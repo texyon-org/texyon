@@ -26,7 +26,7 @@ fn main() {
     let dep = Dependency::probe(IcuSpec, &cfg);
 
     // This is the key. What we print here will be propagated into depending
-    // crates' build scripts as the enviroment variable DEP_ICUUC_INCLUDE,
+    // crates' build scripts as the environment variable DEP_ICUUC_INCLUDE,
     // allowing them to find the headers internally.
     dep.foreach_include_path(|p| {
         println!("cargo:include={}", p.to_str().unwrap());
