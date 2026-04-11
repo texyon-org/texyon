@@ -132,7 +132,7 @@ jobs:
           is-dev: ${{ inputs.is-dev }}
           is-release: ${{ inputs.is-release }}
       - name: "Publish updated Cargo crates"
-        run: cranko cargo foreach-released --pause=30 -- publish --no-verify
+        run: cranko cargo foreach-released --pause=30 -- publish --no-verify --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
   update-website:
