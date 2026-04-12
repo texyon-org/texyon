@@ -359,8 +359,7 @@ impl Font {
 
         *descriptor = descriptor.copy_with_attrs(&attributes);
         *font_ref = Some(
-            CTFont::new_descriptor(descriptor, self.point_size as f64 * 72.0 / 72.27)
-                .ok_or(())?,
+            CTFont::new_descriptor(descriptor, self.point_size as f64 * 72.0 / 72.27).ok_or(())?,
         );
         let mut index = 0;
         let pathname =
