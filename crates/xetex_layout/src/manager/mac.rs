@@ -21,11 +21,11 @@ fn find_fonts_with_name(name: CFString, key: FontAttribute) -> CFArray<CTFontDes
 fn find_font_with_name(name: CFString, key: FontAttribute) -> Option<CTFontDescriptor> {
     let matches = find_fonts_with_name(name, key);
 
-    let mut matched = None;
     if !matches.is_empty() {
-        matched = Some(matches[0].clone());
+        Some(matches.get(0))
+    } else {
+        None
     }
-    matched
 }
 
 fn append_name_to_list(font: &CTFont, name_list: &mut Vec<CString>, name_key: FontNameKey) {
@@ -48,14 +48,16 @@ impl MacBackend {
 
     fn add_fonts_to_caches(&self, maps: &mut FontMaps, members: CFArray<CTFontDescriptor>) {
         for i in 0..members.len() {
-            let font = &members[i];
+            let font = members.get(i);
             let names = self.read_names(font.clone());
-            maps.add_to_maps(self, font.clone(), &names)
+            maps.add_to_maps(self, font, &names)
         }
     }
 
     fn add_font_and_siblings_to_caches(&self, maps: &mut FontMaps, font: &CTFontDescriptor) {
-        let font = CTFont::new_descriptor(font, 10.0);
+        let Some(font) = CTFont::new_descriptor(font, 10.0) else {
+            return;
+        };
         let attr = font.attr(FontAttribute::FamilyName).unwrap();
         // SAFETY: CFString has no generic parameters
         let family = unsafe { attr.downcast::<CFString>() }.unwrap();
@@ -79,7 +81,9 @@ impl FontManagerBackend for MacBackend {
     fn get_platform_font_desc<'a>(&'a self, font: &'a PlatformFontRef) -> Cow<'a, CStr> {
         let mut path = Cow::Borrowed(c"[unknown]");
 
-        let ct_font = CTFont::new_descriptor(font, 0.0);
+        let Some(ct_font) = CTFont::new_descriptor(font, 0.0) else {
+            return path;
+        };
         let url = ct_font
             .attr(FontAttribute::URL)
             // SAFETY: CFUrl has no generic parameters
@@ -154,7 +158,9 @@ impl FontManagerBackend for MacBackend {
 
         names.ps_name = Some(ps_name.get_cstring());
 
-        let font = CTFont::new_descriptor(&font, 0.0);
+        let Some(font) = CTFont::new_descriptor(&font, 0.0) else {
+            return names;
+        };
         append_name_to_list(&font, &mut names.full_names, FontNameKey::Full);
         append_name_to_list(&font, &mut names.family_names, FontNameKey::Family);
         append_name_to_list(&font, &mut names.style_names, FontNameKey::Style);

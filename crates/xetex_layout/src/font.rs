@@ -274,7 +274,7 @@ impl Font {
                     let sz = engine.input_get_size(afm_handle);
                     let mut backing_data2 = vec![0; sz];
                     engine
-                        .input_read(handle, &mut backing_data2)
+                        .input_read(afm_handle, &mut backing_data2)
                         .expect("failed to read AFM file");
 
                     self.ft_face().attach_stream_mem(backing_data2).unwrap();
@@ -358,13 +358,15 @@ impl Font {
             CFDictionary::new([(FontAttribute::CascadeList.to_str(), empty_cascade_list)]);
 
         *descriptor = descriptor.copy_with_attrs(&attributes);
-        *font_ref = Some(CTFont::new_descriptor(
-            descriptor,
-            self.point_size as f64 * 72.0 / 72.27,
-        ));
+        *font_ref = Some(
+            CTFont::new_descriptor(descriptor, self.point_size as f64 * 72.0 / 72.27)
+                .ok_or(())?,
+        );
         let mut index = 0;
-        let pathname = get_file_name_from_ct_font(font_ref.as_ref().unwrap(), &mut index).unwrap();
-        self.initialize_ft(pathname.to_str().unwrap(), index as usize)
+        let pathname =
+            get_file_name_from_ct_font(font_ref.as_ref().unwrap(), &mut index).ok_or(())?;
+        let pathname_str = pathname.to_str().map_err(|_| ())?;
+        self.initialize_ft(pathname_str, index as usize)
     }
 
     pub(crate) fn ft_face(&self) -> std::sync::MutexGuard<'_, ft::Face> {

@@ -85,7 +85,8 @@ cfty! {
 
 impl CTFont {
     /// Create a new font from a [`CTFontDescriptor`] and a size to render at.
-    pub fn new_descriptor(descriptor: &CTFontDescriptor, size: f64) -> CTFont {
+    /// Returns `None` if CoreText cannot create the font (rare, but possible).
+    pub fn new_descriptor(descriptor: &CTFontDescriptor, size: f64) -> Option<CTFont> {
         // SAFETY: Provided descriptor is guaranteed valid. Any size will work. Null matrix is always
         //         allowed.
         let ptr = unsafe {
@@ -95,9 +96,8 @@ impl CTFont {
                 ptr::null_mut(),
             )
         };
-        let ptr = NonNull::new(ptr.cast_mut()).unwrap();
         // SAFETY: If non-null, pointer from CTFontCreateWithFontDescriptor is a new, owned CTFont.
-        unsafe { CTFont::new_owned(ptr) }
+        NonNull::new(ptr.cast_mut()).map(|ptr| unsafe { CTFont::new_owned(ptr) })
     }
 
     /// Get an attribute of this font, if present
