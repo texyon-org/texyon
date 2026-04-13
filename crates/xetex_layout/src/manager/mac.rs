@@ -55,9 +55,7 @@ impl MacBackend {
     }
 
     fn add_font_and_siblings_to_caches(&self, maps: &mut FontMaps, font: &CTFontDescriptor) {
-        let Some(font) = CTFont::new_descriptor(font, 10.0) else {
-            return;
-        };
+        let font = CTFont::new_descriptor(font, 10.0);
         let attr = font.attr(FontAttribute::FamilyName).unwrap();
         // SAFETY: CFString has no generic parameters
         let family = unsafe { attr.downcast::<CFString>() }.unwrap();
@@ -81,9 +79,7 @@ impl FontManagerBackend for MacBackend {
     fn get_platform_font_desc<'a>(&'a self, font: &'a PlatformFontRef) -> Cow<'a, CStr> {
         let mut path = Cow::Borrowed(c"[unknown]");
 
-        let Some(ct_font) = CTFont::new_descriptor(font, 0.0) else {
-            return path;
-        };
+        let ct_font = CTFont::new_descriptor(font, 0.0);
         let url = ct_font
             .attr(FontAttribute::URL)
             // SAFETY: CFUrl has no generic parameters
@@ -158,9 +154,7 @@ impl FontManagerBackend for MacBackend {
 
         names.ps_name = Some(ps_name.get_cstring());
 
-        let Some(font) = CTFont::new_descriptor(&font, 0.0) else {
-            return names;
-        };
+        let font = CTFont::new_descriptor(&font, 0.0);
         append_name_to_list(&font, &mut names.full_names, FontNameKey::Full);
         append_name_to_list(&font, &mut names.family_names, FontNameKey::Family);
         append_name_to_list(&font, &mut names.style_names, FontNameKey::Style);

@@ -358,14 +358,13 @@ impl Font {
             CFDictionary::new([(FontAttribute::CascadeList.to_str(), empty_cascade_list)]);
 
         *descriptor = descriptor.copy_with_attrs(&attributes);
-        *font_ref = Some(
-            CTFont::new_descriptor(descriptor, self.point_size as f64 * 72.0 / 72.27).ok_or(())?,
-        );
+        *font_ref = Some(CTFont::new_descriptor(
+            descriptor,
+            self.point_size as f64 * 72.0 / 72.27,
+        ));
         let mut index = 0;
-        let pathname =
-            get_file_name_from_ct_font(font_ref.as_ref().unwrap(), &mut index).ok_or(())?;
-        let pathname_str = pathname.to_str().map_err(|_| ())?;
-        self.initialize_ft(pathname_str, index as usize)
+        let pathname = get_file_name_from_ct_font(font_ref.as_ref().unwrap(), &mut index).unwrap();
+        self.initialize_ft(pathname.to_str().unwrap(), index as usize)
     }
 
     pub(crate) fn ft_face(&self) -> std::sync::MutexGuard<'_, ft::Face> {

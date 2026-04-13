@@ -30,7 +30,7 @@ pub struct GlyphBBox {
 pub type Fixed = i32;
 /// cbindgen:ignore
 #[cfg(target_os = "macos")]
-pub type Fixed = i32;
+pub type Fixed = u32;
 pub type OTTag = u32;
 pub type GlyphID = u16;
 /// cbindgen:ignore
