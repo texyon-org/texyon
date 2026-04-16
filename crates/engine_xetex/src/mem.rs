@@ -7,16 +7,34 @@
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 
 use crate::globals::{
-    avail, cur_input_synctex_tag, hi_mem_min, line, lo_mem_max, mem_b32s0, mem_b32s1, mem_end,
-    rover, set_avail, set_hi_mem_min, set_lo_mem_max, set_mem_b32s0, set_mem_b32s1, set_mem_end,
-    set_rover,
+    avail, cur_input_synctex_tag, eqtb_b32s1, hi_mem_min, line, lo_mem_max, mem_b32s0, mem_b32s1,
+    mem_end, mem_word, rover, set_avail, set_hi_mem_min, set_lo_mem_max, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_end, set_mem_gr, set_mem_word,
+    set_rover, set_temp_ptr, temp_ptr,
 };
 
-// TeX constants (xetex-constants.h)
-const TEX_NULL: i32 = -0x0FFF_FFFF; // = MIN_HALFWORD
+// TeX constants (xetex-constants.h / xetex_format.h)
+const TEX_NULL: i32 = -0x0FFF_FFFF;    // MIN_HALFWORD
 const MEM_TOP: i32 = 4_999_999;
 const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+const NULL_FLAG: i32 = -0x4000_0000;   // "missing item" in rule nodes
+const NORMAL: u16 = 0;
 const MEDIUM_NODE_SIZE: i32 = 3;
+const SMALL_NODE_SIZE: i32 = 2;
+const GLUE_SPEC_SIZE: i32 = 4;
+const RULE_NODE_SIZE: i32 = 5;
+const BOX_NODE_SIZE: i32 = 8;
+// Node type values (mem[p].b16.s1)
+const HLIST_NODE: u16 = 0;
+const RULE_NODE: u16 = 2;
+const LIGATURE_NODE: u16 = 6;
+const DISC_NODE: u16 = 7;
+const MATH_NODE: u16 = 9;
+const GLUE_NODE: u16 = 10;
+const KERN_NODE: u16 = 11;
+const PENALTY_NODE: u16 = 12;
+// eqtb base indices (xetex_format.h)
+const GLUE_BASE: i32 = 2_254_340;
 
 // C functions not yet translated — still live in xetex-xetex0.c.
 extern "C" {
@@ -240,6 +258,235 @@ pub unsafe extern "C" fn get_node(s: i32) -> i32 {
         set_mem_b32s1(r + s - 1, line());
     }
     r
+}
+
+// ---------------------------------------------------------------------------
+// free_node
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// new_null_box
+// ---------------------------------------------------------------------------
+
+/// Allocate and zero-initialize an empty hbox node (BOX_NODE_SIZE words).
+///
+/// translated from xetex-xetex0.c:147 (new_null_box)
+#[no_mangle]
+pub unsafe extern "C" fn new_null_box() -> i32 {
+    let p = get_node(BOX_NODE_SIZE);
+    // NODE_type(p) = HLIST_NODE  →  mem[p].b16.s1 = HLIST_NODE
+    set_mem_b16s1(p, HLIST_NODE);
+    set_mem_b16s0(p, 0);           // subtype
+    set_mem_b32s1(p + 1, 0);       // width
+    set_mem_b32s1(p + 2, 0);       // depth
+    set_mem_b32s1(p + 3, 0);       // height
+    set_mem_b32s1(p + 4, 0);       // shift_amount
+    set_mem_b32s1(p + 5, TEX_NULL); // list_ptr
+    set_mem_b16s1(p + 5, NORMAL);  // glue_sign (b16.s1, bytes 2-3 of word 5)
+    set_mem_b16s0(p + 5, NORMAL);  // glue_order (b16.s0, bytes 0-1 of word 5)
+    set_mem_gr(p + 6, 0.0);        // BOX_glue_set: mem[(p)+6].gr
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_rule
+// ---------------------------------------------------------------------------
+
+/// Allocate a rule node (RULE_NODE_SIZE words) with all dimensions NULL_FLAG.
+///
+/// translated from xetex-xetex0.c:162 (new_rule)
+#[no_mangle]
+pub unsafe extern "C" fn new_rule() -> i32 {
+    let p = get_node(RULE_NODE_SIZE);
+    set_mem_b16s1(p, RULE_NODE);
+    set_mem_b16s0(p, 0);
+    set_mem_b32s1(p + 1, NULL_FLAG); // width
+    set_mem_b32s1(p + 2, NULL_FLAG); // depth
+    set_mem_b32s1(p + 3, NULL_FLAG); // height
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_ligature
+// ---------------------------------------------------------------------------
+
+/// Allocate a ligature node (SMALL_NODE_SIZE words) for font `f`, char `c`,
+/// and successor list `q`.
+///
+/// Note: `f` (internal_font_number = i32) is cast to u16 to fit in b16.s1,
+/// matching the C's implicit narrowing assignment.
+///
+/// translated from xetex-xetex0.c:174 (new_ligature)
+#[no_mangle]
+pub unsafe extern "C" fn new_ligature(f: i32, c: u16, q: i32) -> i32 {
+    let p = get_node(SMALL_NODE_SIZE);
+    set_mem_b16s1(p, LIGATURE_NODE);
+    // word p+1: b16.s1 = font, b16.s0 = char, b32.s1 = successor link.
+    // b16.s1 and b16.s0 together form b32.s0; b32.s1 is independent.
+    set_mem_b16s1(p + 1, f as u16);
+    set_mem_b16s0(p + 1, c);
+    set_mem_b32s1(p + 1, q);
+    set_mem_b16s0(p, 0); // subtype
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_lig_item
+// ---------------------------------------------------------------------------
+
+/// Allocate a lig-item node (SMALL_NODE_SIZE) for char `c`.
+///
+/// translated from xetex-xetex0.c:186 (new_lig_item)
+#[no_mangle]
+pub unsafe extern "C" fn new_lig_item(c: u16) -> i32 {
+    let p = get_node(SMALL_NODE_SIZE);
+    set_mem_b16s0(p, c);
+    set_mem_b32s1(p + 1, TEX_NULL);
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_disc
+// ---------------------------------------------------------------------------
+
+/// Allocate a discretionary node (SMALL_NODE_SIZE words) with null lists.
+///
+/// translated from xetex-xetex0.c:195 (new_disc)
+#[no_mangle]
+pub unsafe extern "C" fn new_disc() -> i32 {
+    let p = get_node(SMALL_NODE_SIZE);
+    set_mem_b16s1(p, DISC_NODE);
+    set_mem_b16s0(p, 0);
+    set_mem_b32s0(p + 1, TEX_NULL); // pre-break list
+    set_mem_b32s1(p + 1, TEX_NULL); // post-break list
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_math
+// ---------------------------------------------------------------------------
+
+/// Allocate a math-on/off node of width `w` and subtype `s`.
+///
+/// translated from xetex-xetex0.c:221 (new_math)
+#[no_mangle]
+pub unsafe extern "C" fn new_math(w: i32, s: i16) -> i32 {
+    let p = get_node(MEDIUM_NODE_SIZE);
+    set_mem_b16s1(p, MATH_NODE);
+    set_mem_b16s0(p, s as u16);
+    set_mem_b32s1(p + 1, w);
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_spec
+// ---------------------------------------------------------------------------
+
+/// Allocate a glue-spec node (GLUE_SPEC_SIZE words) copied from the spec
+/// at `p`, then clear the copy's reference-count / link field to TEX_NULL.
+///
+/// translated from xetex-xetex0.c:231 (new_spec)
+#[no_mangle]
+pub unsafe extern "C" fn new_spec(p: i32) -> i32 {
+    let q = get_node(GLUE_SPEC_SIZE);
+    set_mem_word(q, mem_word(p));   // copy the whole first word (type + ref_count)
+    set_mem_b32s1(q, TEX_NULL);     // clear ref_count / link
+    set_mem_b32s1(q + 1, mem_b32s1(p + 1)); // width
+    set_mem_b32s1(q + 2, mem_b32s1(p + 2)); // stretch
+    set_mem_b32s1(q + 3, mem_b32s1(p + 3)); // shrink
+    q
+}
+
+// ---------------------------------------------------------------------------
+// new_param_glue
+// ---------------------------------------------------------------------------
+
+/// Allocate a glue node referencing parameter `n` from the format's glue
+/// parameter table.
+///
+/// translated from xetex-xetex0.c:243 (new_param_glue)
+#[no_mangle]
+pub unsafe extern "C" fn new_param_glue(n: i16) -> i32 {
+    let p = get_node(MEDIUM_NODE_SIZE);
+    set_mem_b16s1(p, GLUE_NODE);
+    set_mem_b16s0(p, n as u16 + 1); // subtype = n + 1
+    set_mem_b32s1(p + 1, TEX_NULL);
+    // q = eqtb[GLUE_BASE + n].b32.s1
+    let q = eqtb_b32s1(GLUE_BASE + n as i32);
+    set_mem_b32s0(p + 1, q);
+    // GLUE_SPEC_ref_count(q)++  →  mem[q].b32.s1 += 1
+    set_mem_b32s1(q, mem_b32s1(q) + 1);
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_glue
+// ---------------------------------------------------------------------------
+
+/// Allocate a glue node pointing to the existing glue spec `q`, and
+/// bump the spec's reference count.
+///
+/// translated from xetex-xetex0.c:258 (new_glue)
+#[no_mangle]
+pub unsafe extern "C" fn new_glue(q: i32) -> i32 {
+    let p = get_node(MEDIUM_NODE_SIZE);
+    set_mem_b16s1(p, GLUE_NODE);
+    // GLUE_SPEC_shrink_order(p) = NORMAL  →  mem[p].b16.s0 = NORMAL
+    set_mem_b16s0(p, NORMAL);
+    set_mem_b32s1(p + 1, TEX_NULL);
+    set_mem_b32s0(p + 1, q);
+    // GLUE_SPEC_ref_count(q)++
+    set_mem_b32s1(q, mem_b32s1(q) + 1);
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_skip_param
+// ---------------------------------------------------------------------------
+
+/// Allocate a glue node whose spec is a fresh copy of parameter `n`,
+/// setting `temp_ptr` to the copy.
+///
+/// translated from xetex-xetex0.c:270 (new_skip_param)
+#[no_mangle]
+pub unsafe extern "C" fn new_skip_param(n: i16) -> i32 {
+    set_temp_ptr(new_spec(eqtb_b32s1(GLUE_BASE + n as i32)));
+    let p = new_glue(temp_ptr());
+    set_mem_b32s1(temp_ptr(), TEX_NULL); // clear the spec's ref_count link
+    set_mem_b16s0(p, n as u16 + 1);     // subtype = n + 1
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_kern
+// ---------------------------------------------------------------------------
+
+/// Allocate a kern node of width `w`.
+///
+/// translated from xetex-xetex0.c:281 (new_kern)
+#[no_mangle]
+pub unsafe extern "C" fn new_kern(w: i32) -> i32 {
+    let p = get_node(MEDIUM_NODE_SIZE);
+    set_mem_b16s1(p, KERN_NODE);
+    set_mem_b16s0(p, NORMAL);
+    set_mem_b32s1(p + 1, w);
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_penalty
+// ---------------------------------------------------------------------------
+
+/// Allocate a penalty node with value `m`.
+///
+/// translated from xetex-xetex0.c:291 (new_penalty)
+#[no_mangle]
+pub unsafe extern "C" fn new_penalty(m: i32) -> i32 {
+    let p = get_node(MEDIUM_NODE_SIZE);
+    set_mem_b16s1(p, PENALTY_NODE);
+    set_mem_b16s0(p, 0);
+    set_mem_b32s1(p + 1, m);
+    p
 }
 
 // ---------------------------------------------------------------------------

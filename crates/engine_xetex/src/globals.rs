@@ -64,6 +64,12 @@ mod raw {
         // xetex-xetexd.h:510 — current source line number.
         pub(super) static mut line: i32;
 
+        // xetex-xetexd.h:386 — equivalents table (size eqtb_top+1 words).
+        // Accessed by index like `mem`; valid indices depend on context.
+        pub(super) static mut eqtb: *mut crate::mem_types::MemoryWord;
+        // xetex-xetexd.h:459 — temporary pointer register.
+        pub(super) static mut temp_ptr: i32;
+
         // Memory arena globals (xetex-xetexd.h:460–466).
         // Allocated by C (`xmalloc_array`) during engine init; valid indices
         // are 0 .. =MEM_TOP (4999999). TEX_NULL (-268435455) is never used
@@ -270,4 +276,82 @@ pub(crate) fn cur_input_synctex_tag() -> i32 {
 pub(crate) fn line() -> i32 {
     // SAFETY: see module-level doc.
     unsafe { raw::line }
+}
+
+// ---------------------------------------------------------------------------
+// mem word-level accessors (b16 and gr fields)
+// ---------------------------------------------------------------------------
+
+// Layout (little-endian): one MemoryWord = 8 bytes.
+//   b32.s0 == bytes [0,4): b16.s0 (bytes 0-1) | b16.s1 (bytes 2-3)
+//   b32.s1 == bytes [4,8): b16.s2 (bytes 4-5) | b16.s3 (bytes 6-7)
+//   gr           == all 8 bytes as f64
+
+/// Read `mem[p].b16.s0` (low 16 bits of the first 32-bit half-word).
+#[inline]
+pub(crate) fn mem_b16s0(p: i32) -> u16 {
+    unsafe { (*raw::mem.offset(p as isize)).b16.s0 }
+}
+/// Write `v` into `mem[p].b16.s0`.
+#[inline]
+pub(crate) fn set_mem_b16s0(p: i32, v: u16) {
+    unsafe { (*raw::mem.offset(p as isize)).b16.s0 = v; }
+}
+
+/// Read `mem[p].b16.s1` (high 16 bits of the first 32-bit half-word).
+#[inline]
+pub(crate) fn mem_b16s1(p: i32) -> u16 {
+    unsafe { (*raw::mem.offset(p as isize)).b16.s1 }
+}
+/// Write `v` into `mem[p].b16.s1`.
+#[inline]
+pub(crate) fn set_mem_b16s1(p: i32, v: u16) {
+    unsafe { (*raw::mem.offset(p as isize)).b16.s1 = v; }
+}
+
+/// Read the `gr` (f64) field of `mem[p]`.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn mem_gr(p: i32) -> f64 {
+    unsafe { (*raw::mem.offset(p as isize)).gr }
+}
+/// Write the `gr` (f64) field of `mem[p]`.
+#[inline]
+pub(crate) fn set_mem_gr(p: i32, v: f64) {
+    unsafe { (*raw::mem.offset(p as isize)).gr = v; }
+}
+
+/// Copy the full MemoryWord at `mem[p]`.
+#[inline]
+pub(crate) fn mem_word(p: i32) -> crate::mem_types::MemoryWord {
+    unsafe { *raw::mem.offset(p as isize) }
+}
+/// Write a full MemoryWord to `mem[p]`.
+#[inline]
+pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
+    unsafe { *raw::mem.offset(p as isize) = w; }
+}
+
+// ---------------------------------------------------------------------------
+// eqtb accessor
+// ---------------------------------------------------------------------------
+
+/// Read `eqtb[p].b32.s1` (the "value" half of an equivalents entry).
+#[inline]
+pub(crate) fn eqtb_b32s1(p: i32) -> i32 {
+    // SAFETY: see module-level doc. Caller ensures p is a valid eqtb index.
+    unsafe { (*raw::eqtb.offset(p as isize)).b32.s1 }
+}
+
+// ---------------------------------------------------------------------------
+// temp_ptr
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn temp_ptr() -> i32 {
+    unsafe { raw::temp_ptr }
+}
+#[inline]
+pub(crate) fn set_temp_ptr(v: i32) {
+    unsafe { raw::temp_ptr = v; }
 }
