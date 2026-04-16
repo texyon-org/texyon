@@ -32,6 +32,19 @@
 // Raw extern statics are hidden in this private submodule so their names
 // don't collide with the safe wrappers of the same name exported below.
 
+/// Rust mirror of `input_state_t` (xetex-xetexd.h:344–352).
+/// Must stay layout-compatible with the C struct (`#[repr(C)]`).
+#[repr(C)]
+pub(crate) struct InputState {
+    pub state: u16,
+    pub index: u16,
+    pub start: i32,
+    pub loc: i32,
+    pub limit: i32,
+    pub name: i32,
+    pub synctex_tag: i32,
+}
+
 mod raw {
     use crate::mem_types::MemoryWord;
 
@@ -45,6 +58,11 @@ mod raw {
         pub(super) static mut randoms: [i32; 55];
         // xetex-xetexd.h:455 — index into `randoms`; `unsigned char` maps to u8.
         pub(super) static mut j_random: u8;
+
+        // xetex-xetexd.h:506 — current input state; layout mirrors InputState above.
+        pub(super) static mut cur_input: super::InputState;
+        // xetex-xetexd.h:510 — current source line number.
+        pub(super) static mut line: i32;
 
         // Memory arena globals (xetex-xetexd.h:460–466).
         // Allocated by C (`xmalloc_array`) during engine init; valid indices
@@ -145,6 +163,22 @@ pub(crate) fn set_j_random(v: u8) {
 // mem arena word accessors
 // ---------------------------------------------------------------------------
 
+/// Read `mem[p].b32.s0` (the first 32-bit word / node-size / type field).
+#[inline]
+pub(crate) fn mem_b32s0(p: i32) -> i32 {
+    // SAFETY: see module-level doc. Caller ensures p is in-bounds.
+    unsafe { (*raw::mem.offset(p as isize)).b32.s0 }
+}
+
+/// Write `v` into `mem[p].b32.s0`.
+#[inline]
+pub(crate) fn set_mem_b32s0(p: i32, v: i32) {
+    // SAFETY: see module-level doc. Caller ensures p is in-bounds.
+    unsafe {
+        (*raw::mem.offset(p as isize)).b32.s0 = v;
+    }
+}
+
 /// Read `mem[p].b32.s1` (the `LLIST_link` / successor-pointer field).
 ///
 /// # Safety
@@ -211,7 +245,29 @@ pub(crate) fn set_mem_end(v: i32) {
 }
 
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn rover() -> i32 {
     unsafe { raw::rover }
+}
+
+#[inline]
+pub(crate) fn set_rover(v: i32) {
+    unsafe { raw::rover = v; }
+}
+
+// ---------------------------------------------------------------------------
+// cur_input / line
+// ---------------------------------------------------------------------------
+
+/// Returns `cur_input.synctex_tag`.
+#[inline]
+pub(crate) fn cur_input_synctex_tag() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::cur_input.synctex_tag }
+}
+
+/// Returns the current source line number.
+#[inline]
+pub(crate) fn line() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::line }
 }

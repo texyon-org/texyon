@@ -6,11 +6,17 @@
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 
-use crate::globals::{avail, hi_mem_min, lo_mem_max, mem_b32s1, mem_end, set_avail, set_hi_mem_min, set_mem_b32s1, set_mem_end};
+use crate::globals::{
+    avail, cur_input_synctex_tag, hi_mem_min, line, lo_mem_max, mem_b32s0, mem_b32s1, mem_end,
+    rover, set_avail, set_hi_mem_min, set_lo_mem_max, set_mem_b32s0, set_mem_b32s1, set_mem_end,
+    set_rover,
+};
 
 // TeX constants (xetex-constants.h)
 const TEX_NULL: i32 = -0x0FFF_FFFF; // = MIN_HALFWORD
 const MEM_TOP: i32 = 4_999_999;
+const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+const MEDIUM_NODE_SIZE: i32 = 3;
 
 // C functions not yet translated — still live in xetex-xetex0.c.
 extern "C" {
@@ -127,4 +133,133 @@ pub unsafe extern "C" fn flush_list(p: i32) {
     // q is now the tail; splice: tail.link = old_avail; avail = p
     set_mem_b32s1(q, avail());
     set_avail(p);
+}
+
+// ---------------------------------------------------------------------------
+// free_node
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// get_node
+// ---------------------------------------------------------------------------
+
+/// Allocate a variable-size node of `s` words from the lo-mem free list.
+///
+/// Returns the index of the first word of the allocated block. Calls
+/// `overflow()` (never returns) if memory is exhausted. Returns
+/// `MAX_HALFWORD` for the special sentinel request `s == 0x40000000`.
+///
+/// The two C `goto` labels are handled with Rust's labeled-loop break:
+///   - `goto found`   → `break 'search r`
+///   - `goto restart` → `continue 'restart`
+///
+/// translated from xetex-xetex0.c:150 (get_node)
+#[no_mangle]
+pub unsafe extern "C" fn get_node(s: i32) -> i32 {
+    let r = 'restart: loop {
+        let mut p = rover();
+
+        // do { … } while p != rover()
+        loop {
+            // Coalesce any immediately-following free blocks into one.
+            let mut q = p + mem_b32s0(p);
+            while mem_b32s1(q) == MAX_HALFWORD {
+                let t = mem_b32s1(q + 1);
+                if q == rover() {
+                    set_rover(t);
+                }
+                // Unlink q from the doubly-linked free list.
+                set_mem_b32s0(t + 1, mem_b32s0(q + 1));
+                set_mem_b32s1(mem_b32s0(q + 1) + 1, t);
+                q = q + mem_b32s0(q);
+            }
+
+            let r = q - s;
+
+            if r > p + 1 {
+                // Case 132: block large enough to split; keep left part as free.
+                set_mem_b32s0(p, r - p);
+                set_rover(p);
+                break 'restart r;
+            }
+
+            if r == p && mem_b32s1(p + 1) != p {
+                // Case 133: exact fit; unlink p from the free list.
+                let new_rover = mem_b32s1(p + 1);
+                let t = mem_b32s0(p + 1);
+                set_rover(new_rover);
+                set_mem_b32s0(new_rover + 1, t);
+                set_mem_b32s1(t + 1, new_rover);
+                break 'restart r;
+            }
+
+            set_mem_b32s0(p, q - p);
+            p = mem_b32s1(p + 1);
+            if p == rover() {
+                break;
+            }
+        }
+
+        // No suitable block found in one pass through the free list.
+        if s == 0x4000_0000 {
+            return MAX_HALFWORD;
+        }
+
+        if lo_mem_max() + 2 < hi_mem_min() && lo_mem_max() + 2 <= MAX_HALFWORD {
+            // Grow lo-mem by inserting a new free block between lo_mem_max
+            // and hi_mem_min, then retry.
+            let t = if hi_mem_min() - lo_mem_max() >= 1998 {
+                lo_mem_max() + 1000
+            } else {
+                lo_mem_max() + 1 + (hi_mem_min() - lo_mem_max()) / 2
+            };
+            let t = if t > MAX_HALFWORD { MAX_HALFWORD } else { t };
+
+            let left_neighbor = mem_b32s0(rover() + 1);
+            let q = lo_mem_max();
+            set_mem_b32s1(left_neighbor + 1, q);
+            set_mem_b32s0(rover() + 1, q);
+            set_mem_b32s1(q + 1, rover());
+            set_mem_b32s0(q + 1, left_neighbor);
+            set_mem_b32s1(q, MAX_HALFWORD);
+            set_mem_b32s0(q, t - lo_mem_max());
+            set_lo_mem_max(t);
+            set_mem_b32s1(lo_mem_max(), TEX_NULL);
+            set_mem_b32s0(lo_mem_max(), TEX_NULL);
+            set_rover(q);
+            continue 'restart;
+        }
+
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    };
+
+    // found:
+    set_mem_b32s1(r, TEX_NULL);
+    if s >= MEDIUM_NODE_SIZE {
+        set_mem_b32s0(r + s - 1, cur_input_synctex_tag());
+        set_mem_b32s1(r + s - 1, line());
+    }
+    r
+}
+
+// ---------------------------------------------------------------------------
+// free_node
+// ---------------------------------------------------------------------------
+
+/// Return a variable-size node of size `s` words (headed at `p`) to the
+/// variable-size free list rooted at `rover`.
+///
+/// translated from xetex-xetex0.c:284 (free_node)
+#[no_mangle]
+pub unsafe extern "C" fn free_node(p: i32, s: i32) {
+    // Record node size and mark it as a free block (MAX_HALFWORD sentinel).
+    set_mem_b32s0(p, s);
+    set_mem_b32s1(p, MAX_HALFWORD);
+
+    // Insert p between rover and rover's left-neighbor (rover+1.s0).
+    let q = mem_b32s0(rover() + 1);
+    set_mem_b32s0(p + 1, q);
+    set_mem_b32s1(p + 1, rover());
+    set_mem_b32s0(rover() + 1, p);
+    set_mem_b32s1(q + 1, p);
 }
