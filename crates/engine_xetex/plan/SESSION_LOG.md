@@ -32,6 +32,33 @@ template.
 
 ---
 
+## Session 4 — 2026-04-16 — Phase 2: 12 new_* node constructors
+
+**Goal:** translate the 12 `new_*` node constructor functions from xetex-xetex0.c to `src/mem.rs`.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 3
+
+**Work done:**
+- Confirmed parity baseline: 29/29.
+- Added `eqtb`, `temp_ptr` globals and mem b16/gr/word accessors to `src/globals.rs`.
+- Commit `8fef23ac`: translated new_null_box, new_rule, new_ligature, new_lig_item, new_disc, new_math, new_spec, new_param_glue, new_glue, new_skip_param, new_kern, new_penalty into `src/mem.rs`.
+  Deleted corresponding C bodies from xetex-xetex0.c (~142 lines removed).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 4
+
+**Surprises / gotchas:**
+- First deletion Edit omitted the function header for new_null_box, leaving a dangling `int32_t new_null_box(void)\n{\n    int32_t p;\n` fragment in the C file. Caused cascading parse errors. Fixed with a second Edit removing the stray header. Always include the full function signature in deletion patterns.
+
+**For the next session:**
+- Next target: `copy_native_glyph_info` (xetex-xetex0.c ~line 359) — uses xmalloc_array + memcpy + NATIVE_NODE macros; more complex than the new_* constructors.
+- After that: remaining Phase 2 functions deeper in xetex-xetex0.c.
+
+---
+
 ## Session 3 — 2026-04-16 — Phase 2 kick-off: badness + core allocators
 
 **Goal:** start Phase 2 (memory/node allocation from xetex-xetex0.c)

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 3.
+Last updated: session 4.
 
 ## Core engine files (to translate)
 
@@ -36,7 +36,7 @@ Last updated: session 3.
 | xetex-errors.c               |   175 |      7 | `src/errors.rs`                   | NOT STARTED  |
 | xetex-output.c               |   768 |     30 | `src/output.rs`                   | NOT STARTED  |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 18543 |    268 | multiple (see below)              | IN PROGRESS — 2%  |
+| xetex-xetex0.c               | 18401 |    268 | multiple (see below)              | IN PROGRESS — 6%  |
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
@@ -115,19 +115,19 @@ Status: IN PROGRESS (session 3).
 | 2 | `flush_list`             |  192 | MIGRATED (session 3, e19ace3f) |
 | 3 | `get_node`               |  206 | MIGRATED (session 3, fc914449) |
 | 4 | `free_node`              |  284 | MIGRATED (session 3, fc914449) |
-| 5 | `new_null_box`           |  296 | NOT STARTED |
-| 6 | `new_rule`               |  313 | NOT STARTED |
-| 7 | `new_ligature`           |  325 | NOT STARTED |
-| 8 | `new_lig_item`           |  337 | NOT STARTED |
-| 9 | `new_disc`               |  346 | NOT STARTED |
+| 5 | `new_null_box`           |  296 | MIGRATED (session 4, 8fef23ac) |
+| 6 | `new_rule`               |  313 | MIGRATED (session 4, 8fef23ac) |
+| 7 | `new_ligature`           |  325 | MIGRATED (session 4, 8fef23ac) |
+| 8 | `new_lig_item`           |  337 | MIGRATED (session 4, 8fef23ac) |
+| 9 | `new_disc`               |  346 | MIGRATED (session 4, 8fef23ac) |
 |10 | `copy_native_glyph_info` |  359 | NOT STARTED |
-|11 | `new_math`               |  372 | NOT STARTED |
-|12 | `new_spec`               |  382 | NOT STARTED |
-|13 | `new_param_glue`         |  394 | NOT STARTED |
-|14 | `new_glue`               |  409 | NOT STARTED |
-|15 | `new_skip_param`         |  421 | NOT STARTED |
-|16 | `new_kern`               |  432 | NOT STARTED |
-|17 | `new_penalty`            |  442 | NOT STARTED |
+|11 | `new_math`               |  372 | MIGRATED (session 4, 8fef23ac) |
+|12 | `new_spec`               |  382 | MIGRATED (session 4, 8fef23ac) |
+|13 | `new_param_glue`         |  394 | MIGRATED (session 4, 8fef23ac) |
+|14 | `new_glue`               |  409 | MIGRATED (session 4, 8fef23ac) |
+|15 | `new_skip_param`         |  421 | MIGRATED (session 4, 8fef23ac) |
+|16 | `new_kern`               |  432 | MIGRATED (session 4, 8fef23ac) |
+|17 | `new_penalty`            |  442 | MIGRATED (session 4, 8fef23ac) |
 
 ### Phase 3 — printing (target: `src/output.rs`, `src/show.rs`)
 
