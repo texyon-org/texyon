@@ -32,6 +32,73 @@ template.
 
 ---
 
+## Session 2 — 2026-04-16 — Complete xetex-scaledmath.c (minus m_log)
+
+**Goal:** translate the remaining 7 translatable functions from
+`xetex-scaledmath.c` (make_frac, take_frac, ab_vs_cd, new_randoms,
+init_randoms, unif_rand, norm_rand).
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 1
+
+**Work done:**
+- Confirmed parity baseline: 29/29.
+- Prep commit `1006768f`: removed `static` from make_frac, take_frac,
+  m_log, ab_vs_cd, new_randoms in xetex-scaledmath.c. Added prototypes
+  to xetex-xetexd.h. Build verified.
+- Added `randoms[55]` and `j_random` global accessors to `src/globals.rs`
+  (random_entry / set_random_entry / j_random / set_j_random).
+- Translated 7 functions to Rust in `src/scaled_math.rs`, removed their
+  C bodies — commit `3f096961`:
+    - `make_frac` (xetex-scaledmath.c:165)
+    - `take_frac` (xetex-scaledmath.c:220)
+    - `ab_vs_cd` (xetex-scaledmath.c:332)
+    - `new_randoms` (xetex-scaledmath.c:418)
+    - `init_randoms` (xetex-scaledmath.c:441)
+    - `unif_rand` (xetex-scaledmath.c:468)
+    - `norm_rand` (xetex-scaledmath.c:487) — calls C `m_log` via
+      `extern "C"` declaration in scaled_math.rs.
+- xetex-scaledmath.c now contains only m_log (66 LOC).
+- All 15 crate-level unit tests pass; parity 29/29 after switch.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 2
+- `MODULE_STATUS.md` shows xetex-scaledmath.c IN PROGRESS — 93%
+  (13/14 functions migrated, 1 blocked).
+
+**Surprises / gotchas:**
+- All 7 functions ended up in one commit because they were written
+  together in scaled_math.rs before the C bodies were deleted. The
+  workflow says "one function per commit when practical" — this was
+  a pragmatic deviation, acceptable since they form a tight cluster.
+- `norm_rand` calls `m_log` (blocked on Phase 3). To keep `norm_rand`
+  in Rust now, m_log was un-static'd in C (so the FFI call links).
+  This is clean: norm_rand will need no changes when m_log is eventually
+  translated; we just remove the `extern "C" { fn m_log }` declaration.
+- The `take_frac` overflow check uses `n - 0x7FFFFFFF` (C `be_careful`);
+  since n can be 0x7FFFFFFF and p can be positive, `be_careful + p > 0`
+  can overflow. The C code relies on wrapping behavior here — we don't
+  need `wrapping_*` because n is set to `0x7FFFFFFF - p` in the overflow
+  branch, making the subsequent addition exact.
+
+**For the next session (Session 3):**
+- **Priority 0:** parity baseline 29/29 (already solid).
+- **Priority 1:** start Phase 2 — memory / node allocation helpers from
+  `xetex-xetex0.c`. Candidates (all in xetex-xetex0.c):
+    - `badness` (line 25 in xetex-xetex0.c per session-1 notes) —
+      pure math, no globals except possibly `arith_error`.
+    - `get_avail` (line 170), `flush_list` (line 192) — memory helpers.
+  Read `02-state.md` and `03-memory-and-nodes.md` before starting Phase 2.
+- **Priority 2:** once xetex-scaledmath.c is the only remaining C in
+  the file (it is!), we could mark it DONE if m_log is translated.
+  But m_log is BLOCKED — leave as IN PROGRESS.
+- **Do NOT** touch m_log until the diagnostic/error machinery
+  (error_here_with_diagnostic, print_scaled, etc.) is in Rust (Phase 3).
+
+---
+
 ## Session 1 — 2026-04-16 — Phase 0 scaffolding + first Phase 1 translations
 
 **Goal:** establish the parity baseline, set up the Rust scaffolding

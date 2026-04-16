@@ -19,19 +19,19 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |         16 |
-| IN PROGRESS    |          0 |
+| NOT STARTED    |         15 |
+| IN PROGRESS    |          1 |
 | DONE           |          0 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 1.
+Last updated: session 2.
 
 ## Core engine files (to translate)
 
 | C source file                | LOC   | Fns (C) | Rust target module                | Status       |
 |------------------------------|------:|--------:|-----------------------------------|--------------|
-| xetex-scaledmath.c           |   513 |     14 | `src/scaled_math.rs`              | IN PROGRESS — 43%  |
+| xetex-scaledmath.c           |    66 |      1 | `src/scaled_math.rs`              | IN PROGRESS — 93%  |
 | xetex-stringpool.c           |   206 |      8 | `src/string_pool.rs`              | NOT STARTED  |
 | xetex-errors.c               |   175 |      7 | `src/errors.rs`                   | NOT STARTED  |
 | xetex-output.c               |   768 |     30 | `src/output.rs`                   | NOT STARTED  |
@@ -83,14 +83,14 @@ Phase 3 is far enough along).
 | 4 | `x_over_n`            |   79 | extern          | `arith_error`, `tex_remainder` | MIGRATED (session 1) |
 | 5 | `xn_over_d`           |  105 | extern          | `arith_error`, `tex_remainder` | MIGRATED (session 1) |
 | 6 | `round_xn_over_d`     |  137 | extern          | `arith_error`             | MIGRATED (session 1) |
-| 7 | `make_frac`           |  165 | **static**      | `arith_error`             | NOT STARTED |
-| 8 | `take_frac`           |  220 | **static**      | `arith_error`             | NOT STARTED |
-| 9 | `m_log`               |  287 | **static**      | diagnostic+help globals   | BLOCKED on Phase 3 |
-|10 | `ab_vs_cd`            |  332 | **static**      | —                         | NOT STARTED |
-|11 | `new_randoms`         |  418 | **static**      | `randoms`, `j_random`     | NOT STARTED |
-|12 | `init_randoms`        |  441 | extern          | `randoms`, `j_random`     | NOT STARTED |
-|13 | `unif_rand`           |  468 | extern          | `randoms`, `j_random`     | NOT STARTED |
-|14 | `norm_rand`           |  487 | extern          | `randoms`, `j_random`     | NOT STARTED |
+| 7 | `make_frac`           |  165 | **static**→extern | `arith_error`          | MIGRATED (session 2, 3f096961) |
+| 8 | `take_frac`           |  220 | **static**→extern | `arith_error`          | MIGRATED (session 2, 3f096961) |
+| 9 | `m_log`               |  287 | extern          | diagnostic+help globals   | BLOCKED on Phase 3 |
+|10 | `ab_vs_cd`            |  332 | **static**→extern | —                      | MIGRATED (session 2, 3f096961) |
+|11 | `new_randoms`         |  418 | **static**→extern | `randoms`, `j_random`  | MIGRATED (session 2, 3f096961) |
+|12 | `init_randoms`        |  441 | extern          | `randoms`, `j_random`     | MIGRATED (session 2, 3f096961) |
+|13 | `unif_rand`           |  468 | extern          | `randoms`, `j_random`     | MIGRATED (session 2, 3f096961) |
+|14 | `norm_rand`           |  487 | extern          | `randoms`, `j_random`     | MIGRATED (session 2, 3f096961) |
 
 Session-1 rule-of-thumb on `static` C functions: when translating a
 `static` helper, either translate its caller at the same time (so the
