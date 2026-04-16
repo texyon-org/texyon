@@ -38,6 +38,11 @@ mod raw {
         pub(super) static mut arith_error: bool;
         // xetex-xetexd.h:453 — `scaled_t` is `int32_t` (xetex-core.h:40).
         pub(super) static mut tex_remainder: i32;
+        // xetex-xetexd.h:454 — array of 55 pseudo-random fractions in
+        // [0, 0x10000000).
+        pub(super) static mut randoms: [i32; 55];
+        // xetex-xetexd.h:455 — index into `randoms`; `unsigned char` maps to u8.
+        pub(super) static mut j_random: u8;
     }
 }
 
@@ -82,5 +87,43 @@ pub(crate) fn set_tex_remainder(v: i32) {
     // SAFETY: see module-level doc.
     unsafe {
         raw::tex_remainder = v;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// randoms / j_random
+// ---------------------------------------------------------------------------
+
+/// Returns `randoms[k]`, the k-th element of the pseudo-random table.
+///
+/// Panics in debug mode if `k >= 55`.
+#[inline]
+pub(crate) fn random_entry(k: usize) -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::randoms[k] }
+}
+
+/// Sets `randoms[k]` to `v`.
+#[inline]
+pub(crate) fn set_random_entry(k: usize, v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe {
+        raw::randoms[k] = v;
+    }
+}
+
+/// Returns the current `j_random` index.
+#[inline]
+pub(crate) fn j_random() -> u8 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::j_random }
+}
+
+/// Sets `j_random`.
+#[inline]
+pub(crate) fn set_j_random(v: u8) {
+    // SAFETY: see module-level doc.
+    unsafe {
+        raw::j_random = v;
     }
 }

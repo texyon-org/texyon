@@ -9,7 +9,15 @@
 //! See `plan/04-migration-order.md` Phase 1 for context on why these
 //! functions are the very first ones translated.
 
-use crate::globals::{set_arith_error, set_tex_remainder};
+use crate::globals::{
+    j_random, random_entry, set_arith_error, set_j_random, set_random_entry, set_tex_remainder,
+};
+
+// m_log remains in C (blocked on Phase 3 diagnostic machinery);
+// norm_rand calls it via this FFI declaration.
+extern "C" {
+    fn m_log(x: i32) -> i32;
+}
 
 // ---------------------------------------------------------------------------
 // tex_round
@@ -251,6 +259,317 @@ pub unsafe extern "C" fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
         u
     } else {
         u.wrapping_neg()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// make_frac
+// ---------------------------------------------------------------------------
+
+/// Compute the fraction `p/q` in the range (-8, 8) as a 28-bit fixed-point
+/// "frac" value (1.0 == 0x10000000). Sets `arith_error` and returns
+/// ±0x7FFFFFFF if |p/q| >= 8.
+///
+/// translated from xetex-scaledmath.c:165 (make_frac)
+#[no_mangle]
+pub unsafe extern "C" fn make_frac(mut p: i32, mut q: i32) -> i32 {
+    let mut negative = p < 0;
+    if negative {
+        p = -p;
+    }
+
+    if q <= 0 {
+        q = -q;
+        negative = !negative;
+    }
+
+    let n = p / q;
+    p = p % q;
+
+    if n >= 8 {
+        set_arith_error(true);
+        return if negative { -0x7FFF_FFFF } else { 0x7FFF_FFFF };
+    }
+
+    let n = (n - 1).wrapping_mul(0x1000_0000);
+    let mut f = 1_i32;
+
+    loop {
+        let be_careful = p.wrapping_sub(q);
+        p = be_careful.wrapping_add(p);
+        if p >= 0 {
+            f = f + f + 1;
+        } else {
+            f = f + f;
+            p = p + q;
+        }
+        if f >= 0x1000_0000 {
+            break;
+        }
+    }
+
+    let be_careful = p.wrapping_sub(q);
+    if be_careful.wrapping_add(p) >= 0 {
+        f += 1;
+    }
+
+    if negative { -(f + n) } else { f + n }
+}
+
+// ---------------------------------------------------------------------------
+// take_frac
+// ---------------------------------------------------------------------------
+
+/// Multiply `q` by the 28-bit frac `f` (1.0 == 0x10000000), returning
+/// a scaled integer. Sets `arith_error` on overflow.
+///
+/// translated from xetex-scaledmath.c:220 (take_frac)
+#[no_mangle]
+pub unsafe extern "C" fn take_frac(mut q: i32, mut f: i32) -> i32 {
+    let mut negative = f < 0;
+    if negative {
+        f = -f;
+    }
+
+    if q < 0 {
+        q = -q;
+        negative = !negative;
+    }
+
+    let mut n = if f < 0x1000_0000 {
+        0_i32
+    } else {
+        let nn = f / 0x1000_0000;
+        f = f % 0x1000_0000;
+        if q <= 0x7FFF_FFFF / nn {
+            nn * q
+        } else {
+            set_arith_error(true);
+            0x7FFF_FFFF
+        }
+    };
+
+    f = f + 0x1000_0000;
+    let mut p = 0x0800_0000_i32;
+
+    if q < 0x4000_0000 {
+        loop {
+            if f & 1 != 0 {
+                p = (p + q) / 2;
+            } else {
+                p = p / 2;
+            }
+            f = f / 2;
+            if f == 1 {
+                break;
+            }
+        }
+    } else {
+        loop {
+            if f & 1 != 0 {
+                p = p + (q - p) / 2;
+            } else {
+                p = p / 2;
+            }
+            f = f / 2;
+            if f == 1 {
+                break;
+            }
+        }
+    }
+
+    let be_careful = n - 0x7FFF_FFFF;
+    if be_careful + p > 0 {
+        set_arith_error(true);
+        n = 0x7FFF_FFFF - p;
+    }
+
+    if negative { -(n + p) } else { n + p }
+}
+
+// ---------------------------------------------------------------------------
+// ab_vs_cd
+// ---------------------------------------------------------------------------
+
+/// Compare `a*b` vs `c*d` without overflow, returning 1, 0, or -1.
+///
+/// translated from xetex-scaledmath.c:332 (ab_vs_cd)
+#[no_mangle]
+pub unsafe extern "C" fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
+    if a < 0 {
+        a = -a;
+        b = -b;
+    }
+
+    if c < 0 {
+        c = -c;
+        d = -d;
+    }
+
+    if d <= 0 {
+        if b >= 0 {
+            return if (a == 0 || b == 0) && (c == 0 || d == 0) { 0 } else { 1 };
+        }
+
+        if d == 0 {
+            return if a == 0 { 0 } else { -1 };
+        }
+
+        // swap pairs and flip signs to bring into the main loop
+        let tmp = a; a = c; c = tmp;
+        let tmp = -b; b = -d; d = tmp;
+    } else if b <= 0 {
+        if b < 0 && a > 0 {
+            return -1;
+        }
+        return if c == 0 { 0 } else { -1 };
+    }
+
+    loop {
+        let q = a / d;
+        let r = c / b;
+
+        if q != r {
+            return if q > r { 1 } else { -1 };
+        }
+
+        let q = a % d;
+        let r = c % b;
+
+        if r == 0 {
+            return if q == 0 { 0 } else { 1 };
+        }
+
+        if q == 0 {
+            return -1;
+        }
+
+        a = b; b = q; c = d; d = r;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// new_randoms
+// ---------------------------------------------------------------------------
+
+/// Advance the pseudo-random table by one generation (Fibonacci-lagged
+/// subtraction generator).
+///
+/// translated from xetex-scaledmath.c:418 (new_randoms)
+#[no_mangle]
+pub unsafe extern "C" fn new_randoms() {
+    for k in 0_usize..24 {
+        let x = random_entry(k).wrapping_sub(random_entry(k + 31));
+        set_random_entry(k, if x < 0 { x + 0x1000_0000 } else { x });
+    }
+
+    for k in 24_usize..55 {
+        let x = random_entry(k).wrapping_sub(random_entry(k - 24));
+        set_random_entry(k, if x < 0 { x + 0x1000_0000 } else { x });
+    }
+
+    set_j_random(54);
+}
+
+// ---------------------------------------------------------------------------
+// init_randoms
+// ---------------------------------------------------------------------------
+
+/// Seed the pseudo-random table and run three warmup cycles.
+///
+/// translated from xetex-scaledmath.c:441 (init_randoms)
+#[no_mangle]
+pub unsafe extern "C" fn init_randoms(seed: i32) {
+    let mut j = seed.abs();
+
+    while j >= 0x1000_0000 {
+        j /= 2;
+    }
+
+    let mut k = 1_i32;
+
+    for i in 0_u8..55 {
+        let jj = k;
+        k = j - k;
+        j = jj;
+        if k < 0 {
+            k += 0x1000_0000;
+        }
+        set_random_entry(((i as usize) * 21) % 55, j);
+    }
+
+    new_randoms();
+    new_randoms();
+    new_randoms();
+}
+
+// ---------------------------------------------------------------------------
+// unif_rand
+// ---------------------------------------------------------------------------
+
+/// Return a pseudo-random integer uniformly distributed in
+/// `[0, abs(x))` (or `(-abs(x), 0]` when `x < 0`).
+///
+/// translated from xetex-scaledmath.c:468 (unif_rand)
+#[no_mangle]
+pub unsafe extern "C" fn unif_rand(x: i32) -> i32 {
+    if j_random() == 0 {
+        new_randoms();
+    } else {
+        set_j_random(j_random() - 1);
+    }
+
+    let y = take_frac(x.abs(), random_entry(j_random() as usize));
+    if y == x.abs() {
+        0
+    } else if x > 0 {
+        y
+    } else {
+        -y
+    }
+}
+
+// ---------------------------------------------------------------------------
+// norm_rand
+// ---------------------------------------------------------------------------
+
+/// Return a pseudo-random integer drawn from a normal distribution.
+/// Calls the still-C `m_log` (blocked on Phase 3 diagnostic machinery).
+///
+/// translated from xetex-scaledmath.c:487 (norm_rand)
+#[no_mangle]
+pub unsafe extern "C" fn norm_rand() -> i32 {
+    loop {
+        let (x, u);
+
+        // inner do-while
+        loop {
+            if j_random() == 0 {
+                new_randoms();
+            } else {
+                set_j_random(j_random() - 1);
+            }
+            let xi = take_frac(112429, random_entry(j_random() as usize) - 0x0800_0000);
+
+            if j_random() == 0 {
+                new_randoms();
+            } else {
+                set_j_random(j_random() - 1);
+            }
+            let ui = random_entry(j_random() as usize);
+
+            if xi.abs() < ui {
+                x = xi;
+                u = ui;
+                break;
+            }
+        }
+
+        let xi = make_frac(x, u);
+        let l = 139_548_960_i32 - m_log(u);
+        if ab_vs_cd(1024, l, xi, xi) >= 0 {
+            return xi;
+        }
     }
 }
 
