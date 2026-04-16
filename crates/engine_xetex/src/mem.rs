@@ -7,10 +7,10 @@
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 
 use crate::globals::{
-    avail, cur_input_synctex_tag, eqtb_b32s1, hi_mem_min, line, lo_mem_max, mem_b32s0, mem_b32s1,
-    mem_end, mem_word, rover, set_avail, set_hi_mem_min, set_lo_mem_max, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_end, set_mem_gr, set_mem_word,
-    set_rover, set_temp_ptr, temp_ptr,
+    avail, cur_input_synctex_tag, eqtb_b32s1, hi_mem_min, line, lo_mem_max, mem_b16s0, mem_b32s0,
+    mem_b32s1, mem_end, mem_ptr, mem_word, rover, set_avail, set_hi_mem_min, set_lo_mem_max,
+    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_end, set_mem_gr,
+    set_mem_ptr, set_mem_word, set_rover, set_temp_ptr, temp_ptr,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
@@ -35,11 +35,15 @@ const KERN_NODE: u16 = 11;
 const PENALTY_NODE: u16 = 12;
 // eqtb base indices (xetex_format.h)
 const GLUE_BASE: i32 = 2_254_340;
+// native node glyph info size in bytes (xetex-constants.h:304)
+const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 
 // C functions not yet translated — still live in xetex-xetex0.c.
 extern "C" {
     fn runaway();
     fn overflow(s: *const libc::c_char, n: i32) -> !;
+    // bridge_core: tectonic_bridge_core.h:155
+    fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
 }
 
 /// Index into the TeX memory arena (`mem[]`).
@@ -509,4 +513,30 @@ pub unsafe extern "C" fn free_node(p: i32, s: i32) {
     set_mem_b32s1(p + 1, rover());
     set_mem_b32s0(rover() + 1, p);
     set_mem_b32s1(q + 1, p);
+}
+
+// ---------------------------------------------------------------------------
+// copy_native_glyph_info
+// ---------------------------------------------------------------------------
+
+/// Copy glyph layout info from native node `src` to `dest`, allocating a
+/// fresh heap buffer for the destination.
+///
+/// `NATIVE_NODE_glyph_info_ptr(p)` = `mem[p+5].ptr`
+/// `NATIVE_NODE_glyph_count(p)`    = `mem[p+4].b16.s0`
+///
+/// translated from xetex-xetex0.c:146 (copy_native_glyph_info)
+#[no_mangle]
+pub unsafe extern "C" fn copy_native_glyph_info(src: i32, dest: i32) {
+    let src_ptr = mem_ptr(src + 5);
+    if !src_ptr.is_null() {
+        let glyph_count = mem_b16s0(src + 4) as usize;
+        let byte_count = glyph_count * NATIVE_GLYPH_INFO_SIZE;
+        // xmalloc_array(char, glyph_count * NATIVE_GLYPH_INFO_SIZE)
+        //   = xmalloc((glyph_count * NATIVE_GLYPH_INFO_SIZE + 1) * sizeof(char))
+        let new_ptr = xmalloc(byte_count + 1);
+        std::ptr::copy_nonoverlapping(src_ptr as *const u8, new_ptr as *mut u8, byte_count);
+        set_mem_ptr(dest + 5, new_ptr);
+        set_mem_b16s0(dest + 4, glyph_count as u16);
+    }
 }

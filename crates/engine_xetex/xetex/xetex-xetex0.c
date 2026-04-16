@@ -142,20 +142,6 @@ runaway(void)
 }
 
 
-void
-copy_native_glyph_info(int32_t src, int32_t dest)
-{
-    int32_t glyph_count;
-
-    if (NATIVE_NODE_glyph_info_ptr(src) != NULL) {
-        glyph_count = NATIVE_NODE_glyph_count(src);
-        NATIVE_NODE_glyph_info_ptr(dest) = xmalloc_array(char, glyph_count * NATIVE_GLYPH_INFO_SIZE);
-        memcpy(NATIVE_NODE_glyph_info_ptr(dest), NATIVE_NODE_glyph_info_ptr(src), glyph_count * NATIVE_GLYPH_INFO_SIZE);
-        NATIVE_NODE_glyph_count(dest) = glyph_count;
-    }
-}
-
-
 /*:165*/
 
 int32_t prev_rightmost(int32_t s, int32_t e)

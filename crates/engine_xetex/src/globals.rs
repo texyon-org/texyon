@@ -321,6 +321,17 @@ pub(crate) fn set_mem_gr(p: i32, v: f64) {
     unsafe { (*raw::mem.offset(p as isize)).gr = v; }
 }
 
+/// Read the `ptr` (void*) field of `mem[p]`.
+#[inline]
+pub(crate) fn mem_ptr(p: i32) -> *mut std::ffi::c_void {
+    unsafe { (*raw::mem.offset(p as isize)).ptr }
+}
+/// Write the `ptr` (void*) field of `mem[p]`.
+#[inline]
+pub(crate) fn set_mem_ptr(p: i32, v: *mut std::ffi::c_void) {
+    unsafe { (*raw::mem.offset(p as isize)).ptr = v; }
+}
+
 /// Copy the full MemoryWord at `mem[p]`.
 #[inline]
 pub(crate) fn mem_word(p: i32) -> crate::mem_types::MemoryWord {
