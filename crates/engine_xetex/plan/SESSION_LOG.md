@@ -32,6 +32,33 @@ template.
 
 ---
 
+## Session 5 — 2026-04-16 — Phase 2: copy_native_glyph_info
+
+**Goal:** translate `copy_native_glyph_info` from xetex-xetex0.c to `src/mem.rs`.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 4
+
+**Work done:**
+- Confirmed parity baseline: 29/29.
+- Added `mem_ptr`/`set_mem_ptr` accessors to `src/globals.rs` (for `mem[p].ptr`, the `void*` field).
+- Added `xmalloc` extern declaration to `src/mem.rs`.
+- Commit `37480639`: translated `copy_native_glyph_info` → uses `xmalloc` + `ptr::copy_nonoverlapping`; deleted 14-line C body.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 5
+
+**Surprises / gotchas:**
+- `NATIVE_GLYPH_INFO_SIZE` is in `xetex-constants.h`, not the main header — had to grep for it.
+- `xmalloc_array(char, n)` expands to `xmalloc((n+1) * sizeof(char))` = `xmalloc(n+1)` — the +1 is for null-terminator safety.
+
+**For the next session:**
+- Phase 2 table in MODULE_STATUS.md is fully migrated (all 17 functions done). Next is Phase 3 (printing functions from xetex-output.c), or resume with more xetex-xetex0.c functions not yet in the tracker.
+
+---
+
 ## Session 4 — 2026-04-16 — Phase 2: 12 new_* node constructors
 
 **Goal:** translate the 12 `new_*` node constructor functions from xetex-xetex0.c to `src/mem.rs`.

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 4.
+Last updated: session 5.
 
 ## Core engine files (to translate)
 
@@ -36,7 +36,7 @@ Last updated: session 4.
 | xetex-errors.c               |   175 |      7 | `src/errors.rs`                   | NOT STARTED  |
 | xetex-output.c               |   768 |     30 | `src/output.rs`                   | NOT STARTED  |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 18401 |    268 | multiple (see below)              | IN PROGRESS — 6%  |
+| xetex-xetex0.c               | 18387 |    268 | multiple (see below)              | IN PROGRESS — 6%  |
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
@@ -120,7 +120,7 @@ Status: IN PROGRESS (session 3).
 | 7 | `new_ligature`           |  325 | MIGRATED (session 4, 8fef23ac) |
 | 8 | `new_lig_item`           |  337 | MIGRATED (session 4, 8fef23ac) |
 | 9 | `new_disc`               |  346 | MIGRATED (session 4, 8fef23ac) |
-|10 | `copy_native_glyph_info` |  359 | NOT STARTED |
+|10 | `copy_native_glyph_info` |  359 | MIGRATED (session 5, 37480639) |
 |11 | `new_math`               |  372 | MIGRATED (session 4, 8fef23ac) |
 |12 | `new_spec`               |  382 | MIGRATED (session 4, 8fef23ac) |
 |13 | `new_param_glue`         |  394 | MIGRATED (session 4, 8fef23ac) |
