@@ -22,6 +22,14 @@ use std::{ffi::CString, time::SystemTime};
 use tectonic_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
 use tectonic_errors::prelude::*;
 
+// Internal modules holding the growing Rust translation of the XeTeX
+// engine. See `plan/` for the long-running migration strategy.
+mod globals;
+#[allow(dead_code)] // used as the translation progresses
+mod mem;
+#[allow(dead_code)]
+mod mem_types;
+
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,
 /// indicating that the format file structure has changed. There is no provision
