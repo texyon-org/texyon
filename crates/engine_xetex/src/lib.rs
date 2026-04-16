@@ -30,6 +30,7 @@ mod helpers;
 mod mem;
 #[allow(dead_code)]
 mod mem_types;
+mod output;
 mod scaled_math;
 
 /// A serial number describing the detailed binary layout of the TeX "format

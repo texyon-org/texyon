@@ -347,53 +347,6 @@ print_esc_cstr(const char* s)
 }
 
 
-static void
-print_the_digs(eight_bits k)
-{
-    while (k > 0) {
-        k--;
-        if (dig[k] < 10)
-            print_char('0'  + dig[k]);
-        else
-            print_char(55 /*"A" -10 */  + dig[k]);
-    }
-}
-
-
-void
-print_int(int32_t n)
-{
-    unsigned char k = 0;
-    int32_t m;
-
-    if (n < 0) {
-        print_char('-');
-        if (n > -100000000L)
-            n = -(int32_t) n;
-        else {
-            m = -1 - n;
-            n = m / 10;
-            m = (m % 10) + 1;
-            k = 1;
-            if (m < 10)
-                dig[0] = m;
-            else {
-                dig[0] = 0;
-                n++;
-            }
-        }
-    }
-
-    do {
-        dig[k] = n % 10;
-        n = n / 10;
-        k++;
-    } while (!(n == 0));
-
-    print_the_digs(k);
-}
-
-
 void
 print_cs(int32_t p)
 {
@@ -656,23 +609,6 @@ print_two(int32_t n)
 
 
 void
-print_hex(int32_t n)
-{
-    unsigned char k = 0;
-
-    print_char('"');
-
-    do {
-        dig[k] = n % 16;
-        n = n / 16;
-        k++;
-    } while (n != 0);
-
-    print_the_digs(k);
-}
-
-
-void
 print_roman_int(int32_t n)
 {
     int32_t u, v;
@@ -746,23 +682,3 @@ print_scaled(scaled_t s)
 }
 
 
-void
-print_ucs_code(UnicodeScalar n)
-{
-    unsigned char k = 0;
-
-    print_cstr("U+");
-
-    do {
-        dig[k] = n % 16;
-        n = n / 16;
-        k++;
-    } while (n != 0);
-
-    while (k < 4) {
-        dig[k] = 0;
-        k++;
-    }
-
-    print_the_digs(k);
-}

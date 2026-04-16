@@ -53,6 +53,9 @@ mod raw {
         pub(super) static mut arith_error: bool;
         // xetex-xetexd.h:453 — `scaled_t` is `int32_t` (xetex-core.h:40).
         pub(super) static mut tex_remainder: i32;
+        // xetex-xetexd.h:432 — digit scratch buffer for print_int / print_hex.
+        pub(super) static mut dig: [u8; 23];
+
         // xetex-xetexd.h:454 — array of 55 pseudo-random fractions in
         // [0, 0x10000000).
         pub(super) static mut randoms: [i32; 55];
@@ -365,4 +368,20 @@ pub(crate) fn temp_ptr() -> i32 {
 #[inline]
 pub(crate) fn set_temp_ptr(v: i32) {
     unsafe { raw::temp_ptr = v; }
+}
+
+// ---------------------------------------------------------------------------
+// dig
+// ---------------------------------------------------------------------------
+
+/// Read `dig[k]`, the k-th digit scratch byte (xetex-xetexd.h:432).
+#[inline]
+pub(crate) fn dig_entry(k: usize) -> u8 {
+    unsafe { raw::dig[k] }
+}
+
+/// Write `v` into `dig[k]`.
+#[inline]
+pub(crate) fn set_dig_entry(k: usize, v: u8) {
+    unsafe { raw::dig[k] = v; }
 }

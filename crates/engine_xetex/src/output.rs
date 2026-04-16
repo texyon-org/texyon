@@ -1,0 +1,121 @@
+//! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
+
+use crate::globals::{dig_entry, set_dig_entry};
+
+// C functions not yet translated — still live in xetex-output.c.
+extern "C" {
+    fn print_char(s: i32);
+    fn print_cstr(s: *const libc::c_char);
+}
+
+// ---------------------------------------------------------------------------
+// print_the_digs (static helper — not exported; all C callers translated here)
+// ---------------------------------------------------------------------------
+
+/// Print the digits in `dig[0..k]` in reverse order.
+///
+/// Corresponds to the static `print_the_digs` in xetex-output.c:350.
+/// Not exported — only called from the Rust functions below.
+fn print_the_digs(mut k: u8) {
+    // translated from xetex-output.c:350 (print_the_digs)
+    while k > 0 {
+        k -= 1;
+        let d = dig_entry(k as usize);
+        unsafe {
+            if d < 10 {
+                print_char(b'0' as i32 + d as i32);
+            } else {
+                print_char(55 /* b'A' - 10 */ + d as i32);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_int
+// ---------------------------------------------------------------------------
+
+/// Print an integer in decimal.
+///
+/// translated from xetex-output.c:363 (print_int)
+#[no_mangle]
+pub unsafe extern "C" fn print_int(mut n: i32) {
+    let mut k: u8 = 0;
+
+    if n < 0 {
+        print_char(b'-' as i32);
+        if n > -100_000_000 {
+            n = -(n);
+        } else {
+            let m_val = -1 - n;
+            n = m_val / 10;
+            let m = (m_val % 10) + 1;
+            k = 1;
+            if m < 10 {
+                set_dig_entry(0, m as u8);
+            } else {
+                set_dig_entry(0, 0);
+                n += 1;
+            }
+        }
+    }
+
+    loop {
+        set_dig_entry(k as usize, (n % 10) as u8);
+        n /= 10;
+        k += 1;
+        if n == 0 {
+            break;
+        }
+    }
+
+    print_the_digs(k);
+}
+
+// ---------------------------------------------------------------------------
+// print_hex
+// ---------------------------------------------------------------------------
+
+/// Print an integer in hexadecimal with a leading `"`.
+///
+/// translated from xetex-output.c:658 (print_hex)
+#[no_mangle]
+pub unsafe extern "C" fn print_hex(mut n: i32) {
+    let mut k: u8 = 0;
+    print_char(b'"' as i32);
+    loop {
+        set_dig_entry(k as usize, (n % 16) as u8);
+        n /= 16;
+        k += 1;
+        if n == 0 {
+            break;
+        }
+    }
+    print_the_digs(k);
+}
+
+// ---------------------------------------------------------------------------
+// print_ucs_code
+// ---------------------------------------------------------------------------
+
+/// Print a Unicode scalar value in `U+XXXX` form.
+///
+/// translated from xetex-output.c:749 (print_ucs_code)
+#[no_mangle]
+pub unsafe extern "C" fn print_ucs_code(mut n: i32) {
+    let mut k: u8 = 0;
+    print_cstr(c"U+".as_ptr());
+    loop {
+        set_dig_entry(k as usize, (n % 16) as u8);
+        n /= 16;
+        k += 1;
+        if n == 0 {
+            break;
+        }
+    }
+    while k < 4 {
+        set_dig_entry(k as usize, 0);
+        k += 1;
+    }
+    print_the_digs(k);
+}
