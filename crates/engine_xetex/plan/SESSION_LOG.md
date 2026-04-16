@@ -32,6 +32,50 @@ template.
 
 ---
 
+## Session 6 — 2026-04-16 — Phase 3 start: print_int, print_hex, print_ucs_code
+
+**Goal:** begin Phase 3 (printing functions from xetex-output.c) with the
+cleanest targets that have no static-function dependencies.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 5
+
+**Work done:**
+- Read 04-migration-order.md and 07-anti-patterns.md. Oriented per workflow.
+- Confirmed parity baseline: 29/29.
+- Identified that `warn_char` (static, called by `print_ln`/`print_raw_char`)
+  blocks translating the core printing functions. Deferred those.
+- Identified `print_int`, `print_hex`, `print_ucs_code` as clean targets:
+  they only use the `dig[]` array and call C `print_char`/`print_cstr`.
+- Created `src/output.rs`. Added `dig[]` accessors to `globals.rs`.
+- Commit `6e9a8bea`: translated `print_the_digs` (private Rust helper),
+  `print_int`, `print_hex`, `print_ucs_code`. Deleted 84 C lines.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 6
+
+**Surprises / gotchas:**
+- `warn_char` is a static C function that reads `current_diagnostic` (also
+  a C file-static). Functions that call `warn_char` (`print_ln`,
+  `print_raw_char`) cannot be translated until `warn_char` is either
+  un-static'd (prep commit) or translated alongside `capture_to_diagnostic`
+  (which owns `current_diagnostic`). The whole cluster must move together.
+- `print_the_digs` was called by `print_int`, `print_hex`, AND `print_ucs_code`
+  so all three had to be translated in the same commit (otherwise the C
+  static becomes unreachable from its callers).
+
+**For the next session:**
+- Next targets in Phase 3: `print_ln` + `print_raw_char` require un-static-ing
+  `warn_char` first. Plan: prep commit to un-static `warn_char` + `current_diagnostic`
+  (make `current_diagnostic` an extern, add prototype for `warn_char`), then
+  translate `warn_char` to Rust, then `print_ln` and `print_raw_char`.
+- Alternatively: translate the simpler wrappers `print_cstr`, `print_nl_cstr`,
+  `print_esc_cstr` (these call only C extern functions, no static deps) — quick wins.
+
+---
+
 ## Session 5 — 2026-04-16 — Phase 2: copy_native_glyph_info
 
 **Goal:** translate `copy_native_glyph_info` from xetex-xetex0.c to `src/mem.rs`.
