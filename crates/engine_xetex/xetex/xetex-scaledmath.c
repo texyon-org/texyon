@@ -17,7 +17,7 @@
  * #[no_mangle] implementations. See plan/06-workflow.md §"Step 5".
  */
 
-static int32_t
+int32_t
 make_frac(int32_t p, int32_t q)
 {
     int32_t f;
@@ -72,7 +72,7 @@ make_frac(int32_t p, int32_t q)
     }
 }
 
-static int32_t
+int32_t
 take_frac(int32_t q, int32_t f)
 {
     int32_t p;
@@ -139,7 +139,7 @@ take_frac(int32_t q, int32_t f)
         return n + p;
 }
 
-static int32_t
+int32_t
 m_log(int32_t x)
 {
     int32_t y, z;
@@ -184,7 +184,7 @@ m_log(int32_t x)
     }
 }
 
-static int32_t
+int32_t
 ab_vs_cd(int32_t a, int32_t b, int32_t c, int32_t d)
 {
     int32_t q, r;
@@ -270,7 +270,7 @@ ab_vs_cd(int32_t a, int32_t b, int32_t c, int32_t d)
     }
 }
 
-static void
+void
 new_randoms(void)
 {
     unsigned char k;
