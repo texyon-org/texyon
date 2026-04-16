@@ -25,6 +25,7 @@ use tectonic_errors::prelude::*;
 // Internal modules holding the growing Rust translation of the XeTeX
 // engine. See `plan/` for the long-running migration strategy.
 mod globals;
+mod helpers;
 #[allow(dead_code)] // used as the translation progresses
 mod mem;
 #[allow(dead_code)]

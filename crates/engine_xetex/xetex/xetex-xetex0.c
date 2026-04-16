@@ -21,31 +21,6 @@ int_error(int32_t n)
 }
 
 
-int32_t
-badness(scaled_t t, scaled_t s)
-{
-    int32_t r;
-
-    if (t == 0)
-        return 0;
-
-    if (s <= 0)
-        return INF_BAD;
-
-    if (t <= 7230584L) /* magic constant */
-        r = (t * 297) / s;
-    else if (s >= 1663497L) /* magic constant */
-        r = t / (s / 297);
-    else
-        r = t;
-
-    if (r > 1290) /* magic constant */
-        return INF_BAD;
-
-    return (r * r * r + 0x20000) / 0x40000;
-}
-
-
 /*:112*/
 /*118:*/
 void
@@ -166,42 +141,6 @@ runaway(void)
     }
 }
 
-
-int32_t get_avail(void)
-{
-    int32_t p;
-    p = avail;
-    if (p != TEX_NULL)
-        avail = LLIST_link(avail);
-    else if (mem_end < MEM_TOP) {
-        mem_end++;
-        p = mem_end;
-    } else {
-
-        hi_mem_min--;
-        p = hi_mem_min;
-        if (is_char_node(lo_mem_max)) {
-            runaway();
-            overflow("main memory size", MEM_TOP + 1);
-        }
-    }
-    mem[p].b32.s1 = TEX_NULL;
-    return p;
-}
-
-void flush_list(int32_t p)
-{
-    int32_t q, r;
-    if (p != TEX_NULL) {
-        r = p;
-        do {
-            q = r;
-            r = LLIST_link(r);
-        } while (!(r == TEX_NULL));
-        mem[q].b32.s1 = avail;
-        avail = p;
-    }
-}
 
 int32_t get_node(int32_t s)
 {

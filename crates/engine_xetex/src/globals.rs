@@ -33,6 +33,8 @@
 // don't collide with the safe wrappers of the same name exported below.
 
 mod raw {
+    use crate::mem_types::MemoryWord;
+
     extern "C" {
         // xetex-xetexd.h:452
         pub(super) static mut arith_error: bool;
@@ -43,6 +45,17 @@ mod raw {
         pub(super) static mut randoms: [i32; 55];
         // xetex-xetexd.h:455 — index into `randoms`; `unsigned char` maps to u8.
         pub(super) static mut j_random: u8;
+
+        // Memory arena globals (xetex-xetexd.h:460–466).
+        // Allocated by C (`xmalloc_array`) during engine init; valid indices
+        // are 0 .. =MEM_TOP (4999999). TEX_NULL (-268435455) is never used
+        // as an index — it is a sentinel that callers check before indexing.
+        pub(super) static mut mem: *mut MemoryWord;
+        pub(super) static mut lo_mem_max: i32;
+        pub(super) static mut hi_mem_min: i32;
+        pub(super) static mut avail: i32;
+        pub(super) static mut mem_end: i32;
+        pub(super) static mut rover: i32;
     }
 }
 
@@ -126,4 +139,79 @@ pub(crate) fn set_j_random(v: u8) {
     unsafe {
         raw::j_random = v;
     }
+}
+
+// ---------------------------------------------------------------------------
+// mem arena word accessors
+// ---------------------------------------------------------------------------
+
+/// Read `mem[p].b32.s1` (the `LLIST_link` / successor-pointer field).
+///
+/// # Safety
+/// `p` must be a valid arena index (`0 ..= MEM_TOP`). TEX_NULL is never
+/// a valid index; callers must guard against it before calling this.
+#[inline]
+pub(crate) fn mem_b32s1(p: i32) -> i32 {
+    // SAFETY: see module-level doc. Caller ensures p is in-bounds.
+    unsafe { (*raw::mem.offset(p as isize)).b32.s1 }
+}
+
+/// Write `v` into `mem[p].b32.s1`.
+#[inline]
+pub(crate) fn set_mem_b32s1(p: i32, v: i32) {
+    // SAFETY: see module-level doc. Caller ensures p is in-bounds.
+    unsafe {
+        (*raw::mem.offset(p as isize)).b32.s1 = v;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// lo_mem_max / hi_mem_min / avail / mem_end / rover
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn lo_mem_max() -> i32 {
+    unsafe { raw::lo_mem_max }
+}
+
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn set_lo_mem_max(v: i32) {
+    unsafe { raw::lo_mem_max = v; }
+}
+
+#[inline]
+pub(crate) fn hi_mem_min() -> i32 {
+    unsafe { raw::hi_mem_min }
+}
+
+#[inline]
+pub(crate) fn set_hi_mem_min(v: i32) {
+    unsafe { raw::hi_mem_min = v; }
+}
+
+#[inline]
+pub(crate) fn avail() -> i32 {
+    unsafe { raw::avail }
+}
+
+#[inline]
+pub(crate) fn set_avail(v: i32) {
+    unsafe { raw::avail = v; }
+}
+
+#[inline]
+pub(crate) fn mem_end() -> i32 {
+    unsafe { raw::mem_end }
+}
+
+#[inline]
+pub(crate) fn set_mem_end(v: i32) {
+    unsafe { raw::mem_end = v; }
+}
+
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn rover() -> i32 {
+    unsafe { raw::rover }
 }
