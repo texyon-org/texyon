@@ -32,6 +32,72 @@ template.
 
 ---
 
+## Session 3 — 2026-04-16 — Phase 2 kick-off: badness + core allocators
+
+**Goal:** start Phase 2 (memory/node allocation from xetex-xetex0.c)
+by translating the core allocator functions.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 2
+
+**Work done:**
+- Confirmed parity baseline: 29/29.
+- Commit `e19ace3f`: translated badness, get_avail, flush_list.
+  - `badness` (xetex-xetex0.c:25) → `src/helpers.rs` (new file).
+  - `get_avail` (xetex-xetex0.c:170) → `src/mem.rs`.
+  - `flush_list` (xetex-xetex0.c:192) → `src/mem.rs`.
+  - New globals: `mem` (raw pointer), `lo_mem_max`, `hi_mem_min`,
+    `avail`, `mem_end`, `rover` + `mem_b32s0`/`mem_b32s1` typed
+    accessor pairs. TEX_NULL, MEM_TOP, MAX_HALFWORD as Rust consts.
+  - get_avail's OOM path calls C `runaway()`/`overflow()` via
+    extern "C" (not yet translated).
+- Commit `fc914449`: translated free_node and get_node.
+  - `free_node` (xetex-xetex0.c:284) — straightforward list insertion.
+  - `get_node` (xetex-xetex0.c:150) — the main lo-mem allocator; two
+    C `goto` labels handled via Rust labeled-loop break/continue:
+    `goto found` → `break 'restart r`, `goto restart` → `continue 'restart`.
+  - New globals: `InputState` (#[repr(C)] struct for `input_state_t`),
+    `cur_input_synctex_tag()`, `line()`. Added `set_lo_mem_max`.
+  - New module `src/helpers.rs` registered in `lib.rs`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 3
+- 18 functions migrated total (13 from scaledmath + 5 from xetex0).
+- xetex-xetex0.c: 18,543 LOC, ~268 functions remaining.
+
+**Surprises / gotchas:**
+- Rust unit test runner shows "running 0 tests" in the doc-tests pass
+  (a second binary) — that's normal. The main test binary ran 21 tests.
+- `get_node` Case 133 (exact-fit block): the C code checks
+  `if (r == p)` first and then `if (mem[p+1].b32.s1 != p)` as a
+  second condition. I collapsed these into `if r == p && mem_b32s1(p + 1) != p`.
+  Semantically identical because the inner if can only be true when
+  the outer is true.
+- `InputState` must exactly mirror `input_state_t` (state+index are
+  u16, then five i32 fields). Any field reorder or padding difference
+  would silently corrupt `cur_input.synctex_tag` reads. The `#[repr(C)]`
+  attribute plus the field ordering matches the C definition at
+  xetex-xetexd.h:344–352.
+
+**For the next session (Session 4):**
+- **Priority 1:** continue Phase 2 — the `new_*` node constructors.
+  These all call `get_node` (now in Rust!) so the call chain is clean.
+  Start with the simplest: `new_null_box` (line 223 in current file),
+  `new_rule` (~240), `new_ligature` (~253), `new_lig_item` (~265),
+  `new_disc` (~273), `new_math` (~299), `new_spec` (~309),
+  `new_param_glue` (~321), `new_glue` (~336), `new_skip_param` (~349),
+  `new_kern` (~360), `new_penalty` (~370).
+  These need additional mem accessors (b16 fields, gr field).
+- **Note:** `new_null_box` uses `mem[p].b16.s0`, `BOX_glue_set`,
+  `NODE_type` — check `xetex-xetexd.h` for the macro definitions before
+  translating. Will need `mem_b16s0`/`set_mem_b16s0` etc.
+- **Priority 2:** once the `new_*` constructors are done, `copy_native_glyph_info`
+  is next, followed by Phase 3 (output/printing).
+
+---
+
 ## Session 2 — 2026-04-16 — Complete xetex-scaledmath.c (minus m_log)
 
 **Goal:** translate the remaining 7 translatable functions from

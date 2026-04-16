@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |         15 |
-| IN PROGRESS    |          1 |
+| NOT STARTED    |         14 |
+| IN PROGRESS    |          2 |
 | DONE           |          0 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 2.
+Last updated: session 3.
 
 ## Core engine files (to translate)
 
@@ -36,7 +36,7 @@ Last updated: session 2.
 | xetex-errors.c               |   175 |      7 | `src/errors.rs`                   | NOT STARTED  |
 | xetex-output.c               |   768 |     30 | `src/output.rs`                   | NOT STARTED  |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 18694 |    273 | multiple (see below)              | NOT STARTED  |
+| xetex-xetex0.c               | 18543 |    268 | multiple (see below)              | IN PROGRESS — 2%  |
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
@@ -99,28 +99,35 @@ the C (exporting the symbol) so the Rust replacement can be reached by
 name across the FFI boundary. Do **not** invent a new C wrapper just to
 un-hide a symbol; edit the definition directly.
 
+### Phase 1.5 — pure helpers from xetex-xetex0.c (target: `src/helpers.rs`)
+
+| # | Function  | Line | Status |
+|--:|-----------|-----:|--------|
+| 1 | `badness` |   25 | MIGRATED (session 3, e19ace3f) |
+
 ### Phase 2 — memory / node allocation (target: `src/mem.rs`)
 
-Status: not started.
+Status: IN PROGRESS (session 3).
 
-Candidates from `xetex-xetex0.c`:
--   `get_avail` — line 170
--   `flush_list` — line 192
--   `get_node` — line 206
--   `free_node` — line 284
--   `new_null_box` — line 296
--   `new_rule` — line 313
--   `new_ligature` — line 325
--   `new_lig_item` — line 337
--   `new_disc` — line 346
--   `copy_native_glyph_info` — line 359
--   `new_math` — line 372
--   `new_spec` — line 382
--   `new_param_glue` — line 394
--   `new_glue` — line 409
--   `new_skip_param` — line 421
--   `new_kern` — line 432
--   `new_penalty` — line 442
+| # | Function                 | Line | Status |
+|--:|--------------------------|-----:|--------|
+| 1 | `get_avail`              |  170 | MIGRATED (session 3, e19ace3f) |
+| 2 | `flush_list`             |  192 | MIGRATED (session 3, e19ace3f) |
+| 3 | `get_node`               |  206 | MIGRATED (session 3, fc914449) |
+| 4 | `free_node`              |  284 | MIGRATED (session 3, fc914449) |
+| 5 | `new_null_box`           |  296 | NOT STARTED |
+| 6 | `new_rule`               |  313 | NOT STARTED |
+| 7 | `new_ligature`           |  325 | NOT STARTED |
+| 8 | `new_lig_item`           |  337 | NOT STARTED |
+| 9 | `new_disc`               |  346 | NOT STARTED |
+|10 | `copy_native_glyph_info` |  359 | NOT STARTED |
+|11 | `new_math`               |  372 | NOT STARTED |
+|12 | `new_spec`               |  382 | NOT STARTED |
+|13 | `new_param_glue`         |  394 | NOT STARTED |
+|14 | `new_glue`               |  409 | NOT STARTED |
+|15 | `new_skip_param`         |  421 | NOT STARTED |
+|16 | `new_kern`               |  432 | NOT STARTED |
+|17 | `new_penalty`            |  442 | NOT STARTED |
 
 ### Phase 3 — printing (target: `src/output.rs`, `src/show.rs`)
 
