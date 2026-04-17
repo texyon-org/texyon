@@ -1,8 +1,10 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 
 use crate::globals::{
-    current_diagnostic, dig_entry, eqtb_b32s1, file_offset, log_file, rust_stdout, selector,
-    set_dig_entry, set_file_offset, set_term_offset, term_offset, write_file,
+    current_diagnostic, dig_entry, eqtb_b32s1, error_line, file_offset, log_file, max_print_line,
+    pool_ptr, pool_size, rust_stdout, selector, set_dig_entry, set_file_offset, set_pool_ptr,
+    set_str_pool, set_tally, set_term_offset, set_trick_buf, tally, term_offset, trick_count,
+    write_file,
 };
 
 // Selector constants (xetex-core.h:42–51).
@@ -353,4 +355,74 @@ pub unsafe extern "C" fn print_ln() {
             ttstub_output_putc(write_file(sel as usize), b'\n' as i32);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// print_raw_char
+// ---------------------------------------------------------------------------
+
+/// Write one UTF-16 code unit to the current output destination(s).
+///
+/// translated from xetex-output.c:76 (print_raw_char)
+#[no_mangle]
+pub unsafe extern "C" fn print_raw_char(s: u16, incr_offset: bool) {
+    match selector() {
+        SELECTOR_TERM_AND_LOG => {
+            warn_char(s as i32);
+            ttstub_output_putc(rust_stdout(), s as i32);
+            ttstub_output_putc(log_file(), s as i32);
+            if incr_offset {
+                set_term_offset(term_offset() + 1);
+                set_file_offset(file_offset() + 1);
+            }
+            if term_offset() == max_print_line() {
+                ttstub_output_putc(rust_stdout(), b'\n' as i32);
+                set_term_offset(0);
+            }
+            if file_offset() == max_print_line() {
+                ttstub_output_putc(log_file(), b'\n' as i32);
+                set_file_offset(0);
+            }
+        }
+        SELECTOR_LOG_ONLY => {
+            warn_char(s as i32);
+            ttstub_output_putc(log_file(), s as i32);
+            if incr_offset {
+                set_file_offset(file_offset() + 1);
+            }
+            if file_offset() == max_print_line() {
+                ttstub_output_putc(log_file(), b'\n' as i32);
+                set_file_offset(0);
+            }
+        }
+        SELECTOR_TERM_ONLY => {
+            warn_char(s as i32);
+            ttstub_output_putc(rust_stdout(), s as i32);
+            if incr_offset {
+                set_term_offset(term_offset() + 1);
+            }
+            if term_offset() == max_print_line() {
+                ttstub_output_putc(rust_stdout(), b'\n' as i32);
+                set_term_offset(0);
+            }
+        }
+        SELECTOR_NO_PRINT => {}
+        SELECTOR_PSEUDO => {
+            let t = tally();
+            if t < trick_count() {
+                set_trick_buf((t % error_line()) as usize, s);
+            }
+        }
+        SELECTOR_NEW_STRING => {
+            let pp = pool_ptr();
+            if pp < pool_size() {
+                set_str_pool(pp, s);
+                set_pool_ptr(pp + 1);
+            }
+        }
+        sel => {
+            ttstub_output_putc(write_file(sel as usize), s as i32);
+        }
+    }
+    set_tally(tally() + 1);
 }

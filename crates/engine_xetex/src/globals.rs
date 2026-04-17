@@ -100,6 +100,20 @@ mod raw {
         // Current diagnostic capture handle (xetex-output.c, un-static'd session 8).
         // Null (0) means no active capture. Type is opaque `ttbc_diagnostic_t *`.
         pub(super) static mut current_diagnostic: *mut std::ffi::c_void;
+
+        // Print line-length limit (xetex-xetexd.h:399).
+        pub(super) static mut max_print_line: i32;
+        // Tally of characters output (xetex-xetexd.h:433).
+        pub(super) static mut tally: i32;
+        // Error-line display helpers (xetex-xetexd.h:397, 436–437).
+        pub(super) static mut error_line: i32;
+        pub(super) static mut trick_buf: [u16; 256];
+        pub(super) static mut trick_count: i32;
+        // String pool (xetex-xetexd.h:403, 423, 425).
+        // `packed_UTF16_code` = `unsigned short`; `pool_pointer` = `int32_t`.
+        pub(super) static mut pool_size: i32;
+        pub(super) static mut str_pool: *mut u16;
+        pub(super) static mut pool_ptr: i32;
     }
 }
 
@@ -461,4 +475,56 @@ pub(crate) fn write_file(i: usize) -> usize {
 #[inline]
 pub(crate) fn current_diagnostic() -> *mut std::ffi::c_void {
     unsafe { raw::current_diagnostic }
+}
+
+// ---------------------------------------------------------------------------
+// print_raw_char globals
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn max_print_line() -> i32 {
+    unsafe { raw::max_print_line }
+}
+
+#[inline]
+pub(crate) fn tally() -> i32 {
+    unsafe { raw::tally }
+}
+#[inline]
+pub(crate) fn set_tally(v: i32) {
+    unsafe { raw::tally = v; }
+}
+
+#[inline]
+pub(crate) fn error_line() -> i32 {
+    unsafe { raw::error_line }
+}
+
+/// Read `trick_buf[k]`.
+#[inline]
+pub(crate) fn trick_count() -> i32 {
+    unsafe { raw::trick_count }
+}
+/// Write `trick_buf[k] = v`.
+#[inline]
+pub(crate) fn set_trick_buf(k: usize, v: u16) {
+    unsafe { raw::trick_buf[k] = v; }
+}
+
+#[inline]
+pub(crate) fn pool_size() -> i32 {
+    unsafe { raw::pool_size }
+}
+#[inline]
+pub(crate) fn pool_ptr() -> i32 {
+    unsafe { raw::pool_ptr }
+}
+#[inline]
+pub(crate) fn set_pool_ptr(v: i32) {
+    unsafe { raw::pool_ptr = v; }
+}
+/// Write `str_pool[k] = v`.
+#[inline]
+pub(crate) fn set_str_pool(k: i32, v: u16) {
+    unsafe { *raw::str_pool.offset(k as isize) = v; }
 }
