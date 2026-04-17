@@ -73,60 +73,6 @@ error_here_with_diagnostic(const char* message)
 }
 
 void
-print(int32_t s)
-{
-    int32_t nl;
-
-    if (s >= str_ptr)
-        return print_cstr("???");
-    else if (s <= BIGGEST_CHAR) {
-        if (s < 0)
-            return print_cstr("???");
-        else {
-            if (selector > SELECTOR_PSEUDO) {
-                print_char(s);
-                return;
-            }
-
-            if ( /*252: */ s == INTPAR(new_line_char) /*:252 */ ) {
-                if (selector < SELECTOR_PSEUDO) {
-                    print_ln();
-                    return;
-                }
-            }
-
-            nl = INTPAR(new_line_char);
-            INTPAR(new_line_char) = -1;
-            print_char(s);
-            INTPAR(new_line_char) = nl;
-            return;
-        }
-    }
-
-    int32_t pool_idx = s - 0x10000;
-
-    for (pool_pointer i = str_start[pool_idx]; i < str_start[pool_idx + 1]; i++) {
-        if (
-            (str_pool[i] >= 0xD800) &&
-            (str_pool[i] < 0xDC00) &&
-            (i + 1 < str_start[pool_idx + 1]) &&
-            (str_pool[i + 1] >= 0xDC00) &&
-            (str_pool[i + 1] < 0xE000)
-        ) {
-            print_char(
-                0x10000 +
-                (str_pool[i] - 0xD800) * 1024 +
-                str_pool[i + 1] - 0xDC00
-            );
-            i++;
-        } else {
-            print_char(str_pool[i]);
-        }
-    }
-}
-
-
-void
 print_cs(int32_t p)
 {
     if (p < HASH_BASE) {

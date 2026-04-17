@@ -2,9 +2,9 @@
 
 use crate::globals::{
     current_diagnostic, dig_entry, doing_special, eqtb_b32s1, error_line, file_offset, log_file,
-    max_print_line, pool_ptr, pool_size, rust_stdout, selector, set_dig_entry, set_file_offset,
-    set_pool_ptr, set_str_pool, set_tally, set_term_offset, set_trick_buf, tally, term_offset,
-    trick_count, write_file,
+    max_print_line, pool_ptr, pool_size, rust_stdout, selector, set_dig_entry, set_eqtb_b32s1,
+    set_file_offset, set_pool_ptr, set_str_pool, set_tally, set_term_offset, set_trick_buf,
+    str_pool_entry, str_ptr, str_start, tally, term_offset, trick_count, write_file,
 };
 
 // Selector constants (xetex-core.h:42–51).
@@ -23,9 +23,8 @@ const INT_PAR_NEW_LINE_CHAR: i32 = 49;
 const BIGGEST_USV: i32 = 0x10_FFFF;
 const BIGGEST_CHAR: i32 = 0xFFFF;
 
-// C functions not yet translated — still live in xetex-output.c.
+// C functions not yet translated — still live in xetex-output.c or bridge.
 extern "C" {
-    fn print(s: i32);
     // tectonic_bridge_core output helpers.
     fn ttstub_output_putc(handle: usize, c: i32) -> i32;
     fn ttbc_diag_append(diag: *mut std::ffi::c_void, text: *const libc::c_char);
@@ -506,5 +505,62 @@ pub unsafe extern "C" fn print_char(s: i32) {
             print_raw_char((128 + (s % 4096) / 64) as u16, false);
             print_raw_char((128 + s % 64) as u16, true);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print
+// ---------------------------------------------------------------------------
+
+/// Print string number `s` from the TeX string pool (or a single character).
+///
+/// translated from xetex-output.c:146 (print)
+#[no_mangle]
+pub unsafe extern "C" fn print(s: i32) {
+    if s >= str_ptr() {
+        return print_cstr(c"???".as_ptr());
+    }
+    if s <= BIGGEST_CHAR {
+        if s < 0 {
+            return print_cstr(c"???".as_ptr());
+        }
+        // Single-character string number.
+        if selector() > SELECTOR_PSEUDO {
+            print_char(s);
+            return;
+        }
+        if s == eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR) {
+            if selector() < SELECTOR_PSEUDO {
+                print_ln();
+                return;
+            }
+        }
+        // Temporarily suppress newline-char substitution while printing s.
+        let nl = eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR);
+        set_eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, -1);
+        print_char(s);
+        set_eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, nl);
+        return;
+    }
+
+    // String pool reference: s >= 0x10000.
+    let pool_idx = s - 0x10000;
+    let mut i = str_start(pool_idx);
+    let end = str_start(pool_idx + 1);
+    while i < end {
+        let c = str_pool_entry(i);
+        if c >= 0xD800
+            && c < 0xDC00
+            && i + 1 < end
+        {
+            let c2 = str_pool_entry(i + 1);
+            if c2 >= 0xDC00 && c2 < 0xE000 {
+                print_char(0x10000 + (c as i32 - 0xD800) * 1024 + c2 as i32 - 0xDC00);
+                i += 2;
+                continue;
+            }
+        }
+        print_char(c as i32);
+        i += 1;
     }
 }

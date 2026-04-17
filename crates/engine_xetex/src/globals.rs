@@ -70,6 +70,12 @@ mod raw {
         // xetex-xetexd.h:386 — equivalents table (size eqtb_top+1 words).
         // Accessed by index like `mem`; valid indices depend on context.
         pub(super) static mut eqtb: *mut crate::mem_types::MemoryWord;
+
+        // String pool (xetex-xetexd.h:424–426).
+        // str_start[i] = pool offset of the i-th string (pool_pointer = i32).
+        pub(super) static mut str_start: *mut i32;
+        // str_ptr = number of strings in the pool (str_number = i32).
+        pub(super) static mut str_ptr: i32;
         // xetex-xetexd.h:459 — temporary pointer register.
         pub(super) static mut temp_ptr: i32;
 
@@ -388,6 +394,36 @@ pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
 pub(crate) fn eqtb_b32s1(p: i32) -> i32 {
     // SAFETY: see module-level doc. Caller ensures p is a valid eqtb index.
     unsafe { (*raw::eqtb.offset(p as isize)).b32.s1 }
+}
+/// Write `v` into `eqtb[p].b32.s1`.
+#[inline]
+pub(crate) fn set_eqtb_b32s1(p: i32, v: i32) {
+    // SAFETY: see module-level doc. Caller ensures p is a valid eqtb index.
+    unsafe { (*raw::eqtb.offset(p as isize)).b32.s1 = v; }
+}
+
+// ---------------------------------------------------------------------------
+// str_ptr / str_start / str_pool (read accessor)
+// ---------------------------------------------------------------------------
+
+/// Returns the current number of strings in the string pool.
+#[inline]
+pub(crate) fn str_ptr() -> i32 {
+    unsafe { raw::str_ptr }
+}
+
+/// Returns `str_start[k]` — the pool offset of the k-th string.
+#[inline]
+pub(crate) fn str_start(k: i32) -> i32 {
+    // SAFETY: see module-level doc. Caller ensures k is a valid string index.
+    unsafe { *raw::str_start.offset(k as isize) }
+}
+
+/// Read `str_pool[k]` (a packed UTF-16 code unit).
+#[inline]
+pub(crate) fn str_pool_entry(k: i32) -> u16 {
+    // SAFETY: see module-level doc. Caller ensures k is a valid pool index.
+    unsafe { *raw::str_pool.offset(k as isize) }
 }
 
 // ---------------------------------------------------------------------------
