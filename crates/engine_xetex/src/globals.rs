@@ -153,6 +153,12 @@ mod raw {
         pub(super) static mut log_opened: bool;
         pub(super) static mut job_name: i32;
 
+        // Engine config flags set before launch (xetex-xetexd.h:385,396,722,724).
+        pub(super) static mut in_initex_mode: bool;
+        pub(super) static mut synctex_enabled: i32;
+        pub(super) static mut semantic_pagination_enabled: bool;
+        pub(super) static mut shell_escape_enabled: bool;
+
         // Print line-length limit (xetex-xetexd.h:399).
         pub(super) static mut max_print_line: i32;
         // Tally of characters output (xetex-xetexd.h:433).
@@ -297,52 +303,62 @@ pub(crate) fn set_mem_b32s1(p: i32, v: i32) {
 
 #[inline]
 pub(crate) fn lo_mem_max() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::lo_mem_max }
 }
 
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn set_lo_mem_max(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::lo_mem_max = v; }
 }
 
 #[inline]
 pub(crate) fn hi_mem_min() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::hi_mem_min }
 }
 
 #[inline]
 pub(crate) fn set_hi_mem_min(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::hi_mem_min = v; }
 }
 
 #[inline]
 pub(crate) fn avail() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::avail }
 }
 
 #[inline]
 pub(crate) fn set_avail(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::avail = v; }
 }
 
 #[inline]
 pub(crate) fn mem_end() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::mem_end }
 }
 
 #[inline]
 pub(crate) fn set_mem_end(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::mem_end = v; }
 }
 
 #[inline]
 pub(crate) fn rover() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::rover }
 }
 
 #[inline]
 pub(crate) fn set_rover(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::rover = v; }
 }
 
@@ -376,22 +392,26 @@ pub(crate) fn line() -> i32 {
 /// Read `mem[p].b16.s0` (low 16 bits of the first 32-bit half-word).
 #[inline]
 pub(crate) fn mem_b16s0(p: i32) -> u16 {
+    // SAFETY: see module-level doc.
     unsafe { (*raw::mem.offset(p as isize)).b16.s0 }
 }
 /// Write `v` into `mem[p].b16.s0`.
 #[inline]
 pub(crate) fn set_mem_b16s0(p: i32, v: u16) {
+    // SAFETY: see module-level doc.
     unsafe { (*raw::mem.offset(p as isize)).b16.s0 = v; }
 }
 
 /// Read `mem[p].b16.s1` (high 16 bits of the first 32-bit half-word).
 #[inline]
 pub(crate) fn mem_b16s1(p: i32) -> u16 {
+    // SAFETY: see module-level doc.
     unsafe { (*raw::mem.offset(p as isize)).b16.s1 }
 }
 /// Write `v` into `mem[p].b16.s1`.
 #[inline]
 pub(crate) fn set_mem_b16s1(p: i32, v: u16) {
+    // SAFETY: see module-level doc.
     unsafe { (*raw::mem.offset(p as isize)).b16.s1 = v; }
 }
 
@@ -399,22 +419,26 @@ pub(crate) fn set_mem_b16s1(p: i32, v: u16) {
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn mem_gr(p: i32) -> f64 {
+    // SAFETY: see module-level doc.
     unsafe { (*raw::mem.offset(p as isize)).gr }
 }
 /// Write the `gr` (f64) field of `mem[p]`.
 #[inline]
 pub(crate) fn set_mem_gr(p: i32, v: f64) {
+    // SAFETY: see module-level doc.
     unsafe { (*raw::mem.offset(p as isize)).gr = v; }
 }
 
 /// Read the `ptr` (void*) field of `mem[p]`.
 #[inline]
 pub(crate) fn mem_ptr(p: i32) -> *mut std::ffi::c_void {
+    // SAFETY: see module-level doc.
     unsafe { (*raw::mem.offset(p as isize)).ptr }
 }
 /// Write the `ptr` (void*) field of `mem[p]`.
 #[inline]
 pub(crate) fn set_mem_ptr(p: i32, v: *mut std::ffi::c_void) {
+    // SAFETY: see module-level doc.
     unsafe { (*raw::mem.offset(p as isize)).ptr = v; }
 }
 
@@ -428,11 +452,13 @@ pub(crate) fn mem_as_u16_ptr(p: i32) -> *const u16 {
 /// Copy the full MemoryWord at `mem[p]`.
 #[inline]
 pub(crate) fn mem_word(p: i32) -> crate::mem_types::MemoryWord {
+    // SAFETY: see module-level doc.
     unsafe { *raw::mem.offset(p as isize) }
 }
 /// Write a full MemoryWord to `mem[p]`.
 #[inline]
 pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
+    // SAFETY: see module-level doc.
     unsafe { *raw::mem.offset(p as isize) = w; }
 }
 
@@ -460,6 +486,7 @@ pub(crate) fn set_eqtb_b32s1(p: i32, v: i32) {
 /// Returns the current number of strings in the string pool.
 #[inline]
 pub(crate) fn str_ptr() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::str_ptr }
 }
 
@@ -552,10 +579,12 @@ pub(crate) fn eqtb_top() -> i32 {
 
 #[inline]
 pub(crate) fn temp_ptr() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::temp_ptr }
 }
 #[inline]
 pub(crate) fn set_temp_ptr(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::temp_ptr = v; }
 }
 
@@ -566,12 +595,14 @@ pub(crate) fn set_temp_ptr(v: i32) {
 /// Read `dig[k]`, the k-th digit scratch byte (xetex-xetexd.h:432).
 #[inline]
 pub(crate) fn dig_entry(k: usize) -> u8 {
+    // SAFETY: see module-level doc.
     unsafe { raw::dig[k] }
 }
 
 /// Write `v` into `dig[k]`.
 #[inline]
 pub(crate) fn set_dig_entry(k: usize, v: u8) {
+    // SAFETY: see module-level doc.
     unsafe { raw::dig[k] = v; }
 }
 
@@ -595,28 +626,33 @@ pub(crate) fn set_selector(v: i32) {
 /// Returns true while the engine is processing a `\special` (xetex-xetexd.h:439).
 #[inline]
 pub(crate) fn doing_special() -> bool {
+    // SAFETY: see module-level doc.
     unsafe { raw::doing_special }
 }
 
 /// Returns `term_offset` (columns written to terminal since last newline).
 #[inline]
 pub(crate) fn term_offset() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::term_offset }
 }
 /// Sets `term_offset`.
 #[inline]
 pub(crate) fn set_term_offset(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::term_offset = v; }
 }
 
 /// Returns `file_offset` (columns written to log file since last newline).
 #[inline]
 pub(crate) fn file_offset() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::file_offset }
 }
 /// Sets `file_offset`.
 #[inline]
 pub(crate) fn set_file_offset(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::file_offset = v; }
 }
 
@@ -627,24 +663,28 @@ pub(crate) fn set_file_offset(v: i32) {
 /// Returns the `rust_stdout` output handle.
 #[inline]
 pub(crate) fn rust_stdout() -> usize {
+    // SAFETY: see module-level doc.
     unsafe { raw::rust_stdout }
 }
 
 /// Returns the `log_file` output handle.
 #[inline]
 pub(crate) fn log_file() -> usize {
+    // SAFETY: see module-level doc.
     unsafe { raw::log_file }
 }
 
 /// Returns `write_file[i]`, the output handle for write-stream `i` (0–15).
 #[inline]
 pub(crate) fn write_file(i: usize) -> usize {
+    // SAFETY: see module-level doc.
     unsafe { raw::write_file[i] }
 }
 
 /// Returns the current diagnostic capture pointer (null = no active capture).
 #[inline]
 pub(crate) fn current_diagnostic() -> *mut std::ffi::c_void {
+    // SAFETY: see module-level doc.
     unsafe { raw::current_diagnostic }
 }
 
@@ -654,44 +694,53 @@ pub(crate) fn current_diagnostic() -> *mut std::ffi::c_void {
 
 #[inline]
 pub(crate) fn max_print_line() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::max_print_line }
 }
 
 #[inline]
 pub(crate) fn tally() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::tally }
 }
 #[inline]
 pub(crate) fn set_tally(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::tally = v; }
 }
 
 #[inline]
 pub(crate) fn error_line() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::error_line }
 }
 
 /// Read `trick_buf[k]`.
 #[inline]
 pub(crate) fn trick_count() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::trick_count }
 }
 /// Write `trick_buf[k] = v`.
 #[inline]
 pub(crate) fn set_trick_buf(k: usize, v: u16) {
+    // SAFETY: see module-level doc.
     unsafe { raw::trick_buf[k] = v; }
 }
 
 #[inline]
 pub(crate) fn pool_size() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::pool_size }
 }
 #[inline]
 pub(crate) fn pool_ptr() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::pool_ptr }
 }
 #[inline]
 pub(crate) fn set_pool_ptr(v: i32) {
+    // SAFETY: see module-level doc.
     unsafe { raw::pool_ptr = v; }
 }
 /// Write `str_pool[k] = v`.
@@ -835,4 +884,34 @@ pub(crate) fn log_opened() -> bool {
 pub(crate) fn job_name() -> i32 {
     // SAFETY: see module-level doc.
     unsafe { raw::job_name }
+}
+#[inline]
+pub(crate) fn set_halt_on_error_p(v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::halt_on_error_p = v; }
+}
+
+// ---------------------------------------------------------------------------
+// engine launch config flags (set by tt_xetex_set_int_variable)
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn set_in_initex_mode(v: bool) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::in_initex_mode = v; }
+}
+#[inline]
+pub(crate) fn set_synctex_enabled(v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::synctex_enabled = v; }
+}
+#[inline]
+pub(crate) fn set_semantic_pagination_enabled(v: bool) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::semantic_pagination_enabled = v; }
+}
+#[inline]
+pub(crate) fn set_shell_escape_enabled(v: bool) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::shell_escape_enabled = v; }
 }

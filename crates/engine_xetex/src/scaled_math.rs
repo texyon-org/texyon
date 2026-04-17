@@ -287,7 +287,7 @@ pub unsafe extern "C" fn make_frac(mut p: i32, mut q: i32) -> i32 {
     }
 
     let n = p / q;
-    p = p % q;
+    p %= q;
 
     if n >= 8 {
         set_arith_error(true);
@@ -304,7 +304,7 @@ pub unsafe extern "C" fn make_frac(mut p: i32, mut q: i32) -> i32 {
             f = f + f + 1;
         } else {
             f = f + f;
-            p = p + q;
+            p += q;
         }
         if f >= 0x1000_0000 {
             break;
@@ -343,7 +343,7 @@ pub unsafe extern "C" fn take_frac(mut q: i32, mut f: i32) -> i32 {
         0_i32
     } else {
         let nn = f / 0x1000_0000;
-        f = f % 0x1000_0000;
+        f %= 0x1000_0000;
         if q <= 0x7FFF_FFFF / nn {
             nn * q
         } else {
@@ -352,7 +352,7 @@ pub unsafe extern "C" fn take_frac(mut q: i32, mut f: i32) -> i32 {
         }
     };
 
-    f = f + 0x1000_0000;
+    f += 0x1000_0000;
     let mut p = 0x0800_0000_i32;
 
     if q < 0x4000_0000 {
@@ -360,9 +360,9 @@ pub unsafe extern "C" fn take_frac(mut q: i32, mut f: i32) -> i32 {
             if f & 1 != 0 {
                 p = (p + q) / 2;
             } else {
-                p = p / 2;
+                p /= 2;
             }
-            f = f / 2;
+            f /= 2;
             if f == 1 {
                 break;
             }
@@ -372,9 +372,9 @@ pub unsafe extern "C" fn take_frac(mut q: i32, mut f: i32) -> i32 {
             if f & 1 != 0 {
                 p = p + (q - p) / 2;
             } else {
-                p = p / 2;
+                p /= 2;
             }
-            f = f / 2;
+            f /= 2;
             if f == 1 {
                 break;
             }
@@ -419,7 +419,7 @@ pub unsafe extern "C" fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32
         }
 
         // swap pairs and flip signs to bring into the main loop
-        let tmp = a; a = c; c = tmp;
+        std::mem::swap(&mut a, &mut c);
         let tmp = -b; b = -d; d = tmp;
     } else if b <= 0 {
         if b < 0 && a > 0 {

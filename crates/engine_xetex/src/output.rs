@@ -67,6 +67,7 @@ fn print_the_digs(mut k: u8) {
     while k > 0 {
         k -= 1;
         let d = dig_entry(k as usize);
+        // SAFETY: print_char is always safe to call during engine execution.
         unsafe {
             if d < 10 {
                 print_char(b'0' as i32 + d as i32);
@@ -209,7 +210,7 @@ pub unsafe extern "C" fn print_nl_cstr(str_ptr: *const libc::c_char) {
 #[no_mangle]
 pub unsafe extern "C" fn print_esc_cstr(s: *const libc::c_char) {
     let c = eqtb_b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
-    if c >= 0 && c <= BIGGEST_USV {
+    if (0..=BIGGEST_USV).contains(&c) {
         print_char(c);
     }
     print_cstr(s);
@@ -243,7 +244,7 @@ pub unsafe extern "C" fn print_nl(s: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn print_esc(s: i32) {
     let c = eqtb_b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
-    if c >= 0 && c <= BIGGEST_USV {
+    if (0..=BIGGEST_USV).contains(&c) {
         print_char(c);
     }
     print(s);
@@ -289,7 +290,7 @@ pub unsafe extern "C" fn print_roman_int(mut n: i32) {
         let mut u = v / (ROMAN_DATA[k - 1] as i32 - b'0' as i32);
         if ROMAN_DATA[k - 1] == b'2' {
             k += 2;
-            u = u / (ROMAN_DATA[k - 1] as i32 - b'0' as i32);
+            u /= ROMAN_DATA[k - 1] as i32 - b'0' as i32;
         }
         if n + u >= v {
             print_char(ROMAN_DATA[k] as i32);
@@ -312,7 +313,7 @@ pub unsafe extern "C" fn print_roman_int(mut n: i32) {
 pub unsafe extern "C" fn print_scaled(mut s: i32) {
     if s < 0 {
         print_char(b'-' as i32);
-        s = -(s as i32);
+        s = -s;
     }
     print_int(s / 0x10000);
     print_char(b'.' as i32);
@@ -472,11 +473,9 @@ pub unsafe extern "C" fn print_char(s: i32) {
     }
 
     // Newline character substitution.
-    if s == eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR) {
-        if selector() < SELECTOR_PSEUDO {
-            print_ln();
-            return;
-        }
+    if s == eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR) && selector() < SELECTOR_PSEUDO {
+        print_ln();
+        return;
     }
 
     // Encode for terminal/log output.
@@ -553,11 +552,9 @@ pub unsafe extern "C" fn print(s: i32) {
             print_char(s);
             return;
         }
-        if s == eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR) {
-            if selector() < SELECTOR_PSEUDO {
-                print_ln();
-                return;
-            }
+        if s == eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR) && selector() < SELECTOR_PSEUDO {
+            print_ln();
+            return;
         }
         // Temporarily suppress newline-char substitution while printing s.
         let nl = eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR);
@@ -573,12 +570,9 @@ pub unsafe extern "C" fn print(s: i32) {
     let end = str_start(pool_idx + 1);
     while i < end {
         let c = str_pool_entry(i);
-        if c >= 0xD800
-            && c < 0xDC00
-            && i + 1 < end
-        {
+        if (0xD800..0xDC00).contains(&c) && i + 1 < end {
             let c2 = str_pool_entry(i + 1);
-            if c2 >= 0xDC00 && c2 < 0xE000 {
+            if (0xDC00..0xE000).contains(&c2) {
                 print_char(0x10000 + (c as i32 - 0xD800) * 1024 + c2 as i32 - 0xDC00);
                 i += 2;
                 continue;

@@ -30,6 +30,7 @@ mod helpers;
 mod mem;
 #[allow(dead_code)]
 mod mem_types;
+mod engine_interface;
 mod errors;
 mod output;
 mod scaled_math;
