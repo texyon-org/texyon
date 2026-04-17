@@ -324,16 +324,6 @@ print_file_line(void)
 /*:1660*/
 
 
-void
-print_current_string(void)
-{
-    pool_pointer j = str_start[str_ptr - 0x10000];
-
-    while (j < pool_ptr) {
-        print_char(str_pool[j]);
-        j++;
-    }
-}
 
 
 

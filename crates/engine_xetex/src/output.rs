@@ -564,3 +564,19 @@ pub unsafe extern "C" fn print(s: i32) {
         i += 1;
     }
 }
+
+// ---------------------------------------------------------------------------
+// print_current_string
+// ---------------------------------------------------------------------------
+
+/// Print the currently-accumulating string (in the string pool scratch area).
+///
+/// translated from xetex-output.c:328 (print_current_string)
+#[no_mangle]
+pub unsafe extern "C" fn print_current_string() {
+    let mut j = str_start(str_ptr() - 0x10000);
+    while j < pool_ptr() {
+        print_char(str_pool_entry(j) as i32);
+        j += 1;
+    }
+}
