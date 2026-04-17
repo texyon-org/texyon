@@ -83,6 +83,13 @@ mod raw {
         pub(super) static mut avail: i32;
         pub(super) static mut mem_end: i32;
         pub(super) static mut rover: i32;
+
+        // Output selector (xetex-xetexd.h:431). C type `selector_t` is an
+        // int-sized enum; values range 0–21 (see xetex-core.h).
+        pub(super) static mut selector: i32;
+        // Print position counters (xetex-xetexd.h:434–435).
+        pub(super) static mut term_offset: i32;
+        pub(super) static mut file_offset: i32;
     }
 }
 
@@ -384,4 +391,26 @@ pub(crate) fn dig_entry(k: usize) -> u8 {
 #[inline]
 pub(crate) fn set_dig_entry(k: usize, v: u8) {
     unsafe { raw::dig[k] = v; }
+}
+
+// ---------------------------------------------------------------------------
+// selector / term_offset / file_offset
+// ---------------------------------------------------------------------------
+
+/// Returns the current output selector (xetex-xetexd.h:431).
+#[inline]
+pub(crate) fn selector() -> i32 {
+    unsafe { raw::selector }
+}
+
+/// Returns `term_offset` (columns written to terminal since last newline).
+#[inline]
+pub(crate) fn term_offset() -> i32 {
+    unsafe { raw::term_offset }
+}
+
+/// Returns `file_offset` (columns written to log file since last newline).
+#[inline]
+pub(crate) fn file_offset() -> i32 {
+    unsafe { raw::file_offset }
 }

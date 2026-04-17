@@ -1,11 +1,20 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 
-use crate::globals::{dig_entry, set_dig_entry};
+use crate::globals::{dig_entry, eqtb_b32s1, file_offset, selector, set_dig_entry, term_offset};
+
+// Selector constants (xetex-core.h:42–51). Only those needed here.
+const SELECTOR_LOG_ONLY: i32 = 18;
+
+// Constants for INTPAR(escape_char) = eqtb[INT_BASE + INT_PAR__escape_char].b32.s1
+// (xetex_format.h:219,80 and xetex-constants.h:83).
+const INT_BASE: i32 = 7_826_729;
+const INT_PAR_ESCAPE_CHAR: i32 = 45;
+const BIGGEST_USV: i32 = 0x10_FFFF;
 
 // C functions not yet translated — still live in xetex-output.c.
 extern "C" {
     fn print_char(s: i32);
-    fn print_cstr(s: *const libc::c_char);
+    fn print_ln();
 }
 
 // ---------------------------------------------------------------------------
@@ -118,4 +127,53 @@ pub unsafe extern "C" fn print_ucs_code(mut n: i32) {
         k += 1;
     }
     print_the_digs(k);
+}
+
+// ---------------------------------------------------------------------------
+// print_cstr
+// ---------------------------------------------------------------------------
+
+/// Print a C string one character at a time via `print_char`.
+///
+/// translated from xetex-output.c:301 (print_cstr)
+#[no_mangle]
+pub unsafe extern "C" fn print_cstr(str_ptr: *const libc::c_char) {
+    let s = std::ffi::CStr::from_ptr(str_ptr);
+    for &b in s.to_bytes() {
+        print_char(b as i32);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_nl_cstr
+// ---------------------------------------------------------------------------
+
+/// Start a new line if needed, then print a C string.
+///
+/// translated from xetex-output.c:319 (print_nl_cstr)
+#[no_mangle]
+pub unsafe extern "C" fn print_nl_cstr(str_ptr: *const libc::c_char) {
+    let sel = selector();
+    if ((term_offset() > 0) && (sel & 1 != 0))
+        || ((file_offset() > 0) && (sel >= SELECTOR_LOG_ONLY))
+    {
+        print_ln();
+    }
+    print_cstr(str_ptr);
+}
+
+// ---------------------------------------------------------------------------
+// print_esc_cstr
+// ---------------------------------------------------------------------------
+
+/// Print the escape character (if any) followed by a C string.
+///
+/// translated from xetex-output.c:338 (print_esc_cstr)
+#[no_mangle]
+pub unsafe extern "C" fn print_esc_cstr(s: *const libc::c_char) {
+    let c = eqtb_b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
+    if c >= 0 && c <= BIGGEST_USV {
+        print_char(c);
+    }
+    print_cstr(s);
 }
