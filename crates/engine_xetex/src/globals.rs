@@ -125,6 +125,22 @@ mod raw {
         // Top of the eqtb array (xetex-xetexd.h:486).
         pub(super) static mut eqtb_top: i32;
 
+        // String pool size limits (xetex-xetexd.h:400,427–428).
+        pub(super) static mut max_strings: i32;
+        pub(super) static mut init_str_ptr: i32;
+        pub(super) static mut init_pool_ptr: i32;
+
+        // Input buffer (xetex-xetexd.h:392); UnicodeScalar = int32_t.
+        pub(super) static mut buffer: *mut i32;
+
+        // Error-help machinery (xetex-xetexd.h:449–450).
+        pub(super) static mut help_line: [*const libc::c_char; 6];
+        pub(super) static mut help_ptr: u8;
+
+        // Scaled-math tables (xetex-xetexd.h:457–458).
+        pub(super) static mut two_to_the: [i32; 31];
+        pub(super) static mut spec_log: [i32; 29];
+
         // Print line-length limit (xetex-xetexd.h:399).
         pub(super) static mut max_print_line: i32;
         // Tally of characters output (xetex-xetexd.h:433).
@@ -662,5 +678,81 @@ pub(crate) fn set_pool_ptr(v: i32) {
 /// Write `str_pool[k] = v`.
 #[inline]
 pub(crate) fn set_str_pool(k: i32, v: u16) {
+    // SAFETY: see module-level doc.
     unsafe { *raw::str_pool.offset(k as isize) = v; }
+}
+
+// ---------------------------------------------------------------------------
+// str_start write / str_ptr write / string pool limits
+// ---------------------------------------------------------------------------
+
+/// Write `str_start[k] = v`.
+#[inline]
+pub(crate) fn set_str_start(k: i32, v: i32) {
+    // SAFETY: see module-level doc. Caller ensures k is a valid string index.
+    unsafe { *raw::str_start.offset(k as isize) = v; }
+}
+/// Write `str_ptr = v`.
+#[inline]
+pub(crate) fn set_str_ptr(v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::str_ptr = v; }
+}
+#[inline]
+pub(crate) fn max_strings() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::max_strings }
+}
+#[inline]
+pub(crate) fn init_str_ptr() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::init_str_ptr }
+}
+#[inline]
+pub(crate) fn init_pool_ptr() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::init_pool_ptr }
+}
+/// Read `buffer[k]` (UnicodeScalar = i32).
+#[inline]
+pub(crate) fn buffer_entry(k: i32) -> i32 {
+    // SAFETY: see module-level doc. Caller ensures k is a valid buffer index.
+    unsafe { *raw::buffer.offset(k as isize) }
+}
+
+// ---------------------------------------------------------------------------
+// help_ptr / help_line
+// ---------------------------------------------------------------------------
+
+#[inline]
+#[allow(dead_code)] // getter defined for completeness; only setter used so far
+pub(crate) fn help_ptr() -> u8 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::help_ptr }
+}
+#[inline]
+pub(crate) fn set_help_ptr(v: u8) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::help_ptr = v; }
+}
+/// Write `help_line[k] = v` (a C string pointer; caller owns the lifetime).
+#[inline]
+pub(crate) fn set_help_line(k: usize, v: *const libc::c_char) {
+    // SAFETY: see module-level doc. k must be < 6.
+    unsafe { raw::help_line[k] = v; }
+}
+
+// ---------------------------------------------------------------------------
+// two_to_the / spec_log (read-only tables from xetex-ini.c)
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn two_to_the(k: usize) -> i32 {
+    // SAFETY: see module-level doc. k must be < 31.
+    unsafe { raw::two_to_the[k] }
+}
+#[inline]
+pub(crate) fn spec_log(k: usize) -> i32 {
+    // SAFETY: see module-level doc. k must be < 29.
+    unsafe { raw::spec_log[k] }
 }
