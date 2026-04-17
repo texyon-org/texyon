@@ -109,6 +109,22 @@ mod raw {
         // Null (0) means no active capture. Type is opaque `ttbc_diagnostic_t *`.
         pub(super) static mut current_diagnostic: *mut std::ffi::c_void;
 
+        // Input-level depth (xetex-xetexd.h:507).
+        pub(super) static mut in_open: i32;
+        // Pointer to the filename-stack array (xetex-xetexd.h:513, str_number* = *mut i32).
+        pub(super) static mut full_source_filename_stack: *mut i32;
+        // Pointer to the line-number-stack array (xetex-xetexd.h:511, *mut i32).
+        pub(super) static mut line_stack: *mut i32;
+        // Non-zero when file:line error format is active (xetex-xetexd.h:416).
+        pub(super) static mut file_line_error_style_p: i32;
+
+        // Hash table: `b32x2 *hash` (xetex-xetexd.h:482).
+        pub(super) static mut hash: *mut crate::mem_types::B32x2;
+        // Primitive hash table: `b32x2 prim[PRIM_SIZE + 1]` (xetex-xetexd.h:490).
+        pub(super) static mut prim: [crate::mem_types::B32x2; 2101];
+        // Top of the eqtb array (xetex-xetexd.h:486).
+        pub(super) static mut eqtb_top: i32;
+
         // Print line-length limit (xetex-xetexd.h:399).
         pub(super) static mut max_print_line: i32;
         // Tally of characters output (xetex-xetexd.h:433).
@@ -374,6 +390,13 @@ pub(crate) fn set_mem_ptr(p: i32, v: *mut std::ffi::c_void) {
     unsafe { (*raw::mem.offset(p as isize)).ptr = v; }
 }
 
+/// Return a `*const u16` pointing to `mem[p]` — used for NATIVE_NODE_text.
+#[inline]
+pub(crate) fn mem_as_u16_ptr(p: i32) -> *const u16 {
+    // SAFETY: see module-level doc. Caller ensures p + NATIVE_NODE_SIZE is a valid mem index.
+    unsafe { raw::mem.offset(p as isize) as *const u16 }
+}
+
 /// Copy the full MemoryWord at `mem[p]`.
 #[inline]
 pub(crate) fn mem_word(p: i32) -> crate::mem_types::MemoryWord {
@@ -424,6 +447,75 @@ pub(crate) fn str_start(k: i32) -> i32 {
 pub(crate) fn str_pool_entry(k: i32) -> u16 {
     // SAFETY: see module-level doc. Caller ensures k is a valid pool index.
     unsafe { *raw::str_pool.offset(k as isize) }
+}
+
+// ---------------------------------------------------------------------------
+// current_diagnostic setter
+// ---------------------------------------------------------------------------
+
+/// Sets `current_diagnostic` to `v` (pass null to clear).
+#[inline]
+pub(crate) fn set_current_diagnostic(v: *mut std::ffi::c_void) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::current_diagnostic = v; }
+}
+
+// ---------------------------------------------------------------------------
+// in_open / full_source_filename_stack / line_stack / file_line_error_style_p
+// ---------------------------------------------------------------------------
+
+/// Returns the current input nesting depth.
+#[inline]
+pub(crate) fn in_open() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::in_open }
+}
+
+/// Returns `full_source_filename_stack[k]` (the str_number of the source file
+/// at nesting level k).
+#[inline]
+pub(crate) fn full_source_filename_stack(k: i32) -> i32 {
+    // SAFETY: see module-level doc. Caller ensures k <= in_open.
+    unsafe { *raw::full_source_filename_stack.offset(k as isize) }
+}
+
+/// Returns `line_stack[k]` (the saved line number at nesting level k).
+#[inline]
+pub(crate) fn line_stack(k: i32) -> i32 {
+    // SAFETY: see module-level doc. Caller ensures k <= in_open.
+    unsafe { *raw::line_stack.offset(k as isize) }
+}
+
+/// Returns non-zero when file:line-style error messages are active.
+#[inline]
+pub(crate) fn file_line_error_style_p() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::file_line_error_style_p }
+}
+
+// ---------------------------------------------------------------------------
+// hash / prim / eqtb_top
+// ---------------------------------------------------------------------------
+
+/// Read `hash[p].s1` (the "text" half of a hash-table entry).
+#[inline]
+pub(crate) fn hash_s1(p: i32) -> i32 {
+    // SAFETY: see module-level doc. Caller ensures p is a valid hash index.
+    unsafe { (*raw::hash.offset(p as isize)).s1 }
+}
+
+/// Read `prim[p].s1` (the "text" half of a primitive-table entry).
+#[inline]
+pub(crate) fn prim_s1(p: i32) -> i32 {
+    // SAFETY: see module-level doc. Caller ensures p < prim.len().
+    unsafe { raw::prim[p as usize].s1 }
+}
+
+/// Returns `eqtb_top`.
+#[inline]
+pub(crate) fn eqtb_top() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::eqtb_top }
 }
 
 // ---------------------------------------------------------------------------
