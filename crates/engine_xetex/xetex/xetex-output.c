@@ -8,7 +8,7 @@
 #include "xetex-synctex.h"
 #include "tectonic_bridge_core.h"
 
-static ttbc_diagnostic_t *current_diagnostic = 0;
+ttbc_diagnostic_t *current_diagnostic = 0;
 
 void
 capture_to_diagnostic(ttbc_diagnostic_t *diagnostic)
@@ -72,7 +72,7 @@ error_here_with_diagnostic(const char* message)
     return error;
 }
 
-static void
+void
 warn_char(int c)
 {
     if (current_diagnostic) {

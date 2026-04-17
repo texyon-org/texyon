@@ -1095,6 +1095,8 @@ void capture_to_diagnostic(ttbc_diagnostic_t *diagnostic);
 // complete.
 ttbc_diagnostic_t *error_here_with_diagnostic(const char* message);
 
+extern ttbc_diagnostic_t *current_diagnostic;
+void warn_char(int c);
 void print_ln(void);
 void print_raw_char(UTF16_code s, bool incr_offset);
 void print_char(int32_t s);
