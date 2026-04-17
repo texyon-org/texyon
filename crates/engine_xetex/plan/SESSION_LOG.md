@@ -32,6 +32,51 @@ template.
 
 ---
 
+## Session 10 — 2026-04-18 — Phase 1 complete; xetex-stringpool.c translated
+
+**Goal:** translate `m_log` (last blocked Phase 1 function) and all 8 functions
+from `xetex-stringpool.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 9
+
+**Work done:**
+- Added globals: `max_strings`, `init_str_ptr`, `init_pool_ptr`, `buffer_entry`,
+  `help_ptr`/`set_help_ptr`/`set_help_line`, `two_to_the`, `spec_log`,
+  `set_str_start`, `set_str_ptr`. (a9551603)
+- Translated `m_log` in `src/scaled_math.rs`; removed the C body; Phase 1 is
+  now 100% complete. (7509cc5d)
+- Created `src/string_pool.rs` with all 8 functions; deleted C bodies from
+  `xetex-stringpool.c`. (5e966ad6)
+- Updated plan docs (this commit).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 10
+
+**Surprises / gotchas:**
+- `load_pool_strings` in C iterates a static `string_constants[]` array;
+  Rust translates this as a hardcoded `&[&[u8]]` slice — matches exactly.
+- `str_eq_buf` had an if/else-if/else where both first branches return false;
+  collapsed to `if hi_fail || lo_fail { return false; } j += 1;` for clippy.
+- `help_ptr()` getter is currently unused (only setter used by m_log); added
+  `#[allow(dead_code)]` pending future error-handling translations.
+
+**For the next session:**
+- Three C files are now emptied: xetex-scaledmath.c, xetex-output.c,
+  xetex-stringpool.c. Phase 1, 3, and 4 are complete.
+- Next natural target: `xetex-errors.c` (7 fns, 175 LOC). Two functions are
+  static (pre_error_message, post_error_message); they can be translated as
+  private Rust helpers. `error()` calls `show_context()` and `give_err_help()`
+  which are still in C — call via FFI.
+- `xetex-errors.c` needs new globals: `log_opened`, `job_name`, `interaction`,
+  `error_count`, `use_err_help`, `history`, `halt_on_error_p`, and extern FFI
+  for `open_log_file`, `show_context`, `give_err_help`, `close_files_and_terminate`,
+  `tt_cleanup`, `ttstub_output_flush`.
+
+---
+
 ## Session 9 — 2026-04-18 — Phase 3 complete: xetex-output.c fully translated
 
 **Goal:** translate the remaining 11 functions from `xetex-output.c` and mark

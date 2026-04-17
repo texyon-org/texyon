@@ -23,6 +23,7 @@ cargo test -p tectonic --test tex-outputs
 |       7 | 2026-04-17 |     29 |    29 |     0 | Phase 3: print_cstr, print_nl_cstr, print_esc_cstr. |
 |       8 | 2026-04-17 |     29 |    29 |     0 | Phase 3: print_nl, print_esc, print_two, print_roman_int, print_scaled, warn_char, print_ln, print_raw_char, print_char, print, print_current_string. |
 |       9 | 2026-04-18 |     29 |    29 |     0 | Phase 3 complete: capture_to_diagnostic, diagnostic_begin_capture_warning_here, error_here_with_diagnostic, print_file_line, print_size, print_write_whatsit, print_file_name, print_cs, sprint_cs, print_native_word, print_sa_num + private helper. xetex-output.c fully translated. |
+|      10 | 2026-04-18 |     29 |    29 |     0 | Phase 1 complete: m_log (last scaledmath fn). xetex-stringpool.c fully translated (8 fns). Two more C files emptied. |
 
 **Baseline rule:** session 1 must run the test suite *before* making
 any Rust changes and record the (Passed, Total) pair as the "Session 0"
@@ -43,6 +44,7 @@ Passed count below the previous session's recorded value.
 |       7 |38,418 |                   ~2070 |      ~94.9% |
 |       8 |38,063 |                   ~3000 |      ~92.7% |
 |       9 |37,912 |                   ~3143 |      ~92.4% |
+|      10 |37,673 |                   ~3521 |      ~91.5% |
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
 not in scope for translation. Measured with `wc -l` over the 16 in-scope
@@ -63,6 +65,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |       7 |       38 |           ~???? |      ~3.2% |
 |       8 |       49 |           ~???? |      ~4.1% |
 |       9 |       61 |           ~???? |      ~5.1% |
+|      10 |       70 |           ~???? |      ~5.9% |
 
 Total C function count to be measured in session 1 via:
 
@@ -77,7 +80,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **9** (sessions 1–9 held parity at 29/29).
+Current streak: **10** (sessions 1–10 held parity at 29/29).
 
 ## Health checks
 

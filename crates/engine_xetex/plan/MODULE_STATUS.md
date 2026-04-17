@@ -19,20 +19,20 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |         13 |
-| IN PROGRESS    |          2 |
-| DONE           |          1 |
+| NOT STARTED    |         12 |
+| IN PROGRESS    |          1 |
+| DONE           |          3 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 9.
+Last updated: session 10.
 
 ## Core engine files (to translate)
 
 | C source file                | LOC   | Fns (C) | Rust target module                | Status       |
 |------------------------------|------:|--------:|-----------------------------------|--------------|
-| xetex-scaledmath.c           |    66 |      1 | `src/scaled_math.rs`              | IN PROGRESS — 93%  |
-| xetex-stringpool.c           |   206 |      8 | `src/string_pool.rs`              | NOT STARTED  |
+| xetex-scaledmath.c           |    20 |      0 | `src/scaled_math.rs`              | DONE               |
+| xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |   175 |      7 | `src/errors.rs`                   | NOT STARTED  |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
@@ -85,7 +85,7 @@ Phase 3 is far enough along).
 | 6 | `round_xn_over_d`     |  137 | extern          | `arith_error`             | MIGRATED (session 1) |
 | 7 | `make_frac`           |  165 | **static**→extern | `arith_error`          | MIGRATED (session 2, 3f096961) |
 | 8 | `take_frac`           |  220 | **static**→extern | `arith_error`          | MIGRATED (session 2, 3f096961) |
-| 9 | `m_log`               |  287 | extern          | diagnostic+help globals   | BLOCKED on Phase 3 |
+| 9 | `m_log`               |  287 | extern          | diagnostic+help globals   | MIGRATED (session 10, 7509cc5d) |
 |10 | `ab_vs_cd`            |  332 | **static**→extern | —                      | MIGRATED (session 2, 3f096961) |
 |11 | `new_randoms`         |  418 | **static**→extern | `randoms`, `j_random`  | MIGRATED (session 2, 3f096961) |
 |12 | `init_randoms`        |  441 | extern          | `randoms`, `j_random`     | MIGRATED (session 2, 3f096961) |
@@ -173,9 +173,27 @@ Functions that don't call `warn_char` can be translated independently.
 |27 | `print_native_word`  |  260 | MIGRATED (session 9, 1d48b016) |
 |28 | `print_sa_num`       |  285 | MIGRATED (session 9, 1d48b016) |
 
-### Phases 4+
+### Phase 4 — string pool (target: `src/string_pool.rs`)
 
-Populate when Phase 1–3 are done. Don't speculate.
+Status: DONE (session 10).
+
+| # | Function             | Line | Status |
+|--:|----------------------|-----:|--------|
+| 1 | `load_pool_strings`  |   17 | MIGRATED (session 10, 5e966ad6) |
+| 2 | `length`             |   42 | MIGRATED (session 10, 5e966ad6) |
+| 3 | `make_string`        |   57 | MIGRATED (session 10, 5e966ad6) |
+| 4 | `append_str`         |   69 | MIGRATED (session 10, 5e966ad6) |
+| 5 | `str_eq_buf`         |   91 | MIGRATED (session 10, 5e966ad6) |
+| 6 | `str_eq_str`         |  119 | MIGRATED (session 10, 5e966ad6) |
+| 7 | `search_string`      |  162 | MIGRATED (session 10, 5e966ad6) |
+| 8 | `slow_make_string`   |  190 | MIGRATED (session 10, 5e966ad6) |
+
+### Phases 5+
+
+Populate when Phase 4 is done. Next target: `xetex-errors.c` (7 functions,
+175 LOC). Note: `error()` calls `show_context()` and `give_err_help()` which
+are still in C — plan to translate those from xetex-xetex0.c as needed, or
+leave them in C and call via FFI.
 
 ## How to maintain this file
 
