@@ -10,13 +10,16 @@
 //! functions are the very first ones translated.
 
 use crate::globals::{
-    j_random, random_entry, set_arith_error, set_j_random, set_random_entry, set_tex_remainder,
+    j_random, random_entry, set_arith_error, set_help_line, set_help_ptr, set_j_random,
+    set_random_entry, set_tex_remainder, spec_log, two_to_the,
 };
 
-// m_log remains in C (blocked on Phase 3 diagnostic machinery);
-// norm_rand calls it via this FFI declaration.
 extern "C" {
-    fn m_log(x: i32) -> i32;
+    fn error();
+    fn capture_to_diagnostic(diagnostic: *mut std::ffi::c_void);
+    fn error_here_with_diagnostic(message: *const libc::c_char) -> *mut std::ffi::c_void;
+    fn print_scaled(s: i32);
+    fn print_cstr(s: *const libc::c_char);
 }
 
 // ---------------------------------------------------------------------------
@@ -530,13 +533,58 @@ pub unsafe extern "C" fn unif_rand(x: i32) -> i32 {
 }
 
 // ---------------------------------------------------------------------------
+// m_log
+// ---------------------------------------------------------------------------
+
+/// Natural logarithm in TeX's scaled-point units (result = ln(x/2^30) * 2^24).
+///
+/// translated from xetex-scaledmath.c:22 (m_log)
+#[no_mangle]
+pub unsafe extern "C" fn m_log(mut x: i32) -> i32 {
+    if x <= 0 {
+        error_here_with_diagnostic(c"Logarithm of ".as_ptr());
+        print_scaled(x);
+        print_cstr(c" has been replaced by 0".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(1, c"Since I don't take logs of non-positive numbers,".as_ptr());
+        set_help_line(0, c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr());
+        error();
+        return 0;
+    }
+
+    let mut y = 1_302_456_860_i32;
+    let mut z = 6_581_195_i32;
+
+    while x < 0x4000_0000 {
+        x += x;
+        y -= 93_032_639;
+        z -= 48_782;
+    }
+
+    y += z / 65536;
+    let mut k: usize = 2;
+
+    while x > 0x4000_0004 {
+        let mut z = ((x - 1) / two_to_the(k)) + 1;
+        while x < 0x4000_0000 + z {
+            z = (z + 1) / 2;
+            k += 1;
+        }
+        y += spec_log(k);
+        x -= z;
+    }
+
+    y / 8
+}
+
+// ---------------------------------------------------------------------------
 // norm_rand
 // ---------------------------------------------------------------------------
 
 /// Return a pseudo-random integer drawn from a normal distribution.
-/// Calls the still-C `m_log` (blocked on Phase 3 diagnostic machinery).
 ///
-/// translated from xetex-scaledmath.c:487 (norm_rand)
+/// translated from xetex-scaledmath.c:487 (norm_rand). Calls `m_log`.
 #[no_mangle]
 pub unsafe extern "C" fn norm_rand() -> i32 {
     loop {
