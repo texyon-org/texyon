@@ -1,10 +1,13 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 
 use crate::globals::{
-    current_diagnostic, dig_entry, doing_special, eqtb_b32s1, error_line, file_offset, log_file,
-    max_print_line, pool_ptr, pool_size, rust_stdout, selector, set_dig_entry, set_eqtb_b32s1,
-    set_file_offset, set_pool_ptr, set_str_pool, set_tally, set_term_offset, set_trick_buf,
-    str_pool_entry, str_ptr, str_start, tally, term_offset, trick_count, write_file,
+    current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top, error_line,
+    file_line_error_style_p, file_offset, full_source_filename_stack, hash_s1, in_open, line,
+    line_stack, log_file, max_print_line, mem_as_u16_ptr, mem_b16s1, mem_b32s0, mem_b32s1,
+    pool_ptr, pool_size, prim_s1, rust_stdout,
+    selector, set_current_diagnostic, set_dig_entry, set_eqtb_b32s1, set_file_offset,
+    set_pool_ptr, set_str_pool, set_tally, set_term_offset, set_trick_buf, str_pool_entry,
+    str_ptr, str_start, tally, term_offset, trick_count, write_file,
 };
 
 // Selector constants (xetex-core.h:42–51).
@@ -21,13 +24,34 @@ const INT_BASE: i32 = 7_826_729;
 const INT_PAR_ESCAPE_CHAR: i32 = 45;
 const INT_PAR_NEW_LINE_CHAR: i32 = 49;
 const BIGGEST_USV: i32 = 0x10_FFFF;
+#[allow(dead_code)]
 const BIGGEST_CHAR: i32 = 0xFFFF;
+const TEXT_SIZE: i32 = 0;
+const SCRIPT_SIZE: i32 = 256;
+// print_cs / sprint_cs constants (xetex_format.h).
+const ACTIVE_BASE: i32 = 1;
+const SINGLE_BASE: i32 = 1_114_113;
+const NULL_CS: i32 = 2_228_225;
+const HASH_BASE: i32 = 2_228_226;
+const PRIM_EQTB_BASE: i32 = 2_243_238;
+const FROZEN_NULL_FONT: i32 = 2_245_338;
+const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
+const EQTB_SIZE: i32 = 8_941_458;
+const CAT_CODE_BASE: i32 = 2_256_169;
+const LETTER: i32 = 11;
+// print_sa_num (xetex-constants.h:326).
+const DIMEN_VAL_LIMIT: i32 = 128;
 
 // C functions not yet translated — still live in xetex-output.c or bridge.
 extern "C" {
     // tectonic_bridge_core output helpers.
     fn ttstub_output_putc(handle: usize, c: i32) -> i32;
     fn ttbc_diag_append(diag: *mut std::ffi::c_void, text: *const libc::c_char);
+    fn ttstub_diag_finish(diag: *mut std::ffi::c_void);
+    fn ttbc_diag_begin_warning() -> *mut std::ffi::c_void;
+    fn ttbc_diag_begin_error() -> *mut std::ffi::c_void;
+    fn ttstub_diag_printf(diag: *mut std::ffi::c_void, fmt: *const libc::c_char, ...);
+    fn gettexstring(s: i32) -> *mut libc::c_char;
 }
 
 // ---------------------------------------------------------------------------
@@ -579,4 +603,342 @@ pub unsafe extern "C" fn print_current_string() {
         print_char(str_pool_entry(j) as i32);
         j += 1;
     }
+}
+
+// ---------------------------------------------------------------------------
+// capture_to_diagnostic
+// ---------------------------------------------------------------------------
+
+/// Set the active diagnostic capture target, finishing the previous one.
+///
+/// translated from xetex-output.c:14 (capture_to_diagnostic)
+#[no_mangle]
+pub unsafe extern "C" fn capture_to_diagnostic(diagnostic: *mut std::ffi::c_void) {
+    let cur = current_diagnostic();
+    if !cur.is_null() {
+        ttstub_diag_finish(cur);
+    }
+    set_current_diagnostic(diagnostic);
+}
+
+// ---------------------------------------------------------------------------
+// diagnostic_print_file_line  (private Rust helper — C static, no export)
+// ---------------------------------------------------------------------------
+
+/// Append `"<file>:<line>: "` (or `"!"`) to `diagnostic`.
+///
+/// translated from xetex-output.c:24 (diagnostic_print_file_line — was static)
+unsafe fn diagnostic_print_file_line(diagnostic: *mut std::ffi::c_void) {
+    let mut level = in_open();
+    while level > 0 && full_source_filename_stack(level) == 0 {
+        level -= 1;
+    }
+    if level == 0 {
+        ttbc_diag_append(diagnostic, c"!".as_ptr());
+    } else {
+        let source_line = if level != in_open() {
+            line_stack(level + 1)
+        } else {
+            line()
+        };
+        let filename = gettexstring(full_source_filename_stack(level));
+        ttstub_diag_printf(diagnostic, c"%s:%d: ".as_ptr(), filename, source_line);
+        libc::free(filename as *mut std::ffi::c_void);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// diagnostic_begin_capture_warning_here
+// ---------------------------------------------------------------------------
+
+/// Begin a warning diagnostic capturing file/line context.
+///
+/// translated from xetex-output.c:48 (diagnostic_begin_capture_warning_here)
+#[no_mangle]
+pub unsafe extern "C" fn diagnostic_begin_capture_warning_here() -> *mut std::ffi::c_void {
+    let warning = ttbc_diag_begin_warning();
+    diagnostic_print_file_line(warning);
+    capture_to_diagnostic(warning);
+    warning
+}
+
+// ---------------------------------------------------------------------------
+// error_here_with_diagnostic
+// ---------------------------------------------------------------------------
+
+/// Begin an error diagnostic with file/line context, and emit to TeX output.
+///
+/// translated from xetex-output.c:58 (error_here_with_diagnostic)
+#[no_mangle]
+pub unsafe extern "C" fn error_here_with_diagnostic(
+    message: *const libc::c_char,
+) -> *mut std::ffi::c_void {
+    let error = ttbc_diag_begin_error();
+    diagnostic_print_file_line(error);
+    ttstub_diag_printf(error, c"%s".as_ptr(), message);
+
+    if file_line_error_style_p() != 0 {
+        print_file_line();
+    } else {
+        print_nl_cstr(c"! ".as_ptr());
+    }
+    print_cstr(message);
+
+    capture_to_diagnostic(error);
+    error
+}
+
+// ---------------------------------------------------------------------------
+// print_file_line
+// ---------------------------------------------------------------------------
+
+/// Emit the current file/line prefix to the TeX output stream.
+///
+/// translated from xetex-output.c:304 (print_file_line)
+#[no_mangle]
+pub unsafe extern "C" fn print_file_line() {
+    let mut level = in_open();
+    while level > 0 && full_source_filename_stack(level) == 0 {
+        level -= 1;
+    }
+    if level == 0 {
+        print_nl_cstr(c"! ".as_ptr());
+    } else {
+        print_nl_cstr(c"".as_ptr());
+        print(full_source_filename_stack(level));
+        print_char(b':' as i32);
+        if level == in_open() {
+            print_int(line());
+        } else {
+            print_int(line_stack(level + 1));
+        }
+        print_cstr(c": ".as_ptr());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_size
+// ---------------------------------------------------------------------------
+
+/// Print the name of a math font-size selector.
+///
+/// translated from xetex-output.c:233 (print_size)
+#[no_mangle]
+pub unsafe extern "C" fn print_size(s: i32) {
+    if s == TEXT_SIZE {
+        print_esc_cstr(c"textfont".as_ptr());
+    } else if s == SCRIPT_SIZE {
+        print_esc_cstr(c"scriptfont".as_ptr());
+    } else {
+        print_esc_cstr(c"scriptscriptfont".as_ptr());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_write_whatsit
+// ---------------------------------------------------------------------------
+
+/// Print a write-whatsit node's label and stream number.
+///
+/// translated from xetex-output.c:245 (print_write_whatsit)
+#[no_mangle]
+pub unsafe extern "C" fn print_write_whatsit(s: *const libc::c_char, p: i32) {
+    print_esc_cstr(s);
+    let v = mem_b32s0(p + 1);
+    if v < 16 {
+        print_int(v);
+    } else if v == 16 {
+        print_char(b'*' as i32);
+    } else {
+        print_char(b'-' as i32);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_file_name
+// ---------------------------------------------------------------------------
+
+/// Print a filename composed of area `a`, name `n`, and extension `e`,
+/// quoting if needed.
+///
+/// translated from xetex-output.c:128 (print_file_name)
+#[no_mangle]
+pub unsafe extern "C" fn print_file_name(n: i32, a: i32, e: i32) {
+    // Scan all three string components to decide if quoting is needed.
+    let mut must_quote = false;
+    let mut quote_char: i32 = 0;
+
+    for s in [a, n, e] {
+        if s != 0 {
+            let mut j = str_start(s - 0x10000);
+            let end = str_start((s + 1) - 0x10000);
+            while (!must_quote || quote_char == 0) && j < end {
+                let c = str_pool_entry(j) as i32;
+                if c == b' ' as i32 {
+                    must_quote = true;
+                } else if c == b'"' as i32 || c == b'\'' as i32 {
+                    must_quote = true;
+                    quote_char = 73 - c; // 73 = '"' + '\'' = 34 + 39
+                }
+                j += 1;
+            }
+        }
+    }
+
+    if must_quote {
+        if quote_char == 0 {
+            quote_char = b'"' as i32;
+        }
+        print_char(quote_char);
+    }
+
+    // Print each component with quote-char escaping.
+    for s in [a, n, e] {
+        if s != 0 {
+            let mut j = str_start(s - 0x10000);
+            let for_end = str_start((s + 1) - 0x10000) - 1;
+            if j <= for_end {
+                loop {
+                    let c = str_pool_entry(j) as i32;
+                    if c == quote_char {
+                        print(quote_char);
+                        quote_char = 73 - quote_char;
+                        print(quote_char);
+                    }
+                    print(c);
+                    if j >= for_end {
+                        break;
+                    }
+                    j += 1;
+                }
+            }
+        }
+    }
+
+    if quote_char != 0 {
+        print_char(quote_char);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_cs
+// ---------------------------------------------------------------------------
+
+/// Print a control-sequence name for control-sequence pointer `p`.
+///
+/// translated from xetex-output.c:76 (print_cs)
+#[no_mangle]
+pub unsafe extern "C" fn print_cs(p: i32) {
+    if p < HASH_BASE {
+        if p >= SINGLE_BASE {
+            if p == NULL_CS {
+                print_esc_cstr(c"csname".as_ptr());
+                print_esc_cstr(c"endcsname".as_ptr());
+                print_char(b' ' as i32);
+            } else {
+                print_esc(p - SINGLE_BASE);
+                if eqtb_b32s1(CAT_CODE_BASE + p - SINGLE_BASE) == LETTER {
+                    print_char(b' ' as i32);
+                }
+            }
+        } else if p < ACTIVE_BASE {
+            print_esc_cstr(c"IMPOSSIBLE.".as_ptr());
+        } else {
+            print_char(p - 1);
+        }
+    } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > eqtb_top() {
+        print_esc_cstr(c"IMPOSSIBLE.".as_ptr());
+    } else if hash_s1(p) >= str_ptr() {
+        print_esc_cstr(c"NONEXISTENT.".as_ptr());
+    } else {
+        if (PRIM_EQTB_BASE..FROZEN_NULL_FONT).contains(&p) {
+            print_esc(prim_s1(p - PRIM_EQTB_BASE) - 1);
+        } else {
+            print_esc(hash_s1(p));
+        }
+        print_char(b' ' as i32);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// sprint_cs
+// ---------------------------------------------------------------------------
+
+/// Print a control-sequence name without trailing space (used in error msgs).
+///
+/// translated from xetex-output.c:108 (sprint_cs)
+#[no_mangle]
+pub unsafe extern "C" fn sprint_cs(p: i32) {
+    if p < HASH_BASE {
+        if p < SINGLE_BASE {
+            print_char(p - 1);
+        } else if p < NULL_CS {
+            print_esc(p - SINGLE_BASE);
+        } else {
+            print_esc_cstr(c"csname".as_ptr());
+            print_esc_cstr(c"endcsname".as_ptr());
+        }
+    } else if (PRIM_EQTB_BASE..FROZEN_NULL_FONT).contains(&p) {
+        print_esc(prim_s1(p - PRIM_EQTB_BASE) - 1);
+    } else {
+        print_esc(hash_s1(p));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_native_word
+// ---------------------------------------------------------------------------
+
+/// Print the UTF-16 text of a native-word node.
+///
+/// translated from xetex-output.c:260 (print_native_word)
+#[no_mangle]
+pub unsafe extern "C" fn print_native_word(p: i32) {
+    // NATIVE_NODE_text(p) = (unsigned short *) &mem[p + NATIVE_NODE_SIZE]
+    // NATIVE_NODE_SIZE = 6 (xetex-constants.h:130)
+    // mem[p+4].b16.s1 = character count
+    let for_end = mem_b16s1(p + 4) as i32 - 1;
+    let text_ptr = mem_as_u16_ptr(p + 6);
+    let mut i: i32 = 0;
+    while i <= for_end {
+        let c = *text_ptr.offset(i as isize) as i32;
+        if (0xD800..0xDC00).contains(&c) && i < for_end {
+            let cc = *text_ptr.offset(i as isize + 1) as i32;
+            if (0xDC00..0xE000).contains(&cc) {
+                print_char(0x10000 + (c - 0xD800) * 1024 + (cc - 0xDC00));
+                i += 2;
+                continue;
+            }
+        }
+        if (0xD800..0xDC00).contains(&c) {
+            print(b'.' as i32);
+        } else {
+            print_char(c);
+        }
+        i += 1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_sa_num
+// ---------------------------------------------------------------------------
+
+/// Print the sparse-array register number for node `q`.
+///
+/// translated from xetex-output.c:285 (print_sa_num)
+#[no_mangle]
+pub unsafe extern "C" fn print_sa_num(q: i32) {
+    let n = if (mem_b16s1(q) as i32) < DIMEN_VAL_LIMIT {
+        mem_b32s1(q + 1)
+    } else {
+        let n0 = mem_b16s1(q) as i32 % 64;
+        let q1 = mem_b32s1(q);
+        let n1 = mem_b16s1(q1) as i32;
+        let q2 = mem_b32s1(q1);
+        let b16s1_q2 = mem_b16s1(q2) as i32;
+        let q3 = mem_b32s1(q2);
+        let b16s1_q3 = mem_b16s1(q3) as i32;
+        n0 + 64 * n1 + 64 * 64 * (b16s1_q2 + 64 * b16s1_q3)
+    };
+    print_int(n);
 }
