@@ -87,6 +87,8 @@ mod raw {
         // Output selector (xetex-xetexd.h:431). C type `selector_t` is an
         // int-sized enum; values range 0–21 (see xetex-core.h).
         pub(super) static mut selector: i32;
+        // True while processing a \special (xetex-xetexd.h:439).
+        pub(super) static mut doing_special: bool;
         // Print position counters (xetex-xetexd.h:434–435).
         pub(super) static mut term_offset: i32;
         pub(super) static mut file_offset: i32;
@@ -425,6 +427,12 @@ pub(crate) fn set_dig_entry(k: usize, v: u8) {
 #[inline]
 pub(crate) fn selector() -> i32 {
     unsafe { raw::selector }
+}
+
+/// Returns true while the engine is processing a `\special` (xetex-xetexd.h:439).
+#[inline]
+pub(crate) fn doing_special() -> bool {
+    unsafe { raw::doing_special }
 }
 
 /// Returns `term_offset` (columns written to terminal since last newline).

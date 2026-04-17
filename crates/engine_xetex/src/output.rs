@@ -1,10 +1,10 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 
 use crate::globals::{
-    current_diagnostic, dig_entry, eqtb_b32s1, error_line, file_offset, log_file, max_print_line,
-    pool_ptr, pool_size, rust_stdout, selector, set_dig_entry, set_file_offset, set_pool_ptr,
-    set_str_pool, set_tally, set_term_offset, set_trick_buf, tally, term_offset, trick_count,
-    write_file,
+    current_diagnostic, dig_entry, doing_special, eqtb_b32s1, error_line, file_offset, log_file,
+    max_print_line, pool_ptr, pool_size, rust_stdout, selector, set_dig_entry, set_file_offset,
+    set_pool_ptr, set_str_pool, set_tally, set_term_offset, set_trick_buf, tally, term_offset,
+    trick_count, write_file,
 };
 
 // Selector constants (xetex-core.h:42–51).
@@ -19,11 +19,12 @@ const SELECTOR_NEW_STRING: i32 = 21;
 // (xetex_format.h:219,80 and xetex-constants.h:83).
 const INT_BASE: i32 = 7_826_729;
 const INT_PAR_ESCAPE_CHAR: i32 = 45;
+const INT_PAR_NEW_LINE_CHAR: i32 = 49;
 const BIGGEST_USV: i32 = 0x10_FFFF;
+const BIGGEST_CHAR: i32 = 0xFFFF;
 
 // C functions not yet translated — still live in xetex-output.c.
 extern "C" {
-    fn print_char(s: i32);
     fn print(s: i32);
     // tectonic_bridge_core output helpers.
     fn ttstub_output_putc(handle: usize, c: i32) -> i32;
@@ -425,4 +426,85 @@ pub unsafe extern "C" fn print_raw_char(s: u16, incr_offset: bool) {
         }
     }
     set_tally(tally() + 1);
+}
+
+// ---------------------------------------------------------------------------
+// print_char
+// ---------------------------------------------------------------------------
+
+/// Print a single Unicode code point `s` to the current output destination.
+///
+/// translated from xetex-output.c:76 (print_char)
+#[no_mangle]
+pub unsafe extern "C" fn print_char(s: i32) {
+    // Fast path for NEW_STRING: store as UTF-16 code unit(s).
+    if selector() > SELECTOR_PSEUDO && !doing_special() {
+        if s >= 0x10000 {
+            print_raw_char((0xD800 + (s - 0x10000) / 1024) as u16, true);
+            print_raw_char((0xDC00 + (s - 0x10000) % 1024) as u16, true);
+        } else {
+            print_raw_char(s as u16, true);
+        }
+        return;
+    }
+
+    // Newline character substitution.
+    if s == eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR) {
+        if selector() < SELECTOR_PSEUDO {
+            print_ln();
+            return;
+        }
+    }
+
+    // Encode for terminal/log output.
+    if s < 32 && !doing_special() {
+        // C0 controls: ^^X notation.
+        print_raw_char(b'^' as u16, true);
+        print_raw_char(b'^' as u16, true);
+        print_raw_char((s + 64) as u16, true);
+    } else if s < 127 {
+        print_raw_char(s as u16, true);
+    } else if s == 127 {
+        if !doing_special() {
+            print_raw_char(b'^' as u16, true);
+            print_raw_char(b'^' as u16, true);
+            print_raw_char(b'?' as u16, true);
+        } else {
+            print_raw_char(s as u16, true);
+        }
+    } else if s < 160 && !doing_special() {
+        // C1 controls and 128–159: ^^XX hex notation.
+        print_raw_char(b'^' as u16, true);
+        print_raw_char(b'^' as u16, true);
+        let hi = (s % 256) / 16;
+        if hi < 10 {
+            print_raw_char((b'0' as i32 + hi) as u16, true);
+        } else {
+            print_raw_char((b'a' as i32 + hi - 10) as u16, true);
+        }
+        let lo = s % 16;
+        if lo < 10 {
+            print_raw_char((b'0' as i32 + lo) as u16, true);
+        } else {
+            print_raw_char((b'a' as i32 + lo - 10) as u16, true);
+        }
+    } else if selector() == SELECTOR_PSEUDO {
+        // In pseudo mode, store raw code unit regardless of value.
+        print_raw_char(s as u16, true);
+    } else {
+        // Non-ASCII (s >= 160) heading to terminal/log: emit as UTF-8.
+        if s < 2048 {
+            print_raw_char((192 + s / 64) as u16, false);
+            print_raw_char((128 + s % 64) as u16, true);
+        } else if s < 0x10000 {
+            print_raw_char((224 + s / 4096) as u16, false);
+            print_raw_char((128 + (s % 4096) / 64) as u16, false);
+            print_raw_char((128 + s % 64) as u16, true);
+        } else {
+            print_raw_char((240 + s / 0x40000) as u16, false);
+            print_raw_char((128 + (s % 0x40000) / 4096) as u16, false);
+            print_raw_char((128 + (s % 4096) / 64) as u16, false);
+            print_raw_char((128 + s % 64) as u16, true);
+        }
+    }
 }
