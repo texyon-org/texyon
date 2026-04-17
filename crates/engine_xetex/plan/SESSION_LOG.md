@@ -32,6 +32,52 @@ template.
 
 ---
 
+## Session 9 — 2026-04-18 — Phase 3 complete: xetex-output.c fully translated
+
+**Goal:** translate the remaining 11 functions from `xetex-output.c` and mark
+the module DONE.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 8
+
+**Work done:**
+- Fixed two bugs carried over from previous context: `print_native_word` used
+  non-existent `raw_mem_ptr()` (replaced with new `mem_as_u16_ptr()` accessor in
+  globals.rs), and `print_sa_num` used `mem_b32s0(q) >> 16` where `mem_b16s1(q)`
+  was needed, plus had spurious `% 64` on the n1 term. (3786ec64, 1d48b016)
+- Added globals: `mem_as_u16_ptr`, `set_current_diagnostic`, `in_open`,
+  `full_source_filename_stack`, `line_stack`, `file_line_error_style_p`,
+  `hash_s1`, `prim_s1`, `eqtb_top`. (3786ec64)
+- Translated: `capture_to_diagnostic`, `diagnostic_print_file_line` (private
+  Rust helper), `diagnostic_begin_capture_warning_here`,
+  `error_here_with_diagnostic`, `print_file_line`, `print_size`,
+  `print_write_whatsit`, `print_file_name`, `print_cs`, `sprint_cs`,
+  `print_native_word`, `print_sa_num`. (1d48b016)
+- Deleted all C bodies from `xetex-output.c`; only variable definition
+  `current_diagnostic` remains as C-side storage. (47572258)
+- Updated plan docs (this commit).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 9
+
+**Surprises / gotchas:**
+- `print_sa_num` n1 term has no `% 64` in C (only n0 does) — easy to miss.
+- `NATIVE_NODE_SIZE = 6` is in `xetex-constants.h:130`; needed `mem_as_u16_ptr`
+  helper returning `raw::mem.offset(p) as *const u16` to avoid exposing raw mem.
+- Session started mid-work (context compaction); first task was to fix bugs in
+  code written at end of previous context window.
+
+**For the next session:**
+- `xetex-output.c` is DONE. Phase 3 is complete.
+- Next target: `xetex-stringpool.c` (206 LOC, 8 functions) or `xetex-errors.c`
+  (175 LOC, 7 functions) — both are small and self-contained.
+- `m_log` in `xetex-scaledmath.c` is now unblocked (Phase 3 diagnostic machinery
+  is all in Rust); could be translated as a warm-up next session.
+
+---
+
 ## Session 8 — 2026-04-17 — Phase 3 bulk: print_nl through print_current_string
 
 **Goal:** translate all remaining Phase 3 functions that don't require the
