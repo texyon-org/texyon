@@ -73,47 +73,6 @@ error_here_with_diagnostic(const char* message)
 }
 
 void
-warn_char(int c)
-{
-    if (current_diagnostic) {
-        char bytes[2] = { c, 0 };
-        ttbc_diag_append(current_diagnostic, bytes);
-    }
-}
-
-void
-print_ln(void)
-{
-    switch (selector) {
-    case SELECTOR_TERM_AND_LOG:
-        warn_char('\n');
-        ttstub_output_putc(rust_stdout, '\n');
-        ttstub_output_putc(log_file, '\n');
-        term_offset = 0;
-        file_offset = 0;
-        break;
-    case SELECTOR_LOG_ONLY:
-        warn_char('\n');
-        ttstub_output_putc(log_file, '\n');
-        file_offset = 0;
-        break;
-    case SELECTOR_TERM_ONLY:
-        warn_char('\n');
-        ttstub_output_putc(rust_stdout, '\n');
-        term_offset = 0;
-        break;
-    case SELECTOR_NO_PRINT:
-    case SELECTOR_PSEUDO:
-    case SELECTOR_NEW_STRING:
-        break;
-    default:
-        ttstub_output_putc(write_file[selector], '\n');
-        break;
-    }
-}
-
-
-void
 print_raw_char(UTF16_code s, bool incr_offset)
 {
     switch (selector) {

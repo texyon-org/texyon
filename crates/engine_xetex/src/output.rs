@@ -1,9 +1,17 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 
-use crate::globals::{dig_entry, eqtb_b32s1, file_offset, selector, set_dig_entry, term_offset};
+use crate::globals::{
+    current_diagnostic, dig_entry, eqtb_b32s1, file_offset, log_file, rust_stdout, selector,
+    set_dig_entry, set_file_offset, set_term_offset, term_offset, write_file,
+};
 
-// Selector constants (xetex-core.h:42–51). Only those needed here.
+// Selector constants (xetex-core.h:42–51).
+const SELECTOR_NO_PRINT: i32 = 16;
+const SELECTOR_TERM_ONLY: i32 = 17;
 const SELECTOR_LOG_ONLY: i32 = 18;
+const SELECTOR_TERM_AND_LOG: i32 = 19;
+const SELECTOR_PSEUDO: i32 = 20;
+const SELECTOR_NEW_STRING: i32 = 21;
 
 // Constants for INTPAR(escape_char) = eqtb[INT_BASE + INT_PAR__escape_char].b32.s1
 // (xetex_format.h:219,80 and xetex-constants.h:83).
@@ -14,8 +22,10 @@ const BIGGEST_USV: i32 = 0x10_FFFF;
 // C functions not yet translated — still live in xetex-output.c.
 extern "C" {
     fn print_char(s: i32);
-    fn print_ln();
     fn print(s: i32);
+    // tectonic_bridge_core output helpers.
+    fn ttstub_output_putc(handle: usize, c: i32) -> i32;
+    fn ttbc_diag_append(diag: *mut std::ffi::c_void, text: *const libc::c_char);
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +301,56 @@ pub unsafe extern "C" fn print_scaled(mut s: i32) {
         delta *= 10;
         if s <= delta {
             break;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// warn_char
+// ---------------------------------------------------------------------------
+
+/// Append a single character to the active diagnostic (if any).
+///
+/// translated from xetex-output.c:75 (warn_char)
+#[no_mangle]
+pub unsafe extern "C" fn warn_char(c: i32) {
+    let diag = current_diagnostic();
+    if !diag.is_null() {
+        let bytes: [u8; 2] = [c as u8, 0];
+        ttbc_diag_append(diag, bytes.as_ptr() as *const libc::c_char);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_ln
+// ---------------------------------------------------------------------------
+
+/// Emit a newline to the current output destination(s).
+///
+/// translated from xetex-output.c:84 (print_ln)
+#[no_mangle]
+pub unsafe extern "C" fn print_ln() {
+    match selector() {
+        SELECTOR_TERM_AND_LOG => {
+            warn_char(b'\n' as i32);
+            ttstub_output_putc(rust_stdout(), b'\n' as i32);
+            ttstub_output_putc(log_file(), b'\n' as i32);
+            set_term_offset(0);
+            set_file_offset(0);
+        }
+        SELECTOR_LOG_ONLY => {
+            warn_char(b'\n' as i32);
+            ttstub_output_putc(log_file(), b'\n' as i32);
+            set_file_offset(0);
+        }
+        SELECTOR_TERM_ONLY => {
+            warn_char(b'\n' as i32);
+            ttstub_output_putc(rust_stdout(), b'\n' as i32);
+            set_term_offset(0);
+        }
+        SELECTOR_NO_PRINT | SELECTOR_PSEUDO | SELECTOR_NEW_STRING => {}
+        sel => {
+            ttstub_output_putc(write_file(sel as usize), b'\n' as i32);
         }
     }
 }

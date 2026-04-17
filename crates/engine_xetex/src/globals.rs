@@ -90,6 +90,16 @@ mod raw {
         // Print position counters (xetex-xetexd.h:434–435).
         pub(super) static mut term_offset: i32;
         pub(super) static mut file_offset: i32;
+
+        // Output file handles (xetex-xetexd.h:429–430, 691).
+        // `rust_output_handle_t` is `uintptr_t` (tectonic_bridge_core_generated.h:9).
+        pub(super) static mut rust_stdout: usize;
+        pub(super) static mut log_file: usize;
+        pub(super) static mut write_file: [usize; 16];
+
+        // Current diagnostic capture handle (xetex-output.c, un-static'd session 8).
+        // Null (0) means no active capture. Type is opaque `ttbc_diagnostic_t *`.
+        pub(super) static mut current_diagnostic: *mut std::ffi::c_void;
     }
 }
 
@@ -408,9 +418,47 @@ pub(crate) fn selector() -> i32 {
 pub(crate) fn term_offset() -> i32 {
     unsafe { raw::term_offset }
 }
+/// Sets `term_offset`.
+#[inline]
+pub(crate) fn set_term_offset(v: i32) {
+    unsafe { raw::term_offset = v; }
+}
 
 /// Returns `file_offset` (columns written to log file since last newline).
 #[inline]
 pub(crate) fn file_offset() -> i32 {
     unsafe { raw::file_offset }
+}
+/// Sets `file_offset`.
+#[inline]
+pub(crate) fn set_file_offset(v: i32) {
+    unsafe { raw::file_offset = v; }
+}
+
+// ---------------------------------------------------------------------------
+// rust_stdout / log_file / write_file / current_diagnostic
+// ---------------------------------------------------------------------------
+
+/// Returns the `rust_stdout` output handle.
+#[inline]
+pub(crate) fn rust_stdout() -> usize {
+    unsafe { raw::rust_stdout }
+}
+
+/// Returns the `log_file` output handle.
+#[inline]
+pub(crate) fn log_file() -> usize {
+    unsafe { raw::log_file }
+}
+
+/// Returns `write_file[i]`, the output handle for write-stream `i` (0–15).
+#[inline]
+pub(crate) fn write_file(i: usize) -> usize {
+    unsafe { raw::write_file[i] }
+}
+
+/// Returns the current diagnostic capture pointer (null = no active capture).
+#[inline]
+pub(crate) fn current_diagnostic() -> *mut std::ffi::c_void {
+    unsafe { raw::current_diagnostic }
 }
