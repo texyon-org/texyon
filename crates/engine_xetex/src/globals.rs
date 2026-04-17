@@ -141,6 +141,18 @@ mod raw {
         pub(super) static mut two_to_the: [i32; 31];
         pub(super) static mut spec_log: [i32; 29];
 
+        // Error / interaction state (xetex-xetexd.h:444–452, 551–552).
+        // `interaction` is `unsigned char`; mode values: BATCH=0,SCROLL=2,ERROR_STOP=3.
+        pub(super) static mut interaction: u8;
+        // `history` is `tt_history_t` (int-sized enum, values 0–3).
+        pub(super) static mut history: i32;
+        pub(super) static mut error_count: i8;
+        pub(super) static mut use_err_help: bool;
+        pub(super) static mut halt_on_error_p: i32;
+        // `log_opened` and `job_name` (xetex-xetexd.h:551–552).
+        pub(super) static mut log_opened: bool;
+        pub(super) static mut job_name: i32;
+
         // Print line-length limit (xetex-xetexd.h:399).
         pub(super) static mut max_print_line: i32;
         // Tally of characters output (xetex-xetexd.h:433).
@@ -570,7 +582,14 @@ pub(crate) fn set_dig_entry(k: usize, v: u8) {
 /// Returns the current output selector (xetex-xetexd.h:431).
 #[inline]
 pub(crate) fn selector() -> i32 {
+    // SAFETY: see module-level doc.
     unsafe { raw::selector }
+}
+/// Write `selector = v`.
+#[inline]
+pub(crate) fn set_selector(v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::selector = v; }
 }
 
 /// Returns true while the engine is processing a `\special` (xetex-xetexd.h:439).
@@ -735,6 +754,12 @@ pub(crate) fn set_help_ptr(v: u8) {
     // SAFETY: see module-level doc.
     unsafe { raw::help_ptr = v; }
 }
+/// Read `help_line[k]` as a C string pointer.
+#[inline]
+pub(crate) fn help_line(k: usize) -> *const libc::c_char {
+    // SAFETY: see module-level doc. k must be < 6.
+    unsafe { raw::help_line[k] }
+}
 /// Write `help_line[k] = v` (a C string pointer; caller owns the lifetime).
 #[inline]
 pub(crate) fn set_help_line(k: usize, v: *const libc::c_char) {
@@ -755,4 +780,59 @@ pub(crate) fn two_to_the(k: usize) -> i32 {
 pub(crate) fn spec_log(k: usize) -> i32 {
     // SAFETY: see module-level doc. k must be < 29.
     unsafe { raw::spec_log[k] }
+}
+
+// ---------------------------------------------------------------------------
+// interaction / history / error_count / use_err_help / halt_on_error_p
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn interaction() -> u8 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::interaction }
+}
+#[inline]
+pub(crate) fn set_interaction(v: u8) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::interaction = v; }
+}
+#[inline]
+pub(crate) fn history() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::history }
+}
+#[inline]
+pub(crate) fn set_history(v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::history = v; }
+}
+#[inline]
+pub(crate) fn error_count() -> i8 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::error_count }
+}
+#[inline]
+pub(crate) fn set_error_count(v: i8) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::error_count = v; }
+}
+#[inline]
+pub(crate) fn use_err_help() -> bool {
+    // SAFETY: see module-level doc.
+    unsafe { raw::use_err_help }
+}
+#[inline]
+pub(crate) fn halt_on_error_p() -> bool {
+    // SAFETY: see module-level doc.
+    unsafe { raw::halt_on_error_p != 0 }
+}
+#[inline]
+pub(crate) fn log_opened() -> bool {
+    // SAFETY: see module-level doc.
+    unsafe { raw::log_opened }
+}
+#[inline]
+pub(crate) fn job_name() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::job_name }
 }
