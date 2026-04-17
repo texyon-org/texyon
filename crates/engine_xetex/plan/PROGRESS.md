@@ -25,7 +25,8 @@ cargo test -p tectonic --test tex-outputs
 |       9 | 2026-04-18 |     29 |    29 |     0 | Phase 3 complete: capture_to_diagnostic, diagnostic_begin_capture_warning_here, error_here_with_diagnostic, print_file_line, print_size, print_write_whatsit, print_file_name, print_cs, sprint_cs, print_native_word, print_sa_num + private helper. xetex-output.c fully translated. |
 |      10 | 2026-04-18 |     29 |    29 |     0 | Phase 1 complete: m_log (last scaledmath fn). xetex-stringpool.c fully translated (8 fns). Two more C files emptied. |
 |      11 | 2026-04-18 |     29 |    29 |     0 | xetex-errors.c fully translated: error, fatal_error, overflow, confusion, pdf_error + 2 private helpers. |
-|      12 | 2026-04-17 |     29 |    29 |     0 | Phase 6: tt_xetex_set_int_variable, tt_xetex_set_string_variable (2 fns stay in C). Back-filled clippy lints in output.rs and scaled_math.rs. |
+|      12 | 2026-04-18 |     29 |    29 |     0 | Phase 6: tt_xetex_set_int_variable, tt_xetex_set_string_variable (2 fns stay in C). Back-filled clippy lints in output.rs and scaled_math.rs. |
+|      13 | 2026-04-18 |     29 |    29 |     0 | Phase 7 start: get_date_and_time, get_seconds_and_micros (pure libc, no engine globals). |
 
 **Baseline rule:** session 1 must run the test suite *before* making
 any Rust changes and record the (Passed, Total) pair as the "Session 0"
@@ -49,6 +50,7 @@ Passed count below the previous session's recorded value.
 |      10 |37,673 |                   ~3521 |      ~91.5% |
 |      11 |37,510 |                   ~3816 |      ~90.8% |
 |      12 |37,483 |                   ~3935 |      ~90.5% |
+|      13 |37,455 |                   ~3980 |      ~90.4% |
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
 not in scope for translation. Measured with `wc -l` over the 16 in-scope
@@ -72,6 +74,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      10 |       70 |           ~???? |      ~5.9% |
 |      11 |       77 |           ~???? |      ~6.5% |
 |      12 |       79 |           ~???? |      ~6.7% |
+|      13 |       81 |           ~???? |      ~6.8% |
 
 Total C function count to be measured in session 1 via:
 
@@ -86,7 +89,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **12** (sessions 1–12 held parity at 29/29).
+Current streak: **13** (sessions 1–13 held parity at 29/29).
 
 ## Health checks
 

@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |         10 |
-| IN PROGRESS    |          2 |
+| NOT STARTED    |          9 |
+| IN PROGRESS    |          3 |
 | DONE           |          4 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 12.
+Last updated: session 13.
 
 ## Core engine files (to translate)
 
@@ -45,7 +45,7 @@ Last updated: session 12.
 | xetex-io.c                   |   555 |    ~?? | `src/io.rs`                       | NOT STARTED  |
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
 | xetex-pic.c                  |   664 |    ~?? | `src/pic.rs`                      | NOT STARTED  |
-| xetex-texmfmp.c              |   467 |    ~?? | `src/texmfmp.rs`                  | NOT STARTED  |
+| xetex-texmfmp.c              |   439 |     13 | `src/texmfmp.rs`                  | IN PROGRESS — 13% |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
 
 ## Files NOT to translate
@@ -213,9 +213,22 @@ Status: IN PROGRESS (session 12). Two functions translated; two kept in C perman
 | 3 | `tt_engine_xetex_main`                |   51 | KEEP IN C (setjmp/longjmp cannot cross FFI boundary safely) |
 | 4 | `__terrible_aarch64_musl_linker_hack` |  103 | KEEP IN C (platform linker workaround) |
 
-### Phases 7+
+### Phase 7 — texmfmp time helpers (target: `src/texmfmp.rs`)
 
-Next target: xetex-texmfmp.c (467 LOC). After that, larger files.
+Status: IN PROGRESS (session 13).
+
+| # | Function                | Line | Status |
+|--:|-------------------------|-----:|--------|
+| 1 | `get_date_and_time`     |  116 | MIGRATED (session 13, 4bafb5ef) |
+| 2 | `get_seconds_and_micros`|  128 | MIGRATED (session 13, 4bafb5ef) |
+
+Remaining texmfmp.c functions involve static C state (`last_source_name`,
+`start_time_str`), `makepdftime`, or heavy bridge calls — defer to a future
+session.
+
+### Phases 8+
+
+Continue xetex-texmfmp.c, then tackle larger files.
 
 ## How to maintain this file
 
