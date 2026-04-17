@@ -112,35 +112,7 @@ getcreationdate(void)
 }
 
 
-void
-get_date_and_time (time_t source_date_epoch,
-                   int32_t *minutes, int32_t *day,
-                   int32_t *month, int32_t *year)
-{
-  struct tm *tmptr = localtime (&source_date_epoch);
-  *minutes = tmptr->tm_hour * 60 + tmptr->tm_min;
-  *day = tmptr->tm_mday;
-  *month = tmptr->tm_mon + 1;
-  *year = tmptr->tm_year + 1900;
-}
-
-
-void
-get_seconds_and_micros (int32_t *seconds,  int32_t *micros)
-{
-#ifdef HAVE_GETTIMEOFDAY
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  *seconds = tv.tv_sec;
-  *micros  = tv.tv_usec;
-#else
-  /* This is what we use on Windows/MSVC. Less than ideal.
-   * We should replace this with a Rust-backed cross-platform API. */
-  time_t myclock = time((time_t *) NULL);
-  *seconds = myclock;
-  *micros  = 0;
-#endif
-}
+/* get_date_and_time and get_seconds_and_micros translated to Rust (src/texmfmp.rs). */
 
 
 /* Given a file name stored in the string pool, insert into the string pool text

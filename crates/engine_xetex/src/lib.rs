@@ -31,6 +31,8 @@ mod mem;
 #[allow(dead_code)]
 mod mem_types;
 mod engine_interface;
+#[allow(dead_code)]
+mod texmfmp;
 mod errors;
 mod output;
 mod scaled_math;
