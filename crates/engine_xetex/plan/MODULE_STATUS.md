@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 7.
+Last updated: session 8.
 
 ## Core engine files (to translate)
 
@@ -34,7 +34,7 @@ Last updated: session 7.
 | xetex-scaledmath.c           |    66 |      1 | `src/scaled_math.rs`              | IN PROGRESS — 93%  |
 | xetex-stringpool.c           |   206 |      8 | `src/string_pool.rs`              | NOT STARTED  |
 | xetex-errors.c               |   175 |      7 | `src/errors.rs`                   | NOT STARTED  |
-| xetex-output.c               |   649 |     24 | `src/output.rs`                   | IN PROGRESS — 11%  |
+| xetex-output.c               |   329 |      7 | `src/output.rs`                   | IN PROGRESS — 71%  |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
 | xetex-xetex0.c               | 18387 |    268 | multiple (see below)              | IN PROGRESS — 6%  |
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
@@ -142,17 +142,18 @@ Functions that don't call `warn_char` can be translated independently.
 
 | # | Function             | Line | Status |
 |--:|----------------------|-----:|--------|
-| 1 | `capture_to_diagnostic`           |   13 | NOT STARTED (uses `current_diagnostic` static) |
+| 1 | `capture_to_diagnostic`           |   13 | NOT STARTED |
 | 2 | `diagnostic_begin_capture_warning_here` | 47 | NOT STARTED |
 | 3 | `error_here_with_diagnostic`      |   57 | NOT STARTED |
-| 4 | `print_ln`           |   84 | NOT STARTED (calls static `warn_char`) |
-| 5 | `print_raw_char`     |  116 | NOT STARTED (calls static `warn_char`) |
-| 6 | `print_char`         |  177 | NOT STARTED |
-| 7 | `print`              |  247 | NOT STARTED |
+| 3b| `warn_char` (was static)          |   75 | MIGRATED (session 8, 392e3220 — un-static'd d7e39b4d) |
+| 4 | `print_ln`           |   84 | MIGRATED (session 8, 392e3220) |
+| 5 | `print_raw_char`     |  116 | MIGRATED (session 8, 7b8944cf) |
+| 6 | `print_char`         |  177 | MIGRATED (session 8, 62cd93b1) |
+| 7 | `print`              |  247 | MIGRATED (session 8, 13671cf5) |
 | 8 | `print_cstr`         |  301 | MIGRATED (session 7, 555d6b46) |
-| 9 | `print_nl`           |  310 | NOT STARTED |
+| 9 | `print_nl`           |  310 | MIGRATED (session 8, 4f7ad6bd) |
 |10 | `print_nl_cstr`      |  318 | MIGRATED (session 7, 555d6b46) |
-|11 | `print_esc`          |  327 | NOT STARTED |
+|11 | `print_esc`          |  327 | MIGRATED (session 8, 4f7ad6bd) |
 |12 | `print_esc_cstr`     |  338 | MIGRATED (session 7, 555d6b46) |
 |13 | `print_the_digs`     |  350 | MIGRATED (session 6, 6e9a8bea — private Rust helper, C static deleted) |
 |14 | `print_int`          |  363 | MIGRATED (session 6, 6e9a8bea) |
@@ -160,11 +161,11 @@ Functions that don't call `warn_char` can be translated independently.
 |16 | `sprint_cs`          |  429 | NOT STARTED |
 |17 | `print_file_name`    |  449 | NOT STARTED |
 |18 | `print_file_line`    |  554 | NOT STARTED |
-|19 | `print_two`          |  649 | NOT STARTED |
+|19 | `print_two`          |  554 | MIGRATED (session 8, a4e5e260) |
 |20 | `print_hex`          |  658 | MIGRATED (session 6, 6e9a8bea) |
-|21 | `print_roman_int`    |  675 | NOT STARTED |
-|22 | `print_current_string` | 712 | NOT STARTED |
-|23 | `print_scaled`       |  724 | NOT STARTED |
+|21 | `print_roman_int`    |  563 | MIGRATED (session 8, a4e5e260) |
+|22 | `print_current_string` | 600 | MIGRATED (session 8, 16cdc895) |
+|23 | `print_scaled`       |  612 | MIGRATED (session 8, a4e5e260) |
 |24 | `print_ucs_code`     |  749 | MIGRATED (session 6, 6e9a8bea) |
 
 ### Phases 4+

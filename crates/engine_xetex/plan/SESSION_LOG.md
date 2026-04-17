@@ -32,6 +32,66 @@ template.
 
 ---
 
+## Session 8 — 2026-04-17 — Phase 3 bulk: print_nl through print_current_string
+
+**Goal:** translate all remaining Phase 3 functions that don't require the
+`diagnostic_print_file_line` static helper or `print_cs`/`sprint_cs` complex globals.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 7
+
+**Work done:**
+- Confirmed parity baseline: 29/29.
+- Commit `4f7ad6bd`: translated `print_nl` (output.c:302) and `print_esc` (output.c:310).
+- Commit `a4e5e260`: translated `print_two` (554), `print_roman_int` (563), `print_scaled` (612).
+- Commit `d7e39b4d`: prep — un-static'd `warn_char` and `current_diagnostic`.
+- Commit `392e3220`: translated `warn_char` (75) and `print_ln` (84).
+  Added `selector`/`term_offset`/`file_offset` setters, `rust_stdout`/`log_file`/`write_file`/
+  `current_diagnostic` globals.
+- Commit `7b8944cf`: translated `print_raw_char` (76).
+  Added `max_print_line`, `tally`, `error_line`, `trick_buf`, `pool_ptr`, `pool_size`,
+  `str_pool` globals.
+- Commit `62cd93b1`: translated `print_char` (76). Added `doing_special` global.
+- Commit `13671cf5`: translated `print` (146). Added `str_ptr`, `str_start`,
+  `str_pool_entry`, `set_eqtb_b32s1` globals.
+- Commit `16cdc895`: translated `print_current_string` (328). Trivial after above.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 8
+- 49 functions migrated total.
+- xetex-output.c: 329 LOC (~7 functions) remaining — the diagnostic cluster
+  (capture_to_diagnostic, diagnostic_begin_capture_warning_here,
+  error_here_with_diagnostic, diagnostic_print_file_line) and print_cs/sprint_cs/
+  print_file_name/print_file_line.
+
+**Surprises / gotchas:**
+- `print_char` in C had a dead `small_number l` variable that is actually used in
+  the s < 160 branch for hex encoding — caught at translation time.
+- `print_raw_char` takes `UTF16_code s` (u16) not `int32_t` — the Rust signature
+  must match exactly since it's called from C callers that pass short values.
+- `print` has `INTPAR(new_line_char) = -1` which requires a new `set_eqtb_b32s1`
+  setter. Be careful not to confuse eqtb read vs. write paths.
+
+**For the next session:**
+- **Next targets (Phase 3 remainder):**
+  1. `capture_to_diagnostic` — needs `ttstub_diag_finish` extern; straightforward.
+  2. `diagnostic_print_file_line` (static) — needs `in_open`, `full_source_filename_stack`,
+     `line_stack` globals and `ttstub_diag_printf` (variadic!). Option: un-static it
+     and call via FFI from the two functions that use it, or translate using a
+     Rust format-then-append approach.
+  3. `diagnostic_begin_capture_warning_here` + `error_here_with_diagnostic` —
+     depend on `diagnostic_print_file_line`.
+  4. `print_file_line` — needs `in_open`, `full_source_filename_stack`, `line_stack`;
+     similar to `diagnostic_print_file_line`.
+  5. `print_cs` / `sprint_cs` — need `HASH_BASE`, `SINGLE_BASE`, `NULL_CS`,
+     `hash[]`, `prim[]`, `eqtb_top`, `str_ptr`, `CAT_CODE` macro,
+     `ACTIVE_BASE`, `PRIM_EQTB_BASE`, `FROZEN_NULL_FONT`. Heavy on constants.
+- Alternative quickest path: translate `print_file_name` and see if it's simpler.
+
+---
+
 ## Session 7 — 2026-04-17 — Phase 3: print_cstr, print_nl_cstr, print_esc_cstr
 
 **Goal:** translate the three simple Phase 3 wrapper functions that have no
