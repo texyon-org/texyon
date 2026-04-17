@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 6.
+Last updated: session 7.
 
 ## Core engine files (to translate)
 
@@ -34,7 +34,7 @@ Last updated: session 6.
 | xetex-scaledmath.c           |    66 |      1 | `src/scaled_math.rs`              | IN PROGRESS — 93%  |
 | xetex-stringpool.c           |   206 |      8 | `src/string_pool.rs`              | NOT STARTED  |
 | xetex-errors.c               |   175 |      7 | `src/errors.rs`                   | NOT STARTED  |
-| xetex-output.c               |   684 |     27 | `src/output.rs`                   | IN PROGRESS — 10%  |
+| xetex-output.c               |   649 |     24 | `src/output.rs`                   | IN PROGRESS — 11%  |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
 | xetex-xetex0.c               | 18387 |    268 | multiple (see below)              | IN PROGRESS — 6%  |
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
@@ -149,11 +149,11 @@ Functions that don't call `warn_char` can be translated independently.
 | 5 | `print_raw_char`     |  116 | NOT STARTED (calls static `warn_char`) |
 | 6 | `print_char`         |  177 | NOT STARTED |
 | 7 | `print`              |  247 | NOT STARTED |
-| 8 | `print_cstr`         |  301 | NOT STARTED |
+| 8 | `print_cstr`         |  301 | MIGRATED (session 7, 555d6b46) |
 | 9 | `print_nl`           |  310 | NOT STARTED |
-|10 | `print_nl_cstr`      |  318 | NOT STARTED |
+|10 | `print_nl_cstr`      |  318 | MIGRATED (session 7, 555d6b46) |
 |11 | `print_esc`          |  327 | NOT STARTED |
-|12 | `print_esc_cstr`     |  338 | NOT STARTED |
+|12 | `print_esc_cstr`     |  338 | MIGRATED (session 7, 555d6b46) |
 |13 | `print_the_digs`     |  350 | MIGRATED (session 6, 6e9a8bea — private Rust helper, C static deleted) |
 |14 | `print_int`          |  363 | MIGRATED (session 6, 6e9a8bea) |
 |15 | `print_cs`           |  397 | NOT STARTED |

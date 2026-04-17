@@ -32,6 +32,45 @@ template.
 
 ---
 
+## Session 7 — 2026-04-17 — Phase 3: print_cstr, print_nl_cstr, print_esc_cstr
+
+**Goal:** translate the three simple Phase 3 wrapper functions that have no
+static-function dependencies.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 6
+
+**Work done:**
+- Confirmed parity baseline: 29/29.
+- Added `selector`, `term_offset`, `file_offset` accessors to `src/globals.rs`.
+- Added constants `SELECTOR_LOG_ONLY`, `INT_BASE`, `INT_PAR_ESCAPE_CHAR`,
+  `BIGGEST_USV` to `src/output.rs`.
+- Commit `555d6b46`: translated `print_cstr` (output.c:301), `print_nl_cstr`
+  (output.c:319), `print_esc_cstr` (output.c:338). Deleted ~35 C lines.
+  Removed old `extern "C" { fn print_cstr }` declaration; added `print_ln`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 7
+
+**Surprises / gotchas:**
+- `INTPAR(escape_char)` expands to `eqtb[INT_BASE + INT_PAR__escape_char].b32.s1`
+  where `INT_BASE = 7_826_729` and `INT_PAR__escape_char = 45`. Used the
+  existing `eqtb_b32s1` accessor from globals.rs directly.
+- `odd(selector)` in the C header is `(x) & 1`; translated as `sel & 1 != 0`.
+
+**For the next session:**
+- Next natural targets in Phase 3: `print_nl` (calls `print_ln` + `print`,
+  both in C), `print_esc` (calls `print_char` + `print`).
+  These are straightforward since their callees are all extern C.
+- After those: `print_two` (line 649), `print_roman_int` (line 675),
+  `print_scaled` (line 724) — all pure output functions.
+- The `warn_char` / `print_ln` / `print_raw_char` cluster still requires
+  un-static-ing `warn_char` first. Defer until the simpler wrappers are done.
+
+---
+
 ## Session 6 — 2026-04-16 — Phase 3 start: print_int, print_hex, print_ucs_code
 
 **Goal:** begin Phase 3 (printing functions from xetex-output.c) with the

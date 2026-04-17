@@ -20,6 +20,7 @@ cargo test -p tectonic --test tex-outputs
 |       4 | 2026-04-16 |     29 |    29 |     0 | new_null_box, new_rule, new_ligature, new_lig_item, new_disc, new_math, new_spec, new_param_glue, new_glue, new_skip_param, new_kern, new_penalty. |
 |       5 | 2026-04-16 |     29 |    29 |     0 | copy_native_glyph_info. |
 |       6 | 2026-04-16 |     29 |    29 |     0 | Phase 3 start: print_int, print_hex, print_ucs_code, print_the_digs (private helper). |
+|       7 | 2026-04-17 |     29 |    29 |     0 | Phase 3: print_cstr, print_nl_cstr, print_esc_cstr. |
 
 **Baseline rule:** session 1 must run the test suite *before* making
 any Rust changes and record the (Passed, Total) pair as the "Session 0"
@@ -37,6 +38,7 @@ Passed count below the previous session's recorded value.
 |       4 |38,467 |                   ~1790 |      ~95.6% |
 |       5 |38,453 |                   ~1820 |      ~95.5% |
 |       6 |38,453 |                   ~1960 |      ~95.2% |
+|       7 |38,418 |                   ~2070 |      ~94.9% |
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
 not in scope for translation. Measured with `wc -l` over the 16 in-scope
@@ -54,6 +56,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |       4 |       30 |           ~???? |      ~2.5% |
 |       5 |       31 |           ~???? |      ~2.6% |
 |       6 |       35 |           ~???? |      ~3.0% |
+|       7 |       38 |           ~???? |      ~3.2% |
 
 Total C function count to be measured in session 1 via:
 
@@ -68,7 +71,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **6** (sessions 1–6 held parity at 29/29).
+Current streak: **7** (sessions 1–7 held parity at 29/29).
 
 ## Health checks
 
