@@ -15,6 +15,7 @@ const BIGGEST_USV: i32 = 0x10_FFFF;
 extern "C" {
     fn print_char(s: i32);
     fn print_ln();
+    fn print(s: i32);
 }
 
 // ---------------------------------------------------------------------------
@@ -176,4 +177,38 @@ pub unsafe extern "C" fn print_esc_cstr(s: *const libc::c_char) {
         print_char(c);
     }
     print_cstr(s);
+}
+
+// ---------------------------------------------------------------------------
+// print_nl
+// ---------------------------------------------------------------------------
+
+/// Start a new line if needed, then print string `s`.
+///
+/// translated from xetex-output.c:302 (print_nl)
+#[no_mangle]
+pub unsafe extern "C" fn print_nl(s: i32) {
+    let sel = selector();
+    if ((term_offset() > 0) && (sel & 1 != 0))
+        || ((file_offset() > 0) && (sel >= SELECTOR_LOG_ONLY))
+    {
+        print_ln();
+    }
+    print(s);
+}
+
+// ---------------------------------------------------------------------------
+// print_esc
+// ---------------------------------------------------------------------------
+
+/// Print the escape character (if any) followed by string `s`.
+///
+/// translated from xetex-output.c:310 (print_esc)
+#[no_mangle]
+pub unsafe extern "C" fn print_esc(s: i32) {
+    let c = eqtb_b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
+    if c >= 0 && c <= BIGGEST_USV {
+        print_char(c);
+    }
+    print(s);
 }
