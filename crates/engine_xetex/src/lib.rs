@@ -32,6 +32,8 @@ mod mem;
 mod mem_types;
 mod output;
 mod scaled_math;
+#[allow(dead_code)]
+mod string_pool;
 
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,
