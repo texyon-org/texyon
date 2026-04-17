@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |         12 |
+| NOT STARTED    |         11 |
 | IN PROGRESS    |          1 |
-| DONE           |          3 |
+| DONE           |          4 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 10.
+Last updated: session 11.
 
 ## Core engine files (to translate)
 
@@ -33,7 +33,7 @@ Last updated: session 10.
 |------------------------------|------:|--------:|-----------------------------------|--------------|
 | xetex-scaledmath.c           |    20 |      0 | `src/scaled_math.rs`              | DONE               |
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
-| xetex-errors.c               |   175 |      7 | `src/errors.rs`                   | NOT STARTED  |
+| xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
 | xetex-xetex0.c               | 18387 |    268 | multiple (see below)              | IN PROGRESS — 6%  |
@@ -188,12 +188,25 @@ Status: DONE (session 10).
 | 7 | `search_string`      |  162 | MIGRATED (session 10, 5e966ad6) |
 | 8 | `slow_make_string`   |  190 | MIGRATED (session 10, 5e966ad6) |
 
-### Phases 5+
+### Phase 5 — error handling (target: `src/errors.rs`)
 
-Populate when Phase 4 is done. Next target: `xetex-errors.c` (7 functions,
-175 LOC). Note: `error()` calls `show_context()` and `give_err_help()` which
-are still in C — plan to translate those from xetex-xetex0.c as needed, or
-leave them in C and call via FFI.
+Status: DONE (session 11).
+
+| # | Function                | Line | Status |
+|--:|-------------------------|-----:|--------|
+| 1 | `pre_error_message` (static) |  13 | MIGRATED (session 11, 480fe9f1 — private Rust fn) |
+| 2 | `post_error_message` (static) | 35 | MIGRATED (session 11, 480fe9f1 — private Rust fn) |
+| 3 | `error`                 |   52 | MIGRATED (session 11, 480fe9f1) |
+| 4 | `fatal_error`           |   98 | MIGRATED (session 11, 480fe9f1) |
+| 5 | `overflow`              |  113 | MIGRATED (session 11, 480fe9f1) |
+| 6 | `confusion`             |  132 | MIGRATED (session 11, 480fe9f1) |
+| 7 | `pdf_error`             |  157 | MIGRATED (session 11, 480fe9f1) |
+
+### Phases 6+
+
+Populate when Phase 5 is done. Next target: the remaining small/medium files
+before tackling xetex-xetex0.c. Candidates: xetex-engine-interface.c (112 LOC),
+xetex-texmfmp.c (467 LOC).
 
 ## How to maintain this file
 

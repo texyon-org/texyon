@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 11 — 2026-04-18 — xetex-errors.c fully translated
+
+**Goal:** translate all 7 functions from `xetex-errors.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 10
+
+**Work done:**
+- Added globals: `interaction`, `history`, `error_count`, `use_err_help`,
+  `halt_on_error_p`, `log_opened`, `job_name`, `set_selector`, `help_line`
+  getter. (ea79fbfd)
+- Created `src/errors.rs` with 5 public + 2 private functions. Deleted C bodies.
+  `xetex-errors.c` is now empty. (480fe9f1)
+- Updated plan docs (this commit).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 11
+
+**Surprises / gotchas:**
+- `_tt_abort` called with `"%s", s` in `fatal_error`; simplified to `_tt_abort(s)`
+  directly (the only effect of `%s` is to format `s`), avoiding variadic Rust FFI.
+- `help_ptr` loop uses local counter written back via `set_help_ptr` after the loop;
+  equivalent to C's in-place mutation since no other code reads it mid-loop.
+- `overflow` and `confusion` return `!` — `post_error_message` doesn't, but
+  `_tt_abort` does, so the `-> !` propagates correctly through the tail call.
+
+**For the next session:**
+- 4 C files are now emptied. Next smallest remaining files:
+  `xetex-engine-interface.c` (112 LOC), `xetex-texmfmp.c` (467 LOC).
+- Consider `xetex-engine-interface.c` first — it is the engine entry point
+  and likely has many globals, but is very short.
+
+---
+
 ## Session 10 — 2026-04-18 — Phase 1 complete; xetex-stringpool.c translated
 
 **Goal:** translate `m_log` (last blocked Phase 1 function) and all 8 functions
