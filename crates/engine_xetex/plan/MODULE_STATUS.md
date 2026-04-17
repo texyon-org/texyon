@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |         11 |
-| IN PROGRESS    |          1 |
+| NOT STARTED    |         10 |
+| IN PROGRESS    |          2 |
 | DONE           |          4 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 11.
+Last updated: session 12.
 
 ## Core engine files (to translate)
 
@@ -46,7 +46,7 @@ Last updated: session 11.
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
 | xetex-pic.c                  |   664 |    ~?? | `src/pic.rs`                      | NOT STARTED  |
 | xetex-texmfmp.c              |   467 |    ~?? | `src/texmfmp.rs`                  | NOT STARTED  |
-| xetex-engine-interface.c     |   112 |    ~?? | `src/engine_interface.rs`         | NOT STARTED  |
+| xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
 
 ## Files NOT to translate
 
@@ -202,11 +202,20 @@ Status: DONE (session 11).
 | 6 | `confusion`             |  132 | MIGRATED (session 11, 480fe9f1) |
 | 7 | `pdf_error`             |  157 | MIGRATED (session 11, 480fe9f1) |
 
-### Phases 6+
+### Phase 6 — engine interface (target: `src/engine_interface.rs`)
 
-Populate when Phase 5 is done. Next target: the remaining small/medium files
-before tackling xetex-xetex0.c. Candidates: xetex-engine-interface.c (112 LOC),
-xetex-texmfmp.c (467 LOC).
+Status: IN PROGRESS (session 12). Two functions translated; two kept in C permanently.
+
+| # | Function                              | Line | Status |
+|--:|---------------------------------------|-----:|--------|
+| 1 | `tt_xetex_set_int_variable`           |   25 | MIGRATED (session 12, 73725033) |
+| 2 | `tt_xetex_set_string_variable`        |   44 | MIGRATED (session 12, 73725033) |
+| 3 | `tt_engine_xetex_main`                |   51 | KEEP IN C (setjmp/longjmp cannot cross FFI boundary safely) |
+| 4 | `__terrible_aarch64_musl_linker_hack` |  103 | KEEP IN C (platform linker workaround) |
+
+### Phases 7+
+
+Next target: xetex-texmfmp.c (467 LOC). After that, larger files.
 
 ## How to maintain this file
 
