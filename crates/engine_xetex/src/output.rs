@@ -212,3 +212,85 @@ pub unsafe extern "C" fn print_esc(s: i32) {
     }
     print(s);
 }
+
+// ---------------------------------------------------------------------------
+// print_two
+// ---------------------------------------------------------------------------
+
+/// Print a two-digit decimal number (last two decimal digits of |n|).
+///
+/// translated from xetex-output.c:554 (print_two)
+#[no_mangle]
+pub unsafe extern "C" fn print_two(n: i32) {
+    let n = n.abs() % 100;
+    print_char(b'0' as i32 + n / 10);
+    print_char(b'0' as i32 + n % 10);
+}
+
+// ---------------------------------------------------------------------------
+// print_roman_int
+// ---------------------------------------------------------------------------
+
+/// Print `n` as a Roman numeral (lowercase).
+///
+/// translated from xetex-output.c:563 (print_roman_int)
+#[no_mangle]
+pub unsafe extern "C" fn print_roman_int(mut n: i32) {
+    // "m2d5c2l5x2v5i": alternating letter/divisor pairs encoding the
+    // standard Roman numeral values and their subtraction thresholds.
+    const ROMAN_DATA: &[u8] = b"m2d5c2l5x2v5i";
+    let mut j: usize = 0;
+    let mut v: i32 = 1000;
+    loop {
+        while n >= v {
+            print_char(ROMAN_DATA[j] as i32);
+            n -= v;
+        }
+        if n <= 0 {
+            return;
+        }
+        let mut k = j + 2;
+        let mut u = v / (ROMAN_DATA[k - 1] as i32 - b'0' as i32);
+        if ROMAN_DATA[k - 1] == b'2' {
+            k += 2;
+            u = u / (ROMAN_DATA[k - 1] as i32 - b'0' as i32);
+        }
+        if n + u >= v {
+            print_char(ROMAN_DATA[k] as i32);
+            n += u;
+        } else {
+            j += 2;
+            v /= ROMAN_DATA[j - 1] as i32 - b'0' as i32;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_scaled
+// ---------------------------------------------------------------------------
+
+/// Print a scaled integer (fixed-point with 16 fractional bits) as a decimal.
+///
+/// translated from xetex-output.c:612 (print_scaled)
+#[no_mangle]
+pub unsafe extern "C" fn print_scaled(mut s: i32) {
+    if s < 0 {
+        print_char(b'-' as i32);
+        s = -(s as i32);
+    }
+    print_int(s / 0x10000);
+    print_char(b'.' as i32);
+    s = 10 * (s % 0x10000) + 5;
+    let mut delta: i32 = 10;
+    loop {
+        if delta > 0x10000 {
+            s = s + 0x8000 - 50000;
+        }
+        print_char(b'0' as i32 + (s / 0x10000));
+        s = 10 * (s % 0x10000);
+        delta *= 10;
+        if s <= delta {
+            break;
+        }
+    }
+}
