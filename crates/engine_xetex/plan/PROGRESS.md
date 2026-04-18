@@ -28,6 +28,7 @@ cargo test -p tectonic --test tex-outputs
 |      12 | 2026-04-18 |     29 |    29 |     0 | Phase 6: tt_xetex_set_int_variable, tt_xetex_set_string_variable (2 fns stay in C). Back-filled clippy lints in output.rs and scaled_math.rs. |
 |      13 | 2026-04-18 |     29 |    29 |     0 | Phase 7 start: get_date_and_time, get_seconds_and_micros (pure libc, no engine globals). |
 |      14 | 2026-04-18 |     29 |    29 |     0 | Phase 8: gettexstring, maketexstring (UTF-8↔UTF-16 pool), checkpool_pointer, convertStringToHexString, getmd5sum. |
+|      15 | 2026-04-18 |     29 |    29 |     0 | Phase 9 complete: xetex-texmfmp.c fully translated (make_src_special, getfilesize, getfiledump, is_new_source cluster, makepdftime cluster). |
 
 **Baseline rule:** session 1 must run the test suite *before* making
 any Rust changes and record the (Passed, Total) pair as the "Session 0"
@@ -53,6 +54,7 @@ Passed count below the previous session's recorded value.
 |      12 |37,483 |                   ~3935 |      ~90.5% |
 |      13 |37,455 |                   ~3980 |      ~90.4% |
 |      14 |37,309 |                   ~4200 |      ~89.9% |
+|      15 |37,022 |                   ~4750 |      ~88.7% |
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
 not in scope for translation. Measured with `wc -l` over the 16 in-scope
@@ -78,6 +80,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      12 |       79 |           ~???? |      ~6.7% |
 |      13 |       81 |           ~???? |      ~6.8% |
 |      14 |       86 |           ~???? |      ~7.3% |
+|      15 |       97 |           ~???? |      ~8.2% |
 
 Total C function count to be measured in session 1 via:
 
@@ -92,7 +95,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **14** (sessions 1–14 held parity at 29/29).
+Current streak: **15** (sessions 1–15 held parity at 29/29).
 
 ## Health checks
 

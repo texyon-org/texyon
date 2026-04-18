@@ -20,12 +20,12 @@ every session. The column meanings:
 | Status         | File count |
 |----------------|-----------:|
 | NOT STARTED    |          9 |
-| IN PROGRESS    |          3 |
-| DONE           |          4 |
+| IN PROGRESS    |          2 |
+| DONE           |          5 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 14.
+Last updated: session 15.
 
 ## Core engine files (to translate)
 
@@ -45,7 +45,7 @@ Last updated: session 14.
 | xetex-io.c                   |   555 |    ~?? | `src/io.rs`                       | NOT STARTED  |
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
 | xetex-pic.c                  |   664 |    ~?? | `src/pic.rs`                      | NOT STARTED  |
-| xetex-texmfmp.c              |   302 |      8 | `src/texmfmp.rs`                  | IN PROGRESS — 38% |
+| xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
 
 ## Files NOT to translate
@@ -234,14 +234,24 @@ Status: IN PROGRESS (session 14).
 | 4 | `convertStringToHexString` (was static)| 396 | MIGRATED (session 14, 717cf3d4 — private Rust fn) |
 | 5 | `getmd5sum`                     |  413 | MIGRATED (session 14, 717cf3d4) |
 
-Remaining texmfmp.c functions (8 in C):
-- `makepdftime` (static, complex timezone `struct tm` math) + `init_start_time` + `getcreationdate` — cluster around C-static `start_time_str`; defer.
-- `getfilemoddate`, `getfilesize`, `getfiledump` — call `gettexstring` + bridge file I/O; straightforward next targets.
-- `compare_paths` (static) + `is_new_source` + `remember_source_info` + `make_src_special` — `is_new_source`/`remember_source_info` use C-static `last_source_name`; the rest are straightforward.
+| # | Function                        | Line | Status |
+|--:|---------------------------------|-----:|--------|
+| 6 | `make_src_special`              |  274 | MIGRATED (session 15, 23d0822a) |
+| 7 | `getfilesize`                   |  155 | MIGRATED (session 15, 23d0822a) |
+| 8 | `getfiledump`                   |  189 | MIGRATED (session 15, 23d0822a) |
+| 9 | `compare_paths` (was static)    |  243 | MIGRATED (session 15, 23d0822a — private Rust fn) |
+|10 | `is_new_source`                 |  257 | MIGRATED (session 15, 23d0822a) |
+|11 | `remember_source_info`          |  264 | MIGRATED (session 15, 23d0822a) |
+|12 | `makepdftime` (was static)      |   30 | MIGRATED (session 15, 13fb941d — private Rust fn) |
+|13 | `init_start_time`               |   84 | MIGRATED (session 15, 13fb941d) |
+|14 | `getcreationdate`               |   91 | MIGRATED (session 15, 13fb941d) |
+|15 | `getfilemoddate`                |  120 | MIGRATED (session 15, 13fb941d) |
 
-### Phases 9+
+`xetex-texmfmp.c` is **DONE** (0 C functions remaining).
 
-Continue xetex-texmfmp.c, then tackle larger files.
+### Phases 10+
+
+Next file: `xetex-io.c` (~555 LOC) or continue with `xetex-xetex0.c`.
 
 ## How to maintain this file
 

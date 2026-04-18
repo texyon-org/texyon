@@ -32,6 +32,38 @@ template.
 
 ---
 
+## Session 15 — 2026-04-18 — Phase 9: xetex-texmfmp.c fully translated
+
+**Goal:** translate all remaining functions from `xetex-texmfmp.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 14
+
+**Work done:**
+- Added `ttstub_input_open/get_size/get_mtime/close/seek/read` externs, `TTBC_FILE_FORMAT_TEX`, `INVALID_HANDLE` constant, and `START_TIME_STR` Rust static to `src/texmfmp.rs`.
+- Commit 23d0822a: `make_src_special` (line 274), `getfilesize` (line 155), `getfiledump` (line 189), `compare_paths` (line 243, was static), `is_new_source` (line 257), `remember_source_info` (line 264). C statics `last_source_name`/`last_lineno` moved to Rust `LAST_SOURCE_NAME`/`LAST_LINENO`.
+- Commit 13fb941d: `makepdftime` (line 30, was static), `init_start_time` (line 84), `getcreationdate` (line 91), `getfilemoddate` (line 120). C static `start_time_str[30]` moved to Rust `START_TIME_STR`. `xetex-texmfmp.c` is now DONE.
+- Updated plan docs (this commit).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 15
+- `xetex-texmfmp.c`: DONE (5th file fully translated)
+
+**Surprises / gotchas:**
+- C's `getfilemoddate` passed a 20-byte `buf` to `makepdftime` which uses `TIME_STR_SIZE=30`. This is an overflow bug in C. Rust translation uses 30-byte buffer throughout, fixing it silently.
+- `is_new_source` and `make_src_special` both leaked the `gettexstring` result in C. Added `libc::free` in Rust.
+- `makepdftime`'s UTC-offset format `%+03d` maps exactly to Rust `{:+03}`.
+- `compare_paths` with null `last_source_name` would crash on the first call before `remember_source_info`. Added null guard in Rust (treats null as empty string).
+
+**For the next session:**
+- `xetex-texmfmp.c` is fully done. Five C files are now empty.
+- Next candidates: `xetex-io.c` (555 LOC, ~?? fns) or continue with `xetex-xetex0.c` (still 18,387 LOC, 268 fns).
+- `xetex-io.c` contains the UTF-8 lookup tables (`bytesFromUTF8`, etc.) and I/O wrappers. Likely a mix of straightforward and complex functions.
+
+---
+
 ## Session 14 — 2026-04-18 — Phase 8: gettexstring, maketexstring, getmd5sum
 
 **Goal:** translate `gettexstring`, `maketexstring`, `checkpool_pointer`, `convertStringToHexString`, and `getmd5sum` from `xetex-texmfmp.c`.
