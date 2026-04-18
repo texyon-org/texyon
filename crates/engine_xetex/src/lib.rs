@@ -36,6 +36,7 @@ mod engine_interface;
 mod texmfmp;
 mod errors;
 mod output;
+mod save;
 mod scaled_math;
 #[allow(dead_code)]
 mod string_pool;

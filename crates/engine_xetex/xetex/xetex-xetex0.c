@@ -3856,26 +3856,7 @@ void sa_restore(void)
     } while (!(sa_chain == TEX_NULL));
 }
 
-void new_save_level(group_code c)
-{
-    if (save_ptr > max_save_stack) {
-        max_save_stack = save_ptr;
-        if (max_save_stack > save_size - 7)
-            overflow("save size", save_size);
-    }
-
-    save_stack[save_ptr + 0].b32.s1 = line;
-    save_ptr++;
-    save_stack[save_ptr].b16.s1 = LEVEL_BOUNDARY;
-    save_stack[save_ptr].b16.s0 = cur_group;
-    save_stack[save_ptr].b32.s1 = cur_boundary;
-    if (cur_level == UINT16_MAX)
-        overflow("grouping levels", UINT16_MAX);
-    cur_boundary = save_ptr;
-    cur_group = c;
-    cur_level++;
-    save_ptr++;
-}
+/* new_save_level translated to Rust (src/save.rs). */
 
 void eq_destroy(memory_word w)
 {
@@ -3911,26 +3892,7 @@ void eq_destroy(memory_word w)
     }
 }
 
-void eq_save(int32_t p, uint16_t l)
-{
-
-    if (save_ptr > max_save_stack) {
-        max_save_stack = save_ptr;
-        if (max_save_stack > save_size - 7)
-            overflow("save size", save_size);
-    }
-    if (l == LEVEL_ZERO)
-        save_stack[save_ptr].b16.s1 = RESTORE_ZERO;
-    else {
-
-        save_stack[save_ptr] = eqtb[p];
-        save_ptr++;
-        save_stack[save_ptr].b16.s1 = RESTORE_OLD_VALUE;
-    }
-    save_stack[save_ptr].b16.s0 = l;
-    save_stack[save_ptr].b32.s1 = p;
-    save_ptr++;
-}
+/* eq_save translated to Rust (src/save.rs). */
 
 void
 eq_define(int32_t p, uint16_t t, int32_t e)
@@ -3951,19 +3913,7 @@ eq_define(int32_t p, uint16_t t, int32_t e)
     eqtb[p].b32.s1 = e;
 }
 
-void
-eq_word_define(int32_t p, int32_t w)
-{
-
-    if (eqtb[p].b32.s1 == w)
-        return;
-
-    if (XEQ_LEVEL(p) != cur_level) {
-        eq_save(p, XEQ_LEVEL(p));
-        XEQ_LEVEL(p) = cur_level;
-    }
-    eqtb[p].b32.s1 = w;
-}
+/* eq_word_define translated to Rust (src/save.rs). */
 
 void geq_define(int32_t p, uint16_t t, int32_t e)
 {
@@ -3974,27 +3924,9 @@ void geq_define(int32_t p, uint16_t t, int32_t e)
     eqtb[p].b32.s1 = e;
 }
 
-void geq_word_define(int32_t p, int32_t w)
-{
+/* geq_word_define translated to Rust (src/save.rs). */
 
-    eqtb[p].b32.s1 = w;
-    XEQ_LEVEL(p) = LEVEL_ONE;
-}
-
-void save_for_after(int32_t t)
-{
-    if (cur_level > LEVEL_ONE) {
-        if (save_ptr > max_save_stack) {
-            max_save_stack = save_ptr;
-            if (max_save_stack > save_size - 7)
-                overflow("save size", save_size);
-        }
-        save_stack[save_ptr].b16.s1 = INSERT_TOKEN;
-        save_stack[save_ptr].b16.s0 = LEVEL_ZERO;
-        save_stack[save_ptr].b32.s1 = t;
-        save_ptr++;
-    }
-}
+/* save_for_after translated to Rust (src/save.rs). */
 
 void unsave(void)
 {

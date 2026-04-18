@@ -212,6 +212,11 @@ mod raw {
         pub(super) static mut cur_level: u16;
         // group_code is unsigned char (xetex-xetexd.h:325).
         pub(super) static mut cur_group: u8;
+        // Current group boundary in the save stack (xetex-xetexd.h:497).
+        pub(super) static mut cur_boundary: i32;
+        // XEQ_LEVEL array — level at which each eqtb entry was defined
+        // (xetex-xetexd.h:733; size = EQTB_SIZE - INT_BASE + 1 = 1114730).
+        pub(super) static mut _xeq_level_array: [u16; 1_114_730];
     }
 }
 
@@ -506,6 +511,16 @@ pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
 // eqtb accessor
 // ---------------------------------------------------------------------------
 
+/// Copy the full MemoryWord at `eqtb[p]`.
+#[inline]
+pub(crate) fn eqtb_word(p: i32) -> crate::mem_types::MemoryWord {
+    unsafe { *raw::eqtb.offset(p as isize) }
+}
+/// Write a full MemoryWord to `eqtb[p]`.
+#[inline]
+pub(crate) fn set_eqtb_word(p: i32, w: crate::mem_types::MemoryWord) {
+    unsafe { *raw::eqtb.offset(p as isize) = w; }
+}
 /// Read `eqtb[p].b32.s1` (the "value" half of an equivalents entry).
 #[inline]
 pub(crate) fn eqtb_b32s1(p: i32) -> i32 {
@@ -517,6 +532,26 @@ pub(crate) fn eqtb_b32s1(p: i32) -> i32 {
 pub(crate) fn set_eqtb_b32s1(p: i32, v: i32) {
     // SAFETY: see module-level doc. Caller ensures p is a valid eqtb index.
     unsafe { (*raw::eqtb.offset(p as isize)).b32.s1 = v; }
+}
+/// Read `eqtb[p].b16.s1` (the "type" half of an equivalents entry).
+#[inline]
+pub(crate) fn eqtb_b16s1(p: i32) -> u16 {
+    unsafe { (*raw::eqtb.offset(p as isize)).b16.s1 }
+}
+/// Write `v` into `eqtb[p].b16.s1`.
+#[inline]
+pub(crate) fn set_eqtb_b16s1(p: i32, v: u16) {
+    unsafe { (*raw::eqtb.offset(p as isize)).b16.s1 = v; }
+}
+/// Read `eqtb[p].b16.s0` (the "level" half of an equivalents entry).
+#[inline]
+pub(crate) fn eqtb_b16s0(p: i32) -> u16 {
+    unsafe { (*raw::eqtb.offset(p as isize)).b16.s0 }
+}
+/// Write `v` into `eqtb[p].b16.s0`.
+#[inline]
+pub(crate) fn set_eqtb_b16s0(p: i32, v: u16) {
+    unsafe { (*raw::eqtb.offset(p as isize)).b16.s0 = v; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1107,6 +1142,11 @@ pub(crate) fn set_save_stack_b16s1(k: i32, v: u16) {
 pub(crate) fn set_save_stack_b16s0(k: i32, v: u16) {
     unsafe { (*raw::save_stack.offset(k as isize)).b16.s0 = v; }
 }
+/// Copy a full MemoryWord to `save_stack[k]`.
+#[inline]
+pub(crate) fn set_save_stack_word(k: i32, w: crate::mem_types::MemoryWord) {
+    unsafe { *raw::save_stack.offset(k as isize) = w; }
+}
 #[inline]
 pub(crate) fn cur_level() -> u16 {
     unsafe { raw::cur_level }
@@ -1122,6 +1162,25 @@ pub(crate) fn cur_group() -> u8 {
 #[inline]
 pub(crate) fn set_cur_group(v: u8) {
     unsafe { raw::cur_group = v; }
+}
+#[inline]
+pub(crate) fn cur_boundary() -> i32 {
+    unsafe { raw::cur_boundary }
+}
+#[inline]
+pub(crate) fn set_cur_boundary(v: i32) {
+    unsafe { raw::cur_boundary = v; }
+}
+/// Read `XEQ_LEVEL(p)` = `_xeq_level_array[p - INT_BASE]`.
+#[inline]
+pub(crate) fn xeq_level(p: i32) -> u16 {
+    // SAFETY: caller ensures p >= INT_BASE and p - INT_BASE < 1_114_730.
+    unsafe { raw::_xeq_level_array[(p - 7_826_729) as usize] }
+}
+/// Write `XEQ_LEVEL(p) = v`.
+#[inline]
+pub(crate) fn set_xeq_level(p: i32, v: u16) {
+    unsafe { raw::_xeq_level_array[(p - 7_826_729) as usize] = v; }
 }
 
 // ---------------------------------------------------------------------------
