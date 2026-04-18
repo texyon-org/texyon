@@ -1320,31 +1320,8 @@ copy_node_list(int32_t p)
 /* print_mode translated to Rust (src/output.rs). */
 /* print_in_mode translated to Rust (src/output.rs). */
 
-void push_nest(void)
-{
-    if (nest_ptr > max_nest_stack) {
-        max_nest_stack = nest_ptr;
-        if (nest_ptr == nest_size)
-            overflow("semantic nest size", nest_size);
-    }
-    nest[nest_ptr] = cur_list;
-    nest_ptr++;
-    cur_list.head = get_avail();
-    cur_list.tail = cur_list.head;
-    cur_list.prev_graf = 0;
-    cur_list.mode_line = line;
-    cur_list.eTeX_aux = TEX_NULL;
-}
-
-void pop_nest(void)
-{
-    {
-        mem[cur_list.head].b32.s1 = avail;
-        avail = cur_list.head;
-    }
-    nest_ptr--;
-    cur_list = nest[nest_ptr];
-}
+/* push_nest translated to Rust (src/mem.rs). */
+/* pop_nest translated to Rust (src/mem.rs). */
 
 void show_activities(void)
 {

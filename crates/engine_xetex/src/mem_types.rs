@@ -57,3 +57,33 @@ const _: () = {
     assert!(size_of::<B32x2>() == 8);
     assert!(size_of::<B16x4>() == 8);
 };
+
+/// Rust mirror of C `list_state_record` (xetex-xetexd.h:334–342).
+///
+/// Represents one entry on TeX's "semantic nest" (mode stack).
+/// Must stay layout-compatible with the C struct.
+///
+/// C layout on x86_64 (little-endian):
+///   offset  0: mode (short = i16, 2 B)
+///   offset  2: [2 B padding]
+///   offset  4: head (int32_t, 4 B)
+///   offset  8: tail (int32_t, 4 B)
+///   offset 12: eTeX_aux (int32_t, 4 B)
+///   offset 16: prev_graf (int32_t, 4 B)
+///   offset 20: mode_line (int32_t, 4 B)
+///   offset 24: aux (memory_word, 8 B)
+///   total: 32 B
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ListStateRecord {
+    pub mode: i16,
+    // 2 bytes implicit padding
+    pub head: i32,
+    pub tail: i32,
+    pub e_tex_aux: i32,
+    pub prev_graf: i32,
+    pub mode_line: i32,
+    pub aux: MemoryWord,
+}
+
+const _: () = assert!(size_of::<ListStateRecord>() == 32);

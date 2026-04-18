@@ -7,10 +7,13 @@
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 
 use crate::globals::{
-    avail, cur_input_synctex_tag, eqtb_b32s1, hi_mem_min, line, lo_mem_max, mem_b16s0, mem_b32s0,
-    mem_b32s1, mem_end, mem_ptr, mem_word, rover, set_avail, set_hi_mem_min, set_lo_mem_max,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_end, set_mem_gr,
-    set_mem_ptr, set_mem_word, set_rover, set_temp_ptr, temp_ptr,
+    avail, cur_input_synctex_tag, eqtb_b32s1, hi_mem_min, line, lo_mem_max, max_nest_stack,
+    mem_b16s0, mem_b32s0, mem_b32s1, mem_end, mem_ptr, mem_word, nest_ptr, nest_size, rover,
+    restore_cur_list_from_nest, save_cur_list_to_nest, set_avail, set_cur_list_e_tex_aux,
+    set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
+    set_hi_mem_min, set_lo_mem_max, set_max_nest_stack, set_mem_b16s0, set_mem_b16s1,
+    set_mem_b32s0, set_mem_b32s1, set_mem_end, set_mem_gr, set_mem_ptr, set_mem_word,
+    set_nest_ptr, set_rover, set_temp_ptr, temp_ptr, cur_list_head,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
@@ -567,4 +570,41 @@ pub unsafe extern "C" fn delete_glue_ref(p: i32) {
     } else {
         set_mem_b32s1(p, mem_b32s1(p) - 1);
     }
+}
+
+// ---------------------------------------------------------------------------
+// push_nest / pop_nest
+// ---------------------------------------------------------------------------
+
+/// Push the current list state onto the nest stack and start a new list.
+///
+/// translated from xetex-xetex0.c:1323 (push_nest)
+#[no_mangle]
+pub unsafe extern "C" fn push_nest() {
+    if nest_ptr() > max_nest_stack() {
+        set_max_nest_stack(nest_ptr());
+        if nest_ptr() == nest_size() {
+            crate::errors::overflow(c"semantic nest size".as_ptr(), nest_size());
+        }
+    }
+    save_cur_list_to_nest(nest_ptr());
+    set_nest_ptr(nest_ptr() + 1);
+    let h = get_avail();
+    set_cur_list_head(h);
+    set_cur_list_tail(h);
+    set_cur_list_prev_graf(0);
+    set_cur_list_mode_line(line());
+    set_cur_list_e_tex_aux(TEX_NULL);
+}
+
+/// Pop the top nest entry back into cur_list, freeing the old head token.
+///
+/// translated from xetex-xetex0.c:1339 (pop_nest)
+#[no_mangle]
+pub unsafe extern "C" fn pop_nest() {
+    // Recycle old cur_list.head into avail.
+    set_mem_b32s1(cur_list_head(), avail());
+    set_avail(cur_list_head());
+    set_nest_ptr(nest_ptr() - 1);
+    restore_cur_list_from_nest(nest_ptr());
 }

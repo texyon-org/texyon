@@ -199,6 +199,14 @@ mod raw {
         pub(super) static mut stop_at_space: bool;
         // Magnification as actually set this job (xetex-xetexd.h:498; 0 = not set yet).
         pub(super) static mut mag_set: i32;
+
+        // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
+        pub(super) static mut nest: *mut crate::mem_types::ListStateRecord;
+        pub(super) static mut nest_ptr: i32;
+        pub(super) static mut max_nest_stack: i32;
+        pub(super) static mut nest_size: i32;
+        // Current list state (xetex-xetexd.h:479; direct struct, not a pointer).
+        pub(super) static mut cur_list: crate::mem_types::ListStateRecord;
         // File-open states for \read streams (xetex-xetexd.h:536; CLOSED=2, JUST_OPEN=1).
         pub(super) static mut read_open: [u8; 17];
         // Array of UFILE* for \read streams (xetex-xetexd.h:535).
@@ -1229,4 +1237,64 @@ pub(crate) fn mag_set() -> i32 {
 #[inline]
 pub(crate) fn set_mag_set(v: i32) {
     unsafe { raw::mag_set = v; }
+}
+
+// ---------------------------------------------------------------------------
+// semantic nest (nest / nest_ptr / max_nest_stack / nest_size / cur_list)
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn nest_ptr() -> i32 {
+    unsafe { raw::nest_ptr }
+}
+#[inline]
+pub(crate) fn set_nest_ptr(v: i32) {
+    unsafe { raw::nest_ptr = v; }
+}
+#[inline]
+pub(crate) fn max_nest_stack() -> i32 {
+    unsafe { raw::max_nest_stack }
+}
+#[inline]
+pub(crate) fn set_max_nest_stack(v: i32) {
+    unsafe { raw::max_nest_stack = v; }
+}
+#[inline]
+pub(crate) fn nest_size() -> i32 {
+    unsafe { raw::nest_size }
+}
+/// Copy `nest[k]` to `cur_list` (full struct assignment).
+#[inline]
+pub(crate) fn restore_cur_list_from_nest(k: i32) {
+    unsafe { raw::cur_list = *raw::nest.offset(k as isize); }
+}
+/// Copy `cur_list` to `nest[k]` (full struct assignment).
+#[inline]
+pub(crate) fn save_cur_list_to_nest(k: i32) {
+    unsafe { *raw::nest.offset(k as isize) = raw::cur_list; }
+}
+// cur_list field accessors
+#[inline]
+pub(crate) fn cur_list_head() -> i32 {
+    unsafe { raw::cur_list.head }
+}
+#[inline]
+pub(crate) fn set_cur_list_head(v: i32) {
+    unsafe { raw::cur_list.head = v; }
+}
+#[inline]
+pub(crate) fn set_cur_list_tail(v: i32) {
+    unsafe { raw::cur_list.tail = v; }
+}
+#[inline]
+pub(crate) fn set_cur_list_prev_graf(v: i32) {
+    unsafe { raw::cur_list.prev_graf = v; }
+}
+#[inline]
+pub(crate) fn set_cur_list_mode_line(v: i32) {
+    unsafe { raw::cur_list.mode_line = v; }
+}
+#[inline]
+pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
+    unsafe { raw::cur_list.e_tex_aux = v; }
 }
