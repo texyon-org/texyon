@@ -29,6 +29,9 @@ const INT_PAR_TRACING_ONLINE: i32 = 29;
 // History values (xetex-xetexd.h:355–356).
 const HISTORY_SPOTLESS: i32 = 0;
 const HISTORY_WARNING_ISSUED: i32 = 1;
+
+// Mode divisor for print_mode / print_in_mode (xetex_format.h:345).
+const MAX_COMMAND_PLUS_1: i32 = 103; // MAX_COMMAND + 1
 const BIGGEST_USV: i32 = 0x10_FFFF;
 #[allow(dead_code)]
 const BIGGEST_CHAR: i32 = 0xFFFF;
@@ -973,4 +976,56 @@ pub unsafe extern "C" fn end_diagnostic(blank_line: bool) {
         print_ln();
     }
     set_selector(old_setting() as i32);
+}
+
+// ---------------------------------------------------------------------------
+// print_mode / print_in_mode
+// ---------------------------------------------------------------------------
+
+/// Print a textual description of the current TeX mode m.
+///
+/// translated from xetex-xetex0.c:1327 (print_mode)
+#[no_mangle]
+pub unsafe extern "C" fn print_mode(m: i32) {
+    if m > 0 {
+        match m / MAX_COMMAND_PLUS_1 {
+            0 => print_cstr(c"vertical mode".as_ptr()),
+            1 => print_cstr(c"horizontal mode".as_ptr()),
+            2 => print_cstr(c"display math mode".as_ptr()),
+            _ => {}
+        }
+    } else if m == 0 {
+        print_cstr(c"no mode".as_ptr());
+    } else {
+        match (-m) / MAX_COMMAND_PLUS_1 {
+            0 => print_cstr(c"internal vertical mode".as_ptr()),
+            1 => print_cstr(c"restricted horizontal mode".as_ptr()),
+            2 => print_cstr(c"math mode".as_ptr()),
+            _ => {}
+        }
+    }
+}
+
+/// Print "' in <mode>" for use in error messages.
+///
+/// translated from xetex-xetex0.c:1356 (print_in_mode)
+#[no_mangle]
+pub unsafe extern "C" fn print_in_mode(m: i32) {
+    if m > 0 {
+        match m / MAX_COMMAND_PLUS_1 {
+            0 => print_cstr(c"' in vertical mode".as_ptr()),
+            1 => print_cstr(c"' in horizontal mode".as_ptr()),
+            2 => print_cstr(c"' in display math mode".as_ptr()),
+            _ => {}
+        }
+    } else if m == 0 {
+        print_cstr(c"' in no mode".as_ptr());
+    } else {
+        match (-m) / MAX_COMMAND_PLUS_1 {
+            0 => print_cstr(c"' in internal vertical mode".as_ptr()),
+            1 => print_cstr(c"' in restricted horizontal mode".as_ptr()),
+            2 => print_cstr(c"' in math mode".as_ptr()),
+            _ => {}
+        }
+    }
 }

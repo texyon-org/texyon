@@ -1324,63 +1324,8 @@ copy_node_list(int32_t p)
 }
 
 
-void print_mode(int32_t m)
-{
-    if (m > 0)
-        switch (m / ((MAX_COMMAND + 1))) {
-        case 0:
-            print_cstr("vertical mode");
-            break;
-        case 1:
-            print_cstr("horizontal mode");
-            break;
-        case 2:
-            print_cstr("display math mode");
-            break;
-    } else if (m == 0)
-        print_cstr("no mode");
-    else
-        switch ((-(int32_t) m) / ((MAX_COMMAND + 1))) {
-        case 0:
-            print_cstr("internal vertical mode");
-            break;
-        case 1:
-            print_cstr("restricted horizontal mode");
-            break;
-        case 2:
-            print_cstr("math mode");
-            break;
-        }
-}
-
-void print_in_mode(int32_t m)
-{
-    if (m > 0)
-        switch (m / ((MAX_COMMAND + 1))) {
-        case 0:
-            print_cstr("' in vertical mode");
-            break;
-        case 1:
-            print_cstr("' in horizontal mode");
-            break;
-        case 2:
-            print_cstr("' in display math mode");
-            break;
-    } else if (m == 0)
-        print_cstr("' in no mode");
-    else
-        switch ((-(int32_t) m) / ((MAX_COMMAND + 1))) {
-        case 0:
-            print_cstr("' in internal vertical mode");
-            break;
-        case 1:
-            print_cstr("' in restricted horizontal mode");
-            break;
-        case 2:
-            print_cstr("' in math mode");
-            break;
-        }
-}
+/* print_mode translated to Rust (src/output.rs). */
+/* print_in_mode translated to Rust (src/output.rs). */
 
 void push_nest(void)
 {
