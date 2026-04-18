@@ -172,6 +172,16 @@ mod raw {
         pub(super) static mut pool_size: i32;
         pub(super) static mut str_pool: *mut u16;
         pub(super) static mut pool_ptr: i32;
+
+        // Name-of-file globals (xetex-xetexd.h:388–391).
+        // name_of_file: current input filename (NUL-terminated C string).
+        pub(super) static mut name_of_file: *mut libc::c_char;
+        // name_length: byte length of name_of_file (excluding NUL).
+        pub(super) static mut name_length: i32;
+        // name_of_file16: UTF-16 encoding of name_of_file (xetex-xetexd.h:389).
+        pub(super) static mut name_of_file16: *mut u16;
+        // name_length16: number of UTF-16 code units in name_of_file16.
+        pub(super) static mut name_length16: i32;
     }
 }
 
@@ -482,6 +492,42 @@ pub(crate) fn set_eqtb_b32s1(p: i32, v: i32) {
 // ---------------------------------------------------------------------------
 // str_ptr / str_start / str_pool (read accessor)
 // ---------------------------------------------------------------------------
+
+/// Returns `name_of_file` as a raw pointer (NUL-terminated C string).
+#[inline]
+pub(crate) fn name_of_file() -> *mut libc::c_char {
+    unsafe { raw::name_of_file }
+}
+/// Write `name_length = v`.
+#[inline]
+pub(crate) fn set_name_length(v: i32) {
+    unsafe { raw::name_length = v; }
+}
+/// Returns `name_of_file16` (UTF-16 name buffer).
+#[inline]
+pub(crate) fn name_of_file16() -> *mut u16 {
+    unsafe { raw::name_of_file16 }
+}
+/// Write `name_of_file16 = v`.
+#[inline]
+pub(crate) fn set_name_of_file16(v: *mut u16) {
+    unsafe { raw::name_of_file16 = v; }
+}
+/// Returns `name_length16`.
+#[inline]
+pub(crate) fn name_length16() -> i32 {
+    unsafe { raw::name_length16 }
+}
+/// Write `name_length16 = v`.
+#[inline]
+pub(crate) fn set_name_length16(v: i32) {
+    unsafe { raw::name_length16 = v; }
+}
+/// Returns `name_length`.
+#[inline]
+pub(crate) fn name_length() -> i32 {
+    unsafe { raw::name_length }
+}
 
 /// Returns the current number of strings in the string pool.
 #[inline]

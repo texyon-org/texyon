@@ -11,47 +11,8 @@
 #include <stdio.h>
 #include <unicode/ucnv.h>
 
-char *name_of_input_file = NULL;
-
-// Tectonic: This buffer is used for SyncTeX, which needs to emit absolute
-// filesystem paths -- which are difficult to derive in our virtualized I/O
-// system. The most backwards-compatible way to expose this information to the
-// engine was to add the `ttstub_get_last_input_abspath()` API used below.
-char abspath_of_input_file[1024] = "";
-
-rust_input_handle_t
-tt_xetex_open_input (int filefmt)
-{
-    rust_input_handle_t handle;
-
-    if (filefmt == TTBC_FILE_FORMAT_TECTONIC_PRIMARY) {
-        handle = ttstub_input_open_primary ();
-    } else if (name_of_file[0] == '|') {
-        // Tectonic TODO: issue #859. In mainline XeTeX, a pipe symbol indicates
-        // piped input from an external command via `popen()`. Now that we have
-        // shell-escape support we could also support this, but we don't have a
-        // real implementation yet. For now, issue a warning.
-        print_nl_cstr("Warning: ");
-        diagnostic_begin_capture_warning_here();
-        print_cstr("piped inputs from external commands are not implemented in Tectonic");
-        capture_to_diagnostic(NULL);
-        return INVALID_HANDLE;
-    } else {
-        handle = ttstub_input_open (name_of_file, (ttbc_file_format) filefmt, 0);
-    }
-
-    if (handle == INVALID_HANDLE)
-        return INVALID_HANDLE;
-
-    if (ttstub_get_last_input_abspath(abspath_of_input_file, sizeof(abspath_of_input_file)) < 1) {
-        abspath_of_input_file[0] = '\0';
-    }
-
-    name_length = strlen(name_of_file);
-    free(name_of_input_file);
-    name_of_input_file = xstrdup(name_of_file);
-    return handle;
-}
+/* name_of_input_file, abspath_of_input_file, tt_xetex_open_input
+   translated to Rust (src/io.rs). */
 
 /* tables/values used in UTF-8 interpretation -
    code is based on ConvertUTF.[ch] sample code
@@ -124,53 +85,7 @@ set_input_file_encoding(UFILE* f, int32_t mode, int32_t encodingData)
 }
 
 
-int
-u_open_in(UFILE **f, int32_t filefmt, const char *fopen_mode, int32_t mode, int32_t encodingData)
-{
-    rust_input_handle_t handle;
-    int B1, B2;
-
-    handle = tt_xetex_open_input (filefmt);
-    if (handle == INVALID_HANDLE)
-        return 0;
-
-    *f = xmalloc(sizeof(UFILE));
-    (*f)->encodingMode = 0;
-    (*f)->conversionData = 0;
-    (*f)->savedChar = -1;
-    (*f)->skipNextLF = 0;
-    (*f)->handle = handle;
-
-    if (mode == AUTO) {
-        /* sniff encoding form */
-        B1 = ttstub_input_getc ((*f)->handle);
-        B2 = ttstub_input_getc ((*f)->handle);
-
-        if (B1 == 0xfe && B2 == 0xff)
-            mode = UTF16BE;
-        else if (B2 == 0xfe && B1 == 0xff)
-            mode = UTF16LE;
-        else if (B1 == 0 && B2 != 0) {
-            mode = UTF16BE;
-            ttstub_input_seek ((*f)->handle, 0, SEEK_SET);
-        } else if (B2 == 0 && B1 != 0) {
-            mode = UTF16LE;
-            ttstub_input_seek ((*f)->handle, 0, SEEK_SET);
-        } else if (B1 == 0xEF && B2 == 0xBB) {
-            int B3 = ttstub_input_getc((*f)->handle);
-            if (B3 == 0xBF)
-                mode = UTF8;
-        }
-
-        if (mode == AUTO) {
-            ttstub_input_seek ((*f)->handle, 0, SEEK_SET);
-            mode = UTF8;
-        }
-    }
-
-    set_input_file_encoding(*f, mode, encodingData);
-    return 1;
-}
+/* u_open_in translated to Rust (src/io.rs). */
 
 
 static void
@@ -370,151 +285,10 @@ u_close(UFILE* f)
 }
 
 
-int
-get_uni_c(UFILE* f)
-{
-    int rval;
-    int c;
-
-    if (f->savedChar != -1) {
-        rval = f->savedChar;
-        f->savedChar = -1;
-        return rval;
-    }
-
-    switch (f->encodingMode) {
-        case UTF8:
-            c = rval = ttstub_input_getc(f->handle);
-            if (rval != EOF) {
-                uint16_t extraBytes = bytesFromUTF8[rval];
-                switch (extraBytes) {
-                /* note: code falls through cases! */
-                case 3:
-                    c = ttstub_input_getc(f->handle);
-                    if (c < 0x80 || c >= 0xC0)
-                        goto bad_utf8;
-                    rval <<= 6;
-                    rval += c;
-                case 2:
-                    c = ttstub_input_getc(f->handle);
-                    if (c < 0x80 || c >= 0xC0)
-                        goto bad_utf8;
-                    rval <<= 6;
-                    rval += c;
-                case 1:
-                    c = ttstub_input_getc(f->handle);
-                    if (c < 0x80 || c >= 0xC0)
-                        goto bad_utf8;
-                    rval <<= 6;
-                    rval += c;
-                case 0:
-                    break;
-
-                bad_utf8:
-                    if (c != EOF)
-                        ttstub_input_ungetc(f->handle, c);
-                case 5:
-                case 4:
-                    bad_utf8_warning();
-                    return 0xFFFD; /* return without adjusting by offsetsFromUTF8 */
-                };
-
-                rval -= offsetsFromUTF8[extraBytes];
-
-                if (rval < 0 || rval > 0x10ffff) {
-                    bad_utf8_warning();
-                    return 0xfffd;
-                }
-            }
-            break;
-
-        case UTF16BE:
-            rval = ttstub_input_getc(f->handle);
-            if (rval != EOF) {
-                rval <<= 8;
-                rval += ttstub_input_getc(f->handle);
-                if (rval >= 0xd800 && rval <= 0xdbff) {
-                    int lo = ttstub_input_getc(f->handle);
-                    lo <<= 8;
-                    lo += ttstub_input_getc(f->handle);
-                    if (lo >= 0xdc00 && lo <= 0xdfff)
-                        rval = 0x10000 + (rval - 0xd800) * 0x400 + (lo - 0xdc00);
-                    else {
-                        rval = 0xfffd;
-                        f->savedChar = lo;
-                    }
-                } else if (rval >= 0xdc00 && rval <= 0xdfff)
-                    rval = 0xfffd;
-            }
-            break;
-
-        case UTF16LE:
-            rval = ttstub_input_getc(f->handle);
-            if (rval != EOF) {
-                rval += (ttstub_input_getc(f->handle) << 8);
-                if (rval >= 0xd800 && rval <= 0xdbff) {
-                    int lo = ttstub_input_getc(f->handle);
-                    lo += (ttstub_input_getc(f->handle) << 8);
-                    if (lo >= 0xdc00 && lo <= 0xdfff)
-                        rval = 0x10000 + (rval - 0xd800) * 0x400 + (lo - 0xdc00);
-                    else {
-                        rval = 0xfffd;
-                        f->savedChar = lo;
-                    }
-                } else if (rval >= 0xdc00 && rval <= 0xdfff)
-                    rval = 0xfffd;
-            }
-            break;
-
-        case RAW:
-            rval = ttstub_input_getc(f->handle);
-            break;
-
-        default:
-            _tt_abort("internal error; file input mode=%d", f->encodingMode);
-    }
-
-    return rval;
-}
+/* get_uni_c translated to Rust (src/io.rs). */
 
 
-void
-make_utf16_name(void)
-{
-    unsigned char* s = (unsigned char *) name_of_file;
-    uint32_t rval;
-    uint16_t* t;
-    static int name16len = 0;
-    if (name16len <= name_length) {
-        free(name_of_file16);
-        name16len = name_length + 10;
-        name_of_file16 = xcalloc(name16len, sizeof(uint16_t));
-    }
-    t = name_of_file16;
-
-    while (s < (unsigned char *) name_of_file + name_length) {
-        uint16_t extraBytes;
-        rval = *(s++);
-        extraBytes = bytesFromUTF8[rval];
-        switch (extraBytes) {   /* note: code falls through cases! */
-            case 5: rval <<= 6; if (*s) rval += *(s++);
-            case 4: rval <<= 6; if (*s) rval += *(s++);
-            case 3: rval <<= 6; if (*s) rval += *(s++);
-            case 2: rval <<= 6; if (*s) rval += *(s++);
-            case 1: rval <<= 6; if (*s) rval += *(s++);
-            case 0: ;
-        };
-        rval -= offsetsFromUTF8[extraBytes];
-        if (rval > 0xffff) {
-            rval -= 0x10000;
-            *(t++) = 0xd800 + rval / 0x0400;
-            *(t++) = 0xdc00 + rval % 0x0400;
-        } else {
-            *(t++) = rval;
-        }
-    }
-    name_length16 = t - name_of_file16;
-}
+/* make_utf16_name translated to Rust (src/io.rs). */
 
 
 void
