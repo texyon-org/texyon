@@ -1,14 +1,14 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 
 use crate::globals::{
-    current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top, error_line,
-    file_line_error_style_p, file_offset, full_source_filename_stack, hash_s1, history, in_open,
-    line, line_stack, log_file, max_print_line, mem_as_u16_ptr, mem_b16s1, mem_b32s0, mem_b32s1,
-    old_setting, pool_ptr, pool_size, prim_s1, rust_stdout,
-    selector, set_current_diagnostic, set_dig_entry, set_eqtb_b32s1, set_file_offset,
-    set_history, set_old_setting, set_pool_ptr, set_selector, set_str_pool, set_tally,
-    set_term_offset, set_trick_buf, str_pool_entry, str_ptr, str_start, tally, term_offset,
-    trick_count, write_file,
+    cur_group, cur_level, current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top,
+    error_line, file_line_error_style_p, file_offset, full_source_filename_stack, hash_s1,
+    history, in_open, line, line_stack, log_file, max_print_line, mem_as_u16_ptr, mem_b16s1,
+    mem_b32s0, mem_b32s1, old_setting, pool_ptr, pool_size, prim_s1, rust_stdout, save_ptr,
+    save_stack_b32s1, selector, set_current_diagnostic, set_dig_entry, set_eqtb_b32s1,
+    set_file_offset, set_history, set_old_setting, set_pool_ptr, set_selector, set_str_pool,
+    set_tally, set_term_offset, set_trick_buf, str_pool_entry, str_ptr, str_start, tally,
+    term_offset, trick_count, write_file,
 };
 
 // Selector constants (xetex-core.h:42–51).
@@ -1003,6 +1003,90 @@ pub unsafe extern "C" fn print_mode(m: i32) {
             2 => print_cstr(c"math mode".as_ptr()),
             _ => {}
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_group
+// ---------------------------------------------------------------------------
+
+// Group-code constants (xetex-constants.h:152–168; group_code = u8).
+const BOTTOM_LEVEL: u8 = 0;
+const SIMPLE_GROUP: u8 = 1;
+const HBOX_GROUP: u8 = 2;
+const ADJUSTED_HBOX_GROUP: u8 = 3;
+const VBOX_GROUP: u8 = 4;
+const VTOP_GROUP: u8 = 5;
+const ALIGN_GROUP: u8 = 6;
+const NO_ALIGN_GROUP: u8 = 7;
+const OUTPUT_GROUP: u8 = 8;
+const MATH_GROUP: u8 = 9;
+const DISC_GROUP: u8 = 10;
+const INSERT_GROUP: u8 = 11;
+const VCENTER_GROUP: u8 = 12;
+const MATH_CHOICE_GROUP: u8 = 13;
+const SEMI_SIMPLE_GROUP: u8 = 14;
+const MATH_SHIFT_GROUP: u8 = 15;
+const MATH_LEFT_GROUP: u8 = 16;
+
+/// Print a textual name for the current group, with level and entry line.
+///
+/// translated from xetex-xetex0.c:3464 (print_group)
+#[no_mangle]
+pub unsafe extern "C" fn print_group(e: bool) {
+    let g = cur_group();
+    match g {
+        BOTTOM_LEVEL => {
+            print_cstr(c"bottom level".as_ptr());
+            return;
+        }
+        SIMPLE_GROUP | SEMI_SIMPLE_GROUP => {
+            if g == SEMI_SIMPLE_GROUP {
+                print_cstr(c"semi ".as_ptr());
+            }
+            print_cstr(c"simple".as_ptr());
+        }
+        HBOX_GROUP | ADJUSTED_HBOX_GROUP => {
+            if g == ADJUSTED_HBOX_GROUP {
+                print_cstr(c"adjusted ".as_ptr());
+            }
+            print_cstr(c"hbox".as_ptr());
+        }
+        VBOX_GROUP => print_cstr(c"vbox".as_ptr()),
+        VTOP_GROUP => print_cstr(c"vtop".as_ptr()),
+        ALIGN_GROUP | NO_ALIGN_GROUP => {
+            if g == NO_ALIGN_GROUP {
+                print_cstr(c"no ".as_ptr());
+            }
+            print_cstr(c"align".as_ptr());
+        }
+        OUTPUT_GROUP => print_cstr(c"output".as_ptr()),
+        DISC_GROUP => print_cstr(c"disc".as_ptr()),
+        INSERT_GROUP => print_cstr(c"insert".as_ptr()),
+        VCENTER_GROUP => print_cstr(c"vcenter".as_ptr()),
+        MATH_GROUP | MATH_CHOICE_GROUP | MATH_SHIFT_GROUP | MATH_LEFT_GROUP => {
+            print_cstr(c"math".as_ptr());
+            if g == MATH_CHOICE_GROUP {
+                print_cstr(c" choice".as_ptr());
+            } else if g == MATH_SHIFT_GROUP {
+                print_cstr(c" shift".as_ptr());
+            } else if g == MATH_LEFT_GROUP {
+                print_cstr(c" left".as_ptr());
+            }
+        }
+        _ => {}
+    }
+    print_cstr(c" group (level ".as_ptr());
+    print_int(cur_level() as i32);
+    print_char(')' as i32);
+    let line_at = save_stack_b32s1(save_ptr() - 1);
+    if line_at != 0 {
+        if e {
+            print_cstr(c" entered at line ".as_ptr());
+        } else {
+            print_cstr(c" at line ".as_ptr());
+        }
+        print_int(line_at);
     }
 }
 

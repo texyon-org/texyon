@@ -202,6 +202,16 @@ mod raw {
         // Array of UFILE* for \read streams (xetex-xetexd.h:535).
         // Declared as *mut c_void to avoid a cyclic type dependency with io.rs.
         pub(super) static mut read_file: [*mut libc::c_void; 16];
+
+        // Save-stack (xetex-xetexd.h:492–494).
+        pub(super) static mut save_stack: *mut crate::mem_types::MemoryWord;
+        pub(super) static mut save_ptr: i32;
+        pub(super) static mut max_save_stack: i32;
+        pub(super) static mut save_size: i32;
+        // Grouping level / group-code (xetex-xetexd.h:495–496).
+        pub(super) static mut cur_level: u16;
+        // group_code is unsigned char (xetex-xetexd.h:325).
+        pub(super) static mut cur_group: u8;
     }
 }
 
@@ -1031,6 +1041,87 @@ pub(crate) fn set_name_in_progress(v: bool) {
 #[inline]
 pub(crate) fn set_stop_at_space(v: bool) {
     unsafe { raw::stop_at_space = v; }
+}
+
+// ---------------------------------------------------------------------------
+// save_stack / save_ptr / cur_level / cur_group
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn save_ptr() -> i32 {
+    unsafe { raw::save_ptr }
+}
+#[inline]
+pub(crate) fn set_save_ptr(v: i32) {
+    unsafe { raw::save_ptr = v; }
+}
+#[inline]
+pub(crate) fn max_save_stack() -> i32 {
+    unsafe { raw::max_save_stack }
+}
+#[inline]
+pub(crate) fn set_max_save_stack(v: i32) {
+    unsafe { raw::max_save_stack = v; }
+}
+#[inline]
+pub(crate) fn save_size() -> i32 {
+    unsafe { raw::save_size }
+}
+/// Read `save_stack[k].b32.s1`.
+#[inline]
+pub(crate) fn save_stack_b32s1(k: i32) -> i32 {
+    unsafe { (*raw::save_stack.offset(k as isize)).b32.s1 }
+}
+/// Read `save_stack[k].b32.s0`.
+#[inline]
+pub(crate) fn save_stack_b32s0(k: i32) -> i32 {
+    unsafe { (*raw::save_stack.offset(k as isize)).b32.s0 }
+}
+/// Write `save_stack[k].b32.s1 = v`.
+#[inline]
+pub(crate) fn set_save_stack_b32s1(k: i32, v: i32) {
+    unsafe { (*raw::save_stack.offset(k as isize)).b32.s1 = v; }
+}
+/// Write `save_stack[k].b32.s0 = v`.
+#[inline]
+pub(crate) fn set_save_stack_b32s0(k: i32, v: i32) {
+    unsafe { (*raw::save_stack.offset(k as isize)).b32.s0 = v; }
+}
+/// Read `save_stack[k].b16.s1`.
+#[inline]
+pub(crate) fn save_stack_b16s1(k: i32) -> u16 {
+    unsafe { (*raw::save_stack.offset(k as isize)).b16.s1 }
+}
+/// Read `save_stack[k].b16.s0`.
+#[inline]
+pub(crate) fn save_stack_b16s0(k: i32) -> u16 {
+    unsafe { (*raw::save_stack.offset(k as isize)).b16.s0 }
+}
+/// Write `save_stack[k].b16.s1 = v`.
+#[inline]
+pub(crate) fn set_save_stack_b16s1(k: i32, v: u16) {
+    unsafe { (*raw::save_stack.offset(k as isize)).b16.s1 = v; }
+}
+/// Write `save_stack[k].b16.s0 = v`.
+#[inline]
+pub(crate) fn set_save_stack_b16s0(k: i32, v: u16) {
+    unsafe { (*raw::save_stack.offset(k as isize)).b16.s0 = v; }
+}
+#[inline]
+pub(crate) fn cur_level() -> u16 {
+    unsafe { raw::cur_level }
+}
+#[inline]
+pub(crate) fn set_cur_level(v: u16) {
+    unsafe { raw::cur_level = v; }
+}
+#[inline]
+pub(crate) fn cur_group() -> u8 {
+    unsafe { raw::cur_group }
+}
+#[inline]
+pub(crate) fn set_cur_group(v: u8) {
+    unsafe { raw::cur_group = v; }
 }
 
 // ---------------------------------------------------------------------------
