@@ -247,49 +247,10 @@ void print_mark(int32_t p)
     print_char('}');
 }
 
-void print_rule_dimen(scaled_t d)
-{
-    if (d == NULL_FLAG)
-        print_char('*');
-    else
-        print_scaled(d);
-}
+/* print_rule_dimen translated to Rust (src/output.rs). */
+/* print_glue translated to Rust (src/output.rs). */
 
-void print_glue(scaled_t d, int32_t order, const char* s)
-{
-    print_scaled(d);
-    if ((order < NORMAL) || (order > FILLL))
-        print_cstr("foul");
-    else if (order > NORMAL) {
-        print_cstr("fil");
-        while (order > FIL) {
-
-            print_char('l');
-            order--;
-        }
-    } else if (s != 0)
-        print_cstr(s);
-}
-
-void print_spec(int32_t p, const char* s)
-{
-
-    if (p < 0 || p >= lo_mem_max)
-        print_char('*');
-    else {
-        print_scaled(mem[p + 1].b32.s1);
-        if (s != NULL)
-            print_cstr(s);
-        if (mem[p + 2].b32.s1 != 0) {
-            print_cstr(" plus ");
-            print_glue(mem[p + 2].b32.s1, mem[p].b16.s1, s);
-        }
-        if (mem[p + 3].b32.s1 != 0) {
-            print_cstr(" minus ");
-            print_glue(mem[p + 3].b32.s1, mem[p].b16.s0, s);
-        }
-    }
-}
+/* print_spec translated to Rust (src/output.rs). */
 
 void print_fam_and_char(int32_t p)
 {

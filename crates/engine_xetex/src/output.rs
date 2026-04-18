@@ -3,12 +3,12 @@
 use crate::globals::{
     cur_group, cur_level, current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top,
     error_line, file_line_error_style_p, file_offset, full_source_filename_stack, hash_s1,
-    history, in_open, line, line_stack, log_file, max_print_line, mem_as_u16_ptr, mem_b16s1,
-    mem_b32s0, mem_b32s1, old_setting, pool_ptr, pool_size, prim_s1, rust_stdout, save_ptr,
-    save_stack_b32s1, selector, set_current_diagnostic, set_dig_entry, set_eqtb_b32s1,
-    set_file_offset, set_history, set_old_setting, set_pool_ptr, set_selector, set_str_pool,
-    set_tally, set_term_offset, set_trick_buf, str_pool_entry, str_ptr, str_start, tally,
-    term_offset, trick_count, write_file,
+    history, in_open, line, line_stack, lo_mem_max, log_file, max_print_line, mem_as_u16_ptr,
+    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, pool_ptr, pool_size, prim_s1,
+    rust_stdout, save_ptr, save_stack_b32s1, selector, set_current_diagnostic, set_dig_entry,
+    set_eqtb_b32s1, set_file_offset, set_history, set_old_setting, set_pool_ptr, set_selector,
+    set_str_pool, set_tally, set_term_offset, set_trick_buf, str_pool_entry, str_ptr, str_start,
+    tally, term_offset, trick_count, write_file,
 };
 
 // Selector constants (xetex-core.h:42–51).
@@ -1132,6 +1132,33 @@ pub unsafe extern "C" fn token_show(p: i32) {
 }
 
 // ---------------------------------------------------------------------------
+// print_spec
+// ---------------------------------------------------------------------------
+
+/// Print a glue spec node as "width plus stretch minus shrink".
+///
+/// translated from xetex-xetex0.c:274 (print_spec)
+#[no_mangle]
+pub unsafe extern "C" fn print_spec(p: i32, s: *const libc::c_char) {
+    if p < 0 || p >= lo_mem_max() {
+        print_char('*' as i32);
+    } else {
+        print_scaled(mem_b32s1(p + 1));
+        if !s.is_null() {
+            print_cstr(s);
+        }
+        if mem_b32s1(p + 2) != 0 {
+            print_cstr(c" plus ".as_ptr());
+            print_glue(mem_b32s1(p + 2), mem_b16s1(p) as i32, s);
+        }
+        if mem_b32s1(p + 3) != 0 {
+            print_cstr(c" minus ".as_ptr());
+            print_glue(mem_b32s1(p + 3), mem_b16s0(p) as i32, s);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // print_skip_param / print_param / print_length_param
 // ---------------------------------------------------------------------------
 
@@ -1252,6 +1279,48 @@ pub unsafe extern "C" fn print_param(n: i32) {
         81 => print_esc_cstr(c"synctex".as_ptr()),
         82 => print_esc_cstr(c"pdfoutput".as_ptr()),
         _  => print_cstr(c"[unknown int32_t parameter!]".as_ptr()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_rule_dimen / print_glue
+// ---------------------------------------------------------------------------
+
+// Glue order constants (xetex-constants.h:173–182).
+const NORMAL: i32 = 0;
+const FIL: i32 = 1;
+const FILLL: i32 = 3;
+const NULL_FLAG: i32 = -0x4000_0000;
+
+/// Print a rule dimension (print '*' for a null-flag wildcard).
+///
+/// translated from xetex-xetex0.c:250 (print_rule_dimen)
+#[no_mangle]
+pub unsafe extern "C" fn print_rule_dimen(d: i32) {
+    if d == NULL_FLAG {
+        print_char('*' as i32);
+    } else {
+        print_scaled(d);
+    }
+}
+
+/// Print a glue dimension with optional fil/fill/filll suffix.
+///
+/// translated from xetex-xetex0.c:258 (print_glue)
+#[no_mangle]
+pub unsafe extern "C" fn print_glue(d: i32, order: i32, s: *const libc::c_char) {
+    print_scaled(d);
+    if order < NORMAL || order > FILLL {
+        print_cstr(c"foul".as_ptr());
+    } else if order > NORMAL {
+        print_cstr(c"fil".as_ptr());
+        let mut ord = order;
+        while ord > FIL {
+            print_char('l' as i32);
+            ord -= 1;
+        }
+    } else if !s.is_null() {
+        print_cstr(s);
     }
 }
 
