@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |          9 |
-| IN PROGRESS    |          2 |
+| NOT STARTED    |          8 |
+| IN PROGRESS    |          3 |
 | DONE           |          5 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 15.
+Last updated: session 16.
 
 ## Core engine files (to translate)
 
@@ -42,7 +42,7 @@ Last updated: session 15.
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |  1283 |    ~?? | `src/synctex.rs`                  | NOT STARTED  |
-| xetex-io.c                   |   555 |    ~?? | `src/io.rs`                       | NOT STARTED  |
+| xetex-io.c                   |   329 |      4 | `src/io.rs`                       | IN PROGRESS — 64% |
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
 | xetex-pic.c                  |   664 |    ~?? | `src/pic.rs`                      | NOT STARTED  |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
@@ -249,9 +249,31 @@ Status: IN PROGRESS (session 14).
 
 `xetex-texmfmp.c` is **DONE** (0 C functions remaining).
 
-### Phases 10+
+### Phase 10 — xetex-io.c I/O helpers (target: `src/io.rs`)
 
-Next file: `xetex-io.c` (~555 LOC) or continue with `xetex-xetex0.c`.
+Status: IN PROGRESS (session 16).
+
+| # | Function                  | Line | Status |
+|--:|---------------------------|-----:|--------|
+| 1 | `tt_xetex_open_input`     |   22 | MIGRATED (session 16, 979cde6d) |
+| 2 | `u_open_in`               |  127 | MIGRATED (session 16, 979cde6d) |
+| 3 | `make_utf16_name`         |  481 | MIGRATED (session 16, 979cde6d) |
+| 4 | `get_uni_c`               |  373 | MIGRATED (session 16, 979cde6d) |
+| 5 | `u_close`                 |  357 | KEEP IN C — `ucnv_close` (ICU) not linkable from Rust without build-script changes |
+| 6 | `set_input_file_encoding` |   87 | DEFER — uses ICU (ucnv_open/ucnv_close) |
+| 7 | `buffer_overflow` (static)|  176 | DEFER — called only from `input_line` |
+| 8 | `conversion_error` (static)|  183 | DEFER — called only from `input_line` |
+| 9 | `apply_normalization` (static)| 195 | DEFER — uses TECkit static state |
+|10 | `input_line`              |  220 | DEFER — complex ICU/TECkit encoding |
+|11 | `open_or_close_in`        |  520 | NOT STARTED |
+
+Note: `name_of_input_file` and `abspath_of_input_file` moved from C file-statics
+to Rust `#[no_mangle] pub static mut` in `src/io.rs`. `NAME16LEN` also moved.
+
+### Phases 11+
+
+Continue `xetex-io.c` (remaining 4 functions including complex ones), then
+tackle `xetex-xetex0.c`.
 
 ## How to maintain this file
 

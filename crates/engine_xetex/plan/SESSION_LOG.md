@@ -32,6 +32,52 @@ template.
 
 ---
 
+## Session 16 — 2026-04-18 — Phase 10: xetex-io.c partial (4 functions)
+
+**Goal:** translate as many functions from `xetex-io.c` as feasible.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 15
+
+**Work done:**
+- Created `src/io.rs` with `UFile` struct (`#[repr(C)]`, 32-byte layout on x86_64),
+  encoding constants, and all extern declarations.
+- Added `name_of_file`, `name_length`, `name_of_file16`, `name_length16` accessors to `globals.rs`.
+- Moved C file-statics `name_of_input_file` and `abspath_of_input_file` to Rust
+  `#[no_mangle] pub static mut` in `src/io.rs`.
+- Translated `tt_xetex_open_input` (line 22), `u_open_in` (line 127),
+  `make_utf16_name` (line 481), `get_uni_c` (line 373). (979cde6d)
+- `u_close` left in C — `ucnv_close` (ICU) produces `undefined symbol` when
+  referenced from Rust; would need `cargo:rustc-link-lib=icuuc` in build.rs.
+- Updated plan docs (this commit).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 16
+
+**Surprises / gotchas:**
+- `ucnv_close` (ICU) causes a linker error when called from Rust even though
+  the C code in the same file also calls it. The ICU library is linked via a
+  DEP_ mechanism that the C build knows about but that Rust's `extern "C"`
+  blocks don't pull in automatically. Workaround: keep `u_close` in C.
+  Future fix: add `cargo:rustc-link-lib=icuuc` to `build.rs` if ICU is available.
+- `get_uni_c`'s `goto bad_utf8` inside a nested switch: the goto jumps INTO the
+  switch, right before `case 5:` and `case 4:`. Translated by checking
+  `extra_bytes >= 4` before the loop (handles cases 4/5) and using early-return
+  with `ttstub_input_ungetc` for bad continuation bytes.
+- `make_utf16_name`'s static local `name16len` → Rust `static mut NAME16LEN`.
+- `u_open_in`'s unused `fopen_mode` parameter → `_fopen_mode` in Rust.
+
+**For the next session:**
+- `xetex-io.c` remaining 4 C functions: `u_close` (ICU blocker), 
+  `set_input_file_encoding` (ICU), `input_line` (complex — ICU + TECkit),
+  `open_or_close_in` (calls many C functions).
+  The complex ones can be deferred long-term; consider `open_or_close_in` next.
+- Or switch to `xetex-xetex0.c` for more yield.
+
+---
+
 ## Session 15 — 2026-04-18 — Phase 9: xetex-texmfmp.c fully translated
 
 **Goal:** translate all remaining functions from `xetex-texmfmp.c`.
