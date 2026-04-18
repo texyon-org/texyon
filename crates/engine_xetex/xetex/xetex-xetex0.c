@@ -252,29 +252,8 @@ void print_mark(int32_t p)
 
 /* print_spec translated to Rust (src/output.rs). */
 
-void print_fam_and_char(int32_t p)
-{
-    int32_t c;
-    print_esc_cstr("fam");
-    print_int((mem[p].b16.s1 % 256) % 256);
-    print_char(' ');
-    c = ((unsigned short) mem[p].b16.s0 + ((mem[p].b16.s1 / 256) * 65536L));
-    if (c < 65536L)
-        print(c);
-    else
-        print_char(c);
-}
-
-void print_delimiter(int32_t p)
-{
-    int32_t a;
-    a = (mem[p].b16.s3 % 256) * 256 + (mem[p].b16.s2 + (mem[p].b16.s3 / 256) * 65536L);
-    a = a * 4096 + (mem[p].b16.s1 % 256) * 256 + (mem[p].b16.s0 + (mem[p].b16.s1 / 256) * 65536L);
-    if (a < 0)
-        print_int(a);
-    else
-        print_hex(a);
-}
+/* print_fam_and_char translated to Rust (src/output.rs). */
+/* print_delimiter translated to Rust (src/output.rs). */
 
 
 void
@@ -316,26 +295,7 @@ print_subsidiary_data(int32_t p, UTF16_code c)
 }
 
 
-void print_style(int32_t c)
-{
-    switch (c / 2) {
-    case DISPLAY_STYLE / 2:
-        print_esc_cstr("displaystyle");
-        break;
-    case TEXT_STYLE / 2:
-        print_esc_cstr("textstyle");
-        break;
-    case SCRIPT_STYLE / 2:
-        print_esc_cstr("scriptstyle");
-        break;
-    case SCRIPT_SCRIPT_STYLE / 2:
-        print_esc_cstr("scriptscriptstyle");
-        break;
-    default:
-        print_cstr("Unknown style!");
-        break;
-    }
-}
+/* print_style translated to Rust (src/output.rs). */
 
 /* print_skip_param translated to Rust (src/output.rs). */
 

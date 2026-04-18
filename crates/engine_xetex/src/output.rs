@@ -4,7 +4,8 @@ use crate::globals::{
     cur_group, cur_level, current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top,
     error_line, file_line_error_style_p, file_offset, full_source_filename_stack, hash_s1,
     history, in_open, line, line_stack, lo_mem_max, log_file, max_print_line, mem_as_u16_ptr,
-    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, pool_ptr, pool_size, prim_s1,
+    mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, old_setting, pool_ptr,
+    pool_size, prim_s1,
     rust_stdout, save_ptr, save_stack_b32s1, selector, set_current_diagnostic, set_dig_entry,
     set_eqtb_b32s1, set_file_offset, set_history, set_old_setting, set_pool_ptr, set_selector,
     set_str_pool, set_tally, set_term_offset, set_trick_buf, str_pool_entry, str_ptr, str_start,
@@ -1279,6 +1280,59 @@ pub unsafe extern "C" fn print_param(n: i32) {
         81 => print_esc_cstr(c"synctex".as_ptr()),
         82 => print_esc_cstr(c"pdfoutput".as_ptr()),
         _  => print_cstr(c"[unknown int32_t parameter!]".as_ptr()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_style / print_fam_and_char / print_delimiter
+// ---------------------------------------------------------------------------
+
+/// Print the math style name for style code c.
+///
+/// translated from xetex-xetex0.c:319 (print_style)
+#[no_mangle]
+pub unsafe extern "C" fn print_style(c: i32) {
+    match c / 2 {
+        0 => print_esc_cstr(c"displaystyle".as_ptr()),     // DISPLAY_STYLE / 2
+        1 => print_esc_cstr(c"textstyle".as_ptr()),        // TEXT_STYLE / 2
+        2 => print_esc_cstr(c"scriptstyle".as_ptr()),      // SCRIPT_STYLE / 2
+        3 => print_esc_cstr(c"scriptscriptstyle".as_ptr()), // SCRIPT_SCRIPT_STYLE / 2
+        _ => print_cstr(c"Unknown style!".as_ptr()),
+    }
+}
+
+/// Print the fam number and character code stored in a math node p.
+///
+/// translated from xetex-xetex0.c:294 (print_fam_and_char)
+#[no_mangle]
+pub unsafe extern "C" fn print_fam_and_char(p: i32) {
+    print_esc_cstr(c"fam".as_ptr());
+    print_int((mem_b16s1(p) % 256) as i32);
+    print_char(' ' as i32);
+    let c = (mem_b16s0(p) as i64 + ((mem_b16s1(p) as i64 / 256) * 65536)) as i32;
+    if c < 65536 {
+        print(c);
+    } else {
+        print_char(c);
+    }
+}
+
+/// Print a delimiter code (four 16-bit fields packed as a hex number).
+///
+/// translated from xetex-xetex0.c:307 (print_delimiter)
+#[no_mangle]
+pub unsafe extern "C" fn print_delimiter(p: i32) {
+    let s3 = mem_b16s3(p) as i64;
+    let s2 = mem_b16s2(p) as i64;
+    let s1 = mem_b16s1(p) as i64;
+    let s0 = mem_b16s0(p) as i64;
+    let mut a = (s3 % 256) * 256 + (s2 + (s3 / 256) * 65536);
+    a = a * 4096 + (s1 % 256) * 256 + (s0 + (s1 / 256) * 65536);
+    let a32 = a as i32;
+    if a32 < 0 {
+        print_int(a32);
+    } else {
+        print_hex(a32);
     }
 }
 

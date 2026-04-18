@@ -472,6 +472,16 @@ pub(crate) fn set_mem_b16s1(p: i32, v: u16) {
     // SAFETY: see module-level doc.
     unsafe { (*raw::mem.offset(p as isize)).b16.s1 = v; }
 }
+/// Read `mem[p].b16.s2` (low 16 bits of the second 32-bit half-word).
+#[inline]
+pub(crate) fn mem_b16s2(p: i32) -> u16 {
+    unsafe { (*raw::mem.offset(p as isize)).b16.s2 }
+}
+/// Read `mem[p].b16.s3` (high 16 bits of the second 32-bit half-word).
+#[inline]
+pub(crate) fn mem_b16s3(p: i32) -> u16 {
+    unsafe { (*raw::mem.offset(p as isize)).b16.s3 }
+}
 
 /// Read the `gr` (f64) field of `mem[p]`.
 #[inline]
