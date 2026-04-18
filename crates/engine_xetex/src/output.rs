@@ -1130,3 +1130,160 @@ pub unsafe extern "C" fn token_show(p: i32) {
         show_token_list(mem_b32s1(p), TEX_NULL, 10_000_000);
     }
 }
+
+// ---------------------------------------------------------------------------
+// print_skip_param / print_param / print_length_param
+// ---------------------------------------------------------------------------
+
+/// Print the name of glue parameter n (GLUE_PAR__*).
+///
+/// translated from xetex-xetex0.c:379 (print_skip_param)
+#[no_mangle]
+pub unsafe extern "C" fn print_skip_param(n: i32) {
+    match n {
+        0  => print_esc_cstr(c"lineskip".as_ptr()),
+        1  => print_esc_cstr(c"baselineskip".as_ptr()),
+        2  => print_esc_cstr(c"parskip".as_ptr()),
+        3  => print_esc_cstr(c"abovedisplayskip".as_ptr()),
+        4  => print_esc_cstr(c"belowdisplayskip".as_ptr()),
+        5  => print_esc_cstr(c"abovedisplayshortskip".as_ptr()),
+        6  => print_esc_cstr(c"belowdisplayshortskip".as_ptr()),
+        7  => print_esc_cstr(c"leftskip".as_ptr()),
+        8  => print_esc_cstr(c"rightskip".as_ptr()),
+        9  => print_esc_cstr(c"topskip".as_ptr()),
+        10 => print_esc_cstr(c"splittopskip".as_ptr()),
+        11 => print_esc_cstr(c"tabskip".as_ptr()),
+        12 => print_esc_cstr(c"spaceskip".as_ptr()),
+        13 => print_esc_cstr(c"xspaceskip".as_ptr()),
+        14 => print_esc_cstr(c"parfillskip".as_ptr()),
+        15 => print_esc_cstr(c"XeTeXlinebreakskip".as_ptr()),
+        16 => print_esc_cstr(c"thinmuskip".as_ptr()),
+        17 => print_esc_cstr(c"medmuskip".as_ptr()),
+        18 => print_esc_cstr(c"thickmuskip".as_ptr()),
+        _  => print_cstr(c"[unknown glue parameter!]".as_ptr()),
+    }
+}
+
+/// Print the name of integer parameter n (INT_PAR__*).
+///
+/// translated from xetex-xetex0.c:1423 (print_param)
+#[no_mangle]
+pub unsafe extern "C" fn print_param(n: i32) {
+    match n {
+        0  => print_esc_cstr(c"pretolerance".as_ptr()),
+        1  => print_esc_cstr(c"tolerance".as_ptr()),
+        2  => print_esc_cstr(c"linepenalty".as_ptr()),
+        3  => print_esc_cstr(c"hyphenpenalty".as_ptr()),
+        4  => print_esc_cstr(c"exhyphenpenalty".as_ptr()),
+        5  => print_esc_cstr(c"clubpenalty".as_ptr()),
+        6  => print_esc_cstr(c"widowpenalty".as_ptr()),
+        7  => print_esc_cstr(c"displaywidowpenalty".as_ptr()),
+        8  => print_esc_cstr(c"brokenpenalty".as_ptr()),
+        9  => print_esc_cstr(c"binoppenalty".as_ptr()),
+        10 => print_esc_cstr(c"relpenalty".as_ptr()),
+        11 => print_esc_cstr(c"predisplaypenalty".as_ptr()),
+        12 => print_esc_cstr(c"postdisplaypenalty".as_ptr()),
+        13 => print_esc_cstr(c"interlinepenalty".as_ptr()),
+        14 => print_esc_cstr(c"doublehyphendemerits".as_ptr()),
+        15 => print_esc_cstr(c"finalhyphendemerits".as_ptr()),
+        16 => print_esc_cstr(c"adjdemerits".as_ptr()),
+        17 => print_esc_cstr(c"mag".as_ptr()),
+        18 => print_esc_cstr(c"delimiterfactor".as_ptr()),
+        19 => print_esc_cstr(c"looseness".as_ptr()),
+        20 => print_esc_cstr(c"time".as_ptr()),
+        21 => print_esc_cstr(c"day".as_ptr()),
+        22 => print_esc_cstr(c"month".as_ptr()),
+        23 => print_esc_cstr(c"year".as_ptr()),
+        24 => print_esc_cstr(c"showboxbreadth".as_ptr()),
+        25 => print_esc_cstr(c"showboxdepth".as_ptr()),
+        26 => print_esc_cstr(c"hbadness".as_ptr()),
+        27 => print_esc_cstr(c"vbadness".as_ptr()),
+        28 => print_esc_cstr(c"pausing".as_ptr()),
+        29 => print_esc_cstr(c"tracingonline".as_ptr()),
+        30 => print_esc_cstr(c"tracingmacros".as_ptr()),
+        31 => print_esc_cstr(c"tracingstats".as_ptr()),
+        32 => print_esc_cstr(c"tracingparagraphs".as_ptr()),
+        33 => print_esc_cstr(c"tracingpages".as_ptr()),
+        34 => print_esc_cstr(c"tracingoutput".as_ptr()),
+        35 => print_esc_cstr(c"tracinglostchars".as_ptr()),
+        36 => print_esc_cstr(c"tracingcommands".as_ptr()),
+        37 => print_esc_cstr(c"tracingrestores".as_ptr()),
+        38 => print_esc_cstr(c"uchyph".as_ptr()),
+        39 => print_esc_cstr(c"outputpenalty".as_ptr()),
+        40 => print_esc_cstr(c"maxdeadcycles".as_ptr()),
+        41 => print_esc_cstr(c"hangafter".as_ptr()),
+        42 => print_esc_cstr(c"floatingpenalty".as_ptr()),
+        43 => print_esc_cstr(c"globaldefs".as_ptr()),
+        44 => print_esc_cstr(c"fam".as_ptr()),
+        45 => print_esc_cstr(c"escapechar".as_ptr()),
+        46 => print_esc_cstr(c"defaulthyphenchar".as_ptr()),
+        47 => print_esc_cstr(c"defaultskewchar".as_ptr()),
+        48 => print_esc_cstr(c"endlinechar".as_ptr()),
+        49 => print_esc_cstr(c"newlinechar".as_ptr()),
+        50 => print_esc_cstr(c"language".as_ptr()),
+        51 => print_esc_cstr(c"lefthyphenmin".as_ptr()),
+        52 => print_esc_cstr(c"righthyphenmin".as_ptr()),
+        53 => print_esc_cstr(c"holdinginserts".as_ptr()),
+        54 => print_esc_cstr(c"errorcontextlines".as_ptr()),
+        55 => print_esc_cstr(c"tracingstacklevels".as_ptr()),
+        56 => print_esc_cstr(c"tracingassigns".as_ptr()),
+        57 => print_esc_cstr(c"tracinggroups".as_ptr()),
+        58 => print_esc_cstr(c"tracingifs".as_ptr()),
+        59 => print_esc_cstr(c"tracingscantokens".as_ptr()),
+        60 => print_esc_cstr(c"tracingnesting".as_ptr()),
+        61 => print_esc_cstr(c"predisplaydirection".as_ptr()),
+        62 => print_esc_cstr(c"lastlinefit".as_ptr()),
+        63 => print_esc_cstr(c"savingvdiscards".as_ptr()),
+        64 => print_esc_cstr(c"savinghyphcodes".as_ptr()),
+        65 => print_esc_cstr(c"suppressfontnotfounderror".as_ptr()),
+        // 66 = xetex_linebreak_locale — not in C switch (no matching case)
+        67 => print_esc_cstr(c"XeTeXlinebreakpenalty".as_ptr()),
+        68 => print_esc_cstr(c"XeTeXprotrudechars".as_ptr()),
+        69 => print_esc_cstr(c"TeXXeTstate".as_ptr()),
+        70 => print_esc_cstr(c"XeTeXdashbreakstate".as_ptr()),
+        71 => print_esc_cstr(c"XeTeXupwardsmode".as_ptr()),
+        72 => print_esc_cstr(c"XeTeXuseglyphmetrics".as_ptr()),
+        73 => print_esc_cstr(c"XeTeXinterchartokenstate".as_ptr()),
+        74 => print_esc_cstr(c"XeTeXinputnormalization".as_ptr()),
+        77 => print_esc_cstr(c"XeTeXtracingfonts".as_ptr()),
+        78 => print_esc_cstr(c"XeTeXinterwordspaceshaping".as_ptr()),
+        79 => print_esc_cstr(c"XeTeXgenerateactualtext".as_ptr()),
+        80 => print_esc_cstr(c"XeTeXhyphenatablelength".as_ptr()),
+        81 => print_esc_cstr(c"synctex".as_ptr()),
+        82 => print_esc_cstr(c"pdfoutput".as_ptr()),
+        _  => print_cstr(c"[unknown int32_t parameter!]".as_ptr()),
+    }
+}
+
+/// Print the name of dimen parameter n (DIMEN_PAR__*).
+///
+/// translated from xetex-xetex0.c:1676 (print_length_param)
+#[no_mangle]
+pub unsafe extern "C" fn print_length_param(n: i32) {
+    match n {
+        0  => print_esc_cstr(c"parindent".as_ptr()),
+        1  => print_esc_cstr(c"mathsurround".as_ptr()),
+        2  => print_esc_cstr(c"lineskiplimit".as_ptr()),
+        3  => print_esc_cstr(c"hsize".as_ptr()),
+        4  => print_esc_cstr(c"vsize".as_ptr()),
+        5  => print_esc_cstr(c"maxdepth".as_ptr()),
+        6  => print_esc_cstr(c"splitmaxdepth".as_ptr()),
+        7  => print_esc_cstr(c"boxmaxdepth".as_ptr()),
+        8  => print_esc_cstr(c"hfuzz".as_ptr()),
+        9  => print_esc_cstr(c"vfuzz".as_ptr()),
+        10 => print_esc_cstr(c"delimitershortfall".as_ptr()),
+        11 => print_esc_cstr(c"nulldelimiterspace".as_ptr()),
+        12 => print_esc_cstr(c"scriptspace".as_ptr()),
+        13 => print_esc_cstr(c"predisplaysize".as_ptr()),
+        14 => print_esc_cstr(c"displaywidth".as_ptr()),
+        15 => print_esc_cstr(c"displayindent".as_ptr()),
+        16 => print_esc_cstr(c"overfullrule".as_ptr()),
+        17 => print_esc_cstr(c"hangindent".as_ptr()),
+        18 => print_esc_cstr(c"hoffset".as_ptr()),
+        19 => print_esc_cstr(c"voffset".as_ptr()),
+        20 => print_esc_cstr(c"emergencystretch".as_ptr()),
+        21 => print_esc_cstr(c"pdfpagewidth".as_ptr()),
+        22 => print_esc_cstr(c"pdfpageheight".as_ptr()),
+        _  => print_cstr(c"[unknown dimen parameter!]".as_ptr()),
+    }
+}
