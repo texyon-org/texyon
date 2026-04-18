@@ -1782,25 +1782,8 @@ void print_param(int32_t n)
     }
 }
 
-void begin_diagnostic(void)
-{
-
-    old_setting = selector;
-
-    if (INTPAR(tracing_online) <= 0 && selector == SELECTOR_TERM_AND_LOG) {
-        selector--;
-        if (history == HISTORY_SPOTLESS)
-            history = HISTORY_WARNING_ISSUED;
-    }
-}
-
-void end_diagnostic(bool blank_line)
-{
-    print_nl_cstr("");
-    if (blank_line)
-        print_ln();
-    selector = old_setting;
-}
+/* begin_diagnostic translated to Rust (src/output.rs). */
+/* end_diagnostic translated to Rust (src/output.rs). */
 
 void print_length_param(int32_t n)
 {

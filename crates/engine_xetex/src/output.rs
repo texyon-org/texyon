@@ -2,12 +2,13 @@
 
 use crate::globals::{
     current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top, error_line,
-    file_line_error_style_p, file_offset, full_source_filename_stack, hash_s1, in_open, line,
-    line_stack, log_file, max_print_line, mem_as_u16_ptr, mem_b16s1, mem_b32s0, mem_b32s1,
-    pool_ptr, pool_size, prim_s1, rust_stdout,
+    file_line_error_style_p, file_offset, full_source_filename_stack, hash_s1, history, in_open,
+    line, line_stack, log_file, max_print_line, mem_as_u16_ptr, mem_b16s1, mem_b32s0, mem_b32s1,
+    old_setting, pool_ptr, pool_size, prim_s1, rust_stdout,
     selector, set_current_diagnostic, set_dig_entry, set_eqtb_b32s1, set_file_offset,
-    set_pool_ptr, set_str_pool, set_tally, set_term_offset, set_trick_buf, str_pool_entry,
-    str_ptr, str_start, tally, term_offset, trick_count, write_file,
+    set_history, set_old_setting, set_pool_ptr, set_selector, set_str_pool, set_tally,
+    set_term_offset, set_trick_buf, str_pool_entry, str_ptr, str_start, tally, term_offset,
+    trick_count, write_file,
 };
 
 // Selector constants (xetex-core.h:42–51).
@@ -23,6 +24,11 @@ const SELECTOR_NEW_STRING: i32 = 21;
 const INT_BASE: i32 = 7_826_729;
 const INT_PAR_ESCAPE_CHAR: i32 = 45;
 const INT_PAR_NEW_LINE_CHAR: i32 = 49;
+const INT_PAR_TRACING_ONLINE: i32 = 29;
+
+// History values (xetex-xetexd.h:355–356).
+const HISTORY_SPOTLESS: i32 = 0;
+const HISTORY_WARNING_ISSUED: i32 = 1;
 const BIGGEST_USV: i32 = 0x10_FFFF;
 #[allow(dead_code)]
 const BIGGEST_CHAR: i32 = 0xFFFF;
@@ -935,4 +941,36 @@ pub unsafe extern "C" fn print_sa_num(q: i32) {
         n0 + 64 * n1 + 64 * 64 * (b16s1_q2 + 64 * b16s1_q3)
     };
     print_int(n);
+}
+
+// ---------------------------------------------------------------------------
+// begin_diagnostic / end_diagnostic
+// ---------------------------------------------------------------------------
+
+/// Save selector and switch to log-only mode for diagnostic output.
+///
+/// translated from xetex-xetex0.c:1785 (begin_diagnostic)
+#[no_mangle]
+pub unsafe extern "C" fn begin_diagnostic() {
+    set_old_setting(selector() as u8);
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0
+        && selector() == SELECTOR_TERM_AND_LOG
+    {
+        set_selector(selector() - 1);
+        if history() == HISTORY_SPOTLESS {
+            set_history(HISTORY_WARNING_ISSUED);
+        }
+    }
+}
+
+/// Restore selector saved by begin_diagnostic.
+///
+/// translated from xetex-xetex0.c:1797 (end_diagnostic)
+#[no_mangle]
+pub unsafe extern "C" fn end_diagnostic(blank_line: bool) {
+    print_nl_cstr(c"".as_ptr());
+    if blank_line {
+        print_ln();
+    }
+    set_selector(old_setting() as i32);
 }

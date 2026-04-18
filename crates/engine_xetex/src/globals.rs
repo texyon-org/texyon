@@ -183,6 +183,8 @@ mod raw {
         // name_length16: number of UTF-16 code units in name_of_file16.
         pub(super) static mut name_length16: i32;
 
+        // Saved selector value used by begin_diagnostic/end_diagnostic (xetex-xetexd.h:481).
+        pub(super) static mut old_setting: u8;
         // Current character code (xetex-xetexd.h:500).
         pub(super) static mut cur_chr: i32;
         // Current parsed integer value (xetex-xetexd.h:530).
@@ -978,6 +980,19 @@ pub(crate) fn set_semantic_pagination_enabled(v: bool) {
 pub(crate) fn set_shell_escape_enabled(v: bool) {
     // SAFETY: see module-level doc.
     unsafe { raw::shell_escape_enabled = v; }
+}
+
+// ---------------------------------------------------------------------------
+// old_setting
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn old_setting() -> u8 {
+    unsafe { raw::old_setting }
+}
+#[inline]
+pub(crate) fn set_old_setting(v: u8) {
+    unsafe { raw::old_setting = v; }
 }
 
 // ---------------------------------------------------------------------------
