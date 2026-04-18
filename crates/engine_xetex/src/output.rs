@@ -1,16 +1,23 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 
 use crate::globals::{
-    cur_group, cur_level, current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top,
-    error_line, file_line_error_style_p, file_offset, full_source_filename_stack, hash_s1,
-    history, in_open, line, line_stack, lo_mem_max, log_file, max_print_line, mem_as_u16_ptr,
-    mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, old_setting, pool_ptr,
-    pool_size, prim_s1,
-    rust_stdout, save_ptr, save_stack_b32s1, selector, set_current_diagnostic, set_dig_entry,
-    set_eqtb_b32s1, set_file_offset, set_history, set_old_setting, set_pool_ptr, set_selector,
-    set_str_pool, set_tally, set_term_offset, set_trick_buf, str_pool_entry, str_ptr, str_start,
-    tally, term_offset, trick_count, write_file,
+    base_ptr, cond_ptr, cur_boundary, cur_cmd, cur_chr, cur_group, cur_if, cur_input, cur_level,
+    cur_mark, current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top,
+    error_line, file_line_error_style_p, file_offset, font_max, full_source_filename_stack,
+    grp_stack, hash_s1, hi_mem_min, history, if_line, if_limit, if_stack, in_open, input_ptr,
+    input_stack, line, line_stack, lo_mem_max, log_file, max_print_line, mem_as_u16_ptr,
+    mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end, old_setting,
+    pool_ptr, pool_size, prim_s1,
+    rust_stdout, save_ptr, save_stack_b16s0, save_stack_b32s1, selector,
+    set_base_ptr, set_cond_ptr, set_cur_group, set_cur_if, set_cur_level, set_current_diagnostic,
+    set_dig_entry, set_eqtb_b32s1, set_file_offset, set_grp_stack, set_history, set_if_line,
+    set_if_limit, set_if_stack, set_input_stack, set_old_setting, set_pool_ptr, set_save_ptr,
+    set_selector, set_str_pool, set_tally, set_term_offset, set_trick_buf, str_pool_entry,
+    str_ptr, str_start, tally, term_offset, trick_count, write_file,
 };
+
+
+
 
 // Selector constants (xetex-core.h:42–51).
 const SELECTOR_NO_PRINT: i32 = 16;
@@ -51,6 +58,19 @@ const CAT_CODE_BASE: i32 = 2_256_169;
 const LETTER: i32 = 11;
 // print_sa_num (xetex-constants.h:326).
 const DIMEN_VAL_LIMIT: i32 = 128;
+// FONT_ID_BASE = FROZEN_NULL_FONT (xetex-constants.h:68, xetex_format.h:203).
+const FONT_ID_BASE: i32 = FROZEN_NULL_FONT;
+// Token-state constants (xetex-constants.h:261).
+const TOKEN_LIST: u16 = 0;
+// Conditional command codes (xetex_format.h:349,355,537).
+const IF_TEST: u16 = 107;
+const TOP_BOT_MARK: u16 = 112; // xetex_format.h:354
+const CALL: u16 = 113;
+const FI_CODE: u8 = 2;
+
+// INT_PAR__tracing_nesting (xetex_format.h:95).
+const INT_PAR_TRACING_NESTING: i32 = 60;
+
 
 // C functions not yet translated — still live in xetex-output.c or bridge.
 extern "C" {
@@ -63,7 +83,12 @@ extern "C" {
     fn ttstub_diag_printf(diag: *mut std::ffi::c_void, fmt: *const libc::c_char, ...);
     fn gettexstring(s: i32) -> *mut libc::c_char;
     fn show_token_list(p: i32, q: i32, l: i32);
+    // Still in C — large dispatch over all command types.
+    fn print_cmd_chr(cmd: u16, chr_code: i32);
+    // Still in C — complex context display.
+    fn show_context();
 }
+
 
 // ---------------------------------------------------------------------------
 // print_the_digs (static helper — not exported; all C callers translated here)
@@ -1408,5 +1433,231 @@ pub unsafe extern "C" fn print_length_param(n: i32) {
         21 => print_esc_cstr(c"pdfpagewidth".as_ptr()),
         22 => print_esc_cstr(c"pdfpageheight".as_ptr()),
         _  => print_cstr(c"[unknown dimen parameter!]".as_ptr()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_font_and_char
+// ---------------------------------------------------------------------------
+
+/// Print the font escape-name and character for a char-node at `p`.
+///
+/// translated from xetex-xetex0.c:225 (print_font_and_char)
+#[no_mangle]
+pub unsafe extern "C" fn print_font_and_char(p: i32) {
+    if p > mem_end() {
+        print_esc_cstr(c"CLOBBERED.".as_ptr());
+    } else {
+        if mem_b16s1(p) > font_max() as u16 {
+            print_char('*' as i32);
+        } else {
+            // FONT_ID_BASE + font_id → hash entry → string number of the font name.
+            print_esc(hash_s1(FONT_ID_BASE + mem_b16s1(p) as i32));
+        }
+        print_char(' ' as i32);
+        print(mem_b16s0(p) as i32);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// print_mark
+// ---------------------------------------------------------------------------
+
+/// Print a mark token list enclosed in `{…}`.
+///
+/// translated from xetex-xetex0.c:240 (print_mark)
+#[no_mangle]
+pub unsafe extern "C" fn print_mark(p: i32) {
+    print_char('{' as i32);
+    if p < hi_mem_min() || p > mem_end() {
+        print_esc_cstr(c"CLOBBERED.".as_ptr());
+    } else {
+        show_token_list(mem_b32s1(p), TEX_NULL, max_print_line() - 10);
+    }
+    print_char('}' as i32);
+}
+
+// ---------------------------------------------------------------------------
+// print_meaning
+// ---------------------------------------------------------------------------
+
+/// Print the meaning of the current token (`cur_cmd`/`cur_chr`).
+///
+/// translated from xetex-xetex0.c:3383 (print_meaning)
+#[no_mangle]
+pub unsafe extern "C" fn print_meaning() {
+    print_cmd_chr(cur_cmd() as u16, cur_chr());
+    if cur_cmd() as u16 >= CALL {
+        print_char(':' as i32);
+        print_ln();
+        token_show(cur_chr());
+    } else if cur_cmd() as u16 == TOP_BOT_MARK && (cur_chr() as usize) < 5 {
+        print_char(':' as i32);
+        print_ln();
+        token_show(cur_mark(cur_chr() as usize));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// group_warning
+// ---------------------------------------------------------------------------
+
+/// Warn if a group spans file boundaries (\tracingcommands > 0).
+///
+/// translated from xetex-xetex0.c:2961 (group_warning)
+#[no_mangle]
+pub unsafe extern "C" fn group_warning() {
+    set_base_ptr(input_ptr());
+    set_input_stack(base_ptr(), cur_input());
+    let mut i = in_open();
+    let mut w = false;
+    while grp_stack(i) == cur_boundary() && i > 0 {
+        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 0 {
+            let mut bp = base_ptr();
+            while input_stack(bp).state == TOKEN_LIST || input_stack(bp).index as i32 > i {
+                bp -= 1;
+                set_base_ptr(bp);
+            }
+            if input_stack(base_ptr()).name > 17 {
+                w = true;
+            }
+        }
+        set_grp_stack(i, save_stack_b32s1(save_ptr()));
+        i -= 1;
+    }
+    if w {
+        print_nl_cstr(c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here();
+        print_cstr(c"end of ".as_ptr());
+        print_group(true);
+        print_cstr(c" of a different file".as_ptr());
+        print_ln();
+        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 1 {
+            show_context();
+        }
+        if history() == HISTORY_SPOTLESS {
+            set_history(HISTORY_WARNING_ISSUED);
+        }
+        capture_to_diagnostic(std::ptr::null_mut());
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// if_warning
+// ---------------------------------------------------------------------------
+
+/// Warn if an \if spans file boundaries.
+///
+/// translated from xetex-xetex0.c:2998 (if_warning)
+#[no_mangle]
+pub unsafe extern "C" fn if_warning() {
+    set_base_ptr(input_ptr());
+    set_input_stack(base_ptr(), cur_input());
+    let mut i = in_open();
+    let mut w = false;
+    while if_stack(i) == cond_ptr() {
+        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 0 {
+            let mut bp = base_ptr();
+            while input_stack(bp).state == TOKEN_LIST || input_stack(bp).index as i32 > i {
+                bp -= 1;
+                set_base_ptr(bp);
+            }
+            if input_stack(base_ptr()).name > 17 {
+                w = true;
+            }
+        }
+        set_if_stack(i, mem_b32s1(cond_ptr()));
+        i -= 1;
+    }
+    if w {
+        print_nl_cstr(c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here();
+        print_cstr(c"end of ".as_ptr());
+        print_cmd_chr(IF_TEST, cur_if() as i32);
+        if if_line() != 0 {
+            print_cstr(c" entered on line ".as_ptr());
+            print_int(if_line());
+        }
+        print_cstr(c" of a different file".as_ptr());
+        print_ln();
+        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 1 {
+            show_context();
+        }
+        capture_to_diagnostic(std::ptr::null_mut());
+        if history() == HISTORY_SPOTLESS {
+            set_history(HISTORY_WARNING_ISSUED);
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// file_warning
+// ---------------------------------------------------------------------------
+
+/// Warn about unclosed groups and \if's when reaching end of file.
+///
+/// translated from xetex-xetex0.c:3039 (file_warning)
+#[no_mangle]
+pub unsafe extern "C" fn file_warning() {
+    // Save and restore save-stack / level / group state while scanning.
+    let p = save_ptr();
+    let l = cur_level();
+    let c = cur_group();
+    // Use cur_boundary() as the traversal pointer for groups.
+    set_save_ptr(cur_boundary());
+    while grp_stack(in_open()) != save_ptr() {
+        set_cur_level(cur_level() - 1);
+        print_nl_cstr(c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here();
+        print_cstr(c"end of file when ".as_ptr());
+        print_group(true);
+        print_cstr(c" is incomplete".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_cur_group(save_stack_b16s0(save_ptr()) as u8);
+        set_save_ptr(save_stack_b32s1(save_ptr()));
+    }
+    set_save_ptr(p);
+    set_cur_level(l);
+    set_cur_group(c);
+
+    // Traverse cond_ptr chain.
+    let cp = cond_ptr();
+    let il = if_limit();
+    let ci = cur_if();
+    let iln = if_line();
+    while if_stack(in_open()) != cond_ptr() {
+        print_nl_cstr(c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here();
+        print_cstr(c"end of file when ".as_ptr());
+        print_cmd_chr(IF_TEST, cur_if() as i32);
+        if if_limit() == FI_CODE {
+            print_esc_cstr(c"else".as_ptr());
+        }
+        if if_line() != 0 {
+            print_cstr(c" entered on line ".as_ptr());
+            print_int(if_line());
+        }
+        print_cstr(c" is incomplete".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_if_line(mem_b32s1(cond_ptr() + 1));
+        set_cur_if(mem_b16s0(cond_ptr()) as i16);
+        set_if_limit(mem_b16s1(cond_ptr()) as u8);
+        set_cond_ptr(mem_b32s1(cond_ptr()));
+    }
+    set_cond_ptr(cp);
+    set_if_limit(il);
+    set_cur_if(ci);
+    set_if_line(iln);
+
+    print_ln();
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 1 {
+        diagnostic_begin_capture_warning_here();
+        show_context();
+        capture_to_diagnostic(std::ptr::null_mut());
+    }
+    if history() == HISTORY_SPOTLESS {
+        set_history(HISTORY_WARNING_ISSUED);
     }
 }

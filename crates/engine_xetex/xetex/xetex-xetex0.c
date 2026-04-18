@@ -222,30 +222,9 @@ short_display(int32_t p)
 }
 
 
-void print_font_and_char(int32_t p)
-{
-    if (p > mem_end)
-        print_esc_cstr("CLOBBERED.");
-    else {
+/* print_font_and_char translated to Rust (src/output.rs). */
+/* print_mark translated to Rust (src/output.rs). */
 
-        if ((mem[p].b16.s1 > font_max))
-            print_char('*');
-        else /*279: */
-            print_esc(hash[FONT_ID_BASE + mem[p].b16.s1].s1);
-        print_char(' ');
-        print(mem[p].b16.s0);
-    }
-}
-
-void print_mark(int32_t p)
-{
-    print_char('{');
-    if ((p < hi_mem_min) || (p > mem_end))
-        print_esc_cstr("CLOBBERED.");
-    else
-        show_token_list(mem[p].b32.s1, TEX_NULL, max_print_line - 10);
-    print_char('}');
-}
 
 /* print_rule_dimen translated to Rust (src/output.rs). */
 /* print_glue translated to Rust (src/output.rs). */
@@ -2958,147 +2937,10 @@ void pseudo_close(void)
     }
 }
 
-void group_warning(void)
-{
-    int32_t i;
-    bool w;
+/* group_warning translated to Rust (src/output.rs). */
+/* if_warning translated to Rust (src/output.rs). */
+/* file_warning translated to Rust (src/output.rs). */
 
-    base_ptr = input_ptr;
-    input_stack[base_ptr] = cur_input;
-    i = in_open;
-    w = false;
-    while ((grp_stack[i] == cur_boundary) && (i > 0)) {
-
-        if (INTPAR(tracing_nesting) > 0) {
-            while ((input_stack[base_ptr].state == TOKEN_LIST) || (input_stack[base_ptr].index > i))
-                base_ptr--;
-            if (input_stack[base_ptr].name > 17)
-                w = true;
-        }
-        grp_stack[i] = save_stack[save_ptr].b32.s1;
-        i--;
-    }
-    if (w) {
-        print_nl_cstr("Warning: ");
-        diagnostic_begin_capture_warning_here();
-        print_cstr("end of ");
-        print_group(true);
-        print_cstr(" of a different file");
-        print_ln();
-
-        if (INTPAR(tracing_nesting) > 1)
-            show_context();
-        if (history == HISTORY_SPOTLESS)
-            history = HISTORY_WARNING_ISSUED;
-
-        capture_to_diagnostic(NULL);
-    }
-}
-
-void if_warning(void)
-{
-    int32_t i;
-    bool w;
-
-    base_ptr = input_ptr;
-    input_stack[base_ptr] = cur_input;
-    i = in_open;
-    w = false;
-    while (if_stack[i] == cond_ptr) {
-
-        if (INTPAR(tracing_nesting) > 0) {
-            while ((input_stack[base_ptr].state == TOKEN_LIST) || (input_stack[base_ptr].index > i))
-                base_ptr--;
-            if (input_stack[base_ptr].name > 17)
-                w = true;
-        }
-        if_stack[i] = mem[cond_ptr].b32.s1;
-        i--;
-    }
-    if (w) {
-        print_nl_cstr("Warning: ");
-        diagnostic_begin_capture_warning_here();
-        print_cstr("end of ");
-
-        print_cmd_chr(IF_TEST, cur_if);
-        if (if_line != 0) {
-            print_cstr(" entered on line ");
-            print_int(if_line);
-        }
-        print_cstr(" of a different file");
-        print_ln();
-        if (INTPAR(tracing_nesting) > 1)
-            show_context();
-
-        capture_to_diagnostic(NULL);
-        if (history == HISTORY_SPOTLESS)
-            history = HISTORY_WARNING_ISSUED;
-    }
-}
-
-void file_warning(void)
-{
-    int32_t p;
-    uint16_t l;
-    uint16_t c;
-    int32_t i;
-
-    p = save_ptr;
-    l = cur_level;
-    c = cur_group;
-    save_ptr = cur_boundary;
-    while (grp_stack[in_open] != save_ptr) {
-        cur_level--;
-
-        print_nl_cstr("Warning: ");
-        diagnostic_begin_capture_warning_here();
-        print_cstr("end of file when ");
-        print_group(true);
-        print_cstr(" is incomplete");
-        capture_to_diagnostic(NULL);
-
-        cur_group = save_stack[save_ptr].b16.s0;
-        save_ptr = save_stack[save_ptr].b32.s1;
-    }
-    save_ptr = p;
-    cur_level = l;
-    cur_group = c;
-    p = cond_ptr;
-    l = if_limit;
-    c = cur_if;
-    i = if_line;
-    while (if_stack[in_open] != cond_ptr) {
-        print_nl_cstr("Warning: ");
-        diagnostic_begin_capture_warning_here();
-        print_cstr("end of file when ");
-        print_cmd_chr(IF_TEST, cur_if);
-        if (if_limit == FI_CODE)
-            print_esc_cstr("else");
-        if (if_line != 0) {
-            print_cstr(" entered on line ");
-            print_int(if_line);
-        }
-        print_cstr(" is incomplete");
-        capture_to_diagnostic(NULL);
-
-        if_line = mem[cond_ptr + 1].b32.s1;
-        cur_if = mem[cond_ptr].b16.s0;
-        if_limit = mem[cond_ptr].b16.s1;
-        cond_ptr = LLIST_link(cond_ptr);
-    }
-    cond_ptr = p;
-    if_limit = l;
-    cur_if = c;
-    if_line = i;
-    print_ln();
-    if (INTPAR(tracing_nesting) > 1) {
-        diagnostic_begin_capture_warning_here();
-        show_context();
-        capture_to_diagnostic(NULL);
-    }
-    if (history == HISTORY_SPOTLESS)
-        history = HISTORY_WARNING_ISSUED;
-}
 
 void delete_sa_ref(int32_t q)
 {
@@ -3380,19 +3222,8 @@ void unsave(void)
 
 /* token_show translated to Rust (src/output.rs). */
 
-void print_meaning(void)
-{
-    print_cmd_chr(cur_cmd, cur_chr);
-    if (cur_cmd >= CALL) {
-        print_char(':');
-        print_ln();
-        token_show(cur_chr);
-    } else if ((cur_cmd == TOP_BOT_MARK) && (cur_chr < 5)) {
-        print_char(':');
-        print_ln();
-        token_show(cur_mark[cur_chr]);
-    }
-}
+/* print_meaning translated to Rust (src/output.rs). */
+
 
 // Used just to trace commands - all gated behind INTPAR(tracing_commands)
 void show_cur_cmd_chr(void)

@@ -35,6 +35,7 @@
 /// Rust mirror of `input_state_t` (xetex-xetexd.h:344–352).
 /// Must stay layout-compatible with the C struct (`#[repr(C)]`).
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub(crate) struct InputState {
     pub state: u16,
     pub index: u16,
@@ -192,6 +193,10 @@ mod raw {
         pub(super) static mut font_name: *mut i32;
         // Current character code (xetex-xetexd.h:500).
         pub(super) static mut cur_chr: i32;
+        // Current command code (`eight_bits` = u8, xetex-xetexd.h:499).
+        pub(super) static mut cur_cmd: u8;
+        // Mark registers: cur_mark[0..4] (xetex-xetexd.h:527; str_number = i32).
+        pub(super) static mut cur_mark: [i32; 5];
         // Current parsed integer value (xetex-xetexd.h:530).
         pub(super) static mut cur_val: i32;
         // Parsed file-name components (xetex-xetexd.h:542–544; str_number = i32).
@@ -204,6 +209,30 @@ mod raw {
         pub(super) static mut stop_at_space: bool;
         // Magnification as actually set this job (xetex-xetexd.h:498; 0 = not set yet).
         pub(super) static mut mag_set: i32;
+
+        // Maximum font id (xetex-xetexd.h:406).
+        pub(super) static mut font_max: i32;
+
+        // Input state stack (xetex-xetexd.h:503–504; layout mirrors InputState).
+        pub(super) static mut input_stack: *mut super::InputState;
+        pub(super) static mut input_ptr: i32;
+        // Base pointer into input_stack (xetex-xetexd.h:521).
+        pub(super) static mut base_ptr: i32;
+
+        // Group-stack: grp_stack[i] = save-stack boundary for level i
+        // (xetex-xetexd.h:705; save_pointer = i32).
+        pub(super) static mut grp_stack: *mut i32;
+        // If-stack: if_stack[i] = cond_ptr value at nesting level i
+        // (xetex-xetexd.h:706).
+        pub(super) static mut if_stack: *mut i32;
+
+        // Conditional state (xetex-xetexd.h:537–540).
+        pub(super) static mut cond_ptr: i32;
+        // if_limit: unsigned char (xetex-xetexd.h:538).
+        pub(super) static mut if_limit: u8;
+        // cur_if: small_number = i16 (xetex-xetexd.h:539).
+        pub(super) static mut cur_if: i16;
+        pub(super) static mut if_line: i32;
 
         // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
         pub(super) static mut nest: *mut crate::mem_types::ListStateRecord;
@@ -431,6 +460,14 @@ pub(crate) fn set_rover(v: i32) {
 pub(crate) fn cur_input_synctex_tag() -> i32 {
     // SAFETY: see module-level doc.
     unsafe { raw::cur_input.synctex_tag }
+}
+
+/// Returns a copy of the entire `cur_input` input-state struct.
+/// Used to save the current state onto `input_stack`.
+#[inline]
+pub(crate) fn cur_input() -> InputState {
+    // SAFETY: see module-level doc.  InputState is Copy.
+    unsafe { raw::cur_input }
 }
 
 /// Returns the current source line number.
@@ -1335,4 +1372,152 @@ pub(crate) fn set_cur_list_mode_line(v: i32) {
 #[inline]
 pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
     unsafe { raw::cur_list.e_tex_aux = v; }
+}
+
+// ---------------------------------------------------------------------------
+// font_max
+// ---------------------------------------------------------------------------
+
+/// Returns `font_max` — the largest valid internal font number
+/// (xetex-xetexd.h:406).
+#[inline]
+pub(crate) fn font_max() -> i32 {
+    unsafe { raw::font_max }
+}
+
+// ---------------------------------------------------------------------------
+// cur_cmd / cur_mark
+// ---------------------------------------------------------------------------
+
+/// Returns the current command code (`cur_cmd`, xetex-xetexd.h:499).
+#[inline]
+pub(crate) fn cur_cmd() -> u8 {
+    unsafe { raw::cur_cmd }
+}
+
+/// Returns `cur_mark[k]` — the k-th mark register token list
+/// (xetex-xetexd.h:527; k must be 0..=4).
+#[inline]
+pub(crate) fn cur_mark(k: usize) -> i32 {
+    unsafe { raw::cur_mark[k] }
+}
+
+// ---------------------------------------------------------------------------
+// input_stack / input_ptr / base_ptr
+// ---------------------------------------------------------------------------
+
+/// Copy `input_stack[k]` (full struct copy; xetex-xetexd.h:503).
+#[inline]
+pub(crate) fn input_stack(k: i32) -> InputState {
+    // SAFETY: see module-level doc. Caller ensures k <= input_ptr.
+    unsafe { *raw::input_stack.offset(k as isize) }
+}
+/// Write `input_stack[k] = v` (full struct assign).
+#[inline]
+pub(crate) fn set_input_stack(k: i32, v: InputState) {
+    // SAFETY: see module-level doc.
+    unsafe { *raw::input_stack.offset(k as isize) = v; }
+}
+
+/// Returns `input_ptr` — current top of the input-stack (xetex-xetexd.h:504).
+#[inline]
+pub(crate) fn input_ptr() -> i32 {
+    unsafe { raw::input_ptr }
+}
+/// Sets `input_ptr`.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn set_input_ptr(v: i32) {
+    unsafe { raw::input_ptr = v; }
+}
+
+/// Returns `base_ptr` — search base in the input stack
+/// (xetex-xetexd.h:521).
+#[inline]
+pub(crate) fn base_ptr() -> i32 {
+    unsafe { raw::base_ptr }
+}
+/// Sets `base_ptr`.
+#[inline]
+pub(crate) fn set_base_ptr(v: i32) {
+    unsafe { raw::base_ptr = v; }
+}
+
+// ---------------------------------------------------------------------------
+// grp_stack / if_stack
+// ---------------------------------------------------------------------------
+
+/// Returns `grp_stack[k]` — the save-stack boundary saved at input level k
+/// (xetex-xetexd.h:705; save_pointer = i32).
+#[inline]
+pub(crate) fn grp_stack(k: i32) -> i32 {
+    unsafe { *raw::grp_stack.offset(k as isize) }
+}
+/// Sets `grp_stack[k]`.
+#[inline]
+pub(crate) fn set_grp_stack(k: i32, v: i32) {
+    unsafe { *raw::grp_stack.offset(k as isize) = v; }
+}
+
+/// Returns `if_stack[k]` — the `cond_ptr` saved at input level k
+/// (xetex-xetexd.h:706).
+#[inline]
+pub(crate) fn if_stack(k: i32) -> i32 {
+    unsafe { *raw::if_stack.offset(k as isize) }
+}
+/// Sets `if_stack[k]`.
+#[inline]
+pub(crate) fn set_if_stack(k: i32, v: i32) {
+    unsafe { *raw::if_stack.offset(k as isize) = v; }
+}
+
+// ---------------------------------------------------------------------------
+// cond_ptr / if_limit / cur_if / if_line
+// ---------------------------------------------------------------------------
+
+/// Returns `cond_ptr` — head of the conditional-stack list
+/// (xetex-xetexd.h:537).
+#[inline]
+pub(crate) fn cond_ptr() -> i32 {
+    unsafe { raw::cond_ptr }
+}
+/// Sets `cond_ptr`.
+#[inline]
+pub(crate) fn set_cond_ptr(v: i32) {
+    unsafe { raw::cond_ptr = v; }
+}
+
+/// Returns `if_limit` — current \if nesting limit code
+/// (xetex-xetexd.h:538; unsigned char).
+#[inline]
+pub(crate) fn if_limit() -> u8 {
+    unsafe { raw::if_limit }
+}
+/// Sets `if_limit`.
+#[inline]
+pub(crate) fn set_if_limit(v: u8) {
+    unsafe { raw::if_limit = v; }
+}
+
+/// Returns `cur_if` — current \if type (xetex-xetexd.h:539; small_number = i16).
+#[inline]
+pub(crate) fn cur_if() -> i16 {
+    unsafe { raw::cur_if }
+}
+/// Sets `cur_if`.
+#[inline]
+pub(crate) fn set_cur_if(v: i16) {
+    unsafe { raw::cur_if = v; }
+}
+
+/// Returns `if_line` — line number where the current \if was entered
+/// (xetex-xetexd.h:540).
+#[inline]
+pub(crate) fn if_line() -> i32 {
+    unsafe { raw::if_line }
+}
+/// Sets `if_line`.
+#[inline]
+pub(crate) fn set_if_line(v: i32) {
+    unsafe { raw::if_line = v; }
 }
