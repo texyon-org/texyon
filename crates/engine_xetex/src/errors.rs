@@ -22,6 +22,8 @@ const SELECTOR_TERM_AND_LOG: i32 = 19;
 extern "C" {
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
     fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
+    fn print_cmd_chr(cmd: u16, chr_code: i32);
+    fn print(s: i32);
     fn print_char(c: i32);
     fn print_cstr(s: *const libc::c_char);
     fn print_nl_cstr(s: *const libc::c_char);
@@ -207,6 +209,44 @@ pub unsafe extern "C" fn int_error(n: i32) {
     print_int(n);
     print_char(b')' as i32);
     error();
+}
+
+// ---------------------------------------------------------------------------
+// not_*_font_error cluster
+// ---------------------------------------------------------------------------
+
+unsafe fn not_font_error_common(cmd: u16, c: i32, f: i32, suffix: *const libc::c_char) {
+    error_here_with_diagnostic(c"Cannot use ".as_ptr());
+    print_cmd_chr(cmd, c);
+    print_cstr(c" with ".as_ptr());
+    print(crate::globals::font_name_entry(f));
+    print_cstr(suffix);
+    capture_to_diagnostic(std::ptr::null_mut());
+    error();
+}
+
+/// translated from xetex-xetex0.c:2727 (not_aat_font_error)
+#[no_mangle]
+pub unsafe extern "C" fn not_aat_font_error(cmd: i32, c: i32, f: i32) {
+    not_font_error_common(cmd as u16, c, f, c"; not an AAT font".as_ptr());
+}
+
+/// translated from xetex-xetex0.c:2739 (not_aat_gr_font_error)
+#[no_mangle]
+pub unsafe extern "C" fn not_aat_gr_font_error(cmd: i32, c: i32, f: i32) {
+    not_font_error_common(cmd as u16, c, f, c"; not an AAT or Graphite font".as_ptr());
+}
+
+/// translated from xetex-xetex0.c:2751 (not_ot_font_error)
+#[no_mangle]
+pub unsafe extern "C" fn not_ot_font_error(cmd: i32, c: i32, f: i32) {
+    not_font_error_common(cmd as u16, c, f, c"; not an OpenType Layout font".as_ptr());
+}
+
+/// translated from xetex-xetex0.c:2763 (not_native_font_error)
+#[no_mangle]
+pub unsafe extern "C" fn not_native_font_error(cmd: i32, c: i32, f: i32) {
+    not_font_error_common(cmd as u16, c, f, c"; not a native platform font".as_ptr());
 }
 
 ///

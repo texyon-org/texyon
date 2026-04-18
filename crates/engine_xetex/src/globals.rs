@@ -188,6 +188,8 @@ mod raw {
         // SyncTeX timing base (xetex-xetexd.h:601–602).
         pub(super) static mut epochseconds: i32;
         pub(super) static mut microseconds: i32;
+        // Font name table (xetex-xetexd.h:562; str_number = i32).
+        pub(super) static mut font_name: *mut i32;
         // Current character code (xetex-xetexd.h:500).
         pub(super) static mut cur_chr: i32;
         // Current parsed integer value (xetex-xetexd.h:530).
@@ -1237,6 +1239,16 @@ pub(crate) fn read_file_ptr(n: usize) -> *mut *mut crate::io::UFile {
 #[inline]
 pub(crate) fn name_of_file16_entry(k: i32) -> u16 {
     unsafe { *raw::name_of_file16.add(k as usize) }
+}
+
+// ---------------------------------------------------------------------------
+// font_name
+// ---------------------------------------------------------------------------
+
+/// Returns `font_name[f]` — the string-pool index for font f's name.
+#[inline]
+pub(crate) fn font_name_entry(f: i32) -> i32 {
+    unsafe { *raw::font_name.offset(f as isize) }
 }
 
 // ---------------------------------------------------------------------------

@@ -2724,53 +2724,8 @@ print_cmd_chr(uint16_t cmd, int32_t chr_code)
 }
 
 
-void not_aat_font_error(int32_t cmd, int32_t c, int32_t f)
-{
-    error_here_with_diagnostic("Cannot use ");
-    print_cmd_chr(cmd, c);
-    print_cstr(" with ");
-    print(font_name[f]);
-    print_cstr("; not an AAT font");
-    capture_to_diagnostic(NULL);
-
-    error();
-}
-
-void not_aat_gr_font_error(int32_t cmd, int32_t c, int32_t f)
-{
-    error_here_with_diagnostic("Cannot use ");
-    print_cmd_chr(cmd, c);
-    print_cstr(" with ");
-    print(font_name[f]);
-    print_cstr("; not an AAT or Graphite font");
-    capture_to_diagnostic(NULL);
-
-    error();
-}
-
-void not_ot_font_error(int32_t cmd, int32_t c, int32_t f)
-{
-    error_here_with_diagnostic("Cannot use ");
-    print_cmd_chr(cmd, c);
-    print_cstr(" with ");
-    print(font_name[f]);
-    print_cstr("; not an OpenType Layout font");
-    capture_to_diagnostic(NULL);
-
-    error();
-}
-
-void not_native_font_error(int32_t cmd, int32_t c, int32_t f)
-{
-    error_here_with_diagnostic("Cannot use ");
-    print_cmd_chr(cmd, c);
-    print_cstr(" with ");
-    print(font_name[f]);
-    print_cstr("; not a native platform font");
-    capture_to_diagnostic(NULL);
-
-    error();
-}
+/* not_aat_font_error, not_aat_gr_font_error, not_ot_font_error,
+   not_native_font_error translated to Rust (src/errors.rs). */
 
 /*:1434*/
 
