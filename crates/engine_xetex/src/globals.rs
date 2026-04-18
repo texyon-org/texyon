@@ -182,6 +182,24 @@ mod raw {
         pub(super) static mut name_of_file16: *mut u16;
         // name_length16: number of UTF-16 code units in name_of_file16.
         pub(super) static mut name_length16: i32;
+
+        // Current character code (xetex-xetexd.h:500).
+        pub(super) static mut cur_chr: i32;
+        // Current parsed integer value (xetex-xetexd.h:530).
+        pub(super) static mut cur_val: i32;
+        // Parsed file-name components (xetex-xetexd.h:542–544; str_number = i32).
+        pub(super) static mut cur_name: i32;
+        pub(super) static mut cur_area: i32;
+        pub(super) static mut cur_ext: i32;
+        // True while a filename is being accumulated (xetex-xetexd.h:550).
+        pub(super) static mut name_in_progress: bool;
+        // Controls whether more_name stops at spaces (xetex-xetexd.h:718).
+        pub(super) static mut stop_at_space: bool;
+        // File-open states for \read streams (xetex-xetexd.h:536; CLOSED=2, JUST_OPEN=1).
+        pub(super) static mut read_open: [u8; 17];
+        // Array of UFILE* for \read streams (xetex-xetexd.h:535).
+        // Declared as *mut c_void to avoid a cyclic type dependency with io.rs.
+        pub(super) static mut read_file: [*mut libc::c_void; 16];
     }
 }
 
@@ -960,4 +978,75 @@ pub(crate) fn set_semantic_pagination_enabled(v: bool) {
 pub(crate) fn set_shell_escape_enabled(v: bool) {
     // SAFETY: see module-level doc.
     unsafe { raw::shell_escape_enabled = v; }
+}
+
+// ---------------------------------------------------------------------------
+// cur_chr / cur_val / cur_name / cur_area / cur_ext
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn cur_chr() -> i32 {
+    unsafe { raw::cur_chr }
+}
+#[inline]
+pub(crate) fn cur_val() -> i32 {
+    unsafe { raw::cur_val }
+}
+#[inline]
+pub(crate) fn cur_name() -> i32 {
+    unsafe { raw::cur_name }
+}
+#[inline]
+pub(crate) fn cur_area() -> i32 {
+    unsafe { raw::cur_area }
+}
+#[inline]
+pub(crate) fn cur_ext() -> i32 {
+    unsafe { raw::cur_ext }
+}
+
+// ---------------------------------------------------------------------------
+// name_in_progress / stop_at_space
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn set_name_in_progress(v: bool) {
+    unsafe { raw::name_in_progress = v; }
+}
+#[inline]
+pub(crate) fn set_stop_at_space(v: bool) {
+    unsafe { raw::stop_at_space = v; }
+}
+
+// ---------------------------------------------------------------------------
+// read_open / read_file (for \read stream management)
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn read_open_entry(n: usize) -> u8 {
+    unsafe { raw::read_open[n] }
+}
+#[inline]
+pub(crate) fn set_read_open_entry(n: usize, v: u8) {
+    unsafe { raw::read_open[n] = v; }
+}
+/// Returns `read_file[n]` (the UFILE* value at index n).
+#[inline]
+pub(crate) fn read_file_entry(n: usize) -> *mut crate::io::UFile {
+    unsafe { raw::read_file[n] as *mut crate::io::UFile }
+}
+/// Returns a pointer to `read_file[n]`, for passing to `u_open_in`.
+#[inline]
+pub(crate) fn read_file_ptr(n: usize) -> *mut *mut crate::io::UFile {
+    unsafe { raw::read_file.as_mut_ptr().add(n) as *mut *mut crate::io::UFile }
+}
+
+// ---------------------------------------------------------------------------
+// name_of_file16_entry — indexed read of the UTF-16 name buffer
+// ---------------------------------------------------------------------------
+
+/// Returns `name_of_file16[k]`.
+#[inline]
+pub(crate) fn name_of_file16_entry(k: i32) -> u16 {
+    unsafe { *raw::name_of_file16.add(k as usize) }
 }

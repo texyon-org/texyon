@@ -4,8 +4,10 @@
 //! u_open_in) remain in C for now.
 
 use crate::globals::{
-    name_length, name_of_file, name_of_file16, set_name_length, set_name_length16,
-    set_name_of_file16,
+    cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1, name_length, name_of_file,
+    name_of_file16, name_of_file16_entry, name_length16, read_file_entry, read_file_ptr,
+    read_open_entry, set_name_in_progress, set_name_length, set_name_length16,
+    set_name_of_file16, set_read_open_entry, set_stop_at_space,
 };
 
 // ---------------------------------------------------------------------------
@@ -46,8 +48,18 @@ const RAW: i32 = 4;
 
 // File format constants (tectonic_bridge_core_generated.h).
 const TTBC_FILE_FORMAT_TECTONIC_PRIMARY: libc::c_int = 59;
+const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
 // INVALID_HANDLE = 0
 const INVALID_HANDLE: usize = 0;
+
+// Constants for open_or_close_in (xetex-constants.h:268,277).
+const JUST_OPEN: u8 = 1;
+const CLOSED: u8 = 2;
+
+// INT_BASE and INT_PAR offsets used by open_or_close_in (xetex_format.h:219,110–111).
+const INT_BASE: i32 = 7_826_729;
+const INT_PAR_XETEX_DEFAULT_INPUT_MODE: i32 = 75;
+const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING: i32 = 76;
 
 // ---------------------------------------------------------------------------
 // C-side lookup tables (defined in xetex-io.c, declared extern in xetex-io.h)
@@ -86,9 +98,19 @@ extern "C" {
     // u_close also remains in C (ucnv_close from ICU is not directly linkable
     // from Rust without adding cargo:rustc-link-lib=icuuc to the build).
     fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32);
+    fn u_close(f: *mut UFile);
 
     // bad_utf8_warning remains in C (xetex-xetexd.h:912).
     fn bad_utf8_warning();
+
+    // Callees of open_or_close_in still in C.
+    fn scan_four_bit_int();
+    fn scan_optional_equals();
+    fn scan_file_name();
+    fn pack_file_name(n: i32, a: i32, e: i32);
+    fn begin_name();
+    fn more_name(c: u16) -> bool;
+    fn end_name();
 
     // Output helpers — all translated to Rust in output.rs.
     fn print_nl_cstr(s: *const libc::c_char);
@@ -361,4 +383,51 @@ pub unsafe extern "C" fn get_uni_c(f: *mut UFile) -> libc::c_int {
     }
 
     rval
+}
+
+// ---------------------------------------------------------------------------
+// open_or_close_in
+// ---------------------------------------------------------------------------
+
+/// Open or close a \read stream.
+///
+/// translated from xetex-io.c:294 (open_or_close_in)
+#[no_mangle]
+pub unsafe extern "C" fn open_or_close_in() {
+    let c = cur_chr() as u8;
+    scan_four_bit_int();
+    let n = cur_val() as u8 as usize;
+
+    if read_open_entry(n) != CLOSED {
+        u_close(read_file_entry(n));
+        set_read_open_entry(n, CLOSED);
+    }
+
+    if c != 0 {
+        scan_optional_equals();
+        scan_file_name();
+        pack_file_name(cur_name(), cur_area(), cur_ext());
+
+        if u_open_in(
+            read_file_ptr(n),
+            TTBC_FILE_FORMAT_TEX,
+            c"rb".as_ptr(),
+            eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE),
+            eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING),
+        ) != 0
+        {
+            make_utf16_name();
+            set_name_in_progress(true);
+            begin_name();
+            set_stop_at_space(false);
+            let mut k = 0i32;
+            while k < name_length16() && more_name(name_of_file16_entry(k)) {
+                k += 1;
+            }
+            set_stop_at_space(true);
+            end_name();
+            set_name_in_progress(false);
+            set_read_open_entry(n, JUST_OPEN);
+        }
+    }
 }
