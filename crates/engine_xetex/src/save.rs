@@ -3,11 +3,15 @@
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 
 use crate::globals::{
-    cur_boundary, cur_group, cur_level, eqtb_b32s1, eqtb_word, line, mag_set, max_save_stack,
-    save_ptr, save_size, set_cur_boundary, set_cur_group, set_cur_level,
-    set_eqtb_b32s1, set_mag_set, set_max_save_stack, set_save_ptr, set_save_stack_b16s0,
-    set_save_stack_b16s1, set_save_stack_b32s1, set_save_stack_word, set_xeq_level, xeq_level,
+    cur_boundary, cur_group, cur_level, eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, eqtb_word, line,
+    mag_set, max_save_stack, mem_b32s0, save_ptr, save_size, set_cur_boundary, set_cur_group,
+    set_cur_level, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_mag_set,
+    set_max_save_stack, set_save_ptr, set_save_stack_b16s0, set_save_stack_b16s1,
+    set_save_stack_b32s1, set_save_stack_word, set_xeq_level, xeq_level,
 };
+use crate::mem_types::MemoryWord;
+
+const TEX_NULL: i32 = -0x0FFF_FFFF; // MIN_HALFWORD
 
 extern "C" {
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut libc::c_void;
@@ -16,6 +20,8 @@ extern "C" {
     fn print_cstr(s: *const libc::c_char);
     fn print_nl_cstr(s: *const libc::c_char);
     fn ttstub_diag_printf(d: *mut libc::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
+    fn flush_node_list(p: i32);
+    fn delete_sa_ref(q: i32);
 }
 
 // Save-stack discriminant values (xetex-constants.h:260–285).
@@ -177,4 +183,63 @@ pub unsafe extern "C" fn prepare_mag() {
         geq_word_define(INT_BASE + INT_PAR_MAG, 1000);
     }
     set_mag_set(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
+}
+
+// ---------------------------------------------------------------------------
+// eq_destroy / eq_define / geq_define
+// ---------------------------------------------------------------------------
+
+/// Free any heap resource held by an eqtb entry (token list, glue, box, or sa-ref).
+///
+/// translated from xetex-xetex0.c:3831 (eq_destroy)
+#[no_mangle]
+pub unsafe extern "C" fn eq_destroy(w: MemoryWord) {
+    let typ = w.b16.s1;
+    let val = w.b32.s1;
+    match typ {
+        113 | 114 | 115 | 116 => crate::mem::delete_token_ref(val),
+        119 => crate::mem::delete_glue_ref(val),
+        120 => {
+            if val != TEX_NULL {
+                crate::mem::free_node(val, mem_b32s0(val) + mem_b32s0(val) + 1);
+            }
+        }
+        121 => flush_node_list(val),
+        72 | 91 => {
+            if val < 0 || val > 19 {
+                delete_sa_ref(val);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Assign `eqtb[p] = (level=cur_level, type=t, value=e)`, saving if needed.
+///
+/// translated from xetex-xetex0.c:3867 (eq_define)
+#[no_mangle]
+pub unsafe extern "C" fn eq_define(p: i32, t: u16, e: i32) {
+    if eqtb_b16s1(p) == t && eqtb_b32s1(p) == e {
+        eq_destroy(eqtb_word(p));
+        return;
+    }
+    if eqtb_b16s0(p) == cur_level() {
+        eq_destroy(eqtb_word(p));
+    } else if cur_level() > LEVEL_ONE {
+        eq_save(p, eqtb_b16s0(p));
+    }
+    set_eqtb_b16s0(p, cur_level());
+    set_eqtb_b16s1(p, t);
+    set_eqtb_b32s1(p, e);
+}
+
+/// Globally assign `eqtb[p] = (level=LEVEL_ONE, type=t, value=e)`.
+///
+/// translated from xetex-xetex0.c:3886 (geq_define)
+#[no_mangle]
+pub unsafe extern "C" fn geq_define(p: i32, t: u16, e: i32) {
+    eq_destroy(eqtb_word(p));
+    set_eqtb_b16s0(p, LEVEL_ONE);
+    set_eqtb_b16s1(p, t);
+    set_eqtb_b32s1(p, e);
 }

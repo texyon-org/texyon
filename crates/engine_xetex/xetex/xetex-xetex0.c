@@ -3828,71 +3828,15 @@ void sa_restore(void)
 
 /* new_save_level translated to Rust (src/save.rs). */
 
-void eq_destroy(memory_word w)
-{
-    int32_t q;
-    switch (w.b16.s1) {
-    case 113:
-    case 114:
-    case 115:
-    case 116:
-        delete_token_ref(w.b32.s1);
-        break;
-    case 119:
-        delete_glue_ref(w.b32.s1);
-        break;
-    case 120:
-        {
-            q = w.b32.s1;
-            if (q != TEX_NULL)
-                free_node(q, mem[q].b32.s0 + mem[q].b32.s0 + 1);
-        }
-        break;
-    case 121:
-        flush_node_list(w.b32.s1);
-        break;
-    case 72:
-    case 91:
-        if (w.b32.s1 < 0 || w.b32.s1 > 19)
-            delete_sa_ref(w.b32.s1);
-        break;
-    default:
-        ;
-        break;
-    }
-}
+/* eq_destroy translated to Rust (src/save.rs). */
 
 /* eq_save translated to Rust (src/save.rs). */
 
-void
-eq_define(int32_t p, uint16_t t, int32_t e)
-{
-
-    if (eqtb[p].b16.s1 == t && eqtb[p].b32.s1 == e) {
-        eq_destroy(eqtb[p]);
-        return;
-    }
-
-    if (eqtb[p].b16.s0 == cur_level)
-        eq_destroy(eqtb[p]);
-    else if (cur_level > LEVEL_ONE)
-        eq_save(p, eqtb[p].b16.s0);
-
-    eqtb[p].b16.s0 = cur_level;
-    eqtb[p].b16.s1 = t;
-    eqtb[p].b32.s1 = e;
-}
+/* eq_define translated to Rust (src/save.rs). */
 
 /* eq_word_define translated to Rust (src/save.rs). */
 
-void geq_define(int32_t p, uint16_t t, int32_t e)
-{
-
-    eq_destroy(eqtb[p]);
-    eqtb[p].b16.s0 = LEVEL_ONE;
-    eqtb[p].b16.s1 = t;
-    eqtb[p].b32.s1 = e;
-}
+/* geq_define translated to Rust (src/save.rs). */
 
 /* geq_word_define translated to Rust (src/save.rs). */
 
