@@ -31,6 +31,7 @@ extern "C" {
         is_gz: libc::c_int,
     ) -> usize;
     fn ttstub_input_get_size(handle: usize) -> libc::size_t;
+    fn ttstub_input_get_mtime(handle: usize) -> libc::time_t;
     fn ttstub_input_close(handle: usize) -> libc::c_int;
     fn ttstub_input_seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) -> libc::size_t;
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
@@ -41,12 +42,12 @@ const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
 // INVALID_HANDLE = 0 (tectonic_bridge_core_generated.h:12).
 const INVALID_HANDLE: usize = 0;
 
-// Rust-side static state replacing C file-statics `last_source_name` and
-// `last_lineno` (xetex-texmfmp.c:19–20). The engine holds a process-wide
-// mutex during execution so these have the same concurrency properties as
-// the C originals.
+// Rust-side statics replacing C file-statics (xetex-texmfmp.c:19–27).
+// Single-threaded engine execution (bridge mutex) gives same guarantees as C.
 static mut LAST_SOURCE_NAME: *mut libc::c_char = std::ptr::null_mut();
 static mut LAST_LINENO: i32 = 0;
+// TIME_STR_SIZE = 30 ("D:YYYYmmddHHMMSS+HH'MM'" plus NUL and headroom).
+static mut START_TIME_STR: [u8; 30] = [0u8; 30];
 
 // ---------------------------------------------------------------------------
 // get_date_and_time / get_seconds_and_micros (translated session 13)
@@ -451,4 +452,114 @@ pub unsafe extern "C" fn remember_source_info(srcfilename: i32, lineno: i32) {
     libc::free(LAST_SOURCE_NAME as *mut libc::c_void);
     LAST_SOURCE_NAME = gettexstring(srcfilename);
     LAST_LINENO = lineno;
+}
+
+// ---------------------------------------------------------------------------
+// makepdftime (private) + init_start_time + getcreationdate + getfilemoddate
+// ---------------------------------------------------------------------------
+
+/// Format a Unix timestamp as a PDF date string into `time_str`.
+///
+/// translated from xetex-texmfmp.c:30 (makepdftime, was static)
+unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
+    let lt = if utc { *libc::gmtime(&t) } else { *libc::localtime(&t) };
+    let size = libc::strftime(
+        time_str.as_mut_ptr() as *mut libc::c_char,
+        30,
+        c"D:%Y%m%d%H%M%S".as_ptr(),
+        &lt as *const libc::tm,
+    );
+    if size == 0 {
+        time_str[0] = 0;
+        return;
+    }
+
+    // %S can be 60 or 61 (leap seconds); PDF expects 00..59.
+    if time_str[14] == b'6' {
+        time_str[14] = b'5';
+        time_str[15] = b'9';
+        time_str[16] = 0;
+    }
+
+    // Compute UTC offset in minutes (method from exim's tod.c).
+    let gmt = *libc::gmtime(&t);
+    let mut off = 60 * (lt.tm_hour - gmt.tm_hour) + lt.tm_min - gmt.tm_min;
+    if lt.tm_year != gmt.tm_year {
+        off += if lt.tm_year > gmt.tm_year { 1440 } else { -1440 };
+    } else if lt.tm_yday != gmt.tm_yday {
+        off += if lt.tm_yday > gmt.tm_yday { 1440 } else { -1440 };
+    }
+
+    if off == 0 {
+        time_str[size] = b'Z';
+        time_str[size + 1] = 0;
+    } else {
+        let off_hours = off / 60;
+        let off_mins = (off - off_hours * 60).abs();
+        // C: snprintf(&time_str[size], 9, "%+03d'%02d'", off_hours, off_mins)
+        let tz = format!("{:+03}'{:02}'", off_hours, off_mins);
+        let tz = tz.as_bytes();
+        let copy_len = tz.len().min(8);
+        time_str[size..size + copy_len].copy_from_slice(&tz[..copy_len]);
+        time_str[size + copy_len] = 0;
+    }
+}
+
+/// Store the PDF date string for `source_date_epoch` in the module-level
+/// static buffer for later use by `getcreationdate`.
+///
+/// translated from xetex-texmfmp.c:84 (init_start_time)
+#[no_mangle]
+pub unsafe extern "C" fn init_start_time(source_date_epoch: libc::time_t) {
+    makepdftime(source_date_epoch, &mut START_TIME_STR, true);
+}
+
+/// Push the creation-date string (filled by `init_start_time`) into the
+/// string pool.
+///
+/// translated from xetex-texmfmp.c:91 (getcreationdate)
+#[no_mangle]
+pub unsafe extern "C" fn getcreationdate() {
+    let len = libc::strlen(START_TIME_STR.as_ptr() as *const libc::c_char);
+    if (pool_ptr() as usize) + len >= pool_size() as usize {
+        set_pool_ptr(pool_size());
+        return;
+    }
+    for i in 0..len {
+        set_str_pool(pool_ptr(), START_TIME_STR[i] as u16);
+        set_pool_ptr(pool_ptr() + 1);
+    }
+}
+
+/// Push the modification date of a file (named by pool string `s`) into the
+/// string pool as a PDF date string.
+///
+/// translated from xetex-texmfmp.c:120 (getfilemoddate)
+#[no_mangle]
+pub unsafe extern "C" fn getfilemoddate(s: i32) {
+    let name = gettexstring(s);
+    let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
+    libc::free(name as *mut libc::c_void);
+
+    if handle == INVALID_HANDLE {
+        return;
+    }
+
+    let mtime = ttstub_input_get_mtime(handle);
+    ttstub_input_close(handle);
+
+    // Use a 30-byte buffer (= TIME_STR_SIZE) not the C's 20-byte buf which
+    // was too small for non-UTC timestamps.
+    let mut buf = [0u8; 30];
+    makepdftime(mtime, &mut buf, true);
+    let text_len = libc::strlen(buf.as_ptr() as *const libc::c_char);
+
+    if (pool_ptr() as usize) + text_len >= pool_size() as usize {
+        set_pool_ptr(pool_size());
+    } else {
+        for i in 0..text_len {
+            set_str_pool(pool_ptr(), buf[i] as u16);
+            set_pool_ptr(pool_ptr() + 1);
+        }
+    }
 }
