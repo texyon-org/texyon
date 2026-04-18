@@ -32,6 +32,91 @@ template.
 
 ---
 
+## Session 14 — 2026-04-18 — Phase 8: gettexstring, maketexstring, getmd5sum
+
+**Goal:** translate `gettexstring`, `maketexstring`, `checkpool_pointer`, `convertStringToHexString`, and `getmd5sum` from `xetex-texmfmp.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 13
+
+**Work done:**
+- Fixed missing SESSION_LOG.md entries for sessions 12 and 13 (reconstructed from git log / MODULE_STATUS.md).
+- Added extern declarations for C lookup tables `firstByteMark`, `bytesFromUTF8`, `offsetsFromUTF8` (from `xetex-io.c`), `ttstub_get_file_md5`, `ttbc_get_data_md5`, `xmalloc` to `src/texmfmp.rs`.
+- Translated `gettexstring` (texmfmp.c:282) — pool UTF-16 → heap UTF-8. C's falling-through switch (backward writes with `--j`) rewritten as forward writes using a saved `start = j` offset. Equivalent byte ordering.
+- Translated `checkpool_pointer` (texmfmp.c:237, was static) → private Rust fn `check_pool_pointer`.
+- Translated `maketexstring` (texmfmp.c:245) — heap UTF-8 → pool UTF-16. C's falling-through case 5..0 switch translated as `for _ in 0..extra_bytes` loop. Calls `crate::string_pool::make_string()` directly in Rust.
+- Translated `convertStringToHexString` (texmfmp.c:396, was static) → private Rust fn.
+- Translated `getmd5sum` (texmfmp.c:413) — MD5 of file/string, hex-encoded into pool. Calls Rust `gettexstring` directly.
+- Deleted all 5 C bodies. Committed as 717cf3d4.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 14
+
+**Surprises / gotchas:**
+- `gettexstring`: The C switch writes bytes backward using `--j` pre-decrement then restores `j += bytesToWrite`. In Rust, saving `start = j` before `j += bytes_to_write` and writing forward gives identical results.
+- `maketexstring`: The C `switch (extraBytes)` with fallthrough from case N down to case 1 (case 0 is empty) reduces to exactly `extra_bytes` identical iterations — a simple `for _ in 0..extra_bytes` loop.
+- `make_string()` is already a Rust fn in `crate::string_pool` (`pub unsafe extern "C"`); can be called directly without FFI.
+- `getmd5sum` calls `gettexstring(s)` — since both are now Rust, it's a direct crate-internal call.
+
+**For the next session:**
+- `xetex-texmfmp.c` still has: `makepdftime` (static, complex timezone math), `init_start_time`, `getcreationdate` (reads C-static `start_time_str`), `getfilemoddate`, `getfilesize`, `getfiledump`, `compare_paths` (static), `is_new_source`, `remember_source_info` (manages C-static `last_source_name`), `make_src_special`.
+- Easiest next targets: `make_src_special` (calls `gettexstring`+writes to pool, no statics), and `getfilemoddate`/`getfilesize`/`getfiledump` (call `gettexstring`+bridge file I/O).
+- `is_new_source`/`remember_source_info` require handling `last_source_name` (C static `char*`) — defer or un-static it.
+- `makepdftime` + `init_start_time` + `getcreationdate` form a cluster; defer (complex timezone `struct tm` math).
+
+---
+
+## Session 13 — 2026-04-18 — Phase 7: get_date_and_time, get_seconds_and_micros
+
+**Goal:** translate the two time-related helpers from `xetex-texmfmp.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 12
+
+**Work done:**
+- Translated `get_date_and_time` (texmfmp.c:116) and `get_seconds_and_micros` (texmfmp.c:128) into `src/texmfmp.rs`. Both are pure libc calls with no engine globals. (4bafb5ef)
+- Updated plan docs. (f8aeb73d)
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 13
+
+**Surprises / gotchas:**
+- None; these were the simplest functions in the file.
+
+**For the next session:**
+- Continue with `xetex-texmfmp.c`: `gettexstring`, `maketexstring`, `getmd5sum` are the next natural cluster (string-pool UTF-8/UTF-16 conversion + MD5).
+
+---
+
+## Session 12 — 2026-04-18 — Phase 6: tt_xetex_set_int/string_variable
+
+**Goal:** translate `tt_xetex_set_int_variable` and `tt_xetex_set_string_variable` from `xetex-engine-interface.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 11
+
+**Work done:**
+- Translated `tt_xetex_set_int_variable` (engine-interface.c:25) and `tt_xetex_set_string_variable` (engine-interface.c:44) into `src/engine_interface.rs`. Two functions remain in C permanently: `tt_engine_xetex_main` (setjmp/longjmp) and `__terrible_aarch64_musl_linker_hack`. (73725033)
+- Back-filled clippy lints in `output.rs` and `scaled_math.rs`. (73725033)
+- Updated plan docs. (f5dd9c29)
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 12
+
+**Surprises / gotchas:**
+- `xetex-engine-interface.c` is marked IN PROGRESS — 50%: 2 of 4 functions translated, 2 permanently in C.
+
+**For the next session:**
+- Next target: `xetex-texmfmp.c` — start with the pure time helpers (`get_date_and_time`, `get_seconds_and_micros`).
+
+---
+
 ## Session 11 — 2026-04-18 — xetex-errors.c fully translated
 
 **Goal:** translate all 7 functions from `xetex-errors.c`.

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 13.
+Last updated: session 14.
 
 ## Core engine files (to translate)
 
@@ -45,7 +45,7 @@ Last updated: session 13.
 | xetex-io.c                   |   555 |    ~?? | `src/io.rs`                       | NOT STARTED  |
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
 | xetex-pic.c                  |   664 |    ~?? | `src/pic.rs`                      | NOT STARTED  |
-| xetex-texmfmp.c              |   439 |     13 | `src/texmfmp.rs`                  | IN PROGRESS — 13% |
+| xetex-texmfmp.c              |   302 |      8 | `src/texmfmp.rs`                  | IN PROGRESS — 38% |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
 
 ## Files NOT to translate
@@ -222,11 +222,24 @@ Status: IN PROGRESS (session 13).
 | 1 | `get_date_and_time`     |  116 | MIGRATED (session 13, 4bafb5ef) |
 | 2 | `get_seconds_and_micros`|  128 | MIGRATED (session 13, 4bafb5ef) |
 
-Remaining texmfmp.c functions involve static C state (`last_source_name`,
-`start_time_str`), `makepdftime`, or heavy bridge calls — defer to a future
-session.
+### Phase 8 — texmfmp string/UTF-8 helpers (target: `src/texmfmp.rs`)
 
-### Phases 8+
+Status: IN PROGRESS (session 14).
+
+| # | Function                        | Line | Status |
+|--:|---------------------------------|-----:|--------|
+| 1 | `gettexstring`                  |  282 | MIGRATED (session 14, 717cf3d4) |
+| 2 | `checkpool_pointer` (was static)|  237 | MIGRATED (session 14, 717cf3d4 — private Rust fn) |
+| 3 | `maketexstring`                 |  245 | MIGRATED (session 14, 717cf3d4) |
+| 4 | `convertStringToHexString` (was static)| 396 | MIGRATED (session 14, 717cf3d4 — private Rust fn) |
+| 5 | `getmd5sum`                     |  413 | MIGRATED (session 14, 717cf3d4) |
+
+Remaining texmfmp.c functions (8 in C):
+- `makepdftime` (static, complex timezone `struct tm` math) + `init_start_time` + `getcreationdate` — cluster around C-static `start_time_str`; defer.
+- `getfilemoddate`, `getfilesize`, `getfiledump` — call `gettexstring` + bridge file I/O; straightforward next targets.
+- `compare_paths` (static) + `is_new_source` + `remember_source_info` + `make_src_special` — `is_new_source`/`remember_source_info` use C-static `last_source_name`; the rest are straightforward.
+
+### Phases 9+
 
 Continue xetex-texmfmp.c, then tackle larger files.
 
