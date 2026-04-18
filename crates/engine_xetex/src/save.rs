@@ -3,11 +3,20 @@
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 
 use crate::globals::{
-    cur_boundary, cur_group, cur_level, eqtb_b32s1, eqtb_word, line, max_save_stack,
+    cur_boundary, cur_group, cur_level, eqtb_b32s1, eqtb_word, line, mag_set, max_save_stack,
     save_ptr, save_size, set_cur_boundary, set_cur_group, set_cur_level,
-    set_eqtb_b32s1, set_max_save_stack, set_save_ptr, set_save_stack_b16s0,
+    set_eqtb_b32s1, set_mag_set, set_max_save_stack, set_save_ptr, set_save_stack_b16s0,
     set_save_stack_b16s1, set_save_stack_b32s1, set_save_stack_word, set_xeq_level, xeq_level,
 };
+
+extern "C" {
+    fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut libc::c_void;
+    fn capture_to_diagnostic(diag: *mut libc::c_void);
+    fn print_int(n: i32);
+    fn print_cstr(s: *const libc::c_char);
+    fn print_nl_cstr(s: *const libc::c_char);
+    fn ttstub_diag_printf(d: *mut libc::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
+}
 
 // Save-stack discriminant values (xetex-constants.h:260–285).
 const RESTORE_OLD_VALUE: u16 = 0;
@@ -128,4 +137,44 @@ pub unsafe extern "C" fn save_for_after(t: i32) {
         set_save_stack_b32s1(save_ptr(), t);
         set_save_ptr(save_ptr() + 1);
     }
+}
+
+// ---------------------------------------------------------------------------
+// prepare_mag
+// ---------------------------------------------------------------------------
+
+// INT_PAR__mag = 17 (xetex_format.h:52); INT_BASE = 7_826_729 (xetex_format.h:219).
+const INT_BASE: i32 = 7_826_729;
+const INT_PAR_MAG: i32 = 17;
+
+/// Validate and lock in the current \mag parameter.
+///
+/// translated from xetex-xetex0.c:3997 (prepare_mag)
+#[no_mangle]
+pub unsafe extern "C" fn prepare_mag() {
+    let mag = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
+    if mag_set() > 0 && mag != mag_set() {
+        let errmsg = error_here_with_diagnostic(c"Incompatible magnification (".as_ptr());
+        print_int(mag);
+        print_cstr(c");".as_ptr());
+        print_nl_cstr(c" the previous value will be retained".as_ptr());
+        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag_set());
+        capture_to_diagnostic(std::ptr::null_mut());
+        crate::globals::set_help_ptr(2);
+        crate::globals::set_help_line(1, c"I can handle only one magnification ratio per job. So I've".as_ptr());
+        crate::globals::set_help_line(0, c"reverted to the magnification you used earlier on this run.".as_ptr());
+        crate::errors::int_error(mag_set());
+        geq_word_define(INT_BASE + INT_PAR_MAG, mag_set());
+    }
+    let mag2 = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
+    if mag2 <= 0 || mag2 > 32768 {
+        let errmsg = error_here_with_diagnostic(c"Illegal magnification has been changed to 1000".as_ptr());
+        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag2);
+        capture_to_diagnostic(std::ptr::null_mut());
+        crate::globals::set_help_ptr(1);
+        crate::globals::set_help_line(0, c"The magnification ratio must be between 1 and 32768.".as_ptr());
+        crate::errors::int_error(mag2);
+        geq_word_define(INT_BASE + INT_PAR_MAG, 1000);
+    }
+    set_mag_set(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
 }

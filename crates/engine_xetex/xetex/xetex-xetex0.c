@@ -3994,40 +3994,7 @@ void unsave(void)
         confusion("curlevel");
 }
 
-void prepare_mag(void)
-{
-
-    if (mag_set > 0 && INTPAR(mag) != mag_set) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Incompatible magnification (");
-        print_int(INTPAR(mag));
-        print_cstr(");");
-        print_nl_cstr(" the previous value will be retained");
-
-        ttstub_diag_printf(errmsg, " (%d)", mag_set);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "I can handle only one magnification ratio per job. So I've";
-            help_line[0] = "reverted to the magnification you used earlier on this run.";
-        }
-        int_error(mag_set);
-        geq_word_define(INT_BASE + INT_PAR__mag, mag_set);
-    }
-    if ((INTPAR(mag) <= 0) || (INTPAR(mag) > 32768L)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Illegal magnification has been changed to 1000");
-        ttstub_diag_printf(errmsg, " (%d)", INTPAR(mag));
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 1;
-            help_line[0] = "The magnification ratio must be between 1 and 32768.";
-        }
-        int_error(INTPAR(mag));
-        geq_word_define(INT_BASE + INT_PAR__mag, 1000);
-    }
-    mag_set = INTPAR(mag);
-}
+/* prepare_mag translated to Rust (src/save.rs). */
 
 void token_show(int32_t p)
 {

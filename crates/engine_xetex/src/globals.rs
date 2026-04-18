@@ -197,6 +197,8 @@ mod raw {
         pub(super) static mut name_in_progress: bool;
         // Controls whether more_name stops at spaces (xetex-xetexd.h:718).
         pub(super) static mut stop_at_space: bool;
+        // Magnification as actually set this job (xetex-xetexd.h:498; 0 = not set yet).
+        pub(super) static mut mag_set: i32;
         // File-open states for \read streams (xetex-xetexd.h:536; CLOSED=2, JUST_OPEN=1).
         pub(super) static mut read_open: [u8; 17];
         // Array of UFILE* for \read streams (xetex-xetexd.h:535).
@@ -1214,4 +1216,17 @@ pub(crate) fn read_file_ptr(n: usize) -> *mut *mut crate::io::UFile {
 #[inline]
 pub(crate) fn name_of_file16_entry(k: i32) -> u16 {
     unsafe { *raw::name_of_file16.add(k as usize) }
+}
+
+// ---------------------------------------------------------------------------
+// mag_set
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn mag_set() -> i32 {
+    unsafe { raw::mag_set }
+}
+#[inline]
+pub(crate) fn set_mag_set(v: i32) {
+    unsafe { raw::mag_set = v; }
 }
