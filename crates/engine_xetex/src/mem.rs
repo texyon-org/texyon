@@ -608,3 +608,25 @@ pub unsafe extern "C" fn pop_nest() {
     set_nest_ptr(nest_ptr() - 1);
     restore_cur_list_from_nest(nest_ptr());
 }
+
+// ---------------------------------------------------------------------------
+// prev_rightmost
+// ---------------------------------------------------------------------------
+
+/// Return the last node in [s..e) whose successor is e, or TEX_NULL if none.
+///
+/// translated from xetex-xetex0.c:140 (prev_rightmost)
+#[no_mangle]
+pub unsafe extern "C" fn prev_rightmost(s: i32, e: i32) -> i32 {
+    let mut p = s;
+    if p == TEX_NULL {
+        return TEX_NULL;
+    }
+    while mem_b32s1(p) != e {
+        p = mem_b32s1(p);
+        if p == TEX_NULL {
+            return TEX_NULL;
+        }
+    }
+    p
+}

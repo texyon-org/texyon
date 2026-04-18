@@ -185,6 +185,9 @@ mod raw {
 
         // Saved selector value used by begin_diagnostic/end_diagnostic (xetex-xetexd.h:481).
         pub(super) static mut old_setting: u8;
+        // SyncTeX timing base (xetex-xetexd.h:601–602).
+        pub(super) static mut epochseconds: i32;
+        pub(super) static mut microseconds: i32;
         // Current character code (xetex-xetexd.h:500).
         pub(super) static mut cur_chr: i32;
         // Current parsed integer value (xetex-xetexd.h:530).
@@ -1224,6 +1227,19 @@ pub(crate) fn read_file_ptr(n: usize) -> *mut *mut crate::io::UFile {
 #[inline]
 pub(crate) fn name_of_file16_entry(k: i32) -> u16 {
     unsafe { *raw::name_of_file16.add(k as usize) }
+}
+
+// ---------------------------------------------------------------------------
+// epochseconds / microseconds
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn epochseconds() -> i32 {
+    unsafe { raw::epochseconds }
+}
+#[inline]
+pub(crate) fn microseconds() -> i32 {
+    unsafe { raw::microseconds }
 }
 
 // ---------------------------------------------------------------------------

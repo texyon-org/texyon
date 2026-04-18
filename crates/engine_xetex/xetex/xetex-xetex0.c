@@ -137,35 +137,8 @@ runaway(void)
 
 /*:165*/
 
-int32_t prev_rightmost(int32_t s, int32_t e)
-{
-    int32_t p;
-    p = s;
-    if (p == TEX_NULL)
-        return TEX_NULL;
-    while (mem[p].b32.s1 != e) {
-
-        p = LLIST_link(p);
-        if (p == TEX_NULL)
-            return TEX_NULL;
-    }
-    return p;
-}
-
-int32_t
-get_microinterval(void)
-{
-    int32_t s, m;
-
-    get_seconds_and_micros(&s, &m);
-
-    if ((s - epochseconds) > 0x7FFF)
-        return -1;
-    else if (microseconds > m)
-        return ((s - 1 - epochseconds) * 65536) + (((m + 1000000L - microseconds) / 100.0) * 65536) / 10000.0;
-    else
-        return ((s - epochseconds) * 65536) + (((m - microseconds) / 100.0) * 65536) / 10000.0;
-}
+/* prev_rightmost translated to Rust (src/mem.rs). */
+/* get_microinterval translated to Rust (src/texmfmp.rs). */
 
 void
 short_display(int32_t p)

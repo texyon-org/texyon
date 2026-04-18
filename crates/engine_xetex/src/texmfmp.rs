@@ -71,6 +71,35 @@ pub unsafe extern "C" fn get_date_and_time(
     *year = (*tmptr).tm_year + 1900;
 }
 
+// ---------------------------------------------------------------------------
+// get_microinterval (translated from xetex-xetex0.c)
+// ---------------------------------------------------------------------------
+
+/// Return a fixed-point scaled representation of (now - epoch) in 1/65536 sec.
+///
+/// translated from xetex-xetex0.c:155 (get_microinterval)
+#[no_mangle]
+pub unsafe extern "C" fn get_microinterval() -> i32 {
+    let mut s = 0i32;
+    let mut m = 0i32;
+    get_seconds_and_micros(&mut s, &mut m);
+    if (s - crate::globals::epochseconds()) > 0x7FFF {
+        return -1;
+    } else if crate::globals::microseconds() > m {
+        let t = (s - 1 - crate::globals::epochseconds()) as f64 * 65536.0
+            + ((m as f64 + 1_000_000.0 - crate::globals::microseconds() as f64) / 100.0)
+                * 65536.0
+                / 10_000.0;
+        return t as i32;
+    } else {
+        let t = (s - crate::globals::epochseconds()) as f64 * 65536.0
+            + ((m - crate::globals::microseconds()) as f64 / 100.0)
+                * 65536.0
+                / 10_000.0;
+        return t as i32;
+    }
+}
+
 /// translated from xetex-texmfmp.c:128 (get_seconds_and_micros)
 #[no_mangle]
 pub unsafe extern "C" fn get_seconds_and_micros(seconds: *mut i32, micros: *mut i32) {
