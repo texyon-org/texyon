@@ -11,14 +11,7 @@
 
 #define IS_LC_HEX(c) (((c) >= '0' && (c) <= '9' ) || ((c) >= 'a' && (c) <= 'f' ))
 
-static void
-int_error(int32_t n)
-{
-    print_cstr(" (");
-    print_int(n);
-    print_char(')');
-    error();
-}
+/* int_error translated to Rust (src/errors.rs). */
 
 
 /*:112*/

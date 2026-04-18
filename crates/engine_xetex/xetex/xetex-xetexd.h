@@ -1031,6 +1031,7 @@ void compare_strings(void);
 /* xetex-errors */
 
 void error(void);
+void int_error(int32_t n);
 NORETURN void fatal_error(const char* s);
 NORETURN void overflow(const char* s, int32_t n);
 NORETURN void confusion(const char* s);

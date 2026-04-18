@@ -194,6 +194,21 @@ pub unsafe extern "C" fn confusion(s: *const libc::c_char) -> ! {
 // ---------------------------------------------------------------------------
 
 /// Report an XDV/PDF-level error and abort.
+// ---------------------------------------------------------------------------
+// int_error
+// ---------------------------------------------------------------------------
+
+/// Append "(N)" to the current error message and call error().
+///
+/// translated from xetex-xetex0.c:15 (int_error, was static)
+#[no_mangle]
+pub unsafe extern "C" fn int_error(n: i32) {
+    print_cstr(c" (".as_ptr());
+    print_int(n);
+    print_char(b')' as i32);
+    error();
+}
+
 ///
 /// translated from xetex-errors.c:157 (pdf_error)
 #[no_mangle]
