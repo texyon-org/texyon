@@ -16,8 +16,7 @@
 #define HAVE_GETTIMEOFDAY
 #endif
 
-static char *last_source_name = NULL;
-static int last_lineno;
+/* last_source_name and last_lineno moved to Rust statics in src/texmfmp.rs. */
 
 #define check_nprintf(size_get, size_want) \
     if ((unsigned)(size_get) >= (unsigned)(size_want)) \
@@ -150,88 +149,7 @@ getfilemoddate(str_number s)
   }
 }
 
-/* Given a file name stored in the string pool, insert into the string pool text
- * giving its size in bytes. */
-void
-getfilesize(str_number s)
-{
-  char *name;
-  size_t file_len, text_len;
-  rust_input_handle_t handle;
-  char buf[20];
-  int i;
-
-  name = gettexstring(s);
-  handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
-  free(name);
-
-  if (handle == INVALID_HANDLE)
-    return; /* => evaluate to the empty string; intentional */
-
-  file_len = ttstub_input_get_size(handle);
-  ttstub_input_close(handle);
-
-  i = snprintf(buf, sizeof(buf), "%lu", (long unsigned int) file_len);
-  check_nprintf(i, sizeof(buf));
-  text_len = strlen(buf);
-
-  if ((unsigned) (pool_ptr + text_len) >= (unsigned) pool_size) {
-      pool_ptr = pool_size;
-      /* error by str_toks that calls str_room(1) */
-  } else {
-      int i;
-
-      for (i = 0; i < text_len; i++)
-          str_pool[pool_ptr++] = (uint16_t) buf[i];
-  }
-}
-
-void getfiledump(int32_t s, int offset, int length)
-{
-  char *name;
-  rust_input_handle_t handle;
-  unsigned char *buffer;
-  int i, j, k;
-  ssize_t actual;
-  char strbuf[3];
-
-  if (length == 0)
-    return; /* => evaluate to the empty string; intentional */
-
-  if (pool_ptr + 2 * length + 1 >= pool_size) {
-      /* not enough room to hold the result; trigger an error back in TeX: */
-      pool_ptr = pool_size;
-      return;
-  }
-
-  buffer = (unsigned char *) xmalloc(length + 1);
-  if (buffer == NULL) {
-      pool_ptr = pool_size;
-      return;
-  }
-
-  name = gettexstring(s);
-  handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
-  free(name);
-
-  if (handle == INVALID_HANDLE) {
-    free(buffer);
-    return; /* => evaluate to the empty string; intentional */
-  }
-
-  ttstub_input_seek(handle, offset, SEEK_SET);
-  actual = ttstub_input_read(handle, (char *) buffer, length);
-  ttstub_input_close(handle);
-
-  for (j = 0; j < actual; j++) {
-    i = snprintf(strbuf, 3, "%.2X", (unsigned int) buffer[j]);
-    check_nprintf(i, 3);
-    for (k = 0; k < i; k++)
-        str_pool[pool_ptr++] = (uint16_t) strbuf[k];
-  }
-
-  free(buffer);
-}
+/* getfilesize and getfiledump translated to Rust (src/texmfmp.rs). */
 
 
 /* checkpool_pointer and maketexstring translated to Rust (src/texmfmp.rs). */
@@ -240,63 +158,10 @@ void getfiledump(int32_t s, int offset, int length)
 /* gettexstring translated to Rust (src/texmfmp.rs). */
 
 
-static int
-compare_paths (const char *p1, const char *p2)
-{
-  int ret;
-  while (
-         (((ret = (*p1 - *p2)) == 0) && (*p2 != 0))
-                || (IS_DIR_SEP(*p1) && IS_DIR_SEP(*p2))) {
-       p1++, p2++;
-  }
-  ret = (ret < 0 ? -1 : (ret > 0 ? 1 : 0));
-  return ret;
-}
+/* compare_paths, is_new_source, remember_source_info translated to Rust (src/texmfmp.rs).
+   last_source_name and last_lineno are now Rust statics (LAST_SOURCE_NAME, LAST_LINENO). */
 
 
-bool
-is_new_source (str_number srcfilename, int lineno)
-{
-  char *name = gettexstring(srcfilename);
-  return (compare_paths(name, last_source_name) != 0 || lineno != last_lineno);
-}
-
-
-void
-remember_source_info (str_number srcfilename, int lineno)
-{
-  free(last_source_name);
-  last_source_name = gettexstring(srcfilename);
-  last_lineno = lineno;
-}
-
-
-pool_pointer
-make_src_special (str_number srcfilename, int lineno)
-{
-  pool_pointer oldpool_ptr = pool_ptr;
-  char *filename = gettexstring(srcfilename);
-  /* FIXME: Magic number. */
-  char buf[40];
-  char *s = buf;
-
-  /* Always put a space after the number, which makes things easier
-   * to parse.
-   */
-  sprintf (buf, "src:%d ", lineno);
-
-  if (pool_ptr + strlen(buf) + strlen(filename) >= (size_t)pool_size)
-      _tt_abort ("string pool overflow");
-
-  s = buf;
-  while (*s)
-    str_pool[pool_ptr++] = *s++;
-
-  s = filename;
-  while (*s)
-    str_pool[pool_ptr++] = *s++;
-
-  return (oldpool_ptr);
-}
+/* make_src_special translated to Rust (src/texmfmp.rs). */
 
 /* convertStringToHexString and getmd5sum translated to Rust (src/texmfmp.rs). */

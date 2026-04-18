@@ -23,7 +23,30 @@ extern "C" {
     fn ttstub_get_file_md5(path: *const libc::c_char, digest: *mut u8) -> libc::c_int;
     fn ttbc_get_data_md5(data: *const u8, len: libc::size_t, digest: *mut u8) -> libc::c_int;
     fn _tt_abort(fmt: *const libc::c_char) -> !;
+    // Bridge I/O functions (tectonic_bridge_core.h).
+    // rust_input_handle_t = uintptr_t = usize; INVALID_HANDLE = 0.
+    fn ttstub_input_open(
+        path: *const libc::c_char,
+        format: libc::c_int,
+        is_gz: libc::c_int,
+    ) -> usize;
+    fn ttstub_input_get_size(handle: usize) -> libc::size_t;
+    fn ttstub_input_close(handle: usize) -> libc::c_int;
+    fn ttstub_input_seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) -> libc::size_t;
+    fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
 }
+
+// TTBC_FILE_FORMAT_TEX = 26 (tectonic_bridge_core_generated.h:94).
+const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
+// INVALID_HANDLE = 0 (tectonic_bridge_core_generated.h:12).
+const INVALID_HANDLE: usize = 0;
+
+// Rust-side static state replacing C file-statics `last_source_name` and
+// `last_lineno` (xetex-texmfmp.c:19–20). The engine holds a process-wide
+// mutex during execution so these have the same concurrency properties as
+// the C originals.
+static mut LAST_SOURCE_NAME: *mut libc::c_char = std::ptr::null_mut();
+static mut LAST_LINENO: i32 = 0;
 
 // ---------------------------------------------------------------------------
 // get_date_and_time / get_seconds_and_micros (translated session 13)
@@ -261,4 +284,171 @@ pub unsafe extern "C" fn getmd5sum(s: i32, file: bool) {
         set_str_pool(pool_ptr(), outbuf[i] as u16);
         set_pool_ptr(pool_ptr() + 1);
     }
+}
+
+// ---------------------------------------------------------------------------
+// make_src_special — write "src:{lineno} {filename}" into the pool
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-texmfmp.c:274 (make_src_special)
+#[no_mangle]
+pub unsafe extern "C" fn make_src_special(srcfilename: i32, lineno: i32) -> i32 {
+    let old_pool_ptr = pool_ptr();
+    let filename = gettexstring(srcfilename);
+
+    // C used `sprintf(buf, "src:%d ", lineno)` into a 40-byte local buffer.
+    let prefix = format!("src:{} ", lineno);
+    let fname_len = libc::strlen(filename);
+
+    if (pool_ptr() as usize) + prefix.len() + fname_len >= pool_size() as usize {
+        _tt_abort(c"string pool overflow".as_ptr());
+    }
+
+    for &b in prefix.as_bytes() {
+        set_str_pool(pool_ptr(), b as u16);
+        set_pool_ptr(pool_ptr() + 1);
+    }
+
+    let mut s = filename as *const u8;
+    while *s != 0 {
+        set_str_pool(pool_ptr(), *s as u16);
+        set_pool_ptr(pool_ptr() + 1);
+        s = s.add(1);
+    }
+
+    libc::free(filename as *mut libc::c_void);
+    old_pool_ptr
+}
+
+// ---------------------------------------------------------------------------
+// getfilesize — push decimal file size into the pool
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-texmfmp.c:155 (getfilesize)
+#[no_mangle]
+pub unsafe extern "C" fn getfilesize(s: i32) {
+    let name = gettexstring(s);
+    let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
+    libc::free(name as *mut libc::c_void);
+
+    if handle == INVALID_HANDLE {
+        return;
+    }
+
+    let file_len = ttstub_input_get_size(handle);
+    ttstub_input_close(handle);
+
+    // C used `snprintf(buf, 20, "%lu", file_len)` then wrote bytes to pool.
+    let text = format!("{}", file_len as u64);
+    let text_bytes = text.as_bytes();
+    let text_len = text_bytes.len();
+
+    if (pool_ptr() as usize + text_len) >= pool_size() as usize {
+        set_pool_ptr(pool_size());
+    } else {
+        for &b in text_bytes {
+            set_str_pool(pool_ptr(), b as u16);
+            set_pool_ptr(pool_ptr() + 1);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// getfiledump — push hex dump of file bytes into the pool
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-texmfmp.c:189 (getfiledump)
+#[no_mangle]
+pub unsafe extern "C" fn getfiledump(s: i32, offset: libc::c_int, length: libc::c_int) {
+    if length == 0 {
+        return;
+    }
+
+    if pool_ptr() + 2 * length + 1 >= pool_size() {
+        set_pool_ptr(pool_size());
+        return;
+    }
+
+    let buffer = xmalloc((length + 1) as libc::size_t) as *mut u8;
+    if buffer.is_null() {
+        set_pool_ptr(pool_size());
+        return;
+    }
+
+    let name = gettexstring(s);
+    let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
+    libc::free(name as *mut libc::c_void);
+
+    if handle == INVALID_HANDLE {
+        libc::free(buffer as *mut libc::c_void);
+        return;
+    }
+
+    ttstub_input_seek(handle, offset as libc::ssize_t, libc::SEEK_SET);
+    let actual = ttstub_input_read(handle, buffer, length as libc::size_t);
+    ttstub_input_close(handle);
+
+    // C used `snprintf(strbuf, 3, "%.2X", buffer[j])` — 2 uppercase hex digits.
+    for j in 0..actual as usize {
+        let byte = *buffer.add(j);
+        let hex = format!("{:02X}", byte);
+        for &c in hex.as_bytes() {
+            set_str_pool(pool_ptr(), c as u16);
+            set_pool_ptr(pool_ptr() + 1);
+        }
+    }
+
+    libc::free(buffer as *mut libc::c_void);
+}
+
+// ---------------------------------------------------------------------------
+// compare_paths (private) + is_new_source + remember_source_info
+// ---------------------------------------------------------------------------
+
+/// Compare two NUL-terminated byte strings as file paths, treating any two
+/// directory separators as equal. Returns -1, 0, or 1.
+///
+/// translated from xetex-texmfmp.c:243 (compare_paths, was static)
+unsafe fn compare_paths(p1: *const libc::c_char, p2: *const libc::c_char) -> i32 {
+    // Handle null pointers: treat null same as empty string.
+    let p1 = if p1.is_null() { c"".as_ptr() } else { p1 };
+    let p2 = if p2.is_null() { c"".as_ptr() } else { p2 };
+
+    let mut p1 = p1 as *const u8;
+    let mut p2 = p2 as *const u8;
+    let mut ret: i32;
+    loop {
+        ret = (*p1 as i32) - (*p2 as i32);
+        let equal_and_not_null = ret == 0 && *p2 != 0;
+        let both_dir_sep = *p1 == b'/' && *p2 == b'/';
+        if !(equal_and_not_null || both_dir_sep) {
+            break;
+        }
+        p1 = p1.add(1);
+        p2 = p2.add(1);
+    }
+    if ret < 0 { -1 } else if ret > 0 { 1 } else { 0 }
+}
+
+/// Return true if the source file or line number changed since the last call to
+/// `remember_source_info`.
+///
+/// translated from xetex-texmfmp.c:257 (is_new_source)
+#[no_mangle]
+pub unsafe extern "C" fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
+    let name = gettexstring(srcfilename);
+    let changed = compare_paths(name, LAST_SOURCE_NAME) != 0 || lineno != LAST_LINENO;
+    libc::free(name as *mut libc::c_void);
+    changed
+}
+
+/// Record the current source file and line number for later comparison by
+/// `is_new_source`.
+///
+/// translated from xetex-texmfmp.c:264 (remember_source_info)
+#[no_mangle]
+pub unsafe extern "C" fn remember_source_info(srcfilename: i32, lineno: i32) {
+    libc::free(LAST_SOURCE_NAME as *mut libc::c_void);
+    LAST_SOURCE_NAME = gettexstring(srcfilename);
+    LAST_LINENO = lineno;
 }
