@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 16.
+Last updated: session 17.
 
 ## Core engine files (to translate)
 
@@ -36,13 +36,13 @@ Last updated: session 16.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 18387 |    268 | multiple (see below)              | IN PROGRESS — 6%  |
+| xetex-xetex0.c               | 18154 |    255 | multiple (see below)              | IN PROGRESS — 7%  |
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |  1283 |    ~?? | `src/synctex.rs`                  | NOT STARTED  |
-| xetex-io.c                   |   329 |      4 | `src/io.rs`                       | IN PROGRESS — 64% |
+| xetex-io.c                   |   294 |      3 | `src/io.rs`                       | IN PROGRESS — 73% |
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
 | xetex-pic.c                  |   664 |    ~?? | `src/pic.rs`                      | NOT STARTED  |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
@@ -265,15 +265,36 @@ Status: IN PROGRESS (session 16).
 | 8 | `conversion_error` (static)|  183 | DEFER — called only from `input_line` |
 | 9 | `apply_normalization` (static)| 195 | DEFER — uses TECkit static state |
 |10 | `input_line`              |  220 | DEFER — complex ICU/TECkit encoding |
-|11 | `open_or_close_in`        |  520 | NOT STARTED |
+|11 | `open_or_close_in`        |  294 | MIGRATED (session 17, f4a94ffc) |
 
 Note: `name_of_input_file` and `abspath_of_input_file` moved from C file-statics
 to Rust `#[no_mangle] pub static mut` in `src/io.rs`. `NAME16LEN` also moved.
 
-### Phases 11+
+### Phase 11 — xetex-xetex0.c scattered functions (sessions 17+)
 
-Continue `xetex-io.c` (remaining 4 functions including complex ones), then
-tackle `xetex-xetex0.c`.
+New Rust module `src/save.rs` created for save-stack management.
+
+| # | Function                  | Source Line | Module       | Status |
+|--:|---------------------------|------------:|--------------|--------|
+| 1 | `delete_token_ref`        |         976 | `src/mem.rs` | MIGRATED (session 17, 3e1f337e) |
+| 2 | `delete_glue_ref`         |         984 | `src/mem.rs` | MIGRATED (session 17, 3e1f337e) |
+| 3 | `begin_diagnostic`        |        1785 | `src/output.rs` | MIGRATED (session 17, 1be1cb50) |
+| 4 | `end_diagnostic`          |        1797 | `src/output.rs` | MIGRATED (session 17, 1be1cb50) |
+| 5 | `print_mode`              |        1327 | `src/output.rs` | MIGRATED (session 17, d30eb43b) |
+| 6 | `print_in_mode`           |        1356 | `src/output.rs` | MIGRATED (session 17, d30eb43b) |
+| 7 | `print_group`             |        3464 | `src/output.rs` | MIGRATED (session 17, 6a81482c) |
+| 8 | `new_save_level`          |        3859 | `src/save.rs` | MIGRATED (session 17, 5c29bdaf) |
+| 9 | `eq_save`                 |        3914 | `src/save.rs` | MIGRATED (session 17, 5c29bdaf) |
+|10 | `eq_word_define`          |        3954 | `src/save.rs` | MIGRATED (session 17, 5c29bdaf) |
+|11 | `geq_word_define`         |        3977 | `src/save.rs` | MIGRATED (session 17, 5c29bdaf) |
+|12 | `save_for_after`          |        3984 | `src/save.rs` | MIGRATED (session 17, 5c29bdaf) |
+|13 | `int_error` (was static)  |          15 | `src/errors.rs` | MIGRATED (session 17, 9840db6e) |
+
+### Phases 12+
+
+Continue `xetex-xetex0.c`: next candidates are `prepare_mag` (unblocked by int_error),
+`eq_define` (needs eq_destroy), `geq_define` (needs eq_destroy), `unsave` (complex goto
+translation), `push_nest`/`pop_nest` (need nest/cur_list globals).
 
 ## How to maintain this file
 

@@ -32,6 +32,62 @@ template.
 
 ---
 
+## Session 17 — 2026-04-18 — Phase 11: scattered xetex-xetex0.c functions (13 functions)
+
+**Goal:** continue translating from xetex-xetex0.c and finish xetex-io.c's open_or_close_in.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 16
+
+**Work done:**
+- Translated `open_or_close_in` (xetex-io.c:294) into `src/io.rs`. Added globals:
+  `cur_chr`, `cur_val`, `cur_name/area/ext`, `name_in_progress`, `stop_at_space`,
+  `read_open[17]`, `read_file[16]`. (f4a94ffc)
+- Translated `delete_token_ref` (xetex-xetex0.c:976) and `delete_glue_ref` (984)
+  into `src/mem.rs`. (3e1f337e)
+- Translated `begin_diagnostic` (1785) and `end_diagnostic` (1797) into `src/output.rs`.
+  Added global `old_setting`, constants HISTORY_SPOTLESS/WARNING_ISSUED/TRACING_ONLINE. (1be1cb50)
+- Translated `print_mode` (1327) and `print_in_mode` (1356) into `src/output.rs`. (d30eb43b)
+- Translated `print_group` (3464) into `src/output.rs`. Added globals: `save_stack`,
+  `save_ptr`, `max_save_stack`, `save_size`, `cur_level`, `cur_group`. Added all group-code
+  constants, save-stack b16/b32 accessors. (6a81482c)
+- Created `src/save.rs`. Translated `new_save_level` (3859), `eq_save` (3914),
+  `eq_word_define` (3954), `geq_word_define` (3977), `save_for_after` (3984). Added globals:
+  `cur_boundary`, `_xeq_level_array`. Added eqtb word/b16s0/b16s1 accessors, xeq_level
+  read/write, set_save_stack_word. (5c29bdaf)
+- Translated `int_error` (15, was static) into `src/errors.rs`. Added prototype to
+  xetex-xetexd.h. (9840db6e)
+- Updated plan docs (this commit).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 17
+- 116 Rust functions total; 13 new this session.
+- New module `src/save.rs` created.
+
+**Surprises / gotchas:**
+- `read_file[16]` in globals.rs declared as `[*mut c_void; 16]` to avoid circular type
+  dependency with io.rs (which defines UFile). Cast to `*mut *mut io::UFile` in accessor.
+- `_xeq_level_array` is 1114730 elements — declared as fixed-size extern array. Access uses
+  `p - INT_BASE` as index (INT_BASE = 7826729).
+- save-stack writes to b16.s1, b16.s0, and b32.s1 on same MemoryWord slot are non-overlapping
+  (bytes 2-3, 0-1, and 4-7 respectively in little-endian layout). Safe to do in sequence.
+- `errors.rs` already had `print_cstr/print_int/print_char` in its `extern "C"` block;
+  don't add a duplicate extern block.
+
+**For the next session:**
+- `prepare_mag` (4017) is now unblocked (int_error is Rust). Needs `ttstub_diag_printf`
+  (variadic — declare in Rust as `fn ttstub_diag_printf(d: *mut c_void, fmt: *const c_char, ...)`).
+- `eq_define` (3936) and `geq_define` (3968) need `eq_destroy` (complex switch, calls
+  delete_token_ref (Rust), delete_glue_ref (Rust), flush_node_list (C), delete_sa_ref (C)).
+- `push_nest`/`pop_nest` (1385/1401) need `nest` and `cur_list` globals (list_state_record
+  struct array). Moderate complexity.
+- `unsave` (3999) is complex (goto→loop, many save-stack variants).
+- Consider `group_warning` (3688) and `if_warning` (3725) — short diagnostic functions.
+
+---
+
 ## Session 16 — 2026-04-18 — Phase 10: xetex-io.c partial (4 functions)
 
 **Goal:** translate as many functions from `xetex-io.c` as feasible.
