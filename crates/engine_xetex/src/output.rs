@@ -61,6 +61,7 @@ extern "C" {
     fn ttbc_diag_begin_error() -> *mut std::ffi::c_void;
     fn ttstub_diag_printf(diag: *mut std::ffi::c_void, fmt: *const libc::c_char, ...);
     fn gettexstring(s: i32) -> *mut libc::c_char;
+    fn show_token_list(p: i32, q: i32, l: i32);
 }
 
 // ---------------------------------------------------------------------------
@@ -1111,5 +1112,21 @@ pub unsafe extern "C" fn print_in_mode(m: i32) {
             2 => print_cstr(c"' in math mode".as_ptr()),
             _ => {}
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// token_show
+// ---------------------------------------------------------------------------
+
+const TEX_NULL: i32 = -0x0FFF_FFFF;
+
+/// Display a token list headed at p.
+///
+/// translated from xetex-xetex0.c:3893 (token_show)
+#[no_mangle]
+pub unsafe extern "C" fn token_show(p: i32) {
+    if p != TEX_NULL {
+        show_token_list(mem_b32s1(p), TEX_NULL, 10_000_000);
     }
 }

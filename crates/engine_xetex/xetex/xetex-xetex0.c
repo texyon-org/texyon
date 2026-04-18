@@ -3890,12 +3890,7 @@ void unsave(void)
 
 /* prepare_mag translated to Rust (src/save.rs). */
 
-void token_show(int32_t p)
-{
-
-    if (p != TEX_NULL)
-        show_token_list(mem[p].b32.s1, TEX_NULL, 10000000L);
-}
+/* token_show translated to Rust (src/output.rs). */
 
 void print_meaning(void)
 {
