@@ -25,7 +25,8 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 18.
+Last updated: session 19.
+
 
 ## Core engine files (to translate)
 
@@ -36,7 +37,8 @@ Last updated: session 18.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 17498 |    233 | multiple (see below)              | IN PROGRESS — 12% |
+| xetex-xetex0.c               | 17329 |    214 | multiple (see below)              | IN PROGRESS — 14% |
+
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
@@ -289,12 +291,19 @@ New Rust module `src/save.rs` created for save-stack management.
 |11 | `geq_word_define`         |        3977 | `src/save.rs` | MIGRATED (session 17, 5c29bdaf) |
 |12 | `save_for_after`          |        3984 | `src/save.rs` | MIGRATED (session 17, 5c29bdaf) |
 |13 | `int_error` (was static)  |          15 | `src/errors.rs` | MIGRATED (session 17, 9840db6e) |
+|14 | `print_font_and_char`     |         225 | `src/output.rs` | MIGRATED (session 19, 4a027338) |
+|15 | `print_mark`              |         240 | `src/output.rs` | MIGRATED (session 19, 4a027338) |
+|16 | `print_meaning`           |        3383 | `src/output.rs` | MIGRATED (session 19, 4a027338) |
+|17 | `group_warning`           |        2961 | `src/output.rs` | MIGRATED (session 19, 4a027338) |
+|18 | `if_warning`              |        2998 | `src/output.rs` | MIGRATED (session 19, 4a027338) |
+|19 | `file_warning`            |        3039 | `src/output.rs` | MIGRATED (session 19, 4a027338) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates are `prepare_mag` (unblocked by int_error),
 `eq_define` (needs eq_destroy), `geq_define` (needs eq_destroy), `unsave` (complex goto
-translation), `push_nest`/`pop_nest` (need nest/cur_list globals).
+translation), `push_nest`/`pop_nest` (need nest/cur_list globals),
+`id_lookup` (line 2734), `prim_lookup` (line 2824).
 
 ## How to maintain this file
 

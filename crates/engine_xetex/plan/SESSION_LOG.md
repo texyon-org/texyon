@@ -32,6 +32,57 @@ template.
 
 ---
 
+## Session 19 — 2026-04-18 — Phase 11+: print_font_and_char, print_mark, print_meaning, group/if/file_warning (6 functions)
+
+**Goal:** Translate the warm-up display helpers and file-nesting warning functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 18
+
+**Work done:**
+- Added new globals to `globals.rs`: `font_max`, `cur_cmd` (u8), `cur_mark[5]` (i32),
+  `input_stack` (*mut InputState), `input_ptr`, `base_ptr`, `grp_stack` (*mut i32),
+  `if_stack` (*mut i32), `cond_ptr`, `if_limit` (u8), `cur_if` (i16), `if_line`.
+  Added `InputState: Copy + Clone`. Added `cur_input()` full-struct accessor.
+- Added constants to `output.rs`: `FONT_ID_BASE`, `TOKEN_LIST`, `IF_TEST`, `TOP_BOT_MARK`,
+  `CALL`, `FI_CODE`, `INT_PAR_TRACING_NESTING`. Added `print_cmd_chr` and `show_context`
+  to `extern "C"` block.
+- Translated `print_font_and_char` (line 225) → `src/output.rs`. (4a027338)
+- Translated `print_mark` (line 240) → `src/output.rs`. (4a027338)
+- Translated `print_meaning` (line 3383) → `src/output.rs`. Corrected `TOP_BOT_MARK`
+  (was accidentally drafted as `IF_TEST` before review). (4a027338)
+- Translated `group_warning` (line 2961) → `src/output.rs`. Uses `input_stack`/`grp_stack`
+  globals; saves `cur_input` to `input_stack[base_ptr]` via new accessor. (4a027338)
+- Translated `if_warning` (line 2998) → `src/output.rs`. Same pattern as group_warning
+  but walks `if_stack`. (4a027338)
+- Translated `file_warning` (line 3039) → `src/output.rs`. Saves/restores
+  save-stack + cond_ptr chain to emit per-file unclosed group/if warnings. (4a027338)
+- Deleted all 6 C bodies, replaced with `/* ... translated to Rust (src/output.rs). */` stubs.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 19
+- 144 Rust functions total; 6 new this session.
+- xetex-xetex0.c: 17329 LOC, 214 C functions remaining.
+
+**Surprises / gotchas:**
+- `print_meaning` initially had `IF_TEST` where the C uses `TOP_BOT_MARK` — caught during delete-phase review.
+- `&raw::cur_input` cannot be accessed from outside `mod raw`; replaced with new `cur_input()` accessor.
+- `InputState` needed `Copy + Clone` derives since we return it by value from `cur_input()`.
+- `set_cur_group(save_stack_b16s0(...))` required `as u8` cast (u16 → u8).
+
+**For the next session:**
+- `id_lookup` (original line 2734, current ~2680): next pure hash-lookup candidate.
+- `prim_lookup` (original line 2824): same.
+- `unsave` (original ~3953): complex goto→loop; approach carefully.
+- `eq_define` / `geq_define` already done. Next save-stack function is `unsave`.
+- Consider `show_cur_cmd_chr` (diagnostic tracing) once `print_cmd_chr` is translated.
+- Remaining Phase 11 candidates: `print_if_line` (3475), `show_save_groups` (3489).
+
+---
+
 ## Session 18 — 2026-04-18 — Phase 12: 22 more functions (print_*, eq_*, save-stack, font errors)
 
 **Goal:** continue translating scattered functions from xetex-xetex0.c.
