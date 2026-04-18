@@ -32,6 +32,47 @@ template.
 
 ---
 
+## Session 18 — 2026-04-18 — Phase 12: 22 more functions (print_*, eq_*, save-stack, font errors)
+
+**Goal:** continue translating scattered functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 17
+
+**Work done:**
+- `prepare_mag` (3997) → `src/save.rs`. Added mag_set global, variadic ttstub_diag_printf extern. (46bcab4a)
+- `push_nest`, `pop_nest` (1323, 1339) → `src/mem.rs`. Added ListStateRecord #[repr(C)] to mem_types.rs. Added nest, nest_ptr, max_nest_stack, nest_size, cur_list globals. (8d9c24a7)
+- `eq_destroy`, `eq_define`, `geq_define` (3831, 3867, 3886) → `src/save.rs`. (637a3fb7)
+- `prev_rightmost` (140) → `src/mem.rs`; `get_microinterval` (155) → `src/texmfmp.rs`. Added epochseconds, microseconds globals. (bb6c2214)
+- `token_show` (3893) → `src/output.rs`. (f1fcfc1a)
+- `print_skip_param` (379), `print_param` (1423), `print_length_param` (1676) → `src/output.rs`. Large dispatch tables using numeric INT_PAR__*/GLUE_PAR__*/DIMEN_PAR__* values. (d3fd853c)
+- `print_style` (319), `print_fam_and_char` (294), `print_delimiter` (307) → `src/output.rs`. Added mem_b16s2/b16s3 accessors. (45b16fdd)
+- `print_rule_dimen` (250), `print_glue` (258), `print_spec` (274) → `src/output.rs`. Added NULL_FLAG/NORMAL/FIL/FILLL constants; lo_mem_max import. (cb4ec99f)
+- `not_aat_font_error`, `not_aat_gr_font_error`, `not_ot_font_error`, `not_native_font_error` (2727-2763) → `src/errors.rs`. Added font_name global. Factored to private helper. (e4621a6b)
+- Updated plan docs (this commit).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 18
+- 138 Rust functions total; 22 new this session.
+
+**Surprises / gotchas:**
+- `print_delimiter` uses i64 arithmetic to match C's implicit `long` promotion (a * 4096 overflows i32).
+- `print_param` INT_PAR__xetex_linebreak_locale (66) is NOT in the C switch — left out of Rust match.
+- `ListStateRecord` needs `#[repr(C)]` with 2-byte implicit padding after `mode: i16`, verified by size_of assert == 32.
+- `not_font_error_*` all have identical structure; factored to `not_font_error_common` private helper.
+
+**For the next session:**
+- `print_mark` (240): calls show_token_list (C), hi_mem_min, mem_end, max_print_line — all available.
+- `print_font_and_char` (225): calls print_esc, hash accessor, mem_end — moderate.
+- `print_meaning` (3900): calls print_cmd_chr (C), cur_cmd global, cur_mark global.
+- `id_lookup` (2779), `prim_lookup` (2869): hash/primitive table lookups.
+- Consider `unsave` (3953 in current file): complex goto→loop, needs careful translation.
+- `group_warning`, `if_warning`, `file_warning`: need grp_stack, if_stack, input_stack globals.
+
+---
+
 ## Session 17 — 2026-04-18 — Phase 11: scattered xetex-xetex0.c functions (13 functions)
 
 **Goal:** continue translating from xetex-xetex0.c and finish xetex-io.c's open_or_close_in.
