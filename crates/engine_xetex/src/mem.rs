@@ -540,3 +540,31 @@ pub unsafe extern "C" fn copy_native_glyph_info(src: i32, dest: i32) {
         set_mem_b16s0(dest + 4, glyph_count as u16);
     }
 }
+
+// ---------------------------------------------------------------------------
+// delete_token_ref / delete_glue_ref
+// ---------------------------------------------------------------------------
+
+/// Decrement the reference count of a token list; free if it reaches TEX_NULL.
+///
+/// translated from xetex-xetex0.c:976 (delete_token_ref)
+#[no_mangle]
+pub unsafe extern "C" fn delete_token_ref(p: i32) {
+    if mem_b32s0(p) == TEX_NULL {
+        flush_list(p);
+    } else {
+        set_mem_b32s0(p, mem_b32s0(p) - 1);
+    }
+}
+
+/// Decrement the reference count of a glue spec; free if it reaches TEX_NULL.
+///
+/// translated from xetex-xetex0.c:984 (delete_glue_ref)
+#[no_mangle]
+pub unsafe extern "C" fn delete_glue_ref(p: i32) {
+    if mem_b32s1(p) == TEX_NULL {
+        free_node(p, GLUE_SPEC_SIZE);
+    } else {
+        set_mem_b32s1(p, mem_b32s1(p) - 1);
+    }
+}

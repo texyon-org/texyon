@@ -973,21 +973,8 @@ void short_display_n(int32_t p, int32_t m)
     show_node_list(p);
 }
 
-void delete_token_ref(int32_t p)
-{
-    if (mem[p].b32.s0 == TEX_NULL)
-        flush_list(p);
-    else
-        mem[p].b32.s0--;
-}
-
-void delete_glue_ref(int32_t p)
-{
-    if (mem[p].b32.s1 == TEX_NULL)
-        free_node(p, GLUE_SPEC_SIZE);
-    else
-        mem[p].b32.s1--;
-}
+/* delete_token_ref translated to Rust (src/mem.rs). */
+/* delete_glue_ref translated to Rust (src/mem.rs). */
 
 
 void
