@@ -32,6 +32,45 @@ template.
 
 ---
 
+## Session 23 — 2026-04-19 — plan: add TRIP test + 11 more functions
+
+**Goal:** Add TRIP test to plan/workflow, then translate more functions.
+
+**Starting state:**
+- Parity: 29/29 (tex-outputs)
+- Trip: 2/2
+- Streak: 22
+
+**Work done:**
+- Updated plan docs to include `cargo test -p tectonic --test trip` in 05-testing.md, 06-workflow.md, PROGRESS.md. Fixed package name (tectonic, not tectonic_engine_xetex). Committed 0e6791d6, 967b4187.
+- Translated `add_or_sub` (6281), `quotient` (6305), `fract` (6336) to `src/scaled_math.rs`. Committed 3b22036d.
+- Translated `change_if_limit` (7889) to `src/output.rs`. Added `set_mem_b16s1` to output.rs imports. Committed 3b22036d.
+- Translated `scan_normal_glue` (6519), `scan_mu_glue` (6524) to `src/scan.rs`. Committed f239d532.
+- Translated `flush_str` (15948) to `src/string_pool.rs`. Committed a9eac0dc.
+- Translated `pseudo_close` (2766) to `src/input.rs`. Added `pseudo_files` global. Committed a58a8268.
+- Translated `get_input_normalization_state` (9073), `get_tracing_fonts_state` (9082), `scan_pdf_ext_toks` (15945) to `src/scan.rs`. Added `eqtb_is_null()` to globals.rs. Committed 2f8134e1.
+- Updated MODULE_STATUS.md, SESSION_LOG.md, PROGRESS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 23
+- 193 Rust functions total; 11 new this session.
+- xetex-xetex0.c: 16157 LOC, ~166 C functions remaining.
+
+**Surprises / gotchas:**
+- `fract`'s multi-goto structure: `goto found`/`goto found1`/`goto too_big`/`goto done` all go forward, so labeled blocks in Rust (`if n != 0 { ... }`) + early returns for `too_big` gives a clean translation.
+- `scan_pdf_ext_toks` and `scan_normal_glue`/`scan_mu_glue` are trivial one-liner wrappers — easy wins.
+- TRIP test is in the `tectonic` package, not `tectonic_engine_xetex`.
+
+**For the next session:**
+- `begin_file_reading`/`end_file_reading` (~3113): needs `max_in_open`, `first`, `buf_size`, `source_filename_stack`, `eof_seen`, `MID_LINE`, `input_file`.
+- `scan_expr` (~6379): complex recursive scanner; depends on `get_x_token`, `back_input` (done), etc.
+- `pseudo_start` (~6614): uses `scan_general_text`, `token_show`, `flush_list`, `make_string`.
+- Small helper cluster: `bad_utf8_warning` (~9393), `do_locale_linebreaks` (~9338) — complex.
+
+---
+
 ## Session 22 — 2026-04-19 — input-stack, SA alloc, math node alloc (11 functions)
 
 **Goal:** Translate end_token_list cluster, SA node allocators, math node constructors, and misc helpers.
