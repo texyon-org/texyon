@@ -4,10 +4,12 @@
 
 use crate::globals::{
     cur_boundary, cur_group, cur_level, eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, eqtb_word, line,
-    mag_set, max_save_stack, mem_b32s0, save_ptr, save_size, set_cur_boundary, set_cur_group,
-    set_cur_level, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_mag_set,
-    set_max_save_stack, set_save_ptr, set_save_stack_b16s0, set_save_stack_b16s1,
-    set_save_stack_b32s1, set_save_stack_word, set_xeq_level, xeq_level,
+    mag_set, max_save_stack, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, sa_chain, sa_level,
+    save_ptr, save_size, set_cur_boundary, set_cur_group, set_cur_level, set_eqtb_b16s0,
+    set_eqtb_b16s1, set_eqtb_b32s1, set_mag_set, set_max_save_stack, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_sa_chain, set_sa_level, set_sa_root, set_save_ptr,
+    set_save_stack_b16s0, set_save_stack_b16s1, set_save_stack_b32s1, set_save_stack_word,
+    set_xeq_level, sa_root, xeq_level,
 };
 use crate::mem_types::MemoryWord;
 
@@ -21,7 +23,6 @@ extern "C" {
     fn print_nl_cstr(s: *const libc::c_char);
     fn ttstub_diag_printf(d: *mut libc::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
     fn flush_node_list(p: i32);
-    fn delete_sa_ref(q: i32);
 }
 
 // Save-stack discriminant values (xetex-constants.h:260–285).
@@ -242,4 +243,212 @@ pub unsafe extern "C" fn geq_define(p: i32, t: u16, e: i32) {
     set_eqtb_b16s0(p, LEVEL_ONE);
     set_eqtb_b16s1(p, t);
     set_eqtb_b32s1(p, e);
+}
+
+// ---------------------------------------------------------------------------
+// Sparse-array (SA) register save/restore cluster
+// ---------------------------------------------------------------------------
+
+// Node-size constants (xetex-constants.h:109,120,134).
+const POINTER_NODE_SIZE: i32 = 2;
+const WORD_NODE_SIZE: i32 = 3;
+const INDEX_NODE_SIZE: i32 = 33;
+
+// SA register type limits (xetex-constants.h:326–331).
+const DIMEN_VAL_LIMIT: u16 = 128;
+const MU_VAL_LIMIT: u16 = 256;
+const BOX_VAL_LIMIT: u16 = 320;
+const TOK_VAL_LIMIT: u16 = 384;
+
+// Save-stack discriminant for SA save/restore (xetex-constants.h:291).
+const RESTORE_SA: u16 = 4;
+
+// translated from xetex-xetex0.c:2789 (delete_sa_ref)
+#[no_mangle]
+pub unsafe extern "C" fn delete_sa_ref(q: i32) {
+    set_mem_b32s0(q + 1, mem_b32s0(q + 1) - 1);
+    if mem_b32s0(q + 1) != TEX_NULL {
+        return;
+    }
+    let mut s: i32;
+    if mem_b16s1(q) < DIMEN_VAL_LIMIT {
+        if mem_b32s1(q + 2) == 0 {
+            s = WORD_NODE_SIZE;
+        } else {
+            return;
+        }
+    } else {
+        if mem_b16s1(q) < MU_VAL_LIMIT {
+            if mem_b32s1(q + 1) == 0 {
+                crate::mem::delete_glue_ref(0);
+            } else {
+                return;
+            }
+        } else if mem_b32s1(q + 1) != TEX_NULL {
+            return;
+        }
+        s = POINTER_NODE_SIZE;
+    }
+    let mut q = q;
+    loop {
+        let i = (mem_b16s1(q) % 64) as i32;
+        let p = q;
+        q = mem_b32s1(p);
+        crate::mem::free_node(p, s);
+        if q == TEX_NULL {
+            set_sa_root(i as usize, TEX_NULL);
+            return;
+        }
+        if (i & 1) != 0 {
+            set_mem_b32s1(q + i / 2 + 1, TEX_NULL);
+        } else {
+            set_mem_b32s0(q + i / 2 + 1, TEX_NULL);
+        }
+        set_mem_b16s0(q, mem_b16s0(q) - 1);
+        s = INDEX_NODE_SIZE;
+        if mem_b16s0(q) > 0 {
+            break;
+        }
+    }
+}
+
+// translated from xetex-xetex0.c:2837 (sa_save)
+#[no_mangle]
+pub unsafe extern "C" fn sa_save(p: i32) {
+    if cur_level() != sa_level() {
+        if save_ptr() > max_save_stack() {
+            set_max_save_stack(save_ptr());
+            if max_save_stack() > save_size() - 7 {
+                crate::errors::overflow(c"save size".as_ptr(), save_size());
+            }
+        }
+        set_save_stack_b16s1(save_ptr(), RESTORE_SA);
+        set_save_stack_b16s0(save_ptr(), sa_level());
+        set_save_stack_b32s1(save_ptr(), sa_chain());
+        set_save_ptr(save_ptr() + 1);
+        set_sa_chain(TEX_NULL);
+        set_sa_level(cur_level());
+    }
+    let mut i = mem_b16s1(p);
+    let q: i32;
+    if i < DIMEN_VAL_LIMIT {
+        if mem_b32s1(p + 2) == 0 {
+            q = crate::mem::get_node(POINTER_NODE_SIZE);
+            i = TOK_VAL_LIMIT;
+        } else {
+            q = crate::mem::get_node(WORD_NODE_SIZE);
+            set_mem_b32s1(q + 2, mem_b32s1(p + 2));
+        }
+        set_mem_b32s1(q + 1, TEX_NULL);
+    } else {
+        q = crate::mem::get_node(POINTER_NODE_SIZE);
+        set_mem_b32s1(q + 1, mem_b32s1(p + 1));
+    }
+    set_mem_b32s0(q + 1, p);
+    set_mem_b16s1(q, i);
+    set_mem_b16s0(q, mem_b16s0(p));
+    set_mem_b32s1(q, sa_chain());
+    set_sa_chain(q);
+    set_mem_b32s0(p + 1, mem_b32s0(p + 1) + 1);
+}
+
+// translated from xetex-xetex0.c:2878 (sa_destroy)
+#[no_mangle]
+pub unsafe extern "C" fn sa_destroy(p: i32) {
+    if mem_b16s1(p) < MU_VAL_LIMIT {
+        crate::mem::delete_glue_ref(mem_b32s1(p + 1));
+    } else if mem_b32s1(p + 1) != TEX_NULL {
+        if mem_b16s1(p) < BOX_VAL_LIMIT {
+            flush_node_list(mem_b32s1(p + 1));
+        } else {
+            crate::mem::delete_token_ref(mem_b32s1(p + 1));
+        }
+    }
+}
+
+// translated from xetex-xetex0.c:2891 (sa_def)
+#[no_mangle]
+pub unsafe extern "C" fn sa_def(p: i32, e: i32) {
+    set_mem_b32s0(p + 1, mem_b32s0(p + 1) + 1);
+    if mem_b32s1(p + 1) == e {
+        sa_destroy(p);
+    } else {
+        if mem_b16s0(p) == cur_level() {
+            sa_destroy(p);
+        } else {
+            sa_save(p);
+        }
+        set_mem_b16s0(p, cur_level());
+        set_mem_b32s1(p + 1, e);
+    }
+    delete_sa_ref(p);
+}
+
+// translated from xetex-xetex0.c:2908 (sa_w_def)
+#[no_mangle]
+pub unsafe extern "C" fn sa_w_def(p: i32, w: i32) {
+    set_mem_b32s0(p + 1, mem_b32s0(p + 1) + 1);
+    if mem_b32s1(p + 2) != w {
+        if mem_b16s0(p) != cur_level() {
+            sa_save(p);
+        }
+        set_mem_b16s0(p, cur_level());
+        set_mem_b32s1(p + 2, w);
+    }
+    delete_sa_ref(p);
+}
+
+// translated from xetex-xetex0.c:2923 (gsa_def)
+#[no_mangle]
+pub unsafe extern "C" fn gsa_def(p: i32, e: i32) {
+    set_mem_b32s0(p + 1, mem_b32s0(p + 1) + 1);
+    sa_destroy(p);
+    set_mem_b16s0(p, LEVEL_ONE);
+    set_mem_b32s1(p + 1, e);
+    delete_sa_ref(p);
+}
+
+// translated from xetex-xetex0.c:2933 (gsa_w_def)
+#[no_mangle]
+pub unsafe extern "C" fn gsa_w_def(p: i32, w: i32) {
+    set_mem_b32s0(p + 1, mem_b32s0(p + 1) + 1);
+    set_mem_b16s0(p, LEVEL_ONE);
+    set_mem_b32s1(p + 2, w);
+    delete_sa_ref(p);
+}
+
+// translated from xetex-xetex0.c:2942 (sa_restore)
+#[no_mangle]
+pub unsafe extern "C" fn sa_restore() {
+    loop {
+        let p = mem_b32s0(sa_chain() + 1);
+        if mem_b16s0(p) == LEVEL_ONE {
+            if mem_b16s1(p) >= DIMEN_VAL_LIMIT {
+                sa_destroy(sa_chain());
+            }
+        } else {
+            if mem_b16s1(p) < DIMEN_VAL_LIMIT {
+                if mem_b16s1(sa_chain()) < DIMEN_VAL_LIMIT {
+                    set_mem_b32s1(p + 2, mem_b32s1(sa_chain() + 2));
+                } else {
+                    set_mem_b32s1(p + 2, 0);
+                }
+            } else {
+                sa_destroy(p);
+                set_mem_b32s1(p + 1, mem_b32s1(sa_chain() + 1));
+            }
+            set_mem_b16s0(p, mem_b16s0(sa_chain()));
+        }
+        delete_sa_ref(p);
+        let sc = sa_chain();
+        set_sa_chain(mem_b32s1(sc));
+        if mem_b16s1(sc) < DIMEN_VAL_LIMIT {
+            crate::mem::free_node(sc, WORD_NODE_SIZE);
+        } else {
+            crate::mem::free_node(sc, POINTER_NODE_SIZE);
+        }
+        if sa_chain() == TEX_NULL {
+            break;
+        }
+    }
 }

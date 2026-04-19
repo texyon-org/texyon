@@ -226,6 +226,12 @@ mod raw {
         // Base pointer into input_stack (xetex-xetexd.h:521).
         pub(super) static mut base_ptr: i32;
 
+        // Sparse-array (SA) root table and saved-state chain (xetex-xetexd.h:709–713).
+        // sa_root[i] is the root of the trie for register class i (0..=7).
+        pub(super) static mut sa_root: [i32; 8];
+        pub(super) static mut sa_chain: i32;
+        pub(super) static mut sa_level: u16;
+
         // Register-size limits (xetex-xetexd.h:707–708).
         pub(super) static mut max_reg_num: i32;
         pub(super) static mut max_reg_help_line: *const libc::c_char;
@@ -1603,6 +1609,37 @@ pub(crate) fn if_line() -> i32 {
 #[inline]
 pub(crate) fn set_if_line(v: i32) {
     unsafe { raw::if_line = v; }
+}
+
+// ---------------------------------------------------------------------------
+// sa_root / sa_chain / sa_level
+// ---------------------------------------------------------------------------
+
+/// Read `sa_root[i]` (the root of sparse-array trie for class i).
+#[inline]
+pub(crate) fn sa_root(i: usize) -> i32 {
+    unsafe { raw::sa_root[i] }
+}
+/// Write `sa_root[i] = v`.
+#[inline]
+pub(crate) fn set_sa_root(i: usize, v: i32) {
+    unsafe { raw::sa_root[i] = v; }
+}
+#[inline]
+pub(crate) fn sa_chain() -> i32 {
+    unsafe { raw::sa_chain }
+}
+#[inline]
+pub(crate) fn set_sa_chain(v: i32) {
+    unsafe { raw::sa_chain = v; }
+}
+#[inline]
+pub(crate) fn sa_level() -> u16 {
+    unsafe { raw::sa_level }
+}
+#[inline]
+pub(crate) fn set_sa_level(v: u16) {
+    unsafe { raw::sa_level = v; }
 }
 
 // ---------------------------------------------------------------------------
