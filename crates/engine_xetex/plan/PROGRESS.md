@@ -129,7 +129,7 @@ A session should fail fast if any of these are broken:
 -   [ ] `cargo build -p tectonic_engine_xetex` succeeds
 -   [ ] `cargo build -p tectonic` succeeds
 -   [ ] `cargo test -p tectonic_engine_xetex` passes (unit tests inside the crate)
--   [ ] `cargo test -p tectonic_engine_xetex --test trip` passes at 2/2 (TRIP + eTRIP)
+-   [ ] `cargo test -p tectonic --test trip` passes at 2/2 (TRIP + eTRIP)
 -   [ ] `cargo test -p tectonic --test tex-outputs` passes at ≥ the previous count
 -   [ ] `cargo clippy -p tectonic_engine_xetex -- -D warnings` is clean (once we have non-trivial Rust)
 

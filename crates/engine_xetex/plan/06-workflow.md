@@ -25,7 +25,7 @@ Run the parity harness and the TRIP conformance test:
 ```
 cargo build -p tectonic_engine_xetex
 cargo test -p tectonic --test tex-outputs 2>&1 | tee /tmp/parity-before.txt
-cargo test -p tectonic_engine_xetex --test trip 2>&1 | tee /tmp/trip-before.txt
+cargo test -p tectonic --test trip 2>&1 | tee /tmp/trip-before.txt
 ```
 
 (Or, if a scoped test script exists: `./plan/scripts/parity.sh before`.)
@@ -35,7 +35,7 @@ work. If either is lower than what `PROGRESS.md` claims, **stop and
 investigate**. Either a previous session committed a regression (fix first)
 or `PROGRESS.md` is stale (update it).
 
-**About the TRIP test:** `cargo test -p tectonic_engine_xetex --test trip`
+**About the TRIP test:** `cargo test -p tectonic --test trip`
 runs the two TRIP conformance tests (`trip_test` and `etrip_test`) directly
 against the engine crate. They exercise low-level TeX behaviour and tend to
 catch memory/state bugs that the higher-level tex-outputs suite misses. Both
@@ -137,7 +137,7 @@ Then `cargo build -p tectonic_engine_xetex`. Fix link errors.
 
 ```
 cargo test -p tectonic --test tex-outputs 2>&1 | tee /tmp/parity-after.txt
-cargo test -p tectonic_engine_xetex --test trip 2>&1 | tee /tmp/trip-after.txt
+cargo test -p tectonic --test trip 2>&1 | tee /tmp/trip-after.txt
 diff /tmp/parity-before.txt /tmp/parity-after.txt
 diff /tmp/trip-before.txt /tmp/trip-after.txt
 ```

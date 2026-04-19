@@ -5,7 +5,7 @@ Correctness is measured at three levels:
 1.  **Unit tests** (fast, local). Pure Rust functions get pure Rust
     tests via `#[cfg(test)]` modules.
 2.  **TRIP conformance tests** (fast, engine-level). `cargo test -p
-    tectonic_engine_xetex --test trip` runs the Knuth TRIP and e-TRIP
+    tectonic --test trip` runs the Knuth TRIP and e-TRIP
     tests directly against the engine crate. Both `trip_test` and
     `etrip_test` must pass (2/2) at all times. These catch low-level
     TeX engine bugs that the slower parity suite might miss.
@@ -20,7 +20,7 @@ signals. Unit tests help localize bugs but cannot replace them.
 ## Running the TRIP tests
 
 ```
-cargo test -p tectonic_engine_xetex --test trip
+cargo test -p tectonic --test trip
 ```
 
 Expected output: `test result: ok. 2 passed; 0 failed`.
