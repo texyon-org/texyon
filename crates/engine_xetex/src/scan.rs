@@ -2,7 +2,7 @@
 //!
 //! Translated from xetex-xetex0.c.
 
-use crate::globals::{cur_val, max_reg_help_line, max_reg_num, set_cur_val, set_help_line, set_help_ptr};
+use crate::globals::{cur_val, eqtb_b32s1, max_reg_help_line, max_reg_num, set_cur_val, set_help_line, set_help_ptr};
 
 extern "C" {
     fn scan_int();
@@ -16,6 +16,12 @@ extern "C" {
     ) -> libc::c_int;
     fn error();
 }
+
+// INT_BASE + INT_PAR__xetex_hyphenatable_length offset for max_hyphenatable_length
+// (xetex_format.h:568, xetex_format.h:115; xetex_format.h:7826729 = INT_BASE).
+const INT_BASE: i32 = 7_826_729;
+const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80; // xetex_format.h:115
+const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095; // xetex-constants.h:334
 
 // xetex-constants.h:26
 const BIGGEST_USV: i32 = 0x10_FFFF;
@@ -290,4 +296,17 @@ pub unsafe extern "C" fn scan_delimiter_int() {
         int_error(cur_val());
         set_cur_val(0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// max_hyphenatable_length
+// ---------------------------------------------------------------------------
+
+/// Returns the maximum hyphenatable word length, clamped to HYPHENATABLE_LENGTH_LIMIT.
+///
+/// translated from xetex-xetex0.c:11330 (max_hyphenatable_length)
+#[no_mangle]
+pub unsafe extern "C" fn max_hyphenatable_length() -> i32 {
+    let v = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH);
+    if v > HYPHENATABLE_LENGTH_LIMIT { HYPHENATABLE_LENGTH_LIMIT } else { v }
 }

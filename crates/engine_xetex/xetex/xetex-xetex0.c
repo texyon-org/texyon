@@ -11295,13 +11295,7 @@ restart:
     }
 }
 
-int32_t max_hyphenatable_length(void)
-{
-
-    if (INTPAR(xetex_hyphenatable_length) > HYPHENATABLE_LENGTH_LIMIT)
-        return HYPHENATABLE_LENGTH_LIMIT;
-    return INTPAR(xetex_hyphenatable_length);
-}
+/* max_hyphenatable_length: translated to Rust in src/scan.rs */
 
 bool eTeX_enabled(bool b, uint16_t j, int32_t k)
 {
