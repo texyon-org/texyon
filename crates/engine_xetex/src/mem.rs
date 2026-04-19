@@ -47,6 +47,10 @@ const STYLE_NODE: u16 = 14;  // xetex_format.h:394
 const CHOICE_NODE: u16 = 15; // xetex_format.h:395
 // empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
 const EMPTY: i32 = 0;        // xetex-constants.h:230
+
+// Margin kern node (xetex-constants.h:115; xetex_format.h:396).
+const MARGIN_KERN_NODE_SIZE: i32 = 3;
+const MARGIN_KERN_NODE: u16 = 40;
 // native node glyph info size in bytes (xetex-constants.h:304)
 const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 
@@ -690,4 +694,16 @@ pub unsafe extern "C" fn new_choice() -> i32 {
     set_mem_b32s0(p + 2, TEX_NULL);
     set_mem_b32s1(p + 2, TEX_NULL);
     p
+}
+
+/// Allocate a margin kern node (MARGIN_KERN_NODE_SIZE = 3 words).
+///
+/// translated from xetex-xetex0.c:9838 (new_margin_kern)
+#[no_mangle]
+pub unsafe extern "C" fn new_margin_kern(w: i32, _p: i32, side: i16) -> i32 {
+    let k = get_node(MARGIN_KERN_NODE_SIZE);
+    set_mem_b16s1(k, MARGIN_KERN_NODE);  // NODE_type(k)
+    set_mem_b16s0(k, side as u16);
+    set_mem_b32s1(k + 1, w);
+    k
 }

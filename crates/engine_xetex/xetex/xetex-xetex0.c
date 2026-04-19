@@ -9835,15 +9835,7 @@ scaled_t char_pw(int32_t p, small_number side)
     return round_xn_over_d(font_info[QUAD_CODE + param_base[f]].b32.s1, c, 1000);
 }
 
-int32_t new_margin_kern(scaled_t w, int32_t p, small_number side)
-{
-    int32_t k;
-    k = get_node(MARGIN_KERN_NODE_SIZE);
-    NODE_type(k) = MARGIN_KERN_NODE;
-    mem[k].b16.s0 = side;
-    mem[k + 1].b32.s1 = w;
-    return k;
-}
+/* new_margin_kern: translated to Rust in src/mem.rs */
 
 int32_t hpack(int32_t p, scaled_t w, small_number m)
 {
