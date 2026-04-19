@@ -11,7 +11,7 @@ use crate::globals::{
     rust_stdout, save_ptr, save_stack_b16s0, save_stack_b32s1, selector, set_shown_mode,
     set_base_ptr, set_cond_ptr, set_cur_group, set_cur_if, set_cur_level, set_current_diagnostic,
     set_dig_entry, set_eqtb_b32s1, set_file_offset, set_grp_stack, set_history, set_if_line,
-    set_if_limit, set_if_stack, set_input_stack, set_old_setting, set_pool_ptr, set_save_ptr,
+    set_if_limit, set_if_stack, set_input_stack, set_mem_b16s1, set_old_setting, set_pool_ptr, set_save_ptr,
     set_selector, set_str_pool, set_tally, set_term_offset, set_trick_buf, shown_mode,
     str_pool_entry, str_ptr, str_start, tally, term_offset, trick_count, write_file,
 };
@@ -1711,4 +1711,30 @@ pub unsafe extern "C" fn show_cur_cmd_chr() {
     print_char(b'}' as i32);
     capture_to_diagnostic(std::ptr::null_mut());
     end_diagnostic(false);
+}
+
+// ---------------------------------------------------------------------------
+// change_if_limit
+// ---------------------------------------------------------------------------
+
+/// Update the if-limit for a specific conditional pointer.
+///
+/// translated from xetex-xetex0.c:7889 (change_if_limit)
+#[no_mangle]
+pub unsafe extern "C" fn change_if_limit(l: i16, p: i32) {
+    if p == cond_ptr() {
+        set_if_limit(l as u8);
+    } else {
+        let mut q = cond_ptr();
+        loop {
+            if q == crate::mem::TEX_NULL {
+                crate::errors::confusion(c"if".as_ptr());
+            }
+            if mem_b32s1(q) == p {
+                set_mem_b16s1(q, l as u16);
+                return;
+            }
+            q = mem_b32s1(q); // LLIST_link(q)
+        }
+    }
 }

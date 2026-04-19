@@ -6278,154 +6278,11 @@ scan_glue(small_number level)
 }
 
 
-int32_t add_or_sub(int32_t x, int32_t y, int32_t max_answer, bool negative)
-{
-    int32_t a;
-    if (negative)
-        y = -(int32_t) y;
-    if (x >= 0) {
+/* add_or_sub: translated to Rust in src/scaled_math.rs */
 
-        if (y <= max_answer - x)
-            a = x + y;
-        else {
+/* quotient: translated to Rust in src/scaled_math.rs */
 
-            arith_error = true;
-            a = 0;
-        }
-    } else if (y >= -(int32_t) max_answer - x)
-        a = x + y;
-    else {
-
-        arith_error = true;
-        a = 0;
-    }
-    return a;
-}
-
-int32_t quotient(int32_t n, int32_t d)
-{
-    bool negative;
-    int32_t a;
-    if (d == 0) {
-        arith_error = true;
-        a = 0;
-    } else {
-
-        if (d > 0)
-            negative = false;
-        else {
-
-            d = -(int32_t) d;
-            negative = true;
-        }
-        if (n < 0) {
-            n = -(int32_t) n;
-            negative = !negative;
-        }
-        a = n / d;
-        n = n - a * d;
-        d = n - d;
-        if (d + n >= 0)
-            a++;
-        if (negative)
-            a = -(int32_t) a;
-    }
-    return a;
-}
-
-int32_t fract(int32_t x, int32_t n, int32_t d, int32_t max_answer)
-{
-    bool negative;
-    int32_t a;
-    int32_t f;
-    int32_t h;
-    int32_t r;
-    int32_t t;
-    if (d == 0)
-        goto too_big;
-    a = 0;
-    if (d > 0)
-        negative = false;
-    else {
-
-        d = -(int32_t) d;
-        negative = true;
-    }
-    if (x < 0) {
-        x = -(int32_t) x;
-        negative = !negative;
-    } else if (x == 0)
-        goto done;
-    if (n < 0) {
-        n = -(int32_t) n;
-        negative = !negative;
-    }
-    t = n / d;
-    if (t > max_answer / x)
-        goto too_big;
-    a = t * x;
-    n = n - t * d;
-    if (n == 0)
-        goto found;
-    t = x / d;
-    if (t > (max_answer - a) / n)
-        goto too_big;
-    a = a + t * n;
-    x = x - t * d;
-    if (x == 0)
-        goto found;
-    if (x < n) {
-        t = x;
-        x = n;
-        n = t;
-    }
-    f = 0;
-    r = (d / 2) - d;
-    h = -(int32_t) r;
-    while (true) {
-
-        if (odd(n)) {
-            r = r + x;
-            if (r >= 0) {
-                r = r - d;
-                f++;
-            }
-        }
-        n = n / 2;
-        if (n == 0)
-            goto found1;
-        if (x < h)
-            x = x + x;
-        else {
-
-            t = x - d;
-            x = t + x;
-            f = f + n;
-            if (x < n) {
-                if (x == 0)
-                    goto found1;
-                t = x;
-                x = n;
-                n = t;
-            }
-        }
-    }
-found1:
-    if (f > (max_answer - a))
-        goto too_big;
-    a = a + f;
- found:
-    if (negative)
-        a = -(int32_t) a;
-    goto done;
-too_big:
-    {
-        arith_error = true;
-        a = 0;
-    }
- done:
-    return a;
-}
+/* fract: translated to Rust in src/scaled_math.rs */
 
 void scan_expr(void)
 {
@@ -7886,26 +7743,7 @@ done:
         show_cur_cmd_chr();
 }
 
-void change_if_limit(small_number l, int32_t p)
-{
-    int32_t q;
-    if (p == cond_ptr)
-        if_limit = l;
-    else {
-
-        q = cond_ptr;
-        while (true) {
-
-            if (q == TEX_NULL)
-                confusion("if");
-            if (mem[q].b32.s1 == p) {
-                mem[q].b16.s1 = l;
-                return;
-            }
-            q = LLIST_link(q);
-        }
-    }
-}
+/* change_if_limit: translated to Rust in src/output.rs */
 
 
 void

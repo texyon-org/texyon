@@ -864,3 +864,104 @@ mod tests {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// add_or_sub / quotient / fract
+// ---------------------------------------------------------------------------
+
+/// Add or subtract two scaled values, setting arith_error on overflow.
+///
+/// translated from xetex-xetex0.c:6281 (add_or_sub)
+#[no_mangle]
+pub unsafe extern "C" fn add_or_sub(x: i32, y: i32, max_answer: i32, negative: bool) -> i32 {
+    let y = if negative { -y } else { y };
+    if x >= 0 {
+        if y <= max_answer - x {
+            x + y
+        } else {
+            set_arith_error(true);
+            0
+        }
+    } else if y >= -max_answer - x {
+        x + y
+    } else {
+        set_arith_error(true);
+        0
+    }
+}
+
+/// Rounded integer quotient n/d, setting arith_error on divide-by-zero.
+///
+/// translated from xetex-xetex0.c:6305 (quotient)
+#[no_mangle]
+pub unsafe extern "C" fn quotient(mut n: i32, mut d: i32) -> i32 {
+    if d == 0 {
+        set_arith_error(true);
+        return 0;
+    }
+    let mut negative = if d > 0 { false } else { d = -d; true };
+    if n < 0 { n = -n; negative = !negative; }
+    let mut a = n / d;
+    n -= a * d;
+    d = n - d;
+    if d + n >= 0 { a += 1; }
+    if negative { -a } else { a }
+}
+
+/// Compute x * n / d clamped to max_answer, setting arith_error on overflow.
+///
+/// translated from xetex-xetex0.c:6336 (fract)
+#[no_mangle]
+pub unsafe extern "C" fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
+    if d == 0 { set_arith_error(true); return 0; }
+    let mut negative = if d > 0 { false } else { d = -d; true };
+    if x < 0 { x = -x; negative = !negative; } else if x == 0 { return 0; }
+    if n < 0 { n = -n; negative = !negative; }
+    let t = n / d;
+    if t > max_answer / x { set_arith_error(true); return 0; }
+    let mut a = t * x;
+    n -= t * d;
+    // If n == 0, skip straight to `found` (return with sign).
+    let a = if n != 0 {
+        let t2 = x / d;
+        if t2 > (max_answer - a) / n { set_arith_error(true); return 0; }
+        a += t2 * n;
+        x -= t2 * d;
+        // If x == 0, skip to `found`.
+        if x != 0 {
+            if x < n { let tmp = x; x = n; n = tmp; }
+            let mut f = 0i32;
+            let mut r = (d / 2) - d;
+            let h = -r;
+            // The while(true) loop; all `goto found1` become `break`.
+            loop {
+                if n & 1 != 0 {
+                    r += x;
+                    if r >= 0 { r -= d; f += 1; }
+                }
+                n /= 2;
+                if n == 0 { break; }
+                if x < h {
+                    x += x;
+                } else {
+                    let tmp = x - d;
+                    x = tmp + x;
+                    f += n;
+                    if x < n {
+                        if x == 0 { break; }
+                        let tmp = x; x = n; n = tmp;
+                    }
+                }
+            }
+            // found1:
+            if f > max_answer - a { set_arith_error(true); return 0; }
+            a + f
+        } else {
+            a // x == 0: goto found
+        }
+    } else {
+        a // n == 0: goto found
+    };
+    // found:
+    if negative { -a } else { a }
+}
