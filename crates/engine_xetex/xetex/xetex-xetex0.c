@@ -9070,20 +9070,8 @@ void bad_utf8_warning(void)
     end_diagnostic(false);
 }
 
-int32_t get_input_normalization_state(void)
-{
-
-    if (eqtb == NULL)
-        return 0;
-    else
-        return INTPAR(xetex_input_normalization);
-}
-
-int32_t get_tracing_fonts_state(void)
-{
-
-    return INTPAR(xetex_tracing_fonts);
-}
+/* get_input_normalization_state: translated to Rust in src/scan.rs */
+/* get_tracing_fonts_state: translated to Rust in src/scan.rs */
 
 internal_font_number
 read_font_info(int32_t u, str_number nom, str_number aire, scaled_t s)
@@ -15942,10 +15930,7 @@ str_number tokens_to_string(int32_t p)
     return make_string();
 }
 
-void scan_pdf_ext_toks(void)
-{
-    scan_toks(false, true);
-}
+/* scan_pdf_ext_toks: translated to Rust in src/scan.rs */
 
 void compare_strings(void)
 {

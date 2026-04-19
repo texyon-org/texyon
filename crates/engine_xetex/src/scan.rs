@@ -2,11 +2,12 @@
 //!
 //! Translated from xetex-xetex0.c.
 
-use crate::globals::{cur_val, eqtb_b32s1, max_reg_help_line, max_reg_num, set_cur_val, set_help_line, set_help_ptr};
+use crate::globals::{cur_val, eqtb_b32s1, eqtb_is_null, max_reg_help_line, max_reg_num, set_cur_val, set_help_line, set_help_ptr};
 
 extern "C" {
     fn scan_int();
     fn scan_glue(level: i16);
+    fn scan_toks(macro_def: bool, xpand: bool) -> i32;
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
     fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
     fn int_error(n: i32);
@@ -25,7 +26,9 @@ const MU_VAL_SCAN: i16 = 3;
 // INT_BASE + INT_PAR__xetex_hyphenatable_length offset for max_hyphenatable_length
 // (xetex_format.h:568, xetex_format.h:115; xetex_format.h:7826729 = INT_BASE).
 const INT_BASE: i32 = 7_826_729;
-const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80; // xetex_format.h:115
+const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80;    // xetex_format.h:115
+const INT_PAR_XETEX_INPUT_NORMALIZATION: i32 = 74;    // xetex_format.h:109
+const INT_PAR_XETEX_TRACING_FONTS: i32 = 77;          // xetex_format.h:112
 const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095; // xetex-constants.h:334
 
 // xetex-constants.h:26
@@ -334,4 +337,32 @@ pub unsafe extern "C" fn scan_normal_glue() {
 #[no_mangle]
 pub unsafe extern "C" fn scan_mu_glue() {
     scan_glue(MU_VAL_SCAN);
+}
+
+// ---------------------------------------------------------------------------
+// get_input_normalization_state / get_tracing_fonts_state / scan_pdf_ext_toks
+// ---------------------------------------------------------------------------
+
+/// Returns INTPAR(xetex_input_normalization), or 0 if eqtb is not yet initialized.
+///
+/// translated from xetex-xetex0.c:9073 (get_input_normalization_state)
+#[no_mangle]
+pub unsafe extern "C" fn get_input_normalization_state() -> i32 {
+    if eqtb_is_null() { 0 } else { eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INPUT_NORMALIZATION) }
+}
+
+/// Returns INTPAR(xetex_tracing_fonts).
+///
+/// translated from xetex-xetex0.c:9082 (get_tracing_fonts_state)
+#[no_mangle]
+pub unsafe extern "C" fn get_tracing_fonts_state() -> i32 {
+    eqtb_b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS)
+}
+
+/// Scan a PDF extension token list (xpand=true, macro_def=false).
+///
+/// translated from xetex-xetex0.c:15945 (scan_pdf_ext_toks)
+#[no_mangle]
+pub unsafe extern "C" fn scan_pdf_ext_toks() {
+    scan_toks(false, true);
 }

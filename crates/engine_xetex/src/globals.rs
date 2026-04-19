@@ -639,6 +639,12 @@ pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
 // eqtb accessor
 // ---------------------------------------------------------------------------
 
+/// Returns true if the `eqtb` pointer is null (engine not yet initialized).
+#[inline]
+pub(crate) fn eqtb_is_null() -> bool {
+    unsafe { raw::eqtb.is_null() }
+}
+
 /// Copy the full MemoryWord at `eqtb[p]`.
 #[inline]
 pub(crate) fn eqtb_word(p: i32) -> crate::mem_types::MemoryWord {
