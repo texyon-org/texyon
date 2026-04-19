@@ -15945,13 +15945,7 @@ close_files_and_terminate(void)
 }
 
 
-void flush_str(str_number s)
-{
-    if (s == str_ptr - 1) {
-        str_ptr--;
-        pool_ptr = str_start[str_ptr - TOO_BIG_CHAR];
-    }
-}
+/* flush_str: translated to Rust in src/string_pool.rs */
 
 str_number tokens_to_string(int32_t p)
 {

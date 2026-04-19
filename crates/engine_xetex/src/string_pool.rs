@@ -233,3 +233,18 @@ pub unsafe extern "C" fn load_pool_strings(spare_size: i32) -> i32 {
 
     g
 }
+
+// ---------------------------------------------------------------------------
+// flush_str
+// ---------------------------------------------------------------------------
+
+/// Free the top-of-pool string if it equals s.
+///
+/// translated from xetex-xetex0.c:15948 (flush_str)
+#[no_mangle]
+pub unsafe extern "C" fn flush_str(s: i32) {
+    if s == str_ptr() - 1 {
+        set_str_ptr(str_ptr() - 1);
+        set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+    }
+}
