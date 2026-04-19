@@ -21,6 +21,8 @@ extern "C" {
 const BIGGEST_USV: i32 = 0x10_FFFF;
 // xetex-constants.h:335
 const CHAR_CLASS_LIMIT: i32 = 4096;
+// xetex-constants.h:343
+const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
 // xetex-constants.h:25
 const BIGGEST_CHAR: i32 = 0xFFFF;
 // xetex_format.h (NUMBER_MATH_FAMILIES)
@@ -195,6 +197,41 @@ pub unsafe extern "C" fn scan_fifteen_bit_int() {
         capture_to_diagnostic(std::ptr::null_mut());
         set_help_ptr(2);
         set_help_line(1, c"A mathchar number must be between 0 and 32767.".as_ptr());
+        set_help_line(0, c"I changed this one to zero.".as_ptr());
+        int_error(cur_val());
+        set_cur_val(0);
+    }
+}
+
+// translated from xetex-xetex0.c:5168 (scan_xetex_math_char_int)
+// math_char(x) = (x as u32) & 0x1FFFFF (xetex-xetexd.h:1205)
+#[no_mangle]
+pub unsafe extern "C" fn scan_xetex_math_char_int() {
+    scan_int();
+    let mc = (cur_val() as u32) & 0x1F_FFFF;
+    if mc == ACTIVE_MATH_CHAR as u32 {
+        if cur_val() != ACTIVE_MATH_CHAR {
+            let errmsg = error_here_with_diagnostic(c"Bad active XeTeX math code".as_ptr());
+            ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(2);
+            set_help_line(
+                1,
+                c"Since I ignore class and family for active math chars,".as_ptr(),
+            );
+            set_help_line(0, c"I changed this one to \"1FFFFF.".as_ptr());
+            int_error(cur_val());
+            set_cur_val(ACTIVE_MATH_CHAR);
+        }
+    } else if mc > BIGGEST_USV as u32 {
+        let errmsg = error_here_with_diagnostic(c"Bad XeTeX math character code".as_ptr());
+        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(
+            1,
+            c"Since I expected a character number between 0 and \"10FFFF,".as_ptr(),
+        );
         set_help_line(0, c"I changed this one to zero.".as_ptr());
         int_error(cur_val());
         set_cur_val(0);

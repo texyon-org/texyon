@@ -5073,37 +5073,7 @@ void scan_glyph_number(internal_font_number f)
 /* scan_usv_num translated to Rust (src/scan.rs). */
 /* scan_char_num translated to Rust (src/scan.rs). */
 
-void scan_xetex_math_char_int(void)
-{
-    scan_int();
-    if (math_char(cur_val) == ACTIVE_MATH_CHAR) {
-        if (cur_val != ACTIVE_MATH_CHAR) {
-            ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad active XeTeX math code");
-            ttstub_diag_printf(errmsg, " (%d)", cur_val);
-            capture_to_diagnostic(NULL);
-
-            {
-                help_ptr = 2;
-                help_line[1] = "Since I ignore class and family for active math chars,";
-                help_line[0] = "I changed this one to \"1FFFFF.";
-            }
-            int_error(cur_val);
-            cur_val = ACTIVE_MATH_CHAR;
-        }
-    } else if (math_char(cur_val) > BIGGEST_USV) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad XeTeX math character code");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "Since I expected a character number between 0 and \"10FFFF,";
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
+/* scan_xetex_math_char_int translated to Rust (src/scan.rs). */
 
 void scan_math(int32_t p)
 {
