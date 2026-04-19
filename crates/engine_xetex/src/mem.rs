@@ -38,6 +38,15 @@ const KERN_NODE: u16 = 11;
 const PENALTY_NODE: u16 = 12;
 // eqtb base indices (xetex_format.h)
 const GLUE_BASE: i32 = 2_254_340;
+
+// Math node type and size constants (xetex_format.h:394–401; xetex-constants.h:119,136).
+const NOAD_SIZE: i32 = 4;
+const STYLE_NODE_SIZE: i32 = 3;
+const ORD_NOAD: u16 = 16;    // xetex_format.h:401
+const STYLE_NODE: u16 = 14;  // xetex_format.h:394
+const CHOICE_NODE: u16 = 15; // xetex_format.h:395
+// empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
+const EMPTY: i32 = 0;        // xetex-constants.h:230
 // native node glyph info size in bytes (xetex-constants.h:304)
 const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 
@@ -628,5 +637,57 @@ pub unsafe extern "C" fn prev_rightmost(s: i32, e: i32) -> i32 {
             return TEX_NULL;
         }
     }
+    p
+}
+
+// ---------------------------------------------------------------------------
+// new_noad / new_style / new_choice
+// ---------------------------------------------------------------------------
+
+/// Allocate and zero-initialize an ordinary noad (NOAD_SIZE = 4 words).
+///
+/// translated from xetex-xetex0.c:10542 (new_noad)
+#[no_mangle]
+pub unsafe extern "C" fn new_noad() -> i32 {
+    let p = get_node(NOAD_SIZE);
+    set_mem_b16s1(p, ORD_NOAD);
+    set_mem_b16s0(p, NORMAL);
+    // mem[p+1].b32 = empty  ↔  s1=EMPTY=0, s0=TEX_NULL
+    set_mem_b32s1(p + 1, EMPTY);
+    set_mem_b32s0(p + 1, TEX_NULL);
+    // mem[p+3].b32 = empty
+    set_mem_b32s1(p + 3, EMPTY);
+    set_mem_b32s0(p + 3, TEX_NULL);
+    // mem[p+2].b32 = empty
+    set_mem_b32s1(p + 2, EMPTY);
+    set_mem_b32s0(p + 2, TEX_NULL);
+    p
+}
+
+/// Allocate a style node (STYLE_NODE_SIZE = 3 words).
+///
+/// translated from xetex-xetex0.c:10554 (new_style)
+#[no_mangle]
+pub unsafe extern "C" fn new_style(s: i16) -> i32 {
+    let p = get_node(STYLE_NODE_SIZE);
+    set_mem_b16s1(p, STYLE_NODE);  // NODE_type(p)
+    set_mem_b16s0(p, s as u16);
+    set_mem_b32s1(p + 1, 0);
+    set_mem_b32s1(p + 2, 0);
+    p
+}
+
+/// Allocate a choice node (STYLE_NODE_SIZE = 3 words).
+///
+/// translated from xetex-xetex0.c:10565 (new_choice)
+#[no_mangle]
+pub unsafe extern "C" fn new_choice() -> i32 {
+    let p = get_node(STYLE_NODE_SIZE);
+    set_mem_b16s1(p, CHOICE_NODE);  // NODE_type(p)
+    set_mem_b16s0(p, 0);
+    set_mem_b32s0(p + 1, TEX_NULL);
+    set_mem_b32s1(p + 1, TEX_NULL);
+    set_mem_b32s0(p + 2, TEX_NULL);
+    set_mem_b32s1(p + 2, TEX_NULL);
     p
 }

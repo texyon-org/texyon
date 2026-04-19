@@ -10539,41 +10539,9 @@ void append_to_vlist(int32_t b)
         cur_list.aux.b32.s1 = mem[b + 2].b32.s1;
 }
 
-int32_t new_noad(void)
-{
-    int32_t p;
-    p = get_node(NOAD_SIZE);
-    mem[p].b16.s1 = ORD_NOAD;
-    mem[p].b16.s0 = NORMAL;
-    mem[p + 1].b32 = empty;
-    mem[p + 3].b32 = empty;
-    mem[p + 2].b32 = empty;
-    return p;
-}
-
-int32_t new_style(small_number s)
-{
-    int32_t p;
-    p = get_node(STYLE_NODE_SIZE);
-    NODE_type(p) = STYLE_NODE;
-    mem[p].b16.s0 = s;
-    mem[p + 1].b32.s1 = 0;
-    mem[p + 2].b32.s1 = 0;
-    return p;
-}
-
-int32_t new_choice(void)
-{
-    int32_t p;
-    p = get_node(STYLE_NODE_SIZE);
-    NODE_type(p) = CHOICE_NODE;
-    mem[p].b16.s0 = 0;
-    mem[p + 1].b32.s0 = TEX_NULL;
-    mem[p + 1].b32.s1 = TEX_NULL;
-    mem[p + 2].b32.s0 = TEX_NULL;
-    mem[p + 2].b32.s1 = TEX_NULL;
-    return p;
-}
+/* new_noad: translated to Rust in src/mem.rs */
+/* new_style: translated to Rust in src/mem.rs */
+/* new_choice: translated to Rust in src/mem.rs */
 
 void show_info(void)
 {
