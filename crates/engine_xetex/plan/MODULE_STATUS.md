@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 21.
+Last updated: session 22.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 21.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 16629 |    188 | multiple (see below)              | IN PROGRESS — 22% |
+| xetex-xetex0.c               | 16363 |    177 | multiple (see below)              | IN PROGRESS — 35% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -323,15 +323,25 @@ New Rust module `src/save.rs` created for save-stack management.
 |43 | `sa_restore`              |        2942 | `src/save.rs`   | MIGRATED (session 21, 2c28bd03) |
 |44 | `unsave`                  |        2814 | `src/save.rs`   | MIGRATED (session 21, ddf8d1cc) |
 |45 | `show_cur_cmd_chr`        |        2824 | `src/output.rs` | MIGRATED (session 21, 1a27b4e9) |
+|46 | `end_token_list`          |        3108 | `src/input.rs`  | MIGRATED (session 22, d55b8f05) |
+|47 | `back_input`              |        3136 | `src/input.rs`  | MIGRATED (session 22, d55b8f05) |
+|48 | `back_error`              |        3167 | `src/input.rs`  | MIGRATED (session 22, d55b8f05) |
+|49 | `ins_error`               |        3174 | `src/input.rs`  | MIGRATED (session 22, d55b8f05) |
+|50 | `new_index`               |        4111 | `src/save.rs`   | MIGRATED (session 22, 250f183b) |
+|51 | `find_sa_element`         |        4129 | `src/save.rs`   | MIGRATED (session 22, 250f183b) |
+|52 | `new_noad`                |       10542 | `src/mem.rs`    | MIGRATED (session 22, 2334ba03) |
+|53 | `new_style`               |       10554 | `src/mem.rs`    | MIGRATED (session 22, 2334ba03) |
+|54 | `new_choice`              |       10565 | `src/mem.rs`    | MIGRATED (session 22, 2334ba03) |
+|55 | `max_hyphenatable_length` |       11330 | `src/scan.rs`   | MIGRATED (session 22, 4394fae3) |
+|56 | `new_margin_kern`         |        9838 | `src/mem.rs`    | MIGRATED (session 22, 5147b292) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `show_save_groups` (~line 12120): complex multi-goto; approach carefully with label-loops.
-- `scan_math` (~line 5108): next in scanner cluster; depends on several math globals.
-- `set_math_char` (~line 5299): related to scan_math.
-- `end_token_list` (~line 3412): needs param_ptr, param_stack globals.
-- `back_input` (~line 3440): needs cur_tok, already translated other deps.
+- `show_save_groups` (~line 11356): complex multi-goto; approach carefully with label-loops.
+- `scan_math` (~line 4554): depends on get_x_token, eqtb, math globals — complex.
+- `begin_file_reading`/`end_file_reading` (~3113): needs in_open, eof_seen, etc.
+- `new_noad` ✓, `new_style` ✓, `new_choice` ✓ done this session.
 
 ## How to maintain this file
 

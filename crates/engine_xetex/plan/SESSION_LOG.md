@@ -32,6 +32,43 @@ template.
 
 ---
 
+## Session 22 — 2026-04-19 — input-stack, SA alloc, math node alloc (11 functions)
+
+**Goal:** Translate end_token_list cluster, SA node allocators, math node constructors, and misc helpers.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 21
+
+**Work done:**
+- Added globals: `max_in_stack`, `stack_size`, `param_ptr`/`param_stack`/`max_param_stack`, `cur_ptr`, `sa_null`.
+- Added `cur_input` field setters: `state`, `index`, `set_cur_input` (full replace).
+- Created `src/input.rs`: `end_token_list`, `back_input`, `back_error`, `ins_error` (lines 3108–3179). Committed d55b8f05.
+- Added `new_index`, `find_sa_element` to `src/save.rs` (lines 4111–4264). Added `sa_alloc_chain` helper for the multi-goto allocation chain. Committed 250f183b.
+- Added `new_noad`, `new_style`, `new_choice` to `src/mem.rs` (lines 10542–10576). Committed 2334ba03.
+- Added `max_hyphenatable_length` to `src/scan.rs` (line 11330). Committed 4394fae3.
+- Added `new_margin_kern` to `src/mem.rs` (line 9838). Committed 5147b292.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 22
+- 182 Rust functions total; 11 new this session.
+- xetex-xetex0.c: 16363 LOC, ~177 C functions remaining.
+
+**Surprises / gotchas:**
+- `find_sa_element`'s multi-goto chain (not_found, lab46–49) is cleanest in Rust as a single helper `sa_alloc_chain(q, levels)` that processes all remaining levels from a given entry point; avoids repetition while correctly mirroring C fall-through semantics.
+- `new_margin_kern` in C: the `p` parameter is unused — confirmed by reading the body.
+- `back_input` removes the C `extern "C" { fn back_input(); }` from `save.rs` since it's now a Rust function called via `crate::input::back_input()`.
+
+**For the next session:**
+- `begin_file_reading`/`end_file_reading` (~3113): need `in_open`, `max_in_open`, `first`, `buf_size`, `source_filename_stack`, `full_source_filename_stack`, `eof_seen`, `line_stack`, `pseudo_close`, `u_close`, `input_file` globals.
+- `scan_math` (~4554): depends on `get_x_token`, `eqtb`, math globals — complex, approach carefully.
+- `new_noad` ✓, `new_style` ✓, `new_choice` ✓ done.
+- `show_save_groups` (~11356): complex multi-goto; approach with label-loops carefully.
+
+---
+
 ## Session 21 — 2026-04-19 — SA cluster + unsave + show_cur_cmd_chr (11 functions)
 
 **Goal:** Translate sparse-array register save/restore cluster, unsave, and show_cur_cmd_chr.
