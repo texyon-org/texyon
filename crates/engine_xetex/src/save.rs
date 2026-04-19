@@ -3,13 +3,15 @@
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 
 use crate::globals::{
-    cur_boundary, cur_group, cur_level, eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, eqtb_word, line,
-    mag_set, max_save_stack, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, sa_chain, sa_level,
-    save_ptr, save_size, set_cur_boundary, set_cur_group, set_cur_level, set_eqtb_b16s0,
-    set_eqtb_b16s1, set_eqtb_b32s1, set_mag_set, set_max_save_stack, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_sa_chain, set_sa_level, set_sa_root, set_save_ptr,
-    set_save_stack_b16s0, set_save_stack_b16s1, set_save_stack_b32s1, set_save_stack_word,
-    set_xeq_level, sa_root, xeq_level,
+    align_state, cur_boundary, cur_group, cur_input, cur_level, cur_tok, eqtb_b16s0, eqtb_b16s1,
+    eqtb_b32s1, eqtb_word, grp_stack, in_open, line, mag_set, max_save_stack, mem_b16s0,
+    mem_b16s1, mem_b32s0, mem_b32s1, sa_chain, sa_level, sa_root, save_ptr, save_size,
+    save_stack_b16s0, save_stack_b16s1, save_stack_b32s1, save_stack_word, set_align_state, set_cur_boundary,
+    set_cur_group, set_cur_input_loc, set_cur_input_start, set_cur_level, set_cur_tok,
+    set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word, set_mag_set,
+    set_max_save_stack, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_sa_chain,
+    set_sa_level, set_sa_root, set_save_ptr, set_save_stack_b16s0, set_save_stack_b16s1,
+    set_save_stack_b32s1, set_save_stack_word, set_xeq_level, xeq_level,
 };
 use crate::mem_types::MemoryWord;
 
@@ -23,6 +25,7 @@ extern "C" {
     fn print_nl_cstr(s: *const libc::c_char);
     fn ttstub_diag_printf(d: *mut libc::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
     fn flush_node_list(p: i32);
+    fn back_input();
 }
 
 // Save-stack discriminant values (xetex-constants.h:260–285).
@@ -34,6 +37,15 @@ const LEVEL_BOUNDARY: u16 = 3;
 // Grouping level constants (xetex-constants.h:89–90).
 const LEVEL_ZERO: u16 = 0;
 const LEVEL_ONE: u16 = 1;
+
+// Brace-token limits for align_state tracking (xetex-constants.h:350,352).
+const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
+const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
+
+// eqtb range constants (xetex_format.h:198,204,224).
+const INT_BASE: i32 = 7_826_729;
+const EQTB_SIZE: i32 = 8_941_458;
+const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 
 // ---------------------------------------------------------------------------
 // new_save_level
@@ -150,8 +162,7 @@ pub unsafe extern "C" fn save_for_after(t: i32) {
 // prepare_mag
 // ---------------------------------------------------------------------------
 
-// INT_PAR__mag = 17 (xetex_format.h:52); INT_BASE = 7_826_729 (xetex_format.h:219).
-const INT_BASE: i32 = 7_826_729;
+// INT_PAR__mag = 17 (xetex_format.h:52).
 const INT_PAR_MAG: i32 = 17;
 
 /// Validate and lock in the current \mag parameter.
@@ -450,5 +461,79 @@ pub unsafe extern "C" fn sa_restore() {
         if sa_chain() == TEX_NULL {
             break;
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// unsave
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:2814 (unsave)
+#[no_mangle]
+pub unsafe extern "C" fn unsave() {
+    if cur_level() > LEVEL_ONE {
+        set_cur_level(cur_level() - 1);
+        let mut l: u16 = 0;
+        let mut a = false;
+        loop {
+            set_save_ptr(save_ptr() - 1);
+            if save_stack_b16s1(save_ptr()) == LEVEL_BOUNDARY {
+                break; // goto done
+            }
+            let p = save_stack_b32s1(save_ptr());
+            if save_stack_b16s1(save_ptr()) == INSERT_TOKEN {
+                let t = cur_tok();
+                set_cur_tok(p);
+                if a {
+                    let pn = crate::mem::get_avail();
+                    set_mem_b32s0(pn, cur_tok());
+                    set_mem_b32s1(pn, cur_input().loc);
+                    set_cur_input_loc(pn);
+                    set_cur_input_start(pn);
+                    if cur_tok() < RIGHT_BRACE_LIMIT {
+                        if cur_tok() < LEFT_BRACE_LIMIT {
+                            set_align_state(align_state() - 1);
+                        } else {
+                            set_align_state(align_state() + 1);
+                        }
+                    }
+                } else {
+                    back_input();
+                    a = true;
+                }
+                set_cur_tok(t);
+            } else if save_stack_b16s1(save_ptr()) == RESTORE_SA {
+                sa_restore();
+                set_sa_chain(p);
+                set_sa_level(save_stack_b16s0(save_ptr()));
+            } else {
+                if save_stack_b16s1(save_ptr()) == RESTORE_OLD_VALUE {
+                    l = save_stack_b16s0(save_ptr());
+                    set_save_ptr(save_ptr() - 1);
+                } else {
+                    set_save_stack_word(save_ptr(), eqtb_word(UNDEFINED_CONTROL_SEQUENCE));
+                }
+                if p < INT_BASE || p > EQTB_SIZE {
+                    if eqtb_b16s0(p) == LEVEL_ONE {
+                        eq_destroy(save_stack_word(save_ptr()));
+                    } else {
+                        eq_destroy(eqtb_word(p));
+                        set_eqtb_word(p, save_stack_word(save_ptr()));
+                    }
+                } else if xeq_level(p) != LEVEL_ONE {
+                    set_eqtb_word(p, save_stack_word(save_ptr()));
+                    set_xeq_level(p, l);
+                }
+            }
+        }
+        // done:
+        if grp_stack(in_open()) == cur_boundary() {
+            crate::output::group_warning();
+        }
+        set_cur_group(save_stack_b16s0(save_ptr()) as u8);
+        set_cur_boundary(save_stack_b32s1(save_ptr()));
+        set_save_ptr(save_ptr() - 1);
+    } else {
+        crate::errors::confusion(c"curlevel".as_ptr());
     }
 }

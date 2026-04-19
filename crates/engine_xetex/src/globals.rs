@@ -198,6 +198,10 @@ mod raw {
         pub(super) static mut microseconds: i32;
         // Font name table (xetex-xetexd.h:562; str_number = i32).
         pub(super) static mut font_name: *mut i32;
+        // Current token (xetex-xetexd.h:502; token encoded as int32).
+        pub(super) static mut cur_tok: i32;
+        // Alignment state (xetex-xetexd.h:520; tracks brace nesting in alignment).
+        pub(super) static mut align_state: i32;
         // Current character code (xetex-xetexd.h:500).
         pub(super) static mut cur_chr: i32;
         // Current command code (`eight_bits` = u8, xetex-xetexd.h:499).
@@ -485,6 +489,16 @@ pub(crate) fn cur_input_synctex_tag() -> i32 {
 pub(crate) fn cur_input() -> InputState {
     // SAFETY: see module-level doc.  InputState is Copy.
     unsafe { raw::cur_input }
+}
+/// Writes `cur_input.loc = v`.
+#[inline]
+pub(crate) fn set_cur_input_loc(v: i32) {
+    unsafe { raw::cur_input.loc = v; }
+}
+/// Writes `cur_input.start = v`.
+#[inline]
+pub(crate) fn set_cur_input_start(v: i32) {
+    unsafe { raw::cur_input.start = v; }
 }
 
 /// Returns the current source line number.
@@ -1192,6 +1206,22 @@ pub(crate) fn set_old_setting(v: u8) {
 // ---------------------------------------------------------------------------
 
 #[inline]
+pub(crate) fn cur_tok() -> i32 {
+    unsafe { raw::cur_tok }
+}
+#[inline]
+pub(crate) fn set_cur_tok(v: i32) {
+    unsafe { raw::cur_tok = v; }
+}
+#[inline]
+pub(crate) fn align_state() -> i32 {
+    unsafe { raw::align_state }
+}
+#[inline]
+pub(crate) fn set_align_state(v: i32) {
+    unsafe { raw::align_state = v; }
+}
+#[inline]
 pub(crate) fn cur_chr() -> i32 {
     unsafe { raw::cur_chr }
 }
@@ -1292,6 +1322,11 @@ pub(crate) fn set_save_stack_b16s1(k: i32, v: u16) {
 #[inline]
 pub(crate) fn set_save_stack_b16s0(k: i32, v: u16) {
     unsafe { (*raw::save_stack.offset(k as isize)).b16.s0 = v; }
+}
+/// Copy the full MemoryWord at `save_stack[k]`.
+#[inline]
+pub(crate) fn save_stack_word(k: i32) -> crate::mem_types::MemoryWord {
+    unsafe { *raw::save_stack.offset(k as isize) }
 }
 /// Copy a full MemoryWord to `save_stack[k]`.
 #[inline]

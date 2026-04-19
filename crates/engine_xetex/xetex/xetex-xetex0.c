@@ -2811,78 +2811,7 @@ void pseudo_close(void)
 
 /* save_for_after translated to Rust (src/save.rs). */
 
-void unsave(void)
-{
-    int32_t p;
-    uint16_t l = 0;
-    int32_t t;
-    bool a;
-
-    a = false;
-    if (cur_level > LEVEL_ONE) {
-        cur_level--;
-        while (true) {
-
-            save_ptr--;
-            if (save_stack[save_ptr].b16.s1 == LEVEL_BOUNDARY)
-                goto done;
-            p = save_stack[save_ptr].b32.s1;
-            if (save_stack[save_ptr].b16.s1 == INSERT_TOKEN) {   /*338: */
-                t = cur_tok;
-                cur_tok = p;
-                if (a) {
-                    p = get_avail();
-                    mem[p].b32.s0 = cur_tok;
-                    mem[p].b32.s1 = cur_input.loc;
-                    cur_input.loc = p;
-                    cur_input.start = p;
-                    if (cur_tok < RIGHT_BRACE_LIMIT) {
-
-                        if (cur_tok < LEFT_BRACE_LIMIT)
-                            align_state--;
-                        else
-                            align_state++;
-                    }
-                } else {
-                    back_input();
-                    a = true;
-                }
-                cur_tok = t;
-            } else if (save_stack[save_ptr].b16.s1 == RESTORE_SA) {
-                sa_restore();
-                sa_chain = p;
-                sa_level = save_stack[save_ptr].b16.s0;
-            } else {
-
-                if (save_stack[save_ptr].b16.s1 == RESTORE_OLD_VALUE) {
-                    l = save_stack[save_ptr].b16.s0;
-                    save_ptr--;
-                } else
-                    save_stack[save_ptr] = eqtb[UNDEFINED_CONTROL_SEQUENCE];
-                if ((p < INT_BASE) || (p > EQTB_SIZE)) {
-
-                    if (eqtb[p].b16.s0 == LEVEL_ONE) {
-                        eq_destroy(save_stack[save_ptr]);
-                    } else {
-                        eq_destroy(eqtb[p]);
-                        eqtb[p] = save_stack[save_ptr];
-                    }
-                } else if (XEQ_LEVEL(p) != LEVEL_ONE) {
-                    eqtb[p] = save_stack[save_ptr];
-                    XEQ_LEVEL(p) = l;
-                }
-            }
-        }
-
-    done:
-        if (grp_stack[in_open] == cur_boundary)
-            group_warning();
-        cur_group = save_stack[save_ptr].b16.s0;
-        cur_boundary = save_stack[save_ptr].b32.s1;
-        save_ptr--;
-    } else
-        confusion("curlevel");
-}
+/* unsave translated to Rust (src/save.rs). */
 
 /* prepare_mag translated to Rust (src/save.rs). */
 
