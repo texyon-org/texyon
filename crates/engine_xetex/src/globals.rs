@@ -239,6 +239,12 @@ mod raw {
         pub(super) static mut param_ptr: i32;
         pub(super) static mut max_param_stack: i32;
 
+        // SA trie cursor — scratch pointer used during SA node traversal/allocation
+        // (xetex-xetexd.h:710; xetex-ini.c:336).
+        pub(super) static mut cur_ptr: i32;
+        // SA null sentinel: a MemoryWord with both halves == TEX_NULL (xetex-ini.c:3203).
+        pub(super) static mut sa_null: MemoryWord;
+
         // Sparse-array (SA) root table and saved-state chain (xetex-xetexd.h:709–713).
         // sa_root[i] is the root of the trie for register class i (0..=7).
         pub(super) static mut sa_root: [i32; 8];
@@ -1720,6 +1726,26 @@ pub(crate) fn sa_level() -> u16 {
 #[inline]
 pub(crate) fn set_sa_level(v: u16) {
     unsafe { raw::sa_level = v; }
+}
+
+// ---------------------------------------------------------------------------
+// cur_ptr / sa_null
+// ---------------------------------------------------------------------------
+
+/// Returns `cur_ptr` — SA trie traversal cursor (xetex-xetexd.h:710).
+#[inline]
+pub(crate) fn cur_ptr() -> i32 {
+    unsafe { raw::cur_ptr }
+}
+/// Sets `cur_ptr`.
+#[inline]
+pub(crate) fn set_cur_ptr(v: i32) {
+    unsafe { raw::cur_ptr = v; }
+}
+/// Returns a copy of `sa_null` — the SA null memory-word sentinel.
+#[inline]
+pub(crate) fn sa_null() -> crate::mem_types::MemoryWord {
+    unsafe { raw::sa_null }
 }
 
 // ---------------------------------------------------------------------------
