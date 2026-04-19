@@ -1,16 +1,33 @@
 # 05 — Testing strategy
 
-Correctness is measured at two levels:
+Correctness is measured at three levels:
 
 1.  **Unit tests** (fast, local). Pure Rust functions get pure Rust
     tests via `#[cfg(test)]` modules.
-2.  **Parity tests** (slow, end-to-end). The existing
+2.  **TRIP conformance tests** (fast, engine-level). `cargo test -p
+    tectonic_engine_xetex --test trip` runs the Knuth TRIP and e-TRIP
+    tests directly against the engine crate. Both `trip_test` and
+    `etrip_test` must pass (2/2) at all times. These catch low-level
+    TeX engine bugs that the slower parity suite might miss.
+3.  **Parity tests** (slow, end-to-end). The existing
     `tests/tex-outputs.rs` suite compiles real `.tex` documents and
     compares generated `.xdv`/`.log`/`.pdf` against golden files
     byte-for-byte.
 
-The parity tests are the authoritative correctness signal. Unit
-tests help localize bugs but cannot replace parity.
+Both the TRIP tests and the parity tests are authoritative correctness
+signals. Unit tests help localize bugs but cannot replace them.
+
+## Running the TRIP tests
+
+```
+cargo test -p tectonic_engine_xetex --test trip
+```
+
+Expected output: `test result: ok. 2 passed; 0 failed`.
+
+The TRIP tests (`tests/trip.rs` in `crates/engine_xetex`) compare the
+engine's output against golden TRIP log/xdv/fot files. They are fast
+(~1 second) and should be run alongside the parity suite at every step.
 
 ## Running parity tests
 

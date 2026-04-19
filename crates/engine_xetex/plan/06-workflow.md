@@ -20,18 +20,26 @@ the docs at the start of your session.
 
 ## Step 1 — Establish the baseline
 
-Run the parity harness:
+Run the parity harness and the TRIP conformance test:
 
 ```
 cargo build -p tectonic_engine_xetex
 cargo test -p tectonic --test tex-outputs 2>&1 | tee /tmp/parity-before.txt
+cargo test -p tectonic_engine_xetex --test trip 2>&1 | tee /tmp/trip-before.txt
 ```
 
 (Or, if a scoped test script exists: `./plan/scripts/parity.sh before`.)
 
-Record the pass count. If it's lower than what `PROGRESS.md` claims,
-**stop and investigate**. Either a previous session committed a regression
-(fix first) or `PROGRESS.md` is stale (update it).
+Record the pass counts. Both suites must pass before starting new translation
+work. If either is lower than what `PROGRESS.md` claims, **stop and
+investigate**. Either a previous session committed a regression (fix first)
+or `PROGRESS.md` is stale (update it).
+
+**About the TRIP test:** `cargo test -p tectonic_engine_xetex --test trip`
+runs the two TRIP conformance tests (`trip_test` and `etrip_test`) directly
+against the engine crate. They exercise low-level TeX behaviour and tend to
+catch memory/state bugs that the higher-level tex-outputs suite misses. Both
+tests must pass (2/2) at all times.
 
 ## Step 2 — Pick a target
 
@@ -129,11 +137,13 @@ Then `cargo build -p tectonic_engine_xetex`. Fix link errors.
 
 ```
 cargo test -p tectonic --test tex-outputs 2>&1 | tee /tmp/parity-after.txt
+cargo test -p tectonic_engine_xetex --test trip 2>&1 | tee /tmp/trip-after.txt
 diff /tmp/parity-before.txt /tmp/parity-after.txt
+diff /tmp/trip-before.txt /tmp/trip-after.txt
 ```
 
-Compare pass counts. **If the after-count is lower, you must not
-commit.** Diagnose:
+Compare pass counts for **both** suites. **If either after-count is lower,
+you must not commit.** Diagnose:
 
 1.  Re-read the C function and the Rust translation side-by-side.
 2.  Are you off-by-one on a Pascal 1-based index? Extremely common —
