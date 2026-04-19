@@ -226,6 +226,10 @@ mod raw {
         // Base pointer into input_stack (xetex-xetexd.h:521).
         pub(super) static mut base_ptr: i32;
 
+        // Register-size limits (xetex-xetexd.h:707–708).
+        pub(super) static mut max_reg_num: i32;
+        pub(super) static mut max_reg_help_line: *const libc::c_char;
+
         // Group-stack: grp_stack[i] = save-stack boundary for level i
         // (xetex-xetexd.h:705; save_pointer = i32).
         pub(super) static mut grp_stack: *mut i32;
@@ -1599,4 +1603,17 @@ pub(crate) fn if_line() -> i32 {
 #[inline]
 pub(crate) fn set_if_line(v: i32) {
     unsafe { raw::if_line = v; }
+}
+
+// ---------------------------------------------------------------------------
+// max_reg_num / max_reg_help_line
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn max_reg_num() -> i32 {
+    unsafe { raw::max_reg_num }
+}
+#[inline]
+pub(crate) fn max_reg_help_line() -> *const libc::c_char {
+    unsafe { raw::max_reg_help_line }
 }

@@ -5242,41 +5242,8 @@ void set_math_char(int32_t c)
 /* scan_delimiter_int translated to Rust (src/scan.rs). */
 
 
-void scan_register_num(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > max_reg_num)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad register code");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = max_reg_help_line;
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
-
-void scan_four_bit_int_or_18(void)
-{
-    scan_int();
-    if ((cur_val < 0) || ((cur_val > 15) && (cur_val != 18))) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad number");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "Since I expected to read a number between 0 and 15,"; /* ... "between 0 and 15" */
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
+/* scan_register_num translated to Rust (src/scan.rs). */
+/* scan_four_bit_int_or_18 translated to Rust (src/scan.rs). */
 
 void get_x_or_protected(void)
 {

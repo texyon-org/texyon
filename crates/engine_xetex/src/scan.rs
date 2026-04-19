@@ -2,7 +2,7 @@
 //!
 //! Translated from xetex-xetex0.c.
 
-use crate::globals::{cur_val, set_cur_val, set_help_line, set_help_ptr};
+use crate::globals::{cur_val, max_reg_help_line, max_reg_num, set_cur_val, set_help_line, set_help_ptr};
 
 extern "C" {
     fn scan_int();
@@ -195,6 +195,41 @@ pub unsafe extern "C" fn scan_fifteen_bit_int() {
         capture_to_diagnostic(std::ptr::null_mut());
         set_help_ptr(2);
         set_help_line(1, c"A mathchar number must be between 0 and 32767.".as_ptr());
+        set_help_line(0, c"I changed this one to zero.".as_ptr());
+        int_error(cur_val());
+        set_cur_val(0);
+    }
+}
+
+// translated from xetex-xetex0.c:5245 (scan_register_num)
+#[no_mangle]
+pub unsafe extern "C" fn scan_register_num() {
+    scan_int();
+    if cur_val() < 0 || cur_val() > max_reg_num() {
+        let errmsg = error_here_with_diagnostic(c"Bad register code".as_ptr());
+        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(1, max_reg_help_line());
+        set_help_line(0, c"I changed this one to zero.".as_ptr());
+        int_error(cur_val());
+        set_cur_val(0);
+    }
+}
+
+// translated from xetex-xetex0.c:5263 (scan_four_bit_int_or_18)
+#[no_mangle]
+pub unsafe extern "C" fn scan_four_bit_int_or_18() {
+    scan_int();
+    if cur_val() < 0 || (cur_val() > 15 && cur_val() != 18) {
+        let errmsg = error_here_with_diagnostic(c"Bad number".as_ptr());
+        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(
+            1,
+            c"Since I expected to read a number between 0 and 15,".as_ptr(),
+        );
         set_help_line(0, c"I changed this one to zero.".as_ptr());
         int_error(cur_val());
         set_cur_val(0);
