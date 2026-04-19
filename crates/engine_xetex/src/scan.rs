@@ -6,6 +6,7 @@ use crate::globals::{cur_val, eqtb_b32s1, max_reg_help_line, max_reg_num, set_cu
 
 extern "C" {
     fn scan_int();
+    fn scan_glue(level: i16);
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
     fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
     fn int_error(n: i32);
@@ -16,6 +17,10 @@ extern "C" {
     ) -> libc::c_int;
     fn error();
 }
+
+// Value-type constants for scan_glue (xetex_format.h:568–570).
+const GLUE_VAL: i16 = 2;
+const MU_VAL_SCAN: i16 = 3;
 
 // INT_BASE + INT_PAR__xetex_hyphenatable_length offset for max_hyphenatable_length
 // (xetex_format.h:568, xetex_format.h:115; xetex_format.h:7826729 = INT_BASE).
@@ -309,4 +314,24 @@ pub unsafe extern "C" fn scan_delimiter_int() {
 pub unsafe extern "C" fn max_hyphenatable_length() -> i32 {
     let v = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH);
     if v > HYPHENATABLE_LENGTH_LIMIT { HYPHENATABLE_LENGTH_LIMIT } else { v }
+}
+
+// ---------------------------------------------------------------------------
+// scan_normal_glue / scan_mu_glue
+// ---------------------------------------------------------------------------
+
+/// Scan a glue specification (non-math).
+///
+/// translated from xetex-xetex0.c:6519 (scan_normal_glue)
+#[no_mangle]
+pub unsafe extern "C" fn scan_normal_glue() {
+    scan_glue(GLUE_VAL);
+}
+
+/// Scan a mu-glue specification (math mode).
+///
+/// translated from xetex-xetex0.c:6524 (scan_mu_glue)
+#[no_mangle]
+pub unsafe extern "C" fn scan_mu_glue() {
+    scan_glue(MU_VAL_SCAN);
 }

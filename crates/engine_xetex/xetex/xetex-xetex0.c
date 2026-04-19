@@ -6516,15 +6516,8 @@ found: /*1572:*//*424:*/
     cur_val_level = l;
 }
 
-void scan_normal_glue(void)
-{
-    scan_glue(GLUE_VAL);
-}
-
-void scan_mu_glue(void)
-{
-    scan_glue(MU_VAL);
-}
+/* scan_normal_glue: translated to Rust in src/scan.rs */
+/* scan_mu_glue: translated to Rust in src/scan.rs */
 
 int32_t scan_rule_spec(void)
 {
