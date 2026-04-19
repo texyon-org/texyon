@@ -17,7 +17,7 @@ use crate::globals::{
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
-const TEX_NULL: i32 = -0x0FFF_FFFF;    // MIN_HALFWORD
+pub(crate) const TEX_NULL: i32 = -0x0FFF_FFFF;    // MIN_HALFWORD
 const MEM_TOP: i32 = 4_999_999;
 const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
 const NULL_FLAG: i32 = -0x4000_0000;   // "missing item" in rule nodes

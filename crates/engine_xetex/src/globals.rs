@@ -227,8 +227,17 @@ mod raw {
         // Input state stack (xetex-xetexd.h:503–504; layout mirrors InputState).
         pub(super) static mut input_stack: *mut super::InputState;
         pub(super) static mut input_ptr: i32;
+        // Maximum input_ptr ever reached (xetex-xetexd.h:505).
+        pub(super) static mut max_in_stack: i32;
+        // Capacity of input_stack (xetex-xetexd.h:410).
+        pub(super) static mut stack_size: i32;
         // Base pointer into input_stack (xetex-xetexd.h:521).
         pub(super) static mut base_ptr: i32;
+
+        // Macro parameter stack (xetex-xetexd.h:517–519).
+        pub(super) static mut param_stack: *mut i32;
+        pub(super) static mut param_ptr: i32;
+        pub(super) static mut max_param_stack: i32;
 
         // Sparse-array (SA) root table and saved-state chain (xetex-xetexd.h:709–713).
         // sa_root[i] is the root of the trie for register class i (0..=7).
@@ -502,6 +511,21 @@ pub(crate) fn set_cur_input_loc(v: i32) {
 #[inline]
 pub(crate) fn set_cur_input_start(v: i32) {
     unsafe { raw::cur_input.start = v; }
+}
+/// Writes `cur_input.state = v`.
+#[inline]
+pub(crate) fn set_cur_input_state(v: u16) {
+    unsafe { raw::cur_input.state = v; }
+}
+/// Writes `cur_input.index = v`.
+#[inline]
+pub(crate) fn set_cur_input_index(v: u16) {
+    unsafe { raw::cur_input.index = v; }
+}
+/// Replaces the entire `cur_input` struct (e.g. when restoring from input_stack).
+#[inline]
+pub(crate) fn set_cur_input(v: InputState) {
+    unsafe { raw::cur_input = v; }
 }
 
 /// Returns the current source line number.
@@ -1557,9 +1581,23 @@ pub(crate) fn input_ptr() -> i32 {
 }
 /// Sets `input_ptr`.
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn set_input_ptr(v: i32) {
     unsafe { raw::input_ptr = v; }
+}
+/// Returns `max_in_stack` (xetex-xetexd.h:505).
+#[inline]
+pub(crate) fn max_in_stack() -> i32 {
+    unsafe { raw::max_in_stack }
+}
+/// Sets `max_in_stack`.
+#[inline]
+pub(crate) fn set_max_in_stack(v: i32) {
+    unsafe { raw::max_in_stack = v; }
+}
+/// Returns `stack_size` — capacity of the input stack (xetex-xetexd.h:410).
+#[inline]
+pub(crate) fn stack_size() -> i32 {
+    unsafe { raw::stack_size }
 }
 
 /// Returns `base_ptr` — search base in the input stack
@@ -1708,4 +1746,40 @@ pub(crate) fn max_reg_num() -> i32 {
 #[inline]
 pub(crate) fn max_reg_help_line() -> *const libc::c_char {
     unsafe { raw::max_reg_help_line }
+}
+
+// ---------------------------------------------------------------------------
+// param_stack / param_ptr / max_param_stack
+// ---------------------------------------------------------------------------
+
+/// Returns `param_stack[k]` — the k-th macro parameter token list
+/// (xetex-xetexd.h:517).
+#[inline]
+pub(crate) fn param_stack(k: i32) -> i32 {
+    unsafe { *raw::param_stack.offset(k as isize) }
+}
+/// Writes `param_stack[k] = v`.
+#[inline]
+pub(crate) fn set_param_stack(k: i32, v: i32) {
+    unsafe { *raw::param_stack.offset(k as isize) = v; }
+}
+/// Returns `param_ptr` — next free slot in param_stack (xetex-xetexd.h:518).
+#[inline]
+pub(crate) fn param_ptr() -> i32 {
+    unsafe { raw::param_ptr }
+}
+/// Sets `param_ptr`.
+#[inline]
+pub(crate) fn set_param_ptr(v: i32) {
+    unsafe { raw::param_ptr = v; }
+}
+/// Returns `max_param_stack` (xetex-xetexd.h:519).
+#[inline]
+pub(crate) fn max_param_stack() -> i32 {
+    unsafe { raw::max_param_stack }
+}
+/// Sets `max_param_stack`.
+#[inline]
+pub(crate) fn set_max_param_stack(v: i32) {
+    unsafe { raw::max_param_stack = v; }
 }

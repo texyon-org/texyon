@@ -3105,78 +3105,10 @@ begin_token_list(int32_t p, uint16_t t)
 }
 
 
-void end_token_list(void)
-{
-    if (cur_input.index >= BACKED_UP) {
-        if (cur_input.index <= INSERTED)
-            flush_list(cur_input.start);
-        else {
-
-            delete_token_ref(cur_input.start);
-            if (cur_input.index == MACRO)
-                while (param_ptr > cur_input.limit) {
-
-                    param_ptr--;
-                    flush_list(param_stack[param_ptr]);
-                }
-        }
-    } else if (cur_input.index == U_TEMPLATE) {
-
-        if (align_state > 500000L)
-            align_state = 0;
-        else
-            fatal_error("(interwoven alignment preambles are not allowed)");
-    }
-    {
-        input_ptr--;
-        cur_input = input_stack[input_ptr];
-    }
-}
-
-void back_input(void)
-{
-    int32_t p;
-    while ((cur_input.state == TOKEN_LIST) && (cur_input.loc == TEX_NULL)
-           && (cur_input.index != V_TEMPLATE))
-        end_token_list();
-    p = get_avail();
-    mem[p].b32.s0 = cur_tok;
-    if (cur_tok < RIGHT_BRACE_LIMIT) {
-
-        if (cur_tok < LEFT_BRACE_LIMIT)
-            align_state--;
-        else
-            align_state++;
-    }
-    {
-        if (input_ptr > max_in_stack) {
-            max_in_stack = input_ptr;
-            if (input_ptr == stack_size)
-                overflow("input stack size", stack_size);
-        }
-        input_stack[input_ptr] = cur_input;
-        input_ptr++;
-    }
-    cur_input.state = TOKEN_LIST;
-    cur_input.start = p;
-    cur_input.index = BACKED_UP;
-    cur_input.loc = p;
-}
-
-void
-back_error(void)
-{
-    back_input();
-    error();
-}
-
-void
-ins_error(void)
-{
-    back_input();
-    cur_input.index = INSERTED;
-    error();
-}
+/* end_token_list: translated to Rust in src/input.rs */
+/* back_input: translated to Rust in src/input.rs */
+/* back_error: translated to Rust in src/input.rs */
+/* ins_error: translated to Rust in src/input.rs */
 
 void begin_file_reading(void)
 {

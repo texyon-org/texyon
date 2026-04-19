@@ -37,6 +37,7 @@ mod engine_interface;
 #[allow(dead_code)]
 mod texmfmp;
 mod errors;
+mod input;
 mod output;
 mod save;
 mod scaled_math;

@@ -5,7 +5,7 @@
 use crate::globals::{
     align_state, cur_boundary, cur_group, cur_input, cur_level, cur_tok, eqtb_b16s0, eqtb_b16s1,
     eqtb_b32s1, eqtb_word, grp_stack, in_open, line, mag_set, max_save_stack, mem_b16s0,
-    mem_b16s1, mem_b32s0, mem_b32s1, sa_chain, sa_level, sa_root, save_ptr, save_size,
+    mem_b16s1, mem_b32s0, mem_b32s1, sa_chain, sa_level, save_ptr, save_size,
     save_stack_b16s0, save_stack_b16s1, save_stack_b32s1, save_stack_word, set_align_state, set_cur_boundary,
     set_cur_group, set_cur_input_loc, set_cur_input_start, set_cur_level, set_cur_tok,
     set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word, set_mag_set,
@@ -25,7 +25,6 @@ extern "C" {
     fn print_nl_cstr(s: *const libc::c_char);
     fn ttstub_diag_printf(d: *mut libc::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
     fn flush_node_list(p: i32);
-    fn back_input();
 }
 
 // Save-stack discriminant values (xetex-constants.h:260–285).
@@ -498,7 +497,7 @@ pub unsafe extern "C" fn unsave() {
                         }
                     }
                 } else {
-                    back_input();
+                    crate::input::back_input();
                     a = true;
                 }
                 set_cur_tok(t);
