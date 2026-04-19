@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 19.
+Last updated: session 20.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 19.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 17329 |    214 | multiple (see below)              | IN PROGRESS — 14% |
+| xetex-xetex0.c               | 16933 |    198 | multiple (see below)              | IN PROGRESS — 19% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -297,13 +297,32 @@ New Rust module `src/save.rs` created for save-stack management.
 |17 | `group_warning`           |        2961 | `src/output.rs` | MIGRATED (session 19, 4a027338) |
 |18 | `if_warning`              |        2998 | `src/output.rs` | MIGRATED (session 19, 4a027338) |
 |19 | `file_warning`            |        3039 | `src/output.rs` | MIGRATED (session 19, 4a027338) |
+|20 | `id_lookup`               |        2713 | `src/hash.rs`   | MIGRATED (session 20, 8ae4e8d1) |
+|21 | `prim_lookup`             |        2803 | `src/hash.rs`   | MIGRATED (session 20, 8ae4e8d1) |
+|22 | `mu_error`                |        5050 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|23 | `scan_char_class`         |        5078 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|24 | `scan_char_class_not_ignored` |    5096 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|25 | `scan_eight_bit_int`      |        5114 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|26 | `scan_usv_num`            |        5132 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|27 | `scan_char_num`           |        5150 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|28 | `scan_math_class_int`     |        5330 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|29 | `scan_math_fam_int`       |        5348 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|30 | `scan_four_bit_int`       |        5366 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|31 | `scan_fifteen_bit_int`    |        5384 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|32 | `scan_delimiter_int`      |        5403 | `src/scan.rs`   | MIGRATED (session 20, 467271cd) |
+|33 | `scan_register_num`       |        5245 | `src/scan.rs`   | MIGRATED (session 20, c54d3a06) |
+|34 | `scan_four_bit_int_or_18` |        5263 | `src/scan.rs`   | MIGRATED (session 20, c54d3a06) |
+|35 | `scan_xetex_math_char_int`|        5168 | `src/scan.rs`   | MIGRATED (session 20, 64deab5b) |
 
 ### Phases 12+
 
-Continue `xetex-xetex0.c`: next candidates are `prepare_mag` (unblocked by int_error),
-`eq_define` (needs eq_destroy), `geq_define` (needs eq_destroy), `unsave` (complex goto
-translation), `push_nest`/`pop_nest` (need nest/cur_list globals),
-`id_lookup` (line 2734), `prim_lookup` (line 2824).
+Continue `xetex-xetex0.c`: next candidates:
+- `unsave` (~line 2992): complex goto→loop, approach carefully.
+- `show_cur_cmd_chr` (~line 3073): diagnostic tracing (needs print_cmd_chr).
+- `scan_xetex_math_char_int` done ✓; remaining scanner cluster: `scan_math` (~5108), `set_math_char` (~5299).
+- `show_save_groups` (~12120): complex multi-goto; defer until simpler functions done.
+- New module `src/hash.rs` created this session (id_lookup, prim_lookup).
+- New module `src/scan.rs` created this session (mu_error + 15 scan helpers).
 
 ## How to maintain this file
 

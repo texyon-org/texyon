@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 20 — 2026-04-19 — Phase 12+: id_lookup, prim_lookup, mu_error + 15 scan helpers (16 functions)
+
+**Goal:** Translate hash-table lookup functions and scanner range-validation helpers.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 19
+
+**Work done:**
+- Added `hash_used`, `hash_extra`, `hash_high`, `no_new_control_sequence`, `prim_used` globals; `hash_s0/s1`, `prim_s0/s1` setter accessors; `set_cur_val`; `max_reg_num`/`max_reg_help_line` to `globals.rs`.
+- Created `src/hash.rs`: translated `id_lookup` (line 2713) and `prim_lookup` (line 2803). Committed 8ae4e8d1.
+- Created `src/scan.rs`: translated `mu_error`, `scan_char_class`, `scan_char_class_not_ignored`, `scan_eight_bit_int`, `scan_usv_num`, `scan_char_num`, `scan_math_class_int`, `scan_math_fam_int`, `scan_four_bit_int`, `scan_fifteen_bit_int`, `scan_delimiter_int` (lines 5050–5419). Committed 467271cd.
+- Added `scan_register_num`, `scan_four_bit_int_or_18` to `src/scan.rs` (lines 5245, 5263). Committed c54d3a06.
+- Added `scan_xetex_math_char_int` to `src/scan.rs` (line 5168). Committed 64deab5b.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 20
+- 160 Rust functions total; 16 new this session.
+- xetex-xetex0.c: 16933 LOC, ~198 C functions remaining.
+
+**Surprises / gotchas:**
+- `prim_lookup` uses a local `l=0` when `s <= BIGGEST_CHAR`; Rust `length(s)` returns 1 for single-char strings — must preserve the C `l` variable, not call `length(s)` in the comparison.
+- `cur_length()` is an inline C function (not an extern), so it was re-implemented as a private Rust fn in `hash.rs`.
+- `scan_xetex_math_char_int`: `math_char(x)` is a C macro `((unsigned)(x) & 0x1FFFFF)` — inlined as `(x as u32) & 0x1F_FFFF` in Rust.
+
+**For the next session:**
+- `unsave` (~line 2992): complex goto→loop; approach carefully.
+- `show_cur_cmd_chr` (~line 3073): diagnostic tracing; needs `print_cmd_chr` via extern "C".
+- `scan_math` (~line 5108) and `set_math_char` (~line 5299): next in scanner cluster.
+- `show_save_groups` (~line 12120): complex multi-goto, defer.
+- Consider `delete_sa_ref` / `sa_save` / `sa_destroy` / `sa_def` cluster (lines 2789+).
+
+---
+
 ## Session 19 — 2026-04-18 — Phase 11+: print_font_and_char, print_mark, print_meaning, group/if/file_warning (6 functions)
 
 **Goal:** Translate the warm-up display helpers and file-nesting warning functions from xetex-xetex0.c.
