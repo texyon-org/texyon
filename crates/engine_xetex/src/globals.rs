@@ -255,6 +255,9 @@ mod raw {
         pub(super) static mut cur_if: i16;
         pub(super) static mut if_line: i32;
 
+        // Current display mode for show_cur_cmd_chr (xetex-xetexd.h:480; short = i16).
+        pub(super) static mut shown_mode: i16;
+
         // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
         pub(super) static mut nest: *mut crate::mem_types::ListStateRecord;
         pub(super) static mut nest_ptr: i32;
@@ -1474,6 +1477,10 @@ pub(crate) fn save_cur_list_to_nest(k: i32) {
 }
 // cur_list field accessors
 #[inline]
+pub(crate) fn cur_list_mode() -> i16 {
+    unsafe { raw::cur_list.mode }
+}
+#[inline]
 pub(crate) fn cur_list_head() -> i32 {
     unsafe { raw::cur_list.head }
 }
@@ -1675,6 +1682,19 @@ pub(crate) fn sa_level() -> u16 {
 #[inline]
 pub(crate) fn set_sa_level(v: u16) {
     unsafe { raw::sa_level = v; }
+}
+
+// ---------------------------------------------------------------------------
+// shown_mode
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn shown_mode() -> i16 {
+    unsafe { raw::shown_mode }
+}
+#[inline]
+pub(crate) fn set_shown_mode(v: i16) {
+    unsafe { raw::shown_mode = v; }
 }
 
 // ---------------------------------------------------------------------------

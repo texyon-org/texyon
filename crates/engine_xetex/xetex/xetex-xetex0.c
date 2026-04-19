@@ -2820,62 +2820,7 @@ void pseudo_close(void)
 /* print_meaning translated to Rust (src/output.rs). */
 
 
-// Used just to trace commands - all gated behind INTPAR(tracing_commands)
-void show_cur_cmd_chr(void)
-{
-    int32_t n;
-    int32_t l;
-    int32_t p;
-
-    begin_diagnostic();
-
-    diagnostic_begin_capture_warning_here();
-
-    print_nl('{');
-    if (cur_list.mode != shown_mode) {
-        print_mode(cur_list.mode);
-        print_cstr(": ");
-        shown_mode = cur_list.mode;
-    }
-    print_cmd_chr(cur_cmd, cur_chr);
-    if (INTPAR(tracing_ifs) > 0) {
-
-        if (cur_cmd >= IF_TEST) {
-
-            if (cur_cmd <= FI_OR_ELSE) {
-                print_cstr(": ");
-                if (cur_cmd == FI_OR_ELSE) {
-                    print_cmd_chr(IF_TEST, cur_if);
-                    print_char(' ');
-                    n = 0;
-                    l = if_line;
-                } else {
-
-                    n = 1;
-                    l = line;
-                }
-                p = cond_ptr;
-                while (p != TEX_NULL) {
-
-                    n++;
-                    p = LLIST_link(p);
-                }
-                print_cstr("(level ");
-                print_int(n);
-                print_char(')');
-                if (l != 0) {
-                    print_cstr(" entered on line ");
-                    print_int(l);
-                }
-            }
-        }
-    }
-    print_char('}');
-
-    capture_to_diagnostic(NULL);
-
-    end_diagnostic(false);
-}
+/* show_cur_cmd_chr translated to Rust (src/output.rs). */
 
 void show_context(void)
 {

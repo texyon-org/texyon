@@ -2,18 +2,18 @@
 
 use crate::globals::{
     base_ptr, cond_ptr, cur_boundary, cur_cmd, cur_chr, cur_group, cur_if, cur_input, cur_level,
-    cur_mark, current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top,
+    cur_list_mode, cur_mark, current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top,
     error_line, file_line_error_style_p, file_offset, font_max, full_source_filename_stack,
     grp_stack, hash_s1, hi_mem_min, history, if_line, if_limit, if_stack, in_open, input_ptr,
     input_stack, line, line_stack, lo_mem_max, log_file, max_print_line, mem_as_u16_ptr,
     mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end, old_setting,
     pool_ptr, pool_size, prim_s1,
-    rust_stdout, save_ptr, save_stack_b16s0, save_stack_b32s1, selector,
+    rust_stdout, save_ptr, save_stack_b16s0, save_stack_b32s1, selector, set_shown_mode,
     set_base_ptr, set_cond_ptr, set_cur_group, set_cur_if, set_cur_level, set_current_diagnostic,
     set_dig_entry, set_eqtb_b32s1, set_file_offset, set_grp_stack, set_history, set_if_line,
     set_if_limit, set_if_stack, set_input_stack, set_old_setting, set_pool_ptr, set_save_ptr,
-    set_selector, set_str_pool, set_tally, set_term_offset, set_trick_buf, str_pool_entry,
-    str_ptr, str_start, tally, term_offset, trick_count, write_file,
+    set_selector, set_str_pool, set_tally, set_term_offset, set_trick_buf, shown_mode,
+    str_pool_entry, str_ptr, str_start, tally, term_offset, trick_count, write_file,
 };
 
 
@@ -70,6 +70,10 @@ const FI_CODE: u8 = 2;
 
 // INT_PAR__tracing_nesting (xetex_format.h:95).
 const INT_PAR_TRACING_NESTING: i32 = 60;
+// FI_OR_ELSE command code (xetex_format.h:350).
+const FI_OR_ELSE: u8 = 108;
+// INT_PAR__tracing_ifs (xetex_format.h:93).
+const INT_PAR_TRACING_IFS: i32 = 58;
 
 
 // C functions not yet translated — still live in xetex-output.c or bridge.
@@ -1660,4 +1664,51 @@ pub unsafe extern "C" fn file_warning() {
     if history() == HISTORY_SPOTLESS {
         set_history(HISTORY_WARNING_ISSUED);
     }
+}
+
+// ---------------------------------------------------------------------------
+// show_cur_cmd_chr
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:2824 (show_cur_cmd_chr)
+#[no_mangle]
+pub unsafe extern "C" fn show_cur_cmd_chr() {
+    begin_diagnostic();
+    diagnostic_begin_capture_warning_here();
+    print_nl(b'{' as i32);
+    if cur_list_mode() != shown_mode() as i16 {
+        print_mode(cur_list_mode() as i32);
+        print_cstr(c": ".as_ptr());
+        set_shown_mode(cur_list_mode());
+    }
+    print_cmd_chr(cur_cmd() as u16, cur_chr());
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0 {
+        if cur_cmd() >= IF_TEST as u8 {
+            if cur_cmd() <= FI_OR_ELSE {
+                print_cstr(c": ".as_ptr());
+                let (mut n, mut l) = if cur_cmd() == FI_OR_ELSE {
+                    print_cmd_chr(IF_TEST, cur_if() as i32);
+                    print_char(b' ' as i32);
+                    (0_i32, if_line())
+                } else {
+                    (1_i32, line())
+                };
+                let mut p = cond_ptr();
+                while p != TEX_NULL {
+                    n += 1;
+                    p = mem_b32s1(p);
+                }
+                print_cstr(c"(level ".as_ptr());
+                print_int(n);
+                print_char(b')' as i32);
+                if l != 0 {
+                    print_cstr(c" entered on line ".as_ptr());
+                    print_int(l);
+                }
+            }
+        }
+    }
+    print_char(b'}' as i32);
+    capture_to_diagnostic(std::ptr::null_mut());
+    end_diagnostic(false);
 }
