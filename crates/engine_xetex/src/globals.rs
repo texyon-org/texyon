@@ -121,8 +121,15 @@ mod raw {
 
         // Hash table: `b32x2 *hash` (xetex-xetexd.h:482).
         pub(super) static mut hash: *mut crate::mem_types::B32x2;
+        // Hash table management globals (xetex-xetexd.h:483–488).
+        pub(super) static mut hash_used: i32;
+        pub(super) static mut hash_extra: i32;
+        pub(super) static mut hash_high: i32;
+        pub(super) static mut no_new_control_sequence: bool;
         // Primitive hash table: `b32x2 prim[PRIM_SIZE + 1]` (xetex-xetexd.h:490).
         pub(super) static mut prim: [crate::mem_types::B32x2; 2101];
+        // prim_used: next free slot in prim (xetex-xetexd.h:491).
+        pub(super) static mut prim_used: i32;
         // Top of the eqtb array (xetex-xetexd.h:486).
         pub(super) static mut eqtb_top: i32;
 
@@ -725,18 +732,48 @@ pub(crate) fn file_line_error_style_p() -> i32 {
 // hash / prim / eqtb_top
 // ---------------------------------------------------------------------------
 
+/// Read `hash[p].s0` (the "link" half of a hash-table entry).
+#[inline]
+pub(crate) fn hash_s0(p: i32) -> i32 {
+    unsafe { (*raw::hash.offset(p as isize)).s0 }
+}
+/// Write `hash[p].s0 = v`.
+#[inline]
+pub(crate) fn set_hash_s0(p: i32, v: i32) {
+    unsafe { (*raw::hash.offset(p as isize)).s0 = v; }
+}
 /// Read `hash[p].s1` (the "text" half of a hash-table entry).
 #[inline]
 pub(crate) fn hash_s1(p: i32) -> i32 {
     // SAFETY: see module-level doc. Caller ensures p is a valid hash index.
     unsafe { (*raw::hash.offset(p as isize)).s1 }
 }
+/// Write `hash[p].s1 = v`.
+#[inline]
+pub(crate) fn set_hash_s1(p: i32, v: i32) {
+    unsafe { (*raw::hash.offset(p as isize)).s1 = v; }
+}
 
+/// Read `prim[p].s0` (the link half of a primitive-table entry).
+#[inline]
+pub(crate) fn prim_s0(p: i32) -> i32 {
+    unsafe { raw::prim[p as usize].s0 }
+}
+/// Write `prim[p].s0 = v`.
+#[inline]
+pub(crate) fn set_prim_s0(p: i32, v: i32) {
+    unsafe { raw::prim[p as usize].s0 = v; }
+}
 /// Read `prim[p].s1` (the "text" half of a primitive-table entry).
 #[inline]
 pub(crate) fn prim_s1(p: i32) -> i32 {
     // SAFETY: see module-level doc. Caller ensures p < prim.len().
     unsafe { raw::prim[p as usize].s1 }
+}
+/// Write `prim[p].s1 = v`.
+#[inline]
+pub(crate) fn set_prim_s1(p: i32, v: i32) {
+    unsafe { raw::prim[p as usize].s1 = v; }
 }
 
 /// Returns `eqtb_top`.
@@ -744,6 +781,44 @@ pub(crate) fn prim_s1(p: i32) -> i32 {
 pub(crate) fn eqtb_top() -> i32 {
     // SAFETY: see module-level doc.
     unsafe { raw::eqtb_top }
+}
+
+// ---------------------------------------------------------------------------
+// hash management globals (hash_used / hash_extra / hash_high /
+//                          no_new_control_sequence / prim_used)
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn hash_used() -> i32 {
+    unsafe { raw::hash_used }
+}
+#[inline]
+pub(crate) fn set_hash_used(v: i32) {
+    unsafe { raw::hash_used = v; }
+}
+#[inline]
+pub(crate) fn hash_extra() -> i32 {
+    unsafe { raw::hash_extra }
+}
+#[inline]
+pub(crate) fn hash_high() -> i32 {
+    unsafe { raw::hash_high }
+}
+#[inline]
+pub(crate) fn set_hash_high(v: i32) {
+    unsafe { raw::hash_high = v; }
+}
+#[inline]
+pub(crate) fn no_new_control_sequence() -> bool {
+    unsafe { raw::no_new_control_sequence }
+}
+#[inline]
+pub(crate) fn prim_used() -> i32 {
+    unsafe { raw::prim_used }
+}
+#[inline]
+pub(crate) fn set_prim_used(v: i32) {
+    unsafe { raw::prim_used = v; }
 }
 
 // ---------------------------------------------------------------------------
