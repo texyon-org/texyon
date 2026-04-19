@@ -3,10 +3,10 @@
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 
 use crate::globals::{
-    align_state, cur_input, cur_tok, input_ptr, input_stack, max_in_stack, param_ptr, param_stack,
-    set_align_state, set_cur_input, set_cur_input_index, set_cur_input_loc, set_cur_input_start,
-    set_cur_input_state, set_input_ptr, set_input_stack, set_max_in_stack, set_param_ptr,
-    stack_size,
+    align_state, avail, cur_input, cur_tok, input_ptr, input_stack, max_in_stack, mem_b32s0,
+    mem_b32s1, param_ptr, param_stack, pseudo_files, set_align_state, set_avail, set_cur_input,
+    set_cur_input_index, set_cur_input_loc, set_cur_input_start, set_cur_input_state, set_input_ptr,
+    set_input_stack, set_max_in_stack, set_mem_b32s1, set_param_ptr, set_pseudo_files, stack_size,
 };
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).
@@ -111,4 +111,27 @@ pub unsafe extern "C" fn ins_error() {
     back_input();
     set_cur_input_index(INSERTED);
     crate::errors::error();
+}
+
+// ---------------------------------------------------------------------------
+// pseudo_close
+// ---------------------------------------------------------------------------
+
+/// Close the top pseudo-file, freeing its node chain.
+///
+/// translated from xetex-xetex0.c:2766 (pseudo_close)
+#[no_mangle]
+pub unsafe extern "C" fn pseudo_close() {
+    let p = mem_b32s1(pseudo_files());
+    let mut q = mem_b32s0(pseudo_files());
+    // Free the pseudo_files head node onto the avail list.
+    set_mem_b32s1(pseudo_files(), avail());
+    set_avail(pseudo_files());
+    set_pseudo_files(p);
+    // Walk the chain and free each block node.
+    while q != crate::mem::TEX_NULL {
+        let next = mem_b32s1(q);
+        crate::mem::free_node(q, mem_b32s0(q));
+        q = next;
+    }
 }

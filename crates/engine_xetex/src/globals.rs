@@ -110,6 +110,8 @@ mod raw {
         // Null (0) means no active capture. Type is opaque `ttbc_diagnostic_t *`.
         pub(super) static mut current_diagnostic: *mut std::ffi::c_void;
 
+        // Pseudo-file list head (xetex-xetexd.h:704; used by pseudo_input/close).
+        pub(super) static mut pseudo_files: i32;
         // Input-level depth (xetex-xetexd.h:507).
         pub(super) static mut in_open: i32;
         // Pointer to the filename-stack array (xetex-xetexd.h:513, str_number* = *mut i32).
@@ -761,6 +763,16 @@ pub(crate) fn set_current_diagnostic(v: *mut std::ffi::c_void) {
 pub(crate) fn in_open() -> i32 {
     // SAFETY: see module-level doc.
     unsafe { raw::in_open }
+}
+/// Returns `pseudo_files` — head of the pseudo-file linked list (xetex-xetexd.h:704).
+#[inline]
+pub(crate) fn pseudo_files() -> i32 {
+    unsafe { raw::pseudo_files }
+}
+/// Sets `pseudo_files`.
+#[inline]
+pub(crate) fn set_pseudo_files(v: i32) {
+    unsafe { raw::pseudo_files = v; }
 }
 
 /// Returns `full_source_filename_stack[k]` (the str_number of the source file

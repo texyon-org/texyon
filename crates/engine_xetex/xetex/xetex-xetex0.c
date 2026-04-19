@@ -2763,23 +2763,7 @@ bool pseudo_input(void)
     }
 }
 
-void pseudo_close(void)
-{
-    int32_t p, q;
-    p = mem[pseudo_files].b32.s1;
-    q = mem[pseudo_files].b32.s0;
-    {
-        mem[pseudo_files].b32.s1 = avail;
-        avail = pseudo_files;
-    }
-    pseudo_files = p;
-    while (q != TEX_NULL) {
-
-        p = q;
-        q = mem[p].b32.s1;
-        free_node(p, mem[p].b32.s0);
-    }
-}
+/* pseudo_close: translated to Rust in src/input.rs */
 
 /* group_warning translated to Rust (src/output.rs). */
 /* if_warning translated to Rust (src/output.rs). */
