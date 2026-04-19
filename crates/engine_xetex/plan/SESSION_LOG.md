@@ -32,6 +32,43 @@ template.
 
 ---
 
+## Session 21 — 2026-04-19 — SA cluster + unsave + show_cur_cmd_chr (11 functions)
+
+**Goal:** Translate sparse-array register save/restore cluster, unsave, and show_cur_cmd_chr.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 20
+
+**Work done:**
+- Added `sa_root`, `sa_chain`, `sa_level` globals to `globals.rs`.
+- Added `cur_tok`, `align_state`, `shown_mode`, `cur_list_mode()` globals/accessors.
+- Added `set_cur_input_loc`, `set_cur_input_start`, `save_stack_word` reader.
+- Translated SA cluster to `src/save.rs`: `delete_sa_ref`, `sa_save`, `sa_destroy`, `sa_def`, `sa_w_def`, `gsa_def`, `gsa_w_def`, `sa_restore` (lines 2789–2974). Committed 2c28bd03.
+- Translated `unsave` (line 2814) to `src/save.rs`. Complex save-stack restoration: handles INSERT_TOKEN (align_state), RESTORE_SA, RESTORE_OLD_VALUE/ZERO, LEVEL_BOUNDARY. Committed ddf8d1cc.
+- Translated `show_cur_cmd_chr` (line 2824) to `src/output.rs`. Committed 1a27b4e9.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 21
+- 171 Rust functions total; 11 new this session.
+- xetex-xetex0.c: 16629 LOC, ~188 C functions remaining.
+
+**Surprises / gotchas:**
+- `delete_sa_ref` uses `TEX_NULL` as reference-count "zero" sentinel (not 0), so the ref-count starts at TEX_NULL and gets incremented. Translating arithmetically gives the right behavior.
+- `sa_save` modifies `i = TOK_VAL_LIMIT` only in one branch of the DIMEN_VAL_LIMIT check, requiring `let mut i`.
+- `unsave` goto→loop: `goto done` just breaks out of the inner loop; clean `break` in Rust.
+- `shown_mode` is `i16` in C (short), but `cur_list.mode` is also `i16` — no cast needed.
+
+**For the next session:**
+- `end_token_list` (~line 3412): needs `param_ptr`, `param_stack` globals.
+- `back_input` (~line 3440): uses `cur_tok` (now done), `V_TEMPLATE` constant, `get_avail`.
+- `show_save_groups` (~line 12120): complex multi-goto — use labeled blocks in Rust.
+- `scan_math` (~line 5108): math scanning; depends on several math-mode globals.
+
+---
+
 ## Session 20 — 2026-04-19 — Phase 12+: id_lookup, prim_lookup, mu_error + 15 scan helpers (16 functions)
 
 **Goal:** Translate hash-table lookup functions and scanner range-validation helpers.

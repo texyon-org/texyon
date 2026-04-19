@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 20.
+Last updated: session 21.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 20.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 16933 |    198 | multiple (see below)              | IN PROGRESS — 19% |
+| xetex-xetex0.c               | 16629 |    188 | multiple (see below)              | IN PROGRESS — 22% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -313,16 +313,25 @@ New Rust module `src/save.rs` created for save-stack management.
 |33 | `scan_register_num`       |        5245 | `src/scan.rs`   | MIGRATED (session 20, c54d3a06) |
 |34 | `scan_four_bit_int_or_18` |        5263 | `src/scan.rs`   | MIGRATED (session 20, c54d3a06) |
 |35 | `scan_xetex_math_char_int`|        5168 | `src/scan.rs`   | MIGRATED (session 20, 64deab5b) |
+|36 | `delete_sa_ref`           |        2789 | `src/save.rs`   | MIGRATED (session 21, 2c28bd03) |
+|37 | `sa_save`                 |        2837 | `src/save.rs`   | MIGRATED (session 21, 2c28bd03) |
+|38 | `sa_destroy`              |        2878 | `src/save.rs`   | MIGRATED (session 21, 2c28bd03) |
+|39 | `sa_def`                  |        2891 | `src/save.rs`   | MIGRATED (session 21, 2c28bd03) |
+|40 | `sa_w_def`                |        2908 | `src/save.rs`   | MIGRATED (session 21, 2c28bd03) |
+|41 | `gsa_def`                 |        2923 | `src/save.rs`   | MIGRATED (session 21, 2c28bd03) |
+|42 | `gsa_w_def`               |        2933 | `src/save.rs`   | MIGRATED (session 21, 2c28bd03) |
+|43 | `sa_restore`              |        2942 | `src/save.rs`   | MIGRATED (session 21, 2c28bd03) |
+|44 | `unsave`                  |        2814 | `src/save.rs`   | MIGRATED (session 21, ddf8d1cc) |
+|45 | `show_cur_cmd_chr`        |        2824 | `src/output.rs` | MIGRATED (session 21, 1a27b4e9) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `unsave` (~line 2992): complex goto→loop, approach carefully.
-- `show_cur_cmd_chr` (~line 3073): diagnostic tracing (needs print_cmd_chr).
-- `scan_xetex_math_char_int` done ✓; remaining scanner cluster: `scan_math` (~5108), `set_math_char` (~5299).
-- `show_save_groups` (~12120): complex multi-goto; defer until simpler functions done.
-- New module `src/hash.rs` created this session (id_lookup, prim_lookup).
-- New module `src/scan.rs` created this session (mu_error + 15 scan helpers).
+- `show_save_groups` (~line 12120): complex multi-goto; approach carefully with label-loops.
+- `scan_math` (~line 5108): next in scanner cluster; depends on several math globals.
+- `set_math_char` (~line 5299): related to scan_math.
+- `end_token_list` (~line 3412): needs param_ptr, param_stack globals.
+- `back_input` (~line 3440): needs cur_tok, already translated other deps.
 
 ## How to maintain this file
 

@@ -34,6 +34,7 @@ cargo test -p tectonic --test tex-outputs
 |      18 | 2026-04-18 |     29 |    29 |     0 | Phase 12: prepare_mag, push/pop_nest, eq_destroy/define/geq_define, prev_rightmost, get_microinterval, token_show, print_skip/param/length_param, print_style/fam_and_char/delimiter/rule_dimen/glue/spec, not_*_font_error. |
 |      19 | 2026-04-18 |     29 |    29 |     0 | Phase 11+: print_font_and_char, print_mark, print_meaning, group_warning, if_warning, file_warning. New globals: font_max, cur_cmd, cur_mark, input_stack/ptr, base_ptr, grp_stack, if_stack, cond_ptr, if_limit, cur_if, if_line. |
 |      20 | 2026-04-19 |     29 |    29 |     0 | id_lookup, prim_lookup (new src/hash.rs); mu_error + 15 scan-validation helpers (new src/scan.rs). |
+|      21 | 2026-04-19 |     29 |    29 |     0 | SA cluster (delete_sa_ref + 7 more), unsave, show_cur_cmd_chr. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -66,6 +67,7 @@ Passed count below the previous session's recorded value.
 |      18 |35,910 |                   ~6571 |      ~84.5% |
 |      19 |36,406 |                   ~7007 |      ~83.9% |
 |      20 |35,346 |                   ~7608 |      ~82.3% |
+|      21 |35,042 |                   ~8045 |      ~81.3% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -98,6 +100,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      18 |      138 |           ~???? |     ~11.6% |
 |      19 |      144 |            ~214 |     ~40.2% |
 |      20 |      160 |            ~198 |     ~44.7% |
+|      21 |      171 |            ~188 |     ~47.6% |
 
 
 Total C function count to be measured in session 1 via:
@@ -113,7 +116,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **20** (sessions 1–20 held parity at 29/29).
+Current streak: **21** (sessions 1–21 held parity at 29/29).
 
 
 ## Health checks
