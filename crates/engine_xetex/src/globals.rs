@@ -1190,6 +1190,10 @@ pub(crate) fn cur_val() -> i32 {
     unsafe { raw::cur_val }
 }
 #[inline]
+pub(crate) fn set_cur_val(v: i32) {
+    unsafe { raw::cur_val = v; }
+}
+#[inline]
 pub(crate) fn cur_name() -> i32 {
     unsafe { raw::cur_name }
 }

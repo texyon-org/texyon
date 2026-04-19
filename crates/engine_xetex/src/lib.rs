@@ -27,6 +27,7 @@ use tectonic_errors::prelude::*;
 mod globals;
 mod hash;
 mod helpers;
+mod scan;
 #[allow(dead_code)] // used as the translation progresses
 mod io;
 mod mem;

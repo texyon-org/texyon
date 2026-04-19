@@ -5047,15 +5047,7 @@ bool scan_keyword(const char* s)
     return true;
 }
 
-void mu_error(void)
-{
-    error_here_with_diagnostic("Incompatible glue units");
-    capture_to_diagnostic(NULL);
-
-    help_ptr = 1;
-    help_line[0] = "I'm going to assume that 1mu=1pt when they're mixed.";
-    error();
-}
+/* mu_error translated to Rust (src/scan.rs). */
 
 void scan_glyph_number(internal_font_number f)
 {
@@ -5075,95 +5067,11 @@ void scan_glyph_number(internal_font_number f)
         scan_int();
 }
 
-void scan_char_class(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > CHAR_CLASS_LIMIT)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad character class");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "A character class must be between 0 and 4096.";
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
-
-void scan_char_class_not_ignored(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > CHAR_CLASS_LIMIT)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad character class");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "A class for inter-character transitions must be between 0 and 4095.";
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
-
-void scan_eight_bit_int(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > 255)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad register code");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "A register code or char class must be between 0 and 255.";
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
-
-void scan_usv_num(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > BIGGEST_USV)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad character code");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "A Unicode scalar value must be between 0 and \"10FFFF.";
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
-
-void scan_char_num(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > BIGGEST_CHAR)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad character code");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "A character number must be between 0 and 65535.";
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
+/* scan_char_class translated to Rust (src/scan.rs). */
+/* scan_char_class_not_ignored translated to Rust (src/scan.rs). */
+/* scan_eight_bit_int translated to Rust (src/scan.rs). */
+/* scan_usv_num translated to Rust (src/scan.rs). */
+/* scan_char_num translated to Rust (src/scan.rs). */
 
 void scan_xetex_math_char_int(void)
 {
@@ -5327,96 +5235,11 @@ void set_math_char(int32_t c)
     }
 }
 
-void scan_math_class_int(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > 7)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad math class");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "Since I expected to read a number between 0 and 7,";
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
-
-void scan_math_fam_int(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > (NUMBER_MATH_FAMILIES - 1))) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad math family");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "Since I expected to read a number between 0 and 255,";
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
-
-void scan_four_bit_int(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > 15)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad number");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "Since I expected to read a number between 0 and 15,"; /* ... "between 0 and 15" */
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
-
-void scan_fifteen_bit_int(void)
-{
-    scan_int();
-    if ((cur_val < 0) || (cur_val > 32767)) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad mathchar");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 2;
-            help_line[1] = "A mathchar number must be between 0 and 32767.";
-            help_line[0] = "I changed this one to zero.";
-        }
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
-
-
-void
-scan_delimiter_int(void)
-{
-    scan_int();
-
-    if (cur_val < 0 || cur_val > 0x7FFFFFF) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad delimiter code");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        capture_to_diagnostic(NULL);
-
-        help_ptr = 2;
-        help_line[1] = "A numeric delimiter code must be between 0 and 2^{27}-1.";
-        help_line[0] = "I changed this one to zero.";
-        int_error(cur_val);
-        cur_val = 0;
-    }
-}
+/* scan_math_class_int translated to Rust (src/scan.rs). */
+/* scan_math_fam_int translated to Rust (src/scan.rs). */
+/* scan_four_bit_int translated to Rust (src/scan.rs). */
+/* scan_fifteen_bit_int translated to Rust (src/scan.rs). */
+/* scan_delimiter_int translated to Rust (src/scan.rs). */
 
 
 void scan_register_num(void)
