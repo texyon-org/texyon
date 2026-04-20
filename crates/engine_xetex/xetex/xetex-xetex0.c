@@ -11441,20 +11441,7 @@ void app_space(void)
     cur_list.tail = q;
 }
 
-void
-insert_dollar_sign(void)
-{
-    back_input();
-    cur_tok = (MATH_SHIFT_TOKEN + 36 /*'$'*/);
-
-    error_here_with_diagnostic("Missing $ inserted");
-    capture_to_diagnostic(NULL);
-
-    help_ptr = 2;
-    help_line[1] = "I've inserted a begin-math/end-math symbol since I think";
-    help_line[0] = "you left one out. Proceed, with fingers crossed.";
-    ins_error();
-}
+/* insert_dollar_sign: translated to Rust in src/scan.rs */
 
 void you_cant(void)
 {
@@ -12011,15 +11998,7 @@ void package(small_number c)
     box_end(save_stack[save_ptr + 0].b32.s1);
 }
 
-small_number norm_min(int32_t h)
-{
-    if (h <= 0)
-        return 1;
-    else if (h >= 63)
-        return 63;
-    else
-        return h;
-}
+/* norm_min: translated to Rust in src/helpers.rs */
 
 
 void

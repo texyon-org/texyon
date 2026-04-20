@@ -399,6 +399,22 @@ pub unsafe extern "C" fn x_token() {
     }
 }
 
+// Token-encoding constants (xetex-constants.h:353).
+const MATH_SHIFT_TOKEN: i32 = 0x600000;
+
+/// translated from xetex-xetex0.c:11444 (insert_dollar_sign)
+#[no_mangle]
+pub unsafe extern "C" fn insert_dollar_sign() {
+    crate::input::back_input();
+    set_cur_tok(MATH_SHIFT_TOKEN + '$' as i32);
+    crate::output::error_here_with_diagnostic(c"Missing $ inserted".as_ptr());
+    crate::output::capture_to_diagnostic(std::ptr::null_mut());
+    set_help_ptr(2);
+    set_help_line(1, c"I've inserted a begin-math/end-math symbol since I think".as_ptr());
+    set_help_line(0, c"you left one out. Proceed, with fingers crossed.".as_ptr());
+    crate::input::ins_error();
+}
+
 /// translated from xetex-xetex0.c:4355 (scan_optional_equals)
 #[no_mangle]
 pub unsafe extern "C" fn scan_optional_equals() {
