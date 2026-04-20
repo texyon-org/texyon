@@ -32,6 +32,37 @@ template.
 
 ---
 
+## Session 27 — 2026-04-20 — scan cluster: rule_spec, dimen, decimal, spec
+
+**Goal:** Exploit that scan_keyword is now Rust to translate dependent scan functions.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 26
+
+**Work done:**
+- Translated `scan_rule_spec` (6267) to `src/scan.rs`. goto reswitch → loop. Committed 96737d98.
+- Translated `scan_dimen` (5956), `scan_decimal` (5961) to `src/scan.rs`. Both trivial wrappers around `xetex_scan_dimen`. Committed 6e9aea72.
+- Translated `scan_spec` (9215) to `src/scan.rs`. goto found → if/else. Committed f614c4f3.
+- Updated MODULE_STATUS.md, SESSION_LOG.md, PROGRESS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 27
+- 214 Rust functions total; 4 new this session.
+- xetex-xetex0.c: 15758 LOC, ~145 C functions remaining.
+
+**Surprises / gotchas:**
+- None; all translations were clean.
+
+**For the next session:**
+- `scan_expr` (~6025): complex recursive scanner; now get_x_or_protected, scan_keyword, scan_dimen all in Rust — a good target.
+- `scan_general_text` (~6262): uses scanner_status, get_x_token, back_input, error (all Rust).
+
+---
+
 ## Session 26 — 2026-04-20 — scan_keyword (short session)
 
 **Goal:** Translate scan_keyword, whose callees are now all in Rust.
