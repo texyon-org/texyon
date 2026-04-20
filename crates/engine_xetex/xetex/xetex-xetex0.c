@@ -4280,62 +4280,7 @@ reswitch:
 /* scan_optional_equals: translated to Rust in src/scan.rs */
 
 
-bool scan_keyword(const char* s)
-{
-    int32_t p = BACKUP_HEAD;
-    int32_t q;
-    int32_t save_cur_cs;
-
-    mem[p].b32.s1 = TEX_NULL;
-
-    if (strlen(s) == 1) {
-        char c = s[0];
-        save_cur_cs = cur_cs;
-
-        while (true) {
-            get_x_token();
-            if ((cur_cs == 0) && ((cur_chr == c) || (cur_chr == c - 32))) {
-                {
-                    q = get_avail();
-                    mem[p].b32.s1 = q;
-                    mem[q].b32.s0 = cur_tok;
-                    p = q;
-                }
-                flush_list(mem[BACKUP_HEAD].b32.s1);
-                return true;
-            } else if ((cur_cmd != SPACER) || (p != BACKUP_HEAD)) {
-                back_input();
-                if (p != BACKUP_HEAD)
-                    begin_token_list(mem[BACKUP_HEAD].b32.s1, BACKED_UP);
-                cur_cs = save_cur_cs;
-                return false;
-            }
-        }
-    }
-
-    size_t slen = strlen(s);
-    size_t i = 0;
-    while (i < slen) {
-
-        get_x_token();
-        if ((cur_cs == 0) && ((cur_chr == s[i]) || (cur_chr == s[i] - 32))) {
-            {
-                q = get_avail();
-                mem[p].b32.s1 = q;
-                mem[q].b32.s0 = cur_tok;
-                p = q;
-            }
-            i++;
-        } else if ((cur_cmd != SPACER) || (p != BACKUP_HEAD)) {
-            back_input();
-            if (p != BACKUP_HEAD)
-                begin_token_list(mem[BACKUP_HEAD].b32.s1, BACKED_UP);
-            return false;
-        }
-    }
-    flush_list(mem[BACKUP_HEAD].b32.s1);
-    return true;
-}
+/* scan_keyword: translated to Rust in src/scan.rs */
 
 /* mu_error translated to Rust (src/scan.rs). */
 

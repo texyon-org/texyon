@@ -6,13 +6,14 @@ use crate::globals::{
     align_state, cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1, eqtb_is_null,
     max_reg_help_line, max_reg_num, mem_b32s0, mem_b32s1, no_new_control_sequence,
     set_align_state, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_tok, set_cur_val, set_help_line,
-    set_help_ptr, set_no_new_control_sequence,
+    set_help_ptr, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence,
 };
 
 extern "C" {
     fn expand();
     fn get_next();
     fn macro_call();
+    fn begin_token_list(p: i32, t: u16);
     fn scan_int();
     fn scan_glue(level: i16);
     fn scan_toks(macro_def: bool, xpand: bool) -> i32;
@@ -530,4 +531,71 @@ pub unsafe extern "C" fn get_x_or_protected() {
         }
         expand();
     }
+}
+
+// ---------------------------------------------------------------------------
+// scan_keyword
+// ---------------------------------------------------------------------------
+
+// MEM_TOP - 13 (xetex_format.h:30, xetex-constants.h:50)
+const BACKUP_HEAD: i32 = 4_999_999 - 13;
+// xetex-constants.h:202
+const BACKED_UP: u16 = 3;
+
+/// translated from xetex-xetex0.c:4284 (scan_keyword)
+#[no_mangle]
+pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
+    let mut p = BACKUP_HEAD;
+    set_mem_b32s1(p, crate::mem::TEX_NULL);
+
+    let slen = libc::strlen(s);
+
+    if slen == 1 {
+        let c = *s as i32;
+        let save_cur_cs = cur_cs();
+        loop {
+            get_x_token();
+            if cur_cs() == 0 && (cur_chr() == c || cur_chr() == c - 32) {
+                let q = crate::mem::get_avail();
+                set_mem_b32s1(p, q);
+                set_mem_b32s0(q, cur_tok());
+                p = q;
+                crate::mem::flush_list(mem_b32s1(BACKUP_HEAD));
+                return true;
+            } else if cur_cmd() != SPACER || p != BACKUP_HEAD {
+                back_input();
+                if p != BACKUP_HEAD {
+                    begin_token_list(mem_b32s1(BACKUP_HEAD), BACKED_UP);
+                }
+                set_cur_cs(save_cur_cs);
+                return false;
+            }
+        }
+    }
+
+    let mut i = 0usize;
+    while i < slen {
+        get_x_token();
+        let ch = *s.add(i) as i32;
+        if cur_cs() == 0 && (cur_chr() == ch || cur_chr() == ch - 32) {
+            let q = crate::mem::get_avail();
+            set_mem_b32s1(p, q);
+            set_mem_b32s0(q, cur_tok());
+            p = q;
+            i += 1;
+        } else if cur_cmd() != SPACER || p != BACKUP_HEAD {
+            back_input();
+            if p != BACKUP_HEAD {
+                begin_token_list(mem_b32s1(BACKUP_HEAD), BACKED_UP);
+            }
+            return false;
+        }
+    }
+    crate::mem::flush_list(mem_b32s1(BACKUP_HEAD));
+    true
+}
+
+#[inline]
+unsafe fn back_input() {
+    crate::input::back_input();
 }
