@@ -2719,49 +2719,7 @@ print_cmd_chr(uint16_t cmd, int32_t chr_code)
 
 /*:1448*//*1449: */
 
-bool pseudo_input(void)
-{
-    int32_t p;
-    int32_t sz;
-    b16x4 w;
-    int32_t r;
-    last = first;
-    p = mem[pseudo_files].b32.s0;
-    if (p == TEX_NULL)
-        return false;
-    else {
-
-        mem[pseudo_files].b32.s0 = mem[p].b32.s1;
-        sz = mem[p].b32.s0;
-        if (4 * sz - 3 >= buf_size - last) {    /*35: */
-            cur_input.loc = first;
-            cur_input.limit = last - 1;
-            overflow("buffer size", buf_size);
-        }
-        last = first;
-        {
-            register int32_t for_end;
-            r = p + 1;
-            for_end = p + sz - 1;
-            if (r <= for_end)
-                do {
-                    w = mem[r].b16;
-                    buffer[last] = w.s3;
-                    buffer[last + 1] = w.s2;
-                    buffer[last + 2] = w.s1;
-                    buffer[last + 3] = w.s0;
-                    last = last + 4;
-                }
-                while (r++ < for_end);
-        }
-        if (last >= max_buf_stack)
-            max_buf_stack = last + 1;
-        while ((last > first) && (buffer[last - 1] == ' ' ))
-            last--;
-        free_node(p, sz);
-        return true;
-    }
-}
+/* pseudo_input: translated to Rust in src/input.rs */
 
 /* pseudo_close: translated to Rust in src/input.rs */
 

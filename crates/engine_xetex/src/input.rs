@@ -3,14 +3,16 @@
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 
 use crate::globals::{
-    align_state, avail, buf_size, cond_ptr, cur_boundary, cur_input, cur_tok, first, in_open,
-    input_file, input_ptr, input_stack, line, line_stack, max_in_open, max_in_stack, mem_b32s0,
-    mem_b32s1, param_ptr, param_stack, pseudo_files, set_align_state, set_avail, set_cur_input,
-    set_cur_input_index, set_cur_input_loc, set_cur_input_name, set_cur_input_start,
-    set_cur_input_state, set_cur_input_synctex_tag, set_eof_seen, set_first,
+    align_state, avail, buf_size, buffer_entry, cond_ptr, cur_boundary, cur_input, cur_tok, first,
+    in_open, input_file, input_ptr, input_stack, last, line, line_stack, max_buf_stack, max_in_open,
+    max_in_stack, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, param_ptr,
+    param_stack, pseudo_files, set_align_state, set_avail, set_buffer_entry, set_cur_input,
+    set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
+    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_eof_seen, set_first,
     set_full_source_filename_stack, set_grp_stack, set_if_stack, set_in_open, set_input_file,
-    set_input_ptr, set_input_stack, set_line, set_line_stack, set_max_in_stack, set_mem_b32s1,
-    set_param_ptr, set_pseudo_files, set_source_filename_stack, stack_size,
+    set_input_ptr, set_input_stack, set_last, set_line, set_line_stack, set_max_buf_stack,
+    set_max_in_stack, set_mem_b32s0, set_mem_b32s1, set_param_ptr, set_pseudo_files,
+    set_source_filename_stack, stack_size,
 };
 
 extern "C" {
@@ -204,4 +206,48 @@ pub unsafe extern "C" fn end_file_reading() {
     set_input_ptr(ptr);
     set_cur_input(input_stack(ptr));
     set_in_open(in_open() - 1);
+}
+
+// ---------------------------------------------------------------------------
+// pseudo_input
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:2722 (pseudo_input)
+#[no_mangle]
+pub unsafe extern "C" fn pseudo_input() -> bool {
+    set_last(first());
+    let p = mem_b32s0(pseudo_files());
+    if p == crate::mem::TEX_NULL {
+        return false;
+    }
+    set_mem_b32s0(pseudo_files(), mem_b32s1(p));
+    let sz = mem_b32s0(p);
+    if 4 * sz - 3 >= buf_size() - last() {
+        set_cur_input_loc(first());
+        set_cur_input_limit(last() - 1);
+        crate::errors::overflow(c"buffer size".as_ptr(), buf_size());
+    }
+    set_last(first());
+    let mut r = p + 1;
+    let for_end = p + sz - 1;
+    while r <= for_end {
+        let w0 = mem_b16s3(r) as i32;
+        let w1 = mem_b16s2(r) as i32;
+        let w2 = mem_b16s1(r) as i32;
+        let w3 = mem_b16s0(r) as i32;
+        set_buffer_entry(last(), w0);
+        set_buffer_entry(last() + 1, w1);
+        set_buffer_entry(last() + 2, w2);
+        set_buffer_entry(last() + 3, w3);
+        set_last(last() + 4);
+        r += 1;
+    }
+    if last() >= max_buf_stack() {
+        set_max_buf_stack(last() + 1);
+    }
+    while last() > first() && buffer_entry(last() - 1) == ' ' as i32 {
+        set_last(last() - 1);
+    }
+    crate::mem::free_node(p, sz);
+    true
 }

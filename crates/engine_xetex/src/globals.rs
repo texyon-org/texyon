@@ -304,8 +304,11 @@ mod raw {
         pub(super) static mut _xeq_level_array: [u16; 1_114_730];
 
         // Input buffer: first = next free slot; buf_size = capacity
-        // (xetex-xetexd.h:393, 409).
+        // last = end-of-current-line; max_buf_stack = high-water mark
+        // (xetex-xetexd.h:393–395, 409).
         pub(super) static mut first: i32;
+        pub(super) static mut last: i32;
+        pub(super) static mut max_buf_stack: i32;
         pub(super) static mut buf_size: i32;
         // Maximum allowed input-nesting depth (xetex-xetexd.h:411).
         pub(super) static mut max_in_open: i32;
@@ -1945,4 +1948,39 @@ pub(crate) fn input_file(k: i32) -> *mut libc::c_void {
 #[inline]
 pub(crate) fn set_input_file(k: i32, v: *mut libc::c_void) {
     unsafe { *raw::input_file.offset(k as isize) = v; }
+}
+
+// ---------------------------------------------------------------------------
+// last / max_buf_stack / set_buffer_entry / cur_input_limit
+// ---------------------------------------------------------------------------
+
+/// Returns `last` — index one past the last character on the current input line.
+#[inline]
+pub(crate) fn last() -> i32 {
+    unsafe { raw::last }
+}
+/// Sets `last`.
+#[inline]
+pub(crate) fn set_last(v: i32) {
+    unsafe { raw::last = v; }
+}
+/// Returns `max_buf_stack` — highest value `last` has ever reached.
+#[inline]
+pub(crate) fn max_buf_stack() -> i32 {
+    unsafe { raw::max_buf_stack }
+}
+/// Sets `max_buf_stack`.
+#[inline]
+pub(crate) fn set_max_buf_stack(v: i32) {
+    unsafe { raw::max_buf_stack = v; }
+}
+/// Writes `buffer[k] = v`.
+#[inline]
+pub(crate) fn set_buffer_entry(k: i32, v: i32) {
+    unsafe { *raw::buffer.offset(k as isize) = v; }
+}
+/// Writes `cur_input.limit = v`.
+#[inline]
+pub(crate) fn set_cur_input_limit(v: i32) {
+    unsafe { raw::cur_input.limit = v; }
 }
