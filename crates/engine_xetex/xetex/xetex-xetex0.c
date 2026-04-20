@@ -4313,18 +4313,7 @@ done:
         cur_tok = CS_TOKEN_FLAG + cur_cs;
 }
 
-void x_token(void)
-{
-    while (cur_cmd > MAX_COMMAND) {
-
-        expand();
-        get_next();
-    }
-    if (cur_cs == 0)
-        cur_tok = (cur_cmd * MAX_CHAR_VAL) + cur_chr;
-    else
-        cur_tok = CS_TOKEN_FLAG + cur_cs;
-}
+/* x_token: translated to Rust in src/scan.rs */
 
 
 void
@@ -4352,16 +4341,7 @@ scan_left_brace(void)
 }
 
 
-void
-scan_optional_equals(void)
-{
-    do {
-        get_x_token();
-    } while (cur_cmd == SPACER);
-
-    if (cur_tok != OTHER_TOKEN + 61 /*"="*/)
-        back_input();
-}
+/* scan_optional_equals: translated to Rust in src/scan.rs */
 
 
 bool scan_keyword(const char* s)

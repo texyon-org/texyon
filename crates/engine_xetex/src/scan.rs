@@ -2,9 +2,15 @@
 //!
 //! Translated from xetex-xetex0.c.
 
-use crate::globals::{cur_val, eqtb_b32s1, eqtb_is_null, max_reg_help_line, max_reg_num, set_cur_val, set_help_line, set_help_ptr};
+use crate::globals::{
+    cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1, eqtb_is_null, max_reg_help_line,
+    max_reg_num, set_cur_tok, set_cur_val, set_help_line, set_help_ptr,
+};
 
 extern "C" {
+    fn expand();
+    fn get_next();
+    fn get_x_token();
     fn scan_int();
     fn scan_glue(level: i16);
     fn scan_toks(macro_def: bool, xpand: bool) -> i32;
@@ -365,4 +371,43 @@ pub unsafe extern "C" fn get_tracing_fonts_state() -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn scan_pdf_ext_toks() {
     scan_toks(false, true);
+}
+
+// ---------------------------------------------------------------------------
+// x_token / scan_optional_equals
+// ---------------------------------------------------------------------------
+
+// Command-code constants (xetex_format.h / xetex-constants.h).
+const MAX_COMMAND: u8 = 102;
+const MAX_CHAR_VAL: i32 = 0x200000; // 1 << 21
+const CS_TOKEN_FLAG: i32 = 0x1FFFFFF;
+const SPACER: u8 = 10;
+const OTHER_TOKEN: i32 = 0x1800000; // OTHER_CHAR << 21
+
+/// translated from xetex-xetex0.c:4316 (x_token)
+#[no_mangle]
+pub unsafe extern "C" fn x_token() {
+    while cur_cmd() > MAX_COMMAND {
+        expand();
+        get_next();
+    }
+    if cur_cs() == 0 {
+        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+    } else {
+        set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+    }
+}
+
+/// translated from xetex-xetex0.c:4355 (scan_optional_equals)
+#[no_mangle]
+pub unsafe extern "C" fn scan_optional_equals() {
+    loop {
+        get_x_token();
+        if cur_cmd() != SPACER {
+            break;
+        }
+    }
+    if cur_tok() != OTHER_TOKEN + '=' as i32 {
+        crate::input::back_input();
+    }
 }

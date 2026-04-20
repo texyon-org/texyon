@@ -200,6 +200,8 @@ mod raw {
         pub(super) static mut microseconds: i32;
         // Font name table (xetex-xetexd.h:562; str_number = i32).
         pub(super) static mut font_name: *mut i32;
+        // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
+        pub(super) static mut cur_cs: i32;
         // Current token (xetex-xetexd.h:502; token encoded as int32).
         pub(super) static mut cur_tok: i32;
         // Alignment state (xetex-xetexd.h:520; tracks brace nesting in alignment).
@@ -1283,6 +1285,14 @@ pub(crate) fn set_old_setting(v: u8) {
 // cur_chr / cur_val / cur_name / cur_area / cur_ext
 // ---------------------------------------------------------------------------
 
+#[inline]
+pub(crate) fn cur_cs() -> i32 {
+    unsafe { raw::cur_cs }
+}
+#[inline]
+pub(crate) fn set_cur_cs(v: i32) {
+    unsafe { raw::cur_cs = v; }
+}
 #[inline]
 pub(crate) fn cur_tok() -> i32 {
     unsafe { raw::cur_tok }
