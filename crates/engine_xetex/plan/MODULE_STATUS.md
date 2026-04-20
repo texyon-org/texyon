@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 24.
+Last updated: session 25.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 24.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 15914 |    152 | multiple (see below)              | IN PROGRESS — 44% |
+| xetex-xetex0.c               | 15875 |    150 | multiple (see below)              | IN PROGRESS — 45% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -359,15 +359,16 @@ New Rust module `src/save.rs` created for save-stack management.
 |79 | `insert_dollar_sign`      |       11444 | `src/scan.rs`   | MIGRATED (session 24, 8440fd8c) |
 |80 | `insert_relax`            |        3998 | `src/input.rs`  | MIGRATED (session 24, c6e5204d) |
 |81 | `get_token`               |        3653 | `src/scan.rs`   | MIGRATED (session 24, e789d157) |
+|82 | `get_x_token`             |        4272 | `src/scan.rs`   | MIGRATED (session 25, 42ba5a71) |
+|83 | `get_x_or_protected`      |        4533 | `src/scan.rs`   | MIGRATED (session 25, 42ba5a71) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `scan_expr` (~6227): complex recursive scanner; depends on get_x_token, back_input, get_x_or_protected.
+- `scan_keyword` (~4284): medium complexity; uses get_x_token (now Rust), back_input (Rust), get_avail (Rust), flush_list (Rust).
+- `scan_expr` (~6227): complex recursive scanner; now get_x_or_protected is Rust.
 - `show_save_groups` (~11356): complex multi-goto; approach with label-loops.
-- `scan_math` (~4452): depends on get_x_token, eqtb, math globals.
-- `get_x_or_protected` (~4550): small, calls get_token + expand.
-- `scan_keyword` (~4347): medium complexity.
+- `scan_math` (~4452): depends on eqtb macros, math globals.
 
 ## How to maintain this file
 

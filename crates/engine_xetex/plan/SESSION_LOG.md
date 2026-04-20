@@ -32,6 +32,35 @@ template.
 
 ---
 
+## Session 25 — 2026-04-20 — get_x_token, get_x_or_protected (short session)
+
+**Goal:** Translate the two main token-fetching functions that are called by many other functions.
+
+**Starting state:**
+- Parity: 29/29 (tex-outputs)
+- Trip: 2/2
+- Streak: 24
+
+**Work done:**
+- Translated `get_x_token` (4272) and `get_x_or_protected` (4533) to `src/scan.rs`. Added constants CALL, END_TEMPLATE, ENDV, FROZEN_ENDV, PROTECTED_TOKEN. macro_call() still extern "C". Committed 42ba5a71.
+- Updated MODULE_STATUS.md, SESSION_LOG.md, PROGRESS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 25
+- 209 Rust functions total; 2 new this session.
+- xetex-xetex0.c: 15875 LOC, ~150 C functions remaining.
+
+**Surprises / gotchas:**
+- `get_x_token` had an orphaned C `}` brace after replacing its body — needed a second edit pass.
+
+**For the next session:**
+- `scan_keyword` (~4284): all callees are now Rust (get_x_token, back_input, get_avail, flush_list); medium complexity.
+- `scan_expr` (~6227): complex scanner; get_x_or_protected is now Rust.
+
+---
+
 ## Session 24 — 2026-04-20 — input stack, warnings, scanner helpers (14 functions)
 
 **Goal:** Translate begin/end_file_reading cluster and other small functions.
