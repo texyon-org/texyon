@@ -9212,34 +9212,7 @@ int32_t new_character(internal_font_number f, UTF16_code c)
 }
 
 
-void scan_spec(group_code c, bool three_codes)
-{
-    int32_t s;
-    unsigned char /*additional */ spec_code;
-    if (three_codes)
-        s = save_stack[save_ptr + 0].b32.s1;
-    if (scan_keyword("to"))
-        spec_code = EXACTLY;
-    else if (scan_keyword("spread"))
-        spec_code = ADDITIONAL;
-    else {
-
-        spec_code = ADDITIONAL;
-        cur_val = 0;
-        goto found;
-    }
-    scan_dimen(false, false, false);
- found:
-    if (three_codes) {
-        save_stack[save_ptr + 0].b32.s1 = s;
-        save_ptr++;
-    }
-    save_stack[save_ptr + 0].b32.s1 = spec_code;
-    save_stack[save_ptr + 1].b32.s1 = cur_val;
-    save_ptr = save_ptr + 2;
-    new_save_level(c);
-    scan_left_brace();
-}
+/* scan_spec: translated to Rust in src/scan.rs */
 
 scaled_t char_pw(int32_t p, small_number side)
 {

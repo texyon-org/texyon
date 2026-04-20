@@ -8,6 +8,7 @@ use crate::globals::{
     set_align_state, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_tok, set_cur_val, set_help_line,
     set_help_ptr, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence,
 };
+use crate::globals::{save_ptr, save_stack_b32s1, set_save_ptr, set_save_stack_b32s1};
 use crate::mem::new_rule;
 
 extern "C" {
@@ -595,6 +596,41 @@ pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
     }
     crate::mem::flush_list(mem_b32s1(BACKUP_HEAD));
     true
+}
+
+// ---------------------------------------------------------------------------
+// scan_spec
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:256,264
+const EXACTLY: u8 = 0;
+const ADDITIONAL: u8 = 1;
+
+/// translated from xetex-xetex0.c:9215 (scan_spec)
+#[no_mangle]
+pub unsafe extern "C" fn scan_spec(c: u8, three_codes: bool) {
+    let s = if three_codes { save_stack_b32s1(save_ptr()) } else { 0 };
+    let spec_code;
+    if scan_keyword(c"to".as_ptr()) {
+        spec_code = EXACTLY;
+        scan_dimen(false, false, false);
+    } else if scan_keyword(c"spread".as_ptr()) {
+        spec_code = ADDITIONAL;
+        scan_dimen(false, false, false);
+    } else {
+        spec_code = ADDITIONAL;
+        set_cur_val(0);
+    }
+    // found:
+    if three_codes {
+        set_save_stack_b32s1(save_ptr(), s);
+        set_save_ptr(save_ptr() + 1);
+    }
+    set_save_stack_b32s1(save_ptr(), spec_code as i32);
+    set_save_stack_b32s1(save_ptr() + 1, cur_val());
+    set_save_ptr(save_ptr() + 2);
+    crate::save::new_save_level(c);
+    scan_left_brace();
 }
 
 // ---------------------------------------------------------------------------
