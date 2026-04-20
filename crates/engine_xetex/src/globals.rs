@@ -305,6 +305,14 @@ mod raw {
         // (xetex-xetexd.h:733; size = EQTB_SIZE - INT_BASE + 1 = 1114730).
         pub(super) static mut _xeq_level_array: [u16; 1_114_730];
 
+        // Scanner state tracking (xetex-xetexd.h:514–516).
+        // scanner_status: unsigned char (NORMAL=0 .. ABSORBING=5).
+        pub(super) static mut scanner_status: u8;
+        // warning_index: control-sequence index for error messages.
+        pub(super) static mut warning_index: i32;
+        // def_ref: head of the current macro-definition token list.
+        pub(super) static mut def_ref: i32;
+
         // Input buffer: first = next free slot; buf_size = capacity
         // last = end-of-current-line; max_buf_stack = high-water mark
         // (xetex-xetexd.h:393–395, 409).
@@ -2007,4 +2015,33 @@ pub(crate) fn set_buffer_entry(k: i32, v: i32) {
 #[inline]
 pub(crate) fn set_cur_input_limit(v: i32) {
     unsafe { raw::cur_input.limit = v; }
+}
+
+// ---------------------------------------------------------------------------
+// scanner_status / warning_index / def_ref
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn scanner_status() -> u8 {
+    unsafe { raw::scanner_status }
+}
+#[inline]
+pub(crate) fn set_scanner_status(v: u8) {
+    unsafe { raw::scanner_status = v; }
+}
+#[inline]
+pub(crate) fn warning_index() -> i32 {
+    unsafe { raw::warning_index }
+}
+#[inline]
+pub(crate) fn set_warning_index(v: i32) {
+    unsafe { raw::warning_index = v; }
+}
+#[inline]
+pub(crate) fn def_ref() -> i32 {
+    unsafe { raw::def_ref }
+}
+#[inline]
+pub(crate) fn set_def_ref(v: i32) {
+    unsafe { raw::def_ref = v; }
 }

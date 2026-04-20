@@ -6259,60 +6259,7 @@ found: /*1572:*//*424:*/
 
 /* scan_rule_spec: translated to Rust in src/scan.rs */
 
-void scan_general_text(void)
-{
-    unsigned char /*absorbing */ s;
-    int32_t w;
-    int32_t d;
-    int32_t p;
-    int32_t q;
-    int32_t unbalance;
-    s = scanner_status;
-    w = warning_index;
-    d = def_ref;
-    scanner_status = ABSORBING;
-    warning_index = cur_cs;
-    def_ref = get_avail();
-    mem[def_ref].b32.s0 = TEX_NULL;
-    p = def_ref;
-    scan_left_brace();
-    unbalance = 1;
-    while (true) {
-
-        get_token();
-        if (cur_tok < RIGHT_BRACE_LIMIT) {
-
-            if (cur_cmd < RIGHT_BRACE)
-                unbalance++;
-            else {
-
-                unbalance--;
-                if (unbalance == 0)
-                    goto found;
-            }
-        }
-        {
-            q = get_avail();
-            mem[p].b32.s1 = q;
-            mem[q].b32.s0 = cur_tok;
-            p = q;
-        }
-    }
- found:
-    q = mem[def_ref].b32.s1;
-    {
-        mem[def_ref].b32.s1 = avail;
-        avail = def_ref;
-    }
-    if (q == TEX_NULL)
-        cur_val = TEMP_HEAD;
-    else
-        cur_val = p;
-    mem[TEMP_HEAD].b32.s1 = q;
-    scanner_status = s;
-    warning_index = w;
-    def_ref = d;
-}
+/* scan_general_text: translated to Rust in src/scan.rs */
 
 void pseudo_start(void)
 {

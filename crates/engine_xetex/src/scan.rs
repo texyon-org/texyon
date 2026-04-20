@@ -3,12 +3,13 @@
 //! Translated from xetex-xetex0.c.
 
 use crate::globals::{
-    align_state, cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1, eqtb_is_null,
-    max_reg_help_line, max_reg_num, mem_b32s0, mem_b32s1, no_new_control_sequence,
-    set_align_state, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_tok, set_cur_val, set_help_line,
-    set_help_ptr, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence,
+    align_state, avail, cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, def_ref, eqtb_b32s1,
+    eqtb_is_null, max_reg_help_line, max_reg_num, mem_b32s0, mem_b32s1, no_new_control_sequence,
+    save_ptr, save_stack_b32s1, scanner_status, set_align_state, set_avail, set_cur_chr,
+    set_cur_cmd, set_cur_cs, set_cur_tok, set_cur_val, set_def_ref, set_help_line, set_help_ptr,
+    set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence, set_save_ptr,
+    set_save_stack_b32s1, set_scanner_status, set_warning_index, warning_index,
 };
-use crate::globals::{save_ptr, save_stack_b32s1, set_save_ptr, set_save_stack_b32s1};
 use crate::mem::new_rule;
 
 extern "C" {
@@ -596,6 +597,65 @@ pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
     }
     crate::mem::flush_list(mem_b32s1(BACKUP_HEAD));
     true
+}
+
+// ---------------------------------------------------------------------------
+// scan_general_text
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:187
+const ABSORBING: u8 = 5;
+// xetex_format.h:232
+const RIGHT_BRACE: u8 = 2;
+// xetex-constants.h:352
+const RIGHT_BRACE_LIMIT: i32 = 0x600000;
+// MEM_TOP - 3 (xetex-constants.h:40)
+const TEMP_HEAD: i32 = 4_999_999 - 3;
+
+/// translated from xetex-xetex0.c:6262 (scan_general_text)
+#[no_mangle]
+pub unsafe extern "C" fn scan_general_text() {
+    let s = scanner_status();
+    let w = warning_index();
+    let d = def_ref();
+    set_scanner_status(ABSORBING);
+    set_warning_index(cur_cs());
+    let new_def = crate::mem::get_avail();
+    set_def_ref(new_def);
+    set_mem_b32s0(new_def, crate::mem::TEX_NULL);
+    let mut p = new_def;
+    scan_left_brace();
+    let mut unbalance: i32 = 1;
+    loop {
+        get_token();
+        if cur_tok() < RIGHT_BRACE_LIMIT {
+            if cur_cmd() < RIGHT_BRACE {
+                unbalance += 1;
+            } else {
+                unbalance -= 1;
+                if unbalance == 0 {
+                    break; // found:
+                }
+            }
+        }
+        let q = crate::mem::get_avail();
+        set_mem_b32s1(p, q);
+        set_mem_b32s0(q, cur_tok());
+        p = q;
+    }
+    // found:
+    let q = mem_b32s1(def_ref());
+    set_mem_b32s1(def_ref(), avail());
+    set_avail(def_ref());
+    if q == crate::mem::TEX_NULL {
+        set_cur_val(TEMP_HEAD);
+    } else {
+        set_cur_val(p);
+    }
+    set_mem_b32s1(TEMP_HEAD, q);
+    set_scanner_status(s);
+    set_warning_index(w);
+    set_def_ref(d);
 }
 
 // ---------------------------------------------------------------------------
