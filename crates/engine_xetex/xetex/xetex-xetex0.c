@@ -8709,71 +8709,9 @@ new_native_character(internal_font_number f, UnicodeScalar c)
 }
 
 
-void font_feature_warning(const void *featureNameP, int32_t featLen, const void *settingNameP, int32_t setLen)
-{
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
-    print_nl_cstr("Unknown ");
-    if (setLen > 0) {
-        print_cstr("selector `");
-        print_utf8_str(settingNameP, setLen);
-        print_cstr("' for ");
-    }
-    print_cstr("feature `");
-    print_utf8_str(featureNameP, featLen);
-    print_cstr("' in font `");
-    for (int32_t i = 0; name_of_file[i] != 0; i++)
-        print_raw_char(name_of_file[i], true);
-    print_cstr("'.");
-    capture_to_diagnostic(NULL);
-    end_diagnostic(false);
-}
-
-void font_mapping_warning(const void *mappingNameP, int32_t mappingNameLen, int32_t warningType)
-{
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
-    if (warningType == 0)
-        print_nl_cstr("Loaded mapping `");
-    else
-        print_nl_cstr("Font mapping `");
-    print_utf8_str(mappingNameP, mappingNameLen);
-    print_cstr("' for font `");
-
-    for (int32_t i = 0; name_of_file[i] != 0; i++)
-        print_raw_char(name_of_file[i], true);
-
-    switch (warningType) {
-    case 1:
-        print_cstr("' not found.");
-        break;
-    case 2:
-        {
-            print_cstr("' not usable;");
-            print_nl_cstr("bad mapping file or incorrect mapping type.");
-        }
-        break;
-    default:
-        print_cstr("'.");
-        break;
-    }
-    capture_to_diagnostic(NULL);
-    end_diagnostic(false);
-}
-
-void graphite_warning(void)
-{
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
-    print_nl_cstr("Font `");
-
-    for (int32_t i = 0; name_of_file[i] != 0; i++)
-        print_raw_char(name_of_file[i], true);
-
-    print_cstr("' does not support Graphite. Trying OpenType layout instead.");
-    capture_to_diagnostic(NULL);
-    end_diagnostic(false);
-}
+/* font_feature_warning: translated to Rust in src/output.rs */
+/* font_mapping_warning: translated to Rust in src/output.rs */
+/* graphite_warning: translated to Rust in src/output.rs */
 
 
 internal_font_number

@@ -1739,6 +1739,95 @@ pub unsafe extern "C" fn change_if_limit(l: i16, p: i32) {
     }
 }
 
+extern "C" {
+    fn print_utf8_str(s: *const libc::c_void, len: i32);
+}
+
+// ---------------------------------------------------------------------------
+// font_feature_warning / font_mapping_warning / graphite_warning
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:8712 (font_feature_warning)
+#[no_mangle]
+pub unsafe extern "C" fn font_feature_warning(
+    feature_name_p: *const libc::c_void,
+    feat_len: i32,
+    setting_name_p: *const libc::c_void,
+    set_len: i32,
+) {
+    begin_diagnostic();
+    diagnostic_begin_capture_warning_here();
+    print_nl_cstr(c"Unknown ".as_ptr());
+    if set_len > 0 {
+        print_cstr(c"selector `".as_ptr());
+        print_utf8_str(setting_name_p, set_len);
+        print_cstr(c"' for ".as_ptr());
+    }
+    print_cstr(c"feature `".as_ptr());
+    print_utf8_str(feature_name_p, feat_len);
+    print_cstr(c"' in font `".as_ptr());
+    let nof = crate::globals::name_of_file();
+    let mut i = 0;
+    while *nof.offset(i) != 0 {
+        print_raw_char(*nof.offset(i) as u16, true);
+        i += 1;
+    }
+    print_cstr(c"'.".as_ptr());
+    capture_to_diagnostic(std::ptr::null_mut());
+    end_diagnostic(false);
+}
+
+/// translated from xetex-xetex0.c:8732 (font_mapping_warning)
+#[no_mangle]
+pub unsafe extern "C" fn font_mapping_warning(
+    mapping_name_p: *const libc::c_void,
+    mapping_name_len: i32,
+    warning_type: i32,
+) {
+    begin_diagnostic();
+    diagnostic_begin_capture_warning_here();
+    if warning_type == 0 {
+        print_nl_cstr(c"Loaded mapping `".as_ptr());
+    } else {
+        print_nl_cstr(c"Font mapping `".as_ptr());
+    }
+    print_utf8_str(mapping_name_p, mapping_name_len);
+    print_cstr(c"' for font `".as_ptr());
+    let nof = crate::globals::name_of_file();
+    let mut i = 0;
+    while *nof.offset(i) != 0 {
+        print_raw_char(*nof.offset(i) as u16, true);
+        i += 1;
+    }
+    match warning_type {
+        1 => print_cstr(c"' not found.".as_ptr()),
+        2 => {
+            print_cstr(c"' not usable;".as_ptr());
+            print_nl_cstr(c"bad mapping file or incorrect mapping type.".as_ptr());
+        }
+        _ => print_cstr(c"'.".as_ptr()),
+    }
+    capture_to_diagnostic(std::ptr::null_mut());
+    end_diagnostic(false);
+}
+
+/// translated from xetex-xetex0.c:8764 (graphite_warning)
+#[no_mangle]
+pub unsafe extern "C" fn graphite_warning() {
+    begin_diagnostic();
+    diagnostic_begin_capture_warning_here();
+    print_nl_cstr(c"Font `".as_ptr());
+    let nof = crate::globals::name_of_file();
+    let mut i = 0;
+    while *nof.offset(i) != 0 {
+        print_raw_char(*nof.offset(i) as u16, true);
+        i += 1;
+    }
+    print_cstr(c"' does not support Graphite. Trying OpenType layout instead.".as_ptr());
+    capture_to_diagnostic(std::ptr::null_mut());
+    end_diagnostic(false);
+}
+
 // ---------------------------------------------------------------------------
 // bad_utf8_warning
 // ---------------------------------------------------------------------------
