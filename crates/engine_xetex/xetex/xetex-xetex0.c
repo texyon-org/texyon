@@ -6264,35 +6264,7 @@ found: /*1572:*//*424:*/
 /* scan_normal_glue: translated to Rust in src/scan.rs */
 /* scan_mu_glue: translated to Rust in src/scan.rs */
 
-int32_t scan_rule_spec(void)
-{
-    int32_t q;
-    q = new_rule();
-    if (cur_cmd == VRULE)
-        mem[q + 1].b32.s1 = DEFAULT_RULE;
-    else {
-
-        mem[q + 3].b32.s1 = DEFAULT_RULE;
-        mem[q + 2].b32.s1 = 0;
-    }
-reswitch:
-    if (scan_keyword("width")) {
-        scan_dimen(false, false, false);
-        mem[q + 1].b32.s1 = cur_val;
-        goto reswitch;
-    }
-    if (scan_keyword("height")) {
-        scan_dimen(false, false, false);
-        mem[q + 3].b32.s1 = cur_val;
-        goto reswitch;
-    }
-    if (scan_keyword("depth")) {
-        scan_dimen(false, false, false);
-        mem[q + 2].b32.s1 = cur_val;
-        goto reswitch;
-    }
-    return q;
-}
+/* scan_rule_spec: translated to Rust in src/scan.rs */
 
 void scan_general_text(void)
 {

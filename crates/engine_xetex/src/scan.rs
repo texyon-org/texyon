@@ -8,12 +8,14 @@ use crate::globals::{
     set_align_state, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_tok, set_cur_val, set_help_line,
     set_help_ptr, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence,
 };
+use crate::mem::new_rule;
 
 extern "C" {
     fn expand();
     fn get_next();
     fn macro_call();
     fn begin_token_list(p: i32, t: u16);
+    fn scan_dimen(mu: bool, inf: bool, shortcut: bool);
     fn scan_int();
     fn scan_glue(level: i16);
     fn scan_toks(macro_def: bool, xpand: bool) -> i32;
@@ -593,6 +595,41 @@ pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
     }
     crate::mem::flush_list(mem_b32s1(BACKUP_HEAD));
     true
+}
+
+// ---------------------------------------------------------------------------
+// scan_rule_spec
+// ---------------------------------------------------------------------------
+
+// xetex_format.h:273 / xetex-constants.h:316,339
+const VRULE: u8 = 35;
+const DEFAULT_RULE: i32 = 26214;
+
+/// translated from xetex-xetex0.c:6267 (scan_rule_spec)
+#[no_mangle]
+pub unsafe extern "C" fn scan_rule_spec() -> i32 {
+    let q = new_rule();
+    if cur_cmd() == VRULE {
+        set_mem_b32s1(q + 1, DEFAULT_RULE);
+    } else {
+        set_mem_b32s1(q + 3, DEFAULT_RULE);
+        set_mem_b32s1(q + 2, 0);
+    }
+    loop {
+        if scan_keyword(c"width".as_ptr()) {
+            scan_dimen(false, false, false);
+            set_mem_b32s1(q + 1, cur_val());
+        } else if scan_keyword(c"height".as_ptr()) {
+            scan_dimen(false, false, false);
+            set_mem_b32s1(q + 3, cur_val());
+        } else if scan_keyword(c"depth".as_ptr()) {
+            scan_dimen(false, false, false);
+            set_mem_b32s1(q + 2, cur_val());
+        } else {
+            break;
+        }
+    }
+    q
 }
 
 #[inline]
