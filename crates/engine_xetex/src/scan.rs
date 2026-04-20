@@ -3,8 +3,9 @@
 //! Translated from xetex-xetex0.c.
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1, eqtb_is_null, max_reg_help_line,
-    max_reg_num, set_cur_tok, set_cur_val, set_help_line, set_help_ptr,
+    align_state, cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1, eqtb_is_null,
+    max_reg_help_line, max_reg_num, set_align_state, set_cur_chr, set_cur_cmd, set_cur_tok,
+    set_cur_val, set_help_line, set_help_ptr,
 };
 
 extern "C" {
@@ -409,5 +410,35 @@ pub unsafe extern "C" fn scan_optional_equals() {
     }
     if cur_tok() != OTHER_TOKEN + '=' as i32 {
         crate::input::back_input();
+    }
+}
+
+// Command-code values for scan_left_brace (xetex_format.h).
+const RELAX: u8 = 0;
+const LEFT_BRACE: u8 = 1;
+const LEFT_BRACE_TOKEN: i32 = 0x200000;
+
+/// translated from xetex-xetex0.c:4319 (scan_left_brace)
+#[no_mangle]
+pub unsafe extern "C" fn scan_left_brace() {
+    loop {
+        get_x_token();
+        if cur_cmd() != SPACER && cur_cmd() != RELAX {
+            break;
+        }
+    }
+    if cur_cmd() != LEFT_BRACE {
+        crate::output::error_here_with_diagnostic(c"Missing { inserted".as_ptr());
+        crate::output::capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(4);
+        set_help_line(3, c"A left brace was mandatory here, so I've put one in.".as_ptr());
+        set_help_line(2, c"You might want to delete and/or insert some corrections".as_ptr());
+        set_help_line(1, c"so that I will find a matching right brace soon.".as_ptr());
+        set_help_line(0, c"(If you're confused by all this, try typing `I}' now.)".as_ptr());
+        crate::input::back_error();
+        set_cur_tok(LEFT_BRACE_TOKEN + '{' as i32);
+        set_cur_cmd(LEFT_BRACE);
+        set_cur_chr('{' as i32);
+        set_align_state(align_state() + 1);
     }
 }

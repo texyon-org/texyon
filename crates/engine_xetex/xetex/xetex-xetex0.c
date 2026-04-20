@@ -4316,29 +4316,7 @@ done:
 /* x_token: translated to Rust in src/scan.rs */
 
 
-void
-scan_left_brace(void)
-{
-    do {
-        get_x_token();
-    } while (cur_cmd == SPACER || cur_cmd == RELAX);
-
-    if (cur_cmd != LEFT_BRACE) {
-        error_here_with_diagnostic("Missing { inserted");
-        capture_to_diagnostic(NULL);
-
-        help_ptr = 4;
-        help_line[3] = "A left brace was mandatory here, so I've put one in.";
-        help_line[2] = "You might want to delete and/or insert some corrections";
-        help_line[1] = "so that I will find a matching right brace soon.";
-        help_line[0] = "(If you're confused by all this, try typing `I}' now.)";
-        back_error();
-        cur_tok = (LEFT_BRACE_TOKEN + '{' );
-        cur_cmd = LEFT_BRACE;
-        cur_chr = '{' ;
-        align_state++;
-    }
-}
+/* scan_left_brace: translated to Rust in src/scan.rs */
 
 
 /* scan_optional_equals: translated to Rust in src/scan.rs */

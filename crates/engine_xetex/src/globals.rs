@@ -1610,6 +1610,16 @@ pub(crate) fn font_max() -> i32 {
 pub(crate) fn cur_cmd() -> u8 {
     unsafe { raw::cur_cmd }
 }
+/// Sets `cur_cmd`.
+#[inline]
+pub(crate) fn set_cur_cmd(v: u8) {
+    unsafe { raw::cur_cmd = v; }
+}
+/// Sets `cur_chr`.
+#[inline]
+pub(crate) fn set_cur_chr(v: i32) {
+    unsafe { raw::cur_chr = v; }
+}
 
 /// Returns `cur_mark[k]` — the k-th mark register token list
 /// (xetex-xetexd.h:527; k must be 0..=4).
