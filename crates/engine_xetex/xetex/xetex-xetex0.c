@@ -8967,22 +8967,7 @@ void do_locale_linebreaks(int32_t s, int32_t len)
     }
 }
 
-void bad_utf8_warning(void)
-{
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
-    print_nl_cstr("Invalid UTF-8 byte or sequence");
-    if (cur_input.name == 0)
-        print_cstr(" in terminal input");
-    else {
-
-        print_cstr(" at line ");
-        print_int(line);
-    }
-    print_cstr(" replaced by U+FFFD.");
-    capture_to_diagnostic(NULL);
-    end_diagnostic(false);
-}
+/* bad_utf8_warning: translated to Rust in src/output.rs */
 
 /* get_input_normalization_state: translated to Rust in src/scan.rs */
 /* get_tracing_fonts_state: translated to Rust in src/scan.rs */

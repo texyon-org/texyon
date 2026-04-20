@@ -1738,3 +1738,24 @@ pub unsafe extern "C" fn change_if_limit(l: i16, p: i32) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// bad_utf8_warning
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:8970 (bad_utf8_warning)
+#[no_mangle]
+pub unsafe extern "C" fn bad_utf8_warning() {
+    begin_diagnostic();
+    diagnostic_begin_capture_warning_here();
+    print_nl_cstr(c"Invalid UTF-8 byte or sequence".as_ptr());
+    if crate::globals::cur_input().name == 0 {
+        print_cstr(c" in terminal input".as_ptr());
+    } else {
+        print_cstr(c" at line ".as_ptr());
+        print_int(crate::globals::line());
+    }
+    print_cstr(c" replaced by U+FFFD.".as_ptr());
+    capture_to_diagnostic(std::ptr::null_mut());
+    end_diagnostic(false);
+}
