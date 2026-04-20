@@ -6022,7 +6022,9 @@ scan_glue(small_number level)
 
 /* fract: translated to Rust in src/scaled_math.rs */
 
-void scan_expr(void)
+/* scan_expr: translated to Rust in src/scan.rs */
+#if 0
+void scan_expr_DELETED(void)
 {
     bool a, b;
     small_number l;
@@ -6249,10 +6251,7 @@ found: /*1572:*//*424:*/
         } else
             e = 0;
     }
-    arith_error = a;
-    cur_val = e;
-    cur_val_level = l;
-}
+#endif /* scan_expr_DELETED */
 
 /* scan_normal_glue: translated to Rust in src/scan.rs */
 /* scan_mu_glue: translated to Rust in src/scan.rs */

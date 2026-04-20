@@ -3,10 +3,12 @@
 //! Translated from xetex-xetex0.c.
 
 use crate::globals::{
-    align_state, avail, cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, def_ref, eqtb_b32s1,
-    eqtb_is_null, max_reg_help_line, max_reg_num, mem_b32s0, mem_b32s1, no_new_control_sequence,
-    save_ptr, save_stack_b32s1, scanner_status, set_align_state, set_avail, set_cur_chr,
-    set_cur_cmd, set_cur_cs, set_cur_tok, set_cur_val, set_def_ref, set_help_line, set_help_ptr,
+    align_state, arith_error, avail, cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, cur_val_level,
+    def_ref, eqtb_b32s1, eqtb_is_null, expand_depth, expand_depth_count, max_reg_help_line,
+    max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, no_new_control_sequence, save_ptr,
+    save_stack_b32s1, scanner_status, set_align_state, set_arith_error, set_avail, set_cur_chr,
+    set_cur_cmd, set_cur_cs, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
+    set_expand_depth_count, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b16s1,
     set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence, set_save_ptr,
     set_save_stack_b32s1, set_scanner_status, set_warning_index, warning_index,
 };
@@ -597,6 +599,249 @@ pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
     }
     crate::mem::flush_list(mem_b32s1(BACKUP_HEAD));
     true
+}
+
+// ---------------------------------------------------------------------------
+// scan_expr
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:121,145–150,182; xetex_format.h:568–570; xetex-constants.h:12,15,288
+const EXPR_NONE: i16 = 0;
+const EXPR_ADD: i16 = 1;
+const EXPR_SUB: i16 = 2;
+const EXPR_MULT: i16 = 3;
+const EXPR_DIV: i16 = 4;
+const EXPR_SCALE: i16 = 5;
+const EXPR_NODE_SIZE: i32 = 4;
+const INT_VAL: i16 = 0;
+const DIMEN_VAL: i16 = 1;
+const GLUE_VAL_EXPR: i16 = 2;
+const MU_VAL_EXPR: i16 = 3;
+const NORMAL_EXPR: u16 = 0;
+const TEX_INFINITY: i32 = 0x7FFF_FFFF;
+const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+
+/// translated from xetex-xetex0.c:6025 (scan_expr)
+#[no_mangle]
+pub unsafe extern "C" fn scan_expr() {
+    let mut l = cur_val_level() as i16;
+    let a = arith_error();
+    let mut b = false;
+    let mut p = crate::mem::TEX_NULL;
+
+    set_expand_depth_count(expand_depth_count() + 1);
+    if expand_depth_count() >= expand_depth() {
+        crate::errors::overflow(c"expansion depth".as_ptr(), expand_depth());
+    }
+
+    // restart:
+    let mut r: i16;
+    let mut e: i32;
+    let mut s: i16;
+    let mut t: i32;
+    let mut n: i32;
+    let mut f: i32 = 0;
+    let mut skip_scan = false; // true means "goto found" (skip value-scan phase)
+
+    'outer: loop {
+        // restart:
+        r = EXPR_NONE;
+        e = 0;
+        s = EXPR_NONE;
+        t = 0;
+        n = 0;
+        skip_scan = false;
+
+        loop {
+            // continue_: (only entered when !skip_scan)
+            if !skip_scan {
+                let o: i16 = if s == EXPR_NONE { l } else { INT_VAL };
+                loop { get_x_token(); if cur_cmd() != SPACER { break; } }
+                if cur_tok() == OTHER_TOKEN + 40 { // '('
+                    let q = crate::mem::get_node(EXPR_NODE_SIZE);
+                    set_mem_b32s1(q, p);
+                    set_mem_b16s1(q, l as u16);
+                    set_mem_b16s0(q, (4 * s + r) as u16);
+                    set_mem_b32s1(q + 1, e);
+                    set_mem_b32s1(q + 2, t);
+                    set_mem_b32s1(q + 3, n);
+                    p = q;
+                    l = o;
+                    continue 'outer; // goto restart
+                }
+                back_input();
+                if o == INT_VAL { scan_int(); }
+                else if o == DIMEN_VAL { scan_dimen(false, false, false); }
+                else if o == GLUE_VAL_EXPR { scan_normal_glue(); }
+                else { scan_mu_glue(); }
+                f = cur_val();
+            }
+            skip_scan = false;
+
+            // found:
+            loop { get_x_token(); if cur_cmd() != SPACER { break; } }
+            let mut o: i16 = if cur_tok() == OTHER_TOKEN + 43 { EXPR_ADD }
+                else if cur_tok() == OTHER_TOKEN + 45 { EXPR_SUB }
+                else if cur_tok() == OTHER_TOKEN + 42 { EXPR_MULT }
+                else if cur_tok() == OTHER_TOKEN + 47 { EXPR_DIV }
+                else { EXPR_NONE };
+            if o == EXPR_NONE {
+                if p == crate::mem::TEX_NULL {
+                    if cur_cmd() != RELAX { back_input(); }
+                } else if cur_tok() != OTHER_TOKEN + 41 { // ')'
+                    crate::output::error_here_with_diagnostic(
+                        c"Missing ) inserted for expression".as_ptr());
+                    crate::output::capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(1);
+                    set_help_line(0,
+                        c"I was expecting to see `+', `-', `*', `/', or `)'. Didn't.".as_ptr());
+                    crate::input::back_error();
+                }
+            }
+
+            set_arith_error(b);
+            if l == INT_VAL || s > EXPR_SUB {
+                if f > TEX_INFINITY || f < -TEX_INFINITY {
+                    set_arith_error(true);
+                    f = 0;
+                }
+            } else if l == DIMEN_VAL {
+                if f.abs() > MAX_HALFWORD {
+                    set_arith_error(true);
+                    f = 0;
+                }
+            } else {
+                if mem_b32s1(f + 1).abs() > MAX_HALFWORD
+                    || mem_b32s1(f + 2).abs() > MAX_HALFWORD
+                    || mem_b32s1(f + 3).abs() > MAX_HALFWORD
+                {
+                    set_arith_error(true);
+                    crate::mem::delete_glue_ref(f);
+                    f = crate::mem::new_spec(0);
+                }
+            }
+
+            // o may be modified inside case 3 (EXPR_MULT → EXPR_SCALE)
+            match s {
+                0 => {
+                    if l >= GLUE_VAL_EXPR && o != EXPR_NONE {
+                        t = crate::mem::new_spec(f);
+                        crate::mem::delete_glue_ref(f);
+                        if mem_b32s1(t + 2) == 0 { set_mem_b16s1(t, NORMAL_EXPR); }
+                        if mem_b32s1(t + 3) == 0 { set_mem_b16s0(t, NORMAL_EXPR); }
+                    } else {
+                        t = f;
+                    }
+                }
+                3 => { // EXPR_MULT
+                    if o == EXPR_DIV {
+                        n = f;
+                        o = EXPR_SCALE; // modifies o for post-match code
+                    } else if l == INT_VAL {
+                        t = crate::scaled_math::mult_and_add(t, f, 0, TEX_INFINITY);
+                    } else if l == DIMEN_VAL {
+                        t = crate::scaled_math::mult_and_add(t, f, 0, MAX_HALFWORD);
+                    } else {
+                        set_mem_b32s1(t + 1, crate::scaled_math::mult_and_add(mem_b32s1(t + 1), f, 0, MAX_HALFWORD));
+                        set_mem_b32s1(t + 2, crate::scaled_math::mult_and_add(mem_b32s1(t + 2), f, 0, MAX_HALFWORD));
+                        set_mem_b32s1(t + 3, crate::scaled_math::mult_and_add(mem_b32s1(t + 3), f, 0, MAX_HALFWORD));
+                    }
+                }
+                4 => { // EXPR_DIV
+                    if l < GLUE_VAL_EXPR {
+                        t = crate::scaled_math::quotient(t, f);
+                    } else {
+                        set_mem_b32s1(t + 1, crate::scaled_math::quotient(mem_b32s1(t + 1), f));
+                        set_mem_b32s1(t + 2, crate::scaled_math::quotient(mem_b32s1(t + 2), f));
+                        set_mem_b32s1(t + 3, crate::scaled_math::quotient(mem_b32s1(t + 3), f));
+                    }
+                }
+                5 => { // EXPR_SCALE
+                    if l == INT_VAL {
+                        t = crate::scaled_math::fract(t, n, f, TEX_INFINITY);
+                    } else if l == DIMEN_VAL {
+                        t = crate::scaled_math::fract(t, n, f, MAX_HALFWORD);
+                    } else {
+                        set_mem_b32s1(t + 1, crate::scaled_math::fract(mem_b32s1(t + 1), n, f, MAX_HALFWORD));
+                        set_mem_b32s1(t + 2, crate::scaled_math::fract(mem_b32s1(t + 2), n, f, MAX_HALFWORD));
+                        set_mem_b32s1(t + 3, crate::scaled_math::fract(mem_b32s1(t + 3), n, f, MAX_HALFWORD));
+                    }
+                }
+                _ => {}
+            }
+
+            if o > EXPR_SUB {
+                s = o;
+            } else {
+                s = EXPR_NONE;
+                if r == EXPR_NONE {
+                    e = t;
+                } else if l == INT_VAL {
+                    e = crate::scaled_math::add_or_sub(e, t, TEX_INFINITY, r == EXPR_SUB);
+                } else if l == DIMEN_VAL {
+                    e = crate::scaled_math::add_or_sub(e, t, MAX_HALFWORD, r == EXPR_SUB);
+                } else {
+                    set_mem_b32s1(e + 1, crate::scaled_math::add_or_sub(mem_b32s1(e + 1), mem_b32s1(t + 1), MAX_HALFWORD, r == EXPR_SUB));
+                    if mem_b16s1(e) == mem_b16s1(t) {
+                        set_mem_b32s1(e + 2, crate::scaled_math::add_or_sub(mem_b32s1(e + 2), mem_b32s1(t + 2), MAX_HALFWORD, r == EXPR_SUB));
+                    } else if mem_b16s1(e) < mem_b16s1(t) && mem_b32s1(t + 2) != 0 {
+                        set_mem_b32s1(e + 2, mem_b32s1(t + 2));
+                        set_mem_b16s1(e, mem_b16s1(t));
+                    }
+                    if mem_b16s0(e) == mem_b16s0(t) {
+                        set_mem_b32s1(e + 3, crate::scaled_math::add_or_sub(mem_b32s1(e + 3), mem_b32s1(t + 3), MAX_HALFWORD, r == EXPR_SUB));
+                    } else if mem_b16s0(e) < mem_b16s0(t) && mem_b32s1(t + 3) != 0 {
+                        set_mem_b32s1(e + 3, mem_b32s1(t + 3));
+                        set_mem_b16s0(e, mem_b16s0(t));
+                    }
+                    crate::mem::delete_glue_ref(t);
+                    if mem_b32s1(e + 2) == 0 { set_mem_b16s1(e, NORMAL_EXPR); }
+                    if mem_b32s1(e + 3) == 0 { set_mem_b16s0(e, NORMAL_EXPR); }
+                }
+                r = o;
+            }
+            b = arith_error();
+            if o != EXPR_NONE {
+                continue; // goto continue_
+            }
+            if p != crate::mem::TEX_NULL {
+                f = e;
+                let q = p;
+                e = mem_b32s1(q + 1);
+                t = mem_b32s1(q + 2);
+                n = mem_b32s1(q + 3);
+                s = (mem_b16s0(q) / 4) as i16;
+                r = (mem_b16s0(q) % 4) as i16;
+                l = mem_b16s1(q) as i16;
+                p = mem_b32s1(q);
+                crate::mem::free_node(q, EXPR_NODE_SIZE);
+                skip_scan = true;
+                continue; // goto found
+            }
+            break 'outer;
+        }
+    }
+
+    set_expand_depth_count(expand_depth_count() - 1);
+
+    if b {
+        crate::output::error_here_with_diagnostic(c"Arithmetic overflow".as_ptr());
+        crate::output::capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(1, c"I can't evaluate this expression,".as_ptr());
+        set_help_line(0, c"since the result is out of range.".as_ptr());
+        crate::errors::error();
+        if l >= GLUE_VAL_EXPR {
+            crate::mem::delete_glue_ref(e);
+            e = 0;
+            set_mem_b32s1(e, mem_b32s1(e) + 1); // GLUE_SPEC_ref_count(e)++
+        } else {
+            e = 0;
+        }
+    }
+    set_arith_error(a);
+    set_cur_val(e);
+    set_cur_val_level(l as u8);
 }
 
 // ---------------------------------------------------------------------------

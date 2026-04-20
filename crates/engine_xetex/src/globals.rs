@@ -305,6 +305,13 @@ mod raw {
         // (xetex-xetexd.h:733; size = EQTB_SIZE - INT_BASE + 1 = 1114730).
         pub(super) static mut _xeq_level_array: [u16; 1_114_730];
 
+        // Expression-depth guard (xetex-xetexd.h:415, 525).
+        pub(super) static mut expand_depth: i32;
+        pub(super) static mut expand_depth_count: i32;
+        // Value-type level for the current scanned quantity (xetex-xetexd.h:532).
+        // 0=INT_VAL, 1=DIMEN_VAL, 2=GLUE_VAL, 3=MU_VAL (unsigned char).
+        pub(super) static mut cur_val_level: u8;
+
         // Scanner state tracking (xetex-xetexd.h:514–516).
         // scanner_status: unsigned char (NORMAL=0 .. ABSORBING=5).
         pub(super) static mut scanner_status: u8;
@@ -2016,6 +2023,21 @@ pub(crate) fn set_buffer_entry(k: i32, v: i32) {
 pub(crate) fn set_cur_input_limit(v: i32) {
     unsafe { raw::cur_input.limit = v; }
 }
+
+// ---------------------------------------------------------------------------
+// expand_depth / expand_depth_count / cur_val_level
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn expand_depth() -> i32 { unsafe { raw::expand_depth } }
+#[inline]
+pub(crate) fn expand_depth_count() -> i32 { unsafe { raw::expand_depth_count } }
+#[inline]
+pub(crate) fn set_expand_depth_count(v: i32) { unsafe { raw::expand_depth_count = v; } }
+#[inline]
+pub(crate) fn cur_val_level() -> u8 { unsafe { raw::cur_val_level } }
+#[inline]
+pub(crate) fn set_cur_val_level(v: u8) { unsafe { raw::cur_val_level = v; } }
 
 // ---------------------------------------------------------------------------
 // scanner_status / warning_index / def_ref
