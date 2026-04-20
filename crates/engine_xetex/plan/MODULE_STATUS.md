@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 25.
+Last updated: session 26.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 25.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 15875 |    150 | multiple (see below)              | IN PROGRESS — 45% |
+| xetex-xetex0.c               | 15820 |    149 | multiple (see below)              | IN PROGRESS — 45% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -361,11 +361,11 @@ New Rust module `src/save.rs` created for save-stack management.
 |81 | `get_token`               |        3653 | `src/scan.rs`   | MIGRATED (session 24, e789d157) |
 |82 | `get_x_token`             |        4272 | `src/scan.rs`   | MIGRATED (session 25, 42ba5a71) |
 |83 | `get_x_or_protected`      |        4533 | `src/scan.rs`   | MIGRATED (session 25, 42ba5a71) |
+|84 | `scan_keyword`            |        4283 | `src/scan.rs`   | MIGRATED (session 26, c8ccdb2d) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `scan_keyword` (~4284): medium complexity; uses get_x_token (now Rust), back_input (Rust), get_avail (Rust), flush_list (Rust).
 - `scan_expr` (~6227): complex recursive scanner; now get_x_or_protected is Rust.
 - `show_save_groups` (~11356): complex multi-goto; approach with label-loops.
 - `scan_math` (~4452): depends on eqtb macros, math globals.

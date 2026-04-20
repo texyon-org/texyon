@@ -32,6 +32,35 @@ template.
 
 ---
 
+## Session 26 — 2026-04-20 — scan_keyword (short session)
+
+**Goal:** Translate scan_keyword, whose callees are now all in Rust.
+
+**Starting state:**
+- Parity: 29/29 (tex-outputs)
+- Trip: 2/2
+- Streak: 25
+
+**Work done:**
+- Translated `scan_keyword` (4283) to `src/scan.rs`. Added `begin_token_list` extern "C" and `BACKUP_HEAD`/`BACKED_UP` constants. Added `back_input` local inline wrapper. Committed c8ccdb2d.
+- Updated MODULE_STATUS.md, SESSION_LOG.md, PROGRESS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 26
+- 210 Rust functions total; 1 new this session.
+- xetex-xetex0.c: 15820 LOC, ~149 C functions remaining.
+
+**Surprises / gotchas:**
+- None; clean translation.
+
+**For the next session:**
+- `scan_expr` (~6227): complex recursive scanner; now all helpers (get_x_or_protected, back_input, scan_keyword) are in Rust.
+- `scan_rule_spec` (~6420): medium; uses scan_keyword (now Rust), scan_dimen (C).
+
+---
+
 ## Session 25 — 2026-04-20 — get_x_token, get_x_or_protected (short session)
 
 **Goal:** Translate the two main token-fetching functions that are called by many other functions.
