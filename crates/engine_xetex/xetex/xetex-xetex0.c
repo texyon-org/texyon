@@ -4269,32 +4269,7 @@ reswitch:
 }
 
 
-void get_x_token(void)
-{
- restart:
-    get_next();
-
-    if (cur_cmd <= MAX_COMMAND)
-        goto done;
-    if (cur_cmd >= CALL) {
-
-        if (cur_cmd < END_TEMPLATE)
-            macro_call();
-        else {
-
-            cur_cs = FROZEN_ENDV;
-            cur_cmd = ENDV;
-            goto done;
-        }
-    } else
-        expand();
-    goto restart;
-done:
-    if (cur_cs == 0)
-        cur_tok = (cur_cmd * MAX_CHAR_VAL) + cur_chr;
-    else
-        cur_tok = CS_TOKEN_FLAG + cur_cs;
-}
+/* get_x_token: translated to Rust in src/scan.rs */
 
 /* x_token: translated to Rust in src/scan.rs */
 
@@ -4530,21 +4505,7 @@ void set_math_char(int32_t c)
 /* scan_register_num translated to Rust (src/scan.rs). */
 /* scan_four_bit_int_or_18 translated to Rust (src/scan.rs). */
 
-void get_x_or_protected(void)
-{
-    while (true) {
-
-        get_token();
-        if (cur_cmd <= MAX_COMMAND)
-            return;
-        if ((cur_cmd >= CALL) && (cur_cmd < END_TEMPLATE)) {
-
-            if (mem[mem[cur_chr].b32.s1].b32.s0 == PROTECTED_TOKEN)
-                return;
-        }
-        expand();
-    }
-}
+/* get_x_or_protected: translated to Rust in src/scan.rs */
 
 
 int32_t

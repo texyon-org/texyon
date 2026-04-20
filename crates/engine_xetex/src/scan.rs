@@ -4,15 +4,15 @@
 
 use crate::globals::{
     align_state, cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1, eqtb_is_null,
-    max_reg_help_line, max_reg_num, no_new_control_sequence, set_align_state, set_cur_chr,
-    set_cur_cmd, set_cur_tok, set_cur_val, set_help_line, set_help_ptr,
-    set_no_new_control_sequence,
+    max_reg_help_line, max_reg_num, mem_b32s0, mem_b32s1, no_new_control_sequence,
+    set_align_state, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_tok, set_cur_val, set_help_line,
+    set_help_ptr, set_no_new_control_sequence,
 };
 
 extern "C" {
     fn expand();
     fn get_next();
-    fn get_x_token();
+    fn macro_call();
     fn scan_int();
     fn scan_glue(level: i16);
     fn scan_toks(macro_def: bool, xpand: bool) -> i32;
@@ -402,6 +402,13 @@ const MAX_CHAR_VAL: i32 = 0x200000; // 1 << 21
 const CS_TOKEN_FLAG: i32 = 0x1FFFFFF;
 const SPACER: u8 = 10;
 const OTHER_TOKEN: i32 = 0x1800000; // OTHER_CHAR << 21
+const CALL: u8 = 113;
+const END_TEMPLATE: u8 = 117;
+const ENDV: u8 = 9;
+// FROZEN_CONTROL_SEQUENCE + 6 (xetex_format.h:201, xetex-constants.h:61)
+const FROZEN_ENDV: i32 = 2_243_226 + 6;
+// END_MATCH_TOKEN + 1 (xetex-constants.h:360–361)
+const PROTECTED_TOKEN: i32 = 0x1C00001;
 
 /// translated from xetex-xetex0.c:4316 (x_token)
 #[no_mangle]
@@ -474,5 +481,53 @@ pub unsafe extern "C" fn scan_left_brace() {
         set_cur_cmd(LEFT_BRACE);
         set_cur_chr('{' as i32);
         set_align_state(align_state() + 1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// get_x_token / get_x_or_protected
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:4272 (get_x_token)
+#[no_mangle]
+pub unsafe extern "C" fn get_x_token() {
+    loop {
+        get_next();
+        if cur_cmd() <= MAX_COMMAND {
+            break;
+        }
+        if cur_cmd() >= CALL {
+            if cur_cmd() < END_TEMPLATE {
+                macro_call();
+            } else {
+                set_cur_cs(FROZEN_ENDV);
+                set_cur_cmd(ENDV);
+                break;
+            }
+        } else {
+            expand();
+        }
+    }
+    if cur_cs() == 0 {
+        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+    } else {
+        set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+    }
+}
+
+/// translated from xetex-xetex0.c:4533 (get_x_or_protected)
+#[no_mangle]
+pub unsafe extern "C" fn get_x_or_protected() {
+    loop {
+        get_token();
+        if cur_cmd() <= MAX_COMMAND {
+            return;
+        }
+        if cur_cmd() >= CALL && cur_cmd() < END_TEMPLATE {
+            if mem_b32s0(mem_b32s1(cur_chr())) == PROTECTED_TOKEN {
+                return;
+            }
+        }
+        expand();
     }
 }
