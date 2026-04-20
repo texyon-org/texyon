@@ -917,6 +917,10 @@ pub(crate) fn no_new_control_sequence() -> bool {
     unsafe { raw::no_new_control_sequence }
 }
 #[inline]
+pub(crate) fn set_no_new_control_sequence(v: bool) {
+    unsafe { raw::no_new_control_sequence = v; }
+}
+#[inline]
 pub(crate) fn prim_used() -> i32 {
     unsafe { raw::prim_used }
 }

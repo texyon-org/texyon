@@ -3650,16 +3650,7 @@ restart:
 }
 
 
-void get_token(void)
-{
-    no_new_control_sequence = false;
-    get_next();
-    no_new_control_sequence = true;
-    if (cur_cs == 0)
-        cur_tok = (cur_cmd * MAX_CHAR_VAL) + cur_chr;
-    else
-        cur_tok = CS_TOKEN_FLAG + cur_cs;
-}
+/* get_token: translated to Rust in src/scan.rs */
 
 
 void

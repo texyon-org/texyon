@@ -4,8 +4,9 @@
 
 use crate::globals::{
     align_state, cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1, eqtb_is_null,
-    max_reg_help_line, max_reg_num, set_align_state, set_cur_chr, set_cur_cmd, set_cur_tok,
-    set_cur_val, set_help_line, set_help_ptr,
+    max_reg_help_line, max_reg_num, no_new_control_sequence, set_align_state, set_cur_chr,
+    set_cur_cmd, set_cur_tok, set_cur_val, set_help_line, set_help_ptr,
+    set_no_new_control_sequence,
 };
 
 extern "C" {
@@ -377,6 +378,23 @@ pub unsafe extern "C" fn scan_pdf_ext_toks() {
 // ---------------------------------------------------------------------------
 // x_token / scan_optional_equals
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// get_token
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:3653 (get_token)
+#[no_mangle]
+pub unsafe extern "C" fn get_token() {
+    set_no_new_control_sequence(false);
+    get_next();
+    set_no_new_control_sequence(true);
+    if cur_cs() == 0 {
+        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+    } else {
+        set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+    }
+}
 
 // Command-code constants (xetex_format.h / xetex-constants.h).
 const MAX_COMMAND: u8 = 102;
