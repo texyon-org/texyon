@@ -3,14 +3,24 @@
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 
 use crate::globals::{
-    align_state, avail, cur_input, cur_tok, input_ptr, input_stack, max_in_stack, mem_b32s0,
+    align_state, avail, buf_size, cond_ptr, cur_boundary, cur_input, cur_tok, first, in_open,
+    input_file, input_ptr, input_stack, line, line_stack, max_in_open, max_in_stack, mem_b32s0,
     mem_b32s1, param_ptr, param_stack, pseudo_files, set_align_state, set_avail, set_cur_input,
-    set_cur_input_index, set_cur_input_loc, set_cur_input_start, set_cur_input_state, set_input_ptr,
-    set_input_stack, set_max_in_stack, set_mem_b32s1, set_param_ptr, set_pseudo_files, stack_size,
+    set_cur_input_index, set_cur_input_loc, set_cur_input_name, set_cur_input_start,
+    set_cur_input_state, set_cur_input_synctex_tag, set_eof_seen, set_first,
+    set_full_source_filename_stack, set_grp_stack, set_if_stack, set_in_open, set_input_file,
+    set_input_ptr, set_input_stack, set_line, set_line_stack, set_max_in_stack, set_mem_b32s1,
+    set_param_ptr, set_pseudo_files, set_source_filename_stack, stack_size,
 };
+
+extern "C" {
+    fn u_close(f: *mut libc::c_void);
+}
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).
 const TOKEN_LIST: u16 = 0;
+// Scanner-state constants (xetex-constants.h:221).
+const MID_LINE: u16 = 1;
 const U_TEMPLATE: u16 = 1;
 const V_TEMPLATE: u16 = 2;
 const BACKED_UP: u16 = 3;
@@ -134,4 +144,64 @@ pub unsafe extern "C" fn pseudo_close() {
         crate::mem::free_node(q, mem_b32s0(q));
         q = next;
     }
+}
+
+// ---------------------------------------------------------------------------
+// begin_file_reading
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:3097 (begin_file_reading)
+#[no_mangle]
+pub unsafe extern "C" fn begin_file_reading() {
+    if in_open() == max_in_open() {
+        crate::errors::overflow(c"text input levels".as_ptr(), max_in_open());
+    }
+    if first() == buf_size() {
+        crate::errors::overflow(c"buffer size".as_ptr(), buf_size());
+    }
+    set_in_open(in_open() + 1);
+    let ptr = input_ptr();
+    if ptr > max_in_stack() {
+        set_max_in_stack(ptr);
+        if ptr == stack_size() {
+            crate::errors::overflow(c"input stack size".as_ptr(), stack_size());
+        }
+    }
+    set_input_stack(ptr, cur_input());
+    set_input_ptr(ptr + 1);
+    let idx = in_open();
+    set_cur_input_index(idx as u16);
+    set_source_filename_stack(idx, 0);
+    set_full_source_filename_stack(idx, 0);
+    set_eof_seen(idx, false);
+    set_grp_stack(idx, cur_boundary());
+    set_if_stack(idx, cond_ptr());
+    set_line_stack(idx, line());
+    set_cur_input_start(first());
+    set_cur_input_state(MID_LINE);
+    set_cur_input_name(0);
+    set_cur_input_synctex_tag(0);
+}
+
+// ---------------------------------------------------------------------------
+// end_file_reading
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:3127 (end_file_reading)
+#[no_mangle]
+pub unsafe extern "C" fn end_file_reading() {
+    set_first(cur_input().start);
+    set_line(line_stack(cur_input().index as i32));
+    let name = cur_input().name;
+    if name == 18 || name == 19 {
+        pseudo_close();
+    } else if name > 17 {
+        let idx = cur_input().index as i32;
+        u_close(input_file(idx));
+        set_input_file(idx, std::ptr::null_mut());
+    }
+    let ptr = input_ptr() - 1;
+    set_input_ptr(ptr);
+    set_cur_input(input_stack(ptr));
+    set_in_open(in_open() - 1);
 }

@@ -3094,52 +3094,8 @@ begin_token_list(int32_t p, uint16_t t)
 /* back_error: translated to Rust in src/input.rs */
 /* ins_error: translated to Rust in src/input.rs */
 
-void begin_file_reading(void)
-{
-    if (in_open == max_in_open)
-        overflow("text input levels", max_in_open);
-    if (first == buf_size)
-        overflow("buffer size", buf_size);
-    in_open++;
-    {
-        if (input_ptr > max_in_stack) {
-            max_in_stack = input_ptr;
-            if (input_ptr == stack_size)
-                overflow("input stack size", stack_size);
-        }
-        input_stack[input_ptr] = cur_input;
-        input_ptr++;
-    }
-    cur_input.index = in_open;
-    source_filename_stack[cur_input.index] = 0;
-    full_source_filename_stack[cur_input.index] = 0;
-    eof_seen[cur_input.index] = false;
-    grp_stack[cur_input.index] = cur_boundary;
-    if_stack[cur_input.index] = cond_ptr;
-    line_stack[cur_input.index] = line;
-    cur_input.start = first;
-    cur_input.state = MID_LINE;
-    cur_input.name = 0;
-    cur_input.synctex_tag = 0;
-}
-
-void
-end_file_reading(void)
-{
-    first = cur_input.start;
-    line = line_stack[cur_input.index];
-
-    if (cur_input.name == 18 || cur_input.name == 19) {
-        pseudo_close();
-    } else if (cur_input.name > 17) {
-        u_close(input_file[cur_input.index]);
-        input_file[cur_input.index] = NULL;
-    }
-
-    input_ptr--;
-    cur_input = input_stack[input_ptr];
-    in_open--;
-}
+/* begin_file_reading: translated to Rust in src/input.rs */
+/* end_file_reading: translated to Rust in src/input.rs */
 
 
 void

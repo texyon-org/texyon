@@ -302,6 +302,20 @@ mod raw {
         // XEQ_LEVEL array — level at which each eqtb entry was defined
         // (xetex-xetexd.h:733; size = EQTB_SIZE - INT_BASE + 1 = 1114730).
         pub(super) static mut _xeq_level_array: [u16; 1_114_730];
+
+        // Input buffer: first = next free slot; buf_size = capacity
+        // (xetex-xetexd.h:393, 409).
+        pub(super) static mut first: i32;
+        pub(super) static mut buf_size: i32;
+        // Maximum allowed input-nesting depth (xetex-xetexd.h:411).
+        pub(super) static mut max_in_open: i32;
+        // Source-filename stacks (xetex-xetexd.h:512; str_number = i32).
+        pub(super) static mut source_filename_stack: *mut i32;
+        // eof_seen[k]: true when EOF was seen at level k (xetex-xetexd.h:700).
+        pub(super) static mut eof_seen: *mut bool;
+        // Array of UFILE* for the main input-file stack (xetex-xetexd.h:509).
+        // Typed as *mut c_void to avoid a cyclic dependency on io.rs.
+        pub(super) static mut input_file: *mut *mut libc::c_void;
     }
 }
 
@@ -529,6 +543,16 @@ pub(crate) fn set_cur_input_state(v: u16) {
 #[inline]
 pub(crate) fn set_cur_input_index(v: u16) {
     unsafe { raw::cur_input.index = v; }
+}
+/// Writes `cur_input.name = v`.
+#[inline]
+pub(crate) fn set_cur_input_name(v: i32) {
+    unsafe { raw::cur_input.name = v; }
+}
+/// Writes `cur_input.synctex_tag = v`.
+#[inline]
+pub(crate) fn set_cur_input_synctex_tag(v: i32) {
+    unsafe { raw::cur_input.synctex_tag = v; }
 }
 /// Replaces the entire `cur_input` struct (e.g. when restoring from input_stack).
 #[inline]
@@ -1826,4 +1850,99 @@ pub(crate) fn max_param_stack() -> i32 {
 #[inline]
 pub(crate) fn set_max_param_stack(v: i32) {
     unsafe { raw::max_param_stack = v; }
+}
+
+// ---------------------------------------------------------------------------
+// first / buf_size / max_in_open
+// ---------------------------------------------------------------------------
+
+/// Returns `first` — next free index in the input buffer (xetex-xetexd.h:393).
+#[inline]
+pub(crate) fn first() -> i32 {
+    unsafe { raw::first }
+}
+/// Sets `first`.
+#[inline]
+pub(crate) fn set_first(v: i32) {
+    unsafe { raw::first = v; }
+}
+/// Returns `buf_size` — capacity of the input buffer (xetex-xetexd.h:409).
+#[inline]
+pub(crate) fn buf_size() -> i32 {
+    unsafe { raw::buf_size }
+}
+/// Returns `max_in_open` — maximum allowed input-nesting depth (xetex-xetexd.h:411).
+#[inline]
+pub(crate) fn max_in_open() -> i32 {
+    unsafe { raw::max_in_open }
+}
+
+// ---------------------------------------------------------------------------
+// set_in_open
+// ---------------------------------------------------------------------------
+
+/// Sets `in_open`.
+#[inline]
+pub(crate) fn set_in_open(v: i32) {
+    unsafe { raw::in_open = v; }
+}
+
+// ---------------------------------------------------------------------------
+// source_filename_stack / full_source_filename_stack / line_stack
+// ---------------------------------------------------------------------------
+
+/// Returns `source_filename_stack[k]` (str_number; xetex-xetexd.h:512).
+#[inline]
+pub(crate) fn source_filename_stack(k: i32) -> i32 {
+    unsafe { *raw::source_filename_stack.offset(k as isize) }
+}
+/// Sets `source_filename_stack[k]`.
+#[inline]
+pub(crate) fn set_source_filename_stack(k: i32, v: i32) {
+    unsafe { *raw::source_filename_stack.offset(k as isize) = v; }
+}
+/// Sets `full_source_filename_stack[k]`.
+#[inline]
+pub(crate) fn set_full_source_filename_stack(k: i32, v: i32) {
+    unsafe { *raw::full_source_filename_stack.offset(k as isize) = v; }
+}
+/// Sets `line_stack[k]`.
+#[inline]
+pub(crate) fn set_line_stack(k: i32, v: i32) {
+    unsafe { *raw::line_stack.offset(k as isize) = v; }
+}
+/// Sets `line`.
+#[inline]
+pub(crate) fn set_line(v: i32) {
+    unsafe { raw::line = v; }
+}
+
+// ---------------------------------------------------------------------------
+// eof_seen
+// ---------------------------------------------------------------------------
+
+/// Returns `eof_seen[k]` — whether EOF was seen at input level k.
+#[inline]
+pub(crate) fn eof_seen(k: i32) -> bool {
+    unsafe { *raw::eof_seen.offset(k as isize) }
+}
+/// Sets `eof_seen[k]`.
+#[inline]
+pub(crate) fn set_eof_seen(k: i32, v: bool) {
+    unsafe { *raw::eof_seen.offset(k as isize) = v; }
+}
+
+// ---------------------------------------------------------------------------
+// input_file
+// ---------------------------------------------------------------------------
+
+/// Returns `input_file[k]` as a raw pointer (UFILE*; xetex-xetexd.h:509).
+#[inline]
+pub(crate) fn input_file(k: i32) -> *mut libc::c_void {
+    unsafe { *raw::input_file.offset(k as isize) }
+}
+/// Sets `input_file[k]`.
+#[inline]
+pub(crate) fn set_input_file(k: i32, v: *mut libc::c_void) {
+    unsafe { *raw::input_file.offset(k as isize) = v; }
 }
