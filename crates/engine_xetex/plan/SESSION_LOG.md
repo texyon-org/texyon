@@ -32,6 +32,38 @@ template.
 
 ---
 
+## Session 29 — 2026-04-20 — scan_expr (complex recursive scanner)
+
+**Goal:** Translate scan_expr, whose helpers (get_x_or_protected, scan_keyword, scan_dimen, add_or_sub, mult_and_add, quotient, fract) are all now in Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 28
+
+**Work done:**
+- Added globals: expand_depth, expand_depth_count, cur_val_level. Committed edba0a63.
+- Translated `scan_expr` (6025) to `src/scan.rs`. Two backward gotos (restart, continue_) become a labeled `'outer` loop + inner loop; `goto found` (skip value-scan) becomes `skip_scan=true`. o mutation in case 3 (EXPR_MULT→EXPR_SCALE) handled by declaring `o` as `mut`. C body replaced with `#if 0` block. Committed edba0a63.
+- Updated MODULE_STATUS.md, SESSION_LOG.md, PROGRESS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 29
+- 216 Rust functions total; 1 new this session.
+- xetex-xetex0.c: 15704 LOC, ~143 C functions remaining.
+
+**Surprises / gotchas:**
+- The `o = EXPR_SCALE` mutation inside `match s { 3 => ... }` requires `o` to be declared as `let mut o` before the match — otherwise it shadows rather than mutates.
+- Initial draft had post-match loop logic duplicated inside case 3; second pass moved it out.
+- C body kept as `#if 0` block (not deleted) to preserve line-number references during review.
+
+**For the next session:**
+- `ins_the_toks` (~6700): trivial 1-liner wrapping `the_toks`.
+- `pseudo_start` (~6266): uses scan_general_text (Rust) + str_pool direct access.
+
+---
+
 ## Session 28 — 2026-04-20 — scan_general_text
 
 **Goal:** Translate scan_general_text now that get_token, scan_left_brace are in Rust.

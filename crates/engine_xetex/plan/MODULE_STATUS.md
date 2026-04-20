@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 28.
+Last updated: session 29.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 28.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 15705 |    144 | multiple (see below)              | IN PROGRESS — 47% |
+| xetex-xetex0.c               | 15704 |    143 | multiple (see below)              | IN PROGRESS — 47% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -367,15 +367,15 @@ New Rust module `src/save.rs` created for save-stack management.
 |87 | `scan_decimal`            |        5961 | `src/scan.rs`   | MIGRATED (session 27, 6e9aea72) |
 |88 | `scan_spec`               |        9215 | `src/scan.rs`   | MIGRATED (session 27, f614c4f3) |
 |89 | `scan_general_text`       |        6262 | `src/scan.rs`   | MIGRATED (session 28, a19aad9a) |
+|90 | `scan_expr`               |        6025 | `src/scan.rs`   | MIGRATED (session 29, edba0a63) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `scan_expr` (~6025): complex recursive; scan_general_text now Rust.
-- `pseudo_start` (~6317): uses scan_general_text (now Rust), token_show (C), get_avail (Rust).
-- `scan_expr` (~6227): complex recursive scanner; now get_x_or_protected is Rust.
-- `show_save_groups` (~11356): complex multi-goto; approach with label-loops.
-- `scan_math` (~4452): depends on eqtb macros, math globals.
+- `pseudo_start` (~6266): uses scan_general_text (Rust), token_show (C), str_pool/pool_ptr.
+- `the_toks` (~6607): uses scan_general_text (Rust), token_show (C).
+- `ins_the_toks` (~6700): trivial wrapper.
+- `show_save_groups` (~11356): complex multi-goto.
 
 ## How to maintain this file
 
