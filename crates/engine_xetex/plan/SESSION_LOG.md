@@ -32,6 +32,47 @@ template.
 
 ---
 
+## Session 24 — 2026-04-20 — input stack, warnings, scanner helpers (14 functions)
+
+**Goal:** Translate begin/end_file_reading cluster and other small functions.
+
+**Starting state:**
+- Parity: 29/29 (tex-outputs)
+- Trip: 2/2
+- Streak: 23
+
+**Work done:**
+- Translated `begin_file_reading` (3097), `end_file_reading` (3127) to `src/input.rs`. Added globals: first, buf_size, max_in_open, source_filename_stack, eof_seen, input_file + setters for line, in_open, etc. Committed 778f6b77.
+- Translated `pseudo_input` (2722) to `src/input.rs`. Added last, max_buf_stack, set_buffer_entry, set_cur_input_limit globals. Committed 061dc82a.
+- Translated `bad_utf8_warning` (8970) to `src/output.rs`. Committed 4fa969cd.
+- Translated `font_feature_warning` (8712), `font_mapping_warning` (8732), `graphite_warning` (8764) to `src/output.rs`. Added `print_utf8_str` extern "C" link. Committed 3802c1cf.
+- Translated `x_token` (4316), `scan_optional_equals` (4355) to `src/scan.rs`. Added cur_cs global. Committed 81d5e934.
+- Translated `scan_left_brace` (4319) to `src/scan.rs`. Added set_cur_cmd, set_cur_chr. Committed 01c50e13.
+- Translated `norm_min` (12014) to `src/helpers.rs`, `insert_dollar_sign` (11444) to `src/scan.rs`. Committed 8440fd8c.
+- Translated `insert_relax` (3998) to `src/input.rs`. Committed c6e5204d.
+- Translated `get_token` (3653) to `src/scan.rs`. Added set_no_new_control_sequence. Committed e789d157.
+- Updated MODULE_STATUS.md, SESSION_LOG.md, PROGRESS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 24
+- 207 Rust functions total; 14 new this session.
+- xetex-xetex0.c: 15914 LOC, ~152 C functions remaining.
+
+**Surprises / gotchas:**
+- `pseudo_input` uses `mem[r].b16` to read 4 packed u16 values; the b16 layout is s3,s2,s1,s0 low-to-high in memory. Used individual `mem_b16s0..s3` accessors to match C field mapping.
+- `insert_dollar_sign` (`'$' = 36`): the token `MATH_SHIFT_TOKEN + 36` is exactly `MATH_SHIFT_TOKEN + '$' as i32` in Rust.
+- `INSERTED` constant appeared twice in input.rs after reorganization — needed to deduplicate.
+
+**For the next session:**
+- `get_x_or_protected` (~4550): small (calls `get_token` + `expand`); both in Rust or extern C now.
+- `scan_keyword` (~4347): medium but no new globals needed; uses `get_x_token`, `back_input`, `get_avail`, `flush_list`.
+- `scan_expr` (~6227): complex recursive scanner; needs `get_x_or_protected`, `scan_something_internal`, `scan_int`, `scan_dimen` (all still in C).
+- `scan_math` (~4452): depends on `get_x_token`, `eqtb` macros — needs more infrastructure.
+
+---
+
 ## Session 23 — 2026-04-19 — plan: add TRIP test + 11 more functions
 
 **Goal:** Add TRIP test to plan/workflow, then translate more functions.

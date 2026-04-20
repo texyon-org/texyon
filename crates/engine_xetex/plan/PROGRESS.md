@@ -37,6 +37,7 @@ cargo test -p tectonic --test tex-outputs
 |      21 | 2026-04-19 |     29 |    29 |     0 | SA cluster (delete_sa_ref + 7 more), unsave, show_cur_cmd_chr. |
 |      22 | 2026-04-19 |     29 |    29 |     0 | end_token_list cluster (4 fns, new src/input.rs), new_index/find_sa_element, new_noad/style/choice, max_hyphenatable_length, new_margin_kern. |
 |      23 | 2026-04-19 |     29 |    29 |     0 | Plan: TRIP test added. add_or_sub, quotient, fract, change_if_limit, scan_normal/mu_glue, flush_str, pseudo_close, get_input_normalization_state/get_tracing_fonts_state, scan_pdf_ext_toks. |
+|      24 | 2026-04-20 |     29 |    29 |     0 | begin/end_file_reading, pseudo_input, bad_utf8/font_feature/font_mapping/graphite warnings, x_token, scan_optional_equals, scan_left_brace, norm_min, insert_dollar_sign, insert_relax, get_token. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -72,6 +73,7 @@ Passed count below the previous session's recorded value.
 |      21 |35,042 |                   ~8045 |      ~81.3% |
 |      22 |35,440 |                   ~8479 |      ~80.7% |
 |      23 |35,234 |                   ~8718 |      ~80.2% |
+|      24 |34,991 |                   ~9271 |      ~79.0% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -107,6 +109,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      21 |      171 |            ~188 |     ~47.6% |
 |      22 |      182 |            ~177 |     ~50.7% |
 |      23 |      193 |            ~166 |     ~53.8% |
+|      24 |      207 |            ~152 |     ~57.7% |
 
 
 Total C function count to be measured in session 1 via:
@@ -122,7 +125,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **23** (sessions 1–23 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **24** (sessions 1–24 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
