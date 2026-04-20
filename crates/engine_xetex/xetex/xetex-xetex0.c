@@ -3995,15 +3995,7 @@ exit:
 }
 
 
-void
-insert_relax(void)
-{
-    cur_tok = CS_TOKEN_FLAG + cur_cs;
-    back_input();
-    cur_tok = CS_TOKEN_FLAG + FROZEN_RELAX;
-    back_input();
-    cur_input.index = INSERTED;
-}
+/* insert_relax: translated to Rust in src/input.rs */
 
 
 /* new_index: translated to Rust in src/save.rs */

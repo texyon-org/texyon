@@ -3,16 +3,16 @@
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 
 use crate::globals::{
-    align_state, avail, buf_size, buffer_entry, cond_ptr, cur_boundary, cur_input, cur_tok, first,
-    in_open, input_file, input_ptr, input_stack, last, line, line_stack, max_buf_stack, max_in_open,
-    max_in_stack, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, param_ptr,
-    param_stack, pseudo_files, set_align_state, set_avail, set_buffer_entry, set_cur_input,
-    set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_eof_seen, set_first,
-    set_full_source_filename_stack, set_grp_stack, set_if_stack, set_in_open, set_input_file,
-    set_input_ptr, set_input_stack, set_last, set_line, set_line_stack, set_max_buf_stack,
-    set_max_in_stack, set_mem_b32s0, set_mem_b32s1, set_param_ptr, set_pseudo_files,
-    set_source_filename_stack, stack_size,
+    align_state, avail, buf_size, buffer_entry, cond_ptr, cur_boundary, cur_cs, cur_input, cur_tok,
+    first, in_open, input_file, input_ptr, input_stack, last, line, line_stack, max_buf_stack,
+    max_in_open, max_in_stack, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1,
+    param_ptr, param_stack, pseudo_files, set_align_state, set_avail, set_buffer_entry,
+    set_cur_input, set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
+    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_eof_seen,
+    set_first, set_full_source_filename_stack, set_grp_stack, set_if_stack, set_in_open,
+    set_input_file, set_input_ptr, set_input_stack, set_last, set_line, set_line_stack,
+    set_max_buf_stack, set_max_in_stack, set_mem_b32s0, set_mem_b32s1, set_param_ptr,
+    set_pseudo_files, set_source_filename_stack, stack_size,
 };
 
 extern "C" {
@@ -21,13 +21,16 @@ extern "C" {
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).
 const TOKEN_LIST: u16 = 0;
-// Scanner-state constants (xetex-constants.h:221).
-const MID_LINE: u16 = 1;
 const U_TEMPLATE: u16 = 1;
 const V_TEMPLATE: u16 = 2;
 const BACKED_UP: u16 = 3;
 const INSERTED: u16 = 5;
 const MACRO: u16 = 6;
+// Token encoding (xetex-constants.h:348, xetex_format.h:201, xetex-constants.h:62).
+const CS_TOKEN_FLAG: i32 = 0x1FFFFFF;
+const FROZEN_RELAX: i32 = 2_243_226 + 7; // FROZEN_CONTROL_SEQUENCE + 7
+// Scanner-state constants (xetex-constants.h:221).
+const MID_LINE: u16 = 1;
 
 // Brace-token limits for align_state tracking (xetex-constants.h:350,352).
 const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
@@ -250,4 +253,18 @@ pub unsafe extern "C" fn pseudo_input() -> bool {
     }
     crate::mem::free_node(p, sz);
     true
+}
+
+// ---------------------------------------------------------------------------
+// insert_relax
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:3998 (insert_relax)
+#[no_mangle]
+pub unsafe extern "C" fn insert_relax() {
+    set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+    back_input();
+    set_cur_tok(CS_TOKEN_FLAG + FROZEN_RELAX);
+    back_input();
+    set_cur_input_index(INSERTED);
 }
