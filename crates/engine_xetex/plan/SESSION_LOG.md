@@ -32,6 +32,36 @@ template.
 
 ---
 
+## Session 28 — 2026-04-20 — scan_general_text
+
+**Goal:** Translate scan_general_text now that get_token, scan_left_brace are in Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 27
+
+**Work done:**
+- Added globals: scanner_status, warning_index, def_ref (with getters/setters). Committed a19aad9a.
+- Translated `scan_general_text` (6262) to `src/scan.rs`. goto found replaced with loop/break. Committed a19aad9a.
+- Updated MODULE_STATUS.md, SESSION_LOG.md, PROGRESS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 28
+- 215 Rust functions total; 1 new this session.
+- xetex-xetex0.c: 15705 LOC, ~144 C functions remaining.
+
+**Surprises / gotchas:**
+- None; clean translation.
+
+**For the next session:**
+- `pseudo_start` (~6317): uses scan_general_text (now Rust), token_show (C), str_pool/pool_ptr, get_avail/get_node.
+- `scan_expr` (~6025): complex recursive; all its key helpers are now in Rust.
+
+---
+
 ## Session 27 — 2026-04-20 — scan cluster: rule_spec, dimen, decimal, spec
 
 **Goal:** Exploit that scan_keyword is now Rust to translate dependent scan functions.
