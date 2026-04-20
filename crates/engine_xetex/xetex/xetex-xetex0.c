@@ -5953,15 +5953,8 @@ attach_sign:
 }
 
 
-void scan_dimen(bool mu, bool inf, bool shortcut)
-{
-    xetex_scan_dimen(mu, inf, shortcut, true);
-}
-
-void scan_decimal(void)
-{
-    xetex_scan_dimen(false, false, false, false);
-}
+/* scan_dimen: translated to Rust in src/scan.rs */
+/* scan_decimal: translated to Rust in src/scan.rs */
 
 
 void

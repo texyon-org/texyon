@@ -15,7 +15,7 @@ extern "C" {
     fn get_next();
     fn macro_call();
     fn begin_token_list(p: i32, t: u16);
-    fn scan_dimen(mu: bool, inf: bool, shortcut: bool);
+    fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool);
     fn scan_int();
     fn scan_glue(level: i16);
     fn scan_toks(macro_def: bool, xpand: bool) -> i32;
@@ -598,6 +598,22 @@ pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// scan_dimen / scan_decimal
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:5956 (scan_dimen)
+#[no_mangle]
+pub unsafe extern "C" fn scan_dimen(mu: bool, inf: bool, shortcut: bool) {
+    xetex_scan_dimen(mu, inf, shortcut, true);
+}
+
+/// translated from xetex-xetex0.c:5961 (scan_decimal)
+#[no_mangle]
+pub unsafe extern "C" fn scan_decimal() {
+    xetex_scan_dimen(false, false, false, false);
+}
+
+// ---------------------------------------------------------------------------
 // scan_rule_spec
 // ---------------------------------------------------------------------------
 
@@ -617,13 +633,13 @@ pub unsafe extern "C" fn scan_rule_spec() -> i32 {
     }
     loop {
         if scan_keyword(c"width".as_ptr()) {
-            scan_dimen(false, false, false);
+            xetex_scan_dimen(false, false, false, true);
             set_mem_b32s1(q + 1, cur_val());
         } else if scan_keyword(c"height".as_ptr()) {
-            scan_dimen(false, false, false);
+            xetex_scan_dimen(false, false, false, true);
             set_mem_b32s1(q + 3, cur_val());
         } else if scan_keyword(c"depth".as_ptr()) {
-            scan_dimen(false, false, false);
+            xetex_scan_dimen(false, false, false, true);
             set_mem_b32s1(q + 2, cur_val());
         } else {
             break;
