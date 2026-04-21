@@ -6,7 +6,7 @@ use crate::globals::{
     align_state, arith_error, avail, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val,
     cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth, expand_depth_count,
     file_offset, init_pool_ptr, max_print_line, max_reg_help_line, max_reg_num, mem_b16s0,
-    mem_b16s1, mem_b32s0, mem_b32s1, no_new_control_sequence, open_parens, pool_ptr, pool_size,
+    mem_b16s1, mem_b32s0, mem_b32s1, open_parens, pool_ptr, pool_size,
     pseudo_files, rust_stdout, save_ptr, save_stack_b32s1, scanner_status, selector,
     set_align_state, set_arith_error, set_avail, set_cur_chr, set_cur_cmd, set_cur_cs,
     set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_synctex_tag,
@@ -1130,4 +1130,75 @@ pub unsafe extern "C" fn pseudo_start() {
         set_cur_input_name(18);
         set_cur_input_synctex_tag(0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// str_toks_cat / str_toks
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:356
+const SPACE_TOKEN: i32 = 0x1400020;
+// xetex_format.h:246
+const ACTIVE_CHAR: i32 = 13;
+
+/// translated from xetex-xetex0.c:6363 (str_toks_cat)
+#[no_mangle]
+pub unsafe extern "C" fn str_toks_cat(b: i32, cat: i16) -> i32 {
+    use crate::mem::TEX_NULL;
+
+    if pool_ptr() + 1 > pool_size() {
+        crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+    }
+
+    let mut p = TEMP_HEAD;
+    set_mem_b32s1(p, TEX_NULL);
+    let mut k = b;
+
+    while k < pool_ptr() {
+        let mut t = str_pool_entry(k) as i32;
+
+        if t == b' ' as i32 && cat == 0 {
+            t = SPACE_TOKEN;
+        } else {
+            // decode UTF-16 surrogate pair
+            if t >= 0xD800 && t < 0xDC00 && k + 1 < pool_ptr() {
+                let lo = str_pool_entry(k + 1) as i32;
+                if lo >= 0xDC00 && lo < 0xE000 {
+                    k += 1;
+                    t = 0x10000 + ((t - 0xD800) << 10) + (str_pool_entry(k) as i32 - 0xDC00);
+                }
+            }
+
+            if cat == 0 {
+                t = OTHER_TOKEN + t;
+            } else if cat == ACTIVE_CHAR as i16 {
+                t = CS_TOKEN_FLAG + 1 + t;
+            } else {
+                t = MAX_CHAR_VAL * cat as i32 + t;
+            }
+        }
+
+        let q = if avail() == TEX_NULL {
+            crate::mem::get_avail()
+        } else {
+            let qa = avail();
+            set_avail(mem_b32s1(qa));
+            set_mem_b32s1(qa, TEX_NULL);
+            qa
+        };
+
+        set_mem_b32s1(p, q);
+        set_mem_b32s0(q, t);
+        p = q;
+        k += 1;
+    }
+
+    set_pool_ptr(b);
+    p
+}
+
+/// translated from xetex-xetex0.c:6417 (str_toks)
+#[no_mangle]
+pub unsafe extern "C" fn str_toks(b: i32) -> i32 {
+    str_toks_cat(b, 0)
 }

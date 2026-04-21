@@ -6357,6 +6357,8 @@ void pseudo_start(void)
 }
 #endif
 
+/* str_toks_cat, str_toks: translated to Rust in src/scan.rs */
+#if 0
 /* "The token list created by str toks begins at `LLIST_link(TEMP_HEAD)` and
  * ends at the value `p` that is returned. (If `p = temp head`, the list is
  * empty.)" */
@@ -6419,6 +6421,7 @@ str_toks(pool_pointer b)
 {
     return str_toks_cat(b, 0);
 }
+#endif
 
 
 int32_t the_toks(void)
