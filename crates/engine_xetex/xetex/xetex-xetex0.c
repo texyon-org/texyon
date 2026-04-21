@@ -7078,6 +7078,8 @@ conv_toks(void)
 }
 
 
+/* scan_toks: translated to Rust in src/scan.rs */
+#if 0
 int32_t scan_toks(bool macro_def, bool xpand)
 {
     int32_t t;
@@ -7260,6 +7262,7 @@ found:
     }
     return p;
 }
+#endif
 
 
 void

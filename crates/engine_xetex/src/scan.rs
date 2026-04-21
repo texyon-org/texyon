@@ -27,7 +27,6 @@ extern "C" {
     fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool);
     fn scan_int();
     fn scan_glue(level: i16);
-    fn scan_toks(macro_def: bool, xpand: bool) -> i32;
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
     fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
     fn int_error(n: i32);
@@ -1324,4 +1323,241 @@ pub unsafe extern "C" fn pass_text() {
     if eqtb_b32s1(INT_BASE_PSEUDO + INT_PAR_TRACING_IFS) > 0 {
         crate::output::show_cur_cmd_chr();
     }
+}
+
+// ---------------------------------------------------------------------------
+// scan_toks
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:182,184
+const NORMAL_SCANNER: u8 = 0;
+const DEFINING: u8 = 2;
+// xetex-constants.h:297 / xetex_format.h:237
+const MAC_PARAM: u8 = 6;
+// xetex_format.h:353
+const THE: u8 = 111;
+// xetex-constants.h:341  (BIGGEST_USV + 2)
+const NO_EXPAND_FLAG: i32 = 0x10_FFFF + 2;
+// xetex-constants.h:355,359,360,350
+const LEFT_BRACE_LIMIT: i32 = 0x400000;
+const OUT_PARAM_TOKEN: i32 = 0xA00000;
+const MATCH_TOKEN: i32 = 0x1A00000;
+const END_MATCH_TOKEN: i32 = 0x1C00000;
+// ZERO_TOKEN = OTHER_TOKEN + '0' = 0x1800000 + 48 = 0x1800030
+const ZERO_TOKEN: i32 = OTHER_TOKEN + b'0' as i32;
+
+/// translated from xetex-xetex0.c:7081 (scan_toks)
+#[no_mangle]
+pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
+    use crate::mem::TEX_NULL;
+
+    if macro_def {
+        set_scanner_status(DEFINING);
+    } else {
+        set_scanner_status(ABSORBING);
+    }
+    set_warning_index(cur_cs());
+    let new_def = crate::mem::get_avail();
+    set_def_ref(new_def);
+    set_mem_b32s0(new_def, TEX_NULL);
+    let mut p = new_def;
+    let mut hash_brace: i32 = 0;
+    let mut t = ZERO_TOKEN;
+
+    // 'found: wraps the whole function body so any goto found → break 'found
+    'found: {
+        if macro_def {
+            // Scan parameter text (§493–495)
+            // 'done1 / done: are handled by a named loop + break
+            let reached_done = 'param_scan: loop {
+                loop {
+                    get_token();
+                    if cur_tok() < RIGHT_BRACE_LIMIT {
+                        break 'param_scan false; // goto done1
+                    }
+                    if cur_cmd() == MAC_PARAM {
+                        // §495
+                        let s = MATCH_TOKEN + cur_chr();
+                        get_token();
+                        if cur_tok() < LEFT_BRACE_LIMIT {
+                            hash_brace = cur_tok();
+                            let q = crate::mem::get_avail();
+                            set_mem_b32s1(p, q);
+                            set_mem_b32s0(q, cur_tok());
+                            p = q;
+                            let q2 = crate::mem::get_avail();
+                            set_mem_b32s1(p, q2);
+                            set_mem_b32s0(q2, END_MATCH_TOKEN);
+                            p = q2;
+                            break 'param_scan true; // goto done
+                        }
+                        if t == ZERO_TOKEN + 9 {
+                            error_here_with_diagnostic(
+                                c"You already have nine parameters".as_ptr(),
+                            );
+                            capture_to_diagnostic(std::ptr::null_mut());
+                            set_help_ptr(2);
+                            set_help_line(
+                                1,
+                                c"I'm going to ignore the # sign you just used,".as_ptr(),
+                            );
+                            set_help_line(
+                                0,
+                                c"as well as the token that followed it.".as_ptr(),
+                            );
+                            error();
+                            continue; // back to top of inner loop
+                        } else {
+                            t += 1;
+                            if cur_tok() != t {
+                                error_here_with_diagnostic(
+                                    c"Parameters must be numbered consecutively".as_ptr(),
+                                );
+                                set_help_ptr(2);
+                                set_help_line(
+                                    1,
+                                    c"I've inserted the digit you should have used after the #."
+                                        .as_ptr(),
+                                );
+                                set_help_line(
+                                    0,
+                                    c"Type `1' to delete what you did use.".as_ptr(),
+                                );
+                                crate::input::back_error();
+                            }
+                            set_cur_tok(s);
+                        }
+                    }
+                    // append cur_tok to list
+                    let q = crate::mem::get_avail();
+                    set_mem_b32s1(p, q);
+                    set_mem_b32s0(q, cur_tok());
+                    p = q;
+                }
+            };
+            // done1: append END_MATCH_TOKEN
+            if !reached_done {
+                let q = crate::mem::get_avail();
+                set_mem_b32s1(p, q);
+                set_mem_b32s0(q, END_MATCH_TOKEN);
+                p = q;
+                // §494: check for missing {
+                if cur_cmd() == RIGHT_BRACE {
+                    error_here_with_diagnostic(c"Missing { inserted".as_ptr());
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_align_state(align_state() + 1);
+                    set_help_ptr(2);
+                    set_help_line(
+                        1,
+                        c"Where was the left brace? You said something like `\\def\\a}',".as_ptr(),
+                    );
+                    set_help_line(
+                        0,
+                        c"which I'm going to interpret as `\\def\\a{}'.".as_ptr(),
+                    );
+                    error();
+                    break 'found; // goto found
+                }
+            }
+            // done: fall through to body scan
+        } else {
+            scan_left_brace();
+        }
+
+        // Scan replacement/absorbed text (§497–499)
+        let mut unbalance: i32 = 1;
+        loop {
+            if xpand {
+                // §497: expand, but handle \the specially
+                loop {
+                    get_next();
+                    if cur_cmd() >= CALL {
+                        if mem_b32s0(mem_b32s1(cur_chr())) == PROTECTED_TOKEN {
+                            set_cur_cmd(RELAX);
+                            set_cur_chr(NO_EXPAND_FLAG);
+                        }
+                    }
+                    if cur_cmd() <= MAX_COMMAND {
+                        break; // done2
+                    }
+                    if cur_cmd() != THE {
+                        expand();
+                    } else {
+                        let q = the_toks();
+                        if mem_b32s1(TEMP_HEAD) != TEX_NULL {
+                            set_mem_b32s1(p, mem_b32s1(TEMP_HEAD));
+                            p = q;
+                        }
+                    }
+                }
+                // done2:
+                x_token();
+            } else {
+                get_token();
+            }
+
+            if cur_tok() < RIGHT_BRACE_LIMIT {
+                if cur_cmd() < RIGHT_BRACE {
+                    unbalance += 1;
+                } else {
+                    unbalance -= 1;
+                    if unbalance == 0 {
+                        break 'found; // goto found
+                    }
+                }
+            } else if cur_cmd() == MAC_PARAM {
+                if macro_def {
+                    // §498: parameter reference in definition body
+                    let s = cur_tok();
+                    if xpand {
+                        get_x_token();
+                    } else {
+                        get_token();
+                    }
+                    if cur_cmd() != MAC_PARAM {
+                        if cur_tok() <= ZERO_TOKEN || cur_tok() > t {
+                            error_here_with_diagnostic(
+                                c"Illegal parameter number in definition of ".as_ptr(),
+                            );
+                            crate::output::sprint_cs(warning_index());
+                            capture_to_diagnostic(std::ptr::null_mut());
+                            set_help_ptr(3);
+                            set_help_line(
+                                2,
+                                c"You meant to type ## instead of #, right?".as_ptr(),
+                            );
+                            set_help_line(
+                                1,
+                                c"Or maybe a } was forgotten somewhere earlier, and things"
+                                    .as_ptr(),
+                            );
+                            set_help_line(
+                                0,
+                                c"are all screwed up? I'm going to assume that you meant ##."
+                                    .as_ptr(),
+                            );
+                            crate::input::back_error();
+                            set_cur_tok(s);
+                        } else {
+                            set_cur_tok((OUT_PARAM_TOKEN - 48) + cur_chr());
+                        }
+                    }
+                }
+            }
+            // append cur_tok to list
+            let q = crate::mem::get_avail();
+            set_mem_b32s1(p, q);
+            set_mem_b32s0(q, cur_tok());
+            p = q;
+        }
+    }
+    // found:
+    set_scanner_status(NORMAL_SCANNER);
+    if hash_brace != 0 {
+        let q = crate::mem::get_avail();
+        set_mem_b32s1(p, q);
+        set_mem_b32s0(q, hash_brace);
+        p = q;
+    }
+    p
 }
