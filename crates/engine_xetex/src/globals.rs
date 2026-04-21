@@ -141,6 +141,8 @@ mod raw {
         pub(super) static mut max_strings: i32;
         pub(super) static mut init_str_ptr: i32;
         pub(super) static mut init_pool_ptr: i32;
+        // Font memory capacity (xetex-xetexd.h:405).
+        pub(super) static mut font_mem_size: i32;
 
         // Input buffer (xetex-xetexd.h:392); UnicodeScalar = int32_t.
         pub(super) static mut buffer: *mut i32;
@@ -202,6 +204,13 @@ mod raw {
         pub(super) static mut microseconds: i32;
         // Font name table (xetex-xetexd.h:562; str_number = i32).
         pub(super) static mut font_name: *mut i32;
+        // Font memory tables (xetex-xetexd.h:555–590).
+        pub(super) static mut font_info: *mut MemoryWord;
+        pub(super) static mut fmem_ptr: i32;
+        pub(super) static mut font_ptr: i32;
+        pub(super) static mut font_params: *mut i32;
+        pub(super) static mut font_glue: *mut i32;
+        pub(super) static mut param_base: *mut i32;
         // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
         pub(super) static mut cur_cs: i32;
         // Current token (xetex-xetexd.h:502; token encoded as int32).
@@ -1608,6 +1617,72 @@ pub(crate) fn name_of_file16_entry(k: i32) -> u16 {
 #[inline]
 pub(crate) fn font_name_entry(f: i32) -> i32 {
     unsafe { *raw::font_name.offset(f as isize) }
+}
+
+/// Returns `font_info[k].b32.s1`.
+#[inline]
+pub(crate) fn font_info_b32s1(k: i32) -> i32 {
+    unsafe { (*raw::font_info.offset(k as isize)).b32.s1 }
+}
+
+/// Writes `font_info[k].b32.s1 = v`.
+#[inline]
+pub(crate) fn set_font_info_b32s1(k: i32, v: i32) {
+    unsafe { (*raw::font_info.offset(k as isize)).b32.s1 = v; }
+}
+
+/// Returns `fmem_ptr`.
+#[inline]
+pub(crate) fn fmem_ptr() -> i32 {
+    unsafe { raw::fmem_ptr }
+}
+
+/// Sets `fmem_ptr`.
+#[inline]
+pub(crate) fn set_fmem_ptr(v: i32) {
+    unsafe { raw::fmem_ptr = v; }
+}
+
+/// Returns `font_ptr`.
+#[inline]
+pub(crate) fn font_ptr() -> i32 {
+    unsafe { raw::font_ptr }
+}
+
+/// Returns `font_mem_size`.
+#[inline]
+pub(crate) fn font_mem_size() -> i32 {
+    unsafe { raw::font_mem_size }
+}
+
+/// Returns `font_params[f]`.
+#[inline]
+pub(crate) fn font_params(f: i32) -> i32 {
+    unsafe { *raw::font_params.offset(f as isize) }
+}
+
+/// Sets `font_params[f] = v`.
+#[inline]
+pub(crate) fn set_font_params(f: i32, v: i32) {
+    unsafe { *raw::font_params.offset(f as isize) = v; }
+}
+
+/// Returns `font_glue[f]`.
+#[inline]
+pub(crate) fn font_glue(f: i32) -> i32 {
+    unsafe { *raw::font_glue.offset(f as isize) }
+}
+
+/// Sets `font_glue[f] = v`.
+#[inline]
+pub(crate) fn set_font_glue(f: i32, v: i32) {
+    unsafe { *raw::font_glue.offset(f as isize) = v; }
+}
+
+/// Returns `param_base[f]`.
+#[inline]
+pub(crate) fn param_base(f: i32) -> i32 {
+    unsafe { *raw::param_base.offset(f as isize) }
 }
 
 // ---------------------------------------------------------------------------
