@@ -1898,3 +1898,16 @@ pub unsafe extern "C" fn scan_font_ident() {
     }
     set_cur_val(f);
 }
+
+// ---------------------------------------------------------------------------
+// show_info
+// ---------------------------------------------------------------------------
+
+extern "C" { fn show_node_list(p: i32); }
+
+/// translated from xetex-xetex0.c:9942 (show_info)
+#[no_mangle]
+pub unsafe extern "C" fn show_info() {
+    use crate::globals::{mem_b32s0, temp_ptr};
+    show_node_list(mem_b32s0(temp_ptr()));
+}

@@ -9939,11 +9939,14 @@ void append_to_vlist(int32_t b)
 /* new_style: translated to Rust in src/mem.rs */
 /* new_choice: translated to Rust in src/mem.rs */
 
+/* show_info: translated to Rust in src/scan.rs */
+#if 0
 void show_info(void)
 {
 
     show_node_list(mem[temp_ptr].b32.s0);
 }
+#endif
 
 void push_alignment(void)
 {
