@@ -7967,13 +7967,7 @@ make_name_string(void)
 /* scan_file_name_braced + scan_file_name: translated to Rust in src/scan.rs */
 
 
-void pack_job_name(const char* s)
-{
-    cur_area = EMPTY_STRING;
-    cur_ext = maketexstring(s);
-    cur_name = job_name;
-    pack_file_name(cur_name, cur_area, cur_ext);
-}
+/* pack_job_name: translated to Rust in src/scan.rs */
 
 
 void

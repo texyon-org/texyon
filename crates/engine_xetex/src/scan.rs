@@ -2056,6 +2056,17 @@ pub unsafe extern "C" fn scan_file_name() {
     set_warning_index(save_warning_index);
 }
 
+/// translated from xetex-xetex0.c:7970 (pack_job_name)
+#[no_mangle]
+pub unsafe extern "C" fn pack_job_name(s: *const libc::c_char) {
+    use crate::globals::{job_name, set_cur_area, set_cur_ext, set_cur_name};
+
+    set_cur_area(EMPTY_STRING);
+    set_cur_ext(crate::texmfmp::maketexstring(s));
+    set_cur_name(job_name());
+    pack_file_name(crate::globals::cur_name(), crate::globals::cur_area(), crate::globals::cur_ext());
+}
+
 // ---------------------------------------------------------------------------
 // show_info
 // ---------------------------------------------------------------------------

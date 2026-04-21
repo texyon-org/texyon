@@ -32,6 +32,39 @@ template.
 
 ---
 
+## Session 35 — 2026-04-22 — pack_job_name
+
+**Goal:** Clear the tiny filename wrapper next to `scan_file_name` before returning to the larger scanner core.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 34
+
+**Work done:**
+- Rechecked the baseline after `47dd4f05`: `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs`. Baseline held at parity 29/29 and TRIP 2/2.
+- Translated `pack_job_name` (7970) to `src/scan.rs` as a direct Rust wrapper around `maketexstring`, `job_name`, and `pack_file_name`.
+- Removed the C body from `xetex-xetex0.c`.
+- Re-ran `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs` after the translation; parity stayed 29/29 and TRIP stayed 2/2.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, and `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 35
+- 236 Rust functions total; 1 new this session.
+- xetex-xetex0.c: 15611 LOC, ~123 C functions remaining.
+
+**Surprises / gotchas:**
+- This really was the small cleanup it looked like in the plan: no new globals were needed, because `job_name`, `cur_area`, `cur_ext`, `cur_name`, `maketexstring`, and `pack_file_name` were already reachable from Rust.
+- The raw grep-based function counter for `xetex-xetex0.c` still overshoots the curated tracker, so the per-session “C functions remaining” number should keep following the existing best-effort tracker unless we do a dedicated recount pass.
+
+**For the next session:**
+- `scan_something_internal` (~4552) is now the clear next target again. The nearby filename helpers are fully out of the way.
+- `conditional` (~7420) still follows naturally after `scan_something_internal`.
+
+---
+
 ## Session 34 — 2026-04-22 — scan_file_name + braced helper
 
 **Goal:** Continue the scanner/file-name cluster with the next self-contained pair rather than forcing `scan_something_internal` prematurely.
