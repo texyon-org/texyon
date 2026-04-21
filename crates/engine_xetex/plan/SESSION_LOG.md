@@ -32,6 +32,45 @@ template.
 
 ---
 
+## Session 31 — 2026-04-21 — scan_toks, read_toks, filename cluster, extra_right_brace, scan_font_ident, show_info
+
+**Goal:** Translate the \def-scanner (scan_toks), \read-scanner (read_toks), filename cluster, and small error/util functions.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 30
+
+**Work done:**
+- Translated `scan_toks` (7081) to `src/scan.rs`. goto done1/done → labeled loop returning bool; goto found → break 'found. Committed 36606974.
+- Translated `read_toks` (7268) to `src/scan.rs`. do/while → loop/break. Committed 34f9603e.
+- Added globals: area_delimiter, ext_delimiter, quoted_filename, file_name_quote_char, stop_at_space getter, name_in_progress getter, cur_name/area/ext setters.
+- Translated `begin_name` (7827) + `more_name` (7837) + `end_name` (7870) to `src/scan.rs`. Committed 716de350.
+- Translated `extra_right_brace` (11411) to `src/scan.rs`. Committed a77d4e05.
+- Translated `scan_font_ident` (4467) to `src/scan.rs`. Committed 252c1cea.
+- Translated `show_info` (9942) to `src/scan.rs`. Committed 72b59f43.
+- Updated MODULE_STATUS.md, SESSION_LOG.md, PROGRESS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 31
+- 231 Rust functions total; 9 new this session.
+- xetex-xetex0.c: 15743 LOC, ~128 C functions remaining.
+
+**Surprises / gotchas:**
+- scan_toks had `const SPACER` already defined at module scope (from get_token area) — would-be duplicate constant had to be removed.
+- `read_toks` uses `NORMAL` = 0 for scanner_status, which conflicts with existing constant names. Used `NORMAL_SCANNER` to avoid collision.
+- `end_name` pool-shift loops: the C uses index arithmetic on pool arrays; Rust needs careful tracking of which `str_ptr` value is current at each step.
+- `scan_font_ident` was simple once `scan_math_fam_int` was confirmed Rust; the only issue was a duplicate SPACER constant.
+
+**For the next session:**
+- `scan_something_internal` (~4552): very large (~600 LOC), the core register/parameter reader. Most callees are in Rust. This is a critical target.
+- `conditional` (~7420): ~400 LOC, the \if-expansion machine. Needs `pass_text` (Rust), `change_if_limit` (Rust), `scan_something_internal` (still C).
+- `find_font_dimen` (~4501): small but needs `fmem_ptr`, `font_params`, `font_glue`, `param_base` globals.
+
+---
+
 ## Session 30 — 2026-04-21 — token/string cluster: pseudo_start, ins_the_toks, str_toks*, the_toks, pass_text
 
 **Goal:** Translate the token-building and string-conversion cluster recommended by session 29, plus nearby small functions.
