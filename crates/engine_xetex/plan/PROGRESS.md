@@ -47,6 +47,7 @@ cargo test -p tectonic --test tex-outputs
 |      31 | 2026-04-21 |     29 |    29 |     0 | scan_toks, read_toks, begin_name, more_name, end_name, extra_right_brace, scan_font_ident, show_info (9 fns). |
 |      32 | 2026-04-22 |     29 |    29 |     0 | find_font_dimen. TRIP remained 2/2. |
 |      33 | 2026-04-22 |     29 |    29 |     0 | scan_and_pack_name. TRIP remained 2/2. |
+|      34 | 2026-04-22 |     29 |    29 |     0 | scan_file_name_braced + scan_file_name. TRIP remained 2/2. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -92,6 +93,7 @@ Passed count below the previous session's recorded value.
 |      31 |34,820 |                  ~10865 |      ~76.2% |
 |      32 |34,108 |                  ~10721 |      ~76.1% |
 |      33 |34,104 |                  ~10730 |      ~76.1% |
+|      34 |34,030 |                  ~10809 |      ~75.9% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -137,6 +139,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      31 |      231 |            ~128 |     ~64.3% |
 |      32 |      232 |            ~127 |     ~64.6% |
 |      33 |      233 |            ~126 |     ~64.9% |
+|      34 |      235 |            ~124 |     ~65.5% |
 
 
 Total C function count to be measured in session 1 via:
@@ -152,7 +155,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **33** (sessions 1–33 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **34** (sessions 1–34 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

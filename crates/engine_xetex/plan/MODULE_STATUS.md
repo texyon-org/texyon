@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 33.
+Last updated: session 34.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 33.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 15691 |    126 | multiple (see below)              | IN PROGRESS — 54% |
+| xetex-xetex0.c               | 15617 |    124 | multiple (see below)              | IN PROGRESS — 54% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -368,13 +368,16 @@ New Rust module `src/save.rs` created for save-stack management.
 |88 | `scan_spec`               |        9215 | `src/scan.rs`   | MIGRATED (session 27, f614c4f3) |
 |89 | `scan_general_text`       |        6262 | `src/scan.rs`   | MIGRATED (session 28, a19aad9a) |
 |90 | `scan_expr`               |        6025 | `src/scan.rs`   | MIGRATED (session 29, edba0a63) |
-|91 | `find_font_dimen`         |        4501 | `src/scan.rs`   | MIGRATED (session 32, working tree) |
-|92 | `scan_and_pack_name`      |       13424 | `src/scan.rs`   | MIGRATED (session 33, working tree) |
+|91 | `find_font_dimen`         |        4501 | `src/scan.rs`   | MIGRATED (session 32/33, bbf2fad1 with globals in e6c0c922) |
+|92 | `scan_and_pack_name`      |       13424 | `src/scan.rs`   | MIGRATED (session 33, bbf2fad1) |
+|93 | `scan_file_name_braced` (static) | 7967 | `src/scan.rs` | MIGRATED (session 34, working tree) |
+|94 | `scan_file_name`          |        8003 | `src/scan.rs`   | MIGRATED (session 34, working tree) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
 - `scan_something_internal` (~4552): large core register/parameter scanner; `scan_and_pack_name` is now in Rust, removing one small XeTeX-only callee from that switch.
+- `pack_job_name` (~7970): tiny wrapper next to `scan_file_name`; easy warm-up if `scan_something_internal` still feels too large for a single session.
 - `conditional` (~7420): `\if` expansion machine; depends on `pass_text` (Rust) and still calls `scan_something_internal`.
 - `show_save_groups` (~11356): complex multi-goto diagnostic helper.
 

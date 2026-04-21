@@ -7,18 +7,20 @@ use crate::globals::{
     cur_val, cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth,
     expand_depth_count, file_offset, first, fmem_ptr, font_glue, font_mem_size, font_params,
     font_ptr, hash_s1, init_pool_ptr, last, max_print_line, max_reg_help_line, max_reg_num,
-    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, open_parens, param_base, pool_ptr, pool_size,
-    pseudo_files, read_file_entry, read_open_entry, rust_stdout, save_ptr, save_stack_b32s1,
-    scanner_status, selector, set_align_state, set_arith_error, set_avail, set_buffer_entry,
-    set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc,
-    set_cur_input_name, set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag,
-    set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref, set_expand_depth_count, set_first,
-    set_fmem_ptr, set_font_glue, set_font_info_b32s1, set_font_params, set_help_line,
-    set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3,
-    set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence, set_open_parens, set_pool_ptr,
+    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, open_parens, param_base, pool_ptr,
+    pool_size, pseudo_files, read_file_entry, read_open_entry, rust_stdout, save_ptr,
+    save_stack_b32s1, scanner_status, selector, set_align_state, set_arith_error, set_avail,
+    set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit,
+    set_cur_input_loc, set_cur_input_name, set_cur_input_start, set_cur_input_state,
+    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
+    set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue, set_font_info_b32s1,
+    set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1,
+    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_name_in_progress,
+    set_no_new_control_sequence, set_old_setting, set_open_parens, set_pool_ptr,
     set_pseudo_files, set_read_open_entry, set_save_ptr, set_save_stack_b32s1,
-    set_scanner_status, set_selector, set_str_pool, set_str_ptr, set_warning_index,
-    str_pool_entry, str_ptr, str_start, term_offset, warning_index,
+    set_scanner_status, set_selector, set_stop_at_space, set_str_pool, set_str_ptr,
+    set_warning_index, stop_at_space, str_pool_entry, str_ptr, str_start, term_offset,
+    warning_index,
 };
 use crate::mem::new_rule;
 
@@ -45,8 +47,8 @@ extern "C" {
     fn u_close(f: *mut libc::c_void);
     fn runaway();
     fn _tt_abort(fmt: *const libc::c_char) -> !;
-    fn scan_file_name();
     fn pack_file_name(n: i32, a: i32, e: i32);
+    fn show_token_list(p: i32, q: i32, l: i32);
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -479,6 +481,7 @@ pub unsafe extern "C" fn scan_optional_equals() {
 // Command-code values for scan_left_brace (xetex_format.h).
 const RELAX: u8 = 0;
 const LEFT_BRACE: u8 = 1;
+const OTHER_CHAR: u8 = 12;
 const LEFT_BRACE_TOKEN: i32 = 0x200000;
 
 /// translated from xetex-xetex0.c:4319 (scan_left_brace)
@@ -1975,6 +1978,82 @@ pub unsafe extern "C" fn find_font_dimen(writing: bool) {
 pub unsafe extern "C" fn scan_and_pack_name() {
     scan_file_name();
     pack_file_name(crate::globals::cur_name(), crate::globals::cur_area(), crate::globals::cur_ext());
+}
+
+unsafe fn scan_file_name_braced() {
+    let save_scanner_status = scanner_status();
+    let save_def_ref = def_ref();
+    let save_cur_cs = cur_cs();
+    let save_stop_at_space = stop_at_space();
+
+    set_cur_cs(warning_index());
+    scan_toks(false, true);
+
+    set_old_setting(selector() as u8);
+    set_selector(SELECTOR_NEW_STRING);
+    show_token_list(mem_b32s1(def_ref()), crate::mem::TEX_NULL, pool_size() - pool_ptr());
+    set_selector(old_setting() as i32);
+
+    let s = crate::string_pool::make_string();
+    crate::mem::delete_token_ref(def_ref());
+    set_def_ref(save_def_ref);
+    set_cur_cs(save_cur_cs);
+    set_scanner_status(save_scanner_status);
+
+    begin_name();
+    let start = str_start(s - TOO_BIG_CHAR);
+    let end = str_start(s + 1 - TOO_BIG_CHAR);
+    for i in start..end {
+        more_name(str_pool_entry(i));
+    }
+    set_stop_at_space(save_stop_at_space);
+}
+
+/// translated from xetex-xetex0.c:8003 (scan_file_name)
+#[no_mangle]
+pub unsafe extern "C" fn scan_file_name() {
+    let save_warning_index = warning_index();
+    set_warning_index(cur_cs());
+
+    loop {
+        get_x_token();
+        if cur_cmd() != SPACER && cur_cmd() != RELAX {
+            break;
+        }
+    }
+
+    crate::input::back_input();
+
+    if cur_cmd() == LEFT_BRACE {
+        scan_file_name_braced();
+    } else {
+        set_name_in_progress(true);
+        begin_name();
+
+        loop {
+            get_x_token();
+            if cur_cmd() != SPACER {
+                break;
+            }
+        }
+
+        loop {
+            if cur_cmd() > OTHER_CHAR || cur_chr() > BIGGEST_CHAR {
+                crate::input::back_input();
+                break;
+            }
+
+            if !more_name(cur_chr() as u16) {
+                break;
+            }
+
+            get_x_token();
+        }
+    }
+
+    end_name();
+    set_name_in_progress(false);
+    set_warning_index(save_warning_index);
 }
 
 // ---------------------------------------------------------------------------

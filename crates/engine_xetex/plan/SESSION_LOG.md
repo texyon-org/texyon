@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 34 — 2026-04-22 — scan_file_name + braced helper
+
+**Goal:** Continue the scanner/file-name cluster with the next self-contained pair rather than forcing `scan_something_internal` prematurely.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 33
+
+**Work done:**
+- Rechecked the baseline after the `bbf2fad1` / `e6c0c922` commits: `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs`. Baseline held at parity 29/29 and TRIP 2/2.
+- Translated `scan_file_name_braced` (static helper at 7967) as a private Rust helper in `src/scan.rs`.
+- Translated `scan_file_name` (8003) to `src/scan.rs`, preserving the `warning_index`, `scanner_status`, `def_ref`, `cur_cs`, and `stop_at_space` save/restore flow exactly.
+- Removed the C bodies from `xetex-xetex0.c`.
+- Fixed one missed constant after the first compile (`OTHER_CHAR = 12` from `xetex_format.h:244`).
+- Re-ran `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs` after the translation; parity stayed 29/29 and TRIP stayed 2/2.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, and `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 34
+- 235 Rust functions total; 2 new this session.
+- xetex-xetex0.c: 15617 LOC, ~124 C functions remaining.
+
+**Surprises / gotchas:**
+- `scan_file_name_braced` needs the same temporary-string capture pattern used elsewhere in `scan.rs`: switch `selector` to `SELECTOR_NEW_STRING`, call `show_token_list`, then `make_string()` and clean up the token list.
+- The only compile break was a missing local constant for `OTHER_CHAR`; once that was added, behavior matched the C with no parity changes.
+- `scan_something_internal` still looks best treated as a dedicated session. The remaining scanner/file-name wrappers are now smaller and less entangled.
+
+**For the next session:**
+- `pack_job_name` (~7970) is a trivial nearby warm-up if you want one more tiny cleanup before `scan_something_internal`.
+- Otherwise go straight back to `scan_something_internal` (~4552); with `scan_and_pack_name` and `scan_file_name` now in Rust, that switch has fewer C-side dependencies.
+
+---
+
 ## Session 33 — 2026-04-22 — scan_and_pack_name
 
 **Goal:** Make another incremental pass at the scanner cluster by translating a small helper that `scan_something_internal` already depends on.
