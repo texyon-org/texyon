@@ -7924,44 +7924,7 @@ pack_file_name(str_number n, str_number a, str_number e)
 }
 
 
-str_number
-make_name_string(void)
-{
-    int32_t k;
-    pool_pointer save_area_delimiter, save_ext_delimiter;
-    bool save_name_in_progress, save_stop_at_space;
-
-    if (pool_ptr + name_length > pool_size || str_ptr == max_strings || cur_length() > 0)
-        return '?';
-
-    make_utf16_name();
-
-    for (k = 0; k < name_length16; k++)
-        str_pool[pool_ptr++] = name_of_file16[k];
-
-
-    str_number Result = make_string();
-
-    save_area_delimiter = area_delimiter;
-    save_ext_delimiter = ext_delimiter;
-    save_name_in_progress = name_in_progress;
-    save_stop_at_space = stop_at_space;
-    name_in_progress = true;
-    begin_name();
-    stop_at_space = false;
-    k = 0;
-
-    while (k < name_length16 && more_name(name_of_file16[k]))
-        k++;
-
-    stop_at_space = save_stop_at_space;
-    end_name();
-    name_in_progress = save_name_in_progress;
-    area_delimiter = save_area_delimiter;
-    ext_delimiter = save_ext_delimiter;
-
-    return Result;
-}
+/* make_name_string: translated to Rust in src/scan.rs */
 
 
 /* scan_file_name_braced + scan_file_name: translated to Rust in src/scan.rs */

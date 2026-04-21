@@ -32,6 +32,40 @@ template.
 
 ---
 
+## Session 36 — 2026-04-22 — make_name_string
+
+**Goal:** Keep pushing the filename/logging cluster with another small helper that now sits directly on the Rust side of `pack_job_name`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 35
+
+**Work done:**
+- Committed session 35 as `b375cb8f` (`engine_xetex: translate pack_job_name to Rust`).
+- Rechecked the baseline after `b375cb8f`: `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs`. Baseline held at parity 29/29 and TRIP 2/2.
+- Translated `make_name_string` (7928) to `src/scan.rs`, preserving the early `'?'` overflow/partial-name exit, the temporary UTF-16 repack into the pool, and the save/restore of `area_delimiter`, `ext_delimiter`, `name_in_progress`, and `stop_at_space`.
+- Removed the C body from `xetex-xetex0.c`.
+- Re-ran `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs` after the translation; parity stayed 29/29 and TRIP stayed 2/2.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, and `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 36
+- 237 Rust functions total; 1 new this session.
+- xetex-xetex0.c: 15574 LOC, ~122 C functions remaining.
+
+**Surprises / gotchas:**
+- `make_name_string` looks string-pool heavy, but it turns out to compose cleanly from already-migrated pieces: `make_utf16_name`, `begin_name`, `more_name`, `end_name`, and `make_string`.
+- This leaves the filename/logging area in a nicer spot for a future `open_log_file` session if we want another contained win before returning to the larger scanner work.
+
+**For the next session:**
+- `scan_something_internal` (~4552) is still the main planned target.
+- If you want one more contained helper before that, `open_log_file` is now more attractive: `pack_job_name` and `make_name_string` are both already in Rust.
+
+---
+
 ## Session 35 — 2026-04-22 — pack_job_name
 
 **Goal:** Clear the tiny filename wrapper next to `scan_file_name` before returning to the larger scanner core.

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 35.
+Last updated: session 36.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 35.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 15611 |    123 | multiple (see below)              | IN PROGRESS — 55% |
+| xetex-xetex0.c               | 15574 |    122 | multiple (see below)              | IN PROGRESS — 55% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -372,12 +372,14 @@ New Rust module `src/save.rs` created for save-stack management.
 |92 | `scan_and_pack_name`      |       13424 | `src/scan.rs`   | MIGRATED (session 33, bbf2fad1) |
 |93 | `scan_file_name_braced` (static) | 7967 | `src/scan.rs` | MIGRATED (session 34, 47dd4f05) |
 |94 | `scan_file_name`          |        8003 | `src/scan.rs`   | MIGRATED (session 34, 47dd4f05) |
-|95 | `pack_job_name`           |        7970 | `src/scan.rs`   | MIGRATED (session 35, working tree) |
+|95 | `pack_job_name`           |        7970 | `src/scan.rs`   | MIGRATED (session 35, b375cb8f) |
+|96 | `make_name_string`        |        7928 | `src/scan.rs`   | MIGRATED (session 36, working tree) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `scan_something_internal` (~4552): large core register/parameter scanner; the small filename wrappers around it are now in Rust, so its remaining C-side dependencies are narrower.
+- `scan_something_internal` (~4552): large core register/parameter scanner; the small filename helpers around it are now in Rust, so its remaining C-side dependencies are narrower.
+- `open_log_file` (~7976): moderate filename/logging wrapper; now benefits from `pack_job_name` and `make_name_string` both being in Rust.
 - `conditional` (~7420): `\if` expansion machine; depends on `pass_text` (Rust) and still calls `scan_something_internal`.
 - `show_save_groups` (~11356): complex multi-goto diagnostic helper.
 

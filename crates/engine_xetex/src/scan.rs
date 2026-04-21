@@ -1832,6 +1832,49 @@ pub unsafe extern "C" fn end_name() {
     }
 }
 
+/// translated from xetex-xetex0.c:7928 (make_name_string)
+#[no_mangle]
+pub unsafe extern "C" fn make_name_string() -> i32 {
+    use crate::globals::{
+        area_delimiter, ext_delimiter, max_strings, name_in_progress, name_length,
+        name_length16, name_of_file16_entry, set_area_delimiter, set_ext_delimiter,
+    };
+
+    let cur_length = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
+    if pool_ptr() + name_length() > pool_size() || str_ptr() == max_strings() || cur_length > 0 {
+        return b'?' as i32;
+    }
+
+    crate::io::make_utf16_name();
+
+    for k in 0..name_length16() {
+        set_str_pool(pool_ptr(), name_of_file16_entry(k));
+        set_pool_ptr(pool_ptr() + 1);
+    }
+
+    let result = crate::string_pool::make_string();
+    let save_area_delimiter = area_delimiter();
+    let save_ext_delimiter = ext_delimiter();
+    let save_name_in_progress = name_in_progress();
+    let save_stop_at_space = stop_at_space();
+
+    set_name_in_progress(true);
+    begin_name();
+    set_stop_at_space(false);
+
+    let mut k = 0;
+    while k < name_length16() && more_name(name_of_file16_entry(k)) {
+        k += 1;
+    }
+
+    set_stop_at_space(save_stop_at_space);
+    end_name();
+    set_name_in_progress(save_name_in_progress);
+    set_area_delimiter(save_area_delimiter);
+    set_ext_delimiter(save_ext_delimiter);
+    result
+}
+
 // ---------------------------------------------------------------------------
 // extra_right_brace
 // ---------------------------------------------------------------------------
