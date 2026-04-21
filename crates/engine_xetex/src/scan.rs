@@ -1696,3 +1696,132 @@ pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
     set_scanner_status(NORMAL_SCANNER);
     set_align_state(s);
 }
+
+// ---------------------------------------------------------------------------
+// begin_name / more_name / end_name
+// ---------------------------------------------------------------------------
+
+// xetex-stringpool.h:12  (TOO_BIG_CHAR + 1)
+const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
+
+/// translated from xetex-xetex0.c:7827 (begin_name)
+#[no_mangle]
+pub unsafe extern "C" fn begin_name() {
+    use crate::globals::{
+        set_area_delimiter, set_ext_delimiter, set_file_name_quote_char, set_quoted_filename,
+    };
+    set_area_delimiter(0);
+    set_ext_delimiter(0);
+    set_quoted_filename(false);
+    set_file_name_quote_char(0);
+}
+
+/// translated from xetex-xetex0.c:7837 (more_name)
+#[no_mangle]
+pub unsafe extern "C" fn more_name(c: u16) -> bool {
+    use crate::globals::{
+        area_delimiter, ext_delimiter, file_name_quote_char, quoted_filename, set_area_delimiter,
+        set_ext_delimiter, set_file_name_quote_char, set_quoted_filename, stop_at_space,
+    };
+
+    if stop_at_space() && file_name_quote_char() == 0 && c == b' ' as u16 {
+        return false;
+    }
+    if stop_at_space() && file_name_quote_char() != 0 && c == file_name_quote_char() {
+        set_file_name_quote_char(0);
+        return true;
+    }
+    if stop_at_space()
+        && file_name_quote_char() == 0
+        && (c == b'"' as u16 || c == b'\'' as u16)
+    {
+        set_file_name_quote_char(c);
+        set_quoted_filename(true);
+        return true;
+    }
+    if pool_ptr() + 1 > pool_size() {
+        crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+    }
+    set_str_pool(pool_ptr(), c);
+    set_pool_ptr(pool_ptr() + 1);
+    // cur_length = pool_ptr - str_start[str_ptr - TOO_BIG_CHAR]
+    let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
+    if c == b'/' as u16 {
+        // IS_DIR_SEP
+        set_area_delimiter(cur_len);
+        set_ext_delimiter(0);
+    } else if c == b'.' as u16 {
+        set_ext_delimiter(cur_len);
+    }
+    true
+}
+
+/// translated from xetex-xetex0.c:7870 (end_name)
+#[no_mangle]
+pub unsafe extern "C" fn end_name() {
+    use crate::globals::{
+        area_delimiter, cur_area, cur_ext, cur_name, ext_delimiter, init_str_ptr, max_strings,
+        set_cur_area, set_cur_ext, set_cur_name, set_pool_ptr, set_str_ptr,
+    };
+
+    if str_ptr() + 3 > max_strings() {
+        crate::errors::overflow(c"number of strings".as_ptr(), max_strings() - init_str_ptr());
+    }
+
+    if area_delimiter() == 0 {
+        set_cur_area(EMPTY_STRING);
+    } else {
+        set_cur_area(str_ptr());
+        // str_start[str_ptr + 1 - TOO_BIG_CHAR] = str_start[str_ptr - TOO_BIG_CHAR] + area_delimiter
+        let new_start = str_start(str_ptr() - TOO_BIG_CHAR) + area_delimiter();
+        crate::globals::set_str_start(str_ptr() + 1 - TOO_BIG_CHAR, new_start);
+        set_str_ptr(str_ptr() + 1);
+        let temp_str = crate::string_pool::search_string(cur_area());
+        if temp_str > 0 {
+            set_cur_area(temp_str);
+            set_str_ptr(str_ptr() - 1);
+            // shift pool: str_pool[j - area_delimiter] = str_pool[j] for j in start..pool_ptr
+            let base = str_start(str_ptr() + 1 - TOO_BIG_CHAR);
+            let ad = area_delimiter();
+            let pp = pool_ptr();
+            for j in base..pp {
+                let v = str_pool_entry(j);
+                set_str_pool(j - ad, v);
+            }
+            set_pool_ptr(pp - ad);
+        }
+    }
+
+    if ext_delimiter() == 0 {
+        set_cur_ext(EMPTY_STRING);
+        set_cur_name(crate::string_pool::slow_make_string());
+    } else {
+        set_cur_name(str_ptr());
+        // str_start[str_ptr+1 - TOO_BIG_CHAR] = str_start[str_ptr - TOO_BIG_CHAR]
+        //   + ext_delimiter - area_delimiter - 1
+        let new_start =
+            str_start(str_ptr() - TOO_BIG_CHAR) + ext_delimiter() - area_delimiter() - 1;
+        crate::globals::set_str_start(str_ptr() + 1 - TOO_BIG_CHAR, new_start);
+        set_str_ptr(str_ptr() + 1);
+
+        set_cur_ext(crate::string_pool::make_string());
+        set_str_ptr(str_ptr() - 1);
+        let temp_str = crate::string_pool::search_string(cur_name());
+        if temp_str > 0 {
+            set_cur_name(temp_str);
+            set_str_ptr(str_ptr() - 1);
+            // shift pool: str_pool[j - ext_delimiter + area_delimiter + 1] = str_pool[j]
+            let base = str_start(str_ptr() + 1 - TOO_BIG_CHAR);
+            let ed = ext_delimiter();
+            let ad = area_delimiter();
+            let pp = pool_ptr();
+            let shift = ed - ad - 1;
+            for j in base..pp {
+                let v = str_pool_entry(j);
+                set_str_pool(j - shift, v);
+            }
+            set_pool_ptr(pp - shift);
+        }
+        set_cur_ext(crate::string_pool::slow_make_string());
+    }
+}

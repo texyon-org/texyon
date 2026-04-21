@@ -222,6 +222,15 @@ mod raw {
         pub(super) static mut cur_ext: i32;
         // True while a filename is being accumulated (xetex-xetexd.h:550).
         pub(super) static mut name_in_progress: bool;
+        // File-name parsing scratch (xetex-xetexd.h:545–547).
+        // area_delimiter: pool offset of last dir-sep in current name.
+        pub(super) static mut area_delimiter: i32;
+        // ext_delimiter: pool offset of last '.' in current name.
+        pub(super) static mut ext_delimiter: i32;
+        // quoted_filename: true if name was inside quotes.
+        pub(super) static mut quoted_filename: bool;
+        // file_name_quote_char: quote character currently active (0 = none).
+        pub(super) static mut file_name_quote_char: u16;
         // Controls whether more_name stops at spaces (xetex-xetexd.h:718).
         pub(super) static mut stop_at_space: bool;
         // Magnification as actually set this job (xetex-xetexd.h:498; 0 = not set yet).
@@ -1372,12 +1381,59 @@ pub(crate) fn cur_name() -> i32 {
     unsafe { raw::cur_name }
 }
 #[inline]
+pub(crate) fn set_cur_name(v: i32) {
+    unsafe { raw::cur_name = v; }
+}
+#[inline]
 pub(crate) fn cur_area() -> i32 {
     unsafe { raw::cur_area }
 }
 #[inline]
+pub(crate) fn set_cur_area(v: i32) {
+    unsafe { raw::cur_area = v; }
+}
+#[inline]
 pub(crate) fn cur_ext() -> i32 {
     unsafe { raw::cur_ext }
+}
+#[inline]
+pub(crate) fn set_cur_ext(v: i32) {
+    unsafe { raw::cur_ext = v; }
+}
+
+/// Returns `area_delimiter` (pool offset of last dir-sep in current filename).
+#[inline]
+pub(crate) fn area_delimiter() -> i32 {
+    unsafe { raw::area_delimiter }
+}
+#[inline]
+pub(crate) fn set_area_delimiter(v: i32) {
+    unsafe { raw::area_delimiter = v; }
+}
+/// Returns `ext_delimiter` (pool offset of last '.' in current filename).
+#[inline]
+pub(crate) fn ext_delimiter() -> i32 {
+    unsafe { raw::ext_delimiter }
+}
+#[inline]
+pub(crate) fn set_ext_delimiter(v: i32) {
+    unsafe { raw::ext_delimiter = v; }
+}
+#[inline]
+pub(crate) fn quoted_filename() -> bool {
+    unsafe { raw::quoted_filename }
+}
+#[inline]
+pub(crate) fn set_quoted_filename(v: bool) {
+    unsafe { raw::quoted_filename = v; }
+}
+#[inline]
+pub(crate) fn file_name_quote_char() -> u16 {
+    unsafe { raw::file_name_quote_char }
+}
+#[inline]
+pub(crate) fn set_file_name_quote_char(v: u16) {
+    unsafe { raw::file_name_quote_char = v; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1385,8 +1441,16 @@ pub(crate) fn cur_ext() -> i32 {
 // ---------------------------------------------------------------------------
 
 #[inline]
+pub(crate) fn name_in_progress() -> bool {
+    unsafe { raw::name_in_progress }
+}
+#[inline]
 pub(crate) fn set_name_in_progress(v: bool) {
     unsafe { raw::name_in_progress = v; }
+}
+#[inline]
+pub(crate) fn stop_at_space() -> bool {
+    unsafe { raw::stop_at_space }
 }
 #[inline]
 pub(crate) fn set_stop_at_space(v: bool) {

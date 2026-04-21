@@ -7824,6 +7824,8 @@ common_ending:
 }
 
 
+/* begin_name: translated to Rust in src/scan.rs */
+#if 0
 void
 begin_name(void)
 {
@@ -7832,8 +7834,11 @@ begin_name(void)
     quoted_filename = false;
     file_name_quote_char = 0;
 }
+#endif
 
 
+/* more_name: translated to Rust in src/scan.rs */
+#if 0
 bool
 more_name(UTF16_code c)
 {
@@ -7865,8 +7870,11 @@ more_name(UTF16_code c)
 
     return true;
 }
+#endif
 
 
+/* end_name: translated to Rust in src/scan.rs */
+#if 0
 void
 end_name(void)
 {
@@ -7929,6 +7937,7 @@ end_name(void)
         cur_ext = slow_make_string();
     }
 }
+#endif
 
 
 void
