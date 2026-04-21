@@ -6424,6 +6424,8 @@ str_toks(pool_pointer b)
 #endif
 
 
+/* the_toks: translated to Rust in src/scan.rs */
+#if 0
 int32_t the_toks(void)
 {
     unsigned char /*max_selector */ old_setting;
@@ -6513,6 +6515,7 @@ int32_t the_toks(void)
         return str_toks(b);
     }
 }
+#endif
 
 /* ins_the_toks: translated to Rust in src/scan.rs */
 #if 0

@@ -37,8 +37,8 @@ extern "C" {
         ...
     ) -> libc::c_int;
     fn error();
-    fn the_toks() -> i32;
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
+    fn scan_something_internal(level: i16, negative: bool);
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -1201,4 +1201,87 @@ pub unsafe extern "C" fn str_toks_cat(b: i32, cat: i16) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn str_toks(b: i32) -> i32 {
     str_toks_cat(b, 0)
+}
+
+// ---------------------------------------------------------------------------
+// the_toks
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:289, 293
+const IDENT_VAL: i16 = 4;
+const TOK_VAL: i16 = 5;
+
+/// translated from xetex-xetex0.c:6427 (the_toks)
+#[no_mangle]
+pub unsafe extern "C" fn the_toks() -> i32 {
+    use crate::mem::TEX_NULL;
+
+    if cur_chr() & 1 != 0 {
+        let c = cur_chr();
+        scan_general_text();
+        if c == 1 {
+            return cur_val();
+        } else {
+            let old_setting = selector();
+            set_selector(SELECTOR_NEW_STRING);
+            let b = pool_ptr();
+            let p = crate::mem::get_avail();
+            set_mem_b32s1(p, mem_b32s1(TEMP_HEAD));
+            crate::output::token_show(p);
+            crate::mem::flush_list(p);
+            set_selector(old_setting);
+            return str_toks(b);
+        }
+    }
+    get_x_token();
+    scan_something_internal(TOK_VAL, false);
+    if cur_val_level() >= IDENT_VAL as u8 {
+        let mut p = TEMP_HEAD;
+        set_mem_b32s1(p, TEX_NULL);
+        if cur_val_level() == IDENT_VAL as u8 {
+            let q = crate::mem::get_avail();
+            set_mem_b32s1(p, q);
+            set_mem_b32s0(q, CS_TOKEN_FLAG + cur_val());
+            p = q;
+        } else if cur_val() != TEX_NULL {
+            let mut r = mem_b32s1(cur_val());
+            while r != TEX_NULL {
+                let q = if avail() == TEX_NULL {
+                    crate::mem::get_avail()
+                } else {
+                    let qa = avail();
+                    set_avail(mem_b32s1(qa));
+                    set_mem_b32s1(qa, TEX_NULL);
+                    qa
+                };
+                set_mem_b32s1(p, q);
+                set_mem_b32s0(q, mem_b32s0(r));
+                p = q;
+                r = mem_b32s1(r);
+            }
+        }
+        return p;
+    } else {
+        let old_setting = selector();
+        set_selector(SELECTOR_NEW_STRING);
+        let b = pool_ptr();
+        match cur_val_level() {
+            0 => crate::output::print_int(cur_val()),
+            1 => {
+                crate::output::print_scaled(cur_val());
+                crate::output::print_cstr(c"pt".as_ptr());
+            }
+            2 => {
+                crate::output::print_spec(cur_val(), c"pt".as_ptr());
+                crate::mem::delete_glue_ref(cur_val());
+            }
+            3 => {
+                crate::output::print_spec(cur_val(), c"mu".as_ptr());
+                crate::mem::delete_glue_ref(cur_val());
+            }
+            _ => {}
+        }
+        set_selector(old_setting);
+        str_toks(b)
+    }
 }
