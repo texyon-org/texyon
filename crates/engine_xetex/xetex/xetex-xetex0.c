@@ -7265,6 +7265,8 @@ found:
 #endif
 
 
+/* read_toks: translated to Rust in src/scan.rs */
+#if 0
 void
 read_toks(int32_t n, int32_t r, int32_t j)
 {
@@ -7378,6 +7380,7 @@ read_toks(int32_t n, int32_t r, int32_t j)
     scanner_status = NORMAL;
     align_state = s;
 }
+#endif
 
 
 /* pass_text: translated to Rust in src/scan.rs */

@@ -3,19 +3,21 @@
 //! Translated from xetex-xetex0.c.
 
 use crate::globals::{
-    align_state, arith_error, avail, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val,
-    cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth, expand_depth_count,
-    file_offset, init_pool_ptr, max_print_line, max_reg_help_line, max_reg_num, mem_b16s0,
-    mem_b16s1, mem_b32s0, mem_b32s1, open_parens, pool_ptr, pool_size,
-    pseudo_files, rust_stdout, save_ptr, save_stack_b32s1, scanner_status, selector,
-    set_align_state, set_arith_error, set_avail, set_cur_chr, set_cur_cmd, set_cur_cs,
-    set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_synctex_tag,
-    set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref, set_expand_depth_count,
-    set_help_line, set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2,
-    set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence, set_open_parens,
-    set_pool_ptr, set_pseudo_files, set_save_ptr, set_save_stack_b32s1, set_scanner_status,
-    set_selector, set_str_pool, set_str_ptr, set_warning_index, str_pool_entry, str_ptr,
-    str_start, term_offset, warning_index,
+    align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok,
+    cur_val, cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth,
+    expand_depth_count, file_offset, first, init_pool_ptr, last, max_print_line,
+    max_reg_help_line, max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, open_parens,
+    pool_ptr, pool_size, pseudo_files, read_file_entry, read_open_entry, rust_stdout, save_ptr,
+    save_stack_b32s1, scanner_status, selector, set_align_state, set_arith_error, set_avail,
+    set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit,
+    set_cur_input_loc, set_cur_input_name, set_cur_input_start, set_cur_input_state,
+    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
+    set_expand_depth_count, set_first, set_help_line, set_help_ptr, set_line, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1,
+    set_no_new_control_sequence, set_open_parens, set_pool_ptr, set_pseudo_files,
+    set_read_open_entry, set_save_ptr, set_save_stack_b32s1, set_scanner_status, set_selector,
+    set_str_pool, set_str_ptr, set_warning_index, str_pool_entry, str_ptr, str_start,
+    term_offset, warning_index,
 };
 use crate::mem::new_rule;
 
@@ -38,6 +40,10 @@ extern "C" {
     fn error();
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn scan_something_internal(level: i16, negative: bool);
+    fn input_line(f: *mut libc::c_void) -> libc::c_int;
+    fn u_close(f: *mut libc::c_void);
+    fn runaway();
+    fn _tt_abort(fmt: *const libc::c_char) -> !;
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -1560,4 +1566,133 @@ pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
         p = q;
     }
     p
+}
+
+// ---------------------------------------------------------------------------
+// read_toks
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:268,277,223
+const JUST_OPEN: u8 = 1;
+const CLOSED: u8 = 2;
+const NEW_LINE: u16 = 33;
+// INT_PAR__end_line_char = 48 (xetex_format.h:83)
+const INT_PAR_END_LINE_CHAR: i32 = 48;
+
+/// translated from xetex-xetex0.c:7268 (read_toks)
+#[no_mangle]
+pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
+    use crate::mem::TEX_NULL;
+
+    set_scanner_status(DEFINING);
+    set_warning_index(r);
+    let new_def = crate::mem::get_avail();
+    set_def_ref(new_def);
+    set_mem_b32s0(new_def, TEX_NULL);
+    let mut p = new_def;
+
+    let q = crate::mem::get_avail();
+    set_mem_b32s1(p, q);
+    set_mem_b32s0(q, END_MATCH_TOKEN);
+    p = q;
+
+    let m: usize = if n < 0 || n > 15 { 16 } else { n as usize };
+
+    let s = align_state();
+    set_align_state(1_000_000);
+
+    loop {
+        // do…while(align_state != 1_000_000) — §502
+        crate::input::begin_file_reading();
+        set_cur_input_name((m + 1) as i32);
+
+        if read_open_entry(m) == CLOSED {
+            _tt_abort(c"terminal input forbidden".as_ptr());
+        } else if read_open_entry(m) == JUST_OPEN {
+            // §504
+            if input_line(read_file_entry(m) as *mut libc::c_void) != 0 {
+                set_read_open_entry(m, NORMAL_SCANNER); // NORMAL = 0
+            } else {
+                u_close(read_file_entry(m) as *mut libc::c_void);
+                set_read_open_entry(m, CLOSED);
+            }
+        } else {
+            // §505
+            if input_line(read_file_entry(m) as *mut libc::c_void) == 0 {
+                u_close(read_file_entry(m) as *mut libc::c_void);
+                set_read_open_entry(m, CLOSED);
+                if align_state() != 1_000_000 {
+                    runaway();
+                    error_here_with_diagnostic(c"File ended within ".as_ptr());
+                    crate::output::print_esc_cstr(c"read".as_ptr());
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(1);
+                    set_help_line(0, c"This \\read has unbalanced braces.".as_ptr());
+                    set_align_state(1_000_000);
+                    set_cur_input_limit(0);
+                    error();
+                }
+            }
+        }
+
+        let lim = last();
+        set_cur_input_limit(lim);
+        let end_char = eqtb_b32s1(INT_BASE_PSEUDO + INT_PAR_END_LINE_CHAR);
+        if end_char < 0 || end_char > 255 {
+            set_cur_input_limit(lim - 1);
+        } else {
+            set_buffer_entry(lim, end_char);
+        }
+        set_first(cur_input().limit + 1);
+        set_cur_input_loc(cur_input().start);
+        set_cur_input_state(NEW_LINE);
+
+        if j == 1 {
+            // §: direct token scan (no expansion)
+            let mut loc = cur_input().loc;
+            while loc <= cur_input().limit {
+                let c = buffer_entry(loc);
+                loc += 1;
+                let tok = if c == b' ' as i32 { SPACE_TOKEN } else { c + OTHER_TOKEN };
+                set_cur_chr(c);
+                set_cur_tok(tok);
+                let q2 = crate::mem::get_avail();
+                set_mem_b32s1(p, q2);
+                set_mem_b32s0(q2, tok);
+                p = q2;
+            }
+            // goto done → end_file_reading then check while condition
+        } else {
+            loop {
+                get_token();
+                if cur_tok() == 0 {
+                    break; // goto done
+                }
+                if align_state() < 1_000_000 {
+                    loop {
+                        get_token();
+                        if cur_tok() == 0 {
+                            break;
+                        }
+                    }
+                    set_align_state(1_000_000);
+                    break; // goto done
+                }
+                let q2 = crate::mem::get_avail();
+                set_mem_b32s1(p, q2);
+                set_mem_b32s0(q2, cur_tok());
+                p = q2;
+            }
+        }
+        // done:
+        crate::input::end_file_reading();
+
+        if align_state() == 1_000_000 {
+            break;
+        }
+    }
+
+    set_cur_val(new_def);
+    set_scanner_status(NORMAL_SCANNER);
+    set_align_state(s);
 }
