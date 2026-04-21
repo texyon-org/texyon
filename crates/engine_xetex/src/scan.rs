@@ -1857,3 +1857,44 @@ pub unsafe extern "C" fn extra_right_brace() {
     error();
     set_align_state(align_state() + 1);
 }
+
+// ---------------------------------------------------------------------------
+// scan_font_ident
+// ---------------------------------------------------------------------------
+
+// xetex_format.h:328,329,330,257,212
+const DEF_FAMILY: u8 = 88;
+const SET_FONT: u8 = 89;
+const DEF_FONT: u8 = 90;
+const FONT_BASE: i32 = 0;
+const CUR_FONT_LOC: i32 = 2_255_400;
+
+/// translated from xetex-xetex0.c:4467 (scan_font_ident)
+#[no_mangle]
+pub unsafe extern "C" fn scan_font_ident() {
+    let f;
+    loop {
+        get_x_token();
+        if cur_cmd() != SPACER {
+            break;
+        }
+    }
+    if cur_cmd() == DEF_FONT {
+        f = eqtb_b32s1(CUR_FONT_LOC);
+    } else if cur_cmd() == SET_FONT {
+        f = cur_chr();
+    } else if cur_cmd() == DEF_FAMILY {
+        let m = cur_chr();
+        scan_math_fam_int();
+        f = eqtb_b32s1(m + cur_val());
+    } else {
+        error_here_with_diagnostic(c"Missing font identifier".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(1, c"I was looking for a control sequence whose".as_ptr());
+        set_help_line(0, c"current meaning has been defined by \\font.".as_ptr());
+        crate::input::back_error();
+        f = FONT_BASE;
+    }
+    set_cur_val(f);
+}

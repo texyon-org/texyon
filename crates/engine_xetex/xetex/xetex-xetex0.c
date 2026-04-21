@@ -4464,6 +4464,8 @@ effective_char(bool err_p, internal_font_number f, uint16_t c)
 }
 
 
+/* scan_font_ident: translated to Rust in src/scan.rs */
+#if 0
 void scan_font_ident(void)
 {
     internal_font_number f;
@@ -4494,6 +4496,7 @@ void scan_font_ident(void)
     }
     cur_val = f;
 }
+#endif
 
 void find_font_dimen(bool writing)
 {
