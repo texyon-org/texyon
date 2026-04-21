@@ -65,6 +65,8 @@ mod raw {
 
         // xetex-xetexd.h:506 — current input state; layout mirrors InputState above.
         pub(super) static mut cur_input: super::InputState;
+        // xetex-xetexd.h:508 — count of open pseudo-file parens.
+        pub(super) static mut open_parens: i32;
         // xetex-xetexd.h:510 — current source line number.
         pub(super) static mut line: i32;
 
@@ -587,6 +589,17 @@ pub(crate) fn line() -> i32 {
     unsafe { raw::line }
 }
 
+/// Returns `open_parens` (count of open pseudo-file parentheses in the transcript).
+#[inline]
+pub(crate) fn open_parens() -> i32 {
+    unsafe { raw::open_parens }
+}
+/// Sets `open_parens = v`.
+#[inline]
+pub(crate) fn set_open_parens(v: i32) {
+    unsafe { raw::open_parens = v; }
+}
+
 // ---------------------------------------------------------------------------
 // mem word-level accessors (b16 and gr fields)
 // ---------------------------------------------------------------------------
@@ -630,6 +643,18 @@ pub(crate) fn mem_b16s2(p: i32) -> u16 {
 #[inline]
 pub(crate) fn mem_b16s3(p: i32) -> u16 {
     unsafe { (*raw::mem.offset(p as isize)).b16.s3 }
+}
+/// Write `v` into `mem[p].b16.s2`.
+#[inline]
+pub(crate) fn set_mem_b16s2(p: i32, v: u16) {
+    // SAFETY: see module-level doc.
+    unsafe { (*raw::mem.offset(p as isize)).b16.s2 = v; }
+}
+/// Write `v` into `mem[p].b16.s3`.
+#[inline]
+pub(crate) fn set_mem_b16s3(p: i32, v: u16) {
+    // SAFETY: see module-level doc.
+    unsafe { (*raw::mem.offset(p as isize)).b16.s3 = v; }
 }
 
 /// Read the `gr` (f64) field of `mem[p]`.

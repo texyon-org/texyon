@@ -6260,6 +6260,8 @@ found: /*1572:*//*424:*/
 
 /* scan_general_text: translated to Rust in src/scan.rs */
 
+/* pseudo_start: translated to Rust in src/scan.rs */
+#if 0
 void pseudo_start(void)
 {
     unsigned char /*max_selector */ old_setting;
@@ -6353,6 +6355,7 @@ void pseudo_start(void)
         cur_input.synctex_tag = 0;
     }
 }
+#endif
 
 /* "The token list created by str toks begins at `LLIST_link(TEMP_HEAD)` and
  * ends at the value `p` that is returned. (If `p = temp head`, the list is
@@ -6508,11 +6511,14 @@ int32_t the_toks(void)
     }
 }
 
+/* ins_the_toks: translated to Rust in src/scan.rs */
+#if 0
 void ins_the_toks(void)
 {
     mem[GARBAGE].b32.s1 = the_toks();
     begin_token_list(mem[TEMP_HEAD].b32.s1, INSERTED);
 }
+#endif
 
 
 void

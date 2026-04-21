@@ -3,14 +3,19 @@
 //! Translated from xetex-xetex0.c.
 
 use crate::globals::{
-    align_state, arith_error, avail, cur_chr, cur_cmd, cur_cs, cur_tok, cur_val, cur_val_level,
-    def_ref, eqtb_b32s1, eqtb_is_null, expand_depth, expand_depth_count, max_reg_help_line,
-    max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, no_new_control_sequence, save_ptr,
-    save_stack_b32s1, scanner_status, set_align_state, set_arith_error, set_avail, set_cur_chr,
-    set_cur_cmd, set_cur_cs, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
-    set_expand_depth_count, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b16s1,
-    set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence, set_save_ptr,
-    set_save_stack_b32s1, set_scanner_status, set_warning_index, warning_index,
+    align_state, arith_error, avail, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val,
+    cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth, expand_depth_count,
+    file_offset, init_pool_ptr, max_print_line, max_reg_help_line, max_reg_num, mem_b16s0,
+    mem_b16s1, mem_b32s0, mem_b32s1, no_new_control_sequence, open_parens, pool_ptr, pool_size,
+    pseudo_files, rust_stdout, save_ptr, save_stack_b32s1, scanner_status, selector,
+    set_align_state, set_arith_error, set_avail, set_cur_chr, set_cur_cmd, set_cur_cs,
+    set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_synctex_tag,
+    set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref, set_expand_depth_count,
+    set_help_line, set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2,
+    set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence, set_open_parens,
+    set_pool_ptr, set_pseudo_files, set_save_ptr, set_save_stack_b32s1, set_scanner_status,
+    set_selector, set_str_pool, set_str_ptr, set_warning_index, str_pool_entry, str_ptr,
+    str_start, term_offset, warning_index,
 };
 use crate::mem::new_rule;
 
@@ -32,6 +37,8 @@ extern "C" {
         ...
     ) -> libc::c_int;
     fn error();
+    fn the_toks() -> i32;
+    fn ttstub_output_flush(handle: usize) -> libc::c_int;
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -992,4 +999,135 @@ pub unsafe extern "C" fn scan_rule_spec() -> i32 {
 #[inline]
 unsafe fn back_input() {
     crate::input::back_input();
+}
+
+// ---------------------------------------------------------------------------
+// ins_the_toks
+// ---------------------------------------------------------------------------
+
+// MEM_TOP - 12 (xetex-constants.h:49)
+const GARBAGE: i32 = 4_999_999 - 12;
+// xetex-constants.h:204
+const INSERTED: u16 = 5;
+
+/// translated from xetex-xetex0.c:6511 (ins_the_toks)
+#[no_mangle]
+pub unsafe extern "C" fn ins_the_toks() {
+    set_mem_b32s1(GARBAGE, the_toks());
+    begin_token_list(mem_b32s1(TEMP_HEAD), INSERTED);
+}
+
+// ---------------------------------------------------------------------------
+// pseudo_start
+// ---------------------------------------------------------------------------
+
+// INT_BASE = 7_826_729 (xetex_format.h); INT_PAR__new_line_char = 49
+const INT_BASE_PSEUDO: i32 = 7_826_729;
+const INT_PAR_NEW_LINE_CHAR: i32 = 49;    // xetex_format.h:84
+const INT_PAR_TRACING_SCAN_TOKENS: i32 = 59; // xetex_format.h:94
+const TOO_BIG_CHAR: i32 = 65536; // xetex-constants.h (str_number offset)
+// xetex-core.h / xetex-xetexd.h:430
+const SELECTOR_NEW_STRING: i32 = 21;
+
+/// translated from xetex-xetex0.c:6263 (pseudo_start)
+#[no_mangle]
+pub unsafe extern "C" fn pseudo_start() {
+    scan_general_text();
+    let old_setting = selector();
+    set_selector(SELECTOR_NEW_STRING);
+    crate::output::token_show(TEMP_HEAD);
+    set_selector(old_setting);
+    crate::mem::flush_list(mem_b32s1(TEMP_HEAD));
+
+    if pool_ptr() + 1 > pool_size() {
+        crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+    }
+    let s = crate::string_pool::make_string();
+    set_str_pool(pool_ptr(), b' ' as u16);
+    let mut l = str_start(s - TOO_BIG_CHAR);
+    let nl = eqtb_b32s1(INT_BASE_PSEUDO + INT_PAR_NEW_LINE_CHAR);
+    let p = crate::mem::get_avail();
+    let mut q = p;
+
+    while l < pool_ptr() {
+        let m = l;
+        while l < pool_ptr() && str_pool_entry(l) != nl as u16 {
+            l += 1;
+        }
+        let mut sz = (l - m + 7) / 4;
+        if sz == 1 {
+            sz = 2;
+        }
+        let r_base = crate::mem::get_node(sz);
+        set_mem_b32s1(q, r_base);
+        q = r_base;
+        set_mem_b32s0(q, sz);
+        let mut r = r_base;
+        let mut mm = m;
+        while sz > 2 {
+            sz -= 1;
+            r += 1;
+            let s3 = str_pool_entry(mm);
+            let s2 = str_pool_entry(mm + 1);
+            let s1 = str_pool_entry(mm + 2);
+            let s0 = str_pool_entry(mm + 3);
+            set_mem_b16s3(r, s3);
+            set_mem_b16s2(r, s2);
+            set_mem_b16s1(r, s1);
+            set_mem_b16s0(r, s0);
+            mm += 4;
+        }
+        // last word: pad with spaces, then fill from remaining pool bytes
+        let mut w3: u16 = b' ' as u16;
+        let mut w2: u16 = b' ' as u16;
+        let mut w1: u16 = b' ' as u16;
+        let mut w0: u16 = b' ' as u16;
+        if l > mm {
+            w3 = str_pool_entry(mm);
+            if l > mm + 1 {
+                w2 = str_pool_entry(mm + 1);
+                if l > mm + 2 {
+                    w1 = str_pool_entry(mm + 2);
+                    if l > mm + 3 {
+                        w0 = str_pool_entry(mm + 3);
+                    }
+                }
+            }
+        }
+        set_mem_b16s3(r + 1, w3);
+        set_mem_b16s2(r + 1, w2);
+        set_mem_b16s1(r + 1, w1);
+        set_mem_b16s0(r + 1, w0);
+        if str_pool_entry(l) == nl as u16 {
+            l += 1;
+        }
+    }
+
+    set_mem_b32s0(p, mem_b32s1(p));
+    set_mem_b32s1(p, pseudo_files());
+    set_pseudo_files(p);
+    // pop the temporary string (str_ptr--, pool_ptr = str_start[str_ptr - TOO_BIG_CHAR])
+    set_str_ptr(str_ptr() - 1);
+    set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+
+    crate::input::begin_file_reading();
+    set_line(0);
+    let start = cur_input().start;
+    set_cur_input_limit(start);
+    set_cur_input_loc(start + 1);
+
+    if eqtb_b32s1(INT_BASE_PSEUDO + INT_PAR_TRACING_SCAN_TOKENS) > 0 {
+        if term_offset() > max_print_line() - 3 {
+            crate::output::print_ln();
+        } else if term_offset() > 0 || file_offset() > 0 {
+            crate::output::print_char(b' ' as i32);
+        }
+        set_cur_input_name(19);
+        crate::output::print_cstr(c"( ".as_ptr());
+        set_open_parens(open_parens() + 1);
+        ttstub_output_flush(rust_stdout());
+    } else {
+        set_cur_input_name(18);
+        set_cur_input_synctex_tag(0);
+    }
 }
