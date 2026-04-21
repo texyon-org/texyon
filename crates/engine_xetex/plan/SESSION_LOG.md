@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 30 — 2026-04-21 — token/string cluster: pseudo_start, ins_the_toks, str_toks*, the_toks, pass_text
+
+**Goal:** Translate the token-building and string-conversion cluster recommended by session 29, plus nearby small functions.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 29
+
+**Work done:**
+- Added globals: `open_parens` (xetex-xetexd.h:508), `skip_line` (xetex-xetexd.h:541). Added missing `set_mem_b16s2`/`set_mem_b16s3` setters to globals.rs.
+- Translated `ins_the_toks` (6511) + `pseudo_start` (6263) to `src/scan.rs`. Committed 267f103c.
+- Translated `str_toks_cat` (6363) + `str_toks` (6417) to `src/scan.rs`. Committed a89914f7.
+- Translated `the_toks` (6427) to `src/scan.rs`. Committed 1643e7d9.
+- Translated `pass_text` (7380) to `src/scan.rs`. goto done → loop/break. Committed 5e2cc852.
+- Updated MODULE_STATUS.md, SESSION_LOG.md, PROGRESS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 30
+- 222 Rust functions total; 6 new this session.
+- xetex-xetex0.c: 15719 LOC, ~137 C functions remaining.
+
+**Surprises / gotchas:**
+- `pseudo_start` packs str_pool bytes into b16x4 words (4 u16 per node word); needed `set_mem_b16s2`/`set_mem_b16s3` which were missing from globals.rs.
+- `the_toks` uses `cur_val_level()` which returns `u8`; comparing to `IDENT_VAL: i16` required casting.
+- In `str_toks_cat`, the C variable `m` that tracks the position in the inner pack loop was renamed `mm` to avoid shadowing the outer `m`.
+
+**For the next session:**
+- `conditional` (~7410): large (~400 lines), the full \if-expansion machine. Most helpers are Rust; calls `scan_something_internal` (still C) and `pass_text` (now Rust).
+- `read_toks` (~7266): reads from \read streams; calls `input_line` (C), `begin_file_reading` (Rust).
+- `scan_toks` (~7075): the \def/\edef scanner, ~180 lines; calls `get_token`, `scan_general_text` etc. (all Rust).
+
+---
+
 ## Session 29 — 2026-04-20 — scan_expr (complex recursive scanner)
 
 **Goal:** Translate scan_expr, whose helpers (get_x_or_protected, scan_keyword, scan_dimen, add_or_sub, mult_and_add, quotient, fract) are all now in Rust.
