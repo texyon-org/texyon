@@ -275,6 +275,8 @@ mod raw {
         // cur_if: small_number = i16 (xetex-xetexd.h:539).
         pub(super) static mut cur_if: i16;
         pub(super) static mut if_line: i32;
+        // xetex-xetexd.h:541 — line number saved when entering \if-skip block.
+        pub(super) static mut skip_line: i32;
 
         // Current display mode for show_cur_cmd_chr (xetex-xetexd.h:480; short = i16).
         pub(super) static mut shown_mode: i16;
@@ -1804,6 +1806,16 @@ pub(crate) fn if_line() -> i32 {
 #[inline]
 pub(crate) fn set_if_line(v: i32) {
     unsafe { raw::if_line = v; }
+}
+/// Returns `skip_line` (source line where the current \if-skip started).
+#[inline]
+pub(crate) fn skip_line() -> i32 {
+    unsafe { raw::skip_line }
+}
+/// Sets `skip_line = v`.
+#[inline]
+pub(crate) fn set_skip_line(v: i32) {
+    unsafe { raw::skip_line = v; }
 }
 
 // ---------------------------------------------------------------------------

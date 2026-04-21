@@ -7377,6 +7377,8 @@ read_toks(int32_t n, int32_t r, int32_t j)
 }
 
 
+/* pass_text: translated to Rust in src/scan.rs */
+#if 0
 void pass_text(void)
 {
     int32_t l;
@@ -7403,6 +7405,7 @@ done:
     if (INTPAR(tracing_ifs) > 0)
         show_cur_cmd_chr();
 }
+#endif
 
 /* change_if_limit: translated to Rust in src/output.rs */
 

@@ -1285,3 +1285,43 @@ pub unsafe extern "C" fn the_toks() -> i32 {
         str_toks(b)
     }
 }
+
+// ---------------------------------------------------------------------------
+// pass_text
+// ---------------------------------------------------------------------------
+
+// xetex_format.h:349,350,537; xetex-constants.h:183
+const SKIPPING: u8 = 1;
+const IF_TEST: u8 = 107;
+const FI_OR_ELSE: u8 = 108;
+const FI_CODE: i32 = 2;
+// INT_PAR__tracing_ifs = 58 (xetex_format.h:93)
+const INT_PAR_TRACING_IFS: i32 = 58;
+
+/// translated from xetex-xetex0.c:7380 (pass_text)
+#[no_mangle]
+pub unsafe extern "C" fn pass_text() {
+    let save_scanner_status = scanner_status();
+    set_scanner_status(SKIPPING);
+    let mut l: i32 = 0;
+    crate::globals::set_skip_line(crate::globals::line());
+
+    loop {
+        get_next();
+        if cur_cmd() == FI_OR_ELSE {
+            if l == 0 {
+                break; // done:
+            }
+            if cur_chr() == FI_CODE {
+                l -= 1;
+            }
+        } else if cur_cmd() == IF_TEST {
+            l += 1;
+        }
+    }
+    // done:
+    set_scanner_status(save_scanner_status);
+    if eqtb_b32s1(INT_BASE_PSEUDO + INT_PAR_TRACING_IFS) > 0 {
+        crate::output::show_cur_cmd_chr();
+    }
+}
