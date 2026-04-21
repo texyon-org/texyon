@@ -1825,3 +1825,35 @@ pub unsafe extern "C" fn end_name() {
         set_cur_ext(crate::string_pool::slow_make_string());
     }
 }
+
+// ---------------------------------------------------------------------------
+// extra_right_brace
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:166,167,168
+const SEMI_SIMPLE_GROUP: u8 = 14;
+const MATH_SHIFT_GROUP: u8 = 15;
+const MATH_LEFT_GROUP: u8 = 16;
+
+/// translated from xetex-xetex0.c:7411 (extra_right_brace)
+#[no_mangle]
+pub unsafe extern "C" fn extra_right_brace() {
+    use crate::globals::cur_group;
+
+    error_here_with_diagnostic(c"Extra }, or forgotten ".as_ptr());
+    match cur_group() {
+        SEMI_SIMPLE_GROUP => crate::output::print_esc_cstr(c"endgroup".as_ptr()),
+        MATH_SHIFT_GROUP => crate::output::print_char(b'$' as i32),
+        MATH_LEFT_GROUP => crate::output::print_esc_cstr(c"right".as_ptr()),
+        _ => {}
+    }
+    capture_to_diagnostic(std::ptr::null_mut());
+    set_help_ptr(5);
+    set_help_line(4, c"I've deleted a group-closing symbol because it seems to be".as_ptr());
+    set_help_line(3, c"spurious, as in `$x}$'. But perhaps the } is legitimate and".as_ptr());
+    set_help_line(2, c"you forgot something else, as in `\\hbox{$x}'. In such cases".as_ptr());
+    set_help_line(1, c"the way to recover is to insert both the forgotten and the".as_ptr());
+    set_help_line(0, c"deleted material, e.g., by typing `I$}'.".as_ptr());
+    error();
+    set_align_state(align_state() + 1);
+}

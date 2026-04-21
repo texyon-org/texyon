@@ -11408,6 +11408,8 @@ off_save(void)
 }
 
 
+/* extra_right_brace: translated to Rust in src/scan.rs */
+#if 0
 void
 extra_right_brace(void)
 {
@@ -11436,6 +11438,7 @@ extra_right_brace(void)
     error();
     align_state++;
 }
+#endif
 
 
 void normal_paragraph(void)
