@@ -32,6 +32,75 @@ template.
 
 ---
 
+## Session 33 — 2026-04-22 — scan_and_pack_name
+
+**Goal:** Make another incremental pass at the scanner cluster by translating a small helper that `scan_something_internal` already depends on.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 32
+
+**Work done:**
+- Re-ran the required baseline checks: `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs`. Baseline held at parity 29/29 and TRIP 2/2.
+- Read through `scan_something_internal` and the adjacent scanner/file-name code. Decided not to force a risky 600-line translation in one shot while several branches still rely on many C macros/globals.
+- Translated `scan_and_pack_name` (13424) to `src/scan.rs` as a small, direct helper for the XeTeX-specific branches inside `scan_something_internal`.
+- Removed the C body from `xetex-xetex0.c`.
+- Re-ran `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs` after the translation; parity stayed 29/29 and TRIP stayed 2/2.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, and `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 33
+- 233 Rust functions total; 1 new this session.
+- xetex-xetex0.c: 15691 LOC, ~126 C functions remaining.
+
+**Surprises / gotchas:**
+- `scan_something_internal` is broad enough that translating it faithfully wants a dedicated session: it mixes register logic, page state, font/layout queries, last-node inspection, and a `goto restart` path for primitive lookup.
+- `scan_and_pack_name` was a good intermediate step because it is already called from several XeTeX-only branches of `scan_something_internal`, so future work there has one less C callee to juggle.
+
+**For the next session:**
+- Return to `scan_something_internal` (~4552). A good first move is to split the translation mentally into major switch regions: code tables, token/font cases, register/page/box cases, `LAST_ITEM`, and the `IGNORE_SPACES` restart path.
+- `conditional` (~7420) remains the next major follow-on once `scan_something_internal` is in Rust.
+
+---
+
+## Session 32 — 2026-04-22 — find_font_dimen
+
+**Goal:** Translate the small font-parameter helper queued by session 31 before tackling the much larger scanner core.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 31
+
+**Work done:**
+- Re-ran the required baseline checks before editing: `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs`. Baseline held at parity 29/29 and TRIP 2/2.
+- Added minimal font-memory accessors to `src/globals.rs`: `font_info`, `fmem_ptr`, `font_ptr`, `font_mem_size`, `font_params`, `font_glue`, and `param_base`.
+- Translated `find_font_dimen` (4501) to `src/scan.rs`. The C growth loop stays literal: zero the new `font_info[fmem_ptr].b32.s1`, then increment `fmem_ptr` and `font_params[f]` until the requested slot exists.
+- Removed the C body from `xetex-xetex0.c`.
+- Re-ran `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs` after the translation; parity stayed 29/29 and TRIP stayed 2/2.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, and `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 32
+- 232 Rust functions total; 1 new this session.
+- xetex-xetex0.c: 15695 LOC, ~127 C functions remaining.
+
+**Surprises / gotchas:**
+- `find_font_dimen` needed `FONT_ID_BASE + f` for the diagnostic path; `hash_s1` from `globals.rs` was enough, so no raw hash-table access had to leak into `scan.rs`.
+- The helper returns `cur_val = fmem_ptr` as a sentinel in two distinct error cases (`n <= 0` and "fontdimen too late on an existing font"). Preserving that shared sentinel is what makes the final diagnostic branch line up with the C.
+- This session left the pre-existing non-fatal warnings untouched; the only new warning I introduced briefly was an unused import, which was removed before finishing.
+
+**For the next session:**
+- `scan_something_internal` (~4552) is now the clear next target. It sits immediately after `find_font_dimen`, and most of its small helpers/callees are already in Rust.
+- `conditional` (~7420) remains the next major follow-on once `scan_something_internal` is translated.
+
+---
+
 ## Session 31 — 2026-04-21 — scan_toks, read_toks, filename cluster, extra_right_brace, scan_font_ident, show_info
 
 **Goal:** Translate the \def-scanner (scan_toks), \read-scanner (read_toks), filename cluster, and small error/util functions.

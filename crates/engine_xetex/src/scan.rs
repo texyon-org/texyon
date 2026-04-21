@@ -5,19 +5,20 @@
 use crate::globals::{
     align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok,
     cur_val, cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth,
-    expand_depth_count, file_offset, first, init_pool_ptr, last, max_print_line,
-    max_reg_help_line, max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, open_parens,
-    pool_ptr, pool_size, pseudo_files, read_file_entry, read_open_entry, rust_stdout, save_ptr,
-    save_stack_b32s1, scanner_status, selector, set_align_state, set_arith_error, set_avail,
-    set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit,
-    set_cur_input_loc, set_cur_input_name, set_cur_input_start, set_cur_input_state,
-    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
-    set_expand_depth_count, set_first, set_help_line, set_help_ptr, set_line, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1,
-    set_no_new_control_sequence, set_open_parens, set_pool_ptr, set_pseudo_files,
-    set_read_open_entry, set_save_ptr, set_save_stack_b32s1, set_scanner_status, set_selector,
-    set_str_pool, set_str_ptr, set_warning_index, str_pool_entry, str_ptr, str_start,
-    term_offset, warning_index,
+    expand_depth_count, file_offset, first, fmem_ptr, font_glue, font_mem_size, font_params,
+    font_ptr, hash_s1, init_pool_ptr, last, max_print_line, max_reg_help_line, max_reg_num,
+    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, open_parens, param_base, pool_ptr, pool_size,
+    pseudo_files, read_file_entry, read_open_entry, rust_stdout, save_ptr, save_stack_b32s1,
+    scanner_status, selector, set_align_state, set_arith_error, set_avail, set_buffer_entry,
+    set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc,
+    set_cur_input_name, set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag,
+    set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref, set_expand_depth_count, set_first,
+    set_fmem_ptr, set_font_glue, set_font_info_b32s1, set_font_params, set_help_line,
+    set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3,
+    set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence, set_open_parens, set_pool_ptr,
+    set_pseudo_files, set_read_open_entry, set_save_ptr, set_save_stack_b32s1,
+    set_scanner_status, set_selector, set_str_pool, set_str_ptr, set_warning_index,
+    str_pool_entry, str_ptr, str_start, term_offset, warning_index,
 };
 use crate::mem::new_rule;
 
@@ -44,6 +45,8 @@ extern "C" {
     fn u_close(f: *mut libc::c_void);
     fn runaway();
     fn _tt_abort(fmt: *const libc::c_char) -> !;
+    fn scan_file_name();
+    fn pack_file_name(n: i32, a: i32, e: i32);
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -1867,7 +1870,11 @@ const DEF_FAMILY: u8 = 88;
 const SET_FONT: u8 = 89;
 const DEF_FONT: u8 = 90;
 const FONT_BASE: i32 = 0;
+const FROZEN_NULL_FONT: i32 = 2_245_338;
+const FONT_ID_BASE: i32 = FROZEN_NULL_FONT;
 const CUR_FONT_LOC: i32 = 2_255_400;
+const SPACE_CODE: i32 = 2;
+const SPACE_SHRINK_CODE: i32 = 4;
 
 /// translated from xetex-xetex0.c:4467 (scan_font_ident)
 #[no_mangle]
@@ -1897,6 +1904,77 @@ pub unsafe extern "C" fn scan_font_ident() {
         f = FONT_BASE;
     }
     set_cur_val(f);
+}
+
+/// translated from xetex-xetex0.c:4501 (find_font_dimen)
+#[no_mangle]
+pub unsafe extern "C" fn find_font_dimen(writing: bool) {
+    use crate::mem::TEX_NULL;
+
+    scan_int();
+    let n = cur_val();
+    scan_font_ident();
+    let f = cur_val();
+
+    if n <= 0 {
+        set_cur_val(fmem_ptr());
+    } else {
+        if writing
+            && n <= SPACE_SHRINK_CODE
+            && n >= SPACE_CODE
+            && font_glue(f) != TEX_NULL
+        {
+            crate::mem::delete_glue_ref(font_glue(f));
+            set_font_glue(f, TEX_NULL);
+        }
+
+        if n > font_params(f) {
+            if f < font_ptr() {
+                set_cur_val(fmem_ptr());
+            } else {
+                loop {
+                    if fmem_ptr() == font_mem_size() {
+                        crate::errors::overflow(c"font memory".as_ptr(), font_mem_size());
+                    }
+                    set_font_info_b32s1(fmem_ptr(), 0);
+                    set_fmem_ptr(fmem_ptr() + 1);
+                    set_font_params(f, font_params(f) + 1);
+                    if n == font_params(f) {
+                        break;
+                    }
+                }
+                set_cur_val(fmem_ptr() - 1);
+            }
+        } else {
+            set_cur_val(n + param_base(f));
+        }
+    }
+
+    if cur_val() == fmem_ptr() {
+        error_here_with_diagnostic(c"Font ".as_ptr());
+        crate::output::print_esc(hash_s1(FONT_ID_BASE + f));
+        crate::output::print_cstr(c" has only ".as_ptr());
+        crate::output::print_int(font_params(f));
+        crate::output::print_cstr(c" fontdimen parameters".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(
+            1,
+            c"To increase the number of font parameters, you must".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"use \\fontdimen immediately after the \\font is loaded.".as_ptr(),
+        );
+        error();
+    }
+}
+
+/// translated from xetex-xetex0.c:13424 (scan_and_pack_name)
+#[no_mangle]
+pub unsafe extern "C" fn scan_and_pack_name() {
+    scan_file_name();
+    pack_file_name(crate::globals::cur_name(), crate::globals::cur_area(), crate::globals::cur_ext());
 }
 
 // ---------------------------------------------------------------------------

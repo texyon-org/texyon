@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 31.
+Last updated: session 33.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 31.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 15743 |    128 | multiple (see below)              | IN PROGRESS — 53% |
+| xetex-xetex0.c               | 15691 |    126 | multiple (see below)              | IN PROGRESS — 54% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -368,14 +368,15 @@ New Rust module `src/save.rs` created for save-stack management.
 |88 | `scan_spec`               |        9215 | `src/scan.rs`   | MIGRATED (session 27, f614c4f3) |
 |89 | `scan_general_text`       |        6262 | `src/scan.rs`   | MIGRATED (session 28, a19aad9a) |
 |90 | `scan_expr`               |        6025 | `src/scan.rs`   | MIGRATED (session 29, edba0a63) |
+|91 | `find_font_dimen`         |        4501 | `src/scan.rs`   | MIGRATED (session 32, working tree) |
+|92 | `scan_and_pack_name`      |       13424 | `src/scan.rs`   | MIGRATED (session 33, working tree) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `pseudo_start` (~6266): uses scan_general_text (Rust), token_show (C), str_pool/pool_ptr.
-- `the_toks` (~6607): uses scan_general_text (Rust), token_show (C).
-- `ins_the_toks` (~6700): trivial wrapper.
-- `show_save_groups` (~11356): complex multi-goto.
+- `scan_something_internal` (~4552): large core register/parameter scanner; `scan_and_pack_name` is now in Rust, removing one small XeTeX-only callee from that switch.
+- `conditional` (~7420): `\if` expansion machine; depends on `pass_text` (Rust) and still calls `scan_something_internal`.
+- `show_save_groups` (~11356): complex multi-goto diagnostic helper.
 
 ## How to maintain this file
 

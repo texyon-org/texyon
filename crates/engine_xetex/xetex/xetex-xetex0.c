@@ -4498,55 +4498,7 @@ void scan_font_ident(void)
 }
 #endif
 
-void find_font_dimen(bool writing)
-{
-    internal_font_number f;
-    int32_t n;
-    scan_int();
-    n = cur_val;
-    scan_font_ident();
-    f = cur_val;
-    if (n <= 0)
-        cur_val = fmem_ptr;
-    else {
-
-        if (writing && (n <= SPACE_SHRINK_CODE) && (n >= SPACE_CODE) && (font_glue[f] != TEX_NULL)) {
-            delete_glue_ref(font_glue[f]);
-            font_glue[f] = TEX_NULL;
-        }
-        if (n > font_params[f]) {
-
-            if (f < font_ptr)
-                cur_val = fmem_ptr;
-            else {              /*599: */
-
-                do {
-                    if (fmem_ptr == font_mem_size)
-                        overflow("font memory", font_mem_size);
-                    font_info[fmem_ptr].b32.s1 = 0;
-                    fmem_ptr++;
-                    font_params[f]++;
-                } while (!(n == font_params[f]));
-                cur_val = fmem_ptr - 1;
-            }
-        } else
-            cur_val = n + param_base[f];
-    }
-    if (cur_val == fmem_ptr) {
-        error_here_with_diagnostic("Font ");
-        print_esc(hash[FONT_ID_BASE + f].s1);
-        print_cstr(" has only ");
-        print_int(font_params[f]);
-        print_cstr(" fontdimen parameters");
-        capture_to_diagnostic(NULL);
-        {
-            help_ptr = 2;
-            help_line[1] = "To increase the number of font parameters, you must";
-            help_line[0] = "use \\fontdimen immediately after the \\font is loaded.";
-        }
-        error();
-    }
-}
+/* find_font_dimen: translated to Rust in src/scan.rs */
 
 
 void
@@ -13469,11 +13421,7 @@ void new_write_whatsit(small_number w)
     mem[cur_list.tail + 1].b32.s0 = cur_val;
 }
 
-void scan_and_pack_name(void)
-{
-    scan_file_name();
-    pack_file_name(cur_name, cur_area, cur_ext);
-}
+/* scan_and_pack_name: translated to Rust in src/scan.rs */
 
 void do_extension(void)
 {
