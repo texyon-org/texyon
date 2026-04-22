@@ -3537,7 +3537,7 @@ pub unsafe extern "C" fn conditional() {
             } else if (cur_cmd() as i32) < CALL as i32 {
                 b = cur_chr() == q;
             } else {
-                p = mem_b32s1(q);
+                p = mem_b32s1(cur_chr()); // second token's replacement text (not saved q = first token's chr)
                 q = mem_b32s1(eqtb_b32s1(n));
                 if p == q {
                     b = true;
