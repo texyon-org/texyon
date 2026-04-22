@@ -32,6 +32,46 @@ template.
 
 ---
 
+## Session 38 — 2026-04-22 — scan_something_internal + scan_int
+
+**Goal:** Translate the two central scanner functions that have been "next up" for many sessions, plus the open_log_file warmup from session 37.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 37
+
+**Work done:**
+- Rechecked baseline after `da715977`; held at 29/29 / TRIP 2/2.
+- Added 26 new extern globals to `globals.rs`: page-builder state (`page_contents`, `page_so_far`, `dead_cycles`, `insert_penalties`, `output_active`, `last_penalty/kern/glue/node_type/badness`), font encoding arrays (`font_area`, `font_bc`, `font_ec`, `font_layout_engine`), font dimension bases (`char_base`, `width_base`, `height_base`, `depth_base`, `italic_base`), miscellaneous (`cur_val1`, `radix`, `random_seed`, `pdf_last_x/y_pos`). Also added ~40 accessor functions and fixed `shell_escape_enabled()` getter that was missing.
+- Added `cur_list_tail()` getter, `cur_list_aux_b32s0/s1()`, `nest_mode()`, `nest_prev_graf()` accessors.
+- Added `font_info_b16()`, per-font array accessors (`font_area_entry`, `font_bc_entry`, `font_ec_entry`, `font_layout_engine_ptr`, `hyphen_char_entry`, `skew_char_entry`, and the five dimension-base accessors).
+- Added ~30 new `extern "C"` declarations to `scan.rs` for AAT/OT engine APIs, native-char metrics, glyph mapping, font type queries, and `new_spec`.
+- Added ~165 lines of new constants to `scan.rs` covering all command codes, value types, eqtb bases, LAST_ITEM sub-codes, node codes, token constants for scan_int, etc.
+- Translated `scan_something_internal` (4505) and `scan_int` (5465) to `src/scan.rs`, preserving the `goto restart` as a `'restart: loop`, all switch arms, the coerce/negate epilogue, and the full LAST_ITEM fan-out.
+- Removed both C bodies with tombstone comments.
+- First test run: TRIP `trip_test` failed. Diff showed `0.0pt` expected vs `20.02014pt` observed for `\showthe\fontdimen1000\trip`. Root cause: `ASSIGN_FONT_DIMEN` case used `set_mem_b32s1(fmem_ptr(), 0)` instead of `set_font_info_b32s1(fmem_ptr(), 0)` — wrote the sentinel to `mem[]` instead of `font_info[]`. Fixed; TRIP went back to 2/2.
+- Committed as `9b03ca67`.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, and `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 38
+- 240 Rust functions total; 2 new this session.
+- xetex-xetex0.c: 14434 LOC, ~119 C functions remaining.
+
+**Surprises / gotchas:**
+- `font_info` and `mem` are two distinct arrays. In the `ASSIGN_FONT_DIMEN` case, `font_info[fmem_ptr].b32.s1 = 0` clears a sentinel in `font_info[]`, not `mem[]`. Using `set_mem_b32s1` instead of `set_font_info_b32s1` silently compiled but corrupted the wrong array — caught only by the TRIP test.
+- Several constants that were scoped inside individual functions (`INT_VAL`, `DIMEN_VAL`, `FI_CODE`, `DEF_FAMILY`, etc.) conflicted with the new module-level constants block. The cleanup involved removing the redundant per-function consts. `FI_CODE` was typed as `i32` in the old location and `u8` in the new one — fixed the one usage that needed `as i32`.
+- The `goto restart` in `scan_something_internal` (the IGNORE_SPACES `\primitive` dispatch) maps cleanly to `continue 'restart;` in a labeled loop.
+
+**For the next session:**
+- `conditional` (~7375): `\if` expansion machine, ~250 lines. Now feasible since both `scan_something_internal` and `pass_text` are in Rust.
+- `start_input` (~7940): input file opener, ~170 lines. Depends on `open_log_file` (Rust).
+
+---
+
 ## Session 37 — 2026-04-22 — open_log_file
 
 **Goal:** Translate `open_log_file`, completing the filename/logging cluster now that `pack_job_name` and `make_name_string` are both in Rust.

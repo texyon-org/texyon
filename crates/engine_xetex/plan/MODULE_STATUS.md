@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 37.
+Last updated: session 38.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 37.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 15537 |    121 | multiple (see below)              | IN PROGRESS — 55% |
+| xetex-xetex0.c               | 14434 |    119 | multiple (see below)              | IN PROGRESS — 57% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -375,13 +375,15 @@ New Rust module `src/save.rs` created for save-stack management.
 |95 | `pack_job_name`           |        7970 | `src/scan.rs`   | MIGRATED (session 35, b375cb8f) |
 |96 | `make_name_string`        |        7928 | `src/scan.rs`   | MIGRATED (session 36, 9347fe3b) |
 |97 | `open_log_file`           |        7937 | `src/scan.rs`   | MIGRATED (session 37, da715977) |
+|98 | `scan_something_internal` |        4505 | `src/scan.rs`   | MIGRATED (session 38, 9b03ca67) |
+|99 | `scan_int`                |        5465 | `src/scan.rs`   | MIGRATED (session 38, 9b03ca67) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `scan_something_internal` (~4552): large core register/parameter scanner; the small filename helpers around it are now in Rust, so its remaining C-side dependencies are narrower.
-- `conditional` (~7420): `\if` expansion machine; depends on `pass_text` (Rust) and still calls `scan_something_internal`.
+- `conditional` (~7375): `\if` expansion machine; depends on `pass_text` (Rust) and now `scan_something_internal` (Rust).
 - `show_save_groups` (~11356): complex multi-goto diagnostic helper.
+- `start_input` (~7940): input file opener; depends on `open_log_file` (Rust).
 
 ## How to maintain this file
 
