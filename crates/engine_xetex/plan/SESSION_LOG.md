@@ -32,6 +32,40 @@ template.
 
 ---
 
+## Session 39 — 2026-04-22 — conditional
+
+**Goal:** Translate `conditional` (the `\if`/`\ifcase`/`\ifx`/… expansion machine), a contained ~400-line function that has been the natural next step since `pass_text` and `scan_something_internal` both landed in Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 38
+
+**Work done:**
+- Rechecked baseline after `9b03ca67`; held at 29/29 / TRIP 2/2.
+- Added `is_in_csname` global (bool) to `globals.rs`.
+- Translated `conditional` (6271) to `src/scan.rs`. Handled all 22 `\if…` sub-codes plus the `is_unless` inversion, the `tracing_ifs`/`tracing_commands` diagnostic paths, and the `goto common_ending` idiom.
+- Extracted `pop_cond_node()` as a private `unsafe fn` (the §515 pattern repeated 6 times in C).
+- First test run: both TRIP tests failed. Diff showed "Extra \fi" error from `IF_CASE_CODE`. Root cause: the `goto common_ending` inside the `IF_CASE_CODE` while-loop was implemented as an unconditional `pop_cond_node()` call, but `common_ending` actually branches on `cur_chr`: pop the node only if `cur_chr == FI_CODE`, else just set `if_limit = FI_CODE`. Fixed.
+- Removed C body with tombstone comment.
+- Committed as `cdd6f395`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 39
+- 241 Rust functions total; 1 new this session.
+- xetex-xetex0.c: 14029 LOC, ~118 C functions remaining.
+
+**Surprises / gotchas:**
+- The `goto common_ending` idiom in C requires careful mapping: `common_ending` is not just "pop a node" — it dispatches on `cur_chr == FI_CODE` vs. `ELSE_CODE`. Forgetting this made both TRIP tests fail with a spurious "Extra \fi".
+
+**For the next session:**
+- `start_input` (~7540): input file opener, ~170 lines. Depends on `open_log_file` (Rust).
+- `show_save_groups` (~10952): complex multi-goto diagnostic helper.
+
+---
+
 ## Session 38 — 2026-04-22 — scan_something_internal + scan_int
 
 **Goal:** Translate the two central scanner functions that have been "next up" for many sessions, plus the open_log_file warmup from session 37.
