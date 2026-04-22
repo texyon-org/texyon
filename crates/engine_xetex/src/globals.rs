@@ -163,9 +163,10 @@ mod raw {
         pub(super) static mut error_count: i8;
         pub(super) static mut use_err_help: bool;
         pub(super) static mut halt_on_error_p: i32;
-        // `log_opened` and `job_name` (xetex-xetexd.h:551–552).
+        // `log_opened`, `job_name`, `texmf_log_name` (xetex-xetexd.h:551–554).
         pub(super) static mut log_opened: bool;
         pub(super) static mut job_name: i32;
+        pub(super) static mut texmf_log_name: i32;
 
         // Engine config flags set before launch (xetex-xetexd.h:385,396,722,724).
         pub(super) static mut in_initex_mode: bool;
@@ -1089,6 +1090,12 @@ pub(crate) fn log_file() -> usize {
     // SAFETY: see module-level doc.
     unsafe { raw::log_file }
 }
+/// Sets the `log_file` output handle.
+#[inline]
+pub(crate) fn set_log_file(v: usize) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::log_file = v; }
+}
 
 /// Returns `write_file[i]`, the output handle for write-stream `i` (0–15).
 #[inline]
@@ -1297,9 +1304,29 @@ pub(crate) fn log_opened() -> bool {
     unsafe { raw::log_opened }
 }
 #[inline]
+pub(crate) fn set_log_opened(v: bool) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::log_opened = v; }
+}
+#[inline]
 pub(crate) fn job_name() -> i32 {
     // SAFETY: see module-level doc.
     unsafe { raw::job_name }
+}
+#[inline]
+pub(crate) fn set_job_name(v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::job_name = v; }
+}
+#[inline]
+pub(crate) fn texmf_log_name() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::texmf_log_name }
+}
+#[inline]
+pub(crate) fn set_texmf_log_name(v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::texmf_log_name = v; }
 }
 #[inline]
 pub(crate) fn set_halt_on_error_p(v: i32) {

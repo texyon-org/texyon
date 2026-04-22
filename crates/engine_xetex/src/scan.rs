@@ -49,6 +49,7 @@ extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn pack_file_name(n: i32, a: i32, e: i32);
     fn show_token_list(p: i32, q: i32, l: i32);
+    fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -2108,6 +2109,58 @@ pub unsafe extern "C" fn pack_job_name(s: *const libc::c_char) {
     set_cur_ext(crate::texmfmp::maketexstring(s));
     set_cur_name(job_name());
     pack_file_name(crate::globals::cur_name(), crate::globals::cur_area(), crate::globals::cur_ext());
+}
+
+// ---------------------------------------------------------------------------
+// open_log_file
+// ---------------------------------------------------------------------------
+
+const INVALID_HANDLE: usize = 0;
+const SELECTOR_LOG_ONLY: i32 = 18;
+
+/// translated from xetex-xetex0.c:7937 (open_log_file)
+#[no_mangle]
+pub unsafe extern "C" fn open_log_file() {
+    use crate::globals::{
+        input_stack, input_ptr,
+        job_name, set_job_name, set_log_file, set_log_opened,
+        name_of_file,
+        set_input_stack, set_texmf_log_name,
+    };
+
+    let old_setting = selector();
+    if job_name() == 0 {
+        set_job_name(crate::texmfmp::maketexstring(c"texput".as_ptr()));
+    }
+
+    pack_job_name(c".log".as_ptr());
+
+    let handle = ttstub_output_open(name_of_file(), 0);
+    if handle == INVALID_HANDLE {
+        _tt_abort(c"cannot open log file output".as_ptr());
+    }
+    set_log_file(handle);
+
+    set_texmf_log_name(make_name_string());
+    set_selector(SELECTOR_LOG_ONLY);
+    set_log_opened(true);
+
+    set_input_stack(input_ptr(), cur_input());
+
+    crate::output::print_nl_cstr(c"**".as_ptr());
+    let mut l = input_stack(0).limit;
+    if buffer_entry(l) == eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR) {
+        l -= 1;
+    }
+
+    let mut k = 1;
+    while k <= l {
+        crate::output::print(buffer_entry(k));
+        k += 1;
+    }
+
+    crate::output::print_ln();
+    set_selector(old_setting + 2);
 }
 
 // ---------------------------------------------------------------------------
