@@ -30,7 +30,6 @@ extern "C" {
     fn macro_call();
     fn begin_token_list(p: i32, t: u16);
     fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool);
-    fn scan_int();
     fn scan_glue(level: i16);
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
     fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
@@ -42,7 +41,6 @@ extern "C" {
     ) -> libc::c_int;
     fn error();
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
-    fn scan_something_internal(level: i16, negative: bool);
     fn input_line(f: *mut libc::c_void) -> libc::c_int;
     fn u_close(f: *mut libc::c_void);
     fn runaway();
@@ -50,6 +48,38 @@ extern "C" {
     fn pack_file_name(n: i32, a: i32, e: i32);
     fn show_token_list(p: i32, q: i32, l: i32);
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
+    // C functions called by scan_something_internal / scan_int
+    fn print_cmd_chr(cmd: u16, chr_code: i32);
+    fn scan_glyph_number(f: i32);
+    fn aat_font_get(what: i32, engine: *mut libc::c_void) -> i32;
+    fn aat_font_get_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
+    fn aat_font_get_2(what: i32, engine: *mut libc::c_void, p1: i32, p2: i32) -> i32;
+    fn aat_font_get_named(what: i32, engine: *mut libc::c_void) -> i32;
+    fn aat_font_get_named_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
+    fn ot_font_get(what: i32, engine: *mut libc::c_void) -> i32;
+    fn ot_font_get_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
+    fn ot_font_get_2(what: i32, engine: *mut libc::c_void, p1: i32, p2: i32) -> i32;
+    fn ot_font_get_3(what: i32, engine: *mut libc::c_void, p1: i32, p2: i32, p3: i32) -> i32;
+    fn gr_font_get_named(what: i32, engine: *mut libc::c_void) -> i32;
+    fn gr_font_get_named_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
+    fn not_native_font_error(cmd: i32, c: i32, f: i32);
+    fn not_aat_font_error(cmd: i32, c: i32, f: i32);
+    fn not_aat_gr_font_error(cmd: i32, c: i32, f: i32);
+    fn not_ot_font_error(cmd: i32, c: i32, f: i32);
+    fn getnativecharwd(f: i32, c: i32) -> i32;
+    fn getnativecharht(f: i32, c: i32) -> i32;
+    fn getnativechardp(f: i32, c: i32) -> i32;
+    fn getnativecharic(f: i32, c: i32) -> i32;
+    fn effective_char(err_p: bool, f: i32, c: u16) -> i32;
+    fn usingGraphite(engine: *mut libc::c_void) -> bool;
+    fn usingOpenType(engine: *mut libc::c_void) -> bool;
+    fn get_glyph_bounds(f: i32, edge: i32, gid: i32) -> i32;
+    fn get_font_char_range(f: i32, first: libc::c_int) -> i32;
+    fn map_char_to_glyph(f: i32, ch: i32) -> i32;
+    fn map_glyph_to_index(f: i32) -> i32;
+    fn count_pdf_file_pages() -> i32;
+    fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
+    fn new_spec(p: i32) -> i32;
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -74,6 +104,165 @@ const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
 const BIGGEST_CHAR: i32 = 0xFFFF;
 // xetex_format.h (NUMBER_MATH_FAMILIES)
 const NUMBER_MATH_FAMILIES: i32 = 256;
+
+// --- Constants for scan_something_internal / scan_int ---
+// Command codes (xetex_format.h).
+const DEF_CODE: u8 = 86;
+const XETEX_DEF_CODE: u8 = 87;
+const DEF_FAMILY: u8 = 88;
+const SET_FONT: u8 = 89;
+const DEF_FONT: u8 = 90;
+const TOKS_REGISTER: u8 = 72;
+const ASSIGN_TOKS: u8 = 73;
+const ASSIGN_INT: u8 = 74;
+const ASSIGN_DIMEN: u8 = 75;
+const ASSIGN_GLUE: u8 = 76;
+const ASSIGN_MU_GLUE: u8 = 77;
+const ASSIGN_FONT_DIMEN: u8 = 78;
+const ASSIGN_FONT_INT: u8 = 79;
+const SET_AUX: u8 = 80;
+const SET_PREV_GRAF: u8 = 81;
+const SET_PAGE_DIMEN: u8 = 82;
+const SET_PAGE_INT: u8 = 83;
+const SET_BOX_DIMEN: u8 = 84;
+const SET_SHAPE: u8 = 85;
+const CHAR_GIVEN: u8 = 68;
+const MATH_GIVEN: u8 = 69;
+const XETEX_MATH_GIVEN: u8 = 70;
+const LAST_ITEM: u8 = 71;
+const REGISTER: u8 = 91;
+const IGNORE_SPACES: u8 = 39;
+const MIN_INTERNAL: u8 = 68;
+const MAX_INTERNAL: u8 = 91;
+// Value types (xetex-constants.h:288–296; xetex_format.h:568–572).
+const INT_VAL: i16 = 0;
+const DIMEN_VAL: i16 = 1;
+const MU_VAL: i16 = 3;
+const TOK_VAL: i16 = 5;
+const IDENT_VAL: i16 = 4;
+const INTER_CHAR_VAL: i16 = 6;
+// Mode codes.
+const VMODE: i16 = 1;
+// eqtb bases (xetex_format.h).
+const SKIP_BASE: i32 = 2_254_359;
+const MU_SKIP_BASE: i32 = 2_254_615;
+const LOCAL_BASE: i32 = 2_254_871;
+const TOKS_BASE: i32 = 2_254_884;
+const BOX_BASE: i32 = 2_255_144;
+const CUR_FONT_LOC: i32 = 2_255_400;
+const SF_CODE_BASE: i32 = 5_598_505;
+const MATH_CODE_BASE: i32 = 6_712_617;
+const COUNT_BASE: i32 = 7_826_812;
+const DEL_CODE_BASE: i32 = 7_827_068;
+const SCALED_BASE: i32 = 8_941_203;
+const PRIM_EQTB_BASE: i32 = 2_243_238;
+const FONT_ID_BASE: i32 = 2_245_338; // FROZEN_NULL_FONT
+const HASH_BASE: i32 = 2_228_226;
+const SINGLE_BASE: i32 = 1_114_113;
+const ACTIVE_BASE: i32 = 1;
+const FROZEN_RELAX: i32 = 2_243_233; // FROZEN_CONTROL_SEQUENCE + 7
+const FROZEN_PRIMITIVE: i32 = 2_243_237; // FROZEN_CONTROL_SEQUENCE + 11
+const UNDEFINED_PRIMITIVE: i32 = 0;
+// LOCAL__ offsets (xetex_format.h:172,183).
+const LOCAL_PAR_SHAPE: i32 = 0;
+const LOCAL_XETEX_INTER_CHAR_TOKS: i32 = 11;
+// Font flags (xetex-ext.h:47–48).
+const AAT_FONT_FLAG: i32 = 0xFFFF;
+const OTGR_FONT_FLAG: i32 = 0xFFFE;
+// LEFT/RIGHT side (xetex_layout/src/c_api.rs).
+const LEFT_SIDE: i32 = 0;
+const RIGHT_SIDE: i32 = 1;
+// LP/RP code bases for get_cp_code (xetex-constants.h:377–378).
+const LP_CODE_BASE: i32 = 2;
+const RP_CODE_BASE: i32 = 3;
+// LAST_ITEM sub-codes (xetex_format.h:572–636).
+const INPUT_LINE_NO_CODE: i32 = 4;
+const BADNESS_CODE: i32 = 5;
+const PDF_LAST_X_POS_CODE: i32 = 12;
+const PDF_LAST_Y_POS_CODE: i32 = 13;
+const ELAPSED_TIME_CODE: i32 = 16;
+const PDF_SHELL_ESCAPE_CODE: i32 = 17;
+const RANDOM_SEED_CODE: i32 = 18;
+const ETEX_VERSION_CODE: i32 = 19;
+const CURRENT_GROUP_LEVEL_CODE: i32 = 20;
+const CURRENT_GROUP_TYPE_CODE: i32 = 21;
+const CURRENT_IF_LEVEL_CODE: i32 = 22;
+const CURRENT_IF_TYPE_CODE: i32 = 23;
+const CURRENT_IF_BRANCH_CODE: i32 = 24;
+const GLUE_STRETCH_ORDER_CODE: i32 = 25;
+const GLUE_SHRINK_ORDER_CODE: i32 = 26;
+const XETEX_VERSION_CODE: i32 = 27;
+const XETEX_COUNT_GLYPHS_CODE: i32 = 28;
+const XETEX_COUNT_VARIATIONS_CODE: i32 = 29;
+const XETEX_VARIATION_CODE: i32 = 30;
+const XETEX_FIND_VARIATION_BY_NAME_CODE: i32 = 31;
+const XETEX_VARIATION_MIN_CODE: i32 = 32;
+const XETEX_VARIATION_MAX_CODE: i32 = 33;
+const XETEX_VARIATION_DEFAULT_CODE: i32 = 34;
+const XETEX_COUNT_FEATURES_CODE: i32 = 35;
+const XETEX_FEATURE_CODE_CODE: i32 = 36;
+const XETEX_FIND_FEATURE_BY_NAME_CODE: i32 = 37;
+const XETEX_IS_EXCLUSIVE_FEATURE_CODE: i32 = 38;
+const XETEX_COUNT_SELECTORS_CODE: i32 = 39;
+const XETEX_SELECTOR_CODE_CODE: i32 = 40;
+const XETEX_FIND_SELECTOR_BY_NAME_CODE: i32 = 41;
+const XETEX_IS_DEFAULT_SELECTOR_CODE: i32 = 42;
+const XETEX_OT_COUNT_SCRIPTS_CODE: i32 = 43;
+const XETEX_OT_COUNT_LANGUAGES_CODE: i32 = 44;
+const XETEX_OT_COUNT_FEATURES_CODE: i32 = 45;
+const XETEX_OT_SCRIPT_CODE: i32 = 46;
+const XETEX_OT_LANGUAGE_CODE: i32 = 47;
+const XETEX_OT_FEATURE_CODE: i32 = 48;
+const XETEX_MAP_CHAR_TO_GLYPH_CODE: i32 = 49;
+const XETEX_GLYPH_INDEX_CODE: i32 = 50;
+const XETEX_FONT_TYPE_CODE: i32 = 51;
+const XETEX_FIRST_CHAR_CODE: i32 = 52;
+const XETEX_LAST_CHAR_CODE: i32 = 53;
+const XETEX_PDF_PAGE_COUNT_CODE: i32 = 54;
+const XETEX_GLYPH_BOUNDS_CODE: i32 = 55;
+const FONT_CHAR_WD_CODE: i32 = 56;
+const FONT_CHAR_HT_CODE: i32 = 57;
+const FONT_CHAR_DP_CODE: i32 = 58;
+const FONT_CHAR_IC_CODE: i32 = 59;
+const PAR_SHAPE_LENGTH_CODE: i32 = 60;
+const PAR_SHAPE_INDENT_CODE: i32 = 61;
+const PAR_SHAPE_DIMEN_CODE: i32 = 62;
+const GLUE_STRETCH_CODE: i32 = 63;
+const GLUE_SHRINK_CODE: i32 = 64;
+const ETEX_GLUE: i32 = 65;
+const ETEX_MU: i32 = 66;
+const ETEX_EXPR: i32 = 67;
+const MU_TO_GLUE_CODE: i32 = 65;
+const GLUE_TO_MU_CODE: i32 = 66;
+const XETEX_INT: i32 = 27;
+const XETEX_DIM: i32 = 55;
+const LAST_NODE_TYPE_CODE_VAL: i32 = 3; // distinct name from other LAST_NODE_ uses
+// Node type codes (xetex_format.h:389–437).
+const MATH_NODE: u16 = 9;
+const GLUE_NODE: u16 = 10;
+const KERN_NODE: u16 = 11;
+const PENALTY_NODE: u16 = 12;
+const UNSET_NODE: u16 = 13;
+const END_M_CODE: u16 = 3;
+const MU_GLUE: u16 = 99;
+// Conditional codes (xetex_format.h:537–539).
+const FI_CODE: u8 = 2;
+const ELSE_CODE: u8 = 3;
+const OR_CODE: u8 = 4;
+const UNLESS_CODE: i32 = 32;
+// Engine version constants (xetex-constants.h:255,279).
+const ETEX_VERSION: i32 = 2;
+const XETEX_VERSION: i32 = 0;
+// Token category constants for scan_int (xetex-constants.h:357,363–370).
+const LETTER_TOKEN: i32 = 0x1600000;
+const A_TOKEN: i32 = LETTER_TOKEN + b'A' as i32;
+const OTHER_A_TOKEN: i32 = OTHER_TOKEN + b'A' as i32;
+const HEX_TOKEN: i32 = OTHER_TOKEN + b'"' as i32;
+const OCTAL_TOKEN: i32 = OTHER_TOKEN + b'\'' as i32;
+const CONTINENTAL_POINT_TOKEN: i32 = OTHER_TOKEN + b',' as i32;
+const POINT_TOKEN: i32 = OTHER_TOKEN + b'.' as i32;
+const ALPHA_TOKEN: i32 = OTHER_TOKEN + b'`' as i32;
+const FROZEN_PRIM_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_PRIMITIVE;
 
 // translated from xetex-xetex0.c:5050 (mu_error)
 #[no_mangle]
@@ -632,8 +821,6 @@ const EXPR_MULT: i16 = 3;
 const EXPR_DIV: i16 = 4;
 const EXPR_SCALE: i16 = 5;
 const EXPR_NODE_SIZE: i32 = 4;
-const INT_VAL: i16 = 0;
-const DIMEN_VAL: i16 = 1;
 const GLUE_VAL_EXPR: i16 = 2;
 const MU_VAL_EXPR: i16 = 3;
 const NORMAL_EXPR: u16 = 0;
@@ -1219,10 +1406,6 @@ pub unsafe extern "C" fn str_toks(b: i32) -> i32 {
 // the_toks
 // ---------------------------------------------------------------------------
 
-// xetex-constants.h:289, 293
-const IDENT_VAL: i16 = 4;
-const TOK_VAL: i16 = 5;
-
 /// translated from xetex-xetex0.c:6427 (the_toks)
 #[no_mangle]
 pub unsafe extern "C" fn the_toks() -> i32 {
@@ -1306,7 +1489,6 @@ pub unsafe extern "C" fn the_toks() -> i32 {
 const SKIPPING: u8 = 1;
 const IF_TEST: u8 = 107;
 const FI_OR_ELSE: u8 = 108;
-const FI_CODE: i32 = 2;
 // INT_PAR__tracing_ifs = 58 (xetex_format.h:93)
 const INT_PAR_TRACING_IFS: i32 = 58;
 
@@ -1324,7 +1506,7 @@ pub unsafe extern "C" fn pass_text() {
             if l == 0 {
                 break; // done:
             }
-            if cur_chr() == FI_CODE {
+            if cur_chr() == FI_CODE as i32 {
                 l -= 1;
             }
         } else if cur_cmd() == IF_TEST {
@@ -1912,14 +2094,8 @@ pub unsafe extern "C" fn extra_right_brace() {
 // scan_font_ident
 // ---------------------------------------------------------------------------
 
-// xetex_format.h:328,329,330,257,212
-const DEF_FAMILY: u8 = 88;
-const SET_FONT: u8 = 89;
-const DEF_FONT: u8 = 90;
 const FONT_BASE: i32 = 0;
 const FROZEN_NULL_FONT: i32 = 2_245_338;
-const FONT_ID_BASE: i32 = FROZEN_NULL_FONT;
-const CUR_FONT_LOC: i32 = 2_255_400;
 const SPACE_CODE: i32 = 2;
 const SPACE_SHRINK_CODE: i32 = 4;
 
@@ -2109,6 +2285,1071 @@ pub unsafe extern "C" fn pack_job_name(s: *const libc::c_char) {
     set_cur_ext(crate::texmfmp::maketexstring(s));
     set_cur_name(job_name());
     pack_file_name(crate::globals::cur_name(), crate::globals::cur_area(), crate::globals::cur_ext());
+}
+
+// ---------------------------------------------------------------------------
+// scan_something_internal
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:4505 (scan_something_internal)
+#[no_mangle]
+pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
+    use crate::globals::{
+        cur_cmd, cur_chr, cur_cs, cur_group, cur_if, cur_level, cur_list_aux_b32s0,
+        cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail, cur_ptr,
+        cur_val, cur_val1, cur_val_level, dead_cycles, eqtb_b32s1, eqtb_is_null,
+        font_area_entry, font_bc_entry, font_ec_entry, font_info_b16, font_layout_engine_ptr,
+        hash_s1, hi_mem_min, hyphen_char_entry, if_limit, insert_penalties, interaction,
+        last_badness, last_glue, last_kern, last_node_type, last_penalty,
+        mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1,
+        nest_mode, nest_prev_graf, nest_ptr, output_active, page_contents, page_so_far,
+        pdf_last_x_pos, pdf_last_y_pos, random_seed, save_cur_list_to_nest,
+        set_cur_cmd, set_cur_chr, set_cur_cs, set_cur_ptr, set_cur_tok, set_cur_val,
+        set_cur_val1, set_cur_val_level, set_help_line, set_help_ptr, set_mem_b32s1,
+        shell_escape_enabled, skew_char_entry,
+        char_base_entry, width_base_entry, height_base_entry, depth_base_entry,
+        italic_base_entry, font_info_b32s1,
+    };
+    use crate::mem::TEX_NULL;
+
+    let mut m: i32 = 0;
+    let mut n: i32 = 0;
+    let mut k: i32 = 0;
+    let mut kk: i32 = 0;
+    let mut q: i32 = 0;
+    let mut r: i32 = 0;
+    let mut tx: i32 = 0;
+
+    // The C function has a `goto restart` handled here with a loop.
+    'restart: loop {
+        m = cur_chr();
+
+        match cur_cmd() {
+            DEF_CODE => {
+                scan_usv_num();
+                if m == MATH_CODE_BASE {
+                    let code = eqtb_b32s1(MATH_CODE_BASE + cur_val());
+                    set_cur_val1(code);
+                    let class = ((code as u32 >> 21) & 0x07) as i32;
+                    let fam   = ((code as u32 >> 24) & 0xFF) as i32;
+                    let ch    = (code as u32 & 0x1FFFFF) as i32;
+                    if ch == ACTIVE_MATH_CHAR {
+                        set_cur_val1(0x8000);
+                    } else if class > 7 || fam > 15 || ch > 255 {
+                        let errmsg = error_here_with_diagnostic(
+                            c"Extended mathchar used as mathchar".as_ptr());
+                        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val1());
+                        capture_to_diagnostic(std::ptr::null_mut());
+                        set_help_ptr(2);
+                        set_help_line(1, c"A mathchar number must be between 0 and \"7FFF.".as_ptr());
+                        set_help_line(0, c"I changed this one to zero.".as_ptr());
+                        int_error(cur_val1());
+                        set_cur_val1(0);
+                    }
+                    let v = ((cur_val1() as u32 >> 21) & 0x07) as i32 * 0x1000
+                        + ((cur_val1() as u32 >> 24) & 0xFF) as i32 * 0x100
+                        + (cur_val1() as u32 & 0x1FFFFF) as i32;
+                    set_cur_val(v);
+                    set_cur_val_level(INT_VAL as u8);
+                } else if m == DEL_CODE_BASE {
+                    let code = eqtb_b32s1(DEL_CODE_BASE + cur_val());
+                    set_cur_val1(code);
+                    if cur_val1() >= 0x40000000 {
+                        error_here_with_diagnostic(
+                            c"Extended delcode used as delcode".as_ptr());
+                        capture_to_diagnostic(std::ptr::null_mut());
+                        set_help_ptr(2);
+                        set_help_line(1, c"I can only go up to 2147483647='17777777777=\"7FFFFFFF,".as_ptr());
+                        set_help_line(0, c"I changed this one to zero.".as_ptr());
+                        error();
+                        set_cur_val(0);
+                        set_cur_val_level(INT_VAL as u8);
+                    } else {
+                        set_cur_val(cur_val1());
+                        set_cur_val_level(INT_VAL as u8);
+                    }
+                } else if m < SF_CODE_BASE {
+                    set_cur_val(eqtb_b32s1(m + cur_val()));
+                    set_cur_val_level(INT_VAL as u8);
+                } else if m < MATH_CODE_BASE {
+                    set_cur_val(eqtb_b32s1(m + cur_val()) % 65536);
+                    set_cur_val_level(INT_VAL as u8);
+                } else {
+                    set_cur_val(eqtb_b32s1(m + cur_val()));
+                    set_cur_val_level(INT_VAL as u8);
+                }
+            }
+            XETEX_DEF_CODE => {
+                scan_usv_num();
+                if m == SF_CODE_BASE {
+                    set_cur_val(eqtb_b32s1(SF_CODE_BASE + cur_val()) / 65536);
+                    set_cur_val_level(INT_VAL as u8);
+                } else if m == MATH_CODE_BASE {
+                    set_cur_val(eqtb_b32s1(MATH_CODE_BASE + cur_val()));
+                    set_cur_val_level(INT_VAL as u8);
+                } else if m == MATH_CODE_BASE + 1 {
+                    error_here_with_diagnostic(
+                        c"Can't use \\Umathcode as a number (try \\Umathcodenum)".as_ptr());
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(2);
+                    set_help_line(1, c"\\Umathcode is for setting a mathcode from separate values;".as_ptr());
+                    set_help_line(0, c"use \\Umathcodenum to access them as single values.".as_ptr());
+                    error();
+                    set_cur_val(0);
+                    set_cur_val_level(INT_VAL as u8);
+                } else if m == DEL_CODE_BASE {
+                    set_cur_val(eqtb_b32s1(DEL_CODE_BASE + cur_val()));
+                    set_cur_val_level(INT_VAL as u8);
+                } else {
+                    error_here_with_diagnostic(
+                        c"Can't use \\Udelcode as a number (try \\Udelcodenum)".as_ptr());
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(2);
+                    set_help_line(1, c"\\Udelcode is for setting a delcode from separate values;".as_ptr());
+                    set_help_line(0, c"use \\Udelcodenum to access them as single values.".as_ptr());
+                    error();
+                    set_cur_val(0);
+                    set_cur_val_level(INT_VAL as u8);
+                }
+            }
+            TOKS_REGISTER | ASSIGN_TOKS | DEF_FAMILY | SET_FONT | DEF_FONT => {
+                if level != TOK_VAL {
+                    error_here_with_diagnostic(c"Missing number, treated as zero".as_ptr());
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(3);
+                    set_help_line(2, c"A number should have been here; I inserted `0'.".as_ptr());
+                    set_help_line(1, c"(If you can't figure out why I needed to see a number,".as_ptr());
+                    set_help_line(0, c"look up `weird error' in the index to The TeXbook.)".as_ptr());
+                    crate::input::back_error();
+                    set_cur_val(0);
+                    set_cur_val_level(DIMEN_VAL as u8);
+                } else if cur_cmd() <= ASSIGN_TOKS {
+                    if cur_cmd() < ASSIGN_TOKS {
+                        if m == 0 {
+                            scan_register_num();
+                            if cur_val() < 256 {
+                                set_cur_val(eqtb_b32s1(TOKS_BASE + cur_val()));
+                            } else {
+                                crate::save::find_sa_element(TOK_VAL as u16, cur_val(), false);
+                                if cur_ptr() == TEX_NULL {
+                                    set_cur_val(TEX_NULL);
+                                } else {
+                                    set_cur_val(mem_b32s1(cur_ptr() + 1));
+                                }
+                            }
+                        } else {
+                            set_cur_val(mem_b32s1(m + 1));
+                        }
+                    } else if cur_chr() == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
+                        scan_char_class_not_ignored();
+                        set_cur_ptr(cur_val());
+                        scan_char_class_not_ignored();
+                        crate::save::find_sa_element(
+                            INTER_CHAR_VAL as u16,
+                            cur_ptr() * CHAR_CLASS_LIMIT + cur_val(),
+                            false,
+                        );
+                        if cur_ptr() == TEX_NULL {
+                            set_cur_val(TEX_NULL);
+                        } else {
+                            set_cur_val(mem_b32s1(cur_ptr() + 1));
+                        }
+                    } else {
+                        set_cur_val(eqtb_b32s1(m));
+                    }
+                    set_cur_val_level(TOK_VAL as u8);
+                } else {
+                    crate::input::back_input();
+                    crate::scan::scan_font_ident();
+                    set_cur_val(FONT_ID_BASE + cur_val());
+                    set_cur_val_level(IDENT_VAL as u8);
+                }
+            }
+            ASSIGN_INT => {
+                set_cur_val(eqtb_b32s1(m));
+                set_cur_val_level(INT_VAL as u8);
+            }
+            ASSIGN_DIMEN => {
+                set_cur_val(eqtb_b32s1(m));
+                set_cur_val_level(DIMEN_VAL as u8);
+            }
+            ASSIGN_GLUE => {
+                set_cur_val(eqtb_b32s1(m));
+                set_cur_val_level(GLUE_VAL as u8);
+            }
+            ASSIGN_MU_GLUE => {
+                set_cur_val(eqtb_b32s1(m));
+                set_cur_val_level(MU_VAL as u8);
+            }
+            SET_AUX => {
+                if (cur_list_mode().abs() as i32) != m {
+                    error_here_with_diagnostic(c"Improper ".as_ptr());
+                    print_cmd_chr(SET_AUX as u16, m);
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(4);
+                    set_help_line(3, c"You can refer to \\spacefactor only in horizontal mode;".as_ptr());
+                    set_help_line(2, c"you can refer to \\prevdepth only in vertical mode; and".as_ptr());
+                    set_help_line(1, c"neither of these is meaningful inside \\write. So".as_ptr());
+                    set_help_line(0, c"I'm forgetting what you said and using zero instead.".as_ptr());
+                    error();
+                    if level != TOK_VAL {
+                        set_cur_val(0);
+                        set_cur_val_level(DIMEN_VAL as u8);
+                    } else {
+                        set_cur_val(0);
+                        set_cur_val_level(INT_VAL as u8);
+                    }
+                } else if m == VMODE as i32 {
+                    set_cur_val(cur_list_aux_b32s1());
+                    set_cur_val_level(DIMEN_VAL as u8);
+                } else {
+                    set_cur_val(cur_list_aux_b32s0());
+                    set_cur_val_level(INT_VAL as u8);
+                }
+            }
+            SET_PREV_GRAF => {
+                if cur_list_mode() == 0 {
+                    set_cur_val(0);
+                    set_cur_val_level(INT_VAL as u8);
+                } else {
+                    save_cur_list_to_nest(nest_ptr());
+                    let mut p = nest_ptr();
+                    while (nest_mode(p).abs() as i32) != VMODE as i32 {
+                        p -= 1;
+                    }
+                    set_cur_val(nest_prev_graf(p));
+                    set_cur_val_level(INT_VAL as u8);
+                }
+            }
+            SET_PAGE_INT => {
+                if m == 0 {
+                    set_cur_val(dead_cycles());
+                } else if m == 2 {
+                    set_cur_val(interaction() as i32);
+                } else {
+                    set_cur_val(insert_penalties());
+                }
+                set_cur_val_level(INT_VAL as u8);
+            }
+            SET_PAGE_DIMEN => {
+                if page_contents() == 0 && !output_active() {
+                    if m == 0 {
+                        set_cur_val(MAX_HALFWORD);
+                    } else {
+                        set_cur_val(0);
+                    }
+                } else {
+                    set_cur_val(page_so_far(m as usize));
+                }
+                set_cur_val_level(DIMEN_VAL as u8);
+            }
+            SET_SHAPE => {
+                if m > LOCAL_BASE + LOCAL_PAR_SHAPE {
+                    scan_int();
+                    let shape_ptr = eqtb_b32s1(m);
+                    if shape_ptr == TEX_NULL || cur_val() < 0 {
+                        set_cur_val(0);
+                    } else {
+                        let cnt = mem_b32s1(shape_ptr + 1);
+                        if cur_val() > cnt {
+                            set_cur_val(cnt);
+                        }
+                        set_cur_val(mem_b32s1(shape_ptr + cur_val() + 1));
+                    }
+                } else {
+                    let par_shape = eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+                    if par_shape == TEX_NULL {
+                        set_cur_val(0);
+                    } else {
+                        set_cur_val(mem_b32s0(par_shape));
+                    }
+                }
+                set_cur_val_level(INT_VAL as u8);
+            }
+            SET_BOX_DIMEN => {
+                scan_register_num();
+                if cur_val() < 256 {
+                    q = eqtb_b32s1(BOX_BASE + cur_val());
+                } else {
+                    crate::save::find_sa_element(4, cur_val(), false);
+                    if cur_ptr() == TEX_NULL {
+                        q = TEX_NULL;
+                    } else {
+                        q = mem_b32s1(cur_ptr() + 1);
+                    }
+                }
+                if q == TEX_NULL {
+                    set_cur_val(0);
+                } else {
+                    set_cur_val(mem_b32s1(q + m));
+                }
+                set_cur_val_level(DIMEN_VAL as u8);
+            }
+            CHAR_GIVEN | MATH_GIVEN | XETEX_MATH_GIVEN => {
+                set_cur_val(cur_chr());
+                set_cur_val_level(INT_VAL as u8);
+            }
+            ASSIGN_FONT_DIMEN => {
+                find_font_dimen(false);
+                set_font_info_b32s1(fmem_ptr(), 0);
+                set_cur_val(font_info_b32s1(cur_val()));
+                set_cur_val_level(DIMEN_VAL as u8);
+            }
+            ASSIGN_FONT_INT => {
+                crate::scan::scan_font_ident();
+                if m == 0 {
+                    set_cur_val(hyphen_char_entry(cur_val()));
+                    set_cur_val_level(INT_VAL as u8);
+                } else if m == 1 {
+                    set_cur_val(skew_char_entry(cur_val()));
+                    set_cur_val_level(INT_VAL as u8);
+                } else {
+                    n = cur_val();
+                    let fa = font_area_entry(n);
+                    if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
+                        scan_glyph_number(n);
+                    } else {
+                        scan_char_num();
+                    }
+                    k = cur_val();
+                    match m {
+                        LP_CODE_BASE => {
+                            set_cur_val(get_cp_code(n, k as u32, LEFT_SIDE));
+                            set_cur_val_level(INT_VAL as u8);
+                        }
+                        RP_CODE_BASE => {
+                            set_cur_val(get_cp_code(n, k as u32, RIGHT_SIDE));
+                            set_cur_val_level(INT_VAL as u8);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            REGISTER => {
+                if m < 0 || m > 19 {
+                    set_cur_val_level((mem_b16s1(m) / 64) as u8);
+                    if (cur_val_level() as i16) < GLUE_VAL {
+                        set_cur_val(mem_b32s1(m + 2));
+                    } else {
+                        set_cur_val(mem_b32s1(m + 1));
+                    }
+                } else {
+                    scan_register_num();
+                    set_cur_val_level(m as u8);
+                    if cur_val() > 255 {
+                        crate::save::find_sa_element(cur_val_level() as u16, cur_val(), false);
+                        if cur_ptr() == TEX_NULL {
+                            set_cur_val(0);
+                        } else if (cur_val_level() as i16) < GLUE_VAL {
+                            set_cur_val(mem_b32s1(cur_ptr() + 2));
+                        } else {
+                            set_cur_val(mem_b32s1(cur_ptr() + 1));
+                        }
+                    } else {
+                        match cur_val_level() as i16 {
+                            INT_VAL => set_cur_val(eqtb_b32s1(COUNT_BASE + cur_val())),
+                            DIMEN_VAL => set_cur_val(eqtb_b32s1(SCALED_BASE + cur_val())),
+                            GLUE_VAL => set_cur_val(eqtb_b32s1(SKIP_BASE + cur_val())),
+                            MU_VAL => set_cur_val(eqtb_b32s1(MU_SKIP_BASE + cur_val())),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            LAST_ITEM => {
+                if m >= INPUT_LINE_NO_CODE {
+                    if m >= ETEX_GLUE {
+                        if m < ETEX_MU {
+                            if m == MU_TO_GLUE_CODE {
+                                scan_mu_glue();
+                            }
+                            set_cur_val_level(GLUE_VAL as u8);
+                        } else if m < ETEX_EXPR {
+                            if m == GLUE_TO_MU_CODE {
+                                scan_normal_glue();
+                            }
+                            set_cur_val_level(MU_VAL as u8);
+                        } else {
+                            set_cur_val_level((m - ETEX_EXPR) as u8);
+                            scan_expr();
+                        }
+                        while (cur_val_level() as i16) > level {
+                            if (cur_val_level() as i16) == GLUE_VAL {
+                                let gm = cur_val();
+                                set_cur_val(mem_b32s1(gm + 1));
+                                crate::mem::delete_glue_ref(gm);
+                            } else if (cur_val_level() as i16) == MU_VAL {
+                                mu_error();
+                            }
+                            set_cur_val_level(cur_val_level() - 1);
+                        }
+                        if negative {
+                            if (cur_val_level() as i16) >= GLUE_VAL {
+                                let gm = cur_val();
+                                set_cur_val(new_spec(gm));
+                                crate::mem::delete_glue_ref(gm);
+                                set_mem_b32s1(cur_val() + 1, -(mem_b32s1(cur_val() + 1)));
+                                set_mem_b32s1(cur_val() + 2, -(mem_b32s1(cur_val() + 2)));
+                                set_mem_b32s1(cur_val() + 3, -(mem_b32s1(cur_val() + 3)));
+                            } else {
+                                set_cur_val(-cur_val());
+                            }
+                        }
+                        return;
+                    }
+                    if m >= XETEX_DIM {
+                        match m {
+                            XETEX_GLYPH_BOUNDS_CODE => {
+                                let cf = eqtb_b32s1(CUR_FONT_LOC);
+                                let fa = font_area_entry(cf);
+                                if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
+                                    scan_int();
+                                    n = cur_val();
+                                    if n < 1 || n > 4 {
+                                        error_here_with_diagnostic(
+                                            c"\\\\XeTeXglyphbounds requires an edge index from 1 to 4;".as_ptr());
+                                        crate::output::print_nl_cstr(c"I don't know anything about edge ".as_ptr());
+                                        crate::output::print_int(n);
+                                        capture_to_diagnostic(std::ptr::null_mut());
+                                        error();
+                                        set_cur_val(0);
+                                    } else {
+                                        scan_int();
+                                        set_cur_val(get_glyph_bounds(cf, n, cur_val()));
+                                    }
+                                } else {
+                                    not_native_font_error(LAST_ITEM as i32, m, cf);
+                                    set_cur_val(0);
+                                }
+                            }
+                            FONT_CHAR_WD_CODE | FONT_CHAR_HT_CODE | FONT_CHAR_DP_CODE | FONT_CHAR_IC_CODE => {
+                                crate::scan::scan_font_ident();
+                                q = cur_val();
+                                scan_usv_num();
+                                let fa = font_area_entry(q);
+                                if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
+                                    set_cur_val(match m {
+                                        FONT_CHAR_WD_CODE => getnativecharwd(q, cur_val()),
+                                        FONT_CHAR_HT_CODE => getnativecharht(q, cur_val()),
+                                        FONT_CHAR_DP_CODE => getnativechardp(q, cur_val()),
+                                        _ => getnativecharic(q, cur_val()),
+                                    });
+                                } else {
+                                    let bc = font_bc_entry(q) as i32;
+                                    let ec = font_ec_entry(q) as i32;
+                                    if bc <= cur_val() && ec >= cur_val() {
+                                        let i = font_info_b16(
+                                            char_base_entry(q) + effective_char(true, q, cur_val() as u16));
+                                        set_cur_val(match m {
+                                            FONT_CHAR_WD_CODE =>
+                                                font_info_b32s1(width_base_entry(q) + i.s3 as i32),
+                                            FONT_CHAR_HT_CODE =>
+                                                font_info_b32s1(height_base_entry(q) + i.s2 as i32 / 16),
+                                            FONT_CHAR_DP_CODE =>
+                                                font_info_b32s1(depth_base_entry(q) + i.s2 as i32 % 16),
+                                            _ =>
+                                                font_info_b32s1(italic_base_entry(q) + i.s1 as i32 / 4),
+                                        });
+                                    } else {
+                                        set_cur_val(0);
+                                    }
+                                }
+                            }
+                            PAR_SHAPE_LENGTH_CODE | PAR_SHAPE_INDENT_CODE | PAR_SHAPE_DIMEN_CODE => {
+                                q = cur_chr() - PAR_SHAPE_LENGTH_CODE;
+                                scan_int();
+                                let par_shape = eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+                                if par_shape == TEX_NULL || cur_val() <= 0 {
+                                    set_cur_val(0);
+                                } else {
+                                    if q == 2 {
+                                        q = cur_val() % 2;
+                                        set_cur_val((cur_val() + q) / 2);
+                                    }
+                                    let cnt = mem_b32s0(par_shape);
+                                    if cur_val() > cnt { set_cur_val(cnt); }
+                                    set_cur_val(mem_b32s1(par_shape + 2 * cur_val() - q));
+                                }
+                                set_cur_val_level(DIMEN_VAL as u8);
+                            }
+                            GLUE_STRETCH_CODE | GLUE_SHRINK_CODE => {
+                                scan_normal_glue();
+                                q = cur_val();
+                                if m == GLUE_STRETCH_CODE {
+                                    set_cur_val(mem_b32s1(q + 2));
+                                } else {
+                                    set_cur_val(mem_b32s1(q + 3));
+                                }
+                                crate::mem::delete_glue_ref(q);
+                            }
+                            _ => {}
+                        }
+                        set_cur_val_level(DIMEN_VAL as u8);
+                    } else {
+                        // m >= INPUT_LINE_NO_CODE && m < XETEX_DIM
+                        match m {
+                            INPUT_LINE_NO_CODE => { set_cur_val(crate::globals::line()); }
+                            BADNESS_CODE => { set_cur_val(last_badness()); }
+                            ELAPSED_TIME_CODE => { set_cur_val(crate::texmfmp::get_microinterval()); }
+                            RANDOM_SEED_CODE => { set_cur_val(random_seed()); }
+                            PDF_SHELL_ESCAPE_CODE => {
+                                set_cur_val(if shell_escape_enabled() { 1 } else { 0 });
+                            }
+                            ETEX_VERSION_CODE => { set_cur_val(ETEX_VERSION); }
+                            XETEX_VERSION_CODE => { set_cur_val(XETEX_VERSION); }
+                            XETEX_COUNT_GLYPHS_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                set_cur_val(if fa == AAT_FONT_FLAG {
+                                    aat_font_get(m - XETEX_INT, engine)
+                                } else if fa == OTGR_FONT_FLAG {
+                                    ot_font_get(m - XETEX_INT, engine)
+                                } else { 0 });
+                            }
+                            XETEX_COUNT_FEATURES_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                set_cur_val(if fa == AAT_FONT_FLAG {
+                                    aat_font_get(m - XETEX_INT, engine)
+                                } else if fa == OTGR_FONT_FLAG && usingGraphite(engine) {
+                                    ot_font_get(m - XETEX_INT, engine)
+                                } else { 0 });
+                            }
+                            XETEX_VARIATION_CODE | XETEX_VARIATION_MIN_CODE
+                            | XETEX_VARIATION_MAX_CODE | XETEX_VARIATION_DEFAULT_CODE
+                            | XETEX_COUNT_VARIATIONS_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                set_cur_val(0);
+                            }
+                            XETEX_FEATURE_CODE_CODE | XETEX_IS_EXCLUSIVE_FEATURE_CODE
+                            | XETEX_COUNT_SELECTORS_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                if fa == AAT_FONT_FLAG {
+                                    scan_int();
+                                    k = cur_val();
+                                    set_cur_val(aat_font_get_1(m - XETEX_INT, engine, k));
+                                } else if fa == OTGR_FONT_FLAG && usingGraphite(engine) {
+                                    scan_int();
+                                    k = cur_val();
+                                    set_cur_val(ot_font_get_1(m - XETEX_INT, engine, k));
+                                } else {
+                                    not_aat_gr_font_error(LAST_ITEM as i32, m, n);
+                                    set_cur_val(-1);
+                                }
+                            }
+                            XETEX_SELECTOR_CODE_CODE | XETEX_IS_DEFAULT_SELECTOR_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                if fa == AAT_FONT_FLAG {
+                                    scan_int(); k = cur_val();
+                                    scan_int();
+                                    set_cur_val(aat_font_get_2(m - XETEX_INT, engine, k, cur_val()));
+                                } else if fa == OTGR_FONT_FLAG && usingGraphite(engine) {
+                                    scan_int(); k = cur_val();
+                                    scan_int();
+                                    set_cur_val(ot_font_get_2(m - XETEX_INT, engine, k, cur_val()));
+                                } else {
+                                    not_aat_gr_font_error(LAST_ITEM as i32, m, n);
+                                    set_cur_val(-1);
+                                }
+                            }
+                            XETEX_FIND_VARIATION_BY_NAME_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                if fa == AAT_FONT_FLAG {
+                                    scan_and_pack_name();
+                                    set_cur_val(aat_font_get_named(m - XETEX_INT, engine));
+                                } else {
+                                    not_aat_font_error(LAST_ITEM as i32, m, n);
+                                    set_cur_val(-1);
+                                }
+                            }
+                            XETEX_FIND_FEATURE_BY_NAME_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                if fa == AAT_FONT_FLAG {
+                                    scan_and_pack_name();
+                                    set_cur_val(aat_font_get_named(m - XETEX_INT, engine));
+                                } else if fa == OTGR_FONT_FLAG && usingGraphite(engine) {
+                                    scan_and_pack_name();
+                                    set_cur_val(gr_font_get_named(m - XETEX_INT, engine));
+                                } else {
+                                    not_aat_gr_font_error(LAST_ITEM as i32, m, n);
+                                    set_cur_val(-1);
+                                }
+                            }
+                            XETEX_FIND_SELECTOR_BY_NAME_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                if fa == AAT_FONT_FLAG {
+                                    scan_int(); k = cur_val();
+                                    scan_and_pack_name();
+                                    set_cur_val(aat_font_get_named_1(m - XETEX_INT, engine, k));
+                                } else if fa == OTGR_FONT_FLAG && usingGraphite(engine) {
+                                    scan_int(); k = cur_val();
+                                    scan_and_pack_name();
+                                    set_cur_val(gr_font_get_named_1(m - XETEX_INT, engine, k));
+                                } else {
+                                    not_aat_gr_font_error(LAST_ITEM as i32, m, n);
+                                    set_cur_val(-1);
+                                }
+                            }
+                            XETEX_OT_COUNT_SCRIPTS_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                set_cur_val(if fa == OTGR_FONT_FLAG && usingOpenType(engine) {
+                                    ot_font_get(m - XETEX_INT, engine)
+                                } else { 0 });
+                            }
+                            XETEX_OT_COUNT_LANGUAGES_CODE | XETEX_OT_SCRIPT_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                if fa == OTGR_FONT_FLAG && usingOpenType(engine) {
+                                    scan_int();
+                                    set_cur_val(ot_font_get_1(m - XETEX_INT, engine, cur_val()));
+                                } else {
+                                    not_ot_font_error(LAST_ITEM as i32, m, n);
+                                    set_cur_val(-1);
+                                }
+                            }
+                            XETEX_OT_COUNT_FEATURES_CODE | XETEX_OT_LANGUAGE_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                if fa == OTGR_FONT_FLAG && usingOpenType(engine) {
+                                    scan_int(); k = cur_val();
+                                    scan_int();
+                                    set_cur_val(ot_font_get_2(m - XETEX_INT, engine, k, cur_val()));
+                                } else {
+                                    not_ot_font_error(LAST_ITEM as i32, m, n);
+                                    set_cur_val(-1);
+                                }
+                            }
+                            XETEX_OT_FEATURE_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                if fa == OTGR_FONT_FLAG && usingOpenType(engine) {
+                                    scan_int(); k = cur_val();
+                                    scan_int(); kk = cur_val();
+                                    scan_int();
+                                    set_cur_val(ot_font_get_3(m - XETEX_INT, engine, k, kk, cur_val()));
+                                } else {
+                                    not_ot_font_error(LAST_ITEM as i32, m, n);
+                                    set_cur_val(-1);
+                                }
+                            }
+                            XETEX_MAP_CHAR_TO_GLYPH_CODE => {
+                                let cf = eqtb_b32s1(CUR_FONT_LOC);
+                                let fa = font_area_entry(cf);
+                                if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
+                                    scan_int();
+                                    n = cur_val();
+                                    set_cur_val(map_char_to_glyph(cf, n));
+                                } else {
+                                    not_native_font_error(LAST_ITEM as i32, m, cf);
+                                    set_cur_val(0);
+                                }
+                            }
+                            XETEX_GLYPH_INDEX_CODE => {
+                                let cf = eqtb_b32s1(CUR_FONT_LOC);
+                                let fa = font_area_entry(cf);
+                                if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
+                                    scan_and_pack_name();
+                                    set_cur_val(map_glyph_to_index(cf));
+                                } else {
+                                    not_native_font_error(LAST_ITEM as i32, m, cf);
+                                    set_cur_val(0);
+                                }
+                            }
+                            XETEX_FONT_TYPE_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let engine = font_layout_engine_ptr(n);
+                                let fa = font_area_entry(n);
+                                set_cur_val(if fa == AAT_FONT_FLAG { 1 }
+                                    else if fa == OTGR_FONT_FLAG && usingOpenType(engine) { 2 }
+                                    else if fa == OTGR_FONT_FLAG && usingGraphite(engine) { 3 }
+                                    else { 0 });
+                            }
+                            XETEX_FIRST_CHAR_CODE | XETEX_LAST_CHAR_CODE => {
+                                crate::scan::scan_font_ident();
+                                n = cur_val();
+                                let fa = font_area_entry(n);
+                                if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
+                                    set_cur_val(get_font_char_range(
+                                        n, (m == XETEX_FIRST_CHAR_CODE) as i32));
+                                } else if m == XETEX_FIRST_CHAR_CODE {
+                                    set_cur_val(font_bc_entry(n) as i32);
+                                } else {
+                                    set_cur_val(font_ec_entry(n) as i32);
+                                }
+                            }
+                            PDF_LAST_X_POS_CODE => { set_cur_val(pdf_last_x_pos()); }
+                            PDF_LAST_Y_POS_CODE => { set_cur_val(pdf_last_y_pos()); }
+                            XETEX_PDF_PAGE_COUNT_CODE => {
+                                scan_and_pack_name();
+                                set_cur_val(count_pdf_file_pages());
+                            }
+                            CURRENT_GROUP_LEVEL_CODE => {
+                                set_cur_val(cur_level() as i32 - 1);
+                            }
+                            CURRENT_GROUP_TYPE_CODE => {
+                                set_cur_val(cur_group() as i32);
+                            }
+                            CURRENT_IF_LEVEL_CODE => {
+                                q = crate::globals::cond_ptr();
+                                let mut cnt = 0i32;
+                                while q != TEX_NULL {
+                                    cnt += 1;
+                                    q = mem_b32s1(q);
+                                }
+                                set_cur_val(cnt);
+                            }
+                            CURRENT_IF_TYPE_CODE => {
+                                if crate::globals::cond_ptr() == TEX_NULL {
+                                    set_cur_val(0);
+                                } else if (cur_if() as i32) < UNLESS_CODE {
+                                    set_cur_val(cur_if() as i32 + 1);
+                                } else {
+                                    set_cur_val(-(cur_if() as i32 - 31));
+                                }
+                            }
+                            CURRENT_IF_BRANCH_CODE => {
+                                let ifl = if_limit();
+                                if ifl == OR_CODE || ifl == ELSE_CODE {
+                                    set_cur_val(1);
+                                } else if ifl == FI_CODE {
+                                    set_cur_val(-1);
+                                } else {
+                                    set_cur_val(0);
+                                }
+                            }
+                            GLUE_STRETCH_ORDER_CODE | GLUE_SHRINK_ORDER_CODE => {
+                                scan_normal_glue();
+                                q = cur_val();
+                                if m == GLUE_STRETCH_ORDER_CODE {
+                                    set_cur_val(mem_b16s1(q) as i32);
+                                } else {
+                                    set_cur_val(mem_b16s0(q) as i32);
+                                }
+                                crate::mem::delete_glue_ref(q);
+                            }
+                            _ => {}
+                        }
+                        set_cur_val_level(INT_VAL as u8);
+                    }
+                } else {
+                    // m < INPUT_LINE_NO_CODE: last-node queries
+                    set_cur_val(0);
+                    tx = cur_list_tail();
+                    if tx < hi_mem_min() {
+                        let node_type = mem_b16s1(tx);
+                        let subtype = mem_b16s0(tx);
+                        if node_type == MATH_NODE && subtype == END_M_CODE {
+                            r = cur_list_head();
+                            loop {
+                                q = r;
+                                r = mem_b32s1(q);
+                                if r == tx { break; }
+                            }
+                            tx = q;
+                        }
+                    }
+                    if cur_chr() == LAST_NODE_TYPE_CODE_VAL {
+                        set_cur_val_level(INT_VAL as u8);
+                        if tx == cur_list_head() || cur_list_mode() == 0 {
+                            set_cur_val(-1);
+                        }
+                    } else {
+                        set_cur_val_level(cur_chr() as u8);
+                    }
+                    if tx < hi_mem_min() && cur_list_mode() != 0 {
+                        let node_type = mem_b16s1(tx);
+                        match cur_chr() {
+                            x if x == INT_VAL as i32 => {
+                                if node_type == PENALTY_NODE {
+                                    set_cur_val(mem_b32s1(tx + 1));
+                                }
+                            }
+                            x if x == DIMEN_VAL as i32 => {
+                                if node_type == KERN_NODE {
+                                    set_cur_val(mem_b32s1(tx + 1));
+                                }
+                            }
+                            x if x == GLUE_VAL as i32 => {
+                                if node_type == GLUE_NODE {
+                                    set_cur_val(mem_b32s0(tx + 1));
+                                    if mem_b16s0(tx) == MU_GLUE {
+                                        set_cur_val_level(MU_VAL as u8);
+                                    }
+                                }
+                            }
+                            x if x == LAST_NODE_TYPE_CODE_VAL => {
+                                if node_type <= UNSET_NODE {
+                                    set_cur_val(node_type as i32 + 1);
+                                } else {
+                                    set_cur_val(UNSET_NODE as i32 + 2);
+                                }
+                            }
+                            _ => {}
+                        }
+                    } else if cur_list_mode() == VMODE && tx == cur_list_head() {
+                        match cur_chr() {
+                            x if x == INT_VAL as i32 => set_cur_val(last_penalty()),
+                            x if x == DIMEN_VAL as i32 => set_cur_val(last_kern()),
+                            x if x == GLUE_VAL as i32 => {
+                                if last_glue() != MAX_HALFWORD {
+                                    set_cur_val(last_glue());
+                                }
+                            }
+                            x if x == LAST_NODE_TYPE_CODE_VAL => set_cur_val(last_node_type()),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            IGNORE_SPACES => {
+                if cur_chr() == 1 {
+                    crate::scan::get_token();
+                    if cur_cs() < HASH_BASE {
+                        set_cur_cs(crate::hash::prim_lookup(cur_cs() - SINGLE_BASE));
+                    } else {
+                        set_cur_cs(crate::hash::prim_lookup(hash_s1(cur_cs())));
+                    }
+                    if cur_cs() != UNDEFINED_PRIMITIVE {
+                        set_cur_cmd(crate::globals::eqtb_b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
+                        set_cur_chr(eqtb_b32s1(PRIM_EQTB_BASE + cur_cs()));
+                        set_cur_cs(PRIM_EQTB_BASE + cur_cs());
+                        set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+                    } else {
+                        set_cur_cmd(RELAX);
+                        set_cur_chr(0);
+                        set_cur_tok(CS_TOKEN_FLAG + FROZEN_RELAX);
+                        set_cur_cs(FROZEN_RELAX);
+                    }
+                    continue 'restart;
+                }
+            }
+            _ => {
+                error_here_with_diagnostic(c"You can't use `".as_ptr());
+                print_cmd_chr(cur_cmd() as u16, cur_chr());
+                crate::output::print_cstr(c"' after ".as_ptr());
+                crate::output::print_esc_cstr(c"the".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(1);
+                set_help_line(0, c"I'm forgetting what you said and using zero instead.".as_ptr());
+                error();
+                set_cur_val(0);
+                if level != TOK_VAL {
+                    set_cur_val_level(DIMEN_VAL as u8);
+                } else {
+                    set_cur_val_level(INT_VAL as u8);
+                }
+            }
+        }
+        break; // end 'restart loop
+    }
+
+    // Coerce cur_val to the requested level.
+    while (cur_val_level() as i16) > level {
+        if (cur_val_level() as i16) == GLUE_VAL {
+            set_cur_val(mem_b32s1(cur_val() + 1));
+        } else if (cur_val_level() as i16) == MU_VAL {
+            mu_error();
+        }
+        set_cur_val_level(cur_val_level() - 1);
+    }
+
+    if negative {
+        if (cur_val_level() as i16) >= GLUE_VAL {
+            let gm = cur_val();
+            set_cur_val(new_spec(gm));
+            set_mem_b32s1(cur_val() + 1, -(mem_b32s1(cur_val() + 1)));
+            set_mem_b32s1(cur_val() + 2, -(mem_b32s1(cur_val() + 2)));
+            set_mem_b32s1(cur_val() + 3, -(mem_b32s1(cur_val() + 3)));
+        } else {
+            set_cur_val(-cur_val());
+        }
+    } else if (cur_val_level() as i16) >= GLUE_VAL && (cur_val_level() as i16) <= MU_VAL {
+        // GLUE_SPEC_ref_count(cur_val)++
+        set_mem_b32s1(cur_val(), mem_b32s1(cur_val()) + 1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// scan_int
+// ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:5465 (scan_int)
+#[no_mangle]
+pub unsafe extern "C" fn scan_int() {
+    use crate::globals::{
+        cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1,
+        hash_s1, set_cur_cmd, set_cur_chr, set_cur_cs, set_cur_tok, set_cur_val,
+        set_help_line, set_help_ptr, set_radix,
+    };
+    use crate::mem::TEX_NULL;
+
+    let mut negative = false;
+    let mut m: i32 = 0;
+    let mut d: i32 = 0;
+    let mut vacuous = false;
+    let mut ok_so_far = true;
+
+    set_radix(0);
+
+    // Skip spaces and absorb sign prefix(es).
+    loop {
+        loop { get_x_token(); if cur_cmd() != SPACER { break; } }
+        if cur_tok() == OTHER_TOKEN + b'-' as i32 {
+            negative = !negative;
+            set_cur_tok(OTHER_TOKEN + b'+' as i32);
+        }
+        if cur_tok() != OTHER_TOKEN + b'+' as i32 { break; }
+    }
+
+    'restart: loop {
+        if cur_tok() == ALPHA_TOKEN {
+            get_token();
+            if cur_tok() < CS_TOKEN_FLAG {
+                set_cur_val(cur_chr());
+                if cur_cmd() <= 2 { // RIGHT_BRACE = 2 (xetex_format.h:232)
+                    if cur_cmd() == 2 {
+                        set_align_state(align_state() + 1);
+                    } else {
+                        set_align_state(align_state() - 1);
+                    }
+                }
+            } else if cur_tok() < CS_TOKEN_FLAG + SINGLE_BASE {
+                set_cur_val(cur_tok() - (CS_TOKEN_FLAG + ACTIVE_BASE));
+            } else {
+                set_cur_val(cur_tok() - (CS_TOKEN_FLAG + SINGLE_BASE));
+            }
+            if cur_val() > BIGGEST_USV {
+                error_here_with_diagnostic(c"Improper alphabetic constant".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(2);
+                set_help_line(1, c"A one-character control sequence belongs after a ` mark.".as_ptr());
+                set_help_line(0, c"So I'm essentially inserting \\0 here.".as_ptr());
+                set_cur_val(b'0' as i32);
+                crate::input::back_error();
+            } else {
+                get_x_token();
+                if cur_cmd() != SPACER {
+                    crate::input::back_input();
+                }
+            }
+        } else if cur_tok() == FROZEN_PRIM_TOKEN {
+            get_token();
+            if cur_cs() < HASH_BASE {
+                set_cur_cs(crate::hash::prim_lookup(cur_cs() - SINGLE_BASE));
+            } else {
+                set_cur_cs(crate::hash::prim_lookup(hash_s1(cur_cs())));
+            }
+            if cur_cs() != UNDEFINED_PRIMITIVE {
+                set_cur_cmd(crate::globals::eqtb_b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
+                set_cur_chr(eqtb_b32s1(PRIM_EQTB_BASE + cur_cs()));
+                set_cur_cs(PRIM_EQTB_BASE + cur_cs());
+                set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+            } else {
+                set_cur_cmd(RELAX);
+                set_cur_chr(0);
+                set_cur_tok(CS_TOKEN_FLAG + FROZEN_RELAX);
+                set_cur_cs(FROZEN_RELAX);
+            }
+            continue 'restart;
+        } else if cur_cmd() >= MIN_INTERNAL && cur_cmd() <= MAX_INTERNAL {
+            scan_something_internal(INT_VAL, false);
+        } else {
+            let mut radix_val: i32 = 10;
+            m = 0x0CCC_CCCC;
+            if cur_tok() == OCTAL_TOKEN {
+                radix_val = 8;
+                m = 0x1000_0000;
+                get_x_token();
+            } else if cur_tok() == HEX_TOKEN {
+                radix_val = 16;
+                m = 0x0800_0000;
+                get_x_token();
+            }
+            set_radix(radix_val as u8);
+            vacuous = true;
+            set_cur_val(0);
+            loop {
+                if cur_tok() < ZERO_TOKEN + radix_val
+                    && cur_tok() >= ZERO_TOKEN
+                    && cur_tok() <= ZERO_TOKEN + 9
+                {
+                    d = cur_tok() - ZERO_TOKEN;
+                } else if radix_val == 16 {
+                    if cur_tok() <= A_TOKEN + 5 && cur_tok() >= A_TOKEN {
+                        d = cur_tok() - A_TOKEN + 10;
+                    } else if cur_tok() <= OTHER_A_TOKEN + 5 && cur_tok() >= OTHER_A_TOKEN {
+                        d = cur_tok() - OTHER_A_TOKEN + 10;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+                vacuous = false;
+                if cur_val() >= m && (cur_val() > m || d > 7 || radix_val != 10) {
+                    if ok_so_far {
+                        error_here_with_diagnostic(c"Number too big".as_ptr());
+                        capture_to_diagnostic(std::ptr::null_mut());
+                        set_help_ptr(2);
+                        set_help_line(1, c"I can only go up to 2147483647='17777777777=\"7FFFFFFF,".as_ptr());
+                        set_help_line(0, c"so I'm using that number instead of yours.".as_ptr());
+                        error();
+                        set_cur_val(TEX_INFINITY);
+                        ok_so_far = false;
+                    }
+                } else {
+                    set_cur_val(cur_val() * radix_val + d);
+                }
+                get_x_token();
+            }
+            if vacuous {
+                error_here_with_diagnostic(c"Missing number, treated as zero".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(3);
+                set_help_line(2, c"A number should have been here; I inserted `0'.".as_ptr());
+                set_help_line(1, c"(If you can't figure out why I needed to see a number,".as_ptr());
+                set_help_line(0, c"look up `weird error' in the index to The TeXbook.)".as_ptr());
+                crate::input::back_error();
+            } else if cur_cmd() != SPACER {
+                crate::input::back_input();
+            }
+        }
+        break; // end 'restart
+    }
+
+    if negative {
+        set_cur_val(-cur_val());
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -359,6 +359,49 @@ mod raw {
         // Array of UFILE* for the main input-file stack (xetex-xetexd.h:509).
         // Typed as *mut c_void to avoid a cyclic dependency on io.rs.
         pub(super) static mut input_file: *mut *mut libc::c_void;
+
+        // Second parsed value register used by scan_something_internal (xetex-xetexd.h:531).
+        pub(super) static mut cur_val1: i32;
+        // Scanner radix: 8, 10, or 16 (xetex-xetexd.h:533; small_number = u8).
+        pub(super) static mut radix: u8;
+
+        // Page builder state (xetex-xetexd.h:597, 604, 664–671).
+        pub(super) static mut dead_cycles: i32;
+        pub(super) static mut last_badness: i32;
+        pub(super) static mut page_contents: u8;
+        pub(super) static mut page_so_far: [i32; 8];
+        pub(super) static mut last_glue: i32;
+        pub(super) static mut last_penalty: i32;
+        pub(super) static mut last_kern: i32;
+        pub(super) static mut last_node_type: i32;
+        pub(super) static mut insert_penalties: i32;
+        pub(super) static mut output_active: bool;
+
+        // Random-number seed (xetex-xetexd.h:456; scaled_t = i32).
+        pub(super) static mut random_seed: i32;
+
+        // Positions of last PDF output points (xetex-xetexd.h:698–699).
+        pub(super) static mut pdf_last_x_pos: i32;
+        pub(super) static mut pdf_last_y_pos: i32;
+
+        // Per-font encoding/layout arrays (xetex-xetexd.h:563–573).
+        // font_area[f]: encoded font area (str_number = i32).
+        pub(super) static mut font_area: *mut i32;
+        // font_bc[f], font_ec[f]: first/last valid char (UTF16_code = u16).
+        pub(super) static mut font_bc: *mut u16;
+        pub(super) static mut font_ec: *mut u16;
+        // font_layout_engine[f]: pointer to AAT/OT layout engine (void*).
+        pub(super) static mut font_layout_engine: *mut *mut libc::c_void;
+        // hyphen_char[f], skew_char[f] (xetex-xetexd.h:568–569).
+        pub(super) static mut hyphen_char: *mut i32;
+        pub(super) static mut skew_char: *mut i32;
+
+        // Per-font index bases into font_info (xetex-xetexd.h:582–586).
+        pub(super) static mut char_base: *mut i32;
+        pub(super) static mut width_base: *mut i32;
+        pub(super) static mut height_base: *mut i32;
+        pub(super) static mut depth_base: *mut i32;
+        pub(super) static mut italic_base: *mut i32;
     }
 }
 
@@ -1354,6 +1397,11 @@ pub(crate) fn set_semantic_pagination_enabled(v: bool) {
     unsafe { raw::semantic_pagination_enabled = v; }
 }
 #[inline]
+pub(crate) fn shell_escape_enabled() -> bool {
+    // SAFETY: see module-level doc.
+    unsafe { raw::shell_escape_enabled }
+}
+#[inline]
 pub(crate) fn set_shell_escape_enabled(v: bool) {
     // SAFETY: see module-level doc.
     unsafe { raw::shell_escape_enabled = v; }
@@ -1712,6 +1760,110 @@ pub(crate) fn param_base(f: i32) -> i32 {
     unsafe { *raw::param_base.offset(f as isize) }
 }
 
+/// Returns `font_info[k].b16` (the B16x4 view of font_info word k).
+#[inline]
+pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
+    unsafe { (*raw::font_info.offset(k as isize)).b16 }
+}
+
+/// Returns `font_area[f]` — the str_number encoding the font's area.
+#[inline]
+pub(crate) fn font_area_entry(f: i32) -> i32 {
+    unsafe { *raw::font_area.offset(f as isize) }
+}
+/// Returns `font_bc[f]` — first valid char code.
+#[inline]
+pub(crate) fn font_bc_entry(f: i32) -> u16 {
+    unsafe { *raw::font_bc.offset(f as isize) }
+}
+/// Returns `font_ec[f]` — last valid char code.
+#[inline]
+pub(crate) fn font_ec_entry(f: i32) -> u16 {
+    unsafe { *raw::font_ec.offset(f as isize) }
+}
+/// Returns `font_layout_engine[f]`.
+#[inline]
+pub(crate) fn font_layout_engine_ptr(f: i32) -> *mut libc::c_void {
+    unsafe { *raw::font_layout_engine.offset(f as isize) }
+}
+/// Returns `hyphen_char[f]`.
+#[inline]
+pub(crate) fn hyphen_char_entry(f: i32) -> i32 {
+    unsafe { *raw::hyphen_char.offset(f as isize) }
+}
+/// Returns `skew_char[f]`.
+#[inline]
+pub(crate) fn skew_char_entry(f: i32) -> i32 {
+    unsafe { *raw::skew_char.offset(f as isize) }
+}
+/// Returns `char_base[f]`.
+#[inline]
+pub(crate) fn char_base_entry(f: i32) -> i32 {
+    unsafe { *raw::char_base.offset(f as isize) }
+}
+/// Returns `width_base[f]`.
+#[inline]
+pub(crate) fn width_base_entry(f: i32) -> i32 {
+    unsafe { *raw::width_base.offset(f as isize) }
+}
+/// Returns `height_base[f]`.
+#[inline]
+pub(crate) fn height_base_entry(f: i32) -> i32 {
+    unsafe { *raw::height_base.offset(f as isize) }
+}
+/// Returns `depth_base[f]`.
+#[inline]
+pub(crate) fn depth_base_entry(f: i32) -> i32 {
+    unsafe { *raw::depth_base.offset(f as isize) }
+}
+/// Returns `italic_base[f]`.
+#[inline]
+pub(crate) fn italic_base_entry(f: i32) -> i32 {
+    unsafe { *raw::italic_base.offset(f as isize) }
+}
+
+// ---------------------------------------------------------------------------
+// cur_val1 / radix
+// ---------------------------------------------------------------------------
+#[inline]
+pub(crate) fn cur_val1() -> i32 { unsafe { raw::cur_val1 } }
+#[inline]
+pub(crate) fn set_cur_val1(v: i32) { unsafe { raw::cur_val1 = v; } }
+#[inline]
+pub(crate) fn radix() -> u8 { unsafe { raw::radix } }
+#[inline]
+pub(crate) fn set_radix(v: u8) { unsafe { raw::radix = v; } }
+
+// ---------------------------------------------------------------------------
+// page builder / last-node / output_active / random_seed / pdf positions
+// ---------------------------------------------------------------------------
+#[inline]
+pub(crate) fn dead_cycles() -> i32 { unsafe { raw::dead_cycles } }
+#[inline]
+pub(crate) fn last_badness() -> i32 { unsafe { raw::last_badness } }
+#[inline]
+pub(crate) fn page_contents() -> u8 { unsafe { raw::page_contents } }
+#[inline]
+pub(crate) fn page_so_far(k: usize) -> i32 { unsafe { raw::page_so_far[k] } }
+#[inline]
+pub(crate) fn last_glue() -> i32 { unsafe { raw::last_glue } }
+#[inline]
+pub(crate) fn last_penalty() -> i32 { unsafe { raw::last_penalty } }
+#[inline]
+pub(crate) fn last_kern() -> i32 { unsafe { raw::last_kern } }
+#[inline]
+pub(crate) fn last_node_type() -> i32 { unsafe { raw::last_node_type } }
+#[inline]
+pub(crate) fn insert_penalties() -> i32 { unsafe { raw::insert_penalties } }
+#[inline]
+pub(crate) fn output_active() -> bool { unsafe { raw::output_active } }
+#[inline]
+pub(crate) fn random_seed() -> i32 { unsafe { raw::random_seed } }
+#[inline]
+pub(crate) fn pdf_last_x_pos() -> i32 { unsafe { raw::pdf_last_x_pos } }
+#[inline]
+pub(crate) fn pdf_last_y_pos() -> i32 { unsafe { raw::pdf_last_y_pos } }
+
 // ---------------------------------------------------------------------------
 // epochseconds / microseconds
 // ---------------------------------------------------------------------------
@@ -1778,6 +1930,10 @@ pub(crate) fn cur_list_mode() -> i16 {
     unsafe { raw::cur_list.mode }
 }
 #[inline]
+pub(crate) fn set_cur_list_mode(v: i16) {
+    unsafe { raw::cur_list.mode = v; }
+}
+#[inline]
 pub(crate) fn cur_list_head() -> i32 {
     unsafe { raw::cur_list.head }
 }
@@ -1786,8 +1942,36 @@ pub(crate) fn set_cur_list_head(v: i32) {
     unsafe { raw::cur_list.head = v; }
 }
 #[inline]
+pub(crate) fn cur_list_tail() -> i32 {
+    unsafe { raw::cur_list.tail }
+}
+#[inline]
 pub(crate) fn set_cur_list_tail(v: i32) {
     unsafe { raw::cur_list.tail = v; }
+}
+#[inline]
+pub(crate) fn cur_list_prev_graf() -> i32 {
+    unsafe { raw::cur_list.prev_graf }
+}
+/// Returns `cur_list.aux.b32.s0` (the integer/spacefactor half of aux).
+#[inline]
+pub(crate) fn cur_list_aux_b32s0() -> i32 {
+    unsafe { raw::cur_list.aux.b32.s0 }
+}
+/// Returns `cur_list.aux.b32.s1` (the prevdepth half of aux).
+#[inline]
+pub(crate) fn cur_list_aux_b32s1() -> i32 {
+    unsafe { raw::cur_list.aux.b32.s1 }
+}
+/// Returns `nest[k].mode`.
+#[inline]
+pub(crate) fn nest_mode(k: i32) -> i16 {
+    unsafe { (*raw::nest.offset(k as isize)).mode }
+}
+/// Returns `nest[k].prev_graf`.
+#[inline]
+pub(crate) fn nest_prev_graf(k: i32) -> i32 {
+    unsafe { (*raw::nest.offset(k as isize)).prev_graf }
 }
 #[inline]
 pub(crate) fn set_cur_list_prev_graf(v: i32) {
