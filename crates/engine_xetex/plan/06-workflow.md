@@ -20,15 +20,16 @@ the docs at the start of your session.
 
 ## Step 1 — Establish the baseline
 
-Run the parity harness and the TRIP conformance test:
+Run the parity harness, the TRIP conformance test, **and the LaTeX smoke test**:
 
 ```
 cargo build -p tectonic_engine_xetex
 cargo test -p tectonic --test tex-outputs 2>&1 | tee /tmp/parity-before.txt
 cargo test -p tectonic --test trip 2>&1 | tee /tmp/trip-before.txt
+cargo run -p tectonic -- ~/Code/tectonic/test.tex --print 2>&1 | tee /tmp/latex-before.txt
 ```
 
-(Or, if a scoped test script exists: `./plan/scripts/parity.sh before`.)
+The LaTeX smoke test compiles a real LaTeX document through the full engine. It exercises LaTeX2e + LaTeX3 (hooks, xparse, expl3), which use `\ifx`, `\ifcase`, `\csname`, and other conditionals heavily — exactly the constructs most likely to be broken by a mistranslation in `conditional`, `scan_something_internal`, or `scan_int`. The TRIP and tex-outputs suites do **not** cover this; session 39's `\ifx` bug (broken macro comparison) passed both suites but immediately broke the smoke test.
 
 Record the pass counts. Both suites must pass before starting new translation
 work. If either is lower than what `PROGRESS.md` claims, **stop and
@@ -138,11 +139,13 @@ Then `cargo build -p tectonic_engine_xetex`. Fix link errors.
 ```
 cargo test -p tectonic --test tex-outputs 2>&1 | tee /tmp/parity-after.txt
 cargo test -p tectonic --test trip 2>&1 | tee /tmp/trip-after.txt
+cargo run -p tectonic -- ~/Code/tectonic/test.tex --print 2>&1 | tee /tmp/latex-after.txt
 diff /tmp/parity-before.txt /tmp/parity-after.txt
 diff /tmp/trip-before.txt /tmp/trip-after.txt
+diff /tmp/latex-before.txt /tmp/latex-after.txt
 ```
 
-Compare pass counts for **both** suites. **If either after-count is lower,
+Compare pass counts for **all three** suites. **If either after-count is lower,
 you must not commit.** Diagnose:
 
 1.  Re-read the C function and the Rust translation side-by-side.

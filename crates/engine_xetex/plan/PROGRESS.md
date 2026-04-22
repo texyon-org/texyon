@@ -182,6 +182,7 @@ A session should fail fast if any of these are broken:
 -   [ ] `cargo test -p tectonic_engine_xetex` passes (unit tests inside the crate)
 -   [ ] `cargo test -p tectonic --test trip` passes at 2/2 (TRIP + eTRIP)
 -   [ ] `cargo test -p tectonic --test tex-outputs` passes at ≥ the previous count
+-   [ ] `cargo run -p tectonic -- ~/Code/tectonic/test.tex --print` compiles without errors (LaTeX2e+LaTeX3 smoke test — catches conditional/scan bugs that TRIP and tex-outputs miss)
 -   [ ] `cargo clippy -p tectonic_engine_xetex -- -D warnings` is clean (once we have non-trivial Rust)
 
 If any box is unchecked at session start, **fixing the foundation is
