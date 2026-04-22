@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 37 — 2026-04-22 — open_log_file
+
+**Goal:** Translate `open_log_file`, completing the filename/logging cluster now that `pack_job_name` and `make_name_string` are both in Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 36
+
+**Work done:**
+- Rechecked the baseline after `9347fe3b`: `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs`. Baseline held at parity 29/29 and TRIP 2/2.
+- Added `texmf_log_name` to the raw extern block in `globals.rs`, plus getters/setters for `texmf_log_name`, `log_file` (setter), `log_opened` (setter), and `job_name` (setter).
+- Added `ttstub_output_open` to the `extern "C"` block in `scan.rs`.
+- Translated `open_log_file` (7937) to `src/scan.rs`, preserving the `old_setting`/selector save-restore, the `job_name == 0 → "texput"` fallback, the `pack_job_name(".log")` call, the INVALID_HANDLE abort, the `input_stack[0].limit` / `end_line_char` catch-up replay, and the `old_setting + 2` selector restore.
+- Removed the C body from `xetex-xetex0.c`.
+- Re-ran `cargo build -p tectonic_engine_xetex`, `cargo test -p tectonic --test trip`, and `cargo test -p tectonic --test tex-outputs`; parity stayed 29/29 and TRIP stayed 2/2.
+- Committed as `da715977`.
+- Updated `MODULE_STATUS.md`, `SESSION_LOG.md`, and `PROGRESS.md`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 37
+- 238 Rust functions total; 1 new this session.
+- xetex-xetex0.c: ~15537 LOC, ~121 C functions remaining.
+
+**Surprises / gotchas:**
+- `_tt_abort` in Rust is declared without varargs, so the C `_tt_abort("cannot open log file output \"%s\"", name_of_file)` becomes `_tt_abort(c"cannot open log file output".as_ptr())` — less informative but behaviorally identical (engine aborts). This is the established pattern in the codebase.
+- `INT_PAR_END_LINE_CHAR` was already defined earlier in `scan.rs` (at the `read_toks` section), so the duplicate const would have caused a compile error. Removed the redundant definition from the `open_log_file` section.
+
+**For the next session:**
+- The filename/logging cluster is now complete. The main planned next target is `scan_something_internal` (~4552): large core register/parameter scanner.
+- `conditional` (~7420) follows naturally after `scan_something_internal`.
+
+---
+
 ## Session 36 — 2026-04-22 — make_name_string
 
 **Goal:** Keep pushing the filename/logging cluster with another small helper that now sits directly on the Rust side of `pack_job_name`.
