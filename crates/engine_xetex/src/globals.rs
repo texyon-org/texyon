@@ -360,6 +360,9 @@ mod raw {
         // Typed as *mut c_void to avoid a cyclic dependency on io.rs.
         pub(super) static mut input_file: *mut *mut libc::c_void;
 
+        // is_in_csname: true while scanning between \csname...\endcsname (xetex-xetexd.h:526).
+        pub(super) static mut is_in_csname: bool;
+
         // Second parsed value register used by scan_something_internal (xetex-xetexd.h:531).
         pub(super) static mut cur_val1: i32;
         // Scanner radix: 8, 10, or 16 (xetex-xetexd.h:533; small_number = u8).
@@ -1821,6 +1824,14 @@ pub(crate) fn depth_base_entry(f: i32) -> i32 {
 pub(crate) fn italic_base_entry(f: i32) -> i32 {
     unsafe { *raw::italic_base.offset(f as isize) }
 }
+
+// ---------------------------------------------------------------------------
+// is_in_csname
+// ---------------------------------------------------------------------------
+#[inline]
+pub(crate) fn is_in_csname() -> bool { unsafe { raw::is_in_csname } }
+#[inline]
+pub(crate) fn set_is_in_csname(v: bool) { unsafe { raw::is_in_csname = v; } }
 
 // ---------------------------------------------------------------------------
 // cur_val1 / radix
