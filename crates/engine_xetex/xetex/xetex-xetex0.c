@@ -8808,21 +8808,7 @@ restart:
 
 /* max_hyphenatable_length: translated to Rust in src/scan.rs */
 
-bool eTeX_enabled(bool b, uint16_t j, int32_t k)
-{
-    if (!b) {
-        error_here_with_diagnostic("Improper ");
-        print_cmd_chr(j, k);
-        capture_to_diagnostic(NULL);
-
-        {
-            help_ptr = 1;
-            help_line[0] = "Sorry, this optional e-TeX feature has been disabled.";
-        }
-        error();
-    }
-    return b;
-}
+/* eTeX_enabled: translated to Rust in src/scan.rs */
 
 
 void
@@ -9279,34 +9265,7 @@ done:
     return vpackage(p, h, EXACTLY, DIMENPAR(split_max_depth));
 }
 
-void print_totals(void)
-{
-    print_scaled(page_so_far[1]);
-    if (page_so_far[2] != 0) {
-        print_cstr(" plus ");
-        print_scaled(page_so_far[2]);
-        print_cstr("");
-    }
-    if (page_so_far[3] != 0) {
-        print_cstr(" plus ");
-        print_scaled(page_so_far[3]);
-        print_cstr("fil");
-    }
-    if (page_so_far[4] != 0) {
-        print_cstr(" plus ");
-        print_scaled(page_so_far[4]);
-        print_cstr("fill");
-    }
-    if (page_so_far[5] != 0) {
-        print_cstr(" plus ");
-        print_scaled(page_so_far[5]);
-        print_cstr("filll");
-    }
-    if (page_so_far[6] != 0) {
-        print_cstr(" minus ");
-        print_scaled(page_so_far[6]);
-    }
-}
+/* print_totals: translated to Rust in src/output.rs */
 
 void box_error(eight_bits n)
 {

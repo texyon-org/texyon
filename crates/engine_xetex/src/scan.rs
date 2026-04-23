@@ -4031,6 +4031,28 @@ pub unsafe extern "C" fn start_input(primary_input_name: *const libc::c_char) {
 // effective_char / effective_char_info
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// eTeX_enabled
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:8811 (eTeX_enabled)
+#[no_mangle]
+pub unsafe extern "C" fn eTeX_enabled(b: bool, j: u16, k: i32) -> bool {
+    if !b {
+        error_here_with_diagnostic(c"Improper ".as_ptr());
+        print_cmd_chr(j, k);
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(1);
+        set_help_line(0, c"Sorry, this optional e-TeX feature has been disabled.".as_ptr());
+        error();
+    }
+    b
+}
+
+// ---------------------------------------------------------------------------
+// effective_char / effective_char_info
+// ---------------------------------------------------------------------------
+
 // translated from xetex-xetex0.c:4457 (effective_char)
 #[no_mangle]
 pub unsafe extern "C" fn effective_char(_err_p: bool, f: i32, c: u16) -> i32 {

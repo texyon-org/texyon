@@ -1848,3 +1848,33 @@ pub unsafe extern "C" fn bad_utf8_warning() {
     capture_to_diagnostic(std::ptr::null_mut());
     end_diagnostic(false);
 }
+
+// translated from xetex-xetex0.c:9282 (print_totals)
+#[no_mangle]
+pub unsafe extern "C" fn print_totals() {
+    print_scaled(crate::globals::page_so_far(1));
+    if crate::globals::page_so_far(2) != 0 {
+        print_cstr(c" plus ".as_ptr());
+        print_scaled(crate::globals::page_so_far(2));
+        print_cstr(c"".as_ptr());
+    }
+    if crate::globals::page_so_far(3) != 0 {
+        print_cstr(c" plus ".as_ptr());
+        print_scaled(crate::globals::page_so_far(3));
+        print_cstr(c"fil".as_ptr());
+    }
+    if crate::globals::page_so_far(4) != 0 {
+        print_cstr(c" plus ".as_ptr());
+        print_scaled(crate::globals::page_so_far(4));
+        print_cstr(c"fill".as_ptr());
+    }
+    if crate::globals::page_so_far(5) != 0 {
+        print_cstr(c" plus ".as_ptr());
+        print_scaled(crate::globals::page_so_far(5));
+        print_cstr(c"filll".as_ptr());
+    }
+    if crate::globals::page_so_far(6) != 0 {
+        print_cstr(c" minus ".as_ptr());
+        print_scaled(crate::globals::page_so_far(6));
+    }
+}
