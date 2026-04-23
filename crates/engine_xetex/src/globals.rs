@@ -370,6 +370,7 @@ mod raw {
 
         // Page builder state (xetex-xetexd.h:597, 604, 664–671).
         pub(super) static mut dead_cycles: i32;
+        pub(super) static mut page_tail: i32;
         pub(super) static mut last_badness: i32;
         pub(super) static mut page_contents: u8;
         pub(super) static mut page_so_far: [i32; 8];
@@ -1867,6 +1868,8 @@ pub(crate) fn set_radix(v: u8) { unsafe { raw::radix = v; } }
 pub(crate) fn dead_cycles() -> i32 { unsafe { raw::dead_cycles } }
 #[inline]
 pub(crate) fn last_badness() -> i32 { unsafe { raw::last_badness } }
+#[inline]
+pub(crate) fn page_tail() -> i32 { unsafe { raw::page_tail } }
 #[inline]
 pub(crate) fn page_contents() -> u8 { unsafe { raw::page_contents } }
 #[inline]

@@ -9267,22 +9267,7 @@ done:
 
 /* print_totals: translated to Rust in src/output.rs */
 
-void box_error(eight_bits n)
-{
-    error();
-
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
-
-    print_nl_cstr("The following box has been deleted:");
-    show_box(BOX_REG(n));
-
-    capture_to_diagnostic(NULL);
-    end_diagnostic(true);
-
-    flush_node_list(BOX_REG(n));
-    BOX_REG(n) = TEX_NULL;
-}
+/* box_error: translated to Rust in src/scan.rs */
 
 
 void app_space(void)
@@ -9329,78 +9314,11 @@ void app_space(void)
 
 /* privileged: translated to Rust in src/scan.rs */
 
-bool its_all_over(void)
-{
+/* its_all_over: translated to Rust in src/scan.rs */
 
-    if (privileged()) {
-        if ((PAGE_HEAD == page_tail) && (cur_list.head == cur_list.tail) && (dead_cycles == 0)) {
-            return true;
-        }
-        back_input();
-        {
-            mem[cur_list.tail].b32.s1 = new_null_box();
-            cur_list.tail = LLIST_link(cur_list.tail);
-        }
-        mem[cur_list.tail + 1].b32.s1 = DIMENPAR(hsize);
-        {
-            mem[cur_list.tail].b32.s1 = new_glue(8);
-            cur_list.tail = LLIST_link(cur_list.tail);
-        }
-        {
-            mem[cur_list.tail].b32.s1 = new_penalty(NULL_FLAG);
-            cur_list.tail = LLIST_link(cur_list.tail);
-        }
-        build_page();
-    }
-    return false;
-}
+/* append_glue: translated to Rust in src/scan.rs */
 
-void append_glue(void)
-{
-    small_number s;
-    s = cur_chr;
-    switch (s) {
-    case 0:
-        cur_val = 4;
-        break;
-    case 1:
-        cur_val = 8;
-        break;
-    case 2:
-        cur_val = 12;
-        break;
-    case 3:
-        cur_val = 16;
-        break;
-    case 4:
-        scan_glue(GLUE_VAL);
-        break;
-    case 5:
-        scan_glue(MU_VAL);
-        break;
-    }
-    {
-        mem[cur_list.tail].b32.s1 = new_glue(cur_val);
-        cur_list.tail = LLIST_link(cur_list.tail);
-    }
-    if (s >= SKIP_CODE) {
-        mem[cur_val].b32.s1--;
-        if (s > SKIP_CODE)
-            mem[cur_list.tail].b16.s0 = MU_GLUE;
-    }
-}
-
-void append_kern(void)
-{
-    uint16_t s;
-    s = cur_chr;
-    scan_dimen(s == MU_GLUE, false, false);
-    {
-        mem[cur_list.tail].b32.s1 = new_kern(cur_val);
-        cur_list.tail = LLIST_link(cur_list.tail);
-    }
-    mem[cur_list.tail].b16.s0 = s;
-}
+/* append_kern: translated to Rust in src/scan.rs */
 
 
 void

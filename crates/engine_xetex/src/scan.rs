@@ -47,6 +47,8 @@ extern "C" {
     fn runaway();
     fn line_break(d: bool);
     fn build_page();
+    fn show_box(p: i32);
+    fn flush_node_list(p: i32);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn pack_file_name(n: i32, a: i32, e: i32);
     fn show_token_list(p: i32, q: i32, l: i32);
@@ -4280,4 +4282,100 @@ pub unsafe extern "C" fn normal_paragraph() {
     if eqtb_b32s1(ETEX_PEN_BASE) != crate::mem::TEX_NULL {
         crate::save::eq_define(ETEX_PEN_BASE, SHAPE_REF, crate::mem::TEX_NULL);
     }
+}
+
+// ---------------------------------------------------------------------------
+// box_error
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:9270 (box_error)
+#[no_mangle]
+pub unsafe extern "C" fn box_error(n: u8) {
+    let box_val = eqtb_b32s1(BOX_BASE + n as i32);
+    error();
+    crate::output::begin_diagnostic();
+    crate::output::diagnostic_begin_capture_warning_here();
+    crate::output::print_nl_cstr(c"The following box has been deleted:".as_ptr());
+    show_box(box_val);
+    capture_to_diagnostic(std::ptr::null_mut());
+    crate::output::end_diagnostic(true);
+    flush_node_list(box_val);
+    // BOX_REG(n) = TEX_NULL — direct eqtb write, no save-stack involvement
+    crate::globals::set_eqtb_b32s1(BOX_BASE + n as i32, crate::mem::TEX_NULL);
+}
+
+// ---------------------------------------------------------------------------
+// its_all_over
+// ---------------------------------------------------------------------------
+
+const PAGE_HEAD: i32 = 4_999_997; // MEM_TOP - 2 (xetex_format.h:30)
+const DIMEN_PAR_HSIZE: i32 = 3;   // xetex_format.h:125
+const NULL_FLAG: i32 = -0x4000_0000; // xetex-constants.h:16
+
+// translated from xetex-xetex0.c:9332 (its_all_over)
+#[no_mangle]
+pub unsafe extern "C" fn its_all_over() -> bool {
+    if privileged() {
+        if crate::globals::page_tail() == PAGE_HEAD
+            && crate::globals::cur_list_head() == crate::globals::cur_list_tail()
+            && crate::globals::dead_cycles() == 0
+        {
+            return true;
+        }
+        crate::input::back_input();
+        let nb = crate::mem::new_null_box();
+        set_mem_b32s1(crate::globals::cur_list_tail(), nb);
+        crate::globals::set_cur_list_tail(nb);
+        set_mem_b32s1(crate::globals::cur_list_tail() + 1,
+                      eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE));
+        let ng = crate::mem::new_glue(8);
+        set_mem_b32s1(crate::globals::cur_list_tail(), ng);
+        crate::globals::set_cur_list_tail(ng);
+        let np = crate::mem::new_penalty(NULL_FLAG);
+        set_mem_b32s1(crate::globals::cur_list_tail(), np);
+        crate::globals::set_cur_list_tail(np);
+        build_page();
+    }
+    false
+}
+
+// ---------------------------------------------------------------------------
+// append_glue / append_kern
+// ---------------------------------------------------------------------------
+
+const SKIP_CODE: i16 = 4;   // xetex_format.h:674
+
+// translated from xetex-xetex0.c:9358 (append_glue)
+#[no_mangle]
+pub unsafe extern "C" fn append_glue() {
+    let s = cur_chr() as i16;
+    match s {
+        0 => set_cur_val(4),
+        1 => set_cur_val(8),
+        2 => set_cur_val(12),
+        3 => set_cur_val(16),
+        4 => scan_glue(GLUE_VAL),   // SKIP_CODE
+        5 => scan_glue(MU_VAL_SCAN), // MSKIP_CODE
+        _ => {}
+    }
+    let p = crate::mem::new_glue(cur_val());
+    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+    crate::globals::set_cur_list_tail(p);
+    if s >= SKIP_CODE {
+        set_mem_b32s1(cur_val(), mem_b32s1(cur_val()) - 1);
+        if s > SKIP_CODE {
+            set_mem_b16s0(crate::globals::cur_list_tail(), MU_GLUE);
+        }
+    }
+}
+
+// translated from xetex-xetex0.c:9395 (append_kern)
+#[no_mangle]
+pub unsafe extern "C" fn append_kern() {
+    let s = cur_chr() as u16;
+    scan_dimen(s == MU_GLUE, false, false);
+    let p = crate::mem::new_kern(cur_val());
+    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+    crate::globals::set_cur_list_tail(p);
+    set_mem_b16s0(crate::globals::cur_list_tail(), s);
 }
