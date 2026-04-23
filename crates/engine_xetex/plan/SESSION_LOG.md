@@ -32,6 +32,44 @@ template.
 
 ---
 
+## Session 42 — 2026-04-23 — continued small function cluster
+
+**Goal:** Continue translating small functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 41
+
+**Work done:**
+- Added `page_tail`, `set_dead_cycles`, `set_insert_penalties`, `set_page_so_far`, `set_cur_list_aux_b32s0`, `set_nest_prev_graf` to `globals.rs`.
+- Translated `box_error` (9270), `its_all_over` (9317), `append_glue` (9358), `append_kern` (9395) → `src/scan.rs` (b2c2f894).
+- Translated `make_mark` (9896), `new_interaction` (11040) → `src/scan.rs` (1669e578).
+- Translated `alter_aux` (10774), `alter_prev_graf` (10805), `alter_page_so_far` (10837), `alter_integer` (10846), `alter_box_dimen` (10874) → `src/scan.rs` (49b91f62).
+- Translated `trap_zero_glue` (10570), `fix_language` (11357) → `src/scan.rs` (94b086c4).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 42
+- 272 Rust functions total; 13 new this session.
+- xetex-xetex0.c: 13398 LOC, ~87 C functions remaining.
+
+**Surprises / gotchas:**
+- `BOX_BASE` was already defined at top of scan.rs; got a duplicate-constant error adding it again near box_error. Same for `MU_GLUE`. Check for existing constants before adding new ones.
+- LaTeX smoke test PDF size varied by 2 bytes between runs due to PDF timestamp metadata — not a behavioral regression.
+- `alter_prev_graf` uses `nest[p].mode` in a while-loop condition; used `nest_mode(p).unsigned_abs()` in Rust since `i16::abs()` is available but the comparison to `VMODE` (u16) needs `.unsigned_abs() as u16`.
+
+**For the next session:**
+- `show_save_groups` (8829): complex, many gotos — defer.
+- `off_save` (9367): uses get_avail, back_input, error handling and multi-case switch.
+- `do_endv` (10471): calls end_graf, fin_col, fin_row, off_save — depends on fin_col/fin_row still in C.
+- `indent_in_hmode` (9808): uses new_null_box, new_noad, mem writes.
+- `head_for_vmode` (9831): calls off_save (still in C).
+- `append_src_special` (11401): synctex helper — check dependencies.
+
+---
+
 ## Session 41 — 2026-04-23 — small function cluster
 
 **Goal:** Translate a large batch of small, self-contained functions from `xetex-xetex0.c`.

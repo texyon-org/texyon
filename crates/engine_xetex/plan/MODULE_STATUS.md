@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 41.
+Last updated: session 42.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 41.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 13641 |    100 | multiple (see below)              | IN PROGRESS — 61% |
+| xetex-xetex0.c               | 13398 |     87 | multiple (see below)              | IN PROGRESS — 68% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -396,16 +396,29 @@ New Rust module `src/save.rs` created for save-stack management.
 |116| `omit_error`              |       10457 | `src/scan.rs`   | MIGRATED (session 41, 5f06879e) |
 |117| `cs_error`                |       10489 | `src/scan.rs`   | MIGRATED (session 41, 5f06879e) |
 |118| `push_math`               |       10416 | `src/scan.rs`   | MIGRATED (session 41, 650e6dd0) |
+|119| `box_error`               |        9270 | `src/scan.rs`   | MIGRATED (session 42, b2c2f894) |
+|120| `its_all_over`            |        9317 | `src/scan.rs`   | MIGRATED (session 42, b2c2f894) |
+|121| `append_glue`             |        9358 | `src/scan.rs`   | MIGRATED (session 42, b2c2f894) |
+|122| `append_kern`             |        9395 | `src/scan.rs`   | MIGRATED (session 42, b2c2f894) |
+|123| `make_mark`               |        9896 | `src/scan.rs`   | MIGRATED (session 42, 1669e578) |
+|124| `new_interaction`         |       11040 | `src/scan.rs`   | MIGRATED (session 42, 1669e578) |
+|125| `alter_aux`               |       10774 | `src/scan.rs`   | MIGRATED (session 42, 49b91f62) |
+|126| `alter_prev_graf`         |       10805 | `src/scan.rs`   | MIGRATED (session 42, 49b91f62) |
+|127| `alter_page_so_far`       |       10837 | `src/scan.rs`   | MIGRATED (session 42, 49b91f62) |
+|128| `alter_integer`           |       10846 | `src/scan.rs`   | MIGRATED (session 42, 49b91f62) |
+|129| `alter_box_dimen`         |       10874 | `src/scan.rs`   | MIGRATED (session 42, 49b91f62) |
+|130| `trap_zero_glue`          |       10570 | `src/scan.rs`   | MIGRATED (session 42, 94b086c4) |
+|131| `fix_language`            |       11357 | `src/scan.rs`   | MIGRATED (session 42, 94b086c4) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
 - `show_save_groups` (8829): complex multi-goto diagnostic helper — defer.
-- `its_all_over` (9357): uses mem + build_page + back_input.
+- `off_save` (9367): uses get_avail, back_input, error — medium complexity.
 - `do_endv` (10471): calls end_graf + fin_col + fin_row + off_save.
-- `box_error` (9311): calls error, begin_diagnostic, show_box, flush_node_list.
-- `append_glue` (9383): uses cur_chr, scan_glue, new_glue, mem writes.
-- `append_kern` (9418): uses scan_dimen, new_kern, mem writes.
+- `indent_in_hmode` (9808): uses new_null_box, new_noad, mem writes.
+- `head_for_vmode` (9831): calls off_save (still in C), uses par_token.
+- `append_src_special` (11401): synctex helper.
 
 ## How to maintain this file
 
