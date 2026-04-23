@@ -32,6 +32,44 @@ template.
 
 ---
 
+## Session 40 — 2026-04-23 — start_input
+
+**Goal:** Translate `start_input` (the primary input-file opener, ~160 lines), the natural next step recommended by session 39.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 39
+
+**Work done:**
+- Added `input_file_ptr(k)` accessor to `globals.rs` (returns `*mut *mut UFile`, analogous to existing `read_file_ptr`).
+- Added `mod raw_utf8` with `bytesFromUTF8`/`offsetsFromUTF8` extern statics to `scan.rs` for the UTF-8 decode loop in the primary-input-name path.
+- Added `INT_PAR_XETEX_DEFAULT_INPUT_MODE = 75`, `INT_PAR_XETEX_DEFAULT_INPUT_ENCODING = 76`, `INT_PAR_TRACING_STACK_LEVELS = 55`, `TTBC_FILE_FORMAT_TEX_SI = 26`, `TTBC_FILE_FORMAT_TECTONIC_PRIMARY_SI = 59` constants.
+- Added `synctex_start_input` to `extern "C"` block in `scan.rs`.
+- Translated `start_input` (6431) to `src/scan.rs`.
+- First test run: `pipe_input` test failed — expected error message to include filename but we called `_tt_abort(c"failed to open input file")` without the name. Fixed by formatting the message with `libc::snprintf` into a stack buffer first.
+- Deleted C body with tombstone comment.
+- Committed as `54064e99`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 40
+- 242 Rust functions total; 1 new this session.
+- xetex-xetex0.c: 13867 LOC, ~117 C functions remaining.
+
+**Surprises / gotchas:**
+- `_tt_abort` is declared non-variadic in Rust, but the C code passes `name_of_file` as a format arg. The `pipe_input` test checks for the filename in the error message, so the message must include it. Used `libc::snprintf` into a stack buffer to pre-format the message.
+- `input_file` in globals is a `*mut *mut c_void` (heap pointer), not an array. Need `.offset(k)` not `.as_mut_ptr().add(k)` to get `&input_file[k]`.
+
+**For the next session:**
+- `show_save_groups` (~10952 in current file): complex multi-goto diagnostic helper — defer if possible.
+- `effective_char_info` (~6595) and `char_info` — typed-view helpers used by font lookup code.
+- `print_if_line` (~3475): short diagnostic helper.
+- Consider the cluster around `effective_char` and font char info (lines ~6595+).
+
+---
+
 ## Session 39 — 2026-04-22 — conditional
 
 **Goal:** Translate `conditional` (the `\if`/`\ifcase`/`\ifx`/… expansion machine), a contained ~400-line function that has been the natural next step since `pass_text` and `scan_something_internal` both landed in Rust.

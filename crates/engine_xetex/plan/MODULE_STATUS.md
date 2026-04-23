@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 39.
+Last updated: session 40.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 39.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 14029 |    118 | multiple (see below)              | IN PROGRESS — 57% |
+| xetex-xetex0.c               | 13867 |    117 | multiple (see below)              | IN PROGRESS — 57% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -378,12 +378,14 @@ New Rust module `src/save.rs` created for save-stack management.
 |98 | `scan_something_internal` |        4505 | `src/scan.rs`   | MIGRATED (session 38, 9b03ca67) |
 |99 | `scan_int`                |        5465 | `src/scan.rs`   | MIGRATED (session 38, 9b03ca67) |
 |100| `conditional`             |        6271 | `src/scan.rs`   | MIGRATED (session 39, cdd6f395) |
+|101| `start_input`             |        6431 | `src/scan.rs`   | MIGRATED (session 40, 54064e99) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `start_input` (~7540): input file opener; depends on `open_log_file` (Rust).
-- `show_save_groups` (~10952): complex multi-goto diagnostic helper.
+- `show_save_groups` (~10952): complex multi-goto diagnostic helper — defer.
+- `print_if_line` (~3475): short diagnostic helper.
+- `effective_char_info` / `char_info` (~6595+): font char lookup helpers.
 
 ## How to maintain this file
 
