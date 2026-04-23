@@ -80,6 +80,7 @@ extern "C" {
     fn count_pdf_file_pages() -> i32;
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
     fn new_spec(p: i32) -> i32;
+    fn synctex_start_input();
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -3824,4 +3825,203 @@ extern "C" { fn show_node_list(p: i32); }
 pub unsafe extern "C" fn show_info() {
     use crate::globals::{mem_b32s0, temp_ptr};
     show_node_list(mem_b32s0(temp_ptr()));
+}
+
+// ---------------------------------------------------------------------------
+// start_input
+// ---------------------------------------------------------------------------
+
+// TTBC_FILE_FORMAT values (tectonic_bridge_core_generated.h:94,93).
+const TTBC_FILE_FORMAT_TEX_SI: i32 = 26;
+const TTBC_FILE_FORMAT_TECTONIC_PRIMARY_SI: i32 = 59;
+// INT_PAR offsets used by start_input (xetex_format.h:110,111,90).
+const INT_PAR_XETEX_DEFAULT_INPUT_MODE: i32 = 75;
+const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING: i32 = 76;
+const INT_PAR_TRACING_STACK_LEVELS: i32 = 55;
+
+mod raw_utf8 {
+    extern "C" {
+        pub(super) static bytesFromUTF8: [u8; 256];
+        pub(super) static offsetsFromUTF8: [u32; 6];
+    }
+}
+
+/// translated from xetex-xetex0.c:6431 (start_input)
+#[no_mangle]
+pub unsafe extern "C" fn start_input(primary_input_name: *const libc::c_char) {
+    use crate::globals::{
+        cur_name, cur_area, cur_ext, full_source_filename_stack, in_open,
+        input_file, input_file_ptr, input_ptr, job_name, name_length16,
+        name_of_file16_entry, set_area_delimiter, set_ext_delimiter,
+        set_full_source_filename_stack, set_job_name, set_source_filename_stack,
+    };
+
+    let format = if !primary_input_name.is_null() {
+        TTBC_FILE_FORMAT_TECTONIC_PRIMARY_SI
+    } else {
+        TTBC_FILE_FORMAT_TEX_SI
+    };
+
+    if !primary_input_name.is_null() {
+        set_name_in_progress(true);
+        begin_name();
+        set_stop_at_space(false);
+
+        let mut cp = primary_input_name as *const u8;
+        if pool_ptr() + libc::strlen(primary_input_name) as i32 * 2 >= pool_size() {
+            _tt_abort(c"string pool overflow".as_ptr());
+        }
+
+        loop {
+            let first_byte = *cp;
+            cp = cp.add(1);
+            if first_byte == 0 { break; }
+            let mut rval = first_byte as u32;
+            let extra_bytes = raw_utf8::bytesFromUTF8[rval as usize] as usize;
+            for _ in 0..extra_bytes {
+                if *cp != 0 {
+                    rval = (rval << 6) + *cp as u32;
+                    cp = cp.add(1);
+                } else {
+                    rval <<= 6;
+                }
+            }
+            rval -= raw_utf8::offsetsFromUTF8[extra_bytes] as u32;
+
+            if rval > 0xffff {
+                rval -= 0x10000;
+                let pp = pool_ptr();
+                set_str_pool(pp, (0xd800 + rval / 0x0400) as u16);
+                set_pool_ptr(pp + 1);
+                let pp = pool_ptr();
+                set_str_pool(pp, (0xdc00 + rval % 0x0400) as u16);
+                set_pool_ptr(pp + 1);
+            } else {
+                let pp = pool_ptr();
+                set_str_pool(pp, rval as u16);
+                set_pool_ptr(pp + 1);
+            }
+
+            let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
+            if rval == b'/' as u32 {
+                // IS_DIR_SEP
+                set_area_delimiter(cur_len);
+                set_ext_delimiter(0);
+            } else if rval == b'.' as u32 {
+                set_ext_delimiter(cur_len);
+            }
+        }
+
+        set_stop_at_space(true);
+        end_name();
+        set_name_in_progress(false);
+    } else {
+        scan_file_name();
+    }
+
+    pack_file_name(cur_name(), cur_area(), cur_ext());
+    crate::input::begin_file_reading();
+
+    let idx = cur_input().index as i32;
+    if crate::io::u_open_in(
+        input_file_ptr(idx),
+        format,
+        c"rb".as_ptr(),
+        eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE),
+        eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING),
+    ) == 0 {
+        // Format "failed to open input file "<name>" into a stack buffer;
+        // matches the C: _tt_abort("failed to open input file \"%s\"", name_of_file)
+        let mut buf = [0u8; 512];
+        libc::snprintf(
+            buf.as_mut_ptr() as *mut libc::c_char,
+            buf.len(),
+            c"failed to open input file \"%s\"".as_ptr(),
+            crate::globals::name_of_file(),
+        );
+        _tt_abort(buf.as_ptr() as *const libc::c_char);
+    }
+
+    crate::io::make_utf16_name();
+    set_name_in_progress(true);
+    begin_name();
+    set_stop_at_space(false);
+    let mut k = 0i32;
+    while k < name_length16() && more_name(name_of_file16_entry(k)) {
+        k += 1;
+    }
+    set_stop_at_space(true);
+    end_name();
+    set_name_in_progress(false);
+
+    let name = make_name_string();
+    set_cur_input_name(name);
+    set_source_filename_stack(in_open(), cur_input().name);
+    set_full_source_filename_stack(
+        in_open(),
+        crate::texmfmp::maketexstring(crate::io::name_of_input_file),
+    );
+
+    if cur_input().name == str_ptr() - 1 {
+        let temp_str = crate::string_pool::search_string(cur_input().name);
+        if temp_str > 0 {
+            set_cur_input_name(temp_str);
+            set_str_ptr(str_ptr() - 1);
+            set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+        }
+    }
+
+    if job_name() == 0 {
+        set_job_name(cur_name());
+        open_log_file();
+    }
+
+    let fss = full_source_filename_stack(in_open());
+    if term_offset() + crate::string_pool::length(fss) > max_print_line() - 2 {
+        crate::output::print_ln();
+    } else if term_offset() > 0 || file_offset() > 0 {
+        crate::output::print_char(b' ' as i32);
+    }
+    crate::output::print_char(b'(' as i32);
+    set_open_parens(open_parens() + 1);
+    crate::output::print(fss);
+    ttstub_output_flush(rust_stdout());
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS) > 0 {
+        crate::output::begin_diagnostic();
+        crate::output::diagnostic_begin_capture_warning_here();
+        crate::output::print_ln();
+        crate::output::print_char(b'~' as i32);
+        let mut v = input_ptr() - 1;
+        if v < eqtb_b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS) {
+            while v > 0 {
+                crate::output::print_char(b'.' as i32);
+                v -= 1;
+            }
+        } else {
+            crate::output::print_char(b'~' as i32);
+        }
+        crate::output::print_cstr(c"INPUT ".as_ptr());
+        crate::output::print(cur_name());
+        crate::output::print(cur_ext());
+        crate::output::print_ln();
+        capture_to_diagnostic(std::ptr::null_mut());
+        crate::output::end_diagnostic(false);
+    }
+
+    set_cur_input_state(NEW_LINE);
+    synctex_start_input();
+    set_line(1);
+    input_line(input_file(idx) as *mut libc::c_void);
+    set_cur_input_limit(last());
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR) < 0
+        || eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR) > 255
+    {
+        set_cur_input_limit(cur_input().limit - 1);
+    } else {
+        set_buffer_entry(cur_input().limit, eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR));
+    }
+    set_first(cur_input().limit + 1);
+    set_cur_input_loc(cur_input().start);
 }

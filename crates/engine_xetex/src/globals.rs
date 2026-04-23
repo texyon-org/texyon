@@ -2386,6 +2386,11 @@ pub(crate) fn input_file(k: i32) -> *mut libc::c_void {
 pub(crate) fn set_input_file(k: i32, v: *mut libc::c_void) {
     unsafe { *raw::input_file.offset(k as isize) = v; }
 }
+/// Returns a pointer to `input_file[k]` (i.e. &input_file[k]), for passing to `u_open_in`.
+#[inline]
+pub(crate) fn input_file_ptr(k: i32) -> *mut *mut crate::io::UFile {
+    unsafe { raw::input_file.offset(k as isize) as *mut *mut crate::io::UFile }
+}
 
 // ---------------------------------------------------------------------------
 // last / max_buf_stack / set_buffer_entry / cur_input_limit
