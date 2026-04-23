@@ -30,7 +30,6 @@ extern "C" {
     fn print_int(n: i32);
     fn print_ln();
     fn show_context();
-    fn give_err_help();
     fn open_log_file();
     fn close_files_and_terminate();
     fn tt_cleanup();
@@ -264,4 +263,12 @@ pub unsafe extern "C" fn pdf_error(t: *const libc::c_char, p: *const libc::c_cha
     print_cstr(p);
     post_error_message(true);
     _tt_abort(c"halted on pdf_error()".as_ptr())
+}
+
+// translated from xetex-xetex0.c:13499 (give_err_help)
+#[no_mangle]
+pub unsafe extern "C" fn give_err_help() {
+    // LOCAL(err_help) = eqtb[LOCAL_BASE + LOCAL__err_help].b32.s1
+    // LOCAL_BASE = 2_254_871, LOCAL__err_help = 9
+    crate::output::token_show(crate::globals::eqtb_b32s1(2_254_871 + 9));
 }

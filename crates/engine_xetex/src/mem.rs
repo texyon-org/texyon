@@ -707,3 +707,13 @@ pub unsafe extern "C" fn new_margin_kern(w: i32, _p: i32, side: i16) -> i32 {
     set_mem_b32s1(k + 1, w);
     k
 }
+
+// translated from xetex-xetex0.c:13763 (new_whatsit)
+#[no_mangle]
+pub unsafe extern "C" fn new_whatsit(s: i16, w: i16) {
+    let p = get_node(w as i32);
+    set_mem_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
+    set_mem_b16s0(p, s as u16);
+    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+    crate::globals::set_cur_list_tail(p);
+}

@@ -13495,11 +13495,7 @@ append_normal_space:
 }
 
 
-void
-give_err_help(void)
-{
-    token_show(LOCAL(err_help));
-}
+/* give_err_help: translated to Rust in src/errors.rs */
 
 
 void
@@ -13759,14 +13755,4 @@ do_assignments(void)
 }
 
 
-void
-new_whatsit(small_number s, small_number w)
-{
-    int32_t p;
-
-    p = get_node(w);
-    NODE_type(p) = WHATSIT_NODE;
-    mem[p].b16.s0 = s;
-    mem[cur_list.tail].b32.s1 = p;
-    cur_list.tail = p;
-}
+/* new_whatsit: translated to Rust in src/mem.rs */
