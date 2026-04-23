@@ -6,11 +6,11 @@ use crate::globals::{
     align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok,
     cur_val, cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth,
     expand_depth_count, file_offset, first, fmem_ptr, font_glue, font_mem_size, font_params,
-    font_ptr, hash_s1, init_pool_ptr, last, max_print_line, max_reg_help_line, max_reg_num,
-    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, open_parens, param_base, pool_ptr,
-    pool_size, pseudo_files, read_file_entry, read_open_entry, rust_stdout, save_ptr,
-    save_stack_b32s1, scanner_status, selector, set_align_state, set_arith_error, set_avail,
-    set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit,
+    font_ptr, font_mapping_ptr, hash_s1, init_pool_ptr, last, max_print_line, max_reg_help_line,
+    max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, open_parens,
+    param_base, pool_ptr, pool_size, pseudo_files, read_file_entry, read_open_entry, rust_stdout,
+    save_ptr, save_stack_b32s1, scanner_status, selector, set_align_state, set_arith_error,
+    set_avail, set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit,
     set_cur_input_loc, set_cur_input_name, set_cur_input_start, set_cur_input_state,
     set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
     set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue, set_font_info_b32s1,
@@ -19,8 +19,9 @@ use crate::globals::{
     set_no_new_control_sequence, set_old_setting, set_open_parens, set_pool_ptr,
     set_pseudo_files, set_read_open_entry, set_save_ptr, set_save_stack_b32s1,
     set_scanner_status, set_selector, set_stop_at_space, set_str_pool, set_str_ptr,
-    set_warning_index, stop_at_space, str_pool_entry, str_ptr, str_start, term_offset,
-    warning_index,
+    set_warning_index, set_xtx_ligature_present, stop_at_space, str_pool_entry, str_ptr,
+    str_start, term_offset, warning_index, xtx_ligature_present,
+    char_base_entry, font_info_b16,
 };
 use crate::mem::new_rule;
 
@@ -70,7 +71,7 @@ extern "C" {
     fn getnativecharht(f: i32, c: i32) -> i32;
     fn getnativechardp(f: i32, c: i32) -> i32;
     fn getnativecharic(f: i32, c: i32) -> i32;
-    fn effective_char(err_p: bool, f: i32, c: u16) -> i32;
+    fn apply_tfm_font_mapping(mapping: *mut libc::c_void, c: i32) -> i32;
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
     fn get_glyph_bounds(f: i32, edge: i32, gid: i32) -> i32;
@@ -4024,4 +4025,30 @@ pub unsafe extern "C" fn start_input(primary_input_name: *const libc::c_char) {
     }
     set_first(cur_input().limit + 1);
     set_cur_input_loc(cur_input().start);
+}
+
+// ---------------------------------------------------------------------------
+// effective_char / effective_char_info
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:4457 (effective_char)
+#[no_mangle]
+pub unsafe extern "C" fn effective_char(_err_p: bool, f: i32, c: u16) -> i32 {
+    let mut c = c;
+    if !xtx_ligature_present() && !font_mapping_ptr(f).is_null() {
+        c = apply_tfm_font_mapping(font_mapping_ptr(f), c as i32) as u16;
+    }
+    set_xtx_ligature_present(false);
+    c as i32
+}
+
+// translated from xetex-xetex0.c:6434 (effective_char_info)
+#[no_mangle]
+pub unsafe extern "C" fn effective_char_info(f: i32, c: u16) -> crate::mem_types::B16x4 {
+    let mut c = c;
+    if !xtx_ligature_present() && !font_mapping_ptr(f).is_null() {
+        c = apply_tfm_font_mapping(font_mapping_ptr(f), c as i32) as u16;
+    }
+    set_xtx_ligature_present(false);
+    font_info_b16(char_base_entry(f) + c as i32)
 }

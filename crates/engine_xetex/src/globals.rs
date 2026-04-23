@@ -395,9 +395,13 @@ mod raw {
         pub(super) static mut font_ec: *mut u16;
         // font_layout_engine[f]: pointer to AAT/OT layout engine (void*).
         pub(super) static mut font_layout_engine: *mut *mut libc::c_void;
+        // font_mapping[f]: TECkit/TFM font mapping pointer (void*, xetex-xetexd.h:574).
+        pub(super) static mut font_mapping: *mut *mut libc::c_void;
         // hyphen_char[f], skew_char[f] (xetex-xetexd.h:568–569).
         pub(super) static mut hyphen_char: *mut i32;
         pub(super) static mut skew_char: *mut i32;
+        // xtx_ligature_present: set true when a XeTeX ligature was just applied (xetex-xetexd.h:720).
+        pub(super) static mut xtx_ligature_present: bool;
 
         // Per-font index bases into font_info (xetex-xetexd.h:582–586).
         pub(super) static mut char_base: *mut i32;
@@ -1789,6 +1793,17 @@ pub(crate) fn font_ec_entry(f: i32) -> u16 {
 pub(crate) fn font_layout_engine_ptr(f: i32) -> *mut libc::c_void {
     unsafe { *raw::font_layout_engine.offset(f as isize) }
 }
+/// Returns `font_mapping[f]`.
+#[inline]
+pub(crate) fn font_mapping_ptr(f: i32) -> *mut libc::c_void {
+    unsafe { *raw::font_mapping.offset(f as isize) }
+}
+/// Returns `xtx_ligature_present`.
+#[inline]
+pub(crate) fn xtx_ligature_present() -> bool { unsafe { raw::xtx_ligature_present } }
+/// Sets `xtx_ligature_present = v`.
+#[inline]
+pub(crate) fn set_xtx_ligature_present(v: bool) { unsafe { raw::xtx_ligature_present = v; } }
 /// Returns `hyphen_char[f]`.
 #[inline]
 pub(crate) fn hyphen_char_entry(f: i32) -> i32 {

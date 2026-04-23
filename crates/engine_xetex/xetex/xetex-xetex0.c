@@ -4453,15 +4453,7 @@ void set_math_char(int32_t c)
 /* get_x_or_protected: translated to Rust in src/scan.rs */
 
 
-int32_t
-effective_char(bool err_p, internal_font_number f, uint16_t c)
-{
-    if (!xtx_ligature_present && font_mapping[f] != NULL)
-        c = apply_tfm_font_mapping(font_mapping[f], c);
-
-    xtx_ligature_present = false;
-    return c;
-}
+/* effective_char: translated to Rust in src/scan.rs */
 
 
 /* scan_font_ident: translated to Rust in src/scan.rs */
@@ -6430,15 +6422,7 @@ pack_file_name(str_number n, str_number a, str_number e)
 /* start_input: translated to Rust in src/scan.rs */
 
 
-b16x4
-effective_char_info(internal_font_number f, uint16_t c)
-{
-    if (!xtx_ligature_present && font_mapping[f] != NULL)
-        c = apply_tfm_font_mapping(font_mapping[f], c);
-
-    xtx_ligature_present = false;
-    return FONT_CHARACTER_INFO(f, c);
-}
+/* effective_char_info: translated to Rust in src/scan.rs */
 
 
 void char_warning(internal_font_number f, int32_t c)
