@@ -4201,6 +4201,20 @@ pub unsafe extern "C" fn cs_error() {
 }
 
 // ---------------------------------------------------------------------------
+// push_math
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:10416 (push_math)
+// group_code = unsigned char = u8 (xetex-xetexd.h:325)
+#[no_mangle]
+pub unsafe extern "C" fn push_math(c: u8) {
+    crate::mem::push_nest();
+    crate::globals::set_cur_list_mode(-207); // -MMODE (xetex_format.h:370)
+    crate::globals::set_cur_list_aux_b32s1(crate::mem::TEX_NULL);
+    crate::save::new_save_level(c);
+}
+
+// ---------------------------------------------------------------------------
 // end_graf / append_penalty
 // ---------------------------------------------------------------------------
 

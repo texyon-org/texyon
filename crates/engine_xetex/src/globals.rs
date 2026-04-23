@@ -1989,6 +1989,11 @@ pub(crate) fn cur_list_aux_b32s0() -> i32 {
 pub(crate) fn cur_list_aux_b32s1() -> i32 {
     unsafe { raw::cur_list.aux.b32.s1 }
 }
+/// Sets `cur_list.aux.b32.s1 = v`.
+#[inline]
+pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
+    unsafe { raw::cur_list.aux.b32.s1 = v; }
+}
 /// Returns `nest[k].mode`.
 #[inline]
 pub(crate) fn nest_mode(k: i32) -> i16 {

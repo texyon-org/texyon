@@ -10413,13 +10413,7 @@ void do_endv(void)
 
 /* cs_error: translated to Rust in src/scan.rs */
 
-void push_math(group_code c)
-{
-    push_nest();
-    cur_list.mode = -207;
-    cur_list.aux.b32.s1 = TEX_NULL;
-    new_save_level(c);
-}
+/* push_math: translated to Rust in src/scan.rs */
 
 
 void
