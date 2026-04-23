@@ -9893,26 +9893,7 @@ void begin_insert_or_adjust(void)
     cur_list.aux.b32.s1 = IGNORE_DEPTH;
 }
 
-void make_mark(void)
-{
-    int32_t p;
-    int32_t c;
-    if (cur_chr == 0)
-        c = 0;
-    else {
-
-        scan_register_num();
-        c = cur_val;
-    }
-    p = scan_toks(false, true);
-    p = get_node(SMALL_NODE_SIZE);
-    mem[p + 1].b32.s0 = c;
-    NODE_type(p) = MARK_NODE;
-    mem[p].b16.s0 = 0;
-    mem[p + 1].b32.s1 = def_ref;
-    mem[cur_list.tail].b32.s1 = p;
-    cur_list.tail = p;
-}
+/* make_mark: translated to Rust in src/scan.rs */
 
 /* append_penalty: translated to Rust in src/scan.rs */
 
@@ -11037,17 +11018,7 @@ common_ending:
     hash[FONT_ID_BASE + f].s1 = t;
 }
 
-void new_interaction(void)
-{
-    print_ln();
-    interaction = cur_chr;
-    if (interaction == BATCH_MODE)
-        selector = SELECTOR_NO_PRINT;
-    else
-        selector = SELECTOR_TERM_ONLY/*:79 */ ;
-    if (log_opened)
-        selector = selector + 2;
-}
+/* new_interaction: translated to Rust in src/scan.rs */
 
 void issue_message(void)
 {

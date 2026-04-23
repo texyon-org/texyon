@@ -4379,3 +4379,52 @@ pub unsafe extern "C" fn append_kern() {
     crate::globals::set_cur_list_tail(p);
     set_mem_b16s0(crate::globals::cur_list_tail(), s);
 }
+
+// ---------------------------------------------------------------------------
+// make_mark
+// ---------------------------------------------------------------------------
+
+const MARK_NODE: u16 = 4; // xetex_format.h:384
+const SMALL_NODE_SIZE: i32 = 2; // xetex-constants.h:110
+
+// translated from xetex-xetex0.c:9896 (make_mark)
+#[no_mangle]
+pub unsafe extern "C" fn make_mark() {
+    let c = if cur_chr() == 0 {
+        0
+    } else {
+        scan_register_num();
+        cur_val()
+    };
+    scan_toks(false, true); // side effect: sets def_ref; return value discarded
+    let p = crate::mem::get_node(SMALL_NODE_SIZE);
+    set_mem_b32s0(p + 1, c);
+    set_mem_b16s1(p, MARK_NODE);  // NODE_type(p)
+    set_mem_b16s0(p, 0);
+    set_mem_b32s1(p + 1, def_ref());
+    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+    crate::globals::set_cur_list_tail(p);
+}
+
+// ---------------------------------------------------------------------------
+// new_interaction
+// ---------------------------------------------------------------------------
+
+const SELECTOR_NO_PRINT: i32 = 16;  // xetex-core.h:45
+const SELECTOR_TERM_ONLY: i32 = 17; // xetex-core.h:46
+const BATCH_MODE: u8 = 0;            // xetex_format.h:644
+
+// translated from xetex-xetex0.c:11040 (new_interaction)
+#[no_mangle]
+pub unsafe extern "C" fn new_interaction() {
+    crate::output::print_ln();
+    crate::globals::set_interaction(cur_chr() as u8);
+    if crate::globals::interaction() == BATCH_MODE {
+        set_selector(SELECTOR_NO_PRINT);
+    } else {
+        set_selector(SELECTOR_TERM_ONLY);
+    }
+    if crate::globals::log_opened() {
+        set_selector(selector() + 2);
+    }
+}
