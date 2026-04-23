@@ -10387,86 +10387,11 @@ void make_accent(void)
     }
 }
 
-void align_error(void)
-{
-    if (abs(align_state) > 2) {      /*1163: */
-        error_here_with_diagnostic("Misplaced ");
-        print_cmd_chr(cur_cmd, cur_chr);
-        capture_to_diagnostic(NULL);
+/* align_error: translated to Rust in src/scan.rs */
 
-        if (cur_tok == (TAB_TOKEN + 38)) {
-            {
-                help_ptr = 6;
-                help_line[5] = "I can't figure out why you would want to use a tab mark";
-                help_line[4] = "here. If you just want an ampersand, the remedy is";
-                help_line[3] = "simple: Just type `I\\&' now. But if some right brace";
-                help_line[2] = "up above has ended a previous alignment prematurely,";
-                help_line[1] = "you're probably due for more error messages, and you";
-                help_line[0] = "might try typing `S' now just to see what is salvageable.";
-            }
-        } else {
+/* no_align_error: translated to Rust in src/scan.rs */
 
-            {
-                help_ptr = 5;
-                help_line[4] = "I can't figure out why you would want to use a tab mark";
-                help_line[3] = "or \\cr or \\span just now. If something like a right brace";
-                help_line[2] = "up above has ended a previous alignment prematurely,";
-                help_line[1] = "you're probably due for more error messages, and you";
-                help_line[0] = "might try typing `S' now just to see what is salvageable.";
-            }
-        }
-        error();
-    } else {
-
-        back_input();
-        if (align_state < 0) {
-            error_here_with_diagnostic("Missing { inserted");
-            capture_to_diagnostic(NULL);
-            align_state++;
-            cur_tok = (LEFT_BRACE_TOKEN + 123);
-        } else {
-            error_here_with_diagnostic("Missing } inserted");
-            capture_to_diagnostic(NULL);
-            align_state--;
-            cur_tok = (RIGHT_BRACE_TOKEN + 125);
-        }
-        {
-            help_ptr = 3;
-            help_line[2] = "I've put in what seems to be necessary to fix";
-            help_line[1] = "the current column of the current alignment.";
-            help_line[0] = "Try to go on, since this might almost work.";
-        }
-        ins_error();
-    }
-}
-
-void no_align_error(void)
-{
-    error_here_with_diagnostic("Misplaced ");
-    print_esc_cstr("noalign");
-    capture_to_diagnostic(NULL);
-
-    {
-        help_ptr = 2;
-        help_line[1] = "I expect to see \\noalign only after the \\cr of";
-        help_line[0] = "an alignment. Proceed, and I'll ignore this case.";
-    }
-    error();
-}
-
-void omit_error(void)
-{
-    error_here_with_diagnostic("Misplaced ");
-    print_esc_cstr("omit");
-    capture_to_diagnostic(NULL);
-
-    {
-        help_ptr = 2;
-        help_line[1] = "I expect to see \\omit only after tab marks or the \\cr of";
-        help_line[0] = "an alignment. Proceed, and I'll ignore this case.";
-    }
-    error();
-}
+/* omit_error: translated to Rust in src/scan.rs */
 
 void do_endv(void)
 {
@@ -10486,17 +10411,7 @@ void do_endv(void)
         off_save();
 }
 
-void cs_error(void)
-{
-    error_here_with_diagnostic("Extra ");
-    print_esc_cstr("endcsname");
-    capture_to_diagnostic(NULL);
-    {
-        help_ptr = 1;
-        help_line[0] = "I'm ignoring this, since I wasn't doing a \\csname.";
-    }
-    error();
-}
+/* cs_error: translated to Rust in src/scan.rs */
 
 void push_math(group_code c)
 {

@@ -4114,6 +4114,93 @@ pub unsafe extern "C" fn privileged() -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// align_error / no_align_error / omit_error / cs_error
+// ---------------------------------------------------------------------------
+
+const RIGHT_BRACE_TOKEN: i32 = 0x40_0000; // xetex-constants.h:351
+const TAB_TOKEN: i32 = 0x80_0000;         // xetex-constants.h:354
+
+// translated from xetex-xetex0.c:10390 (align_error)
+#[no_mangle]
+pub unsafe extern "C" fn align_error() {
+    if align_state().abs() > 2 {
+        error_here_with_diagnostic(c"Misplaced ".as_ptr());
+        print_cmd_chr(cur_cmd() as u16, cur_chr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        if cur_tok() == TAB_TOKEN + 38 {
+            set_help_ptr(6);
+            set_help_line(5, c"I can't figure out why you would want to use a tab mark".as_ptr());
+            set_help_line(4, c"here. If you just want an ampersand, the remedy is".as_ptr());
+            set_help_line(3, c"simple: Just type `I\\&' now. But if some right brace".as_ptr());
+            set_help_line(2, c"up above has ended a previous alignment prematurely,".as_ptr());
+            set_help_line(1, c"you're probably due for more error messages, and you".as_ptr());
+            set_help_line(0, c"might try typing `S' now just to see what is salvageable.".as_ptr());
+        } else {
+            set_help_ptr(5);
+            set_help_line(4, c"I can't figure out why you would want to use a tab mark".as_ptr());
+            set_help_line(3, c"or \\cr or \\span just now. If something like a right brace".as_ptr());
+            set_help_line(2, c"up above has ended a previous alignment prematurely,".as_ptr());
+            set_help_line(1, c"you're probably due for more error messages, and you".as_ptr());
+            set_help_line(0, c"might try typing `S' now just to see what is salvageable.".as_ptr());
+        }
+        error();
+    } else {
+        crate::input::back_input();
+        if align_state() < 0 {
+            error_here_with_diagnostic(c"Missing { inserted".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_align_state(align_state() + 1);
+            set_cur_tok(LEFT_BRACE_TOKEN + 123);
+        } else {
+            error_here_with_diagnostic(c"Missing } inserted".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_align_state(align_state() - 1);
+            set_cur_tok(RIGHT_BRACE_TOKEN + 125);
+        }
+        set_help_ptr(3);
+        set_help_line(2, c"I've put in what seems to be necessary to fix".as_ptr());
+        set_help_line(1, c"the current column of the current alignment.".as_ptr());
+        set_help_line(0, c"Try to go on, since this might almost work.".as_ptr());
+        crate::input::ins_error();
+    }
+}
+
+// translated from xetex-xetex0.c:10443 (no_align_error)
+#[no_mangle]
+pub unsafe extern "C" fn no_align_error() {
+    error_here_with_diagnostic(c"Misplaced ".as_ptr());
+    crate::output::print_esc_cstr(c"noalign".as_ptr());
+    capture_to_diagnostic(std::ptr::null_mut());
+    set_help_ptr(2);
+    set_help_line(1, c"I expect to see \\noalign only after the \\cr of".as_ptr());
+    set_help_line(0, c"an alignment. Proceed, and I'll ignore this case.".as_ptr());
+    error();
+}
+
+// translated from xetex-xetex0.c:10457 (omit_error)
+#[no_mangle]
+pub unsafe extern "C" fn omit_error() {
+    error_here_with_diagnostic(c"Misplaced ".as_ptr());
+    crate::output::print_esc_cstr(c"omit".as_ptr());
+    capture_to_diagnostic(std::ptr::null_mut());
+    set_help_ptr(2);
+    set_help_line(1, c"I expect to see \\omit only after tab marks or the \\cr of".as_ptr());
+    set_help_line(0, c"an alignment. Proceed, and I'll ignore this case.".as_ptr());
+    error();
+}
+
+// translated from xetex-xetex0.c:10489 (cs_error)
+#[no_mangle]
+pub unsafe extern "C" fn cs_error() {
+    error_here_with_diagnostic(c"Extra ".as_ptr());
+    crate::output::print_esc_cstr(c"endcsname".as_ptr());
+    capture_to_diagnostic(std::ptr::null_mut());
+    set_help_ptr(1);
+    set_help_line(0, c"I'm ignoring this, since I wasn't doing a \\csname.".as_ptr());
+    error();
+}
+
+// ---------------------------------------------------------------------------
 // end_graf / append_penalty
 // ---------------------------------------------------------------------------
 
