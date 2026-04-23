@@ -2008,6 +2008,10 @@ pub(crate) fn set_cur_list_mode_line(v: i32) {
     unsafe { raw::cur_list.mode_line = v; }
 }
 #[inline]
+pub(crate) fn cur_list_e_tex_aux() -> i32 {
+    unsafe { raw::cur_list.e_tex_aux }
+}
+#[inline]
 pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
     unsafe { raw::cur_list.e_tex_aux = v; }
 }

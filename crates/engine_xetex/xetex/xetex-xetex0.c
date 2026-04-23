@@ -9938,24 +9938,7 @@ void head_for_vmode(void)
     }
 }
 
-void
-end_graf(void)
-{
-    if (cur_list.mode == HMODE) {
-        if (cur_list.head == cur_list.tail)
-            pop_nest();
-        else
-            line_break(false);
-
-        if (cur_list.eTeX_aux != TEX_NULL) {
-            flush_list(cur_list.eTeX_aux);
-            cur_list.eTeX_aux = TEX_NULL;
-        }
-
-        normal_paragraph();
-        error_count = 0;
-    }
-}
+/* end_graf: translated to Rust in src/scan.rs */
 
 void begin_insert_or_adjust(void)
 {
@@ -10013,16 +9996,7 @@ void make_mark(void)
     cur_list.tail = p;
 }
 
-void append_penalty(void)
-{
-    scan_int();
-    {
-        mem[cur_list.tail].b32.s1 = new_penalty(cur_val);
-        cur_list.tail = LLIST_link(cur_list.tail);
-    }
-    if (cur_list.mode == VMODE)
-        build_page();
-}
+/* append_penalty: translated to Rust in src/scan.rs */
 
 void delete_last(void)
 {

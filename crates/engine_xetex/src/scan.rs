@@ -45,6 +45,8 @@ extern "C" {
     fn input_line(f: *mut libc::c_void) -> libc::c_int;
     fn u_close(f: *mut libc::c_void);
     fn runaway();
+    fn line_break(d: bool);
+    fn build_page();
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn pack_file_name(n: i32, a: i32, e: i32);
     fn show_token_list(p: i32, q: i32, l: i32);
@@ -4108,6 +4110,43 @@ pub unsafe extern "C" fn privileged() -> bool {
     } else {
         report_illegal_case();
         false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// end_graf / append_penalty
+// ---------------------------------------------------------------------------
+
+const HMODE: i16 = 104; // xetex_format.h:369
+
+// translated from xetex-xetex0.c:9942 (end_graf)
+#[no_mangle]
+pub unsafe extern "C" fn end_graf() {
+    if cur_list_mode() == HMODE {
+        if crate::globals::cur_list_head() == crate::globals::cur_list_tail() {
+            crate::mem::pop_nest();
+        } else {
+            line_break(false);
+        }
+        if crate::globals::cur_list_e_tex_aux() != crate::mem::TEX_NULL {
+            crate::mem::flush_list(crate::globals::cur_list_e_tex_aux());
+            crate::globals::set_cur_list_e_tex_aux(crate::mem::TEX_NULL);
+        }
+        normal_paragraph();
+        crate::globals::set_error_count(0);
+    }
+}
+
+// translated from xetex-xetex0.c:10016 (append_penalty)
+#[no_mangle]
+pub unsafe extern "C" fn append_penalty() {
+    scan_int();
+    let p = crate::mem::new_penalty(crate::globals::cur_val());
+    let tail = crate::globals::cur_list_tail();
+    set_mem_b32s1(tail, p);
+    crate::globals::set_cur_list_tail(p);
+    if cur_list_mode() == VMODE {
+        build_page();
     }
 }
 
