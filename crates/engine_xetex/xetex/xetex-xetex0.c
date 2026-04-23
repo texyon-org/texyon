@@ -9323,36 +9323,11 @@ void app_space(void)
 
 /* insert_dollar_sign: translated to Rust in src/scan.rs */
 
-void you_cant(void)
-{
-    error_here_with_diagnostic("You can't use `");
-    print_cmd_chr(cur_cmd, cur_chr);
-    print_in_mode(cur_list.mode);
-    capture_to_diagnostic(NULL);
-}
+/* you_cant: translated to Rust in src/scan.rs */
 
-void report_illegal_case(void)
-{
-    you_cant();
-    {
-        help_ptr = 4;
-        help_line[3] = "Sorry, but I'm not programmed to handle this case;";
-        help_line[2] = "I'll just pretend that you didn't ask for it.";
-        help_line[1] = "If you're in the wrong mode, you might be able to";
-        help_line[0] = "return to the right one by typing `I}' or `I$' or `I\\par'.";
-    }
-    error();
-}
+/* report_illegal_case: translated to Rust in src/scan.rs */
 
-bool privileged(void)
-{
-    if (cur_list.mode > 0) {
-        return true;
-    } else {
-        report_illegal_case();
-        return false;
-    }
-}
+/* privileged: translated to Rust in src/scan.rs */
 
 bool its_all_over(void)
 {

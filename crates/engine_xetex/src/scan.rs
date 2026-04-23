@@ -21,7 +21,7 @@ use crate::globals::{
     set_scanner_status, set_selector, set_stop_at_space, set_str_pool, set_str_ptr,
     set_warning_index, set_xtx_ligature_present, stop_at_space, str_pool_entry, str_ptr,
     str_start, term_offset, warning_index, xtx_ligature_present,
-    char_base_entry, font_info_b16,
+    char_base_entry, font_info_b16, cur_list_mode,
 };
 use crate::mem::new_rule;
 
@@ -4073,4 +4073,40 @@ pub unsafe extern "C" fn effective_char_info(f: i32, c: u16) -> crate::mem_types
     }
     set_xtx_ligature_present(false);
     font_info_b16(char_base_entry(f) + c as i32)
+}
+
+// ---------------------------------------------------------------------------
+// you_cant / report_illegal_case / privileged
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:9326 (you_cant)
+#[no_mangle]
+pub unsafe extern "C" fn you_cant() {
+    error_here_with_diagnostic(c"You can't use `".as_ptr());
+    print_cmd_chr(cur_cmd() as u16, cur_chr());
+    crate::output::print_in_mode(cur_list_mode() as i32);
+    capture_to_diagnostic(std::ptr::null_mut());
+}
+
+// translated from xetex-xetex0.c:9334 (report_illegal_case)
+#[no_mangle]
+pub unsafe extern "C" fn report_illegal_case() {
+    you_cant();
+    set_help_ptr(4);
+    set_help_line(3, c"Sorry, but I'm not programmed to handle this case;".as_ptr());
+    set_help_line(2, c"I'll just pretend that you didn't ask for it.".as_ptr());
+    set_help_line(1, c"If you're in the wrong mode, you might be able to".as_ptr());
+    set_help_line(0, c"return to the right one by typing `I}' or `I$' or `I\\par'.".as_ptr());
+    error();
+}
+
+// translated from xetex-xetex0.c:9347 (privileged)
+#[no_mangle]
+pub unsafe extern "C" fn privileged() -> bool {
+    if cur_list_mode() > 0 {
+        true
+    } else {
+        report_illegal_case();
+        false
+    }
 }
