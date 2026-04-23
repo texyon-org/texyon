@@ -1867,6 +1867,8 @@ pub(crate) fn set_radix(v: u8) { unsafe { raw::radix = v; } }
 #[inline]
 pub(crate) fn dead_cycles() -> i32 { unsafe { raw::dead_cycles } }
 #[inline]
+pub(crate) fn set_dead_cycles(v: i32) { unsafe { raw::dead_cycles = v; } }
+#[inline]
 pub(crate) fn last_badness() -> i32 { unsafe { raw::last_badness } }
 #[inline]
 pub(crate) fn page_tail() -> i32 { unsafe { raw::page_tail } }
@@ -1874,6 +1876,8 @@ pub(crate) fn page_tail() -> i32 { unsafe { raw::page_tail } }
 pub(crate) fn page_contents() -> u8 { unsafe { raw::page_contents } }
 #[inline]
 pub(crate) fn page_so_far(k: usize) -> i32 { unsafe { raw::page_so_far[k] } }
+#[inline]
+pub(crate) fn set_page_so_far(k: usize, v: i32) { unsafe { raw::page_so_far[k] = v; } }
 #[inline]
 pub(crate) fn last_glue() -> i32 { unsafe { raw::last_glue } }
 #[inline]
@@ -1884,6 +1888,8 @@ pub(crate) fn last_kern() -> i32 { unsafe { raw::last_kern } }
 pub(crate) fn last_node_type() -> i32 { unsafe { raw::last_node_type } }
 #[inline]
 pub(crate) fn insert_penalties() -> i32 { unsafe { raw::insert_penalties } }
+#[inline]
+pub(crate) fn set_insert_penalties(v: i32) { unsafe { raw::insert_penalties = v; } }
 #[inline]
 pub(crate) fn output_active() -> bool { unsafe { raw::output_active } }
 #[inline]
@@ -1987,6 +1993,11 @@ pub(crate) fn cur_list_prev_graf() -> i32 {
 pub(crate) fn cur_list_aux_b32s0() -> i32 {
     unsafe { raw::cur_list.aux.b32.s0 }
 }
+/// Sets `cur_list.aux.b32.s0 = v`.
+#[inline]
+pub(crate) fn set_cur_list_aux_b32s0(v: i32) {
+    unsafe { raw::cur_list.aux.b32.s0 = v; }
+}
 /// Returns `cur_list.aux.b32.s1` (the prevdepth half of aux).
 #[inline]
 pub(crate) fn cur_list_aux_b32s1() -> i32 {
@@ -2006,6 +2017,10 @@ pub(crate) fn nest_mode(k: i32) -> i16 {
 #[inline]
 pub(crate) fn nest_prev_graf(k: i32) -> i32 {
     unsafe { (*raw::nest.offset(k as isize)).prev_graf }
+}
+#[inline]
+pub(crate) fn set_nest_prev_graf(k: i32, v: i32) {
+    unsafe { (*raw::nest.offset(k as isize)).prev_graf = v; }
 }
 #[inline]
 pub(crate) fn set_cur_list_prev_graf(v: i32) {

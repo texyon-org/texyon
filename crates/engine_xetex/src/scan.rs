@@ -4428,3 +4428,117 @@ pub unsafe extern "C" fn new_interaction() {
         set_selector(selector() + 2);
     }
 }
+
+// ---------------------------------------------------------------------------
+// alter_aux / alter_prev_graf / alter_page_so_far / alter_integer / alter_box_dimen
+// ---------------------------------------------------------------------------
+
+const ERROR_STOP_MODE: u8 = 3; // xetex_format.h:647
+
+// translated from xetex-xetex0.c:10774 (alter_aux)
+#[no_mangle]
+pub unsafe extern "C" fn alter_aux() {
+    if cur_chr() != cur_list_mode().unsigned_abs() as i32 {
+        report_illegal_case();
+    } else {
+        let c = cur_chr();
+        scan_optional_equals();
+        if c == VMODE as i32 {
+            scan_dimen(false, false, false);
+            crate::globals::set_cur_list_aux_b32s1(cur_val());
+        } else {
+            scan_int();
+            if cur_val() <= 0 || cur_val() > 32767 {
+                let errmsg = error_here_with_diagnostic(c"Bad space factor".as_ptr());
+                ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(1);
+                set_help_line(0, c"I allow only values in the range 1..32767 here.".as_ptr());
+                int_error(cur_val());
+            } else {
+                crate::globals::set_cur_list_aux_b32s0(cur_val());
+            }
+        }
+    }
+}
+
+// translated from xetex-xetex0.c:10805 (alter_prev_graf)
+#[no_mangle]
+pub unsafe extern "C" fn alter_prev_graf() {
+    crate::globals::save_cur_list_to_nest(crate::globals::nest_ptr());
+    let mut p = crate::globals::nest_ptr();
+    while crate::globals::nest_mode(p).unsigned_abs() != VMODE as u16 {
+        p -= 1;
+    }
+    scan_optional_equals();
+    scan_int();
+    if cur_val() < 0 {
+        let errmsg = error_here_with_diagnostic(c"Bad ".as_ptr());
+        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+        crate::output::print_esc_cstr(c"prevgraf".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(1);
+        set_help_line(0, c"I allow only nonnegative values here.".as_ptr());
+        int_error(cur_val());
+    } else {
+        crate::globals::set_nest_prev_graf(p, cur_val());
+        crate::globals::restore_cur_list_from_nest(crate::globals::nest_ptr());
+    }
+}
+
+// translated from xetex-xetex0.c:10837 (alter_page_so_far)
+#[no_mangle]
+pub unsafe extern "C" fn alter_page_so_far() {
+    let c = cur_chr() as usize;
+    scan_optional_equals();
+    scan_dimen(false, false, false);
+    crate::globals::set_page_so_far(c, cur_val());
+}
+
+// translated from xetex-xetex0.c:10846 (alter_integer)
+#[no_mangle]
+pub unsafe extern "C" fn alter_integer() {
+    let c = cur_chr() as u8;
+    scan_optional_equals();
+    scan_int();
+    if c == 0 {
+        crate::globals::set_dead_cycles(cur_val());
+    } else if c == 2 {
+        if cur_val() < BATCH_MODE as i32 || cur_val() > ERROR_STOP_MODE as i32 {
+            let errmsg = error_here_with_diagnostic(c"Bad interaction mode".as_ptr());
+            ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(2);
+            set_help_line(1, c"Modes are 0=batch, 1=nonstop, 2=scroll, and".as_ptr());
+            set_help_line(0, c"3=errorstop. Proceed, and I'll ignore this case.".as_ptr());
+            int_error(cur_val());
+        } else {
+            set_cur_chr(cur_val());
+            new_interaction();
+        }
+    } else {
+        crate::globals::set_insert_penalties(cur_val());
+    }
+}
+
+// translated from xetex-xetex0.c:10874 (alter_box_dimen)
+#[no_mangle]
+pub unsafe extern "C" fn alter_box_dimen() {
+    let c = cur_chr();
+    scan_register_num();
+    let b = if cur_val() < 256 {
+        eqtb_b32s1(BOX_BASE + cur_val())
+    } else {
+        crate::save::find_sa_element(4, cur_val(), false);
+        if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
+            crate::mem::TEX_NULL
+        } else {
+            mem_b32s1(crate::globals::cur_ptr() + 1)
+        }
+    };
+    scan_optional_equals();
+    scan_dimen(false, false, false);
+    if b != crate::mem::TEX_NULL {
+        set_mem_b32s1(b + c, cur_val());
+    }
+}

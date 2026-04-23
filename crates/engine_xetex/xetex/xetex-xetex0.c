@@ -10771,122 +10771,15 @@ found:
 }
 
 
-void alter_aux(void)
-{
-    int32_t c;
-    if (cur_chr != abs(cur_list.mode))
-        report_illegal_case();
-    else {
+/* alter_aux: translated to Rust in src/scan.rs */
 
-        c = cur_chr;
-        scan_optional_equals();
-        if (c == VMODE) {
-            scan_dimen(false, false, false);
-            cur_list.aux.b32.s1 = cur_val;
-        } else {
+/* alter_prev_graf: translated to Rust in src/scan.rs */
 
-            scan_int();
-            if ((cur_val <= 0) || (cur_val > 32767)) {
-                ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad space factor");
-                ttstub_diag_printf(errmsg, " (%d)", cur_val);
-                capture_to_diagnostic(NULL);
+/* alter_page_so_far: translated to Rust in src/scan.rs */
 
-                {
-                    help_ptr = 1;
-                    help_line[0] = "I allow only values in the range 1..32767 here.";
-                }
-                int_error(cur_val);
-            } else
-                cur_list.aux.b32.s0 = cur_val;
-        }
-    }
-}
+/* alter_integer: translated to Rust in src/scan.rs */
 
-void alter_prev_graf(void)
-{
-    int32_t p;
-    nest[nest_ptr] = cur_list;
-    p = nest_ptr;
-    while (abs(nest[p].mode) != VMODE)
-        p--;
-    scan_optional_equals();
-    scan_int();
-    if (cur_val < 0) {
-        ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad ");
-        ttstub_diag_printf(errmsg, " (%d)", cur_val);
-        print_esc_cstr("prevgraf");
-        capture_to_diagnostic(NULL);
-        {
-            help_ptr = 1;
-            help_line[0] = "I allow only nonnegative values here.";
-        }
-        int_error(cur_val);
-    } else {
-
-        nest[p].prev_graf = cur_val;
-        cur_list = nest[nest_ptr];
-    }
-}
-
-void alter_page_so_far(void)
-{
-    unsigned char c;
-    c = cur_chr;
-    scan_optional_equals();
-    scan_dimen(false, false, false);
-    page_so_far[c] = cur_val;
-}
-
-void alter_integer(void)
-{
-    small_number c;
-    c = cur_chr;
-    scan_optional_equals();
-    scan_int();
-    if (c == 0)
-        dead_cycles = /*1483: */ cur_val;
-    else if (c == 2) {
-        if ((cur_val < BATCH_MODE) || (cur_val > ERROR_STOP_MODE)) {
-            ttbc_diagnostic_t *errmsg = error_here_with_diagnostic("Bad interaction mode");
-            ttstub_diag_printf(errmsg, " (%d)", cur_val);
-            capture_to_diagnostic(NULL);
-            {
-                help_ptr = 2;
-                help_line[1] = "Modes are 0=batch, 1=nonstop, 2=scroll, and";
-                help_line[0] = "3=errorstop. Proceed, and I'll ignore this case.";
-            }
-            int_error(cur_val);
-        } else {
-
-            cur_chr = cur_val;
-            new_interaction();
-        }
-    } else
-        insert_penalties = cur_val;
-}
-
-void alter_box_dimen(void)
-{
-    small_number c;
-    int32_t b;
-
-    c = cur_chr;
-    scan_register_num();
-    if (cur_val < 256)
-        b = BOX_REG(cur_val);
-    else {
-
-        find_sa_element(4, cur_val, false);
-        if (cur_ptr == TEX_NULL)
-            b = TEX_NULL;
-        else
-            b = mem[cur_ptr + 1].b32.s1;
-    }
-    scan_optional_equals();
-    scan_dimen(false, false, false);
-    if (b != TEX_NULL)
-        mem[b + c].b32.s1 = cur_val;
-}
+/* alter_box_dimen: translated to Rust in src/scan.rs */
 
 void new_font(small_number a)
 {
