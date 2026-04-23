@@ -32,6 +32,49 @@ template.
 
 ---
 
+## Session 41 — 2026-04-23 — small function cluster
+
+**Goal:** Translate a large batch of small, self-contained functions from `xetex-xetex0.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 40
+
+**Work done:**
+- Added `font_mapping` and `xtx_ligature_present` globals to `globals.rs`.
+- Added `cur_list_e_tex_aux()`, `set_cur_list_aux_b32s1()` accessors to `globals.rs`.
+- Translated `effective_char` (4457) + `effective_char_info` (6434) → `src/scan.rs` (223bdfc2).
+- Translated `eTeX_enabled` (8811) → `src/scan.rs`, `print_totals` (9282) → `src/output.rs` (3521e31f).
+- Translated `you_cant` (9326), `report_illegal_case` (9334), `privileged` (9347) cluster → `src/scan.rs` (11e31397). Caught u8→u16 widening bug in `print_cmd_chr` call.
+- Translated `normal_paragraph` (9496) → `src/scan.rs` (862f5198).
+- Translated `give_err_help` (13499) → `src/errors.rs` (removed extern decl from that module), `new_whatsit` (13763) → `src/mem.rs` (e8430054).
+- Translated `end_graf` (9942) + `append_penalty` (10016) → `src/scan.rs` (4af3b2b8).
+- Translated `align_error` (10390), `no_align_error` (10443), `omit_error` (10457), `cs_error` (10489) → `src/scan.rs` (5f06879e).
+- Translated `push_math` (10416) → `src/scan.rs` (650e6dd0).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 41
+- 259 Rust functions total; 17 new this session.
+- xetex-xetex0.c: 13641 LOC, ~100 C functions remaining.
+
+**Surprises / gotchas:**
+- `effective_char` was already declared in scan.rs's extern block (used by scan_something_internal); needed to remove the extern decl when translating.
+- `you_cant` calls `print_cmd_chr(cur_cmd, cur_chr)` where C silently widens `uint8_t cur_cmd` to `uint16_t`. Rust requires explicit `as u16` cast.
+- `new_whatsit` had its return type (`void`) on a separate line; accidentally left it behind when deleting the body, causing a C parse error. Fixed by including the `void` line in the deletion.
+- `print_if_line` mentioned in prior session notes does not exist as a standalone function in the current C source.
+
+**For the next session:**
+- `show_save_groups` (8829): complex multi-goto diagnostic — defer.
+- `its_all_over` (9357): calls `build_page` + `back_input` + uses `mem` writes.
+- `do_endv` (10471): calls `fin_col`, `fin_row`, `off_save` — still in C.
+- `box_error` (9311): calls `show_box`, `flush_node_list` — check dependencies.
+- `append_glue` (9383), `append_kern` (9418): direct mem writes + scan helpers.
+
+---
+
 ## Session 40 — 2026-04-23 — start_input
 
 **Goal:** Translate `start_input` (the primary input-file opener, ~160 lines), the natural next step recommended by session 39.

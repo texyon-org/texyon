@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 40.
+Last updated: session 41.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 40.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 13867 |    117 | multiple (see below)              | IN PROGRESS — 57% |
+| xetex-xetex0.c               | 13641 |    100 | multiple (see below)              | IN PROGRESS — 61% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -379,13 +379,33 @@ New Rust module `src/save.rs` created for save-stack management.
 |99 | `scan_int`                |        5465 | `src/scan.rs`   | MIGRATED (session 38, 9b03ca67) |
 |100| `conditional`             |        6271 | `src/scan.rs`   | MIGRATED (session 39, cdd6f395) |
 |101| `start_input`             |        6431 | `src/scan.rs`   | MIGRATED (session 40, 54064e99) |
+|102| `effective_char`          |        4457 | `src/scan.rs`   | MIGRATED (session 41, 223bdfc2) |
+|103| `effective_char_info`     |        6434 | `src/scan.rs`   | MIGRATED (session 41, 223bdfc2) |
+|104| `eTeX_enabled`            |        8811 | `src/scan.rs`   | MIGRATED (session 41, 3521e31f) |
+|105| `print_totals`            |        9282 | `src/output.rs` | MIGRATED (session 41, 3521e31f) |
+|106| `you_cant`                |        9326 | `src/scan.rs`   | MIGRATED (session 41, 11e31397) |
+|107| `report_illegal_case`     |        9334 | `src/scan.rs`   | MIGRATED (session 41, 11e31397) |
+|108| `privileged`              |        9347 | `src/scan.rs`   | MIGRATED (session 41, 11e31397) |
+|109| `normal_paragraph`        |        9496 | `src/scan.rs`   | MIGRATED (session 41, 862f5198) |
+|110| `give_err_help`           |       13499 | `src/errors.rs` | MIGRATED (session 41, e8430054) |
+|111| `new_whatsit`             |       13763 | `src/mem.rs`    | MIGRATED (session 41, e8430054) |
+|112| `end_graf`                |        9942 | `src/scan.rs`   | MIGRATED (session 41, 4af3b2b8) |
+|113| `append_penalty`          |       10016 | `src/scan.rs`   | MIGRATED (session 41, 4af3b2b8) |
+|114| `align_error`             |       10390 | `src/scan.rs`   | MIGRATED (session 41, 5f06879e) |
+|115| `no_align_error`          |       10443 | `src/scan.rs`   | MIGRATED (session 41, 5f06879e) |
+|116| `omit_error`              |       10457 | `src/scan.rs`   | MIGRATED (session 41, 5f06879e) |
+|117| `cs_error`                |       10489 | `src/scan.rs`   | MIGRATED (session 41, 5f06879e) |
+|118| `push_math`               |       10416 | `src/scan.rs`   | MIGRATED (session 41, 650e6dd0) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `show_save_groups` (~10952): complex multi-goto diagnostic helper — defer.
-- `print_if_line` (~3475): short diagnostic helper.
-- `effective_char_info` / `char_info` (~6595+): font char lookup helpers.
+- `show_save_groups` (8829): complex multi-goto diagnostic helper — defer.
+- `its_all_over` (9357): uses mem + build_page + back_input.
+- `do_endv` (10471): calls end_graf + fin_col + fin_row + off_save.
+- `box_error` (9311): calls error, begin_diagnostic, show_box, flush_node_list.
+- `append_glue` (9383): uses cur_chr, scan_glue, new_glue, mem writes.
+- `append_kern` (9418): uses scan_dimen, new_kern, mem writes.
 
 ## How to maintain this file
 
