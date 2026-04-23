@@ -4110,3 +4110,34 @@ pub unsafe extern "C" fn privileged() -> bool {
         false
     }
 }
+
+// ---------------------------------------------------------------------------
+// normal_paragraph
+// ---------------------------------------------------------------------------
+
+const DIMEN_BASE: i32 = 8_941_180;     // xetex_format.h:222
+const ETEX_PEN_BASE: i32 = 2_255_140;  // xetex_format.h:210
+const SHAPE_REF: u16 = 120;            // xetex_format.h:362
+const INT_PAR_LOOSENESS: i32 = 19;     // xetex_format.h:54
+const INT_PAR_HANG_AFTER: i32 = 41;    // xetex_format.h:76
+const DIMEN_PAR_HANG_INDENT: i32 = 17; // xetex_format.h:139
+
+// translated from xetex-xetex0.c:9496 (normal_paragraph)
+#[no_mangle]
+pub unsafe extern "C" fn normal_paragraph() {
+    if eqtb_b32s1(INT_BASE + INT_PAR_LOOSENESS) != 0 {
+        crate::save::eq_word_define(INT_BASE + INT_PAR_LOOSENESS, 0);
+    }
+    if eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HANG_INDENT) != 0 {
+        crate::save::eq_word_define(DIMEN_BASE + DIMEN_PAR_HANG_INDENT, 0);
+    }
+    if eqtb_b32s1(INT_BASE + INT_PAR_HANG_AFTER) != 1 {
+        crate::save::eq_word_define(INT_BASE + INT_PAR_HANG_AFTER, 1);
+    }
+    if eqtb_b32s1(LOCAL_BASE) != crate::mem::TEX_NULL {
+        crate::save::eq_define(LOCAL_BASE, SHAPE_REF, crate::mem::TEX_NULL);
+    }
+    if eqtb_b32s1(ETEX_PEN_BASE) != crate::mem::TEX_NULL {
+        crate::save::eq_define(ETEX_PEN_BASE, SHAPE_REF, crate::mem::TEX_NULL);
+    }
+}

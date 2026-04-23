@@ -9493,20 +9493,7 @@ extra_right_brace(void)
 #endif
 
 
-void normal_paragraph(void)
-{
-
-    if (INTPAR(looseness) != 0)
-        eq_word_define(INT_BASE + INT_PAR__looseness, 0);
-    if (DIMENPAR(hang_indent) != 0)
-        eq_word_define(DIMEN_BASE + DIMEN_PAR__hang_indent, 0);
-    if (INTPAR(hang_after) != 1)
-        eq_word_define(INT_BASE + INT_PAR__hang_after, 1);
-    if (LOCAL(par_shape) != TEX_NULL)
-        eq_define(LOCAL_BASE + LOCAL__par_shape, SHAPE_REF, TEX_NULL);
-    if (ETEX_PENALTIES_PAR(inter_line_penalties) != TEX_NULL)
-        eq_define(ETEX_PEN_BASE + ETEX_PENALTIES_PAR__inter_line_penalties, SHAPE_REF, TEX_NULL);
-}
+/* normal_paragraph: translated to Rust in src/scan.rs */
 
 
 /*1110: "The box_end procedure does the right thing with cur_box, if
