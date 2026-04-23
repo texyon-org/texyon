@@ -4542,3 +4542,47 @@ pub unsafe extern "C" fn alter_box_dimen() {
         set_mem_b32s1(b + c, cur_val());
     }
 }
+
+// ---------------------------------------------------------------------------
+// trap_zero_glue
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:10570 (trap_zero_glue)
+#[no_mangle]
+pub unsafe extern "C" fn trap_zero_glue() {
+    if mem_b32s1(cur_val() + 1) == 0
+        && mem_b32s1(cur_val() + 2) == 0
+        && mem_b32s1(cur_val() + 3) == 0
+    {
+        // GLUE_SPEC_ref_count(0)++ = mem[0].b32.s1++
+        set_mem_b32s1(0, mem_b32s1(0) + 1);
+        crate::mem::delete_glue_ref(cur_val());
+        set_cur_val(0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// fix_language
+// ---------------------------------------------------------------------------
+
+const INT_PAR_LANGUAGE: i32 = 50;          // xetex_format.h:85
+const INT_PAR_LEFT_HYPHEN_MIN: i32 = 51;   // xetex_format.h:86
+const INT_PAR_RIGHT_HYPHEN_MIN: i32 = 52;  // xetex_format.h:87
+const LANGUAGE_NODE_SUBTYPE: i16 = 4;      // xetex_format.h:461 (whatsit subtype)
+
+// translated from xetex-xetex0.c:11357 (fix_language)
+#[no_mangle]
+pub unsafe extern "C" fn fix_language() {
+    let lang = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
+    let l = if lang <= 0 || lang > 255 { 0i32 } else { lang };
+    if l != crate::globals::cur_list_aux_b32s1() {
+        crate::mem::new_whatsit(LANGUAGE_NODE_SUBTYPE, SMALL_NODE_SIZE as i16);
+        let tail = crate::globals::cur_list_tail();
+        set_mem_b32s1(tail + 1, l);
+        crate::globals::set_cur_list_aux_b32s1(l);
+        set_mem_b16s1(tail + 1,
+                      crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as u16);
+        set_mem_b16s0(tail + 1,
+                      crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as u16);
+    }
+}

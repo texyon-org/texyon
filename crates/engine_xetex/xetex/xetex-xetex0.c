@@ -10567,15 +10567,7 @@ restart:
 }
 
 
-void trap_zero_glue(void)
-{
-
-    if ((mem[cur_val + 1].b32.s1 == 0) && (mem[cur_val + 2].b32.s1 == 0) && (mem[cur_val + 3].b32.s1 == 0)) {
-        GLUE_SPEC_ref_count(0)++;
-        delete_glue_ref(cur_val);
-        cur_val = 0;
-    }
-}
+/* trap_zero_glue: translated to Rust in src/scan.rs */
 
 
 void
@@ -11354,24 +11346,7 @@ void do_extension(void)
     }
 }
 
-void fix_language(void)
-{
-    UTF16_code l;
-
-    if (INTPAR(language) <= 0)
-        l = 0;
-    else if (INTPAR(language) > 255)
-        l = 0;
-    else
-        l = INTPAR(language);
-    if (l != cur_list.aux.b32.s1) {
-        new_whatsit(LANGUAGE_NODE, SMALL_NODE_SIZE);
-        mem[cur_list.tail + 1].b32.s1 = l;
-        cur_list.aux.b32.s1 = l;
-        mem[cur_list.tail + 1].b16.s1 = norm_min(INTPAR(left_hyphen_min));
-        mem[cur_list.tail + 1].b16.s0 = norm_min(INTPAR(right_hyphen_min));
-    }
-}
+/* fix_language: translated to Rust in src/scan.rs */
 
 
 void
