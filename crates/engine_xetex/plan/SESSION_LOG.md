@@ -32,6 +32,40 @@ template.
 
 ---
 
+## Session 44 — 2026-04-24 — discretionary + message cluster
+
+**Goal:** Continue translating small functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 43
+
+**Work done:**
+- Translated `shift_case` (10765), `build_discretionary` (9958) → `src/scan.rs` (9bd0a3da).
+- Added `long_help_seen`, `set_long_help_seen`, `set_use_err_help` to `globals.rs`.
+- Translated `issue_message` (10708) → `src/scan.rs` (c9d261aa).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 44
+- 286 Rust functions total; 3 new this session.
+- xetex-xetex0.c: 12936 LOC, ~73 C functions remaining.
+
+**Surprises / gotchas:**
+- `build_discretionary` had a node-type condition bug: the C nests `!= KERN_NODE` and `!= LIGATURE_NODE` inside `> RULE_NODE` (> 2). Translating the whole condition as `> KERN_NODE` (> 11) silently accepted GLUE nodes (type 10), missing the "Improper discretionary list" error. The TRIP test caught this via a diff in trip.log.
+
+**For the next session:**
+- `show_whatever` (10793): medium, dispatches \show/\showbox/\showlists/\showifs. Depends on `show_save_groups`, `show_activities` (still in C), `cond_ptr`, `if_line`, `cur_if`.
+- `do_register_command` (10439): complex goto-heavy function, ~200 LOC.
+- `make_accent` (10087): complex, font metrics + kern arithmetic.
+- `new_font` (10642): very long, ~130 LOC.
+- `append_to_vlist` (8020): short, needs `prev_depth` check.
+- `align_peek` (8785): short alignment helper.
+
+---
+
 ## Session 43 — 2026-04-24 — main_control helper cluster
 
 **Goal:** Continue translating small functions from xetex-xetex0.c.
