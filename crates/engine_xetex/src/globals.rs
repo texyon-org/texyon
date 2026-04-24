@@ -258,6 +258,10 @@ mod raw {
         pub(super) static mut stack_size: i32;
         // Base pointer into input_stack (xetex-xetexd.h:521).
         pub(super) static mut base_ptr: i32;
+        // Hash-table location of \par control sequence (xetex-xetexd.h:522).
+        pub(super) static mut par_loc: i32;
+        // Token form of \par (xetex-xetexd.h:523; cs_token = CS_TOKEN_FLAG + par_loc).
+        pub(super) static mut par_token: i32;
 
         // Macro parameter stack (xetex-xetexd.h:517–519).
         pub(super) static mut param_stack: *mut i32;
@@ -2130,6 +2134,27 @@ pub(crate) fn base_ptr() -> i32 {
 #[inline]
 pub(crate) fn set_base_ptr(v: i32) {
     unsafe { raw::base_ptr = v; }
+}
+
+/// Returns `par_loc` — hash-table location of \par (xetex-xetexd.h:522).
+#[inline]
+pub(crate) fn par_loc() -> i32 {
+    unsafe { raw::par_loc }
+}
+/// Sets `par_loc`.
+#[inline]
+pub(crate) fn set_par_loc(v: i32) {
+    unsafe { raw::par_loc = v; }
+}
+/// Returns `par_token` — CS_TOKEN_FLAG + par_loc (xetex-xetexd.h:523).
+#[inline]
+pub(crate) fn par_token() -> i32 {
+    unsafe { raw::par_token }
+}
+/// Sets `par_token`.
+#[inline]
+pub(crate) fn set_par_token(v: i32) {
+    unsafe { raw::par_token = v; }
 }
 
 // ---------------------------------------------------------------------------

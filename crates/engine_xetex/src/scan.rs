@@ -12,7 +12,7 @@ use crate::globals::{
     save_ptr, save_stack_b32s1, scanner_status, selector, set_align_state, set_arith_error,
     set_avail, set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit,
     set_cur_input_loc, set_cur_input_name, set_cur_input_start, set_cur_input_state,
-    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
+    set_cur_input_index, set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
     set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue, set_font_info_b32s1,
     set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1,
     set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_name_in_progress,
@@ -21,7 +21,7 @@ use crate::globals::{
     set_scanner_status, set_selector, set_stop_at_space, set_str_pool, set_str_ptr,
     set_warning_index, set_xtx_ligature_present, stop_at_space, str_pool_entry, str_ptr,
     str_start, term_offset, warning_index, xtx_ligature_present,
-    char_base_entry, font_info_b16, cur_list_mode,
+    char_base_entry, font_info_b16, cur_list_mode, cur_group,
 };
 use crate::mem::new_rule;
 
@@ -4584,5 +4584,145 @@ pub unsafe extern "C" fn fix_language() {
                       crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as u16);
         set_mem_b16s0(tail + 1,
                       crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as u16);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// off_save
+// ---------------------------------------------------------------------------
+
+const BOTTOM_LEVEL: u8 = 0; // xetex_format.h (group level 0)
+const FROZEN_END_GROUP: i32 = 2_243_226 + 2; // xetex_format.h:201 + xetex-constants.h:57
+const FROZEN_RIGHT: i32 = 2_243_226 + 3;     // xetex_format.h:201 + xetex-constants.h:58
+
+// translated from xetex-xetex0.c:9325 (off_save)
+#[no_mangle]
+pub unsafe extern "C" fn off_save() {
+    if cur_group() == BOTTOM_LEVEL {
+        error_here_with_diagnostic(c"Extra ".as_ptr());
+        print_cmd_chr(cur_cmd() as u16, cur_chr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(1);
+        set_help_line(0, c"Things are pretty mixed up, but I think the worst is over.".as_ptr());
+        error();
+    } else {
+        crate::input::back_input();
+        let p = crate::mem::get_avail();
+        set_mem_b32s1(TEMP_HEAD, p);
+        error_here_with_diagnostic(c"Missing ".as_ptr());
+        match cur_group() {
+            SEMI_SIMPLE_GROUP => {
+                set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_END_GROUP);
+                crate::output::print_esc_cstr(c"endgroup".as_ptr());
+            }
+            MATH_SHIFT_GROUP => {
+                set_mem_b32s0(p, MATH_SHIFT_TOKEN + b'$' as i32);
+                crate::output::print_char(b'$' as i32);
+            }
+            MATH_LEFT_GROUP => {
+                set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_RIGHT);
+                let q = crate::mem::get_avail();
+                set_mem_b32s1(p, q);
+                let p2 = mem_b32s1(p); // = LLIST_link(p)
+                set_mem_b32s0(p2, OTHER_TOKEN + b'.' as i32);
+                crate::output::print_esc_cstr(c"right.".as_ptr());
+            }
+            _ => {
+                set_mem_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
+                crate::output::print_char(b'}' as i32);
+            }
+        }
+        crate::output::print_cstr(c" inserted".as_ptr());
+        begin_token_list(mem_b32s1(TEMP_HEAD), INSERTED);
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(5);
+        set_help_line(4, c"I've inserted something that you may have forgotten.".as_ptr());
+        set_help_line(3, c"(See the <inserted text> above.)".as_ptr());
+        set_help_line(2, c"With luck, this will get me unwedged. But if you".as_ptr());
+        set_help_line(1, c"really didn't forget anything, try typing `2' now; then".as_ptr());
+        set_help_line(0, c"my insertion and my current dilemma will both disappear.".as_ptr());
+        error();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// indent_in_hmode
+// ---------------------------------------------------------------------------
+
+const HMODE_I: i16 = 104;  // xetex_format.h:369
+const SUB_BOX: i32 = 2;    // xetex_format.h:283
+
+// translated from xetex-xetex0.c:9808 (indent_in_hmode)
+#[no_mangle]
+pub unsafe extern "C" fn indent_in_hmode() {
+    if cur_chr() > 0 {
+        let p = crate::mem::new_null_box();
+        set_mem_b32s1(p + 1, eqtb_b32s1(DIMEN_BASE));
+        let p = if cur_list_mode().abs() == HMODE_I {
+            crate::globals::set_cur_list_aux_b32s0(1000);
+            p
+        } else {
+            let q = crate::mem::new_noad();
+            set_mem_b32s1(q + 1, SUB_BOX);
+            set_mem_b32s0(q + 1, p);
+            q
+        };
+        let tail = crate::globals::cur_list_tail();
+        set_mem_b32s1(tail, p);
+        crate::globals::set_cur_list_tail(mem_b32s1(tail));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// head_for_vmode
+// ---------------------------------------------------------------------------
+
+const HRULE: u8 = 36; // xetex_format.h:274
+
+// translated from xetex-xetex0.c:9831 (head_for_vmode)
+#[no_mangle]
+pub unsafe extern "C" fn head_for_vmode() {
+    if cur_list_mode() < 0 {
+        if cur_cmd() != HRULE {
+            off_save();
+        } else {
+            error_here_with_diagnostic(c"You can't use `".as_ptr());
+            crate::output::print_esc_cstr(c"hrule".as_ptr());
+            crate::output::print_cstr(c"' here except with leaders".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(2);
+            set_help_line(1, c"To put a horizontal rule in an hbox or an alignment,".as_ptr());
+            set_help_line(0, c"you should use \\leaders or \\hrulefill (see The TeXbook).".as_ptr());
+            error();
+        }
+    } else {
+        crate::input::back_input();
+        set_cur_tok(crate::globals::par_token());
+        crate::input::back_input();
+        set_cur_input_index(INSERTED as u16);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// append_src_special
+// ---------------------------------------------------------------------------
+
+const SPECIAL_NODE: i16 = 3;     // xetex_format.h:460
+const WRITE_NODE_SIZE: i16 = 2;  // xetex-constants.h:112
+
+// translated from xetex-xetex0.c:11376 (append_src_special)
+#[no_mangle]
+pub unsafe extern "C" fn append_src_special() {
+    let fname = crate::globals::source_filename_stack(crate::globals::in_open());
+    if fname > 0 && crate::texmfmp::is_new_source(fname, crate::globals::line()) {
+        crate::mem::new_whatsit(SPECIAL_NODE, WRITE_NODE_SIZE);
+        set_mem_b32s0(crate::globals::cur_list_tail() + 1, 0);
+        let d = crate::mem::get_avail();
+        set_def_ref(d);
+        set_mem_b32s0(d, crate::mem::TEX_NULL);
+        str_toks(crate::texmfmp::make_src_special(fname, crate::globals::line()));
+        set_mem_b32s1(d, mem_b32s1(TEMP_HEAD));
+        set_mem_b32s1(crate::globals::cur_list_tail() + 1, d);
+        crate::texmfmp::remember_source_info(fname, crate::globals::line());
     }
 }

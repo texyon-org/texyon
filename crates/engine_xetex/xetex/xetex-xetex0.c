@@ -9321,61 +9321,7 @@ void app_space(void)
 /* append_kern: translated to Rust in src/scan.rs */
 
 
-void
-off_save(void)
-{
-    int32_t p;
-
-    if (cur_group == BOTTOM_LEVEL) { /*1101:*/
-        error_here_with_diagnostic("Extra ");
-        print_cmd_chr(cur_cmd, cur_chr);
-        capture_to_diagnostic(NULL);
-
-        help_ptr = 1;
-        help_line[0] = "Things are pretty mixed up, but I think the worst is over.";
-        error();
-    } else {
-        back_input();
-        p = get_avail();
-        mem[TEMP_HEAD].b32.s1 = p;
-
-        error_here_with_diagnostic("Missing ");
-
-        switch (cur_group) {
-        case SEMI_SIMPLE_GROUP:
-            mem[p].b32.s0 = CS_TOKEN_FLAG + FROZEN_END_GROUP;
-            print_esc_cstr("endgroup");
-            break;
-        case MATH_SHIFT_GROUP:
-            mem[p].b32.s0 = MATH_SHIFT_TOKEN + '$' ;
-            print_char('$');
-            break;
-        case MATH_LEFT_GROUP:
-            mem[p].b32.s0 = CS_TOKEN_FLAG + FROZEN_RIGHT;
-            mem[p].b32.s1 = get_avail();
-            p = LLIST_link(p);
-            mem[p].b32.s0 = OTHER_TOKEN + '.' ;
-            print_esc_cstr("right.");
-            break;
-        default:
-            mem[p].b32.s0 = (RIGHT_BRACE_TOKEN + '}' );
-            print_char('}');
-            break;
-        }
-
-        print_cstr(" inserted");
-        begin_token_list(mem[TEMP_HEAD].b32.s1, INSERTED);
-        capture_to_diagnostic(NULL);
-
-        help_ptr = 5;
-        help_line[4] = "I've inserted something that you may have forgotten.";
-        help_line[3] = "(See the <inserted text> above.)";
-        help_line[2] = "With luck, this will get me unwedged. But if you";
-        help_line[1] = "really didn't forget anything, try typing `2' now; then";
-        help_line[0] = "my insertion and my current dilemma will both disappear.";
-        error();
-    }
-}
+/* off_save: translated to Rust in src/scan.rs */
 
 
 /* extra_right_brace: translated to Rust in src/scan.rs */
@@ -9805,56 +9751,9 @@ new_graf(bool indented)
         build_page();
 }
 
-void indent_in_hmode(void)
-{
-    int32_t p, q;
+/* indent_in_hmode: translated to Rust in src/scan.rs */
 
-    if (cur_chr > 0) {
-        p = new_null_box();
-        mem[p + 1].b32.s1 = eqtb[DIMEN_BASE].b32.s1;
-        if (abs(cur_list.mode) == HMODE)
-            cur_list.aux.b32.s0 = 1000;
-        else {
-
-            q = new_noad();
-            mem[q + 1].b32.s1 = SUB_BOX;
-            mem[q + 1].b32.s0 = p;
-            p = q;
-        }
-        {
-            mem[cur_list.tail].b32.s1 = p;
-            cur_list.tail = LLIST_link(cur_list.tail);
-        }
-    }
-}
-
-void head_for_vmode(void)
-{
-    if (cur_list.mode < 0) {
-
-        if (cur_cmd != HRULE)
-            off_save();
-        else {
-            error_here_with_diagnostic("You can't use `");
-            print_esc_cstr("hrule");
-            print_cstr("' here except with leaders");
-            capture_to_diagnostic(NULL);
-
-            {
-                help_ptr = 2;
-                help_line[1] = "To put a horizontal rule in an hbox or an alignment,";
-                help_line[0] = "you should use \\leaders or \\hrulefill (see The TeXbook).";
-            }
-            error();
-        }
-    } else {
-
-        back_input();
-        cur_tok = par_token;
-        back_input();
-        cur_input.index = INSERTED;
-    }
-}
+/* head_for_vmode: translated to Rust in src/scan.rs */
 
 /* end_graf: translated to Rust in src/scan.rs */
 
@@ -11373,19 +11272,7 @@ insert_src_special(void)
 }
 
 
-void append_src_special(void)
-{
-    if ((source_filename_stack[in_open] > 0 && is_new_source(source_filename_stack[in_open], line))) {
-        new_whatsit(SPECIAL_NODE, WRITE_NODE_SIZE);
-        mem[cur_list.tail + 1].b32.s0 = 0;
-        def_ref = get_avail();
-        mem[def_ref].b32.s0 = TEX_NULL;
-        str_toks(make_src_special(source_filename_stack[in_open], line));
-        mem[def_ref].b32.s1 = mem[TEMP_HEAD].b32.s1;
-        mem[cur_list.tail + 1].b32.s1 = def_ref;
-        remember_source_info(source_filename_stack[in_open], line);
-    }
-}
+/* append_src_special: translated to Rust in src/scan.rs */
 
 
 /* Tectonic: insert a \special into the current token stream */
