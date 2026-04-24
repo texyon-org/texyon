@@ -4726,3 +4726,133 @@ pub unsafe extern "C" fn append_src_special() {
         crate::texmfmp::remember_source_info(fname, crate::globals::line());
     }
 }
+
+// ---------------------------------------------------------------------------
+// tokens_to_string
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:13060 (tokens_to_string)
+#[no_mangle]
+pub unsafe extern "C" fn tokens_to_string(p: i32) -> i32 {
+    if selector() == SELECTOR_NEW_STRING {
+        crate::errors::pdf_error(c"tokens".as_ptr(), c"tokens_to_string() called while selector = new_string".as_ptr());
+    }
+    set_old_setting(selector() as u8);
+    set_selector(SELECTOR_NEW_STRING);
+    show_token_list(mem_b32s1(p), crate::mem::TEX_NULL, pool_size() - pool_ptr());
+    set_selector(old_setting() as i32);
+    crate::string_pool::make_string()
+}
+
+// ---------------------------------------------------------------------------
+// compare_strings
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:13073 (compare_strings)
+#[no_mangle]
+pub unsafe extern "C" fn compare_strings() {
+    let save_cur_cs = cur_cs();
+    scan_toks(false, true);
+    let s1 = tokens_to_string(def_ref());
+    crate::mem::delete_token_ref(def_ref());
+    set_cur_cs(save_cur_cs);
+    scan_toks(false, true);
+    let s2 = tokens_to_string(def_ref());
+    crate::mem::delete_token_ref(def_ref());
+
+    let i1 = str_start(s1 - 65536);
+    let j1 = str_start(s1 + 1 - 65536);
+    let i2 = str_start(s2 - 65536);
+    let j2 = str_start(s2 + 1 - 65536);
+
+    let result = 'done: {
+        let mut i1 = i1;
+        let mut i2 = i2;
+        while i1 < j1 && i2 < j2 {
+            if str_pool_entry(i1) < str_pool_entry(i2) {
+                break 'done -1i32;
+            }
+            if str_pool_entry(i1) > str_pool_entry(i2) {
+                break 'done 1i32;
+            }
+            i1 += 1;
+            i2 += 1;
+        }
+        if i1 == j1 && i2 == j2 {
+            0i32
+        } else if i1 < j1 {
+            1i32
+        } else {
+            -1i32
+        }
+    };
+
+    crate::string_pool::flush_str(s2);
+    crate::string_pool::flush_str(s1);
+    set_cur_val(result);
+    set_cur_val_level(INT_VAL as u8);
+}
+
+// ---------------------------------------------------------------------------
+// new_write_whatsit
+// ---------------------------------------------------------------------------
+
+const OPEN_NODE_SIZE: i16 = 3; // xetex-constants.h:118
+
+// translated from xetex-xetex0.c:11045 (new_write_whatsit)
+#[no_mangle]
+pub unsafe extern "C" fn new_write_whatsit(w: i16) {
+    crate::mem::new_whatsit(cur_chr() as i16, w);
+    if w != WRITE_NODE_SIZE {
+        scan_four_bit_int();
+    } else {
+        scan_int();
+        if cur_val() < 0 {
+            set_cur_val(17);
+        } else if cur_val() > 15 && cur_val() != 18 {
+            set_cur_val(16);
+        }
+    }
+    set_mem_b32s0(crate::globals::cur_list_tail() + 1, cur_val());
+}
+
+// ---------------------------------------------------------------------------
+// begin_insert_or_adjust
+// ---------------------------------------------------------------------------
+
+const VADJUST: u8 = 38;         // xetex_format.h:276
+const INSERT_GROUP: u8 = 11;    // xetex-constants.h:163
+const IGNORE_DEPTH: i32 = -65_536_000; // xetex_format.h:388
+
+// translated from xetex-xetex0.c:9760 (begin_insert_or_adjust)
+#[no_mangle]
+pub unsafe extern "C" fn begin_insert_or_adjust() {
+    if cur_cmd() == VADJUST {
+        set_cur_val(255);
+    } else {
+        scan_eight_bit_int();
+        if cur_val() == 255 {
+            error_here_with_diagnostic(c"You can't ".as_ptr());
+            crate::output::print_esc_cstr(c"insert".as_ptr());
+            crate::output::print_int(cur_val());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(1);
+            set_help_line(0, c"I'm changing to \\insert0; box 255 is special.".as_ptr());
+            error();
+            set_cur_val(0);
+        }
+    }
+    set_save_stack_b32s1(save_ptr(), cur_val());
+    if cur_cmd() == VADJUST && scan_keyword(c"pre".as_ptr()) {
+        set_save_stack_b32s1(save_ptr() + 1, 1);
+    } else {
+        set_save_stack_b32s1(save_ptr() + 1, 0);
+    }
+    set_save_ptr(save_ptr() + 2);
+    crate::save::new_save_level(INSERT_GROUP);
+    scan_left_brace();
+    normal_paragraph();
+    crate::mem::push_nest();
+    crate::globals::set_cur_list_mode(-1); // -VMODE
+    crate::globals::set_cur_list_aux_b32s1(IGNORE_DEPTH);
+}

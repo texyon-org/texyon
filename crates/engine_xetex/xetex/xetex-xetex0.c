@@ -9757,40 +9757,7 @@ new_graf(bool indented)
 
 /* end_graf: translated to Rust in src/scan.rs */
 
-void begin_insert_or_adjust(void)
-{
-    if (cur_cmd == VADJUST)
-        cur_val = 255;
-    else {
-
-        scan_eight_bit_int();
-        if (cur_val == 255) {
-            error_here_with_diagnostic("You can't ");
-            print_esc_cstr("insert");
-            print_int(255);
-            capture_to_diagnostic(NULL);
-
-            {
-                help_ptr = 1;
-                help_line[0] = "I'm changing to \\insert0; box 255 is special.";
-            }
-            error();
-            cur_val = 0;
-        }
-    }
-    save_stack[save_ptr + 0].b32.s1 = cur_val;
-    if ((cur_cmd == VADJUST) && scan_keyword("pre"))
-        save_stack[save_ptr + 1].b32.s1 = 1;
-    else
-        save_stack[save_ptr + 1].b32.s1 = 0;
-    save_ptr = save_ptr + 2;
-    new_save_level(INSERT_GROUP);
-    scan_left_brace();
-    normal_paragraph();
-    push_nest();
-    cur_list.mode = -1;
-    cur_list.aux.b32.s1 = IGNORE_DEPTH;
-}
+/* begin_insert_or_adjust: translated to Rust in src/scan.rs */
 
 /* make_mark: translated to Rust in src/scan.rs */
 
@@ -11042,21 +11009,7 @@ common_ending:
     error();
 }
 
-void new_write_whatsit(small_number w)
-{
-    new_whatsit(cur_chr, w);
-    if (w != WRITE_NODE_SIZE)
-        scan_four_bit_int();
-    else {
-
-        scan_int();
-        if (cur_val < 0)
-            cur_val = 17;
-        else if ((cur_val > 15) && (cur_val != 18))
-            cur_val = 16;
-    }
-    mem[cur_list.tail + 1].b32.s0 = cur_val;
-}
+/* new_write_whatsit: translated to Rust in src/scan.rs */
 
 /* scan_and_pack_name: translated to Rust in src/scan.rs */
 
@@ -13057,65 +13010,11 @@ close_files_and_terminate(void)
 
 /* flush_str: translated to Rust in src/string_pool.rs */
 
-str_number tokens_to_string(int32_t p)
-{
-    if (selector == SELECTOR_NEW_STRING )
-        pdf_error("tokens", "tokens_to_string() called while selector = new_string");
-    old_setting = selector;
-    selector = SELECTOR_NEW_STRING ;
-    show_token_list(mem[p].b32.s1, TEX_NULL, pool_size - pool_ptr);
-    selector = old_setting;
-    return make_string();
-}
+/* tokens_to_string: translated to Rust in src/scan.rs */
 
 /* scan_pdf_ext_toks: translated to Rust in src/scan.rs */
 
-void compare_strings(void)
-{
-    str_number s1, s2;
-    pool_pointer i1, i2, j1, j2;
-    int32_t save_cur_cs;
-
-    save_cur_cs = cur_cs;
-    {
-        scan_toks(false, true);
-    }
-    s1 = tokens_to_string(def_ref);
-    delete_token_ref(def_ref);
-    cur_cs = save_cur_cs;
-    {
-        scan_toks(false, true);
-    }
-    s2 = tokens_to_string(def_ref);
-    delete_token_ref(def_ref);
-    i1 = str_start[(s1) - 65536L];
-    j1 = str_start[(s1 + 1) - 65536L];
-    i2 = str_start[(s2) - 65536L];
-    j2 = str_start[(s2 + 1) - 65536L];
-    while ((i1 < j1) && (i2 < j2)) {
-
-        if (str_pool[i1] < str_pool[i2]) {
-            cur_val = -1;
-            goto done;
-        }
-        if (str_pool[i1] > str_pool[i2]) {
-            cur_val = 1;
-            goto done;
-        }
-        i1++;
-        i2++;
-    }
-    if ((i1 == j1) && (i2 == j2))
-        cur_val = 0;
-    else if (i1 < j1)
-        cur_val = 1;
-    else
-        cur_val = -1;
-done:
-    flush_str(s2);
-    flush_str(s1);
-    cur_val_level = INT_VAL;
-}
+/* compare_strings: translated to Rust in src/scan.rs */
 
 
 int32_t
