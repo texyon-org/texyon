@@ -32,6 +32,44 @@ template.
 
 ---
 
+## Session 43 — 2026-04-24 — main_control helper cluster
+
+**Goal:** Continue translating small functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 42
+
+**Work done:**
+- Added `par_loc`, `par_token` accessors to `globals.rs`.
+- Translated `off_save` (9325), `indent_in_hmode` (9808), `head_for_vmode` (9831), `append_src_special` (11376) → `src/scan.rs` (a38b0b96).
+- Translated `tokens_to_string` (13060), `compare_strings` (13073), `new_write_whatsit` (11045), `begin_insert_or_adjust` (9760) → `src/scan.rs` (d09daa78).
+- Translated `do_endv` (10161), `get_r_token` (10407) → `src/scan.rs` (b80b0aba).
+- Translated `append_discretionary` (9956) → `src/scan.rs` (b0c95ff1).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 43
+- 283 Rust functions total; 11 new this session.
+- xetex-xetex0.c: 13118 LOC, ~76 C functions remaining.
+
+**Surprises / gotchas:**
+- `head_for_vmode` had a heap-corruption bug: passing the return value of `error_here_with_diagnostic` back to `capture_to_diagnostic` caused a double-free. `error_here_with_diagnostic` already calls `capture_to_diagnostic(error)` internally, so the caller must always pass `null_mut()` — never the returned pointer.
+- Binary search (enabling/disabling functions one at a time) was needed to isolate this bug. 4 functions → 3 binary search steps.
+
+**For the next session:**
+- `build_discretionary` (9982): depends on `unsave` (in Rust), `copy_node_list` (C). Medium complexity.
+- `do_register_command` (10439): complex with goto → needs `gsa_w_def`, `sa_w_def`, `gsa_def`, `sa_def` (C extern). Long function.
+- `issue_message` (10774): medium, uses `token_show`, `flush_list`, `overflow`, `use_err_help`, `long_help_seen`.
+- `shift_case` (10831): medium, scans toks and modifies case codes.
+- `show_whatever` (10859): medium, dispatcher for \show/\showbox/etc.
+- `new_font` (10642): very long (~130 LOC), complex.
+- `append_to_vlist` (8020): depends on `prev_depth` in output.rs; check if needed.
+
+---
+
 ## Session 42 — 2026-04-23 — continued small function cluster
 
 **Goal:** Continue translating small functions from xetex-xetex0.c.
