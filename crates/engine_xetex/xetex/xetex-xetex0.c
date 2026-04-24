@@ -9955,110 +9955,7 @@ void append_italic_correction(void)
 
 /* append_discretionary: translated to Rust in src/scan.rs */
 
-void build_discretionary(void)
-{
-    int32_t p, q;
-    int32_t n;
-    unsave();
-    q = cur_list.head;
-    p = mem[q].b32.s1;
-    n = 0;
-    while (p != TEX_NULL) {
-
-        if (!(is_char_node(p))) {
-
-            if (NODE_type(p) > RULE_NODE) {
-
-                if (NODE_type(p) != KERN_NODE) {
-
-                    if (NODE_type(p) != LIGATURE_NODE) {
-
-                        if ((NODE_type(p) != WHATSIT_NODE)
-                            || ((mem[p].b16.s0 != NATIVE_WORD_NODE)
-                                && (mem[p].b16.s0 != NATIVE_WORD_NODE_AT)
-                                && (mem[p].b16.s0 != GLYPH_NODE))) {
-                            error_here_with_diagnostic("Improper discretionary list");
-                            capture_to_diagnostic(NULL);
-                            {
-                                help_ptr = 1;
-                                help_line[0] = "Discretionary lists must contain only boxes and kerns.";
-                            }
-                            error();
-
-                            begin_diagnostic();
-                            diagnostic_begin_capture_warning_here();
-
-                            print_nl_cstr("The following discretionary sublist has been deleted:");
-                            show_box(p);
-
-                            capture_to_diagnostic(NULL);
-                            end_diagnostic(true);
-                            flush_node_list(p);
-                            mem[q].b32.s1 = TEX_NULL;
-                            goto done;
-                        }
-                    }
-                }
-            }
-        }
-        q = p;
-        p = mem[q].b32.s1;
-        n++;
-    } /*:1156 */
-done:
-    p = mem[cur_list.head].b32.s1;
-    pop_nest();
-    switch (save_stack[save_ptr - 1].b32.s1) {
-    case 0:
-        mem[cur_list.tail + 1].b32.s0 = p;
-        break;
-    case 1:
-        mem[cur_list.tail + 1].b32.s1 = p;
-        break;
-    case 2:
-        {
-            if ((n > 0) && (abs(cur_list.mode) == MMODE)) {
-                error_here_with_diagnostic("Illegal math ");
-                print_esc_cstr("discretionary");
-                capture_to_diagnostic(NULL);
-
-                {
-                    help_ptr = 2;
-                    help_line[1] = "Sorry: The third part of a discretionary break must be";
-                    help_line[0] = "empty, in math formulas. I had to delete your third part.";
-                }
-                flush_node_list(p);
-                n = 0;
-                error();
-            } else
-                mem[cur_list.tail].b32.s1 = p;
-            if (n <= UINT16_MAX)
-                mem[cur_list.tail].b16.s0 = n;
-            else {
-                error_here_with_diagnostic("Discretionary list is too long");
-                capture_to_diagnostic(NULL);
-
-                {
-                    help_ptr = 2;
-                    help_line[1] = "Wow---I never thought anybody would tweak me here.";
-                    help_line[0] = "You can't seriously need such a huge discretionary list?";
-                }
-                error();
-            }
-            if (n > 0)
-                cur_list.tail = q;
-            save_ptr--;
-            return;
-        }
-        break;
-    }
-    save_stack[save_ptr - 1].b32.s1++;
-    new_save_level(DISC_GROUP);
-    scan_left_brace();
-    push_nest();
-    cur_list.mode = -104;
-    cur_list.aux.b32.s0 = 1000;
-}
+/* build_discretionary: translated to Rust in src/scan.rs */
 
 void make_accent(void)
 {
@@ -10762,32 +10659,7 @@ void issue_message(void)
 }
 
 
-void
-shift_case(void)
-{
-    int32_t b;
-    int32_t p;
-    int32_t t;
-    int32_t c;
-
-    b = cur_chr;
-    p = scan_toks(false, false);
-    p = mem[def_ref].b32.s1;
-
-    while (p != TEX_NULL) {
-        t = mem[p].b32.s0;
-        if (t < CS_TOKEN_FLAG + SINGLE_BASE) {
-            c = t % MAX_CHAR_VAL;
-            if (eqtb[b + c].b32.s1 != 0)
-                mem[p].b32.s0 = t - c + eqtb[b + c].b32.s1;
-        }
-        p = LLIST_link(p);
-    }
-
-    begin_token_list(mem[def_ref].b32.s1, BACKED_UP);
-    mem[def_ref].b32.s1 = avail;
-    avail = def_ref;
-}
+/* shift_case: translated to Rust in src/scan.rs */
 
 
 void show_whatever(void)

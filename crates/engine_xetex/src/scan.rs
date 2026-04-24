@@ -4968,3 +4968,137 @@ pub unsafe extern "C" fn append_discretionary() {
         crate::globals::set_cur_list_aux_b32s0(1000);
     }
 }
+
+// ---------------------------------------------------------------------------
+// shift_case
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:10765 (shift_case)
+#[no_mangle]
+pub unsafe extern "C" fn shift_case() {
+    let b = cur_chr();
+    scan_toks(false, false);
+    let mut p = mem_b32s1(def_ref());
+    while p != crate::mem::TEX_NULL {
+        let t = mem_b32s0(p);
+        if t < CS_TOKEN_FLAG + SINGLE_BASE {
+            let c = t % MAX_CHAR_VAL;
+            if eqtb_b32s1(b + c) != 0 {
+                set_mem_b32s0(p, t - c + eqtb_b32s1(b + c));
+            }
+        }
+        p = mem_b32s1(p);
+    }
+    begin_token_list(mem_b32s1(def_ref()), BACKED_UP);
+    set_mem_b32s1(def_ref(), avail());
+    set_avail(def_ref());
+}
+
+// ---------------------------------------------------------------------------
+// build_discretionary
+// ---------------------------------------------------------------------------
+
+const WHATSIT_NODE: u16 = 8;          // xetex_format.h:388
+const NATIVE_WORD_NODE: u16 = 40;     // xetex_format.h:463
+const NATIVE_WORD_NODE_AT: u16 = 41;  // xetex_format.h:464
+const GLYPH_NODE_BD: u16 = 42;        // xetex_format.h:465
+const MMODE: i16 = 207;               // xetex_format.h:370
+
+// translated from xetex-xetex0.c:9958 (build_discretionary)
+#[no_mangle]
+pub unsafe extern "C" fn build_discretionary() {
+    crate::save::unsave();
+    let q_head = crate::globals::cur_list_head();
+    let mut q = q_head;
+    let mut p = mem_b32s1(q);
+    let mut n: i32 = 0;
+
+    'walk: loop {
+        if p == crate::mem::TEX_NULL { break; }
+        if p < crate::globals::hi_mem_min() {
+            // not a char node — check node type
+            let ntype = mem_b16s1(p);
+            const RULE_NODE_BD: u16 = 2;  // xetex_format.h:387
+            const LIGATURE_NODE: u16 = 6; // xetex_format.h (= mem.rs)
+            if ntype > RULE_NODE_BD {
+                let ok = ntype == KERN_NODE   // 11
+                    || ntype == LIGATURE_NODE  // 6
+                    || ntype == WHATSIT_NODE && {
+                        let sub = mem_b16s0(p);
+                        sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT || sub == GLYPH_NODE_BD
+                    };
+                if !ok {
+                    error_here_with_diagnostic(c"Improper discretionary list".as_ptr());
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(1);
+                    set_help_line(0, c"Discretionary lists must contain only boxes and kerns.".as_ptr());
+                    error();
+
+                    crate::output::begin_diagnostic();
+                    crate::output::diagnostic_begin_capture_warning_here();
+                    crate::output::print_nl_cstr(c"The following discretionary sublist has been deleted:".as_ptr());
+                    show_box(p);
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    crate::output::end_diagnostic(true);
+
+                    flush_node_list(p);
+                    set_mem_b32s1(q, crate::mem::TEX_NULL);
+                    break 'walk;
+                }
+            }
+        }
+        q = p;
+        p = mem_b32s1(q);
+        n += 1;
+    }
+
+    p = mem_b32s1(q_head);
+    crate::mem::pop_nest();
+
+    let slot = save_stack_b32s1(save_ptr() - 1);
+    match slot {
+        0 => {
+            set_mem_b32s0(crate::globals::cur_list_tail() + 1, p);
+        }
+        1 => {
+            set_mem_b32s1(crate::globals::cur_list_tail() + 1, p);
+        }
+        2 => {
+            if n > 0 && cur_list_mode().abs() == MMODE {
+                error_here_with_diagnostic(c"Illegal math ".as_ptr());
+                crate::output::print_esc_cstr(c"discretionary".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(2);
+                set_help_line(1, c"Sorry: The third part of a discretionary break must be".as_ptr());
+                set_help_line(0, c"empty, in math formulas. I had to delete your third part.".as_ptr());
+                flush_node_list(p);
+                n = 0;
+                error();
+            } else {
+                set_mem_b32s1(crate::globals::cur_list_tail(), p);
+            }
+            if n <= u16::MAX as i32 {
+                set_mem_b16s0(crate::globals::cur_list_tail(), n as u16);
+            } else {
+                error_here_with_diagnostic(c"Discretionary list is too long".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(2);
+                set_help_line(1, c"Wow---I never thought anybody would tweak me here.".as_ptr());
+                set_help_line(0, c"You can't seriously need such a huge discretionary list?".as_ptr());
+                error();
+            }
+            if n > 0 {
+                crate::globals::set_cur_list_tail(q);
+            }
+            set_save_ptr(save_ptr() - 1);
+            return;
+        }
+        _ => {}
+    }
+    set_save_stack_b32s1(save_ptr() - 1, slot + 1);
+    crate::save::new_save_level(DISC_GROUP);
+    scan_left_brace();
+    crate::mem::push_nest();
+    crate::globals::set_cur_list_mode(-104); // -HMODE
+    crate::globals::set_cur_list_aux_b32s0(1000);
+}
