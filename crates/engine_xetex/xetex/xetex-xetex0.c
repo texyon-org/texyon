@@ -10158,23 +10158,7 @@ void make_accent(void)
 
 /* omit_error: translated to Rust in src/scan.rs */
 
-void do_endv(void)
-{
-    base_ptr = input_ptr;
-    input_stack[base_ptr] = cur_input;
-    while ((input_stack[base_ptr].index != V_TEMPLATE) && (input_stack[base_ptr].loc == TEX_NULL)
-           && (input_stack[base_ptr].state == TOKEN_LIST))
-        base_ptr--;
-    if ((input_stack[base_ptr].index != V_TEMPLATE) || (input_stack[base_ptr].loc != TEX_NULL)
-        || (input_stack[base_ptr].state != TOKEN_LIST))
-        fatal_error("(interwoven alignment preambles are not allowed)");
-    if (cur_group == ALIGN_GROUP) {
-        end_graf();
-        if (fin_col())
-            fin_row();
-    } else
-        off_save();
-}
+/* do_endv: translated to Rust in src/scan.rs */
 
 /* cs_error: translated to Rust in src/scan.rs */
 
@@ -10404,33 +10388,7 @@ done:
 }
 
 
-void
-get_r_token(void)
-{
-restart:
-    do {
-        get_token();
-    } while (cur_tok == SPACE_TOKEN);
-
-    if (cur_cs == 0 || cur_cs > eqtb_top || (cur_cs > FROZEN_CONTROL_SEQUENCE && cur_cs <= EQTB_SIZE)) {
-        error_here_with_diagnostic("Missing control sequence inserted");
-        capture_to_diagnostic(NULL);
-
-        help_ptr = 5;
-        help_line[4] = "Please don't say `\\def cs{...}', say `\\def\\cs{...}'.";
-        help_line[3] = "I've inserted an inaccessible control sequence so that your";
-        help_line[2] = "definition will be completed without mixing me up too badly.";
-        help_line[1] = "You can recover graciously from this error, if you're";
-        help_line[0] = "careful; see exercise 27.2 in The TeXbook.";
-
-        if (cur_cs == 0)
-            back_input();
-
-        cur_tok = CS_TOKEN_FLAG + FROZEN_PROTECTION;
-        ins_error();
-        goto restart;
-    }
-}
+/* get_r_token: translated to Rust in src/scan.rs */
 
 
 /* trap_zero_glue: translated to Rust in src/scan.rs */

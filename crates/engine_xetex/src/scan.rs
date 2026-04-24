@@ -4856,3 +4856,80 @@ pub unsafe extern "C" fn begin_insert_or_adjust() {
     crate::globals::set_cur_list_mode(-1); // -VMODE
     crate::globals::set_cur_list_aux_b32s1(IGNORE_DEPTH);
 }
+
+// ---------------------------------------------------------------------------
+// do_endv
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:10161 (do_endv)
+#[no_mangle]
+pub unsafe extern "C" fn do_endv() {
+    extern "C" {
+        fn fin_col() -> bool;
+        fn fin_row();
+    }
+    const V_TEMPLATE: u16 = 2;   // xetex-constants.h:201
+    const TOKEN_LIST: u16 = 0;   // xetex-constants.h:261
+    const ALIGN_GROUP: u8 = 6;   // xetex-constants.h:158
+
+    crate::globals::set_base_ptr(crate::globals::input_ptr());
+    crate::globals::set_input_stack(crate::globals::base_ptr(), crate::globals::cur_input());
+    while crate::globals::input_stack(crate::globals::base_ptr()).index != V_TEMPLATE
+        && crate::globals::input_stack(crate::globals::base_ptr()).loc == crate::mem::TEX_NULL
+        && crate::globals::input_stack(crate::globals::base_ptr()).state == TOKEN_LIST
+    {
+        crate::globals::set_base_ptr(crate::globals::base_ptr() - 1);
+    }
+    if crate::globals::input_stack(crate::globals::base_ptr()).index != V_TEMPLATE
+        || crate::globals::input_stack(crate::globals::base_ptr()).loc != crate::mem::TEX_NULL
+        || crate::globals::input_stack(crate::globals::base_ptr()).state != TOKEN_LIST
+    {
+        crate::errors::fatal_error(c"(interwoven alignment preambles are not allowed)".as_ptr());
+    }
+    if cur_group() == ALIGN_GROUP {
+        end_graf();
+        if fin_col() {
+            fin_row();
+        }
+    } else {
+        off_save();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// get_r_token
+// ---------------------------------------------------------------------------
+
+const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226; // xetex_format.h:201
+const EQTB_SIZE: i32 = 8_941_458;               // xetex_format.h:224
+const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE; // xetex-constants.h:55
+
+// translated from xetex-xetex0.c:10407 (get_r_token)
+#[no_mangle]
+pub unsafe extern "C" fn get_r_token() {
+    loop {
+        loop {
+            get_token();
+            if cur_tok() != SPACE_TOKEN { break; }
+        }
+        if cur_cs() == 0
+            || cur_cs() > crate::globals::eqtb_top()
+            || (cur_cs() > FROZEN_CONTROL_SEQUENCE && cur_cs() <= EQTB_SIZE)
+        {
+            error_here_with_diagnostic(c"Missing control sequence inserted".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(5);
+            set_help_line(4, c"Please don't say `\\def cs{...}', say `\\def\\cs{...}'.".as_ptr());
+            set_help_line(3, c"I've inserted an inaccessible control sequence so that your".as_ptr());
+            set_help_line(2, c"definition will be completed without mixing me up too badly.".as_ptr());
+            set_help_line(1, c"You can recover graciously from this error, if you're".as_ptr());
+            set_help_line(0, c"careful; see exercise 27.2 in The TeXbook.".as_ptr());
+            if cur_cs() == 0 { crate::input::back_input(); }
+            set_cur_tok(CS_TOKEN_FLAG + FROZEN_PROTECTION);
+            crate::input::ins_error();
+            // goto restart
+        } else {
+            break;
+        }
+    }
+}
