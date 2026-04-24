@@ -9953,31 +9953,7 @@ void append_italic_correction(void)
     }
 }
 
-void append_discretionary(void)
-{
-    int32_t c;
-
-    mem[cur_list.tail].b32.s1 = new_disc();
-    cur_list.tail = LLIST_link(cur_list.tail);
-
-    if (cur_chr == 1) {
-        c = hyphen_char[eqtb[CUR_FONT_LOC].b32.s1];
-        if (c >= 0) {
-
-            if (c <= BIGGEST_CHAR)
-                mem[cur_list.tail + 1].b32.s0 = new_character(eqtb[CUR_FONT_LOC].b32.s1, c);
-        }
-    } else {
-
-        save_ptr++;
-        save_stack[save_ptr - 1].b32.s1 = 0;
-        new_save_level(DISC_GROUP);
-        scan_left_brace();
-        push_nest();
-        cur_list.mode = -104;
-        cur_list.aux.b32.s0 = 1000;
-    }
-}
+/* append_discretionary: translated to Rust in src/scan.rs */
 
 void build_discretionary(void)
 {

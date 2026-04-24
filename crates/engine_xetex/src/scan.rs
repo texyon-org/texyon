@@ -4933,3 +4933,38 @@ pub unsafe extern "C" fn get_r_token() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// append_discretionary
+// ---------------------------------------------------------------------------
+
+const DISC_GROUP: u8 = 10; // xetex-constants.h:162
+
+// translated from xetex-xetex0.c:9956 (append_discretionary)
+#[no_mangle]
+pub unsafe extern "C" fn append_discretionary() {
+    extern "C" {
+        fn new_character(f: i32, c: u16) -> i32;
+    }
+
+    let tail = crate::globals::cur_list_tail();
+    set_mem_b32s1(tail, crate::mem::new_disc());
+    crate::globals::set_cur_list_tail(mem_b32s1(tail));
+
+    if cur_chr() == 1 {
+        let f = eqtb_b32s1(CUR_FONT_LOC);
+        let c = crate::globals::hyphen_char_entry(f);
+        if c >= 0 && c <= BIGGEST_CHAR {
+            let tail2 = crate::globals::cur_list_tail();
+            set_mem_b32s0(tail2 + 1, new_character(f, c as u16));
+        }
+    } else {
+        set_save_stack_b32s1(save_ptr(), 0);
+        set_save_ptr(save_ptr() + 1);
+        crate::save::new_save_level(DISC_GROUP);
+        scan_left_brace();
+        crate::mem::push_nest();
+        crate::globals::set_cur_list_mode(-104); // -HMODE
+        crate::globals::set_cur_list_aux_b32s0(1000);
+    }
+}
