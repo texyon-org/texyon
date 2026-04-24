@@ -162,6 +162,8 @@ mod raw {
         pub(super) static mut history: i32;
         pub(super) static mut error_count: i8;
         pub(super) static mut use_err_help: bool;
+        // True after \errmessage when interaction < errorstop (xetex-xetexd.h:689).
+        pub(super) static mut long_help_seen: bool;
         pub(super) static mut halt_on_error_p: i32;
         // `log_opened`, `job_name`, `texmf_log_name` (xetex-xetexd.h:551–554).
         pub(super) static mut log_opened: bool;
@@ -1347,6 +1349,18 @@ pub(crate) fn set_error_count(v: i8) {
 pub(crate) fn use_err_help() -> bool {
     // SAFETY: see module-level doc.
     unsafe { raw::use_err_help }
+}
+#[inline]
+pub(crate) fn set_use_err_help(v: bool) {
+    unsafe { raw::use_err_help = v; }
+}
+#[inline]
+pub(crate) fn long_help_seen() -> bool {
+    unsafe { raw::long_help_seen }
+}
+#[inline]
+pub(crate) fn set_long_help_seen(v: bool) {
+    unsafe { raw::long_help_seen = v; }
 }
 #[inline]
 pub(crate) fn halt_on_error_p() -> bool {
