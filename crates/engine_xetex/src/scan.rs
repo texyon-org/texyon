@@ -5161,3 +5161,82 @@ pub unsafe extern "C" fn issue_message() {
     set_str_ptr(str_ptr() - 1);
     set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR_IM));
 }
+
+// ---------------------------------------------------------------------------
+// append_to_vlist
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:8020 (append_to_vlist)
+#[no_mangle]
+pub unsafe extern "C" fn append_to_vlist(b: i32) {
+    const GLUE_BASE: i32 = 2_254_340;          // xetex_format.h:205
+    const INT_PAR_XETEX_UPWARDS: i32 = 71;     // xetex_format.h:106
+    const GLUE_PAR_BASELINE_SKIP: i32 = 1;     // xetex_format.h:150
+    const GLUE_PAR_LINE_SKIP: i16 = 0;         // xetex_format.h:149
+    const DIMEN_PAR_LINE_SKIP_LIMIT: i32 = 2;  // xetex_format.h:124
+
+    let upwards = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS) > 0;
+    if crate::globals::cur_list_aux_b32s1() > IGNORE_DEPTH {
+        let baseline_spec = eqtb_b32s1(GLUE_BASE + GLUE_PAR_BASELINE_SKIP);
+        let d = mem_b32s1(baseline_spec + 1)
+            - crate::globals::cur_list_aux_b32s1()
+            - if upwards { mem_b32s1(b + 2) } else { mem_b32s1(b + 3) };
+        let p = if d < eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_LINE_SKIP_LIMIT) {
+            crate::mem::new_param_glue(GLUE_PAR_LINE_SKIP)
+        } else {
+            let p = crate::mem::new_skip_param(GLUE_PAR_BASELINE_SKIP as i16);
+            set_mem_b32s1(crate::globals::temp_ptr() + 1, d);
+            p
+        };
+        set_mem_b32s1(crate::globals::cur_list_tail(), p);
+        crate::globals::set_cur_list_tail(p);
+    }
+    set_mem_b32s1(crate::globals::cur_list_tail(), b);
+    crate::globals::set_cur_list_tail(b);
+    crate::globals::set_cur_list_aux_b32s1(
+        if upwards { mem_b32s1(b + 3) } else { mem_b32s1(b + 2) }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// align_peek
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:8785 (align_peek)
+#[no_mangle]
+pub unsafe extern "C" fn align_peek() {
+    extern "C" {
+        fn fin_align();
+        fn init_row();
+        fn init_col();
+    }
+    const NO_ALIGN: u8 = 34;           // xetex_format.h:272
+    const NO_ALIGN_GROUP: u8 = 7;      // xetex-constants.h:159
+    const CAR_RET: u8 = 5;             // xetex_format.h:235
+    const CR_CR_CODE: i32 = 1_114_115; // xetex-constants.h:681
+
+    loop {
+        crate::globals::set_align_state(1_000_000);
+        loop {
+            get_x_or_protected();
+            if cur_cmd() != SPACER { break; }
+        }
+        if cur_cmd() == NO_ALIGN {
+            scan_left_brace();
+            crate::save::new_save_level(NO_ALIGN_GROUP);
+            if crate::globals::cur_list_mode() == -1 {
+                normal_paragraph();
+            }
+            return;
+        } else if cur_cmd() == RIGHT_BRACE {
+            fin_align();
+            return;
+        } else if cur_cmd() == CAR_RET && cur_chr() == CR_CR_CODE {
+            continue;
+        } else {
+            init_row();
+            init_col();
+            return;
+        }
+    }
+}

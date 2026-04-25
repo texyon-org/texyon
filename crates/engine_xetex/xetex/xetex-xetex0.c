@@ -8017,35 +8017,7 @@ exit:
     return r;
 }
 
-void append_to_vlist(int32_t b)
-{
-    scaled_t d;
-    int32_t p;
-    bool upwards;
-
-    upwards = (INTPAR(xetex_upwards) > 0);
-    if (cur_list.aux.b32.s1 > IGNORE_DEPTH) {
-        if (upwards)
-            d = mem[GLUEPAR(baseline_skip) + 1].b32.s1 - cur_list.aux.b32.s1 - mem[b + 2].b32.s1;
-        else
-            d = mem[GLUEPAR(baseline_skip) + 1].b32.s1 - cur_list.aux.b32.s1 - mem[b + 3].b32.s1;
-        if (d < DIMENPAR(line_skip_limit))
-            p = new_param_glue(GLUE_PAR__line_skip);
-        else {
-
-            p = new_skip_param(GLUE_PAR__baseline_skip);
-            mem[temp_ptr + 1].b32.s1 = d;
-        }
-        mem[cur_list.tail].b32.s1 = p;
-        cur_list.tail = p;
-    }
-    mem[cur_list.tail].b32.s1 = b;
-    cur_list.tail = b;
-    if (upwards)
-        cur_list.aux.b32.s1 = mem[b + 3].b32.s1;
-    else
-        cur_list.aux.b32.s1 = mem[b + 2].b32.s1;
-}
+/* append_to_vlist: translated to Rust in src/scan.rs */
 
 /* new_noad: translated to Rust in src/mem.rs */
 /* new_style: translated to Rust in src/mem.rs */
@@ -8782,29 +8754,7 @@ void fin_align(void)
     }
 }
 
-void align_peek(void)
-{
-restart:
-    align_state = 1000000L;
-
-    do {
-        get_x_or_protected();
-    } while (!(cur_cmd != SPACER));
-    if (cur_cmd == NO_ALIGN) {
-        scan_left_brace();
-        new_save_level(NO_ALIGN_GROUP);
-        if (cur_list.mode == -1)
-            normal_paragraph();
-    } else if (cur_cmd == RIGHT_BRACE)
-        fin_align();
-    else if ((cur_cmd == CAR_RET) && (cur_chr == CR_CR_CODE))
-        goto restart;
-    else {
-
-        init_row();
-        init_col();
-    }
-}
+/* align_peek: translated to Rust in src/scan.rs */
 
 /* max_hyphenatable_length: translated to Rust in src/scan.rs */
 
