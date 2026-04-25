@@ -5392,3 +5392,184 @@ pub unsafe extern "C" fn show_whatever() {
     }
     error();
 }
+
+// ---------------------------------------------------------------------------
+// do_register_command
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:10220 (do_register_command)
+#[no_mangle]
+pub unsafe extern "C" fn do_register_command(a: i16) {
+    const ADVANCE: u8 = 92;         // xetex_format.h:332
+    const MULTIPLY: u8 = 93;        // xetex_format.h:334
+    const GLUE_REF: u16 = 119;      // xetex_format.h:361
+    const NORMAL: u16 = 0;          // xetex_format.h:420
+
+    let q = cur_cmd();
+    let mut w: i32 = 0;
+    let mut s: i32 = crate::mem::TEX_NULL;
+
+    // Determine (l, p, e): register address, value type, is_extended_SA
+    let (l, p, e) = 'determine: {
+        if q != REGISTER {
+            get_x_token();
+            if cur_cmd() >= ASSIGN_INT && cur_cmd() <= ASSIGN_MU_GLUE {
+                break 'determine (cur_chr(), (cur_cmd() - ASSIGN_INT) as i16, false);
+            }
+            if cur_cmd() != REGISTER {
+                error_here_with_diagnostic(c"You can't use `".as_ptr());
+                print_cmd_chr(cur_cmd() as u16, cur_chr());
+                crate::output::print_cstr(c"' after ".as_ptr());
+                print_cmd_chr(q as u16, 0);
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(1);
+                set_help_line(0, c"I'm forgetting what you said and not changing anything.".as_ptr());
+                error();
+                return;
+            }
+        }
+        if cur_chr() < 0 || cur_chr() > 19 {
+            let l = cur_chr();
+            let p = (mem_b16s1(l) / 64) as i16;
+            (l, p, true)
+        } else {
+            let p = cur_chr() as i16;
+            scan_register_num();
+            if cur_val() > 255 {
+                crate::save::find_sa_element(p as u16, cur_val(), true);
+                (crate::globals::cur_ptr(), p, true)
+            } else {
+                let l = match p {
+                    INT_VAL   => cur_val() + COUNT_BASE,
+                    DIMEN_VAL => cur_val() + SCALED_BASE,
+                    GLUE_VAL  => cur_val() + SKIP_BASE,
+                    MU_VAL    => cur_val() + MU_SKIP_BASE,
+                    _ => unreachable!(),
+                };
+                (l, p, false)
+            }
+        }
+    };
+
+    // found: read current value into w (int/dimen) or s (glue/mu)
+    if p < GLUE_VAL {
+        w = if e { mem_b32s1(l + 2) } else { eqtb_b32s1(l) };
+    } else if e {
+        s = mem_b32s1(l + 1);
+    } else {
+        s = eqtb_b32s1(l);
+    }
+
+    if q == REGISTER {
+        scan_optional_equals();
+    } else {
+        scan_keyword(c"by".as_ptr());
+    }
+
+    crate::globals::set_arith_error(false);
+
+    if q < MULTIPLY {
+        if p < GLUE_VAL {
+            if p == INT_VAL {
+                scan_int();
+            } else {
+                scan_dimen(false, false, false);
+            }
+            if q == ADVANCE {
+                set_cur_val(cur_val() + w);
+            }
+        } else {
+            scan_glue(p);
+            if q == ADVANCE {
+                let qs = crate::mem::new_spec(cur_val());
+                let r = s;
+                crate::mem::delete_glue_ref(cur_val());
+                set_mem_b32s1(qs + 1, mem_b32s1(qs + 1) + mem_b32s1(r + 1));
+                if mem_b32s1(qs + 2) == 0 {
+                    set_mem_b16s1(qs, NORMAL);
+                }
+                if mem_b16s1(qs) == mem_b16s1(r) {
+                    set_mem_b32s1(qs + 2, mem_b32s1(qs + 2) + mem_b32s1(r + 2));
+                } else if mem_b16s1(qs) < mem_b16s1(r) && mem_b32s1(r + 2) != 0 {
+                    set_mem_b32s1(qs + 2, mem_b32s1(r + 2));
+                    set_mem_b16s1(qs, mem_b16s1(r));
+                }
+                if mem_b32s1(qs + 3) == 0 {
+                    set_mem_b16s0(qs, NORMAL);
+                }
+                if mem_b16s0(qs) == mem_b16s0(r) {
+                    set_mem_b32s1(qs + 3, mem_b32s1(qs + 3) + mem_b32s1(r + 3));
+                } else if mem_b16s0(qs) < mem_b16s0(r) && mem_b32s1(r + 3) != 0 {
+                    set_mem_b32s1(qs + 3, mem_b32s1(r + 3));
+                    set_mem_b16s0(qs, mem_b16s0(r));
+                }
+                set_cur_val(qs);
+            }
+        }
+    } else {
+        scan_int();
+        if p < GLUE_VAL {
+            if q == MULTIPLY {
+                if p == INT_VAL {
+                    set_cur_val(crate::scaled_math::mult_and_add(w, cur_val(), 0, TEX_INFINITY));
+                } else {
+                    set_cur_val(crate::scaled_math::mult_and_add(w, cur_val(), 0, MAX_HALFWORD));
+                }
+            } else {
+                set_cur_val(crate::scaled_math::x_over_n(w, cur_val()));
+            }
+        } else {
+            let r = crate::mem::new_spec(s);
+            if q == MULTIPLY {
+                set_mem_b32s1(r + 1, crate::scaled_math::mult_and_add(mem_b32s1(s + 1), cur_val(), 0, MAX_HALFWORD));
+                set_mem_b32s1(r + 2, crate::scaled_math::mult_and_add(mem_b32s1(s + 2), cur_val(), 0, MAX_HALFWORD));
+                set_mem_b32s1(r + 3, crate::scaled_math::mult_and_add(mem_b32s1(s + 3), cur_val(), 0, MAX_HALFWORD));
+            } else {
+                set_mem_b32s1(r + 1, crate::scaled_math::x_over_n(mem_b32s1(s + 1), cur_val()));
+                set_mem_b32s1(r + 2, crate::scaled_math::x_over_n(mem_b32s1(s + 2), cur_val()));
+                set_mem_b32s1(r + 3, crate::scaled_math::x_over_n(mem_b32s1(s + 3), cur_val()));
+            }
+            set_cur_val(r);
+        }
+    }
+
+    if crate::globals::arith_error() {
+        error_here_with_diagnostic(c"Arithmetic overflow".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(1, c"I can't carry out that multiplication or division,".as_ptr());
+        set_help_line(0, c"since the result is out of range.".as_ptr());
+        if p >= GLUE_VAL {
+            crate::mem::delete_glue_ref(cur_val());
+        }
+        error();
+        return;
+    }
+
+    if p < GLUE_VAL {
+        if e {
+            if a >= 4 {
+                crate::save::gsa_w_def(l, cur_val());
+            } else {
+                crate::save::sa_w_def(l, cur_val());
+            }
+        } else if a >= 4 {
+            crate::save::geq_word_define(l, cur_val());
+        } else {
+            crate::save::eq_word_define(l, cur_val());
+        }
+    } else {
+        trap_zero_glue();
+        if e {
+            if a >= 4 {
+                crate::save::gsa_def(l, cur_val());
+            } else {
+                crate::save::sa_def(l, cur_val());
+            }
+        } else if a >= 4 {
+            crate::save::geq_define(l, GLUE_REF, cur_val());
+        } else {
+            crate::save::eq_define(l, GLUE_REF, cur_val());
+        }
+    }
+}
