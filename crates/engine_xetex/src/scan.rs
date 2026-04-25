@@ -5394,6 +5394,114 @@ pub unsafe extern "C" fn show_whatever() {
 }
 
 // ---------------------------------------------------------------------------
+// make_accent
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:9910 (make_accent)
+#[no_mangle]
+pub unsafe extern "C" fn make_accent() {
+    extern "C" {
+        fn new_character(f: i32, c: i32) -> i32;
+        fn do_assignments();
+        fn hpack(p: i32, w: i32, m: i16) -> i32;
+        fn get_native_char_sidebearings(f: i32, c: i32, lsb: *mut i32, rsb: *mut i32);
+        fn get_native_char_height_depth(f: i32, c: i32, h: *mut i32, depth: *mut i32);
+    }
+    const SLANT_CODE: i32 = 1;      // xetex-constants.h:273
+    const X_HEIGHT_CODE: i32 = 5;   // xetex-constants.h:294
+    const ACC_KERN: u16 = 2;        // xetex_format.h:429
+    const ADDITIONAL: i16 = 1;      // xetex-constants.h:264
+    const LETTER: u8 = 11;          // xetex_format.h:243
+    const CHAR_NUM: u8 = 16;        // xetex_format.h:253
+
+    let is_native = |fnt: i32| -> bool {
+        crate::globals::font_area_entry(fnt) == AAT_FONT_FLAG
+            || crate::globals::font_area_entry(fnt) == OTGR_FONT_FLAG
+    };
+
+    scan_char_num();
+    let mut f = eqtb_b32s1(CUR_FONT_LOC);
+    let p = new_character(f, cur_val());
+
+    if p == crate::mem::TEX_NULL { return; }
+
+    let x = crate::globals::font_info_b32s1(X_HEIGHT_CODE + crate::globals::param_base(f));
+    let s = crate::globals::font_info_b32s1(SLANT_CODE + crate::globals::param_base(f)) as f64 / 65536.0;
+    let mut lsb: i32 = 0;
+    let mut rsb: i32 = 0;
+    let a = if is_native(f) {
+        let av = mem_b32s1(p + 1);
+        if av == 0 {
+            get_native_char_sidebearings(f, cur_val(), &mut lsb, &mut rsb);
+        }
+        av
+    } else {
+        let c = effective_char(true, f, mem_b16s0(p));
+        let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
+        crate::globals::font_info_b32s1(crate::globals::width_base_entry(f) + info.s3 as i32)
+    };
+
+    do_assignments();
+    let mut q = crate::mem::TEX_NULL;
+    f = eqtb_b32s1(CUR_FONT_LOC);
+    if cur_cmd() == LETTER || cur_cmd() == OTHER_CHAR || cur_cmd() == CHAR_GIVEN {
+        q = new_character(f, cur_chr());
+        set_cur_val(cur_chr());
+    } else if cur_cmd() == CHAR_NUM {
+        scan_char_num();
+        q = new_character(f, cur_val());
+    } else {
+        crate::input::back_input();
+    }
+
+    if q != crate::mem::TEX_NULL {
+        let t = crate::globals::font_info_b32s1(SLANT_CODE + crate::globals::param_base(f)) as f64 / 65536.0;
+        let (w, h) = if is_native(f) {
+            let wv = mem_b32s1(q + 1);
+            let mut hv: i32 = 0;
+            let mut dv: i32 = 0;
+            get_native_char_height_depth(f, cur_val(), &mut hv, &mut dv);
+            (wv, hv)
+        } else {
+            let c = effective_char(true, f, mem_b16s0(q));
+            let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
+            let wv = crate::globals::font_info_b32s1(crate::globals::width_base_entry(f) + info.s3 as i32);
+            let hv = crate::globals::font_info_b32s1(crate::globals::height_base_entry(f) + (info.s2 / 16) as i32);
+            (wv, hv)
+        };
+        let mut pa = p;
+        if h != x {
+            pa = hpack(p, 0, ADDITIONAL);
+            set_mem_b32s1(pa + 4, x - h);
+        }
+        let delta = if is_native(f) && a == 0 {
+            crate::scaled_math::tex_round(
+                (w - lsb + rsb) as f64 / 2.0 + h as f64 * t - x as f64 * s,
+            )
+        } else {
+            crate::scaled_math::tex_round(
+                (w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s,
+            )
+        };
+        let r = crate::mem::new_kern(delta);
+        set_mem_b16s0(r, ACC_KERN);
+        set_mem_b32s1(crate::globals::cur_list_tail(), r);
+        set_mem_b32s1(r, pa);
+        let new_tail = crate::mem::new_kern(-a - delta);
+        crate::globals::set_cur_list_tail(new_tail);
+        set_mem_b16s0(new_tail, ACC_KERN);
+        set_mem_b32s1(pa, new_tail);
+        // p = q (in C); we use q directly below
+    }
+
+    // Append p (q if base was found, else accent) to hlist.
+    let p_final = if q != crate::mem::TEX_NULL { q } else { p };
+    set_mem_b32s1(crate::globals::cur_list_tail(), p_final);
+    crate::globals::set_cur_list_tail(p_final);
+    crate::globals::set_cur_list_aux_b32s0(1000);
+}
+
+// ---------------------------------------------------------------------------
 // new_font
 // ---------------------------------------------------------------------------
 

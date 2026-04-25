@@ -9907,73 +9907,7 @@ void append_italic_correction(void)
 
 /* build_discretionary: translated to Rust in src/scan.rs */
 
-void make_accent(void)
-{
-    double s, t;
-    int32_t p, q, r;
-    internal_font_number f;
-    scaled_t a, h, x, w, delta, lsb, rsb;
-    b16x4 i;
-
-    scan_char_num();
-    f = eqtb[CUR_FONT_LOC].b32.s1;
-    p = new_character(f, cur_val);
-
-    if (p != TEX_NULL) {
-        x = font_info[X_HEIGHT_CODE + param_base[f]].b32.s1;
-        s = font_info[SLANT_CODE + param_base[f]].b32.s1 / ((double)65536.0);
-        if (((font_area[f] == AAT_FONT_FLAG) || (font_area[f] == OTGR_FONT_FLAG))) {
-            a = mem[p + 1].b32.s1;
-            if (a == 0)
-                get_native_char_sidebearings(f, cur_val, &lsb, &rsb);
-        } else
-            a = FONT_CHARACTER_WIDTH(f,
-                                     effective_char(true, f, CHAR_NODE_character(p)));
-        do_assignments();
-        q = TEX_NULL;
-        f = eqtb[CUR_FONT_LOC].b32.s1;
-        if ((cur_cmd == LETTER) || (cur_cmd == OTHER_CHAR) || (cur_cmd == CHAR_GIVEN)) {
-            q = new_character(f, cur_chr);
-            cur_val = cur_chr;
-        } else if (cur_cmd == CHAR_NUM) {
-            scan_char_num();
-            q = new_character(f, cur_val);
-        } else
-            back_input();
-        if (q != TEX_NULL) { /*1160: */
-            t = font_info[SLANT_CODE + param_base[f]].b32.s1 / ((double)65536.0);
-            if (((font_area[f] == AAT_FONT_FLAG) || (font_area[f] == OTGR_FONT_FLAG))) {
-                w = mem[q + 1].b32.s1;
-                get_native_char_height_depth(f, cur_val, &h, &delta);
-            } else {
-
-                i = FONT_CHARACTER_INFO(f, effective_char(true, f, CHAR_NODE_character(q)));
-                w = FONT_CHARINFO_WIDTH(f, i);
-                h = FONT_CHARINFO_HEIGHT(f, i);
-            }
-            if (h != x) {
-                p = hpack(p, 0, ADDITIONAL);
-                mem[p + 4].b32.s1 = x - h;
-            }
-            if (((font_area[f] == AAT_FONT_FLAG) || (font_area[f] == OTGR_FONT_FLAG))
-                && (a == 0))
-                delta = tex_round((w - lsb + rsb) / ((double)2.0) + h * t - x * s);
-            else
-                delta = tex_round((w - a) / ((double)2.0) + h * t - x * s);
-            r = new_kern(delta);
-            NODE_subtype(r) = ACC_KERN;
-            mem[cur_list.tail].b32.s1 = r;
-            mem[r].b32.s1 = p;
-            cur_list.tail = new_kern(-(int32_t) a - delta);
-            NODE_subtype(cur_list.tail) = ACC_KERN;
-            mem[p].b32.s1 = cur_list.tail;
-            p = q;
-        }
-        mem[cur_list.tail].b32.s1 = p;
-        cur_list.tail = p;
-        cur_list.aux.b32.s0 = 1000;
-    }
-}
+/* make_accent: translated to Rust in src/scan.rs */
 
 /* align_error: translated to Rust in src/scan.rs */
 
