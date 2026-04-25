@@ -382,6 +382,8 @@ mod raw {
         pub(super) static mut page_so_far: [i32; 8];
         pub(super) static mut last_glue: i32;
         pub(super) static mut last_penalty: i32;
+        // disc_ptr[4]: saved discretionary break pointers (xetex-xetexd.h:716).
+        pub(super) static mut disc_ptr: [i32; 4];
         pub(super) static mut last_kern: i32;
         pub(super) static mut last_node_type: i32;
         pub(super) static mut insert_penalties: i32;
@@ -1911,6 +1913,10 @@ pub(crate) fn page_so_far(k: usize) -> i32 { unsafe { raw::page_so_far[k] } }
 pub(crate) fn set_page_so_far(k: usize, v: i32) { unsafe { raw::page_so_far[k] = v; } }
 #[inline]
 pub(crate) fn last_glue() -> i32 { unsafe { raw::last_glue } }
+#[inline]
+pub(crate) fn disc_ptr(k: usize) -> i32 { unsafe { raw::disc_ptr[k] } }
+#[inline]
+pub(crate) fn set_disc_ptr(k: usize, v: i32) { unsafe { raw::disc_ptr[k] = v; } }
 #[inline]
 pub(crate) fn last_penalty() -> i32 { unsafe { raw::last_penalty } }
 #[inline]

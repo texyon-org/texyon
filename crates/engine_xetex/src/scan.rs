@@ -5883,3 +5883,178 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// unpackage
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:9799 (unpackage)
+#[no_mangle]
+pub unsafe extern "C" fn unpackage() {
+    extern "C" {
+        fn copy_node_list(p: i32) -> i32;
+    }
+    const COPY_CODE: i32 = 1;           // xetex_format.h:481
+    const HLIST_NODE: u16 = 0;          // xetex_format.h:380
+    const VLIST_NODE: u16 = 1;          // xetex_format.h:381
+    const MARGIN_KERN_NODE: u16 = 40;   // xetex_format.h:396
+    const MARGIN_KERN_NODE_SIZE: i32 = 3; // xetex-constants.h:115
+    const BOX_NODE_SIZE: i32 = 8;       // xetex-constants.h:132
+    const HMODE: i16 = 104;             // xetex_format.h:369
+    const MMODE: i16 = 207;             // xetex_format.h:370
+
+    if cur_chr() > COPY_CODE {
+        set_mem_b32s1(crate::globals::cur_list_tail(), crate::globals::disc_ptr(cur_chr() as usize));
+        crate::globals::set_disc_ptr(cur_chr() as usize, crate::mem::TEX_NULL);
+        // goto done — jump to tail-walk loop
+    } else {
+        let c = cur_chr();
+        scan_register_num();
+        let p = if cur_val() < 256 {
+            eqtb_b32s1(BOX_BASE + cur_val())
+        } else {
+            crate::save::find_sa_element(4, cur_val(), false);
+            if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
+                crate::mem::TEX_NULL
+            } else {
+                mem_b32s1(crate::globals::cur_ptr() + 1)
+            }
+        };
+
+        if p == crate::mem::TEX_NULL { return; }
+
+        let mode = cur_list_mode().abs();
+        let ntype = mem_b16s1(p);
+        if mode == MMODE
+            || (mode == VMODE && ntype != VLIST_NODE)
+            || (mode == HMODE && ntype != HLIST_NODE)
+        {
+            error_here_with_diagnostic(c"Incompatible list can't be unboxed".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(3);
+            set_help_line(2, c"Sorry, Pandora. (You sneaky devil.)".as_ptr());
+            set_help_line(1, c"I refuse to unbox an \\hbox in vertical mode or vice versa.".as_ptr());
+            set_help_line(0, c"And I can't open any boxes in math mode.".as_ptr());
+            error();
+            return;
+        }
+
+        let list_head = mem_b32s1(p + 5);
+        if c == COPY_CODE {
+            set_mem_b32s1(crate::globals::cur_list_tail(), copy_node_list(list_head));
+        } else {
+            set_mem_b32s1(crate::globals::cur_list_tail(), list_head);
+            if cur_val() < 256 {
+                crate::globals::set_eqtb_b32s1(BOX_BASE + cur_val(), crate::mem::TEX_NULL);
+            } else {
+                crate::save::find_sa_element(4, cur_val(), false);
+                if crate::globals::cur_ptr() != crate::mem::TEX_NULL {
+                    set_mem_b32s1(crate::globals::cur_ptr() + 1, crate::mem::TEX_NULL);
+                    let rc = mem_b32s0(crate::globals::cur_ptr() + 1) + 1;
+                    set_mem_b32s0(crate::globals::cur_ptr() + 1, rc);
+                    crate::save::delete_sa_ref(crate::globals::cur_ptr());
+                }
+            }
+            crate::mem::free_node(p, BOX_NODE_SIZE);
+        }
+    }
+
+    // done: advance cur_list.tail past any MARGIN_KERN_NODEs
+    while mem_b32s1(crate::globals::cur_list_tail()) != crate::mem::TEX_NULL {
+        let r = mem_b32s1(crate::globals::cur_list_tail());
+        if r < crate::globals::hi_mem_min() && mem_b16s1(r) == MARGIN_KERN_NODE {
+            set_mem_b32s1(crate::globals::cur_list_tail(), mem_b32s1(r));
+            crate::mem::free_node(r, MARGIN_KERN_NODE_SIZE);
+        } else {
+            crate::globals::set_cur_list_tail(mem_b32s1(crate::globals::cur_list_tail()));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// delete_last
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:9716 (delete_last)
+#[no_mangle]
+pub unsafe extern "C" fn delete_last() {
+    const DISC_NODE: u16 = 7;       // xetex_format.h:387
+    const BEGIN_M_CODE: u16 = 2;    // xetex_format.h:436
+
+    if cur_list_mode() == VMODE && crate::globals::cur_list_tail() == crate::globals::cur_list_head() {
+        // On page: only allowed for \lastskip when last_glue != MAX_HALFWORD
+        if cur_chr() as u16 != GLUE_NODE || crate::globals::last_glue() != MAX_HALFWORD {
+            you_cant();
+            set_help_ptr(2);
+            set_help_line(1, c"Sorry...I usually can't take things from the current page.".as_ptr());
+            set_help_line(0, c"Try `I\\vskip-\\lastskip' instead.".as_ptr());
+            if cur_chr() as u16 == KERN_NODE {
+                set_help_line(0, c"Try `I\\kern-\\lastkern' instead.".as_ptr());
+            } else if cur_chr() as u16 != GLUE_NODE {
+                set_help_line(0, c"Perhaps you can make the output routine do it.".as_ptr());
+            }
+            error();
+        }
+        return;
+    }
+
+    let mut tx = crate::globals::cur_list_tail();
+
+    // If tail is MATH END, back up one to find the actual last "deletable" node
+    if tx < crate::globals::hi_mem_min()
+        && mem_b16s1(tx) == MATH_NODE
+        && mem_b16s0(tx) == END_M_CODE
+    {
+        let mut r = crate::globals::cur_list_head();
+        loop {
+            let next_r = mem_b32s1(r);
+            if next_r == tx { tx = r; break; }
+            r = next_r;
+        }
+    }
+
+    if tx >= crate::globals::hi_mem_min() || mem_b16s1(tx) as i32 != cur_chr() {
+        return;
+    }
+
+    // Walk the list to find the node before tx
+    let mut q = crate::globals::cur_list_head();
+    let mut p = crate::mem::TEX_NULL;
+    let mut r_save = p;
+    let mut fm = false;
+    loop {
+        r_save = p;
+        p = q;
+        fm = false;
+        if q < crate::globals::hi_mem_min() {
+            if mem_b16s1(q) == DISC_NODE {
+                let count = mem_b16s0(q);
+                for _ in 0..count {
+                    p = mem_b32s1(p);
+                }
+                if p == tx { return; }
+            } else if mem_b16s1(q) == MATH_NODE && mem_b16s0(q) == BEGIN_M_CODE {
+                fm = true;
+            }
+        }
+        q = mem_b32s1(p);
+        if q == tx { break; }
+    }
+
+    // q == tx; p is the node just before tx; r_save is the one before p
+    let q_next = mem_b32s1(tx);
+    set_mem_b32s1(p, q_next);
+    set_mem_b32s1(tx, crate::mem::TEX_NULL);
+    if q_next == crate::mem::TEX_NULL {
+        if fm {
+            crate::errors::confusion(c"tail1".as_ptr());
+        } else {
+            crate::globals::set_cur_list_tail(p);
+        }
+    } else if fm {
+        crate::globals::set_cur_list_tail(r_save);
+        set_mem_b32s1(r_save, crate::mem::TEX_NULL);
+        flush_node_list(p);
+    }
+    flush_node_list(tx);
+}
