@@ -5240,3 +5240,155 @@ pub unsafe extern "C" fn align_peek() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// show_whatever
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:10561 (show_whatever)
+#[no_mangle]
+pub unsafe extern "C" fn show_whatever() {
+    extern "C" {
+        fn show_activities();
+        fn show_save_groups();
+    }
+    const BOX_BASE: i32 = 2_255_144;          // xetex_format.h:211
+    const INT_PAR_TRACING_ONLINE: i32 = 29;   // xetex_format.h:33
+    const SELECTOR_TERM_AND_LOG: i32 = 19;    // xetex-core.h:48
+    const IF_TEST: u16 = 107;                 // xetex_format.h:349
+    const FI_CODE: u8 = 2;                    // xetex_format.h:537
+
+    crate::output::diagnostic_begin_capture_warning_here();
+
+    let goto_common_ending = match cur_chr() {
+        3 => {
+            crate::output::begin_diagnostic();
+            show_activities();
+            false
+        }
+        1 => {
+            scan_register_num();
+            let p = if cur_val() < 256 {
+                eqtb_b32s1(BOX_BASE + cur_val())
+            } else {
+                crate::save::find_sa_element(4, cur_val(), false);
+                if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
+                    crate::mem::TEX_NULL
+                } else {
+                    mem_b32s1(crate::globals::cur_ptr() + 1)
+                }
+            };
+            crate::output::begin_diagnostic();
+            crate::output::print_nl_cstr(c"> \\box".as_ptr());
+            crate::output::print_int(cur_val());
+            crate::output::print_char('=' as i32);
+            if p == crate::mem::TEX_NULL {
+                crate::output::print_cstr(c"void".as_ptr());
+            } else {
+                show_box(p);
+            }
+            false
+        }
+        0 => {
+            get_token();
+            crate::output::print_nl_cstr(c"> ".as_ptr());
+            if cur_cs() != 0 {
+                crate::output::sprint_cs(cur_cs());
+                crate::output::print_char('=' as i32);
+            }
+            crate::output::print_meaning();
+            true
+        }
+        4 => {
+            crate::output::begin_diagnostic();
+            show_save_groups();
+            false
+        }
+        6 => {
+            crate::output::begin_diagnostic();
+            crate::output::print_nl_cstr(c"".as_ptr());
+            crate::output::print_ln();
+            if crate::globals::cond_ptr() == crate::mem::TEX_NULL {
+                crate::output::print_nl_cstr(c"### ".as_ptr());
+                crate::output::print_cstr(c"no active conditionals".as_ptr());
+            } else {
+                let mut p = crate::globals::cond_ptr();
+                let mut n: i32 = 0;
+                loop {
+                    n += 1;
+                    p = mem_b32s1(p);
+                    if p == crate::mem::TEX_NULL { break; }
+                }
+                p = crate::globals::cond_ptr();
+                let mut t = crate::globals::cur_if();
+                let mut l = crate::globals::if_line();
+                let mut m = crate::globals::if_limit();
+                loop {
+                    crate::output::print_nl_cstr(c"### level ".as_ptr());
+                    crate::output::print_int(n);
+                    crate::output::print_cstr(c": ".as_ptr());
+                    print_cmd_chr(IF_TEST, t as i32);
+                    if m == FI_CODE {
+                        crate::output::print_esc_cstr(c"else".as_ptr());
+                    }
+                    if l != 0 {
+                        crate::output::print_cstr(c" entered on line ".as_ptr());
+                        crate::output::print_int(l);
+                    }
+                    n -= 1;
+                    t = mem_b16s0(p) as i16;
+                    l = mem_b32s1(p + 1);
+                    m = mem_b16s1(p) as u8;
+                    p = mem_b32s1(p);
+                    if p == crate::mem::TEX_NULL { break; }
+                }
+            }
+            false
+        }
+        _ => {
+            the_toks(); // the_toks populates TEMP_HEAD
+            crate::output::print_nl_cstr(c"> ".as_ptr());
+            crate::output::token_show(TEMP_HEAD);
+            crate::mem::flush_list(mem_b32s1(TEMP_HEAD));
+            true
+        }
+    };
+
+    if !goto_common_ending {
+        capture_to_diagnostic(std::ptr::null_mut());
+        crate::output::end_diagnostic(true);
+        if crate::globals::file_line_error_style_p() != 0 {
+            crate::output::print_file_line();
+        } else {
+            crate::output::print_nl_cstr(c"! ".as_ptr());
+        }
+        crate::output::print_cstr(c"OK".as_ptr());
+        if crate::globals::selector() == SELECTOR_TERM_AND_LOG {
+            if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {
+                crate::globals::set_selector(SELECTOR_TERM_ONLY);
+                crate::output::print_cstr(c" (see the transcript file)".as_ptr());
+                crate::globals::set_selector(SELECTOR_TERM_AND_LOG);
+            }
+        }
+    }
+
+    // common_ending:
+    capture_to_diagnostic(std::ptr::null_mut());
+    if crate::globals::interaction() < ERROR_STOP_MODE {
+        set_help_ptr(0);
+        crate::globals::set_error_count(crate::globals::error_count() - 1);
+    } else if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) > 0 {
+        set_help_ptr(3);
+        set_help_line(2, c"This isn't an error message; I'm just \\showing something.".as_ptr());
+        set_help_line(1, c"Type `I\\show...' to show more (e.g., \\show\\cs,".as_ptr());
+        set_help_line(0, c"\\showthe\\count10, \\showbox255, \\showlists).".as_ptr());
+    } else {
+        set_help_ptr(5);
+        set_help_line(4, c"This isn't an error message; I'm just \\showing something.".as_ptr());
+        set_help_line(3, c"Type `I\\show...' to show more (e.g., \\show\\cs,".as_ptr());
+        set_help_line(2, c"\\showthe\\count10, \\showbox255, \\showlists).".as_ptr());
+        set_help_line(1, c"And type `I\\tracingonline=1\\show...' to show boxes and".as_ptr());
+        set_help_line(0, c"lists on your terminal as well as in the transcript file.".as_ptr());
+    }
+    error();
+}
