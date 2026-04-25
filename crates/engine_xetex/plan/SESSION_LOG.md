@@ -32,6 +32,40 @@ template.
 
 ---
 
+## Session 45 — 2026-04-25 — vlist/alignment/show/register/font cluster
+
+**Goal:** Continue translating functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 44
+
+**Work done:**
+- Translated `append_to_vlist` (8020), `align_peek` (8785) → `src/scan.rs` (c2b751b9).
+- Translated `show_whatever` (10561) → `src/scan.rs` (b8e223bc).
+- Translated `do_register_command` (10220) → `src/scan.rs` (177ee736).
+- Translated `new_font` (10233) → `src/scan.rs` (e44c3dce); added `font_size_entry`/`font_dsize_entry` to `globals.rs`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 45
+- ~281 Rust functions total; ~6 new this session (plus 2 private helpers in globals).
+- xetex-xetex0.c: ~31494 total C LOC, ~65 C functions remaining in xetex-xetex0.c.
+
+**Surprises / gotchas:**
+- `show_whatever` has two `goto common_ending` jumps; modelled as a boolean `goto_common_ending` flag — clean and readable.
+- `do_register_command` reuses the `q` variable as both a command code and a glue spec node pointer in the ADVANCE glue branch; used a separate `qs` variable in Rust to avoid confusion.
+- `new_font` has two-strategy font lookup: first by name+area (native fonts), then by full file path (TFM). Both strategies checked inside the same loop.
+
+**For the next session:**
+- `make_accent` (10087): complex, font metrics + kern arithmetic.
+- `append_to_vlist` dependents are now all in Rust.
+- Remaining ~65 functions in xetex-xetex0.c include `do_extension`, `main_control`, and several pagebuilder/linebreak helpers still in C.
+
+---
+
 ## Session 44 — 2026-04-24 — discretionary + message cluster
 
 **Goal:** Continue translating small functions from xetex-xetex0.c.

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 44.
+Last updated: session 45.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 44.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 12936 |     73 | multiple (see below)              | IN PROGRESS — 73% |
+| xetex-xetex0.c               | 12600 |     65 | multiple (see below)              | IN PROGRESS — 76% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -409,6 +409,11 @@ New Rust module `src/save.rs` created for save-stack management.
 |129| `alter_box_dimen`         |       10874 | `src/scan.rs`   | MIGRATED (session 42, 49b91f62) |
 |130| `trap_zero_glue`          |       10570 | `src/scan.rs`   | MIGRATED (session 42, 94b086c4) |
 |131| `fix_language`            |       11357 | `src/scan.rs`   | MIGRATED (session 42, 94b086c4) |
+|132| `append_to_vlist`         |        8020 | `src/scan.rs`   | MIGRATED (session 45, c2b751b9) |
+|133| `align_peek`              |        8785 | `src/scan.rs`   | MIGRATED (session 45, c2b751b9) |
+|134| `show_whatever`           |       10561 | `src/scan.rs`   | MIGRATED (session 45, b8e223bc) |
+|135| `do_register_command`     |       10220 | `src/scan.rs`   | MIGRATED (session 45, 177ee736) |
+|136| `new_font`                |       10233 | `src/scan.rs`   | MIGRATED (session 45, e44c3dce) |
 
 ### Phases 12+
 
