@@ -32,6 +32,41 @@ template.
 
 ---
 
+## Session 46 — 2026-04-25 — accent/italic/unpackage cluster
+
+**Goal:** Continue translating functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 45
+
+**Work done:**
+- Translated `make_accent` (9910) → `src/scan.rs` (3a0adf77).
+- Translated `append_italic_correction` (9868) → `src/scan.rs` (53f45e8b).
+  - Gotcha: `get_native_italic_correction` / `get_native_glyph_italic_correction` are C macros that expand to `real_get_native_italic_correction(&mem[p])` — must call the `real_` prefixed functions with `mem_ptr(p)`.
+- Translated `delete_last` (9716), `unpackage` (9799) → `src/scan.rs` (e5313fe2).
+  - Added `disc_ptr` accessor to `globals.rs`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 46
+- ~300 Rust functions total; ~6 new this session.
+- xetex-xetex0.c: ~31244 total C LOC, ~80 C function signatures remaining.
+
+**Surprises / gotchas:**
+- `get_native_italic_correction(p)` is a C macro: `real_get_native_italic_correction(&mem[p])`. In Rust, call `real_get_native_italic_correction(crate::globals::mem_ptr(p))`.
+
+**For the next session:**
+- `app_space` (9223): needs `main_p`/`main_k` globals (add to globals.rs), uses font_glue.
+- `package` (9624): medium, \hbox/\vbox packaging.
+- `scan_math` (4313): medium, math scanning.
+- `char_warning` (6428): medium, lost character warning.
+- `just_copy` (9992): complex node copying.
+
+---
+
 ## Session 45 — 2026-04-25 — vlist/alignment/show/register/font cluster
 
 **Goal:** Continue translating functions from xetex-xetex0.c.

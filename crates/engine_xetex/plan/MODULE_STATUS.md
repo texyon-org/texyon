@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 45.
+Last updated: session 46.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 45.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 12600 |     65 | multiple (see below)              | IN PROGRESS — 76% |
+| xetex-xetex0.c               | 12400 |     59 | multiple (see below)              | IN PROGRESS — 78% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -414,6 +414,10 @@ New Rust module `src/save.rs` created for save-stack management.
 |134| `show_whatever`           |       10561 | `src/scan.rs`   | MIGRATED (session 45, b8e223bc) |
 |135| `do_register_command`     |       10220 | `src/scan.rs`   | MIGRATED (session 45, 177ee736) |
 |136| `new_font`                |       10233 | `src/scan.rs`   | MIGRATED (session 45, e44c3dce) |
+|137| `make_accent`             |        9910 | `src/scan.rs`   | MIGRATED (session 46, 3a0adf77) |
+|138| `append_italic_correction`|        9868 | `src/scan.rs`   | MIGRATED (session 46, 53f45e8b) |
+|139| `delete_last`             |        9716 | `src/scan.rs`   | MIGRATED (session 46, e5313fe2) |
+|140| `unpackage`               |        9799 | `src/scan.rs`   | MIGRATED (session 46, e5313fe2) |
 
 ### Phases 12+
 
