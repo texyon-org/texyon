@@ -5394,6 +5394,152 @@ pub unsafe extern "C" fn show_whatever() {
 }
 
 // ---------------------------------------------------------------------------
+// new_font
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:10233 (new_font)
+#[no_mangle]
+pub unsafe extern "C" fn new_font(a: i16) {
+    extern "C" {
+        fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32;
+    }
+    const TOO_BIG_CHAR: i32 = 65536;       // xetex-constants.h
+
+    if crate::globals::job_name() == 0 {
+        open_log_file();
+    }
+
+    get_r_token();
+    let u = cur_cs();
+    let t = if u >= HASH_BASE {
+        hash_s1(u)
+    } else if u >= SINGLE_BASE {
+        if u == NULL_CS {
+            crate::texmfmp::maketexstring(c"FONT".as_ptr())
+        } else {
+            u - SINGLE_BASE
+        }
+    } else {
+        let old_setting = crate::globals::selector();
+        crate::globals::set_selector(SELECTOR_NEW_STRING);
+        crate::output::print_cstr(c"FONT".as_ptr());
+        crate::output::print(u - 1);
+        crate::globals::set_selector(old_setting);
+        if pool_ptr() + 1 > crate::globals::pool_size() {
+            crate::errors::overflow(c"pool size".as_ptr(),
+                crate::globals::pool_size() - crate::globals::init_pool_ptr());
+        }
+        crate::string_pool::make_string()
+    };
+
+    if a >= 4 {
+        crate::save::geq_define(u, SET_FONT as u16, FONT_BASE);
+    } else {
+        crate::save::eq_define(u, SET_FONT as u16, FONT_BASE);
+    }
+    scan_optional_equals();
+    scan_file_name();
+    crate::globals::set_name_in_progress(true);
+
+    let s = if scan_keyword(c"at".as_ptr()) {
+        scan_dimen(false, false, false);
+        let sv = cur_val();
+        if sv <= 0 || sv >= 0x800_0000 {
+            error_here_with_diagnostic(c"Improper `at' size (".as_ptr());
+            crate::output::print_scaled(sv);
+            crate::output::print_cstr(c"pt), replaced by 10pt".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(2);
+            set_help_line(1, c"I can only handle fonts at positive sizes that are".as_ptr());
+            set_help_line(0, c"less than 2048pt, so I've changed what you said to 10pt.".as_ptr());
+            error();
+            10 * 65536_i32
+        } else {
+            sv
+        }
+    } else if scan_keyword(c"scaled".as_ptr()) {
+        scan_int();
+        let sv = cur_val();
+        if sv <= 0 || sv > 32768 {
+            let errmsg = error_here_with_diagnostic(
+                c"Illegal magnification has been changed to 1000".as_ptr()
+            );
+            ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), sv);
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(1);
+            set_help_line(0, c"The magnification ratio must be between 1 and 32768.".as_ptr());
+            int_error(sv);
+            -1000_i32
+        } else {
+            -sv
+        }
+    } else {
+        -1000_i32
+    };
+
+    crate::globals::set_name_in_progress(false);
+
+    let f = 'search: {
+        let mut fi = FONT_BASE + 1;
+        while fi <= crate::globals::font_ptr() {
+            if crate::string_pool::str_eq_str(crate::globals::font_name_entry(fi), crate::globals::cur_name())
+                && (
+                    (crate::string_pool::length(crate::globals::cur_area()) == 0
+                        && (crate::globals::font_area_entry(fi) == AAT_FONT_FLAG
+                            || crate::globals::font_area_entry(fi) == OTGR_FONT_FLAG))
+                    || crate::string_pool::str_eq_str(crate::globals::font_area_entry(fi), crate::globals::cur_area())
+                )
+            {
+                if s > 0 {
+                    if s == crate::globals::font_size_entry(fi) {
+                        break 'search fi;
+                    }
+                } else if crate::globals::font_size_entry(fi)
+                    == crate::scaled_math::xn_over_d(crate::globals::font_dsize_entry(fi), -s, 1000)
+                {
+                    break 'search fi;
+                }
+            }
+            crate::string_pool::append_str(crate::globals::cur_area());
+            crate::string_pool::append_str(crate::globals::cur_name());
+            crate::string_pool::append_str(crate::globals::cur_ext());
+            let ms = crate::string_pool::make_string();
+            if crate::string_pool::str_eq_str(crate::globals::font_name_entry(fi), ms) {
+                set_str_ptr(str_ptr() - 1);
+                set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+                if crate::globals::font_area_entry(fi) == AAT_FONT_FLAG
+                    || crate::globals::font_area_entry(fi) == OTGR_FONT_FLAG
+                {
+                    if s > 0 {
+                        if s == crate::globals::font_size_entry(fi) {
+                            break 'search fi;
+                        }
+                    } else if crate::globals::font_size_entry(fi)
+                        == crate::scaled_math::xn_over_d(crate::globals::font_dsize_entry(fi), -s, 1000)
+                    {
+                        break 'search fi;
+                    }
+                }
+            } else {
+                set_str_ptr(str_ptr() - 1);
+                set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+            }
+            fi += 1;
+        }
+        read_font_info(u, crate::globals::cur_name(), crate::globals::cur_area(), s)
+    };
+
+    // common_ending:
+    if a >= 4 {
+        crate::save::geq_define(u, SET_FONT as u16, f);
+    } else {
+        crate::save::eq_define(u, SET_FONT as u16, f);
+    }
+    crate::globals::set_eqtb_word(FONT_ID_BASE + f, crate::globals::eqtb_word(u));
+    crate::globals::set_hash_s1(FONT_ID_BASE + f, t);
+}
+
+// ---------------------------------------------------------------------------
 // do_register_command
 // ---------------------------------------------------------------------------
 

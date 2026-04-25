@@ -397,6 +397,9 @@ mod raw {
         // Per-font encoding/layout arrays (xetex-xetexd.h:563–573).
         // font_area[f]: encoded font area (str_number = i32).
         pub(super) static mut font_area: *mut i32;
+        // font_size[f], font_dsize[f]: current/default design size (scaled_t = i32).
+        pub(super) static mut font_size: *mut i32;
+        pub(super) static mut font_dsize: *mut i32;
         // font_bc[f], font_ec[f]: first/last valid char (UTF16_code = u16).
         pub(super) static mut font_bc: *mut u16;
         pub(super) static mut font_ec: *mut u16;
@@ -1796,6 +1799,16 @@ pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
 #[inline]
 pub(crate) fn font_area_entry(f: i32) -> i32 {
     unsafe { *raw::font_area.offset(f as isize) }
+}
+/// Returns `font_size[f]` — the current at-size (scaled_t) for font f.
+#[inline]
+pub(crate) fn font_size_entry(f: i32) -> i32 {
+    unsafe { *raw::font_size.offset(f as isize) }
+}
+/// Returns `font_dsize[f]` — the design-size (scaled_t) for font f.
+#[inline]
+pub(crate) fn font_dsize_entry(f: i32) -> i32 {
+    unsafe { *raw::font_dsize.offset(f as isize) }
 }
 /// Returns `font_bc[f]` — first valid char code.
 #[inline]
