@@ -5394,6 +5394,62 @@ pub unsafe extern "C" fn show_whatever() {
 }
 
 // ---------------------------------------------------------------------------
+// append_italic_correction
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:9868 (append_italic_correction)
+#[no_mangle]
+pub unsafe extern "C" fn append_italic_correction() {
+    extern "C" {
+        // Note: in C these are macros: get_native_italic_correction(p) = real_get_native_italic_correction(&mem[p])
+        fn real_get_native_italic_correction(p: *mut libc::c_void) -> i32;
+        fn real_get_native_glyph_italic_correction(p: *mut libc::c_void) -> i32;
+    }
+    const LIGATURE_NODE: u16 = 6;        // xetex_format.h:386
+    const EXPLICIT: u16 = 1;            // xetex_format.h:428
+    const GLYPH_NODE: u16 = 42;         // xetex_format.h:465
+
+    let tail = crate::globals::cur_list_tail();
+    if tail == crate::globals::cur_list_head() { return; }
+
+    let p = if tail >= crate::globals::hi_mem_min() {
+        // is_char_node
+        tail
+    } else if mem_b16s1(tail) == LIGATURE_NODE {
+        tail + 1
+    } else if mem_b16s1(tail) == WHATSIT_NODE {
+        let sub = mem_b16s0(tail);
+        if sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT {
+            let kern = crate::mem::new_kern(real_get_native_italic_correction(crate::globals::mem_ptr(tail)));
+            set_mem_b32s1(tail, kern);
+            let new_tail = mem_b32s1(tail);
+            crate::globals::set_cur_list_tail(new_tail);
+            set_mem_b16s0(new_tail, EXPLICIT);
+        } else if sub == GLYPH_NODE {
+            let kern = crate::mem::new_kern(real_get_native_glyph_italic_correction(crate::globals::mem_ptr(tail)));
+            set_mem_b32s1(tail, kern);
+            let new_tail = mem_b32s1(tail);
+            crate::globals::set_cur_list_tail(new_tail);
+            set_mem_b16s0(new_tail, EXPLICIT);
+        }
+        return;
+    } else {
+        return;
+    };
+
+    let f = mem_b16s1(p) as i32; // CHAR_NODE_font(p)
+    let c = effective_char(true, f, mem_b16s0(p));
+    let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
+    let italic = crate::globals::font_info_b32s1(crate::globals::italic_base_entry(f) + (info.s1 / 4) as i32);
+    let kern = crate::mem::new_kern(italic);
+    let tail2 = crate::globals::cur_list_tail();
+    set_mem_b32s1(tail2, kern);
+    let new_tail = mem_b32s1(tail2);
+    crate::globals::set_cur_list_tail(new_tail);
+    set_mem_b16s0(new_tail, EXPLICIT);
+}
+
+// ---------------------------------------------------------------------------
 // make_accent
 // ---------------------------------------------------------------------------
 

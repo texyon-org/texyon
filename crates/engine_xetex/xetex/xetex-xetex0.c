@@ -9865,43 +9865,7 @@ done:
     }
 }
 
-void append_italic_correction(void)
-{
-    int32_t p;
-    internal_font_number f;
-    if (cur_list.tail != cur_list.head) {
-        if ((is_char_node(cur_list.tail)))
-            p = cur_list.tail;
-        else if (NODE_type(cur_list.tail) == LIGATURE_NODE)
-            p = cur_list.tail + 1;
-        else if (NODE_type(cur_list.tail) == WHATSIT_NODE) {
-            if ((mem[cur_list.tail].b16.s0 == NATIVE_WORD_NODE)
-                || (mem[cur_list.tail].b16.s0 == NATIVE_WORD_NODE_AT)) {
-                {
-                    mem[cur_list.tail].b32.s1 = new_kern(get_native_italic_correction(cur_list.tail));
-                    cur_list.tail = LLIST_link(cur_list.tail);
-                }
-                NODE_subtype(cur_list.tail) = EXPLICIT;
-            } else if (mem[cur_list.tail].b16.s0 == GLYPH_NODE) {
-                {
-                    mem[cur_list.tail].b32.s1 =
-                        new_kern(get_native_glyph_italic_correction(cur_list.tail));
-                    cur_list.tail = LLIST_link(cur_list.tail);
-                }
-                NODE_subtype(cur_list.tail) = EXPLICIT;
-            }
-            return;
-        } else
-            return;
-        f = CHAR_NODE_font(p);
-        {
-            mem[cur_list.tail].b32.s1 =
-                new_kern(FONT_CHARINFO_ITALCORR(f, FONT_CHARACTER_INFO(f, effective_char(true, f, CHAR_NODE_character(p)))));
-            cur_list.tail = LLIST_link(cur_list.tail);
-        }
-        NODE_subtype(cur_list.tail) = EXPLICIT;
-    }
-}
+/* append_italic_correction: translated to Rust in src/scan.rs */
 
 /* append_discretionary: translated to Rust in src/scan.rs */
 
