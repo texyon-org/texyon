@@ -6610,6 +6610,42 @@ fn set_class_fn(x: i32) -> i32 { (((x as u32) & 0x07) << 21) as i32 }
 #[inline]
 fn set_family_fn(x: i32) -> i32 { (((x as u32) & 0xFF) << 24) as i32 }
 
+// translated from xetex-xetex0.c:7728 (get_preamble_token)
+#[no_mangle]
+pub unsafe extern "C" fn get_preamble_token() {
+    use crate::globals::{cur_chr, cur_cmd};
+    const TAB_MARK: u8 = 4;           // xetex_format.h:234
+    const SPAN_CODE_GPT: i32 = 1_114_113; // xetex_format.h:679
+    const GLUE_BASE_TAB_SKIP: i32 = 2_254_340 + 11; // GLUE_BASE + GLUE_PAR__tab_skip
+    const GLUE_REF_GPT: u16 = 119;    // xetex_format.h:361
+    const INT_PAR_GLOBAL_DEFS: i32 = 43; // xetex_format.h:78
+
+    'restart: loop {
+        get_token();
+        while cur_chr() == SPAN_CODE_GPT && cur_cmd() == TAB_MARK {
+            get_token();
+            if cur_cmd() > MAX_COMMAND {
+                expand();
+                get_token();
+            }
+        }
+        if cur_cmd() == ENDV {
+            crate::errors::fatal_error(c"(interwoven alignment preambles are not allowed)".as_ptr());
+        }
+        if cur_cmd() == ASSIGN_GLUE && cur_chr() == GLUE_BASE_TAB_SKIP {
+            scan_optional_equals();
+            scan_glue(GLUE_VAL);
+            if eqtb_b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) > 0 {
+                crate::save::geq_define(GLUE_BASE_TAB_SKIP, GLUE_REF_GPT, cur_val());
+            } else {
+                crate::save::eq_define(GLUE_BASE_TAB_SKIP, GLUE_REF_GPT, cur_val());
+            }
+            continue 'restart;
+        }
+        break;
+    }
+}
+
 // translated from xetex-xetex0.c:7880 (init_span)
 #[no_mangle]
 pub unsafe extern "C" fn init_span(p: i32) {

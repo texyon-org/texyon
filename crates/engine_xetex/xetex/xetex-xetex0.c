@@ -7725,32 +7725,7 @@ void show_info(void)
 
 /* pop_alignment: translated to Rust in src/scan.rs */
 
-void get_preamble_token(void)
-{
-
-restart:
-    get_token();
-
-    while ((cur_chr == SPAN_CODE) && (cur_cmd == TAB_MARK)) {
-
-        get_token();
-        if (cur_cmd > MAX_COMMAND) {
-            expand();
-            get_token();
-        }
-    }
-    if (cur_cmd == ENDV)
-        fatal_error("(interwoven alignment preambles are not allowed)");
-    if ((cur_cmd == ASSIGN_GLUE) && (cur_chr == (GLUE_BASE + 11))) {
-        scan_optional_equals();
-        scan_glue(GLUE_VAL);
-        if (INTPAR(global_defs) > 0)
-            geq_define((GLUE_BASE + 11), GLUE_REF, cur_val);
-        else
-            eq_define((GLUE_BASE + 11), GLUE_REF, cur_val);
-        goto restart;
-    }
-}
+/* get_preamble_token: translated to Rust in src/scan.rs */
 
 
 void
