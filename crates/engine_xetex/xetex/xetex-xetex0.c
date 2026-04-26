@@ -7721,49 +7721,9 @@ void show_info(void)
 }
 #endif
 
-void push_alignment(void)
-{
-    int32_t p;
-    p = get_node(ALIGN_STACK_NODE_SIZE);
-    mem[p].b32.s1 = align_ptr;
-    mem[p].b32.s0 = cur_align;
-    mem[p + 1].b32.s0 = mem[ALIGN_HEAD].b32.s1;
-    mem[p + 1].b32.s1 = cur_span;
-    mem[p + 2].b32.s1 = cur_loop;
-    mem[p + 3].b32.s1 = align_state;
-    mem[p + 4].b32.s0 = cur_head;
-    mem[p + 4].b32.s1 = cur_tail;
-    mem[p + 5].b32.s0 = cur_pre_head;
-    mem[p + 5].b32.s1 = cur_pre_tail;
-    align_ptr = p;
-    cur_head = get_avail();
-    cur_pre_head = get_avail();
-}
+/* push_alignment: translated to Rust in src/scan.rs */
 
-void pop_alignment(void)
-{
-    int32_t p;
-    {
-        mem[cur_head].b32.s1 = avail;
-        avail = cur_head;
-    }
-    {
-        mem[cur_pre_head].b32.s1 = avail;
-        avail = cur_pre_head;
-    }
-    p = align_ptr;
-    cur_tail = mem[p + 4].b32.s1;
-    cur_head = mem[p + 4].b32.s0;
-    cur_pre_tail = mem[p + 5].b32.s1;
-    cur_pre_head = mem[p + 5].b32.s0;
-    align_state = mem[p + 3].b32.s1;
-    cur_loop = mem[p + 2].b32.s1;
-    cur_span = mem[p + 1].b32.s1;
-    mem[ALIGN_HEAD].b32.s1 = mem[p + 1].b32.s0;
-    cur_align = mem[p].b32.s0;
-    align_ptr = mem[p].b32.s1;
-    free_node(p, ALIGN_STACK_NODE_SIZE);
-}
+/* pop_alignment: translated to Rust in src/scan.rs */
 
 void get_preamble_token(void)
 {

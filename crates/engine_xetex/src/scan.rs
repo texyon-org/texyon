@@ -6610,6 +6610,65 @@ fn set_class_fn(x: i32) -> i32 { (((x as u32) & 0x07) << 21) as i32 }
 #[inline]
 fn set_family_fn(x: i32) -> i32 { (((x as u32) & 0xFF) << 24) as i32 }
 
+// translated from xetex-xetex0.c:7724 (push_alignment)
+#[no_mangle]
+pub unsafe extern "C" fn push_alignment() {
+    use crate::globals::{
+        align_ptr, align_state, avail, cur_align, cur_head, cur_loop, cur_pre_head, cur_pre_tail,
+        cur_span, cur_tail_a, set_align_ptr, set_cur_head, set_cur_pre_head, set_mem_b32s0,
+        set_mem_b32s1,
+    };
+    const ALIGN_HEAD: i32 = 4_999_991; // MEM_TOP - 8
+    const ALIGN_STACK_NODE_SIZE: i32 = 6; // xetex-constants.h:129
+
+    let p = crate::mem::get_node(ALIGN_STACK_NODE_SIZE);
+    set_mem_b32s1(p, align_ptr());
+    set_mem_b32s0(p, cur_align());
+    set_mem_b32s0(p + 1, mem_b32s1(ALIGN_HEAD));
+    set_mem_b32s1(p + 1, cur_span());
+    set_mem_b32s1(p + 2, cur_loop());
+    set_mem_b32s1(p + 3, align_state());
+    set_mem_b32s0(p + 4, cur_head());
+    set_mem_b32s1(p + 4, cur_tail_a());
+    set_mem_b32s0(p + 5, cur_pre_head());
+    set_mem_b32s1(p + 5, cur_pre_tail());
+    set_align_ptr(p);
+    set_cur_head(crate::mem::get_avail());
+    set_cur_pre_head(crate::mem::get_avail());
+}
+
+// translated from xetex-xetex0.c:7743 (pop_alignment)
+#[no_mangle]
+pub unsafe extern "C" fn pop_alignment() {
+    use crate::globals::{
+        align_ptr, avail, cur_align, cur_head, cur_loop, cur_pre_head, cur_pre_tail, cur_span,
+        mem_b32s0, set_align_ptr, set_align_state, set_cur_align, set_cur_head, set_cur_loop,
+        set_cur_pre_head, set_cur_pre_tail, set_cur_span, set_cur_tail_a, set_mem_b32s1,
+    };
+    const ALIGN_HEAD: i32 = 4_999_991;
+    const ALIGN_STACK_NODE_SIZE: i32 = 6;
+
+    // free_avail(cur_head): mem[cur_head].b32.s1 = avail; avail = cur_head
+    crate::globals::set_mem_b32s1(cur_head(), avail());
+    crate::globals::set_avail(cur_head());
+    // free_avail(cur_pre_head)
+    crate::globals::set_mem_b32s1(cur_pre_head(), avail());
+    crate::globals::set_avail(cur_pre_head());
+
+    let p = align_ptr();
+    set_cur_tail_a(mem_b32s1(p + 4));
+    set_cur_head(mem_b32s0(p + 4));
+    set_cur_pre_tail(mem_b32s1(p + 5));
+    set_cur_pre_head(mem_b32s0(p + 5));
+    set_align_state(mem_b32s1(p + 3));
+    set_cur_loop(mem_b32s1(p + 2));
+    set_cur_span(mem_b32s1(p + 1));
+    set_mem_b32s1(ALIGN_HEAD, mem_b32s0(p + 1));
+    set_cur_align(mem_b32s0(p));
+    set_align_ptr(mem_b32s1(p));
+    crate::mem::free_node(p, ALIGN_STACK_NODE_SIZE);
+}
+
 // translated from xetex-xetex0.c:4678 (scan_glue)
 #[no_mangle]
 pub unsafe extern "C" fn scan_glue(level: i16) {

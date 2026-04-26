@@ -435,6 +435,15 @@ mod raw {
         pub(super) static mut cur_box: i32;
         // Current glue order (normal=0..filll=3; xetex-xetexd.h:534; glue_ord = u8).
         pub(super) static mut cur_order: u8;
+        // Alignment stack and current-alignment state (xetex-xetexd.h:612–617).
+        pub(super) static mut cur_align: i32;
+        pub(super) static mut cur_span: i32;
+        pub(super) static mut cur_loop: i32;
+        pub(super) static mut align_ptr: i32;
+        pub(super) static mut cur_head: i32;
+        pub(super) static mut cur_tail: i32;
+        pub(super) static mut cur_pre_head: i32;
+        pub(super) static mut cur_pre_tail: i32;
     }
 }
 
@@ -2657,3 +2666,24 @@ pub(crate) fn set_cur_box(v: i32) {
 pub(crate) fn cur_order() -> u8 {
     unsafe { raw::cur_order }
 }
+
+// ---------------------------------------------------------------------------
+// alignment state
+// ---------------------------------------------------------------------------
+
+#[inline] pub(crate) fn cur_align() -> i32 { unsafe { raw::cur_align } }
+#[inline] pub(crate) fn set_cur_align(v: i32) { unsafe { raw::cur_align = v; } }
+#[inline] pub(crate) fn cur_span() -> i32 { unsafe { raw::cur_span } }
+#[inline] pub(crate) fn set_cur_span(v: i32) { unsafe { raw::cur_span = v; } }
+#[inline] pub(crate) fn cur_loop() -> i32 { unsafe { raw::cur_loop } }
+#[inline] pub(crate) fn set_cur_loop(v: i32) { unsafe { raw::cur_loop = v; } }
+#[inline] pub(crate) fn align_ptr() -> i32 { unsafe { raw::align_ptr } }
+#[inline] pub(crate) fn set_align_ptr(v: i32) { unsafe { raw::align_ptr = v; } }
+#[inline] pub(crate) fn cur_head() -> i32 { unsafe { raw::cur_head } }
+#[inline] pub(crate) fn set_cur_head(v: i32) { unsafe { raw::cur_head = v; } }
+#[inline] pub(crate) fn cur_tail_a() -> i32 { unsafe { raw::cur_tail } }
+#[inline] pub(crate) fn set_cur_tail_a(v: i32) { unsafe { raw::cur_tail = v; } }
+#[inline] pub(crate) fn cur_pre_head() -> i32 { unsafe { raw::cur_pre_head } }
+#[inline] pub(crate) fn set_cur_pre_head(v: i32) { unsafe { raw::cur_pre_head = v; } }
+#[inline] pub(crate) fn cur_pre_tail() -> i32 { unsafe { raw::cur_pre_tail } }
+#[inline] pub(crate) fn set_cur_pre_tail(v: i32) { unsafe { raw::cur_pre_tail = v; } }
