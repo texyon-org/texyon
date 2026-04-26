@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 50.
+Last updated: session 51.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 50.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 11271 |     38 | multiple (see below)              | IN PROGRESS — 86% |
+| xetex-xetex0.c               | 10972 |     35 | multiple (see below)              | IN PROGRESS — 87% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -439,13 +439,14 @@ New Rust module `src/save.rs` created for save-stack management.
 |159| `fin_col`                 |        7859 | `src/scan.rs`   | MIGRATED (session 50, 724e76bb) |
 |160| `fin_row`                 |        8009 | `src/scan.rs`   | MIGRATED (session 50, 724e76bb) |
 |161| `init_align`              |        7732 | `src/scan.rs`   | MIGRATED (session 50, 724e76bb) |
+|162| `fin_align`               |        8040 | `src/scan.rs`   | MIGRATED (session 51, 97f42b9a) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `fin_align` (8040): large, ~160 lines. Handles column width computation and box setting.
 - `handle_right_brace` (9973): very large — many group cases.
 - `just_copy`/`just_reverse` (9427/9428): bidi node copying — complex.
+- `show_save_groups` (8350): medium — diagnostic helper.
 
 ## How to maintain this file
 

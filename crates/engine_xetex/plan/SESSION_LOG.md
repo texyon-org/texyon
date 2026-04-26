@@ -32,6 +32,38 @@ template.
 
 ---
 
+## Session 51 — 2026-04-26 — fin_align
+
+**Goal:** Translate fin_align from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 50
+
+**Work done:**
+- Added `pack_begin_line` global and `cur_list_mode_line()` accessor to globals.rs.
+- Added `resume_after_display` to the top-level extern "C" block in scan.rs.
+- Translated `fin_align` (8040, ~300 lines) → `src/scan.rs` (97f42b9a).
+- Removed local `extern "C" { fn fin_align(); }` from `align_peek`.
+- Also: restored the lost session 50 translations (init_align/fin_col/fin_row) that were wiped by a git stash/checkout during the hotfix investigation; committed as 59a8e644.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 51
+- xetex-xetex0.c: ~35 C functions remaining.
+
+**Surprises / gotchas:**
+- `set_mem_b32s1(DIMEN_BASE + ...)` silently writes way past the mem[] array bounds (mem has ~5M slots; DIMEN_BASE ≈ 8.9M). Should have been `set_eqtb_b32s1`. TRIP test caught the SIGSEGV immediately — this is exactly why the TRIP suite is mandatory at every step.
+- The session 50 translations (init_align/fin_col/fin_row) were accidentally lost during the hotfix investigation: `git stash; git checkout f4f6bf8c -- src/; git stash pop` reverted the committed translations. They were re-applied in commit 59a8e644.
+- `fin_align` is the most complex function translated so far (~300 lines, 3 nested loops, glue ratio computation, MMODE/VMODE branching).
+
+**For the next session:**
+- `handle_right_brace` (9973): very large — many group cases.
+- `show_save_groups` (8350): medium, diagnostic helper.
+- `just_copy` / `just_reverse` (9427/9428): bidi node copying, complex.
+
 ## Session 50b — 2026-04-26 — hotfix: append_italic_correction seg-fault
 
 **Goal:** Fix the SIGSEGV in the LaTeX smoke test that session 50 exposed.
