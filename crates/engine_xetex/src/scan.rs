@@ -88,6 +88,7 @@ extern "C" {
     fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32;
     fn box_end(box_context: i32);
     fn flush_math();
+    fn resume_after_display();
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -5197,17 +5198,386 @@ pub unsafe extern "C" fn append_to_vlist(b: i32) {
 }
 
 // ---------------------------------------------------------------------------
+// fin_align
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:8040 (fin_align)
+#[no_mangle]
+pub unsafe extern "C" fn fin_align() {
+    extern "C" {
+        fn do_assignments();
+    }
+    use crate::globals::{
+        cur_group, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head,
+        cur_list_mode, cur_list_mode_line, cur_list_tail, mem_b16s0, mem_b16s1, mem_b32s0,
+        mem_b32s1, mem_gr, nest_mode, nest_ptr, save_ptr, save_stack_b32s1, set_cur_list_aux_b32s0,
+        set_cur_list_aux_b32s1, set_cur_list_tail, set_eqtb_b32s1, set_mem_b16s0, set_mem_b16s1,
+        set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_pack_begin_line, set_save_ptr,
+    };
+    use crate::mem::TEX_NULL;
+
+    const ALIGN_GROUP: u8 = 6;                 // xetex-constants.h:158
+    const ALIGN_HEAD: i32 = 4_999_991;         // MEM_TOP - 8
+    const END_SPAN: i32 = 4_999_990;           // MEM_TOP - 9
+    const HOLD_HEAD: i32 = 4_999_995;          // MEM_TOP - 4
+    const NULL_FLAG: i32 = -0x4000_0000;       // xetex-constants.h:16
+    const MMODE: i16 = 207;
+    const INNER_VMODE: i16 = -1;               // -VMODE
+    const VMODE: i16 = 1;
+    const HLIST_NODE: u16 = 0;                 // xetex_format.h:380
+    const VLIST_NODE: u16 = 1;                 // xetex_format.h:381
+    const RULE_NODE: u16 = 2;                  // xetex_format.h:382
+    const UNSET_NODE: u16 = 13;
+    const SPAN_NODE_SIZE: i32 = 2;
+    const ADDITIONAL: i16 = 1;
+    const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+    const STRETCHING: u16 = 1;                 // xetex-constants.h:275
+    const SHRINKING: u16 = 2;                  // xetex-constants.h:281
+    const DLIST: u16 = 2;                      // xetex-constants.h:278
+    const NORMAL: u16 = 0;
+    // GLUE_PAR__above_display_skip = 3, GLUE_PAR__below_display_skip = 4
+    const GLUE_PAR_ABOVE_DISPLAY: i16 = 3;
+    const GLUE_PAR_BELOW_DISPLAY: i16 = 4;
+    const DIMEN_BASE: i32 = 8_941_180;
+    const DIMEN_PAR_DISPLAY_INDENT: i32 = 15;
+    const DIMEN_PAR_OVERFULL_RULE: i32 = 16;
+    const INT_PAR_PRE_DISPLAY_PENALTY: i32 = 11;
+    const INT_PAR_POST_DISPLAY_PENALTY: i32 = 12;
+    const MATH_SHIFT: u8 = 3;                  // xetex_format.h:233
+    const GLUE_PAR_TAB_SKIP: u16 = 12;         // GLUE_PAR__tab_skip + 1
+
+    if cur_group() != ALIGN_GROUP {
+        crate::errors::confusion(c"align1".as_ptr());
+    }
+    crate::save::unsave();
+    if cur_group() != ALIGN_GROUP {
+        crate::errors::confusion(c"align0".as_ptr());
+    }
+    crate::save::unsave();
+
+    let o: i32 = if nest_mode(nest_ptr() - 1) == MMODE {
+        eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT)
+    } else {
+        0
+    };
+
+    // §830: walk preamble, compute column widths, handle span nodes
+    let mut q = mem_b32s1(mem_b32s1(ALIGN_HEAD));
+    loop {
+        crate::mem::flush_list(mem_b32s1(q + 3));
+        crate::mem::flush_list(mem_b32s1(q + 2));
+        let p = mem_b32s1(mem_b32s1(q));
+        // §831: if NULL_FLAG width, clear the tab_skip glue leader
+        if mem_b32s1(q + 1) == NULL_FLAG {
+            set_mem_b32s1(q + 1, 0);
+            let r = mem_b32s1(q);
+            let s = mem_b32s0(r + 1);
+            if s != 0 {
+                set_mem_b32s1(0, mem_b32s1(0) + 1); // GLUE_SPEC_ref_count(0)++
+                crate::mem::delete_glue_ref(s);
+                set_mem_b32s0(r + 1, 0);
+            }
+        }
+        // §832: handle span nodes — distribute width across spanned columns
+        if mem_b32s0(q) != END_SPAN {
+            let t = mem_b32s1(q + 1) + mem_b32s1(mem_b32s0(mem_b32s1(q) + 1) + 1);
+            let mut r = mem_b32s0(q);
+            let mut s = END_SPAN;
+            set_mem_b32s0(s, p);
+            let mut n: i32 = 1;
+            loop {
+                set_mem_b32s1(r + 1, mem_b32s1(r + 1) - t);
+                let u = mem_b32s0(r);
+                while mem_b32s1(r) > n {
+                    s = mem_b32s0(s);
+                    n = mem_b32s1(mem_b32s0(s)) + 1;
+                }
+                if mem_b32s1(r) < n {
+                    set_mem_b32s0(r, mem_b32s0(s));
+                    set_mem_b32s0(s, r);
+                    set_mem_b32s1(r, mem_b32s1(r) - 1);
+                    s = r;
+                } else {
+                    if mem_b32s1(r + 1) > mem_b32s1(mem_b32s0(s) + 1) {
+                        set_mem_b32s1(mem_b32s0(s) + 1, mem_b32s1(r + 1));
+                    }
+                    crate::mem::free_node(r, SPAN_NODE_SIZE);
+                }
+                r = u;
+                if r == END_SPAN { break; }
+            }
+        }
+        // Clear the preamble node fields (convert to UNSET_NODE)
+        set_mem_b16s1(q, UNSET_NODE);
+        set_mem_b16s0(q, 0);
+        set_mem_b32s1(q + 3, 0);
+        set_mem_b32s1(q + 2, 0);
+        set_mem_b16s0(q + 5, NORMAL);
+        set_mem_b16s1(q + 5, NORMAL);
+        set_mem_b32s1(q + 6, 0);
+        set_mem_b32s1(q + 4, 0);
+        q = p;
+        if q == TEX_NULL { break; }
+    }
+
+    // §833: pop the spec from save_stack and pack the whole alignment
+    set_save_ptr(save_ptr() - 2);
+    set_pack_begin_line(-(cur_list_mode_line() as i32));
+    let p = if cur_list_mode() == INNER_VMODE {
+        let rule_save = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE);
+        set_eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE, 0);
+        let pp = hpack(
+            mem_b32s1(ALIGN_HEAD),
+            save_stack_b32s1(save_ptr() + 1),
+            save_stack_b32s1(save_ptr()) as i16,
+        );
+        set_eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE, rule_save);
+        pp
+    } else {
+        // vmode: copy widths to depth, pack, restore
+        let mut qq = mem_b32s1(mem_b32s1(ALIGN_HEAD));
+        loop {
+            set_mem_b32s1(qq + 3, mem_b32s1(qq + 1));
+            set_mem_b32s1(qq + 1, 0);
+            qq = mem_b32s1(mem_b32s1(qq));
+            if qq == TEX_NULL { break; }
+        }
+        let pp = vpackage(
+            mem_b32s1(ALIGN_HEAD),
+            save_stack_b32s1(save_ptr() + 1),
+            save_stack_b32s1(save_ptr()) as i16,
+            MAX_HALFWORD,
+        );
+        qq = mem_b32s1(mem_b32s1(ALIGN_HEAD));
+        loop {
+            set_mem_b32s1(qq + 1, mem_b32s1(qq + 3));
+            set_mem_b32s1(qq + 3, 0);
+            qq = mem_b32s1(mem_b32s1(qq));
+            if qq == TEX_NULL { break; }
+        }
+        pp
+    };
+    set_pack_begin_line(0);
+
+    // §836–840: walk the row list and resolve each UNSET_NODE
+    q = mem_b32s1(cur_list_head());
+    let mut s = cur_list_head();
+    while q != TEX_NULL {
+        if q < crate::globals::hi_mem_min() {  // !is_char_node
+        if mem_b16s1(q) == UNSET_NODE {
+            // §836: set this row/column to its final type and dimensions
+            if cur_list_mode() == INNER_VMODE {
+                set_mem_b16s1(q, HLIST_NODE);
+                set_mem_b32s1(q + 1, mem_b32s1(p + 1));
+                if nest_mode(nest_ptr() - 1) == MMODE {
+                    set_mem_b16s0(q, DLIST);
+                }
+            } else {
+                set_mem_b16s1(q, VLIST_NODE);
+                set_mem_b32s1(q + 3, mem_b32s1(p + 3));
+            }
+            set_mem_b16s0(q + 5, mem_b16s0(p + 5));
+            set_mem_b16s1(q + 5, mem_b16s1(p + 5));
+            set_mem_gr(q + 6, mem_gr(p + 6));
+            set_mem_b32s1(q + 4, o);
+
+            // Walk the column UNSET_NODEs inside this row
+            let mut r = mem_b32s1(mem_b32s1(q + 5));
+            let mut ss = mem_b32s1(mem_b32s1(p + 5));
+            loop {
+                // §837: for each column unset node r, distribute glue
+                let n = mem_b16s0(r);
+                let t_base = mem_b32s1(ss + 1);
+                let mut t = t_base;
+                let mut u = HOLD_HEAD;
+                set_mem_b16s0(r, 0);
+                // Insert inter-column glue for spanned columns
+                let mut span_count = n;
+                while span_count > 0 {
+                    span_count -= 1;
+                    ss = mem_b32s1(ss);
+                    let v = mem_b32s0(ss + 1);
+                    set_mem_b32s1(u, crate::mem::new_glue(v));
+                    u = mem_b32s1(u);
+                    set_mem_b16s0(u, GLUE_PAR_TAB_SKIP);
+                    t += mem_b32s1(v + 1);
+                    if mem_b16s1(p + 5) == STRETCHING {
+                        if mem_b16s1(v) == mem_b16s0(p + 5) {
+                            t += crate::scaled_math::tex_round(mem_gr(p + 6) * mem_b32s1(v + 2) as f64);
+                        }
+                    } else if mem_b16s1(p + 5) == SHRINKING {
+                        if mem_b16s0(v) == mem_b16s0(p + 5) {
+                            t -= crate::scaled_math::tex_round(mem_gr(p + 6) * mem_b32s1(v + 3) as f64);
+                        }
+                    }
+                    ss = mem_b32s1(ss);
+                    set_mem_b32s1(u, crate::mem::new_null_box());
+                    u = mem_b32s1(u);
+                    t += mem_b32s1(ss + 1);
+                    if cur_list_mode() == INNER_VMODE {
+                        set_mem_b32s1(u + 1, mem_b32s1(ss + 1));
+                    } else {
+                        set_mem_b16s1(u, VLIST_NODE);
+                        set_mem_b32s1(u + 3, mem_b32s1(ss + 1));
+                    }
+                }
+                // §839/840: set glue ratio for r and finalize node type
+                if cur_list_mode() == INNER_VMODE {
+                    // §839: hbox column
+                    set_mem_b32s1(r + 3, mem_b32s1(q + 3));
+                    set_mem_b32s1(r + 2, mem_b32s1(q + 2));
+                    if t == mem_b32s1(r + 1) {
+                        set_mem_b16s1(r + 5, NORMAL);
+                        set_mem_b16s0(r + 5, NORMAL);
+                        set_mem_gr(r + 6, 0.0);
+                    } else if t > mem_b32s1(r + 1) {
+                        set_mem_b16s1(r + 5, STRETCHING);
+                        if mem_b32s1(r + 6) == 0 {
+                            set_mem_gr(r + 6, 0.0);
+                        } else {
+                            set_mem_gr(r + 6, (t - mem_b32s1(r + 1)) as f64 / mem_b32s1(r + 6) as f64);
+                        }
+                    } else {
+                        set_mem_b16s0(r + 5, mem_b16s1(r + 5));
+                        set_mem_b16s1(r + 5, SHRINKING);
+                        if mem_b32s1(r + 4) == 0 {
+                            set_mem_gr(r + 6, 0.0);
+                        } else if mem_b16s0(r + 5) == NORMAL && mem_b32s1(r + 1) - t > mem_b32s1(r + 4) {
+                            set_mem_gr(r + 6, 1.0);
+                        } else {
+                            set_mem_gr(r + 6, (mem_b32s1(r + 1) - t) as f64 / mem_b32s1(r + 4) as f64);
+                        }
+                    }
+                    set_mem_b32s1(r + 1, t_base);
+                    set_mem_b16s1(r, HLIST_NODE);
+                } else {
+                    // §840: vbox column
+                    set_mem_b32s1(r + 1, mem_b32s1(q + 1));
+                    if t == mem_b32s1(r + 3) {
+                        set_mem_b16s1(r + 5, NORMAL);
+                        set_mem_b16s0(r + 5, NORMAL);
+                        set_mem_gr(r + 6, 0.0);
+                    } else if t > mem_b32s1(r + 3) {
+                        set_mem_b16s1(r + 5, STRETCHING);
+                        if mem_b32s1(r + 6) == 0 {
+                            set_mem_gr(r + 6, 0.0);
+                        } else {
+                            set_mem_gr(r + 6, (t - mem_b32s1(r + 3)) as f64 / mem_b32s1(r + 6) as f64);
+                        }
+                    } else {
+                        set_mem_b16s0(r + 5, mem_b16s1(r + 5));
+                        set_mem_b16s1(r + 5, SHRINKING);
+                        if mem_b32s1(r + 4) == 0 {
+                            set_mem_gr(r + 6, 0.0);
+                        } else if mem_b16s0(r + 5) == NORMAL && mem_b32s1(r + 3) - t > mem_b32s1(r + 4) {
+                            set_mem_gr(r + 6, 1.0);
+                        } else {
+                            set_mem_gr(r + 6, (mem_b32s1(r + 3) - t) as f64 / mem_b32s1(r + 4) as f64);
+                        }
+                    }
+                    set_mem_b32s1(r + 3, t_base);
+                    set_mem_b16s1(r, VLIST_NODE);
+                }
+                set_mem_b32s1(r + 4, 0);
+                // Link any inserted inter-column glue nodes
+                if u != HOLD_HEAD {
+                    set_mem_b32s1(u, mem_b32s1(r));
+                    set_mem_b32s1(r, mem_b32s1(HOLD_HEAD));
+                    r = u;
+                }
+                r = mem_b32s1(mem_b32s1(r));
+                ss = mem_b32s1(mem_b32s1(ss));
+                if r == TEX_NULL { break; }
+            }
+        } else if mem_b16s1(q) == RULE_NODE {
+            // §835: rule node — fill in any NULL_FLAG dimensions from the packed box
+            if mem_b32s1(q + 1) == NULL_FLAG { set_mem_b32s1(q + 1, mem_b32s1(p + 1)); }
+            if mem_b32s1(q + 3) == NULL_FLAG { set_mem_b32s1(q + 3, mem_b32s1(p + 3)); }
+            if mem_b32s1(q + 2) == NULL_FLAG { set_mem_b32s1(q + 2, mem_b32s1(p + 2)); }
+            if o != 0 {
+                let r = mem_b32s1(q);
+                set_mem_b32s1(q, TEX_NULL);
+                let qq2 = hpack(q, 0, ADDITIONAL);
+                set_mem_b32s1(qq2 + 4, o);
+                set_mem_b32s1(qq2, r);
+                set_mem_b32s1(s, qq2);
+                q = qq2;
+            }
+        }
+        } // end !is_char_node
+        s = q;
+        q = mem_b32s1(q);
+    }
+
+    flush_node_list(p);
+    pop_alignment();
+
+    // Save aux and pop nest to get back to the outer list
+    let aux_save_s0 = cur_list_aux_b32s0();
+    let aux_save_s1 = cur_list_aux_b32s1();
+    let pp = mem_b32s1(cur_list_head());
+    let qq = cur_list_tail();
+    crate::mem::pop_nest();
+
+    if cur_list_mode() == MMODE {
+        // §1241: display math alignment — add penalties + display glue
+        do_assignments();
+        if cur_cmd() != MATH_SHIFT {
+            error_here_with_diagnostic(c"Missing $$ inserted".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(2);
+            set_help_line(1, c"Displays can use special alignments (like \\eqalignno)".as_ptr());
+            set_help_line(0, c"only if nothing but the alignment itself is between $$'s.".as_ptr());
+            crate::input::back_error();
+        } else {
+            // §1232: check for second $$
+            get_x_token();
+            if cur_cmd() != MATH_SHIFT {
+                error_here_with_diagnostic(c"Display math should end with $$".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(2);
+                set_help_line(1, c"The `$' that I just saw supposedly matches a previous `$$'.".as_ptr());
+                set_help_line(0, c"So I shall assume that you typed `$$' both times.".as_ptr());
+                crate::input::back_error();
+            }
+        }
+        flush_node_list(cur_list_e_tex_aux());
+        crate::mem::pop_nest();
+        // Insert pre-display penalty and above-display skip
+        set_mem_b32s1(cur_list_tail(), crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY)));
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        set_mem_b32s1(cur_list_tail(), crate::mem::new_param_glue(GLUE_PAR_ABOVE_DISPLAY));
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        // Attach alignment rows
+        set_mem_b32s1(cur_list_tail(), pp);
+        if pp != TEX_NULL { set_cur_list_tail(qq); }
+        // Insert post-display penalty and below-display skip
+        set_mem_b32s1(cur_list_tail(), crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY)));
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        set_mem_b32s1(cur_list_tail(), crate::mem::new_param_glue(GLUE_PAR_BELOW_DISPLAY));
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        // Only prevdepth (aux.b32.s1) is restored for MMODE (C: cur_list.aux.b32.s1 = aux_save.b32.s1)
+        set_cur_list_aux_b32s1(aux_save_s1);
+        resume_after_display();
+    } else {
+        // Regular vmode or hmode alignment — restore full aux
+        set_cur_list_aux_b32s0(aux_save_s0);
+        set_cur_list_aux_b32s1(aux_save_s1);
+        set_mem_b32s1(cur_list_tail(), pp);
+        if pp != TEX_NULL { set_cur_list_tail(qq); }
+        if cur_list_mode() == VMODE {
+            build_page();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // align_peek
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:8785 (align_peek)
 #[no_mangle]
 pub unsafe extern "C" fn align_peek() {
-    extern "C" {
-        fn fin_align();
-        fn init_row();
-        fn init_col();
-    }
     const NO_ALIGN: u8 = 34;           // xetex_format.h:272
     const NO_ALIGN_GROUP: u8 = 7;      // xetex-constants.h:159
     const CAR_RET: u8 = 5;             // xetex_format.h:235

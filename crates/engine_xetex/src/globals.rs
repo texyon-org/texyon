@@ -449,6 +449,8 @@ mod raw {
         pub(super) static mut pre_adjust_tail: i32;
         pub(super) static mut total_stretch: [i32; 4];
         pub(super) static mut total_shrink: [i32; 4];
+        // Line number at which the current box-packing started (xetex-xetexd.h:607).
+        pub(super) static mut pack_begin_line: i32;
     }
 }
 
@@ -2717,3 +2719,11 @@ pub(crate) fn cur_order() -> u8 {
 #[inline] pub(crate) fn set_total_stretch(o: usize, v: i32) { unsafe { raw::total_stretch[o] = v; } }
 #[inline] pub(crate) fn total_shrink(o: usize) -> i32 { unsafe { raw::total_shrink[o] } }
 #[inline] pub(crate) fn set_total_shrink(o: usize, v: i32) { unsafe { raw::total_shrink[o] = v; } }
+#[inline] pub(crate) fn pack_begin_line() -> i32 { unsafe { raw::pack_begin_line } }
+#[inline] pub(crate) fn set_pack_begin_line(v: i32) { unsafe { raw::pack_begin_line = v; } }
+
+/// Returns `cur_list.mode_line` (the source line where the current mode started).
+#[inline]
+pub(crate) fn cur_list_mode_line() -> i32 {
+    unsafe { raw::cur_list.mode_line }
+}
