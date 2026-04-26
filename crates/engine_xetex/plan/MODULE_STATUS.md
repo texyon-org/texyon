@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 46.
+Last updated: session 47.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 46.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 12400 |     59 | multiple (see below)              | IN PROGRESS — 78% |
+| xetex-xetex0.c               | 11878 |     51 | multiple (see below)              | IN PROGRESS — 82% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -418,16 +418,22 @@ New Rust module `src/save.rs` created for save-stack management.
 |138| `append_italic_correction`|        9868 | `src/scan.rs`   | MIGRATED (session 46, 53f45e8b) |
 |139| `delete_last`             |        9716 | `src/scan.rs`   | MIGRATED (session 46, e5313fe2) |
 |140| `unpackage`               |        9799 | `src/scan.rs`   | MIGRATED (session 46, e5313fe2) |
+|141| `char_warning`            |        6428 | `src/scan.rs`   | MIGRATED (session 47, a7098003) |
+|142| `app_space`               |        9223 | `src/scan.rs`   | MIGRATED (session 47, a7098003) |
+|143| `new_graf`                |        9549 | `src/scan.rs`   | MIGRATED (session 47, 6732bacf) |
+|144| `package`                 |        9509 | `src/scan.rs`   | MIGRATED (session 47, c283130c) |
+|145| `insert_src_special`      |        9978 | `src/scan.rs`   | MIGRATED (session 47, 2ee99a3c) |
+|146| `scan_box`                |        9485 | `src/scan.rs`   | MIGRATED (session 47, 5ffb71e6) |
+|147| `tt_insert_special`       |        9984 | `src/scan.rs`   | MIGRATED (session 47, 9e355d5b) |
+|148| `pack_file_name`          |        6381 | `src/scan.rs`   | MIGRATED (session 47, feb6bd59) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `show_save_groups` (8829): complex multi-goto diagnostic helper — defer.
-- `off_save` (9367): uses get_avail, back_input, error — medium complexity.
-- `do_endv` (10471): calls end_graf + fin_col + fin_row + off_save.
-- `indent_in_hmode` (9808): uses new_null_box, new_noad, mem writes.
-- `head_for_vmode` (9831): calls off_save (still in C), uses par_token.
-- `append_src_special` (11401): synctex helper.
+- `scan_math` (4313): medium, math scanning.
+- `new_character` (7200): medium, creates char nodes from font metrics.
+- `handle_right_brace` (10018): very large — many group cases.
+- `just_copy`/`just_reverse` (9627/9658): bidi node copying — complex.
 
 ## How to maintain this file
 

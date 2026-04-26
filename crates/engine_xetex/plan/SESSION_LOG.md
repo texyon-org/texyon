@@ -32,6 +32,46 @@ template.
 
 ---
 
+## Session 47 — 2026-04-26 — file/box/graf/space cluster
+
+**Goal:** Continue translating functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 46
+
+**Work done:**
+- Added `gave_char_warning_help`, `main_p`, `main_k`, `cur_lang`, `insert_src_special_every_par`, `cur_box` globals to `globals.rs`.
+- Translated `char_warning` (6428), `app_space` (9223) → `src/scan.rs` (a7098003).
+- Translated `new_graf` (9549) → `src/scan.rs` (6732bacf).
+- Translated `package` (9509) → `src/scan.rs` (c283130c). Added `hpack`/`vpackage`/`box_end` to top-level extern block.
+- Translated `insert_src_special` (9978) → `src/scan.rs` (2ee99a3c).
+- Translated `scan_box` (9485) → `src/scan.rs` (5ffb71e6).
+- Translated `tt_insert_special` (9984) → `src/scan.rs` (9e355d5b).
+- Translated `pack_file_name` (6381) → `src/scan.rs` (feb6bd59). Added `set_name_of_file` to `globals.rs`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 47
+- ~8 new functions this session.
+- xetex-xetex0.c: ~11878 total C LOC, ~51 C function signatures remaining.
+
+**Surprises / gotchas:**
+- `ttstub_issue_warning` is a variadic C function; declared with `...` in the Rust extern block (works on Rust 1.90).
+- `char_warning` writes to `INTPAR(tracing_online)` (an eqtb cell), which requires `set_eqtb_b32s1`.
+- `insert_src_special` was already being called from `new_graf` (via extern C), so removing from extern block after Rust translation was required.
+- `pack_file_name` was in both the top-level extern block AND a local extern block — needed to remove both.
+
+**For the next session:**
+- `scan_math` (4313): medium, math scanning. Uses many math-specific globals.
+- `char_warning` callers still in C; `insert_src_special_every_vbox` / `insert_src_special_auto` patterns similar.
+- `new_character` (7200): creates char nodes. Medium complexity.
+- `handle_right_brace` (10018): very large, complex — many group cases.
+- `extra_right_brace` (9278, #if 0): already in Rust at `src/scan.rs:2079`.
+- `just_copy`/`just_reverse` (9627/9658): bidi node copying — complex.
+
 ## Session 46 — 2026-04-25 — accent/italic/unpackage cluster
 
 **Goal:** Continue translating functions from xetex-xetex0.c.
