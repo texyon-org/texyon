@@ -431,6 +431,8 @@ mod raw {
         pub(super) static mut cur_lang: u8;
         // SyncTeX "insert special on every paragraph" flag (xetex-xetexd.h:420).
         pub(super) static mut insert_src_special_every_par: bool;
+        // Currently assembled box (xetex-xetexd.h:687; node index = i32).
+        pub(super) static mut cur_box: i32;
     }
 }
 
@@ -2625,4 +2627,17 @@ pub(crate) fn set_cur_lang(v: u8) {
 #[inline]
 pub(crate) fn insert_src_special_every_par() -> bool {
     unsafe { raw::insert_src_special_every_par }
+}
+
+// ---------------------------------------------------------------------------
+// cur_box
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn cur_box() -> i32 {
+    unsafe { raw::cur_box }
+}
+#[inline]
+pub(crate) fn set_cur_box(v: i32) {
+    unsafe { raw::cur_box = v; }
 }

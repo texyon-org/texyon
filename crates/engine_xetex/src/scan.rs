@@ -88,6 +88,9 @@ extern "C" {
     fn synctex_start_input();
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
     fn insert_src_special();
+    fn hpack(p: i32, w: i32, m: i16) -> i32;
+    fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32;
+    fn box_end(box_context: i32);
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -6206,11 +6209,58 @@ pub unsafe extern "C" fn app_space() {
     set_cur_list_tail(q);
 }
 
+// translated from xetex-xetex0.c:9509 (package)
+#[no_mangle]
+pub unsafe extern "C" fn package(c: i16) {
+    use crate::globals::{
+        cur_box, cur_list_head, cur_list_mode, save_ptr, save_stack_b32s1, set_cur_box,
+        set_save_ptr,
+    };
+    const DIMEN_PAR_BOX_MAX_DEPTH: i32 = 7;    // xetex_format.h:129
+    const INT_PAR_XETEX_UPWARDS: i32 = 71;     // xetex_format.h:106
+    const VTOP_CODE: i16 = 4;                  // xetex_format.h:484
+    const INNER_HMODE: i16 = -104;             // xetex_format.h:369 negated
+
+    let d = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_BOX_MAX_DEPTH);
+    let u = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS);
+    crate::save::unsave();
+    set_save_ptr(save_ptr() - 3);
+    let v = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS);
+    crate::globals::set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS, u);
+    if cur_list_mode() == INNER_HMODE {
+        set_cur_box(hpack(
+            mem_b32s1(cur_list_head()),
+            save_stack_b32s1(save_ptr() + 2),
+            save_stack_b32s1(save_ptr() + 1) as i16,
+        ));
+    } else {
+        set_cur_box(vpackage(
+            mem_b32s1(cur_list_head()),
+            save_stack_b32s1(save_ptr() + 2),
+            save_stack_b32s1(save_ptr() + 1) as i16,
+            d,
+        ));
+        if c == VTOP_CODE {
+            let mut h = 0i32;
+            let p = mem_b32s1(cur_box() + 5);
+            if p != crate::mem::TEX_NULL && mem_b16s1(p) <= 2 {
+                h = mem_b32s1(p + 3);
+            }
+            crate::globals::set_mem_b32s1(cur_box() + 2,
+                mem_b32s1(cur_box() + 2) - h + mem_b32s1(cur_box() + 3));
+            crate::globals::set_mem_b32s1(cur_box() + 3, h);
+        }
+    }
+    crate::globals::set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS, v);
+    crate::mem::pop_nest();
+    box_end(save_stack_b32s1(save_ptr()));
+}
+
 // translated from xetex-xetex0.c:9549 (new_graf)
 #[no_mangle]
 pub unsafe extern "C" fn new_graf(indented: bool) {
     use crate::globals::{
-        cur_lang, cur_list_aux_b32s0, cur_list_head, cur_list_mode, cur_list_tail,
+        cur_list_head, cur_list_mode, cur_list_tail,
         insert_src_special_every_par, nest_ptr, set_cur_lang, set_cur_list_aux_b32s0,
         set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
         set_mem_b32s1,

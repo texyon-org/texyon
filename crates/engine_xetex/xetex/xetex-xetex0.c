@@ -9506,41 +9506,7 @@ scan_box(int32_t box_context)
 }
 
 
-void package(small_number c)
-{
-    scaled_t h;
-    int32_t p;
-    scaled_t d;
-    int32_t u, v;
-
-    d = DIMENPAR(box_max_depth);
-    u = INTPAR(xetex_upwards);
-    unsave();
-    save_ptr = save_ptr - 3;
-    v = INTPAR(xetex_upwards);
-    INTPAR(xetex_upwards) = u;
-    if (cur_list.mode == -104)
-        cur_box = hpack(mem[cur_list.head].b32.s1, save_stack[save_ptr + 2].b32.s1, save_stack[save_ptr + 1].b32.s1);
-    else {
-
-        cur_box =
-            vpackage(mem[cur_list.head].b32.s1, save_stack[save_ptr + 2].b32.s1, save_stack[save_ptr + 1].b32.s1, d);
-        if (c == VTOP_CODE) {   /*1122: */
-            h = 0;
-            p = mem[cur_box + 5].b32.s1;
-            if (p != TEX_NULL) {
-
-                if (NODE_type(p) <= RULE_NODE)
-                    h = mem[p + 3].b32.s1;
-            }
-            mem[cur_box + 2].b32.s1 = mem[cur_box + 2].b32.s1 - h + mem[cur_box + 3].b32.s1;
-            mem[cur_box + 3].b32.s1 = h;
-        }
-    }
-    INTPAR(xetex_upwards) = v;
-    pop_nest();
-    box_end(save_stack[save_ptr + 0].b32.s1);
-}
+/* package: translated to Rust in src/scan.rs */
 
 /* norm_min: translated to Rust in src/helpers.rs */
 
