@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 48 — 2026-04-26 — math/scan/alignment cluster
+
+**Goal:** Continue translating functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 47
+
+**Work done:**
+- Translated `scan_math` (4313), `set_math_char` (4315) → `src/scan.rs` (d90d1986, 38f8512d). Shared `math_{char,class,fam}/set_{class,family}` inline helpers.
+- Translated `new_character` (7048) → `src/scan.rs` (e05d388f).
+- Translated `scan_glue` (4678) → `src/scan.rs` (04720330). Added `cur_order` to globals.rs.
+- Translated `push_alignment` (7724), `pop_alignment` (7743) → `src/scan.rs` (57961939). Added alignment globals.
+- Translated `init_span` (7880), `init_row` (7893), `init_col` (7912) → `src/scan.rs` (300e358f).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 48
+- ~9 new functions this session.
+- xetex-xetex0.c: ~11594 total C LOC, ~42 C function signatures remaining.
+
+**Surprises / gotchas:**
+- `scan_math` has two nested gotos (restart/reswitch): modelled as a `'main` loop containing a `loop { break match { ... } }` block.
+- `scan_glue` was in the extern "C" block — must be removed before defining the Rust function.
+- `init_row` row-mode toggle is `-105 - cur_list.mode` which flips between inner-hmode (-104) and inner-vmode (-1).
+- `cur_tail` (alignment) conflicts with nothing but was named `cur_tail_a` in Rust accessors to avoid confusion with `cur_list_tail`.
+
+**For the next session:**
+- `fin_col` (7924): complex, 100+ lines. Handles column termination in alignments.
+- `fin_row` (8114): calls fin_col helpers, medium.
+- `get_preamble_token` (7768): medium, preamble scanning.
+- `scan_font_ident` (4335, inside #if 0 — already translated? No, still in C).
+- `char_pw` (7053): uses complex font metric macros.
+
 ## Session 47 — 2026-04-26 — file/box/graf/space cluster
 
 **Goal:** Continue translating functions from xetex-xetex0.c.

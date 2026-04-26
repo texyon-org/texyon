@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 47.
+Last updated: session 48.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 47.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 11878 |     51 | multiple (see below)              | IN PROGRESS — 82% |
+| xetex-xetex0.c               | 11594 |     42 | multiple (see below)              | IN PROGRESS — 85% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -426,14 +426,24 @@ New Rust module `src/save.rs` created for save-stack management.
 |146| `scan_box`                |        9485 | `src/scan.rs`   | MIGRATED (session 47, 5ffb71e6) |
 |147| `tt_insert_special`       |        9984 | `src/scan.rs`   | MIGRATED (session 47, 9e355d5b) |
 |148| `pack_file_name`          |        6381 | `src/scan.rs`   | MIGRATED (session 47, feb6bd59) |
+|149| `scan_math`               |        4313 | `src/scan.rs`   | MIGRATED (session 48, d90d1986) |
+|150| `set_math_char`           |        4315 | `src/scan.rs`   | MIGRATED (session 48, 38f8512d) |
+|151| `new_character`           |        7048 | `src/scan.rs`   | MIGRATED (session 48, e05d388f) |
+|152| `scan_glue`               |        4678 | `src/scan.rs`   | MIGRATED (session 48, 04720330) |
+|153| `push_alignment`          |        7724 | `src/scan.rs`   | MIGRATED (session 48, 57961939) |
+|154| `pop_alignment`           |        7743 | `src/scan.rs`   | MIGRATED (session 48, 57961939) |
+|155| `init_span`               |        7880 | `src/scan.rs`   | MIGRATED (session 48, 300e358f) |
+|156| `init_row`                |        7893 | `src/scan.rs`   | MIGRATED (session 48, 300e358f) |
+|157| `init_col`                |        7912 | `src/scan.rs`   | MIGRATED (session 48, 300e358f) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `scan_math` (4313): medium, math scanning.
-- `new_character` (7200): medium, creates char nodes from font metrics.
-- `handle_right_brace` (10018): very large — many group cases.
-- `just_copy`/`just_reverse` (9627/9658): bidi node copying — complex.
+- `fin_col` (7924): complex, 100+ lines.
+- `fin_row` (8114): medium.
+- `get_preamble_token` (7768): medium.
+- `handle_right_brace` (9973): very large — many group cases.
+- `just_copy`/`just_reverse` (9427/9428): bidi node copying — complex.
 
 ## How to maintain this file
 
