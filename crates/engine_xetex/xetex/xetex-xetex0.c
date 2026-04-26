@@ -6378,33 +6378,7 @@ end_name(void)
 #endif
 
 
-void
-pack_file_name(str_number n, str_number a, str_number e)
-{
-    // Note that we populate the buffer in an order different than how the
-    // arguments are passed to this function!
-    char* work_buffer = xmalloc_array(UTF8_code, (length(a) + length(n) + length(e)) * 3 + 1);
-    work_buffer[0] = '\0';
-
-    char* a_utf8 = gettexstring(a);
-    strcat(work_buffer, a_utf8);
-    free(a_utf8);
-
-    char* n_utf8 = gettexstring(n);
-    strcat(work_buffer, n_utf8);
-    free(n_utf8);
-
-    char* e_utf8 = gettexstring(e);
-    strcat(work_buffer, e_utf8);
-    free(e_utf8);
-
-    name_length = strlen(work_buffer);
-
-    free(name_of_file);
-    name_of_file = xmalloc_array(char, name_length + 1);
-    strcpy(name_of_file, work_buffer);
-    free(work_buffer);
-}
+/* pack_file_name: translated to Rust in src/scan.rs */
 
 
 /* make_name_string: translated to Rust in src/scan.rs */

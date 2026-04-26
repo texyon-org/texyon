@@ -861,6 +861,11 @@ pub(crate) fn set_eqtb_b16s0(p: i32, v: u16) {
 pub(crate) fn name_of_file() -> *mut libc::c_char {
     unsafe { raw::name_of_file }
 }
+/// Write `name_of_file = v`.
+#[inline]
+pub(crate) fn set_name_of_file(v: *mut libc::c_char) {
+    unsafe { raw::name_of_file = v; }
+}
 /// Write `name_length = v`.
 #[inline]
 pub(crate) fn set_name_length(v: i32) {

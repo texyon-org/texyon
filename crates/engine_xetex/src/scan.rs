@@ -50,10 +50,8 @@ extern "C" {
     fn show_box(p: i32);
     fn flush_node_list(p: i32);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
-    fn pack_file_name(n: i32, a: i32, e: i32);
     fn show_token_list(p: i32, q: i32, l: i32);
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
-    // C functions called by scan_something_internal / scan_int
     fn print_cmd_chr(cmd: u16, chr_code: i32);
     fn scan_glyph_number(f: i32);
     fn aat_font_get(what: i32, engine: *mut libc::c_void) -> i32;
@@ -6206,6 +6204,40 @@ pub unsafe extern "C" fn app_space() {
     }
     crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), q);
     set_cur_list_tail(q);
+}
+
+// translated from xetex-xetex0.c:6381 (pack_file_name)
+#[no_mangle]
+pub unsafe extern "C" fn pack_file_name(n: i32, a: i32, e: i32) {
+    extern "C" { fn xmalloc(size: libc::size_t) -> *mut libc::c_void; }
+
+    let len_a = crate::string_pool::length(a) as usize;
+    let len_n = crate::string_pool::length(n) as usize;
+    let len_e = crate::string_pool::length(e) as usize;
+    // Each TeX character is at most 3 UTF-8 bytes; +2 for NUL terminators.
+    let work_size = (len_a + len_n + len_e) * 3 + 2;
+    let work_buffer = xmalloc(work_size as libc::size_t) as *mut libc::c_char;
+    *work_buffer = 0;
+
+    let a_utf8 = crate::texmfmp::gettexstring(a);
+    libc::strcat(work_buffer, a_utf8);
+    libc::free(a_utf8 as *mut libc::c_void);
+
+    let n_utf8 = crate::texmfmp::gettexstring(n);
+    libc::strcat(work_buffer, n_utf8);
+    libc::free(n_utf8 as *mut libc::c_void);
+
+    let e_utf8 = crate::texmfmp::gettexstring(e);
+    libc::strcat(work_buffer, e_utf8);
+    libc::free(e_utf8 as *mut libc::c_void);
+
+    let nl = libc::strlen(work_buffer) as i32;
+    crate::globals::set_name_length(nl);
+    libc::free(crate::globals::name_of_file() as *mut libc::c_void);
+    let new_buf = xmalloc((nl + 2) as libc::size_t) as *mut libc::c_char;
+    libc::strcpy(new_buf, work_buffer);
+    crate::globals::set_name_of_file(new_buf);
+    libc::free(work_buffer as *mut libc::c_void);
 }
 
 // translated from xetex-xetex0.c:9978 (insert_src_special)
