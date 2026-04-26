@@ -87,6 +87,7 @@ extern "C" {
     fn new_spec(p: i32) -> i32;
     fn synctex_start_input();
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
+    fn insert_src_special();
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -6203,4 +6204,60 @@ pub unsafe extern "C" fn app_space() {
     }
     crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), q);
     set_cur_list_tail(q);
+}
+
+// translated from xetex-xetex0.c:9549 (new_graf)
+#[no_mangle]
+pub unsafe extern "C" fn new_graf(indented: bool) {
+    use crate::globals::{
+        cur_lang, cur_list_aux_b32s0, cur_list_head, cur_list_mode, cur_list_tail,
+        insert_src_special_every_par, nest_ptr, set_cur_lang, set_cur_list_aux_b32s0,
+        set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
+        set_mem_b32s1,
+    };
+    const GLUE_PAR_PAR_SKIP: i16 = 2;  // xetex_format.h:151
+    const VMODE_I16: i16 = 1;          // xetex_format.h:369
+    const HMODE_I16: i16 = 104;        // xetex_format.h:369
+    const BIGGEST_LANG: i32 = 255;     // xetex-constants.h:327
+    const LOCAL__EVERY_PAR: i32 = 2;   // xetex_format.h:174
+    const EVERY_PAR_TEXT: u16 = 8;     // xetex-constants.h:207
+
+    set_cur_list_prev_graf(0);
+
+    if cur_list_mode() == VMODE_I16 || cur_list_head() != cur_list_tail() {
+        let pg = crate::mem::new_param_glue(GLUE_PAR_PAR_SKIP);
+        set_mem_b32s1(cur_list_tail(), pg);
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+    }
+
+    crate::mem::push_nest();
+    set_cur_list_mode(HMODE_I16);
+    set_cur_list_aux_b32s0(1000);
+
+    let lang_val = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
+    let l: u8 = if lang_val <= 0 || lang_val > BIGGEST_LANG { 0 } else { lang_val as u8 };
+    set_cur_lang(l);
+    set_cur_list_aux_b32s1(l as i32);
+    let lhm = crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as i32;
+    let rhm = crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
+    set_cur_list_prev_graf((lhm * 64 + rhm) * 65536 + l as i32);
+
+    if indented {
+        let nb = crate::mem::new_null_box();
+        set_cur_list_tail(nb);
+        set_mem_b32s1(cur_list_head(), nb);
+        set_mem_b32s1(nb + 1, eqtb_b32s1(DIMEN_BASE));
+        if insert_src_special_every_par() {
+            insert_src_special();
+        }
+    }
+
+    let every_par = eqtb_b32s1(LOCAL_BASE + LOCAL__EVERY_PAR);
+    if every_par != crate::mem::TEX_NULL {
+        begin_token_list(every_par, EVERY_PAR_TEXT as u16);
+    }
+
+    if nest_ptr() == 1 {
+        build_page();
+    }
 }

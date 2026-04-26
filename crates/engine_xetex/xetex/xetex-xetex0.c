@@ -9545,46 +9545,7 @@ void package(small_number c)
 /* norm_min: translated to Rust in src/helpers.rs */
 
 
-void
-new_graf(bool indented)
-{
-    cur_list.prev_graf = 0;
-
-    if (cur_list.mode == VMODE || cur_list.head != cur_list.tail) {
-        mem[cur_list.tail].b32.s1 = new_param_glue(GLUE_PAR__par_skip);
-        cur_list.tail = LLIST_link(cur_list.tail);
-    }
-
-    push_nest();
-    cur_list.mode = HMODE;
-    cur_list.aux.b32.s0 = 1000;
-
-    if (INTPAR(language) <= 0)
-        cur_lang = 0;
-    else if (INTPAR(language) > BIGGEST_LANG)
-        cur_lang = 0;
-    else
-        cur_lang = INTPAR(language);
-
-    cur_list.aux.b32.s1 = cur_lang;
-    cur_list.prev_graf =
-        (norm_min(INTPAR(left_hyphen_min)) * 64 +
-         norm_min(INTPAR(right_hyphen_min))) * 65536L + cur_lang;
-
-    if (indented) {
-        cur_list.tail = new_null_box();
-        mem[cur_list.head].b32.s1 = cur_list.tail;
-        mem[cur_list.tail + 1].b32.s1 = eqtb[DIMEN_BASE].b32.s1;
-        if (insert_src_special_every_par)
-            insert_src_special();
-    }
-
-    if (LOCAL(every_par) != TEX_NULL)
-        begin_token_list(LOCAL(every_par), EVERY_PAR_TEXT);
-
-    if (nest_ptr == 1)
-        build_page();
-}
+/* new_graf: translated to Rust in src/scan.rs */
 
 /* indent_in_hmode: translated to Rust in src/scan.rs */
 

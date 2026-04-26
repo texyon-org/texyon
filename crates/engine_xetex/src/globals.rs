@@ -427,6 +427,10 @@ mod raw {
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
         pub(super) static mut main_p: i32;
         pub(super) static mut main_k: i32;
+        // Current hyphenation language (xetex-xetexd.h:623; unsigned char = u8).
+        pub(super) static mut cur_lang: u8;
+        // SyncTeX "insert special on every paragraph" flag (xetex-xetexd.h:420).
+        pub(super) static mut insert_src_special_every_par: bool;
     }
 }
 
@@ -2604,4 +2608,21 @@ pub(crate) fn main_k() -> i32 {
 #[inline]
 pub(crate) fn set_main_k(v: i32) {
     unsafe { raw::main_k = v; }
+}
+
+// ---------------------------------------------------------------------------
+// cur_lang / insert_src_special_every_par
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn cur_lang() -> u8 {
+    unsafe { raw::cur_lang }
+}
+#[inline]
+pub(crate) fn set_cur_lang(v: u8) {
+    unsafe { raw::cur_lang = v; }
+}
+#[inline]
+pub(crate) fn insert_src_special_every_par() -> bool {
+    unsafe { raw::insert_src_special_every_par }
 }
