@@ -6236,6 +6236,36 @@ pub unsafe extern "C" fn insert_src_special() {
     }
 }
 
+// translated from xetex-xetex0.c:9984 (tt_insert_special)
+#[no_mangle]
+pub unsafe extern "C" fn tt_insert_special(ascii_text: *const libc::c_char) {
+    const FROZEN_SPECIAL: i32 = 2_243_226 + 10; // FROZEN_CONTROL_SEQUENCE + 10
+    const RIGHT_BRACE_TOKEN: i32 = 0x400000;     // xetex-constants.h:351
+
+    let start_pool = pool_ptr();
+    // Copy ASCII text into str_pool
+    let text = std::ffi::CStr::from_ptr(ascii_text).to_bytes();
+    if pool_ptr() + text.len() as i32 >= crate::globals::pool_size() {
+        crate::errors::overflow(c"string pool overflow".as_ptr(), 0);
+    }
+    for &b in text {
+        set_str_pool(pool_ptr(), b as u16);
+        set_pool_ptr(pool_ptr() + 1);
+    }
+    // Build token list: \special { <tokens> }
+    let toklist_start = crate::mem::get_avail();
+    set_mem_b32s0(toklist_start, CS_TOKEN_FLAG + FROZEN_SPECIAL);
+    let q = crate::mem::get_avail();
+    set_mem_b32s0(q, LEFT_BRACE_TOKEN + b'{' as i32);
+    set_mem_b32s1(toklist_start, q);
+    let p = str_toks(start_pool);
+    set_mem_b32s1(q, mem_b32s1(TEMP_HEAD));
+    let q2 = crate::mem::get_avail();
+    set_mem_b32s0(q2, RIGHT_BRACE_TOKEN + b'}' as i32);
+    set_mem_b32s1(p, q2);
+    begin_token_list(toklist_start, INSERTED);
+}
+
 // translated from xetex-xetex0.c:9485 (scan_box)
 #[no_mangle]
 pub unsafe extern "C" fn scan_box(box_context: i32) {

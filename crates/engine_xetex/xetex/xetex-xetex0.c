@@ -9980,39 +9980,7 @@ void do_extension(void)
 /* append_src_special: translated to Rust in src/scan.rs */
 
 
-/* Tectonic: insert a \special into the current token stream */
-void
-tt_insert_special(const char *ascii_text)
-{
-    int32_t toklist_start, p, q;
-    pool_pointer start_pool_ptr = pool_ptr;
-
-    /* Copy the text into the string pool so that we can use str_toks() */
-    if (pool_ptr + strlen(ascii_text) >= (size_t) pool_size)
-        _tt_abort("string pool overflow");
-
-    while (*ascii_text)
-        str_pool[pool_ptr++] = *ascii_text++;
-
-    /* Create the linked list of inserted tokens */
-    p = toklist_start = get_avail();
-    LLIST_info(p) = CS_TOKEN_FLAG + FROZEN_SPECIAL;
-
-    q = get_avail();
-    LLIST_info(q) = LEFT_BRACE_TOKEN + '{';
-    LLIST_link(p) = q;
-
-    /* NB: str_toks creates a list starting at LLIST_link(TEMP_HEAD) and ending at `p` */
-    p = str_toks(start_pool_ptr);
-    LLIST_link(q) = LLIST_link(TEMP_HEAD);
-
-    q = get_avail();
-    LLIST_info(q) = RIGHT_BRACE_TOKEN + '}';
-    LLIST_link(p) = q;
-
-    /* Queue it up and we're done. */
-    begin_token_list(toklist_start, INSERTED);
-}
+/* tt_insert_special: translated to Rust in src/scan.rs */
 
 void
 handle_right_brace(void)
