@@ -6610,6 +6610,70 @@ fn set_class_fn(x: i32) -> i32 { (((x as u32) & 0x07) << 21) as i32 }
 #[inline]
 fn set_family_fn(x: i32) -> i32 { (((x as u32) & 0xFF) << 24) as i32 }
 
+// translated from xetex-xetex0.c:7880 (init_span)
+#[no_mangle]
+pub unsafe extern "C" fn init_span(p: i32) {
+    use crate::globals::{
+        cur_list_mode, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_span,
+    };
+    const INNER_HMODE: i16 = -104;
+
+    crate::mem::push_nest();
+    if cur_list_mode() == INNER_HMODE {
+        set_cur_list_aux_b32s0(1000);
+    } else {
+        set_cur_list_aux_b32s1(IGNORE_DEPTH);
+        normal_paragraph();
+    }
+    set_cur_span(p);
+}
+
+// translated from xetex-xetex0.c:7893 (init_row)
+#[no_mangle]
+pub unsafe extern "C" fn init_row() {
+    use crate::globals::{
+        cur_head, cur_list_mode, cur_list_tail, cur_pre_head, set_cur_align, set_cur_list_aux_b32s0,
+        set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_tail, set_cur_pre_tail,
+        set_cur_tail_a, set_mem_b16s0, set_mem_b32s1,
+    };
+    const ALIGN_HEAD_IR: i32 = 4_999_991;
+    const GLUE_PAR_TAB_SKIP: u16 = 11 + 1; // GLUE_PAR__tab_skip + 1
+
+    crate::mem::push_nest();
+    let new_mode = -105 - cur_list_mode() as i32;
+    set_cur_list_mode(new_mode as i16);
+    if new_mode == -104 {
+        set_cur_list_aux_b32s0(0);
+    } else {
+        set_cur_list_aux_b32s1(0);
+    }
+    let align_head_link = mem_b32s1(ALIGN_HEAD_IR);
+    let glue_node = crate::mem::new_glue(mem_b32s0(align_head_link + 1));
+    set_mem_b32s1(cur_list_tail(), glue_node);
+    set_cur_list_tail(mem_b32s1(cur_list_tail()));
+    set_mem_b16s0(cur_list_tail(), GLUE_PAR_TAB_SKIP);
+    set_cur_align(mem_b32s1(align_head_link));
+    set_cur_tail_a(cur_head());
+    set_cur_pre_tail(cur_pre_head());
+    init_span(crate::globals::cur_align());
+}
+
+// translated from xetex-xetex0.c:7912 (init_col)
+#[no_mangle]
+pub unsafe extern "C" fn init_col() {
+    use crate::globals::{cur_align, cur_cmd, set_align_state, set_mem_b32s0};
+    const OMIT_CMD: u8 = 63;    // xetex_format.h:301
+    const U_TEMPLATE: u16 = 1;  // xetex-constants.h:200
+
+    set_mem_b32s0(cur_align() + 5, cur_cmd() as i32);
+    if cur_cmd() == OMIT_CMD {
+        set_align_state(0);
+    } else {
+        crate::input::back_input();
+        begin_token_list(mem_b32s1(cur_align() + 3), U_TEMPLATE);
+    }
+}
+
 // translated from xetex-xetex0.c:7724 (push_alignment)
 #[no_mangle]
 pub unsafe extern "C" fn push_alignment() {

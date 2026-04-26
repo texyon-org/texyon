@@ -7877,49 +7877,9 @@ done:
 }
 
 
-void init_span(int32_t p)
-{
-    push_nest();
-    if (cur_list.mode == -104)
-        cur_list.aux.b32.s0 = 1000;
-    else {
-
-        cur_list.aux.b32.s1 = IGNORE_DEPTH;
-        normal_paragraph();
-    }
-    cur_span = p;
-}
-
-void init_row(void)
-{
-    push_nest();
-    cur_list.mode = (-105) - cur_list.mode;
-    if (cur_list.mode == -104)
-        cur_list.aux.b32.s0 = 0;
-    else
-        cur_list.aux.b32.s1 = 0;
-    {
-        mem[cur_list.tail].b32.s1 = new_glue(mem[mem[ALIGN_HEAD].b32.s1 + 1].b32.s0);
-        cur_list.tail = LLIST_link(cur_list.tail);
-    }
-    mem[cur_list.tail].b16.s0 = (GLUE_PAR__tab_skip + 1);
-    cur_align = mem[mem[ALIGN_HEAD].b32.s1].b32.s1;
-    cur_tail = cur_head;
-    cur_pre_tail = cur_pre_head;
-    init_span(cur_align);
-}
-
-void init_col(void)
-{
-    mem[cur_align + 5].b32.s0 = cur_cmd;
-    if (cur_cmd == OMIT)
-        align_state = 0;
-    else {
-
-        back_input();
-        begin_token_list(mem[cur_align + 3].b32.s1, U_TEMPLATE);
-    }
-}
+/* init_span: translated to Rust in src/scan.rs */
+/* init_row: translated to Rust in src/scan.rs */
+/* init_col: translated to Rust in src/scan.rs */
 
 bool fin_col(void)
 {
