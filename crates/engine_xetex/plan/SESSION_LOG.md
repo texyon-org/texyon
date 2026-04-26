@@ -32,6 +32,38 @@ template.
 
 ---
 
+## Session 52 — 2026-04-26 — show_save_groups + do_assignments
+
+**Goal:** Two more functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 51
+
+**Work done:**
+- Added `nest_e_tex_aux(k)` accessor to globals.rs.
+- Added `set_box_allowed` global + `set_set_box_allowed` accessor to globals.rs.
+- Translated `show_save_groups` (7752, ~210 lines) → `src/scan.rs` (0963a923).
+- Translated `do_assignments` (10745, 14 lines) → `src/scan.rs` (04e4888a).
+- Removed two local `extern "C"` declarations for `show_save_groups` and `do_assignments`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 52
+- xetex-xetex0.c: ~33 C functions remaining.
+
+**Surprises / gotchas:**
+- `show_save_groups` has a complex goto pattern (found/found1/found2/done) with fallthrough. Modelled as `enum After { Preamble, Found1, Found2, Found }` with chained conditional blocks.
+- C `do-while { m = nest[p].mode; if p>0 p--; else m=VMODE; } while m==HMODE`: in Rust, read m first, conditionally decrement p, then break when m!=HMODE. After the loop, `p` is one below the entry that stopped the loop, which is the intended behavior.
+- `set_box_allowed` is a C global that needed explicit extern linking (xetex-ini.c defines it).
+
+**For the next session:**
+- `show_info` (7717): probably 5-10 lines.
+- `vert_break` (7754): ~135 lines, moderate complexity.
+- `handle_right_brace` (8843): very large.
+
 ## Session 51 — 2026-04-26 — fin_align
 
 **Goal:** Translate fin_align from xetex-xetex0.c.

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 51.
+Last updated: session 52.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 51.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 10972 |     35 | multiple (see below)              | IN PROGRESS — 87% |
+| xetex-xetex0.c               | 10747 |     33 | multiple (see below)              | IN PROGRESS — 88% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -440,13 +440,16 @@ New Rust module `src/save.rs` created for save-stack management.
 |160| `fin_row`                 |        8009 | `src/scan.rs`   | MIGRATED (session 50, 724e76bb) |
 |161| `init_align`              |        7732 | `src/scan.rs`   | MIGRATED (session 50, 724e76bb) |
 |162| `fin_align`               |        8040 | `src/scan.rs`   | MIGRATED (session 51, 97f42b9a) |
+|163| `show_save_groups`        |        7752 | `src/scan.rs`   | MIGRATED (session 52, 0963a923) |
+|164| `do_assignments`          |       10745 | `src/scan.rs`   | MIGRATED (session 52, 04e4888a) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `handle_right_brace` (9973): very large — many group cases.
-- `just_copy`/`just_reverse` (9427/9428): bidi node copying — complex.
-- `show_save_groups` (8350): medium — diagnostic helper.
+- `handle_right_brace` (8843): very large — many group cases.
+- `just_copy` (8389) / `just_reverse` (8516): bidi node copying — complex.
+- `vert_break` (7754): medium (~135 lines).
+- `show_info` (7717): likely small.
 
 ## How to maintain this file
 

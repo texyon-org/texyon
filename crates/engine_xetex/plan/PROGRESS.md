@@ -65,6 +65,7 @@ cargo test -p tectonic --test tex-outputs
 |      49 | 2026-04-26 |     29 |    29 |     0 | get_preamble_token. TRIP 2/2. |
 |      50 | 2026-04-26 |     29 |    29 |     0 | 3 functions: init_align, fin_col, fin_row. Added adjust_tail/pre_adjust_tail/total_stretch/total_shrink globals. TRIP 2/2. |
 |      51 | 2026-04-26 |     29 |    29 |     0 | fin_align (~300 lines). Bug: set_mem_b32s1 vs set_eqtb_b32s1 for DIMENPAR; caught by TRIP. All 4 suites pass. |
+|      52 | 2026-04-26 |     29 |    29 |     0 | show_save_groups (~210 lines, goto-tangle → enum After), do_assignments (14 lines). All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -190,6 +191,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      49 |      319 |             ~40 |     ~88.9% |
 |      50 |      322 |             ~37 |     ~89.7% |
 |      51 |      323 |             ~36 |     ~90.0% |
+|      52 |      325 |             ~34 |     ~90.5% |
 
 
 Total C function count to be measured in session 1 via:
@@ -205,7 +207,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **51** (sessions 1–51 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **52** (sessions 1–52 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
