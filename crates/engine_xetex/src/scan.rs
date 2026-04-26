@@ -6209,6 +6209,36 @@ pub unsafe extern "C" fn app_space() {
     set_cur_list_tail(q);
 }
 
+// translated from xetex-xetex0.c:9485 (scan_box)
+#[no_mangle]
+pub unsafe extern "C" fn scan_box(box_context: i32) {
+    use crate::globals::{cur_cmd, set_cur_box};
+    const MAKE_BOX: u8 = 20;       // xetex_format.h:258
+    const HRULE: u8 = 36;          // xetex_format.h:274
+    const VRULE: u8 = 35;          // xetex_format.h:273
+    const LEADER_FLAG: i32 = 0x40010001; // xetex-constants.h:375
+    extern "C" { fn begin_box(box_context: i32); }
+
+    loop {
+        get_x_token();
+        if cur_cmd() != SPACER && cur_cmd() != RELAX { break; }
+    }
+    if cur_cmd() == MAKE_BOX {
+        begin_box(box_context);
+    } else if box_context >= LEADER_FLAG && (cur_cmd() == HRULE || cur_cmd() == VRULE) {
+        set_cur_box(scan_rule_spec());
+        box_end(box_context);
+    } else {
+        error_here_with_diagnostic(c"A <box> was supposed to be here".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(3);
+        set_help_line(2, c"I was expecting to see \\hbox or \\vbox or \\copy or \\box or".as_ptr());
+        set_help_line(1, c"something like that. So you might find something missing in".as_ptr());
+        set_help_line(0, c"your output. But keep trying; you can fix this later.".as_ptr());
+        crate::input::back_error();
+    }
+}
+
 // translated from xetex-xetex0.c:9509 (package)
 #[no_mangle]
 pub unsafe extern "C" fn package(c: i16) {

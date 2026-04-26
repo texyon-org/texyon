@@ -9481,29 +9481,7 @@ begin_box(int32_t box_context)
 }
 
 
-void
-scan_box(int32_t box_context)
-{
-    do {
-        get_x_token();
-    } while (cur_cmd == SPACER || cur_cmd == RELAX);
-
-    if (cur_cmd == MAKE_BOX) {
-        begin_box(box_context);
-    } else if (box_context >= LEADER_FLAG && (cur_cmd == HRULE || cur_cmd == VRULE)) {
-        cur_box = scan_rule_spec();
-        box_end(box_context);
-    } else {
-        error_here_with_diagnostic("A <box> was supposed to be here");
-        capture_to_diagnostic(NULL);
-
-        help_ptr = 3;
-        help_line[2] = "I was expecting to see \\hbox or \\vbox or \\copy or \\box or";
-        help_line[1] = "something like that. So you might find something missing in";
-        help_line[0] = "your output. But keep trying; you can fix this later.";
-        back_error();
-    }
-}
+/* scan_box: translated to Rust in src/scan.rs */
 
 
 /* package: translated to Rust in src/scan.rs */
