@@ -451,6 +451,8 @@ mod raw {
         pub(super) static mut total_shrink: [i32; 4];
         // Line number at which the current box-packing started (xetex-xetexd.h:607).
         pub(super) static mut pack_begin_line: i32;
+        // Whether \setbox is allowed in the current context (xetex-xetexd.h:446).
+        pub(super) static mut set_box_allowed: bool;
     }
 }
 
@@ -2726,6 +2728,8 @@ pub(crate) fn cur_order() -> u8 {
 #[inline] pub(crate) fn set_total_shrink(o: usize, v: i32) { unsafe { raw::total_shrink[o] = v; } }
 #[inline] pub(crate) fn pack_begin_line() -> i32 { unsafe { raw::pack_begin_line } }
 #[inline] pub(crate) fn set_pack_begin_line(v: i32) { unsafe { raw::pack_begin_line = v; } }
+#[inline] pub(crate) fn set_box_allowed() -> bool { unsafe { raw::set_box_allowed } }
+#[inline] pub(crate) fn set_set_box_allowed(v: bool) { unsafe { raw::set_box_allowed = v; } }
 
 /// Returns `cur_list.mode_line` (the source line where the current mode started).
 #[inline]

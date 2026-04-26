@@ -10741,22 +10741,7 @@ do_marks(small_number a, small_number l, int32_t q)
 }
 
 
-void
-do_assignments(void)
-{
-    while (true) {
-        do {
-            get_x_token();
-        } while (cur_cmd == SPACER || cur_cmd == RELAX);
-
-        if (cur_cmd <= MAX_NON_PREFIXED_COMMAND)
-            return;
-
-        set_box_allowed = false;
-        prefixed_command();
-        set_box_allowed = true;
-    }
-}
+/* do_assignments: translated to Rust in src/scan.rs */
 
 
 /* new_whatsit: translated to Rust in src/mem.rs */

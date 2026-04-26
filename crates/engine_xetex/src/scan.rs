@@ -5204,9 +5204,6 @@ pub unsafe extern "C" fn append_to_vlist(b: i32) {
 // translated from xetex-xetex0.c:8040 (fin_align)
 #[no_mangle]
 pub unsafe extern "C" fn fin_align() {
-    extern "C" {
-        fn do_assignments();
-    }
     use crate::globals::{
         cur_group, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head,
         cur_list_mode, cur_list_mode_line, cur_list_tail, mem_b16s0, mem_b16s1, mem_b32s0,
@@ -6063,7 +6060,6 @@ pub unsafe extern "C" fn append_italic_correction() {
 pub unsafe extern "C" fn make_accent() {
     extern "C" {
         fn new_character(f: i32, c: i32) -> i32;
-        fn do_assignments();
         fn hpack(p: i32, w: i32, m: i16) -> i32;
         fn get_native_char_sidebearings(f: i32, c: i32, lsb: *mut i32, rsb: *mut i32);
         fn get_native_char_height_depth(f: i32, c: i32, h: *mut i32, depth: *mut i32);
@@ -7790,4 +7786,26 @@ pub unsafe extern "C" fn init_align() {
         begin_token_list(every_cr, EVERY_CR_TEXT);
     }
     align_peek();
+}
+
+// translated from xetex-xetex0.c:10745 (do_assignments)
+#[no_mangle]
+pub unsafe extern "C" fn do_assignments() {
+    extern "C" {
+        fn prefixed_command();
+    }
+
+    const MAX_NON_PREFIXED_COMMAND: u8 = 71; // xetex_format.h:312
+    const RELAX: u8 = 0;                     // xetex_format.h:229
+
+    loop {
+        loop {
+            get_x_token();
+            if cur_cmd() != SPACER && cur_cmd() != RELAX { break; }
+        }
+        if cur_cmd() <= MAX_NON_PREFIXED_COMMAND { return; }
+        crate::globals::set_set_box_allowed(false);
+        prefixed_command();
+        crate::globals::set_set_box_allowed(true);
+    }
 }
