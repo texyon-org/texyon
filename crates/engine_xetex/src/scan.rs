@@ -6538,6 +6538,44 @@ pub unsafe extern "C" fn scan_math(p: i32) {
     crate::globals::set_mem_b16s1(p, fam + (math_char_fn(c) / 65536) as u16 * 256);
 }
 
+// translated from xetex-xetex0.c:4315 (set_math_char)
+#[no_mangle]
+pub unsafe extern "C" fn set_math_char(c: i32) {
+    use crate::globals::{cur_chr, cur_cs, set_cur_chr, set_cur_cmd, set_cur_cs, set_mem_b16s0,
+                         set_mem_b16s1, set_mem_b32s1};
+    const ACTIVE_MATH_CHAR_SM: i32 = 0x1FFFFF;
+    const MATH_CHAR_NODE_SM: i32 = 1;   // xetex-constants.h:269
+    const ORD_NOAD: u16 = 16;           // xetex_format.h:401
+    const INT_PAR_CUR_FAM_SM: i32 = 44;
+    const NUMBER_MATH_FAM_SM: i32 = 256;
+
+    if math_char_fn(c) == ACTIVE_MATH_CHAR_SM {
+        set_cur_cs(cur_chr() + 1);
+        set_cur_cmd(crate::globals::eqtb_b16s1(cur_cs()) as u8);
+        set_cur_chr(eqtb_b32s1(cur_cs()));
+        x_token();
+        crate::input::back_input();
+    } else {
+        let p = crate::mem::new_noad();
+        set_mem_b32s1(p + 1, MATH_CHAR_NODE_SM);
+        let ch = math_char_fn(c);
+        set_mem_b16s0(p + 1, (ch % 65536) as u16);
+        set_mem_b16s1(p + 1, math_fam_fn(c) as u16);
+        if math_class_fn(c) == 7 {
+            let cf = eqtb_b32s1(INT_BASE + INT_PAR_CUR_FAM_SM);
+            if cf >= 0 && cf < NUMBER_MATH_FAM_SM {
+                set_mem_b16s1(p + 1, cf as u16);
+            }
+            crate::globals::set_mem_b16s1(p, ORD_NOAD);
+        } else {
+            crate::globals::set_mem_b16s1(p, ORD_NOAD + math_class_fn(c) as u16);
+        }
+        set_mem_b16s1(p + 1, crate::globals::mem_b16s1(p + 1) + (ch / 65536) as u16 * 256);
+        set_mem_b32s1(crate::globals::cur_list_tail(), p);
+        crate::globals::set_cur_list_tail(p);
+    }
+}
+
 #[inline]
 fn math_char_fn(c: i32) -> i32 { (c as u32 & 0x1FFFFF) as i32 }
 #[inline]

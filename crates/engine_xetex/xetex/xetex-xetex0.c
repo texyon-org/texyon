@@ -4312,36 +4312,7 @@ void scan_glyph_number(internal_font_number f)
 
 /* scan_math: translated to Rust in src/scan.rs */
 
-void set_math_char(int32_t c)
-{
-    int32_t p;
-    UnicodeScalar ch;
-
-    if (math_char(c) == ACTIVE_MATH_CHAR) {        /*1187: */
-        cur_cs = cur_chr + 1;
-        cur_cmd = eqtb[cur_cs].b16.s1;
-        cur_chr = eqtb[cur_cs].b32.s1;
-        x_token();
-        back_input();
-    } else {
-
-        p = new_noad();
-        mem[p + 1].b32.s1 = MATH_CHAR;
-        ch = math_char(c);
-        mem[p + 1].b16.s0 = ch % 65536L;
-        mem[p + 1].b16.s1 = math_fam(c);
-        if (math_class(c) == 7) {
-            if (((INTPAR(cur_fam) >= 0)
-                 && (INTPAR(cur_fam) < NUMBER_MATH_FAMILIES)))
-                mem[p + 1].b16.s1 = INTPAR(cur_fam);
-            mem[p].b16.s1 = ORD_NOAD;
-        } else
-            mem[p].b16.s1 = ORD_NOAD + math_class(c);
-        mem[p + 1].b16.s1 = mem[p + 1].b16.s1 + (ch / 65536L) * 256;
-        mem[cur_list.tail].b32.s1 = p;
-        cur_list.tail = p;
-    }
-}
+/* set_math_char: translated to Rust in src/scan.rs */
 
 /* scan_math_class_int translated to Rust (src/scan.rs). */
 /* scan_math_fam_int translated to Rust (src/scan.rs). */
