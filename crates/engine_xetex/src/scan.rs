@@ -5572,6 +5572,244 @@ pub unsafe extern "C" fn fin_align() {
 }
 
 // ---------------------------------------------------------------------------
+// show_save_groups
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:7752 (show_save_groups)
+#[no_mangle]
+pub unsafe extern "C" fn show_save_groups() {
+    use crate::globals::{
+        cur_boundary, cur_group, cur_level, mem_b16s1, nest_e_tex_aux, nest_mode, nest_ptr,
+        save_ptr, save_stack_b16s0, save_stack_b32s1, set_cur_group, set_cur_level, set_save_ptr,
+    };
+
+    const BOTTOM_LEVEL: u8 = 0;
+    const SIMPLE_GROUP: u8 = 1;
+    const HBOX_GROUP: u8 = 2;
+    const ADJUSTED_HBOX_GROUP: u8 = 3;
+    const VBOX_GROUP: u8 = 4;
+    const VTOP_GROUP: u8 = 5;
+    const ALIGN_GROUP: u8 = 6;
+    const NO_ALIGN_GROUP: u8 = 7;
+    const OUTPUT_GROUP: u8 = 8;
+    const MATH_GROUP: u8 = 9;
+    const DISC_GROUP: u8 = 10;
+    const INSERT_GROUP: u8 = 11;
+    const VCENTER_GROUP: u8 = 12;
+    const MATH_CHOICE_GROUP: u8 = 13;
+    const SEMI_SIMPLE_GROUP: u8 = 14;
+    const MATH_SHIFT_GROUP: u8 = 15;
+    const MATH_LEFT_GROUP: u8 = 16;
+    const EXACTLY: i32 = 0;                    // xetex-constants.h:256
+    const BOX_FLAG: i32 = 0x4000_0000;         // xetex-constants.h:372
+    const GLOBAL_BOX_FLAG: i32 = 0x4000_8000;  // xetex-constants.h:373
+    const SHIP_OUT_FLAG: i32 = 0x4001_0000;    // xetex-constants.h:374
+    const LEADER_FLAG: i32 = 0x4001_0001;      // xetex-constants.h:375
+    const A_LEADERS: i32 = 100;                // xetex_format.h:422
+    const HMOVE: u16 = 21;                     // xetex_format.h:259
+    const VMOVE: u16 = 22;                     // xetex_format.h:260
+    const LEADER_SHIP: u16 = 31;               // xetex_format.h:269
+    const EQ_NO: u16 = 48;                     // xetex_format.h:286
+    const LEFT_NOAD: u16 = 30;                 // xetex_format.h:415
+    const VMODE: i16 = 1;
+    const HMODE: i16 = 104;
+    const MMODE: i16 = 207;
+
+    // Save and override state for walking the group stack
+    let mut p = nest_ptr();
+    crate::globals::save_cur_list_to_nest(p);
+    let v = save_ptr();
+    let l = cur_level();
+    let c = cur_group();
+    set_save_ptr(cur_boundary());
+    set_cur_level(cur_level() - 1);
+    let mut a: i8 = 1;
+
+    crate::output::print_nl_cstr(c"".as_ptr());
+    crate::output::print_ln();
+
+    'outer: loop {
+        crate::output::print_nl_cstr(c"### ".as_ptr());
+        crate::output::print_group(true);
+
+        if cur_group() == BOTTOM_LEVEL {
+            break 'outer;
+        }
+
+        // C do-while: advance p until we find a non-HMODE nest entry.
+        // After the loop, m = the mode that stopped it, p = one below that entry.
+        let m: i16;
+        loop {
+            let cur_m = nest_mode(p);
+            if p > 0 { p -= 1; } else {
+                m = VMODE;
+                break;
+            }
+            if cur_m != HMODE {
+                m = cur_m;
+                break;
+            }
+        }
+
+        crate::output::print_cstr(c" (".as_ptr());
+
+        // Determine which continuation block to execute
+        // After::Preamble = execute the i-box preamble block, then found1→found2→found
+        // After::Found1   = skip preamble, execute found1→found2→found
+        // After::Found2   = skip preamble+found1, execute found2→found
+        // After::Found    = skip to found only
+        enum After { Preamble, Found1, Found2, Found }
+        let mut s: *const libc::c_char = std::ptr::null();
+
+        let after = match cur_group() {
+            SIMPLE_GROUP => { p += 1; After::Found2 }
+            HBOX_GROUP | ADJUSTED_HBOX_GROUP => { s = c"hbox".as_ptr(); After::Preamble }
+            VBOX_GROUP  => { s = c"vbox".as_ptr();  After::Preamble }
+            VTOP_GROUP  => { s = c"vtop".as_ptr();  After::Preamble }
+            ALIGN_GROUP => {
+                if a == 0 {
+                    s = if m == -VMODE { c"halign".as_ptr() } else { c"valign".as_ptr() };
+                    a = 1;
+                    After::Found1
+                } else {
+                    if a == 1 {
+                        crate::output::print_cstr(c"align entry".as_ptr());
+                    } else {
+                        crate::output::print_esc_cstr(c"cr".as_ptr());
+                    }
+                    if p >= a as i32 { p -= a as i32; }
+                    a = 0;
+                    After::Found
+                }
+            }
+            NO_ALIGN_GROUP => {
+                p += 1;
+                a = -1;
+                crate::output::print_esc_cstr(c"noalign".as_ptr());
+                After::Found2
+            }
+            OUTPUT_GROUP => {
+                crate::output::print_esc_cstr(c"output".as_ptr());
+                After::Found
+            }
+            MATH_GROUP => After::Found2,
+            DISC_GROUP | MATH_CHOICE_GROUP => {
+                if cur_group() == DISC_GROUP {
+                    crate::output::print_esc_cstr(c"discretionary".as_ptr());
+                } else {
+                    crate::output::print_esc_cstr(c"mathchoice".as_ptr());
+                }
+                let limit = save_stack_b32s1(save_ptr() - 2);
+                for i in 1..=3_i32 {
+                    if i <= limit { crate::output::print_cstr(c"{}".as_ptr()); }
+                }
+                After::Found2
+            }
+            INSERT_GROUP => {
+                let val = save_stack_b32s1(save_ptr() - 2);
+                if val == 255 {
+                    crate::output::print_esc_cstr(c"vadjust".as_ptr());
+                } else {
+                    crate::output::print_esc_cstr(c"insert".as_ptr());
+                    crate::output::print_int(val);
+                }
+                After::Found2
+            }
+            VCENTER_GROUP => { s = c"vcenter".as_ptr(); After::Found1 }
+            SEMI_SIMPLE_GROUP => {
+                p += 1;
+                crate::output::print_esc_cstr(c"begingroup".as_ptr());
+                After::Found
+            }
+            MATH_SHIFT_GROUP => {
+                // C: if m==MMODE print '$' (fall through to another '$' = "$$")
+                //    else if nest[p].mode==MMODE: print EQ_NO, goto found
+                //    else: (fall through to '$' + goto found)
+                if m == MMODE {
+                    crate::output::print_char('$' as i32);
+                } else if nest_mode(p) == MMODE {
+                    print_cmd_chr(EQ_NO, save_stack_b32s1(save_ptr() - 2));
+                    // goto found (no '$')
+                    crate::output::print_char(')' as i32);
+                    set_cur_level(cur_level() - 1);
+                    set_cur_group(save_stack_b16s0(save_ptr()) as u8);
+                    set_save_ptr(save_stack_b32s1(save_ptr()));
+                    continue 'outer;
+                }
+                crate::output::print_char('$' as i32);
+                After::Found
+            }
+            MATH_LEFT_GROUP => {
+                if mem_b16s1(nest_e_tex_aux(p + 1)) == LEFT_NOAD {
+                    crate::output::print_esc_cstr(c"left".as_ptr());
+                } else {
+                    crate::output::print_esc_cstr(c"middle".as_ptr());
+                }
+                After::Found
+            }
+            _ => After::Found,
+        };
+
+        // found1's preamble: print box context for hbox/vbox/vtop (move/setbox/leaders)
+        if matches!(after, After::Preamble) {
+            let i = save_stack_b32s1(save_ptr() - 4);
+            if i != 0 {
+                if i < BOX_FLAG {
+                    let j = if nest_mode(p).abs() == VMODE { HMOVE } else { VMOVE };
+                    if i > 0 { print_cmd_chr(j, 0); } else { print_cmd_chr(j, 1); }
+                    crate::output::print_scaled(i.abs());
+                    crate::output::print_cstr(c"pt".as_ptr());
+                } else if i < SHIP_OUT_FLAG {
+                    let mut ii = i;
+                    if ii >= GLOBAL_BOX_FLAG {
+                        crate::output::print_esc_cstr(c"global".as_ptr());
+                        ii -= GLOBAL_BOX_FLAG - BOX_FLAG;
+                    }
+                    crate::output::print_esc_cstr(c"setbox".as_ptr());
+                    crate::output::print_int(ii - BOX_FLAG);
+                    crate::output::print_char('=' as i32);
+                } else {
+                    print_cmd_chr(LEADER_SHIP, i - (LEADER_FLAG - A_LEADERS));
+                }
+            }
+        }
+
+        // found1: print \s and optional size spec
+        if matches!(after, After::Preamble | After::Found1) {
+            crate::output::print_esc_cstr(s);
+            let spec = save_stack_b32s1(save_ptr() - 2);
+            if spec != 0 {
+                crate::output::print_char(' ' as i32);
+                // C: save_stack[save_ptr - 3].b32.s1 == EXACTLY
+                if save_stack_b32s1(save_ptr() - 3) == EXACTLY {
+                    crate::output::print_cstr(c"to".as_ptr());
+                } else {
+                    crate::output::print_cstr(c"spread".as_ptr());
+                }
+                crate::output::print_scaled(spec);
+                crate::output::print_cstr(c"pt".as_ptr());
+            }
+        }
+
+        // found2: print '{'
+        if !matches!(after, After::Found) {
+            crate::output::print_char('{' as i32);
+        }
+
+        // found: print ')', advance group-boundary chain
+        crate::output::print_char(')' as i32);
+        set_cur_level(cur_level() - 1);
+        set_cur_group(save_stack_b16s0(save_ptr()) as u8);
+        set_save_ptr(save_stack_b32s1(save_ptr()));
+    }
+
+    // done: restore state
+    set_save_ptr(v);
+    set_cur_level(l);
+    set_cur_group(c);
+}
+
+// ---------------------------------------------------------------------------
 // align_peek
 // ---------------------------------------------------------------------------
 
@@ -5618,7 +5856,6 @@ pub unsafe extern "C" fn align_peek() {
 pub unsafe extern "C" fn show_whatever() {
     extern "C" {
         fn show_activities();
-        fn show_save_groups();
     }
     const BOX_BASE: i32 = 2_255_144;          // xetex_format.h:211
     const INT_PAR_TRACING_ONLINE: i32 = 29;   // xetex_format.h:33

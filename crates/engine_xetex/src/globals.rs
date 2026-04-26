@@ -2092,6 +2092,11 @@ pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
 pub(crate) fn nest_mode(k: i32) -> i16 {
     unsafe { (*raw::nest.offset(k as isize)).mode }
 }
+/// Returns `nest[k].eTeX_aux`.
+#[inline]
+pub(crate) fn nest_e_tex_aux(k: i32) -> i32 {
+    unsafe { (*raw::nest.offset(k as isize)).e_tex_aux }
+}
 /// Returns `nest[k].aux.b32.s1` (prevdepth half of the aux word).
 #[inline]
 pub(crate) fn nest_aux_b32s1(k: i32) -> i32 {
