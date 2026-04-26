@@ -6425,88 +6425,7 @@ pack_file_name(str_number n, str_number a, str_number e)
 /* effective_char_info: translated to Rust in src/scan.rs */
 
 
-void char_warning(internal_font_number f, int32_t c)
-{
-    int32_t old_setting;
-
-    if (INTPAR(tracing_lost_chars) > 0) {
-        old_setting = INTPAR(tracing_online);
-        if (INTPAR(tracing_lost_chars) > 1)
-            INTPAR(tracing_online) = 1;
-
-        if (INTPAR(tracing_lost_chars) > 2) {
-            if (file_line_error_style_p)
-                print_file_line();
-            else
-                print_nl_cstr("! ");
-            print_cstr("Missing character: There is no ");
-        } else {
-            begin_diagnostic();
-            diagnostic_begin_capture_warning_here();
-            print_nl_cstr("Missing character: There is no ");
-        }
-
-        if (c < 65536L)
-            print(c);
-        else
-            print_char(c);
-
-        print_cstr(" (");
-
-        if (font_area[f] == AAT_FONT_FLAG || font_area[f] == OTGR_FONT_FLAG) {
-            print_ucs_code(c);
-        } else {
-            print_hex(c);
-        }
-
-        print_char(')');
-        print_cstr(" in font ");
-        print(font_name[f]);
-
-        if (INTPAR(tracing_lost_chars) < 3) {
-            print_char('!');
-        }
-
-        INTPAR(tracing_online) = old_setting;
-
-        if (INTPAR(tracing_lost_chars) > 2) {
-            help_ptr = 0;
-            error();
-        } else {
-            capture_to_diagnostic(NULL);
-            end_diagnostic(false);
-        }
-    }
-
-    {
-        char *fn = gettexstring(font_name[f]);
-        char *chr = NULL;
-        selector_t prev_selector = selector;
-        int s;
-
-        selector = SELECTOR_NEW_STRING;
-        if (c < 0x10000)
-            print(c);
-        else
-            print_char(c);
-        selector = prev_selector;
-        s = make_string();
-        chr = gettexstring(s);
-        str_ptr--; /* this is the "flush_string" macro which discards the most recent string */
-        pool_ptr = str_start[str_ptr - 0x10000];
-
-        ttstub_issue_warning("could not represent character \"%s\" (0x%" PRIx32 ") in font \"%s\"", chr, c, fn);
-
-        free(fn);
-        free(chr);
-
-        if (!gave_char_warning_help) {
-            ttstub_issue_warning("  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to");
-            ttstub_issue_warning("  choose a different font that covers the unrepresentable character(s)");
-            gave_char_warning_help = true;
-        }
-    }
-}
+/* char_warning: translated to Rust in src/scan.rs */
 
 
 int32_t
@@ -9220,41 +9139,7 @@ done:
 /* box_error: translated to Rust in src/scan.rs */
 
 
-void app_space(void)
-{
-    int32_t q;
-
-    if ((cur_list.aux.b32.s0 >= 2000) && (GLUEPAR(xspace_skip) != 0))
-        q = new_param_glue(GLUE_PAR__xspace_skip);
-    else {
-
-        if (GLUEPAR(space_skip) != 0)
-            main_p = GLUEPAR(space_skip);
-        else {                  /*1077: */
-
-            main_p = font_glue[eqtb[CUR_FONT_LOC].b32.s1];
-            if (main_p == TEX_NULL) {
-                main_p = new_spec(0);
-                main_k = param_base[eqtb[CUR_FONT_LOC].b32.s1] + 2;
-                mem[main_p + 1].b32.s1 = font_info[main_k].b32.s1;
-                mem[main_p + 2].b32.s1 = font_info[main_k + 1].b32.s1;
-                mem[main_p + 3].b32.s1 = font_info[main_k + 2].b32.s1;
-                font_glue[eqtb[CUR_FONT_LOC].b32.s1] = main_p;
-            }
-        }
-        main_p = new_spec(main_p);
-        if (cur_list.aux.b32.s0 >= 2000)
-            mem[main_p + 1].b32.s1 =
-                mem[main_p + 1].b32.s1 + font_info[EXTRA_SPACE_CODE +
-                                                 param_base[eqtb[CUR_FONT_LOC].b32.s1]].b32.s1;
-        mem[main_p + 2].b32.s1 = xn_over_d(mem[main_p + 2].b32.s1, cur_list.aux.b32.s0, 1000);
-        mem[main_p + 3].b32.s1 = xn_over_d(mem[main_p + 3].b32.s1, 1000, cur_list.aux.b32.s0) /*:1079 */ ;
-        q = new_glue(main_p);
-        mem[main_p].b32.s1 = TEX_NULL;
-    }
-    mem[cur_list.tail].b32.s1 = q;
-    cur_list.tail = q;
-}
+/* app_space: translated to Rust in src/scan.rs */
 
 /* insert_dollar_sign: translated to Rust in src/scan.rs */
 

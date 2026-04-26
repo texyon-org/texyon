@@ -86,6 +86,7 @@ extern "C" {
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
     fn new_spec(p: i32) -> i32;
     fn synctex_start_input();
+    fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -6057,4 +6058,149 @@ pub unsafe extern "C" fn delete_last() {
         flush_node_list(p);
     }
     flush_node_list(tx);
+}
+
+// translated from xetex-xetex0.c:6428 (char_warning)
+#[no_mangle]
+pub unsafe extern "C" fn char_warning(f: i32, c: i32) {
+    const INT_PAR_TRACING_LOST_CHARS: i32 = 35; // xetex_format.h:70
+    const INT_PAR_TRACING_ONLINE: i32 = 29;     // xetex_format.h:64
+    const TOO_BIG_CHAR: i32 = 65536;
+
+    let tracing_lost = eqtb_b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS);
+    if tracing_lost > 0 {
+        let old_setting = eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE);
+        if tracing_lost > 1 {
+            crate::globals::set_eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE, 1);
+        }
+        if tracing_lost > 2 {
+            if crate::globals::file_line_error_style_p() != 0 {
+                crate::output::print_file_line();
+            } else {
+                crate::output::print_nl_cstr(c"! ".as_ptr());
+            }
+            crate::output::print_cstr(c"Missing character: There is no ".as_ptr());
+        } else {
+            crate::output::begin_diagnostic();
+            crate::output::diagnostic_begin_capture_warning_here();
+            crate::output::print_nl_cstr(c"Missing character: There is no ".as_ptr());
+        }
+        if c < 65536 {
+            crate::output::print(c);
+        } else {
+            crate::output::print_char(c);
+        }
+        crate::output::print_cstr(c" (".as_ptr());
+        let fa = crate::globals::font_area_entry(f);
+        if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
+            crate::output::print_ucs_code(c);
+        } else {
+            crate::output::print_hex(c);
+        }
+        crate::output::print_char(b')' as i32);
+        crate::output::print_cstr(c" in font ".as_ptr());
+        crate::output::print(crate::globals::font_name_entry(f));
+        if tracing_lost < 3 {
+            crate::output::print_char(b'!' as i32);
+        }
+        crate::globals::set_eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE, old_setting);
+        if tracing_lost > 2 {
+            crate::globals::set_help_ptr(0);
+            error();
+        } else {
+            capture_to_diagnostic(std::ptr::null_mut());
+            crate::output::end_diagnostic(false);
+        }
+    }
+
+    // Emit a machine-readable warning via ttstub_issue_warning.
+    let font_name_c = crate::texmfmp::gettexstring(crate::globals::font_name_entry(f));
+    let prev_sel = crate::globals::selector();
+    crate::globals::set_selector(SELECTOR_NEW_STRING);
+    if c < 0x10000 {
+        crate::output::print(c);
+    } else {
+        crate::output::print_char(c);
+    }
+    crate::globals::set_selector(prev_sel);
+    let s = crate::string_pool::make_string();
+    let chr_c = crate::texmfmp::gettexstring(s);
+    // flush_string: str_ptr--, pool_ptr = str_start[str_ptr - TOO_BIG_CHAR]
+    set_str_ptr(str_ptr() - 1);
+    set_pool_ptr(crate::globals::str_start(str_ptr() - TOO_BIG_CHAR));
+    ttstub_issue_warning(
+        c"could not represent character \"%s\" (0x%x) in font \"%s\"".as_ptr(),
+        chr_c,
+        c as u32,
+        font_name_c,
+    );
+    libc::free(font_name_c as *mut libc::c_void);
+    libc::free(chr_c as *mut libc::c_void);
+    if !crate::globals::gave_char_warning_help() {
+        ttstub_issue_warning(
+            c"  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to".as_ptr(),
+        );
+        ttstub_issue_warning(
+            c"  choose a different font that covers the unrepresentable character(s)".as_ptr(),
+        );
+        crate::globals::set_gave_char_warning_help(true);
+    }
+}
+
+// translated from xetex-xetex0.c:9223 (app_space)
+#[no_mangle]
+pub unsafe extern "C" fn app_space() {
+    use crate::globals::{
+        font_glue, font_info_b32s1, main_k, main_p, param_base, set_cur_list_tail, set_font_glue,
+        set_main_k, set_main_p,
+    };
+    const GLUE_BASE: i32 = 2_254_340; // xetex_format.h:205
+    const GLUE_PAR_SPACE_SKIP: i32 = 12;  // xetex_format.h:161
+    const GLUE_PAR_XSPACE_SKIP: i32 = 13; // xetex_format.h:162
+    const EXTRA_SPACE_CODE: i32 = 7;      // xetex-constants.h:299
+
+    let space_factor = crate::globals::cur_list_aux_b32s0();
+    let cf = eqtb_b32s1(CUR_FONT_LOC);
+    let q;
+    if space_factor >= 2000 && eqtb_b32s1(GLUE_BASE + GLUE_PAR_XSPACE_SKIP) != 0 {
+        q = crate::mem::new_param_glue(GLUE_PAR_XSPACE_SKIP as i16);
+    } else {
+        if eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP) != 0 {
+            set_main_p(eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP));
+        } else {
+            set_main_p(font_glue(cf));
+            if main_p() == crate::mem::TEX_NULL {
+                set_main_p(crate::mem::new_spec(0));
+                set_main_k(param_base(cf) + 2);
+                // width = space, stretch = space_stretch, shrink = space_shrink
+                crate::globals::set_mem_b32s1(main_p() + 1, font_info_b32s1(main_k()));
+                crate::globals::set_mem_b32s1(main_p() + 2, font_info_b32s1(main_k() + 1));
+                crate::globals::set_mem_b32s1(main_p() + 3, font_info_b32s1(main_k() + 2));
+                set_font_glue(cf, main_p());
+            }
+        }
+        set_main_p(crate::mem::new_spec(main_p()));
+        if space_factor >= 2000 {
+            // add extra_space to width
+            let extra = font_info_b32s1(EXTRA_SPACE_CODE + param_base(cf));
+            crate::globals::set_mem_b32s1(
+                main_p() + 1,
+                mem_b32s1(main_p() + 1) + extra,
+            );
+        }
+        // scale stretch by space_factor / 1000
+        let new_stretch = crate::scaled_math::xn_over_d(
+            mem_b32s1(main_p() + 2), space_factor, 1000,
+        );
+        crate::globals::set_mem_b32s1(main_p() + 2, new_stretch);
+        // scale shrink by 1000 / space_factor
+        let new_shrink = crate::scaled_math::xn_over_d(
+            mem_b32s1(main_p() + 3), 1000, space_factor,
+        );
+        crate::globals::set_mem_b32s1(main_p() + 3, new_shrink);
+        q = crate::mem::new_glue(main_p());
+        crate::globals::set_mem_b32s1(main_p(), crate::mem::TEX_NULL);
+    }
+    crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), q);
+    set_cur_list_tail(q);
 }

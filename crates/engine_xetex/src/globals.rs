@@ -421,6 +421,12 @@ mod raw {
         pub(super) static mut height_base: *mut i32;
         pub(super) static mut depth_base: *mut i32;
         pub(super) static mut italic_base: *mut i32;
+
+        // True after the first char_warning fontspec hint has been issued (xetex-xetexd.h:725).
+        pub(super) static mut gave_char_warning_help: bool;
+        // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
+        pub(super) static mut main_p: i32;
+        pub(super) static mut main_k: i32;
     }
 }
 
@@ -2569,4 +2575,33 @@ pub(crate) fn def_ref() -> i32 {
 #[inline]
 pub(crate) fn set_def_ref(v: i32) {
     unsafe { raw::def_ref = v; }
+}
+
+// ---------------------------------------------------------------------------
+// gave_char_warning_help / main_p / main_k
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn gave_char_warning_help() -> bool {
+    unsafe { raw::gave_char_warning_help }
+}
+#[inline]
+pub(crate) fn set_gave_char_warning_help(v: bool) {
+    unsafe { raw::gave_char_warning_help = v; }
+}
+#[inline]
+pub(crate) fn main_p() -> i32 {
+    unsafe { raw::main_p }
+}
+#[inline]
+pub(crate) fn set_main_p(v: i32) {
+    unsafe { raw::main_p = v; }
+}
+#[inline]
+pub(crate) fn main_k() -> i32 {
+    unsafe { raw::main_k }
+}
+#[inline]
+pub(crate) fn set_main_k(v: i32) {
+    unsafe { raw::main_k = v; }
 }
