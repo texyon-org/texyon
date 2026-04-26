@@ -1,0 +1,27 @@
+% Tests various \if conditionals translated in session 39.
+\count0=5
+\def\result{}
+
+% \ifnum
+\ifnum\count0>3 big\else small\fi.
+
+% \ifodd
+\ifodd\count0 odd\else even\fi.
+
+% \ifcase
+\ifcase\count0 zero\or one\or two\or three\or four\or five\else more\fi.
+
+% \ifx
+\def\a{hello}\def\b{hello}\def\c{world}
+\ifx\a\b same\else different\fi,
+\ifx\a\c same\else different\fi.
+
+% \iftrue / \iffalse
+\iftrue yes\fi\iffalse no\fi.
+
+% Nested: \if inside \if
+\ifnum\count0>0
+  \ifnum\count0<10 between 1 and 9\fi
+\fi.
+
+\bye

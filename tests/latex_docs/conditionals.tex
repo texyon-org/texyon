@@ -1,0 +1,23 @@
+\documentclass{article}
+\begin{document}
+
+% LaTeX2e conditionals (exercises \ifx, \ifnum, \if... translated in session 39).
+\newif\iftestcond
+\testcondtrue
+\iftestcond Yes \else No \fi.
+
+\newcounter{mycount}
+\setcounter{mycount}{3}
+\ifnum\value{mycount}>2 Count is big\fi.
+
+% Nested conditionals.
+\newif\ifone \onetrue
+\newif\iftwo \twotrue
+\ifone \iftwo both \else first \fi \else none \fi.
+
+% \ifx comparison.
+\newcommand{\aaa}{hello}
+\newcommand{\bbb}{hello}
+\ifx\aaa\bbb Same\else Different\fi.
+
+\end{document}

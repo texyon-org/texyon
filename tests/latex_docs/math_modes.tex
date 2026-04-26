@@ -1,0 +1,32 @@
+\documentclass{article}
+\usepackage{amsmath}
+\begin{document}
+
+% Inline math.
+Einstein's famous equation is $E = mc^2$, where $c$ is the speed of light.
+
+% Display math.
+\[
+  \int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}
+\]
+
+% Aligned equations (uses \halign via align*).
+\begin{align*}
+  a + b &= c \\
+  x     &= \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+\end{align*}
+
+% Cases (also uses alignment).
+\[
+  f(x) = \begin{cases}
+    x^2 & \text{if } x \ge 0 \\
+    -x  & \text{if } x < 0
+  \end{cases}
+\]
+
+% Matrix.
+\[
+  A = \begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix}
+\]
+
+\end{document}

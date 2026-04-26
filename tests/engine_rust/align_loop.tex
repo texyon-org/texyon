@@ -1,0 +1,8 @@
+% Tests \halign with && loop template (exercises fin_col §822: preamble extension).
+% Three columns but preamble only specifies two with &&.
+\tabskip=1em
+\halign{#\hfil && \quad #\hfil \cr
+  A & B & C \cr
+  1 & 2 & 3 \cr
+  x & y & z \cr}
+\bye

@@ -1,0 +1,14 @@
+% Tests save/restore stack interactions with alignment and grouping.
+% Exercises new_save_level, unsave, eq_define, geq_define (sessions 17, 21).
+{\bf Bold} normal {\it italic} normal.
+
+\count0=1
+{\count0=2 \the\count0}
+\the\count0.
+
+% Alignment inside a group, checking that save levels are correctly handled.
+{\halign{#\hfil & #\hfil \cr
+  inside & group \cr}
+}
+After group.
+\bye

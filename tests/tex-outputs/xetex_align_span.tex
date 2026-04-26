@@ -1,0 +1,7 @@
+% Tests \halign with \span and \multispan (exercises fin_col SPAN_CODE path
+% and the span width accumulation in the span-measurement loop).
+\halign{#\hfil & #\hfil & #\hfil \cr
+  A & B & C \cr
+  \multispan2 Wide left\hfil & Right \cr
+  Left & \multispan2\hfil Wide right \cr}
+\bye

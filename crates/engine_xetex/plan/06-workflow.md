@@ -20,19 +20,33 @@ the docs at the start of your session.
 
 ## Step 1 — Establish the baseline
 
-Run the parity harness, the TRIP conformance test, **and the LaTeX smoke test**:
+Run the parity harness, the TRIP conformance test, **and the full golden suite**:
 
 ```
 cargo build -p tectonic_engine_xetex
 cargo test -p tectonic --test tex-outputs 2>&1 | tee /tmp/parity-before.txt
 cargo test -p tectonic --test trip 2>&1 | tee /tmp/trip-before.txt
-cargo run -p tectonic -- ~/Code/tectonic/test.tex --print 2>&1 | tee /tmp/latex-before.txt
+cargo test -p tectonic --test engine_rust 2>&1 | tee /tmp/engine_rust-before.txt
+cargo test -p tectonic --test latex_goldens 2>&1 | tee /tmp/latex_goldens-before.txt
 ```
 
-The LaTeX smoke test compiles a real LaTeX document through the full engine. It exercises LaTeX2e + LaTeX3 (hooks, xparse, expl3), which use `\ifx`, `\ifcase`, `\csname`, and other conditionals heavily — exactly the constructs most likely to be broken by a mistranslation in `conditional`, `scan_something_internal`, or `scan_int`. The TRIP and tex-outputs suites do **not** cover this; session 39's `\ifx` bug (broken macro comparison) passed both suites but immediately broke the smoke test.
+**Test suite roles:**
 
-Record the pass counts. Both suites must pass before starting new translation
-work. If either is lower than what `PROGRESS.md` claims, **stop and
+- **trip**: TRIP/eTRIP conformance tests — catch low-level TeX state bugs.
+- **tex-outputs** (29 tests): Plain-TeX golden comparison — catch regressions in
+  font rendering, file I/O, XDV output format.
+- **engine_rust** (7 tests): Plain-TeX tests specifically targeting the translated
+  constructs — alignment (`\halign`), italic correction, conditionals, save/restore.
+  Uses `.log` + `.xdv` byte-for-byte comparison. Update goldens with `TECTONIC_BLESS=1`.
+- **latex_goldens** (4 tests): Full LaTeX (tabular, math, conditionals, italic)
+  compiled through the real bundle; XDV SHA-256 compared. Update with `TECTONIC_BLESS=1`.
+  Tests are **skipped** (not failed) if the bundle is not locally cached.
+
+The LaTeX golden tests exercise LaTeX2e + LaTeX3 paths that the plain-TeX suites miss,
+in particular the alignment bug (session 50b) and the `\ifx` bug (session 39).
+
+Record the pass counts. All suites must pass before starting new translation
+work. If any count is lower than what `PROGRESS.md` claims, **stop and
 investigate**. Either a previous session committed a regression (fix first)
 or `PROGRESS.md` is stale (update it).
 
@@ -139,13 +153,15 @@ Then `cargo build -p tectonic_engine_xetex`. Fix link errors.
 ```
 cargo test -p tectonic --test tex-outputs 2>&1 | tee /tmp/parity-after.txt
 cargo test -p tectonic --test trip 2>&1 | tee /tmp/trip-after.txt
-cargo run -p tectonic -- ~/Code/tectonic/test.tex --print 2>&1 | tee /tmp/latex-after.txt
+cargo test -p tectonic --test engine_rust 2>&1 | tee /tmp/engine_rust-after.txt
+cargo test -p tectonic --test latex_goldens 2>&1 | tee /tmp/latex_goldens-after.txt
 diff /tmp/parity-before.txt /tmp/parity-after.txt
 diff /tmp/trip-before.txt /tmp/trip-after.txt
-diff /tmp/latex-before.txt /tmp/latex-after.txt
+diff /tmp/engine_rust-before.txt /tmp/engine_rust-after.txt
+diff /tmp/latex_goldens-before.txt /tmp/latex_goldens-after.txt
 ```
 
-Compare pass counts for **all three** suites. **If either after-count is lower,
+Compare pass counts for **all four** suites. **If any after-count is lower,
 you must not commit.** Diagnose:
 
 1.  Re-read the C function and the Rust translation side-by-side.

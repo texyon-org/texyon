@@ -1,0 +1,8 @@
+% Tests italic correction (\/): exercises append_italic_correction with a
+% NATIVE_WORD_NODE tail — specifically the mem_node_addr fix from session 50b.
+\font\x="[lmroman12-regular]"
+\x
+Normal word\/followed by slash.
+{\it italic\/} back to normal.
+Another\/correction here.
+\bye
