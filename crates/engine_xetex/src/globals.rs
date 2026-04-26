@@ -444,6 +444,11 @@ mod raw {
         pub(super) static mut cur_tail: i32;
         pub(super) static mut cur_pre_head: i32;
         pub(super) static mut cur_pre_tail: i32;
+        // hpack/vpackage adjust-list pointers and glue accumulators (xetex-xetexd.h:603–606).
+        pub(super) static mut adjust_tail: i32;
+        pub(super) static mut pre_adjust_tail: i32;
+        pub(super) static mut total_stretch: [i32; 4];
+        pub(super) static mut total_shrink: [i32; 4];
     }
 }
 
@@ -2078,6 +2083,11 @@ pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
 pub(crate) fn nest_mode(k: i32) -> i16 {
     unsafe { (*raw::nest.offset(k as isize)).mode }
 }
+/// Returns `nest[k].aux.b32.s1` (prevdepth half of the aux word).
+#[inline]
+pub(crate) fn nest_aux_b32s1(k: i32) -> i32 {
+    unsafe { (*raw::nest.offset(k as isize)).aux.b32.s1 }
+}
 /// Returns `nest[k].prev_graf`.
 #[inline]
 pub(crate) fn nest_prev_graf(k: i32) -> i32 {
@@ -2687,3 +2697,16 @@ pub(crate) fn cur_order() -> u8 {
 #[inline] pub(crate) fn set_cur_pre_head(v: i32) { unsafe { raw::cur_pre_head = v; } }
 #[inline] pub(crate) fn cur_pre_tail() -> i32 { unsafe { raw::cur_pre_tail } }
 #[inline] pub(crate) fn set_cur_pre_tail(v: i32) { unsafe { raw::cur_pre_tail = v; } }
+
+// ---------------------------------------------------------------------------
+// hpack adjust-tail / total_stretch / total_shrink
+// ---------------------------------------------------------------------------
+
+#[inline] pub(crate) fn adjust_tail() -> i32 { unsafe { raw::adjust_tail } }
+#[inline] pub(crate) fn set_adjust_tail(v: i32) { unsafe { raw::adjust_tail = v; } }
+#[inline] pub(crate) fn pre_adjust_tail() -> i32 { unsafe { raw::pre_adjust_tail } }
+#[inline] pub(crate) fn set_pre_adjust_tail(v: i32) { unsafe { raw::pre_adjust_tail = v; } }
+#[inline] pub(crate) fn total_stretch(o: usize) -> i32 { unsafe { raw::total_stretch[o] } }
+#[inline] pub(crate) fn set_total_stretch(o: usize, v: i32) { unsafe { raw::total_stretch[o] = v; } }
+#[inline] pub(crate) fn total_shrink(o: usize) -> i32 { unsafe { raw::total_shrink[o] } }
+#[inline] pub(crate) fn set_total_shrink(o: usize, v: i32) { unsafe { raw::total_shrink[o] = v; } }
