@@ -32,6 +32,38 @@ template.
 
 ---
 
+## Session 50 — 2026-04-26 — alignment triad: init_align / fin_col / fin_row
+
+**Goal:** Translate the three core alignment functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 49
+
+**Work done:**
+- Added `adjust_tail`, `pre_adjust_tail`, `total_stretch[4]`, `total_shrink[4]` to globals.rs (needed by fin_col).
+- Added `nest_aux_b32s1(k)` accessor to globals.rs (needed by init_align).
+- Added `flush_math` to the top-level extern "C" block in scan.rs (called by init_align).
+- Translated `fin_col` (7859), `fin_row` (8009), `init_align` (7732) → `src/scan.rs` (724e76bb).
+- Removed local `extern "C"` declarations for `fin_col`/`fin_row` from `do_endv` (now same-module calls).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 50
+- xetex-xetex0.c: ~38 C functions remaining.
+
+**Surprises / gotchas:**
+- `fin_col` reuses local variable `q` for two distinct purposes (first = preamble node after cur_align, then = HOLD_HEAD for list building). Used `wq` as the second usage.
+- `cur_tail` in C is the alignment `cur_tail` (Rust: `cur_tail_a()`), distinct from `cur_list.tail`. Easy to confuse.
+- `init_align` uses `nest[nest_ptr - 2].aux.b32.s1` — needed a new `nest_aux_b32s1(k)` accessor in globals.rs.
+- Function-level `use` blocks must explicitly import every `crate::globals` function used; module-level imports don't extend into function bodies with local use blocks that shadow them for the same symbols.
+
+**For the next session:**
+- `fin_align` (8040): ~160 lines. Handles the column width adjustment pass after all rows are done. Uses hpack/vpackage + complex span arithmetic.
+- `handle_right_brace` (9973): very large — many group cases.
+
 ## Session 49 — 2026-04-26 — get_preamble_token
 
 **Goal:** One more function from xetex-xetex0.c.

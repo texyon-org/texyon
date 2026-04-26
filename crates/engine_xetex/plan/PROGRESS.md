@@ -60,6 +60,10 @@ cargo test -p tectonic --test tex-outputs
 |      44 | 2026-04-24 |     29 |    29 |     0 | 3 functions: shift_case, build_discretionary, issue_message. TRIP 2/2. |
 |      45 | 2026-04-25 |     29 |    29 |     0 | 6 functions: append_to_vlist, align_peek, show_whatever, do_register_command, new_font. TRIP 2/2. |
 |      46 | 2026-04-25 |     29 |    29 |     0 | 6 functions: make_accent, append_italic_correction, delete_last, unpackage + globals. TRIP 2/2. |
+|      47 | 2026-04-25 |     29 |    29 |     0 | 9 functions: char_warning, app_space, new_graf, package, insert_src_special, scan_box, tt_insert_special, pack_file_name. TRIP 2/2. |
+|      48 | 2026-04-26 |     29 |    29 |     0 | 9 functions: scan_math, set_math_char, new_character, scan_glue, push_alignment, pop_alignment, init_span, init_row, init_col. TRIP 2/2. |
+|      49 | 2026-04-26 |     29 |    29 |     0 | get_preamble_token. TRIP 2/2. |
+|      50 | 2026-04-26 |     29 |    29 |     0 | 3 functions: init_align, fin_col, fin_row. Added adjust_tail/pre_adjust_tail/total_stretch/total_shrink globals. TRIP 2/2. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -118,6 +122,10 @@ Passed count below the previous session's recorded value.
 |      44 |31,386 |                  ~14545 |      ~68.3% |
 |      45 |31,100 |                  ~15116 |      ~67.3% |
 |      46 |30,900 |                  ~15461 |      ~66.7% |
+|      47 |30,600 |                  ~15800 |      ~65.9% |
+|      48 |30,400 |                  ~16100 |      ~65.4% |
+|      49 |30,300 |                  ~16160 |      ~65.2% |
+|      50 |30,000 |                  ~16500 |      ~64.5% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -176,6 +184,10 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      44 |      286 |             ~73 |     ~79.7% |
 |      45 |      292 |             ~65 |     ~81.8% |
 |      46 |      300 |             ~59 |     ~83.6% |
+|      47 |      309 |             ~50 |     ~86.1% |
+|      48 |      318 |             ~41 |     ~88.6% |
+|      49 |      319 |             ~40 |     ~88.9% |
+|      50 |      322 |             ~37 |     ~89.7% |
 
 
 Total C function count to be measured in session 1 via:
@@ -191,7 +203,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **46** (sessions 1–46 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **50** (sessions 1–50 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
