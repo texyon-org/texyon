@@ -32,6 +32,33 @@ template.
 
 ---
 
+## Session 50b — 2026-04-26 — hotfix: append_italic_correction seg-fault
+
+**Goal:** Fix the SIGSEGV in the LaTeX smoke test that session 50 exposed.
+
+**Root cause:**
+The session 46 translation of `append_italic_correction` called
+`mem_ptr(tail)` to get the node pointer for `real_get_native_italic_correction`.
+`mem_ptr(p)` reads `mem[p].ptr` — the VALUE of the ptr union field — which
+for a NATIVE_WORD_NODE at word 0 is the type/subtype/link bytes, NOT a valid
+pointer.  The correct call is the C macro `get_native_italic_correction(p)`
+= `real_get_native_italic_correction(&mem[p])` — the ADDRESS of word 0.
+
+The bug was latent through sessions 46–49 because the execution path
+(hmode processing after an alignment) happened to hit a NATIVE_WORD_NODE
+as the tail only after session 50 altered the memory layout.  On a 64-bit
+host, the garbage ptr had upper bytes = TEX_NULL = 0xF0000001, making it
+an invalid kernel-space address → SIGSEGV.
+
+**Fix:** Added `mem_node_addr(p) -> *mut c_void` = `&mem[p]` to globals.rs
+and switched both NATIVE_WORD_NODE and GLYPH_NODE branches to use it (2e219d67).
+
+**Ending state:**
+- Smoke test: PASS
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 50 (maintained)
+
 ## Session 50 — 2026-04-26 — alignment triad: init_align / fin_col / fin_row
 
 **Goal:** Translate the three core alignment functions from xetex-xetex0.c.
