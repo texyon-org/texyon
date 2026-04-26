@@ -4674,63 +4674,7 @@ attach_sign:
 /* scan_decimal: translated to Rust in src/scan.rs */
 
 
-void
-scan_glue(small_number level)
-{
-    bool negative;
-    int32_t q;
-    bool mu;
-
-    mu = (level == MU_VAL);
-    negative = false;
-
-    do {
-        do {
-            get_x_token();
-        } while (cur_cmd == SPACER);
-
-        if (cur_tok == OTHER_TOKEN + 45 /*"-"*/) {
-            negative = !negative;
-            cur_tok = OTHER_TOKEN + 43 /*"+"*/;
-        }
-    } while (cur_tok == OTHER_TOKEN + 43 /*"+"*/);
-
-    if (cur_cmd >= MIN_INTERNAL && cur_cmd <= MAX_INTERNAL) {
-        scan_something_internal(level, negative);
-        if (cur_val_level >= GLUE_VAL) {
-            if (cur_val_level != level)
-                mu_error();
-            return;
-        }
-
-        if (cur_val_level == INT_VAL)
-            scan_dimen(mu, false, true);
-        else if (level == MU_VAL)
-            mu_error();
-    } else {
-        back_input();
-        scan_dimen(mu, false, false);
-        if (negative)
-            cur_val = -(int32_t) cur_val;
-    }
-
-    q = new_spec(0);
-    mem[q + 1].b32.s1 = cur_val;
-
-    if (scan_keyword("plus")) {
-        scan_dimen(mu, true, false);
-        mem[q + 2].b32.s1 = cur_val;
-        mem[q].b16.s1 = cur_order;
-    }
-
-    if (scan_keyword("minus")) {
-        scan_dimen(mu, true, false);
-        mem[q + 3].b32.s1 = cur_val;
-        mem[q].b16.s0 = cur_order;
-    }
-
-    cur_val = q; /*:481*/
-}
+/* scan_glue: translated to Rust in src/scan.rs */
 
 
 /* add_or_sub: translated to Rust in src/scaled_math.rs */

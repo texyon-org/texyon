@@ -31,7 +31,6 @@ extern "C" {
     fn macro_call();
     fn begin_token_list(p: i32, t: u16);
     fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool);
-    fn scan_glue(level: i16);
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
     fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
     fn int_error(n: i32);
@@ -6610,3 +6609,60 @@ fn math_fam_fn(c: i32) -> i32 { ((c as u32 >> 24) & 0xFF) as i32 }
 fn set_class_fn(x: i32) -> i32 { (((x as u32) & 0x07) << 21) as i32 }
 #[inline]
 fn set_family_fn(x: i32) -> i32 { (((x as u32) & 0xFF) << 24) as i32 }
+
+// translated from xetex-xetex0.c:4678 (scan_glue)
+#[no_mangle]
+pub unsafe extern "C" fn scan_glue(level: i16) {
+    use crate::globals::{cur_order, cur_val_level, set_cur_val, set_mem_b16s0, set_mem_b16s1,
+                         set_mem_b32s1};
+    const MINUS_TOKEN: i32 = OTHER_TOKEN + b'-' as i32;
+    const PLUS_TOKEN: i32 = OTHER_TOKEN + b'+' as i32;
+
+    let mu = level == MU_VAL;
+    let mut negative = false;
+
+    loop {
+        loop {
+            get_x_token();
+            if cur_cmd() != SPACER { break; }
+        }
+        if cur_tok() == MINUS_TOKEN {
+            negative = !negative;
+            set_cur_tok(PLUS_TOKEN);
+        }
+        if cur_tok() != PLUS_TOKEN { break; }
+    }
+
+    if cur_cmd() >= MIN_INTERNAL && cur_cmd() <= MAX_INTERNAL {
+        scan_something_internal(level, negative);
+        if cur_val_level() as i16 >= GLUE_VAL {
+            if cur_val_level() as i16 != level { mu_error(); }
+            return;
+        }
+        if cur_val_level() as i16 == INT_VAL {
+            scan_dimen(mu, false, true);
+        } else if level == MU_VAL {
+            mu_error();
+        }
+    } else {
+        crate::input::back_input();
+        scan_dimen(mu, false, false);
+        if negative { set_cur_val(-(cur_val() as i32)); }
+    }
+
+    let q = new_spec(0);
+    set_mem_b32s1(q + 1, cur_val());
+
+    if scan_keyword(c"plus".as_ptr()) {
+        scan_dimen(mu, true, false);
+        set_mem_b32s1(q + 2, cur_val());
+        set_mem_b16s1(q, cur_order() as u16);
+    }
+    if scan_keyword(c"minus".as_ptr()) {
+        scan_dimen(mu, true, false);
+        set_mem_b32s1(q + 3, cur_val());
+        set_mem_b16s0(q, cur_order() as u16);
+    }
+
+    set_cur_val(q);
+}

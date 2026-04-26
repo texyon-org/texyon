@@ -433,6 +433,8 @@ mod raw {
         pub(super) static mut insert_src_special_every_par: bool;
         // Currently assembled box (xetex-xetexd.h:687; node index = i32).
         pub(super) static mut cur_box: i32;
+        // Current glue order (normal=0..filll=3; xetex-xetexd.h:534; glue_ord = u8).
+        pub(super) static mut cur_order: u8;
     }
 }
 
@@ -2645,4 +2647,13 @@ pub(crate) fn cur_box() -> i32 {
 #[inline]
 pub(crate) fn set_cur_box(v: i32) {
     unsafe { raw::cur_box = v; }
+}
+
+// ---------------------------------------------------------------------------
+// cur_order
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn cur_order() -> u8 {
+    unsafe { raw::cur_order }
 }
