@@ -6430,3 +6430,121 @@ pub unsafe extern "C" fn new_graf(indented: bool) {
         build_page();
     }
 }
+
+// translated from xetex-xetex0.c:4313 (scan_math)
+#[no_mangle]
+pub unsafe extern "C" fn scan_math(p: i32) {
+    use crate::globals::{cur_chr, cur_cmd, cur_cs, eqtb_b16s1, set_cur_chr, set_cur_cmd, set_cur_cs};
+    const LETTER: u8 = 11;          // xetex_format.h:243
+    const OTHER_CHAR_CMD: u8 = 12;  // xetex_format.h:244
+    const DELIM_NUM: u8 = 15;       // xetex_format.h:251
+    const CHAR_NUM_CMD: u8 = 16;    // xetex_format.h:253
+    const MATH_CHAR_NUM: u8 = 17;   // xetex_format.h:255
+    const CHAR_GIVEN_CMD: u8 = 68;  // xetex_format.h:306
+    const MATH_GIVEN_CMD: u8 = 69;  // xetex_format.h:308
+    const XETEX_MATH_GIVEN: u8 = 70; // xetex_format.h:309
+    const MATH_CODE_BASE_SC: i32 = 6_712_617; // xetex_format.h:218
+    const ACTIVE_MATH_CHAR: i32 = 0x1FFFFF;   // xetex-constants.h:343
+    const MATH_CHAR_NODE: i32 = 1;            // xetex-constants.h:269
+    const MATH_GROUP_TYPE: u8 = 9;            // xetex-constants.h:161
+    const INT_PAR_CUR_FAM: i32 = 44;          // xetex_format.h:79
+    const NUMBER_MATH_FAMILIES_VAL: i32 = 256; // xetex-constants.h:31
+
+    let c: i32;
+    'main: loop {
+        loop {
+            get_x_token();
+            if cur_cmd() != SPACER && cur_cmd() != RELAX { break; }
+        }
+        c = loop {
+            break match cur_cmd() {
+                LETTER | OTHER_CHAR_CMD | CHAR_GIVEN_CMD => {
+                    let mc = eqtb_b32s1(MATH_CODE_BASE_SC + cur_chr());
+                    if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
+                        set_cur_cs(cur_chr() + 1);
+                        set_cur_cmd(eqtb_b16s1(cur_cs()) as u8);
+                        set_cur_chr(eqtb_b32s1(cur_cs()));
+                        x_token();
+                        crate::input::back_input();
+                        continue 'main;
+                    }
+                    mc
+                }
+                CHAR_NUM_CMD => {
+                    scan_char_num();
+                    set_cur_chr(cur_val());
+                    set_cur_cmd(CHAR_GIVEN_CMD);
+                    continue; // goto reswitch
+                }
+                MATH_CHAR_NUM => {
+                    if cur_chr() == 2 {
+                        scan_math_class_int();
+                        let mut cv = set_class_fn(cur_val());
+                        scan_math_fam_int();
+                        cv += set_family_fn(cur_val());
+                        scan_usv_num();
+                        cv + cur_val()
+                    } else if cur_chr() == 1 {
+                        scan_xetex_math_char_int();
+                        cur_val()
+                    } else {
+                        scan_fifteen_bit_int();
+                        let v = cur_val();
+                        set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
+                    }
+                }
+                MATH_GIVEN_CMD => {
+                    let v = cur_chr();
+                    set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
+                }
+                XETEX_MATH_GIVEN => cur_chr(),
+                DELIM_NUM => {
+                    if cur_chr() == 1 {
+                        scan_math_class_int();
+                        let mut cv = set_class_fn(cur_val());
+                        scan_math_fam_int();
+                        cv += set_family_fn(cur_val());
+                        scan_usv_num();
+                        cv + cur_val()
+                    } else {
+                        scan_delimiter_int();
+                        let v = cur_val() / 4096;
+                        set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
+                    }
+                }
+                _ => {
+                    crate::input::back_input();
+                    scan_left_brace();
+                    crate::globals::set_save_stack_b32s1(save_ptr(), p);
+                    crate::globals::set_save_ptr(save_ptr() + 1);
+                    push_math(MATH_GROUP_TYPE);
+                    return;
+                }
+            };
+        };
+        break;
+    }
+    set_mem_b32s1(p, MATH_CHAR_NODE);
+    crate::globals::set_mem_b16s0(p, (c % 65536) as u16);
+    let cur_fam_val = eqtb_b32s1(INT_BASE + INT_PAR_CUR_FAM);
+    let fam: u16 = if math_class_fn(c) == 7
+        && cur_fam_val >= 0
+        && cur_fam_val < NUMBER_MATH_FAMILIES_VAL
+    {
+        cur_fam_val as u16
+    } else {
+        math_fam_fn(c) as u16
+    };
+    crate::globals::set_mem_b16s1(p, fam + (math_char_fn(c) / 65536) as u16 * 256);
+}
+
+#[inline]
+fn math_char_fn(c: i32) -> i32 { (c as u32 & 0x1FFFFF) as i32 }
+#[inline]
+fn math_class_fn(c: i32) -> i32 { ((c as u32 >> 21) & 0x07) as i32 }
+#[inline]
+fn math_fam_fn(c: i32) -> i32 { ((c as u32 >> 24) & 0xFF) as i32 }
+#[inline]
+fn set_class_fn(x: i32) -> i32 { (((x as u32) & 0x07) << 21) as i32 }
+#[inline]
+fn set_family_fn(x: i32) -> i32 { (((x as u32) & 0xFF) << 24) as i32 }
