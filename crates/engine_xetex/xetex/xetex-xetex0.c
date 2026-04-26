@@ -7728,16 +7728,314 @@ void show_info(void)
 /* get_preamble_token: translated to Rust in src/scan.rs */
 
 
-/* init_align: translated to Rust in src/scan.rs */
+void
+init_align(void)
+{
+    int32_t save_cs_ptr;
+    int32_t p;
+
+    save_cs_ptr = cur_cs;
+    push_alignment();
+    align_state = -1000000L;
+
+    if (cur_list.mode == MMODE && (cur_list.tail != cur_list.head || cur_list.aux.b32.s1 != TEX_NULL)) {
+        error_here_with_diagnostic("Improper ");
+        print_esc_cstr("halign");
+        print_cstr(" inside $$'s");
+        capture_to_diagnostic(NULL);
+        help_ptr = 3;
+        help_line[2] = "Displays can use special alignments (like \\eqalignno)";
+        help_line[1] = "only if nothing but the alignment itself is between $$'s.";
+        help_line[0] = "So I've deleted the formulas that preceded this alignment.";
+        error();
+        flush_math();
+    }
+
+    push_nest();
+
+    if (cur_list.mode == MMODE) {
+        cur_list.mode = -1;
+        cur_list.aux.b32.s1 = nest[nest_ptr - 2].aux.b32.s1;
+    } else if (cur_list.mode > 0) {
+        cur_list.mode = -(int32_t) cur_list.mode; /*:804*/
+    }
+
+    scan_spec(ALIGN_GROUP, false);
+    mem[ALIGN_HEAD].b32.s1 = TEX_NULL;
+    cur_align = ALIGN_HEAD;
+    cur_loop = TEX_NULL;
+    scanner_status = ALIGNING;
+    warning_index = save_cs_ptr;
+    align_state = -1000000L;
+
+    while (true) {
+        mem[cur_align].b32.s1 = new_param_glue(GLUE_PAR__tab_skip);
+        cur_align = LLIST_link(cur_align); /*:807*/
+        if (cur_cmd == CAR_RET)
+            goto done;
+
+        p = HOLD_HEAD;
+        mem[p].b32.s1 = TEX_NULL;
+
+        while (true) {
+            get_preamble_token();
+            if (cur_cmd == MAC_PARAM)
+                goto done1;
+
+            if (cur_cmd <= CAR_RET && cur_cmd >= TAB_MARK && align_state == -1000000L) {
+                if (p == HOLD_HEAD && cur_loop == TEX_NULL && cur_cmd == TAB_MARK) {
+                    cur_loop = cur_align;
+                } else {
+                    error_here_with_diagnostic("Missing # inserted in alignment preamble");
+                    capture_to_diagnostic(NULL);
+                    help_ptr = 3;
+                    help_line[2] = "There should be exactly one # between &'s, when an";
+                    help_line[1] = "\\halign or \\valign is being set up. In this case you had";
+                    help_line[0] = "none, so I've put one in; maybe that will work.";
+                    back_error();
+                    goto done1;
+                }
+            } else if (cur_cmd != SPACER || p != HOLD_HEAD) {
+                mem[p].b32.s1 = get_avail();
+                p = LLIST_link(p);
+                mem[p].b32.s0 = cur_tok;
+            }
+        }
+
+    done1:
+        mem[cur_align].b32.s1 = new_null_box();
+        cur_align = LLIST_link(cur_align);
+        mem[cur_align].b32.s0 = END_SPAN;
+        mem[cur_align + 1].b32.s1 = NULL_FLAG;
+        mem[cur_align + 3].b32.s1 = mem[HOLD_HEAD].b32.s1;
+        p = HOLD_HEAD;
+        mem[p].b32.s1 = TEX_NULL;
+
+        while (true) {
+        continue_:
+            get_preamble_token();
+            if (cur_cmd <= CAR_RET && cur_cmd >= TAB_MARK && align_state == -1000000L)
+                goto done2;
+
+            if (cur_cmd == MAC_PARAM) {
+                error_here_with_diagnostic("Only one # is allowed per tab");
+                capture_to_diagnostic(NULL);
+
+                help_ptr = 3;
+                help_line[2] = "There should be exactly one # between &'s, when an";
+                help_line[1] = "\\halign or \\valign is being set up. In this case you had";
+                help_line[0] = "more than one, so I'm ignoring all but the first.";
+                error();
+                goto continue_;
+            }
+
+            mem[p].b32.s1 = get_avail();
+            p = LLIST_link(p);
+            mem[p].b32.s0 = cur_tok;
+        }
+
+    done2:
+        mem[p].b32.s1 = get_avail();
+        p = LLIST_link(p);
+        mem[p].b32.s0 = CS_TOKEN_FLAG + FROZEN_END_TEMPLATE; /*:813*/
+        mem[cur_align + 2].b32.s1 = mem[HOLD_HEAD].b32.s1; /*:808 */
+    }
+
+done:
+    scanner_status = NORMAL; /*:806 */
+    new_save_level(ALIGN_GROUP);
+
+    if (LOCAL(every_cr) != TEX_NULL)
+        begin_token_list(LOCAL(every_cr), EVERY_CR_TEXT);
+
+    align_peek();
+}
 
 
 /* init_span: translated to Rust in src/scan.rs */
 /* init_row: translated to Rust in src/scan.rs */
 /* init_col: translated to Rust in src/scan.rs */
 
-/* fin_col: translated to Rust in src/scan.rs */
+bool fin_col(void)
+{
+    int32_t p;
+    int32_t q, r;
+    int32_t s;
+    int32_t u;
+    scaled_t w;
+    glue_ord o;
+    int32_t n;
+    if (cur_align == TEX_NULL)
+        confusion("endv");
+    q = mem[cur_align].b32.s1;
+    if (q == TEX_NULL)
+        confusion("endv");
+    if (align_state < 500000L)
+        fatal_error("(interwoven alignment preambles are not allowed)");
+    p = mem[q].b32.s1;
+    if ((p == TEX_NULL) && (mem[cur_align + 5].b32.s0 < CR_CODE)) {
 
-/* fin_row: translated to Rust in src/scan.rs */
+        if (cur_loop != TEX_NULL) {  /*822: */
+            mem[q].b32.s1 = new_null_box();
+            p = mem[q].b32.s1;
+            mem[p].b32.s0 = END_SPAN;
+            mem[p + 1].b32.s1 = NULL_FLAG;
+            cur_loop = LLIST_link(cur_loop);
+            q = HOLD_HEAD;
+            r = mem[cur_loop + 3].b32.s1;
+            while (r != TEX_NULL) {
+
+                mem[q].b32.s1 = get_avail();
+                q = LLIST_link(q);
+                mem[q].b32.s0 = mem[r].b32.s0;
+                r = LLIST_link(r);
+            }
+            mem[q].b32.s1 = TEX_NULL;
+            mem[p + 3].b32.s1 = mem[HOLD_HEAD].b32.s1;
+            q = HOLD_HEAD;
+            r = mem[cur_loop + 2].b32.s1;
+            while (r != TEX_NULL) {
+
+                mem[q].b32.s1 = get_avail();
+                q = LLIST_link(q);
+                mem[q].b32.s0 = mem[r].b32.s0;
+                r = LLIST_link(r);
+            }
+            mem[q].b32.s1 = TEX_NULL;
+            mem[p + 2].b32.s1 = mem[HOLD_HEAD].b32.s1 /*:823 */ ;
+            cur_loop = LLIST_link(cur_loop);
+            mem[p].b32.s1 = new_glue(mem[cur_loop + 1].b32.s0);
+            NODE_subtype(LLIST_link(p)) = GLUE_PAR__tab_skip + 1;
+        } else {
+            error_here_with_diagnostic("Extra alignment tab has been changed to ");
+            print_esc_cstr("cr");
+            capture_to_diagnostic(NULL);
+
+            {
+                help_ptr = 3;
+                help_line[2] = "You have given more \\span or & marks than there were";
+                help_line[1] = "in the preamble to the \\halign or \\valign now in progress.";
+                help_line[0] = "So I'll assume that you meant to type \\cr instead.";
+            }
+            mem[cur_align + 5].b32.s0 = CR_CODE;
+            error();
+        }
+    }
+    if (mem[cur_align + 5].b32.s0 != SPAN_CODE) {
+        unsave();
+        new_save_level(ALIGN_GROUP);
+        {
+            if (cur_list.mode == -104) {
+                adjust_tail = cur_tail;
+                pre_adjust_tail = cur_pre_tail;
+                u = hpack(mem[cur_list.head].b32.s1, 0, ADDITIONAL);
+                w = mem[u + 1].b32.s1;
+                cur_tail = adjust_tail;
+                adjust_tail = TEX_NULL;
+                cur_pre_tail = pre_adjust_tail;
+                pre_adjust_tail = TEX_NULL;
+            } else {
+
+                u = vpackage(mem[cur_list.head].b32.s1, 0, ADDITIONAL, 0);
+                w = mem[u + 3].b32.s1;
+            }
+            n = 0;
+            if (cur_span != cur_align) {        /*827: */
+                q = cur_span;
+                do {
+                    n++;
+                    q = mem[mem[q].b32.s1].b32.s1;
+                } while (!(q == cur_align));
+                if (n > UINT16_MAX)
+                    confusion("too many spans");
+                q = cur_span;
+                while (mem[mem[q].b32.s0].b32.s1 < n)
+                    q = mem[q].b32.s0;
+                if (mem[mem[q].b32.s0].b32.s1 > n) {
+                    s = get_node(SPAN_NODE_SIZE);
+                    mem[s].b32.s0 = mem[q].b32.s0;
+                    mem[s].b32.s1 = n;
+                    mem[q].b32.s0 = s;
+                    mem[s + 1].b32.s1 = w;
+                } else if (mem[mem[q].b32.s0 + 1].b32.s1 < w)
+                    mem[mem[q].b32.s0 + 1].b32.s1 = w;
+            } else if (w > mem[cur_align + 1].b32.s1)
+                mem[cur_align + 1].b32.s1 = w;
+            NODE_type(u) = UNSET_NODE;
+            mem[u].b16.s0 = n;
+            if (total_stretch[FILLL] != 0)
+                o = FILLL;
+            else if (total_stretch[FILL] != 0)
+                o = FILL;
+            else if (total_stretch[FIL] != 0)
+                o = FIL;
+            else
+                o = 0 /*normal *//*:684 */ ;
+            mem[u + 5].b16.s0 = o;
+            mem[u + 6].b32.s1 = total_stretch[o];
+            if (total_shrink[FILLL] != 0)
+                o = FILLL;
+            else if (total_shrink[FILL] != 0)
+                o = FILL;
+            else if (total_shrink[FIL] != 0)
+                o = FIL;
+            else
+                o = 0 /*normal *//*:690 */ ;
+            mem[u + 5].b16.s1 = o;
+            mem[u + 4].b32.s1 = total_shrink[o];
+            pop_nest();
+            mem[cur_list.tail].b32.s1 = u;
+            cur_list.tail = u;
+        }
+        {
+            mem[cur_list.tail].b32.s1 = new_glue(mem[mem[cur_align].b32.s1 + 1].b32.s0);
+            cur_list.tail = LLIST_link(cur_list.tail);
+        }
+        mem[cur_list.tail].b16.s0 = 12 /*tab_skip_code 1 *//*:824 */ ;
+        if (mem[cur_align + 5].b32.s0 >= CR_CODE) {
+            return true;
+        }
+        init_span(p);
+    }
+    align_state = 1000000L;
+    do {
+        get_x_or_protected();
+    } while (!(cur_cmd != SPACER));
+    cur_align = p;
+    init_col();
+    return false;
+}
+
+void fin_row(void)
+{
+    int32_t p;
+
+    if (cur_list.mode == -104) {
+        p = hpack(mem[cur_list.head].b32.s1, 0, ADDITIONAL);
+        pop_nest();
+        if (cur_pre_head != cur_pre_tail) {
+            mem[cur_list.tail].b32.s1 = mem[cur_pre_head].b32.s1;
+            cur_list.tail = cur_pre_tail;
+        }
+        append_to_vlist(p);
+        if (cur_head != cur_tail) {
+            mem[cur_list.tail].b32.s1 = mem[cur_head].b32.s1;
+            cur_list.tail = cur_tail;
+        }
+    } else {
+
+        p = vpackage(mem[cur_list.head].b32.s1, 0, ADDITIONAL, MAX_HALFWORD);
+        pop_nest();
+        mem[cur_list.tail].b32.s1 = p;
+        cur_list.tail = p;
+        cur_list.aux.b32.s0 = 1000;
+    }
+    NODE_type(p) = UNSET_NODE;
+    mem[p + 6].b32.s1 = 0;
+    if (LOCAL(every_cr) != TEX_NULL)
+        begin_token_list(LOCAL(every_cr), EVERY_CR_TEXT);
+    align_peek();
+}
 
 void fin_align(void)
 {
