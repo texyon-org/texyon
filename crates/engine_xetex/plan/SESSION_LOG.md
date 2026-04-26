@@ -32,6 +32,32 @@ template.
 
 ---
 
+## Session 49 — 2026-04-26 — get_preamble_token
+
+**Goal:** One more function from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 48
+
+**Work done:**
+- Translated `get_preamble_token` (7728) → `src/scan.rs` (236b6293). goto-restart pattern as labeled `'restart` loop.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 49
+- xetex-xetex0.c: ~41 C functions remaining.
+
+**Surprises / gotchas:**
+- `get_token` and `scan_glue` are in the same module; call directly without `crate::scan::` prefix.
+
+**For the next session:**
+- `fin_col` (7924): complex, ~100 lines.
+- `fin_row` (8114): medium.
+- `init_align` (7756): medium, uses push_alignment, scan_spec.
+
 ## Session 48 — 2026-04-26 — math/scan/alignment cluster
 
 **Goal:** Continue translating functions from xetex-xetex0.c.

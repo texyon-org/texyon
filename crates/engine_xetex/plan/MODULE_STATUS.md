@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 48.
+Last updated: session 49.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 48.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 11594 |     42 | multiple (see below)              | IN PROGRESS — 85% |
+| xetex-xetex0.c               | 11570 |     41 | multiple (see below)              | IN PROGRESS — 85% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -435,13 +435,14 @@ New Rust module `src/save.rs` created for save-stack management.
 |155| `init_span`               |        7880 | `src/scan.rs`   | MIGRATED (session 48, 300e358f) |
 |156| `init_row`                |        7893 | `src/scan.rs`   | MIGRATED (session 48, 300e358f) |
 |157| `init_col`                |        7912 | `src/scan.rs`   | MIGRATED (session 48, 300e358f) |
+|158| `get_preamble_token`      |        7728 | `src/scan.rs`   | MIGRATED (session 49, 236b6293) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `fin_col` (7924): complex, 100+ lines.
+- `fin_col` (7924): complex, ~100 lines.
 - `fin_row` (8114): medium.
-- `get_preamble_token` (7768): medium.
+- `init_align` (7756): medium, uses push_alignment and scan_spec.
 - `handle_right_brace` (9973): very large — many group cases.
 - `just_copy`/`just_reverse` (9427/9428): bidi node copying — complex.
 
