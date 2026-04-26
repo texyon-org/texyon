@@ -6431,6 +6431,30 @@ pub unsafe extern "C" fn new_graf(indented: bool) {
     }
 }
 
+// translated from xetex-xetex0.c:7048 (new_character)
+#[no_mangle]
+pub unsafe extern "C" fn new_character(f: i32, c: u16) -> i32 {
+    extern "C" { fn new_native_character(f: i32, c: u32) -> i32; }
+    use crate::globals::{char_base_entry, font_bc_entry, font_ec_entry, font_info_b16};
+
+    let fa = crate::globals::font_area_entry(f);
+    if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
+        return new_native_character(f, c as u32);
+    }
+    let ec = effective_char(false, f, c) as u16;
+    if font_bc_entry(f) <= ec && font_ec_entry(f) >= ec {
+        let info = font_info_b16(char_base_entry(f) + ec as i32);
+        if info.s3 > 0 {
+            let p = crate::mem::get_avail();
+            crate::globals::set_mem_b16s1(p, f as u16);
+            crate::globals::set_mem_b16s0(p, c);
+            return p;
+        }
+    }
+    char_warning(f, c as i32);
+    crate::mem::TEX_NULL
+}
+
 // translated from xetex-xetex0.c:4313 (scan_math)
 #[no_mangle]
 pub unsafe extern "C" fn scan_math(p: i32) {

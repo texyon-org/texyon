@@ -7045,29 +7045,7 @@ done:
     return g;
 }
 
-int32_t new_character(internal_font_number f, UTF16_code c)
-{
-    int32_t p;
-    uint16_t ec;
-    if (((font_area[f] == AAT_FONT_FLAG) || (font_area[f] == OTGR_FONT_FLAG))) {
-        return new_native_character(f, c);
-    }
-    ec = effective_char(false, f, c);
-    if (font_bc[f] <= ec) {
-
-        if (font_ec[f] >= ec) {
-
-            if ((FONT_CHARACTER_INFO(f, ec).s3 > 0)) {
-                p = get_avail();
-                mem[p].b16.s1 = f;
-                mem[p].b16.s0 = c;
-                return p;
-            }
-        }
-    }
-    char_warning(f, c);
-    return TEX_NULL;
-}
+/* new_character: translated to Rust in src/scan.rs */
 
 
 /* scan_spec: translated to Rust in src/scan.rs */
