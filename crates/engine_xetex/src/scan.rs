@@ -87,7 +87,6 @@ extern "C" {
     fn new_spec(p: i32) -> i32;
     fn synctex_start_input();
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
-    fn insert_src_special();
     fn hpack(p: i32, w: i32, m: i16) -> i32;
     fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32;
     fn box_end(box_context: i32);
@@ -6207,6 +6206,34 @@ pub unsafe extern "C" fn app_space() {
     }
     crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), q);
     set_cur_list_tail(q);
+}
+
+// translated from xetex-xetex0.c:9978 (insert_src_special)
+#[no_mangle]
+pub unsafe extern "C" fn insert_src_special() {
+    use crate::globals::{
+        in_open, line, mem_b32s1, set_mem_b32s0, set_mem_b32s1, source_filename_stack,
+    };
+    const FROZEN_SPECIAL: i32 = 2_243_226 + 10; // FROZEN_CONTROL_SEQUENCE + 10
+    const RIGHT_BRACE_TOKEN: i32 = 0x400000;     // xetex-constants.h:351
+
+    let sfn = source_filename_stack(in_open());
+    if sfn > 0 && crate::texmfmp::is_new_source(sfn, line()) {
+        let toklist = crate::mem::get_avail();
+        let mut p = toklist;
+        set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_SPECIAL);
+        set_mem_b32s1(p, crate::mem::get_avail());
+        p = mem_b32s1(p);
+        set_mem_b32s0(p, LEFT_BRACE_TOKEN + b'{' as i32);
+        let q = str_toks(crate::texmfmp::make_src_special(sfn, line()));
+        set_mem_b32s1(p, mem_b32s1(TEMP_HEAD));
+        p = q;
+        set_mem_b32s1(p, crate::mem::get_avail());
+        p = mem_b32s1(p);
+        set_mem_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
+        begin_token_list(toklist, INSERTED);
+        crate::texmfmp::remember_source_info(sfn, line());
+    }
 }
 
 // translated from xetex-xetex0.c:9485 (scan_box)

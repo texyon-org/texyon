@@ -9974,28 +9974,7 @@ void do_extension(void)
 /* fix_language: translated to Rust in src/scan.rs */
 
 
-void
-insert_src_special(void)
-{
-    int32_t toklist, p, q;
-
-    if (source_filename_stack[in_open] > 0 && is_new_source(source_filename_stack[in_open], line)) {
-        toklist = get_avail();
-        p = toklist;
-        mem[p].b32.s0 = CS_TOKEN_FLAG + FROZEN_SPECIAL;
-        mem[p].b32.s1 = get_avail();
-        p = LLIST_link(p);
-        mem[p].b32.s0 = (LEFT_BRACE_TOKEN + '{' );
-        q = str_toks(make_src_special(source_filename_stack[in_open], line));
-        mem[p].b32.s1 = mem[TEMP_HEAD].b32.s1;
-        p = q;
-        mem[p].b32.s1 = get_avail();
-        p = LLIST_link(p);
-        mem[p].b32.s0 = (RIGHT_BRACE_TOKEN + '}' );
-        begin_token_list(toklist, INSERTED);
-        remember_source_info(source_filename_stack[in_open], line);
-    }
-}
+/* insert_src_special: translated to Rust in src/scan.rs */
 
 
 /* append_src_special: translated to Rust in src/scan.rs */
