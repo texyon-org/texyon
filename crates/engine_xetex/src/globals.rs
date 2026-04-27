@@ -2173,6 +2173,12 @@ pub(crate) fn cur_mark(k: usize) -> i32 {
     unsafe { raw::cur_mark[k] }
 }
 
+/// Sets `cur_mark[k]`.
+#[inline]
+pub(crate) fn set_cur_mark(k: usize, v: i32) {
+    unsafe { raw::cur_mark[k] = v; }
+}
+
 // ---------------------------------------------------------------------------
 // input_stack / input_ptr / base_ptr
 // ---------------------------------------------------------------------------

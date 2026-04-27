@@ -4,7 +4,7 @@
 
 use crate::globals::{
     align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok,
-    cur_val, cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth,
+    cur_val, cur_val_level, def_ref, eqtb_b32s1, set_eqtb_b32s1, eqtb_is_null, expand_depth,
     expand_depth_count, file_offset, first, fmem_ptr, font_glue, font_mem_size, font_params,
     font_ptr, font_mapping_ptr, hash_s1, init_pool_ptr, last, max_print_line, max_reg_help_line,
     max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, open_parens,
@@ -82,6 +82,8 @@ extern "C" {
     fn count_pdf_file_pages() -> i32;
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
     fn new_spec(p: i32) -> i32;
+    fn do_marks(a: i16, l: i16, q: i32) -> bool;
+    fn prune_page_top(p: i32, s: bool) -> i32;
     fn synctex_start_input();
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
     fn hpack(p: i32, w: i32, m: i16) -> i32;
@@ -7990,4 +7992,131 @@ pub unsafe extern "C" fn vert_break(p: i32, h: i32, d: i32) -> i32 {
         p = mem_b32s1(prev_p);
     }
     best_place
+}
+
+// translated from xetex-xetex0.c:7727 (vsplit)
+#[no_mangle]
+pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
+    use crate::globals::{
+        cur_mark, set_cur_mark, cur_ptr, disc_ptr, set_disc_ptr, sa_root, set_sa_root,
+    };
+    use crate::mem::TEX_NULL;
+
+    const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+    const BOX_BASE: i32 = 2_255_144;      // xetex_format.h:211
+    const DIMEN_BASE: i32 = 8_941_180;    // xetex_format.h:222
+    const INT_BASE: i32 = 7_826_729;      // xetex_format.h:219
+    const DIMEN_PAR_SPLIT_MAX_DEPTH: i32 = 6;   // xetex_format.h:128
+    const INT_PAR_SAVING_VDISCARDS: i32 = 63;   // xetex_format.h:98
+    const BOX_NODE_SIZE: i32 = 8;        // xetex-constants.h:132
+    const EXACTLY: i16 = 0;             // xetex-constants.h:256
+    const ADDITIONAL: i16 = 1;          // xetex-constants.h:264
+    const VSPLIT_CODE: usize = 3;       // xetex_format.h:483
+    const MARK_VAL: usize = 7;          // xetex-constants.h:300
+    const VLIST_NODE: u16 = 1;          // xetex_format.h:381
+    const MARK_NODE: u16 = 4;           // xetex_format.h:384
+    const SPLIT_FIRST_MARK_CODE: usize = 3;  // xetex_format.h:688
+    const SPLIT_BOT_MARK_CODE: usize = 4;   // xetex_format.h:689
+
+    set_cur_val(n);
+    let v = if cur_val() < 256 {
+        eqtb_b32s1(BOX_BASE + cur_val())
+    } else {
+        crate::save::find_sa_element(4, cur_val(), false);
+        if cur_ptr() == TEX_NULL {
+            TEX_NULL
+        } else {
+            mem_b32s1(cur_ptr() + 1)
+        }
+    };
+
+    flush_node_list(disc_ptr(VSPLIT_CODE));
+    set_disc_ptr(VSPLIT_CODE, TEX_NULL);
+
+    if sa_root(MARK_VAL) != TEX_NULL {
+        if do_marks(0, 0, sa_root(MARK_VAL)) {
+            set_sa_root(MARK_VAL, TEX_NULL);
+        }
+    }
+
+    if cur_mark(SPLIT_FIRST_MARK_CODE) != TEX_NULL {
+        crate::mem::delete_token_ref(cur_mark(SPLIT_FIRST_MARK_CODE));
+        set_cur_mark(SPLIT_FIRST_MARK_CODE, TEX_NULL);
+        crate::mem::delete_token_ref(cur_mark(SPLIT_BOT_MARK_CODE));
+        set_cur_mark(SPLIT_BOT_MARK_CODE, TEX_NULL);
+    }
+
+    if v == TEX_NULL {
+        return TEX_NULL;
+    }
+
+    if mem_b16s1(v) != VLIST_NODE {
+        error_here_with_diagnostic(c"".as_ptr());
+        crate::output::print_esc_cstr(c"vsplit".as_ptr());
+        crate::output::print_cstr(c" needs a ".as_ptr());
+        crate::output::print_esc_cstr(c"vbox".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(1, c"The box you are trying to split is an \\hbox.".as_ptr());
+        set_help_line(0, c"I can't split such a box, so I'll leave it alone.".as_ptr());
+        error();
+        return TEX_NULL;
+    }
+
+    let split_max_d = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_SPLIT_MAX_DEPTH);
+    let q = vert_break(mem_b32s1(v + 5), h, split_max_d);
+    let mut p = mem_b32s1(v + 5);
+
+    if p == q {
+        set_mem_b32s1(v + 5, TEX_NULL);
+    } else {
+        loop {
+            if mem_b16s1(p) == MARK_NODE {
+                let mark_class = mem_b32s0(p + 1);
+                let mark_ptr = mem_b32s1(p + 1);
+                if mark_class != 0 {
+                    crate::save::find_sa_element(MARK_VAL as u16, mark_class, true);
+                    if mem_b32s1(cur_ptr() + 2) == TEX_NULL {
+                        set_mem_b32s1(cur_ptr() + 2, mark_ptr);
+                        set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
+                    } else {
+                        crate::mem::delete_token_ref(mem_b32s0(cur_ptr() + 3));
+                    }
+                    set_mem_b32s0(cur_ptr() + 3, mark_ptr);
+                    set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
+                } else if cur_mark(SPLIT_FIRST_MARK_CODE) == TEX_NULL {
+                    set_cur_mark(SPLIT_FIRST_MARK_CODE, mark_ptr);
+                    set_cur_mark(SPLIT_BOT_MARK_CODE, mark_ptr);
+                    set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 2);
+                } else {
+                    crate::mem::delete_token_ref(cur_mark(SPLIT_BOT_MARK_CODE));
+                    set_cur_mark(SPLIT_BOT_MARK_CODE, mark_ptr);
+                    set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
+                }
+            }
+            if mem_b32s1(p) == q {
+                set_mem_b32s1(p, TEX_NULL);
+                break;
+            }
+            p = mem_b32s1(p);
+        }
+    }
+
+    let mut q = prune_page_top(q, eqtb_b32s1(INT_BASE + INT_PAR_SAVING_VDISCARDS) > 0);
+    p = mem_b32s1(v + 5);
+    crate::mem::free_node(v, BOX_NODE_SIZE);
+    if q != TEX_NULL {
+        q = vpackage(q, 0, ADDITIONAL, MAX_HALFWORD);
+    }
+    if cur_val() < 256 {
+        set_eqtb_b32s1(BOX_BASE + cur_val(), q);
+    } else {
+        crate::save::find_sa_element(4, cur_val(), false);
+        if cur_ptr() != TEX_NULL {
+            set_mem_b32s1(cur_ptr() + 1, q);
+            set_mem_b32s0(cur_ptr() + 1, mem_b32s0(cur_ptr() + 1) + 1);
+            crate::save::delete_sa_ref(cur_ptr());
+        }
+    }
+    vpackage(p, h, EXACTLY, split_max_d)
 }
