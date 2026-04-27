@@ -86,6 +86,8 @@ extern "C" {
     fn do_marks(a: i16, l: i16, q: i32) -> bool;
     fn prune_page_top(p: i32, s: bool) -> i32;
     fn ship_out(p: i32);
+    fn fin_mlist(p: i32) -> i32;
+    fn build_choices();
     fn synctex_start_input();
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
     fn hpack(p: i32, w: i32, m: i16) -> i32;
@@ -8721,4 +8723,283 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
 
     // done:
     set_mem_b32s1(TEMP_HEAD, l);
+}
+
+// translated from xetex-xetex0.c:8265 (handle_right_brace)
+#[no_mangle]
+pub unsafe extern "C" fn handle_right_brace() {
+    use crate::globals::{
+        adjust_tail, cur_group, cur_input, cur_list_head, cur_list_tail, disc_ptr, insert_penalties,
+        nest_ptr, nest_tail, output_active, page_tail, pre_adjust_tail, save_ptr, save_stack_b32s1,
+        set_adjust_tail, set_cur_list_tail, set_cur_tok, set_disc_ptr, set_insert_penalties,
+        set_mem_b16s0, set_mem_b16s1, set_nest_tail, set_output_active, set_page_tail,
+        set_pre_adjust_tail, set_save_ptr,
+    };
+    use crate::mem::TEX_NULL;
+
+    const BOTTOM_LEVEL: u8 = 0;          // xetex-constants.h:152
+    const SIMPLE_GROUP: u8 = 1;
+    const HBOX_GROUP: u8 = 2;
+    const ADJUSTED_HBOX_GROUP: u8 = 3;
+    const VBOX_GROUP: u8 = 4;
+    const VTOP_GROUP: u8 = 5;
+    const ALIGN_GROUP: u8 = 6;
+    const NO_ALIGN_GROUP: u8 = 7;
+    const OUTPUT_GROUP: u8 = 8;
+    const MATH_GROUP: u8 = 9;
+    const DISC_GROUP: u8 = 10;
+    const INSERT_GROUP: u8 = 11;
+    const VCENTER_GROUP: u8 = 12;
+    const MATH_CHOICE_GROUP: u8 = 13;
+    const SEMI_SIMPLE_GROUP: u8 = 14;
+    const MATH_SHIFT_GROUP: u8 = 15;
+    const MATH_LEFT_GROUP: u8 = 16;
+
+    const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+    const BOX_NODE_SIZE: i32 = 8;
+    const INS_NODE_SIZE: i32 = 5;
+    const SMALL_NODE_SIZE: i32 = 2;
+    const NOAD_SIZE: i32 = 4;
+    const ADDITIONAL: i16 = 1;
+    const VTOP_CODE: i16 = 4;           // xetex_format.h:484
+    const ADJUST_HEAD: i32 = 4_999_994; // MEM_TOP - 5
+    const PRE_ADJUST_HEAD: i32 = 4_999_985; // MEM_TOP - 14
+    const CONTRIB_HEAD: i32 = 4_999_998; // MEM_TOP - 1
+    const PAGE_HEAD: i32 = 4_999_997;   // MEM_TOP - 2
+    const LAST_BOX_CODE: usize = 2;     // xetex_format.h:482
+    const OUTPUT_TEXT: u16 = 7;         // xetex-constants.h:206
+    const BACKED_UP: u16 = 3;           // xetex-constants.h:202
+    const BOX_BASE: i32 = 2_255_144;    // xetex_format.h:211
+    const INT_BASE: i32 = 7_826_729;
+    const DIMEN_BASE: i32 = 8_941_180;
+    const GLUE_BASE: i32 = 2_254_340;   // xetex_format.h:205
+    const DIMEN_PAR_SPLIT_MAX_DEPTH: i32 = 6;      // xetex_format.h:128
+    const INT_PAR_FLOATING_PENALTY: i32 = 42;      // xetex_format.h:77
+    const GLUE_PAR_SPLIT_TOP_SKIP: i32 = 10;       // xetex_format.h:159
+    const INS_NODE: u16 = 3;            // xetex_format.h:383
+    const ADJUST_NODE: u16 = 5;         // xetex_format.h:385
+    const VCENTER_NOAD: u16 = 29;       // xetex_format.h:414
+    const ORD_NOAD: u16 = 16;           // xetex_format.h:401
+    const ACCENT_NOAD: u16 = 28;        // xetex_format.h:413
+    const SUB_BOX: i32 = 2;             // xetex-constants.h:283
+    const SUB_MLIST: i32 = 3;           // xetex-constants.h:287
+    const EMPTY: i32 = 0;               // xetex-constants.h:230
+    const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF; // xetex-constants.h:348
+    const FROZEN_CR: i32 = 2_243_226 + 1; // FROZEN_CONTROL_SEQUENCE + 1
+
+    match cur_group() {
+        SIMPLE_GROUP => {
+            crate::save::unsave();
+        }
+
+        BOTTOM_LEVEL => {
+            error_here_with_diagnostic(c"Too many }'s".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(2);
+            set_help_line(1, c"You've closed more groups than you opened.".as_ptr());
+            set_help_line(0, c"Such booboos are generally harmless, so keep going.".as_ptr());
+            error();
+        }
+
+        SEMI_SIMPLE_GROUP | MATH_SHIFT_GROUP | MATH_LEFT_GROUP => {
+            extra_right_brace();
+        }
+
+        HBOX_GROUP => {
+            package(0);
+        }
+
+        ADJUSTED_HBOX_GROUP => {
+            set_adjust_tail(ADJUST_HEAD);
+            set_pre_adjust_tail(PRE_ADJUST_HEAD);
+            package(0);
+        }
+
+        VBOX_GROUP => {
+            end_graf();
+            package(0);
+        }
+
+        VTOP_GROUP => {
+            end_graf();
+            package(VTOP_CODE);
+        }
+
+        INSERT_GROUP => {
+            end_graf();
+            // GLUEPAR(split_top_skip)
+            let q = eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP);
+            // GLUE_SPEC_ref_count(q)++
+            set_mem_b32s1(q, mem_b32s1(q) + 1);
+            let d = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_SPLIT_MAX_DEPTH);
+            let f = eqtb_b32s1(INT_BASE + INT_PAR_FLOATING_PENALTY);
+            crate::save::unsave();
+            set_save_ptr(save_ptr() - 2);
+            let p = vpackage(mem_b32s1(cur_list_head()), 0, ADDITIONAL, MAX_HALFWORD);
+            crate::mem::pop_nest();
+
+            if save_stack_b32s1(save_ptr()) < 255 {
+                let new_node = crate::mem::get_node(INS_NODE_SIZE);
+                set_mem_b32s1(cur_list_tail(), new_node);
+                set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                set_mem_b16s1(cur_list_tail(), INS_NODE);
+                set_mem_b16s0(cur_list_tail(), save_stack_b32s1(save_ptr()) as u16);
+                set_mem_b32s1(cur_list_tail() + 3, mem_b32s1(p + 3) + mem_b32s1(p + 2));
+                set_mem_b32s0(cur_list_tail() + 4, mem_b32s1(p + 5));  // ins list ptr
+                set_mem_b32s1(cur_list_tail() + 4, q);
+                set_mem_b32s1(cur_list_tail() + 2, d);
+                set_mem_b32s1(cur_list_tail() + 1, f);
+            } else {
+                let new_node = crate::mem::get_node(SMALL_NODE_SIZE);
+                set_mem_b32s1(cur_list_tail(), new_node);
+                set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                set_mem_b16s1(cur_list_tail(), ADJUST_NODE);
+                set_mem_b16s0(cur_list_tail(), save_stack_b32s1(save_ptr() + 1) as u16);
+                set_mem_b32s1(cur_list_tail() + 1, mem_b32s1(p + 5));
+                crate::mem::delete_glue_ref(q);
+            }
+
+            crate::mem::free_node(p, BOX_NODE_SIZE);
+            if nest_ptr() == 0 {
+                build_page();
+            }
+        }
+
+        OUTPUT_GROUP => {
+            if cur_input().loc != TEX_NULL
+                || (cur_input().index != OUTPUT_TEXT && cur_input().index != BACKED_UP)
+            {
+                error_here_with_diagnostic(c"Unbalanced output routine".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(2);
+                set_help_line(1, c"Your sneaky output routine has problematic {'s and/or }'s.".as_ptr());
+                set_help_line(0, c"I can't handle that very well; good luck.".as_ptr());
+                error();
+                loop {
+                    get_token();
+                    if cur_input().loc == TEX_NULL { break; }
+                }
+            }
+
+            crate::input::end_token_list();
+            end_graf();
+            crate::save::unsave();
+            set_output_active(false);
+            set_insert_penalties(0);
+
+            if eqtb_b32s1(BOX_BASE + 255) != TEX_NULL {
+                error_here_with_diagnostic(c"Output routine didn't use all of ".as_ptr());
+                crate::output::print_esc_cstr(c"box".as_ptr());
+                crate::output::print_int(255);
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(3);
+                set_help_line(2, c"Your \\output commands should empty \\box255,".as_ptr());
+                set_help_line(1, c"e.g., by saying `\\shipout\\box255'.".as_ptr());
+                set_help_line(0, c"Proceed; I'll discard its present contents.".as_ptr());
+                box_error(255);
+            }
+
+            if cur_list_tail() != cur_list_head() {
+                set_mem_b32s1(page_tail(), mem_b32s1(cur_list_head()));
+                set_page_tail(cur_list_tail());
+            }
+
+            if mem_b32s1(PAGE_HEAD) != TEX_NULL {
+                if mem_b32s1(CONTRIB_HEAD) == TEX_NULL {
+                    set_nest_tail(0, page_tail());
+                }
+                set_mem_b32s1(page_tail(), mem_b32s1(CONTRIB_HEAD));
+                set_mem_b32s1(CONTRIB_HEAD, mem_b32s1(PAGE_HEAD));
+                set_mem_b32s1(PAGE_HEAD, TEX_NULL);
+                set_page_tail(PAGE_HEAD);
+            }
+
+            flush_node_list(disc_ptr(LAST_BOX_CODE));
+            set_disc_ptr(LAST_BOX_CODE, TEX_NULL);
+            crate::mem::pop_nest();
+            build_page();
+        }
+
+        DISC_GROUP => {
+            build_discretionary();
+        }
+
+        ALIGN_GROUP => {
+            crate::input::back_input();
+            set_cur_tok(CS_TOKEN_FLAG + FROZEN_CR);
+            error_here_with_diagnostic(c"Missing ".as_ptr());
+            crate::output::print_esc_cstr(c"cr".as_ptr());
+            crate::output::print_cstr(c" inserted".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(1);
+            set_help_line(0, c"I'm guessing that you meant to end an alignment here.".as_ptr());
+            crate::input::ins_error();
+        }
+
+        NO_ALIGN_GROUP => {
+            end_graf();
+            crate::save::unsave();
+            align_peek();
+        }
+
+        VCENTER_GROUP => {
+            end_graf();
+            crate::save::unsave();
+            set_save_ptr(save_ptr() - 2);
+            let p = vpackage(
+                mem_b32s1(cur_list_head()),
+                save_stack_b32s1(save_ptr() + 1),
+                save_stack_b32s1(save_ptr()) as i16,
+                MAX_HALFWORD,
+            );
+            crate::mem::pop_nest();
+            let new_noad = crate::mem::new_noad();
+            set_mem_b32s1(cur_list_tail(), new_noad);
+            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+            set_mem_b16s1(cur_list_tail(), VCENTER_NOAD);
+            set_mem_b32s1(cur_list_tail() + 1, SUB_BOX);
+            set_mem_b32s0(cur_list_tail() + 1, p);
+        }
+
+        MATH_CHOICE_GROUP => {
+            build_choices();
+        }
+
+        MATH_GROUP => {
+            crate::save::unsave();
+            set_save_ptr(save_ptr() - 1);
+            let save_loc = save_stack_b32s1(save_ptr());
+            set_mem_b32s1(save_loc, SUB_MLIST);
+            let p = fin_mlist(TEX_NULL);
+            set_mem_b32s0(save_loc, p);
+
+            if p != TEX_NULL && mem_b32s1(p) == TEX_NULL {
+                if mem_b16s1(p) == ORD_NOAD
+                    && mem_b32s1(p + 3) == EMPTY
+                    && mem_b32s1(p + 2) == EMPTY
+                {
+                    // collapse to inline field
+                    set_mem_b32s0(save_loc, mem_b32s0(p + 1));
+                    set_mem_b32s1(save_loc, mem_b32s1(p + 1));
+                    crate::mem::free_node(p, NOAD_SIZE);
+                } else if mem_b16s1(p) == ACCENT_NOAD
+                    && save_loc == cur_list_tail() + 1
+                    && mem_b16s1(cur_list_tail()) == ORD_NOAD
+                {
+                    // merge accent noad into ord
+                    let mut q = cur_list_head();
+                    while mem_b32s1(q) != cur_list_tail() {
+                        q = mem_b32s1(q);
+                    }
+                    set_mem_b32s1(q, p);
+                    crate::mem::free_node(cur_list_tail(), NOAD_SIZE);
+                    set_cur_list_tail(p);
+                }
+            }
+        }
+
+        _ => {
+            crate::errors::confusion(c"rightbrace".as_ptr());
+        }
+    }
 }

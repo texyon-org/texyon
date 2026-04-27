@@ -1960,6 +1960,8 @@ pub(crate) fn last_badness() -> i32 { unsafe { raw::last_badness } }
 #[inline]
 pub(crate) fn page_tail() -> i32 { unsafe { raw::page_tail } }
 #[inline]
+pub(crate) fn set_page_tail(v: i32) { unsafe { raw::page_tail = v; } }
+#[inline]
 pub(crate) fn page_contents() -> u8 { unsafe { raw::page_contents } }
 #[inline]
 pub(crate) fn page_so_far(k: usize) -> i32 { unsafe { raw::page_so_far[k] } }
@@ -1983,6 +1985,8 @@ pub(crate) fn insert_penalties() -> i32 { unsafe { raw::insert_penalties } }
 pub(crate) fn set_insert_penalties(v: i32) { unsafe { raw::insert_penalties = v; } }
 #[inline]
 pub(crate) fn output_active() -> bool { unsafe { raw::output_active } }
+#[inline]
+pub(crate) fn set_output_active(v: bool) { unsafe { raw::output_active = v; } }
 #[inline]
 pub(crate) fn random_seed() -> i32 { unsafe { raw::random_seed } }
 #[inline]
@@ -2103,6 +2107,16 @@ pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
 #[inline]
 pub(crate) fn nest_mode(k: i32) -> i16 {
     unsafe { (*raw::nest.offset(k as isize)).mode }
+}
+/// Returns `nest[k].tail`.
+#[inline]
+pub(crate) fn nest_tail(k: i32) -> i32 {
+    unsafe { (*raw::nest.offset(k as isize)).tail }
+}
+/// Sets `nest[k].tail = v`.
+#[inline]
+pub(crate) fn set_nest_tail(k: i32, v: i32) {
+    unsafe { (*raw::nest.offset(k as isize)).tail = v; }
 }
 /// Returns `nest[k].eTeX_aux`.
 #[inline]
