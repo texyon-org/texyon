@@ -6965,51 +6965,7 @@ done:
 
 /* scan_spec: translated to Rust in src/scan.rs */
 
-scaled_t char_pw(int32_t p, small_number side)
-{
-    internal_font_number f;
-    int32_t c;
-    if (side == 0)
-        last_leftmost_char = TEX_NULL;
-    else
-        last_rightmost_char = TEX_NULL;
-    if (p == TEX_NULL)
-        return 0;
-    if (((p != TEX_NULL && (!(is_char_node(p))) && (NODE_type(p) == WHATSIT_NODE)
-          && (NODE_subtype(p) == NATIVE_WORD_NODE || NODE_subtype(p) == NATIVE_WORD_NODE_AT)))) {
-        if (NATIVE_NODE_glyph_info_ptr(p) != NULL) {
-            f = NATIVE_NODE_font(p);
-            return round_xn_over_d(font_info[QUAD_CODE + param_base[f]].b32.s1, get_native_word_cp(p, side), 1000);
-        } else {
-            return 0;
-        }
-    }
-    if ((((p) != TEX_NULL && (!(is_char_node(p))) && (NODE_type(p) == WHATSIT_NODE)
-          && (mem[p].b16.s0 == GLYPH_NODE)))) {
-        f = mem[p + 4].b16.s2;
-        return round_xn_over_d(font_info[QUAD_CODE + param_base[f]].b32.s1, get_cp_code(f, mem[p + 4].b16.s1, side),
-                               1000);
-    }
-    if (!(is_char_node(p))) {
-        if (NODE_type(p) == LIGATURE_NODE)
-            p = p + 1;
-        else
-            return 0;
-    }
-    f = CHAR_NODE_font(p);
-    c = get_cp_code(f, mem[p].b16.s0, side);
-    switch (side) {
-    case 0:
-        last_leftmost_char = p;
-        break;
-    case 1:
-        last_rightmost_char = p;
-        break;
-    }
-    if (c == 0)
-        return 0;
-    return round_xn_over_d(font_info[QUAD_CODE + param_base[f]].b32.s1, c, 1000);
-}
+/* char_pw: translated to Rust in src/scan.rs */
 
 /* new_margin_kern: translated to Rust in src/mem.rs */
 

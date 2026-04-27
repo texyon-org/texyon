@@ -463,6 +463,9 @@ mod raw {
         pub(super) static mut LR_problems: i32;
         // Current text direction: LEFT_TO_RIGHT=0, RIGHT_TO_LEFT=1 (xetex-xetexd.h:703; small_number=i16).
         pub(super) static mut cur_dir: i16;
+        // Last leftmost/rightmost character found by char_pw (xetex-xetexd.h:467–468; xetex-ini.c:102–103).
+        pub(super) static mut last_leftmost_char: i32;
+        pub(super) static mut last_rightmost_char: i32;
     }
 }
 
@@ -2805,3 +2808,7 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 #[inline] pub(crate) fn set_lr_problems(v: i32) { unsafe { raw::LR_problems = v; } }
 #[inline] pub(crate) fn cur_dir() -> i16 { unsafe { raw::cur_dir } }
 #[inline] pub(crate) fn set_cur_dir(v: i16) { unsafe { raw::cur_dir = v; } }
+#[inline] pub(crate) fn last_leftmost_char() -> i32 { unsafe { raw::last_leftmost_char } }
+#[inline] pub(crate) fn set_last_leftmost_char(v: i32) { unsafe { raw::last_leftmost_char = v; } }
+#[inline] pub(crate) fn last_rightmost_char() -> i32 { unsafe { raw::last_rightmost_char } }
+#[inline] pub(crate) fn set_last_rightmost_char(v: i32) { unsafe { raw::last_rightmost_char = v; } }

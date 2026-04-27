@@ -84,6 +84,7 @@ extern "C" {
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
     fn new_spec(p: i32) -> i32;
     fn do_marks(a: i16, l: i16, q: i32) -> bool;
+    fn real_get_native_word_cp(node: *mut std::ffi::c_void, side: libc::c_int) -> i32;
     fn prune_page_top(p: i32, s: bool) -> i32;
     fn ship_out(p: i32);
     fn fin_mlist(p: i32) -> i32;
@@ -8723,6 +8724,92 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
 
     // done:
     set_mem_b32s1(TEMP_HEAD, l);
+}
+
+// translated from xetex-xetex0.c:6968 (char_pw)
+#[no_mangle]
+pub unsafe extern "C" fn char_pw(p: i32, side: i16) -> i32 {
+    use crate::globals::{
+        font_info_b32s1, hi_mem_min, mem_b16s2, mem_node_addr, mem_ptr,
+        param_base, set_last_leftmost_char, set_last_rightmost_char,
+    };
+    use crate::mem::TEX_NULL;
+
+    const WHATSIT_NODE: u16 = 8;
+    const NATIVE_WORD_NODE: u16 = 40;
+    const NATIVE_WORD_NODE_AT: u16 = 41;
+    const GLYPH_NODE: u16 = 42;
+    const LIGATURE_NODE: u16 = 6;
+    const QUAD_CODE: i32 = 6;   // xetex-constants.h:298
+
+    if side == 0 {
+        set_last_leftmost_char(TEX_NULL);
+    } else {
+        set_last_rightmost_char(TEX_NULL);
+    }
+    if p == TEX_NULL {
+        return 0;
+    }
+
+    // NATIVE_WORD_NODE or NATIVE_WORD_NODE_AT whatsit
+    if p != TEX_NULL
+        && p < hi_mem_min()
+        && mem_b16s1(p) == WHATSIT_NODE
+        && (mem_b16s0(p) == NATIVE_WORD_NODE || mem_b16s0(p) == NATIVE_WORD_NODE_AT)
+    {
+        if !mem_ptr(p + 5).is_null() {  // NATIVE_NODE_glyph_info_ptr != NULL
+            let f = mem_b16s2(p + 4) as i32;  // NATIVE_NODE_font
+            let cp = real_get_native_word_cp(
+                mem_node_addr(p),
+                side as libc::c_int,
+            );
+            return crate::scaled_math::round_xn_over_d(
+                font_info_b32s1(QUAD_CODE + param_base(f)),
+                cp,
+                1000,
+            );
+        } else {
+            return 0;
+        }
+    }
+
+    // GLYPH_NODE whatsit
+    if p != TEX_NULL
+        && p < hi_mem_min()
+        && mem_b16s1(p) == WHATSIT_NODE
+        && mem_b16s0(p) == GLYPH_NODE
+    {
+        let f = mem_b16s2(p + 4) as i32;  // mem[p + 4].b16.s2
+        let code = mem_b16s1(p + 4) as u32; // mem[p + 4].b16.s1 (char code)
+        return crate::scaled_math::round_xn_over_d(
+            font_info_b32s1(QUAD_CODE + param_base(f)),
+            get_cp_code(f, code, side as i32),
+            1000,
+        );
+    }
+
+    // Adjust p for ligature node or non-char node
+    let p = if p < hi_mem_min() {
+        if mem_b16s1(p) == LIGATURE_NODE {
+            p + 1  // LIGATURE_NODE: the char is at p+1
+        } else {
+            return 0;
+        }
+    } else {
+        p
+    };
+
+    let f = mem_b16s1(p) as i32;  // CHAR_NODE_font(p) = mem[p].b16.s1
+    let c = get_cp_code(f, mem_b16s0(p) as u32, side as i32);
+    if side == 0 {
+        set_last_leftmost_char(p);
+    } else {
+        set_last_rightmost_char(p);
+    }
+    if c == 0 {
+        return 0;
+    }
+    crate::scaled_math::round_xn_over_d(font_info_b32s1(QUAD_CODE + param_base(f)), c, 1000)
 }
 
 // translated from xetex-xetex0.c:8265 (handle_right_brace)
