@@ -84,11 +84,12 @@ extern "C" {
     fn new_spec(p: i32) -> i32;
     fn do_marks(a: i16, l: i16, q: i32) -> bool;
     fn prune_page_top(p: i32, s: bool) -> i32;
+    fn ship_out(p: i32);
     fn synctex_start_input();
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
     fn hpack(p: i32, w: i32, m: i16) -> i32;
     fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32;
-    fn box_end(box_context: i32);
+
     fn flush_math();
     fn resume_after_display();
 }
@@ -8119,4 +8120,124 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
         }
     }
     vpackage(p, h, EXACTLY, split_max_d)
+}
+
+// translated from xetex-xetex0.c:7797 (box_end)
+#[no_mangle]
+pub unsafe extern "C" fn box_end(box_context: i32) {
+    use crate::globals::{
+        adjust_tail, cur_box, cur_list_aux_b32s0, cur_list_mode, cur_list_tail, cur_ptr,
+        pre_adjust_tail, set_adjust_tail, set_cur_box, set_cur_list_aux_b32s0,
+        set_cur_list_tail, set_cur_val, set_pre_adjust_tail,
+    };
+    use crate::mem::TEX_NULL;
+
+    const VMODE: i16 = 1;
+    const HMODE: i16 = 104;
+    const BOX_FLAG: i32 = 0x4000_0000;         // xetex-constants.h:372
+    const GLOBAL_BOX_FLAG: i32 = 0x4000_8000;  // xetex-constants.h:373
+    const SHIP_OUT_FLAG: i32 = 0x4001_0000;    // xetex-constants.h:374
+    const LEADER_FLAG: i32 = 0x4001_0001;      // xetex-constants.h:375
+    const A_LEADERS: i32 = 100;               // xetex_format.h:422
+    const ADJUST_HEAD: i32 = 4_999_994;       // MEM_TOP - 5 (xetex-constants.h:42)
+    const PRE_ADJUST_HEAD: i32 = 4_999_985;   // MEM_TOP - 14 (xetex-constants.h:51)
+    const SUB_BOX: i32 = 2;                   // xetex-constants.h:283
+    const BOX_BASE: i32 = 2_255_144;          // xetex_format.h:211
+    const BOX_REF: u16 = 121;                 // xetex_format.h:363
+    const SPACER: u8 = 10;                    // xetex_format.h:242
+    const RELAX: u8 = 0;                      // xetex_format.h:229
+    const HSKIP: u8 = 26;                     // xetex_format.h:264
+    const VSKIP: u8 = 27;                     // xetex_format.h:265
+
+    if box_context < BOX_FLAG {
+        if cur_box() != TEX_NULL {
+            set_mem_b32s1(cur_box() + 4, box_context);
+
+            if cur_list_mode().abs() == VMODE {
+                if pre_adjust_tail() != TEX_NULL {
+                    if PRE_ADJUST_HEAD != pre_adjust_tail() {
+                        set_mem_b32s1(cur_list_tail(), mem_b32s1(PRE_ADJUST_HEAD));
+                        set_cur_list_tail(pre_adjust_tail());
+                    }
+                    set_pre_adjust_tail(TEX_NULL);
+                }
+
+                append_to_vlist(cur_box());
+
+                if adjust_tail() != TEX_NULL {
+                    if ADJUST_HEAD != adjust_tail() {
+                        set_mem_b32s1(cur_list_tail(), mem_b32s1(ADJUST_HEAD));
+                        set_cur_list_tail(adjust_tail());
+                    }
+                    set_adjust_tail(TEX_NULL);
+                }
+
+                if cur_list_mode() > 0 {
+                    build_page();
+                }
+            } else {
+                if cur_list_mode().abs() == HMODE {
+                    set_cur_list_aux_b32s0(1000);  // space_factor
+                } else {
+                    let p = crate::mem::new_noad();
+                    set_mem_b32s1(p + 1, SUB_BOX);
+                    set_mem_b32s0(p + 1, cur_box());
+                    set_cur_box(p);
+                }
+
+                set_mem_b32s1(cur_list_tail(), cur_box());
+                set_cur_list_tail(cur_box());
+            }
+        }
+    } else if box_context < SHIP_OUT_FLAG {
+        let (val, a) = if box_context < GLOBAL_BOX_FLAG {
+            (box_context - BOX_FLAG, 0i16)
+        } else {
+            (box_context - GLOBAL_BOX_FLAG, 4i16)
+        };
+        set_cur_val(val);
+
+        if cur_val() < 256 {
+            if a >= 4 {
+                crate::save::geq_define(BOX_BASE + cur_val(), BOX_REF, cur_box());
+            } else {
+                crate::save::eq_define(BOX_BASE + cur_val(), BOX_REF, cur_box());
+            }
+        } else {
+            crate::save::find_sa_element(4, cur_val(), true);
+            if a >= 4 {
+                crate::save::gsa_def(cur_ptr(), cur_box());
+            } else {
+                crate::save::sa_def(cur_ptr(), cur_box());
+            }
+        }
+    } else if cur_box() != TEX_NULL {
+        if box_context > SHIP_OUT_FLAG {
+            loop {
+                get_x_token();
+                if cur_cmd() != SPACER && cur_cmd() != RELAX {
+                    break;
+                }
+            }
+
+            if (cur_cmd() == HSKIP && cur_list_mode().abs() != VMODE)
+                || (cur_cmd() == VSKIP && cur_list_mode().abs() == VMODE)
+            {
+                append_glue();
+                set_mem_b16s0(cur_list_tail(), (box_context - (LEADER_FLAG - A_LEADERS)) as u16);
+                set_mem_b32s1(cur_list_tail() + 1, cur_box());
+            } else {
+                error_here_with_diagnostic(c"Leaders not followed by proper glue".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(3);
+                set_help_line(2, c"You should say `\\leaders <box or rule><hskip or vskip>'.".as_ptr());
+                set_help_line(1, c"I found the <box or rule>, but there's no suitable".as_ptr());
+                set_help_line(0, c"<hskip or vskip>, so I'm ignoring these leaders.".as_ptr());
+                crate::input::back_error();
+                flush_node_list(cur_box());
+            }
+        } else {
+            ship_out(cur_box());
+        }
+    }
 }
