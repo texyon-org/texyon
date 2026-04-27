@@ -22,6 +22,7 @@ use crate::globals::{
     set_warning_index, set_xtx_ligature_present, stop_at_space, str_pool_entry, str_ptr,
     str_start, term_offset, warning_index, xtx_ligature_present,
     char_base_entry, font_info_b16, cur_list_mode, cur_group,
+    active_width, set_active_width, set_best_height_plus_depth,
 };
 use crate::mem::new_rule;
 
@@ -43,7 +44,6 @@ extern "C" {
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn input_line(f: *mut libc::c_void) -> libc::c_int;
     fn u_close(f: *mut libc::c_void);
-    fn runaway();
     fn line_break(d: bool);
     fn build_page();
     fn show_box(p: i32);
@@ -7808,4 +7808,186 @@ pub unsafe extern "C" fn do_assignments() {
         prefixed_command();
         crate::globals::set_set_box_allowed(true);
     }
+}
+
+// translated from xetex-xetex0.c:107 (runaway)
+#[no_mangle]
+pub unsafe extern "C" fn runaway() {
+    use crate::globals::{def_ref, error_line, mem_b32s1, scanner_status};
+    use crate::mem::TEX_NULL;
+
+    const SKIPPING: u8 = 1;
+    const DEFINING: u8 = 2;
+    const MATCHING: u8 = 3;
+    const ALIGNING: u8 = 4;
+    const ABSORBING: u8 = 5;
+    const TEMP_HEAD: i32 = 4_999_996; // MEM_TOP - 3
+    const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
+
+    if scanner_status() > SKIPPING {
+        let p = match scanner_status() {
+            DEFINING  => { crate::output::print_nl_cstr(c"Runaway definition".as_ptr()); def_ref() }
+            MATCHING  => { crate::output::print_nl_cstr(c"Runaway argument".as_ptr());   TEMP_HEAD }
+            ALIGNING  => { crate::output::print_nl_cstr(c"Runaway preamble".as_ptr());   HOLD_HEAD }
+            ABSORBING => { crate::output::print_nl_cstr(c"Runaway text".as_ptr());        def_ref() }
+            _         => return,
+        };
+        crate::output::print_char('?' as i32);
+        crate::output::print_ln();
+        show_token_list(mem_b32s1(p), TEX_NULL, error_line() - 10);
+    }
+}
+
+// translated from xetex-xetex0.c:7725 (vert_break)
+#[no_mangle]
+pub unsafe extern "C" fn vert_break(p: i32, h: i32, d: i32) -> i32 {
+    use crate::mem::TEX_NULL;
+
+    const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+    const EJECT_PENALTY: i32 = -10_000;  // xetex-constants.h:336
+    const INF_PENALTY: i32 = 10_000;     // xetex-constants.h:338
+    const INF_BAD: i32 = 10_000;         // xetex-constants.h:337
+    const MATH_NODE: u16 = 9;
+    const GLUE_NODE: u16 = 10;
+    const KERN_NODE: u16 = 11;
+    const PENALTY_NODE: u16 = 12;
+    const PIC_NODE: u16 = 43;   // xetex_format.h:466
+    const PDF_NODE: u16 = 44;   // xetex_format.h:467
+    const NORMAL: u16 = 0;
+
+    let mut p = p;
+    let mut prev_p = p;
+    let mut least_cost = MAX_HALFWORD;
+    let mut best_place = TEX_NULL;
+    let mut prev_dp: i32 = 0;
+    for k in 1..=6usize {
+        set_active_width(k, 0);
+    }
+
+    enum Next { NotFound, UpdateHeights, CheckPi(i32) }
+
+    'done: loop {
+        let next = if p == TEX_NULL {
+            Next::CheckPi(EJECT_PENALTY)
+        } else {
+            match mem_b16s1(p) {
+                0 | 1 | 2 => {
+                    set_active_width(1, active_width(1) + prev_dp + mem_b32s1(p + 3));
+                    prev_dp = mem_b32s1(p + 2);
+                    Next::NotFound
+                }
+                8 => {
+                    let sub = mem_b16s0(p);
+                    if sub == PIC_NODE || sub == PDF_NODE {
+                        set_active_width(1, active_width(1) + prev_dp + mem_b32s1(p + 3));
+                        prev_dp = mem_b32s1(p + 2);
+                    }
+                    Next::NotFound
+                }
+                10 => {  // GLUE_NODE
+                    if mem_b16s1(prev_p) < MATH_NODE {  // is_non_discardable_node
+                        Next::CheckPi(0)
+                    } else {
+                        Next::UpdateHeights
+                    }
+                }
+                11 => {  // KERN_NODE
+                    let link = mem_b32s1(p);
+                    let t = if link == TEX_NULL { PENALTY_NODE } else { mem_b16s1(link) };
+                    if t == GLUE_NODE {
+                        Next::CheckPi(0)
+                    } else {
+                        Next::UpdateHeights
+                    }
+                }
+                12 => Next::CheckPi(mem_b32s1(p + 1)),  // PENALTY_NODE
+                3 | 4 => Next::NotFound,
+                _ => crate::errors::confusion(c"vertbreak".as_ptr()),
+            }
+        };
+
+        let do_update = match next {
+            Next::NotFound => false,
+            Next::UpdateHeights => true,
+            Next::CheckPi(pi) => {
+                if pi < INF_PENALTY {
+                    let b = if active_width(1) < h {
+                        if active_width(3) != 0 || active_width(4) != 0 || active_width(5) != 0 {
+                            0
+                        } else {
+                            crate::helpers::badness(h - active_width(1), active_width(2))
+                        }
+                    } else if active_width(1) - h > active_width(6) {
+                        MAX_HALFWORD
+                    } else {
+                        crate::helpers::badness(active_width(1) - h, active_width(6))
+                    };
+                    let b = if b < MAX_HALFWORD {
+                        if pi <= EJECT_PENALTY {
+                            pi
+                        } else if b < INF_BAD {
+                            b + pi
+                        } else {
+                            100_000
+                        }
+                    } else {
+                        b
+                    };
+                    if b <= least_cost {
+                        best_place = p;
+                        least_cost = b;
+                        set_best_height_plus_depth(active_width(1) + prev_dp);
+                    }
+                    if b == MAX_HALFWORD || pi <= EJECT_PENALTY {
+                        break 'done;
+                    }
+                }
+                // reached only when pi >= INF_PENALTY, or (pi < INF_PENALTY and did not break);
+                // in the TEX_NULL case pi == EJECT_PENALTY so we always break above — p is valid.
+                let nt = mem_b16s1(p);
+                nt >= GLUE_NODE && nt <= KERN_NODE
+            }
+        };
+
+        if do_update {
+            let q = if mem_b16s1(p) == KERN_NODE {
+                p
+            } else {
+                let q = mem_b32s0(p + 1);
+                let qi = mem_b16s1(q) as usize;
+                set_active_width(2 + qi, active_width(2 + qi) + mem_b32s1(q + 2));
+                set_active_width(6, active_width(6) + mem_b32s1(q + 3));
+                if mem_b16s0(q) != NORMAL && mem_b32s1(q + 3) != 0 {
+                    error_here_with_diagnostic(
+                        c"Infinite glue shrinkage found in box being split".as_ptr(),
+                    );
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(4);
+                    set_help_line(3, c"The box you are \\vsplitting contains some infinitely".as_ptr());
+                    set_help_line(2, c"shrinkable glue, e.g., `\\vss' or `\\vskip 0pt minus 1fil'.".as_ptr());
+                    set_help_line(1, c"Such glue doesn't belong there; but you can safely proceed,".as_ptr());
+                    set_help_line(0, c"since the offensive shrinkability has been made finite.".as_ptr());
+                    error();
+                    let r = new_spec(q);
+                    set_mem_b16s0(r, NORMAL);   // GLUE_SPEC_shrink_order(r) = NORMAL
+                    crate::mem::delete_glue_ref(q);
+                    set_mem_b32s0(p + 1, r);
+                    r
+                } else {
+                    q
+                }
+            };
+            set_active_width(1, active_width(1) + prev_dp + mem_b32s1(q + 1));
+            prev_dp = 0;
+        }
+
+        // not_found:
+        if prev_dp > d {
+            set_active_width(1, active_width(1) + prev_dp - d);
+            prev_dp = d;
+        }
+        prev_p = p;
+        p = mem_b32s1(prev_p);
+    }
+    best_place
 }

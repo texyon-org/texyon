@@ -453,6 +453,11 @@ mod raw {
         pub(super) static mut pack_begin_line: i32;
         // Whether \setbox is allowed in the current context (xetex-xetexd.h:446).
         pub(super) static mut set_box_allowed: bool;
+        // Glue/kern/height accumulator for vert_break and page-builder (xetex-xetexd.h:619).
+        // 1-indexed in C; element 0 is unused.
+        pub(super) static mut active_width: [i32; 7];
+        // Height + depth of the best vertical break found so far (xetex-xetexd.h:662).
+        pub(super) static mut best_height_plus_depth: i32;
     }
 }
 
@@ -2735,4 +2740,32 @@ pub(crate) fn cur_order() -> u8 {
 #[inline]
 pub(crate) fn cur_list_mode_line() -> i32 {
     unsafe { raw::cur_list.mode_line }
+}
+
+// ---------------------------------------------------------------------------
+// active_width / best_height_plus_depth
+// ---------------------------------------------------------------------------
+
+/// Read `active_width[k]` (1-indexed, k in 1..=6).
+#[inline]
+pub(crate) fn active_width(k: usize) -> i32 {
+    unsafe { raw::active_width[k] }
+}
+
+/// Write `active_width[k] = v` (1-indexed, k in 1..=6).
+#[inline]
+pub(crate) fn set_active_width(k: usize, v: i32) {
+    unsafe { raw::active_width[k] = v; }
+}
+
+/// Read `best_height_plus_depth`.
+#[inline]
+pub(crate) fn best_height_plus_depth() -> i32 {
+    unsafe { raw::best_height_plus_depth }
+}
+
+/// Write `best_height_plus_depth`.
+#[inline]
+pub(crate) fn set_best_height_plus_depth(v: i32) {
+    unsafe { raw::best_height_plus_depth = v; }
 }
