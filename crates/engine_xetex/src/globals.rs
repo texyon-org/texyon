@@ -458,6 +458,11 @@ mod raw {
         pub(super) static mut active_width: [i32; 7];
         // Height + depth of the best vertical break found so far (xetex-xetexd.h:662).
         pub(super) static mut best_height_plus_depth: i32;
+        // Bidi LR-stack head and error counter (xetex-xetexd.h:701–702; xetex-ini.c:327–328).
+        pub(super) static mut LR_ptr: i32;
+        pub(super) static mut LR_problems: i32;
+        // Current text direction: LEFT_TO_RIGHT=0, RIGHT_TO_LEFT=1 (xetex-xetexd.h:703; small_number=i16).
+        pub(super) static mut cur_dir: i16;
     }
 }
 
@@ -2775,3 +2780,14 @@ pub(crate) fn best_height_plus_depth() -> i32 {
 pub(crate) fn set_best_height_plus_depth(v: i32) {
     unsafe { raw::best_height_plus_depth = v; }
 }
+
+// ---------------------------------------------------------------------------
+// LR_ptr / LR_problems / cur_dir
+// ---------------------------------------------------------------------------
+
+#[inline] pub(crate) fn lr_ptr() -> i32 { unsafe { raw::LR_ptr } }
+#[inline] pub(crate) fn set_lr_ptr(v: i32) { unsafe { raw::LR_ptr = v; } }
+#[inline] pub(crate) fn lr_problems() -> i32 { unsafe { raw::LR_problems } }
+#[inline] pub(crate) fn set_lr_problems(v: i32) { unsafe { raw::LR_problems = v; } }
+#[inline] pub(crate) fn cur_dir() -> i16 { unsafe { raw::cur_dir } }
+#[inline] pub(crate) fn set_cur_dir(v: i16) { unsafe { raw::cur_dir = v; } }

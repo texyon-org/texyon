@@ -23,6 +23,7 @@ use crate::globals::{
     str_start, term_offset, warning_index, xtx_ligature_present,
     char_base_entry, font_info_b16, cur_list_mode, cur_group,
     active_width, set_active_width, set_best_height_plus_depth,
+    mem_word, set_mem_word, mem_b16s3, set_mem_ptr,
 };
 use crate::mem::new_rule;
 
@@ -8444,4 +8445,280 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
     }
 
     box_end(box_context);
+}
+
+// translated from xetex-xetex0.c:8029 (just_copy)
+#[no_mangle]
+pub unsafe extern "C" fn just_copy(p: i32, h: i32, t: i32) {
+    use crate::globals::hi_mem_min;
+    use crate::mem::TEX_NULL;
+
+    extern "C" { fn new_edge(s: i16, w: i32) -> i32; }
+
+    const BOX_NODE_SIZE: i32 = 8;           // xetex-constants.h:132
+    const RULE_NODE_SIZE: i32 = 5;          // xetex-constants.h:128
+    const MEDIUM_NODE_SIZE: i32 = 3;        // xetex-constants.h:116
+    const SMALL_NODE_SIZE: i32 = 2;         // xetex-constants.h:110
+    const OPEN_NODE_SIZE: i32 = 3;          // xetex-constants.h:118
+    const WRITE_NODE_SIZE: i32 = 2;         // xetex-constants.h:112
+    const GLYPH_NODE_SIZE: i32 = 5;         // xetex-constants.h:126
+    const PIC_NODE_SIZE: i32 = 9;           // xetex-constants.h:133
+    const MEM_WORD_BYTES: i32 = 8;          // sizeof(memory_word)
+    const SYNCTEX_FIELD_SIZE: i32 = 1;      // xetex-constants.h:102
+    const HLIST_NODE: u16 = 0;
+    const VLIST_NODE: u16 = 1;
+    const RULE_NODE: u16 = 2;
+    const LIGATURE_NODE: u16 = 6;
+    const KERN_NODE: u16 = 11;
+    const MATH_NODE: u16 = 9;
+    const GLUE_NODE: u16 = 10;
+    const WHATSIT_NODE: u16 = 8;
+    const OPEN_NODE: u16 = 0;
+    const WRITE_NODE: u16 = 1;
+    const CLOSE_NODE: u16 = 2;
+    const SPECIAL_NODE: u16 = 3;
+    const LANGUAGE_NODE: u16 = 4;
+    const NATIVE_WORD_NODE: u16 = 40;
+    const NATIVE_WORD_NODE_AT: u16 = 41;
+    const GLYPH_NODE: u16 = 42;
+    const PIC_NODE: u16 = 43;
+    const PDF_NODE: u16 = 44;
+    const PDF_SAVE_POS_NODE: u16 = 21;
+
+    let mut p = p;
+    let mut h = h;
+
+    while p != TEX_NULL {
+        let mut words: i32 = 1;
+
+        // Determine r and words for this node. None = skip linking (goto not_found).
+        let r_opt: Option<i32> = if p >= hi_mem_min() {
+            // char node
+            Some(crate::mem::get_avail())
+        } else {
+            match mem_b16s1(p) {
+                HLIST_NODE | VLIST_NODE => {
+                    let r = crate::mem::get_node(BOX_NODE_SIZE);
+                    // SYNCTEX_tag(r, BOX_NODE_SIZE) = SYNCTEX_tag(p, BOX_NODE_SIZE)
+                    set_mem_b32s0(r + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE,
+                                  mem_b32s0(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE));
+                    // SYNCTEX_line(r, BOX_NODE_SIZE) = SYNCTEX_line(p, BOX_NODE_SIZE)
+                    set_mem_b32s1(r + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE,
+                                  mem_b32s1(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE));
+                    set_mem_word(r + 6, mem_word(p + 6));
+                    set_mem_word(r + 5, mem_word(p + 5));
+                    words = 5;
+                    set_mem_b32s1(r + 5, TEX_NULL);  // BOX_list_ptr(r) = TEX_NULL
+                    Some(r)
+                }
+                RULE_NODE => {
+                    words = RULE_NODE_SIZE;
+                    Some(crate::mem::get_node(RULE_NODE_SIZE))
+                }
+                LIGATURE_NODE => {
+                    let r = crate::mem::get_avail();
+                    set_mem_word(r, mem_word(p + 1));  // mem[r] = mem[p + 1]
+                    words = 0;  // skip the copy loop (goto found)
+                    Some(r)
+                }
+                KERN_NODE | MATH_NODE => {
+                    words = MEDIUM_NODE_SIZE;
+                    Some(crate::mem::get_node(MEDIUM_NODE_SIZE))
+                }
+                GLUE_NODE => {
+                    let r = crate::mem::get_node(MEDIUM_NODE_SIZE);
+                    // GLUE_SPEC_ref_count(GLUE_NODE_glue_ptr(p))++
+                    let gp = mem_b32s0(p + 1);  // GLUE_NODE_glue_ptr(p)
+                    set_mem_b32s1(gp, mem_b32s1(gp) + 1);  // GLUE_SPEC_ref_count(gp)++
+                    // SYNCTEX fields
+                    set_mem_b32s0(r + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE,
+                                  mem_b32s0(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE));
+                    set_mem_b32s1(r + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE,
+                                  mem_b32s1(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE));
+                    set_mem_b32s0(r + 1, gp);       // GLUE_NODE_glue_ptr(r) = gp
+                    set_mem_b32s1(r + 1, TEX_NULL); // GLUE_NODE_leader_ptr(r) = TEX_NULL
+                    Some(r)
+                }
+                WHATSIT_NODE => {
+                    match mem_b16s0(p) {
+                        OPEN_NODE => {
+                            words = OPEN_NODE_SIZE;
+                            Some(crate::mem::get_node(OPEN_NODE_SIZE))
+                        }
+                        WRITE_NODE | SPECIAL_NODE => {
+                            let r = crate::mem::get_node(WRITE_NODE_SIZE);
+                            // TOKEN_LIST_ref_count(WRITE_NODE_tokens(p))++
+                            let toks = mem_b32s1(p + 1);  // WRITE_NODE_tokens(p)
+                            set_mem_b32s0(toks, mem_b32s0(toks) + 1);
+                            words = WRITE_NODE_SIZE;
+                            Some(r)
+                        }
+                        CLOSE_NODE | LANGUAGE_NODE => {
+                            words = SMALL_NODE_SIZE;
+                            Some(crate::mem::get_node(SMALL_NODE_SIZE))
+                        }
+                        NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT => {
+                            let sz = mem_b16s3(p + 4) as i32;  // NATIVE_NODE_size(p)
+                            let r = crate::mem::get_node(sz);
+                            let mut w = sz;
+                            while w > 0 {
+                                w -= 1;
+                                set_mem_word(r + w, mem_word(p + w));
+                            }
+                            // NATIVE_NODE_glyph_info_ptr(r) = NULL
+                            set_mem_ptr(r + 5, std::ptr::null_mut());
+                            // NATIVE_NODE_glyph_count(r) = 0
+                            set_mem_b16s0(r + 4, 0);
+                            crate::mem::copy_native_glyph_info(p, r);
+                            words = 0;  // already copied, skip outer loop
+                            Some(r)
+                        }
+                        GLYPH_NODE => {
+                            words = GLYPH_NODE_SIZE;
+                            Some(crate::mem::get_node(GLYPH_NODE_SIZE))
+                        }
+                        PIC_NODE | PDF_NODE => {
+                            let path_len = mem_b16s1(p + 4) as i32;  // PIC_NODE_path_len
+                            words = PIC_NODE_SIZE + (path_len + MEM_WORD_BYTES - 1) / MEM_WORD_BYTES;
+                            Some(crate::mem::get_node(words))
+                        }
+                        PDF_SAVE_POS_NODE => {
+                            Some(crate::mem::get_node(SMALL_NODE_SIZE))
+                        }
+                        _ => {
+                            crate::errors::confusion(c"ext2".as_ptr());
+                        }
+                    }
+                }
+                _ => None, // goto not_found: skip copy and linking
+            }
+        };
+
+        if let Some(r) = r_opt {
+            // Copy words from p to r (skip if words==0)
+            let mut w = words;
+            while w > 0 {
+                w -= 1;
+                set_mem_word(r + w, mem_word(p + w));
+            }
+            // found: link r into h
+            set_mem_b32s1(h, r);  // LLIST_link(h) = r
+            h = r;
+        }
+
+        // not_found: advance p
+        p = mem_b32s1(p);  // LLIST_link(p)
+    }
+
+    set_mem_b32s1(h, t);  // LLIST_link(h) = t
+}
+
+// translated from xetex-xetex0.c:8155 (just_reverse)
+#[no_mangle]
+pub unsafe extern "C" fn just_reverse(p: i32) {
+    use crate::globals::{
+        avail, cur_dir, lr_problems, lr_ptr, set_avail, set_cur_dir, set_lr_problems, set_lr_ptr,
+        set_temp_ptr, temp_ptr,
+    };
+    use crate::mem::TEX_NULL;
+
+    extern "C" { fn new_edge(s: i16, w: i32) -> i32; }
+
+    const MEDIUM_NODE_SIZE: i32 = 3;
+    const TEMP_HEAD: i32 = 4_999_996;   // MEM_TOP - 3
+    const MIN_HALFWORD: i32 = -0x0FFF_FFFF;
+    const L_CODE: i32 = 4;              // xetex-constants.h:142
+    const R_CODE: i32 = 8;              // xetex-constants.h:143
+    const MATH_NODE: u16 = 9;
+    const KERN_NODE: u16 = 11;
+
+    let mut p = p;
+    let mut m = MIN_HALFWORD;
+    let mut n = MIN_HALFWORD;
+
+    let mut q = if mem_b32s1(TEMP_HEAD) == TEX_NULL {
+        just_copy(mem_b32s1(p), TEMP_HEAD, TEX_NULL);
+        mem_b32s1(TEMP_HEAD)
+    } else {
+        let q = mem_b32s1(p);
+        set_mem_b32s1(p, TEX_NULL);
+        flush_node_list(mem_b32s1(TEMP_HEAD));
+        q
+    };
+
+    let t = new_edge(cur_dir(), 0);
+    let mut l = t;
+    set_cur_dir(1 - cur_dir());
+
+    'done: loop {
+        while q != TEX_NULL {
+            if q >= crate::globals::hi_mem_min() {
+                // char node do-while
+                loop {
+                    p = q;
+                    q = mem_b32s1(p);
+                    set_mem_b32s1(p, l);
+                    l = p;
+                    if q < crate::globals::hi_mem_min() { break; }
+                }
+            } else {
+                p = q;
+                q = mem_b32s1(p);
+
+                if mem_b16s1(p) == MATH_NODE {
+                    let subtype = mem_b16s0(p) as i32;
+                    if subtype & 1 != 0 {
+                        // odd subtype = end math node
+                        let expected = L_CODE * (subtype / L_CODE) + 3;
+                        if mem_b32s0(lr_ptr()) != expected {
+                            set_mem_b16s1(p, KERN_NODE);  // NODE_type(p) = KERN_NODE
+                            set_lr_problems(lr_problems() + 1);
+                        } else {
+                            // pop LR_ptr
+                            set_temp_ptr(lr_ptr());
+                            set_lr_ptr(mem_b32s1(temp_ptr()));
+                            set_mem_b32s1(temp_ptr(), avail());
+                            set_avail(temp_ptr());
+
+                            if n > MIN_HALFWORD {
+                                n -= 1;
+                                set_mem_b16s0(p, mem_b16s0(p) - 1);
+                            } else if m > MIN_HALFWORD {
+                                m -= 1;
+                                set_mem_b16s1(p, KERN_NODE);
+                            } else {
+                                // found edge end: set t's link and free p
+                                set_mem_b32s1(t + 1, mem_b32s1(p + 1));
+                                set_mem_b32s1(t, q);
+                                crate::mem::free_node(p, MEDIUM_NODE_SIZE);
+                                break 'done;
+                            }
+                        }
+                    } else {
+                        // even subtype = begin math node
+                        // push LR_ptr
+                        set_temp_ptr(crate::mem::get_avail());
+                        set_mem_b32s0(temp_ptr(), L_CODE * (subtype / L_CODE) + 3);
+                        set_mem_b32s1(temp_ptr(), lr_ptr());
+                        set_lr_ptr(temp_ptr());
+
+                        if n > MIN_HALFWORD || (subtype / R_CODE) != cur_dir() as i32 {
+                            n += 1;
+                            set_mem_b16s0(p, mem_b16s0(p) + 1);
+                        } else {
+                            set_mem_b16s1(p, KERN_NODE);
+                            m += 1;
+                        }
+                    }
+                }
+
+                set_mem_b32s1(p, l);
+                l = p;
+            }
+        }
+        break; // goto done (past dead code)
+    }
+
+    // done:
+    set_mem_b32s1(TEMP_HEAD, l);
 }
