@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 53 — 2026-04-27 — vert_break, vsplit, box_end, begin_box
+
+**Goal:** Translate several medium-complexity functions from xetex-xetex0.c.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 52
+
+**Work done:**
+- Added `active_width[7]` and `best_height_plus_depth` globals + accessors to globals.rs.
+- Translated `vert_break` (7725, ~135 lines) → `src/scan.rs` (0d1c6960). Goto tangle (not_found/update_heights/done) modelled as a `Next` enum + labeled `'done: loop`.
+- Added `set_cur_mark` accessor; added `do_marks` and `prune_page_top` extern "C" declarations; added `set_eqtb_b32s1` to the scan.rs import list.
+- Translated `vsplit` (7727, ~102 lines) → `src/scan.rs` (9c2a6546). while+goto done → simple `loop { ...; break; }`.
+- Added `ship_out` extern "C" declaration; removed old local `extern "C" { fn box_end }` declaration from `scan_box`.
+- Translated `box_end` (7797, ~90 lines) → `src/scan.rs` (32d30dd9).
+- Translated `begin_box` (7794, ~180 lines) → `src/scan.rs` (bf5b0f45). `goto done` in LAST_BOX_CODE modelled as `'last_box_done: { ... break 'last_box_done; }` Rust labeled block.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 53
+- xetex-xetex0.c: ~29 C functions remaining.
+
+**Surprises / gotchas:**
+- `active_width` is 1-indexed in C (7-element array, indices 1-6 used). In Rust, passed as `active_width(1)` through `active_width(6)`.
+- `begin_box` LAST_BOX_CODE has `goto done` inside a do-while loop. Modelled as a Rust labeled block `'last_box_done: { ... break 'last_box_done; }` — requires Rust 1.65+ labeled block breaks (project already uses Rust 1.77+).
+- `begin_box` default case: when `k` is VTOP_GROUP, it sets `k = VMODE` after the scan_spec call. This was modelled as `k_mode` computed post-branch.
+
+**For the next session:**
+- `just_copy` (8124): ~125 lines, bidi node copying.
+- `just_reverse` (8250): ~130 lines, bidi node reversal.
+- `handle_right_brace` (8578): very large — many group cases (~400 lines).
+
+---
+
 ## Session 52 — 2026-04-26 — show_save_groups + do_assignments
 
 **Goal:** Two more functions from xetex-xetex0.c.

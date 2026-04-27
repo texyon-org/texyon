@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 52.
+Last updated: session 53.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 52.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 10747 |     33 | multiple (see below)              | IN PROGRESS — 88% |
+| xetex-xetex0.c               | 10386 |     29 | multiple (see below)              | IN PROGRESS — 90% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -442,14 +442,17 @@ New Rust module `src/save.rs` created for save-stack management.
 |162| `fin_align`               |        8040 | `src/scan.rs`   | MIGRATED (session 51, 97f42b9a) |
 |163| `show_save_groups`        |        7752 | `src/scan.rs`   | MIGRATED (session 52, 0963a923) |
 |164| `do_assignments`          |       10745 | `src/scan.rs`   | MIGRATED (session 52, 04e4888a) |
+|165| `vert_break`              |        7725 | `src/scan.rs`   | MIGRATED (session 53, 0d1c6960) |
+|166| `vsplit`                  |        7727 | `src/scan.rs`   | MIGRATED (session 53, 9c2a6546) |
+|167| `box_end`                 |        7797 | `src/scan.rs`   | MIGRATED (session 53, 32d30dd9) |
+|168| `begin_box`               |        7794 | `src/scan.rs`   | MIGRATED (session 53, bf5b0f45) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `handle_right_brace` (8843): very large — many group cases.
-- `just_copy` (8389) / `just_reverse` (8516): bidi node copying — complex.
-- `vert_break` (7754): medium (~135 lines).
-- `show_info` (7717): likely small.
+- `handle_right_brace` (8578): very large — many group cases.
+- `just_copy` (8124) / `just_reverse` (8250): bidi node copying — complex.
+- `just_copy` and `just_reverse` are called from `main_control` and `do_extension`.
 
 ## How to maintain this file
 
