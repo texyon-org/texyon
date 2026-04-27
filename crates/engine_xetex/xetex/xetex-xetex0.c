@@ -7790,6 +7790,8 @@ extra_right_brace(void)
 /* box_end: translated to Rust in src/scan.rs */
 
 
+/* begin_box: translated to Rust in src/scan.rs */
+#if 0
 void
 begin_box(int32_t box_context)
 {
@@ -7974,7 +7976,7 @@ begin_box(int32_t box_context)
 
     box_end(box_context);
 }
-
+#endif
 
 /* scan_box: translated to Rust in src/scan.rs */
 

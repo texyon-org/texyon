@@ -6908,8 +6908,6 @@ pub unsafe extern "C" fn scan_box(box_context: i32) {
     const HRULE: u8 = 36;          // xetex_format.h:274
     const VRULE: u8 = 35;          // xetex_format.h:273
     const LEADER_FLAG: i32 = 0x40010001; // xetex-constants.h:375
-    extern "C" { fn begin_box(box_context: i32); }
-
     loop {
         get_x_token();
         if cur_cmd() != SPACER && cur_cmd() != RELAX { break; }
@@ -8240,4 +8238,210 @@ pub unsafe extern "C" fn box_end(box_context: i32) {
             ship_out(cur_box());
         }
     }
+}
+
+// translated from xetex-xetex0.c:7794 (begin_box)
+#[no_mangle]
+pub unsafe extern "C" fn begin_box(box_context: i32) {
+    use crate::globals::{
+        cur_box, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode,
+        cur_list_tail, cur_ptr, hi_mem_min, set_cur_box, set_cur_list_aux_b32s0,
+        set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_tail, set_cur_val,
+        set_save_stack_b32s1,
+    };
+    use crate::mem::TEX_NULL;
+
+    extern "C" {
+        fn copy_node_list(p: i32) -> i32;
+    }
+
+    const BOX_CODE: i32 = 0;           // xetex_format.h:480
+    const COPY_CODE: i32 = 1;          // xetex_format.h:481
+    const LAST_BOX_CODE: i32 = 2;      // xetex_format.h:482
+    const VSPLIT_CODE_I: i32 = 3;      // xetex_format.h:483
+    const BOX_FLAG: i32 = 0x4000_0000; // xetex-constants.h:372
+    const HLIST_NODE: u16 = 0;         // xetex_format.h:380
+    const VLIST_NODE: u16 = 1;         // xetex_format.h:381
+    const DISC_NODE: u16 = 7;          // xetex_format.h:387
+    const MATH_NODE: u16 = 9;          // xetex_format.h:389
+    const MMODE: i16 = 207;            // xetex_format.h:370
+    const VMODE: i16 = 1;              // xetex_format.h:368
+    const HMODE: i16 = 104;            // xetex_format.h:369
+    const BEGIN_M_CODE: u16 = 2;       // xetex_format.h:436
+    const END_M_CODE: u16 = 3;         // xetex_format.h:437
+    const HBOX_GROUP: u8 = 2;          // xetex-constants.h:154
+    const ADJUSTED_HBOX_GROUP: u8 = 3; // xetex-constants.h:155
+    const VBOX_GROUP: u8 = 4;          // xetex-constants.h:156
+    const VTOP_GROUP: u8 = 5;          // xetex-constants.h:157
+    const EVERY_HBOX_TEXT: u16 = 11;   // xetex-constants.h:210
+    const EVERY_VBOX_TEXT: u16 = 12;   // xetex-constants.h:211
+    const IGNORE_DEPTH: i32 = -65_536_000; // xetex-constants.h:388
+    const BOX_BASE: i32 = 2_255_144;   // xetex_format.h:211
+    const LOCAL_BASE: i32 = 2_254_871; // xetex_format.h:208
+    const LOCAL_EVERY_HBOX: i32 = 5;   // xetex_format.h:177
+    const LOCAL_EVERY_VBOX: i32 = 6;   // xetex_format.h:178
+
+    match cur_chr() as i32 {
+        BOX_CODE => {
+            scan_register_num();
+            let v = cur_val();
+            if v < 256 {
+                set_cur_box(eqtb_b32s1(BOX_BASE + v));
+            } else {
+                crate::save::find_sa_element(4, v, false);
+                set_cur_box(if cur_ptr() == TEX_NULL { TEX_NULL } else { mem_b32s1(cur_ptr() + 1) });
+            }
+            if v < 256 {
+                set_eqtb_b32s1(BOX_BASE + v, TEX_NULL);
+            } else {
+                crate::save::find_sa_element(4, v, false);
+                if cur_ptr() != TEX_NULL {
+                    set_mem_b32s1(cur_ptr() + 1, TEX_NULL);
+                    set_mem_b32s0(cur_ptr() + 1, mem_b32s0(cur_ptr() + 1) + 1);
+                    crate::save::delete_sa_ref(cur_ptr());
+                }
+            }
+        }
+
+        COPY_CODE => {
+            scan_register_num();
+            let v = cur_val();
+            let q = if v < 256 {
+                eqtb_b32s1(BOX_BASE + v)
+            } else {
+                crate::save::find_sa_element(4, v, false);
+                if cur_ptr() == TEX_NULL { TEX_NULL } else { mem_b32s1(cur_ptr() + 1) }
+            };
+            set_cur_box(copy_node_list(q));
+        }
+
+        LAST_BOX_CODE => {
+            set_cur_box(TEX_NULL);
+
+            if cur_list_mode().abs() == MMODE {
+                you_cant();
+                set_help_ptr(1);
+                set_help_line(0, c"Sorry; this \\lastbox will be void.".as_ptr());
+                error();
+            } else if cur_list_mode() == VMODE && cur_list_head() == cur_list_tail() {
+                you_cant();
+                set_help_ptr(2);
+                set_help_line(1, c"Sorry...I usually can't take things from the current page.".as_ptr());
+                set_help_line(0, c"This \\lastbox will therefore be void.".as_ptr());
+                error();
+            } else {
+                let mut tx = cur_list_tail();
+                if tx < hi_mem_min() {
+                    if mem_b16s1(tx) == MATH_NODE && mem_b16s0(tx) == END_M_CODE {
+                        let mut r = cur_list_head();
+                        loop {
+                            let prev = r;
+                            r = mem_b32s1(prev);
+                            if r == tx { tx = prev; break; }
+                        }
+                    }
+                }
+                'last_box_done: {
+                    if tx < hi_mem_min() {
+                        let nt = mem_b16s1(tx);
+                        if nt == HLIST_NODE || nt == VLIST_NODE {
+                            let mut q = cur_list_head();
+                            let mut p = TEX_NULL;
+                            let mut r = TEX_NULL;
+                            let mut fm = false;
+                            loop {
+                                r = p;
+                                p = q;
+                                fm = false;
+                                if q < hi_mem_min() {
+                                    if mem_b16s1(q) == DISC_NODE {
+                                        for _ in 1..=mem_b16s0(q) {
+                                            p = mem_b32s1(p);
+                                        }
+                                        if p == tx { break 'last_box_done; }
+                                    } else if mem_b16s1(q) == MATH_NODE && mem_b16s0(q) == BEGIN_M_CODE {
+                                        fm = true;
+                                    }
+                                }
+                                q = mem_b32s1(p);
+                                if q == tx { break; }
+                            }
+                            let q2 = mem_b32s1(tx);
+                            set_mem_b32s1(p, q2);
+                            set_mem_b32s1(tx, TEX_NULL);
+                            if q2 == TEX_NULL {
+                                if fm {
+                                    crate::errors::confusion(c"tail1".as_ptr());
+                                } else {
+                                    set_cur_list_tail(p);
+                                }
+                            } else if fm {
+                                set_cur_list_tail(r);
+                                set_mem_b32s1(r, TEX_NULL);
+                                flush_node_list(p);
+                            }
+                            set_cur_box(tx);
+                            set_mem_b32s1(cur_box() + 4, 0);
+                        }
+                    }
+                }
+            }
+        }
+
+        VSPLIT_CODE_I => {
+            scan_register_num();
+            let n = cur_val();
+            if !scan_keyword(c"to".as_ptr()) {
+                error_here_with_diagnostic(c"Missing `to' inserted".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(2);
+                set_help_line(1, c"I'm working on `\\vsplit<box number> to <dimen>';".as_ptr());
+                set_help_line(0, c"will look for the <dimen> next.".as_ptr());
+                error();
+            }
+            scan_dimen(false, false, false);
+            set_cur_box(vsplit(n, cur_val()));
+        }
+
+        _ => {
+            let k = cur_chr() as i32 - 4;
+            set_save_stack_b32s1(save_ptr(), box_context);
+            if k == HMODE as i32 {
+                if box_context < BOX_FLAG && cur_list_mode().abs() == VMODE {
+                    scan_spec(ADJUSTED_HBOX_GROUP, true);
+                } else {
+                    scan_spec(HBOX_GROUP, true);
+                }
+            } else {
+                if k == VMODE as i32 {
+                    scan_spec(VBOX_GROUP, true);
+                } else {
+                    scan_spec(VTOP_GROUP, true);
+                    // k = VMODE for the nest push below
+                }
+                normal_paragraph();
+            }
+            crate::mem::push_nest();
+            // If k was adjusted to VTOP_GROUP branch: k was neither HMODE nor VMODE,
+            // so the else branch above ran and after scan_spec(VTOP_GROUP), we want k=VMODE.
+            let k_mode = if k != HMODE as i32 && k != VMODE as i32 { VMODE as i32 } else { k };
+            set_cur_list_mode(-(k_mode as i16));
+            if k_mode == VMODE as i32 {
+                set_cur_list_aux_b32s1(IGNORE_DEPTH);
+                let every_vbox = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_VBOX);
+                if every_vbox != TEX_NULL {
+                    begin_token_list(every_vbox, EVERY_VBOX_TEXT);
+                }
+            } else {
+                set_cur_list_aux_b32s0(1000);
+                let every_hbox = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_HBOX);
+                if every_hbox != TEX_NULL {
+                    begin_token_list(every_hbox, EVERY_HBOX_TEXT);
+                }
+            }
+            return;  // no box_end call for new-group cases
+        }
+    }
+
+    box_end(box_context);
 }
