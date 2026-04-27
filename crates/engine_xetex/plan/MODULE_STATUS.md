@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 53.
+Last updated: session 54.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 53.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 10386 |     29 | multiple (see below)              | IN PROGRESS — 90% |
+| xetex-xetex0.c               | 10200 |     25 | multiple (see below)              | IN PROGRESS — 91% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -446,13 +446,20 @@ New Rust module `src/save.rs` created for save-stack management.
 |166| `vsplit`                  |        7727 | `src/scan.rs`   | MIGRATED (session 53, 9c2a6546) |
 |167| `box_end`                 |        7797 | `src/scan.rs`   | MIGRATED (session 53, 32d30dd9) |
 |168| `begin_box`               |        7794 | `src/scan.rs`   | MIGRATED (session 53, bf5b0f45) |
+|169| `just_copy`               |        8029 | `src/scan.rs`   | MIGRATED (session 54, a6f7231b) |
+|170| `just_reverse`            |        8155 | `src/scan.rs`   | MIGRATED (session 54, a6f7231b) |
+|171| `handle_right_brace`      |        8265 | `src/scan.rs`   | MIGRATED (session 54, b6d9eca8) |
+|172| `char_pw`                 |        6968 | `src/scan.rs`   | MIGRATED (session 54, 978de7d8) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `handle_right_brace` (8578): very large — many group cases.
-- `just_copy` (8124) / `just_reverse` (8250): bidi node copying — complex.
-- `just_copy` and `just_reverse` are called from `main_control` and `do_extension`.
+- `do_extension` (8068): medium (~120 lines).
+- `prune_page_top` (9805): medium (~70 lines), already has extern "C" declared.
+- `do_marks` (9861): medium (~80 lines), already has extern "C" declared.
+- `close_files_and_terminate` (9766): medium (~40 lines).
+- `hpack` (7016): large, needed by linebreak and math.
+- `vpackage` (7468): large.
 
 ## How to maintain this file
 

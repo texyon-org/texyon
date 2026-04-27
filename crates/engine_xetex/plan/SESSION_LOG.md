@@ -32,6 +32,44 @@ template.
 
 ---
 
+## Session 54 — 2026-04-27 — just_copy, just_reverse, handle_right_brace, char_pw
+
+**Goal:** Translate the bidi node-copying functions, the right-brace handler, and char_pw.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 53
+
+**Work done:**
+- Added `LR_ptr`, `LR_problems`, `cur_dir`, `last_leftmost_char`, `last_rightmost_char` globals + accessors.
+- Added `set_page_tail`, `set_output_active`, `nest_tail`, `set_nest_tail` accessors to globals.rs.
+- Added extern "C" declarations for `do_marks`, `prune_page_top`, `ship_out`, `fin_mlist`, `build_choices`, `real_get_native_word_cp`.
+- Translated `just_copy` (8029, ~125 lines) → `src/scan.rs` (a6f7231b). Goto found/not_found modelled as `Option<i32>` from the match arm.
+- Translated `just_reverse` (8155, ~95 lines) → `src/scan.rs` (a6f7231b). Inner `goto done` modelled as `break 'done` on labeled loop.
+- Translated `handle_right_brace` (8265, ~215 lines, 16 group cases) → `src/scan.rs` (b6d9eca8).
+- Translated `char_pw` (6968, ~45 lines) → `src/scan.rs` (978de7d8). Uses `mem_node_addr` to pass `&mem[p]` to `real_get_native_word_cp`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 54
+- xetex-xetex0.c: ~25 C functions remaining.
+
+**Surprises / gotchas:**
+- `just_copy` LIGATURE_NODE case: `goto found` skips the word-copy loop. Modelled by setting `words = 0` before returning `Some(r)`.
+- `just_reverse`: line 8242 `goto done` after the while loop means the 3 lines after the loop (8243-8245) are dead code — never executed. They were omitted in Rust.
+- `char_pw`: `CHAR_NODE_font(p)` = `mem[p].b16.s1` (not `.b16.s3` as one might expect — the "type/font" field of a char node is stored in s1).
+- `handle_right_brace` MATH_GROUP: `mem[save_stack[save_ptr].b32.s1].b32 = mem[p+1].b32` — this copies both b32 fields (s0 and s1) at once. In Rust, split into two `set_mem_b32s0/s1` calls.
+
+**For the next session:**
+- `do_extension` (8068): medium — whatsit handlers.
+- `prune_page_top` (9805): medium, already has extern "C" declared.
+- `do_marks` (9861): medium, already has extern "C" declared.
+- `close_files_and_terminate` (9766): medium.
+
+---
+
 ## Session 53 — 2026-04-27 — vert_break, vsplit, box_end, begin_box
 
 **Goal:** Translate several medium-complexity functions from xetex-xetex0.c.
