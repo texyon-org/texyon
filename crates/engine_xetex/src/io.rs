@@ -234,6 +234,11 @@ pub unsafe extern "C" fn u_open_in(
     1
 }
 
+/// Wrapper so scan.rs can call `set_input_file_encoding` without re-declaring it.
+pub(crate) unsafe fn call_set_input_file_encoding(f: *mut libc::c_void, mode: i32, encoding_data: i32) {
+    set_input_file_encoding(f as *mut UFile, mode, encoding_data);
+}
+
 // ---------------------------------------------------------------------------
 // make_utf16_name
 // ---------------------------------------------------------------------------

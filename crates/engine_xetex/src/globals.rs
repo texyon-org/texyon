@@ -2002,6 +2002,8 @@ pub(crate) fn set_output_active(v: bool) { unsafe { raw::output_active = v; } }
 #[inline]
 pub(crate) fn random_seed() -> i32 { unsafe { raw::random_seed } }
 #[inline]
+pub(crate) fn set_random_seed(v: i32) { unsafe { raw::random_seed = v; } }
+#[inline]
 pub(crate) fn pdf_last_x_pos() -> i32 { unsafe { raw::pdf_last_x_pos } }
 #[inline]
 pub(crate) fn pdf_last_y_pos() -> i32 { unsafe { raw::pdf_last_y_pos } }
@@ -2015,8 +2017,16 @@ pub(crate) fn epochseconds() -> i32 {
     unsafe { raw::epochseconds }
 }
 #[inline]
+pub(crate) fn set_epochseconds(v: i32) {
+    unsafe { raw::epochseconds = v; }
+}
+#[inline]
 pub(crate) fn microseconds() -> i32 {
     unsafe { raw::microseconds }
+}
+#[inline]
+pub(crate) fn set_microseconds(v: i32) {
+    unsafe { raw::microseconds = v; }
 }
 
 // ---------------------------------------------------------------------------
