@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 54.
+Last updated: session 55.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 54.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               | 10200 |     25 | multiple (see below)              | IN PROGRESS — 91% |
+| xetex-xetex0.c               |  9559 |     21 | multiple (see below)              | IN PROGRESS — 93% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -450,16 +450,17 @@ New Rust module `src/save.rs` created for save-stack management.
 |170| `just_reverse`            |        8155 | `src/scan.rs`   | MIGRATED (session 54, a6f7231b) |
 |171| `handle_right_brace`      |        8265 | `src/scan.rs`   | MIGRATED (session 54, b6d9eca8) |
 |172| `char_pw`                 |        6968 | `src/scan.rs`   | MIGRATED (session 54, 978de7d8) |
+|173| `close_files_and_terminate` |      9722 | `src/scan.rs`   | MIGRATED (session 55, 5830f81c) |
+|174| `prune_page_top`          |        9761 | `src/scan.rs`   | MIGRATED (session 55, 5830f81c) |
+|175| `do_marks`                |        9817 | `src/scan.rs`   | MIGRATED (session 55, 5830f81c) |
+|176| `do_extension`            |        8024 | `src/scan.rs`   | MIGRATED (session 55, bc4e9176) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: next candidates:
-- `do_extension` (8068): medium (~120 lines).
-- `prune_page_top` (9805): medium (~70 lines), already has extern "C" declared.
-- `do_marks` (9861): medium (~80 lines), already has extern "C" declared.
-- `close_files_and_terminate` (9766): medium (~40 lines).
-- `hpack` (7016): large, needed by linebreak and math.
-- `vpackage` (7468): large.
+- `hpack` (6972): large (~450 lines), needed by linebreak and math.
+- `vpackage` (7424): large (~220 lines).
+- `conv_toks` (5162): medium-large (~350 lines), string conversion tokens.
 
 ## How to maintain this file
 

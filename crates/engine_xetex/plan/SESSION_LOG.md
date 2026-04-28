@@ -32,6 +32,43 @@ template.
 
 ---
 
+## Session 55 — 2026-04-28 — close_files_and_terminate, prune_page_top, do_marks, do_extension
+
+**Goal:** Translate the file-termination function, page-top pruning, mark-tracking recursion, and the whatsit extension dispatcher.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 54
+
+**Work done:**
+- Added `write_open[18]` global + accessor to globals.rs; added setters for `random_seed`, `epochseconds`, `microseconds`.
+- Added extern "C" declarations for `ttstub_output_close`, `ttstub_output_putc`, `finalize_dvi_file`, `synctex_terminate`, `out_what`, `load_picture`, `measure_native_glyph`, `get_encoding_mode_and_info` to scan.rs.
+- Added `call_set_input_file_encoding` wrapper in io.rs to avoid clashing-extern-declarations warning.
+- Translated `close_files_and_terminate` (9722, ~40 lines) → scan.rs (5830f81c).
+- Translated `prune_page_top` (9761, ~70 lines) → scan.rs (5830f81c).
+- Translated `do_marks` (9817, ~80 lines, recursive tree traversal) → scan.rs (5830f81c).
+- Translated `do_extension` (8024, ~165 lines, 13 switch cases) → scan.rs (bc4e9176).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 55
+- xetex-xetex0.c: ~21 C functions remaining.
+
+**Surprises / gotchas:**
+- `do_extension` GLYPH_CODE case: `set_native_glyph_metrics(p, g)` is a macro that expands to `measure_native_glyph(&mem[p], g)`. Used `mem_ptr(cur_list_tail())` to get the raw pointer.
+- `do_marks` recursive: Rust calls itself directly. The `cur_ptr` global is used as a traversal cursor between recursive levels (matches the C exactly).
+- `close_files_and_terminate` uses `write_open[18]` (18-element array, indices 0–15 used here). Added accessor.
+- `prune_page_top` calls `new_skip_param(GLUE_PAR__split_top_skip)` which sets `temp_ptr` as a side effect; the function then reads `mem[temp_ptr + 1].b32.s1` to adjust the glue stretch.
+
+**For the next session:**
+- `hpack` (6972): large (~450 lines), the horizontal packer — complex but well-defined.
+- `vpackage` (7424): large (~220 lines).
+- `conv_toks` (5162): medium-large (~350 lines), string conversion for `\the` commands.
+
+---
+
 ## Session 54 — 2026-04-27 — just_copy, just_reverse, handle_right_brace, char_pw
 
 **Goal:** Translate the bidi node-copying functions, the right-brace handler, and char_pw.
