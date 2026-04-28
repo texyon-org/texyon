@@ -91,7 +91,6 @@ extern "C" {
     fn synctex_start_input();
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
     fn hpack(p: i32, w: i32, m: i16) -> i32;
-    fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32;
 
     fn flush_math();
     fn resume_after_display();
@@ -9553,4 +9552,234 @@ pub unsafe extern "C" fn do_extension() {
             crate::errors::confusion(c"ext1".as_ptr());
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// vpackage
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:132, 173–175, 182, 275, 281, 422
+const BOX_NODE_SIZE_VP: i32 = 8;
+const NORMAL_VP: usize = 0;
+const FIL_VP: usize = 1;
+const FILL_VP: usize = 2;
+const FILLL_VP: usize = 3;
+const STRETCHING_VP: u16 = 1;
+const SHRINKING_VP: u16 = 2;
+const A_LEADERS_VP: u16 = 100;
+// xetex_format.h:381, 383–384, 466–467
+const VLIST_NODE_VP: u16 = 1;
+const RULE_NODE_VP: u16 = 2;
+const WHATSIT_NODE_VP: u16 = 8;
+const PIC_NODE_VP: u16 = 43;
+const PDF_NODE_VP: u16 = 44;
+const KERN_NODE_VP: u16 = 11;
+const GLUE_NODE_VP: u16 = 10;
+// xetex_format.h:71, 106, 131
+const INT_PAR_XETEX_UPWARDS_VP: i32 = 71;
+const INT_PAR_VBADNESS_VP: i32 = 27;
+const DIMEN_PAR_VFUZZ_VP: i32 = 9;
+const INT_BASE_VP: i32 = 7_826_729;
+const DIMEN_BASE_VP: i32 = 8_941_180; // xetex_format.h:222
+// xetex_format.h:297 (ADDITIONAL = 1 already defined as ADDITIONAL in this file's context)
+
+/// translated from xetex-xetex0.c:7424 (vpackage)
+#[no_mangle]
+pub unsafe extern "C" fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
+    use crate::globals::{
+        last_badness, set_last_badness, total_stretch, set_total_stretch,
+        total_shrink, set_total_shrink, hi_mem_min, output_active, pack_begin_line, line,
+        mem_gr, set_mem_gr,
+    };
+    use crate::mem::TEX_NULL;
+
+    const ADDITIONAL_VP: i16 = 1;
+
+    set_last_badness(0);
+    let r = crate::mem::get_node(BOX_NODE_SIZE_VP);
+    set_mem_b16s1(r, VLIST_NODE_VP);
+    if eqtb_b32s1(INT_BASE_VP + INT_PAR_XETEX_UPWARDS_VP) > 0 {
+        set_mem_b16s0(r, 1);
+    } else {
+        set_mem_b16s0(r, 0);
+    }
+    set_mem_b32s1(r + 4, 0);
+    set_mem_b32s1(r + 5, p);
+
+    let mut w: i32 = 0;
+    let mut d: i32 = 0;
+    let mut x: i32 = 0;
+    set_total_stretch(NORMAL_VP, 0);
+    set_total_shrink(NORMAL_VP, 0);
+    set_total_stretch(FIL_VP, 0);
+    set_total_shrink(FIL_VP, 0);
+    set_total_stretch(FILL_VP, 0);
+    set_total_shrink(FILL_VP, 0);
+    set_total_stretch(FILLL_VP, 0);
+    set_total_shrink(FILLL_VP, 0);
+
+    let mut p = p;
+    while p != TEX_NULL {
+        if p >= hi_mem_min() {
+            // is_char_node(p): cannot appear in vlist
+            crate::errors::confusion(c"vpack".as_ptr());
+        } else {
+            match mem_b16s1(p) {
+                0 | 1 | 2 | 13 => {
+                    // HLIST_NODE, VLIST_NODE, RULE_NODE, UNSET_NODE
+                    x += d + mem_b32s1(p + 3);
+                    d = mem_b32s1(p + 2);
+                    let s = if mem_b16s1(p) >= RULE_NODE_VP { 0 } else { mem_b32s1(p + 4) };
+                    if mem_b32s1(p + 1) + s > w {
+                        w = mem_b32s1(p + 1) + s;
+                    }
+                }
+                WHATSIT_NODE_VP => {
+                    let sub = mem_b16s0(p);
+                    if sub == PIC_NODE_VP || sub == PDF_NODE_VP {
+                        x += d + mem_b32s1(p + 3);
+                        d = mem_b32s1(p + 2);
+                        if mem_b32s1(p + 1) > w {
+                            w = mem_b32s1(p + 1);
+                        }
+                    }
+                }
+                GLUE_NODE_VP => {
+                    x += d;
+                    d = 0;
+                    let g = mem_b32s0(p + 1);
+                    x += mem_b32s1(g + 1);
+                    let o = mem_b16s1(g) as usize;
+                    set_total_stretch(o, total_stretch(o) + mem_b32s1(g + 2));
+                    let o = mem_b16s0(g) as usize;
+                    set_total_shrink(o, total_shrink(o) + mem_b32s1(g + 3));
+                    if mem_b16s0(p) >= A_LEADERS_VP {
+                        let g = mem_b32s1(p + 1);
+                        if mem_b32s1(g + 1) > w {
+                            w = mem_b32s1(g + 1);
+                        }
+                    }
+                }
+                KERN_NODE_VP => {
+                    x += d + mem_b32s1(p + 1);
+                    d = 0;
+                }
+                _ => {}
+            }
+        }
+        p = mem_b32s1(p); // LLIST_link(p)
+    }
+
+    set_mem_b32s1(r + 1, w);
+    if d > l {
+        x += d - l;
+        set_mem_b32s1(r + 2, l);
+    } else {
+        set_mem_b32s1(r + 2, d);
+    }
+
+    let h = if m == ADDITIONAL_VP { x + h } else { h };
+    set_mem_b32s1(r + 3, h);
+    x = h - x;
+
+    // Each path below either returns early (goto exit) or sets do_common_ending
+    let do_common_ending: bool = 'glue: {
+        if x == 0 {
+            set_mem_b16s1(r + 5, 0); // NORMAL
+            set_mem_b16s0(r + 5, 0);
+            set_mem_gr(r + 6, 0.0);
+            break 'glue false; // goto exit
+        } else if x > 0 {
+            // stretching
+            let o: usize = if total_stretch(FILLL_VP) != 0 { FILLL_VP }
+                else if total_stretch(FILL_VP) != 0 { FILL_VP }
+                else if total_stretch(FIL_VP) != 0 { FIL_VP }
+                else { NORMAL_VP };
+            set_mem_b16s0(r + 5, o as u16);
+            set_mem_b16s1(r + 5, STRETCHING_VP);
+            if total_stretch(o) != 0 {
+                set_mem_gr(r + 6, x as f64 / total_stretch(o) as f64);
+            } else {
+                set_mem_b16s1(r + 5, 0); // NORMAL
+                set_mem_gr(r + 6, 0.0);
+            }
+            if o == NORMAL_VP && mem_b32s1(r + 5) != TEX_NULL {
+                set_last_badness(crate::helpers::badness(x, total_stretch(NORMAL_VP)));
+                if last_badness() > eqtb_b32s1(INT_BASE_VP + INT_PAR_VBADNESS_VP) {
+                    crate::output::print_ln();
+                    crate::output::diagnostic_begin_capture_warning_here();
+                    if last_badness() > 100 {
+                        crate::output::print_nl_cstr(c"Underfull".as_ptr());
+                    } else {
+                        crate::output::print_nl_cstr(c"Loose".as_ptr());
+                    }
+                    crate::output::print_cstr(c" \\vbox (badness ".as_ptr());
+                    crate::output::print_int(last_badness());
+                    break 'glue true; // goto common_ending
+                }
+            }
+            break 'glue false; // goto exit
+        } else {
+            // shrinking (x < 0)
+            let o: usize = if total_shrink(FILLL_VP) != 0 { FILLL_VP }
+                else if total_shrink(FILL_VP) != 0 { FILL_VP }
+                else if total_shrink(FIL_VP) != 0 { FIL_VP }
+                else { NORMAL_VP };
+            set_mem_b16s0(r + 5, o as u16);
+            set_mem_b16s1(r + 5, SHRINKING_VP);
+            if total_shrink(o) != 0 {
+                set_mem_gr(r + 6, (-(x as i64)) as f64 / total_shrink(o) as f64);
+            } else {
+                set_mem_b16s1(r + 5, 0); // NORMAL
+                set_mem_gr(r + 6, 0.0);
+            }
+            if total_shrink(o) < (-x) && o == NORMAL_VP && mem_b32s1(r + 5) != TEX_NULL {
+                set_last_badness(1_000_000);
+                set_mem_gr(r + 6, 1.0);
+                if (-x) - total_shrink(NORMAL_VP) > eqtb_b32s1(DIMEN_BASE_VP + DIMEN_PAR_VFUZZ_VP)
+                    || eqtb_b32s1(INT_BASE_VP + INT_PAR_VBADNESS_VP) < 100
+                {
+                    crate::output::print_ln();
+                    crate::output::diagnostic_begin_capture_warning_here();
+                    crate::output::print_nl_cstr(c"Overfull \\vbox (".as_ptr());
+                    crate::output::print_scaled((-x) - total_shrink(NORMAL_VP));
+                    crate::output::print_cstr(c"pt too high".as_ptr());
+                    break 'glue true; // goto common_ending
+                }
+            } else if o == NORMAL_VP && mem_b32s1(r + 5) != TEX_NULL {
+                set_last_badness(crate::helpers::badness(-x, total_shrink(NORMAL_VP)));
+                if last_badness() > eqtb_b32s1(INT_BASE_VP + INT_PAR_VBADNESS_VP) {
+                    crate::output::print_ln();
+                    crate::output::diagnostic_begin_capture_warning_here();
+                    crate::output::print_nl_cstr(c"Tight \\vbox (badness ".as_ptr());
+                    crate::output::print_int(last_badness());
+                    break 'glue true; // goto common_ending
+                }
+            }
+            break 'glue false; // goto exit
+        }
+    };
+
+    if do_common_ending {
+        // common_ending:
+        if output_active() {
+            crate::output::print_cstr(c") has occurred while \\output is active".as_ptr());
+        } else {
+            if pack_begin_line() != 0 {
+                crate::output::print_cstr(c") in alignment at lines ".as_ptr());
+                crate::output::print_int(pack_begin_line().abs());
+                crate::output::print_cstr(c"--".as_ptr());
+            } else {
+                crate::output::print_cstr(c") detected at line ".as_ptr());
+            }
+            crate::output::print_int(line());
+            crate::output::print_ln();
+        }
+        capture_to_diagnostic(std::ptr::null_mut());
+        crate::output::begin_diagnostic();
+        show_box(r);
+        crate::output::end_diagnostic(true);
+    }
+
+    r
 }

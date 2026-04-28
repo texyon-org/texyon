@@ -1970,6 +1970,8 @@ pub(crate) fn set_dead_cycles(v: i32) { unsafe { raw::dead_cycles = v; } }
 #[inline]
 pub(crate) fn last_badness() -> i32 { unsafe { raw::last_badness } }
 #[inline]
+pub(crate) fn set_last_badness(v: i32) { unsafe { raw::last_badness = v; } }
+#[inline]
 pub(crate) fn page_tail() -> i32 { unsafe { raw::page_tail } }
 #[inline]
 pub(crate) fn set_page_tail(v: i32) { unsafe { raw::page_tail = v; } }
