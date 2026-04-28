@@ -9718,34 +9718,7 @@ append_normal_space:
 /* give_err_help: translated to Rust in src/errors.rs */
 
 
-void
-close_files_and_terminate(void)
-{
-    int32_t k;
-
-    for (k = 0; k <= 15; k++) {
-        if (write_open[k])
-            ttstub_output_close(write_file[k]);
-    }
-
-    INTPAR(new_line_char) = -1;
-
-    finalize_dvi_file();
-    synctex_terminate(log_opened);
-
-    if (log_opened) {
-        ttstub_output_putc (log_file, '\n');
-        ttstub_output_close (log_file);
-        selector = selector - 2;
-        if (selector == SELECTOR_TERM_ONLY) {
-            print_nl_cstr("Transcript written on ");
-            print(texmf_log_name);
-            print_char('.');
-        }
-    }
-
-    print_ln();
-}
+/* close_files_and_terminate: translated to Rust in src/scan.rs */
 
 
 /* flush_str: translated to Rust in src/string_pool.rs */
@@ -9757,150 +9730,10 @@ close_files_and_terminate(void)
 /* compare_strings: translated to Rust in src/scan.rs */
 
 
-int32_t
-prune_page_top(int32_t p, bool s)
-{
-    int32_t prev_p;
-    int32_t q, r = TEX_NULL;
-
-    prev_p = TEMP_HEAD;
-    mem[TEMP_HEAD].b32.s1 = p;
-
-    while (p != TEX_NULL) {
-        switch (mem[p].b16.s1) {
-        case HLIST_NODE:
-        case VLIST_NODE:
-        case RULE_NODE:
-            q = new_skip_param(GLUE_PAR__split_top_skip);
-            mem[prev_p].b32.s1 = q;
-            mem[q].b32.s1 = p;
-            if (mem[temp_ptr + 1].b32.s1 > mem[p + 3].b32.s1)
-                mem[temp_ptr + 1].b32.s1 = mem[temp_ptr + 1].b32.s1 - mem[p + 3].b32.s1;
-            else
-                mem[temp_ptr + 1].b32.s1 = 0;
-            p = TEX_NULL;
-            break;
-        case WHATSIT_NODE:
-        case MARK_NODE:
-        case INS_NODE:
-            prev_p = p;
-            p = mem[prev_p].b32.s1;
-            break;
-        case GLUE_NODE:
-        case KERN_NODE:
-        case PENALTY_NODE:
-            q = p;
-            p = mem[q].b32.s1;
-            mem[q].b32.s1 = TEX_NULL;
-            mem[prev_p].b32.s1 = p;
-            if (s) {
-                if (disc_ptr[VSPLIT_CODE] == TEX_NULL)
-                    disc_ptr[VSPLIT_CODE] = q;
-                else
-                    mem[r].b32.s1 = q;
-                r = q;
-            } else {
-                flush_node_list(q);
-            }
-            break;
-        default:
-            confusion("pruning");
-            break;
-        }
-    }
-
-    return mem[TEMP_HEAD].b32.s1;
-}
+/* prune_page_top: translated to Rust in src/scan.rs */
 
 
-bool
-do_marks(small_number a, small_number l, int32_t q)
-{
-    small_number i;
-
-    if (l < 4) {
-        for (i = 0; i <= 15; i++) {
-            if (odd(i))
-                cur_ptr = mem[q + (i / 2) + 1].b32.s1;
-            else
-                cur_ptr = mem[q + (i / 2) + 1].b32.s0;
-
-            if (cur_ptr != TEX_NULL) {
-                if (do_marks(a, l + 1, cur_ptr)) {
-                    if (odd(i))
-                        mem[q + (i / 2) + 1].b32.s1 = TEX_NULL;
-                    else
-                        mem[q + (i / 2) + 1].b32.s0 = TEX_NULL;
-                    mem[q].b16.s0--;
-                }
-            }
-        }
-
-        if (mem[q].b16.s0 == 0) {
-            free_node(q, INDEX_NODE_SIZE);
-            q = TEX_NULL;
-        }
-    } else {
-        switch (a) { /*1614: */
-        case VSPLIT_INIT:
-            if (mem[q + 2].b32.s1 != TEX_NULL) {
-                delete_token_ref(mem[q + 2].b32.s1);
-                mem[q + 2].b32.s1 = TEX_NULL;
-                delete_token_ref(mem[q + 3].b32.s0);
-                mem[q + 3].b32.s0 = TEX_NULL;
-            }
-            break;
-
-        case FIRE_UP_INIT:
-            if (mem[q + 2].b32.s0 != TEX_NULL) {
-                if (mem[q + 1].b32.s0 != TEX_NULL)
-                    delete_token_ref(mem[q + 1].b32.s0);
-                delete_token_ref(mem[q + 1].b32.s1);
-                mem[q + 1].b32.s1 = TEX_NULL;
-                if (mem[mem[q + 2].b32.s0].b32.s1 == TEX_NULL) {
-                    delete_token_ref(mem[q + 2].b32.s0);
-                    mem[q + 2].b32.s0 = TEX_NULL;
-                } else
-                    mem[mem[q + 2].b32.s0].b32.s0++;
-                mem[q + 1].b32.s0 = mem[q + 2].b32.s0;
-            }
-            break;
-
-        case FIRE_UP_DONE:
-            if ((mem[q + 1].b32.s0 != TEX_NULL) && (mem[q + 1].b32.s1 == TEX_NULL)) {
-                mem[q + 1].b32.s1 = mem[q + 1].b32.s0;
-                mem[mem[q + 1].b32.s0].b32.s0++;
-            }
-            break;
-
-        case DESTROY_MARKS:
-            for (i = TOP_MARK_CODE; i <= SPLIT_BOT_MARK_CODE; i++) {
-                if (odd(i))
-                    cur_ptr = mem[q + (i / 2) + 1].b32.s1;
-                else
-                    cur_ptr = mem[q + (i / 2) + 1].b32.s0;
-
-                if (cur_ptr != TEX_NULL) {
-                    delete_token_ref(cur_ptr);
-                    if (odd(i))
-                        mem[q + (i / 2) + 1].b32.s1 = TEX_NULL;
-                    else
-                        mem[q + (i / 2) + 1].b32.s0 = TEX_NULL;
-                }
-            }
-            break;
-        }
-
-        if (mem[q + 2].b32.s0 == TEX_NULL) {
-            if (mem[q + 3].b32.s0 == TEX_NULL) {
-                free_node(q, MARK_CLASS_NODE_SIZE);
-                q = TEX_NULL;
-            }
-        }
-    }
-
-    return (q == TEX_NULL);
-}
+/* do_marks: translated to Rust in src/scan.rs */
 
 
 /* do_assignments: translated to Rust in src/scan.rs */

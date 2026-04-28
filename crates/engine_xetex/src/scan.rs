@@ -24,6 +24,7 @@ use crate::globals::{
     char_base_entry, font_info_b16, cur_list_mode, cur_group,
     active_width, set_active_width, set_best_height_plus_depth,
     mem_word, set_mem_word, mem_b16s3, set_mem_ptr,
+    write_open, texmf_log_name, temp_ptr,
 };
 use crate::mem::new_rule;
 
@@ -83,9 +84,7 @@ extern "C" {
     fn count_pdf_file_pages() -> i32;
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
     fn new_spec(p: i32) -> i32;
-    fn do_marks(a: i16, l: i16, q: i32) -> bool;
     fn real_get_native_word_cp(node: *mut std::ffi::c_void, side: libc::c_int) -> i32;
-    fn prune_page_top(p: i32, s: bool) -> i32;
     fn ship_out(p: i32);
     fn fin_mlist(p: i32) -> i32;
     fn build_choices();
@@ -96,6 +95,10 @@ extern "C" {
 
     fn flush_math();
     fn resume_after_display();
+    fn ttstub_output_close(handle: usize) -> libc::c_int;
+    fn ttstub_output_putc(handle: usize, c: i32) -> i32;
+    fn finalize_dvi_file();
+    fn synctex_terminate(log_opened: bool);
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -9089,4 +9092,228 @@ pub unsafe extern "C" fn handle_right_brace() {
             crate::errors::confusion(c"rightbrace".as_ptr());
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// close_files_and_terminate
+// ---------------------------------------------------------------------------
+
+// INT_BASE + INT_PAR__new_line_char (xetex_format.h:84).
+const INT_PAR_NEW_LINE_CHAR_CFT: i32 = 49;
+const INT_BASE_CFT: i32 = 7_826_729;
+const SELECTOR_TERM_ONLY_CFT: i32 = 17;
+
+/// translated from xetex-xetex0.c:9722 (close_files_and_terminate)
+#[no_mangle]
+pub unsafe extern "C" fn close_files_and_terminate() {
+    use crate::globals::{log_file, log_opened, write_file};
+
+    for k in 0usize..=15 {
+        if write_open(k) {
+            ttstub_output_close(write_file(k));
+        }
+    }
+
+    set_eqtb_b32s1(INT_BASE_CFT + INT_PAR_NEW_LINE_CHAR_CFT, -1);
+
+    finalize_dvi_file();
+    synctex_terminate(log_opened());
+
+    if log_opened() {
+        ttstub_output_putc(log_file(), b'\n' as i32);
+        ttstub_output_close(log_file());
+        set_selector(selector() - 2);
+        if selector() == SELECTOR_TERM_ONLY_CFT {
+            crate::output::print_nl_cstr(c"Transcript written on ".as_ptr());
+            crate::output::print(texmf_log_name());
+            crate::output::print_char(b'.' as i32);
+        }
+    }
+
+    crate::output::print_ln();
+}
+
+// ---------------------------------------------------------------------------
+// prune_page_top
+// ---------------------------------------------------------------------------
+
+// xetex_format.h:159
+const GLUE_PAR_SPLIT_TOP_SKIP_PPT: i16 = 10;
+const HLIST_NODE_PPT: u16 = 0;   // xetex_format.h:380
+const VLIST_NODE_PPT: u16 = 1;   // xetex_format.h:381
+const RULE_NODE_PPT: u16 = 2;    // xetex_format.h:382
+const WHATSIT_NODE_PPT: u16 = 8; // xetex_format.h:388
+const MARK_NODE_PPT: u16 = 4;    // xetex_format.h:384
+const INS_NODE_PPT: u16 = 3;     // xetex_format.h:383
+const GLUE_NODE_PPT: u16 = 10;   // xetex_format.h:390
+const KERN_NODE_PPT: u16 = 11;   // xetex_format.h:391
+const PENALTY_NODE_PPT: u16 = 12; // xetex_format.h:392
+const VSPLIT_CODE_PPT: usize = 3; // xetex_format.h:483
+
+/// translated from xetex-xetex0.c:9761 (prune_page_top)
+#[no_mangle]
+pub unsafe extern "C" fn prune_page_top(p: i32, s: bool) -> i32 {
+    use crate::globals::{disc_ptr, set_disc_ptr};
+    use crate::mem::TEX_NULL;
+    let mut p = p;
+    let mut prev_p;
+    let mut q;
+    let mut r = TEX_NULL;
+
+    prev_p = TEMP_HEAD;
+    set_mem_b32s1(TEMP_HEAD, p);
+
+    while p != TEX_NULL {
+        match mem_b16s1(p) {
+            HLIST_NODE_PPT | VLIST_NODE_PPT | RULE_NODE_PPT => {
+                q = crate::mem::new_skip_param(GLUE_PAR_SPLIT_TOP_SKIP_PPT);
+                set_mem_b32s1(prev_p, q);
+                set_mem_b32s1(q, p);
+                if mem_b32s1(temp_ptr() + 1) > mem_b32s1(p + 3) {
+                    set_mem_b32s1(temp_ptr() + 1, mem_b32s1(temp_ptr() + 1) - mem_b32s1(p + 3));
+                } else {
+                    set_mem_b32s1(temp_ptr() + 1, 0);
+                }
+                p = TEX_NULL;
+            }
+            WHATSIT_NODE_PPT | MARK_NODE_PPT | INS_NODE_PPT => {
+                prev_p = p;
+                p = mem_b32s1(prev_p);
+            }
+            GLUE_NODE_PPT | KERN_NODE_PPT | PENALTY_NODE_PPT => {
+                q = p;
+                p = mem_b32s1(q);
+                set_mem_b32s1(q, TEX_NULL);
+                set_mem_b32s1(prev_p, p);
+                if s {
+                    if disc_ptr(VSPLIT_CODE_PPT) == TEX_NULL {
+                        set_disc_ptr(VSPLIT_CODE_PPT, q);
+                    } else {
+                        set_mem_b32s1(r, q);
+                    }
+                    r = q;
+                } else {
+                    flush_node_list(q);
+                }
+            }
+            _ => {
+                crate::errors::confusion(c"pruning".as_ptr());
+            }
+        }
+    }
+
+    mem_b32s1(TEMP_HEAD)
+}
+
+// ---------------------------------------------------------------------------
+// do_marks
+// ---------------------------------------------------------------------------
+
+// xetex-constants.h:381–384
+const VSPLIT_INIT_DM: i16 = 0;
+const FIRE_UP_INIT_DM: i16 = 1;
+const FIRE_UP_DONE_DM: i16 = 2;
+const DESTROY_MARKS_DM: i16 = 3;
+// xetex_format.h:685, 689
+const TOP_MARK_CODE_DM: i16 = 0;
+const SPLIT_BOT_MARK_CODE_DM: i16 = 4;
+// xetex-constants.h:134, 123
+const INDEX_NODE_SIZE_DM: i32 = 33;
+const MARK_CLASS_NODE_SIZE_DM: i32 = 4;
+
+/// translated from xetex-xetex0.c:9817 (do_marks)
+#[no_mangle]
+pub unsafe extern "C" fn do_marks(a: i16, l: i16, q: i32) -> bool {
+    use crate::globals::{cur_ptr, set_cur_ptr};
+    use crate::mem::TEX_NULL;
+    let mut q = q;
+
+    if l < 4 {
+        for i in 0i16..=15 {
+            let cp = if i % 2 != 0 {
+                mem_b32s1(q + (i / 2) as i32 + 1)
+            } else {
+                mem_b32s0(q + (i / 2) as i32 + 1)
+            };
+            set_cur_ptr(cp);
+
+            if cur_ptr() != TEX_NULL {
+                if do_marks(a, l + 1, cur_ptr()) {
+                    if i % 2 != 0 {
+                        set_mem_b32s1(q + (i / 2) as i32 + 1, TEX_NULL);
+                    } else {
+                        set_mem_b32s0(q + (i / 2) as i32 + 1, TEX_NULL);
+                    }
+                    // mem[q].b16.s0-- (reference count of index node)
+                    set_mem_b16s0(q, mem_b16s0(q) - 1);
+                }
+            }
+        }
+
+        if mem_b16s0(q) == 0 {
+            crate::mem::free_node(q, INDEX_NODE_SIZE_DM);
+            q = TEX_NULL;
+        }
+    } else {
+        match a {
+            VSPLIT_INIT_DM => {
+                if mem_b32s1(q + 2) != TEX_NULL {
+                    crate::mem::delete_token_ref(mem_b32s1(q + 2));
+                    set_mem_b32s1(q + 2, TEX_NULL);
+                    crate::mem::delete_token_ref(mem_b32s0(q + 3));
+                    set_mem_b32s0(q + 3, TEX_NULL);
+                }
+            }
+            FIRE_UP_INIT_DM => {
+                if mem_b32s0(q + 2) != TEX_NULL {
+                    if mem_b32s0(q + 1) != TEX_NULL {
+                        crate::mem::delete_token_ref(mem_b32s0(q + 1));
+                    }
+                    crate::mem::delete_token_ref(mem_b32s1(q + 1));
+                    set_mem_b32s1(q + 1, TEX_NULL);
+                    let ref_ptr = mem_b32s0(q + 2);
+                    if mem_b32s1(ref_ptr) == TEX_NULL {
+                        crate::mem::delete_token_ref(ref_ptr);
+                        set_mem_b32s0(q + 2, TEX_NULL);
+                    } else {
+                        set_mem_b32s0(ref_ptr, mem_b32s0(ref_ptr) + 1);
+                    }
+                    set_mem_b32s0(q + 1, mem_b32s0(q + 2));
+                }
+            }
+            FIRE_UP_DONE_DM => {
+                if mem_b32s0(q + 1) != TEX_NULL && mem_b32s1(q + 1) == TEX_NULL {
+                    set_mem_b32s1(q + 1, mem_b32s0(q + 1));
+                    set_mem_b32s0(mem_b32s0(q + 1), mem_b32s0(mem_b32s0(q + 1)) + 1);
+                }
+            }
+            DESTROY_MARKS_DM => {
+                for i in TOP_MARK_CODE_DM..=SPLIT_BOT_MARK_CODE_DM {
+                    let cp = if i % 2 != 0 {
+                        mem_b32s1(q + (i / 2) as i32 + 1)
+                    } else {
+                        mem_b32s0(q + (i / 2) as i32 + 1)
+                    };
+                    set_cur_ptr(cp);
+
+                    if cur_ptr() != TEX_NULL {
+                        crate::mem::delete_token_ref(cur_ptr());
+                        if i % 2 != 0 {
+                            set_mem_b32s1(q + (i / 2) as i32 + 1, TEX_NULL);
+                        } else {
+                            set_mem_b32s0(q + (i / 2) as i32 + 1, TEX_NULL);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        if mem_b32s0(q + 2) == TEX_NULL && mem_b32s0(q + 3) == TEX_NULL {
+            crate::mem::free_node(q, MARK_CLASS_NODE_SIZE_DM);
+            q = TEX_NULL;
+        }
+    }
+
+    q == TEX_NULL
 }
