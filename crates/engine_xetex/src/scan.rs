@@ -6505,9 +6505,6 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
 // translated from xetex-xetex0.c:9799 (unpackage)
 #[no_mangle]
 pub unsafe extern "C" fn unpackage() {
-    extern "C" {
-        fn copy_node_list(p: i32) -> i32;
-    }
     const COPY_CODE: i32 = 1;           // xetex_format.h:481
     const HLIST_NODE: u16 = 0;          // xetex_format.h:380
     const VLIST_NODE: u16 = 1;          // xetex_format.h:381
@@ -8260,10 +8257,6 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
         set_save_stack_b32s1,
     };
     use crate::mem::TEX_NULL;
-
-    extern "C" {
-        fn copy_node_list(p: i32) -> i32;
-    }
 
     const BOX_CODE: i32 = 0;           // xetex_format.h:480
     const COPY_CODE: i32 = 1;          // xetex_format.h:481
@@ -11158,6 +11151,200 @@ pub unsafe extern "C" fn flush_node_list(mut p: i32) {
         }
         p = q;
     }
+}
+
+// ---------------------------------------------------------------------------
+// copy_node_list
+// ---------------------------------------------------------------------------
+
+// Node-type constants (xetex_format.h / xetex-constants.h).
+const HLIST_NODE_CNL: u16  =  0;
+const VLIST_NODE_CNL: u16  =  1;
+const RULE_NODE_CNL: u16   =  2;
+const INS_NODE_CNL: u16    =  3;
+const UNSET_NODE_CNL: u16  = 13;
+const WHATSIT_NODE_CNL: u16 = 8;
+const GLUE_NODE_CNL: u16   = 10;
+const KERN_NODE_CNL: u16   = 11;
+const MATH_NODE_CNL: u16   =  9;
+const PENALTY_NODE_CNL: u16 = 12;
+const MARGIN_KERN_NODE_CNL: u16 = 40;
+const LIGATURE_NODE_CNL: u16 = 6;
+const DISC_NODE_CNL: u16   =  7;
+const MARK_NODE_CNL: u16   =  4;
+const ADJUST_NODE_CNL: u16 =  5;
+// Whatsit subtypes.
+const OPEN_NODE_CNL: u16        =  0;
+const WRITE_NODE_CNL: u16       =  1;
+const SPECIAL_NODE_CNL: u16     =  3;
+const CLOSE_NODE_CNL: u16       =  2;
+const LANGUAGE_NODE_CNL: u16    =  4;
+const NATIVE_WORD_NODE_CNL: u16    = 40;
+const NATIVE_WORD_NODE_AT_CNL: u16 = 41;
+const GLYPH_NODE_CNL: u16       = 42;
+const PIC_NODE_CNL: u16         = 43;
+const PDF_NODE_CNL: u16         = 44;
+const PDF_SAVE_POS_NODE_CNL: u16 = 21;
+// Node sizes.
+const BOX_NODE_SIZE_CNL: i32   = 8;
+const RULE_NODE_SIZE_CNL: i32  = 5;
+const INS_NODE_SIZE_CNL: i32   = 5;
+const OPEN_NODE_SIZE_CNL: i32  = 3;
+const WRITE_NODE_SIZE_CNL: i32 = 2;
+const SMALL_NODE_SIZE_CNL: i32 = 2;
+const MEDIUM_NODE_SIZE_CNL: i32 = 3;
+const GLYPH_NODE_SIZE_CNL: i32 = 5;
+const PIC_NODE_SIZE_CNL: i32   = 9;
+const MARGIN_KERN_NODE_SIZE_CNL: i32 = 3;
+const MEMORY_WORD_SIZE_CNL: i32 = 8;
+// SYNCTEX_FIELD_SIZE = 1, so SYNCTEX_{tag,line}(p, BOX_NODE_SIZE) = mem[p+7].b32.{s0,s1}
+
+/// translated from xetex-xetex0.c:953 (copy_node_list)
+#[no_mangle]
+pub unsafe extern "C" fn copy_node_list(mut p: i32) -> i32 {
+    use crate::globals::{
+        avail, set_avail, hi_mem_min,
+        mem_b16s0, mem_b16s1, mem_b16s3,
+        mem_b32s0, mem_b32s1, set_mem_b32s0, set_mem_b32s1,
+        mem_ptr, set_mem_ptr, set_mem_b16s0,
+        mem_word, set_mem_word,
+    };
+    let h = crate::mem::get_avail();
+    let mut q = h;
+    while p != crate::mem::TEX_NULL {
+        let mut words = 1i32;
+        let mut r = 0i32;
+        if p >= hi_mem_min() {
+            r = crate::mem::get_avail();
+        } else {
+            match mem_b16s1(p) {
+                HLIST_NODE_CNL | VLIST_NODE_CNL | UNSET_NODE_CNL => {
+                    r = crate::mem::get_node(BOX_NODE_SIZE_CNL);
+                    // SYNCTEX_tag(r, BOX_NODE_SIZE) = SYNCTEX_tag(p, BOX_NODE_SIZE)
+                    set_mem_b32s0(r + 7, mem_b32s0(p + 7));
+                    // SYNCTEX_line(r, BOX_NODE_SIZE) = SYNCTEX_line(p, BOX_NODE_SIZE)
+                    set_mem_b32s1(r + 7, mem_b32s1(p + 7));
+                    set_mem_word(r + 6, mem_word(p + 6));
+                    set_mem_word(r + 5, mem_word(p + 5));
+                    set_mem_b32s1(r + 5, copy_node_list(mem_b32s1(p + 5)));
+                    words = 5;
+                }
+                RULE_NODE_CNL => {
+                    r = crate::mem::get_node(RULE_NODE_SIZE_CNL);
+                    words = RULE_NODE_SIZE_CNL - 1;
+                }
+                INS_NODE_CNL => {
+                    r = crate::mem::get_node(INS_NODE_SIZE_CNL);
+                    set_mem_word(r + 4, mem_word(p + 4));
+                    // GLUE_SPEC_ref_count(mem[p+4].b32.s1)++ = mem[mem[p+4].b32.s1].b32.s1++
+                    let spec = mem_b32s1(p + 4);
+                    set_mem_b32s1(spec, mem_b32s1(spec) + 1);
+                    set_mem_b32s0(r + 4, copy_node_list(mem_b32s0(p + 4)));
+                    words = INS_NODE_SIZE_CNL - 1;
+                }
+                WHATSIT_NODE_CNL => {
+                    match mem_b16s0(p) {
+                        OPEN_NODE_CNL => {
+                            r = crate::mem::get_node(OPEN_NODE_SIZE_CNL);
+                            words = OPEN_NODE_SIZE_CNL;
+                        }
+                        WRITE_NODE_CNL | SPECIAL_NODE_CNL => {
+                            // mem[mem[p+1].b32.s1].b32.s0++ (token list ref count)
+                            let tok = mem_b32s1(p + 1);
+                            set_mem_b32s0(tok, mem_b32s0(tok) + 1);
+                            r = crate::mem::get_node(WRITE_NODE_SIZE_CNL);
+                            words = WRITE_NODE_SIZE_CNL;
+                        }
+                        CLOSE_NODE_CNL | LANGUAGE_NODE_CNL => {
+                            r = crate::mem::get_node(SMALL_NODE_SIZE_CNL);
+                            words = SMALL_NODE_SIZE_CNL;
+                        }
+                        NATIVE_WORD_NODE_CNL | NATIVE_WORD_NODE_AT_CNL => {
+                            let sz = mem_b16s3(p + 4) as i32;
+                            r = crate::mem::get_node(sz);
+                            let mut w = sz;
+                            while w > 0 {
+                                w -= 1;
+                                set_mem_word(r + w, mem_word(p + w));
+                            }
+                            set_mem_ptr(r + 5, std::ptr::null_mut());
+                            set_mem_b16s0(r + 4, 0);
+                            crate::mem::copy_native_glyph_info(p, r);
+                            words = 0;
+                        }
+                        GLYPH_NODE_CNL => {
+                            r = crate::mem::get_node(GLYPH_NODE_SIZE_CNL);
+                            words = GLYPH_NODE_SIZE_CNL;
+                        }
+                        PIC_NODE_CNL | PDF_NODE_CNL => {
+                            let path_len = mem_b16s1(p + 4) as i32;
+                            let sz = PIC_NODE_SIZE_CNL
+                                + (path_len + MEMORY_WORD_SIZE_CNL - 1) / MEMORY_WORD_SIZE_CNL;
+                            r = crate::mem::get_node(sz);
+                            words = sz;
+                        }
+                        PDF_SAVE_POS_NODE_CNL => {
+                            r = crate::mem::get_node(SMALL_NODE_SIZE_CNL);
+                        }
+                        _ => { crate::errors::confusion(c"ext2".as_ptr()); }
+                    }
+                }
+                GLUE_NODE_CNL => {
+                    r = crate::mem::get_node(MEDIUM_NODE_SIZE_CNL);
+                    // GLUE_SPEC_ref_count(mem[p+1].b32.s0)++ = mem[mem[p+1].b32.s0].b32.s1++
+                    let spec = mem_b32s0(p + 1);
+                    set_mem_b32s1(spec, mem_b32s1(spec) + 1);
+                    set_mem_b32s0(r + 2, mem_b32s0(p + 2));
+                    set_mem_b32s1(r + 2, mem_b32s1(p + 2));
+                    set_mem_b32s0(r + 1, mem_b32s0(p + 1));
+                    set_mem_b32s1(r + 1, copy_node_list(mem_b32s1(p + 1)));
+                }
+                KERN_NODE_CNL | MATH_NODE_CNL | PENALTY_NODE_CNL => {
+                    r = crate::mem::get_node(MEDIUM_NODE_SIZE_CNL);
+                    words = MEDIUM_NODE_SIZE_CNL;
+                }
+                MARGIN_KERN_NODE_CNL => {
+                    r = crate::mem::get_node(MARGIN_KERN_NODE_SIZE_CNL);
+                    words = MARGIN_KERN_NODE_SIZE_CNL;
+                }
+                LIGATURE_NODE_CNL => {
+                    r = crate::mem::get_node(SMALL_NODE_SIZE_CNL);
+                    set_mem_word(r + 1, mem_word(p + 1));
+                    set_mem_b32s1(r + 1, copy_node_list(mem_b32s1(p + 1)));
+                }
+                DISC_NODE_CNL => {
+                    r = crate::mem::get_node(SMALL_NODE_SIZE_CNL);
+                    set_mem_b32s0(r + 1, copy_node_list(mem_b32s0(p + 1)));
+                    set_mem_b32s1(r + 1, copy_node_list(mem_b32s1(p + 1)));
+                }
+                MARK_NODE_CNL => {
+                    r = crate::mem::get_node(SMALL_NODE_SIZE_CNL);
+                    // mem[mem[p+1].b32.s1].b32.s0++ (token list ref count)
+                    let tok = mem_b32s1(p + 1);
+                    set_mem_b32s0(tok, mem_b32s0(tok) + 1);
+                    words = SMALL_NODE_SIZE_CNL;
+                }
+                ADJUST_NODE_CNL => {
+                    r = crate::mem::get_node(SMALL_NODE_SIZE_CNL);
+                    set_mem_b32s1(r + 1, copy_node_list(mem_b32s1(p + 1)));
+                }
+                _ => { crate::errors::confusion(c"copying".as_ptr()); }
+            }
+        }
+        let mut w = words;
+        while w > 0 {
+            w -= 1;
+            set_mem_word(r + w, mem_word(p + w));
+        }
+        set_mem_b32s1(q, r);
+        q = r;
+        p = mem_b32s1(p);
+    }
+    set_mem_b32s1(q, crate::mem::TEX_NULL);
+    let result = mem_b32s1(h);
+    set_mem_b32s1(h, avail());
+    set_avail(h);
+    result
 }
 
 // ---------------------------------------------------------------------------

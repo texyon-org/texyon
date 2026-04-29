@@ -950,6 +950,8 @@ flush_node_list(int32_t p)
 #endif
 
 
+/* copy_node_list: translated to Rust in src/scan.rs */
+#if 0
 int32_t
 copy_node_list(int32_t p)
 {
@@ -1109,6 +1111,7 @@ copy_node_list(int32_t p)
     avail = h;
     return q;
 }
+#endif
 
 
 /* print_mode translated to Rust (src/output.rs). */
