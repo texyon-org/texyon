@@ -69,6 +69,7 @@ cargo test -p tectonic --test tex-outputs
 |      53 | 2026-04-27 |     29 |    29 |     0 | vert_break (~135 lines, goto → Next enum + labeled loop), vsplit (~102 lines), box_end (~90 lines), begin_box (~180 lines, goto → labeled block break). All 4 suites pass. |
 |      54 | 2026-04-27 |     29 |    29 |     0 | just_copy (~125 lines, goto → Option<i32>), just_reverse (~95 lines, goto done → break 'done), handle_right_brace (~215 lines, 16 match arms), char_pw (~45 lines). All 4 suites pass. |
 |      55 | 2026-04-28 |     29 |    29 |     0 | close_files_and_terminate (~40 lines), prune_page_top (~70 lines), do_marks (~80 lines, recursive), do_extension (~165 lines, 13 switch cases). All 4 suites pass. |
+|      56 | 2026-04-28 |     29 |    29 |     0 | vpackage (~220 lines), hpack (~450 lines, NATIVE_WORD_NODE merging, bidi). Fixed SIGSEGV: mem_node_addr not mem_ptr for measure_native_node. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -134,6 +135,7 @@ Passed count below the previous session's recorded value.
 |      53 |29,700 |                  ~17200 |      ~63.2% |
 |      54 |29,400 |                  ~17700 |      ~62.4% |
 |      55 |28,900 |                  ~18200 |      ~61.3% |
+|      56 |28,000 |                  ~19968 |      ~58.3% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -201,6 +203,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      53 |      329 |             ~29 |     ~91.9% |
 |      54 |      333 |             ~25 |     ~93.0% |
 |      55 |      337 |             ~21 |     ~94.1% |
+|      56 |      339 |             ~19 |     ~94.7% |
 
 
 Total C function count to be measured in session 1 via:
@@ -216,7 +219,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **55** (sessions 1–55 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **56** (sessions 1–56 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

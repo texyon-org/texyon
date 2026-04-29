@@ -32,6 +32,37 @@ template.
 
 ---
 
+## Session 56 — 2026-04-28 — vpackage, hpack (+ SIGSEGV fix)
+
+**Goal:** Translate `vpackage` and `hpack`, the vertical/horizontal box packers.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 55
+
+**Work done:**
+- Translated `vpackage` (7424, ~220 lines) with `'glue: {}` labeled-block for goto-common_ending/goto-exit pattern → scan.rs (79e7c7fd).
+- Translated `hpack` (6972, ~450 lines) with the same glue-block pattern, bidi LR_ptr stack, NATIVE_WORD_NODE merging logic, raw u16 pointer text copy, INS/MARK/ADJUST redirection.
+- Fixed SIGSEGV in `hpack` NATIVE_WORD_NODE path: `measure_native_node` takes `&mem[p]` (= `mem_node_addr(p)`), not `mem[p].ptr` (= `mem_ptr(p)`). The C macro `set_native_metrics(p,g)` expands to `measure_native_node(&mem[p], g)`.
+- Fixed same bug in `do_extension` GLYPH_CODE path: `measure_native_glyph` also expects `mem_node_addr`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 56
+- xetex-xetex0.c: ~19 C functions remaining.
+
+**Surprises / gotchas:**
+- `mem_ptr(p)` vs `mem_node_addr(p)`: `mem_ptr(p)` reads the `ptr` union field of `mem[p]` (the raw pointer stored IN the word), while `mem_node_addr(p)` returns a pointer TO `mem[p]`. All `set_native_metrics`/`set_native_glyph_metrics` C macros use `&mem[p]`, so always use `mem_node_addr`.
+- The OTF SIGSEGV was traced to the wrong pointer being passed to `measure_native_node`; it was reading bogus memory from the `ptr` union field.
+
+**For the next session:**
+- `conv_toks` (5162): medium-large (~350 lines), string conversion for `\the` commands.
+- `show_node_list` and related display functions may also be candidates.
+
+---
+
 ## Session 55 — 2026-04-28 — close_files_and_terminate, prune_page_top, do_marks, do_extension
 
 **Goal:** Translate the file-termination function, page-top pruning, mark-tracking recursion, and the whatsit extension dispatcher.

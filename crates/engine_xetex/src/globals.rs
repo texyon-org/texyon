@@ -468,6 +468,8 @@ mod raw {
         // Last leftmost/rightmost character found by char_pw (xetex-xetexd.h:467–468; xetex-ini.c:102–103).
         pub(super) static mut last_leftmost_char: i32;
         pub(super) static mut last_rightmost_char: i32;
+        // Current font used in short_display output (xetex-xetexd.h:473; xetex-ini.c:108).
+        pub(super) static mut font_in_short_display: i32;
     }
 }
 
@@ -826,6 +828,13 @@ pub(crate) fn set_mem_ptr(p: i32, v: *mut std::ffi::c_void) {
 pub(crate) fn mem_as_u16_ptr(p: i32) -> *const u16 {
     // SAFETY: see module-level doc. Caller ensures p + NATIVE_NODE_SIZE is a valid mem index.
     unsafe { raw::mem.offset(p as isize) as *const u16 }
+}
+
+/// Return a `*mut u16` pointing to `mem[p]` — for writing NATIVE_NODE_text.
+#[inline]
+pub(crate) fn mem_as_u16_ptr_mut(p: i32) -> *mut u16 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::mem.offset(p as isize) as *mut u16 }
 }
 
 /// Copy the full MemoryWord at `mem[p]`.
@@ -2833,3 +2842,5 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 #[inline] pub(crate) fn set_last_leftmost_char(v: i32) { unsafe { raw::last_leftmost_char = v; } }
 #[inline] pub(crate) fn last_rightmost_char() -> i32 { unsafe { raw::last_rightmost_char } }
 #[inline] pub(crate) fn set_last_rightmost_char(v: i32) { unsafe { raw::last_rightmost_char = v; } }
+#[inline] pub(crate) fn font_in_short_display() -> i32 { unsafe { raw::font_in_short_display } }
+#[inline] pub(crate) fn set_font_in_short_display(v: i32) { unsafe { raw::font_in_short_display = v; } }
