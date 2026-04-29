@@ -32,6 +32,41 @@ template.
 
 ---
 
+## Session 57 — 2026-04-29 — conv_toks, begin_token_list
+
+**Goal:** Translate `conv_toks` (string-conversion token builder) and `begin_token_list` (input-stack token-list pusher).
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 56
+
+**Work done:**
+- Added extern "C" declarations for `aat_print_font_name`, `gr_print_font_name`, `print_glyph_name` to scan.rs.
+- Translated `conv_toks` (5162, ~350 lines) → `src/scan.rs` (719c7946). Two-phase switch: Phase 1 computes `c`/`cur_val`; Phase 2 builds the string; `str_toks_cat` finishes. `PDF_CREATION_DATE_CODE` calls `begin_token_list` in Phase 1 then falls through Phase 2 (which emits an empty token list, immediately consumed).
+- Wrapped `conv_toks` C body in `#if 0 / #endif`.
+- Added constants `OUTPUT_TEXT`, `MARK_TEXT`, `WRITE_TEXT`, `INT_BASE_BTL`, `INT_PAR_TRACING_MACROS`, `LOCAL_BASE_BTL`, `LOCAL__OUTPUT_ROUTINE_BTL`, `ASSIGN_TOKS_BTL` to input.rs.
+- Added extern "C" declarations for `print_cmd_chr`, `capture_to_diagnostic` to input.rs.
+- Translated `begin_token_list` (2970, ~50 lines) → `src/input.rs` (73ff1645).
+- Wrapped `begin_token_list` C body in `#if 0 / #endif`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 57
+- xetex-xetex0.c: ~17 C functions remaining.
+
+**Surprises / gotchas:**
+- `ASSIGN_TOKS` must be 73, not 72. `TOKS_REGISTER = 72`, `ASSIGN_TOKS = 73` (xetex_format.h). Using 72 caused TRIP test failure where token registers printed as `\toks0` instead of `\output`, `\everydisplay`, etc.
+- `aat_print_font_name` on Linux: `CFDictionaryRef` is `typedef void*` in the non-Mac header, so declare as `*mut libc::c_void` in Rust — safe.
+
+**For the next session:**
+- `show_token_list` (line 20, ~83 lines): needs `first_count` and `half_error_line` globals added to globals.rs first.
+- `check_outer_validity` (line 3031, ~90 lines): medium, no missing globals expected.
+- `flush_node_list` (line 754, ~182 lines): recursive, complex node traversal.
+
+---
+
 ## Session 56 — 2026-04-28 — vpackage, hpack (+ SIGSEGV fix)
 
 **Goal:** Translate `vpackage` and `hpack`, the vertical/horizontal box packers.
