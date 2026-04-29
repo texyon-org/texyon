@@ -5159,6 +5159,8 @@ void ins_the_toks(void)
 #endif
 
 
+/* conv_toks: translated to Rust in src/scan.rs */
+#if 0
 void
 conv_toks(void)
 {
@@ -5708,6 +5710,7 @@ conv_toks(void)
     mem[GARBAGE].b32.s1 = str_toks_cat(b, cat);
     begin_token_list(mem[TEMP_HEAD].b32.s1, INSERTED);
 }
+#endif
 
 
 /* scan_toks: translated to Rust in src/scan.rs */
