@@ -3033,6 +3033,8 @@ begin_token_list(int32_t p, uint16_t t)
 /* end_file_reading: translated to Rust in src/input.rs */
 
 
+/* check_outer_validity: translated to Rust in src/scan.rs */
+#if 0
 void
 check_outer_validity(void)
 {
@@ -3125,6 +3127,7 @@ check_outer_validity(void)
         deletions_allowed = true;
     }
 }
+#endif
 
 
 /* These macros are kinda scary, but convenient */

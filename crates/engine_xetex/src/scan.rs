@@ -10884,3 +10884,140 @@ pub unsafe extern "C" fn conv_toks() {
     set_mem_b32s1(GARBAGE_CT, crate::scan::str_toks_cat(b, cat as i16));
     begin_token_list(mem_b32s1(TEMP_HEAD_CT), INSERTED);
 }
+
+// ---------------------------------------------------------------------------
+// check_outer_validity
+// ---------------------------------------------------------------------------
+
+// Scanner-status discriminants (xetex-constants.h:182–187).
+const NORMAL_COV: u8  = 0;
+const SKIPPING_COV: u8 = 1;
+const DEFINING_COV: u8 = 2;
+const MATCHING_COV: u8 = 3;
+const ALIGNING_COV: u8 = 4;
+const ABSORBING_COV: u8 = 5;
+// Token constants (xetex-constants.h:351; xetex_format.h:357; xetex-constants.h:59).
+const RIGHT_BRACE_TOKEN_COV: i32 = 0x40_0000; // RIGHT_BRACE << 21
+const OUTER_CALL_COV: u8 = 115;               // xetex_format.h:357
+const FROZEN_CR_COV: i32  = 2_243_226 + 1;    // FROZEN_CONTROL_SEQUENCE + 1
+const FROZEN_FI_COV: i32  = 2_243_226 + 4;    // FROZEN_CONTROL_SEQUENCE + 4
+const CS_TOKEN_FLAG_COV: i32 = 0x1FF_FFFF;
+const IF_TEST_COV: u16 = 107;                 // xetex_format.h:349
+// Input-state discriminant (already TOKEN_LIST = 0 in input.rs).
+const TOKEN_LIST_COV: u16 = 0;
+
+/// translated from xetex-xetex0.c:3036 (check_outer_validity)
+#[no_mangle]
+pub unsafe extern "C" fn check_outer_validity() {
+    use crate::globals::{
+        scanner_status, set_deletions_allowed,
+        cur_cs, set_cur_cs, cur_input,
+        set_cur_cmd, set_cur_chr,
+        par_token, set_long_state,
+        set_align_state,
+        set_mem_b32s0, set_mem_b32s1,
+        set_cur_tok,
+        warning_index,
+        set_help_ptr, set_help_line,
+        cur_if, skip_line,
+        error_line,
+    };
+    if scanner_status() == NORMAL_COV {
+        return;
+    }
+    set_deletions_allowed(false);
+
+    // If cur_cs is a control sequence, push it back as a backed-up token.
+    if cur_cs() != 0 {
+        let ci = cur_input();
+        if ci.state == TOKEN_LIST_COV || ci.name < 1 || ci.name > 17 {
+            let p = crate::mem::get_avail();
+            set_mem_b32s0(p, CS_TOKEN_FLAG_COV + cur_cs());
+            crate::input::begin_token_list(p, 3 /* BACKED_UP */);
+        }
+        set_cur_cmd(SPACER);
+        set_cur_chr(' ' as i32);
+    }
+
+    if scanner_status() > SKIPPING_COV {
+        // scanner_status > SKIPPING: runaway — we hit EOF or OUTER inside a definition/macro/preamble.
+        runaway();
+        if cur_cs() == 0 {
+            error_here_with_diagnostic(c"File ended".as_ptr());
+        } else {
+            set_cur_cs(0);
+            error_here_with_diagnostic(c"Forbidden control sequence found".as_ptr());
+        }
+
+        let p = crate::mem::get_avail();
+        match scanner_status() {
+            DEFINING_COV => {
+                crate::output::print_cstr(c" while scanning definition".as_ptr());
+                set_mem_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+            }
+            MATCHING_COV => {
+                crate::output::print_cstr(c" while scanning use".as_ptr());
+                set_mem_b32s0(p, par_token());
+                set_long_state(OUTER_CALL_COV);
+            }
+            ALIGNING_COV => {
+                crate::output::print_cstr(c" while scanning preamble".as_ptr());
+                set_mem_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+                let q = p;
+                let p2 = crate::mem::get_avail();
+                set_mem_b32s1(p2, q);
+                set_mem_b32s0(p2, CS_TOKEN_FLAG_COV + FROZEN_CR_COV);
+                set_align_state(-1_000_000);
+                crate::input::begin_token_list(p2, 5 /* INSERTED */);
+                // For ALIGNING, we push p2 as the token list, not p.
+                // Then fall through to the help message.
+                crate::output::print_cstr(c" of ".as_ptr());
+                crate::output::sprint_cs(warning_index());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(4);
+                set_help_line(3, c"I suspect you have forgotten a `}', causing me".as_ptr());
+                set_help_line(2, c"to read past where you wanted me to stop.".as_ptr());
+                set_help_line(1, c"I'll try to recover; but if the error is serious,".as_ptr());
+                set_help_line(0, c"you'd better type `E' or `X' now and fix your file.".as_ptr());
+                crate::errors::error();
+                set_deletions_allowed(true);
+                return;
+            }
+            ABSORBING_COV => {
+                crate::output::print_cstr(c" while scanning text".as_ptr());
+                set_mem_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+            }
+            _ => {}
+        }
+
+        crate::input::begin_token_list(p, 5 /* INSERTED */);
+        crate::output::print_cstr(c" of ".as_ptr());
+        crate::output::sprint_cs(warning_index());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(4);
+        set_help_line(3, c"I suspect you have forgotten a `}', causing me".as_ptr());
+        set_help_line(2, c"to read past where you wanted me to stop.".as_ptr());
+        set_help_line(1, c"I'll try to recover; but if the error is serious,".as_ptr());
+        set_help_line(0, c"you'd better type `E' or `X' now and fix your file.".as_ptr());
+        crate::errors::error();
+    } else {
+        // scanner_status == SKIPPING: inside \if...\fi skip.
+        error_here_with_diagnostic(c"Incomplete ".as_ptr());
+        print_cmd_chr(IF_TEST_COV, cur_if() as i32);
+        crate::output::print_cstr(c"; all text was ignored after line ".as_ptr());
+        crate::output::print_int(skip_line());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(3);
+        set_help_line(2, c"A forbidden control sequence occurred in skipped text.".as_ptr());
+        set_help_line(1, c"This kind of error happens when you say `\\if...' and forget".as_ptr());
+        set_help_line(0, c"the matching `\\fi'. I've inserted a `\\fi'; this might work.".as_ptr());
+        if cur_cs() != 0 {
+            set_cur_cs(0);
+        } else {
+            set_help_line(2, c"The file ended while I was skipping conditional text.".as_ptr());
+        }
+        set_cur_tok(CS_TOKEN_FLAG_COV + FROZEN_FI_COV);
+        crate::input::ins_error();
+    }
+    set_deletions_allowed(true);
+}

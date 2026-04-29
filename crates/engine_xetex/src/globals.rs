@@ -352,6 +352,10 @@ mod raw {
         pub(super) static mut warning_index: i32;
         // def_ref: head of the current macro-definition token list.
         pub(super) static mut def_ref: i32;
+        // deletions_allowed: whether deletion recovery is permitted (xetex-xetexd.h:445).
+        pub(super) static mut deletions_allowed: bool;
+        // long_state: CALL/LONG_CALL/OUTER_CALL/LONG_OUTER_CALL (xetex-xetexd.h:528).
+        pub(super) static mut long_state: u8;
 
         // Input buffer: first = next free slot; buf_size = capacity
         // last = end-of-current-line; max_buf_stack = high-water mark
@@ -2708,6 +2712,22 @@ pub(crate) fn def_ref() -> i32 {
 #[inline]
 pub(crate) fn set_def_ref(v: i32) {
     unsafe { raw::def_ref = v; }
+}
+#[inline]
+pub(crate) fn deletions_allowed() -> bool {
+    unsafe { raw::deletions_allowed }
+}
+#[inline]
+pub(crate) fn set_deletions_allowed(v: bool) {
+    unsafe { raw::deletions_allowed = v; }
+}
+#[inline]
+pub(crate) fn long_state() -> u8 {
+    unsafe { raw::long_state }
+}
+#[inline]
+pub(crate) fn set_long_state(v: u8) {
+    unsafe { raw::long_state = v; }
 }
 
 // ---------------------------------------------------------------------------
