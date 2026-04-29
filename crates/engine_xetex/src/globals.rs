@@ -476,6 +476,9 @@ mod raw {
         pub(super) static mut last_rightmost_char: i32;
         // Current font used in short_display output (xetex-xetexd.h:473; xetex-ini.c:108).
         pub(super) static mut font_in_short_display: i32;
+        // show_node_list depth/breadth limits (xetex-xetexd.h:474–475).
+        pub(super) static mut depth_threshold: i32;
+        pub(super) static mut breadth_max: i32;
     }
 }
 
@@ -2886,3 +2889,7 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 #[inline] pub(crate) fn set_last_rightmost_char(v: i32) { unsafe { raw::last_rightmost_char = v; } }
 #[inline] pub(crate) fn font_in_short_display() -> i32 { unsafe { raw::font_in_short_display } }
 #[inline] pub(crate) fn set_font_in_short_display(v: i32) { unsafe { raw::font_in_short_display = v; } }
+#[inline] pub(crate) fn depth_threshold() -> i32 { unsafe { raw::depth_threshold } }
+#[inline] pub(crate) fn set_depth_threshold(v: i32) { unsafe { raw::depth_threshold = v; } }
+#[inline] pub(crate) fn breadth_max() -> i32 { unsafe { raw::breadth_max } }
+#[inline] pub(crate) fn set_breadth_max(v: i32) { unsafe { raw::breadth_max = v; } }

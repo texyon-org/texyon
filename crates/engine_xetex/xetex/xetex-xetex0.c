@@ -732,6 +732,8 @@ show_node_list(int32_t p)
 }
 
 
+/* show_box: translated to Rust in src/scan.rs */
+#if 0
 void show_box(int32_t p)
 {
 
@@ -744,13 +746,17 @@ void show_box(int32_t p)
     show_node_list(p);
     print_ln();
 }
+#endif
 
+/* short_display_n: translated to Rust in src/scan.rs */
+#if 0
 void short_display_n(int32_t p, int32_t m)
 {
     breadth_max = m;
     depth_threshold = pool_size - pool_ptr - 1;
     show_node_list(p);
 }
+#endif
 
 /* delete_token_ref translated to Rust (src/mem.rs). */
 /* delete_glue_ref translated to Rust (src/mem.rs). */

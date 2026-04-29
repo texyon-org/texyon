@@ -48,7 +48,6 @@ extern "C" {
     fn u_close(f: *mut libc::c_void);
     fn line_break(d: bool);
     fn build_page();
-    fn show_box(p: i32);
     fn flush_node_list(p: i32);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
@@ -10882,6 +10881,44 @@ pub unsafe extern "C" fn conv_toks() {
     set_selector(old_sel);
     set_mem_b32s1(GARBAGE_CT, crate::scan::str_toks_cat(b, cat as i16));
     begin_token_list(mem_b32s1(TEMP_HEAD_CT), INSERTED);
+}
+
+// ---------------------------------------------------------------------------
+// show_box / short_display_n
+// ---------------------------------------------------------------------------
+
+// INT_BASE + INT_PAR__show_box_depth/breadth (xetex_format.h:219, :59–60).
+const INT_BASE_SB: i32 = 7_826_729;
+const INT_PAR_SHOW_BOX_BREADTH: i32 = 24;
+const INT_PAR_SHOW_BOX_DEPTH: i32   = 25;
+
+/// translated from xetex-xetex0.c:735 (show_box)
+#[no_mangle]
+pub unsafe extern "C" fn show_box(p: i32) {
+    use crate::globals::{
+        eqtb_b32s1, pool_ptr, pool_size,
+        set_depth_threshold, set_breadth_max, breadth_max,
+    };
+    set_depth_threshold(eqtb_b32s1(INT_BASE_SB + INT_PAR_SHOW_BOX_DEPTH));
+    set_breadth_max(eqtb_b32s1(INT_BASE_SB + INT_PAR_SHOW_BOX_BREADTH));
+    if breadth_max() <= 0 {
+        set_breadth_max(5);
+    }
+    let dt = pool_size() - pool_ptr() - 1;
+    if crate::globals::depth_threshold() > dt {
+        set_depth_threshold(dt);
+    }
+    show_node_list(p);
+    crate::output::print_ln();
+}
+
+/// translated from xetex-xetex0.c:748 (short_display_n)
+#[no_mangle]
+pub unsafe extern "C" fn short_display_n(p: i32, m: i32) {
+    use crate::globals::{pool_ptr, pool_size, set_breadth_max, set_depth_threshold};
+    set_breadth_max(m);
+    set_depth_threshold(pool_size() - pool_ptr() - 1);
+    show_node_list(p);
 }
 
 // ---------------------------------------------------------------------------
