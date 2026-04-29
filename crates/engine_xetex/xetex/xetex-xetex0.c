@@ -2966,6 +2966,8 @@ done:
 }
 
 
+/* begin_token_list: translated to Rust in src/input.rs */
+#if 0
 void
 begin_token_list(int32_t p, uint16_t t)
 {
@@ -3016,6 +3018,7 @@ begin_token_list(int32_t p, uint16_t t)
         cur_input.loc = p;
     }
 }
+#endif
 
 
 /* end_token_list: translated to Rust in src/input.rs */

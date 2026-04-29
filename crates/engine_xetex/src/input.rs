@@ -17,6 +17,8 @@ use crate::globals::{
 
 extern "C" {
     fn u_close(f: *mut libc::c_void);
+    fn print_cmd_chr(cmd: u16, chr_code: i32);
+    fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
 }
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).
@@ -26,6 +28,9 @@ const V_TEMPLATE: u16 = 2;
 const BACKED_UP: u16 = 3;
 const INSERTED: u16 = 5;
 const MACRO: u16 = 6;
+const OUTPUT_TEXT: u16 = 7;    // xetex-constants.h:206
+const MARK_TEXT: u16 = 15;     // xetex-constants.h:214
+const WRITE_TEXT: u16 = 18;    // xetex-constants.h:217
 // Token encoding (xetex-constants.h:348, xetex_format.h:201, xetex-constants.h:62).
 const CS_TOKEN_FLAG: i32 = 0x1FFFFFF;
 const FROZEN_RELAX: i32 = 2_243_226 + 7; // FROZEN_CONTROL_SEQUENCE + 7
@@ -267,4 +272,58 @@ pub unsafe extern "C" fn insert_relax() {
     set_cur_tok(CS_TOKEN_FLAG + FROZEN_RELAX);
     back_input();
     set_cur_input_index(INSERTED);
+}
+
+// ---------------------------------------------------------------------------
+// begin_token_list
+// ---------------------------------------------------------------------------
+
+// INT_BASE + INT_PAR__tracing_macros (xetex_format.h:208, :65)
+const INT_BASE_BTL: i32 = 7_826_729;
+const INT_PAR_TRACING_MACROS: i32 = 30; // xetex_format.h:65
+const LOCAL_BASE_BTL: i32 = 2_254_871;  // xetex_format.h:208
+const LOCAL__OUTPUT_ROUTINE_BTL: i32 = 1; // xetex_format.h:173
+const ASSIGN_TOKS_BTL: u16 = 73;        // xetex_format.h:313
+
+/// translated from xetex-xetex0.c:2970 (begin_token_list)
+#[no_mangle]
+pub unsafe extern "C" fn begin_token_list(p: i32, t: u16) {
+    if input_ptr() > max_in_stack() {
+        set_max_in_stack(input_ptr());
+        if input_ptr() == stack_size() {
+            crate::errors::overflow(c"input stack size".as_ptr(), stack_size());
+        }
+    }
+    set_input_stack(input_ptr(), cur_input());
+    set_input_ptr(input_ptr() + 1);
+    set_cur_input_state(TOKEN_LIST);
+    set_cur_input_start(p);
+    set_cur_input_index(t);
+    if t >= MACRO {
+        set_mem_b32s0(p, mem_b32s0(p) + 1); // increment ref count
+        if t == MACRO {
+            set_cur_input_limit(param_ptr());
+        } else {
+            set_cur_input_loc(mem_b32s1(p));
+            if crate::globals::eqtb_b32s1(INT_BASE_BTL + INT_PAR_TRACING_MACROS) > 1 {
+                crate::output::begin_diagnostic();
+                crate::output::diagnostic_begin_capture_warning_here();
+                crate::output::print_nl_cstr(c"".as_ptr());
+                match t {
+                    MARK_TEXT => crate::output::print_esc_cstr(c"mark".as_ptr()),
+                    WRITE_TEXT => crate::output::print_esc_cstr(c"write".as_ptr()),
+                    _ => print_cmd_chr(
+                        ASSIGN_TOKS_BTL,
+                        t as i32 + LOCAL_BASE_BTL + LOCAL__OUTPUT_ROUTINE_BTL - OUTPUT_TEXT as i32,
+                    ),
+                }
+                crate::output::print_cstr(c"->".as_ptr());
+                crate::output::token_show(p);
+                capture_to_diagnostic(std::ptr::null_mut());
+                crate::output::end_diagnostic(false);
+            }
+        }
+    } else {
+        set_cur_input_loc(p);
+    }
 }
