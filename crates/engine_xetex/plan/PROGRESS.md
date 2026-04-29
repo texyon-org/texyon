@@ -71,6 +71,7 @@ cargo test -p tectonic --test tex-outputs
 |      55 | 2026-04-28 |     29 |    29 |     0 | close_files_and_terminate (~40 lines), prune_page_top (~70 lines), do_marks (~80 lines, recursive), do_extension (~165 lines, 13 switch cases). All 4 suites pass. |
 |      56 | 2026-04-28 |     29 |    29 |     0 | vpackage (~220 lines), hpack (~450 lines, NATIVE_WORD_NODE merging, bidi). Fixed SIGSEGV: mem_node_addr not mem_ptr for measure_native_node. All 4 suites pass. |
 |      57 | 2026-04-29 |     29 |    29 |     0 | conv_toks (~350 lines), begin_token_list (~50 lines). Bug: ASSIGN_TOKS must be 73 not 72; caught by TRIP. All 4 suites pass. |
+|      58 | 2026-04-29 |     29 |    29 |     0 | flush_node_list (~182 lines), copy_node_list (~160 lines), show_activities (~122 lines), show_node_list (~470 lines), print_subsidiary_data (~37 lines). All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -138,6 +139,7 @@ Passed count below the previous session's recorded value.
 |      55 |28,900 |                  ~18200 |      ~61.3% |
 |      56 |28,000 |                  ~19968 |      ~58.3% |
 |      57 |27,600 |                  ~20400 |      ~57.5% |
+|      58 |28,010 |                  ~21883 |      ~56.1% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -207,6 +209,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      55 |      337 |             ~21 |     ~94.1% |
 |      56 |      339 |             ~19 |     ~94.7% |
 |      57 |      341 |             ~17 |     ~95.3% |
+|      58 |      346 |             ~13 |     ~96.4% |
 
 
 Total C function count to be measured in session 1 via:

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 57.
+Last updated: session 58.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 57.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               |  8904 |     17 | multiple (see below)              | IN PROGRESS — 94% |
+| xetex-xetex0.c               |  8010 |     14 | multiple (see below)              | IN PROGRESS — 96% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -456,15 +456,21 @@ New Rust module `src/save.rs` created for save-stack management.
 |176| `do_extension`            |        8024 | `src/scan.rs`   | MIGRATED (session 55, bc4e9176) |
 |177| `conv_toks`               |        5162 | `src/scan.rs`   | MIGRATED (session 57, 719c7946) |
 |178| `begin_token_list`        |        2970 | `src/input.rs`  | MIGRATED (session 57, 73ff1645) |
+|179| `flush_node_list`         |         754 | `src/scan.rs`   | MIGRATED (session 58, 9dbfdea7) |
+|180| `copy_node_list`          |         954 | `src/scan.rs`   | MIGRATED (session 58, 0fc07566) |
+|181| `show_activities`         |        1123 | `src/scan.rs`   | MIGRATED (session 58, 947f0a58) |
+|182| `print_subsidiary_data`   |         215 | `src/scan.rs`   | MIGRATED (session 58, a5e002a6) |
+|183| `show_node_list`          |         259 | `src/scan.rs`   | MIGRATED (session 58, a5e002a6) |
 
 ### Phases 12+
 
-Continue `xetex-xetex0.c`: next candidates:
-- `show_token_list` (line 20): ~83 lines, needs `first_count` and `half_error_line` globals.
-- `check_outer_validity` (line 3031): ~90 lines.
-- `flush_node_list` (line 754): ~182 lines, recursive.
-- `get_next` (line 3132): very large.
-- `macro_call` (line 3628): very large.
+Continue `xetex-xetex0.c`: remaining candidates:
+- `show_context` (line 2752): ~232 lines.
+- `get_next` (line 3152): ~495 lines, very large.
+- `macro_call` (line 3648): ~339 lines.
+- `expand` (line 3988): ~289 lines.
+- `print_cmd_chr` (line 1253): ~1500 lines, very large.
+- `scan_glyph_number`, `round_decimals`, `xetex_scan_dimen`, `new_native_word_node`, `new_native_character`, `load_native_font`, `do_locale_linebreaks`, `read_font_info`, `main_control`.
 
 ## How to maintain this file
 

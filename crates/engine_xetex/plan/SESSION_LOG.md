@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 58 — 2026-04-29 — flush_node_list, copy_node_list, show_activities, show_node_list, print_subsidiary_data
+
+**Goal:** Translate node-list management functions and display functions from `xetex-xetex0.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 57
+
+**Work done:**
+- Translated `flush_node_list` (line 754, ~182 lines) → `src/scan.rs` (9dbfdea7). Recursive node freeing with `'done` labeled block.
+- Translated `copy_node_list` (line 954, ~160 lines) → `src/scan.rs` (0fc07566). Allocates fresh node chain; NATIVE_WORD_NODE inner loop sets `words=0` so outer copy loop is skipped.
+- Added `nest_head`, `nest_mode_line`, `nest_aux_b32s0` accessors to globals.rs.
+- Translated `show_activities` (line 1123, ~122 lines) → `src/scan.rs` (947f0a58).
+- Made `cur_length()` in hash.rs `pub(crate)`.
+- Translated `print_subsidiary_data` (line 215, ~37 lines) and `show_node_list` (line 259, ~470 lines) → `src/scan.rs` (a5e002a6).
+- Updated PROGRESS.md, MODULE_STATUS.md, SESSION_LOG.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 58
+- xetex-xetex0.c: ~14 C functions remaining.
+
+**Surprises / gotchas:**
+- `#if 0` must go BEFORE the return type in C, not inside the function body — caught after first build attempt on `flush_node_list`.
+- `NATIVE_WORD_NODE` in `copy_node_list` sets `words=0` via its own inner loop, so the outer copy loop does nothing after it. Must translate faithfully.
+
+**For the next session:**
+- `show_context` (line 2764, ~232 lines): error context display, medium complexity.
+- `get_next` (line 3164, ~495 lines): core token reader, very large.
+- `macro_call` (line 3660, ~339 lines): macro expansion.
+- `expand` (line 4000, ~289 lines): expansion dispatcher.
+- `print_cmd_chr` (line 1265, ~1500 lines): very large display function.
+- After those: `scan_glyph_number`, `round_decimals`, `xetex_scan_dimen`, `new_native_*`, `load_native_font`, `do_locale_linebreaks`, `read_font_info`, `main_control`.
+
 ## Session 57 — 2026-04-29 — conv_toks, begin_token_list
 
 **Goal:** Translate `conv_toks` (string-conversion token builder) and `begin_token_list` (input-stack token-list pusher).
