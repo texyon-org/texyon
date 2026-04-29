@@ -86,7 +86,6 @@ extern "C" {
     fn ttbc_diag_begin_error() -> *mut std::ffi::c_void;
     fn ttstub_diag_printf(diag: *mut std::ffi::c_void, fmt: *const libc::c_char, ...);
     fn gettexstring(s: i32) -> *mut libc::c_char;
-    fn show_token_list(p: i32, q: i32, l: i32);
     // Still in C — large dispatch over all command types.
     fn print_cmd_chr(cmd: u16, chr_code: i32);
     // Still in C — complex context display.
@@ -1847,6 +1846,103 @@ pub unsafe extern "C" fn bad_utf8_warning() {
     print_cstr(c" replaced by U+FFFD.".as_ptr());
     capture_to_diagnostic(std::ptr::null_mut());
     end_diagnostic(false);
+}
+
+// ---------------------------------------------------------------------------
+// show_token_list
+// ---------------------------------------------------------------------------
+
+// Token-word layout (xetex-constants.h:347).
+const MAX_CHAR_VAL_STL: i32 = 0x200_000; // 1 << 21
+const CS_TOKEN_FLAG_STL: i32 = 0x1FF_FFFF;
+
+// Category-code discriminants used in token words (xetex_format.h:231–250).
+const LEFT_BRACE_STL: i32  =  1;
+const RIGHT_BRACE_STL: i32 =  2;
+const MATH_SHIFT_STL: i32  =  3;
+const TAB_MARK_STL: i32    =  4;
+const OUT_PARAM_STL: i32   =  5;
+const MAC_PARAM_STL: i32   =  6;
+const SUP_MARK_STL: i32    =  7;
+const SUB_MARK_STL: i32    =  8;
+const SPACER_STL: i32      = 10;
+const LETTER_STL: i32      = 11;
+const OTHER_CHAR_STL: i32  = 12;
+const MATCH_STL: i32       = 13;
+const END_MATCH_STL: i32   = 14;
+
+/// translated from xetex-xetex0.c:20 (show_token_list)
+#[no_mangle]
+pub unsafe extern "C" fn show_token_list(mut p: i32, q: i32, l: i32) {
+    use crate::globals::{
+        tally, set_tally, error_line, half_error_line,
+        set_first_count, set_trick_count,
+        hi_mem_min, mem_end,
+        mem_b32s0, mem_b32s1,
+    };
+    let mut match_chr: i32 = '#' as i32;
+    let mut n: i32 = '0' as i32;
+    set_tally(0);
+    while p != crate::mem::TEX_NULL && tally() < l {
+        if p == q {
+            set_first_count(tally());
+            let tc = tally() + 1 + error_line() - half_error_line();
+            set_trick_count(tc.max(error_line()));
+        }
+        if p < hi_mem_min() || p > mem_end() {
+            print_esc_cstr(c"CLOBBERED.".as_ptr());
+            return;
+        }
+        let w = mem_b32s0(p);
+        if w >= CS_TOKEN_FLAG_STL {
+            print_cs(w - CS_TOKEN_FLAG_STL);
+        } else if w < 0 {
+            print_esc_cstr(c"BAD.".as_ptr());
+        } else {
+            let m = w / MAX_CHAR_VAL_STL;
+            let c = w % MAX_CHAR_VAL_STL;
+            match m {
+                LEFT_BRACE_STL | RIGHT_BRACE_STL | MATH_SHIFT_STL | TAB_MARK_STL
+                | SUP_MARK_STL | SUB_MARK_STL | SPACER_STL | LETTER_STL | OTHER_CHAR_STL => {
+                    print_char(c);
+                }
+                MAC_PARAM_STL => {
+                    print_char(c);
+                    print_char(c);
+                }
+                OUT_PARAM_STL => {
+                    print_char(match_chr);
+                    if c <= 9 {
+                        print_char(c + 48);
+                    } else {
+                        print_char('!' as i32);
+                        return;
+                    }
+                }
+                MATCH_STL => {
+                    match_chr = c;
+                    print_char(c);
+                    n += 1;
+                    print_char(n);
+                    if n > '9' as i32 {
+                        return;
+                    }
+                }
+                END_MATCH_STL => {
+                    if c == 0 {
+                        print_cstr(c"->".as_ptr());
+                    }
+                }
+                _ => {
+                    print_esc_cstr(c"BAD.".as_ptr());
+                }
+            }
+        }
+        p = mem_b32s1(p);
+    }
+    if p != crate::mem::TEX_NULL {
+        print_esc_cstr(c"ETC.".as_ptr());
+    }
 }
 
 // translated from xetex-xetex0.c:9282 (print_totals)

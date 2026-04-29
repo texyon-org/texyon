@@ -51,7 +51,6 @@ extern "C" {
     fn show_box(p: i32);
     fn flush_node_list(p: i32);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
-    fn show_token_list(p: i32, q: i32, l: i32);
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
     fn print_cmd_chr(cmd: u16, chr_code: i32);
     fn scan_glyph_number(f: i32);
@@ -2238,7 +2237,7 @@ unsafe fn scan_file_name_braced() {
 
     set_old_setting(selector() as u8);
     set_selector(SELECTOR_NEW_STRING);
-    show_token_list(mem_b32s1(def_ref()), crate::mem::TEX_NULL, pool_size() - pool_ptr());
+    crate::output::show_token_list(mem_b32s1(def_ref()), crate::mem::TEX_NULL, pool_size() - pool_ptr());
     set_selector(old_setting() as i32);
 
     let s = crate::string_pool::make_string();
@@ -4760,7 +4759,7 @@ pub unsafe extern "C" fn tokens_to_string(p: i32) -> i32 {
     }
     set_old_setting(selector() as u8);
     set_selector(SELECTOR_NEW_STRING);
-    show_token_list(mem_b32s1(p), crate::mem::TEX_NULL, pool_size() - pool_ptr());
+    crate::output::show_token_list(mem_b32s1(p), crate::mem::TEX_NULL, pool_size() - pool_ptr());
     set_selector(old_setting() as i32);
     crate::string_pool::make_string()
 }
@@ -7849,7 +7848,7 @@ pub unsafe extern "C" fn runaway() {
         };
         crate::output::print_char('?' as i32);
         crate::output::print_ln();
-        show_token_list(mem_b32s1(p), TEX_NULL, error_line() - 10);
+        crate::output::show_token_list(mem_b32s1(p), TEX_NULL, error_line() - 10);
     }
 }
 
@@ -10447,7 +10446,7 @@ pub unsafe extern "C" fn conv_toks() {
             }
             let old_sel = selector();
             set_selector(SELECTOR_NEW_STRING);
-            show_token_list(mem_b32s1(def_ref()), TEX_NULL, pool_size() - pool_ptr());
+            crate::output::show_token_list(mem_b32s1(def_ref()), TEX_NULL, pool_size() - pool_ptr());
             set_selector(old_sel);
             s = crate::string_pool::make_string();
             crate::mem::delete_token_ref(def_ref());
@@ -10485,7 +10484,7 @@ pub unsafe extern "C" fn conv_toks() {
             }
             let old_sel = selector();
             set_selector(SELECTOR_NEW_STRING);
-            show_token_list(mem_b32s1(def_ref()), TEX_NULL, pool_size() - pool_ptr());
+            crate::output::show_token_list(mem_b32s1(def_ref()), TEX_NULL, pool_size() - pool_ptr());
             set_selector(old_sel);
             s = crate::string_pool::make_string();
             crate::mem::delete_token_ref(def_ref());
@@ -10524,7 +10523,7 @@ pub unsafe extern "C" fn conv_toks() {
             }
             let old_sel = selector();
             set_selector(SELECTOR_NEW_STRING);
-            show_token_list(mem_b32s1(def_ref()), TEX_NULL, pool_size() - pool_ptr());
+            crate::output::show_token_list(mem_b32s1(def_ref()), TEX_NULL, pool_size() - pool_ptr());
             set_selector(old_sel);
             s = crate::string_pool::make_string();
             crate::mem::delete_token_ref(def_ref());
@@ -10590,7 +10589,7 @@ pub unsafe extern "C" fn conv_toks() {
             }
             let old_sel = selector();
             set_selector(SELECTOR_NEW_STRING);
-            show_token_list(mem_b32s1(def_ref()), TEX_NULL, pool_size() - pool_ptr());
+            crate::output::show_token_list(mem_b32s1(def_ref()), TEX_NULL, pool_size() - pool_ptr());
             set_selector(old_sel);
             s = crate::string_pool::make_string();
             crate::mem::delete_token_ref(def_ref());

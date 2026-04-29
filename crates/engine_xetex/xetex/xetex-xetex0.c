@@ -15,6 +15,8 @@
 
 
 /*:112*/
+/* show_token_list: translated to Rust in src/output.rs */
+#if 0
 /*118:*/
 void
 show_token_list(int32_t p, int32_t q, int32_t l)
@@ -101,6 +103,7 @@ show_token_list(int32_t p, int32_t q, int32_t l)
     if (p != TEX_NULL)
         print_esc_cstr("ETC.");
 }
+#endif
 
 
 /* runaway: translated to Rust in src/scan.rs */

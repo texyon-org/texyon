@@ -182,10 +182,12 @@ mod raw {
         pub(super) static mut max_print_line: i32;
         // Tally of characters output (xetex-xetexd.h:433).
         pub(super) static mut tally: i32;
-        // Error-line display helpers (xetex-xetexd.h:397, 436–437).
+        // Error-line display helpers (xetex-xetexd.h:397–398, 436–439).
         pub(super) static mut error_line: i32;
+        pub(super) static mut half_error_line: i32;
         pub(super) static mut trick_buf: [u16; 256];
         pub(super) static mut trick_count: i32;
+        pub(super) static mut first_count: i32;
         // String pool (xetex-xetexd.h:403, 423, 425).
         // `packed_UTF16_code` = `unsigned short`; `pool_pointer` = `int32_t`.
         pub(super) static mut pool_size: i32;
@@ -1273,6 +1275,26 @@ pub(crate) fn set_tally(v: i32) {
 pub(crate) fn error_line() -> i32 {
     // SAFETY: see module-level doc.
     unsafe { raw::error_line }
+}
+#[inline]
+pub(crate) fn half_error_line() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::half_error_line }
+}
+#[inline]
+pub(crate) fn first_count() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::first_count }
+}
+#[inline]
+pub(crate) fn set_first_count(v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::first_count = v; }
+}
+#[inline]
+pub(crate) fn set_trick_count(v: i32) {
+    // SAFETY: see module-level doc.
+    unsafe { raw::trick_count = v; }
 }
 
 /// Read `trick_buf[k]`.
