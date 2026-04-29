@@ -212,6 +212,8 @@ short_display(int32_t p)
 /* print_delimiter translated to Rust (src/output.rs). */
 
 
+/* print_subsidiary_data: translated to Rust in src/scan.rs */
+#if 0
 void
 print_subsidiary_data(int32_t p, UTF16_code c)
 {
@@ -249,6 +251,7 @@ print_subsidiary_data(int32_t p, UTF16_code c)
         pool_ptr--;
     }
 }
+#endif
 
 
 /* print_style translated to Rust (src/output.rs). */
@@ -256,6 +259,8 @@ print_subsidiary_data(int32_t p, UTF16_code c)
 /* print_skip_param translated to Rust (src/output.rs). */
 
 
+/* show_node_list: translated to Rust in src/scan.rs */
+#if 0
 void
 show_node_list(int32_t p)
 {
@@ -730,6 +735,7 @@ show_node_list(int32_t p)
         p = LLIST_link(p);
     }
 }
+#endif
 
 
 /* show_box: translated to Rust in src/scan.rs */

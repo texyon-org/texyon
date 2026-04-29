@@ -42,7 +42,7 @@ const UNDEFINED_PRIMITIVE: i32 = 0;
 
 /// Inline equivalent of `cur_length()` (xetex-xetexd.h:1175).
 #[inline]
-fn cur_length() -> i32 {
+pub(crate) fn cur_length() -> i32 {
     pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR)
 }
 

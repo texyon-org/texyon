@@ -3840,8 +3840,6 @@ pub unsafe extern "C" fn open_log_file() {
 // show_info
 // ---------------------------------------------------------------------------
 
-extern "C" { fn show_node_list(p: i32); }
-
 /// translated from xetex-xetex0.c:9942 (show_info)
 #[no_mangle]
 pub unsafe extern "C" fn show_info() {
@@ -11722,5 +11720,556 @@ pub unsafe extern "C" fn show_activities() {
             }
             _ => {}
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// show_node_list and print_subsidiary_data
+// ---------------------------------------------------------------------------
+
+// Constants for show_node_list / print_subsidiary_data.
+const NORMAL_SNL: u16 = 0;
+const SHRINKING_SNL: u16 = 2;        // xetex-constants.h:281
+const DLIST_SNL: u16 = 2;            // xetex-constants.h:278
+const A_LEADERS_SNL: u16 = 100;      // xetex_format.h:422
+const C_LEADERS_SNL: u16 = 101;      // xetex_format.h:423
+const X_LEADERS_SNL: u16 = 102;      // xetex_format.h:424
+const MU_GLUE_SNL: u16 = 99;         // xetex_format.h:421
+const COND_MATH_GLUE_SNL: u16 = 98;  // xetex-constants.h:324
+const BEFORE_SNL: u16 = 0;           // xetex_format.h:434
+const AFTER_SNL: u16 = 1;            // xetex_format.h:435
+const L_CODE_SNL: u16 = 4;           // xetex-constants.h:142
+const R_CODE_SNL: u16 = 8;           // xetex-constants.h:143
+const ACC_KERN_SNL: u16 = 2;         // xetex_format.h:429
+const SPACE_ADJUSTMENT_SNL: u16 = 3; // xetex_format.h:430
+const LIMITS_SNL: u16 = 1;           // xetex_format.h:452
+const LEFT_NOAD_SNL: u16 = 30;       // xetex_format.h:415
+const HLIST_NODE_SNL: u16 = 0;
+const VLIST_NODE_SNL: u16 = 1;
+const RULE_NODE_SNL: u16 = 2;
+const INS_NODE_SNL: u16 = 3;
+const WHATSIT_NODE_SNL: u16 = 8;
+const MATH_NODE_SNL: u16 = 9;
+const GLUE_NODE_SNL: u16 = 10;
+const KERN_NODE_SNL: u16 = 11;
+const MARGIN_KERN_NODE_SNL: u16 = 40;
+const PENALTY_NODE_SNL: u16 = 12;
+const UNSET_NODE_SNL: u16 = 13;
+const STYLE_NODE_SNL: u16 = 14;
+const CHOICE_NODE_SNL: u16 = 15;
+const ORD_NOAD_SNL: u16 = 16;
+const OP_NOAD_SNL: u16 = 17;
+const BIN_NOAD_SNL: u16 = 18;
+const REL_NOAD_SNL: u16 = 19;
+const OPEN_NOAD_SNL: u16 = 20;
+const CLOSE_NOAD_SNL: u16 = 21;
+const PUNCT_NOAD_SNL: u16 = 22;
+const INNER_NOAD_SNL: u16 = 23;
+const RADICAL_NOAD_SNL: u16 = 24;
+const FRACTION_NOAD_SNL: u16 = 25;
+const UNDER_NOAD_SNL: u16 = 26;
+const OVER_NOAD_SNL: u16 = 27;
+const ACCENT_NOAD_SNL: u16 = 28;
+const VCENTER_NOAD_SNL: u16 = 29;
+const RIGHT_NOAD_SNL: u16 = 31;
+const LIGATURE_NODE_SNL: u16 = 6;
+const DISC_NODE_SNL: u16 = 7;
+const MARK_NODE_SNL: u16 = 4;
+const ADJUST_NODE_SNL: u16 = 5;
+// Whatsit subtypes.
+const OPEN_NODE_SNL: u16 = 0;
+const WRITE_NODE_SNL: u16 = 1;
+const CLOSE_NODE_SNL: u16 = 2;
+const SPECIAL_NODE_SNL: u16 = 3;
+const LANGUAGE_NODE_SNL: u16 = 4;
+const PDF_SAVE_POS_NODE_SNL: u16 = 21;
+const NATIVE_WORD_NODE_SNL: u16 = 40;
+const NATIVE_WORD_NODE_AT_SNL: u16 = 41;
+const GLYPH_NODE_SNL: u16 = 42;
+const PIC_NODE_SNL: u16 = 43;
+const PDF_NODE_SNL: u16 = 44;
+// print_subsidiary_data: mem[p].b32.s1 cases.
+const MATH_CHAR_SNL: i32 = 1;   // xetex-constants.h:269
+const SUB_BOX_SNL: i32 = 2;     // xetex-constants.h:283
+const SUB_MLIST_SNL: i32 = 3;   // xetex-constants.h:287
+// Misc constants.
+const DEFAULT_CODE_SNL: i32 = 0x4000_0000; // xetex-constants.h:17
+const PIC_NODE_SIZE_SNL: i32 = 9;          // xetex-constants.h
+// FONT_ID_BASE = FROZEN_NULL_FONT = 2245338
+const FONT_ID_BASE_SNL: i32 = 2_245_338;
+
+/// translated from xetex-xetex0.c:215 (print_subsidiary_data)
+unsafe fn print_subsidiary_data(p: i32, c: u16) {
+    use crate::globals::{
+        depth_threshold, breadth_max, pool_ptr, set_pool_ptr, set_str_pool,
+        mem_b32s0, mem_b32s1, set_temp_ptr,
+    };
+    let _ = breadth_max; // used indirectly via show_node_list
+    if crate::hash::cur_length() >= depth_threshold() {
+        if mem_b32s1(p) != 0 { // EMPTY = 0
+            crate::output::print_cstr(c" []".as_ptr());
+        }
+    } else {
+        set_str_pool(pool_ptr(), c);
+        set_pool_ptr(pool_ptr() + 1);
+        set_temp_ptr(p);
+        match mem_b32s1(p) {
+            MATH_CHAR_SNL => {
+                crate::output::print_ln();
+                crate::output::print_current_string();
+                crate::output::print_fam_and_char(p);
+            }
+            SUB_BOX_SNL => {
+                show_info();
+            }
+            SUB_MLIST_SNL => {
+                if mem_b32s0(p) == crate::mem::TEX_NULL {
+                    crate::output::print_ln();
+                    crate::output::print_current_string();
+                    crate::output::print_cstr(c"{}".as_ptr());
+                } else {
+                    show_info();
+                }
+            }
+            _ => {}
+        }
+        set_pool_ptr(pool_ptr() - 1);
+    }
+}
+
+/// translated from xetex-xetex0.c:259 (show_node_list)
+#[no_mangle]
+pub unsafe extern "C" fn show_node_list(mut p: i32) {
+    use crate::globals::{
+        depth_threshold, breadth_max, hi_mem_min, mem_end,
+        pool_ptr, set_pool_ptr, set_str_pool,
+        mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1,
+        mem_gr, mem_node_addr, hash_s1,
+    };
+    if crate::hash::cur_length() > depth_threshold() {
+        if p > crate::mem::TEX_NULL {
+            crate::output::print_cstr(c" []".as_ptr());
+        }
+        return;
+    }
+    let mut n = 0i32;
+    while p > 0 {
+        crate::output::print_ln();
+        crate::output::print_current_string();
+        if p > mem_end() {
+            crate::output::print_cstr(c"Bad link, display aborted.".as_ptr());
+            return;
+        }
+        n += 1;
+        if n > breadth_max() {
+            crate::output::print_cstr(c"etc.".as_ptr());
+            return;
+        }
+        if p >= hi_mem_min() {
+            crate::output::print_font_and_char(p);
+        } else {
+            match mem_b16s1(p) {
+                HLIST_NODE_SNL | VLIST_NODE_SNL | UNSET_NODE_SNL => {
+                    let ntype = mem_b16s1(p);
+                    if ntype == HLIST_NODE_SNL {
+                        crate::output::print_esc('h' as i32);
+                    } else if ntype == VLIST_NODE_SNL {
+                        crate::output::print_esc('v' as i32);
+                    } else {
+                        crate::output::print_esc_cstr(c"unset".as_ptr());
+                    }
+                    crate::output::print_cstr(c"box(".as_ptr());
+                    crate::output::print_scaled(mem_b32s1(p + 3));
+                    crate::output::print_char('+' as i32);
+                    crate::output::print_scaled(mem_b32s1(p + 2));
+                    crate::output::print_cstr(c")x".as_ptr());
+                    crate::output::print_scaled(mem_b32s1(p + 1));
+                    if ntype == UNSET_NODE_SNL {
+                        if mem_b16s0(p) != 0 {
+                            crate::output::print_cstr(c" (".as_ptr());
+                            crate::output::print_int(mem_b16s0(p) as i32 + 1);
+                            crate::output::print_cstr(c" columns)".as_ptr());
+                        }
+                        if mem_b32s1(p + 6) != 0 {
+                            crate::output::print_cstr(c", stretch ".as_ptr());
+                            crate::output::print_glue(mem_b32s1(p + 6), mem_b16s0(p + 5) as i32, std::ptr::null());
+                        }
+                        if mem_b32s1(p + 4) != 0 {
+                            crate::output::print_cstr(c", shrink ".as_ptr());
+                            crate::output::print_glue(mem_b32s1(p + 4), mem_b16s1(p + 5) as i32, std::ptr::null());
+                        }
+                    } else {
+                        let g = mem_gr(p + 6);
+                        if g != 0.0 && mem_b16s1(p + 5) != NORMAL_SNL {
+                            crate::output::print_cstr(c", glue set ".as_ptr());
+                            if mem_b16s1(p + 5) == SHRINKING_SNL {
+                                crate::output::print_cstr(c"- ".as_ptr());
+                            }
+                            if g.abs() > 20000.0 {
+                                if g > 0.0 {
+                                    crate::output::print_char('>' as i32);
+                                } else {
+                                    crate::output::print_cstr(c"< -".as_ptr());
+                                }
+                                crate::output::print_glue(20000 * 65536, mem_b16s0(p + 5) as i32, std::ptr::null());
+                            } else {
+                                crate::output::print_glue(
+                                    crate::scaled_math::tex_round(65536.0 * g),
+                                    mem_b16s0(p + 5) as i32,
+                                    std::ptr::null(),
+                                );
+                            }
+                        }
+                        if mem_b32s1(p + 4) != 0 {
+                            crate::output::print_cstr(c", shifted ".as_ptr());
+                            crate::output::print_scaled(mem_b32s1(p + 4));
+                        }
+                        if ntype == HLIST_NODE_SNL && mem_b16s0(p) == DLIST_SNL {
+                            crate::output::print_cstr(c", display".as_ptr());
+                        }
+                    }
+                    set_str_pool(pool_ptr(), '.' as u16);
+                    set_pool_ptr(pool_ptr() + 1);
+                    show_node_list(mem_b32s1(p + 5));
+                    set_pool_ptr(pool_ptr() - 1);
+                }
+                RULE_NODE_SNL => {
+                    crate::output::print_esc_cstr(c"rule(".as_ptr());
+                    crate::output::print_rule_dimen(mem_b32s1(p + 3));
+                    crate::output::print_char('+' as i32);
+                    crate::output::print_rule_dimen(mem_b32s1(p + 2));
+                    crate::output::print_cstr(c")x".as_ptr());
+                    crate::output::print_rule_dimen(mem_b32s1(p + 1));
+                }
+                INS_NODE_SNL => {
+                    crate::output::print_esc_cstr(c"insert".as_ptr());
+                    crate::output::print_int(mem_b16s0(p) as i32);
+                    crate::output::print_cstr(c", natural size ".as_ptr());
+                    crate::output::print_scaled(mem_b32s1(p + 3));
+                    crate::output::print_cstr(c"; split(".as_ptr());
+                    crate::output::print_spec(mem_b32s1(p + 4), std::ptr::null());
+                    crate::output::print_char(',' as i32);
+                    crate::output::print_scaled(mem_b32s1(p + 2));
+                    crate::output::print_cstr(c"); float cost ".as_ptr());
+                    crate::output::print_int(mem_b32s1(p + 1));
+                    set_str_pool(pool_ptr(), '.' as u16);
+                    set_pool_ptr(pool_ptr() + 1);
+                    show_node_list(mem_b32s0(p + 4));
+                    set_pool_ptr(pool_ptr() - 1);
+                }
+                WHATSIT_NODE_SNL => {
+                    match mem_b16s0(p) {
+                        OPEN_NODE_SNL => {
+                            crate::output::print_write_whatsit(c"openout".as_ptr(), p);
+                            crate::output::print_char('=' as i32);
+                            crate::output::print_file_name(mem_b32s1(p + 1), mem_b32s0(p + 2), mem_b32s1(p + 2));
+                        }
+                        WRITE_NODE_SNL => {
+                            crate::output::print_write_whatsit(c"write".as_ptr(), p);
+                            crate::output::print_mark(mem_b32s1(p + 1));
+                        }
+                        CLOSE_NODE_SNL => {
+                            crate::output::print_write_whatsit(c"closeout".as_ptr(), p);
+                        }
+                        SPECIAL_NODE_SNL => {
+                            crate::output::print_esc_cstr(c"special".as_ptr());
+                            crate::output::print_mark(mem_b32s1(p + 1));
+                        }
+                        LANGUAGE_NODE_SNL => {
+                            crate::output::print_esc_cstr(c"setlanguage".as_ptr());
+                            crate::output::print_int(mem_b32s1(p + 1));
+                            crate::output::print_cstr(c" (hyphenmin ".as_ptr());
+                            crate::output::print_int(mem_b16s1(p + 1) as i32);
+                            crate::output::print_char(',' as i32);
+                            crate::output::print_int(mem_b16s0(p + 1) as i32);
+                            crate::output::print_char(')' as i32);
+                        }
+                        PDF_SAVE_POS_NODE_SNL => {
+                            crate::output::print_esc_cstr(c"pdfsavepos".as_ptr());
+                        }
+                        NATIVE_WORD_NODE_SNL | NATIVE_WORD_NODE_AT_SNL => {
+                            // hash[FONT_ID_BASE + mem[p+4].b16.s2].s1
+                            crate::output::print_esc(hash_s1(FONT_ID_BASE_SNL + mem_b16s2(p + 4) as i32));
+                            crate::output::print_char(' ' as i32);
+                            crate::output::print_native_word(p);
+                        }
+                        GLYPH_NODE_SNL => {
+                            crate::output::print_esc(hash_s1(FONT_ID_BASE_SNL + mem_b16s2(p + 4) as i32));
+                            crate::output::print_cstr(c" glyph#".as_ptr());
+                            crate::output::print_int(mem_b16s1(p + 4) as i32);
+                        }
+                        PIC_NODE_SNL | PDF_NODE_SNL => {
+                            if mem_b16s0(p) == PIC_NODE_SNL {
+                                crate::output::print_esc_cstr(c"XeTeXpicfile".as_ptr());
+                            } else {
+                                crate::output::print_esc_cstr(c"XeTeXpdffile".as_ptr());
+                            }
+                            crate::output::print_cstr(c"( ".as_ptr());
+                            let path_len = mem_b16s1(p + 4) as i32;
+                            let path_ptr = mem_node_addr(p + PIC_NODE_SIZE_SNL) as *const u8;
+                            for i in 0..path_len {
+                                crate::output::print_raw_char(*path_ptr.add(i as usize) as u16, true);
+                            }
+                            crate::output::print('"' as i32);
+                        }
+                        _ => { crate::output::print_cstr(c"whatsit?".as_ptr()); }
+                    }
+                }
+                GLUE_NODE_SNL => {
+                    let sub = mem_b16s0(p);
+                    if sub >= A_LEADERS_SNL {
+                        crate::output::print_esc_cstr(c"".as_ptr());
+                        if sub == C_LEADERS_SNL {
+                            crate::output::print_char('c' as i32);
+                        } else if sub == X_LEADERS_SNL {
+                            crate::output::print_char('x' as i32);
+                        }
+                        crate::output::print_cstr(c"leaders ".as_ptr());
+                        crate::output::print_spec(mem_b32s0(p + 1), std::ptr::null());
+                        set_str_pool(pool_ptr(), '.' as u16);
+                        set_pool_ptr(pool_ptr() + 1);
+                        show_node_list(mem_b32s1(p + 1));
+                        set_pool_ptr(pool_ptr() - 1);
+                    } else {
+                        crate::output::print_esc_cstr(c"glue".as_ptr());
+                        if sub != NORMAL_SNL {   // GLUE_SPEC_shrink_order(p) != NORMAL
+                            crate::output::print_char('(' as i32);
+                            if sub < COND_MATH_GLUE_SNL {
+                                crate::output::print_skip_param(sub as i32 - 1);
+                            } else if sub == COND_MATH_GLUE_SNL {
+                                crate::output::print_esc_cstr(c"nonscript".as_ptr());
+                            } else {
+                                crate::output::print_esc_cstr(c"mskip".as_ptr());
+                            }
+                            crate::output::print_char(')' as i32);
+                        }
+                        if sub != COND_MATH_GLUE_SNL {
+                            crate::output::print_char(' ' as i32);
+                            if sub < COND_MATH_GLUE_SNL {
+                                crate::output::print_spec(mem_b32s0(p + 1), std::ptr::null());
+                            } else {
+                                crate::output::print_spec(mem_b32s0(p + 1), c"mu".as_ptr());
+                            }
+                        }
+                    }
+                }
+                KERN_NODE_SNL => {
+                    if mem_b16s0(p) != MU_GLUE_SNL {
+                        crate::output::print_esc_cstr(c"kern".as_ptr());
+                        if mem_b16s0(p) != NORMAL_SNL {
+                            crate::output::print_char(' ' as i32);
+                        }
+                        crate::output::print_scaled(mem_b32s1(p + 1));
+                        let sub = mem_b16s0(p);
+                        if sub == ACC_KERN_SNL {
+                            crate::output::print_cstr(c" (for accent)".as_ptr());
+                        } else if sub == SPACE_ADJUSTMENT_SNL {
+                            crate::output::print_cstr(c" (space adjustment)".as_ptr());
+                        }
+                    } else {
+                        crate::output::print_esc_cstr(c"mkern".as_ptr());
+                        crate::output::print_scaled(mem_b32s1(p + 1));
+                        crate::output::print_cstr(c"mu".as_ptr());
+                    }
+                }
+                MARGIN_KERN_NODE_SNL => {
+                    crate::output::print_esc_cstr(c"kern".as_ptr());
+                    crate::output::print_scaled(mem_b32s1(p + 1));
+                    if mem_b16s0(p) == 0 {
+                        crate::output::print_cstr(c" (left margin)".as_ptr());
+                    } else {
+                        crate::output::print_cstr(c" (right margin)".as_ptr());
+                    }
+                }
+                MATH_NODE_SNL => {
+                    let sub = mem_b16s0(p);
+                    if sub > AFTER_SNL {
+                        if sub % 2 == 1 {
+                            crate::output::print_esc_cstr(c"end".as_ptr());
+                        } else {
+                            crate::output::print_esc_cstr(c"begin".as_ptr());
+                        }
+                        if sub > R_CODE_SNL {
+                            crate::output::print_char('R' as i32);
+                        } else if sub > L_CODE_SNL {
+                            crate::output::print_char('L' as i32);
+                        } else {
+                            crate::output::print_char('M' as i32);
+                        }
+                    } else {
+                        crate::output::print_esc_cstr(c"math".as_ptr());
+                        if sub == BEFORE_SNL {
+                            crate::output::print_cstr(c"on".as_ptr());
+                        } else {
+                            crate::output::print_cstr(c"off".as_ptr());
+                        }
+                        if mem_b32s1(p + 1) != 0 {
+                            crate::output::print_cstr(c", surrounded ".as_ptr());
+                            crate::output::print_scaled(mem_b32s1(p + 1));
+                        }
+                    }
+                }
+                LIGATURE_NODE_SNL => {
+                    crate::output::print_font_and_char(p + 1);
+                    crate::output::print_cstr(c" (ligature ".as_ptr());
+                    if mem_b16s0(p) > 1 {
+                        crate::output::print_char('|' as i32);
+                    }
+                    crate::globals::set_font_in_short_display(mem_b16s1(p + 1) as i32);
+                    short_display(mem_b32s1(p + 1));
+                    if mem_b16s0(p) % 2 == 1 {
+                        crate::output::print_char('|' as i32);
+                    }
+                    crate::output::print_char(')' as i32);
+                }
+                PENALTY_NODE_SNL => {
+                    crate::output::print_esc_cstr(c"penalty ".as_ptr());
+                    crate::output::print_int(mem_b32s1(p + 1));
+                }
+                DISC_NODE_SNL => {
+                    crate::output::print_esc_cstr(c"discretionary".as_ptr());
+                    if mem_b16s0(p) > 0 {
+                        crate::output::print_cstr(c" replacing ".as_ptr());
+                        crate::output::print_int(mem_b16s0(p) as i32);
+                    }
+                    set_str_pool(pool_ptr(), '.' as u16);
+                    set_pool_ptr(pool_ptr() + 1);
+                    show_node_list(mem_b32s0(p + 1));
+                    set_pool_ptr(pool_ptr() - 1);
+                    set_str_pool(pool_ptr(), '|' as u16);
+                    set_pool_ptr(pool_ptr() + 1);
+                    show_node_list(mem_b32s1(p + 1));
+                    set_pool_ptr(pool_ptr() - 1);
+                }
+                MARK_NODE_SNL => {
+                    crate::output::print_esc_cstr(c"mark".as_ptr());
+                    if mem_b32s0(p + 1) != 0 {
+                        crate::output::print_char('s' as i32);
+                        crate::output::print_int(mem_b32s0(p + 1));
+                    }
+                    crate::output::print_mark(mem_b32s1(p + 1));
+                }
+                ADJUST_NODE_SNL => {
+                    crate::output::print_esc_cstr(c"vadjust".as_ptr());
+                    if mem_b16s0(p) != 0 {
+                        crate::output::print_cstr(c" pre ".as_ptr());
+                    }
+                    set_str_pool(pool_ptr(), '.' as u16);
+                    set_pool_ptr(pool_ptr() + 1);
+                    show_node_list(mem_b32s1(p + 1));
+                    set_pool_ptr(pool_ptr() - 1);
+                }
+                STYLE_NODE_SNL => {
+                    crate::output::print_style(mem_b16s0(p) as i32);
+                }
+                CHOICE_NODE_SNL => {
+                    crate::output::print_esc_cstr(c"mathchoice".as_ptr());
+                    set_str_pool(pool_ptr(), 'D' as u16);
+                    set_pool_ptr(pool_ptr() + 1);
+                    show_node_list(mem_b32s0(p + 1));
+                    set_pool_ptr(pool_ptr() - 1);
+                    set_str_pool(pool_ptr(), 'T' as u16);
+                    set_pool_ptr(pool_ptr() + 1);
+                    show_node_list(mem_b32s1(p + 1));
+                    set_pool_ptr(pool_ptr() - 1);
+                    set_str_pool(pool_ptr(), 'S' as u16);
+                    set_pool_ptr(pool_ptr() + 1);
+                    show_node_list(mem_b32s0(p + 2));
+                    set_pool_ptr(pool_ptr() - 1);
+                    set_str_pool(pool_ptr(), 's' as u16);
+                    set_pool_ptr(pool_ptr() + 1);
+                    show_node_list(mem_b32s1(p + 2));
+                    set_pool_ptr(pool_ptr() - 1);
+                }
+                ORD_NOAD_SNL | OP_NOAD_SNL | BIN_NOAD_SNL | REL_NOAD_SNL
+                | OPEN_NOAD_SNL | CLOSE_NOAD_SNL | PUNCT_NOAD_SNL | INNER_NOAD_SNL
+                | RADICAL_NOAD_SNL | OVER_NOAD_SNL | UNDER_NOAD_SNL | VCENTER_NOAD_SNL
+                | ACCENT_NOAD_SNL | LEFT_NOAD_SNL | RIGHT_NOAD_SNL => {
+                    let ntype = mem_b16s1(p);
+                    match ntype {
+                        ORD_NOAD_SNL => { crate::output::print_esc_cstr(c"mathord".as_ptr()); }
+                        OP_NOAD_SNL => { crate::output::print_esc_cstr(c"mathop".as_ptr()); }
+                        BIN_NOAD_SNL => { crate::output::print_esc_cstr(c"mathbin".as_ptr()); }
+                        REL_NOAD_SNL => { crate::output::print_esc_cstr(c"mathrel".as_ptr()); }
+                        OPEN_NOAD_SNL => { crate::output::print_esc_cstr(c"mathopen".as_ptr()); }
+                        CLOSE_NOAD_SNL => { crate::output::print_esc_cstr(c"mathclose".as_ptr()); }
+                        PUNCT_NOAD_SNL => { crate::output::print_esc_cstr(c"mathpunct".as_ptr()); }
+                        INNER_NOAD_SNL => { crate::output::print_esc_cstr(c"mathinner".as_ptr()); }
+                        OVER_NOAD_SNL => { crate::output::print_esc_cstr(c"overline".as_ptr()); }
+                        UNDER_NOAD_SNL => { crate::output::print_esc_cstr(c"underline".as_ptr()); }
+                        VCENTER_NOAD_SNL => { crate::output::print_esc_cstr(c"vcenter".as_ptr()); }
+                        RADICAL_NOAD_SNL => {
+                            crate::output::print_esc_cstr(c"radical".as_ptr());
+                            crate::output::print_delimiter(p + 4);
+                        }
+                        ACCENT_NOAD_SNL => {
+                            crate::output::print_esc_cstr(c"accent".as_ptr());
+                            crate::output::print_fam_and_char(p + 4);
+                        }
+                        LEFT_NOAD_SNL => {
+                            crate::output::print_esc_cstr(c"left".as_ptr());
+                            crate::output::print_delimiter(p + 1);
+                        }
+                        RIGHT_NOAD_SNL => {
+                            if mem_b16s0(p) == NORMAL_SNL {
+                                crate::output::print_esc_cstr(c"right".as_ptr());
+                            } else {
+                                crate::output::print_esc_cstr(c"middle".as_ptr());
+                            }
+                            crate::output::print_delimiter(p + 1);
+                        }
+                        _ => {}
+                    }
+                    if ntype < LEFT_NOAD_SNL {
+                        if mem_b16s0(p) != NORMAL_SNL {
+                            if mem_b16s0(p) == LIMITS_SNL {
+                                crate::output::print_esc_cstr(c"limits".as_ptr());
+                            } else {
+                                crate::output::print_esc_cstr(c"nolimits".as_ptr());
+                            }
+                        }
+                        print_subsidiary_data(p + 1, '.' as u16);
+                    }
+                    print_subsidiary_data(p + 2, '^' as u16);
+                    print_subsidiary_data(p + 3, '_' as u16);
+                }
+                FRACTION_NOAD_SNL => {
+                    crate::output::print_esc_cstr(c"fraction, thickness ".as_ptr());
+                    if mem_b32s1(p + 1) == DEFAULT_CODE_SNL {
+                        crate::output::print_cstr(c"= default".as_ptr());
+                    } else {
+                        crate::output::print_scaled(mem_b32s1(p + 1));
+                    }
+                    // left delimiter check
+                    if mem_b16s3(p + 4) % 256 != 0
+                        || (mem_b16s2(p + 4) as i32
+                            + (mem_b16s3(p + 4) as i32 / 256) * 65536) != 0
+                        || mem_b16s1(p + 4) % 256 != 0
+                        || (mem_b16s0(p + 4) as i32
+                            + (mem_b16s1(p + 4) as i32 / 256) * 65536) != 0
+                    {
+                        crate::output::print_cstr(c", left-delimiter ".as_ptr());
+                        crate::output::print_delimiter(p + 4);
+                    }
+                    // right delimiter check
+                    if mem_b16s3(p + 5) % 256 != 0
+                        || (mem_b16s2(p + 5) as i32
+                            + (mem_b16s3(p + 5) as i32 / 256) * 65536) != 0
+                        || mem_b16s1(p + 5) % 256 != 0
+                        || (mem_b16s0(p + 5) as i32
+                            + (mem_b16s1(p + 5) as i32 / 256) * 65536) != 0
+                    {
+                        crate::output::print_cstr(c", right-delimiter ".as_ptr());
+                        crate::output::print_delimiter(p + 5);
+                    }
+                    print_subsidiary_data(p + 2, '\\' as u16);
+                    print_subsidiary_data(p + 3, '/' as u16);
+                }
+                _ => {
+                    crate::output::print_cstr(c"Unknown node type!".as_ptr());
+                }
+            }
+        }
+        p = mem_b32s1(p);
     }
 }
