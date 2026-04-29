@@ -761,7 +761,8 @@ void short_display_n(int32_t p, int32_t m)
 /* delete_token_ref translated to Rust (src/mem.rs). */
 /* delete_glue_ref translated to Rust (src/mem.rs). */
 
-
+/* flush_node_list: translated to Rust in src/scan.rs */
+#if 0
 void
 flush_node_list(int32_t p)
 {
@@ -946,6 +947,7 @@ flush_node_list(int32_t p)
         p = q;
     }
 }
+#endif
 
 
 int32_t

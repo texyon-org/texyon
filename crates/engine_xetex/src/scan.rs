@@ -48,7 +48,6 @@ extern "C" {
     fn u_close(f: *mut libc::c_void);
     fn line_break(d: bool);
     fn build_page();
-    fn flush_node_list(p: i32);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
     fn print_cmd_chr(cmd: u16, chr_code: i32);
@@ -10919,6 +10918,246 @@ pub unsafe extern "C" fn short_display_n(p: i32, m: i32) {
     set_breadth_max(m);
     set_depth_threshold(pool_size() - pool_ptr() - 1);
     show_node_list(p);
+}
+
+// ---------------------------------------------------------------------------
+// flush_node_list
+// ---------------------------------------------------------------------------
+
+// Node-type constants for flush_node_list (xetex_format.h / xetex-constants.h).
+const HLIST_NODE_FNL: u16  =  0;
+const VLIST_NODE_FNL: u16  =  1;
+const RULE_NODE_FNL: u16   =  2;
+const INS_NODE_FNL: u16    =  3;
+const MARK_NODE_FNL: u16   =  4;
+const ADJUST_NODE_FNL: u16 =  5;
+const LIGATURE_NODE_FNL: u16 = 6;
+const DISC_NODE_FNL: u16   =  7;
+const WHATSIT_NODE_FNL: u16 = 8;
+const MATH_NODE_FNL: u16   =  9;
+const GLUE_NODE_FNL: u16   = 10;
+const KERN_NODE_FNL: u16   = 11;
+const PENALTY_NODE_FNL: u16 = 12;
+const UNSET_NODE_FNL: u16  = 13;
+const STYLE_NODE_FNL: u16  = 14;
+const CHOICE_NODE_FNL: u16 = 15;
+const ORD_NOAD_FNL: u16    = 16;
+const OP_NOAD_FNL: u16     = 17;
+const BIN_NOAD_FNL: u16    = 18;
+const REL_NOAD_FNL: u16    = 19;
+const OPEN_NOAD_FNL: u16   = 20;
+const CLOSE_NOAD_FNL: u16  = 21;
+const PUNCT_NOAD_FNL: u16  = 22;
+const INNER_NOAD_FNL: u16  = 23;
+const RADICAL_NOAD_FNL: u16 = 24;
+const FRACTION_NOAD_FNL: u16 = 25;
+const UNDER_NOAD_FNL: u16  = 26;
+const OVER_NOAD_FNL: u16   = 27;
+const ACCENT_NOAD_FNL: u16 = 28;
+const VCENTER_NOAD_FNL: u16 = 29;
+const LEFT_NOAD_FNL: u16   = 30;
+const RIGHT_NOAD_FNL: u16  = 31;
+const MARGIN_KERN_NODE_FNL: u16 = 40; // checked below
+// Whatsit subtypes (xetex_format.h:457–467).
+const OPEN_NODE_FNL: u16       =  0;
+const WRITE_NODE_FNL: u16      =  1;
+const CLOSE_NODE_FNL: u16      =  2;
+const SPECIAL_NODE_FNL: u16    =  3;
+const LANGUAGE_NODE_FNL: u16   =  4;
+const PDF_SAVE_POS_NODE_FNL: u16 = 21;
+const NATIVE_WORD_NODE_FNL: u16    = 40;
+const NATIVE_WORD_NODE_AT_FNL: u16 = 41;
+const GLYPH_NODE_FNL: u16      = 42;
+const PIC_NODE_FNL: u16        = 43;
+const PDF_NODE_FNL: u16        = 44;
+// Node sizes (xetex-constants.h).
+const BOX_NODE_SIZE_FNL: i32   = 8;
+const RULE_NODE_SIZE_FNL: i32  = 5;
+const INS_NODE_SIZE_FNL: i32   = 5;
+const OPEN_NODE_SIZE_FNL: i32  = 3;
+const WRITE_NODE_SIZE_FNL: i32 = 2;
+const SMALL_NODE_SIZE_FNL: i32 = 2;
+const MEDIUM_NODE_SIZE_FNL: i32 = 3;
+const GLYPH_NODE_SIZE_FNL: i32 = 5;
+const PIC_NODE_SIZE_FNL: i32   = 9;
+const MARGIN_KERN_NODE_SIZE_FNL: i32 = 3;
+const GLUE_SPEC_SIZE_FNL: i32  = 4;
+const STYLE_NODE_SIZE_FNL: i32 = 3;
+const NOAD_SIZE_FNL: i32       = 4;
+const RADICAL_NOAD_SIZE_FNL: i32 = 5;
+const ACCENT_NOAD_SIZE_FNL: i32  = 5;
+const FRACTION_NOAD_SIZE_FNL: i32 = 6;
+const SUB_BOX_FNL: i32 = 2; // xetex-constants.h:283
+// sizeof(memory_word) = 8 on 64-bit platforms.
+const MEMORY_WORD_SIZE_FNL: i32 = 8;
+
+/// translated from xetex-xetex0.c:765 (flush_node_list)
+#[no_mangle]
+pub unsafe extern "C" fn flush_node_list(mut p: i32) {
+    use crate::globals::{
+        hi_mem_min, avail, set_avail,
+        mem_b16s0, mem_b16s1, mem_b16s3,
+        mem_b32s0, mem_b32s1, set_mem_b32s1, set_mem_b16s0,
+        mem_ptr, set_mem_ptr,
+    };
+    while p != crate::mem::TEX_NULL {
+        let q = mem_b32s1(p);
+        if p >= hi_mem_min() {
+            // is_char_node(p): free to avail list
+            set_mem_b32s1(p, avail());
+            set_avail(p);
+        } else {
+            // Goto-done pattern: break 'done skips free_node(p, SMALL_NODE_SIZE) at end.
+            'done: {
+                match mem_b16s1(p) {
+                    HLIST_NODE_FNL | VLIST_NODE_FNL | UNSET_NODE_FNL => {
+                        flush_node_list(mem_b32s1(p + 5));
+                        crate::mem::free_node(p, BOX_NODE_SIZE_FNL);
+                        break 'done;
+                    }
+                    RULE_NODE_FNL => {
+                        crate::mem::free_node(p, RULE_NODE_SIZE_FNL);
+                        break 'done;
+                    }
+                    INS_NODE_FNL => {
+                        flush_node_list(mem_b32s0(p + 4));
+                        crate::mem::delete_glue_ref(mem_b32s1(p + 4));
+                        crate::mem::free_node(p, INS_NODE_SIZE_FNL);
+                        break 'done;
+                    }
+                    WHATSIT_NODE_FNL => {
+                        match mem_b16s0(p) {
+                            OPEN_NODE_FNL => {
+                                crate::mem::free_node(p, OPEN_NODE_SIZE_FNL);
+                            }
+                            WRITE_NODE_FNL | SPECIAL_NODE_FNL => {
+                                crate::mem::delete_token_ref(mem_b32s1(p + 1));
+                                crate::mem::free_node(p, WRITE_NODE_SIZE_FNL);
+                                break 'done;
+                            }
+                            CLOSE_NODE_FNL | LANGUAGE_NODE_FNL => {
+                                crate::mem::free_node(p, SMALL_NODE_SIZE_FNL);
+                            }
+                            NATIVE_WORD_NODE_FNL | NATIVE_WORD_NODE_AT_FNL => {
+                                let glyph_ptr = mem_ptr(p + 5);
+                                if !glyph_ptr.is_null() {
+                                    libc::free(glyph_ptr);
+                                    set_mem_ptr(p + 5, std::ptr::null_mut());
+                                    set_mem_b16s0(p + 4, 0);
+                                }
+                                let sz = mem_b16s3(p + 4) as i32;
+                                crate::mem::free_node(p, sz);
+                            }
+                            GLYPH_NODE_FNL => {
+                                crate::mem::free_node(p, GLYPH_NODE_SIZE_FNL);
+                            }
+                            PIC_NODE_FNL | PDF_NODE_FNL => {
+                                let path_len = mem_b16s1(p + 4) as i32;
+                                let sz = PIC_NODE_SIZE_FNL
+                                    + (path_len + MEMORY_WORD_SIZE_FNL - 1) / MEMORY_WORD_SIZE_FNL;
+                                crate::mem::free_node(p, sz);
+                            }
+                            PDF_SAVE_POS_NODE_FNL => {
+                                crate::mem::free_node(p, SMALL_NODE_SIZE_FNL);
+                            }
+                            _ => {
+                                crate::errors::confusion(c"ext3".as_ptr());
+                            }
+                        }
+                        break 'done;
+                    }
+                    GLUE_NODE_FNL => {
+                        let spec = mem_b32s0(p + 1);
+                        if mem_b32s1(spec) == crate::mem::TEX_NULL {
+                            crate::mem::free_node(spec, GLUE_SPEC_SIZE_FNL);
+                        } else {
+                            set_mem_b32s1(spec, mem_b32s1(spec) - 1);
+                        }
+                        if mem_b32s1(p + 1) != crate::mem::TEX_NULL {
+                            flush_node_list(mem_b32s1(p + 1));
+                        }
+                        crate::mem::free_node(p, MEDIUM_NODE_SIZE_FNL);
+                        break 'done;
+                    }
+                    KERN_NODE_FNL | MATH_NODE_FNL | PENALTY_NODE_FNL => {
+                        crate::mem::free_node(p, MEDIUM_NODE_SIZE_FNL);
+                        break 'done;
+                    }
+                    MARGIN_KERN_NODE_FNL => {
+                        crate::mem::free_node(p, MARGIN_KERN_NODE_SIZE_FNL);
+                        break 'done;
+                    }
+                    LIGATURE_NODE_FNL => {
+                        flush_node_list(mem_b32s1(p + 1));
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
+                    }
+                    MARK_NODE_FNL => {
+                        crate::mem::delete_token_ref(mem_b32s1(p + 1));
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
+                    }
+                    DISC_NODE_FNL => {
+                        flush_node_list(mem_b32s0(p + 1));
+                        flush_node_list(mem_b32s1(p + 1));
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
+                    }
+                    ADJUST_NODE_FNL => {
+                        flush_node_list(mem_b32s1(p + 1));
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
+                    }
+                    STYLE_NODE_FNL => {
+                        crate::mem::free_node(p, STYLE_NODE_SIZE_FNL);
+                        break 'done;
+                    }
+                    CHOICE_NODE_FNL => {
+                        flush_node_list(mem_b32s0(p + 1));
+                        flush_node_list(mem_b32s1(p + 1));
+                        flush_node_list(mem_b32s0(p + 2));
+                        flush_node_list(mem_b32s1(p + 2));
+                        crate::mem::free_node(p, STYLE_NODE_SIZE_FNL);
+                        break 'done;
+                    }
+                    ORD_NOAD_FNL | OP_NOAD_FNL | BIN_NOAD_FNL | REL_NOAD_FNL
+                    | OPEN_NOAD_FNL | CLOSE_NOAD_FNL | PUNCT_NOAD_FNL | INNER_NOAD_FNL
+                    | RADICAL_NOAD_FNL | OVER_NOAD_FNL | UNDER_NOAD_FNL | VCENTER_NOAD_FNL
+                    | ACCENT_NOAD_FNL => {
+                        if mem_b32s1(p + 1) >= SUB_BOX_FNL {
+                            flush_node_list(mem_b32s0(p + 1));
+                        }
+                        if mem_b32s1(p + 2) >= SUB_BOX_FNL {
+                            flush_node_list(mem_b32s0(p + 2));
+                        }
+                        if mem_b32s1(p + 3) >= SUB_BOX_FNL {
+                            flush_node_list(mem_b32s0(p + 3));
+                        }
+                        let ntype = mem_b16s1(p);
+                        if ntype == RADICAL_NOAD_FNL {
+                            crate::mem::free_node(p, RADICAL_NOAD_SIZE_FNL);
+                        } else if ntype == ACCENT_NOAD_FNL {
+                            crate::mem::free_node(p, ACCENT_NOAD_SIZE_FNL);
+                        } else {
+                            crate::mem::free_node(p, NOAD_SIZE_FNL);
+                        }
+                        break 'done;
+                    }
+                    LEFT_NOAD_FNL | RIGHT_NOAD_FNL => {
+                        crate::mem::free_node(p, NOAD_SIZE_FNL);
+                        break 'done;
+                    }
+                    FRACTION_NOAD_FNL => {
+                        flush_node_list(mem_b32s0(p + 2));
+                        flush_node_list(mem_b32s0(p + 3));
+                        crate::mem::free_node(p, FRACTION_NOAD_SIZE_FNL);
+                        break 'done;
+                    }
+                    _ => {
+                        crate::errors::confusion(c"flushing".as_ptr());
+                    }
+                }
+                crate::mem::free_node(p, SMALL_NODE_SIZE_FNL);
+            }
+        }
+        p = q;
+    }
 }
 
 // ---------------------------------------------------------------------------
