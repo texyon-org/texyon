@@ -2200,6 +2200,18 @@ pub(crate) fn set_nest_prev_graf(k: i32, v: i32) {
     unsafe { (*raw::nest.offset(k as isize)).prev_graf = v; }
 }
 #[inline]
+pub(crate) fn nest_head(k: i32) -> i32 {
+    unsafe { (*raw::nest.offset(k as isize)).head }
+}
+#[inline]
+pub(crate) fn nest_mode_line(k: i32) -> i32 {
+    unsafe { (*raw::nest.offset(k as isize)).mode_line }
+}
+#[inline]
+pub(crate) fn nest_aux_b32s0(k: i32) -> i32 {
+    unsafe { (*raw::nest.offset(k as isize)).aux.b32.s0 }
+}
+#[inline]
 pub(crate) fn set_cur_list_prev_graf(v: i32) {
     unsafe { raw::cur_list.prev_graf = v; }
 }

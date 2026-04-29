@@ -1120,6 +1120,8 @@ copy_node_list(int32_t p)
 /* push_nest translated to Rust (src/mem.rs). */
 /* pop_nest translated to Rust (src/mem.rs). */
 
+/* show_activities: translated to Rust in src/scan.rs */
+#if 0
 void show_activities(void)
 {
     int32_t p;
@@ -1243,6 +1245,7 @@ void show_activities(void)
             while (p-- > for_end);
     }
 }
+#endif
 
 /* print_param translated to Rust (src/output.rs). */
 

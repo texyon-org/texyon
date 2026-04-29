@@ -5865,9 +5865,6 @@ pub unsafe extern "C" fn align_peek() {
 // translated from xetex-xetex0.c:10561 (show_whatever)
 #[no_mangle]
 pub unsafe extern "C" fn show_whatever() {
-    extern "C" {
-        fn show_activities();
-    }
     const BOX_BASE: i32 = 2_255_144;          // xetex_format.h:211
     const INT_PAR_TRACING_ONLINE: i32 = 29;   // xetex_format.h:33
     const SELECTOR_TERM_AND_LOG: i32 = 19;    // xetex-core.h:48
@@ -11586,4 +11583,144 @@ pub unsafe extern "C" fn check_outer_validity() {
         crate::input::ins_error();
     }
     set_deletions_allowed(true);
+}
+
+// ---------------------------------------------------------------------------
+// show_activities
+// ---------------------------------------------------------------------------
+
+// MEM_TOP = 4999999; PAGE_INS_HEAD = MEM_TOP, CONTRIB_HEAD = MEM_TOP-1, PAGE_HEAD = MEM_TOP-2
+const MEM_TOP_SA: i32 = 4_999_999;
+const PAGE_INS_HEAD_SA: i32 = MEM_TOP_SA;
+const CONTRIB_HEAD_SA: i32 = MEM_TOP_SA - 1;
+const PAGE_HEAD_SA: i32 = MEM_TOP_SA - 2;
+const MAX_COMMAND_SA: i16 = 102;  // xetex-constants.h:325
+const HMODE_SA: i16 = 104;        // xetex-constants.h:369
+const IGNORE_DEPTH_SA: i32 = -65_536_000; // xetex-constants.h:388
+const EMPTY_SA: u8 = 0;           // xetex-constants.h:230
+const SPLIT_UP_SA: u16 = 1;       // xetex-constants.h:274
+const INS_NODE_SA: u16 = 3;       // xetex_format.h:383
+const COUNT_BASE_SA: i32 = 7_826_812; // xetex-constants.h:220
+
+/// translated from xetex-xetex0.c:1123 (show_activities)
+#[no_mangle]
+pub unsafe extern "C" fn show_activities() {
+    use crate::globals::{
+        save_cur_list_to_nest, nest_ptr, nest_mode, nest_head, nest_mode_line,
+        nest_aux_b32s0, nest_aux_b32s1, nest_prev_graf,
+        page_tail, page_contents, page_so_far, output_active,
+        mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, eqtb_b32s1,
+    };
+    save_cur_list_to_nest(nest_ptr());
+    crate::output::print_nl_cstr(c"".as_ptr());
+    crate::output::print_ln();
+    let np = nest_ptr();
+    for p in (0..=np).rev() {
+        let m = nest_mode(p);
+        let a_s0 = nest_aux_b32s0(p);
+        let a_s1 = nest_aux_b32s1(p);
+        crate::output::print_nl_cstr(c"### ".as_ptr());
+        crate::output::print_mode(m as i32);
+        crate::output::print_cstr(c" entered at line ".as_ptr());
+        crate::output::print_int(nest_mode_line(p).abs());
+        if m == HMODE_SA {
+            let pg = nest_prev_graf(p);
+            if pg != 0x83_0000 {
+                crate::output::print_cstr(c" (language".as_ptr());
+                crate::output::print_int(pg % 65536);
+                crate::output::print_cstr(c":hyphenmin".as_ptr());
+                crate::output::print_int(pg / 0x40_0000);
+                crate::output::print_char(',' as i32);
+                crate::output::print_int((pg / 65536) % 64);
+                crate::output::print_char(')' as i32);
+            }
+        }
+        if nest_mode_line(p) < 0 {
+            crate::output::print_cstr(c" (\\output routine)".as_ptr());
+        }
+        if p == 0 {
+            if PAGE_HEAD_SA != page_tail() {
+                crate::output::print_nl_cstr(c"### current page:".as_ptr());
+                if output_active() {
+                    crate::output::print_cstr(c" (held over for next output)".as_ptr());
+                }
+                show_box(mem_b32s1(PAGE_HEAD_SA));
+                if page_contents() > EMPTY_SA {
+                    crate::output::print_nl_cstr(c"total height ".as_ptr());
+                    crate::output::print_totals();
+                    crate::output::print_nl_cstr(c" goal height ".as_ptr());
+                    crate::output::print_scaled(page_so_far(0));
+                    let mut r = mem_b32s1(PAGE_INS_HEAD_SA);
+                    while r != PAGE_INS_HEAD_SA {
+                        crate::output::print_ln();
+                        crate::output::print_esc_cstr(c"insert".as_ptr());
+                        let mut t = mem_b16s0(r) as i32;
+                        crate::output::print_int(t);
+                        crate::output::print_cstr(c" adds ".as_ptr());
+                        let count_t = eqtb_b32s1(COUNT_BASE_SA + t);
+                        if count_t == 1000 {
+                            t = mem_b32s1(r + 3);
+                        } else {
+                            t = crate::scaled_math::x_over_n(mem_b32s1(r + 3), 1000) * count_t;
+                        }
+                        crate::output::print_scaled(t);
+                        if mem_b16s1(r) == SPLIT_UP_SA {
+                            let mut q = PAGE_HEAD_SA;
+                            t = 0;
+                            loop {
+                                q = mem_b32s1(q);
+                                if mem_b16s1(q) == INS_NODE_SA && mem_b16s0(q) == mem_b16s0(r) {
+                                    t += 1;
+                                }
+                                if q == mem_b32s0(r + 1) { break; }
+                            }
+                            crate::output::print_cstr(c", #".as_ptr());
+                            crate::output::print_int(t);
+                            crate::output::print_cstr(c" might split".as_ptr());
+                        }
+                        r = mem_b32s1(r);
+                    }
+                }
+            }
+            if mem_b32s1(CONTRIB_HEAD_SA) != crate::mem::TEX_NULL {
+                crate::output::print_nl_cstr(c"### recent contributions:".as_ptr());
+            }
+        }
+        show_box(mem_b32s1(nest_head(p)));
+        match (m.abs() / (MAX_COMMAND_SA + 1)) as i32 {
+            0 => {
+                crate::output::print_nl_cstr(c"prevdepth ".as_ptr());
+                if a_s1 <= IGNORE_DEPTH_SA {
+                    crate::output::print_cstr(c"ignored".as_ptr());
+                } else {
+                    crate::output::print_scaled(a_s1);
+                }
+                let pg = nest_prev_graf(p);
+                if pg != 0 {
+                    crate::output::print_cstr(c", prevgraf ".as_ptr());
+                    crate::output::print_int(pg);
+                    if pg != 1 {
+                        crate::output::print_cstr(c" lines".as_ptr());
+                    } else {
+                        crate::output::print_cstr(c" line".as_ptr());
+                    }
+                }
+            }
+            1 => {
+                crate::output::print_nl_cstr(c"spacefactor ".as_ptr());
+                crate::output::print_int(a_s0);
+                if m > 0 && a_s1 > 0 {
+                    crate::output::print_cstr(c", current language ".as_ptr());
+                    crate::output::print_int(a_s1);
+                }
+            }
+            2 => {
+                if a_s1 != crate::mem::TEX_NULL {
+                    crate::output::print_cstr(c"this will begin denominator of:".as_ptr());
+                    show_box(a_s1);
+                }
+            }
+            _ => {}
+        }
+    }
 }
