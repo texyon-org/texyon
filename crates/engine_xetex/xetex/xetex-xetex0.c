@@ -114,6 +114,8 @@ show_token_list(int32_t p, int32_t q, int32_t l)
 /* prev_rightmost translated to Rust (src/mem.rs). */
 /* get_microinterval translated to Rust (src/texmfmp.rs). */
 
+/* short_display: translated to Rust in src/scan.rs */
+#if 0
 void
 short_display(int32_t p)
 {
@@ -194,6 +196,7 @@ short_display(int32_t p)
         p = LLIST_link(p);
     }
 }
+#endif
 
 
 /* print_font_and_char translated to Rust (src/output.rs). */

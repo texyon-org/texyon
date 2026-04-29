@@ -89,7 +89,6 @@ extern "C" {
     fn build_choices();
     fn synctex_start_input();
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
-    fn short_display(p: i32);
     fn new_native_word_node(f: i32, n: i32) -> i32;
 
     fn flush_math();
@@ -10883,6 +10882,110 @@ pub unsafe extern "C" fn conv_toks() {
     set_selector(old_sel);
     set_mem_b32s1(GARBAGE_CT, crate::scan::str_toks_cat(b, cat as i16));
     begin_token_list(mem_b32s1(TEMP_HEAD_CT), INSERTED);
+}
+
+// ---------------------------------------------------------------------------
+// short_display
+// ---------------------------------------------------------------------------
+
+// Node-type constants (xetex_format.h:380–390).
+const HLIST_NODE_SD: u16  =  0;
+const VLIST_NODE_SD: u16  =  1;
+const RULE_NODE_SD: u16   =  2;
+const INS_NODE_SD: u16    =  3;
+const MARK_NODE_SD: u16   =  4;
+const ADJUST_NODE_SD: u16 =  5;
+const DISC_NODE_SD: u16   =  7;
+const WHATSIT_NODE_SD: u16 = 8;
+const MATH_NODE_SD: u16   =  9;
+const GLUE_NODE_SD: u16   = 10;
+const LIGATURE_NODE_SD: u16 = 6;
+const UNSET_NODE_SD: u16  = 13;
+const NATIVE_WORD_NODE_SD: u16    = 40;
+const NATIVE_WORD_NODE_AT_SD: u16 = 41;
+const L_CODE_SD: u16 = 4;            // xetex-constants.h:142
+const FONT_ID_BASE_SD: i32 = 2_245_338; // xetex_format.h:188
+
+/// translated from xetex-xetex0.c:117 (short_display)
+#[no_mangle]
+pub unsafe extern "C" fn short_display(mut p: i32) {
+    use crate::globals::{
+        mem_end, hi_mem_min, font_max,
+        mem_b16s0, mem_b16s1, mem_b16s2,
+        mem_b32s0, mem_b32s1,
+        hash_s1,
+        font_in_short_display, set_font_in_short_display,
+    };
+    while p > 0 {
+        if p >= hi_mem_min() {
+            // is_char_node(p)
+            if p <= mem_end() {
+                let fnt = mem_b16s1(p) as i32;
+                if fnt != font_in_short_display() {
+                    if fnt > font_max() {
+                        crate::output::print_char('*' as i32);
+                    } else {
+                        crate::output::print_esc(hash_s1(FONT_ID_BASE_SD + fnt));
+                    }
+                    crate::output::print_char(' ' as i32);
+                    set_font_in_short_display(fnt);
+                }
+                crate::output::print(mem_b16s0(p) as i32);
+            }
+        } else {
+            match mem_b16s1(p) {
+                HLIST_NODE_SD | VLIST_NODE_SD | INS_NODE_SD | MARK_NODE_SD
+                | ADJUST_NODE_SD | UNSET_NODE_SD => {
+                    crate::output::print_cstr(c"[]".as_ptr());
+                }
+                WHATSIT_NODE_SD => match mem_b16s0(p) {
+                    NATIVE_WORD_NODE_SD | NATIVE_WORD_NODE_AT_SD => {
+                        let fnt = mem_b16s2(p + 4) as i32;
+                        if fnt != font_in_short_display() {
+                            crate::output::print_esc(hash_s1(FONT_ID_BASE_SD + fnt));
+                            crate::output::print_char(' ' as i32);
+                            set_font_in_short_display(fnt);
+                        }
+                        crate::output::print_native_word(p);
+                    }
+                    _ => {
+                        crate::output::print_cstr(c"[]".as_ptr());
+                    }
+                },
+                RULE_NODE_SD => {
+                    crate::output::print_char('|' as i32);
+                }
+                GLUE_NODE_SD => {
+                    if mem_b32s0(p + 1) != 0 {
+                        crate::output::print_char(' ' as i32);
+                    }
+                }
+                MATH_NODE_SD => {
+                    if mem_b16s0(p) >= L_CODE_SD {
+                        crate::output::print_cstr(c"[]".as_ptr());
+                    } else {
+                        crate::output::print_char('$' as i32);
+                    }
+                }
+                LIGATURE_NODE_SD => {
+                    short_display(mem_b32s1(p + 1));
+                }
+                DISC_NODE_SD => {
+                    short_display(mem_b32s0(p + 1));
+                    short_display(mem_b32s1(p + 1));
+                    let mut n = mem_b16s0(p) as i32;
+                    while n > 0 {
+                        if mem_b32s1(p) != crate::mem::TEX_NULL {
+                            p = mem_b32s1(p);
+                        }
+                        n -= 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        p = mem_b32s1(p);
+    }
 }
 
 // ---------------------------------------------------------------------------
