@@ -380,6 +380,9 @@ mod raw {
         // force_eof: set true by \endinput to force end-of-file on the current input level
         // (xetex-xetexd.h:524; xetex-ini.c:159).
         pub(super) static mut force_eof: bool;
+        // used_tectonic_coda_tokens: set true after inserting \TectonicCodaTokens once
+        // (xetex-xetexd.h:723).
+        pub(super) static mut used_tectonic_coda_tokens: bool;
 
         // Second parsed value register used by scan_something_internal (xetex-xetexd.h:531).
         pub(super) static mut cur_val1: i32;
@@ -2923,3 +2926,9 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 // ---------------------------------------------------------------------------
 #[inline] pub(crate) fn force_eof() -> bool { unsafe { raw::force_eof } }
 #[inline] pub(crate) fn set_force_eof(v: bool) { unsafe { raw::force_eof = v; } }
+
+// ---------------------------------------------------------------------------
+// used_tectonic_coda_tokens (xetex-xetexd.h:723)
+// ---------------------------------------------------------------------------
+#[inline] pub(crate) fn used_tectonic_coda_tokens() -> bool { unsafe { raw::used_tectonic_coda_tokens } }
+#[inline] pub(crate) fn set_used_tectonic_coda_tokens(v: bool) { unsafe { raw::used_tectonic_coda_tokens = v; } }

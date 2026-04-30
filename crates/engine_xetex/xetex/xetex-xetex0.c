@@ -3163,6 +3163,8 @@ check_outer_validity(void)
     case (s + SUB_MARK): case (s + LETTER): case (s + OTHER_CHAR)
 
 
+/* get_next: translated to Rust in src/scan.rs */
+#if 0
 void
 get_next(void)
 {
@@ -3654,6 +3656,7 @@ restart:
         goto restart;
     }
 }
+#endif
 
 
 /* get_token: translated to Rust in src/scan.rs */

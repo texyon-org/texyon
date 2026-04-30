@@ -32,6 +32,75 @@ template.
 
 ---
 
+## Session 60 — 2026-04-30 — expand
+
+**Goal:** Finish `expand` translation (compilation errors remained from session 59) and commit.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 59
+- xetex-xetex0.c: ~13 C functions remaining.
+
+**Work done:**
+- Fixed `expand_depth_count += 1` → `set_expand_depth_count(expand_depth_count() + 1)` (getter, not variable).
+- Fixed `expand_depth_count >= expand_depth()` call form.
+- Fixed `print_cmd_chr(cur_cmd(), ...)` → `print_cmd_chr(cur_cmd() as u16, ...)` (u8→u16 cast).
+- Fixed `print_cmd_chr(FI_OR_ELSE_CMD, ...)` → `print_cmd_chr(FI_OR_ELSE_CMD as u16, ...)`.
+- Wrapped C `expand` body in `#if 0 / #endif`.
+- All 4 test suites pass. Committed as b01234a8.
+- Updated SESSION_LOG.md, MODULE_STATUS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 60
+- xetex-xetex0.c: ~12 C functions remaining.
+
+**Surprises / gotchas:**
+- `expand_depth_count` is a getter function — bare `+= 1` fails at compile time with "binary assignment operation cannot be applied to fn item". Must always call setter explicitly.
+- `cur_cmd()` returns `u8` but `print_cmd_chr` expects `u16`; must cast at every call site.
+
+**For the next session:**
+- `get_next` (line 3164, ~495 lines): core token reader, very large.
+- `macro_call` (line 3660, ~339 lines): macro expansion.
+- `print_cmd_chr` (line 1265, ~1500 lines): very large display function.
+- After those: `scan_glyph_number`, `round_decimals`, `xetex_scan_dimen`, `new_native_*`, `load_native_font`, `do_locale_linebreaks`, `read_font_info`, `main_control`.
+
+---
+
+## Session 59 — 2026-04-30 — show_context, expand (partial)
+
+**Goal:** Translate `show_context` and `expand` from `xetex-xetex0.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 58
+- xetex-xetex0.c: ~14 C functions remaining.
+
+**Work done:**
+- Added `trick_buf(k)` read accessor to globals.rs (was missing; only set_trick_buf existed).
+- Added `force_eof` global static and `force_eof()`/`set_force_eof()` accessors to globals.rs.
+- Added `set_cur_order()` setter to globals.rs.
+- Translated `show_context` (line 2764, ~232 lines) → `src/scan.rs` (64464240). C `goto done` → `'outer: loop { ... break 'outer; }`.
+- Wrapped `show_context` C body in `#if 0 / #endif`.
+- All 4 test suites pass after show_context.
+- Translated `expand` (~272 lines) → `src/scan.rs`. Hit compilation errors left for session 60.
+- Removed `fn expand()` from extern "C" block in scan.rs (duplicate symbol).
+- Added `name_in_progress` to module-level imports in scan.rs.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 59 (show_context committed; expand pending)
+- xetex-xetex0.c: ~13 C functions remaining.
+
+**Surprises / gotchas:**
+- Removing from `extern "C"` block required when the Rust fn is defined in the same crate.
+
+---
+
 ## Session 58 — 2026-04-29 — flush_node_list, copy_node_list, show_activities, show_node_list, print_subsidiary_data
 
 **Goal:** Translate node-list management functions and display functions from `xetex-xetex0.c`.

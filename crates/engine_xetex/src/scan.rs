@@ -29,7 +29,6 @@ use crate::globals::{
 use crate::mem::new_rule;
 
 extern "C" {
-    fn get_next();
     fn macro_call();
     fn begin_token_list(p: i32, t: u16);
     fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool);
@@ -12783,4 +12782,573 @@ pub unsafe extern "C" fn expand() {
     set_cur_order(co_backup);
     set_mem_b32s1(BACKUP_HEAD, backup_backup);
     set_expand_depth_count(expand_depth_count() - 1);
+}
+
+// translated from xetex-xetex0.c:3167 (get_next)
+#[no_mangle]
+pub unsafe extern "C" fn get_next() {
+    use crate::globals::{
+        cond_ptr, cur_align, cur_boundary, deletions_allowed, eqtb_b16s1,
+        eof_seen, force_eof, grp_stack, if_stack, in_open, input_file, input_ptr,
+        par_loc, param_stack, set_cur_input, set_cur_input_index,
+        set_deletions_allowed, set_eof_seen, set_force_eof,
+        set_mem_b32s1, set_used_tectonic_coda_tokens, used_tectonic_coda_tokens,
+        line, set_line,
+    };
+
+    // State codes (xetex-constants.h)
+    const TOKEN_LIST: u16 = 0;
+    const MID_LINE: u16 = 1;
+    const SKIP_BLANKS: u16 = 17;
+    const NEW_LINE: u16 = 33;
+    // Category codes (xetex_format.h)
+    const ESCAPE: u8 = 0;
+    const LEFT_BRACE_CAT: u8 = 1;
+    const RIGHT_BRACE_CAT: u8 = 2;
+    const MATH_SHIFT: u8 = 3;
+    const TAB_MARK_CAT: u8 = 4;
+    const CAR_RET: u8 = 5;
+    const MAC_PARAM: u8 = 6;
+    const SUP_MARK: u8 = 7;
+    const SUB_MARK: u8 = 8;
+    const IGNORE: u8 = 9;
+    const SPACER: u8 = 10;
+    const LETTER: u8 = 11;
+    const OTHER_CHAR: u8 = 12;
+    const ACTIVE_CHAR: u8 = 13;
+    const COMMENT: u8 = 14;
+    const INVALID_CHAR: u8 = 15;
+    // Other constants
+    const CAT_CODE_BASE: i32 = 2_256_169;     // xetex_format.h:214
+    const NULL_CS_GN: i32 = 2_228_225;        // xetex_format.h:199
+    const BIGGEST_USV_GN: i32 = 0x10_FFFF;
+    const OUTER_CALL_GN: u8 = 115;
+    const DONT_EXPAND_GN: u8 = 118;
+    const MAX_COMMAND_GN: u8 = 102;
+    const RELAX_GN: u8 = 0;
+    const NO_EXPAND_FLAG_GN: i32 = BIGGEST_USV_GN + 2;
+    const CS_TOKEN_FLAG_GN: i32 = 0x1FF_FFFF;
+    const MAX_CHAR_VAL_GN: i32 = 0x200000;
+    const OUT_PARAM_GN: u8 = 5;
+    const PARAMETER_GN: u16 = 0;
+    const V_TEMPLATE_GN: u16 = 2;
+    const OMIT_GN: u8 = 63;
+    const OMIT_TEMPLATE_GN: i32 = 4_999_999 - 10;    // MEM_TOP - 10
+    const ALIGNING_GN: u8 = 4;
+    const LOCAL_BASE_GN: i32 = 2_254_871;
+    const LOCAL_EVERY_EOF: i32 = 10;
+    const LOCAL_TECTONIC_CODA: i32 = 12;
+    const EVERY_EOF_TEXT_GN: u16 = 16;
+    const TECTONIC_CODA_TEXT_GN: u16 = 19;
+    const SELECTOR_LOG_ONLY_GN: i32 = 18;
+    const INT_BASE_GN: i32 = 7_826_729;
+    const INT_PAR_TRACING_NESTING: i32 = 60;
+    const INT_PAR_END_LINE_CHAR_GN: i32 = 48;
+    const TEX_NULL_GN: i32 = crate::mem::TEX_NULL;
+
+    #[inline(always)]
+    fn is_lc_hex(c: i32) -> bool {
+        (c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x66)
+    }
+
+    'restart: loop {
+        set_cur_cs(0);
+
+        if cur_input().state != TOKEN_LIST {
+            'texswitch: loop {
+                if cur_input().loc <= cur_input().limit {
+                    // Read next character from the buffer
+                    set_cur_chr(buffer_entry(cur_input().loc));
+                    set_cur_input_loc(cur_input().loc + 1);
+
+                    // Handle UTF-16 surrogate pair
+                    if cur_chr() >= 0xD800 && cur_chr() < 0xDC00
+                        && cur_input().loc <= cur_input().limit
+                        && buffer_entry(cur_input().loc) >= 0xDC00
+                        && buffer_entry(cur_input().loc) < 0xE000
+                    {
+                        let lower = buffer_entry(cur_input().loc) - 0xDC00;
+                        set_cur_input_loc(cur_input().loc + 1);
+                        set_cur_chr(65536 + (cur_chr() - 0xD800) * 1024 + lower);
+                    }
+
+                    'reswitch: loop {
+                        let cat = eqtb_b32s1(CAT_CODE_BASE + cur_chr()) as u8;
+                        set_cur_cmd(cat);
+                        let sc = cur_input().state as i32 + cat as i32;
+
+                        match sc {
+                            // ANY_STATE_PLUS(IGNORE) + SKIP_BLANKS+SPACER + NEW_LINE+SPACER
+                            // → goto texswitch
+                            10 | 26 | 42 | 27 | 43 => { continue 'texswitch; }
+
+                            // ANY_STATE_PLUS(ESCAPE): escape sequence
+                            1 | 17 | 33 => {
+                                if cur_input().loc > cur_input().limit {
+                                    set_cur_cs(NULL_CS_GN);
+                                } else {
+                                    'start_cs: loop {
+                                        let cs_start = cur_input().loc;
+                                        let first_chr = buffer_entry(cs_start);
+                                        let first_cat = eqtb_b32s1(CAT_CODE_BASE + first_chr) as u8;
+                                        let mut k = cs_start + 1;
+                                        set_cur_input_state(
+                                            if first_cat == LETTER || first_cat == SPACER { SKIP_BLANKS } else { MID_LINE }
+                                        );
+
+                                        if first_cat == LETTER && k <= cur_input().limit {
+                                            // Multi-letter control word
+                                            let mut chr = buffer_entry(k);
+                                            let mut cat2 = eqtb_b32s1(CAT_CODE_BASE + chr) as u8;
+                                            k += 1;
+                                            while cat2 == LETTER && k <= cur_input().limit {
+                                                chr = buffer_entry(k);
+                                                cat2 = eqtb_b32s1(CAT_CODE_BASE + chr) as u8;
+                                                k += 1;
+                                            }
+
+                                            // Sup-mark (^^^) handling in multi-letter path
+                                            if cat2 == SUP_MARK && buffer_entry(k) == chr && k < cur_input().limit {
+                                                let mut sup_count: i32 = 2;
+                                                while sup_count < 6
+                                                    && k + 2*sup_count - 2 <= cur_input().limit
+                                                    && buffer_entry(k + sup_count - 1) == chr
+                                                {
+                                                    sup_count += 1;
+                                                }
+                                                let sup_count_save = sup_count;
+                                                let mut hex_ok = true;
+                                                for d in 1..=sup_count_save {
+                                                    if !is_lc_hex(buffer_entry(k + sup_count - 2 + d)) {
+                                                        let c = buffer_entry(k + 1);
+                                                        if c < 128 {
+                                                            let new_val = if c < 64 { c + 64 } else { c - 64 };
+                                                            set_buffer_entry(k - 1, new_val);
+                                                            set_cur_input_limit(cur_input().limit - 2);
+                                                            let mut kk = k;
+                                                            while kk <= cur_input().limit {
+                                                                set_buffer_entry(kk, buffer_entry(kk + 2));
+                                                                kk += 1;
+                                                            }
+                                                            continue 'start_cs;
+                                                        } else {
+                                                            sup_count = 0;
+                                                        }
+                                                        hex_ok = false;
+                                                        break;
+                                                    }
+                                                }
+                                                if hex_ok && sup_count > 0 {
+                                                    let mut new_chr: i32 = 0;
+                                                    for d in 1..=sup_count {
+                                                        let c = buffer_entry(k + sup_count - 2 + d);
+                                                        new_chr = 16 * new_chr
+                                                            + if c <= b'9' as i32 { c - b'0' as i32 } else { c - b'a' as i32 + 10 };
+                                                    }
+                                                    if new_chr <= BIGGEST_USV_GN {
+                                                        set_buffer_entry(k - 1, new_chr);
+                                                        let shift = 2 * sup_count - 1;
+                                                        set_cur_input_limit(cur_input().limit - shift);
+                                                        let mut kk = k;
+                                                        while kk <= cur_input().limit {
+                                                            set_buffer_entry(kk, buffer_entry(kk + shift));
+                                                            kk += 1;
+                                                        }
+                                                        continue 'start_cs;
+                                                    }
+                                                    // else: new_chr > BIGGEST_USV — fall through
+                                                }
+                                            }
+
+                                            if cat2 != LETTER { k -= 1; }
+                                            if k > cur_input().loc + 1 {
+                                                set_cur_cs(crate::hash::id_lookup(cur_input().loc, k - cur_input().loc));
+                                                set_cur_input_loc(k);
+                                                break 'start_cs; // goto found
+                                            }
+                                            // Single letter: fall through to single-char handling
+                                        } else {
+                                            // Single-char (non-LETTER first char) or end of line
+                                            if first_cat == SUP_MARK && buffer_entry(k) == first_chr && k < cur_input().limit {
+                                                let mut sup_count: i32 = 2;
+                                                while sup_count < 6
+                                                    && k + 2*sup_count - 2 <= cur_input().limit
+                                                    && buffer_entry(k + sup_count - 1) == first_chr
+                                                {
+                                                    sup_count += 1;
+                                                }
+                                                let sup_count_save = sup_count;
+                                                let mut hex_ok = true;
+                                                for d in 1..=sup_count_save {
+                                                    if !is_lc_hex(buffer_entry(k + sup_count - 2 + d)) {
+                                                        let c = buffer_entry(k + 1);
+                                                        if c < 128 {
+                                                            let new_val = if c < 64 { c + 64 } else { c - 64 };
+                                                            set_buffer_entry(k - 1, new_val);
+                                                            set_cur_input_limit(cur_input().limit - 2);
+                                                            let mut kk = k;
+                                                            while kk <= cur_input().limit {
+                                                                set_buffer_entry(kk, buffer_entry(kk + 2));
+                                                                kk += 1;
+                                                            }
+                                                            continue 'start_cs;
+                                                        } else {
+                                                            sup_count = 0;
+                                                        }
+                                                        hex_ok = false;
+                                                        break;
+                                                    }
+                                                }
+                                                if hex_ok && sup_count > 0 {
+                                                    let mut new_chr: i32 = 0;
+                                                    for d in 1..=sup_count {
+                                                        let c = buffer_entry(k + sup_count - 2 + d);
+                                                        new_chr = 16 * new_chr
+                                                            + if c <= b'9' as i32 { c - b'0' as i32 } else { c - b'a' as i32 + 10 };
+                                                    }
+                                                    if new_chr <= BIGGEST_USV_GN {
+                                                        set_buffer_entry(k - 1, new_chr);
+                                                        let shift = 2 * sup_count - 1;
+                                                        set_cur_input_limit(cur_input().limit - shift);
+                                                        let mut kk = k;
+                                                        while kk <= cur_input().limit {
+                                                            set_buffer_entry(kk, buffer_entry(kk + shift));
+                                                            kk += 1;
+                                                        }
+                                                        continue 'start_cs;
+                                                    }
+                                                    // else: new_chr > BIGGEST_USV — fall through
+                                                }
+                                            }
+                                        }
+
+                                        // Single-char CS: either buffer > 65535 uses id_lookup(1), else SINGLE_BASE
+                                        if buffer_entry(cur_input().loc) > 65535 {
+                                            set_cur_cs(crate::hash::id_lookup(cur_input().loc, 1));
+                                            set_cur_input_loc(cur_input().loc + 1);
+                                            break 'start_cs; // goto found
+                                        }
+                                        set_cur_cs(SINGLE_BASE + buffer_entry(cur_input().loc));
+                                        set_cur_input_loc(cur_input().loc + 1);
+                                        break 'start_cs;
+                                    }
+                                }
+                                // found:
+                                set_cur_cmd(eqtb_b16s1(cur_cs()) as u8);
+                                set_cur_chr(eqtb_b32s1(cur_cs()));
+                                if cur_cmd() >= OUTER_CALL_GN {
+                                    check_outer_validity();
+                                }
+                            }
+
+                            // ANY_STATE_PLUS(ACTIVE_CHAR): active character
+                            14 | 30 | 46 => {
+                                set_cur_cs(cur_chr() + 1);
+                                set_cur_cmd(eqtb_b16s1(cur_cs()) as u8);
+                                set_cur_chr(eqtb_b32s1(cur_cs()));
+                                set_cur_input_state(MID_LINE);
+                                if cur_cmd() >= OUTER_CALL_GN {
+                                    check_outer_validity();
+                                }
+                            }
+
+                            // ANY_STATE_PLUS(SUP_MARK): caret (^^) expansion
+                            8 | 24 | 40 => {
+                                if cur_chr() == buffer_entry(cur_input().loc)
+                                    && cur_input().loc < cur_input().limit
+                                {
+                                    let mut sup_count: i32 = 2;
+                                    while sup_count < 6
+                                        && cur_input().loc + 2*sup_count - 2 <= cur_input().limit
+                                        && cur_chr() == buffer_entry(cur_input().loc + sup_count - 1)
+                                    {
+                                        sup_count += 1;
+                                    }
+                                    let sup_count_save = sup_count;
+                                    let mut hex_ok = true;
+                                    for d in 1..=sup_count_save {
+                                        if !is_lc_hex(buffer_entry(cur_input().loc + sup_count - 2 + d)) {
+                                            let c = buffer_entry(cur_input().loc + 1);
+                                            if c < 128 {
+                                                set_cur_input_loc(cur_input().loc + 2);
+                                                set_cur_chr(if c < 64 { c + 64 } else { c - 64 });
+                                                continue 'reswitch;
+                                            }
+                                            hex_ok = false;
+                                            break;
+                                        }
+                                    }
+                                    if hex_ok {
+                                        let mut new_chr: i32 = 0;
+                                        for d in 1..=sup_count {
+                                            let c = buffer_entry(cur_input().loc + sup_count - 2 + d);
+                                            new_chr = 16 * new_chr
+                                                + if c <= b'9' as i32 { c - b'0' as i32 } else { c - b'a' as i32 + 10 };
+                                        }
+                                        if new_chr > BIGGEST_USV_GN {
+                                            set_cur_chr(buffer_entry(cur_input().loc));
+                                            // fall to not_exp
+                                        } else {
+                                            set_cur_chr(new_chr);
+                                            set_cur_input_loc(cur_input().loc + 2 * sup_count - 1);
+                                            continue 'reswitch;
+                                        }
+                                    }
+                                }
+                                // not_exp:
+                                set_cur_input_state(MID_LINE);
+                            }
+
+                            // ANY_STATE_PLUS(INVALID_CHAR): invalid character
+                            16 | 32 | 48 => {
+                                crate::output::error_here_with_diagnostic(
+                                    c"Text line contains an invalid character".as_ptr()
+                                );
+                                capture_to_diagnostic(core::ptr::null_mut());
+                                set_help_ptr(2);
+                                set_help_line(1, c"A funny symbol that I can't read has just been input.".as_ptr());
+                                set_help_line(0, c"Continue, and I'll forget that it ever happened.".as_ptr());
+                                set_deletions_allowed(false);
+                                error();
+                                set_deletions_allowed(true);
+                                continue 'restart;
+                            }
+
+                            // MID_LINE + SPACER
+                            11 => {
+                                set_cur_input_state(SKIP_BLANKS);
+                                set_cur_chr(b' ' as i32);
+                            }
+
+                            // MID_LINE + CAR_RET
+                            6 => {
+                                set_cur_input_loc(cur_input().limit + 1);
+                                set_cur_cmd(SPACER);
+                                set_cur_chr(b' ' as i32);
+                            }
+
+                            // ANY_STATE_PLUS(COMMENT) + SKIP_BLANKS+CAR_RET → skip rest of line, goto texswitch
+                            15 | 31 | 47 | 22 => {
+                                set_cur_input_loc(cur_input().limit + 1);
+                                continue 'texswitch;
+                            }
+
+                            // NEW_LINE + CAR_RET: insert \par
+                            38 => {
+                                set_cur_input_loc(cur_input().limit + 1);
+                                set_cur_cs(par_loc());
+                                set_cur_cmd(eqtb_b16s1(cur_cs()) as u8);
+                                set_cur_chr(eqtb_b32s1(cur_cs()));
+                                if cur_cmd() >= OUTER_CALL_GN {
+                                    check_outer_validity();
+                                }
+                            }
+
+                            // MID_LINE + LEFT_BRACE
+                            2 => {
+                                set_align_state(align_state() + 1);
+                            }
+
+                            // SKIP_BLANKS + LEFT_BRACE | NEW_LINE + LEFT_BRACE
+                            18 | 34 => {
+                                set_cur_input_state(MID_LINE);
+                                set_align_state(align_state() + 1);
+                            }
+
+                            // MID_LINE + RIGHT_BRACE
+                            3 => {
+                                set_align_state(align_state() - 1);
+                            }
+
+                            // SKIP_BLANKS + RIGHT_BRACE | NEW_LINE + RIGHT_BRACE
+                            19 | 35 => {
+                                set_cur_input_state(MID_LINE);
+                                set_align_state(align_state() - 1);
+                            }
+
+                            // ADD_DELIMS_TO(SKIP_BLANKS): SKIP_BLANKS + MATH_SHIFT/TAB_MARK/MAC_PARAM/SUB_MARK/LETTER/OTHER_CHAR
+                            20 | 21 | 23 | 25 | 28 | 29 => {
+                                set_cur_input_state(MID_LINE);
+                            }
+
+                            // ADD_DELIMS_TO(NEW_LINE): NEW_LINE + MATH_SHIFT/TAB_MARK/MAC_PARAM/SUB_MARK/LETTER/OTHER_CHAR
+                            36 | 37 | 39 | 41 | 44 | 45 => {
+                                set_cur_input_state(MID_LINE);
+                            }
+
+                            _ => {} // default: do nothing
+                        }
+                        break 'reswitch;
+                    }
+                    break 'texswitch;
+                } else {
+                    // End of line / end of file
+                    set_cur_input_state(NEW_LINE);
+
+                    if cur_input().name > 17 {
+                        set_line(line() + 1);
+                        set_first(cur_input().start);
+
+                        if !force_eof() {
+                            if cur_input().name <= 19 {
+                                if crate::input::pseudo_input() {
+                                    set_cur_input_limit(last());
+                                } else if eqtb_b32s1(LOCAL_BASE_GN + LOCAL_EVERY_EOF) != TEX_NULL_GN
+                                    && !eof_seen(cur_input().index as i32)
+                                {
+                                    set_cur_input_limit(first() - 1);
+                                    set_eof_seen(cur_input().index as i32, true);
+                                    crate::input::begin_token_list(
+                                        eqtb_b32s1(LOCAL_BASE_GN + LOCAL_EVERY_EOF),
+                                        EVERY_EOF_TEXT_GN,
+                                    );
+                                    continue 'restart;
+                                } else {
+                                    set_force_eof(true);
+                                }
+                            } else {
+                                if input_line(input_file(cur_input().index as i32) as *mut libc::c_void) != 0 {
+                                    set_cur_input_limit(last());
+                                } else if eqtb_b32s1(LOCAL_BASE_GN + LOCAL_EVERY_EOF) != TEX_NULL_GN
+                                    && !eof_seen(cur_input().index as i32)
+                                {
+                                    set_cur_input_limit(first() - 1);
+                                    set_eof_seen(cur_input().index as i32, true);
+                                    crate::input::begin_token_list(
+                                        eqtb_b32s1(LOCAL_BASE_GN + LOCAL_EVERY_EOF),
+                                        EVERY_EOF_TEXT_GN,
+                                    );
+                                    continue 'restart;
+                                } else {
+                                    set_force_eof(true);
+                                }
+                            }
+                        }
+
+                        if force_eof() {
+                            if eqtb_b32s1(INT_BASE_GN + INT_PAR_TRACING_NESTING) > 0 {
+                                if grp_stack(in_open() as i32) != cur_boundary()
+                                    || if_stack(in_open() as i32) != cond_ptr()
+                                {
+                                    crate::output::file_warning();
+                                }
+                            }
+                            if cur_input().name >= 19 {
+                                crate::output::print_char(b')' as i32);
+                                set_open_parens(open_parens() - 1);
+                                ttstub_output_flush(rust_stdout());
+                            }
+                            set_force_eof(false);
+                            crate::input::end_file_reading();
+                            check_outer_validity();
+                            continue 'restart;
+                        }
+
+                        let end_char = eqtb_b32s1(INT_BASE_GN + INT_PAR_END_LINE_CHAR_GN);
+                        if end_char < 0 || end_char > 255 {
+                            set_cur_input_limit(cur_input().limit - 1);
+                        } else {
+                            set_buffer_entry(cur_input().limit, end_char);
+                        }
+                        set_first(cur_input().limit + 1);
+                        set_cur_input_loc(cur_input().start);
+                    } else {
+                        if cur_input().name != 0 {
+                            set_cur_cmd(0);
+                            set_cur_chr(0);
+                            return;
+                        }
+                        if input_ptr() > 0 {
+                            crate::input::end_file_reading();
+                            continue 'restart;
+                        }
+                        if !used_tectonic_coda_tokens()
+                            && eqtb_b32s1(LOCAL_BASE_GN + LOCAL_TECTONIC_CODA) != TEX_NULL_GN
+                        {
+                            set_used_tectonic_coda_tokens(true);
+                            crate::input::begin_token_list(
+                                eqtb_b32s1(LOCAL_BASE_GN + LOCAL_TECTONIC_CODA),
+                                TECTONIC_CODA_TEXT_GN,
+                            );
+                            continue 'restart;
+                        }
+                        if selector() < SELECTOR_LOG_ONLY_GN {
+                            open_log_file();
+                        }
+                        crate::errors::fatal_error(
+                            c"*** (job aborted, no legal \\end found)".as_ptr()
+                        );
+                    }
+                    continue 'texswitch;
+                }
+            }
+        } else if cur_input().loc != TEX_NULL_GN {
+            // Reading from a token list
+            let t = mem_b32s0(cur_input().loc);
+            set_cur_input_loc(mem_b32s1(cur_input().loc)); // LLIST_link
+
+            if t >= CS_TOKEN_FLAG_GN {
+                set_cur_cs(t - CS_TOKEN_FLAG_GN);
+                set_cur_cmd(eqtb_b16s1(cur_cs()) as u8);
+                set_cur_chr(eqtb_b32s1(cur_cs()));
+                if cur_cmd() >= OUTER_CALL_GN {
+                    if cur_cmd() == DONT_EXPAND_GN {
+                        set_cur_cs(mem_b32s0(cur_input().loc) - CS_TOKEN_FLAG_GN);
+                        set_cur_input_loc(TEX_NULL_GN);
+                        set_cur_cmd(eqtb_b16s1(cur_cs()) as u8);
+                        set_cur_chr(eqtb_b32s1(cur_cs()));
+                        if cur_cmd() > MAX_COMMAND_GN {
+                            set_cur_cmd(RELAX_GN);
+                            set_cur_chr(NO_EXPAND_FLAG_GN);
+                        }
+                    } else {
+                        check_outer_validity();
+                    }
+                }
+            } else {
+                set_cur_cmd((t / MAX_CHAR_VAL_GN) as u8);
+                set_cur_chr(t % MAX_CHAR_VAL_GN);
+                match cur_cmd() {
+                    x if x == LEFT_BRACE_CAT => {
+                        set_align_state(align_state() + 1);
+                    }
+                    x if x == RIGHT_BRACE_CAT => {
+                        set_align_state(align_state() - 1);
+                    }
+                    x if x == OUT_PARAM_GN => {
+                        crate::input::begin_token_list(
+                            param_stack(cur_input().limit + cur_chr() - 1),
+                            PARAMETER_GN,
+                        );
+                        continue 'restart;
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            // Token list exhausted
+            crate::input::end_token_list();
+            continue 'restart;
+        }
+
+        // Alignment preamble check (§818)
+        if cur_cmd() <= CAR_RET && cur_cmd() >= TAB_MARK_CAT && align_state() == 0 {
+            if scanner_status() == ALIGNING_GN || cur_align() == TEX_NULL_GN {
+                crate::errors::fatal_error(
+                    c"(interwoven alignment preambles are not allowed)".as_ptr()
+                );
+            }
+            let saved_cmd = mem_b32s0(cur_align() + 5);
+            set_mem_b32s0(cur_align() + 5, cur_chr());
+            if saved_cmd as u8 == OMIT_GN {
+                crate::input::begin_token_list(OMIT_TEMPLATE_GN, V_TEMPLATE_GN);
+            } else {
+                crate::input::begin_token_list(mem_b32s1(cur_align() + 2), V_TEMPLATE_GN);
+            }
+            set_cur_cmd(saved_cmd as u8);
+            set_align_state(1_000_000);
+            continue 'restart;
+        }
+        break 'restart;
+    }
 }
