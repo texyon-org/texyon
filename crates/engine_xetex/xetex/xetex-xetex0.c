@@ -3662,6 +3662,8 @@ restart:
 /* get_token: translated to Rust in src/scan.rs */
 
 
+/* macro_call: translated to Rust in src/scan.rs */
+#if 0
 void
 macro_call(void)
 {
@@ -3993,6 +3995,7 @@ exit:
     scanner_status = save_scanner_status;
     warning_index = save_warning_index;
 }
+#endif
 
 
 /* insert_relax: translated to Rust in src/input.rs */

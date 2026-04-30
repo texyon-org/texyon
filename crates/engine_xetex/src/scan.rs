@@ -29,7 +29,6 @@ use crate::globals::{
 use crate::mem::new_rule;
 
 extern "C" {
-    fn macro_call();
     fn begin_token_list(p: i32, t: u16);
     fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool);
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
@@ -13351,4 +13350,345 @@ pub unsafe extern "C" fn get_next() {
         }
         break 'restart;
     }
+}
+
+// translated from xetex-xetex0.c:3665 (macro_call)
+#[no_mangle]
+pub unsafe extern "C" fn macro_call() {
+    use crate::globals::{
+        align_state, avail, cur_chr, cur_cs, cur_tok, eqtb_b16s1, input_ptr,
+        long_state, max_param_stack, mem_b32s0, mem_b32s1, param_ptr, param_size,
+        param_stack, par_token, scanner_status, set_align_state, set_avail,
+        set_cur_input_loc, set_cur_input_name, set_cur_tok, set_long_state,
+        set_max_param_stack, set_mem_b32s0, set_mem_b32s1, set_param_ptr,
+        set_param_stack, set_scanner_status, set_warning_index, warning_index,
+    };
+    use crate::mem::{flush_list, get_avail, TEX_NULL};
+
+    const MATCHING: u8 = 3;          // xetex-constants.h:185
+    const LONG_CALL: u8 = 114;       // xetex_format.h:356
+    const OUTER_CALL: u8 = 115;      // xetex_format.h:357
+    const MACRO: u16 = 6;            // xetex-constants.h (token-list type)
+    const V_TEMPLATE: u16 = 2;       // xetex-constants.h:201
+    const TOKEN_LIST: u16 = 0;       // xetex-constants.h:261
+    const INT_PAR_TRACING_MACROS: i32 = 30;      // xetex_format.h:65
+    const INT_PAR_TRACING_STACK_LEVELS: i32 = 55; // xetex_format.h:90
+
+    let save_scanner_status = scanner_status();
+    let save_warning_index = warning_index();
+    set_warning_index(cur_cs());
+    let ref_count = cur_chr();
+    let mut r = mem_b32s1(ref_count);
+    let mut n: i32 = 0;
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_MACROS) > 0 {
+        crate::output::begin_diagnostic();
+        crate::output::diagnostic_begin_capture_warning_here();
+        let tsl = eqtb_b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS);
+        if tsl > 0 {
+            if input_ptr() < tsl {
+                let mut v = input_ptr();
+                crate::output::print_ln();
+                crate::output::print_char(b'~' as i32);
+                while v > 0 {
+                    crate::output::print_char(b'.' as i32);
+                    v -= 1;
+                }
+                crate::output::print_cs(warning_index());
+                crate::output::token_show(ref_count);
+            } else {
+                crate::output::print_char(b'~' as i32);
+                crate::output::print_char(b'~' as i32);
+                crate::output::print_cs(warning_index());
+            }
+        } else {
+            crate::output::print_ln();
+            crate::output::print_cs(warning_index());
+            crate::output::token_show(ref_count);
+        }
+        capture_to_diagnostic(std::ptr::null_mut());
+        crate::output::end_diagnostic(false);
+    }
+
+    if mem_b32s0(r) == PROTECTED_TOKEN {
+        r = mem_b32s1(r);
+    }
+
+    // pstack: accumulates gathered parameter token lists (max 9 params)
+    let mut pstack: [i32; 9] = [TEX_NULL; 9];
+    let mut match_chr: i32 = 0;
+    let mut rbrace_ptr: i32 = TEX_NULL;
+
+    'mac: {
+        if mem_b32s0(r) != END_MATCH_TOKEN {
+            set_scanner_status(MATCHING);
+            let mut unbalance: i32 = 0;
+            set_long_state(eqtb_b16s1(cur_cs()) as u8);
+            if long_state() >= OUTER_CALL {
+                set_long_state(long_state() - 2);
+            }
+
+            'outer: loop {
+                set_mem_b32s1(TEMP_HEAD, TEX_NULL);
+                // Determine whether this iteration gathers a delimited parameter
+                let s: i32;
+                let mut p: i32;
+                let mut m: i32;
+                if mem_b32s0(r) >= END_MATCH_TOKEN || mem_b32s0(r) < MATCH_TOKEN {
+                    s = TEX_NULL;
+                    p = TEX_NULL; // unused when s == TEX_NULL
+                    m = 0;
+                } else {
+                    match_chr = mem_b32s0(r) - MATCH_TOKEN;
+                    s = mem_b32s1(r);
+                    r = s;
+                    p = TEMP_HEAD;
+                    m = 0;
+                }
+
+                'continue_: loop {
+                    get_token();
+
+                    if cur_tok() == mem_b32s0(r) {
+                        r = mem_b32s1(r);
+                        if mem_b32s0(r) >= MATCH_TOKEN && mem_b32s0(r) <= END_MATCH_TOKEN {
+                            if cur_tok() < LEFT_BRACE_LIMIT {
+                                set_align_state(align_state() - 1);
+                            }
+                            break 'continue_; // goto found
+                        } else {
+                            continue 'continue_; // goto continue_
+                        }
+                    }
+
+                    if s != r {
+                        if s == TEX_NULL {
+                            error_here_with_diagnostic(c"Use of ".as_ptr());
+                            crate::output::sprint_cs(warning_index());
+                            crate::output::print_cstr(c" doesn't match its definition".as_ptr());
+                            capture_to_diagnostic(std::ptr::null_mut());
+                            set_help_ptr(4);
+                            set_help_line(3, c"If you say, e.g., `\\def\\a1{...}', then you must always".as_ptr());
+                            set_help_line(2, c"put `1' after `\\a', since control sequence names are".as_ptr());
+                            set_help_line(1, c"made up of letters only. The macro here has not been".as_ptr());
+                            set_help_line(0, c"followed by the required stuff, so I'm ignoring it.".as_ptr());
+                            crate::errors::error();
+                            break 'mac; // goto exit
+                        } else {
+                            let mut t = s;
+                            loop {
+                                let q = get_avail();
+                                set_mem_b32s1(p, q);
+                                set_mem_b32s0(q, mem_b32s0(t));
+                                p = q;
+                                m += 1;
+                                let mut u = mem_b32s1(t);
+                                let mut v = s;
+                                loop {
+                                    if u == r {
+                                        if cur_tok() != mem_b32s0(v) {
+                                            break; // goto done
+                                        } else {
+                                            r = mem_b32s1(v);
+                                            continue 'continue_; // goto continue_
+                                        }
+                                    }
+                                    if mem_b32s0(u) != mem_b32s0(v) {
+                                        break; // goto done
+                                    }
+                                    u = mem_b32s1(u);
+                                    v = mem_b32s1(v);
+                                }
+                                // done:
+                                t = mem_b32s1(t);
+                                if t == r { break; }
+                            }
+                            r = s;
+                        }
+                    }
+
+                    if cur_tok() == par_token() {
+                        if long_state() != LONG_CALL {
+                            if long_state() == CALL {
+                                runaway();
+                                error_here_with_diagnostic(c"Paragraph ended before ".as_ptr());
+                                crate::output::sprint_cs(warning_index());
+                                crate::output::print_cstr(c" was complete".as_ptr());
+                                capture_to_diagnostic(std::ptr::null_mut());
+                                set_help_ptr(3);
+                                set_help_line(2, c"I suspect you've forgotten a `}', causing me to apply this".as_ptr());
+                                set_help_line(1, c"control sequence to too much text. How can we recover?".as_ptr());
+                                set_help_line(0, c"My plan is to forget the whole thing and hope for the best.".as_ptr());
+                                crate::input::back_error();
+                            }
+                            pstack[n as usize] = mem_b32s1(TEMP_HEAD);
+                            set_align_state(align_state() - unbalance);
+                            for m2 in 0..=n {
+                                flush_list(pstack[m2 as usize]);
+                            }
+                            break 'mac; // goto exit
+                        }
+                    }
+
+                    if cur_tok() < RIGHT_BRACE_LIMIT {
+                        if cur_tok() < LEFT_BRACE_LIMIT {
+                            // left brace: gather a braced group
+                            unbalance = 1;
+                            loop {
+                                let q = if avail() != TEX_NULL {
+                                    let q = avail();
+                                    set_avail(mem_b32s1(q));
+                                    set_mem_b32s1(q, TEX_NULL);
+                                    q
+                                } else {
+                                    get_avail()
+                                };
+                                set_mem_b32s1(p, q);
+                                set_mem_b32s0(q, cur_tok());
+                                p = q;
+
+                                get_token();
+
+                                if cur_tok() == par_token() {
+                                    if long_state() != LONG_CALL {
+                                        if long_state() == CALL {
+                                            runaway();
+                                            error_here_with_diagnostic(c"Paragraph ended before ".as_ptr());
+                                            crate::output::sprint_cs(warning_index());
+                                            crate::output::print_cstr(c" was complete".as_ptr());
+                                            capture_to_diagnostic(std::ptr::null_mut());
+                                            set_help_ptr(3);
+                                            set_help_line(2, c"I suspect you've forgotten a `}', causing me to apply this".as_ptr());
+                                            set_help_line(1, c"control sequence to too much text. How can we recover?".as_ptr());
+                                            set_help_line(0, c"My plan is to forget the whole thing and hope for the best.".as_ptr());
+                                            crate::input::back_error();
+                                        }
+                                        pstack[n as usize] = mem_b32s1(TEMP_HEAD);
+                                        set_align_state(align_state() - unbalance);
+                                        for m2 in 0..=n {
+                                            flush_list(pstack[m2 as usize]);
+                                        }
+                                        break 'mac; // goto exit
+                                    }
+                                }
+
+                                if cur_tok() < RIGHT_BRACE_LIMIT {
+                                    if cur_tok() < LEFT_BRACE_LIMIT {
+                                        unbalance += 1;
+                                    } else {
+                                        unbalance -= 1;
+                                        if unbalance == 0 { break; } // done1
+                                    }
+                                }
+                            }
+                            // done1:
+                            rbrace_ptr = p;
+                            let q = get_avail();
+                            set_mem_b32s1(p, q);
+                            set_mem_b32s0(q, cur_tok());
+                            p = q;
+                        } else {
+                            // right brace with no matching left brace (413)
+                            crate::input::back_input();
+                            error_here_with_diagnostic(c"Argument of ".as_ptr());
+                            crate::output::sprint_cs(warning_index());
+                            crate::output::print_cstr(c" has an extra }".as_ptr());
+                            capture_to_diagnostic(std::ptr::null_mut());
+                            set_help_ptr(6);
+                            set_help_line(5, c"I've run across a `}' that doesn't seem to match anything.".as_ptr());
+                            set_help_line(4, c"For example, `\\def\\a#1{...}' and `\\a}' would produce".as_ptr());
+                            set_help_line(3, c"this error. If you simply proceed now, the `\\par' that".as_ptr());
+                            set_help_line(2, c"I've just inserted will cause me to report a runaway".as_ptr());
+                            set_help_line(1, c"argument that might be the root of the problem. But if".as_ptr());
+                            set_help_line(0, c"your `}' was spurious, just type `2' and it will go away.".as_ptr());
+                            set_align_state(align_state() + 1);
+                            set_long_state(CALL);
+                            set_cur_tok(par_token());
+                            crate::input::ins_error();
+                            continue 'continue_; // goto continue_
+                        }
+                    } else {
+                        // 411: non-brace token
+                        if cur_tok() == SPACE_TOKEN {
+                            if mem_b32s0(r) <= END_MATCH_TOKEN && mem_b32s0(r) >= MATCH_TOKEN {
+                                continue 'continue_; // goto continue_
+                            }
+                        }
+                        let q = get_avail();
+                        set_mem_b32s1(p, q);
+                        set_mem_b32s0(q, cur_tok());
+                        p = q;
+                    }
+
+                    m += 1;
+                    if mem_b32s0(r) > END_MATCH_TOKEN || mem_b32s0(r) < MATCH_TOKEN {
+                        continue 'continue_; // goto continue_
+                    }
+                    break 'continue_; // goto found
+                } // end 'continue_
+
+                // found:
+                if s != TEX_NULL {
+                    if m == 1 && mem_b32s0(p) < RIGHT_BRACE_LIMIT {
+                        // strip outer braces from single-token braced arg
+                        set_mem_b32s1(rbrace_ptr, TEX_NULL);
+                        set_mem_b32s1(p, avail());
+                        set_avail(p);
+                        p = mem_b32s1(TEMP_HEAD);
+                        pstack[n as usize] = mem_b32s1(p);
+                        set_mem_b32s1(p, avail());
+                        set_avail(p);
+                    } else {
+                        pstack[n as usize] = mem_b32s1(TEMP_HEAD);
+                    }
+
+                    n += 1;
+
+                    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_MACROS) > 0 {
+                        let tsl = eqtb_b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS);
+                        if tsl == 0 || input_ptr() < tsl {
+                            crate::output::begin_diagnostic();
+                            crate::output::diagnostic_begin_capture_warning_here();
+                            crate::output::print_nl(match_chr);
+                            crate::output::print_int(n);
+                            crate::output::print_cstr(c"<-".as_ptr());
+                            crate::output::show_token_list(pstack[(n - 1) as usize], TEX_NULL, 1000);
+                            capture_to_diagnostic(std::ptr::null_mut());
+                            crate::output::end_diagnostic(false);
+                        }
+                    }
+                }
+
+                if mem_b32s0(r) == END_MATCH_TOKEN { break 'outer; }
+            } // end 'outer
+        } // end if mem_b32s0(r) != END_MATCH_TOKEN
+
+        // Flush exhausted token lists before installing macro body
+        while cur_input().state == TOKEN_LIST
+            && cur_input().loc == TEX_NULL
+            && cur_input().index != V_TEMPLATE
+        {
+            crate::input::end_token_list();
+        }
+
+        crate::input::begin_token_list(ref_count, MACRO);
+        set_cur_input_name(warning_index());
+        set_cur_input_loc(mem_b32s1(r));
+
+        if n > 0 {
+            if param_ptr() + n > max_param_stack() {
+                set_max_param_stack(param_ptr() + n);
+                if max_param_stack() > param_size() {
+                    crate::errors::overflow(c"parameter stack size".as_ptr(), param_size());
+                }
+            }
+            for m in 0..n {
+                set_param_stack(param_ptr() + m, pstack[m as usize]);
+            }
+            set_param_ptr(param_ptr() + n);
+        }
+    } // end 'mac (exit:)
+
+    set_scanner_status(save_scanner_status);
+    set_warning_index(save_warning_index);
 }

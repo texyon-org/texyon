@@ -273,6 +273,8 @@ mod raw {
         pub(super) static mut param_stack: *mut i32;
         pub(super) static mut param_ptr: i32;
         pub(super) static mut max_param_stack: i32;
+        // Allocated size of param_stack (xetex-ini.c:3596).
+        pub(super) static mut param_size: i32;
 
         // SA trie cursor — scratch pointer used during SA node traversal/allocation
         // (xetex-xetexd.h:710; xetex-ini.c:336).
@@ -2559,6 +2561,11 @@ pub(crate) fn max_param_stack() -> i32 {
 #[inline]
 pub(crate) fn set_max_param_stack(v: i32) {
     unsafe { raw::max_param_stack = v; }
+}
+/// Returns `param_size` — allocated capacity of param_stack (xetex-ini.c:3596).
+#[inline]
+pub(crate) fn param_size() -> i32 {
+    unsafe { raw::param_size }
 }
 
 // ---------------------------------------------------------------------------
