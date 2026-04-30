@@ -32,6 +32,47 @@ template.
 
 ---
 
+## Session 61 — 2026-04-30 — get_next, macro_call
+
+**Goal:** Translate `get_next` and `macro_call` from `xetex-xetex0.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 60
+- xetex-xetex0.c: ~12 C functions remaining.
+
+**Work done:**
+- Translated `get_next` (~490 lines, xetex-xetex0.c:3167) → `src/scan.rs` (97dbabde).
+  - Added `used_tectonic_coda_tokens` global to globals.rs.
+  - Complex nested labeled loops: `'restart`, `'texswitch`, `'reswitch`, `'start_cs`.
+  - CRITICAL bug found and fixed: COMMENT case (cat=7) missing `set_cur_input_loc(limit+1)`.
+    Symptoms: XDV 96+ bytes larger, trip test `\toks0` instead of `\output`.
+    Fix: `15 | 31 | 47 | 22 => { set_cur_input_loc(cur_input().limit + 1); continue 'texswitch; }`
+- Translated `macro_call` (~330 lines, xetex-xetex0.c:3665) → `src/scan.rs` (6c98b044).
+  - Added `param_size` accessor to globals.rs.
+  - `pstack` translated as a local `[i32; 9]` array (was C global but only used in macro_call).
+  - goto-label structure: `'mac:` block for exit cleanup, `'outer:` loop for do-while,
+    `'continue_:` loop for inner token-reading cycle.
+- All 4 test suites pass (29+2+7+4 = 42).
+- Updated SESSION_LOG.md, MODULE_STATUS.md.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 61
+- xetex-xetex0.c: ~10 C functions remaining.
+
+**Surprises / gotchas:**
+- COMMENT case bug: easy to miss `cur_input.loc = cur_input.limit + 1` since it looks like a goto-only effect. Without it, `%` comments process rest of commented line as real tokens.
+- `pstack` is a C global but logically local to macro_call; translating as local array avoids adding another global.
+
+**For the next session:**
+- `print_cmd_chr` (line 1265, ~1500 lines): very large display function with CALL/OUTER_CALL tracing.
+- After that: `scan_glyph_number`, `round_decimals`, `xetex_scan_dimen`, `new_native_*`, `load_native_font`, `do_locale_linebreaks`, `read_font_info`, `main_control`.
+
+---
+
 ## Session 60 — 2026-04-30 — expand
 
 **Goal:** Finish `expand` translation (compilation errors remained from session 59) and commit.
