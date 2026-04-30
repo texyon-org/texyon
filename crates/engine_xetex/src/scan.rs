@@ -12273,3 +12273,210 @@ pub unsafe extern "C" fn show_node_list(mut p: i32) {
         p = mem_b32s1(p);
     }
 }
+
+// ---------------------------------------------------------------------------
+// show_context
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:2764 (show_context)
+#[no_mangle]
+pub unsafe extern "C" fn show_context() {
+    use crate::globals::{
+        base_ptr, set_base_ptr, input_ptr, input_stack, set_input_stack, set_cur_input,
+        tally, set_tally, trick_count, set_trick_count, first_count, set_first_count,
+        error_line, half_error_line, line, line_stack, in_open, buffer_entry,
+        trick_buf,
+    };
+
+    const TOKEN_LIST: u16 = 0;
+    const BACKED_UP: u16 = 3;
+    const BACKED_UP_CHAR: u16 = 4;
+    const PARAMETER: u16 = 0;
+    const U_TEMPLATE: u16 = 1;
+    const V_TEMPLATE: u16 = 2;
+    const INSERTED: u16 = 5;
+    const MACRO: u16 = 6;
+    const OUTPUT_TEXT: u16 = 7;
+    const EVERY_PAR_TEXT: u16 = 8;
+    const EVERY_MATH_TEXT: u16 = 9;
+    const EVERY_DISPLAY_TEXT: u16 = 10;
+    const EVERY_HBOX_TEXT: u16 = 11;
+    const EVERY_VBOX_TEXT: u16 = 12;
+    const EVERY_JOB_TEXT: u16 = 13;
+    const EVERY_CR_TEXT: u16 = 14;
+    const MARK_TEXT: u16 = 15;
+    const EVERY_EOF_TEXT: u16 = 16;
+    const INTER_CHAR_TEXT: u16 = 17;
+    const WRITE_TEXT: u16 = 18;
+    const TECTONIC_CODA_TEXT: u16 = 19;
+    const SELECTOR_PSEUDO: i32 = 20;
+    const INT_PAR_ERROR_CONTEXT_LINES: i32 = 54;
+
+    set_base_ptr(input_ptr());
+    set_input_stack(base_ptr(), cur_input());
+    let mut nn: i32 = -1;
+    let mut bottom_line = false;
+
+    'outer: loop {
+        set_cur_input(input_stack(base_ptr()));
+        let ci = cur_input();
+        if ci.state != TOKEN_LIST {
+            if ci.name > 19 || base_ptr() == 0 {
+                bottom_line = true;
+            }
+        }
+        let error_context_lines = eqtb_b32s1(INT_BASE + INT_PAR_ERROR_CONTEXT_LINES);
+        if base_ptr() == input_ptr() || bottom_line || nn < error_context_lines {
+            let ci = cur_input();
+            if base_ptr() == input_ptr()
+                || ci.state != TOKEN_LIST
+                || ci.index != BACKED_UP
+                || ci.loc != crate::mem::TEX_NULL
+            {
+                set_tally(0);
+                let old_setting = selector();
+                let l;
+                if ci.state != TOKEN_LIST {
+                    if ci.name <= 17 {
+                        if ci.name == 0 {
+                            if base_ptr() == 0 {
+                                crate::output::print_nl_cstr(c"<*>".as_ptr());
+                            } else {
+                                crate::output::print_nl_cstr(c"<insert> ".as_ptr());
+                            }
+                        } else {
+                            crate::output::print_nl_cstr(c"<read ".as_ptr());
+                            if ci.name == 17 {
+                                crate::output::print_char('*' as i32);
+                            } else {
+                                crate::output::print_int(ci.name - 1);
+                            }
+                            crate::output::print_char('>' as i32);
+                        }
+                    } else {
+                        crate::output::print_nl_cstr(c"l.".as_ptr());
+                        if ci.index as i32 == in_open() {
+                            crate::output::print_int(line());
+                        } else {
+                            crate::output::print_int(line_stack(ci.index as i32 + 1));
+                        }
+                    }
+                    crate::output::print_char(' ' as i32);
+                    l = tally();
+                    set_tally(0);
+                    set_selector(SELECTOR_PSEUDO);
+                    set_trick_count(1_000_000);
+                    let end_char = eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
+                    let j = if buffer_entry(ci.limit) == end_char { ci.limit } else { ci.limit + 1 };
+                    if j > 0 {
+                        let mut i = ci.start;
+                        let for_end = j - 1;
+                        if i <= for_end {
+                            loop {
+                                if i == ci.loc {
+                                    set_first_count(tally());
+                                    let tc = tally() + 1 + error_line() - half_error_line();
+                                    set_trick_count(tc.max(error_line()));
+                                }
+                                crate::output::print_char(buffer_entry(i));
+                                if i >= for_end { break; }
+                                i += 1;
+                            }
+                        }
+                    }
+                } else {
+                    match ci.index {
+                        PARAMETER => crate::output::print_nl_cstr(c"<argument> ".as_ptr()),
+                        U_TEMPLATE | V_TEMPLATE => crate::output::print_nl_cstr(c"<template> ".as_ptr()),
+                        BACKED_UP | BACKED_UP_CHAR => {
+                            if ci.loc == crate::mem::TEX_NULL {
+                                crate::output::print_nl_cstr(c"<recently read> ".as_ptr());
+                            } else {
+                                crate::output::print_nl_cstr(c"<to be read again> ".as_ptr());
+                            }
+                        }
+                        INSERTED => crate::output::print_nl_cstr(c"<inserted text> ".as_ptr()),
+                        MACRO => {
+                            crate::output::print_ln();
+                            crate::output::print_cs(ci.name);
+                        }
+                        OUTPUT_TEXT => crate::output::print_nl_cstr(c"<output> ".as_ptr()),
+                        EVERY_PAR_TEXT => crate::output::print_nl_cstr(c"<everypar> ".as_ptr()),
+                        EVERY_MATH_TEXT => crate::output::print_nl_cstr(c"<everymath> ".as_ptr()),
+                        EVERY_DISPLAY_TEXT => crate::output::print_nl_cstr(c"<everydisplay> ".as_ptr()),
+                        EVERY_HBOX_TEXT => crate::output::print_nl_cstr(c"<everyhbox> ".as_ptr()),
+                        EVERY_VBOX_TEXT => crate::output::print_nl_cstr(c"<everyvbox> ".as_ptr()),
+                        EVERY_JOB_TEXT => crate::output::print_nl_cstr(c"<everyjob> ".as_ptr()),
+                        EVERY_CR_TEXT => crate::output::print_nl_cstr(c"<everycr> ".as_ptr()),
+                        MARK_TEXT => crate::output::print_nl_cstr(c"<mark> ".as_ptr()),
+                        EVERY_EOF_TEXT => crate::output::print_nl_cstr(c"<everyeof> ".as_ptr()),
+                        INTER_CHAR_TEXT => crate::output::print_nl_cstr(c"<XeTeXinterchartoks> ".as_ptr()),
+                        WRITE_TEXT => crate::output::print_nl_cstr(c"<write> ".as_ptr()),
+                        TECTONIC_CODA_TEXT => crate::output::print_nl_cstr(c"<TectonicCodaTokens> ".as_ptr()),
+                        _ => crate::output::print_nl('?' as i32),
+                    }
+                    l = tally();
+                    set_tally(0);
+                    set_selector(SELECTOR_PSEUDO);
+                    set_trick_count(1_000_000);
+                    if ci.index < MACRO {
+                        crate::output::show_token_list(ci.start, ci.loc, 100_000);
+                    } else {
+                        crate::output::show_token_list(mem_b32s1(ci.start), ci.loc, 100_000);
+                    }
+                }
+                set_selector(old_setting);
+                if trick_count() == 1_000_000 {
+                    set_first_count(tally());
+                    let tc = tally() + 1 + error_line() - half_error_line();
+                    set_trick_count(tc.max(error_line()));
+                }
+                let m = if tally() < trick_count() {
+                    tally() - first_count()
+                } else {
+                    trick_count() - first_count()
+                };
+                let (mut p, n) = if l + first_count() <= half_error_line() {
+                    (0i32, l + first_count())
+                } else {
+                    crate::output::print_cstr(c"...".as_ptr());
+                    (l + first_count() - half_error_line() + 3, half_error_line())
+                };
+                let fc = first_count();
+                let mut q = p;
+                while q <= fc - 1 {
+                    crate::output::print_char(trick_buf((q % error_line()) as usize) as i32);
+                    q += 1;
+                }
+                crate::output::print_ln();
+                let mut q2 = 1;
+                while q2 <= n {
+                    crate::output::print_raw_char(' ' as u16, true);
+                    q2 += 1;
+                }
+                p = if m + n <= error_line() {
+                    fc + m
+                } else {
+                    fc + (error_line() - n - 3)
+                };
+                let mut q3 = fc;
+                while q3 <= p - 1 {
+                    crate::output::print_char(trick_buf((q3 % error_line()) as usize) as i32);
+                    q3 += 1;
+                }
+                if m + n > error_line() {
+                    crate::output::print_cstr(c"...".as_ptr());
+                }
+                nn += 1;
+            }
+        } else if nn == error_context_lines {
+            crate::output::print_nl_cstr(c"...".as_ptr());
+            nn += 1;
+        }
+        if bottom_line {
+            break 'outer;
+        }
+        set_base_ptr(base_ptr() - 1);
+    }
+    set_cur_input(input_stack(input_ptr()));
+}

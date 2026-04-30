@@ -1304,11 +1304,15 @@ pub(crate) fn set_trick_count(v: i32) {
     unsafe { raw::trick_count = v; }
 }
 
-/// Read `trick_buf[k]`.
 #[inline]
 pub(crate) fn trick_count() -> i32 {
     // SAFETY: see module-level doc.
     unsafe { raw::trick_count }
+}
+#[inline]
+pub(crate) fn trick_buf(k: usize) -> u16 {
+    // SAFETY: see module-level doc. k must be < error_line (≤256).
+    unsafe { raw::trick_buf[k] }
 }
 /// Write `trick_buf[k] = v`.
 #[inline]

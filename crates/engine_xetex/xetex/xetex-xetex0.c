@@ -2761,6 +2761,8 @@ print_cmd_chr(uint16_t cmd, int32_t chr_code)
 
 /* show_cur_cmd_chr translated to Rust (src/output.rs). */
 
+/* show_context: translated to Rust in src/scan.rs */
+#if 0
 void show_context(void)
 {
     unsigned char /*max_selector */ old_setting;
@@ -2990,6 +2992,7 @@ void show_context(void)
 done:
     cur_input = input_stack[input_ptr];
 }
+#endif
 
 
 /* begin_token_list: translated to Rust in src/input.rs */
