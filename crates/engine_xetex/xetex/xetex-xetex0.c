@@ -3999,6 +3999,8 @@ exit:
 /* find_sa_element: translated to Rust in src/save.rs */
 
 
+/* expand: translated to Rust in src/scan.rs */
+#if 0
 void
 expand(void)
 {
@@ -4273,6 +4275,7 @@ reswitch:
     mem[BACKUP_HEAD].b32.s1 = backup_backup;
     expand_depth_count--;
 }
+#endif
 
 
 /* get_x_token: translated to Rust in src/scan.rs */

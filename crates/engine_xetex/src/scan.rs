@@ -15,7 +15,7 @@ use crate::globals::{
     set_cur_input_index, set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
     set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue, set_font_info_b32s1,
     set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1,
-    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_name_in_progress,
+    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_name_in_progress, name_in_progress,
     set_no_new_control_sequence, set_old_setting, set_open_parens, set_pool_ptr,
     set_pseudo_files, set_read_open_entry, set_save_ptr, set_save_stack_b32s1,
     set_scanner_status, set_selector, set_stop_at_space, set_str_pool, set_str_ptr,
@@ -29,7 +29,6 @@ use crate::globals::{
 use crate::mem::new_rule;
 
 extern "C" {
-    fn expand();
     fn get_next();
     fn macro_call();
     fn begin_token_list(p: i32, t: u16);
@@ -12479,4 +12478,309 @@ pub unsafe extern "C" fn show_context() {
         set_base_ptr(base_ptr() - 1);
     }
     set_cur_input(input_stack(input_ptr()));
+}
+
+// ---------------------------------------------------------------------------
+// expand
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:4003 (expand)
+#[no_mangle]
+pub unsafe extern "C" fn expand() {
+    use crate::globals::{
+        cur_val_level, set_cur_val_level, radix, set_radix, cur_order, set_cur_order,
+        is_in_csname, set_is_in_csname, cur_ptr, set_cur_ptr,
+        cur_mark, set_cur_mark,
+        cond_ptr, set_cond_ptr, if_limit, set_if_limit,
+        if_line, set_if_line, cur_if, set_cur_if,
+        in_open, if_stack,
+        force_eof, set_force_eof,
+        max_buf_stack, set_max_buf_stack, buf_size,
+        no_new_control_sequence, set_no_new_control_sequence,
+        hash_s1, eqtb_b16s1,
+    };
+
+    const TOP_BOT_MARK: u8 = 112;
+    const EXPAND_AFTER: u8 = 104;
+    const NO_EXPAND: u8 = 105;
+    const INPUT: u8 = 106;
+    const CS_NAME_CMD: u8 = 109;
+    const CONVERT_CMD: u8 = 110;
+    const THE_CMD: u8 = 111;    // same as module-level THE
+    const IF_TEST_CMD: u8 = 107;
+    const FI_OR_ELSE_CMD: u8 = 108;
+    const MARKS_CODE: i32 = 5;
+    const MARK_VAL_IDX: usize = 7;
+    const TOP_MARK_CODE: usize = 0;
+    const FIRST_MARK_CODE: usize = 1;
+    const BOT_MARK_CODE: usize = 2;
+    const SPLIT_FIRST_MARK_CODE: usize = 3;
+    const SPLIT_BOT_MARK_CODE: usize = 4;
+    const MARK_TEXT_TL: u16 = 15;
+    const FROZEN_DONT_EXPAND: i32 = 2_243_226 + 9;
+    const FROZEN_CS_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_DONT_EXPAND;
+    const FROZEN_PRIM_CS_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_PRIMITIVE;
+    const NORMAL_SCANNER: u8 = 0;
+    const IF_CODE_VAL: u8 = 1;
+    const IF_CASE_CODE_VAL: i32 = 16;
+    const IF_NODE_SIZE_V: i32 = 2;
+    const TOO_BIG_USV: i32 = 1_114_112;
+    const NULL_CS_V: i32 = 2_228_225;
+    const UNDEFINED_CS_CMD: u8 = 103;
+    const INT_PAR_TRACING_COMMANDS: i32 = 36;
+    const INT_PAR_TRACING_IFS: i32 = 58;
+    const FI_CODE_VAL: i32 = 2;
+
+    set_expand_depth_count(expand_depth_count() + 1);
+    if expand_depth_count() >= expand_depth() {
+        crate::errors::overflow(c"expansion depth".as_ptr(), expand_depth());
+    }
+
+    let cv_backup = cur_val();
+    let cvl_backup = cur_val_level();
+    let radix_backup = radix();
+    let co_backup = cur_order();
+    let backup_backup = mem_b32s1(BACKUP_HEAD);
+
+    'reswitch: loop {
+        if cur_cmd() < CALL {
+            if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 1 {
+                crate::output::show_cur_cmd_chr();
+            }
+            match cur_cmd() {
+                TOP_BOT_MARK => {
+                    let t = (cur_chr() % MARKS_CODE) as usize;
+                    if cur_chr() >= MARKS_CODE {
+                        scan_register_num();
+                    } else {
+                        set_cur_val(0);
+                    }
+                    if cur_val() == 0 {
+                        set_cur_ptr(cur_mark(t));
+                    } else {
+                        crate::save::find_sa_element(MARK_VAL_IDX as u16, cur_val(), false);
+                        if cur_ptr() != crate::mem::TEX_NULL {
+                            if t % 2 != 0 {
+                                set_cur_ptr(mem_b32s1(cur_ptr() + (t as i32 / 2) + 1));
+                            } else {
+                                set_cur_ptr(mem_b32s0(cur_ptr() + (t as i32 / 2) + 1));
+                            }
+                        }
+                    }
+                    if cur_ptr() != crate::mem::TEX_NULL {
+                        crate::input::begin_token_list(cur_ptr(), MARK_TEXT_TL);
+                    }
+                }
+                EXPAND_AFTER => {
+                    if cur_chr() == 0 {
+                        get_token();
+                        let t = cur_tok();
+                        get_token();
+                        if cur_cmd() > MAX_COMMAND {
+                            expand();
+                        } else {
+                            crate::input::back_input();
+                        }
+                        set_cur_tok(t);
+                        crate::input::back_input();
+                    } else {
+                        // \unless
+                        get_token();
+                        if cur_cmd() == IF_TEST_CMD && cur_chr() != IF_CASE_CODE_VAL {
+                            set_cur_chr(cur_chr() + UNLESS_CODE);
+                            continue 'reswitch;
+                        }
+                        crate::output::error_here_with_diagnostic(c"You can't use `".as_ptr());
+                        crate::output::print_esc_cstr(c"unless".as_ptr());
+                        crate::output::print_cstr(c"' before `".as_ptr());
+                        print_cmd_chr(cur_cmd() as u16, cur_chr());
+                        crate::output::print_char('\'' as i32);
+                        crate::output::capture_to_diagnostic(core::ptr::null_mut());
+                        set_help_ptr(1);
+                        set_help_line(0, c"Continue, and I'll forget that it ever happened.".as_ptr());
+                        crate::input::back_error();
+                    }
+                }
+                NO_EXPAND => {
+                    if cur_chr() == 0 {
+                        let save_scanner_status = scanner_status();
+                        set_scanner_status(NORMAL_SCANNER);
+                        get_token();
+                        set_scanner_status(save_scanner_status);
+                        let t = cur_tok();
+                        crate::input::back_input();
+                        if t >= CS_TOKEN_FLAG {
+                            let p = crate::mem::get_avail();
+                            set_mem_b32s0(p, FROZEN_CS_TOKEN);
+                            set_mem_b32s1(p, cur_input().loc);
+                            set_cur_input_start(p);
+                            set_cur_input_loc(p);
+                        }
+                    } else {
+                        // \primitive
+                        let save_scanner_status = scanner_status();
+                        set_scanner_status(NORMAL_SCANNER);
+                        get_token();
+                        set_scanner_status(save_scanner_status);
+                        let cs = if cur_cs() < HASH_BASE {
+                            crate::hash::prim_lookup(cur_cs() - SINGLE_BASE)
+                        } else {
+                            crate::hash::prim_lookup(hash_s1(cur_cs()))
+                        };
+                        set_cur_cs(cs);
+                        if cur_cs() != UNDEFINED_PRIMITIVE {
+                            let t = eqtb_b16s1(PRIM_EQTB_BASE + cur_cs()) as u8;
+                            if t > MAX_COMMAND {
+                                set_cur_cmd(t);
+                                set_cur_chr(eqtb_b32s1(PRIM_EQTB_BASE + cur_cs()));
+                                set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+                                set_cur_cs(0);
+                                continue 'reswitch;
+                            } else {
+                                crate::input::back_input();
+                                let p = crate::mem::get_avail();
+                                set_mem_b32s0(p, FROZEN_PRIM_CS_TOKEN);
+                                set_mem_b32s1(p, cur_input().loc);
+                                set_cur_input_loc(p);
+                                set_cur_input_start(p);
+                            }
+                        }
+                    }
+                }
+                CS_NAME_CMD => {
+                    let r = crate::mem::get_avail();
+                    let mut p = r;
+                    let b = is_in_csname();
+                    set_is_in_csname(true);
+                    loop {
+                        get_x_token();
+                        if cur_cs() == 0 {
+                            let q = crate::mem::get_avail();
+                            set_mem_b32s1(p, q);
+                            set_mem_b32s0(q, cur_tok());
+                            p = q;
+                        }
+                        if cur_cs() != 0 { break; }
+                    }
+                    if cur_cmd() != END_CS_NAME {
+                        crate::output::error_here_with_diagnostic(c"Missing ".as_ptr());
+                        crate::output::print_esc_cstr(c"endcsname".as_ptr());
+                        crate::output::print_cstr(c" inserted".as_ptr());
+                        crate::output::capture_to_diagnostic(core::ptr::null_mut());
+                        set_help_ptr(2);
+                        set_help_line(1, c"The control sequence marked <to be read again> should".as_ptr());
+                        set_help_line(0, c"not appear between \\csname and \\endcsname.".as_ptr());
+                        crate::input::back_error();
+                    }
+                    set_is_in_csname(b);
+                    let mut j = first();
+                    p = mem_b32s1(r);
+                    while p != crate::mem::TEX_NULL {
+                        if j >= max_buf_stack() {
+                            set_max_buf_stack(j + 1);
+                            if max_buf_stack() == buf_size() {
+                                crate::errors::overflow(c"buffer size".as_ptr(), buf_size());
+                            }
+                        }
+                        set_buffer_entry(j, mem_b32s0(p) % MAX_CHAR_VAL);
+                        j += 1;
+                        p = mem_b32s1(p);
+                    }
+                    let cs = if j > first() + 1 || buffer_entry(first()) > 65535 {
+                        set_no_new_control_sequence(false);
+                        let cs = crate::hash::id_lookup(first(), j - first());
+                        set_no_new_control_sequence(true);
+                        cs
+                    } else if j == first() {
+                        NULL_CS_V
+                    } else {
+                        SINGLE_BASE + buffer_entry(first())
+                    };
+                    set_cur_cs(cs);
+                    crate::mem::flush_list(r);
+                    if eqtb_b16s1(cur_cs()) == UNDEFINED_CS_CMD as u16 {
+                        crate::save::eq_define(cur_cs(), RELAX as u16, TOO_BIG_USV);
+                    }
+                    set_cur_tok(cur_cs() + CS_TOKEN_FLAG);
+                    crate::input::back_input();
+                }
+                CONVERT_CMD => {
+                    conv_toks();
+                }
+                THE_CMD => {
+                    ins_the_toks();
+                }
+                IF_TEST_CMD => {
+                    conditional();
+                }
+                FI_OR_ELSE_CMD => {
+                    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0 {
+                        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) <= 1 {
+                            crate::output::show_cur_cmd_chr();
+                        }
+                    }
+                    if cur_chr() > if_limit() as i32 {
+                        if if_limit() == IF_CODE_VAL {
+                            crate::input::insert_relax();
+                        } else {
+                            crate::output::error_here_with_diagnostic(c"Extra ".as_ptr());
+                            print_cmd_chr(FI_OR_ELSE_CMD as u16, cur_chr());
+                            crate::output::capture_to_diagnostic(core::ptr::null_mut());
+                            set_help_ptr(1);
+                            set_help_line(0, c"I'm ignoring this; it doesn't match any \\if.".as_ptr());
+                            crate::errors::error();
+                        }
+                    } else {
+                        while cur_chr() != FI_CODE_VAL {
+                            pass_text();
+                        }
+                        if if_stack(in_open()) == cond_ptr() {
+                            crate::output::if_warning();
+                        }
+                        let p = cond_ptr();
+                        set_if_line(mem_b32s1(p + 1));
+                        set_cur_if(mem_b16s0(p) as i16);
+                        set_if_limit(mem_b16s1(p) as u8);
+                        set_cond_ptr(mem_b32s1(p));
+                        crate::mem::free_node(p, IF_NODE_SIZE_V);
+                    }
+                }
+                INPUT => {
+                    if cur_chr() == 1 {
+                        set_force_eof(true);
+                    } else if cur_chr() == 2 {
+                        pseudo_start();
+                    } else if name_in_progress() {
+                        crate::input::insert_relax();
+                    } else {
+                        start_input(core::ptr::null());
+                    }
+                }
+                _ => {
+                    crate::output::error_here_with_diagnostic(c"Undefined control sequence".as_ptr());
+                    crate::output::capture_to_diagnostic(core::ptr::null_mut());
+                    set_help_ptr(5);
+                    set_help_line(4, c"The control sequence at the end of the top line".as_ptr());
+                    set_help_line(3, c"of your error message was never \\def'ed. If you have".as_ptr());
+                    set_help_line(2, c"misspelled it (e.g., `\\hobx'), type `I' and the correct".as_ptr());
+                    set_help_line(1, c"spelling (e.g., `I\\hbox'). Otherwise just continue,".as_ptr());
+                    set_help_line(0, c"and I'll forget about whatever was undefined.".as_ptr());
+                    crate::errors::error();
+                }
+            }
+        } else if cur_cmd() < END_TEMPLATE {
+            macro_call();
+        } else {
+            set_cur_tok(CS_TOKEN_FLAG + FROZEN_ENDV);
+            crate::input::back_input();
+        }
+        break 'reswitch;
+    }
+
+    set_cur_val(cv_backup);
+    set_cur_val_level(cvl_backup);
+    set_radix(radix_backup);
+    set_cur_order(co_backup);
+    set_mem_b32s1(BACKUP_HEAD, backup_backup);
+    set_expand_depth_count(expand_depth_count() - 1);
 }
