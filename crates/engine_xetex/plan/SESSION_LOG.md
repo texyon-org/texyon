@@ -32,6 +32,40 @@ template.
 
 ---
 
+## Session 67 — 2026-05-01 — main_control append_normal_space
+
+**Goal:** Start reducing `main_control` risk by translating a small self-contained label block.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 66
+- xetex-xetex0.c: ~2 C functions remaining.
+
+**Work done:**
+- Ran baseline before edits: `tex-outputs` 29/29, TRIP 2/2, `engine_rust` 7/7, `latex_goldens` 4/4.
+- Translated the `main_control` `append_normal_space` label (xetex-xetex0.c:8221) -> `src/scan.rs::main_control_append_normal_space` (e9988a37).
+- Added Rust accessors for XeTeX inter-character spacing globals: `space_class` and `prev_class`.
+- Replaced the C label body with a call to Rust followed by the original `goto big_switch`.
+- Updated `MODULE_STATUS.md` and `PROGRESS.md` for session 67.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- `engine_rust`: 7/7
+- `latex_goldens`: 4/4
+- Streak: 67
+- xetex-xetex0.c: `main_control` remains in C, but the normal-space append block is now Rust.
+
+**Surprises / gotchas:**
+- Translating all of `main_control` at once is too risky; the label-level extraction is safe because every path in the original block returns to `big_switch`.
+- The inter-character token path needs to restore the current token with `back_input()` before beginning the inter-character token list, matching the C order exactly.
+
+**For the next session:**
+- Continue `main_control` by identifying another label or switch arm whose control flow returns to a single known point. Avoid a whole-function rewrite until the remaining dispatcher is smaller.
+
+---
+
 ## Session 66 — 2026-05-01 — read_font_info
 
 **Goal:** Translate `read_font_info` from `xetex-xetex0.c`.

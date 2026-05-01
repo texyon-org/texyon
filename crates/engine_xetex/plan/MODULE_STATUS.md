@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 66.
+Last updated: session 67.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 66.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               |  8285 |      2 | multiple (see below)              | IN PROGRESS — 99% |
+| xetex-xetex0.c               |  8251 |      2 | multiple (see below)              | IN PROGRESS — 99% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -479,6 +479,11 @@ New Rust module `src/save.rs` created for save-stack management.
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.
+
+Session 67 carved out the `main_control` `append_normal_space` label
+(xetex-xetex0.c:8221) into `src/scan.rs` as
+`main_control_append_normal_space` (e9988a37). This is a partial
+`main_control` migration only; the top-level dispatcher remains in C.
 
 ## How to maintain this file
 
