@@ -82,8 +82,6 @@ extern "C" {
     fn build_choices();
     fn synctex_start_input();
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
-    fn new_native_word_node(f: i32, n: i32) -> i32;
-
     fn flush_math();
     fn resume_after_display();
     fn ttstub_output_close(handle: usize) -> libc::c_int;
@@ -13988,4 +13986,117 @@ pub unsafe extern "C" fn macro_call() {
 
     set_scanner_status(save_scanner_status);
     set_warning_index(save_warning_index);
+}
+
+// ---------------------------------------------------------------------------
+// new_native_word_node
+// ---------------------------------------------------------------------------
+
+// Node type/subtype constants (xetex_format.h)
+const WHATSIT_NODE_NN: u16 = 8;
+const NATIVE_WORD_NODE_NN: u16 = 40;
+const NATIVE_WORD_NODE_AT_NN: u16 = 41;
+const NATIVE_NODE_SIZE_NN: i32 = 6;
+// INT_PAR offset for xetex_generate_actual_text (xetex_format.h:114)
+const INT_PAR_XETEX_GENERATE_ACTUAL_TEXT: i32 = 79;
+
+/// Allocate a native-word whatsit node for `n` UTF-16 code units of font `f`.
+///
+/// translated from xetex-xetex0.c:6250 (new_native_word_node)
+#[no_mangle]
+pub unsafe extern "C" fn new_native_word_node(f: i32, n: i32) -> i32 {
+    use crate::globals::{set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_ptr};
+    // sizeof(UTF16_code) = 2, sizeof(memory_word) = 8
+    let l = NATIVE_NODE_SIZE_NN + (n * 2 + 7) / 8;
+    let q = crate::mem::get_node(l);
+    set_mem_b16s1(q, WHATSIT_NODE_NN);
+    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
+        set_mem_b16s0(q, NATIVE_WORD_NODE_AT_NN);
+    } else {
+        set_mem_b16s0(q, NATIVE_WORD_NODE_NN);
+    }
+    set_mem_b16s3(q + 4, l as u16);
+    set_mem_b16s2(q + 4, f as u16);
+    set_mem_b16s1(q + 4, n as u16);
+    set_mem_b16s0(q + 4, 0);
+    set_mem_ptr(q + 5, std::ptr::null_mut());
+    q
+}
+
+// ---------------------------------------------------------------------------
+// do_locale_linebreaks
+// ---------------------------------------------------------------------------
+
+// GLUE_BASE + GLUE_PAR__xetex_linebreak_skip (xetex_format.h:205,164)
+const GLUE_BASE_DO_LB: i32 = 2_254_340;
+const GLUE_PAR_XETEX_LINEBREAK_SKIP: i32 = 15;
+// INT_PAR offsets (xetex_format.h:101,102,107)
+const INT_PAR_XETEX_LINEBREAK_LOCALE: i32 = 66;
+const INT_PAR_XETEX_LINEBREAK_PENALTY: i32 = 67;
+const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
+
+extern "C" {
+    fn linebreak_start(f: i32, locale_str_num: i32, text: *mut u16, text_length: i32);
+    fn linebreak_next(f: i32) -> i32;
+    static mut main_f: i32;
+    static mut native_text: *mut u16;
+}
+
+/// Insert locale-aware linebreaking nodes for `len` glyphs starting at `native_text[s]`.
+///
+/// translated from xetex-xetex0.c:6493 (do_locale_linebreaks)
+#[no_mangle]
+pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
+    use crate::globals::{
+        cur_list_tail, set_cur_list_tail,
+        mem_as_u16_ptr_mut,
+        mem_b32s1, set_mem_b32s1,
+    };
+
+    let locale = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE);
+    let use_glyph = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
+
+    if locale == 0 || len == 1 {
+        let node = new_native_word_node(main_f, len);
+        set_mem_b32s1(cur_list_tail(), node);
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
+        for i in 0..len {
+            *text.add(i as usize) = *native_text.add((s + i) as usize);
+        }
+        measure_native_node(crate::globals::mem_node_addr(cur_list_tail()), use_glyph);
+    } else {
+        let use_skip = eqtb_b32s1(GLUE_BASE_DO_LB + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
+        let penalty_val = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_PENALTY);
+        let use_penalty = penalty_val != 0 || !use_skip;
+        linebreak_start(main_f, locale, native_text.add(s as usize), len);
+        let mut offs: i32 = 0;
+        loop {
+            let prev_offs = offs;
+            offs = linebreak_next(main_f);
+            if offs > 0 {
+                if prev_offs != 0 {
+                    if use_penalty {
+                        let node = crate::mem::new_penalty(penalty_val);
+                        set_mem_b32s1(cur_list_tail(), node);
+                        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                    }
+                    if use_skip {
+                        let node = crate::mem::new_param_glue(GLUE_PAR_XETEX_LINEBREAK_SKIP as i16);
+                        set_mem_b32s1(cur_list_tail(), node);
+                        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                    }
+                }
+                let node = new_native_word_node(main_f, offs - prev_offs);
+                set_mem_b32s1(cur_list_tail(), node);
+                set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
+                for i in prev_offs..offs {
+                    *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
+                }
+                measure_native_node(crate::globals::mem_node_addr(cur_list_tail()), use_glyph);
+            }
+            if offs < 0 { break; }
+        }
+    }
 }

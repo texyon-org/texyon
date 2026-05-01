@@ -6245,7 +6245,8 @@ end_name(void)
 
 /* char_warning: translated to Rust in src/scan.rs */
 
-
+/* new_native_word_node: translated to Rust in src/scan.rs */
+#if 0
 int32_t
 new_native_word_node(internal_font_number f, int32_t n)
 {
@@ -6268,6 +6269,7 @@ new_native_word_node(internal_font_number f, int32_t n)
     NATIVE_NODE_glyph_info_ptr(q) = NULL;
     return q;
 }
+#endif
 
 
 int32_t
@@ -6490,6 +6492,8 @@ load_native_font(int32_t u, str_number nom, str_number aire, scaled_t s)
 }
 
 
+/* do_locale_linebreaks: translated to Rust in src/scan.rs */
+#if 0
 void do_locale_linebreaks(int32_t s, int32_t len)
 {
     int32_t offs, prevOffs, i;
@@ -6544,6 +6548,7 @@ void do_locale_linebreaks(int32_t s, int32_t len)
         } while (!(offs < 0));
     }
 }
+#endif
 
 /* bad_utf8_warning: translated to Rust in src/output.rs */
 
