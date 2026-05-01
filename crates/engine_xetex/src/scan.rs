@@ -27,6 +27,7 @@ use crate::globals::{
     write_open, texmf_log_name, temp_ptr,
 };
 use crate::mem::new_rule;
+use crate::output::print_cmd_chr;
 
 extern "C" {
     fn begin_token_list(p: i32, t: u16);
@@ -46,7 +47,6 @@ extern "C" {
     fn build_page();
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
-    fn print_cmd_chr(cmd: u16, chr_code: i32);
     fn aat_font_get(what: i32, engine: *mut libc::c_void) -> i32;
     fn aat_font_get_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
     fn aat_font_get_2(what: i32, engine: *mut libc::c_void, p1: i32, p2: i32) -> i32;

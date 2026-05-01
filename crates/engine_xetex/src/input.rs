@@ -15,9 +15,10 @@ use crate::globals::{
     set_pseudo_files, set_source_filename_stack, stack_size,
 };
 
+use crate::output::print_cmd_chr;
+
 extern "C" {
     fn u_close(f: *mut libc::c_void);
-    fn print_cmd_chr(cmd: u16, chr_code: i32);
     fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
 }
 

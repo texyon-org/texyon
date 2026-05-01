@@ -5,6 +5,7 @@ use crate::globals::{
     rust_stdout, selector, set_error_count, set_help_line, set_help_ptr, set_history,
     set_interaction, set_selector, use_err_help,
 };
+use crate::output::print_cmd_chr;
 
 // Interaction-mode constants (xetex_format.h:644–647).
 const BATCH_MODE: u8 = 0;
@@ -22,7 +23,6 @@ const SELECTOR_TERM_AND_LOG: i32 = 19;
 extern "C" {
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
     fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
-    fn print_cmd_chr(cmd: u16, chr_code: i32);
     fn print(s: i32);
     fn print_char(c: i32);
     fn print_cstr(s: *const libc::c_char);

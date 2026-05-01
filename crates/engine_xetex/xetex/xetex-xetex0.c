@@ -1260,7 +1260,8 @@ void show_activities(void)
 
 /* print_length_param translated to Rust (src/output.rs). */
 
-
+/* print_cmd_chr: translated to Rust in src/output.rs */
+#if 0
 void
 print_cmd_chr(uint16_t cmd, int32_t chr_code)
 {
@@ -2698,6 +2699,7 @@ print_cmd_chr(uint16_t cmd, int32_t chr_code)
         break;
     }
 }
+#endif
 
 
 /* not_aat_font_error, not_aat_gr_font_error, not_ot_font_error,
