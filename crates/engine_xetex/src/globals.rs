@@ -215,6 +215,7 @@ mod raw {
         pub(super) static mut font_info: *mut MemoryWord;
         pub(super) static mut fmem_ptr: i32;
         pub(super) static mut font_ptr: i32;
+        pub(super) static mut font_check: *mut crate::mem_types::B16x4;
         pub(super) static mut font_params: *mut i32;
         pub(super) static mut font_glue: *mut i32;
         pub(super) static mut param_base: *mut i32;
@@ -422,10 +423,18 @@ mod raw {
         // font_bc[f], font_ec[f]: first/last valid char (UTF16_code = u16).
         pub(super) static mut font_bc: *mut u16;
         pub(super) static mut font_ec: *mut u16;
+        // font_used[f]: whether the font has been emitted in the output.
+        pub(super) static mut font_used: *mut bool;
         // font_layout_engine[f]: pointer to AAT/OT layout engine (void*).
         pub(super) static mut font_layout_engine: *mut *mut libc::c_void;
         // font_mapping[f]: TECkit/TFM font mapping pointer (void*, xetex-xetexd.h:574).
         pub(super) static mut font_mapping: *mut *mut libc::c_void;
+        // font_flags[f], font_letter_space[f] (xetex-xetexd.h:575–576).
+        pub(super) static mut font_flags: *mut libc::c_char;
+        pub(super) static mut font_letter_space: *mut i32;
+        pub(super) static mut loaded_font_mapping: *mut libc::c_void;
+        pub(super) static mut loaded_font_flags: libc::c_char;
+        pub(super) static mut loaded_font_letter_space: i32;
         // mapped_text[i]: output of apply_mapping() (xetex-xetexd.h:580).
         pub(super) static mut mapped_text: *mut u16;
         // hyphen_char[f], skew_char[f] (xetex-xetexd.h:568–569).
@@ -443,6 +452,8 @@ mod raw {
 
         // True after the first char_warning fontspec hint has been issued (xetex-xetexd.h:725).
         pub(super) static mut gave_char_warning_help: bool;
+        // native_font_type_flag: set by find_native_font/loadOTfont (xetex-xetexd.h:719).
+        pub(super) static mut native_font_type_flag: i32;
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
         pub(super) static mut main_p: i32;
         pub(super) static mut main_k: i32;
@@ -1844,6 +1855,12 @@ pub(crate) fn font_name_entry(f: i32) -> i32 {
     unsafe { *raw::font_name.offset(f as isize) }
 }
 
+/// Writes `font_name[f] = v`.
+#[inline]
+pub(crate) fn set_font_name_entry(f: i32, v: i32) {
+    unsafe { *raw::font_name.offset(f as isize) = v; }
+}
+
 /// Returns `font_info[k].b32.s1`.
 #[inline]
 pub(crate) fn font_info_b32s1(k: i32) -> i32 {
@@ -1872,6 +1889,12 @@ pub(crate) fn set_fmem_ptr(v: i32) {
 #[inline]
 pub(crate) fn font_ptr() -> i32 {
     unsafe { raw::font_ptr }
+}
+
+/// Sets `font_ptr`.
+#[inline]
+pub(crate) fn set_font_ptr(v: i32) {
+    unsafe { raw::font_ptr = v; }
 }
 
 /// Returns `font_mem_size`.
@@ -1910,10 +1933,22 @@ pub(crate) fn param_base(f: i32) -> i32 {
     unsafe { *raw::param_base.offset(f as isize) }
 }
 
+/// Sets `param_base[f] = v`.
+#[inline]
+pub(crate) fn set_param_base(f: i32, v: i32) {
+    unsafe { *raw::param_base.offset(f as isize) = v; }
+}
+
 /// Returns `font_info[k].b16` (the B16x4 view of font_info word k).
 #[inline]
 pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
     unsafe { (*raw::font_info.offset(k as isize)).b16 }
+}
+
+/// Writes `font_check[f] = v`.
+#[inline]
+pub(crate) fn set_font_check(f: i32, v: crate::mem_types::B16x4) {
+    unsafe { *raw::font_check.offset(f as isize) = v; }
 }
 
 /// Returns `font_area[f]` — the str_number encoding the font's area.
@@ -1921,35 +1956,100 @@ pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
 pub(crate) fn font_area_entry(f: i32) -> i32 {
     unsafe { *raw::font_area.offset(f as isize) }
 }
+/// Writes `font_area[f] = v`.
+#[inline]
+pub(crate) fn set_font_area_entry(f: i32, v: i32) {
+    unsafe { *raw::font_area.offset(f as isize) = v; }
+}
 /// Returns `font_size[f]` — the current at-size (scaled_t) for font f.
 #[inline]
 pub(crate) fn font_size_entry(f: i32) -> i32 {
     unsafe { *raw::font_size.offset(f as isize) }
+}
+/// Writes `font_size[f] = v`.
+#[inline]
+pub(crate) fn set_font_size_entry(f: i32, v: i32) {
+    unsafe { *raw::font_size.offset(f as isize) = v; }
 }
 /// Returns `font_dsize[f]` — the design-size (scaled_t) for font f.
 #[inline]
 pub(crate) fn font_dsize_entry(f: i32) -> i32 {
     unsafe { *raw::font_dsize.offset(f as isize) }
 }
+/// Writes `font_dsize[f] = v`.
+#[inline]
+pub(crate) fn set_font_dsize_entry(f: i32, v: i32) {
+    unsafe { *raw::font_dsize.offset(f as isize) = v; }
+}
 /// Returns `font_bc[f]` — first valid char code.
 #[inline]
 pub(crate) fn font_bc_entry(f: i32) -> u16 {
     unsafe { *raw::font_bc.offset(f as isize) }
+}
+/// Writes `font_bc[f] = v`.
+#[inline]
+pub(crate) fn set_font_bc_entry(f: i32, v: u16) {
+    unsafe { *raw::font_bc.offset(f as isize) = v; }
 }
 /// Returns `font_ec[f]` — last valid char code.
 #[inline]
 pub(crate) fn font_ec_entry(f: i32) -> u16 {
     unsafe { *raw::font_ec.offset(f as isize) }
 }
+/// Writes `font_ec[f] = v`.
+#[inline]
+pub(crate) fn set_font_ec_entry(f: i32, v: u16) {
+    unsafe { *raw::font_ec.offset(f as isize) = v; }
+}
+/// Writes `font_used[f] = v`.
+#[inline]
+pub(crate) fn set_font_used_entry(f: i32, v: bool) {
+    unsafe { *raw::font_used.offset(f as isize) = v; }
+}
 /// Returns `font_layout_engine[f]`.
 #[inline]
 pub(crate) fn font_layout_engine_ptr(f: i32) -> *mut libc::c_void {
     unsafe { *raw::font_layout_engine.offset(f as isize) }
 }
+/// Writes `font_layout_engine[f] = v`.
+#[inline]
+pub(crate) fn set_font_layout_engine_ptr(f: i32, v: *mut libc::c_void) {
+    unsafe { *raw::font_layout_engine.offset(f as isize) = v; }
+}
 /// Returns `font_mapping[f]`.
 #[inline]
 pub(crate) fn font_mapping_ptr(f: i32) -> *mut libc::c_void {
     unsafe { *raw::font_mapping.offset(f as isize) }
+}
+/// Writes `font_mapping[f] = v`.
+#[inline]
+pub(crate) fn set_font_mapping_ptr(f: i32, v: *mut libc::c_void) {
+    unsafe { *raw::font_mapping.offset(f as isize) = v; }
+}
+/// Returns `loaded_font_mapping`.
+#[inline]
+pub(crate) fn loaded_font_mapping() -> *mut libc::c_void {
+    unsafe { raw::loaded_font_mapping }
+}
+/// Returns `loaded_font_flags`.
+#[inline]
+pub(crate) fn loaded_font_flags() -> i32 {
+    unsafe { raw::loaded_font_flags as i32 }
+}
+/// Returns `loaded_font_letter_space`.
+#[inline]
+pub(crate) fn loaded_font_letter_space() -> i32 {
+    unsafe { raw::loaded_font_letter_space }
+}
+/// Writes `font_flags[f] = v`.
+#[inline]
+pub(crate) fn set_font_flags_entry(f: i32, v: i32) {
+    unsafe { *raw::font_flags.offset(f as isize) = v as libc::c_char; }
+}
+/// Writes `font_letter_space[f] = v`.
+#[inline]
+pub(crate) fn set_font_letter_space_entry(f: i32, v: i32) {
+    unsafe { *raw::font_letter_space.offset(f as isize) = v; }
 }
 /// Returns `mapped_text[i]`, the UTF-16 output buffer from `apply_mapping`.
 #[inline]
@@ -1967,10 +2067,20 @@ pub(crate) fn set_xtx_ligature_present(v: bool) { unsafe { raw::xtx_ligature_pre
 pub(crate) fn hyphen_char_entry(f: i32) -> i32 {
     unsafe { *raw::hyphen_char.offset(f as isize) }
 }
+/// Writes `hyphen_char[f] = v`.
+#[inline]
+pub(crate) fn set_hyphen_char_entry(f: i32, v: i32) {
+    unsafe { *raw::hyphen_char.offset(f as isize) = v; }
+}
 /// Returns `skew_char[f]`.
 #[inline]
 pub(crate) fn skew_char_entry(f: i32) -> i32 {
     unsafe { *raw::skew_char.offset(f as isize) }
+}
+/// Writes `skew_char[f] = v`.
+#[inline]
+pub(crate) fn set_skew_char_entry(f: i32, v: i32) {
+    unsafe { *raw::skew_char.offset(f as isize) = v; }
 }
 /// Returns `char_base[f]`.
 #[inline]
@@ -1987,15 +2097,31 @@ pub(crate) fn width_base_entry(f: i32) -> i32 {
 pub(crate) fn height_base_entry(f: i32) -> i32 {
     unsafe { *raw::height_base.offset(f as isize) }
 }
+/// Writes `height_base[f] = v`.
+#[inline]
+pub(crate) fn set_height_base_entry(f: i32, v: i32) {
+    unsafe { *raw::height_base.offset(f as isize) = v; }
+}
 /// Returns `depth_base[f]`.
 #[inline]
 pub(crate) fn depth_base_entry(f: i32) -> i32 {
     unsafe { *raw::depth_base.offset(f as isize) }
 }
+/// Writes `depth_base[f] = v`.
+#[inline]
+pub(crate) fn set_depth_base_entry(f: i32, v: i32) {
+    unsafe { *raw::depth_base.offset(f as isize) = v; }
+}
 /// Returns `italic_base[f]`.
 #[inline]
 pub(crate) fn italic_base_entry(f: i32) -> i32 {
     unsafe { *raw::italic_base.offset(f as isize) }
+}
+
+/// Returns `native_font_type_flag`.
+#[inline]
+pub(crate) fn native_font_type_flag() -> i32 {
+    unsafe { raw::native_font_type_flag }
 }
 
 // ---------------------------------------------------------------------------

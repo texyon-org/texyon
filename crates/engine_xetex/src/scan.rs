@@ -97,6 +97,27 @@ extern "C" {
     fn aat_print_font_name(what: i32, attrs: *mut libc::c_void, param1: i32, param2: i32);
     fn gr_print_font_name(what: i32, engine: *mut libc::c_void, param1: i32, param2: i32);
     fn print_glyph_name(font: i32, gid: i32);
+    fn find_native_font(name: *mut libc::c_char, scaled_size: i32) -> *mut libc::c_void;
+    fn release_font_engine(engine: *mut libc::c_void, type_flag: i32);
+    fn get_loaded_font_design_size() -> i32;
+    fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
+    fn aat_get_font_metrics(
+        engine: *mut libc::c_void,
+        ascent: *mut i32,
+        descent: *mut i32,
+        xheight: *mut i32,
+        capheight: *mut i32,
+        slant: *mut i32,
+    );
+    fn ot_get_font_metrics(
+        engine: *mut libc::c_void,
+        ascent: *mut i32,
+        descent: *mut i32,
+        xheight: *mut i32,
+        capheight: *mut i32,
+        slant: *mut i32,
+    );
+    fn get_ot_math_constant(f: i32, n: i32) -> i32;
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -14116,6 +14137,215 @@ pub unsafe extern "C" fn new_native_character(f: i32, mut c: u32) -> i32 {
         eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_NC) > 0,
     );
     p
+}
+
+// ---------------------------------------------------------------------------
+// load_native_font
+// ---------------------------------------------------------------------------
+
+const INT_PAR_DEFAULT_HYPHEN_CHAR_LNF: i32 = 46;
+const INT_PAR_DEFAULT_SKEW_CHAR_LNF: i32 = 47;
+
+unsafe fn push_font_info_b32s1(v: i32) {
+    let k = crate::globals::fmem_ptr();
+    crate::globals::set_font_info_b32s1(k, v);
+    crate::globals::set_fmem_ptr(k + 1);
+}
+
+/// Load a native AAT/OpenType/Graphite font and initialize TeX font tables.
+///
+/// translated from xetex-xetex0.c:6284 (load_native_font)
+#[no_mangle]
+pub unsafe extern "C" fn load_native_font(u: i32, nom: i32, aire: i32, mut s: i32) -> i32 {
+    let font_engine = find_native_font(crate::globals::name_of_file(), s);
+    if font_engine.is_null() {
+        return FONT_BASE;
+    }
+
+    let actual_size = if s >= 0 {
+        s
+    } else if s != -1000 {
+        crate::scaled_math::xn_over_d(get_loaded_font_design_size(), -s, 1000)
+    } else {
+        get_loaded_font_design_size()
+    };
+
+    if crate::globals::pool_ptr() + crate::globals::name_length() > crate::globals::pool_size() {
+        crate::errors::overflow(
+            c"pool size".as_ptr(),
+            crate::globals::pool_size() - crate::globals::init_pool_ptr(),
+        );
+    }
+
+    for k in 0..crate::globals::name_length() {
+        crate::globals::set_str_pool(
+            crate::globals::pool_ptr(),
+            *crate::globals::name_of_file().add(k as usize) as u8 as u16,
+        );
+        crate::globals::set_pool_ptr(crate::globals::pool_ptr() + 1);
+    }
+
+    let full_name = crate::string_pool::make_string();
+
+    let mut f = FONT_BASE + 1;
+    while f <= crate::globals::font_ptr() {
+        if crate::globals::font_area_entry(f) == crate::globals::native_font_type_flag()
+            && crate::string_pool::str_eq_str(crate::globals::font_name_entry(f), full_name)
+            && crate::globals::font_size_entry(f) == actual_size
+        {
+            release_font_engine(font_engine, crate::globals::native_font_type_flag());
+            crate::globals::set_str_ptr(crate::globals::str_ptr() - 1);
+            crate::globals::set_pool_ptr(crate::globals::str_start(
+                crate::globals::str_ptr() - TOO_BIG_CHAR,
+            ));
+            return f;
+        }
+        f += 1;
+    }
+
+    let num_font_dimens = if crate::globals::native_font_type_flag() == OTGR_FONT_FLAG
+        && isOpenTypeMathFont(font_engine)
+    {
+        65
+    } else {
+        8
+    };
+
+    if crate::globals::font_ptr() == crate::globals::font_max()
+        || crate::globals::fmem_ptr() + num_font_dimens > crate::globals::font_mem_size()
+    {
+        error_here_with_diagnostic(c"Font ".as_ptr());
+        crate::output::sprint_cs(u);
+        crate::output::print_char(b'=' as i32);
+        if crate::globals::file_name_quote_char() != 0 {
+            crate::output::print_char(crate::globals::file_name_quote_char() as i32);
+        }
+        crate::output::print_file_name(nom, aire, crate::globals::cur_ext());
+        if crate::globals::file_name_quote_char() != 0 {
+            crate::output::print_char(crate::globals::file_name_quote_char() as i32);
+        }
+        if s >= 0 {
+            crate::output::print_cstr(c" at ".as_ptr());
+            crate::output::print_scaled(s);
+            crate::output::print_cstr(c"pt".as_ptr());
+        } else if s != -1000 {
+            crate::output::print_cstr(c" scaled ".as_ptr());
+            crate::output::print_int(-s);
+        }
+        crate::output::print_cstr(c" not loaded: Not enough room left".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+
+        crate::globals::set_help_ptr(4);
+        crate::globals::set_help_line(
+            3,
+            c"I'm afraid I won't be able to make use of this font,".as_ptr(),
+        );
+        crate::globals::set_help_line(
+            2,
+            c"because my memory for character-size data is too small.".as_ptr(),
+        );
+        crate::globals::set_help_line(
+            1,
+            c"If you're really stuck, ask a wizard to enlarge me.".as_ptr(),
+        );
+        crate::globals::set_help_line(
+            0,
+            c"Or maybe try `I\\font<same font id>=<name of loaded font>'.".as_ptr(),
+        );
+
+        error();
+        return FONT_BASE;
+    }
+
+    crate::globals::set_font_ptr(crate::globals::font_ptr() + 1);
+    let font_ptr = crate::globals::font_ptr();
+    crate::globals::set_font_area_entry(font_ptr, crate::globals::native_font_type_flag());
+    crate::globals::set_font_name_entry(font_ptr, full_name);
+    crate::globals::set_font_check(
+        font_ptr,
+        crate::mem_types::B16x4 {
+            s0: 0,
+            s1: 0,
+            s2: 0,
+            s3: 0,
+        },
+    );
+    crate::globals::set_font_glue(font_ptr, crate::mem::TEX_NULL);
+    crate::globals::set_font_dsize_entry(font_ptr, get_loaded_font_design_size());
+    crate::globals::set_font_size_entry(font_ptr, actual_size);
+
+    let mut ascent = 0;
+    let mut descent = 0;
+    let mut x_ht = 0;
+    let mut cap_ht = 0;
+    let mut font_slant = 0;
+    if crate::globals::native_font_type_flag() == AAT_FONT_FLAG {
+        aat_get_font_metrics(
+            font_engine,
+            &mut ascent,
+            &mut descent,
+            &mut x_ht,
+            &mut cap_ht,
+            &mut font_slant,
+        );
+    } else {
+        ot_get_font_metrics(
+            font_engine,
+            &mut ascent,
+            &mut descent,
+            &mut x_ht,
+            &mut cap_ht,
+            &mut font_slant,
+        );
+    }
+
+    crate::globals::set_height_base_entry(font_ptr, ascent);
+    crate::globals::set_depth_base_entry(font_ptr, -descent);
+    crate::globals::set_font_params(font_ptr, num_font_dimens);
+    crate::globals::set_font_bc_entry(font_ptr, 0);
+    crate::globals::set_font_ec_entry(font_ptr, 65_535);
+    crate::globals::set_font_used_entry(font_ptr, false);
+    crate::globals::set_hyphen_char_entry(
+        font_ptr,
+        crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_DEFAULT_HYPHEN_CHAR_LNF),
+    );
+    crate::globals::set_skew_char_entry(
+        font_ptr,
+        crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_DEFAULT_SKEW_CHAR_LNF),
+    );
+    crate::globals::set_param_base(font_ptr, crate::globals::fmem_ptr() - 1);
+    crate::globals::set_font_layout_engine_ptr(font_ptr, font_engine);
+    crate::globals::set_font_mapping_ptr(font_ptr, std::ptr::null_mut());
+    crate::globals::set_font_letter_space_entry(font_ptr, crate::globals::loaded_font_letter_space());
+
+    let p = new_native_character(font_ptr, b' ' as u32);
+    s = crate::globals::mem_b32s1(p + 1) + crate::globals::loaded_font_letter_space();
+    let glyph_info = crate::globals::mem_ptr(p + 5);
+    if !glyph_info.is_null() {
+        libc::free(glyph_info);
+        crate::globals::set_mem_ptr(p + 5, std::ptr::null_mut());
+    }
+    crate::mem::free_node(p, crate::globals::mem_b16s3(p + 4) as i32);
+
+    push_font_info_b32s1(font_slant);
+    push_font_info_b32s1(s);
+    push_font_info_b32s1(s / 2);
+    push_font_info_b32s1(s / 3);
+    push_font_info_b32s1(x_ht);
+    push_font_info_b32s1(crate::globals::font_size_entry(font_ptr));
+    push_font_info_b32s1(s / 3);
+    push_font_info_b32s1(cap_ht);
+
+    if num_font_dimens == 65 {
+        push_font_info_b32s1(num_font_dimens);
+        for k in 0..=55 {
+            push_font_info_b32s1(get_ot_math_constant(font_ptr, k));
+        }
+    }
+
+    crate::globals::set_font_mapping_ptr(font_ptr, crate::globals::loaded_font_mapping());
+    crate::globals::set_font_flags_entry(font_ptr, crate::globals::loaded_font_flags());
+    font_ptr
 }
 
 // ---------------------------------------------------------------------------
