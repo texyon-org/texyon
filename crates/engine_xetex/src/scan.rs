@@ -7,7 +7,7 @@ use crate::globals::{
     cur_val, cur_val_level, def_ref, eqtb_b32s1, set_eqtb_b32s1, eqtb_is_null, expand_depth,
     expand_depth_count, file_offset, first, fmem_ptr, font_glue, font_mem_size, font_params,
     font_ptr, font_mapping_ptr, hash_s1, init_pool_ptr, last, max_print_line, max_reg_help_line,
-    max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, open_parens,
+    max_reg_num, mapped_text_entry, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, open_parens,
     param_base, pool_ptr, pool_size, pseudo_files, read_file_entry, read_open_entry, rust_stdout,
     save_ptr, save_stack_b32s1, scanner_status, selector, set_align_state, set_arith_error,
     set_avail, set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit,
@@ -72,6 +72,7 @@ extern "C" {
     fn get_glyph_bounds(f: i32, edge: i32, gid: i32) -> i32;
     fn get_font_char_range(f: i32, first: libc::c_int) -> i32;
     fn map_char_to_glyph(f: i32, ch: i32) -> i32;
+    fn apply_mapping(mapping: *mut libc::c_void, text: *mut u16, text_len: i32) -> i32;
     fn map_glyph_to_index(f: i32) -> i32;
     fn count_pdf_file_pages() -> i32;
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
@@ -14021,6 +14022,100 @@ pub unsafe extern "C" fn new_native_word_node(f: i32, n: i32) -> i32 {
     set_mem_b16s0(q + 4, 0);
     set_mem_ptr(q + 5, std::ptr::null_mut());
     q
+}
+
+// ---------------------------------------------------------------------------
+// new_native_character
+// ---------------------------------------------------------------------------
+
+const INT_PAR_TRACING_LOST_CHARS_NC: i32 = 35;
+const INT_PAR_XETEX_USE_GLYPH_METRICS_NC: i32 = 72;
+
+/// Allocate a native text node for one Unicode scalar, applying font mappings.
+///
+/// translated from xetex-xetex0.c:6276 (new_native_character)
+#[no_mangle]
+pub unsafe extern "C" fn new_native_character(f: i32, mut c: u32) -> i32 {
+    use crate::globals::{
+        mem_as_u16_ptr_mut, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3,
+        set_mem_ptr,
+    };
+
+    let p;
+    if !font_mapping_ptr(f).is_null() {
+        if c > 65_535 {
+            if pool_ptr() + 2 > pool_size() {
+                crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+            }
+            set_str_pool(pool_ptr(), ((c - 65_536) / 1024 + 0xD800) as u16);
+            set_pool_ptr(pool_ptr() + 1);
+            set_str_pool(pool_ptr(), ((c - 65_536) % 1024 + 0xDC00) as u16);
+            set_pool_ptr(pool_ptr() + 1);
+        } else {
+            if pool_ptr() + 1 > pool_size() {
+                crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+            }
+            set_str_pool(pool_ptr(), c as u16);
+            set_pool_ptr(pool_ptr() + 1);
+        }
+
+        let start = str_start(str_ptr() - TOO_BIG_CHAR);
+        let len = apply_mapping(font_mapping_ptr(f), mem_as_u16_ptr_mut(start), crate::hash::cur_length());
+        set_pool_ptr(start);
+
+        let mut i = 0;
+        while i < len {
+            let mapped = mapped_text_entry(i);
+            if (0xD800..0xDC00).contains(&mapped) {
+                c = ((mapped as u32 - 0xD800) * 1024) + mapped_text_entry(i + 1) as u32 + 9216;
+                if map_char_to_glyph(f, c as i32) == 0 {
+                    char_warning(f, c as i32);
+                }
+                i += 2;
+            } else {
+                if map_char_to_glyph(f, mapped as i32) == 0 {
+                    char_warning(f, mapped as i32);
+                }
+                i += 1;
+            }
+        }
+
+        p = new_native_word_node(f, len);
+        let text = mem_as_u16_ptr_mut(p + NATIVE_NODE_SIZE_NN);
+        for i in 0..len {
+            *text.add(i as usize) = mapped_text_entry(i);
+        }
+    } else {
+        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS_NC) > 0
+            && map_char_to_glyph(f, c as i32) == 0
+        {
+            char_warning(f, c as i32);
+        }
+
+        p = crate::mem::get_node(NATIVE_NODE_SIZE_NN + 1);
+        set_mem_b16s1(p, WHATSIT_NODE_NN);
+        set_mem_b16s0(p, NATIVE_WORD_NODE_NN);
+        set_mem_b16s3(p + 4, (NATIVE_NODE_SIZE_NN + 1) as u16);
+        set_mem_b16s0(p + 4, 0);
+        set_mem_ptr(p + 5, std::ptr::null_mut());
+        set_mem_b16s2(p + 4, f as u16);
+
+        let text = mem_as_u16_ptr_mut(p + NATIVE_NODE_SIZE_NN);
+        if c > 65_535 {
+            set_mem_b16s1(p + 4, 2);
+            *text.add(0) = ((c - 65_536) / 1024 + 0xD800) as u16;
+            *text.add(1) = ((c - 65_536) % 1024 + 0xDC00) as u16;
+        } else {
+            set_mem_b16s1(p + 4, 1);
+            *text.add(0) = c as u16;
+        }
+    }
+
+    measure_native_node(
+        crate::globals::mem_node_addr(p),
+        eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_NC) > 0,
+    );
+    p
 }
 
 // ---------------------------------------------------------------------------

@@ -426,6 +426,8 @@ mod raw {
         pub(super) static mut font_layout_engine: *mut *mut libc::c_void;
         // font_mapping[f]: TECkit/TFM font mapping pointer (void*, xetex-xetexd.h:574).
         pub(super) static mut font_mapping: *mut *mut libc::c_void;
+        // mapped_text[i]: output of apply_mapping() (xetex-xetexd.h:580).
+        pub(super) static mut mapped_text: *mut u16;
         // hyphen_char[f], skew_char[f] (xetex-xetexd.h:568–569).
         pub(super) static mut hyphen_char: *mut i32;
         pub(super) static mut skew_char: *mut i32;
@@ -1948,6 +1950,11 @@ pub(crate) fn font_layout_engine_ptr(f: i32) -> *mut libc::c_void {
 #[inline]
 pub(crate) fn font_mapping_ptr(f: i32) -> *mut libc::c_void {
     unsafe { *raw::font_mapping.offset(f as isize) }
+}
+/// Returns `mapped_text[i]`, the UTF-16 output buffer from `apply_mapping`.
+#[inline]
+pub(crate) fn mapped_text_entry(i: i32) -> u16 {
+    unsafe { *raw::mapped_text.offset(i as isize) }
 }
 /// Returns `xtx_ligature_present`.
 #[inline]
