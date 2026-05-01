@@ -32,6 +32,41 @@ template.
 
 ---
 
+## Session 66 — 2026-05-01 — read_font_info
+
+**Goal:** Translate `read_font_info` from `xetex-xetex0.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 65
+- xetex-xetex0.c: ~3 C functions remaining.
+
+**Work done:**
+- Ran baseline before edits: `tex-outputs` 29/29, TRIP 2/2, `engine_rust` 7/7, `latex_goldens` 4/4.
+- Translated `read_font_info` (xetex-xetex0.c:6350) -> `src/scan.rs` (78da31d7).
+- Added safe Rust accessors for TFM font-table globals used by the loader: boundary chars, lig/kern/exten bases, and `font_info[k].b16`.
+- Replaced the C body in `xetex/xetex-xetex0.c` with the migration marker so callers link to Rust.
+- Updated `MODULE_STATUS.md` and `PROGRESS.md` for session 66.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- `engine_rust`: 7/7
+- `latex_goldens`: 4/4
+- Streak: 66
+- xetex-xetex0.c: ~2 C functions remaining.
+
+**Surprises / gotchas:**
+- `nine_bits` is `int32_t`, not `u16`; `font_false_bchar[f] = TOO_BIG_CHAR` needs to preserve the 65536 sentinel.
+- Removing `read_font_info` from C must also remove the standalone `internal_font_number` return-type line, or it corrupts the following `main_control` declaration.
+- The TFM reader intentionally mirrors C's partial EOF checking in `READFIFTEEN` and the first font parameter path.
+
+**For the next session:**
+- `main_control` is now the obvious remaining target in `xetex-xetex0.c`; it is huge and should be approached with extra care, likely by first mapping its switch cases and dependencies.
+
+---
+
 ## Session 65 — 2026-05-01 — load_native_font
 
 **Goal:** Translate `load_native_font` from `xetex-xetex0.c`.

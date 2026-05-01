@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 65.
+Last updated: session 66.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 65.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               |  6783 |      3 | multiple (see below)              | IN PROGRESS — 99% |
+| xetex-xetex0.c               |  8285 |      2 | multiple (see below)              | IN PROGRESS — 99% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -473,11 +473,11 @@ New Rust module `src/save.rs` created for save-stack management.
 |193| `do_locale_linebreaks`    |        6493 | `src/scan.rs`   | MIGRATED (session 63, 64b6b451) |
 |194| `new_native_character`    |        6276 | `src/scan.rs`   | MIGRATED (session 64, ea82f5de) |
 |195| `load_native_font`        |        6284 | `src/scan.rs`   | MIGRATED (session 65, bd70d52b) |
+|196| `read_font_info`          |        6350 | `src/scan.rs`   | MIGRATED (session 66, 78da31d7) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: remaining candidates:
-- `read_font_info` (line 6483): very large TFM/native font reader.
 - `main_control`: huge main engine loop.
 
 ## How to maintain this file
