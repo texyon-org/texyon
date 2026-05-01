@@ -118,6 +118,11 @@ extern "C" {
         slant: *mut i32,
     );
     fn get_ot_math_constant(f: i32, n: i32) -> i32;
+    fn ttstub_input_getc(handle: usize) -> libc::c_int;
+    fn ttstub_input_close(handle: usize) -> libc::c_int;
+    fn tt_xetex_open_input(filefmt: libc::c_int) -> usize;
+    fn check_for_tfm_font_mapping();
+    fn load_tfm_font_mapping() -> *mut libc::c_void;
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -14143,13 +14148,564 @@ pub unsafe extern "C" fn new_native_character(f: i32, mut c: u32) -> i32 {
 // load_native_font
 // ---------------------------------------------------------------------------
 
+const TTBC_FILE_FORMAT_TFM: libc::c_int = 3;
 const INT_PAR_DEFAULT_HYPHEN_CHAR_LNF: i32 = 46;
 const INT_PAR_DEFAULT_SKEW_CHAR_LNF: i32 = 47;
+const INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR_RFI: i32 = 65;
+const LIST_TAG_RFI: u16 = 2;
+const NON_ADDRESS_RFI: i32 = 0;
+const EOF_RFI: i32 = -1;
 
 unsafe fn push_font_info_b32s1(v: i32) {
     let k = crate::globals::fmem_ptr();
     crate::globals::set_font_info_b32s1(k, v);
     crate::globals::set_fmem_ptr(k + 1);
+}
+
+unsafe fn tfm_getc(handle: usize) -> i32 {
+    ttstub_input_getc(handle) as i32
+}
+
+unsafe fn read_tfm_word(handle: usize) -> Option<(crate::mem_types::B16x4, i32, i32, i32, i32)> {
+    let a = tfm_getc(handle);
+    let b = tfm_getc(handle);
+    let c = tfm_getc(handle);
+    let d = tfm_getc(handle);
+    if a == EOF_RFI || b == EOF_RFI || c == EOF_RFI || d == EOF_RFI {
+        None
+    } else {
+        Some((
+            crate::mem_types::B16x4 {
+                s0: d as u16,
+                s1: c as u16,
+                s2: b as u16,
+                s3: a as u16,
+            },
+            a,
+            b,
+            c,
+            d,
+        ))
+    }
+}
+
+unsafe fn read_fifteen(handle: usize) -> Option<i32> {
+    let mut x = tfm_getc(handle);
+    if x > 127 || x == EOF_RFI {
+        return None;
+    }
+    x *= 256;
+    x += tfm_getc(handle);
+    Some(x)
+}
+
+unsafe fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<i32> {
+    let a = tfm_getc(handle);
+    let b = tfm_getc(handle);
+    let c = tfm_getc(handle);
+    let d = tfm_getc(handle);
+    if a == EOF_RFI || b == EOF_RFI || c == EOF_RFI || d == EOF_RFI {
+        return None;
+    }
+    let sw = (((((d * z) / 256) + c * z) / 256) + b * z) / beta;
+    if a == 0 {
+        Some(sw)
+    } else if a == 255 {
+        Some(sw - alpha)
+    } else {
+        None
+    }
+}
+
+/// Read TFM metrics, with native-font fallback, and initialize a font entry.
+///
+/// translated from xetex-xetex0.c:6350 (read_font_info)
+#[no_mangle]
+pub unsafe extern "C" fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
+    let mut name_too_long = false;
+    let mut file_opened = false;
+    let mut g = FONT_BASE;
+    let mut tfm_file = INVALID_HANDLE;
+
+    pack_file_name(nom, aire, crate::globals::cur_ext());
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
+        crate::output::begin_diagnostic();
+        crate::output::diagnostic_begin_capture_warning_here();
+        crate::output::print_nl_cstr(c"Requested font \"".as_ptr());
+        crate::output::print_cstr(crate::globals::name_of_file());
+        crate::output::print_char(b'"' as i32);
+        if s < 0 {
+            crate::output::print_cstr(c" scaled ".as_ptr());
+            crate::output::print_int(-s);
+        } else {
+            crate::output::print_cstr(c" at ".as_ptr());
+            crate::output::print_scaled(s);
+            crate::output::print_cstr(c"pt".as_ptr());
+        }
+        capture_to_diagnostic(std::ptr::null_mut());
+        crate::output::end_diagnostic(false);
+    }
+
+    let mut bad_tfm = false;
+
+    'read: {
+        macro_rules! bad {
+            () => {{
+                bad_tfm = true;
+                break 'read;
+            }};
+        }
+
+        if crate::globals::quoted_filename() {
+            g = load_native_font(u, nom, aire, s);
+            if g != FONT_BASE {
+                break 'read;
+            }
+        }
+
+        name_too_long = crate::string_pool::length(nom) > 255
+            || crate::string_pool::length(aire) > 255;
+        if name_too_long {
+            bad!();
+        }
+
+        pack_file_name(nom, aire, EMPTY_STRING);
+        check_for_tfm_font_mapping();
+
+        tfm_file = tt_xetex_open_input(TTBC_FILE_FORMAT_TFM);
+        if tfm_file == INVALID_HANDLE {
+            if !crate::globals::quoted_filename() {
+                g = load_native_font(u, nom, aire, s);
+                if g != FONT_BASE {
+                    break 'read;
+                }
+            }
+            bad!();
+        }
+
+        file_opened = true;
+
+        let mut lf = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let mut lh = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let mut bc = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let mut ec = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+
+        if bc > ec + 1 || ec > 255 {
+            bad!();
+        }
+
+        if bc > 255 {
+            bc = 1;
+            ec = 0;
+        }
+
+        let nw = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let nh = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let nd = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let ni = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let nl = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let nk = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let ne = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        let np = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+
+        if lf != 6 + lh + (ec - bc + 1) + nw + nh + nd + ni + nl + nk + ne + np {
+            bad!();
+        }
+        if nw == 0 || nh == 0 || nd == 0 || ni == 0 {
+            bad!();
+        }
+
+        lf = lf - 6 - lh;
+        if np < 7 {
+            lf = lf + 7 - np;
+        }
+
+        if crate::globals::font_ptr() == crate::globals::font_max()
+            || crate::globals::fmem_ptr() + lf > crate::globals::font_mem_size()
+        {
+            _tt_abort(c"not enough memory to load another font".as_ptr());
+        }
+
+        let f = crate::globals::font_ptr() + 1;
+        crate::globals::set_char_base_entry(f, crate::globals::fmem_ptr() - bc);
+        crate::globals::set_width_base_entry(f, crate::globals::char_base_entry(f) + ec + 1);
+        crate::globals::set_height_base_entry(f, crate::globals::width_base_entry(f) + nw);
+        crate::globals::set_depth_base_entry(f, crate::globals::height_base_entry(f) + nh);
+        crate::globals::set_italic_base_entry(f, crate::globals::depth_base_entry(f) + nd);
+        crate::globals::set_lig_kern_base_entry(f, crate::globals::italic_base_entry(f) + ni);
+        crate::globals::set_kern_base_entry(
+            f,
+            crate::globals::lig_kern_base_entry(f) + nl - 256 * 128,
+        );
+        crate::globals::set_exten_base_entry(
+            f,
+            crate::globals::kern_base_entry(f) + 256 * 128 + nk,
+        );
+        crate::globals::set_param_base(f, crate::globals::exten_base_entry(f) + ne);
+
+        if lh < 2 {
+            bad!();
+        }
+
+        let (mut qw, a, b, c, d) = match read_tfm_word(tfm_file) {
+            Some(v) => v,
+            None => bad!(),
+        };
+        let _ = (a, b, c, d);
+        crate::globals::set_font_check(f, qw);
+
+        let mut z = match read_fifteen(tfm_file) { Some(v) => v, None => bad!() };
+        z = z * 256 + tfm_getc(tfm_file);
+        z = (z * 16) + (tfm_getc(tfm_file) / 16);
+        if z < 65_536 {
+            bad!();
+        }
+
+        while lh > 2 {
+            tfm_getc(tfm_file);
+            tfm_getc(tfm_file);
+            tfm_getc(tfm_file);
+            tfm_getc(tfm_file);
+            lh -= 1;
+        }
+
+        crate::globals::set_font_dsize_entry(f, z);
+        if s != -1000 {
+            if s >= 0 {
+                z = s;
+            } else {
+                z = crate::scaled_math::xn_over_d(z, -s, 1000);
+            }
+        }
+
+        crate::globals::set_font_size_entry(f, z);
+
+        let mut k = crate::globals::fmem_ptr();
+        while k <= crate::globals::width_base_entry(f) - 1 {
+            let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
+                Some(v) => v,
+                None => bad!(),
+            };
+            qw = word;
+            crate::globals::set_font_info_b16(k, qw);
+
+            if a >= nw || b / 16 >= nh || b % 16 >= nd || c / 4 >= ni {
+                bad!();
+            }
+
+            match c % 4 {
+                1 => {
+                    if d >= nl {
+                        bad!();
+                    }
+                }
+                3 => {
+                    if d >= ne {
+                        bad!();
+                    }
+                }
+                2 => {
+                    if d < bc || d > ec {
+                        bad!();
+                    }
+
+                    let mut dd = d;
+                    while dd < k + bc - crate::globals::fmem_ptr() {
+                        qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + dd);
+                        if qw.s1 % 4 != LIST_TAG_RFI {
+                            break;
+                        }
+                        dd = qw.s0 as i32;
+                    }
+
+                    if dd == k + bc - crate::globals::fmem_ptr() {
+                        bad!();
+                    }
+                }
+                _ => {}
+            }
+            k += 1;
+        }
+
+        let mut alpha = 16;
+        while z >= 0x800000 {
+            z /= 2;
+            alpha += alpha;
+        }
+        let beta = 256 / alpha;
+        alpha *= z;
+
+        k = crate::globals::width_base_entry(f);
+        while k <= crate::globals::lig_kern_base_entry(f) - 1 {
+            let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
+                Some(v) => v,
+                None => bad!(),
+            };
+            crate::globals::set_font_info_b32s1(k, sw);
+            k += 1;
+        }
+
+        if crate::globals::font_info_b32s1(crate::globals::width_base_entry(f)) != 0
+            || crate::globals::font_info_b32s1(crate::globals::height_base_entry(f)) != 0
+            || crate::globals::font_info_b32s1(crate::globals::depth_base_entry(f)) != 0
+            || crate::globals::font_info_b32s1(crate::globals::italic_base_entry(f)) != 0
+        {
+            bad!();
+        }
+
+        let mut bch_label = 32_767;
+        let mut bchar = 256;
+
+        if nl > 0 {
+            k = crate::globals::lig_kern_base_entry(f);
+            while k <= crate::globals::kern_base_entry(f) + 256 * 128 - 1 {
+                let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
+                    Some(v) => v,
+                    None => bad!(),
+                };
+                qw = word;
+                crate::globals::set_font_info_b16(k, qw);
+
+                if a > 128 {
+                    if 256 * c + d >= nl {
+                        bad!();
+                    }
+
+                    if a == 255 && k == crate::globals::lig_kern_base_entry(f) {
+                        bchar = b;
+                    }
+                } else {
+                    if b != bchar {
+                        if b < bc || b > ec {
+                            bad!();
+                        }
+
+                        qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + b);
+                        if qw.s3 == 0 {
+                            bad!();
+                        }
+                    }
+
+                    if c < 128 {
+                        if d < bc || d > ec {
+                            bad!();
+                        }
+                        qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + d);
+                        if qw.s3 == 0 {
+                            bad!();
+                        }
+                    } else if 256 * (c - 128) + d >= nk {
+                        bad!();
+                    }
+
+                    if a < 128 && k - crate::globals::lig_kern_base_entry(f) + a + 1 >= nl {
+                        bad!();
+                    }
+                }
+
+                if k == crate::globals::kern_base_entry(f) + 256 * 128 - 1 && a == 255 {
+                    bch_label = 256 * c + d;
+                }
+                k += 1;
+            }
+        }
+
+        k = crate::globals::kern_base_entry(f) + 256 * 128;
+        while k <= crate::globals::exten_base_entry(f) - 1 {
+            let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
+                Some(v) => v,
+                None => bad!(),
+            };
+            crate::globals::set_font_info_b32s1(k, sw);
+            k += 1;
+        }
+
+        k = crate::globals::exten_base_entry(f);
+        while k <= crate::globals::param_base(f) - 1 {
+            let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
+                Some(v) => v,
+                None => bad!(),
+            };
+            crate::globals::set_font_info_b16(k, word);
+
+            for ch in [a, b, c] {
+                if ch != 0 {
+                    if ch < bc || ch > ec {
+                        bad!();
+                    }
+                    qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + ch);
+                    if qw.s3 == 0 {
+                        bad!();
+                    }
+                }
+            }
+
+            if d < bc || d > ec {
+                bad!();
+            }
+            qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + d);
+            if qw.s3 == 0 {
+                bad!();
+            }
+            k += 1;
+        }
+
+        k = 1;
+        while k <= np {
+            if k == 1 {
+                let mut sw = tfm_getc(tfm_file);
+                if sw == EOF_RFI {
+                    bad!();
+                }
+                if sw > 127 {
+                    sw -= 256;
+                }
+
+                sw = sw * 256 + tfm_getc(tfm_file);
+                sw = sw * 256 + tfm_getc(tfm_file);
+                crate::globals::set_font_info_b32s1(
+                    crate::globals::param_base(f),
+                    (sw * 16) + (tfm_getc(tfm_file) / 16),
+                );
+            } else {
+                let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
+                    Some(v) => v,
+                    None => bad!(),
+                };
+                crate::globals::set_font_info_b32s1(crate::globals::param_base(f) + k - 1, sw);
+            }
+            k += 1;
+        }
+
+        k = np + 1;
+        while k <= 7 {
+            crate::globals::set_font_info_b32s1(crate::globals::param_base(f) + k - 1, 0);
+            k += 1;
+        }
+
+        if np >= 7 {
+            crate::globals::set_font_params(f, np);
+        } else {
+            crate::globals::set_font_params(f, 7);
+        }
+
+        crate::globals::set_hyphen_char_entry(
+            f,
+            crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_DEFAULT_HYPHEN_CHAR_LNF),
+        );
+        crate::globals::set_skew_char_entry(
+            f,
+            crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_DEFAULT_SKEW_CHAR_LNF),
+        );
+        if bch_label < nl {
+            crate::globals::set_bchar_label_entry(
+                f,
+                bch_label + crate::globals::lig_kern_base_entry(f),
+            );
+        } else {
+            crate::globals::set_bchar_label_entry(f, NON_ADDRESS_RFI);
+        }
+        crate::globals::set_font_bchar_entry(f, bchar);
+        crate::globals::set_font_false_bchar_entry(f, bchar);
+
+        if bchar <= ec && bchar >= bc {
+            qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + bchar);
+            if qw.s3 > 0 {
+                crate::globals::set_font_false_bchar_entry(f, TOO_BIG_CHAR);
+            }
+        }
+
+        crate::globals::set_font_name_entry(f, nom);
+        crate::globals::set_font_area_entry(f, aire);
+        crate::globals::set_font_bc_entry(f, bc as u16);
+        crate::globals::set_font_ec_entry(f, ec as u16);
+        crate::globals::set_font_glue(f, crate::mem::TEX_NULL);
+        crate::globals::set_param_base(f, crate::globals::param_base(f) - 1);
+        crate::globals::set_fmem_ptr(crate::globals::fmem_ptr() + lf);
+        crate::globals::set_font_ptr(f);
+        g = f;
+        crate::globals::set_font_mapping_ptr(f, load_tfm_font_mapping());
+    }
+
+    if bad_tfm && eqtb_b32s1(INT_BASE + INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR_RFI) == 0 {
+        error_here_with_diagnostic(c"Font ".as_ptr());
+        crate::output::sprint_cs(u);
+        crate::output::print_char(b'=' as i32);
+        if crate::globals::file_name_quote_char() != 0 {
+            crate::output::print_char(crate::globals::file_name_quote_char() as i32);
+        }
+        crate::output::print_file_name(nom, aire, crate::globals::cur_ext());
+        if crate::globals::file_name_quote_char() != 0 {
+            crate::output::print_char(crate::globals::file_name_quote_char() as i32);
+        }
+        if s >= 0 {
+            crate::output::print_cstr(c" at ".as_ptr());
+            crate::output::print_scaled(s);
+            crate::output::print_cstr(c"pt".as_ptr());
+        } else if s != -1000 {
+            crate::output::print_cstr(c" scaled ".as_ptr());
+            crate::output::print_int(-s);
+        }
+
+        if file_opened {
+            crate::output::print_cstr(c" not loadable: Bad metric (TFM) file".as_ptr());
+        } else if name_too_long {
+            crate::output::print_cstr(c" not loadable: Metric (TFM) file name too long".as_ptr());
+        } else {
+            crate::output::print_cstr(
+                c" not loadable: Metric (TFM) file or installed font not found".as_ptr(),
+            );
+        }
+        capture_to_diagnostic(std::ptr::null_mut());
+
+        crate::globals::set_help_ptr(5);
+        crate::globals::set_help_line(
+            4,
+            c"I wasn't able to read the size data for this font,".as_ptr(),
+        );
+        crate::globals::set_help_line(
+            3,
+            c"so I will ignore the font specification.".as_ptr(),
+        );
+        crate::globals::set_help_line(
+            2,
+            c"[Wizards can fix TFM files using TFtoPL/PLtoTF.]".as_ptr(),
+        );
+        crate::globals::set_help_line(
+            1,
+            c"You might try inserting a different font spec;".as_ptr(),
+        );
+        crate::globals::set_help_line(
+            0,
+            c"e.g., type `I\\font<same font id>=<substitute font name>'.".as_ptr(),
+        );
+
+        error();
+    }
+
+    if file_opened {
+        ttstub_input_close(tfm_file);
+    }
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0
+        && (g == FONT_BASE || file_opened)
+    {
+        crate::output::begin_diagnostic();
+        crate::output::diagnostic_begin_capture_warning_here();
+
+        crate::output::print_nl_cstr(c" -> ".as_ptr());
+        if g == FONT_BASE {
+            crate::output::print_cstr(c"font not found, using \"nullfont\"".as_ptr());
+        } else {
+            crate::output::print_cstr(crate::globals::name_of_file());
+        }
+
+        capture_to_diagnostic(std::ptr::null_mut());
+        crate::output::end_diagnostic(false);
+    }
+
+    g
 }
 
 /// Load a native AAT/OpenType/Graphite font and initialize TeX font tables.
