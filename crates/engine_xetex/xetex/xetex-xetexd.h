@@ -1019,6 +1019,7 @@ void fix_language(void);
 void insert_src_special(void);
 void append_src_special(void);
 void handle_right_brace(void);
+void main_control_append_normal_space(void);
 void main_control(void);
 void give_err_help(void);
 void close_files_and_terminate(void);

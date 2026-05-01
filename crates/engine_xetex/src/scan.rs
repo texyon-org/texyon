@@ -7129,6 +7129,71 @@ pub unsafe extern "C" fn app_space() {
     set_cur_list_tail(q);
 }
 
+// translated from xetex-xetex0.c:8221 (main_control append_normal_space label)
+#[no_mangle]
+pub unsafe extern "C" fn main_control_append_normal_space() {
+    const INT_PAR_XETEX_INTER_CHAR_TOKENS_MC: i32 = 73; // xetex_format.h:108
+    const GLUE_BASE_MC: i32 = 2_254_340; // xetex_format.h:205
+    const GLUE_PAR_SPACE_SKIP_MC: i16 = 12; // xetex_format.h:161
+    const INTER_CHAR_TEXT_MC: u16 = 17; // xetex-constants.h:216
+    const CHAR_NUM_MC: u8 = 16; // xetex_format.h:253
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS_MC) > 0
+        && crate::globals::space_class() != CHAR_CLASS_LIMIT
+        && crate::globals::prev_class() != CHAR_CLASS_LIMIT - 1
+    {
+        crate::globals::set_prev_class(CHAR_CLASS_LIMIT - 1);
+        crate::save::find_sa_element(
+            INTER_CHAR_VAL as u16,
+            crate::globals::space_class() * CHAR_CLASS_LIMIT + (CHAR_CLASS_LIMIT - 1),
+            false,
+        );
+        if crate::globals::cur_ptr() != crate::mem::TEX_NULL
+            && mem_b32s1(crate::globals::cur_ptr() + 1) != crate::mem::TEX_NULL
+        {
+            if cur_cs() == 0 {
+                if cur_cmd() == CHAR_NUM_MC {
+                    set_cur_cmd(OTHER_CHAR);
+                }
+                set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+            } else {
+                set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+            }
+            back_input();
+            begin_token_list(mem_b32s1(crate::globals::cur_ptr() + 1), INTER_CHAR_TEXT_MC);
+            return;
+        }
+    }
+
+    let cur_font = eqtb_b32s1(CUR_FONT_LOC);
+    if eqtb_b32s1(GLUE_BASE_MC + GLUE_PAR_SPACE_SKIP_MC as i32) == 0 {
+        crate::globals::set_main_p(font_glue(cur_font));
+        if crate::globals::main_p() == crate::mem::TEX_NULL {
+            crate::globals::set_main_p(crate::mem::new_spec(0));
+            crate::globals::set_main_k(param_base(cur_font) + 2);
+            set_mem_b32s1(
+                crate::globals::main_p() + 1,
+                crate::globals::font_info_b32s1(crate::globals::main_k()),
+            );
+            set_mem_b32s1(
+                crate::globals::main_p() + 2,
+                crate::globals::font_info_b32s1(crate::globals::main_k() + 1),
+            );
+            set_mem_b32s1(
+                crate::globals::main_p() + 3,
+                crate::globals::font_info_b32s1(crate::globals::main_k() + 2),
+            );
+            set_font_glue(cur_font, crate::globals::main_p());
+        }
+        crate::globals::set_temp_ptr(crate::mem::new_glue(crate::globals::main_p()));
+    } else {
+        crate::globals::set_temp_ptr(crate::mem::new_param_glue(GLUE_PAR_SPACE_SKIP_MC));
+    }
+
+    set_mem_b32s1(crate::globals::cur_list_tail(), crate::globals::temp_ptr());
+    crate::globals::set_cur_list_tail(crate::globals::temp_ptr());
+}
+
 // translated from xetex-xetex0.c:6381 (pack_file_name)
 #[no_mangle]
 pub unsafe extern "C" fn pack_file_name(n: i32, a: i32, e: i32) {

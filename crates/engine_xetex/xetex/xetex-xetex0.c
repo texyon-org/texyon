@@ -8219,41 +8219,7 @@ main_loop_move_lig: /*1072: */
     goto main_lig_loop;
 
 append_normal_space:
-    if ((INTPAR(xetex_inter_char_tokens) > 0)
-                                 && (space_class != CHAR_CLASS_LIMIT)
-                                 && (prev_class != ((CHAR_CLASS_LIMIT - 1)))) {
-        prev_class = ((CHAR_CLASS_LIMIT - 1));
-        find_sa_element(INTER_CHAR_VAL,
-                        space_class * CHAR_CLASS_LIMIT + ((CHAR_CLASS_LIMIT - 1)), false);
-        if (cur_ptr != TEX_NULL && ETEX_SA_ptr(cur_ptr) != TEX_NULL) {
-            if (cur_cs == 0) {
-                if (cur_cmd == CHAR_NUM)
-                    cur_cmd = OTHER_CHAR;
-                cur_tok = (cur_cmd * MAX_CHAR_VAL) + cur_chr;
-            } else
-                cur_tok = CS_TOKEN_FLAG + cur_cs;
-            back_input();
-            begin_token_list(mem[cur_ptr + 1].b32.s1, INTER_CHAR_TEXT);
-            goto big_switch;
-        }
-    }
-
-    if (GLUEPAR(space_skip) == 0) {
-        main_p = font_glue[eqtb[CUR_FONT_LOC].b32.s1];
-        if (main_p == TEX_NULL) {
-            main_p = new_spec(0);
-            main_k = param_base[eqtb[CUR_FONT_LOC].b32.s1] + 2;
-            mem[main_p + 1].b32.s1 = font_info[main_k].b32.s1;
-            mem[main_p + 2].b32.s1 = font_info[main_k + 1].b32.s1;
-            mem[main_p + 3].b32.s1 = font_info[main_k + 2].b32.s1;
-            font_glue[eqtb[CUR_FONT_LOC].b32.s1] = main_p;
-        }
-        temp_ptr = new_glue(main_p);
-    } else
-        temp_ptr = new_param_glue(GLUE_PAR__space_skip);
-
-    mem[cur_list.tail].b32.s1 = temp_ptr;
-    cur_list.tail = temp_ptr;
+    main_control_append_normal_space();
     goto big_switch;
 }
 
