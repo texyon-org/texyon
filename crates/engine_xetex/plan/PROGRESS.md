@@ -72,6 +72,11 @@ cargo test -p tectonic --test tex-outputs
 |      56 | 2026-04-28 |     29 |    29 |     0 | vpackage (~220 lines), hpack (~450 lines, NATIVE_WORD_NODE merging, bidi). Fixed SIGSEGV: mem_node_addr not mem_ptr for measure_native_node. All 4 suites pass. |
 |      57 | 2026-04-29 |     29 |    29 |     0 | conv_toks (~350 lines), begin_token_list (~50 lines). Bug: ASSIGN_TOKS must be 73 not 72; caught by TRIP. All 4 suites pass. |
 |      58 | 2026-04-29 |     29 |    29 |     0 | flush_node_list (~182 lines), copy_node_list (~160 lines), show_activities (~122 lines), show_node_list (~470 lines), print_subsidiary_data (~37 lines). All 4 suites pass. |
+|      59 | 2026-04-30 |     29 |    29 |     0 | show_context (~232 lines), expand (~272 lines). All 4 suites pass. |
+|      60 | 2026-04-30 |     29 |    29 |     0 | expand (compilation fixes + wrap). All 4 suites pass. |
+|      61 | 2026-04-30 |     29 |    29 |     0 | get_next (~490 lines), macro_call (~330 lines). Critical COMMENT-case bug fixed. All 4 suites pass. |
+|      62 | 2026-05-01 |     29 |    29 |     0 | scan_glyph_number, round_decimals, xetex_scan_dimen. All 4 suites pass. |
+|      63 | 2026-05-01 |     29 |    29 |     0 | print_cmd_chr (~1400 lines), new_native_word_node, do_locale_linebreaks. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -140,6 +145,11 @@ Passed count below the previous session's recorded value.
 |      56 |28,000 |                  ~19968 |      ~58.3% |
 |      57 |27,600 |                  ~20400 |      ~57.5% |
 |      58 |28,010 |                  ~21883 |      ~56.1% |
+|      59 |27,400 |                  ~22500 |      ~54.9% |
+|      60 |27,300 |                  ~22600 |      ~54.7% |
+|      61 |26,200 |                  ~23500 |      ~52.7% |
+|      62 |26,000 |                  ~23700 |      ~52.3% |
+|      63 |24,600 |                  ~25000 |      ~49.6% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -210,6 +220,11 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      56 |      339 |             ~19 |     ~94.7% |
 |      57 |      341 |             ~17 |     ~95.3% |
 |      58 |      346 |             ~13 |     ~96.4% |
+|      59 |      347 |             ~12 |     ~96.7% |
+|      60 |      348 |             ~11 |     ~96.9% |
+|      61 |      350 |              ~9 |     ~97.5% |
+|      62 |      353 |              ~7 |     ~98.1% |
+|      63 |      356 |              ~5 |     ~98.6% |
 
 
 Total C function count to be measured in session 1 via:
@@ -225,7 +240,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **57** (sessions 1–57 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **63** (sessions 1–63 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

@@ -32,6 +32,76 @@ template.
 
 ---
 
+## Session 63 — 2026-05-01 — print_cmd_chr, new_native_word_node, do_locale_linebreaks
+
+**Goal:** Translate `print_cmd_chr` (the large command-display switch), `new_native_word_node`, and `do_locale_linebreaks` from `xetex-xetex0.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 62
+- xetex-xetex0.c: ~9 C functions remaining.
+
+**Work done:**
+- Removed `fn print_cmd_chr(cmd: u16, chr_code: i32);` from extern "C" blocks in scan.rs, errors.rs, and input.rs; added `use crate::output::print_cmd_chr;` to each.
+- Added ~250 lines of `CMD_*` / `CC_*` constants to output.rs covering all command codes and sub-codes.
+- Translated `print_cmd_chr` (line 1265, ~1400 lines) → `src/output.rs` (5184bb4d). Match on `u16` cmd; CALL/OUTER_CALL tracing via `n % 2` odd-test; REGISTER case with local `(the_cmd, the_chr)` binding; SET_FONT font-area flag comparison; XETEX_MATH_GIVEN bit extraction inlined.
+- Wrapped `print_cmd_chr` C body in `#if 0 / #endif`.
+- Translated `new_native_word_node` (line 6250, ~22 lines) → `src/scan.rs` (64b6b451). Node size computed as `NATIVE_NODE_SIZE + (n * 2 + 7) / 8`.
+- Translated `do_locale_linebreaks` (line 6493, ~55 lines) → `src/scan.rs` (64b6b451). Calls `linebreak_start`/`linebreak_next` via local extern block; `main_f`/`native_text` accessed as extern statics.
+- Wrapped both C bodies in `#if 0 / #endif`.
+- All 4 test suites pass (29+2+7+4 = 42).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 63
+- xetex-xetex0.c: ~7 C functions remaining.
+
+**Surprises / gotchas:**
+- `print_cmd_chr` REGISTER case locally reassigns `cmd` in C; modelled as `(the_cmd, the_chr)` local tuple in Rust since you can't rebind a match variable.
+- `CC_AAT_FONT_FLAG = 0xFFFF` and `CC_OTGR_FONT_FLAG = 0xFFFE` must be `i32` to match `font_area_entry()` return type.
+- `mem_node_addr(p)` (pointer TO mem[p]) vs `mem_ptr(p)` (pointer FROM mem[p].ptr field): `measure_native_node` always needs `mem_node_addr`.
+- `do_locale_linebreaks`'s `main_f`/`native_text` are not in globals.rs; accessed via a local `extern "C"` block in scan.rs.
+
+**For the next session:**
+- `new_native_character` (line 6274, ~75 lines): uses `apply_mapping`, `char_warning`, `map_char_to_glyph`, font-mapping globals.
+- `load_native_font` (line 6358, ~130 lines): font engine APIs.
+- `read_font_info` (~6555, very large TFM reader).
+- `main_control` (~7427, the huge main engine loop).
+
+---
+
+## Session 62 — 2026-05-01 — scan_glyph_number, round_decimals, xetex_scan_dimen
+
+**Goal:** Translate `scan_glyph_number`, `round_decimals`, and `xetex_scan_dimen` from `xetex-xetex0.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 61
+- xetex-xetex0.c: ~10 C functions remaining.
+
+**Work done:**
+- Translated `scan_glyph_number`, `round_decimals`, `xetex_scan_dimen` → `src/scan.rs` (7058f857).
+- Wrapped all three C bodies in `#if 0 / #endif`.
+- All 4 test suites pass.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 62
+- xetex-xetex0.c: ~9 C functions remaining.
+
+**Surprises / gotchas:**
+- None significant; these were straightforward scanner functions.
+
+**For the next session:**
+- `print_cmd_chr` (line 1265, ~1400 lines): large display switch.
+- `new_native_word_node`, `do_locale_linebreaks`, `new_native_character`, `load_native_font`, `read_font_info`, `main_control`.
+
+---
+
 ## Session 61 — 2026-04-30 — get_next, macro_call
 
 **Goal:** Translate `get_next` and `macro_call` from `xetex-xetex0.c`.
