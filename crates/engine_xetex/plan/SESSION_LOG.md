@@ -32,6 +32,37 @@ template.
 
 ---
 
+## Session 64 — 2026-05-01 — new_native_character
+
+**Goal:** Translate `new_native_character` from `xetex-xetex0.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 63
+- xetex-xetex0.c: ~5 C functions remaining.
+
+**Work done:**
+- Translated `new_native_character` (xetex-xetex0.c:6276) → `src/scan.rs` (ea82f5de).
+- Added a `mapped_text` raw global plus `mapped_text_entry()` accessor in `src/globals.rs` for the `apply_mapping()` output buffer.
+- Removed the C body from `xetex/xetex-xetex0.c`, leaving the existing header prototype to link to Rust.
+- Verified all 4 suites: tex-outputs 29/29, TRIP 2/2, engine_rust 7/7, latex_goldens 4/4.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 64
+- xetex-xetex0.c: ~4 C functions remaining.
+
+**Surprises / gotchas:**
+- `apply_mapping` writes into the global `mapped_text` buffer owned by `xetex-ext.c`; Rust only needs an indexed read accessor.
+- `measure_native_node` needs `mem_node_addr(p)`, not `mem_ptr(p)`, matching the prior `do_locale_linebreaks` gotcha.
+
+**For the next session:**
+- Next obvious targets are `load_native_font` (line 6360) and then `read_font_info` (line 6559). `main_control` should remain last.
+
+---
+
 ## Session 63 — 2026-05-01 — print_cmd_chr, new_native_word_node, do_locale_linebreaks
 
 **Goal:** Translate `print_cmd_chr` (the large command-display switch), `new_native_word_node`, and `do_locale_linebreaks` from `xetex-xetex0.c`.

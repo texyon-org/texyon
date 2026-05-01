@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 63.
+Last updated: session 64.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 63.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               |  7000 |      5 | multiple (see below)              | IN PROGRESS — 98% |
+| xetex-xetex0.c               |  6917 |      4 | multiple (see below)              | IN PROGRESS — 99% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -461,16 +461,24 @@ New Rust module `src/save.rs` created for save-stack management.
 |181| `show_activities`         |        1123 | `src/scan.rs`   | MIGRATED (session 58, 947f0a58) |
 |182| `print_subsidiary_data`   |         215 | `src/scan.rs`   | MIGRATED (session 58, a5e002a6) |
 |183| `show_node_list`          |         259 | `src/scan.rs`   | MIGRATED (session 58, a5e002a6) |
+|184| `show_context`            |        2752 | `src/scan.rs`   | MIGRATED (session 59, 64464240) |
+|185| `expand`                  |        3988 | `src/scan.rs`   | MIGRATED (session 60, b01234a8) |
+|186| `get_next`                |        3152 | `src/scan.rs`   | MIGRATED (session 61, 97dbabde) |
+|187| `macro_call`              |        3648 | `src/scan.rs`   | MIGRATED (session 61, 6c98b044) |
+|188| `scan_glyph_number`       |        6409 | `src/scan.rs`   | MIGRATED (session 62, 7058f857) |
+|189| `round_decimals`          |        6442 | `src/scan.rs`   | MIGRATED (session 62, 7058f857) |
+|190| `xetex_scan_dimen`        |        6461 | `src/scan.rs`   | MIGRATED (session 62, 7058f857) |
+|191| `print_cmd_chr`           |        1253 | `src/output.rs` | MIGRATED (session 63, 5184bb4d) |
+|192| `new_native_word_node`    |        6250 | `src/scan.rs`   | MIGRATED (session 63, 64b6b451) |
+|193| `do_locale_linebreaks`    |        6493 | `src/scan.rs`   | MIGRATED (session 63, 64b6b451) |
+|194| `new_native_character`    |        6276 | `src/scan.rs`   | MIGRATED (session 64, ea82f5de) |
 
 ### Phases 12+
 
 Continue `xetex-xetex0.c`: remaining candidates:
-- `show_context` (line 2752): ~232 lines.
-- `get_next` (line 3152): ~495 lines, very large.
-- `macro_call` (line 3648): ~339 lines.
-- `expand` (line 3988): ~289 lines.
-- `print_cmd_chr` (line 1253): ~1500 lines, very large.
-- `scan_glyph_number`, `round_decimals`, `xetex_scan_dimen`, `new_native_word_node`, `new_native_character`, `load_native_font`, `do_locale_linebreaks`, `read_font_info`, `main_control`.
+- `load_native_font` (line 6360): font engine APIs.
+- `read_font_info` (line 6559): very large TFM/native font reader.
+- `main_control`: huge main engine loop.
 
 ## How to maintain this file
 
