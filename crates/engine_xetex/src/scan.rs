@@ -30,7 +30,6 @@ use crate::mem::new_rule;
 
 extern "C" {
     fn begin_token_list(p: i32, t: u16);
-    fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool);
     fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
     fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
     fn int_error(n: i32);
@@ -48,7 +47,6 @@ extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
     fn print_cmd_chr(cmd: u16, chr_code: i32);
-    fn scan_glyph_number(f: i32);
     fn aat_font_get(what: i32, engine: *mut libc::c_void) -> i32;
     fn aat_font_get_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
     fn aat_font_get_2(what: i32, engine: *mut libc::c_void, p1: i32, p2: i32) -> i32;
@@ -1162,6 +1160,305 @@ pub unsafe extern "C" fn scan_spec(c: u8, three_codes: bool) {
     set_save_ptr(save_ptr() + 2);
     crate::save::new_save_level(c);
     scan_left_brace();
+}
+
+// ---------------------------------------------------------------------------
+// round_decimals / xetex_scan_dimen / scan_glyph_number
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:4392 (round_decimals, was static)
+unsafe fn round_decimals(k: i32) -> i32 {
+    use crate::globals::dig_entry;
+    let mut a: i32 = 0;
+    let mut k = k;
+    while k > 0 {
+        k -= 1;
+        a = (a + dig_entry(k as usize) as i32 * 0x2_0000) / 10;
+    }
+    (a + 1) / 2
+}
+
+/// translated from xetex-xetex0.c:4406 (xetex_scan_dimen)
+#[no_mangle]
+pub unsafe extern "C" fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool) {
+    use crate::globals::{
+        cur_order, set_cur_order, radix, set_radix,
+        set_dig_entry, tex_remainder, font_info_b32s1,
+    };
+    const NORMAL_ORDER: u8 = 0;
+    const FIL_ORDER: u8 = 1;
+    const FILLL_ORDER: u8 = 3;
+    const QUAD_CODE: i32 = 6;       // xetex-constants.h:298
+    const X_HEIGHT_CODE: i32 = 5;  // xetex-constants.h:294
+    const INT_PAR_MAG: i32 = 17;   // xetex_format.h:52
+    const MINUS_TOKEN: i32 = OTHER_TOKEN + b'-' as i32;
+    const PLUS_TOKEN: i32 = OTHER_TOKEN + b'+' as i32;
+
+    let mut f: i32 = 0;
+    let mut negative = false;
+
+    set_arith_error(false);
+    set_cur_order(NORMAL_ORDER);
+
+    'body: {
+        if !shortcut {
+            // Skip sign-prefix tokens
+            loop {
+                loop { get_x_token(); if cur_cmd() != SPACER { break; } }
+                if cur_tok() == MINUS_TOKEN {
+                    negative = !negative;
+                    set_cur_tok(PLUS_TOKEN);
+                }
+                if cur_tok() != PLUS_TOKEN { break; }
+            }
+
+            if cur_cmd() >= MIN_INTERNAL && cur_cmd() <= MAX_INTERNAL {
+                if mu {
+                    scan_something_internal(MU_VAL, false);
+                    if cur_val_level() as i16 >= GLUE_VAL {
+                        let v = mem_b32s1(cur_val() + 1);
+                        crate::mem::delete_glue_ref(cur_val());
+                        set_cur_val(v);
+                    }
+                    if cur_val_level() as i16 == MU_VAL { break 'body; } // goto attach_sign
+                    if cur_val_level() as i16 != INT_VAL { mu_error(); }
+                } else {
+                    scan_something_internal(DIMEN_VAL, false);
+                    if cur_val_level() as i16 == DIMEN_VAL { break 'body; } // goto attach_sign
+                }
+            } else {
+                back_input();
+                if cur_tok() == CONTINENTAL_POINT_TOKEN { set_cur_tok(POINT_TOKEN); }
+                if cur_tok() != POINT_TOKEN {
+                    scan_int();
+                } else {
+                    set_radix(10);
+                    set_cur_val(0);
+                }
+                if cur_tok() == CONTINENTAL_POINT_TOKEN { set_cur_tok(POINT_TOKEN); }
+
+                if radix() == 10 && cur_tok() == POINT_TOKEN {
+                    let mut k: i32 = 0;
+                    let mut p: i32 = crate::mem::TEX_NULL;
+                    get_token();
+                    'decimal: loop {
+                        get_x_token();
+                        if cur_tok() > ZERO_TOKEN + 9 || cur_tok() < ZERO_TOKEN {
+                            break 'decimal;
+                        }
+                        if k < 17 {
+                            let q = crate::mem::get_avail();
+                            set_mem_b32s1(q, p);
+                            set_mem_b32s0(q, cur_tok() - ZERO_TOKEN);
+                            p = q;
+                            k += 1;
+                        }
+                    }
+                    let mut kk = k;
+                    while kk >= 1 {
+                        set_dig_entry((kk - 1) as usize, mem_b32s0(p) as u8);
+                        let old_p = p;
+                        p = mem_b32s1(p);
+                        set_mem_b32s1(old_p, avail());
+                        set_avail(old_p);
+                        kk -= 1;
+                    }
+                    f = round_decimals(k);
+                    if cur_cmd() != SPACER { back_input(); }
+                }
+            }
+        }
+
+        if cur_val() < 0 { negative = !negative; set_cur_val(-cur_val()); }
+
+        if requires_units {
+            let (apply_fraction, read_spacer) = 'units: {
+                // inf glue order
+                if inf && scan_keyword(c"fil".as_ptr()) {
+                    set_cur_order(FIL_ORDER);
+                    while scan_keyword(c"l".as_ptr()) {
+                        if cur_order() == FILLL_ORDER {
+                            error_here_with_diagnostic(
+                                c"Illegal unit of measure (replaced with filll)".as_ptr(),
+                            );
+                            capture_to_diagnostic(std::ptr::null_mut());
+                            set_help_ptr(1);
+                            set_help_line(0, c"I dddon't go any higher than filll.".as_ptr());
+                            error();
+                        } else {
+                            set_cur_order(cur_order() + 1);
+                        }
+                    }
+                    break 'units (true, true); // attach_fraction
+                }
+
+                let save_cv = cur_val();
+                loop { get_x_token(); if cur_cmd() != SPACER { break; } }
+
+                if cur_cmd() >= MIN_INTERNAL && cur_cmd() <= MAX_INTERNAL {
+                    if mu {
+                        scan_something_internal(MU_VAL, false);
+                        if cur_val_level() as i16 >= GLUE_VAL {
+                            let v = mem_b32s1(cur_val() + 1);
+                            crate::mem::delete_glue_ref(cur_val());
+                            set_cur_val(v);
+                        }
+                        if cur_val_level() as i16 != MU_VAL { mu_error(); }
+                    } else {
+                        scan_something_internal(DIMEN_VAL, false);
+                    }
+                    let v = cur_val();
+                    set_cur_val(crate::scaled_math::mult_and_add(
+                        save_cv, v,
+                        crate::scaled_math::xn_over_d(v, f, 65536),
+                        MAX_HALFWORD,
+                    ));
+                    break 'body; // goto attach_sign (found:)
+                }
+
+                back_input();
+
+                // em/ex lookup (not available for mu)
+                let em_ex = if !mu {
+                    if scan_keyword(c"em".as_ptr()) {
+                        let fi = eqtb_b32s1(CUR_FONT_LOC);
+                        Some(font_info_b32s1(QUAD_CODE + param_base(fi)))
+                    } else if scan_keyword(c"ex".as_ptr()) {
+                        let fi = eqtb_b32s1(CUR_FONT_LOC);
+                        Some(font_info_b32s1(X_HEIGHT_CODE + param_base(fi)))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(v) = em_ex {
+                    get_x_token();
+                    if cur_cmd() != SPACER { back_input(); }
+                    set_cur_val(crate::scaled_math::mult_and_add(
+                        save_cv, v,
+                        crate::scaled_math::xn_over_d(v, f, 65536),
+                        MAX_HALFWORD,
+                    ));
+                    break 'body; // goto attach_sign (found:)
+                }
+
+                // not_found:
+                if mu {
+                    if scan_keyword(c"mu".as_ptr()) {
+                        break 'units (true, true); // attach_fraction
+                    } else {
+                        error_here_with_diagnostic(
+                            c"Illegal unit of measure (mu inserted)".as_ptr(),
+                        );
+                        capture_to_diagnostic(std::ptr::null_mut());
+                        set_help_ptr(4);
+                        set_help_line(3, c"The unit of measurement in math glue must be mu.".as_ptr());
+                        set_help_line(2, c"To recover gracefully from this error, it's best to".as_ptr());
+                        set_help_line(1, c"delete the erroneous units; e.g., type `2' to delete".as_ptr());
+                        set_help_line(0, c"two letters. (See Chapter 27 of The TeXbook.)".as_ptr());
+                        error();
+                        break 'units (true, true); // attach_fraction
+                    }
+                }
+
+                if scan_keyword(c"true".as_ptr()) {
+                    crate::save::prepare_mag();
+                    let mag = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
+                    if mag != 1000 {
+                        set_cur_val(crate::scaled_math::xn_over_d(cur_val(), 1000, mag));
+                        f = (1000 * f + 65536 * tex_remainder()) / mag;
+                        set_cur_val(cur_val() + f / 65536);
+                        f = f % 65536;
+                    }
+                }
+
+                if scan_keyword(c"pt".as_ptr()) { break 'units (true, true); } // attach_fraction
+
+                let (num, denom) = if scan_keyword(c"in".as_ptr()) {
+                    (7227_i32, 100_i32)
+                } else if scan_keyword(c"pc".as_ptr()) {
+                    (12, 1)
+                } else if scan_keyword(c"cm".as_ptr()) {
+                    (7227, 254)
+                } else if scan_keyword(c"mm".as_ptr()) {
+                    (7227, 2540)
+                } else if scan_keyword(c"bp".as_ptr()) {
+                    (7227, 7200)
+                } else if scan_keyword(c"dd".as_ptr()) {
+                    (1238, 1157)
+                } else if scan_keyword(c"cc".as_ptr()) {
+                    (14856, 1157)
+                } else if scan_keyword(c"sp".as_ptr()) {
+                    break 'units (false, true); // done: skip fraction
+                } else {
+                    error_here_with_diagnostic(
+                        c"Illegal unit of measure (pt inserted)".as_ptr(),
+                    );
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(6);
+                    set_help_line(5, c"Dimensions can be in units of em, ex, in, pt, pc,".as_ptr());
+                    set_help_line(4, c"cm, mm, dd, cc, bp, or sp; but yours is a new one!".as_ptr());
+                    set_help_line(3, c"I'll assume that you meant to say pt, for printer's points.".as_ptr());
+                    set_help_line(2, c"To recover gracefully from this error, it's best to".as_ptr());
+                    set_help_line(1, c"delete the erroneous units; e.g., type `2' to delete".as_ptr());
+                    set_help_line(0, c"two letters. (See Chapter 27 of The TeXbook.)".as_ptr());
+                    error();
+                    break 'units (true, true); // done2 → attach_fraction
+                };
+
+                set_cur_val(crate::scaled_math::xn_over_d(cur_val(), num, denom));
+                f = (num * f + 65536 * tex_remainder()) / denom;
+                set_cur_val(cur_val() + f / 65536);
+                f = f % 65536;
+
+                (true, true) // attach_fraction
+            };
+
+            if apply_fraction {
+                if cur_val() >= 16384 { set_arith_error(true); }
+                else { set_cur_val(cur_val() * 65536 + f); }
+            }
+            if read_spacer {
+                get_x_token();
+                if cur_cmd() != SPACER { back_input(); }
+            }
+        } else {
+            // !requires_units
+            if cur_val() >= 16384 { set_arith_error(true); }
+            else { set_cur_val(cur_val() * 65536 + f); }
+        }
+    } // end 'body
+
+    // attach_sign:
+    if arith_error() || cur_val().abs() >= 0x4000_0000 {
+        error_here_with_diagnostic(c"Dimension too large".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(1, c"I can't work with sizes bigger than about 19 feet.".as_ptr());
+        set_help_line(0, c"Continue and I'll use the largest value I can.".as_ptr());
+        error();
+        set_cur_val(MAX_HALFWORD);
+        set_arith_error(false);
+    }
+    if negative { set_cur_val(-cur_val()); }
+}
+
+/// translated from xetex-xetex0.c:4302 (scan_glyph_number)
+#[no_mangle]
+pub unsafe extern "C" fn scan_glyph_number(f: i32) {
+    if scan_keyword(c"/".as_ptr()) {
+        scan_and_pack_name();
+        set_cur_val(map_glyph_to_index(f));
+        set_cur_val_level(INT_VAL as u8);
+    } else if scan_keyword(c"u".as_ptr()) {
+        scan_char_num();
+        set_cur_val(map_char_to_glyph(f, cur_val()));
+        set_cur_val_level(INT_VAL as u8);
+    } else {
+        scan_int();
+    }
 }
 
 // ---------------------------------------------------------------------------

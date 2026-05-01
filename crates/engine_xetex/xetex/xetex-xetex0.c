@@ -4299,6 +4299,8 @@ reswitch:
 
 /* mu_error translated to Rust (src/scan.rs). */
 
+/* scan_glyph_number: translated to Rust in src/scan.rs */
+#if 0
 void scan_glyph_number(internal_font_number f)
 {
     if (scan_keyword("/")) {
@@ -4316,6 +4318,7 @@ void scan_glyph_number(internal_font_number f)
     } else
         scan_int();
 }
+#endif
 
 /* scan_char_class translated to Rust (src/scan.rs). */
 /* scan_char_class_not_ignored translated to Rust (src/scan.rs). */
@@ -4388,6 +4391,8 @@ void scan_font_ident(void)
 /* scan_int: translated to Rust in src/scan.rs */
 
 
+/* round_decimals / xetex_scan_dimen: translated to Rust in src/scan.rs */
+#if 0
 static scaled_t
 round_decimals(small_number k)
 {
@@ -4683,6 +4688,7 @@ attach_sign:
     if (negative)
         cur_val = -(int32_t) cur_val;
 }
+#endif
 
 
 /* scan_dimen: translated to Rust in src/scan.rs */
