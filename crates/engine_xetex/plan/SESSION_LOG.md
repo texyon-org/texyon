@@ -32,6 +32,37 @@ template.
 
 ---
 
+## Session 65 — 2026-05-01 — load_native_font
+
+**Goal:** Translate `load_native_font` from `xetex-xetex0.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 64
+- xetex-xetex0.c: ~4 C functions remaining.
+
+**Work done:**
+- Translated `load_native_font` (xetex-xetex0.c:6284) → `src/scan.rs` (bd70d52b).
+- Added raw globals and accessors for the font tables initialized by native font loading: `font_check`, `font_used`, `font_flags`, `font_letter_space`, `loaded_font_*`, and `native_font_type_flag`.
+- Replaced the C body in `xetex/xetex-xetex0.c` with a Rust-linking stub comment.
+- Verified all 4 suites: tex-outputs 29/29, TRIP 2/2, engine_rust 7/7, latex_goldens 4/4.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 65
+- xetex-xetex0.c: ~3 C functions remaining.
+
+**Surprises / gotchas:**
+- C `mfree()` is a header-only wrapper, so Rust frees native glyph-info with `libc::free()` and explicitly stores a null pointer before `free_node()`.
+- The function depends on layout-engine symbols from `tectonic_xetex_layout` plus native-font globals owned by C; accessor coverage was the main work besides the direct translation.
+
+**For the next session:**
+- Next obvious target is `read_font_info` (currently around xetex-xetex0.c:6483). `main_control` should remain last.
+
+---
+
 ## Session 64 — 2026-05-01 — new_native_character
 
 **Goal:** Translate `new_native_character` from `xetex-xetex0.c`.
