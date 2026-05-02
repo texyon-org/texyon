@@ -473,6 +473,8 @@ mod raw {
         pub(super) static mut insert_src_special_every_par: bool;
         // Currently assembled box (xetex-xetexd.h:687; node index = i32).
         pub(super) static mut cur_box: i32;
+        // Token saved by \afterassignment (xetex-xetexd.h:688).
+        pub(super) static mut after_token: i32;
         // Current glue order (normal=0..filll=3; xetex-xetexd.h:534; glue_ord = u8).
         pub(super) static mut cur_order: u8;
         // Alignment stack and current-alignment state (xetex-xetexd.h:612–617).
@@ -1610,6 +1612,10 @@ pub(crate) fn cur_tok() -> i32 {
 #[inline]
 pub(crate) fn set_cur_tok(v: i32) {
     unsafe { raw::cur_tok = v; }
+}
+#[inline]
+pub(crate) fn set_after_token(v: i32) {
+    unsafe { raw::after_token = v; }
 }
 #[inline]
 pub(crate) fn align_state() -> i32 {

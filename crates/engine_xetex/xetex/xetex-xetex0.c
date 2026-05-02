@@ -6898,7 +6898,7 @@ reswitch:
     case VMODE + ITAL_CORR:
     case NON_MATH(EQ_NO):
     case ANY_MODE(MAC_PARAM):
-        report_illegal_case();
+        main_control_mode_error_cases();
         break;
 
     case NON_MATH(SUP_MARK): /* 1102*: math-only cases in non-math modes, or vice versa */
@@ -6926,75 +6926,31 @@ reswitch:
     case MMODE + UN_VBOX:
     case MMODE + VALIGN:
     case MMODE + HRULE:
-        insert_dollar_sign();
+        main_control_mode_error_cases();
         break;
 
     case VMODE + HRULE: /* 1112*: cases of main_control that build boxes and lists */
     case HMODE + VRULE:
     case MMODE + VRULE:
-        mem[cur_list.tail].b32.s1 = scan_rule_spec();
-        cur_list.tail = LLIST_link(cur_list.tail);
-
-        if (abs(cur_list.mode) == VMODE)
-            cur_list.aux.b32.s1 = IGNORE_DEPTH;
-        else if (abs(cur_list.mode) == HMODE)
-            cur_list.aux.b32.s0 = 1000;
-        break;
-
     case VMODE + VSKIP:
     case HMODE + HSKIP:
     case MMODE + HSKIP:
     case MMODE + MSKIP:
-        append_glue();
-        break;
-
     case ANY_MODE(KERN):
     case MMODE + MKERN:
-        append_kern();
-        break;
-
     case NON_MATH(LEFT_BRACE):
-        new_save_level(SIMPLE_GROUP);
-        break;
-
     case ANY_MODE(BEGIN_GROUP):
-        new_save_level(SEMI_SIMPLE_GROUP);
-        break;
-
     case ANY_MODE(END_GROUP):
-        if (cur_group == SEMI_SIMPLE_GROUP)
-            unsave();
-        else
-            off_save();
+        main_control_simple_list_group_cases();
         break;
 
     case ANY_MODE(RIGHT_BRACE):
-        handle_right_brace();
-        break;
-
     case VMODE + HMOVE:
     case HMODE + VMOVE:
     case MMODE + VMOVE:
-        t = cur_chr;
-        scan_dimen(false, false, false);
-        if (t == 0)
-            scan_box(cur_val);
-        else
-            scan_box(-(int32_t) cur_val);
-        break;
-
     case ANY_MODE(LEADER_SHIP):
-        scan_box(LEADER_FLAG - A_LEADERS + cur_chr);
-        break;
-
     case ANY_MODE(MAKE_BOX):
-        begin_box(0);
-        break;
-
     case VMODE + START_PAR:
-        new_graf(cur_chr > 0);
-        break;
-
     case VMODE + LETTER:
     case VMODE + OTHER_CHAR:
     case VMODE + CHAR_NUM:
@@ -7008,122 +6964,43 @@ reswitch:
     case VMODE + VALIGN:
     case VMODE + EX_SPACE:
     case VMODE + NO_BOUNDARY:
-        back_input();
-        new_graf(true);
-        break;
-
     case HMODE + START_PAR:
     case MMODE + START_PAR:
-        indent_in_hmode();
-        break;
-
     case VMODE + PAR_END:
-        normal_paragraph();
-        if (cur_list.mode > 0)
-            build_page();
-        break;
-
     case HMODE + PAR_END:
-        if (align_state < 0)
-            off_save();
-        end_graf();
-        if (cur_list.mode == VMODE)
-            build_page();
-        break;
-
     case HMODE + STOP:
     case HMODE + VSKIP:
     case HMODE + HRULE:
     case HMODE + UN_VBOX:
     case HMODE + HALIGN:
-        head_for_vmode();
-        break;
-
     case ANY_MODE(INSERT):
     case HMODE + VADJUST:
     case MMODE + VADJUST:
-        begin_insert_or_adjust();
-        break;
-
     case ANY_MODE(MARK):
-        make_mark();
-        break;
-
     case ANY_MODE(BREAK_PENALTY):
-        append_penalty();
-        break;
-
     case ANY_MODE(REMOVE_ITEM):
-        delete_last();
-        break;
-
     case VMODE + UN_VBOX:
     case HMODE + UN_HBOX:
     case MMODE + UN_HBOX:
-        unpackage();
-        break;
-
     case HMODE + ITAL_CORR: /* 1168*: */
-        append_italic_correction();
-        break;
-
     case MMODE + ITAL_CORR:
-        mem[cur_list.tail].b32.s1 = new_kern(0);
-        cur_list.tail = LLIST_link(cur_list.tail);
-        break;
-
     case HMODE + DISCRETIONARY:
     case MMODE + DISCRETIONARY:
-        append_discretionary();
-        break;
-
     case HMODE + ACCENT:
-        make_accent();
-        break;
-
     case ANY_MODE(CAR_RET):
     case ANY_MODE(TAB_MARK):
-        align_error();
+        main_control_box_list_cases();
         break;
 
     case ANY_MODE(NO_ALIGN):
-        no_align_error();
-        break;
-
     case ANY_MODE(OMIT):
-        omit_error();
-        break;
-
     case VMODE + HALIGN:
-        init_align();
-        break;
-
     case HMODE + VALIGN:
-        if (cur_chr > 0) {
-            if (eTeX_enabled(INTPAR(texxet) > 0, cur_cmd, cur_chr)) {
-                mem[cur_list.tail].b32.s1 = new_math(0, cur_chr);
-                cur_list.tail = LLIST_link(cur_list.tail);
-            }
-        } else /*:1490 */
-            init_align();
-        break;
-
     case MMODE + HALIGN:
-        if (privileged()) {
-            if (cur_group == MATH_SHIFT_GROUP)
-                init_align();
-            else
-                off_save();
-        }
-        break;
-
     case VMODE + ENDV:
     case HMODE + ENDV:
-        do_endv();
-        break;
-
     case ANY_MODE(END_CS_NAME):
-        cs_error();
+        main_control_alignment_cases();
         break;
 
     /* Math-related commands */
@@ -7307,37 +7184,14 @@ reswitch:
     case ANY_MODE(SET_BOX):
     case ANY_MODE(HYPH_DATA):
     case ANY_MODE(SET_INTERACTION):
-        prefixed_command();
-        break;
-
     case ANY_MODE(AFTER_ASSIGNMENT):
-        get_token();
-        after_token = cur_tok;
-        break;
-
     case ANY_MODE(AFTER_GROUP):
-        get_token();
-        save_for_after(cur_tok);
-        break;
-
     case ANY_MODE(IN_STREAM):
-        open_or_close_in();
-        break;
-
     case ANY_MODE(MESSAGE):
-        issue_message();
-        break;
-
     case ANY_MODE(CASE_SHIFT):
-        shift_case();
-        break;
-
     case ANY_MODE(XRAY):
-        show_whatever();
-        break;
-
     case ANY_MODE(EXTENSION): /* 1404*: extensions */
-        do_extension();
+        main_control_mode_independent();
         break;
     }
 

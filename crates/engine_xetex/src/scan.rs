@@ -7194,6 +7194,347 @@ pub unsafe extern "C" fn main_control_append_normal_space() {
     crate::globals::set_cur_list_tail(crate::globals::temp_ptr());
 }
 
+// translated from xetex-xetex0.c:7277 (main_control mode-independent cases)
+#[no_mangle]
+pub unsafe extern "C" fn main_control_mode_independent() {
+    extern "C" { fn prefixed_command(); }
+
+    const AFTER_ASSIGNMENT_MC: u8 = 40;
+    const AFTER_GROUP_MC: u8 = 41;
+    const XRAY_MC: u8 = 19;
+    const CASE_SHIFT_MC: u8 = 57;
+    const MESSAGE_MC: u8 = 58;
+    const EXTENSION_MC: u8 = 59;
+    const IN_STREAM_MC: u8 = 60;
+    const TOKS_REGISTER_MC: u8 = 72;
+    const ASSIGN_TOKS_MC: u8 = 73;
+    const ASSIGN_INT_MC: u8 = 74;
+    const ASSIGN_DIMEN_MC: u8 = 75;
+    const ASSIGN_GLUE_MC: u8 = 76;
+    const ASSIGN_MU_GLUE_MC: u8 = 77;
+    const ASSIGN_FONT_DIMEN_MC: u8 = 78;
+    const ASSIGN_FONT_INT_MC: u8 = 79;
+    const SET_AUX_MC: u8 = 80;
+    const SET_PREV_GRAF_MC: u8 = 81;
+    const SET_PAGE_DIMEN_MC: u8 = 82;
+    const SET_PAGE_INT_MC: u8 = 83;
+    const SET_BOX_DIMEN_MC: u8 = 84;
+    const SET_SHAPE_MC: u8 = 85;
+    const DEF_CODE_MC: u8 = 86;
+    const XETEX_DEF_CODE_MC: u8 = 87;
+    const DEF_FAMILY_MC: u8 = 88;
+    const SET_FONT_MC: u8 = 89;
+    const DEF_FONT_MC: u8 = 90;
+    const REGISTER_MC: u8 = 91;
+    const ADVANCE_MC: u8 = 92;
+    const MULTIPLY_MC: u8 = 93;
+    const DIVIDE_MC: u8 = 94;
+    const PREFIX_MC: u8 = 95;
+    const LET_MC: u8 = 96;
+    const SHORTHAND_DEF_MC: u8 = 97;
+    const READ_TO_CS_MC: u8 = 98;
+    const DEF_MC: u8 = 99;
+    const SET_BOX_MC: u8 = 100;
+    const HYPH_DATA_MC: u8 = 101;
+    const SET_INTERACTION_MC: u8 = 102;
+
+    match cur_cmd() {
+        TOKS_REGISTER_MC | ASSIGN_TOKS_MC | ASSIGN_INT_MC | ASSIGN_DIMEN_MC
+        | ASSIGN_GLUE_MC | ASSIGN_MU_GLUE_MC | ASSIGN_FONT_DIMEN_MC
+        | ASSIGN_FONT_INT_MC | SET_AUX_MC | SET_PREV_GRAF_MC | SET_PAGE_DIMEN_MC
+        | SET_PAGE_INT_MC | SET_BOX_DIMEN_MC | SET_SHAPE_MC | DEF_CODE_MC
+        | XETEX_DEF_CODE_MC | DEF_FAMILY_MC | SET_FONT_MC | DEF_FONT_MC
+        | REGISTER_MC | ADVANCE_MC | MULTIPLY_MC | DIVIDE_MC | PREFIX_MC | LET_MC
+        | SHORTHAND_DEF_MC | READ_TO_CS_MC | DEF_MC | SET_BOX_MC | HYPH_DATA_MC
+        | SET_INTERACTION_MC => prefixed_command(),
+        AFTER_ASSIGNMENT_MC => {
+            get_token();
+            crate::globals::set_after_token(cur_tok());
+        }
+        AFTER_GROUP_MC => {
+            get_token();
+            crate::save::save_for_after(cur_tok());
+        }
+        IN_STREAM_MC => crate::io::open_or_close_in(),
+        MESSAGE_MC => issue_message(),
+        CASE_SHIFT_MC => shift_case(),
+        XRAY_MC => show_whatever(),
+        EXTENSION_MC => do_extension(),
+        _ => {}
+    }
+}
+
+// translated from xetex-xetex0.c:6900 (main_control forbidden/math-mode mismatch cases)
+#[no_mangle]
+pub unsafe extern "C" fn main_control_mode_error_cases() {
+    const VMODE_MC: u16 = 1;
+    const HMODE_MC: u16 = 104;
+    const MMODE_MC: u16 = 207;
+    const MAC_PARAM_MC: u8 = 6;
+    const SUP_MARK_MC: u8 = 7;
+    const SUB_MARK_MC: u8 = 8;
+    const ENDV_MC: u8 = 9;
+    const PAR_END_MC: u8 = 13;
+    const STOP_MC: u8 = 14;
+    const DELIM_NUM_MC: u8 = 15;
+    const MATH_CHAR_NUM_MC: u8 = 17;
+    const HMOVE_MC: u8 = 21;
+    const VMOVE_MC: u8 = 22;
+    const UN_VBOX_MC: u8 = 24;
+    const VSKIP_MC: u8 = 27;
+    const MSKIP_MC: u8 = 28;
+    const MKERN_MC: u8 = 30;
+    const VALIGN_MC: u8 = 33;
+    const HRULE_MC: u8 = 36;
+    const VADJUST_MC: u8 = 38;
+    const ITAL_CORR_MC: u8 = 44;
+    const MATH_ACCENT_MC: u8 = 46;
+    const EQ_NO_MC: u8 = 48;
+    const LEFT_RIGHT_MC: u8 = 49;
+    const MATH_COMP_MC: u8 = 50;
+    const LIMIT_SWITCH_MC: u8 = 51;
+    const ABOVE_MC: u8 = 52;
+    const MATH_STYLE_MC: u8 = 53;
+    const MATH_CHOICE_MC: u8 = 54;
+    const NON_SCRIPT_MC: u8 = 55;
+    const VCENTER_MC: u8 = 56;
+    const RADICAL_MC: u8 = 66;
+    const MATH_GIVEN_MC: u8 = 69;
+    const XETEX_MATH_GIVEN_MC: u8 = 70;
+    const LAST_ITEM_MC: u8 = 71;
+
+    match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
+        (VMODE_MC, VMOVE_MC) | (HMODE_MC, HMOVE_MC) | (MMODE_MC, HMOVE_MC)
+        | (VMODE_MC, LAST_ITEM_MC) | (HMODE_MC, LAST_ITEM_MC) | (MMODE_MC, LAST_ITEM_MC)
+        | (VMODE_MC, VADJUST_MC) | (VMODE_MC, ITAL_CORR_MC)
+        | (VMODE_MC, EQ_NO_MC) | (HMODE_MC, EQ_NO_MC)
+        | (VMODE_MC, MAC_PARAM_MC) | (HMODE_MC, MAC_PARAM_MC) | (MMODE_MC, MAC_PARAM_MC) => {
+            report_illegal_case();
+        }
+        (VMODE_MC, SUP_MARK_MC) | (HMODE_MC, SUP_MARK_MC)
+        | (VMODE_MC, SUB_MARK_MC) | (HMODE_MC, SUB_MARK_MC)
+        | (VMODE_MC, MATH_CHAR_NUM_MC) | (HMODE_MC, MATH_CHAR_NUM_MC)
+        | (VMODE_MC, MATH_GIVEN_MC) | (HMODE_MC, MATH_GIVEN_MC)
+        | (VMODE_MC, XETEX_MATH_GIVEN_MC) | (HMODE_MC, XETEX_MATH_GIVEN_MC)
+        | (VMODE_MC, MATH_COMP_MC) | (HMODE_MC, MATH_COMP_MC)
+        | (VMODE_MC, DELIM_NUM_MC) | (HMODE_MC, DELIM_NUM_MC)
+        | (VMODE_MC, LEFT_RIGHT_MC) | (HMODE_MC, LEFT_RIGHT_MC)
+        | (VMODE_MC, ABOVE_MC) | (HMODE_MC, ABOVE_MC)
+        | (VMODE_MC, RADICAL_MC) | (HMODE_MC, RADICAL_MC)
+        | (VMODE_MC, MATH_STYLE_MC) | (HMODE_MC, MATH_STYLE_MC)
+        | (VMODE_MC, MATH_CHOICE_MC) | (HMODE_MC, MATH_CHOICE_MC)
+        | (VMODE_MC, VCENTER_MC) | (HMODE_MC, VCENTER_MC)
+        | (VMODE_MC, NON_SCRIPT_MC) | (HMODE_MC, NON_SCRIPT_MC)
+        | (VMODE_MC, MKERN_MC) | (HMODE_MC, MKERN_MC)
+        | (VMODE_MC, LIMIT_SWITCH_MC) | (HMODE_MC, LIMIT_SWITCH_MC)
+        | (VMODE_MC, MSKIP_MC) | (HMODE_MC, MSKIP_MC)
+        | (VMODE_MC, MATH_ACCENT_MC) | (HMODE_MC, MATH_ACCENT_MC)
+        | (MMODE_MC, ENDV_MC) | (MMODE_MC, PAR_END_MC) | (MMODE_MC, STOP_MC)
+        | (MMODE_MC, VSKIP_MC) | (MMODE_MC, UN_VBOX_MC) | (MMODE_MC, VALIGN_MC)
+        | (MMODE_MC, HRULE_MC) => insert_dollar_sign(),
+        _ => {}
+    }
+}
+
+// translated from xetex-xetex0.c:6932 (main_control simple list/group cases)
+#[no_mangle]
+pub unsafe extern "C" fn main_control_simple_list_group_cases() {
+    const VMODE_MC: u16 = 1;
+    const HMODE_MC: u16 = 104;
+    const MMODE_MC: u16 = 207;
+    const LEFT_BRACE_MC: u8 = 1;
+    const KERN_MC: u8 = 29;
+    const MKERN_MC: u8 = 30;
+    const HSKIP_MC: u8 = 26;
+    const VSKIP_MC: u8 = 27;
+    const MSKIP_MC: u8 = 28;
+    const BEGIN_GROUP_MC: u8 = 61;
+    const END_GROUP_MC: u8 = 62;
+    const HRULE_MC: u8 = 36;
+    const VRULE_MC: u8 = 35;
+    const SIMPLE_GROUP_MC: u8 = 1;
+    const SEMI_SIMPLE_GROUP_MC: u8 = 14;
+    const IGNORE_DEPTH_MC: i32 = -65_536_000;
+
+    let mode = crate::globals::cur_list_mode().unsigned_abs();
+    match (mode, cur_cmd()) {
+        (VMODE_MC, HRULE_MC) | (HMODE_MC, VRULE_MC) | (MMODE_MC, VRULE_MC) => {
+            let p = scan_rule_spec();
+            crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), p);
+            crate::globals::set_cur_list_tail(p);
+            if mode == VMODE_MC {
+                crate::globals::set_cur_list_aux_b32s1(IGNORE_DEPTH_MC);
+            } else if mode == HMODE_MC {
+                crate::globals::set_cur_list_aux_b32s0(1000);
+            }
+        }
+        (VMODE_MC, VSKIP_MC) | (HMODE_MC, HSKIP_MC) | (MMODE_MC, HSKIP_MC)
+        | (MMODE_MC, MSKIP_MC) => append_glue(),
+        (VMODE_MC, KERN_MC) | (HMODE_MC, KERN_MC) | (MMODE_MC, KERN_MC)
+        | (MMODE_MC, MKERN_MC) => append_kern(),
+        (VMODE_MC, LEFT_BRACE_MC) | (HMODE_MC, LEFT_BRACE_MC) => {
+            crate::save::new_save_level(SIMPLE_GROUP_MC);
+        }
+        (VMODE_MC, BEGIN_GROUP_MC) | (HMODE_MC, BEGIN_GROUP_MC) | (MMODE_MC, BEGIN_GROUP_MC) => {
+            crate::save::new_save_level(SEMI_SIMPLE_GROUP_MC);
+        }
+        (VMODE_MC, END_GROUP_MC) | (HMODE_MC, END_GROUP_MC) | (MMODE_MC, END_GROUP_MC) => {
+            if crate::globals::cur_group() == SEMI_SIMPLE_GROUP_MC {
+                crate::save::unsave();
+            } else {
+                off_save();
+            }
+        }
+        _ => {}
+    }
+}
+
+// translated from xetex-xetex0.c:6964 (main_control box/list construction cases)
+#[no_mangle]
+pub unsafe extern "C" fn main_control_box_list_cases() {
+    const VMODE_MC: u16 = 1;
+    const HMODE_MC: u16 = 104;
+    const MMODE_MC: u16 = 207;
+    const RIGHT_BRACE_MC: u8 = 2;
+    const MATH_SHIFT_MC: u8 = 3;
+    const TAB_MARK_MC: u8 = 4;
+    const CAR_RET_MC: u8 = 5;
+    const LETTER_MC: u8 = 11;
+    const OTHER_CHAR_MC: u8 = 12;
+    const PAR_END_MC: u8 = 13;
+    const STOP_MC: u8 = 14;
+    const CHAR_NUM_MC: u8 = 16;
+    const MARK_MC: u8 = 18;
+    const MAKE_BOX_MC: u8 = 20;
+    const HMOVE_MC: u8 = 21;
+    const VMOVE_MC: u8 = 22;
+    const UN_HBOX_MC: u8 = 23;
+    const UN_VBOX_MC: u8 = 24;
+    const REMOVE_ITEM_MC: u8 = 25;
+    const HSKIP_MC: u8 = 26;
+    const VSKIP_MC: u8 = 27;
+    const LEADER_SHIP_MC: u8 = 31;
+    const HALIGN_MC: u8 = 32;
+    const VALIGN_MC: u8 = 33;
+    const VRULE_MC: u8 = 35;
+    const HRULE_MC: u8 = 36;
+    const INSERT_MC: u8 = 37;
+    const VADJUST_MC: u8 = 38;
+    const BREAK_PENALTY_MC: u8 = 42;
+    const START_PAR_MC: u8 = 43;
+    const ITAL_CORR_MC: u8 = 44;
+    const ACCENT_MC: u8 = 45;
+    const DISCRETIONARY_MC: u8 = 47;
+    const EX_SPACE_MC: u8 = 64;
+    const NO_BOUNDARY_MC: u8 = 65;
+    const CHAR_GIVEN_MC: u8 = 68;
+    const LEADER_FLAG_MC: i32 = 0x4001_0001;
+    const A_LEADERS_MC: i32 = 100;
+
+    match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
+        (VMODE_MC, RIGHT_BRACE_MC) | (HMODE_MC, RIGHT_BRACE_MC) | (MMODE_MC, RIGHT_BRACE_MC) => handle_right_brace(),
+        (VMODE_MC, HMOVE_MC) | (HMODE_MC, VMOVE_MC) | (MMODE_MC, VMOVE_MC) => {
+            let t = cur_chr();
+            scan_dimen(false, false, false);
+            if t == 0 { scan_box(cur_val()); } else { scan_box(-cur_val()); }
+        }
+        (VMODE_MC, LEADER_SHIP_MC) | (HMODE_MC, LEADER_SHIP_MC) | (MMODE_MC, LEADER_SHIP_MC) => {
+            scan_box(LEADER_FLAG_MC - A_LEADERS_MC + cur_chr());
+        }
+        (VMODE_MC, MAKE_BOX_MC) | (HMODE_MC, MAKE_BOX_MC) | (MMODE_MC, MAKE_BOX_MC) => begin_box(0),
+        (VMODE_MC, START_PAR_MC) => new_graf(cur_chr() > 0),
+        (VMODE_MC, LETTER_MC) | (VMODE_MC, OTHER_CHAR_MC) | (VMODE_MC, CHAR_NUM_MC)
+        | (VMODE_MC, CHAR_GIVEN_MC) | (VMODE_MC, MATH_SHIFT_MC) | (VMODE_MC, UN_HBOX_MC)
+        | (VMODE_MC, VRULE_MC) | (VMODE_MC, ACCENT_MC) | (VMODE_MC, DISCRETIONARY_MC)
+        | (VMODE_MC, HSKIP_MC) | (VMODE_MC, VALIGN_MC) | (VMODE_MC, EX_SPACE_MC)
+        | (VMODE_MC, NO_BOUNDARY_MC) => {
+            crate::input::back_input();
+            new_graf(true);
+        }
+        (HMODE_MC, START_PAR_MC) | (MMODE_MC, START_PAR_MC) => indent_in_hmode(),
+        (VMODE_MC, PAR_END_MC) => {
+            normal_paragraph();
+            if crate::globals::cur_list_mode() > 0 { build_page(); }
+        }
+        (HMODE_MC, PAR_END_MC) => {
+            if crate::globals::align_state() < 0 { off_save(); }
+            end_graf();
+            if crate::globals::cur_list_mode() == VMODE_MC as i16 { build_page(); }
+        }
+        (HMODE_MC, STOP_MC) | (HMODE_MC, VSKIP_MC) | (HMODE_MC, HRULE_MC)
+        | (HMODE_MC, UN_VBOX_MC) | (HMODE_MC, HALIGN_MC) => head_for_vmode(),
+        (VMODE_MC, INSERT_MC) | (HMODE_MC, INSERT_MC) | (MMODE_MC, INSERT_MC)
+        | (HMODE_MC, VADJUST_MC) | (MMODE_MC, VADJUST_MC) => begin_insert_or_adjust(),
+        (VMODE_MC, MARK_MC) | (HMODE_MC, MARK_MC) | (MMODE_MC, MARK_MC) => make_mark(),
+        (VMODE_MC, BREAK_PENALTY_MC) | (HMODE_MC, BREAK_PENALTY_MC)
+        | (MMODE_MC, BREAK_PENALTY_MC) => append_penalty(),
+        (VMODE_MC, REMOVE_ITEM_MC) | (HMODE_MC, REMOVE_ITEM_MC)
+        | (MMODE_MC, REMOVE_ITEM_MC) => delete_last(),
+        (VMODE_MC, UN_VBOX_MC) | (HMODE_MC, UN_HBOX_MC) | (MMODE_MC, UN_HBOX_MC) => unpackage(),
+        (HMODE_MC, ITAL_CORR_MC) => append_italic_correction(),
+        (MMODE_MC, ITAL_CORR_MC) => {
+            let p = crate::mem::new_kern(0);
+            crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), p);
+            crate::globals::set_cur_list_tail(p);
+        }
+        (HMODE_MC, DISCRETIONARY_MC) | (MMODE_MC, DISCRETIONARY_MC) => append_discretionary(),
+        (HMODE_MC, ACCENT_MC) => make_accent(),
+        (VMODE_MC, CAR_RET_MC) | (HMODE_MC, CAR_RET_MC) | (MMODE_MC, CAR_RET_MC)
+        | (VMODE_MC, TAB_MARK_MC) | (HMODE_MC, TAB_MARK_MC) | (MMODE_MC, TAB_MARK_MC) => align_error(),
+        _ => {}
+    }
+}
+
+// translated from xetex-xetex0.c:6993 (main_control alignment/endcsname cases)
+#[no_mangle]
+pub unsafe extern "C" fn main_control_alignment_cases() {
+    const VMODE_MC: u16 = 1;
+    const HMODE_MC: u16 = 104;
+    const MMODE_MC: u16 = 207;
+    const ENDV_MC: u8 = 9;
+    const HALIGN_MC: u8 = 32;
+    const VALIGN_MC: u8 = 33;
+    const NO_ALIGN_MC: u8 = 34;
+    const OMIT_MC: u8 = 63;
+    const END_CS_NAME_MC: u8 = 67;
+    const INT_BASE_MC: i32 = 7_826_729;
+    const INT_PAR_TEXXET_MC: i32 = 69;
+    const MATH_SHIFT_GROUP_MC: u8 = 15;
+
+    match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
+        (VMODE_MC, NO_ALIGN_MC) | (HMODE_MC, NO_ALIGN_MC) | (MMODE_MC, NO_ALIGN_MC) => no_align_error(),
+        (VMODE_MC, OMIT_MC) | (HMODE_MC, OMIT_MC) | (MMODE_MC, OMIT_MC) => omit_error(),
+        (VMODE_MC, HALIGN_MC) => init_align(),
+        (HMODE_MC, VALIGN_MC) => {
+            if cur_chr() > 0 {
+                if eTeX_enabled(
+                    crate::globals::eqtb_b32s1(INT_BASE_MC + INT_PAR_TEXXET_MC) > 0,
+                    cur_cmd() as u16,
+                    cur_chr(),
+                ) {
+                    let p = crate::mem::new_math(0, cur_chr() as i16);
+                    crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), p);
+                    crate::globals::set_cur_list_tail(p);
+                }
+            } else {
+                init_align();
+            }
+        }
+        (MMODE_MC, HALIGN_MC) => {
+            if privileged() {
+                if crate::globals::cur_group() == MATH_SHIFT_GROUP_MC {
+                    init_align();
+                } else {
+                    off_save();
+                }
+            }
+        }
+        (VMODE_MC, ENDV_MC) | (HMODE_MC, ENDV_MC) => do_endv(),
+        (VMODE_MC, END_CS_NAME_MC) | (HMODE_MC, END_CS_NAME_MC) | (MMODE_MC, END_CS_NAME_MC) => cs_error(),
+        _ => {}
+    }
+}
+
 // translated from xetex-xetex0.c:6381 (pack_file_name)
 #[no_mangle]
 pub unsafe extern "C" fn pack_file_name(n: i32, a: i32, e: i32) {

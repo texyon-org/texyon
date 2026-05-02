@@ -32,6 +32,45 @@ template.
 
 ---
 
+## Session 68 — 2026-05-01 — main_control switch clusters
+
+**Goal:** Make a larger dent in `main_control` by extracting switch-arm clusters with a single fall-through point.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 67
+- xetex-xetex0.c: `main_control` remains in C, with one extracted label.
+
+**Work done:**
+- Cleaned generated parity artifacts from the previous failed run and kept the useful `src/globals.rs` main-loop accessor additions.
+- Added the `after_token` raw global binding and setter needed by `\afterassignment`.
+- Extracted the mode-independent `main_control` cluster (xetex-xetex0.c:7277) into `src/scan.rs::main_control_mode_independent`, including prefixed-command cases, `AFTER_ASSIGNMENT`, `AFTER_GROUP`, `IN_STREAM`, `MESSAGE`, `CASE_SHIFT`, `XRAY`, and `EXTENSION`.
+- Extracted the forbidden/math-mode mismatch clusters into `main_control_mode_error_cases`.
+- Extracted simple rule/glue/kern/group cases into `main_control_simple_list_group_cases`.
+- Extracted box/list construction cases into `main_control_box_list_cases`, including the movement, paragraph-entry, mark/penalty/remove/unpackage, italic correction, discretionary, accent, and alignment-error arms.
+- Extracted alignment/endcsname cases into `main_control_alignment_cases`, including the small TeXXeT `\valign` branch that appends a math node.
+- Replaced the C switch-arm bodies with Rust calls and added prototypes to `xetex-xetexd.h`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- `engine_rust`: 7/7
+- `latex_goldens`: 4/4
+- Streak: 68
+- `main_control` still owns the dispatcher; five substantial switch-arm clusters now run through Rust helpers.
+- `xetex-xetex0.c`: 8105 LOC.
+
+**Surprises / gotchas:**
+- The worktree already had uncommitted `src/globals.rs` main-loop accessor additions and generated parity artifacts when the session began. Generated artifacts were cleaned; the globals were kept.
+- Batching these clusters worked because every extracted arm returns to the same C `break`/`big_switch` continuation. The math-mode body below this point is more stateful and should be split more carefully.
+
+**For the next session:**
+- Continue with `main_control`, but prefer structurally coherent chunks: the math-shift/eqno entry cases and then the MMODE math-list construction cases.
+- Keep the top-level dispatcher in C until the label-heavy inner loop and math cases have been reduced enough to translate control flow cleanly.
+
+---
+
 ## Session 67 — 2026-05-01 — main_control append_normal_space
 
 **Goal:** Start reducing `main_control` risk by translating a small self-contained label block.

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 67.
+Last updated: session 68.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 67.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               |  8251 |      2 | multiple (see below)              | IN PROGRESS — 99% |
+| xetex-xetex0.c               |  8105 |      2 | multiple (see below)              | IN PROGRESS — 99% |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
@@ -484,6 +484,15 @@ Session 67 carved out the `main_control` `append_normal_space` label
 (xetex-xetex0.c:8221) into `src/scan.rs` as
 `main_control_append_normal_space` (e9988a37). This is a partial
 `main_control` migration only; the top-level dispatcher remains in C.
+
+Session 68 carved out five `main_control` switch-arm clusters into
+`src/scan.rs`: mode-independent commands, forbidden/math-mode mismatch
+errors, simple list/group cases, box/list construction cases, and
+alignment/endcsname cases. The C dispatcher still owns the loop and
+control-flow labels, but these clusters now funnel through Rust helpers
+with the same common `break`/`big_switch` continuation. The session also
+kept the useful pre-existing `src/globals.rs` main-loop accessor work and
+added the `after_token` binding needed by `\afterassignment`.
 
 ## How to maintain this file
 
