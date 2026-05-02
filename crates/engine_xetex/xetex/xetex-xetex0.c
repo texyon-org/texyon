@@ -6832,15 +6832,9 @@ reswitch:
 
     switch (abs(cur_list.mode) + cur_cmd) {
     case HMODE + SPACER:
-        if (cur_list.aux.b32.s0 /*space_factor*/ == 1000)
-            goto append_normal_space;
-        else
-            app_space();
-        break;
-
     case HMODE + EX_SPACE:
     case MMODE + EX_SPACE:
-        goto append_normal_space;
+        main_control_spacer_cases();
         break;
 
     /* 1101*: Cases of main_control that are not part of the inner loop: */

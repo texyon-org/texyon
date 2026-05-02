@@ -15594,3 +15594,26 @@ pub unsafe extern "C" fn main_control_math_cases() {
         _ => {}
     }
 }
+
+// translated from xetex-xetex0.c:6833 (main_control spacer/ex_space cases)
+#[no_mangle]
+pub unsafe extern "C" fn main_control_spacer_cases() {
+    const HMODE_MC: u16 = 104;    // xetex_format.h:369
+    const MMODE_MC: u16 = 207;    // xetex_format.h:370
+    const SPACER_MC: u8 = 10;     // xetex_format.h:242
+    const EX_SPACE_MC: u8 = 64;   // xetex_format.h:302
+
+    match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
+        (HMODE_MC, SPACER_MC) => {
+            if crate::globals::cur_list_aux_b32s0() == 1000 {
+                main_control_append_normal_space();
+            } else {
+                app_space();
+            }
+        }
+        (HMODE_MC, EX_SPACE_MC) | (MMODE_MC, EX_SPACE_MC) => {
+            main_control_append_normal_space();
+        }
+        _ => {}
+    }
+}
