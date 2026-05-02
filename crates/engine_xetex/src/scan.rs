@@ -15387,3 +15387,210 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
         }
     }
 }
+
+// translated from xetex-xetex0.c:7006 (main_control math entry/exit cases)
+#[no_mangle]
+pub unsafe extern "C" fn main_control_math_cases() {
+    extern "C" {
+        fn init_math();
+        fn after_math();
+        fn start_eq_no();
+        fn math_limit_switch();
+        fn math_radical();
+        fn math_ac();
+        fn append_choices();
+        fn sub_sup();
+        fn math_fraction();
+        fn math_left_right();
+    }
+
+    const HMODE_MC: u16 = 104;         // xetex_format.h:369
+    const MMODE_MC: u16 = 207;         // xetex_format.h:370
+    const MATH_SHIFT_MC: u8 = 3;       // xetex_format.h:233
+    const LEFT_BRACE_MC: u8 = 1;       // xetex_format.h:231
+    const SUP_MARK_MC: u8 = 7;         // xetex_format.h:238
+    const SUB_MARK_MC: u8 = 8;         // xetex_format.h:239
+    const LETTER_MC: u8 = 11;          // xetex_format.h:243
+    const OTHER_CHAR_MC: u8 = 12;      // xetex_format.h:244
+    const DELIM_NUM_MC: u8 = 15;       // xetex_format.h:251
+    const CHAR_NUM_MC: u8 = 16;        // xetex_format.h:253
+    const MATH_CHAR_NUM_MC: u8 = 17;   // xetex_format.h:255
+    const ACCENT_MC: u8 = 45;          // xetex_format.h:283
+    const MATH_ACCENT_MC: u8 = 46;     // xetex_format.h:284
+    const EQ_NO_MC: u8 = 48;           // xetex_format.h:286
+    const LEFT_RIGHT_MC: u8 = 49;      // xetex_format.h:287
+    const MATH_COMP_MC: u8 = 50;       // xetex_format.h:288
+    const LIMIT_SWITCH_MC: u8 = 51;    // xetex_format.h:289
+    const ABOVE_MC: u8 = 52;           // xetex_format.h:290
+    const MATH_STYLE_MC: u8 = 53;      // xetex_format.h:291
+    const MATH_CHOICE_MC: u8 = 54;     // xetex_format.h:292
+    const NON_SCRIPT_MC: u8 = 55;      // xetex_format.h:293
+    const VCENTER_MC: u8 = 56;         // xetex_format.h:294
+    const RADICAL_MC: u8 = 66;         // xetex_format.h:304
+    const CHAR_GIVEN_MC: u8 = 68;      // xetex_format.h:306
+    const MATH_GIVEN_MC: u8 = 69;      // xetex_format.h:308
+    const XETEX_MATH_GIVEN_MC: u8 = 70; // xetex_format.h:309
+
+    const MATH_SHIFT_GROUP_MC: u8 = 15;  // xetex-constants.h:167
+    const VCENTER_GROUP_MC: u8 = 12;     // xetex-constants.h:164
+    const COND_MATH_GLUE_MC: u16 = 98;   // xetex-constants.h:324
+    const MATH_CODE_BASE_MC: i32 = 6_712_617; // xetex_format.h:218
+    const IGNORE_DEPTH_MC: i32 = -65_536_000; // xetex_format.h:388
+    const EVERY_VBOX_TEXT_MC: u16 = 12;  // xetex-constants.h:211
+    const LOCAL_BASE_MC: i32 = 2_254_871; // xetex_format.h:208
+    const LOCAL_EVERY_VBOX_MC: i32 = 6;  // xetex_format.h:178
+
+    use crate::globals::{
+        cur_chr, cur_cmd, cur_group, cur_list_mode, cur_list_tail,
+        eqtb_b32s1, mem_b32s1,
+        set_cur_chr, set_cur_list_mode, set_cur_list_aux_b32s1, set_cur_list_tail,
+        set_mem_b16s0, set_mem_b16s1, set_mem_b32s1,
+    };
+    use crate::mem::TEX_NULL;
+
+    match (cur_list_mode().unsigned_abs(), cur_cmd()) {
+        (HMODE_MC, MATH_SHIFT_MC) => init_math(),
+
+        (MMODE_MC, EQ_NO_MC) => {
+            if privileged() {
+                if cur_group() == MATH_SHIFT_GROUP_MC {
+                    start_eq_no();
+                } else {
+                    off_save();
+                }
+            }
+        }
+
+        (MMODE_MC, LEFT_BRACE_MC) => {
+            let n = crate::mem::new_noad();
+            set_mem_b32s1(cur_list_tail(), n);
+            set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail) = n
+            crate::input::back_input();
+            scan_math(cur_list_tail() + 1);
+        }
+
+        (MMODE_MC, LETTER_MC) | (MMODE_MC, OTHER_CHAR_MC) | (MMODE_MC, CHAR_GIVEN_MC) => {
+            set_math_char(eqtb_b32s1(MATH_CODE_BASE_MC + cur_chr()));
+        }
+
+        (MMODE_MC, CHAR_NUM_MC) => {
+            scan_char_num();
+            set_cur_chr(cur_val());
+            set_math_char(eqtb_b32s1(MATH_CODE_BASE_MC + cur_chr()));
+        }
+
+        (MMODE_MC, MATH_CHAR_NUM_MC) => {
+            if cur_chr() == 2 {
+                // \Umathchar
+                scan_math_class_int();
+                let mut t = set_class_fn(cur_val());
+                scan_math_fam_int();
+                t += set_family_fn(cur_val());
+                scan_usv_num();
+                t += cur_val();
+                set_math_char(t);
+            } else if cur_chr() == 1 {
+                // \Umathcharnum
+                scan_xetex_math_char_int();
+                set_math_char(cur_val());
+            } else {
+                scan_fifteen_bit_int();
+                let v = cur_val();
+                set_math_char(
+                    set_class_fn(v / 4096)
+                    + set_family_fn((v % 4096) / 256)
+                    + (v % 256),
+                );
+            }
+        }
+
+        (MMODE_MC, MATH_GIVEN_MC) => {
+            let c = cur_chr();
+            set_math_char(
+                set_class_fn(c / 4096)
+                + set_family_fn((c % 4096) / 256)
+                + (c % 256),
+            );
+        }
+
+        (MMODE_MC, XETEX_MATH_GIVEN_MC) => {
+            set_math_char(cur_chr());
+        }
+
+        (MMODE_MC, DELIM_NUM_MC) => {
+            if cur_chr() == 1 {
+                // \Udelimiter
+                scan_math_class_int();
+                let mut t = set_class_fn(cur_val());
+                scan_math_fam_int();
+                t += set_family_fn(cur_val());
+                scan_usv_num();
+                t += cur_val();
+                set_math_char(t);
+            } else {
+                scan_delimiter_int();
+                let v = cur_val() / 4096;
+                set_math_char(
+                    set_class_fn(v / 4096)
+                    + set_family_fn((v % 4096) / 256)
+                    + (v % 256),
+                );
+            }
+        }
+
+        (MMODE_MC, MATH_COMP_MC) => {
+            let n = crate::mem::new_noad();
+            set_mem_b32s1(cur_list_tail(), n);
+            set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail)
+            set_mem_b16s1(cur_list_tail(), cur_chr() as u16);
+            scan_math(cur_list_tail() + 1);
+        }
+
+        (MMODE_MC, LIMIT_SWITCH_MC) => math_limit_switch(),
+        (MMODE_MC, RADICAL_MC) => math_radical(),
+        (MMODE_MC, ACCENT_MC) | (MMODE_MC, MATH_ACCENT_MC) => math_ac(),
+
+        (MMODE_MC, VCENTER_MC) => {
+            scan_spec(VCENTER_GROUP_MC, false);
+            normal_paragraph();
+            crate::mem::push_nest();
+            set_cur_list_mode(-1);
+            set_cur_list_aux_b32s1(IGNORE_DEPTH_MC);
+            if crate::globals::insert_src_special_every_vbox() {
+                insert_src_special();
+            }
+            let every_vbox = eqtb_b32s1(LOCAL_BASE_MC + LOCAL_EVERY_VBOX_MC);
+            if every_vbox != TEX_NULL {
+                crate::input::begin_token_list(every_vbox, EVERY_VBOX_TEXT_MC);
+            }
+        }
+
+        (MMODE_MC, MATH_STYLE_MC) => {
+            let s = crate::mem::new_style(cur_chr() as i16);
+            set_mem_b32s1(cur_list_tail(), s);
+            set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail)
+        }
+
+        (MMODE_MC, NON_SCRIPT_MC) => {
+            let g = crate::mem::new_glue(0);
+            set_mem_b32s1(cur_list_tail(), g);
+            set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail)
+            set_mem_b16s0(cur_list_tail(), COND_MATH_GLUE_MC);
+        }
+
+        (MMODE_MC, MATH_CHOICE_MC) => append_choices(),
+        (MMODE_MC, SUB_MARK_MC) | (MMODE_MC, SUP_MARK_MC) => sub_sup(),
+        (MMODE_MC, ABOVE_MC) => math_fraction(),
+        (MMODE_MC, LEFT_RIGHT_MC) => math_left_right(),
+
+        (MMODE_MC, MATH_SHIFT_MC) => {
+            if cur_group() == MATH_SHIFT_GROUP_MC {
+                after_math();
+            } else {
+                off_save();
+            }
+        }
+
+        _ => {}
+    }
+}

@@ -7006,149 +7006,31 @@ reswitch:
     /* Math-related commands */
 
     case HMODE + MATH_SHIFT: /* 1193*: */
-        init_math();
-        break;
-
     case MMODE + EQ_NO:
-        if (privileged()) {
-            if (cur_group == MATH_SHIFT_GROUP)
-                start_eq_no();
-            else
-                off_save();
-        }
-        break;
-
     case MMODE + LEFT_BRACE:
-        mem[cur_list.tail].b32.s1 = new_noad();
-        cur_list.tail = LLIST_link(cur_list.tail);
-        back_input();
-        scan_math(cur_list.tail + 1);
-        break;
-
     case MMODE + LETTER:
     case MMODE + OTHER_CHAR:
     case MMODE + CHAR_GIVEN:
-        set_math_char(MATH_CODE(cur_chr));
-        break;
-
     case MMODE + CHAR_NUM:
-        scan_char_num();
-        cur_chr = cur_val;
-        set_math_char(MATH_CODE(cur_chr));
-        break;
-
     case MMODE + MATH_CHAR_NUM:
-        if (cur_chr == 2) { /* \Umathchar? */
-            scan_math_class_int();
-            t = set_class(cur_val);
-            scan_math_fam_int();
-            t = t + set_family(cur_val);
-            scan_usv_num();
-            t = t + cur_val;
-            set_math_char(t);
-        } else if (cur_chr == 1) { /* \Umathcharnum/ */
-            scan_xetex_math_char_int();
-            set_math_char(cur_val);
-        } else {
-            scan_fifteen_bit_int();
-            set_math_char(set_class(cur_val / 4096) + set_family((cur_val % 4096) / 256) +
-                            (cur_val % 256));
-        }
-        break;
-
     case MMODE + MATH_GIVEN:
-        set_math_char(
-            set_class(cur_chr / 4096) + set_family((cur_chr % 4096) / 256) + (cur_chr % 256)
-        );
-        break;
-
     case MMODE + XETEX_MATH_GIVEN:
-        set_math_char(cur_chr);
-        break;
-
     case MMODE + DELIM_NUM:
-        if (cur_chr == 1) { /* \Udelimiter? */
-            scan_math_class_int();
-            t = set_class(cur_val);
-            scan_math_fam_int();
-            t = t + set_family(cur_val);
-            scan_usv_num();
-            t = t + cur_val;
-            set_math_char(t);
-        } else {
-            scan_delimiter_int();
-            cur_val = cur_val / 4096;
-            set_math_char(set_class(cur_val / 4096) + set_family((cur_val % 4096) / 256) +
-                            (cur_val % 256));
-        }
-        break;
-
     case MMODE + MATH_COMP:
-        mem[cur_list.tail].b32.s1 = new_noad();
-        cur_list.tail = LLIST_link(cur_list.tail);
-        mem[cur_list.tail].b16.s1 = cur_chr;
-        scan_math(cur_list.tail + 1);
-        break;
-
     case MMODE + LIMIT_SWITCH:
-        math_limit_switch();
-        break;
-
     case MMODE + RADICAL:
-        math_radical();
-        break;
-
     case MMODE + ACCENT: /* 1220*: */
     case MMODE + MATH_ACCENT:
-        math_ac();
-        break;
-
     case MMODE + VCENTER:
-        scan_spec(VCENTER_GROUP, false);
-        normal_paragraph();
-        push_nest();
-        cur_list.mode = -1;
-        cur_list.aux.b32.s1 = IGNORE_DEPTH;
-        if ((insert_src_special_every_vbox))
-            insert_src_special();
-        if (LOCAL(every_vbox) != TEX_NULL)
-            begin_token_list(LOCAL(every_vbox), EVERY_VBOX_TEXT);
-        break;
-
     case MMODE + MATH_STYLE:
-        mem[cur_list.tail].b32.s1 = new_style(cur_chr);
-        cur_list.tail = LLIST_link(cur_list.tail);
-        break;
-
     case MMODE + NON_SCRIPT:
-        mem[cur_list.tail].b32.s1 = new_glue(0);
-        cur_list.tail = LLIST_link(cur_list.tail);
-        mem[cur_list.tail].b16.s0 = COND_MATH_GLUE;
-        break;
-
     case MMODE + MATH_CHOICE:
-        append_choices();
-        break;
-
     case MMODE + SUB_MARK:
     case MMODE + SUP_MARK:
-        sub_sup();
-        break;
-
     case MMODE + ABOVE:
-        math_fraction();
-        break;
-
     case MMODE + LEFT_RIGHT:
-        math_left_right();
-        break;
-
     case MMODE + MATH_SHIFT:
-        /* "Here is the only way out of math mode" */
-        if (cur_group == MATH_SHIFT_GROUP)
-            after_math();
-        else
-            off_save();
+        main_control_math_cases();
         break;
 
     /* 1266*: "cases of main_control that don't depend on mode" */

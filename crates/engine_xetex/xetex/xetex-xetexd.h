@@ -1025,6 +1025,7 @@ void main_control_mode_error_cases(void);
 void main_control_simple_list_group_cases(void);
 void main_control_box_list_cases(void);
 void main_control_alignment_cases(void);
+void main_control_math_cases(void);
 void main_control(void);
 void give_err_help(void);
 void close_files_and_terminate(void);
