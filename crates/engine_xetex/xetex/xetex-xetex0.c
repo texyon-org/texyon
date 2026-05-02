@@ -6801,34 +6801,8 @@ reswitch:
         break;
     }
 
-    if (abs(cur_list.mode) == HMODE) {
-        if (
-            INTPAR(xetex_inter_char_tokens) > 0
-            && space_class != CHAR_CLASS_LIMIT
-            && prev_class != CHAR_CLASS_LIMIT - 1
-        ) {
-            prev_class = CHAR_CLASS_LIMIT - 1;
-
-            find_sa_element(
-                INTER_CHAR_VAL,
-                space_class * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
-                false
-            );
-
-            if (cur_ptr != TEX_NULL && ETEX_SA_ptr(cur_ptr) != TEX_NULL) {
-                if (cur_cs == 0) {
-                    if (cur_cmd == CHAR_NUM)
-                        cur_cmd = OTHER_CHAR;
-                    cur_tok = (cur_cmd * MAX_CHAR_VAL) + cur_chr;
-                } else
-                    cur_tok = CS_TOKEN_FLAG + cur_cs;
-
-                back_input();
-                begin_token_list(ETEX_SA_ptr(cur_ptr), INTER_CHAR_TEXT);
-                goto big_switch;
-            }
-        }
-    }
+    if (main_control_hmode_inter_char_check())
+        goto big_switch;
 
     switch (abs(cur_list.mode) + cur_cmd) {
     case HMODE + SPACER:

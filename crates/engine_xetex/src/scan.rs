@@ -15632,6 +15632,57 @@ pub unsafe extern "C" fn main_control_ignore_spaces() {
     // Caller must do: goto reswitch
 }
 
+// translated from xetex-xetex0.c:6804 (main_control HMODE inter-char pre-dispatch check)
+// Returns true if the caller should goto big_switch (inter-char token was injected).
+#[no_mangle]
+pub unsafe extern "C" fn main_control_hmode_inter_char_check() -> bool {
+    const HMODE_MC: i16 = 104;
+    const CHAR_NUM_MC: u8 = 16;
+    const INT_PAR_XETEX_INTER_CHAR_TOKENS_MC: i32 = 73; // xetex_format.h:108
+    const INTER_CHAR_TEXT_MC: u16 = 17; // xetex-constants.h:216
+
+    use crate::globals::{
+        cur_chr, cur_cmd, cur_cs, cur_list_mode, cur_ptr,
+        eqtb_b32s1, mem_b32s1,
+        set_cur_cmd, set_cur_tok, set_prev_class,
+    };
+    use crate::mem::TEX_NULL;
+
+    if cur_list_mode().abs() != HMODE_MC {
+        return false;
+    }
+    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS_MC) <= 0 {
+        return false;
+    }
+    let sc = crate::globals::space_class();
+    let pc = crate::globals::prev_class();
+    if sc == CHAR_CLASS_LIMIT || pc == CHAR_CLASS_LIMIT - 1 {
+        return false;
+    }
+
+    set_prev_class(CHAR_CLASS_LIMIT - 1);
+    crate::save::find_sa_element(
+        INTER_CHAR_VAL as u16,
+        sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
+        false,
+    );
+    if cur_ptr() == TEX_NULL || mem_b32s1(cur_ptr() + 1) == TEX_NULL {
+        return false;
+    }
+
+    if cur_cs() == 0 {
+        if cur_cmd() == CHAR_NUM_MC {
+            set_cur_cmd(OTHER_CHAR);
+        }
+        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+    } else {
+        set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+    }
+    back_input();
+    crate::input::begin_token_list(mem_b32s1(cur_ptr() + 1), INTER_CHAR_TEXT_MC);
+    true
+}
+
 // translated from xetex-xetex0.c:6833 (main_control spacer/ex_space cases)
 #[no_mangle]
 pub unsafe extern "C" fn main_control_spacer_cases() {
