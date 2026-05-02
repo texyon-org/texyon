@@ -6855,27 +6855,7 @@ reswitch:
         break;
 
     case ANY_MODE(IGNORE_SPACES):
-        if (cur_chr == 0) {
-            do {
-                get_x_token();
-            } while (cur_cmd == SPACER);
-        } else {
-            t = scanner_status;
-            scanner_status = NORMAL;
-            get_next();
-            scanner_status = t;
-
-            if (cur_cs < HASH_BASE)
-                cur_cs = prim_lookup(cur_cs - SINGLE_BASE);
-            else
-                cur_cs = prim_lookup(hash[cur_cs].s1);
-
-            if (cur_cs != UNDEFINED_PRIMITIVE) {
-                cur_cmd = eqtb[PRIM_EQTB_BASE + cur_cs].b16.s1;
-                cur_chr = eqtb[PRIM_EQTB_BASE + cur_cs].b32.s1;
-                cur_tok = CS_TOKEN_FLAG + PRIM_EQTB_BASE + cur_cs;
-            }
-        }
+        main_control_ignore_spaces();
         goto reswitch;
         break;
 

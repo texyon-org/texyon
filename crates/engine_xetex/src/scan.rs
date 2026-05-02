@@ -15595,6 +15595,43 @@ pub unsafe extern "C" fn main_control_math_cases() {
     }
 }
 
+// translated from xetex-xetex0.c:6857 (main_control IGNORE_SPACES body; caller does goto reswitch)
+#[no_mangle]
+pub unsafe extern "C" fn main_control_ignore_spaces() {
+    const SPACER_MC: u8 = 10;
+    const NORMAL_SCANNER_MC: u8 = 0;
+
+    use crate::globals::{
+        cur_chr, cur_cs, cur_cmd, eqtb_b16s1, eqtb_b32s1, hash_s1,
+        scanner_status, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_tok, set_scanner_status,
+    };
+
+    if cur_chr() == 0 {
+        loop {
+            get_x_token();
+            if cur_cmd() != SPACER_MC { break; }
+        }
+    } else {
+        let saved = scanner_status();
+        set_scanner_status(NORMAL_SCANNER_MC);
+        get_next();
+        set_scanner_status(saved);
+
+        if cur_cs() < HASH_BASE {
+            set_cur_cs(crate::hash::prim_lookup(cur_cs() - SINGLE_BASE));
+        } else {
+            set_cur_cs(crate::hash::prim_lookup(hash_s1(cur_cs())));
+        }
+
+        if cur_cs() != UNDEFINED_PRIMITIVE {
+            set_cur_cmd(eqtb_b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
+            set_cur_chr(eqtb_b32s1(PRIM_EQTB_BASE + cur_cs()));
+            set_cur_tok(CS_TOKEN_FLAG + PRIM_EQTB_BASE + cur_cs());
+        }
+    }
+    // Caller must do: goto reswitch
+}
+
 // translated from xetex-xetex0.c:6833 (main_control spacer/ex_space cases)
 #[no_mangle]
 pub unsafe extern "C" fn main_control_spacer_cases() {
