@@ -82,6 +82,7 @@ cargo test -p tectonic --test tex-outputs
 |      66 | 2026-05-01 |     29 |    29 |     0 | read_font_info. All 4 suites pass. |
 |      67 | 2026-05-01 |     29 |    29 |     0 | Partial main_control: append_normal_space label. All 4 suites pass. |
 |      68 | 2026-05-01 |     29 |    29 |     0 | Partial main_control: five switch-arm clusters through alignment/endcsname cases. All 4 suites pass. |
+|      69 | 2026-05-02 |     29 |    29 |     0 | Partial main_control: math cases, spacer/EX_SPACE, IGNORE_SPACES, HMODE inter-char check. xetex-xetex0.c 8105→7935 LOC. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making

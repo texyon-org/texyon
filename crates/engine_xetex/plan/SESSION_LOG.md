@@ -32,6 +32,47 @@ template.
 
 ---
 
+## Session 69 — 2026-05-02 — main_control math/spacer/ignore_spaces/inter-char cases
+
+**Goal:** Extract the remaining large `main_control` switch-arm clusters — math cases, spacer/EX_SPACE, IGNORE_SPACES, and the HMODE inter-char pre-dispatch check — into Rust helpers.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 68
+- xetex-xetex0.c: 8105 LOC
+
+**Work done:**
+- Committed Session 68 work that was uncommitted at session start (58840072).
+- Added `insert_src_special_every_vbox` raw global and getter in `src/globals.rs`.
+- Translated all HMODE+MATH_SHIFT through MMODE+MATH_SHIFT switch arms (~147 C lines) into `src/scan.rs::main_control_math_cases`.
+- Translated HMODE+SPACER / HMODE+EX_SPACE / MMODE+EX_SPACE arms into `src/scan.rs::main_control_spacer_cases`.
+- Translated `ANY_MODE(IGNORE_SPACES)` arm into `src/scan.rs::main_control_ignore_spaces`; caller retains `goto reswitch`.
+- Translated the 25-line HMODE inter-char token injection block (before the main switch) into `src/scan.rs::main_control_hmode_inter_char_check() -> bool`; caller does `if (…) goto big_switch`.
+- Added four prototypes to `xetex/xetex-xetexd.h`.
+- Replaced C arm bodies with single Rust call sites in `xetex/xetex-xetex0.c`.
+- All 4 suites verified after each commit: 29/29 tex-outputs, 2/2 TRIP, 7/7 engine_rust, 4/4 latex_goldens.
+- Updated `MODULE_STATUS.md` (xetex-xetex0.c 8105→7935 LOC, last updated session 69).
+- Commits: 58840072 (session 68), 4 subsequent commits for the four extracted helpers.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- `engine_rust`: 7/7
+- `latex_goldens`: 4/4
+- Streak: 69
+- xetex-xetex0.c: 7935 LOC
+
+**Surprises / gotchas:**
+- Session 68 work was uncommitted at session start; had to commit it first.
+- The Edit tool collided on a non-unique tail string in scan.rs (the closing `}` appeared 6 times); fixed by extending the match context.
+
+**For the next session:**
+- The remaining untranslated block in `main_control` is `main_loop` / `main_lig_loop` (~550 lines, goto-heavy character-processing inner loop).
+- Approach: study the goto graph carefully; convert gotos to labeled `loop` + `break`/`continue` as in prior sessions.
+
+---
+
 ## Session 68 — 2026-05-01 — main_control switch clusters
 
 **Goal:** Make a larger dent in `main_control` by extracting switch-arm clusters with a single fall-through point.
