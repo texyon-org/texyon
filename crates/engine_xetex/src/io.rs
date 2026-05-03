@@ -95,10 +95,10 @@ extern "C" {
     fn ttstub_input_ungetc(handle: usize, ch: libc::c_int) -> libc::c_int;
 
     // set_input_file_encoding remains in C; called from u_open_in via FFI.
-    // u_close also remains in C (ucnv_close from ICU is not directly linkable
-    // from Rust without adding cargo:rustc-link-lib=icuuc to the build).
     fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32);
-    fn u_close(f: *mut UFile);
+
+    // Thin C wrapper around ucnv_close (ICU is linked via C objects, not directly from Rust).
+    fn xetex_ucnv_close(converter: *mut libc::c_void);
 
     // bad_utf8_warning remains in C (xetex-xetexd.h:912).
     fn bad_utf8_warning();
@@ -388,6 +388,28 @@ pub unsafe extern "C" fn get_uni_c(f: *mut UFile) -> libc::c_int {
     }
 
     rval
+}
+
+// ---------------------------------------------------------------------------
+// u_close
+// ---------------------------------------------------------------------------
+
+// translated from xetex-io.c:273 (u_close)
+#[no_mangle]
+pub unsafe extern "C" fn u_close(f: *mut UFile) {
+    const ICUMAPPING: i16 = 5; // xetex-xetexd.h:1215
+
+    if f.is_null() || (*f).handle == INVALID_HANDLE {
+        return;
+    }
+
+    ttstub_input_close((*f).handle);
+
+    if (*f).encoding_mode == ICUMAPPING && !(*f).conversion_data.is_null() {
+        xetex_ucnv_close((*f).conversion_data);
+    }
+
+    libc::free(f as *mut libc::c_void);
 }
 
 // ---------------------------------------------------------------------------

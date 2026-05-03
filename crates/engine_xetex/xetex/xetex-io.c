@@ -269,19 +269,14 @@ input_line(UFILE* f)
 }
 
 
+/* u_close: translated to Rust in src/io.rs */
+
+/* Thin wrapper so Rust can finalize an ICU UConverter without directly
+   linking against libicuuc (ICU is already linked via the C objects). */
 void
-u_close(UFILE* f)
+xetex_ucnv_close(void* cnv)
 {
-    if (f == NULL || f->handle == INVALID_HANDLE)
-        /* NULL handle is stdin/terminal file. Shouldn't happen but meh. */
-        return;
-
-    ttstub_input_close (f->handle);
-
-    if (f->encodingMode == ICUMAPPING && f->conversionData != NULL)
-        ucnv_close ((UConverter*) f->conversionData);
-
-    free (f);
+    ucnv_close((UConverter*)cnv);
 }
 
 
