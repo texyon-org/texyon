@@ -84,6 +84,7 @@ cargo test -p tectonic --test tex-outputs
 |      68 | 2026-05-01 |     29 |    29 |     0 | Partial main_control: five switch-arm clusters through alignment/endcsname cases. All 4 suites pass. |
 |      69 | 2026-05-02 |     29 |    29 |     0 | Partial main_control: math cases, spacer/EX_SPACE, IGNORE_SPACES, HMODE inter-char check. xetex-xetex0.c 8105→7935 LOC. All 4 suites pass. |
 |      70 | 2026-05-04 |     29 |    29 |     0 | main_control_main_loop (main_loop + lig_loop, ~874 lines). Fixed lig_result=2 wrapup bug (extra 'i' in fi-ligature). xetex-xetex0.c 7935→7065 LOC. All 4 suites pass. |
+|      71 | 2026-05-03 |     29 |    29 |     0 | main_control (~272 lines, big_switch/reswitch dispatcher). xetex-xetex0.c 7065→6793 LOC. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making

@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 71 — 2026-05-03 — main_control (big_switch/reswitch dispatcher)
+
+**Goal:** Translate the `main_control()` top-level dispatcher function into Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 70
+- xetex-xetex0.c: 7065 LOC
+
+**Work done:**
+- Surveyed all command/mode constants and the C switch structure.
+- Wrote `main_control()` in Rust (~270 lines) in `src/scan.rs`:
+  - `'big_switch` / `'reswitch` labeled loop structure replicates the C goto network.
+  - First match: fast HMODE char path → `main_control_main_loop()`; HMODE+NO_BOUNDARY → `cancel_boundary`; all before the inter-char check.
+  - `main_control_hmode_inter_char_check()` returns true → `break 'reswitch` (→ big_switch).
+  - Second match: full routing table of (mode, cmd) pairs to each helper function. Special cases: `IGNORE_SPACES` → `continue 'reswitch`; `VMODE+STOP` → `if its_all_over() { return; }`.
+  - Mode-independent assignments (TOKS_REGISTER..EXTENSION, AFTER_ASSIGNMENT/GROUP, etc.) handled with `_ if matches!(cmd, ...)` guard.
+- Replaced the 272-line C function body with a one-line comment in xetex-xetex0.c.
+- All 4 suites verified: 29/29 tex-outputs, 2/2 TRIP.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 71
+- xetex-xetex0.c: 6793 LOC
+
+**Surprises / gotchas:**
+- Rust match requires exhaustive pattern enumeration for the (mode, cmd) dispatch table. Used explicit tuple pairs throughout for clarity. Mode-independent commands use a `_ if matches!` guard since all three modes apply.
+
+**For the next session:**
+- xetex-xetex0.c now has only 1 remaining function stub (the comment for `main_control` that's been moved). The next logical step is to identify what remains in the ~6793 LOC and either translate or mark as done.
+- The HMODE `do_locale_linebreaks` loop in `main_control_main_loop` has a TODO for the multi-iteration case.
+
+---
+
 ## Session 70 — 2026-05-04 — main_control_main_loop (main_loop + lig_loop)
 
 **Goal:** Translate the `main_loop` + `main_lig_loop` block (~874 lines) into Rust and wire it in.

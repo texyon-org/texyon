@@ -16771,3 +16771,300 @@ unsafe fn do_lookahead(
 
     true // normal lookahead complete, continue lig loop
 }
+
+// ---------------------------------------------------------------------------
+// main_control
+// ---------------------------------------------------------------------------
+
+// translated from xetex-xetex0.c:6766 (main_control)
+// Top-level TeX command dispatcher: big_switch / reswitch loop.
+#[no_mangle]
+pub unsafe extern "C" fn main_control() {
+    // Mode constants (xetex_format.h)
+    const VMODE: u16 = 1;
+    const HMODE: u16 = 104;
+    const MMODE: u16 = 207;
+
+    // Command constants (xetex_format.h)
+    const RELAX: u8 = 0;
+    const LEFT_BRACE: u8 = 1;
+    const RIGHT_BRACE: u8 = 2;
+    const MATH_SHIFT: u8 = 3;
+    const TAB_MARK: u8 = 4;
+    const CAR_RET: u8 = 5;
+    const MAC_PARAM: u8 = 6;
+    const SUP_MARK: u8 = 7;
+    const SUB_MARK: u8 = 8;
+    const ENDV: u8 = 9;
+    const SPACER: u8 = 10;
+    const LETTER: u8 = 11;
+    const OTHER_CHAR: u8 = 12;
+    const PAR_END: u8 = 13;
+    const STOP: u8 = 14;
+    const DELIM_NUM: u8 = 15;
+    const CHAR_NUM: u8 = 16;
+    const MATH_CHAR_NUM: u8 = 17;
+    const MARK: u8 = 18;
+    const XRAY: u8 = 19;
+    const MAKE_BOX: u8 = 20;
+    const HMOVE: u8 = 21;
+    const VMOVE: u8 = 22;
+    const UN_HBOX: u8 = 23;
+    const UN_VBOX: u8 = 24;
+    const REMOVE_ITEM: u8 = 25;
+    const HSKIP: u8 = 26;
+    const VSKIP: u8 = 27;
+    const MSKIP: u8 = 28;
+    const KERN: u8 = 29;
+    const MKERN: u8 = 30;
+    const LEADER_SHIP: u8 = 31;
+    const HALIGN: u8 = 32;
+    const VALIGN: u8 = 33;
+    const NO_ALIGN: u8 = 34;
+    const VRULE: u8 = 35;
+    const HRULE: u8 = 36;
+    const INSERT: u8 = 37;
+    const VADJUST: u8 = 38;
+    const IGNORE_SPACES: u8 = 39;
+    const AFTER_ASSIGNMENT: u8 = 40;
+    const AFTER_GROUP: u8 = 41;
+    const BREAK_PENALTY: u8 = 42;
+    const START_PAR: u8 = 43;
+    const ITAL_CORR: u8 = 44;
+    const ACCENT: u8 = 45;
+    const MATH_ACCENT: u8 = 46;
+    const DISCRETIONARY: u8 = 47;
+    const EQ_NO: u8 = 48;
+    const LEFT_RIGHT: u8 = 49;
+    const MATH_COMP: u8 = 50;
+    const LIMIT_SWITCH: u8 = 51;
+    const ABOVE: u8 = 52;
+    const MATH_STYLE: u8 = 53;
+    const MATH_CHOICE: u8 = 54;
+    const NON_SCRIPT: u8 = 55;
+    const VCENTER: u8 = 56;
+    const CASE_SHIFT: u8 = 57;
+    const MESSAGE: u8 = 58;
+    const EXTENSION: u8 = 59;
+    const IN_STREAM: u8 = 60;
+    const BEGIN_GROUP: u8 = 61;
+    const END_GROUP: u8 = 62;
+    const OMIT: u8 = 63;
+    const EX_SPACE: u8 = 64;
+    const NO_BOUNDARY: u8 = 65;
+    const RADICAL: u8 = 66;
+    const END_CS_NAME: u8 = 67;
+    const CHAR_GIVEN: u8 = 68;
+    const MATH_GIVEN: u8 = 69;
+    const XETEX_MATH_GIVEN: u8 = 70;
+    const LAST_ITEM: u8 = 71;
+    const TOKS_REGISTER: u8 = 72;
+    const ASSIGN_TOKS: u8 = 73;
+    const ASSIGN_INT: u8 = 74;
+    const ASSIGN_DIMEN: u8 = 75;
+    const ASSIGN_GLUE: u8 = 76;
+    const ASSIGN_MU_GLUE: u8 = 77;
+    const ASSIGN_FONT_DIMEN: u8 = 78;
+    const ASSIGN_FONT_INT: u8 = 79;
+    const SET_AUX: u8 = 80;
+    const SET_PREV_GRAF: u8 = 81;
+    const SET_PAGE_DIMEN: u8 = 82;
+    const SET_PAGE_INT: u8 = 83;
+    const SET_BOX_DIMEN: u8 = 84;
+    const SET_SHAPE: u8 = 85;
+    const DEF_CODE: u8 = 86;
+    const XETEX_DEF_CODE: u8 = 87;
+    const DEF_FAMILY: u8 = 88;
+    const SET_FONT: u8 = 89;
+    const DEF_FONT: u8 = 90;
+    const REGISTER: u8 = 91;
+    const ADVANCE: u8 = 92;
+    const MULTIPLY: u8 = 93;
+    const DIVIDE: u8 = 94;
+    const PREFIX: u8 = 95;
+    const LET: u8 = 96;
+    const SHORTHAND_DEF: u8 = 97;
+    const READ_TO_CS: u8 = 98;
+    const DEF: u8 = 99;
+    const SET_BOX: u8 = 100;
+    const HYPH_DATA: u8 = 101;
+    const SET_INTERACTION: u8 = 102;
+
+    const CC_LOCAL_BASE: i32 = 2_254_871;   // xetex_format.h:208
+    const CC_LOCAL_EVERY_JOB: i32 = 7;      // xetex_format.h:179
+    const EVERY_JOB_TEXT: u16 = 13;         // xetex-constants.h:212
+    const INT_BASE_MC: i32 = 7_826_729;     // xetex_format.h:568
+    const INT_PAR_TRACING_COMMANDS: i32 = 36; // xetex_format.h:71
+
+    use crate::globals::{
+        cancel_boundary, cur_cmd, cur_list_mode, cur_val,
+        eqtb_b32s1, set_cancel_boundary, set_cur_chr,
+    };
+    use crate::mem::TEX_NULL;
+
+    let every_job = eqtb_b32s1(CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB);
+    if every_job != TEX_NULL {
+        crate::input::begin_token_list(every_job, EVERY_JOB_TEXT);
+    }
+
+    'big_switch: loop {
+        get_x_token();
+
+        'reswitch: loop {
+            if eqtb_b32s1(INT_BASE_MC + INT_PAR_TRACING_COMMANDS) > 0 {
+                crate::output::show_cur_cmd_chr();
+            }
+
+            let mode = cur_list_mode().unsigned_abs();
+            let cmd = cur_cmd();
+
+            // Fast char path and boundary check (first switch in C, before inter-char check)
+            match (mode, cmd) {
+                (HMODE, LETTER) | (HMODE, OTHER_CHAR) | (HMODE, CHAR_GIVEN) => {
+                    if main_control_main_loop() { break 'reswitch; }
+                    continue 'reswitch;
+                }
+                (HMODE, CHAR_NUM) => {
+                    scan_usv_num();
+                    set_cur_chr(cur_val());
+                    if main_control_main_loop() { break 'reswitch; }
+                    continue 'reswitch;
+                }
+                (HMODE, NO_BOUNDARY) => {
+                    get_x_token();
+                    if matches!(cur_cmd(), LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM) {
+                        set_cancel_boundary(true);
+                    }
+                    continue 'reswitch;
+                }
+                _ => {}
+            }
+
+            if main_control_hmode_inter_char_check() {
+                break 'reswitch; // → big_switch
+            }
+
+            // Main command dispatch (second switch in C)
+            match (mode, cmd) {
+                // Spacer/ex_space → spacer_cases
+                (HMODE, SPACER) | (HMODE, EX_SPACE) | (MMODE, EX_SPACE) => {
+                    main_control_spacer_cases();
+                }
+                // No-op: ANY_MODE(RELAX), VMODE+SPACER, MMODE+SPACER, MMODE+NO_BOUNDARY
+                (HMODE, RELAX) | (VMODE, RELAX) | (MMODE, RELAX)
+                | (VMODE, SPACER) | (MMODE, SPACER) | (MMODE, NO_BOUNDARY) => {}
+                // ANY_MODE(IGNORE_SPACES) → call helper then reswitch
+                (HMODE, IGNORE_SPACES) | (VMODE, IGNORE_SPACES) | (MMODE, IGNORE_SPACES) => {
+                    main_control_ignore_spaces();
+                    continue 'reswitch;
+                }
+                // VMODE+STOP → "the only way out"
+                (VMODE, STOP) => {
+                    if its_all_over() { return; }
+                }
+                // Forbidden / math-mode-mismatch error cases
+                (VMODE, VMOVE) | (HMODE, HMOVE) | (MMODE, HMOVE)
+                | (VMODE, LAST_ITEM) | (HMODE, LAST_ITEM) | (MMODE, LAST_ITEM)
+                | (VMODE, VADJUST) | (VMODE, ITAL_CORR)
+                | (VMODE, EQ_NO) | (HMODE, EQ_NO)
+                | (VMODE, MAC_PARAM) | (HMODE, MAC_PARAM) | (MMODE, MAC_PARAM)
+                | (VMODE, SUP_MARK) | (HMODE, SUP_MARK)
+                | (VMODE, SUB_MARK) | (HMODE, SUB_MARK)
+                | (VMODE, MATH_CHAR_NUM) | (HMODE, MATH_CHAR_NUM)
+                | (VMODE, MATH_GIVEN) | (HMODE, MATH_GIVEN)
+                | (VMODE, XETEX_MATH_GIVEN) | (HMODE, XETEX_MATH_GIVEN)
+                | (VMODE, MATH_COMP) | (HMODE, MATH_COMP)
+                | (VMODE, DELIM_NUM) | (HMODE, DELIM_NUM)
+                | (VMODE, LEFT_RIGHT) | (HMODE, LEFT_RIGHT)
+                | (VMODE, ABOVE) | (HMODE, ABOVE)
+                | (VMODE, RADICAL) | (HMODE, RADICAL)
+                | (VMODE, MATH_STYLE) | (HMODE, MATH_STYLE)
+                | (VMODE, MATH_CHOICE) | (HMODE, MATH_CHOICE)
+                | (VMODE, VCENTER) | (HMODE, VCENTER)
+                | (VMODE, NON_SCRIPT) | (HMODE, NON_SCRIPT)
+                | (VMODE, MKERN) | (HMODE, MKERN)
+                | (VMODE, LIMIT_SWITCH) | (HMODE, LIMIT_SWITCH)
+                | (VMODE, MSKIP) | (HMODE, MSKIP)
+                | (VMODE, MATH_ACCENT) | (HMODE, MATH_ACCENT)
+                | (MMODE, ENDV) | (MMODE, PAR_END) | (MMODE, STOP)
+                | (MMODE, VSKIP) | (MMODE, UN_VBOX) | (MMODE, VALIGN) | (MMODE, HRULE) => {
+                    main_control_mode_error_cases();
+                }
+                // Rule/skip/kern/group cases
+                (VMODE, HRULE) | (HMODE, VRULE) | (MMODE, VRULE)
+                | (VMODE, VSKIP) | (HMODE, HSKIP) | (MMODE, HSKIP) | (MMODE, MSKIP)
+                | (VMODE, KERN) | (HMODE, KERN) | (MMODE, KERN) | (MMODE, MKERN)
+                | (VMODE, LEFT_BRACE) | (HMODE, LEFT_BRACE)
+                | (VMODE, BEGIN_GROUP) | (HMODE, BEGIN_GROUP) | (MMODE, BEGIN_GROUP)
+                | (VMODE, END_GROUP) | (HMODE, END_GROUP) | (MMODE, END_GROUP) => {
+                    main_control_simple_list_group_cases();
+                }
+                // Box/list construction cases
+                (VMODE, RIGHT_BRACE) | (HMODE, RIGHT_BRACE) | (MMODE, RIGHT_BRACE)
+                | (VMODE, HMOVE) | (HMODE, VMOVE) | (MMODE, VMOVE)
+                | (VMODE, LEADER_SHIP) | (HMODE, LEADER_SHIP) | (MMODE, LEADER_SHIP)
+                | (VMODE, MAKE_BOX) | (HMODE, MAKE_BOX) | (MMODE, MAKE_BOX)
+                | (VMODE, START_PAR)
+                | (VMODE, LETTER) | (VMODE, OTHER_CHAR) | (VMODE, CHAR_NUM) | (VMODE, CHAR_GIVEN)
+                | (VMODE, MATH_SHIFT) | (VMODE, UN_HBOX) | (VMODE, VRULE) | (VMODE, ACCENT)
+                | (VMODE, DISCRETIONARY) | (VMODE, HSKIP) | (VMODE, VALIGN)
+                | (VMODE, EX_SPACE) | (VMODE, NO_BOUNDARY)
+                | (HMODE, START_PAR) | (MMODE, START_PAR)
+                | (VMODE, PAR_END) | (HMODE, PAR_END)
+                | (HMODE, STOP) | (HMODE, VSKIP) | (HMODE, HRULE)
+                | (HMODE, UN_VBOX) | (HMODE, HALIGN)
+                | (VMODE, INSERT) | (HMODE, INSERT) | (MMODE, INSERT)
+                | (HMODE, VADJUST) | (MMODE, VADJUST)
+                | (VMODE, MARK) | (HMODE, MARK) | (MMODE, MARK)
+                | (VMODE, BREAK_PENALTY) | (HMODE, BREAK_PENALTY) | (MMODE, BREAK_PENALTY)
+                | (VMODE, REMOVE_ITEM) | (HMODE, REMOVE_ITEM) | (MMODE, REMOVE_ITEM)
+                | (VMODE, UN_VBOX) | (HMODE, UN_HBOX) | (MMODE, UN_HBOX)
+                | (HMODE, ITAL_CORR) | (MMODE, ITAL_CORR)
+                | (HMODE, DISCRETIONARY) | (MMODE, DISCRETIONARY)
+                | (HMODE, ACCENT)
+                | (VMODE, CAR_RET) | (HMODE, CAR_RET) | (MMODE, CAR_RET)
+                | (VMODE, TAB_MARK) | (HMODE, TAB_MARK) | (MMODE, TAB_MARK) => {
+                    main_control_box_list_cases();
+                }
+                // Alignment / endcsname cases
+                (VMODE, NO_ALIGN) | (HMODE, NO_ALIGN) | (MMODE, NO_ALIGN)
+                | (VMODE, OMIT) | (HMODE, OMIT) | (MMODE, OMIT)
+                | (VMODE, HALIGN) | (HMODE, VALIGN) | (MMODE, HALIGN)
+                | (VMODE, ENDV) | (HMODE, ENDV)
+                | (VMODE, END_CS_NAME) | (HMODE, END_CS_NAME) | (MMODE, END_CS_NAME) => {
+                    main_control_alignment_cases();
+                }
+                // Math entry/exit cases
+                (HMODE, MATH_SHIFT)
+                | (MMODE, EQ_NO) | (MMODE, LEFT_BRACE)
+                | (MMODE, LETTER) | (MMODE, OTHER_CHAR) | (MMODE, CHAR_GIVEN) | (MMODE, CHAR_NUM)
+                | (MMODE, MATH_CHAR_NUM) | (MMODE, MATH_GIVEN) | (MMODE, XETEX_MATH_GIVEN)
+                | (MMODE, DELIM_NUM) | (MMODE, MATH_COMP) | (MMODE, LIMIT_SWITCH) | (MMODE, RADICAL)
+                | (MMODE, ACCENT) | (MMODE, MATH_ACCENT) | (MMODE, VCENTER) | (MMODE, MATH_STYLE)
+                | (MMODE, NON_SCRIPT) | (MMODE, MATH_CHOICE)
+                | (MMODE, SUB_MARK) | (MMODE, SUP_MARK)
+                | (MMODE, ABOVE) | (MMODE, LEFT_RIGHT) | (MMODE, MATH_SHIFT) => {
+                    main_control_math_cases();
+                }
+                // Mode-independent cases (ANY_MODE): assignments, defs, etc.
+                _ if matches!(cmd,
+                    TOKS_REGISTER | ASSIGN_TOKS | ASSIGN_INT | ASSIGN_DIMEN
+                    | ASSIGN_GLUE | ASSIGN_MU_GLUE | ASSIGN_FONT_DIMEN | ASSIGN_FONT_INT
+                    | SET_AUX | SET_PREV_GRAF | SET_PAGE_DIMEN | SET_PAGE_INT
+                    | SET_BOX_DIMEN | SET_SHAPE | DEF_CODE | XETEX_DEF_CODE
+                    | DEF_FAMILY | SET_FONT | DEF_FONT | REGISTER | ADVANCE
+                    | MULTIPLY | DIVIDE | PREFIX | LET | SHORTHAND_DEF | READ_TO_CS
+                    | DEF | SET_BOX | HYPH_DATA | SET_INTERACTION
+                    | AFTER_ASSIGNMENT | AFTER_GROUP | IN_STREAM | MESSAGE
+                    | CASE_SHIFT | XRAY | EXTENSION
+                ) => {
+                    main_control_mode_independent();
+                }
+                // Default: unrecognized / already handled → goto big_switch
+                _ => {}
+            }
+
+            break 'reswitch; // → big_switch (get_x_token at top of loop)
+        }
+    }
+}
