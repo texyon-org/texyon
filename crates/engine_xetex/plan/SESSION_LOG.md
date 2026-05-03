@@ -32,6 +32,35 @@ template.
 
 ---
 
+## Session 72 — 2026-05-04 — xetex-xetex0.c cleanup and DONE
+
+**Goal:** Strip the 6793-line dead-code file down to a stub and mark xetex-xetex0.c DONE.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 71
+- xetex-xetex0.c: 6793 LOC (all functions behind #if 0, functionally empty)
+
+**Work done:**
+- Replaced xetex-xetex0.c with a 10-line stub: license header + two includes. All 36 `#if 0` reference blocks and their dead macros removed.
+- Updated MODULE_STATUS.md: xetex-xetex0.c → DONE (6th file done), IN PROGRESS count drops from 3 to 2.
+- All 4 suites verified: 29/29 tex-outputs, 2/2 TRIP.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 72
+- xetex-xetex0.c: 10 LOC (DONE)
+
+**Surprises / gotchas:**
+- None. Pure cleanup.
+
+**For the next session:**
+- xetex-io.c is IN PROGRESS at 73% (3 remaining functions). That's the natural next target.
+
+---
+
 ## Session 71 — 2026-05-03 — main_control (big_switch/reswitch dispatcher)
 
 **Goal:** Translate the `main_control()` top-level dispatcher function into Rust.

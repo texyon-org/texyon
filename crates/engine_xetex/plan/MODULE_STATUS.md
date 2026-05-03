@@ -20,12 +20,12 @@ every session. The column meanings:
 | Status         | File count |
 |----------------|-----------:|
 | NOT STARTED    |          8 |
-| IN PROGRESS    |          3 |
-| DONE           |          5 |
+| IN PROGRESS    |          2 |
+| DONE           |          6 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 71.
+Last updated: session 72.
 
 
 ## Core engine files (to translate)
@@ -37,7 +37,7 @@ Last updated: session 71.
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
-| xetex-xetex0.c               |  6793 |      1 | multiple (see below)              | IN PROGRESS — 99% |
+| xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |   804 |    ~?? | `src/pagebuilder.rs`              | NOT STARTED  |
 | xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
