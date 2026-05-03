@@ -32,6 +32,42 @@ template.
 
 ---
 
+## Session 70 — 2026-05-04 — main_control_main_loop (main_loop + lig_loop)
+
+**Goal:** Translate the `main_loop` + `main_lig_loop` block (~874 lines) into Rust and wire it in.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 69
+- xetex-xetex0.c: 7935 LOC
+
+**Work done:**
+- Session started mid-implementation: the Rust function `main_control_main_loop` had been written (1160 lines uncommitted) but not wired in, and had compilation errors (missing `TEX_NULL` import, missing `is_char_node` helpers).
+- Fixed compilation: added `TEX_NULL` to the `use crate::mem::` import, added local `is_char_node` helpers in `main_control_main_loop` and `lig_inner_loop`.
+- Wired the function into C: added `bool main_control_main_loop(void)` prototype to `xetex-xetexd.h`, replaced the 874-line `main_loop:` body with a 4-line call site.
+- Fixed the `lig_result=2` wrapup bug: the wrapup guard was `lig_result != 1` (running wrapup for both result 0 and result 2), but result 2 (type-0/4 ligature with non-null lig_stack) should also skip wrapup. Changed to `lig_result == 0`. Root cause: type-0 'fi' ligature was running wrapup early, emitting an extra 'i' in the XDV output.
+- Fixed `lig_result == 0xFF` sentinel: returns `continue 'char_proc` to re-enter the lig loop top without triggering wrapup or move.
+- All 4 suites verified: 29/29 tex-outputs, 2/2 TRIP, 21 engine_rust, 4 latex_goldens. (commit 6f90f400)
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- `engine_rust`: 21/21
+- `latex_goldens`: 4/4
+- Streak: 70
+- xetex-xetex0.c: 7065 LOC
+
+**Surprises / gotchas:**
+- The `lig_result != 1` wrapup guard was subtly wrong: lig_result=2 (type-0/4 lig with stack) also needs to skip wrapup (C uses `goto main_loop_move_1` which skips both wrapup and the lig_stack==TEX_NULL check). Caught by `xetex_g_builtins` test (fi-ligature in "fina'Terminal" feature name).
+- The HMODE `do_locale_linebreaks` loop is still incomplete (TODO placeholder); it works for the simple no-hyphen path because the else-branch calls `do_locale_linebreaks` once before breaking.
+
+**For the next session:**
+- Only `main_control` and its dispatcher remain in C (~7065 LOC). The top-level `main_control` switch and the `big_switch` loop are the remaining pieces.
+- The HMODE `do_locale_linebreaks` loop in `main_control_main_loop` has a TODO for the multi-iteration case; this should be verified/completed.
+
+---
+
 ## Session 69 — 2026-05-02 — main_control math/spacer/ignore_spaces/inter-char cases
 
 **Goal:** Extract the remaining large `main_control` switch-arm clusters — math cases, spacer/EX_SPACE, IGNORE_SPACES, and the HMODE inter-char pre-dispatch check — into Rust helpers.
