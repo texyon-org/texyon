@@ -464,6 +464,35 @@ mod raw {
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
         pub(super) static mut main_p: i32;
         pub(super) static mut main_k: i32;
+        // main_control inner-loop state (xetex-xetexd.h:672–686).
+        pub(super) static mut main_f: i32;           // internal_font_number
+        pub(super) static mut main_i: crate::mem_types::B16x4;
+        pub(super) static mut main_j: crate::mem_types::B16x4;
+        pub(super) static mut main_h: i32;
+        pub(super) static mut main_pp: i32;
+        pub(super) static mut main_ppp: i32;
+        pub(super) static mut main_s: i32;
+        // Ligature/kern inner-loop state (xetex-xetexd.h:630–634, 683–686).
+        pub(super) static mut cur_l: i32;
+        pub(super) static mut cur_r: i32;
+        pub(super) static mut cur_q: i32;
+        pub(super) static mut lig_stack: i32;
+        pub(super) static mut ligature_present: bool;
+        pub(super) static mut lft_hit: bool;
+        pub(super) static mut rt_hit: bool;
+        // Native text buffer (xetex-xetexd.h:440–443).
+        pub(super) static mut native_text: *mut u16;
+        pub(super) static mut native_text_size: i32;
+        pub(super) static mut native_len: i32;
+        pub(super) static mut save_native_len: i32;
+        // Further main_loop state (xetex-xetexd.h:679–686).
+        pub(super) static mut is_hyph: bool;
+        pub(super) static mut bchar: i32;
+        pub(super) static mut false_bchar: i32;
+        pub(super) static mut cancel_boundary: bool;
+        pub(super) static mut ins_disc: bool;
+        // SyncTeX auto-insert flag (xetex-xetexd.h:419).
+        pub(super) static mut insert_src_special_auto: bool;
         // XeTeX inter-character class state (xetex-xetexd.h:679-681).
         pub(super) static mut space_class: i32;
         pub(super) static mut prev_class: i32;
@@ -2044,6 +2073,21 @@ pub(crate) fn set_font_bchar_entry(f: i32, v: i32) {
 pub(crate) fn set_font_false_bchar_entry(f: i32, v: i32) {
     unsafe { *raw::font_false_bchar.offset(f as isize) = v; }
 }
+/// Returns `bchar_label[f]`.
+#[inline]
+pub(crate) fn bchar_label_entry(f: i32) -> i32 {
+    unsafe { *raw::bchar_label.offset(f as isize) }
+}
+/// Returns `font_bchar[f]`.
+#[inline]
+pub(crate) fn font_bchar_entry(f: i32) -> i32 {
+    unsafe { *raw::font_bchar.offset(f as isize) }
+}
+/// Returns `font_false_bchar[f]`.
+#[inline]
+pub(crate) fn font_false_bchar_entry(f: i32) -> i32 {
+    unsafe { *raw::font_false_bchar.offset(f as isize) }
+}
 /// Returns `font_layout_engine[f]`.
 #[inline]
 pub(crate) fn font_layout_engine_ptr(f: i32) -> *mut libc::c_void {
@@ -3007,9 +3051,62 @@ pub(crate) fn main_k() -> i32 {
 pub(crate) fn set_main_k(v: i32) {
     unsafe { raw::main_k = v; }
 }
+
+// ---------------------------------------------------------------------------
+// main_loop inner-loop globals
+// ---------------------------------------------------------------------------
+
+#[inline] pub(crate) fn main_f() -> i32 { unsafe { raw::main_f } }
+#[inline] pub(crate) fn set_main_f(v: i32) { unsafe { raw::main_f = v; } }
+#[inline] pub(crate) fn main_h() -> i32 { unsafe { raw::main_h } }
+#[inline] pub(crate) fn set_main_h(v: i32) { unsafe { raw::main_h = v; } }
+#[inline] pub(crate) fn main_pp() -> i32 { unsafe { raw::main_pp } }
+#[inline] pub(crate) fn set_main_pp(v: i32) { unsafe { raw::main_pp = v; } }
+#[inline] pub(crate) fn main_ppp() -> i32 { unsafe { raw::main_ppp } }
+#[inline] pub(crate) fn set_main_ppp(v: i32) { unsafe { raw::main_ppp = v; } }
+#[inline] pub(crate) fn main_s() -> i32 { unsafe { raw::main_s } }
+#[inline] pub(crate) fn set_main_s(v: i32) { unsafe { raw::main_s = v; } }
+#[inline] pub(crate) fn cur_l() -> i32 { unsafe { raw::cur_l } }
+#[inline] pub(crate) fn set_cur_l(v: i32) { unsafe { raw::cur_l = v; } }
+#[inline] pub(crate) fn cur_r() -> i32 { unsafe { raw::cur_r } }
+#[inline] pub(crate) fn set_cur_r(v: i32) { unsafe { raw::cur_r = v; } }
+#[inline] pub(crate) fn cur_q() -> i32 { unsafe { raw::cur_q } }
+#[inline] pub(crate) fn set_cur_q(v: i32) { unsafe { raw::cur_q = v; } }
+#[inline] pub(crate) fn lig_stack() -> i32 { unsafe { raw::lig_stack } }
+#[inline] pub(crate) fn set_lig_stack(v: i32) { unsafe { raw::lig_stack = v; } }
+#[inline] pub(crate) fn ligature_present() -> bool { unsafe { raw::ligature_present } }
+#[inline] pub(crate) fn set_ligature_present(v: bool) { unsafe { raw::ligature_present = v; } }
+#[inline] pub(crate) fn lft_hit() -> bool { unsafe { raw::lft_hit } }
+#[inline] pub(crate) fn set_lft_hit(v: bool) { unsafe { raw::lft_hit = v; } }
+#[inline] pub(crate) fn rt_hit() -> bool { unsafe { raw::rt_hit } }
+#[inline] pub(crate) fn set_rt_hit(v: bool) { unsafe { raw::rt_hit = v; } }
+#[inline] pub(crate) fn native_text() -> *mut u16 { unsafe { raw::native_text } }
+#[inline] pub(crate) fn set_native_text(v: *mut u16) { unsafe { raw::native_text = v; } }
+#[inline] pub(crate) fn native_text_size() -> i32 { unsafe { raw::native_text_size } }
+#[inline] pub(crate) fn set_native_text_size(v: i32) { unsafe { raw::native_text_size = v; } }
+#[inline] pub(crate) fn native_len() -> i32 { unsafe { raw::native_len } }
+#[inline] pub(crate) fn set_native_len(v: i32) { unsafe { raw::native_len = v; } }
+#[inline] pub(crate) fn save_native_len() -> i32 { unsafe { raw::save_native_len } }
+#[inline] pub(crate) fn set_save_native_len(v: i32) { unsafe { raw::save_native_len = v; } }
+#[inline] pub(crate) fn is_hyph() -> bool { unsafe { raw::is_hyph } }
+#[inline] pub(crate) fn set_is_hyph(v: bool) { unsafe { raw::is_hyph = v; } }
+#[inline] pub(crate) fn bchar() -> i32 { unsafe { raw::bchar } }
+#[inline] pub(crate) fn set_bchar(v: i32) { unsafe { raw::bchar = v; } }
+#[inline] pub(crate) fn false_bchar() -> i32 { unsafe { raw::false_bchar } }
+#[inline] pub(crate) fn set_false_bchar(v: i32) { unsafe { raw::false_bchar = v; } }
+#[inline] pub(crate) fn cancel_boundary() -> bool { unsafe { raw::cancel_boundary } }
+#[inline] pub(crate) fn set_cancel_boundary(v: bool) { unsafe { raw::cancel_boundary = v; } }
+#[inline] pub(crate) fn ins_disc() -> bool { unsafe { raw::ins_disc } }
+#[inline] pub(crate) fn set_ins_disc(v: bool) { unsafe { raw::ins_disc = v; } }
+#[inline] pub(crate) fn insert_src_special_auto() -> bool { unsafe { raw::insert_src_special_auto } }
+
 #[inline]
 pub(crate) fn space_class() -> i32 {
     unsafe { raw::space_class }
+}
+#[inline]
+pub(crate) fn set_space_class(v: i32) {
+    unsafe { raw::space_class = v; }
 }
 #[inline]
 pub(crate) fn prev_class() -> i32 {

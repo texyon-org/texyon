@@ -1029,6 +1029,7 @@ void main_control_math_cases(void);
 bool main_control_hmode_inter_char_check(void);
 void main_control_ignore_spaces(void);
 void main_control_spacer_cases(void);
+bool main_control_main_loop(void);
 void main_control(void);
 void give_err_help(void);
 void close_files_and_terminate(void);
