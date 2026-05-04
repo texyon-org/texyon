@@ -86,6 +86,7 @@ cargo test -p tectonic --test tex-outputs
 |      70 | 2026-05-04 |     29 |    29 |     0 | main_control_main_loop (main_loop + lig_loop, ~874 lines). Fixed lig_result=2 wrapup bug (extra 'i' in fi-ligature). xetex-xetex0.c 7935→7065 LOC. All 4 suites pass. |
 |      71 | 2026-05-03 |     29 |    29 |     0 | main_control (~272 lines, big_switch/reswitch dispatcher). xetex-xetex0.c 7065→6793 LOC. All 4 suites pass. |
 |      72 | 2026-05-04 |     29 |    29 |     0 | Strip all 36 #if-0 blocks from xetex-xetex0.c. File is now 10 LOC stub. DONE. All 4 suites pass. |
+|      73 | 2026-05-04 |     29 |    29 |     0 | xetex-io.c: translate set_input_file_encoding, buffer_overflow, conversion_error, apply_normalization, input_line. File DONE. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -259,7 +260,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **68** (sessions 1–68 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **73** (sessions 1–73 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

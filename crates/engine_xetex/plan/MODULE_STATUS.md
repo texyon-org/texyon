@@ -20,8 +20,8 @@ every session. The column meanings:
 | Status         | File count |
 |----------------|-----------:|
 | NOT STARTED    |          8 |
-| IN PROGRESS    |          2 |
-| DONE           |          6 |
+| IN PROGRESS    |          1 |
+| DONE           |          7 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
@@ -44,7 +44,7 @@ Last updated: session 73.
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |  1283 |    ~?? | `src/synctex.rs`                  | NOT STARTED  |
-| xetex-io.c                   |   222 |      5 | `src/io.rs`                       | IN PROGRESS — 55% |
+| xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
 | xetex-pic.c                  |   664 |    ~?? | `src/pic.rs`                      | NOT STARTED  |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
@@ -253,7 +253,7 @@ Status: IN PROGRESS (session 14).
 
 ### Phase 10 — xetex-io.c I/O helpers (target: `src/io.rs`)
 
-Status: IN PROGRESS (session 16).
+Status: DONE (session 73).
 
 | # | Function                  | Line | Status |
 |--:|---------------------------|-----:|--------|
@@ -262,16 +262,20 @@ Status: IN PROGRESS (session 16).
 | 3 | `make_utf16_name`         |  481 | MIGRATED (session 16, 979cde6d) |
 | 4 | `get_uni_c`               |  373 | MIGRATED (session 16, 979cde6d) |
 | 5 | `u_close`                 |  357 | MIGRATED (session 73, 25da31e5) — via `xetex_ucnv_close` C wrapper |
-| 6 | `set_input_file_encoding` |   87 | DEFER — uses ICU (ucnv_open/ucnv_close) |
-| 7 | `buffer_overflow` (static)|  176 | DEFER — called only from `input_line` |
-| 8 | `conversion_error` (static)|  183 | DEFER — called only from `input_line` |
-| 9 | `apply_normalization` (static)| 195 | DEFER — uses TECkit static state |
-|10 | `input_line`              |  220 | DEFER — complex ICU/TECkit encoding |
+| 6 | `set_input_file_encoding` |   87 | MIGRATED (session 73, 725c7a39) — via `xetex_ucnv_open` C wrapper |
+| 7 | `buffer_overflow` (static)|  176 | MIGRATED (session 73, 725c7a39) — private Rust fn |
+| 8 | `conversion_error` (static)|  183 | MIGRATED (session 73, 725c7a39) — private Rust fn |
+| 9 | `apply_normalization` (static)| 195 | MIGRATED (session 73, 725c7a39) — TECkit extern "C", NORMALIZERS static |
+|10 | `input_line`              |  220 | MIGRATED (session 73, 725c7a39) — via `xetex_ucnv_to_utf32` C wrapper |
 |11 | `open_or_close_in`        |  294 | MIGRATED (session 17, f4a94ffc) |
 
 Note: `name_of_input_file` and `abspath_of_input_file` moved from C file-statics
-to Rust `#[no_mangle] pub static mut` in `src/io.rs`. `NAME16LEN` also moved.
-`xetex_ucnv_close` is a permanent C helper (thin ICU wrapper enabling Rust `u_close`).
+to Rust `#[no_mangle] pub static mut` in `src/io.rs`. `NAME16LEN`, `BYTE_BUFFER`,
+`UTF32_BUF`, and `NORMALIZERS` also moved.
+Permanent C helpers (thin ICU wrappers): `xetex_ucnv_close`, `xetex_ucnv_open`,
+`xetex_ucnv_to_utf32`. The lookup tables `offsetsFromUTF8`, `bytesFromUTF8`,
+`firstByteMark` remain as C `const` arrays (referenced from Rust via `extern "C"`).
+xetex-io.c is now 101 LOC (header, lookup tables, 3 ICU wrappers).
 
 ### Phase 11 — xetex-xetex0.c scattered functions (sessions 17+)
 

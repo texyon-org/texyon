@@ -32,6 +32,65 @@ template.
 
 ---
 
+## Session 73 — 2026-05-04 — xetex-io.c: translate remaining 5 functions — file DONE
+
+**Goal:** Translate the 5 deferred functions in xetex-io.c (set_input_file_encoding,
+buffer_overflow, conversion_error, apply_normalization, input_line) and mark the file DONE.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 72
+- xetex-io.c: 289 LOC, u_close already migrated but MODULE_STATUS not updated
+
+**Work done:**
+- Fixed MODULE_STATUS: marked u_close as MIGRATED (25da31e5), correct LOC/fn counts.
+  (d34db49e)
+- Added `buffer_ptr(offset)` accessor to `src/globals.rs` for raw buffer pointer access.
+- Added three ICU C wrappers to xetex-io.c:
+  - `xetex_ucnv_open` (for set_input_file_encoding)
+  - `xetex_ucnv_to_utf32` (for input_line ICU path)
+  (`xetex_ucnv_close` was already present for u_close)
+- Declared TECkit API (`TECkit_CreateConverter`, `TECkit_ConvertBuffer`,
+  `TECkit_ResetConverter`) as `extern "C"` in Rust (TECkit C++ engine has C ABI).
+- Moved C file-statics to Rust: `BYTE_BUFFER`, `UTF32_BUF`, `NORMALIZERS`.
+- Translated 5 functions to `src/io.rs`:
+  - `set_input_file_encoding` (#[no_mangle] extern "C")
+  - `buffer_overflow` (private Rust fn, was static)
+  - `conversion_error` (private Rust fn, was static)
+  - `apply_normalization` (private Rust fn, was static; uses TECkit)
+  - `input_line` (#[no_mangle] extern "C"; ICU path + UTF-8/16/RAW path + norm)
+- Removed all 5 C implementations; xetex-io.c now 101 LOC.
+- MODULE_STATUS: xetex-io.c → DONE (7th file done), IN PROGRESS drops from 2 to 1.
+  (725c7a39)
+- All 4 suites verified: 29/29 tex-outputs, 2/2 TRIP, 7/7 engine_rust, 4/4 latex_goldens.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 73
+- xetex-io.c: 101 LOC (DONE — only ICU wrappers and lookup tables remain in C)
+
+**Surprises / gotchas:**
+- apply_normalization's `static TECkit_Converter normalizers[2]` translated to Rust
+  `static mut NORMALIZERS: [*mut c_void; 2]`. The `&mut NORMALIZERS[i]` pattern triggers
+  a `static_mut_refs` warning (mutable reference to mutable static); this is pre-existing
+  in the codebase (texmfmp.rs has the same pattern). Not blocking.
+- input_line's errno check (`errno != EINTR`) uses `*libc::__errno_location()` which is
+  Linux-specific but acceptable (xetex-macos.c is excluded per plan).
+- `_tt_abort` is non-variadic in Rust; the normalizer error message drops the status code
+  (not critical — failure is already fatal).
+
+**For the next session:**
+- xetex-io.c is DONE. Only `xetex-engine-interface.c` remains IN PROGRESS (2 fns in C
+  permanently: setjmp + aarch64 linker hack).
+- Natural next target: xetex-ini.c (3881 LOC, NOT STARTED) — the engine initialization
+  file. Or continue with smaller NOT STARTED files (xetex-pagebuilder.c 804 LOC first).
+
+---
+
 ## Session 72 — 2026-05-04 — xetex-xetex0.c cleanup and DONE
 
 **Goal:** Strip the 6793-line dead-code file down to a stub and mark xetex-xetex0.c DONE.
