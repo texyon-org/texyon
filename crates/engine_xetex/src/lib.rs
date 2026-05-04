@@ -41,6 +41,7 @@ mod input;
 mod output;
 mod save;
 mod scaled_math;
+mod pagebuilder;
 #[allow(dead_code)]
 mod string_pool;
 

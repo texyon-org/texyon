@@ -1595,6 +1595,10 @@ pub(crate) fn set_synctex_enabled(v: i32) {
     unsafe { raw::synctex_enabled = v; }
 }
 #[inline]
+pub(crate) fn semantic_pagination_enabled() -> bool {
+    unsafe { raw::semantic_pagination_enabled }
+}
+#[inline]
 pub(crate) fn set_semantic_pagination_enabled(v: bool) {
     // SAFETY: see module-level doc.
     unsafe { raw::semantic_pagination_enabled = v; }
@@ -2289,11 +2293,15 @@ pub(crate) fn set_page_tail(v: i32) { unsafe { raw::page_tail = v; } }
 #[inline]
 pub(crate) fn page_contents() -> u8 { unsafe { raw::page_contents } }
 #[inline]
+pub(crate) fn set_page_contents(v: u8) { unsafe { raw::page_contents = v; } }
+#[inline]
 pub(crate) fn page_so_far(k: usize) -> i32 { unsafe { raw::page_so_far[k] } }
 #[inline]
 pub(crate) fn set_page_so_far(k: usize, v: i32) { unsafe { raw::page_so_far[k] = v; } }
 #[inline]
 pub(crate) fn last_glue() -> i32 { unsafe { raw::last_glue } }
+#[inline]
+pub(crate) fn set_last_glue(v: i32) { unsafe { raw::last_glue = v; } }
 #[inline]
 pub(crate) fn disc_ptr(k: usize) -> i32 { unsafe { raw::disc_ptr[k] } }
 #[inline]
@@ -2301,9 +2309,15 @@ pub(crate) fn set_disc_ptr(k: usize, v: i32) { unsafe { raw::disc_ptr[k] = v; } 
 #[inline]
 pub(crate) fn last_penalty() -> i32 { unsafe { raw::last_penalty } }
 #[inline]
+pub(crate) fn set_last_penalty(v: i32) { unsafe { raw::last_penalty = v; } }
+#[inline]
 pub(crate) fn last_kern() -> i32 { unsafe { raw::last_kern } }
 #[inline]
+pub(crate) fn set_last_kern(v: i32) { unsafe { raw::last_kern = v; } }
+#[inline]
 pub(crate) fn last_node_type() -> i32 { unsafe { raw::last_node_type } }
+#[inline]
+pub(crate) fn set_last_node_type(v: i32) { unsafe { raw::last_node_type = v; } }
 #[inline]
 pub(crate) fn insert_penalties() -> i32 { unsafe { raw::insert_penalties } }
 #[inline]
