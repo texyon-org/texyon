@@ -1,13 +1,11 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
-//!
-//! Complex functions that depend on ICU (input_line, set_input_file_encoding,
-//! u_open_in) remain in C for now.
 
 use crate::globals::{
-    cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1, name_length, name_of_file,
-    name_of_file16, name_of_file16_entry, name_length16, read_file_entry, read_file_ptr,
-    read_open_entry, set_name_in_progress, set_name_length, set_name_length16,
-    set_name_of_file16, set_read_open_entry, set_stop_at_space,
+    buf_size, buffer_entry, buffer_ptr, cur_area, cur_chr, cur_ext, cur_name, cur_val,
+    eqtb_b32s1, first, last, max_buf_stack, name_length, name_of_file, name_of_file16,
+    name_of_file16_entry, name_length16, read_file_entry, read_file_ptr, read_open_entry,
+    set_buffer_entry, set_last, set_max_buf_stack, set_name_in_progress, set_name_length,
+    set_name_length16, set_name_of_file16, set_read_open_entry, set_stop_at_space,
 };
 
 // ---------------------------------------------------------------------------
@@ -44,7 +42,19 @@ const UTF8: i32 = 1;
 const UTF16BE: i32 = 2;
 const UTF16LE: i32 = 3;
 const RAW: i32 = 4;
-// const ICUMAPPING: i32 = 5;  // handled in C (set_input_file_encoding)
+const ICUMAPPING: i32 = 5;
+
+// TECkit normalization form constants (teckit-Common.h:92–93, xetex-core.h:29,34).
+// NATIVE_UTF32 = kForm_UTF32LE on little-endian (Linux x86_64).
+#[cfg(target_endian = "little")]
+const NATIVE_UTF32: u16 = 6; // kForm_UTF32LE
+#[cfg(target_endian = "big")]
+const NATIVE_UTF32: u16 = 5; // kForm_UTF32BE
+const K_FORM_NFC: u16 = 0x0100;
+const K_FORM_NFD: u16 = 0x0200;
+
+// TECkit status constants (teckit-Common.h:55).
+const K_STATUS_NO_ERROR: i64 = 0;
 
 // File format constants (tectonic_bridge_core_generated.h).
 const TTBC_FILE_FORMAT_TECTONIC_PRIMARY: libc::c_int = 59;
@@ -94,14 +104,55 @@ extern "C" {
     fn ttstub_input_getc(handle: usize) -> libc::c_int;
     fn ttstub_input_ungetc(handle: usize, ch: libc::c_int) -> libc::c_int;
 
-    // set_input_file_encoding remains in C; called from u_open_in via FFI.
-    fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32);
-
-    // Thin C wrapper around ucnv_close (ICU is linked via C objects, not directly from Rust).
+    // Thin C wrappers around ICU functions (ICU linked via C objects, not directly from Rust).
     fn xetex_ucnv_close(converter: *mut libc::c_void);
+    fn xetex_ucnv_open(name: *const libc::c_char, out_err: *mut libc::c_int) -> *mut libc::c_void;
+    fn xetex_ucnv_to_utf32(
+        cnv: *mut libc::c_void,
+        target: *mut libc::c_char,
+        target_capacity: i32,
+        source: *const libc::c_char,
+        source_length: i32,
+        out_err: *mut libc::c_int,
+    ) -> i32;
+
+    // TECkit functions (C++ engine with C API — extern "C" ABI).
+    // TECkit_Status is `long` = i64 on Linux 64-bit; TECkit_Converter is opaque ptr (*mut c_void).
+    fn TECkit_CreateConverter(
+        mapping: *const u8,
+        mapping_size: u32,
+        map_forward: u8,
+        source_form: u16,
+        target_form: u16,
+        converter: *mut *mut libc::c_void,
+    ) -> i64;
+    fn TECkit_ConvertBuffer(
+        converter: *mut libc::c_void,
+        in_buffer: *const u8,
+        in_length: u32,
+        in_used: *mut u32,
+        out_buffer: *mut u8,
+        out_length: u32,
+        out_used: *mut u32,
+        input_is_complete: u8,
+    ) -> i64;
+    fn TECkit_ResetConverter(converter: *mut libc::c_void) -> i64;
 
     // bad_utf8_warning remains in C (xetex-xetexd.h:912).
     fn bad_utf8_warning();
+
+    // gettexstring — translated to Rust (texmfmp.rs) but called via FFI.
+    fn gettexstring(s: i32) -> *mut libc::c_char;
+
+    // Output helpers — all translated to Rust in output.rs.
+    fn print_nl_cstr(s: *const libc::c_char);
+    fn diagnostic_begin_capture_warning_here();
+    fn print_cstr(s: *const libc::c_char);
+    fn capture_to_diagnostic(diagnostic: *mut libc::c_void);
+    fn print_nl(s: i32);
+    fn print_int(n: i32);
+    fn begin_diagnostic();
+    fn end_diagnostic(blank_line: i32);
 
     // Callees of open_or_close_in still in C.
     fn scan_four_bit_int();
@@ -111,12 +162,6 @@ extern "C" {
     fn begin_name();
     fn more_name(c: u16) -> bool;
     fn end_name();
-
-    // Output helpers — all translated to Rust in output.rs.
-    fn print_nl_cstr(s: *const libc::c_char);
-    fn diagnostic_begin_capture_warning_here();
-    fn print_cstr(s: *const libc::c_char);
-    fn capture_to_diagnostic(diagnostic: *mut libc::c_void);
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +282,305 @@ pub unsafe extern "C" fn u_open_in(
 /// Wrapper so scan.rs can call `set_input_file_encoding` without re-declaring it.
 pub(crate) unsafe fn call_set_input_file_encoding(f: *mut libc::c_void, mode: i32, encoding_data: i32) {
     set_input_file_encoding(f as *mut UFile, mode, encoding_data);
+}
+
+// ---------------------------------------------------------------------------
+// set_input_file_encoding
+// ---------------------------------------------------------------------------
+
+/// Set the encoding mode (and optional ICU converter) on an open UFILE.
+///
+/// translated from xetex-io.c:47 (set_input_file_encoding)
+#[no_mangle]
+pub unsafe extern "C" fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32) {
+    if (*f).encoding_mode == ICUMAPPING as i16 && !(*f).conversion_data.is_null() {
+        xetex_ucnv_close((*f).conversion_data);
+    }
+    (*f).conversion_data = std::ptr::null_mut();
+
+    match mode {
+        UTF8 | UTF16BE | UTF16LE | RAW => {
+            (*f).encoding_mode = mode as i16;
+        }
+        _ if mode == ICUMAPPING => {
+            let name = gettexstring(encoding_data);
+            let mut err: libc::c_int = 0;
+            let cnv = xetex_ucnv_open(name, &mut err);
+            if cnv.is_null() {
+                begin_diagnostic();
+                print_nl(b'E' as i32);
+                print_cstr(c"rror ".as_ptr());
+                print_int(err);
+                print_cstr(c" creating Unicode converter for `".as_ptr());
+                print_cstr(name);
+                print_cstr(c"'; reading as raw bytes".as_ptr());
+                end_diagnostic(1);
+                (*f).encoding_mode = RAW as i16;
+            } else {
+                (*f).encoding_mode = ICUMAPPING as i16;
+                (*f).conversion_data = cnv;
+            }
+            libc::free(name as *mut libc::c_void);
+        }
+        _ => {}
+    }
+}
+
+// ---------------------------------------------------------------------------
+// input_line private helpers: buffer_overflow, conversion_error, apply_normalization
+// ---------------------------------------------------------------------------
+
+// Persistent state for input_line, replacing C file-statics.
+// `BYTE_BUFFER`: byte staging area for ICU decoding (xetex-io.c:138).
+static mut BYTE_BUFFER: *mut libc::c_char = std::ptr::null_mut();
+// `UTF32_BUF`: UTF-32 staging area for normalization (xetex-io.c:139).
+static mut UTF32_BUF: *mut u32 = std::ptr::null_mut();
+// TECkit normalizer converters; replaces `static TECkit_Converter normalizers[2]` (xetex-io.c:113).
+static mut NORMALIZERS: [*mut libc::c_void; 2] = [std::ptr::null_mut(), std::ptr::null_mut()];
+
+// translated from xetex-io.c:92 (buffer_overflow, was static)
+unsafe fn buffer_overflow() -> ! {
+    _tt_abort(c"unable to read an entire line (buffer too small)".as_ptr())
+}
+
+// translated from xetex-io.c:98 (conversion_error, was static)
+unsafe fn conversion_error(errcode: i32) {
+    begin_diagnostic();
+    print_nl(b'U' as i32);
+    print_cstr(c"nicode conversion failed (ICU error code = ".as_ptr());
+    print_int(errcode);
+    print_cstr(c") discarding any remaining text".as_ptr());
+    end_diagnostic(1);
+}
+
+// translated from xetex-io.c:110 (apply_normalization, was static)
+// Sets `last` on return; called from `input_line`.
+unsafe fn apply_normalization(buf: *mut u32, len: i32, norm: i32) {
+    let norm_idx = (norm - 1) as usize; // 0 for NFC, 1 for NFD
+    let norm_ptr = &mut NORMALIZERS[norm_idx];
+    if norm_ptr.is_null() {
+        let target_form = NATIVE_UTF32 | if norm == 1 { K_FORM_NFC } else { K_FORM_NFD };
+        let status = TECkit_CreateConverter(
+            std::ptr::null(),
+            0,
+            1,
+            NATIVE_UTF32,
+            target_form,
+            norm_ptr as *mut *mut libc::c_void,
+        );
+        if status != K_STATUS_NO_ERROR {
+            _tt_abort(c"failed to create normalizer".as_ptr())
+        }
+    }
+
+    let mut in_used: u32 = 0;
+    let mut out_used: u32 = 0;
+    let status = TECkit_ConvertBuffer(
+        *norm_ptr,
+        buf as *const u8,
+        (len * 4) as u32,
+        &mut in_used,
+        buffer_ptr(first()) as *mut u8,
+        (4 * (buf_size() - first())) as u32,
+        &mut out_used,
+        1,
+    );
+    TECkit_ResetConverter(*norm_ptr);
+    if status != K_STATUS_NO_ERROR {
+        buffer_overflow();
+    }
+    set_last(first() + (out_used / 4) as i32);
+}
+
+// ---------------------------------------------------------------------------
+// input_line
+// ---------------------------------------------------------------------------
+
+/// Read one line from UFILE into the TeX `buffer`, handling encodings.
+///
+/// translated from xetex-io.c:135 (input_line)
+#[no_mangle]
+pub unsafe extern "C" fn input_line(f: *mut UFile) -> libc::c_int {
+    let norm = crate::scan::get_input_normalization_state();
+
+    if (*f).handle == INVALID_HANDLE {
+        _tt_abort(
+            c"reads from synthetic \"terminal\" file #0 should never happen".as_ptr(),
+        )
+    }
+
+    set_last(first());
+
+    if (*f).encoding_mode as i32 == ICUMAPPING {
+        // ICU-converter path.
+        let mut bytes_read: u32 = 0;
+        let mut error_code: libc::c_int = 0;
+
+        if BYTE_BUFFER.is_null() {
+            BYTE_BUFFER = xmalloc((buf_size() + 1) as libc::size_t) as *mut libc::c_char;
+        }
+
+        let mut i = ttstub_input_getc((*f).handle);
+        if (*f).skip_next_lf != 0 {
+            (*f).skip_next_lf = 0;
+            if i == b'\n' as libc::c_int {
+                i = ttstub_input_getc((*f).handle);
+            }
+        }
+
+        if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+            *BYTE_BUFFER.add(bytes_read as usize) = i as libc::c_char;
+            bytes_read += 1;
+            while bytes_read < buf_size() as u32 {
+                i = ttstub_input_getc((*f).handle);
+                if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
+                    break;
+                }
+                *BYTE_BUFFER.add(bytes_read as usize) = i as libc::c_char;
+                bytes_read += 1;
+            }
+        }
+
+        if i == libc::EOF && *libc::__errno_location() != libc::EINTR && bytes_read == 0 {
+            return 0; // false
+        }
+
+        if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+            buffer_overflow();
+        }
+
+        // Apply ICU mapping to produce UTF-32 in buffer.
+        let cnv = (*f).conversion_data;
+        match norm {
+            1 | 2 => {
+                // NFC or NFD: convert to utf32Buf first, then normalize into buffer.
+                if UTF32_BUF.is_null() {
+                    UTF32_BUF = xcalloc(
+                        buf_size() as libc::size_t,
+                        std::mem::size_of::<u32>(),
+                    ) as *mut u32;
+                }
+                let tmp_len = xetex_ucnv_to_utf32(
+                    cnv,
+                    UTF32_BUF as *mut libc::c_char,
+                    buf_size() * 4,
+                    BYTE_BUFFER as *const libc::c_char,
+                    bytes_read as i32,
+                    &mut error_code,
+                );
+                if error_code != 0 {
+                    conversion_error(error_code);
+                    return 0;
+                }
+                // tmp_len is bytes; divide by 4 to get u32 count.
+                apply_normalization(UTF32_BUF, tmp_len / 4, norm);
+            }
+            _ => {
+                // No normalization: convert directly into buffer[first..].
+                let out_len = xetex_ucnv_to_utf32(
+                    cnv,
+                    buffer_ptr(first()) as *mut libc::c_char,
+                    4 * (buf_size() - first()),
+                    BYTE_BUFFER as *const libc::c_char,
+                    bytes_read as i32,
+                    &mut error_code,
+                );
+                if error_code != 0 {
+                    conversion_error(error_code);
+                    return 0;
+                }
+                set_last(first() + out_len / 4);
+            }
+        }
+
+        // Reuse `i` for the CR-tracking check at the end.
+        if i == b'\r' as i32 {
+            (*f).skip_next_lf = 1;
+        }
+    } else {
+        // Non-ICU path: get_uni_c reads UTF-8/16/RAW.
+        let mut i = get_uni_c(f);
+        if (*f).skip_next_lf != 0 {
+            (*f).skip_next_lf = 0;
+            if i == b'\n' as i32 {
+                i = get_uni_c(f);
+            }
+        }
+
+        match norm {
+            1 | 2 => {
+                // NFC or NFD: read into utf32Buf then normalize.
+                if UTF32_BUF.is_null() {
+                    UTF32_BUF = xcalloc(
+                        buf_size() as libc::size_t,
+                        std::mem::size_of::<u32>(),
+                    ) as *mut u32;
+                }
+                let mut tmp_len: i32 = 0;
+                if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+                    *UTF32_BUF.add(tmp_len as usize) = i as u32;
+                    tmp_len += 1;
+                    while tmp_len < buf_size() {
+                        i = get_uni_c(f);
+                        if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
+                            break;
+                        }
+                        *UTF32_BUF.add(tmp_len as usize) = i as u32;
+                        tmp_len += 1;
+                    }
+                }
+
+                if i == libc::EOF && *libc::__errno_location() != libc::EINTR && tmp_len == 0 {
+                    return 0;
+                }
+                if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+                    buffer_overflow();
+                }
+                apply_normalization(UTF32_BUF, tmp_len, norm);
+            }
+            _ => {
+                // No normalization: store directly into buffer[last..].
+                if last() < buf_size() && i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+                    set_buffer_entry(last(), i);
+                    set_last(last() + 1);
+                    while last() < buf_size() {
+                        i = get_uni_c(f);
+                        if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
+                            break;
+                        }
+                        set_buffer_entry(last(), i);
+                        set_last(last() + 1);
+                    }
+                }
+
+                if i == libc::EOF && *libc::__errno_location() != libc::EINTR && last() == first() {
+                    return 0;
+                }
+                if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+                    buffer_overflow();
+                }
+            }
+        }
+
+        if i == b'\r' as i32 {
+            (*f).skip_next_lf = 1;
+        }
+    }
+
+    set_buffer_entry(last(), b' ' as i32);
+    if last() >= max_buf_stack() {
+        set_max_buf_stack(last());
+    }
+
+    // Trim trailing spaces and EOL characters.
+    loop {
+        if last() <= first() { break; }
+        let c = buffer_entry(last() - 1);
+        if c != b' ' as i32 && c != b'\r' as i32 && c != b'\n' as i32 { break; }
+        set_last(last() - 1);
+    }
+
+    1 // true
 }
 
 // ---------------------------------------------------------------------------

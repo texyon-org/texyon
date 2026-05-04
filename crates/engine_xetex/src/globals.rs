@@ -2957,6 +2957,11 @@ pub(crate) fn set_max_buf_stack(v: i32) {
 pub(crate) fn set_buffer_entry(k: i32, v: i32) {
     unsafe { *raw::buffer.offset(k as isize) = v; }
 }
+/// Returns a raw pointer to `buffer[offset]` for use with C APIs.
+#[inline]
+pub(crate) unsafe fn buffer_ptr(offset: i32) -> *mut i32 {
+    raw::buffer.add(offset as usize)
+}
 /// Writes `cur_input.limit = v`.
 #[inline]
 pub(crate) fn set_cur_input_limit(v: i32) {
