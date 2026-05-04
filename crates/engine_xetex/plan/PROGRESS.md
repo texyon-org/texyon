@@ -88,6 +88,7 @@ cargo test -p tectonic --test tex-outputs
 |      72 | 2026-05-04 |     29 |    29 |     0 | Strip all 36 #if-0 blocks from xetex-xetex0.c. File is now 10 LOC stub. DONE. All 4 suites pass. |
 |      73 | 2026-05-04 |     29 |    29 |     0 | xetex-io.c: translate set_input_file_encoding, buffer_overflow, conversion_error, apply_normalization, input_line. File DONE. All 4 suites pass. |
 |      74 | 2026-05-04 |     29 |    29 |     0 | xetex-pagebuilder.c: translate initialize_pagebuilder_variables, freeze_page_specs, ensure_vbox, fire_up, build_page. File DONE. All 4 suites pass. |
+|      75 | 2026-05-04 |     29 |    29 |     0 | xetex-linebreak.c: translate push_node, pop_node hlist-stack helpers. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -166,6 +167,7 @@ Passed count below the previous session's recorded value.
 |      66 |23,905 |                  ~26090 |      ~47.8% |
 |      67 |23,870 |                  ~26170 |      ~47.7% |
 |      68 |23,724 |                  ~26560 |      ~47.2% |
+|      75 |17,418 |                  ~29809 |      36.9% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -246,6 +248,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      66 |      359 |              ~2 |     ~99.4% |
 |      67 |      360 |              ~2 |     ~99.4% |
 |      68 |      365 |              ~2 |     ~99.4% |
+|      75 |      367 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -261,7 +264,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **73** (sessions 1–73 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **75** (sessions 1–75 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |          7 |
-| IN PROGRESS    |          1 |
+| NOT STARTED    |          6 |
+| IN PROGRESS    |          2 |
 | DONE           |          8 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 74.
+Last updated: session 75.
 
 
 ## Core engine files (to translate)
@@ -40,7 +40,7 @@ Last updated: session 74.
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
-| xetex-linebreak.c            |  2843 |    ~?? | `src/linebreak.rs`                | NOT STARTED  |
+| xetex-linebreak.c            |  2824 |     10 | `src/linebreak.rs`                | IN PROGRESS — 17% |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |  1283 |    ~?? | `src/synctex.rs`                  | NOT STARTED  |
@@ -203,6 +203,20 @@ Status: DONE (session 11).
 | 5 | `overflow`              |  113 | MIGRATED (session 11, 480fe9f1) |
 | 6 | `confusion`             |  132 | MIGRATED (session 11, 480fe9f1) |
 | 7 | `pdf_error`             |  157 | MIGRATED (session 11, 480fe9f1) |
+
+### Phase 5.5 — linebreak helpers (target: `src/linebreak.rs`)
+
+Status: IN PROGRESS (session 75).
+
+`xetex-linebreak.c` has 12 function definitions in the starting file:
+`get_native_usv`, `line_break`, 8 private helpers, plus `push_node` and
+`pop_node`. This phase starts with the tiny hlist-stack helpers used by
+the protrusion scans.
+
+| # | Function    | Line | Status |
+|--:|-------------|-----:|--------|
+| 1 | `push_node` | 2827 | MIGRATED (session 75) |
+| 2 | `pop_node`  | 2837 | MIGRATED (session 75) |
 
 ### Phase 6 — engine interface (target: `src/engine_interface.rs`)
 

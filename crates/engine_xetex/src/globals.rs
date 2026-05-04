@@ -538,6 +538,9 @@ mod raw {
         // Last leftmost/rightmost character found by char_pw (xetex-xetexd.h:467–468; xetex-ini.c:102–103).
         pub(super) static mut last_leftmost_char: i32;
         pub(super) static mut last_rightmost_char: i32;
+        // Hlist stack used by linebreak protrusion scans (xetex-xetexd.h:469–470).
+        pub(super) static mut hlist_stack: [i32; 513];
+        pub(super) static mut hlist_stack_level: i16;
         // Current font used in short_display output (xetex-xetexd.h:473; xetex-ini.c:108).
         pub(super) static mut font_in_short_display: i32;
         // show_node_list depth/breadth limits (xetex-xetexd.h:474–475).
@@ -3269,6 +3272,10 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 #[inline] pub(crate) fn set_last_leftmost_char(v: i32) { unsafe { raw::last_leftmost_char = v; } }
 #[inline] pub(crate) fn last_rightmost_char() -> i32 { unsafe { raw::last_rightmost_char } }
 #[inline] pub(crate) fn set_last_rightmost_char(v: i32) { unsafe { raw::last_rightmost_char = v; } }
+#[inline] pub(crate) fn hlist_stack_entry(k: i16) -> i32 { unsafe { raw::hlist_stack[k as usize] } }
+#[inline] pub(crate) fn set_hlist_stack_entry(k: i16, v: i32) { unsafe { raw::hlist_stack[k as usize] = v; } }
+#[inline] pub(crate) fn hlist_stack_level() -> i16 { unsafe { raw::hlist_stack_level } }
+#[inline] pub(crate) fn set_hlist_stack_level(v: i16) { unsafe { raw::hlist_stack_level = v; } }
 #[inline] pub(crate) fn font_in_short_display() -> i32 { unsafe { raw::font_in_short_display } }
 #[inline] pub(crate) fn set_font_in_short_display(v: i32) { unsafe { raw::font_in_short_display = v; } }
 #[inline] pub(crate) fn depth_threshold() -> i32 { unsafe { raw::depth_threshold } }

@@ -68,8 +68,8 @@ static small_number reconstitute(small_number j, small_number n, int32_t bchar, 
 static scaled_t total_pw(int32_t q, int32_t p);
 static int32_t find_protchar_left(int32_t l, bool d);
 static int32_t find_protchar_right(int32_t l, int32_t r);
-static void push_node(int32_t p);
-static int32_t pop_node(void);
+void push_node(int32_t p);
+int32_t pop_node(void);
 
 /* "The active list ends where it begins" */
 #define LAST_ACTIVE ACTIVE_LIST
@@ -2822,22 +2822,3 @@ find_protchar_right(int32_t l, int32_t r)
     return r;
 }
 
-
-static void
-push_node(int32_t p)
-{
-    if (hlist_stack_level > MAX_HLIST_STACK)
-        pdf_error("push_node", "stack overflow");
-    hlist_stack[hlist_stack_level] = p;
-    hlist_stack_level = hlist_stack_level + 1;
-}
-
-
-static int32_t
-pop_node(void)
-{
-    hlist_stack_level = hlist_stack_level - 1;
-    if (hlist_stack_level < 0)
-        pdf_error("pop_node", "stack underflow (internal error)");
-    return hlist_stack[hlist_stack_level];
-}

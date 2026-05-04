@@ -38,6 +38,7 @@ mod engine_interface;
 mod texmfmp;
 mod errors;
 mod input;
+mod linebreak;
 mod output;
 mod save;
 mod scaled_math;
