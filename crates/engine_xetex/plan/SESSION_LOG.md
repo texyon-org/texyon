@@ -32,6 +32,45 @@ template.
 
 ---
 
+## Session 75 — 2026-05-04 — xetex-linebreak.c: hlist stack helpers
+
+**Goal:** Start `xetex-linebreak.c` with a small low-risk helper cluster.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 74
+
+**Work done:**
+- Added hlist-stack globals accessors for `hlist_stack` and `hlist_stack_level`.
+- Created `src/linebreak.rs` and registered `mod linebreak;`.
+- Translated `push_node` and `pop_node` from `xetex-linebreak.c` to Rust.
+- Converted their C prototypes from `static` to extern-visible declarations and
+  deleted the C bodies so existing C callers link to the Rust symbols.
+- Updated `MODULE_STATUS.md` and `PROGRESS.md`.
+- Commit: 1b49c054
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 75
+
+**Surprises / gotchas:**
+- The worktree already contained unrelated dirty generated output files plus
+  shipout-oriented `globals.rs` accessors from a prior interrupted session.
+  The commit staged only the hlist-stack portions of `globals.rs`; the unrelated
+  dirty state remains for the next session or the user to handle.
+
+**For the next session:**
+- Continue `xetex-linebreak.c`. Good candidates are the smaller bottom helpers:
+  `find_protchar_left`, `find_protchar_right`, or `total_pw`. Each uses linebreak
+  node/accessor macros, so read the C body and add only the minimal globals/macros
+  needed for that function.
+
 ## Session 74 — 2026-05-04 — xetex-pagebuilder.c: all 5 functions — file DONE
 
 **Goal:** Translate all 5 functions from xetex-pagebuilder.c to Rust and mark the file DONE.
