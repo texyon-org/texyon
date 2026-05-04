@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 72.
+Last updated: session 73.
 
 
 ## Core engine files (to translate)
@@ -44,7 +44,7 @@ Last updated: session 72.
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |  1283 |    ~?? | `src/synctex.rs`                  | NOT STARTED  |
-| xetex-io.c                   |   294 |      3 | `src/io.rs`                       | IN PROGRESS — 73% |
+| xetex-io.c                   |   222 |      5 | `src/io.rs`                       | IN PROGRESS — 55% |
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
 | xetex-pic.c                  |   664 |    ~?? | `src/pic.rs`                      | NOT STARTED  |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
@@ -261,7 +261,7 @@ Status: IN PROGRESS (session 16).
 | 2 | `u_open_in`               |  127 | MIGRATED (session 16, 979cde6d) |
 | 3 | `make_utf16_name`         |  481 | MIGRATED (session 16, 979cde6d) |
 | 4 | `get_uni_c`               |  373 | MIGRATED (session 16, 979cde6d) |
-| 5 | `u_close`                 |  357 | KEEP IN C — `ucnv_close` (ICU) not linkable from Rust without build-script changes |
+| 5 | `u_close`                 |  357 | MIGRATED (session 73, 25da31e5) — via `xetex_ucnv_close` C wrapper |
 | 6 | `set_input_file_encoding` |   87 | DEFER — uses ICU (ucnv_open/ucnv_close) |
 | 7 | `buffer_overflow` (static)|  176 | DEFER — called only from `input_line` |
 | 8 | `conversion_error` (static)|  183 | DEFER — called only from `input_line` |
@@ -271,6 +271,7 @@ Status: IN PROGRESS (session 16).
 
 Note: `name_of_input_file` and `abspath_of_input_file` moved from C file-statics
 to Rust `#[no_mangle] pub static mut` in `src/io.rs`. `NAME16LEN` also moved.
+`xetex_ucnv_close` is a permanent C helper (thin ICU wrapper enabling Rust `u_close`).
 
 ### Phase 11 — xetex-xetex0.c scattered functions (sessions 17+)
 
