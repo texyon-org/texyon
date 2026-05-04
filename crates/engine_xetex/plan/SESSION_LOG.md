@@ -32,6 +32,46 @@ template.
 
 ---
 
+## Session 74 — 2026-05-04 — xetex-pagebuilder.c: all 5 functions — file DONE
+
+**Goal:** Translate all 5 functions from xetex-pagebuilder.c to Rust and mark the file DONE.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 73
+
+**Work done:**
+- Added 6 missing globals.rs accessors: `set_page_contents`, `set_last_glue`,
+  `set_last_penalty`, `set_last_kern`, `set_last_node_type`, `semantic_pagination_enabled` getter.
+- Created `src/pagebuilder.rs` (916 lines) with 4 file-statics (BEST_PAGE_BREAK,
+  BEST_SIZE, LEAST_PAGE_COST, PAGE_MAX_DEPTH), all constants, extern "C" block,
+  and 5 translated functions: `initialize_pagebuilder_variables`,
+  `freeze_page_specs`, `ensure_vbox`, `fire_up`, `build_page`.
+- Registered `mod pagebuilder;` in `src/lib.rs`.
+- Stubbed `xetex-pagebuilder.c` to 12-line header-only file.
+- Commit: f5dbfff0
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 74
+
+**Surprises / gotchas:**
+- `as T < rhs` Rust parse ambiguity: `mem_b16s1(page_tail()) as i32 < MATH_NODE`
+  was parsed as `as (i32 < MATH_NODE)` (generic). Fixed with parens.
+- `fire_up`'s while loop uses the "reset p to prev_p" trick after unlinking an
+  INS_NODE; translated using a `reset_p` bool flag.
+- `SPLIT_UP` as NODE_type for PAGE_INS_NODE = 1, same slot as VLIST_NODE but
+  different semantic context; must compare via `mem_b16s1(r) as i32 == SPLIT_UP`.
+- `build_page` goto structure (contribute/update_heights/done1/done) mapped to
+  boolean flags (need_contribute, need_update_heights, need_done1) with a single
+  'outer: loop.
+
+**For the next session:**
+- Next target: `xetex-linebreak.c` (2843 LOC, NOT STARTED) — largest remaining file.
+  Alternatively `xetex-shipout.c` (2451 LOC) if linebreak is too large for one session.
+
+---
+
 ## Session 73 — 2026-05-04 — xetex-io.c: translate remaining 5 functions — file DONE
 
 **Goal:** Translate the 5 deferred functions in xetex-io.c (set_input_file_encoding,

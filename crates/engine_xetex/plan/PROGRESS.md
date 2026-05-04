@@ -87,6 +87,7 @@ cargo test -p tectonic --test tex-outputs
 |      71 | 2026-05-03 |     29 |    29 |     0 | main_control (~272 lines, big_switch/reswitch dispatcher). xetex-xetex0.c 7065→6793 LOC. All 4 suites pass. |
 |      72 | 2026-05-04 |     29 |    29 |     0 | Strip all 36 #if-0 blocks from xetex-xetex0.c. File is now 10 LOC stub. DONE. All 4 suites pass. |
 |      73 | 2026-05-04 |     29 |    29 |     0 | xetex-io.c: translate set_input_file_encoding, buffer_overflow, conversion_error, apply_normalization, input_line. File DONE. All 4 suites pass. |
+|      74 | 2026-05-04 |     29 |    29 |     0 | xetex-pagebuilder.c: translate initialize_pagebuilder_variables, freeze_page_specs, ensure_vbox, fire_up, build_page. File DONE. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
