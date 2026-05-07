@@ -32,6 +32,62 @@ template.
 
 ---
 
+## Session 81 — 2026-05-07 — xetex-synctex.c
+
+**Goal:** Translate `xetex-synctex.c` (1,283 LOC, ~30 functions) to `src/synctex.rs`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 80
+
+**Work done:**
+- Created `src/synctex.rs` with Rust translations of all ~30 functions from
+  `xetex-synctex.c`. Includes the public API (`synctex_init_command`,
+  `synctex_terminate`, `synctex_abort`, `synctex_start_input`, `synctex_sheet`,
+  `synctex_teehs`, `synctex_pdfxform`, `synctex_mrofxfdp`, `synctex_vlist`,
+  `synctex_tsilv`, `synctex_void_vlist`, `synctex_hlist`, `synctex_tsilh`,
+  `synctex_void_hlist`, `synctex_math`, `synctex_horizontal_rule_or_glue`,
+  `synctex_kern`, `synctex_pdfrefxform`, `synctex_current`) and all private
+  helpers (`synctex_dot_open`, `synctex_prepare_content`, `get_current_name`,
+  `synctexabort`, `synctex_record_*`). Added `mod synctex;` to `lib.rs`.
+  Reduced `xetex-synctex.c` to a 10-line stub of includes.
+- `MODULE_STATUS.md`: `xetex-synctex.c` NOT STARTED → DONE. Summary:
+  NOT STARTED 5→4, DONE 10→11.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 81
+
+**Surprises / gotchas:**
+- `ttstub_fprintf` is variadic — replaced with `format!` + `ttstub_output_write`.
+  The `synctex_write` helper returns written bytes as `i32` (matching C `int`).
+- The file-static `synctex_ctxt` C struct uses bitfields for flags. Replaced
+  with a plain Rust struct with `bool` fields (no layout constraint since
+  it's private state). Stored in `static mut SYNCTEX_CTXT: SynctexCtxt`.
+- The recorder function pointer (`synctex_record_node_kern`) is stored as
+  `Option<unsafe fn(i32)>` and called by extracting `(recorder, node)` before
+  calling, to avoid aliased `&mut SYNCTEX_CTXT` references during the call.
+- `~counter > 0` (C bitwise NOT) translates to `counter != u32::MAX` in Rust.
+- `synctex_abort` is declared in the header but not implemented in the C file;
+  implemented here as a thin wrapper around `synctexabort()`.
+- `synctex_record_preamble` and `synctex_record_anchor` use `total_length = len`
+  (assignment, not `+=`) matching a quirk in the original C source.
+
+**For the next session:**
+- Remaining NOT STARTED files: `xetex-ini.c` (3,881 LOC), `xetex-math.c`
+  (3,833 LOC), `xetex-shipout.c` (2,451 LOC), `xetex-ext.c` (2,170 LOC).
+  IN PROGRESS: `xetex-engine-interface.c` (85 LOC, 2 fns stay in C).
+- Recommend `xetex-ext.c` next — it contains `Fix2D`/`D2Fix` used by pic.rs
+  and other modules.
+
+---
+
 ## Session 80 — 2026-05-07 — xetex-linebreak.c cleanup + xetex-pic.c
 
 **Goal:** Remove the disabled `#if 0` reference blocks from

@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |          5 |
+| NOT STARTED    |          4 |
 | IN PROGRESS    |          1 |
-| DONE           |         10 |
+| DONE           |         11 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 80.
+Last updated: session 81.
 
 
 ## Core engine files (to translate)
@@ -43,7 +43,7 @@ Last updated: session 80.
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
-| xetex-synctex.c              |  1283 |    ~?? | `src/synctex.rs`                  | NOT STARTED  |
+| xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |

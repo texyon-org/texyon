@@ -94,6 +94,7 @@ cargo test -p tectonic --test tex-outputs
 |      78 | 2026-05-07 |     29 |    29 |     0 | xetex-linebreak.c: translate try_break and route C line_break through Rust. Fixed last_line_fit goto semantics caught by eTRIP. All 4 suites pass. |
 |      79 | 2026-05-07 |     29 |    29 |     0 | xetex-linebreak.c: translate line_break; file has zero compiled C bodies. Fixed hang_after param, ligature hyphenation done3 control flow, and native-node font accessor. All 4 suites pass. |
 |      80 | 2026-05-07 |     29 |    29 |     0 | xetex-linebreak.c: delete disabled #if 0 reference blocks (cleanup). xetex-pic.c: translate all 11 functions to src/pic.rs; file DONE. All 4 suites pass. |
+|      81 | 2026-05-07 |     29 |    29 |     0 | xetex-synctex.c: translate all ~30 functions to src/synctex.rs; file DONE. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -176,6 +177,7 @@ Passed count below the previous session's recorded value.
 |      78 |~16,775 |                  ~30440 |      ~35.5% |
 |      79 |~15,810 |                  ~32700 |      ~32.6% |
 |      80 |~14,025 |                  ~33230 |      ~29.7% |
+|      81 |~12,752 |                  ~34,370 |      ~27.1% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are

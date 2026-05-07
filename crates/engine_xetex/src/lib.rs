@@ -44,6 +44,7 @@ mod save;
 mod scaled_math;
 mod pagebuilder;
 mod pic;
+mod synctex;
 #[allow(dead_code)]
 mod string_pool;
 
