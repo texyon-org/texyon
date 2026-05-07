@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 84.
+Last updated: session 85.
 
 
 ## Core engine files (to translate)
@@ -45,7 +45,7 @@ Last updated: session 84.
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
-| xetex-ext.c                  |  1773 |      42 | `src/ext.rs`                      | IN PROGRESS — 26% |
+| xetex-ext.c                  |  1582 |      33 | `src/ext.rs`                      | IN PROGRESS — 42% |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
@@ -525,7 +525,7 @@ Status: DONE (session 80).
 
 ### Phase 13 — xetex-ext.c helpers (target: `src/ext.rs`)
 
-Status: IN PROGRESS (session 84).
+Status: IN PROGRESS (session 85).
 
 | # | Function      | Line | Status |
 |--:|---------------|-----:|--------|
@@ -544,6 +544,15 @@ Status: IN PROGRESS (session 84).
 |13 | `read_tag_with_param` (static) | 173 | MIGRATED (session 84) |
 |14 | `readFeatureNumber` (static) | 204 | MIGRATED (session 84) |
 |15 | `splitFontName` (static) | 440 | MIGRATED (session 84) |
+|16 | `release_font_engine` | 503 | MIGRATED (session 85) |
+|17 | `ot_get_font_metrics` | 517 | MIGRATED (session 85) |
+|18 | `ot_font_get` | 560 | MIGRATED (session 85) |
+|19 | `ot_font_get_1` | 580 | MIGRATED (session 85) |
+|20 | `ot_font_get_2` | 608 | MIGRATED (session 85) |
+|21 | `ot_font_get_3` | 636 | MIGRATED (session 85) |
+|22 | `gr_print_font_name` | 651 | MIGRATED (session 85) |
+|23 | `gr_font_get_named` | 670 | MIGRATED (session 85) |
+|24 | `gr_font_get_named_1` | 683 | MIGRATED (session 85) |
 
 Session 83 also moved the former `saved_mapping_name` file-static into
 Rust as `SAVED_MAPPING_NAME`.

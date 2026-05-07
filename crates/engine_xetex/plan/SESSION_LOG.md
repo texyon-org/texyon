@@ -32,6 +32,57 @@ template.
 
 ---
 
+## Session 85 — 2026-05-07 — xetex-ext.c font getter helpers
+
+**Goal:** Continue `xetex-ext.c` by translating the cohesive
+OpenType/Graphite font-query and metrics helper cluster.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 84
+
+**Work done:**
+- Translated nine `xetex-ext.c` helpers to `src/ext.rs`:
+  `release_font_engine`, `ot_get_font_metrics`, `ot_font_get`,
+  `ot_font_get_1`, `ot_font_get_2`, `ot_font_get_3`,
+  `gr_print_font_name`, `gr_font_get_named`, and `gr_font_get_named_1`.
+- Added the matching layout-engine FFI declarations and mirrored the
+  XeTeX command-code constants used by the scanner (`XETEX_*_CODE -
+  XETEX_INT`).
+- Preserved Graphite label ownership by printing through Rust
+  `print_cstr` and then calling `gr_label_destroy`, matching the C
+  helper behavior.
+- Reduced `xetex-ext.c` from 1,773 LOC / ~42 C bodies to 1,582 LOC /
+  ~33 C bodies.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 85
+
+**Surprises / gotchas:**
+- The Mac `AAT_FONT_FLAG` branch in `release_font_engine` must remain
+  cfg-gated on Linux to avoid adding a new dead-code warning while still
+  preserving the C branch shape for macOS.
+- The Graphite label APIs return raw labels whose destruction remains tied
+  to `gr_label_destroy`; do not switch these to `free`/`CString::from_raw`
+  from the `engine_xetex` side.
+
+**For the next session:**
+- Continue `xetex-ext.c`. Good next candidates are the small native glyph
+  and character metric wrappers (`get_native_char_height_depth`,
+  `get_native_char_sidebearings`, `getnativechar*`, `get_glyph_bounds`,
+  `map_char_to_glyph`, `map_glyph_to_index`, `get_font_char_range`,
+  `print_glyph_name`) before the larger glyph-array and native-node
+  measurement routines.
+
+---
+
 ## Session 84 — 2026-05-07 — xetex-ext.c parser helpers
 
 **Goal:** Continue `xetex-ext.c` by translating the small encoding and

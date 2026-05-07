@@ -1,9 +1,33 @@
 // translated from xetex-ext.c
 
-use libc::{c_char, c_double, c_int, c_uint, c_void};
+use libc::{c_char, c_double, c_int, c_long, c_uint, c_void};
 use std::ptr;
 
+type XeTeXFont = *mut c_void;
+type XeTeXLayoutEngine = *mut c_void;
+
 const TTBC_FILE_FORMAT_MISC_FONTS: c_int = 41;
+const XETEX_INT: i32 = 27;
+const XETEX_FEATURE_NAME_CODE: i32 = 35;
+const XETEX_SELECTOR_NAME_CODE: i32 = 36;
+const XETEX_COUNT_GLYPHS: i32 = 28 - XETEX_INT;
+const XETEX_COUNT_FEATURES: i32 = 35 - XETEX_INT;
+const XETEX_FEATURE_CODE: i32 = 36 - XETEX_INT;
+const XETEX_FIND_FEATURE_BY_NAME: i32 = 37 - XETEX_INT;
+const XETEX_IS_EXCLUSIVE_FEATURE: i32 = 38 - XETEX_INT;
+const XETEX_COUNT_SELECTORS: i32 = 39 - XETEX_INT;
+const XETEX_SELECTOR_CODE: i32 = 40 - XETEX_INT;
+const XETEX_FIND_SELECTOR_BY_NAME: i32 = 41 - XETEX_INT;
+const XETEX_IS_DEFAULT_SELECTOR: i32 = 42 - XETEX_INT;
+const XETEX_OT_COUNT_SCRIPTS: i32 = 43 - XETEX_INT;
+const XETEX_OT_COUNT_LANGUAGES: i32 = 44 - XETEX_INT;
+const XETEX_OT_COUNT_FEATURES: i32 = 45 - XETEX_INT;
+const XETEX_OT_SCRIPT_CODE: i32 = 46 - XETEX_INT;
+const XETEX_OT_LANGUAGE_CODE: i32 = 47 - XETEX_INT;
+const XETEX_OT_FEATURE_CODE: i32 = 48 - XETEX_INT;
+#[cfg(target_os = "macos")]
+const AAT_FONT_FLAG: u32 = 0xFFFF;
+const OTGR_FONT_FLAG: u32 = 0xFFFE;
 const AUTO: c_int = 0;
 const UTF8: c_int = 1;
 const UTF16BE: c_int = 2;
@@ -58,6 +82,56 @@ extern "C" {
     fn print_char(s: i32);
     fn font_mapping_warning(mapping_name: *const c_void, mapping_name_len: i32, warning_type: i32);
     fn get_tracing_fonts_state() -> i32;
+    fn deleteLayoutEngine(engine: XeTeXLayoutEngine);
+    fn getFont(engine: XeTeXLayoutEngine) -> XeTeXFont;
+    fn getExtendFactor(engine: XeTeXLayoutEngine) -> f32;
+    fn getSlantFactor(engine: XeTeXLayoutEngine) -> f32;
+    fn getAscentAndDescent(engine: XeTeXLayoutEngine, ascent: *mut f32, descent: *mut f32);
+    fn getCapAndXHeight(engine: XeTeXLayoutEngine, capheight: *mut f32, xheight: *mut f32);
+    fn getGlyphHeightDepth(
+        engine: XeTeXLayoutEngine,
+        glyph_id: u32,
+        height: *mut f32,
+        depth: *mut f32,
+    );
+    fn mapCharToGlyph(engine: XeTeXLayoutEngine, char_code: u32) -> u32;
+    fn getSlant(font: XeTeXFont) -> i32;
+    fn countGlyphs(font: XeTeXFont) -> c_uint;
+    fn countGraphiteFeatures(engine: XeTeXLayoutEngine) -> u32;
+    fn countScripts(font: XeTeXFont) -> c_uint;
+    fn countLanguages(font: XeTeXFont, script: u32) -> c_uint;
+    fn getIndScript(font: XeTeXFont, index: c_uint) -> u32;
+    fn getGraphiteFeatureCode(engine: XeTeXLayoutEngine, index: u32) -> u32;
+    fn countGraphiteFeatureSettings(engine: XeTeXLayoutEngine, feature_id: u32) -> u32;
+    fn getIndLanguage(font: XeTeXFont, script: u32, index: c_uint) -> u32;
+    fn countFeatures(font: XeTeXFont, script: u32, language: u32) -> c_uint;
+    fn getGraphiteFeatureSettingCode(
+        engine: XeTeXLayoutEngine,
+        feature_id: u32,
+        setting_index: u32,
+    ) -> u32;
+    fn getGraphiteFeatureDefaultSetting(engine: XeTeXLayoutEngine, feature_id: u32) -> u32;
+    fn getIndFeature(font: XeTeXFont, script: u32, language: u32, index: c_uint) -> u32;
+    fn getGraphiteFeatureLabel(engine: XeTeXLayoutEngine, feature_id: u32) -> *mut c_char;
+    fn getGraphiteFeatureSettingLabel(
+        engine: XeTeXLayoutEngine,
+        feature_id: u32,
+        setting_index: u32,
+    ) -> *mut c_char;
+    fn gr_label_destroy(name: *mut c_void);
+    fn findGraphiteFeatureNamed(
+        engine: XeTeXLayoutEngine,
+        name: *const c_char,
+        namelength: c_int,
+    ) -> c_long;
+    fn findGraphiteFeatureSettingNamed(
+        engine: XeTeXLayoutEngine,
+        feature_id: u32,
+        name: *const c_char,
+        namelength: c_int,
+    ) -> c_long;
+    #[cfg(target_os = "macos")]
+    fn CFRelease(cf: *const c_void);
 }
 
 unsafe fn mfree_ptr<T>(ptr: *mut T) -> *mut T {
@@ -569,6 +643,202 @@ pub unsafe extern "C" fn splitFontName(
     if (*var).is_null() {
         *var = *feat;
     }
+}
+
+// translated from xetex-ext.c:503 (release_font_engine)
+#[no_mangle]
+pub unsafe extern "C" fn release_font_engine(engine: *mut c_void, type_flag: c_int) {
+    #[cfg(target_os = "macos")]
+    if type_flag as u32 == AAT_FONT_FLAG {
+        CFRelease(engine);
+        return;
+    }
+
+    if type_flag as u32 == OTGR_FONT_FLAG {
+        deleteLayoutEngine(engine as XeTeXLayoutEngine);
+    }
+}
+
+// translated from xetex-ext.c:517 (ot_get_font_metrics)
+#[no_mangle]
+pub unsafe extern "C" fn ot_get_font_metrics(
+    p_engine: *mut c_void,
+    ascent: *mut i32,
+    descent: *mut i32,
+    xheight: *mut i32,
+    capheight: *mut i32,
+    slant: *mut i32,
+) {
+    let engine = p_engine as XeTeXLayoutEngine;
+    let mut a = 0.0f32;
+    let mut d = 0.0f32;
+
+    getAscentAndDescent(engine, &mut a, &mut d);
+    *ascent = D2Fix(a as c_double);
+    *descent = D2Fix(d as c_double);
+
+    *slant = D2Fix(
+        Fix2D(getSlant(getFont(engine))) * getExtendFactor(engine) as c_double
+            + getSlantFactor(engine) as c_double,
+    );
+
+    getCapAndXHeight(engine, &mut a, &mut d);
+    *capheight = D2Fix(a as c_double);
+    *xheight = D2Fix(d as c_double);
+
+    if *xheight == 0 {
+        let glyph_id = mapCharToGlyph(engine, b'x' as u32);
+        if glyph_id != 0 {
+            getGlyphHeightDepth(engine, glyph_id, &mut a, &mut d);
+            *xheight = D2Fix(a as c_double);
+        } else {
+            *xheight = *ascent / 2;
+        }
+    }
+
+    if *capheight == 0 {
+        let glyph_id = mapCharToGlyph(engine, b'X' as u32);
+        if glyph_id != 0 {
+            getGlyphHeightDepth(engine, glyph_id, &mut a, &mut d);
+            *capheight = D2Fix(a as c_double);
+        } else {
+            *capheight = *ascent;
+        }
+    }
+}
+
+// translated from xetex-ext.c:560 (ot_font_get)
+#[no_mangle]
+pub unsafe extern "C" fn ot_font_get(what: i32, p_engine: *mut c_void) -> i32 {
+    let engine = p_engine as XeTeXLayoutEngine;
+    let font_inst = getFont(engine);
+    match what {
+        XETEX_COUNT_GLYPHS => countGlyphs(font_inst) as i32,
+        XETEX_COUNT_FEATURES => countGraphiteFeatures(engine) as i32,
+        XETEX_OT_COUNT_SCRIPTS => countScripts(font_inst) as i32,
+        _ => 0,
+    }
+}
+
+// translated from xetex-ext.c:580 (ot_font_get_1)
+#[no_mangle]
+pub unsafe extern "C" fn ot_font_get_1(what: i32, p_engine: *mut c_void, param: i32) -> i32 {
+    let engine = p_engine as XeTeXLayoutEngine;
+    let font_inst = getFont(engine);
+    match what {
+        XETEX_OT_COUNT_LANGUAGES => countLanguages(font_inst, param as u32) as i32,
+        XETEX_OT_SCRIPT_CODE => getIndScript(font_inst, param as c_uint) as i32,
+        XETEX_FEATURE_CODE => getGraphiteFeatureCode(engine, param as u32) as i32,
+        XETEX_IS_EXCLUSIVE_FEATURE => 1,
+        XETEX_COUNT_SELECTORS => countGraphiteFeatureSettings(engine, param as u32) as i32,
+        _ => 0,
+    }
+}
+
+// translated from xetex-ext.c:608 (ot_font_get_2)
+#[no_mangle]
+pub unsafe extern "C" fn ot_font_get_2(
+    what: i32,
+    p_engine: *mut c_void,
+    param1: i32,
+    param2: i32,
+) -> i32 {
+    let engine = p_engine as XeTeXLayoutEngine;
+    let font_inst = getFont(engine);
+    match what {
+        XETEX_OT_LANGUAGE_CODE => getIndLanguage(font_inst, param1 as u32, param2 as c_uint) as i32,
+        XETEX_OT_COUNT_FEATURES => countFeatures(font_inst, param1 as u32, param2 as u32) as i32,
+        XETEX_SELECTOR_CODE => {
+            getGraphiteFeatureSettingCode(engine, param1 as u32, param2 as u32) as i32
+        }
+        XETEX_IS_DEFAULT_SELECTOR => {
+            (getGraphiteFeatureDefaultSetting(engine, param1 as u32) == param2 as u32) as i32
+        }
+        _ => 0,
+    }
+}
+
+// translated from xetex-ext.c:636 (ot_font_get_3)
+#[no_mangle]
+pub unsafe extern "C" fn ot_font_get_3(
+    what: i32,
+    p_engine: *mut c_void,
+    param1: i32,
+    param2: i32,
+    param3: i32,
+) -> i32 {
+    let engine = p_engine as XeTeXLayoutEngine;
+    let font_inst = getFont(engine);
+    match what {
+        XETEX_OT_FEATURE_CODE => {
+            getIndFeature(font_inst, param1 as u32, param2 as u32, param3 as c_uint) as i32
+        }
+        _ => 0,
+    }
+}
+
+// translated from xetex-ext.c:651 (gr_print_font_name)
+#[no_mangle]
+pub unsafe extern "C" fn gr_print_font_name(
+    what: i32,
+    p_engine: *mut c_void,
+    param1: i32,
+    param2: i32,
+) {
+    let engine = p_engine as XeTeXLayoutEngine;
+    let name = match what {
+        XETEX_FEATURE_NAME_CODE => getGraphiteFeatureLabel(engine, param1 as u32),
+        XETEX_SELECTOR_NAME_CODE => {
+            getGraphiteFeatureSettingLabel(engine, param1 as u32, param2 as u32)
+        }
+        _ => ptr::null_mut(),
+    };
+
+    if !name.is_null() {
+        crate::output::print_cstr(name);
+        gr_label_destroy(name as *mut c_void);
+    }
+}
+
+// translated from xetex-ext.c:670 (gr_font_get_named)
+#[no_mangle]
+pub unsafe extern "C" fn gr_font_get_named(what: i32, p_engine: *mut c_void) -> i32 {
+    let mut rval: c_long = -1;
+    let engine = p_engine as XeTeXLayoutEngine;
+    match what {
+        XETEX_FIND_FEATURE_BY_NAME => {
+            rval = findGraphiteFeatureNamed(
+                engine,
+                crate::globals::name_of_file(),
+                crate::globals::name_length(),
+            );
+        }
+        _ => {}
+    }
+    rval as i32
+}
+
+// translated from xetex-ext.c:683 (gr_font_get_named_1)
+#[no_mangle]
+pub unsafe extern "C" fn gr_font_get_named_1(
+    what: i32,
+    p_engine: *mut c_void,
+    param: i32,
+) -> i32 {
+    let mut rval: c_long = -1;
+    let engine = p_engine as XeTeXLayoutEngine;
+    match what {
+        XETEX_FIND_SELECTOR_BY_NAME => {
+            rval = findGraphiteFeatureSettingNamed(
+                engine,
+                param as u32,
+                crate::globals::name_of_file(),
+                crate::globals::name_length(),
+            );
+        }
+        _ => {}
+    }
+    rval as i32
 }
 
 #[cfg(test)]

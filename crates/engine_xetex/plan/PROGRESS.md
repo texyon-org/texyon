@@ -98,6 +98,7 @@ cargo test -p tectonic --test tex-outputs
 |      82 | 2026-05-07 |     29 |    29 |     0 | xetex-ext.c: translate read_double, read_rgb_a, D2Fix, Fix2D to src/ext.rs. All 4 suites pass. |
 |      83 | 2026-05-07 |     29 |    29 |     0 | xetex-ext.c: translate print helpers, TFM mapping wrappers, and readCommonFeatures to src/ext.rs. All 4 suites pass. |
 |      84 | 2026-05-07 |     29 |    29 |     0 | xetex-ext.c: translate get_encoding_mode_and_info, feature-tag parsers, and splitFontName to src/ext.rs. All 4 suites pass. |
+|      85 | 2026-05-07 |     29 |    29 |     0 | xetex-ext.c: translate OpenType/Graphite font getters, font metrics, and release helper to src/ext.rs. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -268,6 +269,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      78 |      368 |             ~?? |       ~?? |
 |      83 |      422 |             ~?? |       ~?? |
 |      84 |      426 |             ~?? |       ~?? |
+|      85 |      435 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -283,7 +285,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **84** (sessions 1–84 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **85** (sessions 1–85 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
