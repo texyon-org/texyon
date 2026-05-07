@@ -123,109 +123,8 @@ linebreak_next(int f)
 	}
 }
 
-int
-get_encoding_mode_and_info(int32_t* info)
-{
-    /* \XeTeXinputencoding "enc-name"
-     *   -> name is packed in |nameoffile| as a C string, starting at [1]
-     * Check if it's a built-in name; if not, try to open an ICU converter by that name
-     */
-    UErrorCode err = U_ZERO_ERROR;
-    UConverter* cnv;
-    *info = 0;
-    if (strcasecmp(name_of_file, "auto") == 0) {
-        return AUTO;
-    }
-    if (strcasecmp(name_of_file, "utf8") == 0) {
-        return UTF8;
-    }
-    if (strcasecmp(name_of_file, "utf16") == 0) {   /* depends on host platform */
-        return US_NATIVE_UTF16;
-    }
-    if (strcasecmp(name_of_file, "utf16be") == 0) {
-        return UTF16BE;
-    }
-    if (strcasecmp(name_of_file, "utf16le") == 0) {
-        return UTF16LE;
-    }
-    if (strcasecmp(name_of_file, "bytes") == 0) {
-        return RAW;
-    }
-
-    /* try for an ICU converter */
-    cnv = ucnv_open(name_of_file, &err);
-    if (cnv == NULL) {
-        begin_diagnostic();
-        print_nl('U'); /* ensure message starts on a new line */
-        print_c_string("nknown encoding `");
-        print_c_string(name_of_file);
-        print_c_string("'; reading as raw bytes");
-        end_diagnostic(1);
-        return RAW;
-    } else {
-        ucnv_close(cnv);
-        *info = maketexstring(name_of_file);
-        return ICUMAPPING;
-    }
-}
-
-static hb_tag_t
-read_tag_with_param(const char* cp, int* param)
-{
-    const char* cp2;
-    hb_tag_t tag;
-
-    cp2 = cp;
-    while (*cp2 && (*cp2 != ':') && (*cp2 != ';') && (*cp2 != ',') && (*cp2 != '='))
-        ++cp2;
-
-    tag = hb_tag_from_string(cp, cp2 - cp);
-
-    cp = cp2;
-    if (*cp == '=') {
-        int neg = 0;
-        ++cp;
-        if (*cp == '-') {
-            ++neg;
-            ++cp;
-        }
-        while (*cp >= '0' && *cp <= '9') {
-            *param = *param * 10 + *cp - '0';
-            ++cp;
-        }
-        if (neg)
-            *param = -(*param);
-    }
-
-    return tag;
-}
-
-static bool
-readFeatureNumber(const char* s, const char* e, hb_tag_t* f, int* v)
-    /* s...e is a "id=setting" string; */
-{
-    *f = 0;
-    *v = 0;
-    if (*s < '0' || *s > '9')
-        return false;
-    while (*s >= '0' && *s <= '9')
-        *f = *f * 10 + *s++ - '0';
-    while ((*s == ' ') || (*s == '\t'))
-        ++s;
-    if (*s++ != '=')
-        /* no setting was specified */
-        return false;
-
-    if (*s < '0' || *s > '9')
-        return false;
-    while (*s >= '0' && *s <= '9')
-        *v = *v * 10 + *s++ - '0';
-    while ((*s == ' ') || (*s == '\t'))
-        ++s;
-    if (s != e)
-        return false;
-    return true;
-}
+hb_tag_t read_tag_with_param(const char* cp, int* param);
+bool readFeatureNumber(const char* s, const char* e, hb_tag_t* f, int* v);
 
 static void*
 loadOTfont(RawPlatformFontRef fontRef, XeTeXFont font, Fixed scaled_size, char* cp1)
@@ -436,48 +335,7 @@ loadOTfont(RawPlatformFontRef fontRef, XeTeXFont font, Fixed scaled_size, char* 
     return engine;
 }
 
-static void
-splitFontName(char* name, char** var, char** feat, char** end, int* index)
-{
-    *var = NULL;
-    *feat = NULL;
-    *index = 0;
-    if (*name == '[') {
-        int withinFileName = 1;
-        ++name;
-        while (*name) {
-            if (withinFileName && *name == ']') {
-                withinFileName = 0;
-                if (*var == NULL)
-                    *var = name;
-            } else if (*name == ':') {
-                if (withinFileName && *var == NULL) {
-                    *var = name;
-                    ++name;
-                    while (*name >= '0' && *name <= '9')
-                        *index = *index * 10 + *name++ - '0';
-                    --name;
-                } else if (!withinFileName && *feat == NULL)
-                    *feat = name;
-            }
-            ++name;
-        }
-        *end = name;
-    } else {
-        while (*name) {
-            if (*name == '/' && *var == NULL && *feat == NULL)
-                *var = name;
-            else if (*name == ':' && *feat == NULL)
-                *feat = name;
-            ++name;
-        }
-        *end = name;
-    }
-    if (*feat == NULL)
-        *feat = name;
-    if (*var == NULL)
-        *var = *feat;
-}
+void splitFontName(char* name, char** var, char** feat, char** end, int* index);
 
 void*
 find_native_font(char* uname, int32_t scaled_size)

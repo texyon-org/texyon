@@ -4,6 +4,16 @@ use libc::{c_char, c_double, c_int, c_uint, c_void};
 use std::ptr;
 
 const TTBC_FILE_FORMAT_MISC_FONTS: c_int = 41;
+const AUTO: c_int = 0;
+const UTF8: c_int = 1;
+const UTF16BE: c_int = 2;
+const UTF16LE: c_int = 3;
+const RAW: c_int = 4;
+const ICUMAPPING: c_int = 5;
+#[cfg(target_endian = "big")]
+const US_NATIVE_UTF16: c_int = UTF16BE;
+#[cfg(target_endian = "little")]
+const US_NATIVE_UTF16: c_int = UTF16LE;
 const K_FORM_BYTES: u16 = 1;
 #[cfg(target_endian = "big")]
 const UTF16_NATIVE: u16 = 3;
@@ -21,6 +31,8 @@ extern "C" {
     fn ttstub_input_get_size(handle: usize) -> libc::size_t;
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
     fn ttstub_input_close(handle: usize) -> c_int;
+    fn xetex_ucnv_open(name: *const c_char, out_err: *mut c_int) -> *mut c_void;
+    fn xetex_ucnv_close(cnv: *mut c_void);
     fn TECkit_CreateConverter(
         mapping: *const u8,
         mapping_size: u32,
@@ -40,6 +52,8 @@ extern "C" {
         input_is_complete: u8,
     ) -> i64;
     fn TECkit_ResetConverter(converter: *mut c_void) -> i64;
+    fn hb_tag_from_string(str_: *const c_char, len: c_int) -> u32;
+    fn maketexstring(s: *const c_char) -> c_int;
     fn print_raw_char(s: i32, set_trick_count: bool);
     fn print_char(s: i32);
     fn font_mapping_warning(mapping_name: *const c_void, mapping_name_len: i32, warning_type: i32);
@@ -162,6 +176,121 @@ pub unsafe extern "C" fn read_rgb_a(cp: *mut *const c_char) -> c_uint {
     }
 
     rgb_value
+}
+
+// translated from xetex-ext.c:127 (get_encoding_mode_and_info)
+#[no_mangle]
+pub unsafe extern "C" fn get_encoding_mode_and_info(info: *mut i32) -> c_int {
+    let name_of_file = crate::globals::name_of_file();
+    *info = 0;
+
+    if libc::strcasecmp(name_of_file, c"auto".as_ptr()) == 0 {
+        return AUTO;
+    }
+    if libc::strcasecmp(name_of_file, c"utf8".as_ptr()) == 0 {
+        return UTF8;
+    }
+    if libc::strcasecmp(name_of_file, c"utf16".as_ptr()) == 0 {
+        return US_NATIVE_UTF16;
+    }
+    if libc::strcasecmp(name_of_file, c"utf16be".as_ptr()) == 0 {
+        return UTF16BE;
+    }
+    if libc::strcasecmp(name_of_file, c"utf16le".as_ptr()) == 0 {
+        return UTF16LE;
+    }
+    if libc::strcasecmp(name_of_file, c"bytes".as_ptr()) == 0 {
+        return RAW;
+    }
+
+    let mut err = 0;
+    let cnv = xetex_ucnv_open(name_of_file, &mut err);
+    if cnv.is_null() {
+        crate::output::begin_diagnostic();
+        crate::output::print_nl(b'U' as i32);
+        crate::output::print_cstr(c"nknown encoding `".as_ptr());
+        crate::output::print_cstr(name_of_file);
+        crate::output::print_cstr(c"'; reading as raw bytes".as_ptr());
+        crate::output::end_diagnostic(true);
+        RAW
+    } else {
+        xetex_ucnv_close(cnv);
+        *info = maketexstring(name_of_file);
+        ICUMAPPING
+    }
+}
+
+// translated from xetex-ext.c:173 (read_tag_with_param)
+#[no_mangle]
+pub unsafe extern "C" fn read_tag_with_param(cp: *const c_char, param: *mut c_int) -> u32 {
+    let mut cp2 = cp;
+    while peek(cp2) != 0
+        && peek(cp2) != b':'
+        && peek(cp2) != b';'
+        && peek(cp2) != b','
+        && peek(cp2) != b'='
+    {
+        cp2 = cp2.add(1);
+    }
+
+    let tag = hb_tag_from_string(cp, cp2.offset_from(cp) as c_int);
+
+    let mut cp = cp2;
+    if peek(cp) == b'=' {
+        let mut neg = false;
+        cp = cp.add(1);
+        if peek(cp) == b'-' {
+            neg = true;
+            cp = cp.add(1);
+        }
+        while peek(cp).is_ascii_digit() {
+            *param = *param * 10 + (peek(cp) - b'0') as c_int;
+            cp = cp.add(1);
+        }
+        if neg {
+            *param = -*param;
+        }
+    }
+
+    tag
+}
+
+// translated from xetex-ext.c:204 (readFeatureNumber)
+#[no_mangle]
+pub unsafe extern "C" fn readFeatureNumber(
+    mut s: *const c_char,
+    e: *const c_char,
+    f: *mut u32,
+    v: *mut c_int,
+) -> bool {
+    *f = 0;
+    *v = 0;
+    if !peek(s).is_ascii_digit() {
+        return false;
+    }
+    while peek(s).is_ascii_digit() {
+        *f = *f * 10 + (peek(s) - b'0') as u32;
+        s = s.add(1);
+    }
+    while peek(s) == b' ' || peek(s) == b'\t' {
+        s = s.add(1);
+    }
+    if peek(s) != b'=' {
+        return false;
+    }
+    s = s.add(1);
+
+    if !peek(s).is_ascii_digit() {
+        return false;
+    }
+    while peek(s).is_ascii_digit() {
+        *v = *v * 10 + (peek(s) - b'0') as c_int;
+        s = s.add(1);
+    }
+    while peek(s) == b' ' || peek(s) == b'\t' {
+        s = s.add(1);
+    }
+    s == e
 }
 
 // translated from xetex-ext.c:173 (print_utf8_str)
@@ -384,6 +513,64 @@ pub unsafe extern "C" fn readCommonFeatures(
     0
 }
 
+// translated from xetex-ext.c:440 (splitFontName)
+#[no_mangle]
+pub unsafe extern "C" fn splitFontName(
+    mut name: *mut c_char,
+    var: *mut *mut c_char,
+    feat: *mut *mut c_char,
+    end: *mut *mut c_char,
+    index: *mut c_int,
+) {
+    *var = ptr::null_mut();
+    *feat = ptr::null_mut();
+    *index = 0;
+
+    if *name == b'[' as c_char {
+        let mut within_file_name = true;
+        name = name.add(1);
+        while *name != 0 {
+            if within_file_name && *name == b']' as c_char {
+                within_file_name = false;
+                if (*var).is_null() {
+                    *var = name;
+                }
+            } else if *name == b':' as c_char {
+                if within_file_name && (*var).is_null() {
+                    *var = name;
+                    name = name.add(1);
+                    while *name >= b'0' as c_char && *name <= b'9' as c_char {
+                        *index = *index * 10 + (*name - b'0' as c_char) as c_int;
+                        name = name.add(1);
+                    }
+                    name = name.sub(1);
+                } else if !within_file_name && (*feat).is_null() {
+                    *feat = name;
+                }
+            }
+            name = name.add(1);
+        }
+        *end = name;
+    } else {
+        while *name != 0 {
+            if *name == b'/' as c_char && (*var).is_null() && (*feat).is_null() {
+                *var = name;
+            } else if *name == b':' as c_char && (*feat).is_null() {
+                *feat = name;
+            }
+            name = name.add(1);
+        }
+        *end = name;
+    }
+
+    if (*feat).is_null() {
+        *feat = name;
+    }
+    if (*var).is_null() {
+        *var = *feat;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,5 +607,73 @@ mod tests {
 
         assert_eq!(unsafe { read_rgb_a(&mut ptr) }, 0x000000FF);
         assert_eq!(unsafe { *ptr }, b'x' as c_char);
+    }
+
+    #[test]
+    fn read_feature_number_requires_number_setting_and_full_consumption() {
+        let input = CString::new("123 =45").unwrap();
+        let mut feature = 999;
+        let mut value = 999;
+
+        assert!(unsafe {
+            readFeatureNumber(
+                input.as_ptr(),
+                input.as_ptr().add(7),
+                &mut feature,
+                &mut value,
+            )
+        });
+        assert_eq!(feature, 123);
+        assert_eq!(value, 45);
+
+        let trailing = CString::new("123 =45x").unwrap();
+        assert!(!unsafe {
+            readFeatureNumber(
+                trailing.as_ptr(),
+                trailing.as_ptr().add(8),
+                &mut feature,
+                &mut value,
+            )
+        });
+    }
+
+    #[test]
+    fn split_font_name_matches_bracket_and_unbracketed_forms() {
+        let mut bracketed = CString::new("[font/name.ttf:2]:color=FF0000").unwrap().into_bytes_with_nul();
+        let mut var = ptr::null_mut();
+        let mut feat = ptr::null_mut();
+        let mut end = ptr::null_mut();
+        let mut index = -1;
+
+        unsafe {
+            splitFontName(
+                bracketed.as_mut_ptr() as *mut c_char,
+                &mut var,
+                &mut feat,
+                &mut end,
+                &mut index,
+            );
+            let base = bracketed.as_mut_ptr() as *mut c_char;
+            assert_eq!(var.offset_from(base), 14);
+            assert_eq!(feat.offset_from(base), 17);
+            assert_eq!(end.offset_from(base), 30);
+        }
+        assert_eq!(index, 2);
+
+        let mut named = CString::new("Font/Bold:script=latn").unwrap().into_bytes_with_nul();
+        unsafe {
+            splitFontName(
+                named.as_mut_ptr() as *mut c_char,
+                &mut var,
+                &mut feat,
+                &mut end,
+                &mut index,
+            );
+            let base = named.as_mut_ptr() as *mut c_char;
+            assert_eq!(var.offset_from(base), 4);
+            assert_eq!(feat.offset_from(base), 9);
+            assert_eq!(end.offset_from(base), 21);
+        }
+        assert_eq!(index, 0);
     }
 }

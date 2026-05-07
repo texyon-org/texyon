@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 83.
+Last updated: session 84.
 
 
 ## Core engine files (to translate)
@@ -45,7 +45,7 @@ Last updated: session 83.
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
-| xetex-ext.c                  |  1915 |      47 | `src/ext.rs`                      | IN PROGRESS — 20% |
+| xetex-ext.c                  |  1773 |      42 | `src/ext.rs`                      | IN PROGRESS — 26% |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
@@ -525,7 +525,7 @@ Status: DONE (session 80).
 
 ### Phase 13 — xetex-ext.c helpers (target: `src/ext.rs`)
 
-Status: IN PROGRESS (session 83).
+Status: IN PROGRESS (session 84).
 
 | # | Function      | Line | Status |
 |--:|---------------|-----:|--------|
@@ -540,6 +540,10 @@ Status: IN PROGRESS (session 83).
 | 9 | `load_tfm_font_mapping` | 251 | MIGRATED (session 83) |
 |10 | `apply_tfm_font_mapping` | 263 | MIGRATED (session 83) |
 |11 | `readCommonFeatures` | 310 | MIGRATED (session 83) |
+|12 | `get_encoding_mode_and_info` | 127 | MIGRATED (session 84) |
+|13 | `read_tag_with_param` (static) | 173 | MIGRATED (session 84) |
+|14 | `readFeatureNumber` (static) | 204 | MIGRATED (session 84) |
+|15 | `splitFontName` (static) | 440 | MIGRATED (session 84) |
 
 Session 83 also moved the former `saved_mapping_name` file-static into
 Rust as `SAVED_MAPPING_NAME`.

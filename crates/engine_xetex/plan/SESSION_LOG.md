@@ -32,6 +32,50 @@ template.
 
 ---
 
+## Session 84 — 2026-05-07 — xetex-ext.c parser helpers
+
+**Goal:** Continue `xetex-ext.c` by translating the small encoding and
+font-feature parsing helpers that still feed the C font-loading path.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 83
+
+**Work done:**
+- Translated `get_encoding_mode_and_info` to `src/ext.rs`.
+- Translated three former C file-static helpers to Rust while leaving C
+  prototypes for the remaining C callers:
+  `read_tag_with_param`, `readFeatureNumber`, and `splitFontName`.
+- Added focused unit tests for `readFeatureNumber` and `splitFontName`.
+- Reduced `xetex-ext.c` from 1,915 LOC / ~47 C bodies to 1,773 LOC / ~42 C
+  bodies.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 84
+
+**Surprises / gotchas:**
+- Direct `ucnv_open`/`ucnv_close` declarations built the library but failed
+  when linking the full `tectonic` test binary. The Rust translation now uses
+  the existing `xetex_ucnv_open`/`xetex_ucnv_close` bridge functions from
+  `xetex-io.c`, which handle the ICU symbol setup already used elsewhere.
+- `readFeatureNumber` permits whitespace before `=`, but not after it; the
+  unit test was adjusted to match the C parser exactly.
+
+**For the next session:**
+- Continue `xetex-ext.c`. Good candidates are smaller OpenType/Graphite
+  getters and printing helpers (`ot_font_get*`, `gr_font_get*`,
+  `gr_print_font_name`) before attempting the larger `loadOTfont` or
+  native-node measurement paths.
+
+---
+
 ## Session 83 — 2026-05-07 — xetex-ext.c mapping feature helpers
 
 **Goal:** Continue `xetex-ext.c` by moving the top-of-file printing and
