@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 85.
+Last updated: session 86.
 
 
 ## Core engine files (to translate)
@@ -45,7 +45,7 @@ Last updated: session 85.
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
-| xetex-ext.c                  |  1582 |      33 | `src/ext.rs`                      | IN PROGRESS — 42% |
+| xetex-ext.c                  |  1370 |      21 | `src/ext.rs`                      | IN PROGRESS — 63% |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
@@ -525,7 +525,7 @@ Status: DONE (session 80).
 
 ### Phase 13 — xetex-ext.c helpers (target: `src/ext.rs`)
 
-Status: IN PROGRESS (session 85).
+Status: IN PROGRESS (session 86).
 
 | # | Function      | Line | Status |
 |--:|---------------|-----:|--------|
@@ -553,6 +553,18 @@ Status: IN PROGRESS (session 85).
 |22 | `gr_print_font_name` | 651 | MIGRATED (session 85) |
 |23 | `gr_font_get_named` | 670 | MIGRATED (session 85) |
 |24 | `gr_font_get_named_1` | 683 | MIGRATED (session 85) |
+|25 | `snap_zone` (static) | 777 | MIGRATED (session 86, bf560133 — private Rust fn) |
+|26 | `get_native_char_height_depth` | 785 | MIGRATED (session 86, bf560133) |
+|27 | `getnativecharht` | 822 | MIGRATED (session 86, bf560133) |
+|28 | `getnativechardp` | 830 | MIGRATED (session 86, bf560133) |
+|29 | `get_native_char_sidebearings` | 838 | MIGRATED (session 86, bf560133) |
+|30 | `get_glyph_bounds` | 862 | MIGRATED (session 86, bf560133) |
+|31 | `getnativecharic` | 889 | MIGRATED (session 86, bf560133) |
+|32 | `getnativecharwd` | 900 | MIGRATED (session 86, bf560133) |
+|33 | `map_char_to_glyph` | 1261 | MIGRATED (session 86, bf560133) |
+|34 | `map_glyph_to_index` | 1278 | MIGRATED (session 86, bf560133) |
+|35 | `get_font_char_range` | 1293 | MIGRATED (session 86, bf560133) |
+|36 | `print_glyph_name` | 1538 | MIGRATED (session 86, bf560133) |
 
 Session 83 also moved the former `saved_mapping_name` file-static into
 Rust as `SAVED_MAPPING_NAME`.

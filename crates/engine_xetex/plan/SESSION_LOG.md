@@ -32,6 +32,73 @@ template.
 
 ---
 
+## Session 86 — 2026-05-07 — xetex-ext.c char metric helpers
+
+**Goal:** Translate the small native glyph and character metric wrappers
+from `xetex-ext.c` to `src/ext.rs`, as recommended by session 85.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 85
+
+**Work done:**
+- Added FFI declarations to `src/ext.rs` extern "C" block:
+  `getGlyphSidebearings`, `getGlyphWidthFromEngine`, `mapGlyphToIndex`,
+  `getFontCharRange`, `getGlyphName`, `freeGlyphName`, `get_cp_code`.
+- Added `LEFT_SIDE` and `RIGHT_SIDE` constants.
+- Translated 12 functions from `xetex-ext.c` to `src/ext.rs`:
+  - `snap_zone` (static, line 777 — private Rust fn)
+  - `get_native_char_height_depth` (line 785)
+  - `getnativecharht` (line 822)
+  - `getnativechardp` (line 830)
+  - `get_native_char_sidebearings` (line 838)
+  - `get_glyph_bounds` (line 862)
+  - `getnativecharic` (line 889)
+  - `getnativecharwd` (line 900)
+  - `map_char_to_glyph` (line 1261)
+  - `map_glyph_to_index` (line 1278)
+  - `get_font_char_range` (line 1293)
+  - `print_glyph_name` (line 1538)
+- Deleted corresponding C bodies. Commit: bf560133.
+- `xetex-ext.c` reduced from 1,582 LOC / ~33 C bodies to ~1,370 LOC / ~21 C bodies.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 86
+
+**Surprises / gotchas:**
+- The C `print_glyph_name` has a bug: `freeGlyphName(s)` is called after
+  `s` is advanced through the while loop — passing a pointer past the
+  allocation start, which is UB. The Rust translation uses a separate
+  cursor `p` and frees the original `s` pointer correctly.
+- `snap_zone` was `static` in C so it has no linker symbol; it was
+  translated as a private Rust function (no `#[no_mangle]`), with
+  `get_native_char_height_depth` calling it directly.
+- The `QUAD`, `X_HEIGHT`, `CAP_HEIGHT` C macros expand to
+  `font_info[N+param_base[f]].b32.s1`; translated as
+  `font_info_b32s1(N + param_base(f))` via the globals accessors.
+
+**For the next session:**
+- Continue `xetex-ext.c`. Remaining C bodies (~21): `linebreak_start`,
+  `linebreak_next`, `loadOTfont`, `find_native_font`, `cgColorToRGBA32`
+  (macOS), `makeXDVGlyphArrayData`, `make_font_def`, `apply_mapping`,
+  `real_get_native_glyph`, `store_justified_native_glyphs`,
+  `measure_native_node`, `real_get_native_italic_correction`,
+  `real_get_native_glyph_italic_correction`, `measure_native_glyph`,
+  `real_get_native_word_cp`, and the `aat_*` macOS stubs.
+- Good next targets: `real_get_native_glyph` (small, 9 lines),
+  `real_get_native_word_cp` (23 lines), `real_get_native_italic_correction`
+  (~25 lines), `real_get_native_glyph_italic_correction` (~18 lines)
+  — all use the node-memory layout macros, so translate them as a cluster.
+
+---
+
 ## Session 85 — 2026-05-07 — xetex-ext.c font getter helpers
 
 **Goal:** Continue `xetex-ext.c` by translating the cohesive
