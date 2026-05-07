@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |          6 |
+| NOT STARTED    |          5 |
 | IN PROGRESS    |          1 |
-| DONE           |          9 |
+| DONE           |         10 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 79.
+Last updated: session 80.
 
 
 ## Core engine files (to translate)
@@ -40,13 +40,13 @@ Last updated: session 79.
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
-| xetex-linebreak.c            |     0 |      0 | `src/linebreak.rs`                | DONE |
+| xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |  1283 |    ~?? | `src/synctex.rs`                  | NOT STARTED  |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
 | xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
-| xetex-pic.c                  |   664 |    ~?? | `src/pic.rs`                      | NOT STARTED  |
+| xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
 
@@ -505,7 +505,25 @@ New Rust module `src/save.rs` created for save-stack management.
 |195| `load_native_font`        |        6284 | `src/scan.rs`   | MIGRATED (session 65, bd70d52b) |
 |196| `read_font_info`          |        6350 | `src/scan.rs`   | MIGRATED (session 66, 78da31d7) |
 
-### Phases 12+
+### Phase 12 — xetex-pic.c (target: `src/pic.rs`)
+
+Status: DONE (session 80).
+
+| # | Function                   | Line | Status |
+|--:|----------------------------|-----:|--------|
+| 1 | `count_pdf_file_pages`     |   76 | MIGRATED (session 80, cb2b9ec9) |
+| 2 | `pdf_get_rect` (static)    |   99 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
+| 3 | `get_image_size_in_inches` (static) | 191 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
+| 4 | `find_pic_file` (static)   |  224 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
+| 5 | `transform_point` (static) |  258 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
+| 6 | `make_identity` (static)   |  270 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
+| 7 | `make_scale` (static)      |  282 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
+| 8 | `make_translation` (static)|  294 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
+| 9 | `make_rotation` (static)   |  306 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
+|10 | `transform_concat` (static)|  318 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
+|11 | `load_picture`             |  336 | MIGRATED (session 80, cb2b9ec9) |
+
+### Phases 13+
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.

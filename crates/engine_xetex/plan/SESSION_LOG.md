@@ -32,6 +32,61 @@ template.
 
 ---
 
+## Session 80 — 2026-05-07 — xetex-linebreak.c cleanup + xetex-pic.c
+
+**Goal:** Remove the disabled `#if 0` reference blocks from
+`xetex-linebreak.c`, then translate `xetex-pic.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 79
+
+**Work done:**
+- Deleted both disabled `#if 0` blocks (the `line_break` and `try_break`
+  reference bodies) from `xetex-linebreak.c`, along with the macro defines
+  (`AWFUL_BAD`, `VERY_LOOSE_FIT`, `LOOSE_FIT`, `DECENT_FIT`, `TIGHT_FIT`,
+  `LAST_ACTIVE`) and file-local statics (`second_pass`, `fewest_demerits`,
+  `actual_looseness`, `line_diff`, `init_cur_lang`, `last_line_fill`) that
+  were only used inside those blocks. The non-static globals that Rust
+  accesses via `extern "C"` were retained. Commit 3c2b4116.
+- Created `src/pic.rs` with Rust translations of all 11 functions from
+  `xetex-pic.c`: `count_pdf_file_pages`, `load_picture`, and their 9
+  private helpers (`pdf_get_rect`, `get_image_size_in_inches`,
+  `find_pic_file`, `transform_point`, `make_identity`, `make_scale`,
+  `make_translation`, `make_rotation`, `transform_concat`). All dpx/bridge
+  calls remain via `extern "C"`. `Fix2D`/`D2Fix` still call into
+  `xetex-ext.c` via FFI. `xetex-pic.c` is now a 48-LOC stub of includes.
+  Commit cb2b9ec9.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 80
+
+**Surprises / gotchas:**
+- `pdf_tmatrix` in dpx has fields `a, b, c, d, e, f` (six doubles), not
+  `a, b, c, d, x, y`. The Rust struct must match this layout exactly.
+- The xetex-pic.c `transform_t` local struct uses `x, y` for translation
+  while dpx's `pdf_tmatrix` uses `e, f`. These are different types that
+  happen to be used together in `pdf_get_rect`.
+- `load_picture`'s `make_translation` call uses `-(int32_t) xmin` casts:
+  the C code first truncates the float to int before negating. The Rust
+  translation preserves this with `-(xmin as i32 as f64)`.
+
+**For the next session:**
+- Continue with the next NOT STARTED file. Candidates by size: `xetex-synctex.c`
+  (1,283 LOC), `xetex-ext.c` (2,170 LOC), `xetex-shipout.c` (2,451 LOC),
+  `xetex-math.c` (3,833 LOC), `xetex-ini.c` (3,881 LOC).
+- Per the migration order, Phase 7 (math) is next, but `xetex-synctex.c`
+  is much smaller. A session on synctex would be tractable.
+
+---
+
 ## Session 79 — 2026-05-07 — xetex-linebreak.c: line_break
 
 **Goal:** Translate the remaining compiled `line_break` body to Rust and finish
