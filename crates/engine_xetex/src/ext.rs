@@ -130,6 +130,8 @@ extern "C" {
         name: *const c_char,
         namelength: c_int,
     ) -> c_long;
+    fn getGlyphItalCorr(engine: XeTeXLayoutEngine, glyph_id: u32) -> f32;
+    fn getGlyphWidth(font: XeTeXFont, gid: u32) -> f32;
     fn getGlyphSidebearings(
         engine: XeTeXLayoutEngine,
         glyph_id: u32,
@@ -854,6 +856,111 @@ pub unsafe extern "C" fn gr_font_get_named_1(
         _ => {}
     }
     rval as i32
+}
+
+// translated from xetex-ext.c:921 (real_get_native_glyph)
+// glyph info buffer layout: [FixedPoint(8b) * glyph_count][u16 * glyph_count]
+#[no_mangle]
+pub unsafe extern "C" fn real_get_native_glyph(p_node: *mut c_void, index: u32) -> u16 {
+    let node = p_node as *mut crate::mem_types::MemoryWord;
+    let glyph_count = (*node.add(4)).b16.s0 as usize;
+    let glyph_info = (*node.add(5)).ptr as *const u8;
+    let glyph_ids = glyph_info.add(glyph_count * 8) as *const u16;
+    if index as usize >= glyph_count {
+        0
+    } else {
+        *glyph_ids.add(index as usize)
+    }
+}
+
+// translated from xetex-ext.c:1183 (real_get_native_italic_correction)
+#[no_mangle]
+pub unsafe extern "C" fn real_get_native_italic_correction(p_node: *mut c_void) -> i32 {
+    let node = p_node as *mut crate::mem_types::MemoryWord;
+    let f = (*node.add(4)).b16.s2 as i32; // native_font
+    let n = (*node.add(4)).b16.s0 as usize; // native_glyph_count
+    if n > 0 {
+        let glyph_info = (*node.add(5)).ptr as *const u8; // native_glyph_info_ptr
+        let glyph_ids = glyph_info.add(n * 8) as *const u16;
+        let last_glyph = *glyph_ids.add(n - 1);
+        if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+            return D2Fix(
+                getGlyphItalCorr(
+                    crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine,
+                    last_glyph as u32,
+                ) as c_double,
+            ) + crate::globals::font_letter_space_entry(f);
+        }
+    }
+    0
+}
+
+// translated from xetex-ext.c:1207 (real_get_native_glyph_italic_correction)
+#[no_mangle]
+pub unsafe extern "C" fn real_get_native_glyph_italic_correction(p_node: *mut c_void) -> i32 {
+    let node = p_node as *mut crate::mem_types::MemoryWord;
+    let gid = (*node.add(4)).b16.s1; // native_glyph = native_length
+    let f = (*node.add(4)).b16.s2 as i32; // native_font
+    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+        return D2Fix(
+            getGlyphItalCorr(
+                crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine,
+                gid as u32,
+            ) as c_double,
+        );
+    }
+    0
+}
+
+// translated from xetex-ext.c:1224 (measure_native_glyph)
+#[no_mangle]
+pub unsafe extern "C" fn measure_native_glyph(p_node: *mut c_void, use_glyph_metrics: c_int) {
+    let node = p_node as *mut crate::mem_types::MemoryWord;
+    let gid = (*node.add(4)).b16.s1; // native_glyph = native_length
+    let f = (*node.add(4)).b16.s2 as i32; // native_font
+    let mut ht = 0.0f32;
+    let mut dp = 0.0f32;
+
+    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+        let engine = crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine;
+        let font_inst = getFont(engine);
+        // node_width(node) = node[1].b32.s1
+        (*node.add(1)).b32.s1 = D2Fix(getGlyphWidth(font_inst, gid as u32) as c_double);
+        if use_glyph_metrics != 0 {
+            getGlyphHeightDepth(engine, gid as u32, &mut ht, &mut dp);
+        }
+    } else {
+        _tt_abort(b"bad native font flag in `measure_native_glyph`\0".as_ptr() as *const c_char);
+    }
+
+    if use_glyph_metrics != 0 {
+        (*node.add(3)).b32.s1 = D2Fix(ht as c_double); // node_height
+        (*node.add(2)).b32.s1 = D2Fix(dp as c_double); // node_depth
+    } else {
+        (*node.add(3)).b32.s1 = crate::globals::height_base_entry(f); // node_height = height_base[f]
+        (*node.add(2)).b32.s1 = crate::globals::depth_base_entry(f); // node_depth = depth_base[f]
+    }
+}
+
+// translated from xetex-ext.c:1559 (real_get_native_word_cp)
+#[no_mangle]
+pub unsafe extern "C" fn real_get_native_word_cp(p_node: *mut c_void, side: c_int) -> i32 {
+    let node = p_node as *mut crate::mem_types::MemoryWord;
+    let glyph_count = (*node.add(4)).b16.s0;
+    let f = (*node.add(4)).b16.s2 as i32; // native_font
+    let glyph_info = (*node.add(5)).ptr as *const u8; // native_glyph_info_ptr
+    let glyph_ids = glyph_info.add(glyph_count as usize * 8) as *const u16;
+
+    if glyph_count == 0 {
+        return 0;
+    }
+
+    let actual_glyph = match side {
+        LEFT_SIDE => *glyph_ids,
+        RIGHT_SIDE => *glyph_ids.add(glyph_count as usize - 1),
+        _ => unreachable!(), // C: assert(0) — should not reach this point
+    };
+    get_cp_code(f, actual_glyph as u32, side)
 }
 
 // translated from xetex-ext.c:777 (snap_zone) — private helper

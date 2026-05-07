@@ -773,18 +773,6 @@ retry:
     }
 }
 
-uint16_t
-real_get_native_glyph(void* pNode, unsigned int index)
-{
-    memory_word* node = (memory_word*)pNode;
-    FixedPoint* locations = (FixedPoint*)native_glyph_info_ptr(node);
-    uint16_t* glyphIDs = (uint16_t*)(locations + native_glyph_count(node));
-    if (index >= native_glyph_count(node))
-        return 0;
-    else
-        return glyphIDs[index];
-}
-
 void
 store_justified_native_glyphs(void* pNode)
 {
@@ -1035,84 +1023,6 @@ measure_native_node(void* pNode, int use_glyph_metrics)
     }
 }
 
-Fixed
-real_get_native_italic_correction(void* pNode)
-{
-    memory_word* node = (memory_word*) pNode;
-    unsigned int f = native_font(node);
-    unsigned int n = native_glyph_count(node);
-    if (n > 0) {
-        FixedPoint* locations = (FixedPoint*)native_glyph_info_ptr(node);
-        uint16_t* glyphIDs = (uint16_t*)(locations + n);
-
-#ifdef XETEX_MAC
-        if (font_area[f] == AAT_FONT_FLAG)
-            return D2Fix(GetGlyphItalCorr_AAT((CFDictionaryRef)(font_layout_engine[f]), glyphIDs[n-1]))
-                    + font_letter_space[f];
-#endif
-        if (font_area[f] == OTGR_FONT_FLAG)
-            return D2Fix(getGlyphItalCorr((XeTeXLayoutEngine)(font_layout_engine[f]), glyphIDs[n-1]))
-                    + font_letter_space[f];
-    }
-
-    return 0;
-}
-
-
-Fixed
-real_get_native_glyph_italic_correction(void* pNode)
-{
-    memory_word* node = (memory_word*) pNode;
-    uint16_t gid = native_glyph(node);
-    unsigned int f = native_font(node);
-
-#ifdef XETEX_MAC
-    if (font_area[f] == AAT_FONT_FLAG)
-        return D2Fix(GetGlyphItalCorr_AAT((CFDictionaryRef)(font_layout_engine[f]), gid));
-#endif
-    if (font_area[f] == OTGR_FONT_FLAG)
-        return D2Fix(getGlyphItalCorr((XeTeXLayoutEngine)(font_layout_engine[f]), gid));
-
-    return 0;   /* can't actually happen */
-}
-
-void
-measure_native_glyph(void* pNode, int use_glyph_metrics)
-{
-    memory_word* node = (memory_word*) pNode;
-    uint16_t gid = native_glyph(node);
-    unsigned int f = native_font(node);
-
-    float ht = 0.0;
-    float dp = 0.0;
-
-#ifdef XETEX_MAC
-    if (font_area[f] == AAT_FONT_FLAG) {
-        CFDictionaryRef attributes = (CFDictionaryRef)(font_layout_engine[f]);
-        node_width(node) = D2Fix(GetGlyphWidth_AAT(attributes, gid));
-        if (use_glyph_metrics)
-            GetGlyphHeightDepth_AAT(attributes, gid, &ht, &dp);
-    } else
-#endif
-    if (font_area[f] == OTGR_FONT_FLAG) {
-        XeTeXLayoutEngine engine = (XeTeXLayoutEngine)font_layout_engine[f];
-        XeTeXFont fontInst = getFont(engine);
-        node_width(node) = D2Fix(getGlyphWidth(fontInst, gid));
-        if (use_glyph_metrics)
-            getGlyphHeightDepth(engine, gid, &ht, &dp);
-    } else {
-        _tt_abort("bad native font flag in `measure_native_glyph`");
-    }
-
-    if (use_glyph_metrics) {
-        node_height(node) = D2Fix(ht);
-        node_depth(node) = D2Fix(dp);
-    } else {
-        node_height(node) = height_base[f];
-        node_depth(node) = depth_base[f];
-    }
-}
-
 /* these are here, not XeTeX_mac.c, because we need stubs on other platforms */
 void
 aat_get_font_metrics(CFDictionaryRef attributes, int32_t* ascent, int32_t* descent, int32_t* xheight, int32_t* capheight, int32_t* slant)
@@ -1344,27 +1254,3 @@ aat_print_font_name(int what, CFDictionaryRef attributes, int param1, int param2
 #endif
 }
 
-int32_t real_get_native_word_cp(void* pNode, int side)
-{
-    memory_word* node = (memory_word*)pNode;
-    FixedPoint* locations = (FixedPoint*)native_glyph_info_ptr(node);
-    uint16_t* glyphIDs = (uint16_t*)(locations + native_glyph_count(node));
-    uint16_t glyphCount = native_glyph_count(node);
-    int32_t f = native_font(node);
-    uint16_t actual_glyph;
-
-    if (glyphCount == 0)
-        return 0;
-
-    switch (side) {
-    case LEFT_SIDE:
-        actual_glyph = *glyphIDs;
-        break;
-    case RIGHT_SIDE:
-        actual_glyph = glyphIDs[glyphCount - 1];
-        break;
-    default:
-        assert(0); // we should not reach this point
-    }
-    return get_cp_code(f, actual_glyph, side);
-}
