@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |          4 |
-| IN PROGRESS    |          1 |
+| NOT STARTED    |          3 |
+| IN PROGRESS    |          2 |
 | DONE           |         11 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 81.
+Last updated: session 82.
 
 
 ## Core engine files (to translate)
@@ -45,7 +45,7 @@ Last updated: session 81.
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
-| xetex-ext.c                  |  2170 |    ~?? | `src/ext.rs`                      | NOT STARTED  |
+| xetex-ext.c                  |  2088 |      55 | `src/ext.rs`                      | IN PROGRESS — 7% |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
@@ -523,7 +523,18 @@ Status: DONE (session 80).
 |10 | `transform_concat` (static)|  318 | MIGRATED (session 80, cb2b9ec9 — private Rust fn) |
 |11 | `load_picture`             |  336 | MIGRATED (session 80, cb2b9ec9) |
 
-### Phases 13+
+### Phase 13 — xetex-ext.c helpers (target: `src/ext.rs`)
+
+Status: IN PROGRESS (session 82).
+
+| # | Function      | Line | Status |
+|--:|---------------|-----:|--------|
+| 1 | `read_double` |  279 | MIGRATED (session 82) |
+| 2 | `read_rgb_a`  |  344 | MIGRATED (session 82) |
+| 3 | `D2Fix`       | 1882 | MIGRATED (session 82) |
+| 4 | `Fix2D`       | 1888 | MIGRATED (session 82) |
+
+### Phases 14+
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.

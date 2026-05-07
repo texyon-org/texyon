@@ -32,6 +32,49 @@ template.
 
 ---
 
+## Session 82 — 2026-05-07 — xetex-ext.c helper slice
+
+**Goal:** Start `xetex-ext.c` by translating a small, low-state helper group
+used by feature parsing and picture/font fixed-point conversion.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 81
+
+**Work done:**
+- Created `src/ext.rs` and added it to `src/lib.rs`.
+- Translated four public helpers from `xetex-ext.c`:
+  - `read_double` (xetex-ext.c:279)
+  - `read_rgb_a` (xetex-ext.c:344)
+  - `D2Fix` (xetex-ext.c:1882)
+  - `Fix2D` (xetex-ext.c:1888)
+- Added focused unit tests for `read_double` and `read_rgb_a` parsing behavior.
+- Removed the corresponding C bodies while keeping the existing header
+  prototypes for C callers.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 82
+
+**Surprises / gotchas:**
+- `read_double` accumulates decimal digits exactly like the C loop, so unit
+  tests must use tolerance rather than exact `f64` equality.
+- The first focused `cargo test -p tectonic_engine_xetex ext::tests` needed
+  escalation because Cargo had to write to the workspace-level target directory.
+
+**For the next session:**
+- Continue `xetex-ext.c`. Good next candidates are still near the top of the
+  file: `print_utf8_str`, `print_chars`, and the TFM mapping wrappers, before
+  taking on the larger native-font loading/layout functions.
+
+---
+
 ## Session 81 — 2026-05-07 — xetex-synctex.c
 
 **Goal:** Translate `xetex-synctex.c` (1,283 LOC, ~30 functions) to `src/synctex.rs`.

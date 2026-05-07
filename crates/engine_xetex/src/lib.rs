@@ -34,6 +34,7 @@ mod mem;
 #[allow(dead_code)]
 mod mem_types;
 mod engine_interface;
+mod ext;
 #[allow(dead_code)]
 mod texmfmp;
 mod errors;

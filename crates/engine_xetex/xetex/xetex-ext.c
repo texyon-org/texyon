@@ -275,40 +275,6 @@ apply_tfm_font_mapping(void* cnv, int c)
         return out[0];
 }
 
-double
-read_double(const char** s)
-{
-    int neg = 0;
-    double val = 0.0;
-    const char* cp = *s;
-
-    while (*cp == ' '|| *cp == '\t')
-        ++cp;
-    if (*cp == '-') {
-        neg = 1;
-        ++cp;
-    } else if (*cp == '+') {
-        ++cp;
-    }
-
-    while (*cp >= '0' && *cp <= '9') {
-        val = val * 10.0 + *cp - '0';
-        ++cp;
-    }
-    if (*cp == '.') {
-        double dec = 10.0;
-        ++cp;
-        while (*cp >= '0' && *cp <= '9') {
-            val = val + (*cp - '0') / dec;
-            ++cp;
-            dec = dec * 10.0;
-        }
-    }
-    *s = cp;
-
-    return neg ? -val : val;
-}
-
 static hb_tag_t
 read_tag_with_param(const char* cp, int* param)
 {
@@ -338,42 +304,6 @@ read_tag_with_param(const char* cp, int* param)
     }
 
     return tag;
-}
-
-unsigned int
-read_rgb_a(const char** cp)
-{
-    uint32_t rgbValue = 0;
-    uint32_t alpha = 0;
-    int i;
-    for (i = 0; i < 6; ++i) {
-        if ((**cp >= '0') && (**cp <= '9'))
-            rgbValue = (rgbValue << 4) + **cp - '0';
-        else if ((**cp >= 'A') && (**cp <= 'F'))
-            rgbValue = (rgbValue << 4) + **cp - 'A' + 10;
-        else if ((**cp >= 'a') && (**cp <= 'f'))
-            rgbValue = (rgbValue << 4) + **cp - 'a' + 10;
-        else
-            return 0x000000FF;
-        (*cp)++;
-    }
-    rgbValue <<= 8;
-    for (i = 0; i < 2; ++i) {
-        if ((**cp >= '0') && (**cp <= '9'))
-            alpha = (alpha << 4) + **cp - '0';
-        else if ((**cp >= 'A') && (**cp <= 'F'))
-            alpha = (alpha << 4) + **cp - 'A' + 10;
-        else if ((**cp >= 'a') && (**cp <= 'f'))
-            alpha = (alpha << 4) + **cp - 'a' + 10;
-        else
-            break;
-        (*cp)++;
-    }
-    if (i == 2)
-        rgbValue += alpha;
-    else
-        rgbValue += 0xFF;
-    return rgbValue;
 }
 
 int
@@ -1877,18 +1807,6 @@ get_font_char_range(int32_t font, int first)
         return getFontCharRange((XeTeXLayoutEngine)(font_layout_engine[font]), first);
     else
         _tt_abort("bad native font flag in `get_font_char_range'`");
-}
-
-Fixed D2Fix(double d)
-{
-    Fixed rval = (int)(d * 65536.0 + 0.5);
-    return rval;
-}
-
-double Fix2D(Fixed f)
-{
-    double rval = f / 65536.0;
-    return rval;
 }
 
 /* these are here, not XeTeX_mac.c, because we need stubs on other platforms */
