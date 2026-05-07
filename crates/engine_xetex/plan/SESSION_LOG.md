@@ -32,6 +32,68 @@ template.
 
 ---
 
+## Session 88 — 2026-05-08 — xetex-ext.c linebreak, XDV, font-def, and AAT helpers
+
+**Goal:** Translate linebreak iterators, XDV glyph-array serialisation,
+font-def packet writing, TECkit mapping, glyph justification, and
+macOS AAT stubs from `xetex-ext.c` to `src/ext.rs`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 87
+
+**Work done:**
+- Added new statics `BRK_ITER`, `BRK_LOCALE_STR_NUM`, `XDV_BUF_SIZE`,
+  `APPLY_MAPPING_OUT_LENGTH` (promoted from C file-statics).
+- Added `FixedPoint` repr-C struct for glyph-info buffer arithmetic.
+- Added `print_c_string` as a Rust helper (was a static inline in the C header).
+- Translated 13 C functions:
+  - `linebreak_start` / `linebreak_next` — ICU UBreakIterator + Graphite
+  - `makeXDVGlyphArrayData` — big-endian glyph-array serialisation
+  - `make_font_def` — XDV font-definition packet; SWAP32/SWAP16 → `to_be()` + `write_unaligned`
+  - `apply_mapping` — TECkit buffer mapping; `goto retry` → `loop {}`
+  - `store_justified_native_glyphs` — justified glyph relayout
+  - `aat_get_font_metrics`, `aat_font_get`, `aat_font_get_1`, `aat_font_get_2`,
+    `aat_font_get_named`, `aat_font_get_named_1`, `aat_print_font_name` — no-ops/stubs on Linux
+- Deleted all 13 C bodies plus file-statics `brkIter`, `brkLocaleStrNum`, `xdvBufSize`.
+- Fixed linker error: ICU exports version-suffixed symbols (`ubrk_open_74`).
+  Added ICU major-version detection to `build.rs` (parses `uvernum.h`) and
+  used `#[link_name = concat!("ubrk_open", env!("ICU_VERSION_SUFFIX"))]`.
+- Fixed `print_c_string`: was `static inline` in header, not an exported symbol.
+  Implemented as a Rust helper calling `print_char` per byte.
+- Commit: 932d70f1. xetex-ext.c reduced from 1,256 LOC / ~16 C bodies to 670 LOC / ~3 C bodies.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 88
+
+**Surprises / gotchas:**
+- ICU version-suffixed symbols: Rust FFI declarations must use `#[link_name]`
+  with the versioned name (e.g. `ubrk_open_74`). Solved portably by parsing
+  `U_ICU_VERSION_MAJOR_NUM` from `uvernum.h` in `build.rs` and emitting
+  `cargo:rustc-env=ICU_VERSION_SUFFIX=_74`.
+- `print_c_string` is a `static inline` in `xetex-xetexd.h`, not exported.
+  Cannot be called via FFI; must be re-implemented in Rust.
+- `store_justified_native_glyphs` calls `measure_native_node` which is still
+  in C. On Linux the `aat_*` stubs all return -1 or do nothing, as the
+  macOS CoreText code path is `#ifdef XETEX_MAC` guarded.
+
+**For the next session:**
+- Remaining 3 C bodies in `xetex-ext.c`:
+  - `loadOTfont` (static, complex — loads OpenType font via HarfBuzz)
+  - `find_native_font` (complex — searches system fonts via fontconfig)
+  - `measure_native_node` (very complex, ~200 lines — full shaping pipeline
+    including ICU UBiDi, HarfBuzz, Graphite)
+- Translate all 3 remaining functions to complete `xetex-ext.c`.
+
+---
+
 ## Session 87 — 2026-05-07 — xetex-ext.c native node helpers
 
 **Goal:** Translate the native-node accessor and glyph measurement

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 87.
+Last updated: session 88.
 
 
 ## Core engine files (to translate)
@@ -45,7 +45,7 @@ Last updated: session 87.
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
-| xetex-ext.c                  |  1256 |      ~16 | `src/ext.rs`                      | IN PROGRESS — 72% |
+| xetex-ext.c                  |   670 |       ~3 | `src/ext.rs`                      | IN PROGRESS — 95% |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
@@ -570,6 +570,24 @@ Status: IN PROGRESS (session 87).
 |39 | `real_get_native_glyph_italic_correction` | 1063 | MIGRATED (session 87, 3ff25d07) |
 |40 | `measure_native_glyph` | 1080 | MIGRATED (session 87, 3ff25d07) |
 |41 | `real_get_native_word_cp` | 1347 | MIGRATED (session 87, 3ff25d07) |
+|42 | `linebreak_start` | 1558 | MIGRATED (session 88, 932d70f1) |
+|43 | `linebreak_next` | 1612 | MIGRATED (session 88, 932d70f1) |
+|44 | `makeXDVGlyphArrayData` | 1641 | MIGRATED (session 88, 932d70f1) |
+|45 | `make_font_def` | 1714 | MIGRATED (session 88, 932d70f1) |
+|46 | `apply_mapping` | 1804 | MIGRATED (session 88, 932d70f1) |
+|47 | `store_justified_native_glyphs` | 1845 | MIGRATED (session 88, 932d70f1) |
+|48 | `aat_get_font_metrics` | 1876 | MIGRATED (session 88, 932d70f1 — no-op on Linux) |
+|49 | `aat_font_get` | 1892 | MIGRATED (session 88, 932d70f1 — returns -1 on Linux) |
+|50 | `aat_font_get_1` | 1901 | MIGRATED (session 88, 932d70f1 — returns -1 on Linux) |
+|51 | `aat_font_get_2` | 1912 | MIGRATED (session 88, 932d70f1 — returns -1 on Linux) |
+|52 | `aat_font_get_named` | 1925 | MIGRATED (session 88, 932d70f1 — returns -1 on Linux) |
+|53 | `aat_font_get_named_1` | 1936 | MIGRATED (session 88, 932d70f1 — returns -1 on Linux) |
+|54 | `aat_print_font_name` | 1949 | MIGRATED (session 88, 932d70f1 — no-op on Linux) |
+
+Session 88 also promoted `brkIter` → `BRK_ITER`, `brkLocaleStrNum` → `BRK_LOCALE_STR_NUM`,
+`xdvBufSize` → `XDV_BUF_SIZE` file-statics to Rust. Added ICU version detection in build.rs
+(reads `uvernum.h` → `ICU_VERSION_SUFFIX` env var) to resolve version-mangled symbols via
+`#[link_name = concat!("ubrk_open", env!("ICU_VERSION_SUFFIX"))]`.
 
 Session 83 also moved the former `saved_mapping_name` file-static into
 Rust as `SAVED_MAPPING_NAME`.
