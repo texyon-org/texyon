@@ -32,6 +32,57 @@ template.
 
 ---
 
+## Session 87 — 2026-05-07 — xetex-ext.c native node helpers
+
+**Goal:** Translate the native-node accessor and glyph measurement
+functions from `xetex-ext.c` to `src/ext.rs`, as recommended by session 86.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 86
+
+**Work done:**
+- Added FFI declarations `getGlyphItalCorr` and `getGlyphWidth` to
+  `src/ext.rs` extern "C" block.
+- Translated 5 functions from `xetex-ext.c` to `src/ext.rs`:
+  - `real_get_native_glyph` (line 921) — reads glyph ID from raw node
+    glyph-info buffer using pointer arithmetic
+  - `real_get_native_italic_correction` (line 1039)
+  - `real_get_native_glyph_italic_correction` (line 1063)
+  - `measure_native_glyph` (line 1080)
+  - `real_get_native_word_cp` (line 1347)
+- Deleted corresponding C bodies. Commit: 3ff25d07.
+- `xetex-ext.c` reduced from ~1,370 LOC / ~21 C bodies to 1,256 LOC / ~16 C bodies.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 87
+
+**Surprises / gotchas:**
+- Glyph-info buffer layout: `[FixedPoint(8b) × count][u16 × count]`.
+  The Rust translation uses `glyph_info.add(glyph_count * 8) as *const u16`
+  to locate the glyph-ID array without needing a `FixedPoint` struct.
+- `real_get_native_word_cp` uses a `switch` on `side` with no default
+  termination path — translated with `_ => 0` since an unreachable
+  `assert(0)` in C becomes an abort in Rust (safe to leave as dead code).
+
+**For the next session:**
+- Continue `xetex-ext.c`. Remaining C bodies (~16): `linebreak_start`,
+  `linebreak_next`, `loadOTfont`, `find_native_font`, `makeXDVGlyphArrayData`,
+  `make_font_def`, `apply_mapping`, `store_justified_native_glyphs`,
+  `measure_native_node` (very complex ~200 lines, requires ubidi/ICU FFI),
+  and the `aat_*` macOS stubs.
+- Good next targets: `makeXDVGlyphArrayData` (moderate complexity,
+  builds XDV glyph array from node), `make_font_def`, `apply_mapping`.
+
+---
+
 ## Session 86 — 2026-05-07 — xetex-ext.c char metric helpers
 
 **Goal:** Translate the small native glyph and character metric wrappers

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 86.
+Last updated: session 87.
 
 
 ## Core engine files (to translate)
@@ -45,7 +45,7 @@ Last updated: session 86.
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
-| xetex-ext.c                  |  1370 |      21 | `src/ext.rs`                      | IN PROGRESS — 63% |
+| xetex-ext.c                  |  1256 |      ~16 | `src/ext.rs`                      | IN PROGRESS — 72% |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
@@ -525,7 +525,7 @@ Status: DONE (session 80).
 
 ### Phase 13 — xetex-ext.c helpers (target: `src/ext.rs`)
 
-Status: IN PROGRESS (session 86).
+Status: IN PROGRESS (session 87).
 
 | # | Function      | Line | Status |
 |--:|---------------|-----:|--------|
@@ -565,6 +565,11 @@ Status: IN PROGRESS (session 86).
 |34 | `map_glyph_to_index` | 1278 | MIGRATED (session 86, bf560133) |
 |35 | `get_font_char_range` | 1293 | MIGRATED (session 86, bf560133) |
 |36 | `print_glyph_name` | 1538 | MIGRATED (session 86, bf560133) |
+|37 | `real_get_native_glyph` | 921 | MIGRATED (session 87, 3ff25d07) |
+|38 | `real_get_native_italic_correction` | 1039 | MIGRATED (session 87, 3ff25d07) |
+|39 | `real_get_native_glyph_italic_correction` | 1063 | MIGRATED (session 87, 3ff25d07) |
+|40 | `measure_native_glyph` | 1080 | MIGRATED (session 87, 3ff25d07) |
+|41 | `real_get_native_word_cp` | 1347 | MIGRATED (session 87, 3ff25d07) |
 
 Session 83 also moved the former `saved_mapping_name` file-static into
 Rust as `SAVED_MAPPING_NAME`.

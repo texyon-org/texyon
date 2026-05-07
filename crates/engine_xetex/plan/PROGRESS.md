@@ -100,6 +100,7 @@ cargo test -p tectonic --test tex-outputs
 |      84 | 2026-05-07 |     29 |    29 |     0 | xetex-ext.c: translate get_encoding_mode_and_info, feature-tag parsers, and splitFontName to src/ext.rs. All 4 suites pass. |
 |      85 | 2026-05-07 |     29 |    29 |     0 | xetex-ext.c: translate OpenType/Graphite font getters, font metrics, and release helper to src/ext.rs. All 4 suites pass. |
 |      86 | 2026-05-07 |     29 |    29 |     0 | xetex-ext.c: translate 12 char-metric helpers (snap_zone, get_native_char_height_depth, getnativechar{ht,dp,ic,wd}, get_native_char_sidebearings, get_glyph_bounds, map_char_to_glyph, map_glyph_to_index, get_font_char_range, print_glyph_name). All 4 suites pass. |
+|      87 | 2026-05-07 |     29 |    29 |     0 | xetex-ext.c: translate 5 native node helpers (real_get_native_glyph, real_get_native_italic_correction, real_get_native_glyph_italic_correction, measure_native_glyph, real_get_native_word_cp). All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -187,6 +188,7 @@ Passed count below the previous session's recorded value.
 |      83 | 12,497 |                  ~34,700 |      ~26.5% |
 |      84 | 12,355 |                  ~35,060 |      ~26.1% |
 |      86 | ~12,143 |                  ~35,284 |      ~25.6% |
+|      87 | ~12,030 |                  ~35,390 |      ~25.4% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -273,6 +275,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      84 |      426 |             ~?? |       ~?? |
 |      85 |      435 |             ~?? |       ~?? |
 |      86 |      447 |             ~?? |       ~?? |
+|      87 |      452 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -288,7 +291,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **86** (sessions 1–86 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **87** (sessions 1–87 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
