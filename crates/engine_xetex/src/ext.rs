@@ -144,12 +144,68 @@ extern "C" {
     fn getGlyphName(font: XeTeXFont, gid: u16, len: *mut c_int) -> *const c_char;
     fn freeGlyphName(name: *mut c_char);
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
+    fn gettexstring(s: i32) -> *mut c_char;
+    #[link_name = concat!("ubrk_open", env!("ICU_VERSION_SUFFIX"))]
+    fn ubrk_open(
+        type_: c_int,
+        locale: *const c_char,
+        text: *const u16,
+        text_length: i32,
+        status: *mut i32,
+    ) -> *mut c_void;
+    #[link_name = concat!("ubrk_close", env!("ICU_VERSION_SUFFIX"))]
+    fn ubrk_close(bi: *mut c_void);
+    #[link_name = concat!("ubrk_setText", env!("ICU_VERSION_SUFFIX"))]
+    fn ubrk_setText(bi: *mut c_void, text: *const u16, text_length: i32, status: *mut i32);
+    #[link_name = concat!("ubrk_next", env!("ICU_VERSION_SUFFIX"))]
+    fn ubrk_next(bi: *mut c_void) -> c_int;
+    fn initGraphiteBreaking(engine: XeTeXLayoutEngine, txt_ptr: *const u16, txt_len: u32) -> bool;
+    fn findNextGraphiteBreak(engine: XeTeXLayoutEngine) -> c_int;
+    fn begin_diagnostic();
+    fn end_diagnostic(newline: c_int);
+    fn print_nl(s: i32);
+    fn print_int(n: i32);
+    fn getFontFilename(engine: XeTeXLayoutEngine, index: *mut u32) -> *const c_char;
+    fn freeFontFilename(filename: *const c_char);
+    fn getRgbValue(engine: XeTeXLayoutEngine) -> u32;
+    fn getEmboldenFactor(engine: XeTeXLayoutEngine) -> f32;
+    fn getPointSize(engine: XeTeXLayoutEngine) -> f32;
+    fn measure_native_node(p_node: *mut c_void, use_glyph_metrics: bool);
+    static mut xdv_buffer: *mut c_char;
+    static mut mapped_text: *mut u16;
     #[cfg(target_os = "macos")]
     fn CFRelease(cf: *const c_void);
 }
 
 const LEFT_SIDE: i32 = 0;
 const RIGHT_SIDE: i32 = 1;
+const FONT_FLAGS_VERTICAL: i32 = 0x02;
+const UBRK_LINE: c_int = 2;
+const XDV_FLAG_VERTICAL: u16 = 0x0100;
+const XDV_FLAG_COLORED: u16 = 0x0200;
+const XDV_FLAG_EXTEND: u16 = 0x1000;
+const XDV_FLAG_SLANT: u16 = 0x2000;
+const XDV_FLAG_EMBOLDEN: u16 = 0x4000;
+const NATIVE_GLYPH_INFO_SIZE: usize = 10;
+
+static mut BRK_ITER: *mut c_void = ptr::null_mut();
+static mut BRK_LOCALE_STR_NUM: i32 = 0;
+static mut XDV_BUF_SIZE: c_int = 0;
+static mut APPLY_MAPPING_OUT_LENGTH: u32 = 0;
+
+#[repr(C)]
+struct FixedPoint {
+    x: i32,
+    y: i32,
+}
+
+unsafe fn print_c_string(s: *const c_char) {
+    let mut p = s;
+    while *p != 0 {
+        print_char(*p as i32);
+        p = p.add(1);
+    }
+}
 
 unsafe fn mfree_ptr<T>(ptr: *mut T) -> *mut T {
     if !ptr.is_null() {
@@ -1146,6 +1202,381 @@ pub unsafe extern "C" fn get_font_char_range(font: i32, first: i32) -> i32 {
             b"bad native font flag in `get_font_char_range'`\0".as_ptr() as *const c_char,
         )
     }
+}
+
+// translated from xetex-ext.c:72 (linebreak_start)
+#[no_mangle]
+pub unsafe extern "C" fn linebreak_start(
+    f: c_int,
+    locale_str_num: i32,
+    text: *mut u16,
+    text_length: i32,
+) {
+    let mut status: i32 = 0; // U_ZERO_ERROR
+    let locale = gettexstring(locale_str_num);
+
+    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG
+        && libc::strcmp(locale, b"G\0".as_ptr() as *const c_char) == 0
+    {
+        let engine = crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine;
+        if initGraphiteBreaking(engine, text as *const u16, text_length as u32) {
+            return; // locale intentionally not freed (matches C behavior)
+        }
+    }
+
+    if locale_str_num != BRK_LOCALE_STR_NUM && !BRK_ITER.is_null() {
+        ubrk_close(BRK_ITER);
+        BRK_ITER = ptr::null_mut();
+    }
+
+    if BRK_ITER.is_null() {
+        BRK_ITER = ubrk_open(UBRK_LINE, locale, ptr::null(), 0, &mut status);
+        if status > 0 {
+            begin_diagnostic();
+            print_nl(b'E' as i32);
+            print_c_string(b"rror \0".as_ptr() as *const c_char);
+            print_int(status);
+            print_c_string(
+                b" creating linebreak iterator for locale `\0".as_ptr() as *const c_char,
+            );
+            print_c_string(locale);
+            print_c_string(b"'; trying default locale `en_us'.\0".as_ptr() as *const c_char);
+            end_diagnostic(1);
+            if !BRK_ITER.is_null() {
+                ubrk_close(BRK_ITER);
+            }
+            status = 0;
+            BRK_ITER = ubrk_open(
+                UBRK_LINE,
+                b"en_us\0".as_ptr() as *const c_char,
+                ptr::null(),
+                0,
+                &mut status,
+            );
+        }
+        libc::free(locale as *mut c_void);
+        BRK_LOCALE_STR_NUM = locale_str_num;
+    }
+
+    if BRK_ITER.is_null() {
+        _tt_abort(b"failed to create linebreak iterator\0".as_ptr() as *const c_char);
+    }
+
+    ubrk_setText(BRK_ITER, text as *const u16, text_length, &mut status);
+}
+
+// translated from xetex-ext.c:116 (linebreak_next)
+#[no_mangle]
+pub unsafe extern "C" fn linebreak_next(f: c_int) -> c_int {
+    if !BRK_ITER.is_null() {
+        ubrk_next(BRK_ITER)
+    } else {
+        let engine = crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine;
+        findNextGraphiteBreak(engine)
+    }
+}
+
+// translated from xetex-ext.c:529 (makeXDVGlyphArrayData)
+// xdvBufSize was a C file-static; promoted to module-level static XDV_BUF_SIZE
+#[no_mangle]
+pub unsafe extern "C" fn makeXDVGlyphArrayData(p_node: *mut c_void) -> c_int {
+    let node = p_node as *mut crate::mem_types::MemoryWord;
+    let glyph_count = (*node.add(4)).b16.s0 as usize;
+
+    let needed = (glyph_count * NATIVE_GLYPH_INFO_SIZE + 8) as c_int;
+    if needed > XDV_BUF_SIZE {
+        libc::free(xdv_buffer as *mut c_void);
+        XDV_BUF_SIZE = ((needed / 1024) + 1) * 1024;
+        xdv_buffer = xmalloc(XDV_BUF_SIZE as libc::size_t) as *mut c_char;
+    }
+
+    let glyph_info = (*node.add(5)).ptr as *const u8;
+    let locations = glyph_info as *const FixedPoint;
+    let glyph_ids = glyph_info.add(glyph_count * 8) as *const u16;
+
+    let mut cp = xdv_buffer as *mut u8;
+    let width = (*node.add(1)).b32.s1 as u32;
+
+    *cp = (width >> 24) as u8; cp = cp.add(1);
+    *cp = (width >> 16) as u8; cp = cp.add(1);
+    *cp = (width >> 8) as u8; cp = cp.add(1);
+    *cp = width as u8; cp = cp.add(1);
+
+    *cp = (glyph_count >> 8) as u8; cp = cp.add(1);
+    *cp = glyph_count as u8; cp = cp.add(1);
+
+    for i in 0..glyph_count {
+        let x = (*locations.add(i)).x as u32;
+        let y = (*locations.add(i)).y as u32;
+        *cp = (x >> 24) as u8; cp = cp.add(1);
+        *cp = (x >> 16) as u8; cp = cp.add(1);
+        *cp = (x >> 8) as u8; cp = cp.add(1);
+        *cp = x as u8; cp = cp.add(1);
+        *cp = (y >> 24) as u8; cp = cp.add(1);
+        *cp = (y >> 16) as u8; cp = cp.add(1);
+        *cp = (y >> 8) as u8; cp = cp.add(1);
+        *cp = y as u8; cp = cp.add(1);
+    }
+
+    for i in 0..glyph_count {
+        let g = *glyph_ids.add(i);
+        *cp = (g >> 8) as u8; cp = cp.add(1);
+        *cp = g as u8; cp = cp.add(1);
+    }
+
+    cp.offset_from(xdv_buffer as *mut u8) as c_int
+}
+
+// translated from xetex-ext.c:584 (make_font_def)
+// xdvBufSize was a C file-static; shared with makeXDVGlyphArrayData via XDV_BUF_SIZE
+#[no_mangle]
+pub unsafe extern "C" fn make_font_def(f: i32) -> c_int {
+    let mut flags: u16 = 0;
+    let rgba: u32;
+    let size: i32;
+    let filename: *const c_char;
+    let index: u32;
+    let extend: f32;
+    let slant: f32;
+    let embolden: f32;
+
+    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+        let engine = crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine;
+        let mut idx: u32 = 0;
+        filename = getFontFilename(engine, &mut idx);
+        assert!(!filename.is_null());
+        index = idx;
+
+        rgba = getRgbValue(engine);
+        if (crate::globals::font_flags_entry(f) & FONT_FLAGS_VERTICAL) != 0 {
+            flags |= XDV_FLAG_VERTICAL;
+        }
+
+        extend = getExtendFactor(engine);
+        slant = getSlantFactor(engine);
+        embolden = getEmboldenFactor(engine);
+        size = D2Fix(getPointSize(engine) as c_double);
+    } else {
+        _tt_abort(b"bad native font flag in `make_font_def`\0".as_ptr() as *const c_char);
+    }
+
+    let filename_len = libc::strlen(filename) as u8;
+
+    let mut font_def_length: usize = 4 + 2 + 1 + filename_len as usize + 4;
+
+    if (crate::globals::font_flags_entry(f) & FONT_FLAGS_COLORED) != 0 {
+        font_def_length += 4;
+        flags |= XDV_FLAG_COLORED;
+    }
+    if extend != 1.0 {
+        font_def_length += 4;
+        flags |= XDV_FLAG_EXTEND;
+    }
+    if slant != 0.0 {
+        font_def_length += 4;
+        flags |= XDV_FLAG_SLANT;
+    }
+    if embolden != 0.0 {
+        font_def_length += 4;
+        flags |= XDV_FLAG_EMBOLDEN;
+    }
+
+    if font_def_length as c_int > XDV_BUF_SIZE {
+        libc::free(xdv_buffer as *mut c_void);
+        XDV_BUF_SIZE = (((font_def_length / 1024) + 1) * 1024) as c_int;
+        xdv_buffer = xmalloc(XDV_BUF_SIZE as libc::size_t) as *mut c_char;
+    }
+
+    let mut cp = xdv_buffer as *mut u8;
+
+    std::ptr::write_unaligned(cp as *mut u32, (size as u32).to_be());
+    cp = cp.add(4);
+
+    std::ptr::write_unaligned(cp as *mut u16, flags.to_be());
+    cp = cp.add(2);
+
+    *cp = filename_len;
+    cp = cp.add(1);
+    libc::memcpy(cp as *mut c_void, filename as *const c_void, filename_len as libc::size_t);
+    cp = cp.add(filename_len as usize);
+
+    std::ptr::write_unaligned(cp as *mut u32, index.to_be());
+    cp = cp.add(4);
+
+    if (crate::globals::font_flags_entry(f) & FONT_FLAGS_COLORED) != 0 {
+        std::ptr::write_unaligned(cp as *mut u32, rgba.to_be());
+        cp = cp.add(4);
+    }
+    if flags & XDV_FLAG_EXTEND != 0 {
+        std::ptr::write_unaligned(cp as *mut u32, (D2Fix(extend as c_double) as u32).to_be());
+        cp = cp.add(4);
+    }
+    if flags & XDV_FLAG_SLANT != 0 {
+        std::ptr::write_unaligned(cp as *mut u32, (D2Fix(slant as c_double) as u32).to_be());
+        cp = cp.add(4);
+    }
+    if flags & XDV_FLAG_EMBOLDEN != 0 {
+        std::ptr::write_unaligned(cp as *mut u32, (D2Fix(embolden as c_double) as u32).to_be());
+        cp = cp.add(4);
+    }
+
+    freeFontFilename(filename);
+
+    font_def_length as c_int
+}
+
+// translated from xetex-ext.c:738 (apply_mapping)
+// outLength was a C function-static; promoted to module-level APPLY_MAPPING_OUT_LENGTH
+#[no_mangle]
+pub unsafe extern "C" fn apply_mapping(p_cnv: *mut c_void, txt_ptr: *mut u16, txt_len: c_int) -> c_int {
+    const K_STATUS_NO_ERROR: i64 = 0;
+    const K_STATUS_OUTPUT_BUFFER_FULL: i64 = 1;
+    let txt_bytes = txt_len as u32 * 2; // sizeof(UniChar) == 2
+
+    if APPLY_MAPPING_OUT_LENGTH < txt_bytes + 32 {
+        libc::free(mapped_text as *mut c_void);
+        APPLY_MAPPING_OUT_LENGTH = txt_bytes + 32;
+        mapped_text = xmalloc(APPLY_MAPPING_OUT_LENGTH as libc::size_t) as *mut u16;
+    }
+
+    loop {
+        let mut in_used: u32 = 0;
+        let mut out_used: u32 = 0;
+        let status = TECkit_ConvertBuffer(
+            p_cnv,
+            txt_ptr as *const u8,
+            txt_bytes,
+            &mut in_used,
+            mapped_text as *mut u8,
+            APPLY_MAPPING_OUT_LENGTH,
+            &mut out_used,
+            1,
+        );
+        TECkit_ResetConverter(p_cnv);
+
+        match status {
+            K_STATUS_NO_ERROR => return (out_used / 2) as c_int,
+            K_STATUS_OUTPUT_BUFFER_FULL => {
+                APPLY_MAPPING_OUT_LENGTH += txt_bytes + 32;
+                libc::free(mapped_text as *mut c_void);
+                mapped_text = xmalloc(APPLY_MAPPING_OUT_LENGTH as libc::size_t) as *mut u16;
+            }
+            _ => return 0,
+        }
+    }
+}
+
+// translated from xetex-ext.c:776 (store_justified_native_glyphs)
+#[no_mangle]
+pub unsafe extern "C" fn store_justified_native_glyphs(p_node: *mut c_void) {
+    let node = p_node as *mut crate::mem_types::MemoryWord;
+    let f = (*node.add(4)).b16.s2 as i32;
+
+    let saved_width = (*node.add(1)).b32.s1;
+    measure_native_node(p_node, false);
+
+    if (*node.add(1)).b32.s1 != saved_width {
+        let just_amount = Fix2D(saved_width - (*node.add(1)).b32.s1);
+
+        let glyph_count = (*node.add(4)).b16.s0 as usize;
+        let glyph_info = (*node.add(5)).ptr as *mut u8;
+        let locations = glyph_info as *mut FixedPoint;
+        let glyph_ids = glyph_info.add(glyph_count * 8) as *mut u16;
+
+        let space_glyph = map_char_to_glyph(f, b' ' as i32);
+        let mut space_count = 0i32;
+        for i in 0..glyph_count {
+            if *glyph_ids.add(i) as i32 == space_glyph {
+                space_count += 1;
+            }
+        }
+
+        if space_count > 0 {
+            let mut adjustment = 0.0f64;
+            let mut space_index = 0i32;
+            for i in 0..glyph_count {
+                (*locations.add(i)).x = D2Fix(Fix2D((*locations.add(i)).x) + adjustment);
+                if *glyph_ids.add(i) as i32 == space_glyph {
+                    space_index += 1;
+                    adjustment = just_amount * space_index as f64 / space_count as f64;
+                }
+            }
+        } else {
+            for i in 1..glyph_count {
+                (*locations.add(i)).x = D2Fix(
+                    Fix2D((*locations.add(i)).x)
+                        + just_amount * i as f64 / (glyph_count - 1) as f64,
+                );
+            }
+        }
+
+        (*node.add(1)).b32.s1 = saved_width;
+    }
+}
+
+// translated from xetex-ext.c:1027 (aat_get_font_metrics)
+#[no_mangle]
+pub unsafe extern "C" fn aat_get_font_metrics(
+    _attributes: *mut c_void,
+    _ascent: *mut i32,
+    _descent: *mut i32,
+    _xheight: *mut i32,
+    _capheight: *mut i32,
+    _slant: *mut i32,
+) {
+}
+
+// translated from xetex-ext.c:1041 (aat_font_get)
+#[no_mangle]
+pub unsafe extern "C" fn aat_font_get(_what: c_int, _attributes: *mut c_void) -> c_int {
+    -1
+}
+
+// translated from xetex-ext.c:1067 (aat_font_get_1)
+#[no_mangle]
+pub unsafe extern "C" fn aat_font_get_1(
+    _what: c_int,
+    _attributes: *mut c_void,
+    _param: c_int,
+) -> c_int {
+    -1
+}
+
+// translated from xetex-ext.c:1125 (aat_font_get_2)
+#[no_mangle]
+pub unsafe extern "C" fn aat_font_get_2(
+    _what: c_int,
+    _attributes: *mut c_void,
+    _param1: c_int,
+    _param2: c_int,
+) -> c_int {
+    -1
+}
+
+// translated from xetex-ext.c:1168 (aat_font_get_named)
+#[no_mangle]
+pub unsafe extern "C" fn aat_font_get_named(_what: c_int, _attributes: *mut c_void) -> c_int {
+    -1
+}
+
+// translated from xetex-ext.c:1193 (aat_font_get_named_1)
+#[no_mangle]
+pub unsafe extern "C" fn aat_font_get_named_1(
+    _what: c_int,
+    _attributes: *mut c_void,
+    _param: c_int,
+) -> c_int {
+    -1
+}
+
+// translated from xetex-ext.c:1218 (aat_print_font_name)
+#[no_mangle]
+pub unsafe extern "C" fn aat_print_font_name(
+    _what: c_int,
+    _attributes: *mut c_void,
+    _param1: c_int,
+    _param2: c_int,
+) {
 }
 
 // translated from xetex-ext.c:1538 (print_glyph_name)

@@ -2224,6 +2224,11 @@ pub(crate) fn set_loaded_font_flags(v: i32) {
 pub(crate) fn loaded_font_letter_space() -> i32 {
     unsafe { raw::loaded_font_letter_space }
 }
+/// Returns `font_flags[f]`.
+#[inline]
+pub(crate) fn font_flags_entry(f: i32) -> i32 {
+    unsafe { *raw::font_flags.offset(f as isize) as i32 }
+}
 /// Writes `font_flags[f] = v`.
 #[inline]
 pub(crate) fn set_font_flags_entry(f: i32, v: i32) {
