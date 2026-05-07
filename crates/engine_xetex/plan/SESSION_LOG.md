@@ -32,6 +32,57 @@ template.
 
 ---
 
+## Session 83 — 2026-05-07 — xetex-ext.c mapping feature helpers
+
+**Goal:** Continue `xetex-ext.c` by moving the top-of-file printing and
+mapping feature helper cluster into Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 82
+
+**Work done:**
+- Translated `print_utf8_str` and `print_chars` to `src/ext.rs`.
+- Translated the TECkit mapping helper cluster:
+  `check_for_tfm_font_mapping`, `load_tfm_font_mapping`,
+  `apply_tfm_font_mapping`, and private `load_mapping_file`.
+- Translated `readCommonFeatures`, including the mapping, extend, slant,
+  embolden, letterspace, and color parsing branches.
+- Moved the former C file-static `saved_mapping_name` into Rust as
+  `SAVED_MAPPING_NAME`.
+- Added `loaded_font_mapping` and `loaded_font_flags` setters in
+  `src/globals.rs` so `readCommonFeatures` can update the same engine state
+  as the C implementation.
+- Reduced `xetex-ext.c` from 2,088 LOC / 55 rough C functions to 1,915 LOC /
+  47 rough C functions.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 83
+
+**Surprises / gotchas:**
+- `load_mapping_file` was file-static in C, but it had to move with
+  `readCommonFeatures`; otherwise the translated Rust caller could not link to
+  a C-local helper.
+- Declaring `_tt_abort` as variadic in `src/ext.rs` introduced a new
+  clashing-extern warning. The Rust code now uses the existing one-argument
+  declaration style and a fixed fatal message on mapping-file read failure.
+- `UTF16_NATIVE` is endian-dependent, so the Rust translation uses
+  `#[cfg(target_endian = ...)]` instead of a runtime branch.
+
+**For the next session:**
+- Continue `xetex-ext.c`. Reasonable candidates are `readFeatureNumber` and
+  `splitFontName`, then the smaller OpenType/Graphite getter and printing
+  helpers before taking on `loadOTfont` or native-node measurement.
+
+---
+
 ## Session 82 — 2026-05-07 — xetex-ext.c helper slice
 
 **Goal:** Start `xetex-ext.c` by translating a small, low-state helper group

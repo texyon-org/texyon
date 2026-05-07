@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 82.
+Last updated: session 83.
 
 
 ## Core engine files (to translate)
@@ -45,7 +45,7 @@ Last updated: session 82.
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
-| xetex-ext.c                  |  2088 |      55 | `src/ext.rs`                      | IN PROGRESS — 7% |
+| xetex-ext.c                  |  1915 |      47 | `src/ext.rs`                      | IN PROGRESS — 20% |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
@@ -525,7 +525,7 @@ Status: DONE (session 80).
 
 ### Phase 13 — xetex-ext.c helpers (target: `src/ext.rs`)
 
-Status: IN PROGRESS (session 82).
+Status: IN PROGRESS (session 83).
 
 | # | Function      | Line | Status |
 |--:|---------------|-----:|--------|
@@ -533,6 +533,16 @@ Status: IN PROGRESS (session 82).
 | 2 | `read_rgb_a`  |  344 | MIGRATED (session 82) |
 | 3 | `D2Fix`       | 1882 | MIGRATED (session 82) |
 | 4 | `Fix2D`       | 1888 | MIGRATED (session 82) |
+| 5 | `print_utf8_str` | 173 | MIGRATED (session 83) |
+| 6 | `print_chars` | 180 | MIGRATED (session 83) |
+| 7 | `load_mapping_file` (static) | 187 | MIGRATED (session 83 — private Rust fn) |
+| 8 | `check_for_tfm_font_mapping` | 236 | MIGRATED (session 83) |
+| 9 | `load_tfm_font_mapping` | 251 | MIGRATED (session 83) |
+|10 | `apply_tfm_font_mapping` | 263 | MIGRATED (session 83) |
+|11 | `readCommonFeatures` | 310 | MIGRATED (session 83) |
+
+Session 83 also moved the former `saved_mapping_name` file-static into
+Rust as `SAVED_MAPPING_NAME`.
 
 ### Phases 14+
 

@@ -2204,10 +2204,20 @@ pub(crate) fn set_font_mapping_ptr(f: i32, v: *mut libc::c_void) {
 pub(crate) fn loaded_font_mapping() -> *mut libc::c_void {
     unsafe { raw::loaded_font_mapping }
 }
+/// Writes `loaded_font_mapping = v`.
+#[inline]
+pub(crate) fn set_loaded_font_mapping(v: *mut libc::c_void) {
+    unsafe { raw::loaded_font_mapping = v; }
+}
 /// Returns `loaded_font_flags`.
 #[inline]
 pub(crate) fn loaded_font_flags() -> i32 {
     unsafe { raw::loaded_font_flags as i32 }
+}
+/// Writes `loaded_font_flags = v`.
+#[inline]
+pub(crate) fn set_loaded_font_flags(v: i32) {
+    unsafe { raw::loaded_font_flags = v as libc::c_char; }
 }
 /// Returns `loaded_font_letter_space`.
 #[inline]
