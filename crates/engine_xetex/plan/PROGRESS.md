@@ -89,6 +89,10 @@ cargo test -p tectonic --test tex-outputs
 |      73 | 2026-05-04 |     29 |    29 |     0 | xetex-io.c: translate set_input_file_encoding, buffer_overflow, conversion_error, apply_normalization, input_line. File DONE. All 4 suites pass. |
 |      74 | 2026-05-04 |     29 |    29 |     0 | xetex-pagebuilder.c: translate initialize_pagebuilder_variables, freeze_page_specs, ensure_vbox, fire_up, build_page. File DONE. All 4 suites pass. |
 |      75 | 2026-05-04 |     29 |    29 |     0 | xetex-linebreak.c: translate push_node, pop_node hlist-stack helpers. All 4 suites pass. |
+|      76 | 2026-05-04 |     29 |    29 |     0 | xetex-linebreak.c: translate get_native_usv, total_pw, find_protchar_left/right, finite_shrink, reconstitute, hyphenate, post_line_break. Remaining C bodies: line_break, try_break. All 4 suites pass. |
+|      77 | 2026-05-07 |     29 |    29 |     0 | xetex-linebreak.c prep: exported try_break and active-list scratch state for Rust replacement. All 4 suites pass. |
+|      78 | 2026-05-07 |     29 |    29 |     0 | xetex-linebreak.c: translate try_break and route C line_break through Rust. Fixed last_line_fit goto semantics caught by eTRIP. All 4 suites pass. |
+|      79 | 2026-05-07 |     29 |    29 |     0 | xetex-linebreak.c: translate line_break; file has zero compiled C bodies. Fixed hang_after param, ligature hyphenation done3 control flow, and native-node font accessor. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -168,6 +172,8 @@ Passed count below the previous session's recorded value.
 |      67 |23,870 |                  ~26170 |      ~47.7% |
 |      68 |23,724 |                  ~26560 |      ~47.2% |
 |      75 |17,418 |                  ~29809 |      36.9% |
+|      78 |~16,775 |                  ~30440 |      ~35.5% |
+|      79 |~15,810 |                  ~32700 |      ~32.6% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -249,6 +255,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      67 |      360 |              ~2 |     ~99.4% |
 |      68 |      365 |              ~2 |     ~99.4% |
 |      75 |      367 |             ~?? |       ~?? |
+|      78 |      368 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -264,7 +271,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **75** (sessions 1–75 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **78** (sessions 1–78 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

@@ -32,6 +32,197 @@ template.
 
 ---
 
+## Session 79 — 2026-05-07 — xetex-linebreak.c: line_break
+
+**Goal:** Translate the remaining compiled `line_break` body to Rust and finish
+`xetex-linebreak.c` as a compiled-C-free file.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 78
+
+**Work done:**
+- Translated `line_break` into `src/linebreak.rs`, including pass setup,
+  paragraph shape and hanging-indent handling, active-width scanning, glue and
+  discretionary break handling, native-word hyphenation preparation, best-break
+  selection, final-pass retry, last-line-fit adjustment, and active/passive
+  cleanup.
+- Added the remaining Rust global accessors needed by `line_break`, including
+  `trie_not_ready`, `hyph_start`, `hyph_index`, active/background setters,
+  threshold/final-pass/easy-line setters, and last-line-fit width setters.
+- Disabled the C `line_break` body with `#if 0`, leaving it and the old
+  `try_break` block as temporary reference material only. `xetex-linebreak.c`
+  now has zero compiled C function bodies.
+- Corrected three parity issues found during verification: `hang_after` is
+  integer parameter 41, not 7; a non-letter inside a ligature must take WEB's
+  `done3` path rather than aborting hyphenation; and `NATIVE_NODE_font` is
+  `mem[p + 4].b16.s2`, not `b32.s0`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 79
+
+**Surprises / gotchas:**
+- `cargo build -p tectonic_engine_xetex` alone did not prove output parity;
+  TRIP caught the ligature hyphenation control-flow mismatch and
+  `tex-outputs` caught the native-node font accessor mistake.
+- The disabled C reference blocks now trigger unused-static warnings in
+  `xetex-linebreak.c`. They are harmless but should be deleted in a cleanup
+  session.
+
+**For the next session:**
+- Delete the disabled `line_break`/`try_break` reference blocks from
+  `xetex-linebreak.c`, or move on to the next in-scope C file after confirming
+  the worktree state.
+
+## Session 78 — 2026-05-07 — xetex-linebreak.c: try_break
+
+**Goal:** Translate `try_break` to Rust and keep C `line_break` calling the
+Rust implementation through the existing symbol.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 77
+
+**Work done:**
+- Added Rust accessors for the active-list scratch globals surfaced in session
+  77, including `passive`, `cur_active_width`, `break_width`, best-place and
+  demerit arrays, `active_node_size`, `fill_width`, and last-line-fit scratch.
+- Translated `try_break` into `src/linebreak.rs`, including discretionary
+  breakpoint width calculation, active/delta node insertion and removal,
+  demerit calculation, and e-TeX `last_line_fit` bookkeeping.
+- Disabled the C `try_break` body with `#if 0` so C `line_break` now links to
+  the Rust `try_break` symbol. The disabled body remains as temporary reference
+  material until `line_break` is migrated or the block is deleted.
+- Fixed a control-flow bug caught by `etrip_test`: successful `last_line_fit`
+  branches in C `goto found` and skip the later shortfall/glue reset. The Rust
+  version now preserves that label behavior.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 78
+
+**Surprises / gotchas:**
+- The common output goldens and `engine_rust` passed before the `last_line_fit`
+  fix; eTRIP was the only suite that exposed the missing finite `\parfillskip`
+  adjustment. Keep eTRIP in the tight loop for the remaining line-break core.
+- `small_number` is `short` in `xetex-xetexd.h`; the active-node-size extern
+  should remain `i16`.
+- Test failure diagnosis created `trip_etrip.log.expected` and
+  `trip_etrip.log.observed` at the repository root.
+
+**For the next session:**
+- Translate `line_break`, then remove the disabled C `try_break` reference
+  block and mark `xetex-linebreak.c` done if parity holds.
+
+## Session 77 — 2026-05-07 — xetex-linebreak.c: try_break ABI prep
+
+**Goal:** Prepare the remaining line-break core so `try_break` can be
+translated without duplicating C file-static state.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 76
+
+**Work done:**
+- Verified the dirty session-76 handoff builds and all four suites still pass.
+- Made `try_break` extern-visible in `xetex-linebreak.c` while keeping the C
+  body in place.
+- Made the active-list scratch variables used by `try_break` link-visible:
+  `passive`, `cur_active_width`, `background`, `break_width`, `best_place`,
+  `best_pl_line`, `disc_width`, `final_pass`, `threshold`,
+  `minimal_demerits`, `minimum_demerits`, `easy_line`, `do_last_line_fit`,
+  `active_node_size`, `fill_width`, `best_pl_short`, and `best_pl_glue`.
+- No Rust replacement was installed for `try_break`; this was a
+  no-behavior-change prep step.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 77
+
+**Surprises / gotchas:**
+- `try_break` cannot be translated in isolation while those values remain C
+  file-statics, because C `line_break` initializes them and Rust would
+  otherwise see a separate copy or no symbol.
+- A later Rust `try_break` should add the globals accessors at the same time as
+  the Rust body, so unused accessor warnings do not pile up.
+- The worktree still contains unrelated generated output artifacts and
+  pre-existing shipout/font accessor edits in `src/globals.rs`.
+
+**For the next session:**
+- Translate `try_break` using the now link-visible scratch state, or translate
+  `line_break` and `try_break` together if you want to eliminate the bridge
+  immediately.
+
+---
+
+## Session 76 — 2026-05-04 — xetex-linebreak.c: bottom helpers through post_line_break
+
+**Goal:** Continue `xetex-linebreak.c` by moving the remaining bounded helpers
+before the large paragraph-breaking core.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 75
+
+**Work done:**
+- Translated `get_native_usv`, `total_pw`, `find_protchar_left`,
+  `find_protchar_right`, `finite_shrink`, `reconstitute`, `hyphenate`, and
+  `post_line_break` to Rust in `src/linebreak.rs`.
+- Added minimal global accessors for linebreak protrusion state, hyphenation
+  scratch state, and the paragraph line-width/best-break state read by
+  `post_line_break`.
+- Deleted the corresponding C helper bodies and converted their prototypes to
+  extern-visible declarations.
+- Fixed a sentinel mismatch caught by `trip`: Rust `linebreak.rs` must use
+  `TEX_NULL = -0x0FFF_FFFF`, not the rule-node `NULL_FLAG`.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 76
+
+**Surprises / gotchas:**
+- `reconstitute` is exercised by TRIP even when common output goldens pass; keep
+  TRIP in the tight loop for any future linebreak helper work.
+- `post_line_break` reaches into the active-list/passive-list layout but only
+  reads a subset of the line-break file statics. `try_break` and `line_break`
+  share the much larger active-list scratch set and should be moved with that
+  state surfaced deliberately.
+- The worktree still contains unrelated dirty generated output files and
+  pre-existing `globals.rs` shipout/font accessor edits from the interrupted
+  prior session.
+
+**For the next session:**
+- Finish `xetex-linebreak.c`: remaining C bodies are `line_break` and
+  `try_break`. Next target should be `try_break`; expose the active-list scratch
+  state (`passive`, `cur_active_width`, `background`, `break_width`,
+  `best_place`, `minimal_demerits`, `threshold`, `active_node_size`,
+  `fill_width`, etc.) before deleting the C body.
+
 ## Session 75 — 2026-05-04 — xetex-linebreak.c: hlist stack helpers
 
 **Goal:** Start `xetex-linebreak.c` with a small low-risk helper cluster.

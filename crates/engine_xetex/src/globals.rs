@@ -496,6 +496,30 @@ mod raw {
         // XeTeX inter-character class state (xetex-xetexd.h:679-681).
         pub(super) static mut space_class: i32;
         pub(super) static mut prev_class: i32;
+        // Hyphenation scratch state (xetex-xetexd.h:621-629).
+        pub(super) static mut hf: i32;
+        pub(super) static mut hc: [i32; 4099];
+        pub(super) static mut hu: [i32; 4097];
+        pub(super) static mut max_hyph_char: i32;
+        pub(super) static mut hyf: [u8; 4097];
+        pub(super) static mut init_list: i32;
+        pub(super) static mut init_lig: bool;
+        pub(super) static mut init_lft: bool;
+        pub(super) static mut hyphen_passed: i16;
+        // Hyphenation trie and exception tables (xetex-xetexd.h:635-645).
+        pub(super) static mut trie_trl: *mut i32;
+        pub(super) static mut trie_tro: *mut i32;
+        pub(super) static mut trie_trc: *mut u16;
+        pub(super) static mut hyf_distance: [i16; 35112];
+        pub(super) static mut hyf_num: [i16; 35112];
+        pub(super) static mut hyf_next: [u16; 35112];
+        pub(super) static mut op_start: [i32; 256];
+        pub(super) static mut hyph_word: *mut i32;
+        pub(super) static mut hyph_list: *mut i32;
+        pub(super) static mut hyph_link: *mut u16;
+        pub(super) static mut trie_not_ready: bool;
+        pub(super) static mut hyph_start: i32;
+        pub(super) static mut hyph_index: i32;
         // Current hyphenation language (xetex-xetexd.h:623; unsigned char = u8).
         pub(super) static mut cur_lang: u8;
         // SyncTeX "insert special on every paragraph/vbox" flag (xetex-xetexd.h:420-422).
@@ -521,6 +545,7 @@ mod raw {
         pub(super) static mut pre_adjust_tail: i32;
         pub(super) static mut total_stretch: [i32; 4];
         pub(super) static mut total_shrink: [i32; 4];
+        pub(super) static mut just_box: i32;
         // Line number at which the current box-packing started (xetex-xetexd.h:607).
         pub(super) static mut pack_begin_line: i32;
         // Whether \setbox is allowed in the current context (xetex-xetexd.h:446).
@@ -541,11 +566,70 @@ mod raw {
         // Hlist stack used by linebreak protrusion scans (xetex-xetexd.h:469–470).
         pub(super) static mut hlist_stack: [i32; 513];
         pub(super) static mut hlist_stack_level: i16;
+        pub(super) static mut first_p: i32;
+        pub(super) static mut global_prev_p: i32;
+        pub(super) static mut no_shrink_error_yet: bool;
+        pub(super) static mut cur_p: i32;
+        pub(super) static mut last_special_line: i32;
+        pub(super) static mut first_width: i32;
+        pub(super) static mut second_width: i32;
+        pub(super) static mut first_indent: i32;
+        pub(super) static mut second_indent: i32;
+        pub(super) static mut best_bet: i32;
+        pub(super) static mut best_line: i32;
+        pub(super) static mut hn: i16;
+        pub(super) static mut ha: i32;
+        pub(super) static mut hb: i32;
+        pub(super) static mut hyf_char: i32;
+        pub(super) static mut l_hyf: i32;
+        pub(super) static mut r_hyf: i32;
+        pub(super) static mut init_l_hyf: i32;
+        pub(super) static mut init_r_hyf: i32;
+        pub(super) static mut hyf_bchar: i32;
+        pub(super) static mut passive: i32;
+        pub(super) static mut cur_active_width: [i32; 7];
+        pub(super) static mut background: [i32; 7];
+        pub(super) static mut break_width: [i32; 7];
+        pub(super) static mut best_place: [i32; 4];
+        pub(super) static mut best_pl_line: [i32; 4];
+        pub(super) static mut disc_width: i32;
+        pub(super) static mut final_pass: bool;
+        pub(super) static mut threshold: i32;
+        pub(super) static mut minimal_demerits: [i32; 4];
+        pub(super) static mut minimum_demerits: i32;
+        pub(super) static mut easy_line: i32;
+        pub(super) static mut do_last_line_fit: bool;
+        pub(super) static mut active_node_size: i16;
+        pub(super) static mut fill_width: [i32; 3];
+        pub(super) static mut best_pl_short: [i32; 4];
+        pub(super) static mut best_pl_glue: [i32; 4];
         // Current font used in short_display output (xetex-xetexd.h:473; xetex-ini.c:108).
         pub(super) static mut font_in_short_display: i32;
         // show_node_list depth/breadth limits (xetex-xetexd.h:474–475).
         pub(super) static mut depth_threshold: i32;
         pub(super) static mut breadth_max: i32;
+
+        // Shipout / DVI output state (xetex-xetexd.h:592–600).
+        pub(super) static mut total_pages: i32;
+        pub(super) static mut max_v: i32;
+        pub(super) static mut max_h: i32;
+        pub(super) static mut max_push: i32;
+        pub(super) static mut last_bop: i32;
+        pub(super) static mut doing_leaders: bool;
+        // rule_ht/rule_dp/rule_wd: current rule dimensions (xetex-xetexd.h:599).
+        pub(super) static mut rule_ht: i32;
+        pub(super) static mut rule_dp: i32;
+        pub(super) static mut rule_wd: i32;
+        // cur_h/cur_v: DVI cursor position (xetex-xetexd.h:600).
+        pub(super) static mut cur_h: i32;
+        pub(super) static mut cur_v: i32;
+        // Page dimensions for XDV output (xetex-xetexd.h:694–697).
+        pub(super) static mut cur_page_width: i32;
+        pub(super) static mut cur_page_height: i32;
+        pub(super) static mut cur_h_offset: i32;
+        pub(super) static mut cur_v_offset: i32;
+        // write_loc: eqtb location of \write (xetex-xetexd.h:693).
+        pub(super) static mut write_loc: i32;
     }
 }
 
@@ -3140,8 +3224,40 @@ pub(crate) fn set_prev_class(v: i32) {
 }
 
 // ---------------------------------------------------------------------------
-// cur_lang / insert_src_special_every_par
+// hyphenation globals / cur_lang / insert_src_special_every_par
 // ---------------------------------------------------------------------------
+
+#[inline] pub(crate) fn hf() -> i32 { unsafe { raw::hf } }
+#[inline] pub(crate) fn set_hf(v: i32) { unsafe { raw::hf = v; } }
+#[inline] pub(crate) fn hc_entry(k: usize) -> i32 { unsafe { raw::hc[k] } }
+#[inline] pub(crate) fn set_hc_entry(k: usize, v: i32) { unsafe { raw::hc[k] = v; } }
+#[inline] pub(crate) fn hu_entry(k: usize) -> i32 { unsafe { raw::hu[k] } }
+#[inline] pub(crate) fn set_hu_entry(k: usize, v: i32) { unsafe { raw::hu[k] = v; } }
+#[inline] pub(crate) fn max_hyph_char() -> i32 { unsafe { raw::max_hyph_char } }
+#[inline] pub(crate) fn hyf_entry(k: usize) -> u8 { unsafe { raw::hyf[k] } }
+#[inline] pub(crate) fn set_hyf_entry(k: usize, v: u8) { unsafe { raw::hyf[k] = v; } }
+#[inline] pub(crate) fn init_list() -> i32 { unsafe { raw::init_list } }
+#[inline] pub(crate) fn set_init_list(v: i32) { unsafe { raw::init_list = v; } }
+#[inline] pub(crate) fn init_lig() -> bool { unsafe { raw::init_lig } }
+#[inline] pub(crate) fn set_init_lig(v: bool) { unsafe { raw::init_lig = v; } }
+#[inline] pub(crate) fn init_lft() -> bool { unsafe { raw::init_lft } }
+#[inline] pub(crate) fn set_init_lft(v: bool) { unsafe { raw::init_lft = v; } }
+#[inline] pub(crate) fn hyphen_passed() -> i16 { unsafe { raw::hyphen_passed } }
+#[inline] pub(crate) fn set_hyphen_passed(v: i16) { unsafe { raw::hyphen_passed = v; } }
+#[inline] pub(crate) fn trie_trl_entry(k: i32) -> i32 { unsafe { *raw::trie_trl.offset(k as isize) } }
+#[inline] pub(crate) fn trie_tro_entry(k: i32) -> i32 { unsafe { *raw::trie_tro.offset(k as isize) } }
+#[inline] pub(crate) fn trie_trc_entry(k: i32) -> u16 { unsafe { *raw::trie_trc.offset(k as isize) } }
+#[inline] pub(crate) fn trie_not_ready() -> bool { unsafe { raw::trie_not_ready } }
+#[inline] pub(crate) fn hyph_start() -> i32 { unsafe { raw::hyph_start } }
+#[inline] pub(crate) fn hyph_index() -> i32 { unsafe { raw::hyph_index } }
+#[inline] pub(crate) fn set_hyph_index(v: i32) { unsafe { raw::hyph_index = v; } }
+#[inline] pub(crate) fn hyf_distance_entry(k: i32) -> i16 { unsafe { raw::hyf_distance[k as usize] } }
+#[inline] pub(crate) fn hyf_num_entry(k: i32) -> i16 { unsafe { raw::hyf_num[k as usize] } }
+#[inline] pub(crate) fn hyf_next_entry(k: i32) -> u16 { unsafe { raw::hyf_next[k as usize] } }
+#[inline] pub(crate) fn op_start_entry(k: usize) -> i32 { unsafe { raw::op_start[k] } }
+#[inline] pub(crate) fn hyph_word_entry(k: i32) -> i32 { unsafe { *raw::hyph_word.offset(k as isize) } }
+#[inline] pub(crate) fn hyph_list_entry(k: i32) -> i32 { unsafe { *raw::hyph_list.offset(k as isize) } }
+#[inline] pub(crate) fn hyph_link_entry(k: i32) -> u16 { unsafe { *raw::hyph_link.offset(k as isize) } }
 
 #[inline]
 pub(crate) fn cur_lang() -> u8 {
@@ -3219,6 +3335,8 @@ pub(crate) fn set_cur_order(v: u8) {
 #[inline] pub(crate) fn set_total_stretch(o: usize, v: i32) { unsafe { raw::total_stretch[o] = v; } }
 #[inline] pub(crate) fn total_shrink(o: usize) -> i32 { unsafe { raw::total_shrink[o] } }
 #[inline] pub(crate) fn set_total_shrink(o: usize, v: i32) { unsafe { raw::total_shrink[o] = v; } }
+#[inline] pub(crate) fn just_box() -> i32 { unsafe { raw::just_box } }
+#[inline] pub(crate) fn set_just_box(v: i32) { unsafe { raw::just_box = v; } }
 #[inline] pub(crate) fn pack_begin_line() -> i32 { unsafe { raw::pack_begin_line } }
 #[inline] pub(crate) fn set_pack_begin_line(v: i32) { unsafe { raw::pack_begin_line = v; } }
 #[inline] pub(crate) fn set_box_allowed() -> bool { unsafe { raw::set_box_allowed } }
@@ -3276,6 +3394,80 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 #[inline] pub(crate) fn set_hlist_stack_entry(k: i16, v: i32) { unsafe { raw::hlist_stack[k as usize] = v; } }
 #[inline] pub(crate) fn hlist_stack_level() -> i16 { unsafe { raw::hlist_stack_level } }
 #[inline] pub(crate) fn set_hlist_stack_level(v: i16) { unsafe { raw::hlist_stack_level = v; } }
+#[inline] pub(crate) fn first_p() -> i32 { unsafe { raw::first_p } }
+#[inline] pub(crate) fn set_first_p(v: i32) { unsafe { raw::first_p = v; } }
+#[inline] pub(crate) fn global_prev_p() -> i32 { unsafe { raw::global_prev_p } }
+#[inline] pub(crate) fn set_global_prev_p(v: i32) { unsafe { raw::global_prev_p = v; } }
+#[inline] pub(crate) fn no_shrink_error_yet() -> bool { unsafe { raw::no_shrink_error_yet } }
+#[inline] pub(crate) fn set_no_shrink_error_yet(v: bool) { unsafe { raw::no_shrink_error_yet = v; } }
+#[inline] pub(crate) fn cur_p() -> i32 { unsafe { raw::cur_p } }
+#[inline] pub(crate) fn set_cur_p(v: i32) { unsafe { raw::cur_p = v; } }
+#[inline] pub(crate) fn last_special_line() -> i32 { unsafe { raw::last_special_line } }
+#[inline] pub(crate) fn set_last_special_line(v: i32) { unsafe { raw::last_special_line = v; } }
+#[inline] pub(crate) fn first_width() -> i32 { unsafe { raw::first_width } }
+#[inline] pub(crate) fn set_first_width(v: i32) { unsafe { raw::first_width = v; } }
+#[inline] pub(crate) fn second_width() -> i32 { unsafe { raw::second_width } }
+#[inline] pub(crate) fn set_second_width(v: i32) { unsafe { raw::second_width = v; } }
+#[inline] pub(crate) fn first_indent() -> i32 { unsafe { raw::first_indent } }
+#[inline] pub(crate) fn set_first_indent(v: i32) { unsafe { raw::first_indent = v; } }
+#[inline] pub(crate) fn second_indent() -> i32 { unsafe { raw::second_indent } }
+#[inline] pub(crate) fn set_second_indent(v: i32) { unsafe { raw::second_indent = v; } }
+#[inline] pub(crate) fn best_bet() -> i32 { unsafe { raw::best_bet } }
+#[inline] pub(crate) fn set_best_bet(v: i32) { unsafe { raw::best_bet = v; } }
+#[inline] pub(crate) fn best_line() -> i32 { unsafe { raw::best_line } }
+#[inline] pub(crate) fn set_best_line(v: i32) { unsafe { raw::best_line = v; } }
+#[inline] pub(crate) fn hn() -> i16 { unsafe { raw::hn } }
+#[inline] pub(crate) fn set_hn(v: i16) { unsafe { raw::hn = v; } }
+#[inline] pub(crate) fn ha() -> i32 { unsafe { raw::ha } }
+#[inline] pub(crate) fn set_ha(v: i32) { unsafe { raw::ha = v; } }
+#[inline] pub(crate) fn hb() -> i32 { unsafe { raw::hb } }
+#[inline] pub(crate) fn set_hb(v: i32) { unsafe { raw::hb = v; } }
+#[inline] pub(crate) fn hyf_char() -> i32 { unsafe { raw::hyf_char } }
+#[inline] pub(crate) fn set_hyf_char(v: i32) { unsafe { raw::hyf_char = v; } }
+#[inline] pub(crate) fn l_hyf() -> i32 { unsafe { raw::l_hyf } }
+#[inline] pub(crate) fn set_l_hyf(v: i32) { unsafe { raw::l_hyf = v; } }
+#[inline] pub(crate) fn r_hyf() -> i32 { unsafe { raw::r_hyf } }
+#[inline] pub(crate) fn set_r_hyf(v: i32) { unsafe { raw::r_hyf = v; } }
+#[inline] pub(crate) fn init_l_hyf() -> i32 { unsafe { raw::init_l_hyf } }
+#[inline] pub(crate) fn set_init_l_hyf(v: i32) { unsafe { raw::init_l_hyf = v; } }
+#[inline] pub(crate) fn init_r_hyf() -> i32 { unsafe { raw::init_r_hyf } }
+#[inline] pub(crate) fn set_init_r_hyf(v: i32) { unsafe { raw::init_r_hyf = v; } }
+#[inline] pub(crate) fn hyf_bchar() -> i32 { unsafe { raw::hyf_bchar } }
+#[inline] pub(crate) fn set_hyf_bchar(v: i32) { unsafe { raw::hyf_bchar = v; } }
+#[inline] pub(crate) fn passive() -> i32 { unsafe { raw::passive } }
+#[inline] pub(crate) fn set_passive(v: i32) { unsafe { raw::passive = v; } }
+#[inline] pub(crate) fn cur_active_width(k: usize) -> i32 { unsafe { raw::cur_active_width[k] } }
+#[inline] pub(crate) fn set_cur_active_width(k: usize, v: i32) { unsafe { raw::cur_active_width[k] = v; } }
+#[inline] pub(crate) fn background(k: usize) -> i32 { unsafe { raw::background[k] } }
+#[inline] pub(crate) fn set_background(k: usize, v: i32) { unsafe { raw::background[k] = v; } }
+#[inline] pub(crate) fn break_width(k: usize) -> i32 { unsafe { raw::break_width[k] } }
+#[inline] pub(crate) fn set_break_width(k: usize, v: i32) { unsafe { raw::break_width[k] = v; } }
+#[inline] pub(crate) fn best_place(k: usize) -> i32 { unsafe { raw::best_place[k] } }
+#[inline] pub(crate) fn set_best_place(k: usize, v: i32) { unsafe { raw::best_place[k] = v; } }
+#[inline] pub(crate) fn best_pl_line(k: usize) -> i32 { unsafe { raw::best_pl_line[k] } }
+#[inline] pub(crate) fn set_best_pl_line(k: usize, v: i32) { unsafe { raw::best_pl_line[k] = v; } }
+#[inline] pub(crate) fn disc_width() -> i32 { unsafe { raw::disc_width } }
+#[inline] pub(crate) fn set_disc_width(v: i32) { unsafe { raw::disc_width = v; } }
+#[inline] pub(crate) fn final_pass() -> bool { unsafe { raw::final_pass } }
+#[inline] pub(crate) fn set_final_pass(v: bool) { unsafe { raw::final_pass = v; } }
+#[inline] pub(crate) fn threshold() -> i32 { unsafe { raw::threshold } }
+#[inline] pub(crate) fn set_threshold(v: i32) { unsafe { raw::threshold = v; } }
+#[inline] pub(crate) fn minimal_demerits(k: usize) -> i32 { unsafe { raw::minimal_demerits[k] } }
+#[inline] pub(crate) fn set_minimal_demerits(k: usize, v: i32) { unsafe { raw::minimal_demerits[k] = v; } }
+#[inline] pub(crate) fn minimum_demerits() -> i32 { unsafe { raw::minimum_demerits } }
+#[inline] pub(crate) fn set_minimum_demerits(v: i32) { unsafe { raw::minimum_demerits = v; } }
+#[inline] pub(crate) fn easy_line() -> i32 { unsafe { raw::easy_line } }
+#[inline] pub(crate) fn set_easy_line(v: i32) { unsafe { raw::easy_line = v; } }
+#[inline] pub(crate) fn do_last_line_fit() -> bool { unsafe { raw::do_last_line_fit } }
+#[inline] pub(crate) fn set_do_last_line_fit(v: bool) { unsafe { raw::do_last_line_fit = v; } }
+#[inline] pub(crate) fn active_node_size() -> i32 { unsafe { raw::active_node_size as i32 } }
+#[inline] pub(crate) fn set_active_node_size(v: i16) { unsafe { raw::active_node_size = v; } }
+#[inline] pub(crate) fn fill_width(k: usize) -> i32 { unsafe { raw::fill_width[k] } }
+#[inline] pub(crate) fn set_fill_width(k: usize, v: i32) { unsafe { raw::fill_width[k] = v; } }
+#[inline] pub(crate) fn best_pl_short(k: usize) -> i32 { unsafe { raw::best_pl_short[k] } }
+#[inline] pub(crate) fn set_best_pl_short(k: usize, v: i32) { unsafe { raw::best_pl_short[k] = v; } }
+#[inline] pub(crate) fn best_pl_glue(k: usize) -> i32 { unsafe { raw::best_pl_glue[k] } }
+#[inline] pub(crate) fn set_best_pl_glue(k: usize, v: i32) { unsafe { raw::best_pl_glue[k] = v; } }
 #[inline] pub(crate) fn font_in_short_display() -> i32 { unsafe { raw::font_in_short_display } }
 #[inline] pub(crate) fn set_font_in_short_display(v: i32) { unsafe { raw::font_in_short_display = v; } }
 #[inline] pub(crate) fn depth_threshold() -> i32 { unsafe { raw::depth_threshold } }
@@ -3294,3 +3486,63 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 // ---------------------------------------------------------------------------
 #[inline] pub(crate) fn used_tectonic_coda_tokens() -> bool { unsafe { raw::used_tectonic_coda_tokens } }
 #[inline] pub(crate) fn set_used_tectonic_coda_tokens(v: bool) { unsafe { raw::used_tectonic_coda_tokens = v; } }
+
+// ---------------------------------------------------------------------------
+// Shipout / DVI output globals (xetex-xetexd.h:592–600, 694–697, 693)
+// ---------------------------------------------------------------------------
+#[inline] pub(crate) fn total_pages() -> i32 { unsafe { raw::total_pages } }
+#[inline] pub(crate) fn set_total_pages(v: i32) { unsafe { raw::total_pages = v; } }
+#[inline] pub(crate) fn max_v() -> i32 { unsafe { raw::max_v } }
+#[inline] pub(crate) fn set_max_v(v: i32) { unsafe { raw::max_v = v; } }
+#[inline] pub(crate) fn max_h() -> i32 { unsafe { raw::max_h } }
+#[inline] pub(crate) fn set_max_h(v: i32) { unsafe { raw::max_h = v; } }
+#[inline] pub(crate) fn max_push() -> i32 { unsafe { raw::max_push } }
+#[inline] pub(crate) fn set_max_push(v: i32) { unsafe { raw::max_push = v; } }
+#[inline] pub(crate) fn last_bop() -> i32 { unsafe { raw::last_bop } }
+#[inline] pub(crate) fn set_last_bop(v: i32) { unsafe { raw::last_bop = v; } }
+#[inline] pub(crate) fn doing_leaders() -> bool { unsafe { raw::doing_leaders } }
+#[inline] pub(crate) fn set_doing_leaders(v: bool) { unsafe { raw::doing_leaders = v; } }
+#[inline] pub(crate) fn rule_ht() -> i32 { unsafe { raw::rule_ht } }
+#[inline] pub(crate) fn set_rule_ht(v: i32) { unsafe { raw::rule_ht = v; } }
+#[inline] pub(crate) fn rule_dp() -> i32 { unsafe { raw::rule_dp } }
+#[inline] pub(crate) fn set_rule_dp(v: i32) { unsafe { raw::rule_dp = v; } }
+#[inline] pub(crate) fn rule_wd() -> i32 { unsafe { raw::rule_wd } }
+#[inline] pub(crate) fn set_rule_wd(v: i32) { unsafe { raw::rule_wd = v; } }
+#[inline] pub(crate) fn cur_h() -> i32 { unsafe { raw::cur_h } }
+#[inline] pub(crate) fn set_cur_h(v: i32) { unsafe { raw::cur_h = v; } }
+#[inline] pub(crate) fn cur_v() -> i32 { unsafe { raw::cur_v } }
+#[inline] pub(crate) fn set_cur_v(v: i32) { unsafe { raw::cur_v = v; } }
+#[inline] pub(crate) fn cur_page_width() -> i32 { unsafe { raw::cur_page_width } }
+#[inline] pub(crate) fn set_cur_page_width(v: i32) { unsafe { raw::cur_page_width = v; } }
+#[inline] pub(crate) fn cur_page_height() -> i32 { unsafe { raw::cur_page_height } }
+#[inline] pub(crate) fn set_cur_page_height(v: i32) { unsafe { raw::cur_page_height = v; } }
+#[inline] pub(crate) fn cur_h_offset() -> i32 { unsafe { raw::cur_h_offset } }
+#[inline] pub(crate) fn set_cur_h_offset(v: i32) { unsafe { raw::cur_h_offset = v; } }
+#[inline] pub(crate) fn cur_v_offset() -> i32 { unsafe { raw::cur_v_offset } }
+#[inline] pub(crate) fn set_cur_v_offset(v: i32) { unsafe { raw::cur_v_offset = v; } }
+#[inline] pub(crate) fn write_loc() -> i32 { unsafe { raw::write_loc } }
+#[inline] pub(crate) fn set_write_loc(v: i32) { unsafe { raw::write_loc = v; } }
+
+// ---------------------------------------------------------------------------
+// Missing font entry getters (raw already declared)
+// ---------------------------------------------------------------------------
+#[inline] pub(crate) fn font_used_entry(f: i32) -> bool {
+    unsafe { *raw::font_used.offset(f as isize) }
+}
+#[inline] pub(crate) fn font_check_entry(f: i32) -> crate::mem_types::B16x4 {
+    unsafe { *raw::font_check.offset(f as isize) }
+}
+#[inline] pub(crate) fn font_letter_space_entry(f: i32) -> i32 {
+    unsafe { *raw::font_letter_space.offset(f as isize) }
+}
+
+// ---------------------------------------------------------------------------
+// Missing setters for pdf_last_x/y_pos (raw already declared)
+// ---------------------------------------------------------------------------
+#[inline] pub(crate) fn set_pdf_last_x_pos(v: i32) { unsafe { raw::pdf_last_x_pos = v; } }
+#[inline] pub(crate) fn set_pdf_last_y_pos(v: i32) { unsafe { raw::pdf_last_y_pos = v; } }
+
+// ---------------------------------------------------------------------------
+// Missing setter for doing_special (raw already declared)
+// ---------------------------------------------------------------------------
+#[inline] pub(crate) fn set_doing_special(v: bool) { unsafe { raw::doing_special = v; } }

@@ -20,12 +20,12 @@ every session. The column meanings:
 | Status         | File count |
 |----------------|-----------:|
 | NOT STARTED    |          6 |
-| IN PROGRESS    |          2 |
-| DONE           |          8 |
+| IN PROGRESS    |          1 |
+| DONE           |          9 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 75.
+Last updated: session 79.
 
 
 ## Core engine files (to translate)
@@ -40,7 +40,7 @@ Last updated: session 75.
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
-| xetex-linebreak.c            |  2824 |     10 | `src/linebreak.rs`                | IN PROGRESS — 17% |
+| xetex-linebreak.c            |     0 |      0 | `src/linebreak.rs`                | DONE |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |  1283 |    ~?? | `src/synctex.rs`                  | NOT STARTED  |
@@ -206,17 +206,28 @@ Status: DONE (session 11).
 
 ### Phase 5.5 — linebreak helpers (target: `src/linebreak.rs`)
 
-Status: IN PROGRESS (session 75).
+Status: DONE (session 79).
 
 `xetex-linebreak.c` has 12 function definitions in the starting file:
 `get_native_usv`, `line_break`, 8 private helpers, plus `push_node` and
-`pop_node`. This phase starts with the tiny hlist-stack helpers used by
-the protrusion scans.
+`pop_node`. All compiled bodies are now in Rust. The old `line_break` and
+`try_break` bodies are still present under `#if 0` as temporary reference
+blocks and should be deleted when convenient.
 
-| # | Function    | Line | Status |
-|--:|-------------|-----:|--------|
-| 1 | `push_node` | 2827 | MIGRATED (session 75) |
-| 2 | `pop_node`  | 2837 | MIGRATED (session 75) |
+| # | Function                | Line | Status |
+|--:|-------------------------|-----:|--------|
+| 1 | `push_node`             | 2827 | MIGRATED (session 75) |
+| 2 | `pop_node`              | 2837 | MIGRATED (session 75) |
+| 3 | `get_native_usv`        |   77 | MIGRATED (session 76) |
+| 4 | `total_pw`              | 2692 | MIGRATED (session 76) |
+| 5 | `find_protchar_left`    | 2731 | MIGRATED (session 76) |
+| 6 | `find_protchar_right`   | 2778 | MIGRATED (session 76) |
+| 7 | `finite_shrink`         | 2377 | MIGRATED (session 76) |
+| 8 | `reconstitute`          | 2428 | MIGRATED (session 76) |
+| 9 | `hyphenate`             | 2010 | MIGRATED (session 76) |
+|10 | `post_line_break`       |  971 | MIGRATED (session 76) |
+|11 | `try_break`             |  978 | MIGRATED (session 78) |
+|12 | `line_break`            |   90 | MIGRATED (session 79) |
 
 ### Phase 6 — engine interface (target: `src/engine_interface.rs`)
 
