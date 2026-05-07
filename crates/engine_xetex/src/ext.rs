@@ -130,9 +130,24 @@ extern "C" {
         name: *const c_char,
         namelength: c_int,
     ) -> c_long;
+    fn getGlyphSidebearings(
+        engine: XeTeXLayoutEngine,
+        glyph_id: u32,
+        lsb: *mut f32,
+        rsb: *mut f32,
+    );
+    fn getGlyphWidthFromEngine(engine: XeTeXLayoutEngine, glyph_id: u32) -> f32;
+    fn mapGlyphToIndex(engine: XeTeXLayoutEngine, glyph_name: *const c_char) -> c_int;
+    fn getFontCharRange(engine: XeTeXLayoutEngine, req_first: c_int) -> c_int;
+    fn getGlyphName(font: XeTeXFont, gid: u16, len: *mut c_int) -> *const c_char;
+    fn freeGlyphName(name: *mut c_char);
+    fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
     #[cfg(target_os = "macos")]
     fn CFRelease(cf: *const c_void);
 }
+
+const LEFT_SIDE: i32 = 0;
+const RIGHT_SIDE: i32 = 1;
 
 unsafe fn mfree_ptr<T>(ptr: *mut T) -> *mut T {
     if !ptr.is_null() {
@@ -839,6 +854,215 @@ pub unsafe extern "C" fn gr_font_get_named_1(
         _ => {}
     }
     rval as i32
+}
+
+// translated from xetex-ext.c:777 (snap_zone) — private helper
+unsafe fn snap_zone(value: *mut i32, snap_value: i32, fuzz: i32) {
+    let difference = *value - snap_value;
+    if difference <= fuzz && difference >= -fuzz {
+        *value = snap_value;
+    }
+}
+
+// translated from xetex-ext.c:785 (get_native_char_height_depth)
+#[no_mangle]
+pub unsafe extern "C" fn get_native_char_height_depth(
+    font: i32,
+    ch: i32,
+    height: *mut i32,
+    depth: *mut i32,
+) {
+    let mut ht = 0.0f32;
+    let mut dp = 0.0f32;
+
+    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        let engine = crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine;
+        let gid = mapCharToGlyph(engine, ch as u32);
+        getGlyphHeightDepth(engine, gid, &mut ht, &mut dp);
+    } else {
+        _tt_abort(
+            b"bad native font flag in `get_native_char_height_depth`\0".as_ptr() as *const c_char,
+        );
+    }
+
+    *height = D2Fix(ht as c_double);
+    *depth = D2Fix(dp as c_double);
+
+    // snap to known zones (baseline, x-height, cap-height) if within 4% of em-size
+    let fuzz =
+        crate::globals::font_info_b32s1(6 + crate::globals::param_base(font)) / 25;
+    snap_zone(depth, 0, fuzz);
+    snap_zone(height, 0, fuzz);
+    snap_zone(
+        height,
+        crate::globals::font_info_b32s1(5 + crate::globals::param_base(font)),
+        fuzz,
+    );
+    snap_zone(
+        height,
+        crate::globals::font_info_b32s1(8 + crate::globals::param_base(font)),
+        fuzz,
+    );
+}
+
+// translated from xetex-ext.c:822 (getnativecharht)
+#[no_mangle]
+pub unsafe extern "C" fn getnativecharht(f: i32, c: i32) -> i32 {
+    let mut h = 0i32;
+    let mut d = 0i32;
+    get_native_char_height_depth(f, c, &mut h, &mut d);
+    h
+}
+
+// translated from xetex-ext.c:830 (getnativechardp)
+#[no_mangle]
+pub unsafe extern "C" fn getnativechardp(f: i32, c: i32) -> i32 {
+    let mut h = 0i32;
+    let mut d = 0i32;
+    get_native_char_height_depth(f, c, &mut h, &mut d);
+    d
+}
+
+// translated from xetex-ext.c:838 (get_native_char_sidebearings)
+#[no_mangle]
+pub unsafe extern "C" fn get_native_char_sidebearings(
+    font: i32,
+    ch: i32,
+    lsb: *mut i32,
+    rsb: *mut i32,
+) {
+    let mut l = 0.0f32;
+    let mut r = 0.0f32;
+
+    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        let engine = crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine;
+        let gid = mapCharToGlyph(engine, ch as u32);
+        getGlyphSidebearings(engine, gid, &mut l, &mut r);
+    } else {
+        _tt_abort(
+            b"bad native font flag in `get_native_char_side_bearings`\0".as_ptr()
+                as *const c_char,
+        );
+    }
+
+    *lsb = D2Fix(l as c_double);
+    *rsb = D2Fix(r as c_double);
+}
+
+// translated from xetex-ext.c:862 (get_glyph_bounds)
+#[no_mangle]
+pub unsafe extern "C" fn get_glyph_bounds(font: i32, edge: i32, gid: i32) -> i32 {
+    // edge codes: 1,2,3,4 => L T R B
+    let mut a = 0.0f32;
+    let mut b = 0.0f32;
+
+    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        let engine = crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine;
+        if edge & 1 != 0 {
+            getGlyphSidebearings(engine, gid as u32, &mut a, &mut b);
+        } else {
+            getGlyphHeightDepth(engine, gid as u32, &mut a, &mut b);
+        }
+    } else {
+        _tt_abort(
+            b"bad native font flag in `get_glyph_bounds`\0".as_ptr() as *const c_char,
+        );
+    }
+    D2Fix(if edge <= 2 { a } else { b } as c_double)
+}
+
+// translated from xetex-ext.c:889 (getnativecharic)
+#[no_mangle]
+pub unsafe extern "C" fn getnativecharic(f: i32, c: i32) -> i32 {
+    let mut lsb = 0i32;
+    let mut rsb = 0i32;
+    get_native_char_sidebearings(f, c, &mut lsb, &mut rsb);
+    if rsb < 0 {
+        crate::globals::font_letter_space_entry(f) - rsb
+    } else {
+        crate::globals::font_letter_space_entry(f)
+    }
+}
+
+// translated from xetex-ext.c:900 (getnativecharwd)
+#[no_mangle]
+pub unsafe extern "C" fn getnativecharwd(f: i32, c: i32) -> i32 {
+    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+        let engine = crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine;
+        let gid = mapCharToGlyph(engine, c as u32);
+        D2Fix(getGlyphWidthFromEngine(engine, gid) as c_double)
+    } else {
+        _tt_abort(b"bad native font flag in `get_native_char_wd`\0".as_ptr() as *const c_char)
+    }
+}
+
+// translated from xetex-ext.c:1261 (map_char_to_glyph)
+#[no_mangle]
+pub unsafe extern "C" fn map_char_to_glyph(font: i32, ch: i32) -> i32 {
+    if ch > 0x10ffff || (ch >= 0xd800 && ch <= 0xdfff) {
+        return 0;
+    }
+    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        mapCharToGlyph(
+            crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine,
+            ch as u32,
+        ) as i32
+    } else {
+        _tt_abort(b"bad native font flag in `map_char_to_glyph`\0".as_ptr() as *const c_char)
+    }
+}
+
+// translated from xetex-ext.c:1278 (map_glyph_to_index)
+// glyph name is at name_of_file
+#[no_mangle]
+pub unsafe extern "C" fn map_glyph_to_index(font: i32) -> i32 {
+    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        mapGlyphToIndex(
+            crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine,
+            crate::globals::name_of_file(),
+        )
+    } else {
+        _tt_abort(b"bad native font flag in `map_glyph_to_index`\0".as_ptr() as *const c_char)
+    }
+}
+
+// translated from xetex-ext.c:1293 (get_font_char_range)
+#[no_mangle]
+pub unsafe extern "C" fn get_font_char_range(font: i32, first: i32) -> i32 {
+    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        getFontCharRange(
+            crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine,
+            first,
+        )
+    } else {
+        _tt_abort(
+            b"bad native font flag in `get_font_char_range'`\0".as_ptr() as *const c_char,
+        )
+    }
+}
+
+// translated from xetex-ext.c:1538 (print_glyph_name)
+#[no_mangle]
+pub unsafe extern "C" fn print_glyph_name(font: i32, gid: i32) {
+    let mut len: c_int = 0;
+    let s;
+
+    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        let engine = crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine;
+        s = getGlyphName(getFont(engine), gid as u16, &mut len);
+    } else {
+        _tt_abort(b"bad native font flag in `print_glyph_name`\0".as_ptr() as *const c_char);
+    }
+
+    let mut p = s;
+    while len > 0 {
+        print_char(*p as i32);
+        p = p.add(1);
+        len -= 1;
+    }
+    if !s.is_null() {
+        freeGlyphName(s as *mut c_char);
+    }
 }
 
 #[cfg(test)]
