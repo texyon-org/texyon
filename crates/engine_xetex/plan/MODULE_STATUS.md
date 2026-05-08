@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 97.
+Last updated: session 98.
 
 
 ## Core engine files (to translate)
@@ -41,7 +41,7 @@ Last updated: session 97.
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |  2167 |     17 | `src/math.rs`                     | IN PROGRESS — 60% |
+| xetex-math.c                 |  2100 |     15 | `src/math.rs`                     | IN PROGRESS — 62% |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -614,7 +614,7 @@ Status: IN PROGRESS (session 91).
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
-Status: IN PROGRESS (session 97).
+Status: IN PROGRESS (session 98).
 
 | # | Function            | Line | Status |
 |--:|---------------------|-----:|--------|
@@ -665,11 +665,12 @@ Status: IN PROGRESS (session 97).
 |45 | `make_over`         | 198 | MIGRATED (session 97, 47196355) |
 |46 | `make_under`        | 207 | MIGRATED (session 97, 47196355) |
 |47 | `make_vcenter`      | 225 | MIGRATED (session 97, 47196355) |
+|48 | `fetch`             | 115 | MIGRATED (session 98, 7b62b15b; promoted from C static) |
+|49 | `compute_ot_math_accent_pos` | 199 | MIGRATED (session 98, 7b62b15b; promoted from C static) |
 
-The next low-risk continuation is `fetch`, which is still a C static helper
-used by the remaining math layout code. It is self-contained but will need
-access to the math scratch globals (`cur_f`, `cur_c`, `cur_i`) and the
-`null_character` value before it can move.
+The next low-risk continuation is `make_radical`. It is small, but calls
+`var_delimiter`, so either move that helper at the same time or promote the
+remaining C helper directly without adding a wrapper.
 
 ### Phases 16+
 

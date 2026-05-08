@@ -32,6 +32,52 @@ template.
 
 ---
 
+## Session 98 — 2026-05-08 — xetex-math.c fetch helpers
+
+**Goal:** Move the next math-list character-fetch helpers out of
+`xetex-math.c` and keep parity green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 97
+
+**Work done:**
+- Translated `fetch` and `compute_ot_math_accent_pos` to `src/math.rs`.
+- Exposed `null_character`, `cur_f`, `cur_c`, and `cur_i` through
+  `src/globals.rs`, keeping math scratch state centralized.
+- Promoted the two former C-static helpers to exported Rust symbols and
+  removed their C bodies from `xetex-math.c`.
+- Code commit: `7b62b15b` (`engine_xetex: translate fetch math helpers to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 98
+
+**Surprises / gotchas:**
+- `fetch` needed the shared `null_character` B16x4 and the math scratch
+  globals that remaining C layout code also reads immediately after calls.
+- `compute_ot_math_accent_pos` maps the C `get_native_glyph(q, 0)` macro
+  to `real_get_native_glyph(mem_node_addr(q), 0)`; using `mem_node_addr`
+  keeps the same node-pointer semantics as C.
+
+**For the next session:**
+- Continue with `make_radical`. It is small, but it depends on
+  `var_delimiter`; either translate that helper in the same slice or promote
+  it directly for Rust callers.
+
 ## Session 97 — 2026-05-08 — xetex-math.c clean_box helpers
 
 **Goal:** Move the next connected math-list box/list helper cluster out of
