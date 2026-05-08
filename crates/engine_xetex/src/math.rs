@@ -1,17 +1,20 @@
 //! Math-mode command helpers translated from `xetex/xetex-math.c`.
 
 use crate::globals::{
-    avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang, cur_list_aux_b32s1,
-    cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf, cur_list_tail, cur_val,
-    cur_val1, eqtb_b32s1, file_line_error_style_p, font_info_b16, font_info_b32s1, hi_mem_min,
-    insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
-    mem_b32s0, mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, save_ptr, save_stack_b32s1,
-    semantic_pagination_enabled, set_avail, set_cur_dir, set_cur_lang, set_cur_list_aux_b32s0,
+    adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
+    cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
+    cur_list_prev_graf, cur_list_tail, cur_val, cur_val1, eqtb_b32s1,
+    file_line_error_style_p, font_info_b16, font_info_b32s1, font_layout_engine_ptr,
+    font_area_entry, font_params, hi_mem_min, insert_src_special_every_math, just_box, lr_problems,
+    lr_ptr, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, mem_gr, mem_word,
+    nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
+    set_adjust_tail, set_avail, set_cur_dir, set_cur_lang, set_cur_list_aux_b32s0,
     set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf,
-    set_cur_list_tail, set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems,
-    set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0,
-    set_mem_b32s1, set_mem_gr, set_mem_word, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
-    set_xtx_ligature_present, temp_ptr, width_base_entry,
+    set_cur_list_tail, set_cur_mlist, set_cur_style, set_cur_val, set_cur_val1, set_help_line,
+    set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2,
+    set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties,
+    set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
+    set_xtx_ligature_present, temp_ptr, total_shrink, width_base_entry,
 };
 use crate::mem::{TEX_NULL, get_node, new_choice, new_noad};
 
@@ -101,8 +104,45 @@ const RIGHT_TO_LEFT: i16 = 1;
 const LEFT_TO_RIGHT: i16 = 0;
 const BEFORE: i32 = 0;
 
+const MATH_FONT_BASE: i32 = 2_255_401;
+const TEXT_SIZE: i32 = 0;
+const SCRIPT_SIZE: i32 = 256;
+const SCRIPT_SCRIPT_SIZE: i32 = 512;
+const TOTAL_MATHSY_PARAMS: i32 = 22;
+const TOTAL_MATHEX_PARAMS: i32 = 13;
+const OTGR_FONT_FLAG: i32 = 0xFFFE;
+const BEGIN_M_CODE: i16 = 2;
+const END_M_CODE: i16 = 3;
+const DISPLAY_STYLE: i16 = 0;
+const TEXT_STYLE: i16 = 2;
+const BOX_NODE_SIZE: i32 = 8;
+const ADJUST_HEAD: i32 = 4_999_994;
+const PRE_ADJUST_HEAD: i32 = 4_999_985;
+const FIL: usize = 1;
+const FILL: usize = 2;
+const FILLL: usize = 3;
+const INF_PENALTY: i32 = 10000;
+const DIMEN_PAR_MATH_SURROUND: i32 = 1;
+const INT_PAR_PRE_DISPLAY_PENALTY: i32 = 11;
+const INT_PAR_POST_DISPLAY_PENALTY: i32 = 12;
+const GLUE_PAR_ABOVE_DISPLAY_SKIP: i16 = 3;
+const GLUE_PAR_BELOW_DISPLAY_SKIP: i16 = 4;
+const GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP: i16 = 5;
+const GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP: i16 = 6;
+const ADDITIONAL: i16 = 1;
+const EXACTLY: i16 = 0;
+const AFTER: i16 = 1;
+const GLUE_NODE: u16 = 10;
+const DLIST: u16 = 2;
+
 extern "C" {
     fn begin_token_list(p: i32, t: u16);
+    fn flush_math();
+    fn mlist_to_hlist();
+    fn math_quad(size_code: i32) -> i32;
+    fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
+    #[allow(dead_code)]
+    fn get_native_mathsy_param(f: i32, n: i32) -> i32;
 }
 
 #[inline]
@@ -600,6 +640,410 @@ pub unsafe extern "C" fn resume_after_display() {
     }
     if nest_ptr() == 1 {
         crate::pagebuilder::build_page();
+    }
+}
+
+#[inline]
+unsafe fn font_is_ot_math(f: i32) -> bool {
+    font_area_entry(f) == OTGR_FONT_FLAG && isOpenTypeMathFont(font_layout_engine_ptr(f))
+}
+
+#[inline]
+unsafe fn sym_font_ok(size: i32) -> bool {
+    let f = eqtb_b32s1(MATH_FONT_BASE + 2 + size);
+    font_params(f) >= TOTAL_MATHSY_PARAMS || font_is_ot_math(f)
+}
+
+#[inline]
+unsafe fn ext_font_ok(size: i32) -> bool {
+    let f = eqtb_b32s1(MATH_FONT_BASE + 3 + size);
+    font_params(f) >= TOTAL_MATHEX_PARAMS || font_is_ot_math(f)
+}
+
+/// translated from xetex-math.c:82 (app_display) — private helper
+unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
+    let mut b = b_in;
+    let mut d = d_in;
+    let s = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
+    let x = eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION);
+
+    if x == 0 {
+        set_mem_b32s1(b + 4, s + d);
+    } else {
+        let z = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
+        let p_orig = b;
+        let mut e;
+        if x > 0 {
+            e = z - d - mem_b32s1(p_orig + 1);
+        } else {
+            e = d;
+            d = z - e - mem_b32s1(p_orig + 1);
+        }
+        if j != TEX_NULL {
+            b = crate::scan::copy_node_list(j);
+            set_mem_b32s1(b + 3, mem_b32s1(p_orig + 3));
+            set_mem_b32s1(b + 2, mem_b32s1(p_orig + 2));
+            let b4 = mem_b32s1(b + 4);
+            let s2 = s - b4;
+            d += s2;
+            e = e + mem_b32s1(b + 1) - z - s2;
+        }
+        let (mut p, mut q);
+        if mem_b16s0(p_orig) == DLIST {
+            q = p_orig;
+            p = p_orig;
+        } else {
+            let r0 = mem_b32s1(p_orig + 5);
+            crate::mem::free_node(p_orig, BOX_NODE_SIZE);
+            if r0 == TEX_NULL {
+                crate::errors::confusion(c"LR4".as_ptr());
+            }
+            let mut r = r0;
+            if x > 0 {
+                p = r;
+                loop {
+                    q = r;
+                    r = mem_b32s1(r);
+                    if r == TEX_NULL {
+                        break;
+                    }
+                }
+            } else {
+                p = TEX_NULL;
+                q = r;
+                loop {
+                    let t = mem_b32s1(r);
+                    set_mem_b32s1(r, p);
+                    p = r;
+                    r = t;
+                    if r == TEX_NULL {
+                        break;
+                    }
+                }
+            }
+        }
+        let (r, t);
+        if j == TEX_NULL {
+            r = crate::mem::new_kern(0);
+            t = crate::mem::new_kern(0);
+        } else {
+            r = mem_b32s1(b + 5);
+            t = mem_b32s1(r);
+        }
+        let u = crate::mem::new_math(0, END_M_CODE);
+        if mem_b16s1(t) == GLUE_NODE {
+            let jj = crate::mem::new_skip_param(GLUE_PAR_RIGHT_SKIP as i16);
+            set_mem_b32s1(q, jj);
+            set_mem_b32s1(jj, u);
+            let jspec = mem_b32s0(t + 1);
+            set_mem_b16s1(temp_ptr(), mem_b16s1(jspec));
+            set_mem_b16s0(temp_ptr(), mem_b16s0(jspec));
+            set_mem_b32s1(temp_ptr() + 1, e - mem_b32s1(jspec + 1));
+            set_mem_b32s1(temp_ptr() + 2, -mem_b32s1(jspec + 2));
+            set_mem_b32s1(temp_ptr() + 3, -mem_b32s1(jspec + 3));
+            set_mem_b32s1(u, t);
+        } else {
+            set_mem_b32s1(t + 1, e);
+            set_mem_b32s1(t, u);
+            set_mem_b32s1(q, t);
+        }
+        let u2 = crate::mem::new_math(0, BEGIN_M_CODE);
+        if mem_b16s1(r) == GLUE_NODE {
+            let jj = crate::mem::new_skip_param(GLUE_PAR_LEFT_SKIP as i16);
+            set_mem_b32s1(u2, jj);
+            set_mem_b32s1(jj, p);
+            let jspec = mem_b32s0(r + 1);
+            set_mem_b16s1(temp_ptr(), mem_b16s1(jspec));
+            set_mem_b16s0(temp_ptr(), mem_b16s0(jspec));
+            set_mem_b32s1(temp_ptr() + 1, d - mem_b32s1(jspec + 1));
+            set_mem_b32s1(temp_ptr() + 2, -mem_b32s1(jspec + 2));
+            set_mem_b32s1(temp_ptr() + 3, -mem_b32s1(jspec + 3));
+            set_mem_b32s1(r, u2);
+        } else {
+            set_mem_b32s1(r + 1, d);
+            set_mem_b32s1(r, p);
+            set_mem_b32s1(u2, r);
+            if j == TEX_NULL {
+                b = crate::scan::hpack(u2, 0, ADDITIONAL);
+                set_mem_b32s1(b + 4, s);
+            } else {
+                set_mem_b32s1(b + 5, u2);
+            }
+        }
+    }
+    crate::scan::append_to_vlist(b);
+}
+
+/// Emit error for insufficient math fonts, flush the math list, set danger.
+unsafe fn check_math_font_params(danger: &mut bool) {
+    if !sym_font_ok(TEXT_SIZE) || !sym_font_ok(SCRIPT_SIZE) || !sym_font_ok(SCRIPT_SCRIPT_SIZE) {
+        crate::output::error_here_with_diagnostic(
+            c"Math formula deleted: Insufficient symbol fonts".as_ptr(),
+        );
+        crate::output::capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(3);
+        set_help_line(2, c"Sorry, but I can't typeset math unless \\textfont 2".as_ptr());
+        set_help_line(1, c"and \\scriptfont 2 and \\scriptscriptfont 2 have all".as_ptr());
+        set_help_line(0, c"the \\fontdimen values needed in math symbol fonts.".as_ptr());
+        crate::errors::error();
+        flush_math();
+        *danger = true;
+    } else if !ext_font_ok(TEXT_SIZE) || !ext_font_ok(SCRIPT_SIZE) || !ext_font_ok(SCRIPT_SCRIPT_SIZE) {
+        crate::output::error_here_with_diagnostic(
+            c"Math formula deleted: Insufficient extension fonts".as_ptr(),
+        );
+        crate::output::capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(3);
+        set_help_line(2, c"Sorry, but I can't typeset math unless \\textfont 3".as_ptr());
+        set_help_line(1, c"and \\scriptfont 3 and \\scriptscriptfont 3 have all".as_ptr());
+        set_help_line(0, c"the \\fontdimen values needed in math extension fonts.".as_ptr());
+        crate::errors::error();
+        flush_math();
+        *danger = true;
+    }
+}
+
+/// translated from xetex-math.c:194 (after_math)
+#[no_mangle]
+pub unsafe extern "C" fn after_math() {
+    let mut danger = false;
+
+    let mut j = if cur_list_mode() == MMODE {
+        cur_list_e_tex_aux()
+    } else {
+        TEX_NULL
+    };
+
+    check_math_font_params(&mut danger);
+
+    let mut m = cur_list_mode() as i32;
+    let mut l = false;
+    let mut p = fin_mlist(TEX_NULL);
+
+    let a;
+    if cur_list_mode() as i32 == -m {
+        // eTeX display math: second `$$` ends an inner display
+        crate::scan::get_x_token();
+        if cur_cmd() != MATH_SHIFT {
+            crate::output::error_here_with_diagnostic(
+                c"Display math should end with $$".as_ptr(),
+            );
+            crate::output::capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(2);
+            set_help_line(
+                1,
+                c"The `$' that I just saw supposedly matches a previous `$$'.".as_ptr(),
+            );
+            set_help_line(
+                0,
+                c"So I shall assume that you typed `$$' both times.".as_ptr(),
+            );
+            crate::input::back_error();
+        }
+        set_cur_mlist(p);
+        set_cur_style(TEXT_STYLE);
+        set_mlist_penalties(false);
+        mlist_to_hlist();
+        a = crate::scan::hpack(mem_b32s1(TEMP_HEAD), 0, ADDITIONAL);
+        set_mem_b16s0(a, DLIST);
+        crate::save::unsave();
+        set_save_ptr(save_ptr() - 1);
+        if save_stack_b32s1(save_ptr()) == 1 {
+            l = true;
+        }
+        danger = false;
+
+        j = if cur_list_mode() == MMODE {
+            cur_list_e_tex_aux()
+        } else {
+            TEX_NULL
+        };
+
+        check_math_font_params(&mut danger);
+
+        m = cur_list_mode() as i32;
+        p = fin_mlist(TEX_NULL);
+    } else {
+        a = TEX_NULL;
+    }
+
+    if m < 0 {
+        // inline math (or inner/restricted hmode)
+        let math_surround = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_MATH_SURROUND);
+        let node = crate::mem::new_math(math_surround, BEFORE as i16);
+        set_mem_b32s1(cur_list_tail(), node);
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        set_cur_mlist(p);
+        set_cur_style(TEXT_STYLE);
+        set_mlist_penalties(cur_list_mode() > 0);
+        mlist_to_hlist();
+        set_mem_b32s1(cur_list_tail(), mem_b32s1(TEMP_HEAD));
+        while mem_b32s1(cur_list_tail()) != TEX_NULL {
+            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        }
+        let node2 = crate::mem::new_math(math_surround, AFTER);
+        set_mem_b32s1(cur_list_tail(), node2);
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        set_cur_list_aux_b32s0(1000);
+
+        if semantic_pagination_enabled() {
+            crate::scan::tt_insert_special(c"tdux:ce math".as_ptr());
+        }
+
+        crate::save::unsave();
+    } else {
+        // display math
+        if a == TEX_NULL {
+            crate::scan::get_x_token();
+            if cur_cmd() != MATH_SHIFT {
+                crate::output::error_here_with_diagnostic(
+                    c"Display math should end with $$".as_ptr(),
+                );
+                crate::output::capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(2);
+                set_help_line(
+                    1,
+                    c"The `$' that I just saw supposedly matches a previous `$$'.".as_ptr(),
+                );
+                set_help_line(
+                    0,
+                    c"So I shall assume that you typed `$$' both times.".as_ptr(),
+                );
+                crate::input::back_error();
+            }
+        }
+        set_cur_mlist(p);
+        set_cur_style(DISPLAY_STYLE);
+        set_mlist_penalties(false);
+        mlist_to_hlist();
+        p = mem_b32s1(TEMP_HEAD);
+        set_adjust_tail(ADJUST_HEAD);
+        set_pre_adjust_tail(PRE_ADJUST_HEAD);
+        let mut b = crate::scan::hpack(p, 0, ADDITIONAL);
+        p = mem_b32s1(b + 5);
+        let t = adjust_tail();
+        set_adjust_tail(TEX_NULL);
+        let pre_t = pre_adjust_tail();
+        set_pre_adjust_tail(TEX_NULL);
+        let mut w = mem_b32s1(b + 1);
+        let z = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
+        let mut s = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
+        if eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION) < 0 {
+            s = -s - z;
+        }
+        let (mut e, q);
+        if a == TEX_NULL || danger {
+            e = 0;
+            q = 0;
+        } else {
+            e = mem_b32s1(a + 1);
+            q = e + math_quad(TEXT_SIZE as i32);
+        }
+        if w + q > z {
+            if e != 0
+                && (w - total_shrink(0) + q <= z
+                    || total_shrink(FIL) != 0
+                    || total_shrink(FILL) != 0
+                    || total_shrink(FILLL) != 0)
+            {
+                crate::mem::free_node(b, BOX_NODE_SIZE);
+                b = crate::scan::hpack(p, z - q, EXACTLY);
+            } else {
+                e = 0;
+                if w > z {
+                    crate::mem::free_node(b, BOX_NODE_SIZE);
+                    b = crate::scan::hpack(p, z, EXACTLY);
+                }
+            }
+            w = mem_b32s1(b + 1);
+        }
+        set_mem_b16s0(b, DLIST);
+        let mut d = crate::scaled_math::half(z - w);
+        if e > 0 && d < 2 * e {
+            d = crate::scaled_math::half(z - w - e);
+            if p != TEX_NULL
+                && p < crate::globals::hi_mem_min()
+                && mem_b16s1(p) == GLUE_NODE
+            {
+                d = 0;
+            }
+        }
+
+        let penalty_node = crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY));
+        set_mem_b32s1(cur_list_tail(), penalty_node);
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+
+        let pre_display_size = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
+        let (g1, mut g2);
+        if d + s <= pre_display_size || l {
+            g1 = GLUE_PAR_ABOVE_DISPLAY_SKIP;
+            g2 = GLUE_PAR_BELOW_DISPLAY_SKIP;
+        } else {
+            g1 = GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP;
+            g2 = GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP;
+        }
+
+        if l && e == 0 {
+            app_display(j, a, 0);
+            let inf_node = crate::mem::new_penalty(INF_PENALTY);
+            set_mem_b32s1(cur_list_tail(), inf_node);
+            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        } else {
+            let g1_node = crate::mem::new_param_glue(g1);
+            set_mem_b32s1(cur_list_tail(), g1_node);
+            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        }
+
+        if e != 0 {
+            let r = crate::mem::new_kern(z - w - e - d);
+            if l {
+                set_mem_b32s1(a, r);
+                set_mem_b32s1(r, b);
+                b = a;
+                d = 0;
+            } else {
+                set_mem_b32s1(b, r);
+                set_mem_b32s1(r, a);
+            }
+            b = crate::scan::hpack(b, 0, ADDITIONAL);
+        }
+
+        app_display(j, b, d);
+
+        if a != TEX_NULL && e == 0 && !l {
+            let inf_node2 = crate::mem::new_penalty(INF_PENALTY);
+            set_mem_b32s1(cur_list_tail(), inf_node2);
+            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+            app_display(j, a, z - mem_b32s1(a + 1));
+            g2 = 0;
+        }
+
+        if t != ADJUST_HEAD {
+            set_mem_b32s1(cur_list_tail(), mem_b32s1(ADJUST_HEAD));
+            set_cur_list_tail(t);
+        }
+        if pre_t != PRE_ADJUST_HEAD {
+            set_mem_b32s1(cur_list_tail(), mem_b32s1(PRE_ADJUST_HEAD));
+            set_cur_list_tail(pre_t);
+        }
+
+        let post_pen = crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY));
+        set_mem_b32s1(cur_list_tail(), post_pen);
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+
+        if g2 > 0 {
+            let g2_node = crate::mem::new_param_glue(g2);
+            set_mem_b32s1(cur_list_tail(), g2_node);
+            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        }
+
+        crate::scan::flush_node_list(j);
+
+        if semantic_pagination_enabled() {
+            crate::scan::tt_insert_special(c"tdux:ce dmath".as_ptr());
+        }
+
+        resume_after_display();
     }
 }
 
