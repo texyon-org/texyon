@@ -40,6 +40,7 @@ mod texmfmp;
 mod errors;
 mod input;
 mod linebreak;
+mod math;
 mod output;
 mod save;
 mod scaled_math;

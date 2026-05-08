@@ -522,8 +522,9 @@ mod raw {
         pub(super) static mut hyph_index: i32;
         // Current hyphenation language (xetex-xetexd.h:623; unsigned char = u8).
         pub(super) static mut cur_lang: u8;
-        // SyncTeX "insert special on every paragraph/vbox" flag (xetex-xetexd.h:420-422).
+        // SyncTeX "insert special on every paragraph/math/vbox" flag (xetex-xetexd.h:420-422).
         pub(super) static mut insert_src_special_every_par: bool;
+        pub(super) static mut insert_src_special_every_math: bool;
         pub(super) static mut insert_src_special_every_vbox: bool;
         // Currently assembled box (xetex-xetexd.h:687; node index = i32).
         pub(super) static mut cur_box: i32;
@@ -3295,6 +3296,10 @@ pub(crate) fn set_cur_lang(v: u8) {
 #[inline]
 pub(crate) fn insert_src_special_every_par() -> bool {
     unsafe { raw::insert_src_special_every_par }
+}
+#[inline]
+pub(crate) fn insert_src_special_every_math() -> bool {
+    unsafe { raw::insert_src_special_every_math }
 }
 #[inline]
 pub(crate) fn insert_src_special_every_vbox() -> bool {
