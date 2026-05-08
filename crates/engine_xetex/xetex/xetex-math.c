@@ -44,11 +44,11 @@ static int32_t var_delimiter(int32_t d, int32_t s, scaled_t v);
 static int32_t rebox(int32_t b, scaled_t w);
 int32_t math_glue(int32_t g, scaled_t m);
 void math_kern(int32_t p, scaled_t m);
-static int32_t clean_box(int32_t p, small_number s);
+int32_t clean_box(int32_t p, small_number s);
 static void fetch(int32_t a);
-static void make_over(int32_t q);
-static void make_under(int32_t q);
-static void make_vcenter(int32_t q);
+void make_over(int32_t q);
+void make_under(int32_t q);
+void make_vcenter(int32_t q);
 static void make_radical(int32_t q);
 static scaled_t compute_ot_math_accent_pos(int32_t p);
 static void make_math_accent(int32_t q);
@@ -65,7 +65,7 @@ static b16x4 null_delimiter;
 int32_t cur_mlist;
 small_number cur_style;
 int32_t cur_size;
-static scaled_t cur_mu;
+scaled_t cur_mu;
 bool mlist_penalties;
 
 void
@@ -76,82 +76,6 @@ initialize_math_variables(void)
     null_delimiter.s1 = 0;
     null_delimiter.s0 = 0;
 }
-void
-flush_math(void)
-{
-    flush_node_list(mem[cur_list.head].b32.s1);
-    flush_node_list(cur_list.aux.b32.s1);
-    mem[cur_list.head].b32.s1 = TEX_NULL;
-    cur_list.tail = cur_list.head;
-    cur_list.aux.b32.s1 = TEX_NULL;
-}
-
-
-static int32_t
-clean_box(int32_t p, small_number s)
-{
-    int32_t q;
-    small_number save_style;
-    int32_t x;
-    int32_t r;
-    switch (mem[p].b32.s1) {
-    case 1:
-        {
-            cur_mlist = new_noad();
-            mem[cur_mlist + 1] = mem[p];
-        }
-        break;
-    case 2:
-        q = mem[p].b32.s0;
-        goto found;
-    case 3:
-        cur_mlist = mem[p].b32.s0;
-        break;
-    default:
-        q = new_null_box();
-        goto found;
-    }
-    save_style = cur_style;
-    cur_style = s;
-    mlist_penalties = false;
-    mlist_to_hlist();
-    q = mem[TEMP_HEAD].b32.s1;
-    cur_style = save_style;
-    {
-        if (cur_style < SCRIPT_STYLE)
-            cur_size = TEXT_SIZE;
-        else
-            cur_size = SCRIPT_SIZE * ((cur_style - 2) / 2);
-        cur_mu = x_over_n(math_quad(cur_size), 18);
-    }
-found:
-    if ((is_char_node(q)) || (q == TEX_NULL))
-        x = hpack(q, 0, ADDITIONAL);
-    else if ((mem[q].b32.s1 == TEX_NULL) && (NODE_type(q) <= VLIST_NODE) && (mem[q + 4].b32.s1 == 0))
-        x = q;
-    else
-        x = hpack(q, 0, ADDITIONAL);
-    q = mem[x + 5].b32.s1;
-    if ((is_char_node(q))) {
-        r = mem[q].b32.s1;
-        if (r != TEX_NULL) {
-
-            if (mem[r].b32.s1 == TEX_NULL) {
-
-                if (!(is_char_node(r))) {
-
-                    if (NODE_type(r) == KERN_NODE) {
-                        free_node(r, MEDIUM_NODE_SIZE);
-                        mem[q].b32.s1 = TEX_NULL;
-                    }
-                }
-            }
-        }
-    }
-    return x;
-}
-
-
 static void
 fetch(int32_t a)
 {
@@ -191,47 +115,6 @@ fetch(int32_t a)
             cur_i = null_character;
         }
     }
-}
-
-
-static void
-make_over(int32_t q)
-{
-        mem[q + 1].b32.s0 =
-        overbar(clean_box(q + 1, 2 * (cur_style / 2) + 1), 3 * default_rule_thickness(), default_rule_thickness());
-    mem[q + 1].b32.s1 = SUB_BOX;
-}
-
-
-static void
-make_under(int32_t q)
-{
-    int32_t p, x, y;
-    scaled_t delta;
-    x = clean_box(q + 1, cur_style);
-    p = new_kern(3 * default_rule_thickness());
-    mem[x].b32.s1 = p;
-    mem[p].b32.s1 = fraction_rule(default_rule_thickness());
-    y = vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
-    delta = mem[y + 3].b32.s1 + mem[y + 2].b32.s1 + default_rule_thickness();
-    mem[y + 3].b32.s1 = mem[x + 3].b32.s1;
-    mem[y + 2].b32.s1 = delta - mem[y + 3].b32.s1;
-    mem[q + 1].b32.s0 = y;
-    mem[q + 1].b32.s1 = SUB_BOX;
-}
-
-
-static void
-make_vcenter(int32_t q)
-{
-    int32_t v;
-    scaled_t delta;
-    v = mem[q + 1].b32.s0;
-    if (NODE_type(v) != VLIST_NODE)
-        confusion("vcenter");
-    delta = mem[v + 3].b32.s1 + mem[v + 2].b32.s1;
-    mem[v + 3].b32.s1 = axis_height(cur_size) + half(delta);
-    mem[v + 2].b32.s1 = delta - mem[v + 3].b32.s1;
 }
 
 

@@ -3,20 +3,20 @@
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
     cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf,
-    cur_list_tail, cur_size, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p,
+    cur_list_tail, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p,
     font_area_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr, font_params,
     hi_mem_min, insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
     mem_b32s0, mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr,
     save_stack_b32s1, semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir,
     set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux,
     set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail, set_cur_mlist, set_cur_style,
-    set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr,
+    set_cur_mu, set_cur_size, set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr,
     set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1,
     set_mem_gr, set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr,
     set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr, tex_remainder,
     total_shrink, width_base_entry,
 };
-use crate::mem::{get_node, new_choice, new_kern, new_noad, new_rule, TEX_NULL};
+use crate::mem::{free_node, get_node, new_choice, new_kern, new_noad, new_rule, TEX_NULL};
 
 const INT_BASE: i32 = 7_826_729;
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -115,6 +115,7 @@ const BEGIN_M_CODE: i16 = 2;
 const END_M_CODE: i16 = 3;
 const DISPLAY_STYLE: i16 = 0;
 const TEXT_STYLE: i16 = 2;
+const SCRIPT_STYLE: i16 = 4;
 const BOX_NODE_SIZE: i32 = 8;
 const ADJUST_HEAD: i32 = 4_999_994;
 const PRE_ADJUST_HEAD: i32 = 4_999_985;
@@ -137,10 +138,13 @@ const DLIST: u16 = 2;
 const GLUE_SPEC_SIZE: i32 = 4;
 const MU_GLUE: u16 = 99;
 const EXPLICIT: u16 = 1;
+const VLIST_NODE: u16 = 1;
+const KERN_NODE: u16 = 11;
+const MEDIUM_NODE_SIZE: i32 = 3;
+const SUB_BOX: i32 = 2;
 
 extern "C" {
     fn begin_token_list(p: i32, t: u16);
-    fn flush_math();
     fn mlist_to_hlist();
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
     fn get_native_mathsy_param(f: i32, n: i32) -> i32;
@@ -409,6 +413,130 @@ pub unsafe extern "C" fn math_kern(p: i32, m: i32) {
         );
         set_mem_b16s0(p, EXPLICIT);
     }
+}
+
+/// translated from xetex-math.c:80 (flush_math)
+#[no_mangle]
+pub unsafe extern "C" fn flush_math() {
+    crate::scan::flush_node_list(mem_b32s1(cur_list_head()));
+    crate::scan::flush_node_list(cur_list_aux_b32s1());
+    set_mem_b32s1(cur_list_head(), TEX_NULL);
+    set_cur_list_tail(cur_list_head());
+    set_cur_list_aux_b32s1(TEX_NULL);
+}
+
+#[inline]
+unsafe fn is_char_node(p: i32) -> bool {
+    p >= hi_mem_min()
+}
+
+/// translated from xetex-math.c:91 (clean_box)
+#[no_mangle]
+pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
+    let q;
+    match mem_b32s1(p) {
+        MATH_CHAR => {
+            let mlist = new_noad();
+            set_cur_mlist(mlist);
+            set_mem_word(mlist + 1, mem_word(p));
+
+            let save_style = cur_style();
+            set_cur_style(s);
+            set_mlist_penalties(false);
+            mlist_to_hlist();
+            q = mem_b32s1(TEMP_HEAD);
+            set_cur_style(save_style);
+
+            if cur_style() < SCRIPT_STYLE {
+                set_cur_size(TEXT_SIZE);
+            } else {
+                set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
+            }
+            set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+        }
+        SUB_BOX => {
+            q = mem_b32s0(p);
+        }
+        SUB_MLIST => {
+            set_cur_mlist(mem_b32s0(p));
+
+            let save_style = cur_style();
+            set_cur_style(s);
+            set_mlist_penalties(false);
+            mlist_to_hlist();
+            q = mem_b32s1(TEMP_HEAD);
+            set_cur_style(save_style);
+
+            if cur_style() < SCRIPT_STYLE {
+                set_cur_size(TEXT_SIZE);
+            } else {
+                set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
+            }
+            set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+        }
+        _ => {
+            q = crate::mem::new_null_box();
+        }
+    }
+
+    let x = if is_char_node(q) || q == TEX_NULL {
+        crate::scan::hpack(q, 0, ADDITIONAL)
+    } else if mem_b32s1(q) == TEX_NULL && mem_b16s1(q) <= VLIST_NODE && mem_b32s1(q + 4) == 0 {
+        q
+    } else {
+        crate::scan::hpack(q, 0, ADDITIONAL)
+    };
+
+    let q = mem_b32s1(x + 5);
+    if is_char_node(q) {
+        let r = mem_b32s1(q);
+        if r != TEX_NULL && mem_b32s1(r) == TEX_NULL && !is_char_node(r) && mem_b16s1(r) == KERN_NODE {
+            free_node(r, MEDIUM_NODE_SIZE);
+            set_mem_b32s1(q, TEX_NULL);
+        }
+    }
+    x
+}
+
+/// translated from xetex-math.c:198 (make_over)
+#[no_mangle]
+pub unsafe extern "C" fn make_over(q: i32) {
+    set_mem_b32s0(
+        q + 1,
+        overbar(
+            clean_box(q + 1, 2 * (cur_style() / 2) + 1),
+            3 * default_rule_thickness(),
+            default_rule_thickness(),
+        ),
+    );
+    set_mem_b32s1(q + 1, SUB_BOX);
+}
+
+/// translated from xetex-math.c:207 (make_under)
+#[no_mangle]
+pub unsafe extern "C" fn make_under(q: i32) {
+    let x = clean_box(q + 1, cur_style());
+    let p = new_kern(3 * default_rule_thickness());
+    set_mem_b32s1(x, p);
+    set_mem_b32s1(p, fraction_rule(default_rule_thickness()));
+    let y = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
+    let delta = mem_b32s1(y + 3) + mem_b32s1(y + 2) + default_rule_thickness();
+    set_mem_b32s1(y + 3, mem_b32s1(x + 3));
+    set_mem_b32s1(y + 2, delta - mem_b32s1(y + 3));
+    set_mem_b32s0(q + 1, y);
+    set_mem_b32s1(q + 1, SUB_BOX);
+}
+
+/// translated from xetex-math.c:225 (make_vcenter)
+#[no_mangle]
+pub unsafe extern "C" fn make_vcenter(q: i32) {
+    let v = mem_b32s0(q + 1);
+    if mem_b16s1(v) != VLIST_NODE {
+        crate::errors::confusion(c"vcenter".as_ptr());
+    }
+    let delta = mem_b32s1(v + 3) + mem_b32s1(v + 2);
+    set_mem_b32s1(v + 3, axis_height(cur_size()) + crate::scaled_math::half(delta));
+    set_mem_b32s1(v + 2, delta - mem_b32s1(v + 3));
 }
 
 /// translated from xetex-math.c:388 (scan_delimiter)
