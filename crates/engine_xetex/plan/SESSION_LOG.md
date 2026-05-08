@@ -32,6 +32,55 @@ template.
 
 ---
 
+## Session 89 — 2026-05-08 — xetex-ext.c native font loading
+
+**Goal:** Translate the remaining native-font loading path from `xetex-ext.c`
+to `src/ext.rs`, leaving only the shaping-heavy `measure_native_node` body in C.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 88
+
+**Work done:**
+- Added global setters for `loaded_font_letter_space` and `native_font_type_flag`.
+- Added the font-manager/layout FFI bindings needed by the native-font loader.
+- Translated `loadOTfont` as private Rust helper `load_ot_font`, including feature-string
+  parsing, Graphite feature resolution, shaper list construction, color/vertical flags,
+  letterspacing, and layout-engine creation/cleanup.
+- Translated exported `find_native_font`, including `[filename]` loading, system-font
+  lookup, design-size rescaling, `name_of_file` rewriting, tracing diagnostics, and
+  handoff to `load_ot_font`.
+- Deleted the C bodies for `loadOTfont` and `find_native_font`.
+- Commit: 89869eaa. `xetex-ext.c` reduced from 670 LOC / ~3 bodies to 296 LOC / ~1 compiled body.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 89
+
+**Surprises / gotchas:**
+- The current generated `tectonic_xetex_layout.h` has the Tectonic-local
+  `createLayoutEngine(font, ...)` signature, not the older upstream
+  `createLayoutEngine(fontRef, font, ...)` form.
+- The macOS AAT fallback branch remains platform-guarded; this Linux session
+  translated the compiled OpenType/Graphite path. The remaining body,
+  `measure_native_node`, is the full ICU BiDi + HarfBuzz/Graphite shaping path.
+
+**For the next session:**
+- Translate `measure_native_node` from `xetex-ext.c` to complete the compiled
+  Linux contents of `xetex-ext.c`.
+- The Rust side will need FFI for ICU `ubidi_*`, layout result accessors
+  (`layoutChars`, `getGlyphs`, `getGlyphAdvances`, `getGlyphPositions`),
+  glyph bbox cache (`getCachedGlyphBBox`, `cacheGlyphBBox`), and a repr-C
+  `FloatPoint`/`GlyphBBox`.
+
+---
+
 ## Session 88 — 2026-05-08 — xetex-ext.c linebreak, XDV, font-def, and AAT helpers
 
 **Goal:** Translate linebreak iterators, XDV glyph-array serialisation,

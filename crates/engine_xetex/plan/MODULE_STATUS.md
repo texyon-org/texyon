@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 88.
+Last updated: session 89.
 
 
 ## Core engine files (to translate)
@@ -45,7 +45,7 @@ Last updated: session 88.
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
-| xetex-ext.c                  |   670 |       ~3 | `src/ext.rs`                      | IN PROGRESS — 95% |
+| xetex-ext.c                  |   296 |       ~1 | `src/ext.rs`                      | IN PROGRESS — 99% |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
@@ -525,7 +525,7 @@ Status: DONE (session 80).
 
 ### Phase 13 — xetex-ext.c helpers (target: `src/ext.rs`)
 
-Status: IN PROGRESS (session 87).
+Status: IN PROGRESS (session 89).
 
 | # | Function      | Line | Status |
 |--:|---------------|-----:|--------|
@@ -583,11 +583,17 @@ Status: IN PROGRESS (session 87).
 |52 | `aat_font_get_named` | 1925 | MIGRATED (session 88, 932d70f1 — returns -1 on Linux) |
 |53 | `aat_font_get_named_1` | 1936 | MIGRATED (session 88, 932d70f1 — returns -1 on Linux) |
 |54 | `aat_print_font_name` | 1949 | MIGRATED (session 88, 932d70f1 — no-op on Linux) |
+|55 | `loadOTfont` (static) | 72 | MIGRATED (session 89, 89869eaa — private Rust fn) |
+|56 | `find_native_font` | 283 | MIGRATED (session 89, 89869eaa) |
 
 Session 88 also promoted `brkIter` → `BRK_ITER`, `brkLocaleStrNum` → `BRK_LOCALE_STR_NUM`,
 `xdvBufSize` → `XDV_BUF_SIZE` file-statics to Rust. Added ICU version detection in build.rs
 (reads `uvernum.h` → `ICU_VERSION_SUFFIX` env var) to resolve version-mangled symbols via
 `#[link_name = concat!("ubrk_open", env!("ICU_VERSION_SUFFIX"))]`.
+
+Session 89 added setters for `loaded_font_letter_space` and `native_font_type_flag`, translated
+the Linux OpenType/Graphite native-font loader path (`loadOTfont` as private Rust helper plus
+exported `find_native_font`), and left `measure_native_node` as the one remaining compiled C body.
 
 Session 83 also moved the former `saved_mapping_name` file-static into
 Rust as `SAVED_MAPPING_NAME`.
