@@ -44,6 +44,7 @@ mod output;
 mod save;
 mod scaled_math;
 mod pagebuilder;
+mod shipout;
 mod pic;
 mod synctex;
 #[allow(dead_code)]
