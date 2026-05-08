@@ -32,6 +32,54 @@ template.
 
 ---
 
+## Session 92 — 2026-05-08 — xetex-math.c command helpers
+
+**Goal:** Start `xetex-math.c` with the math-mode command/front-end helpers
+that build noads and math-list state.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 91
+
+**Work done:**
+- Created `src/math.rs` and wired it into `src/lib.rs`.
+- Added the `insert_src_special_every_math` raw global/accessor used by
+  `start_eq_no`.
+- Translated 10 helpers from `xetex-math.c`: `start_eq_no`,
+  `math_limit_switch`, `scan_delimiter`, `math_radical`, `append_choices`,
+  `fin_mlist`, `build_choices`, `sub_sup`, `math_fraction`, and
+  `math_left_right`.
+- Deleted those C bodies from `xetex-math.c`. `scan_delimiter` was promoted
+  from C static to an exported Rust symbol because the remaining C `math_ac`
+  body still calls it.
+- Commit: 7e81f4b6.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 92
+
+**Surprises / gotchas:**
+- `null_delimiter` is initialized to all-zero fields in C, so the Rust
+  fraction setup writes zeros directly for the two delimiter slots.
+- A crate-wide `cargo fmt -p` touched unrelated generated-style Rust files;
+  that churn was removed before committing, and only `src/math.rs` was
+  formatted.
+- The test run generated the usual observed/expected artifacts outside this
+  crate; they were left untouched.
+
+**For the next session:**
+- Continue `xetex-math.c`. `math_ac` is the natural next target because it is
+  adjacent to the migrated command helpers and still consumes the exported
+  `scan_delimiter`.
+
+---
+
 ## Session 91 — 2026-05-08 — xetex-shipout.c edge node helper
 
 **Goal:** Start `xetex-shipout.c` by translating a small public helper with

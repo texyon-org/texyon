@@ -105,6 +105,7 @@ cargo test -p tectonic --test tex-outputs
 |      89 | 2026-05-08 |     29 |    29 |     0 | xetex-ext.c: translate loadOTfont (private Rust helper) and find_native_font (89869eaa). xetex-ext.c 670→296 LOC. All 4 suites pass. |
 |      90 | 2026-05-08 |     29 |    29 |     0 | xetex-ext.c: translate measure_native_node (9acfe915), including ICU BiDi, layout copying, letterspacing, and glyph bbox metrics. xetex-ext.c 296→97 LOC / zero Linux C bodies. All 4 suites pass. |
 |      91 | 2026-05-08 |     29 |    29 |     0 | xetex-shipout.c: translate new_edge (3ecb7ae8), starting src/shipout.rs. All 4 suites pass. |
+|      92 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate 10 math command helpers (7e81f4b6), starting src/math.rs. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -196,6 +197,7 @@ Passed count below the previous session's recorded value.
 |      89 | ~11,656 |                  ~35,880 |      ~24.5% |
 |      90 | ~11,457 |                  ~36,166 |      ~24.1% |
 |      91 | ~11,443 |                  ~36,190 |      ~24.0% |
+|      92 | 10,311 |                  37,025 |       21.8% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -284,6 +286,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      86 |      447 |             ~?? |       ~?? |
 |      87 |      452 |             ~?? |       ~?? |
 |      91 |      453 |             ~?? |       ~?? |
+|      92 |      463 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -299,7 +302,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **91** (sessions 1–91 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **92** (sessions 1–92 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

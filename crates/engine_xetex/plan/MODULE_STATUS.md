@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |          2 |
-| IN PROGRESS    |          2 |
+| NOT STARTED    |          1 |
+| IN PROGRESS    |          3 |
 | DONE           |         12 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 91.
+Last updated: session 92.
 
 
 ## Core engine files (to translate)
@@ -41,7 +41,7 @@ Last updated: session 91.
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
+| xetex-math.c                 |  3479 |    ~44 | `src/math.rs`                     | IN PROGRESS — 19% |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -612,7 +612,28 @@ Status: IN PROGRESS (session 91).
 |--:|------------|-----:|--------|
 | 1 | `new_edge` | 1708 | MIGRATED (session 91, 3ecb7ae8) |
 
-### Phases 15+
+### Phase 15 — xetex-math.c command helpers (target: `src/math.rs`)
+
+Status: IN PROGRESS (session 92).
+
+| # | Function            | Line | Status |
+|--:|---------------------|-----:|--------|
+| 1 | `start_eq_no`       | 354 | MIGRATED (session 92, 7e81f4b6) |
+| 2 | `math_limit_switch` | 368 | MIGRATED (session 92, 7e81f4b6) |
+| 3 | `scan_delimiter`    | 388 | MIGRATED (session 92, 7e81f4b6; promoted from C static) |
+| 4 | `math_radical`      | 461 | MIGRATED (session 92, 7e81f4b6) |
+| 5 | `append_choices`    | 533 | MIGRATED (session 92, 7e81f4b6) |
+| 6 | `fin_mlist`         | 545 | MIGRATED (session 92, 7e81f4b6) |
+| 7 | `build_choices`     | 571 | MIGRATED (session 92, 7e81f4b6) |
+| 8 | `sub_sup`           | 599 | MIGRATED (session 92, 7e81f4b6) |
+| 9 | `math_fraction`     | 644 | MIGRATED (session 92, 7e81f4b6) |
+|10 | `math_left_right`   | 703 | MIGRATED (session 92, 7e81f4b6) |
+
+`scan_delimiter` remains callable from C because the still-C `math_ac` body uses
+it. Continue this phase by translating `math_ac`, or move deeper into the
+math-list conversion helpers once the command front-end cluster is complete.
+
+### Phases 16+
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.
