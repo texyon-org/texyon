@@ -2,21 +2,20 @@
 
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
-    cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
-    cur_list_prev_graf, cur_list_tail, cur_val, cur_val1, eqtb_b32s1,
-    file_line_error_style_p, font_info_b16, font_info_b32s1, font_layout_engine_ptr,
-    font_area_entry, font_params, hi_mem_min, insert_src_special_every_math, just_box, lr_problems,
-    lr_ptr, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, mem_gr, mem_word,
-    nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
-    set_adjust_tail, set_avail, set_cur_dir, set_cur_lang, set_cur_list_aux_b32s0,
-    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf,
-    set_cur_list_tail, set_cur_mlist, set_cur_style, set_cur_val, set_cur_val1, set_help_line,
-    set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2,
-    set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties,
-    set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
-    set_xtx_ligature_present, temp_ptr, total_shrink, width_base_entry,
+    cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf,
+    cur_list_tail, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p, font_area_entry,
+    font_info_b16, font_info_b32s1, font_layout_engine_ptr, font_params, hi_mem_min,
+    insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b32s0,
+    mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
+    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_lang,
+    set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode,
+    set_cur_list_prev_graf, set_cur_list_tail, set_cur_mlist, set_cur_style, set_cur_val,
+    set_cur_val1, set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr,
+    set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1,
+    set_temp_ptr, set_xtx_ligature_present, temp_ptr, total_shrink, width_base_entry,
 };
-use crate::mem::{TEX_NULL, get_node, new_choice, new_noad};
+use crate::mem::{get_node, new_choice, new_noad, TEX_NULL};
 
 const INT_BASE: i32 = 7_826_729;
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -139,9 +138,7 @@ extern "C" {
     fn begin_token_list(p: i32, t: u16);
     fn flush_math();
     fn mlist_to_hlist();
-    fn math_quad(size_code: i32) -> i32;
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
-    #[allow(dead_code)]
     fn get_native_mathsy_param(f: i32, n: i32) -> i32;
 }
 
@@ -149,6 +146,123 @@ extern "C" {
 unsafe fn set_empty_math_field(p: i32) {
     set_mem_b32s1(p, EMPTY);
     set_mem_b32s0(p, TEX_NULL);
+}
+
+#[inline]
+unsafe fn math_font(n: i32) -> i32 {
+    eqtb_b32s1(MATH_FONT_BASE + n)
+}
+
+#[inline]
+unsafe fn math_sy_param(size_code: i32, param: i32) -> i32 {
+    let f = math_font(2 + size_code);
+    if font_is_ot_math(f) {
+        get_native_mathsy_param(f, param)
+    } else {
+        font_info_b32s1(param + param_base(f))
+    }
+}
+
+/// translated from xetex-math.c:86 (math_x_height)
+#[no_mangle]
+pub unsafe extern "C" fn math_x_height(size_code: i32) -> i32 {
+    math_sy_param(size_code, 5)
+}
+
+/// translated from xetex-math.c:101 (math_quad)
+#[no_mangle]
+pub unsafe extern "C" fn math_quad(size_code: i32) -> i32 {
+    math_sy_param(size_code, 6)
+}
+
+/// translated from xetex-math.c:115 (num1)
+#[no_mangle]
+pub unsafe extern "C" fn num1(size_code: i32) -> i32 {
+    math_sy_param(size_code, 8)
+}
+
+/// translated from xetex-math.c:130 (num2)
+#[no_mangle]
+pub unsafe extern "C" fn num2(size_code: i32) -> i32 {
+    math_sy_param(size_code, 9)
+}
+
+/// translated from xetex-math.c:145 (num3)
+#[no_mangle]
+pub unsafe extern "C" fn num3(size_code: i32) -> i32 {
+    math_sy_param(size_code, 10)
+}
+
+/// translated from xetex-math.c:160 (denom1)
+#[no_mangle]
+pub unsafe extern "C" fn denom1(size_code: i32) -> i32 {
+    math_sy_param(size_code, 11)
+}
+
+/// translated from xetex-math.c:175 (denom2)
+#[no_mangle]
+pub unsafe extern "C" fn denom2(size_code: i32) -> i32 {
+    math_sy_param(size_code, 12)
+}
+
+/// translated from xetex-math.c:190 (sup1)
+#[no_mangle]
+pub unsafe extern "C" fn sup1(size_code: i32) -> i32 {
+    math_sy_param(size_code, 13)
+}
+
+/// translated from xetex-math.c:205 (sup2)
+#[no_mangle]
+pub unsafe extern "C" fn sup2(size_code: i32) -> i32 {
+    math_sy_param(size_code, 14)
+}
+
+/// translated from xetex-math.c:219 (sup3)
+#[no_mangle]
+pub unsafe extern "C" fn sup3(size_code: i32) -> i32 {
+    math_sy_param(size_code, 15)
+}
+
+/// translated from xetex-math.c:233 (sub1)
+#[no_mangle]
+pub unsafe extern "C" fn sub1(size_code: i32) -> i32 {
+    math_sy_param(size_code, 16)
+}
+
+/// translated from xetex-math.c:247 (sub2)
+#[no_mangle]
+pub unsafe extern "C" fn sub2(size_code: i32) -> i32 {
+    math_sy_param(size_code, 17)
+}
+
+/// translated from xetex-math.c:261 (sup_drop)
+#[no_mangle]
+pub unsafe extern "C" fn sup_drop(size_code: i32) -> i32 {
+    math_sy_param(size_code, 18)
+}
+
+/// translated from xetex-math.c:275 (sub_drop)
+#[no_mangle]
+pub unsafe extern "C" fn sub_drop(size_code: i32) -> i32 {
+    math_sy_param(size_code, 19)
+}
+
+/// translated from xetex-math.c:289 (delim1)
+#[no_mangle]
+pub unsafe extern "C" fn delim1(size_code: i32) -> i32 {
+    math_sy_param(size_code, 20)
+}
+
+/// translated from xetex-math.c:303 (delim2)
+#[no_mangle]
+pub unsafe extern "C" fn delim2(size_code: i32) -> i32 {
+    math_sy_param(size_code, 21)
+}
+
+/// translated from xetex-math.c:317 (axis_height)
+#[no_mangle]
+pub unsafe extern "C" fn axis_height(size_code: i32) -> i32 {
+    math_sy_param(size_code, 22)
 }
 
 /// translated from xetex-math.c:388 (scan_delimiter)
@@ -782,21 +896,42 @@ unsafe fn check_math_font_params(danger: &mut bool) {
         );
         crate::output::capture_to_diagnostic(std::ptr::null_mut());
         set_help_ptr(3);
-        set_help_line(2, c"Sorry, but I can't typeset math unless \\textfont 2".as_ptr());
-        set_help_line(1, c"and \\scriptfont 2 and \\scriptscriptfont 2 have all".as_ptr());
-        set_help_line(0, c"the \\fontdimen values needed in math symbol fonts.".as_ptr());
+        set_help_line(
+            2,
+            c"Sorry, but I can't typeset math unless \\textfont 2".as_ptr(),
+        );
+        set_help_line(
+            1,
+            c"and \\scriptfont 2 and \\scriptscriptfont 2 have all".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"the \\fontdimen values needed in math symbol fonts.".as_ptr(),
+        );
         crate::errors::error();
         flush_math();
         *danger = true;
-    } else if !ext_font_ok(TEXT_SIZE) || !ext_font_ok(SCRIPT_SIZE) || !ext_font_ok(SCRIPT_SCRIPT_SIZE) {
+    } else if !ext_font_ok(TEXT_SIZE)
+        || !ext_font_ok(SCRIPT_SIZE)
+        || !ext_font_ok(SCRIPT_SCRIPT_SIZE)
+    {
         crate::output::error_here_with_diagnostic(
             c"Math formula deleted: Insufficient extension fonts".as_ptr(),
         );
         crate::output::capture_to_diagnostic(std::ptr::null_mut());
         set_help_ptr(3);
-        set_help_line(2, c"Sorry, but I can't typeset math unless \\textfont 3".as_ptr());
-        set_help_line(1, c"and \\scriptfont 3 and \\scriptscriptfont 3 have all".as_ptr());
-        set_help_line(0, c"the \\fontdimen values needed in math extension fonts.".as_ptr());
+        set_help_line(
+            2,
+            c"Sorry, but I can't typeset math unless \\textfont 3".as_ptr(),
+        );
+        set_help_line(
+            1,
+            c"and \\scriptfont 3 and \\scriptscriptfont 3 have all".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"the \\fontdimen values needed in math extension fonts.".as_ptr(),
+        );
         crate::errors::error();
         flush_math();
         *danger = true;
@@ -825,9 +960,7 @@ pub unsafe extern "C" fn after_math() {
         // eTeX display math: second `$$` ends an inner display
         crate::scan::get_x_token();
         if cur_cmd() != MATH_SHIFT {
-            crate::output::error_here_with_diagnostic(
-                c"Display math should end with $$".as_ptr(),
-            );
+            crate::output::error_here_with_diagnostic(c"Display math should end with $$".as_ptr());
             crate::output::capture_to_diagnostic(std::ptr::null_mut());
             set_help_ptr(2);
             set_help_line(
@@ -961,15 +1094,13 @@ pub unsafe extern "C" fn after_math() {
         let mut d = crate::scaled_math::half(z - w);
         if e > 0 && d < 2 * e {
             d = crate::scaled_math::half(z - w - e);
-            if p != TEX_NULL
-                && p < crate::globals::hi_mem_min()
-                && mem_b16s1(p) == GLUE_NODE
-            {
+            if p != TEX_NULL && p < crate::globals::hi_mem_min() && mem_b16s1(p) == GLUE_NODE {
                 d = 0;
             }
         }
 
-        let penalty_node = crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY));
+        let penalty_node =
+            crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY));
         set_mem_b32s1(cur_list_tail(), penalty_node);
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
 
@@ -1137,8 +1268,7 @@ pub unsafe extern "C" fn init_math() {
                         let f = mem_b16s1(p) as i32;
                         let c = crate::scan::effective_char(true, f, mem_b16s0(p));
                         d = font_info_b32s1(
-                            width_base_entry(f)
-                                + font_info_b16(char_base_entry(f) + c).s3 as i32,
+                            width_base_entry(f) + font_info_b16(char_base_entry(f) + c).s3 as i32,
                         );
                         is_found = true;
                         break 'reswitch;
@@ -1289,8 +1419,7 @@ pub unsafe extern "C" fn init_math() {
             let hang_after = eqtb_b32s1(INT_BASE + INT_PAR_HANG_AFTER);
             let prev_graf = cur_list_prev_graf();
             if hang != 0
-                && ((hang_after >= 0 && prev_graf + 2 > hang_after)
-                    || prev_graf + 1 < -hang_after)
+                && ((hang_after >= 0 && prev_graf + 2 > hang_after) || prev_graf + 1 < -hang_after)
             {
                 l = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE) - hang.abs();
                 s = if hang > 0 { hang } else { 0 };

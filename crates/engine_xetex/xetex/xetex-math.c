@@ -8,23 +8,23 @@
 #include "tectonic_bridge_core.h"
 
 
-static scaled_t math_x_height(int32_t size_code);
+scaled_t math_x_height(int32_t size_code);
 scaled_t math_quad(int32_t size_code);
-static scaled_t num1(int32_t size_code);
-static scaled_t num2(int32_t size_code);
-static scaled_t num3(int32_t size_code);
-static scaled_t denom1(int32_t size_code);
-static scaled_t denom2(int32_t size_code);
-static scaled_t sup1(int32_t size_code);
-static scaled_t sup2(int32_t size_code);
-static scaled_t sup3(int32_t size_code);
-static scaled_t sub1(int32_t size_code);
-static scaled_t sub2(int32_t size_code);
-static scaled_t sup_drop(int32_t size_code);
-static scaled_t sub_drop(int32_t size_code);
-static scaled_t delim1(int32_t size_code);
-static scaled_t delim2(int32_t size_code);
-static scaled_t axis_height(int32_t size_code);
+scaled_t num1(int32_t size_code);
+scaled_t num2(int32_t size_code);
+scaled_t num3(int32_t size_code);
+scaled_t denom1(int32_t size_code);
+scaled_t denom2(int32_t size_code);
+scaled_t sup1(int32_t size_code);
+scaled_t sup2(int32_t size_code);
+scaled_t sup3(int32_t size_code);
+scaled_t sub1(int32_t size_code);
+scaled_t sub2(int32_t size_code);
+scaled_t sup_drop(int32_t size_code);
+scaled_t sub_drop(int32_t size_code);
+scaled_t delim1(int32_t size_code);
+scaled_t delim2(int32_t size_code);
+scaled_t axis_height(int32_t size_code);
 static scaled_t default_rule_thickness(void);
 static scaled_t big_op_spacing1(void);
 static scaled_t big_op_spacing2(void);
@@ -81,251 +81,6 @@ initialize_math_variables(void)
 
 
 
-
-static scaled_t
-math_x_height(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 5);
-    else
-        rval = font_info[5 + param_base[f]].b32.s1;
-    return rval;
-}
-
-
-scaled_t
-math_quad(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 6);
-    else
-        rval = font_info[6 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-num1(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 8);
-    else
-        rval = font_info[8 + param_base[f]].b32.s1;
-    return rval;
-}
-
-
-static scaled_t
-num2(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 9);
-    else
-        rval = font_info[9 + param_base[f]].b32.s1;
-    return rval;
-}
-
-
-static scaled_t
-num3(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 10);
-    else
-        rval = font_info[10 + param_base[f]].b32.s1;
-    return rval;
-}
-
-
-static scaled_t
-denom1(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 11);
-    else
-        rval = font_info[11 + param_base[f]].b32.s1;
-    return rval;
-}
-
-
-static scaled_t
-denom2(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 12);
-    else
-        rval = font_info[12 + param_base[f]].b32.s1;
-    return rval;
-}
-
-
-static scaled_t
-sup1(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 13);
-    else
-        rval = font_info[13 + param_base[f]].b32.s1;
-    return rval;
-}
-
-
-static scaled_t
-sup2(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 14);
-    else
-        rval = font_info[14 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-sup3(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 15);
-    else
-        rval = font_info[15 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-sub1(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 16);
-    else
-        rval = font_info[16 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-sub2(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 17);
-    else
-        rval = font_info[17 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-sup_drop(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 18);
-    else
-        rval = font_info[18 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-sub_drop(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 19);
-    else
-        rval = font_info[19 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-delim1(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 20);
-    else
-        rval = font_info[20 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-delim2(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 21);
-    else
-        rval = font_info[21 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-axis_height(int32_t size_code)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(2 + size_code);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathsy_param(f, 22);
-    else
-        rval = font_info[22 + param_base[f]].b32.s1;
-    return rval;
-}
 
 static scaled_t
 default_rule_thickness(void)
