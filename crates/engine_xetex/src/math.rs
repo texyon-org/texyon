@@ -1,12 +1,14 @@
 //! Math-mode command helpers translated from `xetex/xetex-math.c`.
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_group, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head,
-    cur_list_tail, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p,
-    insert_src_special_every_math, mem_b16s1, mem_b32s0, mem_b32s1, save_ptr, save_stack_b32s1,
-    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_tail, set_cur_val, set_cur_val1,
-    set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3,
-    set_mem_b32s0, set_mem_b32s1, set_save_ptr, set_save_stack_b32s1,
+    cur_chr, cur_cmd, cur_group, cur_lang, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head,
+    cur_list_prev_graf, cur_list_tail, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p,
+    insert_src_special_every_math, mem_b16s1, mem_b32s0, mem_b32s1, nest_ptr, save_ptr,
+    save_stack_b32s1, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
+    set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
+    set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b16s1,
+    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_save_ptr,
+    set_save_stack_b32s1,
 };
 use crate::mem::{TEX_NULL, get_node, new_choice, new_noad};
 
@@ -36,6 +38,11 @@ const ATOP_CODE: i32 = 2;
 const DEFAULT_CODE: i32 = 0x4000_0000;
 const GARBAGE: i32 = 4_999_987;
 
+const HMODE: i16 = 104;
+const BIGGEST_LANG: i32 = 255;
+const INT_PAR_LANGUAGE: i32 = 50;
+const INT_PAR_LEFT_HYPHEN_MIN: i32 = 51;
+const INT_PAR_RIGHT_HYPHEN_MIN: i32 = 52;
 const ACCENT: u8 = 45;
 const ACCENT_NOAD: u16 = 28;
 const ACCENT_NOAD_SIZE: i32 = 5;
@@ -520,4 +527,38 @@ pub unsafe extern "C" fn math_ac() {
         mem_b16s1(cur_list_tail() + 4) + (math_char_field(cur_val()) / 65536) as u16 * 256,
     );
     crate::scan::scan_math(cur_list_tail() + 1);
+}
+
+/// translated from xetex-math.c:786 (resume_after_display)
+#[no_mangle]
+pub unsafe extern "C" fn resume_after_display() {
+    if cur_group() != MATH_SHIFT_GROUP {
+        crate::errors::confusion(c"display".as_ptr());
+    }
+
+    crate::save::unsave();
+    set_cur_list_prev_graf(cur_list_prev_graf() + 3);
+    crate::mem::push_nest();
+    set_cur_list_mode(HMODE);
+    set_cur_list_aux_b32s0(1000);
+
+    let lang = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
+    if lang <= 0 || lang > BIGGEST_LANG {
+        set_cur_lang(0);
+    } else {
+        set_cur_lang(lang as u8);
+    }
+    set_cur_list_aux_b32s1(cur_lang() as i32);
+
+    let lhm = crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as i32;
+    let rhm = crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
+    set_cur_list_prev_graf((lhm * 64 + rhm) * 65536 + cur_lang() as i32);
+
+    crate::scan::get_x_token();
+    if cur_cmd() != SPACER {
+        crate::input::back_input();
+    }
+    if nest_ptr() == 1 {
+        crate::pagebuilder::build_page();
+    }
 }

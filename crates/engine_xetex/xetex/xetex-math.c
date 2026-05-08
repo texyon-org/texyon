@@ -783,35 +783,6 @@ void after_math(void)
     }
 }
 
-void resume_after_display(void)
-{
-
-    if (cur_group != MATH_SHIFT_GROUP)
-        confusion("display");
-
-    unsave();
-    cur_list.prev_graf = cur_list.prev_graf + 3;
-    push_nest();
-    cur_list.mode = HMODE;
-    cur_list.aux.b32.s0 = 1000;
-    if (INTPAR(language) <= 0)
-        cur_lang = 0;
-    else if (INTPAR(language) > BIGGEST_LANG)
-        cur_lang = 0;
-    else
-        cur_lang = INTPAR(language);
-    cur_list.aux.b32.s1 = cur_lang;
-    cur_list.prev_graf =
-        (norm_min(INTPAR(left_hyphen_min)) * 64 +
-         norm_min(INTPAR(right_hyphen_min))) * 65536L + cur_lang;
-    {
-        get_x_token();
-        if (cur_cmd != SPACER)
-            back_input();
-    }
-    if (nest_ptr == 1)
-        build_page();
-}
 
 
 static scaled_t
