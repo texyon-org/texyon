@@ -32,6 +32,58 @@ template.
 
 ---
 
+## Session 94 — 2026-05-08 — xetex-math.c app_display + after_math
+
+**Goal:** Translate `app_display` (~110 lines, static private helper) and
+`after_math` (~320 lines) together from `xetex-math.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 93
+
+**Work done:**
+- Dropped `static` from `cur_mlist`, `cur_style`, `mlist_penalties` C
+  globals and exposed them via `globals.rs` accessor functions.
+- Dropped `static` from `math_quad` and `mlist_to_hlist` so Rust can call
+  them as `extern "C"`.
+- Added 4 private Rust helpers: `font_is_ot_math`, `sym_font_ok`,
+  `ext_font_ok`, `check_math_font_params`.
+- Translated `app_display` and `after_math` (public `#[no_mangle]`) to
+  `src/math.rs`.
+- Deleted C bodies of `app_display` and `after_math` from `xetex-math.c`.
+- Bug caught by TRIP: `if m < 0` (mode BEFORE `fin_mlist`) is the
+  inline-vs-display discriminant; accidentally used `cur_list_mode()`
+  AFTER `fin_mlist`, causing "Display math should end with $$" on all
+  inline math. Fixed: `let mut m = ...; m = cur_list_mode()` before
+  second `fin_mlist` in eTeX path.
+- Commit: 49f0aee7.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 94
+
+**Surprises / gotchas:**
+- `if m < 0` must test the mode CAPTURED before `fin_mlist` (the math
+  mode, negative for inline). Testing mode AFTER fin_mlist (the parent
+  mode, always ≥ 1) routes all inline math to the display path and breaks
+  the trip test immediately.
+- In the eTeX inner-display branch, `m` is reassigned before a second
+  `fin_mlist`. The variable must be `mut` and must actually be updated,
+  not just shadowed with a discarded `let _ = m2`.
+
+**For the next session:**
+- Continue translating in `xetex-math.c`. The next large block is the
+  math typesetting pipeline (`math_x_height`, `num1`…`big_op_spacing5`
+  helpers, then `mlist_to_hlist` itself, ~1800 lines).
+
+---
+
 ## Session 93 — 2026-05-08 — xetex-math.c init_math
 
 **Goal:** Translate `init_math` (~270 lines) from `xetex-math.c` to Rust.

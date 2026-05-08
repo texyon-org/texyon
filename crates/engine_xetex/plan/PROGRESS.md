@@ -107,6 +107,7 @@ cargo test -p tectonic --test tex-outputs
 |      91 | 2026-05-08 |     29 |    29 |     0 | xetex-shipout.c: translate new_edge (3ecb7ae8), starting src/shipout.rs. All 4 suites pass. |
 |      92 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate 10 math command helpers (7e81f4b6), starting src/math.rs. All 4 suites pass. |
 |      93 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate init_math (~270 lines, goto→labeled-loop, 133c1ac0). All 4 suites pass. |
+|      94 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate app_display + after_math (~430 lines). Bug: if m < 0 must test mode before fin_mlist (49f0aee7). All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
