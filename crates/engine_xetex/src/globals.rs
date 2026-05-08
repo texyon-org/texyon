@@ -635,6 +635,7 @@ mod raw {
         // xetex-math.c module-level state (formerly static; exposed for after_math Rust translation).
         pub(super) static mut cur_mlist: i32;
         pub(super) static mut cur_style: i16;
+        pub(super) static mut cur_size: i32;
         pub(super) static mut mlist_penalties: bool;
     }
 }
@@ -3583,11 +3584,13 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 #[inline] pub(crate) fn set_doing_special(v: bool) { unsafe { raw::doing_special = v; } }
 
 // ---------------------------------------------------------------------------
-// xetex-math.c module-level state (cur_mlist / cur_style / mlist_penalties)
+// xetex-math.c module-level state (cur_mlist / cur_style / cur_size / mlist_penalties)
 // ---------------------------------------------------------------------------
 #[inline] pub(crate) fn cur_mlist() -> i32 { unsafe { raw::cur_mlist } }
 #[inline] pub(crate) fn set_cur_mlist(v: i32) { unsafe { raw::cur_mlist = v; } }
 #[inline] pub(crate) fn cur_style() -> i16 { unsafe { raw::cur_style } }
 #[inline] pub(crate) fn set_cur_style(v: i16) { unsafe { raw::cur_style = v; } }
+#[inline] pub(crate) fn cur_size() -> i32 { unsafe { raw::cur_size } }
+#[inline] pub(crate) fn set_cur_size(v: i32) { unsafe { raw::cur_size = v; } }
 #[inline] pub(crate) fn mlist_penalties() -> bool { unsafe { raw::mlist_penalties } }
 #[inline] pub(crate) fn set_mlist_penalties(v: bool) { unsafe { raw::mlist_penalties = v; } }

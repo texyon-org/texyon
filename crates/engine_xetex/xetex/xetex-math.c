@@ -25,15 +25,15 @@ scaled_t sub_drop(int32_t size_code);
 scaled_t delim1(int32_t size_code);
 scaled_t delim2(int32_t size_code);
 scaled_t axis_height(int32_t size_code);
-static scaled_t default_rule_thickness(void);
-static scaled_t big_op_spacing1(void);
-static scaled_t big_op_spacing2(void);
-static scaled_t big_op_spacing3(void);
-static scaled_t big_op_spacing4(void);
-static scaled_t big_op_spacing5(void);
+scaled_t default_rule_thickness(void);
+scaled_t big_op_spacing1(void);
+scaled_t big_op_spacing2(void);
+scaled_t big_op_spacing3(void);
+scaled_t big_op_spacing4(void);
+scaled_t big_op_spacing5(void);
 void scan_delimiter(int32_t p, bool r);
-static int32_t fraction_rule(scaled_t t);
-static int32_t overbar(int32_t b, scaled_t k, scaled_t t);
+int32_t fraction_rule(scaled_t t);
+int32_t overbar(int32_t b, scaled_t k, scaled_t t);
 static int32_t char_box(internal_font_number f, int32_t c);
 static void stack_into_box(int32_t b, internal_font_number f, uint16_t c);
 static scaled_t height_plus_depth(internal_font_number f, uint16_t c);
@@ -42,8 +42,8 @@ static void stack_glue_into_box(int32_t b, scaled_t min, scaled_t max);
 static int32_t build_opentype_assembly(internal_font_number f, void *a, scaled_t s, bool horiz);
 static int32_t var_delimiter(int32_t d, int32_t s, scaled_t v);
 static int32_t rebox(int32_t b, scaled_t w);
-static int32_t math_glue(int32_t g, scaled_t m);
-static void math_kern(int32_t p, scaled_t m);
+int32_t math_glue(int32_t g, scaled_t m);
+void math_kern(int32_t p, scaled_t m);
 static int32_t clean_box(int32_t p, small_number s);
 static void fetch(int32_t a);
 static void make_over(int32_t q);
@@ -64,7 +64,7 @@ void mlist_to_hlist(void);
 static b16x4 null_delimiter;
 int32_t cur_mlist;
 small_number cur_style;
-static int32_t cur_size;
+int32_t cur_size;
 static scaled_t cur_mu;
 bool mlist_penalties;
 
@@ -76,167 +76,6 @@ initialize_math_variables(void)
     null_delimiter.s1 = 0;
     null_delimiter.s0 = 0;
 }
-
-
-
-
-
-
-static scaled_t
-default_rule_thickness(void)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(3 + cur_size);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathex_param(f, 8);
-    else
-        rval = font_info[8 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-big_op_spacing1(void)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(3 + cur_size);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathex_param(f, 9);
-    else
-        rval = font_info[9 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-big_op_spacing2(void)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(3 + cur_size);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathex_param(f, 10);
-    else
-        rval = font_info[10 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-big_op_spacing3(void)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(3 + cur_size);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathex_param(f, 11);
-    else
-        rval = font_info[11 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-big_op_spacing4(void)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(3 + cur_size);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathex_param(f, 12);
-    else
-        rval = font_info[12 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static scaled_t
-big_op_spacing5(void)
-{
-    int32_t f;
-    scaled_t rval;
-
-    f = MATH_FONT(3 + cur_size);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rval = get_native_mathex_param(f, 13);
-    else
-        rval = font_info[13 + param_base[f]].b32.s1;
-    return rval;
-}
-
-static int32_t
-fraction_rule(scaled_t t)
-{
-    int32_t p;
-    p = new_rule();
-    mem[p + 3].b32.s1 = t;
-    mem[p + 2].b32.s1 = 0;
-    return p;
-}
-
-
-static int32_t
-overbar(int32_t b, scaled_t k, scaled_t t)
-{
-    int32_t p, q;
-    p = new_kern(k);
-    mem[p].b32.s1 = b;
-    q = fraction_rule(t);
-    mem[q].b32.s1 = p;
-    p = new_kern(t);
-    mem[p].b32.s1 = q;
-    return vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
-}
-
-
-static int32_t
-math_glue(int32_t g, scaled_t m)
-{
-    int32_t p;
-    int32_t n;
-    scaled_t f;
-    n = x_over_n(m, 65536L);
-    f = tex_remainder;
-    if (f < 0) {
-        n--;
-        f = f + 65536L;
-    }
-    p = get_node(GLUE_SPEC_SIZE);
-    mem[p + 1].b32.s1 = mult_and_add(n, mem[g + 1].b32.s1, xn_over_d(mem[g + 1].b32.s1, f, 65536L), MAX_HALFWORD);
-    mem[p].b16.s1 = mem[g].b16.s1;
-    if (mem[p].b16.s1 == NORMAL)
-        mem[p + 2].b32.s1 = mult_and_add(n, mem[g + 2].b32.s1, xn_over_d(mem[g + 2].b32.s1, f, 65536L), MAX_HALFWORD);
-    else
-        mem[p + 2].b32.s1 = mem[g + 2].b32.s1;
-    mem[p].b16.s0 = mem[g].b16.s0;
-    if (GLUE_SPEC_shrink_order(p) == NORMAL)
-        mem[p + 3].b32.s1 = mult_and_add(n, mem[g + 3].b32.s1, xn_over_d(mem[g + 3].b32.s1, f, 65536L), MAX_HALFWORD);
-    else
-        mem[p + 3].b32.s1 = mem[g + 3].b32.s1;
-    return p;
-}
-
-
-static void
-math_kern(int32_t p, scaled_t m)
-{
-    int32_t n;
-    scaled_t f;
-    if (mem[p].b16.s0 == MU_GLUE) {
-        n = x_over_n(m, 65536L);
-        f = tex_remainder;
-        if (f < 0) {
-            n--;
-            f = f + 65536L;
-        }
-        mem[p + 1].b32.s1 = mult_and_add(n, mem[p + 1].b32.s1, xn_over_d(mem[p + 1].b32.s1, f, 65536L), MAX_HALFWORD);
-        NODE_subtype(p) = EXPLICIT;
-    }
-}
-
-
 void
 flush_math(void)
 {

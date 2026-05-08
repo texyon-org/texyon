@@ -3,19 +3,20 @@
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
     cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf,
-    cur_list_tail, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p, font_area_entry,
-    font_info_b16, font_info_b32s1, font_layout_engine_ptr, font_params, hi_mem_min,
-    insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b32s0,
-    mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
-    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_lang,
-    set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode,
-    set_cur_list_prev_graf, set_cur_list_tail, set_cur_mlist, set_cur_style, set_cur_val,
-    set_cur_val1, set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr,
-    set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1,
-    set_temp_ptr, set_xtx_ligature_present, temp_ptr, total_shrink, width_base_entry,
+    cur_list_tail, cur_size, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p,
+    font_area_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr, font_params,
+    hi_mem_min, insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
+    mem_b32s0, mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr,
+    save_stack_b32s1, semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir,
+    set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux,
+    set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail, set_cur_mlist, set_cur_style,
+    set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr,
+    set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1,
+    set_mem_gr, set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr,
+    set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr, tex_remainder,
+    total_shrink, width_base_entry,
 };
-use crate::mem::{get_node, new_choice, new_noad, TEX_NULL};
+use crate::mem::{get_node, new_choice, new_kern, new_noad, new_rule, TEX_NULL};
 
 const INT_BASE: i32 = 7_826_729;
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -133,6 +134,9 @@ const EXACTLY: i16 = 0;
 const AFTER: i16 = 1;
 const GLUE_NODE: u16 = 10;
 const DLIST: u16 = 2;
+const GLUE_SPEC_SIZE: i32 = 4;
+const MU_GLUE: u16 = 99;
+const EXPLICIT: u16 = 1;
 
 extern "C" {
     fn begin_token_list(p: i32, t: u16);
@@ -140,6 +144,7 @@ extern "C" {
     fn mlist_to_hlist();
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
     fn get_native_mathsy_param(f: i32, n: i32) -> i32;
+    fn get_native_mathex_param(f: i32, n: i32) -> i32;
 }
 
 #[inline]
@@ -158,6 +163,16 @@ unsafe fn math_sy_param(size_code: i32, param: i32) -> i32 {
     let f = math_font(2 + size_code);
     if font_is_ot_math(f) {
         get_native_mathsy_param(f, param)
+    } else {
+        font_info_b32s1(param + param_base(f))
+    }
+}
+
+#[inline]
+unsafe fn math_ext_param(param: i32) -> i32 {
+    let f = math_font(3 + cur_size());
+    if font_is_ot_math(f) {
+        get_native_mathex_param(f, param)
     } else {
         font_info_b32s1(param + param_base(f))
     }
@@ -263,6 +278,137 @@ pub unsafe extern "C" fn delim2(size_code: i32) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn axis_height(size_code: i32) -> i32 {
     math_sy_param(size_code, 22)
+}
+
+/// translated from xetex-math.c:88 (default_rule_thickness)
+#[no_mangle]
+pub unsafe extern "C" fn default_rule_thickness() -> i32 {
+    math_ext_param(8)
+}
+
+/// translated from xetex-math.c:102 (big_op_spacing1)
+#[no_mangle]
+pub unsafe extern "C" fn big_op_spacing1() -> i32 {
+    math_ext_param(9)
+}
+
+/// translated from xetex-math.c:116 (big_op_spacing2)
+#[no_mangle]
+pub unsafe extern "C" fn big_op_spacing2() -> i32 {
+    math_ext_param(10)
+}
+
+/// translated from xetex-math.c:130 (big_op_spacing3)
+#[no_mangle]
+pub unsafe extern "C" fn big_op_spacing3() -> i32 {
+    math_ext_param(11)
+}
+
+/// translated from xetex-math.c:144 (big_op_spacing4)
+#[no_mangle]
+pub unsafe extern "C" fn big_op_spacing4() -> i32 {
+    math_ext_param(12)
+}
+
+/// translated from xetex-math.c:158 (big_op_spacing5)
+#[no_mangle]
+pub unsafe extern "C" fn big_op_spacing5() -> i32 {
+    math_ext_param(13)
+}
+
+/// translated from xetex-math.c:170 (fraction_rule)
+#[no_mangle]
+pub unsafe extern "C" fn fraction_rule(t: i32) -> i32 {
+    let p = new_rule();
+    set_mem_b32s1(p + 3, t);
+    set_mem_b32s1(p + 2, 0);
+    p
+}
+
+/// translated from xetex-math.c:181 (overbar)
+#[no_mangle]
+pub unsafe extern "C" fn overbar(b: i32, k: i32, t: i32) -> i32 {
+    let mut p = new_kern(k);
+    set_mem_b32s1(p, b);
+    let q = fraction_rule(t);
+    set_mem_b32s1(q, p);
+    p = new_kern(t);
+    set_mem_b32s1(p, q);
+    crate::scan::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD)
+}
+
+/// translated from xetex-math.c:195 (math_glue)
+#[no_mangle]
+pub unsafe extern "C" fn math_glue(g: i32, m: i32) -> i32 {
+    let mut n = crate::scaled_math::x_over_n(m, 65_536);
+    let mut f = tex_remainder();
+    if f < 0 {
+        n -= 1;
+        f += 65_536;
+    }
+
+    let p = get_node(GLUE_SPEC_SIZE);
+    set_mem_b32s1(
+        p + 1,
+        crate::scaled_math::mult_and_add(
+            n,
+            mem_b32s1(g + 1),
+            crate::scaled_math::xn_over_d(mem_b32s1(g + 1), f, 65_536),
+            MAX_HALFWORD,
+        ),
+    );
+    set_mem_b16s1(p, mem_b16s1(g));
+    if mem_b16s1(p) == NORMAL {
+        set_mem_b32s1(
+            p + 2,
+            crate::scaled_math::mult_and_add(
+                n,
+                mem_b32s1(g + 2),
+                crate::scaled_math::xn_over_d(mem_b32s1(g + 2), f, 65_536),
+                MAX_HALFWORD,
+            ),
+        );
+    } else {
+        set_mem_b32s1(p + 2, mem_b32s1(g + 2));
+    }
+    set_mem_b16s0(p, mem_b16s0(g));
+    if mem_b16s0(p) == NORMAL {
+        set_mem_b32s1(
+            p + 3,
+            crate::scaled_math::mult_and_add(
+                n,
+                mem_b32s1(g + 3),
+                crate::scaled_math::xn_over_d(mem_b32s1(g + 3), f, 65_536),
+                MAX_HALFWORD,
+            ),
+        );
+    } else {
+        set_mem_b32s1(p + 3, mem_b32s1(g + 3));
+    }
+    p
+}
+
+/// translated from xetex-math.c:223 (math_kern)
+#[no_mangle]
+pub unsafe extern "C" fn math_kern(p: i32, m: i32) {
+    if mem_b16s0(p) == MU_GLUE {
+        let mut n = crate::scaled_math::x_over_n(m, 65_536);
+        let mut f = tex_remainder();
+        if f < 0 {
+            n -= 1;
+            f += 65_536;
+        }
+        set_mem_b32s1(
+            p + 1,
+            crate::scaled_math::mult_and_add(
+                n,
+                mem_b32s1(p + 1),
+                crate::scaled_math::xn_over_d(mem_b32s1(p + 1), f, 65_536),
+                MAX_HALFWORD,
+            ),
+        );
+        set_mem_b16s0(p, EXPLICIT);
+    }
 }
 
 /// translated from xetex-math.c:388 (scan_delimiter)
