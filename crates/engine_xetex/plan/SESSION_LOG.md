@@ -32,6 +32,46 @@ template.
 
 ---
 
+## Session 93 — 2026-05-08 — xetex-math.c init_math
+
+**Goal:** Translate `init_math` (~270 lines) from `xetex-math.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 92
+
+**Work done:**
+- Translated `init_math` (xetex-math.c:81, ~270 lines) to `src/math.rs`.
+- Complex goto structure (reswitch/found/not_found/done) mapped to
+  `'outer: loop` + `'reswitch: loop` with `is_found: bool` flag.
+- Added 38 new constants and 20 new globals imports to `math.rs`.
+- Deleted C body from `xetex-math.c`.
+- Commit: 133c1ac0.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 93
+
+**Surprises / gotchas:**
+- `BOX_glue_set(p)` is at offset 6 (not 5); b16 fields (sign/order) are
+  at offset 5.
+- `effective_char` returns `i32`; `FONT_CHARACTER_WIDTH` expands to
+  `font_info_b32s1(width_base_entry(f) + font_info_b16(char_base_entry(f) + c).s3)`.
+- `BEFORE = 0` (from xetex_format.h) needed for the texxet LR-stack push.
+
+**For the next session:**
+- Translate `app_display` (static, ~110 lines) and `after_math`
+  (~320 lines) together (app_display is static and only called from
+  after_math).
+
+---
+
 ## Session 92 — 2026-05-08 — xetex-math.c command helpers
 
 **Goal:** Start `xetex-math.c` with the math-mode command/front-end helpers

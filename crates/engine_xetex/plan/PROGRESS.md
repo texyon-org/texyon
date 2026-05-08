@@ -106,6 +106,7 @@ cargo test -p tectonic --test tex-outputs
 |      90 | 2026-05-08 |     29 |    29 |     0 | xetex-ext.c: translate measure_native_node (9acfe915), including ICU BiDi, layout copying, letterspacing, and glyph bbox metrics. xetex-ext.c 296→97 LOC / zero Linux C bodies. All 4 suites pass. |
 |      91 | 2026-05-08 |     29 |    29 |     0 | xetex-shipout.c: translate new_edge (3ecb7ae8), starting src/shipout.rs. All 4 suites pass. |
 |      92 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate 10 math command helpers (7e81f4b6), starting src/math.rs. All 4 suites pass. |
+|      93 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate init_math (~270 lines, goto→labeled-loop, 133c1ac0). All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
