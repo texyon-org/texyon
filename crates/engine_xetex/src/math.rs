@@ -1,14 +1,17 @@
 //! Math-mode command helpers translated from `xetex/xetex-math.c`.
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_group, cur_lang, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head,
-    cur_list_prev_graf, cur_list_tail, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p,
-    insert_src_special_every_math, mem_b16s1, mem_b32s0, mem_b32s1, nest_ptr, save_ptr,
-    save_stack_b32s1, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
-    set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
-    set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b16s1,
-    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_save_ptr,
-    set_save_stack_b32s1,
+    avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang, cur_list_aux_b32s1,
+    cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf, cur_list_tail, cur_val,
+    cur_val1, eqtb_b32s1, file_line_error_style_p, font_info_b16, font_info_b32s1, hi_mem_min,
+    insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
+    mem_b32s0, mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, save_ptr, save_stack_b32s1,
+    semantic_pagination_enabled, set_avail, set_cur_dir, set_cur_lang, set_cur_list_aux_b32s0,
+    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf,
+    set_cur_list_tail, set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems,
+    set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0,
+    set_mem_b32s1, set_mem_gr, set_mem_word, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
+    set_xtx_ligature_present, temp_ptr, width_base_entry,
 };
 use crate::mem::{TEX_NULL, get_node, new_choice, new_noad};
 
@@ -60,6 +63,43 @@ const LEFT_NOAD: u16 = 30;
 const RIGHT_NOAD: u16 = 31;
 const RADICAL_NOAD_SIZE: i32 = 5;
 const FRACTION_NOAD_SIZE: i32 = 6;
+
+const MATH_SHIFT: u8 = 3;
+const MMODE: i16 = 207;
+const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+const GLUE_BASE: i32 = 2_254_340;
+const DIMEN_BASE: i32 = 8_941_180;
+const GLUE_PAR_RIGHT_SKIP: i32 = 8;
+const GLUE_PAR_LEFT_SKIP: i32 = 7;
+const DIMEN_PAR_PRE_DISPLAY_SIZE: i32 = 13;
+const DIMEN_PAR_DISPLAY_WIDTH: i32 = 14;
+const DIMEN_PAR_DISPLAY_INDENT: i32 = 15;
+const DIMEN_PAR_HANG_INDENT: i32 = 17;
+const DIMEN_PAR_HSIZE: i32 = 3;
+const INT_PAR_HANG_AFTER: i32 = 41;
+const INT_PAR_PRE_DISPLAY_DIRECTION: i32 = 61;
+const INT_PAR_TEXXET: i32 = 69;
+const CUR_FONT_LOC: i32 = 2_255_400;
+const QUAD_CODE: i32 = 6;
+const L_CODE: i32 = 4;
+const R_CODE: i32 = 8;
+const BEGIN_L_CODE: i16 = 6;
+const END_L_CODE: i16 = 7;
+const TEMP_HEAD: i32 = 4_999_996;
+const EVERY_DISPLAY_TEXT: u16 = 10;
+const LOCAL_EVERY_DISPLAY: i32 = 4;
+const LOCAL_PAR_SHAPE: i32 = 0;
+const NATIVE_WORD_NODE: u16 = 40;
+const NATIVE_WORD_NODE_AT: u16 = 41;
+const GLYPH_NODE: u16 = 42;
+const PIC_NODE: u16 = 43;
+const PDF_NODE: u16 = 44;
+const STRETCHING: u16 = 1;
+const SHRINKING: u16 = 2;
+const A_LEADERS: u16 = 100;
+const RIGHT_TO_LEFT: i16 = 1;
+const LEFT_TO_RIGHT: i16 = 0;
+const BEFORE: i32 = 0;
 
 extern "C" {
     fn begin_token_list(p: i32, t: u16);
@@ -560,5 +600,304 @@ pub unsafe extern "C" fn resume_after_display() {
     }
     if nest_ptr() == 1 {
         crate::pagebuilder::build_page();
+    }
+}
+
+/// translated from xetex-math.c:81 (init_math)
+#[no_mangle]
+pub unsafe extern "C" fn init_math() {
+    crate::scan::get_token();
+
+    if cur_cmd() == MATH_SHIFT && cur_list_mode() > 0 {
+        let mut j = TEX_NULL;
+        let mut w = -MAX_HALFWORD;
+        let x;
+
+        if cur_list_head() == cur_list_tail() {
+            crate::mem::pop_nest();
+            x = if cur_list_e_tex_aux() == TEX_NULL {
+                0
+            } else if mem_b32s0(cur_list_e_tex_aux()) >= R_CODE {
+                -1
+            } else {
+                1
+            };
+        } else {
+            crate::linebreak::line_break(true);
+
+            j = if eqtb_b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP) == 0 {
+                crate::mem::new_kern(0)
+            } else {
+                crate::mem::new_param_glue(GLUE_PAR_RIGHT_SKIP as i16)
+            };
+
+            let p_glue = if eqtb_b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP) == 0 {
+                crate::mem::new_kern(0)
+            } else {
+                crate::mem::new_param_glue(GLUE_PAR_LEFT_SKIP as i16)
+            };
+            set_mem_b32s1(p_glue, j);
+
+            j = crate::mem::new_null_box();
+            set_mem_b32s1(j + 1, mem_b32s1(just_box() + 1));
+            set_mem_b32s1(j + 4, mem_b32s1(just_box() + 4));
+            set_mem_b32s1(j + 5, p_glue);
+            set_mem_b16s0(j + 5, mem_b16s0(just_box() + 5));
+            set_mem_b16s1(j + 5, mem_b16s1(just_box() + 5));
+            set_mem_gr(j + 6, mem_gr(just_box() + 6));
+
+            let mut v = mem_b32s1(just_box() + 4);
+            x = if cur_list_e_tex_aux() == TEX_NULL {
+                0
+            } else if mem_b32s0(cur_list_e_tex_aux()) >= R_CODE {
+                -1
+            } else {
+                1
+            };
+
+            let mut p;
+            if x >= 0 {
+                p = mem_b32s1(just_box() + 5);
+                set_mem_b32s1(TEMP_HEAD, TEX_NULL);
+            } else {
+                v = -v - mem_b32s1(just_box() + 1);
+                p = crate::mem::new_math(0, BEGIN_L_CODE);
+                set_mem_b32s1(TEMP_HEAD, p);
+                crate::scan::just_copy(
+                    mem_b32s1(just_box() + 5),
+                    p,
+                    crate::mem::new_math(0, END_L_CODE),
+                );
+                set_cur_dir(RIGHT_TO_LEFT);
+            }
+
+            v += 2 * font_info_b32s1(QUAD_CODE + param_base(eqtb_b32s1(CUR_FONT_LOC)));
+
+            if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
+                set_temp_ptr(crate::mem::get_avail());
+                set_mem_b32s0(temp_ptr(), BEFORE);
+                set_mem_b32s1(temp_ptr(), lr_ptr());
+                set_lr_ptr(temp_ptr());
+            }
+
+            'outer: loop {
+                if p == TEX_NULL {
+                    break 'outer;
+                }
+
+                let is_found: bool;
+                let d: i32;
+
+                'reswitch: loop {
+                    if p >= hi_mem_min() {
+                        let f = mem_b16s1(p) as i32;
+                        let c = crate::scan::effective_char(true, f, mem_b16s0(p));
+                        d = font_info_b32s1(
+                            width_base_entry(f)
+                                + font_info_b16(char_base_entry(f) + c).s3 as i32,
+                        );
+                        is_found = true;
+                        break 'reswitch;
+                    }
+                    match mem_b16s1(p) {
+                        0 | 1 | 2 => {
+                            d = mem_b32s1(p + 1);
+                            is_found = true;
+                            break 'reswitch;
+                        }
+                        6 => {
+                            set_mem_word(GARBAGE, mem_word(p + 1));
+                            set_mem_b32s1(GARBAGE, mem_b32s1(p));
+                            p = GARBAGE;
+                            set_xtx_ligature_present(true);
+                            continue 'reswitch;
+                        }
+                        11 | 40 => {
+                            d = mem_b32s1(p + 1);
+                            is_found = false;
+                            break 'reswitch;
+                        }
+                        9 => {
+                            d = mem_b32s1(p + 1);
+                            if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
+                                if mem_b16s0(p) & 1 != 0 {
+                                    if mem_b32s0(lr_ptr())
+                                        == L_CODE * (mem_b16s0(p) as i32 / L_CODE) + 3
+                                    {
+                                        set_temp_ptr(lr_ptr());
+                                        set_lr_ptr(mem_b32s1(temp_ptr()));
+                                        set_mem_b32s1(temp_ptr(), avail());
+                                        set_avail(temp_ptr());
+                                    } else if mem_b16s0(p) as i32 > L_CODE {
+                                        w = MAX_HALFWORD;
+                                        break 'outer;
+                                    }
+                                } else {
+                                    set_temp_ptr(crate::mem::get_avail());
+                                    set_mem_b32s0(
+                                        temp_ptr(),
+                                        L_CODE * (mem_b16s0(p) as i32 / L_CODE) + 3,
+                                    );
+                                    set_mem_b32s1(temp_ptr(), lr_ptr());
+                                    set_lr_ptr(temp_ptr());
+                                    if mem_b16s0(p) as i32 / R_CODE != cur_dir() as i32 {
+                                        crate::scan::just_reverse(p);
+                                        p = TEMP_HEAD;
+                                    }
+                                }
+                            } else if mem_b16s0(p) as i32 >= L_CODE {
+                                w = MAX_HALFWORD;
+                                break 'outer;
+                            }
+                            is_found = false;
+                            break 'reswitch;
+                        }
+                        14 => {
+                            d = mem_b32s1(p + 1);
+                            set_cur_dir(mem_b16s0(p) as i16);
+                            is_found = false;
+                            break 'reswitch;
+                        }
+                        10 => {
+                            let q = mem_b32s0(p + 1);
+                            d = mem_b32s1(q + 1);
+                            if mem_b16s1(just_box() + 5) == STRETCHING {
+                                if mem_b16s0(just_box() + 5) == mem_b16s1(q)
+                                    && mem_b32s1(q + 2) != 0
+                                {
+                                    v = MAX_HALFWORD;
+                                }
+                            } else if mem_b16s1(just_box() + 5) == SHRINKING {
+                                if mem_b16s0(just_box() + 5) == mem_b16s0(q)
+                                    && mem_b32s1(q + 3) != 0
+                                {
+                                    v = MAX_HALFWORD;
+                                }
+                            }
+                            if mem_b16s0(p) >= A_LEADERS {
+                                is_found = true;
+                                break 'reswitch;
+                            }
+                            is_found = false;
+                            break 'reswitch;
+                        }
+                        8 => {
+                            let st = mem_b16s0(p);
+                            if st == NATIVE_WORD_NODE
+                                || st == NATIVE_WORD_NODE_AT
+                                || st == GLYPH_NODE
+                                || st == PIC_NODE
+                                || st == PDF_NODE
+                            {
+                                d = mem_b32s1(p + 1);
+                                is_found = true;
+                            } else {
+                                d = 0;
+                                is_found = false;
+                            }
+                            break 'reswitch;
+                        }
+                        _ => {
+                            d = 0;
+                            is_found = false;
+                            break 'reswitch;
+                        }
+                    }
+                }
+
+                if is_found {
+                    if v < MAX_HALFWORD {
+                        v += d;
+                        w = v;
+                    } else {
+                        w = MAX_HALFWORD;
+                        break 'outer;
+                    }
+                } else if v < MAX_HALFWORD {
+                    v += d;
+                }
+
+                p = mem_b32s1(p);
+            }
+
+            if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
+                while lr_ptr() != TEX_NULL {
+                    set_temp_ptr(lr_ptr());
+                    set_lr_ptr(mem_b32s1(temp_ptr()));
+                    set_mem_b32s1(temp_ptr(), avail());
+                    set_avail(temp_ptr());
+                }
+                if lr_problems() != 0 {
+                    w = MAX_HALFWORD;
+                    set_lr_problems(0);
+                }
+            }
+
+            set_cur_dir(LEFT_TO_RIGHT);
+            crate::scan::flush_node_list(mem_b32s1(TEMP_HEAD));
+        }
+
+        let l;
+        let s;
+        let par_shape = eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+        if par_shape == TEX_NULL {
+            let hang = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HANG_INDENT);
+            let hang_after = eqtb_b32s1(INT_BASE + INT_PAR_HANG_AFTER);
+            let prev_graf = cur_list_prev_graf();
+            if hang != 0
+                && ((hang_after >= 0 && prev_graf + 2 > hang_after)
+                    || prev_graf + 1 < -hang_after)
+            {
+                l = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE) - hang.abs();
+                s = if hang > 0 { hang } else { 0 };
+            } else {
+                l = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE);
+                s = 0;
+            }
+        } else {
+            let n = mem_b32s0(par_shape);
+            let p = if cur_list_prev_graf() + 2 >= n {
+                par_shape + 2 * n
+            } else {
+                par_shape + 2 * (cur_list_prev_graf() + 2)
+            };
+            s = mem_b32s1(p - 1);
+            l = mem_b32s1(p);
+        }
+
+        crate::scan::push_math(MATH_SHIFT_GROUP);
+        set_cur_list_mode(MMODE);
+        crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
+        crate::save::eq_word_define(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w);
+        set_cur_list_e_tex_aux(j);
+        crate::save::eq_word_define(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION, x);
+        crate::save::eq_word_define(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH, l);
+        crate::save::eq_word_define(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s);
+
+        if semantic_pagination_enabled() {
+            crate::scan::tt_insert_special(c"tdux:cs dmath".as_ptr());
+        }
+
+        let every_display = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_DISPLAY);
+        if every_display != TEX_NULL {
+            begin_token_list(every_display, EVERY_DISPLAY_TEXT);
+        }
+        if nest_ptr() == 1 {
+            crate::pagebuilder::build_page();
+        }
+    } else {
+        crate::input::back_input();
+        crate::scan::push_math(MATH_SHIFT_GROUP);
+        crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
+        if insert_src_special_every_math() {
+            crate::scan::insert_src_special();
+        }
+        if semantic_pagination_enabled() {
+            crate::scan::tt_insert_special(c"tdux:cs math".as_ptr());
+        }
+        let every_math = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_MATH);
+        if every_math != TEX_NULL {
+            begin_token_list(every_math, EVERY_MATH_TEXT);
+        }
     }
 }
