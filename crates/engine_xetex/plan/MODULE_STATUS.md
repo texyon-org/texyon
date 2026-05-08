@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |          3 |
-| IN PROGRESS    |          1 |
+| NOT STARTED    |          2 |
+| IN PROGRESS    |          2 |
 | DONE           |         12 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 90.
+Last updated: session 91.
 
 
 ## Core engine files (to translate)
@@ -42,7 +42,7 @@ Last updated: session 90.
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
 | xetex-math.c                 |  3833 |    ~?? | `src/math.rs`                     | NOT STARTED  |
-| xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
+| xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
 | xetex-ext.c                  |    97 |      0 | `src/ext.rs`                      | DONE |
@@ -604,7 +604,15 @@ Linux migration scope.
 Session 83 also moved the former `saved_mapping_name` file-static into
 Rust as `SAVED_MAPPING_NAME`.
 
-### Phases 14+
+### Phase 14 — xetex-shipout.c helpers (target: `src/shipout.rs`)
+
+Status: IN PROGRESS (session 91).
+
+| # | Function   | Line | Status |
+|--:|------------|-----:|--------|
+| 1 | `new_edge` | 1708 | MIGRATED (session 91, 3ecb7ae8) |
+
+### Phases 15+
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.

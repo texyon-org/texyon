@@ -32,6 +32,49 @@ template.
 
 ---
 
+## Session 91 — 2026-05-08 — xetex-shipout.c edge node helper
+
+**Goal:** Start `xetex-shipout.c` by translating a small public helper with
+minimal state dependencies.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 90
+
+**Work done:**
+- Created `src/shipout.rs` and wired it into `src/lib.rs`.
+- Translated `new_edge` from `xetex-shipout.c:1708`, preserving the allocation
+  through `get_node(EDGE_NODE_SIZE)` and the same node fields:
+  `NODE_type = EDGE_NODE`, `NODE_subtype = s`, `BOX_width = w`, and
+  `EDGE_NODE_edge_dist = 0`.
+- Deleted the C body for `new_edge`; existing C and Rust callers now link to
+  the Rust `#[no_mangle]` symbol.
+- Commit: 3ecb7ae8.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 91
+
+**Surprises / gotchas:**
+- `EDGE_NODE` is a C alias for `STYLE_NODE` (`xetex-constants.h:105`), so the
+  Rust constant is documented directly in `src/shipout.rs`.
+- The test run generated the usual observed/expected artifacts outside this
+  crate; they were pre-existing/untracked and left untouched.
+
+**For the next session:**
+- Continue `xetex-shipout.c`. Good small candidates are
+  `initialize_shipout_variables`, `deinitialize_shipout_variables`, or the DVI
+  buffer helpers, but note that `dvi_out` is file-static and should be handled
+  with its callers or after promoting the relevant shipout file-statics.
+
+---
+
 ## Session 90 — 2026-05-08 — xetex-ext.c native node measurement
 
 **Goal:** Translate the remaining `measure_native_node` body from `xetex-ext.c`
