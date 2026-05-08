@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 92.
+Last updated: session 95.
 
 
 ## Core engine files (to translate)
@@ -41,7 +41,7 @@ Last updated: session 92.
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |  3479 |    ~44 | `src/math.rs`                     | IN PROGRESS — 19% |
+| xetex-math.c                 |  2445 |     32 | `src/math.rs`                     | IN PROGRESS — 50% |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -612,9 +612,9 @@ Status: IN PROGRESS (session 91).
 |--:|------------|-----:|--------|
 | 1 | `new_edge` | 1708 | MIGRATED (session 91, 3ecb7ae8) |
 
-### Phase 15 — xetex-math.c command helpers (target: `src/math.rs`)
+### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
-Status: IN PROGRESS (session 92).
+Status: IN PROGRESS (session 95).
 
 | # | Function            | Line | Status |
 |--:|---------------------|-----:|--------|
@@ -628,10 +628,34 @@ Status: IN PROGRESS (session 92).
 | 8 | `sub_sup`           | 599 | MIGRATED (session 92, 7e81f4b6) |
 | 9 | `math_fraction`     | 644 | MIGRATED (session 92, 7e81f4b6) |
 |10 | `math_left_right`   | 703 | MIGRATED (session 92, 7e81f4b6) |
+|11 | `math_ac`           | 355 | MIGRATED (1d724580) |
+|12 | `resume_after_display` | 786 | MIGRATED (7f29297a) |
+|13 | `init_math`         | 81 | MIGRATED (session 93, 133c1ac0) |
+|14 | `app_display`       | 82 | MIGRATED (session 94, 49f0aee7; private Rust helper) |
+|15 | `after_math`        | 923 | MIGRATED (session 94, 49f0aee7) |
+|16 | `math_x_height`     | 86 | MIGRATED (session 95, 65eea6ce) |
+|17 | `math_quad`         | 101 | MIGRATED (session 95, 65eea6ce) |
+|18 | `num1`              | 115 | MIGRATED (session 95, 65eea6ce) |
+|19 | `num2`              | 130 | MIGRATED (session 95, 65eea6ce) |
+|20 | `num3`              | 145 | MIGRATED (session 95, 65eea6ce) |
+|21 | `denom1`            | 160 | MIGRATED (session 95, 65eea6ce) |
+|22 | `denom2`            | 175 | MIGRATED (session 95, 65eea6ce) |
+|23 | `sup1`              | 190 | MIGRATED (session 95, 65eea6ce) |
+|24 | `sup2`              | 205 | MIGRATED (session 95, 65eea6ce) |
+|25 | `sup3`              | 219 | MIGRATED (session 95, 65eea6ce) |
+|26 | `sub1`              | 233 | MIGRATED (session 95, 65eea6ce) |
+|27 | `sub2`              | 247 | MIGRATED (session 95, 65eea6ce) |
+|28 | `sup_drop`          | 261 | MIGRATED (session 95, 65eea6ce) |
+|29 | `sub_drop`          | 275 | MIGRATED (session 95, 65eea6ce) |
+|30 | `delim1`            | 289 | MIGRATED (session 95, 65eea6ce) |
+|31 | `delim2`            | 303 | MIGRATED (session 95, 65eea6ce) |
+|32 | `axis_height`       | 317 | MIGRATED (session 95, 65eea6ce) |
 
-`scan_delimiter` remains callable from C because the still-C `math_ac` body uses
-it. Continue this phase by translating `math_ac`, or move deeper into the
-math-list conversion helpers once the command front-end cluster is complete.
+The next low-risk continuation is the matching math-extension parameter
+cluster: `default_rule_thickness` and `big_op_spacing1` through
+`big_op_spacing5`. They use `cur_size`, which is still a C file-static and
+will need the same minimal exposure used earlier for `cur_mlist` and
+`cur_style`.
 
 ### Phases 16+
 

@@ -32,6 +32,54 @@ template.
 
 ---
 
+## Session 95 — 2026-05-08 — xetex-math.c parameter helpers
+
+**Goal:** Translate the first small math-list conversion helper cluster,
+the math-symbol font parameter accessors, from `xetex-math.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 94
+
+**Work done:**
+- Translated 17 math-symbol parameter helpers to `src/math.rs`:
+  `math_x_height`, `math_quad`, `num1`, `num2`, `num3`, `denom1`,
+  `denom2`, `sup1`, `sup2`, `sup3`, `sub1`, `sub2`, `sup_drop`,
+  `sub_drop`, `delim1`, `delim2`, and `axis_height`.
+- Added a shared Rust `math_sy_param` helper matching the identical C
+  pattern: fetch `MATH_FONT(2 + size_code)`, use
+  `get_native_mathsy_param` for OpenType math fonts, otherwise read
+  `font_info[param + param_base[f]].b32.s1`.
+- Promoted the corresponding C prototypes from `static` to external and
+  deleted their C bodies from `xetex-math.c`; remaining C code now links
+  to the Rust symbols.
+- Reconciled `MODULE_STATUS.md` with the undocumented `math_ac` and
+  `resume_after_display` commits already present in `git log`.
+- Commit: 65eea6ce.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 95
+
+**Surprises / gotchas:**
+- No behavior bugs. The only C-side wrinkle was that the helpers were
+  file-static, so the prototypes had to be un-static'd before the C
+  math pipeline could call Rust replacements.
+- `default_rule_thickness` and `big_op_spacing1` through `big_op_spacing5`
+  are the same shape but read `cur_size`, which is still a C file-static.
+
+**For the next session:**
+- Continue with the math-extension parameter cluster
+  (`default_rule_thickness`, `big_op_spacing1`...`big_op_spacing5`) after
+  exposing `cur_size` through `globals.rs`, or translate the small
+  `fraction_rule` / `overbar` pair if you want to avoid another global.
+
 ## Session 94 — 2026-05-08 — xetex-math.c app_display + after_math
 
 **Goal:** Translate `app_display` (~110 lines, static private helper) and
