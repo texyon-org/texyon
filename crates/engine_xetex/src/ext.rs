@@ -1,10 +1,11 @@
 // translated from xetex-ext.c
 
-use libc::{c_char, c_double, c_int, c_long, c_uint, c_void};
+use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
 use std::ptr;
 
 type XeTeXFont = *mut c_void;
 type XeTeXLayoutEngine = *mut c_void;
+type RawPlatformFontRef = *mut c_void;
 
 const TTBC_FILE_FORMAT_MISC_FONTS: c_int = 41;
 const XETEX_INT: i32 = 27;
@@ -28,6 +29,7 @@ const XETEX_OT_FEATURE_CODE: i32 = 48 - XETEX_INT;
 #[cfg(target_os = "macos")]
 const AAT_FONT_FLAG: u32 = 0xFFFF;
 const OTGR_FONT_FLAG: u32 = 0xFFFE;
+const HB_TAG_NONE: u32 = 0;
 const AUTO: c_int = 0;
 const UTF8: c_int = 1;
 const UTF16BE: c_int = 2;
@@ -50,6 +52,7 @@ static mut SAVED_MAPPING_NAME: *mut c_char = ptr::null_mut();
 extern "C" {
     fn _tt_abort(fmt: *const c_char) -> !;
     fn xmalloc(size: libc::size_t) -> *mut c_void;
+    fn xrealloc(ptr: *mut c_void, size: libc::size_t) -> *mut c_void;
     fn xstrdup(s: *const c_char) -> *mut c_char;
     fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
     fn ttstub_input_get_size(handle: usize) -> libc::size_t;
@@ -83,6 +86,30 @@ extern "C" {
     fn font_mapping_warning(mapping_name: *const c_void, mapping_name_len: i32, warning_type: i32);
     fn get_tracing_fonts_state() -> i32;
     fn deleteLayoutEngine(engine: XeTeXLayoutEngine);
+    fn createLayoutEngine(
+        font: XeTeXFont,
+        script: u32,
+        language: *mut c_char,
+        features: *mut HbFeature,
+        n_features: c_int,
+        shapers: *mut *const c_char,
+        rgb_value: u32,
+        extend: c_float,
+        slant: c_float,
+        embolden: c_float,
+    ) -> XeTeXLayoutEngine;
+    fn createLayoutEngineBorrowed(
+        font: XeTeXFont,
+        script: u32,
+        language: *mut c_char,
+        features: *mut HbFeature,
+        n_features: c_int,
+        shapers: *const *const c_char,
+        rgb_value: u32,
+        extend: c_float,
+        slant: c_float,
+        embolden: c_float,
+    ) -> XeTeXLayoutEngine;
     fn getFont(engine: XeTeXLayoutEngine) -> XeTeXFont;
     fn getExtendFactor(engine: XeTeXLayoutEngine) -> f32;
     fn getSlantFactor(engine: XeTeXLayoutEngine) -> f32;
@@ -95,6 +122,21 @@ extern "C" {
         depth: *mut f32,
     );
     fn mapCharToGlyph(engine: XeTeXLayoutEngine, char_code: u32) -> u32;
+    fn createFont(font_ref: RawPlatformFontRef, point_size: i32) -> XeTeXFont;
+    fn createFontFromFile(filename: *const c_char, index: c_int, point_size: i32) -> XeTeXFont;
+    fn deleteFont(font: XeTeXFont);
+    fn findFontByName(
+        name: *const c_char,
+        var: *mut c_char,
+        size: c_double,
+    ) -> RawPlatformFontRef;
+    fn getReqEngine() -> c_char;
+    fn setReqEngine(engine: c_char);
+    fn getFullName(font: RawPlatformFontRef) -> *const c_char;
+    fn getDesignSize(font: XeTeXFont) -> c_double;
+    fn set_loaded_font_design_size(val: i32);
+    fn ttxl_platfont_get_desc(font: RawPlatformFontRef) -> *const c_char;
+    fn setFontLayoutDir(font: XeTeXFont, vertical: c_int);
     fn getSlant(font: XeTeXFont) -> i32;
     fn countGlyphs(font: XeTeXFont) -> c_uint;
     fn countGraphiteFeatures(engine: XeTeXLayoutEngine) -> u32;
@@ -130,6 +172,13 @@ extern "C" {
         name: *const c_char,
         namelength: c_int,
     ) -> c_long;
+    fn findGraphiteFeature(
+        engine: XeTeXLayoutEngine,
+        s: *const c_char,
+        e: *const c_char,
+        f: *mut u32,
+        v: *mut c_int,
+    ) -> bool;
     fn getGlyphItalCorr(engine: XeTeXLayoutEngine, glyph_id: u32) -> f32;
     fn getGlyphWidth(font: XeTeXFont, gid: u32) -> f32;
     fn getGlyphSidebearings(
@@ -199,6 +248,14 @@ struct FixedPoint {
     y: i32,
 }
 
+#[repr(C)]
+struct HbFeature {
+    tag: u32,
+    value: u32,
+    start: u32,
+    end: u32,
+}
+
 unsafe fn print_c_string(s: *const c_char) {
     let mut p = s;
     while *p != 0 {
@@ -225,6 +282,27 @@ unsafe fn str_starts_with(s: *const c_char, prefix: &[u8]) -> *const c_char {
         }
     }
     s.add(prefix.len())
+}
+
+unsafe fn push_hb_feature(features: &mut *mut HbFeature, n_features: &mut c_int, tag: u32, value: u32) {
+    *features = xrealloc(
+        *features as *mut c_void,
+        ((*n_features as usize + 1) * std::mem::size_of::<HbFeature>()) as libc::size_t,
+    ) as *mut HbFeature;
+    let feature = (*features).add(*n_features as usize);
+    (*feature).tag = tag;
+    (*feature).value = value;
+    (*feature).start = 0;
+    (*feature).end = u32::MAX;
+    *n_features += 1;
+}
+
+unsafe fn copy_c_slice(start: *const c_char, end: *const c_char) -> *mut c_char {
+    let len = end.offset_from(start) as usize;
+    let out = xmalloc((len + 1) as libc::size_t) as *mut c_char;
+    ptr::copy_nonoverlapping(start, out, len);
+    *out.add(len) = 0;
+    out
 }
 
 // translated from xetex-ext.c:1882 (D2Fix)
@@ -658,6 +736,403 @@ pub unsafe extern "C" fn readCommonFeatures(
     }
 
     0
+}
+
+// translated from xetex-ext.c:72 (loadOTfont) — private helper
+unsafe fn load_ot_font(
+    _font_ref: RawPlatformFontRef,
+    font: XeTeXFont,
+    scaled_size: i32,
+    mut cp1: *mut c_char,
+) -> *mut c_void {
+    let mut engine: XeTeXLayoutEngine = ptr::null_mut();
+    let mut script = HB_TAG_NONE;
+    let mut language: *mut c_char = ptr::null_mut();
+    let mut features: *mut HbFeature = ptr::null_mut();
+    let mut shapers: *mut *const c_char = ptr::null_mut();
+    let mut n_features: c_int = 0;
+    let mut n_shapers: c_int = 0;
+    let mut rgb_value: u32 = 0x000000FF;
+    let mut extend: c_float = 1.0;
+    let mut slant: c_float = 0.0;
+    let mut embolden: c_float = 0.0;
+    let mut letterspace: c_float = 0.0;
+    let req_engine = getReqEngine();
+
+    if req_engine == b'O' as c_char || req_engine == b'G' as c_char {
+        shapers = xrealloc(
+            shapers as *mut c_void,
+            ((n_shapers as usize + 1) * std::mem::size_of::<*const c_char>()) as libc::size_t,
+        ) as *mut *const c_char;
+        if req_engine == b'O' as c_char {
+            *shapers.add(n_shapers as usize) = c"ot".as_ptr();
+        } else {
+            *shapers.add(n_shapers as usize) = c"graphite2".as_ptr();
+        }
+        n_shapers += 1;
+    }
+
+    if req_engine == b'G' as c_char {
+        let graphite_shaper = [c"graphite2".as_ptr(), ptr::null()];
+        engine = createLayoutEngineBorrowed(
+            font,
+            script,
+            ptr::null_mut(),
+            features,
+            n_features,
+            graphite_shaper.as_ptr(),
+            rgb_value,
+            extend,
+            slant,
+            embolden,
+        );
+        if engine.is_null() {
+            return ptr::null_mut();
+        }
+    }
+
+    if !cp1.is_null() {
+        while *cp1 != 0 {
+            if *cp1 == b':' as c_char || *cp1 == b';' as c_char || *cp1 == b',' as c_char {
+                cp1 = cp1.add(1);
+            }
+            while *cp1 == b' ' as c_char || *cp1 == b'\t' as c_char {
+                cp1 = cp1.add(1);
+            }
+            if *cp1 == 0 {
+                break;
+            }
+
+            let mut cp2 = cp1;
+            while *cp2 != 0
+                && *cp2 != b':' as c_char
+                && *cp2 != b';' as c_char
+                && *cp2 != b',' as c_char
+            {
+                cp2 = cp2.add(1);
+            }
+
+            let mut bad_option = false;
+            let mut handled = false;
+
+            let mut cp3 = str_starts_with(cp1, b"script");
+            if !cp3.is_null() {
+                if *cp3 != b'=' as c_char {
+                    bad_option = true;
+                } else {
+                    cp3 = cp3.add(1);
+                    script = hb_tag_from_string(cp3, cp2.offset_from(cp3) as c_int);
+                    handled = true;
+                }
+            }
+
+            if !handled && !bad_option {
+                cp3 = str_starts_with(cp1, b"language");
+                if !cp3.is_null() {
+                    if *cp3 != b'=' as c_char {
+                        bad_option = true;
+                    } else {
+                        cp3 = cp3.add(1);
+                        language = copy_c_slice(cp3, cp2);
+                        handled = true;
+                    }
+                }
+            }
+
+            if !handled && !bad_option {
+                cp3 = str_starts_with(cp1, b"shaper");
+                if !cp3.is_null() {
+                    if *cp3 != b'=' as c_char {
+                        bad_option = true;
+                    } else {
+                        cp3 = cp3.add(1);
+                        shapers = xrealloc(
+                            shapers as *mut c_void,
+                            ((n_shapers as usize + 1) * std::mem::size_of::<*const c_char>())
+                                as libc::size_t,
+                        ) as *mut *const c_char;
+                        *shapers.add(n_shapers as usize) = copy_c_slice(cp3, cp2);
+                        n_shapers += 1;
+                        handled = true;
+                    }
+                }
+            }
+
+            if !handled && !bad_option {
+                let i = readCommonFeatures(
+                    cp1,
+                    cp2,
+                    &mut extend,
+                    &mut slant,
+                    &mut embolden,
+                    &mut letterspace,
+                    &mut rgb_value,
+                );
+                if i == 1 {
+                    handled = true;
+                } else if i == -1 {
+                    bad_option = true;
+                }
+            }
+
+            if !handled && !bad_option && req_engine == b'G' as c_char {
+                let mut value = 0;
+                let mut tag = 0;
+                if readFeatureNumber(cp1, cp2, &mut tag, &mut value)
+                    || findGraphiteFeature(engine, cp1, cp2, &mut tag, &mut value)
+                {
+                    push_hb_feature(&mut features, &mut n_features, tag, value as u32);
+                    handled = true;
+                }
+            }
+
+            if !handled && !bad_option && *cp1 == b'+' as c_char {
+                let mut param = 0;
+                let tag = read_tag_with_param(cp1.add(1), &mut param);
+                if param >= 0 {
+                    param += 1;
+                }
+                push_hb_feature(&mut features, &mut n_features, tag, param as u32);
+                handled = true;
+            }
+
+            if !handled && !bad_option && *cp1 == b'-' as c_char {
+                cp1 = cp1.add(1);
+                let tag = hb_tag_from_string(cp1, cp2.offset_from(cp1) as c_int);
+                push_hb_feature(&mut features, &mut n_features, tag, 0);
+                handled = true;
+            }
+
+            if !handled && !bad_option && !str_starts_with(cp1, b"vertical").is_null() {
+                cp3 = cp2;
+                if *cp3 == b';' as c_char || *cp3 == b':' as c_char || *cp3 == b',' as c_char {
+                    cp3 = cp3.sub(1);
+                }
+                while *cp3 == 0 || *cp3 == b' ' as c_char || *cp3 == b'\t' as c_char {
+                    cp3 = cp3.sub(1);
+                }
+                if *cp3 != 0 {
+                    cp3 = cp3.add(1);
+                }
+                if cp3 == cp1.add(8) {
+                    crate::globals::set_loaded_font_flags(
+                        crate::globals::loaded_font_flags() | FONT_FLAGS_VERTICAL,
+                    );
+                    handled = true;
+                }
+            }
+
+            if !handled || bad_option {
+                crate::output::font_feature_warning(
+                    cp1 as *const c_void,
+                    cp2.offset_from(cp1) as i32,
+                    ptr::null(),
+                    0,
+                );
+            }
+            cp1 = cp2;
+        }
+    }
+
+    if !shapers.is_null() {
+        shapers = xrealloc(
+            shapers as *mut c_void,
+            ((n_shapers as usize + 1) * std::mem::size_of::<*const c_char>()) as libc::size_t,
+        ) as *mut *const c_char;
+        *shapers.add(n_shapers as usize) = ptr::null();
+    }
+
+    if !engine.is_null() {
+        deleteLayoutEngine(engine);
+    }
+
+    if embolden != 0.0 {
+        embolden = (embolden as c_double * Fix2D(scaled_size) / 100.0) as c_float;
+    }
+
+    if letterspace != 0.0 {
+        crate::globals::set_loaded_font_letter_space(
+            (letterspace as c_double / 100.0 * scaled_size as c_double) as i32,
+        );
+    }
+
+    if (crate::globals::loaded_font_flags() & FONT_FLAGS_COLORED) == 0 {
+        rgb_value = 0x000000FF;
+    }
+
+    if (crate::globals::loaded_font_flags() & FONT_FLAGS_VERTICAL) != 0 {
+        setFontLayoutDir(font, 1);
+    }
+
+    engine = createLayoutEngine(
+        font,
+        script,
+        language,
+        features,
+        n_features,
+        shapers,
+        rgb_value,
+        extend,
+        slant,
+        embolden,
+    );
+
+    if !features.is_null() {
+        libc::free(features as *mut c_void);
+    }
+    if !shapers.is_null() {
+        libc::free(shapers as *mut c_void);
+    }
+    if !language.is_null() {
+        libc::free(language as *mut c_void);
+    }
+    if !engine.is_null() {
+        crate::globals::set_native_font_type_flag(OTGR_FONT_FLAG as i32);
+    }
+
+    engine as *mut c_void
+}
+
+// translated from xetex-ext.c:283 (find_native_font)
+#[no_mangle]
+pub unsafe extern "C" fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut c_void {
+    let mut rval: *mut c_void = ptr::null_mut();
+    let name = uname;
+    let mut var: *mut c_char = ptr::null_mut();
+    let mut feat: *mut c_char = ptr::null_mut();
+    let mut end: *mut c_char = ptr::null_mut();
+    let mut var_string: *mut c_char = ptr::null_mut();
+    let mut feat_string: *mut c_char = ptr::null_mut();
+    let mut font: XeTeXFont = ptr::null_mut();
+    let mut index = 0;
+
+    crate::globals::set_loaded_font_mapping(ptr::null_mut());
+    crate::globals::set_loaded_font_flags(0);
+    crate::globals::set_loaded_font_letter_space(0);
+
+    splitFontName(name, &mut var, &mut feat, &mut end, &mut index);
+    let name_string = xmalloc((var.offset_from(name) + 1) as libc::size_t) as *mut c_char;
+    ptr::copy_nonoverlapping(name, name_string, var.offset_from(name) as usize);
+    *name_string.add(var.offset_from(name) as usize) = 0;
+
+    if feat > var {
+        var_string = copy_c_slice(var.add(1), feat);
+    }
+    if end > feat {
+        feat_string = copy_c_slice(feat.add(1), end);
+    }
+
+    if *name_string == b'[' as c_char {
+        if scaled_size < 0 {
+            font = createFontFromFile(name_string.add(1), index, 655360);
+            if !font.is_null() {
+                let dsize = D2Fix(getDesignSize(font));
+                if scaled_size == -1000 {
+                    scaled_size = dsize;
+                } else {
+                    scaled_size = crate::scaled_math::xn_over_d(dsize, -scaled_size, 1000);
+                }
+                deleteFont(font);
+            }
+        }
+        font = createFontFromFile(name_string.add(1), index, scaled_size);
+        if !font.is_null() {
+            set_loaded_font_design_size(D2Fix(getDesignSize(font)));
+
+            setReqEngine(0);
+            if !var_string.is_null() {
+                if !str_starts_with(var_string, b"/AAT").is_null() {
+                    setReqEngine(b'A' as c_char);
+                } else if !str_starts_with(var_string, b"/OT").is_null()
+                    || !str_starts_with(var_string, b"/ICU").is_null()
+                {
+                    setReqEngine(b'O' as c_char);
+                } else if !str_starts_with(var_string, b"/GR").is_null() {
+                    setReqEngine(b'G' as c_char);
+                }
+            }
+
+            rval = load_ot_font(ptr::null_mut(), font, scaled_size, feat_string);
+            if rval.is_null() {
+                deleteFont(font);
+            }
+            if !rval.is_null() && get_tracing_fonts_state() > 0 {
+                begin_diagnostic();
+                print_nl(b' ' as i32);
+                print_c_string(c"-> ".as_ptr());
+                print_c_string(name_string.add(1));
+                end_diagnostic(0);
+            }
+        }
+    } else {
+        let font_ref = findFontByName(name_string, var_string, Fix2D(scaled_size));
+
+        if get_tracing_fonts_state() > 0 {
+            begin_diagnostic();
+            print_nl(b' ' as i32);
+            print_c_string(c"-> ".as_ptr());
+            print_c_string(ttxl_platfont_get_desc(font_ref));
+            end_diagnostic(0);
+        }
+
+        if !font_ref.is_null() {
+            let full_name = getFullName(font_ref);
+            let mut name_length = libc::strlen(full_name) as i32;
+            if !feat_string.is_null() {
+                name_length += libc::strlen(feat_string) as i32 + 1;
+            }
+            if !var_string.is_null() {
+                name_length += libc::strlen(var_string) as i32 + 1;
+            }
+            libc::free(crate::globals::name_of_file() as *mut c_void);
+            crate::globals::set_name_of_file(xmalloc((name_length + 1) as libc::size_t) as *mut c_char);
+            libc::strcpy(crate::globals::name_of_file(), full_name);
+
+            if scaled_size < 0 {
+                font = createFont(font_ref, scaled_size);
+                if !font.is_null() {
+                    let dsize = D2Fix(getDesignSize(font));
+                    if scaled_size == -1000 {
+                        scaled_size = dsize;
+                    } else {
+                        scaled_size = crate::scaled_math::xn_over_d(dsize, -scaled_size, 1000);
+                    }
+                    deleteFont(font);
+                }
+            }
+
+            font = createFont(font_ref, scaled_size);
+            if !font.is_null() {
+                #[cfg(target_os = "macos")]
+                {
+                    compile_error!("AAT native font loading is still implemented in C on macOS");
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    rval = load_ot_font(font_ref, font, scaled_size, feat_string);
+                    if rval.is_null() {
+                        deleteFont(font);
+                    }
+                }
+            }
+
+            if !var_string.is_null() && *var_string != 0 {
+                libc::strcat(crate::globals::name_of_file(), c"/".as_ptr());
+                libc::strcat(crate::globals::name_of_file(), var_string);
+            }
+            if !feat_string.is_null() && *feat_string != 0 {
+                libc::strcat(crate::globals::name_of_file(), c":".as_ptr());
+                libc::strcat(crate::globals::name_of_file(), feat_string);
+            }
+            crate::globals::set_name_length(libc::strlen(crate::globals::name_of_file()) as i32);
+        }
+    }
+
+    libc::free(var_string as *mut c_void);
+    libc::free(feat_string as *mut c_void);
+    libc::free(name_string as *mut c_void);
+
+    rval
 }
 
 // translated from xetex-ext.c:440 (splitFontName)
