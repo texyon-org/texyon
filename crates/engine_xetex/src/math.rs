@@ -2,19 +2,21 @@
 
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
-    cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf,
-    cur_list_tail, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p,
-    font_area_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr, font_params,
-    hi_mem_min, insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
-    mem_b32s0, mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr,
-    save_stack_b32s1, semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir,
-    set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux,
-    set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail, set_cur_mlist, set_cur_style,
-    set_cur_mu, set_cur_size, set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1,
-    set_mem_gr, set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr,
-    set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr, tex_remainder,
-    total_shrink, width_base_entry,
+    cur_c, cur_f, cur_i, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
+    cur_list_prev_graf, cur_list_tail, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1,
+    file_line_error_style_p, font_area_entry, font_bc_entry, font_ec_entry, font_info_b16,
+    font_info_b32s1, font_layout_engine_ptr, font_params, hi_mem_min,
+    insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
+    mem_b32s0, mem_b32s1, mem_gr, mem_node_addr, mem_word, nest_ptr, null_character,
+    param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
+    set_adjust_tail, set_avail, set_cur_c, set_cur_dir, set_cur_f, set_cur_i, set_cur_lang,
+    set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode,
+    set_cur_list_prev_graf, set_cur_list_tail, set_cur_mlist, set_cur_mu, set_cur_size,
+    set_cur_style, set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems,
+    set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0,
+    set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties, set_pre_adjust_tail,
+    set_save_ptr, set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr,
+    tex_remainder, total_shrink, width_base_entry,
 };
 use crate::mem::{free_node, get_node, new_choice, new_kern, new_noad, new_rule, TEX_NULL};
 
@@ -105,12 +107,15 @@ const LEFT_TO_RIGHT: i16 = 0;
 const BEFORE: i32 = 0;
 
 const MATH_FONT_BASE: i32 = 2_255_401;
+const FONT_BASE: i32 = 0;
 const TEXT_SIZE: i32 = 0;
 const SCRIPT_SIZE: i32 = 256;
 const SCRIPT_SCRIPT_SIZE: i32 = 512;
 const TOTAL_MATHSY_PARAMS: i32 = 22;
 const TOTAL_MATHEX_PARAMS: i32 = 13;
+const AAT_FONT_FLAG: i32 = 0xFFFF;
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
+const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 const BEGIN_M_CODE: i16 = 2;
 const END_M_CODE: i16 = 3;
 const DISPLAY_STYLE: i16 = 0;
@@ -149,6 +154,8 @@ extern "C" {
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
     fn get_native_mathsy_param(f: i32, n: i32) -> i32;
     fn get_native_mathex_param(f: i32, n: i32) -> i32;
+    fn real_get_native_glyph(p_node: *mut libc::c_void, index: u32) -> u16;
+    fn get_ot_math_accent_pos(f: i32, g: i32) -> i32;
 }
 
 #[inline]
@@ -498,6 +505,46 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
     x
 }
 
+/// translated from xetex-math.c:115 (fetch)
+#[no_mangle]
+pub unsafe extern "C" fn fetch(a: i32) {
+    set_cur_c(mem_b16s0(a) as i32);
+    set_cur_f(math_font((mem_b16s1(a) as i32 % 256) + cur_size()));
+    set_cur_c(cur_c() + (mem_b16s1(a) as i32 / 256) * 65_536);
+
+    if cur_f() == FONT_BASE {
+        crate::output::error_here_with_diagnostic(c"".as_ptr());
+        crate::output::print_size(cur_size());
+        crate::output::print_char(' ' as i32);
+        crate::output::print_int(mem_b16s1(a) as i32 % 256);
+        crate::output::print_cstr(c" is undefined (character ".as_ptr());
+        crate::output::print(cur_c());
+        crate::output::print_char(')' as i32);
+        crate::output::capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(4);
+        set_help_line(3, c"Somewhere in the math formula just ended, you used the".as_ptr());
+        set_help_line(2, c"stated character from an undefined font family. For example,".as_ptr());
+        set_help_line(1, c"plain TeX doesn't allow \\it or \\sl in subscripts. Proceed,".as_ptr());
+        set_help_line(0, c"and I'll try to forget that I needed that character.".as_ptr());
+        crate::errors::error();
+        set_cur_i(null_character());
+        set_mem_b32s1(a, EMPTY);
+    } else if font_area_entry(cur_f()) == AAT_FONT_FLAG || font_area_entry(cur_f()) == OTGR_FONT_FLAG {
+        set_cur_i(null_character());
+    } else {
+        if cur_c() >= font_bc_entry(cur_f()) as i32 && cur_c() <= font_ec_entry(cur_f()) as i32 {
+            set_cur_i(font_info_b16(char_base_entry(cur_f()) + cur_c()));
+        } else {
+            set_cur_i(null_character());
+        }
+        if cur_i().s3 == 0 {
+            crate::scan::char_warning(cur_f(), cur_c());
+            set_mem_b32s1(a, EMPTY);
+            set_cur_i(null_character());
+        }
+    }
+}
+
 /// translated from xetex-math.c:198 (make_over)
 #[no_mangle]
 pub unsafe extern "C" fn make_over(q: i32) {
@@ -537,6 +584,26 @@ pub unsafe extern "C" fn make_vcenter(q: i32) {
     let delta = mem_b32s1(v + 3) + mem_b32s1(v + 2);
     set_mem_b32s1(v + 3, axis_height(cur_size()) + crate::scaled_math::half(delta));
     set_mem_b32s1(v + 2, delta - mem_b32s1(v + 3));
+}
+
+/// translated from xetex-math.c:199 (compute_ot_math_accent_pos)
+#[no_mangle]
+pub unsafe extern "C" fn compute_ot_math_accent_pos(p: i32) -> i32 {
+    if mem_b32s1(p + 1) == MATH_CHAR {
+        fetch(p + 1);
+        let q = crate::scan::new_native_character(cur_f(), cur_c() as u32);
+        let g = real_get_native_glyph(mem_node_addr(q), 0);
+        get_ot_math_accent_pos(cur_f(), g as i32)
+    } else if mem_b32s1(p + 1) == SUB_MLIST {
+        let r = mem_b32s0(p + 1);
+        if r != TEX_NULL && mem_b16s1(r) == ACCENT_NOAD {
+            compute_ot_math_accent_pos(r)
+        } else {
+            TEX_INFINITY
+        }
+    } else {
+        TEX_INFINITY
+    }
 }
 
 /// translated from xetex-math.c:388 (scan_delimiter)

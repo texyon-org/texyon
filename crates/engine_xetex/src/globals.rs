@@ -392,6 +392,9 @@ mod raw {
         // Scanner radix: 8, 10, or 16 (xetex-xetexd.h:533; small_number = u8).
         pub(super) static mut radix: u8;
 
+        // Null character-info word (xetex-xetexd.h:591).
+        pub(super) static mut null_character: crate::mem_types::B16x4;
+
         // Page builder state (xetex-xetexd.h:597, 604, 664–671).
         pub(super) static mut dead_cycles: i32;
         pub(super) static mut page_tail: i32;
@@ -547,6 +550,10 @@ mod raw {
         pub(super) static mut total_stretch: [i32; 4];
         pub(super) static mut total_shrink: [i32; 4];
         pub(super) static mut just_box: i32;
+        // Math/list conversion scratch (xetex-xetexd.h:609–611).
+        pub(super) static mut cur_f: i32;
+        pub(super) static mut cur_c: i32;
+        pub(super) static mut cur_i: crate::mem_types::B16x4;
         // Line number at which the current box-packing started (xetex-xetexd.h:607).
         pub(super) static mut pack_begin_line: i32;
         // Whether \setbox is allowed in the current context (xetex-xetexd.h:446).
@@ -3374,6 +3381,12 @@ pub(crate) fn set_cur_order(v: u8) {
 #[inline] pub(crate) fn set_total_shrink(o: usize, v: i32) { unsafe { raw::total_shrink[o] = v; } }
 #[inline] pub(crate) fn just_box() -> i32 { unsafe { raw::just_box } }
 #[inline] pub(crate) fn set_just_box(v: i32) { unsafe { raw::just_box = v; } }
+#[inline] pub(crate) fn cur_f() -> i32 { unsafe { raw::cur_f } }
+#[inline] pub(crate) fn set_cur_f(v: i32) { unsafe { raw::cur_f = v; } }
+#[inline] pub(crate) fn cur_c() -> i32 { unsafe { raw::cur_c } }
+#[inline] pub(crate) fn set_cur_c(v: i32) { unsafe { raw::cur_c = v; } }
+#[inline] pub(crate) fn cur_i() -> crate::mem_types::B16x4 { unsafe { raw::cur_i } }
+#[inline] pub(crate) fn set_cur_i(v: crate::mem_types::B16x4) { unsafe { raw::cur_i = v; } }
 #[inline] pub(crate) fn pack_begin_line() -> i32 { unsafe { raw::pack_begin_line } }
 #[inline] pub(crate) fn set_pack_begin_line(v: i32) { unsafe { raw::pack_begin_line = v; } }
 #[inline] pub(crate) fn set_box_allowed() -> bool { unsafe { raw::set_box_allowed } }
@@ -3527,6 +3540,7 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 // ---------------------------------------------------------------------------
 // Shipout / DVI output globals (xetex-xetexd.h:592–600, 694–697, 693)
 // ---------------------------------------------------------------------------
+#[inline] pub(crate) fn null_character() -> crate::mem_types::B16x4 { unsafe { raw::null_character } }
 #[inline] pub(crate) fn total_pages() -> i32 { unsafe { raw::total_pages } }
 #[inline] pub(crate) fn set_total_pages(v: i32) { unsafe { raw::total_pages = v; } }
 #[inline] pub(crate) fn max_v() -> i32 { unsafe { raw::max_v } }

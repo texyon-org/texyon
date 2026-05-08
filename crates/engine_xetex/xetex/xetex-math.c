@@ -45,12 +45,12 @@ static int32_t rebox(int32_t b, scaled_t w);
 int32_t math_glue(int32_t g, scaled_t m);
 void math_kern(int32_t p, scaled_t m);
 int32_t clean_box(int32_t p, small_number s);
-static void fetch(int32_t a);
+void fetch(int32_t a);
 void make_over(int32_t q);
 void make_under(int32_t q);
 void make_vcenter(int32_t q);
 static void make_radical(int32_t q);
-static scaled_t compute_ot_math_accent_pos(int32_t p);
+scaled_t compute_ot_math_accent_pos(int32_t p);
 static void make_math_accent(int32_t q);
 static void make_fraction(int32_t q);
 static scaled_t make_op(int32_t q);
@@ -76,48 +76,6 @@ initialize_math_variables(void)
     null_delimiter.s1 = 0;
     null_delimiter.s0 = 0;
 }
-static void
-fetch(int32_t a)
-{
-    cur_c = (unsigned short) mem[a].b16.s0;
-    cur_f = MATH_FONT((mem[a].b16.s1 % 256) + cur_size);
-    cur_c = cur_c + (mem[a].b16.s1 / 256) * 65536L;
-    if (cur_f == FONT_BASE) {   /*749: */
-        error_here_with_diagnostic("");
-        print_size(cur_size);
-        print_char(' ');
-        print_int((mem[a].b16.s1 % 256));
-        print_cstr(" is undefined (character ");
-        print(cur_c);
-        print_char(')');
-        capture_to_diagnostic(NULL);
-        {
-            help_ptr = 4;
-            help_line[3] = "Somewhere in the math formula just ended, you used the";
-            help_line[2] = "stated character from an undefined font family. For example,";
-            help_line[1] = "plain TeX doesn't allow \\it or \\sl in subscripts. Proceed,";
-            help_line[0] = "and I'll try to forget that I needed that character.";
-        }
-        error();
-        cur_i = null_character;
-        mem[a].b32.s1 = EMPTY;
-    } else if (((font_area[cur_f] == AAT_FONT_FLAG) || (font_area[cur_f] == OTGR_FONT_FLAG))) {
-        cur_i = null_character;
-    } else {
-
-        if ((cur_c >= font_bc[cur_f]) && (cur_c <= font_ec[cur_f]))
-            cur_i = FONT_CHARACTER_INFO(cur_f, cur_c);
-        else
-            cur_i = null_character;
-        if (!((cur_i.s3 > 0))) {
-            char_warning(cur_f, cur_c);
-            mem[a].b32.s1 = EMPTY;
-            cur_i = null_character;
-        }
-    }
-}
-
-
 static void
 make_radical(int32_t q)
 {
@@ -159,31 +117,6 @@ make_radical(int32_t q)
     mem[y].b32.s1 = overbar(x, clr, mem[y + 3].b32.s1);
     mem[q + 1].b32.s0 = hpack(y, 0, ADDITIONAL);
     mem[q + 1].b32.s1 = SUB_BOX;
-}
-
-
-static scaled_t
-compute_ot_math_accent_pos(int32_t p)
-{
-    int32_t q, r;
-    scaled_t s, g;
-    if (mem[p + 1].b32.s1 == MATH_CHAR) {
-        fetch(p + 1);
-        q = new_native_character(cur_f, cur_c);
-        g = get_native_glyph(q, 0);
-        s = get_ot_math_accent_pos(cur_f, g);
-    } else {
-
-        if (mem[p + 1].b32.s1 == SUB_MLIST) {
-            r = mem[p + 1].b32.s0;
-            if ((r != TEX_NULL) && (mem[r].b16.s1 == ACCENT_NOAD))
-                s = compute_ot_math_accent_pos(r);
-            else
-                s = TEX_INFINITY;
-        } else
-            s = TEX_INFINITY;
-    }
-    return s;
 }
 
 
