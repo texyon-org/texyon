@@ -7,7 +7,7 @@ use crate::globals::{
     file_line_error_style_p, font_area_entry, font_bc_entry, font_ec_entry, font_info_b16,
     font_info_b32s1, font_layout_engine_ptr, font_params, hi_mem_min,
     insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
-    mem_b32s0, mem_b32s1, mem_gr, mem_node_addr, mem_word, nest_ptr, null_character,
+    mem_b16s3, mem_b32s0, mem_b32s1, mem_gr, mem_node_addr, mem_word, nest_ptr, null_character,
     param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
     set_adjust_tail, set_avail, set_cur_c, set_cur_dir, set_cur_f, set_cur_i, set_cur_lang,
     set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode,
@@ -116,6 +116,15 @@ const TOTAL_MATHEX_PARAMS: i32 = 13;
 const AAT_FONT_FLAG: i32 = 0xFFFF;
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
 const TEX_INFINITY: i32 = 0x7FFF_FFFF;
+const STACKGAPMIN: i32 = 26;
+const STACKDISPLAYSTYLEGAPMIN: i32 = 27;
+const FRACTIONNUMERATORGAPMIN: i32 = 36;
+const FRACTIONNUMDISPLAYSTYLEGAPMIN: i32 = 37;
+const FRACTIONDENOMINATORGAPMIN: i32 = 39;
+const FRACTIONDENOMDISPLAYSTYLEGAPMIN: i32 = 40;
+const RADICALVERTICALGAP: i32 = 49;
+const RADICALDISPLAYSTYLEVERTICALGAP: i32 = 50;
+const RADICALRULETHICKNESS: i32 = 51;
 const BEGIN_M_CODE: i16 = 2;
 const END_M_CODE: i16 = 3;
 const DISPLAY_STYLE: i16 = 0;
@@ -156,6 +165,9 @@ extern "C" {
     fn get_native_mathex_param(f: i32, n: i32) -> i32;
     fn real_get_native_glyph(p_node: *mut libc::c_void, index: u32) -> u16;
     fn get_ot_math_accent_pos(f: i32, g: i32) -> i32;
+    fn get_ot_math_constant(f: i32, n: i32) -> i32;
+    fn var_delimiter(d: i32, s: i32, v: i32) -> i32;
+    fn rebox(b: i32, w: i32) -> i32;
 }
 
 #[inline]
@@ -584,6 +596,174 @@ pub unsafe extern "C" fn make_vcenter(q: i32) {
     let delta = mem_b32s1(v + 3) + mem_b32s1(v + 2);
     set_mem_b32s1(v + 3, axis_height(cur_size()) + crate::scaled_math::half(delta));
     set_mem_b32s1(v + 2, delta - mem_b32s1(v + 3));
+}
+
+/// translated from xetex-math.c:80 (make_radical)
+#[no_mangle]
+pub unsafe extern "C" fn make_radical(q: i32) {
+    let f = math_font((mem_b16s3(q + 4) as i32 % 256) + cur_size());
+    let rule_thickness = if font_is_ot_math(f) {
+        get_ot_math_constant(f, RADICALRULETHICKNESS)
+    } else {
+        default_rule_thickness()
+    };
+
+    let x = clean_box(q + 1, 2 * (cur_style() / 2) + 1);
+    let mut clr = if font_is_ot_math(f) {
+        if cur_style() < TEXT_STYLE {
+            get_ot_math_constant(f, RADICALDISPLAYSTYLEVERTICALGAP)
+        } else {
+            get_ot_math_constant(f, RADICALVERTICALGAP)
+        }
+    } else if cur_style() < TEXT_STYLE {
+        rule_thickness + math_x_height(cur_size()).abs() / 4
+    } else {
+        rule_thickness + rule_thickness.abs() / 4
+    };
+
+    let y = var_delimiter(
+        q + 4,
+        cur_size(),
+        mem_b32s1(x + 3) + mem_b32s1(x + 2) + clr + rule_thickness,
+    );
+    if font_is_ot_math(f) {
+        set_mem_b32s1(y + 2, mem_b32s1(y + 3) + mem_b32s1(y + 2) - rule_thickness);
+        set_mem_b32s1(y + 3, rule_thickness);
+    }
+
+    let delta = mem_b32s1(y + 2) - (mem_b32s1(x + 3) + mem_b32s1(x + 2) + clr);
+    if delta > 0 {
+        clr += crate::scaled_math::half(delta);
+    }
+    set_mem_b32s1(y + 4, -(mem_b32s1(x + 3) + clr));
+    set_mem_b32s1(y, overbar(x, clr, mem_b32s1(y + 3)));
+    set_mem_b32s0(q + 1, crate::scan::hpack(y, 0, ADDITIONAL));
+    set_mem_b32s1(q + 1, SUB_BOX);
+}
+
+/// translated from xetex-math.c:313 (make_fraction)
+#[no_mangle]
+pub unsafe extern "C" fn make_fraction(q: i32) {
+    if mem_b32s1(q + 1) == DEFAULT_CODE {
+        set_mem_b32s1(q + 1, default_rule_thickness());
+    }
+
+    let mut x = clean_box(q + 2, cur_style() + 2 - 2 * (cur_style() / 6));
+    let mut z = clean_box(q + 3, 2 * (cur_style() / 2) + 3 - 2 * (cur_style() / 6));
+
+    if mem_b32s1(x + 1) < mem_b32s1(z + 1) {
+        x = rebox(x, mem_b32s1(z + 1));
+    } else {
+        z = rebox(z, mem_b32s1(x + 1));
+    }
+
+    let (mut shift_up, mut shift_down) = if cur_style() < TEXT_STYLE {
+        (num1(cur_size()), denom1(cur_size()))
+    } else {
+        (
+            if mem_b32s1(q + 1) != 0 {
+                num2(cur_size())
+            } else {
+                num3(cur_size())
+            },
+            denom2(cur_size()),
+        )
+    };
+
+    let mut delta = 0;
+    if mem_b32s1(q + 1) == 0 {
+        let clr = if font_is_ot_math(cur_f()) {
+            if cur_style() < TEXT_STYLE {
+                get_ot_math_constant(cur_f(), STACKDISPLAYSTYLEGAPMIN)
+            } else {
+                get_ot_math_constant(cur_f(), STACKGAPMIN)
+            }
+        } else if cur_style() < TEXT_STYLE {
+            7 * default_rule_thickness()
+        } else {
+            3 * default_rule_thickness()
+        };
+
+        delta = crate::scaled_math::half(
+            clr - ((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(z + 3) - shift_down)),
+        );
+        if delta > 0 {
+            shift_up += delta;
+            shift_down += delta;
+        }
+    } else {
+        let (delta1, delta2) = if font_is_ot_math(cur_f()) {
+            delta = crate::scaled_math::half(mem_b32s1(q + 1));
+            let clr_num = if cur_style() < TEXT_STYLE {
+                get_ot_math_constant(cur_f(), FRACTIONNUMDISPLAYSTYLEGAPMIN)
+            } else {
+                get_ot_math_constant(cur_f(), FRACTIONNUMERATORGAPMIN)
+            };
+            let delta1 =
+                clr_num - ((shift_up - mem_b32s1(x + 2)) - (axis_height(cur_size()) + delta));
+
+            let clr_den = if cur_style() < TEXT_STYLE {
+                get_ot_math_constant(cur_f(), FRACTIONDENOMDISPLAYSTYLEGAPMIN)
+            } else {
+                get_ot_math_constant(cur_f(), FRACTIONDENOMINATORGAPMIN)
+            };
+            let delta2 =
+                clr_den - ((axis_height(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
+            (delta1, delta2)
+        } else {
+            let clr = if cur_style() < TEXT_STYLE {
+                3 * mem_b32s1(q + 1)
+            } else {
+                mem_b32s1(q + 1)
+            };
+            delta = crate::scaled_math::half(mem_b32s1(q + 1));
+            (
+                clr - ((shift_up - mem_b32s1(x + 2)) - (axis_height(cur_size()) + delta)),
+                clr - ((axis_height(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down)),
+            )
+        };
+
+        if delta1 > 0 {
+            shift_up += delta1;
+        }
+        if delta2 > 0 {
+            shift_down += delta2;
+        }
+    }
+
+    let v = crate::mem::new_null_box();
+    set_mem_b16s1(v, VLIST_NODE);
+    set_mem_b32s1(v + 3, shift_up + mem_b32s1(x + 3));
+    set_mem_b32s1(v + 2, mem_b32s1(z + 2) + shift_down);
+    set_mem_b32s1(v + 1, mem_b32s1(x + 1));
+
+    let mut p;
+    if mem_b32s1(q + 1) == 0 {
+        p = new_kern((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(z + 3) - shift_down));
+        set_mem_b32s1(p, z);
+    } else {
+        let y = fraction_rule(mem_b32s1(q + 1));
+        p = new_kern((axis_height(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
+        set_mem_b32s1(y, p);
+        set_mem_b32s1(p, z);
+        p = new_kern((shift_up - mem_b32s1(x + 2)) - (axis_height(cur_size()) + delta));
+        set_mem_b32s1(p, y);
+    }
+
+    set_mem_b32s1(x, p);
+    set_mem_b32s1(v + 5, x);
+
+    delta = if cur_style() < TEXT_STYLE {
+        delim1(cur_size())
+    } else {
+        delim2(cur_size())
+    };
+
+    x = var_delimiter(q + 4, cur_size(), delta);
+    set_mem_b32s1(x, v);
+    z = var_delimiter(q + 5, cur_size(), delta);
+    set_mem_b32s1(v, z);
+    set_mem_b32s1(q + 1, crate::scan::hpack(x, 0, ADDITIONAL));
 }
 
 /// translated from xetex-math.c:199 (compute_ot_math_accent_pos)

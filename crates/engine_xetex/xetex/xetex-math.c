@@ -40,8 +40,8 @@ static scaled_t height_plus_depth(internal_font_number f, uint16_t c);
 static void stack_glyph_into_box(int32_t b, internal_font_number f, int32_t g);
 static void stack_glue_into_box(int32_t b, scaled_t min, scaled_t max);
 static int32_t build_opentype_assembly(internal_font_number f, void *a, scaled_t s, bool horiz);
-static int32_t var_delimiter(int32_t d, int32_t s, scaled_t v);
-static int32_t rebox(int32_t b, scaled_t w);
+int32_t var_delimiter(int32_t d, int32_t s, scaled_t v);
+int32_t rebox(int32_t b, scaled_t w);
 int32_t math_glue(int32_t g, scaled_t m);
 void math_kern(int32_t p, scaled_t m);
 int32_t clean_box(int32_t p, small_number s);
@@ -49,10 +49,10 @@ void fetch(int32_t a);
 void make_over(int32_t q);
 void make_under(int32_t q);
 void make_vcenter(int32_t q);
-static void make_radical(int32_t q);
+void make_radical(int32_t q);
 scaled_t compute_ot_math_accent_pos(int32_t p);
 static void make_math_accent(int32_t q);
-static void make_fraction(int32_t q);
+void make_fraction(int32_t q);
 static scaled_t make_op(int32_t q);
 static void make_ord(int32_t q);
 static int32_t attach_hkern_to_new_hlist(int32_t q, scaled_t delta);
@@ -76,50 +76,6 @@ initialize_math_variables(void)
     null_delimiter.s1 = 0;
     null_delimiter.s0 = 0;
 }
-static void
-make_radical(int32_t q)
-{
-    int32_t x, y;
-    internal_font_number f;
-    scaled_t rule_thickness;
-    scaled_t delta, clr;
-
-    f = MATH_FONT((mem[q + 4].b16.s3 % 256) + cur_size);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f]))))
-        rule_thickness = get_ot_math_constant(f, RADICALRULETHICKNESS);
-    else
-        rule_thickness = default_rule_thickness();
-    x = clean_box(q + 1, 2 * (cur_style / 2) + 1);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f])))) {
-        if (cur_style < TEXT_STYLE)
-            clr = get_ot_math_constant(f, RADICALDISPLAYSTYLEVERTICALGAP);
-        else
-            clr = get_ot_math_constant(f, RADICALVERTICALGAP);
-    } else {
-
-        if (cur_style < TEXT_STYLE)
-            clr = rule_thickness + (abs(math_x_height(cur_size)) / 4);
-        else {
-
-            clr = rule_thickness;
-            clr = clr + (abs(clr) / 4);
-        }
-    }
-    y = var_delimiter(q + 4, cur_size, mem[x + 3].b32.s1 + mem[x + 2].b32.s1 + clr + rule_thickness);
-    if (((font_area[f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[f])))) {
-        mem[y + 2].b32.s1 = mem[y + 3].b32.s1 + mem[y + 2].b32.s1 - rule_thickness;
-        mem[y + 3].b32.s1 = rule_thickness;
-    }
-    delta = mem[y + 2].b32.s1 - (mem[x + 3].b32.s1 + mem[x + 2].b32.s1 + clr);
-    if (delta > 0)
-        clr = clr + half(delta);
-    mem[y + 4].b32.s1 = -(int32_t) (mem[x + 3].b32.s1 + clr);
-    mem[y].b32.s1 = overbar(x, clr, mem[y + 3].b32.s1);
-    mem[q + 1].b32.s0 = hpack(y, 0, ADDITIONAL);
-    mem[q + 1].b32.s1 = SUB_BOX;
-}
-
-
 static void
 make_math_accent(int32_t q)
 {
@@ -307,121 +263,6 @@ make_math_accent(int32_t q)
     }
 
     free_ot_assembly(ot_assembly_ptr);
-}
-
-
-static void
-make_fraction(int32_t q)
-{
-    int32_t p, v, x, y, z;
-    scaled_t delta, delta1, delta2, shift_up, shift_down, clr;
-
-    if (mem[q + 1].b32.s1 == DEFAULT_CODE)
-        mem[q + 1].b32.s1 = default_rule_thickness();
-
-    x = clean_box(q + 2, cur_style + 2 - 2 * (cur_style / 6));
-    z = clean_box(q + 3, 2 * (cur_style / 2) + 3 - 2 * (cur_style / 6));
-
-    if (mem[x + 1].b32.s1 < mem[z + 1].b32.s1)
-        x = rebox(x, mem[z + 1].b32.s1);
-    else
-        z = rebox(z, mem[x + 1].b32.s1);
-
-    if (cur_style < TEXT_STYLE) {
-        shift_up = num1(cur_size);
-        shift_down = denom1(cur_size);
-    } else {
-        shift_down = denom2(cur_size);
-        if (mem[q + 1].b32.s1 != 0)
-            shift_up = num2(cur_size);
-        else
-            shift_up = num3(cur_size);
-    }
-
-    if (mem[q + 1].b32.s1 == 0) { /*772:*/
-        if (font_area[cur_f] == OTGR_FONT_FLAG && isOpenTypeMathFont(font_layout_engine[cur_f])) {
-            if (cur_style < TEXT_STYLE)
-                clr = get_ot_math_constant(cur_f, STACKDISPLAYSTYLEGAPMIN);
-            else
-                clr = get_ot_math_constant(cur_f, STACKGAPMIN);
-        } else {
-            if (cur_style < TEXT_STYLE)
-                clr = 7 * default_rule_thickness();
-            else
-                clr = 3 * default_rule_thickness();
-        }
-
-        delta = half(clr - ((shift_up - mem[x + 2].b32.s1) - (mem[z + 3].b32.s1 - shift_down)));
-
-        if (delta > 0) {
-            shift_up = shift_up + delta;
-            shift_down = shift_down + delta;
-        }
-    } else { /*773:*/
-        if (font_area[cur_f] == OTGR_FONT_FLAG && isOpenTypeMathFont(font_layout_engine[cur_f])) {
-            delta = half(mem[q + 1].b32.s1);
-
-            if (cur_style < TEXT_STYLE)
-                clr = get_ot_math_constant(cur_f, FRACTIONNUMDISPLAYSTYLEGAPMIN);
-            else
-                clr = get_ot_math_constant(cur_f, FRACTIONNUMERATORGAPMIN);
-
-            delta1 = clr - ((shift_up - mem[x + 2].b32.s1) - (axis_height(cur_size) + delta));
-
-            if (cur_style < TEXT_STYLE)
-                clr = get_ot_math_constant(cur_f, FRACTIONDENOMDISPLAYSTYLEGAPMIN);
-            else
-                clr = get_ot_math_constant(cur_f, FRACTIONDENOMINATORGAPMIN);
-
-            delta2 = clr - ((axis_height(cur_size) - delta) - (mem[z + 3].b32.s1 - shift_down));
-        } else {
-            if (cur_style < TEXT_STYLE)
-                clr = 3 * mem[q + 1].b32.s1;
-            else
-                clr = mem[q + 1].b32.s1;
-            delta = half(mem[q + 1].b32.s1);
-            delta1 = clr - ((shift_up - mem[x + 2].b32.s1) - (axis_height(cur_size) + delta));
-            delta2 = clr - ((axis_height(cur_size) - delta) - (mem[z + 3].b32.s1 - shift_down));
-        }
-
-        if (delta1 > 0)
-            shift_up = shift_up + delta1;
-
-        if (delta2 > 0)
-            shift_down = shift_down + delta2;
-    }
-
-    v = new_null_box();
-    NODE_type(v) = VLIST_NODE;
-    mem[v + 3].b32.s1 = shift_up + mem[x + 3].b32.s1;
-    mem[v + 2].b32.s1 = mem[z + 2].b32.s1 + shift_down;
-    mem[v + 1].b32.s1 = mem[x + 1].b32.s1;
-
-    if (mem[q + 1].b32.s1 == 0) {
-        p = new_kern((shift_up - mem[x + 2].b32.s1) - (mem[z + 3].b32.s1 - shift_down));
-        mem[p].b32.s1 = z;
-    } else {
-        y = fraction_rule(mem[q + 1].b32.s1);
-        p = new_kern((axis_height(cur_size) - delta) - (mem[z + 3].b32.s1 - shift_down));
-        mem[y].b32.s1 = p;
-        mem[p].b32.s1 = z;
-        p = new_kern((shift_up - mem[x + 2].b32.s1) - (axis_height(cur_size) + delta));
-        mem[p].b32.s1 = y;
-    }
-
-    mem[x].b32.s1 = p;
-    mem[v + 5].b32.s1 = x; /*:774*/
-
-    if (cur_style < TEXT_STYLE)
-        delta = delim1(cur_size);
-    else
-        delta = delim2(cur_size);
-
-    x = var_delimiter(q + 4, cur_size, delta);
-    mem[x].b32.s1 = v;
-    z = var_delimiter(q + 5, cur_size, delta);
-    mem[v].b32.s1 = z;
-    mem[q + 1].b32.s1 = hpack(x, 0, ADDITIONAL); /*:775*/
 }
 
 
@@ -1634,7 +1475,7 @@ mlist_to_hlist(void)
 }
 
 
-static int32_t
+int32_t
 var_delimiter(int32_t d, int32_t s, scaled_t v)
 {
     int32_t b;
@@ -2068,7 +1909,7 @@ build_opentype_assembly(internal_font_number f, void *a, scaled_t s, bool horiz)
 }
 
 
-static int32_t
+int32_t
 rebox(int32_t b, scaled_t w)
 {
     int32_t p;
