@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 95.
+Last updated: session 96.
 
 
 ## Core engine files (to translate)
@@ -41,7 +41,7 @@ Last updated: session 95.
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |  2445 |     32 | `src/math.rs`                     | IN PROGRESS — 50% |
+| xetex-math.c                 |  2284 |     22 | `src/math.rs`                     | IN PROGRESS — 55% |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -614,7 +614,7 @@ Status: IN PROGRESS (session 91).
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
-Status: IN PROGRESS (session 95).
+Status: IN PROGRESS (session 96).
 
 | # | Function            | Line | Status |
 |--:|---------------------|-----:|--------|
@@ -650,12 +650,20 @@ Status: IN PROGRESS (session 95).
 |30 | `delim1`            | 289 | MIGRATED (session 95, 65eea6ce) |
 |31 | `delim2`            | 303 | MIGRATED (session 95, 65eea6ce) |
 |32 | `axis_height`       | 317 | MIGRATED (session 95, 65eea6ce) |
+|33 | `default_rule_thickness` | 88 | MIGRATED (session 96, 0c80ba9e) |
+|34 | `big_op_spacing1`   | 102 | MIGRATED (session 96, 0c80ba9e) |
+|35 | `big_op_spacing2`   | 116 | MIGRATED (session 96, 0c80ba9e) |
+|36 | `big_op_spacing3`   | 130 | MIGRATED (session 96, 0c80ba9e) |
+|37 | `big_op_spacing4`   | 144 | MIGRATED (session 96, 0c80ba9e) |
+|38 | `big_op_spacing5`   | 158 | MIGRATED (session 96, 0c80ba9e) |
+|39 | `fraction_rule`     | 170 | MIGRATED (session 96, 0c80ba9e) |
+|40 | `overbar`           | 181 | MIGRATED (session 96, 0c80ba9e) |
+|41 | `math_glue`         | 195 | MIGRATED (session 96, 0c80ba9e) |
+|42 | `math_kern`         | 223 | MIGRATED (session 96, 0c80ba9e) |
 
-The next low-risk continuation is the matching math-extension parameter
-cluster: `default_rule_thickness` and `big_op_spacing1` through
-`big_op_spacing5`. They use `cur_size`, which is still a C file-static and
-will need the same minimal exposure used earlier for `cur_mlist` and
-`cur_style`.
+The next low-risk continuation is the remaining small box/list helpers at
+the top of `xetex-math.c`, starting with `flush_math` and then reassessing
+whether `clean_box` should move alone or together with the helpers it calls.
 
 ### Phases 16+
 

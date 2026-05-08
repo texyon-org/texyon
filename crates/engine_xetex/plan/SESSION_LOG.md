@@ -32,6 +32,51 @@ template.
 
 ---
 
+## Session 96 — 2026-05-08 — xetex-math.c layout helpers
+
+**Goal:** Continue the top-of-file math-list conversion helpers with the
+math-extension parameter and rule/glue scaling cluster.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- Streak: 95
+
+**Work done:**
+- Translated the Math Extension font parameter helpers to Rust:
+  `default_rule_thickness`, `big_op_spacing1`, `big_op_spacing2`,
+  `big_op_spacing3`, `big_op_spacing4`, and `big_op_spacing5`.
+- Exposed C math state `cur_size` through `src/globals.rs`, matching the
+  existing `cur_mlist` / `cur_style` bridge.
+- Translated the small math list construction helpers `fraction_rule`,
+  `overbar`, `math_glue`, and `math_kern` to Rust.
+- Removed the corresponding C bodies from `xetex-math.c`; remaining C code
+  calls the Rust exports directly.
+- Code commit: `0c80ba9e` (`engine_xetex: translate math layout helpers to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- Streak: 96
+
+**Surprises / gotchas:**
+- `cargo fmt -p tectonic_engine_xetex` reformatted many older generated
+  translation files. Those accidental formatting changes were backed out;
+  only `src/globals.rs`, `src/math.rs`, and `xetex/xetex-math.c` were kept
+  for the code commit.
+
+**For the next session:**
+- Continue with the remaining small top-of-file helpers in `xetex-math.c`.
+  `flush_math` is the obvious next small function; after that reassess
+  whether `clean_box` should move alone or with the helpers it calls.
+
 ## Session 95 — 2026-05-08 — xetex-math.c parameter helpers
 
 **Goal:** Translate the first small math-list conversion helper cluster,
