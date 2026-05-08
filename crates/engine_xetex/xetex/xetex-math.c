@@ -352,63 +352,6 @@ void init_math(void)
     }
 }
 
-void math_ac(void)
-{
-    int32_t c;
-
-    if (cur_cmd == ACCENT) {   /*1201: */
-        error_here_with_diagnostic("Please use ");
-        print_esc_cstr("mathaccent");
-        print_cstr(" for accents in math mode");
-        capture_to_diagnostic(NULL);
-        {
-            help_ptr = 2;
-            help_line[1] = "I'm changing \\accent to \\mathaccent here; wish me luck.";
-            help_line[0] = "(Accents are not the same in formulas as they are in text.)";
-        }
-        error();
-    }
-    {
-        mem[cur_list.tail].b32.s1 = get_node(ACCENT_NOAD_SIZE);
-        cur_list.tail = LLIST_link(cur_list.tail);
-    }
-    mem[cur_list.tail].b16.s1 = ACCENT_NOAD;
-    mem[cur_list.tail].b16.s0 = NORMAL;
-    mem[cur_list.tail + 1].b32 = empty;
-    mem[cur_list.tail + 3].b32 = empty;
-    mem[cur_list.tail + 2].b32 = empty;
-    mem[cur_list.tail + 4].b32.s1 = MATH_CHAR;
-    if (cur_chr == 1) {
-        if (scan_keyword("fixed"))
-            mem[cur_list.tail].b16.s0 = FIXED_ACC;
-        else if (scan_keyword("bottom")) {
-            if (scan_keyword("fixed"))
-                mem[cur_list.tail].b16.s0 = (BOTTOM_ACC + 1);
-            else
-                mem[cur_list.tail].b16.s0 = BOTTOM_ACC;
-        }
-        scan_math_class_int();
-        c = set_class(cur_val);
-        scan_math_fam_int();
-        c = c + set_family(cur_val);
-        scan_usv_num();
-        cur_val = cur_val + c;
-    } else {
-
-        scan_fifteen_bit_int();
-        cur_val = set_class(cur_val / 4096) + set_family((cur_val % 4096) / 256) + (cur_val % 256);
-    }
-    mem[cur_list.tail + 4].b16.s0 = cur_val % 65536L;
-    if ((math_class(cur_val) == 7)
-        && ((INTPAR(cur_fam) >= 0)
-            && (INTPAR(cur_fam) < NUMBER_MATH_FAMILIES)))
-        mem[cur_list.tail + 4].b16.s1 = INTPAR(cur_fam);
-    else
-        mem[cur_list.tail + 4].b16.s1 = math_fam(cur_val);
-    mem[cur_list.tail + 4].b16.s1 = mem[cur_list.tail + 4].b16.s1 + (math_char(cur_val) / 65536L) * 256;
-    scan_math(cur_list.tail + 1);
-}
-
 static void
 app_display(int32_t j, int32_t b, scaled_t d)
 {

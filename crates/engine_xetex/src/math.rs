@@ -36,6 +36,14 @@ const ATOP_CODE: i32 = 2;
 const DEFAULT_CODE: i32 = 0x4000_0000;
 const GARBAGE: i32 = 4_999_987;
 
+const ACCENT: u8 = 45;
+const ACCENT_NOAD: u16 = 28;
+const ACCENT_NOAD_SIZE: i32 = 5;
+const MATH_CHAR: i32 = 1;
+const FIXED_ACC: u16 = 1;
+const BOTTOM_ACC: u16 = 2;
+const NUMBER_MATH_FAMILIES: i32 = 256;
+
 const NORMAL: u16 = 0;
 const RADICAL_NOAD: u16 = 24;
 const FRACTION_NOAD: u16 = 25;
@@ -419,4 +427,97 @@ pub unsafe extern "C" fn math_left_right() {
             set_mem_b32s0(cur_list_tail() + 1, q);
         }
     }
+}
+
+// Inline helpers for the C bitfield macros in xetex-xetexd.h.
+#[inline]
+fn math_class_field(x: i32) -> i32 {
+    (((x as u32) >> 21) & 7) as i32
+}
+#[inline]
+fn math_fam_field(x: i32) -> i32 {
+    (((x as u32) >> 24) & 0xFF) as i32
+}
+#[inline]
+fn math_char_field(x: i32) -> i32 {
+    ((x as u32) & 0x1F_FFFF) as i32
+}
+#[inline]
+fn set_class_bits(x: i32) -> i32 {
+    (((x as u32) & 7) << 21) as i32
+}
+#[inline]
+fn set_family_bits(x: i32) -> i32 {
+    (((x as u32) & 0xFF) << 24) as i32
+}
+
+/// translated from xetex-math.c:355 (math_ac)
+#[no_mangle]
+pub unsafe extern "C" fn math_ac() {
+    if cur_cmd() == ACCENT {
+        crate::output::error_here_with_diagnostic(c"Please use ".as_ptr());
+        crate::output::print_esc_cstr(c"mathaccent".as_ptr());
+        crate::output::print_cstr(c" for accents in math mode".as_ptr());
+        crate::output::capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(
+            1,
+            c"I'm changing \\accent to \\mathaccent here; wish me luck.".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"(Accents are not the same in formulas as they are in text.)".as_ptr(),
+        );
+        crate::errors::error();
+    }
+
+    set_mem_b32s1(cur_list_tail(), get_node(ACCENT_NOAD_SIZE));
+    set_cur_list_tail(mem_b32s1(cur_list_tail()));
+    set_mem_b16s1(cur_list_tail(), ACCENT_NOAD);
+    set_mem_b16s0(cur_list_tail(), NORMAL);
+    set_empty_math_field(cur_list_tail() + 1);
+    set_empty_math_field(cur_list_tail() + 3);
+    set_empty_math_field(cur_list_tail() + 2);
+    set_mem_b32s1(cur_list_tail() + 4, MATH_CHAR);
+
+    if cur_chr() == 1 {
+        if crate::scan::scan_keyword(c"fixed".as_ptr()) {
+            set_mem_b16s0(cur_list_tail(), FIXED_ACC);
+        } else if crate::scan::scan_keyword(c"bottom".as_ptr()) {
+            if crate::scan::scan_keyword(c"fixed".as_ptr()) {
+                set_mem_b16s0(cur_list_tail(), BOTTOM_ACC + 1);
+            } else {
+                set_mem_b16s0(cur_list_tail(), BOTTOM_ACC);
+            }
+        }
+        crate::scan::scan_math_class_int();
+        let mut c = set_class_bits(cur_val());
+        crate::scan::scan_math_fam_int();
+        c += set_family_bits(cur_val());
+        crate::scan::scan_usv_num();
+        set_cur_val(cur_val() + c);
+    } else {
+        crate::scan::scan_fifteen_bit_int();
+        set_cur_val(
+            set_class_bits(cur_val() / 4096)
+                + set_family_bits((cur_val() % 4096) / 256)
+                + (cur_val() % 256),
+        );
+    }
+
+    set_mem_b16s0(cur_list_tail() + 4, (cur_val() % 65536) as u16);
+    let intpar_cur_fam = eqtb_b32s1(INT_BASE + INT_PAR_CUR_FAM);
+    if math_class_field(cur_val()) == 7
+        && intpar_cur_fam >= 0
+        && intpar_cur_fam < NUMBER_MATH_FAMILIES
+    {
+        set_mem_b16s1(cur_list_tail() + 4, intpar_cur_fam as u16);
+    } else {
+        set_mem_b16s1(cur_list_tail() + 4, math_fam_field(cur_val()) as u16);
+    }
+    set_mem_b16s1(
+        cur_list_tail() + 4,
+        mem_b16s1(cur_list_tail() + 4) + (math_char_field(cur_val()) / 65536) as u16 * 256,
+    );
+    crate::scan::scan_math(cur_list_tail() + 1);
 }
