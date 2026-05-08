@@ -32,6 +32,51 @@ template.
 
 ---
 
+## Session 99 — 2026-05-08 — xetex-math.c radical and fraction builders
+
+**Goal:** Move the next math noad builder slice out of `xetex-math.c`
+while preserving all parity suites.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 98
+
+**Work done:**
+- Translated `make_radical` and `make_fraction` to `src/math.rs`.
+- Promoted `var_delimiter` and `rebox` from C-static helpers to
+  link-visible C functions so the Rust builders can call the original
+  implementations without wrapper code.
+- Added the OpenType math constants needed by radical/fraction layout and
+  reused the existing `font_is_ot_math` helper for the OT math checks.
+- Code commit: `ca405061` (`engine_xetex: translate radical and fraction builders to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 99
+
+**Surprises / gotchas:**
+- `var_delimiter` pulls in a much larger delimiter/assembly helper cluster,
+  so it was deliberately left in C and promoted directly for Rust callers.
+- `make_fraction` depends on `cur_f` for OpenType math gap constants; the
+  Rust translation preserves that shared scratch-state dependency exactly.
+
+**For the next session:**
+- `make_op` is the likely next low-risk builder. Its main dependencies
+  (`fetch`, `clean_box`, parameter helpers) are already Rust.
+
 ## Session 98 — 2026-05-08 — xetex-math.c fetch helpers
 
 **Goal:** Move the next math-list character-fetch helpers out of

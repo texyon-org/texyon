@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 98.
+Last updated: session 99.
 
 
 ## Core engine files (to translate)
@@ -41,7 +41,7 @@ Last updated: session 98.
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |  2100 |     15 | `src/math.rs`                     | IN PROGRESS — 62% |
+| xetex-math.c                 |  1941 |     13 | `src/math.rs`                     | IN PROGRESS — 64% |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -614,7 +614,7 @@ Status: IN PROGRESS (session 91).
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
-Status: IN PROGRESS (session 98).
+Status: IN PROGRESS (session 99).
 
 | # | Function            | Line | Status |
 |--:|---------------------|-----:|--------|
@@ -667,10 +667,13 @@ Status: IN PROGRESS (session 98).
 |47 | `make_vcenter`      | 225 | MIGRATED (session 97, 47196355) |
 |48 | `fetch`             | 115 | MIGRATED (session 98, 7b62b15b; promoted from C static) |
 |49 | `compute_ot_math_accent_pos` | 199 | MIGRATED (session 98, 7b62b15b; promoted from C static) |
+|50 | `make_radical`      | 80 | MIGRATED (session 99, ca405061; promoted from C static) |
+|51 | `make_fraction`     | 313 | MIGRATED (session 99, ca405061; promoted from C static) |
 
-The next low-risk continuation is `make_radical`. It is small, but calls
-`var_delimiter`, so either move that helper at the same time or promote the
-remaining C helper directly without adding a wrapper.
+The next low-risk continuation is likely `make_op`, which now has its main
+callees (`fetch`, `clean_box`, parameter helpers) in Rust. `var_delimiter`
+and `rebox` were promoted in session 99 so Rust builders can call the
+remaining C helpers directly while their larger helper clusters stay in C.
 
 ### Phases 16+
 
