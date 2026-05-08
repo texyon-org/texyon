@@ -110,6 +110,7 @@ cargo test -p tectonic --test tex-outputs
 |      94 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate app_display + after_math (~430 lines). Bug: if m < 0 must test mode before fin_mlist (49f0aee7). All 4 suites pass. |
 |      95 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate math-symbol parameter helpers (math_x_height, math_quad, num/denom/sup/sub/drop/delim/axis cluster; 65eea6ce). All 4 suites pass. |
 |      96 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate math-extension parameters plus fraction_rule/overbar/math_glue/math_kern (0c80ba9e). All 4 suites pass. |
+|      97 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate flush_math/clean_box and make_over/make_under/make_vcenter (47196355). All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -294,6 +295,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      92 |      463 |             ~?? |       ~?? |
 |      95 |      485 |             ~?? |       ~?? |
 |      96 |      495 |             ~?? |       ~?? |
+|      97 |      500 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -309,7 +311,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **96** (sessions 1–96 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **97** (sessions 1–97 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 96.
+Last updated: session 97.
 
 
 ## Core engine files (to translate)
@@ -41,7 +41,7 @@ Last updated: session 96.
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |  2284 |     22 | `src/math.rs`                     | IN PROGRESS — 55% |
+| xetex-math.c                 |  2167 |     17 | `src/math.rs`                     | IN PROGRESS — 60% |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -614,7 +614,7 @@ Status: IN PROGRESS (session 91).
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
-Status: IN PROGRESS (session 96).
+Status: IN PROGRESS (session 97).
 
 | # | Function            | Line | Status |
 |--:|---------------------|-----:|--------|
@@ -660,10 +660,16 @@ Status: IN PROGRESS (session 96).
 |40 | `overbar`           | 181 | MIGRATED (session 96, 0c80ba9e) |
 |41 | `math_glue`         | 195 | MIGRATED (session 96, 0c80ba9e) |
 |42 | `math_kern`         | 223 | MIGRATED (session 96, 0c80ba9e) |
+|43 | `flush_math`        | 80 | MIGRATED (session 97, 47196355) |
+|44 | `clean_box`         | 91 | MIGRATED (session 97, 47196355) |
+|45 | `make_over`         | 198 | MIGRATED (session 97, 47196355) |
+|46 | `make_under`        | 207 | MIGRATED (session 97, 47196355) |
+|47 | `make_vcenter`      | 225 | MIGRATED (session 97, 47196355) |
 
-The next low-risk continuation is the remaining small box/list helpers at
-the top of `xetex-math.c`, starting with `flush_math` and then reassessing
-whether `clean_box` should move alone or together with the helpers it calls.
+The next low-risk continuation is `fetch`, which is still a C static helper
+used by the remaining math layout code. It is self-contained but will need
+access to the math scratch globals (`cur_f`, `cur_c`, `cur_i`) and the
+`null_character` value before it can move.
 
 ### Phases 16+
 

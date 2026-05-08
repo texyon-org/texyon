@@ -32,6 +32,52 @@ template.
 
 ---
 
+## Session 97 — 2026-05-08 — xetex-math.c clean_box helpers
+
+**Goal:** Move the next connected math-list box/list helper cluster out of
+`xetex-math.c` and keep parity green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 96
+
+**Work done:**
+- Translated `flush_math`, `clean_box`, `make_over`, `make_under`, and
+  `make_vcenter` to `src/math.rs`.
+- Exposed `cur_mu` through `src/globals.rs`, matching the existing math
+  state bridge for `cur_mlist`, `cur_style`, and `cur_size`.
+- Removed the corresponding C bodies from `xetex-math.c`; remaining C
+  math layout code now calls the Rust exports.
+- Code commit: `47196355` (`engine_xetex: translate clean_box math helpers to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 97
+
+**Surprises / gotchas:**
+- `clean_box` is the first translated helper in this cluster that updates
+  `cur_mu`; exposing that C static was required because the remaining C
+  `mlist_to_hlist` code still consumes it.
+
+**For the next session:**
+- `fetch` is the natural next target. It is still C-static and feeds many
+  remaining math layout helpers; translating it will need accessors for
+  the math scratch globals `cur_f`, `cur_c`, and `cur_i`, plus the existing
+  `null_character` value.
+
 ## Session 96 — 2026-05-08 — xetex-math.c layout helpers
 
 **Goal:** Continue the top-of-file math-list conversion helpers with the
