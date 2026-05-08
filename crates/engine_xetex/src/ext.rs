@@ -52,6 +52,7 @@ static mut SAVED_MAPPING_NAME: *mut c_char = ptr::null_mut();
 extern "C" {
     fn _tt_abort(fmt: *const c_char) -> !;
     fn xmalloc(size: libc::size_t) -> *mut c_void;
+    fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut c_void;
     fn xrealloc(ptr: *mut c_void, size: libc::size_t) -> *mut c_void;
     fn xstrdup(s: *const c_char) -> *mut c_char;
     fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
@@ -192,8 +193,47 @@ extern "C" {
     fn getFontCharRange(engine: XeTeXLayoutEngine, req_first: c_int) -> c_int;
     fn getGlyphName(font: XeTeXFont, gid: u16, len: *mut c_int) -> *const c_char;
     fn freeGlyphName(name: *mut c_char);
+    fn layoutChars(
+        engine: XeTeXLayoutEngine,
+        chars: *mut u16,
+        offset: i32,
+        count: i32,
+        max: i32,
+        rtl: bool,
+    ) -> c_int;
+    fn getGlyphs(engine: XeTeXLayoutEngine, glyphs: *mut u32);
+    fn getGlyphAdvances(engine: XeTeXLayoutEngine, advances: *mut f32);
+    fn getGlyphPositions(engine: XeTeXLayoutEngine, positions: *mut FloatPoint);
+    fn getDefaultDirection(engine: XeTeXLayoutEngine) -> c_int;
+    fn getCachedGlyphBBox(font_id: u16, glyph_id: u16, bbox: *mut GlyphBBox) -> i32;
+    fn cacheGlyphBBox(font_id: u16, glyph_id: u16, bbox: *const GlyphBBox);
+    fn getGlyphBounds(engine: XeTeXLayoutEngine, glyph_id: u32, bbox: *mut GlyphBBox);
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
     fn gettexstring(s: i32) -> *mut c_char;
+    #[link_name = concat!("ubidi_open", env!("ICU_VERSION_SUFFIX"))]
+    fn ubidi_open() -> *mut c_void;
+    #[link_name = concat!("ubidi_close", env!("ICU_VERSION_SUFFIX"))]
+    fn ubidi_close(bidi: *mut c_void);
+    #[link_name = concat!("ubidi_setPara", env!("ICU_VERSION_SUFFIX"))]
+    fn ubidi_setPara(
+        bidi: *mut c_void,
+        text: *const u16,
+        length: i32,
+        para_level: u8,
+        embedding_levels: *mut u8,
+        status: *mut i32,
+    );
+    #[link_name = concat!("ubidi_getDirection", env!("ICU_VERSION_SUFFIX"))]
+    fn ubidi_getDirection(bidi: *mut c_void) -> c_int;
+    #[link_name = concat!("ubidi_countRuns", env!("ICU_VERSION_SUFFIX"))]
+    fn ubidi_countRuns(bidi: *mut c_void, status: *mut i32) -> c_int;
+    #[link_name = concat!("ubidi_getVisualRun", env!("ICU_VERSION_SUFFIX"))]
+    fn ubidi_getVisualRun(
+        bidi: *mut c_void,
+        run_index: i32,
+        logical_start: *mut i32,
+        length: *mut i32,
+    ) -> c_int;
     #[link_name = concat!("ubrk_open", env!("ICU_VERSION_SUFFIX"))]
     fn ubrk_open(
         type_: c_int,
@@ -219,7 +259,6 @@ extern "C" {
     fn getRgbValue(engine: XeTeXLayoutEngine) -> u32;
     fn getEmboldenFactor(engine: XeTeXLayoutEngine) -> f32;
     fn getPointSize(engine: XeTeXLayoutEngine) -> f32;
-    fn measure_native_node(p_node: *mut c_void, use_glyph_metrics: bool);
     static mut xdv_buffer: *mut c_char;
     static mut mapped_text: *mut u16;
     #[cfg(target_os = "macos")]
@@ -230,6 +269,8 @@ const LEFT_SIDE: i32 = 0;
 const RIGHT_SIDE: i32 = 1;
 const FONT_FLAGS_VERTICAL: i32 = 0x02;
 const UBRK_LINE: c_int = 2;
+const UBIDI_RTL: c_int = 1;
+const UBIDI_MIXED: c_int = 2;
 const XDV_FLAG_VERTICAL: u16 = 0x0100;
 const XDV_FLAG_COLORED: u16 = 0x0200;
 const XDV_FLAG_EXTEND: u16 = 0x1000;
@@ -246,6 +287,20 @@ static mut APPLY_MAPPING_OUT_LENGTH: u32 = 0;
 struct FixedPoint {
     x: i32,
     y: i32,
+}
+
+#[repr(C)]
+struct FloatPoint {
+    x: f32,
+    y: f32,
+}
+
+#[repr(C)]
+struct GlyphBBox {
+    x_min: f32,
+    y_min: f32,
+    x_max: f32,
+    y_max: f32,
 }
 
 #[repr(C)]
@@ -1389,6 +1444,233 @@ pub unsafe extern "C" fn gr_font_get_named_1(
     rval as i32
 }
 
+// translated from xetex-ext.c:98 (measure_native_node)
+#[no_mangle]
+pub unsafe extern "C" fn measure_native_node(p_node: *mut c_void, use_glyph_metrics: c_int) {
+    let node = p_node as *mut crate::mem_types::MemoryWord;
+    let txt_len = (*node.add(4)).b16.s1 as i32; // native_length
+    let txt_ptr = node.add(6) as *mut u16; // node + NATIVE_NODE_SIZE
+    let f = (*node.add(4)).b16.s2 as i32; // native_font
+    let mut locations: *mut FixedPoint = ptr::null_mut();
+    let mut glyph_advances: *mut i32 = ptr::null_mut();
+    let mut total_glyph_count = 0i32;
+
+    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+        let engine = crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine;
+        let mut glyph_info: *mut c_void = ptr::null_mut();
+        let bidi = ubidi_open();
+        let mut error_code = 0i32;
+
+        ubidi_setPara(
+            bidi,
+            txt_ptr as *const u16,
+            txt_len,
+            getDefaultDirection(engine) as u8,
+            ptr::null_mut(),
+            &mut error_code,
+        );
+
+        let mut dir = ubidi_getDirection(bidi);
+        if dir == UBIDI_MIXED {
+            let n_runs = ubidi_countRuns(bidi, &mut error_code);
+            let mut width = 0.0f64;
+            let mut logical_start = 0i32;
+            let mut length = 0i32;
+
+            for run_index in 0..n_runs {
+                dir = ubidi_getVisualRun(bidi, run_index, &mut logical_start, &mut length);
+                total_glyph_count += layoutChars(
+                    engine,
+                    txt_ptr,
+                    logical_start,
+                    length,
+                    txt_len,
+                    dir == UBIDI_RTL,
+                );
+            }
+
+            if total_glyph_count > 0 {
+                glyph_info = xcalloc(
+                    total_glyph_count as libc::size_t,
+                    NATIVE_GLYPH_INFO_SIZE as libc::size_t,
+                );
+                locations = glyph_info as *mut FixedPoint;
+                let glyph_ids = locations.add(total_glyph_count as usize) as *mut u16;
+                glyph_advances = xcalloc(
+                    total_glyph_count as libc::size_t,
+                    std::mem::size_of::<i32>() as libc::size_t,
+                ) as *mut i32;
+                total_glyph_count = 0;
+
+                let mut x = 0.0f64;
+                let mut y = 0.0f64;
+                for run_index in 0..n_runs {
+                    dir = ubidi_getVisualRun(bidi, run_index, &mut logical_start, &mut length);
+                    let n_glyphs = layoutChars(
+                        engine,
+                        txt_ptr,
+                        logical_start,
+                        length,
+                        txt_len,
+                        dir == UBIDI_RTL,
+                    );
+
+                    let glyphs = xcalloc(
+                        n_glyphs as libc::size_t,
+                        std::mem::size_of::<u32>() as libc::size_t,
+                    ) as *mut u32;
+                    let positions = xcalloc(
+                        (n_glyphs + 1) as libc::size_t,
+                        std::mem::size_of::<FloatPoint>() as libc::size_t,
+                    ) as *mut FloatPoint;
+                    let advances = xcalloc(
+                        n_glyphs as libc::size_t,
+                        std::mem::size_of::<f32>() as libc::size_t,
+                    ) as *mut f32;
+
+                    getGlyphs(engine, glyphs);
+                    getGlyphAdvances(engine, advances);
+                    getGlyphPositions(engine, positions);
+
+                    for i in 0..n_glyphs as usize {
+                        let out_index = total_glyph_count as usize;
+                        *glyph_ids.add(out_index) = *glyphs.add(i) as u16;
+                        (*locations.add(out_index)).x = D2Fix((*positions.add(i)).x as c_double + x);
+                        (*locations.add(out_index)).y = D2Fix((*positions.add(i)).y as c_double + y);
+                        *glyph_advances.add(out_index) = D2Fix(*advances.add(i) as c_double);
+                        total_glyph_count += 1;
+                    }
+
+                    x += (*positions.add(n_glyphs as usize)).x as f64;
+                    y += (*positions.add(n_glyphs as usize)).y as f64;
+
+                    libc::free(glyphs as *mut c_void);
+                    libc::free(positions as *mut c_void);
+                    libc::free(advances as *mut c_void);
+                }
+                width = x;
+            }
+
+            (*node.add(1)).b32.s1 = D2Fix(width);
+            (*node.add(4)).b16.s0 = total_glyph_count as u16;
+            (*node.add(5)).ptr = glyph_info;
+        } else {
+            let mut width = 0.0f64;
+            total_glyph_count = layoutChars(engine, txt_ptr, 0, txt_len, txt_len, dir == UBIDI_RTL);
+
+            let glyphs = xcalloc(
+                total_glyph_count as libc::size_t,
+                std::mem::size_of::<u32>() as libc::size_t,
+            ) as *mut u32;
+            let positions = xcalloc(
+                (total_glyph_count + 1) as libc::size_t,
+                std::mem::size_of::<FloatPoint>() as libc::size_t,
+            ) as *mut FloatPoint;
+            let advances = xcalloc(
+                total_glyph_count as libc::size_t,
+                std::mem::size_of::<f32>() as libc::size_t,
+            ) as *mut f32;
+
+            getGlyphs(engine, glyphs);
+            getGlyphAdvances(engine, advances);
+            getGlyphPositions(engine, positions);
+
+            if total_glyph_count > 0 {
+                glyph_info = xcalloc(
+                    total_glyph_count as libc::size_t,
+                    NATIVE_GLYPH_INFO_SIZE as libc::size_t,
+                );
+                locations = glyph_info as *mut FixedPoint;
+                let glyph_ids = locations.add(total_glyph_count as usize) as *mut u16;
+                glyph_advances = xcalloc(
+                    total_glyph_count as libc::size_t,
+                    std::mem::size_of::<i32>() as libc::size_t,
+                ) as *mut i32;
+
+                for i in 0..total_glyph_count as usize {
+                    *glyph_ids.add(i) = *glyphs.add(i) as u16;
+                    *glyph_advances.add(i) = D2Fix(*advances.add(i) as c_double);
+                    (*locations.add(i)).x = D2Fix((*positions.add(i)).x as c_double);
+                    (*locations.add(i)).y = D2Fix((*positions.add(i)).y as c_double);
+                }
+                width = (*positions.add(total_glyph_count as usize)).x as f64;
+            }
+
+            (*node.add(1)).b32.s1 = D2Fix(width);
+            (*node.add(4)).b16.s0 = total_glyph_count as u16;
+            (*node.add(5)).ptr = glyph_info;
+
+            libc::free(glyphs as *mut c_void);
+            libc::free(positions as *mut c_void);
+            libc::free(advances as *mut c_void);
+        }
+
+        ubidi_close(bidi);
+
+        let letter_space = crate::globals::font_letter_space_entry(f);
+        if letter_space != 0 {
+            let mut ls_delta = 0i32;
+            for i in 0..total_glyph_count as usize {
+                if *glyph_advances.add(i) == 0 && ls_delta != 0 {
+                    ls_delta -= letter_space;
+                }
+                (*locations.add(i)).x += ls_delta;
+                ls_delta += letter_space;
+            }
+            if ls_delta != 0 {
+                ls_delta -= letter_space;
+                (*node.add(1)).b32.s1 += ls_delta;
+            }
+        }
+        libc::free(glyph_advances as *mut c_void);
+    } else {
+        _tt_abort(b"bad native font flag in `measure_native_node`\0".as_ptr() as *const c_char);
+    }
+
+    if use_glyph_metrics == 0 || (*node.add(4)).b16.s0 == 0 {
+        (*node.add(3)).b32.s1 = crate::globals::height_base_entry(f);
+        (*node.add(2)).b32.s1 = crate::globals::depth_base_entry(f);
+    } else {
+        let glyph_count = (*node.add(4)).b16.s0 as usize;
+        let locations = (*node.add(5)).ptr as *mut FixedPoint;
+        let glyph_ids = locations.add(glyph_count) as *mut u16;
+        let mut y_min = 65536.0f32;
+        let mut y_max = -65536.0f32;
+
+        for i in 0..glyph_count {
+            let y = Fix2D(-(*locations.add(i)).y) as f32;
+            let mut bbox = GlyphBBox {
+                x_min: 0.0,
+                y_min: 0.0,
+                x_max: 0.0,
+                y_max: 0.0,
+            };
+            let glyph_id = *glyph_ids.add(i);
+
+            if getCachedGlyphBBox(f as u16, glyph_id, &mut bbox) == 0 {
+                getGlyphBounds(
+                    crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine,
+                    glyph_id as u32,
+                    &mut bbox,
+                );
+                cacheGlyphBBox(f as u16, glyph_id, &bbox);
+            }
+
+            let ht = bbox.y_max;
+            let dp = -bbox.y_min;
+            if y + ht > y_max {
+                y_max = y + ht;
+            }
+            if y - dp < y_min {
+                y_min = y - dp;
+            }
+        }
+
+        (*node.add(3)).b32.s1 = D2Fix(y_max as c_double);
+        (*node.add(2)).b32.s1 = -D2Fix(y_min as c_double);
+    }
+}
+
 // translated from xetex-ext.c:921 (real_get_native_glyph)
 // glyph info buffer layout: [FixedPoint(8b) * glyph_count][u16 * glyph_count]
 #[no_mangle]
@@ -1948,7 +2230,7 @@ pub unsafe extern "C" fn store_justified_native_glyphs(p_node: *mut c_void) {
     let f = (*node.add(4)).b16.s2 as i32;
 
     let saved_width = (*node.add(1)).b32.s1;
-    measure_native_node(p_node, false);
+    measure_native_node(p_node, 0);
 
     if (*node.add(1)).b32.s1 != saved_width {
         let just_amount = Fix2D(saved_width - (*node.add(1)).b32.s1);

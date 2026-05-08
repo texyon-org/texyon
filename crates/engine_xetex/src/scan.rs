@@ -92,7 +92,7 @@ extern "C" {
     fn out_what(p: i32);
     fn load_picture(is_pdf: bool);
     fn measure_native_glyph(node: *mut std::ffi::c_void, use_glyph_metrics: bool);
-    fn measure_native_node(node: *mut std::ffi::c_void, use_glyph_metrics: bool);
+    fn measure_native_node(node: *mut std::ffi::c_void, use_glyph_metrics: libc::c_int);
     fn get_encoding_mode_and_info(info: *mut i32) -> i32;
     fn aat_print_font_name(what: i32, attrs: *mut libc::c_void, param1: i32, param2: i32);
     fn gr_print_font_name(what: i32, engine: *mut libc::c_void, param1: i32, param2: i32);
@@ -10510,7 +10510,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                             flush_node_list(scan_p);
                             p = mem_b32s1(q);
                             let use_glyph_metrics = eqtb_b32s1(INT_BASE_HP + 72) > 0;
-                            measure_native_node(crate::globals::mem_node_addr(p), use_glyph_metrics);
+                            measure_native_node(crate::globals::mem_node_addr(p), use_glyph_metrics as libc::c_int);
                         }
                         // metrics are in mem[p+3].b32.s1 (height) and mem[p+2].b32.s1 (depth)
                         if mem_b32s1(p + 3) > h { h = mem_b32s1(p + 3); }
@@ -14545,7 +14545,7 @@ pub unsafe extern "C" fn new_native_character(f: i32, mut c: u32) -> i32 {
 
     measure_native_node(
         crate::globals::mem_node_addr(p),
-        eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_NC) > 0,
+        (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_NC) > 0) as libc::c_int,
     );
     p
 }
@@ -15351,7 +15351,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
         for i in 0..len {
             *text.add(i as usize) = *native_text.add((s + i) as usize);
         }
-        measure_native_node(crate::globals::mem_node_addr(cur_list_tail()), use_glyph);
+        measure_native_node(crate::globals::mem_node_addr(cur_list_tail()), use_glyph as libc::c_int);
     } else {
         let use_skip = eqtb_b32s1(GLUE_BASE_DO_LB + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
         let penalty_val = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_PENALTY);
@@ -15381,7 +15381,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
                 for i in prev_offs..offs {
                     *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
                 }
-                measure_native_node(crate::globals::mem_node_addr(cur_list_tail()), use_glyph);
+                measure_native_node(crate::globals::mem_node_addr(cur_list_tail()), use_glyph as libc::c_int);
             }
             if offs < 0 { break; }
         }
@@ -15748,7 +15748,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         fn xrealloc(p: *mut libc::c_void, n: usize) -> *mut libc::c_void;
         fn apply_mapping(mapping: *mut libc::c_void, text: *mut u16, len: i32) -> i32;
         fn map_char_to_glyph(f: i32, c: i32) -> i32;
-        fn measure_native_node(node: *mut libc::c_void, use_glyph_metrics: bool);
+        fn measure_native_node(node: *mut libc::c_void, use_glyph_metrics: libc::c_int);
     }
 
     // Constants
@@ -16148,7 +16148,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                         *native_text().add(i as usize);
                 }
                 measure_native_node(mem_node_addr(cur_list_tail()),
-                    eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0);
+                    (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int);
                 let mut prev = cur_list_head();
                 if prev != main_pp() {
                     while mem_b32s1(prev) != main_pp() { prev = mem_b32s1(prev); }
@@ -16165,7 +16165,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                         *native_text().add(i as usize);
                 }
                 measure_native_node(mem_node_addr(cur_list_tail()),
-                    eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0);
+                    (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int);
             }
         }
 
@@ -16220,7 +16220,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                             ki += 1;
                         }
                         measure_native_node(mem_node_addr(tmp),
-                            eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0);
+                            (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int);
                         let t_val = mem_b32s1(tmp + 1)
                             - mem_b32s1(pp + 1)
                             - mem_b32s1(cur_list_tail() + 1);

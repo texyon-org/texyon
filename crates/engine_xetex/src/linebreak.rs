@@ -97,7 +97,7 @@ extern "C" {
     fn char_pw(p: i32, side: i16) -> i32;
     fn init_trie();
     fn prev_rightmost(s: i32, e: i32) -> i32;
-    fn measure_native_node(node: *mut std::ffi::c_void, use_glyph_metrics: bool);
+    fn measure_native_node(node: *mut std::ffi::c_void, use_glyph_metrics: libc::c_int);
 }
 
 // translated from xetex-linebreak.c:77 (get_native_usv)
@@ -801,7 +801,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
 unsafe fn set_native_metrics(p: i32) {
     measure_native_node(
         crate::globals::mem_node_addr(p),
-        crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0,
+        (crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
     );
 }
 
