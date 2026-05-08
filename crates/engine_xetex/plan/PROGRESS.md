@@ -103,6 +103,7 @@ cargo test -p tectonic --test tex-outputs
 |      87 | 2026-05-07 |     29 |    29 |     0 | xetex-ext.c: translate 5 native node helpers (real_get_native_glyph, real_get_native_italic_correction, real_get_native_glyph_italic_correction, measure_native_glyph, real_get_native_word_cp). All 4 suites pass. |
 |      88 | 2026-05-08 |     29 |    29 |     0 | xetex-ext.c: translate 13 functions (linebreak_start/next, makeXDVGlyphArrayData, make_font_def, apply_mapping, store_justified_native_glyphs, 7 aat_* stubs). Added ICU version detection in build.rs. xetex-ext.c 1256→670 LOC. All 4 suites pass. |
 |      89 | 2026-05-08 |     29 |    29 |     0 | xetex-ext.c: translate loadOTfont (private Rust helper) and find_native_font (89869eaa). xetex-ext.c 670→296 LOC. All 4 suites pass. |
+|      90 | 2026-05-08 |     29 |    29 |     0 | xetex-ext.c: translate measure_native_node (9acfe915), including ICU BiDi, layout copying, letterspacing, and glyph bbox metrics. xetex-ext.c 296→97 LOC / zero Linux C bodies. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -192,6 +193,7 @@ Passed count below the previous session's recorded value.
 |      86 | ~12,143 |                  ~35,284 |      ~25.6% |
 |      87 | ~12,030 |                  ~35,390 |      ~25.4% |
 |      89 | ~11,656 |                  ~35,880 |      ~24.5% |
+|      90 | ~11,457 |                  ~36,166 |      ~24.1% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are

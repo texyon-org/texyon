@@ -20,12 +20,12 @@ every session. The column meanings:
 | Status         | File count |
 |----------------|-----------:|
 | NOT STARTED    |          3 |
-| IN PROGRESS    |          2 |
-| DONE           |         11 |
+| IN PROGRESS    |          1 |
+| DONE           |         12 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 89.
+Last updated: session 90.
 
 
 ## Core engine files (to translate)
@@ -45,7 +45,7 @@ Last updated: session 89.
 | xetex-shipout.c              |  2451 |    ~?? | `src/shipout.rs`                  | NOT STARTED  |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
-| xetex-ext.c                  |   296 |       ~1 | `src/ext.rs`                      | IN PROGRESS — 99% |
+| xetex-ext.c                  |    97 |      0 | `src/ext.rs`                      | DONE |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
 | xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
@@ -525,7 +525,7 @@ Status: DONE (session 80).
 
 ### Phase 13 — xetex-ext.c helpers (target: `src/ext.rs`)
 
-Status: IN PROGRESS (session 89).
+Status: DONE (session 90).
 
 | # | Function      | Line | Status |
 |--:|---------------|-----:|--------|
@@ -585,6 +585,7 @@ Status: IN PROGRESS (session 89).
 |54 | `aat_print_font_name` | 1949 | MIGRATED (session 88, 932d70f1 — no-op on Linux) |
 |55 | `loadOTfont` (static) | 72 | MIGRATED (session 89, 89869eaa — private Rust fn) |
 |56 | `find_native_font` | 283 | MIGRATED (session 89, 89869eaa) |
+|57 | `measure_native_node` | 98 | MIGRATED (session 90, 9acfe915) |
 
 Session 88 also promoted `brkIter` → `BRK_ITER`, `brkLocaleStrNum` → `BRK_LOCALE_STR_NUM`,
 `xdvBufSize` → `XDV_BUF_SIZE` file-statics to Rust. Added ICU version detection in build.rs
@@ -593,7 +594,12 @@ Session 88 also promoted `brkIter` → `BRK_ITER`, `brkLocaleStrNum` → `BRK_LO
 
 Session 89 added setters for `loaded_font_letter_space` and `native_font_type_flag`, translated
 the Linux OpenType/Graphite native-font loader path (`loadOTfont` as private Rust helper plus
-exported `find_native_font`), and left `measure_native_node` as the one remaining compiled C body.
+exported `find_native_font`).
+
+Session 90 translated `measure_native_node`, including ICU BiDi runs, layout result copying,
+letterspacing, and glyph-bbox height/depth calculation. `xetex-ext.c` now has no remaining
+Linux-compiled C function bodies; only the platform-guarded macOS helper remains out of the
+Linux migration scope.
 
 Session 83 also moved the former `saved_mapping_name` file-static into
 Rust as `SAVED_MAPPING_NAME`.

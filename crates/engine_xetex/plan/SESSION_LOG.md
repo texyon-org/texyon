@@ -32,6 +32,53 @@ template.
 
 ---
 
+## Session 90 — 2026-05-08 — xetex-ext.c native node measurement
+
+**Goal:** Translate the remaining `measure_native_node` body from `xetex-ext.c`
+to `src/ext.rs` and complete the Linux-compiled contents of `xetex-ext.c`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 89
+
+**Work done:**
+- Added FFI bindings for ICU `ubidi_*`, layout result accessors (`layoutChars`,
+  `getGlyphs`, `getGlyphAdvances`, `getGlyphPositions`, `getDefaultDirection`),
+  glyph bbox cache helpers, and `xcalloc`.
+- Added repr-C `FloatPoint` and `GlyphBBox` structs for the layout and metrics APIs.
+- Translated `measure_native_node` to Rust, preserving the two-pass mixed-bidi
+  layout, glyph-info buffer layout, letterspacing adjustment, and glyph-bbox
+  height/depth calculation.
+- Normalized Rust callers of `measure_native_node` to pass C `int`, matching
+  `xetex-ext.h`.
+- Deleted the C body for `measure_native_node`. Commit: 9acfe915.
+- `xetex-ext.c` reduced from 296 LOC / ~1 Linux-compiled body to 97 LOC / zero
+  Linux-compiled bodies.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 90
+
+**Surprises / gotchas:**
+- `measure_native_node` is declared as `int use_glyph_metrics` in C, while some
+  Rust extern declarations still had `bool`; those were corrected for this
+  function while translating it.
+- `xetex-ext.c` still contains a platform-guarded macOS `cgColorToRGBA32`
+  helper, but there are no Linux-compiled C function bodies left in the file.
+
+**For the next session:**
+- Pick the next non-DONE in-scope file. The remaining large bodies are
+  `xetex-ini.c`, `xetex-math.c`, and `xetex-shipout.c`; `xetex-engine-interface.c`
+  still has the intentionally retained C setjmp/platform glue.
+
+---
+
 ## Session 89 — 2026-05-08 — xetex-ext.c native font loading
 
 **Goal:** Translate the remaining native-font loading path from `xetex-ext.c`
