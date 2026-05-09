@@ -32,6 +32,46 @@ template.
 
 ---
 
+## Session 110 — 2026-05-09 — xetex-shipout.c DVI font definitions
+
+**Goal:** Continue `xetex-shipout.c` with a larger DVI output cluster by translating font definition emission.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 109
+
+**Work done:**
+- Translated `dvi_native_font_def` and `dvi_font_def` from `xetex-shipout.c` to Rust in `src/shipout.rs`.
+- Kept `dvi_native_font_def` private in Rust because its only caller is the translated `dvi_font_def`.
+- Added `xdv_buffer` raw access in `src/globals.rs` so Rust can emit the bytes filled by `make_font_def`.
+- Removed the C implementations and left C call sites bound to the exported Rust `dvi_font_def`.
+- Code commit: `0fe52f3a` (`engine_xetex: translate DVI font defs to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 110
+
+**Surprises / gotchas:**
+- `make_font_def` still owns filling `xdv_buffer`; the Rust side only reads the resulting byte span and writes it through `dvi_out`.
+- `font_check_entry` exposes `B16x4` fields as `u16`; `dvi_font_def` intentionally casts them to `u8` to match the C byte write.
+- String-pool indices for `font_area` and `font_name` keep the WEB `str_number - 65536` offset convention.
+
+**For the next session:**
+- Continue `xetex-shipout.c`. Good next candidates are `dvi_pop` plus the DVI pointer state it needs, or the `out_what`/`special_out`/`write_out` cluster if we are ready to bridge more shipout globals.
+
 ## Session 109 — 2026-05-09 — xetex-shipout.c DVI word helpers
 
 **Goal:** Continue `xetex-shipout.c` by translating a small DVI output helper cluster while keeping all parity suites green.

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 109.
+Last updated: session 110.
 
 
 ## Core engine files (to translate)
@@ -42,7 +42,7 @@ Last updated: session 109.
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
 | xetex-math.c                 |    99 |      0 | `src/math.rs`                     | DONE |
-| xetex-shipout.c              |  2414 |     19 | `src/shipout.rs`                  | IN PROGRESS — 14% |
+| xetex-shipout.c              |  2338 |     17 | `src/shipout.rs`                  | IN PROGRESS — 23% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
 | xetex-ext.c                  |    97 |      0 | `src/ext.rs`                      | DONE |
@@ -606,13 +606,15 @@ Rust as `SAVED_MAPPING_NAME`.
 
 ### Phase 14 — xetex-shipout.c helpers (target: `src/shipout.rs`)
 
-Status: IN PROGRESS (session 109).
+Status: IN PROGRESS (session 110).
 
 | # | Function   | Line | Status |
 |--:|------------|-----:|--------|
 | 1 | `new_edge` | 1708 | MIGRATED (session 91, 3ecb7ae8) |
 | 2 | `dvi_four` | 2403 | MIGRATED (session 109, 55c6d9e9) |
 | 3 | `dvi_two`  | 2423 | MIGRATED (session 109, 55c6d9e9) |
+| 4 | `dvi_native_font_def` | 1784 | MIGRATED (session 110, 0fe52f3a; private Rust helper) |
+| 5 | `dvi_font_def` | 1798 | MIGRATED (session 110, 0fe52f3a) |
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
