@@ -121,6 +121,7 @@ cargo test -p tectonic --test tex-outputs
 |     105 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate build_opentype_assembly (a77e095c). do-while→loop, WEB for-loops→Rust ranges, ot_part_* added to extern block. All 4 suites pass. |
 |     106 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate var_delimiter (e4eed5c9). 6×goto found→break 'found, goto continue_→continue in inner loop. All 4 suites pass. |
 |     107 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_scripts (8b15e714). Factored repeated script glyph discovery into a Rust helper. All 4 suites pass. |
+|     108 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate mlist_to_hlist (4ee11a58). Final compiled math body moved to Rust; file now has zero C bodies. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -219,6 +220,7 @@ Passed count below the previous session's recorded value.
 |     105 |  8,040 |                  35,599 |       18.4% |
 |     106 |  7,863 |                  35,761 |       18.0% |
 |     107 |  7,398 |                  35,753 |       17.1% |
+|     108 |  6,931 |                  44,316 |       13.5% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -321,6 +323,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |     105 |      517 |             ~?? |       ~?? |
 |     106 |      518 |             ~?? |       ~?? |
 |     107 |      519 |             ~?? |       ~?? |
+|     108 |      520 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -336,7 +339,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **107** (sessions 1–107 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **108** (sessions 1–108 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

@@ -20,12 +20,12 @@ every session. The column meanings:
 | Status         | File count |
 |----------------|-----------:|
 | NOT STARTED    |          1 |
-| IN PROGRESS    |          3 |
-| DONE           |         12 |
+| IN PROGRESS    |          2 |
+| DONE           |         13 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 107.
+Last updated: session 108.
 
 
 ## Core engine files (to translate)
@@ -39,9 +39,9 @@ Last updated: session 107.
 | xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
-| xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
+| xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |   566 |      1 | `src/math.rs`                     | IN PROGRESS — 98% |
+| xetex-math.c                 |    99 |      0 | `src/math.rs`                     | DONE |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -614,7 +614,7 @@ Status: IN PROGRESS (session 91).
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
-Status: IN PROGRESS (session 107).
+Status: DONE (session 108).
 
 | # | Function            | Line | Status |
 |--:|---------------------|-----:|--------|
@@ -679,12 +679,13 @@ Status: IN PROGRESS (session 107).
 |59 | `stack_glyph_into_box` | 1482 | MIGRATED (session 102, e27b5336; promoted from C static) |
 |60 | `stack_glue_into_box` | 1517 | MIGRATED (session 102, e27b5336; promoted from C static) |
 |61 | `make_scripts`     | 84 | MIGRATED (session 107, 8b15e714; promoted from C static) |
+|62 | `mlist_to_hlist`   | 84 | MIGRATED (session 108, 4ee11a58) |
 
-Remaining in C (need translation): `mlist_to_hlist` (1 remaining C body).
+Remaining in C: none. `xetex-math.c` now has no remaining compiled C
+bodies; only prototypes/globals/reference comments remain.
 
-The next candidate is `mlist_to_hlist` (~467 lines). It is the final compiled
-C body in `xetex-math.c`; after it moves, this file should be ready to mark
-DONE except for prototypes/globals/reference comments.
+The next candidate is outside the math file: continue `xetex-shipout.c`
+or start `xetex-ini.c`.
 
 ### Phases 16+
 

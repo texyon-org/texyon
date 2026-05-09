@@ -32,6 +32,46 @@ template.
 
 ---
 
+## Session 108 — 2026-05-09 — xetex-math.c mlist_to_hlist
+
+**Goal:** Translate the final compiled `xetex-math.c` body, `mlist_to_hlist`, to Rust while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 107
+
+**Work done:**
+- Deleted the C `mlist_to_hlist` body (~469 LOC) and added the Rust translation in `src/math.rs`.
+- Added math-list constants and `update_math_style_params` for the repeated `cur_style`/`cur_size`/`cur_mu` update block.
+- Preserved the two-pass structure: first pass converts noads and measures dimensions; second pass rebuilds the hlist with spacing, penalties, and node deletion.
+- Marked `xetex-math.c` DONE: it now has no remaining compiled C bodies.
+- Code commit: `4ee11a58` (`engine_xetex: translate mlist_to_hlist to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 108
+
+**Surprises / gotchas:**
+- The first pass maps C labels `reswitch`, `lab82`, `lab80`, and `lab81` to a small Rust enum plus a labeled loop.
+- C temporarily reuses `r_type` when checking whether to insert a penalty before the next node; Rust uses `next_type` because `r_type` is immediately overwritten with `t` afterward.
+- `confusion()` is divergent in Rust, so impossible match arms can be plain calls without dummy fallback values.
+
+**For the next session:**
+- `xetex-math.c` is done. Continue with `xetex-shipout.c` (21 C functions remain) or start `xetex-ini.c`.
+
 ## Session 107 — 2026-05-09 — xetex-math.c make_scripts
 
 **Goal:** Translate `make_scripts` from `xetex-math.c` to Rust while keeping all parity suites green.
