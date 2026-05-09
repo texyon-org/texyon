@@ -24,19 +24,24 @@ fn main() {
     let icu_include_path = env::var("DEP_ICUUC_INCLUDE_PATH").unwrap();
 
     // Detect ICU version suffix (e.g. "_74") so Rust FFI can use #[link_name] with versioned names.
-    let icu_major = icu_include_path.split(';').find_map(|dir| {
-        let uvernum = PathBuf::from(dir).join("unicode/uvernum.h");
-        let f = fs::File::open(&uvernum).ok()?;
-        std::io::BufReader::new(f).lines().find_map(|line| {
-            let line = line.ok()?;
-            let line = line.trim();
-            if line.starts_with("#define U_ICU_VERSION_MAJOR_NUM") {
-                line.split_whitespace().nth(2).and_then(|v| v.parse::<u32>().ok())
-            } else {
-                None
-            }
+    let icu_major = icu_include_path
+        .split(';')
+        .find_map(|dir| {
+            let uvernum = PathBuf::from(dir).join("unicode/uvernum.h");
+            let f = fs::File::open(&uvernum).ok()?;
+            std::io::BufReader::new(f).lines().find_map(|line| {
+                let line = line.ok()?;
+                let line = line.trim();
+                if line.starts_with("#define U_ICU_VERSION_MAJOR_NUM") {
+                    line.split_whitespace()
+                        .nth(2)
+                        .and_then(|v| v.parse::<u32>().ok())
+                } else {
+                    None
+                }
+            })
         })
-    }).expect("could not detect ICU major version from uvernum.h");
+        .expect("could not detect ICU major version from uvernum.h");
     println!("cargo:rustc-env=ICU_VERSION_SUFFIX=_{}", icu_major);
 
     // If we want to profile, the default assumption is that we must force the

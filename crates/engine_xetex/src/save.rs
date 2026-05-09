@@ -179,18 +179,28 @@ pub unsafe extern "C" fn prepare_mag() {
         ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag_set());
         capture_to_diagnostic(std::ptr::null_mut());
         crate::globals::set_help_ptr(2);
-        crate::globals::set_help_line(1, c"I can handle only one magnification ratio per job. So I've".as_ptr());
-        crate::globals::set_help_line(0, c"reverted to the magnification you used earlier on this run.".as_ptr());
+        crate::globals::set_help_line(
+            1,
+            c"I can handle only one magnification ratio per job. So I've".as_ptr(),
+        );
+        crate::globals::set_help_line(
+            0,
+            c"reverted to the magnification you used earlier on this run.".as_ptr(),
+        );
         crate::errors::int_error(mag_set());
         geq_word_define(INT_BASE + INT_PAR_MAG, mag_set());
     }
     let mag2 = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
     if mag2 <= 0 || mag2 > 32768 {
-        let errmsg = error_here_with_diagnostic(c"Illegal magnification has been changed to 1000".as_ptr());
+        let errmsg =
+            error_here_with_diagnostic(c"Illegal magnification has been changed to 1000".as_ptr());
         ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag2);
         capture_to_diagnostic(std::ptr::null_mut());
         crate::globals::set_help_ptr(1);
-        crate::globals::set_help_line(0, c"The magnification ratio must be between 1 and 32768.".as_ptr());
+        crate::globals::set_help_line(
+            0,
+            c"The magnification ratio must be between 1 and 32768.".as_ptr(),
+        );
         crate::errors::int_error(mag2);
         geq_word_define(INT_BASE + INT_PAR_MAG, 1000);
     }
@@ -566,14 +576,21 @@ unsafe fn new_index(i: u16, q: i32) {
 /// Odd `i` → b32.s1; even `i` → b32.s0.
 #[inline]
 unsafe fn sa_get_child(q: i32, i: i32) -> i32 {
-    if i & 1 != 0 { mem_b32s1(q + i / 2 + 1) } else { mem_b32s0(q + i / 2 + 1) }
+    if i & 1 != 0 {
+        mem_b32s1(q + i / 2 + 1)
+    } else {
+        mem_b32s0(q + i / 2 + 1)
+    }
 }
 
 /// Helper: write the child pointer and increment the ref-count in node `q`.
 #[inline]
 unsafe fn sa_set_child(q: i32, i: i32, p: i32) {
-    if i & 1 != 0 { set_mem_b32s1(q + i / 2 + 1, p); }
-    else { set_mem_b32s0(q + i / 2 + 1, p); }
+    if i & 1 != 0 {
+        set_mem_b32s1(q + i / 2 + 1, p);
+    } else {
+        set_mem_b32s0(q + i / 2 + 1, p);
+    }
     set_mem_b16s0(q, mem_b16s0(q) + 1);
 }
 
@@ -628,7 +645,9 @@ pub unsafe extern "C" fn find_sa_element(t: u16, n: i32, w: bool) {
 
     // Check root level (not_found in C).
     if cur_ptr() == TEX_NULL {
-        if !w { return; }
+        if !w {
+            return;
+        }
         new_index(t, TEX_NULL);
         set_sa_root(t as usize, cur_ptr());
         // lab46..lab49: allocate all 4 levels from this root.
@@ -642,7 +661,9 @@ pub unsafe extern "C" fn find_sa_element(t: u16, n: i32, w: bool) {
         qs[k] = cur_ptr();
         set_cur_ptr(sa_get_child(qs[k], lvl[k]));
         if cur_ptr() == TEX_NULL {
-            if !w { return; }
+            if !w {
+                return;
+            }
             // lab46/47/48: allocate remaining levels from qs[k].
             sa_alloc_chain(t, n, qs[k], &lvl[k..]);
             return;

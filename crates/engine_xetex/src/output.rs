@@ -1,23 +1,20 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 
 use crate::globals::{
-    base_ptr, cond_ptr, cur_boundary, cur_cmd, cur_chr, cur_group, cur_if, cur_input, cur_level,
+    base_ptr, cond_ptr, cur_boundary, cur_chr, cur_cmd, cur_group, cur_if, cur_input, cur_level,
     cur_list_mode, cur_mark, current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top,
     error_line, file_line_error_style_p, file_offset, font_max, full_source_filename_stack,
-    grp_stack, hash_s1, hi_mem_min, history, if_line, if_limit, if_stack, in_open, input_ptr,
-    input_stack, line, line_stack, lo_mem_max, log_file, max_print_line, mem_as_u16_ptr,
-    mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end, old_setting,
-    pool_ptr, pool_size, prim_s1,
-    rust_stdout, save_ptr, save_stack_b16s0, save_stack_b32s1, selector, set_shown_mode,
+    grp_stack, hash_s1, hi_mem_min, history, if_limit, if_line, if_stack, in_open, input_ptr,
+    input_stack, line, line_stack, lo_mem_max, log_file, max_print_line, mem_as_u16_ptr, mem_b16s0,
+    mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end, old_setting, pool_ptr,
+    pool_size, prim_s1, rust_stdout, save_ptr, save_stack_b16s0, save_stack_b32s1, selector,
     set_base_ptr, set_cond_ptr, set_cur_group, set_cur_if, set_cur_level, set_current_diagnostic,
-    set_dig_entry, set_eqtb_b32s1, set_file_offset, set_grp_stack, set_history, set_if_line,
-    set_if_limit, set_if_stack, set_input_stack, set_mem_b16s1, set_old_setting, set_pool_ptr, set_save_ptr,
-    set_selector, set_str_pool, set_tally, set_term_offset, set_trick_buf, shown_mode,
-    str_pool_entry, str_ptr, str_start, tally, term_offset, trick_count, write_file,
+    set_dig_entry, set_eqtb_b32s1, set_file_offset, set_grp_stack, set_history, set_if_limit,
+    set_if_line, set_if_stack, set_input_stack, set_mem_b16s1, set_old_setting, set_pool_ptr,
+    set_save_ptr, set_selector, set_shown_mode, set_str_pool, set_tally, set_term_offset,
+    set_trick_buf, shown_mode, str_pool_entry, str_ptr, str_start, tally, term_offset, trick_count,
+    write_file,
 };
-
-
-
 
 // Selector constants (xetex-core.h:42–51).
 const SELECTOR_NO_PRINT: i32 = 16;
@@ -75,7 +72,6 @@ const FI_OR_ELSE: u8 = 108;
 // INT_PAR__tracing_ifs (xetex_format.h:93).
 const INT_PAR_TRACING_IFS: i32 = 58;
 
-
 // C functions not yet translated — still live in xetex-output.c or bridge.
 extern "C" {
     // tectonic_bridge_core output helpers.
@@ -89,7 +85,6 @@ extern "C" {
     // Still in C — complex context display.
     fn show_context();
 }
-
 
 // ---------------------------------------------------------------------------
 // print_the_digs (static helper — not exported; all C callers translated here)
@@ -984,9 +979,7 @@ pub unsafe extern "C" fn print_sa_num(q: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn begin_diagnostic() {
     set_old_setting(selector() as u8);
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0
-        && selector() == SELECTOR_TERM_AND_LOG
-    {
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 && selector() == SELECTOR_TERM_AND_LOG {
         set_selector(selector() - 1);
         if history() == HISTORY_SPOTLESS {
             set_history(HISTORY_WARNING_ISSUED);
@@ -1195,16 +1188,16 @@ pub unsafe extern "C" fn print_spec(p: i32, s: *const libc::c_char) {
 #[no_mangle]
 pub unsafe extern "C" fn print_skip_param(n: i32) {
     match n {
-        0  => print_esc_cstr(c"lineskip".as_ptr()),
-        1  => print_esc_cstr(c"baselineskip".as_ptr()),
-        2  => print_esc_cstr(c"parskip".as_ptr()),
-        3  => print_esc_cstr(c"abovedisplayskip".as_ptr()),
-        4  => print_esc_cstr(c"belowdisplayskip".as_ptr()),
-        5  => print_esc_cstr(c"abovedisplayshortskip".as_ptr()),
-        6  => print_esc_cstr(c"belowdisplayshortskip".as_ptr()),
-        7  => print_esc_cstr(c"leftskip".as_ptr()),
-        8  => print_esc_cstr(c"rightskip".as_ptr()),
-        9  => print_esc_cstr(c"topskip".as_ptr()),
+        0 => print_esc_cstr(c"lineskip".as_ptr()),
+        1 => print_esc_cstr(c"baselineskip".as_ptr()),
+        2 => print_esc_cstr(c"parskip".as_ptr()),
+        3 => print_esc_cstr(c"abovedisplayskip".as_ptr()),
+        4 => print_esc_cstr(c"belowdisplayskip".as_ptr()),
+        5 => print_esc_cstr(c"abovedisplayshortskip".as_ptr()),
+        6 => print_esc_cstr(c"belowdisplayshortskip".as_ptr()),
+        7 => print_esc_cstr(c"leftskip".as_ptr()),
+        8 => print_esc_cstr(c"rightskip".as_ptr()),
+        9 => print_esc_cstr(c"topskip".as_ptr()),
         10 => print_esc_cstr(c"splittopskip".as_ptr()),
         11 => print_esc_cstr(c"tabskip".as_ptr()),
         12 => print_esc_cstr(c"spaceskip".as_ptr()),
@@ -1214,7 +1207,7 @@ pub unsafe extern "C" fn print_skip_param(n: i32) {
         16 => print_esc_cstr(c"thinmuskip".as_ptr()),
         17 => print_esc_cstr(c"medmuskip".as_ptr()),
         18 => print_esc_cstr(c"thickmuskip".as_ptr()),
-        _  => print_cstr(c"[unknown glue parameter!]".as_ptr()),
+        _ => print_cstr(c"[unknown glue parameter!]".as_ptr()),
     }
 }
 
@@ -1224,16 +1217,16 @@ pub unsafe extern "C" fn print_skip_param(n: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn print_param(n: i32) {
     match n {
-        0  => print_esc_cstr(c"pretolerance".as_ptr()),
-        1  => print_esc_cstr(c"tolerance".as_ptr()),
-        2  => print_esc_cstr(c"linepenalty".as_ptr()),
-        3  => print_esc_cstr(c"hyphenpenalty".as_ptr()),
-        4  => print_esc_cstr(c"exhyphenpenalty".as_ptr()),
-        5  => print_esc_cstr(c"clubpenalty".as_ptr()),
-        6  => print_esc_cstr(c"widowpenalty".as_ptr()),
-        7  => print_esc_cstr(c"displaywidowpenalty".as_ptr()),
-        8  => print_esc_cstr(c"brokenpenalty".as_ptr()),
-        9  => print_esc_cstr(c"binoppenalty".as_ptr()),
+        0 => print_esc_cstr(c"pretolerance".as_ptr()),
+        1 => print_esc_cstr(c"tolerance".as_ptr()),
+        2 => print_esc_cstr(c"linepenalty".as_ptr()),
+        3 => print_esc_cstr(c"hyphenpenalty".as_ptr()),
+        4 => print_esc_cstr(c"exhyphenpenalty".as_ptr()),
+        5 => print_esc_cstr(c"clubpenalty".as_ptr()),
+        6 => print_esc_cstr(c"widowpenalty".as_ptr()),
+        7 => print_esc_cstr(c"displaywidowpenalty".as_ptr()),
+        8 => print_esc_cstr(c"brokenpenalty".as_ptr()),
+        9 => print_esc_cstr(c"binoppenalty".as_ptr()),
         10 => print_esc_cstr(c"relpenalty".as_ptr()),
         11 => print_esc_cstr(c"predisplaypenalty".as_ptr()),
         12 => print_esc_cstr(c"postdisplaypenalty".as_ptr()),
@@ -1305,7 +1298,7 @@ pub unsafe extern "C" fn print_param(n: i32) {
         80 => print_esc_cstr(c"XeTeXhyphenatablelength".as_ptr()),
         81 => print_esc_cstr(c"synctex".as_ptr()),
         82 => print_esc_cstr(c"pdfoutput".as_ptr()),
-        _  => print_cstr(c"[unknown int32_t parameter!]".as_ptr()),
+        _ => print_cstr(c"[unknown int32_t parameter!]".as_ptr()),
     }
 }
 
@@ -1319,9 +1312,9 @@ pub unsafe extern "C" fn print_param(n: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn print_style(c: i32) {
     match c / 2 {
-        0 => print_esc_cstr(c"displaystyle".as_ptr()),     // DISPLAY_STYLE / 2
-        1 => print_esc_cstr(c"textstyle".as_ptr()),        // TEXT_STYLE / 2
-        2 => print_esc_cstr(c"scriptstyle".as_ptr()),      // SCRIPT_STYLE / 2
+        0 => print_esc_cstr(c"displaystyle".as_ptr()), // DISPLAY_STYLE / 2
+        1 => print_esc_cstr(c"textstyle".as_ptr()),    // TEXT_STYLE / 2
+        2 => print_esc_cstr(c"scriptstyle".as_ptr()),  // SCRIPT_STYLE / 2
         3 => print_esc_cstr(c"scriptscriptstyle".as_ptr()), // SCRIPT_SCRIPT_STYLE / 2
         _ => print_cstr(c"Unknown style!".as_ptr()),
     }
@@ -1410,16 +1403,16 @@ pub unsafe extern "C" fn print_glue(d: i32, order: i32, s: *const libc::c_char) 
 #[no_mangle]
 pub unsafe extern "C" fn print_length_param(n: i32) {
     match n {
-        0  => print_esc_cstr(c"parindent".as_ptr()),
-        1  => print_esc_cstr(c"mathsurround".as_ptr()),
-        2  => print_esc_cstr(c"lineskiplimit".as_ptr()),
-        3  => print_esc_cstr(c"hsize".as_ptr()),
-        4  => print_esc_cstr(c"vsize".as_ptr()),
-        5  => print_esc_cstr(c"maxdepth".as_ptr()),
-        6  => print_esc_cstr(c"splitmaxdepth".as_ptr()),
-        7  => print_esc_cstr(c"boxmaxdepth".as_ptr()),
-        8  => print_esc_cstr(c"hfuzz".as_ptr()),
-        9  => print_esc_cstr(c"vfuzz".as_ptr()),
+        0 => print_esc_cstr(c"parindent".as_ptr()),
+        1 => print_esc_cstr(c"mathsurround".as_ptr()),
+        2 => print_esc_cstr(c"lineskiplimit".as_ptr()),
+        3 => print_esc_cstr(c"hsize".as_ptr()),
+        4 => print_esc_cstr(c"vsize".as_ptr()),
+        5 => print_esc_cstr(c"maxdepth".as_ptr()),
+        6 => print_esc_cstr(c"splitmaxdepth".as_ptr()),
+        7 => print_esc_cstr(c"boxmaxdepth".as_ptr()),
+        8 => print_esc_cstr(c"hfuzz".as_ptr()),
+        9 => print_esc_cstr(c"vfuzz".as_ptr()),
         10 => print_esc_cstr(c"delimitershortfall".as_ptr()),
         11 => print_esc_cstr(c"nulldelimiterspace".as_ptr()),
         12 => print_esc_cstr(c"scriptspace".as_ptr()),
@@ -1433,7 +1426,7 @@ pub unsafe extern "C" fn print_length_param(n: i32) {
         20 => print_esc_cstr(c"emergencystretch".as_ptr()),
         21 => print_esc_cstr(c"pdfpagewidth".as_ptr()),
         22 => print_esc_cstr(c"pdfpageheight".as_ptr()),
-        _  => print_cstr(c"[unknown dimen parameter!]".as_ptr()),
+        _ => print_cstr(c"[unknown dimen parameter!]".as_ptr()),
     }
 }
 
@@ -1757,10 +1750,12 @@ const CC_XETEX_UCHAR_CODE: i32 = 38;
 const CC_XETEX_UCHARCAT_CODE: i32 = 39;
 // SET_SHAPE sub-codes
 const CC_LOCAL_BASE_PAR_SHAPE: i32 = CC_LOCAL_BASE + CC_LOCAL__par_shape;
-const CC_ETEX_PEN_BASE_INTER_LINE: i32 = CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__inter_line_penalties;
+const CC_ETEX_PEN_BASE_INTER_LINE: i32 =
+    CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__inter_line_penalties;
 const CC_ETEX_PEN_BASE_CLUB: i32 = CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__club_penalties;
 const CC_ETEX_PEN_BASE_WIDOW: i32 = CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__widow_penalties;
-const CC_ETEX_PEN_BASE_DISPLAY_WIDOW: i32 = CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__display_widow_penalties;
+const CC_ETEX_PEN_BASE_DISPLAY_WIDOW: i32 =
+    CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__display_widow_penalties;
 // MAKE_BOX sub-codes (xetex_format.h:480–484)
 const CC_BOX_CODE: i32 = 0;
 const CC_COPY_CODE: i32 = 1;
@@ -1867,7 +1862,7 @@ const CC_PROTECTED_TOKEN: i32 = 0x1C00001;
 /// translated from xetex-xetex0.c:1265 (print_cmd_chr)
 #[no_mangle]
 pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
-    use crate::globals::{font_name_entry, font_area_entry, font_size_entry, font_dsize_entry};
+    use crate::globals::{font_area_entry, font_dsize_entry, font_name_entry, font_size_entry};
 
     // Helper: print a char/codepoint (> 65535 uses print_char for raw code).
     let print_char_or_wide = |code: i32| {
@@ -1935,17 +1930,39 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
                 print_int(chr_code - CC_TOKS_BASE);
             } else {
                 match chr_code {
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__output_routine => print_esc_cstr(c"output".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_par     => print_esc_cstr(c"everypar".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_math    => print_esc_cstr(c"everymath".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_display => print_esc_cstr(c"everydisplay".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_hbox    => print_esc_cstr(c"everyhbox".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_vbox    => print_esc_cstr(c"everyvbox".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_job     => print_esc_cstr(c"everyjob".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_cr      => print_esc_cstr(c"everycr".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_eof     => print_esc_cstr(c"everyeof".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__xetex_inter_char_toks => print_esc_cstr(c"XeTeXinterchartoks".as_ptr()),
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__tectonic_coda_tokens  => print_esc_cstr(c"TectonicCodaTokens".as_ptr()),
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__output_routine => {
+                        print_esc_cstr(c"output".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_par => {
+                        print_esc_cstr(c"everypar".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_math => {
+                        print_esc_cstr(c"everymath".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_display => {
+                        print_esc_cstr(c"everydisplay".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_hbox => {
+                        print_esc_cstr(c"everyhbox".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_vbox => {
+                        print_esc_cstr(c"everyvbox".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_job => {
+                        print_esc_cstr(c"everyjob".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_cr => {
+                        print_esc_cstr(c"everycr".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_eof => {
+                        print_esc_cstr(c"everyeof".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__xetex_inter_char_toks => {
+                        print_esc_cstr(c"XeTeXinterchartoks".as_ptr())
+                    }
+                    x if x == CC_LOCAL_BASE + CC_LOCAL__tectonic_coda_tokens => {
+                        print_esc_cstr(c"TectonicCodaTokens".as_ptr())
+                    }
                     _ => print_esc_cstr(c"errhelp".as_ptr()),
                 }
             }
@@ -1966,119 +1983,156 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
                 print_int(chr_code - CC_SCALED_BASE);
             }
         }
-        CMD_ACCENT            => print_esc_cstr(c"accent".as_ptr()),
-        CMD_ADVANCE           => print_esc_cstr(c"advance".as_ptr()),
-        CMD_AFTER_ASSIGNMENT  => print_esc_cstr(c"afterassignment".as_ptr()),
-        CMD_AFTER_GROUP       => print_esc_cstr(c"aftergroup".as_ptr()),
+        CMD_ACCENT => print_esc_cstr(c"accent".as_ptr()),
+        CMD_ADVANCE => print_esc_cstr(c"advance".as_ptr()),
+        CMD_AFTER_ASSIGNMENT => print_esc_cstr(c"afterassignment".as_ptr()),
+        CMD_AFTER_GROUP => print_esc_cstr(c"aftergroup".as_ptr()),
         CMD_ASSIGN_FONT_DIMEN => print_esc_cstr(c"fontdimen".as_ptr()),
-        CMD_BEGIN_GROUP       => print_esc_cstr(c"begingroup".as_ptr()),
-        CMD_BREAK_PENALTY     => print_esc_cstr(c"penalty".as_ptr()),
-        CMD_CHAR_NUM          => print_esc_cstr(c"char".as_ptr()),
-        CMD_CS_NAME           => print_esc_cstr(c"csname".as_ptr()),
-        CMD_DEF_FONT          => print_esc_cstr(c"font".as_ptr()),
+        CMD_BEGIN_GROUP => print_esc_cstr(c"begingroup".as_ptr()),
+        CMD_BREAK_PENALTY => print_esc_cstr(c"penalty".as_ptr()),
+        CMD_CHAR_NUM => print_esc_cstr(c"char".as_ptr()),
+        CMD_CS_NAME => print_esc_cstr(c"csname".as_ptr()),
+        CMD_DEF_FONT => print_esc_cstr(c"font".as_ptr()),
         CMD_DELIM_NUM => {
-            if chr_code == 1 { print_esc_cstr(c"Udelimiter".as_ptr()); }
-            else             { print_esc_cstr(c"delimiter".as_ptr()); }
-        }
-        CMD_DIVIDE            => print_esc_cstr(c"divide".as_ptr()),
-        CMD_END_CS_NAME       => print_esc_cstr(c"endcsname".as_ptr()),
-        CMD_END_GROUP         => print_esc_cstr(c"endgroup".as_ptr()),
-        CMD_EX_SPACE          => print_esc(' ' as i32),
-        CMD_EXPAND_AFTER => {
-            if chr_code == 0 { print_esc_cstr(c"expandafter".as_ptr()); }
-            else             { print_esc_cstr(c"unless".as_ptr()); }
-        }
-        CMD_HALIGN            => print_esc_cstr(c"halign".as_ptr()),
-        CMD_HRULE             => print_esc_cstr(c"hrule".as_ptr()),
-        CMD_IGNORE_SPACES => {
-            if chr_code == 0 { print_esc_cstr(c"ignorespaces".as_ptr()); }
-            else             { print_esc_cstr(c"primitive".as_ptr()); }
-        }
-        CMD_INSERT            => print_esc_cstr(c"insert".as_ptr()),
-        CMD_ITAL_CORR         => print_esc('/' as i32),
-        CMD_MARK => {
-            print_esc_cstr(c"mark".as_ptr());
-            if chr_code > 0 { print_char('s' as i32); }
-        }
-        CMD_MATH_ACCENT => {
-            if chr_code == 1 { print_esc_cstr(c"Umathaccent".as_ptr()); }
-            else             { print_esc_cstr(c"mathaccent".as_ptr()); }
-        }
-        CMD_MATH_CHAR_NUM => {
-            if chr_code == 2      { print_esc_cstr(c"Umathchar".as_ptr()); }
-            else if chr_code == 1 { print_esc_cstr(c"Umathcharnum".as_ptr()); }
-            else                  { print_esc_cstr(c"mathchar".as_ptr()); }
-        }
-        CMD_MATH_CHOICE       => print_esc_cstr(c"mathchoice".as_ptr()),
-        CMD_MULTIPLY          => print_esc_cstr(c"multiply".as_ptr()),
-        CMD_NO_ALIGN          => print_esc_cstr(c"noalign".as_ptr()),
-        CMD_NO_BOUNDARY       => print_esc_cstr(c"noboundary".as_ptr()),
-        CMD_NO_EXPAND => {
-            if chr_code == 0 { print_esc_cstr(c"noexpand".as_ptr()); }
-            else             { print_esc_cstr(c"primitive".as_ptr()); }
-        }
-        CMD_NON_SCRIPT        => print_esc_cstr(c"nonscript".as_ptr()),
-        CMD_OMIT              => print_esc_cstr(c"omit".as_ptr()),
-        CMD_RADICAL => {
-            if chr_code == 1 { print_esc_cstr(c"Uradical".as_ptr()); }
-            else             { print_esc_cstr(c"radical".as_ptr()); }
-        }
-        CMD_READ_TO_CS => {
-            if chr_code == 0 { print_esc_cstr(c"read".as_ptr()); }
-            else             { print_esc_cstr(c"readline".as_ptr()); }
-        }
-        CMD_RELAX             => print_esc_cstr(c"relax".as_ptr()),
-        CMD_SET_BOX           => print_esc_cstr(c"setbox".as_ptr()),
-        CMD_SET_PREV_GRAF     => print_esc_cstr(c"prevgraf".as_ptr()),
-        CMD_SET_SHAPE => {
-            match chr_code {
-                CC_LOCAL_BASE_PAR_SHAPE      => print_esc_cstr(c"parshape".as_ptr()),
-                CC_ETEX_PEN_BASE_INTER_LINE  => print_esc_cstr(c"interlinepenalties".as_ptr()),
-                CC_ETEX_PEN_BASE_CLUB        => print_esc_cstr(c"clubpenalties".as_ptr()),
-                CC_ETEX_PEN_BASE_WIDOW       => print_esc_cstr(c"widowpenalties".as_ptr()),
-                CC_ETEX_PEN_BASE_DISPLAY_WIDOW => print_esc_cstr(c"displaywidowpenalties".as_ptr()),
-                _ => {}
+            if chr_code == 1 {
+                print_esc_cstr(c"Udelimiter".as_ptr());
+            } else {
+                print_esc_cstr(c"delimiter".as_ptr());
             }
         }
+        CMD_DIVIDE => print_esc_cstr(c"divide".as_ptr()),
+        CMD_END_CS_NAME => print_esc_cstr(c"endcsname".as_ptr()),
+        CMD_END_GROUP => print_esc_cstr(c"endgroup".as_ptr()),
+        CMD_EX_SPACE => print_esc(' ' as i32),
+        CMD_EXPAND_AFTER => {
+            if chr_code == 0 {
+                print_esc_cstr(c"expandafter".as_ptr());
+            } else {
+                print_esc_cstr(c"unless".as_ptr());
+            }
+        }
+        CMD_HALIGN => print_esc_cstr(c"halign".as_ptr()),
+        CMD_HRULE => print_esc_cstr(c"hrule".as_ptr()),
+        CMD_IGNORE_SPACES => {
+            if chr_code == 0 {
+                print_esc_cstr(c"ignorespaces".as_ptr());
+            } else {
+                print_esc_cstr(c"primitive".as_ptr());
+            }
+        }
+        CMD_INSERT => print_esc_cstr(c"insert".as_ptr()),
+        CMD_ITAL_CORR => print_esc('/' as i32),
+        CMD_MARK => {
+            print_esc_cstr(c"mark".as_ptr());
+            if chr_code > 0 {
+                print_char('s' as i32);
+            }
+        }
+        CMD_MATH_ACCENT => {
+            if chr_code == 1 {
+                print_esc_cstr(c"Umathaccent".as_ptr());
+            } else {
+                print_esc_cstr(c"mathaccent".as_ptr());
+            }
+        }
+        CMD_MATH_CHAR_NUM => {
+            if chr_code == 2 {
+                print_esc_cstr(c"Umathchar".as_ptr());
+            } else if chr_code == 1 {
+                print_esc_cstr(c"Umathcharnum".as_ptr());
+            } else {
+                print_esc_cstr(c"mathchar".as_ptr());
+            }
+        }
+        CMD_MATH_CHOICE => print_esc_cstr(c"mathchoice".as_ptr()),
+        CMD_MULTIPLY => print_esc_cstr(c"multiply".as_ptr()),
+        CMD_NO_ALIGN => print_esc_cstr(c"noalign".as_ptr()),
+        CMD_NO_BOUNDARY => print_esc_cstr(c"noboundary".as_ptr()),
+        CMD_NO_EXPAND => {
+            if chr_code == 0 {
+                print_esc_cstr(c"noexpand".as_ptr());
+            } else {
+                print_esc_cstr(c"primitive".as_ptr());
+            }
+        }
+        CMD_NON_SCRIPT => print_esc_cstr(c"nonscript".as_ptr()),
+        CMD_OMIT => print_esc_cstr(c"omit".as_ptr()),
+        CMD_RADICAL => {
+            if chr_code == 1 {
+                print_esc_cstr(c"Uradical".as_ptr());
+            } else {
+                print_esc_cstr(c"radical".as_ptr());
+            }
+        }
+        CMD_READ_TO_CS => {
+            if chr_code == 0 {
+                print_esc_cstr(c"read".as_ptr());
+            } else {
+                print_esc_cstr(c"readline".as_ptr());
+            }
+        }
+        CMD_RELAX => print_esc_cstr(c"relax".as_ptr()),
+        CMD_SET_BOX => print_esc_cstr(c"setbox".as_ptr()),
+        CMD_SET_PREV_GRAF => print_esc_cstr(c"prevgraf".as_ptr()),
+        CMD_SET_SHAPE => match chr_code {
+            CC_LOCAL_BASE_PAR_SHAPE => print_esc_cstr(c"parshape".as_ptr()),
+            CC_ETEX_PEN_BASE_INTER_LINE => print_esc_cstr(c"interlinepenalties".as_ptr()),
+            CC_ETEX_PEN_BASE_CLUB => print_esc_cstr(c"clubpenalties".as_ptr()),
+            CC_ETEX_PEN_BASE_WIDOW => print_esc_cstr(c"widowpenalties".as_ptr()),
+            CC_ETEX_PEN_BASE_DISPLAY_WIDOW => print_esc_cstr(c"displaywidowpenalties".as_ptr()),
+            _ => {}
+        },
         CMD_THE => {
-            if chr_code == 0      { print_esc_cstr(c"the".as_ptr()); }
-            else if chr_code == 1 { print_esc_cstr(c"unexpanded".as_ptr()); }
-            else                  { print_esc_cstr(c"detokenize".as_ptr()); }
+            if chr_code == 0 {
+                print_esc_cstr(c"the".as_ptr());
+            } else if chr_code == 1 {
+                print_esc_cstr(c"unexpanded".as_ptr());
+            } else {
+                print_esc_cstr(c"detokenize".as_ptr());
+            }
         }
         CMD_TOKS_REGISTER => {
             print_esc_cstr(c"toks".as_ptr());
-            if chr_code != 0 { print_sa_num(chr_code); }
+            if chr_code != 0 {
+                print_sa_num(chr_code);
+            }
         }
-        CMD_VADJUST           => print_esc_cstr(c"vadjust".as_ptr()),
+        CMD_VADJUST => print_esc_cstr(c"vadjust".as_ptr()),
         CMD_VALIGN => {
             if chr_code == 0 {
                 print_esc_cstr(c"valign".as_ptr());
             } else {
                 match chr_code {
                     CC_BEGIN_L_CODE => print_esc_cstr(c"beginL".as_ptr()),
-                    CC_END_L_CODE   => print_esc_cstr(c"endL".as_ptr()),
+                    CC_END_L_CODE => print_esc_cstr(c"endL".as_ptr()),
                     CC_BEGIN_R_CODE => print_esc_cstr(c"beginR".as_ptr()),
-                    _               => print_esc_cstr(c"endR".as_ptr()),
+                    _ => print_esc_cstr(c"endR".as_ptr()),
                 }
             }
         }
-        CMD_VCENTER           => print_esc_cstr(c"vcenter".as_ptr()),
-        CMD_VRULE             => print_esc_cstr(c"vrule".as_ptr()),
-        CMD_PAR_END           => print_esc_cstr(c"par".as_ptr()),
+        CMD_VCENTER => print_esc_cstr(c"vcenter".as_ptr()),
+        CMD_VRULE => print_esc_cstr(c"vrule".as_ptr()),
+        CMD_PAR_END => print_esc_cstr(c"par".as_ptr()),
         CMD_INPUT => {
-            if chr_code == 0      { print_esc_cstr(c"input".as_ptr()); }
-            else if chr_code == 2 { print_esc_cstr(c"scantokens".as_ptr()); }
-            else                  { print_esc_cstr(c"endinput".as_ptr()); }
+            if chr_code == 0 {
+                print_esc_cstr(c"input".as_ptr());
+            } else if chr_code == 2 {
+                print_esc_cstr(c"scantokens".as_ptr());
+            } else {
+                print_esc_cstr(c"endinput".as_ptr());
+            }
         }
         CMD_TOP_BOT_MARK => {
             match chr_code % CC_MARKS_CODE {
-                CC_FIRST_MARK_CODE       => print_esc_cstr(c"firstmark".as_ptr()),
-                CC_BOT_MARK_CODE         => print_esc_cstr(c"botmark".as_ptr()),
+                CC_FIRST_MARK_CODE => print_esc_cstr(c"firstmark".as_ptr()),
+                CC_BOT_MARK_CODE => print_esc_cstr(c"botmark".as_ptr()),
                 CC_SPLIT_FIRST_MARK_CODE => print_esc_cstr(c"splitfirstmark".as_ptr()),
-                CC_SPLIT_BOT_MARK_CODE   => print_esc_cstr(c"splitbotmark".as_ptr()),
-                _                        => print_esc_cstr(c"topmark".as_ptr()),
+                CC_SPLIT_BOT_MARK_CODE => print_esc_cstr(c"splitbotmark".as_ptr()),
+                _ => print_esc_cstr(c"topmark".as_ptr()),
             }
-            if chr_code >= CC_MARKS_CODE { print_char('s' as i32); }
+            if chr_code >= CC_MARKS_CODE {
+                print_char('s' as i32);
+            }
         }
         CMD_REGISTER => {
             let (the_cmd, the_chr) = if chr_code < 0 || chr_code > 19 {
@@ -2086,153 +2140,185 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
             } else {
                 (chr_code, TEX_NULL)
             };
-            if the_cmd == CC_INT_VAL        { print_esc_cstr(c"count".as_ptr()); }
-            else if the_cmd == CC_DIMEN_VAL { print_esc_cstr(c"dimen".as_ptr()); }
-            else if the_cmd == CC_GLUE_VAL  { print_esc_cstr(c"skip".as_ptr()); }
-            else                            { print_esc_cstr(c"muskip".as_ptr()); }
-            if the_chr != TEX_NULL { print_sa_num(the_chr); }
+            if the_cmd == CC_INT_VAL {
+                print_esc_cstr(c"count".as_ptr());
+            } else if the_cmd == CC_DIMEN_VAL {
+                print_esc_cstr(c"dimen".as_ptr());
+            } else if the_cmd == CC_GLUE_VAL {
+                print_esc_cstr(c"skip".as_ptr());
+            } else {
+                print_esc_cstr(c"muskip".as_ptr());
+            }
+            if the_chr != TEX_NULL {
+                print_sa_num(the_chr);
+            }
         }
         CMD_SET_AUX => {
-            if chr_code == CC_VMODE { print_esc_cstr(c"prevdepth".as_ptr()); }
-            else                    { print_esc_cstr(c"spacefactor".as_ptr()); }
+            if chr_code == CC_VMODE {
+                print_esc_cstr(c"prevdepth".as_ptr());
+            } else {
+                print_esc_cstr(c"spacefactor".as_ptr());
+            }
         }
         CMD_SET_PAGE_INT => {
-            if chr_code == 0      { print_esc_cstr(c"deadcycles".as_ptr()); }
-            else if chr_code == 2 { print_esc_cstr(c"interactionmode".as_ptr()); }
-            else                  { print_esc_cstr(c"insertpenalties".as_ptr()); }
+            if chr_code == 0 {
+                print_esc_cstr(c"deadcycles".as_ptr());
+            } else if chr_code == 2 {
+                print_esc_cstr(c"interactionmode".as_ptr());
+            } else {
+                print_esc_cstr(c"insertpenalties".as_ptr());
+            }
         }
         CMD_SET_BOX_DIMEN => {
-            if chr_code == CC_WIDTH_OFFSET        { print_esc_cstr(c"wd".as_ptr()); }
-            else if chr_code == CC_HEIGHT_OFFSET  { print_esc_cstr(c"ht".as_ptr()); }
-            else                                  { print_esc_cstr(c"dp".as_ptr()); }
-        }
-        CMD_LAST_ITEM => {
-            match chr_code {
-                CC_INT_VAL               => print_esc_cstr(c"lastpenalty".as_ptr()),
-                CC_DIMEN_VAL             => print_esc_cstr(c"lastkern".as_ptr()),
-                CC_GLUE_VAL              => print_esc_cstr(c"lastskip".as_ptr()),
-                CC_INPUT_LINE_NO_CODE    => print_esc_cstr(c"inputlineno".as_ptr()),
-                CC_LAST_NODE_TYPE_CODE   => print_esc_cstr(c"lastnodetype".as_ptr()),
-                CC_ETEX_VERSION_CODE     => print_esc_cstr(c"eTeXversion".as_ptr()),
-                CC_XETEX_VERSION_CODE    => print_esc_cstr(c"XeTeXversion".as_ptr()),
-                CC_XETEX_COUNT_GLYPHS_CODE         => print_esc_cstr(c"XeTeXcountglyphs".as_ptr()),
-                CC_XETEX_COUNT_VARIATIONS_CODE     => print_esc_cstr(c"XeTeXcountvariations".as_ptr()),
-                CC_XETEX_VARIATION_CODE            => print_esc_cstr(c"XeTeXvariation".as_ptr()),
-                CC_XETEX_FIND_VARIATION_BY_NAME_CODE => print_esc_cstr(c"XeTeXfindvariationbyname".as_ptr()),
-                CC_XETEX_VARIATION_MIN_CODE        => print_esc_cstr(c"XeTeXvariationmin".as_ptr()),
-                CC_XETEX_VARIATION_MAX_CODE        => print_esc_cstr(c"XeTeXvariationmax".as_ptr()),
-                CC_XETEX_VARIATION_DEFAULT_CODE    => print_esc_cstr(c"XeTeXvariationdefault".as_ptr()),
-                CC_XETEX_COUNT_FEATURES_CODE       => print_esc_cstr(c"XeTeXcountfeatures".as_ptr()),
-                CC_XETEX_FEATURE_CODE_CODE         => print_esc_cstr(c"XeTeXfeaturecode".as_ptr()),
-                CC_XETEX_FIND_FEATURE_BY_NAME_CODE => print_esc_cstr(c"XeTeXfindfeaturebyname".as_ptr()),
-                CC_XETEX_IS_EXCLUSIVE_FEATURE_CODE => print_esc_cstr(c"XeTeXisexclusivefeature".as_ptr()),
-                CC_XETEX_COUNT_SELECTORS_CODE      => print_esc_cstr(c"XeTeXcountselectors".as_ptr()),
-                CC_XETEX_SELECTOR_CODE_CODE        => print_esc_cstr(c"XeTeXselectorcode".as_ptr()),
-                CC_XETEX_FIND_SELECTOR_BY_NAME_CODE => print_esc_cstr(c"XeTeXfindselectorbyname".as_ptr()),
-                CC_XETEX_IS_DEFAULT_SELECTOR_CODE  => print_esc_cstr(c"XeTeXisdefaultselector".as_ptr()),
-                CC_XETEX_OT_COUNT_SCRIPTS_CODE     => print_esc_cstr(c"XeTeXOTcountscripts".as_ptr()),
-                CC_XETEX_OT_COUNT_LANGUAGES_CODE   => print_esc_cstr(c"XeTeXOTcountlanguages".as_ptr()),
-                CC_XETEX_OT_COUNT_FEATURES_CODE    => print_esc_cstr(c"XeTeXOTcountfeatures".as_ptr()),
-                CC_XETEX_OT_SCRIPT_CODE            => print_esc_cstr(c"XeTeXOTscripttag".as_ptr()),
-                CC_XETEX_OT_LANGUAGE_CODE          => print_esc_cstr(c"XeTeXOTlanguagetag".as_ptr()),
-                CC_XETEX_OT_FEATURE_CODE           => print_esc_cstr(c"XeTeXOTfeaturetag".as_ptr()),
-                CC_XETEX_MAP_CHAR_TO_GLYPH_CODE    => print_esc_cstr(c"XeTeXcharglyph".as_ptr()),
-                CC_XETEX_GLYPH_INDEX_CODE          => print_esc_cstr(c"XeTeXglyphindex".as_ptr()),
-                CC_XETEX_GLYPH_BOUNDS_CODE         => print_esc_cstr(c"XeTeXglyphbounds".as_ptr()),
-                CC_XETEX_FONT_TYPE_CODE            => print_esc_cstr(c"XeTeXfonttype".as_ptr()),
-                CC_XETEX_FIRST_CHAR_CODE           => print_esc_cstr(c"XeTeXfirstfontchar".as_ptr()),
-                CC_XETEX_LAST_CHAR_CODE            => print_esc_cstr(c"XeTeXlastfontchar".as_ptr()),
-                CC_XETEX_PDF_PAGE_COUNT_CODE       => print_esc_cstr(c"XeTeXpdfpagecount".as_ptr()),
-                CC_CURRENT_GROUP_LEVEL_CODE        => print_esc_cstr(c"currentgrouplevel".as_ptr()),
-                CC_CURRENT_GROUP_TYPE_CODE         => print_esc_cstr(c"currentgrouptype".as_ptr()),
-                CC_CURRENT_IF_LEVEL_CODE           => print_esc_cstr(c"currentiflevel".as_ptr()),
-                CC_CURRENT_IF_TYPE_CODE            => print_esc_cstr(c"currentiftype".as_ptr()),
-                CC_CURRENT_IF_BRANCH_CODE          => print_esc_cstr(c"currentifbranch".as_ptr()),
-                CC_FONT_CHAR_WD_CODE               => print_esc_cstr(c"fontcharwd".as_ptr()),
-                CC_FONT_CHAR_HT_CODE               => print_esc_cstr(c"fontcharht".as_ptr()),
-                CC_FONT_CHAR_DP_CODE               => print_esc_cstr(c"fontchardp".as_ptr()),
-                CC_FONT_CHAR_IC_CODE               => print_esc_cstr(c"fontcharic".as_ptr()),
-                CC_PAR_SHAPE_LENGTH_CODE           => print_esc_cstr(c"parshapelength".as_ptr()),
-                CC_PAR_SHAPE_INDENT_CODE           => print_esc_cstr(c"parshapeindent".as_ptr()),
-                CC_PAR_SHAPE_DIMEN_CODE            => print_esc_cstr(c"parshapedimen".as_ptr()),
-                x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_INT_VAL   => print_esc_cstr(c"numexpr".as_ptr()),
-                x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_DIMEN_VAL => print_esc_cstr(c"dimexpr".as_ptr()),
-                x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_GLUE_VAL  => print_esc_cstr(c"glueexpr".as_ptr()),
-                x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_MU_VAL    => print_esc_cstr(c"muexpr".as_ptr()),
-                CC_GLUE_STRETCH_ORDER_CODE => print_esc_cstr(c"gluestretchorder".as_ptr()),
-                CC_GLUE_SHRINK_ORDER_CODE  => print_esc_cstr(c"glueshrinkorder".as_ptr()),
-                CC_GLUE_STRETCH_CODE       => print_esc_cstr(c"gluestretch".as_ptr()),
-                CC_GLUE_SHRINK_CODE        => print_esc_cstr(c"glueshrink".as_ptr()),
-                CC_MU_TO_GLUE_CODE         => print_esc_cstr(c"mutoglue".as_ptr()),
-                CC_GLUE_TO_MU_CODE         => print_esc_cstr(c"gluetomu".as_ptr()),
-                CC_PDF_LAST_X_POS_CODE     => print_esc_cstr(c"pdflastxpos".as_ptr()),
-                CC_PDF_LAST_Y_POS_CODE     => print_esc_cstr(c"pdflastypos".as_ptr()),
-                CC_ELAPSED_TIME_CODE       => print_esc_cstr(c"elapsedtime".as_ptr()),
-                CC_PDF_SHELL_ESCAPE_CODE   => print_esc_cstr(c"shellescape".as_ptr()),
-                CC_RANDOM_SEED_CODE        => print_esc_cstr(c"randomseed".as_ptr()),
-                _                          => print_esc_cstr(c"badness".as_ptr()),
+            if chr_code == CC_WIDTH_OFFSET {
+                print_esc_cstr(c"wd".as_ptr());
+            } else if chr_code == CC_HEIGHT_OFFSET {
+                print_esc_cstr(c"ht".as_ptr());
+            } else {
+                print_esc_cstr(c"dp".as_ptr());
             }
         }
-        CMD_CONVERT => {
-            match chr_code {
-                CC_NUMBER_CODE          => print_esc_cstr(c"number".as_ptr()),
-                CC_ROMAN_NUMERAL_CODE   => print_esc_cstr(c"romannumeral".as_ptr()),
-                CC_STRING_CODE          => print_esc_cstr(c"string".as_ptr()),
-                CC_MEANING_CODE         => print_esc_cstr(c"meaning".as_ptr()),
-                CC_FONT_NAME_CODE       => print_esc_cstr(c"fontname".as_ptr()),
-                CC_ETEX_REVISION_CODE   => print_esc_cstr(c"eTeXrevision".as_ptr()),
-                CC_EXPANDED_CODE        => print_esc_cstr(c"expanded".as_ptr()),
-                CC_LEFT_MARGIN_KERN_CODE  => print_esc_cstr(c"leftmarginkern".as_ptr()),
-                CC_RIGHT_MARGIN_KERN_CODE => print_esc_cstr(c"rightmarginkern".as_ptr()),
-                CC_PDF_CREATION_DATE_CODE => print_esc_cstr(c"creationdate".as_ptr()),
-                CC_PDF_FILE_MOD_DATE_CODE => print_esc_cstr(c"filemoddate".as_ptr()),
-                CC_PDF_FILE_SIZE_CODE     => print_esc_cstr(c"filesize".as_ptr()),
-                CC_PDF_MDFIVE_SUM_CODE    => print_esc_cstr(c"mdfivesum".as_ptr()),
-                CC_PDF_FILE_DUMP_CODE     => print_esc_cstr(c"filedump".as_ptr()),
-                CC_PDF_STRCMP_CODE        => print_esc_cstr(c"strcmp".as_ptr()),
-                CC_UNIFORM_DEVIATE_CODE   => print_esc_cstr(c"uniformdeviate".as_ptr()),
-                CC_NORMAL_DEVIATE_CODE    => print_esc_cstr(c"normaldeviate".as_ptr()),
-                CC_XETEX_REVISION_CODE    => print_esc_cstr(c"XeTeXrevision".as_ptr()),
-                CC_XETEX_VARIATION_NAME_CODE => print_esc_cstr(c"XeTeXvariationname".as_ptr()),
-                CC_XETEX_FEATURE_NAME_CODE   => print_esc_cstr(c"XeTeXfeaturename".as_ptr()),
-                CC_XETEX_SELECTOR_NAME_CODE  => print_esc_cstr(c"XeTeXselectorname".as_ptr()),
-                CC_XETEX_GLYPH_NAME_CODE     => print_esc_cstr(c"XeTeXglyphname".as_ptr()),
-                CC_XETEX_UCHAR_CODE          => print_esc_cstr(c"Uchar".as_ptr()),
-                CC_XETEX_UCHARCAT_CODE       => print_esc_cstr(c"Ucharcat".as_ptr()),
-                _                            => print_esc_cstr(c"jobname".as_ptr()),
+        CMD_LAST_ITEM => match chr_code {
+            CC_INT_VAL => print_esc_cstr(c"lastpenalty".as_ptr()),
+            CC_DIMEN_VAL => print_esc_cstr(c"lastkern".as_ptr()),
+            CC_GLUE_VAL => print_esc_cstr(c"lastskip".as_ptr()),
+            CC_INPUT_LINE_NO_CODE => print_esc_cstr(c"inputlineno".as_ptr()),
+            CC_LAST_NODE_TYPE_CODE => print_esc_cstr(c"lastnodetype".as_ptr()),
+            CC_ETEX_VERSION_CODE => print_esc_cstr(c"eTeXversion".as_ptr()),
+            CC_XETEX_VERSION_CODE => print_esc_cstr(c"XeTeXversion".as_ptr()),
+            CC_XETEX_COUNT_GLYPHS_CODE => print_esc_cstr(c"XeTeXcountglyphs".as_ptr()),
+            CC_XETEX_COUNT_VARIATIONS_CODE => print_esc_cstr(c"XeTeXcountvariations".as_ptr()),
+            CC_XETEX_VARIATION_CODE => print_esc_cstr(c"XeTeXvariation".as_ptr()),
+            CC_XETEX_FIND_VARIATION_BY_NAME_CODE => {
+                print_esc_cstr(c"XeTeXfindvariationbyname".as_ptr())
             }
-        }
+            CC_XETEX_VARIATION_MIN_CODE => print_esc_cstr(c"XeTeXvariationmin".as_ptr()),
+            CC_XETEX_VARIATION_MAX_CODE => print_esc_cstr(c"XeTeXvariationmax".as_ptr()),
+            CC_XETEX_VARIATION_DEFAULT_CODE => print_esc_cstr(c"XeTeXvariationdefault".as_ptr()),
+            CC_XETEX_COUNT_FEATURES_CODE => print_esc_cstr(c"XeTeXcountfeatures".as_ptr()),
+            CC_XETEX_FEATURE_CODE_CODE => print_esc_cstr(c"XeTeXfeaturecode".as_ptr()),
+            CC_XETEX_FIND_FEATURE_BY_NAME_CODE => {
+                print_esc_cstr(c"XeTeXfindfeaturebyname".as_ptr())
+            }
+            CC_XETEX_IS_EXCLUSIVE_FEATURE_CODE => {
+                print_esc_cstr(c"XeTeXisexclusivefeature".as_ptr())
+            }
+            CC_XETEX_COUNT_SELECTORS_CODE => print_esc_cstr(c"XeTeXcountselectors".as_ptr()),
+            CC_XETEX_SELECTOR_CODE_CODE => print_esc_cstr(c"XeTeXselectorcode".as_ptr()),
+            CC_XETEX_FIND_SELECTOR_BY_NAME_CODE => {
+                print_esc_cstr(c"XeTeXfindselectorbyname".as_ptr())
+            }
+            CC_XETEX_IS_DEFAULT_SELECTOR_CODE => print_esc_cstr(c"XeTeXisdefaultselector".as_ptr()),
+            CC_XETEX_OT_COUNT_SCRIPTS_CODE => print_esc_cstr(c"XeTeXOTcountscripts".as_ptr()),
+            CC_XETEX_OT_COUNT_LANGUAGES_CODE => print_esc_cstr(c"XeTeXOTcountlanguages".as_ptr()),
+            CC_XETEX_OT_COUNT_FEATURES_CODE => print_esc_cstr(c"XeTeXOTcountfeatures".as_ptr()),
+            CC_XETEX_OT_SCRIPT_CODE => print_esc_cstr(c"XeTeXOTscripttag".as_ptr()),
+            CC_XETEX_OT_LANGUAGE_CODE => print_esc_cstr(c"XeTeXOTlanguagetag".as_ptr()),
+            CC_XETEX_OT_FEATURE_CODE => print_esc_cstr(c"XeTeXOTfeaturetag".as_ptr()),
+            CC_XETEX_MAP_CHAR_TO_GLYPH_CODE => print_esc_cstr(c"XeTeXcharglyph".as_ptr()),
+            CC_XETEX_GLYPH_INDEX_CODE => print_esc_cstr(c"XeTeXglyphindex".as_ptr()),
+            CC_XETEX_GLYPH_BOUNDS_CODE => print_esc_cstr(c"XeTeXglyphbounds".as_ptr()),
+            CC_XETEX_FONT_TYPE_CODE => print_esc_cstr(c"XeTeXfonttype".as_ptr()),
+            CC_XETEX_FIRST_CHAR_CODE => print_esc_cstr(c"XeTeXfirstfontchar".as_ptr()),
+            CC_XETEX_LAST_CHAR_CODE => print_esc_cstr(c"XeTeXlastfontchar".as_ptr()),
+            CC_XETEX_PDF_PAGE_COUNT_CODE => print_esc_cstr(c"XeTeXpdfpagecount".as_ptr()),
+            CC_CURRENT_GROUP_LEVEL_CODE => print_esc_cstr(c"currentgrouplevel".as_ptr()),
+            CC_CURRENT_GROUP_TYPE_CODE => print_esc_cstr(c"currentgrouptype".as_ptr()),
+            CC_CURRENT_IF_LEVEL_CODE => print_esc_cstr(c"currentiflevel".as_ptr()),
+            CC_CURRENT_IF_TYPE_CODE => print_esc_cstr(c"currentiftype".as_ptr()),
+            CC_CURRENT_IF_BRANCH_CODE => print_esc_cstr(c"currentifbranch".as_ptr()),
+            CC_FONT_CHAR_WD_CODE => print_esc_cstr(c"fontcharwd".as_ptr()),
+            CC_FONT_CHAR_HT_CODE => print_esc_cstr(c"fontcharht".as_ptr()),
+            CC_FONT_CHAR_DP_CODE => print_esc_cstr(c"fontchardp".as_ptr()),
+            CC_FONT_CHAR_IC_CODE => print_esc_cstr(c"fontcharic".as_ptr()),
+            CC_PAR_SHAPE_LENGTH_CODE => print_esc_cstr(c"parshapelength".as_ptr()),
+            CC_PAR_SHAPE_INDENT_CODE => print_esc_cstr(c"parshapeindent".as_ptr()),
+            CC_PAR_SHAPE_DIMEN_CODE => print_esc_cstr(c"parshapedimen".as_ptr()),
+            x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_INT_VAL => print_esc_cstr(c"numexpr".as_ptr()),
+            x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_DIMEN_VAL => {
+                print_esc_cstr(c"dimexpr".as_ptr())
+            }
+            x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_GLUE_VAL => {
+                print_esc_cstr(c"glueexpr".as_ptr())
+            }
+            x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_MU_VAL => print_esc_cstr(c"muexpr".as_ptr()),
+            CC_GLUE_STRETCH_ORDER_CODE => print_esc_cstr(c"gluestretchorder".as_ptr()),
+            CC_GLUE_SHRINK_ORDER_CODE => print_esc_cstr(c"glueshrinkorder".as_ptr()),
+            CC_GLUE_STRETCH_CODE => print_esc_cstr(c"gluestretch".as_ptr()),
+            CC_GLUE_SHRINK_CODE => print_esc_cstr(c"glueshrink".as_ptr()),
+            CC_MU_TO_GLUE_CODE => print_esc_cstr(c"mutoglue".as_ptr()),
+            CC_GLUE_TO_MU_CODE => print_esc_cstr(c"gluetomu".as_ptr()),
+            CC_PDF_LAST_X_POS_CODE => print_esc_cstr(c"pdflastxpos".as_ptr()),
+            CC_PDF_LAST_Y_POS_CODE => print_esc_cstr(c"pdflastypos".as_ptr()),
+            CC_ELAPSED_TIME_CODE => print_esc_cstr(c"elapsedtime".as_ptr()),
+            CC_PDF_SHELL_ESCAPE_CODE => print_esc_cstr(c"shellescape".as_ptr()),
+            CC_RANDOM_SEED_CODE => print_esc_cstr(c"randomseed".as_ptr()),
+            _ => print_esc_cstr(c"badness".as_ptr()),
+        },
+        CMD_CONVERT => match chr_code {
+            CC_NUMBER_CODE => print_esc_cstr(c"number".as_ptr()),
+            CC_ROMAN_NUMERAL_CODE => print_esc_cstr(c"romannumeral".as_ptr()),
+            CC_STRING_CODE => print_esc_cstr(c"string".as_ptr()),
+            CC_MEANING_CODE => print_esc_cstr(c"meaning".as_ptr()),
+            CC_FONT_NAME_CODE => print_esc_cstr(c"fontname".as_ptr()),
+            CC_ETEX_REVISION_CODE => print_esc_cstr(c"eTeXrevision".as_ptr()),
+            CC_EXPANDED_CODE => print_esc_cstr(c"expanded".as_ptr()),
+            CC_LEFT_MARGIN_KERN_CODE => print_esc_cstr(c"leftmarginkern".as_ptr()),
+            CC_RIGHT_MARGIN_KERN_CODE => print_esc_cstr(c"rightmarginkern".as_ptr()),
+            CC_PDF_CREATION_DATE_CODE => print_esc_cstr(c"creationdate".as_ptr()),
+            CC_PDF_FILE_MOD_DATE_CODE => print_esc_cstr(c"filemoddate".as_ptr()),
+            CC_PDF_FILE_SIZE_CODE => print_esc_cstr(c"filesize".as_ptr()),
+            CC_PDF_MDFIVE_SUM_CODE => print_esc_cstr(c"mdfivesum".as_ptr()),
+            CC_PDF_FILE_DUMP_CODE => print_esc_cstr(c"filedump".as_ptr()),
+            CC_PDF_STRCMP_CODE => print_esc_cstr(c"strcmp".as_ptr()),
+            CC_UNIFORM_DEVIATE_CODE => print_esc_cstr(c"uniformdeviate".as_ptr()),
+            CC_NORMAL_DEVIATE_CODE => print_esc_cstr(c"normaldeviate".as_ptr()),
+            CC_XETEX_REVISION_CODE => print_esc_cstr(c"XeTeXrevision".as_ptr()),
+            CC_XETEX_VARIATION_NAME_CODE => print_esc_cstr(c"XeTeXvariationname".as_ptr()),
+            CC_XETEX_FEATURE_NAME_CODE => print_esc_cstr(c"XeTeXfeaturename".as_ptr()),
+            CC_XETEX_SELECTOR_NAME_CODE => print_esc_cstr(c"XeTeXselectorname".as_ptr()),
+            CC_XETEX_GLYPH_NAME_CODE => print_esc_cstr(c"XeTeXglyphname".as_ptr()),
+            CC_XETEX_UCHAR_CODE => print_esc_cstr(c"Uchar".as_ptr()),
+            CC_XETEX_UCHARCAT_CODE => print_esc_cstr(c"Ucharcat".as_ptr()),
+            _ => print_esc_cstr(c"jobname".as_ptr()),
+        },
         CMD_IF_TEST => {
-            if chr_code >= CC_UNLESS_CODE { print_esc_cstr(c"unless".as_ptr()); }
+            if chr_code >= CC_UNLESS_CODE {
+                print_esc_cstr(c"unless".as_ptr());
+            }
             match chr_code % CC_UNLESS_CODE {
-                CC_IF_CAT_CODE       => print_esc_cstr(c"ifcat".as_ptr()),
-                CC_IF_INT_CODE       => print_esc_cstr(c"ifnum".as_ptr()),
-                CC_IF_DIM_CODE       => print_esc_cstr(c"ifdim".as_ptr()),
-                CC_IF_ODD_CODE       => print_esc_cstr(c"ifodd".as_ptr()),
-                CC_IF_VMODE_CODE     => print_esc_cstr(c"ifvmode".as_ptr()),
-                CC_IF_HMODE_CODE     => print_esc_cstr(c"ifhmode".as_ptr()),
-                CC_IF_MMODE_CODE     => print_esc_cstr(c"ifmmode".as_ptr()),
-                CC_IF_INNER_CODE     => print_esc_cstr(c"ifinner".as_ptr()),
-                CC_IF_VOID_CODE      => print_esc_cstr(c"ifvoid".as_ptr()),
-                CC_IF_HBOX_CODE      => print_esc_cstr(c"ifhbox".as_ptr()),
-                CC_IF_VBOX_CODE      => print_esc_cstr(c"ifvbox".as_ptr()),
-                CC_IFX_CODE          => print_esc_cstr(c"ifx".as_ptr()),
-                CC_IF_EOF_CODE       => print_esc_cstr(c"ifeof".as_ptr()),
-                CC_IF_TRUE_CODE      => print_esc_cstr(c"iftrue".as_ptr()),
-                CC_IF_FALSE_CODE     => print_esc_cstr(c"iffalse".as_ptr()),
-                CC_IF_CASE_CODE      => print_esc_cstr(c"ifcase".as_ptr()),
+                CC_IF_CAT_CODE => print_esc_cstr(c"ifcat".as_ptr()),
+                CC_IF_INT_CODE => print_esc_cstr(c"ifnum".as_ptr()),
+                CC_IF_DIM_CODE => print_esc_cstr(c"ifdim".as_ptr()),
+                CC_IF_ODD_CODE => print_esc_cstr(c"ifodd".as_ptr()),
+                CC_IF_VMODE_CODE => print_esc_cstr(c"ifvmode".as_ptr()),
+                CC_IF_HMODE_CODE => print_esc_cstr(c"ifhmode".as_ptr()),
+                CC_IF_MMODE_CODE => print_esc_cstr(c"ifmmode".as_ptr()),
+                CC_IF_INNER_CODE => print_esc_cstr(c"ifinner".as_ptr()),
+                CC_IF_VOID_CODE => print_esc_cstr(c"ifvoid".as_ptr()),
+                CC_IF_HBOX_CODE => print_esc_cstr(c"ifhbox".as_ptr()),
+                CC_IF_VBOX_CODE => print_esc_cstr(c"ifvbox".as_ptr()),
+                CC_IFX_CODE => print_esc_cstr(c"ifx".as_ptr()),
+                CC_IF_EOF_CODE => print_esc_cstr(c"ifeof".as_ptr()),
+                CC_IF_TRUE_CODE => print_esc_cstr(c"iftrue".as_ptr()),
+                CC_IF_FALSE_CODE => print_esc_cstr(c"iffalse".as_ptr()),
+                CC_IF_CASE_CODE => print_esc_cstr(c"ifcase".as_ptr()),
                 CC_IF_PRIMITIVE_CODE => print_esc_cstr(c"ifprimitive".as_ptr()),
-                CC_IF_DEF_CODE       => print_esc_cstr(c"ifdefined".as_ptr()),
-                CC_IF_CS_CODE        => print_esc_cstr(c"ifcsname".as_ptr()),
+                CC_IF_DEF_CODE => print_esc_cstr(c"ifdefined".as_ptr()),
+                CC_IF_CS_CODE => print_esc_cstr(c"ifcsname".as_ptr()),
                 CC_IF_FONT_CHAR_CODE => print_esc_cstr(c"iffontchar".as_ptr()),
                 CC_IF_IN_CSNAME_CODE => print_esc_cstr(c"ifincsname".as_ptr()),
-                _                    => print_esc_cstr(c"if".as_ptr()),
+                _ => print_esc_cstr(c"if".as_ptr()),
             }
         }
         CMD_FI_OR_ELSE => {
-            if chr_code == CC_FI_CODE     { print_esc_cstr(c"fi".as_ptr()); }
-            else if chr_code == CC_OR_CODE { print_esc_cstr(c"or".as_ptr()); }
-            else                           { print_esc_cstr(c"else".as_ptr()); }
+            if chr_code == CC_FI_CODE {
+                print_esc_cstr(c"fi".as_ptr());
+            } else if chr_code == CC_OR_CODE {
+                print_esc_cstr(c"or".as_ptr());
+            } else {
+                print_esc_cstr(c"else".as_ptr());
+            }
         }
         CMD_TAB_MARK => {
             if chr_code == CC_SPAN_CODE {
@@ -2243,163 +2329,214 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
             }
         }
         CMD_CAR_RET => {
-            if chr_code == CC_CR_CODE { print_esc_cstr(c"cr".as_ptr()); }
-            else                      { print_esc_cstr(c"crcr".as_ptr()); }
-        }
-        CMD_SET_PAGE_DIMEN => {
-            match chr_code {
-                0 => print_esc_cstr(c"pagegoal".as_ptr()),
-                1 => print_esc_cstr(c"pagetotal".as_ptr()),
-                2 => print_esc_cstr(c"pagestretch".as_ptr()),
-                3 => print_esc_cstr(c"pagefilstretch".as_ptr()),
-                4 => print_esc_cstr(c"pagefillstretch".as_ptr()),
-                5 => print_esc_cstr(c"pagefilllstretch".as_ptr()),
-                6 => print_esc_cstr(c"pageshrink".as_ptr()),
-                _ => print_esc_cstr(c"pagedepth".as_ptr()),
+            if chr_code == CC_CR_CODE {
+                print_esc_cstr(c"cr".as_ptr());
+            } else {
+                print_esc_cstr(c"crcr".as_ptr());
             }
         }
+        CMD_SET_PAGE_DIMEN => match chr_code {
+            0 => print_esc_cstr(c"pagegoal".as_ptr()),
+            1 => print_esc_cstr(c"pagetotal".as_ptr()),
+            2 => print_esc_cstr(c"pagestretch".as_ptr()),
+            3 => print_esc_cstr(c"pagefilstretch".as_ptr()),
+            4 => print_esc_cstr(c"pagefillstretch".as_ptr()),
+            5 => print_esc_cstr(c"pagefilllstretch".as_ptr()),
+            6 => print_esc_cstr(c"pageshrink".as_ptr()),
+            _ => print_esc_cstr(c"pagedepth".as_ptr()),
+        },
         CMD_STOP => {
-            if chr_code == 1 { print_esc_cstr(c"dump".as_ptr()); }
-            else             { print_esc_cstr(c"end".as_ptr()); }
-        }
-        CMD_HSKIP => {
-            match chr_code {
-                CC_SKIP_CODE => print_esc_cstr(c"hskip".as_ptr()),
-                CC_FIL_CODE  => print_esc_cstr(c"hfil".as_ptr()),
-                CC_FILL_CODE => print_esc_cstr(c"hfill".as_ptr()),
-                CC_SS_CODE   => print_esc_cstr(c"hss".as_ptr()),
-                _            => print_esc_cstr(c"hfilneg".as_ptr()),
+            if chr_code == 1 {
+                print_esc_cstr(c"dump".as_ptr());
+            } else {
+                print_esc_cstr(c"end".as_ptr());
             }
         }
-        CMD_VSKIP => {
-            match chr_code {
-                CC_SKIP_CODE => print_esc_cstr(c"vskip".as_ptr()),
-                CC_FIL_CODE  => print_esc_cstr(c"vfil".as_ptr()),
-                CC_FILL_CODE => print_esc_cstr(c"vfill".as_ptr()),
-                CC_SS_CODE   => print_esc_cstr(c"vss".as_ptr()),
-                _            => print_esc_cstr(c"vfilneg".as_ptr()),
-            }
-        }
-        CMD_MSKIP           => print_esc_cstr(c"mskip".as_ptr()),
-        CMD_KERN            => print_esc_cstr(c"kern".as_ptr()),
-        CMD_MKERN           => print_esc_cstr(c"mkern".as_ptr()),
+        CMD_HSKIP => match chr_code {
+            CC_SKIP_CODE => print_esc_cstr(c"hskip".as_ptr()),
+            CC_FIL_CODE => print_esc_cstr(c"hfil".as_ptr()),
+            CC_FILL_CODE => print_esc_cstr(c"hfill".as_ptr()),
+            CC_SS_CODE => print_esc_cstr(c"hss".as_ptr()),
+            _ => print_esc_cstr(c"hfilneg".as_ptr()),
+        },
+        CMD_VSKIP => match chr_code {
+            CC_SKIP_CODE => print_esc_cstr(c"vskip".as_ptr()),
+            CC_FIL_CODE => print_esc_cstr(c"vfil".as_ptr()),
+            CC_FILL_CODE => print_esc_cstr(c"vfill".as_ptr()),
+            CC_SS_CODE => print_esc_cstr(c"vss".as_ptr()),
+            _ => print_esc_cstr(c"vfilneg".as_ptr()),
+        },
+        CMD_MSKIP => print_esc_cstr(c"mskip".as_ptr()),
+        CMD_KERN => print_esc_cstr(c"kern".as_ptr()),
+        CMD_MKERN => print_esc_cstr(c"mkern".as_ptr()),
         CMD_HMOVE => {
-            if chr_code == 1 { print_esc_cstr(c"moveleft".as_ptr()); }
-            else             { print_esc_cstr(c"moveright".as_ptr()); }
+            if chr_code == 1 {
+                print_esc_cstr(c"moveleft".as_ptr());
+            } else {
+                print_esc_cstr(c"moveright".as_ptr());
+            }
         }
         CMD_VMOVE => {
-            if chr_code == 1 { print_esc_cstr(c"raise".as_ptr()); }
-            else             { print_esc_cstr(c"lower".as_ptr()); }
-        }
-        CMD_MAKE_BOX => {
-            match chr_code {
-                CC_BOX_CODE      => print_esc_cstr(c"box".as_ptr()),
-                CC_COPY_CODE     => print_esc_cstr(c"copy".as_ptr()),
-                CC_LAST_BOX_CODE => print_esc_cstr(c"lastbox".as_ptr()),
-                CC_VSPLIT_CODE   => print_esc_cstr(c"vsplit".as_ptr()),
-                CC_VTOP_CODE     => print_esc_cstr(c"vtop".as_ptr()),
-                x if x == CC_VTOP_CODE + CC_VMODE => print_esc_cstr(c"vbox".as_ptr()),
-                _                => print_esc_cstr(c"hbox".as_ptr()),
+            if chr_code == 1 {
+                print_esc_cstr(c"raise".as_ptr());
+            } else {
+                print_esc_cstr(c"lower".as_ptr());
             }
         }
+        CMD_MAKE_BOX => match chr_code {
+            CC_BOX_CODE => print_esc_cstr(c"box".as_ptr()),
+            CC_COPY_CODE => print_esc_cstr(c"copy".as_ptr()),
+            CC_LAST_BOX_CODE => print_esc_cstr(c"lastbox".as_ptr()),
+            CC_VSPLIT_CODE => print_esc_cstr(c"vsplit".as_ptr()),
+            CC_VTOP_CODE => print_esc_cstr(c"vtop".as_ptr()),
+            x if x == CC_VTOP_CODE + CC_VMODE => print_esc_cstr(c"vbox".as_ptr()),
+            _ => print_esc_cstr(c"hbox".as_ptr()),
+        },
         CMD_LEADER_SHIP => {
-            if chr_code == CC_A_LEADERS      { print_esc_cstr(c"leaders".as_ptr()); }
-            else if chr_code == CC_C_LEADERS { print_esc_cstr(c"cleaders".as_ptr()); }
-            else if chr_code == CC_X_LEADERS { print_esc_cstr(c"xleaders".as_ptr()); }
-            else                             { print_esc_cstr(c"shipout".as_ptr()); }
+            if chr_code == CC_A_LEADERS {
+                print_esc_cstr(c"leaders".as_ptr());
+            } else if chr_code == CC_C_LEADERS {
+                print_esc_cstr(c"cleaders".as_ptr());
+            } else if chr_code == CC_X_LEADERS {
+                print_esc_cstr(c"xleaders".as_ptr());
+            } else {
+                print_esc_cstr(c"shipout".as_ptr());
+            }
         }
         CMD_START_PAR => {
-            if chr_code == 0 { print_esc_cstr(c"noindent".as_ptr()); }
-            else             { print_esc_cstr(c"indent".as_ptr()); }
+            if chr_code == 0 {
+                print_esc_cstr(c"noindent".as_ptr());
+            } else {
+                print_esc_cstr(c"indent".as_ptr());
+            }
         }
         CMD_REMOVE_ITEM => {
-            if chr_code == CC_GLUE_NODE      { print_esc_cstr(c"unskip".as_ptr()); }
-            else if chr_code == CC_KERN_NODE { print_esc_cstr(c"unkern".as_ptr()); }
-            else                             { print_esc_cstr(c"unpenalty".as_ptr()); }
+            if chr_code == CC_GLUE_NODE {
+                print_esc_cstr(c"unskip".as_ptr());
+            } else if chr_code == CC_KERN_NODE {
+                print_esc_cstr(c"unkern".as_ptr());
+            } else {
+                print_esc_cstr(c"unpenalty".as_ptr());
+            }
         }
         CMD_UN_HBOX => {
-            if chr_code == CC_COPY_CODE { print_esc_cstr(c"unhcopy".as_ptr()); }
-            else                        { print_esc_cstr(c"unhbox".as_ptr()); }
+            if chr_code == CC_COPY_CODE {
+                print_esc_cstr(c"unhcopy".as_ptr());
+            } else {
+                print_esc_cstr(c"unhbox".as_ptr());
+            }
         }
         CMD_UN_VBOX => {
-            if chr_code == CC_COPY_CODE          { print_esc_cstr(c"unvcopy".as_ptr()); }
-            else if chr_code == CC_LAST_BOX_CODE { print_esc_cstr(c"pagediscards".as_ptr()); }
-            else if chr_code == CC_VSPLIT_CODE2  { print_esc_cstr(c"splitdiscards".as_ptr()); }
-            else                                 { print_esc_cstr(c"unvbox".as_ptr()); }
+            if chr_code == CC_COPY_CODE {
+                print_esc_cstr(c"unvcopy".as_ptr());
+            } else if chr_code == CC_LAST_BOX_CODE {
+                print_esc_cstr(c"pagediscards".as_ptr());
+            } else if chr_code == CC_VSPLIT_CODE2 {
+                print_esc_cstr(c"splitdiscards".as_ptr());
+            } else {
+                print_esc_cstr(c"unvbox".as_ptr());
+            }
         }
         CMD_DISCRETIONARY => {
-            if chr_code == 1 { print_esc('-' as i32); }
-            else             { print_esc_cstr(c"discretionary".as_ptr()); }
+            if chr_code == 1 {
+                print_esc('-' as i32);
+            } else {
+                print_esc_cstr(c"discretionary".as_ptr());
+            }
         }
         CMD_EQ_NO => {
-            if chr_code == 1 { print_esc_cstr(c"leqno".as_ptr()); }
-            else             { print_esc_cstr(c"eqno".as_ptr()); }
-        }
-        CMD_MATH_COMP => {
-            match chr_code {
-                CC_ORD_NOAD   => print_esc_cstr(c"mathord".as_ptr()),
-                CC_OP_NOAD    => print_esc_cstr(c"mathop".as_ptr()),
-                CC_BIN_NOAD   => print_esc_cstr(c"mathbin".as_ptr()),
-                CC_REL_NOAD   => print_esc_cstr(c"mathrel".as_ptr()),
-                CC_OPEN_NOAD  => print_esc_cstr(c"mathopen".as_ptr()),
-                CC_CLOSE_NOAD => print_esc_cstr(c"mathclose".as_ptr()),
-                CC_PUNCT_NOAD => print_esc_cstr(c"mathpunct".as_ptr()),
-                CC_INNER_NOAD => print_esc_cstr(c"mathinner".as_ptr()),
-                CC_UNDER_NOAD => print_esc_cstr(c"underline".as_ptr()),
-                _             => print_esc_cstr(c"overline".as_ptr()),
+            if chr_code == 1 {
+                print_esc_cstr(c"leqno".as_ptr());
+            } else {
+                print_esc_cstr(c"eqno".as_ptr());
             }
         }
+        CMD_MATH_COMP => match chr_code {
+            CC_ORD_NOAD => print_esc_cstr(c"mathord".as_ptr()),
+            CC_OP_NOAD => print_esc_cstr(c"mathop".as_ptr()),
+            CC_BIN_NOAD => print_esc_cstr(c"mathbin".as_ptr()),
+            CC_REL_NOAD => print_esc_cstr(c"mathrel".as_ptr()),
+            CC_OPEN_NOAD => print_esc_cstr(c"mathopen".as_ptr()),
+            CC_CLOSE_NOAD => print_esc_cstr(c"mathclose".as_ptr()),
+            CC_PUNCT_NOAD => print_esc_cstr(c"mathpunct".as_ptr()),
+            CC_INNER_NOAD => print_esc_cstr(c"mathinner".as_ptr()),
+            CC_UNDER_NOAD => print_esc_cstr(c"underline".as_ptr()),
+            _ => print_esc_cstr(c"overline".as_ptr()),
+        },
         CMD_LIMIT_SWITCH => {
-            if chr_code == CC_LIMITS         { print_esc_cstr(c"limits".as_ptr()); }
-            else if chr_code == CC_NO_LIMITS { print_esc_cstr(c"nolimits".as_ptr()); }
-            else                             { print_esc_cstr(c"displaylimits".as_ptr()); }
+            if chr_code == CC_LIMITS {
+                print_esc_cstr(c"limits".as_ptr());
+            } else if chr_code == CC_NO_LIMITS {
+                print_esc_cstr(c"nolimits".as_ptr());
+            } else {
+                print_esc_cstr(c"displaylimits".as_ptr());
+            }
         }
         CMD_MATH_STYLE => print_style(chr_code),
-        CMD_ABOVE => {
-            match chr_code {
-                CC_OVER_CODE                         => print_esc_cstr(c"over".as_ptr()),
-                CC_ATOP_CODE                         => print_esc_cstr(c"atop".as_ptr()),
-                x if x == CC_DELIMITED_CODE + CC_ABOVE_CODE => print_esc_cstr(c"abovewithdelims".as_ptr()),
-                x if x == CC_DELIMITED_CODE + CC_OVER_CODE  => print_esc_cstr(c"overwithdelims".as_ptr()),
-                x if x == CC_DELIMITED_CODE + CC_ATOP_CODE  => print_esc_cstr(c"atopwithdelims".as_ptr()),
-                _                                    => print_esc_cstr(c"above".as_ptr()),
+        CMD_ABOVE => match chr_code {
+            CC_OVER_CODE => print_esc_cstr(c"over".as_ptr()),
+            CC_ATOP_CODE => print_esc_cstr(c"atop".as_ptr()),
+            x if x == CC_DELIMITED_CODE + CC_ABOVE_CODE => {
+                print_esc_cstr(c"abovewithdelims".as_ptr())
             }
-        }
+            x if x == CC_DELIMITED_CODE + CC_OVER_CODE => {
+                print_esc_cstr(c"overwithdelims".as_ptr())
+            }
+            x if x == CC_DELIMITED_CODE + CC_ATOP_CODE => {
+                print_esc_cstr(c"atopwithdelims".as_ptr())
+            }
+            _ => print_esc_cstr(c"above".as_ptr()),
+        },
         CMD_LEFT_RIGHT => {
-            if chr_code == CC_LEFT_NOAD        { print_esc_cstr(c"left".as_ptr()); }
-            else if chr_code == CC_MIDDLE_NOAD { print_esc_cstr(c"middle".as_ptr()); }
-            else                               { print_esc_cstr(c"right".as_ptr()); }
+            if chr_code == CC_LEFT_NOAD {
+                print_esc_cstr(c"left".as_ptr());
+            } else if chr_code == CC_MIDDLE_NOAD {
+                print_esc_cstr(c"middle".as_ptr());
+            } else {
+                print_esc_cstr(c"right".as_ptr());
+            }
         }
         CMD_PREFIX => {
-            if chr_code == 1      { print_esc_cstr(c"long".as_ptr()); }
-            else if chr_code == 2 { print_esc_cstr(c"outer".as_ptr()); }
-            else if chr_code == 8 { print_esc_cstr(c"protected".as_ptr()); }
-            else                  { print_esc_cstr(c"global".as_ptr()); }
-        }
-        CMD_DEF => {
-            if chr_code == 0      { print_esc_cstr(c"def".as_ptr()); }
-            else if chr_code == 1 { print_esc_cstr(c"gdef".as_ptr()); }
-            else if chr_code == 2 { print_esc_cstr(c"edef".as_ptr()); }
-            else                  { print_esc_cstr(c"xdef".as_ptr()); }
-        }
-        CMD_LET => {
-            if chr_code != CC_NORMAL { print_esc_cstr(c"futurelet".as_ptr()); }
-            else                     { print_esc_cstr(c"let".as_ptr()); }
-        }
-        CMD_SHORTHAND_DEF => {
-            match chr_code {
-                CC_CHAR_DEF_CODE             => print_esc_cstr(c"chardef".as_ptr()),
-                CC_MATH_CHAR_DEF_CODE        => print_esc_cstr(c"mathchardef".as_ptr()),
-                CC_XETEX_MATH_CHAR_DEF_CODE  => print_esc_cstr(c"Umathchardef".as_ptr()),
-                CC_XETEX_MATH_CHAR_NUM_DEF_CODE => print_esc_cstr(c"Umathcharnumdef".as_ptr()),
-                CC_COUNT_DEF_CODE            => print_esc_cstr(c"countdef".as_ptr()),
-                CC_DIMEN_DEF_CODE            => print_esc_cstr(c"dimendef".as_ptr()),
-                CC_SKIP_DEF_CODE             => print_esc_cstr(c"skipdef".as_ptr()),
-                CC_MU_SKIP_DEF_CODE          => print_esc_cstr(c"muskipdef".as_ptr()),
-                CC_CHAR_SUB_DEF_CODE         => print_esc_cstr(c"charsubdef".as_ptr()),
-                _                            => print_esc_cstr(c"toksdef".as_ptr()),
+            if chr_code == 1 {
+                print_esc_cstr(c"long".as_ptr());
+            } else if chr_code == 2 {
+                print_esc_cstr(c"outer".as_ptr());
+            } else if chr_code == 8 {
+                print_esc_cstr(c"protected".as_ptr());
+            } else {
+                print_esc_cstr(c"global".as_ptr());
             }
         }
+        CMD_DEF => {
+            if chr_code == 0 {
+                print_esc_cstr(c"def".as_ptr());
+            } else if chr_code == 1 {
+                print_esc_cstr(c"gdef".as_ptr());
+            } else if chr_code == 2 {
+                print_esc_cstr(c"edef".as_ptr());
+            } else {
+                print_esc_cstr(c"xdef".as_ptr());
+            }
+        }
+        CMD_LET => {
+            if chr_code != CC_NORMAL {
+                print_esc_cstr(c"futurelet".as_ptr());
+            } else {
+                print_esc_cstr(c"let".as_ptr());
+            }
+        }
+        CMD_SHORTHAND_DEF => match chr_code {
+            CC_CHAR_DEF_CODE => print_esc_cstr(c"chardef".as_ptr()),
+            CC_MATH_CHAR_DEF_CODE => print_esc_cstr(c"mathchardef".as_ptr()),
+            CC_XETEX_MATH_CHAR_DEF_CODE => print_esc_cstr(c"Umathchardef".as_ptr()),
+            CC_XETEX_MATH_CHAR_NUM_DEF_CODE => print_esc_cstr(c"Umathcharnumdef".as_ptr()),
+            CC_COUNT_DEF_CODE => print_esc_cstr(c"countdef".as_ptr()),
+            CC_DIMEN_DEF_CODE => print_esc_cstr(c"dimendef".as_ptr()),
+            CC_SKIP_DEF_CODE => print_esc_cstr(c"skipdef".as_ptr()),
+            CC_MU_SKIP_DEF_CODE => print_esc_cstr(c"muskipdef".as_ptr()),
+            CC_CHAR_SUB_DEF_CODE => print_esc_cstr(c"charsubdef".as_ptr()),
+            _ => print_esc_cstr(c"toksdef".as_ptr()),
+        },
         CMD_CHAR_GIVEN => {
             print_esc_cstr(c"char".as_ptr());
             print_hex(chr_code);
@@ -2412,37 +2549,51 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
             print_esc_cstr(c"Umathchar".as_ptr());
             print_hex(((chr_code as u32 >> 21) & 0x07) as i32); // math_class
             print_hex(((chr_code as u32 >> 24) & 0xFF) as i32); // math_fam
-            print_hex((chr_code as u32 & 0x1FFFFF) as i32);     // math_char
+            print_hex((chr_code as u32 & 0x1FFFFF) as i32); // math_char
         }
         CMD_DEF_CODE => {
-            if chr_code == CC_LC_CODE_BASE         { print_esc_cstr(c"lccode".as_ptr()); }
-            else if chr_code == CC_UC_CODE_BASE    { print_esc_cstr(c"uccode".as_ptr()); }
-            else if chr_code == CC_SF_CODE_BASE    { print_esc_cstr(c"sfcode".as_ptr()); }
-            else if chr_code == CC_MATH_CODE_BASE  { print_esc_cstr(c"mathcode".as_ptr()); }
-            else if chr_code == CC_DEL_CODE_BASE   { print_esc_cstr(c"delcode".as_ptr()); }
-            else                                   { print_esc_cstr(c"catcode".as_ptr()); }
+            if chr_code == CC_LC_CODE_BASE {
+                print_esc_cstr(c"lccode".as_ptr());
+            } else if chr_code == CC_UC_CODE_BASE {
+                print_esc_cstr(c"uccode".as_ptr());
+            } else if chr_code == CC_SF_CODE_BASE {
+                print_esc_cstr(c"sfcode".as_ptr());
+            } else if chr_code == CC_MATH_CODE_BASE {
+                print_esc_cstr(c"mathcode".as_ptr());
+            } else if chr_code == CC_DEL_CODE_BASE {
+                print_esc_cstr(c"delcode".as_ptr());
+            } else {
+                print_esc_cstr(c"catcode".as_ptr());
+            }
         }
         CMD_XETEX_DEF_CODE => {
-            if chr_code == CC_SF_CODE_BASE                   { print_esc_cstr(c"XeTeXcharclass".as_ptr()); }
-            else if chr_code == CC_MATH_CODE_BASE            { print_esc_cstr(c"Umathcodenum".as_ptr()); }
-            else if chr_code == CC_MATH_CODE_BASE + 1        { print_esc_cstr(c"Umathcode".as_ptr()); }
-            else if chr_code == CC_DEL_CODE_BASE             { print_esc_cstr(c"Udelcodenum".as_ptr()); }
-            else                                             { print_esc_cstr(c"Udelcode".as_ptr()); }
+            if chr_code == CC_SF_CODE_BASE {
+                print_esc_cstr(c"XeTeXcharclass".as_ptr());
+            } else if chr_code == CC_MATH_CODE_BASE {
+                print_esc_cstr(c"Umathcodenum".as_ptr());
+            } else if chr_code == CC_MATH_CODE_BASE + 1 {
+                print_esc_cstr(c"Umathcode".as_ptr());
+            } else if chr_code == CC_DEL_CODE_BASE {
+                print_esc_cstr(c"Udelcodenum".as_ptr());
+            } else {
+                print_esc_cstr(c"Udelcode".as_ptr());
+            }
         }
         CMD_DEF_FAMILY => print_size(chr_code - CC_MATH_FONT_BASE),
         CMD_HYPH_DATA => {
-            if chr_code == 1 { print_esc_cstr(c"patterns".as_ptr()); }
-            else             { print_esc_cstr(c"hyphenation".as_ptr()); }
-        }
-        CMD_ASSIGN_FONT_INT => {
-            match chr_code {
-                0                 => print_esc_cstr(c"hyphenchar".as_ptr()),
-                1                 => print_esc_cstr(c"skewchar".as_ptr()),
-                CC_LP_CODE_BASE   => print_esc_cstr(c"lpcode".as_ptr()),
-                CC_RP_CODE_BASE   => print_esc_cstr(c"rpcode".as_ptr()),
-                _                 => {}
+            if chr_code == 1 {
+                print_esc_cstr(c"patterns".as_ptr());
+            } else {
+                print_esc_cstr(c"hyphenation".as_ptr());
             }
         }
+        CMD_ASSIGN_FONT_INT => match chr_code {
+            0 => print_esc_cstr(c"hyphenchar".as_ptr()),
+            1 => print_esc_cstr(c"skewchar".as_ptr()),
+            CC_LP_CODE_BASE => print_esc_cstr(c"lpcode".as_ptr()),
+            CC_RP_CODE_BASE => print_esc_cstr(c"rpcode".as_ptr()),
+            _ => {}
+        },
         CMD_SET_FONT => {
             print_cstr(c"select font ".as_ptr());
             let font_name_str = font_name_entry(chr_code);
@@ -2467,70 +2618,87 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
                 print_cstr(c"pt".as_ptr());
             }
         }
-        CMD_SET_INTERACTION => {
-            match chr_code {
-                CC_BATCH_MODE   => print_esc_cstr(c"batchmode".as_ptr()),
-                CC_NONSTOP_MODE => print_esc_cstr(c"nonstopmode".as_ptr()),
-                CC_SCROLL_MODE  => print_esc_cstr(c"scrollmode".as_ptr()),
-                _               => print_esc_cstr(c"errorstopmode".as_ptr()),
-            }
-        }
+        CMD_SET_INTERACTION => match chr_code {
+            CC_BATCH_MODE => print_esc_cstr(c"batchmode".as_ptr()),
+            CC_NONSTOP_MODE => print_esc_cstr(c"nonstopmode".as_ptr()),
+            CC_SCROLL_MODE => print_esc_cstr(c"scrollmode".as_ptr()),
+            _ => print_esc_cstr(c"errorstopmode".as_ptr()),
+        },
         CMD_IN_STREAM => {
-            if chr_code == 0 { print_esc_cstr(c"closein".as_ptr()); }
-            else             { print_esc_cstr(c"openin".as_ptr()); }
+            if chr_code == 0 {
+                print_esc_cstr(c"closein".as_ptr());
+            } else {
+                print_esc_cstr(c"openin".as_ptr());
+            }
         }
         CMD_MESSAGE => {
-            if chr_code == 0 { print_esc_cstr(c"message".as_ptr()); }
-            else             { print_esc_cstr(c"errmessage".as_ptr()); }
-        }
-        CMD_CASE_SHIFT => {
-            if chr_code == CC_LC_CODE_BASE { print_esc_cstr(c"lowercase".as_ptr()); }
-            else                           { print_esc_cstr(c"uppercase".as_ptr()); }
-        }
-        CMD_XRAY => {
-            match chr_code {
-                CC_SHOW_BOX_CODE => print_esc_cstr(c"showbox".as_ptr()),
-                CC_SHOW_THE_CODE => print_esc_cstr(c"showthe".as_ptr()),
-                CC_SHOW_LISTS    => print_esc_cstr(c"showlists".as_ptr()),
-                CC_SHOW_GROUPS   => print_esc_cstr(c"showgroups".as_ptr()),
-                CC_SHOW_TOKENS   => print_esc_cstr(c"showtokens".as_ptr()),
-                CC_SHOW_IFS      => print_esc_cstr(c"showifs".as_ptr()),
-                _                => print_esc_cstr(c"show".as_ptr()),
+            if chr_code == 0 {
+                print_esc_cstr(c"message".as_ptr());
+            } else {
+                print_esc_cstr(c"errmessage".as_ptr());
             }
         }
+        CMD_CASE_SHIFT => {
+            if chr_code == CC_LC_CODE_BASE {
+                print_esc_cstr(c"lowercase".as_ptr());
+            } else {
+                print_esc_cstr(c"uppercase".as_ptr());
+            }
+        }
+        CMD_XRAY => match chr_code {
+            CC_SHOW_BOX_CODE => print_esc_cstr(c"showbox".as_ptr()),
+            CC_SHOW_THE_CODE => print_esc_cstr(c"showthe".as_ptr()),
+            CC_SHOW_LISTS => print_esc_cstr(c"showlists".as_ptr()),
+            CC_SHOW_GROUPS => print_esc_cstr(c"showgroups".as_ptr()),
+            CC_SHOW_TOKENS => print_esc_cstr(c"showtokens".as_ptr()),
+            CC_SHOW_IFS => print_esc_cstr(c"showifs".as_ptr()),
+            _ => print_esc_cstr(c"show".as_ptr()),
+        },
         CMD_UNDEFINED_CS => print_cstr(c"undefined".as_ptr()),
         CMD_CALL | CMD_LONG_CALL | CMD_OUTER_CALL | CMD_LONG_OUTER_CALL => {
             let mut n = cmd as i32 - CMD_CALL as i32;
             if mem_b32s0(mem_b32s1(chr_code)) == CC_PROTECTED_TOKEN {
                 n += 4;
             }
-            if n / 4 % 2 != 0 { print_esc_cstr(c"protected".as_ptr()); }
-            if n % 2 != 0     { print_esc_cstr(c"long".as_ptr()); }
-            if n / 2 % 2 != 0 { print_esc_cstr(c"outer".as_ptr()); }
-            if n > 0          { print_char(' ' as i32); }
+            if n / 4 % 2 != 0 {
+                print_esc_cstr(c"protected".as_ptr());
+            }
+            if n % 2 != 0 {
+                print_esc_cstr(c"long".as_ptr());
+            }
+            if n / 2 % 2 != 0 {
+                print_esc_cstr(c"outer".as_ptr());
+            }
+            if n > 0 {
+                print_char(' ' as i32);
+            }
             print_cstr(c"macro".as_ptr());
         }
         CMD_END_TEMPLATE => print_esc_cstr(c"outer endtemplate".as_ptr()),
-        CMD_EXTENSION => {
-            match chr_code {
-                CC_OPEN_NODE    => print_esc_cstr(c"openout".as_ptr()),
-                CC_WRITE_NODE   => print_esc_cstr(c"write".as_ptr()),
-                CC_CLOSE_NODE   => print_esc_cstr(c"closeout".as_ptr()),
-                CC_SPECIAL_NODE => print_esc_cstr(c"special".as_ptr()),
-                CC_IMMEDIATE_CODE => print_esc_cstr(c"immediate".as_ptr()),
-                CC_SET_LANGUAGE_CODE => print_esc_cstr(c"setlanguage".as_ptr()),
-                CC_PDF_SAVE_POS_NODE => print_esc_cstr(c"pdfsavepos".as_ptr()),
-                CC_RESET_TIMER_CODE  => print_esc_cstr(c"resettimer".as_ptr()),
-                CC_SET_RANDOM_SEED_CODE => print_esc_cstr(c"setrandomseed".as_ptr()),
-                CC_PIC_FILE_CODE => print_esc_cstr(c"XeTeXpicfile".as_ptr()),
-                CC_PDF_FILE_CODE => print_esc_cstr(c"XeTeXpdffile".as_ptr()),
-                CC_GLYPH_CODE    => print_esc_cstr(c"XeTeXglyph".as_ptr()),
-                CC_XETEX_LINEBREAK_LOCALE_EXTENSION_CODE   => print_esc_cstr(c"XeTeXlinebreaklocale".as_ptr()),
-                CC_XETEX_INPUT_ENCODING_EXTENSION_CODE     => print_esc_cstr(c"XeTeXinputencoding".as_ptr()),
-                CC_XETEX_DEFAULT_ENCODING_EXTENSION_CODE   => print_esc_cstr(c"XeTeXdefaultencoding".as_ptr()),
-                _ => print_cstr(c"[unknown extension!]".as_ptr()),
+        CMD_EXTENSION => match chr_code {
+            CC_OPEN_NODE => print_esc_cstr(c"openout".as_ptr()),
+            CC_WRITE_NODE => print_esc_cstr(c"write".as_ptr()),
+            CC_CLOSE_NODE => print_esc_cstr(c"closeout".as_ptr()),
+            CC_SPECIAL_NODE => print_esc_cstr(c"special".as_ptr()),
+            CC_IMMEDIATE_CODE => print_esc_cstr(c"immediate".as_ptr()),
+            CC_SET_LANGUAGE_CODE => print_esc_cstr(c"setlanguage".as_ptr()),
+            CC_PDF_SAVE_POS_NODE => print_esc_cstr(c"pdfsavepos".as_ptr()),
+            CC_RESET_TIMER_CODE => print_esc_cstr(c"resettimer".as_ptr()),
+            CC_SET_RANDOM_SEED_CODE => print_esc_cstr(c"setrandomseed".as_ptr()),
+            CC_PIC_FILE_CODE => print_esc_cstr(c"XeTeXpicfile".as_ptr()),
+            CC_PDF_FILE_CODE => print_esc_cstr(c"XeTeXpdffile".as_ptr()),
+            CC_GLYPH_CODE => print_esc_cstr(c"XeTeXglyph".as_ptr()),
+            CC_XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => {
+                print_esc_cstr(c"XeTeXlinebreaklocale".as_ptr())
             }
-        }
+            CC_XETEX_INPUT_ENCODING_EXTENSION_CODE => {
+                print_esc_cstr(c"XeTeXinputencoding".as_ptr())
+            }
+            CC_XETEX_DEFAULT_ENCODING_EXTENSION_CODE => {
+                print_esc_cstr(c"XeTeXdefaultencoding".as_ptr())
+            }
+            _ => print_cstr(c"[unknown extension!]".as_ptr()),
+        },
         _ => print_cstr(c"[unknown command code!]".as_ptr()),
     }
 }
@@ -2600,7 +2768,6 @@ pub unsafe extern "C" fn group_warning() {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // if_warning
 // ---------------------------------------------------------------------------
@@ -2648,7 +2815,6 @@ pub unsafe extern "C" fn if_warning() {
         }
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // file_warning
@@ -2912,28 +3078,26 @@ const MAX_CHAR_VAL_STL: i32 = 0x200_000; // 1 << 21
 const CS_TOKEN_FLAG_STL: i32 = 0x1FF_FFFF;
 
 // Category-code discriminants used in token words (xetex_format.h:231–250).
-const LEFT_BRACE_STL: i32  =  1;
-const RIGHT_BRACE_STL: i32 =  2;
-const MATH_SHIFT_STL: i32  =  3;
-const TAB_MARK_STL: i32    =  4;
-const OUT_PARAM_STL: i32   =  5;
-const MAC_PARAM_STL: i32   =  6;
-const SUP_MARK_STL: i32    =  7;
-const SUB_MARK_STL: i32    =  8;
-const SPACER_STL: i32      = 10;
-const LETTER_STL: i32      = 11;
-const OTHER_CHAR_STL: i32  = 12;
-const MATCH_STL: i32       = 13;
-const END_MATCH_STL: i32   = 14;
+const LEFT_BRACE_STL: i32 = 1;
+const RIGHT_BRACE_STL: i32 = 2;
+const MATH_SHIFT_STL: i32 = 3;
+const TAB_MARK_STL: i32 = 4;
+const OUT_PARAM_STL: i32 = 5;
+const MAC_PARAM_STL: i32 = 6;
+const SUP_MARK_STL: i32 = 7;
+const SUB_MARK_STL: i32 = 8;
+const SPACER_STL: i32 = 10;
+const LETTER_STL: i32 = 11;
+const OTHER_CHAR_STL: i32 = 12;
+const MATCH_STL: i32 = 13;
+const END_MATCH_STL: i32 = 14;
 
 /// translated from xetex-xetex0.c:20 (show_token_list)
 #[no_mangle]
 pub unsafe extern "C" fn show_token_list(mut p: i32, q: i32, l: i32) {
     use crate::globals::{
-        tally, set_tally, error_line, half_error_line,
-        set_first_count, set_trick_count,
-        hi_mem_min, mem_end,
-        mem_b32s0, mem_b32s1,
+        error_line, half_error_line, hi_mem_min, mem_b32s0, mem_b32s1, mem_end, set_first_count,
+        set_tally, set_trick_count, tally,
     };
     let mut match_chr: i32 = '#' as i32;
     let mut n: i32 = '0' as i32;
@@ -2957,8 +3121,8 @@ pub unsafe extern "C" fn show_token_list(mut p: i32, q: i32, l: i32) {
             let m = w / MAX_CHAR_VAL_STL;
             let c = w % MAX_CHAR_VAL_STL;
             match m {
-                LEFT_BRACE_STL | RIGHT_BRACE_STL | MATH_SHIFT_STL | TAB_MARK_STL
-                | SUP_MARK_STL | SUB_MARK_STL | SPACER_STL | LETTER_STL | OTHER_CHAR_STL => {
+                LEFT_BRACE_STL | RIGHT_BRACE_STL | MATH_SHIFT_STL | TAB_MARK_STL | SUP_MARK_STL
+                | SUB_MARK_STL | SPACER_STL | LETTER_STL | OTHER_CHAR_STL => {
                     print_char(c);
                 }
                 MAC_PARAM_STL => {

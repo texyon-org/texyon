@@ -24,32 +24,32 @@ use tectonic_errors::prelude::*;
 
 // Internal modules holding the growing Rust translation of the XeTeX
 // engine. See `plan/` for the long-running migration strategy.
+mod engine_interface;
+mod errors;
+mod ext;
 mod globals;
 mod hash;
 mod helpers;
-mod scan;
+mod input;
 #[allow(dead_code)] // used as the translation progresses
 mod io;
+mod linebreak;
+mod math;
 mod mem;
 #[allow(dead_code)]
 mod mem_types;
-mod engine_interface;
-mod ext;
-#[allow(dead_code)]
-mod texmfmp;
-mod errors;
-mod input;
-mod linebreak;
-mod math;
 mod output;
+mod pagebuilder;
+mod pic;
 mod save;
 mod scaled_math;
-mod pagebuilder;
+mod scan;
 mod shipout;
-mod pic;
-mod synctex;
 #[allow(dead_code)]
 mod string_pool;
+mod synctex;
+#[allow(dead_code)]
+mod texmfmp;
 
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,

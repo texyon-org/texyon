@@ -89,8 +89,8 @@ pub unsafe extern "C" fn half(x: i32) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn mult_and_add(
     mut n: i32,
-    mut x: i32, // scaled_t
-    y: i32,     // scaled_t
+    mut x: i32,      // scaled_t
+    y: i32,          // scaled_t
     max_answer: i32, // scaled_t
 ) -> i32 {
     if n < 0 {
@@ -316,7 +316,11 @@ pub unsafe extern "C" fn make_frac(mut p: i32, mut q: i32) -> i32 {
         f += 1;
     }
 
-    if negative { -(f + n) } else { f + n }
+    if negative {
+        -(f + n)
+    } else {
+        f + n
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -387,7 +391,11 @@ pub unsafe extern "C" fn take_frac(mut q: i32, mut f: i32) -> i32 {
         n = 0x7FFF_FFFF - p;
     }
 
-    if negative { -(n + p) } else { n + p }
+    if negative {
+        -(n + p)
+    } else {
+        n + p
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +419,11 @@ pub unsafe extern "C" fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32
 
     if d <= 0 {
         if b >= 0 {
-            return if (a == 0 || b == 0) && (c == 0 || d == 0) { 0 } else { 1 };
+            return if (a == 0 || b == 0) && (c == 0 || d == 0) {
+                0
+            } else {
+                1
+            };
         }
 
         if d == 0 {
@@ -420,7 +432,9 @@ pub unsafe extern "C" fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32
 
         // swap pairs and flip signs to bring into the main loop
         std::mem::swap(&mut a, &mut c);
-        let tmp = -b; b = -d; d = tmp;
+        let tmp = -b;
+        b = -d;
+        d = tmp;
     } else if b <= 0 {
         if b < 0 && a > 0 {
             return -1;
@@ -447,7 +461,10 @@ pub unsafe extern "C" fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32
             return -1;
         }
 
-        a = b; b = q; c = d; d = r;
+        a = b;
+        b = q;
+        c = d;
+        d = r;
     }
 }
 
@@ -547,8 +564,14 @@ pub unsafe extern "C" fn m_log(mut x: i32) -> i32 {
         print_cstr(c" has been replaced by 0".as_ptr());
         capture_to_diagnostic(std::ptr::null_mut());
         set_help_ptr(2);
-        set_help_line(1, c"Since I don't take logs of non-positive numbers,".as_ptr());
-        set_help_line(0, c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr());
+        set_help_line(
+            1,
+            c"Since I don't take logs of non-positive numbers,".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr(),
+        );
         error();
         return 0;
     }
@@ -899,13 +922,27 @@ pub unsafe extern "C" fn quotient(mut n: i32, mut d: i32) -> i32 {
         set_arith_error(true);
         return 0;
     }
-    let mut negative = if d > 0 { false } else { d = -d; true };
-    if n < 0 { n = -n; negative = !negative; }
+    let mut negative = if d > 0 {
+        false
+    } else {
+        d = -d;
+        true
+    };
+    if n < 0 {
+        n = -n;
+        negative = !negative;
+    }
     let mut a = n / d;
     n -= a * d;
     d = n - d;
-    if d + n >= 0 { a += 1; }
-    if negative { -a } else { a }
+    if d + n >= 0 {
+        a += 1;
+    }
+    if negative {
+        -a
+    } else {
+        a
+    }
 }
 
 /// Compute x * n / d clamped to max_answer, setting arith_error on overflow.
@@ -913,23 +950,49 @@ pub unsafe extern "C" fn quotient(mut n: i32, mut d: i32) -> i32 {
 /// translated from xetex-xetex0.c:6336 (fract)
 #[no_mangle]
 pub unsafe extern "C" fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
-    if d == 0 { set_arith_error(true); return 0; }
-    let mut negative = if d > 0 { false } else { d = -d; true };
-    if x < 0 { x = -x; negative = !negative; } else if x == 0 { return 0; }
-    if n < 0 { n = -n; negative = !negative; }
+    if d == 0 {
+        set_arith_error(true);
+        return 0;
+    }
+    let mut negative = if d > 0 {
+        false
+    } else {
+        d = -d;
+        true
+    };
+    if x < 0 {
+        x = -x;
+        negative = !negative;
+    } else if x == 0 {
+        return 0;
+    }
+    if n < 0 {
+        n = -n;
+        negative = !negative;
+    }
     let t = n / d;
-    if t > max_answer / x { set_arith_error(true); return 0; }
+    if t > max_answer / x {
+        set_arith_error(true);
+        return 0;
+    }
     let mut a = t * x;
     n -= t * d;
     // If n == 0, skip straight to `found` (return with sign).
     let a = if n != 0 {
         let t2 = x / d;
-        if t2 > (max_answer - a) / n { set_arith_error(true); return 0; }
+        if t2 > (max_answer - a) / n {
+            set_arith_error(true);
+            return 0;
+        }
         a += t2 * n;
         x -= t2 * d;
         // If x == 0, skip to `found`.
         if x != 0 {
-            if x < n { let tmp = x; x = n; n = tmp; }
+            if x < n {
+                let tmp = x;
+                x = n;
+                n = tmp;
+            }
             let mut f = 0i32;
             let mut r = (d / 2) - d;
             let h = -r;
@@ -937,10 +1000,15 @@ pub unsafe extern "C" fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i
             loop {
                 if n & 1 != 0 {
                     r += x;
-                    if r >= 0 { r -= d; f += 1; }
+                    if r >= 0 {
+                        r -= d;
+                        f += 1;
+                    }
                 }
                 n /= 2;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 if x < h {
                     x += x;
                 } else {
@@ -948,13 +1016,20 @@ pub unsafe extern "C" fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i
                     x = tmp + x;
                     f += n;
                     if x < n {
-                        if x == 0 { break; }
-                        let tmp = x; x = n; n = tmp;
+                        if x == 0 {
+                            break;
+                        }
+                        let tmp = x;
+                        x = n;
+                        n = tmp;
                     }
                 }
             }
             // found1:
-            if f > max_answer - a { set_arith_error(true); return 0; }
+            if f > max_answer - a {
+                set_arith_error(true);
+                return 0;
+            }
             a + f
         } else {
             a // x == 0: goto found
@@ -963,5 +1038,9 @@ pub unsafe extern "C" fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i
         a // n == 0: goto found
     };
     // found:
-    if negative { -a } else { a }
+    if negative {
+        -a
+    } else {
+        a
+    }
 }

@@ -17,8 +17,12 @@ pub struct PdfFile {
 // dpx layout types — must match C struct layout exactly (dpx-pdfdev.h)
 #[repr(C)]
 struct PdfTMatrix {
-    a: c_double, b: c_double, c: c_double,
-    d: c_double, e: c_double, f: c_double,
+    a: c_double,
+    b: c_double,
+    c: c_double,
+    d: c_double,
+    e: c_double,
+    f: c_double,
 }
 
 #[repr(C)]
@@ -37,11 +41,26 @@ struct PdfCoord {
 
 // --- local helper types (real_point, transform_t, real_rect from xetex-pic.c) ---
 
-struct RealPoint { x: f32, y: f32 }
+struct RealPoint {
+    x: f32,
+    y: f32,
+}
 
-struct Transform { a: f64, b: f64, c: f64, d: f64, x: f64, y: f64 }
+struct Transform {
+    a: f64,
+    b: f64,
+    c: f64,
+    d: f64,
+    x: f64,
+    y: f64,
+}
 
-struct RealRect { x: f32, y: f32, wd: f32, ht: f32 }
+struct RealRect {
+    x: f32,
+    y: f32,
+    wd: f32,
+    ht: f32,
+}
 
 // --- extern C ---
 
@@ -63,18 +82,27 @@ extern "C" {
     // dpx image probers
     fn check_for_jpeg(handle: usize) -> c_int;
     fn jpeg_get_bbox(
-        handle: usize, width: *mut c_uint, height: *mut c_uint,
-        xdensity: *mut c_double, ydensity: *mut c_double,
+        handle: usize,
+        width: *mut c_uint,
+        height: *mut c_uint,
+        xdensity: *mut c_double,
+        ydensity: *mut c_double,
     ) -> c_int;
     fn check_for_bmp(handle: usize) -> c_int;
     fn bmp_get_bbox(
-        handle: usize, width: *mut c_uint, height: *mut c_uint,
-        xdensity: *mut c_double, ydensity: *mut c_double,
+        handle: usize,
+        width: *mut c_uint,
+        height: *mut c_uint,
+        xdensity: *mut c_double,
+        ydensity: *mut c_double,
     ) -> c_int;
     fn check_for_png(handle: usize) -> c_int;
     fn png_get_bbox(
-        handle: usize, width: *mut c_uint, height: *mut c_uint,
-        xdensity: *mut c_double, ydensity: *mut c_double,
+        handle: usize,
+        width: *mut c_uint,
+        height: *mut c_uint,
+        xdensity: *mut c_double,
+        ydensity: *mut c_double,
     ) -> c_int;
     fn min4(v1: c_double, v2: c_double, v3: c_double, v4: c_double) -> c_double;
     fn max4(v1: c_double, v2: c_double, v3: c_double, v4: c_double) -> c_double;
@@ -92,12 +120,12 @@ const INVALID_HANDLE: usize = 0;
 const TTBC_FILE_FORMAT_PICT: c_int = 25; // tectonic_bridge_core_generated.h:74
 
 // pdfbox constants from xetex-ext.h:53–58
-const PDFBOX_CROP:  c_int = 1;
+const PDFBOX_CROP: c_int = 1;
 const PDFBOX_MEDIA: c_int = 2;
 const PDFBOX_BLEED: c_int = 3;
-const PDFBOX_TRIM:  c_int = 4;
-const PDFBOX_ART:   c_int = 5;
-const PDFBOX_NONE:  c_int = 6;
+const PDFBOX_TRIM: c_int = 4;
+const PDFBOX_ART: c_int = 5;
+const PDFBOX_NONE: c_int = 6;
 
 // node constants from xetex_format.h:466–467 and xetex-constants.h:133
 const PIC_NODE: i16 = 43;
@@ -118,22 +146,44 @@ unsafe fn pdf_get_rect(
     }
 
     let pages = pdf_doc_get_page_count(pf);
-    if page_num > pages { page_num = pages; }
-    if page_num < 0 { page_num = pages + 1 + page_num; }
-    if page_num < 1 { page_num = 1; }
+    if page_num > pages {
+        page_num = pages;
+    }
+    if page_num < 0 {
+        page_num = pages + 1 + page_num;
+    }
+    if page_num < 1 {
+        page_num = 1;
+    }
 
     let dpx_options: c_int = match pdf_box {
         PDFBOX_MEDIA => 2,
         PDFBOX_BLEED => 5,
-        PDFBOX_TRIM  => 4,
-        PDFBOX_ART   => 3,
-        _            => 1, // PDFBOX_CROP and default
+        PDFBOX_TRIM => 4,
+        PDFBOX_ART => 3,
+        _ => 1, // PDFBOX_CROP and default
     };
 
-    let mut bbox   = PdfRect { llx: 0.0, lly: 0.0, urx: 0.0, ury: 0.0 };
-    let mut matrix = PdfTMatrix { a: 0.0, b: 0.0, c: 0.0, d: 0.0, e: 0.0, f: 0.0 };
+    let mut bbox = PdfRect {
+        llx: 0.0,
+        lly: 0.0,
+        urx: 0.0,
+        ury: 0.0,
+    };
+    let mut matrix = PdfTMatrix {
+        a: 0.0,
+        b: 0.0,
+        c: 0.0,
+        d: 0.0,
+        e: 0.0,
+        f: 0.0,
+    };
     let page = pdf_doc_get_page(
-        pf, page_num, dpx_options, &mut bbox, &mut matrix,
+        pf,
+        page_num,
+        dpx_options,
+        &mut bbox,
+        &mut matrix,
         std::ptr::null_mut(),
     );
     pdf_close(pf);
@@ -144,10 +194,22 @@ unsafe fn pdf_get_rect(
     pdf_release_obj(page);
 
     // Transform all four corners by the page matrix to account for /Rotate.
-    let mut p1 = PdfCoord { x: bbox.llx, y: bbox.lly };
-    let mut p2 = PdfCoord { x: bbox.urx, y: bbox.lly };
-    let mut p3 = PdfCoord { x: bbox.urx, y: bbox.ury };
-    let mut p4 = PdfCoord { x: bbox.llx, y: bbox.ury };
+    let mut p1 = PdfCoord {
+        x: bbox.llx,
+        y: bbox.lly,
+    };
+    let mut p2 = PdfCoord {
+        x: bbox.urx,
+        y: bbox.lly,
+    };
+    let mut p3 = PdfCoord {
+        x: bbox.urx,
+        y: bbox.ury,
+    };
+    let mut p4 = PdfCoord {
+        x: bbox.llx,
+        y: bbox.ury,
+    };
     pdf_dev_transform(&mut p1, &matrix);
     pdf_dev_transform(&mut p2, &matrix);
     pdf_dev_transform(&mut p3, &matrix);
@@ -158,19 +220,15 @@ unsafe fn pdf_get_rect(
     bbox.urx = max4(p1.x, p2.x, p3.x, p4.x);
     bbox.ury = max4(p1.y, p2.y, p3.y, p4.y);
 
-    box_out.x  = (72.27 / 72.0 * bbox.llx) as f32;
-    box_out.y  = (72.27 / 72.0 * bbox.lly) as f32;
+    box_out.x = (72.27 / 72.0 * bbox.llx) as f32;
+    box_out.y = (72.27 / 72.0 * bbox.lly) as f32;
     box_out.wd = (72.27 / 72.0 * (bbox.urx - bbox.llx)) as f32;
     box_out.ht = (72.27 / 72.0 * (bbox.ury - bbox.lly)) as f32;
     0
 }
 
 // translated from xetex-pic.c:191 (get_image_size_in_inches)
-unsafe fn get_image_size_in_inches(
-    handle: usize,
-    width: &mut f64,
-    height: &mut f64,
-) -> c_int {
+unsafe fn get_image_size_in_inches(handle: usize, width: &mut f64, height: &mut f64) -> c_int {
     let mut err: c_int = 1;
     let mut width_pix: c_uint = 0;
     let mut height_pix: c_uint = 0;
@@ -178,23 +236,38 @@ unsafe fn get_image_size_in_inches(
     let mut ydensity: f64 = 0.0;
 
     if check_for_jpeg(handle) != 0 {
-        err = jpeg_get_bbox(handle, &mut width_pix, &mut height_pix,
-                            &mut xdensity, &mut ydensity);
+        err = jpeg_get_bbox(
+            handle,
+            &mut width_pix,
+            &mut height_pix,
+            &mut xdensity,
+            &mut ydensity,
+        );
     } else if check_for_bmp(handle) != 0 {
-        err = bmp_get_bbox(handle, &mut width_pix, &mut height_pix,
-                           &mut xdensity, &mut ydensity);
+        err = bmp_get_bbox(
+            handle,
+            &mut width_pix,
+            &mut height_pix,
+            &mut xdensity,
+            &mut ydensity,
+        );
     } else if check_for_png(handle) != 0 {
-        err = png_get_bbox(handle, &mut width_pix, &mut height_pix,
-                           &mut xdensity, &mut ydensity);
+        err = png_get_bbox(
+            handle,
+            &mut width_pix,
+            &mut height_pix,
+            &mut xdensity,
+            &mut ydensity,
+        );
     }
 
     if err != 0 {
-        *width  = -1.0;
+        *width = -1.0;
         *height = -1.0;
         return err;
     }
     // xdvipdfmx: density = 72 / dpi, so width_inches = pixels * density / 72.
-    *width  = width_pix  as f64 * xdensity / 72.0;
+    *width = width_pix as f64 * xdensity / 72.0;
     *height = height_pix as f64 * ydensity / 72.0;
     0
 }
@@ -206,9 +279,7 @@ unsafe fn find_pic_file(
     pdf_box_type: c_int,
     page: c_int,
 ) -> c_int {
-    let handle = ttstub_input_open(
-        crate::globals::name_of_file(), TTBC_FILE_FORMAT_PICT, 0,
-    );
+    let handle = ttstub_input_open(crate::globals::name_of_file(), TTBC_FILE_FORMAT_PICT, 0);
     bounds.x = 0.0;
     bounds.y = 0.0;
     bounds.wd = 0.0;
@@ -219,7 +290,13 @@ unsafe fn find_pic_file(
     }
 
     let err = if pdf_box_type != 0 {
-        pdf_get_rect(crate::globals::name_of_file(), handle, page, pdf_box_type, bounds)
+        pdf_get_rect(
+            crate::globals::name_of_file(),
+            handle,
+            page,
+            pdf_box_type,
+            bounds,
+        )
     } else {
         let mut wd: f64 = 0.0;
         let mut ht: f64 = 0.0;
@@ -246,22 +323,50 @@ fn transform_point(p: &mut RealPoint, t: &Transform) {
 
 // translated from xetex-pic.c:270 (make_identity)
 fn make_identity(t: &mut Transform) {
-    *t = Transform { a: 1.0, b: 0.0, c: 0.0, d: 1.0, x: 0.0, y: 0.0 };
+    *t = Transform {
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        x: 0.0,
+        y: 0.0,
+    };
 }
 
 // translated from xetex-pic.c:282 (make_scale)
 fn make_scale(t: &mut Transform, xscale: f64, yscale: f64) {
-    *t = Transform { a: xscale, b: 0.0, c: 0.0, d: yscale, x: 0.0, y: 0.0 };
+    *t = Transform {
+        a: xscale,
+        b: 0.0,
+        c: 0.0,
+        d: yscale,
+        x: 0.0,
+        y: 0.0,
+    };
 }
 
 // translated from xetex-pic.c:294 (make_translation)
 fn make_translation(t: &mut Transform, dx: f64, dy: f64) {
-    *t = Transform { a: 1.0, b: 0.0, c: 0.0, d: 1.0, x: dx, y: dy };
+    *t = Transform {
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        x: dx,
+        y: dy,
+    };
 }
 
 // translated from xetex-pic.c:306 (make_rotation)
 fn make_rotation(t: &mut Transform, a: f64) {
-    *t = Transform { a: a.cos(), b: a.sin(), c: -a.sin(), d: a.cos(), x: 0.0, y: 0.0 };
+    *t = Transform {
+        a: a.cos(),
+        b: a.sin(),
+        c: -a.sin(),
+        d: a.cos(),
+        x: 0.0,
+        y: 0.0,
+    };
 }
 
 // translated from xetex-pic.c:318 (transform_concat)
@@ -278,24 +383,32 @@ fn transform_concat(t1: &mut Transform, t2: &Transform) {
 }
 
 fn corners_bbox(corners: &[RealPoint; 4]) -> (f64, f64, f64, f64) {
-    let xmin = corners.iter().map(|p| p.x).fold(f32::INFINITY,  f32::min) as f64;
-    let xmax = corners.iter().map(|p| p.x).fold(f32::NEG_INFINITY, f32::max) as f64;
-    let ymin = corners.iter().map(|p| p.y).fold(f32::INFINITY,  f32::min) as f64;
-    let ymax = corners.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max) as f64;
+    let xmin = corners.iter().map(|p| p.x).fold(f32::INFINITY, f32::min) as f64;
+    let xmax = corners
+        .iter()
+        .map(|p| p.x)
+        .fold(f32::NEG_INFINITY, f32::max) as f64;
+    let ymin = corners.iter().map(|p| p.y).fold(f32::INFINITY, f32::min) as f64;
+    let ymax = corners
+        .iter()
+        .map(|p| p.y)
+        .fold(f32::NEG_INFINITY, f32::max) as f64;
     (xmin, xmax, ymin, ymax)
 }
 
 // translated from xetex-pic.c:336 (load_picture)
 #[no_mangle]
 pub unsafe extern "C" fn load_picture(is_pdf: bool) {
-    use crate::globals::{
-        cur_area, cur_ext, cur_name, cur_val, cur_list_tail,
-        mem_node_addr, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-    };
-    use crate::output::{print_cstr, print_file_name, print_scaled};
     use crate::errors::error;
-    use crate::scan::{scan_dimen, scan_decimal, scan_file_name, scan_int, scan_keyword, pack_file_name};
+    use crate::globals::{
+        cur_area, cur_ext, cur_list_tail, cur_name, cur_val, mem_node_addr, set_mem_b16s0,
+        set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
+    };
     use crate::mem::new_whatsit;
+    use crate::output::{print_cstr, print_file_name, print_scaled};
+    use crate::scan::{
+        pack_file_name, scan_decimal, scan_dimen, scan_file_name, scan_int, scan_keyword,
+    };
 
     scan_file_name();
     pack_file_name(cur_name(), cur_area(), cur_ext());
@@ -322,7 +435,12 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
         }
     }
 
-    let mut bounds = RealRect { x: 0.0, y: 0.0, wd: 0.0, ht: 0.0 };
+    let mut bounds = RealRect {
+        x: 0.0,
+        y: 0.0,
+        wd: 0.0,
+        ht: 0.0,
+    };
     let mut pic_path: *mut c_char = std::ptr::null_mut();
     let result = if pdf_box_type == PDFBOX_NONE {
         find_pic_file(&mut pic_path, &mut bounds, PDFBOX_CROP, page)
@@ -331,40 +449,72 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
     };
 
     let mut corners: [RealPoint; 4] = [
-        RealPoint { x: bounds.x,              y: bounds.y },
-        RealPoint { x: bounds.x,              y: bounds.y + bounds.ht },
-        RealPoint { x: bounds.x + bounds.wd,  y: bounds.y + bounds.ht },
-        RealPoint { x: bounds.x + bounds.wd,  y: bounds.y },
+        RealPoint {
+            x: bounds.x,
+            y: bounds.y,
+        },
+        RealPoint {
+            x: bounds.x,
+            y: bounds.y + bounds.ht,
+        },
+        RealPoint {
+            x: bounds.x + bounds.wd,
+            y: bounds.y + bounds.ht,
+        },
+        RealPoint {
+            x: bounds.x + bounds.wd,
+            y: bounds.y,
+        },
     ];
 
     let mut x_size_req: f64 = 0.0;
     let mut y_size_req: f64 = 0.0;
-    let mut t = Transform { a: 0.0, b: 0.0, c: 0.0, d: 0.0, x: 0.0, y: 0.0 };
+    let mut t = Transform {
+        a: 0.0,
+        b: 0.0,
+        c: 0.0,
+        d: 0.0,
+        x: 0.0,
+        y: 0.0,
+    };
     make_identity(&mut t);
 
     let mut check_keywords = true;
     while check_keywords {
-        let mut t2 = Transform { a: 0.0, b: 0.0, c: 0.0, d: 0.0, x: 0.0, y: 0.0 };
+        let mut t2 = Transform {
+            a: 0.0,
+            b: 0.0,
+            c: 0.0,
+            d: 0.0,
+            x: 0.0,
+            y: 0.0,
+        };
         if scan_keyword(c"scaled".as_ptr()) {
             scan_int();
             if x_size_req == 0.0 && y_size_req == 0.0 {
                 let s = cur_val() as f64 / 1000.0;
                 make_scale(&mut t2, s, s);
-                for c in corners.iter_mut() { transform_point(c, &t2); }
+                for c in corners.iter_mut() {
+                    transform_point(c, &t2);
+                }
                 transform_concat(&mut t, &t2);
             }
         } else if scan_keyword(c"xscaled".as_ptr()) {
             scan_int();
             if x_size_req == 0.0 && y_size_req == 0.0 {
                 make_scale(&mut t2, cur_val() as f64 / 1000.0, 1.0);
-                for c in corners.iter_mut() { transform_point(c, &t2); }
+                for c in corners.iter_mut() {
+                    transform_point(c, &t2);
+                }
                 transform_concat(&mut t, &t2);
             }
         } else if scan_keyword(c"yscaled".as_ptr()) {
             scan_int();
             if x_size_req == 0.0 && y_size_req == 0.0 {
                 make_scale(&mut t2, 1.0, cur_val() as f64 / 1000.0);
-                for c in corners.iter_mut() { transform_point(c, &t2); }
+                for c in corners.iter_mut() {
+                    transform_point(c, &t2);
+                }
                 transform_concat(&mut t, &t2);
             }
         } else if scan_keyword(c"width".as_ptr()) {
@@ -376,7 +526,10 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
                 print_cstr(c"pt) will be ignored".as_ptr());
                 crate::output::capture_to_diagnostic(std::ptr::null_mut());
                 crate::globals::set_help_ptr(2);
-                crate::globals::set_help_line(1, c"I can't scale images to zero or negative sizes,".as_ptr());
+                crate::globals::set_help_line(
+                    1,
+                    c"I can't scale images to zero or negative sizes,".as_ptr(),
+                );
                 crate::globals::set_help_line(0, c"so I'm ignoring this.".as_ptr());
                 error();
             } else {
@@ -391,7 +544,10 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
                 print_cstr(c"pt) will be ignored".as_ptr());
                 crate::output::capture_to_diagnostic(std::ptr::null_mut());
                 crate::globals::set_help_ptr(2);
-                crate::globals::set_help_line(1, c"I can't scale images to zero or negative sizes,".as_ptr());
+                crate::globals::set_help_line(
+                    1,
+                    c"I can't scale images to zero or negative sizes,".as_ptr(),
+                );
                 crate::globals::set_help_line(0, c"so I'm ignoring this.".as_ptr());
                 error();
             } else {
@@ -411,19 +567,35 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
                     (x_size_req / (xmax - xmin), y_size_req / (ymax - ymin))
                 };
                 make_scale(&mut t2, sx, sy);
-                for c in corners.iter_mut() { transform_point(c, &t2); }
+                for c in corners.iter_mut() {
+                    transform_point(c, &t2);
+                }
                 x_size_req = 0.0;
                 y_size_req = 0.0;
                 transform_concat(&mut t, &t2);
             }
             make_rotation(&mut t2, Fix2D(cur_val()) * std::f64::consts::PI / 180.0);
-            for c in corners.iter_mut() { transform_point(c, &t2); }
+            for c in corners.iter_mut() {
+                transform_point(c, &t2);
+            }
             let (xmin, xmax, ymin, ymax) = corners_bbox(&corners);
             corners = [
-                RealPoint { x: xmin as f32, y: ymin as f32 },
-                RealPoint { x: xmin as f32, y: ymax as f32 },
-                RealPoint { x: xmax as f32, y: ymax as f32 },
-                RealPoint { x: xmax as f32, y: ymin as f32 },
+                RealPoint {
+                    x: xmin as f32,
+                    y: ymin as f32,
+                },
+                RealPoint {
+                    x: xmin as f32,
+                    y: ymax as f32,
+                },
+                RealPoint {
+                    x: xmax as f32,
+                    y: ymax as f32,
+                },
+                RealPoint {
+                    x: xmax as f32,
+                    y: ymin as f32,
+                },
             ];
             transform_concat(&mut t, &t2);
         } else {
@@ -442,9 +614,18 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
         } else {
             (x_size_req / (xmax - xmin), y_size_req / (ymax - ymin))
         };
-        let mut t2 = Transform { a: 0.0, b: 0.0, c: 0.0, d: 0.0, x: 0.0, y: 0.0 };
+        let mut t2 = Transform {
+            a: 0.0,
+            b: 0.0,
+            c: 0.0,
+            d: 0.0,
+            x: 0.0,
+            y: 0.0,
+        };
         make_scale(&mut t2, sx, sy);
-        for c in corners.iter_mut() { transform_point(c, &t2); }
+        for c in corners.iter_mut() {
+            transform_point(c, &t2);
+        }
         x_size_req = 0.0;
         y_size_req = 0.0;
         transform_concat(&mut t, &t2);
@@ -452,9 +633,19 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
     let _ = (x_size_req, y_size_req); // consumed
 
     let (xmin, xmax, ymin, ymax) = corners_bbox(&corners);
-    let mut t2 = Transform { a: 0.0, b: 0.0, c: 0.0, d: 0.0, x: 0.0, y: 0.0 };
-    make_translation(&mut t2, -(xmin as i32 as f64) * 72.0 / 72.27,
-                                -(ymin as i32 as f64) * 72.0 / 72.27);
+    let mut t2 = Transform {
+        a: 0.0,
+        b: 0.0,
+        c: 0.0,
+        d: 0.0,
+        x: 0.0,
+        y: 0.0,
+    };
+    make_translation(
+        &mut t2,
+        -(xmin as i32 as f64) * 72.0 / 72.27,
+        -(ymin as i32 as f64) * 72.0 / 72.27,
+    );
     transform_concat(&mut t, &t2);
 
     if result == 0 {
@@ -491,19 +682,23 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
         std::ptr::copy_nonoverlapping(pic_path as *const u8, dst, path_len);
         libc::free(pic_path as *mut c_void);
     } else {
-        crate::output::error_here_with_diagnostic(
-            c"Unable to load picture or PDF file '".as_ptr(),
-        );
+        crate::output::error_here_with_diagnostic(c"Unable to load picture or PDF file '".as_ptr());
         print_file_name(cur_name(), cur_area(), cur_ext());
         crate::output::print('\'' as i32);
         crate::output::capture_to_diagnostic(std::ptr::null_mut());
         if result == -43 {
             crate::globals::set_help_ptr(2);
-            crate::globals::set_help_line(1, c"The requested image couldn't be read because".as_ptr());
+            crate::globals::set_help_line(
+                1,
+                c"The requested image couldn't be read because".as_ptr(),
+            );
             crate::globals::set_help_line(0, c"the file was not found.".as_ptr());
         } else {
             crate::globals::set_help_ptr(2);
-            crate::globals::set_help_line(1, c"The requested image couldn't be read because".as_ptr());
+            crate::globals::set_help_line(
+                1,
+                c"The requested image couldn't be read because".as_ptr(),
+            );
             crate::globals::set_help_line(0, c"it was not a recognized image format.".as_ptr());
         }
         error();
@@ -513,9 +708,7 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
 // translated from xetex-pic.c:76 (count_pdf_file_pages)
 #[no_mangle]
 pub unsafe extern "C" fn count_pdf_file_pages() -> c_int {
-    let handle = ttstub_input_open(
-        crate::globals::name_of_file(), TTBC_FILE_FORMAT_PICT, 0,
-    );
+    let handle = ttstub_input_open(crate::globals::name_of_file(), TTBC_FILE_FORMAT_PICT, 0);
     if handle == INVALID_HANDLE {
         return 0;
     }

@@ -1,11 +1,11 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
 use crate::globals::{
-    buf_size, buffer_entry, buffer_ptr, cur_area, cur_chr, cur_ext, cur_name, cur_val,
-    eqtb_b32s1, first, last, max_buf_stack, name_length, name_of_file, name_of_file16,
-    name_of_file16_entry, name_length16, read_file_entry, read_file_ptr, read_open_entry,
-    set_buffer_entry, set_last, set_max_buf_stack, set_name_in_progress, set_name_length,
-    set_name_length16, set_name_of_file16, set_read_open_entry, set_stop_at_space,
+    buf_size, buffer_entry, buffer_ptr, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1,
+    first, last, max_buf_stack, name_length, name_length16, name_of_file, name_of_file16,
+    name_of_file16_entry, read_file_entry, read_file_ptr, read_open_entry, set_buffer_entry,
+    set_last, set_max_buf_stack, set_name_in_progress, set_name_length, set_name_length16,
+    set_name_of_file16, set_read_open_entry, set_stop_at_space,
 };
 
 // ---------------------------------------------------------------------------
@@ -25,7 +25,7 @@ use crate::globals::{
 #[repr(C)]
 pub(crate) struct UFile {
     pub handle: usize,
-    pub saved_char: i64,  // C `long` = i64 on Linux 64-bit
+    pub saved_char: i64, // C `long` = i64 on Linux 64-bit
     pub skip_next_lf: i16,
     pub encoding_mode: i16,
     pub conversion_data: *mut libc::c_void,
@@ -98,9 +98,11 @@ extern "C" {
         is_gz: libc::c_int,
     ) -> usize;
     fn ttstub_input_open_primary() -> usize;
-    fn ttstub_get_last_input_abspath(buffer: *mut libc::c_char, len: libc::size_t) -> libc::ssize_t;
+    fn ttstub_get_last_input_abspath(buffer: *mut libc::c_char, len: libc::size_t)
+        -> libc::ssize_t;
     fn ttstub_input_close(handle: usize) -> libc::c_int;
-    fn ttstub_input_seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) -> libc::size_t;
+    fn ttstub_input_seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int)
+        -> libc::size_t;
     fn ttstub_input_getc(handle: usize) -> libc::c_int;
     fn ttstub_input_ungetc(handle: usize, ch: libc::c_int) -> libc::c_int;
 
@@ -194,9 +196,7 @@ pub unsafe extern "C" fn tt_xetex_open_input(filefmt: libc::c_int) -> usize {
     } else if *name_of_file() == b'|' as libc::c_char {
         print_nl_cstr(c"Warning: ".as_ptr());
         diagnostic_begin_capture_warning_here();
-        print_cstr(
-            c"piped inputs from external commands are not implemented in Tectonic".as_ptr(),
-        );
+        print_cstr(c"piped inputs from external commands are not implemented in Tectonic".as_ptr());
         capture_to_diagnostic(std::ptr::null_mut());
         return INVALID_HANDLE;
     } else {
@@ -280,7 +280,11 @@ pub unsafe extern "C" fn u_open_in(
 }
 
 /// Wrapper so scan.rs can call `set_input_file_encoding` without re-declaring it.
-pub(crate) unsafe fn call_set_input_file_encoding(f: *mut libc::c_void, mode: i32, encoding_data: i32) {
+pub(crate) unsafe fn call_set_input_file_encoding(
+    f: *mut libc::c_void,
+    mode: i32,
+    encoding_data: i32,
+) {
     set_input_file_encoding(f as *mut UFile, mode, encoding_data);
 }
 
@@ -404,9 +408,7 @@ pub unsafe extern "C" fn input_line(f: *mut UFile) -> libc::c_int {
     let norm = crate::scan::get_input_normalization_state();
 
     if (*f).handle == INVALID_HANDLE {
-        _tt_abort(
-            c"reads from synthetic \"terminal\" file #0 should never happen".as_ptr(),
-        )
+        _tt_abort(c"reads from synthetic \"terminal\" file #0 should never happen".as_ptr())
     }
 
     set_last(first());
@@ -455,10 +457,8 @@ pub unsafe extern "C" fn input_line(f: *mut UFile) -> libc::c_int {
             1 | 2 => {
                 // NFC or NFD: convert to utf32Buf first, then normalize into buffer.
                 if UTF32_BUF.is_null() {
-                    UTF32_BUF = xcalloc(
-                        buf_size() as libc::size_t,
-                        std::mem::size_of::<u32>(),
-                    ) as *mut u32;
+                    UTF32_BUF =
+                        xcalloc(buf_size() as libc::size_t, std::mem::size_of::<u32>()) as *mut u32;
                 }
                 let tmp_len = xetex_ucnv_to_utf32(
                     cnv,
@@ -511,10 +511,8 @@ pub unsafe extern "C" fn input_line(f: *mut UFile) -> libc::c_int {
             1 | 2 => {
                 // NFC or NFD: read into utf32Buf then normalize.
                 if UTF32_BUF.is_null() {
-                    UTF32_BUF = xcalloc(
-                        buf_size() as libc::size_t,
-                        std::mem::size_of::<u32>(),
-                    ) as *mut u32;
+                    UTF32_BUF =
+                        xcalloc(buf_size() as libc::size_t, std::mem::size_of::<u32>()) as *mut u32;
                 }
                 let mut tmp_len: i32 = 0;
                 if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
@@ -574,9 +572,13 @@ pub unsafe extern "C" fn input_line(f: *mut UFile) -> libc::c_int {
 
     // Trim trailing spaces and EOL characters.
     loop {
-        if last() <= first() { break; }
+        if last() <= first() {
+            break;
+        }
         let c = buffer_entry(last() - 1);
-        if c != b' ' as i32 && c != b'\r' as i32 && c != b'\n' as i32 { break; }
+        if c != b' ' as i32 && c != b'\r' as i32 && c != b'\n' as i32 {
+            break;
+        }
         set_last(last() - 1);
     }
 

@@ -33,7 +33,8 @@ extern "C" {
     fn ttstub_input_get_size(handle: usize) -> libc::size_t;
     fn ttstub_input_get_mtime(handle: usize) -> libc::time_t;
     fn ttstub_input_close(handle: usize) -> libc::c_int;
-    fn ttstub_input_seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) -> libc::size_t;
+    fn ttstub_input_seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int)
+        -> libc::size_t;
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
 }
 
@@ -87,15 +88,12 @@ pub unsafe extern "C" fn get_microinterval() -> i32 {
         return -1;
     } else if crate::globals::microseconds() > m {
         let t = (s - 1 - crate::globals::epochseconds()) as f64 * 65536.0
-            + ((m as f64 + 1_000_000.0 - crate::globals::microseconds() as f64) / 100.0)
-                * 65536.0
+            + ((m as f64 + 1_000_000.0 - crate::globals::microseconds() as f64) / 100.0) * 65536.0
                 / 10_000.0;
         return t as i32;
     } else {
         let t = (s - crate::globals::epochseconds()) as f64 * 65536.0
-            + ((m - crate::globals::microseconds()) as f64 / 100.0)
-                * 65536.0
-                / 10_000.0;
+            + ((m - crate::globals::microseconds()) as f64 / 100.0) * 65536.0 / 10_000.0;
         return t as i32;
     }
 }
@@ -457,7 +455,13 @@ unsafe fn compare_paths(p1: *const libc::c_char, p2: *const libc::c_char) -> i32
         p1 = p1.add(1);
         p2 = p2.add(1);
     }
-    if ret < 0 { -1 } else if ret > 0 { 1 } else { 0 }
+    if ret < 0 {
+        -1
+    } else if ret > 0 {
+        1
+    } else {
+        0
+    }
 }
 
 /// Return true if the source file or line number changed since the last call to
@@ -491,7 +495,11 @@ pub unsafe extern "C" fn remember_source_info(srcfilename: i32, lineno: i32) {
 ///
 /// translated from xetex-texmfmp.c:30 (makepdftime, was static)
 unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
-    let lt = if utc { *libc::gmtime(&t) } else { *libc::localtime(&t) };
+    let lt = if utc {
+        *libc::gmtime(&t)
+    } else {
+        *libc::localtime(&t)
+    };
     let size = libc::strftime(
         time_str.as_mut_ptr() as *mut libc::c_char,
         30,
@@ -514,9 +522,17 @@ unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
     let gmt = *libc::gmtime(&t);
     let mut off = 60 * (lt.tm_hour - gmt.tm_hour) + lt.tm_min - gmt.tm_min;
     if lt.tm_year != gmt.tm_year {
-        off += if lt.tm_year > gmt.tm_year { 1440 } else { -1440 };
+        off += if lt.tm_year > gmt.tm_year {
+            1440
+        } else {
+            -1440
+        };
     } else if lt.tm_yday != gmt.tm_yday {
-        off += if lt.tm_yday > gmt.tm_yday { 1440 } else { -1440 };
+        off += if lt.tm_yday > gmt.tm_yday {
+            1440
+        } else {
+            -1440
+        };
     }
 
     if off == 0 {

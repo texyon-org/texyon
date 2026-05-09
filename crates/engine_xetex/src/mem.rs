@@ -7,20 +7,20 @@
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 
 use crate::globals::{
-    avail, cur_input_synctex_tag, eqtb_b32s1, hi_mem_min, line, lo_mem_max, max_nest_stack,
-    mem_b16s0, mem_b32s0, mem_b32s1, mem_end, mem_ptr, mem_word, nest_ptr, nest_size, rover,
-    restore_cur_list_from_nest, save_cur_list_to_nest, set_avail, set_cur_list_e_tex_aux,
-    set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
-    set_hi_mem_min, set_lo_mem_max, set_max_nest_stack, set_mem_b16s0, set_mem_b16s1,
-    set_mem_b32s0, set_mem_b32s1, set_mem_end, set_mem_gr, set_mem_ptr, set_mem_word,
-    set_nest_ptr, set_rover, set_temp_ptr, temp_ptr, cur_list_head,
+    avail, cur_input_synctex_tag, cur_list_head, eqtb_b32s1, hi_mem_min, line, lo_mem_max,
+    max_nest_stack, mem_b16s0, mem_b32s0, mem_b32s1, mem_end, mem_ptr, mem_word, nest_ptr,
+    nest_size, restore_cur_list_from_nest, rover, save_cur_list_to_nest, set_avail,
+    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf,
+    set_cur_list_tail, set_hi_mem_min, set_lo_mem_max, set_max_nest_stack, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_end, set_mem_gr, set_mem_ptr,
+    set_mem_word, set_nest_ptr, set_rover, set_temp_ptr, temp_ptr,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
-pub(crate) const TEX_NULL: i32 = -0x0FFF_FFFF;    // MIN_HALFWORD
+pub(crate) const TEX_NULL: i32 = -0x0FFF_FFFF; // MIN_HALFWORD
 const MEM_TOP: i32 = 4_999_999;
 const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
-const NULL_FLAG: i32 = -0x4000_0000;   // "missing item" in rule nodes
+const NULL_FLAG: i32 = -0x4000_0000; // "missing item" in rule nodes
 const NORMAL: u16 = 0;
 const MEDIUM_NODE_SIZE: i32 = 3;
 const SMALL_NODE_SIZE: i32 = 2;
@@ -42,11 +42,11 @@ const GLUE_BASE: i32 = 2_254_340;
 // Math node type and size constants (xetex_format.h:394–401; xetex-constants.h:119,136).
 const NOAD_SIZE: i32 = 4;
 const STYLE_NODE_SIZE: i32 = 3;
-const ORD_NOAD: u16 = 16;    // xetex_format.h:401
-const STYLE_NODE: u16 = 14;  // xetex_format.h:394
+const ORD_NOAD: u16 = 16; // xetex_format.h:401
+const STYLE_NODE: u16 = 14; // xetex_format.h:394
 const CHOICE_NODE: u16 = 15; // xetex_format.h:395
-// empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
-const EMPTY: i32 = 0;        // xetex-constants.h:230
+                             // empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
+const EMPTY: i32 = 0; // xetex-constants.h:230
 
 // Margin kern node (xetex-constants.h:115; xetex_format.h:396).
 const MARGIN_KERN_NODE_SIZE: i32 = 3;
@@ -296,15 +296,15 @@ pub unsafe extern "C" fn new_null_box() -> i32 {
     let p = get_node(BOX_NODE_SIZE);
     // NODE_type(p) = HLIST_NODE  →  mem[p].b16.s1 = HLIST_NODE
     set_mem_b16s1(p, HLIST_NODE);
-    set_mem_b16s0(p, 0);           // subtype
-    set_mem_b32s1(p + 1, 0);       // width
-    set_mem_b32s1(p + 2, 0);       // depth
-    set_mem_b32s1(p + 3, 0);       // height
-    set_mem_b32s1(p + 4, 0);       // shift_amount
+    set_mem_b16s0(p, 0); // subtype
+    set_mem_b32s1(p + 1, 0); // width
+    set_mem_b32s1(p + 2, 0); // depth
+    set_mem_b32s1(p + 3, 0); // height
+    set_mem_b32s1(p + 4, 0); // shift_amount
     set_mem_b32s1(p + 5, TEX_NULL); // list_ptr
-    set_mem_b16s1(p + 5, NORMAL);  // glue_sign (b16.s1, bytes 2-3 of word 5)
-    set_mem_b16s0(p + 5, NORMAL);  // glue_order (b16.s0, bytes 0-1 of word 5)
-    set_mem_gr(p + 6, 0.0);        // BOX_glue_set: mem[(p)+6].gr
+    set_mem_b16s1(p + 5, NORMAL); // glue_sign (b16.s1, bytes 2-3 of word 5)
+    set_mem_b16s0(p + 5, NORMAL); // glue_order (b16.s0, bytes 0-1 of word 5)
+    set_mem_gr(p + 6, 0.0); // BOX_glue_set: mem[(p)+6].gr
     p
 }
 
@@ -409,8 +409,8 @@ pub unsafe extern "C" fn new_math(w: i32, s: i16) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn new_spec(p: i32) -> i32 {
     let q = get_node(GLUE_SPEC_SIZE);
-    set_mem_word(q, mem_word(p));   // copy the whole first word (type + ref_count)
-    set_mem_b32s1(q, TEX_NULL);     // clear ref_count / link
+    set_mem_word(q, mem_word(p)); // copy the whole first word (type + ref_count)
+    set_mem_b32s1(q, TEX_NULL); // clear ref_count / link
     set_mem_b32s1(q + 1, mem_b32s1(p + 1)); // width
     set_mem_b32s1(q + 2, mem_b32s1(p + 2)); // stretch
     set_mem_b32s1(q + 3, mem_b32s1(p + 3)); // shrink
@@ -473,7 +473,7 @@ pub unsafe extern "C" fn new_skip_param(n: i16) -> i32 {
     set_temp_ptr(new_spec(eqtb_b32s1(GLUE_BASE + n as i32)));
     let p = new_glue(temp_ptr());
     set_mem_b32s1(temp_ptr(), TEX_NULL); // clear the spec's ref_count link
-    set_mem_b16s0(p, n as u16 + 1);     // subtype = n + 1
+    set_mem_b16s0(p, n as u16 + 1); // subtype = n + 1
     p
 }
 
@@ -674,7 +674,7 @@ pub unsafe extern "C" fn new_noad() -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn new_style(s: i16) -> i32 {
     let p = get_node(STYLE_NODE_SIZE);
-    set_mem_b16s1(p, STYLE_NODE);  // NODE_type(p)
+    set_mem_b16s1(p, STYLE_NODE); // NODE_type(p)
     set_mem_b16s0(p, s as u16);
     set_mem_b32s1(p + 1, 0);
     set_mem_b32s1(p + 2, 0);
@@ -687,7 +687,7 @@ pub unsafe extern "C" fn new_style(s: i16) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn new_choice() -> i32 {
     let p = get_node(STYLE_NODE_SIZE);
-    set_mem_b16s1(p, CHOICE_NODE);  // NODE_type(p)
+    set_mem_b16s1(p, CHOICE_NODE); // NODE_type(p)
     set_mem_b16s0(p, 0);
     set_mem_b32s0(p + 1, TEX_NULL);
     set_mem_b32s1(p + 1, TEX_NULL);
@@ -702,7 +702,7 @@ pub unsafe extern "C" fn new_choice() -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn new_margin_kern(w: i32, _p: i32, side: i16) -> i32 {
     let k = get_node(MARGIN_KERN_NODE_SIZE);
-    set_mem_b16s1(k, MARGIN_KERN_NODE);  // NODE_type(k)
+    set_mem_b16s1(k, MARGIN_KERN_NODE); // NODE_type(k)
     set_mem_b16s0(k, side as u16);
     set_mem_b32s1(k + 1, w);
     k

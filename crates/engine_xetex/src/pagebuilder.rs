@@ -2,15 +2,14 @@
 #![allow(non_upper_case_globals)]
 
 use crate::globals::{
-    best_height_plus_depth, cur_mark, cur_ptr, dead_cycles, disc_ptr, eqtb_b32s1,
-    insert_penalties, last_glue, line, mem_b16s0,
-    mem_b16s1, mem_b32s0, mem_b32s1, nest_ptr, output_active, page_contents, page_so_far,
-    page_tail, sa_root, semantic_pagination_enabled, set_best_height_plus_depth,
-    set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_mode_line, set_cur_list_tail,
-    set_cur_mark, set_dead_cycles, set_disc_ptr, set_eqtb_b32s1, set_help_line, set_help_ptr,
-    set_insert_penalties, set_last_glue, set_last_kern, set_last_node_type, set_last_penalty,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_nest_tail, set_output_active,
-    set_page_contents, set_page_so_far, set_page_tail, set_sa_root, temp_ptr,
+    best_height_plus_depth, cur_mark, cur_ptr, dead_cycles, disc_ptr, eqtb_b32s1, insert_penalties,
+    last_glue, line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, nest_ptr, output_active,
+    page_contents, page_so_far, page_tail, sa_root, semantic_pagination_enabled,
+    set_best_height_plus_depth, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_mode_line,
+    set_cur_list_tail, set_cur_mark, set_dead_cycles, set_disc_ptr, set_eqtb_b32s1, set_help_line,
+    set_help_ptr, set_insert_penalties, set_last_glue, set_last_kern, set_last_node_type,
+    set_last_penalty, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_nest_tail,
+    set_output_active, set_page_contents, set_page_so_far, set_page_tail, set_sa_root, temp_ptr,
 };
 
 // File-static variables (C module-level statics)
@@ -155,7 +154,10 @@ unsafe fn ensure_vbox(n: u8) {
     set_help_ptr(3);
     set_help_line(2, c"Tut tut: You're trying to \\insert into a".as_ptr());
     set_help_line(1, c"\\box register that now contains an \\hbox.".as_ptr());
-    set_help_line(0, c"Proceed, and I'll discard its present contents.".as_ptr());
+    set_help_line(
+        0,
+        c"Proceed, and I'll discard its present contents.".as_ptr(),
+    );
     box_error(n);
 }
 
@@ -217,8 +219,8 @@ unsafe fn fire_up(c: i32) {
 
     set_insert_penalties(0);
     let save_split_top_skip = eqtb_b32s1(GLUE_BASE + GLUE_PAR__split_top_skip);
-    let process_inserts = eqtb_b32s1(INT_BASE + INT_PAR__holding_inserts) <= 0
-        && !semantic_pagination_enabled();
+    let process_inserts =
+        eqtb_b32s1(INT_BASE + INT_PAR__holding_inserts) <= 0 && !semantic_pagination_enabled();
 
     if process_inserts {
         // 1053: Prepare insertion boxes as queues
@@ -283,12 +285,8 @@ unsafe fn fire_up(c: i32) {
                             );
                             if mem_b32s0(p + 4) != TEX_NULL {
                                 // INSERTION_NODE_ins_ptr != TEX_NULL
-                                let tmp =
-                                    vpackage(mem_b32s0(p + 4), 0, ADDITIONAL, MAX_HALFWORD);
-                                set_mem_b32s1(
-                                    p + 3,
-                                    mem_b32s1(tmp + 3) + mem_b32s1(tmp + 2),
-                                ); // BOX_height = BOX_height(tmp)+BOX_depth(tmp)
+                                let tmp = vpackage(mem_b32s0(p + 4), 0, ADDITIONAL, MAX_HALFWORD);
+                                set_mem_b32s1(p + 3, mem_b32s1(tmp + 3) + mem_b32s1(tmp + 2)); // BOX_height = BOX_height(tmp)+BOX_depth(tmp)
                                 free_node(tmp, BOX_NODE_SIZE);
                                 inner_wait = true;
                             }
@@ -334,20 +332,16 @@ unsafe fn fire_up(c: i32) {
                     if mem_b32s1(cur_ptr() + 1) == TEX_NULL {
                         // ETEX_MARK_sa_first_mark == TEX_NULL
                         set_mem_b32s1(cur_ptr() + 1, mem_b32s1(p + 1)); // = MARK_NODE_ptr
-                        set_mem_b32s0(
-                            mem_b32s1(p + 1),
-                            mem_b32s0(mem_b32s1(p + 1)) + 1,
-                        ); // TOKEN_LIST_ref_count++
+                        set_mem_b32s0(mem_b32s1(p + 1), mem_b32s0(mem_b32s1(p + 1)) + 1);
+                        // TOKEN_LIST_ref_count++
                     }
                     if mem_b32s0(cur_ptr() + 2) != TEX_NULL {
                         // ETEX_MARK_sa_bot_mark != TEX_NULL
                         delete_token_ref(mem_b32s0(cur_ptr() + 2));
                     }
                     set_mem_b32s0(cur_ptr() + 2, mem_b32s1(p + 1)); // sa_bot_mark = MARK_NODE_ptr
-                    set_mem_b32s0(
-                        mem_b32s1(p + 1),
-                        mem_b32s0(mem_b32s1(p + 1)) + 1,
-                    ); // TOKEN_LIST_ref_count++
+                    set_mem_b32s0(mem_b32s1(p + 1), mem_b32s0(mem_b32s1(p + 1)) + 1);
+                // TOKEN_LIST_ref_count++
                 } else {
                     // 1051: Update first_mark and bot_mark (default)
                     if cur_mark(FIRST_MARK_CODE) == TEX_NULL {
@@ -477,10 +471,7 @@ unsafe fn fire_up(c: i32) {
             set_cur_list_mode(-VMODE);
             set_cur_list_aux_b32s1(IGNORE_DEPTH); // prev_depth
             set_cur_list_mode_line(-line());
-            begin_token_list(
-                eqtb_b32s1(LOCAL_BASE + LOCAL__output_routine),
-                OUTPUT_TEXT,
-            );
+            begin_token_list(eqtb_b32s1(LOCAL_BASE + LOCAL__output_routine), OUTPUT_TEXT);
             new_save_level(OUTPUT_GROUP);
             normal_paragraph();
             scan_left_brace();
@@ -560,10 +551,7 @@ pub unsafe extern "C" fn build_page() {
                     // temp_ptr = glue_ptr(q) after new_skip_param
                     if mem_b32s1(temp_ptr() + 1) > mem_b32s1(p + 3) {
                         // BOX_width(temp_ptr) > BOX_height(p)
-                        set_mem_b32s1(
-                            temp_ptr() + 1,
-                            mem_b32s1(temp_ptr() + 1) - mem_b32s1(p + 3),
-                        );
+                        set_mem_b32s1(temp_ptr() + 1, mem_b32s1(temp_ptr() + 1) - mem_b32s1(p + 3));
                     } else {
                         set_mem_b32s1(temp_ptr() + 1, 0);
                     }
@@ -652,8 +640,7 @@ pub unsafe extern "C" fn build_page() {
                     let h = if eqtb_b32s1(COUNT_BASE + n as i32) == 1000 {
                         mem_b32s1(r + 3)
                     } else {
-                        x_over_n(mem_b32s1(r + 3), 1000)
-                            * eqtb_b32s1(COUNT_BASE + n as i32)
+                        x_over_n(mem_b32s1(r + 3), 1000) * eqtb_b32s1(COUNT_BASE + n as i32)
                     };
                     set_page_so_far(0, page_so_far(0) - h - mem_b32s1(q2 + 1)); // BOX_width
                     let stretch_ord = mem_b16s1(q2) as usize; // GLUE_SPEC_stretch_order
@@ -692,8 +679,7 @@ pub unsafe extern "C" fn build_page() {
                     );
                 } else {
                     set_mem_b32s1(r + 2, p); // PAGE_INS_NODE_last_ins_ptr = p
-                    let delta =
-                        page_so_far(0) - page_so_far(1) - page_so_far(7) + page_so_far(6);
+                    let delta = page_so_far(0) - page_so_far(1) - page_so_far(7) + page_so_far(6);
                     let count_n = eqtb_b32s1(COUNT_BASE + n as i32);
                     let h = if count_n == 1000 {
                         mem_b32s1(p + 3) // BOX_height(p)
@@ -702,8 +688,7 @@ pub unsafe extern "C" fn build_page() {
                     };
 
                     if (h <= 0 || h <= delta)
-                        && mem_b32s1(p + 3) + mem_b32s1(r + 3)
-                            <= eqtb_b32s1(SCALED_BASE + n as i32)
+                        && mem_b32s1(p + 3) + mem_b32s1(r + 3) <= eqtb_b32s1(SCALED_BASE + n as i32)
                     {
                         set_page_so_far(0, page_so_far(0) - h);
                         set_mem_b32s1(r + 3, mem_b32s1(r + 3) + mem_b32s1(p + 3));
@@ -735,9 +720,7 @@ pub unsafe extern "C" fn build_page() {
                         if q2 == TEX_NULL {
                             set_insert_penalties(insert_penalties() + EJECT_PENALTY);
                         } else if mem_b16s1(q2) as i32 == PENALTY_NODE {
-                            set_insert_penalties(
-                                insert_penalties() + mem_b32s1(q2 + 1),
-                            );
+                            set_insert_penalties(insert_penalties() + mem_b32s1(q2 + 1));
                         }
                     }
                 }
@@ -862,10 +845,7 @@ pub unsafe extern "C" fn build_page() {
         // 1038/1033: contribute — check depth limit, link p into page, goto done
         if need_contribute {
             if page_so_far(7) > PAGE_MAX_DEPTH {
-                set_page_so_far(
-                    1,
-                    page_so_far(1) + page_so_far(7) - PAGE_MAX_DEPTH,
-                );
+                set_page_so_far(1, page_so_far(1) + page_so_far(7) - PAGE_MAX_DEPTH);
                 set_page_so_far(7, PAGE_MAX_DEPTH);
             }
             set_mem_b32s1(page_tail(), p);

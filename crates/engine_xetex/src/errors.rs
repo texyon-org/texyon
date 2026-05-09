@@ -179,12 +179,21 @@ pub unsafe extern "C" fn confusion(s: *const libc::c_char) -> ! {
         print_cstr(s);
         print_char(b')' as i32);
         set_help_ptr(1);
-        set_help_line(0, c"I'm broken. Please show this to someone who can fix can fix".as_ptr());
+        set_help_line(
+            0,
+            c"I'm broken. Please show this to someone who can fix can fix".as_ptr(),
+        );
     } else {
         print_cstr(c"I can't go on meeting you like this".as_ptr());
         set_help_ptr(2);
-        set_help_line(1, c"One of your faux pas seems to have wounded me deeply...".as_ptr());
-        set_help_line(0, c"in fact, I'm barely conscious. Please fix it and try again.".as_ptr());
+        set_help_line(
+            1,
+            c"One of your faux pas seems to have wounded me deeply...".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"in fact, I'm barely conscious. Please fix it and try again.".as_ptr(),
+        );
     }
     post_error_message(true);
     _tt_abort(c"halted on confusion()".as_ptr())

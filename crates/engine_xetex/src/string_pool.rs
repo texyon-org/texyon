@@ -54,7 +54,10 @@ pub unsafe extern "C" fn length(s: i32) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn make_string() -> i32 {
     if str_ptr() == max_strings() {
-        overflow(c"number of strings".as_ptr(), max_strings() - init_str_ptr());
+        overflow(
+            c"number of strings".as_ptr(),
+            max_strings() - init_str_ptr(),
+        );
     }
     set_str_ptr(str_ptr() + 1);
     set_str_start(str_ptr() - TOO_BIG_CHAR, pool_ptr());
@@ -210,10 +213,7 @@ pub unsafe extern "C" fn load_pool_strings(spare_size: i32) -> i32 {
     // Tectonic's array has exactly two entries: a sentinel string and "",
     // so the loop body runs once (for the sentinel) and then once more for "".
     // We replicate it by iterating the same constants here.
-    static STRING_CONSTANTS: &[&[u8]] = &[
-        b"this marks the start of the stringpool",
-        b"",
-    ];
+    static STRING_CONSTANTS: &[&[u8]] = &[b"this marks the start of the stringpool", b""];
 
     let mut total_len: usize = 0;
     let mut g: i32 = 0;

@@ -29,13 +29,13 @@ const V_TEMPLATE: u16 = 2;
 const BACKED_UP: u16 = 3;
 const INSERTED: u16 = 5;
 const MACRO: u16 = 6;
-const OUTPUT_TEXT: u16 = 7;    // xetex-constants.h:206
-const MARK_TEXT: u16 = 15;     // xetex-constants.h:214
-const WRITE_TEXT: u16 = 18;    // xetex-constants.h:217
-// Token encoding (xetex-constants.h:348, xetex_format.h:201, xetex-constants.h:62).
+const OUTPUT_TEXT: u16 = 7; // xetex-constants.h:206
+const MARK_TEXT: u16 = 15; // xetex-constants.h:214
+const WRITE_TEXT: u16 = 18; // xetex-constants.h:217
+                            // Token encoding (xetex-constants.h:348, xetex_format.h:201, xetex-constants.h:62).
 const CS_TOKEN_FLAG: i32 = 0x1FFFFFF;
 const FROZEN_RELAX: i32 = 2_243_226 + 7; // FROZEN_CONTROL_SEQUENCE + 7
-// Scanner-state constants (xetex-constants.h:221).
+                                         // Scanner-state constants (xetex-constants.h:221).
 const MID_LINE: u16 = 1;
 
 // Brace-token limits for align_state tracking (xetex-constants.h:350,352).
@@ -66,7 +66,9 @@ pub unsafe extern "C" fn end_token_list() {
         if align_state() > 500_000 {
             set_align_state(0);
         } else {
-            crate::errors::fatal_error(c"(interwoven alignment preambles are not allowed)".as_ptr());
+            crate::errors::fatal_error(
+                c"(interwoven alignment preambles are not allowed)".as_ptr(),
+            );
         }
     }
     let ptr = input_ptr() - 1;
@@ -282,9 +284,9 @@ pub unsafe extern "C" fn insert_relax() {
 // INT_BASE + INT_PAR__tracing_macros (xetex_format.h:208, :65)
 const INT_BASE_BTL: i32 = 7_826_729;
 const INT_PAR_TRACING_MACROS: i32 = 30; // xetex_format.h:65
-const LOCAL_BASE_BTL: i32 = 2_254_871;  // xetex_format.h:208
+const LOCAL_BASE_BTL: i32 = 2_254_871; // xetex_format.h:208
 const LOCAL__OUTPUT_ROUTINE_BTL: i32 = 1; // xetex_format.h:173
-const ASSIGN_TOKS_BTL: u16 = 73;        // xetex_format.h:313
+const ASSIGN_TOKS_BTL: u16 = 73; // xetex_format.h:313
 
 /// translated from xetex-xetex0.c:2970 (begin_token_list)
 #[no_mangle]

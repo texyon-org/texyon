@@ -469,7 +469,7 @@ mod raw {
         pub(super) static mut main_p: i32;
         pub(super) static mut main_k: i32;
         // main_control inner-loop state (xetex-xetexd.h:672–686).
-        pub(super) static mut main_f: i32;           // internal_font_number
+        pub(super) static mut main_f: i32; // internal_font_number
         pub(super) static mut main_i: crate::mem_types::B16x4;
         pub(super) static mut main_j: crate::mem_types::B16x4;
         pub(super) static mut main_h: i32;
@@ -785,7 +785,9 @@ pub(crate) fn lo_mem_max() -> i32 {
 #[allow(dead_code)]
 pub(crate) fn set_lo_mem_max(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::lo_mem_max = v; }
+    unsafe {
+        raw::lo_mem_max = v;
+    }
 }
 
 #[inline]
@@ -797,7 +799,9 @@ pub(crate) fn hi_mem_min() -> i32 {
 #[inline]
 pub(crate) fn set_hi_mem_min(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::hi_mem_min = v; }
+    unsafe {
+        raw::hi_mem_min = v;
+    }
 }
 
 #[inline]
@@ -809,7 +813,9 @@ pub(crate) fn avail() -> i32 {
 #[inline]
 pub(crate) fn set_avail(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::avail = v; }
+    unsafe {
+        raw::avail = v;
+    }
 }
 
 #[inline]
@@ -821,7 +827,9 @@ pub(crate) fn mem_end() -> i32 {
 #[inline]
 pub(crate) fn set_mem_end(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::mem_end = v; }
+    unsafe {
+        raw::mem_end = v;
+    }
 }
 
 #[inline]
@@ -833,7 +841,9 @@ pub(crate) fn rover() -> i32 {
 #[inline]
 pub(crate) fn set_rover(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::rover = v; }
+    unsafe {
+        raw::rover = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -857,37 +867,51 @@ pub(crate) fn cur_input() -> InputState {
 /// Writes `cur_input.loc = v`.
 #[inline]
 pub(crate) fn set_cur_input_loc(v: i32) {
-    unsafe { raw::cur_input.loc = v; }
+    unsafe {
+        raw::cur_input.loc = v;
+    }
 }
 /// Writes `cur_input.start = v`.
 #[inline]
 pub(crate) fn set_cur_input_start(v: i32) {
-    unsafe { raw::cur_input.start = v; }
+    unsafe {
+        raw::cur_input.start = v;
+    }
 }
 /// Writes `cur_input.state = v`.
 #[inline]
 pub(crate) fn set_cur_input_state(v: u16) {
-    unsafe { raw::cur_input.state = v; }
+    unsafe {
+        raw::cur_input.state = v;
+    }
 }
 /// Writes `cur_input.index = v`.
 #[inline]
 pub(crate) fn set_cur_input_index(v: u16) {
-    unsafe { raw::cur_input.index = v; }
+    unsafe {
+        raw::cur_input.index = v;
+    }
 }
 /// Writes `cur_input.name = v`.
 #[inline]
 pub(crate) fn set_cur_input_name(v: i32) {
-    unsafe { raw::cur_input.name = v; }
+    unsafe {
+        raw::cur_input.name = v;
+    }
 }
 /// Writes `cur_input.synctex_tag = v`.
 #[inline]
 pub(crate) fn set_cur_input_synctex_tag(v: i32) {
-    unsafe { raw::cur_input.synctex_tag = v; }
+    unsafe {
+        raw::cur_input.synctex_tag = v;
+    }
 }
 /// Replaces the entire `cur_input` struct (e.g. when restoring from input_stack).
 #[inline]
 pub(crate) fn set_cur_input(v: InputState) {
-    unsafe { raw::cur_input = v; }
+    unsafe {
+        raw::cur_input = v;
+    }
 }
 
 /// Returns the current source line number.
@@ -905,7 +929,9 @@ pub(crate) fn open_parens() -> i32 {
 /// Sets `open_parens = v`.
 #[inline]
 pub(crate) fn set_open_parens(v: i32) {
-    unsafe { raw::open_parens = v; }
+    unsafe {
+        raw::open_parens = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -927,7 +953,9 @@ pub(crate) fn mem_b16s0(p: i32) -> u16 {
 #[inline]
 pub(crate) fn set_mem_b16s0(p: i32, v: u16) {
     // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).b16.s0 = v; }
+    unsafe {
+        (*raw::mem.offset(p as isize)).b16.s0 = v;
+    }
 }
 
 /// Read `mem[p].b16.s1` (high 16 bits of the first 32-bit half-word).
@@ -940,7 +968,9 @@ pub(crate) fn mem_b16s1(p: i32) -> u16 {
 #[inline]
 pub(crate) fn set_mem_b16s1(p: i32, v: u16) {
     // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).b16.s1 = v; }
+    unsafe {
+        (*raw::mem.offset(p as isize)).b16.s1 = v;
+    }
 }
 /// Read `mem[p].b16.s2` (low 16 bits of the second 32-bit half-word).
 #[inline]
@@ -956,13 +986,17 @@ pub(crate) fn mem_b16s3(p: i32) -> u16 {
 #[inline]
 pub(crate) fn set_mem_b16s2(p: i32, v: u16) {
     // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).b16.s2 = v; }
+    unsafe {
+        (*raw::mem.offset(p as isize)).b16.s2 = v;
+    }
 }
 /// Write `v` into `mem[p].b16.s3`.
 #[inline]
 pub(crate) fn set_mem_b16s3(p: i32, v: u16) {
     // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).b16.s3 = v; }
+    unsafe {
+        (*raw::mem.offset(p as isize)).b16.s3 = v;
+    }
 }
 
 /// Read the `gr` (f64) field of `mem[p]`.
@@ -976,7 +1010,9 @@ pub(crate) fn mem_gr(p: i32) -> f64 {
 #[inline]
 pub(crate) fn set_mem_gr(p: i32, v: f64) {
     // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).gr = v; }
+    unsafe {
+        (*raw::mem.offset(p as isize)).gr = v;
+    }
 }
 
 /// Read the `ptr` (void*) field of `mem[p]`.
@@ -996,7 +1032,9 @@ pub(crate) fn mem_node_addr(p: i32) -> *mut std::ffi::c_void {
 #[inline]
 pub(crate) fn set_mem_ptr(p: i32, v: *mut std::ffi::c_void) {
     // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).ptr = v; }
+    unsafe {
+        (*raw::mem.offset(p as isize)).ptr = v;
+    }
 }
 
 /// Return a `*const u16` pointing to `mem[p]` — used for NATIVE_NODE_text.
@@ -1023,7 +1061,9 @@ pub(crate) fn mem_word(p: i32) -> crate::mem_types::MemoryWord {
 #[inline]
 pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
     // SAFETY: see module-level doc.
-    unsafe { *raw::mem.offset(p as isize) = w; }
+    unsafe {
+        *raw::mem.offset(p as isize) = w;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1044,7 +1084,9 @@ pub(crate) fn eqtb_word(p: i32) -> crate::mem_types::MemoryWord {
 /// Write a full MemoryWord to `eqtb[p]`.
 #[inline]
 pub(crate) fn set_eqtb_word(p: i32, w: crate::mem_types::MemoryWord) {
-    unsafe { *raw::eqtb.offset(p as isize) = w; }
+    unsafe {
+        *raw::eqtb.offset(p as isize) = w;
+    }
 }
 /// Read `eqtb[p].b32.s1` (the "value" half of an equivalents entry).
 #[inline]
@@ -1056,7 +1098,9 @@ pub(crate) fn eqtb_b32s1(p: i32) -> i32 {
 #[inline]
 pub(crate) fn set_eqtb_b32s1(p: i32, v: i32) {
     // SAFETY: see module-level doc. Caller ensures p is a valid eqtb index.
-    unsafe { (*raw::eqtb.offset(p as isize)).b32.s1 = v; }
+    unsafe {
+        (*raw::eqtb.offset(p as isize)).b32.s1 = v;
+    }
 }
 /// Read `eqtb[p].b16.s1` (the "type" half of an equivalents entry).
 #[inline]
@@ -1066,7 +1110,9 @@ pub(crate) fn eqtb_b16s1(p: i32) -> u16 {
 /// Write `v` into `eqtb[p].b16.s1`.
 #[inline]
 pub(crate) fn set_eqtb_b16s1(p: i32, v: u16) {
-    unsafe { (*raw::eqtb.offset(p as isize)).b16.s1 = v; }
+    unsafe {
+        (*raw::eqtb.offset(p as isize)).b16.s1 = v;
+    }
 }
 /// Read `eqtb[p].b16.s0` (the "level" half of an equivalents entry).
 #[inline]
@@ -1076,7 +1122,9 @@ pub(crate) fn eqtb_b16s0(p: i32) -> u16 {
 /// Write `v` into `eqtb[p].b16.s0`.
 #[inline]
 pub(crate) fn set_eqtb_b16s0(p: i32, v: u16) {
-    unsafe { (*raw::eqtb.offset(p as isize)).b16.s0 = v; }
+    unsafe {
+        (*raw::eqtb.offset(p as isize)).b16.s0 = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1091,12 +1139,16 @@ pub(crate) fn name_of_file() -> *mut libc::c_char {
 /// Write `name_of_file = v`.
 #[inline]
 pub(crate) fn set_name_of_file(v: *mut libc::c_char) {
-    unsafe { raw::name_of_file = v; }
+    unsafe {
+        raw::name_of_file = v;
+    }
 }
 /// Write `name_length = v`.
 #[inline]
 pub(crate) fn set_name_length(v: i32) {
-    unsafe { raw::name_length = v; }
+    unsafe {
+        raw::name_length = v;
+    }
 }
 /// Returns `name_of_file16` (UTF-16 name buffer).
 #[inline]
@@ -1106,7 +1158,9 @@ pub(crate) fn name_of_file16() -> *mut u16 {
 /// Write `name_of_file16 = v`.
 #[inline]
 pub(crate) fn set_name_of_file16(v: *mut u16) {
-    unsafe { raw::name_of_file16 = v; }
+    unsafe {
+        raw::name_of_file16 = v;
+    }
 }
 /// Returns `name_length16`.
 #[inline]
@@ -1116,7 +1170,9 @@ pub(crate) fn name_length16() -> i32 {
 /// Write `name_length16 = v`.
 #[inline]
 pub(crate) fn set_name_length16(v: i32) {
-    unsafe { raw::name_length16 = v; }
+    unsafe {
+        raw::name_length16 = v;
+    }
 }
 /// Returns `name_length`.
 #[inline]
@@ -1153,7 +1209,9 @@ pub(crate) fn str_pool_entry(k: i32) -> u16 {
 #[inline]
 pub(crate) fn set_current_diagnostic(v: *mut std::ffi::c_void) {
     // SAFETY: see module-level doc.
-    unsafe { raw::current_diagnostic = v; }
+    unsafe {
+        raw::current_diagnostic = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1174,7 +1232,9 @@ pub(crate) fn pseudo_files() -> i32 {
 /// Sets `pseudo_files`.
 #[inline]
 pub(crate) fn set_pseudo_files(v: i32) {
-    unsafe { raw::pseudo_files = v; }
+    unsafe {
+        raw::pseudo_files = v;
+    }
 }
 
 /// Returns `full_source_filename_stack[k]` (the str_number of the source file
@@ -1211,7 +1271,9 @@ pub(crate) fn hash_s0(p: i32) -> i32 {
 /// Write `hash[p].s0 = v`.
 #[inline]
 pub(crate) fn set_hash_s0(p: i32, v: i32) {
-    unsafe { (*raw::hash.offset(p as isize)).s0 = v; }
+    unsafe {
+        (*raw::hash.offset(p as isize)).s0 = v;
+    }
 }
 /// Read `hash[p].s1` (the "text" half of a hash-table entry).
 #[inline]
@@ -1222,7 +1284,9 @@ pub(crate) fn hash_s1(p: i32) -> i32 {
 /// Write `hash[p].s1 = v`.
 #[inline]
 pub(crate) fn set_hash_s1(p: i32, v: i32) {
-    unsafe { (*raw::hash.offset(p as isize)).s1 = v; }
+    unsafe {
+        (*raw::hash.offset(p as isize)).s1 = v;
+    }
 }
 
 /// Read `prim[p].s0` (the link half of a primitive-table entry).
@@ -1233,7 +1297,9 @@ pub(crate) fn prim_s0(p: i32) -> i32 {
 /// Write `prim[p].s0 = v`.
 #[inline]
 pub(crate) fn set_prim_s0(p: i32, v: i32) {
-    unsafe { raw::prim[p as usize].s0 = v; }
+    unsafe {
+        raw::prim[p as usize].s0 = v;
+    }
 }
 /// Read `prim[p].s1` (the "text" half of a primitive-table entry).
 #[inline]
@@ -1244,7 +1310,9 @@ pub(crate) fn prim_s1(p: i32) -> i32 {
 /// Write `prim[p].s1 = v`.
 #[inline]
 pub(crate) fn set_prim_s1(p: i32, v: i32) {
-    unsafe { raw::prim[p as usize].s1 = v; }
+    unsafe {
+        raw::prim[p as usize].s1 = v;
+    }
 }
 
 /// Returns `eqtb_top`.
@@ -1265,7 +1333,9 @@ pub(crate) fn hash_used() -> i32 {
 }
 #[inline]
 pub(crate) fn set_hash_used(v: i32) {
-    unsafe { raw::hash_used = v; }
+    unsafe {
+        raw::hash_used = v;
+    }
 }
 #[inline]
 pub(crate) fn hash_extra() -> i32 {
@@ -1277,7 +1347,9 @@ pub(crate) fn hash_high() -> i32 {
 }
 #[inline]
 pub(crate) fn set_hash_high(v: i32) {
-    unsafe { raw::hash_high = v; }
+    unsafe {
+        raw::hash_high = v;
+    }
 }
 #[inline]
 pub(crate) fn no_new_control_sequence() -> bool {
@@ -1285,7 +1357,9 @@ pub(crate) fn no_new_control_sequence() -> bool {
 }
 #[inline]
 pub(crate) fn set_no_new_control_sequence(v: bool) {
-    unsafe { raw::no_new_control_sequence = v; }
+    unsafe {
+        raw::no_new_control_sequence = v;
+    }
 }
 #[inline]
 pub(crate) fn prim_used() -> i32 {
@@ -1293,7 +1367,9 @@ pub(crate) fn prim_used() -> i32 {
 }
 #[inline]
 pub(crate) fn set_prim_used(v: i32) {
-    unsafe { raw::prim_used = v; }
+    unsafe {
+        raw::prim_used = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1308,7 +1384,9 @@ pub(crate) fn temp_ptr() -> i32 {
 #[inline]
 pub(crate) fn set_temp_ptr(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::temp_ptr = v; }
+    unsafe {
+        raw::temp_ptr = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1326,7 +1404,9 @@ pub(crate) fn dig_entry(k: usize) -> u8 {
 #[inline]
 pub(crate) fn set_dig_entry(k: usize, v: u8) {
     // SAFETY: see module-level doc.
-    unsafe { raw::dig[k] = v; }
+    unsafe {
+        raw::dig[k] = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1343,7 +1423,9 @@ pub(crate) fn selector() -> i32 {
 #[inline]
 pub(crate) fn set_selector(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::selector = v; }
+    unsafe {
+        raw::selector = v;
+    }
 }
 
 /// Returns true while the engine is processing a `\special` (xetex-xetexd.h:439).
@@ -1363,7 +1445,9 @@ pub(crate) fn term_offset() -> i32 {
 #[inline]
 pub(crate) fn set_term_offset(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::term_offset = v; }
+    unsafe {
+        raw::term_offset = v;
+    }
 }
 
 /// Returns `file_offset` (columns written to log file since last newline).
@@ -1376,7 +1460,9 @@ pub(crate) fn file_offset() -> i32 {
 #[inline]
 pub(crate) fn set_file_offset(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::file_offset = v; }
+    unsafe {
+        raw::file_offset = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1400,7 +1486,9 @@ pub(crate) fn log_file() -> usize {
 #[inline]
 pub(crate) fn set_log_file(v: usize) {
     // SAFETY: see module-level doc.
-    unsafe { raw::log_file = v; }
+    unsafe {
+        raw::log_file = v;
+    }
 }
 
 /// Returns `write_file[i]`, the output handle for write-stream `i` (0–15).
@@ -1442,7 +1530,9 @@ pub(crate) fn tally() -> i32 {
 #[inline]
 pub(crate) fn set_tally(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::tally = v; }
+    unsafe {
+        raw::tally = v;
+    }
 }
 
 #[inline]
@@ -1463,12 +1553,16 @@ pub(crate) fn first_count() -> i32 {
 #[inline]
 pub(crate) fn set_first_count(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::first_count = v; }
+    unsafe {
+        raw::first_count = v;
+    }
 }
 #[inline]
 pub(crate) fn set_trick_count(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::trick_count = v; }
+    unsafe {
+        raw::trick_count = v;
+    }
 }
 
 #[inline]
@@ -1485,7 +1579,9 @@ pub(crate) fn trick_buf(k: usize) -> u16 {
 #[inline]
 pub(crate) fn set_trick_buf(k: usize, v: u16) {
     // SAFETY: see module-level doc.
-    unsafe { raw::trick_buf[k] = v; }
+    unsafe {
+        raw::trick_buf[k] = v;
+    }
 }
 
 #[inline]
@@ -1501,13 +1597,17 @@ pub(crate) fn pool_ptr() -> i32 {
 #[inline]
 pub(crate) fn set_pool_ptr(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::pool_ptr = v; }
+    unsafe {
+        raw::pool_ptr = v;
+    }
 }
 /// Write `str_pool[k] = v`.
 #[inline]
 pub(crate) fn set_str_pool(k: i32, v: u16) {
     // SAFETY: see module-level doc.
-    unsafe { *raw::str_pool.offset(k as isize) = v; }
+    unsafe {
+        *raw::str_pool.offset(k as isize) = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1518,13 +1618,17 @@ pub(crate) fn set_str_pool(k: i32, v: u16) {
 #[inline]
 pub(crate) fn set_str_start(k: i32, v: i32) {
     // SAFETY: see module-level doc. Caller ensures k is a valid string index.
-    unsafe { *raw::str_start.offset(k as isize) = v; }
+    unsafe {
+        *raw::str_start.offset(k as isize) = v;
+    }
 }
 /// Write `str_ptr = v`.
 #[inline]
 pub(crate) fn set_str_ptr(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::str_ptr = v; }
+    unsafe {
+        raw::str_ptr = v;
+    }
 }
 #[inline]
 pub(crate) fn max_strings() -> i32 {
@@ -1561,7 +1665,9 @@ pub(crate) fn help_ptr() -> u8 {
 #[inline]
 pub(crate) fn set_help_ptr(v: u8) {
     // SAFETY: see module-level doc.
-    unsafe { raw::help_ptr = v; }
+    unsafe {
+        raw::help_ptr = v;
+    }
 }
 /// Read `help_line[k]` as a C string pointer.
 #[inline]
@@ -1573,7 +1679,9 @@ pub(crate) fn help_line(k: usize) -> *const libc::c_char {
 #[inline]
 pub(crate) fn set_help_line(k: usize, v: *const libc::c_char) {
     // SAFETY: see module-level doc. k must be < 6.
-    unsafe { raw::help_line[k] = v; }
+    unsafe {
+        raw::help_line[k] = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1603,7 +1711,9 @@ pub(crate) fn interaction() -> u8 {
 #[inline]
 pub(crate) fn set_interaction(v: u8) {
     // SAFETY: see module-level doc.
-    unsafe { raw::interaction = v; }
+    unsafe {
+        raw::interaction = v;
+    }
 }
 #[inline]
 pub(crate) fn history() -> i32 {
@@ -1613,7 +1723,9 @@ pub(crate) fn history() -> i32 {
 #[inline]
 pub(crate) fn set_history(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::history = v; }
+    unsafe {
+        raw::history = v;
+    }
 }
 #[inline]
 pub(crate) fn error_count() -> i8 {
@@ -1623,7 +1735,9 @@ pub(crate) fn error_count() -> i8 {
 #[inline]
 pub(crate) fn set_error_count(v: i8) {
     // SAFETY: see module-level doc.
-    unsafe { raw::error_count = v; }
+    unsafe {
+        raw::error_count = v;
+    }
 }
 #[inline]
 pub(crate) fn use_err_help() -> bool {
@@ -1632,7 +1746,9 @@ pub(crate) fn use_err_help() -> bool {
 }
 #[inline]
 pub(crate) fn set_use_err_help(v: bool) {
-    unsafe { raw::use_err_help = v; }
+    unsafe {
+        raw::use_err_help = v;
+    }
 }
 #[inline]
 pub(crate) fn long_help_seen() -> bool {
@@ -1640,7 +1756,9 @@ pub(crate) fn long_help_seen() -> bool {
 }
 #[inline]
 pub(crate) fn set_long_help_seen(v: bool) {
-    unsafe { raw::long_help_seen = v; }
+    unsafe {
+        raw::long_help_seen = v;
+    }
 }
 #[inline]
 pub(crate) fn halt_on_error_p() -> bool {
@@ -1655,7 +1773,9 @@ pub(crate) fn log_opened() -> bool {
 #[inline]
 pub(crate) fn set_log_opened(v: bool) {
     // SAFETY: see module-level doc.
-    unsafe { raw::log_opened = v; }
+    unsafe {
+        raw::log_opened = v;
+    }
 }
 #[inline]
 pub(crate) fn job_name() -> i32 {
@@ -1665,7 +1785,9 @@ pub(crate) fn job_name() -> i32 {
 #[inline]
 pub(crate) fn set_job_name(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::job_name = v; }
+    unsafe {
+        raw::job_name = v;
+    }
 }
 #[inline]
 pub(crate) fn texmf_log_name() -> i32 {
@@ -1675,12 +1797,16 @@ pub(crate) fn texmf_log_name() -> i32 {
 #[inline]
 pub(crate) fn set_texmf_log_name(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::texmf_log_name = v; }
+    unsafe {
+        raw::texmf_log_name = v;
+    }
 }
 #[inline]
 pub(crate) fn set_halt_on_error_p(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::halt_on_error_p = v; }
+    unsafe {
+        raw::halt_on_error_p = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1690,12 +1816,16 @@ pub(crate) fn set_halt_on_error_p(v: i32) {
 #[inline]
 pub(crate) fn set_in_initex_mode(v: bool) {
     // SAFETY: see module-level doc.
-    unsafe { raw::in_initex_mode = v; }
+    unsafe {
+        raw::in_initex_mode = v;
+    }
 }
 #[inline]
 pub(crate) fn set_synctex_enabled(v: i32) {
     // SAFETY: see module-level doc.
-    unsafe { raw::synctex_enabled = v; }
+    unsafe {
+        raw::synctex_enabled = v;
+    }
 }
 #[inline]
 pub(crate) fn semantic_pagination_enabled() -> bool {
@@ -1704,7 +1834,9 @@ pub(crate) fn semantic_pagination_enabled() -> bool {
 #[inline]
 pub(crate) fn set_semantic_pagination_enabled(v: bool) {
     // SAFETY: see module-level doc.
-    unsafe { raw::semantic_pagination_enabled = v; }
+    unsafe {
+        raw::semantic_pagination_enabled = v;
+    }
 }
 #[inline]
 pub(crate) fn shell_escape_enabled() -> bool {
@@ -1714,7 +1846,9 @@ pub(crate) fn shell_escape_enabled() -> bool {
 #[inline]
 pub(crate) fn set_shell_escape_enabled(v: bool) {
     // SAFETY: see module-level doc.
-    unsafe { raw::shell_escape_enabled = v; }
+    unsafe {
+        raw::shell_escape_enabled = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1727,7 +1861,9 @@ pub(crate) fn old_setting() -> u8 {
 }
 #[inline]
 pub(crate) fn set_old_setting(v: u8) {
-    unsafe { raw::old_setting = v; }
+    unsafe {
+        raw::old_setting = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1740,7 +1876,9 @@ pub(crate) fn cur_cs() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_cs(v: i32) {
-    unsafe { raw::cur_cs = v; }
+    unsafe {
+        raw::cur_cs = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_tok() -> i32 {
@@ -1748,11 +1886,15 @@ pub(crate) fn cur_tok() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_tok(v: i32) {
-    unsafe { raw::cur_tok = v; }
+    unsafe {
+        raw::cur_tok = v;
+    }
 }
 #[inline]
 pub(crate) fn set_after_token(v: i32) {
-    unsafe { raw::after_token = v; }
+    unsafe {
+        raw::after_token = v;
+    }
 }
 #[inline]
 pub(crate) fn align_state() -> i32 {
@@ -1760,7 +1902,9 @@ pub(crate) fn align_state() -> i32 {
 }
 #[inline]
 pub(crate) fn set_align_state(v: i32) {
-    unsafe { raw::align_state = v; }
+    unsafe {
+        raw::align_state = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_chr() -> i32 {
@@ -1772,7 +1916,9 @@ pub(crate) fn cur_val() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_val(v: i32) {
-    unsafe { raw::cur_val = v; }
+    unsafe {
+        raw::cur_val = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_name() -> i32 {
@@ -1780,7 +1926,9 @@ pub(crate) fn cur_name() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_name(v: i32) {
-    unsafe { raw::cur_name = v; }
+    unsafe {
+        raw::cur_name = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_area() -> i32 {
@@ -1788,7 +1936,9 @@ pub(crate) fn cur_area() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_area(v: i32) {
-    unsafe { raw::cur_area = v; }
+    unsafe {
+        raw::cur_area = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_ext() -> i32 {
@@ -1796,7 +1946,9 @@ pub(crate) fn cur_ext() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_ext(v: i32) {
-    unsafe { raw::cur_ext = v; }
+    unsafe {
+        raw::cur_ext = v;
+    }
 }
 
 /// Returns `area_delimiter` (pool offset of last dir-sep in current filename).
@@ -1806,7 +1958,9 @@ pub(crate) fn area_delimiter() -> i32 {
 }
 #[inline]
 pub(crate) fn set_area_delimiter(v: i32) {
-    unsafe { raw::area_delimiter = v; }
+    unsafe {
+        raw::area_delimiter = v;
+    }
 }
 /// Returns `ext_delimiter` (pool offset of last '.' in current filename).
 #[inline]
@@ -1815,7 +1969,9 @@ pub(crate) fn ext_delimiter() -> i32 {
 }
 #[inline]
 pub(crate) fn set_ext_delimiter(v: i32) {
-    unsafe { raw::ext_delimiter = v; }
+    unsafe {
+        raw::ext_delimiter = v;
+    }
 }
 #[inline]
 pub(crate) fn quoted_filename() -> bool {
@@ -1823,7 +1979,9 @@ pub(crate) fn quoted_filename() -> bool {
 }
 #[inline]
 pub(crate) fn set_quoted_filename(v: bool) {
-    unsafe { raw::quoted_filename = v; }
+    unsafe {
+        raw::quoted_filename = v;
+    }
 }
 #[inline]
 pub(crate) fn file_name_quote_char() -> u16 {
@@ -1831,7 +1989,9 @@ pub(crate) fn file_name_quote_char() -> u16 {
 }
 #[inline]
 pub(crate) fn set_file_name_quote_char(v: u16) {
-    unsafe { raw::file_name_quote_char = v; }
+    unsafe {
+        raw::file_name_quote_char = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1844,7 +2004,9 @@ pub(crate) fn name_in_progress() -> bool {
 }
 #[inline]
 pub(crate) fn set_name_in_progress(v: bool) {
-    unsafe { raw::name_in_progress = v; }
+    unsafe {
+        raw::name_in_progress = v;
+    }
 }
 #[inline]
 pub(crate) fn stop_at_space() -> bool {
@@ -1852,7 +2014,9 @@ pub(crate) fn stop_at_space() -> bool {
 }
 #[inline]
 pub(crate) fn set_stop_at_space(v: bool) {
-    unsafe { raw::stop_at_space = v; }
+    unsafe {
+        raw::stop_at_space = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1865,7 +2029,9 @@ pub(crate) fn save_ptr() -> i32 {
 }
 #[inline]
 pub(crate) fn set_save_ptr(v: i32) {
-    unsafe { raw::save_ptr = v; }
+    unsafe {
+        raw::save_ptr = v;
+    }
 }
 #[inline]
 pub(crate) fn max_save_stack() -> i32 {
@@ -1873,7 +2039,9 @@ pub(crate) fn max_save_stack() -> i32 {
 }
 #[inline]
 pub(crate) fn set_max_save_stack(v: i32) {
-    unsafe { raw::max_save_stack = v; }
+    unsafe {
+        raw::max_save_stack = v;
+    }
 }
 #[inline]
 pub(crate) fn save_size() -> i32 {
@@ -1892,12 +2060,16 @@ pub(crate) fn save_stack_b32s0(k: i32) -> i32 {
 /// Write `save_stack[k].b32.s1 = v`.
 #[inline]
 pub(crate) fn set_save_stack_b32s1(k: i32, v: i32) {
-    unsafe { (*raw::save_stack.offset(k as isize)).b32.s1 = v; }
+    unsafe {
+        (*raw::save_stack.offset(k as isize)).b32.s1 = v;
+    }
 }
 /// Write `save_stack[k].b32.s0 = v`.
 #[inline]
 pub(crate) fn set_save_stack_b32s0(k: i32, v: i32) {
-    unsafe { (*raw::save_stack.offset(k as isize)).b32.s0 = v; }
+    unsafe {
+        (*raw::save_stack.offset(k as isize)).b32.s0 = v;
+    }
 }
 /// Read `save_stack[k].b16.s1`.
 #[inline]
@@ -1912,12 +2084,16 @@ pub(crate) fn save_stack_b16s0(k: i32) -> u16 {
 /// Write `save_stack[k].b16.s1 = v`.
 #[inline]
 pub(crate) fn set_save_stack_b16s1(k: i32, v: u16) {
-    unsafe { (*raw::save_stack.offset(k as isize)).b16.s1 = v; }
+    unsafe {
+        (*raw::save_stack.offset(k as isize)).b16.s1 = v;
+    }
 }
 /// Write `save_stack[k].b16.s0 = v`.
 #[inline]
 pub(crate) fn set_save_stack_b16s0(k: i32, v: u16) {
-    unsafe { (*raw::save_stack.offset(k as isize)).b16.s0 = v; }
+    unsafe {
+        (*raw::save_stack.offset(k as isize)).b16.s0 = v;
+    }
 }
 /// Copy the full MemoryWord at `save_stack[k]`.
 #[inline]
@@ -1927,7 +2103,9 @@ pub(crate) fn save_stack_word(k: i32) -> crate::mem_types::MemoryWord {
 /// Copy a full MemoryWord to `save_stack[k]`.
 #[inline]
 pub(crate) fn set_save_stack_word(k: i32, w: crate::mem_types::MemoryWord) {
-    unsafe { *raw::save_stack.offset(k as isize) = w; }
+    unsafe {
+        *raw::save_stack.offset(k as isize) = w;
+    }
 }
 #[inline]
 pub(crate) fn cur_level() -> u16 {
@@ -1935,7 +2113,9 @@ pub(crate) fn cur_level() -> u16 {
 }
 #[inline]
 pub(crate) fn set_cur_level(v: u16) {
-    unsafe { raw::cur_level = v; }
+    unsafe {
+        raw::cur_level = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_group() -> u8 {
@@ -1943,7 +2123,9 @@ pub(crate) fn cur_group() -> u8 {
 }
 #[inline]
 pub(crate) fn set_cur_group(v: u8) {
-    unsafe { raw::cur_group = v; }
+    unsafe {
+        raw::cur_group = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_boundary() -> i32 {
@@ -1951,7 +2133,9 @@ pub(crate) fn cur_boundary() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_boundary(v: i32) {
-    unsafe { raw::cur_boundary = v; }
+    unsafe {
+        raw::cur_boundary = v;
+    }
 }
 /// Read `XEQ_LEVEL(p)` = `_xeq_level_array[p - INT_BASE]`.
 #[inline]
@@ -1962,7 +2146,9 @@ pub(crate) fn xeq_level(p: i32) -> u16 {
 /// Write `XEQ_LEVEL(p) = v`.
 #[inline]
 pub(crate) fn set_xeq_level(p: i32, v: u16) {
-    unsafe { raw::_xeq_level_array[(p - 7_826_729) as usize] = v; }
+    unsafe {
+        raw::_xeq_level_array[(p - 7_826_729) as usize] = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1975,7 +2161,9 @@ pub(crate) fn read_open_entry(n: usize) -> u8 {
 }
 #[inline]
 pub(crate) fn set_read_open_entry(n: usize, v: u8) {
-    unsafe { raw::read_open[n] = v; }
+    unsafe {
+        raw::read_open[n] = v;
+    }
 }
 /// Returns `read_file[n]` (the UFILE* value at index n).
 #[inline]
@@ -2011,7 +2199,9 @@ pub(crate) fn font_name_entry(f: i32) -> i32 {
 /// Writes `font_name[f] = v`.
 #[inline]
 pub(crate) fn set_font_name_entry(f: i32, v: i32) {
-    unsafe { *raw::font_name.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_name.offset(f as isize) = v;
+    }
 }
 
 /// Returns `font_info[k].b32.s1`.
@@ -2023,13 +2213,17 @@ pub(crate) fn font_info_b32s1(k: i32) -> i32 {
 /// Writes `font_info[k].b32.s1 = v`.
 #[inline]
 pub(crate) fn set_font_info_b32s1(k: i32, v: i32) {
-    unsafe { (*raw::font_info.offset(k as isize)).b32.s1 = v; }
+    unsafe {
+        (*raw::font_info.offset(k as isize)).b32.s1 = v;
+    }
 }
 
 /// Writes `font_info[k].b16 = v`.
 #[inline]
 pub(crate) fn set_font_info_b16(k: i32, v: crate::mem_types::B16x4) {
-    unsafe { (*raw::font_info.offset(k as isize)).b16 = v; }
+    unsafe {
+        (*raw::font_info.offset(k as isize)).b16 = v;
+    }
 }
 
 /// Returns `fmem_ptr`.
@@ -2041,7 +2235,9 @@ pub(crate) fn fmem_ptr() -> i32 {
 /// Sets `fmem_ptr`.
 #[inline]
 pub(crate) fn set_fmem_ptr(v: i32) {
-    unsafe { raw::fmem_ptr = v; }
+    unsafe {
+        raw::fmem_ptr = v;
+    }
 }
 
 /// Returns `font_ptr`.
@@ -2053,7 +2249,9 @@ pub(crate) fn font_ptr() -> i32 {
 /// Sets `font_ptr`.
 #[inline]
 pub(crate) fn set_font_ptr(v: i32) {
-    unsafe { raw::font_ptr = v; }
+    unsafe {
+        raw::font_ptr = v;
+    }
 }
 
 /// Returns `font_mem_size`.
@@ -2071,7 +2269,9 @@ pub(crate) fn font_params(f: i32) -> i32 {
 /// Sets `font_params[f] = v`.
 #[inline]
 pub(crate) fn set_font_params(f: i32, v: i32) {
-    unsafe { *raw::font_params.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_params.offset(f as isize) = v;
+    }
 }
 
 /// Returns `font_glue[f]`.
@@ -2083,7 +2283,9 @@ pub(crate) fn font_glue(f: i32) -> i32 {
 /// Sets `font_glue[f] = v`.
 #[inline]
 pub(crate) fn set_font_glue(f: i32, v: i32) {
-    unsafe { *raw::font_glue.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_glue.offset(f as isize) = v;
+    }
 }
 
 /// Returns `param_base[f]`.
@@ -2095,7 +2297,9 @@ pub(crate) fn param_base(f: i32) -> i32 {
 /// Sets `param_base[f] = v`.
 #[inline]
 pub(crate) fn set_param_base(f: i32, v: i32) {
-    unsafe { *raw::param_base.offset(f as isize) = v; }
+    unsafe {
+        *raw::param_base.offset(f as isize) = v;
+    }
 }
 
 /// Returns `font_info[k].b16` (the B16x4 view of font_info word k).
@@ -2107,7 +2311,9 @@ pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
 /// Writes `font_check[f] = v`.
 #[inline]
 pub(crate) fn set_font_check(f: i32, v: crate::mem_types::B16x4) {
-    unsafe { *raw::font_check.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_check.offset(f as isize) = v;
+    }
 }
 
 /// Returns `font_area[f]` — the str_number encoding the font's area.
@@ -2118,7 +2324,9 @@ pub(crate) fn font_area_entry(f: i32) -> i32 {
 /// Writes `font_area[f] = v`.
 #[inline]
 pub(crate) fn set_font_area_entry(f: i32, v: i32) {
-    unsafe { *raw::font_area.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_area.offset(f as isize) = v;
+    }
 }
 /// Returns `font_size[f]` — the current at-size (scaled_t) for font f.
 #[inline]
@@ -2128,7 +2336,9 @@ pub(crate) fn font_size_entry(f: i32) -> i32 {
 /// Writes `font_size[f] = v`.
 #[inline]
 pub(crate) fn set_font_size_entry(f: i32, v: i32) {
-    unsafe { *raw::font_size.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_size.offset(f as isize) = v;
+    }
 }
 /// Returns `font_dsize[f]` — the design-size (scaled_t) for font f.
 #[inline]
@@ -2138,7 +2348,9 @@ pub(crate) fn font_dsize_entry(f: i32) -> i32 {
 /// Writes `font_dsize[f] = v`.
 #[inline]
 pub(crate) fn set_font_dsize_entry(f: i32, v: i32) {
-    unsafe { *raw::font_dsize.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_dsize.offset(f as isize) = v;
+    }
 }
 /// Returns `font_bc[f]` — first valid char code.
 #[inline]
@@ -2148,7 +2360,9 @@ pub(crate) fn font_bc_entry(f: i32) -> u16 {
 /// Writes `font_bc[f] = v`.
 #[inline]
 pub(crate) fn set_font_bc_entry(f: i32, v: u16) {
-    unsafe { *raw::font_bc.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_bc.offset(f as isize) = v;
+    }
 }
 /// Returns `font_ec[f]` — last valid char code.
 #[inline]
@@ -2158,27 +2372,37 @@ pub(crate) fn font_ec_entry(f: i32) -> u16 {
 /// Writes `font_ec[f] = v`.
 #[inline]
 pub(crate) fn set_font_ec_entry(f: i32, v: u16) {
-    unsafe { *raw::font_ec.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_ec.offset(f as isize) = v;
+    }
 }
 /// Writes `font_used[f] = v`.
 #[inline]
 pub(crate) fn set_font_used_entry(f: i32, v: bool) {
-    unsafe { *raw::font_used.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_used.offset(f as isize) = v;
+    }
 }
 /// Writes `bchar_label[f] = v`.
 #[inline]
 pub(crate) fn set_bchar_label_entry(f: i32, v: i32) {
-    unsafe { *raw::bchar_label.offset(f as isize) = v; }
+    unsafe {
+        *raw::bchar_label.offset(f as isize) = v;
+    }
 }
 /// Writes `font_bchar[f] = v`.
 #[inline]
 pub(crate) fn set_font_bchar_entry(f: i32, v: i32) {
-    unsafe { *raw::font_bchar.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_bchar.offset(f as isize) = v;
+    }
 }
 /// Writes `font_false_bchar[f] = v`.
 #[inline]
 pub(crate) fn set_font_false_bchar_entry(f: i32, v: i32) {
-    unsafe { *raw::font_false_bchar.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_false_bchar.offset(f as isize) = v;
+    }
 }
 /// Returns `bchar_label[f]`.
 #[inline]
@@ -2203,7 +2427,9 @@ pub(crate) fn font_layout_engine_ptr(f: i32) -> *mut libc::c_void {
 /// Writes `font_layout_engine[f] = v`.
 #[inline]
 pub(crate) fn set_font_layout_engine_ptr(f: i32, v: *mut libc::c_void) {
-    unsafe { *raw::font_layout_engine.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_layout_engine.offset(f as isize) = v;
+    }
 }
 /// Returns `font_mapping[f]`.
 #[inline]
@@ -2213,7 +2439,9 @@ pub(crate) fn font_mapping_ptr(f: i32) -> *mut libc::c_void {
 /// Writes `font_mapping[f] = v`.
 #[inline]
 pub(crate) fn set_font_mapping_ptr(f: i32, v: *mut libc::c_void) {
-    unsafe { *raw::font_mapping.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_mapping.offset(f as isize) = v;
+    }
 }
 /// Returns `loaded_font_mapping`.
 #[inline]
@@ -2223,7 +2451,9 @@ pub(crate) fn loaded_font_mapping() -> *mut libc::c_void {
 /// Writes `loaded_font_mapping = v`.
 #[inline]
 pub(crate) fn set_loaded_font_mapping(v: *mut libc::c_void) {
-    unsafe { raw::loaded_font_mapping = v; }
+    unsafe {
+        raw::loaded_font_mapping = v;
+    }
 }
 /// Returns `loaded_font_flags`.
 #[inline]
@@ -2233,7 +2463,9 @@ pub(crate) fn loaded_font_flags() -> i32 {
 /// Writes `loaded_font_flags = v`.
 #[inline]
 pub(crate) fn set_loaded_font_flags(v: i32) {
-    unsafe { raw::loaded_font_flags = v as libc::c_char; }
+    unsafe {
+        raw::loaded_font_flags = v as libc::c_char;
+    }
 }
 /// Returns `loaded_font_letter_space`.
 #[inline]
@@ -2243,7 +2475,9 @@ pub(crate) fn loaded_font_letter_space() -> i32 {
 /// Writes `loaded_font_letter_space = v`.
 #[inline]
 pub(crate) fn set_loaded_font_letter_space(v: i32) {
-    unsafe { raw::loaded_font_letter_space = v; }
+    unsafe {
+        raw::loaded_font_letter_space = v;
+    }
 }
 /// Returns `font_flags[f]`.
 #[inline]
@@ -2253,12 +2487,16 @@ pub(crate) fn font_flags_entry(f: i32) -> i32 {
 /// Writes `font_flags[f] = v`.
 #[inline]
 pub(crate) fn set_font_flags_entry(f: i32, v: i32) {
-    unsafe { *raw::font_flags.offset(f as isize) = v as libc::c_char; }
+    unsafe {
+        *raw::font_flags.offset(f as isize) = v as libc::c_char;
+    }
 }
 /// Writes `font_letter_space[f] = v`.
 #[inline]
 pub(crate) fn set_font_letter_space_entry(f: i32, v: i32) {
-    unsafe { *raw::font_letter_space.offset(f as isize) = v; }
+    unsafe {
+        *raw::font_letter_space.offset(f as isize) = v;
+    }
 }
 /// Returns `mapped_text[i]`, the UTF-16 output buffer from `apply_mapping`.
 #[inline]
@@ -2267,10 +2505,16 @@ pub(crate) fn mapped_text_entry(i: i32) -> u16 {
 }
 /// Returns `xtx_ligature_present`.
 #[inline]
-pub(crate) fn xtx_ligature_present() -> bool { unsafe { raw::xtx_ligature_present } }
+pub(crate) fn xtx_ligature_present() -> bool {
+    unsafe { raw::xtx_ligature_present }
+}
 /// Sets `xtx_ligature_present = v`.
 #[inline]
-pub(crate) fn set_xtx_ligature_present(v: bool) { unsafe { raw::xtx_ligature_present = v; } }
+pub(crate) fn set_xtx_ligature_present(v: bool) {
+    unsafe {
+        raw::xtx_ligature_present = v;
+    }
+}
 /// Returns `hyphen_char[f]`.
 #[inline]
 pub(crate) fn hyphen_char_entry(f: i32) -> i32 {
@@ -2279,7 +2523,9 @@ pub(crate) fn hyphen_char_entry(f: i32) -> i32 {
 /// Writes `hyphen_char[f] = v`.
 #[inline]
 pub(crate) fn set_hyphen_char_entry(f: i32, v: i32) {
-    unsafe { *raw::hyphen_char.offset(f as isize) = v; }
+    unsafe {
+        *raw::hyphen_char.offset(f as isize) = v;
+    }
 }
 /// Returns `skew_char[f]`.
 #[inline]
@@ -2289,7 +2535,9 @@ pub(crate) fn skew_char_entry(f: i32) -> i32 {
 /// Writes `skew_char[f] = v`.
 #[inline]
 pub(crate) fn set_skew_char_entry(f: i32, v: i32) {
-    unsafe { *raw::skew_char.offset(f as isize) = v; }
+    unsafe {
+        *raw::skew_char.offset(f as isize) = v;
+    }
 }
 /// Returns `char_base[f]`.
 #[inline]
@@ -2299,7 +2547,9 @@ pub(crate) fn char_base_entry(f: i32) -> i32 {
 /// Writes `char_base[f] = v`.
 #[inline]
 pub(crate) fn set_char_base_entry(f: i32, v: i32) {
-    unsafe { *raw::char_base.offset(f as isize) = v; }
+    unsafe {
+        *raw::char_base.offset(f as isize) = v;
+    }
 }
 /// Returns `width_base[f]`.
 #[inline]
@@ -2309,7 +2559,9 @@ pub(crate) fn width_base_entry(f: i32) -> i32 {
 /// Writes `width_base[f] = v`.
 #[inline]
 pub(crate) fn set_width_base_entry(f: i32, v: i32) {
-    unsafe { *raw::width_base.offset(f as isize) = v; }
+    unsafe {
+        *raw::width_base.offset(f as isize) = v;
+    }
 }
 /// Returns `height_base[f]`.
 #[inline]
@@ -2319,7 +2571,9 @@ pub(crate) fn height_base_entry(f: i32) -> i32 {
 /// Writes `height_base[f] = v`.
 #[inline]
 pub(crate) fn set_height_base_entry(f: i32, v: i32) {
-    unsafe { *raw::height_base.offset(f as isize) = v; }
+    unsafe {
+        *raw::height_base.offset(f as isize) = v;
+    }
 }
 /// Returns `depth_base[f]`.
 #[inline]
@@ -2329,7 +2583,9 @@ pub(crate) fn depth_base_entry(f: i32) -> i32 {
 /// Writes `depth_base[f] = v`.
 #[inline]
 pub(crate) fn set_depth_base_entry(f: i32, v: i32) {
-    unsafe { *raw::depth_base.offset(f as isize) = v; }
+    unsafe {
+        *raw::depth_base.offset(f as isize) = v;
+    }
 }
 /// Returns `italic_base[f]`.
 #[inline]
@@ -2339,7 +2595,9 @@ pub(crate) fn italic_base_entry(f: i32) -> i32 {
 /// Writes `italic_base[f] = v`.
 #[inline]
 pub(crate) fn set_italic_base_entry(f: i32, v: i32) {
-    unsafe { *raw::italic_base.offset(f as isize) = v; }
+    unsafe {
+        *raw::italic_base.offset(f as isize) = v;
+    }
 }
 /// Returns `lig_kern_base[f]`.
 #[inline]
@@ -2349,7 +2607,9 @@ pub(crate) fn lig_kern_base_entry(f: i32) -> i32 {
 /// Writes `lig_kern_base[f] = v`.
 #[inline]
 pub(crate) fn set_lig_kern_base_entry(f: i32, v: i32) {
-    unsafe { *raw::lig_kern_base.offset(f as isize) = v; }
+    unsafe {
+        *raw::lig_kern_base.offset(f as isize) = v;
+    }
 }
 /// Returns `kern_base[f]`.
 #[inline]
@@ -2359,7 +2619,9 @@ pub(crate) fn kern_base_entry(f: i32) -> i32 {
 /// Writes `kern_base[f] = v`.
 #[inline]
 pub(crate) fn set_kern_base_entry(f: i32, v: i32) {
-    unsafe { *raw::kern_base.offset(f as isize) = v; }
+    unsafe {
+        *raw::kern_base.offset(f as isize) = v;
+    }
 }
 /// Returns `exten_base[f]`.
 #[inline]
@@ -2369,7 +2631,9 @@ pub(crate) fn exten_base_entry(f: i32) -> i32 {
 /// Writes `exten_base[f] = v`.
 #[inline]
 pub(crate) fn set_exten_base_entry(f: i32, v: i32) {
-    unsafe { *raw::exten_base.offset(f as isize) = v; }
+    unsafe {
+        *raw::exten_base.offset(f as isize) = v;
+    }
 }
 
 /// Returns `native_font_type_flag`.
@@ -2380,88 +2644,190 @@ pub(crate) fn native_font_type_flag() -> i32 {
 /// Writes `native_font_type_flag = v`.
 #[inline]
 pub(crate) fn set_native_font_type_flag(v: i32) {
-    unsafe { raw::native_font_type_flag = v; }
+    unsafe {
+        raw::native_font_type_flag = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
 // is_in_csname
 // ---------------------------------------------------------------------------
 #[inline]
-pub(crate) fn is_in_csname() -> bool { unsafe { raw::is_in_csname } }
+pub(crate) fn is_in_csname() -> bool {
+    unsafe { raw::is_in_csname }
+}
 #[inline]
-pub(crate) fn set_is_in_csname(v: bool) { unsafe { raw::is_in_csname = v; } }
+pub(crate) fn set_is_in_csname(v: bool) {
+    unsafe {
+        raw::is_in_csname = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // cur_val1 / radix
 // ---------------------------------------------------------------------------
 #[inline]
-pub(crate) fn cur_val1() -> i32 { unsafe { raw::cur_val1 } }
+pub(crate) fn cur_val1() -> i32 {
+    unsafe { raw::cur_val1 }
+}
 #[inline]
-pub(crate) fn set_cur_val1(v: i32) { unsafe { raw::cur_val1 = v; } }
+pub(crate) fn set_cur_val1(v: i32) {
+    unsafe {
+        raw::cur_val1 = v;
+    }
+}
 #[inline]
-pub(crate) fn radix() -> u8 { unsafe { raw::radix } }
+pub(crate) fn radix() -> u8 {
+    unsafe { raw::radix }
+}
 #[inline]
-pub(crate) fn set_radix(v: u8) { unsafe { raw::radix = v; } }
+pub(crate) fn set_radix(v: u8) {
+    unsafe {
+        raw::radix = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // page builder / last-node / output_active / random_seed / pdf positions
 // ---------------------------------------------------------------------------
 #[inline]
-pub(crate) fn dead_cycles() -> i32 { unsafe { raw::dead_cycles } }
+pub(crate) fn dead_cycles() -> i32 {
+    unsafe { raw::dead_cycles }
+}
 #[inline]
-pub(crate) fn set_dead_cycles(v: i32) { unsafe { raw::dead_cycles = v; } }
+pub(crate) fn set_dead_cycles(v: i32) {
+    unsafe {
+        raw::dead_cycles = v;
+    }
+}
 #[inline]
-pub(crate) fn last_badness() -> i32 { unsafe { raw::last_badness } }
+pub(crate) fn last_badness() -> i32 {
+    unsafe { raw::last_badness }
+}
 #[inline]
-pub(crate) fn set_last_badness(v: i32) { unsafe { raw::last_badness = v; } }
+pub(crate) fn set_last_badness(v: i32) {
+    unsafe {
+        raw::last_badness = v;
+    }
+}
 #[inline]
-pub(crate) fn page_tail() -> i32 { unsafe { raw::page_tail } }
+pub(crate) fn page_tail() -> i32 {
+    unsafe { raw::page_tail }
+}
 #[inline]
-pub(crate) fn set_page_tail(v: i32) { unsafe { raw::page_tail = v; } }
+pub(crate) fn set_page_tail(v: i32) {
+    unsafe {
+        raw::page_tail = v;
+    }
+}
 #[inline]
-pub(crate) fn page_contents() -> u8 { unsafe { raw::page_contents } }
+pub(crate) fn page_contents() -> u8 {
+    unsafe { raw::page_contents }
+}
 #[inline]
-pub(crate) fn set_page_contents(v: u8) { unsafe { raw::page_contents = v; } }
+pub(crate) fn set_page_contents(v: u8) {
+    unsafe {
+        raw::page_contents = v;
+    }
+}
 #[inline]
-pub(crate) fn page_so_far(k: usize) -> i32 { unsafe { raw::page_so_far[k] } }
+pub(crate) fn page_so_far(k: usize) -> i32 {
+    unsafe { raw::page_so_far[k] }
+}
 #[inline]
-pub(crate) fn set_page_so_far(k: usize, v: i32) { unsafe { raw::page_so_far[k] = v; } }
+pub(crate) fn set_page_so_far(k: usize, v: i32) {
+    unsafe {
+        raw::page_so_far[k] = v;
+    }
+}
 #[inline]
-pub(crate) fn last_glue() -> i32 { unsafe { raw::last_glue } }
+pub(crate) fn last_glue() -> i32 {
+    unsafe { raw::last_glue }
+}
 #[inline]
-pub(crate) fn set_last_glue(v: i32) { unsafe { raw::last_glue = v; } }
+pub(crate) fn set_last_glue(v: i32) {
+    unsafe {
+        raw::last_glue = v;
+    }
+}
 #[inline]
-pub(crate) fn disc_ptr(k: usize) -> i32 { unsafe { raw::disc_ptr[k] } }
+pub(crate) fn disc_ptr(k: usize) -> i32 {
+    unsafe { raw::disc_ptr[k] }
+}
 #[inline]
-pub(crate) fn set_disc_ptr(k: usize, v: i32) { unsafe { raw::disc_ptr[k] = v; } }
+pub(crate) fn set_disc_ptr(k: usize, v: i32) {
+    unsafe {
+        raw::disc_ptr[k] = v;
+    }
+}
 #[inline]
-pub(crate) fn last_penalty() -> i32 { unsafe { raw::last_penalty } }
+pub(crate) fn last_penalty() -> i32 {
+    unsafe { raw::last_penalty }
+}
 #[inline]
-pub(crate) fn set_last_penalty(v: i32) { unsafe { raw::last_penalty = v; } }
+pub(crate) fn set_last_penalty(v: i32) {
+    unsafe {
+        raw::last_penalty = v;
+    }
+}
 #[inline]
-pub(crate) fn last_kern() -> i32 { unsafe { raw::last_kern } }
+pub(crate) fn last_kern() -> i32 {
+    unsafe { raw::last_kern }
+}
 #[inline]
-pub(crate) fn set_last_kern(v: i32) { unsafe { raw::last_kern = v; } }
+pub(crate) fn set_last_kern(v: i32) {
+    unsafe {
+        raw::last_kern = v;
+    }
+}
 #[inline]
-pub(crate) fn last_node_type() -> i32 { unsafe { raw::last_node_type } }
+pub(crate) fn last_node_type() -> i32 {
+    unsafe { raw::last_node_type }
+}
 #[inline]
-pub(crate) fn set_last_node_type(v: i32) { unsafe { raw::last_node_type = v; } }
+pub(crate) fn set_last_node_type(v: i32) {
+    unsafe {
+        raw::last_node_type = v;
+    }
+}
 #[inline]
-pub(crate) fn insert_penalties() -> i32 { unsafe { raw::insert_penalties } }
+pub(crate) fn insert_penalties() -> i32 {
+    unsafe { raw::insert_penalties }
+}
 #[inline]
-pub(crate) fn set_insert_penalties(v: i32) { unsafe { raw::insert_penalties = v; } }
+pub(crate) fn set_insert_penalties(v: i32) {
+    unsafe {
+        raw::insert_penalties = v;
+    }
+}
 #[inline]
-pub(crate) fn output_active() -> bool { unsafe { raw::output_active } }
+pub(crate) fn output_active() -> bool {
+    unsafe { raw::output_active }
+}
 #[inline]
-pub(crate) fn set_output_active(v: bool) { unsafe { raw::output_active = v; } }
+pub(crate) fn set_output_active(v: bool) {
+    unsafe {
+        raw::output_active = v;
+    }
+}
 #[inline]
-pub(crate) fn random_seed() -> i32 { unsafe { raw::random_seed } }
+pub(crate) fn random_seed() -> i32 {
+    unsafe { raw::random_seed }
+}
 #[inline]
-pub(crate) fn set_random_seed(v: i32) { unsafe { raw::random_seed = v; } }
+pub(crate) fn set_random_seed(v: i32) {
+    unsafe {
+        raw::random_seed = v;
+    }
+}
 #[inline]
-pub(crate) fn pdf_last_x_pos() -> i32 { unsafe { raw::pdf_last_x_pos } }
+pub(crate) fn pdf_last_x_pos() -> i32 {
+    unsafe { raw::pdf_last_x_pos }
+}
 #[inline]
-pub(crate) fn pdf_last_y_pos() -> i32 { unsafe { raw::pdf_last_y_pos } }
+pub(crate) fn pdf_last_y_pos() -> i32 {
+    unsafe { raw::pdf_last_y_pos }
+}
 
 // ---------------------------------------------------------------------------
 // epochseconds / microseconds
@@ -2473,7 +2839,9 @@ pub(crate) fn epochseconds() -> i32 {
 }
 #[inline]
 pub(crate) fn set_epochseconds(v: i32) {
-    unsafe { raw::epochseconds = v; }
+    unsafe {
+        raw::epochseconds = v;
+    }
 }
 #[inline]
 pub(crate) fn microseconds() -> i32 {
@@ -2481,7 +2849,9 @@ pub(crate) fn microseconds() -> i32 {
 }
 #[inline]
 pub(crate) fn set_microseconds(v: i32) {
-    unsafe { raw::microseconds = v; }
+    unsafe {
+        raw::microseconds = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2494,7 +2864,9 @@ pub(crate) fn mag_set() -> i32 {
 }
 #[inline]
 pub(crate) fn set_mag_set(v: i32) {
-    unsafe { raw::mag_set = v; }
+    unsafe {
+        raw::mag_set = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2507,7 +2879,9 @@ pub(crate) fn nest_ptr() -> i32 {
 }
 #[inline]
 pub(crate) fn set_nest_ptr(v: i32) {
-    unsafe { raw::nest_ptr = v; }
+    unsafe {
+        raw::nest_ptr = v;
+    }
 }
 #[inline]
 pub(crate) fn max_nest_stack() -> i32 {
@@ -2515,7 +2889,9 @@ pub(crate) fn max_nest_stack() -> i32 {
 }
 #[inline]
 pub(crate) fn set_max_nest_stack(v: i32) {
-    unsafe { raw::max_nest_stack = v; }
+    unsafe {
+        raw::max_nest_stack = v;
+    }
 }
 #[inline]
 pub(crate) fn nest_size() -> i32 {
@@ -2524,12 +2900,16 @@ pub(crate) fn nest_size() -> i32 {
 /// Copy `nest[k]` to `cur_list` (full struct assignment).
 #[inline]
 pub(crate) fn restore_cur_list_from_nest(k: i32) {
-    unsafe { raw::cur_list = *raw::nest.offset(k as isize); }
+    unsafe {
+        raw::cur_list = *raw::nest.offset(k as isize);
+    }
 }
 /// Copy `cur_list` to `nest[k]` (full struct assignment).
 #[inline]
 pub(crate) fn save_cur_list_to_nest(k: i32) {
-    unsafe { *raw::nest.offset(k as isize) = raw::cur_list; }
+    unsafe {
+        *raw::nest.offset(k as isize) = raw::cur_list;
+    }
 }
 // cur_list field accessors
 #[inline]
@@ -2538,7 +2918,9 @@ pub(crate) fn cur_list_mode() -> i16 {
 }
 #[inline]
 pub(crate) fn set_cur_list_mode(v: i16) {
-    unsafe { raw::cur_list.mode = v; }
+    unsafe {
+        raw::cur_list.mode = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_list_head() -> i32 {
@@ -2546,7 +2928,9 @@ pub(crate) fn cur_list_head() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_list_head(v: i32) {
-    unsafe { raw::cur_list.head = v; }
+    unsafe {
+        raw::cur_list.head = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_list_tail() -> i32 {
@@ -2554,7 +2938,9 @@ pub(crate) fn cur_list_tail() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_list_tail(v: i32) {
-    unsafe { raw::cur_list.tail = v; }
+    unsafe {
+        raw::cur_list.tail = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_list_prev_graf() -> i32 {
@@ -2568,7 +2954,9 @@ pub(crate) fn cur_list_aux_b32s0() -> i32 {
 /// Sets `cur_list.aux.b32.s0 = v`.
 #[inline]
 pub(crate) fn set_cur_list_aux_b32s0(v: i32) {
-    unsafe { raw::cur_list.aux.b32.s0 = v; }
+    unsafe {
+        raw::cur_list.aux.b32.s0 = v;
+    }
 }
 /// Returns `cur_list.aux.b32.s1` (the prevdepth half of aux).
 #[inline]
@@ -2578,7 +2966,9 @@ pub(crate) fn cur_list_aux_b32s1() -> i32 {
 /// Sets `cur_list.aux.b32.s1 = v`.
 #[inline]
 pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
-    unsafe { raw::cur_list.aux.b32.s1 = v; }
+    unsafe {
+        raw::cur_list.aux.b32.s1 = v;
+    }
 }
 /// Returns `nest[k].mode`.
 #[inline]
@@ -2593,7 +2983,9 @@ pub(crate) fn nest_tail(k: i32) -> i32 {
 /// Sets `nest[k].tail = v`.
 #[inline]
 pub(crate) fn set_nest_tail(k: i32, v: i32) {
-    unsafe { (*raw::nest.offset(k as isize)).tail = v; }
+    unsafe {
+        (*raw::nest.offset(k as isize)).tail = v;
+    }
 }
 /// Returns `nest[k].eTeX_aux`.
 #[inline]
@@ -2612,7 +3004,9 @@ pub(crate) fn nest_prev_graf(k: i32) -> i32 {
 }
 #[inline]
 pub(crate) fn set_nest_prev_graf(k: i32, v: i32) {
-    unsafe { (*raw::nest.offset(k as isize)).prev_graf = v; }
+    unsafe {
+        (*raw::nest.offset(k as isize)).prev_graf = v;
+    }
 }
 #[inline]
 pub(crate) fn nest_head(k: i32) -> i32 {
@@ -2628,11 +3022,15 @@ pub(crate) fn nest_aux_b32s0(k: i32) -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_list_prev_graf(v: i32) {
-    unsafe { raw::cur_list.prev_graf = v; }
+    unsafe {
+        raw::cur_list.prev_graf = v;
+    }
 }
 #[inline]
 pub(crate) fn set_cur_list_mode_line(v: i32) {
-    unsafe { raw::cur_list.mode_line = v; }
+    unsafe {
+        raw::cur_list.mode_line = v;
+    }
 }
 #[inline]
 pub(crate) fn cur_list_e_tex_aux() -> i32 {
@@ -2640,7 +3038,9 @@ pub(crate) fn cur_list_e_tex_aux() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
-    unsafe { raw::cur_list.e_tex_aux = v; }
+    unsafe {
+        raw::cur_list.e_tex_aux = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2666,12 +3066,16 @@ pub(crate) fn cur_cmd() -> u8 {
 /// Sets `cur_cmd`.
 #[inline]
 pub(crate) fn set_cur_cmd(v: u8) {
-    unsafe { raw::cur_cmd = v; }
+    unsafe {
+        raw::cur_cmd = v;
+    }
 }
 /// Sets `cur_chr`.
 #[inline]
 pub(crate) fn set_cur_chr(v: i32) {
-    unsafe { raw::cur_chr = v; }
+    unsafe {
+        raw::cur_chr = v;
+    }
 }
 
 /// Returns `cur_mark[k]` — the k-th mark register token list
@@ -2684,7 +3088,9 @@ pub(crate) fn cur_mark(k: usize) -> i32 {
 /// Sets `cur_mark[k]`.
 #[inline]
 pub(crate) fn set_cur_mark(k: usize, v: i32) {
-    unsafe { raw::cur_mark[k] = v; }
+    unsafe {
+        raw::cur_mark[k] = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2701,7 +3107,9 @@ pub(crate) fn input_stack(k: i32) -> InputState {
 #[inline]
 pub(crate) fn set_input_stack(k: i32, v: InputState) {
     // SAFETY: see module-level doc.
-    unsafe { *raw::input_stack.offset(k as isize) = v; }
+    unsafe {
+        *raw::input_stack.offset(k as isize) = v;
+    }
 }
 
 /// Returns `input_ptr` — current top of the input-stack (xetex-xetexd.h:504).
@@ -2712,7 +3120,9 @@ pub(crate) fn input_ptr() -> i32 {
 /// Sets `input_ptr`.
 #[inline]
 pub(crate) fn set_input_ptr(v: i32) {
-    unsafe { raw::input_ptr = v; }
+    unsafe {
+        raw::input_ptr = v;
+    }
 }
 /// Returns `max_in_stack` (xetex-xetexd.h:505).
 #[inline]
@@ -2722,7 +3132,9 @@ pub(crate) fn max_in_stack() -> i32 {
 /// Sets `max_in_stack`.
 #[inline]
 pub(crate) fn set_max_in_stack(v: i32) {
-    unsafe { raw::max_in_stack = v; }
+    unsafe {
+        raw::max_in_stack = v;
+    }
 }
 /// Returns `stack_size` — capacity of the input stack (xetex-xetexd.h:410).
 #[inline]
@@ -2739,7 +3151,9 @@ pub(crate) fn base_ptr() -> i32 {
 /// Sets `base_ptr`.
 #[inline]
 pub(crate) fn set_base_ptr(v: i32) {
-    unsafe { raw::base_ptr = v; }
+    unsafe {
+        raw::base_ptr = v;
+    }
 }
 
 /// Returns `par_loc` — hash-table location of \par (xetex-xetexd.h:522).
@@ -2750,7 +3164,9 @@ pub(crate) fn par_loc() -> i32 {
 /// Sets `par_loc`.
 #[inline]
 pub(crate) fn set_par_loc(v: i32) {
-    unsafe { raw::par_loc = v; }
+    unsafe {
+        raw::par_loc = v;
+    }
 }
 /// Returns `par_token` — CS_TOKEN_FLAG + par_loc (xetex-xetexd.h:523).
 #[inline]
@@ -2760,7 +3176,9 @@ pub(crate) fn par_token() -> i32 {
 /// Sets `par_token`.
 #[inline]
 pub(crate) fn set_par_token(v: i32) {
-    unsafe { raw::par_token = v; }
+    unsafe {
+        raw::par_token = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2776,7 +3194,9 @@ pub(crate) fn grp_stack(k: i32) -> i32 {
 /// Sets `grp_stack[k]`.
 #[inline]
 pub(crate) fn set_grp_stack(k: i32, v: i32) {
-    unsafe { *raw::grp_stack.offset(k as isize) = v; }
+    unsafe {
+        *raw::grp_stack.offset(k as isize) = v;
+    }
 }
 
 /// Returns `if_stack[k]` — the `cond_ptr` saved at input level k
@@ -2788,7 +3208,9 @@ pub(crate) fn if_stack(k: i32) -> i32 {
 /// Sets `if_stack[k]`.
 #[inline]
 pub(crate) fn set_if_stack(k: i32, v: i32) {
-    unsafe { *raw::if_stack.offset(k as isize) = v; }
+    unsafe {
+        *raw::if_stack.offset(k as isize) = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2804,7 +3226,9 @@ pub(crate) fn cond_ptr() -> i32 {
 /// Sets `cond_ptr`.
 #[inline]
 pub(crate) fn set_cond_ptr(v: i32) {
-    unsafe { raw::cond_ptr = v; }
+    unsafe {
+        raw::cond_ptr = v;
+    }
 }
 
 /// Returns `if_limit` — current \if nesting limit code
@@ -2816,7 +3240,9 @@ pub(crate) fn if_limit() -> u8 {
 /// Sets `if_limit`.
 #[inline]
 pub(crate) fn set_if_limit(v: u8) {
-    unsafe { raw::if_limit = v; }
+    unsafe {
+        raw::if_limit = v;
+    }
 }
 
 /// Returns `cur_if` — current \if type (xetex-xetexd.h:539; small_number = i16).
@@ -2827,7 +3253,9 @@ pub(crate) fn cur_if() -> i16 {
 /// Sets `cur_if`.
 #[inline]
 pub(crate) fn set_cur_if(v: i16) {
-    unsafe { raw::cur_if = v; }
+    unsafe {
+        raw::cur_if = v;
+    }
 }
 
 /// Returns `if_line` — line number where the current \if was entered
@@ -2839,7 +3267,9 @@ pub(crate) fn if_line() -> i32 {
 /// Sets `if_line`.
 #[inline]
 pub(crate) fn set_if_line(v: i32) {
-    unsafe { raw::if_line = v; }
+    unsafe {
+        raw::if_line = v;
+    }
 }
 /// Returns `skip_line` (source line where the current \if-skip started).
 #[inline]
@@ -2849,7 +3279,9 @@ pub(crate) fn skip_line() -> i32 {
 /// Sets `skip_line = v`.
 #[inline]
 pub(crate) fn set_skip_line(v: i32) {
-    unsafe { raw::skip_line = v; }
+    unsafe {
+        raw::skip_line = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2864,7 +3296,9 @@ pub(crate) fn sa_root(i: usize) -> i32 {
 /// Write `sa_root[i] = v`.
 #[inline]
 pub(crate) fn set_sa_root(i: usize, v: i32) {
-    unsafe { raw::sa_root[i] = v; }
+    unsafe {
+        raw::sa_root[i] = v;
+    }
 }
 #[inline]
 pub(crate) fn sa_chain() -> i32 {
@@ -2872,7 +3306,9 @@ pub(crate) fn sa_chain() -> i32 {
 }
 #[inline]
 pub(crate) fn set_sa_chain(v: i32) {
-    unsafe { raw::sa_chain = v; }
+    unsafe {
+        raw::sa_chain = v;
+    }
 }
 #[inline]
 pub(crate) fn sa_level() -> u16 {
@@ -2880,7 +3316,9 @@ pub(crate) fn sa_level() -> u16 {
 }
 #[inline]
 pub(crate) fn set_sa_level(v: u16) {
-    unsafe { raw::sa_level = v; }
+    unsafe {
+        raw::sa_level = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2895,7 +3333,9 @@ pub(crate) fn cur_ptr() -> i32 {
 /// Sets `cur_ptr`.
 #[inline]
 pub(crate) fn set_cur_ptr(v: i32) {
-    unsafe { raw::cur_ptr = v; }
+    unsafe {
+        raw::cur_ptr = v;
+    }
 }
 /// Returns a copy of `sa_null` — the SA null memory-word sentinel.
 #[inline]
@@ -2913,7 +3353,9 @@ pub(crate) fn shown_mode() -> i16 {
 }
 #[inline]
 pub(crate) fn set_shown_mode(v: i16) {
-    unsafe { raw::shown_mode = v; }
+    unsafe {
+        raw::shown_mode = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2942,7 +3384,9 @@ pub(crate) fn param_stack(k: i32) -> i32 {
 /// Writes `param_stack[k] = v`.
 #[inline]
 pub(crate) fn set_param_stack(k: i32, v: i32) {
-    unsafe { *raw::param_stack.offset(k as isize) = v; }
+    unsafe {
+        *raw::param_stack.offset(k as isize) = v;
+    }
 }
 /// Returns `param_ptr` — next free slot in param_stack (xetex-xetexd.h:518).
 #[inline]
@@ -2952,7 +3396,9 @@ pub(crate) fn param_ptr() -> i32 {
 /// Sets `param_ptr`.
 #[inline]
 pub(crate) fn set_param_ptr(v: i32) {
-    unsafe { raw::param_ptr = v; }
+    unsafe {
+        raw::param_ptr = v;
+    }
 }
 /// Returns `max_param_stack` (xetex-xetexd.h:519).
 #[inline]
@@ -2962,7 +3408,9 @@ pub(crate) fn max_param_stack() -> i32 {
 /// Sets `max_param_stack`.
 #[inline]
 pub(crate) fn set_max_param_stack(v: i32) {
-    unsafe { raw::max_param_stack = v; }
+    unsafe {
+        raw::max_param_stack = v;
+    }
 }
 /// Returns `param_size` — allocated capacity of param_stack (xetex-ini.c:3596).
 #[inline]
@@ -2982,7 +3430,9 @@ pub(crate) fn first() -> i32 {
 /// Sets `first`.
 #[inline]
 pub(crate) fn set_first(v: i32) {
-    unsafe { raw::first = v; }
+    unsafe {
+        raw::first = v;
+    }
 }
 /// Returns `buf_size` — capacity of the input buffer (xetex-xetexd.h:409).
 #[inline]
@@ -3002,7 +3452,9 @@ pub(crate) fn max_in_open() -> i32 {
 /// Sets `in_open`.
 #[inline]
 pub(crate) fn set_in_open(v: i32) {
-    unsafe { raw::in_open = v; }
+    unsafe {
+        raw::in_open = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3017,22 +3469,30 @@ pub(crate) fn source_filename_stack(k: i32) -> i32 {
 /// Sets `source_filename_stack[k]`.
 #[inline]
 pub(crate) fn set_source_filename_stack(k: i32, v: i32) {
-    unsafe { *raw::source_filename_stack.offset(k as isize) = v; }
+    unsafe {
+        *raw::source_filename_stack.offset(k as isize) = v;
+    }
 }
 /// Sets `full_source_filename_stack[k]`.
 #[inline]
 pub(crate) fn set_full_source_filename_stack(k: i32, v: i32) {
-    unsafe { *raw::full_source_filename_stack.offset(k as isize) = v; }
+    unsafe {
+        *raw::full_source_filename_stack.offset(k as isize) = v;
+    }
 }
 /// Sets `line_stack[k]`.
 #[inline]
 pub(crate) fn set_line_stack(k: i32, v: i32) {
-    unsafe { *raw::line_stack.offset(k as isize) = v; }
+    unsafe {
+        *raw::line_stack.offset(k as isize) = v;
+    }
 }
 /// Sets `line`.
 #[inline]
 pub(crate) fn set_line(v: i32) {
-    unsafe { raw::line = v; }
+    unsafe {
+        raw::line = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3047,7 +3507,9 @@ pub(crate) fn eof_seen(k: i32) -> bool {
 /// Sets `eof_seen[k]`.
 #[inline]
 pub(crate) fn set_eof_seen(k: i32, v: bool) {
-    unsafe { *raw::eof_seen.offset(k as isize) = v; }
+    unsafe {
+        *raw::eof_seen.offset(k as isize) = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3062,7 +3524,9 @@ pub(crate) fn input_file(k: i32) -> *mut libc::c_void {
 /// Sets `input_file[k]`.
 #[inline]
 pub(crate) fn set_input_file(k: i32, v: *mut libc::c_void) {
-    unsafe { *raw::input_file.offset(k as isize) = v; }
+    unsafe {
+        *raw::input_file.offset(k as isize) = v;
+    }
 }
 /// Returns a pointer to `input_file[k]` (i.e. &input_file[k]), for passing to `u_open_in`.
 #[inline]
@@ -3082,7 +3546,9 @@ pub(crate) fn last() -> i32 {
 /// Sets `last`.
 #[inline]
 pub(crate) fn set_last(v: i32) {
-    unsafe { raw::last = v; }
+    unsafe {
+        raw::last = v;
+    }
 }
 /// Returns `max_buf_stack` — highest value `last` has ever reached.
 #[inline]
@@ -3092,12 +3558,16 @@ pub(crate) fn max_buf_stack() -> i32 {
 /// Sets `max_buf_stack`.
 #[inline]
 pub(crate) fn set_max_buf_stack(v: i32) {
-    unsafe { raw::max_buf_stack = v; }
+    unsafe {
+        raw::max_buf_stack = v;
+    }
 }
 /// Writes `buffer[k] = v`.
 #[inline]
 pub(crate) fn set_buffer_entry(k: i32, v: i32) {
-    unsafe { *raw::buffer.offset(k as isize) = v; }
+    unsafe {
+        *raw::buffer.offset(k as isize) = v;
+    }
 }
 /// Returns a raw pointer to `buffer[offset]` for use with C APIs.
 #[inline]
@@ -3107,7 +3577,9 @@ pub(crate) unsafe fn buffer_ptr(offset: i32) -> *mut i32 {
 /// Writes `cur_input.limit = v`.
 #[inline]
 pub(crate) fn set_cur_input_limit(v: i32) {
-    unsafe { raw::cur_input.limit = v; }
+    unsafe {
+        raw::cur_input.limit = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3115,15 +3587,29 @@ pub(crate) fn set_cur_input_limit(v: i32) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn expand_depth() -> i32 { unsafe { raw::expand_depth } }
+pub(crate) fn expand_depth() -> i32 {
+    unsafe { raw::expand_depth }
+}
 #[inline]
-pub(crate) fn expand_depth_count() -> i32 { unsafe { raw::expand_depth_count } }
+pub(crate) fn expand_depth_count() -> i32 {
+    unsafe { raw::expand_depth_count }
+}
 #[inline]
-pub(crate) fn set_expand_depth_count(v: i32) { unsafe { raw::expand_depth_count = v; } }
+pub(crate) fn set_expand_depth_count(v: i32) {
+    unsafe {
+        raw::expand_depth_count = v;
+    }
+}
 #[inline]
-pub(crate) fn cur_val_level() -> u8 { unsafe { raw::cur_val_level } }
+pub(crate) fn cur_val_level() -> u8 {
+    unsafe { raw::cur_val_level }
+}
 #[inline]
-pub(crate) fn set_cur_val_level(v: u8) { unsafe { raw::cur_val_level = v; } }
+pub(crate) fn set_cur_val_level(v: u8) {
+    unsafe {
+        raw::cur_val_level = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // scanner_status / warning_index / def_ref
@@ -3135,7 +3621,9 @@ pub(crate) fn scanner_status() -> u8 {
 }
 #[inline]
 pub(crate) fn set_scanner_status(v: u8) {
-    unsafe { raw::scanner_status = v; }
+    unsafe {
+        raw::scanner_status = v;
+    }
 }
 #[inline]
 pub(crate) fn warning_index() -> i32 {
@@ -3143,7 +3631,9 @@ pub(crate) fn warning_index() -> i32 {
 }
 #[inline]
 pub(crate) fn set_warning_index(v: i32) {
-    unsafe { raw::warning_index = v; }
+    unsafe {
+        raw::warning_index = v;
+    }
 }
 #[inline]
 pub(crate) fn def_ref() -> i32 {
@@ -3151,7 +3641,9 @@ pub(crate) fn def_ref() -> i32 {
 }
 #[inline]
 pub(crate) fn set_def_ref(v: i32) {
-    unsafe { raw::def_ref = v; }
+    unsafe {
+        raw::def_ref = v;
+    }
 }
 #[inline]
 pub(crate) fn deletions_allowed() -> bool {
@@ -3159,7 +3651,9 @@ pub(crate) fn deletions_allowed() -> bool {
 }
 #[inline]
 pub(crate) fn set_deletions_allowed(v: bool) {
-    unsafe { raw::deletions_allowed = v; }
+    unsafe {
+        raw::deletions_allowed = v;
+    }
 }
 #[inline]
 pub(crate) fn long_state() -> u8 {
@@ -3167,7 +3661,9 @@ pub(crate) fn long_state() -> u8 {
 }
 #[inline]
 pub(crate) fn set_long_state(v: u8) {
-    unsafe { raw::long_state = v; }
+    unsafe {
+        raw::long_state = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3180,7 +3676,9 @@ pub(crate) fn gave_char_warning_help() -> bool {
 }
 #[inline]
 pub(crate) fn set_gave_char_warning_help(v: bool) {
-    unsafe { raw::gave_char_warning_help = v; }
+    unsafe {
+        raw::gave_char_warning_help = v;
+    }
 }
 #[inline]
 pub(crate) fn main_p() -> i32 {
@@ -3188,7 +3686,9 @@ pub(crate) fn main_p() -> i32 {
 }
 #[inline]
 pub(crate) fn set_main_p(v: i32) {
-    unsafe { raw::main_p = v; }
+    unsafe {
+        raw::main_p = v;
+    }
 }
 #[inline]
 pub(crate) fn main_k() -> i32 {
@@ -3196,56 +3696,229 @@ pub(crate) fn main_k() -> i32 {
 }
 #[inline]
 pub(crate) fn set_main_k(v: i32) {
-    unsafe { raw::main_k = v; }
+    unsafe {
+        raw::main_k = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
 // main_loop inner-loop globals
 // ---------------------------------------------------------------------------
 
-#[inline] pub(crate) fn main_f() -> i32 { unsafe { raw::main_f } }
-#[inline] pub(crate) fn set_main_f(v: i32) { unsafe { raw::main_f = v; } }
-#[inline] pub(crate) fn main_h() -> i32 { unsafe { raw::main_h } }
-#[inline] pub(crate) fn set_main_h(v: i32) { unsafe { raw::main_h = v; } }
-#[inline] pub(crate) fn main_pp() -> i32 { unsafe { raw::main_pp } }
-#[inline] pub(crate) fn set_main_pp(v: i32) { unsafe { raw::main_pp = v; } }
-#[inline] pub(crate) fn main_ppp() -> i32 { unsafe { raw::main_ppp } }
-#[inline] pub(crate) fn set_main_ppp(v: i32) { unsafe { raw::main_ppp = v; } }
-#[inline] pub(crate) fn main_s() -> i32 { unsafe { raw::main_s } }
-#[inline] pub(crate) fn set_main_s(v: i32) { unsafe { raw::main_s = v; } }
-#[inline] pub(crate) fn cur_l() -> i32 { unsafe { raw::cur_l } }
-#[inline] pub(crate) fn set_cur_l(v: i32) { unsafe { raw::cur_l = v; } }
-#[inline] pub(crate) fn cur_r() -> i32 { unsafe { raw::cur_r } }
-#[inline] pub(crate) fn set_cur_r(v: i32) { unsafe { raw::cur_r = v; } }
-#[inline] pub(crate) fn cur_q() -> i32 { unsafe { raw::cur_q } }
-#[inline] pub(crate) fn set_cur_q(v: i32) { unsafe { raw::cur_q = v; } }
-#[inline] pub(crate) fn lig_stack() -> i32 { unsafe { raw::lig_stack } }
-#[inline] pub(crate) fn set_lig_stack(v: i32) { unsafe { raw::lig_stack = v; } }
-#[inline] pub(crate) fn ligature_present() -> bool { unsafe { raw::ligature_present } }
-#[inline] pub(crate) fn set_ligature_present(v: bool) { unsafe { raw::ligature_present = v; } }
-#[inline] pub(crate) fn lft_hit() -> bool { unsafe { raw::lft_hit } }
-#[inline] pub(crate) fn set_lft_hit(v: bool) { unsafe { raw::lft_hit = v; } }
-#[inline] pub(crate) fn rt_hit() -> bool { unsafe { raw::rt_hit } }
-#[inline] pub(crate) fn set_rt_hit(v: bool) { unsafe { raw::rt_hit = v; } }
-#[inline] pub(crate) fn native_text() -> *mut u16 { unsafe { raw::native_text } }
-#[inline] pub(crate) fn set_native_text(v: *mut u16) { unsafe { raw::native_text = v; } }
-#[inline] pub(crate) fn native_text_size() -> i32 { unsafe { raw::native_text_size } }
-#[inline] pub(crate) fn set_native_text_size(v: i32) { unsafe { raw::native_text_size = v; } }
-#[inline] pub(crate) fn native_len() -> i32 { unsafe { raw::native_len } }
-#[inline] pub(crate) fn set_native_len(v: i32) { unsafe { raw::native_len = v; } }
-#[inline] pub(crate) fn save_native_len() -> i32 { unsafe { raw::save_native_len } }
-#[inline] pub(crate) fn set_save_native_len(v: i32) { unsafe { raw::save_native_len = v; } }
-#[inline] pub(crate) fn is_hyph() -> bool { unsafe { raw::is_hyph } }
-#[inline] pub(crate) fn set_is_hyph(v: bool) { unsafe { raw::is_hyph = v; } }
-#[inline] pub(crate) fn bchar() -> i32 { unsafe { raw::bchar } }
-#[inline] pub(crate) fn set_bchar(v: i32) { unsafe { raw::bchar = v; } }
-#[inline] pub(crate) fn false_bchar() -> i32 { unsafe { raw::false_bchar } }
-#[inline] pub(crate) fn set_false_bchar(v: i32) { unsafe { raw::false_bchar = v; } }
-#[inline] pub(crate) fn cancel_boundary() -> bool { unsafe { raw::cancel_boundary } }
-#[inline] pub(crate) fn set_cancel_boundary(v: bool) { unsafe { raw::cancel_boundary = v; } }
-#[inline] pub(crate) fn ins_disc() -> bool { unsafe { raw::ins_disc } }
-#[inline] pub(crate) fn set_ins_disc(v: bool) { unsafe { raw::ins_disc = v; } }
-#[inline] pub(crate) fn insert_src_special_auto() -> bool { unsafe { raw::insert_src_special_auto } }
+#[inline]
+pub(crate) fn main_f() -> i32 {
+    unsafe { raw::main_f }
+}
+#[inline]
+pub(crate) fn set_main_f(v: i32) {
+    unsafe {
+        raw::main_f = v;
+    }
+}
+#[inline]
+pub(crate) fn main_h() -> i32 {
+    unsafe { raw::main_h }
+}
+#[inline]
+pub(crate) fn set_main_h(v: i32) {
+    unsafe {
+        raw::main_h = v;
+    }
+}
+#[inline]
+pub(crate) fn main_pp() -> i32 {
+    unsafe { raw::main_pp }
+}
+#[inline]
+pub(crate) fn set_main_pp(v: i32) {
+    unsafe {
+        raw::main_pp = v;
+    }
+}
+#[inline]
+pub(crate) fn main_ppp() -> i32 {
+    unsafe { raw::main_ppp }
+}
+#[inline]
+pub(crate) fn set_main_ppp(v: i32) {
+    unsafe {
+        raw::main_ppp = v;
+    }
+}
+#[inline]
+pub(crate) fn main_s() -> i32 {
+    unsafe { raw::main_s }
+}
+#[inline]
+pub(crate) fn set_main_s(v: i32) {
+    unsafe {
+        raw::main_s = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_l() -> i32 {
+    unsafe { raw::cur_l }
+}
+#[inline]
+pub(crate) fn set_cur_l(v: i32) {
+    unsafe {
+        raw::cur_l = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_r() -> i32 {
+    unsafe { raw::cur_r }
+}
+#[inline]
+pub(crate) fn set_cur_r(v: i32) {
+    unsafe {
+        raw::cur_r = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_q() -> i32 {
+    unsafe { raw::cur_q }
+}
+#[inline]
+pub(crate) fn set_cur_q(v: i32) {
+    unsafe {
+        raw::cur_q = v;
+    }
+}
+#[inline]
+pub(crate) fn lig_stack() -> i32 {
+    unsafe { raw::lig_stack }
+}
+#[inline]
+pub(crate) fn set_lig_stack(v: i32) {
+    unsafe {
+        raw::lig_stack = v;
+    }
+}
+#[inline]
+pub(crate) fn ligature_present() -> bool {
+    unsafe { raw::ligature_present }
+}
+#[inline]
+pub(crate) fn set_ligature_present(v: bool) {
+    unsafe {
+        raw::ligature_present = v;
+    }
+}
+#[inline]
+pub(crate) fn lft_hit() -> bool {
+    unsafe { raw::lft_hit }
+}
+#[inline]
+pub(crate) fn set_lft_hit(v: bool) {
+    unsafe {
+        raw::lft_hit = v;
+    }
+}
+#[inline]
+pub(crate) fn rt_hit() -> bool {
+    unsafe { raw::rt_hit }
+}
+#[inline]
+pub(crate) fn set_rt_hit(v: bool) {
+    unsafe {
+        raw::rt_hit = v;
+    }
+}
+#[inline]
+pub(crate) fn native_text() -> *mut u16 {
+    unsafe { raw::native_text }
+}
+#[inline]
+pub(crate) fn set_native_text(v: *mut u16) {
+    unsafe {
+        raw::native_text = v;
+    }
+}
+#[inline]
+pub(crate) fn native_text_size() -> i32 {
+    unsafe { raw::native_text_size }
+}
+#[inline]
+pub(crate) fn set_native_text_size(v: i32) {
+    unsafe {
+        raw::native_text_size = v;
+    }
+}
+#[inline]
+pub(crate) fn native_len() -> i32 {
+    unsafe { raw::native_len }
+}
+#[inline]
+pub(crate) fn set_native_len(v: i32) {
+    unsafe {
+        raw::native_len = v;
+    }
+}
+#[inline]
+pub(crate) fn save_native_len() -> i32 {
+    unsafe { raw::save_native_len }
+}
+#[inline]
+pub(crate) fn set_save_native_len(v: i32) {
+    unsafe {
+        raw::save_native_len = v;
+    }
+}
+#[inline]
+pub(crate) fn is_hyph() -> bool {
+    unsafe { raw::is_hyph }
+}
+#[inline]
+pub(crate) fn set_is_hyph(v: bool) {
+    unsafe {
+        raw::is_hyph = v;
+    }
+}
+#[inline]
+pub(crate) fn bchar() -> i32 {
+    unsafe { raw::bchar }
+}
+#[inline]
+pub(crate) fn set_bchar(v: i32) {
+    unsafe {
+        raw::bchar = v;
+    }
+}
+#[inline]
+pub(crate) fn false_bchar() -> i32 {
+    unsafe { raw::false_bchar }
+}
+#[inline]
+pub(crate) fn set_false_bchar(v: i32) {
+    unsafe {
+        raw::false_bchar = v;
+    }
+}
+#[inline]
+pub(crate) fn cancel_boundary() -> bool {
+    unsafe { raw::cancel_boundary }
+}
+#[inline]
+pub(crate) fn set_cancel_boundary(v: bool) {
+    unsafe {
+        raw::cancel_boundary = v;
+    }
+}
+#[inline]
+pub(crate) fn ins_disc() -> bool {
+    unsafe { raw::ins_disc }
+}
+#[inline]
+pub(crate) fn set_ins_disc(v: bool) {
+    unsafe {
+        raw::ins_disc = v;
+    }
+}
+#[inline]
+pub(crate) fn insert_src_special_auto() -> bool {
+    unsafe { raw::insert_src_special_auto }
+}
 
 #[inline]
 pub(crate) fn space_class() -> i32 {
@@ -3253,7 +3926,9 @@ pub(crate) fn space_class() -> i32 {
 }
 #[inline]
 pub(crate) fn set_space_class(v: i32) {
-    unsafe { raw::space_class = v; }
+    unsafe {
+        raw::space_class = v;
+    }
 }
 #[inline]
 pub(crate) fn prev_class() -> i32 {
@@ -3261,44 +3936,157 @@ pub(crate) fn prev_class() -> i32 {
 }
 #[inline]
 pub(crate) fn set_prev_class(v: i32) {
-    unsafe { raw::prev_class = v; }
+    unsafe {
+        raw::prev_class = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
 // hyphenation globals / cur_lang / insert_src_special_every_par
 // ---------------------------------------------------------------------------
 
-#[inline] pub(crate) fn hf() -> i32 { unsafe { raw::hf } }
-#[inline] pub(crate) fn set_hf(v: i32) { unsafe { raw::hf = v; } }
-#[inline] pub(crate) fn hc_entry(k: usize) -> i32 { unsafe { raw::hc[k] } }
-#[inline] pub(crate) fn set_hc_entry(k: usize, v: i32) { unsafe { raw::hc[k] = v; } }
-#[inline] pub(crate) fn hu_entry(k: usize) -> i32 { unsafe { raw::hu[k] } }
-#[inline] pub(crate) fn set_hu_entry(k: usize, v: i32) { unsafe { raw::hu[k] = v; } }
-#[inline] pub(crate) fn max_hyph_char() -> i32 { unsafe { raw::max_hyph_char } }
-#[inline] pub(crate) fn hyf_entry(k: usize) -> u8 { unsafe { raw::hyf[k] } }
-#[inline] pub(crate) fn set_hyf_entry(k: usize, v: u8) { unsafe { raw::hyf[k] = v; } }
-#[inline] pub(crate) fn init_list() -> i32 { unsafe { raw::init_list } }
-#[inline] pub(crate) fn set_init_list(v: i32) { unsafe { raw::init_list = v; } }
-#[inline] pub(crate) fn init_lig() -> bool { unsafe { raw::init_lig } }
-#[inline] pub(crate) fn set_init_lig(v: bool) { unsafe { raw::init_lig = v; } }
-#[inline] pub(crate) fn init_lft() -> bool { unsafe { raw::init_lft } }
-#[inline] pub(crate) fn set_init_lft(v: bool) { unsafe { raw::init_lft = v; } }
-#[inline] pub(crate) fn hyphen_passed() -> i16 { unsafe { raw::hyphen_passed } }
-#[inline] pub(crate) fn set_hyphen_passed(v: i16) { unsafe { raw::hyphen_passed = v; } }
-#[inline] pub(crate) fn trie_trl_entry(k: i32) -> i32 { unsafe { *raw::trie_trl.offset(k as isize) } }
-#[inline] pub(crate) fn trie_tro_entry(k: i32) -> i32 { unsafe { *raw::trie_tro.offset(k as isize) } }
-#[inline] pub(crate) fn trie_trc_entry(k: i32) -> u16 { unsafe { *raw::trie_trc.offset(k as isize) } }
-#[inline] pub(crate) fn trie_not_ready() -> bool { unsafe { raw::trie_not_ready } }
-#[inline] pub(crate) fn hyph_start() -> i32 { unsafe { raw::hyph_start } }
-#[inline] pub(crate) fn hyph_index() -> i32 { unsafe { raw::hyph_index } }
-#[inline] pub(crate) fn set_hyph_index(v: i32) { unsafe { raw::hyph_index = v; } }
-#[inline] pub(crate) fn hyf_distance_entry(k: i32) -> i16 { unsafe { raw::hyf_distance[k as usize] } }
-#[inline] pub(crate) fn hyf_num_entry(k: i32) -> i16 { unsafe { raw::hyf_num[k as usize] } }
-#[inline] pub(crate) fn hyf_next_entry(k: i32) -> u16 { unsafe { raw::hyf_next[k as usize] } }
-#[inline] pub(crate) fn op_start_entry(k: usize) -> i32 { unsafe { raw::op_start[k] } }
-#[inline] pub(crate) fn hyph_word_entry(k: i32) -> i32 { unsafe { *raw::hyph_word.offset(k as isize) } }
-#[inline] pub(crate) fn hyph_list_entry(k: i32) -> i32 { unsafe { *raw::hyph_list.offset(k as isize) } }
-#[inline] pub(crate) fn hyph_link_entry(k: i32) -> u16 { unsafe { *raw::hyph_link.offset(k as isize) } }
+#[inline]
+pub(crate) fn hf() -> i32 {
+    unsafe { raw::hf }
+}
+#[inline]
+pub(crate) fn set_hf(v: i32) {
+    unsafe {
+        raw::hf = v;
+    }
+}
+#[inline]
+pub(crate) fn hc_entry(k: usize) -> i32 {
+    unsafe { raw::hc[k] }
+}
+#[inline]
+pub(crate) fn set_hc_entry(k: usize, v: i32) {
+    unsafe {
+        raw::hc[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn hu_entry(k: usize) -> i32 {
+    unsafe { raw::hu[k] }
+}
+#[inline]
+pub(crate) fn set_hu_entry(k: usize, v: i32) {
+    unsafe {
+        raw::hu[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn max_hyph_char() -> i32 {
+    unsafe { raw::max_hyph_char }
+}
+#[inline]
+pub(crate) fn hyf_entry(k: usize) -> u8 {
+    unsafe { raw::hyf[k] }
+}
+#[inline]
+pub(crate) fn set_hyf_entry(k: usize, v: u8) {
+    unsafe {
+        raw::hyf[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn init_list() -> i32 {
+    unsafe { raw::init_list }
+}
+#[inline]
+pub(crate) fn set_init_list(v: i32) {
+    unsafe {
+        raw::init_list = v;
+    }
+}
+#[inline]
+pub(crate) fn init_lig() -> bool {
+    unsafe { raw::init_lig }
+}
+#[inline]
+pub(crate) fn set_init_lig(v: bool) {
+    unsafe {
+        raw::init_lig = v;
+    }
+}
+#[inline]
+pub(crate) fn init_lft() -> bool {
+    unsafe { raw::init_lft }
+}
+#[inline]
+pub(crate) fn set_init_lft(v: bool) {
+    unsafe {
+        raw::init_lft = v;
+    }
+}
+#[inline]
+pub(crate) fn hyphen_passed() -> i16 {
+    unsafe { raw::hyphen_passed }
+}
+#[inline]
+pub(crate) fn set_hyphen_passed(v: i16) {
+    unsafe {
+        raw::hyphen_passed = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_trl_entry(k: i32) -> i32 {
+    unsafe { *raw::trie_trl.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn trie_tro_entry(k: i32) -> i32 {
+    unsafe { *raw::trie_tro.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn trie_trc_entry(k: i32) -> u16 {
+    unsafe { *raw::trie_trc.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn trie_not_ready() -> bool {
+    unsafe { raw::trie_not_ready }
+}
+#[inline]
+pub(crate) fn hyph_start() -> i32 {
+    unsafe { raw::hyph_start }
+}
+#[inline]
+pub(crate) fn hyph_index() -> i32 {
+    unsafe { raw::hyph_index }
+}
+#[inline]
+pub(crate) fn set_hyph_index(v: i32) {
+    unsafe {
+        raw::hyph_index = v;
+    }
+}
+#[inline]
+pub(crate) fn hyf_distance_entry(k: i32) -> i16 {
+    unsafe { raw::hyf_distance[k as usize] }
+}
+#[inline]
+pub(crate) fn hyf_num_entry(k: i32) -> i16 {
+    unsafe { raw::hyf_num[k as usize] }
+}
+#[inline]
+pub(crate) fn hyf_next_entry(k: i32) -> u16 {
+    unsafe { raw::hyf_next[k as usize] }
+}
+#[inline]
+pub(crate) fn op_start_entry(k: usize) -> i32 {
+    unsafe { raw::op_start[k] }
+}
+#[inline]
+pub(crate) fn hyph_word_entry(k: i32) -> i32 {
+    unsafe { *raw::hyph_word.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn hyph_list_entry(k: i32) -> i32 {
+    unsafe { *raw::hyph_list.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn hyph_link_entry(k: i32) -> u16 {
+    unsafe { *raw::hyph_link.offset(k as isize) }
+}
 
 #[inline]
 pub(crate) fn cur_lang() -> u8 {
@@ -3306,7 +4094,9 @@ pub(crate) fn cur_lang() -> u8 {
 }
 #[inline]
 pub(crate) fn set_cur_lang(v: u8) {
-    unsafe { raw::cur_lang = v; }
+    unsafe {
+        raw::cur_lang = v;
+    }
 }
 #[inline]
 pub(crate) fn insert_src_special_every_par() -> bool {
@@ -3331,7 +4121,9 @@ pub(crate) fn cur_box() -> i32 {
 }
 #[inline]
 pub(crate) fn set_cur_box(v: i32) {
-    unsafe { raw::cur_box = v; }
+    unsafe {
+        raw::cur_box = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3344,54 +4136,200 @@ pub(crate) fn cur_order() -> u8 {
 }
 #[inline]
 pub(crate) fn set_cur_order(v: u8) {
-    unsafe { raw::cur_order = v; }
+    unsafe {
+        raw::cur_order = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
 // alignment state
 // ---------------------------------------------------------------------------
 
-#[inline] pub(crate) fn cur_align() -> i32 { unsafe { raw::cur_align } }
-#[inline] pub(crate) fn set_cur_align(v: i32) { unsafe { raw::cur_align = v; } }
-#[inline] pub(crate) fn cur_span() -> i32 { unsafe { raw::cur_span } }
-#[inline] pub(crate) fn set_cur_span(v: i32) { unsafe { raw::cur_span = v; } }
-#[inline] pub(crate) fn cur_loop() -> i32 { unsafe { raw::cur_loop } }
-#[inline] pub(crate) fn set_cur_loop(v: i32) { unsafe { raw::cur_loop = v; } }
-#[inline] pub(crate) fn align_ptr() -> i32 { unsafe { raw::align_ptr } }
-#[inline] pub(crate) fn set_align_ptr(v: i32) { unsafe { raw::align_ptr = v; } }
-#[inline] pub(crate) fn cur_head() -> i32 { unsafe { raw::cur_head } }
-#[inline] pub(crate) fn set_cur_head(v: i32) { unsafe { raw::cur_head = v; } }
-#[inline] pub(crate) fn cur_tail_a() -> i32 { unsafe { raw::cur_tail } }
-#[inline] pub(crate) fn set_cur_tail_a(v: i32) { unsafe { raw::cur_tail = v; } }
-#[inline] pub(crate) fn cur_pre_head() -> i32 { unsafe { raw::cur_pre_head } }
-#[inline] pub(crate) fn set_cur_pre_head(v: i32) { unsafe { raw::cur_pre_head = v; } }
-#[inline] pub(crate) fn cur_pre_tail() -> i32 { unsafe { raw::cur_pre_tail } }
-#[inline] pub(crate) fn set_cur_pre_tail(v: i32) { unsafe { raw::cur_pre_tail = v; } }
+#[inline]
+pub(crate) fn cur_align() -> i32 {
+    unsafe { raw::cur_align }
+}
+#[inline]
+pub(crate) fn set_cur_align(v: i32) {
+    unsafe {
+        raw::cur_align = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_span() -> i32 {
+    unsafe { raw::cur_span }
+}
+#[inline]
+pub(crate) fn set_cur_span(v: i32) {
+    unsafe {
+        raw::cur_span = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_loop() -> i32 {
+    unsafe { raw::cur_loop }
+}
+#[inline]
+pub(crate) fn set_cur_loop(v: i32) {
+    unsafe {
+        raw::cur_loop = v;
+    }
+}
+#[inline]
+pub(crate) fn align_ptr() -> i32 {
+    unsafe { raw::align_ptr }
+}
+#[inline]
+pub(crate) fn set_align_ptr(v: i32) {
+    unsafe {
+        raw::align_ptr = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_head() -> i32 {
+    unsafe { raw::cur_head }
+}
+#[inline]
+pub(crate) fn set_cur_head(v: i32) {
+    unsafe {
+        raw::cur_head = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_tail_a() -> i32 {
+    unsafe { raw::cur_tail }
+}
+#[inline]
+pub(crate) fn set_cur_tail_a(v: i32) {
+    unsafe {
+        raw::cur_tail = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_pre_head() -> i32 {
+    unsafe { raw::cur_pre_head }
+}
+#[inline]
+pub(crate) fn set_cur_pre_head(v: i32) {
+    unsafe {
+        raw::cur_pre_head = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_pre_tail() -> i32 {
+    unsafe { raw::cur_pre_tail }
+}
+#[inline]
+pub(crate) fn set_cur_pre_tail(v: i32) {
+    unsafe {
+        raw::cur_pre_tail = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // hpack adjust-tail / total_stretch / total_shrink
 // ---------------------------------------------------------------------------
 
-#[inline] pub(crate) fn adjust_tail() -> i32 { unsafe { raw::adjust_tail } }
-#[inline] pub(crate) fn set_adjust_tail(v: i32) { unsafe { raw::adjust_tail = v; } }
-#[inline] pub(crate) fn pre_adjust_tail() -> i32 { unsafe { raw::pre_adjust_tail } }
-#[inline] pub(crate) fn set_pre_adjust_tail(v: i32) { unsafe { raw::pre_adjust_tail = v; } }
-#[inline] pub(crate) fn total_stretch(o: usize) -> i32 { unsafe { raw::total_stretch[o] } }
-#[inline] pub(crate) fn set_total_stretch(o: usize, v: i32) { unsafe { raw::total_stretch[o] = v; } }
-#[inline] pub(crate) fn total_shrink(o: usize) -> i32 { unsafe { raw::total_shrink[o] } }
-#[inline] pub(crate) fn set_total_shrink(o: usize, v: i32) { unsafe { raw::total_shrink[o] = v; } }
-#[inline] pub(crate) fn just_box() -> i32 { unsafe { raw::just_box } }
-#[inline] pub(crate) fn set_just_box(v: i32) { unsafe { raw::just_box = v; } }
-#[inline] pub(crate) fn cur_f() -> i32 { unsafe { raw::cur_f } }
-#[inline] pub(crate) fn set_cur_f(v: i32) { unsafe { raw::cur_f = v; } }
-#[inline] pub(crate) fn cur_c() -> i32 { unsafe { raw::cur_c } }
-#[inline] pub(crate) fn set_cur_c(v: i32) { unsafe { raw::cur_c = v; } }
-#[inline] pub(crate) fn cur_i() -> crate::mem_types::B16x4 { unsafe { raw::cur_i } }
-#[inline] pub(crate) fn set_cur_i(v: crate::mem_types::B16x4) { unsafe { raw::cur_i = v; } }
-#[inline] pub(crate) fn pack_begin_line() -> i32 { unsafe { raw::pack_begin_line } }
-#[inline] pub(crate) fn set_pack_begin_line(v: i32) { unsafe { raw::pack_begin_line = v; } }
-#[inline] pub(crate) fn set_box_allowed() -> bool { unsafe { raw::set_box_allowed } }
-#[inline] pub(crate) fn set_set_box_allowed(v: bool) { unsafe { raw::set_box_allowed = v; } }
+#[inline]
+pub(crate) fn adjust_tail() -> i32 {
+    unsafe { raw::adjust_tail }
+}
+#[inline]
+pub(crate) fn set_adjust_tail(v: i32) {
+    unsafe {
+        raw::adjust_tail = v;
+    }
+}
+#[inline]
+pub(crate) fn pre_adjust_tail() -> i32 {
+    unsafe { raw::pre_adjust_tail }
+}
+#[inline]
+pub(crate) fn set_pre_adjust_tail(v: i32) {
+    unsafe {
+        raw::pre_adjust_tail = v;
+    }
+}
+#[inline]
+pub(crate) fn total_stretch(o: usize) -> i32 {
+    unsafe { raw::total_stretch[o] }
+}
+#[inline]
+pub(crate) fn set_total_stretch(o: usize, v: i32) {
+    unsafe {
+        raw::total_stretch[o] = v;
+    }
+}
+#[inline]
+pub(crate) fn total_shrink(o: usize) -> i32 {
+    unsafe { raw::total_shrink[o] }
+}
+#[inline]
+pub(crate) fn set_total_shrink(o: usize, v: i32) {
+    unsafe {
+        raw::total_shrink[o] = v;
+    }
+}
+#[inline]
+pub(crate) fn just_box() -> i32 {
+    unsafe { raw::just_box }
+}
+#[inline]
+pub(crate) fn set_just_box(v: i32) {
+    unsafe {
+        raw::just_box = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_f() -> i32 {
+    unsafe { raw::cur_f }
+}
+#[inline]
+pub(crate) fn set_cur_f(v: i32) {
+    unsafe {
+        raw::cur_f = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_c() -> i32 {
+    unsafe { raw::cur_c }
+}
+#[inline]
+pub(crate) fn set_cur_c(v: i32) {
+    unsafe {
+        raw::cur_c = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_i() -> crate::mem_types::B16x4 {
+    unsafe { raw::cur_i }
+}
+#[inline]
+pub(crate) fn set_cur_i(v: crate::mem_types::B16x4) {
+    unsafe {
+        raw::cur_i = v;
+    }
+}
+#[inline]
+pub(crate) fn pack_begin_line() -> i32 {
+    unsafe { raw::pack_begin_line }
+}
+#[inline]
+pub(crate) fn set_pack_begin_line(v: i32) {
+    unsafe {
+        raw::pack_begin_line = v;
+    }
+}
+#[inline]
+pub(crate) fn set_box_allowed() -> bool {
+    unsafe { raw::set_box_allowed }
+}
+#[inline]
+pub(crate) fn set_set_box_allowed(v: bool) {
+    unsafe {
+        raw::set_box_allowed = v;
+    }
+}
 
 /// Returns `cur_list.mode_line` (the source line where the current mode started).
 #[inline]
@@ -3412,7 +4350,9 @@ pub(crate) fn active_width(k: usize) -> i32 {
 /// Write `active_width[k] = v` (1-indexed, k in 1..=6).
 #[inline]
 pub(crate) fn set_active_width(k: usize, v: i32) {
-    unsafe { raw::active_width[k] = v; }
+    unsafe {
+        raw::active_width[k] = v;
+    }
 }
 
 /// Read `best_height_plus_depth`.
@@ -3424,194 +4364,778 @@ pub(crate) fn best_height_plus_depth() -> i32 {
 /// Write `best_height_plus_depth`.
 #[inline]
 pub(crate) fn set_best_height_plus_depth(v: i32) {
-    unsafe { raw::best_height_plus_depth = v; }
+    unsafe {
+        raw::best_height_plus_depth = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
 // LR_ptr / LR_problems / cur_dir
 // ---------------------------------------------------------------------------
 
-#[inline] pub(crate) fn lr_ptr() -> i32 { unsafe { raw::LR_ptr } }
-#[inline] pub(crate) fn set_lr_ptr(v: i32) { unsafe { raw::LR_ptr = v; } }
-#[inline] pub(crate) fn lr_problems() -> i32 { unsafe { raw::LR_problems } }
-#[inline] pub(crate) fn set_lr_problems(v: i32) { unsafe { raw::LR_problems = v; } }
-#[inline] pub(crate) fn cur_dir() -> i16 { unsafe { raw::cur_dir } }
-#[inline] pub(crate) fn set_cur_dir(v: i16) { unsafe { raw::cur_dir = v; } }
-#[inline] pub(crate) fn last_leftmost_char() -> i32 { unsafe { raw::last_leftmost_char } }
-#[inline] pub(crate) fn set_last_leftmost_char(v: i32) { unsafe { raw::last_leftmost_char = v; } }
-#[inline] pub(crate) fn last_rightmost_char() -> i32 { unsafe { raw::last_rightmost_char } }
-#[inline] pub(crate) fn set_last_rightmost_char(v: i32) { unsafe { raw::last_rightmost_char = v; } }
-#[inline] pub(crate) fn hlist_stack_entry(k: i16) -> i32 { unsafe { raw::hlist_stack[k as usize] } }
-#[inline] pub(crate) fn set_hlist_stack_entry(k: i16, v: i32) { unsafe { raw::hlist_stack[k as usize] = v; } }
-#[inline] pub(crate) fn hlist_stack_level() -> i16 { unsafe { raw::hlist_stack_level } }
-#[inline] pub(crate) fn set_hlist_stack_level(v: i16) { unsafe { raw::hlist_stack_level = v; } }
-#[inline] pub(crate) fn first_p() -> i32 { unsafe { raw::first_p } }
-#[inline] pub(crate) fn set_first_p(v: i32) { unsafe { raw::first_p = v; } }
-#[inline] pub(crate) fn global_prev_p() -> i32 { unsafe { raw::global_prev_p } }
-#[inline] pub(crate) fn set_global_prev_p(v: i32) { unsafe { raw::global_prev_p = v; } }
-#[inline] pub(crate) fn no_shrink_error_yet() -> bool { unsafe { raw::no_shrink_error_yet } }
-#[inline] pub(crate) fn set_no_shrink_error_yet(v: bool) { unsafe { raw::no_shrink_error_yet = v; } }
-#[inline] pub(crate) fn cur_p() -> i32 { unsafe { raw::cur_p } }
-#[inline] pub(crate) fn set_cur_p(v: i32) { unsafe { raw::cur_p = v; } }
-#[inline] pub(crate) fn last_special_line() -> i32 { unsafe { raw::last_special_line } }
-#[inline] pub(crate) fn set_last_special_line(v: i32) { unsafe { raw::last_special_line = v; } }
-#[inline] pub(crate) fn first_width() -> i32 { unsafe { raw::first_width } }
-#[inline] pub(crate) fn set_first_width(v: i32) { unsafe { raw::first_width = v; } }
-#[inline] pub(crate) fn second_width() -> i32 { unsafe { raw::second_width } }
-#[inline] pub(crate) fn set_second_width(v: i32) { unsafe { raw::second_width = v; } }
-#[inline] pub(crate) fn first_indent() -> i32 { unsafe { raw::first_indent } }
-#[inline] pub(crate) fn set_first_indent(v: i32) { unsafe { raw::first_indent = v; } }
-#[inline] pub(crate) fn second_indent() -> i32 { unsafe { raw::second_indent } }
-#[inline] pub(crate) fn set_second_indent(v: i32) { unsafe { raw::second_indent = v; } }
-#[inline] pub(crate) fn best_bet() -> i32 { unsafe { raw::best_bet } }
-#[inline] pub(crate) fn set_best_bet(v: i32) { unsafe { raw::best_bet = v; } }
-#[inline] pub(crate) fn best_line() -> i32 { unsafe { raw::best_line } }
-#[inline] pub(crate) fn set_best_line(v: i32) { unsafe { raw::best_line = v; } }
-#[inline] pub(crate) fn hn() -> i16 { unsafe { raw::hn } }
-#[inline] pub(crate) fn set_hn(v: i16) { unsafe { raw::hn = v; } }
-#[inline] pub(crate) fn ha() -> i32 { unsafe { raw::ha } }
-#[inline] pub(crate) fn set_ha(v: i32) { unsafe { raw::ha = v; } }
-#[inline] pub(crate) fn hb() -> i32 { unsafe { raw::hb } }
-#[inline] pub(crate) fn set_hb(v: i32) { unsafe { raw::hb = v; } }
-#[inline] pub(crate) fn hyf_char() -> i32 { unsafe { raw::hyf_char } }
-#[inline] pub(crate) fn set_hyf_char(v: i32) { unsafe { raw::hyf_char = v; } }
-#[inline] pub(crate) fn l_hyf() -> i32 { unsafe { raw::l_hyf } }
-#[inline] pub(crate) fn set_l_hyf(v: i32) { unsafe { raw::l_hyf = v; } }
-#[inline] pub(crate) fn r_hyf() -> i32 { unsafe { raw::r_hyf } }
-#[inline] pub(crate) fn set_r_hyf(v: i32) { unsafe { raw::r_hyf = v; } }
-#[inline] pub(crate) fn init_l_hyf() -> i32 { unsafe { raw::init_l_hyf } }
-#[inline] pub(crate) fn set_init_l_hyf(v: i32) { unsafe { raw::init_l_hyf = v; } }
-#[inline] pub(crate) fn init_r_hyf() -> i32 { unsafe { raw::init_r_hyf } }
-#[inline] pub(crate) fn set_init_r_hyf(v: i32) { unsafe { raw::init_r_hyf = v; } }
-#[inline] pub(crate) fn hyf_bchar() -> i32 { unsafe { raw::hyf_bchar } }
-#[inline] pub(crate) fn set_hyf_bchar(v: i32) { unsafe { raw::hyf_bchar = v; } }
-#[inline] pub(crate) fn passive() -> i32 { unsafe { raw::passive } }
-#[inline] pub(crate) fn set_passive(v: i32) { unsafe { raw::passive = v; } }
-#[inline] pub(crate) fn cur_active_width(k: usize) -> i32 { unsafe { raw::cur_active_width[k] } }
-#[inline] pub(crate) fn set_cur_active_width(k: usize, v: i32) { unsafe { raw::cur_active_width[k] = v; } }
-#[inline] pub(crate) fn background(k: usize) -> i32 { unsafe { raw::background[k] } }
-#[inline] pub(crate) fn set_background(k: usize, v: i32) { unsafe { raw::background[k] = v; } }
-#[inline] pub(crate) fn break_width(k: usize) -> i32 { unsafe { raw::break_width[k] } }
-#[inline] pub(crate) fn set_break_width(k: usize, v: i32) { unsafe { raw::break_width[k] = v; } }
-#[inline] pub(crate) fn best_place(k: usize) -> i32 { unsafe { raw::best_place[k] } }
-#[inline] pub(crate) fn set_best_place(k: usize, v: i32) { unsafe { raw::best_place[k] = v; } }
-#[inline] pub(crate) fn best_pl_line(k: usize) -> i32 { unsafe { raw::best_pl_line[k] } }
-#[inline] pub(crate) fn set_best_pl_line(k: usize, v: i32) { unsafe { raw::best_pl_line[k] = v; } }
-#[inline] pub(crate) fn disc_width() -> i32 { unsafe { raw::disc_width } }
-#[inline] pub(crate) fn set_disc_width(v: i32) { unsafe { raw::disc_width = v; } }
-#[inline] pub(crate) fn final_pass() -> bool { unsafe { raw::final_pass } }
-#[inline] pub(crate) fn set_final_pass(v: bool) { unsafe { raw::final_pass = v; } }
-#[inline] pub(crate) fn threshold() -> i32 { unsafe { raw::threshold } }
-#[inline] pub(crate) fn set_threshold(v: i32) { unsafe { raw::threshold = v; } }
-#[inline] pub(crate) fn minimal_demerits(k: usize) -> i32 { unsafe { raw::minimal_demerits[k] } }
-#[inline] pub(crate) fn set_minimal_demerits(k: usize, v: i32) { unsafe { raw::minimal_demerits[k] = v; } }
-#[inline] pub(crate) fn minimum_demerits() -> i32 { unsafe { raw::minimum_demerits } }
-#[inline] pub(crate) fn set_minimum_demerits(v: i32) { unsafe { raw::minimum_demerits = v; } }
-#[inline] pub(crate) fn easy_line() -> i32 { unsafe { raw::easy_line } }
-#[inline] pub(crate) fn set_easy_line(v: i32) { unsafe { raw::easy_line = v; } }
-#[inline] pub(crate) fn do_last_line_fit() -> bool { unsafe { raw::do_last_line_fit } }
-#[inline] pub(crate) fn set_do_last_line_fit(v: bool) { unsafe { raw::do_last_line_fit = v; } }
-#[inline] pub(crate) fn active_node_size() -> i32 { unsafe { raw::active_node_size as i32 } }
-#[inline] pub(crate) fn set_active_node_size(v: i16) { unsafe { raw::active_node_size = v; } }
-#[inline] pub(crate) fn fill_width(k: usize) -> i32 { unsafe { raw::fill_width[k] } }
-#[inline] pub(crate) fn set_fill_width(k: usize, v: i32) { unsafe { raw::fill_width[k] = v; } }
-#[inline] pub(crate) fn best_pl_short(k: usize) -> i32 { unsafe { raw::best_pl_short[k] } }
-#[inline] pub(crate) fn set_best_pl_short(k: usize, v: i32) { unsafe { raw::best_pl_short[k] = v; } }
-#[inline] pub(crate) fn best_pl_glue(k: usize) -> i32 { unsafe { raw::best_pl_glue[k] } }
-#[inline] pub(crate) fn set_best_pl_glue(k: usize, v: i32) { unsafe { raw::best_pl_glue[k] = v; } }
-#[inline] pub(crate) fn font_in_short_display() -> i32 { unsafe { raw::font_in_short_display } }
-#[inline] pub(crate) fn set_font_in_short_display(v: i32) { unsafe { raw::font_in_short_display = v; } }
-#[inline] pub(crate) fn depth_threshold() -> i32 { unsafe { raw::depth_threshold } }
-#[inline] pub(crate) fn set_depth_threshold(v: i32) { unsafe { raw::depth_threshold = v; } }
-#[inline] pub(crate) fn breadth_max() -> i32 { unsafe { raw::breadth_max } }
-#[inline] pub(crate) fn set_breadth_max(v: i32) { unsafe { raw::breadth_max = v; } }
+#[inline]
+pub(crate) fn lr_ptr() -> i32 {
+    unsafe { raw::LR_ptr }
+}
+#[inline]
+pub(crate) fn set_lr_ptr(v: i32) {
+    unsafe {
+        raw::LR_ptr = v;
+    }
+}
+#[inline]
+pub(crate) fn lr_problems() -> i32 {
+    unsafe { raw::LR_problems }
+}
+#[inline]
+pub(crate) fn set_lr_problems(v: i32) {
+    unsafe {
+        raw::LR_problems = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_dir() -> i16 {
+    unsafe { raw::cur_dir }
+}
+#[inline]
+pub(crate) fn set_cur_dir(v: i16) {
+    unsafe {
+        raw::cur_dir = v;
+    }
+}
+#[inline]
+pub(crate) fn last_leftmost_char() -> i32 {
+    unsafe { raw::last_leftmost_char }
+}
+#[inline]
+pub(crate) fn set_last_leftmost_char(v: i32) {
+    unsafe {
+        raw::last_leftmost_char = v;
+    }
+}
+#[inline]
+pub(crate) fn last_rightmost_char() -> i32 {
+    unsafe { raw::last_rightmost_char }
+}
+#[inline]
+pub(crate) fn set_last_rightmost_char(v: i32) {
+    unsafe {
+        raw::last_rightmost_char = v;
+    }
+}
+#[inline]
+pub(crate) fn hlist_stack_entry(k: i16) -> i32 {
+    unsafe { raw::hlist_stack[k as usize] }
+}
+#[inline]
+pub(crate) fn set_hlist_stack_entry(k: i16, v: i32) {
+    unsafe {
+        raw::hlist_stack[k as usize] = v;
+    }
+}
+#[inline]
+pub(crate) fn hlist_stack_level() -> i16 {
+    unsafe { raw::hlist_stack_level }
+}
+#[inline]
+pub(crate) fn set_hlist_stack_level(v: i16) {
+    unsafe {
+        raw::hlist_stack_level = v;
+    }
+}
+#[inline]
+pub(crate) fn first_p() -> i32 {
+    unsafe { raw::first_p }
+}
+#[inline]
+pub(crate) fn set_first_p(v: i32) {
+    unsafe {
+        raw::first_p = v;
+    }
+}
+#[inline]
+pub(crate) fn global_prev_p() -> i32 {
+    unsafe { raw::global_prev_p }
+}
+#[inline]
+pub(crate) fn set_global_prev_p(v: i32) {
+    unsafe {
+        raw::global_prev_p = v;
+    }
+}
+#[inline]
+pub(crate) fn no_shrink_error_yet() -> bool {
+    unsafe { raw::no_shrink_error_yet }
+}
+#[inline]
+pub(crate) fn set_no_shrink_error_yet(v: bool) {
+    unsafe {
+        raw::no_shrink_error_yet = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_p() -> i32 {
+    unsafe { raw::cur_p }
+}
+#[inline]
+pub(crate) fn set_cur_p(v: i32) {
+    unsafe {
+        raw::cur_p = v;
+    }
+}
+#[inline]
+pub(crate) fn last_special_line() -> i32 {
+    unsafe { raw::last_special_line }
+}
+#[inline]
+pub(crate) fn set_last_special_line(v: i32) {
+    unsafe {
+        raw::last_special_line = v;
+    }
+}
+#[inline]
+pub(crate) fn first_width() -> i32 {
+    unsafe { raw::first_width }
+}
+#[inline]
+pub(crate) fn set_first_width(v: i32) {
+    unsafe {
+        raw::first_width = v;
+    }
+}
+#[inline]
+pub(crate) fn second_width() -> i32 {
+    unsafe { raw::second_width }
+}
+#[inline]
+pub(crate) fn set_second_width(v: i32) {
+    unsafe {
+        raw::second_width = v;
+    }
+}
+#[inline]
+pub(crate) fn first_indent() -> i32 {
+    unsafe { raw::first_indent }
+}
+#[inline]
+pub(crate) fn set_first_indent(v: i32) {
+    unsafe {
+        raw::first_indent = v;
+    }
+}
+#[inline]
+pub(crate) fn second_indent() -> i32 {
+    unsafe { raw::second_indent }
+}
+#[inline]
+pub(crate) fn set_second_indent(v: i32) {
+    unsafe {
+        raw::second_indent = v;
+    }
+}
+#[inline]
+pub(crate) fn best_bet() -> i32 {
+    unsafe { raw::best_bet }
+}
+#[inline]
+pub(crate) fn set_best_bet(v: i32) {
+    unsafe {
+        raw::best_bet = v;
+    }
+}
+#[inline]
+pub(crate) fn best_line() -> i32 {
+    unsafe { raw::best_line }
+}
+#[inline]
+pub(crate) fn set_best_line(v: i32) {
+    unsafe {
+        raw::best_line = v;
+    }
+}
+#[inline]
+pub(crate) fn hn() -> i16 {
+    unsafe { raw::hn }
+}
+#[inline]
+pub(crate) fn set_hn(v: i16) {
+    unsafe {
+        raw::hn = v;
+    }
+}
+#[inline]
+pub(crate) fn ha() -> i32 {
+    unsafe { raw::ha }
+}
+#[inline]
+pub(crate) fn set_ha(v: i32) {
+    unsafe {
+        raw::ha = v;
+    }
+}
+#[inline]
+pub(crate) fn hb() -> i32 {
+    unsafe { raw::hb }
+}
+#[inline]
+pub(crate) fn set_hb(v: i32) {
+    unsafe {
+        raw::hb = v;
+    }
+}
+#[inline]
+pub(crate) fn hyf_char() -> i32 {
+    unsafe { raw::hyf_char }
+}
+#[inline]
+pub(crate) fn set_hyf_char(v: i32) {
+    unsafe {
+        raw::hyf_char = v;
+    }
+}
+#[inline]
+pub(crate) fn l_hyf() -> i32 {
+    unsafe { raw::l_hyf }
+}
+#[inline]
+pub(crate) fn set_l_hyf(v: i32) {
+    unsafe {
+        raw::l_hyf = v;
+    }
+}
+#[inline]
+pub(crate) fn r_hyf() -> i32 {
+    unsafe { raw::r_hyf }
+}
+#[inline]
+pub(crate) fn set_r_hyf(v: i32) {
+    unsafe {
+        raw::r_hyf = v;
+    }
+}
+#[inline]
+pub(crate) fn init_l_hyf() -> i32 {
+    unsafe { raw::init_l_hyf }
+}
+#[inline]
+pub(crate) fn set_init_l_hyf(v: i32) {
+    unsafe {
+        raw::init_l_hyf = v;
+    }
+}
+#[inline]
+pub(crate) fn init_r_hyf() -> i32 {
+    unsafe { raw::init_r_hyf }
+}
+#[inline]
+pub(crate) fn set_init_r_hyf(v: i32) {
+    unsafe {
+        raw::init_r_hyf = v;
+    }
+}
+#[inline]
+pub(crate) fn hyf_bchar() -> i32 {
+    unsafe { raw::hyf_bchar }
+}
+#[inline]
+pub(crate) fn set_hyf_bchar(v: i32) {
+    unsafe {
+        raw::hyf_bchar = v;
+    }
+}
+#[inline]
+pub(crate) fn passive() -> i32 {
+    unsafe { raw::passive }
+}
+#[inline]
+pub(crate) fn set_passive(v: i32) {
+    unsafe {
+        raw::passive = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_active_width(k: usize) -> i32 {
+    unsafe { raw::cur_active_width[k] }
+}
+#[inline]
+pub(crate) fn set_cur_active_width(k: usize, v: i32) {
+    unsafe {
+        raw::cur_active_width[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn background(k: usize) -> i32 {
+    unsafe { raw::background[k] }
+}
+#[inline]
+pub(crate) fn set_background(k: usize, v: i32) {
+    unsafe {
+        raw::background[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn break_width(k: usize) -> i32 {
+    unsafe { raw::break_width[k] }
+}
+#[inline]
+pub(crate) fn set_break_width(k: usize, v: i32) {
+    unsafe {
+        raw::break_width[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn best_place(k: usize) -> i32 {
+    unsafe { raw::best_place[k] }
+}
+#[inline]
+pub(crate) fn set_best_place(k: usize, v: i32) {
+    unsafe {
+        raw::best_place[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn best_pl_line(k: usize) -> i32 {
+    unsafe { raw::best_pl_line[k] }
+}
+#[inline]
+pub(crate) fn set_best_pl_line(k: usize, v: i32) {
+    unsafe {
+        raw::best_pl_line[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn disc_width() -> i32 {
+    unsafe { raw::disc_width }
+}
+#[inline]
+pub(crate) fn set_disc_width(v: i32) {
+    unsafe {
+        raw::disc_width = v;
+    }
+}
+#[inline]
+pub(crate) fn final_pass() -> bool {
+    unsafe { raw::final_pass }
+}
+#[inline]
+pub(crate) fn set_final_pass(v: bool) {
+    unsafe {
+        raw::final_pass = v;
+    }
+}
+#[inline]
+pub(crate) fn threshold() -> i32 {
+    unsafe { raw::threshold }
+}
+#[inline]
+pub(crate) fn set_threshold(v: i32) {
+    unsafe {
+        raw::threshold = v;
+    }
+}
+#[inline]
+pub(crate) fn minimal_demerits(k: usize) -> i32 {
+    unsafe { raw::minimal_demerits[k] }
+}
+#[inline]
+pub(crate) fn set_minimal_demerits(k: usize, v: i32) {
+    unsafe {
+        raw::minimal_demerits[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn minimum_demerits() -> i32 {
+    unsafe { raw::minimum_demerits }
+}
+#[inline]
+pub(crate) fn set_minimum_demerits(v: i32) {
+    unsafe {
+        raw::minimum_demerits = v;
+    }
+}
+#[inline]
+pub(crate) fn easy_line() -> i32 {
+    unsafe { raw::easy_line }
+}
+#[inline]
+pub(crate) fn set_easy_line(v: i32) {
+    unsafe {
+        raw::easy_line = v;
+    }
+}
+#[inline]
+pub(crate) fn do_last_line_fit() -> bool {
+    unsafe { raw::do_last_line_fit }
+}
+#[inline]
+pub(crate) fn set_do_last_line_fit(v: bool) {
+    unsafe {
+        raw::do_last_line_fit = v;
+    }
+}
+#[inline]
+pub(crate) fn active_node_size() -> i32 {
+    unsafe { raw::active_node_size as i32 }
+}
+#[inline]
+pub(crate) fn set_active_node_size(v: i16) {
+    unsafe {
+        raw::active_node_size = v;
+    }
+}
+#[inline]
+pub(crate) fn fill_width(k: usize) -> i32 {
+    unsafe { raw::fill_width[k] }
+}
+#[inline]
+pub(crate) fn set_fill_width(k: usize, v: i32) {
+    unsafe {
+        raw::fill_width[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn best_pl_short(k: usize) -> i32 {
+    unsafe { raw::best_pl_short[k] }
+}
+#[inline]
+pub(crate) fn set_best_pl_short(k: usize, v: i32) {
+    unsafe {
+        raw::best_pl_short[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn best_pl_glue(k: usize) -> i32 {
+    unsafe { raw::best_pl_glue[k] }
+}
+#[inline]
+pub(crate) fn set_best_pl_glue(k: usize, v: i32) {
+    unsafe {
+        raw::best_pl_glue[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn font_in_short_display() -> i32 {
+    unsafe { raw::font_in_short_display }
+}
+#[inline]
+pub(crate) fn set_font_in_short_display(v: i32) {
+    unsafe {
+        raw::font_in_short_display = v;
+    }
+}
+#[inline]
+pub(crate) fn depth_threshold() -> i32 {
+    unsafe { raw::depth_threshold }
+}
+#[inline]
+pub(crate) fn set_depth_threshold(v: i32) {
+    unsafe {
+        raw::depth_threshold = v;
+    }
+}
+#[inline]
+pub(crate) fn breadth_max() -> i32 {
+    unsafe { raw::breadth_max }
+}
+#[inline]
+pub(crate) fn set_breadth_max(v: i32) {
+    unsafe {
+        raw::breadth_max = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // force_eof (xetex-ini.c:159 / xetex-xetexd.h:524)
 // ---------------------------------------------------------------------------
-#[inline] pub(crate) fn force_eof() -> bool { unsafe { raw::force_eof } }
-#[inline] pub(crate) fn set_force_eof(v: bool) { unsafe { raw::force_eof = v; } }
+#[inline]
+pub(crate) fn force_eof() -> bool {
+    unsafe { raw::force_eof }
+}
+#[inline]
+pub(crate) fn set_force_eof(v: bool) {
+    unsafe {
+        raw::force_eof = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // used_tectonic_coda_tokens (xetex-xetexd.h:723)
 // ---------------------------------------------------------------------------
-#[inline] pub(crate) fn used_tectonic_coda_tokens() -> bool { unsafe { raw::used_tectonic_coda_tokens } }
-#[inline] pub(crate) fn set_used_tectonic_coda_tokens(v: bool) { unsafe { raw::used_tectonic_coda_tokens = v; } }
+#[inline]
+pub(crate) fn used_tectonic_coda_tokens() -> bool {
+    unsafe { raw::used_tectonic_coda_tokens }
+}
+#[inline]
+pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
+    unsafe {
+        raw::used_tectonic_coda_tokens = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Shipout / DVI output globals (xetex-xetexd.h:592–600, 694–697, 693)
 // ---------------------------------------------------------------------------
-#[inline] pub(crate) fn null_character() -> crate::mem_types::B16x4 { unsafe { raw::null_character } }
-#[inline] pub(crate) fn total_pages() -> i32 { unsafe { raw::total_pages } }
-#[inline] pub(crate) fn set_total_pages(v: i32) { unsafe { raw::total_pages = v; } }
-#[inline] pub(crate) fn max_v() -> i32 { unsafe { raw::max_v } }
-#[inline] pub(crate) fn set_max_v(v: i32) { unsafe { raw::max_v = v; } }
-#[inline] pub(crate) fn max_h() -> i32 { unsafe { raw::max_h } }
-#[inline] pub(crate) fn set_max_h(v: i32) { unsafe { raw::max_h = v; } }
-#[inline] pub(crate) fn max_push() -> i32 { unsafe { raw::max_push } }
-#[inline] pub(crate) fn set_max_push(v: i32) { unsafe { raw::max_push = v; } }
-#[inline] pub(crate) fn last_bop() -> i32 { unsafe { raw::last_bop } }
-#[inline] pub(crate) fn set_last_bop(v: i32) { unsafe { raw::last_bop = v; } }
-#[inline] pub(crate) fn doing_leaders() -> bool { unsafe { raw::doing_leaders } }
-#[inline] pub(crate) fn set_doing_leaders(v: bool) { unsafe { raw::doing_leaders = v; } }
-#[inline] pub(crate) fn rule_ht() -> i32 { unsafe { raw::rule_ht } }
-#[inline] pub(crate) fn set_rule_ht(v: i32) { unsafe { raw::rule_ht = v; } }
-#[inline] pub(crate) fn rule_dp() -> i32 { unsafe { raw::rule_dp } }
-#[inline] pub(crate) fn set_rule_dp(v: i32) { unsafe { raw::rule_dp = v; } }
-#[inline] pub(crate) fn rule_wd() -> i32 { unsafe { raw::rule_wd } }
-#[inline] pub(crate) fn set_rule_wd(v: i32) { unsafe { raw::rule_wd = v; } }
-#[inline] pub(crate) fn cur_h() -> i32 { unsafe { raw::cur_h } }
-#[inline] pub(crate) fn set_cur_h(v: i32) { unsafe { raw::cur_h = v; } }
-#[inline] pub(crate) fn cur_v() -> i32 { unsafe { raw::cur_v } }
-#[inline] pub(crate) fn set_cur_v(v: i32) { unsafe { raw::cur_v = v; } }
-#[inline] pub(crate) fn cur_page_width() -> i32 { unsafe { raw::cur_page_width } }
-#[inline] pub(crate) fn set_cur_page_width(v: i32) { unsafe { raw::cur_page_width = v; } }
-#[inline] pub(crate) fn cur_page_height() -> i32 { unsafe { raw::cur_page_height } }
-#[inline] pub(crate) fn set_cur_page_height(v: i32) { unsafe { raw::cur_page_height = v; } }
-#[inline] pub(crate) fn cur_h_offset() -> i32 { unsafe { raw::cur_h_offset } }
-#[inline] pub(crate) fn set_cur_h_offset(v: i32) { unsafe { raw::cur_h_offset = v; } }
-#[inline] pub(crate) fn cur_v_offset() -> i32 { unsafe { raw::cur_v_offset } }
-#[inline] pub(crate) fn set_cur_v_offset(v: i32) { unsafe { raw::cur_v_offset = v; } }
-#[inline] pub(crate) fn write_loc() -> i32 { unsafe { raw::write_loc } }
-#[inline] pub(crate) fn set_write_loc(v: i32) { unsafe { raw::write_loc = v; } }
+#[inline]
+pub(crate) fn null_character() -> crate::mem_types::B16x4 {
+    unsafe { raw::null_character }
+}
+#[inline]
+pub(crate) fn total_pages() -> i32 {
+    unsafe { raw::total_pages }
+}
+#[inline]
+pub(crate) fn set_total_pages(v: i32) {
+    unsafe {
+        raw::total_pages = v;
+    }
+}
+#[inline]
+pub(crate) fn max_v() -> i32 {
+    unsafe { raw::max_v }
+}
+#[inline]
+pub(crate) fn set_max_v(v: i32) {
+    unsafe {
+        raw::max_v = v;
+    }
+}
+#[inline]
+pub(crate) fn max_h() -> i32 {
+    unsafe { raw::max_h }
+}
+#[inline]
+pub(crate) fn set_max_h(v: i32) {
+    unsafe {
+        raw::max_h = v;
+    }
+}
+#[inline]
+pub(crate) fn max_push() -> i32 {
+    unsafe { raw::max_push }
+}
+#[inline]
+pub(crate) fn set_max_push(v: i32) {
+    unsafe {
+        raw::max_push = v;
+    }
+}
+#[inline]
+pub(crate) fn last_bop() -> i32 {
+    unsafe { raw::last_bop }
+}
+#[inline]
+pub(crate) fn set_last_bop(v: i32) {
+    unsafe {
+        raw::last_bop = v;
+    }
+}
+#[inline]
+pub(crate) fn doing_leaders() -> bool {
+    unsafe { raw::doing_leaders }
+}
+#[inline]
+pub(crate) fn set_doing_leaders(v: bool) {
+    unsafe {
+        raw::doing_leaders = v;
+    }
+}
+#[inline]
+pub(crate) fn rule_ht() -> i32 {
+    unsafe { raw::rule_ht }
+}
+#[inline]
+pub(crate) fn set_rule_ht(v: i32) {
+    unsafe {
+        raw::rule_ht = v;
+    }
+}
+#[inline]
+pub(crate) fn rule_dp() -> i32 {
+    unsafe { raw::rule_dp }
+}
+#[inline]
+pub(crate) fn set_rule_dp(v: i32) {
+    unsafe {
+        raw::rule_dp = v;
+    }
+}
+#[inline]
+pub(crate) fn rule_wd() -> i32 {
+    unsafe { raw::rule_wd }
+}
+#[inline]
+pub(crate) fn set_rule_wd(v: i32) {
+    unsafe {
+        raw::rule_wd = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_h() -> i32 {
+    unsafe { raw::cur_h }
+}
+#[inline]
+pub(crate) fn set_cur_h(v: i32) {
+    unsafe {
+        raw::cur_h = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_v() -> i32 {
+    unsafe { raw::cur_v }
+}
+#[inline]
+pub(crate) fn set_cur_v(v: i32) {
+    unsafe {
+        raw::cur_v = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_page_width() -> i32 {
+    unsafe { raw::cur_page_width }
+}
+#[inline]
+pub(crate) fn set_cur_page_width(v: i32) {
+    unsafe {
+        raw::cur_page_width = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_page_height() -> i32 {
+    unsafe { raw::cur_page_height }
+}
+#[inline]
+pub(crate) fn set_cur_page_height(v: i32) {
+    unsafe {
+        raw::cur_page_height = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_h_offset() -> i32 {
+    unsafe { raw::cur_h_offset }
+}
+#[inline]
+pub(crate) fn set_cur_h_offset(v: i32) {
+    unsafe {
+        raw::cur_h_offset = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_v_offset() -> i32 {
+    unsafe { raw::cur_v_offset }
+}
+#[inline]
+pub(crate) fn set_cur_v_offset(v: i32) {
+    unsafe {
+        raw::cur_v_offset = v;
+    }
+}
+#[inline]
+pub(crate) fn write_loc() -> i32 {
+    unsafe { raw::write_loc }
+}
+#[inline]
+pub(crate) fn set_write_loc(v: i32) {
+    unsafe {
+        raw::write_loc = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Missing font entry getters (raw already declared)
 // ---------------------------------------------------------------------------
-#[inline] pub(crate) fn font_used_entry(f: i32) -> bool {
+#[inline]
+pub(crate) fn font_used_entry(f: i32) -> bool {
     unsafe { *raw::font_used.offset(f as isize) }
 }
-#[inline] pub(crate) fn font_check_entry(f: i32) -> crate::mem_types::B16x4 {
+#[inline]
+pub(crate) fn font_check_entry(f: i32) -> crate::mem_types::B16x4 {
     unsafe { *raw::font_check.offset(f as isize) }
 }
-#[inline] pub(crate) fn xdv_buffer_entry(i: i32) -> u8 {
+#[inline]
+pub(crate) fn xdv_buffer_entry(i: i32) -> u8 {
     unsafe { *raw::xdv_buffer.offset(i as isize) as u8 }
 }
-#[inline] pub(crate) fn font_letter_space_entry(f: i32) -> i32 {
+#[inline]
+pub(crate) fn font_letter_space_entry(f: i32) -> i32 {
     unsafe { *raw::font_letter_space.offset(f as isize) }
 }
 
 // ---------------------------------------------------------------------------
 // Missing setters for pdf_last_x/y_pos (raw already declared)
 // ---------------------------------------------------------------------------
-#[inline] pub(crate) fn set_pdf_last_x_pos(v: i32) { unsafe { raw::pdf_last_x_pos = v; } }
-#[inline] pub(crate) fn set_pdf_last_y_pos(v: i32) { unsafe { raw::pdf_last_y_pos = v; } }
+#[inline]
+pub(crate) fn set_pdf_last_x_pos(v: i32) {
+    unsafe {
+        raw::pdf_last_x_pos = v;
+    }
+}
+#[inline]
+pub(crate) fn set_pdf_last_y_pos(v: i32) {
+    unsafe {
+        raw::pdf_last_y_pos = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Missing setter for doing_special (raw already declared)
 // ---------------------------------------------------------------------------
-#[inline] pub(crate) fn set_doing_special(v: bool) { unsafe { raw::doing_special = v; } }
+#[inline]
+pub(crate) fn set_doing_special(v: bool) {
+    unsafe {
+        raw::doing_special = v;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // xetex-math.c module-level state (cur_mlist / cur_style / cur_size / cur_mu / mlist_penalties)
 // ---------------------------------------------------------------------------
-#[inline] pub(crate) fn cur_mlist() -> i32 { unsafe { raw::cur_mlist } }
-#[inline] pub(crate) fn set_cur_mlist(v: i32) { unsafe { raw::cur_mlist = v; } }
-#[inline] pub(crate) fn cur_style() -> i16 { unsafe { raw::cur_style } }
-#[inline] pub(crate) fn set_cur_style(v: i16) { unsafe { raw::cur_style = v; } }
-#[inline] pub(crate) fn cur_size() -> i32 { unsafe { raw::cur_size } }
-#[inline] pub(crate) fn set_cur_size(v: i32) { unsafe { raw::cur_size = v; } }
-#[inline] pub(crate) fn cur_mu() -> i32 { unsafe { raw::cur_mu } }
-#[inline] pub(crate) fn set_cur_mu(v: i32) { unsafe { raw::cur_mu = v; } }
-#[inline] pub(crate) fn mlist_penalties() -> bool { unsafe { raw::mlist_penalties } }
-#[inline] pub(crate) fn set_mlist_penalties(v: bool) { unsafe { raw::mlist_penalties = v; } }
+#[inline]
+pub(crate) fn cur_mlist() -> i32 {
+    unsafe { raw::cur_mlist }
+}
+#[inline]
+pub(crate) fn set_cur_mlist(v: i32) {
+    unsafe {
+        raw::cur_mlist = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_style() -> i16 {
+    unsafe { raw::cur_style }
+}
+#[inline]
+pub(crate) fn set_cur_style(v: i16) {
+    unsafe {
+        raw::cur_style = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_size() -> i32 {
+    unsafe { raw::cur_size }
+}
+#[inline]
+pub(crate) fn set_cur_size(v: i32) {
+    unsafe {
+        raw::cur_size = v;
+    }
+}
+#[inline]
+pub(crate) fn cur_mu() -> i32 {
+    unsafe { raw::cur_mu }
+}
+#[inline]
+pub(crate) fn set_cur_mu(v: i32) {
+    unsafe {
+        raw::cur_mu = v;
+    }
+}
+#[inline]
+pub(crate) fn mlist_penalties() -> bool {
+    unsafe { raw::mlist_penalties }
+}
+#[inline]
+pub(crate) fn set_mlist_penalties(v: bool) {
+    unsafe {
+        raw::mlist_penalties = v;
+    }
+}

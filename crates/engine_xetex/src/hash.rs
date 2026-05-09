@@ -5,8 +5,8 @@
 use crate::globals::{
     buffer_entry, hash_extra, hash_high, hash_s0, hash_s1, hash_used, init_pool_ptr,
     no_new_control_sequence, pool_ptr, pool_size, prim_s0, prim_s1, prim_used, set_hash_high,
-    set_hash_s0, set_hash_s1, set_hash_used, set_pool_ptr, set_prim_s0, set_prim_s1,
-    set_prim_used, set_str_pool, str_pool_entry, str_ptr, str_start,
+    set_hash_s0, set_hash_s1, set_hash_used, set_pool_ptr, set_prim_s0, set_prim_s1, set_prim_used,
+    set_str_pool, str_pool_entry, str_ptr, str_start,
 };
 
 extern "C" {
@@ -154,7 +154,11 @@ pub unsafe extern "C" fn prim_lookup(s: i32) -> i32 {
         l = 0; // not used in the BIGGEST_CHAR path
     } else {
         let j = str_start(s - TOO_BIG_CHAR);
-        l = if s == str_ptr() { cur_length() } else { length(s) };
+        l = if s == str_ptr() {
+            cur_length()
+        } else {
+            length(s)
+        };
         let mut h = str_pool_entry(j) as i32;
         let for_end = j + l - 1;
         let mut k = j + 1;

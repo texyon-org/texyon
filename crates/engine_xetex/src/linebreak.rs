@@ -107,9 +107,7 @@ pub unsafe extern "C" fn get_native_usv(p: i32, i: i32) -> i32 {
     let c = *text.add(i as usize);
 
     if (0xD800..0xDC00).contains(&c) {
-        return 0x10000 + (c as i32 - 0xD800) * 0x400
-            + *text.add(i as usize + 1) as i32
-            - 0xDC00;
+        return 0x10000 + (c as i32 - 0xD800) * 0x400 + *text.add(i as usize + 1) as i32 - 0xDC00;
     }
 
     c as i32
@@ -345,16 +343,18 @@ fn ignorable_protrusion_node(p: i32) -> bool {
     !is_char_node(p)
         && match mem_b16s1(p) as i32 {
             INS_NODE | MARK_NODE | ADJUST_NODE | PENALTY_NODE => true,
-            DISC_NODE => mem_b32s0(p + 1) == TEX_NULL
-                && mem_b32s1(p + 1) == TEX_NULL
-                && mem_b16s0(p) == 0,
+            DISC_NODE => {
+                mem_b32s0(p + 1) == TEX_NULL && mem_b32s1(p + 1) == TEX_NULL && mem_b16s0(p) == 0
+            }
             MATH_NODE => mem_b32s1(p + 1) == 0,
             KERN_NODE => mem_b32s1(p + 1) == 0 || mem_b16s0(p) == NORMAL,
             GLUE_NODE => mem_b32s0(p + 1) == 0,
-            HLIST_NODE => mem_b32s1(p + 1) == 0
-                && mem_b32s1(p + 3) == 0
-                && mem_b32s1(p + 2) == 0
-                && mem_b32s1(p + 5) == TEX_NULL,
+            HLIST_NODE => {
+                mem_b32s1(p + 1) == 0
+                    && mem_b32s1(p + 3) == 0
+                    && mem_b32s1(p + 2) == 0
+                    && mem_b32s1(p + 5) == TEX_NULL
+            }
             _ => false,
         }
 }
@@ -381,7 +381,10 @@ pub unsafe extern "C" fn pop_node() -> i32 {
     let level = hlist_stack_level() - 1;
     set_hlist_stack_level(level);
     if level < 0 {
-        crate::errors::pdf_error(c"pop_node".as_ptr(), c"stack underflow (internal error)".as_ptr());
+        crate::errors::pdf_error(
+            c"pop_node".as_ptr(),
+            c"stack underflow (internal error)".as_ptr(),
+        );
     }
 
     hlist_stack_entry(level)
@@ -529,11 +532,26 @@ pub unsafe extern "C" fn finite_shrink(p: i32) -> i32 {
         );
         crate::output::capture_to_diagnostic(std::ptr::null_mut());
         set_help_ptr(5);
-        set_help_line(4, c"The paragraph just ended includes some glue that has".as_ptr());
-        set_help_line(3, c"infinite shrinkability, e.g., `\\hskip 0pt minus 1fil'.".as_ptr());
-        set_help_line(2, c"Such glue doesn't belong there---it allows a paragraph".as_ptr());
-        set_help_line(1, c"of any length to fit on one line. But it's safe to proceed,".as_ptr());
-        set_help_line(0, c"since the offensive shrinkability has been made finite.".as_ptr());
+        set_help_line(
+            4,
+            c"The paragraph just ended includes some glue that has".as_ptr(),
+        );
+        set_help_line(
+            3,
+            c"infinite shrinkability, e.g., `\\hskip 0pt minus 1fil'.".as_ptr(),
+        );
+        set_help_line(
+            2,
+            c"Such glue doesn't belong there---it allows a paragraph".as_ptr(),
+        );
+        set_help_line(
+            1,
+            c"of any length to fit on one line. But it's safe to proceed,".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"since the offensive shrinkability has been made finite.".as_ptr(),
+        );
         crate::errors::error();
     }
 
@@ -549,10 +567,9 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
     use crate::globals::{
         bchar_label_entry, char_base_entry, cur_l, cur_q, cur_r, font_info_b16, font_info_b32s1,
         hf, hyf_entry, init_lft, init_lig, init_list, kern_base_entry, lft_hit,
-        lig_kern_base_entry, lig_stack, ligature_present, mem_b16s0, mem_b32s1, rt_hit,
-        set_cur_l, set_cur_q, set_cur_r, set_hyphen_passed, set_lft_hit, set_lig_stack,
-        set_ligature_present, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-        set_rt_hit,
+        lig_kern_base_entry, lig_stack, ligature_present, mem_b16s0, mem_b32s1, rt_hit, set_cur_l,
+        set_cur_q, set_cur_r, set_hyphen_passed, set_lft_hit, set_lig_stack, set_ligature_present,
+        set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_rt_hit,
     };
     use crate::mem::{free_node, get_avail, new_kern, new_lig_item, new_ligature};
 
@@ -606,194 +623,206 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
     let mut cur_rh = update_right(j, n, bchar, hchar);
 
     loop {
-    'continue_: loop {
-        let mut k;
-        let mut q;
+        'continue_: loop {
+            let mut k;
+            let mut q;
 
-        if cur_l() == TOO_BIG_CHAR {
-            k = bchar_label_entry(hf());
-            if k == NON_ADDRESS {
-                break 'continue_;
-            }
-            q = font_info_b16(k);
-        } else {
-            q = font_info_b16(
-                char_base_entry(hf()) + crate::scan::effective_char(true, hf(), cur_l() as u16),
-            );
-            if q.s1 % 4 != LIG_TAG {
-                break 'continue_;
-            }
-            k = lig_kern_base_entry(hf()) + q.s0 as i32;
-            q = font_info_b16(k);
-            if q.s3 > 128 {
-                k = lig_kern_base_entry(hf()) + 256 * q.s1 as i32 + q.s0 as i32 + 32768 - 256 * 128;
+            if cur_l() == TOO_BIG_CHAR {
+                k = bchar_label_entry(hf());
+                if k == NON_ADDRESS {
+                    break 'continue_;
+                }
                 q = font_info_b16(k);
+            } else {
+                q = font_info_b16(
+                    char_base_entry(hf()) + crate::scan::effective_char(true, hf(), cur_l() as u16),
+                );
+                if q.s1 % 4 != LIG_TAG {
+                    break 'continue_;
+                }
+                k = lig_kern_base_entry(hf()) + q.s0 as i32;
+                q = font_info_b16(k);
+                if q.s3 > 128 {
+                    k = lig_kern_base_entry(hf()) + 256 * q.s1 as i32 + q.s0 as i32 + 32768
+                        - 256 * 128;
+                    q = font_info_b16(k);
+                }
             }
-        }
 
-        let mut test_char = if cur_rh < TOO_BIG_CHAR { cur_rh } else { cur_r() };
+            let mut test_char = if cur_rh < TOO_BIG_CHAR {
+                cur_rh
+            } else {
+                cur_r()
+            };
 
-        loop {
-            if q.s2 as i32 == test_char && q.s3 <= 128 {
-                if cur_rh < TOO_BIG_CHAR {
-                    set_hyphen_passed(j);
-                    hchar = TOO_BIG_CHAR;
+            loop {
+                if q.s2 as i32 == test_char && q.s3 <= 128 {
+                    if cur_rh < TOO_BIG_CHAR {
+                        set_hyphen_passed(j);
+                        hchar = TOO_BIG_CHAR;
+                        cur_rh = TOO_BIG_CHAR;
+                        continue 'continue_;
+                    }
+
+                    if hchar < TOO_BIG_CHAR && odd(hyf_entry(j as usize)) {
+                        set_hyphen_passed(j);
+                        hchar = TOO_BIG_CHAR;
+                    }
+
+                    if q.s1 < 128 {
+                        if cur_l() == TOO_BIG_CHAR {
+                            set_lft_hit(true);
+                        }
+                        if j == n && lig_stack() == TEX_NULL {
+                            set_rt_hit(true);
+                        }
+
+                        match q.s1 {
+                            1 | 5 => {
+                                set_cur_l(q.s0 as i32);
+                                set_ligature_present(true);
+                            }
+                            2 | 6 => {
+                                set_cur_r(q.s0 as i32);
+                                if lig_stack() > TEX_NULL {
+                                    set_mem_b16s0(lig_stack(), cur_r() as u16);
+                                } else {
+                                    set_lig_stack(new_lig_item(cur_r() as u16));
+                                    if j == n {
+                                        bchar = TOO_BIG_CHAR;
+                                    } else {
+                                        let p = get_avail();
+                                        set_mem_b32s1(lig_stack() + 1, p);
+                                        set_mem_b16s0(
+                                            p,
+                                            crate::globals::hu_entry((j + 1) as usize) as u16,
+                                        );
+                                        set_mem_b16s1(p, hf() as u16);
+                                    }
+                                }
+                            }
+                            3 => {
+                                set_cur_r(q.s0 as i32);
+                                let p = lig_stack();
+                                set_lig_stack(new_lig_item(cur_r() as u16));
+                                set_mem_b32s1(lig_stack(), p);
+                            }
+                            7 | 11 => {
+                                if ligature_present() {
+                                    let p = new_ligature(hf(), cur_l() as u16, mem_b32s1(cur_q()));
+                                    if lft_hit() {
+                                        set_mem_b16s0(p, 2);
+                                        set_lft_hit(false);
+                                    }
+                                    set_mem_b32s1(cur_q(), p);
+                                    t = p;
+                                    set_ligature_present(false);
+                                }
+                                set_cur_q(t);
+                                set_cur_l(q.s0 as i32);
+                                set_ligature_present(true);
+                            }
+                            _ => {
+                                set_cur_l(q.s0 as i32);
+                                set_ligature_present(true);
+                                if lig_stack() > TEX_NULL {
+                                    if mem_b32s1(lig_stack() + 1) > TEX_NULL {
+                                        set_mem_b32s1(t, mem_b32s1(lig_stack() + 1));
+                                        t = mem_b32s1(t);
+                                        j += 1;
+                                    }
+                                    let p = lig_stack();
+                                    set_lig_stack(mem_b32s1(p));
+                                    free_node(p, SMALL_NODE_SIZE);
+                                    if lig_stack() == TEX_NULL {
+                                        cur_rh = update_right(j, n, bchar, hchar);
+                                    } else {
+                                        set_cur_r(mem_b16s0(lig_stack()) as i32);
+                                    }
+                                } else if j == n {
+                                    break 'continue_;
+                                } else {
+                                    set_mem_b32s1(t, get_avail());
+                                    t = mem_b32s1(t);
+                                    set_mem_b16s1(t, hf() as u16);
+                                    set_mem_b16s0(t, cur_r() as u16);
+                                    j += 1;
+                                    cur_rh = update_right(j, n, bchar, hchar);
+                                }
+                            }
+                        }
+
+                        if q.s1 > 4 && q.s1 != 7 {
+                            break 'continue_;
+                        }
+                        continue 'continue_;
+                    }
+
+                    w = font_info_b32s1(kern_base_entry(hf()) + 256 * q.s1 as i32 + q.s0 as i32);
+                    break 'continue_;
+                }
+
+                if q.s3 >= 128 {
+                    if cur_rh == TOO_BIG_CHAR {
+                        break 'continue_;
+                    }
                     cur_rh = TOO_BIG_CHAR;
                     continue 'continue_;
                 }
 
-                if hchar < TOO_BIG_CHAR && odd(hyf_entry(j as usize)) {
-                    set_hyphen_passed(j);
-                    hchar = TOO_BIG_CHAR;
-                }
-
-                if q.s1 < 128 {
-                    if cur_l() == TOO_BIG_CHAR {
-                        set_lft_hit(true);
-                    }
-                    if j == n && lig_stack() == TEX_NULL {
-                        set_rt_hit(true);
-                    }
-
-                    match q.s1 {
-                        1 | 5 => {
-                            set_cur_l(q.s0 as i32);
-                            set_ligature_present(true);
-                        }
-                        2 | 6 => {
-                            set_cur_r(q.s0 as i32);
-                            if lig_stack() > TEX_NULL {
-                                set_mem_b16s0(lig_stack(), cur_r() as u16);
-                            } else {
-                                set_lig_stack(new_lig_item(cur_r() as u16));
-                                if j == n {
-                                    bchar = TOO_BIG_CHAR;
-                                } else {
-                                    let p = get_avail();
-                                    set_mem_b32s1(lig_stack() + 1, p);
-                                    set_mem_b16s0(p, crate::globals::hu_entry((j + 1) as usize) as u16);
-                                    set_mem_b16s1(p, hf() as u16);
-                                }
-                            }
-                        }
-                        3 => {
-                            set_cur_r(q.s0 as i32);
-                            let p = lig_stack();
-                            set_lig_stack(new_lig_item(cur_r() as u16));
-                            set_mem_b32s1(lig_stack(), p);
-                        }
-                        7 | 11 => {
-                            if ligature_present() {
-                                let p = new_ligature(hf(), cur_l() as u16, mem_b32s1(cur_q()));
-                                if lft_hit() {
-                                    set_mem_b16s0(p, 2);
-                                    set_lft_hit(false);
-                                }
-                                set_mem_b32s1(cur_q(), p);
-                                t = p;
-                                set_ligature_present(false);
-                            }
-                            set_cur_q(t);
-                            set_cur_l(q.s0 as i32);
-                            set_ligature_present(true);
-                        }
-                        _ => {
-                            set_cur_l(q.s0 as i32);
-                            set_ligature_present(true);
-                            if lig_stack() > TEX_NULL {
-                                if mem_b32s1(lig_stack() + 1) > TEX_NULL {
-                                    set_mem_b32s1(t, mem_b32s1(lig_stack() + 1));
-                                    t = mem_b32s1(t);
-                                    j += 1;
-                                }
-                                let p = lig_stack();
-                                set_lig_stack(mem_b32s1(p));
-                                free_node(p, SMALL_NODE_SIZE);
-                                if lig_stack() == TEX_NULL {
-                                    cur_rh = update_right(j, n, bchar, hchar);
-                                } else {
-                                    set_cur_r(mem_b16s0(lig_stack()) as i32);
-                                }
-                            } else if j == n {
-                                break 'continue_;
-                            } else {
-                                set_mem_b32s1(t, get_avail());
-                                t = mem_b32s1(t);
-                                set_mem_b16s1(t, hf() as u16);
-                                set_mem_b16s0(t, cur_r() as u16);
-                                j += 1;
-                                cur_rh = update_right(j, n, bchar, hchar);
-                            }
-                        }
-                    }
-
-                    if q.s1 > 4 && q.s1 != 7 {
-                        break 'continue_;
-                    }
-                    continue 'continue_;
-                }
-
-                w = font_info_b32s1(kern_base_entry(hf()) + 256 * q.s1 as i32 + q.s0 as i32);
-                break 'continue_;
+                k += q.s3 as i32 + 1;
+                q = font_info_b16(k);
+                test_char = if cur_rh < TOO_BIG_CHAR {
+                    cur_rh
+                } else {
+                    cur_r()
+                };
             }
+        }
 
-            if q.s3 >= 128 {
-                if cur_rh == TOO_BIG_CHAR {
-                    break 'continue_;
-                }
-                cur_rh = TOO_BIG_CHAR;
-                continue 'continue_;
+        if ligature_present() {
+            let p = new_ligature(hf(), cur_l() as u16, mem_b32s1(cur_q()));
+            if lft_hit() {
+                set_mem_b16s0(p, 2);
+                set_lft_hit(false);
             }
-
-            k += q.s3 as i32 + 1;
-            q = font_info_b16(k);
-            test_char = if cur_rh < TOO_BIG_CHAR { cur_rh } else { cur_r() };
+            if rt_hit() && lig_stack() == TEX_NULL {
+                set_mem_b16s0(p, mem_b16s0(p) + 1);
+                set_rt_hit(false);
+            }
+            set_mem_b32s1(cur_q(), p);
+            t = p;
+            set_ligature_present(false);
         }
-    }
 
-    if ligature_present() {
-        let p = new_ligature(hf(), cur_l() as u16, mem_b32s1(cur_q()));
-        if lft_hit() {
-            set_mem_b16s0(p, 2);
-            set_lft_hit(false);
-        }
-        if rt_hit() && lig_stack() == TEX_NULL {
-            set_mem_b16s0(p, mem_b16s0(p) + 1);
-            set_rt_hit(false);
-        }
-        set_mem_b32s1(cur_q(), p);
-        t = p;
-        set_ligature_present(false);
-    }
-
-    if w != 0 {
-        set_mem_b32s1(t, new_kern(w));
-        t = mem_b32s1(t);
-        w = 0;
-        set_mem_b32s0(t + 2, 0);
-    }
-
-    if lig_stack() > TEX_NULL {
-        set_cur_q(t);
-        set_cur_l(mem_b16s0(lig_stack()) as i32);
-        set_ligature_present(true);
-        if mem_b32s1(lig_stack() + 1) > TEX_NULL {
-            set_mem_b32s1(t, mem_b32s1(lig_stack() + 1));
+        if w != 0 {
+            set_mem_b32s1(t, new_kern(w));
             t = mem_b32s1(t);
-            j += 1;
+            w = 0;
+            set_mem_b32s0(t + 2, 0);
         }
-        let p = lig_stack();
-        set_lig_stack(mem_b32s1(p));
-        free_node(p, SMALL_NODE_SIZE);
-        if lig_stack() == TEX_NULL {
-            cur_rh = update_right(j, n, bchar, hchar);
-        } else {
-            set_cur_r(mem_b16s0(lig_stack()) as i32);
-        }
-        continue;
-    }
 
-    return j;
+        if lig_stack() > TEX_NULL {
+            set_cur_q(t);
+            set_cur_l(mem_b16s0(lig_stack()) as i32);
+            set_ligature_present(true);
+            if mem_b32s1(lig_stack() + 1) > TEX_NULL {
+                set_mem_b32s1(t, mem_b32s1(lig_stack() + 1));
+                t = mem_b32s1(t);
+                j += 1;
+            }
+            let p = lig_stack();
+            set_lig_stack(mem_b32s1(p));
+            free_node(p, SMALL_NODE_SIZE);
+            if lig_stack() == TEX_NULL {
+                cur_rh = update_right(j, n, bchar, hchar);
+            } else {
+                set_cur_r(mem_b16s0(lig_stack()) as i32);
+            }
+            continue;
+        }
+
+        return j;
     }
 }
 
@@ -811,19 +840,18 @@ pub unsafe extern "C" fn line_break(d: bool) {
     use crate::globals::{
         active_width, background, cur_lang, cur_list_head, cur_list_mode_line, cur_list_prev_graf,
         cur_list_tail, eqtb_b32s1, first_p, font_bchar_entry, font_in_short_display, global_prev_p,
-        hc_entry, hi_mem_min, hn, hu_entry, hyph_index, hyph_start, hyphen_char_entry,
-        l_hyf, last_special_line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1,
-        minimal_demerits, passive, r_hyf, set_active_width, set_active_node_size,
-        set_background, set_best_bet, set_best_line, set_cur_lang, set_cur_list_tail,
-        set_cur_p, set_disc_width, set_do_last_line_fit, set_easy_line, set_fill_width,
-        set_final_pass, set_first_indent, set_first_p, set_first_width, set_font_in_short_display,
-        set_global_prev_p, set_ha, set_hb, set_hc_entry, set_hf, set_hn, set_hu_entry,
-        set_hyf_bchar, set_hyf_char, set_hyph_index, set_init_l_hyf, set_init_r_hyf,
-        set_l_hyf, set_last_special_line, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0,
-        set_mem_b32s1, set_minimal_demerits, set_minimum_demerits, set_no_shrink_error_yet,
-        set_pack_begin_line, set_passive, set_r_hyf, set_second_indent, set_second_width,
-        set_threshold, set_xtx_ligature_present, trie_not_ready, trie_trc_entry, trie_trl_entry,
-        trie_tro_entry,
+        hc_entry, hi_mem_min, hn, hu_entry, hyph_index, hyph_start, hyphen_char_entry, l_hyf,
+        last_special_line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, minimal_demerits, passive,
+        r_hyf, set_active_node_size, set_active_width, set_background, set_best_bet, set_best_line,
+        set_cur_lang, set_cur_list_tail, set_cur_p, set_disc_width, set_do_last_line_fit,
+        set_easy_line, set_fill_width, set_final_pass, set_first_indent, set_first_p,
+        set_first_width, set_font_in_short_display, set_global_prev_p, set_ha, set_hb,
+        set_hc_entry, set_hf, set_hn, set_hu_entry, set_hyf_bchar, set_hyf_char, set_hyph_index,
+        set_init_l_hyf, set_init_r_hyf, set_l_hyf, set_last_special_line, set_mem_b16s0,
+        set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_minimal_demerits, set_minimum_demerits,
+        set_no_shrink_error_yet, set_pack_begin_line, set_passive, set_r_hyf, set_second_indent,
+        set_second_width, set_threshold, set_xtx_ligature_present, trie_not_ready, trie_trc_entry,
+        trie_trl_entry, trie_tro_entry,
     };
 
     fn int_par(n: i32) -> i32 {
@@ -932,7 +960,10 @@ pub unsafe extern "C" fn line_break(d: bool) {
     for k in 2..=5 {
         set_background(k, 0);
     }
-    set_background(2 + glue_spec_stretch_order(q) as usize, glue_spec_stretch(q));
+    set_background(
+        2 + glue_spec_stretch_order(q) as usize,
+        glue_spec_stretch(q),
+    );
     set_background(
         2 + glue_spec_stretch_order(r) as usize,
         background(2 + glue_spec_stretch_order(r) as usize) + glue_spec_stretch(r),
@@ -950,7 +981,10 @@ pub unsafe extern "C" fn line_break(d: bool) {
                 set_fill_width(0, 0);
                 set_fill_width(1, 0);
                 set_fill_width(2, 0);
-                set_fill_width((glue_spec_stretch_order(q) - 1) as usize, glue_spec_stretch(q));
+                set_fill_width(
+                    (glue_spec_stretch_order(q) - 1) as usize,
+                    glue_spec_stretch(q),
+                );
             }
         }
     }
@@ -968,7 +1002,9 @@ pub unsafe extern "C" fn line_break(d: bool) {
         } else {
             set_last_special_line(int_par(INT_PAR_HANG_AFTER).abs());
             if int_par(INT_PAR_HANG_AFTER) < 0 {
-                set_first_width(dimen_par(DIMEN_PAR_HSIZE) - dimen_par(DIMEN_PAR_HANG_INDENT).abs());
+                set_first_width(
+                    dimen_par(DIMEN_PAR_HSIZE) - dimen_par(DIMEN_PAR_HANG_INDENT).abs(),
+                );
                 set_first_indent(if dimen_par(DIMEN_PAR_HANG_INDENT) >= 0 {
                     dimen_par(DIMEN_PAR_HANG_INDENT)
                 } else {
@@ -979,7 +1015,9 @@ pub unsafe extern "C" fn line_break(d: bool) {
             } else {
                 set_first_width(dimen_par(DIMEN_PAR_HSIZE));
                 set_first_indent(0);
-                set_second_width(dimen_par(DIMEN_PAR_HSIZE) - dimen_par(DIMEN_PAR_HANG_INDENT).abs());
+                set_second_width(
+                    dimen_par(DIMEN_PAR_HSIZE) - dimen_par(DIMEN_PAR_HANG_INDENT).abs(),
+                );
                 set_second_indent(if dimen_par(DIMEN_PAR_HANG_INDENT) >= 0 {
                     dimen_par(DIMEN_PAR_HANG_INDENT)
                 } else {
@@ -1104,7 +1142,10 @@ pub unsafe extern "C" fn line_break(d: bool) {
                         set_glue_ptr(cur, q);
                     }
                     add_active_width(1, box_width(q));
-                    add_active_width(2 + glue_spec_stretch_order(q) as usize, glue_spec_stretch(q));
+                    add_active_width(
+                        2 + glue_spec_stretch_order(q) as usize,
+                        glue_spec_stretch(q),
+                    );
                     add_active_width(6, glue_spec_shrink(q));
 
                     if second_pass && auto_breaking {
@@ -1200,7 +1241,9 @@ pub unsafe extern "C" fn line_break(d: bool) {
                             }
 
                             set_hyf_char(hyphen_char_entry(crate::globals::hf()));
-                            if crate::globals::hyf_char() < 0 || crate::globals::hyf_char() > TOO_BIG_CHAR - 1 {
+                            if crate::globals::hyf_char() < 0
+                                || crate::globals::hyf_char() > TOO_BIG_CHAR - 1
+                            {
                                 break 'hyphen_probe;
                             }
                             set_ha(prev_s);
@@ -1224,8 +1267,8 @@ pub unsafe extern "C" fn line_break(d: bool) {
                                                     break;
                                                 }
                                             }
-                                            WHATSIT_NODE | GLUE_NODE | PENALTY_NODE | INS_NODE | ADJUST_NODE
-                                            | MARK_NODE => break,
+                                            WHATSIT_NODE | GLUE_NODE | PENALTY_NODE | INS_NODE
+                                            | ADJUST_NODE | MARK_NODE => break,
                                             _ => break 'hyphen_probe,
                                         }
                                     }
@@ -1248,8 +1291,14 @@ pub unsafe extern "C" fn line_break(d: bool) {
 
                                         if hc_entry(0) == 0 {
                                             if hn() > 0 {
-                                                q = crate::scan::new_native_word_node(crate::globals::hf(), native_node_len(crate::globals::ha()) - l);
-                                                set_mem_b16s0(q, node_subtype(crate::globals::ha()));
+                                                q = crate::scan::new_native_word_node(
+                                                    crate::globals::hf(),
+                                                    native_node_len(crate::globals::ha()) - l,
+                                                );
+                                                set_mem_b16s0(
+                                                    q,
+                                                    node_subtype(crate::globals::ha()),
+                                                );
                                                 copy_native_tail(q, crate::globals::ha(), l);
                                                 set_native_metrics(q);
                                                 set_mem_b32s1(q, mem_b32s1(crate::globals::ha()));
@@ -1259,7 +1308,10 @@ pub unsafe extern "C" fn line_break(d: bool) {
                                                 break 'restart_native;
                                             }
                                         } else if hn() == 0 && l > 0 {
-                                            q = crate::scan::new_native_word_node(crate::globals::hf(), native_node_len(crate::globals::ha()) - l);
+                                            q = crate::scan::new_native_word_node(
+                                                crate::globals::hf(),
+                                                native_node_len(crate::globals::ha()) - l,
+                                            );
                                             set_mem_b16s0(q, node_subtype(crate::globals::ha()));
                                             copy_native_tail(q, crate::globals::ha(), l);
                                             set_native_metrics(q);
@@ -1269,7 +1321,9 @@ pub unsafe extern "C" fn line_break(d: bool) {
                                             set_native_metrics(crate::globals::ha());
                                             set_ha(mem_b32s1(crate::globals::ha()));
                                             continue 'restart_native;
-                                        } else if hn() as i32 == crate::scan::max_hyphenatable_length() {
+                                        } else if hn() as i32
+                                            == crate::scan::max_hyphenatable_length()
+                                        {
                                             break 'restart_native;
                                         } else {
                                             set_hn(hn() + 1);
@@ -1277,11 +1331,20 @@ pub unsafe extern "C" fn line_break(d: bool) {
                                                 set_hu_entry(hn() as usize, c);
                                                 set_hc_entry(hn() as usize, hc_entry(0));
                                             } else {
-                                                set_hu_entry(hn() as usize, (c - 65_536) / 1024 + 0xD800);
-                                                set_hc_entry(hn() as usize, (hc_entry(0) - 65_536) / 1024 + 0xD800);
+                                                set_hu_entry(
+                                                    hn() as usize,
+                                                    (c - 65_536) / 1024 + 0xD800,
+                                                );
+                                                set_hc_entry(
+                                                    hn() as usize,
+                                                    (hc_entry(0) - 65_536) / 1024 + 0xD800,
+                                                );
                                                 set_hn(hn() + 1);
                                                 set_hu_entry(hn() as usize, c % 1024 + 0xDC00);
-                                                set_hc_entry(hn() as usize, hc_entry(0) % 1024 + 0xDC00);
+                                                set_hc_entry(
+                                                    hn() as usize,
+                                                    hc_entry(0) % 1024 + 0xDC00,
+                                                );
                                                 l += 1;
                                             }
                                             set_hyf_bchar(TOO_BIG_CHAR);
@@ -1337,7 +1400,8 @@ pub unsafe extern "C" fn line_break(d: bool) {
                                             }
                                             if hc_entry(0) == 0
                                                 || hc_entry(0) > crate::globals::max_hyph_char()
-                                                || j as i32 == crate::scan::max_hyphenatable_length()
+                                                || j as i32
+                                                    == crate::scan::max_hyphenatable_length()
                                             {
                                                 break 'collect_word;
                                             }
@@ -1353,7 +1417,8 @@ pub unsafe extern "C" fn line_break(d: bool) {
                                         } else {
                                             set_hyf_bchar(TOO_BIG_CHAR);
                                         }
-                                    } else if node_type(s) == KERN_NODE && node_subtype(s) == NORMAL {
+                                    } else if node_type(s) == KERN_NODE && node_subtype(s) == NORMAL
+                                    {
                                         set_hb(s);
                                         set_hyf_bchar(font_bchar_entry(crate::globals::hf()));
                                     } else {
@@ -1376,8 +1441,8 @@ pub unsafe extern "C" fn line_break(d: bool) {
                                                 break;
                                             }
                                         }
-                                        WHATSIT_NODE | GLUE_NODE | PENALTY_NODE | INS_NODE | ADJUST_NODE
-                                        | MARK_NODE => break,
+                                        WHATSIT_NODE | GLUE_NODE | PENALTY_NODE | INS_NODE
+                                        | ADJUST_NODE | MARK_NODE => break,
                                         MATH_NODE => {
                                             if node_subtype(s) >= L_CODE {
                                                 break;
@@ -1397,7 +1462,10 @@ pub unsafe extern "C" fn line_break(d: bool) {
                 }
                 KERN_NODE => {
                     if node_subtype(cur) == EXPLICIT {
-                        if !is_char_node(mem_b32s1(cur)) && auto_breaking && node_type(mem_b32s1(cur)) == GLUE_NODE {
+                        if !is_char_node(mem_b32s1(cur))
+                            && auto_breaking
+                            && node_type(mem_b32s1(cur)) == GLUE_NODE
+                        {
                             try_break(0, UNHYPHENATED);
                         }
                         add_active_width(1, box_width(cur));
@@ -1446,7 +1514,10 @@ pub unsafe extern "C" fn line_break(d: bool) {
                     if node_subtype(cur) < L_CODE {
                         auto_breaking = odd(node_subtype(cur) as u8);
                     }
-                    if !is_char_node(mem_b32s1(cur)) && auto_breaking && node_type(mem_b32s1(cur)) == GLUE_NODE {
+                    if !is_char_node(mem_b32s1(cur))
+                        && auto_breaking
+                        && node_type(mem_b32s1(cur)) == GLUE_NODE
+                    {
                         try_break(0, UNHYPHENATED);
                     }
                     add_active_width(1, box_width(cur));
@@ -1469,7 +1540,8 @@ pub unsafe extern "C" fn line_break(d: bool) {
                 let mut r = mem_b32s1(ACTIVE_LIST);
                 let mut fewest_demerits = MAX_HALFWORD;
                 loop {
-                    if node_type(r) != DELTA_NODE && active_node_total_demerits(r) < fewest_demerits {
+                    if node_type(r) != DELTA_NODE && active_node_total_demerits(r) < fewest_demerits
+                    {
                         fewest_demerits = active_node_total_demerits(r);
                         set_best_bet(r);
                     }
@@ -1490,7 +1562,8 @@ pub unsafe extern "C" fn line_break(d: bool) {
                     if node_type(r) != DELTA_NODE {
                         let line_diff = active_node_line_number(r) - crate::globals::best_line();
                         if (line_diff < actual_looseness && int_par(INT_PAR_LOOSENESS) <= line_diff)
-                            || (line_diff > actual_looseness && int_par(INT_PAR_LOOSENESS) >= line_diff)
+                            || (line_diff > actual_looseness
+                                && int_par(INT_PAR_LOOSENESS) >= line_diff)
                         {
                             set_best_bet(r);
                             actual_looseness = line_diff;
@@ -1551,8 +1624,7 @@ pub unsafe extern "C" fn line_break(d: bool) {
             crate::mem::delete_glue_ref(glue_ptr(last_line_fill));
             set_box_width(
                 q,
-                box_width(q)
-                    + active_node_shortfall(crate::globals::best_bet())
+                box_width(q) + active_node_shortfall(crate::globals::best_bet())
                     - active_node_glue(crate::globals::best_bet()),
             );
             set_glue_spec_stretch(q, 0);
@@ -1628,8 +1700,8 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
         eqtb_b32s1, first_indent, first_width, hi_mem_min, just_box, last_leftmost_char,
         last_rightmost_char, last_special_line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1,
         pre_adjust_tail, second_indent, second_width, semantic_pagination_enabled, set_adjust_tail,
-        set_cur_list_e_tex_aux, set_cur_list_prev_graf, set_cur_list_tail, set_cur_p,
-        set_just_box, set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, set_pre_adjust_tail,
+        set_cur_list_e_tex_aux, set_cur_list_prev_graf, set_cur_list_tail, set_cur_p, set_just_box,
+        set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, set_pre_adjust_tail,
     };
 
     let mut lr_ptr = cur_list_e_tex_aux();
@@ -1954,14 +2026,13 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
 pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
     use crate::globals::{
         active_node_size, active_width, background, best_pl_glue, best_pl_line, best_pl_short,
-        best_place, break_width, cur_active_width, cur_p, disc_width, do_last_line_fit,
-        easy_line, eqtb_b32s1, fill_width, final_pass, first_width, last_special_line,
-        mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, minimal_demerits, minimum_demerits,
-        passive, semantic_pagination_enabled, set_active_width, set_best_pl_glue,
-        set_best_pl_line, set_best_pl_short, set_best_place, set_break_width,
-        set_cur_active_width, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-        set_minimal_demerits, set_minimum_demerits, set_passive, set_xtx_ligature_present,
-        threshold,
+        best_place, break_width, cur_active_width, cur_p, disc_width, do_last_line_fit, easy_line,
+        eqtb_b32s1, fill_width, final_pass, first_width, last_special_line, mem_b16s0, mem_b16s1,
+        mem_b32s0, mem_b32s1, minimal_demerits, minimum_demerits, passive,
+        semantic_pagination_enabled, set_active_width, set_best_pl_glue, set_best_pl_line,
+        set_best_pl_short, set_best_place, set_break_width, set_cur_active_width, set_mem_b16s0,
+        set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_minimal_demerits, set_minimum_demerits,
+        set_passive, set_xtx_ligature_present, threshold,
     };
 
     if semantic_pagination_enabled() && cur_p() != TEX_NULL {
@@ -2048,7 +2119,10 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                                                 || sub == PIC_NODE
                                                 || sub == PDF_NODE
                                             {
-                                                set_break_width(1, break_width(1) - mem_b32s1(v + 1));
+                                                set_break_width(
+                                                    1,
+                                                    break_width(1) - mem_b32s1(v + 1),
+                                                );
                                             } else {
                                                 crate::errors::confusion(c"disc1a".as_ptr());
                                             }
@@ -2087,7 +2161,10 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                                                 || sub == PIC_NODE
                                                 || sub == PDF_NODE
                                             {
-                                                set_break_width(1, break_width(1) + mem_b32s1(s + 1));
+                                                set_break_width(
+                                                    1,
+                                                    break_width(1) + mem_b32s1(s + 1),
+                                                );
                                             } else {
                                                 crate::errors::confusion(c"disc2a".as_ptr());
                                             }
@@ -2300,7 +2377,11 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                                 } else {
                                     b = crate::helpers::badness(g, cur_active_width(2));
                                     fit_class = if b > 12 {
-                                        if b > 99 { VERY_LOOSE_FIT } else { LOOSE_FIT }
+                                        if b > 99 {
+                                            VERY_LOOSE_FIT
+                                        } else {
+                                            LOOSE_FIT
+                                        }
                                     } else {
                                         DECENT_FIT
                                     };
@@ -2332,7 +2413,11 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                 } else {
                     b = crate::helpers::badness(shortfall, cur_active_width(2));
                     fit_class = if b > 12 {
-                        if b > 99 { VERY_LOOSE_FIT } else { LOOSE_FIT }
+                        if b > 99 {
+                            VERY_LOOSE_FIT
+                        } else {
+                            LOOSE_FIT
+                        }
                     } else {
                         DECENT_FIT
                     };
@@ -2481,14 +2566,14 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
 #[no_mangle]
 pub unsafe extern "C" fn hyphenate() {
     use crate::globals::{
-        avail, bchar_label_entry, cur_lang, cur_p, font_bchar_entry, ha, hb, hc_entry,
-        hf, hn, hu_entry, hyf_bchar, hyf_char, hyf_distance_entry, hyf_entry, hyf_next_entry,
-        hyf_num_entry, hyph_link_entry, hyph_list_entry, hyph_word_entry, hyphen_passed,
-        l_hyf, max_hyph_char, mem_as_u16_ptr, mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1,
-        mem_b32s0, mem_b32s1, op_start_entry, r_hyf, set_avail, set_hc_entry, set_hn,
-        set_hu_entry, set_hyf_entry, set_hyphen_passed, set_init_lft, set_init_lig,
-        set_init_list, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-        str_pool_entry, str_start, trie_trc_entry, trie_trl_entry, trie_tro_entry,
+        avail, bchar_label_entry, cur_lang, cur_p, font_bchar_entry, ha, hb, hc_entry, hf, hn,
+        hu_entry, hyf_bchar, hyf_char, hyf_distance_entry, hyf_entry, hyf_next_entry,
+        hyf_num_entry, hyph_link_entry, hyph_list_entry, hyph_word_entry, hyphen_passed, l_hyf,
+        max_hyph_char, mem_as_u16_ptr, mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b32s0,
+        mem_b32s1, op_start_entry, r_hyf, set_avail, set_hc_entry, set_hn, set_hu_entry,
+        set_hyf_entry, set_hyphen_passed, set_init_lft, set_init_lig, set_init_list, set_mem_b16s0,
+        set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, str_pool_entry, str_start, trie_trc_entry,
+        trie_trl_entry, trie_tro_entry,
     };
 
     let mut hn_v = hn();
@@ -2578,12 +2663,11 @@ pub unsafe extern "C" fn hyphenate() {
 
     unsafe fn goto_found(mut hn_v: i16) {
         use crate::globals::{
-            avail, bchar_label_entry, cur_p, font_bchar_entry, ha, hb, hf, hn, hu_entry,
-            hyf_bchar, hyf_char, hyf_entry, hyphen_passed, l_hyf, max_hyph_char,
-            mem_as_u16_ptr, mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b32s1, r_hyf,
-            set_avail, set_hn, set_hu_entry, set_hyf_entry, set_hyphen_passed, set_init_lft,
-            set_init_lig, set_init_list, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0,
-            set_mem_b32s1,
+            avail, bchar_label_entry, cur_p, font_bchar_entry, ha, hb, hf, hn, hu_entry, hyf_bchar,
+            hyf_char, hyf_entry, hyphen_passed, l_hyf, max_hyph_char, mem_as_u16_ptr,
+            mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b32s1, r_hyf, set_avail, set_hn,
+            set_hu_entry, set_hyf_entry, set_hyphen_passed, set_init_lft, set_init_lig,
+            set_init_list, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
         };
 
         for j in 0..=(l_hyf() as i16 - 1) {

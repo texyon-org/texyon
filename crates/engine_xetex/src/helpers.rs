@@ -70,7 +70,9 @@ mod tests {
 
     #[test]
     fn badness_zero_t() {
-        unsafe { assert_eq!(badness(0, 1000), 0); }
+        unsafe {
+            assert_eq!(badness(0, 1000), 0);
+        }
     }
 
     #[test]
@@ -84,19 +86,25 @@ mod tests {
     #[test]
     fn badness_perfect_fit() {
         // t == s means ratio 1.0 → r = 297 → r^3/262144 = 26236551/262144 = 100
-        unsafe { assert_eq!(badness(1000, 1000), 100); }
+        unsafe {
+            assert_eq!(badness(1000, 1000), 100);
+        }
     }
 
     #[test]
     fn badness_small_ratio_gives_zero() {
         // Very small t/s: r = (1 * 297) / 1_000_000 = 0, so result = 0.
-        unsafe { assert_eq!(badness(1, 1_000_000), 0); }
+        unsafe {
+            assert_eq!(badness(1, 1_000_000), 0);
+        }
     }
 
     #[test]
     fn badness_large_t_s_path() {
         // t > 7_230_584 and s < 1_663_497 → r = t, which is > 1290, → INF_BAD.
-        unsafe { assert_eq!(badness(8_000_000, 1_000_000), INF_BAD); }
+        unsafe {
+            assert_eq!(badness(8_000_000, 1_000_000), INF_BAD);
+        }
     }
 
     #[test]

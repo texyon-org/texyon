@@ -110,43 +110,69 @@ static mut SYNCTEX_CTXT: SynctexCtxt = SynctexCtxt {
 
 // SYNCTEX_CURH / SYNCTEX_CURV (xetex-synctex.c:19-20).
 #[inline]
-unsafe fn synctex_curh() -> i32 { cur_h() + 4736287 }
+unsafe fn synctex_curh() -> i32 {
+    cur_h() + 4736287
+}
 #[inline]
-unsafe fn synctex_curv() -> i32 { cur_v() + 4736287 }
+unsafe fn synctex_curv() -> i32 {
+    cur_v() + 4736287
+}
 
 // SYNCTEX_TAG_MODEL / SYNCTEX_LINE_MODEL for BOX (BOX_NODE_SIZE = 8, field = offset 7).
 #[inline]
-unsafe fn synctex_tag_box(p: i32) -> i32 { mem_b32s0(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE) }
+unsafe fn synctex_tag_box(p: i32) -> i32 {
+    mem_b32s0(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+}
 #[inline]
-unsafe fn synctex_line_box(p: i32) -> i32 { mem_b32s1(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE) }
+unsafe fn synctex_line_box(p: i32) -> i32 {
+    mem_b32s1(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+}
 
 // For RULE (RULE_NODE_SIZE = 5, field at offset 4).
 #[inline]
-unsafe fn synctex_tag_rule(p: i32) -> i32 { mem_b32s0(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE) }
+unsafe fn synctex_tag_rule(p: i32) -> i32 {
+    mem_b32s0(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+}
 #[inline]
-unsafe fn synctex_line_rule(p: i32) -> i32 { mem_b32s1(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE) }
+unsafe fn synctex_line_rule(p: i32) -> i32 {
+    mem_b32s1(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+}
 
 // For GLUE / KERN / MATH (MEDIUM_NODE_SIZE = 3, field at offset 2).
 #[inline]
-unsafe fn synctex_tag_medium(p: i32) -> i32 { mem_b32s0(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE) }
+unsafe fn synctex_tag_medium(p: i32) -> i32 {
+    mem_b32s0(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+}
 #[inline]
-unsafe fn synctex_line_medium(p: i32) -> i32 { mem_b32s1(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE) }
+unsafe fn synctex_line_medium(p: i32) -> i32 {
+    mem_b32s1(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+}
 
 // SYNCTEX_TYPE: mem[p].b16.s1
 #[inline]
-unsafe fn synctex_type(p: i32) -> u16 { mem_b16s1(p) }
+unsafe fn synctex_type(p: i32) -> u16 {
+    mem_b16s1(p)
+}
 
 // SYNCTEX_WIDTH/DEPTH/HEIGHT (width_offset=1, depth_offset=2, height_offset=3).
 #[inline]
-unsafe fn synctex_width(p: i32) -> i32 { mem_b32s1(p + 1) }
+unsafe fn synctex_width(p: i32) -> i32 {
+    mem_b32s1(p + 1)
+}
 #[inline]
-unsafe fn synctex_depth(p: i32) -> i32 { mem_b32s1(p + 2) }
+unsafe fn synctex_depth(p: i32) -> i32 {
+    mem_b32s1(p + 2)
+}
 #[inline]
-unsafe fn synctex_height(p: i32) -> i32 { mem_b32s1(p + 3) }
+unsafe fn synctex_height(p: i32) -> i32 {
+    mem_b32s1(p + 3)
+}
 
 // INTPAR(synctex) = eqtb[INT_BASE + INT_PAR__synctex].b32.s1
 #[inline]
-unsafe fn intpar_synctex() -> i32 { eqtb_b32s1(INT_BASE + INT_PAR_SYNCTEX) }
+unsafe fn intpar_synctex() -> i32 {
+    eqtb_b32s1(INT_BASE + INT_PAR_SYNCTEX)
+}
 
 // ---------------------------------------------------------------------------
 // Write helper: format! + ttstub_output_write
@@ -159,7 +185,11 @@ unsafe fn synctex_write(handle: usize, s: &str) -> i32 {
         return 0;
     }
     let written = ttstub_output_write(handle, bytes.as_ptr() as *const c_char, bytes.len());
-    if written > 0 { written as i32 } else { -1 }
+    if written > 0 {
+        written as i32
+    } else {
+        -1
+    }
 }
 
 // Free a C pointer and return null (replaces `mfree(ptr)`).
@@ -228,7 +258,11 @@ unsafe fn synctex_record_settings() -> i32 {
     if SYNCTEX_CTXT.file == INVALID_HANDLE {
         return 0;
     }
-    let (file, mag, unit) = (SYNCTEX_CTXT.file, SYNCTEX_CTXT.magnification, SYNCTEX_CTXT.unit);
+    let (file, mag, unit) = (
+        SYNCTEX_CTXT.file,
+        SYNCTEX_CTXT.magnification,
+        SYNCTEX_CTXT.unit,
+    );
     let s = format!(
         "Output:pdf\nMagnification:{}\nUnit:{}\nX Offset:0\nY Offset:0\n",
         mag, unit
@@ -381,9 +415,13 @@ unsafe fn synctex_record_node_vlist(p: i32) {
     );
     let s = format!(
         "[{},{}:{},{}:{},{},{}\n",
-        synctex_tag_box(p), synctex_line_box(p),
-        curh / unit, curv / unit,
-        synctex_width(p) / unit, synctex_height(p) / unit, synctex_depth(p) / unit
+        synctex_tag_box(p),
+        synctex_line_box(p),
+        curh / unit,
+        curv / unit,
+        synctex_width(p) / unit,
+        synctex_height(p) / unit,
+        synctex_depth(p) / unit
     );
     let len = synctex_write(file, &s);
     SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
@@ -415,9 +453,13 @@ unsafe fn synctex_record_node_void_vlist(p: i32) {
     );
     let s = format!(
         "v{},{}:{},{}:{},{},{}\n",
-        synctex_tag_box(p), synctex_line_box(p),
-        curh / unit, curv / unit,
-        synctex_width(p) / unit, synctex_height(p) / unit, synctex_depth(p) / unit
+        synctex_tag_box(p),
+        synctex_line_box(p),
+        curh / unit,
+        curv / unit,
+        synctex_width(p) / unit,
+        synctex_height(p) / unit,
+        synctex_depth(p) / unit
     );
     let len = synctex_write(file, &s);
     SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
@@ -439,9 +481,13 @@ unsafe fn synctex_record_node_hlist(p: i32) {
     );
     let s = format!(
         "({},{}:{},{}:{},{},{}\n",
-        synctex_tag_box(p), synctex_line_box(p),
-        curh / unit, curv / unit,
-        synctex_width(p) / unit, synctex_height(p) / unit, synctex_depth(p) / unit
+        synctex_tag_box(p),
+        synctex_line_box(p),
+        curh / unit,
+        curv / unit,
+        synctex_width(p) / unit,
+        synctex_height(p) / unit,
+        synctex_depth(p) / unit
     );
     let len = synctex_write(file, &s);
     SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
@@ -473,9 +519,13 @@ unsafe fn synctex_record_node_void_hlist(p: i32) {
     );
     let s = format!(
         "h{},{}:{},{}:{},{},{}\n",
-        synctex_tag_box(p), synctex_line_box(p),
-        curh / unit, curv / unit,
-        synctex_width(p) / unit, synctex_height(p) / unit, synctex_depth(p) / unit
+        synctex_tag_box(p),
+        synctex_line_box(p),
+        curh / unit,
+        curv / unit,
+        synctex_width(p) / unit,
+        synctex_height(p) / unit,
+        synctex_depth(p) / unit
     );
     let len = synctex_write(file, &s);
     SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
@@ -496,8 +546,10 @@ unsafe fn synctex_record_node_math(p: i32) {
     );
     let s = format!(
         "${},{}:{},{}\n",
-        synctex_tag_medium(p), synctex_line_medium(p),
-        curh / unit, curv / unit
+        synctex_tag_medium(p),
+        synctex_line_medium(p),
+        curh / unit,
+        curv / unit
     );
     let len = synctex_write(file, &s);
     SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
@@ -518,8 +570,10 @@ unsafe fn synctex_record_node_glue(p: i32) {
     );
     let s = format!(
         "g{},{}:{},{}\n",
-        synctex_tag_medium(p), synctex_line_medium(p),
-        curh / unit, curv / unit
+        synctex_tag_medium(p),
+        synctex_line_medium(p),
+        curh / unit,
+        curv / unit
     );
     let len = synctex_write(file, &s);
     SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
@@ -542,8 +596,10 @@ unsafe fn synctex_record_node_kern(p: i32) {
     );
     let s = format!(
         "k{},{}:{},{}:{}\n",
-        synctex_tag_medium(p), synctex_line_medium(p),
-        curh / unit, curv / unit,
+        synctex_tag_medium(p),
+        synctex_line_medium(p),
+        curh / unit,
+        curv / unit,
         synctex_width(p) / unit
     );
     let len = synctex_write(file, &s);
@@ -565,9 +621,13 @@ unsafe fn synctex_record_node_rule(p: i32) {
     );
     let s = format!(
         "r{},{}:{},{}:{},{},{}\n",
-        synctex_tag_rule(p), synctex_line_rule(p),
-        curh / unit, curv / unit,
-        rule_wd() / unit, rule_ht() / unit, rule_dp() / unit
+        synctex_tag_rule(p),
+        synctex_line_rule(p),
+        curh / unit,
+        curv / unit,
+        rule_wd() / unit,
+        rule_ht() / unit,
+        rule_dp() / unit
     );
     let len = synctex_write(file, &s);
     SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
@@ -723,10 +783,8 @@ pub unsafe extern "C" fn synctex_start_input() {
         SYNCTEX_CTXT.root_name = get_current_name();
         if libc::strlen(SYNCTEX_CTXT.root_name) == 0 {
             let texput = b"texput\0";
-            SYNCTEX_CTXT.root_name = xrealloc(
-                SYNCTEX_CTXT.root_name as *mut libc::c_void,
-                texput.len(),
-            ) as *mut c_char;
+            SYNCTEX_CTXT.root_name =
+                xrealloc(SYNCTEX_CTXT.root_name as *mut libc::c_void, texput.len()) as *mut c_char;
             libc::strcpy(SYNCTEX_CTXT.root_name, texput.as_ptr() as *const c_char);
         }
         return;
@@ -1023,7 +1081,8 @@ pub unsafe extern "C" fn synctex_current() {
     );
     let s = format!(
         "x{},{}:{},{}\n",
-        tag, line,
+        tag,
+        line,
         synctex_curh() / unit,
         synctex_curv() / unit
     );
