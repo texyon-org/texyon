@@ -1,26 +1,28 @@
 //! Math-mode command helpers translated from `xetex/xetex-math.c`.
 
 use crate::globals::{
-    adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
-    cur_c, cur_f, cur_i, depth_base_entry, exten_base_entry, height_base_entry, italic_base_entry,
-    kern_base_entry, lig_kern_base_entry, skew_char_entry,
-    cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
-    cur_list_prev_graf, cur_list_tail, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1,
-    file_line_error_style_p, font_area_entry, font_bc_entry, font_ec_entry, font_info_b16,
-    font_info_b32s1, font_layout_engine_ptr, font_params, hi_mem_min,
-    insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
-    mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_gr, mem_node_addr, mem_word, nest_ptr, null_character,
-    param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
-    set_adjust_tail, set_avail, set_cur_c, set_cur_dir, set_cur_f, set_cur_i, set_cur_lang,
-    set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode,
-    set_cur_list_prev_graf, set_cur_list_tail, set_cur_mlist, set_cur_mu, set_cur_size,
-    set_cur_style, set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems,
-    set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0,
-    set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties, set_pre_adjust_tail,
-    set_save_ptr, set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr,
-    tex_remainder, total_shrink, width_base_entry,
+    adjust_tail, avail, char_base_entry, cur_c, cur_chr, cur_cmd, cur_dir, cur_f, cur_group, cur_i,
+    cur_lang, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
+    cur_list_prev_graf, cur_list_tail, cur_size, cur_style, cur_val, cur_val1, depth_base_entry,
+    eqtb_b32s1, exten_base_entry, file_line_error_style_p, font_area_entry, font_bc_entry,
+    font_ec_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr, font_params,
+    height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
+    kern_base_entry, lig_kern_base_entry, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2,
+    mem_b16s3, mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, mem_word, nest_ptr,
+    null_character, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
+    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_c, set_cur_dir, set_cur_f,
+    set_cur_i, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
+    set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
+    set_cur_mlist, set_cur_mu, set_cur_size, set_cur_style, set_cur_val, set_cur_val1,
+    set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1,
+    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_word,
+    set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
+    set_xtx_ligature_present, skew_char_entry, temp_ptr, tex_remainder, total_shrink,
+    width_base_entry,
 };
-use crate::mem::{free_node, get_node, new_choice, new_glue, new_kern, new_noad, new_rule, new_spec, TEX_NULL};
+use crate::mem::{
+    free_node, get_node, new_choice, new_glue, new_kern, new_noad, new_rule, new_spec, TEX_NULL,
+};
 
 const INT_BASE: i32 = 7_826_729;
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -72,6 +74,10 @@ const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const RADICAL_NOAD: u16 = 24;
 const FRACTION_NOAD: u16 = 25;
 const OP_NOAD: u16 = 17;
+const BIN_NOAD: u16 = 18;
+const REL_NOAD: u16 = 19;
+const OPEN_NOAD: u16 = 20;
+const CLOSE_NOAD: u16 = 21;
 const INNER_NOAD: u16 = 23;
 const LEFT_NOAD: u16 = 30;
 const RIGHT_NOAD: u16 = 31;
@@ -144,6 +150,12 @@ const FRACTIONDENOMDISPLAYSTYLEGAPMIN: i32 = 40;
 const RADICALVERTICALGAP: i32 = 49;
 const RADICALDISPLAYSTYLEVERTICALGAP: i32 = 50;
 const RADICALRULETHICKNESS: i32 = 51;
+const SUB_CMD: i32 = 1;
+const SUP_CMD: i32 = 0;
+const SUBSCRIPTTOPMAX: i32 = 9;
+const SUPERSCRIPTBOTTOMMIN: i32 = 13;
+const SUBSUPERSCRIPTGAPMIN: i32 = 15;
+const SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT: i32 = 16;
 const BEGIN_M_CODE: i16 = 2;
 const END_M_CODE: i16 = 3;
 const DISPLAY_STYLE: i16 = 0;
@@ -157,6 +169,7 @@ const FILL: usize = 2;
 const FILLL: usize = 3;
 const INF_PENALTY: i32 = 10000;
 const DIMEN_PAR_MATH_SURROUND: i32 = 1;
+const DIMEN_PAR_SCRIPT_SPACE: i32 = 12;
 const INT_PAR_PRE_DISPLAY_PENALTY: i32 = 11;
 const INT_PAR_POST_DISPLAY_PENALTY: i32 = 12;
 const GLUE_PAR_ABOVE_DISPLAY_SKIP: i16 = 3;
@@ -173,6 +186,8 @@ const MU_GLUE: u16 = 99;
 const EXPLICIT: u16 = 1;
 const VLIST_NODE: u16 = 1;
 const KERN_NODE: u16 = 11;
+const STYLE_NODE: u16 = 14;
+const CHOICE_NODE: u16 = 15;
 const MEDIUM_NODE_SIZE: i32 = 3;
 const SUB_BOX: i32 = 2;
 
@@ -186,6 +201,14 @@ extern "C" {
     fn real_get_native_glyph(p_node: *mut libc::c_void, index: u32) -> u16;
     fn get_ot_math_accent_pos(f: i32, g: i32) -> i32;
     fn get_ot_math_constant(f: i32, n: i32) -> i32;
+    fn get_ot_math_kern(
+        base_f: i32,
+        base_g: u16,
+        script_f: i32,
+        script_g: u16,
+        cmd: i32,
+        shift: i32,
+    ) -> i32;
     fn get_ot_math_variant(f: i32, g: i32, v: i32, adv: *mut i32, horiz: i32) -> i32;
     fn get_ot_assembly_ptr(f: i32, g: i32, horiz: i32) -> *mut libc::c_void;
     fn get_ot_math_ital_corr(f: i32, g: i32) -> i32;
@@ -538,7 +561,11 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
     let q = mem_b32s1(x + 5);
     if is_char_node(q) {
         let r = mem_b32s1(q);
-        if r != TEX_NULL && mem_b32s1(r) == TEX_NULL && !is_char_node(r) && mem_b16s1(r) == KERN_NODE {
+        if r != TEX_NULL
+            && mem_b32s1(r) == TEX_NULL
+            && !is_char_node(r)
+            && mem_b16s1(r) == KERN_NODE
+        {
             free_node(r, MEDIUM_NODE_SIZE);
             set_mem_b32s1(q, TEX_NULL);
         }
@@ -563,14 +590,28 @@ pub unsafe extern "C" fn fetch(a: i32) {
         crate::output::print_char(')' as i32);
         crate::output::capture_to_diagnostic(std::ptr::null_mut());
         set_help_ptr(4);
-        set_help_line(3, c"Somewhere in the math formula just ended, you used the".as_ptr());
-        set_help_line(2, c"stated character from an undefined font family. For example,".as_ptr());
-        set_help_line(1, c"plain TeX doesn't allow \\it or \\sl in subscripts. Proceed,".as_ptr());
-        set_help_line(0, c"and I'll try to forget that I needed that character.".as_ptr());
+        set_help_line(
+            3,
+            c"Somewhere in the math formula just ended, you used the".as_ptr(),
+        );
+        set_help_line(
+            2,
+            c"stated character from an undefined font family. For example,".as_ptr(),
+        );
+        set_help_line(
+            1,
+            c"plain TeX doesn't allow \\it or \\sl in subscripts. Proceed,".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"and I'll try to forget that I needed that character.".as_ptr(),
+        );
         crate::errors::error();
         set_cur_i(null_character());
         set_mem_b32s1(a, EMPTY);
-    } else if font_area_entry(cur_f()) == AAT_FONT_FLAG || font_area_entry(cur_f()) == OTGR_FONT_FLAG {
+    } else if font_area_entry(cur_f()) == AAT_FONT_FLAG
+        || font_area_entry(cur_f()) == OTGR_FONT_FLAG
+    {
         set_cur_i(null_character());
     } else {
         if cur_c() >= font_bc_entry(cur_f()) as i32 && cur_c() <= font_ec_entry(cur_f()) as i32 {
@@ -623,7 +664,10 @@ pub unsafe extern "C" fn make_vcenter(q: i32) {
         crate::errors::confusion(c"vcenter".as_ptr());
     }
     let delta = mem_b32s1(v + 3) + mem_b32s1(v + 2);
-    set_mem_b32s1(v + 3, axis_height(cur_size()) + crate::scaled_math::half(delta));
+    set_mem_b32s1(
+        v + 3,
+        axis_height(cur_size()) + crate::scaled_math::half(delta),
+    );
     set_mem_b32s1(v + 2, delta - mem_b32s1(v + 3));
 }
 
@@ -834,8 +878,7 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
                 'found: {
                     if cur_style() < TEXT_STYLE {
                         let mut h1 = get_ot_math_constant(cur_f(), DISPLAYOPERATORMINHEIGHT);
-                        let size_h =
-                            (mem_b32s1(p + 3) + mem_b32s1(p + 2)) as f64 * 5.0 / 4.0;
+                        let size_h = (mem_b32s1(p + 3) + mem_b32s1(p + 2)) as f64 * 5.0 / 4.0;
                         if (h1 as f64) < size_h {
                             h1 = size_h as i32;
                         }
@@ -880,8 +923,7 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
         }
         set_mem_b32s1(
             x + 4,
-            crate::scaled_math::half(mem_b32s1(x + 3) - mem_b32s1(x + 2))
-                - axis_height(cur_size()),
+            crate::scaled_math::half(mem_b32s1(x + 3) - mem_b32s1(x + 2)) - axis_height(cur_size()),
         );
         set_mem_b32s1(q + 1, SUB_BOX);
         set_mem_b32s0(q + 1, x);
@@ -964,24 +1006,41 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn make_ord(q: i32) {
     'restart: loop {
-        if mem_b32s1(q + 3) != EMPTY { break 'restart; }
-        if mem_b32s1(q + 2) != EMPTY { break 'restart; }
-        if mem_b32s1(q + 1) != MATH_CHAR { break 'restart; }
+        if mem_b32s1(q + 3) != EMPTY {
+            break 'restart;
+        }
+        if mem_b32s1(q + 2) != EMPTY {
+            break 'restart;
+        }
+        if mem_b32s1(q + 1) != MATH_CHAR {
+            break 'restart;
+        }
         let p = mem_b32s1(q);
-        if p == TEX_NULL { break 'restart; }
-        if mem_b16s1(p) < ORD_NOAD || mem_b16s1(p) > PUNCT_NOAD { break 'restart; }
-        if mem_b32s1(p + 1) != MATH_CHAR { break 'restart; }
-        if mem_b16s1(p + 1) % 256 != mem_b16s1(q + 1) % 256 { break 'restart; }
+        if p == TEX_NULL {
+            break 'restart;
+        }
+        if mem_b16s1(p) < ORD_NOAD || mem_b16s1(p) > PUNCT_NOAD {
+            break 'restart;
+        }
+        if mem_b32s1(p + 1) != MATH_CHAR {
+            break 'restart;
+        }
+        if mem_b16s1(p + 1) % 256 != mem_b16s1(q + 1) % 256 {
+            break 'restart;
+        }
 
         set_mem_b32s1(q + 1, MATH_TEXT_CHAR);
         fetch(q + 1);
-        if cur_i().s1 % 4 != LIG_TAG { break 'restart; }
+        if cur_i().s1 % 4 != LIG_TAG {
+            break 'restart;
+        }
 
         let mut a = lig_kern_base_entry(cur_f()) + cur_i().s0 as i32;
         set_cur_c(mem_b16s0(p + 1) as i32);
         set_cur_i(font_info_b16(a));
         if cur_i().s3 > 128 {
-            a = lig_kern_base_entry(cur_f()) + 256 * cur_i().s1 as i32 + cur_i().s0 as i32 + 32768 - 256 * 128;
+            a = lig_kern_base_entry(cur_f()) + 256 * cur_i().s1 as i32 + cur_i().s0 as i32 + 32768
+                - 256 * 128;
             set_cur_i(font_info_b16(a));
         }
         loop {
@@ -1077,7 +1136,8 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
                         a = lig_kern_base_entry(cur_f())
                             + 256 * cur_i().s1 as i32
                             + cur_i().s0 as i32
-                            + 32768 - 256 * 128;
+                            + 32768
+                            - 256 * 128;
                         set_cur_i(font_info_b16(a));
                     }
                     loop {
@@ -1105,11 +1165,17 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
         w = mem_b32s1(x + 1);
         h = mem_b32s1(x + 3);
         loop {
-            if acc_i.s1 % 4 != LIST_TAG { break; }
+            if acc_i.s1 % 4 != LIST_TAG {
+                break;
+            }
             let y_tmp = acc_i.s0 as i32;
             acc_i = font_info_b16(char_base_entry(f) + y_tmp);
-            if !(acc_i.s3 > 0) { break; }
-            if font_info_b32s1(width_base_entry(f) + acc_i.s3 as i32) > w { break; }
+            if !(acc_i.s3 > 0) {
+                break;
+            }
+            if font_info_b32s1(width_base_entry(f) + acc_i.s3 as i32) > w {
+                break;
+            }
             c = y_tmp;
         }
         // done:
@@ -1162,7 +1228,10 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
         set_mem_b16s1(p, WHATSIT_NODE);
         set_mem_b16s0(p, GLYPH_NODE);
         set_mem_b16s2(p + 4, f as u16);
-        set_mem_b16s1(p + 4, real_get_native_glyph(mem_node_addr(mem_b32s1(y + 5)), 0));
+        set_mem_b16s1(
+            p + 4,
+            real_get_native_glyph(mem_node_addr(mem_b32s1(y + 5)), 0),
+        );
         crate::ext::measure_native_glyph(mem_node_addr(p), 1);
         let old_node = mem_b32s1(y + 5);
         free_node(old_node, mem_b16s3(old_node + 4) as i32);
@@ -1180,7 +1249,9 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
                     crate::ext::measure_native_glyph(mem_node_addr(p), 1);
                     a_var += 1;
                 }
-                if w2 < 0 || w2 >= w { break; }
+                if w2 < 0 || w2 >= w {
+                    break;
+                }
             }
             'found: {
                 if w2 < 0 {
@@ -1202,14 +1273,24 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
         set_mem_b32s1(y + 3, mem_b32s1(p + 3));
         set_mem_b32s1(y + 2, mem_b32s1(p + 2));
         if mem_b16s0(q) == BOTTOM_ACC || mem_b16s0(q) == BOTTOM_ACC + 1 {
-            if mem_b32s1(y + 3) < 0 { set_mem_b32s1(y + 3, 0); }
+            if mem_b32s1(y + 3) < 0 {
+                set_mem_b32s1(y + 3, 0);
+            }
         } else if mem_b32s1(y + 2) < 0 {
             set_mem_b32s1(y + 2, 0);
         }
         let sa: i32;
-        if p != TEX_NULL && !is_char_node(p) && mem_b16s1(p) == WHATSIT_NODE && mem_b16s0(p) == GLYPH_NODE {
+        if p != TEX_NULL
+            && !is_char_node(p)
+            && mem_b16s1(p) == WHATSIT_NODE
+            && mem_b16s0(p) == GLYPH_NODE
+        {
             sa = get_ot_math_accent_pos(f, mem_b16s1(p + 4) as i32);
-            let sa = if sa == TEX_INFINITY { crate::scaled_math::half(mem_b32s1(y + 1)) } else { sa };
+            let sa = if sa == TEX_INFINITY {
+                crate::scaled_math::half(mem_b32s1(y + 1))
+            } else {
+                sa
+            };
             if mem_b16s0(q) == BOTTOM_ACC || mem_b16s0(q) == BOTTOM_ACC + 1 || s == TEX_INFINITY {
                 s = crate::scaled_math::half(w);
             }
@@ -1269,6 +1350,325 @@ pub unsafe extern "C" fn attach_hkern_to_new_hlist(q: i32, delta: i32) -> i32 {
     mem_b32s1(q + 1)
 }
 
+// translated from xetex-math.c:805 (repeated script glyph discovery block)
+unsafe fn first_script_glyph(mut script_head: i32) -> (u16, i32) {
+    let mut script_g: u16 = 0;
+    let mut script_f: i32 = 0;
+    let mut this_math_style = 2 * (cur_style() / 4) + 5;
+
+    if mem_b32s1(script_head) == SUB_MLIST {
+        let mut script_ptr = mem_b32s0(script_head);
+        script_head = TEX_NULL;
+
+        while script_ptr >= 0 && script_ptr <= mem_end() {
+            match mem_b16s1(script_ptr) {
+                KERN_NODE | GLUE_NODE | CHOICE_NODE => {}
+                STYLE_NODE => {
+                    this_math_style = mem_b16s0(script_ptr) as i16;
+                }
+                ORD_NOAD | OP_NOAD | BIN_NOAD | REL_NOAD | OPEN_NOAD | CLOSE_NOAD | PUNCT_NOAD => {
+                    script_head = script_ptr + 1;
+                    script_ptr = TEX_NULL;
+                }
+                _ => {
+                    script_ptr = TEX_NULL;
+                }
+            }
+
+            if script_ptr >= 0 && script_ptr <= mem_end() {
+                if mem_b16s1(script_ptr) == CHOICE_NODE {
+                    script_ptr = match this_math_style / 2 {
+                        0 => mem_b32s0(script_ptr + 1),
+                        1 => mem_b32s1(script_ptr + 1),
+                        2 => mem_b32s0(script_ptr + 2),
+                        3 => mem_b32s1(script_ptr + 2),
+                        _ => script_ptr,
+                    };
+                } else {
+                    script_ptr = mem_b32s1(script_ptr);
+                }
+            }
+        }
+    }
+
+    if script_head >= 0 && script_head <= mem_end() && mem_b32s1(script_head) == MATH_CHAR {
+        let save_f = cur_f();
+        let saved_math_style = cur_style();
+        set_cur_style(this_math_style);
+
+        if cur_style() < SCRIPT_STYLE {
+            set_cur_size(TEXT_SIZE);
+        } else {
+            set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
+        }
+
+        set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+        fetch(script_head);
+
+        if font_is_ot_math(cur_f()) {
+            let script_c = crate::scan::new_native_character(cur_f(), cur_c() as u32);
+            script_g = real_get_native_glyph(mem_node_addr(script_c), 0);
+            script_f = cur_f();
+        }
+
+        set_cur_f(save_f);
+        set_cur_style(saved_math_style);
+
+        if cur_style() < SCRIPT_STYLE {
+            set_cur_size(TEXT_SIZE);
+        } else {
+            set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
+        }
+        set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+    }
+
+    (script_g, script_f)
+}
+
+/// translated from xetex-math.c:84 (make_scripts)
+#[no_mangle]
+pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
+    let mut p = mem_b32s1(q + 1);
+    let mut x: i32;
+    let y: i32;
+    let z: i32;
+    let mut clr: i32;
+    let mut sub_kern = 0;
+    let mut sup_kern = 0;
+    let sup_g: u16;
+    let sup_f: i32;
+    let sub_g: u16;
+    let sub_f: i32;
+
+    let (mut shift_up, mut shift_down) = if is_char_node(p)
+        || (p != TEX_NULL
+            && !is_char_node(p)
+            && mem_b16s1(p) == WHATSIT_NODE
+            && mem_b16s0(p) == GLYPH_NODE)
+    {
+        (0, 0)
+    } else {
+        z = crate::scan::hpack(p, 0, ADDITIONAL);
+        let t = if cur_style() < SCRIPT_STYLE {
+            SCRIPT_SIZE
+        } else {
+            SCRIPT_SCRIPT_SIZE
+        };
+        let up = mem_b32s1(z + 3) - sup_drop(t);
+        let down = mem_b32s1(z + 2) + sub_drop(t);
+        free_node(z, BOX_NODE_SIZE);
+        (up, down)
+    };
+
+    if mem_b32s1(q + 2) == EMPTY {
+        let (script_g, script_f) = first_script_glyph(q + 3);
+        sub_g = script_g;
+        sub_f = script_f;
+
+        let save_f = cur_f();
+        x = clean_box(q + 3, 2 * (cur_style() / 4) + 5);
+        set_cur_f(save_f);
+        set_mem_b32s1(
+            x + 1,
+            mem_b32s1(x + 1) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE),
+        );
+
+        if shift_down < sub1(cur_size()) {
+            shift_down = sub1(cur_size());
+        }
+
+        clr = if font_is_ot_math(cur_f()) {
+            mem_b32s1(x + 3) - get_ot_math_constant(cur_f(), SUBSCRIPTTOPMAX)
+        } else {
+            mem_b32s1(x + 3) - (math_x_height(cur_size()) * 4).abs() / 5
+        };
+
+        if shift_down < clr {
+            shift_down = clr;
+        }
+
+        set_mem_b32s1(x + 4, shift_down);
+
+        if font_is_ot_math(cur_f())
+            && p != TEX_NULL
+            && !is_char_node(p)
+            && mem_b16s1(p) == WHATSIT_NODE
+            && mem_b16s0(p) == GLYPH_NODE
+        {
+            sub_kern = get_ot_math_kern(
+                mem_b16s2(p + 4) as i32,
+                mem_b16s1(p + 4),
+                sub_f,
+                sub_g,
+                SUB_CMD,
+                shift_down,
+            );
+
+            if sub_kern != 0 {
+                p = attach_hkern_to_new_hlist(q, sub_kern);
+            }
+        }
+    } else {
+        let (script_g, script_f) = first_script_glyph(q + 2);
+        sup_g = script_g;
+        sup_f = script_f;
+
+        let mut save_f = cur_f();
+        x = clean_box(q + 2, 2 * (cur_style() / 4) + 4 + (cur_style() % 2));
+        set_cur_f(save_f);
+        set_mem_b32s1(
+            x + 1,
+            mem_b32s1(x + 1) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE),
+        );
+
+        clr = if cur_style() % 2 != 0 {
+            sup3(cur_size())
+        } else if cur_style() < TEXT_STYLE {
+            sup1(cur_size())
+        } else {
+            sup2(cur_size())
+        };
+
+        if shift_up < clr {
+            shift_up = clr;
+        }
+
+        clr = if font_is_ot_math(cur_f()) {
+            mem_b32s1(x + 2) + get_ot_math_constant(cur_f(), SUPERSCRIPTBOTTOMMIN)
+        } else {
+            mem_b32s1(x + 2) + math_x_height(cur_size()).abs() / 4
+        };
+
+        if shift_up < clr {
+            shift_up = clr;
+        }
+
+        if font_is_ot_math(cur_f())
+            && mem_b32s1(q + 3) == EMPTY
+            && p != TEX_NULL
+            && !is_char_node(p)
+            && mem_b16s1(p) == WHATSIT_NODE
+            && mem_b16s0(p) == GLYPH_NODE
+        {
+            sup_kern = get_ot_math_kern(
+                mem_b16s2(p + 4) as i32,
+                mem_b16s1(p + 4),
+                sup_f,
+                sup_g,
+                SUP_CMD,
+                shift_up,
+            );
+
+            if sup_kern != 0 {
+                p = attach_hkern_to_new_hlist(q, sup_kern);
+            }
+        }
+
+        if mem_b32s1(q + 3) == EMPTY {
+            set_mem_b32s1(x + 4, -shift_up);
+        } else {
+            save_f = cur_f();
+            let (script_g, script_f) = first_script_glyph(q + 3);
+            sub_g = script_g;
+            sub_f = script_f;
+
+            y = clean_box(q + 3, 2 * (cur_style() / 4) + 5);
+            set_cur_f(save_f);
+            set_mem_b32s1(
+                y + 1,
+                mem_b32s1(y + 1) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE),
+            );
+
+            if shift_down < sub2(cur_size()) {
+                shift_down = sub2(cur_size());
+            }
+
+            clr = if font_is_ot_math(cur_f()) {
+                get_ot_math_constant(cur_f(), SUBSUPERSCRIPTGAPMIN)
+                    - ((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(y + 3) - shift_down))
+            } else {
+                4 * default_rule_thickness()
+                    - ((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(y + 3) - shift_down))
+            };
+
+            if clr > 0 {
+                shift_down += clr;
+                clr = if font_is_ot_math(cur_f()) {
+                    get_ot_math_constant(cur_f(), SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT)
+                        - (shift_up - mem_b32s1(x + 2))
+                } else {
+                    (math_x_height(cur_size()) * 4).abs() / 5 - (shift_up - mem_b32s1(x + 2))
+                };
+                if clr > 0 {
+                    shift_up += clr;
+                    shift_down -= clr;
+                }
+            }
+
+            if font_is_ot_math(cur_f()) {
+                if p != TEX_NULL
+                    && !is_char_node(p)
+                    && mem_b16s1(p) == WHATSIT_NODE
+                    && mem_b16s0(p) == GLYPH_NODE
+                {
+                    sub_kern = get_ot_math_kern(
+                        mem_b16s2(p + 4) as i32,
+                        mem_b16s1(p + 4),
+                        sub_f,
+                        sub_g,
+                        SUB_CMD,
+                        shift_down,
+                    );
+
+                    if sub_kern != 0 {
+                        p = attach_hkern_to_new_hlist(q, sub_kern);
+                    }
+                }
+
+                if mem_b32s1(q + 3) == EMPTY
+                    && p != TEX_NULL
+                    && !is_char_node(p)
+                    && mem_b16s1(p) == WHATSIT_NODE
+                    && mem_b16s0(p) == GLYPH_NODE
+                {
+                    sup_kern = get_ot_math_kern(
+                        mem_b16s2(p + 4) as i32,
+                        mem_b16s1(p + 4),
+                        sup_f,
+                        sup_g,
+                        SUP_CMD,
+                        shift_up,
+                    );
+
+                    if sup_kern != 0 {
+                        p = attach_hkern_to_new_hlist(q, sup_kern);
+                    }
+                }
+            } else {
+                sup_kern = 0;
+                sub_kern = 0;
+            }
+
+            set_mem_b32s1(x + 4, sup_kern + delta - sub_kern);
+            p = new_kern((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(y + 3) - shift_down));
+            set_mem_b32s1(x, p);
+            set_mem_b32s1(p, y);
+            x = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
+            set_mem_b32s1(x + 4, shift_down);
+        }
+    }
+
+    if mem_b32s1(q + 1) == TEX_NULL {
+        set_mem_b32s1(q + 1, x);
+    } else {
+        p = mem_b32s1(q + 1);
+        while mem_b32s1(p) != TEX_NULL {
+            p = mem_b32s1(p);
+        }
+        set_mem_b32s1(p, x);
+    }
+}
+
 /// translated from xetex-math.c:759 (make_left_right)
 #[no_mangle]
 pub unsafe extern "C" fn make_left_right(q: i32, style: i16, max_d: i32, max_h: i32) -> i16 {
@@ -1318,8 +1718,14 @@ pub unsafe extern "C" fn char_box(f: i32, c: i32) -> i32 {
             font_info_b32s1(width_base_entry(f) + q.s3 as i32)
                 + font_info_b32s1(italic_base_entry(f) + q.s1 as i32 / 4),
         );
-        set_mem_b32s1(b + 3, font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16));
-        set_mem_b32s1(b + 2, font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16));
+        set_mem_b32s1(
+            b + 3,
+            font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16),
+        );
+        set_mem_b32s1(
+            b + 2,
+            font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16),
+        );
         p = crate::mem::get_avail();
         set_mem_b16s0(p, c as u16);
         set_mem_b16s1(p, f as u16);
@@ -1340,9 +1746,7 @@ pub unsafe extern "C" fn stack_into_box(b: i32, f: i32, c: u16) {
 /// translated from xetex-math.c:1474 (height_plus_depth)
 #[no_mangle]
 pub unsafe extern "C" fn height_plus_depth(f: i32, c: u16) -> i32 {
-    let q = font_info_b16(
-        char_base_entry(f) + crate::scan::effective_char(true, f, c) as i32,
-    );
+    let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c) as i32);
     font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16)
         + font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16)
 }
@@ -2656,9 +3060,7 @@ pub unsafe extern "C" fn rebox(b: i32, w: i32) -> i32 {
         if is_char_node(p) && mem_b32s1(p) == TEX_NULL {
             let f = mem_b16s1(p) as i32;
             let c_raw = mem_b16s0(p);
-            let q = font_info_b16(
-                char_base_entry(f) + crate::scan::effective_char(true, f, c_raw),
-            );
+            let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c_raw));
             let v = font_info_b32s1(width_base_entry(f) + q.s3 as i32);
             if v != mem_b32s1(b + 1) {
                 set_mem_b32s1(p, new_kern(mem_b32s1(b + 1) - v));
@@ -2705,20 +3107,30 @@ pub unsafe extern "C" fn build_opentype_assembly(
                 no_extenders = false;
                 for _j in 1..=n {
                     let mut o = ot_part_start_connector(f, a, i);
-                    if min_o < o { o = min_o; }
-                    if prev_o < o { o = prev_o; }
+                    if min_o < o {
+                        o = min_o;
+                    }
+                    if prev_o < o {
+                        o = prev_o;
+                    }
                     s_max = s_max - o + ot_part_full_advance(f, a, i);
                     prev_o = ot_part_end_connector(f, a, i);
                 }
             } else {
                 let mut o = ot_part_start_connector(f, a, i);
-                if min_o < o { o = min_o; }
-                if prev_o < o { o = prev_o; }
+                if min_o < o {
+                    o = min_o;
+                }
+                if prev_o < o {
+                    o = prev_o;
+                }
                 s_max = s_max - o + ot_part_full_advance(f, a, i);
                 prev_o = ot_part_end_connector(f, a, i);
             }
         }
-        if s_max >= s || no_extenders { break; }
+        if s_max >= s || no_extenders {
+            break;
+        }
     }
     // Build the node list.
     let mut prev_o: i32 = 0;
@@ -2726,9 +3138,13 @@ pub unsafe extern "C" fn build_opentype_assembly(
         if ot_part_is_extender(a, i) {
             for _j in 1..=n {
                 let mut o = ot_part_start_connector(f, a, i);
-                if prev_o < o { o = prev_o; }
+                if prev_o < o {
+                    o = prev_o;
+                }
                 let oo = o;
-                if min_o < o { o = min_o; }
+                if min_o < o {
+                    o = min_o;
+                }
                 if oo > 0 {
                     stack_glue_into_box(b, -oo, -o);
                 }
@@ -2737,9 +3153,13 @@ pub unsafe extern "C" fn build_opentype_assembly(
             }
         } else {
             let mut o = ot_part_start_connector(f, a, i);
-            if prev_o < o { o = prev_o; }
+            if prev_o < o {
+                o = prev_o;
+            }
             let oo = o;
-            if min_o < o { o = min_o; }
+            if min_o < o {
+                o = min_o;
+            }
             if oo > 0 {
                 stack_glue_into_box(b, -oo, -o);
             }
@@ -2791,7 +3211,12 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
     let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
     let mut c: u16 = 0;
     let mut w: i32 = 0;
-    let mut q = crate::mem_types::B16x4 { s3: 0, s2: 0, s1: 0, s0: 0 };
+    let mut q = crate::mem_types::B16x4 {
+        s3: 0,
+        s2: 0,
+        s1: 0,
+        s0: 0,
+    };
     let mut large_attempt = false;
     let mut z = mem_b16s3(d) as i32 % 256;
     let mut x = mem_b16s2(d) as i32 + (mem_b16s3(d) as i32 / 256) * 65536;
@@ -2822,13 +3247,19 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                                 if u > w {
                                     c = yv;
                                     w = u;
-                                    if u >= v { break 'found; }
+                                    if u >= v {
+                                        break 'found;
+                                    }
                                 }
                                 n += 1;
-                                if u < 0 { break; }
+                                if u < 0 {
+                                    break;
+                                }
                             }
                             ot_assembly_ptr = get_ot_assembly_ptr(g, x, 0);
-                            if !ot_assembly_ptr.is_null() { break 'found; }
+                            if !ot_assembly_ptr.is_null() {
+                                break 'found;
+                            }
                         } else {
                             let mut y = x as u16;
                             if y >= font_bc_entry(g) && y <= font_ec_entry(g) {
@@ -2841,13 +3272,18 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                                             c = y;
                                             break 'found;
                                         }
-                                        let u = font_info_b32s1(height_base_entry(g) + q.s2 as i32 / 16)
-                                            + font_info_b32s1(depth_base_entry(g) + q.s2 as i32 % 16);
+                                        let u = font_info_b32s1(
+                                            height_base_entry(g) + q.s2 as i32 / 16,
+                                        ) + font_info_b32s1(
+                                            depth_base_entry(g) + q.s2 as i32 % 16,
+                                        );
                                         if u > w {
                                             f = g;
                                             c = y;
                                             w = u;
-                                            if u >= v { break 'found; }
+                                            if u >= v {
+                                                break 'found;
+                                            }
                                         }
                                         if q.s1 % 4 == LIST_TAG {
                                             y = q.s0;
@@ -2859,10 +3295,14 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                             }
                         }
                     }
-                    if z < SCRIPT_SIZE { break; }
+                    if z < SCRIPT_SIZE {
+                        break;
+                    }
                 }
             }
-            if large_attempt { break 'found; }
+            if large_attempt {
+                break 'found;
+            }
             large_attempt = true;
             z = mem_b16s1(d) as i32 % 256;
             x = mem_b16s0(d) as i32 + (mem_b16s1(d) as i32 / 256) * 65536;
@@ -2879,40 +3319,54 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                 c = r.s0;
                 let mut u = height_plus_depth(f, c);
                 w = 0;
-                q = font_info_b16(
-                    char_base_entry(f) + crate::scan::effective_char(true, f, c),
-                );
+                q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c));
                 set_mem_b32s1(
                     b + 1,
                     font_info_b32s1(width_base_entry(f) + q.s3 as i32)
                         + font_info_b32s1(italic_base_entry(f) + q.s1 as i32 / 4),
                 );
                 c = r.s1;
-                if c != 0 { w += height_plus_depth(f, c); }
+                if c != 0 {
+                    w += height_plus_depth(f, c);
+                }
                 c = r.s2;
-                if c != 0 { w += height_plus_depth(f, c); }
+                if c != 0 {
+                    w += height_plus_depth(f, c);
+                }
                 c = r.s3;
-                if c != 0 { w += height_plus_depth(f, c); }
+                if c != 0 {
+                    w += height_plus_depth(f, c);
+                }
                 let mut n: i32 = 0;
                 if u > 0 {
                     while w < v {
                         w += u;
                         n += 1;
-                        if r.s2 != 0 { w += u; }
+                        if r.s2 != 0 {
+                            w += u;
+                        }
                     }
                 }
                 c = r.s1;
-                if c != 0 { stack_into_box(b, f, c); }
+                if c != 0 {
+                    stack_into_box(b, f, c);
+                }
                 c = r.s0;
-                for _ in 1..=n { stack_into_box(b, f, c); }
+                for _ in 1..=n {
+                    stack_into_box(b, f, c);
+                }
                 c = r.s2;
                 if c != 0 {
                     stack_into_box(b, f, c);
                     c = r.s0;
-                    for _ in 1..=n { stack_into_box(b, f, c); }
+                    for _ in 1..=n {
+                        stack_into_box(b, f, c);
+                    }
                 }
                 c = r.s3;
-                if c != 0 { stack_into_box(b, f, c); }
+                if c != 0 {
+                    stack_into_box(b, f, c);
+                }
                 set_mem_b32s1(b + 2, w - mem_b32s1(b + 3));
             } else {
                 b = char_box(f, c as i32);
@@ -2935,7 +3389,10 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
         }
     } else {
         b = crate::mem::new_null_box();
-        set_mem_b32s1(b + 1, eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE));
+        set_mem_b32s1(
+            b + 1,
+            eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE),
+        );
     }
     set_mem_b32s1(
         b + 4,
