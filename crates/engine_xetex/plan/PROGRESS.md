@@ -117,6 +117,7 @@ cargo test -p tectonic --test tex-outputs
 |     101 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_ord (99e00684). Goto-restart→'restart: loop, lig-kern while-true→inner loop. All 4 suites pass. |
 |     102 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate 7 helpers (e27b5336): attach_hkern_to_new_hlist, make_left_right, char_box, stack_into_box, height_plus_depth, stack_glyph_into_box, stack_glue_into_box. All 4 suites pass. |
 |     103 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_math_accent (0f0435fe). Three goto patterns: done1→labeled block, done→plain break, found→labeled block. All 4 suites pass. |
+|     104 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate initialize_math_variables (no-op) + rebox (b5acc37f). null_delimiter was write-only static; removed. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -211,6 +212,7 @@ Passed count below the previous session's recorded value.
 |      92 | 10,311 |                  37,025 |       21.8% |
 |      95 |  9,277 |                  38,094 |       19.6% |
 |     103 |  8,217 |                  35,445 |       18.8% |
+|     104 |  8,180 |                  35,487 |       18.7% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -309,6 +311,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |     101 |      506 |             ~?? |       ~?? |
 |     102 |      513 |             ~?? |       ~?? |
 |     103 |      514 |             ~?? |       ~?? |
+|     104 |      516 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:

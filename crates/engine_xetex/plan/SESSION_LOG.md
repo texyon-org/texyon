@@ -32,6 +32,50 @@ template.
 
 ---
 
+## Session 104 — 2026-05-09 — xetex-math.c initialize_math_variables + rebox
+
+**Goal:** Translate `initialize_math_variables` and `rebox` from `xetex-math.c` to Rust while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 103
+
+**Work done:**
+- Removed unused `static b16x4 null_delimiter` C variable (never read outside the init function).
+- Deleted C body of `initialize_math_variables` (no-op: C zero-inits statics by default). Added empty Rust function.
+- Removed `rebox` from the `extern "C"` block in `src/math.rs` (was calling C; now Rust-native).
+- Deleted C body of `rebox` (~29 LOC). Added Rust `rebox` using `mem_b16s1(p) as i32` for font, `effective_char` + manual width lookup, `free_node`/`new_glue`/`hpack`.
+- Code commit: `b5acc37f` (`engine_xetex: translate initialize_math_variables and rebox to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 104
+
+**Surprises / gotchas:**
+- `null_delimiter` was a write-only static (initialized, never read). Its C removal is safe.
+- `CHAR_NODE_font(p)` = `mem[p].b16.s1` = `mem_b16s1(p)`.
+- `CHAR_NODE_character(p)` = `mem[p].b16.s0` = `mem_b16s0(p)`.
+- `FONT_CHARACTER_WIDTH(f, effective_char(true, f, c))` inlined as: `font_info_b32s1(width_base_entry(f) + font_info_b16(char_base_entry(f) + effective_char(true, f, c_raw)).s3 as i32)`.
+
+**For the next session:**
+- Remaining C bodies in xetex-math.c: `make_scripts` (~464 LOC, static), `mlist_to_hlist` (~467 LOC), `var_delimiter` (~186 LOC), `build_opentype_assembly` (~142 LOC).
+- Next target: `build_opentype_assembly` (~142 LOC) or `var_delimiter` (~186 LOC) for a medium session; `make_scripts` (~464 LOC) or `mlist_to_hlist` (~467 LOC) for a big session.
+
+---
+
 ## Session 103 — 2026-05-09 — xetex-math.c make_math_accent
 
 **Goal:** Translate `make_math_accent` from `xetex-math.c` to Rust while keeping all parity suites green.
