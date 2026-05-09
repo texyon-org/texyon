@@ -188,8 +188,14 @@ extern "C" {
     fn get_ot_assembly_ptr(f: i32, g: i32, horiz: i32) -> *mut libc::c_void;
     fn get_ot_math_ital_corr(f: i32, g: i32) -> i32;
     fn free_ot_assembly(a: *mut libc::c_void);
-    fn build_opentype_assembly(f: i32, a: *mut libc::c_void, s: i32, horiz: bool) -> i32;
     fn var_delimiter(d: i32, s: i32, v: i32) -> i32;
+    fn ot_min_connector_overlap(f: i32) -> i32;
+    fn ot_part_count(a: *mut libc::c_void) -> i32;
+    fn ot_part_is_extender(a: *mut libc::c_void, i: i32) -> bool;
+    fn ot_part_glyph(a: *mut libc::c_void, i: i32) -> i32;
+    fn ot_part_start_connector(f: i32, a: *mut libc::c_void, i: i32) -> i32;
+    fn ot_part_end_connector(f: i32, a: *mut libc::c_void, i: i32) -> i32;
+    fn ot_part_full_advance(f: i32, a: *mut libc::c_void, i: i32) -> i32;
 }
 
 #[inline]
@@ -2669,4 +2675,110 @@ pub unsafe extern "C" fn rebox(b: i32, w: i32) -> i32 {
         set_mem_b32s1(b + 1, w);
         b
     }
+}
+
+/// translated from xetex-math.c:1206 (build_opentype_assembly)
+#[no_mangle]
+pub unsafe extern "C" fn build_opentype_assembly(
+    f: i32,
+    a: *mut libc::c_void,
+    s: i32,
+    horiz: bool,
+) -> i32 {
+    let b = crate::mem::new_null_box();
+    if horiz {
+        set_mem_b16s1(b, HLIST_NODE);
+    } else {
+        set_mem_b16s1(b, VLIST_NODE);
+    }
+    let mut n: i32 = -1;
+    let mut no_extenders = true;
+    let min_o = ot_min_connector_overlap(f);
+    // Find minimum repeat count n such that the assembly reaches size s.
+    loop {
+        n += 1;
+        let mut s_max: i32 = 0;
+        let mut prev_o: i32 = 0;
+        for i in 0..ot_part_count(a) {
+            if ot_part_is_extender(a, i) {
+                no_extenders = false;
+                for _j in 1..=n {
+                    let mut o = ot_part_start_connector(f, a, i);
+                    if min_o < o { o = min_o; }
+                    if prev_o < o { o = prev_o; }
+                    s_max = s_max - o + ot_part_full_advance(f, a, i);
+                    prev_o = ot_part_end_connector(f, a, i);
+                }
+            } else {
+                let mut o = ot_part_start_connector(f, a, i);
+                if min_o < o { o = min_o; }
+                if prev_o < o { o = prev_o; }
+                s_max = s_max - o + ot_part_full_advance(f, a, i);
+                prev_o = ot_part_end_connector(f, a, i);
+            }
+        }
+        if s_max >= s || no_extenders { break; }
+    }
+    // Build the node list.
+    let mut prev_o: i32 = 0;
+    for i in 0..ot_part_count(a) {
+        if ot_part_is_extender(a, i) {
+            for _j in 1..=n {
+                let mut o = ot_part_start_connector(f, a, i);
+                if prev_o < o { o = prev_o; }
+                let oo = o;
+                if min_o < o { o = min_o; }
+                if oo > 0 {
+                    stack_glue_into_box(b, -oo, -o);
+                }
+                stack_glyph_into_box(b, f, ot_part_glyph(a, i));
+                prev_o = ot_part_end_connector(f, a, i);
+            }
+        } else {
+            let mut o = ot_part_start_connector(f, a, i);
+            if prev_o < o { o = prev_o; }
+            let oo = o;
+            if min_o < o { o = min_o; }
+            if oo > 0 {
+                stack_glue_into_box(b, -oo, -o);
+            }
+            stack_glyph_into_box(b, f, ot_part_glyph(a, i));
+            prev_o = ot_part_end_connector(f, a, i);
+        }
+    }
+    // Measure natural size and total stretch.
+    let mut p = mem_b32s1(b + 5);
+    let mut nat: i32 = 0;
+    let mut str: i32 = 0;
+    while p != TEX_NULL {
+        if mem_b16s1(p) == WHATSIT_NODE {
+            if horiz {
+                nat += mem_b32s1(p + 1);
+            } else {
+                nat += mem_b32s1(p + 3) + mem_b32s1(p + 2);
+            }
+        } else if mem_b16s1(p) == GLUE_NODE {
+            let gptr = mem_b32s0(p + 1);
+            nat += mem_b32s1(gptr + 1);
+            str += mem_b32s1(gptr + 2);
+        }
+        p = mem_b32s1(p);
+    }
+    if s > nat && str > 0 {
+        let o = if s - nat > str { str } else { s - nat };
+        set_mem_b16s0(b + 5, NORMAL);
+        set_mem_b16s1(b + 5, STRETCHING);
+        set_mem_gr(b + 6, o as f64 / str as f64);
+        let set_dim = nat + crate::scaled_math::tex_round(str as f64 * mem_gr(b + 6));
+        if horiz {
+            set_mem_b32s1(b + 1, set_dim);
+        } else {
+            set_mem_b32s1(b + 3, set_dim);
+        }
+    } else if horiz {
+        set_mem_b32s1(b + 1, nat);
+    } else {
+        set_mem_b32s1(b + 3, nat);
+    }
+    b
 }
