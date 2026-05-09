@@ -34,11 +34,11 @@ scaled_t big_op_spacing5(void);
 void scan_delimiter(int32_t p, bool r);
 int32_t fraction_rule(scaled_t t);
 int32_t overbar(int32_t b, scaled_t k, scaled_t t);
-static int32_t char_box(internal_font_number f, int32_t c);
-static void stack_into_box(int32_t b, internal_font_number f, uint16_t c);
-static scaled_t height_plus_depth(internal_font_number f, uint16_t c);
-static void stack_glyph_into_box(int32_t b, internal_font_number f, int32_t g);
-static void stack_glue_into_box(int32_t b, scaled_t min, scaled_t max);
+int32_t char_box(internal_font_number f, int32_t c);
+void stack_into_box(int32_t b, internal_font_number f, uint16_t c);
+scaled_t height_plus_depth(internal_font_number f, uint16_t c);
+void stack_glyph_into_box(int32_t b, internal_font_number f, int32_t g);
+void stack_glue_into_box(int32_t b, scaled_t min, scaled_t max);
 int32_t build_opentype_assembly(internal_font_number f, void *a, scaled_t s, bool horiz);
 int32_t var_delimiter(int32_t d, int32_t s, scaled_t v);
 int32_t rebox(int32_t b, scaled_t w);
@@ -55,9 +55,9 @@ static void make_math_accent(int32_t q);
 void make_fraction(int32_t q);
 scaled_t make_op(int32_t q);
 void make_ord(int32_t q);
-static int32_t attach_hkern_to_new_hlist(int32_t q, scaled_t delta);
+int32_t attach_hkern_to_new_hlist(int32_t q, scaled_t delta);
 static void make_scripts(int32_t q, scaled_t delta);
-static small_number make_left_right(int32_t q, small_number style, scaled_t max_d, scaled_t max_h);
+small_number make_left_right(int32_t q, small_number style, scaled_t max_d, scaled_t max_h);
 void mlist_to_hlist(void);
 
 
@@ -272,22 +272,7 @@ make_math_accent(int32_t q)
 // translated to Rust: src/math.rs make_ord
 
 
-static int32_t
-attach_hkern_to_new_hlist(int32_t q, scaled_t delta)
-{
-    int32_t y, z;
-    z = new_kern(delta);
-    if (mem[q + 1].b32.s1 == TEX_NULL)
-        mem[q + 1].b32.s1 = z;
-    else {
-
-        y = mem[q + 1].b32.s1;
-        while (mem[y].b32.s1 != TEX_NULL)
-            y = LLIST_link(y);
-        mem[y].b32.s1 = z;
-    }
-    return mem[q + 1].b32.s1;
-}
+// translated to Rust: src/math.rs attach_hkern_to_new_hlist
 
 
 static void
@@ -756,30 +741,7 @@ make_scripts(int32_t q, scaled_t delta)
 }
 
 
-static small_number
-make_left_right(int32_t q, small_number style, scaled_t max_d, scaled_t max_h)
-{
-    scaled_t delta, delta1, delta2;
-
-    cur_style = style;
-    {
-        if (cur_style < SCRIPT_STYLE)
-            cur_size = TEXT_SIZE;
-        else
-            cur_size = SCRIPT_SIZE * ((cur_style - 2) / 2);
-        cur_mu = x_over_n(math_quad(cur_size), 18);
-    }
-    delta2 = max_d + axis_height(cur_size);
-    delta1 = max_h + max_d - delta2;
-    if (delta2 > delta1)
-        delta1 = delta2;
-    delta = (delta1 / 500) * INTPAR(delimiter_factor);
-    delta2 = delta1 + delta1 - DIMENPAR(delimiter_shortfall);
-    if (delta < delta2)
-        delta = delta2;
-    mem[q + 1].b32.s1 = var_delimiter(q + 1, cur_size, delta);
-    return mem[q].b16.s1 - ((LEFT_NOAD - 20));
-}
+// translated to Rust: src/math.rs make_left_right
 
 
 void
@@ -1429,117 +1391,11 @@ var_delimiter(int32_t d, int32_t s, scaled_t v)
 }
 
 
-static int32_t
-char_box(internal_font_number f, int32_t c)
-{
-    b16x4 q;
-    int32_t b, p;
-    if (((font_area[f] == AAT_FONT_FLAG) || (font_area[f] == OTGR_FONT_FLAG))) {
-        b = new_null_box();
-        p = new_native_character(f, c);
-        mem[b + 5].b32.s1 = p;
-        mem[b + 3].b32.s1 = mem[p + 3].b32.s1;
-        mem[b + 1].b32.s1 = mem[p + 1].b32.s1;
-        if (mem[p + 2].b32.s1 < 0)
-            mem[b + 2].b32.s1 = 0;
-        else
-            mem[b + 2].b32.s1 = mem[p + 2].b32.s1;
-    } else {
-
-        q = FONT_CHARACTER_INFO(f, effective_char(true, f, c));
-        b = new_null_box();
-        mem[b + 1].b32.s1 = FONT_CHARINFO_WIDTH(f, q) + FONT_CHARINFO_ITALCORR(f, q);
-        mem[b + 3].b32.s1 = FONT_CHARINFO_HEIGHT(f, q);
-        mem[b + 2].b32.s1 = FONT_CHARINFO_DEPTH(f, q);
-        p = get_avail();
-        mem[p].b16.s0 = c;
-        mem[p].b16.s1 = f;
-    }
-    mem[b + 5].b32.s1 = p;
-    return b;
-}
-
-
-static void
-stack_into_box(int32_t b, internal_font_number f, uint16_t c)
-{
-    int32_t p;
-    p = char_box(f, c);
-    mem[p].b32.s1 = mem[b + 5].b32.s1;
-    mem[b + 5].b32.s1 = p;
-    mem[b + 3].b32.s1 = mem[p + 3].b32.s1;
-}
-
-
-static scaled_t
-height_plus_depth(internal_font_number f, uint16_t c)
-{
-    b16x4 q = FONT_CHARACTER_INFO(f, effective_char(true, f, c));
-    return FONT_CHARINFO_HEIGHT(f, q) + FONT_CHARINFO_DEPTH(f, q);
-}
-
-
-static void
-stack_glyph_into_box(int32_t b, internal_font_number f, int32_t g)
-{
-    int32_t p, q;
-    p = get_node(GLYPH_NODE_SIZE);
-    NODE_type(p) = WHATSIT_NODE;
-    mem[p].b16.s0 = GLYPH_NODE;
-    mem[p + 4].b16.s2 = f;
-    mem[p + 4].b16.s1 = g;
-    set_native_glyph_metrics(p, 1);
-    if (NODE_type(b) == HLIST_NODE) {
-        q = mem[b + 5].b32.s1;
-        if (q == TEX_NULL)
-            mem[b + 5].b32.s1 = p;
-        else {
-
-            while (mem[q].b32.s1 != TEX_NULL)
-                q = LLIST_link(q);
-            mem[q].b32.s1 = p;
-            if ((mem[b + 3].b32.s1 < mem[p + 3].b32.s1))
-                mem[b + 3].b32.s1 = mem[p + 3].b32.s1;
-            if ((mem[b + 2].b32.s1 < mem[p + 2].b32.s1))
-                mem[b + 2].b32.s1 = mem[p + 2].b32.s1;
-        }
-    } else {
-
-        mem[p].b32.s1 = mem[b + 5].b32.s1;
-        mem[b + 5].b32.s1 = p;
-        mem[b + 3].b32.s1 = mem[p + 3].b32.s1;
-        if ((mem[b + 1].b32.s1 < mem[p + 1].b32.s1))
-            mem[b + 1].b32.s1 = mem[p + 1].b32.s1;
-    }
-}
-
-
-static void
-stack_glue_into_box(int32_t b, scaled_t min, scaled_t max)
-{
-    int32_t p, q;
-    q = new_spec(0);
-    mem[q + 1].b32.s1 = min;
-    mem[q + 2].b32.s1 = max - min;
-    p = new_glue(q);
-    if (NODE_type(b) == HLIST_NODE) {
-        q = mem[b + 5].b32.s1;
-        if (q == TEX_NULL)
-            mem[b + 5].b32.s1 = p;
-        else {
-
-            while (mem[q].b32.s1 != TEX_NULL)
-                q = LLIST_link(q);
-            mem[q].b32.s1 = p;
-        }
-    } else {
-
-        mem[p].b32.s1 = mem[b + 5].b32.s1;
-        mem[b + 5].b32.s1 = p;
-        mem[b + 3].b32.s1 = mem[p + 3].b32.s1;
-        mem[b + 1].b32.s1 = mem[p + 1].b32.s1;
-    }
-}
+// translated to Rust: src/math.rs char_box
+// translated to Rust: src/math.rs stack_into_box
+// translated to Rust: src/math.rs height_plus_depth
+// translated to Rust: src/math.rs stack_glyph_into_box
+// translated to Rust: src/math.rs stack_glue_into_box
 
 
 int32_t

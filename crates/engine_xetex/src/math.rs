@@ -2,7 +2,8 @@
 
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
-    cur_c, cur_f, cur_i, italic_base_entry, kern_base_entry, lig_kern_base_entry,
+    cur_c, cur_f, cur_i, depth_base_entry, height_base_entry, italic_base_entry,
+    kern_base_entry, lig_kern_base_entry,
     cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
     cur_list_prev_graf, cur_list_tail, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1,
     file_line_error_style_p, font_area_entry, font_bc_entry, font_ec_entry, font_info_b16,
@@ -19,7 +20,7 @@ use crate::globals::{
     set_save_ptr, set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr,
     tex_remainder, total_shrink, width_base_entry,
 };
-use crate::mem::{free_node, get_node, new_choice, new_kern, new_noad, new_rule, TEX_NULL};
+use crate::mem::{free_node, get_node, new_choice, new_glue, new_kern, new_noad, new_rule, new_spec, TEX_NULL};
 
 const INT_BASE: i32 = 7_826_729;
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -77,6 +78,9 @@ const PUNCT_NOAD: u16 = 22;
 const LIG_TAG: u16 = 1;
 const MATH_TEXT_CHAR: i32 = 4;
 const NOAD_SIZE: i32 = 4;
+const HLIST_NODE: u16 = 0;
+const INT_PAR_DELIMITER_FACTOR: i32 = 18;
+const DIMEN_PAR_DELIMITER_SHORTFALL: i32 = 10;
 const RADICAL_NOAD_SIZE: i32 = 5;
 const FRACTION_NOAD_SIZE: i32 = 6;
 
@@ -1024,6 +1028,160 @@ pub unsafe extern "C" fn make_ord(q: i32) {
             a += cur_i().s3 as i32 + 1;
             set_cur_i(font_info_b16(a));
         }
+    }
+}
+
+/// translated from xetex-math.c:275 (attach_hkern_to_new_hlist)
+#[no_mangle]
+pub unsafe extern "C" fn attach_hkern_to_new_hlist(q: i32, delta: i32) -> i32 {
+    let z = new_kern(delta);
+    if mem_b32s1(q + 1) == TEX_NULL {
+        set_mem_b32s1(q + 1, z);
+    } else {
+        let mut y = mem_b32s1(q + 1);
+        while mem_b32s1(y) != TEX_NULL {
+            y = mem_b32s1(y);
+        }
+        set_mem_b32s1(y, z);
+    }
+    mem_b32s1(q + 1)
+}
+
+/// translated from xetex-math.c:759 (make_left_right)
+#[no_mangle]
+pub unsafe extern "C" fn make_left_right(q: i32, style: i16, max_d: i32, max_h: i32) -> i16 {
+    set_cur_style(style);
+    if cur_style() < SCRIPT_STYLE {
+        set_cur_size(TEXT_SIZE);
+    } else {
+        set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
+    }
+    set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+    let mut delta2 = max_d + axis_height(cur_size());
+    let mut delta1 = max_h + max_d - delta2;
+    if delta2 > delta1 {
+        delta1 = delta2;
+    }
+    let mut delta = (delta1 / 500) * eqtb_b32s1(INT_BASE + INT_PAR_DELIMITER_FACTOR);
+    delta2 = delta1 + delta1 - eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DELIMITER_SHORTFALL);
+    if delta < delta2 {
+        delta = delta2;
+    }
+    set_mem_b32s1(q + 1, var_delimiter(q + 1, cur_size(), delta));
+    (mem_b16s1(q) as i32 - (LEFT_NOAD as i32 - 20)) as i16
+}
+
+/// translated from xetex-math.c:1432 (char_box)
+#[no_mangle]
+pub unsafe extern "C" fn char_box(f: i32, c: i32) -> i32 {
+    let b;
+    let p;
+    if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
+        b = crate::mem::new_null_box();
+        p = crate::scan::new_native_character(f, c as u32);
+        set_mem_b32s1(b + 3, mem_b32s1(p + 3));
+        set_mem_b32s1(b + 1, mem_b32s1(p + 1));
+        if mem_b32s1(p + 2) < 0 {
+            set_mem_b32s1(b + 2, 0);
+        } else {
+            set_mem_b32s1(b + 2, mem_b32s1(p + 2));
+        }
+    } else {
+        let q = font_info_b16(
+            char_base_entry(f) + crate::scan::effective_char(true, f, c as u16) as i32,
+        );
+        b = crate::mem::new_null_box();
+        set_mem_b32s1(
+            b + 1,
+            font_info_b32s1(width_base_entry(f) + q.s3 as i32)
+                + font_info_b32s1(italic_base_entry(f) + q.s1 as i32 / 4),
+        );
+        set_mem_b32s1(b + 3, font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16));
+        set_mem_b32s1(b + 2, font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16));
+        p = crate::mem::get_avail();
+        set_mem_b16s0(p, c as u16);
+        set_mem_b16s1(p, f as u16);
+    }
+    set_mem_b32s1(b + 5, p);
+    b
+}
+
+/// translated from xetex-math.c:1463 (stack_into_box)
+#[no_mangle]
+pub unsafe extern "C" fn stack_into_box(b: i32, f: i32, c: u16) {
+    let p = char_box(f, c as i32);
+    set_mem_b32s1(p, mem_b32s1(b + 5));
+    set_mem_b32s1(b + 5, p);
+    set_mem_b32s1(b + 3, mem_b32s1(p + 3));
+}
+
+/// translated from xetex-math.c:1474 (height_plus_depth)
+#[no_mangle]
+pub unsafe extern "C" fn height_plus_depth(f: i32, c: u16) -> i32 {
+    let q = font_info_b16(
+        char_base_entry(f) + crate::scan::effective_char(true, f, c) as i32,
+    );
+    font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16)
+        + font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16)
+}
+
+/// translated from xetex-math.c:1482 (stack_glyph_into_box)
+#[no_mangle]
+pub unsafe extern "C" fn stack_glyph_into_box(b: i32, f: i32, g: i32) {
+    let p = get_node(GLYPH_NODE_SIZE);
+    set_mem_b16s1(p, WHATSIT_NODE);
+    set_mem_b16s0(p, GLYPH_NODE);
+    set_mem_b16s2(p + 4, f as u16);
+    set_mem_b16s1(p + 4, g as u16);
+    crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+    if mem_b16s1(b) == HLIST_NODE {
+        let mut q = mem_b32s1(b + 5);
+        if q == TEX_NULL {
+            set_mem_b32s1(b + 5, p);
+        } else {
+            while mem_b32s1(q) != TEX_NULL {
+                q = mem_b32s1(q);
+            }
+            set_mem_b32s1(q, p);
+            if mem_b32s1(b + 3) < mem_b32s1(p + 3) {
+                set_mem_b32s1(b + 3, mem_b32s1(p + 3));
+            }
+            if mem_b32s1(b + 2) < mem_b32s1(p + 2) {
+                set_mem_b32s1(b + 2, mem_b32s1(p + 2));
+            }
+        }
+    } else {
+        set_mem_b32s1(p, mem_b32s1(b + 5));
+        set_mem_b32s1(b + 5, p);
+        set_mem_b32s1(b + 3, mem_b32s1(p + 3));
+        if mem_b32s1(b + 1) < mem_b32s1(p + 1) {
+            set_mem_b32s1(b + 1, mem_b32s1(p + 1));
+        }
+    }
+}
+
+/// translated from xetex-math.c:1517 (stack_glue_into_box)
+#[no_mangle]
+pub unsafe extern "C" fn stack_glue_into_box(b: i32, min: i32, max: i32) {
+    let q_spec = new_spec(0);
+    set_mem_b32s1(q_spec + 1, min);
+    set_mem_b32s1(q_spec + 2, max - min);
+    let p = new_glue(q_spec);
+    if mem_b16s1(b) == HLIST_NODE {
+        let mut q = mem_b32s1(b + 5);
+        if q == TEX_NULL {
+            set_mem_b32s1(b + 5, p);
+        } else {
+            while mem_b32s1(q) != TEX_NULL {
+                q = mem_b32s1(q);
+            }
+            set_mem_b32s1(q, p);
+        }
+    } else {
+        set_mem_b32s1(p, mem_b32s1(b + 5));
+        set_mem_b32s1(b + 5, p);
+        set_mem_b32s1(b + 3, mem_b32s1(p + 3));
+        set_mem_b32s1(b + 1, mem_b32s1(p + 1));
     }
 }
 
