@@ -3,12 +3,12 @@
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_c, cur_chr, cur_cmd, cur_dir, cur_f, cur_group, cur_i,
     cur_lang, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
-    cur_list_prev_graf, cur_list_tail, cur_size, cur_style, cur_val, cur_val1, depth_base_entry,
-    eqtb_b32s1, exten_base_entry, file_line_error_style_p, font_area_entry, font_bc_entry,
-    font_ec_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr, font_params,
-    height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
-    kern_base_entry, lig_kern_base_entry, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2,
-    mem_b16s3, mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, mem_word, nest_ptr,
+    cur_list_prev_graf, cur_list_tail, cur_mu, cur_size, cur_style, cur_val, cur_val1,
+    depth_base_entry, eqtb_b32s1, exten_base_entry, file_line_error_style_p, font_area_entry,
+    font_bc_entry, font_ec_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr,
+    font_params, height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry,
+    just_box, kern_base_entry, lig_kern_base_entry, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
+    mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, mem_word, nest_ptr,
     null_character, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
     semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_c, set_cur_dir, set_cur_f,
     set_cur_i, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
@@ -73,12 +73,15 @@ const GLYPH_NODE_SIZE: i32 = 5;
 const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const RADICAL_NOAD: u16 = 24;
 const FRACTION_NOAD: u16 = 25;
+const UNDER_NOAD: u16 = 26;
+const OVER_NOAD: u16 = 27;
 const OP_NOAD: u16 = 17;
 const BIN_NOAD: u16 = 18;
 const REL_NOAD: u16 = 19;
 const OPEN_NOAD: u16 = 20;
 const CLOSE_NOAD: u16 = 21;
 const INNER_NOAD: u16 = 23;
+const VCENTER_NOAD: u16 = 29;
 const LEFT_NOAD: u16 = 30;
 const RIGHT_NOAD: u16 = 31;
 const ORD_NOAD: u16 = 16;
@@ -93,6 +96,7 @@ const ACCENTBASEHEIGHT: i32 = 6;
 const X_HEIGHT_CODE: i32 = 5;
 const RADICAL_NOAD_SIZE: i32 = 5;
 const FRACTION_NOAD_SIZE: i32 = 6;
+const STYLE_NODE_SIZE: i32 = 3;
 
 const MATH_SHIFT: u8 = 3;
 const MMODE: i16 = 207;
@@ -109,6 +113,8 @@ const DIMEN_PAR_HSIZE: i32 = 3;
 const INT_PAR_HANG_AFTER: i32 = 41;
 const INT_PAR_PRE_DISPLAY_DIRECTION: i32 = 61;
 const INT_PAR_TEXXET: i32 = 69;
+const INT_PAR_BIN_OP_PENALTY: i32 = 9;
+const INT_PAR_REL_PENALTY: i32 = 10;
 const CUR_FONT_LOC: i32 = 2_255_400;
 const QUAD_CODE: i32 = 6;
 const L_CODE: i32 = 4;
@@ -176,6 +182,9 @@ const GLUE_PAR_ABOVE_DISPLAY_SKIP: i16 = 3;
 const GLUE_PAR_BELOW_DISPLAY_SKIP: i16 = 4;
 const GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP: i16 = 5;
 const GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP: i16 = 6;
+const GLUE_PAR_THIN_MU_SKIP: i32 = 16;
+const GLUE_PAR_MED_MU_SKIP: i32 = 17;
+const GLUE_PAR_THICK_MU_SKIP: i32 = 18;
 const ADDITIONAL: i16 = 1;
 const EXACTLY: i16 = 0;
 const AFTER: i16 = 1;
@@ -185,15 +194,22 @@ const GLUE_SPEC_SIZE: i32 = 4;
 const MU_GLUE: u16 = 99;
 const EXPLICIT: u16 = 1;
 const VLIST_NODE: u16 = 1;
+const RULE_NODE: u16 = 2;
+const INS_NODE: u16 = 3;
+const MARK_NODE: u16 = 4;
+const ADJUST_NODE: u16 = 5;
+const DISC_NODE: u16 = 7;
 const KERN_NODE: u16 = 11;
+const PENALTY_NODE: u16 = 12;
 const STYLE_NODE: u16 = 14;
 const CHOICE_NODE: u16 = 15;
 const MEDIUM_NODE_SIZE: i32 = 3;
 const SUB_BOX: i32 = 2;
+const COND_MATH_GLUE: u16 = 98;
+const SPACE_CODE: i32 = 2;
 
 extern "C" {
     fn begin_token_list(p: i32, t: u16);
-    fn mlist_to_hlist();
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
     fn get_native_mathsy_param(f: i32, n: i32) -> i32;
@@ -1691,6 +1707,445 @@ pub unsafe extern "C" fn make_left_right(q: i32, style: i16, max_d: i32, max_h: 
     }
     set_mem_b32s1(q + 1, var_delimiter(q + 1, cur_size(), delta));
     (mem_b16s1(q) as i32 - (LEFT_NOAD as i32 - 20)) as i16
+}
+
+#[inline]
+unsafe fn update_math_style_params() {
+    if cur_style() < SCRIPT_STYLE {
+        set_cur_size(TEXT_SIZE);
+    } else {
+        set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
+    }
+    set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+}
+
+/// translated from xetex-math.c:84 (mlist_to_hlist)
+#[no_mangle]
+pub unsafe extern "C" fn mlist_to_hlist() {
+    let mlist = crate::globals::cur_mlist();
+    let penalties = crate::globals::mlist_penalties();
+    let style = cur_style();
+    let mut q = mlist;
+    let mut r = TEX_NULL;
+    let mut r_type = OP_NOAD;
+    let mut max_h = 0;
+    let mut max_d = 0;
+
+    update_math_style_params();
+
+    enum FirstPass {
+        ProcessNucleus,
+        CheckDimensions,
+        DoneWithNoad,
+        DoneWithNode,
+    }
+
+    while q != TEX_NULL {
+        let mut delta = 0;
+        let action = 'reswitch: loop {
+            delta = 0;
+            match mem_b16s1(q) {
+                BIN_NOAD => {
+                    match r_type {
+                        BIN_NOAD | OP_NOAD | REL_NOAD | OPEN_NOAD | PUNCT_NOAD | LEFT_NOAD => {
+                            set_mem_b16s1(q, ORD_NOAD);
+                            continue 'reswitch;
+                        }
+                        _ => {}
+                    }
+                    break 'reswitch FirstPass::ProcessNucleus;
+                }
+                REL_NOAD | CLOSE_NOAD | PUNCT_NOAD | RIGHT_NOAD => {
+                    if r_type == BIN_NOAD {
+                        set_mem_b16s1(r, ORD_NOAD);
+                    }
+                    if mem_b16s1(q) == RIGHT_NOAD {
+                        break 'reswitch FirstPass::DoneWithNoad;
+                    }
+                    break 'reswitch FirstPass::ProcessNucleus;
+                }
+                LEFT_NOAD => break 'reswitch FirstPass::DoneWithNoad,
+                FRACTION_NOAD => {
+                    make_fraction(q);
+                    break 'reswitch FirstPass::CheckDimensions;
+                }
+                OP_NOAD => {
+                    delta = make_op(q);
+                    if mem_b16s0(q) == LIMITS {
+                        break 'reswitch FirstPass::CheckDimensions;
+                    }
+                    break 'reswitch FirstPass::ProcessNucleus;
+                }
+                ORD_NOAD => {
+                    make_ord(q);
+                    break 'reswitch FirstPass::ProcessNucleus;
+                }
+                OPEN_NOAD | INNER_NOAD => break 'reswitch FirstPass::ProcessNucleus,
+                RADICAL_NOAD => {
+                    make_radical(q);
+                    break 'reswitch FirstPass::ProcessNucleus;
+                }
+                OVER_NOAD => {
+                    make_over(q);
+                    break 'reswitch FirstPass::ProcessNucleus;
+                }
+                UNDER_NOAD => {
+                    make_under(q);
+                    break 'reswitch FirstPass::ProcessNucleus;
+                }
+                ACCENT_NOAD => {
+                    make_math_accent(q);
+                    break 'reswitch FirstPass::ProcessNucleus;
+                }
+                VCENTER_NOAD => {
+                    make_vcenter(q);
+                    break 'reswitch FirstPass::ProcessNucleus;
+                }
+                STYLE_NODE => {
+                    set_cur_style(mem_b16s0(q) as i16);
+                    update_math_style_params();
+                    break 'reswitch FirstPass::DoneWithNode;
+                }
+                CHOICE_NODE => {
+                    let mut p = match cur_style() / 2 {
+                        0 => {
+                            let p = mem_b32s0(q + 1);
+                            set_mem_b32s0(q + 1, TEX_NULL);
+                            p
+                        }
+                        1 => {
+                            let p = mem_b32s1(q + 1);
+                            set_mem_b32s1(q + 1, TEX_NULL);
+                            p
+                        }
+                        2 => {
+                            let p = mem_b32s0(q + 2);
+                            set_mem_b32s0(q + 2, TEX_NULL);
+                            p
+                        }
+                        3 => {
+                            let p = mem_b32s1(q + 2);
+                            set_mem_b32s1(q + 2, TEX_NULL);
+                            p
+                        }
+                        _ => TEX_NULL,
+                    };
+                    crate::scan::flush_node_list(mem_b32s0(q + 1));
+                    crate::scan::flush_node_list(mem_b32s1(q + 1));
+                    crate::scan::flush_node_list(mem_b32s0(q + 2));
+                    crate::scan::flush_node_list(mem_b32s1(q + 2));
+                    set_mem_b16s1(q, STYLE_NODE);
+                    set_mem_b16s0(q, cur_style() as u16);
+                    set_mem_b32s1(q + 1, 0);
+                    set_mem_b32s1(q + 2, 0);
+                    if p != TEX_NULL {
+                        let z = mem_b32s1(q);
+                        set_mem_b32s1(q, p);
+                        while mem_b32s1(p) != TEX_NULL {
+                            p = mem_b32s1(p);
+                        }
+                        set_mem_b32s1(p, z);
+                    }
+                    break 'reswitch FirstPass::DoneWithNode;
+                }
+                INS_NODE | MARK_NODE | ADJUST_NODE | WHATSIT_NODE | PENALTY_NODE | DISC_NODE => {
+                    break 'reswitch FirstPass::DoneWithNode;
+                }
+                RULE_NODE => {
+                    if mem_b32s1(q + 3) > max_h {
+                        max_h = mem_b32s1(q + 3);
+                    }
+                    if mem_b32s1(q + 2) > max_d {
+                        max_d = mem_b32s1(q + 2);
+                    }
+                    break 'reswitch FirstPass::DoneWithNode;
+                }
+                GLUE_NODE => {
+                    if mem_b16s0(q) == MU_GLUE {
+                        let x = mem_b32s0(q + 1);
+                        let y = math_glue(x, cur_mu());
+                        crate::mem::delete_glue_ref(x);
+                        set_mem_b32s0(q + 1, y);
+                        set_mem_b16s0(q, NORMAL);
+                    } else if cur_size() != TEXT_SIZE && mem_b16s0(q) == COND_MATH_GLUE {
+                        let p = mem_b32s1(q);
+                        if p != TEX_NULL && (mem_b16s1(p) == GLUE_NODE || mem_b16s1(p) == KERN_NODE)
+                        {
+                            set_mem_b32s1(q, mem_b32s1(p));
+                            set_mem_b32s1(p, TEX_NULL);
+                            crate::scan::flush_node_list(p);
+                        }
+                    }
+                    break 'reswitch FirstPass::DoneWithNode;
+                }
+                KERN_NODE => {
+                    math_kern(q, cur_mu());
+                    break 'reswitch FirstPass::DoneWithNode;
+                }
+                _ => crate::errors::confusion(c"mlist1".as_ptr()),
+            }
+        };
+
+        match action {
+            FirstPass::ProcessNucleus => {
+                let p = match mem_b32s1(q + 1) {
+                    MATH_CHAR | MATH_TEXT_CHAR => {
+                        fetch(q + 1);
+                        let p;
+                        if font_area_entry(cur_f()) == AAT_FONT_FLAG
+                            || font_area_entry(cur_f()) == OTGR_FONT_FLAG
+                        {
+                            let z = crate::scan::new_native_character(cur_f(), cur_c() as u32);
+                            p = get_node(GLYPH_NODE_SIZE);
+                            set_mem_b16s1(p, WHATSIT_NODE);
+                            set_mem_b16s0(p, GLYPH_NODE);
+                            set_mem_b16s2(p + 4, cur_f() as u16);
+                            set_mem_b16s1(p + 4, real_get_native_glyph(mem_node_addr(z), 0));
+                            crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+                            free_node(z, mem_b16s3(z + 4) as i32);
+                            delta = get_ot_math_ital_corr(cur_f(), mem_b16s1(p + 4) as i32);
+                            if mem_b32s1(q + 1) == MATH_TEXT_CHAR && !font_is_ot_math(cur_f()) {
+                                delta = 0;
+                            }
+                            if mem_b32s1(q + 3) == EMPTY && delta != 0 {
+                                set_mem_b32s1(p, new_kern(delta));
+                                delta = 0;
+                            }
+                        } else if cur_i().s3 > 0 {
+                            delta =
+                                font_info_b32s1(italic_base_entry(cur_f()) + cur_i().s1 as i32 / 4);
+                            p = crate::scan::new_character(cur_f(), cur_c() as u16);
+                            if mem_b32s1(q + 1) == MATH_TEXT_CHAR
+                                && font_info_b32s1(SPACE_CODE + param_base(cur_f())) != 0
+                            {
+                                delta = 0;
+                            }
+                            if mem_b32s1(q + 3) == EMPTY && delta != 0 {
+                                set_mem_b32s1(p, new_kern(delta));
+                                delta = 0;
+                            }
+                        } else {
+                            p = TEX_NULL;
+                        }
+                        p
+                    }
+                    EMPTY => TEX_NULL,
+                    SUB_BOX => mem_b32s0(q + 1),
+                    SUB_MLIST => {
+                        set_cur_mlist(mem_b32s0(q + 1));
+                        let save_style = cur_style();
+                        set_mlist_penalties(false);
+                        mlist_to_hlist();
+                        set_cur_style(save_style);
+                        update_math_style_params();
+                        crate::scan::hpack(mem_b32s1(TEMP_HEAD), 0, ADDITIONAL)
+                    }
+                    _ => crate::errors::confusion(c"mlist2".as_ptr()),
+                };
+                set_mem_b32s1(q + 1, p);
+                if mem_b32s1(q + 3) != EMPTY || mem_b32s1(q + 2) != EMPTY {
+                    make_scripts(q, delta);
+                }
+
+                let z = crate::scan::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
+                if mem_b32s1(z + 3) > max_h {
+                    max_h = mem_b32s1(z + 3);
+                }
+                if mem_b32s1(z + 2) > max_d {
+                    max_d = mem_b32s1(z + 2);
+                }
+                free_node(z, BOX_NODE_SIZE);
+
+                r = q;
+                r_type = mem_b16s1(r);
+                if r_type == RIGHT_NOAD {
+                    r_type = LEFT_NOAD;
+                    set_cur_style(style);
+                    update_math_style_params();
+                }
+                q = mem_b32s1(q);
+            }
+            FirstPass::CheckDimensions => {
+                let z = crate::scan::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
+                if mem_b32s1(z + 3) > max_h {
+                    max_h = mem_b32s1(z + 3);
+                }
+                if mem_b32s1(z + 2) > max_d {
+                    max_d = mem_b32s1(z + 2);
+                }
+                free_node(z, BOX_NODE_SIZE);
+
+                r = q;
+                r_type = mem_b16s1(r);
+                if r_type == RIGHT_NOAD {
+                    r_type = LEFT_NOAD;
+                    set_cur_style(style);
+                    update_math_style_params();
+                }
+                q = mem_b32s1(q);
+            }
+            FirstPass::DoneWithNoad => {
+                r = q;
+                r_type = mem_b16s1(r);
+                if r_type == RIGHT_NOAD {
+                    r_type = LEFT_NOAD;
+                    set_cur_style(style);
+                    update_math_style_params();
+                }
+                q = mem_b32s1(q);
+            }
+            FirstPass::DoneWithNode => {
+                q = mem_b32s1(q);
+            }
+        }
+    }
+
+    if r_type == BIN_NOAD {
+        set_mem_b16s1(r, ORD_NOAD);
+    }
+
+    let mut p = TEMP_HEAD;
+    set_mem_b32s1(p, TEX_NULL);
+    q = mlist;
+    r_type = 0;
+    set_cur_style(style);
+    update_math_style_params();
+
+    while q != TEX_NULL {
+        let mut t = ORD_NOAD;
+        let mut s = NOAD_SIZE;
+        let mut pen = INF_PENALTY;
+        let delete_q = match mem_b16s1(q) {
+            OP_NOAD | OPEN_NOAD | CLOSE_NOAD | PUNCT_NOAD | INNER_NOAD => {
+                t = mem_b16s1(q);
+                true
+            }
+            BIN_NOAD => {
+                t = BIN_NOAD;
+                pen = eqtb_b32s1(INT_BASE + INT_PAR_BIN_OP_PENALTY);
+                true
+            }
+            REL_NOAD => {
+                t = REL_NOAD;
+                pen = eqtb_b32s1(INT_BASE + INT_PAR_REL_PENALTY);
+                true
+            }
+            ORD_NOAD | VCENTER_NOAD | OVER_NOAD | UNDER_NOAD => true,
+            RADICAL_NOAD => {
+                s = RADICAL_NOAD_SIZE;
+                true
+            }
+            ACCENT_NOAD => {
+                s = ACCENT_NOAD_SIZE;
+                true
+            }
+            FRACTION_NOAD => {
+                s = FRACTION_NOAD_SIZE;
+                true
+            }
+            LEFT_NOAD | RIGHT_NOAD => {
+                t = make_left_right(q, style, max_d, max_h) as u16;
+                true
+            }
+            STYLE_NODE => {
+                set_cur_style(mem_b16s0(q) as i16);
+                s = STYLE_NODE_SIZE;
+                update_math_style_params();
+                true
+            }
+            WHATSIT_NODE | PENALTY_NODE | RULE_NODE | DISC_NODE | ADJUST_NODE | INS_NODE
+            | MARK_NODE | GLUE_NODE | KERN_NODE => {
+                set_mem_b32s1(p, q);
+                p = q;
+                q = mem_b32s1(q);
+                set_mem_b32s1(p, TEX_NULL);
+                false
+            }
+            _ => crate::errors::confusion(c"mlist3".as_ptr()),
+        };
+
+        if !delete_q {
+            continue;
+        }
+
+        if mem_b16s1(q) != STYLE_NODE {
+            if r_type > 0 {
+                let offset_table = [
+                    b"02340001",
+                    b"22*40001",
+                    b"33**3**3",
+                    b"44*04004",
+                    b"00*00000",
+                    b"02340001",
+                    b"11*11111",
+                    b"12341011",
+                ];
+                let spacing = offset_table[(r_type - ORD_NOAD) as usize][(t - ORD_NOAD) as usize];
+                let x = match spacing {
+                    b'0' => 0,
+                    b'1' => {
+                        if cur_style() < SCRIPT_STYLE {
+                            GLUE_PAR_THIN_MU_SKIP
+                        } else {
+                            0
+                        }
+                    }
+                    b'2' => GLUE_PAR_THIN_MU_SKIP,
+                    b'3' => {
+                        if cur_style() < SCRIPT_STYLE {
+                            GLUE_PAR_MED_MU_SKIP
+                        } else {
+                            0
+                        }
+                    }
+                    b'4' => {
+                        if cur_style() < SCRIPT_STYLE {
+                            GLUE_PAR_THICK_MU_SKIP
+                        } else {
+                            0
+                        }
+                    }
+                    _ => crate::errors::confusion(c"mlist4".as_ptr()),
+                };
+                if x != 0 {
+                    let y = math_glue(eqtb_b32s1(GLUE_BASE + x), cur_mu());
+                    let z = new_glue(y);
+                    set_mem_b32s1(y, TEX_NULL);
+                    set_mem_b32s1(p, z);
+                    p = z;
+                    set_mem_b16s0(z, (x + 1) as u16);
+                }
+            }
+
+            if mem_b32s1(q + 1) != TEX_NULL {
+                set_mem_b32s1(p, mem_b32s1(q + 1));
+                loop {
+                    p = mem_b32s1(p);
+                    if mem_b32s1(p) == TEX_NULL {
+                        break;
+                    }
+                }
+            }
+
+            if penalties && mem_b32s1(q) != TEX_NULL && pen < INF_PENALTY {
+                let next_type = mem_b16s1(mem_b32s1(q));
+                if next_type != PENALTY_NODE && next_type != REL_NOAD {
+                    let z = crate::mem::new_penalty(pen);
+                    set_mem_b32s1(p, z);
+                    p = z;
+                }
+            }
+
+            if mem_b16s1(q) == RIGHT_NOAD {
+                t = OPEN_NOAD;
+            }
+            r_type = t;
+        }
+
+        r = q;
+        q = mem_b32s1(q);
+        free_node(r, s);
+    }
 }
 
 /// translated from xetex-math.c:1432 (char_box)
