@@ -32,6 +32,54 @@ template.
 
 ---
 
+## Session 105 — 2026-05-09 — xetex-math.c build_opentype_assembly
+
+**Goal:** Translate `build_opentype_assembly` from `xetex-math.c` to Rust while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 104
+
+**Work done:**
+- Removed `build_opentype_assembly` from the `extern "C"` block in `src/math.rs` (was calling C; now Rust-native).
+- Added `ot_min_connector_overlap`, `ot_part_count`, `ot_part_is_extender`, `ot_part_glyph`, `ot_part_start_connector`, `ot_part_end_connector`, `ot_part_full_advance` to the `extern "C"` block.
+- Deleted C body (~138 LOC). Added Rust `build_opentype_assembly`:
+  - Outer `do-while` → `loop { ...; if cond { break; } }` for finding minimum extender count.
+  - WEB-style `for (i=0; i<count; i++)` → Rust `for i in 0..ot_part_count(a)`.
+  - WEB-style `for (j=1; j<=n; j++)` → Rust `for _j in 1..=n`.
+  - `BOX_glue_set(b) = o / (double)str` → `set_mem_gr(b + 6, o as f64 / str as f64)`.
+  - `tex_round(str * BOX_glue_set(b))` → `tex_round(str as f64 * mem_gr(b + 6))`.
+  - `GLUE_NODE_glue_ptr(p)` = `mem_b32s0(p + 1)`.
+- Code commit: `a77e095c` (`engine_xetex: translate build_opentype_assembly to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 105
+
+**Surprises / gotchas:**
+- `ot_part_*` functions take `const GlyphAssembly*` in C → `*mut libc::c_void` in Rust extern block.
+- `GLUE_NODE_glue_ptr(p)` = `mem[p+1].b32.s0` = `mem_b32s0(p+1)`.
+- `NODE_type(p)` = `mem[p].b16.s1` = `mem_b16s1(p)`.
+
+**For the next session:**
+- Remaining C bodies in xetex-math.c: `make_scripts` (~464 LOC, static), `mlist_to_hlist` (~467 LOC), `var_delimiter` (~186 LOC).
+- Next target: `var_delimiter` (~186 LOC) for a medium session; `make_scripts`/`mlist_to_hlist` for big sessions.
+
+---
+
 ## Session 104 — 2026-05-09 — xetex-math.c initialize_math_variables + rebox
 
 **Goal:** Translate `initialize_math_variables` and `rebox` from `xetex-math.c` to Rust while keeping all parity suites green.
