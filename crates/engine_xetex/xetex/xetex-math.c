@@ -39,7 +39,7 @@ static void stack_into_box(int32_t b, internal_font_number f, uint16_t c);
 static scaled_t height_plus_depth(internal_font_number f, uint16_t c);
 static void stack_glyph_into_box(int32_t b, internal_font_number f, int32_t g);
 static void stack_glue_into_box(int32_t b, scaled_t min, scaled_t max);
-static int32_t build_opentype_assembly(internal_font_number f, void *a, scaled_t s, bool horiz);
+int32_t build_opentype_assembly(internal_font_number f, void *a, scaled_t s, bool horiz);
 int32_t var_delimiter(int32_t d, int32_t s, scaled_t v);
 int32_t rebox(int32_t b, scaled_t w);
 int32_t math_glue(int32_t g, scaled_t m);
@@ -53,7 +53,7 @@ void make_radical(int32_t q);
 scaled_t compute_ot_math_accent_pos(int32_t p);
 static void make_math_accent(int32_t q);
 void make_fraction(int32_t q);
-static scaled_t make_op(int32_t q);
+scaled_t make_op(int32_t q);
 static void make_ord(int32_t q);
 static int32_t attach_hkern_to_new_hlist(int32_t q, scaled_t delta);
 static void make_scripts(int32_t q, scaled_t delta);
@@ -266,135 +266,7 @@ make_math_accent(int32_t q)
 }
 
 
-static scaled_t
-make_op(int32_t q)
-{
-    scaled_t delta;
-    int32_t p, v, x, y, z;
-    uint16_t c;
-    b16x4 i;
-    scaled_t shift_up, shift_down;
-    scaled_t h1, h2;
-    int32_t n, g;
-    void *ot_assembly_ptr;
-    internal_font_number save_f;
-    if ((mem[q].b16.s0 == NORMAL) && (cur_style < TEXT_STYLE))
-        mem[q].b16.s0 = LIMITS;
-    delta = 0;
-    ot_assembly_ptr = NULL;
-    if (mem[q + 1].b32.s1 == MATH_CHAR) {
-        fetch(q + 1);
-        if (!((font_area[cur_f] == OTGR_FONT_FLAG) && (usingOpenType(font_layout_engine[cur_f])))) {
-            if ((cur_style < TEXT_STYLE) && (((cur_i.s1) % 4) == LIST_TAG)) {
-                c = cur_i.s0;
-                i = FONT_CHARACTER_INFO(cur_f, c);
-                if ((i.s3 > 0)) {
-                    cur_c = c;
-                    cur_i = i;
-                    mem[q + 1].b16.s0 = c;
-                }
-            }
-            delta = FONT_CHARINFO_ITALCORR(cur_f, cur_i);
-        }
-        x = clean_box(q + 1, cur_style);
-        if (((font_area[cur_f] == OTGR_FONT_FLAG) && (isOpenTypeMathFont(font_layout_engine[cur_f])))) {
-            p = mem[x + 5].b32.s1;
-            if ((((p) != TEX_NULL && (!(is_char_node(p))) && (NODE_type(p) == WHATSIT_NODE)
-                  && (mem[p].b16.s0 == GLYPH_NODE)))) {
-                if (cur_style < TEXT_STYLE) {
-                    h1 = get_ot_math_constant(cur_f, DISPLAYOPERATORMINHEIGHT);
-                    if (h1 < (mem[p + 3].b32.s1 + mem[p + 2].b32.s1) * 5 / ((double)4))
-                        h1 = (mem[p + 3].b32.s1 + mem[p + 2].b32.s1) * 5 / ((double)4);
-                    c = mem[p + 4].b16.s1;
-                    n = 0;
-                    do {
-                        g = get_ot_math_variant(cur_f, c, n, &h2, 0);
-                        if (h2 > 0) {
-                            mem[p + 4].b16.s1 = g;
-                            set_native_glyph_metrics(p, 1);
-                        }
-                        n++;
-                    } while (!((h2 < 0) || (h2 >= h1)));
-                    if ((h2 < 0)) {
-                        ot_assembly_ptr = get_ot_assembly_ptr(cur_f, c, 0);
-                        if (ot_assembly_ptr != NULL) {
-                            free_node(p, GLYPH_NODE_SIZE);
-                            p = build_opentype_assembly(cur_f, ot_assembly_ptr, h1, 0);
-                            mem[x + 5].b32.s1 = p;
-                            delta = 0;
-                            goto found;
-                        }
-                    } else
-                        set_native_glyph_metrics(p, 1);
-                }
-                delta = get_ot_math_ital_corr(cur_f, mem[p + 4].b16.s1);
-            found:
-                mem[x + 1].b32.s1 = mem[p + 1].b32.s1;
-                mem[x + 3].b32.s1 = mem[p + 3].b32.s1;
-                mem[x + 2].b32.s1 = mem[p + 2].b32.s1;
-            }
-        }
-        if ((mem[q + 3].b32.s1 != EMPTY) && (mem[q].b16.s0 != LIMITS))
-            mem[x + 1].b32.s1 = mem[x + 1].b32.s1 - delta;
-        mem[x + 4].b32.s1 = half(mem[x + 3].b32.s1 - mem[x + 2].b32.s1) - axis_height(cur_size);
-        mem[q + 1].b32.s1 = SUB_BOX;
-        mem[q + 1].b32.s0 = x;
-    }
-    save_f = cur_f;
-    if (mem[q].b16.s0 == LIMITS) {       /*777: */
-        x = clean_box(q + 2, 2 * (cur_style / 4) + 4 + (cur_style % 2));
-        y = clean_box(q + 1, cur_style);
-        z = clean_box(q + 3, 2 * (cur_style / 4) + 5);
-        v = new_null_box();
-        NODE_type(v) = VLIST_NODE;
-        mem[v + 1].b32.s1 = mem[y + 1].b32.s1;
-        if (mem[x + 1].b32.s1 > mem[v + 1].b32.s1)
-            mem[v + 1].b32.s1 = mem[x + 1].b32.s1;
-        if (mem[z + 1].b32.s1 > mem[v + 1].b32.s1)
-            mem[v + 1].b32.s1 = mem[z + 1].b32.s1;
-        x = rebox(x, mem[v + 1].b32.s1);
-        y = rebox(y, mem[v + 1].b32.s1);
-        z = rebox(z, mem[v + 1].b32.s1);
-        mem[x + 4].b32.s1 = half(delta);
-        mem[z + 4].b32.s1 = -(int32_t) mem[x + 4].b32.s1;
-        mem[v + 3].b32.s1 = mem[y + 3].b32.s1;
-        mem[v + 2].b32.s1 = mem[y + 2].b32.s1;
-        cur_f = save_f;
-        if (mem[q + 2].b32.s1 == EMPTY) {
-            free_node(x, BOX_NODE_SIZE);
-            mem[v + 5].b32.s1 = y;
-        } else {
-
-            shift_up = big_op_spacing3() - mem[x + 2].b32.s1;
-            if (shift_up < big_op_spacing1())
-                shift_up = big_op_spacing1();
-            p = new_kern(shift_up);
-            mem[p].b32.s1 = y;
-            mem[x].b32.s1 = p;
-            p = new_kern(big_op_spacing5());
-            mem[p].b32.s1 = x;
-            mem[v + 5].b32.s1 = p;
-            mem[v + 3].b32.s1 = mem[v + 3].b32.s1 + big_op_spacing5() + mem[x + 3].b32.s1 + mem[x + 2].b32.s1 + shift_up;
-        }
-        if (mem[q + 3].b32.s1 == EMPTY)
-            free_node(z, BOX_NODE_SIZE);
-        else {
-
-            shift_down = big_op_spacing4() - mem[z + 3].b32.s1;
-            if (shift_down < big_op_spacing2())
-                shift_down = big_op_spacing2();
-            p = new_kern(shift_down);
-            mem[y].b32.s1 = p;
-            mem[p].b32.s1 = z;
-            p = new_kern(big_op_spacing5());
-            mem[z].b32.s1 = p;
-            mem[v + 2].b32.s1 = mem[v + 2].b32.s1 + big_op_spacing5() + mem[z + 3].b32.s1 + mem[z + 2].b32.s1 + shift_down;
-        }
-        mem[q + 1].b32.s1 = v;
-    }
-    free_ot_assembly(ot_assembly_ptr);
-    return delta;
-}
+// translated to Rust: src/math.rs make_op
 
 
 static void
@@ -1767,7 +1639,7 @@ stack_glue_into_box(int32_t b, scaled_t min, scaled_t max)
 }
 
 
-static int32_t
+int32_t
 build_opentype_assembly(internal_font_number f, void *a, scaled_t s, bool horiz)
 {
     int32_t b;

@@ -2,7 +2,7 @@
 
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
-    cur_c, cur_f, cur_i, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
+    cur_c, cur_f, cur_i, italic_base_entry, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
     cur_list_prev_graf, cur_list_tail, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1,
     file_line_error_style_p, font_area_entry, font_bc_entry, font_ec_entry, font_info_b16,
     font_info_b32s1, font_layout_engine_ptr, font_params, hi_mem_min,
@@ -60,6 +60,11 @@ const BOTTOM_ACC: u16 = 2;
 const NUMBER_MATH_FAMILIES: i32 = 256;
 
 const NORMAL: u16 = 0;
+const LIMITS: u16 = 1;
+const LIST_TAG: u16 = 2;
+const WHATSIT_NODE: u16 = 8;
+const GLYPH_NODE_SIZE: i32 = 5;
+const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const RADICAL_NOAD: u16 = 24;
 const FRACTION_NOAD: u16 = 25;
 const OP_NOAD: u16 = 17;
@@ -161,11 +166,17 @@ extern "C" {
     fn begin_token_list(p: i32, t: u16);
     fn mlist_to_hlist();
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
+    fn usingOpenType(engine: *mut libc::c_void) -> bool;
     fn get_native_mathsy_param(f: i32, n: i32) -> i32;
     fn get_native_mathex_param(f: i32, n: i32) -> i32;
     fn real_get_native_glyph(p_node: *mut libc::c_void, index: u32) -> u16;
     fn get_ot_math_accent_pos(f: i32, g: i32) -> i32;
     fn get_ot_math_constant(f: i32, n: i32) -> i32;
+    fn get_ot_math_variant(f: i32, g: i32, v: i32, adv: *mut i32, horiz: i32) -> i32;
+    fn get_ot_assembly_ptr(f: i32, g: i32, horiz: i32) -> *mut libc::c_void;
+    fn get_ot_math_ital_corr(f: i32, g: i32) -> i32;
+    fn free_ot_assembly(a: *mut libc::c_void);
+    fn build_opentype_assembly(f: i32, a: *mut libc::c_void, s: i32, horiz: bool) -> i32;
     fn var_delimiter(d: i32, s: i32, v: i32) -> i32;
     fn rebox(b: i32, w: i32) -> i32;
 }
@@ -764,6 +775,171 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
     z = var_delimiter(q + 5, cur_size(), delta);
     set_mem_b32s1(v, z);
     set_mem_b32s1(q + 1, crate::scan::hpack(x, 0, ADDITIONAL));
+}
+
+/// translated from xetex-math.c:270 (make_op)
+#[no_mangle]
+pub unsafe extern "C" fn make_op(q: i32) -> i32 {
+    let mut delta: i32 = 0;
+    let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
+
+    if mem_b16s0(q) == NORMAL && cur_style() < TEXT_STYLE {
+        set_mem_b16s0(q, LIMITS);
+    }
+
+    if mem_b32s1(q + 1) == MATH_CHAR {
+        fetch(q + 1);
+        if !(font_area_entry(cur_f()) == OTGR_FONT_FLAG
+            && usingOpenType(font_layout_engine_ptr(cur_f())))
+        {
+            if cur_style() < TEXT_STYLE && cur_i().s1 % 4 == LIST_TAG {
+                let c = cur_i().s0;
+                let i_info = font_info_b16(char_base_entry(cur_f()) + c as i32);
+                if i_info.s3 > 0 {
+                    set_cur_c(c as i32);
+                    set_cur_i(i_info);
+                    set_mem_b16s0(q + 1, c);
+                }
+            }
+            delta = font_info_b32s1(italic_base_entry(cur_f()) + cur_i().s1 as i32 / 4);
+        }
+        let mut x = clean_box(q + 1, cur_style());
+        if font_area_entry(cur_f()) == OTGR_FONT_FLAG
+            && isOpenTypeMathFont(font_layout_engine_ptr(cur_f()))
+        {
+            let mut p = mem_b32s1(x + 5);
+            if p != TEX_NULL
+                && !is_char_node(p)
+                && mem_b16s1(p) == WHATSIT_NODE
+                && mem_b16s0(p) == GLYPH_NODE
+            {
+                'found: {
+                    if cur_style() < TEXT_STYLE {
+                        let mut h1 = get_ot_math_constant(cur_f(), DISPLAYOPERATORMINHEIGHT);
+                        let size_h =
+                            (mem_b32s1(p + 3) + mem_b32s1(p + 2)) as f64 * 5.0 / 4.0;
+                        if (h1 as f64) < size_h {
+                            h1 = size_h as i32;
+                        }
+                        let c_glyph = mem_b16s1(p + 4);
+                        let mut n: i32 = 0;
+                        let mut h2: i32 = 0;
+                        loop {
+                            let g = get_ot_math_variant(cur_f(), c_glyph as i32, n, &mut h2, 0);
+                            if h2 > 0 {
+                                set_mem_b16s1(p + 4, g as u16);
+                                crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+                            }
+                            n += 1;
+                            if h2 < 0 || h2 >= h1 {
+                                break;
+                            }
+                        }
+                        if h2 < 0 {
+                            let assembly_ptr = get_ot_assembly_ptr(cur_f(), c_glyph as i32, 0);
+                            if !assembly_ptr.is_null() {
+                                ot_assembly_ptr = assembly_ptr;
+                                free_node(p, GLYPH_NODE_SIZE);
+                                p = build_opentype_assembly(cur_f(), ot_assembly_ptr, h1, false);
+                                set_mem_b32s1(x + 5, p);
+                                delta = 0;
+                                break 'found;
+                            }
+                        } else {
+                            crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+                        }
+                    }
+                    delta = get_ot_math_ital_corr(cur_f(), mem_b16s1(p + 4) as i32);
+                }
+                // found:
+                set_mem_b32s1(x + 1, mem_b32s1(p + 1));
+                set_mem_b32s1(x + 3, mem_b32s1(p + 3));
+                set_mem_b32s1(x + 2, mem_b32s1(p + 2));
+            }
+        }
+        if mem_b32s1(q + 3) != EMPTY && mem_b16s0(q) != LIMITS {
+            set_mem_b32s1(x + 1, mem_b32s1(x + 1) - delta);
+        }
+        set_mem_b32s1(
+            x + 4,
+            crate::scaled_math::half(mem_b32s1(x + 3) - mem_b32s1(x + 2))
+                - axis_height(cur_size()),
+        );
+        set_mem_b32s1(q + 1, SUB_BOX);
+        set_mem_b32s0(q + 1, x);
+    }
+
+    let save_f = cur_f();
+    if mem_b16s0(q) == LIMITS {
+        let mut x = clean_box(q + 2, 2 * (cur_style() / 4) + 4 + (cur_style() % 2));
+        let mut y = clean_box(q + 1, cur_style());
+        let mut z = clean_box(q + 3, 2 * (cur_style() / 4) + 5);
+        let v = crate::mem::new_null_box();
+        set_mem_b16s1(v, VLIST_NODE);
+        set_mem_b32s1(v + 1, mem_b32s1(y + 1));
+        if mem_b32s1(x + 1) > mem_b32s1(v + 1) {
+            set_mem_b32s1(v + 1, mem_b32s1(x + 1));
+        }
+        if mem_b32s1(z + 1) > mem_b32s1(v + 1) {
+            set_mem_b32s1(v + 1, mem_b32s1(z + 1));
+        }
+        x = rebox(x, mem_b32s1(v + 1));
+        y = rebox(y, mem_b32s1(v + 1));
+        z = rebox(z, mem_b32s1(v + 1));
+        set_mem_b32s1(x + 4, crate::scaled_math::half(delta));
+        set_mem_b32s1(z + 4, -mem_b32s1(x + 4));
+        set_mem_b32s1(v + 3, mem_b32s1(y + 3));
+        set_mem_b32s1(v + 2, mem_b32s1(y + 2));
+        set_cur_f(save_f);
+        if mem_b32s1(q + 2) == EMPTY {
+            free_node(x, BOX_NODE_SIZE);
+            set_mem_b32s1(v + 5, y);
+        } else {
+            let mut shift_up = big_op_spacing3() - mem_b32s1(x + 2);
+            if shift_up < big_op_spacing1() {
+                shift_up = big_op_spacing1();
+            }
+            let mut p = new_kern(shift_up);
+            set_mem_b32s1(p, y);
+            set_mem_b32s1(x, p);
+            p = new_kern(big_op_spacing5());
+            set_mem_b32s1(p, x);
+            set_mem_b32s1(v + 5, p);
+            set_mem_b32s1(
+                v + 3,
+                mem_b32s1(v + 3)
+                    + big_op_spacing5()
+                    + mem_b32s1(x + 3)
+                    + mem_b32s1(x + 2)
+                    + shift_up,
+            );
+        }
+        if mem_b32s1(q + 3) == EMPTY {
+            free_node(z, BOX_NODE_SIZE);
+        } else {
+            let mut shift_down = big_op_spacing4() - mem_b32s1(z + 3);
+            if shift_down < big_op_spacing2() {
+                shift_down = big_op_spacing2();
+            }
+            let mut p = new_kern(shift_down);
+            set_mem_b32s1(y, p);
+            set_mem_b32s1(p, z);
+            p = new_kern(big_op_spacing5());
+            set_mem_b32s1(z, p);
+            set_mem_b32s1(
+                v + 2,
+                mem_b32s1(v + 2)
+                    + big_op_spacing5()
+                    + mem_b32s1(z + 3)
+                    + mem_b32s1(z + 2)
+                    + shift_down,
+            );
+        }
+        set_mem_b32s1(q + 1, v);
+    }
+
+    free_ot_assembly(ot_assembly_ptr);
+    delta
 }
 
 /// translated from xetex-math.c:199 (compute_ot_math_accent_pos)
