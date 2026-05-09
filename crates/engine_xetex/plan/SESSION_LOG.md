@@ -32,6 +32,45 @@ template.
 
 ---
 
+## Session 109 — 2026-05-09 — xetex-shipout.c DVI word helpers
+
+**Goal:** Continue `xetex-shipout.c` by translating a small DVI output helper cluster while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 108
+
+**Work done:**
+- Translated `dvi_four` and `dvi_two` from `xetex-shipout.c` to Rust in `src/shipout.rs`.
+- Exported the existing C `dvi_out` helper so the Rust functions can emit bytes through the current C-owned DVI buffer state.
+- Left the larger DVI buffer globals and `dvi_swap` in C; this keeps the session scoped to the two pure byte-encoding helpers.
+- Code commit: `55c6d9e9` (`engine_xetex: translate DVI word helpers to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 109
+
+**Surprises / gotchas:**
+- `dvi_out` was a `static inline` helper over C file-static DVI buffer state; exporting it is the minimal bridge for translating callers before moving the buffer state itself.
+- Adding a local C prototype for `dvi_out` avoids introducing a new `-Wmissing-prototypes` warning.
+- `dvi_two` uses `UTF16_code`; the Rust ABI type is `u16`.
+
+**For the next session:**
+- Continue `xetex-shipout.c`. Good next candidates are other small DVI helpers (`dvi_pop` needs DVI pointer access, so it may require state accessors) or a self-contained external function such as `out_what` if its callees stay in C.
+
 ## Session 108 — 2026-05-09 — xetex-math.c mlist_to_hlist
 
 **Goal:** Translate the final compiled `xetex-math.c` body, `mlist_to_hlist`, to Rust while keeping all parity suites green.
