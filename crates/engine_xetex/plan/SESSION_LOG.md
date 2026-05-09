@@ -32,6 +32,58 @@ template.
 
 ---
 
+## Session 103 — 2026-05-09 — xetex-math.c make_math_accent
+
+**Goal:** Translate `make_math_accent` from `xetex-math.c` to Rust while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 102
+
+**Work done:**
+- Removed `static` from `make_math_accent` forward declaration (line 54 of xetex-math.c).
+- Deleted C body (~187 LOC), replaced with `// translated to Rust: src/math.rs make_math_accent`.
+- Added to `src/math.rs`:
+  - Import: `skew_char_entry` from globals.
+  - Constants: `ACCENTBASEHEIGHT` (6), `X_HEIGHT_CODE` (5).
+  - Function `make_math_accent` (~190 Rust lines), handling:
+    - AAT/OT font path with `compute_ot_math_accent_pos`, glyph variant loop, assembly fallback.
+    - TFM font path with lig-kern skew lookup (`goto done1` → `'done1: { ... break 'done1; }` labeled block).
+    - Char-variant loop with size-narrowing (`goto done` → plain `break`).
+    - Accent position logic with `get_ot_math_accent_pos`, bottom accent handling.
+    - `goto found` → `'found: { ... break 'found; }` labeled block in assembly branch.
+- Code commit: `0f0435fe` (`engine_xetex: translate make_math_accent to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 103
+
+**Surprises / gotchas:**
+- `make_math_accent` has three distinct `goto` targets: `done1` (exit lig-kern loop), `done` (exit char-variant while), `found` (skip else-branch in assembly). Each needed different Rust patterns.
+- `odd(mem[q].b16.s0)` → `mem_b16s0(q) % 2 != 0`.
+- `mem[x+1] = mem[q+1]` (full word copy) → `set_mem_word(x+1, mem_word(q+1))`.
+- `get_native_glyph(p, i)` macro → `real_get_native_glyph(mem_node_addr(p), i)`.
+- Non-critical warnings: unused initial assignment `x = TEX_NULL`, dead `p = TEX_NULL` in the non-AAT/OT else branch (both survive a dead-code analysis but don't affect correctness).
+
+**For the next session:**
+- Remaining C bodies in xetex-math.c: `initialize_math_variables` (tiny, ~6 lines), `make_scripts` (~464 LOC, static), `mlist_to_hlist` (~467 LOC), `var_delimiter` (~186 LOC), `build_opentype_assembly` (~142 LOC), `rebox` (~?? LOC).
+- Next target: `initialize_math_variables` (trivial, clears `null_delimiter`), or tackle `make_scripts` for a bigger session.
+
+---
+
 ## Session 102 — 2026-05-09 — xetex-math.c 7-function batch (delimiter helpers + stack helpers)
 
 **Goal:** Translate a batch of 7 helper functions from `xetex-math.c` to Rust while keeping all parity suites green.

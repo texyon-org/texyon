@@ -116,6 +116,7 @@ cargo test -p tectonic --test tex-outputs
 |     100 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_op (93c786d8), promoting build_opentype_assembly for Rust callers. Goto→labeled-block, do-while→loop. All 4 suites pass. |
 |     101 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_ord (99e00684). Goto-restart→'restart: loop, lig-kern while-true→inner loop. All 4 suites pass. |
 |     102 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate 7 helpers (e27b5336): attach_hkern_to_new_hlist, make_left_right, char_box, stack_into_box, height_plus_depth, stack_glyph_into_box, stack_glue_into_box. All 4 suites pass. |
+|     103 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_math_accent (0f0435fe). Three goto patterns: done1→labeled block, done→plain break, found→labeled block. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -209,6 +210,7 @@ Passed count below the previous session's recorded value.
 |      91 | ~11,443 |                  ~36,190 |      ~24.0% |
 |      92 | 10,311 |                  37,025 |       21.8% |
 |      95 |  9,277 |                  38,094 |       19.6% |
+|     103 |  8,217 |                  35,445 |       18.8% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -306,6 +308,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |     100 |      505 |             ~?? |       ~?? |
 |     101 |      506 |             ~?? |       ~?? |
 |     102 |      513 |             ~?? |       ~?? |
+|     103 |      514 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
