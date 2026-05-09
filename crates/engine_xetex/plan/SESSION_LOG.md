@@ -32,6 +32,57 @@ template.
 
 ---
 
+## Session 106 — 2026-05-09 — xetex-math.c var_delimiter
+
+**Goal:** Translate `var_delimiter` from `xetex-math.c` to Rust while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 105
+
+**Work done:**
+- Removed `var_delimiter` from the `extern "C"` block in `src/math.rs`.
+- Added imports: `exten_base_entry`, `mem_b16s2` to globals use.
+- Added constants: `EXT_TAG` (3), `DIMEN_PAR_NULL_DELIMITER_SPACE` (11).
+- Deleted C body (~180 LOC). Added Rust `var_delimiter`:
+  - `goto found` → `break 'found` (labeled block wrapping the outer `while(true)` loop).
+  - `goto continue_` → `continue` inside inner `loop {}` for character list chain.
+  - OT variant `do-while(u >= 0)` → `loop { ...; if u < 0 { break; } }`.
+  - Size-scan `do-while(z >= SCRIPT_SIZE)` → `loop { ...; if z < SCRIPT_SIZE { break; } }`.
+  - `c`, `x`, `y` declared as `u16` throughout; `stack_into_box`/`height_plus_depth` take `u16`.
+  - `map_char_to_glyph` called as `crate::ext::map_char_to_glyph(g, x) as i32`.
+  - `AAT_FONT_FLAG || OTGR_FONT_FLAG+usingOpenType` condition corrected to match C logic.
+- Code commit: `e4eed5c9` (`engine_xetex: translate var_delimiter to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 106
+
+**Surprises / gotchas:**
+- `stack_into_box(b, f, c)` and `height_plus_depth(f, c)` both take `c: u16`, not `i32` — Rust type errors caught the mismatch.
+- `goto found` from 6 different sites → all become `break 'found` uniformly.
+- `goto continue_` (character list chain) → inner `loop {}` with `continue` (no named label needed since there's no outer named loop to conflict with).
+- `mem_b16s2` (reading) was not yet imported; added alongside the existing `mem_b16s0`/`mem_b16s1`/`mem_b16s3`.
+
+**For the next session:**
+- Remaining C bodies in xetex-math.c: `make_scripts` (~464 LOC, static), `mlist_to_hlist` (~467 LOC).
+- Both are large functions. `make_scripts` should come first (it's called by `mlist_to_hlist`).
+
+---
+
 ## Session 105 — 2026-05-09 — xetex-math.c build_opentype_assembly
 
 **Goal:** Translate `build_opentype_assembly` from `xetex-math.c` to Rust while keeping all parity suites green.

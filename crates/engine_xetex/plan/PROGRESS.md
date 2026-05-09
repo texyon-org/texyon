@@ -119,6 +119,7 @@ cargo test -p tectonic --test tex-outputs
 |     103 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_math_accent (0f0435fe). Three goto patterns: done1→labeled block, done→plain break, found→labeled block. All 4 suites pass. |
 |     104 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate initialize_math_variables (no-op) + rebox (b5acc37f). null_delimiter was write-only static; removed. All 4 suites pass. |
 |     105 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate build_opentype_assembly (a77e095c). do-while→loop, WEB for-loops→Rust ranges, ot_part_* added to extern block. All 4 suites pass. |
+|     106 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate var_delimiter (e4eed5c9). 6×goto found→break 'found, goto continue_→continue in inner loop. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -215,6 +216,7 @@ Passed count below the previous session's recorded value.
 |     103 |  8,217 |                  35,445 |       18.8% |
 |     104 |  8,180 |                  35,487 |       18.7% |
 |     105 |  8,040 |                  35,599 |       18.4% |
+|     106 |  7,863 |                  35,761 |       18.0% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -315,6 +317,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |     103 |      514 |             ~?? |       ~?? |
 |     104 |      516 |             ~?? |       ~?? |
 |     105 |      517 |             ~?? |       ~?? |
+|     106 |      518 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
