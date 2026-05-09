@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 100.
+Last updated: session 101.
 
 
 ## Core engine files (to translate)
@@ -41,7 +41,7 @@ Last updated: session 100.
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |  1813 |     12 | `src/math.rs`                     | IN PROGRESS — 68% |
+| xetex-math.c                 |  1716 |     11 | `src/math.rs`                     | IN PROGRESS — 72% |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -614,7 +614,7 @@ Status: IN PROGRESS (session 91).
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
-Status: IN PROGRESS (session 100).
+Status: IN PROGRESS (session 101).
 
 | # | Function            | Line | Status |
 |--:|---------------------|-----:|--------|
@@ -670,16 +670,17 @@ Status: IN PROGRESS (session 100).
 |50 | `make_radical`      | 80 | MIGRATED (session 99, ca405061; promoted from C static) |
 |51 | `make_fraction`     | 313 | MIGRATED (session 99, ca405061; promoted from C static) |
 |52 | `make_op`           | 270 | MIGRATED (session 100, 93c786d8; promoted from C static) |
+|53 | `make_ord`          | 272 | MIGRATED (session 101, 99e00684; promoted from C static) |
 
 `build_opentype_assembly` was also promoted (un-static'd) so Rust can call
 the remaining C variant-assembly helper. Remaining in C: `initialize_math_variables`,
-`make_math_accent`, `make_ord`, `attach_hkern_to_new_hlist`, `make_scripts`,
+`make_math_accent`, `attach_hkern_to_new_hlist`, `make_scripts`,
 `make_left_right`, `mlist_to_hlist`, `var_delimiter`, `rebox`,
 `char_box`, `stack_into_box`, `height_plus_depth`, `stack_glyph_into_box`,
-`stack_glue_into_box`, `build_opentype_assembly` (12 translated-or-excluded C bodies).
+`stack_glue_into_box`, `build_opentype_assembly` (11 remaining C bodies).
 
-The next candidate is `make_ord`, which is smaller and has all its callees
-already in Rust.
+The next candidate is `attach_hkern_to_new_hlist`, which is small (~10 lines)
+and has all callees already in Rust.
 
 ### Phases 16+
 

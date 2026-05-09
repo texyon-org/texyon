@@ -32,6 +32,56 @@ template.
 
 ---
 
+## Session 101 — 2026-05-09 — xetex-math.c make_ord lig/kern handler
+
+**Goal:** Translate `make_ord` from `xetex-math.c` to Rust while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 100
+
+**Work done:**
+- Promoted `make_ord` from C-static to link-visible (removed `static` from forward
+  declaration on line 57 and definition on line 272 of `xetex-math.c`).
+- Deleted `make_ord` C body (~96 lines), replaced with comment.
+- Translated `make_ord` to `src/math.rs`. Key points:
+  - Added imports `lig_kern_base_entry` and `kern_base_entry` from globals.rs.
+  - New constants: `ORD_NOAD` (16), `PUNCT_NOAD` (22), `LIG_TAG` (1),
+    `MATH_TEXT_CHAR` (4), `NOAD_SIZE` (4).
+  - The `goto restart:` became `'restart: loop { ... continue 'restart; }` with
+    early-exit conditions guarding entry into the deep `if` chain.
+  - The inner `while(true)` lig-kern walk became a plain `loop`.
+  - `mem[q+3] = mem[p+3]` (memory_word copy) → `set_mem_word(q+3, mem_word(p+3))`.
+  - Kern insertion case uses a separate `p_kern` variable to avoid C's pointer reuse.
+- Code commit: `99e00684` (`engine_xetex: translate make_ord to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 101
+
+**Surprises / gotchas:**
+- None. `make_ord` was straightforward once the `goto restart:` → labeled loop
+  pattern was applied. All callees were already in Rust.
+
+**For the next session:**
+- Next target: `attach_hkern_to_new_hlist` (xetex-math.c, ~10 lines, static,
+  all callees in Rust). Small but needs `static` removal.
+
+---
+
 ## Session 100 — 2026-05-09 — xetex-math.c make_op builder
 
 **Goal:** Translate `make_op` from `xetex-math.c` to Rust while keeping all parity suites green.
