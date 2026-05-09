@@ -32,6 +32,63 @@ template.
 
 ---
 
+## Session 102 — 2026-05-09 — xetex-math.c 7-function batch (delimiter helpers + stack helpers)
+
+**Goal:** Translate a batch of 7 helper functions from `xetex-math.c` to Rust while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 101
+
+**Work done:**
+- Promoted all 7 from C-static by removing `static` from their forward declarations.
+- Deleted 7 C bodies, replaced with translated comments.
+- Added to `src/math.rs`:
+  - Imports: `depth_base_entry`, `height_base_entry` from globals; `new_glue`, `new_spec` from `crate::mem`.
+  - Constants: `HLIST_NODE` (0), `INT_PAR_DELIMITER_FACTOR` (18), `DIMEN_PAR_DELIMITER_SHORTFALL` (10).
+  - 7 `#[no_mangle] pub unsafe extern "C"` functions:
+    - `attach_hkern_to_new_hlist`: kern append with list-walk.
+    - `make_left_right`: style/size setup then `var_delimiter`, result = noad type - 10.
+    - `char_box`: AAT/OT path via `new_native_character`; TFM path expands `FONT_CHARACTER_INFO` macros manually.
+    - `stack_into_box`: calls `char_box`, prepends to vlist.
+    - `height_plus_depth`: one-liner, expands `FONT_CHARINFO_HEIGHT + FONT_CHARINFO_DEPTH`.
+    - `stack_glyph_into_box`: builds GLYPH_NODE and appends (hlist) or prepends (vlist).
+    - `stack_glue_into_box`: builds glue spec and appends (hlist) or prepends (vlist).
+  - `INTPAR(delimiter_factor)` = `eqtb_b32s1(INT_BASE + 18)`.
+  - `DIMENPAR(delimiter_shortfall)` = `eqtb_b32s1(DIMEN_BASE + 10)`.
+- Code commit: `e27b5336` (`engine_xetex: translate 7 math helpers to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 102
+
+**Surprises / gotchas:**
+- `char_box` sets `mem[b+5]` twice in the AAT/OT branch (once inside the if,
+  once after). Translated faithfully with a single trailing `set_mem_b32s1(b+5, p)`.
+- `stack_glyph_into_box` does NOT update b+3/b+2 when adding the first element to
+  an empty hlist — this is C behavior preserved faithfully.
+- `INTPAR`/`DIMENPAR` macros expand to `eqtb[BASE + offset].b32.s1`. Translated
+  as `eqtb_b32s1(INT_BASE + N)` / `eqtb_b32s1(DIMEN_BASE + N)`.
+
+**For the next session:**
+- Next target: `make_math_accent` (xetex-math.c, ~80 lines, static, all callees in Rust),
+  or tackle large `make_scripts` (~460 lines) for a truly big session.
+
+---
+
 ## Session 101 — 2026-05-09 — xetex-math.c make_ord lig/kern handler
 
 **Goal:** Translate `make_ord` from `xetex-math.c` to Rust while keeping all parity suites green.

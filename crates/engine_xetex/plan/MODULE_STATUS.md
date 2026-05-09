@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 101.
+Last updated: session 102.
 
 
 ## Core engine files (to translate)
@@ -41,7 +41,7 @@ Last updated: session 101.
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |  1716 |     11 | `src/math.rs`                     | IN PROGRESS — 72% |
+| xetex-math.c                 |  1572 |      4 | `src/math.rs`                     | IN PROGRESS — 84% |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -614,7 +614,7 @@ Status: IN PROGRESS (session 91).
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
-Status: IN PROGRESS (session 101).
+Status: IN PROGRESS (session 102).
 
 | # | Function            | Line | Status |
 |--:|---------------------|-----:|--------|
@@ -671,16 +671,22 @@ Status: IN PROGRESS (session 101).
 |51 | `make_fraction`     | 313 | MIGRATED (session 99, ca405061; promoted from C static) |
 |52 | `make_op`           | 270 | MIGRATED (session 100, 93c786d8; promoted from C static) |
 |53 | `make_ord`          | 272 | MIGRATED (session 101, 99e00684; promoted from C static) |
+|54 | `attach_hkern_to_new_hlist` | 275 | MIGRATED (session 102, e27b5336; promoted from C static) |
+|55 | `make_left_right`   | 759 | MIGRATED (session 102, e27b5336; promoted from C static) |
+|56 | `char_box`          | 1432 | MIGRATED (session 102, e27b5336; promoted from C static) |
+|57 | `stack_into_box`    | 1463 | MIGRATED (session 102, e27b5336; promoted from C static) |
+|58 | `height_plus_depth` | 1474 | MIGRATED (session 102, e27b5336; promoted from C static) |
+|59 | `stack_glyph_into_box` | 1482 | MIGRATED (session 102, e27b5336; promoted from C static) |
+|60 | `stack_glue_into_box` | 1517 | MIGRATED (session 102, e27b5336; promoted from C static) |
 
 `build_opentype_assembly` was also promoted (un-static'd) so Rust can call
-the remaining C variant-assembly helper. Remaining in C: `initialize_math_variables`,
-`make_math_accent`, `attach_hkern_to_new_hlist`, `make_scripts`,
-`make_left_right`, `mlist_to_hlist`, `var_delimiter`, `rebox`,
-`char_box`, `stack_into_box`, `height_plus_depth`, `stack_glyph_into_box`,
-`stack_glue_into_box`, `build_opentype_assembly` (11 remaining C bodies).
+the remaining C variant-assembly helper. Remaining in C (need translation):
+`initialize_math_variables`, `make_math_accent`, `make_scripts`,
+`mlist_to_hlist` (4 remaining C bodies to translate; `var_delimiter`,
+`rebox`, `build_opentype_assembly` are large and may be deferred).
 
-The next candidate is `attach_hkern_to_new_hlist`, which is small (~10 lines)
-and has all callees already in Rust.
+The next candidate is `make_math_accent` (static, ~80 lines, all callees in Rust)
+or the large `make_scripts` (~460 lines).
 
 ### Phases 16+
 

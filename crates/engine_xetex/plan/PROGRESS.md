@@ -115,6 +115,7 @@ cargo test -p tectonic --test tex-outputs
 |      99 | 2026-05-08 |     29 |    29 |     0 | xetex-math.c: translate make_radical and make_fraction (ca405061), promoting var_delimiter/rebox for Rust callers. All 4 suites pass. |
 |     100 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_op (93c786d8), promoting build_opentype_assembly for Rust callers. Goto→labeled-block, do-while→loop. All 4 suites pass. |
 |     101 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_ord (99e00684). Goto-restart→'restart: loop, lig-kern while-true→inner loop. All 4 suites pass. |
+|     102 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate 7 helpers (e27b5336): attach_hkern_to_new_hlist, make_left_right, char_box, stack_into_box, height_plus_depth, stack_glyph_into_box, stack_glue_into_box. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -304,6 +305,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |      99 |      504 |             ~?? |       ~?? |
 |     100 |      505 |             ~?? |       ~?? |
 |     101 |      506 |             ~?? |       ~?? |
+|     102 |      513 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -319,7 +321,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **101** (sessions 1–101 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **102** (sessions 1–102 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
