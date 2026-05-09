@@ -38,8 +38,9 @@ static void write_out(int32_t p);
 static void pic_out(int32_t p);
 static void write_to_dvi(int32_t a, int32_t b);
 static void dvi_swap(void);
-static void dvi_four(int32_t x);
-static void dvi_two(UTF16_code s);
+void dvi_out(eight_bits c);
+void dvi_four(int32_t x);
+void dvi_two(UTF16_code s);
 static void dvi_pop(int32_t l);
 static void dvi_font_def(internal_font_number f);
 
@@ -67,7 +68,7 @@ deinitialize_shipout_variables(void)
 }
 
 
-static inline void
+void
 dvi_out(eight_bits c)
 {
     dvi_buf[dvi_ptr++] = c;
@@ -2399,32 +2400,8 @@ dvi_swap(void)
 }
 
 
-static void
-dvi_four(int32_t x)
-{
-    if (x >= 0) {
-        dvi_out(x / 0x1000000);
-    } else {
-        x = x + 0x40000000;
-        x = x + 0x40000000;
-        dvi_out((x / 0x1000000) + 128);
-    }
-
-    x = x % 0x1000000;
-    dvi_out(x / 0x10000);
-
-    x = x % 0x10000;
-    dvi_out(x / 0x100);
-    dvi_out(x % 0x100);
-}
-
-
-static void
-dvi_two(UTF16_code s)
-{
-    dvi_out(s / 0x100);
-    dvi_out(s % 0x100);
-}
+// translated to Rust: src/shipout.rs dvi_four
+// translated to Rust: src/shipout.rs dvi_two
 
 
 static void
