@@ -216,6 +216,7 @@ mod raw {
         pub(super) static mut fmem_ptr: i32;
         pub(super) static mut font_ptr: i32;
         pub(super) static mut font_check: *mut crate::mem_types::B16x4;
+        pub(super) static mut xdv_buffer: *mut libc::c_char;
         pub(super) static mut font_params: *mut i32;
         pub(super) static mut font_glue: *mut i32;
         pub(super) static mut param_base: *mut i32;
@@ -3582,6 +3583,9 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 }
 #[inline] pub(crate) fn font_check_entry(f: i32) -> crate::mem_types::B16x4 {
     unsafe { *raw::font_check.offset(f as isize) }
+}
+#[inline] pub(crate) fn xdv_buffer_entry(i: i32) -> u8 {
+    unsafe { *raw::xdv_buffer.offset(i as isize) as u8 }
 }
 #[inline] pub(crate) fn font_letter_space_entry(f: i32) -> i32 {
     unsafe { *raw::font_letter_space.offset(f as isize) }

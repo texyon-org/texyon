@@ -30,7 +30,6 @@ static int32_t cur_s;
 static void hlist_out(void);
 static void vlist_out(void);
 static int32_t reverse(int32_t this_box, int32_t t, scaled_t * cur_g, double * cur_glue);
-static void dvi_native_font_def(internal_font_number f);
 static void movement(scaled_t w, eight_bits o);
 static void prune_movements(int32_t l);
 static void special_out(int32_t p);
@@ -42,7 +41,7 @@ void dvi_out(eight_bits c);
 void dvi_four(int32_t x);
 void dvi_two(UTF16_code s);
 static void dvi_pop(int32_t l);
-static void dvi_font_def(internal_font_number f);
+void dvi_font_def(internal_font_number f);
 
 
 void
@@ -1782,83 +1781,8 @@ out_what(int32_t p)
 }
 
 
-static void
-dvi_native_font_def(internal_font_number f)
-{
-    int32_t font_def_length, i;
-
-    dvi_out(DEFINE_NATIVE_FONT);
-    dvi_four(f - 1);
-    font_def_length = make_font_def(f);
-
-    for (i = 0; i < font_def_length; i++)
-        dvi_out(xdv_buffer[i]);
-}
-
-
-void
-dvi_font_def(internal_font_number f)
-{
-    pool_pointer k;
-    int32_t l;
-
-    if (font_area[f] == AAT_FONT_FLAG || font_area[f] == OTGR_FONT_FLAG)
-        dvi_native_font_def(f);
-    else {
-        if (f <= 256) {
-            dvi_out(FNT_DEF1);
-            dvi_out(f - 1);
-        } else {
-            dvi_out(FNT_DEF1 + 1);
-            dvi_out((f - 1) / 256);
-            dvi_out((f - 1) % 256);
-        }
-
-        dvi_out(font_check[f].s3);
-        dvi_out(font_check[f].s2);
-        dvi_out(font_check[f].s1);
-        dvi_out(font_check[f].s0);
-        dvi_four(font_size[f]);
-        dvi_four(font_dsize[f]);
-        dvi_out(length(font_area[f]));
-        l = 0;
-        k = str_start[(font_name[f]) - 65536L];
-
-        while ((l == 0) && (k < str_start[(font_name[f] + 1) - 65536L])) {
-
-            if (str_pool[k] == ':' )
-                l = k - str_start[(font_name[f]) - 65536L];
-            k++;
-        }
-
-        if (l == 0)
-            l = length(font_name[f]);
-
-        dvi_out(l);
-
-        {
-            register int32_t for_end;
-            k = str_start[(font_area[f]) - 65536L];
-            for_end = str_start[(font_area[f] + 1) - 65536L] - 1;
-            if (k <= for_end)
-                do {
-                    dvi_out(str_pool[k]);
-                }
-                while (k++ < for_end);
-        }
-
-        {
-            register int32_t for_end;
-            k = str_start[(font_name[f]) - 65536L];
-            for_end = str_start[(font_name[f]) - 65536L] + l - 1;
-            if (k <= for_end)
-                do {
-                    dvi_out(str_pool[k]);
-                }
-                while (k++ < for_end);
-        }
-    }
-}
+// translated to Rust: src/shipout.rs dvi_native_font_def
+// translated to Rust: src/shipout.rs dvi_font_def
 
 
 static void
