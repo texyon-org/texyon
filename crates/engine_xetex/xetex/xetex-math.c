@@ -54,7 +54,7 @@ scaled_t compute_ot_math_accent_pos(int32_t p);
 static void make_math_accent(int32_t q);
 void make_fraction(int32_t q);
 scaled_t make_op(int32_t q);
-static void make_ord(int32_t q);
+void make_ord(int32_t q);
 static int32_t attach_hkern_to_new_hlist(int32_t q, scaled_t delta);
 static void make_scripts(int32_t q, scaled_t delta);
 static small_number make_left_right(int32_t q, small_number style, scaled_t max_d, scaled_t max_h);
@@ -269,104 +269,7 @@ make_math_accent(int32_t q)
 // translated to Rust: src/math.rs make_op
 
 
-static void
-make_ord(int32_t q)
-{
-    int32_t a;
-    int32_t p, r;
-
-restart:
-    if (mem[q + 3].b32.s1 == EMPTY) {
-
-        if (mem[q + 2].b32.s1 == EMPTY) {
-
-            if (mem[q + 1].b32.s1 == MATH_CHAR) {
-                p = mem[q].b32.s1;
-                if (p != TEX_NULL) {
-
-                    if ((mem[p].b16.s1 >= ORD_NOAD) && (mem[p].b16.s1 <= PUNCT_NOAD)) {
-
-                        if (mem[p + 1].b32.s1 == MATH_CHAR) {
-
-                            if ((mem[p + 1].b16.s1 % 256) == (mem[q + 1].b16.s1 % 256)) {
-                                mem[q + 1].b32.s1 = MATH_TEXT_CHAR;
-                                fetch(q + 1);
-                                if (((cur_i.s1) % 4) == LIG_TAG) {
-                                    a = lig_kern_base[cur_f] + cur_i.s0;
-                                    cur_c = mem[p + 1].b16.s0;
-                                    cur_i = font_info[a].b16;
-                                    if (cur_i.s3 > 128) {
-                                        a = lig_kern_base[cur_f] + 256 * cur_i.s1 + cur_i.s0 + 32768L - 256 * (128);
-                                        cur_i = font_info[a].b16;
-                                    }
-                                    while (true) {
-
-                                        if (cur_i.s2 == cur_c) {
-
-                                            if (cur_i.s3 <= 128) {
-
-                                                if (cur_i.s1 >= 128) {
-                                                    p = new_kern(font_info
-                                                                 [kern_base[cur_f] + 256 * cur_i.s1 + cur_i.s0].b32.s1);
-                                                    mem[p].b32.s1 = mem[q].b32.s1;
-                                                    mem[q].b32.s1 = p;
-                                                    return;
-                                                } else {
-                                                    switch (cur_i.s1) {
-                                                    case 1:
-                                                    case 5:
-                                                        mem[q + 1].b16.s0 = cur_i.s0;
-                                                        break;
-                                                    case 2:
-                                                    case 6:
-                                                        mem[p + 1].b16.s0 = cur_i.s0;
-                                                        break;
-                                                    case 3:
-                                                    case 7:
-                                                    case 11:
-                                                        {
-                                                            r = new_noad();
-                                                            mem[r + 1].b16.s0 = cur_i.s0;
-                                                            mem[r + 1].b16.s1 = (mem[q + 1].b16.s1 % 256);
-                                                            mem[q].b32.s1 = r;
-                                                            mem[r].b32.s1 = p;
-                                                            if (cur_i.s1 < 11)
-                                                                mem[r + 1].b32.s1 = MATH_CHAR;
-                                                            else
-                                                                mem[r + 1].b32.s1 = MATH_TEXT_CHAR;
-                                                        }
-                                                        break;
-                                                    default:
-                                                        {
-                                                            mem[q].b32.s1 = mem[p].b32.s1;
-                                                            mem[q + 1].b16.s0 = cur_i.s0;
-                                                            mem[q + 3] = mem[p + 3];
-                                                            mem[q + 2] = mem[p + 2];
-                                                            free_node(p, NOAD_SIZE);
-                                                        }
-                                                        break;
-                                                    }
-                                                    if (cur_i.s1 > 3)
-                                                        return;
-                                                    mem[q + 1].b32.s1 = MATH_CHAR;
-                                                    goto restart;
-                                                }
-                                            }
-                                        }
-                                        if (cur_i.s3 >= 128)
-                                            return;
-                                        a = a + cur_i.s3 + 1;
-                                        cur_i = font_info[a].b16;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+// translated to Rust: src/math.rs make_ord
 
 
 static int32_t

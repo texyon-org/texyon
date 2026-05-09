@@ -2,7 +2,8 @@
 
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
-    cur_c, cur_f, cur_i, italic_base_entry, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
+    cur_c, cur_f, cur_i, italic_base_entry, kern_base_entry, lig_kern_base_entry,
+    cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
     cur_list_prev_graf, cur_list_tail, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1,
     file_line_error_style_p, font_area_entry, font_bc_entry, font_ec_entry, font_info_b16,
     font_info_b32s1, font_layout_engine_ptr, font_params, hi_mem_min,
@@ -71,6 +72,11 @@ const OP_NOAD: u16 = 17;
 const INNER_NOAD: u16 = 23;
 const LEFT_NOAD: u16 = 30;
 const RIGHT_NOAD: u16 = 31;
+const ORD_NOAD: u16 = 16;
+const PUNCT_NOAD: u16 = 22;
+const LIG_TAG: u16 = 1;
+const MATH_TEXT_CHAR: i32 = 4;
+const NOAD_SIZE: i32 = 4;
 const RADICAL_NOAD_SIZE: i32 = 5;
 const FRACTION_NOAD_SIZE: i32 = 6;
 
@@ -940,6 +946,85 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
 
     free_ot_assembly(ot_assembly_ptr);
     delta
+}
+
+/// translated from xetex-math.c:272 (make_ord)
+#[no_mangle]
+pub unsafe extern "C" fn make_ord(q: i32) {
+    'restart: loop {
+        if mem_b32s1(q + 3) != EMPTY { break 'restart; }
+        if mem_b32s1(q + 2) != EMPTY { break 'restart; }
+        if mem_b32s1(q + 1) != MATH_CHAR { break 'restart; }
+        let p = mem_b32s1(q);
+        if p == TEX_NULL { break 'restart; }
+        if mem_b16s1(p) < ORD_NOAD || mem_b16s1(p) > PUNCT_NOAD { break 'restart; }
+        if mem_b32s1(p + 1) != MATH_CHAR { break 'restart; }
+        if mem_b16s1(p + 1) % 256 != mem_b16s1(q + 1) % 256 { break 'restart; }
+
+        set_mem_b32s1(q + 1, MATH_TEXT_CHAR);
+        fetch(q + 1);
+        if cur_i().s1 % 4 != LIG_TAG { break 'restart; }
+
+        let mut a = lig_kern_base_entry(cur_f()) + cur_i().s0 as i32;
+        set_cur_c(mem_b16s0(p + 1) as i32);
+        set_cur_i(font_info_b16(a));
+        if cur_i().s3 > 128 {
+            a = lig_kern_base_entry(cur_f()) + 256 * cur_i().s1 as i32 + cur_i().s0 as i32 + 32768 - 256 * 128;
+            set_cur_i(font_info_b16(a));
+        }
+        loop {
+            if cur_i().s2 == cur_c() as u16 {
+                if cur_i().s3 <= 128 {
+                    if cur_i().s1 >= 128 {
+                        let p_kern = new_kern(font_info_b32s1(
+                            kern_base_entry(cur_f()) + 256 * cur_i().s1 as i32 + cur_i().s0 as i32,
+                        ));
+                        set_mem_b32s1(p_kern, mem_b32s1(q));
+                        set_mem_b32s1(q, p_kern);
+                        return;
+                    } else {
+                        match cur_i().s1 {
+                            1 | 5 => {
+                                set_mem_b16s0(q + 1, cur_i().s0);
+                            }
+                            2 | 6 => {
+                                set_mem_b16s0(p + 1, cur_i().s0);
+                            }
+                            3 | 7 | 11 => {
+                                let r = new_noad();
+                                set_mem_b16s0(r + 1, cur_i().s0);
+                                set_mem_b16s1(r + 1, mem_b16s1(q + 1) % 256);
+                                set_mem_b32s1(q, r);
+                                set_mem_b32s1(r, p);
+                                if cur_i().s1 < 11 {
+                                    set_mem_b32s1(r + 1, MATH_CHAR);
+                                } else {
+                                    set_mem_b32s1(r + 1, MATH_TEXT_CHAR);
+                                }
+                            }
+                            _ => {
+                                set_mem_b32s1(q, mem_b32s1(p));
+                                set_mem_b16s0(q + 1, cur_i().s0);
+                                set_mem_word(q + 3, mem_word(p + 3));
+                                set_mem_word(q + 2, mem_word(p + 2));
+                                free_node(p, NOAD_SIZE);
+                            }
+                        }
+                        if cur_i().s1 > 3 {
+                            return;
+                        }
+                        set_mem_b32s1(q + 1, MATH_CHAR);
+                        continue 'restart;
+                    }
+                }
+            }
+            if cur_i().s3 >= 128 {
+                return;
+            }
+            a += cur_i().s3 as i32 + 1;
+            set_cur_i(font_info_b16(a));
+        }
+    }
 }
 
 /// translated from xetex-math.c:199 (compute_ot_math_accent_pos)
