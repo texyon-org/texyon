@@ -32,6 +32,64 @@ template.
 
 ---
 
+## Session 100 — 2026-05-09 — xetex-math.c make_op builder
+
+**Goal:** Translate `make_op` from `xetex-math.c` to Rust while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 99
+
+**Work done:**
+- Promoted `build_opentype_assembly` from C-static to link-visible (removed `static`
+  from both its forward declaration and definition in `xetex-math.c`) so Rust can call it.
+- Promoted `make_op` similarly (removed `static` from its C declaration).
+- Translated `make_op` (~130 LOC) to `src/math.rs`. Key points:
+  - Added new extern "C" declarations for `usingOpenType`, `get_ot_math_variant`,
+    `get_ot_assembly_ptr`, `free_ot_assembly`, `get_ot_math_ital_corr`, and
+    `build_opentype_assembly`.
+  - Added `italic_base_entry` import from globals.rs.
+  - New constants: `LIMITS`, `LIST_TAG`, `WHATSIT_NODE`, `GLYPH_NODE_SIZE`,
+    `DISPLAYOPERATORMINHEIGHT`.
+  - The C `goto found:` was translated to a Rust labeled block `'found: { ... break 'found; }`.
+  - The `do-while` variant-selection loop became a `loop { ... if cond { break; } }`.
+  - `set_native_glyph_metrics(p, 1)` → `crate::ext::measure_native_glyph(mem_node_addr(p), 1)`.
+  - `FONT_CHARINFO_ITALCORR(f, cur_i)` → `font_info_b32s1(italic_base_entry(f) + cur_i().s1 as i32 / 4)`.
+  - `FONT_CHARACTER_INFO(f, c)` → `font_info_b16(char_base_entry(f) + c as i32)`.
+  - `!is_char_node(p)` → `!is_char_node(p)` using the existing helper in math.rs (checks `p >= hi_mem_min()`).
+- Code commit: `93c786d8` (`engine_xetex: translate make_op to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 100
+
+**Surprises / gotchas:**
+- `is_char_node` in XeTeX is `p >= hi_mem_min()`, NOT `NODE_type(p) < MATH_NODE`
+  (which is `is_non_discardable_node`). They are distinct functions in `xetex-xetexd.h`
+  right next to each other — easy to confuse.
+- `build_opentype_assembly` is a large helper (~200 LOC) still in C; it's used by both
+  `make_op` (now Rust) and `make_math_accent` (still C), so it was promoted but not
+  translated this session.
+
+**For the next session:**
+- `make_ord` is the likely next low-risk target. It's a `static` function (~100 LOC)
+  with all callees already in Rust.
+
+---
+
 ## Session 99 — 2026-05-08 — xetex-math.c radical and fraction builders
 
 **Goal:** Move the next math noad builder slice out of `xetex-math.c`

@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 99.
+Last updated: session 100.
 
 
 ## Core engine files (to translate)
@@ -41,7 +41,7 @@ Last updated: session 99.
 
 | xetex-pagebuilder.c          |    12 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
-| xetex-math.c                 |  1941 |     13 | `src/math.rs`                     | IN PROGRESS — 64% |
+| xetex-math.c                 |  1813 |     12 | `src/math.rs`                     | IN PROGRESS — 68% |
 | xetex-shipout.c              |  2437 |     21 | `src/shipout.rs`                  | IN PROGRESS — 5% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
@@ -614,7 +614,7 @@ Status: IN PROGRESS (session 91).
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
-Status: IN PROGRESS (session 99).
+Status: IN PROGRESS (session 100).
 
 | # | Function            | Line | Status |
 |--:|---------------------|-----:|--------|
@@ -669,11 +669,17 @@ Status: IN PROGRESS (session 99).
 |49 | `compute_ot_math_accent_pos` | 199 | MIGRATED (session 98, 7b62b15b; promoted from C static) |
 |50 | `make_radical`      | 80 | MIGRATED (session 99, ca405061; promoted from C static) |
 |51 | `make_fraction`     | 313 | MIGRATED (session 99, ca405061; promoted from C static) |
+|52 | `make_op`           | 270 | MIGRATED (session 100, 93c786d8; promoted from C static) |
 
-The next low-risk continuation is likely `make_op`, which now has its main
-callees (`fetch`, `clean_box`, parameter helpers) in Rust. `var_delimiter`
-and `rebox` were promoted in session 99 so Rust builders can call the
-remaining C helpers directly while their larger helper clusters stay in C.
+`build_opentype_assembly` was also promoted (un-static'd) so Rust can call
+the remaining C variant-assembly helper. Remaining in C: `initialize_math_variables`,
+`make_math_accent`, `make_ord`, `attach_hkern_to_new_hlist`, `make_scripts`,
+`make_left_right`, `mlist_to_hlist`, `var_delimiter`, `rebox`,
+`char_box`, `stack_into_box`, `height_plus_depth`, `stack_glyph_into_box`,
+`stack_glue_into_box`, `build_opentype_assembly` (12 translated-or-excluded C bodies).
+
+The next candidate is `make_ord`, which is smaller and has all its callees
+already in Rust.
 
 ### Phases 16+
 
