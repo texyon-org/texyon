@@ -61,21 +61,13 @@ small_number make_left_right(int32_t q, small_number style, scaled_t max_d, scal
 void mlist_to_hlist(void);
 
 
-static b16x4 null_delimiter;
 int32_t cur_mlist;
 small_number cur_style;
 int32_t cur_size;
 scaled_t cur_mu;
 bool mlist_penalties;
 
-void
-initialize_math_variables(void)
-{
-    null_delimiter.s3 = 0;
-    null_delimiter.s2 = 0;
-    null_delimiter.s1 = 0;
-    null_delimiter.s0 = 0;
-}
+// translated to Rust: src/math.rs initialize_math_variables
 // translated to Rust: src/math.rs make_math_accent
 
 
@@ -1353,33 +1345,4 @@ build_opentype_assembly(internal_font_number f, void *a, scaled_t s, bool horiz)
 }
 
 
-int32_t
-rebox(int32_t b, scaled_t w)
-{
-    int32_t p;
-    internal_font_number f;
-    scaled_t v;
-    if ((mem[b + 1].b32.s1 != w) && (mem[b + 5].b32.s1 != TEX_NULL)) {
-        if (NODE_type(b) == VLIST_NODE)
-            b = hpack(b, 0, ADDITIONAL);
-        p = mem[b + 5].b32.s1;
-        if (((is_char_node(p))) && (mem[p].b32.s1 == TEX_NULL)) {
-            f = CHAR_NODE_font(p);
-            v = FONT_CHARACTER_WIDTH(f,
-                                     effective_char(true, f, CHAR_NODE_character(p)));
-            if (v != mem[b + 1].b32.s1)
-                mem[p].b32.s1 = new_kern(mem[b + 1].b32.s1 - v);
-        }
-        free_node(b, BOX_NODE_SIZE);
-        b = new_glue(12);
-        mem[b].b32.s1 = p;
-        while (mem[p].b32.s1 != TEX_NULL)
-            p = LLIST_link(p);
-        mem[p].b32.s1 = new_glue(12);
-        return hpack(b, w, EXACTLY);
-    } else {
-
-        mem[b + 1].b32.s1 = w;
-        return b;
-    }
-}
+// translated to Rust: src/math.rs rebox

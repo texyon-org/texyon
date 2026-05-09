@@ -190,7 +190,6 @@ extern "C" {
     fn free_ot_assembly(a: *mut libc::c_void);
     fn build_opentype_assembly(f: i32, a: *mut libc::c_void, s: i32, horiz: bool) -> i32;
     fn var_delimiter(d: i32, s: i32, v: i32) -> i32;
-    fn rebox(b: i32, w: i32) -> i32;
 }
 
 #[inline]
@@ -2628,5 +2627,46 @@ pub unsafe extern "C" fn init_math() {
         if every_math != TEX_NULL {
             begin_token_list(every_math, EVERY_MATH_TEXT);
         }
+    }
+}
+
+/// translated from xetex-math.c:71 (initialize_math_variables)
+#[no_mangle]
+pub unsafe extern "C" fn initialize_math_variables() {
+    // null_delimiter is a file-static b16x4 that is never read outside this
+    // function; zeroing it is redundant (C zero-initializes statics) and a no-op.
+}
+
+/// translated from xetex-math.c:1356 (rebox)
+#[no_mangle]
+pub unsafe extern "C" fn rebox(b: i32, w: i32) -> i32 {
+    let mut b = b;
+    if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL {
+        if mem_b16s1(b) == VLIST_NODE {
+            b = crate::scan::hpack(b, 0, ADDITIONAL);
+        }
+        let mut p = mem_b32s1(b + 5);
+        if is_char_node(p) && mem_b32s1(p) == TEX_NULL {
+            let f = mem_b16s1(p) as i32;
+            let c_raw = mem_b16s0(p);
+            let q = font_info_b16(
+                char_base_entry(f) + crate::scan::effective_char(true, f, c_raw),
+            );
+            let v = font_info_b32s1(width_base_entry(f) + q.s3 as i32);
+            if v != mem_b32s1(b + 1) {
+                set_mem_b32s1(p, new_kern(mem_b32s1(b + 1) - v));
+            }
+        }
+        free_node(b, BOX_NODE_SIZE);
+        b = new_glue(12);
+        set_mem_b32s1(b, p);
+        while mem_b32s1(p) != TEX_NULL {
+            p = mem_b32s1(p);
+        }
+        set_mem_b32s1(p, new_glue(12));
+        crate::scan::hpack(b, w, EXACTLY)
+    } else {
+        set_mem_b32s1(b + 1, w);
+        b
     }
 }
