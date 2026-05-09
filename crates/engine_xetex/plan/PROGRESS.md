@@ -120,6 +120,7 @@ cargo test -p tectonic --test tex-outputs
 |     104 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate initialize_math_variables (no-op) + rebox (b5acc37f). null_delimiter was write-only static; removed. All 4 suites pass. |
 |     105 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate build_opentype_assembly (a77e095c). do-while→loop, WEB for-loops→Rust ranges, ot_part_* added to extern block. All 4 suites pass. |
 |     106 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate var_delimiter (e4eed5c9). 6×goto found→break 'found, goto continue_→continue in inner loop. All 4 suites pass. |
+|     107 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate make_scripts (8b15e714). Factored repeated script glyph discovery into a Rust helper. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -217,6 +218,7 @@ Passed count below the previous session's recorded value.
 |     104 |  8,180 |                  35,487 |       18.7% |
 |     105 |  8,040 |                  35,599 |       18.4% |
 |     106 |  7,863 |                  35,761 |       18.0% |
+|     107 |  7,398 |                  35,753 |       17.1% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -318,6 +320,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |     104 |      516 |             ~?? |       ~?? |
 |     105 |      517 |             ~?? |       ~?? |
 |     106 |      518 |             ~?? |       ~?? |
+|     107 |      519 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -333,7 +336,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **102** (sessions 1–102 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **107** (sessions 1–107 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

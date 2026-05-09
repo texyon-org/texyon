@@ -32,6 +32,46 @@ template.
 
 ---
 
+## Session 107 — 2026-05-09 — xetex-math.c make_scripts
+
+**Goal:** Translate `make_scripts` from `xetex-math.c` to Rust while keeping all parity suites green.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 106
+
+**Work done:**
+- Promoted `make_scripts` from C `static` to an exported symbol so the remaining C `mlist_to_hlist` caller can link to the Rust replacement.
+- Deleted the C `make_scripts` body (~465 LOC) and added Rust `make_scripts` in `src/math.rs`.
+- Added `first_script_glyph` as a private Rust helper for the three repeated C blocks at `xetex-math.c:805`.
+- Added the OpenType math kern extern and constants needed by the script placement paths.
+- Code commit: `8b15e714` (`engine_xetex: translate make_scripts to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 107
+
+**Surprises / gotchas:**
+- The repeated "fetch first character of a sub/superscript" block is long enough that a helper is safer than maintaining three copies; the helper keeps the original global save/restore behavior.
+- `make_scripts` may attach OpenType script kerns by replacing the noad nucleus list via `attach_hkern_to_new_hlist`; the local `p` assignments mirror C even where a later branch overwrites `p`.
+- The Rust helper creates a temporary native character node for glyph lookup exactly like C; it does not free that node.
+
+**For the next session:**
+- Only one compiled C body remains in `xetex-math.c`: `mlist_to_hlist` (~467 LOC). Translating it should allow the math file to move to DONE except for prototypes/globals/reference comments.
+
 ## Session 106 — 2026-05-09 — xetex-math.c var_delimiter
 
 **Goal:** Translate `var_delimiter` from `xetex-math.c` to Rust while keeping all parity suites green.
