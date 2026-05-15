@@ -33,13 +33,12 @@ static void hlist_out(void);
 static void vlist_out(void);
 static int32_t reverse(int32_t this_box, int32_t t, scaled_t * cur_g, double * cur_glue);
 static void movement(scaled_t w, eight_bits o);
-static void prune_movements(int32_t l);
+void prune_movements(int32_t l);
 static void special_out(int32_t p);
 static void write_out(int32_t p);
 static void pic_out(int32_t p);
-/* write_to_dvi translated to Rust but still called by finalize_dvi_file */
-void write_to_dvi(int32_t a, int32_t b);
 /* dvi_swap translated to Rust (only called from dvi_out, also in Rust) */
+void write_to_dvi(int32_t a, int32_t b);
 void dvi_out(eight_bits c);
 void dvi_four(int32_t x);
 void dvi_two(UTF16_code s);
@@ -1926,29 +1925,7 @@ found: /*629:*/
 }
 
 
-static void
-prune_movements(int32_t l)
-{
-    int32_t p;
-
-    while (down_ptr != TEX_NULL) {
-        if (mem[down_ptr + 2].b32.s1 < l)
-            break;
-
-        p = down_ptr;
-        down_ptr = mem[p].b32.s1;
-        free_node(p, MOVEMENT_NODE_SIZE);
-    }
-
-    while (right_ptr != TEX_NULL) {
-        if (mem[right_ptr + 2].b32.s1 < l)
-            return;
-        p = right_ptr;
-        right_ptr = mem[p].b32.s1;
-        free_node(p, MOVEMENT_NODE_SIZE);
-    }
-}
-
+// translated to Rust: src/shipout.rs prune_movements
 
 static void
 special_out(int32_t p)
@@ -2169,107 +2146,11 @@ pic_out(int32_t p)
 }
 
 
-void
-finalize_dvi_file(void)
-{
-    unsigned char k;
-
-    while (cur_s > -1) {
-        if (cur_s > 0) {
-            dvi_out(POP);
-        } else {
-            dvi_out(EOP);
-            total_pages++;
-        }
-
-        cur_s--;
-    }
-
-    if (total_pages == 0) {
-        print_nl_cstr("No pages of output.");
-        return;
-    }
-
-    if (cur_s == -2)
-        /* This happens when the DVI gets too big; a message has already been printed */
-        return;
-
-    dvi_out(POST);
-    dvi_four(last_bop);
-    last_bop = dvi_offset + dvi_ptr - 5;
-    dvi_four(25400000L); /* magic values: conversion ratio for sp */
-    dvi_four(473628672L); /* magic values: conversion ratio for sp */
-    prepare_mag();
-    dvi_four(INTPAR(mag));
-    dvi_four(max_v);
-    dvi_four(max_h);
-    dvi_out(max_push / 256);
-    dvi_out(max_push % 256);
-    dvi_out((total_pages / 256) % 256);
-    dvi_out(total_pages % 256);
-
-    while (font_ptr > FONT_BASE) {
-        if (font_used[font_ptr])
-            dvi_font_def(font_ptr);
-        font_ptr--;
-    }
-
-    dvi_out(POST_POST);
-    dvi_four(last_bop);
-
-    if (semantic_pagination_enabled)
-        dvi_out(SPX_ID_BYTE);
-    else
-        dvi_out(XDV_ID_BYTE);
-
-    k = 4 + (DVI_BUF_SIZE - dvi_ptr) % 4;
-
-    while (k > 0) {
-        dvi_out(223);
-        k--;
-    }
-
-    if (dvi_limit == HALF_BUF)
-        write_to_dvi(HALF_BUF, DVI_BUF_SIZE - 1);
-
-    if (dvi_ptr > TEX_INFINITY - dvi_offset) {
-        cur_s = -2;
-        fatal_error("dvi length exceeds 0x7FFFFFFF");
-    }
-
-    if (dvi_ptr > 0)
-        write_to_dvi(0, dvi_ptr - 1);
-
-    k = ttstub_output_close(dvi_file);
-
-    if (k == 0) {
-        print_nl_cstr("Output written on ");
-        print(output_file_name);
-        print_cstr(" (");
-        print_int(total_pages);
-        if (total_pages != 1)
-            print_cstr(" pages");
-        else
-            print_cstr(" page");
-        print_cstr(", ");
-        print_int(dvi_offset + dvi_ptr);
-        print_cstr(" bytes).");
-    } else {
-        print_nl_cstr("Error ");
-        print_int(k);
-        print_cstr(" (");
-        print_c_string(strerror(k));
-        print_cstr(") generating output;");
-        print_nl_cstr("file ");
-        print(output_file_name);
-        print_cstr(" may not be valid.");
-        /* XeTeX adds history = OUTPUT_FAILURE = 4 here; I'm not implementing that. */
-    }
-}
-
+// translated to Rust: src/shipout.rs finalize_dvi_file
 
 // translated to Rust: src/shipout.rs write_to_dvi
 // translated to Rust: src/shipout.rs dvi_swap
 // translated to Rust: src/shipout.rs dvi_four
 // translated to Rust: src/shipout.rs dvi_two
 // translated to Rust: src/shipout.rs dvi_pop
+// translated to Rust: src/shipout.rs prune_movements

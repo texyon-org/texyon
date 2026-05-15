@@ -1,10 +1,12 @@
 //! Shipout helpers translated from `xetex/xetex-shipout.c`.
 
 use crate::globals::{
-    font_area_entry, font_check_entry, font_dsize_entry, font_name_entry, font_size_entry,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s1, str_pool_entry, str_start, xdv_buffer_entry,
+    eqtb_b32s1, font_area_entry, font_check_entry, font_dsize_entry, font_name_entry,
+    font_ptr, font_size_entry, font_used_entry, last_bop, max_h, max_push, max_v, mem_b32s1,
+    semantic_pagination_enabled, set_font_ptr, set_last_bop, set_mem_b16s0, set_mem_b16s1,
+    set_mem_b32s1, set_total_pages, str_pool_entry, str_start, total_pages, xdv_buffer_entry,
 };
-use crate::mem::get_node;
+use crate::mem::{free_node, get_node};
 
 extern "C" {
     fn make_font_def(f: i32) -> libc::c_int;
@@ -14,6 +16,7 @@ extern "C" {
         data: *const libc::c_char,
         len: libc::size_t,
     ) -> libc::size_t;
+    fn ttstub_output_close(handle: usize) -> libc::c_int;
     fn _tt_abort(fmt: *const libc::c_char) -> !;
 }
 
@@ -243,5 +246,151 @@ pub unsafe extern "C" fn dvi_pop(l: i32) {
         dvi_ptr -= 1;
     } else {
         dvi_out(POP);
+    }
+}
+
+// xetex-constants.h:238,240,248,249,226,227
+const EOP: u8 = 140;
+const POST: u8 = 248;
+const POST_POST: u8 = 249;
+const XDV_ID_BYTE: u8 = 7;
+const SPX_ID_BYTE: u8 = 100;
+// xetex-constants.h:117
+const MOVEMENT_NODE_SIZE: i32 = 3;
+// xetex_format.h:52; xetex-xetexd.h INT_BASE
+const INT_BASE: i32 = 7_826_729;
+const INT_PAR_MAG: i32 = 17;
+// scan.rs FONT_BASE
+const FONT_BASE: i32 = 0;
+
+// translated from xetex-shipout.c:1930 (prune_movements)
+#[no_mangle]
+pub unsafe extern "C" fn prune_movements(l: i32) {
+    while down_ptr != TEX_NULL {
+        if mem_b32s1(down_ptr + 2) < l {
+            break;
+        }
+        let p = down_ptr;
+        down_ptr = mem_b32s1(p);
+        free_node(p, MOVEMENT_NODE_SIZE);
+    }
+    while right_ptr != TEX_NULL {
+        if mem_b32s1(right_ptr + 2) < l {
+            return;
+        }
+        let p = right_ptr;
+        right_ptr = mem_b32s1(p);
+        free_node(p, MOVEMENT_NODE_SIZE);
+    }
+}
+
+// print_c_string: local equivalent of xetex-xetexd.h static inline print_c_string.
+unsafe fn print_c_string_here(s: *const libc::c_char) {
+    let mut p = s;
+    while *p != 0 {
+        crate::output::print_char(*p as i32);
+        p = p.add(1);
+    }
+}
+
+// translated from xetex-shipout.c:2173 (finalize_dvi_file)
+#[no_mangle]
+pub unsafe extern "C" fn finalize_dvi_file() {
+    while cur_s > -1 {
+        if cur_s > 0 {
+            dvi_out(POP);
+        } else {
+            dvi_out(EOP);
+            set_total_pages(total_pages() + 1);
+        }
+        cur_s -= 1;
+    }
+
+    if total_pages() == 0 {
+        crate::output::print_nl_cstr(c"No pages of output.".as_ptr());
+        return;
+    }
+
+    if cur_s == -2 {
+        // DVI got too big; message already printed
+        return;
+    }
+
+    dvi_out(POST);
+    dvi_four(last_bop());
+    set_last_bop(dvi_offset + dvi_ptr - 5);
+    dvi_four(25_400_000); // magic: conversion ratio for sp
+    dvi_four(473_628_672); // magic: conversion ratio for sp
+    crate::save::prepare_mag();
+    dvi_four(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
+    dvi_four(max_v());
+    dvi_four(max_h());
+    dvi_out((max_push() / 256) as u8);
+    dvi_out((max_push() % 256) as u8);
+    dvi_out(((total_pages() / 256) % 256) as u8);
+    dvi_out((total_pages() % 256) as u8);
+
+    let mut fp = font_ptr();
+    while fp > FONT_BASE {
+        if font_used_entry(fp) {
+            dvi_font_def(fp);
+        }
+        fp -= 1;
+    }
+    set_font_ptr(fp);
+
+    dvi_out(POST_POST);
+    dvi_four(last_bop());
+
+    if semantic_pagination_enabled() {
+        dvi_out(SPX_ID_BYTE);
+    } else {
+        dvi_out(XDV_ID_BYTE);
+    }
+
+    let mut k = (4 + (DVI_BUF_SIZE - dvi_ptr) % 4) as u8;
+    while k > 0 {
+        dvi_out(223);
+        k -= 1;
+    }
+
+    if dvi_limit == HALF_BUF {
+        write_to_dvi(HALF_BUF, DVI_BUF_SIZE - 1);
+    }
+
+    if dvi_ptr > TEX_INFINITY - dvi_offset {
+        cur_s = -2;
+        crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
+    }
+
+    if dvi_ptr > 0 {
+        write_to_dvi(0, dvi_ptr - 1);
+    }
+
+    let k = ttstub_output_close(dvi_file) as u8;
+
+    if k == 0 {
+        crate::output::print_nl_cstr(c"Output written on ".as_ptr());
+        crate::output::print(output_file_name);
+        crate::output::print_cstr(c" (".as_ptr());
+        crate::output::print_int(total_pages());
+        if total_pages() != 1 {
+            crate::output::print_cstr(c" pages".as_ptr());
+        } else {
+            crate::output::print_cstr(c" page".as_ptr());
+        }
+        crate::output::print_cstr(c", ".as_ptr());
+        crate::output::print_int(dvi_offset + dvi_ptr);
+        crate::output::print_cstr(c" bytes).".as_ptr());
+    } else {
+        crate::output::print_nl_cstr(c"Error ".as_ptr());
+        crate::output::print_int(k as i32);
+        crate::output::print_cstr(c" (".as_ptr());
+        print_c_string_here(libc::strerror(k as libc::c_int));
+        crate::output::print_cstr(c") generating output;".as_ptr());
+        crate::output::print_nl_cstr(c"file ".as_ptr());
+        crate::output::print(output_file_name);
+        crate::output::print_cstr(c" may not be valid.".as_ptr());
+        // XeTeX adds history = OUTPUT_FAILURE = 4 here; not implemented.
     }
 }
