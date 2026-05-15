@@ -12,19 +12,21 @@
 #define HALF_BUF 8192
 #define FNT_NUM_0 171 /* DVI code */
 
-static rust_output_handle_t dvi_file;
-static str_number output_file_name;
-static eight_bits *dvi_buf = NULL;
-static int32_t dvi_limit;
+/* Promoted to Rust statics in src/shipout.rs (session 111): */
+extern rust_output_handle_t dvi_file;
+extern str_number output_file_name;
+extern eight_bits *dvi_buf;
+extern int32_t dvi_limit;
+extern int32_t dvi_ptr;
+extern int32_t dvi_offset;
+extern int32_t dvi_gone;
+extern int32_t down_ptr, right_ptr;
+extern int32_t cur_s;
+/* Still C file-statics (used only by untranslated functions): */
 static int32_t g;
 static int32_t lq, lr;
-static int32_t dvi_ptr;
-static int32_t dvi_offset;
-static int32_t dvi_gone;
-static int32_t down_ptr, right_ptr;
 static scaled_t dvi_h, dvi_v;
 static internal_font_number dvi_f;
-static int32_t cur_s;
 
 
 static void hlist_out(void);
@@ -35,45 +37,19 @@ static void prune_movements(int32_t l);
 static void special_out(int32_t p);
 static void write_out(int32_t p);
 static void pic_out(int32_t p);
-static void write_to_dvi(int32_t a, int32_t b);
-static void dvi_swap(void);
+/* write_to_dvi translated to Rust but still called by finalize_dvi_file */
+void write_to_dvi(int32_t a, int32_t b);
+/* dvi_swap translated to Rust (only called from dvi_out, also in Rust) */
 void dvi_out(eight_bits c);
 void dvi_four(int32_t x);
 void dvi_two(UTF16_code s);
-static void dvi_pop(int32_t l);
+void dvi_pop(int32_t l);
 void dvi_font_def(internal_font_number f);
 
 
-void
-initialize_shipout_variables(void)
-{
-    output_file_name = 0;
-    dvi_buf = xmalloc_array(eight_bits, DVI_BUF_SIZE);
-    dvi_limit = DVI_BUF_SIZE;
-    dvi_ptr = 0;
-    dvi_offset = 0;
-    dvi_gone = 0;
-    down_ptr = TEX_NULL;
-    right_ptr = TEX_NULL;
-    cur_s = -1;
-}
-
-
-void
-deinitialize_shipout_variables(void)
-{
-    free(dvi_buf);
-    dvi_buf = NULL;
-}
-
-
-void
-dvi_out(eight_bits c)
-{
-    dvi_buf[dvi_ptr++] = c;
-    if (dvi_ptr == dvi_limit)
-        dvi_swap();
-}
+// translated to Rust: src/shipout.rs initialize_shipout_variables
+// translated to Rust: src/shipout.rs deinitialize_shipout_variables
+// translated to Rust: src/shipout.rs dvi_out
 
 
 /*660: output the box `p` */
@@ -2292,47 +2268,8 @@ finalize_dvi_file(void)
 }
 
 
-static void
-write_to_dvi(int32_t a, int32_t b)
-{
-    int32_t n = b - a + 1;
-
-    if (ttstub_output_write (dvi_file, (char *) &dvi_buf[a], n) != n)
-        _tt_abort ("failed to write data to XDV file");
-}
-
-
-static void
-dvi_swap(void)
-{
-    if (dvi_ptr > (TEX_INFINITY - dvi_offset)) {
-        cur_s = -2;
-        fatal_error("dvi length exceeds 0x7FFFFFFF");
-    }
-
-    if (dvi_limit == DVI_BUF_SIZE) {
-        write_to_dvi(0, HALF_BUF - 1);
-        dvi_limit = HALF_BUF;
-        dvi_offset = dvi_offset + DVI_BUF_SIZE;
-        dvi_ptr = 0;
-    } else {
-        write_to_dvi(HALF_BUF, DVI_BUF_SIZE - 1);
-        dvi_limit = DVI_BUF_SIZE;
-    }
-
-    dvi_gone = dvi_gone + HALF_BUF;
-}
-
-
+// translated to Rust: src/shipout.rs write_to_dvi
+// translated to Rust: src/shipout.rs dvi_swap
 // translated to Rust: src/shipout.rs dvi_four
 // translated to Rust: src/shipout.rs dvi_two
-
-
-static void
-dvi_pop(int32_t l)
-{
-    if (l == dvi_offset + dvi_ptr && dvi_ptr > 0)
-        dvi_ptr--;
-    else
-        dvi_out(POP);
-}
+// translated to Rust: src/shipout.rs dvi_pop
