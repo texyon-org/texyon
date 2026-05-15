@@ -9,8 +9,11 @@ use crate::mem::get_node;
 extern "C" {
     fn make_font_def(f: i32) -> libc::c_int;
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
-    fn ttstub_output_write(handle: usize, data: *const libc::c_char, len: libc::size_t)
-        -> libc::size_t;
+    fn ttstub_output_write(
+        handle: usize,
+        data: *const libc::c_char,
+        len: libc::size_t,
+    ) -> libc::size_t;
     fn _tt_abort(fmt: *const libc::c_char) -> !;
 }
 
