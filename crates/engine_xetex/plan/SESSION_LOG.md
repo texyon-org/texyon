@@ -32,6 +32,59 @@ template.
 
 ---
 
+## Session 111 — 2026-05-15 — xetex-shipout.c DVI buffer state and low-level I/O helpers
+
+**Goal:** Translate the DVI buffer management cluster — `dvi_out`, `dvi_swap`, `write_to_dvi`, `dvi_pop`, `initialize_shipout_variables`, `deinitialize_shipout_variables` — to Rust, along with promoting the C file-statics to Rust `#[no_mangle]` statics.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 110
+
+**Work done:**
+- Promoted 10 C file-statics from `xetex-shipout.c` to `#[no_mangle] pub static mut` in `src/shipout.rs`: `dvi_file`, `output_file_name`, `dvi_buf`, `dvi_limit`, `dvi_ptr`, `dvi_offset`, `dvi_gone`, `down_ptr`, `right_ptr`, `cur_s`. The four variables only used by un-translated functions (`g`, `lq`, `lr`, `dvi_h`, `dvi_v`, `dvi_f`) remain as C file-statics.
+- Translated 6 functions from `xetex-shipout.c` to `src/shipout.rs`:
+  - `initialize_shipout_variables` (line 48): sets DVI statics to initial values, allocates `dvi_buf` via `xmalloc`.
+  - `deinitialize_shipout_variables` (line 63): frees `dvi_buf`.
+  - `write_to_dvi` (line 2296): writes a `dvi_buf[a..=b]` range to `dvi_file` via `ttstub_output_write`; kept `#[no_mangle]` because `finalize_dvi_file` (still in C) calls it.
+  - `dvi_swap` (line 2306): private Rust helper; swaps DVI buffer halves by writing one half and flipping `dvi_limit`.
+  - `dvi_out` (line 71): emits one byte into `dvi_buf`, triggering `dvi_swap` when the buffer is full. Replaces the C symbol that previous Rust functions called via `extern "C"`.
+  - `dvi_pop` (line 2332): un-static'd in C so `hlist_out`/`vlist_out`/`ship_out` link to the Rust replacement.
+- Changed `xetex-shipout.c` to `extern`-declare the promoted statics instead of defining them, and removed all six C bodies.
+- Code commits: `9a26ee88` (`engine_xetex: translate DVI buffer state and low-level helpers to Rust`), `15e10faf` (fmt).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 111
+
+**Surprises / gotchas:**
+- `write_to_dvi` was `static` in C but `finalize_dvi_file` (still in C) calls it, so it must remain `#[no_mangle] pub extern "C"` even though all its internal logic is pure Rust. Making it private Rust caused an `undefined symbol: write_to_dvi` link error.
+- `dvi_pop` was `static void` in C; changed the forward declaration to `void dvi_pop(int32_t l);` so the remaining C callers (`hlist_out`, `vlist_out`, `ship_out`) resolve to the Rust export at link time.
+- `dvi_swap` and `dvi_out` have a mutual dependency (`dvi_out` calls `dvi_swap`). Since both are in the same Rust module, there is no ordering issue — Rust resolves them naturally.
+- `xmalloc_array(eight_bits, DVI_BUF_SIZE)` expands to `xmalloc((DVI_BUF_SIZE+1) * sizeof(uint8_t))` = `xmalloc(DVI_BUF_SIZE + 1)`. Rust uses `xmalloc((DVI_BUF_SIZE + 1) as libc::size_t)`.
+
+**For the next session:**
+- Continue `xetex-shipout.c`. Good next targets:
+  - `prune_movements` (~20 lines): uses `down_ptr`, `right_ptr`, `free_node`. All now accessible.
+  - `movement` (~160 lines): uses DVI buffer state, `down_ptr`, `right_ptr`; the main `goto`→labeled-loop challenge.
+  - `out_what` (~73 lines): non-static, calls `write_out` (still in C) and `special_out` (still in C).
+  - `finalize_dvi_file` (~95 lines): calls `write_to_dvi`, `dvi_out`, `dvi_four`, `dvi_font_def` — all now in Rust; would clear the `write_to_dvi` #[no_mangle] note.
+- After `movement` + `prune_movements`, the `special_out` / `pic_out` cluster depends on `dvi_h`/`dvi_v` (still C file-statics). Those would need promotion before those functions can be translated.
+
+---
+
 ## Session 110 — 2026-05-09 — xetex-shipout.c DVI font definitions
 
 **Goal:** Continue `xetex-shipout.c` with a larger DVI output cluster by translating font definition emission.

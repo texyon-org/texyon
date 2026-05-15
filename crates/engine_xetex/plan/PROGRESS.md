@@ -124,6 +124,7 @@ cargo test -p tectonic --test tex-outputs
 |     108 | 2026-05-09 |     29 |    29 |     0 | xetex-math.c: translate mlist_to_hlist (4ee11a58). Final compiled math body moved to Rust; file now has zero C bodies. All 4 suites pass. |
 |     109 | 2026-05-09 |     29 |    29 |     0 | xetex-shipout.c: translate dvi_four and dvi_two (55c6d9e9). Exported C dvi_out so Rust helpers can keep using the existing DVI buffer state. All 4 suites pass. |
 |     110 | 2026-05-09 |     29 |    29 |     0 | xetex-shipout.c: translate dvi_native_font_def and dvi_font_def (0fe52f3a). Rust now emits both native and classic DVI font definitions through the existing dvi_out bridge. All 4 suites pass. |
+|     111 | 2026-05-15 |     29 |    29 |     0 | xetex-shipout.c: translate DVI buffer statics + initialize/deinitialize_shipout_variables, write_to_dvi, dvi_swap, dvi_out, dvi_pop (9a26ee88). All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -225,6 +226,7 @@ Passed count below the previous session's recorded value.
 |     108 |  6,931 |                  44,316 |       13.5% |
 |     109 |  6,908 |                  44,346 |       13.5% |
 |     110 |  6,832 |                  44,723 |       13.3% |
+|     111 |  6,720 |                  ~44,980 |       13.0% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -330,6 +332,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |     108 |      520 |             ~?? |       ~?? |
 |     109 |      522 |             ~?? |       ~?? |
 |     110 |      524 |             ~?? |       ~?? |
+|     111 |      530 |             ~?? |       ~?? |
 
 
 Total C function count to be measured in session 1 via:
@@ -345,7 +348,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **110** (sessions 1–110 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **111** (sessions 1–111 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
