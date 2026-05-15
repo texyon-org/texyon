@@ -32,6 +32,40 @@ template.
 
 ---
 
+## Session 112 — 2026-05-15 — xetex-shipout.c prune_movements and finalize_dvi_file
+
+**Goal:** Translate `prune_movements` and `finalize_dvi_file` from `xetex-shipout.c` to `src/shipout.rs`.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 26/26
+- latex_goldens: 4/4
+- Streak: 111
+
+**Work done:**
+- Translated `prune_movements` (xetex-shipout.c:1930): `#[no_mangle]` because `hlist_out` and `vlist_out` (still in C) call it; removed `static` from C forward declaration accordingly.
+- Translated `finalize_dvi_file` (xetex-shipout.c:2173): writes POST/POST_POST trailer, emits padding bytes, and closes the DVI file. With this translated, no C code calls `write_to_dvi` anymore.
+- Added helper `print_c_string_here` (local loop over `*const c_char`) — `print_c_string` in ext.rs is not public.
+- Added constants: `EOP`, `POST`, `POST_POST`, `XDV_ID_BYTE`, `SPX_ID_BYTE`, `MOVEMENT_NODE_SIZE`, `INT_BASE`, `INT_PAR_MAG`, `FONT_BASE`.
+- Removed both C bodies from `xetex-shipout.c`; updated translated-comments block at bottom of file.
+- Commit: 1819fba9. All four test suites pass (29/29, 2/2, 26/26, 4/4).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Streak: 112
+
+**Surprises / gotchas:**
+- `prune_movements` was `static void` in C, but `hlist_out`/`vlist_out` (both still in C) call it — had to export it as `#[no_mangle]` and un-static the C forward declaration.
+- `INTPAR(mag)` C macro expands to `eqtb_b32s1(INT_BASE + INT_PAR_MAG)` where `INT_BASE = 7_826_729` and `INT_PAR_MAG = 17`.
+
+**For the next session:**
+- Remaining 9 functions in `xetex-shipout.c`: `ship_out`, `hlist_out`, `vlist_out`, `reverse`, `out_what`, `movement`, `special_out`, `write_out`, `pic_out`.
+- `special_out`, `hlist_out`, `vlist_out` use `dvi_h`, `dvi_v` (still C file-statics) — those must be promoted to Rust statics before those functions can be translated.
+- `write_to_dvi` can be made private (remove `#[no_mangle]`) once no C functions call it; currently it has `#[no_mangle]` but `finalize_dvi_file` is now in Rust.
+
+---
+
 ## Session 111 — 2026-05-15 — xetex-shipout.c DVI buffer state and low-level I/O helpers
 
 **Goal:** Translate the DVI buffer management cluster — `dvi_out`, `dvi_swap`, `write_to_dvi`, `dvi_pop`, `initialize_shipout_variables`, `deinitialize_shipout_variables` — to Rust, along with promoting the C file-statics to Rust `#[no_mangle]` statics.

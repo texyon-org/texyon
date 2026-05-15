@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 111.
+Last updated: session 112.
 
 
 ## Core engine files (to translate)
@@ -42,7 +42,7 @@ Last updated: session 111.
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
 | xetex-math.c                 |    99 |      0 | `src/math.rs`                     | DONE |
-| xetex-shipout.c              |  2275 |     11 | `src/shipout.rs`                  | IN PROGRESS — 35% |
+| xetex-shipout.c              |  2156 |      9 | `src/shipout.rs`                  | IN PROGRESS — 42% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
 | xetex-ext.c                  |    97 |      0 | `src/ext.rs`                      | DONE |
@@ -617,10 +617,12 @@ Status: IN PROGRESS (session 110).
 | 5 | `dvi_font_def` | 1798 | MIGRATED (session 110, 0fe52f3a) |
 | 6 | `initialize_shipout_variables` | 48 | MIGRATED (session 111, 9a26ee88) |
 | 7 | `deinitialize_shipout_variables` | 63 | MIGRATED (session 111, 9a26ee88) |
-| 8 | `write_to_dvi` | 2296 | MIGRATED (session 111, 9a26ee88; #[no_mangle] — still called by finalize_dvi_file in C) |
+| 8 | `write_to_dvi` | 2296 | MIGRATED (session 111, 9a26ee88; kept #[no_mangle] for finalize_dvi_file; can be made private once no C callers remain) |
 | 9 | `dvi_swap` | 2306 | MIGRATED (session 111, 9a26ee88; private Rust helper) |
 | 10 | `dvi_out` | 71 | MIGRATED (session 111, 9a26ee88) |
 | 11 | `dvi_pop` | 2332 | MIGRATED (session 111, 9a26ee88; un-static'd so C callers link to Rust) |
+| 12 | `prune_movements` | 1930 | MIGRATED (session 112, 1819fba9; #[no_mangle] — called by hlist_out/vlist_out still in C) |
+| 13 | `finalize_dvi_file` | 2173 | MIGRATED (session 112, 1819fba9; write_to_dvi no longer needs #[no_mangle]) |
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
