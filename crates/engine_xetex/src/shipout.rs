@@ -1,18 +1,20 @@
 //! Shipout helpers translated from `xetex/xetex-shipout.c`.
 
 use crate::globals::{
-    cur_area, cur_ext, cur_h, cur_list_mode, cur_name, cur_tok, cur_v, def_ref, doing_leaders,
-    eqtb_b32s1, font_area_entry, font_check_entry, font_dsize_entry, font_name_entry, font_ptr,
-    font_size_entry, font_used_entry, init_pool_ptr, last_bop, log_opened, max_h, max_push, max_v,
-    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, name_of_file, pool_ptr, pool_size, selector,
-    semantic_pagination_enabled, set_cur_area, set_cur_cs, set_cur_ext, set_cur_h,
-    set_cur_list_mode, set_cur_name, set_cur_v, set_doing_special, set_font_ptr, set_help_line,
-    set_help_ptr, set_last_bop, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-    set_pool_ptr, set_selector, set_total_pages, set_write_file, set_write_open,
-    shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr, str_start, total_pages,
-    write_file, write_loc, write_open, xdv_buffer_entry,
+    avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name, cur_tok,
+    cur_v, def_ref, doing_leaders, eqtb_b32s1, font_area_entry, font_check_entry, font_dsize_entry,
+    font_info_b16, font_info_b32s1, font_name_entry, font_ptr, font_size_entry, font_used_entry,
+    init_pool_ptr, last_bop, log_opened, lr_problems, lr_ptr, max_h, max_push, max_v, mem_b16s0,
+    mem_b16s1, mem_b32s0, mem_b32s1, mem_gr, mem_word, name_of_file, pool_ptr, pool_size, rule_wd,
+    selector, semantic_pagination_enabled, set_avail, set_cur_area, set_cur_cs, set_cur_ext,
+    set_cur_h, set_cur_list_mode, set_cur_name, set_cur_v, set_doing_special, set_font_ptr,
+    set_help_line, set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pool_ptr, set_rule_wd,
+    set_selector, set_temp_ptr, set_total_pages, set_write_file, set_write_open,
+    shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr, str_start, temp_ptr, total_pages,
+    width_base_entry, write_file, write_loc, write_open, xdv_buffer_entry,
 };
-use crate::mem::{free_node, get_node};
+use crate::mem::{free_node, get_avail, get_node, new_math};
 
 extern "C" {
     fn make_font_def(f: i32) -> libc::c_int;
@@ -74,13 +76,25 @@ pub static mut dvi_v: i32 = 0;
 const DVI_BUF_SIZE: i32 = 16384;
 const HALF_BUF: i32 = 8192;
 const TEX_INFINITY: i32 = 0x7FFF_FFFF;
+const MIN_HALFWORD: i32 = -0x0FFF_FFFF;
 const TEX_NULL: i32 = -0x0FFF_FFFF;
 // xetex-constants.h:240
 const POP: u8 = 142;
 
 // xetex-constants.h:105,114. EDGE_NODE is an alias of STYLE_NODE.
+const HLIST_NODE: u16 = 0;
+const VLIST_NODE: u16 = 1;
+const RULE_NODE: u16 = 2;
+const LIGATURE_NODE: u16 = 6;
+const WHATSIT_NODE: u16 = 8;
+const MATH_NODE: u16 = 9;
+const GLUE_NODE: u16 = 10;
+const KERN_NODE: u16 = 11;
 const EDGE_NODE: u16 = 14;
+const SMALL_NODE_SIZE: i32 = 2;
+const MEDIUM_NODE_SIZE: i32 = 3;
 const EDGE_NODE_SIZE: i32 = 3;
+const GLUE_SPEC_SIZE: i32 = 4;
 const AAT_FONT_FLAG: i32 = 65533;
 const OTGR_FONT_FLAG: i32 = 65534;
 const FNT_DEF1: u8 = 243;
@@ -110,6 +124,23 @@ const WRITE_NODE: u16 = 1;
 const CLOSE_NODE: u16 = 2;
 const SPECIAL_NODE: u16 = 3;
 const LANGUAGE_NODE: u16 = 4;
+const NATIVE_WORD_NODE: u16 = 40;
+const NATIVE_WORD_NODE_AT: u16 = 41;
+const GLYPH_NODE: u16 = 42;
+const PIC_NODE: u16 = 43;
+const PDF_NODE: u16 = 44;
+
+// Glue and leader constants: xetex-constants.h:175,182,275,281; xetex_format.h:422.
+const FILLL: u16 = 3;
+const NORMAL: u16 = 0;
+const STRETCHING: u16 = 1;
+const SHRINKING: u16 = 2;
+const A_LEADERS: u16 = 100;
+
+// MATH_NODE LR constants: xetex-constants.h:142-143; xetex_format.h:437.
+const L_CODE: u16 = 4;
+const R_CODE: u16 = 8;
+const END_M_CODE: u16 = 3;
 
 // xetex-constants.h:133, tectonic_bridge_core_generated.h:12
 const PIC_NODE_SIZE: i32 = 9;
@@ -453,6 +484,209 @@ pub unsafe extern "C" fn finalize_dvi_file() {
         crate::output::print(output_file_name);
         crate::output::print_cstr(c" may not be valid.".as_ptr());
         // XeTeX adds history = OUTPUT_FAILURE = 4 here; not implemented.
+    }
+}
+
+#[inline]
+fn is_char_node(p: i32) -> bool {
+    (p as u32) >= 0x0C00_0000
+}
+
+#[inline]
+fn math_node_lr_dir(p: i32) -> u16 {
+    mem_b16s0(p) / R_CODE
+}
+
+#[inline]
+fn math_node_end_lr_type(p: i32) -> u16 {
+    L_CODE * (mem_b16s0(p) / L_CODE) + END_M_CODE
+}
+
+#[inline]
+fn font_character_width(f: i32, c: i32) -> i32 {
+    let info = font_info_b16(char_base_entry(f) + c);
+    font_info_b32s1(width_base_entry(f) + info.s3 as i32)
+}
+
+// translated from xetex-shipout.c:1470 (reverse)
+// Called by hlist_out (still in C) -> #[no_mangle].
+#[no_mangle]
+pub unsafe extern "C" fn reverse(
+    this_box: i32,
+    t: i32,
+    cur_g: *mut i32,
+    cur_glue: *mut f64,
+) -> i32 {
+    let g_order = mem_b16s0(this_box + 5);
+    let g_sign = mem_b16s1(this_box + 5);
+    let mut l = t;
+    let mut p = temp_ptr();
+    let mut m = MIN_HALFWORD;
+    let mut n = MIN_HALFWORD;
+
+    loop {
+        while p != TEX_NULL {
+            if is_char_node(p) {
+                loop {
+                    let f = mem_b16s1(p) as i32;
+                    let c = mem_b16s0(p);
+                    set_cur_h(
+                        cur_h() + font_character_width(f, crate::scan::effective_char(true, f, c)),
+                    );
+                    let q = mem_b32s1(p);
+                    set_mem_b32s1(p, l);
+                    l = p;
+                    p = q;
+                    if !is_char_node(p) {
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            let q = mem_b32s1(p);
+            let mut add_width = true;
+
+            'reswitch: loop {
+                match mem_b16s1(p) {
+                    HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
+                        set_rule_wd(mem_b32s1(p + 1));
+                    }
+                    WHATSIT_NODE => match mem_b16s0(p) {
+                        NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE | PIC_NODE
+                        | PDF_NODE => {
+                            set_rule_wd(mem_b32s1(p + 1));
+                        }
+                        _ => add_width = false,
+                    },
+                    GLUE_NODE => {
+                        let mut g = mem_b32s1(p + 1);
+                        set_rule_wd(mem_b32s1(g + 1) - *cur_g);
+
+                        if g_sign != NORMAL {
+                            if g_sign == STRETCHING {
+                                if mem_b16s1(g) == g_order {
+                                    *cur_glue += mem_b32s1(g + 2) as f64;
+                                    let mut glue_temp = mem_gr(this_box + 6) * *cur_glue;
+                                    glue_temp = glue_temp.clamp(-1_000_000_000.0, 1_000_000_000.0);
+                                    *cur_g = crate::scaled_math::tex_round(glue_temp);
+                                }
+                            } else if mem_b16s0(g) == g_order {
+                                *cur_glue -= mem_b32s1(g + 3) as f64;
+                                let mut glue_temp = mem_gr(this_box + 6) * *cur_glue;
+                                glue_temp = glue_temp.clamp(-1_000_000_000.0, 1_000_000_000.0);
+                                *cur_g = crate::scaled_math::tex_round(glue_temp);
+                            }
+                        }
+
+                        set_rule_wd(rule_wd() + *cur_g);
+
+                        if (g_sign == STRETCHING && mem_b16s1(g) == g_order)
+                            || (g_sign == SHRINKING && mem_b16s0(g) == g_order)
+                        {
+                            if mem_b32s1(g) == TEX_NULL {
+                                free_node(g, GLUE_SPEC_SIZE);
+                            } else {
+                                set_mem_b32s1(g, mem_b32s1(g) - 1);
+                            }
+
+                            if mem_b16s0(p) < A_LEADERS {
+                                set_mem_b16s1(p, KERN_NODE);
+                                set_mem_b32s1(p + 1, rule_wd());
+                            } else {
+                                g = get_node(GLUE_SPEC_SIZE);
+                                set_mem_b16s1(g, FILLL + 1);
+                                set_mem_b16s0(g, FILLL + 1);
+                                set_mem_b32s1(g + 1, rule_wd());
+                                set_mem_b32s1(g + 2, 0);
+                                set_mem_b32s1(g + 3, 0);
+                                set_mem_b32s1(p + 1, g);
+                            }
+                        }
+                    }
+                    LIGATURE_NODE => {
+                        crate::mem::flush_list(mem_b32s1(p + 1));
+                        set_temp_ptr(p);
+                        p = get_avail();
+                        set_mem_word(p, mem_word(temp_ptr() + 1));
+                        set_mem_b32s1(p, q);
+                        free_node(temp_ptr(), SMALL_NODE_SIZE);
+                        continue 'reswitch;
+                    }
+                    MATH_NODE => {
+                        set_rule_wd(mem_b32s1(p + 1));
+
+                        if mem_b16s0(p) % 2 != 0 {
+                            if mem_b32s0(lr_ptr()) as u16 != math_node_end_lr_type(p) {
+                                set_mem_b16s1(p, KERN_NODE);
+                                set_lr_problems(lr_problems() + 1);
+                            } else {
+                                set_temp_ptr(lr_ptr());
+                                set_lr_ptr(mem_b32s1(temp_ptr()));
+                                set_mem_b32s1(temp_ptr(), avail());
+                                set_avail(temp_ptr());
+
+                                if n > MIN_HALFWORD {
+                                    n -= 1;
+                                    set_mem_b16s0(p, mem_b16s0(p) - 1);
+                                } else {
+                                    set_mem_b16s1(p, KERN_NODE);
+
+                                    if m > MIN_HALFWORD {
+                                        m -= 1;
+                                    } else {
+                                        free_node(p, MEDIUM_NODE_SIZE);
+                                        set_mem_b32s1(t, q);
+                                        set_mem_b32s1(t + 1, rule_wd());
+                                        set_mem_b32s1(t + 2, -cur_h() - rule_wd());
+                                        return l;
+                                    }
+                                }
+                            }
+                        } else {
+                            set_temp_ptr(get_avail());
+                            set_mem_b32s0(temp_ptr(), math_node_end_lr_type(p) as i32);
+                            set_mem_b32s1(temp_ptr(), lr_ptr());
+                            set_lr_ptr(temp_ptr());
+
+                            if n > MIN_HALFWORD || math_node_lr_dir(p) as i16 != cur_dir() {
+                                n += 1;
+                                set_mem_b16s0(p, mem_b16s0(p) + 1);
+                            } else {
+                                set_mem_b16s1(p, KERN_NODE);
+                                m += 1;
+                            }
+                        }
+                    }
+                    EDGE_NODE => {
+                        crate::errors::confusion(c"LR2".as_ptr());
+                    }
+                    _ => add_width = false,
+                }
+                break;
+            }
+
+            if add_width {
+                set_cur_h(cur_h() + rule_wd());
+            }
+
+            set_mem_b32s1(p, l);
+
+            if mem_b16s1(p) == KERN_NODE && (rule_wd() == 0 || l == TEX_NULL) {
+                free_node(p, MEDIUM_NODE_SIZE);
+                p = l;
+            }
+
+            l = p;
+            p = q;
+        }
+
+        if t == TEX_NULL && m == MIN_HALFWORD && n == MIN_HALFWORD {
+            return l;
+        }
+
+        p = new_math(0, mem_b32s0(lr_ptr()) as i16);
+        set_lr_problems(lr_problems() + 10000);
     }
 }
 
