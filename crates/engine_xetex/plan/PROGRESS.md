@@ -129,6 +129,7 @@ cargo test -p tectonic --test tex-outputs
 |     113 | 2026-05-19 |     29 |    29 |     0 | xetex-shipout.c: translate out_what, movement, special_out, write_out, pic_out (fc907f6a). All 4 suites pass. |
 |     114 | 2026-05-19 |     29 |    29 |     0 | xetex-shipout.c: translate reverse (0d3b8461). All 4 suites pass. |
 |     115 | 2026-05-19 |     29 |    29 |     0 | xetex-shipout.c: translate ship_out (31345c81). All 4 suites pass. |
+|     116 | 2026-05-19 |     29 |    29 |     0 | xetex-shipout.c: translate vlist_out (f4cc04d5). Fixed swapped GLUE_NODE glue/leader fields caught by a single-case SIGSEGV repro. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -235,6 +236,7 @@ Passed count below the previous session's recorded value.
 |     113 |  6,194 |                  45,478 |       12.0% |
 |     114 |  5,985 |                  45,417 |       11.6% |
 |     115 |  5,774 |                  45,661 |       11.2% |
+|     116 |  5,388 |                  46,044 |       10.5% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -345,6 +347,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |     113 |      537 |              ~4 |     ~99.3% |
 |     114 |      538 |              ~3 |     ~99.4% |
 |     115 |      539 |              ~2 |     ~99.6% |
+|     116 |      540 |              ~1 |     ~99.8% |
 
 
 Total C function count to be measured in session 1 via:
@@ -360,7 +363,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **115** (sessions 1–115 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **116** (sessions 1–116 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

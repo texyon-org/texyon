@@ -32,6 +32,51 @@ template.
 
 ---
 
+## Session 116 — 2026-05-19 — xetex-shipout.c vlist_out
+
+**Goal:** Continue `xetex-shipout.c` by translating vertical list output while keeping the remaining C `hlist_out` body linked across the Rust/C boundary.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 115
+
+**Work done:**
+- Translated `vlist_out` (line 866) from `xetex-shipout.c` to `src/shipout.rs`.
+- Added Rust-side vertical list helpers for DVI font selection, vlist rule emission, and vertical rule/glue movement.
+- Kept `hlist_out` in C for this session; C `hlist_out` now calls Rust `vlist_out`, and Rust `vlist_out` calls C `hlist_out` for nested hboxes and hbox leaders.
+- Kept list-output scratch (`cur_g`, `cur_glue`, `lq`, `lr`) local to Rust `vlist_out`; the C scratch statics remain only for the still-untranslated `hlist_out`.
+- Removed the C `vlist_out` body and left the translated marker in `xetex/xetex-shipout.c`.
+- Code commit: `f4cc04d5` (`engine_xetex: translate shipout vlist_out to Rust`).
+
+**Validation:**
+- `cargo test -p tectonic --test tex-outputs the_letter_a` => 1/1
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 116
+
+**Surprises / gotchas:**
+- The first full `tex-outputs` run SIGSEGV'd. A single-case repro (`the_letter_a`) confirmed it was not test parallelism.
+- Root cause: the initial Rust pass swapped `GLUE_NODE_glue_ptr` and `GLUE_NODE_leader_ptr`; in generated macros, `glue_ptr` is `mem[p+1].b32.s0` and `leader_ptr` is `mem[p+1].b32.s1`.
+- Translating `vlist_out` separately is viable because the mutual recursion boundary is just symbol linkage: Rust `vlist_out` can call exported C `hlist_out`, and C `hlist_out` can call exported Rust `vlist_out`.
+
+**For the next session:**
+- Translate the final compiled `xetex-shipout.c` body: `hlist_out`.
+- Expect `hlist_out` to be the largest remaining shipout piece: native word/AAT output, glyph emission, leaders, LR stack reversal, and the remaining list-output scratch state all converge there.
+
+---
+
 ## Session 115 — 2026-05-19 — xetex-shipout.c ship_out
 
 **Goal:** Continue `xetex-shipout.c` by translating the top-level page emission function `ship_out` to Rust.
