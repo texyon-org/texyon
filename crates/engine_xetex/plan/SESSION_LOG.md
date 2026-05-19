@@ -32,6 +32,54 @@ template.
 
 ---
 
+## Session 113 — 2026-05-19 — xetex-shipout.c whatsit and movement helpers
+
+**Goal:** Continue `xetex-shipout.c` by translating the movement/whatsit helper cluster to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 112
+
+**Work done:**
+- Promoted `dvi_h` and `dvi_v` from C file-statics to Rust `#[no_mangle]` statics so Rust helpers and remaining C list-output code share the same shipout position state.
+- Added small string/write accessors in `src/globals.rs`: `str_pool_ptr`, `set_write_open`, and `set_write_file`.
+- Translated five functions from `xetex-shipout.c` to `src/shipout.rs`:
+  - `out_what` (line 1682): open/write/close/special whatsit dispatch.
+  - `movement` (line 1763): DVI y/z movement reuse state, preserving the C goto cases with a labeled search block.
+  - `special_out` (line 1930): token-list special emission.
+  - `write_out` (line 1976): `\write` token capture plus shell-escape handling.
+  - `pic_out` (line 2071): PDF image special construction.
+- Removed the five C bodies and left translated markers in `xetex-shipout.c`.
+- Code commit: `fc907f6a` (`engine_xetex: translate shipout whatsit helpers to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 113
+
+**Surprises / gotchas:**
+- The working tree already contained a partial shipout migration at session start; it compiled, but needed exact source citations and one diagnostic fidelity fix for the open-output abort path.
+- `movement` remains `#[no_mangle]` because `hlist_out` and `vlist_out` are still in C. `pic_out` also remains exported for the same reason.
+- `write_to_dvi` still has `#[no_mangle]`; with current Rust callers only, it can be made private in a cleanup once the remaining C references are checked.
+
+**For the next session:**
+- Remaining compiled functions in `xetex-shipout.c`: `ship_out`, `hlist_out`, `vlist_out`, `reverse`.
+- The remaining C file-statics are `g`, `lq`, `lr`, and `dvi_f`. Translating `ship_out` will need `dvi_f`; translating `hlist_out`/`vlist_out` will need the list-output scratch state.
+
+---
+
 ## Session 112 — 2026-05-15 — xetex-shipout.c prune_movements and finalize_dvi_file
 
 **Goal:** Translate `prune_movements` and `finalize_dvi_file` from `xetex-shipout.c` to `src/shipout.rs`.

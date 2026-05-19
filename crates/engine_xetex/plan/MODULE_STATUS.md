@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 112.
+Last updated: session 113.
 
 
 ## Core engine files (to translate)
@@ -42,7 +42,7 @@ Last updated: session 112.
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
 | xetex-math.c                 |    99 |      0 | `src/math.rs`                     | DONE |
-| xetex-shipout.c              |  2156 |      9 | `src/shipout.rs`                  | IN PROGRESS — 42% |
+| xetex-shipout.c              |  1700 |      4 | `src/shipout.rs`                  | IN PROGRESS — 72% |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
 | xetex-ext.c                  |    97 |      0 | `src/ext.rs`                      | DONE |
@@ -606,7 +606,7 @@ Rust as `SAVED_MAPPING_NAME`.
 
 ### Phase 14 — xetex-shipout.c helpers (target: `src/shipout.rs`)
 
-Status: IN PROGRESS (session 110).
+Status: IN PROGRESS (session 113).
 
 | # | Function   | Line | Status |
 |--:|------------|-----:|--------|
@@ -623,6 +623,11 @@ Status: IN PROGRESS (session 110).
 | 11 | `dvi_pop` | 2332 | MIGRATED (session 111, 9a26ee88; un-static'd so C callers link to Rust) |
 | 12 | `prune_movements` | 1930 | MIGRATED (session 112, 1819fba9; #[no_mangle] — called by hlist_out/vlist_out still in C) |
 | 13 | `finalize_dvi_file` | 2173 | MIGRATED (session 112, 1819fba9; write_to_dvi no longer needs #[no_mangle]) |
+| 14 | `out_what` | 1682 | MIGRATED (session 113, fc907f6a) |
+| 15 | `movement` | 1763 | MIGRATED (session 113, fc907f6a; #[no_mangle] — called by hlist_out/vlist_out still in C) |
+| 16 | `special_out` | 1930 | MIGRATED (session 113, fc907f6a; private Rust helper) |
+| 17 | `write_out` | 1976 | MIGRATED (session 113, fc907f6a; private Rust helper) |
+| 18 | `pic_out` | 2071 | MIGRATED (session 113, fc907f6a; #[no_mangle] — called by hlist_out still in C) |
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 
