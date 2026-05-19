@@ -25,14 +25,15 @@ extern int32_t cur_s;
 /* Promoted to Rust statics in src/shipout.rs (session 113): */
 extern scaled_t dvi_h;
 extern scaled_t dvi_v;
+/* Promoted to Rust statics in src/shipout.rs (session 115): */
+extern internal_font_number dvi_f;
 /* Still C file-statics (used only by untranslated functions): */
 static int32_t g;
 static int32_t lq, lr;
-static internal_font_number dvi_f;
 
 
-static void hlist_out(void);
-static void vlist_out(void);
+void hlist_out(void);
+void vlist_out(void);
 int32_t reverse(int32_t this_box, int32_t t, scaled_t * cur_g, double * cur_glue);
 void movement(scaled_t w, eight_bits o);
 void prune_movements(int32_t l);
@@ -51,223 +52,11 @@ void dvi_font_def(internal_font_number f);
 // translated to Rust: src/shipout.rs dvi_out
 
 
-/*660: output the box `p` */
-void
-ship_out(int32_t p)
-{
-    int32_t page_loc;
-    unsigned char j, k;
-    pool_pointer s;
-    unsigned char old_setting;
-    unsigned char l;
-    const char *output_comment = "tectonic";
-
-    synctex_sheet(INTPAR(mag));
-
-    if (job_name == 0)
-        open_log_file();
-
-    if (INTPAR(tracing_output) > 0) {
-        print_nl_cstr("");
-        print_ln();
-        print_cstr("Completed box being shipped out");
-    }
-
-    if (term_offset > max_print_line - 9)
-        print_ln();
-    else if (term_offset > 0 || file_offset > 0)
-        print_char(' ' );
-
-    print_char('[' );
-    j = 9;
-    while (j > 0 && COUNT_REG(j) == 0)
-        j--;
-
-    for (k = 0; k <= j; k++) {
-        print_int(COUNT_REG(k));
-        if (k < j)
-            print_char('.' );
-    }
-
-    ttstub_output_flush(rust_stdout);
-
-    if (INTPAR(tracing_output) > 0) {
-        print_char(']' );
-        begin_diagnostic();
-        show_box(p);
-        end_diagnostic(true);
-    }
-
-    /*662: "Ship box `p` out." */
-    /*663: "Update the values of max_h and max_v; but if the page is too
-     * large, goto done". */
-
-    if (BOX_height(p) > MAX_HALFWORD ||
-        BOX_depth(p) > MAX_HALFWORD ||
-        BOX_height(p) + BOX_depth(p) + DIMENPAR(v_offset) > MAX_HALFWORD ||
-        BOX_width(p) + DIMENPAR(h_offset) > MAX_HALFWORD)
-    {
-        error_here_with_diagnostic("Huge page cannot be shipped out");
-        capture_to_diagnostic(NULL);
-        help_ptr = 2;
-        help_line[1] = "The page just created is more than 18 feet tall or";
-        help_line[0] = "more than 18 feet wide, so I suspect something went wrong.";
-        error();
-
-        if (INTPAR(tracing_output) <= 0) {
-            begin_diagnostic();
-            print_nl_cstr("The following box has been deleted:");
-            show_box(p);
-            end_diagnostic(true);
-        }
-        goto done;
-    }
-
-    if (BOX_height(p) + BOX_depth(p) + DIMENPAR(v_offset) > max_v)
-        max_v = BOX_height(p) + BOX_depth(p) + DIMENPAR(v_offset);
-
-    if (BOX_width(p) + DIMENPAR(h_offset) > max_h)
-        max_h = BOX_width(p) + DIMENPAR(h_offset);
-
-    /*637: "Initialize variables as ship_out begins." */
-
-    dvi_h = 0;
-    dvi_v = 0;
-    cur_h = DIMENPAR(h_offset);
-    dvi_f = FONT_BASE;
-
-    /*1405: "Calculate page dimensions and margins" */
-    /* 4736287 = round(0xFFFF * 72.27) ; i.e., 1 inch expressed as a scaled_t */
-    cur_h_offset = DIMENPAR(h_offset) + 4736287;
-    cur_v_offset = DIMENPAR(v_offset) + 4736287;
-
-    if (DIMENPAR(pdf_page_width) != 0)
-        cur_page_width = DIMENPAR(pdf_page_width);
-    else
-        cur_page_width = BOX_width(p) + 2 * cur_h_offset;
-
-    if (DIMENPAR(pdf_page_height) != 0)
-        cur_page_height = DIMENPAR(pdf_page_height);
-    else
-        cur_page_height = BOX_height(p) + BOX_depth(p) + 2 * cur_v_offset;
-
-    /* ... resuming 637 ... open up the DVI file if needed */
-
-    if (output_file_name == 0) {
-        if (job_name == 0)
-            open_log_file();
-        pack_job_name(output_file_extension);
-        dvi_file = ttstub_output_open(name_of_file, 0);
-        if (dvi_file == INVALID_HANDLE)
-            _tt_abort("cannot open output file \"%s\"", name_of_file);
-        output_file_name = make_name_string();
-    }
-
-    /* First page? Emit preamble items. */
-
-    if (total_pages == 0) {
-        dvi_out(PRE);
-
-        if (semantic_pagination_enabled)
-            dvi_out(SPX_ID_BYTE);
-        else
-            dvi_out(XDV_ID_BYTE);
-
-        dvi_four(25400000L); /* magic values: conversion ratio for sp */
-        dvi_four(473628672L); /* magic values: conversion ratio for sp */
-
-        prepare_mag();
-        dvi_four(INTPAR(mag));
-
-        l = strlen(output_comment);
-        dvi_out(l);
-        for (s = 0; s < l; s++)
-            dvi_out(output_comment[s]);
-    }
-
-    /* ... resuming 662 ... Emit per-page preamble. */
-
-    page_loc = dvi_offset + dvi_ptr;
-
-    dvi_out(BOP);
-
-    for (k = 0; k < 10; k++)
-        dvi_four(COUNT_REG(k));
-
-    dvi_four(last_bop);
-    last_bop = page_loc;
-
-    /* Generate a PDF pagesize special unilaterally */
-
-    old_setting = selector;
-    selector = SELECTOR_NEW_STRING;
-    print_cstr("pdf:pagesize ");
-    if (DIMENPAR(pdf_page_width) <= 0 || DIMENPAR(pdf_page_height) <= 0) {
-        print_cstr("default");
-    } else {
-        print_cstr("width");
-        print(' ' );
-        print_scaled(DIMENPAR(pdf_page_width));
-        print_cstr("pt");
-        print(' ' );
-        print_cstr("height");
-        print(' ' );
-        print_scaled(DIMENPAR(pdf_page_height));
-        print_cstr("pt");
-    }
-    selector = old_setting;
-
-    dvi_out(XXX1);
-    dvi_out(cur_length());
-
-    for (s = str_start[str_ptr - TOO_BIG_CHAR]; s < pool_ptr; s++)
-        dvi_out(str_pool[s]);
-
-    pool_ptr = str_start[str_ptr - TOO_BIG_CHAR];
-
-    /* Done with the synthesized special. The meat: emit this page box. */
-
-    cur_v = BOX_height(p) + DIMENPAR(v_offset); /*"Does this need changing for upwards mode???"*/
-    temp_ptr = p;
-    if (NODE_type(p) == VLIST_NODE)
-        vlist_out();
-    else
-        hlist_out();
-
-    dvi_out(EOP);
-    total_pages++;
-    cur_s = -1;
-
-done:
-    /*1518: "Check for LR anomalies at the end of ship_out" */
-
-    if (LR_problems > 0) {
-        print_ln();
-        print_nl_cstr("\\endL or \\endR problem (");
-        print_int(LR_problems / 10000);
-        print_cstr(" missing, ");
-        print_int(LR_problems % 10000);
-        print_cstr(" extra");
-        LR_problems = 0;
-        print_char(')');
-        print_ln();
-    }
-
-    if (LR_ptr != TEX_NULL || cur_dir != LEFT_TO_RIGHT)
-        confusion("LR3");
-
-    if (INTPAR(tracing_output) <= 0)
-        print_char(']');
-
-    dead_cycles = 0;
-    ttstub_output_flush(rust_stdout);
-    flush_node_list(p);
-    synctex_teehs();
-}
+// translated to Rust: src/shipout.rs ship_out
 
 
 /*639: Output an hlist */
-static void
+void
 hlist_out(void)
 {
     scaled_t base_line;
@@ -1073,7 +862,7 @@ hlist_out(void)
 /*651: "When vlist_out is called, its duty is to output the box represented by
  * the vlist_node pointed to by temp_ptr. The reference point of that box has
  * coordinates (cur_h, cur_v)." */
-static void
+void
 vlist_out(void)
 {
     scaled_t left_edge;

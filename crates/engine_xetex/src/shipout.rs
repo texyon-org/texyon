@@ -2,17 +2,19 @@
 
 use crate::globals::{
     avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name, cur_tok,
-    cur_v, def_ref, doing_leaders, eqtb_b32s1, font_area_entry, font_check_entry, font_dsize_entry,
-    font_info_b16, font_info_b32s1, font_name_entry, font_ptr, font_size_entry, font_used_entry,
-    init_pool_ptr, last_bop, log_opened, lr_problems, lr_ptr, max_h, max_push, max_v, mem_b16s0,
-    mem_b16s1, mem_b32s0, mem_b32s1, mem_gr, mem_word, name_of_file, pool_ptr, pool_size, rule_wd,
-    selector, semantic_pagination_enabled, set_avail, set_cur_area, set_cur_cs, set_cur_ext,
-    set_cur_h, set_cur_list_mode, set_cur_name, set_cur_v, set_doing_special, set_font_ptr,
-    set_help_line, set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_mem_b16s0,
+    cur_v, def_ref, doing_leaders, eqtb_b32s1, file_offset, font_area_entry, font_check_entry,
+    font_dsize_entry, font_info_b16, font_info_b32s1, font_name_entry, font_ptr, font_size_entry,
+    font_used_entry, init_pool_ptr, job_name, last_bop, log_opened, lr_problems, lr_ptr, max_h,
+    max_print_line, max_push, max_v, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, mem_gr, mem_word,
+    name_of_file, pool_ptr, pool_size, rule_wd, rust_stdout, selector, semantic_pagination_enabled,
+    set_avail, set_cur_area, set_cur_cs, set_cur_ext, set_cur_h, set_cur_h_offset,
+    set_cur_list_mode, set_cur_name, set_cur_page_height, set_cur_page_width, set_cur_v,
+    set_cur_v_offset, set_dead_cycles, set_doing_special, set_font_ptr, set_help_line,
+    set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_v, set_mem_b16s0,
     set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pool_ptr, set_rule_wd,
     set_selector, set_temp_ptr, set_total_pages, set_write_file, set_write_open,
-    shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr, str_start, temp_ptr, total_pages,
-    width_base_entry, write_file, write_loc, write_open, xdv_buffer_entry,
+    shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr, str_start, temp_ptr, term_offset,
+    total_pages, width_base_entry, write_file, write_loc, write_open, xdv_buffer_entry,
 };
 use crate::mem::{free_node, get_avail, get_node, new_math};
 
@@ -26,8 +28,12 @@ extern "C" {
     ) -> libc::size_t;
     fn ttstub_output_close(handle: usize) -> libc::c_int;
     fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize;
+    fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn ttstub_shell_escape(cmd: *const u16, len: libc::size_t);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
+    static output_file_extension: *const libc::c_char;
+    fn hlist_out();
+    fn vlist_out();
 }
 
 // DVI output file state — file-statics promoted from xetex-shipout.c.
@@ -71,15 +77,23 @@ pub static mut dvi_h: i32 = 0;
 #[allow(non_upper_case_globals)]
 #[no_mangle]
 pub static mut dvi_v: i32 = 0;
+// Promoted from C file-static in session 115 so Rust ship_out and remaining C
+// list-output functions share the current DVI font.
+#[allow(non_upper_case_globals)]
+#[no_mangle]
+pub static mut dvi_f: i32 = 0;
 
 // xetex-shipout.c:11–12
 const DVI_BUF_SIZE: i32 = 16384;
 const HALF_BUF: i32 = 8192;
 const TEX_INFINITY: i32 = 0x7FFF_FFFF;
+const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
 const MIN_HALFWORD: i32 = -0x0FFF_FFFF;
 const TEX_NULL: i32 = -0x0FFF_FFFF;
 // xetex-constants.h:240
 const POP: u8 = 142;
+const PRE: u8 = 247;
+const BOP: u8 = 139;
 
 // xetex-constants.h:105,114. EDGE_NODE is an alias of STYLE_NODE.
 const HLIST_NODE: u16 = 0;
@@ -331,6 +345,227 @@ pub unsafe extern "C" fn dvi_out(c: u8) {
     }
 }
 
+// translated from xetex-shipout.c:56 (ship_out)
+#[no_mangle]
+pub unsafe extern "C" fn ship_out(p: i32) {
+    crate::synctex::synctex_sheet(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
+
+    if job_name() == 0 {
+        crate::scan::open_log_file();
+    }
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) > 0 {
+        crate::output::print_nl_cstr(c"".as_ptr());
+        crate::output::print_ln();
+        crate::output::print_cstr(c"Completed box being shipped out".as_ptr());
+    }
+
+    if term_offset() > max_print_line() - 9 {
+        crate::output::print_ln();
+    } else if term_offset() > 0 || file_offset() > 0 {
+        crate::output::print_char(b' ' as i32);
+    }
+
+    crate::output::print_char(b'[' as i32);
+    let mut j: u8 = 9;
+    while j > 0 && eqtb_b32s1(COUNT_BASE + j as i32) == 0 {
+        j -= 1;
+    }
+
+    for k in 0..=j {
+        crate::output::print_int(eqtb_b32s1(COUNT_BASE + k as i32));
+        if k < j {
+            crate::output::print_char(b'.' as i32);
+        }
+    }
+
+    ttstub_output_flush(rust_stdout());
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) > 0 {
+        crate::output::print_char(b']' as i32);
+        crate::output::begin_diagnostic();
+        crate::scan::show_box(p);
+        crate::output::end_diagnostic(true);
+    }
+
+    if mem_b32s1(p + 3) > MAX_HALFWORD
+        || mem_b32s1(p + 2) > MAX_HALFWORD
+        || mem_b32s1(p + 3) + mem_b32s1(p + 2) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET)
+            > MAX_HALFWORD
+        || mem_b32s1(p + 1) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) > MAX_HALFWORD
+    {
+        crate::output::error_here_with_diagnostic(c"Huge page cannot be shipped out".as_ptr());
+        crate::output::capture_to_diagnostic(core::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(
+            1,
+            c"The page just created is more than 18 feet tall or".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"more than 18 feet wide, so I suspect something went wrong.".as_ptr(),
+        );
+        crate::errors::error();
+
+        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) <= 0 {
+            crate::output::begin_diagnostic();
+            crate::output::print_nl_cstr(c"The following box has been deleted:".as_ptr());
+            crate::scan::show_box(p);
+            crate::output::end_diagnostic(true);
+        }
+    } else {
+        let page_height =
+            mem_b32s1(p + 3) + mem_b32s1(p + 2) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET);
+        if page_height > max_v() {
+            set_max_v(page_height);
+        }
+
+        let page_width = mem_b32s1(p + 1) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET);
+        if page_width > max_h() {
+            set_max_h(page_width);
+        }
+
+        dvi_h = 0;
+        dvi_v = 0;
+        set_cur_h(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET));
+        dvi_f = FONT_BASE;
+
+        set_cur_h_offset(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) + ONE_INCH);
+        set_cur_v_offset(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET) + ONE_INCH);
+
+        if eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH) != 0 {
+            set_cur_page_width(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH));
+        } else {
+            set_cur_page_width(
+                mem_b32s1(p + 1) + 2 * (eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) + ONE_INCH),
+            );
+        }
+
+        if eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT) != 0 {
+            set_cur_page_height(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT));
+        } else {
+            set_cur_page_height(
+                mem_b32s1(p + 3)
+                    + mem_b32s1(p + 2)
+                    + 2 * (eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET) + ONE_INCH),
+            );
+        }
+
+        if output_file_name == 0 {
+            if job_name() == 0 {
+                crate::scan::open_log_file();
+            }
+            crate::scan::pack_job_name(output_file_extension);
+            dvi_file = ttstub_output_open(name_of_file(), 0);
+            if dvi_file == INVALID_HANDLE {
+                let mut buf = [0u8; 512];
+                libc::snprintf(
+                    buf.as_mut_ptr() as *mut libc::c_char,
+                    buf.len(),
+                    c"cannot open output file \"%s\"".as_ptr(),
+                    name_of_file(),
+                );
+                _tt_abort(buf.as_ptr() as *const libc::c_char);
+            }
+            output_file_name = crate::scan::make_name_string();
+        }
+
+        if total_pages() == 0 {
+            dvi_out(PRE);
+            if semantic_pagination_enabled() {
+                dvi_out(SPX_ID_BYTE);
+            } else {
+                dvi_out(XDV_ID_BYTE);
+            }
+            dvi_four(25_400_000);
+            dvi_four(473_628_672);
+            crate::save::prepare_mag();
+            dvi_four(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
+
+            let output_comment = c"tectonic";
+            let l = libc::strlen(output_comment.as_ptr()) as u8;
+            dvi_out(l);
+            for s in 0..l {
+                dvi_out(*output_comment.as_ptr().add(s as usize) as u8);
+            }
+        }
+
+        let page_loc = dvi_offset + dvi_ptr;
+        dvi_out(BOP);
+        for k in 0..10 {
+            dvi_four(eqtb_b32s1(COUNT_BASE + k));
+        }
+        dvi_four(last_bop());
+        set_last_bop(page_loc);
+
+        let old_setting = selector();
+        set_selector(SELECTOR_NEW_STRING);
+        crate::output::print_cstr(c"pdf:pagesize ".as_ptr());
+        if eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH) <= 0
+            || eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT) <= 0
+        {
+            crate::output::print_cstr(c"default".as_ptr());
+        } else {
+            crate::output::print_cstr(c"width".as_ptr());
+            crate::output::print(b' ' as i32);
+            crate::output::print_scaled(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH));
+            crate::output::print_cstr(c"pt".as_ptr());
+            crate::output::print(b' ' as i32);
+            crate::output::print_cstr(c"height".as_ptr());
+            crate::output::print(b' ' as i32);
+            crate::output::print_scaled(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT));
+            crate::output::print_cstr(c"pt".as_ptr());
+        }
+        set_selector(old_setting);
+
+        dvi_out(XXX1);
+        dvi_out(crate::hash::cur_length() as u8);
+        let start = str_start(str_ptr() - TOO_BIG_CHAR);
+        let end = pool_ptr();
+        for s in start..end {
+            dvi_out(str_pool_entry(s) as u8);
+        }
+        set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+
+        set_cur_v(mem_b32s1(p + 3) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET));
+        set_temp_ptr(p);
+        if mem_b16s1(p) == VLIST_NODE {
+            vlist_out();
+        } else {
+            hlist_out();
+        }
+
+        dvi_out(EOP);
+        set_total_pages(total_pages() + 1);
+        cur_s = -1;
+    }
+
+    if lr_problems() > 0 {
+        crate::output::print_ln();
+        crate::output::print_nl_cstr(c"\\endL or \\endR problem (".as_ptr());
+        crate::output::print_int(lr_problems() / 10000);
+        crate::output::print_cstr(c" missing, ".as_ptr());
+        crate::output::print_int(lr_problems() % 10000);
+        crate::output::print_cstr(c" extra".as_ptr());
+        set_lr_problems(0);
+        crate::output::print_char(b')' as i32);
+        crate::output::print_ln();
+    }
+
+    if lr_ptr() != TEX_NULL || cur_dir() != LEFT_TO_RIGHT {
+        crate::errors::confusion(c"LR3".as_ptr());
+    }
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) <= 0 {
+        crate::output::print_char(b']' as i32);
+    }
+
+    set_dead_cycles(0);
+    ttstub_output_flush(rust_stdout());
+    crate::scan::flush_node_list(p);
+    crate::synctex::synctex_teehs();
+}
+
 // translated from xetex-shipout.c:2332 (dvi_pop)
 #[no_mangle]
 pub unsafe extern "C" fn dvi_pop(l: i32) {
@@ -352,8 +587,17 @@ const MOVEMENT_NODE_SIZE: i32 = 3;
 // xetex_format.h:52; xetex-xetexd.h INT_BASE
 const INT_BASE: i32 = 7_826_729;
 const INT_PAR_MAG: i32 = 17;
+const INT_PAR_TRACING_OUTPUT: i32 = 34;
+const DIMEN_BASE: i32 = 8_941_180;
+const DIMEN_PAR_H_OFFSET: i32 = 18;
+const DIMEN_PAR_V_OFFSET: i32 = 19;
+const DIMEN_PAR_PDF_PAGE_WIDTH: i32 = 21;
+const DIMEN_PAR_PDF_PAGE_HEIGHT: i32 = 22;
+const COUNT_BASE: i32 = 7_826_812;
 // scan.rs FONT_BASE
 const FONT_BASE: i32 = 0;
+const LEFT_TO_RIGHT: i16 = 0;
+const ONE_INCH: i32 = 4_736_287;
 
 // translated from xetex-shipout.c:1930 (prune_movements)
 #[no_mangle]
