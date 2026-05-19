@@ -1,10 +1,16 @@
 //! Shipout helpers translated from `xetex/xetex-shipout.c`.
 
 use crate::globals::{
-    eqtb_b32s1, font_area_entry, font_check_entry, font_dsize_entry, font_name_entry,
-    font_ptr, font_size_entry, font_used_entry, last_bop, max_h, max_push, max_v, mem_b32s1,
-    semantic_pagination_enabled, set_font_ptr, set_last_bop, set_mem_b16s0, set_mem_b16s1,
-    set_mem_b32s1, set_total_pages, str_pool_entry, str_start, total_pages, xdv_buffer_entry,
+    cur_area, cur_ext, cur_h, cur_list_mode, cur_name, cur_tok, cur_v, def_ref, doing_leaders,
+    eqtb_b32s1, font_area_entry, font_check_entry, font_dsize_entry, font_name_entry, font_ptr,
+    font_size_entry, font_used_entry, init_pool_ptr, last_bop, log_opened, max_h, max_push, max_v,
+    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, name_of_file, pool_ptr, pool_size, selector,
+    semantic_pagination_enabled, set_cur_area, set_cur_cs, set_cur_ext, set_cur_h,
+    set_cur_list_mode, set_cur_name, set_cur_v, set_doing_special, set_font_ptr, set_help_line,
+    set_help_ptr, set_last_bop, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
+    set_pool_ptr, set_selector, set_total_pages, set_write_file, set_write_open,
+    shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr, str_start, total_pages,
+    write_file, write_loc, write_open, xdv_buffer_entry,
 };
 use crate::mem::{free_node, get_node};
 
@@ -17,6 +23,8 @@ extern "C" {
         len: libc::size_t,
     ) -> libc::size_t;
     fn ttstub_output_close(handle: usize) -> libc::c_int;
+    fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize;
+    fn ttstub_shell_escape(cmd: *const u16, len: libc::size_t);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
 }
 
@@ -54,6 +62,13 @@ pub static mut right_ptr: i32 = 0;
 #[allow(non_upper_case_globals)]
 #[no_mangle]
 pub static mut cur_s: i32 = 0;
+// Promoted from C file-statics in session 113 — used by movement, special_out, pic_out.
+#[allow(non_upper_case_globals)]
+#[no_mangle]
+pub static mut dvi_h: i32 = 0;
+#[allow(non_upper_case_globals)]
+#[no_mangle]
+pub static mut dvi_v: i32 = 0;
 
 // xetex-shipout.c:11–12
 const DVI_BUF_SIZE: i32 = 16384;
@@ -71,6 +86,52 @@ const OTGR_FONT_FLAG: i32 = 65534;
 const FNT_DEF1: u8 = 243;
 const DEFINE_NATIVE_FONT: u8 = 252;
 const TOO_BIG_CHAR: i32 = 65536;
+
+// DVI movement opcodes — xetex-constants.h:241–242,244–245
+const DOWN1: u8 = 157;
+const RIGHT1: u8 = 143;
+const XXX1: u8 = 239;
+const XXX4: u8 = 242;
+
+// Movement node states — xetex-constants.h:393–401
+const MOV_NONE_SEEN: i32 = 0;
+const MOV_Y_HERE: i32 = 1;
+const MOV_Z_HERE: i32 = 2;
+const MOV_YZ_OK: i32 = 3;
+const MOV_Y_OK: i32 = 4;
+const MOV_Z_OK: i32 = 5;
+const MOV_Y_SEEN: i32 = 6;
+const MOV_D_FIXED: i32 = 6;
+const MOV_Z_SEEN: i32 = 12;
+
+// Whatsit subtype codes — xetex_format.h:457–461
+const OPEN_NODE: u16 = 0;
+const WRITE_NODE: u16 = 1;
+const CLOSE_NODE: u16 = 2;
+const SPECIAL_NODE: u16 = 3;
+const LANGUAGE_NODE: u16 = 4;
+
+// xetex-constants.h:133, tectonic_bridge_core_generated.h:12
+const PIC_NODE_SIZE: i32 = 9;
+const INVALID_HANDLE: usize = 0;
+
+// INT_PAR index for \tracingonline — xetex_format.h
+const INT_PAR_TRACING_ONLINE: i32 = 29;
+
+// Token constants — xetex-constants.h:204,217,348–351
+const INSERTED: u16 = 5;
+const WRITE_TEXT: u16 = 18;
+const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
+const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
+const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
+// END_WRITE = FROZEN_CONTROL_SEQUENCE + 8 = 2_243_226 + 8
+const END_WRITE: i32 = 2_243_234;
+
+// Output selector values — xetex-core.h:43–50
+const SELECTOR_TERM_ONLY: i32 = 17;
+const SELECTOR_LOG_ONLY: i32 = 18;
+const SELECTOR_TERM_AND_LOG: i32 = 19;
+const SELECTOR_NEW_STRING: i32 = 21;
 
 /// Create a new edge node of subtype `s` and width `w`.
 ///
@@ -392,5 +453,409 @@ pub unsafe extern "C" fn finalize_dvi_file() {
         crate::output::print(output_file_name);
         crate::output::print_cstr(c" may not be valid.".as_ptr());
         // XeTeX adds history = OUTPUT_FAILURE = 4 here; not implemented.
+    }
+}
+
+// translated from xetex-shipout.c:1763 (movement)
+// Called from hlist_out and vlist_out (still in C) → #[no_mangle].
+#[no_mangle]
+pub unsafe extern "C" fn movement(mut w: i32, o: u8) {
+    let mut q = crate::mem::get_node(MOVEMENT_NODE_SIZE);
+    set_mem_b32s1(q + 1, w);
+    set_mem_b32s1(q + 2, dvi_offset + dvi_ptr);
+
+    if o == DOWN1 {
+        set_mem_b32s1(q, down_ptr);
+        down_ptr = q;
+    } else {
+        set_mem_b32s1(q, right_ptr);
+        right_ptr = q;
+    }
+
+    let mut p = mem_b32s1(q);
+    let mut mstate: i32 = MOV_NONE_SEEN;
+
+    // 'search either breaks with Some(found_node) or falls through with None.
+    let found_p: Option<i32> = 'search: {
+        while p != TEX_NULL {
+            if mem_b32s1(p + 1) == w {
+                match mstate + mem_b32s0(p) {
+                    // NONE_SEEN+YZ_OK=3, NONE_SEEN+Y_OK=4, Z_SEEN+YZ_OK=15, Z_SEEN+Y_OK=16
+                    3 | 4 | 15 | 16 => {
+                        if mem_b32s1(p + 2) < dvi_gone {
+                            break 'search None;
+                        }
+                        let mut k = mem_b32s1(p + 2) - dvi_offset;
+                        if k < 0 {
+                            k += DVI_BUF_SIZE;
+                        }
+                        *dvi_buf.add(k as usize) += 5;
+                        set_mem_b32s0(p, MOV_Y_HERE);
+                        break 'search Some(p);
+                    }
+                    // NONE_SEEN+Z_OK=5, Y_SEEN+YZ_OK=9, Y_SEEN+Z_OK=11
+                    5 | 9 | 11 => {
+                        if mem_b32s1(p + 2) < dvi_gone {
+                            break 'search None;
+                        }
+                        let mut k = mem_b32s1(p + 2) - dvi_offset;
+                        if k < 0 {
+                            k += DVI_BUF_SIZE;
+                        }
+                        *dvi_buf.add(k as usize) += 10;
+                        set_mem_b32s0(p, MOV_Z_HERE);
+                        break 'search Some(p);
+                    }
+                    // NONE_SEEN+Y_HERE=1, NONE_SEEN+Z_HERE=2, Y_SEEN+Z_HERE=8, Z_SEEN+Y_HERE=13
+                    1 | 2 | 8 | 13 => break 'search Some(p),
+                    _ => {}
+                }
+            } else {
+                match mstate + mem_b32s0(p) {
+                    1 => mstate = MOV_Y_SEEN,     // NONE_SEEN+Y_HERE
+                    2 => mstate = MOV_Z_SEEN,     // NONE_SEEN+Z_HERE
+                    8 | 13 => break 'search None, // Y_SEEN+Z_HERE, Z_SEEN+Y_HERE
+                    _ => {}
+                }
+            }
+            p = mem_b32s1(p); // LLIST_link(p)
+        }
+        None
+    };
+
+    match found_p {
+        None => {
+            // not_found: emit the shortest encoding
+            set_mem_b32s0(q, MOV_YZ_OK);
+            if w.abs() >= 0x800000 {
+                dvi_out(o.wrapping_add(3));
+                dvi_four(w);
+                return;
+            }
+            if w.abs() >= 0x8000 {
+                dvi_out(o.wrapping_add(2));
+                if w < 0 {
+                    w += 0x1000000;
+                }
+                dvi_out((w / 0x10000) as u8); // lab2
+                w %= 0x10000;
+                dvi_out((w / 256) as u8); // lab1
+                dvi_out((w % 256) as u8);
+                return;
+            }
+            if w.abs() >= 128 {
+                dvi_out(o.wrapping_add(1));
+                if w < 0 {
+                    w += 0x10000;
+                }
+                dvi_out((w / 256) as u8); // lab2
+                dvi_out((w % 256) as u8); // lab1
+                return;
+            }
+            dvi_out(o);
+            if w < 0 {
+                w += 256;
+            }
+            dvi_out((w % 256) as u8); // lab1
+        }
+        Some(p) => {
+            // found: reuse previous y/z command
+            set_mem_b32s0(q, mem_b32s0(p));
+            if mem_b32s0(q) == MOV_Y_HERE {
+                dvi_out(o.wrapping_add(4));
+                while mem_b32s1(q) != p {
+                    q = mem_b32s1(q);
+                    match mem_b32s0(q) {
+                        MOV_YZ_OK => set_mem_b32s0(q, MOV_Z_OK),
+                        MOV_Y_OK => set_mem_b32s0(q, MOV_D_FIXED),
+                        _ => {}
+                    }
+                }
+            } else {
+                dvi_out(o.wrapping_add(9));
+                while mem_b32s1(q) != p {
+                    q = mem_b32s1(q);
+                    match mem_b32s0(q) {
+                        MOV_YZ_OK => set_mem_b32s0(q, MOV_Y_OK),
+                        MOV_Z_OK => set_mem_b32s0(q, MOV_D_FIXED),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+}
+
+// translated from xetex-shipout.c:1930 (special_out)
+// Only called from out_what (Rust) → private.
+unsafe fn special_out(p: i32) {
+    if cur_h() != dvi_h {
+        movement(cur_h() - dvi_h, RIGHT1);
+        dvi_h = cur_h();
+    }
+    if cur_v() != dvi_v {
+        movement(cur_v() - dvi_v, DOWN1);
+        dvi_v = cur_v();
+    }
+    set_doing_special(true);
+    let old_setting = selector();
+    set_selector(SELECTOR_NEW_STRING);
+    crate::output::show_token_list(
+        mem_b32s1(mem_b32s1(p + 1)),
+        TEX_NULL,
+        pool_size() - pool_ptr(),
+    );
+    set_selector(old_setting);
+
+    if pool_ptr() + 1 > pool_size() {
+        crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+    }
+
+    let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
+    if cur_len < 256 {
+        dvi_out(XXX1);
+        dvi_out(cur_len as u8);
+    } else {
+        dvi_out(XXX4);
+        dvi_four(cur_len);
+    }
+
+    let mut k = str_start(str_ptr() - TOO_BIG_CHAR);
+    let for_end = pool_ptr() - 1;
+    while k <= for_end {
+        dvi_out(str_pool_entry(k) as u8);
+        k += 1;
+    }
+    set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+    set_doing_special(false);
+}
+
+// translated from xetex-shipout.c:1976 (write_out)
+// Only called from out_what (Rust) → private.
+unsafe fn write_out(p: i32) {
+    let q = crate::mem::get_avail();
+    set_mem_b32s0(q, RIGHT_BRACE_TOKEN + b'}' as i32);
+    let r = crate::mem::get_avail();
+    set_mem_b32s1(q, r);
+    set_mem_b32s0(r, CS_TOKEN_FLAG + END_WRITE);
+    crate::input::begin_token_list(q, INSERTED);
+    crate::input::begin_token_list(mem_b32s1(p + 1), WRITE_TEXT);
+    let q2 = crate::mem::get_avail();
+    set_mem_b32s0(q2, LEFT_BRACE_TOKEN + b'{' as i32);
+    crate::input::begin_token_list(q2, INSERTED);
+
+    let old_mode = cur_list_mode();
+    set_cur_list_mode(0);
+    set_cur_cs(write_loc());
+    crate::scan::scan_toks(false, true);
+    crate::scan::get_token();
+
+    if cur_tok() != CS_TOKEN_FLAG + END_WRITE {
+        crate::output::error_here_with_diagnostic(c"Unbalanced write command".as_ptr());
+        crate::output::capture_to_diagnostic(core::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(
+            1,
+            c"On this page there's a \\write with fewer real {'s than }'s.".as_ptr(),
+        );
+        set_help_line(0, c"I can't handle that very well; good luck.".as_ptr());
+        crate::errors::error();
+        loop {
+            crate::scan::get_token();
+            if cur_tok() == CS_TOKEN_FLAG + END_WRITE {
+                break;
+            }
+        }
+    }
+
+    set_cur_list_mode(old_mode);
+    crate::input::end_token_list();
+    let old_setting = selector();
+    let j = mem_b32s0(p + 1);
+
+    if j == 18 {
+        set_selector(SELECTOR_NEW_STRING);
+    } else if write_open(j as usize) {
+        set_selector(j);
+    } else {
+        if j == 17 && selector() == SELECTOR_TERM_AND_LOG {
+            set_selector(SELECTOR_LOG_ONLY);
+        }
+        crate::output::print_nl_cstr(c"".as_ptr());
+    }
+
+    crate::output::token_show(def_ref());
+    crate::output::print_ln();
+    crate::mem::flush_list(def_ref());
+
+    if j == 18 {
+        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {
+            set_selector(SELECTOR_LOG_ONLY);
+        } else {
+            set_selector(SELECTOR_TERM_AND_LOG);
+        }
+        if !log_opened() {
+            set_selector(SELECTOR_TERM_ONLY);
+        }
+
+        // Tectonic: don't emit warnings for shell-escape when enabled;
+        // the driver provides a better UX.
+        if !shell_escape_enabled() {
+            crate::output::diagnostic_begin_capture_warning_here();
+            crate::output::print_nl_cstr(c"runsystem(".as_ptr());
+            let base = str_start(str_ptr() - TOO_BIG_CHAR);
+            let cur_len = pool_ptr() - base;
+            for d in 0..cur_len {
+                crate::output::print(str_pool_entry(base + d) as i32);
+            }
+            crate::output::print_cstr(c")...".as_ptr());
+            crate::output::print_cstr(c"disabled".as_ptr());
+            crate::output::print_char(b'.' as i32);
+            crate::output::capture_to_diagnostic(core::ptr::null_mut());
+            crate::output::print_nl_cstr(c"".as_ptr());
+            crate::output::print_ln();
+        } else {
+            let base = str_start(str_ptr() - TOO_BIG_CHAR);
+            let cur_len = pool_ptr() - base;
+            ttstub_shell_escape(str_pool_ptr(base), cur_len as libc::size_t);
+        }
+
+        set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+    }
+
+    set_selector(old_setting);
+}
+
+// translated from xetex-shipout.c:2071 (pic_out)
+// Called from hlist_out (still in C) → #[no_mangle].
+#[no_mangle]
+pub unsafe extern "C" fn pic_out(p: i32) {
+    if cur_h() != dvi_h {
+        movement(cur_h() - dvi_h, RIGHT1);
+        dvi_h = cur_h();
+    }
+    if cur_v() != dvi_v {
+        movement(cur_v() - dvi_v, DOWN1);
+        dvi_v = cur_v();
+    }
+
+    let old_setting = selector();
+    set_selector(SELECTOR_NEW_STRING);
+    crate::output::print_cstr(c"pdf:image ".as_ptr());
+    crate::output::print_cstr(c"matrix ".as_ptr());
+    crate::output::print_scaled(mem_b32s0(p + 5));
+    crate::output::print(b' ' as i32);
+    crate::output::print_scaled(mem_b32s1(p + 5));
+    crate::output::print(b' ' as i32);
+    crate::output::print_scaled(mem_b32s0(p + 6));
+    crate::output::print(b' ' as i32);
+    crate::output::print_scaled(mem_b32s1(p + 6));
+    crate::output::print(b' ' as i32);
+    crate::output::print_scaled(mem_b32s0(p + 7));
+    crate::output::print(b' ' as i32);
+    crate::output::print_scaled(mem_b32s1(p + 7));
+    crate::output::print(b' ' as i32);
+    crate::output::print_cstr(c"page ".as_ptr());
+    crate::output::print_int(mem_b16s0(p + 4) as i32);
+    crate::output::print(b' ' as i32);
+
+    match mem_b16s1(p + 8) {
+        1 => crate::output::print_cstr(c"pagebox cropbox ".as_ptr()),
+        2 => crate::output::print_cstr(c"pagebox mediabox ".as_ptr()),
+        3 => crate::output::print_cstr(c"pagebox bleedbox ".as_ptr()),
+        4 => crate::output::print_cstr(c"pagebox trimbox ".as_ptr()),
+        5 => crate::output::print_cstr(c"pagebox artbox ".as_ptr()),
+        _ => {}
+    }
+
+    crate::output::print(b'(' as i32);
+    let path_len = mem_b16s1(p + 4) as i32;
+    let path_ptr = crate::globals::mem_node_addr(p + PIC_NODE_SIZE) as *const u8;
+    for i in 0..path_len {
+        crate::output::print_raw_char(*path_ptr.add(i as usize) as u16, true);
+    }
+    crate::output::print(b')' as i32);
+
+    set_selector(old_setting);
+    let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
+    if cur_len < 256 {
+        dvi_out(XXX1);
+        dvi_out(cur_len as u8);
+    } else {
+        dvi_out(XXX4);
+        dvi_four(cur_len);
+    }
+
+    let mut k = str_start(str_ptr() - TOO_BIG_CHAR);
+    while k < pool_ptr() {
+        dvi_out(str_pool_entry(k) as u8);
+        k += 1;
+    }
+    set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+}
+
+// translated from xetex-shipout.c:1682 (out_what)
+// Declared in xetex-xetexd.h (external linkage) → #[no_mangle].
+#[no_mangle]
+pub unsafe extern "C" fn out_what(p: i32) {
+    match mem_b16s0(p) {
+        OPEN_NODE | WRITE_NODE | CLOSE_NODE => {
+            if !doing_leaders() {
+                let j = mem_b32s0(p + 1);
+                if mem_b16s0(p) == WRITE_NODE {
+                    write_out(p);
+                    return;
+                }
+                if write_open(j as usize) {
+                    ttstub_output_close(write_file(j as usize));
+                }
+                if mem_b16s0(p) == CLOSE_NODE {
+                    set_write_open(j as usize, false);
+                    return;
+                }
+                // OPEN_NODE
+                if j < 16 {
+                    set_cur_name(mem_b32s1(p + 1));
+                    set_cur_area(mem_b32s0(p + 2));
+                    set_cur_ext(mem_b32s1(p + 2));
+                    if crate::string_pool::length(cur_ext()) == 0 {
+                        set_cur_ext(crate::texmfmp::maketexstring(c".tex".as_ptr()));
+                    }
+                    crate::scan::pack_file_name(cur_name(), cur_area(), cur_ext());
+                    let handle = ttstub_output_open(name_of_file(), 0);
+                    if handle == INVALID_HANDLE {
+                        let mut buf = [0u8; 512];
+                        libc::snprintf(
+                            buf.as_mut_ptr() as *mut libc::c_char,
+                            buf.len(),
+                            c"cannot open output file \"%s\"".as_ptr(),
+                            name_of_file(),
+                        );
+                        _tt_abort(buf.as_ptr() as *const libc::c_char);
+                    }
+                    set_write_file(j as usize, handle);
+                    set_write_open(j as usize, true);
+                    if log_opened() {
+                        let old_setting = selector();
+                        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {
+                            set_selector(SELECTOR_LOG_ONLY);
+                        } else {
+                            set_selector(SELECTOR_TERM_AND_LOG);
+                        }
+                        crate::output::print_nl_cstr(c"\\openout".as_ptr());
+                        crate::output::print_int(j);
+                        crate::output::print_cstr(c" = `".as_ptr());
+                        crate::output::print_file_name(cur_name(), cur_area(), cur_ext());
+                        crate::output::print_cstr(c"'.".as_ptr());
+                        crate::output::print_nl_cstr(c"".as_ptr());
+                        crate::output::print_ln();
+                        set_selector(old_setting);
+                    }
+                }
+            }
+        }
+        SPECIAL_NODE => special_out(p),
+        LANGUAGE_NODE => {}
+        _ => crate::errors::confusion(c"ext4".as_ptr()),
     }
 }

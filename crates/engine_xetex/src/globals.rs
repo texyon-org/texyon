@@ -1201,6 +1201,12 @@ pub(crate) fn str_pool_entry(k: i32) -> u16 {
     unsafe { *raw::str_pool.offset(k as isize) }
 }
 
+/// Returns a pointer to `str_pool[k]` (for passing to C bridge functions).
+#[inline]
+pub(crate) fn str_pool_ptr(k: i32) -> *const u16 {
+    unsafe { raw::str_pool.add(k as usize) }
+}
+
 // ---------------------------------------------------------------------------
 // current_diagnostic setter
 // ---------------------------------------------------------------------------
@@ -1503,6 +1509,22 @@ pub(crate) fn write_file(i: usize) -> usize {
 pub(crate) fn write_open(i: usize) -> bool {
     // SAFETY: see module-level doc.
     unsafe { raw::write_open[i] }
+}
+
+/// Sets `write_open[i]` to `v`.
+#[inline]
+pub(crate) fn set_write_open(i: usize, v: bool) {
+    unsafe {
+        raw::write_open[i] = v;
+    }
+}
+
+/// Sets `write_file[i]` to `v`.
+#[inline]
+pub(crate) fn set_write_file(i: usize, v: usize) {
+    unsafe {
+        raw::write_file[i] = v;
+    }
 }
 
 /// Returns the current diagnostic capture pointer (null = no active capture).
