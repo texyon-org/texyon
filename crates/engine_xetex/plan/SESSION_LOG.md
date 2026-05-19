@@ -32,6 +32,49 @@ template.
 
 ---
 
+## Session 114 — 2026-05-19 — xetex-shipout.c reverse
+
+**Goal:** Continue `xetex-shipout.c` by translating the remaining reflected-hlist helper `reverse` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 113
+
+**Work done:**
+- Translated `reverse` (line 1470) from `xetex-shipout.c` to `src/shipout.rs`.
+- Kept `reverse` as `#[no_mangle] pub unsafe extern "C"` because `hlist_out` is still in C and calls it directly.
+- Added the local shipout constants and helpers needed for mirrored-list traversal, glue rounding, ligature replacement, math LR stack handling, and char-node width accounting.
+- Removed the C `reverse` body and left the translated marker in `xetex-shipout.c`.
+- Code commit: `0d3b8461` (`engine_xetex: translate shipout reverse to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 114
+
+**Surprises / gotchas:**
+- `reverse` mutates caller-owned glue rounding state through pointer arguments; the Rust translation keeps that ABI rather than introducing new bridge state.
+- The remaining `xetex-shipout.c` compiled functions are now only `ship_out`, `hlist_out`, and `vlist_out`.
+- `reverse` still needs export visibility until `hlist_out` moves to Rust.
+
+**For the next session:**
+- Continue `xetex-shipout.c`. `ship_out` is the smaller top-level body; `hlist_out` and `vlist_out` are larger and still depend on list-output scratch statics (`g`, `lq`, `lr`, `dvi_f`).
+- Consider promoting the remaining list-output scratch state before translating `hlist_out`/`vlist_out`, or translate `ship_out` first if the goal is a lower-risk next step.
+
+---
+
 ## Session 113 — 2026-05-19 — xetex-shipout.c whatsit and movement helpers
 
 **Goal:** Continue `xetex-shipout.c` by translating the movement/whatsit helper cluster to Rust.

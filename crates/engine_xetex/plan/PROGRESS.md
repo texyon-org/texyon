@@ -127,6 +127,7 @@ cargo test -p tectonic --test tex-outputs
 |     111 | 2026-05-15 |     29 |    29 |     0 | xetex-shipout.c: translate DVI buffer statics + initialize/deinitialize_shipout_variables, write_to_dvi, dvi_swap, dvi_out, dvi_pop (9a26ee88). All 4 suites pass. |
 |     112 | 2026-05-15 |     29 |    29 |     0 | xetex-shipout.c: translate prune_movements and finalize_dvi_file (1819fba9). All 4 suites pass. |
 |     113 | 2026-05-19 |     29 |    29 |     0 | xetex-shipout.c: translate out_what, movement, special_out, write_out, pic_out (fc907f6a). All 4 suites pass. |
+|     114 | 2026-05-19 |     29 |    29 |     0 | xetex-shipout.c: translate reverse (0d3b8461). All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -231,6 +232,7 @@ Passed count below the previous session's recorded value.
 |     111 |  6,720 |                  ~44,980 |       13.0% |
 |     112 |  6,601 |                  ~45,080 |       12.8% |
 |     113 |  6,194 |                  45,478 |       12.0% |
+|     114 |  5,985 |                  45,417 |       11.6% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -339,6 +341,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |     111 |      530 |             ~?? |       ~?? |
 |     112 |      532 |             ~?? |       ~?? |
 |     113 |      537 |              ~4 |     ~99.3% |
+|     114 |      538 |              ~3 |     ~99.4% |
 
 
 Total C function count to be measured in session 1 via:
@@ -354,7 +357,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **113** (sessions 1–113 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **114** (sessions 1–114 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
