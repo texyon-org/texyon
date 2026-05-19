@@ -1,20 +1,22 @@
 //! Shipout helpers translated from `xetex/xetex-shipout.c`.
 
 use crate::globals::{
-    avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name, cur_tok,
-    cur_v, def_ref, doing_leaders, eqtb_b32s1, file_offset, font_area_entry, font_check_entry,
-    font_dsize_entry, font_info_b16, font_info_b32s1, font_name_entry, font_ptr, font_size_entry,
-    font_used_entry, init_pool_ptr, job_name, last_bop, log_opened, lr_problems, lr_ptr, max_h,
-    max_print_line, max_push, max_v, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, mem_gr, mem_word,
-    name_of_file, pool_ptr, pool_size, rule_wd, rust_stdout, selector, semantic_pagination_enabled,
-    set_avail, set_cur_area, set_cur_cs, set_cur_ext, set_cur_h, set_cur_h_offset,
-    set_cur_list_mode, set_cur_name, set_cur_page_height, set_cur_page_width, set_cur_v,
-    set_cur_v_offset, set_dead_cycles, set_doing_special, set_font_ptr, set_help_line,
-    set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_v, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pool_ptr, set_rule_wd,
-    set_selector, set_temp_ptr, set_total_pages, set_write_file, set_write_open,
-    shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr, str_start, temp_ptr, term_offset,
-    total_pages, width_base_entry, write_file, write_loc, write_open, xdv_buffer_entry,
+    avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name,
+    cur_page_height, cur_tok, cur_v, def_ref, doing_leaders, eqtb_b32s1, file_offset,
+    font_area_entry, font_check_entry, font_dsize_entry, font_info_b16, font_info_b32s1,
+    font_name_entry, font_ptr, font_size_entry, font_used_entry, init_pool_ptr, job_name, last_bop,
+    log_opened, lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v, mem_b16s0, mem_b16s1,
+    mem_b16s2, mem_b32s0, mem_b32s1, mem_gr, mem_word, name_of_file, pool_ptr, pool_size, rule_dp,
+    rule_ht, rule_wd, rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area,
+    set_cur_cs, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode, set_cur_name,
+    set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset, set_dead_cycles,
+    set_doing_leaders, set_doing_special, set_font_ptr, set_font_used_entry, set_help_line,
+    set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_push, set_max_v,
+    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pdf_last_x_pos,
+    set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht, set_rule_wd, set_selector,
+    set_temp_ptr, set_total_pages, set_write_file, set_write_open, shell_escape_enabled,
+    str_pool_entry, str_pool_ptr, str_ptr, str_start, temp_ptr, term_offset, total_pages,
+    width_base_entry, write_file, write_loc, write_open, xdv_buffer_entry,
 };
 use crate::mem::{free_node, get_avail, get_node, new_math};
 
@@ -33,7 +35,6 @@ extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     static output_file_extension: *const libc::c_char;
     fn hlist_out();
-    fn vlist_out();
 }
 
 // DVI output file state — file-statics promoted from xetex-shipout.c.
@@ -94,6 +95,11 @@ const TEX_NULL: i32 = -0x0FFF_FFFF;
 const POP: u8 = 142;
 const PRE: u8 = 247;
 const BOP: u8 = 139;
+const PUSH: u8 = 141;
+const PUT_RULE: u8 = 137;
+const FNT1: u8 = 235;
+const SET_GLYPHS: u8 = 253;
+const FNT_NUM_0: u8 = 171;
 
 // xetex-constants.h:105,114. EDGE_NODE is an alias of STYLE_NODE.
 const HLIST_NODE: u16 = 0;
@@ -143,6 +149,7 @@ const NATIVE_WORD_NODE_AT: u16 = 41;
 const GLYPH_NODE: u16 = 42;
 const PIC_NODE: u16 = 43;
 const PDF_NODE: u16 = 44;
+const PDF_SAVE_POS_NODE: u16 = 21;
 
 // Glue and leader constants: xetex-constants.h:175,182,275,281; xetex_format.h:422.
 const FILLL: u16 = 3;
@@ -150,6 +157,7 @@ const NORMAL: u16 = 0;
 const STRETCHING: u16 = 1;
 const SHRINKING: u16 = 2;
 const A_LEADERS: u16 = 100;
+const C_LEADERS: u16 = 101;
 
 // MATH_NODE LR constants: xetex-constants.h:142-143; xetex_format.h:437.
 const L_CODE: u16 = 4;
@@ -576,6 +584,348 @@ pub unsafe extern "C" fn dvi_pop(l: i32) {
     }
 }
 
+unsafe fn ensure_dvi_font(f: i32) {
+    if f != dvi_f {
+        if !font_used_entry(f) {
+            dvi_font_def(f);
+            set_font_used_entry(f, true);
+        }
+
+        if f <= 64 {
+            dvi_out((f as u8) + FNT_NUM_0 - 1);
+        } else if f <= 256 {
+            dvi_out(FNT1);
+            dvi_out((f - 1) as u8);
+        } else {
+            dvi_out(FNT1 + 1);
+            dvi_out(((f - 1) / 256) as u8);
+            dvi_out(((f - 1) % 256) as u8);
+        }
+
+        dvi_f = f;
+    }
+}
+
+// translated from xetex-shipout.c:866 (vlist_out)
+#[no_mangle]
+pub unsafe extern "C" fn vlist_out() {
+    let mut cur_g = 0;
+    let mut cur_glue = 0.0;
+    let this_box = temp_ptr();
+    let g_order = mem_b16s0(this_box + 5);
+    let g_sign = mem_b16s1(this_box + 5);
+    let mut p = mem_b32s1(this_box + 5);
+    let upwards = mem_b16s0(this_box) == 1;
+
+    cur_s += 1;
+    if cur_s > 0 {
+        dvi_out(PUSH);
+    }
+
+    if cur_s > max_push() {
+        set_max_push(cur_s);
+    }
+
+    let save_loc = dvi_offset + dvi_ptr;
+    let left_edge = cur_h();
+    crate::synctex::synctex_vlist(this_box);
+
+    if upwards {
+        set_cur_v(cur_v() + mem_b32s1(this_box + 2));
+    } else {
+        set_cur_v(cur_v() - mem_b32s1(this_box + 3));
+    }
+
+    let top_edge = cur_v();
+
+    while p != TEX_NULL {
+        if is_char_node(p) {
+            crate::errors::confusion(c"vlistout".as_ptr());
+        }
+
+        let mut go_next = true;
+        match mem_b16s1(p) {
+            HLIST_NODE | VLIST_NODE => {
+                if mem_b32s1(p + 5) == TEX_NULL {
+                    if upwards {
+                        set_cur_v(cur_v() - mem_b32s1(p + 2));
+                    } else {
+                        set_cur_v(cur_v() + mem_b32s1(p + 3));
+                    }
+
+                    if mem_b16s1(p) == VLIST_NODE {
+                        crate::synctex::synctex_void_vlist(p, this_box);
+                    } else {
+                        crate::synctex::synctex_void_hlist(p, this_box);
+                    }
+
+                    if upwards {
+                        set_cur_v(cur_v() - mem_b32s1(p + 3));
+                    } else {
+                        set_cur_v(cur_v() + mem_b32s1(p + 2));
+                    }
+                } else {
+                    if upwards {
+                        set_cur_v(cur_v() - mem_b32s1(p + 2));
+                    } else {
+                        set_cur_v(cur_v() + mem_b32s1(p + 3));
+                    }
+
+                    if cur_v() != dvi_v {
+                        movement(cur_v() - dvi_v, DOWN1);
+                        dvi_v = cur_v();
+                    }
+
+                    let save_h = dvi_h;
+                    let save_v = dvi_v;
+
+                    if cur_dir() == RIGHT_TO_LEFT {
+                        set_cur_h(left_edge - mem_b32s1(p + 4));
+                    } else {
+                        set_cur_h(left_edge + mem_b32s1(p + 4));
+                    }
+
+                    set_temp_ptr(p);
+                    if mem_b16s1(p) == VLIST_NODE {
+                        vlist_out();
+                    } else {
+                        hlist_out();
+                    }
+
+                    dvi_h = save_h;
+                    dvi_v = save_v;
+
+                    if upwards {
+                        set_cur_v(save_v - mem_b32s1(p + 3));
+                    } else {
+                        set_cur_v(save_v + mem_b32s1(p + 2));
+                    }
+
+                    set_cur_h(left_edge);
+                }
+            }
+            RULE_NODE => {
+                set_rule_ht(mem_b32s1(p + 3));
+                set_rule_dp(mem_b32s1(p + 2));
+                set_rule_wd(mem_b32s1(p + 1));
+                finish_vlist_rule(this_box, left_edge, upwards);
+            }
+            WHATSIT_NODE => match mem_b16s0(p) {
+                GLYPH_NODE => {
+                    set_cur_v(cur_v() + mem_b32s1(p + 3));
+                    set_cur_h(left_edge);
+
+                    if cur_h() != dvi_h {
+                        movement(cur_h() - dvi_h, RIGHT1);
+                        dvi_h = cur_h();
+                    }
+
+                    if cur_v() != dvi_v {
+                        movement(cur_v() - dvi_v, DOWN1);
+                        dvi_v = cur_v();
+                    }
+
+                    let f = mem_b16s2(p + 4) as i32;
+                    ensure_dvi_font(f);
+
+                    dvi_out(SET_GLYPHS);
+                    dvi_four(0);
+                    dvi_two(1);
+                    dvi_four(0);
+                    dvi_four(0);
+                    dvi_two(mem_b16s1(p + 4));
+
+                    set_cur_v(cur_v() + mem_b32s1(p + 2));
+                    set_cur_h(left_edge);
+                }
+                PIC_NODE | PDF_NODE => {
+                    let save_h = dvi_h;
+                    let save_v = dvi_v;
+                    set_cur_v(cur_v() + mem_b32s1(p + 3));
+                    pic_out(p);
+                    dvi_h = save_h;
+                    dvi_v = save_v;
+                    set_cur_v(save_v + mem_b32s1(p + 2));
+                    set_cur_h(left_edge);
+                }
+                PDF_SAVE_POS_NODE => {
+                    set_pdf_last_x_pos(cur_h() + ONE_INCH_LESS_ONE);
+                    set_pdf_last_y_pos(cur_page_height() - cur_v() - ONE_INCH_LESS_ONE);
+                }
+                _ => out_what(p),
+            },
+            GLUE_NODE => {
+                let g = mem_b32s0(p + 1);
+                set_rule_ht(mem_b32s1(g + 1) - cur_g);
+
+                if g_sign != NORMAL {
+                    if g_sign == STRETCHING {
+                        if mem_b16s1(g) == g_order {
+                            cur_glue += mem_b32s1(g + 2) as f64;
+                            let glue_temp = (mem_gr(this_box + 6) * cur_glue)
+                                .clamp(-1_000_000_000.0, 1_000_000_000.0);
+                            cur_g = crate::scaled_math::tex_round(glue_temp);
+                        }
+                    } else if mem_b16s0(g) == g_order {
+                        cur_glue -= mem_b32s1(g + 3) as f64;
+                        let glue_temp = (mem_gr(this_box + 6) * cur_glue)
+                            .clamp(-1_000_000_000.0, 1_000_000_000.0);
+                        cur_g = crate::scaled_math::tex_round(glue_temp);
+                    }
+                }
+
+                set_rule_ht(rule_ht() + cur_g);
+
+                if mem_b16s0(p) >= A_LEADERS {
+                    let leader_box = mem_b32s1(p + 1);
+
+                    if mem_b16s1(leader_box) == RULE_NODE {
+                        set_rule_wd(mem_b32s1(leader_box + 1));
+                        set_rule_dp(0);
+                        finish_vlist_rule(this_box, left_edge, upwards);
+                    } else {
+                        let leader_ht = mem_b32s1(leader_box + 3) + mem_b32s1(leader_box + 2);
+
+                        if leader_ht > 0 && rule_ht() > 0 {
+                            set_rule_ht(rule_ht() + 10);
+                            let edge = cur_v() + rule_ht();
+                            let mut lx = 0;
+
+                            if mem_b16s0(p) == A_LEADERS {
+                                let save_v = cur_v();
+                                set_cur_v(
+                                    top_edge + leader_ht * ((cur_v() - top_edge) / leader_ht),
+                                );
+                                if cur_v() < save_v {
+                                    set_cur_v(cur_v() + leader_ht);
+                                }
+                            } else {
+                                let lq = rule_ht() / leader_ht;
+                                let lr = rule_ht() % leader_ht;
+
+                                if mem_b16s0(p) == C_LEADERS {
+                                    set_cur_v(cur_v() + (lr / 2));
+                                } else {
+                                    lx = lr / (lq + 1);
+                                    set_cur_v(cur_v() + ((lr - (lq - 1) * lx) / 2));
+                                }
+                            }
+
+                            while cur_v() + leader_ht <= edge {
+                                if cur_dir() == RIGHT_TO_LEFT {
+                                    set_cur_h(left_edge - mem_b32s1(leader_box + 4));
+                                } else {
+                                    set_cur_h(left_edge + mem_b32s1(leader_box + 4));
+                                }
+
+                                if cur_h() != dvi_h {
+                                    movement(cur_h() - dvi_h, RIGHT1);
+                                    dvi_h = cur_h();
+                                }
+
+                                let save_h = dvi_h;
+                                set_cur_v(cur_v() + mem_b32s1(leader_box + 3));
+
+                                if cur_v() != dvi_v {
+                                    movement(cur_v() - dvi_v, DOWN1);
+                                    dvi_v = cur_v();
+                                }
+
+                                let save_v = dvi_v;
+                                set_temp_ptr(leader_box);
+                                let outer_doing_leaders = doing_leaders();
+                                set_doing_leaders(true);
+
+                                if mem_b16s1(leader_box) == VLIST_NODE {
+                                    vlist_out();
+                                } else {
+                                    hlist_out();
+                                }
+
+                                set_doing_leaders(outer_doing_leaders);
+                                dvi_v = save_v;
+                                dvi_h = save_h;
+                                set_cur_h(left_edge);
+                                set_cur_v(save_v - mem_b32s1(leader_box + 3) + leader_ht + lx);
+                            }
+
+                            set_cur_v(edge - 10);
+                            go_next = true;
+                        } else {
+                            move_past_vlist_rule(upwards);
+                        }
+                    }
+                } else {
+                    move_past_vlist_rule(upwards);
+                }
+            }
+            KERN_NODE => {
+                if upwards {
+                    set_cur_v(cur_v() - mem_b32s1(p + 1));
+                } else {
+                    set_cur_v(cur_v() + mem_b32s1(p + 1));
+                }
+            }
+            _ => {}
+        }
+
+        if go_next {
+            p = mem_b32s1(p);
+        }
+    }
+
+    crate::synctex::synctex_tsilv(this_box);
+    prune_movements(save_loc);
+
+    if cur_s > 0 {
+        dvi_pop(save_loc);
+    }
+    cur_s -= 1;
+}
+
+unsafe fn finish_vlist_rule(this_box: i32, left_edge: i32, upwards: bool) {
+    if rule_wd() == NULL_FLAG {
+        set_rule_wd(mem_b32s1(this_box + 1));
+    }
+
+    set_rule_ht(rule_ht() + rule_dp());
+
+    if upwards {
+        set_cur_v(cur_v() - rule_ht());
+    } else {
+        set_cur_v(cur_v() + rule_ht());
+    }
+
+    if rule_ht() > 0 && rule_wd() > 0 {
+        if cur_dir() == RIGHT_TO_LEFT {
+            set_cur_h(cur_h() - rule_wd());
+        }
+
+        if cur_h() != dvi_h {
+            movement(cur_h() - dvi_h, RIGHT1);
+            dvi_h = cur_h();
+        }
+
+        if cur_v() != dvi_v {
+            movement(cur_v() - dvi_v, DOWN1);
+            dvi_v = cur_v();
+        }
+
+        dvi_out(PUT_RULE);
+        dvi_four(rule_ht());
+        dvi_four(rule_wd());
+        set_cur_h(left_edge);
+    }
+}
+
+unsafe fn move_past_vlist_rule(upwards: bool) {
+    if upwards {
+        set_cur_v(cur_v() - rule_ht());
+    } else {
+        set_cur_v(cur_v() + rule_ht());
+    }
+}
+
 // xetex-constants.h:238,240,248,249,226,227
 const EOP: u8 = 140;
 const POST: u8 = 248;
@@ -597,7 +947,10 @@ const COUNT_BASE: i32 = 7_826_812;
 // scan.rs FONT_BASE
 const FONT_BASE: i32 = 0;
 const LEFT_TO_RIGHT: i16 = 0;
+const RIGHT_TO_LEFT: i16 = 1;
 const ONE_INCH: i32 = 4_736_287;
+const ONE_INCH_LESS_ONE: i32 = 4_736_286;
+const NULL_FLAG: i32 = -0x4000_0000;
 
 // translated from xetex-shipout.c:1930 (prune_movements)
 #[no_mangle]
