@@ -32,6 +32,49 @@ template.
 
 ---
 
+## Session 115 — 2026-05-19 — xetex-shipout.c ship_out
+
+**Goal:** Continue `xetex-shipout.c` by translating the top-level page emission function `ship_out` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 114
+
+**Work done:**
+- Translated `ship_out` (line 56) from `xetex-shipout.c` to `src/shipout.rs`.
+- Promoted the C file-static `dvi_f` to a Rust `#[no_mangle]` static so Rust `ship_out` and the remaining C list-output functions share current-font state.
+- Un-static'd `hlist_out` and `vlist_out` in C so Rust `ship_out` can call them while they remain untranslated.
+- Preserved the C behavior for the output preamble, page-size special generation, huge-page diagnostic, LR anomaly reporting, node flushing, and SyncTeX sheet/teehs calls.
+- Code commit: `31345c81` (`engine_xetex: translate shipout page emission to Rust`).
+
+**Validation:**
+- `cargo build -p tectonic_engine_xetex`
+- `cargo test -p tectonic --test tex-outputs` => 29/29
+- `cargo test -p tectonic --test trip` => 2/2
+- `cargo test -p tectonic --test engine_rust` => 7/7
+- `cargo test -p tectonic --test latex_goldens` => 4/4
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- Trip: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 115
+
+**Surprises / gotchas:**
+- `ship_out` could not be translated without exporting `hlist_out`/`vlist_out`; Rust cannot call C file-static functions.
+- The output filename abort path still needs a formatted string; the Rust side mirrors the existing `write_out` approach by formatting into a fixed buffer before `_tt_abort`.
+- The remaining compiled functions in `xetex-shipout.c` are now only `hlist_out` and `vlist_out`.
+
+**For the next session:**
+- Continue `xetex-shipout.c` with `hlist_out` or `vlist_out`.
+- Before translating either, plan the remaining list-output scratch state (`g`, `lq`, `lr`) and the mutual recursion between `hlist_out` and `vlist_out`; they may need to move together or through a carefully staged export boundary.
+
+---
+
 ## Session 114 — 2026-05-19 — xetex-shipout.c reverse
 
 **Goal:** Continue `xetex-shipout.c` by translating the remaining reflected-hlist helper `reverse` to Rust.
