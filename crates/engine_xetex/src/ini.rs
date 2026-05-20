@@ -4,9 +4,11 @@ use crate::globals::{
     cur_lang, first, hyf_distance_entry, hyf_next_entry, hyf_num_entry, last, max_op_used,
     pool_size, set_buffer_entry, set_cur_input_limit, set_cur_input_loc, set_first,
     set_hyf_distance_entry, set_hyf_next_entry, set_hyf_num_entry, set_input_file, set_last,
-    set_max_op_used, set_pool_ptr, set_str_ptr, set_str_start, set_trie_op_lang_entry,
-    set_trie_op_ptr, set_trie_op_val_entry, set_trie_used_entry, string_vacancies,
-    trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_used_entry,
+    set_max_op_used, set_pool_ptr, set_str_ptr, set_str_start, set_trie_hash_entry,
+    set_trie_l_entry, set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry,
+    set_trie_r_entry, set_trie_used_entry, string_vacancies, trie_c_entry, trie_hash_entry,
+    trie_l_entry, trie_o_entry, trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_r_entry,
+    trie_size, trie_used_entry,
 };
 use crate::io::UFile;
 
@@ -128,4 +130,49 @@ pub unsafe extern "C" fn new_trie_op(d: i16, n: i16, v: u16) -> u16 {
             h = TRIE_OP_SIZE;
         }
     }
+}
+
+// translated from xetex-ini.c:632 (trie_node)
+#[no_mangle]
+pub unsafe extern "C" fn trie_node(p: i32) -> i32 {
+    let mut h = (trie_c_entry(p) as i32
+        + 1009 * trie_o_entry(p) as i32
+        + 2718 * trie_l_entry(p)
+        + 3142 * trie_r_entry(p))
+    .abs()
+        % trie_size();
+
+    loop {
+        let q = trie_hash_entry(h);
+        if q == 0 {
+            set_trie_hash_entry(h, p);
+            return p;
+        }
+
+        if trie_c_entry(q) == trie_c_entry(p)
+            && trie_o_entry(q) == trie_o_entry(p)
+            && trie_l_entry(q) == trie_l_entry(p)
+            && trie_r_entry(q) == trie_r_entry(p)
+        {
+            return q;
+        }
+
+        if h > 0 {
+            h -= 1;
+        } else {
+            h = trie_size();
+        }
+    }
+}
+
+// translated from xetex-ini.c:655 (compress_trie)
+#[no_mangle]
+pub unsafe extern "C" fn compress_trie(p: i32) -> i32 {
+    if p == 0 {
+        return 0;
+    }
+
+    set_trie_l_entry(p, compress_trie(trie_l_entry(p)));
+    set_trie_r_entry(p, compress_trie(trie_r_entry(p)));
+    trie_node(p)
 }

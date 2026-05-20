@@ -515,6 +515,12 @@ mod raw {
         pub(super) static mut trie_trl: *mut i32;
         pub(super) static mut trie_tro: *mut i32;
         pub(super) static mut trie_trc: *mut u16;
+        pub(super) static mut trie_c: *mut u16;
+        pub(super) static mut trie_o: *mut u16;
+        pub(super) static mut trie_l: *mut i32;
+        pub(super) static mut trie_r: *mut i32;
+        pub(super) static mut trie_hash: *mut i32;
+        pub(super) static mut trie_size: i32;
         pub(super) static mut hyf_distance: [i16; 35112];
         pub(super) static mut hyf_num: [i16; 35112];
         pub(super) static mut hyf_next: [u16; 35112];
@@ -4073,6 +4079,48 @@ pub(crate) fn trie_tro_entry(k: i32) -> i32 {
 #[inline]
 pub(crate) fn trie_trc_entry(k: i32) -> u16 {
     unsafe { *raw::trie_trc.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn trie_c_entry(k: i32) -> u16 {
+    unsafe { *raw::trie_c.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn trie_o_entry(k: i32) -> u16 {
+    unsafe { *raw::trie_o.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn trie_l_entry(k: i32) -> i32 {
+    unsafe { *raw::trie_l.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn set_trie_l_entry(k: i32, v: i32) {
+    unsafe {
+        *raw::trie_l.offset(k as isize) = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_r_entry(k: i32) -> i32 {
+    unsafe { *raw::trie_r.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn set_trie_r_entry(k: i32, v: i32) {
+    unsafe {
+        *raw::trie_r.offset(k as isize) = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_hash_entry(k: i32) -> i32 {
+    unsafe { *raw::trie_hash.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn set_trie_hash_entry(k: i32, v: i32) {
+    unsafe {
+        *raw::trie_hash.offset(k as isize) = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_size() -> i32 {
+    unsafe { raw::trie_size }
 }
 #[inline]
 pub(crate) fn trie_not_ready() -> bool {

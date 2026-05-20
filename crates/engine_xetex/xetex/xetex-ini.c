@@ -629,40 +629,9 @@ primitive(const char* ident, uint16_t c, int32_t o)
 
 // translated to Rust: src/ini.rs new_trie_op
 
-trie_pointer trie_node(trie_pointer p)
-{
-    trie_pointer h;
-    trie_pointer q;
-    h = abs(trie_c[p] + 1009 * trie_o[p] + 2718 * trie_l[p] + 3142 * trie_r[p]) % trie_size;
-    while (true) {
+// translated to Rust: src/ini.rs trie_node
 
-        q = trie_hash[h];
-        if (q == 0) {
-            trie_hash[h] = p;
-            return p;
-        }
-        if ((trie_c[q] == trie_c[p]) && (trie_o[q] == trie_o[p]) && (trie_l[q] == trie_l[p])
-            && (trie_r[q] == trie_r[p])) {
-            return q;
-        }
-        if (h > 0)
-            h--;
-        else
-            h = trie_size;
-    }
-}
-
-trie_pointer compress_trie(trie_pointer p)
-{
-    if (p == 0)
-        return 0;
-    else {
-
-        trie_l[p] = compress_trie(trie_l[p]);
-        trie_r[p] = compress_trie(trie_r[p]);
-        return trie_node(p);
-    }
-}
+// translated to Rust: src/ini.rs compress_trie
 
 void first_fit(trie_pointer p)
 {
