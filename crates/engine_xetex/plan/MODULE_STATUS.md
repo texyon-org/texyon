@@ -705,8 +705,7 @@ Status: DONE (session 108).
 Remaining in C: none. `xetex-math.c` now has no remaining compiled C
 bodies; only prototypes/globals/reference comments remain.
 
-The next candidate is outside the math file: continue `xetex-shipout.c`
-or start `xetex-ini.c`.
+The next large candidate is `xetex-ini.c`; `xetex-shipout.c` is now done.
 
 ### Phases 16+
 
