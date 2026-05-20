@@ -522,6 +522,11 @@ mod raw {
         pub(super) static mut hyph_word: *mut i32;
         pub(super) static mut hyph_list: *mut i32;
         pub(super) static mut hyph_link: *mut u16;
+        pub(super) static mut trie_used: [u16; 256];
+        pub(super) static mut trie_op_lang: [u8; 35112];
+        pub(super) static mut trie_op_val: [u16; 35112];
+        pub(super) static mut trie_op_ptr: i32;
+        pub(super) static mut max_op_used: u16;
         pub(super) static mut trie_not_ready: bool;
         pub(super) static mut hyph_start: i32;
         pub(super) static mut hyph_index: i32;
@@ -4092,16 +4097,84 @@ pub(crate) fn hyf_distance_entry(k: i32) -> i16 {
     unsafe { raw::hyf_distance[k as usize] }
 }
 #[inline]
+pub(crate) fn set_hyf_distance_entry(k: i32, v: i16) {
+    unsafe {
+        raw::hyf_distance[k as usize] = v;
+    }
+}
+#[inline]
 pub(crate) fn hyf_num_entry(k: i32) -> i16 {
     unsafe { raw::hyf_num[k as usize] }
+}
+#[inline]
+pub(crate) fn set_hyf_num_entry(k: i32, v: i16) {
+    unsafe {
+        raw::hyf_num[k as usize] = v;
+    }
 }
 #[inline]
 pub(crate) fn hyf_next_entry(k: i32) -> u16 {
     unsafe { raw::hyf_next[k as usize] }
 }
 #[inline]
+pub(crate) fn set_hyf_next_entry(k: i32, v: u16) {
+    unsafe {
+        raw::hyf_next[k as usize] = v;
+    }
+}
+#[inline]
 pub(crate) fn op_start_entry(k: usize) -> i32 {
     unsafe { raw::op_start[k] }
+}
+#[inline]
+pub(crate) fn trie_used_entry(k: usize) -> u16 {
+    unsafe { raw::trie_used[k] }
+}
+#[inline]
+pub(crate) fn set_trie_used_entry(k: usize, v: u16) {
+    unsafe {
+        raw::trie_used[k] = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_op_lang_entry(k: i32) -> u8 {
+    unsafe { raw::trie_op_lang[k as usize] }
+}
+#[inline]
+pub(crate) fn set_trie_op_lang_entry(k: i32, v: u8) {
+    unsafe {
+        raw::trie_op_lang[k as usize] = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_op_val_entry(k: i32) -> u16 {
+    unsafe { raw::trie_op_val[k as usize] }
+}
+#[inline]
+pub(crate) fn set_trie_op_val_entry(k: i32, v: u16) {
+    unsafe {
+        raw::trie_op_val[k as usize] = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_op_ptr() -> i32 {
+    unsafe { raw::trie_op_ptr }
+}
+#[inline]
+pub(crate) fn set_trie_op_ptr(v: i32) {
+    unsafe {
+        raw::trie_op_ptr = v;
+    }
+}
+#[inline]
+pub(crate) fn max_op_used() -> u16 {
+    unsafe { raw::max_op_used }
+}
+#[inline]
+pub(crate) fn set_max_op_used(v: u16) {
+    unsafe {
+        raw::max_op_used = v;
+    }
 }
 #[inline]
 pub(crate) fn hyph_word_entry(k: i32) -> i32 {

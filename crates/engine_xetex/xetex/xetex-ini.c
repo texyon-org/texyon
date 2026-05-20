@@ -366,7 +366,7 @@ uint16_t _xeq_level_array[EQTB_SIZE - INT_BASE + 1];
 #define NEG_TRIE_OP_SIZE -35111L
 #define MAX_TRIE_OP 65535L
 
-static int32_t _trie_op_hash_array[TRIE_OP_SIZE - NEG_TRIE_OP_SIZE + 1];
+extern int32_t _trie_op_hash_array[TRIE_OP_SIZE - NEG_TRIE_OP_SIZE + 1];
 #define TRIE_OP_HASH(i) _trie_op_hash_array[(i) - NEG_TRIE_OP_SIZE]
 
 static b32x2 *yhash;
@@ -627,44 +627,7 @@ primitive(const char* ident, uint16_t c, int32_t o)
 
 /*:925*//*977: */
 
-trie_opcode new_trie_op(small_number d, small_number n, trie_opcode v)
-{
-    int32_t h;
-    trie_opcode u;
-    int32_t l;
-    h = abs(n + 313 * d + 361 * v + 1009 * cur_lang) % (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE) + NEG_TRIE_OP_SIZE;
-    while (true) {
-
-        l = TRIE_OP_HASH(h);
-        if (l == 0) {
-            if (trie_op_ptr == TRIE_OP_SIZE)
-                overflow("pattern memory ops", TRIE_OP_SIZE);
-            u = trie_used[cur_lang];
-            if (u == MAX_TRIE_OP)
-                overflow("pattern memory ops per language",
-                         MAX_TRIE_OP - MIN_TRIE_OP);
-            trie_op_ptr++;
-            u++;
-            trie_used[cur_lang] = u;
-            if (u > max_op_used)
-                max_op_used = u;
-            hyf_distance[trie_op_ptr] = d;
-            hyf_num[trie_op_ptr] = n;
-            hyf_next[trie_op_ptr] = v;
-            trie_op_lang[trie_op_ptr] = cur_lang;
-            TRIE_OP_HASH(h) = trie_op_ptr;
-            trie_op_val[trie_op_ptr] = u;
-            return u;
-        }
-        if ((hyf_distance[l] == d) && (hyf_num[l] == n) && (hyf_next[l] == v) && (trie_op_lang[l] == cur_lang)) {
-            return trie_op_val[l];
-        }
-        if (h > -(int32_t) TRIE_OP_SIZE)
-            h--;
-        else
-            h = TRIE_OP_SIZE;
-    }
-}
+// translated to Rust: src/ini.rs new_trie_op
 
 trie_pointer trie_node(trie_pointer p)
 {
