@@ -633,95 +633,11 @@ primitive(const char* ident, uint16_t c, int32_t o)
 
 // translated to Rust: src/ini.rs compress_trie
 
-void first_fit(trie_pointer p)
-{
-    trie_pointer h;
-    trie_pointer z;
-    trie_pointer q;
-    UTF16_code c;
-    trie_pointer l, r;
-    int32_t /*too_big_char */ ll;
-    c = trie_c[p];
-    z = trie_min[c];
-    while (true) {
+// translated to Rust: src/ini.rs first_fit
 
-        h = z - c;
-        if (trie_max < h + max_hyph_char) {
-            if (trie_size <= h + max_hyph_char)
-                overflow("pattern memory", trie_size);
-            do {
-                trie_max++;
-                trie_taken[trie_max] = false;
-                trie_trl[trie_max] = trie_max + 1;
-                trie_tro[trie_max] = trie_max - 1;
-            } while (!(trie_max == h + max_hyph_char));
-        }
-        if (trie_taken[h])
-            goto not_found;
-        q = trie_r[p];
-        while (q > 0) {
+// translated to Rust: src/ini.rs trie_pack
 
-            if (trie_trl[h + trie_c[q]] == 0)
-                goto not_found;
-            q = trie_r[q];
-        }
-        goto found;
-    not_found:                        /*not_found */ z = trie_trl[z];
-    }
-found:                        /*found *//*991: */ trie_taken[h] = true;
-    trie_hash[p] = h;
-    q = p;
-    do {
-        z = h + trie_c[q];
-        l = trie_tro[z];
-        r = trie_trl[z];
-        trie_tro[r] = l;
-        trie_trl[l] = r;
-        trie_trl[z] = 0;
-        if (l < max_hyph_char) {
-            if (z < max_hyph_char)
-                ll = z;
-            else
-                ll = max_hyph_char;
-            do {
-                trie_min[l] = r;
-                l++;
-            } while (!(l == ll));
-        }
-        q = trie_r[q];
-    } while (!(q == 0 /*:991 */ ));
-}
-
-void trie_pack(trie_pointer p)
-{
-    trie_pointer q;
-    do {
-        q = trie_l[p];
-        if ((q > 0) && (trie_hash[q] == 0)) {
-            first_fit(q);
-            trie_pack(q);
-        }
-        p = trie_r[p];
-    } while (!(p == 0));
-}
-
-void trie_fix(trie_pointer p)
-{
-    trie_pointer q;
-    UTF16_code c;
-    trie_pointer z;
-    z = trie_hash[p];
-    do {
-        q = trie_l[p];
-        c = trie_c[p];
-        trie_trl[z + c] = trie_hash[q];
-        trie_trc[z + c] = c;
-        trie_tro[z + c] = trie_o[p];
-        if (q > 0)
-            trie_fix(q);
-        p = trie_r[p];
-    } while (!(p == 0));
-}
+// translated to Rust: src/ini.rs trie_fix
 
 static void
 new_patterns(void)

@@ -520,6 +520,9 @@ mod raw {
         pub(super) static mut trie_l: *mut i32;
         pub(super) static mut trie_r: *mut i32;
         pub(super) static mut trie_hash: *mut i32;
+        pub(super) static mut trie_taken: *mut bool;
+        pub(super) static mut trie_min: [i32; 65536];
+        pub(super) static mut trie_max: i32;
         pub(super) static mut trie_size: i32;
         pub(super) static mut hyf_distance: [i16; 35112];
         pub(super) static mut hyf_num: [i16; 35112];
@@ -4073,12 +4076,30 @@ pub(crate) fn trie_trl_entry(k: i32) -> i32 {
     unsafe { *raw::trie_trl.offset(k as isize) }
 }
 #[inline]
+pub(crate) fn set_trie_trl_entry(k: i32, v: i32) {
+    unsafe {
+        *raw::trie_trl.offset(k as isize) = v;
+    }
+}
+#[inline]
 pub(crate) fn trie_tro_entry(k: i32) -> i32 {
     unsafe { *raw::trie_tro.offset(k as isize) }
 }
 #[inline]
+pub(crate) fn set_trie_tro_entry(k: i32, v: i32) {
+    unsafe {
+        *raw::trie_tro.offset(k as isize) = v;
+    }
+}
+#[inline]
 pub(crate) fn trie_trc_entry(k: i32) -> u16 {
     unsafe { *raw::trie_trc.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn set_trie_trc_entry(k: i32, v: u16) {
+    unsafe {
+        *raw::trie_trc.offset(k as isize) = v;
+    }
 }
 #[inline]
 pub(crate) fn trie_c_entry(k: i32) -> u16 {
@@ -4116,6 +4137,36 @@ pub(crate) fn trie_hash_entry(k: i32) -> i32 {
 pub(crate) fn set_trie_hash_entry(k: i32, v: i32) {
     unsafe {
         *raw::trie_hash.offset(k as isize) = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_taken_entry(k: i32) -> bool {
+    unsafe { *raw::trie_taken.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn set_trie_taken_entry(k: i32, v: bool) {
+    unsafe {
+        *raw::trie_taken.offset(k as isize) = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_min_entry(k: i32) -> i32 {
+    unsafe { raw::trie_min[k as usize] }
+}
+#[inline]
+pub(crate) fn set_trie_min_entry(k: i32, v: i32) {
+    unsafe {
+        raw::trie_min[k as usize] = v;
+    }
+}
+#[inline]
+pub(crate) fn trie_max() -> i32 {
+    unsafe { raw::trie_max }
+}
+#[inline]
+pub(crate) fn set_trie_max(v: i32) {
+    unsafe {
+        raw::trie_max = v;
     }
 }
 #[inline]

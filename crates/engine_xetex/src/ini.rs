@@ -1,14 +1,16 @@
 //! Rust translation of initialization helpers from xetex-ini.c.
 
 use crate::globals::{
-    cur_lang, first, hyf_distance_entry, hyf_next_entry, hyf_num_entry, last, max_op_used,
-    pool_size, set_buffer_entry, set_cur_input_limit, set_cur_input_loc, set_first,
+    cur_lang, first, hyf_distance_entry, hyf_next_entry, hyf_num_entry, last, max_hyph_char,
+    max_op_used, pool_size, set_buffer_entry, set_cur_input_limit, set_cur_input_loc, set_first,
     set_hyf_distance_entry, set_hyf_next_entry, set_hyf_num_entry, set_input_file, set_last,
     set_max_op_used, set_pool_ptr, set_str_ptr, set_str_start, set_trie_hash_entry,
-    set_trie_l_entry, set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry,
-    set_trie_r_entry, set_trie_used_entry, string_vacancies, trie_c_entry, trie_hash_entry,
-    trie_l_entry, trie_o_entry, trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_r_entry,
-    trie_size, trie_used_entry,
+    set_trie_l_entry, set_trie_max, set_trie_min_entry, set_trie_op_lang_entry, set_trie_op_ptr,
+    set_trie_op_val_entry, set_trie_r_entry, set_trie_taken_entry, set_trie_trc_entry,
+    set_trie_trl_entry, set_trie_tro_entry, set_trie_used_entry, string_vacancies, trie_c_entry,
+    trie_hash_entry, trie_l_entry, trie_max, trie_min_entry, trie_o_entry, trie_op_lang_entry,
+    trie_op_ptr, trie_op_val_entry, trie_r_entry, trie_size, trie_taken_entry, trie_trl_entry,
+    trie_tro_entry, trie_used_entry,
 };
 use crate::io::UFile;
 
@@ -175,4 +177,119 @@ pub unsafe extern "C" fn compress_trie(p: i32) -> i32 {
     set_trie_l_entry(p, compress_trie(trie_l_entry(p)));
     set_trie_r_entry(p, compress_trie(trie_r_entry(p)));
     trie_node(p)
+}
+
+// translated from xetex-ini.c:638 (first_fit)
+#[no_mangle]
+pub unsafe extern "C" fn first_fit(p: i32) {
+    let c = trie_c_entry(p) as i32;
+    let mut z = trie_min_entry(c);
+    let mut h;
+
+    loop {
+        h = z - c;
+        if trie_max() < h + max_hyph_char() {
+            if trie_size() <= h + max_hyph_char() {
+                crate::errors::overflow(c"pattern memory".as_ptr(), trie_size());
+            }
+
+            loop {
+                set_trie_max(trie_max() + 1);
+                set_trie_taken_entry(trie_max(), false);
+                set_trie_trl_entry(trie_max(), trie_max() + 1);
+                set_trie_tro_entry(trie_max(), trie_max() - 1);
+                if trie_max() == h + max_hyph_char() {
+                    break;
+                }
+            }
+        }
+
+        let mut found = !trie_taken_entry(h);
+        let mut q = trie_r_entry(p);
+        while found && q > 0 {
+            if trie_trl_entry(h + trie_c_entry(q) as i32) == 0 {
+                found = false;
+            } else {
+                q = trie_r_entry(q);
+            }
+        }
+
+        if found {
+            break;
+        }
+
+        z = trie_trl_entry(z);
+    }
+
+    set_trie_taken_entry(h, true);
+    set_trie_hash_entry(p, h);
+    let mut q = p;
+    loop {
+        z = h + trie_c_entry(q) as i32;
+        let mut l = trie_tro_entry(z);
+        let r = trie_trl_entry(z);
+        set_trie_tro_entry(r, l);
+        set_trie_trl_entry(l, r);
+        set_trie_trl_entry(z, 0);
+
+        if l < max_hyph_char() {
+            let ll = if z < max_hyph_char() {
+                z
+            } else {
+                max_hyph_char()
+            };
+
+            loop {
+                set_trie_min_entry(l, r);
+                l += 1;
+                if l == ll {
+                    break;
+                }
+            }
+        }
+
+        q = trie_r_entry(q);
+        if q == 0 {
+            break;
+        }
+    }
+}
+
+// translated from xetex-ini.c:695 (trie_pack)
+#[no_mangle]
+pub unsafe extern "C" fn trie_pack(mut p: i32) {
+    loop {
+        let q = trie_l_entry(p);
+        if q > 0 && trie_hash_entry(q) == 0 {
+            first_fit(q);
+            trie_pack(q);
+        }
+
+        p = trie_r_entry(p);
+        if p == 0 {
+            break;
+        }
+    }
+}
+
+// translated from xetex-ini.c:708 (trie_fix)
+#[no_mangle]
+pub unsafe extern "C" fn trie_fix(mut p: i32) {
+    let z = trie_hash_entry(p);
+    loop {
+        let q = trie_l_entry(p);
+        let c = trie_c_entry(p);
+        set_trie_trl_entry(z + c as i32, trie_hash_entry(q));
+        set_trie_trc_entry(z + c as i32, c);
+        set_trie_tro_entry(z + c as i32, trie_o_entry(p) as i32);
+
+        if q > 0 {
+            trie_fix(q);
+        }
+
+        p = trie_r_entry(p);
+        if p == 0 {
+            break;
+        }
+    }
 }
