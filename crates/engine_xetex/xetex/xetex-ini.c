@@ -3029,25 +3029,8 @@ final_cleanup(void)
 
 /* Engine initialization */
 
-static UFILE stdin_ufile;
-
-static void
-init_io(void)
-{
-    /* This is largely vestigial at this point */
-    stdin_ufile.handle = INVALID_HANDLE;
-    stdin_ufile.savedChar = -1;
-    stdin_ufile.skipNextLF = 0;
-    stdin_ufile.encodingMode = UTF8;
-    stdin_ufile.conversionData = 0;
-    input_file[0] = &stdin_ufile;
-
-    buffer[first] = 0;
-    last = first;
-    cur_input.loc = first;
-    cur_input.limit = last;
-    first = last + 1;
-}
+void init_io(void);
+// translated to Rust: src/ini.rs init_io
 
 
 static void
@@ -3448,17 +3431,8 @@ initialize_primitives(void)
 }
 
 
-static void
-get_strings_started(void)
-{
-    pool_ptr = 0;
-    str_ptr = 0;
-    str_start[0] = 0;
-    str_ptr = TOO_BIG_CHAR;
-
-    if (load_pool_strings(pool_size - string_vacancies) == 0)
-        _tt_abort ("must increase pool_size");
-}
+void get_strings_started(void);
+// translated to Rust: src/ini.rs get_strings_started
 /*:1001*/
 
 void

@@ -188,8 +188,9 @@ mod raw {
         pub(super) static mut trick_buf: [u16; 256];
         pub(super) static mut trick_count: i32;
         pub(super) static mut first_count: i32;
-        // String pool (xetex-xetexd.h:403, 423, 425).
+        // String pool (xetex-xetexd.h:402-403, 423, 425).
         // `packed_UTF16_code` = `unsigned short`; `pool_pointer` = `int32_t`.
+        pub(super) static mut string_vacancies: i32;
         pub(super) static mut pool_size: i32;
         pub(super) static mut str_pool: *mut u16;
         pub(super) static mut pool_ptr: i32;
@@ -1610,6 +1611,11 @@ pub(crate) fn set_trick_buf(k: usize, v: u16) {
 pub(crate) fn pool_size() -> i32 {
     // SAFETY: see module-level doc.
     unsafe { raw::pool_size }
+}
+#[inline]
+pub(crate) fn string_vacancies() -> i32 {
+    // SAFETY: see module-level doc.
+    unsafe { raw::string_vacancies }
 }
 #[inline]
 pub(crate) fn pool_ptr() -> i32 {
