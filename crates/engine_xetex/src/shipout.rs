@@ -3,22 +3,25 @@
 use crate::globals::{
     avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name,
     cur_page_height, cur_tok, cur_v, def_ref, doing_leaders, eqtb_b32s1, file_offset,
-    font_area_entry, font_check_entry, font_dsize_entry, font_info_b16, font_info_b32s1,
-    font_name_entry, font_ptr, font_size_entry, font_used_entry, init_pool_ptr, job_name, last_bop,
-    log_opened, lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v, mem_b16s0, mem_b16s1,
-    mem_b16s2, mem_b32s0, mem_b32s1, mem_gr, mem_word, name_of_file, pool_ptr, pool_size, rule_dp,
-    rule_ht, rule_wd, rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area,
-    set_cur_cs, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode, set_cur_name,
+    font_area_entry, font_bc_entry, font_check_entry, font_dsize_entry, font_ec_entry, font_glue,
+    font_info_b16, font_info_b32s1, font_letter_space_entry, font_mapping_ptr, font_name_entry,
+    font_ptr, font_size_entry, font_used_entry, hi_mem_min, init_pool_ptr, job_name, last_bop,
+    log_opened, lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v, mem_as_u16_ptr,
+    mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1, mem_gr,
+    mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size, rule_dp, rule_ht, rule_wd,
+    rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area, set_cur_cs,
+    set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode, set_cur_name,
     set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset, set_dead_cycles,
     set_doing_leaders, set_doing_special, set_font_ptr, set_font_used_entry, set_help_line,
     set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_push, set_max_v,
     set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pdf_last_x_pos,
     set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht, set_rule_wd, set_selector,
-    set_temp_ptr, set_total_pages, set_write_file, set_write_open, shell_escape_enabled,
-    str_pool_entry, str_pool_ptr, str_ptr, str_start, temp_ptr, term_offset, total_pages,
-    width_base_entry, write_file, write_loc, write_open, xdv_buffer_entry,
+    set_str_pool, set_temp_ptr, set_total_pages, set_write_file, set_write_open,
+    set_xtx_ligature_present, shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr,
+    str_start, temp_ptr, term_offset, total_pages, width_base_entry, write_file, write_loc,
+    write_open, xdv_buffer_entry,
 };
-use crate::mem::{free_node, get_avail, get_node, new_math};
+use crate::mem::{free_node, get_avail, get_node, new_kern, new_math};
 
 extern "C" {
     fn make_font_def(f: i32) -> libc::c_int;
@@ -33,8 +36,10 @@ extern "C" {
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn ttstub_shell_escape(cmd: *const u16, len: libc::size_t);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
+    fn apply_tfm_font_mapping(cnv: *mut libc::c_void, c: libc::c_int) -> libc::c_int;
+    fn makeXDVGlyphArrayData(node: *mut libc::c_void) -> libc::c_int;
+    fn store_justified_native_glyphs(node: *mut libc::c_void);
     static output_file_extension: *const libc::c_char;
-    fn hlist_out();
 }
 
 // DVI output file state — file-statics promoted from xetex-shipout.c.
@@ -96,21 +101,29 @@ const POP: u8 = 142;
 const PRE: u8 = 247;
 const BOP: u8 = 139;
 const PUSH: u8 = 141;
+const SET1: u8 = 128;
+const SET_RULE: u8 = 132;
 const PUT_RULE: u8 = 137;
 const FNT1: u8 = 235;
 const SET_GLYPHS: u8 = 253;
+const SET_TEXT_AND_GLYPHS: u8 = 254;
 const FNT_NUM_0: u8 = 171;
 
 // xetex-constants.h:105,114. EDGE_NODE is an alias of STYLE_NODE.
 const HLIST_NODE: u16 = 0;
 const VLIST_NODE: u16 = 1;
 const RULE_NODE: u16 = 2;
+const INS_NODE: u16 = 3;
+const MARK_NODE: u16 = 4;
+const ADJUST_NODE: u16 = 5;
 const LIGATURE_NODE: u16 = 6;
 const WHATSIT_NODE: u16 = 8;
 const MATH_NODE: u16 = 9;
 const GLUE_NODE: u16 = 10;
 const KERN_NODE: u16 = 11;
+const PENALTY_NODE: u16 = 12;
 const EDGE_NODE: u16 = 14;
+const MARGIN_KERN_NODE: u16 = 40;
 const SMALL_NODE_SIZE: i32 = 2;
 const MEDIUM_NODE_SIZE: i32 = 3;
 const EDGE_NODE_SIZE: i32 = 3;
@@ -158,11 +171,18 @@ const STRETCHING: u16 = 1;
 const SHRINKING: u16 = 2;
 const A_LEADERS: u16 = 100;
 const C_LEADERS: u16 = 101;
+const SPACE_ADJUSTMENT: u16 = 3;
 
 // MATH_NODE LR constants: xetex-constants.h:142-143; xetex_format.h:437.
 const L_CODE: u16 = 4;
 const R_CODE: u16 = 8;
 const END_M_CODE: u16 = 3;
+const BEFORE: i32 = 0;
+const DLIST: u16 = 2;
+const REVERSED: u16 = 1;
+const LIG_TRICK: i32 = 4_999_987;
+
+const INT_PAR_XETEX_INTERWORD_SPACE_SHAPING: i32 = 78;
 
 // xetex-constants.h:133, tectonic_bridge_core_generated.h:12
 const PIC_NODE_SIZE: i32 = 9;
@@ -604,6 +624,657 @@ unsafe fn ensure_dvi_font(f: i32) {
 
         dvi_f = f;
     }
+}
+
+#[inline]
+unsafe fn is_ignorable_interword_node(p: i32) -> bool {
+    !is_char_node(p)
+        && (mem_b16s1(p) == PENALTY_NODE
+            || mem_b16s1(p) == INS_NODE
+            || mem_b16s1(p) == MARK_NODE
+            || mem_b16s1(p) == ADJUST_NODE
+            || (mem_b16s1(p) == WHATSIT_NODE && mem_b16s0(p) <= LANGUAGE_NODE))
+}
+
+unsafe fn skip_ignorable_interword_nodes(mut q: i32) -> i32 {
+    while q != TEX_NULL && is_ignorable_interword_node(q) {
+        q = mem_b32s1(q);
+    }
+    q
+}
+
+unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u16) {
+    let mut p = mem_b32s1(this_box + 5);
+    let mut prev_p = this_box + 5;
+
+    while p != TEX_NULL {
+        if mem_b32s1(p) != TEX_NULL
+            && !is_char_node(p)
+            && mem_b16s1(p) == WHATSIT_NODE
+            && (mem_b16s0(p) == NATIVE_WORD_NODE || mem_b16s0(p) == NATIVE_WORD_NODE_AT)
+            && font_letter_space_entry(mem_b16s2(p + 4) as i32) == 0
+        {
+            let r = p;
+            let mut k = mem_b16s1(r + 4) as i32;
+            let mut q = mem_b32s1(p);
+
+            'check_next: loop {
+                q = skip_ignorable_interword_nodes(q);
+
+                if q != TEX_NULL && !is_char_node(q) {
+                    if mem_b16s1(q) == GLUE_NODE && mem_b16s0(mem_b32s0(q + 1)) == NORMAL {
+                        if mem_b32s0(q + 1) == font_glue(mem_b16s2(r + 4) as i32) {
+                            q = skip_ignorable_interword_nodes(mem_b32s1(q));
+
+                            if q != TEX_NULL
+                                && !is_char_node(q)
+                                && mem_b16s1(q) == WHATSIT_NODE
+                                && (mem_b16s0(q) == NATIVE_WORD_NODE
+                                    || mem_b16s0(q) == NATIVE_WORD_NODE_AT)
+                                && mem_b16s2(q + 4) == mem_b16s2(r + 4)
+                            {
+                                p = q;
+                                k += 1 + mem_b16s1(q + 4) as i32;
+                                q = mem_b32s1(q);
+                                continue 'check_next;
+                            }
+                        } else {
+                            q = mem_b32s1(q);
+                        }
+
+                        if q != TEX_NULL
+                            && !is_char_node(q)
+                            && mem_b16s1(q) == KERN_NODE
+                            && mem_b16s0(q) == SPACE_ADJUSTMENT
+                        {
+                            q = skip_ignorable_interword_nodes(mem_b32s1(q));
+
+                            if q != TEX_NULL
+                                && !is_char_node(q)
+                                && mem_b16s1(q) == WHATSIT_NODE
+                                && (mem_b16s0(q) == NATIVE_WORD_NODE
+                                    || mem_b16s0(q) == NATIVE_WORD_NODE_AT)
+                                && mem_b16s2(q + 4) == mem_b16s2(r + 4)
+                            {
+                                p = q;
+                                k += 1 + mem_b16s1(q + 4) as i32;
+                                q = mem_b32s1(q);
+                                continue 'check_next;
+                            }
+                        }
+                    } else if mem_b16s1(q) == WHATSIT_NODE
+                        && (mem_b16s0(q) == NATIVE_WORD_NODE || mem_b16s0(q) == NATIVE_WORD_NODE_AT)
+                        && mem_b16s2(q + 4) == mem_b16s2(r + 4)
+                    {
+                        p = q;
+                        q = mem_b32s1(q);
+                        continue 'check_next;
+                    }
+                }
+
+                break;
+            }
+
+            if p != r {
+                if pool_ptr() + k > pool_size() {
+                    crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+                }
+
+                k = 0;
+                q = r;
+                loop {
+                    if mem_b16s1(q) == WHATSIT_NODE {
+                        if mem_b16s0(q) == NATIVE_WORD_NODE || mem_b16s0(q) == NATIVE_WORD_NODE_AT {
+                            let text = mem_as_u16_ptr(q + 6);
+                            for j in 0..(mem_b16s1(q + 4) as i32) {
+                                set_str_pool(pool_ptr(), *text.add(j as usize));
+                                set_pool_ptr(pool_ptr() + 1);
+                            }
+
+                            k += mem_b32s1(q + 1);
+                        }
+                    } else if mem_b16s1(q) == GLUE_NODE {
+                        set_str_pool(pool_ptr(), b' ' as u16);
+                        set_pool_ptr(pool_ptr() + 1);
+                        let g = mem_b32s0(q + 1);
+                        k += mem_b32s1(g + 1);
+
+                        if g_sign != NORMAL {
+                            if g_sign == STRETCHING {
+                                if mem_b16s1(g) == g_order {
+                                    k += crate::scaled_math::tex_round(
+                                        mem_gr(this_box + 6) * mem_b32s1(g + 2) as f64,
+                                    );
+                                }
+                            } else if mem_b16s0(g) == g_order {
+                                k -= crate::scaled_math::tex_round(
+                                    mem_gr(this_box + 6) * mem_b32s1(g + 3) as f64,
+                                );
+                            }
+                        }
+                    } else if mem_b16s1(q) == KERN_NODE {
+                        k += mem_b32s1(q + 1);
+                    }
+
+                    if q == p {
+                        break;
+                    }
+                    q = mem_b32s1(q);
+                }
+
+                q = crate::scan::new_native_word_node(
+                    mem_b16s2(r + 4) as i32,
+                    crate::hash::cur_length(),
+                );
+                set_mem_b16s0(q, mem_b16s0(r));
+
+                let src = str_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+                let dst = mem_as_u16_ptr_mut(q + 6);
+                for j in 0..crate::hash::cur_length() {
+                    *dst.add(j as usize) = *src.add(j as usize);
+                }
+
+                set_mem_b32s1(q + 1, k);
+                store_justified_native_glyphs(mem_node_addr(q));
+                set_mem_b32s1(prev_p, q);
+                set_mem_b32s1(q, mem_b32s1(p));
+                set_mem_b32s1(p, TEX_NULL);
+                prev_p = r;
+                p = mem_b32s1(r);
+
+                while p != TEX_NULL {
+                    if is_ignorable_interword_node(p) {
+                        set_mem_b32s1(prev_p, mem_b32s1(p));
+                        set_mem_b32s1(p, mem_b32s1(q));
+                        set_mem_b32s1(q, p);
+                        q = p;
+                    }
+
+                    prev_p = p;
+                    p = mem_b32s1(p);
+                }
+
+                crate::scan::flush_node_list(r);
+                set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+                p = q;
+            }
+        }
+
+        prev_p = p;
+        p = mem_b32s1(p);
+    }
+}
+
+unsafe fn finish_hlist_rule(this_box: i32, base_line: i32, p: i32) {
+    if rule_ht() == NULL_FLAG {
+        set_rule_ht(mem_b32s1(this_box + 3));
+    }
+    if rule_dp() == NULL_FLAG {
+        set_rule_dp(mem_b32s1(this_box + 2));
+    }
+    set_rule_ht(rule_ht() + rule_dp());
+
+    if rule_ht() > 0 && rule_wd() > 0 {
+        if cur_h() != dvi_h {
+            movement(cur_h() - dvi_h, RIGHT1);
+            dvi_h = cur_h();
+        }
+
+        set_cur_v(base_line + rule_dp());
+        if cur_v() != dvi_v {
+            movement(cur_v() - dvi_v, DOWN1);
+            dvi_v = cur_v();
+        }
+
+        dvi_out(SET_RULE);
+        dvi_four(rule_ht());
+        dvi_four(rule_wd());
+        set_cur_v(base_line);
+        dvi_h += rule_wd();
+    }
+
+    set_cur_h(cur_h() + rule_wd());
+    crate::synctex::synctex_horizontal_rule_or_glue(p, this_box);
+}
+
+unsafe fn output_hlist_glue(
+    this_box: i32,
+    base_line: i32,
+    left_edge: i32,
+    p: i32,
+    g_order: u16,
+    g_sign: u16,
+    cur_g: &mut i32,
+    cur_glue: &mut f64,
+) {
+    let mut g = mem_b32s0(p + 1);
+    set_rule_wd(mem_b32s1(g + 1) - *cur_g);
+
+    if g_sign != NORMAL {
+        if g_sign == STRETCHING {
+            if mem_b16s1(g) == g_order {
+                *cur_glue += mem_b32s1(g + 2) as f64;
+                *cur_g = crate::scaled_math::tex_round(
+                    (mem_gr(this_box + 6) * *cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0),
+                );
+            }
+        } else if mem_b16s0(g) == g_order {
+            *cur_glue -= mem_b32s1(g + 3) as f64;
+            *cur_g = crate::scaled_math::tex_round(
+                (mem_gr(this_box + 6) * *cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0),
+            );
+        }
+    }
+
+    set_rule_wd(rule_wd() + *cur_g);
+
+    if (g_sign == STRETCHING && mem_b16s1(g) == g_order)
+        || (g_sign == SHRINKING && mem_b16s0(g) == g_order)
+    {
+        if mem_b32s1(g) == TEX_NULL {
+            free_node(g, GLUE_SPEC_SIZE);
+        } else {
+            set_mem_b32s1(g, mem_b32s1(g) - 1);
+        }
+
+        if mem_b16s0(p) < A_LEADERS {
+            set_mem_b16s1(p, KERN_NODE);
+            set_mem_b32s1(p + 1, rule_wd());
+        } else {
+            g = get_node(GLUE_SPEC_SIZE);
+            set_mem_b16s1(g, FILLL + 1);
+            set_mem_b16s0(g, FILLL + 1);
+            set_mem_b32s1(g + 1, rule_wd());
+            set_mem_b32s1(g + 2, 0);
+            set_mem_b32s1(g + 3, 0);
+            set_mem_b32s0(p + 1, g);
+        }
+    }
+
+    if mem_b16s0(p) >= A_LEADERS {
+        let leader_box = mem_b32s1(p + 1);
+        if mem_b16s1(leader_box) == RULE_NODE {
+            set_rule_ht(mem_b32s1(leader_box + 3));
+            set_rule_dp(mem_b32s1(leader_box + 2));
+            finish_hlist_rule(this_box, base_line, p);
+            return;
+        }
+
+        let leader_wd = mem_b32s1(leader_box + 1);
+        if leader_wd > 0 && rule_wd() > 0 {
+            set_rule_wd(rule_wd() + 10);
+            if cur_dir() == RIGHT_TO_LEFT {
+                set_cur_h(cur_h() - 10);
+            }
+            let edge = cur_h() + rule_wd();
+            let mut lx = 0;
+
+            if mem_b16s0(p) == A_LEADERS {
+                let save_h = cur_h();
+                set_cur_h(left_edge + leader_wd * ((cur_h() - left_edge) / leader_wd));
+                if cur_h() < save_h {
+                    set_cur_h(cur_h() + leader_wd);
+                }
+            } else {
+                let lq = rule_wd() / leader_wd;
+                let lr = rule_wd() % leader_wd;
+                if mem_b16s0(p) == C_LEADERS {
+                    set_cur_h(cur_h() + (lr / 2));
+                } else {
+                    lx = lr / (lq + 1);
+                    set_cur_h(cur_h() + ((lr - (lq - 1) * lx) / 2));
+                }
+            }
+
+            while cur_h() + leader_wd <= edge {
+                set_cur_v(base_line + mem_b32s1(leader_box + 4));
+                if cur_v() != dvi_v {
+                    movement(cur_v() - dvi_v, DOWN1);
+                    dvi_v = cur_v();
+                }
+                let save_v = dvi_v;
+
+                if cur_h() != dvi_h {
+                    movement(cur_h() - dvi_h, RIGHT1);
+                    dvi_h = cur_h();
+                }
+                let save_h = dvi_h;
+
+                set_temp_ptr(leader_box);
+                if cur_dir() == RIGHT_TO_LEFT {
+                    set_cur_h(cur_h() + leader_wd);
+                }
+
+                let outer_doing_leaders = doing_leaders();
+                set_doing_leaders(true);
+                if mem_b16s1(leader_box) == VLIST_NODE {
+                    vlist_out();
+                } else {
+                    hlist_out();
+                }
+                set_doing_leaders(outer_doing_leaders);
+
+                dvi_v = save_v;
+                dvi_h = save_h;
+                set_cur_v(base_line);
+                set_cur_h(save_h + leader_wd + lx);
+            }
+
+            if cur_dir() == RIGHT_TO_LEFT {
+                set_cur_h(edge);
+            } else {
+                set_cur_h(edge - 10);
+            }
+            return;
+        }
+    }
+
+    set_cur_h(cur_h() + rule_wd());
+    crate::synctex::synctex_horizontal_rule_or_glue(p, this_box);
+}
+
+// translated from xetex-shipout.c:63 (hlist_out)
+#[no_mangle]
+pub unsafe extern "C" fn hlist_out() {
+    let mut cur_g = 0;
+    let mut cur_glue = 0.0;
+    let this_box = temp_ptr();
+    let g_order = mem_b16s0(this_box + 5);
+    let g_sign = mem_b16s1(this_box + 5);
+
+    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 1 {
+        merge_justifiable_native_words(this_box, g_order, g_sign);
+    }
+
+    let mut p = mem_b32s1(this_box + 5);
+    cur_s += 1;
+    if cur_s > 0 {
+        dvi_out(PUSH);
+    }
+    if cur_s > max_push() {
+        set_max_push(cur_s);
+    }
+
+    let save_loc = dvi_offset + dvi_ptr;
+    let base_line = cur_v();
+    let mut prev_p = this_box + 5;
+
+    set_temp_ptr(get_avail());
+    set_mem_b32s0(temp_ptr(), BEFORE);
+    set_mem_b32s1(temp_ptr(), lr_ptr());
+    set_lr_ptr(temp_ptr());
+
+    if mem_b16s0(this_box) == DLIST {
+        if cur_dir() == RIGHT_TO_LEFT {
+            set_cur_dir(LEFT_TO_RIGHT);
+            set_cur_h(cur_h() - mem_b32s1(this_box + 1));
+        } else {
+            set_mem_b16s0(this_box, 0);
+        }
+    }
+
+    if cur_dir() == RIGHT_TO_LEFT && mem_b16s0(this_box) != REVERSED {
+        let save_h = cur_h();
+        set_temp_ptr(p);
+        p = new_kern(0);
+        set_mem_b32s0(p + 2, 0);
+        set_mem_b32s1(prev_p, p);
+        set_cur_h(0);
+        set_mem_b32s1(p, reverse(this_box, TEX_NULL, &mut cur_g, &mut cur_glue));
+        set_mem_b32s1(p + 1, -cur_h());
+        set_cur_h(save_h);
+        set_mem_b16s0(this_box, REVERSED);
+    }
+
+    let mut left_edge = cur_h();
+    crate::synctex::synctex_hlist(this_box);
+
+    while p != TEX_NULL {
+        'reswitch: loop {
+            if is_char_node(p) {
+                if cur_h() != dvi_h {
+                    movement(cur_h() - dvi_h, RIGHT1);
+                    dvi_h = cur_h();
+                }
+                if cur_v() != dvi_v {
+                    movement(cur_v() - dvi_v, DOWN1);
+                    dvi_v = cur_v();
+                }
+
+                while is_char_node(p) {
+                    let f = mem_b16s1(p) as i32;
+                    let mut c = mem_b16s0(p);
+                    if p != LIG_TRICK && !font_mapping_ptr(f).is_null() {
+                        c = apply_tfm_font_mapping(font_mapping_ptr(f), c as libc::c_int) as u16;
+                    }
+
+                    ensure_dvi_font(f);
+                    if font_ec_entry(f) >= c && font_bc_entry(f) <= c {
+                        let info = font_info_b16(char_base_entry(f) + c as i32);
+                        if info.s3 > 0 {
+                            if c >= 128 {
+                                dvi_out(SET1);
+                            }
+                            dvi_out(c as u8);
+                            set_cur_h(cur_h() + font_character_width(f, c as i32));
+                        }
+                    }
+
+                    prev_p = mem_b32s1(prev_p);
+                    p = mem_b32s1(p);
+                }
+
+                crate::synctex::synctex_current();
+                dvi_h = cur_h();
+            } else {
+                match mem_b16s1(p) {
+                    HLIST_NODE | VLIST_NODE => {
+                        if mem_b32s1(p + 5) == TEX_NULL {
+                            if mem_b16s1(p) == VLIST_NODE {
+                                crate::synctex::synctex_void_vlist(p, this_box);
+                            } else {
+                                crate::synctex::synctex_void_hlist(p, this_box);
+                            }
+                            set_cur_h(cur_h() + mem_b32s1(p + 1));
+                        } else {
+                            let save_h = dvi_h;
+                            let save_v = dvi_v;
+                            set_cur_v(base_line + mem_b32s1(p + 4));
+                            set_temp_ptr(p);
+                            let edge = cur_h() + mem_b32s1(p + 1);
+                            if cur_dir() == RIGHT_TO_LEFT {
+                                set_cur_h(edge);
+                            }
+                            if mem_b16s1(p) == VLIST_NODE {
+                                vlist_out();
+                            } else {
+                                hlist_out();
+                            }
+                            dvi_h = save_h;
+                            dvi_v = save_v;
+                            set_cur_h(edge);
+                            set_cur_v(base_line);
+                        }
+                    }
+                    RULE_NODE => {
+                        set_rule_ht(mem_b32s1(p + 3));
+                        set_rule_dp(mem_b32s1(p + 2));
+                        set_rule_wd(mem_b32s1(p + 1));
+                        finish_hlist_rule(this_box, base_line, p);
+                    }
+                    WHATSIT_NODE => match mem_b16s0(p) {
+                        NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
+                            if cur_h() != dvi_h {
+                                movement(cur_h() - dvi_h, RIGHT1);
+                                dvi_h = cur_h();
+                            }
+                            if cur_v() != dvi_v {
+                                movement(cur_v() - dvi_v, DOWN1);
+                                dvi_v = cur_v();
+                            }
+                            let f = mem_b16s2(p + 4) as i32;
+                            ensure_dvi_font(f);
+
+                            if mem_b16s0(p) == GLYPH_NODE {
+                                dvi_out(SET_GLYPHS);
+                                dvi_four(mem_b32s1(p + 1));
+                                dvi_two(1);
+                                dvi_four(0);
+                                dvi_four(0);
+                                dvi_two(mem_b16s1(p + 4));
+                                set_cur_h(cur_h() + mem_b32s1(p + 1));
+                            } else {
+                                if mem_b16s0(p) == NATIVE_WORD_NODE_AT {
+                                    if mem_b16s1(p + 4) > 0 || !mem_ptr(p + 5).is_null() {
+                                        dvi_out(SET_TEXT_AND_GLYPHS);
+                                        let len = mem_b16s1(p + 4) as i32;
+                                        dvi_two(len as u16);
+                                        let text = mem_as_u16_ptr(p + 6);
+                                        for k in 0..len {
+                                            dvi_two(*text.add(k as usize));
+                                        }
+                                        let len = makeXDVGlyphArrayData(mem_node_addr(p));
+                                        for k in 0..len {
+                                            dvi_out(xdv_buffer_entry(k));
+                                        }
+                                    }
+                                } else if !mem_ptr(p + 5).is_null() {
+                                    dvi_out(SET_GLYPHS);
+                                    let len = makeXDVGlyphArrayData(mem_node_addr(p));
+                                    for k in 0..len {
+                                        dvi_out(xdv_buffer_entry(k));
+                                    }
+                                }
+                                set_cur_h(cur_h() + mem_b32s1(p + 1));
+                            }
+                            dvi_h = cur_h();
+                        }
+                        PIC_NODE | PDF_NODE => {
+                            let save_h = dvi_h;
+                            let save_v = dvi_v;
+                            set_cur_v(base_line);
+                            let edge = cur_h() + mem_b32s1(p + 1);
+                            pic_out(p);
+                            dvi_h = save_h;
+                            dvi_v = save_v;
+                            set_cur_h(edge);
+                            set_cur_v(base_line);
+                        }
+                        PDF_SAVE_POS_NODE => {
+                            set_pdf_last_x_pos(cur_h() + ONE_INCH_LESS_ONE);
+                            set_pdf_last_y_pos(cur_page_height() - cur_v() - ONE_INCH_LESS_ONE);
+                        }
+                        _ => out_what(p),
+                    },
+                    GLUE_NODE => {
+                        output_hlist_glue(
+                            this_box,
+                            base_line,
+                            left_edge,
+                            p,
+                            g_order,
+                            g_sign,
+                            &mut cur_g,
+                            &mut cur_glue,
+                        );
+                    }
+                    MARGIN_KERN_NODE => set_cur_h(cur_h() + mem_b32s1(p + 1)),
+                    KERN_NODE => {
+                        crate::synctex::synctex_kern(p, this_box);
+                        set_cur_h(cur_h() + mem_b32s1(p + 1));
+                    }
+                    MATH_NODE => {
+                        crate::synctex::synctex_math(p, this_box);
+                        if mem_b16s0(p) % 2 != 0 {
+                            if mem_b32s0(lr_ptr()) as u16 == math_node_end_lr_type(p) {
+                                set_temp_ptr(lr_ptr());
+                                set_lr_ptr(mem_b32s1(temp_ptr()));
+                                set_mem_b32s1(temp_ptr(), avail());
+                                set_avail(temp_ptr());
+                            } else if mem_b16s0(p) > L_CODE {
+                                set_lr_problems(lr_problems() + 1);
+                            }
+                        } else {
+                            set_temp_ptr(get_avail());
+                            set_mem_b32s0(temp_ptr(), math_node_end_lr_type(p) as i32);
+                            set_mem_b32s1(temp_ptr(), lr_ptr());
+                            set_lr_ptr(temp_ptr());
+
+                            if math_node_lr_dir(p) as i16 != cur_dir() {
+                                let save_h = cur_h();
+                                set_temp_ptr(mem_b32s1(p));
+                                set_rule_wd(mem_b32s1(p + 1));
+                                free_node(p, MEDIUM_NODE_SIZE);
+                                set_cur_dir(1 - cur_dir());
+                                p = new_edge(cur_dir(), rule_wd());
+                                set_mem_b32s1(prev_p, p);
+                                set_cur_h(cur_h() - left_edge + rule_wd());
+                                set_mem_b32s1(
+                                    p,
+                                    reverse(
+                                        this_box,
+                                        new_edge(1 - cur_dir(), 0),
+                                        &mut cur_g,
+                                        &mut cur_glue,
+                                    ),
+                                );
+                                set_mem_b32s1(p + 2, cur_h());
+                                set_cur_dir(1 - cur_dir());
+                                set_cur_h(save_h);
+                                continue 'reswitch;
+                            }
+                        }
+                        set_mem_b16s1(p, KERN_NODE);
+                        set_cur_h(cur_h() + mem_b32s1(p + 1));
+                    }
+                    LIGATURE_NODE => {
+                        set_mem_word(LIG_TRICK, mem_word(p + 1));
+                        set_mem_b32s1(LIG_TRICK, mem_b32s1(p));
+                        p = LIG_TRICK;
+                        set_xtx_ligature_present(true);
+                        continue 'reswitch;
+                    }
+                    EDGE_NODE => {
+                        set_cur_h(cur_h() + mem_b32s1(p + 1));
+                        left_edge = cur_h() + mem_b32s1(p + 2);
+                        set_cur_dir(mem_b16s0(p) as i16);
+                    }
+                    _ => {}
+                }
+
+                prev_p = p;
+                p = mem_b32s1(p);
+            }
+            break;
+        }
+    }
+
+    crate::synctex::synctex_tsilh(this_box);
+
+    while mem_b32s0(lr_ptr()) != BEFORE {
+        if mem_b32s0(lr_ptr()) as u16 > L_CODE {
+            set_lr_problems(lr_problems() + 10000);
+        }
+        set_temp_ptr(lr_ptr());
+        set_lr_ptr(mem_b32s1(temp_ptr()));
+        set_mem_b32s1(temp_ptr(), avail());
+        set_avail(temp_ptr());
+    }
+
+    set_temp_ptr(lr_ptr());
+    set_lr_ptr(mem_b32s1(temp_ptr()));
+    set_mem_b32s1(temp_ptr(), avail());
+    set_avail(temp_ptr());
+
+    if mem_b16s0(this_box) == DLIST {
+        set_cur_dir(RIGHT_TO_LEFT);
+    }
+
+    prune_movements(save_loc);
+    if cur_s > 0 {
+        dvi_pop(save_loc);
+    }
+    cur_s -= 1;
 }
 
 // translated from xetex-shipout.c:866 (vlist_out)
@@ -1086,7 +1757,7 @@ pub unsafe extern "C" fn finalize_dvi_file() {
 
 #[inline]
 fn is_char_node(p: i32) -> bool {
-    (p as u32) >= 0x0C00_0000
+    p >= hi_mem_min()
 }
 
 #[inline]
