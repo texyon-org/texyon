@@ -32,6 +32,36 @@ template.
 
 ---
 
+## Session 120 — 2026-05-20 — xetex-ini.c trie compression helpers
+
+**Goal:** Continue `xetex-ini.c` by migrating the small trie compression helpers that operate on the shared trie arrays.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 119
+
+**Work done:**
+- Translated `trie_node` (line 632) and `compress_trie` (line 655) from `xetex-ini.c` to Rust (47eb2114).
+- Added Rust global accessors for the trie arrays and `trie_size` (`trie_c`, `trie_o`, `trie_l`, `trie_r`, `trie_hash`).
+- Kept `compress_trie` and `trie_node` together so recursive compression and hash-consing stay on the Rust side.
+- Updated module status and progress docs.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 120
+
+**Surprises / gotchas:**
+- `trie_node` can wrap its probe index to `trie_size`, matching the C code exactly. Do not "fix" this to `trie_size - 1` unless the allocation/indexing model is changed deliberately.
+
+**For the next session:**
+- Continue `xetex-ini.c`. `first_fit`, `trie_pack`, and `trie_fix` are the next trie-pack cluster and should likely be translated together because they share trie packing invariants.
+
 ## Session 119 — 2026-05-20 — xetex-ini.c new_trie_op
 
 **Goal:** Continue `xetex-ini.c` with a small hyphenation trie helper while keeping the remaining C trie setup linked to the same state.
