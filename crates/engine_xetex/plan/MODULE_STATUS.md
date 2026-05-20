@@ -20,12 +20,12 @@ every session. The column meanings:
 | Status         | File count |
 |----------------|-----------:|
 | NOT STARTED    |          1 |
-| IN PROGRESS    |          2 |
-| DONE           |         13 |
+| IN PROGRESS    |          1 |
+| DONE           |         14 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 116.
+Last updated: session 117.
 
 
 ## Core engine files (to translate)
@@ -42,7 +42,7 @@ Last updated: session 116.
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
 | xetex-linebreak.c            |    47 |      0 | `src/linebreak.rs`                | DONE |
 | xetex-math.c                 |    99 |      0 | `src/math.rs`                     | DONE |
-| xetex-shipout.c              |   894 |      1 | `src/shipout.rs`                  | IN PROGRESS — 95% |
+| xetex-shipout.c              |    88 |      0 | `src/shipout.rs`                  | DONE |
 | xetex-synctex.c              |    10 |      0 | `src/synctex.rs`                  | DONE         |
 | xetex-io.c                   |   101 |      0 | `src/io.rs`                       | DONE               |
 | xetex-ext.c                  |    97 |      0 | `src/ext.rs`                      | DONE |
@@ -606,7 +606,7 @@ Rust as `SAVED_MAPPING_NAME`.
 
 ### Phase 14 — xetex-shipout.c helpers (target: `src/shipout.rs`)
 
-Status: IN PROGRESS (session 116).
+Status: DONE (session 117).
 
 | # | Function   | Line | Status |
 |--:|------------|-----:|--------|
@@ -631,6 +631,7 @@ Status: IN PROGRESS (session 116).
 | 19 | `reverse` | 1470 | MIGRATED (session 114, 0d3b8461; #[no_mangle] — called by hlist_out still in C) |
 | 20 | `ship_out` | 56 | MIGRATED (session 115, 31345c81; promoted `dvi_f`; un-static'd `hlist_out`/`vlist_out` for Rust caller) |
 | 21 | `vlist_out` | 866 | MIGRATED (session 116, f4cc04d5; C `hlist_out` now calls Rust `vlist_out`, and Rust `vlist_out` calls C `hlist_out`) |
+| 22 | `hlist_out` | 63 | MIGRATED (session 117, f05b105f; final compiled shipout body moved to Rust) |
 
 ### Phase 15 — xetex-math.c helpers (target: `src/math.rs`)
 

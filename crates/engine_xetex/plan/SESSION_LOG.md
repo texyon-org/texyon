@@ -32,6 +32,34 @@ template.
 
 ---
 
+## Session 117 — 2026-05-20 — xetex-shipout.c hlist_out
+
+**Goal:** Translate the final compiled `xetex-shipout.c` body, `hlist_out`, to Rust and finish the shipout module.
+
+**Starting state:**
+- Parity: 29/29
+- Streak: 116
+
+**Work done:**
+- Translated `hlist_out` (line 63) from `xetex-shipout.c` to `src/shipout.rs` (f05b105f).
+- Added Rust helpers for interword native-word merging, hlist rule emission, and hlist glue/leader output.
+- Removed the old C `hlist_out` body and the now-unused C scratch statics (`g`, `lq`, `lr`); `xetex-shipout.c` now has zero compiled C bodies.
+- Corrected Rust `is_char_node` to match the C inline (`p >= hi_mem_min()`).
+- Updated module status and progress docs.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 117
+
+**Surprises / gotchas:**
+- The first focused `the_letter_a` run emitted a shorter XDV because the existing Rust `is_char_node` helper used a stale high-bit threshold instead of XeTeX's `hi_mem_min()` boundary. Fixing that helper restored byte-for-byte parity.
+
+**For the next session:**
+- `xetex-shipout.c` is done. The remaining planned engine C work is `xetex-ini.c`, plus the known `xetex-engine-interface.c` C entries that stay for setjmp/platform glue.
+
 ## Session 116 — 2026-05-19 — xetex-shipout.c vlist_out
 
 **Goal:** Continue `xetex-shipout.c` by translating vertical list output while keeping the remaining C `hlist_out` body linked across the Rust/C boundary.
