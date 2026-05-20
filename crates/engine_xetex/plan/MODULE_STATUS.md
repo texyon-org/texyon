@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 118.
+Last updated: session 119.
 
 
 ## Core engine files (to translate)
@@ -36,7 +36,7 @@ Last updated: session 118.
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
-| xetex-ini.c                  |  3855 |     24 | `src/ini.rs` + state modules      | IN PROGRESS — 8% |
+| xetex-ini.c                  |  3818 |     23 | `src/ini.rs` + state modules      | IN PROGRESS — 12% |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
@@ -709,12 +709,13 @@ The active large candidate is `xetex-ini.c`; `xetex-shipout.c` is done.
 
 ### Phase 16 — xetex-ini.c initialization helpers (target: `src/ini.rs`)
 
-Status: IN PROGRESS (session 118).
+Status: IN PROGRESS (session 119).
 
 | # | Function | Line | Status |
 |--:|----------|-----:|--------|
 | 1 | `init_io` | 3035 | MIGRATED (session 118, 5b846747; Rust owns the vestigial stdin `UFile`) |
 | 2 | `get_strings_started` | 3452 | MIGRATED (session 118, 5b846747) |
+| 3 | `new_trie_op` | 630 | MIGRATED (session 119, 1958fc5e; promoted `_trie_op_hash_array` to a shared Rust static for remaining C trie setup) |
 
 Remaining in C: allocation/init clusters, hyphenation trie/pattern setup, `prefixed_command`, format-file I/O (`store_fmt_file`/`load_fmt_file` as a later paired migration), final cleanup, and `tt_run_engine`.
 

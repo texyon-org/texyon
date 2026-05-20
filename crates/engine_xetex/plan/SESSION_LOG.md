@@ -32,6 +32,36 @@ template.
 
 ---
 
+## Session 119 — 2026-05-20 — xetex-ini.c new_trie_op
+
+**Goal:** Continue `xetex-ini.c` with a small hyphenation trie helper while keeping the remaining C trie setup linked to the same state.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 118
+
+**Work done:**
+- Translated `new_trie_op` (line 630) from `xetex-ini.c` to Rust (1958fc5e).
+- Promoted `_trie_op_hash_array` to a Rust-owned `#[no_mangle]` static and made the remaining C trie code reference it with `extern`.
+- Added Rust global accessors for trie-op state (`trie_used`, `trie_op_lang`, `trie_op_val`, `trie_op_ptr`, `max_op_used`) and hyphenation op arrays.
+- Updated module status and progress docs.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 119
+
+**Surprises / gotchas:**
+- `TRIE_OP_HASH` must stay shared with the remaining C `init_trie`; a separate Rust table would silently diverge from C during trie setup.
+
+**For the next session:**
+- Continue `xetex-ini.c`. `trie_node` / `compress_trie` are plausible next small helpers; `first_fit`, `trie_pack`, and `trie_fix` need more care. Keep `load_fmt_file`/`store_fmt_file` paired.
+
 ## Session 118 — 2026-05-20 — xetex-ini.c initial helpers
 
 **Goal:** Start `xetex-ini.c` with small initialization helpers while avoiding the format-file I/O pair.
