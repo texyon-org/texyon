@@ -32,6 +32,36 @@ template.
 
 ---
 
+## Session 121 — 2026-05-20 — xetex-ini.c trie packing helpers
+
+**Goal:** Continue `xetex-ini.c` by migrating the trie packing cluster that follows trie compression.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 120
+
+**Work done:**
+- Translated `first_fit` (line 638), `trie_pack` (line 695), and `trie_fix` (line 708) from `xetex-ini.c` to Rust (4e756427).
+- Added Rust accessors for trie packing state: `trie_taken`, `trie_min`, `trie_max`, and setters for `trie_trl`, `trie_tro`, and `trie_trc`.
+- Kept the linked-free-list packing logic as a single migration cluster so `first_fit`, recursive packing, and trie finalization share the same Rust accessors.
+- Updated module status and progress docs.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 121
+
+**Surprises / gotchas:**
+- `first_fit` contains TeX's classic `do ... while (!(l == ll))` update of `trie_min`; keep that exact post-increment behavior when touching the code.
+
+**For the next session:**
+- Continue `xetex-ini.c`. The next obvious work is around pattern/hyphenation setup (`new_patterns`/`init_trie`), but those are larger and entangled with scanners, language state, and format-file state. Avoid splitting `load_fmt_file`/`store_fmt_file`; keep them paired for a dedicated session.
+
 ## Session 120 — 2026-05-20 — xetex-ini.c trie compression helpers
 
 **Goal:** Continue `xetex-ini.c` by migrating the small trie compression helpers that operate on the shared trie arrays.

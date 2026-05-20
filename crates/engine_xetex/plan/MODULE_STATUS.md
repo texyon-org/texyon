@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 120.
+Last updated: session 121.
 
 
 ## Core engine files (to translate)
@@ -36,7 +36,7 @@ Last updated: session 120.
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
-| xetex-ini.c                  |  3787 |     21 | `src/ini.rs` + state modules      | IN PROGRESS — 19% |
+| xetex-ini.c                  |  3703 |     18 | `src/ini.rs` + state modules      | IN PROGRESS — 31% |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
@@ -709,7 +709,7 @@ The active large candidate is `xetex-ini.c`; `xetex-shipout.c` is done.
 
 ### Phase 16 — xetex-ini.c initialization helpers (target: `src/ini.rs`)
 
-Status: IN PROGRESS (session 120).
+Status: IN PROGRESS (session 121).
 
 | # | Function | Line | Status |
 |--:|----------|-----:|--------|
@@ -718,6 +718,9 @@ Status: IN PROGRESS (session 120).
 | 3 | `new_trie_op` | 630 | MIGRATED (session 119, 1958fc5e; promoted `_trie_op_hash_array` to a shared Rust static for remaining C trie setup) |
 | 4 | `trie_node` | 632 | MIGRATED (session 120, 47eb2114) |
 | 5 | `compress_trie` | 655 | MIGRATED (session 120, 47eb2114; translated with `trie_node` to keep recursive compression local to Rust) |
+| 6 | `first_fit` | 638 | MIGRATED (session 121, 4e756427; keeps TeX's linked-free-list trie packing exactly) |
+| 7 | `trie_pack` | 695 | MIGRATED (session 121, 4e756427) |
+| 8 | `trie_fix` | 708 | MIGRATED (session 121, 4e756427) |
 
 Remaining in C: allocation/init clusters, hyphenation trie/pattern setup, `prefixed_command`, format-file I/O (`store_fmt_file`/`load_fmt_file` as a later paired migration), final cleanup, and `tt_run_engine`.
 
