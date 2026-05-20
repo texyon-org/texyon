@@ -131,6 +131,7 @@ cargo test -p tectonic --test tex-outputs
 |     115 | 2026-05-19 |     29 |    29 |     0 | xetex-shipout.c: translate ship_out (31345c81). All 4 suites pass. |
 |     116 | 2026-05-19 |     29 |    29 |     0 | xetex-shipout.c: translate vlist_out (f4cc04d5). Fixed swapped GLUE_NODE glue/leader fields caught by a single-case SIGSEGV repro. All 4 suites pass. |
 |     117 | 2026-05-20 |     29 |    29 |     0 | xetex-shipout.c: translate hlist_out (f05b105f). File now has zero compiled C bodies. Fixed Rust is_char_node to use hi_mem_min after a single-case XDV divergence. All 4 suites pass. |
+|     118 | 2026-05-20 |     29 |    29 |     0 | xetex-ini.c: start src/ini.rs with init_io and get_strings_started (5b846747). Avoided format-file I/O; all 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making

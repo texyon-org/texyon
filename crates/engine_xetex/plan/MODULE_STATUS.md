@@ -19,13 +19,13 @@ every session. The column meanings:
 
 | Status         | File count |
 |----------------|-----------:|
-| NOT STARTED    |          1 |
-| IN PROGRESS    |          1 |
+| NOT STARTED    |          0 |
+| IN PROGRESS    |          2 |
 | DONE           |         14 |
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 117.
+Last updated: session 118.
 
 
 ## Core engine files (to translate)
@@ -36,7 +36,7 @@ Last updated: session 117.
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
-| xetex-ini.c                  |  3881 |    ~?? | `src/ini.rs` + state modules      | NOT STARTED  |
+| xetex-ini.c                  |  3855 |     24 | `src/ini.rs` + state modules      | IN PROGRESS — 8% |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
@@ -705,9 +705,18 @@ Status: DONE (session 108).
 Remaining in C: none. `xetex-math.c` now has no remaining compiled C
 bodies; only prototypes/globals/reference comments remain.
 
-The next large candidate is `xetex-ini.c`; `xetex-shipout.c` is now done.
+The active large candidate is `xetex-ini.c`; `xetex-shipout.c` is done.
 
-### Phases 16+
+### Phase 16 — xetex-ini.c initialization helpers (target: `src/ini.rs`)
+
+Status: IN PROGRESS (session 118).
+
+| # | Function | Line | Status |
+|--:|----------|-----:|--------|
+| 1 | `init_io` | 3035 | MIGRATED (session 118, 5b846747; Rust owns the vestigial stdin `UFile`) |
+| 2 | `get_strings_started` | 3452 | MIGRATED (session 118, 5b846747) |
+
+Remaining in C: allocation/init clusters, hyphenation trie/pattern setup, `prefixed_command`, format-file I/O (`store_fmt_file`/`load_fmt_file` as a later paired migration), final cleanup, and `tt_run_engine`.
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.

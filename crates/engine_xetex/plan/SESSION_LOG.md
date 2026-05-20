@@ -32,6 +32,38 @@ template.
 
 ---
 
+## Session 118 — 2026-05-20 — xetex-ini.c initial helpers
+
+**Goal:** Start `xetex-ini.c` with small initialization helpers while avoiding the format-file I/O pair.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 117
+
+**Work done:**
+- Added `src/ini.rs` and registered it in `src/lib.rs`.
+- Translated `init_io` (line 3035) and `get_strings_started` (line 3452) from `xetex-ini.c` to Rust (5b846747).
+- Moved the vestigial `stdin_ufile` static into Rust as a `UFile`.
+- Added the minimal `string_vacancies` global accessor needed by `get_strings_started`.
+- Updated module status and progress docs.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 118
+
+**Surprises / gotchas:**
+- None. The only new global accessor was `string_vacancies`; all other state used by these helpers already had Rust accessors.
+- `load_fmt_file` and `store_fmt_file` should still be translated as a pair later, per the format-file anti-pattern guidance.
+
+**For the next session:**
+- Continue `xetex-ini.c`. Good next candidates are non-format initialization helpers such as `initialize_primitives` or small trie helpers; keep `load_fmt_file`/`store_fmt_file` paired for a dedicated format-file session.
+
 ## Session 117 — 2026-05-20 — xetex-shipout.c hlist_out
 
 **Goal:** Translate the final compiled `xetex-shipout.c` body, `hlist_out`, to Rust and finish the shipout module.
