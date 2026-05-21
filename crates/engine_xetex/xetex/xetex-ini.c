@@ -639,7 +639,7 @@ primitive(const char* ident, uint16_t c, int32_t o)
 
 // translated to Rust: src/ini.rs trie_fix
 
-static void
+void
 new_patterns(void)
 {
     short /*hyphenatable_length_limit 1 */ k, l;
@@ -859,7 +859,7 @@ new_patterns(void)
 
 /*:1001*/
 
-static void
+void
 new_hyph_exceptions(void)
 {
     short /*hyphenatable_length_limit 1 */ n;
