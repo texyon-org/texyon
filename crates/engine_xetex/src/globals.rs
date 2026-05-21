@@ -524,6 +524,7 @@ mod raw {
         pub(super) static mut trie_min: [i32; 65536];
         pub(super) static mut trie_max: i32;
         pub(super) static mut trie_size: i32;
+        pub(super) static mut trie_ptr: i32;
         pub(super) static mut hyf_distance: [i16; 35112];
         pub(super) static mut hyf_num: [i16; 35112];
         pub(super) static mut hyf_next: [u16; 35112];
@@ -4022,6 +4023,12 @@ pub(crate) fn max_hyph_char() -> i32 {
     unsafe { raw::max_hyph_char }
 }
 #[inline]
+pub(crate) fn set_max_hyph_char(v: i32) {
+    unsafe {
+        raw::max_hyph_char = v;
+    }
+}
+#[inline]
 pub(crate) fn hyf_entry(k: usize) -> u8 {
     unsafe { raw::hyf[k] }
 }
@@ -4174,12 +4181,34 @@ pub(crate) fn trie_size() -> i32 {
     unsafe { raw::trie_size }
 }
 #[inline]
+pub(crate) fn trie_ptr() -> i32 {
+    unsafe { raw::trie_ptr }
+}
+#[inline]
+pub(crate) fn set_trie_ptr(v: i32) {
+    unsafe {
+        raw::trie_ptr = v;
+    }
+}
+#[inline]
 pub(crate) fn trie_not_ready() -> bool {
     unsafe { raw::trie_not_ready }
 }
 #[inline]
+pub(crate) fn set_trie_not_ready(v: bool) {
+    unsafe {
+        raw::trie_not_ready = v;
+    }
+}
+#[inline]
 pub(crate) fn hyph_start() -> i32 {
     unsafe { raw::hyph_start }
+}
+#[inline]
+pub(crate) fn set_hyph_start(v: i32) {
+    unsafe {
+        raw::hyph_start = v;
+    }
 }
 #[inline]
 pub(crate) fn hyph_index() -> i32 {
@@ -4224,6 +4253,12 @@ pub(crate) fn set_hyf_next_entry(k: i32, v: u16) {
 #[inline]
 pub(crate) fn op_start_entry(k: usize) -> i32 {
     unsafe { raw::op_start[k] }
+}
+#[inline]
+pub(crate) fn set_op_start_entry(k: usize, v: i32) {
+    unsafe {
+        raw::op_start[k] = v;
+    }
 }
 #[inline]
 pub(crate) fn trie_used_entry(k: usize) -> u16 {

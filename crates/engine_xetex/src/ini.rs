@@ -2,15 +2,16 @@
 
 use crate::globals::{
     cur_lang, first, hyf_distance_entry, hyf_next_entry, hyf_num_entry, last, max_hyph_char,
-    max_op_used, pool_size, set_buffer_entry, set_cur_input_limit, set_cur_input_loc, set_first,
-    set_hyf_distance_entry, set_hyf_next_entry, set_hyf_num_entry, set_input_file, set_last,
-    set_max_op_used, set_pool_ptr, set_str_ptr, set_str_start, set_trie_hash_entry,
-    set_trie_l_entry, set_trie_max, set_trie_min_entry, set_trie_op_lang_entry, set_trie_op_ptr,
-    set_trie_op_val_entry, set_trie_r_entry, set_trie_taken_entry, set_trie_trc_entry,
-    set_trie_trl_entry, set_trie_tro_entry, set_trie_used_entry, string_vacancies, trie_c_entry,
-    trie_hash_entry, trie_l_entry, trie_max, trie_min_entry, trie_o_entry, trie_op_lang_entry,
-    trie_op_ptr, trie_op_val_entry, trie_r_entry, trie_size, trie_taken_entry, trie_trl_entry,
-    trie_tro_entry, trie_used_entry,
+    max_op_used, op_start_entry, pool_size, set_buffer_entry, set_cur_input_limit,
+    set_cur_input_loc, set_first, set_hyf_distance_entry, set_hyf_next_entry, set_hyf_num_entry,
+    set_hyph_start, set_input_file, set_last, set_max_hyph_char, set_max_op_used,
+    set_op_start_entry, set_pool_ptr, set_str_ptr, set_str_start, set_trie_hash_entry,
+    set_trie_l_entry, set_trie_max, set_trie_min_entry, set_trie_not_ready,
+    set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry, set_trie_r_entry,
+    set_trie_taken_entry, set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry,
+    set_trie_used_entry, string_vacancies, trie_c_entry, trie_hash_entry, trie_l_entry, trie_max,
+    trie_min_entry, trie_o_entry, trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_ptr,
+    trie_r_entry, trie_size, trie_taken_entry, trie_trl_entry, trie_tro_entry, trie_used_entry,
 };
 use crate::io::UFile;
 
@@ -21,6 +22,8 @@ const TRIE_OP_SIZE: i32 = 35_111;
 const NEG_TRIE_OP_SIZE: i32 = -35_111;
 const MAX_TRIE_OP: u16 = 65_535;
 const MIN_TRIE_OP: i32 = 0;
+const BIGGEST_LANG: i32 = 255;
+const BIGGEST_CHAR: i32 = 0xFFFF;
 const TRIE_OP_HASH_SIZE: usize = (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE + 1) as usize;
 
 #[no_mangle]
@@ -292,4 +295,132 @@ pub unsafe extern "C" fn trie_fix(mut p: i32) {
             break;
         }
     }
+}
+
+// translated from xetex-ini.c:858 (init_trie)
+#[no_mangle]
+pub unsafe extern "C" fn init_trie() {
+    set_max_hyph_char(max_hyph_char() + 1);
+    set_op_start_entry(0, -MIN_TRIE_OP);
+
+    let mut j = 1;
+    while j <= BIGGEST_LANG {
+        let prev = (j - 1) as usize;
+        let val = op_start_entry(prev) + trie_used_entry(prev) as i32;
+        set_op_start_entry(j as usize, val);
+        j += 1;
+    }
+
+    let op_ptr = trie_op_ptr();
+    j = 1;
+    while j <= op_ptr {
+        let lang = trie_op_lang_entry(j) as usize;
+        let val = op_start_entry(lang) + trie_op_val_entry(j) as i32;
+        set_trie_op_hash(j, val);
+        j += 1;
+    }
+
+    j = 1;
+    while j <= op_ptr {
+        while trie_op_hash(j) > j {
+            let k = trie_op_hash(j);
+            let t = hyf_distance_entry(k);
+            set_hyf_distance_entry(k, hyf_distance_entry(j));
+            set_hyf_distance_entry(j, t);
+
+            let t = hyf_num_entry(k);
+            set_hyf_num_entry(k, hyf_num_entry(j));
+            set_hyf_num_entry(j, t);
+
+            let t = hyf_next_entry(k);
+            set_hyf_next_entry(k, hyf_next_entry(j));
+            set_hyf_next_entry(j, t);
+
+            let hash_k = trie_op_hash(k);
+            set_trie_op_hash(j, hash_k);
+            set_trie_op_hash(k, k);
+        }
+        j += 1;
+    }
+
+    let mut p = 0;
+    let trie_size_val = trie_size();
+    while p <= trie_size_val {
+        set_trie_hash_entry(p, 0);
+        p += 1;
+    }
+
+    set_trie_r_entry(0, compress_trie(trie_r_entry(0)));
+    set_trie_l_entry(0, compress_trie(trie_l_entry(0)));
+
+    p = 0;
+    let trie_ptr_val = trie_ptr();
+    while p <= trie_ptr_val {
+        set_trie_hash_entry(p, 0);
+        p += 1;
+    }
+
+    p = 0;
+    while p <= BIGGEST_CHAR {
+        set_trie_min_entry(p, p + 1);
+        p += 1;
+    }
+
+    set_trie_trl_entry(0, 1);
+    set_trie_max(0);
+
+    let trie_l0 = trie_l_entry(0);
+    if trie_l0 != 0 {
+        first_fit(trie_l0);
+        trie_pack(trie_l0);
+    }
+
+    let trie_r0 = trie_r_entry(0);
+    if trie_r0 != 0 {
+        if trie_l0 == 0 {
+            p = 0;
+            while p <= 255 {
+                set_trie_min_entry(p, p + 2);
+                p += 1;
+            }
+        }
+        first_fit(trie_r0);
+        trie_pack(trie_r0);
+        set_hyph_start(trie_hash_entry(trie_r0));
+    }
+
+    if trie_max() == 0 {
+        let mut r = 0;
+        let max_hyph = max_hyph_char();
+        while r <= max_hyph {
+            set_trie_trl_entry(r, 0);
+            set_trie_tro_entry(r, MIN_TRIE_OP);
+            set_trie_trc_entry(r, 0);
+            r += 1;
+        }
+        set_trie_max(max_hyph);
+    } else {
+        if trie_r0 > 0 {
+            trie_fix(trie_r0);
+        }
+        if trie_l0 > 0 {
+            trie_fix(trie_l0);
+        }
+
+        let trie_max_val = trie_max();
+        let mut r = 0;
+        loop {
+            let s = trie_trl_entry(r);
+            set_trie_trl_entry(r, 0);
+            set_trie_tro_entry(r, MIN_TRIE_OP);
+            set_trie_trc_entry(r, 0);
+            r = s;
+            if r > trie_max_val {
+                break;
+            }
+        }
+    }
+
+    set_trie_trc_entry(0, b'?' as u16);
+    set_trie_not_ready(false);
 }
