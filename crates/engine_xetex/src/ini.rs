@@ -1,30 +1,36 @@
 //! Rust translation of initialization helpers from xetex-ini.c.
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_lang, cur_val, eqtb_b32s1, first, hc_entry, hyf_distance_entry,
-    hyf_entry, hyf_next_entry, hyf_num_entry, hyph_count, hyph_index, hyph_link_entry,
-    hyph_next, hyph_size, hyph_start, hyph_word_entry, init_pool_ptr, last,
-    max_hyph_char, max_op_used, op_start_entry, pool_ptr, pool_size, set_buffer_entry,
-    set_cur_chr, set_cur_cmd, set_cur_input_limit, set_cur_input_loc, set_cur_lang, set_first,
-    set_hc_entry, set_help_line, set_help_ptr, set_hyf_distance_entry, set_hyf_entry,
-    set_hyf_next_entry, set_hyf_num_entry, set_hyph_count, set_hyph_index, set_hyph_link_entry,
-    set_hyph_list_entry, set_hyph_next, set_hyph_start, set_hyph_word_entry, set_input_file,
-    set_last, set_max_hyph_char, set_max_op_used, set_op_start_entry, set_pool_ptr,
-    set_str_pool, set_str_ptr, set_str_start, set_trie_c_entry, set_trie_hash_entry,
-    set_trie_l_entry, set_trie_max, set_trie_min_entry, set_trie_not_ready,
-    set_trie_o_entry, set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry,
-    set_trie_ptr, set_trie_r_entry, set_trie_taken_entry, set_trie_trc_entry,
-    set_trie_trl_entry, set_trie_tro_entry, set_trie_used_entry, str_ptr, str_pool_entry,
-    str_start, string_vacancies, trie_c_entry, trie_hash_entry, trie_l_entry, trie_max,
-    trie_min_entry, trie_not_ready, trie_o_entry, trie_op_lang_entry, trie_op_ptr,
-    trie_op_val_entry, trie_ptr, trie_r_entry, trie_size, trie_taken_entry, trie_trc_entry,
-    trie_trl_entry, trie_tro_entry, trie_used_entry,
+    buf_size, cur_chr, cur_cmd, cur_lang, cur_val, eqtb_b32s1, first, hc_entry,
+    hyf_distance_entry, hyf_entry, hyf_next_entry, hyf_num_entry, hyph_count, hyph_index,
+    hyph_link_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, init_pool_ptr,
+    last, max_hyph_char, max_op_used, mem_b32s1, op_start_entry, pool_ptr, pool_size, rover,
+    set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_input_limit, set_cur_input_loc,
+    set_cur_lang, set_cur_val, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_first,
+    set_hash_s1, set_hc_entry, set_help_line, set_help_ptr, set_hyf_distance_entry,
+    set_hyf_entry, set_hyf_next_entry, set_hyf_num_entry, set_hyph_count, set_hyph_index,
+    set_hyph_link_entry, set_hyph_list_entry, set_hyph_next, set_hyph_start,
+    set_hyph_word_entry, set_input_file, set_last, set_max_hyph_char, set_max_op_used,
+    set_mem_b32s1, set_op_start_entry, set_pool_ptr, set_rover, set_str_pool, set_str_ptr,
+    set_str_start, set_trie_c_entry, set_trie_hash_entry, set_trie_l_entry, set_trie_max,
+    set_trie_min_entry, set_trie_not_ready, set_trie_o_entry, set_trie_op_lang_entry,
+    set_trie_op_ptr, set_trie_op_val_entry, set_trie_ptr, set_trie_r_entry,
+    set_trie_taken_entry, set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry,
+    set_trie_used_entry, str_ptr, str_pool_entry, str_start, string_vacancies, trie_c_entry,
+    trie_hash_entry, trie_l_entry, trie_max, trie_min_entry, trie_not_ready, trie_o_entry,
+    trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_ptr, trie_r_entry, trie_size,
+    trie_taken_entry, trie_trc_entry, trie_trl_entry, trie_tro_entry, trie_used_entry,
 };
 use crate::io::UFile;
 
 const INVALID_HANDLE: usize = 0;
 const UTF8: i16 = 1;
 const TOO_BIG_CHAR: i32 = 65_536;
+const SINGLE_BASE: i32 = 1_114_113;
+const PRIM_EQTB_BASE: i32 = 2_243_238;
+const LEVEL_ONE: u16 = 1;
+const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
 const TRIE_OP_SIZE: i32 = 35_111;
 const NEG_TRIE_OP_SIZE: i32 = -35_111;
 const MAX_TRIE_OP: u16 = 65_535;
@@ -869,4 +875,78 @@ pub unsafe extern "C" fn new_hyph_exceptions() {
 
         let _ = &p; // suppress unused-variable warning on 'outer
     }
+}
+
+// translated from xetex-ini.c:554 (sort_avail)
+#[no_mangle]
+pub unsafe extern "C" fn sort_avail() {
+    let _ = crate::mem::get_node(GET_NODE_HEAD_SENTINEL);
+    let mut p = mem_b32s1(rover() + 1);
+    set_mem_b32s1(rover() + 1, MAX_HALFWORD);
+    let old_rover = rover();
+
+    /*136:*/
+    while p != old_rover {
+        if p < rover() {
+            let q = p;
+            p = mem_b32s1(q + 1);
+            set_mem_b32s1(q + 1, rover());
+            set_rover(q);
+        } else {
+            let mut q = rover();
+            while mem_b32s1(q + 1) < p {
+                q = mem_b32s1(q + 1);
+            }
+            let r = mem_b32s1(p + 1);
+            set_mem_b32s1(p + 1, mem_b32s1(q + 1));
+            set_mem_b32s1(q + 1, p);
+            p = r;
+        }
+    }
+
+    p = rover();
+    while mem_b32s1(p + 1) != MAX_HALFWORD {
+        crate::globals::set_mem_b32s0(mem_b32s1(p + 1) + 1, p);
+        p = mem_b32s1(p + 1);
+    }
+
+    set_mem_b32s1(p + 1, rover());
+    crate::globals::set_mem_b32s0(rover() + 1, p);
+}
+
+// translated from xetex-ini.c:597 (primitive)
+#[no_mangle]
+pub unsafe extern "C" fn primitive(ident: *const libc::c_char, c: u16, o: i32) {
+    let len = libc::strlen(ident) as i32;
+    let prim_val: i32;
+
+    if len > 1 {
+        let s = crate::texmfmp::maketexstring(ident);
+
+        if first() + len > buf_size() + 1 {
+            crate::errors::overflow(c"buffer size".as_ptr(), buf_size());
+        }
+
+        for i in 0..len {
+            let b = *ident.offset(i as isize) as u8 as i32;
+            set_buffer_entry(first() + i, b);
+        }
+
+        set_cur_val(crate::hash::id_lookup(first(), len));
+        set_str_ptr(str_ptr() - 1);
+        set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+        set_hash_s1(cur_val(), s);
+        prim_val = crate::hash::prim_lookup(s);
+    } else {
+        let ch = *ident as u8 as i32;
+        set_cur_val(ch + SINGLE_BASE);
+        prim_val = crate::hash::prim_lookup(ch);
+    }
+
+    set_eqtb_b16s0(cur_val(), LEVEL_ONE);
+    set_eqtb_b16s1(cur_val(), c);
+    set_eqtb_b32s1(cur_val(), o);
+    set_eqtb_b16s0(PRIM_EQTB_BASE + prim_val, LEVEL_ONE);
+    set_eqtb_b16s1(PRIM_EQTB_BASE + prim_val, c);
+    set_eqtb_b32s1(PRIM_EQTB_BASE + prim_val, o);
 }

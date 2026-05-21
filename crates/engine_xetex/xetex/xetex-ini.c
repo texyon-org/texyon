@@ -550,80 +550,11 @@ do_undump (char *p, size_t item_size, size_t nitems, rust_input_handle_t in_file
 
 /*:134*//*135: */
 
-void
-sort_avail(void)
-{
-    int32_t p, q, r;
-    int32_t old_rover;
-
-    p = get_node(0x40000000);
-    p = mem[rover + 1].b32.s1;
-    mem[rover + 1].b32.s1 = MAX_HALFWORD;
-    old_rover = rover;
-
-    /*136: */
-
-    while (p != old_rover) {
-        if (p < rover) {
-            q = p;
-            p = mem[q + 1].b32.s1;
-            mem[q + 1].b32.s1 = rover;
-            rover = q;
-        } else {
-            q = rover;
-            while (mem[q + 1].b32.s1 < p)
-                q = mem[q + 1].b32.s1;
-            r = mem[p + 1].b32.s1;
-            mem[p + 1].b32.s1 = mem[q + 1].b32.s1;
-            mem[q + 1].b32.s1 = p;
-            p = r;
-        }
-    }
-
-    p = rover;
-
-    while (mem[p + 1].b32.s1 != MAX_HALFWORD) {
-        mem[mem[p + 1].b32.s1 + 1].b32.s0 = p;
-        p = mem[p + 1].b32.s1;
-    }
-
-    mem[p + 1].b32.s1 = rover;
-    mem[rover + 1].b32.s0 = p;
-}
+// translated to Rust: src/ini.rs sort_avail
 
 /*:271*//*276: */
 
-void
-primitive(const char* ident, uint16_t c, int32_t o)
-{
-    int32_t prim_val;
-    int len = strlen(ident);
-    if (len > 1) {
-        str_number s = maketexstring(ident);
-
-        if (first + len > buf_size + 1)
-            overflow("buffer size", buf_size);
-
-        for (int i = 0; i < len; i++)
-            buffer[first + i] = ident[i];
-
-        cur_val = id_lookup(first, len);
-        str_ptr--;
-        pool_ptr = str_start[str_ptr - TOO_BIG_CHAR];
-        hash[cur_val].s1 = s;
-        prim_val = prim_lookup(s);
-    } else {
-        cur_val = ident[0] + SINGLE_BASE;
-        prim_val = prim_lookup(ident[0]);
-    }
-
-    eqtb[cur_val].b16.s0 = LEVEL_ONE;
-    eqtb[cur_val].b16.s1 = c;
-    eqtb[cur_val].b32.s1 = o;
-    eqtb[PRIM_EQTB_BASE + prim_val].b16.s0 = LEVEL_ONE;
-    eqtb[PRIM_EQTB_BASE + prim_val].b16.s1 = c;
-    eqtb[PRIM_EQTB_BASE + prim_val].b32.s1 = o;
-}
+// translated to Rust: src/ini.rs primitive
 
 /*:925*//*977: */
 
