@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 122.
+Last updated: session 123.
 
 
 ## Core engine files (to translate)
@@ -36,7 +36,7 @@ Last updated: session 122.
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
-| xetex-ini.c                  |  3573 |     17 | `src/ini.rs` + state modules      | IN PROGRESS — 35% |
+| xetex-ini.c                  |  3190 |     14 | `src/ini.rs` + state modules      | IN PROGRESS — 48% |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
@@ -709,7 +709,7 @@ The active large candidate is `xetex-ini.c`; `xetex-shipout.c` is done.
 
 ### Phase 16 — xetex-ini.c initialization helpers (target: `src/ini.rs`)
 
-Status: IN PROGRESS (session 121).
+Status: IN PROGRESS (session 123).
 
 | # | Function | Line | Status |
 |--:|----------|-----:|--------|
@@ -721,8 +721,11 @@ Status: IN PROGRESS (session 121).
 | 6 | `first_fit` | 638 | MIGRATED (session 121, 4e756427; keeps TeX's linked-free-list trie packing exactly) |
 | 7 | `trie_pack` | 695 | MIGRATED (session 121, 4e756427) |
 | 8 | `trie_fix` | 708 | MIGRATED (session 121, 4e756427) |
+| 9 | `init_trie` | 858 | MIGRATED (session 122, a2dd886a) |
+|10 | `new_patterns` | 642 | MIGRATED (session 123, 67330244; trie_insert_node! macro for 3× repeated pattern, 'done: labeled block for goto done) |
+|11 | `new_hyph_exceptions` | 862 | MIGRATED (session 123, 67330244; goto reswitch→inner loop, goto found/not_found→matched bool) |
 
-Remaining in C: allocation/init clusters, hyphenation trie/pattern setup, `prefixed_command`, format-file I/O (`store_fmt_file`/`load_fmt_file` as a later paired migration), final cleanup, and `tt_run_engine`.
+Remaining in C: `sort_avail`, `primitive`, `prefixed_command`, format-file I/O (`store_fmt_file`/`load_fmt_file` as a paired migration), initialization clusters (`initialize_more_variables`, `initialize_more_initex_variables`, `initialize_primitives`), and `tt_run_engine`/`tt_cleanup`/`final_cleanup`.
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.

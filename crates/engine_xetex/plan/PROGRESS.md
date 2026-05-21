@@ -247,6 +247,7 @@ Passed count below the previous session's recorded value.
 |     120 |  4,488 |                  46,993 |        8.7% |
 |     121 |  4,404 |                  47,457 |        8.5% |
 |     122 |  4,274 |                  47,623 |        8.2% |
+|     123 |  3,891 |                  47,816 |        7.5% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are

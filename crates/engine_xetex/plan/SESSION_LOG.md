@@ -32,6 +32,39 @@ template.
 
 ---
 
+## Session 123 — 2026-05-21 — xetex-ini.c new_patterns and new_hyph_exceptions
+
+**Goal:** Translate `new_patterns` and `new_hyph_exceptions` from `xetex-ini.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 122
+
+**Work done:**
+- Prep commit (c1c91b6d): un-static'd `new_patterns` and `new_hyph_exceptions` in C and added declarations to xetex-xetexd.h.
+- Added missing `globals.rs` accessors: `hyph_count`, `hyph_size`, `hyph_next` raw externs; `set_hyph_word/list/link_entry`; `set_trie_c/o_entry`; `set_cur_lang`.
+- Translated `new_patterns` (67330244): `goto done` → `'done:` labeled block; repeated trie-node insertion captured in `trie_insert_node!` macro; inner op-gathering `while (true)` → counted-down `loop`.
+- Translated `new_hyph_exceptions` (67330244): `goto reswitch` → inner `loop { match { CHAR_NUM => continue, _ => break } }`; `goto found/not_found` in hash lookup → single loop with `matched` bool.
+- Removed both C bodies from `xetex-ini.c`.
+- All four test suites pass (29/29 tex-outputs, 2/2 trip, 7/7 engine_rust, 4/4 latex_goldens).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 123
+
+**Surprises / gotchas:**
+- `set_cur_lang` existed in globals.rs but was missing from the ini.rs import list; caught at compile time.
+- The `'outer:` loop label on `new_hyph_exceptions`'s outer loop was unused (no labeled break/continue needed); removed to silence warning.
+
+**For the next session:**
+- Continue `xetex-ini.c`. Good candidates: `sort_avail` + `primitive` as a small cluster, or the format I/O pair (`store_fmt_file` + `load_fmt_file`). The `prefixed_command` function is very large (~800 lines); consider as a dedicated session.
+
 ## Session 122 — 2026-05-21 — xetex-ini.c init_trie
 
 **Goal:** Migrate `init_trie` and update the plan docs.
