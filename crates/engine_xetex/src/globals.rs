@@ -295,6 +295,12 @@ mod raw {
         pub(super) static mut max_reg_num: i32;
         pub(super) static mut max_reg_help_line: *const libc::c_char;
 
+        // Memory-usage counters (xetex-xetexd.h:463).
+        pub(super) static mut var_used: i32;
+        pub(super) static mut dyn_used: i32;
+        // Control-sequence count (xetex-xetexd.h:489).
+        pub(super) static mut cs_count: i32;
+
         // Group-stack: grp_stack[i] = save-stack boundary for level i
         // (xetex-xetexd.h:705; save_pointer = i32).
         pub(super) static mut grp_stack: *mut i32;
@@ -3437,6 +3443,48 @@ pub(crate) fn set_shown_mode(v: i16) {
 #[inline]
 pub(crate) fn max_reg_num() -> i32 {
     unsafe { raw::max_reg_num }
+}
+#[inline]
+pub(crate) fn set_max_reg_num(v: i32) {
+    unsafe {
+        raw::max_reg_num = v;
+    }
+}
+#[inline]
+pub(crate) fn set_max_reg_help_line(v: *const libc::c_char) {
+    unsafe {
+        raw::max_reg_help_line = v;
+    }
+}
+#[inline]
+pub(crate) fn var_used() -> i32 {
+    unsafe { raw::var_used }
+}
+#[inline]
+pub(crate) fn set_var_used(v: i32) {
+    unsafe {
+        raw::var_used = v;
+    }
+}
+#[inline]
+pub(crate) fn dyn_used() -> i32 {
+    unsafe { raw::dyn_used }
+}
+#[inline]
+pub(crate) fn set_dyn_used(v: i32) {
+    unsafe {
+        raw::dyn_used = v;
+    }
+}
+#[inline]
+pub(crate) fn cs_count() -> i32 {
+    unsafe { raw::cs_count }
+}
+#[inline]
+pub(crate) fn set_cs_count(v: i32) {
+    unsafe {
+        raw::cs_count = v;
+    }
 }
 #[inline]
 pub(crate) fn max_reg_help_line() -> *const libc::c_char {
