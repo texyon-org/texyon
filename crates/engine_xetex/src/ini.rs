@@ -2,10 +2,12 @@
 
 use crate::globals::{
     buf_size, cond_ptr, cur_chr, cur_cmd, cur_if, cur_input, cur_lang, cur_level, cur_mark,
-    cur_val, disc_ptr, eqtb_b32s1, eqtb_top, eqtb_word, first, hc_entry, history,
+    cur_val, disc_ptr, eqtb_b32s1, eqtb_top, eqtb_word, first, font_area_entry,
+    font_layout_engine_ptr, font_mapping_ptr, font_max, hc_entry, history,
     hyf_distance_entry, hyf_entry, hyf_next_entry, hyf_num_entry, hyph_count, hyph_index,
-    hyph_link_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, if_line,
-    init_pool_ptr, in_initex_mode, interaction, job_name, last, last_glue, max_hyph_char,
+    hyph_link_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, if_line, in_open,
+    init_pool_ptr, in_initex_mode, input_file, interaction, job_name, last, last_glue,
+    max_hyph_char,
     max_op_used, mem_b16s0, mem_b32s1, op_start_entry, open_parens, pool_ptr, pool_size,
     rover, sa_root, selector, set_adjust_tail, set_after_token, set_align_ptr, set_avail,
     set_buffer_entry, set_cancel_boundary, set_cond_ptr, set_cs_count, set_cur_align,
@@ -1687,4 +1689,218 @@ pub unsafe extern "C" fn initialize_primitives() {
     set_eqtb_b32s1(END_WRITE, crate::mem::TEX_NULL);
 
     set_no_new_control_sequence(true);
+}
+
+// All tt_cleanup_ items need #[link_name] since the Rust names carry a prefix
+// that doesn't exist in C, and some also clash with existing accessor functions.
+extern "C" {
+    #[link_name = "pdf_files_close"]
+    fn tt_cleanup_pdf_files_close();
+    #[link_name = "destroy_font_manager"]
+    fn tt_cleanup_destroy_font_manager();
+    #[link_name = "TECkit_DisposeConverter"]
+    fn tt_cleanup_TECkit_DisposeConverter(cnv: *mut libc::c_void);
+    #[link_name = "TEX_format_default"]
+    static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
+    #[link_name = "font_used"]
+    static mut tt_cleanup_font_used: *mut libc::c_void;
+    #[link_name = "buffer"]
+    static mut tt_cleanup_buffer: *mut libc::c_void;
+    #[link_name = "nest"]
+    static mut tt_cleanup_nest: *mut libc::c_void;
+    #[link_name = "save_stack"]
+    static mut tt_cleanup_save_stack: *mut libc::c_void;
+    #[link_name = "input_stack"]
+    static mut tt_cleanup_input_stack: *mut libc::c_void;
+    #[link_name = "input_file"]
+    static mut tt_cleanup_input_file: *mut libc::c_void;
+    #[link_name = "line_stack"]
+    static mut tt_cleanup_line_stack: *mut libc::c_void;
+    #[link_name = "eof_seen"]
+    static mut tt_cleanup_eof_seen: *mut libc::c_void;
+    #[link_name = "grp_stack"]
+    static mut tt_cleanup_grp_stack: *mut libc::c_void;
+    #[link_name = "if_stack"]
+    static mut tt_cleanup_if_stack: *mut libc::c_void;
+    #[link_name = "source_filename_stack"]
+    static mut tt_cleanup_source_filename_stack: *mut libc::c_void;
+    #[link_name = "full_source_filename_stack"]
+    static mut tt_cleanup_full_source_filename_stack: *mut libc::c_void;
+    #[link_name = "param_stack"]
+    static mut tt_cleanup_param_stack: *mut libc::c_void;
+    #[link_name = "hyph_word"]
+    static mut tt_cleanup_hyph_word: *mut libc::c_void;
+    #[link_name = "hyph_list"]
+    static mut tt_cleanup_hyph_list: *mut libc::c_void;
+    #[link_name = "hyph_link"]
+    static mut tt_cleanup_hyph_link: *mut libc::c_void;
+    #[link_name = "native_text"]
+    static mut tt_cleanup_native_text: *mut libc::c_void;
+    #[link_name = "tt_cleanup_free_yhash"]
+    fn tt_cleanup_yhash();
+    #[link_name = "eqtb"]
+    static mut tt_cleanup_eqtb: *mut libc::c_void;
+    #[link_name = "mem"]
+    static mut tt_cleanup_mem: *mut libc::c_void;
+    #[link_name = "str_start"]
+    static mut tt_cleanup_str_start: *mut libc::c_void;
+    #[link_name = "str_pool"]
+    static mut tt_cleanup_str_pool: *mut libc::c_void;
+    #[link_name = "font_info"]
+    static mut tt_cleanup_font_info: *mut libc::c_void;
+    #[link_name = "font_mapping"]
+    static mut tt_cleanup_font_mapping: *mut libc::c_void;
+    #[link_name = "font_layout_engine"]
+    static mut tt_cleanup_font_layout_engine: *mut libc::c_void;
+    #[link_name = "font_flags"]
+    static mut tt_cleanup_font_flags: *mut libc::c_void;
+    #[link_name = "font_letter_space"]
+    static mut tt_cleanup_font_letter_space: *mut libc::c_void;
+    #[link_name = "font_check"]
+    static mut tt_cleanup_font_check: *mut libc::c_void;
+    #[link_name = "font_size"]
+    static mut tt_cleanup_font_size: *mut libc::c_void;
+    #[link_name = "font_dsize"]
+    static mut tt_cleanup_font_dsize: *mut libc::c_void;
+    #[link_name = "font_params"]
+    static mut tt_cleanup_font_params: *mut libc::c_void;
+    #[link_name = "font_name"]
+    static mut tt_cleanup_font_name: *mut libc::c_void;
+    #[link_name = "font_area"]
+    static mut tt_cleanup_font_area: *mut libc::c_void;
+    #[link_name = "font_bc"]
+    static mut tt_cleanup_font_bc: *mut libc::c_void;
+    #[link_name = "font_ec"]
+    static mut tt_cleanup_font_ec: *mut libc::c_void;
+    #[link_name = "font_glue"]
+    static mut tt_cleanup_font_glue: *mut libc::c_void;
+    #[link_name = "hyphen_char"]
+    static mut tt_cleanup_hyphen_char: *mut libc::c_void;
+    #[link_name = "skew_char"]
+    static mut tt_cleanup_skew_char: *mut libc::c_void;
+    #[link_name = "bchar_label"]
+    static mut tt_cleanup_bchar_label: *mut libc::c_void;
+    #[link_name = "font_bchar"]
+    static mut tt_cleanup_font_bchar: *mut libc::c_void;
+    #[link_name = "font_false_bchar"]
+    static mut tt_cleanup_font_false_bchar: *mut libc::c_void;
+    #[link_name = "char_base"]
+    static mut tt_cleanup_char_base: *mut libc::c_void;
+    #[link_name = "width_base"]
+    static mut tt_cleanup_width_base: *mut libc::c_void;
+    #[link_name = "height_base"]
+    static mut tt_cleanup_height_base: *mut libc::c_void;
+    #[link_name = "depth_base"]
+    static mut tt_cleanup_depth_base: *mut libc::c_void;
+    #[link_name = "italic_base"]
+    static mut tt_cleanup_italic_base: *mut libc::c_void;
+    #[link_name = "lig_kern_base"]
+    static mut tt_cleanup_lig_kern_base: *mut libc::c_void;
+    #[link_name = "kern_base"]
+    static mut tt_cleanup_kern_base: *mut libc::c_void;
+    #[link_name = "exten_base"]
+    static mut tt_cleanup_exten_base: *mut libc::c_void;
+    #[link_name = "param_base"]
+    static mut tt_cleanup_param_base: *mut libc::c_void;
+    #[link_name = "trie_trl"]
+    static mut tt_cleanup_trie_trl: *mut libc::c_void;
+    #[link_name = "trie_tro"]
+    static mut tt_cleanup_trie_tro: *mut libc::c_void;
+    #[link_name = "trie_trc"]
+    static mut tt_cleanup_trie_trc: *mut libc::c_void;
+}
+
+// translated from xetex-ini.c:2226 (tt_cleanup)
+#[no_mangle]
+pub unsafe extern "C" fn tt_cleanup() {
+    tt_cleanup_pdf_files_close();
+    libc::free(tt_cleanup_TEX_format_default as *mut _);
+    libc::free(tt_cleanup_font_used);
+    crate::shipout::deinitialize_shipout_variables();
+
+    tt_cleanup_destroy_font_manager();
+
+    for font_k in 0..font_max() {
+        let engine = font_layout_engine_ptr(font_k);
+        if !engine.is_null() {
+            crate::ext::release_font_engine(engine, font_area_entry(font_k));
+            crate::globals::set_font_layout_engine_ptr(font_k, std::ptr::null_mut());
+        }
+        let mapping = font_mapping_ptr(font_k);
+        if !mapping.is_null() {
+            tt_cleanup_TECkit_DisposeConverter(mapping);
+            crate::globals::set_font_mapping_ptr(font_k, std::ptr::null_mut());
+        }
+    }
+
+    for i in 1..=in_open() {
+        let f = input_file(i);
+        if !f.is_null() {
+            crate::io::u_close(f as *mut crate::io::UFile);
+        }
+    }
+
+    // Free the big allocated arrays
+    libc::free(tt_cleanup_buffer);
+    libc::free(tt_cleanup_nest);
+    libc::free(tt_cleanup_save_stack);
+    libc::free(tt_cleanup_input_stack);
+    libc::free(tt_cleanup_input_file);
+    libc::free(tt_cleanup_line_stack);
+    libc::free(tt_cleanup_eof_seen);
+    libc::free(tt_cleanup_grp_stack);
+    libc::free(tt_cleanup_if_stack);
+    libc::free(tt_cleanup_source_filename_stack);
+    libc::free(tt_cleanup_full_source_filename_stack);
+    libc::free(tt_cleanup_param_stack);
+    libc::free(tt_cleanup_hyph_word);
+    libc::free(tt_cleanup_hyph_list);
+    libc::free(tt_cleanup_hyph_link);
+
+    // initialize_more_variables @ 3277
+    libc::free(tt_cleanup_native_text);
+
+    // Free arrays allocated in load_fmt_file
+    tt_cleanup_yhash(); // frees file-static yhash via C helper
+    libc::free(tt_cleanup_eqtb);
+    libc::free(tt_cleanup_mem);
+    libc::free(tt_cleanup_str_start);
+    libc::free(tt_cleanup_str_pool);
+    libc::free(tt_cleanup_font_info);
+
+    libc::free(tt_cleanup_font_mapping);
+    libc::free(tt_cleanup_font_layout_engine);
+    libc::free(tt_cleanup_font_flags);
+    libc::free(tt_cleanup_font_letter_space);
+    libc::free(tt_cleanup_font_check);
+    libc::free(tt_cleanup_font_size);
+    libc::free(tt_cleanup_font_dsize);
+    libc::free(tt_cleanup_font_params);
+    libc::free(tt_cleanup_font_name);
+    libc::free(tt_cleanup_font_area);
+    libc::free(tt_cleanup_font_bc);
+    libc::free(tt_cleanup_font_ec);
+    libc::free(tt_cleanup_font_glue);
+    libc::free(tt_cleanup_hyphen_char);
+    libc::free(tt_cleanup_skew_char);
+    libc::free(tt_cleanup_bchar_label);
+    libc::free(tt_cleanup_font_bchar);
+    libc::free(tt_cleanup_font_false_bchar);
+    libc::free(tt_cleanup_char_base);
+    libc::free(tt_cleanup_width_base);
+    libc::free(tt_cleanup_height_base);
+    libc::free(tt_cleanup_depth_base);
+    libc::free(tt_cleanup_italic_base);
+    libc::free(tt_cleanup_lig_kern_base);
+    libc::free(tt_cleanup_kern_base);
+    libc::free(tt_cleanup_exten_base);
+    libc::free(tt_cleanup_param_base);
+
+    // mfree(trie_trl) ≡ free(trie_trl); trie_trl = NULL
+    libc::free(tt_cleanup_trie_trl);
+    tt_cleanup_trie_trl = std::ptr::null_mut();
+    libc::free(tt_cleanup_trie_tro);
+    tt_cleanup_trie_tro = std::ptr::null_mut();
+    libc::free(tt_cleanup_trie_trc);
+    tt_cleanup_trie_trc = std::ptr::null_mut();
 }

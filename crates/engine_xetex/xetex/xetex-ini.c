@@ -2222,99 +2222,12 @@ void get_strings_started(void);
 // translated to Rust: src/ini.rs get_strings_started
 /*:1001*/
 
+// translated to Rust: src/ini.rs tt_cleanup
+// Helper for tt_cleanup: free the file-static yhash pointer.
 void
-tt_cleanup(void) {
-    /*
-        Cleanup of all intermediate buffers.
-        Conceptually, final_cleanup() and close_files_and_terminate() also
-        belong here, but that requires a more thorough refactor as presently
-        it would result in a segfault.
-    */
-
-    pdf_files_close();
-    free(TEX_format_default);
-    free(font_used);
-    deinitialize_shipout_variables();
-
-    destroy_font_manager();
-
-    for (int font_k = 0; font_k < font_max; font_k++) {
-        if (font_layout_engine[font_k] != NULL) {
-            release_font_engine(font_layout_engine[font_k], font_area[font_k]);
-            font_layout_engine[font_k] = NULL;
-        }
-
-        if (font_mapping[font_k] != NULL) {
-            TECkit_DisposeConverter((TECkit_Converter) font_mapping[font_k]);
-            font_mapping[font_k] = NULL;
-        }
-    }
-
-    for (int i = 1; i <= in_open; i++) {
-        if (input_file[i] != NULL) {
-            u_close(input_file[i]);
-        }
-    }
-
-    // Free the big allocated arrays
-    free(buffer);
-    free(nest);
-    free(save_stack);
-    free(input_stack);
-    free(input_file);
-    free(line_stack);
-    free(eof_seen);
-    free(grp_stack);
-    free(if_stack);
-    free(source_filename_stack);
-    free(full_source_filename_stack);
-    free(param_stack);
-    free(hyph_word);
-    free(hyph_list);
-    free(hyph_link);
-
-    // initialize_more_variables @ 3277
-    free(native_text);
-
-    // Free arrays allocated in load_fmt_file
+tt_cleanup_free_yhash(void) {
     free(yhash);
-    free(eqtb);
-    free(mem);
-    free(str_start);
-    free(str_pool);
-    free(font_info);
-
-    free(font_mapping);
-    free(font_layout_engine);
-    free(font_flags);
-    free(font_letter_space);
-    free(font_check);
-    free(font_size);
-    free(font_dsize);
-    free(font_params);
-    free(font_name);
-    free(font_area);
-    free(font_bc);
-    free(font_ec);
-    free(font_glue);
-    free(hyphen_char);
-    free(skew_char);
-    free(bchar_label);
-    free(font_bchar);
-    free(font_false_bchar);
-    free(char_base);
-    free(width_base);
-    free(height_base);
-    free(depth_base);
-    free(italic_base);
-    free(lig_kern_base);
-    free(kern_base);
-    free(exten_base);
-    free(param_base);
-
-    trie_trl = mfree(trie_trl);
-    trie_tro = mfree(trie_tro);
-    trie_trc = mfree(trie_trc);
+    yhash = NULL;
 }
 
 tt_history_t
