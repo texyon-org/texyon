@@ -32,6 +32,43 @@ template.
 
 ---
 
+## Session 124 — 2026-05-21 — xetex-ini.c sort_avail and primitive
+
+**Goal:** Translate `sort_avail` and `primitive` from `xetex-ini.c` to Rust as a small cluster.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 123
+
+**Work done:**
+- Prep commit (baeae90e): un-static'd `sort_avail` and `primitive` in C and added declarations to xetex-xetexd.h. Their only callers are still-in-C functions (`store_fmt_file`, `initialize_primitives`), so the symbols must be linker-visible for the Rust replacements to resolve.
+- Translated `sort_avail` (0904e3cf): direct transliteration of the avail-list sort. Two nested `while` loops walking the rover free list; uses `mem_b32s1` / `set_mem_b32s1` accessors + `set_mem_b32s0` for back-links. Bumped a few new imports (`mem_b32s1`, `rover`, `set_mem_b32s1`, `set_rover`).
+- Translated `primitive` (0904e3cf): straightforward — single-character vs. multi-char identifiers walk separate branches. Uses already-Rust helpers `crate::texmfmp::maketexstring`, `crate::hash::id_lookup`, `crate::hash::prim_lookup`, `crate::errors::overflow`. Added local consts `SINGLE_BASE`, `PRIM_EQTB_BASE`, `LEVEL_ONE`, plus accessors `set_eqtb_b16s0`/`set_eqtb_b16s1`/`set_eqtb_b32s1`/`set_hash_s1`/`set_cur_val`/`buf_size`/`set_buffer_entry`/`set_str_ptr`/`set_pool_ptr`.
+- Removed both C bodies from `xetex-ini.c`.
+- All four test suites pass (29/29 tex-outputs, 2/2 trip, 7/7 engine_rust, 4/4 latex_goldens).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 124
+
+**Surprises / gotchas:**
+- `sort_avail` calls `get_node(0x40000000)` with a sentinel value but the return value is discarded (the magic sentinel triggers a free-list rebuild as a side effect inside `get_node`). The result is overwritten immediately by `p = mem[rover+1].b32.s1`. Kept the call as `let _ = ...` to make the discard explicit.
+- `primitive` is `static` in C, but its only caller `initialize_primitives` is also still in C — un-static prep was unavoidable because keeping it Rust-private would have required translating both the loop body and helper in the same commit.
+
+**For the next session:**
+- Continue `xetex-ini.c`. Remaining candidates:
+  - `final_cleanup` (~95 lines) and `tt_cleanup` (~95 lines) as a small cleanup cluster.
+  - `initialize_more_variables` (~160 lines) — straightforward init.
+  - `pack_buffered_name` (~11 lines, tiny).
+  - `prefixed_command` (~800 lines) — dedicated session.
+  - `store_fmt_file` / `load_fmt_file` — must be paired, large session.
+
 ## Session 123 — 2026-05-21 — xetex-ini.c new_patterns and new_hyph_exceptions
 
 **Goal:** Translate `new_patterns` and `new_hyph_exceptions` from `xetex-ini.c` to Rust.
