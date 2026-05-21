@@ -2206,7 +2206,7 @@ void init_io(void);
 // translated to Rust: src/ini.rs init_io
 
 
-static void
+void
 initialize_more_variables(void)
 {
     int32_t k;
