@@ -1860,6 +1860,11 @@ pub(crate) fn set_halt_on_error_p(v: i32) {
 // ---------------------------------------------------------------------------
 
 #[inline]
+pub(crate) fn in_initex_mode() -> bool {
+    // SAFETY: see module-level doc.
+    unsafe { raw::in_initex_mode }
+}
+#[inline]
 pub(crate) fn set_in_initex_mode(v: bool) {
     // SAFETY: see module-level doc.
     unsafe {

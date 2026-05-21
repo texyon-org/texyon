@@ -1343,7 +1343,7 @@ done: /*1304:*/
 
 
 /*1337:*/
-static void
+void
 store_fmt_file(void)
 {
     int32_t j, k, l;
@@ -2197,100 +2197,7 @@ bad_fmt:
 }
 
 
-void
-final_cleanup(void)
-{
-    small_number c;
-
-    c = cur_chr;
-
-    if (c != 1)
-        INTPAR(new_line_char) = -1;
-
-    if (job_name == 0)
-        open_log_file();
-
-    while (input_ptr > 0)
-        if (cur_input.state == TOKEN_LIST)
-            end_token_list();
-        else
-            end_file_reading();
-    while (open_parens > 0) {
-
-        print_cstr(" )");
-        open_parens--;
-    }
-    if (cur_level > LEVEL_ONE) {
-        print_nl('(' );
-        print_esc_cstr("end occurred ");
-        print_cstr("inside a group at level ");
-        print_int(cur_level - 1);
-        print_char(')');
-        show_save_groups();
-    }
-    while (cond_ptr != TEX_NULL) {
-
-        print_nl('(' );
-        print_esc_cstr("end occurred ");
-        print_cstr("when ");
-        print_cmd_chr(IF_TEST, cur_if);
-        if (if_line != 0) {
-            print_cstr(" on line ");
-            print_int(if_line);
-        }
-        print_cstr(" was incomplete)");
-        if_line = mem[cond_ptr + 1].b32.s1;
-        cur_if = mem[cond_ptr].b16.s0;
-        temp_ptr = cond_ptr;
-        cond_ptr = LLIST_link(cond_ptr);
-        free_node(temp_ptr, IF_NODE_SIZE);
-    }
-
-    if (history != HISTORY_SPOTLESS) {
-        if ((history == HISTORY_WARNING_ISSUED || (interaction < ERROR_STOP_MODE))) {
-
-            if (selector == SELECTOR_TERM_AND_LOG) {
-                selector = SELECTOR_TERM_ONLY;
-                print_nl_cstr("(see the transcript file for additional information)");
-                selector = SELECTOR_TERM_AND_LOG;
-            }
-        }
-    }
-    if (c == 1) {
-        if (in_initex_mode) {
-            {
-                register int32_t for_end;
-                c = TOP_MARK_CODE;
-                for_end = SPLIT_BOT_MARK_CODE;
-                if (c <= for_end)
-                    do
-                        if (cur_mark[c] != TEX_NULL)
-                            delete_token_ref(cur_mark[c]);
-                    while (c++ < for_end) ;
-            }
-            if (sa_root[MARK_VAL] != TEX_NULL) {
-
-                if (do_marks(3, 0, sa_root[MARK_VAL]))
-                    sa_root[MARK_VAL] = TEX_NULL;
-            }
-            {
-                register int32_t for_end;
-                c = LAST_BOX_CODE;
-                for_end = VSPLIT_CODE;
-                if (c <= for_end)
-                    do
-                        flush_node_list(disc_ptr[c]);
-                    while (c++ < for_end);
-            }
-            if (last_glue != MAX_HALFWORD)
-                delete_glue_ref(last_glue);
-            store_fmt_file();
-            return;
-        }
-        print_nl_cstr("(\\dump is performed only by INITEX)");
-        return;
-    }
-}
+// translated to Rust: src/ini.rs final_cleanup
 
 
 /* Engine initialization */

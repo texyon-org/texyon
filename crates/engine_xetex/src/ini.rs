@@ -1,25 +1,29 @@
 //! Rust translation of initialization helpers from xetex-ini.c.
 
 use crate::globals::{
-    buf_size, cur_chr, cur_cmd, cur_lang, cur_val, eqtb_b32s1, first, hc_entry,
-    hyf_distance_entry, hyf_entry, hyf_next_entry, hyf_num_entry, hyph_count, hyph_index,
-    hyph_link_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, init_pool_ptr,
-    last, max_hyph_char, max_op_used, mem_b32s1, op_start_entry, pool_ptr, pool_size, rover,
-    set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_input_limit, set_cur_input_loc,
-    set_cur_lang, set_cur_val, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_first,
-    set_hash_s1, set_hc_entry, set_help_line, set_help_ptr, set_hyf_distance_entry,
-    set_hyf_entry, set_hyf_next_entry, set_hyf_num_entry, set_hyph_count, set_hyph_index,
-    set_hyph_link_entry, set_hyph_list_entry, set_hyph_next, set_hyph_start,
-    set_hyph_word_entry, set_input_file, set_last, set_max_hyph_char, set_max_op_used,
-    set_mem_b32s1, set_op_start_entry, set_pool_ptr, set_rover, set_str_pool, set_str_ptr,
-    set_str_start, set_trie_c_entry, set_trie_hash_entry, set_trie_l_entry, set_trie_max,
-    set_trie_min_entry, set_trie_not_ready, set_trie_o_entry, set_trie_op_lang_entry,
-    set_trie_op_ptr, set_trie_op_val_entry, set_trie_ptr, set_trie_r_entry,
-    set_trie_taken_entry, set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry,
-    set_trie_used_entry, str_ptr, str_pool_entry, str_start, string_vacancies, trie_c_entry,
-    trie_hash_entry, trie_l_entry, trie_max, trie_min_entry, trie_not_ready, trie_o_entry,
-    trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_ptr, trie_r_entry, trie_size,
-    trie_taken_entry, trie_trc_entry, trie_trl_entry, trie_tro_entry, trie_used_entry,
+    buf_size, cond_ptr, cur_chr, cur_cmd, cur_if, cur_input, cur_lang, cur_level, cur_mark,
+    cur_val, disc_ptr, eqtb_b32s1, first, hc_entry, history, hyf_distance_entry, hyf_entry,
+    hyf_next_entry, hyf_num_entry, hyph_count, hyph_index, hyph_link_entry, hyph_next,
+    hyph_size, hyph_start, hyph_word_entry, if_line, init_pool_ptr, in_initex_mode,
+    interaction, job_name, last, last_glue, max_hyph_char, max_op_used, mem_b16s0, mem_b32s1,
+    op_start_entry, open_parens, pool_ptr, pool_size, rover, sa_root, selector,
+    set_buffer_entry, set_cond_ptr, set_cur_chr, set_cur_cmd, set_cur_if, set_cur_input_limit,
+    set_cur_input_loc, set_cur_lang, set_cur_val, set_eqtb_b16s0, set_eqtb_b16s1,
+    set_eqtb_b32s1, set_first, set_hash_s1, set_hc_entry, set_help_line, set_help_ptr,
+    set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry, set_hyf_num_entry,
+    set_hyph_count, set_hyph_index, set_hyph_link_entry, set_hyph_list_entry, set_hyph_next,
+    set_hyph_start, set_hyph_word_entry, set_if_line, set_input_file, set_last,
+    set_max_hyph_char, set_max_op_used, set_mem_b32s1, set_op_start_entry, set_open_parens,
+    set_pool_ptr, set_rover, set_sa_root, set_selector, set_str_pool, set_str_ptr,
+    set_str_start, set_temp_ptr, set_trie_c_entry, set_trie_hash_entry, set_trie_l_entry,
+    set_trie_max, set_trie_min_entry, set_trie_not_ready, set_trie_o_entry,
+    set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry, set_trie_ptr,
+    set_trie_r_entry, set_trie_taken_entry, set_trie_trc_entry, set_trie_trl_entry,
+    set_trie_tro_entry, set_trie_used_entry, str_ptr, str_pool_entry, str_start,
+    string_vacancies, temp_ptr, trie_c_entry, trie_hash_entry, trie_l_entry, trie_max,
+    trie_min_entry, trie_not_ready, trie_o_entry, trie_op_lang_entry, trie_op_ptr,
+    trie_op_val_entry, trie_ptr, trie_r_entry, trie_size, trie_taken_entry, trie_trc_entry,
+    trie_trl_entry, trie_tro_entry, trie_used_entry,
 };
 use crate::io::UFile;
 
@@ -44,6 +48,7 @@ pub static mut _trie_op_hash_array: [i32; TRIE_OP_HASH_SIZE] = [0; TRIE_OP_HASH_
 
 extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
+    fn store_fmt_file();
 }
 
 #[inline]
@@ -949,4 +954,121 @@ pub unsafe extern "C" fn primitive(ident: *const libc::c_char, c: u16, o: i32) {
     set_eqtb_b16s0(PRIM_EQTB_BASE + prim_val, LEVEL_ONE);
     set_eqtb_b16s1(PRIM_EQTB_BASE + prim_val, c);
     set_eqtb_b32s1(PRIM_EQTB_BASE + prim_val, o);
+}
+
+// translated from xetex-ini.c:2201 (final_cleanup)
+#[no_mangle]
+pub unsafe extern "C" fn final_cleanup() {
+    const INT_BASE: i32 = 7_826_729;
+    const INT_PAR_NEW_LINE_CHAR: i32 = 49;
+    const IF_NODE_SIZE: i32 = 2;
+    const IF_TEST: u16 = 107;
+    const TOKEN_LIST: u16 = 0;
+    const TOP_MARK_CODE: usize = 0;
+    const SPLIT_BOT_MARK_CODE: usize = 4;
+    const LAST_BOX_CODE: usize = 2;
+    const VSPLIT_CODE: usize = 3;
+    const MARK_VAL: usize = 7;
+    const HISTORY_SPOTLESS: i32 = 0;
+    const HISTORY_WARNING_ISSUED: i32 = 1;
+    const ERROR_STOP_MODE: u8 = 3;
+    const SELECTOR_TERM_ONLY: i32 = 17;
+    const SELECTOR_TERM_AND_LOG: i32 = 19;
+
+    let mut c = cur_chr();
+
+    if c != 1 {
+        set_eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, -1);
+    }
+
+    if job_name() == 0 {
+        crate::scan::open_log_file();
+    }
+
+    while crate::globals::input_ptr() > 0 {
+        if cur_input().state == TOKEN_LIST {
+            crate::input::end_token_list();
+        } else {
+            crate::input::end_file_reading();
+        }
+    }
+
+    while open_parens() > 0 {
+        crate::output::print_cstr(c" )".as_ptr());
+        set_open_parens(open_parens() - 1);
+    }
+
+    if cur_level() as u16 > LEVEL_ONE {
+        crate::output::print_nl(b'(' as i32);
+        crate::output::print_esc_cstr(c"end occurred ".as_ptr());
+        crate::output::print_cstr(c"inside a group at level ".as_ptr());
+        crate::output::print_int(cur_level() as i32 - 1);
+        crate::output::print_char(b')' as i32);
+        crate::scan::show_save_groups();
+    }
+
+    while cond_ptr() != crate::mem::TEX_NULL {
+        crate::output::print_nl(b'(' as i32);
+        crate::output::print_esc_cstr(c"end occurred ".as_ptr());
+        crate::output::print_cstr(c"when ".as_ptr());
+        crate::output::print_cmd_chr(IF_TEST, cur_if() as i32);
+        if if_line() != 0 {
+            crate::output::print_cstr(c" on line ".as_ptr());
+            crate::output::print_int(if_line());
+        }
+        crate::output::print_cstr(c" was incomplete)".as_ptr());
+        set_if_line(mem_b32s1(cond_ptr() + 1));
+        set_cur_if(mem_b16s0(cond_ptr()) as i16);
+        set_temp_ptr(cond_ptr());
+        set_cond_ptr(mem_b32s1(cond_ptr()));
+        crate::mem::free_node(temp_ptr(), IF_NODE_SIZE);
+    }
+
+    if history() != HISTORY_SPOTLESS
+        && (history() == HISTORY_WARNING_ISSUED || (interaction() as u8) < ERROR_STOP_MODE)
+        && selector() == SELECTOR_TERM_AND_LOG
+    {
+        set_selector(SELECTOR_TERM_ONLY);
+        crate::output::print_nl_cstr(
+            c"(see the transcript file for additional information)".as_ptr(),
+        );
+        set_selector(SELECTOR_TERM_AND_LOG);
+    }
+
+    if c == 1 {
+        if in_initex_mode() {
+            c = TOP_MARK_CODE as i32;
+            loop {
+                if cur_mark(c as usize) != crate::mem::TEX_NULL {
+                    crate::mem::delete_token_ref(cur_mark(c as usize));
+                }
+                if c as usize >= SPLIT_BOT_MARK_CODE {
+                    break;
+                }
+                c += 1;
+            }
+
+            if sa_root(MARK_VAL) != crate::mem::TEX_NULL
+                && crate::scan::do_marks(3, 0, sa_root(MARK_VAL))
+            {
+                set_sa_root(MARK_VAL, crate::mem::TEX_NULL);
+            }
+
+            c = LAST_BOX_CODE as i32;
+            loop {
+                crate::scan::flush_node_list(disc_ptr(c as usize));
+                if c as usize >= VSPLIT_CODE {
+                    break;
+                }
+                c += 1;
+            }
+
+            if last_glue() != MAX_HALFWORD {
+                crate::mem::delete_glue_ref(last_glue());
+            }
+            store_fmt_file();
+            return;
+        }
+        crate::output::print_nl_cstr(c"(\\dump is performed only by INITEX)".as_ptr());
+    }
 }
