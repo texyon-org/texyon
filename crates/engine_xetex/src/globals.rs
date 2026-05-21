@@ -532,6 +532,9 @@ mod raw {
         pub(super) static mut hyph_word: *mut i32;
         pub(super) static mut hyph_list: *mut i32;
         pub(super) static mut hyph_link: *mut u16;
+        pub(super) static mut hyph_count: i32;
+        pub(super) static mut hyph_size: i32;
+        pub(super) static mut hyph_next: i32;
         pub(super) static mut trie_used: [u16; 256];
         pub(super) static mut trie_op_lang: [u8; 35112];
         pub(super) static mut trie_op_val: [u16; 35112];
@@ -4113,8 +4116,16 @@ pub(crate) fn trie_c_entry(k: i32) -> u16 {
     unsafe { *raw::trie_c.offset(k as isize) }
 }
 #[inline]
+pub(crate) fn set_trie_c_entry(k: i32, v: u16) {
+    unsafe { *raw::trie_c.offset(k as isize) = v; }
+}
+#[inline]
 pub(crate) fn trie_o_entry(k: i32) -> u16 {
     unsafe { *raw::trie_o.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn set_trie_o_entry(k: i32, v: u16) {
+    unsafe { *raw::trie_o.offset(k as isize) = v; }
 }
 #[inline]
 pub(crate) fn trie_l_entry(k: i32) -> i32 {
@@ -4321,6 +4332,38 @@ pub(crate) fn hyph_list_entry(k: i32) -> i32 {
 #[inline]
 pub(crate) fn hyph_link_entry(k: i32) -> u16 {
     unsafe { *raw::hyph_link.offset(k as isize) }
+}
+#[inline]
+pub(crate) fn set_hyph_word_entry(k: i32, v: i32) {
+    unsafe { *raw::hyph_word.offset(k as isize) = v; }
+}
+#[inline]
+pub(crate) fn set_hyph_list_entry(k: i32, v: i32) {
+    unsafe { *raw::hyph_list.offset(k as isize) = v; }
+}
+#[inline]
+pub(crate) fn set_hyph_link_entry(k: i32, v: u16) {
+    unsafe { *raw::hyph_link.offset(k as isize) = v; }
+}
+#[inline]
+pub(crate) fn hyph_count() -> i32 {
+    unsafe { raw::hyph_count }
+}
+#[inline]
+pub(crate) fn set_hyph_count(v: i32) {
+    unsafe { raw::hyph_count = v; }
+}
+#[inline]
+pub(crate) fn hyph_size() -> i32 {
+    unsafe { raw::hyph_size }
+}
+#[inline]
+pub(crate) fn hyph_next() -> i32 {
+    unsafe { raw::hyph_next }
+}
+#[inline]
+pub(crate) fn set_hyph_next(v: i32) {
+    unsafe { raw::hyph_next = v; }
 }
 
 #[inline]
