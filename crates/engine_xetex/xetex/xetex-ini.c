@@ -550,7 +550,7 @@ do_undump (char *p, size_t item_size, size_t nitems, rust_input_handle_t in_file
 
 /*:134*//*135: */
 
-static void
+void
 sort_avail(void)
 {
     int32_t p, q, r;
@@ -593,7 +593,7 @@ sort_avail(void)
 
 /*:271*//*276: */
 
-static void
+void
 primitive(const char* ident, uint16_t c, int32_t o)
 {
     int32_t prim_val;
