@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 124.
+Last updated: session 125.
 
 
 ## Core engine files (to translate)
@@ -36,7 +36,7 @@ Last updated: session 124.
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
-| xetex-ini.c                  |  3121 |     12 | `src/ini.rs` + state modules      | IN PROGRESS — 55% |
+| xetex-ini.c                  |  3028 |     11 | `src/ini.rs` + state modules      | IN PROGRESS — 59% |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
@@ -726,8 +726,9 @@ Status: IN PROGRESS (session 124).
 |11 | `new_hyph_exceptions` | 862 | MIGRATED (session 123, 67330244; goto reswitch→inner loop, goto found/not_found→matched bool) |
 |12 | `sort_avail` | 554 | MIGRATED (session 124, 0904e3cf; un-static'd in baeae90e prep commit) |
 |13 | `primitive` | 597 | MIGRATED (session 124, 0904e3cf; un-static'd in baeae90e prep commit) |
+|14 | `final_cleanup` | 2201 | MIGRATED (session 125, 77978635; un-static'd in 6a55a6e5 prep commit; un-static'd `store_fmt_file` in the same translation commit so the Rust caller can reach it through FFI) |
 
-Remaining in C: `prefixed_command`, format-file I/O (`store_fmt_file`/`load_fmt_file` as a paired migration), initialization clusters (`initialize_more_variables`, `initialize_more_initex_variables`, `initialize_primitives`), and `tt_run_engine`/`tt_cleanup`/`final_cleanup`.
+Remaining in C: `prefixed_command`, format-file I/O (`store_fmt_file`/`load_fmt_file` as a paired migration), `pack_buffered_name`, initialization clusters (`initialize_more_variables`, `initialize_more_initex_variables`, `initialize_primitives`), and `tt_run_engine`/`tt_cleanup`.
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.

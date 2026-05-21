@@ -138,6 +138,7 @@ cargo test -p tectonic --test tex-outputs
 |     122 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate init_trie and wire trie globals. All 4 suites pass. |
 |     123 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate new_patterns and new_hyph_exceptions (67330244, c1c91b6d prep). All 4 suites pass. |
 |     124 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate sort_avail and primitive (0904e3cf, baeae90e prep). All 4 suites pass. |
+|     125 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate final_cleanup (77978635, 6a55a6e5 prep); un-static store_fmt_file for FFI access. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -251,6 +252,7 @@ Passed count below the previous session's recorded value.
 |     122 |  4,274 |                  47,623 |        8.2% |
 |     123 |  3,891 |                  47,816 |        7.5% |
 |     124 |  3,822 |                  47,890 |        7.4% |
+|     125 |  3,729 |                  48,022 |        7.2% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -377,7 +379,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **124** (sessions 1–124 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **125** (sessions 1–125 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

@@ -32,6 +32,43 @@ template.
 
 ---
 
+## Session 125 — 2026-05-21 — xetex-ini.c final_cleanup
+
+**Goal:** Translate `final_cleanup` from `xetex-ini.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 124
+
+**Work done:**
+- Prep commit (6a55a6e5): un-static'd `final_cleanup` in C and added the declaration to xetex-xetexd.h. Its only caller is `tt_run_engine`, still in C.
+- Translated `final_cleanup` (77978635). Two C `do {...} while (c++ < for_end)` loops (over mark codes and disc_ptr slots) became `loop { ... if c >= LIMIT { break } c += 1 }` to match the exact C semantics (executes at least once even if `c > for_end`, which here never actually happens but is preserved). Translated `LLIST_link(cond_ptr)` as `mem_b32s1(cond_ptr())`. `INTPAR(new_line_char) = -1` mapped to `set_eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, -1)`.
+- Added `in_initex_mode()` getter to globals.rs (only the setter existed).
+- Un-static'd `store_fmt_file` in the same translation commit (declaration in xetex-xetexd.h) so the Rust `final_cleanup` can reach it through `extern "C"`. The body itself stays in C until paired with `load_fmt_file` in a future session.
+- Removed `final_cleanup` body from `xetex-ini.c`.
+- All four test suites pass (29/29 tex-outputs, 2/2 trip, 7/7 engine_rust, 4/4 latex_goldens).
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 125
+
+**Surprises / gotchas:**
+- `store_fmt_file` was also static; the linker error surfaced only after the C body was removed. The un-static landed in the translation commit rather than a separate prep — it's a one-line change tied to the same migration step.
+- The mode parameter `c` is reused twice as a loop induction variable after its initial use as `cur_chr`. Kept the name and let-mut to mirror the C, but the second/third reuses look like `c = TOP_MARK_CODE` etc. Future readers should not assume `c` still holds `cur_chr` past line 1 of the function.
+
+**For the next session:**
+- Continue `xetex-ini.c`. Candidates:
+  - `pack_buffered_name` (~8 LOC, trivial) — un-static prep needed; only called from `load_fmt_file`.
+  - `initialize_more_variables` (~160 LOC, straightforward inits) — un-static prep needed; called from `tt_run_engine`.
+  - `store_fmt_file` (~410 LOC) and `load_fmt_file` (~410 LOC) — paired migration, dedicated session.
+  - `prefixed_command` (~800 LOC) — dedicated session.
+
 ## Session 124 — 2026-05-21 — xetex-ini.c sort_avail and primitive
 
 **Goal:** Translate `sort_avail` and `primitive` from `xetex-ini.c` to Rust as a small cluster.
