@@ -32,6 +32,47 @@ template.
 
 ---
 
+## Session 126 — 2026-05-21 — xetex-ini.c initialize_more_variables
+
+**Goal:** Translate `initialize_more_variables` from `xetex-ini.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 125
+
+**Work done:**
+- Prep commit (71347f28): un-static'd `initialize_more_variables` in C and added its declaration to xetex-xetexd.h. Its only caller (`tt_run_engine`) is still in C, so the symbol must be linker-visible for the Rust replacement to resolve.
+- Translated `initialize_more_variables` (a9c6e366). The function is ~155 lines of straight-line state initialization (no branches, no goto): scalars, the `two_to_the` / `spec_log` precomputed tables, `cur_list` fields, mark/disc-ptr arrays, hyph_word/list/link arrays sized by `hyph_size()`, the entire `XEQ_LEVEL` table, and the `prim` hash table. Loops kept their inclusive bounds (`for k in 1..=30usize`, `for z in 0..=hyph_size()`).
+- Added missing setter accessors in src/globals.rs: `set_two_to_the`, `set_spec_log`, `set_null_character`, `set_format_ident`, `set_edit_name_start`, `set_empty_b32s0`, `set_empty_b32s1`, `set_sa_null_b32s0`, `set_sa_null_b32s1`. Added new raw externs: `format_ident: i32`, `edit_name_start: i32`, `empty: B32x2`.
+- Translated the C `prim[0].s0 = 0; prim[0].s1 = 0; for (k = 1; k <= PRIM_SIZE; k++) prim[k] = prim[0];` pattern as a single loop over `0..=PRIM_SIZE` that zeros both halves — equivalent to the C behavior (copy of an all-zero entry into every slot).
+- Removed the C body from `xetex-ini.c`, left a translated marker.
+- All four test suites pass.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 126
+
+**Surprises / gotchas:**
+- `empty` is a real `b32x2` global with module-level state semantics (zero-initialized template for math-noad fields). Other Rust code uses an inline `s1=0, s0=TEX_NULL` instead of reading `empty`, but the C engine still writes here, so the global needs the same writes.
+- `cur_list.aux.b32.s1 = IGNORE_DEPTH` mapped to `set_cur_list_aux_b32s1`; the s0 half is the spacefactor and is not touched here.
+- `null_character.s3/s2/s1/s0 = 0` collapses to a single `set_null_character(B16x4 { ... })`.
+- The `for (k = INT_BASE; k <= EQTB_SIZE; k++) XEQ_LEVEL(k) = LEVEL_ONE;` loop runs over a 1.1M-entry table; `set_xeq_level` is just a `_xeq_level_array[k - INT_BASE] = v` write, so this is identical to C in semantics and speed.
+
+**For the next session:**
+- Continue `xetex-ini.c`. Remaining function bodies in C:
+  - `initialize_more_initex_variables` (~170 lines): mostly more initialization, but touches `mem`/`eqtb`/`hash` setup tables; mid-size session.
+  - `initialize_primitives` (~65 lines): calls the already-Rust `primitive()` repeatedly.
+  - `prefixed_command` (~800 lines): big dispatcher; dedicated session.
+  - `pack_buffered_name` (~11 lines, static): tiny but its only caller is `load_fmt_file` still in C — translate together with `load_fmt_file`.
+  - `store_fmt_file` (~360 lines) + `load_fmt_file` (~480 lines): paired migration; dedicated session.
+  - `tt_cleanup` (~95 lines), `tt_run_engine` (~?? lines): top-level lifecycle; consider together.
+
 ## Session 125 — 2026-05-21 — xetex-ini.c final_cleanup
 
 **Goal:** Translate `final_cleanup` from `xetex-ini.c` to Rust.
