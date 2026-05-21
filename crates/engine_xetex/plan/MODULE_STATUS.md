@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 127.
+Last updated: session 128.
 
 
 ## Core engine files (to translate)
@@ -36,7 +36,7 @@ Last updated: session 127.
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
-| xetex-ini.c                  |  2702 |      9 | `src/ini.rs` + state modules      | IN PROGRESS — 67% |
+| xetex-ini.c                  |  2642 |      8 | `src/ini.rs` + state modules      | IN PROGRESS — 70% |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
@@ -709,7 +709,7 @@ The active large candidate is `xetex-ini.c`; `xetex-shipout.c` is done.
 
 ### Phase 16 — xetex-ini.c initialization helpers (target: `src/ini.rs`)
 
-Status: IN PROGRESS (session 127).
+Status: IN PROGRESS (session 128).
 
 | # | Function | Line | Status |
 |--:|----------|-----:|--------|
@@ -729,8 +729,9 @@ Status: IN PROGRESS (session 127).
 |14 | `final_cleanup` | 2201 | MIGRATED (session 125, 77978635; un-static'd in 6a55a6e5 prep commit; un-static'd `store_fmt_file` in the same translation commit so the Rust caller can reach it through FFI) |
 |15 | `initialize_more_variables` | 2210 | MIGRATED (session 126, a9c6e366; un-static'd in 71347f28 prep commit) |
 |16 | `initialize_more_initex_variables` | 2212 | MIGRATED (session 127, edbaf81f; un-static'd in dc0031e4 prep commit) |
+|17 | `initialize_primitives` | 2218 | MIGRATED (session 128, 4307d45d; un-static'd in 9c29265d prep commit; primitives[] table moved to file-scope `xetex_primitives` and consumed via FFI raw-pointer iteration) |
 
-Remaining in C: `prefixed_command`, format-file I/O (`store_fmt_file`/`load_fmt_file` as a paired migration), `pack_buffered_name`, `swap_items` / `do_dump` / `do_undump` (statics used by format-file I/O), `initialize_primitives`, and `tt_run_engine`/`tt_cleanup`.
+Remaining in C: `prefixed_command`, format-file I/O (`store_fmt_file`/`load_fmt_file` as a paired migration), `pack_buffered_name`, `swap_items` / `do_dump` / `do_undump` (statics used by format-file I/O), and `tt_run_engine`/`tt_cleanup`.
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.

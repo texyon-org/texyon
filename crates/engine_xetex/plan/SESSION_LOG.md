@@ -32,6 +32,44 @@ template.
 
 ---
 
+## Session 128 — 2026-05-21 — xetex-ini.c initialize_primitives
+
+**Goal:** Translate `initialize_primitives` from `xetex-ini.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 127
+
+**Work done:**
+- Prep commit (9c29265d): moved the `static xetex_format_primitive_def_t primitives[]` array (function-local, ~500 entries via the `XETEX_FORMAT_PRIMITIVE_INITIALIZERS` macro) out to file scope as `xetex_primitives[]`. Added `xetex_primitives_count` for the size. Un-static'd `initialize_primitives`. Declared all three in xetex-xetexd.h.
+- Translated `initialize_primitives` (4307d45d). Rust side mirrors `xetex_format_primitive_def_t` with `#[repr(C)]`, externs both the array (as a single sentinel that we offset with raw-pointer arithmetic) and the count. A `const _: () = assert!(size_of::<XetexPrimitiveDef>() == 24)` pins the struct size at compile time.
+- The loop body switches on `extra_init`: `xf_prim_init_none` (no-op), `xf_prim_init_par` (record par_loc / par_token), `xf_prim_init_write` (record write_loc), or default (frozen primitive — hash + eqtb fill from cur_val). After the loop, six trailing frozen primitives (END_TEMPLATE, ENDV, DONT_EXPAND, PRIMITIVE, PROTECTION, END_WRITE) are set up in the same pattern.
+- Removed the C function body; the array+count remain in C as the data source.
+- All four test suites pass.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 128
+
+**Surprises / gotchas:**
+- The `xetex_primitives` array has to stay in C: it uses ~500 entries of the `XETEX_FORMAT_PRIMITIVE_INITIALIZERS` macro which expands into a brace-initializer using ~150 C macros (RELAX, CHAR_NUM, FROZEN_CR, etc.). Translating each entry to Rust would be a one-off chore with no payoff; keeping the table in C and iterating it from Rust via `#[repr(C)]` + raw pointer is the right boundary.
+- Rust requires declaring the extern'd array with a concrete size. Used the "single element, walk by offset" idiom: `extern { static xetex_primitives: XetexPrimitiveDef; }` and `(&raw const xetex_primitives).add(i)` for indexing. This is the standard libc-bindings pattern.
+- The `for (i = 0; i < sizeof(primitives) / sizeof(primitives[0]); i++)` C idiom collapses to `for i in 0..xetex_primitives_count`; the count is computed once at C compile time and exported.
+
+**For the next session:**
+- Continue `xetex-ini.c`. Remaining function bodies in C:
+  - `prefixed_command` (~800 lines): dedicated session.
+  - `pack_buffered_name` (~11 lines, static): pair with `load_fmt_file`.
+  - `store_fmt_file` (~360 lines) + `load_fmt_file` (~480 lines): paired migration, dedicated session.
+  - `swap_items`, `do_dump`, `do_undump`: format-file static helpers, translate with the format-file pair.
+  - `tt_cleanup` (~95 lines), `tt_run_engine` (~?? lines): top-level lifecycle.
+
 ## Session 127 — 2026-05-21 — xetex-ini.c initialize_more_initex_variables
 
 **Goal:** Translate `initialize_more_initex_variables` from `xetex-ini.c` to Rust.

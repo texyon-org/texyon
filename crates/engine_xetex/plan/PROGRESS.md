@@ -141,6 +141,7 @@ cargo test -p tectonic --test tex-outputs
 |     125 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate final_cleanup (77978635, 6a55a6e5 prep); un-static store_fmt_file for FFI access. All 4 suites pass. |
 |     126 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate initialize_more_variables (a9c6e366, 71347f28 prep). All 4 suites pass. |
 |     127 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate initialize_more_initex_variables (edbaf81f, dc0031e4 prep). Loop with empty C bounds (ETEX_PEN_BASE..NUM_ETEX_PENALTIES-1) translated literally. All 4 suites pass. |
+|     128 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate initialize_primitives (4307d45d, 9c29265d prep). primitives[] lifted to file-scope xetex_primitives + count; Rust mirrors struct via #[repr(C)] and iterates via raw-pointer offset. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -257,6 +258,7 @@ Passed count below the previous session's recorded value.
 |     125 |  3,729 |                  48,022 |        7.2% |
 |     126 |  3,571 |                  48,178 |        6.9% |
 |     127 |  3,403 |                  48,442 |        6.6% |
+|     128 |  3,343 |                  48,557 |        6.4% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are
@@ -383,7 +385,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **127** (sessions 1–127 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **128** (sessions 1–128 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
