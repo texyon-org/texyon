@@ -32,6 +32,48 @@ template.
 
 ---
 
+## Session 127 — 2026-05-21 — xetex-ini.c initialize_more_initex_variables
+
+**Goal:** Translate `initialize_more_initex_variables` from `xetex-ini.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 126
+
+**Work done:**
+- Prep commit (dc0031e4): un-static'd `initialize_more_initex_variables` in C and added its declaration to xetex-xetexd.h. Its only caller is `tt_run_engine`, still in C.
+- Translated `initialize_more_initex_variables` (edbaf81f). ~170 lines of mem/eqtb/trie state setup for initex mode. No goto, no branches; entirely linear: low-end mem-arena seeding (rover at 20, 1000-word block, MAX_HALFWORD link), high-end mem template fill from `lo_mem_max` up to MEM_TOP, eqtb template copies (UNDEFINED_CONTROL_SEQUENCE → ACTIVE_BASE..eqtb_top; GLUE_BASE → glue range; BOX_BASE → box range; CUR_FONT_LOC → math-font range; CAT_CODE_BASE → CAT_CODE_BASE+1..INT_BASE-1), character class setup (`OTHER_CHAR`/`MATH_CODE`/`SF_CODE` for all USVs, then targeted overrides for CR/space/`\\`/`%`/DEL, digits, letters A-Z + a-z with case mapping), default integer params, DEL_CODE init, trie-op tables, `format_ident = " (INITEX)"`, `max_reg_num/help_line`, SA roots.
+- Added missing setter accessors in src/globals.rs: `var_used`/`dyn_used`/`cs_count` raw externs + get/set wrappers, `set_max_reg_num`, `set_max_reg_help_line`.
+- Used `eqtb_word`/`set_eqtb_word` and `mem_word`/`set_mem_word` to copy entire memory-word entries — matches the C `eqtb[k] = eqtb[X]` and `mem[k] = mem[X]` semantics exactly.
+- Removed the C body from `xetex-ini.c`, left a translated marker.
+- All four test suites pass.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 127
+
+**Surprises / gotchas:**
+- The C source has `for (k = ETEX_PEN_BASE; k <= NUM_ETEX_PENALTIES - 1; k++)` where `ETEX_PEN_BASE = 2255140` and `NUM_ETEX_PENALTIES = 4`, so this loop never executes in C. Translated literally as `for k in 2255140..=3 { ... }` — also empty. Anti-pattern A.8 forbids "fixing" this; the loop is presumably leftover from an earlier WEB layout where it had meaningful bounds.
+- `LOCAL(par_shape)` macro expands to `eqtb[LOCAL_BASE + LOCAL__par_shape].b32.s1`. With `LOCAL__par_shape = 0`, this is just `set_eqtb_b32s1(LOCAL_BASE, ...)` — kept the explicit `+ LOCAL_PAR_SHAPE` constant for fidelity to the macro.
+- `mem[0].b32.s1 += 531` is the only += in the function. Required pulling `mem_b32s1(0)` and writing back. The "531" is the GLUEs ref-count bump.
+- `format_ident = maketexstring(" (INITEX)")` uses Rust `crate::texmfmp::maketexstring` (already translated). Passed a C-string literal via `c"..."` syntax.
+- `set_class(x)` and `set_family(x)` are local `fn`s inside the body — they're trivial bit-shifts and don't need to be exported to `crate::scan` (they already exist somewhere else in scan.rs but with the same definition; keeping local avoids cross-module dependency).
+
+**For the next session:**
+- Continue `xetex-ini.c`. Remaining function bodies in C:
+  - `initialize_primitives` (~65 lines): straight loop calling already-Rust `primitive()`. Trivial; good next target.
+  - `prefixed_command` (~800 lines): dedicated session.
+  - `pack_buffered_name` (~11 lines, static): pair with `load_fmt_file`.
+  - `store_fmt_file` (~360 lines) + `load_fmt_file` (~480 lines): paired migration, dedicated session.
+  - `swap_items`, `do_dump`, `do_undump`: static helpers for the format-file pair.
+  - `tt_cleanup` (~95 lines), `tt_run_engine` (~?? lines): top-level lifecycle.
+
 ## Session 126 — 2026-05-21 — xetex-ini.c initialize_more_variables
 
 **Goal:** Translate `initialize_more_variables` from `xetex-ini.c` to Rust.
