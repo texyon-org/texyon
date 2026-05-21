@@ -2212,17 +2212,19 @@ void init_io(void);
 
 
 /*:1370*//*1371: */
-static void
+const xetex_format_primitive_def_t xetex_primitives[] = { XETEX_FORMAT_PRIMITIVE_INITIALIZERS };
+const size_t xetex_primitives_count = sizeof(xetex_primitives) / sizeof(xetex_primitives[0]);
+
+void
 initialize_primitives(void)
 {
-    static xetex_format_primitive_def_t primitives[] = { XETEX_FORMAT_PRIMITIVE_INITIALIZERS };
     int i;
 
     no_new_control_sequence = false;
     first = 0;
 
-    for (i = 0; i < sizeof(primitives) / sizeof(primitives[0]); i++) {
-        xetex_format_primitive_def_t prim = primitives[i];
+    for (i = 0; i < xetex_primitives_count; i++) {
+        xetex_format_primitive_def_t prim = xetex_primitives[i];
 
         if (prim.name != NULL) {
             primitive(prim.name, prim.cmd, prim.chr);
