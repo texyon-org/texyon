@@ -951,6 +951,7 @@ void sort_avail(void);
 void primitive(const char* ident, uint16_t c, int32_t o);
 void final_cleanup(void);
 void initialize_more_variables(void);
+void initialize_more_initex_variables(void);
 void store_fmt_file(void);
 void line_break(bool d);
 bool eTeX_enabled(bool b, uint16_t j, int32_t k);
