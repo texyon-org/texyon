@@ -2215,69 +2215,7 @@ void init_io(void);
 const xetex_format_primitive_def_t xetex_primitives[] = { XETEX_FORMAT_PRIMITIVE_INITIALIZERS };
 const size_t xetex_primitives_count = sizeof(xetex_primitives) / sizeof(xetex_primitives[0]);
 
-void
-initialize_primitives(void)
-{
-    int i;
-
-    no_new_control_sequence = false;
-    first = 0;
-
-    for (i = 0; i < xetex_primitives_count; i++) {
-        xetex_format_primitive_def_t prim = xetex_primitives[i];
-
-        if (prim.name != NULL) {
-            primitive(prim.name, prim.cmd, prim.chr);
-
-            switch (prim.extra_init) {
-                case xf_prim_init_none:
-                    break;
-
-                case xf_prim_init_par:
-                    par_loc = cur_val;
-                    par_token = CS_TOKEN_FLAG + par_loc;
-                    break;
-
-                case xf_prim_init_write:
-                    write_loc = cur_val;
-                    break;
-
-                default:
-                    /* A "frozen" primitive */
-                    hash[prim.extra_init].s1 = maketexstring(prim.name);
-                    eqtb[prim.extra_init] = eqtb[cur_val];
-                    break;
-            }
-        }
-    }
-
-    hash[FROZEN_END_TEMPLATE].s1 = maketexstring("endtemplate");
-    eqtb[FROZEN_END_TEMPLATE].b16.s1 = END_TEMPLATE;
-    eqtb[FROZEN_END_TEMPLATE].b32.s1 = NULL_LIST;
-    eqtb[FROZEN_END_TEMPLATE].b16.s0 = LEVEL_ONE;
-
-    hash[FROZEN_ENDV].s1 = maketexstring("endtemplate");
-    eqtb[FROZEN_ENDV].b16.s1 = ENDV;
-    eqtb[FROZEN_ENDV].b32.s1 = NULL_LIST;
-    eqtb[FROZEN_ENDV].b16.s0 = LEVEL_ONE;
-
-    hash[FROZEN_DONT_EXPAND].s1 = maketexstring("notexpanded:");
-    eqtb[FROZEN_DONT_EXPAND].b16.s1 = DONT_EXPAND;
-
-    hash[FROZEN_PRIMITIVE].s1 = maketexstring("primitive");
-    eqtb[FROZEN_PRIMITIVE].b16.s1 = IGNORE_SPACES;
-    eqtb[FROZEN_PRIMITIVE].b32.s1 = 1;
-    eqtb[FROZEN_PRIMITIVE].b16.s0 = LEVEL_ONE;
-
-    hash[FROZEN_PROTECTION].s1 = maketexstring("inaccessible");
-
-    hash[END_WRITE].s1 = maketexstring("endwrite");
-    eqtb[END_WRITE].b16.s0 = LEVEL_ONE;
-    eqtb[END_WRITE].b16.s1 = OUTER_CALL;
-    eqtb[END_WRITE].b32.s1 = TEX_NULL;
-
-    no_new_control_sequence = true;
-}
+// translated to Rust: src/ini.rs initialize_primitives
 
 
 void get_strings_started(void);

@@ -46,6 +46,7 @@ use crate::globals::{
     set_use_err_help, set_var_used, set_write_open, set_xeq_level, str_ptr,
     str_pool_entry, str_start, string_vacancies, temp_ptr, trie_c_entry, trie_hash_entry,
     trie_l_entry, trie_max, trie_min_entry, trie_not_ready, trie_o_entry,
+    par_loc, set_par_loc, set_par_token, set_write_loc,
     trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_ptr, trie_r_entry,
     trie_size, trie_taken_entry, trie_trc_entry, trie_trl_entry, trie_tro_entry,
     trie_used_entry, two_to_the,
@@ -75,7 +76,22 @@ extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn store_fmt_file();
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
+    static xetex_primitives: XetexPrimitiveDef;
+    static xetex_primitives_count: libc::size_t;
 }
+
+/// Mirror of C `xetex_format_primitive_def_t` (xetex_format.h:715).
+/// Layout: pointer (8) + u8 cmd (1+3 pad) + i32 chr (4) + i32 extra_init (4) + 4 trailing pad = 24.
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct XetexPrimitiveDef {
+    name: *const libc::c_char,
+    cmd: u8,
+    chr: i32,
+    extra_init: i32,
+}
+
+const _: () = assert!(std::mem::size_of::<XetexPrimitiveDef>() == 24);
 
 #[inline]
 unsafe fn trie_op_hash(k: i32) -> i32 {
@@ -1572,4 +1588,103 @@ pub unsafe extern "C" fn initialize_more_initex_variables() {
     }
 
     set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH, 63);
+}
+
+// translated from xetex-ini.c:2215 (initialize_primitives)
+#[no_mangle]
+pub unsafe extern "C" fn initialize_primitives() {
+    const CS_TOKEN_FLAG: i32 = 0x1FFF_FFF;
+    const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226;
+    const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE;
+    const FROZEN_END_TEMPLATE: i32 = FROZEN_CONTROL_SEQUENCE + 5;
+    const FROZEN_ENDV: i32 = FROZEN_CONTROL_SEQUENCE + 6;
+    const END_WRITE: i32 = FROZEN_CONTROL_SEQUENCE + 8;
+    const FROZEN_DONT_EXPAND: i32 = FROZEN_CONTROL_SEQUENCE + 9;
+    const FROZEN_PRIMITIVE: i32 = FROZEN_CONTROL_SEQUENCE + 11;
+
+    const ENDV: u16 = 9;
+    const IGNORE_SPACES: u16 = 39;
+    const OUTER_CALL: u16 = 115;
+    const END_TEMPLATE: u16 = 117;
+    const DONT_EXPAND: u16 = 118;
+
+    const MEM_TOP: i32 = 4_999_999;
+    const NULL_LIST: i32 = MEM_TOP - 11;
+
+    const XF_PRIM_INIT_NONE: i32 = 0;
+    const XF_PRIM_INIT_PAR: i32 = 1;
+    const XF_PRIM_INIT_WRITE: i32 = 2;
+
+    set_no_new_control_sequence(false);
+    set_first(0);
+
+    let table_ptr = &raw const xetex_primitives;
+    let count = xetex_primitives_count;
+    for i in 0..count {
+        let prim = table_ptr.add(i).read();
+
+        if !prim.name.is_null() {
+            primitive(prim.name, prim.cmd as u16, prim.chr);
+
+            match prim.extra_init {
+                XF_PRIM_INIT_NONE => {}
+                XF_PRIM_INIT_PAR => {
+                    set_par_loc(cur_val());
+                    set_par_token(CS_TOKEN_FLAG + par_loc());
+                }
+                XF_PRIM_INIT_WRITE => {
+                    set_write_loc(cur_val());
+                }
+                frozen => {
+                    set_hash_s1(frozen, crate::texmfmp::maketexstring(prim.name));
+                    set_eqtb_word(frozen, eqtb_word(cur_val()));
+                }
+            }
+        }
+    }
+
+    set_hash_s1(
+        FROZEN_END_TEMPLATE,
+        crate::texmfmp::maketexstring(c"endtemplate".as_ptr()),
+    );
+    set_eqtb_b16s1(FROZEN_END_TEMPLATE, END_TEMPLATE);
+    set_eqtb_b32s1(FROZEN_END_TEMPLATE, NULL_LIST);
+    set_eqtb_b16s0(FROZEN_END_TEMPLATE, LEVEL_ONE);
+
+    set_hash_s1(
+        FROZEN_ENDV,
+        crate::texmfmp::maketexstring(c"endtemplate".as_ptr()),
+    );
+    set_eqtb_b16s1(FROZEN_ENDV, ENDV);
+    set_eqtb_b32s1(FROZEN_ENDV, NULL_LIST);
+    set_eqtb_b16s0(FROZEN_ENDV, LEVEL_ONE);
+
+    set_hash_s1(
+        FROZEN_DONT_EXPAND,
+        crate::texmfmp::maketexstring(c"notexpanded:".as_ptr()),
+    );
+    set_eqtb_b16s1(FROZEN_DONT_EXPAND, DONT_EXPAND);
+
+    set_hash_s1(
+        FROZEN_PRIMITIVE,
+        crate::texmfmp::maketexstring(c"primitive".as_ptr()),
+    );
+    set_eqtb_b16s1(FROZEN_PRIMITIVE, IGNORE_SPACES);
+    set_eqtb_b32s1(FROZEN_PRIMITIVE, 1);
+    set_eqtb_b16s0(FROZEN_PRIMITIVE, LEVEL_ONE);
+
+    set_hash_s1(
+        FROZEN_PROTECTION,
+        crate::texmfmp::maketexstring(c"inaccessible".as_ptr()),
+    );
+
+    set_hash_s1(
+        END_WRITE,
+        crate::texmfmp::maketexstring(c"endwrite".as_ptr()),
+    );
+    set_eqtb_b16s0(END_WRITE, LEVEL_ONE);
+    set_eqtb_b16s1(END_WRITE, OUTER_CALL);
+    set_eqtb_b32s1(END_WRITE, crate::mem::TEX_NULL);
+
+    set_no_new_control_sequence(true);
 }
