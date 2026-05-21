@@ -2197,7 +2197,7 @@ bad_fmt:
 }
 
 
-static void
+void
 final_cleanup(void)
 {
     small_number c;

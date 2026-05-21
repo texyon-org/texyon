@@ -949,6 +949,7 @@ void new_patterns(void);
 void new_hyph_exceptions(void);
 void sort_avail(void);
 void primitive(const char* ident, uint16_t c, int32_t o);
+void final_cleanup(void);
 void line_break(bool d);
 bool eTeX_enabled(bool b, uint16_t j, int32_t k);
 void show_save_groups(void);
