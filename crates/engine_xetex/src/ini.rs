@@ -7,23 +7,43 @@ use crate::globals::{
     hyph_size, hyph_start, hyph_word_entry, if_line, init_pool_ptr, in_initex_mode,
     interaction, job_name, last, last_glue, max_hyph_char, max_op_used, mem_b16s0, mem_b32s1,
     op_start_entry, open_parens, pool_ptr, pool_size, rover, sa_root, selector,
-    set_buffer_entry, set_cond_ptr, set_cur_chr, set_cur_cmd, set_cur_if, set_cur_input_limit,
-    set_cur_input_loc, set_cur_lang, set_cur_val, set_eqtb_b16s0, set_eqtb_b16s1,
-    set_eqtb_b32s1, set_first, set_hash_s1, set_hc_entry, set_help_line, set_help_ptr,
-    set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry, set_hyf_num_entry,
-    set_hyph_count, set_hyph_index, set_hyph_link_entry, set_hyph_list_entry, set_hyph_next,
-    set_hyph_start, set_hyph_word_entry, set_if_line, set_input_file, set_last,
-    set_max_hyph_char, set_max_op_used, set_mem_b32s1, set_op_start_entry, set_open_parens,
-    set_pool_ptr, set_rover, set_sa_root, set_selector, set_str_pool, set_str_ptr,
-    set_str_start, set_temp_ptr, set_trie_c_entry, set_trie_hash_entry, set_trie_l_entry,
-    set_trie_max, set_trie_min_entry, set_trie_not_ready, set_trie_o_entry,
-    set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry, set_trie_ptr,
-    set_trie_r_entry, set_trie_taken_entry, set_trie_trc_entry, set_trie_trl_entry,
-    set_trie_tro_entry, set_trie_used_entry, str_ptr, str_pool_entry, str_start,
-    string_vacancies, temp_ptr, trie_c_entry, trie_hash_entry, trie_l_entry, trie_max,
-    trie_min_entry, trie_not_ready, trie_o_entry, trie_op_lang_entry, trie_op_ptr,
-    trie_op_val_entry, trie_ptr, trie_r_entry, trie_size, trie_taken_entry, trie_trc_entry,
-    trie_trl_entry, trie_tro_entry, trie_used_entry,
+    set_adjust_tail, set_after_token, set_align_ptr, set_buffer_entry, set_cancel_boundary,
+    set_cond_ptr, set_cur_align, set_cur_boundary, set_cur_chr, set_cur_cmd, set_cur_dir,
+    set_cur_f, set_cur_group, set_cur_head, set_cur_if, set_cur_input_limit,
+    set_cur_input_loc, set_cur_lang, set_cur_level, set_cur_list_aux_b32s1,
+    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line,
+    set_cur_list_prev_graf, set_cur_list_tail, set_cur_loop, set_cur_mark, set_cur_order,
+    set_cur_pre_head, set_cur_pre_tail, set_cur_span, set_cur_tail_a, set_cur_val,
+    set_cur_val_level, set_dead_cycles, set_deletions_allowed, set_disc_ptr,
+    set_doing_leaders, set_doing_special, set_edit_name_start, set_empty_b32s0,
+    set_empty_b32s1, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_error_count,
+    set_expand_depth_count, set_first, set_format_ident, set_hash_s1, set_hc_entry,
+    set_help_line, set_help_ptr, set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry,
+    set_hyf_num_entry, set_hyph_count, set_hyph_index, set_hyph_link_entry,
+    set_hyph_list_entry, set_hyph_next, set_hyph_start, set_hyph_word_entry, set_if_limit,
+    set_if_line, set_input_file, set_ins_disc, set_insert_penalties, set_interaction,
+    set_is_in_csname, set_last, set_last_badness, set_last_bop, set_last_glue, set_last_kern,
+    set_last_node_type, set_last_penalty, set_lft_hit, set_ligature_present, set_lr_problems,
+    set_lr_ptr, set_long_help_seen, set_mag_set, set_max_h, set_max_hyph_char,
+    set_max_nest_stack, set_max_op_used, set_max_push, set_max_save_stack, set_max_v,
+    set_mem_b32s1, set_native_text, set_native_text_size, set_nest_ptr,
+    set_no_new_control_sequence, set_null_character, set_op_start_entry, set_open_parens,
+    set_output_active, set_pack_begin_line, set_page_contents, set_page_so_far,
+    set_page_tail, set_pool_ptr, set_pre_adjust_tail, set_prim_s0, set_prim_s1,
+    set_pseudo_files, set_radix, set_read_open_entry, set_rover, set_rt_hit,
+    set_sa_chain, set_sa_level, set_sa_null_b32s0, set_sa_null_b32s1, set_sa_root,
+    set_save_ptr, set_selector, set_set_box_allowed, set_shown_mode, set_spec_log,
+    set_stop_at_space, set_str_pool, set_str_ptr, set_str_start, set_temp_ptr,
+    set_total_pages, set_trie_c_entry, set_trie_hash_entry, set_trie_l_entry, set_trie_max,
+    set_trie_min_entry, set_trie_not_ready, set_trie_o_entry, set_trie_op_lang_entry,
+    set_trie_op_ptr, set_trie_op_val_entry, set_trie_ptr, set_trie_r_entry,
+    set_trie_taken_entry, set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry,
+    set_trie_used_entry, set_two_to_the, set_use_err_help, set_write_open, set_xeq_level,
+    str_ptr, str_pool_entry, str_start, string_vacancies, temp_ptr, trie_c_entry,
+    trie_hash_entry, trie_l_entry, trie_max, trie_min_entry, trie_not_ready, trie_o_entry,
+    trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_ptr, trie_r_entry, trie_size,
+    trie_taken_entry, trie_trc_entry, trie_trl_entry, trie_tro_entry, trie_used_entry,
+    two_to_the,
 };
 use crate::io::UFile;
 
@@ -49,6 +69,7 @@ pub static mut _trie_op_hash_array: [i32; TRIE_OP_HASH_SIZE] = [0; TRIE_OP_HASH_
 extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn store_fmt_file();
+    fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
 }
 
 #[inline]
@@ -1071,4 +1092,200 @@ pub unsafe extern "C" fn final_cleanup() {
         }
         crate::output::print_nl_cstr(c"(\\dump is performed only by INITEX)".as_ptr());
     }
+}
+
+// translated from xetex-ini.c:2210 (initialize_more_variables)
+#[no_mangle]
+pub unsafe extern "C" fn initialize_more_variables() {
+    const ERROR_STOP_MODE: u8 = 3;
+    const VMODE: i16 = 1;
+    const MEM_TOP: i32 = 4_999_999;
+    const CONTRIB_HEAD: i32 = MEM_TOP - 1;
+    const PAGE_HEAD: i32 = MEM_TOP - 2;
+    const IGNORE_DEPTH: i32 = -65_536_000;
+    const EMPTY: u8 = 0;
+    const INT_BASE: i32 = 7_826_729;
+    const EQTB_SIZE: i32 = 8_941_458;
+    const PRIM_SIZE: i32 = 2100;
+    const TOP_MARK_CODE: usize = 0;
+    const FIRST_MARK_CODE: usize = 1;
+    const BOT_MARK_CODE: usize = 2;
+    const SPLIT_FIRST_MARK_CODE: usize = 3;
+    const SPLIT_BOT_MARK_CODE: usize = 4;
+    const INT_VAL: u8 = 0;
+    const NORMAL: u8 = 0;
+    const CLOSED: u8 = 2;
+    const TOO_BIG_LANG: i32 = 256;
+    const LEVEL_ZERO_U16: u16 = 0;
+    const BOTTOM_LEVEL: u8 = 0;
+    const LEFT_TO_RIGHT: i16 = 0;
+    const MARK_VAL: usize = 7;
+    const LAST_BOX_CODE: usize = 2;
+    const VSPLIT_CODE: usize = 3;
+    const HYPH_PRIME: i32 = 607;
+
+    set_doing_special(false);
+    set_native_text_size(128);
+    set_native_text(
+        xmalloc((128 * std::mem::size_of::<u16>()) as libc::size_t) as *mut u16,
+    );
+
+    set_interaction(ERROR_STOP_MODE);
+
+    set_deletions_allowed(true);
+    set_set_box_allowed(true);
+    set_error_count(0);
+    set_help_ptr(0);
+    set_use_err_help(false);
+
+    set_two_to_the(0, 1);
+    for k in 1..=30usize {
+        set_two_to_the(k, 2 * two_to_the(k - 1));
+    }
+
+    set_spec_log(1, 93_032_640);
+    set_spec_log(2, 38_612_034);
+    set_spec_log(3, 17_922_280);
+    set_spec_log(4, 8_662_214);
+    set_spec_log(5, 4_261_238);
+    set_spec_log(6, 2_113_709);
+    set_spec_log(7, 1_052_693);
+    set_spec_log(8, 525_315);
+    set_spec_log(9, 262_400);
+    set_spec_log(10, 131_136);
+    set_spec_log(11, 65_552);
+    set_spec_log(12, 32_772);
+    set_spec_log(13, 16_385);
+    for k in 14..=27usize {
+        set_spec_log(k, two_to_the(27 - k));
+    }
+    set_spec_log(28, 1);
+
+    set_nest_ptr(0);
+    set_max_nest_stack(0);
+    set_cur_list_mode(VMODE);
+    set_cur_list_head(CONTRIB_HEAD);
+    set_cur_list_tail(CONTRIB_HEAD);
+    set_cur_list_e_tex_aux(crate::mem::TEX_NULL);
+    set_cur_list_aux_b32s1(IGNORE_DEPTH);
+    set_cur_list_mode_line(0);
+    set_cur_list_prev_graf(0);
+    set_shown_mode(0);
+    set_page_contents(EMPTY);
+    set_page_tail(PAGE_HEAD);
+    set_last_glue(MAX_HALFWORD);
+    set_last_penalty(0);
+    set_last_kern(0);
+    set_last_node_type(-1);
+    set_page_so_far(7, 0);
+
+    for k in INT_BASE..=EQTB_SIZE {
+        set_xeq_level(k, LEVEL_ONE);
+    }
+
+    set_no_new_control_sequence(true);
+    set_prim_s0(0, 0);
+    set_prim_s1(0, 0);
+
+    for k in 1..=PRIM_SIZE {
+        set_prim_s0(k, 0);
+        set_prim_s1(k, 0);
+    }
+
+    set_save_ptr(0);
+    set_cur_level(LEVEL_ONE);
+    set_cur_group(BOTTOM_LEVEL);
+    set_cur_boundary(0);
+    set_max_save_stack(0);
+    set_mag_set(0);
+    set_expand_depth_count(0);
+    set_is_in_csname(false);
+    set_cur_mark(TOP_MARK_CODE, crate::mem::TEX_NULL);
+    set_cur_mark(FIRST_MARK_CODE, crate::mem::TEX_NULL);
+    set_cur_mark(BOT_MARK_CODE, crate::mem::TEX_NULL);
+    set_cur_mark(SPLIT_FIRST_MARK_CODE, crate::mem::TEX_NULL);
+    set_cur_mark(SPLIT_BOT_MARK_CODE, crate::mem::TEX_NULL);
+    set_cur_val(0);
+    set_cur_val_level(INT_VAL);
+    set_radix(0);
+    set_cur_order(NORMAL);
+
+    for k in 0..=16usize {
+        set_read_open_entry(k, CLOSED);
+    }
+
+    set_cond_ptr(crate::mem::TEX_NULL);
+    set_if_limit(NORMAL);
+    set_cur_if(0);
+    set_if_line(0);
+    set_null_character(crate::mem_types::B16x4 {
+        s0: 0,
+        s1: 0,
+        s2: 0,
+        s3: 0,
+    });
+    set_total_pages(0);
+    set_max_v(0);
+    set_max_h(0);
+    set_max_push(0);
+    set_last_bop(-1);
+    set_doing_leaders(false);
+    set_dead_cycles(0);
+    set_adjust_tail(crate::mem::TEX_NULL);
+    set_last_badness(0);
+    set_pre_adjust_tail(crate::mem::TEX_NULL);
+    set_pack_begin_line(0);
+    set_empty_b32s1(EMPTY as i32);
+    set_empty_b32s0(crate::mem::TEX_NULL);
+    set_align_ptr(crate::mem::TEX_NULL);
+    set_cur_align(crate::mem::TEX_NULL);
+    set_cur_span(crate::mem::TEX_NULL);
+    set_cur_loop(crate::mem::TEX_NULL);
+    set_cur_head(crate::mem::TEX_NULL);
+    set_cur_tail_a(crate::mem::TEX_NULL);
+    set_cur_pre_head(crate::mem::TEX_NULL);
+    set_cur_pre_tail(crate::mem::TEX_NULL);
+    set_cur_f(0);
+    set_max_hyph_char(TOO_BIG_LANG);
+
+    for z in 0..=hyph_size() {
+        set_hyph_word_entry(z, 0);
+        set_hyph_list_entry(z, crate::mem::TEX_NULL);
+        set_hyph_link_entry(z, 0);
+    }
+
+    set_hyph_count(0);
+    set_hyph_next(HYPH_PRIME + 1);
+    if hyph_next() > hyph_size() {
+        set_hyph_next(HYPH_PRIME);
+    }
+
+    set_output_active(false);
+    set_insert_penalties(0);
+    set_ligature_present(false);
+    set_cancel_boundary(false);
+    set_lft_hit(false);
+    set_rt_hit(false);
+    set_ins_disc(false);
+    set_after_token(0);
+    set_long_help_seen(false);
+    set_format_ident(0);
+
+    for k in 0..=17usize {
+        set_write_open(k, false);
+    }
+
+    set_lr_ptr(crate::mem::TEX_NULL);
+    set_lr_problems(0);
+    set_cur_dir(LEFT_TO_RIGHT);
+    set_pseudo_files(crate::mem::TEX_NULL);
+    set_sa_root(MARK_VAL, crate::mem::TEX_NULL);
+    set_sa_null_b32s0(crate::mem::TEX_NULL);
+    set_sa_null_b32s1(crate::mem::TEX_NULL);
+    set_sa_chain(crate::mem::TEX_NULL);
+    set_sa_level(LEVEL_ZERO_U16);
+    set_disc_ptr(LAST_BOX_CODE, crate::mem::TEX_NULL);
+    set_disc_ptr(VSPLIT_CODE, crate::mem::TEX_NULL);
+    set_edit_name_start(0);
+    set_stop_at_space(true);
 }

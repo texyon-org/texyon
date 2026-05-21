@@ -665,6 +665,13 @@ mod raw {
         pub(super) static mut cur_size: i32;
         pub(super) static mut cur_mu: i32;
         pub(super) static mut mlist_penalties: bool;
+
+        // Format-file identification (xetex-xetexd.h:690; str_number = i32).
+        pub(super) static mut format_ident: i32;
+        // Pool offset of the \jobname (xetex-xetexd.h:717; pool_pointer = i32).
+        pub(super) static mut edit_name_start: i32;
+        // The all-zero b32x2 template used to clear math-noad fields (xetex-xetexd.h:608).
+        pub(super) static mut empty: crate::mem_types::B32x2;
     }
 }
 
@@ -1740,9 +1747,23 @@ pub(crate) fn two_to_the(k: usize) -> i32 {
     unsafe { raw::two_to_the[k] }
 }
 #[inline]
+pub(crate) fn set_two_to_the(k: usize, v: i32) {
+    // SAFETY: see module-level doc. k must be < 31.
+    unsafe {
+        raw::two_to_the[k] = v;
+    }
+}
+#[inline]
 pub(crate) fn spec_log(k: usize) -> i32 {
     // SAFETY: see module-level doc. k must be < 29.
     unsafe { raw::spec_log[k] }
+}
+#[inline]
+pub(crate) fn set_spec_log(k: usize, v: i32) {
+    // SAFETY: see module-level doc. k must be < 29.
+    unsafe {
+        raw::spec_log[k] = v;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5163,6 +5184,12 @@ pub(crate) fn null_character() -> crate::mem_types::B16x4 {
     unsafe { raw::null_character }
 }
 #[inline]
+pub(crate) fn set_null_character(v: crate::mem_types::B16x4) {
+    unsafe {
+        raw::null_character = v;
+    }
+}
+#[inline]
 pub(crate) fn total_pages() -> i32 {
     unsafe { raw::total_pages }
 }
@@ -5420,5 +5447,54 @@ pub(crate) fn mlist_penalties() -> bool {
 pub(crate) fn set_mlist_penalties(v: bool) {
     unsafe {
         raw::mlist_penalties = v;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// format_ident / edit_name_start / empty / sa_null per-field setters
+// ---------------------------------------------------------------------------
+
+#[inline]
+pub(crate) fn format_ident() -> i32 {
+    unsafe { raw::format_ident }
+}
+#[inline]
+pub(crate) fn set_format_ident(v: i32) {
+    unsafe {
+        raw::format_ident = v;
+    }
+}
+#[inline]
+pub(crate) fn edit_name_start() -> i32 {
+    unsafe { raw::edit_name_start }
+}
+#[inline]
+pub(crate) fn set_edit_name_start(v: i32) {
+    unsafe {
+        raw::edit_name_start = v;
+    }
+}
+#[inline]
+pub(crate) fn set_empty_b32s0(v: i32) {
+    unsafe {
+        raw::empty.s0 = v;
+    }
+}
+#[inline]
+pub(crate) fn set_empty_b32s1(v: i32) {
+    unsafe {
+        raw::empty.s1 = v;
+    }
+}
+#[inline]
+pub(crate) fn set_sa_null_b32s0(v: i32) {
+    unsafe {
+        raw::sa_null.b32.s0 = v;
+    }
+}
+#[inline]
+pub(crate) fn set_sa_null_b32s1(v: i32) {
+    unsafe {
+        raw::sa_null.b32.s1 = v;
     }
 }
