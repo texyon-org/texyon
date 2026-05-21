@@ -32,6 +32,36 @@ template.
 
 ---
 
+## Session 122 — 2026-05-21 — xetex-ini.c init_trie
+
+**Goal:** Migrate `init_trie` and update the plan docs.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 121
+
+**Work done:**
+- Translated `init_trie` (line 858) from `xetex-ini.c` to Rust and wired trie/hyphenation accessors.
+- Removed the C body of `init_trie` and left a Rust translation note.
+- Ran `cargo build -p tectonic_engine_xetex` and the `tex-outputs`, `trip`, `engine_rust`, and `latex_goldens` test suites.
+- Updated module status and progress docs.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 122
+
+**Surprises / gotchas:**
+- None.
+
+**For the next session:**
+- Continue `xetex-ini.c`, likely `new_patterns` / `new_hyph_exceptions` or the format I/O cluster (`store_fmt_file` + `load_fmt_file`) as a paired session.
+
 ## Session 121 — 2026-05-20 — xetex-ini.c trie packing helpers
 
 **Goal:** Continue `xetex-ini.c` by migrating the trie packing cluster that follows trie compression.
