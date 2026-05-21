@@ -142,6 +142,7 @@ cargo test -p tectonic --test tex-outputs
 |     126 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate initialize_more_variables (a9c6e366, 71347f28 prep). All 4 suites pass. |
 |     127 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate initialize_more_initex_variables (edbaf81f, dc0031e4 prep). Loop with empty C bounds (ETEX_PEN_BASE..NUM_ETEX_PENALTIES-1) translated literally. All 4 suites pass. |
 |     128 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate initialize_primitives (4307d45d, 9c29265d prep). primitives[] lifted to file-scope xetex_primitives + count; Rust mirrors struct via #[repr(C)] and iterates via raw-pointer offset. All 4 suites pass. |
+|     129 | 2026-05-22 |     29 |    29 |     0 | xetex-ini.c: translate tt_cleanup (926ae467). File-static yhash freed via a tiny C helper; all other freed globals accessed via tt_cleanup_-prefixed extern block with #[link_name] on every item. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -259,6 +260,7 @@ Passed count below the previous session's recorded value.
 |     126 |  3,571 |                  48,178 |        6.9% |
 |     127 |  3,403 |                  48,442 |        6.6% |
 |     128 |  3,343 |                  48,557 |        6.4% |
+|     129 |  3,256 |                  48,979 |        6.2% |
 
 
 (C LOC excludes teckit, xetex-XeTeXOTMath, and xetex-macos, which are

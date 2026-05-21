@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 128.
+Last updated: session 129.
 
 
 ## Core engine files (to translate)
@@ -36,7 +36,7 @@ Last updated: session 128.
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
-| xetex-ini.c                  |  2642 |      8 | `src/ini.rs` + state modules      | IN PROGRESS — 70% |
+| xetex-ini.c                  |  2555 |      7 | `src/ini.rs` + state modules      | IN PROGRESS — 73% |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |

@@ -32,6 +32,44 @@ template.
 
 ---
 
+## Session 129 — 2026-05-22 — xetex-ini.c tt_cleanup
+
+**Goal:** Translate `tt_cleanup` from `xetex-ini.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 128
+
+**Work done:**
+- Translated `tt_cleanup` (926ae467): 93-line cleanup function that frees all dynamically allocated engine arrays at shutdown. Calls `pdf_files_close`, `destroy_font_manager`, `TECkit_DisposeConverter` for font converters, and iterates `in_open` to close input files, then frees ~50 global array pointers.
+- The file-static `yhash` pointer in xetex-ini.c has internal linkage, so it cannot be accessed from Rust. Added a tiny C helper `tt_cleanup_free_yhash()` that frees and nulls it, called via extern from Rust.
+- All other C globals accessed via an `extern "C"` block using `tt_cleanup_`-prefixed Rust names. Every item carries `#[link_name = "actual_c_name"]` to avoid clashing with existing accessor functions already in scope.
+- The `mfree` C macro pattern (free + set to NULL) for `trie_trl/tro/trc` is faithfully translated as two statements each.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 129
+
+**Surprises / gotchas:**
+- File-static variables in C have internal linkage — they are invisible to the linker and cannot be bound via `extern "C"` from Rust. `yhash` is `static b32x2 *yhash` in xetex-ini.c. The fix is a thin C helper wrapper rather than trying to expose the static.
+- Every item in the `extern "C"` block needs `#[link_name]` because all Rust names carry a `tt_cleanup_` prefix. Without it the linker looks for the prefixed name and fails. (Only a subset had `#[link_name]` in the initial draft, causing the first linker error.)
+
+**For the next session:**
+- Continue `xetex-ini.c`. Remaining C bodies:
+  - `prefixed_command` (~800 lines): dedicated session.
+  - `pack_buffered_name` (~11 lines, static): pair with `load_fmt_file`.
+  - `store_fmt_file` (~360 lines) + `load_fmt_file` (~480 lines): paired migration, dedicated session.
+  - `swap_items`, `do_dump`, `do_undump`: format-file static helpers, translate with the format-file pair.
+  - `tt_run_engine` (~320 lines): top-level engine entry point.
+
+---
+
 ## Session 128 — 2026-05-21 — xetex-ini.c initialize_primitives
 
 **Goal:** Translate `initialize_primitives` from `xetex-ini.c` to Rust.
