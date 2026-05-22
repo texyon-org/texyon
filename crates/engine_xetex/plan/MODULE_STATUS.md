@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 131.
+Last updated: session 132.
 
 
 ## Core engine files (to translate)
@@ -36,7 +36,7 @@ Last updated: session 131.
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
-| xetex-ini.c                  |  1481 |      8 | `src/ini.rs` + state modules      | IN PROGRESS — format I/O remains |
+| xetex-ini.c                  |   467 |      2 | `src/ini.rs` + state modules      | IN PROGRESS — yhash helper glue remains |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
@@ -709,7 +709,7 @@ The active large candidate is `xetex-ini.c`; `xetex-shipout.c` is done.
 
 ### Phase 16 — xetex-ini.c initialization helpers (target: `src/ini.rs`)
 
-Status: IN PROGRESS (session 128).
+Status: IN PROGRESS (session 132).
 
 | # | Function | Line | Status |
 |--:|----------|-----:|--------|
@@ -733,8 +733,16 @@ Status: IN PROGRESS (session 128).
 |18 | `tt_cleanup` | 2228 | MIGRATED (session 129, 926ae467; file-static `yhash` freed via tiny C helper `tt_cleanup_free_yhash`; all other freed globals reached via `tt_cleanup_`-prefixed extern block with `#[link_name]`) |
 |19 | `prefixed_command` | 583 | MIGRATED (session 130, 1571e5cd; ~760-line assignment dispatcher; goto-done→`'sw` labeled block, early returns preserved; added `after_token()` getter + `set_cp_code` extern) |
 |20 | `tt_run_engine` | 1474 | MIGRATED (session 131; top-level lifecycle/allocation entry point; `load_fmt_file` remains C and is now exported for Rust caller; file-static `yhash` allocation goes through `tt_run_engine_allocate_yhash`) |
+|21 | `store_fmt_file` | 587 | MIGRATED (session 132; paired with `load_fmt_file`; Rust dump helpers replace `do_dump`/`swap_items`) |
+|22 | `pack_buffered_name` | 590 | MIGRATED (session 132; private Rust helper for `load_fmt_file`) |
+|23 | `load_fmt_file` | 602 | MIGRATED (session 132; paired with `store_fmt_file`; Rust undump helpers replace `do_undump`/`swap_items`) |
+|24 | `swap_items` | — | MIGRATED (session 132; folded into Rust byte-order dump/undump helpers) |
+|25 | `do_dump` | — | MIGRATED (session 132; folded into `dump_bytes` / `dump_slice`) |
+|26 | `do_undump` | — | MIGRATED (session 132; folded into `undump_bytes` / `undump_slice`) |
 
-Remaining in C: format-file I/O (`store_fmt_file`/`load_fmt_file` as a paired migration), `pack_buffered_name`, and `swap_items` / `do_dump` / `do_undump` (statics used by format-file I/O). Tiny `yhash` C helpers remain as glue while `yhash` has file-static linkage.
+Remaining in C: only the two tiny `yhash` helper functions (`tt_cleanup_free_yhash`
+and `tt_run_engine_allocate_yhash`) remain as glue while `yhash` has file-static
+linkage.
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.

@@ -32,6 +32,48 @@ template.
 
 ---
 
+## Session 132 — 2026-05-22 — xetex-ini.c format-file I/O
+
+**Goal:** Translate the paired format-file load/store cluster from `xetex-ini.c`
+to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 131
+
+**Work done:**
+- Translated `store_fmt_file`, `load_fmt_file`, and private `pack_buffered_name`
+  to `src/ini.rs`, keeping the format writer and reader paired.
+- Folded the C `swap_items`, `do_dump`, and `do_undump` helpers into Rust
+  `dump_*` / `undump_*` helpers that preserve the on-disk byte order.
+- Removed the old C format-file bodies and left translated markers in
+  `xetex/xetex-ini.c`.
+- Reused the existing tiny C yhash helpers; `xetex-ini.c` now has only those two
+  C helper bodies left.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 132
+
+**Surprises / gotchas:**
+- The format header uses `xetex_format.h`'s `HASH_PRIME` value (`8501`), not the
+  runtime hash table prime (`557111`). Using the runtime value made prebuilt
+  plain formats fail validation.
+- `TTBC_FILE_FORMAT_FORMAT` is `10` in `tectonic_bridge_core_generated.h`.
+  A wrong value (`40`) crossed the FFI boundary into Rust enum UB and showed up
+  as SIGILL when loading LaTeX formats.
+
+**For the next session:**
+- `xetex-ini.c` has only the two yhash helper bodies left. Decide whether to keep
+  them as intentional C glue for file-static `yhash`, or move `yhash` ownership
+  to Rust so the file can become a pure data/prototype stub.
+
 ## Session 131 — 2026-05-22 — xetex-ini.c tt_run_engine
 
 **Goal:** Translate `tt_run_engine` from `xetex-ini.c` to Rust.

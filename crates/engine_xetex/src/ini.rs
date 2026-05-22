@@ -1,61 +1,55 @@
 //! Rust translation of initialization helpers from xetex-ini.c.
 
 use crate::globals::{
-    buf_size, cond_ptr, cur_chr, cur_cmd, cur_if, cur_input, cur_lang, cur_level, cur_mark,
-    cur_val, disc_ptr, eqtb_b32s1, eqtb_top, eqtb_word, first, font_area_entry,
-    font_layout_engine_ptr, font_mapping_ptr, font_max, hc_entry, history,
+    after_token, avail, buf_size, cond_ptr, cs_count, cur_chr, cur_cmd, cur_cs, cur_if, cur_input,
+    cur_lang, cur_level, cur_mark, cur_ptr, cur_tok, cur_val, def_ref, disc_ptr, dyn_used,
+    eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, eqtb_top, eqtb_word, first, fmem_ptr, font_area_entry,
+    font_dsize_entry, font_layout_engine_ptr, font_mapping_ptr, font_max, font_name_entry,
+    font_ptr, font_size_entry, format_ident, hash_high, hash_used, hc_entry, hi_mem_min, history,
     hyf_distance_entry, hyf_entry, hyf_next_entry, hyf_num_entry, hyph_count, hyph_index,
-    hyph_link_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, if_line, in_open,
-    init_pool_ptr, in_initex_mode, input_file, interaction, job_name, last, last_glue,
-    max_hyph_char,
-    max_op_used, mem_b16s0, mem_b32s1, op_start_entry, open_parens, pool_ptr, pool_size,
-    rover, sa_root, selector, set_adjust_tail, set_after_token, set_align_ptr, set_avail,
-    set_buffer_entry, set_cancel_boundary, set_cond_ptr, set_cs_count, set_cur_align,
-    set_cur_boundary, set_cur_chr, set_cur_cmd, set_cur_dir, set_cur_f, set_cur_group,
-    set_cur_head, set_cur_if, set_cur_input_limit, set_cur_input_loc, set_cur_lang,
-    set_cur_level, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head,
-    set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
-    set_cur_loop, set_cur_mark, set_cur_order, set_cur_pre_head, set_cur_pre_tail,
-    set_cur_span, set_cur_tail_a, set_cur_val, set_cur_val_level, set_dead_cycles,
-    set_deletions_allowed, set_disc_ptr, set_doing_leaders, set_doing_special,
-    set_dyn_used, set_edit_name_start, set_empty_b32s0, set_empty_b32s1, set_eqtb_b16s0,
-    set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word, set_error_count,
-    set_expand_depth_count, set_first, set_format_ident, set_hash_high, set_hash_s1,
-    set_hash_used, set_hc_entry, set_help_line, set_help_ptr, set_hi_mem_min,
-    set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry, set_hyf_num_entry,
-    set_hyph_count, set_hyph_index, set_hyph_link_entry, set_hyph_list_entry,
-    set_hyph_next, set_hyph_start, set_hyph_word_entry, set_if_limit, set_if_line,
-    set_input_file, set_ins_disc, set_insert_penalties, set_interaction, set_is_in_csname,
-    set_last, set_last_badness, set_last_bop, set_last_glue, set_last_kern,
-    set_last_node_type, set_last_penalty, set_lft_hit, set_ligature_present,
-    set_lo_mem_max, set_long_help_seen, set_lr_problems, set_lr_ptr, set_mag_set,
-    set_max_h, set_max_hyph_char, set_max_nest_stack, set_max_op_used, set_max_push,
-    set_max_reg_help_line, set_max_reg_num, set_max_save_stack, set_max_v,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_end,
-    set_mem_word, set_native_text, set_native_text_size, set_nest_ptr,
+    hyph_link_entry, hyph_list_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, if_line,
+    in_initex_mode, in_open, init_pool_ptr, input_file, interaction, job_name, last, last_glue,
+    lo_mem_max, max_hyph_char, max_op_used, mem_b16s0, mem_b32s0, mem_b32s1, mem_end,
+    op_start_entry, open_parens, par_loc, pool_ptr, pool_size, rover, sa_root, selector,
+    set_adjust_tail, set_after_token, set_align_ptr, set_avail, set_box_allowed, set_buffer_entry,
+    set_cancel_boundary, set_cond_ptr, set_cs_count, set_cur_align, set_cur_boundary, set_cur_chr,
+    set_cur_cmd, set_cur_cs, set_cur_dir, set_cur_f, set_cur_group, set_cur_head, set_cur_if,
+    set_cur_input_limit, set_cur_input_loc, set_cur_lang, set_cur_level, set_cur_list_aux_b32s1,
+    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line,
+    set_cur_list_prev_graf, set_cur_list_tail, set_cur_loop, set_cur_mark, set_cur_order,
+    set_cur_pre_head, set_cur_pre_tail, set_cur_ptr, set_cur_span, set_cur_tail_a, set_cur_tok,
+    set_cur_val, set_cur_val_level, set_dead_cycles, set_deletions_allowed, set_disc_ptr,
+    set_doing_leaders, set_doing_special, set_dyn_used, set_edit_name_start, set_empty_b32s0,
+    set_empty_b32s1, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word,
+    set_error_count, set_expand_depth_count, set_first, set_fmem_ptr, set_font_info_b32s1,
+    set_font_ptr, set_format_ident, set_hash_high, set_hash_s1, set_hash_used, set_hc_entry,
+    set_help_line, set_help_ptr, set_hi_mem_min, set_hyf_distance_entry, set_hyf_entry,
+    set_hyf_next_entry, set_hyf_num_entry, set_hyph_count, set_hyph_index, set_hyph_link_entry,
+    set_hyph_list_entry, set_hyph_next, set_hyph_start, set_hyph_word_entry, set_hyphen_char_entry,
+    set_if_limit, set_if_line, set_input_file, set_ins_disc, set_insert_penalties, set_interaction,
+    set_is_in_csname, set_last, set_last_badness, set_last_bop, set_last_glue, set_last_kern,
+    set_last_node_type, set_last_penalty, set_lft_hit, set_ligature_present, set_lo_mem_max,
+    set_long_help_seen, set_lr_problems, set_lr_ptr, set_mag_set, set_max_h, set_max_hyph_char,
+    set_max_nest_stack, set_max_op_used, set_max_push, set_max_reg_help_line, set_max_reg_num,
+    set_max_save_stack, set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
+    set_mem_end, set_mem_word, set_native_text, set_native_text_size, set_nest_ptr,
     set_no_new_control_sequence, set_null_character, set_op_start_entry, set_open_parens,
-    set_output_active, set_pack_begin_line, set_page_contents, set_page_so_far,
-    set_page_tail, set_pool_ptr, set_pre_adjust_tail, set_prim_s0, set_prim_s1,
-    set_prim_used, set_pseudo_files, set_radix, set_read_open_entry, set_rover,
-    set_rt_hit, set_sa_chain, set_sa_level, set_sa_null_b32s0, set_sa_null_b32s1,
-    set_sa_root, set_save_ptr, set_selector, set_set_box_allowed, set_shown_mode,
-    set_spec_log, set_stop_at_space, set_str_pool, set_str_ptr, set_str_start,
-    set_temp_ptr, set_total_pages, set_trie_c_entry, set_trie_hash_entry,
-    set_trie_l_entry, set_trie_max, set_trie_min_entry, set_trie_not_ready,
-    set_trie_o_entry, set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry,
-    set_trie_ptr, set_trie_r_entry, set_trie_taken_entry, set_trie_trc_entry,
-    set_trie_trl_entry, set_trie_tro_entry, set_trie_used_entry, set_two_to_the,
-    set_use_err_help, set_var_used, set_write_open, set_xeq_level, str_ptr,
-    str_pool_entry, str_start, string_vacancies, temp_ptr, trie_c_entry, trie_hash_entry,
-    trie_l_entry, trie_max, trie_min_entry, trie_not_ready, trie_o_entry,
-    par_loc, set_par_loc, set_par_token, set_write_loc,
-    trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_ptr, trie_r_entry,
-    trie_size, trie_taken_entry, trie_trc_entry, trie_trl_entry, trie_tro_entry,
-    trie_used_entry, two_to_the,
-    after_token, avail, cur_cs, cur_ptr, cur_tok, def_ref, font_info_b32s1,
-    hyphen_char_entry, mem_b32s0, set_box_allowed,
-    set_cur_cs, set_cur_ptr, set_cur_tok, set_def_ref,
-    set_font_info_b32s1, set_hyphen_char_entry, set_skew_char_entry, skew_char_entry,
+    set_output_active, set_pack_begin_line, set_page_contents, set_page_so_far, set_page_tail,
+    set_par_loc, set_par_token, set_pool_ptr, set_pre_adjust_tail, set_prim_s0, set_prim_s1,
+    set_prim_used, set_pseudo_files, set_radix, set_read_open_entry, set_rover, set_rt_hit,
+    set_sa_chain, set_sa_level, set_sa_null_b32s0, set_sa_null_b32s1, set_sa_root, set_save_ptr,
+    set_selector, set_set_box_allowed, set_shown_mode, set_skew_char_entry, set_spec_log,
+    set_stop_at_space, set_str_pool, set_str_ptr, set_str_start, set_temp_ptr, set_total_pages,
+    set_trie_c_entry, set_trie_hash_entry, set_trie_l_entry, set_trie_max, set_trie_min_entry,
+    set_trie_not_ready, set_trie_o_entry, set_trie_op_lang_entry, set_trie_op_ptr,
+    set_trie_op_val_entry, set_trie_ptr, set_trie_r_entry, set_trie_taken_entry,
+    set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry, set_trie_used_entry,
+    set_two_to_the, set_use_err_help, set_var_used, set_write_loc, set_write_open, set_xeq_level,
+    str_pool_entry, str_ptr, str_start, string_vacancies, temp_ptr, trie_c_entry, trie_hash_entry,
+    trie_l_entry, trie_max, trie_min_entry, trie_not_ready, trie_o_entry, trie_op_lang_entry,
+    trie_op_ptr, trie_op_val_entry, trie_ptr, trie_r_entry, trie_size, trie_taken_entry,
+    trie_trc_entry, trie_trl_entry, trie_tro_entry, trie_used_entry, two_to_the, var_used,
+    write_loc,
 };
 use crate::io::UFile;
 
@@ -65,6 +59,7 @@ const TOO_BIG_CHAR: i32 = 65_536;
 const SINGLE_BASE: i32 = 1_114_113;
 const PRIM_EQTB_BASE: i32 = 2_243_238;
 const LEVEL_ONE: u16 = 1;
+const MIN_HALFWORD: i32 = -0x0FFF_FFFF;
 const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
 const TRIE_OP_SIZE: i32 = 35_111;
@@ -80,7 +75,6 @@ pub static mut _trie_op_hash_array: [i32; TRIE_OP_HASH_SIZE] = [0; TRIE_OP_HASH_
 
 extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
-    fn store_fmt_file();
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut libc::c_void;
     fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
@@ -794,10 +788,7 @@ pub unsafe extern "C" fn new_hyph_exceptions() {
                             if hc_entry(0) < 65536 {
                                 set_hc_entry(n as usize, hc_entry(0));
                             } else {
-                                set_hc_entry(
-                                    n as usize,
-                                    (hc_entry(0) - 65536) / 1024 + 55296,
-                                );
+                                set_hc_entry(n as usize, (hc_entry(0) - 65536) / 1024 + 55296);
                                 n += 1;
                                 set_hc_entry(n as usize, hc_entry(0) % 1024 + 56320);
                             }
@@ -838,10 +829,7 @@ pub unsafe extern "C" fn new_hyph_exceptions() {
                         }
 
                         if hyph_count() == hyph_size() || hyph_next() == 0 {
-                            crate::errors::overflow(
-                                c"exception dictionary".as_ptr(),
-                                hyph_size(),
-                            );
+                            crate::errors::overflow(c"exception dictionary".as_ptr(), hyph_size());
                         }
 
                         set_hyph_count(hyph_count() + 1);
@@ -854,25 +842,24 @@ pub unsafe extern "C" fn new_hyph_exceptions() {
                             let k = hyph_word_entry(h);
 
                             // Check if this slot holds the same word
-                            let matched = if crate::string_pool::length(k)
-                                != crate::string_pool::length(s)
-                            {
-                                false
-                            } else {
-                                let mut u = str_start(k - TOO_BIG_CHAR);
-                                let mut v = str_start(s - TOO_BIG_CHAR);
-                                let end = str_start(k + 1 - TOO_BIG_CHAR);
-                                let mut ok = true;
-                                while u != end {
-                                    if str_pool_entry(u) != str_pool_entry(v) {
-                                        ok = false;
-                                        break;
+                            let matched =
+                                if crate::string_pool::length(k) != crate::string_pool::length(s) {
+                                    false
+                                } else {
+                                    let mut u = str_start(k - TOO_BIG_CHAR);
+                                    let mut v = str_start(s - TOO_BIG_CHAR);
+                                    let end = str_start(k + 1 - TOO_BIG_CHAR);
+                                    let mut ok = true;
+                                    while u != end {
+                                        if str_pool_entry(u) != str_pool_entry(v) {
+                                            ok = false;
+                                            break;
+                                        }
+                                        u += 1;
+                                        v += 1;
                                     }
-                                    u += 1;
-                                    v += 1;
-                                }
-                                ok
-                            };
+                                    ok
+                                };
 
                             if matched {
                                 // found: merge into existing slot
@@ -1155,9 +1142,7 @@ pub unsafe extern "C" fn initialize_more_variables() {
 
     set_doing_special(false);
     set_native_text_size(128);
-    set_native_text(
-        xmalloc((128 * std::mem::size_of::<u16>()) as libc::size_t) as *mut u16,
-    );
+    set_native_text(xmalloc((128 * std::mem::size_of::<u16>()) as libc::size_t) as *mut u16);
 
     set_interaction(ERROR_STOP_MODE);
 
@@ -1536,7 +1521,10 @@ pub unsafe extern "C" fn initialize_more_initex_variables() {
     for k in (b'A' as i32)..=(b'Z' as i32) {
         set_eqtb_b32s1(CAT_CODE_BASE + k, LETTER);
         set_eqtb_b32s1(CAT_CODE_BASE + k + 32, LETTER);
-        set_eqtb_b32s1(MATH_CODE_BASE + k, k + set_family(1) + set_class(VAR_FAM_CLASS));
+        set_eqtb_b32s1(
+            MATH_CODE_BASE + k,
+            k + set_family(1) + set_class(VAR_FAM_CLASS),
+        );
         set_eqtb_b32s1(
             MATH_CODE_BASE + k + 32,
             k + 32 + set_family(1) + set_class(VAR_FAM_CLASS),
@@ -1707,6 +1695,10 @@ const HASH_TOP_UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 const CS_TOKEN_FLAG: i32 = 0x1FFF_FFF;
 const FONT_BASE: i32 = 0;
 const MAX_FONT_MAX: i32 = 9_000;
+const CONTRIB_HEAD: i32 = MEM_TOP - 1;
+const PAGE_HEAD: i32 = MEM_TOP - 2;
+const PRE_ADJUST_HEAD: i32 = MEM_TOP - 14;
+const HI_MEM_STAT_USAGE: i32 = 15;
 const SELECTOR_NO_PRINT: i32 = 16;
 const SELECTOR_TERM_ONLY: i32 = 17;
 const HISTORY_FATAL_ERROR: i32 = 3;
@@ -1721,6 +1713,30 @@ const INT_PAR_MONTH: i32 = 22;
 const INT_PAR_YEAR: i32 = 23;
 const INT_PAR_XETEX_GENERATE_ACTUAL_TEXT: i32 = 79;
 const INT_PAR_END_LINE_CHAR: i32 = 48;
+const INT_PAR_TRACING_STATS: i32 = 31;
+const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
+const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
+const FORMAT_SERIAL: i32 = 33;
+const FORMAT_HASH_PRIME: i32 = 8_501;
+const FORMAT_HYPH_PRIME: i32 = 607;
+const FORMAT_HASH_BASE: i32 = 2_228_226;
+const INT_VAL: i32 = 0;
+const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226;
+const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
+const FONT_ID_BASE: i32 = 2_245_338;
+const PRIM_SIZE: i32 = 2_100;
+const ACTIVE_BASE: i32 = 1;
+const FORMAT_INT_BASE: i32 = 7_826_729;
+const SELECTOR_LOG_ONLY: i32 = 18;
+const SELECTOR_TERM_AND_LOG: i32 = 19;
+const SELECTOR_NEW_STRING: i32 = 21;
+const ERROR_STOP_MODE: u8 = 3;
+const SCROLL_MODE: u8 = 2;
+const TTBC_FILE_FORMAT_FORMAT: libc::c_int = 10;
+const SUP_MAX_STRINGS: i32 = 2_097_151;
+const SUP_FONT_MEM_SIZE: i32 = 147_483_647;
+const SUP_POOL_SIZE: i32 = 40_000_000;
+const SUP_HASH_EXTRA: i32 = 2_097_151;
 
 #[inline]
 unsafe fn xmalloc_array<T>(n: i32) -> *mut T {
@@ -1736,9 +1752,24 @@ unsafe fn xcalloc_array<T>(n: i32) -> *mut T {
 // transition glue allocates many globals in one place and will disappear when
 // EngineState replaces the C globals.
 extern "C" {
+    fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize;
+    fn ttstub_output_write(
+        handle: usize,
+        data: *const libc::c_char,
+        len: libc::size_t,
+    ) -> libc::size_t;
+    fn ttstub_output_close(handle: usize) -> libc::c_int;
+    fn ttstub_output_flush(handle: usize) -> libc::c_int;
+    fn ttstub_input_open(
+        path: *const libc::c_char,
+        format: libc::c_int,
+        is_gz: libc::c_int,
+    ) -> usize;
+    fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
+    fn ttstub_input_close(handle: usize) -> libc::c_int;
     fn ttstub_output_open_stdout() -> usize;
     fn tt_run_engine_allocate_yhash();
-    fn load_fmt_file() -> bool;
+    fn tt_cleanup_free_yhash();
     fn pdf_files_init();
 
     #[link_name = "TEX_format_default"]
@@ -1821,6 +1852,8 @@ extern "C" {
     static mut tre_hyph_link: *mut u16;
     #[link_name = "mem"]
     static mut tre_mem: *mut crate::mem_types::MemoryWord;
+    #[link_name = "hash"]
+    static mut tre_hash: *mut crate::mem_types::B32x2;
     #[link_name = "eqtb_top"]
     static mut tre_eqtb_top: i32;
     #[link_name = "hash_top"]
@@ -1915,6 +1948,1254 @@ extern "C" {
     static mut tre_trie_taken: *mut bool;
     #[link_name = "font_used"]
     static mut tre_font_used: *mut bool;
+    #[link_name = "sa_root"]
+    static mut fmt_sa_root: [i32; 8];
+    #[link_name = "hyf_distance"]
+    static mut fmt_hyf_distance: [i16; 35112];
+    #[link_name = "hyf_num"]
+    static mut fmt_hyf_num: [i16; 35112];
+    #[link_name = "hyf_next"]
+    static mut fmt_hyf_next: [u16; 35112];
+    #[link_name = "trie_used"]
+    static mut fmt_trie_used: [u16; 256];
+}
+
+#[inline]
+unsafe fn dump_bytes(fmt_out: usize, ptr: *const u8, item_size: usize, nitems: usize) {
+    let byte_len = item_size * nitems;
+    let written = if cfg!(target_endian = "little") && item_size > 1 {
+        let mut bytes = std::slice::from_raw_parts(ptr, byte_len).to_vec();
+        for item in bytes.chunks_exact_mut(item_size) {
+            item.reverse();
+        }
+        ttstub_output_write(fmt_out, bytes.as_ptr() as *const libc::c_char, byte_len)
+    } else {
+        ttstub_output_write(fmt_out, ptr as *const libc::c_char, byte_len)
+    };
+
+    if written != byte_len {
+        _tt_abort(c"could not write format file data".as_ptr());
+    }
+}
+
+#[inline]
+unsafe fn dump_slice<T>(fmt_out: usize, ptr: *const T, nitems: i32) {
+    if nitems > 0 {
+        dump_bytes(
+            fmt_out,
+            ptr as *const u8,
+            std::mem::size_of::<T>(),
+            nitems as usize,
+        );
+    }
+}
+
+#[inline]
+unsafe fn dump_one<T: Copy>(fmt_out: usize, value: T) {
+    dump_slice(fmt_out, &value as *const T, 1);
+}
+
+#[inline]
+unsafe fn dump_int(fmt_out: usize, value: i32) {
+    dump_one(fmt_out, value);
+}
+
+#[inline]
+unsafe fn dump_b32(fmt_out: usize, s0: i32, s1: i32) {
+    dump_one(fmt_out, crate::mem_types::B32x2 { s0, s1 });
+}
+
+#[inline]
+unsafe fn undump_bytes(fmt_in: usize, ptr: *mut u8, item_size: usize, nitems: usize) {
+    let byte_len = item_size * nitems;
+    let read = ttstub_input_read(fmt_in, ptr, byte_len);
+    if read < 0 || read as usize != byte_len {
+        _tt_abort(c"could not read format file data".as_ptr());
+    }
+
+    if cfg!(target_endian = "little") && item_size > 1 {
+        let bytes = std::slice::from_raw_parts_mut(ptr, byte_len);
+        for item in bytes.chunks_exact_mut(item_size) {
+            item.reverse();
+        }
+    }
+}
+
+#[inline]
+unsafe fn undump_slice<T>(fmt_in: usize, ptr: *mut T, nitems: i32) {
+    if nitems > 0 {
+        undump_bytes(
+            fmt_in,
+            ptr as *mut u8,
+            std::mem::size_of::<T>(),
+            nitems as usize,
+        );
+    }
+}
+
+#[inline]
+unsafe fn undump_one<T: Copy>(fmt_in: usize) -> T {
+    let mut value = std::mem::MaybeUninit::<T>::uninit();
+    undump_slice(fmt_in, value.as_mut_ptr(), 1);
+    value.assume_init()
+}
+
+#[inline]
+unsafe fn undump_int(fmt_in: usize) -> i32 {
+    undump_one(fmt_in)
+}
+
+unsafe fn undump_checked_i32(
+    fmt_in: usize,
+    ptr: *mut i32,
+    nitems: i32,
+    low: i32,
+    high: i32,
+) -> bool {
+    undump_slice(fmt_in, ptr, nitems);
+    for i in 0..nitems {
+        let value = *ptr.add(i as usize);
+        if value < low || value > high {
+            return false;
+        }
+    }
+    true
+}
+
+unsafe fn undump_upper_i32(fmt_in: usize, ptr: *mut i32, nitems: i32, high: i32) -> bool {
+    undump_slice(fmt_in, ptr, nitems);
+    for i in 0..nitems {
+        if *ptr.add(i as usize) > high {
+            return false;
+        }
+    }
+    true
+}
+
+unsafe fn undump_upper_u16(fmt_in: usize, ptr: *mut u16, nitems: i32, high: u16) -> bool {
+    undump_slice(fmt_in, ptr, nitems);
+    for i in 0..nitems {
+        if *ptr.add(i as usize) > high {
+            return false;
+        }
+    }
+    true
+}
+
+// translated from xetex-ini.c:587 (store_fmt_file)
+#[no_mangle]
+pub unsafe extern "C" fn store_fmt_file() {
+    if crate::globals::save_ptr() != 0 {
+        crate::output::error_here_with_diagnostic(c"You can't dump inside a group".as_ptr());
+        crate::output::capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(1);
+        set_help_line(0, c"`{...\\dump}' is a no-no.".as_ptr());
+
+        if interaction() == ERROR_STOP_MODE {
+            set_interaction(SCROLL_MODE);
+        }
+        if crate::globals::log_opened() {
+            crate::errors::error();
+        }
+
+        crate::globals::set_history(HISTORY_FATAL_ERROR);
+        crate::scan::close_files_and_terminate();
+        ttstub_output_flush(crate::globals::rust_stdout());
+        _tt_abort(c"\\dump inside a group".as_ptr());
+    }
+
+    set_selector(SELECTOR_NEW_STRING);
+    crate::output::print_cstr(c" (preloaded format=".as_ptr());
+    crate::output::print(job_name());
+    crate::output::print_char(b' ' as i32);
+    crate::output::print_int(intpar(INT_PAR_YEAR));
+    crate::output::print_char(b'.' as i32);
+    crate::output::print_int(intpar(INT_PAR_MONTH));
+    crate::output::print_char(b'.' as i32);
+    crate::output::print_int(intpar(INT_PAR_DAY));
+    crate::output::print_char(b')' as i32);
+
+    if interaction() == BATCH_MODE {
+        set_selector(SELECTOR_LOG_ONLY);
+    } else {
+        set_selector(SELECTOR_TERM_AND_LOG);
+    }
+
+    if pool_ptr() + 1 > pool_size() {
+        crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+    }
+
+    set_format_ident(crate::string_pool::make_string());
+    crate::scan::pack_job_name(c".fmt".as_ptr());
+
+    let fmt_out = ttstub_output_open(crate::globals::name_of_file(), 0);
+    if fmt_out == INVALID_HANDLE {
+        _tt_abort(c"cannot open format output file".as_ptr());
+    }
+
+    crate::output::print_nl_cstr(c"Beginning to dump on file ".as_ptr());
+    crate::output::print(crate::scan::make_name_string());
+
+    set_str_ptr(str_ptr() - 1);
+    set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+
+    crate::output::print_nl_cstr(c"".as_ptr());
+    crate::output::print(format_ident());
+
+    dump_int(fmt_out, FORMAT_HEADER_MAGIC);
+    dump_int(fmt_out, FORMAT_SERIAL);
+    dump_int(fmt_out, hash_high());
+
+    while crate::globals::pseudo_files() != crate::mem::TEX_NULL {
+        crate::input::pseudo_close();
+    }
+
+    dump_int(fmt_out, MEM_TOP);
+    dump_int(fmt_out, EQTB_SIZE);
+    dump_int(fmt_out, FORMAT_HASH_PRIME);
+    dump_int(fmt_out, FORMAT_HYPH_PRIME);
+
+    dump_int(fmt_out, pool_ptr());
+    dump_int(fmt_out, str_ptr());
+    dump_slice(fmt_out, tre_str_start, str_ptr() - TOO_BIG_CHAR + 1);
+    dump_slice(fmt_out, tre_str_pool, pool_ptr());
+
+    crate::output::print_ln();
+    crate::output::print_int(str_ptr());
+    crate::output::print_cstr(c" strings of total length ".as_ptr());
+    crate::output::print_int(pool_ptr());
+
+    sort_avail();
+    set_var_used(0);
+    dump_int(fmt_out, lo_mem_max());
+    dump_int(fmt_out, rover());
+
+    for k in INT_VAL as usize..=INTER_CHAR_VAL as usize {
+        dump_int(fmt_out, fmt_sa_root[k]);
+    }
+
+    let mut p = 0;
+    let mut q = rover();
+    let mut x = 0;
+    loop {
+        let len = q + 2 - p;
+        dump_slice(fmt_out, tre_mem.add(p as usize), len);
+        x += len;
+        set_var_used(var_used() + q - p);
+        p = q + mem_b32s0(q);
+        q = mem_b32s1(q + 1);
+        if q == rover() {
+            break;
+        }
+    }
+
+    set_var_used(var_used() + lo_mem_max() - p);
+    set_dyn_used(mem_end() + 1 - hi_mem_min());
+    dump_slice(fmt_out, tre_mem.add(p as usize), lo_mem_max() + 1 - p);
+    x += lo_mem_max() + 1 - p;
+
+    dump_int(fmt_out, hi_mem_min());
+    dump_int(fmt_out, avail());
+    dump_slice(
+        fmt_out,
+        tre_mem.add(hi_mem_min() as usize),
+        mem_end() + 1 - hi_mem_min(),
+    );
+    x += mem_end() + 1 - hi_mem_min();
+
+    p = avail();
+    while p != crate::mem::TEX_NULL {
+        set_dyn_used(dyn_used() - 1);
+        p = mem_b32s1(p);
+    }
+
+    dump_int(fmt_out, var_used());
+    dump_int(fmt_out, dyn_used());
+
+    crate::output::print_ln();
+    crate::output::print_int(x);
+    crate::output::print_cstr(c" memory locations dumped; current usage is ".as_ptr());
+    crate::output::print_int(var_used());
+    crate::output::print_char(b'&' as i32);
+    crate::output::print_int(dyn_used());
+
+    let mut k = ACTIVE_BASE;
+    loop {
+        let mut j = k;
+        while j < FORMAT_INT_BASE - 1 {
+            if eqtb_b32s1(j) == eqtb_b32s1(j + 1)
+                && eqtb_b16s1(j) == eqtb_b16s1(j + 1)
+                && eqtb_b16s0(j) == eqtb_b16s0(j + 1)
+            {
+                break;
+            }
+            j += 1;
+        }
+        let l = if j < FORMAT_INT_BASE - 1 {
+            j += 1;
+            let l = j;
+            while j < FORMAT_INT_BASE - 1
+                && eqtb_b32s1(j) == eqtb_b32s1(j + 1)
+                && eqtb_b16s1(j) == eqtb_b16s1(j + 1)
+                && eqtb_b16s0(j) == eqtb_b16s0(j + 1)
+            {
+                j += 1;
+            }
+            l
+        } else {
+            FORMAT_INT_BASE
+        };
+
+        dump_int(fmt_out, l - k);
+        dump_slice(fmt_out, tre_eqtb.add(k as usize), l - k);
+        k = j + 1;
+        dump_int(fmt_out, k - l);
+        if k == FORMAT_INT_BASE {
+            break;
+        }
+    }
+
+    loop {
+        let mut j = k;
+        while j < EQTB_SIZE {
+            if eqtb_b32s1(j) == eqtb_b32s1(j + 1) {
+                break;
+            }
+            j += 1;
+        }
+        let l = if j < EQTB_SIZE {
+            j += 1;
+            let l = j;
+            while j < EQTB_SIZE && eqtb_b32s1(j) == eqtb_b32s1(j + 1) {
+                j += 1;
+            }
+            l
+        } else {
+            EQTB_SIZE + 1
+        };
+
+        dump_int(fmt_out, l - k);
+        dump_slice(fmt_out, tre_eqtb.add(k as usize), l - k);
+        k = j + 1;
+        dump_int(fmt_out, k - l);
+        if k > EQTB_SIZE {
+            break;
+        }
+    }
+
+    if hash_high() > 0 {
+        dump_slice(fmt_out, tre_eqtb.add((EQTB_SIZE + 1) as usize), hash_high());
+    }
+
+    dump_int(fmt_out, par_loc());
+    dump_int(fmt_out, write_loc());
+
+    for p in 0..=PRIM_SIZE {
+        dump_b32(
+            fmt_out,
+            crate::globals::prim_s0(p),
+            crate::globals::prim_s1(p),
+        );
+    }
+
+    dump_int(fmt_out, hash_used());
+    set_cs_count((FROZEN_CONTROL_SEQUENCE - 1) - hash_used() + hash_high());
+
+    for p in FORMAT_HASH_BASE..=hash_used() {
+        if crate::globals::hash_s1(p) != 0 {
+            dump_int(fmt_out, p);
+            dump_b32(
+                fmt_out,
+                crate::globals::hash_s0(p),
+                crate::globals::hash_s1(p),
+            );
+            set_cs_count(cs_count() + 1);
+        }
+    }
+
+    for p in (hash_used() + 1)..=(UNDEFINED_CONTROL_SEQUENCE - 1) {
+        dump_b32(
+            fmt_out,
+            crate::globals::hash_s0(p),
+            crate::globals::hash_s1(p),
+        );
+    }
+    if hash_high() > 0 {
+        for p in (EQTB_SIZE + 1)..=(EQTB_SIZE + hash_high()) {
+            dump_b32(
+                fmt_out,
+                crate::globals::hash_s0(p),
+                crate::globals::hash_s1(p),
+            );
+        }
+    }
+
+    dump_int(fmt_out, cs_count());
+
+    crate::output::print_ln();
+    crate::output::print_int(cs_count());
+    crate::output::print_cstr(c" multiletter control sequences".as_ptr());
+
+    dump_int(fmt_out, fmem_ptr());
+    dump_slice(fmt_out, tre_font_info, fmem_ptr());
+    dump_int(fmt_out, font_ptr());
+    dump_slice(
+        fmt_out,
+        tre_font_check.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_font_size.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_font_dsize.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_font_params.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_hyphen_char.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_skew_char.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_font_name.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_font_area.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(fmt_out, tre_font_bc.add(FONT_BASE as usize), font_ptr() + 1);
+    dump_slice(fmt_out, tre_font_ec.add(FONT_BASE as usize), font_ptr() + 1);
+    dump_slice(
+        fmt_out,
+        tre_char_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_width_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_height_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_depth_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_italic_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_lig_kern_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_kern_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_exten_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_param_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_font_glue.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_bchar_label.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_font_bchar.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    dump_slice(
+        fmt_out,
+        tre_font_false_bchar.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+
+    for k in FONT_BASE..=font_ptr() {
+        crate::output::print_nl_cstr(c"\\font".as_ptr());
+        crate::output::print_esc(crate::globals::hash_s1(FONT_ID_BASE + k));
+        crate::output::print_char(b'=' as i32);
+
+        if font_area_entry(k) == AAT_FONT_FLAG
+            || font_area_entry(k) == OTGR_FONT_FLAG
+            || !font_mapping_ptr(k).is_null()
+        {
+            crate::output::print_file_name(font_name_entry(k), EMPTY_STRING, EMPTY_STRING);
+            crate::output::error_here_with_diagnostic(
+                c"Can't \\dump a format with native fonts or font-mappings".as_ptr(),
+            );
+            crate::output::capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(3);
+            set_help_line(2, c"You really, really don't want to do this.".as_ptr());
+            set_help_line(1, c"It won't work, and only confuses me.".as_ptr());
+            set_help_line(
+                0,
+                c"(Load them at runtime, not as part of the format file.)".as_ptr(),
+            );
+            crate::errors::error();
+        } else {
+            crate::output::print_file_name(font_name_entry(k), font_area_entry(k), EMPTY_STRING);
+        }
+
+        if font_size_entry(k) != font_dsize_entry(k) {
+            crate::output::print_cstr(c" at ".as_ptr());
+            crate::output::print_scaled(font_size_entry(k));
+            crate::output::print_cstr(c"pt".as_ptr());
+        }
+    }
+
+    crate::output::print_ln();
+    crate::output::print_int(fmem_ptr() - 7);
+    crate::output::print_cstr(c" words of font info for ".as_ptr());
+    crate::output::print_int(font_ptr());
+    if font_ptr() != FONT_BASE + 1 {
+        crate::output::print_cstr(c" preloaded fonts".as_ptr());
+    } else {
+        crate::output::print_cstr(c" preloaded font".as_ptr());
+    }
+
+    dump_int(fmt_out, hyph_count());
+    if hyph_next() <= FORMAT_HYPH_PRIME {
+        set_hyph_next(hyph_size());
+    }
+    dump_int(fmt_out, hyph_next());
+
+    for k in 0..=hyph_size() {
+        if hyph_word_entry(k) != 0 {
+            dump_int(fmt_out, k + 65_536 * hyph_link_entry(k) as i32);
+            dump_int(fmt_out, hyph_word_entry(k));
+            dump_int(fmt_out, hyph_list_entry(k));
+        }
+    }
+
+    crate::output::print_ln();
+    crate::output::print_int(hyph_count());
+    if hyph_count() != 1 {
+        crate::output::print_cstr(c" hyphenation exceptions".as_ptr());
+    } else {
+        crate::output::print_cstr(c" hyphenation exception".as_ptr());
+    }
+
+    if trie_not_ready() {
+        init_trie();
+    }
+
+    dump_int(fmt_out, trie_max());
+    dump_int(fmt_out, hyph_start());
+    dump_slice(fmt_out, tre_trie_trl, trie_max() + 1);
+    dump_slice(fmt_out, tre_trie_tro, trie_max() + 1);
+    dump_slice(fmt_out, tre_trie_trc, trie_max() + 1);
+    dump_int(fmt_out, max_hyph_char());
+    dump_int(fmt_out, trie_op_ptr());
+    dump_slice(
+        fmt_out,
+        std::ptr::addr_of!(fmt_hyf_distance).cast::<i16>().add(1),
+        trie_op_ptr(),
+    );
+    dump_slice(
+        fmt_out,
+        std::ptr::addr_of!(fmt_hyf_num).cast::<i16>().add(1),
+        trie_op_ptr(),
+    );
+    dump_slice(
+        fmt_out,
+        std::ptr::addr_of!(fmt_hyf_next).cast::<u16>().add(1),
+        trie_op_ptr(),
+    );
+
+    crate::output::print_nl_cstr(c"Hyphenation trie of length ".as_ptr());
+    crate::output::print_int(trie_max());
+    crate::output::print_cstr(c" has ".as_ptr());
+    crate::output::print_int(trie_op_ptr());
+    if trie_op_ptr() != 1 {
+        crate::output::print_cstr(c" ops".as_ptr());
+    } else {
+        crate::output::print_cstr(c" op".as_ptr());
+    }
+    crate::output::print_cstr(c" out of ".as_ptr());
+    crate::output::print_int(TRIE_OP_SIZE);
+
+    for k in (0..=BIGGEST_LANG as usize).rev() {
+        if fmt_trie_used[k] > 0 {
+            crate::output::print_nl_cstr(c"  ".as_ptr());
+            crate::output::print_int(fmt_trie_used[k] as i32);
+            crate::output::print_cstr(c" for language ".as_ptr());
+            crate::output::print_int(k as i32);
+            dump_int(fmt_out, k as i32);
+            dump_int(fmt_out, fmt_trie_used[k] as i32);
+        }
+    }
+
+    dump_int(fmt_out, FORMAT_FOOTER_MAGIC);
+    set_eqtb_b32s1(PC_INT_BASE + INT_PAR_TRACING_STATS, 0);
+    ttstub_output_close(fmt_out);
+}
+
+// translated from xetex-ini.c:590 (pack_buffered_name)
+unsafe fn pack_buffered_name(_n: i16, _a: i32, _b: i32) {
+    libc::free(crate::globals::name_of_file() as *mut libc::c_void);
+    let name = xmalloc((tre_format_default_length as usize) + 1) as *mut libc::c_char;
+    libc::strcpy(name, tre_TEX_format_default);
+    crate::globals::set_name_of_file(name);
+    crate::globals::set_name_length(libc::strlen(name) as i32);
+}
+
+#[inline]
+unsafe fn bad_format_file() -> ! {
+    _tt_abort(c"fatal format file error".as_ptr());
+}
+
+// translated from xetex-ini.c:602 (load_fmt_file)
+#[no_mangle]
+pub unsafe extern "C" fn load_fmt_file() -> bool {
+    let mut j: i32;
+    let mut k: i32;
+    let mut p: i32;
+    let mut q: i32;
+    let mut x: i32;
+
+    j = cur_input().loc;
+    pack_buffered_name((tre_format_default_length - 4) as i16, 1, 0);
+
+    let fmt_in = ttstub_input_open(crate::globals::name_of_file(), TTBC_FILE_FORMAT_FORMAT, 0);
+    if fmt_in == INVALID_HANDLE {
+        _tt_abort(c"cannot open the format file".as_ptr());
+    }
+
+    set_cur_input_loc(j);
+
+    if in_initex_mode() {
+        libc::free(tre_font_info as *mut libc::c_void);
+        libc::free(tre_str_pool as *mut libc::c_void);
+        libc::free(tre_str_start as *mut libc::c_void);
+        tt_cleanup_free_yhash();
+        libc::free(tre_eqtb as *mut libc::c_void);
+        libc::free(tre_mem as *mut libc::c_void);
+        tre_mem = std::ptr::null_mut();
+    }
+
+    x = undump_int(fmt_in);
+    if x != FORMAT_HEADER_MAGIC {
+        bad_format_file();
+    }
+
+    x = undump_int(fmt_in);
+    if x != FORMAT_SERIAL {
+        _tt_abort(c"format file is of the wrong version".as_ptr());
+    }
+
+    x = undump_int(fmt_in);
+    if x < 0 || x > SUP_HASH_EXTRA {
+        bad_format_file();
+    }
+    set_hash_high(x);
+    if tre_hash_extra < hash_high() {
+        tre_hash_extra = hash_high();
+    }
+
+    tre_eqtb_top = EQTB_SIZE + tre_hash_extra;
+    if tre_hash_extra == 0 {
+        tre_hash_top = UNDEFINED_CONTROL_SEQUENCE;
+    } else {
+        tre_hash_top = tre_eqtb_top;
+    }
+
+    tt_run_engine_allocate_yhash();
+    crate::globals::set_hash_s0(FORMAT_HASH_BASE, 0);
+    crate::globals::set_hash_s1(FORMAT_HASH_BASE, 0);
+    for h in (FORMAT_HASH_BASE + 1)..=tre_hash_top {
+        crate::globals::set_hash_s0(h, crate::globals::hash_s0(FORMAT_HASH_BASE));
+        crate::globals::set_hash_s1(h, crate::globals::hash_s1(FORMAT_HASH_BASE));
+    }
+
+    tre_eqtb = xmalloc_array::<crate::mem_types::MemoryWord>(tre_eqtb_top);
+    set_eqtb_b16s1(UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_CS as u16);
+    set_eqtb_b32s1(UNDEFINED_CONTROL_SEQUENCE, crate::mem::TEX_NULL);
+    set_eqtb_b16s0(UNDEFINED_CONTROL_SEQUENCE, 0);
+    for e in (EQTB_SIZE + 1)..=tre_eqtb_top {
+        *tre_eqtb.add(e as usize) = *tre_eqtb.add(UNDEFINED_CONTROL_SEQUENCE as usize);
+    }
+
+    set_max_reg_num(32_767);
+    set_max_reg_help_line(c"A register number must be between 0 and 32767.".as_ptr());
+
+    x = undump_int(fmt_in);
+    if x != MEM_TOP {
+        bad_format_file();
+    }
+
+    set_cur_list_head(CONTRIB_HEAD);
+    set_cur_list_tail(CONTRIB_HEAD);
+    set_page_tail(PAGE_HEAD);
+    tre_mem = xmalloc_array::<crate::mem_types::MemoryWord>(MEM_TOP);
+
+    x = undump_int(fmt_in);
+    if x != EQTB_SIZE {
+        bad_format_file();
+    }
+    x = undump_int(fmt_in);
+    if x != FORMAT_HASH_PRIME {
+        bad_format_file();
+    }
+    x = undump_int(fmt_in);
+    if x != FORMAT_HYPH_PRIME {
+        bad_format_file();
+    }
+
+    x = undump_int(fmt_in);
+    if x < 0 {
+        bad_format_file();
+    }
+    if x > SUP_POOL_SIZE - tre_pool_free {
+        _tt_abort(c"must increase string_pool_size".as_ptr());
+    }
+    set_pool_ptr(x);
+    if tre_pool_size < pool_ptr() + tre_pool_free {
+        tre_pool_size = pool_ptr() + tre_pool_free;
+    }
+
+    x = undump_int(fmt_in);
+    if x < 0 {
+        bad_format_file();
+    }
+    if x > SUP_MAX_STRINGS - tre_strings_free {
+        _tt_abort(c"must increase sup_strings".as_ptr());
+    }
+    set_str_ptr(x);
+    if tre_max_strings < str_ptr() + tre_strings_free {
+        tre_max_strings = str_ptr() + tre_strings_free;
+    }
+
+    tre_str_start = xmalloc(tre_max_strings as usize * std::mem::size_of::<i32>()) as *mut i32;
+    if !undump_checked_i32(
+        fmt_in,
+        tre_str_start,
+        str_ptr() - TOO_BIG_CHAR + 1,
+        0,
+        pool_ptr(),
+    ) {
+        bad_format_file();
+    }
+    tre_str_pool = xmalloc(tre_pool_size as usize * std::mem::size_of::<u16>()) as *mut u16;
+    undump_slice(fmt_in, tre_str_pool, pool_ptr());
+
+    tre_init_str_ptr = str_ptr();
+    tre_init_pool_ptr = pool_ptr();
+
+    x = undump_int(fmt_in);
+    if x < 1019 || x > MEM_TOP - HI_MEM_STAT_USAGE {
+        bad_format_file();
+    }
+    set_lo_mem_max(x);
+
+    x = undump_int(fmt_in);
+    if x < 20 || x > lo_mem_max() {
+        bad_format_file();
+    }
+    set_rover(x);
+
+    for idx in INT_VAL..=INTER_CHAR_VAL {
+        x = undump_int(fmt_in);
+        if x < MIN_HALFWORD || x > lo_mem_max() {
+            bad_format_file();
+        }
+        fmt_sa_root[idx as usize] = x;
+    }
+
+    p = 0;
+    q = rover();
+    loop {
+        undump_slice(fmt_in, tre_mem.add(p as usize), q + 2 - p);
+        p = q + mem_b32s0(q);
+        if p > lo_mem_max() || (q >= mem_b32s1(q + 1) && mem_b32s1(q + 1) != rover()) {
+            bad_format_file();
+        }
+        q = mem_b32s1(q + 1);
+        if q == rover() {
+            break;
+        }
+    }
+
+    undump_slice(fmt_in, tre_mem.add(p as usize), lo_mem_max() + 1 - p);
+
+    x = undump_int(fmt_in);
+    if x < lo_mem_max() + 1 || x > PRE_ADJUST_HEAD {
+        bad_format_file();
+    }
+    set_hi_mem_min(x);
+
+    x = undump_int(fmt_in);
+    if x < MIN_HALFWORD || x > MEM_TOP {
+        bad_format_file();
+    }
+    set_avail(x);
+
+    set_mem_end(MEM_TOP);
+    undump_slice(
+        fmt_in,
+        tre_mem.add(hi_mem_min() as usize),
+        mem_end() + 1 - hi_mem_min(),
+    );
+    set_var_used(undump_int(fmt_in));
+    set_dyn_used(undump_int(fmt_in));
+
+    k = ACTIVE_BASE;
+    loop {
+        x = undump_int(fmt_in);
+        if x < 1 || k + x > EQTB_SIZE + 1 {
+            bad_format_file();
+        }
+
+        undump_slice(fmt_in, tre_eqtb.add(k as usize), x);
+        k += x;
+
+        x = undump_int(fmt_in);
+        if x < 0 || k + x > EQTB_SIZE + 1 {
+            bad_format_file();
+        }
+
+        for j1 in k..=(k + x - 1) {
+            *tre_eqtb.add(j1 as usize) = *tre_eqtb.add((k - 1) as usize);
+        }
+        k += x;
+        if k > EQTB_SIZE {
+            break;
+        }
+    }
+
+    if hash_high() > 0 {
+        undump_slice(fmt_in, tre_eqtb.add((EQTB_SIZE + 1) as usize), hash_high());
+    }
+
+    x = undump_int(fmt_in);
+    if x < FORMAT_HASH_BASE || x > tre_hash_top {
+        bad_format_file();
+    }
+    set_par_loc(x);
+    set_par_token(CS_TOKEN_FLAG + par_loc());
+
+    x = undump_int(fmt_in);
+    if x < FORMAT_HASH_BASE || x > tre_hash_top {
+        bad_format_file();
+    }
+    set_write_loc(x);
+
+    for prim_idx in 0..=PRIM_SIZE {
+        let value: crate::mem_types::B32x2 = undump_one(fmt_in);
+        set_prim_s0(prim_idx, value.s0);
+        set_prim_s1(prim_idx, value.s1);
+    }
+
+    x = undump_int(fmt_in);
+    if x < FORMAT_HASH_BASE || x > FROZEN_CONTROL_SEQUENCE {
+        bad_format_file();
+    }
+    set_hash_used(x);
+
+    p = FORMAT_HASH_BASE - 1;
+    loop {
+        x = undump_int(fmt_in);
+        if x < p + 1 || x > hash_used() {
+            bad_format_file();
+        }
+        p = x;
+        let value: crate::mem_types::B32x2 = undump_one(fmt_in);
+        crate::globals::set_hash_s0(p, value.s0);
+        crate::globals::set_hash_s1(p, value.s1);
+        if p == hash_used() {
+            break;
+        }
+    }
+
+    undump_slice(
+        fmt_in,
+        tre_hash.add((hash_used() + 1) as usize),
+        (UNDEFINED_CONTROL_SEQUENCE - 1) - hash_used(),
+    );
+    if hash_high() > 0 {
+        undump_slice(fmt_in, tre_hash.add((EQTB_SIZE + 1) as usize), hash_high());
+    }
+
+    set_cs_count(undump_int(fmt_in));
+
+    x = undump_int(fmt_in);
+    if x < 7 {
+        bad_format_file();
+    }
+    if x > SUP_FONT_MEM_SIZE {
+        _tt_abort(c"must increase font_mem_size".as_ptr());
+    }
+    set_fmem_ptr(x);
+    if fmem_ptr() > tre_font_mem_size {
+        tre_font_mem_size = fmem_ptr();
+    }
+
+    tre_font_info = xmalloc_array::<crate::mem_types::MemoryWord>(tre_font_mem_size);
+    undump_slice(fmt_in, tre_font_info, fmem_ptr());
+
+    x = undump_int(fmt_in);
+    if x < FONT_BASE {
+        bad_format_file();
+    }
+    if x > FONT_BASE + MAX_FONT_MAX {
+        _tt_abort(c"must increase font_max".as_ptr());
+    }
+    set_font_ptr(x);
+
+    tre_font_mapping = xcalloc_array::<*mut libc::c_void>(tre_font_max);
+    tre_font_layout_engine = xcalloc_array::<*mut libc::c_void>(tre_font_max);
+    tre_font_flags = xmalloc_array::<libc::c_char>(tre_font_max);
+    tre_font_letter_space = xmalloc_array::<i32>(tre_font_max);
+    tre_font_check = xmalloc_array::<crate::mem_types::B16x4>(tre_font_max);
+    tre_font_size = xmalloc_array::<i32>(tre_font_max);
+    tre_font_dsize = xmalloc_array::<i32>(tre_font_max);
+    tre_font_params = xmalloc_array::<i32>(tre_font_max);
+    tre_font_name = xmalloc_array::<i32>(tre_font_max);
+    tre_font_area = xmalloc_array::<i32>(tre_font_max);
+    tre_font_bc = xmalloc_array::<u16>(tre_font_max);
+    tre_font_ec = xmalloc_array::<u16>(tre_font_max);
+    tre_font_glue = xmalloc_array::<i32>(tre_font_max);
+    tre_hyphen_char = xmalloc_array::<i32>(tre_font_max);
+    tre_skew_char = xmalloc_array::<i32>(tre_font_max);
+    tre_bchar_label = xmalloc_array::<i32>(tre_font_max);
+    tre_font_bchar = xmalloc_array::<i32>(tre_font_max);
+    tre_font_false_bchar = xmalloc_array::<i32>(tre_font_max);
+    tre_char_base = xmalloc_array::<i32>(tre_font_max);
+    tre_width_base = xmalloc_array::<i32>(tre_font_max);
+    tre_height_base = xmalloc_array::<i32>(tre_font_max);
+    tre_depth_base = xmalloc_array::<i32>(tre_font_max);
+    tre_italic_base = xmalloc_array::<i32>(tre_font_max);
+    tre_lig_kern_base = xmalloc_array::<i32>(tre_font_max);
+    tre_kern_base = xmalloc_array::<i32>(tre_font_max);
+    tre_exten_base = xmalloc_array::<i32>(tre_font_max);
+    tre_param_base = xmalloc_array::<i32>(tre_font_max);
+
+    for font_idx in FONT_BASE..=font_ptr() {
+        *tre_font_mapping.add(font_idx as usize) = std::ptr::null_mut();
+    }
+
+    undump_slice(
+        fmt_in,
+        tre_font_check.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_font_size.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_font_dsize.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    if !undump_checked_i32(
+        fmt_in,
+        tre_font_params.add(FONT_BASE as usize),
+        font_ptr() + 1,
+        MIN_HALFWORD,
+        MAX_HALFWORD,
+    ) {
+        bad_format_file();
+    }
+    undump_slice(
+        fmt_in,
+        tre_hyphen_char.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_skew_char.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    if !undump_upper_i32(
+        fmt_in,
+        tre_font_name.add(FONT_BASE as usize),
+        font_ptr() + 1,
+        str_ptr(),
+    ) {
+        bad_format_file();
+    }
+    if !undump_upper_i32(
+        fmt_in,
+        tre_font_area.add(FONT_BASE as usize),
+        font_ptr() + 1,
+        str_ptr(),
+    ) {
+        bad_format_file();
+    }
+    undump_slice(fmt_in, tre_font_bc.add(FONT_BASE as usize), font_ptr() + 1);
+    undump_slice(fmt_in, tre_font_ec.add(FONT_BASE as usize), font_ptr() + 1);
+    undump_slice(
+        fmt_in,
+        tre_char_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_width_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_height_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_depth_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_italic_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_lig_kern_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_kern_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_exten_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    undump_slice(
+        fmt_in,
+        tre_param_base.add(FONT_BASE as usize),
+        font_ptr() + 1,
+    );
+    if !undump_checked_i32(
+        fmt_in,
+        tre_font_glue.add(FONT_BASE as usize),
+        font_ptr() + 1,
+        MIN_HALFWORD,
+        lo_mem_max(),
+    ) {
+        bad_format_file();
+    }
+    if !undump_checked_i32(
+        fmt_in,
+        tre_bchar_label.add(FONT_BASE as usize),
+        font_ptr() + 1,
+        0,
+        fmem_ptr() - 1,
+    ) {
+        bad_format_file();
+    }
+    if !undump_checked_i32(
+        fmt_in,
+        tre_font_bchar.add(FONT_BASE as usize),
+        font_ptr() + 1,
+        0,
+        TOO_BIG_CHAR,
+    ) {
+        bad_format_file();
+    }
+    if !undump_checked_i32(
+        fmt_in,
+        tre_font_false_bchar.add(FONT_BASE as usize),
+        font_ptr() + 1,
+        0,
+        TOO_BIG_CHAR,
+    ) {
+        bad_format_file();
+    }
+
+    x = undump_int(fmt_in);
+    if x < 0 {
+        bad_format_file();
+    }
+    if x > hyph_size() {
+        _tt_abort(c"must increase hyph_size".as_ptr());
+    }
+    set_hyph_count(x);
+
+    x = undump_int(fmt_in);
+    if x < FORMAT_HYPH_PRIME {
+        bad_format_file();
+    }
+    if x > hyph_size() {
+        _tt_abort(c"must increase hyph_size".as_ptr());
+    }
+    set_hyph_next(x);
+
+    j = 0;
+    for _ in 1..=hyph_count() {
+        j = undump_int(fmt_in);
+        if j < 0 {
+            bad_format_file();
+        }
+        if j > 65_535 {
+            set_hyph_next(j / 65_536);
+            j -= hyph_next() * 65_536;
+        } else {
+            set_hyph_next(0);
+        }
+
+        if j >= hyph_size() || hyph_next() > hyph_size() {
+            bad_format_file();
+        }
+        set_hyph_link_entry(j, hyph_next() as u16);
+
+        x = undump_int(fmt_in);
+        if x < 0 || x > str_ptr() {
+            bad_format_file();
+        }
+        set_hyph_word_entry(j, x);
+
+        x = undump_int(fmt_in);
+        if x < MIN_HALFWORD || x > MAX_HALFWORD {
+            bad_format_file();
+        }
+        set_hyph_list_entry(j, x);
+    }
+
+    j += 1;
+    if j < FORMAT_HYPH_PRIME {
+        j = FORMAT_HYPH_PRIME;
+    }
+    set_hyph_next(j);
+    if hyph_next() >= hyph_size() {
+        set_hyph_next(FORMAT_HYPH_PRIME);
+    } else if hyph_next() >= FORMAT_HYPH_PRIME {
+        set_hyph_next(hyph_next() + 1);
+    }
+
+    x = undump_int(fmt_in);
+    if x < 0 {
+        bad_format_file();
+    }
+    if x > trie_size() {
+        _tt_abort(c"must increase trie_size".as_ptr());
+    }
+    j = x;
+    set_trie_max(j);
+
+    x = undump_int(fmt_in);
+    if x < 0 || x > j {
+        bad_format_file();
+    }
+    set_hyph_start(x);
+
+    if tre_trie_trl.is_null() {
+        tre_trie_trl = xmalloc_array::<i32>(j);
+    }
+    undump_slice(fmt_in, tre_trie_trl, j + 1);
+    if tre_trie_tro.is_null() {
+        tre_trie_tro = xmalloc_array::<i32>(j);
+    }
+    undump_slice(fmt_in, tre_trie_tro, j + 1);
+    if tre_trie_trc.is_null() {
+        tre_trie_trc = xmalloc_array::<u16>(j);
+    }
+    undump_slice(fmt_in, tre_trie_trc, j + 1);
+
+    set_max_hyph_char(undump_int(fmt_in));
+
+    x = undump_int(fmt_in);
+    if x < 0 {
+        bad_format_file();
+    }
+    if x > TRIE_OP_SIZE {
+        _tt_abort(c"must increase TRIE_OP_SIZE".as_ptr());
+    }
+    j = x;
+    set_trie_op_ptr(j);
+
+    undump_slice(
+        fmt_in,
+        std::ptr::addr_of_mut!(fmt_hyf_distance)
+            .cast::<i16>()
+            .add(1),
+        j,
+    );
+    undump_slice(
+        fmt_in,
+        std::ptr::addr_of_mut!(fmt_hyf_num).cast::<i16>().add(1),
+        j,
+    );
+    if !undump_upper_u16(
+        fmt_in,
+        std::ptr::addr_of_mut!(fmt_hyf_next).cast::<u16>().add(1),
+        j,
+        MAX_TRIE_OP,
+    ) {
+        bad_format_file();
+    }
+
+    for lang in 0..=BIGGEST_LANG as usize {
+        fmt_trie_used[lang] = 0;
+    }
+
+    k = BIGGEST_LANG + 1;
+    while j > 0 {
+        x = undump_int(fmt_in);
+        if x < 0 || x > k - 1 {
+            bad_format_file();
+        }
+        k = x;
+
+        x = undump_int(fmt_in);
+        if x < 1 || x > j {
+            bad_format_file();
+        }
+        fmt_trie_used[k as usize] = x as u16;
+        j -= x;
+        set_op_start_entry(k as usize, j);
+    }
+
+    set_trie_not_ready(false);
+
+    x = undump_int(fmt_in);
+    if x != FORMAT_FOOTER_MAGIC {
+        bad_format_file();
+    }
+
+    ttstub_input_close(fmt_in);
+    true
 }
 
 // translated from xetex-ini.c:1474 (tt_run_engine)
@@ -2131,7 +3412,10 @@ pub unsafe extern "C" fn tt_run_engine(
     if intpar(INT_PAR_END_LINE_CHAR) < 0 || intpar(INT_PAR_END_LINE_CHAR) > BIGGEST_CHAR {
         crate::globals::set_cur_input_limit(crate::globals::cur_input().limit - 1);
     } else {
-        set_buffer_entry(crate::globals::cur_input().limit, intpar(INT_PAR_END_LINE_CHAR));
+        set_buffer_entry(
+            crate::globals::cur_input().limit,
+            intpar(INT_PAR_END_LINE_CHAR),
+        );
     }
 
     if in_initex_mode() {
@@ -2144,13 +3428,7 @@ pub unsafe extern "C" fn tt_run_engine(
         let mut day = 0;
         let mut month = 0;
         let mut year = 0;
-        crate::texmfmp::get_date_and_time(
-            build_date,
-            &mut time,
-            &mut day,
-            &mut month,
-            &mut year,
-        );
+        crate::texmfmp::get_date_and_time(build_date, &mut time, &mut day, &mut month, &mut year);
         set_eqtb_b32s1(PC_INT_BASE + INT_PAR_TIME, time);
         set_eqtb_b32s1(PC_INT_BASE + INT_PAR_DAY, day);
         set_eqtb_b32s1(PC_INT_BASE + INT_PAR_MONTH, month);
@@ -2203,7 +3481,10 @@ pub unsafe extern "C" fn tt_run_engine(
 
         crate::globals::set_font_ptr(FONT_BASE);
         crate::globals::set_fmem_ptr(7);
-        crate::globals::set_font_name_entry(FONT_BASE, crate::texmfmp::maketexstring(c"nullfont".as_ptr()));
+        crate::globals::set_font_name_entry(
+            FONT_BASE,
+            crate::texmfmp::maketexstring(c"nullfont".as_ptr()),
+        );
         crate::globals::set_font_area_entry(FONT_BASE, EMPTY_STRING);
         set_hyphen_char_entry(FONT_BASE, b'-' as i32);
         set_skew_char_entry(FONT_BASE, -1);
@@ -2623,7 +3904,8 @@ pub unsafe extern "C" fn prefixed_command() {
             set_help_ptr(1);
             set_help_line(
                 0,
-                c"I'll pretend you didn't say \\long or \\outer or \\global or \\protected.".as_ptr(),
+                c"I'll pretend you didn't say \\long or \\outer or \\global or \\protected."
+                    .as_ptr(),
             );
             crate::input::back_error();
             return;
@@ -2928,7 +4210,10 @@ pub unsafe extern "C" fn prefixed_command() {
                     crate::output::error_here_with_diagnostic(c"Missing `to' inserted".as_ptr());
                     crate::output::capture_to_diagnostic(std::ptr::null_mut());
                     set_help_ptr(2);
-                    set_help_line(1, c"You should have said `\\read<number> to \\cs'.".as_ptr());
+                    set_help_line(
+                        1,
+                        c"You should have said `\\read<number> to \\cs'.".as_ptr(),
+                    );
                     set_help_line(0, c"I'm going to look for the \\cs now.".as_ptr());
                     crate::errors::error();
                 }
@@ -3316,7 +4601,10 @@ pub unsafe extern "C" fn prefixed_command() {
                         1,
                         c"Sorry, \\setbox is not allowed after \\halign in a display,".as_ptr(),
                     );
-                    set_help_line(0, c"or between \\accent and an accented character.".as_ptr());
+                    set_help_line(
+                        0,
+                        c"or between \\accent and an accented character.".as_ptr(),
+                    );
                     crate::errors::error();
                 }
             }

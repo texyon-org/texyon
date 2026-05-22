@@ -145,6 +145,7 @@ cargo test -p tectonic --test tex-outputs
 |     129 | 2026-05-22 |     29 |    29 |     0 | xetex-ini.c: translate tt_cleanup (926ae467). File-static yhash freed via a tiny C helper; all other freed globals accessed via tt_cleanup_-prefixed extern block with #[link_name] on every item. All 4 suites pass. |
 |     130 | 2026-05-22 |     29 |    29 |     0 | xetex-ini.c: translate prefixed_command (1571e5cd). ~760-line assignment/definition dispatcher; goto-done→'sw labeled block, prefix-loop/non-INITEX \patterns early returns preserved. All 4 suites pass. |
 |     131 | 2026-05-22 |     29 |    29 |     0 | xetex-ini.c: translate tt_run_engine. Top-level lifecycle/allocation entry point now in Rust; C body deleted, load_fmt_file exported for the remaining format-file cluster. All 4 suites pass. |
+|     132 | 2026-05-22 |     29 |    29 |     0 | xetex-ini.c: translate paired format-file I/O cluster (`store_fmt_file`, `load_fmt_file`, `pack_buffered_name`, dump/undump helpers). Fixed format HASH_PRIME and bridge enum constants. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -375,6 +376,7 @@ own `src/*.rs` modules, excluding tests and `lib.rs`.)
 |     114 |      538 |              ~3 |     ~99.4% |
 |     115 |      539 |              ~2 |     ~99.6% |
 |     116 |      540 |              ~1 |     ~99.8% |
+|     132 |    1,832 |                52,152 |      ~3.4% |
 
 
 Total C function count to be measured in session 1 via:
@@ -390,7 +392,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **131** (sessions 1–131 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **132** (sessions 1–132 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks
