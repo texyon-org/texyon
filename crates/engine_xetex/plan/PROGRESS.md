@@ -144,6 +144,7 @@ cargo test -p tectonic --test tex-outputs
 |     128 | 2026-05-21 |     29 |    29 |     0 | xetex-ini.c: translate initialize_primitives (4307d45d, 9c29265d prep). primitives[] lifted to file-scope xetex_primitives + count; Rust mirrors struct via #[repr(C)] and iterates via raw-pointer offset. All 4 suites pass. |
 |     129 | 2026-05-22 |     29 |    29 |     0 | xetex-ini.c: translate tt_cleanup (926ae467). File-static yhash freed via a tiny C helper; all other freed globals accessed via tt_cleanup_-prefixed extern block with #[link_name] on every item. All 4 suites pass. |
 |     130 | 2026-05-22 |     29 |    29 |     0 | xetex-ini.c: translate prefixed_command (1571e5cd). ~760-line assignment/definition dispatcher; goto-done→'sw labeled block, prefix-loop/non-INITEX \patterns early returns preserved. All 4 suites pass. |
+|     131 | 2026-05-22 |     29 |    29 |     0 | xetex-ini.c: translate tt_run_engine. Top-level lifecycle/allocation entry point now in Rust; C body deleted, load_fmt_file exported for the remaining format-file cluster. All 4 suites pass. |
 
 
 **Baseline rule:** session 1 must run the test suite *before* making
@@ -389,7 +390,7 @@ done | sort -nr
 Count of consecutive sessions without a parity-count regression. A
 regression resets this to zero and must be noted in `SESSION_LOG.md`.
 
-Current streak: **130** (sessions 1–130 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
+Current streak: **131** (sessions 1–131 held parity at 29/29; TRIP 2/2 maintained from session 23 onward).
 
 
 ## Health checks

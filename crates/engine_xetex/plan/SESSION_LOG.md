@@ -32,6 +32,51 @@ template.
 
 ---
 
+## Session 131 — 2026-05-22 — xetex-ini.c tt_run_engine
+
+**Goal:** Translate `tt_run_engine` from `xetex-ini.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 130
+
+**Work done:**
+- Translated `tt_run_engine`, the top-level engine lifecycle/allocation entry point,
+  to `src/ini.rs`.
+- Exported `load_fmt_file` so the Rust entry point can call the still-C format
+  loader in non-INITEX mode.
+- Added `tt_run_engine_allocate_yhash()` as a tiny C helper because `yhash` remains
+  file-static in `xetex-ini.c`; Rust handles the public hash initialization around it.
+- Deleted the old C `tt_run_engine` body rather than leaving a disabled reference block.
+- Added a prototype for `tt_cleanup_free_yhash`, removing the local missing-prototype
+  warning introduced by the previous yhash cleanup helper.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 131
+
+**Surprises / gotchas:**
+- The int-parameter indexes are not the later table positions: `time/day/month/year`
+  are 20..23, and `xetex_generate_actual_text` is 79. An initial wrong mapping wrote
+  `\tracingstacklevels`, producing `~INPUT` log noise across parity tests.
+- Rust `_tt_abort` is intentionally declared non-variadic in this codebase. The
+  consistency-check abort path formats its message into a stack buffer before calling it.
+- `hash_used` is initialized to `hash_top` after filling the hash table; INITEX setup
+  later resets it through `initialize_more_initex_variables`, matching tested behavior.
+
+**For the next session:**
+- Finish `xetex-ini.c` by translating the format-file cluster as one unit:
+  `store_fmt_file`, `load_fmt_file`, `pack_buffered_name`, `swap_items`,
+  `do_dump`, and `do_undump`. Keep this paired per anti-pattern A.10.
+
+---
+
 ## Session 130 — 2026-05-22 — xetex-ini.c prefixed_command
 
 **Goal:** Translate `prefixed_command` from `xetex-ini.c` to Rust.

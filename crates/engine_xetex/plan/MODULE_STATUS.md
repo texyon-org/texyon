@@ -25,7 +25,7 @@ every session. The column meanings:
 | SKIPPED        |          0 |
 | **Total**      |     **16** |
 
-Last updated: session 130.
+Last updated: session 131.
 
 
 ## Core engine files (to translate)
@@ -36,7 +36,7 @@ Last updated: session 130.
 | xetex-stringpool.c           |    13 |      0 | `src/string_pool.rs`              | DONE               |
 | xetex-errors.c               |    12 |      0 | `src/errors.rs`                   | DONE         |
 | xetex-output.c               |    15 |      0 | `src/output.rs`                   | DONE               |
-| xetex-ini.c                  |  1795 |      7 | `src/ini.rs` + state modules      | IN PROGRESS — 75% |
+| xetex-ini.c                  |  1481 |      8 | `src/ini.rs` + state modules      | IN PROGRESS — format I/O remains |
 | xetex-xetex0.c               |    10 |      0 | multiple (see below)              | DONE         |
 
 | xetex-pagebuilder.c          |    11 |      0 | `src/pagebuilder.rs`              | DONE         |
@@ -732,8 +732,9 @@ Status: IN PROGRESS (session 128).
 |17 | `initialize_primitives` | 2218 | MIGRATED (session 128, 4307d45d; un-static'd in 9c29265d prep commit; primitives[] table moved to file-scope `xetex_primitives` and consumed via FFI raw-pointer iteration) |
 |18 | `tt_cleanup` | 2228 | MIGRATED (session 129, 926ae467; file-static `yhash` freed via tiny C helper `tt_cleanup_free_yhash`; all other freed globals reached via `tt_cleanup_`-prefixed extern block with `#[link_name]`) |
 |19 | `prefixed_command` | 583 | MIGRATED (session 130, 1571e5cd; ~760-line assignment dispatcher; goto-done→`'sw` labeled block, early returns preserved; added `after_token()` getter + `set_cp_code` extern) |
+|20 | `tt_run_engine` | 1474 | MIGRATED (session 131; top-level lifecycle/allocation entry point; `load_fmt_file` remains C and is now exported for Rust caller; file-static `yhash` allocation goes through `tt_run_engine_allocate_yhash`) |
 
-Remaining in C: format-file I/O (`store_fmt_file`/`load_fmt_file` as a paired migration), `pack_buffered_name`, `swap_items` / `do_dump` / `do_undump` (statics used by format-file I/O), and `tt_run_engine`.
+Remaining in C: format-file I/O (`store_fmt_file`/`load_fmt_file` as a paired migration), `pack_buffered_name`, and `swap_items` / `do_dump` / `do_undump` (statics used by format-file I/O). Tiny `yhash` C helpers remain as glue while `yhash` has file-static linkage.
 
 Continue `xetex-xetex0.c`: remaining candidates:
 - `main_control`: huge main engine loop.

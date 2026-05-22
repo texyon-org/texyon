@@ -82,6 +82,7 @@ extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn store_fmt_file();
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
+    fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut libc::c_void;
     fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
     static xetex_primitives: XetexPrimitiveDef;
     static xetex_primitives_count: libc::size_t;
@@ -1694,6 +1695,573 @@ pub unsafe extern "C" fn initialize_primitives() {
     set_eqtb_b32s1(END_WRITE, crate::mem::TEX_NULL);
 
     set_no_new_control_sequence(true);
+}
+
+const FORMAT_HASH_OFFSET: i32 = 514;
+const MEM_TOP: i32 = 4_999_999;
+const EQTB_SIZE: i32 = 8_941_458;
+const HASH_PRIME: i32 = 557_111;
+const HASH_SIZE: i32 = 2_242_711;
+const HASH_BASE: i32 = 1_114_114;
+const HASH_TOP_UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
+const CS_TOKEN_FLAG: i32 = 0x1FFF_FFF;
+const FONT_BASE: i32 = 0;
+const MAX_FONT_MAX: i32 = 9_000;
+const SELECTOR_NO_PRINT: i32 = 16;
+const SELECTOR_TERM_ONLY: i32 = 17;
+const HISTORY_FATAL_ERROR: i32 = 3;
+const HISTORY_SPOTLESS: i32 = 0;
+const BATCH_MODE: u8 = 0;
+const NEW_LINE: u16 = 33;
+const EMPTY_STRING: i32 = 65_536;
+const NON_ADDRESS: i32 = 0;
+const INT_PAR_TIME: i32 = 20;
+const INT_PAR_DAY: i32 = 21;
+const INT_PAR_MONTH: i32 = 22;
+const INT_PAR_YEAR: i32 = 23;
+const INT_PAR_XETEX_GENERATE_ACTUAL_TEXT: i32 = 79;
+const INT_PAR_END_LINE_CHAR: i32 = 48;
+
+#[inline]
+unsafe fn xmalloc_array<T>(n: i32) -> *mut T {
+    xmalloc(((n as usize) + 1) * std::mem::size_of::<T>()) as *mut T
+}
+
+#[inline]
+unsafe fn xcalloc_array<T>(n: i32) -> *mut T {
+    xcalloc((n as usize) + 1, std::mem::size_of::<T>()) as *mut T
+}
+
+// Raw lifecycle state used by tt_run_engine. Kept local because this top-level
+// transition glue allocates many globals in one place and will disappear when
+// EngineState replaces the C globals.
+extern "C" {
+    fn ttstub_output_open_stdout() -> usize;
+    fn tt_run_engine_allocate_yhash();
+    fn load_fmt_file() -> bool;
+    fn pdf_files_init();
+
+    #[link_name = "TEX_format_default"]
+    static mut tre_TEX_format_default: *mut libc::c_char;
+    #[link_name = "rust_stdout"]
+    static mut tre_rust_stdout: usize;
+    #[link_name = "format_default_length"]
+    static mut tre_format_default_length: i32;
+    #[link_name = "file_line_error_style_p"]
+    static mut tre_file_line_error_style_p: i32;
+    #[link_name = "pool_size"]
+    static mut tre_pool_size: i32;
+    #[link_name = "string_vacancies"]
+    static mut tre_string_vacancies: i32;
+    #[link_name = "pool_free"]
+    static mut tre_pool_free: i32;
+    #[link_name = "max_strings"]
+    static mut tre_max_strings: i32;
+    #[link_name = "strings_free"]
+    static mut tre_strings_free: i32;
+    #[link_name = "font_mem_size"]
+    static mut tre_font_mem_size: i32;
+    #[link_name = "font_max"]
+    static mut tre_font_max: i32;
+    #[link_name = "trie_size"]
+    static mut tre_trie_size: i32;
+    #[link_name = "hyph_size"]
+    static mut tre_hyph_size: i32;
+    #[link_name = "buf_size"]
+    static mut tre_buf_size: i32;
+    #[link_name = "nest_size"]
+    static mut tre_nest_size: i32;
+    #[link_name = "max_in_open"]
+    static mut tre_max_in_open: i32;
+    #[link_name = "param_size"]
+    static mut tre_param_size: i32;
+    #[link_name = "save_size"]
+    static mut tre_save_size: i32;
+    #[link_name = "stack_size"]
+    static mut tre_stack_size: i32;
+    #[link_name = "error_line"]
+    static mut tre_error_line: i32;
+    #[link_name = "half_error_line"]
+    static mut tre_half_error_line: i32;
+    #[link_name = "max_print_line"]
+    static mut tre_max_print_line: i32;
+    #[link_name = "hash_extra"]
+    static mut tre_hash_extra: i32;
+    #[link_name = "expand_depth"]
+    static mut tre_expand_depth: i32;
+    #[link_name = "buffer"]
+    static mut tre_buffer: *mut i32;
+    #[link_name = "nest"]
+    static mut tre_nest: *mut crate::mem_types::ListStateRecord;
+    #[link_name = "save_stack"]
+    static mut tre_save_stack: *mut crate::mem_types::MemoryWord;
+    #[link_name = "input_stack"]
+    static mut tre_input_stack: *mut crate::globals::InputState;
+    #[link_name = "input_file"]
+    static mut tre_input_file: *mut *mut libc::c_void;
+    #[link_name = "line_stack"]
+    static mut tre_line_stack: *mut i32;
+    #[link_name = "eof_seen"]
+    static mut tre_eof_seen: *mut bool;
+    #[link_name = "grp_stack"]
+    static mut tre_grp_stack: *mut i32;
+    #[link_name = "if_stack"]
+    static mut tre_if_stack: *mut i32;
+    #[link_name = "source_filename_stack"]
+    static mut tre_source_filename_stack: *mut i32;
+    #[link_name = "full_source_filename_stack"]
+    static mut tre_full_source_filename_stack: *mut i32;
+    #[link_name = "param_stack"]
+    static mut tre_param_stack: *mut i32;
+    #[link_name = "hyph_word"]
+    static mut tre_hyph_word: *mut i32;
+    #[link_name = "hyph_list"]
+    static mut tre_hyph_list: *mut i32;
+    #[link_name = "hyph_link"]
+    static mut tre_hyph_link: *mut u16;
+    #[link_name = "mem"]
+    static mut tre_mem: *mut crate::mem_types::MemoryWord;
+    #[link_name = "eqtb_top"]
+    static mut tre_eqtb_top: i32;
+    #[link_name = "hash_top"]
+    static mut tre_hash_top: i32;
+    #[link_name = "eqtb"]
+    static mut tre_eqtb: *mut crate::mem_types::MemoryWord;
+    #[link_name = "str_start"]
+    static mut tre_str_start: *mut i32;
+    #[link_name = "str_pool"]
+    static mut tre_str_pool: *mut u16;
+    #[link_name = "font_info"]
+    static mut tre_font_info: *mut crate::mem_types::MemoryWord;
+    #[link_name = "bad"]
+    static mut tre_bad: i32;
+    #[link_name = "init_str_ptr"]
+    static mut tre_init_str_ptr: i32;
+    #[link_name = "init_pool_ptr"]
+    static mut tre_init_pool_ptr: i32;
+    #[link_name = "output_file_extension"]
+    static mut tre_output_file_extension: *const libc::c_char;
+    #[link_name = "font_mapping"]
+    static mut tre_font_mapping: *mut *mut libc::c_void;
+    #[link_name = "font_layout_engine"]
+    static mut tre_font_layout_engine: *mut *mut libc::c_void;
+    #[link_name = "font_flags"]
+    static mut tre_font_flags: *mut libc::c_char;
+    #[link_name = "font_letter_space"]
+    static mut tre_font_letter_space: *mut i32;
+    #[link_name = "font_check"]
+    static mut tre_font_check: *mut crate::mem_types::B16x4;
+    #[link_name = "font_size"]
+    static mut tre_font_size: *mut i32;
+    #[link_name = "font_dsize"]
+    static mut tre_font_dsize: *mut i32;
+    #[link_name = "font_params"]
+    static mut tre_font_params: *mut i32;
+    #[link_name = "font_name"]
+    static mut tre_font_name: *mut i32;
+    #[link_name = "font_area"]
+    static mut tre_font_area: *mut i32;
+    #[link_name = "font_bc"]
+    static mut tre_font_bc: *mut u16;
+    #[link_name = "font_ec"]
+    static mut tre_font_ec: *mut u16;
+    #[link_name = "font_glue"]
+    static mut tre_font_glue: *mut i32;
+    #[link_name = "hyphen_char"]
+    static mut tre_hyphen_char: *mut i32;
+    #[link_name = "skew_char"]
+    static mut tre_skew_char: *mut i32;
+    #[link_name = "bchar_label"]
+    static mut tre_bchar_label: *mut i32;
+    #[link_name = "font_bchar"]
+    static mut tre_font_bchar: *mut i32;
+    #[link_name = "font_false_bchar"]
+    static mut tre_font_false_bchar: *mut i32;
+    #[link_name = "char_base"]
+    static mut tre_char_base: *mut i32;
+    #[link_name = "width_base"]
+    static mut tre_width_base: *mut i32;
+    #[link_name = "height_base"]
+    static mut tre_height_base: *mut i32;
+    #[link_name = "depth_base"]
+    static mut tre_depth_base: *mut i32;
+    #[link_name = "italic_base"]
+    static mut tre_italic_base: *mut i32;
+    #[link_name = "lig_kern_base"]
+    static mut tre_lig_kern_base: *mut i32;
+    #[link_name = "kern_base"]
+    static mut tre_kern_base: *mut i32;
+    #[link_name = "exten_base"]
+    static mut tre_exten_base: *mut i32;
+    #[link_name = "param_base"]
+    static mut tre_param_base: *mut i32;
+    #[link_name = "trie_trl"]
+    static mut tre_trie_trl: *mut i32;
+    #[link_name = "trie_tro"]
+    static mut tre_trie_tro: *mut i32;
+    #[link_name = "trie_trc"]
+    static mut tre_trie_trc: *mut u16;
+    #[link_name = "trie_c"]
+    static mut tre_trie_c: *mut u16;
+    #[link_name = "trie_o"]
+    static mut tre_trie_o: *mut u16;
+    #[link_name = "trie_l"]
+    static mut tre_trie_l: *mut i32;
+    #[link_name = "trie_r"]
+    static mut tre_trie_r: *mut i32;
+    #[link_name = "trie_hash"]
+    static mut tre_trie_hash: *mut i32;
+    #[link_name = "trie_taken"]
+    static mut tre_trie_taken: *mut bool;
+    #[link_name = "font_used"]
+    static mut tre_font_used: *mut bool;
+}
+
+// translated from xetex-ini.c:1474 (tt_run_engine)
+#[no_mangle]
+pub unsafe extern "C" fn tt_run_engine(
+    dump_name: *const libc::c_char,
+    input_file_name: *const libc::c_char,
+    build_date: libc::time_t,
+) -> i32 {
+    tre_TEX_format_default = xmalloc(libc::strlen(dump_name) + 1) as *mut libc::c_char;
+    libc::strcpy(tre_TEX_format_default, dump_name);
+    tre_format_default_length = libc::strlen(dump_name) as i32;
+    tre_rust_stdout = ttstub_output_open_stdout();
+
+    if tre_file_line_error_style_p < 0 {
+        tre_file_line_error_style_p = 0;
+    }
+
+    tre_pool_size = 6_250_000;
+    tre_string_vacancies = 90_000;
+    tre_pool_free = 47_500;
+    tre_max_strings = 565_536;
+    tre_strings_free = 100;
+    tre_font_mem_size = 8_000_000;
+    tre_font_max = 9_000;
+    tre_trie_size = 1_000_000;
+    tre_hyph_size = 8_191;
+    tre_buf_size = 200_000;
+    tre_nest_size = 500;
+    tre_max_in_open = 15;
+    tre_param_size = 10_000;
+    tre_save_size = 80_000;
+    tre_stack_size = 5_000;
+    tre_error_line = 79;
+    tre_half_error_line = 50;
+    tre_max_print_line = 79;
+    tre_hash_extra = 600_000;
+    tre_expand_depth = 10_000;
+
+    tre_buffer = xmalloc_array::<i32>(tre_buf_size);
+    tre_nest = xmalloc_array::<crate::mem_types::ListStateRecord>(tre_nest_size);
+    tre_save_stack = xmalloc_array::<crate::mem_types::MemoryWord>(tre_save_size);
+    tre_input_stack = xmalloc_array::<crate::globals::InputState>(tre_stack_size);
+    tre_input_file = xmalloc_array::<*mut libc::c_void>(tre_max_in_open);
+    tre_line_stack = xmalloc_array::<i32>(tre_max_in_open);
+    tre_eof_seen = xmalloc_array::<bool>(tre_max_in_open);
+    tre_grp_stack = xmalloc_array::<i32>(tre_max_in_open);
+    tre_if_stack = xmalloc_array::<i32>(tre_max_in_open);
+    tre_source_filename_stack = xmalloc_array::<i32>(tre_max_in_open);
+    tre_full_source_filename_stack = xmalloc_array::<i32>(tre_max_in_open);
+    tre_param_stack = xmalloc_array::<i32>(tre_param_size);
+    tre_hyph_word = xmalloc_array::<i32>(tre_hyph_size);
+    tre_hyph_list = xmalloc_array::<i32>(tre_hyph_size);
+    tre_hyph_link = xmalloc_array::<u16>(tre_hyph_size);
+
+    if in_initex_mode() {
+        tre_mem = xmalloc_array::<crate::mem_types::MemoryWord>(MEM_TOP + 1);
+        tre_eqtb_top = EQTB_SIZE + tre_hash_extra;
+        tre_hash_top = if tre_hash_extra == 0 {
+            HASH_TOP_UNDEFINED_CONTROL_SEQUENCE
+        } else {
+            tre_eqtb_top
+        };
+
+        tt_run_engine_allocate_yhash();
+        crate::globals::set_hash_s0(HASH_BASE, 0);
+        crate::globals::set_hash_s1(HASH_BASE, 0);
+        let hash_base = crate::globals::hash_s0(HASH_BASE);
+        let hash_base_s1 = crate::globals::hash_s1(HASH_BASE);
+        let mut h = HASH_BASE + 1;
+        while h <= tre_hash_top {
+            crate::globals::set_hash_s0(h, hash_base);
+            crate::globals::set_hash_s1(h, hash_base_s1);
+            h += 1;
+        }
+        crate::globals::set_hash_used(tre_hash_top);
+
+        tre_eqtb = xcalloc_array::<crate::mem_types::MemoryWord>(tre_eqtb_top);
+        tre_str_start = xmalloc_array::<i32>(tre_max_strings);
+        tre_str_pool = xmalloc_array::<u16>(tre_pool_size);
+        tre_font_info = xmalloc_array::<crate::mem_types::MemoryWord>(tre_font_mem_size);
+    }
+
+    crate::globals::set_history(HISTORY_FATAL_ERROR);
+    tre_bad = 0;
+    if tre_half_error_line < 30 || tre_half_error_line > tre_error_line - 15 {
+        tre_bad = 1;
+    }
+    if tre_max_print_line < 60 {
+        tre_bad = 2;
+    }
+    if 1100 > MEM_TOP {
+        tre_bad = 4;
+    }
+    if HASH_PRIME > HASH_SIZE {
+        tre_bad = 5;
+    }
+    if tre_max_in_open >= 128 {
+        tre_bad = 6;
+    }
+    if MEM_TOP < 267 {
+        tre_bad = 7;
+    }
+    if crate::mem::TEX_NULL > 0 {
+        tre_bad = 12;
+    }
+    if MAX_FONT_MAX < crate::mem::TEX_NULL || MAX_FONT_MAX > MAX_HALFWORD {
+        tre_bad = 15;
+    }
+    if tre_font_max > FONT_BASE + 9000 {
+        tre_bad = 16;
+    }
+    if tre_save_size > MAX_HALFWORD || tre_max_strings > MAX_HALFWORD {
+        tre_bad = 17;
+    }
+    if tre_buf_size > MAX_HALFWORD {
+        tre_bad = 18;
+    }
+    if CS_TOKEN_FLAG + EQTB_SIZE + tre_hash_extra > MAX_HALFWORD {
+        tre_bad = 21;
+    }
+    if FORMAT_HASH_OFFSET < 0 || FORMAT_HASH_OFFSET > HASH_BASE {
+        tre_bad = 42;
+    }
+    if tre_format_default_length > i32::MAX {
+        tre_bad = 31;
+    }
+    if 2 * MAX_HALFWORD < MEM_TOP {
+        tre_bad = 41;
+    }
+    if tre_bad > 0 {
+        let mut msg = [0 as libc::c_char; 80];
+        libc::snprintf(
+            msg.as_mut_ptr(),
+            msg.len(),
+            c"failed internal consistency check #%d".as_ptr(),
+            tre_bad,
+        );
+        _tt_abort(msg.as_ptr());
+    }
+
+    initialize_more_variables();
+    if in_initex_mode() {
+        get_strings_started();
+        initialize_more_initex_variables();
+        initialize_primitives();
+        tre_init_str_ptr = str_ptr();
+        tre_init_pool_ptr = pool_ptr();
+    }
+
+    crate::math::initialize_math_variables();
+    crate::pagebuilder::initialize_pagebuilder_variables();
+    crate::shipout::initialize_shipout_variables();
+    let mut epoch = 0;
+    let mut micros = 0;
+    crate::texmfmp::get_seconds_and_micros(&mut epoch, &mut micros);
+    crate::globals::set_epochseconds(epoch);
+    crate::globals::set_microseconds(micros);
+    crate::texmfmp::init_start_time(build_date);
+
+    set_selector(SELECTOR_TERM_ONLY);
+    crate::globals::set_tally(0);
+    crate::globals::set_term_offset(0);
+    crate::globals::set_file_offset(0);
+    crate::globals::set_job_name(0);
+    crate::globals::set_name_in_progress(false);
+    crate::globals::set_log_opened(false);
+    tre_output_file_extension = if crate::globals::semantic_pagination_enabled() {
+        c".spx".as_ptr()
+    } else {
+        c".xdv".as_ptr()
+    };
+
+    crate::globals::set_input_ptr(0);
+    crate::globals::set_max_in_stack(0);
+    *tre_source_filename_stack.add(0) = 0;
+    *tre_full_source_filename_stack.add(0) = 0;
+    crate::globals::set_in_open(0);
+    set_open_parens(0);
+    crate::globals::set_max_buf_stack(0);
+    *tre_grp_stack.add(0) = 0;
+    *tre_if_stack.add(0) = crate::mem::TEX_NULL;
+    crate::globals::set_param_ptr(0);
+    crate::globals::set_max_param_stack(0);
+    crate::globals::set_used_tectonic_coda_tokens(false);
+    crate::globals::set_gave_char_warning_help(false);
+    std::ptr::write_bytes(tre_buffer, 0, tre_buf_size as usize);
+    set_first(0);
+
+    crate::globals::set_scanner_status(NORMAL as u8);
+    crate::globals::set_warning_index(crate::mem::TEX_NULL);
+    set_first(1);
+    crate::globals::set_cur_input_state(NEW_LINE);
+    crate::globals::set_cur_input_start(1);
+    crate::globals::set_cur_input_index(0);
+    crate::globals::set_line(0);
+    crate::globals::set_cur_input_name(0);
+    crate::globals::set_force_eof(false);
+    crate::globals::set_align_state(1_000_000);
+
+    init_io();
+
+    if in_initex_mode() {
+        crate::globals::set_no_new_control_sequence(false);
+        set_max_reg_num(32767);
+        set_max_reg_help_line(c"A register number must be between 0 and 32767.".as_ptr());
+    }
+    crate::globals::set_no_new_control_sequence(true);
+
+    if !in_initex_mode() && !load_fmt_file() {
+        return history();
+    }
+
+    if intpar(INT_PAR_END_LINE_CHAR) < 0 || intpar(INT_PAR_END_LINE_CHAR) > BIGGEST_CHAR {
+        crate::globals::set_cur_input_limit(crate::globals::cur_input().limit - 1);
+    } else {
+        set_buffer_entry(crate::globals::cur_input().limit, intpar(INT_PAR_END_LINE_CHAR));
+    }
+
+    if in_initex_mode() {
+        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_TIME, 0);
+        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_DAY, 0);
+        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_MONTH, 0);
+        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_YEAR, 0);
+    } else {
+        let mut time = 0;
+        let mut day = 0;
+        let mut month = 0;
+        let mut year = 0;
+        crate::texmfmp::get_date_and_time(
+            build_date,
+            &mut time,
+            &mut day,
+            &mut month,
+            &mut year,
+        );
+        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_TIME, time);
+        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_DAY, day);
+        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_MONTH, month);
+        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_YEAR, year);
+    }
+
+    if trie_not_ready() {
+        tre_trie_trl = xmalloc_array::<i32>(trie_size());
+        tre_trie_tro = xmalloc_array::<i32>(trie_size());
+        tre_trie_trc = xmalloc_array::<u16>(trie_size());
+        tre_trie_c = xmalloc_array::<u16>(trie_size());
+        tre_trie_o = xmalloc_array::<u16>(trie_size());
+        tre_trie_l = xmalloc_array::<i32>(trie_size());
+        tre_trie_r = xmalloc_array::<i32>(trie_size());
+        tre_trie_hash = xmalloc_array::<i32>(trie_size());
+        tre_trie_taken = xmalloc_array::<bool>(trie_size());
+        *tre_trie_l.add(0) = 0;
+        *tre_trie_c.add(0) = 0;
+        set_trie_ptr(0);
+        *tre_trie_r.add(0) = 0;
+        set_hyph_start(0);
+
+        tre_font_mapping = xcalloc_array::<*mut libc::c_void>(font_max());
+        tre_font_layout_engine = xcalloc_array::<*mut libc::c_void>(font_max());
+        tre_font_flags = xcalloc_array::<libc::c_char>(font_max());
+        tre_font_letter_space = xcalloc_array::<i32>(font_max());
+        tre_font_check = xcalloc_array::<crate::mem_types::B16x4>(font_max());
+        tre_font_size = xcalloc_array::<i32>(font_max());
+        tre_font_dsize = xcalloc_array::<i32>(font_max());
+        tre_font_params = xcalloc_array::<i32>(font_max());
+        tre_font_name = xcalloc_array::<i32>(font_max());
+        tre_font_area = xcalloc_array::<i32>(font_max());
+        tre_font_bc = xcalloc_array::<u16>(font_max());
+        tre_font_ec = xcalloc_array::<u16>(font_max());
+        tre_font_glue = xcalloc_array::<i32>(font_max());
+        tre_hyphen_char = xcalloc_array::<i32>(font_max());
+        tre_skew_char = xcalloc_array::<i32>(font_max());
+        tre_bchar_label = xcalloc_array::<i32>(font_max());
+        tre_font_bchar = xcalloc_array::<i32>(font_max());
+        tre_font_false_bchar = xcalloc_array::<i32>(font_max());
+        tre_char_base = xcalloc_array::<i32>(font_max());
+        tre_width_base = xcalloc_array::<i32>(font_max());
+        tre_height_base = xcalloc_array::<i32>(font_max());
+        tre_depth_base = xcalloc_array::<i32>(font_max());
+        tre_italic_base = xcalloc_array::<i32>(font_max());
+        tre_lig_kern_base = xcalloc_array::<i32>(font_max());
+        tre_kern_base = xcalloc_array::<i32>(font_max());
+        tre_exten_base = xcalloc_array::<i32>(font_max());
+        tre_param_base = xcalloc_array::<i32>(font_max());
+
+        crate::globals::set_font_ptr(FONT_BASE);
+        crate::globals::set_fmem_ptr(7);
+        crate::globals::set_font_name_entry(FONT_BASE, crate::texmfmp::maketexstring(c"nullfont".as_ptr()));
+        crate::globals::set_font_area_entry(FONT_BASE, EMPTY_STRING);
+        set_hyphen_char_entry(FONT_BASE, b'-' as i32);
+        set_skew_char_entry(FONT_BASE, -1);
+        crate::globals::set_bchar_label_entry(FONT_BASE, NON_ADDRESS);
+        crate::globals::set_font_bchar_entry(FONT_BASE, TOO_BIG_CHAR);
+        crate::globals::set_font_false_bchar_entry(FONT_BASE, TOO_BIG_CHAR);
+        crate::globals::set_font_bc_entry(FONT_BASE, 1);
+        crate::globals::set_font_ec_entry(FONT_BASE, 0);
+        crate::globals::set_font_size_entry(FONT_BASE, 0);
+        crate::globals::set_font_dsize_entry(FONT_BASE, 0);
+        crate::globals::set_char_base_entry(FONT_BASE, 0);
+        crate::globals::set_width_base_entry(FONT_BASE, 0);
+        crate::globals::set_height_base_entry(FONT_BASE, 0);
+        crate::globals::set_depth_base_entry(FONT_BASE, 0);
+        crate::globals::set_italic_base_entry(FONT_BASE, 0);
+        crate::globals::set_lig_kern_base_entry(FONT_BASE, 0);
+        crate::globals::set_kern_base_entry(FONT_BASE, 0);
+        crate::globals::set_exten_base_entry(FONT_BASE, 0);
+        crate::globals::set_font_glue(FONT_BASE, crate::mem::TEX_NULL);
+        crate::globals::set_font_params(FONT_BASE, 7);
+        crate::globals::set_font_mapping_ptr(FONT_BASE, std::ptr::null_mut());
+        crate::globals::set_param_base(FONT_BASE, -1);
+
+        for font_k in 0..=6 {
+            set_font_info_b32s1(font_k, 0);
+        }
+    }
+
+    tre_font_used = xmalloc_array::<bool>(font_max());
+    for font_k in 0..=font_max() {
+        *tre_font_used.add(font_k as usize) = false;
+    }
+
+    crate::globals::set_random_seed(
+        crate::globals::microseconds() * 1000 + (crate::globals::epochseconds() % 1_000_000),
+    );
+    crate::scaled_math::init_randoms(crate::globals::random_seed());
+
+    if interaction() == BATCH_MODE {
+        set_selector(SELECTOR_NO_PRINT);
+    } else {
+        set_selector(SELECTOR_TERM_ONLY);
+    }
+
+    if crate::globals::semantic_pagination_enabled() {
+        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, 1);
+    }
+
+    pdf_files_init();
+    crate::synctex::synctex_init_command();
+    crate::scan::start_input(input_file_name);
+    crate::globals::set_history(HISTORY_SPOTLESS);
+    crate::scan::main_control();
+    final_cleanup();
+    crate::scan::close_files_and_terminate();
+    tt_cleanup();
+
+    history()
 }
 
 // All tt_cleanup_ items need #[link_name] since the Rust names carry a prefix
