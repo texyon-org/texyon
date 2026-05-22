@@ -32,6 +32,59 @@ template.
 
 ---
 
+## Session 130 — 2026-05-22 — xetex-ini.c prefixed_command
+
+**Goal:** Translate `prefixed_command` from `xetex-ini.c` to Rust.
+
+**Starting state:**
+- Parity: 29/29
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 129
+
+**Work done:**
+- Translated `prefixed_command` (1571e5cd): the ~760-line assignment/definition
+  dispatcher behind `\def`, `\let`, `\chardef`/`\toksdef`/etc. shorthands, `\read`,
+  token-register assignment, integer/dimen/glue/mathcode/delcode assignment,
+  `\setbox`, `\parshape`/`\interlinepenalties`, `\patterns`/`\hyphenation`, font-dimen
+  and font-int assignment, `\font`, and `\interactionmode`.
+- Control flow: the trailing `done:` label (reached by `goto done` from the
+  toks-register and `\patterns`/`\hyphenation` arms, and by normal switch fall-through)
+  became a labeled `'sw { match … }` block with `break 'sw`; the after_token
+  fix-up follows it. The two early `return`s (prefix-with-non-prefixable error,
+  non-INITEX `\patterns`) stay as `return`, correctly skipping the after_token block.
+- The C `set_class`/`set_family` macros became nested `fn`s; all `n = n + set_*`
+  accumulations use `wrapping_add`/`wrapping_mul` to match C int wrapping.
+- Added an `after_token()` getter in globals.rs (only the setter existed) and an
+  `extern "C"` decl for `set_cp_code` (lives in xetex_layout).
+- Removed the C body; left the translated marker. xetex-ini.c 2555→1795 LOC.
+
+**Ending state:**
+- Parity: 29/29 (delta: 0)
+- TRIP: 2/2
+- engine_rust: 7/7
+- latex_goldens: 4/4
+- Streak: 130
+
+**Surprises / gotchas:**
+- The C `if (cur_cmd != LEFT_BRACE) { if (toks_register/assign_toks) { … goto done; } }`
+  flattens to a single `&&` guard because the inner block always ends in `goto done`;
+  either condition failing falls through to the same `back_input()`.
+- `prefixed_command` is called from Rust `main_control` (scan.rs) via `extern "C"`,
+  so the translation stays `#[no_mangle] pub unsafe extern "C"`.
+- `cur_chr`/`cur_cmd`/`cur_val`/`cur_ptr` are re-read after each scanner call rather
+  than cached, matching the C which reads the live globals throughout.
+
+**For the next session:**
+- Continue `xetex-ini.c`. Remaining C bodies:
+  - format-file I/O: `store_fmt_file` (~360 lines) + `load_fmt_file` (~480 lines) +
+    static helpers `swap_items`, `do_dump`, `do_undump`, `pack_buffered_name` — a
+    paired migration, dedicated session (see anti-pattern A.10).
+  - `tt_run_engine` (~320 lines): top-level engine entry point.
+
+---
+
 ## Session 129 — 2026-05-22 — xetex-ini.c tt_cleanup
 
 **Goal:** Translate `tt_cleanup` from `xetex-ini.c` to Rust.
