@@ -5,10 +5,31 @@ Reproducers where the **current Rust engine** diverges from the
 the engine's to-fix list — the in-tree `tex-outputs` goldens miss them
 because those goldens were blessed *from* the Rust engine.
 
-## D1 — spurious U+0000 in native-font line breaking
+## D1a — spurious U+0000 in native-font line breaking — FIXED (90acc757)
 
-**Repro:** `native_linebreak_nul.tex` (a wrapping justified paragraph in
-`lmroman10-regular.otf` with `Ligatures=TeX`).
+**Root cause:** `new_native_character`'s font-mapping branch passed
+`mem_as_u16_ptr_mut(start)` (a pointer into `mem[]`) to `apply_mapping`
+instead of a pointer into `str_pool`, so every char built via that path
+mapped to 0. Surfaced through hyphenation (the discretionary hyphen) and
+math native characters. Fix: map from `str_pool_ptr(start)`.
+
+**Result:** `native_linebreak_nul.tex` 56 warnings → 0, xdv now identical
+to oracle; document parity 12/38 → 16/38; TRIP 2/2, tex-outputs 29/29.
+
+**Repro (now passes):** `native_linebreak_nul.tex` (a wrapping justified
+paragraph in `lmroman10-regular.otf` with `Ligatures=TeX`).
+
+## D1b — positional divergence in native text — OPEN
+
+After D1a, 21/38 documents still diverge, now in glyph *position* values
+(not missing chars): e.g. `1302.4270v3` has 0 warnings but its `.xdv`
+still differs from the oracle in native-glyph x-positions (~45k bytes).
+Affects long native-text documents (lshort, most arXiv); classic-TFM and
+short native docs pass. Next target. Likely a metric/measurement
+difference in native glyph positioning rather than a missing-char issue.
+
+---
+### (historical) D1 — original combined symptom
 
 **Symptom:** the candidate emits many
 `Missing character: There is no ^^@ (U+0000) in font [...]/mapping=tex-text;`
