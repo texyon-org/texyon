@@ -1,0 +1,29 @@
+% Tier 1 parity doc: sectioning, ToC, cross-refs, footnotes, hyperref, bib.
+% Exercises multi-pass label resolution, marks, and whatsit emission.
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\begin{document}
+\tableofcontents
+
+\section{Introduction}\label{sec:intro}
+This document references Section~\ref{sec:method} on
+page~\pageref{sec:method}, and cites~\cite{knuth1984}.
+Here is a footnote.\footnote{Footnotes exercise insertion nodes.}
+
+\section{Method}\label{sec:method}
+As discussed in Section~\ref{sec:intro}, we proceed. A hyperlink to
+\href{https://example.org}{an example site} and an internal jump to
+Section~\ref{sec:intro}.
+
+\section{Conclusion}
+See equation~\eqref{eq:e} below.
+\begin{equation}\label{eq:e}
+  e = \lim_{n\to\infty}\left(1+\tfrac{1}{n}\right)^n
+\end{equation}
+
+\begin{thebibliography}{9}
+\bibitem{knuth1984} D.~E. Knuth, \emph{The \TeX book}, Addison-Wesley, 1984.
+\end{thebibliography}
+
+\end{document}

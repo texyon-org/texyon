@@ -1,0 +1,26 @@
+% Tier 1 parity doc: unicode-math with an OpenType math font.
+% Exercises mlist_to_hlist + OpenType math (sessions 92-108).
+\documentclass[12pt]{article}
+\usepackage{amsmath}
+\usepackage{unicode-math}
+\setmainfont{LibertinusSerif-Regular.otf}
+\setmathfont{LibertinusMath-Regular.otf}
+\begin{document}
+\section*{Unicode math}
+
+Inline: the value $α^2 + β^2 = γ^2$ with $∑_{i=1}^{n} i = \frac{n(n+1)}{2}$.
+
+\begin{align}
+  ∫_0^∞ e^{-x^2}\,dx &= \frac{\sqrt{π}}{2}, \\
+  \nabla × \mathbf{F} &= \begin{pmatrix} ∂_y F_z - ∂_z F_y \\
+                                          ∂_z F_x - ∂_x F_z \\
+                                          ∂_x F_y - ∂_y F_x \end{pmatrix}.
+\end{align}
+
+A radical and a fraction over a delimiter:
+\[
+  \sqrt[3]{\frac{α+β}{γ}} \quad
+  \left( \sum_{k=0}^{∞} \frac{x^k}{k!} \right) = e^x .
+\]
+
+\end{document}

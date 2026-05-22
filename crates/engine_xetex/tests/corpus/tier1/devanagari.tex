@@ -1,0 +1,20 @@
+% Tier 1 parity doc: Devanagari (complex script shaping via HarfBuzz).
+% Exercises mark positioning, conjuncts, reordering in native-word nodes.
+\documentclass[12pt]{article}
+\usepackage{fontspec}
+\setmainfont{LibertinusSerif-Regular.otf}
+\newfontfamily\devafont{Shobhika-Regular.otf}[Script=Devanagari]
+\begin{document}
+\section*{Devanagari shaping}
+
+The following block uses a complex script with conjuncts and combining
+vowel signs, exercising glyph reordering and mark attachment.
+
+{\devafont
+नमस्ते। यह देवनागरी लिपि में लिखा गया एक उदाहरण है। इसमें संयुक्ताक्षर
+और मात्राएँ शामिल हैं, जैसे क्ष त्र ज्ञ श्र। संस्कृत वाक्य: सत्यमेव जयते।
+}
+
+English trailer paragraph.
+
+\end{document}

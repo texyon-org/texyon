@@ -1,0 +1,22 @@
+% Tier 1 parity doc: OpenType feature selection via fontspec.
+% Exercises font feature plumbing into native-word node shaping.
+\documentclass[12pt]{article}
+\usepackage{fontspec}
+\setmainfont{LibertinusSerif-Regular.otf}[Ligatures=TeX]
+\newfontfamily\liningfont{LibertinusSerif-Regular.otf}[Numbers={Lining,Monospaced}]
+\newfontfamily\oldfont{LibertinusSerif-Regular.otf}[Numbers={OldStyle,Proportional}]
+\newfontfamily\scfont{LibertinusSerif-Regular.otf}[Letters=SmallCaps]
+\begin{document}
+\section*{OpenType features}
+
+Common ligatures: office, waffle, affluent, fluffier.
+
+Lining numerals: {\liningfont 0123456789}.
+
+Old-style numerals: {\oldfont 0123456789}.
+
+Small caps: {\scfont The Quick Brown Fox}.
+
+Default vs. TeX ligatures for dashes: a -- b, c --- d, and ``quotes''.
+
+\end{document}

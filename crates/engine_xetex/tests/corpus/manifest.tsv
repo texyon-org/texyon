@@ -1,0 +1,58 @@
+# Parity corpus manifest.  Columns (tab-separated):
+#   tier        tier1 | tier1-real | tier2 | tier2-pending
+#   id          stable identifier (also the cache subdir for non-authored docs)
+#   main        main .tex relative to its source root (engine compiles this)
+#   source_url  origin; "authored" for in-repo docs, TL path or arXiv e-print URL otherwise
+# Authored Tier 1 docs live in tests/corpus/tier1/ (in repo). Everything
+# else is reproduced into $TECTONIC_CORPUS_DIR by plan/scripts/corpus_fetch.sh.
+#
+# tier2-pending: harvested but does NOT compile under the pinned 2022 bundle
+#   (version skew / missing assets). Not part of the active parity set;
+#   re-survey when the bundle is upgraded to promote to tier2.
+# The LaTeX regression test suite (.lvt, log-parity) is NOT listed here —
+# too many files; its generated pass-list is tests/corpus/lvt-viable.txt.
+tier1	unicode_text	tier1/unicode_text.tex	authored
+tier1	bidi_arabic	tier1/bidi_arabic.tex	authored
+tier1	cjk	tier1/cjk.tex	authored
+tier1	devanagari	tier1/devanagari.tex	authored
+tier1	unicode_math	tier1/unicode_math.tex	authored
+tier1	fontspec_features	tier1/fontspec_features.tex	authored
+tier1	math_classic	tier1/math_classic.tex	authored
+tier1	tables_floats	tier1/tables_floats.tex	authored
+tier1	xref_hyperref	tier1/xref_hyperref.tex	authored
+tier1	tikz_basic	tier1/tikz_basic.tex	authored
+tier1	primitives	tier1/primitives.tex	authored
+tier1	ligatures_kerning	tier1/ligatures_kerning.tex	authored
+tier1-real	lshort	lshort/src/lshort.tex	texlive:doc/latex/lshort-english/lshort-6.4.src.tar.gz
+tier1-real	unimath-example	unicode-math/unimath-example.ltx	texlive:doc/latex/unicode-math/unimath-example.ltx
+tier2	2012.12757	arxiv/2012.12757/main.tex	https://arxiv.org/e-print/2012.12757
+tier2	1210.4525v6	arxiv/1210.4525v6/main.tex	https://arxiv.org/e-print/1210.4525v6
+tier2	1302.4270v3	arxiv/1302.4270v3/main.tex	https://arxiv.org/e-print/1302.4270v3
+tier2	1302.5814v1	arxiv/1302.5814v1/main.tex	https://arxiv.org/e-print/1302.5814v1
+tier2	1302.6202v5	arxiv/1302.6202v5/main.tex	https://arxiv.org/e-print/1302.6202v5
+tier2	1309.7425v1	arxiv/1309.7425v1/main.tex	https://arxiv.org/e-print/1309.7425v1
+tier2	1411.2790v1	arxiv/1411.2790v1/bessatsu-hoshi-rv4-arXiv.tex	https://arxiv.org/e-print/1411.2790v1
+tier2	1508.05280v1	arxiv/1508.05280v1/main.tex	https://arxiv.org/e-print/1508.05280v1
+tier2	1703.05531v1	arxiv/1703.05531v1/main.tex	https://arxiv.org/e-print/1703.05531v1
+tier2	1706.10010v1	arxiv/1706.10010v1/main.tex	https://arxiv.org/e-print/1706.10010v1
+tier2	1804.07721v2	arxiv/1804.07721v2/main.tex	https://arxiv.org/e-print/1804.07721v2
+tier2	1805.12181v1	arxiv/1805.12181v1/paper.tex	https://arxiv.org/e-print/1805.12181v1
+tier2	1810.00868v1	arxiv/1810.00868v1/Truly_Concurrent_Process_Algebra_Is_Reversible.tex	https://arxiv.org/e-print/1810.00868v1
+tier2	1903.00121v1	arxiv/1903.00121v1/main.tex	https://arxiv.org/e-print/1903.00121v1
+tier2	1903.00169v1	arxiv/1903.00169v1/main.tex	https://arxiv.org/e-print/1903.00169v1
+tier2	1903.00250v1	arxiv/1903.00250v1/main.tex	https://arxiv.org/e-print/1903.00250v1
+tier2	1903.00262v2	arxiv/1903.00262v2/unisingular3.tex	https://arxiv.org/e-print/1903.00262v2
+tier2	1905.00044v1	arxiv/1905.00044v1/minnorm-lb-arxiv-nocomt.tex	https://arxiv.org/e-print/1905.00044v1
+tier2	1905.00066v2	arxiv/1905.00066v2/arxivJ.tex	https://arxiv.org/e-print/1905.00066v2
+tier2	1905.00073v1	arxiv/1905.00073v1/arXiv.tex	https://arxiv.org/e-print/1905.00073v1
+tier2	1905.00148v1	arxiv/1905.00148v1/llncs_IRPFL_2019_04_30.tex	https://arxiv.org/e-print/1905.00148v1
+tier2	1906.08084v4	arxiv/1906.08084v4/samplepaper.tex	https://arxiv.org/e-print/1906.08084v4
+tier2	1907.00087v2	arxiv/1907.00087v2/main.tex	https://arxiv.org/e-print/1907.00087v2
+tier2	1907.00359v2	arxiv/1907.00359v2/Rough-concepts-arXiv.tex	https://arxiv.org/e-print/1907.00359v2
+tier2-pending	pgfmanual	manuals/pgfmanual/pgfmanual.tex	texlive:doc/generic/pgf
+tier2-pending	memoir	manuals/memoir/memman.tex	texlive:doc/latex/memoir
+tier2-pending	beamer-guide	manuals/beamer-guide/beameruserguide.tex	texlive:doc/latex/beamer
+tier2-pending	latex-usrguide	manuals/latex-usrguide/usrguide.tex	texlive:doc/latex/base
+tier2-pending	xetex-reference	manuals/xetex-reference/xetex-reference.tex	texlive:doc/xetex/xetexref
+tier2-pending	font-change-xetex	manuals/font-change-xetex/font-change-xetex.tex	texlive:doc/xetex/font-change-xetex
+tier2-pending	xetex-notes	manuals/xetex-notes/XeTeX-notes.tex	texlive:doc/xetex/base

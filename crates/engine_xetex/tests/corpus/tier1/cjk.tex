@@ -1,0 +1,21 @@
+% Tier 1 parity doc: CJK (Chinese) — native-word nodes + locale linebreak.
+% Exercises do_locale_linebreaks and inter-character glue for CJK.
+\documentclass[12pt]{article}
+\usepackage{fontspec}
+\setmainfont{LibertinusSerif-Regular.otf}
+\newfontfamily\cjkfont{FandolSong-Regular.otf}[Script=CJK]
+\begin{document}
+\section*{CJK line breaking}
+
+English lead-in, then a block of Chinese text set with a CJK font to
+drive the locale-aware line breaker over a long run of wide glyphs.
+
+{\cjkfont
+排版系统需要正确处理中文文本的断行与字间距。这是一段足够长的中文，
+用来测试在没有空格的情况下，断行算法能否在字符之间正确地折行，并且
+在整段范围内保持一致的字间距与标点处理。数字一二三四五六七八九十。
+}
+
+Back to English to confirm the surrounding paragraph still typesets.
+
+\end{document}

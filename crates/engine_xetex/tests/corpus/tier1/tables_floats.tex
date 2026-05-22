@@ -1,0 +1,38 @@
+% Tier 1 parity doc: tables, floats, captions, multi-page table.
+% Exercises vertical mode, float placement, \halign via tabular/longtable.
+\documentclass[11pt]{article}
+\usepackage{booktabs,longtable,array,caption}
+\begin{document}
+\section{Tables and floats}
+
+\begin{table}[h]
+  \centering
+  \caption{A simple booktabs table}
+  \begin{tabular}{lrr}
+    \toprule
+    Item & Qty & Price \\
+    \midrule
+    Apples  & 12 & 3.50 \\
+    Oranges &  7 & 2.10 \\
+    Pears   & 20 & 5.00 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{longtable}{cl}
+  \toprule
+  \# & Description \\
+  \midrule
+  \endhead
+  1 & first row \\
+  2 & second row \\
+  3 & third row \\
+  4 & fourth row \\
+  5 & fifth row \\
+  \bottomrule
+\end{longtable}
+
+Text after the floats to fill the page and confirm the page builder
+places everything consistently.
+
+\end{document}

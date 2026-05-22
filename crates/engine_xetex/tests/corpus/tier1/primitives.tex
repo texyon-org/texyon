@@ -1,0 +1,32 @@
+% Tier 1 parity doc: low-level TeX primitives inside a LaTeX wrapper.
+% Exercises boxes, glue, \halign, \discretionary, \mark, \valign, leaders.
+\documentclass[11pt]{article}
+\begin{document}
+\section*{Primitive stress}
+
+\noindent
+\hbox{A}\kern2pt\hbox{B}\hskip 1em plus 2pt minus 1pt\hbox{C}.
+
+\par\noindent
+\vbox{\hsize=4cm \noindent A paragraph inside a vbox with an explicit
+narrow measure, forcing the line breaker to work, with a
+discretionary break\discretionary{-}{}{}point inserted manually.}
+
+\par\noindent
+\halign{#\hfil&\quad#\hfil\cr
+  left&right\cr
+  alpha&beta\cr
+  a longer cell&x\cr}
+
+\par\noindent
+Leaders: \hbox to 5cm{\leaders\hbox{.}\hfill}.
+
+\par\noindent
+Rules: \vrule width 2pt height 8pt depth 2pt\ and a boxed rule
+\hbox{\vrule height 6pt depth 0pt width 12pt}.
+
+\par\noindent
+A discretionary hyphen in a long made-up word:
+super\discretionary{-}{}{}cali\discretionary{-}{}{}fragilistic.
+
+\end{document}

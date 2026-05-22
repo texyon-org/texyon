@@ -1,0 +1,24 @@
+% Tier 1 parity doc: bidirectional (RTL Arabic + LTR English).
+% Exercises the bidi paths in hpack/reverse/shipout (sessions 56,116).
+\documentclass[12pt]{article}
+\usepackage{polyglossia}
+\setmainlanguage{english}
+\setotherlanguage{arabic}
+\newfontfamily\arabicfont[Script=Arabic]{Amiri-Regular.ttf}
+\begin{document}
+\section*{Bidirectional text}
+
+English paragraph before the Arabic block. The following lines mix a
+right-to-left script inside a left-to-right document, which exercises
+the directional reordering performed during box packing and shipout.
+
+\begin{Arabic}
+هذا نص عربي بسيط لاختبار اتجاه الكتابة من اليمين إلى اليسار.
+يحتوي على أرقام مثل ١٢٣٤٥ وكلمات متعددة في فقرة واحدة طويلة بما يكفي
+لإجبار خوارزمية كسر الأسطر على العمل عبر عدة أسطر.
+\end{Arabic}
+
+A mixed line: the Arabic word \textarabic{السلام} means ``peace'' in
+English, embedded mid-sentence.
+
+\end{document}

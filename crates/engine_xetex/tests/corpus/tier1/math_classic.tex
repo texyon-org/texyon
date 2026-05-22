@@ -1,0 +1,28 @@
+% Tier 1 parity doc: classic (Computer Modern) LaTeX math, no fontspec.
+% Exercises the legacy TFM math path + amsmath environments.
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb}
+\begin{document}
+\section*{Classic math}
+
+\begin{equation}
+  f(x) = a_0 + \sum_{n=1}^{\infty}\left(a_n\cos\frac{n\pi x}{L}
+         + b_n\sin\frac{n\pi x}{L}\right)
+\end{equation}
+
+\begin{align}
+  (a+b)^2 &= a^2 + 2ab + b^2, \\
+  \int_a^b f'(x)\,dx &= f(b) - f(a).
+\end{align}
+
+\[
+  A = \begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\ 7 & 8 & 9 \end{bmatrix},
+  \qquad
+  |x| = \begin{cases} x & x \ge 0, \\ -x & x < 0. \end{cases}
+\]
+
+Nested fractions and limits: $\displaystyle\lim_{n\to\infty}
+\left(1+\frac{1}{n}\right)^{n} = e$, and
+$\binom{n}{k} = \dfrac{n!}{k!\,(n-k)!}$.
+
+\end{document}

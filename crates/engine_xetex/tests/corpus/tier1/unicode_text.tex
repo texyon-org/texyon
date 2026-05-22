@@ -1,0 +1,33 @@
+% Tier 1 parity doc: Unicode text across scripts + combining marks + emoji.
+% Exercises native-word nodes, UTF-8 input, font fallback paths.
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont{LibertinusSerif-Regular.otf}[
+  Ligatures=TeX,
+  BoldFont=LibertinusSerif-Bold.otf,
+  ItalicFont=LibertinusSerif-Italic.otf,
+  BoldItalicFont=LibertinusSerif-BoldItalic.otf,
+]
+\newfontfamily\notofont{NotoSans-Regular.ttf}[BoldFont=NotoSans-Bold.ttf]
+\begin{document}
+\section*{Unicode coverage}
+
+Latin with accents: na\"\i ve, café, Gödel, Œuvre, Çatalhöyük, Straße.
+
+Combining marks: a\char"0301{} e\char"0300{} o\char"0302{} n\char"0303.
+
+{\notofont Greek: \char"0391\char"03B2\char"03B3\char"03B4 \char"03B5\char"03C0.
+Cyrillic: \char"041F\char"0440\char"0438\char"0432\char"0435\char"0442.}
+
+Punctuation \& symbols: \char"2014 em-dash, \char"2026 ellipsis,
+\char"00A7 section, \char"2122 trademark, \char"221E infinity.
+
+Ligature words: office, waffle, fluffier, affluent.
+
+A long justified paragraph to drive the line breaker across native-word
+nodes and inter-word glue. Lorem ipsum dolor sit amet, consectetur
+adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore
+magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation
+ullamco laboris nisi ut aliquip ex ea commodo consequat.
+
+\end{document}

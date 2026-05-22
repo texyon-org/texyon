@@ -1,0 +1,26 @@
+% Tier 1 parity doc: ligature + kerning stress with Latin Modern OTF.
+% Targets the lig/kern main loop (session 70 fi-ligature bug).
+\documentclass[12pt]{article}
+\usepackage{fontspec}
+\setmainfont{lmroman10-regular.otf}[
+  BoldFont=lmroman10-bold.otf,
+  ItalicFont=lmroman10-italic.otf,
+  BoldItalicFont=lmroman10-bolditalic.otf,
+  Ligatures=TeX,
+]
+\begin{document}
+\section*{Ligatures and kerning}
+
+f-ligatures: fi, fl, ff, ffi, ffl in words --- find, flight, off,
+office, shuffle, baffling, scaffold.
+
+Kerning pairs: AV, VA, To, Yo, We, AWAY, WAVE, Tower.
+
+A justified paragraph repeating ligature-rich words to stress the
+reconstitute/lig-kern loop across line breaks: office office office
+shuffle shuffle baffling baffling scaffold scaffold flight flight find
+find affluent affluent fluffier fluffier waffle waffle.
+
+Quotes and dashes via TeX ligatures: ``hello'' --- a test, en--dash.
+
+\end{document}
