@@ -1975,6 +1975,10 @@ pub(crate) fn set_after_token(v: i32) {
     }
 }
 #[inline]
+pub(crate) fn after_token() -> i32 {
+    unsafe { raw::after_token }
+}
+#[inline]
 pub(crate) fn align_state() -> i32 {
     unsafe { raw::align_state }
 }
