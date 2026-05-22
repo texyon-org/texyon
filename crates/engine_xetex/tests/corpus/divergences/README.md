@@ -28,6 +28,28 @@ Affects long native-text documents (lshort, most arXiv); classic-TFM and
 short native docs pass. Next target. Likely a metric/measurement
 difference in native glyph positioning rather than a missing-char issue.
 
+## LaTeX kernel `.lvt` log-parity (after D1a) — 596/601 pass
+
+`corpus.sh check lvt` against the 601 oracle-blessed log goldens:
+**596 passed, 5 diverged.** The 5 (all in `base/`):
+
+- `testfiles/tlxs01l`, `testfiles/tlxs01p` — **D1b cluster**. Log shows
+  native-font (`\TU/lmr/...`) box dimensions / xdv byte counts differing
+  (e.g. `Output written ... 43824` vs `43816` bytes; underfull-hbox
+  badness lines). Same native-glyph positional issue as D1b.
+- `testfiles-TU/tu-textcomp-003`, `testfiles/vtl2e06` — candidate is
+  **missing a `....\discretionary` node** in the `\showbox` dump vs the
+  oracle. Discretionary-structure difference in native text (likely
+  D1-family: native discretionary construction).
+- `testfiles/properties-006-warn` — two diffs: an `Overfull \hbox` width
+  (`30.10002pt` vs `9.26pt`, native-metric ⇒ D1b), **and** a string diff
+  `-unknownlabel-` (oracle) vs `-unknown-` (candidate) — a separate
+  label/property-warning behavioral divergence worth its own look.
+
+Takeaway: the kernel suite is in good shape (99.2%); the residual 5
+mostly fold into D1b (native-glyph metrics) plus a native-discretionary
+structure diff and one label-string diff.
+
 ---
 ### (historical) D1 — original combined symptom
 
