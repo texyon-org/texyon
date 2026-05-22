@@ -15852,7 +15852,7 @@ pub unsafe extern "C" fn new_native_character(f: i32, mut c: u32) -> i32 {
         let start = str_start(str_ptr() - TOO_BIG_CHAR);
         let len = apply_mapping(
             font_mapping_ptr(f),
-            mem_as_u16_ptr_mut(start),
+            crate::globals::str_pool_ptr(start) as *mut u16,
             crate::hash::cur_length(),
         );
         set_pool_ptr(start);
