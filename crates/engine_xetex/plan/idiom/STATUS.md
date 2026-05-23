@@ -128,6 +128,16 @@ the snippets in `00-overview.md` / the workstream plans.
     READY for execution, starting with least-coupled non-`misc` clusters.
     `misc` rows are a holding area and require final sub-struct decisions
     before migration.
+-   **2026-05-23** — Phase-B migrations keep the raw `i32`/`u8`
+    representation by design (newtypes are the §4(b) sweep), **but** a
+    field whose C type was a semantic typedef/enum (`selector_t`,
+    `tt_history_t`, `scaled_t`, …) must get a row in the new
+    **Deferred newtype worklist** in `01a-global-inventory.md` in the
+    same commit that migrates it. This closes the gap where moving a
+    `selector_t` into `EngineState` as `i32` would silently lose the type
+    forever. Worklist seeded retroactively for `selector`/`history`/etc.
+    Goal is *more* type safety, recovered on a tracked schedule — not
+    less.
 
 ## Next action for a fresh session
 

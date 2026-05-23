@@ -161,6 +161,35 @@ they are zero-cost and `#[inline]` accessors compile identically to the
 raw index. Confirm with a release-mode disassembly spot-check on a hot
 accessor (e.g. `box_width`) before committing to the pattern.
 
+**Deferral must be tracked, not silent (mandatory).** Stage 1 already
+collapsed every semantic C type — `selector_t`, `tt_history_t`,
+`group_code`, `scaled_t`, `str_number`, `internal_font_number`, the
+various `*_t`/`small_number` mode enums — into raw `i32`/`u8`. A Phase-B
+cluster move that lands such a field in `EngineState` as a bare integer
+is faithful and correct **only if it records the debt**. Otherwise the
+type information is lost for good: once the field is an `i32` in a
+struct, nothing signals that it was ever a `selector_t`.
+
+Therefore, **every cluster migration commit MUST**, for each field it
+moves:
+
+1.  Check the field's declared type in `xetex/xetex-xetexd.h` (and
+    `xetex-core.h` for the enum bodies). Plain `int32_t`/`bool` counters
+    that are genuinely numbers need nothing. A semantic typedef or enum
+    (`selector_t`, `tt_history_t`, `group_code`, `scaled_t`,
+    `str_number`, `internal_font_number`, `glue_ord`, node-type codes,
+    mode codes, …) is a newtype debt.
+2.  Add a row for that field to the **Deferred newtype worklist** in
+    `01a-global-inventory.md` (target newtype + original C type), unless
+    a row already exists.
+
+Phase B keeps the `i32` representation and the accessor signature
+unchanged — that part of the bridge is unchanged. The worklist is what
+guarantees the §4(b) newtype sweep has a complete, auditable backlog
+instead of relying on memory. Migrating a semantic-typed field **without**
+adding its worklist row is a plan violation, even though the code still
+compiles and passes parity.
+
 ## 5. The arena: `Mem`
 
 Target shape is already specified in `plan/03-memory-and-nodes.md`

@@ -468,3 +468,37 @@ These are not C-symbol globals from `globals.rs`, but they are still mutable eng
 | `LAST_SOURCE_NAME` | `*mut libc::c_char` | `misc` | `src/texmfmp.rs:51` private static | io private/scratch; needs subcluster decision |
 | `LAST_LINENO` | `i32` | `misc` | `src/texmfmp.rs:52` private static | io private/scratch; needs subcluster decision |
 | `START_TIME_STR` | `[u8; 30]` | `misc` | `src/texmfmp.rs:54` private static | io private/scratch; needs subcluster decision |
+
+## Deferred newtype worklist
+
+Stage 1 collapsed every semantic C type into raw `i32`/`u8`. Phase-B
+cluster moves keep that raw representation (and the accessor signature)
+on purpose — see `01-state-and-memory.md` §4. This table is the backlog
+the §4(b) newtype sweep must clear so that type safety is *recovered*,
+not silently lost when a field becomes a bare integer inside
+`EngineState`.
+
+**Rule:** every cluster migration must add a row here for each field it
+moves whose declared C type (in `xetex-xetexd.h` / `xetex-core.h`) is a
+semantic typedef or enum rather than a plain numeric `int32_t`/`bool`.
+Genuinely-numeric counters (`dead_cycles`, `epochseconds`,
+`insert_penalties`, …) do not need rows.
+
+Status: `pending` until the newtype exists and the accessor returns it.
+
+| field | cluster | original C type | target newtype | migrated in | status |
+|---|---|---|---|---|---|
+| `selector` | `shipout` | `selector_t` (enum, 0–21) | `Selector` | session 7 | pending |
+| `page_contents` | `shipout` | `unsigned char` (PC_* state code) | `PageContents` | session 7 | pending |
+| `last_node_type` | `shipout` | `int32_t` (node-type code) | `NodeType`/`Option<NodeType>` | session 7 | pending |
+| `last_glue` | `shipout` | `int32_t` (glue node ptr) | `MemPtr`/`Halfword` | session 7 | pending |
+| `last_kern` | `shipout` | `scaled_t` | `Scaled` | session 7 | pending |
+| `page_so_far` | `shipout` | `scaled_t[8]` | `[Scaled; 8]` | session 7 | pending |
+| `old_setting` | `shipout` | `unsigned char` (saved `selector_t`) | `Selector` | session 7 | pending |
+| `history` | `errors` | `tt_history_t` (enum) | `History` | session 5 | pending |
+| `interaction` | `errors` | `unsigned char` (interaction mode) | `InteractionMode` | session 5 | pending |
+
+Earlier clusters (`config`) were re-checked: their migrated fields are
+plain `int32_t`/`bool` flags with no semantic C type, so they need no
+rows. The `errors` rows above were added retroactively when this rule
+was introduced (session 7 review).
