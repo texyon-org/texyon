@@ -1831,8 +1831,6 @@ extern "C" {
     static mut tre_font_flags: *mut libc::c_char;
     #[link_name = "font_letter_space"]
     static mut tre_font_letter_space: *mut i32;
-    #[link_name = "font_check"]
-    static mut tre_font_check: *mut crate::mem_types::B16x4;
     #[link_name = "font_size"]
     static mut tre_font_size: *mut i32;
     #[link_name = "font_dsize"]
@@ -2268,11 +2266,13 @@ pub unsafe extern "C" fn store_fmt_file() {
     dump_int(fmt_out, fmem_ptr());
     dump_slice(fmt_out, tre_font_info, fmem_ptr());
     dump_int(fmt_out, font_ptr());
-    dump_slice(
-        fmt_out,
-        tre_font_check.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
+    crate::state::with_state(|state| {
+        dump_slice(
+            fmt_out,
+            state.fonts.font_check.as_ptr().add(FONT_BASE as usize),
+            font_ptr() + 1,
+        );
+    });
     dump_slice(
         fmt_out,
         tre_font_size.add(FONT_BASE as usize),
@@ -2821,7 +2821,18 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     tre_font_layout_engine = xcalloc_array::<*mut libc::c_void>(font_max());
     tre_font_flags = xmalloc_array::<libc::c_char>(font_max());
     tre_font_letter_space = xmalloc_array::<i32>(font_max());
-    tre_font_check = xmalloc_array::<crate::mem_types::B16x4>(font_max());
+    let font_check_len = (font_max() as usize) + 1;
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_check = vec![
+            crate::mem_types::B16x4 {
+                s0: 0,
+                s1: 0,
+                s2: 0,
+                s3: 0,
+            };
+            font_check_len
+        ];
+    });
     tre_font_size = xmalloc_array::<i32>(font_max());
     tre_font_dsize = xmalloc_array::<i32>(font_max());
     tre_font_params = xmalloc_array::<i32>(font_max());
@@ -2849,11 +2860,13 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         *tre_font_mapping.add(font_idx as usize) = std::ptr::null_mut();
     }
 
-    undump_slice(
-        fmt_in,
-        tre_font_check.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
+    crate::state::with_state_mut(|state| {
+        undump_slice(
+            fmt_in,
+            state.fonts.font_check.as_mut_ptr().add(FONT_BASE as usize),
+            font_ptr() + 1,
+        );
+    });
     undump_slice(
         fmt_in,
         tre_font_size.add(FONT_BASE as usize),
@@ -3497,7 +3510,18 @@ pub unsafe extern "C" fn tt_run_engine(
         tre_font_layout_engine = xcalloc_array::<*mut libc::c_void>(font_max());
         tre_font_flags = xcalloc_array::<libc::c_char>(font_max());
         tre_font_letter_space = xcalloc_array::<i32>(font_max());
-        tre_font_check = xcalloc_array::<crate::mem_types::B16x4>(font_max());
+        let font_check_len = (font_max() as usize) + 1;
+        crate::state::with_state_mut(|state| {
+            state.fonts.font_check = vec![
+                crate::mem_types::B16x4 {
+                    s0: 0,
+                    s1: 0,
+                    s2: 0,
+                    s3: 0,
+                };
+                font_check_len
+            ];
+        });
         tre_font_size = xcalloc_array::<i32>(font_max());
         tre_font_dsize = xcalloc_array::<i32>(font_max());
         tre_font_params = xcalloc_array::<i32>(font_max());
@@ -3619,8 +3643,6 @@ extern "C" {
     static mut tt_cleanup_font_flags: *mut libc::c_void;
     #[link_name = "font_letter_space"]
     static mut tt_cleanup_font_letter_space: *mut libc::c_void;
-    #[link_name = "font_check"]
-    static mut tt_cleanup_font_check: *mut libc::c_void;
     #[link_name = "font_size"]
     static mut tt_cleanup_font_size: *mut libc::c_void;
     #[link_name = "font_dsize"]
@@ -3733,6 +3755,7 @@ pub unsafe extern "C" fn tt_cleanup() {
     crate::state::with_state_mut(|state| {
         state.strings.str_start = Vec::new();
         state.strings.str_pool = Vec::new();
+        state.fonts.font_check = Vec::new();
     });
     libc::free(tt_cleanup_font_info);
 
@@ -3740,7 +3763,6 @@ pub unsafe extern "C" fn tt_cleanup() {
     libc::free(tt_cleanup_font_layout_engine);
     libc::free(tt_cleanup_font_flags);
     libc::free(tt_cleanup_font_letter_space);
-    libc::free(tt_cleanup_font_check);
     libc::free(tt_cleanup_font_size);
     libc::free(tt_cleanup_font_dsize);
     libc::free(tt_cleanup_font_params);

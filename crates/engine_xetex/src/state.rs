@@ -144,6 +144,10 @@ pub(crate) struct FontState {
     pub font_mem_size: i32,
     pub font_max: i32,
     pub null_character: crate::mem_types::B16x4,
+    /// Rust-owned font checksum table (`font_max + 1` entries, matching the
+    /// former `xmalloc_array` shape). Allocated at engine init / format load
+    /// and released by `tt_cleanup`; serialized in the format dump.
+    pub font_check: Vec<crate::mem_types::B16x4>,
 }
 
 impl Default for FontState {
@@ -163,6 +167,7 @@ impl Default for FontState {
                 s2: 0,
                 s3: 0,
             },
+            font_check: Vec::new(),
         }
     }
 }

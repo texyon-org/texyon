@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 31 (2026-05-23).
+Last updated: idiom session 32 (2026-05-23).
 
 ## How to read this file
 
@@ -276,6 +276,13 @@ least-coupled non-`misc` clusters:
     alloc/free or `src/ini.rs` link alias, and its existing `B16x4` Rust type
     preserves the C struct shape. Accessors are now fully safe; the raw extern
     and C definition were removed. No newtype debt.
+-   **Font checksum array ownership move (session 32):** `font_check`
+    (`b16x4 *`) moved from a C-`malloc`'d pointer into a Rust-owned
+    `Vec<B16x4>` on `EngineState.fonts`. Init and format-load allocation now
+    size the vector as `font_max + 1`; format dump/undump uses the vector
+    storage from `FONT_BASE`; `tt_cleanup` drops the vector. Removed both
+    `#[link_name="font_check"]` aliases, the raw extern, and the C definition.
+    No newtype debt: the element is already represented as the `B16x4` struct.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -284,12 +291,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 205 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 204 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 818 total / 92 state-backed scalars/arrays + 37 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, and 3 hyph exception arrays) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 818 total / 92 state-backed scalars/arrays + 38 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, and font_check) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 497 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 495 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -401,12 +408,13 @@ the snippets in `00-overview.md` / the workstream plans.
     The `font_mem_size`/`font_max` capacity pair and their `src/ini.rs` aliases
     were moved in session 30. `null_character` (`b16x4`) was moved in session
     31 after checking that its existing Rust `B16x4` struct preserves the C
-    shape.
+    shape. `font_check` was moved in session 32, establishing the ownership
+    shape for one format-serialized font table.
     Next, continue with another carefully bounded `fonts` subgroup. Good
     candidates are ownership-aware font arrays with `src/ini.rs` aliases
-    (`font_check`, `font_size`, `font_dsize`, `font_params`, `font_name`,
-    `font_area`, `font_bc`, `font_ec`, `font_glue`, `font_used`, etc.), but
-    keep each subgroup coherent with its init/dump/cleanup edges. Alternatively
+    (`font_size`, `font_dsize`, `font_params`, `font_name`, `font_area`,
+    `font_bc`, `font_ec`, `font_glue`, `font_used`, etc.), but keep each
+    subgroup coherent with its init/dump/cleanup edges. Alternatively
     pick an ownership-aware `eqtb`/`mem` slice. Avoid hot tokenizer/main-loop
     scratch state and do not split the `mem` bookkeeping scalars from the
     `Mem` arena move.

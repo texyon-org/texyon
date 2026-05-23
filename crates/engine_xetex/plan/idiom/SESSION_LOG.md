@@ -9,6 +9,71 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 32 — 2026-05-23 — font checksum array -> FontState
+
+**Type:** execution (workstream 01, Phase-B ownership slice).
+
+**Goal:** move the single `fonts` checksum table (`font_check`) out of C
+`malloc` storage and into Rust-owned state on `EngineState.fonts`. One
+coherent ownership slice, one commit.
+
+**Why this slice:** session 31 handed off the ownership-aware font arrays as
+the next area. `font_check` is the smallest format-serialized font table with
+both init and cleanup aliases, so it exercises the font-array ownership shape
+without mixing in the many scalar `i32`/`u16` tables.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C type: `font_check` is `b16x4 *`.
+- (b) cleanup/link aliases: `src/ini.rs` had the expected allocation and
+  cleanup `#[link_name="font_check"]` aliases; both were removed.
+- (c) C readers: only `xetex/xetex-ini.c`.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs`
+  aliases; no other redeclarations.
+
+**Work done:**
+- Added `font_check: Vec<B16x4>` to `FontState`.
+- Repointed `set_font_check()` and `font_check_entry()` to index the Rust-owned
+  vector.
+- Replaced init and format-load `xmalloc_array`/`xcalloc_array` allocation with
+  `vec![zero B16x4; font_max + 1]`.
+- Repointed format dump/undump to the vector storage at `FONT_BASE`.
+- Dropped the vector in `tt_cleanup`.
+- Removed both `src/ini.rs` `#[link_name="font_check"]` aliases, the raw
+  extern declaration from `globals.rs`, and the C definition from
+  `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** no row. The source element type is the compound
+`b16x4` struct, already represented by Rust's `B16x4`; the move does not erase
+a semantic typedef/enum into a primitive.
+
+**longjmp / Drop (§7):** owned vector lives in the `'static` thread-local
+`EngineState` and is released explicitly by `tt_cleanup`; abort paths skip Drop
+as intended by the existing arena pattern.
+
+**Surprise:** the first dashboard run caught a nested `RefCell` borrow during
+format loading because `font_max()` was called inside a `with_state_mut`
+allocation closure. Fixed by reading the length before taking the mutable state
+borrow, then reran the full dashboard successfully.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 205 -> 204 (-1).
+- Raw `unsafe { ... }` text-search count: 497 -> 495 (-2, getter/setter
+  bodies became fully safe).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of `font_check` in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Continue with another bounded `fonts` table subgroup. Good candidates are
+  `font_size`/`font_dsize` as a pair (both `scaled_t *`, same init/dump/cleanup
+  shape) or another single font table if keeping the slice smaller is preferred.
+- Avoid nested `with_state_mut` borrows when allocating: compute capacities via
+  accessors before entering the state mutation closure.
+- Keep avoiding hot tokenizer/main-loop scratch state; keep `mem` bookkeeping
+  scalars with the eventual `Mem` arena move.
+
 ## Idiom session 31 — 2026-05-23 — font null-character scalar → FontState
 
 **Type:** execution (workstream 01, Phase-B scalar slice).

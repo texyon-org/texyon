@@ -110,7 +110,6 @@ mod raw {
         pub(super) static mut font_info: *mut MemoryWord;
         pub(super) static mut fmem_ptr: i32;
         pub(super) static mut font_ptr: i32;
-        pub(super) static mut font_check: *mut crate::mem_types::B16x4;
         pub(super) static mut xdv_buffer: *mut libc::c_char;
         pub(super) static mut font_params: *mut i32;
         pub(super) static mut font_glue: *mut i32;
@@ -2091,9 +2090,9 @@ pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
 /// Writes `font_check[f] = v`.
 #[inline]
 pub(crate) fn set_font_check(f: i32, v: crate::mem_types::B16x4) {
-    unsafe {
-        *raw::font_check.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_check[f as usize] = v;
+    });
 }
 
 /// Returns `font_area[f]` — the str_number encoding the font's area.
@@ -5134,7 +5133,7 @@ pub(crate) fn font_used_entry(f: i32) -> bool {
 }
 #[inline]
 pub(crate) fn font_check_entry(f: i32) -> crate::mem_types::B16x4 {
-    unsafe { *raw::font_check.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_check[f as usize])
 }
 #[inline]
 pub(crate) fn xdv_buffer_entry(i: i32) -> u8 {

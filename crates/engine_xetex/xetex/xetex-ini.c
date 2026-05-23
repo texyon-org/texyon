@@ -103,7 +103,6 @@ const char* output_file_extension;
 memory_word *font_info;
 font_index fmem_ptr;
 internal_font_number font_ptr;
-b16x4 *font_check;
 scaled_t *font_size;
 scaled_t *font_dsize;
 font_index *font_params;

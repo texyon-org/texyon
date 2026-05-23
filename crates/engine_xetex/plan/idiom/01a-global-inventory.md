@@ -122,7 +122,7 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `font_info` | `*mut MemoryWord` | `fonts` | `src/globals.rs:219` C extern | `font_info_b32s1`, `set_font_info_b32s1`, `set_font_info_b16`, `font_info_b16` | def xetex/xetex-ini.c; link src/ini.rs:1870,src/ini.rs:3606 |  |
 | `fmem_ptr` | `i32` | `fonts` | `src/globals.rs:220` C extern | `fmem_ptr`, `set_fmem_ptr` | def xetex/xetex-ini.c |  |
 | `font_ptr` | `i32` | `fonts` | `src/globals.rs:221` C extern | `font_ptr`, `set_font_ptr` | def xetex/xetex-ini.c |  |
-| `font_check` | `*mut crate::mem_types::B16x4` | `fonts` | `src/globals.rs:222` C extern | `set_font_check`, `font_check_entry` | def xetex/xetex-ini.c; link src/ini.rs:1888,src/ini.rs:3616 |  |
+| `font_check` | `Vec<crate::mem_types::B16x4>` | `fonts` | `EngineState.fonts.font_check` (Rust-owned) | `set_font_check`, `font_check_entry` | MOVED session 32: C def + both aliases removed; format dump/undump through state |
 | `xdv_buffer` | `*mut libc::c_char` | `fonts` | `src/globals.rs:223` C extern | `xdv_buffer_entry` | def xetex/xetex-ini.c |  |
 | `font_params` | `*mut i32` | `fonts` | `src/globals.rs:224` C extern | `font_params`, `set_font_params` | def xetex/xetex-ini.c; link src/ini.rs:1894,src/ini.rs:3622 |  |
 | `font_glue` | `*mut i32` | `fonts` | `src/globals.rs:225` C extern | `font_glue`, `set_font_glue` | def xetex/xetex-ini.c; link src/ini.rs:1904,src/ini.rs:3632 |  |
