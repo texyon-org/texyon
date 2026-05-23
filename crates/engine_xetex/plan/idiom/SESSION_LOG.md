@@ -9,6 +9,79 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 14 — 2026-05-23 — eof_seen array → Rust-owned Vec (last simple input array)
+
+**Type:** execution (workstream 01, ownership-bearing slice).
+
+**Goal:** finish the simple input-cluster arrays by moving the last one,
+`eof_seen` (`*mut bool`), into a Rust-owned `Vec<bool>` on
+`EngineState.input`. One array, one commit.
+
+**Why eof_seen now:** it is the last input array with a plain element
+type and the exact session-13 shape — sized `max_in_open`, allocated in
+the same `ini.rs` block, two `#[link_name]` aliases (alloc `tre_eof_seen`
++ cleanup `tt_cleanup_eof_seen`), the only C reference is its definition
+in `xetex-ini.c`, and it is not serialized in the format dump/undump. The
+remaining input arrays have harder element types (`input_file`
+`*mut *mut c_void`, `input_stack` `*mut InputState`, `nest`
+`*mut ListStateRecord`, `buffer` `*mut i32`) and are left for follow-up.
+
+**Pre-move grep checks (§11 step 2):** (a) `xetex-xetexd.h` declares it
+`extern bool *eof_seen;` — plain `bool`, no semantic typedef. (b) two
+`link_name = "eof_seen"` aliases in `ini.rs` (alloc + cleanup) → ownership
+slice. (c) only `xetex-ini.c` references it. (d) no foreign-module
+`extern`/`static mut` redeclaration (the only hits were the two `ini.rs`
+aliases being removed).
+
+**Work done:**
+- Added `eof_seen: Vec<bool>` to `InputClusterState` in `src/state.rs`
+  (`#[derive(Default)]` covers it).
+- Repointed the two accessors in `globals.rs` (`eof_seen(k)` /
+  `set_eof_seen(k, v)`) to index the `Vec` via `with_state`/
+  `with_state_mut`. No `unsafe` remains in them.
+- Allocation (`ini.rs`): removed the `tre_eof_seen = xmalloc_array::<bool>`
+  call and added `s.input.eof_seen = vec![false; n]` to the existing
+  session-13 `with_state_mut` block (`n = max_in_open + 1`). C left this
+  uninitialized; Rust zero(false)-inits — parity-safe (each slot written
+  before read).
+- Cleanup (`tt_cleanup`): dropped `eof_seen` (`= Vec::new()`) in the same
+  block as the other input arrays instead of `libc::free`.
+- Removed both `#[link_name = "eof_seen"]` alias decls (alloc + cleanup),
+  the raw extern in `globals.rs`, and the C def in `xetex-ini.c`.
+
+**Newtype debt (§4 check):** none — `eof_seen` is plain `bool *`. Checked,
+no worklist row needed.
+
+**longjmp / Drop (§7, handled):** identical to sessions 11–13 —
+`EngineState` lives in the `'static` thread-local, so a `longjmp` abort
+never jumps over the `Vec`; `Drop` doesn't run on abort (matches prior C).
+`tt_cleanup` is the normal teardown and now drops the `Vec`.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 300 → 299.
+- Raw `unsafe { ... }` text-search count: 683 → 681.
+- `#[link_name]` aliases in `ini.rs`: −2.
+- 8 Rust-owned arena arrays total (save_stack, param_stack, the 5 session-13
+  line/group stacks, + eof_seen). All simple input-cluster arrays now done.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of `eof_seen` in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- The simple input arrays are exhausted. Next ownership-bearing input
+  arrays have non-trivial element types and need a hand-written
+  `impl Default` if the sub-struct can no longer derive it: `input_file`
+  (`*mut *mut c_void`), `input_stack` (`*mut InputState`), `nest`
+  (`*mut ListStateRecord`), `buffer` (`*mut i32`). None in the dump.
+  Each still has **two** alias decls (alloc + cleanup) + raw extern + C def.
+- Alternatively `strings` (`str_start`/`str_pool`) — but those **are** in
+  the format dump/undump, so that slice must reconcile the load/dump paths.
+
 ## Idiom session 13 — 2026-05-23 — input line/group stacks → Rust-owned Vecs (5 arrays)
 
 **Type:** execution (workstream 01, ownership-bearing slice).

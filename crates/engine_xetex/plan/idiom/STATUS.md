@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 13 (2026-05-23).
+Last updated: idiom session 14 (2026-05-23).
 
 ## How to read this file
 
@@ -127,6 +127,15 @@ least-coupled non-`misc` clusters:
     `source_filename_stack`/`full_source_filename_stack` (`str_number`);
     `line_stack`/`if_stack` are plain `int32_t` (no row). `eof_seen`
     (`*mut bool`) is the last simple input array, left for a later slice.
+-   **`eof_seen` (last simple input array):** moved from a C-`malloc`'d
+    `*mut bool` into a Rust-owned `Vec<bool>` on `EngineState.input`
+    (`vec![false; max_in_open + 1]`), folded into the session-13 alloc and
+    cleanup blocks. Accessors index the `Vec` (no `unsafe`). Both
+    `#[link_name]` aliases (alloc + cleanup), the raw extern, and the C def
+    removed in the same commit. Not in format dump. Plain `bool`, no
+    newtype debt. All simple input-cluster arrays are now Rust-owned; the
+    remaining input arrays (`input_file`, `input_stack`, `nest`, `buffer`)
+    have non-trivial element types.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -135,12 +144,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 300 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 299 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 77 state-backed scalars + 7 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 77 state-backed scalars + 8 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 683 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 681 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -217,14 +226,14 @@ the snippets in `00-overview.md` / the workstream plans.
     regress performance. Prefer threading those in Phase C.
     The arena-ownership pattern is now proven on `save_stack`
     (session 11), `param_stack` (session 12, first `input`-cluster
-    array), and the five `*mut i32` line/group stacks (session 13).
-    Ownership-bearing options remain, in rough difficulty order:
-    (a) the **rest of the `input` cluster arrays** — `*mut bool`
-    `eof_seen` is the last simple one (`vec![false; max_in_open + 1]`,
-    same no-dump property, exact session-13 shape, plain `bool` so no
-    newtype row); then the trickier element types `input_file`
+    array), the five `*mut i32` line/group stacks (session 13), and
+    `eof_seen` (session 14). All **simple** input-cluster arrays are now
+    Rust-owned. Ownership-bearing options remain, in rough difficulty
+    order: (a) the **trickier-element-type `input` arrays** — `input_file`
     (`*mut *mut c_void`), `input_stack` (`*mut InputState`), `nest`
-    (`*mut ListStateRecord`), and `buffer` (`*mut i32`). **Gotcha:** each
+    (`*mut ListStateRecord`), and `buffer` (`*mut i32`); these may need a
+    hand-written `impl Default` on `InputClusterState` if a non-`Default`
+    element type is stored. None is in the format dump. **Gotcha:** each
     input array has **two** alias decls (alloc `tre_*` + cleanup
     `tt_cleanup_*`) to remove, not one;
     (b) `strings` (`str_start` / `str_pool`), which **are** serialized in

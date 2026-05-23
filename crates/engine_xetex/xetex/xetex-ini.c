@@ -254,7 +254,6 @@ scaled_t cur_page_width;
 scaled_t cur_page_height;
 scaled_t cur_h_offset;
 scaled_t cur_v_offset;
-bool *eof_seen;
 int32_t LR_ptr;
 int32_t LR_problems;
 small_number cur_dir;

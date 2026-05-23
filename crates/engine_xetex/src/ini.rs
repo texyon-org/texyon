@@ -1821,8 +1821,6 @@ extern "C" {
     static mut tre_input_stack: *mut crate::globals::InputState;
     #[link_name = "input_file"]
     static mut tre_input_file: *mut *mut libc::c_void;
-    #[link_name = "eof_seen"]
-    static mut tre_eof_seen: *mut bool;
     #[link_name = "hyph_word"]
     static mut tre_hyph_word: *mut i32;
     #[link_name = "hyph_list"]
@@ -3232,7 +3230,6 @@ pub unsafe extern "C" fn tt_run_engine(
     }
     tre_input_stack = xmalloc_array::<crate::globals::InputState>(tre_stack_size);
     tre_input_file = xmalloc_array::<*mut libc::c_void>(tre_max_in_open);
-    tre_eof_seen = xmalloc_array::<bool>(tre_max_in_open);
     {
         // Rust-owned input line/group stacks, each `max_in_open + 1` words
         // (matching the former `xmalloc_array` shape). Allocated fresh each
@@ -3244,6 +3241,7 @@ pub unsafe extern "C" fn tt_run_engine(
             s.input.if_stack = vec![0i32; n];
             s.input.source_filename_stack = vec![0i32; n];
             s.input.full_source_filename_stack = vec![0i32; n];
+            s.input.eof_seen = vec![false; n];
         });
     }
     {
@@ -3576,8 +3574,6 @@ extern "C" {
     static mut tt_cleanup_input_stack: *mut libc::c_void;
     #[link_name = "input_file"]
     static mut tt_cleanup_input_file: *mut libc::c_void;
-    #[link_name = "eof_seen"]
-    static mut tt_cleanup_eof_seen: *mut libc::c_void;
     #[link_name = "hyph_word"]
     static mut tt_cleanup_hyph_word: *mut libc::c_void;
     #[link_name = "hyph_list"]
@@ -3700,7 +3696,6 @@ pub unsafe extern "C" fn tt_cleanup() {
     libc::free(tt_cleanup_nest);
     libc::free(tt_cleanup_input_stack);
     libc::free(tt_cleanup_input_file);
-    libc::free(tt_cleanup_eof_seen);
     // Release the Rust-owned macro-parameter and input line/group stacks
     // (were C `malloc`'d arrays).
     crate::state::with_state_mut(|s| {
@@ -3710,6 +3705,7 @@ pub unsafe extern "C" fn tt_cleanup() {
         s.input.if_stack = Vec::new();
         s.input.source_filename_stack = Vec::new();
         s.input.full_source_filename_stack = Vec::new();
+        s.input.eof_seen = Vec::new();
     });
     libc::free(tt_cleanup_hyph_word);
     libc::free(tt_cleanup_hyph_list);

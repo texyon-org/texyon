@@ -268,8 +268,6 @@ mod raw {
         pub(super) static mut buf_size: i32;
         // Maximum allowed input-nesting depth (xetex-xetexd.h:411).
         pub(super) static mut max_in_open: i32;
-        // eof_seen[k]: true when EOF was seen at level k (xetex-xetexd.h:700).
-        pub(super) static mut eof_seen: *mut bool;
         // Array of UFILE* for the main input-file stack (xetex-xetexd.h:509).
         // Typed as *mut c_void to avoid a cyclic dependency on io.rs.
         pub(super) static mut input_file: *mut *mut libc::c_void;
@@ -3460,14 +3458,14 @@ pub(crate) fn set_line(v: i32) {
 /// Returns `eof_seen[k]` — whether EOF was seen at input level k.
 #[inline]
 pub(crate) fn eof_seen(k: i32) -> bool {
-    unsafe { *raw::eof_seen.offset(k as isize) }
+    crate::state::with_state(|s| s.input.eof_seen[k as usize])
 }
 /// Sets `eof_seen[k]`.
 #[inline]
 pub(crate) fn set_eof_seen(k: i32, v: bool) {
-    unsafe {
-        *raw::eof_seen.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.eof_seen[k as usize] = v;
+    });
 }
 
 // ---------------------------------------------------------------------------

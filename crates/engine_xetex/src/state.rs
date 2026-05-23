@@ -33,6 +33,10 @@ pub(crate) struct InputClusterState {
     pub if_stack: Vec<i32>,
     pub source_filename_stack: Vec<i32>,
     pub full_source_filename_stack: Vec<i32>,
+    /// `eof_seen[k]`: true when EOF was seen at input level k. Sized
+    /// `max_in_open + 1`; allocated at init and released by `tt_cleanup`.
+    /// Not serialized in format dump/undump. Plain `bool`, no newtype debt.
+    pub eof_seen: Vec<bool>,
 }
 
 #[derive(Default)]
