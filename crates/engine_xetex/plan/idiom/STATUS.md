@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 32 (2026-05-23).
+Last updated: idiom session 33 (2026-05-23).
 
 ## How to read this file
 
@@ -283,6 +283,16 @@ least-coupled non-`misc` clusters:
     storage from `FONT_BASE`; `tt_cleanup` drops the vector. Removed both
     `#[link_name="font_check"]` aliases, the raw extern, and the C definition.
     No newtype debt: the element is already represented as the `B16x4` struct.
+-   **Font size arrays ownership move (session 33):** `font_size` and
+    `font_dsize` (`scaled_t *`) moved from C-`malloc`'d pointers into
+    Rust-owned `Vec<i32>` fields on `EngineState.fonts`. Init and format-load
+    allocation now size both vectors as `font_max + 1`; format dump/undump uses
+    state-derived pointers from `FONT_BASE`; `tt_cleanup` drops both vectors.
+    Removed both allocation/cleanup link aliases per array, the raw externs,
+    and the C definitions. The hidden C++ OpenType math reader in
+    `xetex-XeTeXOTMath.cpp` now calls a narrow Rust bridge,
+    `tt_get_font_size_entry`. Newtype debts recorded for both `scaled_t`
+    arrays.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -291,12 +301,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 204 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 202 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 818 total / 92 state-backed scalars/arrays + 38 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, and font_check) |
-| `#[no_mangle]` exports | 576 | boundary-only | 576 |
+| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 92 state-backed scalars/arrays + 40 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, and font_dsize) |
+| `#[no_mangle]` exports | 576 | boundary-only | 577 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 495 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 491 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -409,12 +419,15 @@ the snippets in `00-overview.md` / the workstream plans.
     were moved in session 30. `null_character` (`b16x4`) was moved in session
     31 after checking that its existing Rust `B16x4` struct preserves the C
     shape. `font_check` was moved in session 32, establishing the ownership
-    shape for one format-serialized font table.
+    shape for one format-serialized font table. `font_size`/`font_dsize` were
+    moved in session 33; note that a hidden C++ reader in
+    `xetex-XeTeXOTMath.cpp` had to be routed through a Rust bridge, so future
+    font-table slices should grep `.cpp` files as well as `.c`.
     Next, continue with another carefully bounded `fonts` subgroup. Good
     candidates are ownership-aware font arrays with `src/ini.rs` aliases
-    (`font_size`, `font_dsize`, `font_params`, `font_name`, `font_area`,
-    `font_bc`, `font_ec`, `font_glue`, `font_used`, etc.), but keep each
-    subgroup coherent with its init/dump/cleanup edges. Alternatively
+    (`font_params`, `font_name`, `font_area`, `font_bc`, `font_ec`,
+    `font_glue`, `font_used`, etc.), but keep each subgroup coherent with its
+    init/dump/cleanup edges. Alternatively
     pick an ownership-aware `eqtb`/`mem` slice. Avoid hot tokenizer/main-loop
     scratch state and do not split the `mem` bookkeeping scalars from the
     `Mem` arena move.

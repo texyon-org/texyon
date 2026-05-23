@@ -9,6 +9,77 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 33 — 2026-05-23 — font size arrays -> FontState
+
+**Type:** execution (workstream 01, Phase-B ownership slice).
+
+**Goal:** move the paired `fonts` size tables (`font_size` and `font_dsize`)
+out of C `malloc` storage and into Rust-owned state on `EngineState.fonts`.
+One coherent ownership slice, one commit.
+
+**Why this slice:** session 32 handed off another bounded font table subgroup,
+with `font_size`/`font_dsize` called out as a good pair. They have the same
+`scaled_t *` type, init/dump/cleanup shape, and are semantically paired as the
+current at-size and design-size tables.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C type: both symbols are `scaled_t *`.
+- (b) cleanup/link aliases: `src/ini.rs` had the expected allocation and
+  cleanup `#[link_name]` aliases for both symbols; all four were removed.
+- (c) C readers: only `xetex/xetex-ini.c`.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs`
+  aliases; no other Rust redeclarations.
+
+**Work done:**
+- Added `font_size: Vec<i32>` and `font_dsize: Vec<i32>` to `FontState`.
+- Repointed `font_size_entry`/`set_font_size_entry` and
+  `font_dsize_entry`/`set_font_dsize_entry` to index the Rust-owned vectors.
+- Replaced init and format-load allocation with `vec![0i32; font_max + 1]`
+  for both arrays; format dump/undump now uses state-derived pointers at
+  `FONT_BASE`.
+- Dropped both vectors in `tt_cleanup`.
+- Removed both `src/ini.rs` link aliases per array, the raw externs in
+  `globals.rs`, and the C definitions in `xetex/xetex-ini.c`.
+- Repointed the remaining C++ OpenType math helper direct reads in
+  `xetex/xetex-XeTeXOTMath.cpp` through a narrow Rust export,
+  `tt_get_font_size_entry`.
+
+**Newtype debt (§4 check):** added rows for `font_size[]` and `font_dsize[]`
+(`scaled_t *` -> `Vec<Scaled>`) to the deferred newtype worklist.
+
+**longjmp / Drop (§7):** owned vectors live in the `'static` thread-local
+`EngineState` and are released explicitly by `tt_cleanup`; abort paths skip
+Drop as intended by the existing arena pattern.
+
+**Surprise:** the documented `.c` reader grep missed
+`xetex/xetex-XeTeXOTMath.cpp`, which still read `font_size[f]` directly. The
+full dashboard caught this as an undefined symbol at link time. Fixed by adding
+the C++ bridge and extending the final local grep to include `.cpp`.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 204 -> 202 (-2).
+- Raw `unsafe { ... }` text-search count: 495 -> 491 (-4, getter/setter
+  bodies became fully safe).
+- `#[no_mangle]` exports: 576 -> 577 (+1, temporary C++ bridge for OpenType
+  math).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of `font_size` / `font_dsize` in `xetex/*.c` (minus macos): empty.
+- Extended grep of `font_size` / `font_dsize` in `xetex/*.{c,cpp}` (minus
+  macos): empty.
+
+**For the next session:**
+- Continue with another bounded `fonts` table subgroup. Good candidates are
+  `font_params` alone (`font_index *`, format-serialized, checked undump) or
+  the `font_name`/`font_area` pair (`str_number *`, same init/dump/cleanup
+  shape). Keep subgroups coherent with init/dump/cleanup edges.
+- Include `.cpp` in reader greps for font-table slices; `xetex-XeTeXOTMath.cpp`
+  can hold direct table reads that the §11 `.c` grep misses.
+- Avoid nested `with_state_mut` borrows when allocating: compute capacities via
+  accessors before entering the state mutation closure.
+
 ## Idiom session 32 — 2026-05-23 — font checksum array -> FontState
 
 **Type:** execution (workstream 01, Phase-B ownership slice).

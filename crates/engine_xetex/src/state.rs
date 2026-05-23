@@ -148,6 +148,12 @@ pub(crate) struct FontState {
     /// former `xmalloc_array` shape). Allocated at engine init / format load
     /// and released by `tt_cleanup`; serialized in the format dump.
     pub font_check: Vec<crate::mem_types::B16x4>,
+    /// Rust-owned font size tables (`font_max + 1` scaled values each).
+    /// Allocated at engine init / format load and released by `tt_cleanup`;
+    /// serialized in the format dump. Element type is `scaled_t` (newtype debt
+    /// tracked in 01a).
+    pub font_size: Vec<i32>,
+    pub font_dsize: Vec<i32>,
 }
 
 impl Default for FontState {
@@ -168,6 +174,8 @@ impl Default for FontState {
                 s3: 0,
             },
             font_check: Vec::new(),
+            font_size: Vec::new(),
+            font_dsize: Vec::new(),
         }
     }
 }

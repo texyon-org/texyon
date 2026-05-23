@@ -39,6 +39,8 @@ authorization from the copyright holders.
 #include "tectonic_xetex_layout.h"
 #include "xetex-XeTeXOTMath.h"
 
+extern "C" scaled_t tt_get_font_size_entry(int f);
+
 int
 get_ot_math_constant(int f, int n)
 {
@@ -118,11 +120,11 @@ get_native_mathsy_param(int f, int n)
     int rval = 0;
 
     if (n == math_quad) {
-        rval = font_size[f];
+        rval = tt_get_font_size_entry(f);
     }
     else if (n == delim2) { // XXX not sure what OT parameter we should use here;
                             // for now we use 1.5em, clamped to delim1 height
-        rval = std::min<int>(1.5 * font_size[f], get_native_mathsy_param(f, delim1));
+        rval = std::min<int>(1.5 * tt_get_font_size_entry(f), get_native_mathsy_param(f, delim1));
     }
     else {
         if (n < (int) (sizeof(TeX_sym_to_OT_map) / sizeof(hb_ot_math_constant_t))) {
@@ -167,7 +169,7 @@ get_native_mathex_param(int f, int n)
     int rval = 0;
 
     if (n == math_quad)
-        rval = font_size[f];
+        rval = tt_get_font_size_entry(f);
     else {
         if (n < (int) (sizeof(TeX_ext_to_OT_map) / sizeof(hb_ot_math_constant_t))) {
             hb_ot_math_constant_t ot_index = TeX_ext_to_OT_map[n];

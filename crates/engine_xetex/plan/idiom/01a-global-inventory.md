@@ -542,6 +542,8 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `hyph_word[]` | `hyph` | `str_number *` | `Vec<StrNumber>` | session 28 | pending |
 | `hyph_link[]` | `hyph` | `hyph_pointer *` | `Vec<HyphPointer>` | session 28 | pending |
 | `loaded_font_letter_space` | `fonts` | `scaled_t` | `Scaled` | session 29 | pending |
+| `font_size[]` | `fonts` | `scaled_t *` | `Vec<Scaled>` | session 33 | pending |
+| `font_dsize[]` | `fonts` | `scaled_t *` | `Vec<Scaled>` | session 33 | pending |
 
 
 (`input` session-13 move of the line/group stacks: `line_stack` and

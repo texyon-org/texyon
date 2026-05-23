@@ -243,9 +243,6 @@ mod raw {
         // Per-font encoding/layout arrays (xetex-xetexd.h:563–573).
         // font_area[f]: encoded font area (str_number = i32).
         pub(super) static mut font_area: *mut i32;
-        // font_size[f], font_dsize[f]: current/default design size (scaled_t = i32).
-        pub(super) static mut font_size: *mut i32;
-        pub(super) static mut font_dsize: *mut i32;
         // font_bc[f], font_ec[f]: first/last valid char (UTF16_code = u16).
         pub(super) static mut font_bc: *mut u16;
         pub(super) static mut font_ec: *mut u16;
@@ -2110,26 +2107,31 @@ pub(crate) fn set_font_area_entry(f: i32, v: i32) {
 /// Returns `font_size[f]` — the current at-size (scaled_t) for font f.
 #[inline]
 pub(crate) fn font_size_entry(f: i32) -> i32 {
-    unsafe { *raw::font_size.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_size[f as usize])
+}
+/// C++ bridge for the remaining OpenType math helper.
+#[no_mangle]
+pub unsafe extern "C" fn tt_get_font_size_entry(f: i32) -> i32 {
+    font_size_entry(f)
 }
 /// Writes `font_size[f] = v`.
 #[inline]
 pub(crate) fn set_font_size_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::font_size.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_size[f as usize] = v;
+    });
 }
 /// Returns `font_dsize[f]` — the design-size (scaled_t) for font f.
 #[inline]
 pub(crate) fn font_dsize_entry(f: i32) -> i32 {
-    unsafe { *raw::font_dsize.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_dsize[f as usize])
 }
 /// Writes `font_dsize[f] = v`.
 #[inline]
 pub(crate) fn set_font_dsize_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::font_dsize.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_dsize[f as usize] = v;
+    });
 }
 /// Returns `font_bc[f]` — first valid char code.
 #[inline]
