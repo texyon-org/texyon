@@ -253,15 +253,7 @@ mod raw {
 
         // Save-stack (xetex-xetexd.h:492–494).
         pub(super) static mut save_stack: *mut crate::mem_types::MemoryWord;
-        pub(super) static mut save_ptr: i32;
-        pub(super) static mut max_save_stack: i32;
         pub(super) static mut save_size: i32;
-        // Grouping level / group-code (xetex-xetexd.h:495–496).
-        pub(super) static mut cur_level: u16;
-        // group_code is unsigned char (xetex-xetexd.h:325).
-        pub(super) static mut cur_group: u8;
-        // Current group boundary in the save stack (xetex-xetexd.h:497).
-        pub(super) static mut cur_boundary: i32;
         // XEQ_LEVEL array — level at which each eqtb entry was defined
         // (xetex-xetexd.h:733; size = EQTB_SIZE - INT_BASE + 1 = 1114730).
         pub(super) static mut _xeq_level_array: [u16; 1_114_730];
@@ -1965,23 +1957,23 @@ pub(crate) fn set_stop_at_space(v: bool) {
 
 #[inline]
 pub(crate) fn save_ptr() -> i32 {
-    unsafe { raw::save_ptr }
+    crate::state::with_state(|state| state.save_stack.save_ptr)
 }
 #[inline]
 pub(crate) fn set_save_ptr(v: i32) {
-    unsafe {
-        raw::save_ptr = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.save_stack.save_ptr = v;
+    });
 }
 #[inline]
 pub(crate) fn max_save_stack() -> i32 {
-    unsafe { raw::max_save_stack }
+    crate::state::with_state(|state| state.save_stack.max_save_stack)
 }
 #[inline]
 pub(crate) fn set_max_save_stack(v: i32) {
-    unsafe {
-        raw::max_save_stack = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.save_stack.max_save_stack = v;
+    });
 }
 #[inline]
 pub(crate) fn save_size() -> i32 {
@@ -2049,33 +2041,33 @@ pub(crate) fn set_save_stack_word(k: i32, w: crate::mem_types::MemoryWord) {
 }
 #[inline]
 pub(crate) fn cur_level() -> u16 {
-    unsafe { raw::cur_level }
+    crate::state::with_state(|state| state.save_stack.cur_level)
 }
 #[inline]
 pub(crate) fn set_cur_level(v: u16) {
-    unsafe {
-        raw::cur_level = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.save_stack.cur_level = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_group() -> u8 {
-    unsafe { raw::cur_group }
+    crate::state::with_state(|state| state.save_stack.cur_group)
 }
 #[inline]
 pub(crate) fn set_cur_group(v: u8) {
-    unsafe {
-        raw::cur_group = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.save_stack.cur_group = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_boundary() -> i32 {
-    unsafe { raw::cur_boundary }
+    crate::state::with_state(|state| state.save_stack.cur_boundary)
 }
 #[inline]
 pub(crate) fn set_cur_boundary(v: i32) {
-    unsafe {
-        raw::cur_boundary = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.save_stack.cur_boundary = v;
+    });
 }
 /// Read `XEQ_LEVEL(p)` = `_xeq_level_array[p - INT_BASE]`.
 #[inline]

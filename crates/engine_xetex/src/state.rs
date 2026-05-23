@@ -8,6 +8,16 @@ pub(crate) struct EngineState {
     pub errors: ErrorState,
     pub shipout: ShipoutState,
     pub scanner: ScannerState,
+    pub save_stack: SaveStackState,
+}
+
+#[derive(Default)]
+pub(crate) struct SaveStackState {
+    pub save_ptr: i32,
+    pub max_save_stack: i32,
+    pub cur_level: u16,
+    pub cur_group: u8,
+    pub cur_boundary: i32,
 }
 
 #[derive(Default)]

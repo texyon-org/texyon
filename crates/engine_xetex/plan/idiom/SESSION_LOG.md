@@ -9,6 +9,59 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 9 — 2026-05-23 — save_stack scalar cluster Phase-B bridge
+
+**Type:** execution (workstream 01).
+
+**Goal:** migrate the `save_stack` scalar cluster, keeping the
+ownership-bearing members (`save_stack` pointer, `save_size` capacity)
+out of scope so this stays a clean no-cleanup-alias slice.
+
+**Work done:**
+- Added `SaveStackState` under `EngineState` and moved the five
+  save-stack scalars into it: `save_ptr`, `max_save_stack`, `cur_level`,
+  `cur_group`, `cur_boundary`.
+- Repointed the `globals.rs` accessors at `state::with_state` /
+  `with_state_mut`; removed the raw externs (leaving `save_stack` and
+  `save_size`) and the C definitions in `xetex/xetex-ini.c`.
+- Recorded the `cur_group` → `GroupCode` newtype debt in the worklist
+  (`01a-global-inventory.md`); the others are plain int/uint counts.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 317 → 312.
+- Raw `unsafe { ... }` text-search count: 721 → 711.
+- `globals.rs`: 72 globals now state-backed.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, existing warnings.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+
+**Surprises / gotchas:**
+- `save_size` (capacity, set at init) and the `save_stack` pointer carry
+  ownership/`#[link_name]`/cleanup edges and were deliberately left for
+  a later ownership-aware slice; they sit interleaved with the scalars
+  in both `globals.rs` and `xetex-ini.c`, so each scalar was removed
+  individually around them.
+- `cur_level`/`cur_group`/`cur_boundary` and `save_ptr` are touched on
+  every group entry/exit (`new_save_level`/`unsave`), but that is not a
+  per-token inner loop, so the thread-local bridge cost is acceptable
+  here (unlike the tokenizer scalars deferred in session 8).
+- Verified (grep) no non-macOS C reader and no separate `extern`
+  redeclaration in other Rust modules before moving.
+
+**For the next session:**
+- Remaining clean scalar wins: small `eqtb` scalar set (`hash_used`,
+  `hash_high`, `no_new_control_sequence`, `prim_used`, `cs_count`) and
+  more non-hot `scanner` scalars. Then the ownership-bearing clusters
+  (`strings`, `fonts` arrays, `shipout` file-handles, and the
+  `save_stack`/`save_size` pointer pair) each need a single
+  ownership-aware slice that also fixes `tt_cleanup`/`#[link_name]`.
+- Keep `with_state` closures single-field; do not call translated engine
+  code while a borrow is live.
+
 ## Idiom session 8 — 2026-05-23 — scanner file-name group Phase-B bridge
 
 **Type:** execution (workstream 01).

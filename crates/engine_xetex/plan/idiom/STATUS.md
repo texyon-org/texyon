@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 8 (2026-05-23).
+Last updated: idiom session 9 (2026-05-23).
 
 ## How to read this file
 
@@ -84,6 +84,12 @@ least-coupled non-`misc` clusters:
     inventory worklist. The hot scanner scalars (`cur_cmd`, `cur_chr`,
     `cur_tok`, `cur_cs`, `cur_val`) are intentionally deferred to avoid
     a thread-local cost on the tokenizer hot path.
+-   `save_stack` scalar cluster moved into `EngineState.save_stack` (new
+    `SaveStackState`): `save_ptr`, `max_save_stack`, `cur_level`,
+    `cur_group`, `cur_boundary`. The `save_stack` pointer and `save_size`
+    capacity stay behind (ownership/cleanup edges) for a later slice.
+    Raw externs and C defs removed; no cleanup aliases touched.
+    `cur_group` → `GroupCode` recorded in the worklist.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -92,12 +98,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 317 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 312 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 67 state-backed globals |
+| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 72 state-backed globals |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 721 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 711 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -151,8 +157,10 @@ the snippets in `00-overview.md` / the workstream plans.
 ## Next action for a fresh session
 
 1.  Continue executing workstream 01. Remaining clean (no-cleanup-alias)
-    scalar groups live mostly in `scanner` and small `eqtb`/`save_stack`
-    scalar sets. **Caution:** do not bridge the hot tokenizer scalars
+    scalar groups: the small `eqtb` scalar set (`hash_used`, `hash_high`,
+    `no_new_control_sequence`, `prim_used`, `cs_count`) and more non-hot
+    `scanner` scalars. **Caution:** do not bridge the hot tokenizer
+    scalars
     (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) through the
     thread-local without benchmarking — they are read on nearly every
     `get_next`/`get_token`, and a `RefCell` borrow per access could

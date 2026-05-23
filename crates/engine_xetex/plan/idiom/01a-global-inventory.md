@@ -502,6 +502,11 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `cur_ext` | `scanner` | `str_number` | `StrNumber` | session 8 | pending |
 | `area_delimiter` | `scanner` | `pool_pointer` | `PoolPtr` | session 8 | pending |
 | `ext_delimiter` | `scanner` | `pool_pointer` | `PoolPtr` | session 8 | pending |
+| `cur_group` | `save_stack` | `group_code` (enum) | `GroupCode` | session 9 | pending |
+
+(`save_stack` session-9 move: `save_ptr`/`max_save_stack`/`cur_boundary`
+are plain `int32_t` and `cur_level` is a `uint16_t` nesting count, so
+only `cur_group` is a debt.)
 
 (`file_name_quote_char` is `UTF16_code`/`u16` — a genuine character value,
 not a semantic typedef, so it needs no row; `quoted_filename`,
