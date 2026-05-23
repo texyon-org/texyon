@@ -177,6 +177,10 @@ the snippets in `00-overview.md` / the workstream plans.
 
 ## Next action for a fresh session
 
+0.  Follow the **Execution recipe** in `01-state-and-memory.md` §11
+    (grep checks → add field → repoint accessors → remove defs/aliases →
+    worklist rows → dashboard → docs → commit) and heed its recurring
+    gotchas.
 1.  Continue executing workstream 01. Clean (no-cleanup-alias) scalar
     groups are getting sparse: a few non-hot `scanner` scalars remain
     (`shown_mode`, `mag_set`, `radix`, `expand_depth_count`, …). The

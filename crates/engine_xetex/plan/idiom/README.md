@@ -43,7 +43,10 @@ read in this order:
 3.  [`SESSION_LOG.md`](SESSION_LOG.md) — running log; read the top
     (newest) entry first for the handoff.
 4.  The numbered workstream plans (`01-…`, `02-…`, …) — read the one
-    you are about to construct or execute.
+    you are about to construct or execute. **Execution sessions: read
+    [`01-state-and-memory.md`](01-state-and-memory.md) §11 ("Execution
+    recipe") — the step-by-step procedure (grep checks, accessor
+    repoint, cleanup, validation, commit) plus the recurring gotchas.**
 
 ## Relationship to the Stage 1 plan (`../`)
 

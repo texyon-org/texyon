@@ -365,3 +365,126 @@ is executed:
 -   **Diff size.** Phase C threading touches hundreds of signatures. Keep
     it per-subsystem and per-commit; resist "thread the whole crate in
     one go."
+
+## 11. Execution recipe (read before each Phase-B slice)
+
+This is the repeatable procedure proven across sessions 4–11. A session
+is one cluster (or one sub-group / one array) per commit. The model is
+reset between sessions, so this recipe — not memory — is the source of
+truth for *how* to execute. Run from the crate root
+(`crates/engine_xetex`).
+
+**1. Pick the slice.** Read `STATUS.md` → "Next action". Take the next
+group. Hard rule: do **not** bridge the hot tokenizer scalars (`cur_cmd`,
+`cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) through the thread-local —
+they are read per `get_next`/`get_token`; thread them in Phase C instead.
+
+**2. Verify the slice is safe to move (grep before touching anything).**
+For the symbols `S` in the slice:
+
+```bash
+# (a) original C types — needed for the §4 newtype-worklist rule
+for s in S…; do grep -hE "extern .* \b$s\b *;" xetex/xetex-xetexd.h; done
+# (b) cleanup aliases — if any hit, this is an ownership slice (see step 6)
+grep -nE 'link_name = "(S…)"' src/ini.rs
+# (c) C readers — must be empty except xetex-ini.c (the definition)
+grep -lnE '\b(S…)\b' xetex/*.c | grep -v macos
+# (d) cross-module extern redeclarations (the synctex.rs gotcha) — must be empty
+grep -rnE '\b(S…)\b' src/*.rs | grep -v 'src/globals.rs' \
+  | grep -iE 'extern|static mut|link_name'
+```
+
+If (c) shows a non-`ini.c` reader, or (d) shows a redeclaration, stop and
+handle it explicitly — do not migrate blind.
+
+**3. Add the sub-struct field(s).** In `src/state.rs`, add a field to the
+cluster's sub-struct (create the sub-struct + add it to `EngineState` if
+it's the cluster's first field). `#[derive(Default)]` covers scalars,
+fixed arrays, and `Vec` (empty). A struct containing a large fixed array
+(`[i32; 55]`, `[u16; 256]`) or a non-`Default` element needs a hand-
+written `impl Default`.
+
+**4. Repoint the accessors.** In `src/globals.rs`, change each
+getter/setter body from `unsafe { raw::SYM }` /
+`unsafe { raw::SYM = v }` to
+`crate::state::with_state(|s| s.<cluster>.SYM)` /
+`crate::state::with_state_mut(|s| { s.<cluster>.SYM = v; })`. Keep
+signatures identical (this is the bridge). Closures touch one field and
+never call engine code while the borrow is live.
+
+**5. Remove the old definitions in the same commit.** Delete the
+`pub(super) static mut SYM …;` lines from `globals.rs` `mod raw`, and the
+matching C definitions from `xetex/xetex-ini.c` (some symbols live in
+other `.c` files or are scattered — grep to confirm each). Watch for
+symbols *interleaved* with ones you are keeping (e.g. `disc_ptr`,
+`hash_extra`, `save_size`); remove individually around them.
+
+**6. Ownership slices only (an array allocated by Rust / freed by C).**
+Use the session-11 `save_stack` shape:
+- field is `Vec<T>` on the sub-struct; accessors index it (safe,
+  bounds-checked — only a `MemoryWord` union projection stays `unsafe`);
+- in `src/ini.rs`, replace the `xmalloc_array::<T>(n)` call with
+  `with_state_mut` writing `vec![<zero T>; (n as usize) + 1]`
+  (`xmalloc_array` allocates `n + 1` — match it);
+- `tt_cleanup` drops the `Vec` (`= Vec::new()`) instead of `libc::free`;
+- remove **both** `#[link_name = "SYM"]` aliases (the alloc alias and the
+  cleanup-free alias), the raw extern, and the C def — same commit;
+- the owner stays in the `'static` thread-local, so longjmp/abort never
+  jumps over live storage and `Drop`-on-abort is intentionally skipped
+  (§7). Check whether the array is in the format dump/undump
+  (`save_stack` and the `input` stacks are **not**; `str_pool`/`str_start`
+  and `eqtb` **are** — those slices must reconcile the load/dump paths).
+
+**7. Record newtype debts (§4 rule).** For any moved field whose C type
+(from step 2a) is a semantic typedef/enum (`selector_t`, `tt_history_t`,
+`group_code`, `scaled_t`, `str_number`, `pool_pointer`,
+`internal_font_number`, …), add a row to the Deferred newtype worklist in
+`01a-global-inventory.md`. Plain `int32_t`/`bool`/char counts need no row
+— say so in the session log so the next session knows it was checked.
+
+**8. Build, then run the full dashboard. Never regress it.**
+
+```bash
+cargo check -p tectonic_engine_xetex
+cargo test -p tectonic --test tex-outputs --test trip \
+  --test engine_rust --test latex_goldens
+# expected: 29 / 2 / 7 / 4
+```
+
+Also `grep -rnE '\b(S…)\b' xetex/*.c | grep -v macos` must be empty
+(no leftover C reference). Re-measure for the metrics table:
+`grep -cE 'pub\(super\) static mut' src/globals.rs` and
+`grep -rohE 'unsafe \{' src/*.rs | wc -l`.
+
+**9. Update the docs and commit.** Append a `SESSION_LOG.md` entry
+(work, metrics, validation, gotchas, "for the next session"), update
+`STATUS.md` (execution list, metrics row, "Next action", and the
+"Last updated" line), and commit **only the engine-crate files** —
+`src/*.rs`, `xetex/xetex-ini.c`, and `plan/idiom/*`. Do **not** stage the
+stray test-output artifacts, `test.pdf`, `bundles/`, etc. that sit in the
+working tree. Commit message prefix: `engine_xetex: …`.
+
+### Recurring gotchas (have bitten a session)
+
+-   `xmalloc_array(n)` / `xcalloc_array(n)` allocate `n + 1` elements
+    (`src/ini.rs`). A Rust `Vec` replacement must match the inclusive
+    size or indexing is off by one.
+-   `MemoryWord` is a `#[derive(Copy, Clone)]` **union** with no
+    `Default`. Build a zero word explicitly:
+    `MemoryWord { b32: B32x2 { s0: 0, s1: 0 } }` (works in `vec![…; n]`
+    because it is `Copy`).
+-   `mod raw` statics are `pub(super)`, so other modules cannot reach
+    `raw::SYM` — but a few modules historically declared their **own**
+    `extern "C"` block for a symbol (e.g. `synctex.rs` for
+    `synctex_enabled`). Step 2d catches these; they must be repointed
+    too.
+-   Some symbols are defined in a `.c` file other than `xetex-ini.c`
+    (e.g. `no_shrink_error_yet` in `xetex-linebreak.c`,
+    `current_diagnostic` in `xetex-output.c`). Grep each symbol; do not
+    assume `xetex-ini.c`.
+-   The IDE/LSP `dead_code` / "never read" warnings that fire mid-edit
+    are **stale** — they clear once all accessors are repointed and the
+    crate is rebuilt. Don't chase them; trust `cargo check`.
+-   `mem` bookkeeping scalars (`var_used`, `dyn_used`, `lo_mem_max`,
+    `hi_mem_min`, `avail`, `rover`, `mem_end`) are best moved **with**
+    the `Mem` arena (§5), not as a loose scalar slice.
