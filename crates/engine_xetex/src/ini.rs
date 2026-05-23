@@ -1815,8 +1815,6 @@ extern "C" {
     static mut tre_expand_depth: i32;
     #[link_name = "nest"]
     static mut tre_nest: *mut crate::mem_types::ListStateRecord;
-    #[link_name = "input_file"]
-    static mut tre_input_file: *mut *mut libc::c_void;
     #[link_name = "hyph_word"]
     static mut tre_hyph_word: *mut i32;
     #[link_name = "hyph_list"]
@@ -3234,7 +3232,15 @@ pub unsafe extern "C" fn tt_run_engine(
             ];
         });
     }
-    tre_input_file = xmalloc_array::<*mut libc::c_void>(tre_max_in_open);
+    {
+        // Rust-owned main input-file stack (`max_in_open + 1` handles, matching
+        // the former `xmalloc_array` shape). Allocated fresh each run; released
+        // by `tt_cleanup`. Never reallocated during a run.
+        let n = (tre_max_in_open as usize) + 1;
+        crate::state::with_state_mut(|s| {
+            s.input.input_file = vec![std::ptr::null_mut::<libc::c_void>(); n];
+        });
+    }
     {
         // Rust-owned input stack (`stack_size + 1` records, matching the former
         // `xmalloc_array` shape). Allocated fresh each run; released by
@@ -3592,8 +3598,6 @@ extern "C" {
     static mut tt_cleanup_font_used: *mut libc::c_void;
     #[link_name = "nest"]
     static mut tt_cleanup_nest: *mut libc::c_void;
-    #[link_name = "input_file"]
-    static mut tt_cleanup_input_file: *mut libc::c_void;
     #[link_name = "hyph_word"]
     static mut tt_cleanup_hyph_word: *mut libc::c_void;
     #[link_name = "hyph_list"]
@@ -3713,10 +3717,10 @@ pub unsafe extern "C" fn tt_cleanup() {
 
     // Free the big allocated arrays
     libc::free(tt_cleanup_nest);
-    libc::free(tt_cleanup_input_file);
-    // Release the Rust-owned input, macro-parameter, input line/group, and
-    // buffer arrays (were C `malloc`'d arrays).
+    // Release the Rust-owned input-file, input, macro-parameter, input
+    // line/group, and buffer arrays (were C `malloc`'d arrays).
     crate::state::with_state_mut(|s| {
+        s.input.input_file = Vec::new();
         s.input.input_stack = Vec::new();
         s.input.param_stack = Vec::new();
         s.input.line_stack = Vec::new();

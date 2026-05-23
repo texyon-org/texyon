@@ -9,6 +9,91 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 17 — 2026-05-23 — input_file array → Rust-owned Vec
+
+**Type:** execution (workstream 01, ownership-bearing slice).
+
+**Goal:** move the `input_file` (`UFILE ** == *mut *mut c_void`) into a
+Rust-owned `Vec<*mut libc::c_void>` on `EngineState.input`. One array, one
+commit. Second-to-last `input`-cluster array.
+
+**Why input_file now:** of the two arrays left it has the fewest accessors
+(only three: `input_file`, `set_input_file`, and the pointer-escaping
+`input_file_ptr`), and that pointer-escape is the exact `buffer_ptr` pattern
+already proven in session 15 (`as_mut_ptr().add(k)` past the borrow, valid
+because the `'static` thread-local owner never reallocates). `nest` is left
+for last (~11 field-projection accessors, no pointer escape). The element is a
+plain `UFILE*` handle stored as `*mut c_void` (avoids a cyclic dep on io.rs),
+so `Vec<*mut c_void>` derives `Default` (empty) and the `InputClusterState`
+still derives `Default` with no hand-written impl. Only C reference is its
+`xetex-ini.c` definition; not serialized in the format dump/undump.
+
+**Pre-move grep checks (§11 step 2):** (a) declared `extern UFILE
+**input_file;` in `xetex-xetexd.h:509`. `UFILE*` is an opaque file-handle
+pointer, not a scalar semantic typedef — **no** newtype debt (raw pointer, no
+type info lost). (b) two `link_name = "input_file"` aliases in `ini.rs` (alloc
+`tre_input_file` + cleanup `tt_cleanup_input_file`) → ownership slice. (c) only
+`xetex-ini.c` references it. (d) no foreign-module redeclaration (the only hits
+were the two `ini.rs` aliases being removed).
+
+**Work done:**
+- Added `input_file: Vec<*mut libc::c_void>` to `InputClusterState` in
+  `src/state.rs` (`#[derive(Default)]` still covers the struct — empty Vec).
+- Repointed the three accessors in `globals.rs`: `input_file(k)` /
+  `set_input_file(k, v)` index the `Vec` via `with_state`/`with_state_mut`
+  (no `unsafe`); `input_file_ptr(k)` (still a safe `fn` with an inner `unsafe`
+  block, as before) returns `as_mut_ptr().add(k)` cast to
+  `*mut *mut crate::io::UFile` — the session-15 `buffer_ptr` shape.
+- Allocation (`ini.rs`): replaced
+  `tre_input_file = xmalloc_array::<*mut c_void>(tre_max_in_open)` with a
+  `with_state_mut` block writing `vec![null_mut(); max_in_open + 1]` (matching
+  the former `n + 1` shape).
+- Cleanup (`tt_cleanup`): dropped `input_file` (`= Vec::new()`) folded into the
+  existing input cleanup block instead of `libc::free`.
+- Removed both `#[link_name = "input_file"]` alias decls (alloc + cleanup), the
+  raw extern in `globals.rs`, and the C def in `xetex-ini.c`.
+
+**Newtype debt (§4 check):** element type is `UFILE*`, an opaque file handle
+stored as `*mut c_void` — a plain pointer, no semantic typedef collapse, so
+**no** worklist row (checked, none needed).
+
+**longjmp / Drop (§7, handled):** identical to sessions 11–16 —
+`EngineState` lives in the `'static` thread-local, so a `longjmp` abort never
+jumps over the `Vec`; `Drop` doesn't run on abort (matches prior C).
+`tt_cleanup` is the normal teardown and now drops the `Vec`.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 297 → 296.
+- Raw `unsafe { ... }` text-search count: 677 → 675.
+- `#[link_name]` aliases in `ini.rs`: −2.
+- 11 Rust-owned arena arrays total (save_stack, param_stack, the 5 session-13
+  line/group stacks, eof_seen, buffer, input_stack, + input_file).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of `input_file` in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- One input array remains: `nest` (`list_state_record * == *mut
+  ListStateRecord`). It has ~11 field-projection accessors to repoint
+  (`nest_mode`, `nest_tail`, `set_nest_tail`, `nest_e_tex_aux`,
+  `nest_aux_b32s1`, `nest_prev_graf`, `set_nest_prev_graf`, `nest_head`,
+  `nest_mode_line`, `nest_aux_b32s0`, …) but **no** pointer escape, so the move
+  is purely "index the `Vec`" per accessor. `ListStateRecord` already exists in
+  `mem_types.rs` — check it derives `Copy`/`Clone` for the `vec![<zero>; n]`
+  init (sized `nest_size + 1`). Two alias decls (alloc `tre_nest` + cleanup
+  `tt_cleanup_nest`), one raw extern, one C def to remove. Not in format dump.
+  As a struct element, the array itself is no newtype debt — but check the
+  per-field accessors' return types (`nest_mode` is `i16` mode, `nest_*` aux
+  fields) for semantic typedefs and add worklist rows if any.
+- After `nest`, **all** `input`-cluster arrays are Rust-owned. Then `strings`
+  (`str_start`/`str_pool`) — but those **are** in the format dump/undump, so
+  that slice must reconcile the load/dump paths.
+
 ## Idiom session 16 — 2026-05-23 — input_stack array → Rust-owned Vec
 
 **Type:** execution (workstream 01, ownership-bearing slice).

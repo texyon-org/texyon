@@ -89,7 +89,6 @@ int32_t max_in_stack;
 input_state_t cur_input;
 int32_t in_open;
 int32_t open_parens;
-UFILE **input_file;
 int32_t line;
 unsigned char scanner_status;
 int32_t warning_index;

@@ -52,6 +52,14 @@ pub(crate) struct InputClusterState {
     /// `input_state_t`) — a compound struct, not a scalar typedef, no
     /// newtype debt.
     pub input_stack: Vec<crate::globals::InputState>,
+    /// Rust-owned main input-file stack (`max_in_open + 1` handles, matching
+    /// the former `xmalloc_array` shape). Allocated at engine init and released
+    /// by `tt_cleanup`; never reallocated during a run (the pointer-escaping
+    /// `input_file_ptr` accessor relies on this). Replaces the former
+    /// C-`malloc`'d `input_file` pointer. Not serialized in format dump/undump.
+    /// Element type is a `UFILE*` handle, stored as `*mut c_void` to avoid a
+    /// cyclic dependency on `io.rs` — a plain pointer, no newtype debt.
+    pub input_file: Vec<*mut libc::c_void>,
 }
 
 #[derive(Default)]

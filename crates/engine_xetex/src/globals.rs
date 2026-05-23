@@ -265,9 +265,6 @@ mod raw {
         pub(super) static mut buf_size: i32;
         // Maximum allowed input-nesting depth (xetex-xetexd.h:411).
         pub(super) static mut max_in_open: i32;
-        // Array of UFILE* for the main input-file stack (xetex-xetexd.h:509).
-        // Typed as *mut c_void to avoid a cyclic dependency on io.rs.
-        pub(super) static mut input_file: *mut *mut libc::c_void;
 
         // is_in_csname: true while scanning between \csname...\endcsname (xetex-xetexd.h:526).
         pub(super) static mut is_in_csname: bool;
@@ -3469,19 +3466,22 @@ pub(crate) fn set_eof_seen(k: i32, v: bool) {
 /// Returns `input_file[k]` as a raw pointer (UFILE*; xetex-xetexd.h:509).
 #[inline]
 pub(crate) fn input_file(k: i32) -> *mut libc::c_void {
-    unsafe { *raw::input_file.offset(k as isize) }
+    crate::state::with_state(|s| s.input.input_file[k as usize])
 }
 /// Sets `input_file[k]`.
 #[inline]
 pub(crate) fn set_input_file(k: i32, v: *mut libc::c_void) {
-    unsafe {
-        *raw::input_file.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| s.input.input_file[k as usize] = v);
 }
-/// Returns a pointer to `input_file[k]` (i.e. &input_file[k]), for passing to `u_open_in`.
+/// Returns a pointer to `input_file[k]` (i.e. `&input_file[k]`), for passing to
+/// `u_open_in`. The stack is a Rust-owned `Vec` held by the `'static`
+/// thread-local and never reallocated during a run, so the pointer stays valid
+/// past the borrow.
 #[inline]
 pub(crate) fn input_file_ptr(k: i32) -> *mut *mut crate::io::UFile {
-    unsafe { raw::input_file.offset(k as isize) as *mut *mut crate::io::UFile }
+    crate::state::with_state_mut(|s| unsafe {
+        s.input.input_file.as_mut_ptr().add(k as usize) as *mut *mut crate::io::UFile
+    })
 }
 
 // ---------------------------------------------------------------------------
