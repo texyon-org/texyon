@@ -519,6 +519,14 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `pool_ptr` | `strings` | `pool_pointer` | `PoolPtr` | session 24 | pending |
 | `format_ident` | `strings` | `str_number` | `StrNumber` | session 24 | pending |
 | `edit_name_start` | `strings` | `pool_pointer` | `PoolPtr` | session 24 | pending |
+| `hf` | `hyph` | `internal_font_number` | `FontId` | session 25 | pending |
+| `hyphen_passed` | `hyph` | `small_number` | `SmallNumber` | session 25 | pending |
+| `trie_max` | `hyph` | `trie_pointer` | `TrieIndex` | session 25 | pending |
+| `trie_ptr` | `hyph` | `trie_pointer` | `TrieIndex` | session 25 | pending |
+| `max_op_used` | `hyph` | `trie_opcode` | `TrieOpcode` | session 25 | pending |
+| `hyph_start` | `hyph` | `trie_pointer` | `TrieIndex` | session 25 | pending |
+| `hyph_index` | `hyph` | `trie_pointer` | `TrieIndex` | session 25 | pending |
+
 
 (`input` session-13 move of the line/group stacks: `line_stack` and
 `if_stack` are plain `int32_t *` and need no row — `line_stack` holds

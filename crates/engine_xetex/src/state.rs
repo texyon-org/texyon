@@ -12,6 +12,7 @@ pub(crate) struct EngineState {
     pub eqtb: EqtbState,
     pub input: InputClusterState,
     pub strings: StringsState,
+    pub hyph: HyphState,
 }
 
 /// The `input` cluster's Rust-owned state. Distinct from
@@ -259,3 +260,33 @@ pub(crate) fn with_state<R>(f: impl FnOnce(&EngineState) -> R) -> R {
 pub(crate) fn with_state_mut<R>(f: impl FnOnce(&mut EngineState) -> R) -> R {
     ENGINE_STATE.with(|state| f(&mut state.borrow_mut()))
 }
+
+#[derive(Default)]
+pub(crate) struct HyphState {
+    pub is_hyph: bool,
+    pub hf: i32,
+    pub max_hyph_char: i32,
+    pub init_list: i32,
+    pub init_lig: bool,
+    pub init_lft: bool,
+    pub hyphen_passed: i16,
+    pub trie_max: i32,
+    pub trie_size: i32,
+    pub trie_ptr: i32,
+    pub hyph_count: i32,
+    pub hyph_size: i32,
+    pub hyph_next: i32,
+    pub trie_op_ptr: i32,
+    pub max_op_used: u16,
+    pub trie_not_ready: bool,
+    pub hyph_start: i32,
+    pub hyph_index: i32,
+    pub cur_lang: u8,
+    pub hyf_char: i32,
+    pub l_hyf: i32,
+    pub r_hyf: i32,
+    pub init_l_hyf: i32,
+    pub init_r_hyf: i32,
+    pub hyf_bchar: i32,
+}
+

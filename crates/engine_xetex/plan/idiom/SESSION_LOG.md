@@ -9,6 +9,51 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 25 — 2026-05-23 — hyph cluster clean scalars → HyphState
+
+**Type:** execution (workstream 01, Phase-B scalar slice).
+
+**Goal:** move the 25 clean scalar fields of the `hyph` cluster (including 19 defined in `xetex-ini.c` and 6 defined in `xetex-linebreak.c`) into `EngineState.hyph`. One coherent slice, no commit (per user request).
+
+**Why this slice:**
+1. **Next Authoritative Cluster:** As indicated by the "Next action" in `STATUS.md`, the `hyph` cluster is the designated next target since all `input`-cluster arrays are now Rust-owned, and other clean cold scalar groups from other features are exhausted.
+2. **Logical Phased Approach:** `STATUS.md` explicitly allows split migrations on `hyph`: *"We can continue Phase-B moves on `hyph` either with the clean scalar fields first or the trie/hyph arrays."*
+3. **Safety & Clarity:** Migrating all 25 scalars first cleanly establishes `EngineState.hyph` and its accessors without having to worry about complex `Vec`/alloc/cleanup details of the 10+ dynamically allocated or large fixed arrays in the same commit. This makes the diff reviewable and extremely safe.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: 7 variables are semantic types (`hf` is `internal_font_number`, `hyphen_passed` is `small_number`, `max_op_used` is `trie_opcode`, and `trie_max`/`trie_ptr`/`hyph_start`/`hyph_index` are `trie_pointer`).
+- (b) cleanup aliases: none.
+- (c) C readers: only `xetex-ini.c` / `xetex-linebreak.c` (defining the C globals) compiled by build.rs.
+- (d) cross-module extern redeclarations: none.
+
+**Work done:**
+- Added `HyphState` sub-struct and the 25 clean scalar fields to `src/state.rs`.
+- Repointed all 25 getters and setters in `src/globals.rs` to safe `with_state` / `with_state_mut` closures (removing their inner `unsafe` blocks completely).
+- Removed the 25 raw extern definitions from `globals.rs` `mod raw`.
+- Converted `tre_trie_size` and `tre_hyph_size` from link-name external C references to safe private module-level Rust `static mut` variables to satisfy the linker after C definitions were removed.
+- Initialized `state.hyph.trie_size` and `state.hyph.hyph_size` using `tre_trie_size` and `tre_hyph_size` in `src/ini.rs` `tt_run_engine` initialization path.
+- Removed `trie_size` and `hyph_size` external link declarations from `src/ini.rs`.
+- Removed all 19 C definitions from `xetex/xetex-ini.c`.
+- Removed all 6 C definitions from `xetex/xetex-linebreak.c`.
+
+**Newtype debt (§4 check):** 7 rows added to `Deferred newtype worklist` in `01a-global-inventory.md` for semantic-typed fields (`hf`, `hyphen_passed`, `trie_max`, `trie_ptr`, `max_op_used`, `hyph_start`, `hyph_index`). Plain variables need no rows.
+
+**longjmp / Drop (§7):** N/A — plain scalar/pointer fields with no owned heap storage, no `Drop` edge. Thread-local owner unchanged.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 262 → 237 (−25).
+- Raw `unsafe { ... }` text-search count: 607 → 559 (−48, 24 getter/setter accessor pairs became fully safe).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4).
+- `grep` of the 25 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Continue with execution of workstream 01 by targeting `hyph` arrays (`hc`, `hu`, `hyf`, `trie_min`, `hyf_distance`, `hyf_num`, `hyf_next`, `op_start`, `trie_used`, `trie_op_lang`, `trie_op_val`), applying the static array mapping or dynamic allocations patterns established in prior sessions.
+
+---
+
 ## Idiom session 24 — 2026-05-23 — strings cluster arenas and scalars → StringsState
 
 **Type:** execution (workstream 01, Phase-B scalar/ownership slice).

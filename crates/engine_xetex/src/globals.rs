@@ -326,7 +326,6 @@ mod raw {
         pub(super) static mut native_len: i32;
         pub(super) static mut save_native_len: i32;
         // Further main_loop state (xetex-xetexd.h:679–686).
-        pub(super) static mut is_hyph: bool;
         pub(super) static mut bchar: i32;
         pub(super) static mut false_bchar: i32;
         pub(super) static mut cancel_boundary: bool;
@@ -335,15 +334,9 @@ mod raw {
         pub(super) static mut space_class: i32;
         pub(super) static mut prev_class: i32;
         // Hyphenation scratch state (xetex-xetexd.h:621-629).
-        pub(super) static mut hf: i32;
         pub(super) static mut hc: [i32; 4099];
         pub(super) static mut hu: [i32; 4097];
-        pub(super) static mut max_hyph_char: i32;
         pub(super) static mut hyf: [u8; 4097];
-        pub(super) static mut init_list: i32;
-        pub(super) static mut init_lig: bool;
-        pub(super) static mut init_lft: bool;
-        pub(super) static mut hyphen_passed: i16;
         // Hyphenation trie and exception tables (xetex-xetexd.h:635-645).
         pub(super) static mut trie_trl: *mut i32;
         pub(super) static mut trie_tro: *mut i32;
@@ -355,9 +348,6 @@ mod raw {
         pub(super) static mut trie_hash: *mut i32;
         pub(super) static mut trie_taken: *mut bool;
         pub(super) static mut trie_min: [i32; 65536];
-        pub(super) static mut trie_max: i32;
-        pub(super) static mut trie_size: i32;
-        pub(super) static mut trie_ptr: i32;
         pub(super) static mut hyf_distance: [i16; 35112];
         pub(super) static mut hyf_num: [i16; 35112];
         pub(super) static mut hyf_next: [u16; 35112];
@@ -365,19 +355,9 @@ mod raw {
         pub(super) static mut hyph_word: *mut i32;
         pub(super) static mut hyph_list: *mut i32;
         pub(super) static mut hyph_link: *mut u16;
-        pub(super) static mut hyph_count: i32;
-        pub(super) static mut hyph_size: i32;
-        pub(super) static mut hyph_next: i32;
         pub(super) static mut trie_used: [u16; 256];
         pub(super) static mut trie_op_lang: [u8; 35112];
         pub(super) static mut trie_op_val: [u16; 35112];
-        pub(super) static mut trie_op_ptr: i32;
-        pub(super) static mut max_op_used: u16;
-        pub(super) static mut trie_not_ready: bool;
-        pub(super) static mut hyph_start: i32;
-        pub(super) static mut hyph_index: i32;
-        // Current hyphenation language (xetex-xetexd.h:623; unsigned char = u8).
-        pub(super) static mut cur_lang: u8;
         // Currently assembled box (xetex-xetexd.h:687; node index = i32).
         pub(super) static mut cur_box: i32;
         // Token saved by \afterassignment (xetex-xetexd.h:688).
@@ -427,12 +407,6 @@ mod raw {
         pub(super) static mut hn: i16;
         pub(super) static mut ha: i32;
         pub(super) static mut hb: i32;
-        pub(super) static mut hyf_char: i32;
-        pub(super) static mut l_hyf: i32;
-        pub(super) static mut r_hyf: i32;
-        pub(super) static mut init_l_hyf: i32;
-        pub(super) static mut init_r_hyf: i32;
-        pub(super) static mut hyf_bchar: i32;
         pub(super) static mut passive: i32;
         pub(super) static mut cur_active_width: [i32; 7];
         pub(super) static mut background: [i32; 7];
@@ -3758,13 +3732,13 @@ pub(crate) fn set_save_native_len(v: i32) {
 }
 #[inline]
 pub(crate) fn is_hyph() -> bool {
-    unsafe { raw::is_hyph }
+    crate::state::with_state(|state| state.hyph.is_hyph)
 }
 #[inline]
 pub(crate) fn set_is_hyph(v: bool) {
-    unsafe {
-        raw::is_hyph = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.is_hyph = v;
+    });
 }
 #[inline]
 pub(crate) fn bchar() -> i32 {
@@ -3838,13 +3812,13 @@ pub(crate) fn set_prev_class(v: i32) {
 
 #[inline]
 pub(crate) fn hf() -> i32 {
-    unsafe { raw::hf }
+    crate::state::with_state(|state| state.hyph.hf)
 }
 #[inline]
 pub(crate) fn set_hf(v: i32) {
-    unsafe {
-        raw::hf = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hf = v;
+    });
 }
 #[inline]
 pub(crate) fn hc_entry(k: usize) -> i32 {
@@ -3868,13 +3842,13 @@ pub(crate) fn set_hu_entry(k: usize, v: i32) {
 }
 #[inline]
 pub(crate) fn max_hyph_char() -> i32 {
-    unsafe { raw::max_hyph_char }
+    crate::state::with_state(|state| state.hyph.max_hyph_char)
 }
 #[inline]
 pub(crate) fn set_max_hyph_char(v: i32) {
-    unsafe {
-        raw::max_hyph_char = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.max_hyph_char = v;
+    });
 }
 #[inline]
 pub(crate) fn hyf_entry(k: usize) -> u8 {
@@ -3888,43 +3862,43 @@ pub(crate) fn set_hyf_entry(k: usize, v: u8) {
 }
 #[inline]
 pub(crate) fn init_list() -> i32 {
-    unsafe { raw::init_list }
+    crate::state::with_state(|state| state.hyph.init_list)
 }
 #[inline]
 pub(crate) fn set_init_list(v: i32) {
-    unsafe {
-        raw::init_list = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.init_list = v;
+    });
 }
 #[inline]
 pub(crate) fn init_lig() -> bool {
-    unsafe { raw::init_lig }
+    crate::state::with_state(|state| state.hyph.init_lig)
 }
 #[inline]
 pub(crate) fn set_init_lig(v: bool) {
-    unsafe {
-        raw::init_lig = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.init_lig = v;
+    });
 }
 #[inline]
 pub(crate) fn init_lft() -> bool {
-    unsafe { raw::init_lft }
+    crate::state::with_state(|state| state.hyph.init_lft)
 }
 #[inline]
 pub(crate) fn set_init_lft(v: bool) {
-    unsafe {
-        raw::init_lft = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.init_lft = v;
+    });
 }
 #[inline]
 pub(crate) fn hyphen_passed() -> i16 {
-    unsafe { raw::hyphen_passed }
+    crate::state::with_state(|state| state.hyph.hyphen_passed)
 }
 #[inline]
 pub(crate) fn set_hyphen_passed(v: i16) {
-    unsafe {
-        raw::hyphen_passed = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyphen_passed = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_trl_entry(k: i32) -> i32 {
@@ -4028,57 +4002,57 @@ pub(crate) fn set_trie_min_entry(k: i32, v: i32) {
 }
 #[inline]
 pub(crate) fn trie_max() -> i32 {
-    unsafe { raw::trie_max }
+    crate::state::with_state(|state| state.hyph.trie_max)
 }
 #[inline]
 pub(crate) fn set_trie_max(v: i32) {
-    unsafe {
-        raw::trie_max = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_max = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_size() -> i32 {
-    unsafe { raw::trie_size }
+    crate::state::with_state(|state| state.hyph.trie_size)
 }
 #[inline]
 pub(crate) fn trie_ptr() -> i32 {
-    unsafe { raw::trie_ptr }
+    crate::state::with_state(|state| state.hyph.trie_ptr)
 }
 #[inline]
 pub(crate) fn set_trie_ptr(v: i32) {
-    unsafe {
-        raw::trie_ptr = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_ptr = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_not_ready() -> bool {
-    unsafe { raw::trie_not_ready }
+    crate::state::with_state(|state| state.hyph.trie_not_ready)
 }
 #[inline]
 pub(crate) fn set_trie_not_ready(v: bool) {
-    unsafe {
-        raw::trie_not_ready = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_not_ready = v;
+    });
 }
 #[inline]
 pub(crate) fn hyph_start() -> i32 {
-    unsafe { raw::hyph_start }
+    crate::state::with_state(|state| state.hyph.hyph_start)
 }
 #[inline]
 pub(crate) fn set_hyph_start(v: i32) {
-    unsafe {
-        raw::hyph_start = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyph_start = v;
+    });
 }
 #[inline]
 pub(crate) fn hyph_index() -> i32 {
-    unsafe { raw::hyph_index }
+    crate::state::with_state(|state| state.hyph.hyph_index)
 }
 #[inline]
 pub(crate) fn set_hyph_index(v: i32) {
-    unsafe {
-        raw::hyph_index = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyph_index = v;
+    });
 }
 #[inline]
 pub(crate) fn hyf_distance_entry(k: i32) -> i16 {
@@ -4152,23 +4126,23 @@ pub(crate) fn set_trie_op_val_entry(k: i32, v: u16) {
 }
 #[inline]
 pub(crate) fn trie_op_ptr() -> i32 {
-    unsafe { raw::trie_op_ptr }
+    crate::state::with_state(|state| state.hyph.trie_op_ptr)
 }
 #[inline]
 pub(crate) fn set_trie_op_ptr(v: i32) {
-    unsafe {
-        raw::trie_op_ptr = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_op_ptr = v;
+    });
 }
 #[inline]
 pub(crate) fn max_op_used() -> u16 {
-    unsafe { raw::max_op_used }
+    crate::state::with_state(|state| state.hyph.max_op_used)
 }
 #[inline]
 pub(crate) fn set_max_op_used(v: u16) {
-    unsafe {
-        raw::max_op_used = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.max_op_used = v;
+    });
 }
 #[inline]
 pub(crate) fn hyph_word_entry(k: i32) -> i32 {
@@ -4202,38 +4176,38 @@ pub(crate) fn set_hyph_link_entry(k: i32, v: u16) {
 }
 #[inline]
 pub(crate) fn hyph_count() -> i32 {
-    unsafe { raw::hyph_count }
+    crate::state::with_state(|state| state.hyph.hyph_count)
 }
 #[inline]
 pub(crate) fn set_hyph_count(v: i32) {
-    unsafe {
-        raw::hyph_count = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyph_count = v;
+    });
 }
 #[inline]
 pub(crate) fn hyph_size() -> i32 {
-    unsafe { raw::hyph_size }
+    crate::state::with_state(|state| state.hyph.hyph_size)
 }
 #[inline]
 pub(crate) fn hyph_next() -> i32 {
-    unsafe { raw::hyph_next }
+    crate::state::with_state(|state| state.hyph.hyph_next)
 }
 #[inline]
 pub(crate) fn set_hyph_next(v: i32) {
-    unsafe {
-        raw::hyph_next = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyph_next = v;
+    });
 }
 
 #[inline]
 pub(crate) fn cur_lang() -> u8 {
-    unsafe { raw::cur_lang }
+    crate::state::with_state(|state| state.hyph.cur_lang)
 }
 #[inline]
 pub(crate) fn set_cur_lang(v: u8) {
-    unsafe {
-        raw::cur_lang = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.cur_lang = v;
+    });
 }
 #[inline]
 pub(crate) fn insert_src_special_every_par() -> bool {
@@ -4722,63 +4696,63 @@ pub(crate) fn set_hb(v: i32) {
 }
 #[inline]
 pub(crate) fn hyf_char() -> i32 {
-    unsafe { raw::hyf_char }
+    crate::state::with_state(|state| state.hyph.hyf_char)
 }
 #[inline]
 pub(crate) fn set_hyf_char(v: i32) {
-    unsafe {
-        raw::hyf_char = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyf_char = v;
+    });
 }
 #[inline]
 pub(crate) fn l_hyf() -> i32 {
-    unsafe { raw::l_hyf }
+    crate::state::with_state(|state| state.hyph.l_hyf)
 }
 #[inline]
 pub(crate) fn set_l_hyf(v: i32) {
-    unsafe {
-        raw::l_hyf = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.l_hyf = v;
+    });
 }
 #[inline]
 pub(crate) fn r_hyf() -> i32 {
-    unsafe { raw::r_hyf }
+    crate::state::with_state(|state| state.hyph.r_hyf)
 }
 #[inline]
 pub(crate) fn set_r_hyf(v: i32) {
-    unsafe {
-        raw::r_hyf = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.r_hyf = v;
+    });
 }
 #[inline]
 pub(crate) fn init_l_hyf() -> i32 {
-    unsafe { raw::init_l_hyf }
+    crate::state::with_state(|state| state.hyph.init_l_hyf)
 }
 #[inline]
 pub(crate) fn set_init_l_hyf(v: i32) {
-    unsafe {
-        raw::init_l_hyf = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.init_l_hyf = v;
+    });
 }
 #[inline]
 pub(crate) fn init_r_hyf() -> i32 {
-    unsafe { raw::init_r_hyf }
+    crate::state::with_state(|state| state.hyph.init_r_hyf)
 }
 #[inline]
 pub(crate) fn set_init_r_hyf(v: i32) {
-    unsafe {
-        raw::init_r_hyf = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.init_r_hyf = v;
+    });
 }
 #[inline]
 pub(crate) fn hyf_bchar() -> i32 {
-    unsafe { raw::hyf_bchar }
+    crate::state::with_state(|state| state.hyph.hyf_bchar)
 }
 #[inline]
 pub(crate) fn set_hyf_bchar(v: i32) {
-    unsafe {
-        raw::hyf_bchar = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyf_bchar = v;
+    });
 }
 #[inline]
 pub(crate) fn passive() -> i32 {

@@ -1742,6 +1742,8 @@ const SUP_HASH_EXTRA: i32 = 2_097_151;
 static mut tre_pool_size: i32 = 0;
 static mut tre_string_vacancies: i32 = 0;
 static mut tre_max_strings: i32 = 0;
+static mut tre_trie_size: i32 = 0;
+static mut tre_hyph_size: i32 = 0;
 
 #[inline]
 unsafe fn xmalloc_array<T>(n: i32) -> *mut T {
@@ -1790,10 +1792,6 @@ extern "C" {
     static mut tre_font_mem_size: i32;
     #[link_name = "font_max"]
     static mut tre_font_max: i32;
-    #[link_name = "trie_size"]
-    static mut tre_trie_size: i32;
-    #[link_name = "hyph_size"]
-    static mut tre_hyph_size: i32;
     #[link_name = "buf_size"]
     static mut tre_buf_size: i32;
     #[link_name = "nest_size"]
@@ -3222,6 +3220,8 @@ pub unsafe extern "C" fn tt_run_engine(
         state.strings.pool_size = tre_pool_size;
         state.strings.string_vacancies = tre_string_vacancies;
         state.strings.max_strings = tre_max_strings;
+        state.hyph.trie_size = tre_trie_size;
+        state.hyph.hyph_size = tre_hyph_size;
     });
 
     {

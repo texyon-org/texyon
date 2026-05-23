@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 24 (2026-05-23).
+Last updated: idiom session 25 (2026-05-23).
 
 ## How to read this file
 
@@ -226,6 +226,7 @@ least-coupled non-`misc` clusters:
     `xetex-ini.c` and `xetex-output.c` were removed. All 5 accessors now fully
     safe. Newtype debt recorded for `rust_stdout` and `log_file`.
 -   **Strings ownership move (session 24):** `str_start` / `str_pool` arenas (and 11 other string-related scalar fields: `str_ptr`, `max_strings`, `init_str_ptr`, `init_pool_ptr`, `job_name`, `texmf_log_name`, `string_vacancies`, `pool_size`, `pool_ptr`, `format_ident`, `edit_name_start`) moved from C `malloc`'d arrays/globals into a Rust-owned `Vec<i32>` / `Vec<u16>` and scalar fields on `EngineState.strings` (new `StringsState` sub-struct). Evaluates limits and allocations safely in Rust during init/undump and cleans them up in `tt_cleanup`. Removed all 13 C definitions and all related `#[link_name]` aliases in `src/ini.rs`. Accessors repointed and now 12 are fully safe (only `str_pool_ptr` keeps a small `unsafe` pointer addition block).
+-   **Hyphenation scalars move (session 25):** 25 clean scalar fields of the `hyph` (hyphenation and trie) cluster (`is_hyph`, `hf`, `max_hyph_char`, `init_list`, `init_lig`, `init_lft`, `hyphen_passed`, `trie_max`, `trie_size`, `trie_ptr`, `hyph_count`, `hyph_size`, `hyph_next`, `trie_op_ptr`, `max_op_used`, `trie_not_ready`, `hyph_start`, `hyph_index`, `cur_lang` from `xetex-ini.c` and `hyf_char`, `l_hyf`, `r_hyf`, `init_l_hyf`, `init_r_hyf`, `hyf_bchar` from `xetex-linebreak.c`) moved from C globals into a Rust-owned sub-struct `EngineState.hyph` (`HyphState`). Capacity limits initialized in state. Accessors repointed, with all of them now fully safe. C definitions and `trie_size` / `hyph_size` external link aliases removed. Newtype debts recorded in the global inventory.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -234,12 +235,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 262 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 237 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 816 total / 94 state-backed scalars/arrays + 14 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 816 total / 69 state-backed scalars/arrays + 14 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 607 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 559 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -334,8 +335,9 @@ the snippets in `00-overview.md` / the workstream plans.
     The remaining `shipout` file-*handle* state (`rust_stdout`, `log_file`,
     `current_diagnostic`) was moved in session 23.
     The `strings` (`str_start` / `str_pool` and 11 scalar fields) was moved in session 24, establishing the pattern for format dump/undump arrays.
+    The 25 clean `hyph` scalar fields were moved in session 25, establishing `EngineState.hyph`.
     Options remaining:
-    (a) `hyph` (hyphenation and trie arrays), which has 49 symbols. Many are arrays (`trie_trl`, `trie_tro`, `trie_trc`, `trie_c`, `trie_o`, `trie_l`, `trie_r`, `trie_hash`, `trie_taken`, `hyph_word`, `hyph_list`, `hyph_link`) allocated at init or undump, very similar to the strings cluster. We can continue Phase-B moves on `hyph` either with the clean scalar fields first or the trie/hyph arrays.
+    (a) `hyph` arrays (`hc`, `hu`, `hyf`, `trie_min`, `hyf_distance`, `hyf_num`, `hyf_next`, `op_start`, `trie_used`, `trie_op_lang`, `trie_op_val`) and the dynamically allocated arrays (`trie_trl`, `trie_tro`, `trie_trc`, `trie_c`, `trie_o`, `trie_l`, `trie_r`, `trie_hash`, `trie_taken`, `hyph_word`, `hyph_list`, `hyph_link`), which are allocated at init or undump, very similar to the strings cluster.
     For each symbol moved, use `01a-global-inventory.md` for C defs /
     cleanup aliases / accessors, and add a worklist row for any
     semantic-typed field (§4 rule).
