@@ -80,15 +80,6 @@ mod raw {
         pub(super) static mut mem_end: i32;
         pub(super) static mut rover: i32;
 
-        // Output selector (xetex-xetexd.h:431). C type `selector_t` is an
-        // int-sized enum; values range 0–21 (see xetex-core.h).
-        pub(super) static mut selector: i32;
-        // True while processing a \special (xetex-xetexd.h:439).
-        pub(super) static mut doing_special: bool;
-        // Print position counters (xetex-xetexd.h:434–435).
-        pub(super) static mut term_offset: i32;
-        pub(super) static mut file_offset: i32;
-
         // Output file handles (xetex-xetexd.h:429–430, 691).
         // `rust_output_handle_t` is `uintptr_t` (tectonic_bridge_core_generated.h:9).
         pub(super) static mut rust_stdout: usize;
@@ -153,11 +144,6 @@ mod raw {
         // name_length16: number of UTF-16 code units in name_of_file16.
         pub(super) static mut name_length16: i32;
 
-        // Saved selector value used by begin_diagnostic/end_diagnostic (xetex-xetexd.h:481).
-        pub(super) static mut old_setting: u8;
-        // SyncTeX timing base (xetex-xetexd.h:601–602).
-        pub(super) static mut epochseconds: i32;
-        pub(super) static mut microseconds: i32;
         // Font name table (xetex-xetexd.h:562; str_number = i32).
         pub(super) static mut font_name: *mut i32;
         // Font memory tables (xetex-xetexd.h:555–590).
@@ -349,24 +335,8 @@ mod raw {
         // Null character-info word (xetex-xetexd.h:591).
         pub(super) static mut null_character: crate::mem_types::B16x4;
 
-        // Page builder state (xetex-xetexd.h:597, 604, 664–671).
-        pub(super) static mut dead_cycles: i32;
-        pub(super) static mut page_tail: i32;
-        pub(super) static mut last_badness: i32;
-        pub(super) static mut page_contents: u8;
-        pub(super) static mut page_so_far: [i32; 8];
-        pub(super) static mut last_glue: i32;
-        pub(super) static mut last_penalty: i32;
         // disc_ptr[4]: saved discretionary break pointers (xetex-xetexd.h:716).
         pub(super) static mut disc_ptr: [i32; 4];
-        pub(super) static mut last_kern: i32;
-        pub(super) static mut last_node_type: i32;
-        pub(super) static mut insert_penalties: i32;
-        pub(super) static mut output_active: bool;
-
-        // Positions of last PDF output points (xetex-xetexd.h:698–699).
-        pub(super) static mut pdf_last_x_pos: i32;
-        pub(super) static mut pdf_last_y_pos: i32;
 
         // Per-font encoding/layout arrays (xetex-xetexd.h:563–573).
         // font_area[f]: encoded font area (str_number = i32).
@@ -445,8 +415,6 @@ mod raw {
         pub(super) static mut false_bchar: i32;
         pub(super) static mut cancel_boundary: bool;
         pub(super) static mut ins_disc: bool;
-        // SyncTeX auto-insert flag (xetex-xetexd.h:419).
-        pub(super) static mut insert_src_special_auto: bool;
         // XeTeX inter-character class state (xetex-xetexd.h:679-681).
         pub(super) static mut space_class: i32;
         pub(super) static mut prev_class: i32;
@@ -1382,53 +1350,46 @@ pub(crate) fn set_dig_entry(k: usize, v: u8) {
 /// Returns the current output selector (xetex-xetexd.h:431).
 #[inline]
 pub(crate) fn selector() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::selector }
+    crate::state::with_state(|state| state.shipout.selector)
 }
 /// Write `selector = v`.
 #[inline]
 pub(crate) fn set_selector(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::selector = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.selector = v;
+    });
 }
 
 /// Returns true while the engine is processing a `\special` (xetex-xetexd.h:439).
 #[inline]
 pub(crate) fn doing_special() -> bool {
-    // SAFETY: see module-level doc.
-    unsafe { raw::doing_special }
+    crate::state::with_state(|state| state.shipout.doing_special)
 }
 
 /// Returns `term_offset` (columns written to terminal since last newline).
 #[inline]
 pub(crate) fn term_offset() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::term_offset }
+    crate::state::with_state(|state| state.shipout.term_offset)
 }
 /// Sets `term_offset`.
 #[inline]
 pub(crate) fn set_term_offset(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::term_offset = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.term_offset = v;
+    });
 }
 
 /// Returns `file_offset` (columns written to log file since last newline).
 #[inline]
 pub(crate) fn file_offset() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::file_offset }
+    crate::state::with_state(|state| state.shipout.file_offset)
 }
 /// Sets `file_offset`.
 #[inline]
 pub(crate) fn set_file_offset(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::file_offset = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.file_offset = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1849,13 +1810,13 @@ pub(crate) fn set_shell_escape_enabled(v: bool) {
 
 #[inline]
 pub(crate) fn old_setting() -> u8 {
-    unsafe { raw::old_setting }
+    crate::state::with_state(|state| state.shipout.old_setting)
 }
 #[inline]
 pub(crate) fn set_old_setting(v: u8) {
-    unsafe {
-        raw::old_setting = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.old_setting = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2688,63 +2649,63 @@ pub(crate) fn set_radix(v: u8) {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn dead_cycles() -> i32 {
-    unsafe { raw::dead_cycles }
+    crate::state::with_state(|state| state.shipout.dead_cycles)
 }
 #[inline]
 pub(crate) fn set_dead_cycles(v: i32) {
-    unsafe {
-        raw::dead_cycles = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.dead_cycles = v;
+    });
 }
 #[inline]
 pub(crate) fn last_badness() -> i32 {
-    unsafe { raw::last_badness }
+    crate::state::with_state(|state| state.shipout.last_badness)
 }
 #[inline]
 pub(crate) fn set_last_badness(v: i32) {
-    unsafe {
-        raw::last_badness = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.last_badness = v;
+    });
 }
 #[inline]
 pub(crate) fn page_tail() -> i32 {
-    unsafe { raw::page_tail }
+    crate::state::with_state(|state| state.shipout.page_tail)
 }
 #[inline]
 pub(crate) fn set_page_tail(v: i32) {
-    unsafe {
-        raw::page_tail = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.page_tail = v;
+    });
 }
 #[inline]
 pub(crate) fn page_contents() -> u8 {
-    unsafe { raw::page_contents }
+    crate::state::with_state(|state| state.shipout.page_contents)
 }
 #[inline]
 pub(crate) fn set_page_contents(v: u8) {
-    unsafe {
-        raw::page_contents = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.page_contents = v;
+    });
 }
 #[inline]
 pub(crate) fn page_so_far(k: usize) -> i32 {
-    unsafe { raw::page_so_far[k] }
+    crate::state::with_state(|state| state.shipout.page_so_far[k])
 }
 #[inline]
 pub(crate) fn set_page_so_far(k: usize, v: i32) {
-    unsafe {
-        raw::page_so_far[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.page_so_far[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn last_glue() -> i32 {
-    unsafe { raw::last_glue }
+    crate::state::with_state(|state| state.shipout.last_glue)
 }
 #[inline]
 pub(crate) fn set_last_glue(v: i32) {
-    unsafe {
-        raw::last_glue = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.last_glue = v;
+    });
 }
 #[inline]
 pub(crate) fn disc_ptr(k: usize) -> i32 {
@@ -2758,53 +2719,53 @@ pub(crate) fn set_disc_ptr(k: usize, v: i32) {
 }
 #[inline]
 pub(crate) fn last_penalty() -> i32 {
-    unsafe { raw::last_penalty }
+    crate::state::with_state(|state| state.shipout.last_penalty)
 }
 #[inline]
 pub(crate) fn set_last_penalty(v: i32) {
-    unsafe {
-        raw::last_penalty = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.last_penalty = v;
+    });
 }
 #[inline]
 pub(crate) fn last_kern() -> i32 {
-    unsafe { raw::last_kern }
+    crate::state::with_state(|state| state.shipout.last_kern)
 }
 #[inline]
 pub(crate) fn set_last_kern(v: i32) {
-    unsafe {
-        raw::last_kern = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.last_kern = v;
+    });
 }
 #[inline]
 pub(crate) fn last_node_type() -> i32 {
-    unsafe { raw::last_node_type }
+    crate::state::with_state(|state| state.shipout.last_node_type)
 }
 #[inline]
 pub(crate) fn set_last_node_type(v: i32) {
-    unsafe {
-        raw::last_node_type = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.last_node_type = v;
+    });
 }
 #[inline]
 pub(crate) fn insert_penalties() -> i32 {
-    unsafe { raw::insert_penalties }
+    crate::state::with_state(|state| state.shipout.insert_penalties)
 }
 #[inline]
 pub(crate) fn set_insert_penalties(v: i32) {
-    unsafe {
-        raw::insert_penalties = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.insert_penalties = v;
+    });
 }
 #[inline]
 pub(crate) fn output_active() -> bool {
-    unsafe { raw::output_active }
+    crate::state::with_state(|state| state.shipout.output_active)
 }
 #[inline]
 pub(crate) fn set_output_active(v: bool) {
-    unsafe {
-        raw::output_active = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.output_active = v;
+    });
 }
 #[inline]
 pub(crate) fn random_seed() -> i32 {
@@ -2818,11 +2779,11 @@ pub(crate) fn set_random_seed(v: i32) {
 }
 #[inline]
 pub(crate) fn pdf_last_x_pos() -> i32 {
-    unsafe { raw::pdf_last_x_pos }
+    crate::state::with_state(|state| state.shipout.pdf_last_x_pos)
 }
 #[inline]
 pub(crate) fn pdf_last_y_pos() -> i32 {
-    unsafe { raw::pdf_last_y_pos }
+    crate::state::with_state(|state| state.shipout.pdf_last_y_pos)
 }
 
 // ---------------------------------------------------------------------------
@@ -2831,23 +2792,23 @@ pub(crate) fn pdf_last_y_pos() -> i32 {
 
 #[inline]
 pub(crate) fn epochseconds() -> i32 {
-    unsafe { raw::epochseconds }
+    crate::state::with_state(|state| state.shipout.epochseconds)
 }
 #[inline]
 pub(crate) fn set_epochseconds(v: i32) {
-    unsafe {
-        raw::epochseconds = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.epochseconds = v;
+    });
 }
 #[inline]
 pub(crate) fn microseconds() -> i32 {
-    unsafe { raw::microseconds }
+    crate::state::with_state(|state| state.shipout.microseconds)
 }
 #[inline]
 pub(crate) fn set_microseconds(v: i32) {
-    unsafe {
-        raw::microseconds = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.microseconds = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3955,7 +3916,7 @@ pub(crate) fn set_ins_disc(v: bool) {
 }
 #[inline]
 pub(crate) fn insert_src_special_auto() -> bool {
-    unsafe { raw::insert_src_special_auto }
+    crate::state::with_state(|state| state.shipout.insert_src_special_auto)
 }
 
 #[inline]
@@ -5355,15 +5316,15 @@ pub(crate) fn font_letter_space_entry(f: i32) -> i32 {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn set_pdf_last_x_pos(v: i32) {
-    unsafe {
-        raw::pdf_last_x_pos = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.pdf_last_x_pos = v;
+    });
 }
 #[inline]
 pub(crate) fn set_pdf_last_y_pos(v: i32) {
-    unsafe {
-        raw::pdf_last_y_pos = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.pdf_last_y_pos = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -5371,9 +5332,9 @@ pub(crate) fn set_pdf_last_y_pos(v: i32) {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn set_doing_special(v: bool) {
-    unsafe {
-        raw::doing_special = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.doing_special = v;
+    });
 }
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 6 (2026-05-23).
+Last updated: idiom session 7 (2026-05-23).
 
 ## How to read this file
 
@@ -64,6 +64,17 @@ least-coupled non-`misc` clusters:
     `EngineState.shipout`: `insert_src_special_every_par`,
     `insert_src_special_every_math`, and
     `insert_src_special_every_vbox`.
+-   `shipout` scalar cluster moved into `EngineState.shipout` (21 more
+    fields): `selector`, `doing_special`, `term_offset`, `file_offset`,
+    `old_setting`, `epochseconds`, `microseconds`, `dead_cycles`,
+    `page_tail`, `last_badness`, `page_contents`, `page_so_far`,
+    `last_glue`, `last_penalty`, `last_kern`, `last_node_type`,
+    `insert_penalties`, `output_active`, `pdf_last_x_pos`,
+    `pdf_last_y_pos`, and `insert_src_special_auto`. Raw externs and C
+    definitions removed in the same change; no cleanup aliases existed.
+    Remaining `shipout` rows are pointer/file-handle state with
+    init/cleanup edges (`rust_stdout`, `log_file`, `write_file`,
+    `current_diagnostic`).
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -72,12 +83,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 347 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 326 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 37 state-backed globals |
+| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 58 state-backed globals |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 780 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 739 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -120,12 +131,17 @@ the snippets in `00-overview.md` / the workstream plans.
 
 ## Next action for a fresh session
 
-1.  Continue executing workstream 01 with another small non-`misc`
-    cluster. `strings` is a logical next target, but it is
-    ownership-bearing: handle `str_start` / `str_pool` allocation,
-    cleanup aliases, and format loading/dumping paths in one slice. For
-    each symbol moved, use `01a-global-inventory.md` to update C
-    definitions, cleanup aliases, and accessors in the same commit.
+1.  Continue executing workstream 01. The remaining low-coupling
+    non-`misc` scalar groups are largely exhausted in `shipout`; the
+    next targets carry ownership/cleanup edges. Two good choices:
+    (a) `strings` (the planned next big ownership-bearing cluster):
+    handle `str_start` / `str_pool` allocation, cleanup aliases, and
+    format loading/dumping in one slice; or (b) the remaining `shipout`
+    file-handle/pointer state (`rust_stdout`, `log_file`, `write_file`,
+    `write_open`, `current_diagnostic`) as its own ownership-aware
+    slice. For each symbol moved, use `01a-global-inventory.md` to
+    update C definitions, cleanup aliases, and accessors in the same
+    commit.
 2.  The `config` bridge pattern in `src/state.rs` is intentionally small:
     keep `with_state` / `with_state_mut` borrows to single-field
     read/write closures and avoid calling translated engine code while a

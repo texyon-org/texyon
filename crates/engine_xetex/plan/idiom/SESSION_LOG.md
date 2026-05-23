@@ -9,6 +9,62 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 7 — 2026-05-23 — shipout scalar cluster Phase-B bridge
+
+**Type:** execution (workstream 01).
+
+**Goal:** continue Phase B by moving the remaining low-coupling
+`shipout` scalar globals into `EngineState.shipout`, building on the
+tiny session-6 slice, without taking on the pointer/file-handle
+ownership surface of that cluster.
+
+**Work done:**
+- Extended `ShipoutState` with 21 scalar/array fields and repointed
+  their `globals.rs` accessors at `state::with_state` /
+  `with_state_mut`: `selector`, `doing_special`, `term_offset`,
+  `file_offset`, `old_setting`, `epochseconds`, `microseconds`,
+  `dead_cycles`, `page_tail`, `last_badness`, `page_contents`,
+  `page_so_far` (`[i32; 8]`), `last_glue`, `last_penalty`, `last_kern`,
+  `last_node_type`, `insert_penalties`, `output_active`,
+  `pdf_last_x_pos`, `pdf_last_y_pos`, and `insert_src_special_auto`.
+- Removed the matching raw `extern` declarations from `globals.rs`
+  `mod raw` and the C definitions from `xetex/xetex-ini.c`.
+- Left `disc_ptr` (scanner cluster) untouched where it was interleaved
+  with the page-builder scalars.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 347 → 326.
+- Raw `unsafe { ... }` text-search count: 780 → 739.
+- `globals.rs`: 58 globals now state-backed.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, existing warnings.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+
+**Surprises / gotchas:**
+- These globals are only reached through `globals.rs` accessors: no
+  non-macOS C reader and no separate `extern` redeclaration in other
+  Rust modules (verified by grep), so the move is purely repoint +
+  delete-def. Print-path scalars (`selector`, `file_offset`,
+  `term_offset`) are consistent with the errors-cluster print scalars
+  already bridged in session 5.
+- None of these had `#[link_name]` cleanup aliases, so no `ini.rs`
+  free-path edits were needed.
+- The remaining `shipout` rows are pointer / file-handle state
+  (`rust_stdout`, `log_file`, `write_file`, `current_diagnostic`) that
+  carry init/cleanup edges; defer them to an ownership-aware slice.
+
+**For the next session:**
+- Either take an ownership-bearing cluster (`strings` is the planned
+  next big one: `str_start` / `str_pool` allocation, cleanup aliases,
+  format load/dump), or finish the remaining `shipout` file-handle
+  state as its own ownership-aware slice.
+- Keep `with_state` / `with_state_mut` closures single-field; do not
+  call translated engine code while a `RefCell` borrow is live.
+
 ## Idiom session 6 — 2026-05-23 — tiny shipout source-special flag bridge
 
 **Type:** execution (workstream 01, short slice).
