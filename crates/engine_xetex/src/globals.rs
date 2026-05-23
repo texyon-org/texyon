@@ -154,8 +154,6 @@ mod raw {
         pub(super) static mut cur_mark: [i32; 5];
         // Current parsed integer value (xetex-xetexd.h:530).
         pub(super) static mut cur_val: i32;
-        // Magnification as actually set this job (xetex-xetexd.h:498; 0 = not set yet).
-        pub(super) static mut mag_set: i32;
 
         // Maximum font id (xetex-xetexd.h:406).
         pub(super) static mut font_max: i32;
@@ -212,9 +210,6 @@ mod raw {
         // xetex-xetexd.h:541 — line number saved when entering \if-skip block.
         pub(super) static mut skip_line: i32;
 
-        // Current display mode for show_cur_cmd_chr (xetex-xetexd.h:480; short = i16).
-        pub(super) static mut shown_mode: i16;
-
         // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
         pub(super) static mut nest_ptr: i32;
         pub(super) static mut max_nest_stack: i32;
@@ -237,7 +232,6 @@ mod raw {
 
         // Expression-depth guard (xetex-xetexd.h:415, 525).
         pub(super) static mut expand_depth: i32;
-        pub(super) static mut expand_depth_count: i32;
         // Value-type level for the current scanned quantity (xetex-xetexd.h:532).
         // 0=INT_VAL, 1=DIMEN_VAL, 2=GLUE_VAL, 3=MU_VAL (unsigned char).
         pub(super) static mut cur_val_level: u8;
@@ -274,8 +268,6 @@ mod raw {
 
         // Second parsed value register used by scan_something_internal (xetex-xetexd.h:531).
         pub(super) static mut cur_val1: i32;
-        // Scanner radix: 8, 10, or 16 (xetex-xetexd.h:533; small_number = u8).
-        pub(super) static mut radix: u8;
 
         // Null character-info word (xetex-xetexd.h:591).
         pub(super) static mut null_character: crate::mem_types::B16x4;
@@ -2570,13 +2562,13 @@ pub(crate) fn set_cur_val1(v: i32) {
 }
 #[inline]
 pub(crate) fn radix() -> u8 {
-    unsafe { raw::radix }
+    crate::state::with_state(|s| s.scanner.radix)
 }
 #[inline]
 pub(crate) fn set_radix(v: u8) {
-    unsafe {
-        raw::radix = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.radix = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2752,13 +2744,13 @@ pub(crate) fn set_microseconds(v: i32) {
 
 #[inline]
 pub(crate) fn mag_set() -> i32 {
-    unsafe { raw::mag_set }
+    crate::state::with_state(|s| s.scanner.mag_set)
 }
 #[inline]
 pub(crate) fn set_mag_set(v: i32) {
-    unsafe {
-        raw::mag_set = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.mag_set = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3241,13 +3233,13 @@ pub(crate) fn sa_null() -> crate::mem_types::MemoryWord {
 
 #[inline]
 pub(crate) fn shown_mode() -> i16 {
-    unsafe { raw::shown_mode }
+    crate::state::with_state(|s| s.scanner.shown_mode)
 }
 #[inline]
 pub(crate) fn set_shown_mode(v: i16) {
-    unsafe {
-        raw::shown_mode = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.shown_mode = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3529,13 +3521,13 @@ pub(crate) fn expand_depth() -> i32 {
 }
 #[inline]
 pub(crate) fn expand_depth_count() -> i32 {
-    unsafe { raw::expand_depth_count }
+    crate::state::with_state(|s| s.scanner.expand_depth_count)
 }
 #[inline]
 pub(crate) fn set_expand_depth_count(v: i32) {
-    unsafe {
-        raw::expand_depth_count = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.expand_depth_count = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_val_level() -> u8 {

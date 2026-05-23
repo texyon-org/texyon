@@ -9,6 +9,86 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 21 — 2026-05-23 — cold scanner scalars (shown_mode/mag_set/radix/expand_depth_count) → ScannerState
+
+**Type:** execution (workstream 01, Phase-B scalar slice).
+
+**Goal:** move the 4 clean cold scanner scratch scalars `shown_mode`
+(`short`/i16), `mag_set` (`int32_t`/i32), `radix` (`small_number`, stored u8),
+`expand_depth_count` (`int32_t`/i32) into `EngineState.scanner`. One coherent
+slice (clean cold scanner scalars), one commit.
+
+**Why this slice:** the remaining ownership slices (`strings` touches the
+format dump/undump; `shipout` file-handle state has cleanup edges) are more
+involved. These 4 are the confirmed-clean cold scanner scalars carried as
+low-risk filler since session 20: `shown_mode` is the show-mode latch for
+`show_cur_cmd_chr`; `mag_set` is the once-per-job magnification latch; `radix`
+is the scanner number base (8/10/16); `expand_depth_count` is the
+`\expanded`/expression-depth guard counter. None are on the tokenizer or
+per-character hot path. They share a contiguous-ish declaration region in
+`xetex-ini.c` and `mod raw`, so the move is clean.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `extern short shown_mode`, `extern int32_t mag_set`,
+  `extern small_number radix`, `extern int32_t expand_depth_count` in
+  `xetex-xetexd.h`. `small_number` is `typedef short` (`xetex-xetexd.h:50`) — a
+  semantic typedef → **newtype debt for `radix`**. The other three are plain
+  `short`/`int32_t` → no debt (`shown_mode` holds a mode value but its declared
+  C type is plain `short`, not a mode typedef/enum, so per the session-20
+  precedent no row is added).
+- (b) cleanup aliases: none for any of the 4 → scalar slice, not ownership.
+- (c) C readers: only `xetex/xetex-ini.c` (the definitions).
+- (d) cross-module redeclarations: none.
+
+**Work done:**
+- Added the 4 fields to `ScannerState` in `src/state.rs` with their existing
+  bridge widths (`shown_mode: i16`, `mag_set: i32`, `radix: u8`,
+  `expand_depth_count: i32`); `#[derive(Default)]` covers them.
+- Repointed all 8 accessors in `globals.rs` (`shown_mode`/`set_shown_mode`,
+  `mag_set`/`set_mag_set`, `radix`/`set_radix`,
+  `expand_depth_count`/`set_expand_depth_count`) from `unsafe { raw::… }` to
+  `with_state`/`with_state_mut` closures. All 8 are now fully safe (no `unsafe`).
+- Removed the 4 raw externs from `globals.rs` `mod raw` and the 4 C def lines
+  (75/81/102/110) from `xetex/xetex-ini.c`, each interleaved with kept symbols
+  so removed individually. No allocation/cleanup edits (plain BSS scalars).
+
+**Newtype debt (§4 check):** one row added — `radix` (`small_number` →
+`SmallNumber`/`Radix`). `shown_mode`/`mag_set`/`expand_depth_count` are plain
+`short`/`int32_t`, no rows (checked).
+
+**longjmp / Drop (§7):** N/A — plain scalar fields, no owned heap storage, no
+`Drop` edge. Thread-local owner unchanged.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 285 → 281 (−4).
+- Raw `unsafe { ... }` text-search count: 647 → 639 (−8, all 8 accessors became
+  fully safe).
+- `#[link_name]` aliases: unchanged (this slice had none).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of the 4 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Remaining ownership-bearing options (rough difficulty order): `strings`
+  (`str_start`/`str_pool`, **serialized in format dump/undump** — first
+  format-path slice, most involved); remaining `shipout` file-*handle* state
+  (`rust_stdout` has a cleanup alias → ownership slice; `log_file`;
+  `current_diagnostic`, C-defined in `xetex-output.c`).
+- Clean cold `scanner` scalar filler is now nearly exhausted. The `sa_*`
+  sparse-array group (`cur_ptr`, `sa_null`, `sa_root`, `sa_chain`, `sa_level`,
+  `max_reg_num`, `max_reg_help_line`) remains but is messier: `sa_root` has a
+  link alias (ownership), `sa_null` is a `MemoryWord`, `max_reg_help_line` is a
+  `*const c_char`.
+- Reminder: do **not** bridge the hot tokenizer scalars (`cur_cmd`,
+  `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) or the `main_*` ligature/main-loop
+  scratch scalars (per-character hot path); the `mem` bookkeeping scalars go
+  with the `Mem` arena move (§5).
+
 ## Idiom session 20 — 2026-05-23 — alignment state scalars → ScannerState
 
 **Type:** execution (workstream 01, Phase-B scalar slice).

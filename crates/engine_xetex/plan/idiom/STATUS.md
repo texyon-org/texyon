@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 20 (2026-05-23).
+Last updated: idiom session 21 (2026-05-23).
 
 ## How to read this file
 
@@ -201,6 +201,14 @@ least-coupled non-`misc` clusters:
     `\halign`/`\valign` scratch, not on the tokenizer/main-loop hot path); raw
     externs and C defs removed in the same change; no cleanup aliases, no
     newtype debt (all checked plain `int32_t`).
+-   `scanner` clean cold scratch scalars moved into `EngineState.scanner` (4
+    fields): `shown_mode` (`short`), `mag_set` (`int32_t`), `radix`
+    (`small_number`, stored `u8`), `expand_depth_count` (`int32_t`). Non-hot
+    (show-mode latch / once-per-job magnification latch / scanner number base /
+    expression-depth guard), so the thread-local bridge has no hot-path cost.
+    Raw externs and C defs removed in the same change; no cleanup aliases. One
+    newtype debt row added: `radix` (`small_number` → `SmallNumber`/`Radix`);
+    the other three are plain `short`/`int32_t`.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -209,12 +217,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 285 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 281 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 87 state-backed scalars/arrays + 12 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 91 state-backed scalars/arrays + 12 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 647 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 639 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -295,10 +303,11 @@ the snippets in `00-overview.md` / the workstream plans.
     The `shipout` write-stream arrays (`write_file`/`write_open`) were moved
     scalar-style in session 19; the `scanner` alignment-state scalars
     (`cur_align`/`cur_span`/`cur_loop`/`align_ptr`/`cur_head`/`cur_tail`/
-    `cur_pre_head`/`cur_pre_tail`) in session 20. More clean cold `scanner`
-    scalars remain as low-risk filler (`shown_mode`, `mag_set`, `radix`,
-    `expand_depth_count`; the `sa_*` group is messier — `sa_root` has a link
-    alias, `sa_null` is a `MemoryWord`, `max_reg_help_line` is a pointer).
+    `cur_pre_head`/`cur_pre_tail`) in session 20; the clean cold `scanner`
+    scalars `shown_mode`/`mag_set`/`radix`/`expand_depth_count` in session 21.
+    Clean cold `scanner` scalar filler is now nearly exhausted — the `sa_*`
+    sparse-array group remains but is messier (`sa_root` has a link alias,
+    `sa_null` is a `MemoryWord`, `max_reg_help_line` is a pointer).
     Do **not** bridge the `main_*` ligature/main-loop scratch scalars (hot
     per-character path), same reasoning as the tokenizer scalars.
     Options remaining, in rough difficulty order:

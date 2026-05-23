@@ -111,6 +111,10 @@ pub(crate) struct ScannerState {
     pub cur_tail: i32,
     pub cur_pre_head: i32,
     pub cur_pre_tail: i32,
+    pub shown_mode: i16,
+    pub mag_set: i32,
+    pub radix: u8,
+    pub expand_depth_count: i32,
 }
 
 #[derive(Default)]
