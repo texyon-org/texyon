@@ -60,6 +60,14 @@ pub(crate) struct InputClusterState {
     /// Element type is a `UFILE*` handle, stored as `*mut c_void` to avoid a
     /// cyclic dependency on `io.rs` — a plain pointer, no newtype debt.
     pub input_file: Vec<*mut libc::c_void>,
+    /// Rust-owned semantic-nest (mode) stack (`nest_size + 1` records, matching
+    /// the former `xmalloc_array` shape). Allocated at engine init and released
+    /// by `tt_cleanup`; never reallocated during a run. Replaces the former
+    /// C-`malloc`'d `nest` pointer. Not serialized in format dump/undump.
+    /// Element type is the `ListStateRecord` struct (mirrors C
+    /// `list_state_record`) — a compound struct, not a scalar typedef, no
+    /// newtype debt.
+    pub nest: Vec<crate::mem_types::ListStateRecord>,
 }
 
 #[derive(Default)]

@@ -69,7 +69,6 @@ int32_t hlist_stack[MAX_HLIST_STACK + 1];
 short hlist_stack_level;
 int32_t first_p;
 int32_t global_prev_p;
-list_state_record *nest;
 int32_t nest_ptr;
 int32_t max_nest_stack;
 list_state_record cur_list;

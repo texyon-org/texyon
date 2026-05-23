@@ -9,6 +9,104 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 18 — 2026-05-23 — nest array → Rust-owned Vec
+
+**Type:** execution (workstream 01, ownership-bearing slice).
+
+**Goal:** move the `nest` (`list_state_record * == *mut ListStateRecord`)
+into a Rust-owned `Vec<ListStateRecord>` on `EngineState.input`. One array,
+one commit. **Last** remaining `input`-cluster array — with this slice all
+input arrays are Rust-owned.
+
+**Why nest now:** it was the last input array left; it has no
+pointer-escaping accessor (unlike `buffer`/`input_file`), so the move is
+purely "index the `Vec`" per accessor — the simplest remaining shape.
+`ListStateRecord` already exists in `mem_types.rs` as a
+`#[repr(C)] #[derive(Copy, Clone)]` struct, so `Vec<ListStateRecord>`
+derives `Default` (empty) and `InputClusterState` still derives `Default`
+with no hand-written impl. Only C reference is its `xetex-ini.c` definition;
+not serialized in the format dump/undump.
+
+**Pre-move grep checks (§11 step 2):** (a) declared `list_state_record
+*nest;` in `xetex-xetexd.h:476`. `list_state_record` is a struct typedef,
+already mirrored 1:1 by the Rust `ListStateRecord` — a compound struct, not
+a scalar semantic typedef, so **no** newtype debt (type info preserved in
+the struct, same reasoning as session-16 `input_stack`/`InputState`). (b)
+two `link_name = "nest"` aliases in `ini.rs` (alloc `tre_nest` + cleanup
+`tt_cleanup_nest`) → ownership slice. (c) only `xetex-ini.c` references it.
+(d) no foreign-module redeclaration (only the two `ini.rs` aliases being
+removed).
+
+**Work done:**
+- Added `nest: Vec<crate::mem_types::ListStateRecord>` to
+  `InputClusterState` in `src/state.rs` (`#[derive(Default)]` still covers
+  the struct — empty Vec).
+- Repointed the 12 `raw::nest` accessors in `globals.rs`:
+  `restore_cur_list_from_nest`/`save_cur_list_to_nest` copy the whole
+  `ListStateRecord` to/from the separate `cur_list` static (which is **not**
+  part of this slice — it stays a raw global); the 10 field-projection
+  accessors (`nest_mode`, `nest_tail`, `set_nest_tail`, `nest_e_tex_aux`,
+  `nest_prev_graf`, `set_nest_prev_graf`, `nest_head`, `nest_mode_line`,
+  `nest_aux_b32s1`, `nest_aux_b32s0`) index the `Vec` via
+  `with_state`/`with_state_mut`. The two `aux.b32.*` reads keep an inner
+  `unsafe` (the `MemoryWord` union projection); the other 8 field accessors
+  are now fully safe. `nest_ptr`/`max_nest_stack`/`nest_size` are separate
+  scalars and stay behind.
+- Allocation (`ini.rs`): replaced
+  `tre_nest = xmalloc_array::<ListStateRecord>(tre_nest_size)` with a
+  `with_state_mut` block writing `vec![<zero ListStateRecord>; nest_size + 1]`
+  (matching the former `n + 1` shape; zero word built explicitly since
+  `MemoryWord` has no `Default`).
+- Cleanup (`tt_cleanup`): dropped `nest` (`= Vec::new()`) folded into the
+  existing input cleanup block instead of `libc::free`.
+- Removed both `#[link_name = "nest"]` alias decls (alloc + cleanup), the
+  raw extern in `globals.rs`, and the C def in `xetex-ini.c`.
+
+**Newtype debt (§4 check):** element type is the `list_state_record` struct,
+mirrored 1:1 by `ListStateRecord` — a compound struct, not a scalar typedef
+collapse, so **no** worklist row (checked, none needed). The per-field
+accessor return types (`mode: i16`, the `i32` aux/graf/head fields) are
+unchanged by this slice and were already the accessor shape before.
+
+**longjmp / Drop (§7, handled):** identical to sessions 11–17 —
+`EngineState` lives in the `'static` thread-local, so a `longjmp` abort never
+jumps over the `Vec`; `Drop` doesn't run on abort (matches prior C).
+`tt_cleanup` is the normal teardown and now drops the `Vec`.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 296 → 295.
+- Raw `unsafe { ... }` text-search count: 675 → 667 (8 field accessors became
+  fully safe; 4 unsafe remain across the nest accessors — 2 aux-union reads
+  + 2 `cur_list` copies).
+- `#[link_name]` aliases in `ini.rs`: −2.
+- 12 Rust-owned arena arrays total (save_stack, param_stack, the 5 session-13
+  line/group stacks, eof_seen, buffer, input_stack, input_file, + nest). **All
+  `input`-cluster arrays are now Rust-owned.**
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of `nest` in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- **No `input` arrays remain** — the input cluster's arrays are fully
+  Rust-owned. Remaining ownership-bearing options (rough difficulty order):
+  - `strings` (`str_start` / `str_pool`): **serialized in the format
+    dump/undump**, so that slice must also reconcile the load/dump paths
+    (the first ownership slice that touches the format paths — more involved
+    than the input arrays).
+  - remaining `shipout` file-handle state: `rust_stdout` (has a cleanup
+    alias), `write_file`/`write_open` (inline arrays, movable like scalars),
+    `current_diagnostic` (C-defined in `xetex-output.c`, not `xetex-ini.c`).
+- Clean (no-cleanup-alias) non-hot `scanner` scalars also still available as
+  low-risk filler (`shown_mode`, `mag_set`, `radix`, `expand_depth_count`, …).
+- Reminder: do **not** bridge the hot tokenizer scalars (`cur_cmd`,
+  `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`); the `mem` bookkeeping scalars
+  go with the `Mem` arena move (§5), not as a loose slice.
+
 ## Idiom session 17 — 2026-05-23 — input_file array → Rust-owned Vec
 
 **Type:** execution (workstream 01, ownership-bearing slice).

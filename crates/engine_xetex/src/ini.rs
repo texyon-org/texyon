@@ -1813,8 +1813,6 @@ extern "C" {
     static mut tre_hash_extra: i32;
     #[link_name = "expand_depth"]
     static mut tre_expand_depth: i32;
-    #[link_name = "nest"]
-    static mut tre_nest: *mut crate::mem_types::ListStateRecord;
     #[link_name = "hyph_word"]
     static mut tre_hyph_word: *mut i32;
     #[link_name = "hyph_list"]
@@ -3217,7 +3215,28 @@ pub unsafe extern "C" fn tt_run_engine(
             s.input.buffer = vec![0i32; n];
         });
     }
-    tre_nest = xmalloc_array::<crate::mem_types::ListStateRecord>(tre_nest_size);
+    {
+        // Rust-owned semantic-nest stack (`nest_size + 1` records, matching the
+        // former `xmalloc_array` shape). Allocated fresh each run; released by
+        // `tt_cleanup`. Never reallocated during a run.
+        let n = (tre_nest_size as usize) + 1;
+        crate::state::with_state_mut(|s| {
+            s.input.nest = vec![
+                crate::mem_types::ListStateRecord {
+                    mode: 0,
+                    head: 0,
+                    tail: 0,
+                    e_tex_aux: 0,
+                    prev_graf: 0,
+                    mode_line: 0,
+                    aux: crate::mem_types::MemoryWord {
+                        b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
+                    },
+                };
+                n
+            ];
+        });
+    }
     {
         // Rust-owned save-stack arena (`save_size + 1` words, matching the
         // former `xmalloc_array` shape). Allocated fresh each run; released by
@@ -3596,8 +3615,6 @@ extern "C" {
     static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
     #[link_name = "font_used"]
     static mut tt_cleanup_font_used: *mut libc::c_void;
-    #[link_name = "nest"]
-    static mut tt_cleanup_nest: *mut libc::c_void;
     #[link_name = "hyph_word"]
     static mut tt_cleanup_hyph_word: *mut libc::c_void;
     #[link_name = "hyph_list"]
@@ -3715,11 +3732,10 @@ pub unsafe extern "C" fn tt_cleanup() {
         s.save_stack.data = Vec::new();
     });
 
-    // Free the big allocated arrays
-    libc::free(tt_cleanup_nest);
-    // Release the Rust-owned input-file, input, macro-parameter, input
+    // Release the Rust-owned nest, input-file, input, macro-parameter, input
     // line/group, and buffer arrays (were C `malloc`'d arrays).
     crate::state::with_state_mut(|s| {
+        s.input.nest = Vec::new();
         s.input.input_file = Vec::new();
         s.input.input_stack = Vec::new();
         s.input.param_stack = Vec::new();

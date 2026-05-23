@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 17 (2026-05-23).
+Last updated: idiom session 18 (2026-05-23).
 
 ## How to read this file
 
@@ -172,6 +172,20 @@ least-coupled non-`misc` clusters:
     the C def removed in the same commit. Not in format dump. **No** newtype
     debt — element is an opaque `UFILE*` handle stored as `*mut c_void`, a
     plain pointer (checked).
+-   **`nest` array → Rust-owned Vec (last input array):** moved from a
+    C-`malloc`'d `*mut ListStateRecord` into a Rust-owned
+    `Vec<ListStateRecord>` on `EngineState.input.nest`
+    (`vec![<zero ListStateRecord>; nest_size + 1]`). 12 accessors repointed:
+    the two full-struct copies to/from the separate `cur_list` static
+    (`restore_cur_list_from_nest`/`save_cur_list_to_nest`, `cur_list` itself
+    stays a raw global) and 10 field-projection accessors that now index the
+    `Vec` (8 fully safe; the two `aux.b32.*` reads keep an inner `unsafe`
+    union projection). No pointer-escaping accessor. Both
+    `#[link_name="nest"]` aliases (alloc + cleanup), the raw extern, and the
+    C def removed in the same commit. Not in format dump. **No** newtype debt
+    — element `list_state_record` is a struct typedef mirrored 1:1 by
+    `ListStateRecord`, so no type info lost (checked). **All `input`-cluster
+    arrays are now Rust-owned.**
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -180,12 +194,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 296 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 295 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 77 state-backed scalars + 11 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 77 state-backed scalars + 12 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 675 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 667 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -249,46 +263,33 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  Continue executing workstream 01. Clean (no-cleanup-alias) scalar
-    groups are getting sparse: a few non-hot `scanner` scalars remain
-    (`shown_mode`, `mag_set`, `radix`, `expand_depth_count`, …). The
-    `mem` bookkeeping scalars (`var_used`, `dyn_used`, `lo_mem_max`,
-    `hi_mem_min`, `avail`, `rover`, `mem_end`) are best done as part of
-    the `Mem` arena move (§5), not as a loose scalar slice. **Caution:**
-    do not bridge the hot tokenizer scalars
+1.  Continue executing workstream 01. **All `input`-cluster arrays are now
+    Rust-owned** (the arena pattern is proven across sessions 11–18:
+    `save_stack`, `param_stack`, the five `*mut i32` line/group stacks,
+    `eof_seen`, `buffer`, `input_stack`, `input_file`, and `nest`). Clean
+    (no-cleanup-alias) scalar groups are getting sparse: a few non-hot
+    `scanner` scalars remain (`shown_mode`, `mag_set`, `radix`,
+    `expand_depth_count`, …). The `mem` bookkeeping scalars (`var_used`,
+    `dyn_used`, `lo_mem_max`, `hi_mem_min`, `avail`, `rover`, `mem_end`) are
+    best done as part of the `Mem` arena move (§5), not as a loose scalar
+    slice. **Caution:** do not bridge the hot tokenizer scalars
     (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) through the
     thread-local without benchmarking — they are read on nearly every
     `get_next`/`get_token`, and a `RefCell` borrow per access could
     regress performance. Prefer threading those in Phase C.
-    The arena-ownership pattern is now proven on `save_stack`
-    (session 11), `param_stack` (session 12, first `input`-cluster
-    array), the five `*mut i32` line/group stacks (session 13),
-    `eof_seen` (session 14), `buffer` (session 15), `input_stack`
-    (session 16), and `input_file` (session 17). All input-cluster arrays
-    **except `nest`** are now Rust-owned. Ownership-bearing options remain,
-    in rough difficulty order: (a) the **last remaining `input` array** —
-    `nest` (`*mut ListStateRecord`). A `Vec<T>` derives `Default` for any
-    `T`, so no hand-written `impl Default` is required as long as the field
-    is a `Vec` (`ListStateRecord` already exists in `mem_types.rs` — check
-    it derives `Copy`/`Clone` for the `vec![<zero>; n]` init). Not in the
-    format dump. `nest` has ~11 field-projection accessors to repoint
-    (`nest_mode`, `nest_tail`, `set_nest_tail`, `nest_e_tex_aux`,
-    `nest_aux_b32s1`, `nest_prev_graf`, `set_nest_prev_graf`, `nest_head`,
-    `nest_mode_line`, `nest_aux_b32s0`, …) but **no** pointer escape, so the
-    move is purely "index the `Vec`" per accessor. Sized `nest_size + 1`.
-    As a struct element the array itself is no newtype debt, but check the
-    per-field accessor return types for semantic typedefs and add worklist
-    rows if any.
-    **Gotcha:** each input array has **two** alias decls (alloc `tre_*` +
-    cleanup `tt_cleanup_*`) to remove, not one;
-    (b) `strings` (`str_start` / `str_pool`), which **are** serialized in
+    Ownership-bearing options remain, in rough difficulty order:
+    (a) `strings` (`str_start` / `str_pool`), which **are** serialized in
     format dump/undump, so that slice must also reconcile the load/dump
-    paths; (c) remaining `shipout` file-handle state (`rust_stdout` has a
+    paths — the first ownership slice that touches the format paths, more
+    involved than the input arrays;
+    (b) remaining `shipout` file-handle state (`rust_stdout` has a
     cleanup alias; `write_file`/`write_open` are inline arrays movable
     like scalars; `current_diagnostic` is C-defined in `xetex-output.c`).
     For each symbol moved, use `01a-global-inventory.md` for C defs /
     cleanup aliases / accessors, and add a worklist row for any
-    semantic-typed field (§4 rule).
+    semantic-typed field (§4 rule). **Gotcha:** each input array had **two**
+    alias decls (alloc `tre_*` + cleanup `tt_cleanup_*`) to remove, not one
+    — expect the same for the next ownership slices.
 2.  The `config` bridge pattern in `src/state.rs` is intentionally small:
     keep `with_state` / `with_state_mut` borrows to single-field
     read/write closures and avoid calling translated engine code while a

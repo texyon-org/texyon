@@ -219,7 +219,6 @@ mod raw {
         pub(super) static mut shown_mode: i16;
 
         // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
-        pub(super) static mut nest: *mut crate::mem_types::ListStateRecord;
         pub(super) static mut nest_ptr: i32;
         pub(super) static mut max_nest_stack: i32;
         pub(super) static mut nest_size: i32;
@@ -2807,16 +2806,18 @@ pub(crate) fn nest_size() -> i32 {
 /// Copy `nest[k]` to `cur_list` (full struct assignment).
 #[inline]
 pub(crate) fn restore_cur_list_from_nest(k: i32) {
+    let v = crate::state::with_state(|s| s.input.nest[k as usize]);
     unsafe {
-        raw::cur_list = *raw::nest.offset(k as isize);
+        raw::cur_list = v;
     }
 }
 /// Copy `cur_list` to `nest[k]` (full struct assignment).
 #[inline]
 pub(crate) fn save_cur_list_to_nest(k: i32) {
-    unsafe {
-        *raw::nest.offset(k as isize) = raw::cur_list;
-    }
+    let v = unsafe { raw::cur_list };
+    crate::state::with_state_mut(|s| {
+        s.input.nest[k as usize] = v;
+    });
 }
 // cur_list field accessors
 #[inline]
@@ -2880,52 +2881,52 @@ pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
 /// Returns `nest[k].mode`.
 #[inline]
 pub(crate) fn nest_mode(k: i32) -> i16 {
-    unsafe { (*raw::nest.offset(k as isize)).mode }
+    crate::state::with_state(|s| s.input.nest[k as usize].mode)
 }
 /// Returns `nest[k].tail`.
 #[inline]
 pub(crate) fn nest_tail(k: i32) -> i32 {
-    unsafe { (*raw::nest.offset(k as isize)).tail }
+    crate::state::with_state(|s| s.input.nest[k as usize].tail)
 }
 /// Sets `nest[k].tail = v`.
 #[inline]
 pub(crate) fn set_nest_tail(k: i32, v: i32) {
-    unsafe {
-        (*raw::nest.offset(k as isize)).tail = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.nest[k as usize].tail = v;
+    });
 }
 /// Returns `nest[k].eTeX_aux`.
 #[inline]
 pub(crate) fn nest_e_tex_aux(k: i32) -> i32 {
-    unsafe { (*raw::nest.offset(k as isize)).e_tex_aux }
+    crate::state::with_state(|s| s.input.nest[k as usize].e_tex_aux)
 }
 /// Returns `nest[k].aux.b32.s1` (prevdepth half of the aux word).
 #[inline]
 pub(crate) fn nest_aux_b32s1(k: i32) -> i32 {
-    unsafe { (*raw::nest.offset(k as isize)).aux.b32.s1 }
+    crate::state::with_state(|s| unsafe { s.input.nest[k as usize].aux.b32.s1 })
 }
 /// Returns `nest[k].prev_graf`.
 #[inline]
 pub(crate) fn nest_prev_graf(k: i32) -> i32 {
-    unsafe { (*raw::nest.offset(k as isize)).prev_graf }
+    crate::state::with_state(|s| s.input.nest[k as usize].prev_graf)
 }
 #[inline]
 pub(crate) fn set_nest_prev_graf(k: i32, v: i32) {
-    unsafe {
-        (*raw::nest.offset(k as isize)).prev_graf = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.nest[k as usize].prev_graf = v;
+    });
 }
 #[inline]
 pub(crate) fn nest_head(k: i32) -> i32 {
-    unsafe { (*raw::nest.offset(k as isize)).head }
+    crate::state::with_state(|s| s.input.nest[k as usize].head)
 }
 #[inline]
 pub(crate) fn nest_mode_line(k: i32) -> i32 {
-    unsafe { (*raw::nest.offset(k as isize)).mode_line }
+    crate::state::with_state(|s| s.input.nest[k as usize].mode_line)
 }
 #[inline]
 pub(crate) fn nest_aux_b32s0(k: i32) -> i32 {
-    unsafe { (*raw::nest.offset(k as isize)).aux.b32.s0 }
+    crate::state::with_state(|s| unsafe { s.input.nest[k as usize].aux.b32.s0 })
 }
 #[inline]
 pub(crate) fn set_cur_list_prev_graf(v: i32) {
