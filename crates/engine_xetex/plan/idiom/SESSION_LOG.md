@@ -9,6 +9,87 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 19 — 2026-05-23 — shipout write_file/write_open arrays → ShipoutState
+
+**Type:** execution (workstream 01, Phase-B scalar-style slice).
+
+**Goal:** move the two write-stream arrays `write_file`
+(`rust_output_handle_t[16]`) and `write_open` (`bool[18]`) into
+`EngineState.shipout`. One coherent slice (the shipout write-stream state),
+one commit.
+
+**Why this slice:** with all `input`-cluster arrays now Rust-owned (sessions
+11–18), the remaining ownership-bearing options are `strings` (touches the
+format dump/undump paths — most involved) and the rest of the `shipout`
+file-handle state. `write_file`/`write_open` are **inline fixed C arrays**
+(`[16]`/`[18]` in BSS, not `malloc`'d), so they move exactly like scalars:
+no `ini.rs` allocation, no `tt_cleanup` free, no `#[link_name]` cleanup
+alias. Lowest-risk way to keep advancing the shipout cluster. The
+file-*handle* state with init/cleanup edges (`rust_stdout`, `log_file`,
+`current_diagnostic`) stays behind for a later slice.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `rust_output_handle_t write_file[16]` and `bool write_open[18]`
+  in `xetex-xetexd.h:691–692`. `rust_output_handle_t` is
+  `typedef uintptr_t` (`tectonic_bridge_core_generated.h:9`; bridge_core also
+  names `Option_OutputId = rust_output_handle_t`) — a nullable output-stream
+  handle (0 = none), a semantic typedef → **newtype debt** for `write_file`.
+  `write_open` is plain `bool` → no row.
+- (b) cleanup aliases: none (`link_name = "write_file"|"write_open"` empty).
+- (c) C readers: only `xetex/xetex-ini.c` (the definitions). Not in the
+  format dump/undump (grep for dump/undump empty).
+- (d) cross-module redeclarations: none.
+
+**Work done:**
+- Added `write_file: [usize; 16]` and `write_open: [bool; 18]` to
+  `ShipoutState` in `src/state.rs` (`#[derive(Default)]` covers both — arrays
+  of length ≤ 32 implement `Default`).
+- Repointed the 4 accessors in `globals.rs` (`write_file`, `write_open`,
+  `set_write_file`, `set_write_open`) from `unsafe { raw::… }` to
+  `with_state`/`with_state_mut` closures. All 4 are now fully safe (no
+  `unsafe`).
+- Removed the two raw externs from `globals.rs` `mod raw` and the two C defs
+  from `xetex/xetex-ini.c`. No allocation/cleanup edits needed (inline
+  arrays).
+
+**Newtype debt (§4 check):** `write_file[]` → worklist row added
+(`rust_output_handle_t` → `OutputHandle`/`Option<OutputId>`). `write_open[]`
+is plain `bool`, no row (checked).
+
+**longjmp / Drop (§7):** N/A for this slice — these are plain inline fields,
+no owned heap storage, no `Drop` edge. The `EngineState` thread-local owner
+is unchanged.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 295 → 293 (−2).
+- Raw `unsafe { ... }` text-search count: 667 → 663 (−4, all 4 accessors
+  became fully safe).
+- `#[link_name]` aliases: unchanged (this slice had none).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of `write_file`/`write_open` in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Remaining ownership-bearing options (rough difficulty order):
+  - `strings` (`str_start` / `str_pool`): **serialized in the format
+    dump/undump**, so that slice must also reconcile the load/dump paths
+    (first ownership slice touching the format paths — more involved).
+  - remaining `shipout` file-*handle* state: `rust_stdout` (has a cleanup
+    alias → ownership slice), `log_file`, `current_diagnostic` (C-defined in
+    `xetex-output.c`, not `xetex-ini.c`).
+- Clean (no-cleanup-alias) non-hot `scanner` scalars also still available as
+  low-risk filler (`shown_mode`, `mag_set`, `radix`, `expand_depth_count`, …;
+  all confirmed clean this session — only `xetex-ini.c` defines them, no
+  cleanup alias, no cross-module redecl).
+- Reminder: do **not** bridge the hot tokenizer scalars (`cur_cmd`,
+  `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`); the `mem` bookkeeping scalars
+  go with the `Mem` arena move (§5), not as a loose slice.
+
 ## Idiom session 18 — 2026-05-23 — nest array → Rust-owned Vec
 
 **Type:** execution (workstream 01, ownership-bearing slice).

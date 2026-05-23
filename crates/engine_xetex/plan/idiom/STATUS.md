@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 18 (2026-05-23).
+Last updated: idiom session 19 (2026-05-23).
 
 ## How to read this file
 
@@ -186,6 +186,15 @@ least-coupled non-`misc` clusters:
     — element `list_state_record` is a struct typedef mirrored 1:1 by
     `ListStateRecord`, so no type info lost (checked). **All `input`-cluster
     arrays are now Rust-owned.**
+-   **`shipout` write-stream arrays:** `write_file` (`rust_output_handle_t[16]`)
+    and `write_open` (`bool[18]`) moved into `EngineState.shipout` as
+    `[usize; 16]` / `[bool; 18]`. Inline fixed C arrays (BSS, not `malloc`'d),
+    so a scalar-style move: no `ini.rs` alloc, no `tt_cleanup` free, no cleanup
+    alias. All 4 accessors now fully safe. Raw externs and C defs removed in
+    the same commit. Not in format dump. Newtype debt recorded for
+    `write_file` (`rust_output_handle_t` → `OutputHandle`); `write_open` plain
+    `bool`, no row. Remaining `shipout` rows are file-*handle* state with
+    init/cleanup edges (`rust_stdout`, `log_file`, `current_diagnostic`).
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -194,12 +203,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 295 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 293 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 77 state-backed scalars + 12 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 79 state-backed scalars/arrays + 12 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 667 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 663 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -277,14 +286,15 @@ the snippets in `00-overview.md` / the workstream plans.
     thread-local without benchmarking — they are read on nearly every
     `get_next`/`get_token`, and a `RefCell` borrow per access could
     regress performance. Prefer threading those in Phase C.
-    Ownership-bearing options remain, in rough difficulty order:
+    The `shipout` write-stream arrays (`write_file`/`write_open`) were moved
+    scalar-style in session 19. Options remaining, in rough difficulty order:
     (a) `strings` (`str_start` / `str_pool`), which **are** serialized in
     format dump/undump, so that slice must also reconcile the load/dump
     paths — the first ownership slice that touches the format paths, more
     involved than the input arrays;
-    (b) remaining `shipout` file-handle state (`rust_stdout` has a
-    cleanup alias; `write_file`/`write_open` are inline arrays movable
-    like scalars; `current_diagnostic` is C-defined in `xetex-output.c`).
+    (b) remaining `shipout` file-*handle* state (`rust_stdout` has a
+    cleanup alias → ownership slice; `log_file`; `current_diagnostic` is
+    C-defined in `xetex-output.c`).
     For each symbol moved, use `01a-global-inventory.md` for C defs /
     cleanup aliases / accessors, and add a worklist row for any
     semantic-typed field (§4 rule). **Gotcha:** each input array had **two**

@@ -243,8 +243,6 @@ bool ins_disc;
 int32_t cur_box;
 int32_t after_token;
 str_number format_ident;
-rust_output_handle_t write_file[16];
-bool write_open[18];
 int32_t write_loc;
 scaled_t cur_page_width;
 scaled_t cur_page_height;

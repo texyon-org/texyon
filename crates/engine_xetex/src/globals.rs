@@ -84,9 +84,6 @@ mod raw {
         // `rust_output_handle_t` is `uintptr_t` (tectonic_bridge_core_generated.h:9).
         pub(super) static mut rust_stdout: usize;
         pub(super) static mut log_file: usize;
-        pub(super) static mut write_file: [usize; 16];
-        // Which write-file slots are open (xetex-xetexd.h:692).
-        pub(super) static mut write_open: [bool; 18];
 
         // Current diagnostic capture handle (xetex-output.c, un-static'd session 8).
         // Null (0) means no active capture. Type is opaque `ttbc_diagnostic_t *`.
@@ -1367,31 +1364,29 @@ pub(crate) fn set_log_file(v: usize) {
 /// Returns `write_file[i]`, the output handle for write-stream `i` (0–15).
 #[inline]
 pub(crate) fn write_file(i: usize) -> usize {
-    // SAFETY: see module-level doc.
-    unsafe { raw::write_file[i] }
+    crate::state::with_state(|s| s.shipout.write_file[i])
 }
 
 /// Returns `write_open[i]`, whether write-stream `i` is open (xetex-xetexd.h:692).
 #[inline]
 pub(crate) fn write_open(i: usize) -> bool {
-    // SAFETY: see module-level doc.
-    unsafe { raw::write_open[i] }
+    crate::state::with_state(|s| s.shipout.write_open[i])
 }
 
 /// Sets `write_open[i]` to `v`.
 #[inline]
 pub(crate) fn set_write_open(i: usize, v: bool) {
-    unsafe {
-        raw::write_open[i] = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.shipout.write_open[i] = v;
+    });
 }
 
 /// Sets `write_file[i]` to `v`.
 #[inline]
 pub(crate) fn set_write_file(i: usize, v: usize) {
-    unsafe {
-        raw::write_file[i] = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.shipout.write_file[i] = v;
+    });
 }
 
 /// Returns the current diagnostic capture pointer (null = no active capture).

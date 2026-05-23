@@ -507,6 +507,7 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `source_filename_stack[]` | `input` | `str_number` | `StrNumber` | session 13 | pending |
 | `full_source_filename_stack[]` | `input` | `str_number` | `StrNumber` | session 13 | pending |
 | `buffer[]` | `input` | `UnicodeScalar` (`int32_t` typedef, a Unicode scalar value) | `UnicodeScalar` | session 15 | pending |
+| `write_file[]` | `shipout` | `rust_output_handle_t` (`uintptr_t` typedef; nullable output-stream handle, 0 = none) | `OutputHandle`/`Option<OutputId>` | session 19 | pending |
 
 (`input` session-13 move of the line/group stacks: `line_stack` and
 `if_stack` are plain `int32_t *` and need no row — `line_stack` holds

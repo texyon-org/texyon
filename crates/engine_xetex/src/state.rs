@@ -142,6 +142,8 @@ pub(crate) struct ShipoutState {
     pub output_active: bool,
     pub pdf_last_x_pos: i32,
     pub pdf_last_y_pos: i32,
+    pub write_file: [usize; 16],
+    pub write_open: [bool; 18],
 }
 
 pub(crate) struct ErrorState {
