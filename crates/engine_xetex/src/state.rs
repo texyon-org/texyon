@@ -115,6 +115,9 @@ pub(crate) struct ScannerState {
     pub mag_set: i32,
     pub radix: u8,
     pub expand_depth_count: i32,
+    pub sa_chain: i32,
+    pub sa_level: u16,
+    pub max_reg_num: i32,
 }
 
 #[derive(Default)]

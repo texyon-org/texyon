@@ -9,6 +9,84 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 22 — 2026-05-23 — cold sparse-array register scalars (sa_chain/sa_level/max_reg_num) → ScannerState
+
+**Type:** execution (workstream 01, Phase-B scalar slice).
+
+**Goal:** move the 3 clean cold sparse-array register scalars `sa_chain`
+(`int32_t`/i32), `sa_level` (`uint16_t`/u16), `max_reg_num` (`int32_t`/i32) into
+`EngineState.scanner`. One coherent slice (the clean cold members of the `sa_*`
+group), one commit.
+
+**Why this slice:** clean cold `scanner` scalar filler is otherwise exhausted,
+and the remaining ownership slices (`strings` touches format dump/undump;
+`shipout` file-handle state has cleanup edges) are more involved. The `sa_*`
+sparse-array group's three plain-integer members are the lowest-risk remainder:
+tightly scoped (`sa_chain` 16 uses, `sa_level` 8, `max_reg_num` 7), pure
+`\global`-register sparse-array machinery, never on the tokenizer/per-character
+hot path. The other `sa_*` members were deliberately left behind: `sa_root` has
+a `#[link_name]` alias (ownership slice), `sa_null` is a `MemoryWord`,
+`max_reg_help_line` is a `*const c_char`, and `cur_ptr` (148 uses across
+save.rs/pagebuilder.rs/scan.rs) is too broad to bridge without benchmarking.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `extern int32_t sa_chain`, `extern uint16_t sa_level`,
+  `extern int32_t max_reg_num` in `xetex-xetexd.h` — all plain integer types,
+  **no newtype debt** (`sa_level` is conceptually a quarterword level but its
+  declared C type is plain `uint16_t`, so per the session-20/21 precedent no row
+  is added).
+- (b) cleanup aliases: none for any of the 3 → scalar slice, not ownership.
+  (`sa_root`, excluded, *does* have one.)
+- (c) C readers: only `xetex/xetex-ini.c` (the definitions).
+- (d) cross-module redeclarations: none.
+
+**Work done:**
+- Added the 3 fields to `ScannerState` in `src/state.rs` (`sa_chain: i32`,
+  `sa_level: u16`, `max_reg_num: i32`); `#[derive(Default)]` covers them.
+- Repointed all 6 accessors in `globals.rs`
+  (`sa_chain`/`set_sa_chain`, `sa_level`/`set_sa_level`,
+  `max_reg_num`/`set_max_reg_num`) from `unsafe { raw::… }` to
+  `with_state`/`with_state_mut` closures. All 6 are now fully safe (no `unsafe`).
+- Removed the 3 raw externs from `globals.rs` `mod raw` (interleaved with the
+  kept `sa_root` array and `max_reg_help_line` pointer, removed individually)
+  and the 3 C def lines (`max_reg_num` at 245, `sa_chain`/`sa_level` at 250–251)
+  from `xetex/xetex-ini.c`. No allocation/cleanup edits (plain BSS scalars).
+
+**Newtype debt (§4 check):** none — all three are plain `int32_t`/`uint16_t`,
+no semantic typedef (checked).
+
+**longjmp / Drop (§7):** N/A — plain scalar fields, no owned heap storage, no
+`Drop` edge. Thread-local owner unchanged.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 281 → 278 (−3).
+- Raw `unsafe { ... }` text-search count: 639 → 633 (−6, all 6 accessors became
+  fully safe).
+- `#[link_name]` aliases: unchanged (this slice had none).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of the 3 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Clean cold `scanner` scalar filler is now **exhausted**. The remaining `sa_*`
+  members are all messier: `sa_root` (link alias → ownership slice), `sa_null`
+  (`MemoryWord`), `max_reg_help_line` (`*const c_char` pointer), `cur_ptr`
+  (148 uses, too broad — bridge only with benchmarking or in Phase C).
+- Remaining ownership-bearing options (rough difficulty order): `strings`
+  (`str_start`/`str_pool`, **serialized in format dump/undump** — first
+  format-path slice, most involved); remaining `shipout` file-*handle* state
+  (`rust_stdout` has a cleanup alias → ownership slice; `log_file`;
+  `current_diagnostic`, C-defined in `xetex-output.c`).
+- Reminder: do **not** bridge the hot tokenizer scalars (`cur_cmd`,
+  `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) or the `main_*` ligature/main-loop
+  scratch scalars (per-character hot path); the `mem` bookkeeping scalars go
+  with the `Mem` arena move (§5).
+
 ## Idiom session 21 — 2026-05-23 — cold scanner scalars (shown_mode/mag_set/radix/expand_depth_count) → ScannerState
 
 **Type:** execution (workstream 01, Phase-B scalar slice).

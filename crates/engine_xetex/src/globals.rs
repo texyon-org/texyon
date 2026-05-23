@@ -189,11 +189,8 @@ mod raw {
         // Sparse-array (SA) root table and saved-state chain (xetex-xetexd.h:709–713).
         // sa_root[i] is the root of the trie for register class i (0..=7).
         pub(super) static mut sa_root: [i32; 8];
-        pub(super) static mut sa_chain: i32;
-        pub(super) static mut sa_level: u16;
 
         // Register-size limits (xetex-xetexd.h:707–708).
-        pub(super) static mut max_reg_num: i32;
         pub(super) static mut max_reg_help_line: *const libc::c_char;
 
         // Memory-usage counters (xetex-xetexd.h:463).
@@ -3186,23 +3183,23 @@ pub(crate) fn set_sa_root(i: usize, v: i32) {
 }
 #[inline]
 pub(crate) fn sa_chain() -> i32 {
-    unsafe { raw::sa_chain }
+    crate::state::with_state(|s| s.scanner.sa_chain)
 }
 #[inline]
 pub(crate) fn set_sa_chain(v: i32) {
-    unsafe {
-        raw::sa_chain = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.sa_chain = v;
+    });
 }
 #[inline]
 pub(crate) fn sa_level() -> u16 {
-    unsafe { raw::sa_level }
+    crate::state::with_state(|s| s.scanner.sa_level)
 }
 #[inline]
 pub(crate) fn set_sa_level(v: u16) {
-    unsafe {
-        raw::sa_level = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.sa_level = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3248,13 +3245,13 @@ pub(crate) fn set_shown_mode(v: i16) {
 
 #[inline]
 pub(crate) fn max_reg_num() -> i32 {
-    unsafe { raw::max_reg_num }
+    crate::state::with_state(|s| s.scanner.max_reg_num)
 }
 #[inline]
 pub(crate) fn set_max_reg_num(v: i32) {
-    unsafe {
-        raw::max_reg_num = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.max_reg_num = v;
+    });
 }
 #[inline]
 pub(crate) fn set_max_reg_help_line(v: *const libc::c_char) {
