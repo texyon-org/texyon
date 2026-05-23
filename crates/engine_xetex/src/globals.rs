@@ -96,10 +96,6 @@ mod raw {
         pub(super) static mut pseudo_files: i32;
         // Input-level depth (xetex-xetexd.h:507).
         pub(super) static mut in_open: i32;
-        // Pointer to the filename-stack array (xetex-xetexd.h:513, str_number* = *mut i32).
-        pub(super) static mut full_source_filename_stack: *mut i32;
-        // Pointer to the line-number-stack array (xetex-xetexd.h:511, *mut i32).
-        pub(super) static mut line_stack: *mut i32;
         // Hash table: `b32x2 *hash` (xetex-xetexd.h:482).
         pub(super) static mut hash: *mut crate::mem_types::B32x2;
         // Hash table management globals (xetex-xetexd.h:483–488).
@@ -212,13 +208,6 @@ mod raw {
         pub(super) static mut var_used: i32;
         pub(super) static mut dyn_used: i32;
 
-        // Group-stack: grp_stack[i] = save-stack boundary for level i
-        // (xetex-xetexd.h:705; save_pointer = i32).
-        pub(super) static mut grp_stack: *mut i32;
-        // If-stack: if_stack[i] = cond_ptr value at nesting level i
-        // (xetex-xetexd.h:706).
-        pub(super) static mut if_stack: *mut i32;
-
         // Conditional state (xetex-xetexd.h:537–540).
         pub(super) static mut cond_ptr: i32;
         // if_limit: unsigned char (xetex-xetexd.h:538).
@@ -279,8 +268,6 @@ mod raw {
         pub(super) static mut buf_size: i32;
         // Maximum allowed input-nesting depth (xetex-xetexd.h:411).
         pub(super) static mut max_in_open: i32;
-        // Source-filename stacks (xetex-xetexd.h:512; str_number = i32).
-        pub(super) static mut source_filename_stack: *mut i32;
         // eof_seen[k]: true when EOF was seen at level k (xetex-xetexd.h:700).
         pub(super) static mut eof_seen: *mut bool;
         // Array of UFILE* for the main input-file stack (xetex-xetexd.h:509).
@@ -1141,15 +1128,13 @@ pub(crate) fn set_pseudo_files(v: i32) {
 /// at nesting level k).
 #[inline]
 pub(crate) fn full_source_filename_stack(k: i32) -> i32 {
-    // SAFETY: see module-level doc. Caller ensures k <= in_open.
-    unsafe { *raw::full_source_filename_stack.offset(k as isize) }
+    crate::state::with_state(|s| s.input.full_source_filename_stack[k as usize])
 }
 
 /// Returns `line_stack[k]` (the saved line number at nesting level k).
 #[inline]
 pub(crate) fn line_stack(k: i32) -> i32 {
-    // SAFETY: see module-level doc. Caller ensures k <= in_open.
-    unsafe { *raw::line_stack.offset(k as isize) }
+    crate::state::with_state(|s| s.input.line_stack[k as usize])
 }
 
 /// Returns non-zero when file:line-style error messages are active.
@@ -3120,28 +3105,28 @@ pub(crate) fn set_par_token(v: i32) {
 /// (xetex-xetexd.h:705; save_pointer = i32).
 #[inline]
 pub(crate) fn grp_stack(k: i32) -> i32 {
-    unsafe { *raw::grp_stack.offset(k as isize) }
+    crate::state::with_state(|s| s.input.grp_stack[k as usize])
 }
 /// Sets `grp_stack[k]`.
 #[inline]
 pub(crate) fn set_grp_stack(k: i32, v: i32) {
-    unsafe {
-        *raw::grp_stack.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.grp_stack[k as usize] = v;
+    });
 }
 
 /// Returns `if_stack[k]` — the `cond_ptr` saved at input level k
 /// (xetex-xetexd.h:706).
 #[inline]
 pub(crate) fn if_stack(k: i32) -> i32 {
-    unsafe { *raw::if_stack.offset(k as isize) }
+    crate::state::with_state(|s| s.input.if_stack[k as usize])
 }
 /// Sets `if_stack[k]`.
 #[inline]
 pub(crate) fn set_if_stack(k: i32, v: i32) {
-    unsafe {
-        *raw::if_stack.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.if_stack[k as usize] = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3437,28 +3422,28 @@ pub(crate) fn set_in_open(v: i32) {
 /// Returns `source_filename_stack[k]` (str_number; xetex-xetexd.h:512).
 #[inline]
 pub(crate) fn source_filename_stack(k: i32) -> i32 {
-    unsafe { *raw::source_filename_stack.offset(k as isize) }
+    crate::state::with_state(|s| s.input.source_filename_stack[k as usize])
 }
 /// Sets `source_filename_stack[k]`.
 #[inline]
 pub(crate) fn set_source_filename_stack(k: i32, v: i32) {
-    unsafe {
-        *raw::source_filename_stack.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.source_filename_stack[k as usize] = v;
+    });
 }
 /// Sets `full_source_filename_stack[k]`.
 #[inline]
 pub(crate) fn set_full_source_filename_stack(k: i32, v: i32) {
-    unsafe {
-        *raw::full_source_filename_stack.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.full_source_filename_stack[k as usize] = v;
+    });
 }
 /// Sets `line_stack[k]`.
 #[inline]
 pub(crate) fn set_line_stack(k: i32, v: i32) {
-    unsafe {
-        *raw::line_stack.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.line_stack[k as usize] = v;
+    });
 }
 /// Sets `line`.
 #[inline]

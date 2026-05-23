@@ -503,6 +503,14 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `area_delimiter` | `scanner` | `pool_pointer` | `PoolPtr` | session 8 | pending |
 | `ext_delimiter` | `scanner` | `pool_pointer` | `PoolPtr` | session 8 | pending |
 | `cur_group` | `save_stack` | `group_code` (enum) | `GroupCode` | session 9 | pending |
+| `grp_stack[]` | `input` | `save_pointer` | `SavePointer`/`Scaled`-style index | session 13 | pending |
+| `source_filename_stack[]` | `input` | `str_number` | `StrNumber` | session 13 | pending |
+| `full_source_filename_stack[]` | `input` | `str_number` | `StrNumber` | session 13 | pending |
+
+(`input` session-13 move of the line/group stacks: `line_stack` and
+`if_stack` are plain `int32_t *` and need no row — `line_stack` holds
+line numbers, `if_stack` holds `cond_ptr` halfwords that become a `MemPtr`
+in the later pointer-taxonomy sweep, not a typedef-loss row.)
 
 (`save_stack` session-9 move: `save_ptr`/`max_save_stack`/`cur_boundary`
 are plain `int32_t` and `cur_level` is a `uint16_t` nesting count, so

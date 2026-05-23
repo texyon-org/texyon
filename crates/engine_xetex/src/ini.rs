@@ -1821,18 +1821,8 @@ extern "C" {
     static mut tre_input_stack: *mut crate::globals::InputState;
     #[link_name = "input_file"]
     static mut tre_input_file: *mut *mut libc::c_void;
-    #[link_name = "line_stack"]
-    static mut tre_line_stack: *mut i32;
     #[link_name = "eof_seen"]
     static mut tre_eof_seen: *mut bool;
-    #[link_name = "grp_stack"]
-    static mut tre_grp_stack: *mut i32;
-    #[link_name = "if_stack"]
-    static mut tre_if_stack: *mut i32;
-    #[link_name = "source_filename_stack"]
-    static mut tre_source_filename_stack: *mut i32;
-    #[link_name = "full_source_filename_stack"]
-    static mut tre_full_source_filename_stack: *mut i32;
     #[link_name = "hyph_word"]
     static mut tre_hyph_word: *mut i32;
     #[link_name = "hyph_list"]
@@ -3242,12 +3232,20 @@ pub unsafe extern "C" fn tt_run_engine(
     }
     tre_input_stack = xmalloc_array::<crate::globals::InputState>(tre_stack_size);
     tre_input_file = xmalloc_array::<*mut libc::c_void>(tre_max_in_open);
-    tre_line_stack = xmalloc_array::<i32>(tre_max_in_open);
     tre_eof_seen = xmalloc_array::<bool>(tre_max_in_open);
-    tre_grp_stack = xmalloc_array::<i32>(tre_max_in_open);
-    tre_if_stack = xmalloc_array::<i32>(tre_max_in_open);
-    tre_source_filename_stack = xmalloc_array::<i32>(tre_max_in_open);
-    tre_full_source_filename_stack = xmalloc_array::<i32>(tre_max_in_open);
+    {
+        // Rust-owned input line/group stacks, each `max_in_open + 1` words
+        // (matching the former `xmalloc_array` shape). Allocated fresh each
+        // run; released by `tt_cleanup`. Never reallocated during a run.
+        let n = (tre_max_in_open as usize) + 1;
+        crate::state::with_state_mut(|s| {
+            s.input.line_stack = vec![0i32; n];
+            s.input.grp_stack = vec![0i32; n];
+            s.input.if_stack = vec![0i32; n];
+            s.input.source_filename_stack = vec![0i32; n];
+            s.input.full_source_filename_stack = vec![0i32; n];
+        });
+    }
     {
         // Rust-owned macro-parameter stack (`param_size + 1` words, matching
         // the former `xmalloc_array` shape). Allocated fresh each run; released
@@ -3383,13 +3381,13 @@ pub unsafe extern "C" fn tt_run_engine(
 
     crate::globals::set_input_ptr(0);
     crate::globals::set_max_in_stack(0);
-    *tre_source_filename_stack.add(0) = 0;
-    *tre_full_source_filename_stack.add(0) = 0;
+    crate::globals::set_source_filename_stack(0, 0);
+    crate::globals::set_full_source_filename_stack(0, 0);
     crate::globals::set_in_open(0);
     set_open_parens(0);
     crate::globals::set_max_buf_stack(0);
-    *tre_grp_stack.add(0) = 0;
-    *tre_if_stack.add(0) = crate::mem::TEX_NULL;
+    crate::globals::set_grp_stack(0, 0);
+    crate::globals::set_if_stack(0, crate::mem::TEX_NULL);
     crate::globals::set_param_ptr(0);
     crate::globals::set_max_param_stack(0);
     crate::globals::set_used_tectonic_coda_tokens(false);
@@ -3578,18 +3576,8 @@ extern "C" {
     static mut tt_cleanup_input_stack: *mut libc::c_void;
     #[link_name = "input_file"]
     static mut tt_cleanup_input_file: *mut libc::c_void;
-    #[link_name = "line_stack"]
-    static mut tt_cleanup_line_stack: *mut libc::c_void;
     #[link_name = "eof_seen"]
     static mut tt_cleanup_eof_seen: *mut libc::c_void;
-    #[link_name = "grp_stack"]
-    static mut tt_cleanup_grp_stack: *mut libc::c_void;
-    #[link_name = "if_stack"]
-    static mut tt_cleanup_if_stack: *mut libc::c_void;
-    #[link_name = "source_filename_stack"]
-    static mut tt_cleanup_source_filename_stack: *mut libc::c_void;
-    #[link_name = "full_source_filename_stack"]
-    static mut tt_cleanup_full_source_filename_stack: *mut libc::c_void;
     #[link_name = "hyph_word"]
     static mut tt_cleanup_hyph_word: *mut libc::c_void;
     #[link_name = "hyph_list"]
@@ -3712,15 +3700,16 @@ pub unsafe extern "C" fn tt_cleanup() {
     libc::free(tt_cleanup_nest);
     libc::free(tt_cleanup_input_stack);
     libc::free(tt_cleanup_input_file);
-    libc::free(tt_cleanup_line_stack);
     libc::free(tt_cleanup_eof_seen);
-    libc::free(tt_cleanup_grp_stack);
-    libc::free(tt_cleanup_if_stack);
-    libc::free(tt_cleanup_source_filename_stack);
-    libc::free(tt_cleanup_full_source_filename_stack);
-    // Release the Rust-owned macro-parameter stack (was a C `malloc`'d array).
+    // Release the Rust-owned macro-parameter and input line/group stacks
+    // (were C `malloc`'d arrays).
     crate::state::with_state_mut(|s| {
         s.input.param_stack = Vec::new();
+        s.input.line_stack = Vec::new();
+        s.input.grp_stack = Vec::new();
+        s.input.if_stack = Vec::new();
+        s.input.source_filename_stack = Vec::new();
+        s.input.full_source_filename_stack = Vec::new();
     });
     libc::free(tt_cleanup_hyph_word);
     libc::free(tt_cleanup_hyph_list);

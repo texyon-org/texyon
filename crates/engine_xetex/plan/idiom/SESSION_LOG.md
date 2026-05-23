@@ -9,6 +9,88 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 13 — 2026-05-23 — input line/group stacks → Rust-owned Vecs (5 arrays)
+
+**Type:** execution (workstream 01, ownership-bearing slice).
+
+**Goal:** extend the session-12 input-cluster arena pattern to the
+homogeneous `*mut i32` line/group stacks: `line_stack`, `grp_stack`,
+`if_stack`, `source_filename_stack`, `full_source_filename_stack`. Five
+arrays, one commit.
+
+**Why these five together:** identical `*mut i32` element type, all sized
+`max_in_open`, allocated in the same `ini.rs` block, the only C reference
+is each one's definition in `xetex-ini.c`, and none is serialized in the
+format dump/undump (same no-dump property as `param_stack`/`save_stack`).
+`eof_seen` (`*mut bool`) is left for a later slice (different element
+type); the trickier element types (`input_file`, `input_stack`, `nest`,
+`buffer`) remain too.
+
+**Work done:**
+- Added five `Vec<i32>` fields to `InputClusterState` in `src/state.rs`
+  (`line_stack`, `grp_stack`, `if_stack`, `source_filename_stack`,
+  `full_source_filename_stack`; `#[derive(Default)]` covers them).
+- Repointed all accessors in `globals.rs` (getters
+  `line_stack`/`grp_stack`/`if_stack`/`source_filename_stack`/
+  `full_source_filename_stack`, setters `set_*`) to index the `Vec`s via
+  `with_state`/`with_state_mut`. No `unsafe` remains in them.
+- Allocation (`src/ini.rs`): replaced the five `xmalloc_array::<i32>` calls
+  with one `with_state_mut` block writing `vec![0i32; max_in_open + 1]`
+  each (matching the former `n+1` shape). C left these uninitialized;
+  Rust zero-inits, parity-safe (each slot is written before read).
+- The four explicit init writes in `ini.rs` (`*tre_source_filename_stack
+  .add(0) = 0` etc., plus `if_stack[0] = TEX_NULL`) were rewritten to the
+  new `set_*` accessors.
+- Cleanup (`tt_cleanup`): dropped the five arrays (`= Vec::new()`) instead
+  of `libc::free`.
+- Removed both `#[link_name]` alias decls per array (alloc `tre_*` +
+  cleanup `tt_cleanup_*` = 10 decls), the five raw externs in `globals.rs`,
+  and the five C defs in `xetex/xetex-ini.c` (3 in the line-stack block,
+  2 in the grp/if block). `eof_seen` stays a C global.
+
+**Newtype debt (§4 check):** `grp_stack` is `save_pointer *` and
+`source_filename_stack`/`full_source_filename_stack` are `str_number *` —
+three worklist rows added to `01a-global-inventory.md`. `line_stack`
+(`int32_t *`, line numbers) and `if_stack` (`int32_t *`, `cond_ptr`
+halfwords) are plain `int32_t` — no typedef-loss row (the `if_stack`
+elements become a `MemPtr` in the later pointer sweep, not a typedef row).
+
+**longjmp / Drop (§7, handled):** identical to sessions 11–12 —
+`EngineState` lives in the `'static` thread-local, so a `longjmp` abort
+never jumps over the `Vec` storage; `Drop` simply doesn't run on abort
+(matches prior C, which never freed on abort). `tt_cleanup` is the normal
+teardown and now drops the `Vec`s.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 305 → 300.
+- Raw `unsafe { ... }` text-search count: 693 → 683.
+- `#[link_name]` aliases in `ini.rs`: −10.
+- 6 Rust-owned arena arrays total (save_stack, param_stack + these 5… = 7).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of the 5 symbols in `xetex/*.c` (minus macos): empty.
+
+**Surprises / gotchas:**
+- Unlike `param_stack`, these arrays have explicit slot-0 init writes in
+  `ini.rs` (`source_filename_stack[0]=0`, `grp_stack[0]=0`,
+  `if_stack[0]=TEX_NULL`, etc.) that used the raw `tre_*` pointers — those
+  had to be rewritten to the new `set_*` accessors, not just deleted.
+- The five arrays span **two** raw-extern blocks and **two** C-def blocks
+  in `xetex-ini.c` (line/filename block + grp/if block); grep each.
+
+**For the next session:**
+- `eof_seen` (`*mut bool`) is the last simple input array — same shape,
+  `vec![false; max_in_open + 1]`. Then the harder element types:
+  `input_file` (`*mut *mut c_void`), `input_stack` (`*mut InputState`),
+  `nest` (`*mut ListStateRecord`), `buffer` (`*mut i32`). None in the dump.
+- Two alias decls per array (alloc + cleanup) + raw extern + C def, same
+  commit, every time.
+
 ## Idiom session 12 — 2026-05-23 — param_stack array → Rust-owned Vec (first input-cluster ownership move)
 
 **Type:** execution (workstream 01, ownership-bearing slice).

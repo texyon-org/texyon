@@ -23,6 +23,16 @@ pub(crate) struct InputClusterState {
     /// `tt_cleanup`; never reallocated during a run. Replaces the former
     /// C-`malloc`'d `param_stack` pointer. Not serialized in format dump/undump.
     pub param_stack: Vec<i32>,
+    /// Rust-owned input line/group stacks, each sized `max_in_open` (matching
+    /// the former `xmalloc_array` shape). Allocated at engine init and released
+    /// by `tt_cleanup`; never reallocated during a run. Not serialized in
+    /// format dump/undump. `grp_stack` is a `save_pointer`, `*filename_stack`
+    /// are `str_number` (newtype debts tracked in 01a).
+    pub line_stack: Vec<i32>,
+    pub grp_stack: Vec<i32>,
+    pub if_stack: Vec<i32>,
+    pub source_filename_stack: Vec<i32>,
+    pub full_source_filename_stack: Vec<i32>,
 }
 
 #[derive(Default)]
