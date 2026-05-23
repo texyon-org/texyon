@@ -9,6 +9,63 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 30 — 2026-05-23 — font capacity scalars → FontState
+
+**Type:** execution (workstream 01, Phase-B scalar/link-alias slice).
+
+**Goal:** move the small `fonts` capacity pair (`font_mem_size`,
+`font_max`) out of C globals and into Rust-owned fields on
+`EngineState.fonts`. One coherent slice, one commit.
+
+**Why this slice:** session 29 established `FontState` and handed off to a
+carefully bounded follow-up `fonts` subgroup. These two globals are plain
+capacity integers with no cleanup ownership, but they do have `src/ini.rs`
+link aliases, so they are a useful bridge step before the larger font arenas.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: both `font_mem_size` and `font_max` are `int32_t`.
+- (b) cleanup/link aliases: `src/ini.rs` had expected
+  `#[link_name]` aliases for both symbols; both were removed/replaced.
+- (c) C readers: only `xetex/xetex-ini.c`.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs`
+  aliases; no other redeclarations.
+
+**Work done:**
+- Added `font_mem_size` and `font_max` fields to `FontState`.
+- Repointed `font_mem_size()` and `font_max()` to `EngineState.fonts`, and
+  added `set_font_mem_size()` / `set_font_max()` for initialization and format
+  loading.
+- Replaced the `src/ini.rs` `tre_font_mem_size` / `tre_font_max` aliases with
+  the accessor layer in default initialization, format loading, and font-table
+  allocation checks.
+- Removed the 2 raw extern declarations from `globals.rs` `mod raw` and the 2
+  C definitions from `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** no rows. Both moved fields are plain `int32_t`
+capacity integers, not semantic typedefs/enums.
+
+**longjmp / Drop (§7):** scalar fields live in the `'static` thread-local
+`EngineState`; no owned heap resource or stack-owned Rust storage is introduced
+by this slice.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 208 → 206 (−2).
+- Raw `unsafe { ... }` text-search count: 501 → 499 (−2, both getter bodies
+  became fully safe).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of the 2 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Continue with another bounded `fonts` subgroup. Good next scalar candidate:
+  `null_character`, but check its `B16x4` semantics first and keep it separate
+  from the large font metric arenas.
+- Keep avoiding the hot tokenizer scalars and `main_*` ligature/main-loop
+  scratch scalars; keep `mem` bookkeeping scalars with the eventual `Mem`
+  arena move.
+
 ## Idiom session 29 — 2026-05-23 — font-loading scratch scalars → FontState
 
 **Type:** execution (workstream 01, Phase-B scalar slice).

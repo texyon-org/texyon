@@ -81,7 +81,7 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `max_strings` | `i32` | `strings` | `src/globals.rs:146` C extern | `max_strings` | def xetex/xetex-ini.c; link src/ini.rs:1792 |  |
 | `init_str_ptr` | `i32` | `strings` | `src/globals.rs:147` C extern | `init_str_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1874 |  |
 | `init_pool_ptr` | `i32` | `strings` | `src/globals.rs:148` C extern | `init_pool_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1876 |  |
-| `font_mem_size` | `i32` | `fonts` | `src/globals.rs:150` C extern | `font_mem_size` | def xetex/xetex-ini.c; link src/ini.rs:1796 |  |
+| `font_mem_size` | `i32` | `fonts` | `EngineState.fonts.font_mem_size` (Rust-owned) | `font_mem_size`, `set_font_mem_size` | MOVED session 30: C def + alias removed |
 | `buffer` | `Vec<i32>` | `input` | `EngineState.input.buffer` (Rust-owned) | `buffer_entry`, `set_buffer_entry`, `buffer_ptr` | MOVED session 15: C def + both aliases removed |
 | `help_line` | `[*const libc::c_char; 6]` | `errors` | `src/globals.rs:156` C extern | `help_line`, `set_help_line` | def xetex/xetex-ini.c |  |
 | `help_ptr` | `u8` | `errors` | `src/globals.rs:157` C extern | `help_ptr`, `set_help_ptr` | def xetex/xetex-ini.c |  |
@@ -144,7 +144,7 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `file_name_quote_char` | `u16` | `scanner` | `src/globals.rs:255` C extern | `file_name_quote_char`, `set_file_name_quote_char` | def xetex/xetex-ini.c |  |
 | `stop_at_space` | `bool` | `scanner` | `src/globals.rs:257` C extern | `stop_at_space`, `set_stop_at_space` | def xetex/xetex-ini.c |  |
 | `mag_set` | `i32` | `scanner` | `src/globals.rs:259` C extern | `mag_set`, `set_mag_set` | def xetex/xetex-ini.c |  |
-| `font_max` | `i32` | `fonts` | `src/globals.rs:262` C extern | `font_max` | def xetex/xetex-ini.c; link src/ini.rs:1798 |  |
+| `font_max` | `i32` | `fonts` | `EngineState.fonts.font_max` (Rust-owned) | `font_max`, `set_font_max` | MOVED session 30: C def + alias removed |
 | `input_stack` | `*mut super::InputState` | `input` | `src/globals.rs:265` C extern | `input_stack`, `set_input_stack` | def xetex/xetex-ini.c; link src/ini.rs:1832,src/ini.rs:3570 |  |
 | `input_ptr` | `i32` | `input` | `src/globals.rs:266` C extern | `input_ptr`, `set_input_ptr` | def xetex/xetex-ini.c |  |
 | `max_in_stack` | `i32` | `input` | `src/globals.rs:268` C extern | `max_in_stack`, `set_max_in_stack` | def xetex/xetex-ini.c |  |

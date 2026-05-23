@@ -94,9 +94,6 @@ mod raw {
         // Top of the eqtb array (xetex-xetexd.h:486).
         pub(super) static mut eqtb_top: i32;
 
-        // Font memory capacity (xetex-xetexd.h:405).
-        pub(super) static mut font_mem_size: i32;
-
         // Name-of-file globals (xetex-xetexd.h:388–391).
         // name_of_file: current input filename (NUL-terminated C string).
         pub(super) static mut name_of_file: *mut libc::c_char;
@@ -132,9 +129,6 @@ mod raw {
         pub(super) static mut cur_mark: [i32; 5];
         // Current parsed integer value (xetex-xetexd.h:530).
         pub(super) static mut cur_val: i32;
-
-        // Maximum font id (xetex-xetexd.h:406).
-        pub(super) static mut font_max: i32;
 
         // Input state stack ownership moved to EngineState.input.input_stack
         // (Rust-owned Vec<InputState>); see src/state.rs.
@@ -2038,7 +2032,15 @@ pub(crate) fn set_font_ptr(v: i32) {
 /// Returns `font_mem_size`.
 #[inline]
 pub(crate) fn font_mem_size() -> i32 {
-    unsafe { raw::font_mem_size }
+    crate::state::with_state(|state| state.fonts.font_mem_size)
+}
+
+/// Sets `font_mem_size`.
+#[inline]
+pub(crate) fn set_font_mem_size(v: i32) {
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_mem_size = v;
+    });
 }
 
 /// Returns `font_params[f]`.
@@ -2834,7 +2836,15 @@ pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
 /// (xetex-xetexd.h:406).
 #[inline]
 pub(crate) fn font_max() -> i32 {
-    unsafe { raw::font_max }
+    crate::state::with_state(|state| state.fonts.font_max)
+}
+
+/// Sets `font_max`.
+#[inline]
+pub(crate) fn set_font_max(v: i32) {
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_max = v;
+    });
 }
 
 // ---------------------------------------------------------------------------

@@ -28,8 +28,6 @@ int32_t last;
 int32_t max_buf_stack;
 int32_t strings_free;
 int32_t pool_free;
-int32_t font_mem_size;
-int32_t font_max;
 int32_t buf_size;
 int32_t stack_size;
 int32_t max_in_open;

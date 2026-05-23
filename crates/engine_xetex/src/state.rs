@@ -142,6 +142,8 @@ pub(crate) struct FontState {
     pub xtx_ligature_present: bool,
     pub gave_char_warning_help: bool,
     pub native_font_type_flag: i32,
+    pub font_mem_size: i32,
+    pub font_max: i32,
 }
 
 #[derive(Default)]
