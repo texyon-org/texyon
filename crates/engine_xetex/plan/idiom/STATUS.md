@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 14 (2026-05-23).
+Last updated: idiom session 15 (2026-05-23).
 
 ## How to read this file
 
@@ -136,6 +136,17 @@ least-coupled non-`misc` clusters:
     newtype debt. All simple input-cluster arrays are now Rust-owned; the
     remaining input arrays (`input_file`, `input_stack`, `nest`, `buffer`)
     have non-trivial element types.
+-   **`buffer` (input buffer):** moved from a C-`malloc`'d `*mut i32`
+    (`UnicodeScalar *`) into a Rust-owned `Vec<i32>` on
+    `EngineState.input.buffer` (`vec![0i32; buf_size + 1]`). Fixed-size:
+    overflow paths error rather than growing, so the no-realloc invariant
+    holds. Accessors `buffer_entry`/`set_buffer_entry` index the `Vec`
+    (no `unsafe`); `buffer_ptr` (still `unsafe fn`, used only by io.rs's
+    byte-decode path) returns `as_mut_ptr().add(offset)`, valid past the
+    borrow because the thread-local owner never reallocates. Removed the
+    redundant `write_bytes` re-zero, both `#[link_name]` aliases, the raw
+    extern, and the C def in the same commit. Not in format dump. Newtype
+    debt recorded (`buffer[]` → `UnicodeScalar`).
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -144,12 +155,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 299 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 298 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 77 state-backed scalars + 8 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 77 state-backed scalars + 9 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 681 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 679 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -226,16 +237,19 @@ the snippets in `00-overview.md` / the workstream plans.
     regress performance. Prefer threading those in Phase C.
     The arena-ownership pattern is now proven on `save_stack`
     (session 11), `param_stack` (session 12, first `input`-cluster
-    array), the five `*mut i32` line/group stacks (session 13), and
-    `eof_seen` (session 14). All **simple** input-cluster arrays are now
-    Rust-owned. Ownership-bearing options remain, in rough difficulty
-    order: (a) the **trickier-element-type `input` arrays** — `input_file`
-    (`*mut *mut c_void`), `input_stack` (`*mut InputState`), `nest`
-    (`*mut ListStateRecord`), and `buffer` (`*mut i32`); these may need a
-    hand-written `impl Default` on `InputClusterState` if a non-`Default`
-    element type is stored. None is in the format dump. **Gotcha:** each
-    input array has **two** alias decls (alloc `tre_*` + cleanup
-    `tt_cleanup_*`) to remove, not one;
+    array), the five `*mut i32` line/group stacks (session 13),
+    `eof_seen` (session 14), and `buffer` (session 15). All **simple**
+    input-cluster arrays plus `buffer` are now Rust-owned. Ownership-
+    bearing options remain, in rough difficulty order: (a) the
+    **trickier-element-type `input` arrays** — `input_file`
+    (`*mut *mut c_void`), `input_stack` (`*mut InputState`), and `nest`
+    (`*mut ListStateRecord`). A `Vec<T>` derives `Default` for any `T`, so
+    no hand-written `impl Default` is required as long as the field is a
+    `Vec`; the element types just need a Rust form (`InputState`/
+    `ListStateRecord` already exist; `input_file` holds `UFILE*` handles,
+    storable as `Vec<*mut c_void>`). None is in the format dump.
+    **Gotcha:** each input array has **two** alias decls (alloc `tre_*` +
+    cleanup `tt_cleanup_*`) to remove, not one;
     (b) `strings` (`str_start` / `str_pool`), which **are** serialized in
     format dump/undump, so that slice must also reconcile the load/dump
     paths; (c) remaining `shipout` file-handle state (`rust_stdout` has a

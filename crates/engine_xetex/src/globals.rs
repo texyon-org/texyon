@@ -112,9 +112,6 @@ mod raw {
         // Font memory capacity (xetex-xetexd.h:405).
         pub(super) static mut font_mem_size: i32;
 
-        // Input buffer (xetex-xetexd.h:392); UnicodeScalar = int32_t.
-        pub(super) static mut buffer: *mut i32;
-
         // `log_opened`, `job_name`, `texmf_log_name` (xetex-xetexd.h:551–554).
         pub(super) static mut job_name: i32;
         pub(super) static mut texmf_log_name: i32;
@@ -1556,8 +1553,7 @@ pub(crate) fn init_pool_ptr() -> i32 {
 /// Read `buffer[k]` (UnicodeScalar = i32).
 #[inline]
 pub(crate) fn buffer_entry(k: i32) -> i32 {
-    // SAFETY: see module-level doc. Caller ensures k is a valid buffer index.
-    unsafe { *raw::buffer.offset(k as isize) }
+    crate::state::with_state(|s| s.input.buffer[k as usize])
 }
 
 // ---------------------------------------------------------------------------
@@ -3521,14 +3517,14 @@ pub(crate) fn set_max_buf_stack(v: i32) {
 /// Writes `buffer[k] = v`.
 #[inline]
 pub(crate) fn set_buffer_entry(k: i32, v: i32) {
-    unsafe {
-        *raw::buffer.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| s.input.buffer[k as usize] = v);
 }
-/// Returns a raw pointer to `buffer[offset]` for use with C APIs.
+/// Returns a raw pointer to `buffer[offset]` for use with C APIs. The buffer
+/// is a Rust-owned `Vec` held by the `'static` thread-local and never
+/// reallocated during a run, so the pointer stays valid past the borrow.
 #[inline]
 pub(crate) unsafe fn buffer_ptr(offset: i32) -> *mut i32 {
-    raw::buffer.add(offset as usize)
+    crate::state::with_state_mut(|s| s.input.buffer.as_mut_ptr().add(offset as usize))
 }
 /// Writes `cur_input.limit = v`.
 #[inline]

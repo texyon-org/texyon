@@ -82,7 +82,7 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `init_str_ptr` | `i32` | `strings` | `src/globals.rs:147` C extern | `init_str_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1874 |  |
 | `init_pool_ptr` | `i32` | `strings` | `src/globals.rs:148` C extern | `init_pool_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1876 |  |
 | `font_mem_size` | `i32` | `fonts` | `src/globals.rs:150` C extern | `font_mem_size` | def xetex/xetex-ini.c; link src/ini.rs:1796 |  |
-| `buffer` | `*mut i32` | `input` | `src/globals.rs:153` C extern | `buffer_entry`, `set_buffer_entry`, `buffer_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1826,src/ini.rs:3564 |  |
+| `buffer` | `Vec<i32>` | `input` | `EngineState.input.buffer` (Rust-owned) | `buffer_entry`, `set_buffer_entry`, `buffer_ptr` | MOVED session 15: C def + both aliases removed |
 | `help_line` | `[*const libc::c_char; 6]` | `errors` | `src/globals.rs:156` C extern | `help_line`, `set_help_line` | def xetex/xetex-ini.c |  |
 | `help_ptr` | `u8` | `errors` | `src/globals.rs:157` C extern | `help_ptr`, `set_help_ptr` | def xetex/xetex-ini.c |  |
 | `two_to_the` | `[i32; 31]` | `errors` | `src/globals.rs:160` C extern | `two_to_the`, `set_two_to_the` | def xetex/xetex-ini.c |  |
@@ -506,6 +506,7 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `grp_stack[]` | `input` | `save_pointer` | `SavePointer`/`Scaled`-style index | session 13 | pending |
 | `source_filename_stack[]` | `input` | `str_number` | `StrNumber` | session 13 | pending |
 | `full_source_filename_stack[]` | `input` | `str_number` | `StrNumber` | session 13 | pending |
+| `buffer[]` | `input` | `UnicodeScalar` (`int32_t` typedef, a Unicode scalar value) | `UnicodeScalar` | session 15 | pending |
 
 (`input` session-13 move of the line/group stacks: `line_stack` and
 `if_stack` are plain `int32_t *` and need no row — `line_stack` holds

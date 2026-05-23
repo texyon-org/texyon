@@ -23,7 +23,6 @@ char *name_of_file;
 UTF16_code *name_of_file16;
 int32_t name_length;
 int32_t name_length16;
-UnicodeScalar *buffer;
 int32_t first;
 int32_t last;
 int32_t max_buf_stack;

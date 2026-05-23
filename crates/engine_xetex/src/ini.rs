@@ -1813,8 +1813,6 @@ extern "C" {
     static mut tre_hash_extra: i32;
     #[link_name = "expand_depth"]
     static mut tre_expand_depth: i32;
-    #[link_name = "buffer"]
-    static mut tre_buffer: *mut i32;
     #[link_name = "nest"]
     static mut tre_nest: *mut crate::mem_types::ListStateRecord;
     #[link_name = "input_stack"]
@@ -3212,7 +3210,17 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_hash_extra = 600_000;
     tre_expand_depth = 10_000;
 
-    tre_buffer = xmalloc_array::<i32>(tre_buf_size);
+    {
+        // Rust-owned input buffer (`buf_size + 1` words, matching the former
+        // `xmalloc_array` shape). Allocated fresh each run; released by
+        // `tt_cleanup`. Never reallocated during a run (overflow errors
+        // instead of growing). Zero-init replaces the former explicit
+        // `write_bytes(buffer, 0, buf_size)`.
+        let n = (tre_buf_size as usize) + 1;
+        crate::state::with_state_mut(|s| {
+            s.input.buffer = vec![0i32; n];
+        });
+    }
     tre_nest = xmalloc_array::<crate::mem_types::ListStateRecord>(tre_nest_size);
     {
         // Rust-owned save-stack arena (`save_size + 1` words, matching the
@@ -3390,7 +3398,6 @@ pub unsafe extern "C" fn tt_run_engine(
     crate::globals::set_max_param_stack(0);
     crate::globals::set_used_tectonic_coda_tokens(false);
     crate::globals::set_gave_char_warning_help(false);
-    std::ptr::write_bytes(tre_buffer, 0, tre_buf_size as usize);
     set_first(0);
 
     crate::globals::set_scanner_status(NORMAL as u8);
@@ -3566,8 +3573,6 @@ extern "C" {
     static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
     #[link_name = "font_used"]
     static mut tt_cleanup_font_used: *mut libc::c_void;
-    #[link_name = "buffer"]
-    static mut tt_cleanup_buffer: *mut libc::c_void;
     #[link_name = "nest"]
     static mut tt_cleanup_nest: *mut libc::c_void;
     #[link_name = "input_stack"]
@@ -3692,12 +3697,11 @@ pub unsafe extern "C" fn tt_cleanup() {
     });
 
     // Free the big allocated arrays
-    libc::free(tt_cleanup_buffer);
     libc::free(tt_cleanup_nest);
     libc::free(tt_cleanup_input_stack);
     libc::free(tt_cleanup_input_file);
-    // Release the Rust-owned macro-parameter and input line/group stacks
-    // (were C `malloc`'d arrays).
+    // Release the Rust-owned macro-parameter, input line/group, and buffer
+    // arrays (were C `malloc`'d arrays).
     crate::state::with_state_mut(|s| {
         s.input.param_stack = Vec::new();
         s.input.line_stack = Vec::new();
@@ -3706,6 +3710,7 @@ pub unsafe extern "C" fn tt_cleanup() {
         s.input.source_filename_stack = Vec::new();
         s.input.full_source_filename_stack = Vec::new();
         s.input.eof_seen = Vec::new();
+        s.input.buffer = Vec::new();
     });
     libc::free(tt_cleanup_hyph_word);
     libc::free(tt_cleanup_hyph_list);

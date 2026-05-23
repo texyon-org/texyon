@@ -37,6 +37,13 @@ pub(crate) struct InputClusterState {
     /// `max_in_open + 1`; allocated at init and released by `tt_cleanup`.
     /// Not serialized in format dump/undump. Plain `bool`, no newtype debt.
     pub eof_seen: Vec<bool>,
+    /// Rust-owned input buffer (`buf_size + 1` words, matching the former
+    /// `xmalloc_array` shape). Allocated at engine init and released by
+    /// `tt_cleanup`; never reallocated during a run (overflow errors instead
+    /// of growing). Replaces the former C-`malloc`'d `buffer` pointer. Not
+    /// serialized in format dump/undump. Element type is `UnicodeScalar`
+    /// (`i32`) — plain int, no newtype debt.
+    pub buffer: Vec<i32>,
 }
 
 #[derive(Default)]

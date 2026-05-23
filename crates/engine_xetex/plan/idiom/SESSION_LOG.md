@@ -9,6 +9,89 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 15 — 2026-05-23 — buffer array → Rust-owned Vec
+
+**Type:** execution (workstream 01, ownership-bearing slice).
+
+**Goal:** move the input `buffer` (`UnicodeScalar * == int32_t *`) into a
+Rust-owned `Vec<i32>` on `EngineState.input`. One array, one commit.
+
+**Why buffer now:** of the four remaining input arrays it is the lowest-
+difficulty — plain `i32` element type (so the `InputClusterState` still
+derives `Default`, no hand-written impl needed, unlike `input_file`/
+`input_stack`/`nest`), the only C reference is its `xetex-ini.c`
+definition, and it is **not** serialized in the format dump/undump. It is
+also fixed-size: `buf_size` is a constant (200 000 in initex) and overflow
+paths *error* (`overflow(c"buffer size", …)` in `input.rs`/`ini.rs`)
+rather than reallocating, so the "Vec must never realloc during a run"
+invariant holds.
+
+**Pre-move grep checks (§11 step 2):** (a) declared `extern UnicodeScalar
+*buffer;` in `xetex-xetexd.h:392` — `UnicodeScalar` is a semantic typedef
+(newtype debt, see below). (b) two `link_name = "buffer"` aliases in
+`ini.rs` (alloc + cleanup) → ownership slice. (c) only `xetex-ini.c`
+references it. (d) no foreign-module `extern`/`static mut` redeclaration
+(the only hits were the two `ini.rs` aliases being removed).
+
+**Work done:**
+- Added `buffer: Vec<i32>` to `InputClusterState` in `src/state.rs`
+  (`#[derive(Default)]` still covers the struct).
+- Repointed the three accessors in `globals.rs`: `buffer_entry(k)` /
+  `set_buffer_entry(k, v)` now index the `Vec` via `with_state`/
+  `with_state_mut` (no `unsafe`). `buffer_ptr(offset)` (still `unsafe fn`,
+  returns `*mut i32` for the io.rs byte-decode path) obtains the pointer
+  via `s.input.buffer.as_mut_ptr().add(offset)` — valid past the borrow
+  because the `Vec` is owned by the `'static` thread-local and never
+  reallocates/reassigns during a run (same stability the old `raw::buffer`
+  pointer had). Only callers are io.rs:390 / io.rs:485.
+- Allocation (`ini.rs`): replaced `tre_buffer = xmalloc_array::<i32>(buf_size)`
+  with a `with_state_mut` block writing `vec![0i32; buf_size + 1]`
+  (matching the former `n+1` shape). Removed the now-redundant explicit
+  `write_bytes(tre_buffer, 0, buf_size)` re-zero — the `Vec` is already
+  zero-initialized at alloc and nothing reads it before that point.
+- Cleanup (`tt_cleanup`): dropped `buffer` (`= Vec::new()`) in the input
+  cleanup block instead of `libc::free`.
+- Removed both `#[link_name = "buffer"]` alias decls (alloc + cleanup),
+  the raw extern in `globals.rs`, and the C def in `xetex-ini.c`.
+
+**Newtype debt (§4 check):** `buffer`'s element type is `UnicodeScalar`,
+an `int32_t` typedef for a Unicode scalar value — a semantic type. Added a
+worklist row (`buffer[]` → `UnicodeScalar`) in `01a-global-inventory.md`.
+
+**longjmp / Drop (§7, handled):** identical to sessions 11–14 —
+`EngineState` lives in the `'static` thread-local, so a `longjmp` abort
+never jumps over the `Vec`; `Drop` doesn't run on abort (matches prior C).
+`tt_cleanup` is the normal teardown and now drops the `Vec`.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 299 → 298.
+- Raw `unsafe { ... }` text-search count: 681 → 679.
+- `#[link_name]` aliases in `ini.rs`: −2.
+- 9 Rust-owned arena arrays total (save_stack, param_stack, the 5 session-13
+  line/group stacks, eof_seen, + buffer).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of `buffer` in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Three input arrays with non-trivial element types remain: `input_file`
+  (`*mut *mut c_void`), `input_stack` (`*mut InputState`), `nest`
+  (`*mut ListStateRecord`). Each needs the sub-struct to keep deriving
+  `Default` — `Vec<T>` derives `Default` for any `T` (empty vec), so no
+  hand-written impl is actually required as long as the field type is
+  `Vec<…>`; the element types just need to exist in the chosen Rust form
+  (`InputState`/`ListStateRecord` already do; `input_file` was a
+  `*mut *mut c_void` array of `UFILE*` handles — store as `Vec<*mut
+  c_void>` or a typed handle). None is in the format dump. Each still has
+  **two** alias decls (alloc + cleanup) + raw extern + C def.
+- Alternatively `strings` (`str_start`/`str_pool`) — but those **are** in
+  the format dump/undump, so that slice must reconcile the load/dump paths.
+
 ## Idiom session 14 — 2026-05-23 — eof_seen array → Rust-owned Vec (last simple input array)
 
 **Type:** execution (workstream 01, ownership-bearing slice).
