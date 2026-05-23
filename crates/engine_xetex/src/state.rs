@@ -6,6 +6,7 @@ use std::cell::RefCell;
 pub(crate) struct EngineState {
     pub config: ConfigState,
     pub errors: ErrorState,
+    pub shipout: ShipoutState,
 }
 
 #[derive(Default)]
@@ -17,6 +18,13 @@ pub(crate) struct ConfigState {
     pub semantic_pagination_enabled: bool,
     pub shell_escape_enabled: bool,
     pub max_print_line: i32,
+}
+
+#[derive(Default)]
+pub(crate) struct ShipoutState {
+    pub insert_src_special_every_par: bool,
+    pub insert_src_special_every_math: bool,
+    pub insert_src_special_every_vbox: bool,
 }
 
 pub(crate) struct ErrorState {

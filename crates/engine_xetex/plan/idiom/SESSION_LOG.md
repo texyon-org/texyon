@@ -9,6 +9,45 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 6 — 2026-05-23 — tiny shipout source-special flag bridge
+
+**Type:** execution (workstream 01, short slice).
+
+**Goal:** make one small non-`misc` state migration without taking on
+the `strings` ownership-transfer surface.
+
+**Work done:**
+- Added `ShipoutState` under the thread-local `EngineState`.
+- Moved three source-special flags behind `EngineState.shipout`:
+  `insert_src_special_every_par`, `insert_src_special_every_math`, and
+  `insert_src_special_every_vbox`.
+- Repointed their `globals.rs` getters to `state::with_state`.
+- Removed the old C definitions from `xetex/xetex-ini.c`.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 350 → 347.
+- Raw `unsafe { ... }` text-search count: 783 → 780.
+- `globals.rs` wrappers: 815 total, with 37 globals now state-backed.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, existing warnings.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- The other dashboard suites were not rerun in this short session; they
+  passed in session 5 after the larger `errors` migration.
+
+**Surprises / gotchas:**
+- These flags are currently read from translated Rust but not set by
+  in-scope code; the migration preserves the effective default `false`
+  behavior.
+- This was deliberately kept smaller than `strings`, which still needs a
+  single ownership-aware slice covering allocation, cleanup aliases, and
+  format load/dump paths.
+
+**For the next session:**
+- Either take the planned `strings` ownership-bearing cluster with full
+  validation, or continue with another small non-`misc` scalar group
+  that has no cleanup aliases.
+
 ## Idiom session 5 — 2026-05-23 — errors cluster Phase-B bridge
 
 **Type:** execution (workstream 01).
