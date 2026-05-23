@@ -9,6 +9,60 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 8 — 2026-05-23 — scanner file-name group Phase-B bridge
+
+**Type:** execution (workstream 01).
+
+**Goal:** migrate a coherent, self-contained, non-hot `scanner` scalar
+group, and exercise the new deferred-newtype-worklist rule for the first
+time.
+
+**Work done:**
+- Added `ScannerState` under `EngineState` and moved the file-name
+  scanning group into it: `cur_name`, `cur_area`, `cur_ext`,
+  `area_delimiter`, `ext_delimiter`, `quoted_filename`,
+  `file_name_quote_char`, `name_in_progress`, `stop_at_space`.
+- Repointed the `globals.rs` accessors at `state::with_state` /
+  `with_state_mut`; removed the raw externs and the C definitions in
+  `xetex/xetex-ini.c`.
+- Recorded the newtype debts created by this move in the Deferred
+  newtype worklist (`01a-global-inventory.md`): `cur_name/area/ext` →
+  `StrNumber`, `area_delimiter`/`ext_delimiter` → `PoolPtr`.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 326 → 317.
+- Raw `unsafe { ... }` text-search count: 739 → 721.
+- `globals.rs`: 67 globals now state-backed.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, existing warnings.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+
+**Surprises / gotchas:**
+- Chose a non-hot scanner sub-group (file-name parsing) on purpose: the
+  truly hot scanner scalars (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`,
+  `cur_val`) are touched on essentially every `get_next`/`get_token`,
+  so routing them through the thread-local `RefCell` bridge risks a
+  measurable slowdown. Defer those until Phase C threads `&mut` instead,
+  or benchmark first.
+- `name_in_progress` / `quoted_filename` / `stop_at_space` / the
+  `cur_*` defs were scattered across `xetex-ini.c` (lines 46, 139–147,
+  291), not contiguous — each needed individual removal.
+- Verified (grep) no non-macOS C reader and no separate `extern`
+  redeclaration in other Rust modules before moving.
+
+**For the next session:**
+- The remaining easy scalar wins are mostly in `scanner` (non-hot
+  groups) and small `eqtb`/`save_stack` scalar sets. The ownership-
+  bearing clusters (`strings`, `fonts` arrays, the `shipout`
+  file-handles) still need single ownership-aware slices that also fix
+  `tt_cleanup`/`#[link_name]` paths.
+- Keep `with_state` closures single-field; do not call translated engine
+  code while a borrow is live.
+
 ## Idiom session 7 — 2026-05-23 — shipout scalar cluster Phase-B bridge
 
 **Type:** execution (workstream 01).

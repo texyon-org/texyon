@@ -7,6 +7,20 @@ pub(crate) struct EngineState {
     pub config: ConfigState,
     pub errors: ErrorState,
     pub shipout: ShipoutState,
+    pub scanner: ScannerState,
+}
+
+#[derive(Default)]
+pub(crate) struct ScannerState {
+    pub cur_name: i32,
+    pub cur_area: i32,
+    pub cur_ext: i32,
+    pub area_delimiter: i32,
+    pub ext_delimiter: i32,
+    pub quoted_filename: bool,
+    pub file_name_quote_char: u16,
+    pub name_in_progress: bool,
+    pub stop_at_space: bool,
 }
 
 #[derive(Default)]

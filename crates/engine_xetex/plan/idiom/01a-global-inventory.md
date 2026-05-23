@@ -497,6 +497,15 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `old_setting` | `shipout` | `unsigned char` (saved `selector_t`) | `Selector` | session 7 | pending |
 | `history` | `errors` | `tt_history_t` (enum) | `History` | session 5 | pending |
 | `interaction` | `errors` | `unsigned char` (interaction mode) | `InteractionMode` | session 5 | pending |
+| `cur_name` | `scanner` | `str_number` | `StrNumber` | session 8 | pending |
+| `cur_area` | `scanner` | `str_number` | `StrNumber` | session 8 | pending |
+| `cur_ext` | `scanner` | `str_number` | `StrNumber` | session 8 | pending |
+| `area_delimiter` | `scanner` | `pool_pointer` | `PoolPtr` | session 8 | pending |
+| `ext_delimiter` | `scanner` | `pool_pointer` | `PoolPtr` | session 8 | pending |
+
+(`file_name_quote_char` is `UTF16_code`/`u16` — a genuine character value,
+not a semantic typedef, so it needs no row; `quoted_filename`,
+`name_in_progress`, `stop_at_space` are plain `bool` flags.)
 
 Earlier clusters (`config`) were re-checked: their migrated fields are
 plain `int32_t`/`bool` flags with no semantic C type, so they need no
