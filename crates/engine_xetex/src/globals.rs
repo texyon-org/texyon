@@ -50,19 +50,6 @@ mod raw {
     use crate::mem_types::MemoryWord;
 
     extern "C" {
-        // xetex-xetexd.h:452
-        pub(super) static mut arith_error: bool;
-        // xetex-xetexd.h:453 — `scaled_t` is `int32_t` (xetex-core.h:40).
-        pub(super) static mut tex_remainder: i32;
-        // xetex-xetexd.h:432 — digit scratch buffer for print_int / print_hex.
-        pub(super) static mut dig: [u8; 23];
-
-        // xetex-xetexd.h:454 — array of 55 pseudo-random fractions in
-        // [0, 0x10000000).
-        pub(super) static mut randoms: [i32; 55];
-        // xetex-xetexd.h:455 — index into `randoms`; `unsigned char` maps to u8.
-        pub(super) static mut j_random: u8;
-
         // xetex-xetexd.h:506 — current input state; layout mirrors InputState above.
         pub(super) static mut cur_input: super::InputState;
         // xetex-xetexd.h:508 — count of open pseudo-file parens.
@@ -122,9 +109,6 @@ mod raw {
         pub(super) static mut full_source_filename_stack: *mut i32;
         // Pointer to the line-number-stack array (xetex-xetexd.h:511, *mut i32).
         pub(super) static mut line_stack: *mut i32;
-        // Non-zero when file:line error format is active (xetex-xetexd.h:416).
-        pub(super) static mut file_line_error_style_p: i32;
-
         // Hash table: `b32x2 *hash` (xetex-xetexd.h:482).
         pub(super) static mut hash: *mut crate::mem_types::B32x2;
         // Hash table management globals (xetex-xetexd.h:483–488).
@@ -149,45 +133,9 @@ mod raw {
         // Input buffer (xetex-xetexd.h:392); UnicodeScalar = int32_t.
         pub(super) static mut buffer: *mut i32;
 
-        // Error-help machinery (xetex-xetexd.h:449–450).
-        pub(super) static mut help_line: [*const libc::c_char; 6];
-        pub(super) static mut help_ptr: u8;
-
-        // Scaled-math tables (xetex-xetexd.h:457–458).
-        pub(super) static mut two_to_the: [i32; 31];
-        pub(super) static mut spec_log: [i32; 29];
-
-        // Error / interaction state (xetex-xetexd.h:444–452, 551–552).
-        // `interaction` is `unsigned char`; mode values: BATCH=0,SCROLL=2,ERROR_STOP=3.
-        pub(super) static mut interaction: u8;
-        // `history` is `tt_history_t` (int-sized enum, values 0–3).
-        pub(super) static mut history: i32;
-        pub(super) static mut error_count: i8;
-        pub(super) static mut use_err_help: bool;
-        // True after \errmessage when interaction < errorstop (xetex-xetexd.h:689).
-        pub(super) static mut long_help_seen: bool;
-        pub(super) static mut halt_on_error_p: i32;
         // `log_opened`, `job_name`, `texmf_log_name` (xetex-xetexd.h:551–554).
-        pub(super) static mut log_opened: bool;
         pub(super) static mut job_name: i32;
         pub(super) static mut texmf_log_name: i32;
-
-        // Engine config flags set before launch (xetex-xetexd.h:385,396,722,724).
-        pub(super) static mut in_initex_mode: bool;
-        pub(super) static mut synctex_enabled: i32;
-        pub(super) static mut semantic_pagination_enabled: bool;
-        pub(super) static mut shell_escape_enabled: bool;
-
-        // Print line-length limit (xetex-xetexd.h:399).
-        pub(super) static mut max_print_line: i32;
-        // Tally of characters output (xetex-xetexd.h:433).
-        pub(super) static mut tally: i32;
-        // Error-line display helpers (xetex-xetexd.h:397–398, 436–439).
-        pub(super) static mut error_line: i32;
-        pub(super) static mut half_error_line: i32;
-        pub(super) static mut trick_buf: [u16; 256];
-        pub(super) static mut trick_count: i32;
-        pub(super) static mut first_count: i32;
         // String pool (xetex-xetexd.h:402-403, 423, 425).
         // `packed_UTF16_code` = `unsigned short`; `pool_pointer` = `int32_t`.
         pub(super) static mut string_vacancies: i32;
@@ -363,8 +311,6 @@ mod raw {
         pub(super) static mut warning_index: i32;
         // def_ref: head of the current macro-definition token list.
         pub(super) static mut def_ref: i32;
-        // deletions_allowed: whether deletion recovery is permitted (xetex-xetexd.h:445).
-        pub(super) static mut deletions_allowed: bool;
         // long_state: CALL/LONG_CALL/OUTER_CALL/LONG_OUTER_CALL (xetex-xetexd.h:528).
         pub(super) static mut long_state: u8;
 
@@ -417,9 +363,6 @@ mod raw {
         pub(super) static mut last_node_type: i32;
         pub(super) static mut insert_penalties: i32;
         pub(super) static mut output_active: bool;
-
-        // Random-number seed (xetex-xetexd.h:456; scaled_t = i32).
-        pub(super) static mut random_seed: i32;
 
         // Positions of last PDF output points (xetex-xetexd.h:698–699).
         pub(super) static mut pdf_last_x_pos: i32;
@@ -602,7 +545,6 @@ mod raw {
         pub(super) static mut hlist_stack_level: i16;
         pub(super) static mut first_p: i32;
         pub(super) static mut global_prev_p: i32;
-        pub(super) static mut no_shrink_error_yet: bool;
         pub(super) static mut cur_p: i32;
         pub(super) static mut last_special_line: i32;
         pub(super) static mut first_width: i32;
@@ -637,12 +579,6 @@ mod raw {
         pub(super) static mut fill_width: [i32; 3];
         pub(super) static mut best_pl_short: [i32; 4];
         pub(super) static mut best_pl_glue: [i32; 4];
-        // Current font used in short_display output (xetex-xetexd.h:473; xetex-ini.c:108).
-        pub(super) static mut font_in_short_display: i32;
-        // show_node_list depth/breadth limits (xetex-xetexd.h:474–475).
-        pub(super) static mut depth_threshold: i32;
-        pub(super) static mut breadth_max: i32;
-
         // Shipout / DVI output state (xetex-xetexd.h:592–600).
         pub(super) static mut total_pages: i32;
         pub(super) static mut max_v: i32;
@@ -690,17 +626,15 @@ mod raw {
 #[allow(dead_code)] // used in unit tests and by future Rust callers of
                     // `mult_and_add` / `xn_over_d`.
 pub(crate) fn arith_error() -> bool {
-    // SAFETY: see module-level doc.
-    unsafe { raw::arith_error }
+    crate::state::with_state(|state| state.errors.arith_error)
 }
 
 /// Sets the engine's `arith_error` flag.
 #[inline]
 pub(crate) fn set_arith_error(v: bool) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::arith_error = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.arith_error = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -712,17 +646,15 @@ pub(crate) fn set_arith_error(v: bool) {
 #[inline]
 #[allow(dead_code)] // used in unit tests and by future Rust callers.
 pub(crate) fn tex_remainder() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::tex_remainder }
+    crate::state::with_state(|state| state.errors.tex_remainder)
 }
 
 /// Stores a value into the `tex_remainder` register.
 #[inline]
 pub(crate) fn set_tex_remainder(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::tex_remainder = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.tex_remainder = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -734,33 +666,29 @@ pub(crate) fn set_tex_remainder(v: i32) {
 /// Panics in debug mode if `k >= 55`.
 #[inline]
 pub(crate) fn random_entry(k: usize) -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::randoms[k] }
+    crate::state::with_state(|state| state.errors.randoms[k])
 }
 
 /// Sets `randoms[k]` to `v`.
 #[inline]
 pub(crate) fn set_random_entry(k: usize, v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::randoms[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.randoms[k] = v;
+    });
 }
 
 /// Returns the current `j_random` index.
 #[inline]
 pub(crate) fn j_random() -> u8 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::j_random }
+    crate::state::with_state(|state| state.errors.j_random)
 }
 
 /// Sets `j_random`.
 #[inline]
 pub(crate) fn set_j_random(v: u8) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::j_random = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.j_random = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1293,8 +1221,14 @@ pub(crate) fn line_stack(k: i32) -> i32 {
 /// Returns non-zero when file:line-style error messages are active.
 #[inline]
 pub(crate) fn file_line_error_style_p() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::file_line_error_style_p }
+    crate::state::with_state(|state| state.config.file_line_error_style_p)
+}
+/// Sets non-zero when file:line-style error messages are active.
+#[inline]
+pub(crate) fn set_file_line_error_style_p(v: i32) {
+    crate::state::with_state_mut(|state| {
+        state.config.file_line_error_style_p = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1434,17 +1368,15 @@ pub(crate) fn set_temp_ptr(v: i32) {
 /// Read `dig[k]`, the k-th digit scratch byte (xetex-xetexd.h:432).
 #[inline]
 pub(crate) fn dig_entry(k: usize) -> u8 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::dig[k] }
+    crate::state::with_state(|state| state.errors.dig[k])
 }
 
 /// Write `v` into `dig[k]`.
 #[inline]
 pub(crate) fn set_dig_entry(k: usize, v: u8) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::dig[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.dig[k] = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1572,70 +1504,77 @@ pub(crate) fn current_diagnostic() -> *mut std::ffi::c_void {
 
 #[inline]
 pub(crate) fn max_print_line() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::max_print_line }
+    crate::state::with_state(|state| state.config.max_print_line)
+}
+#[inline]
+pub(crate) fn set_max_print_line(v: i32) {
+    crate::state::with_state_mut(|state| {
+        state.config.max_print_line = v;
+    });
 }
 
 #[inline]
 pub(crate) fn tally() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::tally }
+    crate::state::with_state(|state| state.errors.tally)
 }
 #[inline]
 pub(crate) fn set_tally(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::tally = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.tally = v;
+    });
 }
 
 #[inline]
 pub(crate) fn error_line() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::error_line }
+    crate::state::with_state(|state| state.errors.error_line)
+}
+#[inline]
+pub(crate) fn set_error_line(v: i32) {
+    crate::state::with_state_mut(|state| {
+        state.errors.error_line = v;
+    });
 }
 #[inline]
 pub(crate) fn half_error_line() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::half_error_line }
+    crate::state::with_state(|state| state.errors.half_error_line)
+}
+#[inline]
+pub(crate) fn set_half_error_line(v: i32) {
+    crate::state::with_state_mut(|state| {
+        state.errors.half_error_line = v;
+    });
 }
 #[inline]
 pub(crate) fn first_count() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::first_count }
+    crate::state::with_state(|state| state.errors.first_count)
 }
 #[inline]
 pub(crate) fn set_first_count(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::first_count = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.first_count = v;
+    });
 }
 #[inline]
 pub(crate) fn set_trick_count(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::trick_count = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.trick_count = v;
+    });
 }
 
 #[inline]
 pub(crate) fn trick_count() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::trick_count }
+    crate::state::with_state(|state| state.errors.trick_count)
 }
 #[inline]
 pub(crate) fn trick_buf(k: usize) -> u16 {
-    // SAFETY: see module-level doc. k must be < error_line (≤256).
-    unsafe { raw::trick_buf[k] }
+    crate::state::with_state(|state| state.errors.trick_buf[k])
 }
 /// Write `trick_buf[k] = v`.
 #[inline]
 pub(crate) fn set_trick_buf(k: usize, v: u16) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::trick_buf[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.trick_buf[k] = v;
+    });
 }
 
 #[inline]
@@ -1718,29 +1657,25 @@ pub(crate) fn buffer_entry(k: i32) -> i32 {
 #[inline]
 #[allow(dead_code)] // getter defined for completeness; only setter used so far
 pub(crate) fn help_ptr() -> u8 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::help_ptr }
+    crate::state::with_state(|state| state.errors.help_ptr)
 }
 #[inline]
 pub(crate) fn set_help_ptr(v: u8) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::help_ptr = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.help_ptr = v;
+    });
 }
 /// Read `help_line[k]` as a C string pointer.
 #[inline]
 pub(crate) fn help_line(k: usize) -> *const libc::c_char {
-    // SAFETY: see module-level doc. k must be < 6.
-    unsafe { raw::help_line[k] }
+    crate::state::with_state(|state| state.errors.help_line[k])
 }
 /// Write `help_line[k] = v` (a C string pointer; caller owns the lifetime).
 #[inline]
 pub(crate) fn set_help_line(k: usize, v: *const libc::c_char) {
-    // SAFETY: see module-level doc. k must be < 6.
-    unsafe {
-        raw::help_line[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.help_line[k] = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1749,27 +1684,23 @@ pub(crate) fn set_help_line(k: usize, v: *const libc::c_char) {
 
 #[inline]
 pub(crate) fn two_to_the(k: usize) -> i32 {
-    // SAFETY: see module-level doc. k must be < 31.
-    unsafe { raw::two_to_the[k] }
+    crate::state::with_state(|state| state.errors.two_to_the[k])
 }
 #[inline]
 pub(crate) fn set_two_to_the(k: usize, v: i32) {
-    // SAFETY: see module-level doc. k must be < 31.
-    unsafe {
-        raw::two_to_the[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.two_to_the[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn spec_log(k: usize) -> i32 {
-    // SAFETY: see module-level doc. k must be < 29.
-    unsafe { raw::spec_log[k] }
+    crate::state::with_state(|state| state.errors.spec_log[k])
 }
 #[inline]
 pub(crate) fn set_spec_log(k: usize, v: i32) {
-    // SAFETY: see module-level doc. k must be < 29.
-    unsafe {
-        raw::spec_log[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.spec_log[k] = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1778,77 +1709,67 @@ pub(crate) fn set_spec_log(k: usize, v: i32) {
 
 #[inline]
 pub(crate) fn interaction() -> u8 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::interaction }
+    crate::state::with_state(|state| state.errors.interaction)
 }
 #[inline]
 pub(crate) fn set_interaction(v: u8) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::interaction = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.interaction = v;
+    });
 }
 #[inline]
 pub(crate) fn history() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::history }
+    crate::state::with_state(|state| state.errors.history)
 }
 #[inline]
 pub(crate) fn set_history(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::history = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.history = v;
+    });
 }
 #[inline]
 pub(crate) fn error_count() -> i8 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::error_count }
+    crate::state::with_state(|state| state.errors.error_count)
 }
 #[inline]
 pub(crate) fn set_error_count(v: i8) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::error_count = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.error_count = v;
+    });
 }
 #[inline]
 pub(crate) fn use_err_help() -> bool {
-    // SAFETY: see module-level doc.
-    unsafe { raw::use_err_help }
+    crate::state::with_state(|state| state.errors.use_err_help)
 }
 #[inline]
 pub(crate) fn set_use_err_help(v: bool) {
-    unsafe {
-        raw::use_err_help = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.use_err_help = v;
+    });
 }
 #[inline]
 pub(crate) fn long_help_seen() -> bool {
-    unsafe { raw::long_help_seen }
+    crate::state::with_state(|state| state.errors.long_help_seen)
 }
 #[inline]
 pub(crate) fn set_long_help_seen(v: bool) {
-    unsafe {
-        raw::long_help_seen = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.long_help_seen = v;
+    });
 }
 #[inline]
 pub(crate) fn halt_on_error_p() -> bool {
-    // SAFETY: see module-level doc.
-    unsafe { raw::halt_on_error_p != 0 }
+    crate::state::with_state(|state| state.config.halt_on_error_p != 0)
 }
 #[inline]
 pub(crate) fn log_opened() -> bool {
-    // SAFETY: see module-level doc.
-    unsafe { raw::log_opened }
+    crate::state::with_state(|state| state.errors.log_opened)
 }
 #[inline]
 pub(crate) fn set_log_opened(v: bool) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::log_opened = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.log_opened = v;
+    });
 }
 #[inline]
 pub(crate) fn job_name() -> i32 {
@@ -1876,10 +1797,9 @@ pub(crate) fn set_texmf_log_name(v: i32) {
 }
 #[inline]
 pub(crate) fn set_halt_on_error_p(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::halt_on_error_p = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.config.halt_on_error_p = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1888,45 +1808,43 @@ pub(crate) fn set_halt_on_error_p(v: i32) {
 
 #[inline]
 pub(crate) fn in_initex_mode() -> bool {
-    // SAFETY: see module-level doc.
-    unsafe { raw::in_initex_mode }
+    crate::state::with_state(|state| state.config.in_initex_mode)
 }
 #[inline]
 pub(crate) fn set_in_initex_mode(v: bool) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::in_initex_mode = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.config.in_initex_mode = v;
+    });
+}
+#[inline]
+pub(crate) fn synctex_enabled() -> i32 {
+    crate::state::with_state(|state| state.config.synctex_enabled)
 }
 #[inline]
 pub(crate) fn set_synctex_enabled(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::synctex_enabled = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.config.synctex_enabled = v;
+    });
 }
 #[inline]
 pub(crate) fn semantic_pagination_enabled() -> bool {
-    unsafe { raw::semantic_pagination_enabled }
+    crate::state::with_state(|state| state.config.semantic_pagination_enabled)
 }
 #[inline]
 pub(crate) fn set_semantic_pagination_enabled(v: bool) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::semantic_pagination_enabled = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.config.semantic_pagination_enabled = v;
+    });
 }
 #[inline]
 pub(crate) fn shell_escape_enabled() -> bool {
-    // SAFETY: see module-level doc.
-    unsafe { raw::shell_escape_enabled }
+    crate::state::with_state(|state| state.config.shell_escape_enabled)
 }
 #[inline]
 pub(crate) fn set_shell_escape_enabled(v: bool) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::shell_escape_enabled = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.config.shell_escape_enabled = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2894,13 +2812,13 @@ pub(crate) fn set_output_active(v: bool) {
 }
 #[inline]
 pub(crate) fn random_seed() -> i32 {
-    unsafe { raw::random_seed }
+    crate::state::with_state(|state| state.errors.random_seed)
 }
 #[inline]
 pub(crate) fn set_random_seed(v: i32) {
-    unsafe {
-        raw::random_seed = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.random_seed = v;
+    });
 }
 #[inline]
 pub(crate) fn pdf_last_x_pos() -> i32 {
@@ -3771,13 +3689,13 @@ pub(crate) fn set_def_ref(v: i32) {
 }
 #[inline]
 pub(crate) fn deletions_allowed() -> bool {
-    unsafe { raw::deletions_allowed }
+    crate::state::with_state(|state| state.errors.deletions_allowed)
 }
 #[inline]
 pub(crate) fn set_deletions_allowed(v: bool) {
-    unsafe {
-        raw::deletions_allowed = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.deletions_allowed = v;
+    });
 }
 #[inline]
 pub(crate) fn long_state() -> u8 {
@@ -4835,13 +4753,13 @@ pub(crate) fn set_global_prev_p(v: i32) {
 }
 #[inline]
 pub(crate) fn no_shrink_error_yet() -> bool {
-    unsafe { raw::no_shrink_error_yet }
+    crate::state::with_state(|state| state.errors.no_shrink_error_yet)
 }
 #[inline]
 pub(crate) fn set_no_shrink_error_yet(v: bool) {
-    unsafe {
-        raw::no_shrink_error_yet = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.no_shrink_error_yet = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_p() -> i32 {
@@ -5185,33 +5103,33 @@ pub(crate) fn set_best_pl_glue(k: usize, v: i32) {
 }
 #[inline]
 pub(crate) fn font_in_short_display() -> i32 {
-    unsafe { raw::font_in_short_display }
+    crate::state::with_state(|state| state.errors.font_in_short_display)
 }
 #[inline]
 pub(crate) fn set_font_in_short_display(v: i32) {
-    unsafe {
-        raw::font_in_short_display = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.font_in_short_display = v;
+    });
 }
 #[inline]
 pub(crate) fn depth_threshold() -> i32 {
-    unsafe { raw::depth_threshold }
+    crate::state::with_state(|state| state.errors.depth_threshold)
 }
 #[inline]
 pub(crate) fn set_depth_threshold(v: i32) {
-    unsafe {
-        raw::depth_threshold = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.depth_threshold = v;
+    });
 }
 #[inline]
 pub(crate) fn breadth_max() -> i32 {
-    unsafe { raw::breadth_max }
+    crate::state::with_state(|state| state.errors.breadth_max)
 }
 #[inline]
 pub(crate) fn set_breadth_max(v: i32) {
-    unsafe {
-        raw::breadth_max = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.errors.breadth_max = v;
+    });
 }
 
 // ---------------------------------------------------------------------------

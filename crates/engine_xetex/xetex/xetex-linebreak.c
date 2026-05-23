@@ -21,7 +21,6 @@ scaled_t break_width[7];
 int32_t best_place[4];
 int32_t best_pl_line[4];
 scaled_t disc_width;
-bool no_shrink_error_yet;
 int32_t cur_p;
 bool final_pass;
 int32_t threshold;

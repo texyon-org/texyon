@@ -6,7 +6,7 @@ use std::ptr;
 
 use crate::globals::{
     cur_h, cur_input, cur_v, eqtb_b32s1, job_name, mem_b16s1, mem_b32s0, mem_b32s1, rule_dp,
-    rule_ht, rule_wd, set_cur_input_synctex_tag, set_eqtb_b32s1, total_pages,
+    rule_ht, rule_wd, set_cur_input_synctex_tag, set_eqtb_b32s1, synctex_enabled, total_pages,
 };
 
 // INT_BASE (save.rs) and INT_PAR__synctex (xetex_format.h:116).
@@ -40,9 +40,6 @@ extern "C" {
 
     // abspath_of_input_file: #[no_mangle] pub static in io.rs, char[1024].
     static abspath_of_input_file: [c_char; 1024];
-
-    // synctex_enabled engine config flag (globals.rs raw block → C symbol).
-    static synctex_enabled: c_int;
 }
 
 // ---------------------------------------------------------------------------
@@ -740,7 +737,7 @@ pub unsafe extern "C" fn synctex_init_command() {
     SYNCTEX_CTXT.flags.warn = false;
     SYNCTEX_CTXT.flags.output_p = false;
 
-    if synctex_enabled != 0 {
+    if synctex_enabled() != 0 {
         set_eqtb_b32s1(INT_BASE + INT_PAR_SYNCTEX, 1);
     } else {
         set_eqtb_b32s1(INT_BASE + INT_PAR_SYNCTEX, 0);

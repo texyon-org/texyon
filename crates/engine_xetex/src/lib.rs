@@ -46,6 +46,7 @@ mod save;
 mod scaled_math;
 mod scan;
 mod shipout;
+mod state;
 #[allow(dead_code)]
 mod string_pool;
 mod synctex;

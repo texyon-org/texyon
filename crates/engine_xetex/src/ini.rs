@@ -21,35 +21,36 @@ use crate::globals::{
     set_cur_val, set_cur_val_level, set_dead_cycles, set_deletions_allowed, set_disc_ptr,
     set_doing_leaders, set_doing_special, set_dyn_used, set_edit_name_start, set_empty_b32s0,
     set_empty_b32s1, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word,
-    set_error_count, set_expand_depth_count, set_first, set_fmem_ptr, set_font_info_b32s1,
-    set_font_ptr, set_format_ident, set_hash_high, set_hash_s1, set_hash_used, set_hc_entry,
-    set_help_line, set_help_ptr, set_hi_mem_min, set_hyf_distance_entry, set_hyf_entry,
-    set_hyf_next_entry, set_hyf_num_entry, set_hyph_count, set_hyph_index, set_hyph_link_entry,
-    set_hyph_list_entry, set_hyph_next, set_hyph_start, set_hyph_word_entry, set_hyphen_char_entry,
-    set_if_limit, set_if_line, set_input_file, set_ins_disc, set_insert_penalties, set_interaction,
-    set_is_in_csname, set_last, set_last_badness, set_last_bop, set_last_glue, set_last_kern,
-    set_last_node_type, set_last_penalty, set_lft_hit, set_ligature_present, set_lo_mem_max,
-    set_long_help_seen, set_lr_problems, set_lr_ptr, set_mag_set, set_max_h, set_max_hyph_char,
-    set_max_nest_stack, set_max_op_used, set_max_push, set_max_reg_help_line, set_max_reg_num,
-    set_max_save_stack, set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-    set_mem_end, set_mem_word, set_native_text, set_native_text_size, set_nest_ptr,
-    set_no_new_control_sequence, set_null_character, set_op_start_entry, set_open_parens,
-    set_output_active, set_pack_begin_line, set_page_contents, set_page_so_far, set_page_tail,
-    set_par_loc, set_par_token, set_pool_ptr, set_pre_adjust_tail, set_prim_s0, set_prim_s1,
-    set_prim_used, set_pseudo_files, set_radix, set_read_open_entry, set_rover, set_rt_hit,
-    set_sa_chain, set_sa_level, set_sa_null_b32s0, set_sa_null_b32s1, set_sa_root, set_save_ptr,
-    set_selector, set_set_box_allowed, set_shown_mode, set_skew_char_entry, set_spec_log,
-    set_stop_at_space, set_str_pool, set_str_ptr, set_str_start, set_temp_ptr, set_total_pages,
-    set_trie_c_entry, set_trie_hash_entry, set_trie_l_entry, set_trie_max, set_trie_min_entry,
-    set_trie_not_ready, set_trie_o_entry, set_trie_op_lang_entry, set_trie_op_ptr,
-    set_trie_op_val_entry, set_trie_ptr, set_trie_r_entry, set_trie_taken_entry,
-    set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry, set_trie_used_entry,
-    set_two_to_the, set_use_err_help, set_var_used, set_write_loc, set_write_open, set_xeq_level,
-    str_pool_entry, str_ptr, str_start, string_vacancies, temp_ptr, trie_c_entry, trie_hash_entry,
-    trie_l_entry, trie_max, trie_min_entry, trie_not_ready, trie_o_entry, trie_op_lang_entry,
-    trie_op_ptr, trie_op_val_entry, trie_ptr, trie_r_entry, trie_size, trie_taken_entry,
-    trie_trc_entry, trie_trl_entry, trie_tro_entry, trie_used_entry, two_to_the, var_used,
-    write_loc,
+    set_error_count, set_error_line, set_expand_depth_count, set_file_line_error_style_p,
+    set_first, set_fmem_ptr, set_font_info_b32s1, set_font_ptr, set_format_ident, set_hash_high,
+    set_hash_s1, set_hash_used, set_hc_entry, set_half_error_line, set_help_line, set_help_ptr,
+    set_hi_mem_min, set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry, set_hyf_num_entry,
+    set_hyph_count, set_hyph_index, set_hyph_link_entry, set_hyph_list_entry, set_hyph_next,
+    set_hyph_start, set_hyph_word_entry, set_hyphen_char_entry, set_if_limit, set_if_line,
+    set_input_file, set_ins_disc,
+    set_insert_penalties, set_interaction, set_is_in_csname, set_last, set_last_badness,
+    set_last_bop, set_last_glue, set_last_kern, set_last_node_type, set_last_penalty, set_lft_hit,
+    set_ligature_present, set_lo_mem_max, set_long_help_seen, set_lr_problems, set_lr_ptr,
+    set_mag_set, set_max_h, set_max_hyph_char, set_max_nest_stack, set_max_op_used,
+    set_max_print_line, set_max_push, set_max_reg_help_line, set_max_reg_num, set_max_save_stack,
+    set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_end,
+    set_mem_word, set_native_text, set_native_text_size, set_nest_ptr, set_no_new_control_sequence,
+    set_null_character, set_op_start_entry, set_open_parens, set_output_active,
+    set_pack_begin_line, set_page_contents, set_page_so_far, set_page_tail, set_par_loc,
+    set_par_token, set_pool_ptr, set_pre_adjust_tail, set_prim_s0, set_prim_s1, set_prim_used,
+    set_pseudo_files, set_radix, set_read_open_entry, set_rover, set_rt_hit, set_sa_chain,
+    set_sa_level, set_sa_null_b32s0, set_sa_null_b32s1, set_sa_root, set_save_ptr, set_selector,
+    set_set_box_allowed, set_shown_mode, set_skew_char_entry, set_spec_log, set_stop_at_space,
+    set_str_pool, set_str_ptr, set_str_start, set_temp_ptr, set_total_pages, set_trie_c_entry,
+    set_trie_hash_entry, set_trie_l_entry, set_trie_max, set_trie_min_entry, set_trie_not_ready,
+    set_trie_o_entry, set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry, set_trie_ptr,
+    set_trie_r_entry, set_trie_taken_entry, set_trie_trc_entry, set_trie_trl_entry,
+    set_trie_tro_entry, set_trie_used_entry, set_two_to_the, set_use_err_help, set_var_used,
+    set_write_loc, set_write_open, set_xeq_level, str_pool_entry, str_ptr, str_start,
+    string_vacancies, temp_ptr, trie_c_entry, trie_hash_entry, trie_l_entry, trie_max,
+    trie_min_entry, trie_not_ready, trie_o_entry, trie_op_lang_entry, trie_op_ptr,
+    trie_op_val_entry, trie_ptr, trie_r_entry, trie_size, trie_taken_entry, trie_trc_entry,
+    trie_trl_entry, trie_tro_entry, trie_used_entry, two_to_the, var_used, write_loc,
 };
 use crate::io::UFile;
 
@@ -1778,8 +1779,6 @@ extern "C" {
     static mut tre_rust_stdout: usize;
     #[link_name = "format_default_length"]
     static mut tre_format_default_length: i32;
-    #[link_name = "file_line_error_style_p"]
-    static mut tre_file_line_error_style_p: i32;
     #[link_name = "pool_size"]
     static mut tre_pool_size: i32;
     #[link_name = "string_vacancies"]
@@ -1810,12 +1809,6 @@ extern "C" {
     static mut tre_save_size: i32;
     #[link_name = "stack_size"]
     static mut tre_stack_size: i32;
-    #[link_name = "error_line"]
-    static mut tre_error_line: i32;
-    #[link_name = "half_error_line"]
-    static mut tre_half_error_line: i32;
-    #[link_name = "max_print_line"]
-    static mut tre_max_print_line: i32;
     #[link_name = "hash_extra"]
     static mut tre_hash_extra: i32;
     #[link_name = "expand_depth"]
@@ -3210,8 +3203,8 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_format_default_length = libc::strlen(dump_name) as i32;
     tre_rust_stdout = ttstub_output_open_stdout();
 
-    if tre_file_line_error_style_p < 0 {
-        tre_file_line_error_style_p = 0;
+    if crate::globals::file_line_error_style_p() < 0 {
+        set_file_line_error_style_p(0);
     }
 
     tre_pool_size = 6_250_000;
@@ -3229,9 +3222,9 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_param_size = 10_000;
     tre_save_size = 80_000;
     tre_stack_size = 5_000;
-    tre_error_line = 79;
-    tre_half_error_line = 50;
-    tre_max_print_line = 79;
+    set_error_line(79);
+    set_half_error_line(50);
+    set_max_print_line(79);
     tre_hash_extra = 600_000;
     tre_expand_depth = 10_000;
 
@@ -3281,10 +3274,12 @@ pub unsafe extern "C" fn tt_run_engine(
 
     crate::globals::set_history(HISTORY_FATAL_ERROR);
     tre_bad = 0;
-    if tre_half_error_line < 30 || tre_half_error_line > tre_error_line - 15 {
+    if crate::globals::half_error_line() < 30
+        || crate::globals::half_error_line() > crate::globals::error_line() - 15
+    {
         tre_bad = 1;
     }
-    if tre_max_print_line < 60 {
+    if crate::globals::max_print_line() < 60 {
         tre_bad = 2;
     }
     if 1100 > MEM_TOP {
