@@ -261,7 +261,6 @@ pub(crate) fn with_state_mut<R>(f: impl FnOnce(&mut EngineState) -> R) -> R {
     ENGINE_STATE.with(|state| f(&mut state.borrow_mut()))
 }
 
-#[derive(Default)]
 pub(crate) struct HyphState {
     pub is_hyph: bool,
     pub hf: i32,
@@ -288,5 +287,58 @@ pub(crate) struct HyphState {
     pub init_l_hyf: i32,
     pub init_r_hyf: i32,
     pub hyf_bchar: i32,
+    pub hc: Vec<i32>,
+    pub hu: Vec<i32>,
+    pub hyf: Vec<u8>,
+    pub trie_min: Vec<i32>,
+    pub hyf_distance: Vec<i16>,
+    pub hyf_num: Vec<i16>,
+    pub hyf_next: Vec<u16>,
+    pub op_start: Vec<i32>,
+    pub trie_used: Vec<u16>,
+    pub trie_op_lang: Vec<u8>,
+    pub trie_op_val: Vec<u16>,
 }
 
+impl Default for HyphState {
+    fn default() -> Self {
+        Self {
+            is_hyph: false,
+            hf: 0,
+            max_hyph_char: 0,
+            init_list: 0,
+            init_lig: false,
+            init_lft: false,
+            hyphen_passed: 0,
+            trie_max: 0,
+            trie_size: 0,
+            trie_ptr: 0,
+            hyph_count: 0,
+            hyph_size: 0,
+            hyph_next: 0,
+            trie_op_ptr: 0,
+            max_op_used: 0,
+            trie_not_ready: false,
+            hyph_start: 0,
+            hyph_index: 0,
+            cur_lang: 0,
+            hyf_char: 0,
+            l_hyf: 0,
+            r_hyf: 0,
+            init_l_hyf: 0,
+            init_r_hyf: 0,
+            hyf_bchar: 0,
+            hc: vec![0; 4099],
+            hu: vec![0; 4097],
+            hyf: vec![0; 4097],
+            trie_min: vec![0; 65536],
+            hyf_distance: vec![0; 35112],
+            hyf_num: vec![0; 35112],
+            hyf_next: vec![0; 35112],
+            op_start: vec![0; 256],
+            trie_used: vec![0; 256],
+            trie_op_lang: vec![0; 35112],
+            trie_op_val: vec![0; 35112],
+        }
+    }
+}

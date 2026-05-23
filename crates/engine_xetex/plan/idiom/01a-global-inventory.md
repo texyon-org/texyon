@@ -526,6 +526,12 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `max_op_used` | `hyph` | `trie_opcode` | `TrieOpcode` | session 25 | pending |
 | `hyph_start` | `hyph` | `trie_pointer` | `TrieIndex` | session 25 | pending |
 | `hyph_index` | `hyph` | `trie_pointer` | `TrieIndex` | session 25 | pending |
+| `trie_min[]` | `hyph` | `trie_pointer[65536]` | `Vec<TrieIndex>` | session 26 | pending |
+| `hyf_distance[]` | `hyph` | `small_number[TRIE_OP_SIZE + 1]` | `Vec<SmallNumber>` | session 26 | pending |
+| `hyf_num[]` | `hyph` | `small_number[TRIE_OP_SIZE + 1]` | `Vec<SmallNumber>` | session 26 | pending |
+| `hyf_next[]` | `hyph` | `trie_opcode[TRIE_OP_SIZE + 1]` | `Vec<TrieOpcode>` | session 26 | pending |
+| `trie_used[]` | `hyph` | `trie_opcode[256]` | `Vec<TrieOpcode>` | session 26 | pending |
+| `trie_op_val[]` | `hyph` | `trie_opcode[TRIE_OP_SIZE + 1]` | `Vec<TrieOpcode>` | session 26 | pending |
 
 
 (`input` session-13 move of the line/group stacks: `line_stack` and

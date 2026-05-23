@@ -22,35 +22,35 @@ use crate::globals::{
     set_doing_leaders, set_doing_special, set_dyn_used, set_edit_name_start, set_empty_b32s0,
     set_empty_b32s1, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word,
     set_error_count, set_error_line, set_expand_depth_count, set_file_line_error_style_p,
-    set_first, set_fmem_ptr, set_font_info_b32s1, set_font_ptr, set_format_ident, set_hash_high,
-    set_hash_s1, set_hash_used, set_hc_entry, set_half_error_line, set_help_line, set_help_ptr,
-    set_hi_mem_min, set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry, set_hyf_num_entry,
-    set_hyph_count, set_hyph_index, set_hyph_link_entry, set_hyph_list_entry, set_hyph_next,
-    set_hyph_start, set_hyph_word_entry, set_hyphen_char_entry, set_if_limit, set_if_line,
-    set_input_file, set_ins_disc,
-    set_insert_penalties, set_interaction, set_is_in_csname, set_last, set_last_badness,
-    set_last_bop, set_last_glue, set_last_kern, set_last_node_type, set_last_penalty, set_lft_hit,
-    set_ligature_present, set_lo_mem_max, set_long_help_seen, set_lr_problems, set_lr_ptr,
-    set_mag_set, set_max_h, set_max_hyph_char, set_max_nest_stack, set_max_op_used,
-    set_max_print_line, set_max_push, set_max_reg_help_line, set_max_reg_num, set_max_save_stack,
-    set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_end,
-    set_mem_word, set_native_text, set_native_text_size, set_nest_ptr, set_no_new_control_sequence,
-    set_null_character, set_op_start_entry, set_open_parens, set_output_active,
-    set_pack_begin_line, set_page_contents, set_page_so_far, set_page_tail, set_par_loc,
-    set_par_token, set_pool_ptr, set_pre_adjust_tail, set_prim_s0, set_prim_s1, set_prim_used,
-    set_pseudo_files, set_radix, set_read_open_entry, set_rover, set_rt_hit, set_sa_chain,
-    set_sa_level, set_sa_null_b32s0, set_sa_null_b32s1, set_sa_root, set_save_ptr, set_selector,
-    set_set_box_allowed, set_shown_mode, set_skew_char_entry, set_spec_log, set_stop_at_space,
-    set_str_pool, set_str_ptr, set_str_start, set_temp_ptr, set_total_pages, set_trie_c_entry,
-    set_trie_hash_entry, set_trie_l_entry, set_trie_max, set_trie_min_entry, set_trie_not_ready,
-    set_trie_o_entry, set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry, set_trie_ptr,
-    set_trie_r_entry, set_trie_taken_entry, set_trie_trc_entry, set_trie_trl_entry,
-    set_trie_tro_entry, set_trie_used_entry, set_two_to_the, set_use_err_help, set_var_used,
-    set_write_loc, set_write_open, set_xeq_level, str_pool_entry, str_ptr, str_start,
-    string_vacancies, temp_ptr, trie_c_entry, trie_hash_entry, trie_l_entry, trie_max,
-    trie_min_entry, trie_not_ready, trie_o_entry, trie_op_lang_entry, trie_op_ptr,
-    trie_op_val_entry, trie_ptr, trie_r_entry, trie_size, trie_taken_entry, trie_trc_entry,
-    trie_trl_entry, trie_tro_entry, trie_used_entry, two_to_the, var_used, write_loc,
+    set_first, set_fmem_ptr, set_font_info_b32s1, set_font_ptr, set_format_ident,
+    set_half_error_line, set_hash_high, set_hash_s1, set_hash_used, set_hc_entry, set_help_line,
+    set_help_ptr, set_hi_mem_min, set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry,
+    set_hyf_num_entry, set_hyph_count, set_hyph_index, set_hyph_link_entry, set_hyph_list_entry,
+    set_hyph_next, set_hyph_start, set_hyph_word_entry, set_hyphen_char_entry, set_if_limit,
+    set_if_line, set_input_file, set_ins_disc, set_insert_penalties, set_interaction,
+    set_is_in_csname, set_last, set_last_badness, set_last_bop, set_last_glue, set_last_kern,
+    set_last_node_type, set_last_penalty, set_lft_hit, set_ligature_present, set_lo_mem_max,
+    set_long_help_seen, set_lr_problems, set_lr_ptr, set_mag_set, set_max_h, set_max_hyph_char,
+    set_max_nest_stack, set_max_op_used, set_max_print_line, set_max_push, set_max_reg_help_line,
+    set_max_reg_num, set_max_save_stack, set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0,
+    set_mem_b32s1, set_mem_end, set_mem_word, set_native_text, set_native_text_size, set_nest_ptr,
+    set_no_new_control_sequence, set_null_character, set_op_start_entry, set_open_parens,
+    set_output_active, set_pack_begin_line, set_page_contents, set_page_so_far, set_page_tail,
+    set_par_loc, set_par_token, set_pool_ptr, set_pre_adjust_tail, set_prim_s0, set_prim_s1,
+    set_prim_used, set_pseudo_files, set_radix, set_read_open_entry, set_rover, set_rt_hit,
+    set_sa_chain, set_sa_level, set_sa_null_b32s0, set_sa_null_b32s1, set_sa_root, set_save_ptr,
+    set_selector, set_set_box_allowed, set_shown_mode, set_skew_char_entry, set_spec_log,
+    set_stop_at_space, set_str_pool, set_str_ptr, set_str_start, set_temp_ptr, set_total_pages,
+    set_trie_c_entry, set_trie_hash_entry, set_trie_l_entry, set_trie_max, set_trie_min_entry,
+    set_trie_not_ready, set_trie_o_entry, set_trie_op_lang_entry, set_trie_op_ptr,
+    set_trie_op_val_entry, set_trie_ptr, set_trie_r_entry, set_trie_taken_entry,
+    set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry, set_trie_used_entry,
+    set_two_to_the, set_use_err_help, set_var_used, set_write_loc, set_write_open, set_xeq_level,
+    str_pool_entry, str_ptr, str_start, string_vacancies, temp_ptr, trie_c_entry, trie_hash_entry,
+    trie_l_entry, trie_max, trie_min_entry, trie_not_ready, trie_o_entry, trie_op_lang_entry,
+    trie_op_ptr, trie_op_val_entry, trie_ptr, trie_r_entry, trie_size, trie_taken_entry,
+    trie_trc_entry, trie_trl_entry, trie_tro_entry, trie_used_entry, two_to_the, var_used,
+    write_loc,
 };
 use crate::io::UFile;
 
@@ -1908,14 +1908,6 @@ extern "C" {
     static mut tre_font_used: *mut bool;
     #[link_name = "sa_root"]
     static mut fmt_sa_root: [i32; 8];
-    #[link_name = "hyf_distance"]
-    static mut fmt_hyf_distance: [i16; 35112];
-    #[link_name = "hyf_num"]
-    static mut fmt_hyf_num: [i16; 35112];
-    #[link_name = "hyf_next"]
-    static mut fmt_hyf_next: [u16; 35112];
-    #[link_name = "trie_used"]
-    static mut fmt_trie_used: [u16; 256];
 }
 
 #[inline]
@@ -2116,7 +2108,11 @@ pub unsafe extern "C" fn store_fmt_file() {
     dump_int(fmt_out, pool_ptr());
     dump_int(fmt_out, str_ptr());
     crate::state::with_state(|state| {
-        dump_slice(fmt_out, state.strings.str_start.as_ptr(), str_ptr() - TOO_BIG_CHAR + 1);
+        dump_slice(
+            fmt_out,
+            state.strings.str_start.as_ptr(),
+            str_ptr() - TOO_BIG_CHAR + 1,
+        );
         dump_slice(fmt_out, state.strings.str_pool.as_ptr(), pool_ptr());
     });
 
@@ -2483,21 +2479,12 @@ pub unsafe extern "C" fn store_fmt_file() {
     dump_slice(fmt_out, tre_trie_trc, trie_max() + 1);
     dump_int(fmt_out, max_hyph_char());
     dump_int(fmt_out, trie_op_ptr());
-    dump_slice(
-        fmt_out,
-        std::ptr::addr_of!(fmt_hyf_distance).cast::<i16>().add(1),
-        trie_op_ptr(),
-    );
-    dump_slice(
-        fmt_out,
-        std::ptr::addr_of!(fmt_hyf_num).cast::<i16>().add(1),
-        trie_op_ptr(),
-    );
-    dump_slice(
-        fmt_out,
-        std::ptr::addr_of!(fmt_hyf_next).cast::<u16>().add(1),
-        trie_op_ptr(),
-    );
+    let fmt_hyf_distance = crate::state::with_state(|state| state.hyph.hyf_distance.as_ptr());
+    let fmt_hyf_num = crate::state::with_state(|state| state.hyph.hyf_num.as_ptr());
+    let fmt_hyf_next = crate::state::with_state(|state| state.hyph.hyf_next.as_ptr());
+    dump_slice(fmt_out, fmt_hyf_distance.add(1), trie_op_ptr());
+    dump_slice(fmt_out, fmt_hyf_num.add(1), trie_op_ptr());
+    dump_slice(fmt_out, fmt_hyf_next.add(1), trie_op_ptr());
 
     crate::output::print_nl_cstr(c"Hyphenation trie of length ".as_ptr());
     crate::output::print_int(trie_max());
@@ -2512,13 +2499,14 @@ pub unsafe extern "C" fn store_fmt_file() {
     crate::output::print_int(TRIE_OP_SIZE);
 
     for k in (0..=BIGGEST_LANG as usize).rev() {
-        if fmt_trie_used[k] > 0 {
+        let used = trie_used_entry(k);
+        if used > 0 {
             crate::output::print_nl_cstr(c"  ".as_ptr());
-            crate::output::print_int(fmt_trie_used[k] as i32);
+            crate::output::print_int(used as i32);
             crate::output::print_cstr(c" for language ".as_ptr());
             crate::output::print_int(k as i32);
             dump_int(fmt_out, k as i32);
-            dump_int(fmt_out, fmt_trie_used[k] as i32);
+            dump_int(fmt_out, used as i32);
         }
     }
 
@@ -2676,13 +2664,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     let n = str_ptr() - TOO_BIG_CHAR + 1;
     let limit = pool_ptr();
     if !crate::state::with_state_mut(|state| {
-        undump_checked_i32(
-            fmt_in,
-            state.strings.str_start.as_mut_ptr(),
-            n,
-            0,
-            limit,
-        )
+        undump_checked_i32(fmt_in, state.strings.str_start.as_mut_ptr(), n, 0, limit)
     }) {
         bad_format_file();
     }
@@ -3126,29 +3108,18 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     j = x;
     set_trie_op_ptr(j);
 
-    undump_slice(
-        fmt_in,
-        std::ptr::addr_of_mut!(fmt_hyf_distance)
-            .cast::<i16>()
-            .add(1),
-        j,
-    );
-    undump_slice(
-        fmt_in,
-        std::ptr::addr_of_mut!(fmt_hyf_num).cast::<i16>().add(1),
-        j,
-    );
-    if !undump_upper_u16(
-        fmt_in,
-        std::ptr::addr_of_mut!(fmt_hyf_next).cast::<u16>().add(1),
-        j,
-        MAX_TRIE_OP,
-    ) {
+    let fmt_hyf_distance =
+        crate::state::with_state_mut(|state| state.hyph.hyf_distance.as_mut_ptr());
+    let fmt_hyf_num = crate::state::with_state_mut(|state| state.hyph.hyf_num.as_mut_ptr());
+    let fmt_hyf_next = crate::state::with_state_mut(|state| state.hyph.hyf_next.as_mut_ptr());
+    undump_slice(fmt_in, fmt_hyf_distance.add(1), j);
+    undump_slice(fmt_in, fmt_hyf_num.add(1), j);
+    if !undump_upper_u16(fmt_in, fmt_hyf_next.add(1), j, MAX_TRIE_OP) {
         bad_format_file();
     }
 
     for lang in 0..=BIGGEST_LANG as usize {
-        fmt_trie_used[lang] = 0;
+        set_trie_used_entry(lang, 0);
     }
 
     k = BIGGEST_LANG + 1;
@@ -3163,7 +3134,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         if x < 1 || x > j {
             bad_format_file();
         }
-        fmt_trie_used[k as usize] = x as u16;
+        set_trie_used_entry(k as usize, x as u16);
         j -= x;
         set_op_start_entry(k as usize, j);
     }
