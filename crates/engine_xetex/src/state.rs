@@ -13,6 +13,7 @@ pub(crate) struct EngineState {
     pub input: InputClusterState,
     pub strings: StringsState,
     pub hyph: HyphState,
+    pub fonts: FontState,
 }
 
 /// The `input` cluster's Rust-owned state. Distinct from
@@ -131,6 +132,16 @@ pub(crate) struct ConfigState {
     pub semantic_pagination_enabled: bool,
     pub shell_escape_enabled: bool,
     pub max_print_line: i32,
+}
+
+#[derive(Default)]
+pub(crate) struct FontState {
+    pub loaded_font_mapping: *mut libc::c_void,
+    pub loaded_font_flags: libc::c_char,
+    pub loaded_font_letter_space: i32,
+    pub xtx_ligature_present: bool,
+    pub gave_char_warning_help: bool,
+    pub native_font_type_flag: i32,
 }
 
 #[derive(Default)]

@@ -9,6 +9,66 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 29 — 2026-05-23 — font-loading scratch scalars → FontState
+
+**Type:** execution (workstream 01, Phase-B scalar slice).
+
+**Goal:** move a small, cold `fonts` scalar subgroup
+(`loaded_font_mapping`, `loaded_font_flags`, `loaded_font_letter_space`,
+`xtx_ligature_present`, `gave_char_warning_help`,
+`native_font_type_flag`) out of C globals and into Rust-owned fields on a
+new `EngineState.fonts` sub-struct. One coherent slice, one commit.
+
+**Why this slice:** session 28 completed the practical `hyph` ownership
+moves and handed off to the next least-coupled non-`misc` cluster. This
+font-loading scratch group has no allocation, cleanup, or format aliases;
+it is separate from the large font metric arenas and from the hot
+per-character `main_*` ligature/main-loop scratch state.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `loaded_font_mapping` is `void *`, `loaded_font_flags` is
+  `char`, `loaded_font_letter_space` is `scaled_t`,
+  `xtx_ligature_present` and `gave_char_warning_help` are `bool`, and
+  `native_font_type_flag` is `int32_t`.
+- (b) cleanup/link aliases: no `src/ini.rs` `#[link_name]` aliases for
+  any of the 6 symbols.
+- (c) C readers: only `xetex/xetex-ini.c` definitions.
+- (d) cross-module extern redeclarations: none.
+
+**Work done:**
+- Added `FontState` to `src/state.rs` and wired it into `EngineState`.
+- Repointed the 12 accessors for the 6 symbols to short
+  `with_state` / `with_state_mut` closures.
+- Removed the 6 raw extern declarations from `globals.rs` `mod raw` and
+  the 6 C definitions from `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** row added for `loaded_font_letter_space`
+(`scaled_t` → `Scaled`). The other five moved fields are plain pointer,
+char, bool, or `int32_t`, so no rows.
+
+**longjmp / Drop (§7):** scalar fields live in the `'static`
+thread-local `EngineState`; no owned heap resource or stack-owned Rust
+storage is introduced by this slice.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 214 → 208 (−6).
+- Raw `unsafe { ... }` text-search count: 513 → 501 (−12, all 12
+  accessor bodies became fully safe).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of the 6 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Continue with another carefully bounded `fonts` subgroup now that
+  `EngineState.fonts` exists. Good scalar candidates are
+  `font_mem_size`/`font_max` (with their `src/ini.rs` aliases) or
+  `null_character` after checking its `B16x4` semantics.
+- Keep avoiding the hot tokenizer scalars and `main_*` ligature/main-loop
+  scratch scalars; keep `mem` bookkeeping scalars with the eventual `Mem`
+  arena move.
+
 ## Idiom session 28 — 2026-05-23 — hyph exception arrays → HyphState Vecs
 
 **Type:** execution (workstream 01, Phase-B ownership slice).

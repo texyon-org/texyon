@@ -272,17 +272,11 @@ mod raw {
         // font_flags[f], font_letter_space[f] (xetex-xetexd.h:575–576).
         pub(super) static mut font_flags: *mut libc::c_char;
         pub(super) static mut font_letter_space: *mut i32;
-        pub(super) static mut loaded_font_mapping: *mut libc::c_void;
-        pub(super) static mut loaded_font_flags: libc::c_char;
-        pub(super) static mut loaded_font_letter_space: i32;
         // mapped_text[i]: output of apply_mapping() (xetex-xetexd.h:580).
         pub(super) static mut mapped_text: *mut u16;
         // hyphen_char[f], skew_char[f] (xetex-xetexd.h:568–569).
         pub(super) static mut hyphen_char: *mut i32;
         pub(super) static mut skew_char: *mut i32;
-        // xtx_ligature_present: set true when a XeTeX ligature was just applied (xetex-xetexd.h:720).
-        pub(super) static mut xtx_ligature_present: bool;
-
         // Per-font index bases into font_info (xetex-xetexd.h:582–586).
         pub(super) static mut char_base: *mut i32;
         pub(super) static mut width_base: *mut i32;
@@ -293,10 +287,6 @@ mod raw {
         pub(super) static mut kern_base: *mut i32;
         pub(super) static mut exten_base: *mut i32;
 
-        // True after the first char_warning fontspec hint has been issued (xetex-xetexd.h:725).
-        pub(super) static mut gave_char_warning_help: bool;
-        // native_font_type_flag: set by find_native_font/loadOTfont (xetex-xetexd.h:719).
-        pub(super) static mut native_font_type_flag: i32;
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
         pub(super) static mut main_p: i32;
         pub(super) static mut main_k: i32;
@@ -2237,38 +2227,38 @@ pub(crate) fn set_font_mapping_ptr(f: i32, v: *mut libc::c_void) {
 /// Returns `loaded_font_mapping`.
 #[inline]
 pub(crate) fn loaded_font_mapping() -> *mut libc::c_void {
-    unsafe { raw::loaded_font_mapping }
+    crate::state::with_state(|state| state.fonts.loaded_font_mapping)
 }
 /// Writes `loaded_font_mapping = v`.
 #[inline]
 pub(crate) fn set_loaded_font_mapping(v: *mut libc::c_void) {
-    unsafe {
-        raw::loaded_font_mapping = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.loaded_font_mapping = v;
+    });
 }
 /// Returns `loaded_font_flags`.
 #[inline]
 pub(crate) fn loaded_font_flags() -> i32 {
-    unsafe { raw::loaded_font_flags as i32 }
+    crate::state::with_state(|state| state.fonts.loaded_font_flags as i32)
 }
 /// Writes `loaded_font_flags = v`.
 #[inline]
 pub(crate) fn set_loaded_font_flags(v: i32) {
-    unsafe {
-        raw::loaded_font_flags = v as libc::c_char;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.loaded_font_flags = v as libc::c_char;
+    });
 }
 /// Returns `loaded_font_letter_space`.
 #[inline]
 pub(crate) fn loaded_font_letter_space() -> i32 {
-    unsafe { raw::loaded_font_letter_space }
+    crate::state::with_state(|state| state.fonts.loaded_font_letter_space)
 }
 /// Writes `loaded_font_letter_space = v`.
 #[inline]
 pub(crate) fn set_loaded_font_letter_space(v: i32) {
-    unsafe {
-        raw::loaded_font_letter_space = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.loaded_font_letter_space = v;
+    });
 }
 /// Returns `font_flags[f]`.
 #[inline]
@@ -2297,14 +2287,14 @@ pub(crate) fn mapped_text_entry(i: i32) -> u16 {
 /// Returns `xtx_ligature_present`.
 #[inline]
 pub(crate) fn xtx_ligature_present() -> bool {
-    unsafe { raw::xtx_ligature_present }
+    crate::state::with_state(|state| state.fonts.xtx_ligature_present)
 }
 /// Sets `xtx_ligature_present = v`.
 #[inline]
 pub(crate) fn set_xtx_ligature_present(v: bool) {
-    unsafe {
-        raw::xtx_ligature_present = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.xtx_ligature_present = v;
+    });
 }
 /// Returns `hyphen_char[f]`.
 #[inline]
@@ -2430,14 +2420,14 @@ pub(crate) fn set_exten_base_entry(f: i32, v: i32) {
 /// Returns `native_font_type_flag`.
 #[inline]
 pub(crate) fn native_font_type_flag() -> i32 {
-    unsafe { raw::native_font_type_flag }
+    crate::state::with_state(|state| state.fonts.native_font_type_flag)
 }
 /// Writes `native_font_type_flag = v`.
 #[inline]
 pub(crate) fn set_native_font_type_flag(v: i32) {
-    unsafe {
-        raw::native_font_type_flag = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.native_font_type_flag = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3508,13 +3498,13 @@ pub(crate) fn set_long_state(v: u8) {
 
 #[inline]
 pub(crate) fn gave_char_warning_help() -> bool {
-    unsafe { raw::gave_char_warning_help }
+    crate::state::with_state(|state| state.fonts.gave_char_warning_help)
 }
 #[inline]
 pub(crate) fn set_gave_char_warning_help(v: bool) {
-    unsafe {
-        raw::gave_char_warning_help = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.gave_char_warning_help = v;
+    });
 }
 #[inline]
 pub(crate) fn main_p() -> i32 {

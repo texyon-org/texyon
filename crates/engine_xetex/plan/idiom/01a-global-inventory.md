@@ -239,13 +239,13 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `font_mapping` | `*mut *mut libc::c_void` | `fonts` | `src/globals.rs:449` C extern | `font_mapping_ptr`, `set_font_mapping_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1880,src/ini.rs:3608 |  |
 | `font_flags` | `*mut libc::c_char` | `fonts` | `src/globals.rs:451` C extern | `font_flags_entry`, `set_font_flags_entry` | def xetex/xetex-ini.c; link src/ini.rs:1884,src/ini.rs:3612 |  |
 | `font_letter_space` | `*mut i32` | `fonts` | `src/globals.rs:452` C extern | `set_font_letter_space_entry`, `font_letter_space_entry` | def xetex/xetex-ini.c; link src/ini.rs:1886,src/ini.rs:3614 |  |
-| `loaded_font_mapping` | `*mut libc::c_void` | `fonts` | `src/globals.rs:453` C extern | `loaded_font_mapping`, `set_loaded_font_mapping` | def xetex/xetex-ini.c |  |
-| `loaded_font_flags` | `libc::c_char` | `fonts` | `src/globals.rs:454` C extern | `loaded_font_flags`, `set_loaded_font_flags` | def xetex/xetex-ini.c |  |
-| `loaded_font_letter_space` | `i32` | `fonts` | `src/globals.rs:455` C extern | `loaded_font_letter_space`, `set_loaded_font_letter_space` | def xetex/xetex-ini.c |  |
+| `loaded_font_mapping` | `*mut libc::c_void` | `fonts` | `EngineState.fonts.loaded_font_mapping` (Rust-owned) | `loaded_font_mapping`, `set_loaded_font_mapping` | MOVED session 29: C def removed |
+| `loaded_font_flags` | `libc::c_char` | `fonts` | `EngineState.fonts.loaded_font_flags` (Rust-owned) | `loaded_font_flags`, `set_loaded_font_flags` | MOVED session 29: C def removed |
+| `loaded_font_letter_space` | `i32` | `fonts` | `EngineState.fonts.loaded_font_letter_space` (Rust-owned) | `loaded_font_letter_space`, `set_loaded_font_letter_space` | MOVED session 29: C def removed |
 | `mapped_text` | `*mut u16` | `fonts` | `src/globals.rs:457` C extern | `mapped_text_entry` | def xetex/xetex-ini.c |  |
 | `hyphen_char` | `*mut i32` | `fonts` | `src/globals.rs:459` C extern | `hyphen_char_entry`, `set_hyphen_char_entry` | def xetex/xetex-ini.c; link src/ini.rs:1906,src/ini.rs:3634 |  |
 | `skew_char` | `*mut i32` | `fonts` | `src/globals.rs:460` C extern | `skew_char_entry`, `set_skew_char_entry` | def xetex/xetex-ini.c; link src/ini.rs:1908,src/ini.rs:3636 |  |
-| `xtx_ligature_present` | `bool` | `fonts` | `src/globals.rs:462` C extern | `xtx_ligature_present`, `set_xtx_ligature_present` | def xetex/xetex-ini.c |  |
+| `xtx_ligature_present` | `bool` | `fonts` | `EngineState.fonts.xtx_ligature_present` (Rust-owned) | `xtx_ligature_present`, `set_xtx_ligature_present` | MOVED session 29: C def removed |
 | `char_base` | `*mut i32` | `fonts` | `src/globals.rs:465` C extern | `char_base_entry`, `set_char_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1916,src/ini.rs:3644 |  |
 | `width_base` | `*mut i32` | `fonts` | `src/globals.rs:466` C extern | `width_base_entry`, `set_width_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1918,src/ini.rs:3646 |  |
 | `height_base` | `*mut i32` | `fonts` | `src/globals.rs:467` C extern | `height_base_entry`, `set_height_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1920,src/ini.rs:3648 |  |
@@ -254,8 +254,8 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `lig_kern_base` | `*mut i32` | `fonts` | `src/globals.rs:470` C extern | `lig_kern_base_entry`, `set_lig_kern_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1926,src/ini.rs:3654 |  |
 | `kern_base` | `*mut i32` | `fonts` | `src/globals.rs:471` C extern | `kern_base_entry`, `set_kern_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1928,src/ini.rs:3656 |  |
 | `exten_base` | `*mut i32` | `fonts` | `src/globals.rs:472` C extern | `exten_base_entry`, `set_exten_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1930,src/ini.rs:3658 |  |
-| `gave_char_warning_help` | `bool` | `fonts` | `src/globals.rs:475` C extern | `gave_char_warning_help`, `set_gave_char_warning_help` | def xetex/xetex-ini.c |  |
-| `native_font_type_flag` | `i32` | `fonts` | `src/globals.rs:477` C extern | `native_font_type_flag`, `set_native_font_type_flag` | def xetex/xetex-ini.c |  |
+| `gave_char_warning_help` | `bool` | `fonts` | `EngineState.fonts.gave_char_warning_help` (Rust-owned) | `gave_char_warning_help`, `set_gave_char_warning_help` | MOVED session 29: C def removed |
+| `native_font_type_flag` | `i32` | `fonts` | `EngineState.fonts.native_font_type_flag` (Rust-owned) | `native_font_type_flag`, `set_native_font_type_flag` | MOVED session 29: C def removed |
 | `main_p` | `i32` | `scanner` | `src/globals.rs:479` C extern | `main_p`, `set_main_p` | def xetex/xetex-ini.c |  |
 | `main_k` | `i32` | `scanner` | `src/globals.rs:480` C extern | `main_k`, `set_main_k` | def xetex/xetex-ini.c |  |
 | `main_f` | `i32` | `scanner` | `src/globals.rs:482` C extern | `main_f`, `set_main_f` | def xetex/xetex-ini.c |  |
@@ -541,6 +541,7 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `trie_hash[]` | `hyph` | `trie_pointer *` | `Vec<TrieIndex>` | session 27 | pending |
 | `hyph_word[]` | `hyph` | `str_number *` | `Vec<StrNumber>` | session 28 | pending |
 | `hyph_link[]` | `hyph` | `hyph_pointer *` | `Vec<HyphPointer>` | session 28 | pending |
+| `loaded_font_letter_space` | `fonts` | `scaled_t` | `Scaled` | session 29 | pending |
 
 
 (`input` session-13 move of the line/group stacks: `line_stack` and

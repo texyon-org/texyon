@@ -124,9 +124,6 @@ void **font_layout_engine;
 void **font_mapping;
 char *font_flags;
 scaled_t *font_letter_space;
-void *loaded_font_mapping;
-char loaded_font_flags;
-scaled_t loaded_font_letter_space;
 UTF16_code *mapped_text;
 char *xdv_buffer;
 int32_t *char_base;
@@ -193,11 +190,8 @@ int32_t sa_root[8];
 int32_t cur_ptr;
 memory_word sa_null;
 int32_t disc_ptr[4];
-int32_t native_font_type_flag;
-bool xtx_ligature_present;
 scaled_t delta;
 bool used_tectonic_coda_tokens;
-bool gave_char_warning_help;
 
 uint16_t _xeq_level_array[EQTB_SIZE - INT_BASE + 1];
 
