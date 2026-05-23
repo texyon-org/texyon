@@ -10,6 +10,19 @@ pub(crate) struct EngineState {
     pub scanner: ScannerState,
     pub save_stack: SaveStackState,
     pub eqtb: EqtbState,
+    pub input: InputClusterState,
+}
+
+/// The `input` cluster's Rust-owned state. Distinct from
+/// `crate::globals::InputState`, which is a single per-input-record struct;
+/// this holds the cluster's owned arenas (input/param/file stacks).
+#[derive(Default)]
+pub(crate) struct InputClusterState {
+    /// Rust-owned macro-parameter stack (`param_size + 1` words, matching the
+    /// former `xmalloc_array` shape). Allocated at engine init and released by
+    /// `tt_cleanup`; never reallocated during a run. Replaces the former
+    /// C-`malloc`'d `param_stack` pointer. Not serialized in format dump/undump.
+    pub param_stack: Vec<i32>,
 }
 
 #[derive(Default)]

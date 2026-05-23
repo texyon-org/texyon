@@ -1833,8 +1833,6 @@ extern "C" {
     static mut tre_source_filename_stack: *mut i32;
     #[link_name = "full_source_filename_stack"]
     static mut tre_full_source_filename_stack: *mut i32;
-    #[link_name = "param_stack"]
-    static mut tre_param_stack: *mut i32;
     #[link_name = "hyph_word"]
     static mut tre_hyph_word: *mut i32;
     #[link_name = "hyph_list"]
@@ -3250,7 +3248,15 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_if_stack = xmalloc_array::<i32>(tre_max_in_open);
     tre_source_filename_stack = xmalloc_array::<i32>(tre_max_in_open);
     tre_full_source_filename_stack = xmalloc_array::<i32>(tre_max_in_open);
-    tre_param_stack = xmalloc_array::<i32>(tre_param_size);
+    {
+        // Rust-owned macro-parameter stack (`param_size + 1` words, matching
+        // the former `xmalloc_array` shape). Allocated fresh each run; released
+        // by `tt_cleanup`. Never reallocated during a run.
+        let n = (tre_param_size as usize) + 1;
+        crate::state::with_state_mut(|s| {
+            s.input.param_stack = vec![0i32; n];
+        });
+    }
     tre_hyph_word = xmalloc_array::<i32>(tre_hyph_size);
     tre_hyph_list = xmalloc_array::<i32>(tre_hyph_size);
     tre_hyph_link = xmalloc_array::<u16>(tre_hyph_size);
@@ -3584,8 +3590,6 @@ extern "C" {
     static mut tt_cleanup_source_filename_stack: *mut libc::c_void;
     #[link_name = "full_source_filename_stack"]
     static mut tt_cleanup_full_source_filename_stack: *mut libc::c_void;
-    #[link_name = "param_stack"]
-    static mut tt_cleanup_param_stack: *mut libc::c_void;
     #[link_name = "hyph_word"]
     static mut tt_cleanup_hyph_word: *mut libc::c_void;
     #[link_name = "hyph_list"]
@@ -3714,7 +3718,10 @@ pub unsafe extern "C" fn tt_cleanup() {
     libc::free(tt_cleanup_if_stack);
     libc::free(tt_cleanup_source_filename_stack);
     libc::free(tt_cleanup_full_source_filename_stack);
-    libc::free(tt_cleanup_param_stack);
+    // Release the Rust-owned macro-parameter stack (was a C `malloc`'d array).
+    crate::state::with_state_mut(|s| {
+        s.input.param_stack = Vec::new();
+    });
     libc::free(tt_cleanup_hyph_word);
     libc::free(tt_cleanup_hyph_list);
     libc::free(tt_cleanup_hyph_link);

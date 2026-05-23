@@ -184,8 +184,9 @@ mod raw {
         // Token form of \par (xetex-xetexd.h:523; cs_token = CS_TOKEN_FLAG + par_loc).
         pub(super) static mut par_token: i32;
 
-        // Macro parameter stack (xetex-xetexd.h:517–519).
-        pub(super) static mut param_stack: *mut i32;
+        // Macro parameter stack (xetex-xetexd.h:517–519). The `param_stack`
+        // array is Rust-owned on `EngineState.input.param_stack`; only the
+        // scalars remain C globals.
         pub(super) static mut param_ptr: i32;
         pub(super) static mut max_param_stack: i32;
         // Allocated size of param_stack (xetex-ini.c:3596).
@@ -3351,14 +3352,14 @@ pub(crate) fn max_reg_help_line() -> *const libc::c_char {
 /// (xetex-xetexd.h:517).
 #[inline]
 pub(crate) fn param_stack(k: i32) -> i32 {
-    unsafe { *raw::param_stack.offset(k as isize) }
+    crate::state::with_state(|s| s.input.param_stack[k as usize])
 }
 /// Writes `param_stack[k] = v`.
 #[inline]
 pub(crate) fn set_param_stack(k: i32, v: i32) {
-    unsafe {
-        *raw::param_stack.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.param_stack[k as usize] = v;
+    });
 }
 /// Returns `param_ptr` — next free slot in param_stack (xetex-xetexd.h:518).
 #[inline]

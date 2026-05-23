@@ -9,6 +9,99 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 12 — 2026-05-23 — param_stack array → Rust-owned Vec (first input-cluster ownership move)
+
+**Type:** execution (workstream 01, ownership-bearing slice).
+
+**Goal:** extend the session-11 arena-ownership pattern into the `input`
+cluster, starting with its smallest, cleanest array: `param_stack` (the
+macro-parameter stack). One array, one commit.
+
+**Why param_stack first (of the input arrays):** plain `*mut i32`
+element type (no `InputState`/`ListStateRecord` complications), a single
+allocation site (`ini.rs:3256`), a single `tt_cleanup` free, exactly two
+`#[link_name]` aliases (alloc `tre_param_stack`, cleanup
+`tt_cleanup_param_stack`), the only C reference is its definition in
+`xetex-ini.c`, and it is **not** serialized in the format dump/undump —
+so there is no load/dump path to reconcile (same property as
+save_stack). The other input arrays (`input_stack`, `input_file`,
+`line_stack`, `eof_seen`, `grp_stack`, `if_stack`,
+`source_filename_stack`, `full_source_filename_stack`, `nest`, `buffer`)
+remain for follow-up slices.
+
+**Work done:**
+- Added a new `InputClusterState` sub-struct to `EngineState`
+  (`pub input`), holding `param_stack: Vec<i32>` (`#[derive(Default)]`;
+  `Vec` defaults empty). Named to avoid colliding with the existing
+  `crate::globals::InputState` per-input-record type.
+- Repointed the two `param_stack` accessors in `globals.rs`
+  (`param_stack(k)` / `set_param_stack(k, v)`) to index the `Vec` via
+  `state::with_state` / `with_state_mut`. The index is safe and
+  bounds-checked; no `unsafe` remains in these accessors.
+- Allocation (`src/ini.rs:3256`): replaced
+  `tre_param_stack = xmalloc_array::<i32>(tre_param_size)` with a
+  `with_state_mut` writing `vec![0i32; (param_size as usize) + 1]`
+  (matching the old `n+1` element shape). C left the slot uninitialized;
+  Rust zero-inits, parity-safe because TeX writes each param-stack slot
+  before reading it.
+- Cleanup (`tt_cleanup`): removed `libc::free(tt_cleanup_param_stack)`
+  and instead drops the `Vec` (`= Vec::new()`).
+- Removed both `#[link_name = "param_stack"]` alias decls (the alloc
+  `tre_param_stack` and the cleanup `tt_cleanup_param_stack`), the
+  `globals.rs` raw extern, and the `int32_t *param_stack;` C definition
+  in `xetex/xetex-ini.c`. The scalars `param_ptr`, `max_param_stack`,
+  `param_size` stay C globals (only the array moved).
+
+**Newtype debt (§4 check):** `param_stack`'s declared C type is
+`int32_t *` (plain `int32_t` elements, no semantic typedef), so **no**
+Deferred-newtype-worklist row is required. Noted here that the check was
+done. (The elements are token-list pointers and would become a `MemPtr`
+in a later taxonomy sweep, but that follows the arena/pointer work, not a
+typedef-loss row.)
+
+**longjmp / Drop (§7, handled):** identical reasoning to session 11 —
+`EngineState` lives in the `'static` thread-local, so a `longjmp` abort
+never jumps over the `Vec`'s storage (no use-after-free); `Drop` simply
+does not run on abort, matching the prior C behavior (the array was never
+freed on abort either). `tt_cleanup` remains the normal-path teardown and
+now drops the `Vec`.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 306 → 305.
+- Raw `unsafe { ... }` text-search count: 695 → 693.
+- `#[link_name]` aliases in `ini.rs`: −2.
+- Second Rust-owned arena array; first in the `input` cluster.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep param_stack xetex/*.c | grep -v macos`: empty (no leftover C ref).
+
+**Surprises / gotchas:**
+- The input arrays share **one** allocation block (`ini.rs:3248-3256`),
+  but each has **two** extern-alias declarations in separate blocks: the
+  `tre_*` block (alloc path, ~line 1819+) and the `tt_cleanup_*` block
+  (free path, ~line 3570+). Both must be removed per array. (save_stack
+  had only one alias pair; this is the pattern for the input arrays.)
+- IDE flagged `param_stack` as an "unused import" in `scan.rs` mid-edit —
+  stale; the accessor still exists and `cargo check` is clean.
+
+**For the next session:**
+- Continue the input-cluster ownership moves, reusing this exact shape.
+  Next-easiest are the other `*mut i32` arrays sized by `max_in_open`
+  (`line_stack`, `grp_stack`, `if_stack`, `source_filename_stack`,
+  `full_source_filename_stack`) and `*mut bool` `eof_seen` — same
+  no-dump property, plain element types. `input_file`
+  (`*mut *mut c_void`) and `input_stack` (`*mut InputState`) and `nest`
+  (`*mut ListStateRecord`) need element-type care (Copy/Default). None of
+  the input arrays are in the format dump.
+- Remember: two alias decls per array (alloc `tre_*` + cleanup
+  `tt_cleanup_*`), plus the raw extern and the C def — all four edits in
+  the same commit.
+
 ## Idiom session 11 — 2026-05-23 — save_stack arena → Rust-owned Vec (first ownership move)
 
 **Type:** execution (workstream 01, first ownership-bearing slice).

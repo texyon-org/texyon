@@ -99,7 +99,6 @@ str_number *full_source_filename_stack;
 unsigned char scanner_status;
 int32_t warning_index;
 int32_t def_ref;
-int32_t *param_stack;
 int32_t param_ptr;
 int32_t max_param_stack;
 int32_t align_state;
