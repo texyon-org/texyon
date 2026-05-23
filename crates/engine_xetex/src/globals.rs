@@ -238,9 +238,6 @@ mod raw {
         // Second parsed value register used by scan_something_internal (xetex-xetexd.h:531).
         pub(super) static mut cur_val1: i32;
 
-        // Null character-info word (xetex-xetexd.h:591).
-        pub(super) static mut null_character: crate::mem_types::B16x4;
-
         // disc_ptr[4]: saved discretionary break pointers (xetex-xetexd.h:716).
         pub(super) static mut disc_ptr: [i32; 4];
 
@@ -4959,13 +4956,13 @@ pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn null_character() -> crate::mem_types::B16x4 {
-    unsafe { raw::null_character }
+    crate::state::with_state(|state| state.fonts.null_character)
 }
 #[inline]
 pub(crate) fn set_null_character(v: crate::mem_types::B16x4) {
-    unsafe {
-        raw::null_character = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.null_character = v;
+    });
 }
 #[inline]
 pub(crate) fn total_pages() -> i32 {

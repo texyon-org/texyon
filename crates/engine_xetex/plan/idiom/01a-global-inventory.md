@@ -210,7 +210,7 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `used_tectonic_coda_tokens` | `bool` | `scanner` | `src/globals.rs:399` C extern | `used_tectonic_coda_tokens`, `set_used_tectonic_coda_tokens` | def xetex/xetex-ini.c |  |
 | `cur_val1` | `i32` | `scanner` | `src/globals.rs:402` C extern | `cur_val1`, `set_cur_val1` | def xetex/xetex-ini.c |  |
 | `radix` | `u8` | `scanner` | `src/globals.rs:404` C extern | `radix`, `set_radix` | def xetex/xetex-ini.c |  |
-| `null_character` | `crate::mem_types::B16x4` | `fonts` | `src/globals.rs:407` C extern | `null_character`, `set_null_character` | def xetex/xetex-ini.c |  |
+| `null_character` | `crate::mem_types::B16x4` | `fonts` | `EngineState.fonts.null_character` (Rust-owned) | `null_character`, `set_null_character` | MOVED session 31: C def removed |
 | `dead_cycles` | `i32` | `shipout` | `src/globals.rs:410` C extern | `dead_cycles`, `set_dead_cycles` | def xetex/xetex-ini.c |  |
 | `page_tail` | `i32` | `shipout` | `src/globals.rs:411` C extern | `page_tail`, `set_page_tail` | def xetex/xetex-ini.c |  |
 | `last_badness` | `i32` | `shipout` | `src/globals.rs:412` C extern | `last_badness`, `set_last_badness` | def xetex/xetex-ini.c |  |

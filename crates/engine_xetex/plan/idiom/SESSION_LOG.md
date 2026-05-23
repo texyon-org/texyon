@@ -9,6 +9,62 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 31 — 2026-05-23 — font null-character scalar → FontState
+
+**Type:** execution (workstream 01, Phase-B scalar slice).
+
+**Goal:** move the single `fonts` null-character word (`null_character`)
+out of C globals and into Rust-owned state on `EngineState.fonts`. One
+coherent slice, one commit.
+
+**Why this slice:** session 30 handed off `null_character` as the next
+bounded `fonts` candidate after the capacity-pair move. It is small enough
+to verify its `B16x4` semantics independently before touching the larger
+font metric/name arrays and their init/dump/cleanup edges.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C type: `null_character` is `b16x4`.
+- (b) cleanup/link aliases: no `src/ini.rs` `#[link_name]` alias.
+- (c) C readers: only `xetex/xetex-ini.c`.
+- (d) cross-module extern redeclarations: none.
+
+**Work done:**
+- Added `null_character` to `FontState`.
+- Replaced the derived `FontState` default with an explicit default because
+  `B16x4` is a `Copy` struct but does not implement `Default`.
+- Repointed `null_character()` and `set_null_character()` to the accessor
+  bridge over `EngineState.fonts`.
+- Removed the raw extern declaration from `globals.rs` `mod raw` and the C
+  definition from `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** no row. The source C type is a four-field
+`b16x4` struct, already represented by the Rust `B16x4` struct, so the move
+does not erase a semantic typedef/enum into a primitive.
+
+**longjmp / Drop (§7):** scalar state lives in the `'static` thread-local
+`EngineState`; no owned heap resource or stack-owned Rust storage is
+introduced by this slice.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 206 → 205 (−1).
+- Raw `unsafe { ... }` text-search count: 499 → 497 (−2, getter/setter
+  bodies became fully safe).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of `null_character` in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Continue with another carefully bounded `fonts` subgroup. The remaining
+  font arrays (`font_check`, `font_size`, `font_dsize`, `font_params`,
+  `font_name`, `font_area`, `font_bc`, `font_ec`, `font_glue`, `font_used`,
+  and related arrays) have `src/ini.rs` aliases and format dump/undump edges,
+  so pick a coherent ownership slice rather than a loose scalar-style move.
+- Keep avoiding the hot tokenizer scalars and `main_*` ligature/main-loop
+  scratch scalars; keep `mem` bookkeeping scalars with the eventual `Mem`
+  arena move.
+
 ## Idiom session 30 — 2026-05-23 — font capacity scalars → FontState
 
 **Type:** execution (workstream 01, Phase-B scalar/link-alias slice).

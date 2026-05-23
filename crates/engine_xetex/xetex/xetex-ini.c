@@ -133,7 +133,6 @@ int32_t *lig_kern_base;
 int32_t *kern_base;
 int32_t *exten_base;
 int32_t *param_base;
-b16x4 null_character;
 int32_t total_pages;
 scaled_t max_v;
 scaled_t max_h;

@@ -134,7 +134,6 @@ pub(crate) struct ConfigState {
     pub max_print_line: i32,
 }
 
-#[derive(Default)]
 pub(crate) struct FontState {
     pub loaded_font_mapping: *mut libc::c_void,
     pub loaded_font_flags: libc::c_char,
@@ -144,6 +143,28 @@ pub(crate) struct FontState {
     pub native_font_type_flag: i32,
     pub font_mem_size: i32,
     pub font_max: i32,
+    pub null_character: crate::mem_types::B16x4,
+}
+
+impl Default for FontState {
+    fn default() -> Self {
+        Self {
+            loaded_font_mapping: std::ptr::null_mut(),
+            loaded_font_flags: 0,
+            loaded_font_letter_space: 0,
+            xtx_ligature_present: false,
+            gave_char_warning_help: false,
+            native_font_type_flag: 0,
+            font_mem_size: 0,
+            font_max: 0,
+            null_character: crate::mem_types::B16x4 {
+                s0: 0,
+                s1: 0,
+                s2: 0,
+                s3: 0,
+            },
+        }
+    }
 }
 
 #[derive(Default)]
