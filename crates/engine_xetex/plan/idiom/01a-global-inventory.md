@@ -511,6 +511,14 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `radix` | `scanner` | `small_number` (`typedef short`; scanner radix 8/10/16, stored as `u8` in the bridge) | `SmallNumber`/`Radix` | session 21 | pending |
 | `rust_stdout` | `shipout` | `rust_output_handle_t` (`uintptr_t` typedef; stdout stream handle) | `OutputHandle` | session 23 | pending |
 | `log_file` | `shipout` | `rust_output_handle_t` (`uintptr_t` typedef; log stream handle, 0 = none) | `OutputHandle`/`Option<OutputId>` | session 23 | pending |
+| `str_ptr` | `strings` | `str_number` | `StrNumber` | session 24 | pending |
+| `init_str_ptr` | `strings` | `str_number` | `StrNumber` | session 24 | pending |
+| `init_pool_ptr` | `strings` | `pool_pointer` | `PoolPtr` | session 24 | pending |
+| `job_name` | `strings` | `str_number` | `StrNumber` | session 24 | pending |
+| `texmf_log_name` | `strings` | `str_number` | `StrNumber` | session 24 | pending |
+| `pool_ptr` | `strings` | `pool_pointer` | `PoolPtr` | session 24 | pending |
+| `format_ident` | `strings` | `str_number` | `StrNumber` | session 24 | pending |
+| `edit_name_start` | `strings` | `pool_pointer` | `PoolPtr` | session 24 | pending |
 
 (`input` session-13 move of the line/group stacks: `line_stack` and
 `if_stack` are plain `int32_t *` and need no row — `line_stack` holds

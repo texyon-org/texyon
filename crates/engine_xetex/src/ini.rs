@@ -1739,6 +1739,10 @@ const SUP_FONT_MEM_SIZE: i32 = 147_483_647;
 const SUP_POOL_SIZE: i32 = 40_000_000;
 const SUP_HASH_EXTRA: i32 = 2_097_151;
 
+static mut tre_pool_size: i32 = 0;
+static mut tre_string_vacancies: i32 = 0;
+static mut tre_max_strings: i32 = 0;
+
 #[inline]
 unsafe fn xmalloc_array<T>(n: i32) -> *mut T {
     xmalloc(((n as usize) + 1) * std::mem::size_of::<T>()) as *mut T
@@ -1778,14 +1782,8 @@ extern "C" {
 
     #[link_name = "format_default_length"]
     static mut tre_format_default_length: i32;
-    #[link_name = "pool_size"]
-    static mut tre_pool_size: i32;
-    #[link_name = "string_vacancies"]
-    static mut tre_string_vacancies: i32;
     #[link_name = "pool_free"]
     static mut tre_pool_free: i32;
-    #[link_name = "max_strings"]
-    static mut tre_max_strings: i32;
     #[link_name = "strings_free"]
     static mut tre_strings_free: i32;
     #[link_name = "font_mem_size"]
@@ -1828,18 +1826,12 @@ extern "C" {
     static mut tre_hash_top: i32;
     #[link_name = "eqtb"]
     static mut tre_eqtb: *mut crate::mem_types::MemoryWord;
-    #[link_name = "str_start"]
-    static mut tre_str_start: *mut i32;
-    #[link_name = "str_pool"]
-    static mut tre_str_pool: *mut u16;
+
     #[link_name = "font_info"]
     static mut tre_font_info: *mut crate::mem_types::MemoryWord;
     #[link_name = "bad"]
     static mut tre_bad: i32;
-    #[link_name = "init_str_ptr"]
-    static mut tre_init_str_ptr: i32;
-    #[link_name = "init_pool_ptr"]
-    static mut tre_init_pool_ptr: i32;
+
     #[link_name = "output_file_extension"]
     static mut tre_output_file_extension: *const libc::c_char;
     #[link_name = "font_mapping"]
@@ -2125,8 +2117,10 @@ pub unsafe extern "C" fn store_fmt_file() {
 
     dump_int(fmt_out, pool_ptr());
     dump_int(fmt_out, str_ptr());
-    dump_slice(fmt_out, tre_str_start, str_ptr() - TOO_BIG_CHAR + 1);
-    dump_slice(fmt_out, tre_str_pool, pool_ptr());
+    crate::state::with_state(|state| {
+        dump_slice(fmt_out, state.strings.str_start.as_ptr(), str_ptr() - TOO_BIG_CHAR + 1);
+        dump_slice(fmt_out, state.strings.str_pool.as_ptr(), pool_ptr());
+    });
 
     crate::output::print_ln();
     crate::output::print_int(str_ptr());
@@ -2570,8 +2564,10 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
 
     if in_initex_mode() {
         libc::free(tre_font_info as *mut libc::c_void);
-        libc::free(tre_str_pool as *mut libc::c_void);
-        libc::free(tre_str_start as *mut libc::c_void);
+        crate::state::with_state_mut(|state| {
+            state.strings.str_pool = Vec::new();
+            state.strings.str_start = Vec::new();
+        });
         tt_cleanup_free_yhash();
         libc::free(tre_eqtb as *mut libc::c_void);
         libc::free(tre_mem as *mut libc::c_void);
@@ -2657,6 +2653,9 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     if tre_pool_size < pool_ptr() + tre_pool_free {
         tre_pool_size = pool_ptr() + tre_pool_free;
     }
+    crate::state::with_state_mut(|state| {
+        state.strings.pool_size = tre_pool_size;
+    });
 
     x = undump_int(fmt_in);
     if x < 0 {
@@ -2669,22 +2668,38 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     if tre_max_strings < str_ptr() + tre_strings_free {
         tre_max_strings = str_ptr() + tre_strings_free;
     }
+    crate::state::with_state_mut(|state| {
+        state.strings.max_strings = tre_max_strings;
+    });
 
-    tre_str_start = xmalloc(tre_max_strings as usize * std::mem::size_of::<i32>()) as *mut i32;
-    if !undump_checked_i32(
-        fmt_in,
-        tre_str_start,
-        str_ptr() - TOO_BIG_CHAR + 1,
-        0,
-        pool_ptr(),
-    ) {
+    crate::state::with_state_mut(|state| {
+        state.strings.str_start = vec![0i32; (tre_max_strings as usize) + 1];
+    });
+    let n = str_ptr() - TOO_BIG_CHAR + 1;
+    let limit = pool_ptr();
+    if !crate::state::with_state_mut(|state| {
+        undump_checked_i32(
+            fmt_in,
+            state.strings.str_start.as_mut_ptr(),
+            n,
+            0,
+            limit,
+        )
+    }) {
         bad_format_file();
     }
-    tre_str_pool = xmalloc(tre_pool_size as usize * std::mem::size_of::<u16>()) as *mut u16;
-    undump_slice(fmt_in, tre_str_pool, pool_ptr());
+    crate::state::with_state_mut(|state| {
+        state.strings.str_pool = vec![0u16; (tre_pool_size as usize) + 1];
+    });
+    let limit = pool_ptr();
+    crate::state::with_state_mut(|state| {
+        undump_slice(fmt_in, state.strings.str_pool.as_mut_ptr(), limit);
+    });
 
-    tre_init_str_ptr = str_ptr();
-    tre_init_pool_ptr = pool_ptr();
+    crate::state::with_state_mut(|state| {
+        state.strings.init_str_ptr = state.strings.str_ptr;
+        state.strings.init_pool_ptr = state.strings.pool_ptr;
+    });
 
     x = undump_int(fmt_in);
     if x < 1019 || x > MEM_TOP - HI_MEM_STAT_USAGE {
@@ -3203,6 +3218,12 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_hash_extra = 600_000;
     tre_expand_depth = 10_000;
 
+    crate::state::with_state_mut(|state| {
+        state.strings.pool_size = tre_pool_size;
+        state.strings.string_vacancies = tre_string_vacancies;
+        state.strings.max_strings = tre_max_strings;
+    });
+
     {
         // Rust-owned input buffer (`buf_size + 1` words, matching the former
         // `xmalloc_array` shape). Allocated fresh each run; released by
@@ -3329,8 +3350,10 @@ pub unsafe extern "C" fn tt_run_engine(
         crate::globals::set_hash_used(tre_hash_top);
 
         tre_eqtb = xcalloc_array::<crate::mem_types::MemoryWord>(tre_eqtb_top);
-        tre_str_start = xmalloc_array::<i32>(tre_max_strings);
-        tre_str_pool = xmalloc_array::<u16>(tre_pool_size);
+        crate::state::with_state_mut(|state| {
+            state.strings.str_start = vec![0i32; (tre_max_strings as usize) + 1];
+            state.strings.str_pool = vec![0u16; (tre_pool_size as usize) + 1];
+        });
         tre_font_info = xmalloc_array::<crate::mem_types::MemoryWord>(tre_font_mem_size);
     }
 
@@ -3399,8 +3422,10 @@ pub unsafe extern "C" fn tt_run_engine(
         get_strings_started();
         initialize_more_initex_variables();
         initialize_primitives();
-        tre_init_str_ptr = str_ptr();
-        tre_init_pool_ptr = pool_ptr();
+        crate::state::with_state_mut(|state| {
+            state.strings.init_str_ptr = state.strings.str_ptr;
+            state.strings.init_pool_ptr = state.strings.pool_ptr;
+        });
     }
 
     crate::math::initialize_math_variables();
@@ -3628,10 +3653,7 @@ extern "C" {
     static mut tt_cleanup_eqtb: *mut libc::c_void;
     #[link_name = "mem"]
     static mut tt_cleanup_mem: *mut libc::c_void;
-    #[link_name = "str_start"]
-    static mut tt_cleanup_str_start: *mut libc::c_void;
-    #[link_name = "str_pool"]
-    static mut tt_cleanup_str_pool: *mut libc::c_void;
+
     #[link_name = "font_info"]
     static mut tt_cleanup_font_info: *mut libc::c_void;
     #[link_name = "font_mapping"]
@@ -3757,8 +3779,10 @@ pub unsafe extern "C" fn tt_cleanup() {
     tt_cleanup_yhash(); // frees file-static yhash via C helper
     libc::free(tt_cleanup_eqtb);
     libc::free(tt_cleanup_mem);
-    libc::free(tt_cleanup_str_start);
-    libc::free(tt_cleanup_str_pool);
+    crate::state::with_state_mut(|state| {
+        state.strings.str_start = Vec::new();
+        state.strings.str_pool = Vec::new();
+    });
     libc::free(tt_cleanup_font_info);
 
     libc::free(tt_cleanup_font_mapping);

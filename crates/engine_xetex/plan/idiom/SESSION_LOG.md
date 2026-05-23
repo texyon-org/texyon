@@ -9,6 +9,49 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 24 — 2026-05-23 — strings cluster arenas and scalars → StringsState
+
+**Type:** execution (workstream 01, Phase-B scalar/ownership slice).
+
+**Goal:** move the 13 symbols of the `strings` cluster (comprising arrays `str_start` / `str_pool` and 11 scalar fields: `str_ptr`, `max_strings`, `init_str_ptr`, `init_pool_ptr`, `job_name`, `texmf_log_name`, `string_vacancies`, `pool_size`, `pool_ptr`, `format_ident`, `edit_name_start`) into `EngineState.strings`. One coherent slice, one commit.
+
+**Why this slice:** This is the designated next action from STATUS.md and the handoff of session 23. Resolving the strings cluster represents the first ownership-transfer slice of format-dumped/undumped arrays, establishing a vital precedent for future large arrays like `eqtb` and `mem`.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `str_start` is `pool_pointer *` (*mut i32), `str_pool` is `packed_UTF16_code *` (*mut u16). The 11 scalars are primarily `str_number` or `pool_pointer` (meaning we add deferred newtype rows for 8 of them: `str_ptr`, `init_str_ptr`, `init_pool_ptr`, `job_name`, `texmf_log_name`, `pool_ptr`, `format_ident`, `edit_name_start`).
+- (b) cleanup aliases: 9 occurrences in `src/ini.rs` (tre_pool_size, tre_string_vacancies, tre_max_strings, tre_str_start, tre_str_pool, tre_init_str_ptr, tre_init_pool_ptr, tt_cleanup_str_start, tt_cleanup_str_pool) - all removed/redirected to StringsState.
+- (c) C readers: only `xetex-ini.c` (defining the C globals) compiled by build.rs.
+- (d) cross-module extern redeclarations: none.
+
+**Work done:**
+- Added `StringsState` sub-struct and the 13 fields to `src/state.rs`.
+- Repointed all 14 getters and setters in `src/globals.rs` to safe `with_state` / `with_state_mut` closures (only `str_pool_ptr` uses an inner `unsafe` block for raw pointer arithmetic).
+- Replaced C `malloc` allocations in `src/ini.rs` (initex alloc at line 3355, undump alloc at line 2680) with safe `vec![0; n + 1]` allocations stored on `state.strings.str_start` and `state.strings.str_pool`.
+- Replaced `libc::free` cleanup in `src/ini.rs` (undump cleanup at line 2572, tt_cleanup at line 3784) with vector resets `Vec::new()`.
+- Pre-evaluated `str_ptr()` and `pool_ptr()` calls in `src/ini.rs` outside the mutable closure borrow `with_state_mut` block to avoid RefCell nested borrow panics.
+- Removed all 9 `#[link_name]` aliases from `src/ini.rs`.
+- Converted `tre_pool_size`, `tre_string_vacancies`, and `tre_max_strings` from link-name external C references to safe private module-level Rust `static mut` variables to satisfy the linker after C definitions were removed.
+- Removed all 13 C definitions from `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** 8 rows added to `Deferred newtype worklist` in `01a-global-inventory.md` for semantic-typed scalars. Genuinely-numeric variables (`max_strings`, `string_vacancies`, `pool_size`) need no rows.
+
+**longjmp / Drop (§7):** N/A — arrays are owned by the thread-local state, meaning they persist past any longjmp/abort boundaries and are cleanly collected when the thread terminates, matching prior behavior.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 275 → 262 (−13).
+- Raw `unsafe { ... }` text-search count: 628 → 607 (−21).
+- `#[link_name]` aliases: removed 9 aliases from `src/ini.rs`.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4).
+- `grep` of the 13 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Continue with execution of workstream 01 by targeting `hyph` (hyphenation and trie arrays), starting either with hyphenation scalars or trie pointer/trie-state arrays (`trie_trl`, `trie_tro`, `trie_trc`, `trie_c`, `trie_o`, `trie_l`, `trie_r`, `trie_hash`, `trie_taken`, etc.), applying the same init/undump/cleanup pattern established in session 24.
+
+---
+
 ## Idiom session 23 — 2026-05-23 — shipout file-handles (rust_stdout/log_file/current_diagnostic) → ShipoutState
 
 **Type:** execution (workstream 01, Phase-B scalar/ownership slice).

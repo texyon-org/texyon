@@ -11,6 +11,7 @@ pub(crate) struct EngineState {
     pub save_stack: SaveStackState,
     pub eqtb: EqtbState,
     pub input: InputClusterState,
+    pub strings: StringsState,
 }
 
 /// The `input` cluster's Rust-owned state. Distinct from
@@ -226,6 +227,23 @@ impl Default for ErrorState {
             breadth_max: 0,
         }
     }
+}
+
+#[derive(Default)]
+pub(crate) struct StringsState {
+    pub str_ptr: i32,
+    pub max_strings: i32,
+    pub init_str_ptr: i32,
+    pub init_pool_ptr: i32,
+    pub job_name: i32,
+    pub texmf_log_name: i32,
+    pub string_vacancies: i32,
+    pub pool_size: i32,
+    pub pool_ptr: i32,
+    pub format_ident: i32,
+    pub edit_name_start: i32,
+    pub str_start: Vec<i32>,
+    pub str_pool: Vec<u16>,
 }
 
 thread_local! {

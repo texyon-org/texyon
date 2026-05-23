@@ -61,11 +61,7 @@ mod raw {
         // Accessed by index like `mem`; valid indices depend on context.
         pub(super) static mut eqtb: *mut crate::mem_types::MemoryWord;
 
-        // String pool (xetex-xetexd.h:424–426).
-        // str_start[i] = pool offset of the i-th string (pool_pointer = i32).
-        pub(super) static mut str_start: *mut i32;
-        // str_ptr = number of strings in the pool (str_number = i32).
-        pub(super) static mut str_ptr: i32;
+
         // xetex-xetexd.h:459 — temporary pointer register.
         pub(super) static mut temp_ptr: i32;
 
@@ -99,22 +95,11 @@ mod raw {
         // Top of the eqtb array (xetex-xetexd.h:486).
         pub(super) static mut eqtb_top: i32;
 
-        // String pool size limits (xetex-xetexd.h:400,427–428).
-        pub(super) static mut max_strings: i32;
-        pub(super) static mut init_str_ptr: i32;
-        pub(super) static mut init_pool_ptr: i32;
+
         // Font memory capacity (xetex-xetexd.h:405).
         pub(super) static mut font_mem_size: i32;
 
-        // `log_opened`, `job_name`, `texmf_log_name` (xetex-xetexd.h:551–554).
-        pub(super) static mut job_name: i32;
-        pub(super) static mut texmf_log_name: i32;
-        // String pool (xetex-xetexd.h:402-403, 423, 425).
-        // `packed_UTF16_code` = `unsigned short`; `pool_pointer` = `int32_t`.
-        pub(super) static mut string_vacancies: i32;
-        pub(super) static mut pool_size: i32;
-        pub(super) static mut str_pool: *mut u16;
-        pub(super) static mut pool_ptr: i32;
+
 
         // Name-of-file globals (xetex-xetexd.h:388–391).
         // name_of_file: current input filename (NUL-terminated C string).
@@ -494,10 +479,7 @@ mod raw {
         pub(super) static mut cur_mu: i32;
         pub(super) static mut mlist_penalties: bool;
 
-        // Format-file identification (xetex-xetexd.h:690; str_number = i32).
-        pub(super) static mut format_ident: i32;
-        // Pool offset of the \jobname (xetex-xetexd.h:717; pool_pointer = i32).
-        pub(super) static mut edit_name_start: i32;
+
         // The all-zero b32x2 template used to clear math-noad fields (xetex-xetexd.h:608).
         pub(super) static mut empty: crate::mem_types::B32x2;
     }
@@ -1029,28 +1011,25 @@ pub(crate) fn name_length() -> i32 {
 /// Returns the current number of strings in the string pool.
 #[inline]
 pub(crate) fn str_ptr() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::str_ptr }
+    crate::state::with_state(|state| state.strings.str_ptr)
 }
 
 /// Returns `str_start[k]` — the pool offset of the k-th string.
 #[inline]
 pub(crate) fn str_start(k: i32) -> i32 {
-    // SAFETY: see module-level doc. Caller ensures k is a valid string index.
-    unsafe { *raw::str_start.offset(k as isize) }
+    crate::state::with_state(|state| state.strings.str_start[k as usize])
 }
 
 /// Read `str_pool[k]` (a packed UTF-16 code unit).
 #[inline]
 pub(crate) fn str_pool_entry(k: i32) -> u16 {
-    // SAFETY: see module-level doc. Caller ensures k is a valid pool index.
-    unsafe { *raw::str_pool.offset(k as isize) }
+    crate::state::with_state(|state| state.strings.str_pool[k as usize])
 }
 
 /// Returns a pointer to `str_pool[k]` (for passing to C bridge functions).
 #[inline]
 pub(crate) fn str_pool_ptr(k: i32) -> *const u16 {
-    unsafe { raw::str_pool.add(k as usize) }
+    crate::state::with_state(|state| unsafe { state.strings.str_pool.as_ptr().add(k as usize) })
 }
 
 // ---------------------------------------------------------------------------
@@ -1457,33 +1436,28 @@ pub(crate) fn set_trick_buf(k: usize, v: u16) {
 
 #[inline]
 pub(crate) fn pool_size() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::pool_size }
+    crate::state::with_state(|state| state.strings.pool_size)
 }
 #[inline]
 pub(crate) fn string_vacancies() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::string_vacancies }
+    crate::state::with_state(|state| state.strings.string_vacancies)
 }
 #[inline]
 pub(crate) fn pool_ptr() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::pool_ptr }
+    crate::state::with_state(|state| state.strings.pool_ptr)
 }
 #[inline]
 pub(crate) fn set_pool_ptr(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::pool_ptr = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.strings.pool_ptr = v;
+    });
 }
 /// Write `str_pool[k] = v`.
 #[inline]
 pub(crate) fn set_str_pool(k: i32, v: u16) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        *raw::str_pool.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.strings.str_pool[k as usize] = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1493,33 +1467,28 @@ pub(crate) fn set_str_pool(k: i32, v: u16) {
 /// Write `str_start[k] = v`.
 #[inline]
 pub(crate) fn set_str_start(k: i32, v: i32) {
-    // SAFETY: see module-level doc. Caller ensures k is a valid string index.
-    unsafe {
-        *raw::str_start.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.strings.str_start[k as usize] = v;
+    });
 }
 /// Write `str_ptr = v`.
 #[inline]
 pub(crate) fn set_str_ptr(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::str_ptr = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.strings.str_ptr = v;
+    });
 }
 #[inline]
 pub(crate) fn max_strings() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::max_strings }
+    crate::state::with_state(|state| state.strings.max_strings)
 }
 #[inline]
 pub(crate) fn init_str_ptr() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::init_str_ptr }
+    crate::state::with_state(|state| state.strings.init_str_ptr)
 }
 #[inline]
 pub(crate) fn init_pool_ptr() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::init_pool_ptr }
+    crate::state::with_state(|state| state.strings.init_pool_ptr)
 }
 /// Read `buffer[k]` (UnicodeScalar = i32).
 #[inline]
@@ -1650,27 +1619,23 @@ pub(crate) fn set_log_opened(v: bool) {
 }
 #[inline]
 pub(crate) fn job_name() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::job_name }
+    crate::state::with_state(|state| state.strings.job_name)
 }
 #[inline]
 pub(crate) fn set_job_name(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::job_name = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.strings.job_name = v;
+    });
 }
 #[inline]
 pub(crate) fn texmf_log_name() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::texmf_log_name }
+    crate::state::with_state(|state| state.strings.texmf_log_name)
 }
 #[inline]
 pub(crate) fn set_texmf_log_name(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::texmf_log_name = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.strings.texmf_log_name = v;
+    });
 }
 #[inline]
 pub(crate) fn set_halt_on_error_p(v: i32) {
@@ -5324,23 +5289,23 @@ pub(crate) fn set_mlist_penalties(v: bool) {
 
 #[inline]
 pub(crate) fn format_ident() -> i32 {
-    unsafe { raw::format_ident }
+    crate::state::with_state(|state| state.strings.format_ident)
 }
 #[inline]
 pub(crate) fn set_format_ident(v: i32) {
-    unsafe {
-        raw::format_ident = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.strings.format_ident = v;
+    });
 }
 #[inline]
 pub(crate) fn edit_name_start() -> i32 {
-    unsafe { raw::edit_name_start }
+    crate::state::with_state(|state| state.strings.edit_name_start)
 }
 #[inline]
 pub(crate) fn set_edit_name_start(v: i32) {
-    unsafe {
-        raw::edit_name_start = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.strings.edit_name_start = v;
+    });
 }
 #[inline]
 pub(crate) fn set_empty_b32s0(v: i32) {
