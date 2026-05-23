@@ -19,36 +19,49 @@ to oracle; document parity 12/38 → 16/38; TRIP 2/2, tex-outputs 29/29.
 **Repro (now passes):** `native_linebreak_nul.tex` (a wrapping justified
 paragraph in `lmroman10-regular.otf` with `Ligatures=TeX`).
 
-## D1b — positional divergence in native text — OPEN
+## D1b — divergent line breaking at explicit hyphens in native words — FIXED
 
-After D1a, 21/38 documents still diverge, now in glyph *position* values
-(not missing chars): e.g. `1302.4270v3` has 0 warnings but its `.xdv`
-still differs from the oracle in native-glyph x-positions (~45k bytes).
-Affects long native-text documents (lshort, most arXiv); classic-TFM and
-short native docs pass. Next target. Likely a metric/measurement
-difference in native glyph positioning rather than a missing-char issue.
+**Symptom (as originally characterized):** "positional divergence" — long
+native-text documents (lshort, most arXiv) and a handful of `.lvt` tests
+diverged from the oracle. The real cause was not glyph *metrics* but
+*line-breaking*: words containing an explicit hyphen/dash (`lig-kern`,
+`reconstitute/lig-kern`) broke at different points, and the candidate
+emitted a **doubled hyphen** glyph at the break (the explicit hyphen plus
+an extra one from the line-breaker auto-hyphenating the un-split word).
 
-## LaTeX kernel `.lvt` log-parity (after D1a) — 596/601 pass
+**Root cause:** in `main_control_main_loop` (`src/scan.rs`), the native
+(AAT/OTGR) path that splits a native word at explicit hyphens into
+segments separated by *empty* discretionaries was gated on
+`cur_list_mode() == 1` — but `1` is VMODE; HMODE is `104`. The branch
+therefore never ran in horizontal mode, and its body was an incomplete
+stub (`break` placeholder + TODO). All native HMODE words fell through to
+the MMODE single-node path, so a hyphenated word became one un-split
+native node; the line-breaker's native-hyphenation path (`hyphenate`)
+then auto-hyphenated it, doubling the hyphen at explicit-hyphen breaks.
+Space-separated words were unaffected (each is already its own run), which
+is why the bug only surfaced on words with embedded hyphens/dashes.
 
-`corpus.sh check lvt` against the 601 oracle-blessed log goldens:
-**596 passed, 5 diverged.** The 5 (all in `base/`):
+**Fix:** corrected the mode test to `== 104` (HMODE) and faithfully
+translated the C `do { ... } while (main_k != 0)` hyphen-splitting loop
+(oracle `xetex-xetex0.c:17671–17778`), inserting an empty `new_disc()`
+after each hyphen segment.
 
-- `testfiles/tlxs01l`, `testfiles/tlxs01p` — **D1b cluster**. Log shows
-  native-font (`\TU/lmr/...`) box dimensions / xdv byte counts differing
-  (e.g. `Output written ... 43824` vs `43816` bytes; underfull-hbox
-  badness lines). Same native-glyph positional issue as D1b.
-- `testfiles-TU/tu-textcomp-003`, `testfiles/vtl2e06` — candidate is
-  **missing a `....\discretionary` node** in the `\showbox` dump vs the
-  oracle. Discretionary-structure difference in native text (likely
-  D1-family: native discretionary construction).
-- `testfiles/properties-006-warn` — two diffs: an `Overfull \hbox` width
-  (`30.10002pt` vs `9.26pt`, native-metric ⇒ D1b), **and** a string diff
-  `-unknownlabel-` (oracle) vs `-unknown-` (candidate) — a separate
-  label/property-warning behavioral divergence worth its own look.
+**Result:** full corpus `corpus.sh check all` → **638 passed, 0 diverged**
+(was: docs 16/38, lvt 596/601). The 5 residual `.lvt` divergences below
+(tlxs01l/p, tu-textcomp-003, vtl2e06, properties-006-warn) all resolved.
+TRIP 2/2, tex-outputs 29/29, crate unit tests 26/26.
 
-Takeaway: the kernel suite is in good shape (99.2%); the residual 5
-mostly fold into D1b (native-glyph metrics) plus a native-discretionary
-structure diff and one label-string diff.
+**Repro (now passes):** `aaaaaaaa ... long-compound-word` forced to break
+at the second hyphen; `tier1/ligatures_kerning.tex` (the
+`reconstitute/lig-kern` paragraph).
+
+## D2 — `bidi_arabic` segfault — OPEN (pre-existing, unrelated to D1)
+
+`tier1/bidi_arabic.tex` segfaults in the candidate (exit 139, no `.xdv`)
+where the oracle compiles cleanly. **Confirmed pre-existing**: reproduces
+on the build *before* the D1b fix, so it is not a regression from it. The
+corpus harness reports it as `NOXDV` (skipped, not counted as a
+divergence). Next target for the bidi paths.
 
 ---
 ### (historical) D1 — original combined symptom

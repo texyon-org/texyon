@@ -17441,7 +17441,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         let mk = native_len();
         set_main_pp(cur_list_tail());
 
-        if cur_list_mode() == 1
+        if cur_list_mode() == 104
         /* HMODE */
         {
             set_main_ppp(cur_list_head());
@@ -17458,10 +17458,14 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                 }
             }
 
-            let mut tp = 0i32;
+            // C uses `main_k` as the running remaining-length and `temp_ptr` as
+            // the offset into native_text of the current segment; both mutate
+            // across the do-while. `main_h` (global) is the next hyphen offset.
+            let mut temp_ptr = 0i32;
+            let mut main_k = mk;
             loop {
                 if main_h() == 0 {
-                    set_main_h(mk);
+                    set_main_h(main_k);
                 }
 
                 let tail_is_native = main_pp() != TEX_NULL
@@ -17476,8 +17480,8 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
 
                 if tail_is_native {
                     let old_len = mem_b16s1(main_pp() + 4) as i32;
-                    let new_mk = main_h() + old_len;
-                    while native_text_size() <= native_len() + new_mk {
+                    main_k = main_h() + old_len;
+                    while native_text_size() <= native_len() + main_k {
                         set_native_text_size(native_text_size() + 128);
                         let np = xrealloc(
                             native_text() as *mut libc::c_void,
@@ -17486,72 +17490,71 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                         set_native_text(np as *mut u16);
                     }
                     set_save_native_len(native_len());
-                    // Copy old node's text into buffer at end
                     for i in 0..old_len {
                         *native_text().add(native_len() as usize) =
                             *mem_as_u16_ptr_mut(main_pp() + NATIVE_NODE_SIZE).add(i as usize);
                         set_native_len(native_len() + 1);
                     }
-                    // Append the new segment
                     for i in 0..main_h() {
                         *native_text().add(native_len() as usize) =
-                            *native_text().add((tp + i) as usize);
+                            *native_text().add((temp_ptr + i) as usize);
                         set_native_len(native_len() + 1);
                     }
-                    do_locale_linebreaks(save_native_len(), new_mk);
+                    do_locale_linebreaks(save_native_len(), main_k);
                     set_native_len(save_native_len());
-                    let mut new_mk2 = native_len() - main_h() - tp;
-                    tp = main_h();
+                    main_k = native_len() - main_h() - temp_ptr;
+                    temp_ptr = main_h();
                     set_main_h(0);
-                    while main_h() < new_mk2
-                        && *native_text().add((tp + main_h()) as usize)
-                            != hyphen_char_entry(main_f()) as u16
-                        && (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) == 0
-                            || (*native_text().add((tp + main_h()) as usize) != 8212
-                                && *native_text().add((tp + main_h()) as usize) != 8211))
+                    while main_h() < main_k
+                        && (*native_text().add((temp_ptr + main_h()) as usize) as i32)
+                            != hyphen_char_entry(main_f())
+                        && (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) <= 0
+                            || ((*native_text().add((temp_ptr + main_h()) as usize) as i32) != 8212
+                                && (*native_text().add((temp_ptr + main_h()) as usize) as i32)
+                                    != 8211))
                     {
                         set_main_h(main_h() + 1);
                     }
-                    if main_h() < new_mk2 {
+                    if main_h() < main_k {
                         set_main_h(main_h() + 1);
                     }
-                    // Unlink old native node
                     set_mem_b32s1(main_ppp(), mem_b32s1(main_pp()));
                     set_mem_b32s1(main_pp(), TEX_NULL);
-                    free_node(main_pp(), mem_b16s3(main_pp() + 4) as i32);
+                    flush_node_list(main_pp());
                     set_main_pp(cur_list_tail());
                     while mem_b32s1(main_ppp()) != main_pp() {
                         set_main_ppp(mem_b32s1(main_ppp()));
                     }
-                    // (new_mk2 reassignment from temp: continuation of loop)
-                    let _ = new_mk2; // already consumed above
-                                     // check loop end: mk is the original total, compute remainder
-                                     // Actually in C: "while (!(main_k == 0))" — main_k here is the mk variable
-                                     // We track this with `mk` local. After tail_is_native: new mk = native_len - main_h - temp_ptr
-                                     // ... but the loop variable is `main_k` in C. Let me re-read.
-                                     // Actually in the C code, main_k is reassigned several times inside the do-while.
-                                     // The loop condition is "while (!(main_k == 0))".
-                                     // This is complex state. I'll restructure using a local variable.
-                                     // (continuing below)
                 } else {
-                    do_locale_linebreaks(tp, main_h());
-                    tp += main_h();
-                    let new_mk2 = mk - tp;
-                    // wait, mk is the ORIGINAL native_len. After do_locale_linebreaks,
-                    // the tail has been updated. main_k in C = main_k - main_h; main_h = 0;
-                    // then scan for next hyphen.
-                    // Let me trace the C carefully:
-                    // C: temp_ptr = 0; do { ... do_locale_linebreaks(temp_ptr, main_h); temp_ptr += main_h; main_k -= main_h; main_h = 0; while (main_h < main_k) ... } while (!(main_k == 0))
-                    // So main_k decreases by main_h each iteration.
-                    // I'm restructuring this as a while loop with explicit mk tracking.
-                    let _ = new_mk2; // placeholder
-                                     // (this branch handled in the restructured loop below)
+                    do_locale_linebreaks(temp_ptr, main_h());
+                    temp_ptr += main_h();
+                    main_k -= main_h();
+                    set_main_h(0);
+                    while main_h() < main_k
+                        && (*native_text().add((temp_ptr + main_h()) as usize) as i32)
+                            != hyphen_char_entry(main_f())
+                        && (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) <= 0
+                            || ((*native_text().add((temp_ptr + main_h()) as usize) as i32) != 8212
+                                && (*native_text().add((temp_ptr + main_h()) as usize) as i32)
+                                    != 8211))
+                    {
+                        set_main_h(main_h() + 1);
+                    }
+                    if main_h() < main_k {
+                        set_main_h(main_h() + 1);
+                    }
                 }
-                break; // placeholder to allow compiling; will be replaced
+
+                if main_k > 0 || is_hyph() {
+                    set_mem_b32s1(cur_list_tail(), new_disc());
+                    set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                    set_main_pp(cur_list_tail());
+                }
+
+                if main_k == 0 {
+                    break;
+                }
             }
-            // TODO: this do-while loop is complex and needs restructuring.
-            // For now, fall through to MMODE path which is simpler and correct.
-            // (The HMODE path will be handled in the restructured version)
         } else {
             // MMODE (or not HMODE): simple native word node creation
             set_main_ppp(cur_list_head());
