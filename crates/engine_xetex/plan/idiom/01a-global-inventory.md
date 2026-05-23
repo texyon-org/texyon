@@ -60,11 +60,11 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `doing_special` | `bool` | `shipout` | `src/globals.rs:103` C extern | `doing_special`, `set_doing_special` | def xetex/xetex-ini.c |  |
 | `term_offset` | `i32` | `shipout` | `src/globals.rs:105` C extern | `term_offset`, `set_term_offset` | def xetex/xetex-ini.c |  |
 | `file_offset` | `i32` | `shipout` | `src/globals.rs:106` C extern | `file_offset`, `set_file_offset` | def xetex/xetex-ini.c |  |
-| `rust_stdout` | `usize` | `shipout` | `src/globals.rs:110` C extern | `rust_stdout` | def xetex/xetex-ini.c; link src/ini.rs:1780 |  |
-| `log_file` | `usize` | `shipout` | `src/globals.rs:111` C extern | `log_file`, `set_log_file` | def xetex/xetex-ini.c |  |
-| `write_file` | `[usize; 16]` | `shipout` | `src/globals.rs:112` C extern | `write_file`, `set_write_file` | def xetex/xetex-ini.c |  |
-| `write_open` | `[bool; 18]` | `shipout` | `src/globals.rs:114` C extern | `write_open`, `set_write_open` | def xetex/xetex-ini.c |  |
-| `current_diagnostic` | `*mut std::ffi::c_void` | `shipout` | `src/globals.rs:118` C extern | `set_current_diagnostic`, `current_diagnostic` | def xetex/xetex-output.c |  |
+| `rust_stdout` | `usize` | `shipout` | `EngineState.shipout.rust_stdout` (Rust-owned) | `rust_stdout`, `set_rust_stdout` | MOVED session 23: C def + alias removed |
+| `log_file` | `usize` | `shipout` | `EngineState.shipout.log_file` (Rust-owned) | `log_file`, `set_log_file` | MOVED session 23: C def removed |
+| `write_file` | `[usize; 16]` | `shipout` | `EngineState.shipout.write_file` (Rust-owned) | `write_file`, `set_write_file` | MOVED session 19: C def removed |
+| `write_open` | `[bool; 18]` | `shipout` | `EngineState.shipout.write_open` (Rust-owned) | `write_open`, `set_write_open` | MOVED session 19: C def removed |
+| `current_diagnostic` | `*mut std::ffi::c_void` | `shipout` | `EngineState.shipout.current_diagnostic` (Rust-owned) | `set_current_diagnostic`, `current_diagnostic` | MOVED session 23: C def removed |
 | `pseudo_files` | `i32` | `input` | `src/globals.rs:121` C extern | `pseudo_files`, `set_pseudo_files` | def xetex/xetex-ini.c |  |
 | `in_open` | `i32` | `input` | `src/globals.rs:123` C extern | `in_open`, `set_in_open` | def xetex/xetex-ini.c |  |
 | `full_source_filename_stack` | `*mut i32` | `input` | `src/globals.rs:125` C extern | `full_source_filename_stack`, `set_full_source_filename_stack` | def xetex/xetex-ini.c; link src/ini.rs:1846,src/ini.rs:3584 |  |
@@ -509,6 +509,8 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `buffer[]` | `input` | `UnicodeScalar` (`int32_t` typedef, a Unicode scalar value) | `UnicodeScalar` | session 15 | pending |
 | `write_file[]` | `shipout` | `rust_output_handle_t` (`uintptr_t` typedef; nullable output-stream handle, 0 = none) | `OutputHandle`/`Option<OutputId>` | session 19 | pending |
 | `radix` | `scanner` | `small_number` (`typedef short`; scanner radix 8/10/16, stored as `u8` in the bridge) | `SmallNumber`/`Radix` | session 21 | pending |
+| `rust_stdout` | `shipout` | `rust_output_handle_t` (`uintptr_t` typedef; stdout stream handle) | `OutputHandle` | session 23 | pending |
+| `log_file` | `shipout` | `rust_output_handle_t` (`uintptr_t` typedef; log stream handle, 0 = none) | `OutputHandle`/`Option<OutputId>` | session 23 | pending |
 
 (`input` session-13 move of the line/group stacks: `line_stack` and
 `if_stack` are plain `int32_t *` and need no row — `line_stack` holds

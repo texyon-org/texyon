@@ -1775,8 +1775,7 @@ extern "C" {
 
     #[link_name = "TEX_format_default"]
     static mut tre_TEX_format_default: *mut libc::c_char;
-    #[link_name = "rust_stdout"]
-    static mut tre_rust_stdout: usize;
+
     #[link_name = "format_default_length"]
     static mut tre_format_default_length: i32;
     #[link_name = "pool_size"]
@@ -3177,7 +3176,7 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_TEX_format_default = xmalloc(libc::strlen(dump_name) + 1) as *mut libc::c_char;
     libc::strcpy(tre_TEX_format_default, dump_name);
     tre_format_default_length = libc::strlen(dump_name) as i32;
-    tre_rust_stdout = ttstub_output_open_stdout();
+    crate::globals::set_rust_stdout(ttstub_output_open_stdout());
 
     if crate::globals::file_line_error_style_p() < 0 {
         set_file_line_error_style_p(0);

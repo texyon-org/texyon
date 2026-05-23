@@ -9,6 +9,50 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 23 — 2026-05-23 — shipout file-handles (rust_stdout/log_file/current_diagnostic) → ShipoutState
+
+**Type:** execution (workstream 01, Phase-B scalar/ownership slice).
+
+**Goal:** move the 3 remaining `shipout` file-handle state variables `rust_stdout` (`usize`/`rust_output_handle_t`), `log_file` (`usize`/`rust_output_handle_t`), and `current_diagnostic` (`*mut c_void`/`ttbc_diagnostic_t *`) into `EngineState.shipout`. One coherent slice (the remaining file-handle members of the `shipout` group), one commit (once reviewed).
+
+**Why this slice:** Clean cold `scanner` scalar filler is fully exhausted as of session 22. The other remaining ownership-bearing options are more involved (e.g. `strings` touches the format dump/undump paths). Moving these 3 completes the BSS/extern file-handle state of `shipout`, resolving `rust_stdout`'s cleanup alias and moving `current_diagnostic` out of C-side storage `xetex-output.c`.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `rust_stdout` and `log_file` are `rust_output_handle_t` in `xetex/xetex-xetexd.h` — type is a `uintptr_t` typedef, meaning we add newtype debt rows to the Deferred newtype worklist for both `rust_stdout` and `log_file`. `current_diagnostic` is `ttbc_diagnostic_t *`, which is a plain opaque pointer (like `input_file`'s handles) and needs no row.
+- (b) cleanup aliases: `rust_stdout` has a `#[link_name = "rust_stdout"]` alias in `src/ini.rs:1781` with the name `tre_rust_stdout`, which is initialized but has no cleanup/free call. This alias was removed and replaced with a direct write through `set_rust_stdout` in the same commit.
+- (c) C readers: only `xetex/xetex-ini.c` (defining `rust_stdout` and `log_file`) and `xetex/xetex-output.c` (defining `current_diagnostic`).
+- (d) cross-module redeclarations: none.
+
+**Work done:**
+- Added the 3 fields to `ShipoutState` in `src/state.rs` (`rust_stdout: usize`, `log_file: usize`, `current_diagnostic: *mut std::ffi::c_void`); `#[derive(Default)]` covers them.
+- Repointed all 5 accessors in `globals.rs` (`rust_stdout`/`set_rust_stdout`, `log_file`/`set_log_file`, `current_diagnostic`/`set_current_diagnostic`) to `with_state`/`with_state_mut` closures. All 5 are now fully safe (no `unsafe`).
+- Removed `#[link_name = "rust_stdout"]` alias `tre_rust_stdout` from `src/ini.rs` and replaced its initialization in `tt_run_engine` with a safe call to the `set_rust_stdout` accessor.
+- Removed the 3 raw extern definitions from `globals.rs` `mod raw`.
+- Removed C definitions of `rust_stdout` and `log_file` from `xetex/xetex-ini.c`.
+- Removed C definition of `current_diagnostic` from `xetex/xetex-output.c`.
+
+**Newtype debt (§4 check):** Two rows added to `Deferred newtype worklist` in `01a-global-inventory.md`: `rust_stdout` (`rust_output_handle_t` → `OutputHandle`) and `log_file` (`rust_output_handle_t` → `OutputHandle`/`Option<OutputId>`). `current_diagnostic` is a plain pointer, no newtype debt (checked).
+
+**longjmp / Drop (§7):** N/A — plain scalar/pointer fields with no owned heap storage, no `Drop` edge. Thread-local owner unchanged.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 278 → 275 (−3).
+- Raw `unsafe { ... }` text-search count: 633 → 628 (−5, all 5 accessors became fully safe).
+- `#[link_name]` aliases: removed `rust_stdout` alias.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of the 3 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Reconcile `strings` (`str_start` / `str_pool`), which **are** serialized in the format dump/undump paths — this is the first ownership slice that touches the format paths, more involved than the input arrays.
+
+---
+
 ## Idiom session 22 — 2026-05-23 — cold sparse-array register scalars (sa_chain/sa_level/max_reg_num) → ScannerState
 
 **Type:** execution (workstream 01, Phase-B scalar slice).

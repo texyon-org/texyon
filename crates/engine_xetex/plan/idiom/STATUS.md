@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 22 (2026-05-23).
+Last updated: idiom session 23 (2026-05-23).
 
 ## How to read this file
 
@@ -218,6 +218,13 @@ least-coupled non-`misc` clusters:
     behind: `sa_root` (link alias → ownership), `sa_null` (`MemoryWord`),
     `max_reg_help_line` (pointer), `cur_ptr` (148 uses, too broad to bridge
     without benchmarking).
+-   `shipout` remaining file-handle state moved into `EngineState.shipout` (3 fields):
+    `rust_stdout` (`usize`), `log_file` (`usize`), `current_diagnostic`
+    (`*mut c_void`). Removes the last remaining BSS/extern file-handle state
+    from `shipout`. `rust_stdout` has its `#[link_name]` alias in `src/ini.rs`
+    removed and repointed to `set_rust_stdout`; definitions in C
+    `xetex-ini.c` and `xetex-output.c` were removed. All 5 accessors now fully
+    safe. Newtype debt recorded for `rust_stdout` and `log_file`.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -226,12 +233,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 278 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 275 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 91 state-backed scalars/arrays + 12 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 816 total / 94 state-backed scalars/arrays + 12 Rust-owned arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 633 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 628 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -323,14 +330,13 @@ the snippets in `00-overview.md` / the workstream plans.
     benchmarking.
     Do **not** bridge the `main_*` ligature/main-loop scratch scalars (hot
     per-character path), same reasoning as the tokenizer scalars.
+    The remaining `shipout` file-*handle* state (`rust_stdout`, `log_file`,
+    `current_diagnostic`) was moved in session 23.
     Options remaining, in rough difficulty order:
     (a) `strings` (`str_start` / `str_pool`), which **are** serialized in
     format dump/undump, so that slice must also reconcile the load/dump
     paths — the first ownership slice that touches the format paths, more
-    involved than the input arrays;
-    (b) remaining `shipout` file-*handle* state (`rust_stdout` has a
-    cleanup alias → ownership slice; `log_file`; `current_diagnostic` is
-    C-defined in `xetex-output.c`).
+    involved than the input arrays.
     For each symbol moved, use `01a-global-inventory.md` for C defs /
     cleanup aliases / accessors, and add a worklist row for any
     semantic-typed field (§4 rule). **Gotcha:** each input array had **two**

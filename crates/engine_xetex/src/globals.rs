@@ -82,12 +82,9 @@ mod raw {
 
         // Output file handles (xetex-xetexd.h:429–430, 691).
         // `rust_output_handle_t` is `uintptr_t` (tectonic_bridge_core_generated.h:9).
-        pub(super) static mut rust_stdout: usize;
-        pub(super) static mut log_file: usize;
 
         // Current diagnostic capture handle (xetex-output.c, un-static'd session 8).
         // Null (0) means no active capture. Type is opaque `ttbc_diagnostic_t *`.
-        pub(super) static mut current_diagnostic: *mut std::ffi::c_void;
 
         // Pseudo-file list head (xetex-xetexd.h:704; used by pseudo_input/close).
         pub(super) static mut pseudo_files: i32;
@@ -1063,10 +1060,9 @@ pub(crate) fn str_pool_ptr(k: i32) -> *const u16 {
 /// Sets `current_diagnostic` to `v` (pass null to clear).
 #[inline]
 pub(crate) fn set_current_diagnostic(v: *mut std::ffi::c_void) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::current_diagnostic = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.shipout.current_diagnostic = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1322,23 +1318,28 @@ pub(crate) fn set_file_offset(v: i32) {
 /// Returns the `rust_stdout` output handle.
 #[inline]
 pub(crate) fn rust_stdout() -> usize {
-    // SAFETY: see module-level doc.
-    unsafe { raw::rust_stdout }
+    crate::state::with_state(|s| s.shipout.rust_stdout)
+}
+
+/// Sets the `rust_stdout` output handle.
+#[inline]
+pub(crate) fn set_rust_stdout(v: usize) {
+    crate::state::with_state_mut(|s| {
+        s.shipout.rust_stdout = v;
+    });
 }
 
 /// Returns the `log_file` output handle.
 #[inline]
 pub(crate) fn log_file() -> usize {
-    // SAFETY: see module-level doc.
-    unsafe { raw::log_file }
+    crate::state::with_state(|s| s.shipout.log_file)
 }
 /// Sets the `log_file` output handle.
 #[inline]
 pub(crate) fn set_log_file(v: usize) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::log_file = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.shipout.log_file = v;
+    });
 }
 
 /// Returns `write_file[i]`, the output handle for write-stream `i` (0–15).
@@ -1372,8 +1373,7 @@ pub(crate) fn set_write_file(i: usize, v: usize) {
 /// Returns the current diagnostic capture pointer (null = no active capture).
 #[inline]
 pub(crate) fn current_diagnostic() -> *mut std::ffi::c_void {
-    // SAFETY: see module-level doc.
-    unsafe { raw::current_diagnostic }
+    crate::state::with_state(|s| s.shipout.current_diagnostic)
 }
 
 // ---------------------------------------------------------------------------
