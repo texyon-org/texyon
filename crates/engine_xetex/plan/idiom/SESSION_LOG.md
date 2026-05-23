@@ -9,6 +9,86 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 20 — 2026-05-23 — alignment state scalars → ScannerState
+
+**Type:** execution (workstream 01, Phase-B scalar slice).
+
+**Goal:** move the 8 alignment (`\halign`/`\valign`) scratch scalars
+`cur_align`, `cur_span`, `cur_loop`, `align_ptr`, `cur_head`, `cur_tail`,
+`cur_pre_head`, `cur_pre_tail` into `EngineState.scanner`. One coherent slice
+(the alignment state group), one commit.
+
+**Why this slice:** with all `input`-cluster arrays Rust-owned and the
+`shipout` write-stream arrays done, the remaining ownership slices (`strings`
+touches the format dump/undump; the `shipout` file-handle state has cleanup
+edges) are more involved. The alignment scalars are a semantically coherent
+cold group — they are touched per-alignment-cell, never on the per-token or
+per-character hot path (usage counts 15–51 across the crate, all in
+`align`/`scan` paths), so the thread-local bridge has no hot-path cost. They
+share a contiguous declaration block in `xetex-ini.c` and `mod raw`, so the
+move is clean. Lowest-risk way to keep advancing the `scanner` cluster.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: all 8 are plain `extern int32_t` in `xetex-xetexd.h`
+  (`cur_head, cur_tail` and `cur_pre_head, cur_pre_tail` are paired decls).
+  No semantic typedef → **no newtype debt** for any of them (checked). They
+  are TeX mem "pointers" in spirit, but the declared C type is `int32_t`, so
+  the §4 typedef-debt rule does not apply; their eventual `MemPtr`/`Halfword`
+  shape is an arena/Phase-C concern, not a typedef-debt row.
+- (b) cleanup aliases: none (`link_name = "…"` empty for all 8) → scalar
+  slice, not an ownership slice.
+- (c) C readers: only `xetex/xetex-ini.c` (the definitions).
+- (d) cross-module redeclarations: none.
+
+**Work done:**
+- Added the 8 `i32` fields to `ScannerState` in `src/state.rs`
+  (`#[derive(Default)]` covers them).
+- Repointed all 16 accessors in `globals.rs`
+  (`cur_align`/`set_cur_align`, …, `cur_pre_tail`/`set_cur_pre_tail`; note the
+  `cur_tail` getter/setter are named `cur_tail_a`/`set_cur_tail_a`) from
+  `unsafe { raw::… }` to `with_state`/`with_state_mut` closures. All 16 are
+  now fully safe (no `unsafe`).
+- Removed the 8 raw externs from `globals.rs` `mod raw` and the 6 C def lines
+  (177–182) from `xetex/xetex-ini.c`. No allocation/cleanup edits (plain
+  BSS scalars).
+
+**Newtype debt (§4 check):** none — all 8 are plain `int32_t` in the header
+(checked). No worklist rows added.
+
+**longjmp / Drop (§7):** N/A — plain scalar fields, no owned heap storage, no
+`Drop` edge. Thread-local owner unchanged.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 293 → 285 (−8).
+- Raw `unsafe { ... }` text-search count: 663 → 647 (−16, all 16 accessors
+  became fully safe).
+- `#[link_name]` aliases: unchanged (this slice had none).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of the 8 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Remaining ownership-bearing options (rough difficulty order): `strings`
+  (`str_start`/`str_pool`, **serialized in format dump/undump** — first
+  format-path slice, most involved); remaining `shipout` file-*handle* state
+  (`rust_stdout` has a cleanup alias → ownership slice; `log_file`;
+  `current_diagnostic`, C-defined in `xetex-output.c`).
+- More clean cold `scanner` scalars remain as low-risk filler — confirmed
+  clean candidates from prior sessions: `shown_mode`, `mag_set`, `radix`,
+  `expand_depth_count`. The `sa_*` sparse-array group (`cur_ptr`, `sa_null`,
+  `sa_root`, `sa_chain`, `sa_level`, `max_reg_num`, `max_reg_help_line`) is
+  also `scanner` but messier: `sa_root` has a link alias (ownership), `sa_null`
+  is a `MemoryWord`, `max_reg_help_line` is a `*const c_char`.
+- Reminder: do **not** bridge the hot tokenizer scalars (`cur_cmd`,
+  `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) or the `main_*` ligature/main-loop
+  scratch scalars (per-character hot path); the `mem` bookkeeping scalars go
+  with the `Mem` arena move (§5).
+
 ## Idiom session 19 — 2026-05-23 — shipout write_file/write_open arrays → ShipoutState
 
 **Type:** execution (workstream 01, Phase-B scalar-style slice).

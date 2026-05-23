@@ -103,6 +103,14 @@ pub(crate) struct ScannerState {
     pub file_name_quote_char: u16,
     pub name_in_progress: bool,
     pub stop_at_space: bool,
+    pub cur_align: i32,
+    pub cur_span: i32,
+    pub cur_loop: i32,
+    pub align_ptr: i32,
+    pub cur_head: i32,
+    pub cur_tail: i32,
+    pub cur_pre_head: i32,
+    pub cur_pre_tail: i32,
 }
 
 #[derive(Default)]
