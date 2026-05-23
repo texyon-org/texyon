@@ -532,6 +532,13 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `hyf_next[]` | `hyph` | `trie_opcode[TRIE_OP_SIZE + 1]` | `Vec<TrieOpcode>` | session 26 | pending |
 | `trie_used[]` | `hyph` | `trie_opcode[256]` | `Vec<TrieOpcode>` | session 26 | pending |
 | `trie_op_val[]` | `hyph` | `trie_opcode[TRIE_OP_SIZE + 1]` | `Vec<TrieOpcode>` | session 26 | pending |
+| `trie_trl[]` | `hyph` | `trie_pointer *` | `Vec<TrieIndex>` | session 27 | pending |
+| `trie_tro[]` | `hyph` | `trie_pointer *` | `Vec<TrieIndex>` | session 27 | pending |
+| `trie_c[]` | `hyph` | `packed_UTF16_code *` | `Vec<PackedUtf16Code>` | session 27 | pending |
+| `trie_o[]` | `hyph` | `trie_opcode *` | `Vec<TrieOpcode>` | session 27 | pending |
+| `trie_l[]` | `hyph` | `trie_pointer *` | `Vec<TrieIndex>` | session 27 | pending |
+| `trie_r[]` | `hyph` | `trie_pointer *` | `Vec<TrieIndex>` | session 27 | pending |
+| `trie_hash[]` | `hyph` | `trie_pointer *` | `Vec<TrieIndex>` | session 27 | pending |
 
 
 (`input` session-13 move of the line/group stacks: `line_stack` and

@@ -330,15 +330,6 @@ mod raw {
         pub(super) static mut space_class: i32;
         pub(super) static mut prev_class: i32;
         // Hyphenation trie and exception tables (xetex-xetexd.h:635-645).
-        pub(super) static mut trie_trl: *mut i32;
-        pub(super) static mut trie_tro: *mut i32;
-        pub(super) static mut trie_trc: *mut u16;
-        pub(super) static mut trie_c: *mut u16;
-        pub(super) static mut trie_o: *mut u16;
-        pub(super) static mut trie_l: *mut i32;
-        pub(super) static mut trie_r: *mut i32;
-        pub(super) static mut trie_hash: *mut i32;
-        pub(super) static mut trie_taken: *mut bool;
         pub(super) static mut hyph_word: *mut i32;
         pub(super) static mut hyph_list: *mut i32;
         pub(super) static mut hyph_link: *mut u16;
@@ -3885,93 +3876,93 @@ pub(crate) fn set_hyphen_passed(v: i16) {
 }
 #[inline]
 pub(crate) fn trie_trl_entry(k: i32) -> i32 {
-    unsafe { *raw::trie_trl.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.trie_trl[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_trl_entry(k: i32, v: i32) {
-    unsafe {
-        *raw::trie_trl.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_trl[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_tro_entry(k: i32) -> i32 {
-    unsafe { *raw::trie_tro.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.trie_tro[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_tro_entry(k: i32, v: i32) {
-    unsafe {
-        *raw::trie_tro.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_tro[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_trc_entry(k: i32) -> u16 {
-    unsafe { *raw::trie_trc.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.trie_trc[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_trc_entry(k: i32, v: u16) {
-    unsafe {
-        *raw::trie_trc.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_trc[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_c_entry(k: i32) -> u16 {
-    unsafe { *raw::trie_c.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.trie_c[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_c_entry(k: i32, v: u16) {
-    unsafe {
-        *raw::trie_c.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_c[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_o_entry(k: i32) -> u16 {
-    unsafe { *raw::trie_o.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.trie_o[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_o_entry(k: i32, v: u16) {
-    unsafe {
-        *raw::trie_o.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_o[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_l_entry(k: i32) -> i32 {
-    unsafe { *raw::trie_l.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.trie_l[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_l_entry(k: i32, v: i32) {
-    unsafe {
-        *raw::trie_l.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_l[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_r_entry(k: i32) -> i32 {
-    unsafe { *raw::trie_r.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.trie_r[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_r_entry(k: i32, v: i32) {
-    unsafe {
-        *raw::trie_r.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_r[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_hash_entry(k: i32) -> i32 {
-    unsafe { *raw::trie_hash.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.trie_hash[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_hash_entry(k: i32, v: i32) {
-    unsafe {
-        *raw::trie_hash.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_hash[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_taken_entry(k: i32) -> bool {
-    unsafe { *raw::trie_taken.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.trie_taken[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_taken_entry(k: i32, v: bool) {
-    unsafe {
-        *raw::trie_taken.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_taken[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn trie_min_entry(k: i32) -> i32 {

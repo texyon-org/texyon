@@ -298,6 +298,15 @@ pub(crate) struct HyphState {
     pub trie_used: Vec<u16>,
     pub trie_op_lang: Vec<u8>,
     pub trie_op_val: Vec<u16>,
+    pub trie_trl: Vec<i32>,
+    pub trie_tro: Vec<i32>,
+    pub trie_trc: Vec<u16>,
+    pub trie_c: Vec<u16>,
+    pub trie_o: Vec<u16>,
+    pub trie_l: Vec<i32>,
+    pub trie_r: Vec<i32>,
+    pub trie_hash: Vec<i32>,
+    pub trie_taken: Vec<bool>,
 }
 
 impl Default for HyphState {
@@ -339,6 +348,15 @@ impl Default for HyphState {
             trie_used: vec![0; 256],
             trie_op_lang: vec![0; 35112],
             trie_op_val: vec![0; 35112],
+            trie_trl: Vec::new(),
+            trie_tro: Vec::new(),
+            trie_trc: Vec::new(),
+            trie_c: Vec::new(),
+            trie_o: Vec::new(),
+            trie_l: Vec::new(),
+            trie_r: Vec::new(),
+            trie_hash: Vec::new(),
+            trie_taken: Vec::new(),
         }
     }
 }

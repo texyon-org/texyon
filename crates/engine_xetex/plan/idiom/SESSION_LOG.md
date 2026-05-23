@@ -9,6 +9,74 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 27 — 2026-05-23 — hyph dynamic trie arrays → HyphState Vecs
+
+**Type:** execution (workstream 01, Phase-B ownership slice).
+
+**Goal:** move the 9 dynamically allocated `hyph` trie arrays (`trie_trl`,
+`trie_tro`, `trie_trc`, `trie_c`, `trie_o`, `trie_l`, `trie_r`,
+`trie_hash`, `trie_taken`) out of C globals and into Rust-owned `Vec`s on
+`EngineState.hyph`. One coherent slice, one commit.
+
+**Why this slice:** session 26 moved the fixed-size `hyph` arrays and left
+the dynamically allocated trie arrays as the next least-entangled
+hyphenation group. These arrays share trie init/format behavior and are
+separate from the remaining hyphenation-exception lists
+(`hyph_word`/`hyph_list`/`hyph_link`), so they make a coherent ownership
+slice.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: semantic typedef pointers are `trie_trl`/`trie_tro`/
+  `trie_l`/`trie_r`/`trie_hash` (`trie_pointer *`), `trie_c`
+  (`packed_UTF16_code *`), and `trie_o` (`trie_opcode *`). Plain pointers
+  checked: `trie_trc` (`uint16_t *`) and `trie_taken` (`bool *`).
+- (b) cleanup/link aliases: init/format aliases existed for all 9 arrays;
+  cleanup aliases existed for `trie_trl`, `trie_tro`, and `trie_trc`. All
+  were removed/replaced in this slice.
+- (c) C readers: only `xetex/xetex-ini.c` definitions.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs`
+  aliases; no other redeclarations.
+
+**Work done:**
+- Added the 9 dynamic trie arrays to `HyphState` as `Vec`s. Initex
+  allocation now sizes all 9 as `trie_size + 1`, matching the former
+  `xmalloc_array(trie_size)` shape.
+- Repointed all 18 array accessors in `src/globals.rs` to safe
+  `with_state` / `with_state_mut` indexing.
+- Replaced format dump/undump aliases for `trie_trl`/`trie_tro`/
+  `trie_trc` with short-lived pointers derived from `EngineState.hyph`.
+- Replaced `tt_cleanup` frees for `trie_trl`/`trie_tro`/`trie_trc` with
+  vector resets, and reset the other six trie build arrays in the same
+  cleanup block.
+- Removed the 9 raw externs from `globals.rs` `mod raw`, the 12
+  `#[link_name]` aliases from `src/ini.rs`, and the 9 C definitions from
+  `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** 7 rows added to the Deferred newtype
+worklist for `trie_trl[]`, `trie_tro[]`, `trie_c[]`, `trie_o[]`,
+`trie_l[]`, `trie_r[]`, and `trie_hash[]`. `trie_trc[]` is plain
+`uint16_t *` and `trie_taken[]` is plain `bool *`, so no rows.
+
+**longjmp / Drop (§7):** handled by the established arena pattern. The
+owners live in the `'static` thread-local `EngineState`; abort paths do
+not jump over stack-owned Rust storage, and cleanup resets the vectors.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 226 → 217 (−9).
+- Raw `unsafe { ... }` text-search count: 537 → 519 (−18, all 18 array
+  accessor bodies became fully safe).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of the 9 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Continue with the remaining `hyph` exception arrays: `hyph_word`,
+  `hyph_list`, and `hyph_link`. They have init/undump allocation and
+  cleanup aliases, plus format dump/undump participation, so use the same
+  ownership-slice recipe.
+
 ## Idiom session 26 — 2026-05-23 — hyph fixed arrays → HyphState Vecs
 
 **Type:** execution (workstream 01, Phase-B fixed-array state slice).

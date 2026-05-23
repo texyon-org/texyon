@@ -1886,24 +1886,6 @@ extern "C" {
     static mut tre_exten_base: *mut i32;
     #[link_name = "param_base"]
     static mut tre_param_base: *mut i32;
-    #[link_name = "trie_trl"]
-    static mut tre_trie_trl: *mut i32;
-    #[link_name = "trie_tro"]
-    static mut tre_trie_tro: *mut i32;
-    #[link_name = "trie_trc"]
-    static mut tre_trie_trc: *mut u16;
-    #[link_name = "trie_c"]
-    static mut tre_trie_c: *mut u16;
-    #[link_name = "trie_o"]
-    static mut tre_trie_o: *mut u16;
-    #[link_name = "trie_l"]
-    static mut tre_trie_l: *mut i32;
-    #[link_name = "trie_r"]
-    static mut tre_trie_r: *mut i32;
-    #[link_name = "trie_hash"]
-    static mut tre_trie_hash: *mut i32;
-    #[link_name = "trie_taken"]
-    static mut tre_trie_taken: *mut bool;
     #[link_name = "font_used"]
     static mut tre_font_used: *mut bool;
     #[link_name = "sa_root"]
@@ -2474,9 +2456,12 @@ pub unsafe extern "C" fn store_fmt_file() {
 
     dump_int(fmt_out, trie_max());
     dump_int(fmt_out, hyph_start());
-    dump_slice(fmt_out, tre_trie_trl, trie_max() + 1);
-    dump_slice(fmt_out, tre_trie_tro, trie_max() + 1);
-    dump_slice(fmt_out, tre_trie_trc, trie_max() + 1);
+    let fmt_trie_trl = crate::state::with_state(|state| state.hyph.trie_trl.as_ptr());
+    let fmt_trie_tro = crate::state::with_state(|state| state.hyph.trie_tro.as_ptr());
+    let fmt_trie_trc = crate::state::with_state(|state| state.hyph.trie_trc.as_ptr());
+    dump_slice(fmt_out, fmt_trie_trl, trie_max() + 1);
+    dump_slice(fmt_out, fmt_trie_tro, trie_max() + 1);
+    dump_slice(fmt_out, fmt_trie_trc, trie_max() + 1);
     dump_int(fmt_out, max_hyph_char());
     dump_int(fmt_out, trie_op_ptr());
     let fmt_hyf_distance = crate::state::with_state(|state| state.hyph.hyf_distance.as_ptr());
@@ -3083,18 +3068,20 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     }
     set_hyph_start(x);
 
-    if tre_trie_trl.is_null() {
-        tre_trie_trl = xmalloc_array::<i32>(j);
-    }
-    undump_slice(fmt_in, tre_trie_trl, j + 1);
-    if tre_trie_tro.is_null() {
-        tre_trie_tro = xmalloc_array::<i32>(j);
-    }
-    undump_slice(fmt_in, tre_trie_tro, j + 1);
-    if tre_trie_trc.is_null() {
-        tre_trie_trc = xmalloc_array::<u16>(j);
-    }
-    undump_slice(fmt_in, tre_trie_trc, j + 1);
+    crate::state::with_state_mut(|state| {
+        if state.hyph.trie_trl.is_empty() {
+            state.hyph.trie_trl = vec![0i32; (j as usize) + 1];
+        }
+        undump_slice(fmt_in, state.hyph.trie_trl.as_mut_ptr(), j + 1);
+        if state.hyph.trie_tro.is_empty() {
+            state.hyph.trie_tro = vec![0i32; (j as usize) + 1];
+        }
+        undump_slice(fmt_in, state.hyph.trie_tro.as_mut_ptr(), j + 1);
+        if state.hyph.trie_trc.is_empty() {
+            state.hyph.trie_trc = vec![0u16; (j as usize) + 1];
+        }
+        undump_slice(fmt_in, state.hyph.trie_trc.as_mut_ptr(), j + 1);
+    });
 
     set_max_hyph_char(undump_int(fmt_in));
 
@@ -3488,19 +3475,22 @@ pub unsafe extern "C" fn tt_run_engine(
     }
 
     if trie_not_ready() {
-        tre_trie_trl = xmalloc_array::<i32>(trie_size());
-        tre_trie_tro = xmalloc_array::<i32>(trie_size());
-        tre_trie_trc = xmalloc_array::<u16>(trie_size());
-        tre_trie_c = xmalloc_array::<u16>(trie_size());
-        tre_trie_o = xmalloc_array::<u16>(trie_size());
-        tre_trie_l = xmalloc_array::<i32>(trie_size());
-        tre_trie_r = xmalloc_array::<i32>(trie_size());
-        tre_trie_hash = xmalloc_array::<i32>(trie_size());
-        tre_trie_taken = xmalloc_array::<bool>(trie_size());
-        *tre_trie_l.add(0) = 0;
-        *tre_trie_c.add(0) = 0;
+        crate::state::with_state_mut(|state| {
+            let trie_len = (state.hyph.trie_size as usize) + 1;
+            state.hyph.trie_trl = vec![0i32; trie_len];
+            state.hyph.trie_tro = vec![0i32; trie_len];
+            state.hyph.trie_trc = vec![0u16; trie_len];
+            state.hyph.trie_c = vec![0u16; trie_len];
+            state.hyph.trie_o = vec![0u16; trie_len];
+            state.hyph.trie_l = vec![0i32; trie_len];
+            state.hyph.trie_r = vec![0i32; trie_len];
+            state.hyph.trie_hash = vec![0i32; trie_len];
+            state.hyph.trie_taken = vec![false; trie_len];
+        });
+        set_trie_l_entry(0, 0);
+        set_trie_c_entry(0, 0);
         set_trie_ptr(0);
-        *tre_trie_r.add(0) = 0;
+        set_trie_r_entry(0, 0);
         set_hyph_start(0);
 
         tre_font_mapping = xcalloc_array::<*mut libc::c_void>(font_max());
@@ -3681,12 +3671,6 @@ extern "C" {
     static mut tt_cleanup_exten_base: *mut libc::c_void;
     #[link_name = "param_base"]
     static mut tt_cleanup_param_base: *mut libc::c_void;
-    #[link_name = "trie_trl"]
-    static mut tt_cleanup_trie_trl: *mut libc::c_void;
-    #[link_name = "trie_tro"]
-    static mut tt_cleanup_trie_tro: *mut libc::c_void;
-    #[link_name = "trie_trc"]
-    static mut tt_cleanup_trie_trc: *mut libc::c_void;
 }
 
 // translated from xetex-ini.c:2226 (tt_cleanup)
@@ -3784,13 +3768,18 @@ pub unsafe extern "C" fn tt_cleanup() {
     libc::free(tt_cleanup_exten_base);
     libc::free(tt_cleanup_param_base);
 
-    // mfree(trie_trl) ≡ free(trie_trl); trie_trl = NULL
-    libc::free(tt_cleanup_trie_trl);
-    tt_cleanup_trie_trl = std::ptr::null_mut();
-    libc::free(tt_cleanup_trie_tro);
-    tt_cleanup_trie_tro = std::ptr::null_mut();
-    libc::free(tt_cleanup_trie_trc);
-    tt_cleanup_trie_trc = std::ptr::null_mut();
+    // Release Rust-owned hyphenation trie arrays (were C `malloc`'d arrays).
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_trl = Vec::new();
+        state.hyph.trie_tro = Vec::new();
+        state.hyph.trie_trc = Vec::new();
+        state.hyph.trie_c = Vec::new();
+        state.hyph.trie_o = Vec::new();
+        state.hyph.trie_l = Vec::new();
+        state.hyph.trie_r = Vec::new();
+        state.hyph.trie_hash = Vec::new();
+        state.hyph.trie_taken = Vec::new();
+    });
 }
 
 // Command/eqtb constants used by `prefixed_command` (xetex-constants.h).

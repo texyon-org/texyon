@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 26 (2026-05-23).
+Last updated: idiom session 27 (2026-05-23).
 
 ## How to read this file
 
@@ -238,6 +238,15 @@ least-coupled non-`misc` clusters:
     are heap-backed rather than inline fixed arrays because inline storage
     overflowed the `engine_rust` test thread stack during thread-local state
     initialization. Newtype debts recorded for semantic typedef arrays.
+-   **Hyphenation dynamic trie arrays move (session 27):** 9 dynamically
+    allocated `hyph` trie arrays (`trie_trl`, `trie_tro`, `trie_trc`,
+    `trie_c`, `trie_o`, `trie_l`, `trie_r`, `trie_hash`, `trie_taken`)
+    moved from C globals / `malloc` storage into Rust-owned `Vec`s on
+    `EngineState.hyph`. Initex allocation now sizes all 9 as
+    `trie_size + 1`; format load/dump for the packed trie arrays uses
+    state-derived pointers; `tt_cleanup` resets the vectors. Removed 9 raw
+    externs, 12 `src/ini.rs` link aliases, and the C definitions from
+    `xetex-ini.c`. Newtype debts recorded for the semantic typedef arrays.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -246,12 +255,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 226 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 217 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 816 total / 80 state-backed scalars/arrays + 25 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, and 11 fixed-size hyph arrays) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 816 total / 80 state-backed scalars/arrays + 34 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, and 9 dynamic trie arrays) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 537 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 519 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -348,13 +357,14 @@ the snippets in `00-overview.md` / the workstream plans.
     The `strings` (`str_start` / `str_pool` and 11 scalar fields) was moved in session 24, establishing the pattern for format dump/undump arrays.
     The 25 clean `hyph` scalar fields were moved in session 25, establishing `EngineState.hyph`.
     The 11 fixed-size `hyph` arrays were moved in session 26 as heap-backed,
-    fixed-size `Vec`s on `EngineState.hyph`.
+    fixed-size `Vec`s on `EngineState.hyph`. The 9 dynamically allocated
+    trie arrays were moved in session 27 as Rust-owned `Vec`s on
+    `EngineState.hyph`.
     Options remaining:
-    (a) the dynamically allocated `hyph` arrays (`trie_trl`, `trie_tro`,
-    `trie_trc`, `trie_c`, `trie_o`, `trie_l`, `trie_r`, `trie_hash`,
-    `trie_taken`, `hyph_word`, `hyph_list`, `hyph_link`), which are allocated
-    at init or undump and cleaned up later, very similar to the strings
-    cluster but with more aliases.
+    (a) the remaining dynamically allocated `hyph` exception arrays
+    (`hyph_word`, `hyph_list`, `hyph_link`), which are allocated at init or
+    undump and cleaned up later, very similar to the strings cluster but with
+    more aliases.
     For each symbol moved, use `01a-global-inventory.md` for C defs /
     cleanup aliases / accessors, and add a worklist row for any
     semantic-typed field (§4 rule).
