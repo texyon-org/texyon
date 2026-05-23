@@ -103,14 +103,9 @@ mod raw {
         // Hash table: `b32x2 *hash` (xetex-xetexd.h:482).
         pub(super) static mut hash: *mut crate::mem_types::B32x2;
         // Hash table management globals (xetex-xetexd.h:483–488).
-        pub(super) static mut hash_used: i32;
         pub(super) static mut hash_extra: i32;
-        pub(super) static mut hash_high: i32;
-        pub(super) static mut no_new_control_sequence: bool;
         // Primitive hash table: `b32x2 prim[PRIM_SIZE + 1]` (xetex-xetexd.h:490).
         pub(super) static mut prim: [crate::mem_types::B32x2; 2101];
-        // prim_used: next free slot in prim (xetex-xetexd.h:491).
-        pub(super) static mut prim_used: i32;
         // Top of the eqtb array (xetex-xetexd.h:486).
         pub(super) static mut eqtb_top: i32;
 
@@ -215,8 +210,6 @@ mod raw {
         // Memory-usage counters (xetex-xetexd.h:463).
         pub(super) static mut var_used: i32;
         pub(super) static mut dyn_used: i32;
-        // Control-sequence count (xetex-xetexd.h:489).
-        pub(super) static mut cs_count: i32;
 
         // Group-stack: grp_stack[i] = save-stack boundary for level i
         // (xetex-xetexd.h:705; save_pointer = i32).
@@ -1240,13 +1233,13 @@ pub(crate) fn eqtb_top() -> i32 {
 
 #[inline]
 pub(crate) fn hash_used() -> i32 {
-    unsafe { raw::hash_used }
+    crate::state::with_state(|state| state.eqtb.hash_used)
 }
 #[inline]
 pub(crate) fn set_hash_used(v: i32) {
-    unsafe {
-        raw::hash_used = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.eqtb.hash_used = v;
+    });
 }
 #[inline]
 pub(crate) fn hash_extra() -> i32 {
@@ -1254,33 +1247,33 @@ pub(crate) fn hash_extra() -> i32 {
 }
 #[inline]
 pub(crate) fn hash_high() -> i32 {
-    unsafe { raw::hash_high }
+    crate::state::with_state(|state| state.eqtb.hash_high)
 }
 #[inline]
 pub(crate) fn set_hash_high(v: i32) {
-    unsafe {
-        raw::hash_high = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.eqtb.hash_high = v;
+    });
 }
 #[inline]
 pub(crate) fn no_new_control_sequence() -> bool {
-    unsafe { raw::no_new_control_sequence }
+    crate::state::with_state(|state| state.eqtb.no_new_control_sequence)
 }
 #[inline]
 pub(crate) fn set_no_new_control_sequence(v: bool) {
-    unsafe {
-        raw::no_new_control_sequence = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.eqtb.no_new_control_sequence = v;
+    });
 }
 #[inline]
 pub(crate) fn prim_used() -> i32 {
-    unsafe { raw::prim_used }
+    crate::state::with_state(|state| state.eqtb.prim_used)
 }
 #[inline]
 pub(crate) fn set_prim_used(v: i32) {
-    unsafe {
-        raw::prim_used = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.eqtb.prim_used = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3332,13 +3325,13 @@ pub(crate) fn set_dyn_used(v: i32) {
 }
 #[inline]
 pub(crate) fn cs_count() -> i32 {
-    unsafe { raw::cs_count }
+    crate::state::with_state(|state| state.eqtb.cs_count)
 }
 #[inline]
 pub(crate) fn set_cs_count(v: i32) {
-    unsafe {
-        raw::cs_count = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.eqtb.cs_count = v;
+    });
 }
 #[inline]
 pub(crate) fn max_reg_help_line() -> *const libc::c_char {

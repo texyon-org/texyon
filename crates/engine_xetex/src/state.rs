@@ -9,6 +9,16 @@ pub(crate) struct EngineState {
     pub shipout: ShipoutState,
     pub scanner: ScannerState,
     pub save_stack: SaveStackState,
+    pub eqtb: EqtbState,
+}
+
+#[derive(Default)]
+pub(crate) struct EqtbState {
+    pub hash_used: i32,
+    pub hash_high: i32,
+    pub no_new_control_sequence: bool,
+    pub prim_used: i32,
+    pub cs_count: i32,
 }
 
 #[derive(Default)]

@@ -9,6 +9,64 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 10 — 2026-05-23 — eqtb scalar set Phase-B bridge
+
+**Type:** execution (workstream 01).
+
+**Goal:** migrate the small clean `eqtb` scalar set, keeping the
+ownership/alias-bearing members (`eqtb`, `hash`, `prim` arrays,
+`hash_extra`, `eqtb_top`, `hash_top`) out of scope.
+
+**Work done:**
+- Added `EqtbState` under `EngineState` and moved five scalars into it:
+  `hash_used`, `hash_high`, `no_new_control_sequence`, `prim_used`,
+  `cs_count`.
+- Repointed the `globals.rs` accessors at `state::with_state` /
+  `with_state_mut`; removed the raw externs (leaving `hash`,
+  `hash_extra`, `prim`, `eqtb_top`) and the C definitions in
+  `xetex/xetex-ini.c` (leaving `hash`, `hash_extra`, `hash_top`,
+  `eqtb_top`, `prim`).
+- No newtype-worklist rows: all five are plain `int32_t`/`bool` with no
+  semantic C typedef.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 312 → 307.
+- Raw `unsafe { ... }` text-search count: 711 → 701.
+- `globals.rs`: 77 globals now state-backed.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, existing warnings.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+
+**Surprises / gotchas:**
+- `hash_high`, `cs_count`, and `no_new_control_sequence` are read inside
+  `id_lookup` (`src/hash.rs`), but only on the cs-not-found / interning
+  branch — a defined control sequence returns at the "found" branch
+  without touching them. So in steady state they are creation-time /
+  cache-miss reads, not per-token hot like the deferred `cur_chr` /
+  `cur_cmd` tokenizer scalars. Bridging them is acceptable.
+- `hash_extra`/`eqtb_top` (which carry `#[link_name]` init aliases) and
+  the `hash`/`prim`/`eqtb` arrays are interleaved with these scalars in
+  both files and were deliberately left for the ownership-aware `eqtb`
+  array slice.
+- Verified (grep) no non-macOS C reader and no separate `extern`
+  redeclaration in other Rust modules before moving.
+
+**For the next session:**
+- Remaining clean scalar wins are getting sparse: a few more non-hot
+  `scanner` scalars (e.g. `shown_mode`, `mag_set`, `radix`,
+  `expand_depth_count`) and `mem` bookkeeping scalars
+  (`var_used`, `dyn_used`, `lo_mem_max`, `hi_mem_min`, `avail`, `rover`,
+  `mem_end`) — but the `mem` set is tightly coupled to the arena and is
+  better tackled as part of the `Mem` arena move (§5).
+- The big remaining work is the ownership-bearing clusters (`strings`,
+  `fonts` arrays, `shipout` file-handles, the `save_stack`/`save_size`
+  pointer pair, the `eqtb`/`hash`/`prim` arrays) — each needs a single
+  ownership-aware slice that also fixes `tt_cleanup`/`#[link_name]`.
+
 ## Idiom session 9 — 2026-05-23 — save_stack scalar cluster Phase-B bridge
 
 **Type:** execution (workstream 01).
