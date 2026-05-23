@@ -111,7 +111,6 @@ mod raw {
         pub(super) static mut fmem_ptr: i32;
         pub(super) static mut font_ptr: i32;
         pub(super) static mut xdv_buffer: *mut libc::c_char;
-        pub(super) static mut font_params: *mut i32;
         pub(super) static mut font_glue: *mut i32;
         pub(super) static mut param_base: *mut i32;
         // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
@@ -2039,15 +2038,15 @@ pub(crate) fn set_font_mem_size(v: i32) {
 /// Returns `font_params[f]`.
 #[inline]
 pub(crate) fn font_params(f: i32) -> i32 {
-    unsafe { *raw::font_params.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_params[f as usize])
 }
 
 /// Sets `font_params[f] = v`.
 #[inline]
 pub(crate) fn set_font_params(f: i32, v: i32) {
-    unsafe {
-        *raw::font_params.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_params[f as usize] = v;
+    });
 }
 
 /// Returns `font_glue[f]`.

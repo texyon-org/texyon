@@ -154,6 +154,10 @@ pub(crate) struct FontState {
     /// tracked in 01a).
     pub font_size: Vec<i32>,
     pub font_dsize: Vec<i32>,
+    /// Rust-owned font-parameter count table (`font_max + 1` entries).
+    /// Serialized in the format dump. Element type is `font_index` (newtype
+    /// debt tracked in 01a).
+    pub font_params: Vec<i32>,
 }
 
 impl Default for FontState {
@@ -176,6 +180,7 @@ impl Default for FontState {
             font_check: Vec::new(),
             font_size: Vec::new(),
             font_dsize: Vec::new(),
+            font_params: Vec::new(),
         }
     }
 }

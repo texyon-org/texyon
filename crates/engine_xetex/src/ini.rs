@@ -1831,8 +1831,6 @@ extern "C" {
     static mut tre_font_flags: *mut libc::c_char;
     #[link_name = "font_letter_space"]
     static mut tre_font_letter_space: *mut i32;
-    #[link_name = "font_params"]
-    static mut tre_font_params: *mut i32;
     #[link_name = "font_name"]
     static mut tre_font_name: *mut i32;
     #[link_name = "font_area"]
@@ -2281,11 +2279,13 @@ pub unsafe extern "C" fn store_fmt_file() {
             font_ptr() + 1,
         );
     });
-    dump_slice(
-        fmt_out,
-        tre_font_params.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
+    crate::state::with_state(|state| {
+        dump_slice(
+            fmt_out,
+            state.fonts.font_params.as_ptr().add(FONT_BASE as usize),
+            font_ptr() + 1,
+        );
+    });
     dump_slice(
         fmt_out,
         tre_hyphen_char.add(FONT_BASE as usize),
@@ -2832,8 +2832,8 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         ];
         state.fonts.font_size = vec![0i32; font_check_len];
         state.fonts.font_dsize = vec![0i32; font_check_len];
+        state.fonts.font_params = vec![0i32; font_check_len];
     });
-    tre_font_params = xmalloc_array::<i32>(font_max());
     tre_font_name = xmalloc_array::<i32>(font_max());
     tre_font_area = xmalloc_array::<i32>(font_max());
     tre_font_bc = xmalloc_array::<u16>(font_max());
@@ -2877,13 +2877,15 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
             font_ptr() + 1,
         );
     });
-    if !undump_checked_i32(
-        fmt_in,
-        tre_font_params.add(FONT_BASE as usize),
-        font_ptr() + 1,
-        MIN_HALFWORD,
-        MAX_HALFWORD,
-    ) {
+    if !crate::state::with_state_mut(|state| {
+        undump_checked_i32(
+            fmt_in,
+            state.fonts.font_params.as_mut_ptr().add(FONT_BASE as usize),
+            font_ptr() + 1,
+            MIN_HALFWORD,
+            MAX_HALFWORD,
+        )
+    }) {
         bad_format_file();
     }
     undump_slice(
@@ -3523,8 +3525,8 @@ pub unsafe extern "C" fn tt_run_engine(
             ];
             state.fonts.font_size = vec![0i32; font_check_len];
             state.fonts.font_dsize = vec![0i32; font_check_len];
+            state.fonts.font_params = vec![0i32; font_check_len];
         });
-        tre_font_params = xcalloc_array::<i32>(font_max());
         tre_font_name = xcalloc_array::<i32>(font_max());
         tre_font_area = xcalloc_array::<i32>(font_max());
         tre_font_bc = xcalloc_array::<u16>(font_max());
@@ -3643,8 +3645,6 @@ extern "C" {
     static mut tt_cleanup_font_flags: *mut libc::c_void;
     #[link_name = "font_letter_space"]
     static mut tt_cleanup_font_letter_space: *mut libc::c_void;
-    #[link_name = "font_params"]
-    static mut tt_cleanup_font_params: *mut libc::c_void;
     #[link_name = "font_name"]
     static mut tt_cleanup_font_name: *mut libc::c_void;
     #[link_name = "font_area"]
@@ -3754,6 +3754,7 @@ pub unsafe extern "C" fn tt_cleanup() {
         state.fonts.font_check = Vec::new();
         state.fonts.font_size = Vec::new();
         state.fonts.font_dsize = Vec::new();
+        state.fonts.font_params = Vec::new();
     });
     libc::free(tt_cleanup_font_info);
 
@@ -3761,7 +3762,6 @@ pub unsafe extern "C" fn tt_cleanup() {
     libc::free(tt_cleanup_font_layout_engine);
     libc::free(tt_cleanup_font_flags);
     libc::free(tt_cleanup_font_letter_space);
-    libc::free(tt_cleanup_font_params);
     libc::free(tt_cleanup_font_name);
     libc::free(tt_cleanup_font_area);
     libc::free(tt_cleanup_font_bc);
