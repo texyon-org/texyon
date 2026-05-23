@@ -55,13 +55,27 @@ TRIP 2/2, tex-outputs 29/29, crate unit tests 26/26.
 at the second hyphen; `tier1/ligatures_kerning.tex` (the
 `reconstitute/lig-kern` paragraph).
 
-## D2 — `bidi_arabic` segfault — OPEN (pre-existing, unrelated to D1)
+## D2 — `bidi_arabic` segfault — FIXED
 
-`tier1/bidi_arabic.tex` segfaults in the candidate (exit 139, no `.xdv`)
-where the oracle compiles cleanly. **Confirmed pre-existing**: reproduces
-on the build *before* the D1b fix, so it is not a regression from it. The
-corpus harness reports it as `NOXDV` (skipped, not counted as a
-divergence). Next target for the bidi paths.
+`tier1/bidi_arabic.tex` (and any RTL paragraph — a single Arabic word in
+a `\begin{Arabic}` block sufficed) segfaulted in the candidate where the
+oracle compiled cleanly.
+
+**Root cause:** `reverse` (`src/shipout.rs`) read and wrote a glue node's
+glue-spec pointer via `mem[p+1].b32.s1`, but `GLUE_NODE_glue_ptr(p)` is
+`b32.s0` (`b32.s1` is `leader_ptr`, which is `TEX_NULL` for normal glue).
+So `g` came back null and `BOX_width(g)` → `mem[g+1]` dereferenced an
+invalid address. The working `hlist_out`/`vlist_out` glue handlers
+already used `b32.s0`; only the session-114 `reverse` translation had the
+field swapped (read site + the leaders-glue write site).
+
+**Fix:** use `mem_b32s0(p + 1)` for the glue_ptr read and
+`set_mem_b32s0(p + 1, g)` for the leaders write, matching
+`xetex-shipout.c:1555,1603`.
+
+**Result:** `bidi_arabic.tex` compiles; its `.xdv` is byte-identical to
+the oracle. Full corpus `corpus.sh check all` → **639 passed, 0 diverged**
+(bidi_arabic now counted, was NOXDV). TRIP 2/2, tex-outputs 29/29.
 
 ---
 ### (historical) D1 — original combined symptom

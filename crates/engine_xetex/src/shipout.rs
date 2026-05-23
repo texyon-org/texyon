@@ -1828,7 +1828,7 @@ pub unsafe extern "C" fn reverse(
                         _ => add_width = false,
                     },
                     GLUE_NODE => {
-                        let mut g = mem_b32s1(p + 1);
+                        let mut g = mem_b32s0(p + 1);
                         set_rule_wd(mem_b32s1(g + 1) - *cur_g);
 
                         if g_sign != NORMAL {
@@ -1868,7 +1868,7 @@ pub unsafe extern "C" fn reverse(
                                 set_mem_b32s1(g + 1, rule_wd());
                                 set_mem_b32s1(g + 2, 0);
                                 set_mem_b32s1(g + 3, 0);
-                                set_mem_b32s1(p + 1, g);
+                                set_mem_b32s0(p + 1, g);
                             }
                         }
                     }
