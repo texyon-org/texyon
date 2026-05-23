@@ -84,7 +84,6 @@ eight_bits cur_cmd;
 int32_t cur_chr;
 int32_t cur_cs;
 int32_t cur_tok;
-input_state_t *input_stack;
 int32_t input_ptr;
 int32_t max_in_stack;
 input_state_t cur_input;

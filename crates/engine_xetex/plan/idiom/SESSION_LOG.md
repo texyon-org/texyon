@@ -9,6 +9,98 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 16 — 2026-05-23 — input_stack array → Rust-owned Vec
+
+**Type:** execution (workstream 01, ownership-bearing slice).
+
+**Goal:** move the `input_stack` (`input_state_t * == InputState *`) into a
+Rust-owned `Vec<InputState>` on `EngineState.input`. One array, one commit.
+
+**Why input_stack now:** of the three remaining input arrays it is the
+lowest-difficulty — only **two** accessors (`input_stack(k)` full-struct
+copy-out + `set_input_stack(k, v)` full-struct assign), no pointer-escaping
+accessor like `buffer_ptr`/`input_file_ptr`, so the move is purely "index
+the `Vec`". `InputState` already exists as a `#[derive(Copy, Clone)]` struct
+in `globals.rs`, so `Vec<InputState>` derives `Default` (empty vec) and the
+`InputClusterState` still derives `Default` with no hand-written impl. The
+only C reference is its `xetex-ini.c` definition; it is **not** serialized in
+the format dump/undump. (`input_file` and `nest` are left for follow-up:
+`input_file` has a pointer-escaping `input_file_ptr` accessor for `u_open_in`,
+and `nest` has ~12 field-projection accessors.)
+
+**Pre-move grep checks (§11 step 2):** (a) declared `extern input_state_t
+*input_stack;` in `xetex-xetexd.h:503`. `input_state_t` is a struct typedef,
+already mirrored 1:1 by the Rust `InputState` — a compound struct, not a
+scalar semantic typedef, so **no** newtype debt (the type info is preserved
+in the struct, unlike a `selector_t`→`i32` collapse). (b) two
+`link_name = "input_stack"` aliases in `ini.rs` (alloc `tre_input_stack` +
+cleanup `tt_cleanup_input_stack`) → ownership slice. (c) only `xetex-ini.c`
+references it. (d) no foreign-module `extern`/`static mut` redeclaration (the
+only hits were the two `ini.rs` aliases being removed).
+
+**Work done:**
+- Added `input_stack: Vec<crate::globals::InputState>` to `InputClusterState`
+  in `src/state.rs` (`#[derive(Default)]` still covers the struct — empty Vec).
+- Repointed the two accessors in `globals.rs`: `input_stack(k)` /
+  `set_input_stack(k, v)` now index the `Vec` via `with_state`/
+  `with_state_mut` (no `unsafe`). Both keep their `InputState`-valued
+  signatures (the bridge is unchanged).
+- Allocation (`ini.rs`): replaced
+  `tre_input_stack = xmalloc_array::<InputState>(tre_stack_size)` with a
+  `with_state_mut` block writing `vec![<zero InputState>; stack_size + 1]`
+  (matching the former `n+1` shape; `InputState` has no `Default`, so the zero
+  record is written out field-by-field).
+- Cleanup (`tt_cleanup`): dropped `input_stack` (`= Vec::new()`) folded into
+  the existing input cleanup block instead of `libc::free`.
+- Removed both `#[link_name = "input_stack"]` alias decls (alloc + cleanup),
+  the raw extern in `globals.rs`, and the C def in `xetex-ini.c`.
+
+**Newtype debt (§4 check):** element type is `input_state_t`, a struct
+typedef already represented as the Rust `InputState` struct — no type info is
+lost, so **no** worklist row (checked, none needed). Contrast with the prior
+sessions' scalar typedefs (`UnicodeScalar`, `str_number`).
+
+**longjmp / Drop (§7, handled):** identical to sessions 11–15 —
+`EngineState` lives in the `'static` thread-local, so a `longjmp` abort never
+jumps over the `Vec`; `Drop` doesn't run on abort (matches prior C).
+`tt_cleanup` is the normal teardown and now drops the `Vec`.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 298 → 297.
+- Raw `unsafe { ... }` text-search count: 679 → 677.
+- `#[link_name]` aliases in `ini.rs`: −2.
+- 10 Rust-owned arena arrays total (save_stack, param_stack, the 5 session-13
+  line/group stacks, eof_seen, buffer, + input_stack).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2.
+- `cargo test -p tectonic --test engine_rust`: 7/7.
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+- `grep` of `input_stack` in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- Two input arrays remain: `input_file` (`UFILE ** == *mut *mut c_void`) and
+  `nest` (`list_state_record * == *mut ListStateRecord`).
+  - `input_file` is the more involved of the two despite its plain-pointer
+    element: besides `input_file(k)`/`set_input_file(k, v)` it has a
+    pointer-escaping accessor `input_file_ptr(k)` (returns
+    `&input_file[k]` as `*mut *mut UFile` for `u_open_in`) — handle it like
+    `buffer_ptr` (obtain via `as_mut_ptr().add(k)` past the borrow; the
+    thread-local owner never reallocates). Stored as `Vec<*mut c_void>`. Sized
+    `max_in_open + 1`. Not in format dump.
+  - `nest` (`Vec<ListStateRecord>`) has ~12 field-projection accessors
+    (`nest_mode`, `nest_tail`, `set_nest_tail`, `nest_to_cur_list`,
+    `cur_list_to_nest`, …) — more accessors to repoint but no pointer escape.
+    `ListStateRecord` already exists; check it derives/Copy for the zero-init
+    `vec!`. Sized `nest_size + 1`. Not in format dump. `grp_stack`-style
+    fields may carry semantic typedefs — check per-field, though as a struct
+    element the array itself is no debt (same as input_stack here).
+- After these two, all `input`-cluster arrays are Rust-owned. Then `strings`
+  (`str_start`/`str_pool`) — but those **are** in the format dump/undump, so
+  that slice must reconcile the load/dump paths.
+
 ## Idiom session 15 — 2026-05-23 — buffer array → Rust-owned Vec
 
 **Type:** execution (workstream 01, ownership-bearing slice).

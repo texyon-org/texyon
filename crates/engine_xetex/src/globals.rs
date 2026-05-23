@@ -163,8 +163,8 @@ mod raw {
         // Maximum font id (xetex-xetexd.h:406).
         pub(super) static mut font_max: i32;
 
-        // Input state stack (xetex-xetexd.h:503–504; layout mirrors InputState).
-        pub(super) static mut input_stack: *mut super::InputState;
+        // Input state stack ownership moved to EngineState.input.input_stack
+        // (Rust-owned Vec<InputState>); see src/state.rs.
         pub(super) static mut input_ptr: i32;
         // Maximum input_ptr ever reached (xetex-xetexd.h:505).
         pub(super) static mut max_in_stack: i32;
@@ -3010,16 +3010,14 @@ pub(crate) fn set_cur_mark(k: usize, v: i32) {
 /// Copy `input_stack[k]` (full struct copy; xetex-xetexd.h:503).
 #[inline]
 pub(crate) fn input_stack(k: i32) -> InputState {
-    // SAFETY: see module-level doc. Caller ensures k <= input_ptr.
-    unsafe { *raw::input_stack.offset(k as isize) }
+    crate::state::with_state(|s| s.input.input_stack[k as usize])
 }
 /// Write `input_stack[k] = v` (full struct assign).
 #[inline]
 pub(crate) fn set_input_stack(k: i32, v: InputState) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        *raw::input_stack.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.input_stack[k as usize] = v;
+    });
 }
 
 /// Returns `input_ptr` — current top of the input-stack (xetex-xetexd.h:504).

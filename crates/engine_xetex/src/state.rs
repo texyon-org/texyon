@@ -44,6 +44,14 @@ pub(crate) struct InputClusterState {
     /// serialized in format dump/undump. Element type is `UnicodeScalar`
     /// (`i32`) — plain int, no newtype debt.
     pub buffer: Vec<i32>,
+    /// Rust-owned input stack (`stack_size + 1` records, matching the former
+    /// `xmalloc_array` shape). Allocated at engine init and released by
+    /// `tt_cleanup`; never reallocated during a run. Replaces the former
+    /// C-`malloc`'d `input_stack` pointer. Not serialized in format
+    /// dump/undump. Element type is the `InputState` struct (mirrors C
+    /// `input_state_t`) — a compound struct, not a scalar typedef, no
+    /// newtype debt.
+    pub input_stack: Vec<crate::globals::InputState>,
 }
 
 #[derive(Default)]

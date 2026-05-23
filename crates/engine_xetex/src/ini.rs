@@ -1815,8 +1815,6 @@ extern "C" {
     static mut tre_expand_depth: i32;
     #[link_name = "nest"]
     static mut tre_nest: *mut crate::mem_types::ListStateRecord;
-    #[link_name = "input_stack"]
-    static mut tre_input_stack: *mut crate::globals::InputState;
     #[link_name = "input_file"]
     static mut tre_input_file: *mut *mut libc::c_void;
     #[link_name = "hyph_word"]
@@ -3236,8 +3234,27 @@ pub unsafe extern "C" fn tt_run_engine(
             ];
         });
     }
-    tre_input_stack = xmalloc_array::<crate::globals::InputState>(tre_stack_size);
     tre_input_file = xmalloc_array::<*mut libc::c_void>(tre_max_in_open);
+    {
+        // Rust-owned input stack (`stack_size + 1` records, matching the former
+        // `xmalloc_array` shape). Allocated fresh each run; released by
+        // `tt_cleanup`. Never reallocated during a run.
+        let n = (tre_stack_size as usize) + 1;
+        crate::state::with_state_mut(|s| {
+            s.input.input_stack = vec![
+                crate::globals::InputState {
+                    state: 0,
+                    index: 0,
+                    start: 0,
+                    loc: 0,
+                    limit: 0,
+                    name: 0,
+                    synctex_tag: 0,
+                };
+                n
+            ];
+        });
+    }
     {
         // Rust-owned input line/group stacks, each `max_in_open + 1` words
         // (matching the former `xmalloc_array` shape). Allocated fresh each
@@ -3575,8 +3592,6 @@ extern "C" {
     static mut tt_cleanup_font_used: *mut libc::c_void;
     #[link_name = "nest"]
     static mut tt_cleanup_nest: *mut libc::c_void;
-    #[link_name = "input_stack"]
-    static mut tt_cleanup_input_stack: *mut libc::c_void;
     #[link_name = "input_file"]
     static mut tt_cleanup_input_file: *mut libc::c_void;
     #[link_name = "hyph_word"]
@@ -3698,11 +3713,11 @@ pub unsafe extern "C" fn tt_cleanup() {
 
     // Free the big allocated arrays
     libc::free(tt_cleanup_nest);
-    libc::free(tt_cleanup_input_stack);
     libc::free(tt_cleanup_input_file);
-    // Release the Rust-owned macro-parameter, input line/group, and buffer
-    // arrays (were C `malloc`'d arrays).
+    // Release the Rust-owned input, macro-parameter, input line/group, and
+    // buffer arrays (were C `malloc`'d arrays).
     crate::state::with_state_mut(|s| {
+        s.input.input_stack = Vec::new();
         s.input.param_stack = Vec::new();
         s.input.line_stack = Vec::new();
         s.input.grp_stack = Vec::new();
