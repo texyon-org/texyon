@@ -330,9 +330,6 @@ mod raw {
         pub(super) static mut space_class: i32;
         pub(super) static mut prev_class: i32;
         // Hyphenation trie and exception tables (xetex-xetexd.h:635-645).
-        pub(super) static mut hyph_word: *mut i32;
-        pub(super) static mut hyph_list: *mut i32;
-        pub(super) static mut hyph_link: *mut u16;
         // Currently assembled box (xetex-xetexd.h:687; node index = i32).
         pub(super) static mut cur_box: i32;
         // Token saved by \afterassignment (xetex-xetexd.h:688).
@@ -4120,33 +4117,33 @@ pub(crate) fn set_max_op_used(v: u16) {
 }
 #[inline]
 pub(crate) fn hyph_word_entry(k: i32) -> i32 {
-    unsafe { *raw::hyph_word.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.hyph_word[k as usize])
 }
 #[inline]
 pub(crate) fn hyph_list_entry(k: i32) -> i32 {
-    unsafe { *raw::hyph_list.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.hyph_list[k as usize])
 }
 #[inline]
 pub(crate) fn hyph_link_entry(k: i32) -> u16 {
-    unsafe { *raw::hyph_link.offset(k as isize) }
+    crate::state::with_state(|state| state.hyph.hyph_link[k as usize])
 }
 #[inline]
 pub(crate) fn set_hyph_word_entry(k: i32, v: i32) {
-    unsafe {
-        *raw::hyph_word.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyph_word[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn set_hyph_list_entry(k: i32, v: i32) {
-    unsafe {
-        *raw::hyph_list.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyph_list[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn set_hyph_link_entry(k: i32, v: u16) {
-    unsafe {
-        *raw::hyph_link.offset(k as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.hyph.hyph_link[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn hyph_count() -> i32 {

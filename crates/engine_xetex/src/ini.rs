@@ -1808,12 +1808,6 @@ extern "C" {
     static mut tre_hash_extra: i32;
     #[link_name = "expand_depth"]
     static mut tre_expand_depth: i32;
-    #[link_name = "hyph_word"]
-    static mut tre_hyph_word: *mut i32;
-    #[link_name = "hyph_list"]
-    static mut tre_hyph_list: *mut i32;
-    #[link_name = "hyph_link"]
-    static mut tre_hyph_link: *mut u16;
     #[link_name = "mem"]
     static mut tre_mem: *mut crate::mem_types::MemoryWord;
     #[link_name = "hash"]
@@ -3281,9 +3275,18 @@ pub unsafe extern "C" fn tt_run_engine(
             s.input.param_stack = vec![0i32; n];
         });
     }
-    tre_hyph_word = xmalloc_array::<i32>(tre_hyph_size);
-    tre_hyph_list = xmalloc_array::<i32>(tre_hyph_size);
-    tre_hyph_link = xmalloc_array::<u16>(tre_hyph_size);
+    {
+        // Rust-owned hyphenation-exception table (`hyph_size + 1` words,
+        // matching the former `xmalloc_array` shape). Allocated fresh each
+        // run; released by `tt_cleanup`. Serialized in format dump/undump
+        // through the normal accessors.
+        let n = (tre_hyph_size as usize) + 1;
+        crate::state::with_state_mut(|s| {
+            s.hyph.hyph_word = vec![0i32; n];
+            s.hyph.hyph_list = vec![0i32; n];
+            s.hyph.hyph_link = vec![0u16; n];
+        });
+    }
 
     if in_initex_mode() {
         tre_mem = xmalloc_array::<crate::mem_types::MemoryWord>(MEM_TOP + 1);
@@ -3600,12 +3603,6 @@ extern "C" {
     static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
     #[link_name = "font_used"]
     static mut tt_cleanup_font_used: *mut libc::c_void;
-    #[link_name = "hyph_word"]
-    static mut tt_cleanup_hyph_word: *mut libc::c_void;
-    #[link_name = "hyph_list"]
-    static mut tt_cleanup_hyph_list: *mut libc::c_void;
-    #[link_name = "hyph_link"]
-    static mut tt_cleanup_hyph_link: *mut libc::c_void;
     #[link_name = "native_text"]
     static mut tt_cleanup_native_text: *mut libc::c_void;
     #[link_name = "tt_cleanup_free_yhash"]
@@ -3723,9 +3720,11 @@ pub unsafe extern "C" fn tt_cleanup() {
         s.input.eof_seen = Vec::new();
         s.input.buffer = Vec::new();
     });
-    libc::free(tt_cleanup_hyph_word);
-    libc::free(tt_cleanup_hyph_list);
-    libc::free(tt_cleanup_hyph_link);
+    crate::state::with_state_mut(|s| {
+        s.hyph.hyph_word = Vec::new();
+        s.hyph.hyph_list = Vec::new();
+        s.hyph.hyph_link = Vec::new();
+    });
 
     // initialize_more_variables @ 3277
     libc::free(tt_cleanup_native_text);

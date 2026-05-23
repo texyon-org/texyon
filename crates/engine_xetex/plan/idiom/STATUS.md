@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 27 (2026-05-23).
+Last updated: idiom session 28 (2026-05-23).
 
 ## How to read this file
 
@@ -247,6 +247,15 @@ least-coupled non-`misc` clusters:
     state-derived pointers; `tt_cleanup` resets the vectors. Removed 9 raw
     externs, 12 `src/ini.rs` link aliases, and the C definitions from
     `xetex-ini.c`. Newtype debts recorded for the semantic typedef arrays.
+-   **Hyphenation exception arrays move (session 28):** the remaining 3
+    dynamically allocated `hyph` exception arrays (`hyph_word`, `hyph_list`,
+    `hyph_link`) moved from C globals / `malloc` storage into Rust-owned
+    `Vec`s on `EngineState.hyph`. Init alloc now sizes all 3 as
+    `hyph_size + 1`; format load/dump continues through the accessor layer;
+    `tt_cleanup` resets the vectors. Removed 3 raw externs, 6 `src/ini.rs`
+    link aliases, and the C definitions from `xetex-ini.c`. Newtype debts
+    recorded for `hyph_word[]` and `hyph_link[]`; `hyph_list[]` is plain
+    `int32_t *`.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -255,12 +264,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 217 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 214 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 816 total / 80 state-backed scalars/arrays + 34 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, and 9 dynamic trie arrays) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 816 total / 83 state-backed scalars/arrays + 37 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, and 3 hyph exception arrays) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 519 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 513 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -360,11 +369,15 @@ the snippets in `00-overview.md` / the workstream plans.
     fixed-size `Vec`s on `EngineState.hyph`. The 9 dynamically allocated
     trie arrays were moved in session 27 as Rust-owned `Vec`s on
     `EngineState.hyph`.
-    Options remaining:
-    (a) the remaining dynamically allocated `hyph` exception arrays
-    (`hyph_word`, `hyph_list`, `hyph_link`), which are allocated at init or
-    undump and cleaned up later, very similar to the strings cluster but with
-    more aliases.
+    The remaining dynamically allocated `hyph` exception arrays
+    (`hyph_word`, `hyph_list`, `hyph_link`) were moved in session 28. The
+    `hyph` cluster's scalar, fixed-array, dynamic-trie-array, and exception
+    array state is now Rust-owned.
+    Next, pick the next least-coupled non-`misc` cluster from
+    `01a-global-inventory.md`. Good candidates are a carefully bounded
+    `fonts` ownership/scalar subgroup or an ownership-aware `eqtb`/`mem`
+    slice; avoid hot tokenizer/main-loop scratch state and do not split the
+    `mem` bookkeeping scalars from the `Mem` arena move.
     For each symbol moved, use `01a-global-inventory.md` for C defs /
     cleanup aliases / accessors, and add a worklist row for any
     semantic-typed field (§4 rule).

@@ -9,6 +9,67 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 28 — 2026-05-23 — hyph exception arrays → HyphState Vecs
+
+**Type:** execution (workstream 01, Phase-B ownership slice).
+
+**Goal:** move the remaining dynamically allocated `hyph` exception arrays
+(`hyph_word`, `hyph_list`, `hyph_link`) out of C globals and into
+Rust-owned `Vec`s on `EngineState.hyph`. One coherent slice, one commit.
+
+**Why this slice:** session 27 moved the dynamic trie arrays and handed off
+the exception arrays as the next `hyph` group. These three arrays share init
+allocation, format dump/undump participation through accessors, and cleanup
+aliases, so they form one ownership slice.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `hyph_word` is `str_number *`, `hyph_list` is `int32_t *`,
+  and `hyph_link` is `hyph_pointer *`.
+- (b) cleanup/link aliases: init aliases and cleanup aliases existed for all
+  3 arrays in `src/ini.rs`; all were removed/replaced in this slice.
+- (c) C readers: only `xetex/xetex-ini.c`.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs`
+  aliases; no other redeclarations.
+
+**Work done:**
+- Added `hyph_word`, `hyph_list`, and `hyph_link` to `HyphState` as `Vec`s.
+  Init allocation now sizes all 3 as `hyph_size + 1`, matching the former
+  `xmalloc_array(hyph_size)` shape.
+- Repointed all 6 exception-table accessors in `src/globals.rs` to safe
+  `with_state` / `with_state_mut` indexing.
+- Replaced `tt_cleanup` frees for the three arrays with vector resets.
+- Removed the 3 raw externs from `globals.rs` `mod raw`, the 6
+  `#[link_name]` aliases from `src/ini.rs`, and the 3 C definitions from
+  `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** rows added for `hyph_word[]`
+(`str_number *` → `Vec<StrNumber>`) and `hyph_link[]`
+(`hyph_pointer *` → `Vec<HyphPointer>`). `hyph_list[]` is plain
+`int32_t *`, so no row.
+
+**longjmp / Drop (§7):** handled by the established arena pattern. The
+owners live in the `'static` thread-local `EngineState`; abort paths do not
+jump over stack-owned Rust storage, and cleanup resets the vectors.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 217 → 214 (−3).
+- Raw `unsafe { ... }` text-search count: 519 → 513 (−6, all 6 array
+  accessor bodies became fully safe).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of the 3 symbols in `xetex/*.c` (minus macos): empty.
+
+**For the next session:**
+- The practical `hyph` cluster moves are complete: scalars, fixed arrays,
+  dynamic trie arrays, and exception arrays are Rust-owned.
+- Pick the next least-coupled non-`misc` cluster from
+  `01a-global-inventory.md`. Likely candidates are a bounded `fonts`
+  ownership/scalar subgroup or an ownership-aware `eqtb`/`mem` slice. Keep
+  avoiding hot tokenizer/main-loop scratch state, and keep `mem` bookkeeping
+  scalars with the eventual `Mem` arena move.
+
 ## Idiom session 27 — 2026-05-23 — hyph dynamic trie arrays → HyphState Vecs
 
 **Type:** execution (workstream 01, Phase-B ownership slice).

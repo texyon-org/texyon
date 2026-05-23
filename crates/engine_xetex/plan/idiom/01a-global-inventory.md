@@ -539,6 +539,8 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `trie_l[]` | `hyph` | `trie_pointer *` | `Vec<TrieIndex>` | session 27 | pending |
 | `trie_r[]` | `hyph` | `trie_pointer *` | `Vec<TrieIndex>` | session 27 | pending |
 | `trie_hash[]` | `hyph` | `trie_pointer *` | `Vec<TrieIndex>` | session 27 | pending |
+| `hyph_word[]` | `hyph` | `str_number *` | `Vec<StrNumber>` | session 28 | pending |
+| `hyph_link[]` | `hyph` | `hyph_pointer *` | `Vec<HyphPointer>` | session 28 | pending |
 
 
 (`input` session-13 move of the line/group stacks: `line_stack` and

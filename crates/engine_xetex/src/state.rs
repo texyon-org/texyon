@@ -307,6 +307,9 @@ pub(crate) struct HyphState {
     pub trie_r: Vec<i32>,
     pub trie_hash: Vec<i32>,
     pub trie_taken: Vec<bool>,
+    pub hyph_word: Vec<i32>,
+    pub hyph_list: Vec<i32>,
+    pub hyph_link: Vec<u16>,
 }
 
 impl Default for HyphState {
@@ -357,6 +360,9 @@ impl Default for HyphState {
             trie_r: Vec::new(),
             trie_hash: Vec::new(),
             trie_taken: Vec::new(),
+            hyph_word: Vec::new(),
+            hyph_list: Vec::new(),
+            hyph_link: Vec::new(),
         }
     }
 }
