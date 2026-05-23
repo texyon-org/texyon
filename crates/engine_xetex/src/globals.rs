@@ -244,8 +244,9 @@ mod raw {
         // Declared as *mut c_void to avoid a cyclic type dependency with io.rs.
         pub(super) static mut read_file: [*mut libc::c_void; 16];
 
-        // Save-stack (xetex-xetexd.h:492–494).
-        pub(super) static mut save_stack: *mut crate::mem_types::MemoryWord;
+        // Save-stack (xetex-xetexd.h:492–494). The `save_stack` array itself
+        // is Rust-owned (`EngineState.save_stack.data`); only the capacity
+        // `save_size` remains a C global here.
         pub(super) static mut save_size: i32;
         // XEQ_LEVEL array — level at which each eqtb entry was defined
         // (xetex-xetexd.h:733; size = EQTB_SIZE - INT_BASE + 1 = 1114730).
@@ -1975,62 +1976,66 @@ pub(crate) fn save_size() -> i32 {
 /// Read `save_stack[k].b32.s1`.
 #[inline]
 pub(crate) fn save_stack_b32s1(k: i32) -> i32 {
-    unsafe { (*raw::save_stack.offset(k as isize)).b32.s1 }
+    // SAFETY: union projection; the entry was last written via the b32 view.
+    crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b32.s1 })
 }
 /// Read `save_stack[k].b32.s0`.
 #[inline]
 pub(crate) fn save_stack_b32s0(k: i32) -> i32 {
-    unsafe { (*raw::save_stack.offset(k as isize)).b32.s0 }
+    // SAFETY: union projection; the entry was last written via the b32 view.
+    crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b32.s0 })
 }
 /// Write `save_stack[k].b32.s1 = v`.
 #[inline]
 pub(crate) fn set_save_stack_b32s1(k: i32, v: i32) {
-    unsafe {
-        (*raw::save_stack.offset(k as isize)).b32.s1 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.save_stack.data[k as usize].b32.s1 = v;
+    });
 }
 /// Write `save_stack[k].b32.s0 = v`.
 #[inline]
 pub(crate) fn set_save_stack_b32s0(k: i32, v: i32) {
-    unsafe {
-        (*raw::save_stack.offset(k as isize)).b32.s0 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.save_stack.data[k as usize].b32.s0 = v;
+    });
 }
 /// Read `save_stack[k].b16.s1`.
 #[inline]
 pub(crate) fn save_stack_b16s1(k: i32) -> u16 {
-    unsafe { (*raw::save_stack.offset(k as isize)).b16.s1 }
+    // SAFETY: union projection; the entry was last written via the b16 view.
+    crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b16.s1 })
 }
 /// Read `save_stack[k].b16.s0`.
 #[inline]
 pub(crate) fn save_stack_b16s0(k: i32) -> u16 {
-    unsafe { (*raw::save_stack.offset(k as isize)).b16.s0 }
+    // SAFETY: union projection; the entry was last written via the b16 view.
+    crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b16.s0 })
 }
 /// Write `save_stack[k].b16.s1 = v`.
 #[inline]
 pub(crate) fn set_save_stack_b16s1(k: i32, v: u16) {
-    unsafe {
-        (*raw::save_stack.offset(k as isize)).b16.s1 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.save_stack.data[k as usize].b16.s1 = v;
+    });
 }
 /// Write `save_stack[k].b16.s0 = v`.
 #[inline]
 pub(crate) fn set_save_stack_b16s0(k: i32, v: u16) {
-    unsafe {
-        (*raw::save_stack.offset(k as isize)).b16.s0 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.save_stack.data[k as usize].b16.s0 = v;
+    });
 }
 /// Copy the full MemoryWord at `save_stack[k]`.
 #[inline]
 pub(crate) fn save_stack_word(k: i32) -> crate::mem_types::MemoryWord {
-    unsafe { *raw::save_stack.offset(k as isize) }
+    crate::state::with_state(|s| s.save_stack.data[k as usize])
 }
 /// Copy a full MemoryWord to `save_stack[k]`.
 #[inline]
 pub(crate) fn set_save_stack_word(k: i32, w: crate::mem_types::MemoryWord) {
-    unsafe {
-        *raw::save_stack.offset(k as isize) = w;
-    }
+    crate::state::with_state_mut(|s| {
+        s.save_stack.data[k as usize] = w;
+    });
 }
 #[inline]
 pub(crate) fn cur_level() -> u16 {

@@ -80,7 +80,6 @@ int32_t hash_extra;
 int32_t hash_top;
 int32_t eqtb_top;
 b32x2 prim[PRIM_SIZE + 1];
-memory_word *save_stack;
 int32_t mag_set;
 eight_bits cur_cmd;
 int32_t cur_chr;

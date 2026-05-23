@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 10 (2026-05-23).
+Last updated: idiom session 11 (2026-05-23).
 
 ## How to read this file
 
@@ -96,6 +96,14 @@ least-coupled non-`misc` clusters:
     `hash_extra`/`eqtb_top`/`hash_top` stay behind for the ownership-
     aware `eqtb` array slice. Raw externs and C defs removed; no cleanup
     aliases touched. No newtype debts (all plain int/bool).
+-   **First ownership move:** the `save_stack` *array* moved from a
+    C-`malloc`'d pointer into a Rust-owned `Vec<MemoryWord>` on
+    `EngineState.save_stack.data`. Accessors index the `Vec` (safe,
+    bounds-checked; only the `MemoryWord` union projection stays
+    `unsafe`); `ini.rs` allocates the `Vec` at init and `tt_cleanup`
+    drops it; both `#[link_name="save_stack"]` aliases, the raw extern,
+    and the C def were removed in the same commit. `save_size` capacity
+    stays a C global. Establishes the §5 arena pattern.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -104,12 +112,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 307 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 306 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 77 state-backed globals |
+| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 77 state-backed scalars + 1 Rust-owned arena (save_stack) |
 | `#[no_mangle]` exports | 576 | boundary-only | 576 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 701 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 695 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -159,6 +167,13 @@ the snippets in `00-overview.md` / the workstream plans.
     forever. Worklist seeded retroactively for `selector`/`history`/etc.
     Goal is *more* type safety, recovered on a tracked schedule — not
     less.
+-   **2026-05-23** — Arena ownership pattern established on `save_stack`
+    (session 11): array storage becomes a `Vec<T>` on `EngineState`,
+    allocated at init and dropped by `tt_cleanup`; accessors index the
+    `Vec`. longjmp/Drop (§7) is handled by keeping the owner in the
+    `'static` thread-local, so abort never jumps over live storage and
+    `Drop`-on-abort is intentionally skipped (matches prior behavior).
+    Reuse this exact shape for the remaining arena arrays.
 
 ## Next action for a fresh session
 
@@ -173,13 +188,20 @@ the snippets in `00-overview.md` / the workstream plans.
     thread-local without benchmarking — they are read on nearly every
     `get_next`/`get_token`, and a `RefCell` borrow per access could
     regress performance. Prefer threading those in Phase C.
-    Ownership-bearing options remain: (a) `strings` (`str_start` /
-    `str_pool` allocation, cleanup aliases, format load/dump in one
-    slice); (b) remaining `shipout` file-handle/pointer state
-    (`rust_stdout`, `log_file`, `write_file`, `write_open`,
-    `current_diagnostic`). For each symbol moved, use
-    `01a-global-inventory.md` for C defs / cleanup aliases / accessors,
-    and add a worklist row for any semantic-typed field (§4 rule).
+    The arena-ownership pattern is now proven on `save_stack`
+    (session 11). Ownership-bearing options remain, in rough difficulty
+    order: (a) the `input` cluster arrays (`input_stack`, `nest`,
+    `param_stack`, and the per-`max_in_open` stacks) — multiple arrays
+    but the same no-format-dump property as `save_stack`, so the
+    session-11 shape applies directly; (b) `strings` (`str_start` /
+    `str_pool`), which **are** serialized in format dump/undump, so that
+    slice must also reconcile the load/dump paths; (c) remaining
+    `shipout` file-handle state (`rust_stdout` has a cleanup alias;
+    `write_file`/`write_open` are inline arrays movable like scalars;
+    `current_diagnostic` is C-defined in `xetex-output.c`). For each
+    symbol moved, use `01a-global-inventory.md` for C defs / cleanup
+    aliases / accessors, and add a worklist row for any semantic-typed
+    field (§4 rule).
 2.  The `config` bridge pattern in `src/state.rs` is intentionally small:
     keep `with_state` / `with_state_mut` borrows to single-field
     read/write closures and avoid calling translated engine code while a

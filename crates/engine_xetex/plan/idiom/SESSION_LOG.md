@@ -9,6 +9,83 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 11 — 2026-05-23 — save_stack arena → Rust-owned Vec (first ownership move)
+
+**Type:** execution (workstream 01, first ownership-bearing slice).
+
+**Goal:** move the `save_stack` array out of C `malloc`/`free` ownership
+into a Rust-owned `Vec<MemoryWord>` on `EngineState`, establishing the
+arena-ownership pattern (§5/§7) on the smallest self-contained allocated
+array before tackling `strings`/`eqtb`/`fonts`.
+
+**Why save_stack first:** single fixed-capacity array (`save_size + 1`
+words), one allocation site, one `tt_cleanup` free, two `#[link_name]`
+aliases, and — crucially — **not** serialized in the format dump/undump
+(the save stack is empty at `\dump`), so there is no load/dump path to
+reconcile.
+
+**Work done:**
+- Added `data: Vec<MemoryWord>` to `SaveStackState` (`#[derive(Default)]`
+  still holds: `Vec` defaults to empty).
+- Repointed the 10 `save_stack_*` accessors in `globals.rs` to index the
+  `Vec` via `state::with_state`. The only remaining `unsafe` is the
+  `MemoryWord` union projection (per §5); the `Vec` index is safe and
+  bounds-checked.
+- Allocation (`src/ini.rs`): replaced the
+  `xmalloc_array::<MemoryWord>(save_size)` call with a zeroed
+  `vec![MemoryWord{..0}; save_size + 1]` written into `EngineState`
+  (matching the old `n+1` element shape). C `xmalloc_array` left
+  uninitialized; Rust zero-inits, which is parity-safe because TeX writes
+  every save-stack slot before reading it.
+- Cleanup (`tt_cleanup`): removed `libc::free(save_stack)` and instead
+  drops the `Vec` (`= Vec::new()`), releasing the arena between runs.
+- Removed both `#[link_name = "save_stack"]` aliases (the allocation
+  alias and the cleanup-free alias), the `globals.rs` raw extern, and the
+  `memory_word *save_stack;` C definition. `save_size` stays a C global
+  (still aliased/used) — only the array moved.
+
+**longjmp / Drop (the §7 hazard, handled):** `EngineState` lives in the
+`'static` thread-local, so a `longjmp` on the abort path does not jump
+over the `Vec`'s storage (no use-after-free); its `Drop` simply does not
+run on abort, which matches the pre-existing behavior (the C array was
+also never freed on abort). `tt_cleanup` remains the explicit teardown
+on the normal path and now drops the `Vec` instead of `free`-ing a C
+pointer.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 307 → 306.
+- Raw `unsafe { ... }` text-search count: 701 → 695.
+- `#[link_name]` aliases in `ini.rs`: −2.
+- First Rust-owned arena array (no scalar-count change).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, existing warnings.
+- `cargo test -p tectonic --test tex-outputs`: 29/29.
+- `cargo test -p tectonic --test trip`: 2/2 (exercises save/restore
+  heavily — the key check for this slice).
+- `cargo test -p tectonic --test engine_rust`: 7/7 (incl. save_restore).
+- `cargo test -p tectonic --test latex_goldens`: 4/4.
+
+**Surprises / gotchas:**
+- `xmalloc_array(n)` allocates `n + 1` elements (`src/ini.rs:1746`); the
+  `Vec` must match that inclusive size or off-by-one indexing breaks.
+- The save-stack arena is allocated unconditionally in the common engine
+  init block (one site), not split across initex/format-load paths like
+  `mem`, which simplified the move.
+- `MemoryWord` is a `Copy` union with no `Default`; build the zero word
+  explicitly as `MemoryWord { b32: B32x2 { s0: 0, s1: 0 } }` for `vec!`.
+
+**For the next session:**
+- The arena-ownership pattern is now proven. Next ownership targets, in
+  rough difficulty order: the `input` cluster arrays (`input_stack`,
+  `nest`, `param_stack`, the per-`max_in_open` stacks — several arrays,
+  same no-dump property as save_stack), then `strings`
+  (`str_pool`/`str_start`, which **are** in format dump/undump), then
+  `fonts` arrays, then the big `mem`/`eqtb` arenas (§5).
+- Reuse exactly this shape: `Vec` field, accessors index it, allocation
+  writes the `Vec`, `tt_cleanup` drops it, remove aliases + raw extern +
+  C def in the same commit.
+
 ## Idiom session 10 — 2026-05-23 — eqtb scalar set Phase-B bridge
 
 **Type:** execution (workstream 01).

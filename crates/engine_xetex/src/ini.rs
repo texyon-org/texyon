@@ -1817,8 +1817,6 @@ extern "C" {
     static mut tre_buffer: *mut i32;
     #[link_name = "nest"]
     static mut tre_nest: *mut crate::mem_types::ListStateRecord;
-    #[link_name = "save_stack"]
-    static mut tre_save_stack: *mut crate::mem_types::MemoryWord;
     #[link_name = "input_stack"]
     static mut tre_input_stack: *mut crate::globals::InputState;
     #[link_name = "input_file"]
@@ -3230,7 +3228,20 @@ pub unsafe extern "C" fn tt_run_engine(
 
     tre_buffer = xmalloc_array::<i32>(tre_buf_size);
     tre_nest = xmalloc_array::<crate::mem_types::ListStateRecord>(tre_nest_size);
-    tre_save_stack = xmalloc_array::<crate::mem_types::MemoryWord>(tre_save_size);
+    {
+        // Rust-owned save-stack arena (`save_size + 1` words, matching the
+        // former `xmalloc_array` shape). Allocated fresh each run; released by
+        // `tt_cleanup`. Never reallocated during a run.
+        let n = (tre_save_size as usize) + 1;
+        crate::state::with_state_mut(|s| {
+            s.save_stack.data = vec![
+                crate::mem_types::MemoryWord {
+                    b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
+                };
+                n
+            ];
+        });
+    }
     tre_input_stack = xmalloc_array::<crate::globals::InputState>(tre_stack_size);
     tre_input_file = xmalloc_array::<*mut libc::c_void>(tre_max_in_open);
     tre_line_stack = xmalloc_array::<i32>(tre_max_in_open);
@@ -3557,8 +3568,6 @@ extern "C" {
     static mut tt_cleanup_buffer: *mut libc::c_void;
     #[link_name = "nest"]
     static mut tt_cleanup_nest: *mut libc::c_void;
-    #[link_name = "save_stack"]
-    static mut tt_cleanup_save_stack: *mut libc::c_void;
     #[link_name = "input_stack"]
     static mut tt_cleanup_input_stack: *mut libc::c_void;
     #[link_name = "input_file"]
@@ -3689,10 +3698,14 @@ pub unsafe extern "C" fn tt_cleanup() {
         }
     }
 
+    // Release the Rust-owned save-stack arena (was a C `malloc`'d array).
+    crate::state::with_state_mut(|s| {
+        s.save_stack.data = Vec::new();
+    });
+
     // Free the big allocated arrays
     libc::free(tt_cleanup_buffer);
     libc::free(tt_cleanup_nest);
-    libc::free(tt_cleanup_save_stack);
     libc::free(tt_cleanup_input_stack);
     libc::free(tt_cleanup_input_file);
     libc::free(tt_cleanup_line_stack);

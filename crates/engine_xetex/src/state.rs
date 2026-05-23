@@ -28,6 +28,10 @@ pub(crate) struct SaveStackState {
     pub cur_level: u16,
     pub cur_group: u8,
     pub cur_boundary: i32,
+    /// Rust-owned save-stack arena (`save_size + 1` words). Allocated at
+    /// engine init and released by `tt_cleanup`; never reallocated during a
+    /// run. Replaces the former C-`malloc`'d `save_stack` pointer.
+    pub data: Vec<crate::mem_types::MemoryWord>,
 }
 
 #[derive(Default)]
