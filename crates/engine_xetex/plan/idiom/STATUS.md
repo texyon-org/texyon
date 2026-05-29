@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 49 (2026-05-29).
+Last updated: 2026-05-30 (added workstream 06; last execution = session 49, 2026-05-29).
 
 ## How to read this file
 
@@ -36,6 +36,7 @@ A workstream plan moves through these construction states:
 | 03 | `03-deunsafe-ffi.md` | PLANNED | De-unsafe + FFI teardown. Mostly falls out of 01. |
 | 04 | `04-clippy.md` | PLANNED | Cheap clippy wins now; unsafe-block bucket after 01/03. |
 | 05 | `05-errors-and-misc.md` | PLANNED | Error-handling shape, dead-comment cleanup, longjmp/Drop. Partly optional. |
+| 06 | `06-constants.md` | DRAFTED | Magic-number / duplicated-const cleanup into a shared computed `consts.rs`. Phase A (centralize 193 cross-module dup consts) is low-risk and independent; Phase B (call-site literal sweep) rides Phase C. Not covered by 01–05; clippy can't catch it. |
 
 ## Execution
 
@@ -534,6 +535,17 @@ the snippets in `00-overview.md` / the workstream plans.
     `'static` thread-local, so abort never jumps over live storage and
     `Drop`-on-abort is intentionally skipped (matches prior behavior).
     Reuse this exact shape for the remaining arena arrays.
+-   **2026-05-30** — Added **workstream 06 (constants & magic numbers)**,
+    `06-constants.md`. A measured gap not covered by 01–05 (and invisible
+    to clippy): **193 distinct `const`s are duplicated across 2+ modules**
+    (`INT_BASE` ×16, `MAX_HALFWORD` ×12, …), and region bases are stored
+    as opaque literals where the WEB computes them. Two phases: **A**
+    centralize the duplicated cross-module consts into a shared computed
+    `src/consts.rs` (low-risk, value-preserving, do independently now);
+    **B** sweep call-site literals module-by-module **as Phase C threads
+    each module**, so literals that typed accessors will absorb are not
+    named prematurely. Hard rule: no value may change — static assertions
+    pin every computed base; TRIP + format goldens are the guard.
 
 ## Next action for a fresh session
 
