@@ -104,8 +104,6 @@ mod raw {
         // name_length16: number of UTF-16 code units in name_of_file16.
         pub(super) static mut name_length16: i32;
 
-        // Font name table (xetex-xetexd.h:562; str_number = i32).
-        pub(super) static mut font_name: *mut i32;
         // Font memory tables (xetex-xetexd.h:555–590).
         pub(super) static mut font_info: *mut MemoryWord;
         pub(super) static mut fmem_ptr: i32;
@@ -240,8 +238,6 @@ mod raw {
         pub(super) static mut disc_ptr: [i32; 4];
 
         // Per-font encoding/layout arrays (xetex-xetexd.h:563–573).
-        // font_area[f]: encoded font area (str_number = i32).
-        pub(super) static mut font_area: *mut i32;
         // font_bc[f], font_ec[f]: first/last valid char (UTF16_code = u16).
         pub(super) static mut font_bc: *mut u16;
         pub(super) static mut font_ec: *mut u16;
@@ -1960,15 +1956,15 @@ pub(crate) fn name_of_file16_entry(k: i32) -> u16 {
 /// Returns `font_name[f]` — the string-pool index for font f's name.
 #[inline]
 pub(crate) fn font_name_entry(f: i32) -> i32 {
-    unsafe { *raw::font_name.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_name[f as usize])
 }
 
 /// Writes `font_name[f] = v`.
 #[inline]
 pub(crate) fn set_font_name_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::font_name.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_name[f as usize] = v;
+    });
 }
 
 /// Returns `font_info[k].b32.s1`.
@@ -2094,14 +2090,19 @@ pub(crate) fn set_font_check(f: i32, v: crate::mem_types::B16x4) {
 /// Returns `font_area[f]` — the str_number encoding the font's area.
 #[inline]
 pub(crate) fn font_area_entry(f: i32) -> i32 {
-    unsafe { *raw::font_area.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_area[f as usize])
 }
 /// Writes `font_area[f] = v`.
 #[inline]
 pub(crate) fn set_font_area_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::font_area.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_area[f as usize] = v;
+    });
+}
+/// C++ bridge for OpenType math helpers that still need font_area.
+#[no_mangle]
+pub unsafe extern "C" fn tt_get_font_area_entry(f: i32) -> i32 {
+    font_area_entry(f)
 }
 /// Returns `font_size[f]` — the current at-size (scaled_t) for font f.
 #[inline]

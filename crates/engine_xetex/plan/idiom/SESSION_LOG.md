@@ -9,6 +9,80 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 35 — 2026-05-29 — font name/area arrays -> FontState
+
+**Type:** execution (workstream 01, Phase-B ownership slice).
+
+**Goal:** move the paired `fonts` string-index tables (`font_name` and
+`font_area`) out of C `malloc` storage and into Rust-owned state on
+`EngineState.fonts`. One coherent ownership slice, one commit.
+
+**Why this slice:** session 34 handed off another bounded font table subgroup,
+and `STATUS.md` called out `font_name`/`font_area` as a good next pair. Both
+are `str_number *`, share the same init/dump/cleanup shape, and are
+format-serialized together.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C type: both symbols are `str_number *`.
+- (b) cleanup/link aliases: `src/ini.rs` had the expected allocation and
+  cleanup `#[link_name]` aliases for both symbols; all four were removed.
+- (c) C readers: only `xetex/xetex-ini.c`.
+- (c, extended) C/C++ readers: `xetex/xetex-ini.c` plus a direct
+  `font_area` reader in `xetex/xetex-XeTeXOTMath.cpp`.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs`
+  aliases; no other Rust redeclarations.
+
+**Work done:**
+- Added `font_name: Vec<i32>` and `font_area: Vec<i32>` to `FontState`.
+- Repointed `font_name_entry`/`set_font_name_entry` and
+  `font_area_entry`/`set_font_area_entry` to index the Rust-owned vectors.
+- Replaced init and format-load allocation with `vec![0i32; font_max + 1]`
+  for both arrays.
+- Repointed format dump and checked undump to state-derived storage at
+  `FONT_BASE`; fixed the checked undump path to compute `str_ptr()` before
+  entering the mutable state borrow.
+- Dropped both vectors in `tt_cleanup`.
+- Removed both `src/ini.rs` `#[link_name]` aliases per array, the raw externs
+  in `globals.rs`, and the C definitions in `xetex/xetex-ini.c`.
+- Routed the remaining C++ OpenType math direct `font_area[f]` reads through a
+  narrow Rust export, `tt_get_font_area_entry`.
+
+**Newtype debt (§4 check):** added rows for `font_name[]` and `font_area[]`
+(`str_number *` -> `Vec<StrNumber>`) to the deferred newtype worklist.
+
+**longjmp / Drop (§7):** owned vectors live in the `'static` thread-local
+`EngineState` and are released explicitly by `tt_cleanup`; abort paths skip
+Drop as intended by the existing arena pattern.
+
+**Surprise:** the extended `.cpp` reader grep mattered again:
+`xetex-XeTeXOTMath.cpp` read `font_area` directly in OpenType math helpers.
+Also, the first dashboard run exposed a nested state borrow in the undump
+closure; computing `font_count`/`max_str` outside the closure fixed it.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 201 -> 199 (-2).
+- Raw `unsafe { ... }` text-search count: 489 -> 485 (-4, two getter/setter
+  pairs became fully safe).
+- `#[no_mangle]` exports: 577 -> 578 (new C++ bridge).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- First dashboard run failed in `engine_rust` due to the nested `str_ptr()`
+  state borrow described above; fixed before final validation.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of `font_name`/`font_area` in `xetex/*.c` (minus macos): empty.
+- Extended grep of `font_name`/`font_area` in `xetex/*.{c,cpp}` (minus macos):
+  empty of direct array-symbol reads after routing C++ through
+  `tt_get_font_area_entry`.
+
+**For the next session:**
+- Continue with another bounded `fonts` table subgroup. Good next candidate:
+  `font_bc`/`font_ec` (`UTF16_code *`, same init/dump/cleanup shape).
+- Keep including `.cpp` in reader greps for font-table slices.
+- Avoid nested `with_state_mut` borrows when checked undump bounds depend on
+  other state-backed accessors; compute lengths/bounds before entering the
+  mutation closure.
+
 ## Idiom session 34 — 2026-05-23 — font parameter-count array -> FontState
 
 **Type:** execution (workstream 01, Phase-B ownership slice).
