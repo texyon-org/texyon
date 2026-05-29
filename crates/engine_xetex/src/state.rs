@@ -96,6 +96,14 @@ pub(crate) struct InputClusterState {
     pub param_ptr: i32,
     /// Peak value ever reached by `param_ptr`. Plain `int32_t`.
     pub max_param_stack: i32,
+    /// Set true by `\endinput` to force end-of-file on the current input level
+    /// (xetex-xetexd.h:524). Plain `bool`.
+    pub force_eof: bool,
+    /// End of the current input line in the buffer (xetex-xetexd.h:395;
+    /// next position after the last character). Plain `int32_t`.
+    pub last: i32,
+    /// High-water mark of buffer usage (xetex-xetexd.h:395). Plain `int32_t`.
+    pub max_buf_stack: i32,
 }
 
 #[derive(Default)]
@@ -160,6 +168,19 @@ pub(crate) struct ScannerState {
     /// Line number where the current if-skip started (xetex-xetexd.h:541).
     /// Plain `int32_t`.
     pub skip_line: i32,
+    /// True while scanning between `\csname...\endcsname` (xetex-xetexd.h:526).
+    /// Plain `bool`.
+    pub is_in_csname: bool,
+    /// True after `\TectonicCodaTokens` was inserted once (xetex-xetexd.h:723).
+    /// Plain `bool`.
+    pub used_tectonic_coda_tokens: bool,
+    /// Value-type level for the current scanned quantity (xetex-xetexd.h:532;
+    /// `unsigned char`; 0=INT_VAL, 1=DIMEN_VAL, 2=GLUE_VAL, 3=MU_VAL). Plain
+    /// `unsigned char`, no semantic typedef, no newtype debt.
+    pub cur_val_level: u8,
+    /// Second parsed value register for `scan_something_internal`
+    /// (xetex-xetexd.h:531). Plain `int32_t`.
+    pub cur_val1: i32,
 }
 
 #[derive(Default)]

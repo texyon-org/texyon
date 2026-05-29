@@ -24,8 +24,7 @@ UTF16_code *name_of_file16;
 int32_t name_length;
 int32_t name_length16;
 int32_t first;
-int32_t last;
-int32_t max_buf_stack;
+/* last / max_buf_stack moved to EngineState.input (scalars). */
 int32_t strings_free;
 int32_t pool_free;
 int32_t buf_size;
@@ -75,14 +74,14 @@ int32_t def_ref;
 /* param_ptr / max_param_stack moved to EngineState.input (scalars). */
 int32_t align_state;
 /* base_ptr / par_loc / par_token moved to EngineState.input (scalars). */
-bool force_eof;
-bool is_in_csname;
+/* force_eof moved to EngineState.input (scalar). */
+/* is_in_csname moved to EngineState.scanner (scalar). */
 int32_t cur_mark[5];
 unsigned char long_state;
 int32_t pstack[9];
 int32_t cur_val;
-int32_t cur_val1;
-unsigned char cur_val_level;
+/* cur_val1 moved to EngineState.scanner (scalar). */
+/* cur_val_level moved to EngineState.scanner (scalar). */
 glue_ord cur_order;
 UFILE *read_file[16];
 unsigned char read_open[17];
@@ -148,7 +147,7 @@ int32_t cur_ptr;
 memory_word sa_null;
 int32_t disc_ptr[4];
 scaled_t delta;
-bool used_tectonic_coda_tokens;
+/* used_tectonic_coda_tokens moved to EngineState.scanner (scalar). */
 
 uint16_t _xeq_level_array[EQTB_SIZE - INT_BASE + 1];
 

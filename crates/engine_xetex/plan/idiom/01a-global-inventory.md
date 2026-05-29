@@ -556,6 +556,7 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `fmem_ptr` | `fonts` | `font_index` (semantic typedef for `int32_t`, font-info write pointer) | `FontIndex`/`FmemPtr` | session 39 | pending |
 | `font_ptr` | `fonts` | `internal_font_number` (semantic typedef for `int32_t`, current font count) | `InternalFontNumber`/`FontId` | session 39 | pending |
 | `font_letter_space[]` | `fonts` | `scaled_t *` (per-font letter spacing; not format-serialized) | `Vec<Scaled>` | session 39 | pending |
+| `cur_if` | `scanner` | `small_number` (`typedef short`; current `\if` type code, same typedef as `radix`) | `SmallNumber` | session 41 | pending |
 
 
 (`input` session-13 move of the line/group stacks: `line_stack` and

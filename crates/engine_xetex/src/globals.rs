@@ -173,9 +173,7 @@ mod raw {
 
         // Expression-depth guard (xetex-xetexd.h:415, 525).
         pub(super) static mut expand_depth: i32;
-        // Value-type level for the current scanned quantity (xetex-xetexd.h:532).
-        // 0=INT_VAL, 1=DIMEN_VAL, 2=GLUE_VAL, 3=MU_VAL (unsigned char).
-        pub(super) static mut cur_val_level: u8;
+        // cur_val_level moved to EngineState.scanner.
 
         // Scanner state tracking (xetex-xetexd.h:514–516).
         // scanner_status: unsigned char (NORMAL=0 .. ABSORBING=5).
@@ -188,27 +186,17 @@ mod raw {
         pub(super) static mut long_state: u8;
 
         // Input buffer: first = next free slot; buf_size = capacity
-        // last = end-of-current-line; max_buf_stack = high-water mark
+        // last/max_buf_stack moved to EngineState.input (scalars).
         // (xetex-xetexd.h:393–395, 409).
         pub(super) static mut first: i32;
-        pub(super) static mut last: i32;
-        pub(super) static mut max_buf_stack: i32;
         pub(super) static mut buf_size: i32;
         // Maximum allowed input-nesting depth (xetex-xetexd.h:411).
         pub(super) static mut max_in_open: i32;
 
-        // is_in_csname: true while scanning between \csname...\endcsname (xetex-xetexd.h:526).
-        pub(super) static mut is_in_csname: bool;
-
-        // force_eof: set true by \endinput to force end-of-file on the current input level
-        // (xetex-xetexd.h:524; xetex-ini.c:159).
-        pub(super) static mut force_eof: bool;
-        // used_tectonic_coda_tokens: set true after inserting \TectonicCodaTokens once
-        // (xetex-xetexd.h:723).
-        pub(super) static mut used_tectonic_coda_tokens: bool;
-
-        // Second parsed value register used by scan_something_internal (xetex-xetexd.h:531).
-        pub(super) static mut cur_val1: i32;
+        // is_in_csname moved to EngineState.scanner.
+        // force_eof moved to EngineState.input.
+        // used_tectonic_coda_tokens moved to EngineState.scanner.
+        // cur_val1 moved to EngineState.scanner.
 
         // disc_ptr[4]: saved discretionary break pointers (xetex-xetexd.h:716).
         pub(super) static mut disc_ptr: [i32; 4];
@@ -2381,13 +2369,13 @@ pub(crate) fn set_native_font_type_flag(v: i32) {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn is_in_csname() -> bool {
-    unsafe { raw::is_in_csname }
+    crate::state::with_state(|s| s.scanner.is_in_csname)
 }
 #[inline]
 pub(crate) fn set_is_in_csname(v: bool) {
-    unsafe {
-        raw::is_in_csname = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.is_in_csname = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2395,13 +2383,13 @@ pub(crate) fn set_is_in_csname(v: bool) {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn cur_val1() -> i32 {
-    unsafe { raw::cur_val1 }
+    crate::state::with_state(|s| s.scanner.cur_val1)
 }
 #[inline]
 pub(crate) fn set_cur_val1(v: i32) {
-    unsafe {
-        raw::cur_val1 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_val1 = v;
+    });
 }
 #[inline]
 pub(crate) fn radix() -> u8 {
@@ -3321,26 +3309,26 @@ pub(crate) fn input_file_ptr(k: i32) -> *mut *mut crate::io::UFile {
 /// Returns `last` — index one past the last character on the current input line.
 #[inline]
 pub(crate) fn last() -> i32 {
-    unsafe { raw::last }
+    crate::state::with_state(|s| s.input.last)
 }
 /// Sets `last`.
 #[inline]
 pub(crate) fn set_last(v: i32) {
-    unsafe {
-        raw::last = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.last = v;
+    });
 }
 /// Returns `max_buf_stack` — highest value `last` has ever reached.
 #[inline]
 pub(crate) fn max_buf_stack() -> i32 {
-    unsafe { raw::max_buf_stack }
+    crate::state::with_state(|s| s.input.max_buf_stack)
 }
 /// Sets `max_buf_stack`.
 #[inline]
 pub(crate) fn set_max_buf_stack(v: i32) {
-    unsafe {
-        raw::max_buf_stack = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.max_buf_stack = v;
+    });
 }
 /// Writes `buffer[k] = v`.
 #[inline]
@@ -3382,13 +3370,13 @@ pub(crate) fn set_expand_depth_count(v: i32) {
 }
 #[inline]
 pub(crate) fn cur_val_level() -> u8 {
-    unsafe { raw::cur_val_level }
+    crate::state::with_state(|s| s.scanner.cur_val_level)
 }
 #[inline]
 pub(crate) fn set_cur_val_level(v: u8) {
-    unsafe {
-        raw::cur_val_level = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_val_level = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -4875,13 +4863,13 @@ pub(crate) fn set_breadth_max(v: i32) {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn force_eof() -> bool {
-    unsafe { raw::force_eof }
+    crate::state::with_state(|s| s.input.force_eof)
 }
 #[inline]
 pub(crate) fn set_force_eof(v: bool) {
-    unsafe {
-        raw::force_eof = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.force_eof = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -4889,13 +4877,13 @@ pub(crate) fn set_force_eof(v: bool) {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn used_tectonic_coda_tokens() -> bool {
-    unsafe { raw::used_tectonic_coda_tokens }
+    crate::state::with_state(|s| s.scanner.used_tectonic_coda_tokens)
 }
 #[inline]
 pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
-    unsafe {
-        raw::used_tectonic_coda_tokens = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.used_tectonic_coda_tokens = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
