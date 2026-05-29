@@ -174,6 +174,14 @@ pub(crate) struct FontState {
     pub bchar_label: Vec<i32>,
     pub font_bchar: Vec<i32>,
     pub font_false_bchar: Vec<i32>,
+    /// Rust-owned per-font glue-spec pointer table (`font_max + 1` entries).
+    /// Serialized in the format dump (checked undump against `lo_mem_max`).
+    /// Element is a nullable memory/halfword pointer (newtype debt tracked in
+    /// 01a).
+    pub font_glue: Vec<i32>,
+    /// Rust-owned per-font "emitted in output" flag table (`font_max + 1`
+    /// entries). Not serialized in the format dump; plain `bool`.
+    pub font_used: Vec<bool>,
 }
 
 impl Default for FontState {
@@ -204,6 +212,8 @@ impl Default for FontState {
             bchar_label: Vec::new(),
             font_bchar: Vec::new(),
             font_false_bchar: Vec::new(),
+            font_glue: Vec::new(),
+            font_used: Vec::new(),
         }
     }
 }

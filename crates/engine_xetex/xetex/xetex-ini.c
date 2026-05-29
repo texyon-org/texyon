@@ -103,8 +103,6 @@ const char* output_file_extension;
 memory_word *font_info;
 font_index fmem_ptr;
 internal_font_number font_ptr;
-int32_t *font_glue;
-bool *font_used;
 int32_t *hyphen_char;
 int32_t *skew_char;
 void **font_layout_engine;

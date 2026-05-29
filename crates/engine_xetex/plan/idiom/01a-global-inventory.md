@@ -552,6 +552,7 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `bchar_label[]` | `fonts` | `font_index *` | `Vec<FontIndex>` | session 37 | pending |
 | `font_bchar[]` | `fonts` | `nine_bits *` | `Vec<NineBits>` | session 37 | pending |
 | `font_false_bchar[]` | `fonts` | `nine_bits *` | `Vec<NineBits>` | session 37 | pending |
+| `font_glue[]` | `fonts` | `int32_t *` (nullable glue-spec mem pointer; checked undump vs `lo_mem_max`) | `Vec<MemPtr>` | session 38 | pending |
 
 
 (`input` session-13 move of the line/group stacks: `line_stack` and

@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 37 (2026-05-29).
+Last updated: idiom session 38 (2026-05-29).
 
 ## How to read this file
 
@@ -328,6 +328,18 @@ least-coupled non-`misc` clusters:
     `tt_cleanup` drops the vectors. Removed all six allocation/cleanup link
     aliases, the raw externs, and the C definitions. Newtype debts recorded
     for `font_index`/`nine_bits`.
+-   **`font_glue` + `font_used` arrays ownership move (session 38):** the two
+    remaining simple per-font table arrays moved from C-`malloc`'d pointer
+    storage into Rust-owned `Vec<i32>` / `Vec<bool>` fields on
+    `EngineState.fonts`. `font_glue` (`int32_t *`) is format-dumped with a
+    checked undump against `lo_mem_max` (count/bound precomputed before
+    `with_state_mut` to avoid nested borrows); `font_used` (`bool *`) is not
+    format-dumped and is allocated unconditionally as `vec![false; font_max+1]`.
+    Init/format-load allocation folds `font_glue` into the existing init
+    closures; `tt_cleanup` drops both vectors. Removed all four
+    allocation/cleanup link aliases, the two raw externs, and the two C
+    definitions. Newtype debt recorded for `font_glue[]` (nullable glue-spec
+    mem pointer -> `Vec<MemPtr>`); `font_used[]` is plain `bool`, no row.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -336,12 +348,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 194 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 192 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 92 state-backed scalars/arrays + 48 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, and font_false_bchar) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 92 state-backed scalars/arrays + 50 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, and font_used) |
 | `#[no_mangle]` exports | 576 | boundary-only | 578 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 475 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 471 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -465,13 +477,15 @@ the snippets in `00-overview.md` / the workstream plans.
     `str_ptr()` before entering `with_state_mut`. `font_bc`/`font_ec` were
     moved in session 36; the extended `.cpp` reader grep was clean. The
     boundary-character trio (`bchar_label`, `font_bchar`,
-    `font_false_bchar`) moved in session 37.
-    Next, continue with another carefully bounded `fonts` subgroup. Good
-    candidates are ownership-aware font arrays with `src/ini.rs` aliases
-    (`font_glue`, `font_used`, etc.), but keep each subgroup coherent with its
-    init/dump/cleanup edges. `font_glue` is format-dumped and has a checked
-    undump bound against `lo_mem_max`; `font_used` is plain `bool *` and is not
-    format-dumped. Alternatively pick an ownership-aware `eqtb`/`mem` slice.
+    `font_false_bchar`) moved in session 37. The two remaining simple per-font
+    table arrays, `font_glue` (`int32_t *`, format-dumped, checked undump vs
+    `lo_mem_max`) and `font_used` (`bool *`, not format-dumped), moved in
+    session 38; the simple per-font table arrays are now exhausted.
+    Next, the remaining `fonts` state is messier: pointer-element arrays
+    (`font_mapping`, `font_layout_engine`), the `font_info` arena and its
+    `*_base` index tables, and assorted scalars. Pick a coherent bounded
+    subgroup with its init/dump/cleanup edges, and keep including `.cpp` in
+    reader greps. Alternatively pick an ownership-aware `eqtb`/`mem` slice.
     Avoid hot tokenizer/main-loop scratch state and do not split the `mem`
     bookkeeping scalars from the `Mem` arena move.
     For each symbol moved, use `01a-global-inventory.md` for C defs /

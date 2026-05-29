@@ -9,6 +9,79 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 38 — 2026-05-29 — font_glue + font_used arrays -> FontState
+
+**Type:** execution (workstream 01, Phase-B ownership slice).
+
+**Goal:** move the two remaining simple per-font table arrays — `font_glue`
+(`int32_t *`, format-dumped) and `font_used` (`bool *`, not format-dumped) —
+out of C `malloc` storage and into Rust-owned state on `EngineState.fonts`.
+One coherent slice, one commit.
+
+**Why this slice:** STATUS / session-37 handoff named `font_glue` and
+`font_used` as the next candidates. They are the two next per-font table
+arrays, share the established `FontState` ownership shape, and are not hot
+tokenizer/main-loop scratch state.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `extern int32_t *font_glue;` and `extern bool *font_used;`
+  (xetex-xetexd.h:566-567).
+- (b) cleanup/link aliases: `src/ini.rs` had the expected allocation aliases
+  (`tre_font_glue`, `tre_font_used`) and cleanup aliases
+  (`tt_cleanup_font_glue`, `tt_cleanup_font_used`); all four were removed.
+- (c) C readers: only `xetex/xetex-ini.c`.
+- (c, extended) C/C++ readers: only `xetex/xetex-ini.c` (`.cpp` grep clean).
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs`
+  aliases; no other Rust redeclarations.
+
+**Work done:**
+- Added `font_glue: Vec<i32>` and `font_used: Vec<bool>` to `FontState`.
+- Repointed `font_glue`/`set_font_glue` and
+  `font_used_entry`/`set_font_used_entry` to index the Rust-owned vectors.
+- Folded `font_glue` into both the initex and format-load init closures
+  (`vec![0i32; font_check_len]`), replacing the `xmalloc_array`/`xcalloc_array`
+  calls. `font_used` is allocated unconditionally as
+  `vec![false; font_max + 1]` (matching the former xmalloc + zero loop).
+- Repointed format dump to a state-derived `font_glue` pointer at `FONT_BASE`.
+- Repointed the checked undump (`undump_checked_i32` against
+  `MIN_HALFWORD..lo_mem_max`) to state-derived storage, precomputing the count
+  (`font_ptr() + 1`) and bound (`lo_mem_max()`) before entering
+  `with_state_mut` to avoid nested borrows. `font_used` is not in the format
+  dump.
+- Dropped both vectors in `tt_cleanup`.
+- Removed all four `#[link_name]` aliases, the two raw externs in
+  `globals.rs`, and the two C definitions in `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** `font_glue[]` is declared `int32_t *` but holds a
+nullable glue-spec memory pointer (checked on undump against `lo_mem_max`), so
+a worklist row (`Vec<MemPtr>`) was added. `font_used[]` is plain `bool *` — no
+row needed (checked).
+
+**longjmp / Drop (§7):** owned vectors live in the `'static` thread-local
+`EngineState` and are released explicitly by `tt_cleanup`; abort paths skip
+Drop as intended by the existing arena pattern.
+
+**Surprise:** none. Extended `.cpp` reader grep was clean.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 194 -> 192 (-2).
+- Raw `unsafe { ... }` text-search count: 475 -> 471 (-4, four getter/setter
+  bodies became fully safe).
+- `#[no_mangle]` exports: unchanged at 578.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of `font_glue`/`font_used` in `xetex/*.{c,cpp}` (minus macos): empty.
+
+**For the next session:**
+- The simple per-font table arrays are now exhausted. Remaining `fonts` state
+  is messier: pointer-element arrays (`font_mapping`, `font_layout_engine`),
+  the `font_info` arena and its `*_base` index tables, and various scalars.
+  Pick a coherent bounded subgroup and keep including `.cpp` in reader greps.
+- Alternatively pick an ownership-aware `eqtb`/`mem` slice (but do not split
+  the `mem` bookkeeping scalars from the `Mem` arena move).
+
 ## Idiom session 37 — 2026-05-29 — font boundary-character arrays -> FontState
 
 **Type:** execution (workstream 01, Phase-B ownership slice).

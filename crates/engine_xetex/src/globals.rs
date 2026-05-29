@@ -109,7 +109,6 @@ mod raw {
         pub(super) static mut fmem_ptr: i32;
         pub(super) static mut font_ptr: i32;
         pub(super) static mut xdv_buffer: *mut libc::c_char;
-        pub(super) static mut font_glue: *mut i32;
         pub(super) static mut param_base: *mut i32;
         // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
         pub(super) static mut cur_cs: i32;
@@ -238,8 +237,6 @@ mod raw {
         pub(super) static mut disc_ptr: [i32; 4];
 
         // Per-font encoding/layout arrays (xetex-xetexd.h:566–573).
-        // font_used[f]: whether the font has been emitted in the output.
-        pub(super) static mut font_used: *mut bool;
         // font_layout_engine[f]: pointer to AAT/OT layout engine (void*).
         pub(super) static mut font_layout_engine: *mut *mut libc::c_void;
         // font_mapping[f]: TECkit/TFM font mapping pointer (void*, xetex-xetexd.h:574).
@@ -2041,15 +2038,15 @@ pub(crate) fn set_font_params(f: i32, v: i32) {
 /// Returns `font_glue[f]`.
 #[inline]
 pub(crate) fn font_glue(f: i32) -> i32 {
-    unsafe { *raw::font_glue.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_glue[f as usize])
 }
 
 /// Sets `font_glue[f] = v`.
 #[inline]
 pub(crate) fn set_font_glue(f: i32, v: i32) {
-    unsafe {
-        *raw::font_glue.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_glue[f as usize] = v;
+    });
 }
 
 /// Returns `param_base[f]`.
@@ -2153,9 +2150,9 @@ pub(crate) fn set_font_ec_entry(f: i32, v: u16) {
 /// Writes `font_used[f] = v`.
 #[inline]
 pub(crate) fn set_font_used_entry(f: i32, v: bool) {
-    unsafe {
-        *raw::font_used.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_used[f as usize] = v;
+    });
 }
 /// Writes `bchar_label[f] = v`.
 #[inline]
@@ -5124,7 +5121,7 @@ pub(crate) fn set_write_loc(v: i32) {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn font_used_entry(f: i32) -> bool {
-    unsafe { *raw::font_used.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_used[f as usize])
 }
 #[inline]
 pub(crate) fn font_check_entry(f: i32) -> crate::mem_types::B16x4 {

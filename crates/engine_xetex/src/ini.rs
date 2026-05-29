@@ -1831,8 +1831,6 @@ extern "C" {
     static mut tre_font_flags: *mut libc::c_char;
     #[link_name = "font_letter_space"]
     static mut tre_font_letter_space: *mut i32;
-    #[link_name = "font_glue"]
-    static mut tre_font_glue: *mut i32;
     #[link_name = "hyphen_char"]
     static mut tre_hyphen_char: *mut i32;
     #[link_name = "skew_char"]
@@ -1855,8 +1853,6 @@ extern "C" {
     static mut tre_exten_base: *mut i32;
     #[link_name = "param_base"]
     static mut tre_param_base: *mut i32;
-    #[link_name = "font_used"]
-    static mut tre_font_used: *mut bool;
     #[link_name = "sa_root"]
     static mut fmt_sa_root: [i32; 8];
 }
@@ -2355,11 +2351,13 @@ pub unsafe extern "C" fn store_fmt_file() {
         tre_param_base.add(FONT_BASE as usize),
         font_ptr() + 1,
     );
-    dump_slice(
-        fmt_out,
-        tre_font_glue.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
+    crate::state::with_state(|state| {
+        dump_slice(
+            fmt_out,
+            state.fonts.font_glue.as_ptr().add(FONT_BASE as usize),
+            font_ptr() + 1,
+        );
+    });
     crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
@@ -2852,8 +2850,8 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         state.fonts.bchar_label = vec![0i32; font_check_len];
         state.fonts.font_bchar = vec![0i32; font_check_len];
         state.fonts.font_false_bchar = vec![0i32; font_check_len];
+        state.fonts.font_glue = vec![0i32; font_check_len];
     });
-    tre_font_glue = xmalloc_array::<i32>(font_max());
     tre_hyphen_char = xmalloc_array::<i32>(font_max());
     tre_skew_char = xmalloc_array::<i32>(font_max());
     tre_char_base = xmalloc_array::<i32>(font_max());
@@ -2991,13 +2989,17 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         tre_param_base.add(FONT_BASE as usize),
         font_ptr() + 1,
     );
-    if !undump_checked_i32(
-        fmt_in,
-        tre_font_glue.add(FONT_BASE as usize),
-        font_ptr() + 1,
-        MIN_HALFWORD,
-        lo_mem_max(),
-    ) {
+    let font_glue_count = font_ptr() + 1;
+    let font_glue_max = lo_mem_max();
+    if !crate::state::with_state_mut(|state| {
+        undump_checked_i32(
+            fmt_in,
+            state.fonts.font_glue.as_mut_ptr().add(FONT_BASE as usize),
+            font_glue_count,
+            MIN_HALFWORD,
+            font_glue_max,
+        )
+    }) {
         bad_format_file();
     }
     let max_font_index = fmem_ptr() - 1;
@@ -3574,8 +3576,8 @@ pub unsafe extern "C" fn tt_run_engine(
             state.fonts.bchar_label = vec![0i32; font_check_len];
             state.fonts.font_bchar = vec![0i32; font_check_len];
             state.fonts.font_false_bchar = vec![0i32; font_check_len];
+            state.fonts.font_glue = vec![0i32; font_check_len];
         });
-        tre_font_glue = xcalloc_array::<i32>(font_max());
         tre_hyphen_char = xcalloc_array::<i32>(font_max());
         tre_skew_char = xcalloc_array::<i32>(font_max());
         tre_char_base = xcalloc_array::<i32>(font_max());
@@ -3622,10 +3624,10 @@ pub unsafe extern "C" fn tt_run_engine(
         }
     }
 
-    tre_font_used = xmalloc_array::<bool>(font_max());
-    for font_k in 0..=font_max() {
-        *tre_font_used.add(font_k as usize) = false;
-    }
+    let font_used_len = (font_max() as usize) + 1;
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_used = vec![false; font_used_len];
+    });
 
     crate::globals::set_random_seed(
         crate::globals::microseconds() * 1000 + (crate::globals::epochseconds() % 1_000_000),
@@ -3665,8 +3667,6 @@ extern "C" {
     fn tt_cleanup_TECkit_DisposeConverter(cnv: *mut libc::c_void);
     #[link_name = "TEX_format_default"]
     static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
-    #[link_name = "font_used"]
-    static mut tt_cleanup_font_used: *mut libc::c_void;
     #[link_name = "native_text"]
     static mut tt_cleanup_native_text: *mut libc::c_void;
     #[link_name = "tt_cleanup_free_yhash"]
@@ -3686,8 +3686,6 @@ extern "C" {
     static mut tt_cleanup_font_flags: *mut libc::c_void;
     #[link_name = "font_letter_space"]
     static mut tt_cleanup_font_letter_space: *mut libc::c_void;
-    #[link_name = "font_glue"]
-    static mut tt_cleanup_font_glue: *mut libc::c_void;
     #[link_name = "hyphen_char"]
     static mut tt_cleanup_hyphen_char: *mut libc::c_void;
     #[link_name = "skew_char"]
@@ -3717,7 +3715,6 @@ extern "C" {
 pub unsafe extern "C" fn tt_cleanup() {
     tt_cleanup_pdf_files_close();
     libc::free(tt_cleanup_TEX_format_default as *mut _);
-    libc::free(tt_cleanup_font_used);
     crate::shipout::deinitialize_shipout_variables();
 
     tt_cleanup_destroy_font_manager();
@@ -3789,6 +3786,8 @@ pub unsafe extern "C" fn tt_cleanup() {
         state.fonts.bchar_label = Vec::new();
         state.fonts.font_bchar = Vec::new();
         state.fonts.font_false_bchar = Vec::new();
+        state.fonts.font_glue = Vec::new();
+        state.fonts.font_used = Vec::new();
     });
     libc::free(tt_cleanup_font_info);
 
@@ -3796,7 +3795,6 @@ pub unsafe extern "C" fn tt_cleanup() {
     libc::free(tt_cleanup_font_layout_engine);
     libc::free(tt_cleanup_font_flags);
     libc::free(tt_cleanup_font_letter_space);
-    libc::free(tt_cleanup_font_glue);
     libc::free(tt_cleanup_hyphen_char);
     libc::free(tt_cleanup_skew_char);
     libc::free(tt_cleanup_char_base);
