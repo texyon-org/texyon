@@ -196,6 +196,14 @@ pub(crate) struct ScannerState {
     /// Alignment brace-nesting counter (xetex-xetexd.h:520). Positive = extra
     /// open braces; negative = unmatched `&` or `\cr`. Plain `int32_t`.
     pub align_state: i32,
+    /// Mark registers: `cur_mark[0..=4]` (xetex-xetexd.h:527). Each entry is
+    /// a token-list pointer (`int32_t`). Inline fixed array; no alloc/cleanup
+    /// edge. Plain `int32_t` elements, no newtype debt.
+    pub cur_mark: [i32; 5],
+    /// Saved discretionary break pointers (xetex-xetexd.h:716). Inline fixed
+    /// array of 4 `int32_t` half-word pointers. No alloc/cleanup edge. Plain
+    /// `int32_t` elements, no newtype debt.
+    pub disc_ptr: [i32; 4],
 }
 
 #[derive(Default)]

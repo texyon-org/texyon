@@ -113,8 +113,7 @@ mod raw {
         pub(super) static mut cur_chr: i32;
         // Current command code (`eight_bits` = u8, xetex-xetexd.h:499).
         pub(super) static mut cur_cmd: u8;
-        // Mark registers: cur_mark[0..4] (xetex-xetexd.h:527; str_number = i32).
-        pub(super) static mut cur_mark: [i32; 5];
+        // cur_mark[5] moved to EngineState.scanner (inline fixed array).
         // Current parsed integer value (xetex-xetexd.h:530).
         pub(super) static mut cur_val: i32;
 
@@ -190,8 +189,7 @@ mod raw {
         // used_tectonic_coda_tokens moved to EngineState.scanner.
         // cur_val1 moved to EngineState.scanner.
 
-        // disc_ptr[4]: saved discretionary break pointers (xetex-xetexd.h:716).
-        pub(super) static mut disc_ptr: [i32; 4];
+        // disc_ptr[4] moved to EngineState.scanner (inline fixed array).
 
         // mapped_text[i]: output of apply_mapping() (xetex-xetexd.h:580).
         pub(super) static mut mapped_text: *mut u16;
@@ -2459,13 +2457,13 @@ pub(crate) fn set_last_glue(v: i32) {
 }
 #[inline]
 pub(crate) fn disc_ptr(k: usize) -> i32 {
-    unsafe { raw::disc_ptr[k] }
+    crate::state::with_state(|s| s.scanner.disc_ptr[k])
 }
 #[inline]
 pub(crate) fn set_disc_ptr(k: usize, v: i32) {
-    unsafe {
-        raw::disc_ptr[k] = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.disc_ptr[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn last_penalty() -> i32 {
@@ -2799,15 +2797,15 @@ pub(crate) fn set_cur_chr(v: i32) {
 /// (xetex-xetexd.h:527; k must be 0..=4).
 #[inline]
 pub(crate) fn cur_mark(k: usize) -> i32 {
-    unsafe { raw::cur_mark[k] }
+    crate::state::with_state(|s| s.scanner.cur_mark[k])
 }
 
 /// Sets `cur_mark[k]`.
 #[inline]
 pub(crate) fn set_cur_mark(k: usize, v: i32) {
-    unsafe {
-        raw::cur_mark[k] = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_mark[k] = v;
+    });
 }
 
 // ---------------------------------------------------------------------------

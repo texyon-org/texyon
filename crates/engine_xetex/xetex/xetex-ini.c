@@ -74,7 +74,7 @@ int32_t line;
 /* base_ptr / par_loc / par_token moved to EngineState.input (scalars). */
 /* force_eof moved to EngineState.input (scalar). */
 /* is_in_csname moved to EngineState.scanner (scalar). */
-int32_t cur_mark[5];
+/* cur_mark[5] moved to EngineState.scanner (inline fixed array). */
 /* long_state moved to EngineState.scanner (scalar). */
 int32_t pstack[9];
 int32_t cur_val;
@@ -143,7 +143,7 @@ const char* max_reg_help_line;
 int32_t sa_root[8];
 int32_t cur_ptr;
 memory_word sa_null;
-int32_t disc_ptr[4];
+/* disc_ptr[4] moved to EngineState.scanner (inline fixed array). */
 scaled_t delta;
 /* used_tectonic_coda_tokens moved to EngineState.scanner (scalar). */
 
