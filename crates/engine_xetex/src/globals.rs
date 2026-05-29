@@ -1783,17 +1783,15 @@ pub(crate) fn set_read_open_entry(n: usize, v: u8) {
         s.input.read_open[n] = v;
     });
 }
-/// Returns `read_file[n]` (the UFILE* value at index n).
-#[inline]
 pub(crate) fn read_file_entry(n: usize) -> *mut crate::io::UFile {
-    crate::state::with_state(|s| s.input.read_file[n]) as *mut crate::io::UFile
+    crate::state::with_state(|s| s.input.read_file[n])
 }
 /// Returns a pointer to `read_file[n]`, for passing to `u_open_in`.
 /// Valid past the borrow: the array lives in the `'static` thread-local and is never moved.
 #[inline]
 pub(crate) fn read_file_ptr(n: usize) -> *mut *mut crate::io::UFile {
     crate::state::with_state_mut(|s| unsafe {
-        s.input.read_file.as_mut_ptr().add(n) as *mut *mut crate::io::UFile
+        s.input.read_file.as_mut_ptr().add(n)
     })
 }
 
@@ -3208,12 +3206,12 @@ pub(crate) fn set_eof_seen(k: i32, v: bool) {
 
 /// Returns `input_file[k]` as a raw pointer (UFILE*; xetex-xetexd.h:509).
 #[inline]
-pub(crate) fn input_file(k: i32) -> *mut libc::c_void {
+pub(crate) fn input_file(k: i32) -> *mut crate::io::UFile {
     crate::state::with_state(|s| s.input.input_file[k as usize])
 }
 /// Sets `input_file[k]`.
 #[inline]
-pub(crate) fn set_input_file(k: i32, v: *mut libc::c_void) {
+pub(crate) fn set_input_file(k: i32, v: *mut crate::io::UFile) {
     crate::state::with_state_mut(|s| s.input.input_file[k as usize] = v);
 }
 /// Returns a pointer to `input_file[k]` (i.e. `&input_file[k]`), for passing to
@@ -3223,7 +3221,7 @@ pub(crate) fn set_input_file(k: i32, v: *mut libc::c_void) {
 #[inline]
 pub(crate) fn input_file_ptr(k: i32) -> *mut *mut crate::io::UFile {
     crate::state::with_state_mut(|s| unsafe {
-        s.input.input_file.as_mut_ptr().add(k as usize) as *mut *mut crate::io::UFile
+        s.input.input_file.as_mut_ptr().add(k as usize)
     })
 }
 

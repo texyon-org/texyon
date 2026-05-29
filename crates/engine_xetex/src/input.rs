@@ -1,6 +1,9 @@
 //! Input-stack management functions translated from `xetex/xetex-xetex0.c`.
 //!
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
+use crate::io::u_close;
+use crate::output::capture_to_diagnostic;
+
 
 use crate::globals::{
     align_state, avail, buf_size, buffer_entry, cond_ptr, cur_boundary, cur_cs, cur_input, cur_tok,
@@ -18,8 +21,8 @@ use crate::globals::{
 use crate::output::print_cmd_chr;
 
 extern "C" {
-    fn u_close(f: *mut libc::c_void);
-    fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
+    
+    
 }
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).
@@ -289,8 +292,7 @@ const LOCAL__OUTPUT_ROUTINE_BTL: i32 = 1; // xetex_format.h:173
 const ASSIGN_TOKS_BTL: u16 = 73; // xetex_format.h:313
 
 /// translated from xetex-xetex0.c:2970 (begin_token_list)
-#[no_mangle]
-pub unsafe extern "C" fn begin_token_list(p: i32, t: u16) {
+pub unsafe fn begin_token_list(p: i32, t: u16) {
     if input_ptr() > max_in_stack() {
         set_max_in_stack(input_ptr());
         if input_ptr() == stack_size() {

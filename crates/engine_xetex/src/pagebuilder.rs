@@ -14,6 +14,37 @@ use crate::globals::{
 
 // Former C module-level statics, now bridged onto EngineState.shipout
 // (session 46). Thin module-private accessors over the thread-local.
+use crate::errors::confusion;
+use crate::errors::error;
+use crate::helpers::badness;
+use crate::input::begin_token_list;
+use crate::mem::delete_glue_ref;
+use crate::mem::delete_token_ref;
+use crate::mem::free_node;
+use crate::mem::get_node;
+use crate::mem::new_null_box;
+use crate::mem::new_skip_param;
+use crate::mem::new_spec;
+use crate::mem::push_nest;
+use crate::output::capture_to_diagnostic;
+use crate::output::error_here_with_diagnostic;
+use crate::output::print_cstr;
+use crate::output::print_esc_cstr;
+use crate::output::print_int;
+use crate::save::find_sa_element;
+use crate::save::geq_word_define;
+use crate::save::new_save_level;
+use crate::scaled_math::x_over_n;
+use crate::scan::box_error;
+use crate::scan::do_marks;
+use crate::scan::flush_node_list;
+use crate::scan::normal_paragraph;
+use crate::scan::prune_page_top;
+use crate::scan::scan_left_brace;
+use crate::scan::vert_break;
+use crate::scan::vpackage;
+use crate::shipout::ship_out;
+
 #[inline]
 fn best_page_break() -> i32 {
     crate::state::with_state(|s| s.shipout.best_page_break)
@@ -119,36 +150,36 @@ const COUNT_BASE: i32 = 7_826_812;
 const SCALED_BASE: i32 = 8_941_203;
 
 extern "C" {
-    fn geq_word_define(p: i32, w: i32);
-    fn do_marks(a: i16, l: i16, q: i32) -> bool;
-    fn delete_token_ref(p: i32);
-    fn find_sa_element(t: u16, n: i32, w: bool);
-    fn new_null_box() -> i32;
-    fn prune_page_top(p: i32, s: bool) -> i32;
-    fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32;
-    fn free_node(p: i32, s: i32);
-    fn get_node(s: i32) -> i32;
-    fn delete_glue_ref(p: i32);
-    fn box_error(n: u8);
-    fn error_here_with_diagnostic(message: *const libc::c_char) -> *mut std::ffi::c_void;
-    fn capture_to_diagnostic(d: *mut std::ffi::c_void);
-    fn begin_token_list(p: i32, t: u16);
-    fn new_save_level(c: u8);
-    fn normal_paragraph();
-    fn scan_left_brace();
-    fn flush_node_list(p: i32);
-    fn ship_out(p: i32);
-    fn push_nest();
-    fn badness(t: i32, s: i32) -> i32;
-    fn x_over_n(x: i32, n: i32) -> i32;
-    fn vert_break(p: i32, h: i32, d: i32) -> i32;
-    fn new_skip_param(n: i16) -> i32;
-    fn new_spec(p: i32) -> i32;
-    fn confusion(s: *const libc::c_char) -> !;
-    fn error();
-    fn print_esc_cstr(s: *const libc::c_char);
-    fn print_int(n: i32);
-    fn print_cstr(s: *const libc::c_char);
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 }
 
 #[no_mangle]
@@ -530,8 +561,7 @@ unsafe fn fire_up(c: i32) {
     set_eqtb_b32s1(BOX_BASE + 255, TEX_NULL);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn build_page() {
+pub unsafe fn build_page() {
     if mem_b32s1(CONTRIB_HEAD) == TEX_NULL || output_active() {
         return;
     }

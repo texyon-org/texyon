@@ -1,4 +1,7 @@
 //! Math-mode command helpers translated from `xetex/xetex-math.c`.
+use crate::ext::real_get_native_glyph;
+use crate::input::begin_token_list;
+
 
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_c, cur_chr, cur_cmd, cur_dir, cur_f, cur_group, cur_i,
@@ -209,12 +212,12 @@ const COND_MATH_GLUE: u16 = 98;
 const SPACE_CODE: i32 = 2;
 
 extern "C" {
-    fn begin_token_list(p: i32, t: u16);
+    
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
     fn get_native_mathsy_param(f: i32, n: i32) -> i32;
     fn get_native_mathex_param(f: i32, n: i32) -> i32;
-    fn real_get_native_glyph(p_node: *mut libc::c_void, index: u32) -> u16;
+    
     fn get_ot_math_accent_pos(f: i32, g: i32) -> i32;
     fn get_ot_math_constant(f: i32, n: i32) -> i32;
     fn get_ot_math_kern(
@@ -503,8 +506,7 @@ pub unsafe extern "C" fn math_kern(p: i32, m: i32) {
 }
 
 /// translated from xetex-math.c:80 (flush_math)
-#[no_mangle]
-pub unsafe extern "C" fn flush_math() {
+pub unsafe fn flush_math() {
     crate::scan::flush_node_list(mem_b32s1(cur_list_head()));
     crate::scan::flush_node_list(cur_list_aux_b32s1());
     set_mem_b32s1(cur_list_head(), TEX_NULL);
@@ -2378,8 +2380,7 @@ pub unsafe extern "C" fn scan_delimiter(p: i32, r: bool) {
 }
 
 /// translated from xetex-math.c:354 (start_eq_no)
-#[no_mangle]
-pub unsafe extern "C" fn start_eq_no() {
+pub unsafe fn start_eq_no() {
     set_save_stack_b32s1(save_ptr(), cur_chr());
     set_save_ptr(save_ptr() + 1);
 
@@ -2395,8 +2396,7 @@ pub unsafe extern "C" fn start_eq_no() {
 }
 
 /// translated from xetex-math.c:368 (math_limit_switch)
-#[no_mangle]
-pub unsafe extern "C" fn math_limit_switch() {
+pub unsafe fn math_limit_switch() {
     if cur_list_head() != cur_list_tail() && mem_b16s1(cur_list_tail()) == OP_NOAD {
         set_mem_b16s0(cur_list_tail(), cur_chr() as u16);
         return;
@@ -2415,8 +2415,7 @@ pub unsafe extern "C" fn math_limit_switch() {
 }
 
 /// translated from xetex-math.c:461 (math_radical)
-#[no_mangle]
-pub unsafe extern "C" fn math_radical() {
+pub unsafe fn math_radical() {
     set_mem_b32s1(cur_list_tail(), get_node(RADICAL_NOAD_SIZE));
     set_cur_list_tail(mem_b32s1(cur_list_tail()));
     set_mem_b16s1(cur_list_tail(), RADICAL_NOAD);
@@ -2429,8 +2428,7 @@ pub unsafe extern "C" fn math_radical() {
 }
 
 /// translated from xetex-math.c:533 (append_choices)
-#[no_mangle]
-pub unsafe extern "C" fn append_choices() {
+pub unsafe fn append_choices() {
     set_mem_b32s1(cur_list_tail(), new_choice());
     set_cur_list_tail(mem_b32s1(cur_list_tail()));
     set_save_ptr(save_ptr() + 1);
@@ -2440,8 +2438,7 @@ pub unsafe extern "C" fn append_choices() {
 }
 
 /// translated from xetex-math.c:545 (fin_mlist)
-#[no_mangle]
-pub unsafe extern "C" fn fin_mlist(p: i32) -> i32 {
+pub unsafe fn fin_mlist(p: i32) -> i32 {
     let q;
     if cur_list_aux_b32s1() != TEX_NULL {
         set_mem_b32s1(cur_list_aux_b32s1() + 3, SUB_MLIST);
@@ -2466,8 +2463,7 @@ pub unsafe extern "C" fn fin_mlist(p: i32) -> i32 {
 }
 
 /// translated from xetex-math.c:571 (build_choices)
-#[no_mangle]
-pub unsafe extern "C" fn build_choices() {
+pub unsafe fn build_choices() {
     crate::save::unsave();
     let p = fin_mlist(TEX_NULL);
     match save_stack_b32s1(save_ptr() - 1) {
@@ -2487,8 +2483,7 @@ pub unsafe extern "C" fn build_choices() {
 }
 
 /// translated from xetex-math.c:599 (sub_sup)
-#[no_mangle]
-pub unsafe extern "C" fn sub_sup() {
+pub unsafe fn sub_sup() {
     let mut t = EMPTY;
     let mut p = TEX_NULL;
 
@@ -2523,8 +2518,7 @@ pub unsafe extern "C" fn sub_sup() {
 }
 
 /// translated from xetex-math.c:644 (math_fraction)
-#[no_mangle]
-pub unsafe extern "C" fn math_fraction() {
+pub unsafe fn math_fraction() {
     let c = cur_chr();
 
     if cur_list_aux_b32s1() != TEX_NULL {
@@ -2594,8 +2588,7 @@ pub unsafe extern "C" fn math_fraction() {
 }
 
 /// translated from xetex-math.c:703 (math_left_right)
-#[no_mangle]
-pub unsafe extern "C" fn math_left_right() {
+pub unsafe fn math_left_right() {
     let t = cur_chr() as u16;
     if t != LEFT_NOAD && cur_group() != MATH_LEFT_GROUP {
         if cur_group() == MATH_SHIFT_GROUP {
@@ -2674,8 +2667,7 @@ fn set_family_bits(x: i32) -> i32 {
 }
 
 /// translated from xetex-math.c:355 (math_ac)
-#[no_mangle]
-pub unsafe extern "C" fn math_ac() {
+pub unsafe fn math_ac() {
     if cur_cmd() == ACCENT {
         crate::output::error_here_with_diagnostic(c"Please use ".as_ptr());
         crate::output::print_esc_cstr(c"mathaccent".as_ptr());
@@ -2745,8 +2737,7 @@ pub unsafe extern "C" fn math_ac() {
 }
 
 /// translated from xetex-math.c:786 (resume_after_display)
-#[no_mangle]
-pub unsafe extern "C" fn resume_after_display() {
+pub unsafe fn resume_after_display() {
     if cur_group() != MATH_SHIFT_GROUP {
         crate::errors::confusion(c"display".as_ptr());
     }
@@ -2960,8 +2951,7 @@ unsafe fn check_math_font_params(danger: &mut bool) {
 }
 
 /// translated from xetex-math.c:194 (after_math)
-#[no_mangle]
-pub unsafe extern "C" fn after_math() {
+pub unsafe fn after_math() {
     let mut danger = false;
 
     let mut j = if cur_list_mode() == MMODE {
@@ -3200,8 +3190,7 @@ pub unsafe extern "C" fn after_math() {
 }
 
 /// translated from xetex-math.c:81 (init_math)
-#[no_mangle]
-pub unsafe extern "C" fn init_math() {
+pub unsafe fn init_math() {
     crate::scan::get_token();
 
     if cur_cmd() == MATH_SHIFT && cur_list_mode() > 0 {

@@ -57,9 +57,10 @@ unlocks everything downstream.
 **Translation rules:**
 -   Take `&mut Mem` (Phase B) — but in Phase A, read/write the C
     globals for now. Add the `&mut Mem` parameter later.
--   Add typed accessors (see `03-memory-and-nodes.md`) as you need
-    them. Don't preemptively add accessors for nodes you haven't
-    touched yet.
+-   Add typed handles/views and field methods (see
+    `03-memory-and-nodes.md`) as you need them. Don't preemptively add
+    node APIs for nodes you haven't touched yet. Transitional raw
+    `MemIdx` field helpers are allowed only as bridge/private code.
 -   Preserve the C code's invariants about the free-list rover: it
     walks in a specific order, and the order *does* affect which
     word is reused next, which can affect output in subtle ways

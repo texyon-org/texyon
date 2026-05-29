@@ -8,6 +8,12 @@
 //!
 //! See `plan/04-migration-order.md` Phase 1 for context on why these
 //! functions are the very first ones translated.
+use crate::errors::error;
+use crate::output::capture_to_diagnostic;
+use crate::output::error_here_with_diagnostic;
+use crate::output::print_cstr;
+use crate::output::print_scaled;
+
 
 use crate::globals::{
     j_random, random_entry, set_arith_error, set_help_line, set_help_ptr, set_j_random,
@@ -15,11 +21,11 @@ use crate::globals::{
 };
 
 extern "C" {
-    fn error();
-    fn capture_to_diagnostic(diagnostic: *mut std::ffi::c_void);
-    fn error_here_with_diagnostic(message: *const libc::c_char) -> *mut std::ffi::c_void;
-    fn print_scaled(s: i32);
-    fn print_cstr(s: *const libc::c_char);
+    
+    
+    
+    
+    
 }
 
 // ---------------------------------------------------------------------------
@@ -135,8 +141,7 @@ pub unsafe extern "C" fn mult_and_add(
 /// 0, with `tex_remainder = x`) on division by zero.
 ///
 /// translated from xetex-scaledmath.c:79 (x_over_n)
-#[no_mangle]
-pub unsafe extern "C" fn x_over_n(mut x: i32, mut n: i32) -> i32 {
+pub unsafe fn x_over_n(mut x: i32, mut n: i32) -> i32 {
     // scaled_t is i32
 
     if n == 0 {

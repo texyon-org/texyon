@@ -1,6 +1,12 @@
 //! Control-sequence hash table lookups (id_lookup, prim_lookup).
 //!
 //! Translated from xetex-xetex0.c.
+use crate::errors::overflow;
+use crate::string_pool::length;
+use crate::string_pool::make_string;
+use crate::string_pool::str_eq_buf;
+use crate::string_pool::str_eq_str;
+
 
 use crate::globals::{
     buffer_entry, hash_extra, hash_high, hash_s0, hash_s1, hash_used, init_pool_ptr,
@@ -10,11 +16,11 @@ use crate::globals::{
 };
 
 extern "C" {
-    fn overflow(s: *const libc::c_char, n: i32) -> !;
-    fn length(s: i32) -> i32;
-    fn str_eq_buf(s: i32, k: i32) -> bool;
-    fn str_eq_str(s: i32, t: i32) -> bool;
-    fn make_string() -> i32;
+    
+    
+    
+    
+    
 }
 
 // xetex-constants.h:25

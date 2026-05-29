@@ -15,6 +15,9 @@ pub struct PdfFile {
 }
 
 // dpx layout types — must match C struct layout exactly (dpx-pdfdev.h)
+use crate::ext::D2Fix;
+use crate::ext::Fix2D;
+
 #[repr(C)]
 struct PdfTMatrix {
     a: c_double,
@@ -107,8 +110,8 @@ extern "C" {
     fn min4(v1: c_double, v2: c_double, v3: c_double, v4: c_double) -> c_double;
     fn max4(v1: c_double, v2: c_double, v3: c_double, v4: c_double) -> c_double;
     // xetex-ext.c conversion helpers (still in C)
-    fn Fix2D(f: i32) -> c_double;
-    fn D2Fix(d: c_double) -> i32;
+    
+    
     // bridge I/O
     fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
     fn ttstub_input_close(handle: usize) -> c_int;
@@ -397,8 +400,7 @@ fn corners_bbox(corners: &[RealPoint; 4]) -> (f64, f64, f64, f64) {
 }
 
 // translated from xetex-pic.c:336 (load_picture)
-#[no_mangle]
-pub unsafe extern "C" fn load_picture(is_pdf: bool) {
+pub unsafe fn load_picture(is_pdf: bool) {
     use crate::errors::error;
     use crate::globals::{
         cur_area, cur_ext, cur_list_tail, cur_name, cur_val, mem_node_addr, set_mem_b16s0,
@@ -706,8 +708,7 @@ pub unsafe extern "C" fn load_picture(is_pdf: bool) {
 }
 
 // translated from xetex-pic.c:76 (count_pdf_file_pages)
-#[no_mangle]
-pub unsafe extern "C" fn count_pdf_file_pages() -> c_int {
+pub unsafe fn count_pdf_file_pages() -> c_int {
     let handle = ttstub_input_open(crate::globals::name_of_file(), TTBC_FILE_FORMAT_PICT, 0);
     if handle == INVALID_HANDLE {
         return 0;

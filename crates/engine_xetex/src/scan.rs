@@ -1,6 +1,85 @@
 //! Scanner range-validation helpers and mu_error.
 //!
 //! Translated from xetex-xetex0.c.
+use crate::errors::error;
+use crate::errors::int_error;
+use crate::errors::not_aat_font_error;
+use crate::errors::not_aat_gr_font_error;
+use crate::errors::not_native_font_error;
+use crate::errors::not_ot_font_error;
+use crate::ext::aat_font_get;
+use crate::ext::aat_font_get_1;
+use crate::ext::aat_font_get_2;
+use crate::ext::aat_font_get_named;
+use crate::ext::aat_font_get_named_1;
+use crate::ext::aat_get_font_metrics;
+use crate::ext::aat_print_font_name;
+use crate::ext::apply_mapping;
+use crate::ext::apply_tfm_font_mapping;
+use crate::ext::check_for_tfm_font_mapping;
+use crate::ext::find_native_font;
+use crate::ext::get_encoding_mode_and_info;
+use crate::ext::get_font_char_range;
+use crate::ext::get_glyph_bounds;
+use crate::ext::get_native_char_height_depth;
+use crate::ext::get_native_char_sidebearings;
+use crate::ext::getnativechardp;
+use crate::ext::getnativecharht;
+use crate::ext::getnativecharic;
+use crate::ext::getnativecharwd;
+use crate::ext::gr_font_get_named;
+use crate::ext::gr_font_get_named_1;
+use crate::ext::gr_print_font_name;
+use crate::ext::linebreak_next;
+use crate::ext::linebreak_start;
+use crate::ext::load_tfm_font_mapping;
+use crate::ext::map_char_to_glyph;
+use crate::ext::map_glyph_to_index;
+use crate::ext::measure_native_glyph;
+use crate::ext::measure_native_node;
+use crate::ext::ot_font_get;
+use crate::ext::ot_font_get_1;
+use crate::ext::ot_font_get_2;
+use crate::ext::ot_font_get_3;
+use crate::ext::ot_get_font_metrics;
+use crate::ext::print_glyph_name;
+use crate::ext::real_get_native_glyph_italic_correction;
+use crate::ext::real_get_native_italic_correction;
+use crate::ext::real_get_native_word_cp;
+use crate::ext::release_font_engine;
+use crate::ini::prefixed_command;
+use crate::input::begin_token_list;
+use crate::io::input_line;
+use crate::io::tt_xetex_open_input;
+use crate::io::u_close;
+use crate::linebreak::line_break;
+use crate::math::after_math;
+use crate::math::append_choices;
+use crate::math::build_choices;
+use crate::math::fin_mlist;
+use crate::math::flush_math;
+use crate::math::init_math;
+use crate::math::math_ac;
+use crate::math::math_fraction;
+use crate::math::math_left_right;
+use crate::math::math_limit_switch;
+use crate::math::math_radical;
+use crate::math::resume_after_display;
+use crate::math::start_eq_no;
+use crate::math::sub_sup;
+use crate::mem::new_spec;
+use crate::output::capture_to_diagnostic;
+use crate::output::error_here_with_diagnostic;
+use crate::pagebuilder::build_page;
+use crate::pic::count_pdf_file_pages;
+use crate::pic::load_picture;
+use crate::shipout::finalize_dvi_file;
+use crate::shipout::new_edge;
+use crate::shipout::out_what;
+use crate::shipout::ship_out;
+use crate::synctex::synctex_start_input;
+use crate::synctex::synctex_terminate;
+
 
 use crate::globals::{
     active_width, align_state, arith_error, avail, buffer_entry, char_base_entry, cur_chr, cur_cmd,
@@ -29,95 +108,81 @@ use crate::mem::new_rule;
 use crate::output::print_cmd_chr;
 
 extern "C" {
-    fn begin_token_list(p: i32, t: u16);
-    fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
-    fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
-    fn int_error(n: i32);
+    
+    
+    
+    
     fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
-    fn error();
+    
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
-    fn input_line(f: *mut libc::c_void) -> libc::c_int;
-    fn u_close(f: *mut libc::c_void);
-    fn line_break(d: bool);
-    fn build_page();
+    
+    
+    
+    
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
-    fn aat_font_get(what: i32, engine: *mut libc::c_void) -> i32;
-    fn aat_font_get_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
-    fn aat_font_get_2(what: i32, engine: *mut libc::c_void, p1: i32, p2: i32) -> i32;
-    fn aat_font_get_named(what: i32, engine: *mut libc::c_void) -> i32;
-    fn aat_font_get_named_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
-    fn ot_font_get(what: i32, engine: *mut libc::c_void) -> i32;
-    fn ot_font_get_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
-    fn ot_font_get_2(what: i32, engine: *mut libc::c_void, p1: i32, p2: i32) -> i32;
-    fn ot_font_get_3(what: i32, engine: *mut libc::c_void, p1: i32, p2: i32, p3: i32) -> i32;
-    fn gr_font_get_named(what: i32, engine: *mut libc::c_void) -> i32;
-    fn gr_font_get_named_1(what: i32, engine: *mut libc::c_void, p1: i32) -> i32;
-    fn not_native_font_error(cmd: i32, c: i32, f: i32);
-    fn not_aat_font_error(cmd: i32, c: i32, f: i32);
-    fn not_aat_gr_font_error(cmd: i32, c: i32, f: i32);
-    fn not_ot_font_error(cmd: i32, c: i32, f: i32);
-    fn getnativecharwd(f: i32, c: i32) -> i32;
-    fn getnativecharht(f: i32, c: i32) -> i32;
-    fn getnativechardp(f: i32, c: i32) -> i32;
-    fn getnativecharic(f: i32, c: i32) -> i32;
-    fn apply_tfm_font_mapping(mapping: *mut libc::c_void, c: i32) -> i32;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
-    fn get_glyph_bounds(f: i32, edge: i32, gid: i32) -> i32;
-    fn get_font_char_range(f: i32, first: libc::c_int) -> i32;
-    fn map_char_to_glyph(f: i32, ch: i32) -> i32;
-    fn apply_mapping(mapping: *mut libc::c_void, text: *mut u16, text_len: i32) -> i32;
-    fn map_glyph_to_index(f: i32) -> i32;
-    fn count_pdf_file_pages() -> i32;
+    
+    
+    
+    
+    
+    
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
-    fn new_spec(p: i32) -> i32;
-    fn real_get_native_word_cp(node: *mut std::ffi::c_void, side: libc::c_int) -> i32;
-    fn ship_out(p: i32);
-    fn fin_mlist(p: i32) -> i32;
-    fn build_choices();
-    fn synctex_start_input();
+    
+    
+    
+    
+    
+    
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
-    fn flush_math();
-    fn resume_after_display();
+    
+    
     fn ttstub_output_close(handle: usize) -> libc::c_int;
     fn ttstub_output_putc(handle: usize, c: i32) -> i32;
-    fn finalize_dvi_file();
-    fn synctex_terminate(log_opened: bool);
-    fn out_what(p: i32);
-    fn load_picture(is_pdf: bool);
-    fn measure_native_glyph(node: *mut std::ffi::c_void, use_glyph_metrics: bool);
-    fn measure_native_node(node: *mut std::ffi::c_void, use_glyph_metrics: libc::c_int);
-    fn get_encoding_mode_and_info(info: *mut i32) -> i32;
-    fn aat_print_font_name(what: i32, attrs: *mut libc::c_void, param1: i32, param2: i32);
-    fn gr_print_font_name(what: i32, engine: *mut libc::c_void, param1: i32, param2: i32);
-    fn print_glyph_name(font: i32, gid: i32);
-    fn find_native_font(name: *mut libc::c_char, scaled_size: i32) -> *mut libc::c_void;
-    fn release_font_engine(engine: *mut libc::c_void, type_flag: i32);
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     fn get_loaded_font_design_size() -> i32;
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
-    fn aat_get_font_metrics(
-        engine: *mut libc::c_void,
-        ascent: *mut i32,
-        descent: *mut i32,
-        xheight: *mut i32,
-        capheight: *mut i32,
-        slant: *mut i32,
-    );
-    fn ot_get_font_metrics(
-        engine: *mut libc::c_void,
-        ascent: *mut i32,
-        descent: *mut i32,
-        xheight: *mut i32,
-        capheight: *mut i32,
-        slant: *mut i32,
-    );
+    
+    
     fn get_ot_math_constant(f: i32, n: i32) -> i32;
     fn ttstub_input_getc(handle: usize) -> libc::c_int;
     fn ttstub_input_close(handle: usize) -> libc::c_int;
-    fn tt_xetex_open_input(filefmt: libc::c_int) -> usize;
-    fn check_for_tfm_font_mapping();
-    fn load_tfm_font_mapping() -> *mut libc::c_void;
+    
+    
+    
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -446,8 +511,7 @@ pub unsafe extern "C" fn scan_math_fam_int() {
 }
 
 // translated from xetex-xetex0.c:5366 (scan_four_bit_int)
-#[no_mangle]
-pub unsafe extern "C" fn scan_four_bit_int() {
+pub unsafe fn scan_four_bit_int() {
     scan_int();
     if cur_val() < 0 || cur_val() > 15 {
         let errmsg = error_here_with_diagnostic(c"Bad number".as_ptr());
@@ -628,8 +692,7 @@ pub unsafe extern "C" fn get_input_normalization_state() -> i32 {
 /// Returns INTPAR(xetex_tracing_fonts).
 ///
 /// translated from xetex-xetex0.c:9082 (get_tracing_fonts_state)
-#[no_mangle]
-pub unsafe extern "C" fn get_tracing_fonts_state() -> i32 {
+pub unsafe fn get_tracing_fonts_state() -> i32 {
     eqtb_b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS)
 }
 
@@ -713,8 +776,7 @@ pub unsafe extern "C" fn insert_dollar_sign() {
 }
 
 /// translated from xetex-xetex0.c:4355 (scan_optional_equals)
-#[no_mangle]
-pub unsafe extern "C" fn scan_optional_equals() {
+pub unsafe fn scan_optional_equals() {
     loop {
         get_x_token();
         if cur_cmd() != SPACER {
@@ -733,8 +795,7 @@ const OTHER_CHAR: u8 = 12;
 const LEFT_BRACE_TOKEN: i32 = 0x200000;
 
 /// translated from xetex-xetex0.c:4319 (scan_left_brace)
-#[no_mangle]
-pub unsafe extern "C" fn scan_left_brace() {
+pub unsafe fn scan_left_brace() {
     loop {
         get_x_token();
         if cur_cmd() != SPACER && cur_cmd() != RELAX {
@@ -2318,16 +2379,16 @@ pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
             _tt_abort(c"terminal input forbidden".as_ptr());
         } else if read_open_entry(m) == JUST_OPEN {
             // §504
-            if input_line(read_file_entry(m) as *mut libc::c_void) != 0 {
+            if input_line(read_file_entry(m)) != 0 {
                 set_read_open_entry(m, NORMAL_SCANNER); // NORMAL = 0
             } else {
-                u_close(read_file_entry(m) as *mut libc::c_void);
+                u_close(read_file_entry(m));
                 set_read_open_entry(m, CLOSED);
             }
         } else {
             // §505
-            if input_line(read_file_entry(m) as *mut libc::c_void) == 0 {
-                u_close(read_file_entry(m) as *mut libc::c_void);
+            if input_line(read_file_entry(m)) == 0 {
+                u_close(read_file_entry(m));
                 set_read_open_entry(m, CLOSED);
                 if align_state() != 1_000_000 {
                     runaway();
@@ -2417,8 +2478,7 @@ pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
 const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
 
 /// translated from xetex-xetex0.c:7827 (begin_name)
-#[no_mangle]
-pub unsafe extern "C" fn begin_name() {
+pub unsafe fn begin_name() {
     use crate::globals::{
         set_area_delimiter, set_ext_delimiter, set_file_name_quote_char, set_quoted_filename,
     };
@@ -2429,8 +2489,7 @@ pub unsafe extern "C" fn begin_name() {
 }
 
 /// translated from xetex-xetex0.c:7837 (more_name)
-#[no_mangle]
-pub unsafe extern "C" fn more_name(c: u16) -> bool {
+pub unsafe fn more_name(c: u16) -> bool {
     use crate::globals::{
         area_delimiter, ext_delimiter, file_name_quote_char, quoted_filename, set_area_delimiter,
         set_ext_delimiter, set_file_name_quote_char, set_quoted_filename, stop_at_space,
@@ -2466,8 +2525,7 @@ pub unsafe extern "C" fn more_name(c: u16) -> bool {
 }
 
 /// translated from xetex-xetex0.c:7870 (end_name)
-#[no_mangle]
-pub unsafe extern "C" fn end_name() {
+pub unsafe fn end_name() {
     use crate::globals::{
         area_delimiter, cur_area, cur_ext, cur_name, ext_delimiter, init_str_ptr, max_strings,
         set_cur_area, set_cur_ext, set_cur_name, set_pool_ptr, set_str_ptr,
@@ -2769,8 +2827,7 @@ unsafe fn scan_file_name_braced() {
 }
 
 /// translated from xetex-xetex0.c:8003 (scan_file_name)
-#[no_mangle]
-pub unsafe extern "C" fn scan_file_name() {
+pub unsafe fn scan_file_name() {
     let save_warning_index = warning_index();
     set_warning_index(cur_cs());
 
@@ -4307,7 +4364,7 @@ pub unsafe extern "C" fn conditional() {
                 if m >= max_buf_stack() {
                     set_max_buf_stack(m + 1);
                     if max_buf_stack() == buf_size() {
-                        overflow(c"buffer size".as_ptr(), buf_size());
+                        crate::errors::overflow(c"buffer size".as_ptr(), buf_size());
                     }
                 }
                 set_buffer_entry(m, mem_b32s0(p) % MAX_CHAR_VAL);
@@ -4475,13 +4532,6 @@ unsafe fn pop_cond_node() {
     crate::mem::free_node(p, IF_NODE_SIZE);
 }
 
-/// Calls `overflow` (still in C) with a pool-string message.
-unsafe fn overflow(s: *const libc::c_char, n: i32) {
-    extern "C" {
-        fn overflow(s: *const libc::c_char, n: i32);
-    }
-    overflow(s, n);
-}
 
 // ---------------------------------------------------------------------------
 // open_log_file
@@ -4491,8 +4541,7 @@ const INVALID_HANDLE: usize = 0;
 const SELECTOR_LOG_ONLY: i32 = 18;
 
 /// translated from xetex-xetex0.c:7937 (open_log_file)
-#[no_mangle]
-pub unsafe extern "C" fn open_log_file() {
+pub unsafe fn open_log_file() {
     use crate::globals::{
         input_ptr, input_stack, job_name, name_of_file, set_input_stack, set_job_name,
         set_log_file, set_log_opened, set_texmf_log_name,
@@ -4732,7 +4781,7 @@ pub unsafe extern "C" fn start_input(primary_input_name: *const libc::c_char) {
     set_cur_input_state(NEW_LINE);
     synctex_start_input();
     set_line(1);
-    input_line(input_file(idx) as *mut libc::c_void);
+    input_line(input_file(idx));
     set_cur_input_limit(last());
 
     if eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR) < 0
@@ -5043,8 +5092,7 @@ const INT_PAR_HANG_AFTER: i32 = 41; // xetex_format.h:76
 const DIMEN_PAR_HANG_INDENT: i32 = 17; // xetex_format.h:139
 
 // translated from xetex-xetex0.c:9496 (normal_paragraph)
-#[no_mangle]
-pub unsafe extern "C" fn normal_paragraph() {
+pub unsafe fn normal_paragraph() {
     if eqtb_b32s1(INT_BASE + INT_PAR_LOOSENESS) != 0 {
         crate::save::eq_word_define(INT_BASE + INT_PAR_LOOSENESS, 0);
     }
@@ -5067,8 +5115,7 @@ pub unsafe extern "C" fn normal_paragraph() {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:9270 (box_error)
-#[no_mangle]
-pub unsafe extern "C" fn box_error(n: u8) {
+pub unsafe fn box_error(n: u8) {
     let box_val = eqtb_b32s1(BOX_BASE + n as i32);
     error();
     crate::output::begin_diagnostic();
@@ -5776,7 +5823,7 @@ const DISC_GROUP: u8 = 10; // xetex-constants.h:162
 #[no_mangle]
 pub unsafe extern "C" fn append_discretionary() {
     extern "C" {
-        fn new_character(f: i32, c: u16) -> i32;
+        
     }
 
     let tail = crate::globals::cur_list_tail();
@@ -6998,8 +7045,8 @@ pub unsafe extern "C" fn show_whatever() {
 pub unsafe extern "C" fn append_italic_correction() {
     extern "C" {
         // Note: in C these are macros: get_native_italic_correction(p) = real_get_native_italic_correction(&mem[p])
-        fn real_get_native_italic_correction(p: *mut libc::c_void) -> i32;
-        fn real_get_native_glyph_italic_correction(p: *mut libc::c_void) -> i32;
+        
+        
     }
     const LIGATURE_NODE: u16 = 6; // xetex_format.h:386
     const EXPLICIT: u16 = 1; // xetex_format.h:428
@@ -7061,9 +7108,9 @@ pub unsafe extern "C" fn append_italic_correction() {
 #[no_mangle]
 pub unsafe extern "C" fn make_accent() {
     extern "C" {
-        fn new_character(f: i32, c: i32) -> i32;
-        fn get_native_char_sidebearings(f: i32, c: i32, lsb: *mut i32, rsb: *mut i32);
-        fn get_native_char_height_depth(f: i32, c: i32, h: *mut i32, depth: *mut i32);
+        
+        
+        
     }
     const SLANT_CODE: i32 = 1; // xetex-constants.h:273
     const X_HEIGHT_CODE: i32 = 5; // xetex-constants.h:294
@@ -7079,7 +7126,7 @@ pub unsafe extern "C" fn make_accent() {
 
     scan_char_num();
     let mut f = eqtb_b32s1(CUR_FONT_LOC);
-    let p = new_character(f, cur_val());
+    let p = new_character(f, cur_val() as u16);
 
     if p == crate::mem::TEX_NULL {
         return;
@@ -7106,11 +7153,11 @@ pub unsafe extern "C" fn make_accent() {
     let mut q = crate::mem::TEX_NULL;
     f = eqtb_b32s1(CUR_FONT_LOC);
     if cur_cmd() == LETTER || cur_cmd() == OTHER_CHAR || cur_cmd() == CHAR_GIVEN {
-        q = new_character(f, cur_chr());
+        q = new_character(f, cur_chr() as u16);
         set_cur_val(cur_chr());
     } else if cur_cmd() == CHAR_NUM {
         scan_char_num();
-        q = new_character(f, cur_val());
+        q = new_character(f, cur_val() as u16);
     } else {
         crate::input::back_input();
     }
@@ -7173,7 +7220,7 @@ pub unsafe extern "C" fn make_accent() {
 #[no_mangle]
 pub unsafe extern "C" fn new_font(a: i16) {
     extern "C" {
-        fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32;
+        
     }
     const TOO_BIG_CHAR: i32 = 65536; // xetex-constants.h
 
@@ -7948,7 +7995,7 @@ pub unsafe extern "C" fn main_control_append_normal_space() {
 #[no_mangle]
 pub unsafe extern "C" fn main_control_mode_independent() {
     extern "C" {
-        fn prefixed_command();
+        
     }
 
     const AFTER_ASSIGNMENT_MC: u8 = 40;
@@ -8356,8 +8403,7 @@ pub unsafe extern "C" fn main_control_alignment_cases() {
 }
 
 // translated from xetex-xetex0.c:6381 (pack_file_name)
-#[no_mangle]
-pub unsafe extern "C" fn pack_file_name(n: i32, a: i32, e: i32) {
+pub unsafe fn pack_file_name(n: i32, a: i32, e: i32) {
     extern "C" {
         fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     }
@@ -8597,10 +8643,9 @@ pub unsafe extern "C" fn new_graf(indented: bool) {
 }
 
 // translated from xetex-xetex0.c:7048 (new_character)
-#[no_mangle]
-pub unsafe extern "C" fn new_character(f: i32, c: u16) -> i32 {
+pub unsafe fn new_character(f: i32, c: u16) -> i32 {
     extern "C" {
-        fn new_native_character(f: i32, c: u32) -> i32;
+        
     }
     use crate::globals::{char_base_entry, font_bc_entry, font_ec_entry, font_info_b16};
 
@@ -9442,7 +9487,7 @@ pub unsafe extern "C" fn init_align() {
 #[no_mangle]
 pub unsafe extern "C" fn do_assignments() {
     extern "C" {
-        fn prefixed_command();
+        
     }
 
     const MAX_NON_PREFIXED_COMMAND: u8 = 71; // xetex_format.h:312
@@ -9465,8 +9510,7 @@ pub unsafe extern "C" fn do_assignments() {
 }
 
 // translated from xetex-xetex0.c:107 (runaway)
-#[no_mangle]
-pub unsafe extern "C" fn runaway() {
+pub unsafe fn runaway() {
     use crate::globals::{def_ref, error_line, mem_b32s1, scanner_status};
     use crate::mem::TEX_NULL;
 
@@ -9505,8 +9549,7 @@ pub unsafe extern "C" fn runaway() {
 }
 
 // translated from xetex-xetex0.c:7725 (vert_break)
-#[no_mangle]
-pub unsafe extern "C" fn vert_break(p: i32, h: i32, d: i32) -> i32 {
+pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
     use crate::mem::TEX_NULL;
 
     const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
@@ -10179,7 +10222,7 @@ pub unsafe extern "C" fn just_copy(p: i32, h: i32, t: i32) {
     use crate::mem::TEX_NULL;
 
     extern "C" {
-        fn new_edge(s: i16, w: i32) -> i32;
+        
     }
 
     const BOX_NODE_SIZE: i32 = 8; // xetex-constants.h:132
@@ -10357,7 +10400,7 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
     use crate::mem::TEX_NULL;
 
     extern "C" {
-        fn new_edge(s: i16, w: i32) -> i32;
+        
     }
 
     const MEDIUM_NODE_SIZE: i32 = 3;
@@ -10462,8 +10505,7 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
 }
 
 // translated from xetex-xetex0.c:6968 (char_pw)
-#[no_mangle]
-pub unsafe extern "C" fn char_pw(p: i32, side: i16) -> i32 {
+pub unsafe fn char_pw(p: i32, side: i16) -> i32 {
     use crate::globals::{
         font_info_b32s1, hi_mem_min, mem_b16s2, mem_node_addr, mem_ptr, param_base,
         set_last_leftmost_char, set_last_rightmost_char,
@@ -10845,8 +10887,7 @@ const INT_BASE_CFT: i32 = 7_826_729;
 const SELECTOR_TERM_ONLY_CFT: i32 = 17;
 
 /// translated from xetex-xetex0.c:9722 (close_files_and_terminate)
-#[no_mangle]
-pub unsafe extern "C" fn close_files_and_terminate() {
+pub unsafe fn close_files_and_terminate() {
     use crate::globals::{log_file, log_opened, write_file};
 
     for k in 0usize..=15 {
@@ -10892,8 +10933,7 @@ const PENALTY_NODE_PPT: u16 = 12; // xetex_format.h:392
 const VSPLIT_CODE_PPT: usize = 3; // xetex_format.h:483
 
 /// translated from xetex-xetex0.c:9761 (prune_page_top)
-#[no_mangle]
-pub unsafe extern "C" fn prune_page_top(p: i32, s: bool) -> i32 {
+pub unsafe fn prune_page_top(p: i32, s: bool) -> i32 {
     use crate::globals::{disc_ptr, set_disc_ptr};
     use crate::mem::TEX_NULL;
     let mut p = p;
@@ -10963,8 +11003,7 @@ const INDEX_NODE_SIZE_DM: i32 = 33;
 const MARK_CLASS_NODE_SIZE_DM: i32 = 4;
 
 /// translated from xetex-xetex0.c:9817 (do_marks)
-#[no_mangle]
-pub unsafe extern "C" fn do_marks(a: i16, l: i16, q: i32) -> bool {
+pub unsafe fn do_marks(a: i16, l: i16, q: i32) -> bool {
     use crate::globals::{cur_ptr, set_cur_ptr};
     use crate::mem::TEX_NULL;
     let mut q = q;
@@ -11256,7 +11295,7 @@ pub unsafe extern "C" fn do_extension() {
                     let use_glyph_metrics =
                         eqtb_b32s1(INT_BASE_DE + INT_PAR_XETEX_USE_GLYPH_METRICS_DE) > 0;
                     let node_ptr = crate::globals::mem_node_addr(cur_list_tail());
-                    measure_native_glyph(node_ptr, use_glyph_metrics);
+                    measure_native_glyph(node_ptr, use_glyph_metrics as i32);
                 } else {
                     not_native_font_error(EXTENSION_DE as i32, GLYPH_CODE_DE, cur_font);
                 }
@@ -11896,8 +11935,7 @@ const DIMEN_BASE_VP: i32 = 8_941_180; // xetex_format.h:222
                                       // xetex_format.h:297 (ADDITIONAL = 1 already defined as ADDITIONAL in this file's context)
 
 /// translated from xetex-xetex0.c:7424 (vpackage)
-#[no_mangle]
-pub unsafe extern "C" fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
+pub unsafe fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
     use crate::globals::{
         hi_mem_min, last_badness, line, mem_gr, output_active, pack_begin_line, set_last_badness,
         set_mem_gr, set_total_shrink, set_total_stretch, total_shrink, total_stretch,
@@ -12839,8 +12877,7 @@ const SUB_BOX_FNL: i32 = 2; // xetex-constants.h:283
 const MEMORY_WORD_SIZE_FNL: i32 = 8;
 
 /// translated from xetex-xetex0.c:765 (flush_node_list)
-#[no_mangle]
-pub unsafe extern "C" fn flush_node_list(mut p: i32) {
+pub unsafe fn flush_node_list(mut p: i32) {
     use crate::globals::{
         avail, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, mem_ptr,
         set_avail, set_mem_b16s0, set_mem_b32s1, set_mem_ptr,
@@ -14200,8 +14237,7 @@ pub unsafe extern "C" fn show_node_list(mut p: i32) {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:2764 (show_context)
-#[no_mangle]
-pub unsafe extern "C" fn show_context() {
+pub unsafe fn show_context() {
     use crate::globals::{
         base_ptr, buffer_entry, error_line, first_count, half_error_line, in_open, input_ptr,
         input_stack, line, line_stack, set_base_ptr, set_cur_input, set_first_count,
@@ -15235,7 +15271,7 @@ pub unsafe extern "C" fn get_next() {
                                 }
                             } else {
                                 if input_line(
-                                    input_file(cur_input().index as i32) as *mut libc::c_void
+                                    input_file(cur_input().index as i32)
                                 ) != 0
                                 {
                                     set_cur_input_limit(last());
@@ -15825,8 +15861,7 @@ const INT_PAR_XETEX_USE_GLYPH_METRICS_NC: i32 = 72;
 /// Allocate a native text node for one Unicode scalar, applying font mappings.
 ///
 /// translated from xetex-xetex0.c:6276 (new_native_character)
-#[no_mangle]
-pub unsafe extern "C" fn new_native_character(f: i32, mut c: u32) -> i32 {
+pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
     use crate::globals::{
         mem_as_u16_ptr_mut, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_ptr,
     };
@@ -15988,8 +16023,7 @@ unsafe fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Opti
 /// Read TFM metrics, with native-font fallback, and initialize a font entry.
 ///
 /// translated from xetex-xetex0.c:6350 (read_font_info)
-#[no_mangle]
-pub unsafe extern "C" fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
+pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
     let mut name_too_long = false;
     let mut file_opened = false;
     let mut g = FONT_BASE;
@@ -16722,8 +16756,8 @@ const INT_PAR_XETEX_LINEBREAK_PENALTY: i32 = 67;
 const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
 
 extern "C" {
-    fn linebreak_start(f: i32, locale_str_num: i32, text: *mut u16, text_length: i32);
-    fn linebreak_next(f: i32) -> i32;
+    
+    
     static mut main_f: i32;
     static mut native_text: *mut u16;
 }
@@ -16797,16 +16831,16 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn main_control_math_cases() {
     extern "C" {
-        fn init_math();
-        fn after_math();
-        fn start_eq_no();
-        fn math_limit_switch();
-        fn math_radical();
-        fn math_ac();
-        fn append_choices();
-        fn sub_sup();
-        fn math_fraction();
-        fn math_left_right();
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
     }
 
     const HMODE_MC: u16 = 104; // xetex_format.h:369
@@ -17134,9 +17168,9 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
 
     extern "C" {
         fn xrealloc(p: *mut libc::c_void, n: usize) -> *mut libc::c_void;
-        fn apply_mapping(mapping: *mut libc::c_void, text: *mut u16, len: i32) -> i32;
-        fn map_char_to_glyph(f: i32, c: i32) -> i32;
-        fn measure_native_node(node: *mut libc::c_void, use_glyph_metrics: libc::c_int);
+        
+        
+        
     }
 
     // Constants

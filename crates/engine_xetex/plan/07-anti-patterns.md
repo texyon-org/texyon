@@ -50,14 +50,26 @@ when translating a function is to dump all referenced globals into a single
 
 Pointer arithmetic in C becomes `unsafe` slice arithmetic in Rust. This
 is an *anti-pattern* unless the alternative is measurably slower. The
-right tool for `mem[p + 1].b32.s1` is a typed accessor on the arena:
+right tool for `mem[p + 1].b32.s1` is a typed handle/view plus a field
+method on the arena:
 
 ```rust
+let p: NodePtr<HListNode> = mem.expect_hlist(raw_p)?;
+
 impl Mem {
-    pub fn box_width(&self, p: MemIdx) -> Scaled { self[p + 1].i32_1() }
-    pub fn set_box_width(&mut self, p: MemIdx, w: Scaled) { self[p + 1].set_i32_1(w); }
+    pub fn width<K: HasDimensions>(&self, p: NodePtr<K>) -> Scaled {
+        self[p.idx().offset(1)].scaled_s1()
+    }
+
+    pub fn set_width<K: HasDimensions>(&mut self, p: NodePtr<K>, w: Scaled) {
+        self[p.idx().offset(1)].set_scaled_s1(w);
+    }
 }
 ```
+
+Raw `MemIdx`-taking field helpers are acceptable as a migration bridge
+inside `Mem`, but they should not become the final call-site API because
+they do not prove that the index references a node with that field.
 
 `unsafe` is *only* allowed in:
 

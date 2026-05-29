@@ -1,4 +1,9 @@
 //! Shipout helpers translated from `xetex/xetex-shipout.c`.
+use crate::ext::apply_tfm_font_mapping;
+use crate::ext::makeXDVGlyphArrayData;
+use crate::ext::make_font_def;
+use crate::ext::store_justified_native_glyphs;
+
 
 use crate::globals::{
     avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name,
@@ -24,7 +29,7 @@ use crate::globals::{
 use crate::mem::{free_node, get_avail, get_node, new_kern, new_math};
 
 extern "C" {
-    fn make_font_def(f: i32) -> libc::c_int;
+    
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     fn ttstub_output_write(
         handle: usize,
@@ -36,9 +41,9 @@ extern "C" {
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn ttstub_shell_escape(cmd: *const u16, len: libc::size_t);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
-    fn apply_tfm_font_mapping(cnv: *mut libc::c_void, c: libc::c_int) -> libc::c_int;
-    fn makeXDVGlyphArrayData(node: *mut libc::c_void) -> libc::c_int;
-    fn store_justified_native_glyphs(node: *mut libc::c_void);
+    
+    
+    
     static output_file_extension: *const libc::c_char;
 }
 
@@ -209,8 +214,7 @@ const SELECTOR_NEW_STRING: i32 = 21;
 /// Create a new edge node of subtype `s` and width `w`.
 ///
 /// translated from xetex-shipout.c:1708 (new_edge)
-#[no_mangle]
-pub unsafe extern "C" fn new_edge(s: i16, w: i32) -> i32 {
+pub unsafe fn new_edge(s: i16, w: i32) -> i32 {
     let p = get_node(EDGE_NODE_SIZE);
     set_mem_b16s1(p, EDGE_NODE);
     set_mem_b16s0(p, s as u16);
@@ -374,8 +378,7 @@ pub unsafe extern "C" fn dvi_out(c: u8) {
 }
 
 // translated from xetex-shipout.c:56 (ship_out)
-#[no_mangle]
-pub unsafe extern "C" fn ship_out(p: i32) {
+pub unsafe fn ship_out(p: i32) {
     crate::synctex::synctex_sheet(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
 
     if job_name() == 0 {
@@ -1654,8 +1657,7 @@ unsafe fn print_c_string_here(s: *const libc::c_char) {
 }
 
 // translated from xetex-shipout.c:2173 (finalize_dvi_file)
-#[no_mangle]
-pub unsafe extern "C" fn finalize_dvi_file() {
+pub unsafe fn finalize_dvi_file() {
     while cur_s > -1 {
         if cur_s > 0 {
             dvi_out(POP);
@@ -2298,8 +2300,7 @@ pub unsafe extern "C" fn pic_out(p: i32) {
 
 // translated from xetex-shipout.c:1682 (out_what)
 // Declared in xetex-xetexd.h (external linkage) → #[no_mangle].
-#[no_mangle]
-pub unsafe extern "C" fn out_what(p: i32) {
+pub unsafe fn out_what(p: i32) {
     match mem_b16s0(p) {
         OPEN_NODE | WRITE_NODE | CLOSE_NODE => {
             if !doing_leaders() {

@@ -17,6 +17,8 @@
 
 // TODO: the internal interface we're using here is pretty janky. The bibtex
 // engine has a nicer approach that we should probably start using.
+use crate::engine_interface::tt_xetex_set_int_variable;
+
 
 use std::{ffi::CString, time::SystemTime};
 use tectonic_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
@@ -265,10 +267,7 @@ pub mod c_api {
 
     #[allow(improper_ctypes)] // for CoreBridgeState
     extern "C" {
-        pub fn tt_xetex_set_int_variable(
-            var_name: *const libc::c_char,
-            value: libc::c_int,
-        ) -> libc::c_int;
+        
 
         pub fn tt_engine_xetex_main(
             api: &mut CoreBridgeState,

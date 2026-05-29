@@ -1,6 +1,13 @@
 //! Save-stack management functions translated from `xetex/xetex-xetex0.c`.
 //!
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
+use crate::output::capture_to_diagnostic;
+use crate::output::error_here_with_diagnostic;
+use crate::output::print_cstr;
+use crate::output::print_int;
+use crate::output::print_nl_cstr;
+use crate::scan::flush_node_list;
+
 
 use crate::globals::{
     align_state, cur_boundary, cur_group, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0,
@@ -19,13 +26,13 @@ use crate::mem_types::MemoryWord;
 const TEX_NULL: i32 = -0x0FFF_FFFF; // MIN_HALFWORD
 
 extern "C" {
-    fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut libc::c_void;
-    fn capture_to_diagnostic(diag: *mut libc::c_void);
-    fn print_int(n: i32);
-    fn print_cstr(s: *const libc::c_char);
-    fn print_nl_cstr(s: *const libc::c_char);
+    
+    
+    
+    
+    
     fn ttstub_diag_printf(d: *mut libc::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
-    fn flush_node_list(p: i32);
+    
 }
 
 // Save-stack discriminant values (xetex-constants.h:260–285).
@@ -54,8 +61,7 @@ const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 /// Push a new grouping level onto the save stack.
 ///
 /// translated from xetex-xetex0.c:3932 (new_save_level)
-#[no_mangle]
-pub unsafe extern "C" fn new_save_level(c: u8) {
+pub unsafe fn new_save_level(c: u8) {
     if save_ptr() > max_save_stack() {
         set_max_save_stack(save_ptr());
         if max_save_stack() > save_size() - 7 {
@@ -129,8 +135,7 @@ pub unsafe extern "C" fn eq_word_define(p: i32, w: i32) {
 /// Globally assign `eqtb[p].b32.s1 = w` at LEVEL_ONE.
 ///
 /// translated from xetex-xetex0.c:3977 (geq_word_define)
-#[no_mangle]
-pub unsafe extern "C" fn geq_word_define(p: i32, w: i32) {
+pub unsafe fn geq_word_define(p: i32, w: i32) {
     set_eqtb_b32s1(p, w);
     set_xeq_level(p, LEVEL_ONE);
 }
@@ -635,8 +640,7 @@ unsafe fn sa_alloc_chain(t: u16, n: i32, mut q: i32, levels: &[i32]) {
 /// Navigate (and optionally create) a path in the sparse-array trie.
 ///
 /// translated from xetex-xetex0.c:4129 (find_sa_element)
-#[no_mangle]
-pub unsafe extern "C" fn find_sa_element(t: u16, n: i32, w: bool) {
+pub unsafe fn find_sa_element(t: u16, n: i32, w: bool) {
     // Trie-level indices: break n into four 6-bit digits (roughly).
     let lvl = [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64];
 

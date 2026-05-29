@@ -143,7 +143,7 @@ pub(crate) struct InputClusterState {
     /// C-`malloc`'d `input_file` pointer. Not serialized in format dump/undump.
     /// Element type is a `UFILE*` handle, stored as `*mut c_void` to avoid a
     /// cyclic dependency on `io.rs` — a plain pointer, no newtype debt.
-    pub input_file: Vec<*mut libc::c_void>,
+    pub input_file: Vec<*mut crate::io::UFile>,
     /// Rust-owned semantic-nest (mode) stack (`nest_size + 1` records, matching
     /// the former `xmalloc_array` shape). Allocated at engine init and released
     /// by `tt_cleanup`; never reallocated during a run. Replaces the former
@@ -197,7 +197,7 @@ pub(crate) struct InputClusterState {
     /// convention as `input_file`). The pointer-escaping accessor `read_file_ptr` is valid
     /// because the array lives in the `'static` thread-local and is never moved. Plain opaque
     /// pointer, no newtype debt.
-    pub read_file: [*mut libc::c_void; 16],
+    pub read_file: [*mut crate::io::UFile; 16],
 }
 
 pub(crate) struct EqtbState {

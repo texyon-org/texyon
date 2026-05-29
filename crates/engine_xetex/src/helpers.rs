@@ -15,8 +15,7 @@ const INF_BAD: i32 = 10000;
 /// or the result would exceed 10000, otherwise `(t/s)^3 * 100` rounded.
 ///
 /// translated from xetex-xetex0.c:25 (badness)
-#[no_mangle]
-pub unsafe extern "C" fn badness(t: i32, s: i32) -> i32 {
+pub unsafe fn badness(t: i32, s: i32) -> i32 {
     if t == 0 {
         return 0;
     }

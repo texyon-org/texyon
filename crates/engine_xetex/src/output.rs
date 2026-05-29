@@ -1,4 +1,8 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
+use crate::ext::print_utf8_str;
+use crate::scan::show_context;
+use crate::texmfmp::gettexstring;
+
 
 use crate::globals::{
     base_ptr, cond_ptr, cur_boundary, cur_chr, cur_cmd, cur_group, cur_if, cur_input, cur_level,
@@ -81,9 +85,9 @@ extern "C" {
     fn ttbc_diag_begin_warning() -> *mut std::ffi::c_void;
     fn ttbc_diag_begin_error() -> *mut std::ffi::c_void;
     fn ttstub_diag_printf(diag: *mut std::ffi::c_void, fmt: *const libc::c_char, ...);
-    fn gettexstring(s: i32) -> *mut libc::c_char;
+    
     // Still in C — complex context display.
-    fn show_context();
+    
 }
 
 // ---------------------------------------------------------------------------
@@ -117,8 +121,7 @@ fn print_the_digs(mut k: u8) {
 /// Print an integer in decimal.
 ///
 /// translated from xetex-output.c:363 (print_int)
-#[no_mangle]
-pub unsafe extern "C" fn print_int(mut n: i32) {
+pub unsafe fn print_int(mut n: i32) {
     let mut k: u8 = 0;
 
     if n < 0 {
@@ -206,8 +209,7 @@ pub unsafe extern "C" fn print_ucs_code(mut n: i32) {
 /// Print a C string one character at a time via `print_char`.
 ///
 /// translated from xetex-output.c:301 (print_cstr)
-#[no_mangle]
-pub unsafe extern "C" fn print_cstr(str_ptr: *const libc::c_char) {
+pub unsafe fn print_cstr(str_ptr: *const libc::c_char) {
     let s = std::ffi::CStr::from_ptr(str_ptr);
     for &b in s.to_bytes() {
         print_char(b as i32);
@@ -221,8 +223,7 @@ pub unsafe extern "C" fn print_cstr(str_ptr: *const libc::c_char) {
 /// Start a new line if needed, then print a C string.
 ///
 /// translated from xetex-output.c:319 (print_nl_cstr)
-#[no_mangle]
-pub unsafe extern "C" fn print_nl_cstr(str_ptr: *const libc::c_char) {
+pub unsafe fn print_nl_cstr(str_ptr: *const libc::c_char) {
     let sel = selector();
     if ((term_offset() > 0) && (sel & 1 != 0))
         || ((file_offset() > 0) && (sel >= SELECTOR_LOG_ONLY))
@@ -239,8 +240,7 @@ pub unsafe extern "C" fn print_nl_cstr(str_ptr: *const libc::c_char) {
 /// Print the escape character (if any) followed by a C string.
 ///
 /// translated from xetex-output.c:338 (print_esc_cstr)
-#[no_mangle]
-pub unsafe extern "C" fn print_esc_cstr(s: *const libc::c_char) {
+pub unsafe fn print_esc_cstr(s: *const libc::c_char) {
     let c = eqtb_b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
     if (0..=BIGGEST_USV).contains(&c) {
         print_char(c);
@@ -255,8 +255,7 @@ pub unsafe extern "C" fn print_esc_cstr(s: *const libc::c_char) {
 /// Start a new line if needed, then print string `s`.
 ///
 /// translated from xetex-output.c:302 (print_nl)
-#[no_mangle]
-pub unsafe extern "C" fn print_nl(s: i32) {
+pub unsafe fn print_nl(s: i32) {
     let sel = selector();
     if ((term_offset() > 0) && (sel & 1 != 0))
         || ((file_offset() > 0) && (sel >= SELECTOR_LOG_ONLY))
@@ -341,8 +340,7 @@ pub unsafe extern "C" fn print_roman_int(mut n: i32) {
 /// Print a scaled integer (fixed-point with 16 fractional bits) as a decimal.
 ///
 /// translated from xetex-output.c:612 (print_scaled)
-#[no_mangle]
-pub unsafe extern "C" fn print_scaled(mut s: i32) {
+pub unsafe fn print_scaled(mut s: i32) {
     if s < 0 {
         print_char(b'-' as i32);
         s = -s;
@@ -387,8 +385,7 @@ pub unsafe extern "C" fn warn_char(c: i32) {
 /// Emit a newline to the current output destination(s).
 ///
 /// translated from xetex-output.c:84 (print_ln)
-#[no_mangle]
-pub unsafe extern "C" fn print_ln() {
+pub unsafe fn print_ln() {
     match selector() {
         SELECTOR_TERM_AND_LOG => {
             warn_char(b'\n' as i32);
@@ -421,8 +418,7 @@ pub unsafe extern "C" fn print_ln() {
 /// Write one UTF-16 code unit to the current output destination(s).
 ///
 /// translated from xetex-output.c:76 (print_raw_char)
-#[no_mangle]
-pub unsafe extern "C" fn print_raw_char(s: u16, incr_offset: bool) {
+pub unsafe fn print_raw_char(s: u16, incr_offset: bool) {
     match selector() {
         SELECTOR_TERM_AND_LOG => {
             warn_char(s as i32);
@@ -491,8 +487,7 @@ pub unsafe extern "C" fn print_raw_char(s: u16, incr_offset: bool) {
 /// Print a single Unicode code point `s` to the current output destination.
 ///
 /// translated from xetex-output.c:76 (print_char)
-#[no_mangle]
-pub unsafe extern "C" fn print_char(s: i32) {
+pub unsafe fn print_char(s: i32) {
     // Fast path for NEW_STRING: store as UTF-16 code unit(s).
     if selector() > SELECTOR_PSEUDO && !doing_special() {
         if s >= 0x10000 {
@@ -570,8 +565,7 @@ pub unsafe extern "C" fn print_char(s: i32) {
 /// Print string number `s` from the TeX string pool (or a single character).
 ///
 /// translated from xetex-output.c:146 (print)
-#[no_mangle]
-pub unsafe extern "C" fn print(s: i32) {
+pub unsafe fn print(s: i32) {
     if s >= str_ptr() {
         return print_cstr(c"???".as_ptr());
     }
@@ -638,8 +632,7 @@ pub unsafe extern "C" fn print_current_string() {
 /// Set the active diagnostic capture target, finishing the previous one.
 ///
 /// translated from xetex-output.c:14 (capture_to_diagnostic)
-#[no_mangle]
-pub unsafe extern "C" fn capture_to_diagnostic(diagnostic: *mut std::ffi::c_void) {
+pub unsafe fn capture_to_diagnostic(diagnostic: *mut std::ffi::c_void) {
     let cur = current_diagnostic();
     if !cur.is_null() {
         ttstub_diag_finish(cur);
@@ -680,8 +673,7 @@ unsafe fn diagnostic_print_file_line(diagnostic: *mut std::ffi::c_void) {
 /// Begin a warning diagnostic capturing file/line context.
 ///
 /// translated from xetex-output.c:48 (diagnostic_begin_capture_warning_here)
-#[no_mangle]
-pub unsafe extern "C" fn diagnostic_begin_capture_warning_here() -> *mut std::ffi::c_void {
+pub unsafe fn diagnostic_begin_capture_warning_here() -> *mut std::ffi::c_void {
     let warning = ttbc_diag_begin_warning();
     diagnostic_print_file_line(warning);
     capture_to_diagnostic(warning);
@@ -695,8 +687,7 @@ pub unsafe extern "C" fn diagnostic_begin_capture_warning_here() -> *mut std::ff
 /// Begin an error diagnostic with file/line context, and emit to TeX output.
 ///
 /// translated from xetex-output.c:58 (error_here_with_diagnostic)
-#[no_mangle]
-pub unsafe extern "C" fn error_here_with_diagnostic(
+pub unsafe fn error_here_with_diagnostic(
     message: *const libc::c_char,
 ) -> *mut std::ffi::c_void {
     let error = ttbc_diag_begin_error();
@@ -976,8 +967,7 @@ pub unsafe extern "C" fn print_sa_num(q: i32) {
 /// Save selector and switch to log-only mode for diagnostic output.
 ///
 /// translated from xetex-xetex0.c:1785 (begin_diagnostic)
-#[no_mangle]
-pub unsafe extern "C" fn begin_diagnostic() {
+pub unsafe fn begin_diagnostic() {
     set_old_setting(selector() as u8);
     if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 && selector() == SELECTOR_TERM_AND_LOG {
         set_selector(selector() - 1);
@@ -990,8 +980,7 @@ pub unsafe extern "C" fn begin_diagnostic() {
 /// Restore selector saved by begin_diagnostic.
 ///
 /// translated from xetex-xetex0.c:1797 (end_diagnostic)
-#[no_mangle]
-pub unsafe extern "C" fn end_diagnostic(blank_line: bool) {
+pub unsafe fn end_diagnostic(blank_line: bool) {
     print_nl_cstr(c"".as_ptr());
     if blank_line {
         print_ln();
@@ -2960,7 +2949,7 @@ pub unsafe extern "C" fn change_if_limit(l: i16, p: i32) {
 }
 
 extern "C" {
-    fn print_utf8_str(s: *const libc::c_void, len: i32);
+    
 }
 
 // ---------------------------------------------------------------------------
@@ -2980,11 +2969,11 @@ pub unsafe extern "C" fn font_feature_warning(
     print_nl_cstr(c"Unknown ".as_ptr());
     if set_len > 0 {
         print_cstr(c"selector `".as_ptr());
-        print_utf8_str(setting_name_p, set_len);
+        print_utf8_str(setting_name_p as *const u8, set_len);
         print_cstr(c"' for ".as_ptr());
     }
     print_cstr(c"feature `".as_ptr());
-    print_utf8_str(feature_name_p, feat_len);
+    print_utf8_str(feature_name_p as *const u8, feat_len);
     print_cstr(c"' in font `".as_ptr());
     let nof = crate::globals::name_of_file();
     let mut i = 0;
@@ -2998,8 +2987,7 @@ pub unsafe extern "C" fn font_feature_warning(
 }
 
 /// translated from xetex-xetex0.c:8732 (font_mapping_warning)
-#[no_mangle]
-pub unsafe extern "C" fn font_mapping_warning(
+pub unsafe fn font_mapping_warning(
     mapping_name_p: *const libc::c_void,
     mapping_name_len: i32,
     warning_type: i32,
@@ -3011,7 +2999,7 @@ pub unsafe extern "C" fn font_mapping_warning(
     } else {
         print_nl_cstr(c"Font mapping `".as_ptr());
     }
-    print_utf8_str(mapping_name_p, mapping_name_len);
+    print_utf8_str(mapping_name_p as *const u8, mapping_name_len);
     print_cstr(c"' for font `".as_ptr());
     let nof = crate::globals::name_of_file();
     let mut i = 0;
@@ -3053,8 +3041,7 @@ pub unsafe extern "C" fn graphite_warning() {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:8970 (bad_utf8_warning)
-#[no_mangle]
-pub unsafe extern "C" fn bad_utf8_warning() {
+pub unsafe fn bad_utf8_warning() {
     begin_diagnostic();
     diagnostic_begin_capture_warning_here();
     print_nl_cstr(c"Invalid UTF-8 byte or sequence".as_ptr());

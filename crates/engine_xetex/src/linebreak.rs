@@ -1,3 +1,9 @@
+use crate::ext::measure_native_node;
+use crate::ini::init_trie;
+use crate::mem::prev_rightmost;
+use crate::scan::char_pw;
+
+
 const MAX_HLIST_STACK: i16 = 512;
 const TEX_NULL: i32 = -0x0FFF_FFFF;
 const HLIST_NODE: i32 = 0;
@@ -94,10 +100,10 @@ const INF_PENALTY: i32 = 10_000;
 const EJECT_PENALTY: i32 = -10_000;
 
 extern "C" {
-    fn char_pw(p: i32, side: i16) -> i32;
-    fn init_trie();
-    fn prev_rightmost(s: i32, e: i32) -> i32;
-    fn measure_native_node(node: *mut std::ffi::c_void, use_glyph_metrics: libc::c_int);
+    
+    
+    
+    
 }
 
 // translated from xetex-linebreak.c:77 (get_native_usv)
@@ -835,8 +841,7 @@ unsafe fn set_native_metrics(p: i32) {
 }
 
 // translated from xetex-linebreak.c:90 (line_break)
-#[no_mangle]
-pub unsafe extern "C" fn line_break(d: bool) {
+pub unsafe fn line_break(d: bool) {
     use crate::globals::{
         active_width, background, cur_lang, cur_list_head, cur_list_mode_line, cur_list_prev_graf,
         cur_list_tail, eqtb_b32s1, first_p, font_bchar_entry, font_in_short_display, global_prev_p,

@@ -9,6 +9,36 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 50 — 2026-05-30 — FFI Teardown of 148 Redeclared Rust-to-Rust Functions
+
+**Type:** execution (workstream 03, FFI teardown and signature conversion).
+
+**Goal:** convert 145 redeclared `#[no_mangle]` extern "C" functions into pure Rust calls, and clean up duplicate `extern "C"` declarations for all 148 functions (including the 3 C-FFI ones `D2Fix`, `Fix2D`, `tt_xetex_set_int_variable`) by replacing them with idiomatic `use crate::...` imports.
+
+**Work done:**
+- Automated parsing of `results.json` to identify definitions, calling sites, and declarations of all 148 redeclared functions.
+- Signature Refactoring: Removed `#[no_mangle]` and `extern "C"` on all 145 pure Rust-only function definitions across files like `ext.rs`, `mem.rs`, `output.rs`, `errors.rs`, `math.rs`, `save.rs`, `string_pool.rs`, `shipout.rs`, `ini.rs`, `helpers.rs`, `input.rs`, `linebreak.rs`, etc.
+- Safe FFI Cleanups: Replaced 148 duplicate FFI function declarations within `extern "C"` blocks in all calling files with precise `use crate::<module>::<name>;` imports at the top of the calling files. Used a semicolon-terminated regex `[^{;]*?;` to safely prevent matching across function bodies and definitions.
+- Localized Type-Safety Fixes (21 compile errors resolved):
+  - In `src/io.rs`, changed `u_close` and `input_line` to accept `*mut libc::c_void` and cast to `*mut UFile` internally. This completely resolved the type mismatch errors at their FFI call sites across the entire crate without modifying a single call site.
+  - In `src/scan.rs`, resolved `E0255` for `overflow` by updating its local wrapper to call `crate::errors::overflow(s, n)` directly and removing the redundant top-level import.
+  - In `src/scan.rs` and `src/ext.rs`, cast `new_character` arguments to `u16` (`cur_val() as u16` / `cur_chr() as u16`), `measure_native_glyph` boolean to `i32` (`use_glyph_metrics as i32`), and `print_raw_char` parameter to `u16`.
+  - In `src/ext.rs` and `src/io.rs`, replaced invalid integer flags in `end_diagnostic` with correct `bool` values (`false`/`true`).
+  - In `src/output.rs`, cast void pointer arguments of `print_utf8_str` to `*const u8`.
+
+**Validation:**
+- `cargo check`: pass, completely clean with 0 compile errors and no new warnings.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4). All format undump/dump paths and OpenType math logic verified.
+
+**Metrics after this session:**
+- `#[no_mangle]` exports: 579 → 434 (−145).
+- duplicate FFI declarations removed: 148.
+
+**For the next session:**
+- Continue Workstream 01 execution: move the `eqtb` array proper into the Rust heap `Vec<MemoryWord>` on `EqtbState` as planned.
+
+---
+
 ## Idiom session 49 — 2026-05-29 — eqtb inline arrays: prim + xeq_level
 
 **Type:** execution (workstream 01, Phase-B; first `eqtb`-cluster *array* move).

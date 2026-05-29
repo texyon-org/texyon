@@ -117,8 +117,7 @@ pub unsafe extern "C" fn get_seconds_and_micros(seconds: *mut i32, micros: *mut 
 /// string. The caller must free the returned pointer.
 ///
 /// translated from xetex-texmfmp.c:282 (gettexstring)
-#[no_mangle]
-pub unsafe extern "C" fn gettexstring(s: i32) -> *mut libc::c_char {
+pub unsafe fn gettexstring(s: i32) -> *mut libc::c_char {
     let len: i32 = if s >= 65536 {
         str_start(s + 1 - 65536) - str_start(s - 65536)
     } else {
@@ -209,8 +208,7 @@ unsafe fn check_pool_pointer(pp: i32, len: usize) {
 /// return its str_number.
 ///
 /// translated from xetex-texmfmp.c:245 (maketexstring)
-#[no_mangle]
-pub unsafe extern "C" fn maketexstring(s: *const libc::c_char) -> i32 {
+pub unsafe fn maketexstring(s: *const libc::c_char) -> i32 {
     // EMPTY_STRING = TOO_BIG_CHAR + 1 (xetex-stringpool.h:12)
     const EMPTY_STRING: i32 = 65537;
 

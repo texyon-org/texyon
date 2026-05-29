@@ -40,6 +40,11 @@ A workstream plan moves through these construction states:
 
 ## Execution
 
+Workstream 03 (FFI Teardown) executed for all redeclared functions (Session 50, 2026-05-30):
+- **FFI Teardown complete for 148 functions:** converted 145 redeclared `#[no_mangle] extern "C"` functions to pure Rust signatures, and cleaned up duplicate FFI declarations for all 148 functions (including C-FFI `D2Fix`, `Fix2D`, `tt_xetex_set_int_variable` which keep their export ABI) in favor of direct compile-time safe `use crate::...` imports.
+- **21 type-safety compile errors resolved:** patched pointer casts (`u_close`/`input_line` cast to `*mut c_void` internally to avoid call site churn), boolean parameters (`end_diagnostic` 0/1 to false/true), character casts (`new_character(..., as u16)`), and removed E0255 duplicate definition of `overflow` in `scan.rs`.
+- **Zero regressions:** all 29/2/7/4 tests pass perfectly.
+
 Workstream 01 is executing. Phase-B bridge has started with
 least-coupled non-`misc` clusters:
 

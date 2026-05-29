@@ -13,6 +13,19 @@ const SCROLL_MODE: u8 = 2;
 const ERROR_STOP_MODE: u8 = 3;
 
 // History constants (xetex-xetexd.h:355–358).
+use crate::ini::tt_cleanup;
+use crate::output::capture_to_diagnostic;
+use crate::output::error_here_with_diagnostic;
+use crate::output::print;
+use crate::output::print_char;
+use crate::output::print_cstr;
+use crate::output::print_int;
+use crate::output::print_ln;
+use crate::output::print_nl_cstr;
+use crate::scan::close_files_and_terminate;
+use crate::scan::open_log_file;
+use crate::scan::show_context;
+
 const HISTORY_ERROR_ISSUED: i32 = 2;
 const HISTORY_FATAL_ERROR: i32 = 3;
 
@@ -21,18 +34,18 @@ const SELECTOR_TERM_ONLY: i32 = 17;
 const SELECTOR_TERM_AND_LOG: i32 = 19;
 
 extern "C" {
-    fn error_here_with_diagnostic(msg: *const libc::c_char) -> *mut std::ffi::c_void;
-    fn capture_to_diagnostic(diag: *mut std::ffi::c_void);
-    fn print(s: i32);
-    fn print_char(c: i32);
-    fn print_cstr(s: *const libc::c_char);
-    fn print_nl_cstr(s: *const libc::c_char);
-    fn print_int(n: i32);
-    fn print_ln();
-    fn show_context();
-    fn open_log_file();
-    fn close_files_and_terminate();
-    fn tt_cleanup();
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn _tt_abort(fmt: *const libc::c_char) -> !;
 }
@@ -81,8 +94,7 @@ unsafe fn post_error_message(need_to_print_it: bool) {
 /// Handle a recoverable TeX error.
 ///
 /// translated from xetex-errors.c:52 (error)
-#[no_mangle]
-pub unsafe extern "C" fn error() {
+pub unsafe fn error() {
     if history() < HISTORY_ERROR_ISSUED {
         set_history(HISTORY_ERROR_ISSUED);
     }
@@ -149,8 +161,7 @@ pub unsafe extern "C" fn fatal_error(s: *const libc::c_char) {
 /// Report a TeX capacity overflow for resource `s` of size `n` and abort.
 ///
 /// translated from xetex-errors.c:113 (overflow)
-#[no_mangle]
-pub unsafe extern "C" fn overflow(s: *const libc::c_char, n: i32) -> ! {
+pub unsafe fn overflow(s: *const libc::c_char, n: i32) -> ! {
     pre_error_message();
     print_cstr(c"TeX capacity exceeded, sorry [".as_ptr());
     print_cstr(s);
@@ -171,8 +182,7 @@ pub unsafe extern "C" fn overflow(s: *const libc::c_char, n: i32) -> ! {
 /// Report an internal consistency failure and abort.
 ///
 /// translated from xetex-errors.c:132 (confusion)
-#[no_mangle]
-pub unsafe extern "C" fn confusion(s: *const libc::c_char) -> ! {
+pub unsafe fn confusion(s: *const libc::c_char) -> ! {
     pre_error_message();
     if history() < HISTORY_ERROR_ISSUED {
         print_cstr(c"This can't happen (".as_ptr());
@@ -211,8 +221,7 @@ pub unsafe extern "C" fn confusion(s: *const libc::c_char) -> ! {
 /// Append "(N)" to the current error message and call error().
 ///
 /// translated from xetex-xetex0.c:15 (int_error, was static)
-#[no_mangle]
-pub unsafe extern "C" fn int_error(n: i32) {
+pub unsafe fn int_error(n: i32) {
     print_cstr(c" (".as_ptr());
     print_int(n);
     print_char(b')' as i32);
@@ -234,26 +243,22 @@ unsafe fn not_font_error_common(cmd: u16, c: i32, f: i32, suffix: *const libc::c
 }
 
 /// translated from xetex-xetex0.c:2727 (not_aat_font_error)
-#[no_mangle]
-pub unsafe extern "C" fn not_aat_font_error(cmd: i32, c: i32, f: i32) {
+pub unsafe fn not_aat_font_error(cmd: i32, c: i32, f: i32) {
     not_font_error_common(cmd as u16, c, f, c"; not an AAT font".as_ptr());
 }
 
 /// translated from xetex-xetex0.c:2739 (not_aat_gr_font_error)
-#[no_mangle]
-pub unsafe extern "C" fn not_aat_gr_font_error(cmd: i32, c: i32, f: i32) {
+pub unsafe fn not_aat_gr_font_error(cmd: i32, c: i32, f: i32) {
     not_font_error_common(cmd as u16, c, f, c"; not an AAT or Graphite font".as_ptr());
 }
 
 /// translated from xetex-xetex0.c:2751 (not_ot_font_error)
-#[no_mangle]
-pub unsafe extern "C" fn not_ot_font_error(cmd: i32, c: i32, f: i32) {
+pub unsafe fn not_ot_font_error(cmd: i32, c: i32, f: i32) {
     not_font_error_common(cmd as u16, c, f, c"; not an OpenType Layout font".as_ptr());
 }
 
 /// translated from xetex-xetex0.c:2763 (not_native_font_error)
-#[no_mangle]
-pub unsafe extern "C" fn not_native_font_error(cmd: i32, c: i32, f: i32) {
+pub unsafe fn not_native_font_error(cmd: i32, c: i32, f: i32) {
     not_font_error_common(cmd as u16, c, f, c"; not a native platform font".as_ptr());
 }
 

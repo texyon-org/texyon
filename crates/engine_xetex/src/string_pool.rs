@@ -13,11 +13,13 @@ use crate::globals::{
 // TOO_BIG_CHAR: the threshold above which str_number values index the pool.
 const TOO_BIG_CHAR: i32 = 65536;
 // EMPTY_STRING = TOO_BIG_CHAR + 1 (xetex-stringpool.h:12).
+use crate::errors::overflow;
+
 const EMPTY_STRING: i32 = 65537;
 
 // C function still needed — not yet translated.
 extern "C" {
-    fn overflow(s: *const libc::c_char, n: i32) -> !;
+    
 }
 
 // ---------------------------------------------------------------------------
@@ -27,8 +29,7 @@ extern "C" {
 /// Return the number of UTF-16 code units in string `s`.
 ///
 /// translated from xetex-stringpool.c:42 (length)
-#[no_mangle]
-pub unsafe extern "C" fn length(s: i32) -> i32 {
+pub unsafe fn length(s: i32) -> i32 {
     if s >= TOO_BIG_CHAR {
         return str_start(s + 1 - TOO_BIG_CHAR) - str_start(s - TOO_BIG_CHAR);
     }
@@ -51,8 +52,7 @@ pub unsafe extern "C" fn length(s: i32) -> i32 {
 /// Finalise a string being assembled in the pool and return its str_number.
 ///
 /// translated from xetex-stringpool.c:57 (make_string)
-#[no_mangle]
-pub unsafe extern "C" fn make_string() -> i32 {
+pub unsafe fn make_string() -> i32 {
     if str_ptr() == max_strings() {
         overflow(
             c"number of strings".as_ptr(),
@@ -95,8 +95,7 @@ pub unsafe extern "C" fn append_str(s: i32) {
 /// Return true if string `s` equals the buffer run starting at position `k`.
 ///
 /// translated from xetex-stringpool.c:91 (str_eq_buf)
-#[no_mangle]
-pub unsafe extern "C" fn str_eq_buf(s: i32, mut k: i32) -> bool {
+pub unsafe fn str_eq_buf(s: i32, mut k: i32) -> bool {
     let mut j = str_start(s - TOO_BIG_CHAR);
     while j < str_start(s + 1 - TOO_BIG_CHAR) {
         let bk = buffer_entry(k);
@@ -124,8 +123,7 @@ pub unsafe extern "C" fn str_eq_buf(s: i32, mut k: i32) -> bool {
 /// Return true if strings `s` and `t` have the same content.
 ///
 /// translated from xetex-stringpool.c:119 (str_eq_str)
-#[no_mangle]
-pub unsafe extern "C" fn str_eq_str(s: i32, t: i32) -> bool {
+pub unsafe fn str_eq_str(s: i32, t: i32) -> bool {
     if length(s) != length(t) {
         return false;
     }

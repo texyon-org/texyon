@@ -15,6 +15,24 @@ use crate::globals::{
 /// Rust mirror of `UFILE` (xetex-io.h:12–18). Must stay layout-compatible.
 ///
 /// On Linux x86_64 the C layout is:
+use crate::output::bad_utf8_warning;
+use crate::output::begin_diagnostic;
+use crate::output::capture_to_diagnostic;
+use crate::output::diagnostic_begin_capture_warning_here;
+use crate::output::end_diagnostic;
+use crate::output::print_cstr;
+use crate::output::print_int;
+use crate::output::print_nl;
+use crate::output::print_nl_cstr;
+use crate::scan::begin_name;
+use crate::scan::end_name;
+use crate::scan::more_name;
+use crate::scan::pack_file_name;
+use crate::scan::scan_file_name;
+use crate::scan::scan_four_bit_int;
+use crate::scan::scan_optional_equals;
+use crate::texmfmp::gettexstring;
+
 ///   offset 0: handle (uintptr_t, 8 B)
 ///   offset 8: savedChar (long, 8 B)
 ///   offset 16: skipNextLF (short, 2 B)
@@ -141,29 +159,29 @@ extern "C" {
     fn TECkit_ResetConverter(converter: *mut libc::c_void) -> i64;
 
     // bad_utf8_warning remains in C (xetex-xetexd.h:912).
-    fn bad_utf8_warning();
+    
 
     // gettexstring — translated to Rust (texmfmp.rs) but called via FFI.
-    fn gettexstring(s: i32) -> *mut libc::c_char;
+    
 
     // Output helpers — all translated to Rust in output.rs.
-    fn print_nl_cstr(s: *const libc::c_char);
-    fn diagnostic_begin_capture_warning_here();
-    fn print_cstr(s: *const libc::c_char);
-    fn capture_to_diagnostic(diagnostic: *mut libc::c_void);
-    fn print_nl(s: i32);
-    fn print_int(n: i32);
-    fn begin_diagnostic();
-    fn end_diagnostic(blank_line: i32);
+    
+    
+    
+    
+    
+    
+    
+    
 
     // Callees of open_or_close_in still in C.
-    fn scan_four_bit_int();
-    fn scan_optional_equals();
-    fn scan_file_name();
-    fn pack_file_name(n: i32, a: i32, e: i32);
-    fn begin_name();
-    fn more_name(c: u16) -> bool;
-    fn end_name();
+    
+    
+    
+    
+    
+    
+    
 }
 
 // ---------------------------------------------------------------------------
@@ -189,8 +207,7 @@ static mut NAME16LEN: i32 = 0;
 /// Open the current input file (named by `name_of_file`) via the bridge.
 ///
 /// translated from xetex-io.c:22 (tt_xetex_open_input)
-#[no_mangle]
-pub unsafe extern "C" fn tt_xetex_open_input(filefmt: libc::c_int) -> usize {
+pub unsafe fn tt_xetex_open_input(filefmt: libc::c_int) -> usize {
     let handle = if filefmt == TTBC_FILE_FORMAT_TECTONIC_PRIMARY {
         ttstub_input_open_primary()
     } else if *name_of_file() == b'|' as libc::c_char {
@@ -281,11 +298,11 @@ pub unsafe extern "C" fn u_open_in(
 
 /// Wrapper so scan.rs can call `set_input_file_encoding` without re-declaring it.
 pub(crate) unsafe fn call_set_input_file_encoding(
-    f: *mut libc::c_void,
+    f: *mut UFile,
     mode: i32,
     encoding_data: i32,
 ) {
-    set_input_file_encoding(f as *mut UFile, mode, encoding_data);
+    set_input_file_encoding(f, mode, encoding_data);
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +335,7 @@ pub unsafe extern "C" fn set_input_file_encoding(f: *mut UFile, mode: i32, encod
                 print_cstr(c" creating Unicode converter for `".as_ptr());
                 print_cstr(name);
                 print_cstr(c"'; reading as raw bytes".as_ptr());
-                end_diagnostic(1);
+                end_diagnostic(true);
                 (*f).encoding_mode = RAW as i16;
             } else {
                 (*f).encoding_mode = ICUMAPPING as i16;
@@ -354,7 +371,7 @@ unsafe fn conversion_error(errcode: i32) {
     print_cstr(c"nicode conversion failed (ICU error code = ".as_ptr());
     print_int(errcode);
     print_cstr(c") discarding any remaining text".as_ptr());
-    end_diagnostic(1);
+    end_diagnostic(true);
 }
 
 // translated from xetex-io.c:110 (apply_normalization, was static)
@@ -403,8 +420,7 @@ unsafe fn apply_normalization(buf: *mut u32, len: i32, norm: i32) {
 /// Read one line from UFILE into the TeX `buffer`, handling encodings.
 ///
 /// translated from xetex-io.c:135 (input_line)
-#[no_mangle]
-pub unsafe extern "C" fn input_line(f: *mut UFile) -> libc::c_int {
+pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
     let norm = crate::scan::get_input_normalization_state();
 
     if (*f).handle == INVALID_HANDLE {
@@ -741,8 +757,7 @@ pub unsafe extern "C" fn get_uni_c(f: *mut UFile) -> libc::c_int {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-io.c:273 (u_close)
-#[no_mangle]
-pub unsafe extern "C" fn u_close(f: *mut UFile) {
+pub unsafe fn u_close(f: *mut UFile) {
     const ICUMAPPING: i16 = 5; // xetex-xetexd.h:1215
 
     if f.is_null() || (*f).handle == INVALID_HANDLE {

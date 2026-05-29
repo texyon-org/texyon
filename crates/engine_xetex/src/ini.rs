@@ -362,8 +362,7 @@ pub unsafe extern "C" fn trie_fix(mut p: i32) {
 }
 
 // translated from xetex-ini.c:858 (init_trie)
-#[no_mangle]
-pub unsafe extern "C" fn init_trie() {
+pub unsafe fn init_trie() {
     set_max_hyph_char(max_hyph_char() + 1);
     set_op_start_entry(0, -MIN_TRIE_OP);
 
@@ -3276,7 +3275,7 @@ pub unsafe extern "C" fn tt_run_engine(
         // by `tt_cleanup`. Never reallocated during a run.
         let n = (tre_max_in_open as usize) + 1;
         crate::state::with_state_mut(|s| {
-            s.input.input_file = vec![std::ptr::null_mut::<libc::c_void>(); n];
+            s.input.input_file = vec![std::ptr::null_mut(); n];
         });
     }
     {
@@ -3678,8 +3677,7 @@ extern "C" {
 }
 
 // translated from xetex-ini.c:2226 (tt_cleanup)
-#[no_mangle]
-pub unsafe extern "C" fn tt_cleanup() {
+pub unsafe fn tt_cleanup() {
     tt_cleanup_pdf_files_close();
     libc::free(tt_cleanup_TEX_format_default as *mut _);
     crate::shipout::deinitialize_shipout_variables();
@@ -3702,7 +3700,7 @@ pub unsafe extern "C" fn tt_cleanup() {
     for i in 1..=in_open() {
         let f = input_file(i);
         if !f.is_null() {
-            crate::io::u_close(f as *mut crate::io::UFile);
+            crate::io::u_close(f);
         }
     }
 
@@ -3897,8 +3895,7 @@ unsafe fn intpar(n: i32) -> i32 {
 }
 
 // translated from xetex-ini.c:583 (prefixed_command)
-#[no_mangle]
-pub unsafe extern "C" fn prefixed_command() {
+pub unsafe fn prefixed_command() {
     fn set_class(x: i32) -> i32 {
         (((x as u32) & 0x07) << 21) as i32
     }

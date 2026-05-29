@@ -14,6 +14,8 @@ const INT_BASE: i32 = 7_826_729;
 const INT_PAR_SYNCTEX: i32 = 81;
 
 // Node-size constants (xetex-constants.h).
+use crate::texmfmp::gettexstring;
+
 const SYNCTEX_FIELD_SIZE: i32 = 1;
 const BOX_NODE_SIZE: i32 = 8;
 const RULE_NODE_SIZE: i32 = 5;
@@ -36,7 +38,7 @@ extern "C" {
 
     fn xstrdup(s: *const c_char) -> *mut c_char;
     fn xrealloc(ptr: *mut libc::c_void, size: size_t) -> *mut libc::c_void;
-    fn gettexstring(s: i32) -> *mut c_char;
+    
 
     // abspath_of_input_file: #[no_mangle] pub static in io.rs, char[1024].
     static abspath_of_input_file: [c_char; 1024];
@@ -751,8 +753,7 @@ pub unsafe extern "C" fn synctex_init_command() {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn synctex_terminate(_log_opened: bool) {
+pub unsafe fn synctex_terminate(_log_opened: bool) {
     if sc_file() != INVALID_HANDLE {
         synctex_record_postamble();
         ttstub_output_close(sc_file());
@@ -767,8 +768,7 @@ pub unsafe extern "C" fn synctex_abort(_log_opened: bool) {
     synctexabort();
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn synctex_start_input() {
+pub unsafe fn synctex_start_input() {
     if sc_flags_off() {
         return;
     }
