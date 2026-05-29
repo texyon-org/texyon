@@ -14,6 +14,7 @@ pub(crate) struct EngineState {
     pub strings: StringsState,
     pub hyph: HyphState,
     pub fonts: FontState,
+    pub linebreak: LinebreakState,
 }
 
 /// The `input` cluster's Rust-owned state. Distinct from
@@ -493,6 +494,104 @@ pub(crate) struct StringsState {
     pub edit_name_start: i32,
     pub str_start: Vec<i32>,
     pub str_pool: Vec<u16>,
+}
+
+/// The line-breaker's working state (formerly the `misc` bucket's
+/// line-breaking / LR-reverse / hyphenation-attempt scratch globals,
+/// defined in C across `xetex-ini.c` and `xetex-linebreak.c`). These are
+/// per-paragraph scratch — cold relative to the tokenizer — so the Phase-B
+/// thread-local bridge has no hot-path cost. None are in the format
+/// dump and none had a `#[link_name]` cleanup alias, so this is a pure
+/// scalar/inline-array move (no `ini.rs` alloc, no `tt_cleanup` free).
+///
+/// `hlist_stack` is heap-backed as a `Vec<i32>` (sized `MAX_HLIST_STACK + 1`
+/// = 513 in `Default`, matching the C BSS array `int32_t
+/// hlist_stack[MAX_HLIST_STACK + 1]`) rather than an inline `[i32; 513]`:
+/// `EngineState` lives inline in the `ENGINE_STATE` thread-local, so a 2 KB
+/// inline array risks the thread-stack overflow seen when the hyph fixed
+/// arrays were first moved inline. The small fixed arrays stay inline.
+///
+/// Newtype debts (recovered by the §4 sweep, tracked in `01a`): the
+/// `scaled_t` dimension fields and the `small_number` fields. The
+/// `int32_t` mem-pointer fields (`cur_p`, `passive`, …) are pointer-taxonomy
+/// sweep candidates, not typedef-loss rows.
+pub(crate) struct LinebreakState {
+    pub last_leftmost_char: i32,
+    pub last_rightmost_char: i32,
+    /// Heap-backed; sized `MAX_HLIST_STACK + 1` (= 513) in `Default`.
+    pub hlist_stack: Vec<i32>,
+    pub hlist_stack_level: i16,
+    pub first_p: i32,
+    pub global_prev_p: i32,
+    pub cur_p: i32,
+    pub last_special_line: i32,
+    pub first_width: i32,
+    pub second_width: i32,
+    pub first_indent: i32,
+    pub second_indent: i32,
+    pub best_bet: i32,
+    pub best_line: i32,
+    pub hn: i16,
+    pub ha: i32,
+    pub hb: i32,
+    pub passive: i32,
+    pub cur_active_width: [i32; 7],
+    pub background: [i32; 7],
+    pub break_width: [i32; 7],
+    pub best_place: [i32; 4],
+    pub best_pl_line: [i32; 4],
+    pub disc_width: i32,
+    pub final_pass: bool,
+    pub threshold: i32,
+    pub minimal_demerits: [i32; 4],
+    pub minimum_demerits: i32,
+    pub easy_line: i32,
+    pub do_last_line_fit: bool,
+    pub active_node_size: i16,
+    pub fill_width: [i32; 3],
+    pub best_pl_short: [i32; 4],
+    pub best_pl_glue: [i32; 4],
+}
+
+impl Default for LinebreakState {
+    fn default() -> Self {
+        Self {
+            last_leftmost_char: 0,
+            last_rightmost_char: 0,
+            hlist_stack: vec![0i32; 513],
+            hlist_stack_level: 0,
+            first_p: 0,
+            global_prev_p: 0,
+            cur_p: 0,
+            last_special_line: 0,
+            first_width: 0,
+            second_width: 0,
+            first_indent: 0,
+            second_indent: 0,
+            best_bet: 0,
+            best_line: 0,
+            hn: 0,
+            ha: 0,
+            hb: 0,
+            passive: 0,
+            cur_active_width: [0; 7],
+            background: [0; 7],
+            break_width: [0; 7],
+            best_place: [0; 4],
+            best_pl_line: [0; 4],
+            disc_width: 0,
+            final_pass: false,
+            threshold: 0,
+            minimal_demerits: [0; 4],
+            minimum_demerits: 0,
+            easy_line: 0,
+            do_last_line_fit: false,
+            active_node_size: 0,
+            fill_width: [0; 3],
+            best_pl_short: [0; 4],
+            best_pl_glue: [0; 4],
+        }
+    }
 }
 
 thread_local! {

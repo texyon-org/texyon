@@ -9,6 +9,73 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 45 — 2026-05-29 — LinebreakState (34 linebreak-scratch globals)
+
+**Type:** execution (workstream 01, Phase-B; batch scalar/inline-array slice).
+
+**Goal:** move all 34 former-`misc` line-breaker scratch globals from C into a
+new `EngineState.linebreak` (`LinebreakState`), per the session-44 decision
+block. One coherent slice, one commit.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: 6 defined in `xetex-ini.c` (`last_leftmost_char`,
+  `last_rightmost_char`, `hlist_stack[MAX_HLIST_STACK+1]`, `hlist_stack_level`,
+  `first_p`, `global_prev_p`); 28 in `xetex-linebreak.c`. Semantic typedefs
+  present: 11 `scaled_t`, 2 `small_number`; the rest plain `int32_t`/`bool`/`short`.
+- (b) cleanup aliases: none in `src/ini.rs` (grep empty).
+- (c) C readers: only `xetex-ini.c` + `xetex-linebreak.c` (the definers); no
+  other `.c`/`.cpp`.
+- (d) cross-module extern redeclarations in `src/*.rs`: none.
+
+**Work done (1 commit):**
+- Added `LinebreakState` to `src/state.rs` with all 34 fields and a
+  `pub linebreak: LinebreakState` field on `EngineState`. Hand-written
+  `impl Default` (mirrors `ErrorState`): `hlist_stack` is a heap-backed
+  `Vec<i32>` sized `513` (= `MAX_HLIST_STACK + 1`), the rest zero/false/`[0;N]`.
+  Heap-backing `hlist_stack` avoids both the inline-`[i32;513]` thread-stack
+  risk and the fact that arrays >32 have no derived `Default`.
+- Repointed all 68 accessor bodies in `src/globals.rs` from `unsafe { raw::SYM }`
+  / `unsafe { raw::SYM = v }` to `with_state`/`with_state_mut` closures (guarded
+  regex transform; verified 0 remaining `raw::<linebreak sym>` refs).
+- Removed the 34 `pub(super) static mut` decls from `mod raw`.
+- Removed 36 C definition lines: 6 in `xetex/xetex-ini.c`, 28 in
+  `xetex/xetex-linebreak.c` (replaced with move-marker comments).
+
+**Newtype debts (§4):** 13 rows added to `01a-global-inventory.md` — 11
+`scaled_t`→`Scaled` (`cur_active_width[7]`, `background[7]`, `break_width[7]`,
+`disc_width`, `first_width`, `second_width`, `first_indent`, `second_indent`,
+`fill_width[3]`, `best_pl_short[4]`, `best_pl_glue[4]`) and 2
+`small_number`→`SmallNumber` (`hn`, `active_node_size`). The `int32_t`
+mem-pointer fields (`cur_p`, `first_p`, `global_prev_p`, `passive`, `best_bet`,
+`best_place[]`, `best_pl_line[]`, `ha`, `hb`) are declared plain `int32_t`
+(WEB `pointer` typedef erased in Stage 1) → no typedef-loss row; they are
+pointer-taxonomy-sweep candidates (same disposition as `if_stack`'s `cond_ptr`).
+Documented in the worklist's trailing note.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 139 → 105 (−34).
+- Raw `unsafe { ... }` text-search count: 366 → 298 (−68).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass (pre-existing warnings only; the
+  stale unused-import/dead_code LSP warnings cleared the §11 way — the accessor
+  fns still exist, only their bodies changed).
+- Leftover C references: clean (only the move-marker comments).
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`:
+  **29/2/7/4** — no regression.
+
+**For the next session (46):**
+- The three remaining resolved misc clusters, all *private module-local* statics
+  (no C defs, no `mod raw` externs): `ShipoutState` fold (4 pagebuilder statics
+  in `src/pagebuilder.rs`), `EngineState.synctex: SynctexCtxt` (`SYNCTEX_CTXT`
+  in `src/synctex.rs`), `TexmfState` (`LAST_SOURCE_NAME`/`LAST_LINENO`/
+  `START_TIME_STR` in `src/texmfmp.rs`). Move = add field + repoint in-module
+  accessors + delete static; run §11 grep checks for cross-module readers.
+- Watch `SYNCTEX_CTXT` and the io statics for init/cleanup lifecycle edges;
+  `LAST_SOURCE_NAME` is an owned C string (`strdup`/`free`) — do not double-free.
+
+---
+
 ## Idiom session 44 — 2026-05-29 — `misc` sub-struct planning (no code change)
 
 **Type:** planning (workstream 01). Per `STATUS.md` → "Next action" step 1,

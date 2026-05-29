@@ -608,7 +608,33 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `font_ptr` | `fonts` | `internal_font_number` (semantic typedef for `int32_t`, current font count) | `InternalFontNumber`/`FontId` | session 39 | pending |
 | `font_letter_space[]` | `fonts` | `scaled_t *` (per-font letter spacing; not format-serialized) | `Vec<Scaled>` | session 39 | pending |
 | `cur_if` | `scanner` | `small_number` (`typedef short`; current `\if` type code, same typedef as `radix`) | `SmallNumber` | session 41 | pending |
+| `cur_active_width[]` | `linebreak` | `scaled_t[7]` | `[Scaled; 7]` | session 45 | pending |
+| `background[]` | `linebreak` | `scaled_t[7]` | `[Scaled; 7]` | session 45 | pending |
+| `break_width[]` | `linebreak` | `scaled_t[7]` | `[Scaled; 7]` | session 45 | pending |
+| `disc_width` | `linebreak` | `scaled_t` | `Scaled` | session 45 | pending |
+| `first_width` | `linebreak` | `scaled_t` | `Scaled` | session 45 | pending |
+| `second_width` | `linebreak` | `scaled_t` | `Scaled` | session 45 | pending |
+| `first_indent` | `linebreak` | `scaled_t` | `Scaled` | session 45 | pending |
+| `second_indent` | `linebreak` | `scaled_t` | `Scaled` | session 45 | pending |
+| `fill_width[]` | `linebreak` | `scaled_t[3]` | `[Scaled; 3]` | session 45 | pending |
+| `best_pl_short[]` | `linebreak` | `scaled_t[4]` | `[Scaled; 4]` | session 45 | pending |
+| `best_pl_glue[]` | `linebreak` | `scaled_t[4]` | `[Scaled; 4]` | session 45 | pending |
+| `hn` | `linebreak` | `small_number` (`typedef short`; hyphenation char count) | `SmallNumber` | session 45 | pending |
+| `active_node_size` | `linebreak` | `small_number` (`typedef short`; active-node word size) | `SmallNumber` | session 45 | pending |
 
+
+(`linebreak` session-45 move: the `int32_t` mem-pointer fields — `cur_p`,
+`first_p`, `global_prev_p`, `passive`, `best_bet`, `best_place[]`,
+`best_pl_line[]`, `ha`, `hb` — are declared plain `int32_t` in the C
+source (the WEB `pointer` typedef was already erased in Stage 1), so they
+get **no** typedef-loss row; they are `MemPtr`/`Halfword` candidates for
+the later pointer-taxonomy sweep, same disposition as `if_stack`'s
+`cond_ptr` halfwords. `last_special_line`/`best_line` hold line numbers,
+`threshold`/`minimum_demerits`/`minimal_demerits[]`/`easy_line` are plain
+demerit/line integers, `final_pass`/`do_last_line_fit` are plain `bool`,
+`hlist_stack[]`/`last_leftmost_char`/`last_rightmost_char` are plain
+`int32_t`, and `hlist_stack_level` is a plain `short` stack pointer — none
+need a row.)
 
 (`input` session-13 move of the line/group stacks: `line_stack` and
 `if_stack` are plain `int32_t *` and need no row — `line_stack` holds

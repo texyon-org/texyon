@@ -47,12 +47,8 @@ int32_t var_used, dyn_used;
 int32_t avail;
 int32_t mem_end;
 int32_t rover;
-int32_t last_leftmost_char;
-int32_t last_rightmost_char;
-int32_t hlist_stack[MAX_HLIST_STACK + 1];
-short hlist_stack_level;
-int32_t first_p;
-int32_t global_prev_p;
+/* last_leftmost_char / last_rightmost_char / hlist_stack / hlist_stack_level /
+   first_p / global_prev_p moved to EngineState.linebreak (LinebreakState). */
 /* nest_ptr / max_nest_stack moved to EngineState.input (scalars). */
 list_state_record cur_list;
 b32x2 *hash;

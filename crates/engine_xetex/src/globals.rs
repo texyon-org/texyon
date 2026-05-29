@@ -251,42 +251,9 @@ mod raw {
         pub(super) static mut LR_problems: i32;
         // Current text direction: LEFT_TO_RIGHT=0, RIGHT_TO_LEFT=1 (xetex-xetexd.h:703; small_number=i16).
         pub(super) static mut cur_dir: i16;
-        // Last leftmost/rightmost character found by char_pw (xetex-xetexd.h:467–468; xetex-ini.c:102–103).
-        pub(super) static mut last_leftmost_char: i32;
-        pub(super) static mut last_rightmost_char: i32;
-        // Hlist stack used by linebreak protrusion scans (xetex-xetexd.h:469–470).
-        pub(super) static mut hlist_stack: [i32; 513];
-        pub(super) static mut hlist_stack_level: i16;
-        pub(super) static mut first_p: i32;
-        pub(super) static mut global_prev_p: i32;
-        pub(super) static mut cur_p: i32;
-        pub(super) static mut last_special_line: i32;
-        pub(super) static mut first_width: i32;
-        pub(super) static mut second_width: i32;
-        pub(super) static mut first_indent: i32;
-        pub(super) static mut second_indent: i32;
-        pub(super) static mut best_bet: i32;
-        pub(super) static mut best_line: i32;
-        pub(super) static mut hn: i16;
-        pub(super) static mut ha: i32;
-        pub(super) static mut hb: i32;
-        pub(super) static mut passive: i32;
-        pub(super) static mut cur_active_width: [i32; 7];
-        pub(super) static mut background: [i32; 7];
-        pub(super) static mut break_width: [i32; 7];
-        pub(super) static mut best_place: [i32; 4];
-        pub(super) static mut best_pl_line: [i32; 4];
-        pub(super) static mut disc_width: i32;
-        pub(super) static mut final_pass: bool;
-        pub(super) static mut threshold: i32;
-        pub(super) static mut minimal_demerits: [i32; 4];
-        pub(super) static mut minimum_demerits: i32;
-        pub(super) static mut easy_line: i32;
-        pub(super) static mut do_last_line_fit: bool;
-        pub(super) static mut active_node_size: i16;
-        pub(super) static mut fill_width: [i32; 3];
-        pub(super) static mut best_pl_short: [i32; 4];
-        pub(super) static mut best_pl_glue: [i32; 4];
+        // last_leftmost_char .. best_pl_glue (the line-breaker / LR-reverse /
+        // hyphenation-attempt scratch) moved to EngineState.linebreak
+        // (LinebreakState); see src/state.rs.
         // Shipout / DVI output state (xetex-xetexd.h:592–600).
         pub(super) static mut total_pages: i32;
         pub(super) static mut max_v: i32;
@@ -4407,63 +4374,63 @@ pub(crate) fn set_cur_dir(v: i16) {
 }
 #[inline]
 pub(crate) fn last_leftmost_char() -> i32 {
-    unsafe { raw::last_leftmost_char }
+    crate::state::with_state(|state| state.linebreak.last_leftmost_char)
 }
 #[inline]
 pub(crate) fn set_last_leftmost_char(v: i32) {
-    unsafe {
-        raw::last_leftmost_char = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.last_leftmost_char = v;
+    });
 }
 #[inline]
 pub(crate) fn last_rightmost_char() -> i32 {
-    unsafe { raw::last_rightmost_char }
+    crate::state::with_state(|state| state.linebreak.last_rightmost_char)
 }
 #[inline]
 pub(crate) fn set_last_rightmost_char(v: i32) {
-    unsafe {
-        raw::last_rightmost_char = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.last_rightmost_char = v;
+    });
 }
 #[inline]
 pub(crate) fn hlist_stack_entry(k: i16) -> i32 {
-    unsafe { raw::hlist_stack[k as usize] }
+    crate::state::with_state(|state| state.linebreak.hlist_stack[k as usize])
 }
 #[inline]
 pub(crate) fn set_hlist_stack_entry(k: i16, v: i32) {
-    unsafe {
-        raw::hlist_stack[k as usize] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.hlist_stack[k as usize] = v;
+    });
 }
 #[inline]
 pub(crate) fn hlist_stack_level() -> i16 {
-    unsafe { raw::hlist_stack_level }
+    crate::state::with_state(|state| state.linebreak.hlist_stack_level)
 }
 #[inline]
 pub(crate) fn set_hlist_stack_level(v: i16) {
-    unsafe {
-        raw::hlist_stack_level = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.hlist_stack_level = v;
+    });
 }
 #[inline]
 pub(crate) fn first_p() -> i32 {
-    unsafe { raw::first_p }
+    crate::state::with_state(|state| state.linebreak.first_p)
 }
 #[inline]
 pub(crate) fn set_first_p(v: i32) {
-    unsafe {
-        raw::first_p = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.first_p = v;
+    });
 }
 #[inline]
 pub(crate) fn global_prev_p() -> i32 {
-    unsafe { raw::global_prev_p }
+    crate::state::with_state(|state| state.linebreak.global_prev_p)
 }
 #[inline]
 pub(crate) fn set_global_prev_p(v: i32) {
-    unsafe {
-        raw::global_prev_p = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.global_prev_p = v;
+    });
 }
 #[inline]
 pub(crate) fn no_shrink_error_yet() -> bool {
@@ -4477,113 +4444,113 @@ pub(crate) fn set_no_shrink_error_yet(v: bool) {
 }
 #[inline]
 pub(crate) fn cur_p() -> i32 {
-    unsafe { raw::cur_p }
+    crate::state::with_state(|state| state.linebreak.cur_p)
 }
 #[inline]
 pub(crate) fn set_cur_p(v: i32) {
-    unsafe {
-        raw::cur_p = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.cur_p = v;
+    });
 }
 #[inline]
 pub(crate) fn last_special_line() -> i32 {
-    unsafe { raw::last_special_line }
+    crate::state::with_state(|state| state.linebreak.last_special_line)
 }
 #[inline]
 pub(crate) fn set_last_special_line(v: i32) {
-    unsafe {
-        raw::last_special_line = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.last_special_line = v;
+    });
 }
 #[inline]
 pub(crate) fn first_width() -> i32 {
-    unsafe { raw::first_width }
+    crate::state::with_state(|state| state.linebreak.first_width)
 }
 #[inline]
 pub(crate) fn set_first_width(v: i32) {
-    unsafe {
-        raw::first_width = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.first_width = v;
+    });
 }
 #[inline]
 pub(crate) fn second_width() -> i32 {
-    unsafe { raw::second_width }
+    crate::state::with_state(|state| state.linebreak.second_width)
 }
 #[inline]
 pub(crate) fn set_second_width(v: i32) {
-    unsafe {
-        raw::second_width = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.second_width = v;
+    });
 }
 #[inline]
 pub(crate) fn first_indent() -> i32 {
-    unsafe { raw::first_indent }
+    crate::state::with_state(|state| state.linebreak.first_indent)
 }
 #[inline]
 pub(crate) fn set_first_indent(v: i32) {
-    unsafe {
-        raw::first_indent = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.first_indent = v;
+    });
 }
 #[inline]
 pub(crate) fn second_indent() -> i32 {
-    unsafe { raw::second_indent }
+    crate::state::with_state(|state| state.linebreak.second_indent)
 }
 #[inline]
 pub(crate) fn set_second_indent(v: i32) {
-    unsafe {
-        raw::second_indent = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.second_indent = v;
+    });
 }
 #[inline]
 pub(crate) fn best_bet() -> i32 {
-    unsafe { raw::best_bet }
+    crate::state::with_state(|state| state.linebreak.best_bet)
 }
 #[inline]
 pub(crate) fn set_best_bet(v: i32) {
-    unsafe {
-        raw::best_bet = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.best_bet = v;
+    });
 }
 #[inline]
 pub(crate) fn best_line() -> i32 {
-    unsafe { raw::best_line }
+    crate::state::with_state(|state| state.linebreak.best_line)
 }
 #[inline]
 pub(crate) fn set_best_line(v: i32) {
-    unsafe {
-        raw::best_line = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.best_line = v;
+    });
 }
 #[inline]
 pub(crate) fn hn() -> i16 {
-    unsafe { raw::hn }
+    crate::state::with_state(|state| state.linebreak.hn)
 }
 #[inline]
 pub(crate) fn set_hn(v: i16) {
-    unsafe {
-        raw::hn = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.hn = v;
+    });
 }
 #[inline]
 pub(crate) fn ha() -> i32 {
-    unsafe { raw::ha }
+    crate::state::with_state(|state| state.linebreak.ha)
 }
 #[inline]
 pub(crate) fn set_ha(v: i32) {
-    unsafe {
-        raw::ha = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.ha = v;
+    });
 }
 #[inline]
 pub(crate) fn hb() -> i32 {
-    unsafe { raw::hb }
+    crate::state::with_state(|state| state.linebreak.hb)
 }
 #[inline]
 pub(crate) fn set_hb(v: i32) {
-    unsafe {
-        raw::hb = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.hb = v;
+    });
 }
 #[inline]
 pub(crate) fn hyf_char() -> i32 {
@@ -4647,173 +4614,173 @@ pub(crate) fn set_hyf_bchar(v: i32) {
 }
 #[inline]
 pub(crate) fn passive() -> i32 {
-    unsafe { raw::passive }
+    crate::state::with_state(|state| state.linebreak.passive)
 }
 #[inline]
 pub(crate) fn set_passive(v: i32) {
-    unsafe {
-        raw::passive = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.passive = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_active_width(k: usize) -> i32 {
-    unsafe { raw::cur_active_width[k] }
+    crate::state::with_state(|state| state.linebreak.cur_active_width[k])
 }
 #[inline]
 pub(crate) fn set_cur_active_width(k: usize, v: i32) {
-    unsafe {
-        raw::cur_active_width[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.cur_active_width[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn background(k: usize) -> i32 {
-    unsafe { raw::background[k] }
+    crate::state::with_state(|state| state.linebreak.background[k])
 }
 #[inline]
 pub(crate) fn set_background(k: usize, v: i32) {
-    unsafe {
-        raw::background[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.background[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn break_width(k: usize) -> i32 {
-    unsafe { raw::break_width[k] }
+    crate::state::with_state(|state| state.linebreak.break_width[k])
 }
 #[inline]
 pub(crate) fn set_break_width(k: usize, v: i32) {
-    unsafe {
-        raw::break_width[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.break_width[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn best_place(k: usize) -> i32 {
-    unsafe { raw::best_place[k] }
+    crate::state::with_state(|state| state.linebreak.best_place[k])
 }
 #[inline]
 pub(crate) fn set_best_place(k: usize, v: i32) {
-    unsafe {
-        raw::best_place[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.best_place[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn best_pl_line(k: usize) -> i32 {
-    unsafe { raw::best_pl_line[k] }
+    crate::state::with_state(|state| state.linebreak.best_pl_line[k])
 }
 #[inline]
 pub(crate) fn set_best_pl_line(k: usize, v: i32) {
-    unsafe {
-        raw::best_pl_line[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.best_pl_line[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn disc_width() -> i32 {
-    unsafe { raw::disc_width }
+    crate::state::with_state(|state| state.linebreak.disc_width)
 }
 #[inline]
 pub(crate) fn set_disc_width(v: i32) {
-    unsafe {
-        raw::disc_width = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.disc_width = v;
+    });
 }
 #[inline]
 pub(crate) fn final_pass() -> bool {
-    unsafe { raw::final_pass }
+    crate::state::with_state(|state| state.linebreak.final_pass)
 }
 #[inline]
 pub(crate) fn set_final_pass(v: bool) {
-    unsafe {
-        raw::final_pass = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.final_pass = v;
+    });
 }
 #[inline]
 pub(crate) fn threshold() -> i32 {
-    unsafe { raw::threshold }
+    crate::state::with_state(|state| state.linebreak.threshold)
 }
 #[inline]
 pub(crate) fn set_threshold(v: i32) {
-    unsafe {
-        raw::threshold = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.threshold = v;
+    });
 }
 #[inline]
 pub(crate) fn minimal_demerits(k: usize) -> i32 {
-    unsafe { raw::minimal_demerits[k] }
+    crate::state::with_state(|state| state.linebreak.minimal_demerits[k])
 }
 #[inline]
 pub(crate) fn set_minimal_demerits(k: usize, v: i32) {
-    unsafe {
-        raw::minimal_demerits[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.minimal_demerits[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn minimum_demerits() -> i32 {
-    unsafe { raw::minimum_demerits }
+    crate::state::with_state(|state| state.linebreak.minimum_demerits)
 }
 #[inline]
 pub(crate) fn set_minimum_demerits(v: i32) {
-    unsafe {
-        raw::minimum_demerits = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.minimum_demerits = v;
+    });
 }
 #[inline]
 pub(crate) fn easy_line() -> i32 {
-    unsafe { raw::easy_line }
+    crate::state::with_state(|state| state.linebreak.easy_line)
 }
 #[inline]
 pub(crate) fn set_easy_line(v: i32) {
-    unsafe {
-        raw::easy_line = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.easy_line = v;
+    });
 }
 #[inline]
 pub(crate) fn do_last_line_fit() -> bool {
-    unsafe { raw::do_last_line_fit }
+    crate::state::with_state(|state| state.linebreak.do_last_line_fit)
 }
 #[inline]
 pub(crate) fn set_do_last_line_fit(v: bool) {
-    unsafe {
-        raw::do_last_line_fit = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.do_last_line_fit = v;
+    });
 }
 #[inline]
 pub(crate) fn active_node_size() -> i32 {
-    unsafe { raw::active_node_size as i32 }
+    crate::state::with_state(|state| state.linebreak.active_node_size as i32)
 }
 #[inline]
 pub(crate) fn set_active_node_size(v: i16) {
-    unsafe {
-        raw::active_node_size = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.active_node_size = v;
+    });
 }
 #[inline]
 pub(crate) fn fill_width(k: usize) -> i32 {
-    unsafe { raw::fill_width[k] }
+    crate::state::with_state(|state| state.linebreak.fill_width[k])
 }
 #[inline]
 pub(crate) fn set_fill_width(k: usize, v: i32) {
-    unsafe {
-        raw::fill_width[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.fill_width[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn best_pl_short(k: usize) -> i32 {
-    unsafe { raw::best_pl_short[k] }
+    crate::state::with_state(|state| state.linebreak.best_pl_short[k])
 }
 #[inline]
 pub(crate) fn set_best_pl_short(k: usize, v: i32) {
-    unsafe {
-        raw::best_pl_short[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.best_pl_short[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn best_pl_glue(k: usize) -> i32 {
-    unsafe { raw::best_pl_glue[k] }
+    crate::state::with_state(|state| state.linebreak.best_pl_glue[k])
 }
 #[inline]
 pub(crate) fn set_best_pl_glue(k: usize, v: i32) {
-    unsafe {
-        raw::best_pl_glue[k] = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.linebreak.best_pl_glue[k] = v;
+    });
 }
 #[inline]
 pub(crate) fn font_in_short_display() -> i32 {

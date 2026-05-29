@@ -14,30 +14,10 @@
 #include "xetex-xetexd.h"
 #include "tectonic_bridge_core.h"
 
-int32_t passive;
-scaled_t cur_active_width[7];
-scaled_t background[7];
-scaled_t break_width[7];
-int32_t best_place[4];
-int32_t best_pl_line[4];
-scaled_t disc_width;
-int32_t cur_p;
-bool final_pass;
-int32_t threshold;
-int32_t minimal_demerits[4];
-int32_t minimum_demerits;
-int32_t easy_line;
-int32_t last_special_line;
-scaled_t first_width;
-scaled_t second_width;
-scaled_t first_indent;
-scaled_t second_indent;
-int32_t best_bet;
-int32_t best_line;
-small_number hn;
-int32_t ha, hb;
-bool do_last_line_fit;
-small_number active_node_size;
-scaled_t fill_width[3];
-scaled_t best_pl_short[4];
-scaled_t best_pl_glue[4];
+/* The line-breaker scratch globals formerly defined here (passive,
+   cur_active_width, background, break_width, best_place, best_pl_line,
+   disc_width, cur_p, final_pass, threshold, minimal_demerits,
+   minimum_demerits, easy_line, last_special_line, first_width, second_width,
+   first_indent, second_indent, best_bet, best_line, hn, ha, hb,
+   do_last_line_fit, active_node_size, fill_width, best_pl_short, best_pl_glue)
+   moved to EngineState.linebreak (LinebreakState). */
