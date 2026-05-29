@@ -168,6 +168,12 @@ pub(crate) struct FontState {
     /// `UTF16_code` (newtype debt tracked in 01a).
     pub font_bc: Vec<u16>,
     pub font_ec: Vec<u16>,
+    /// Rust-owned boundary-character tables (`font_max + 1` entries each).
+    /// Serialized in the format dump. Element types are `font_index` /
+    /// `nine_bits` (newtype debt tracked in 01a).
+    pub bchar_label: Vec<i32>,
+    pub font_bchar: Vec<i32>,
+    pub font_false_bchar: Vec<i32>,
 }
 
 impl Default for FontState {
@@ -195,6 +201,9 @@ impl Default for FontState {
             font_area: Vec::new(),
             font_bc: Vec::new(),
             font_ec: Vec::new(),
+            bchar_label: Vec::new(),
+            font_bchar: Vec::new(),
+            font_false_bchar: Vec::new(),
         }
     }
 }

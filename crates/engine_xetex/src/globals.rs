@@ -240,10 +240,6 @@ mod raw {
         // Per-font encoding/layout arrays (xetex-xetexd.h:566–573).
         // font_used[f]: whether the font has been emitted in the output.
         pub(super) static mut font_used: *mut bool;
-        // Boundary-character and ligature tables (xetex-xetexd.h:570-572).
-        pub(super) static mut bchar_label: *mut i32;
-        pub(super) static mut font_bchar: *mut i32;
-        pub(super) static mut font_false_bchar: *mut i32;
         // font_layout_engine[f]: pointer to AAT/OT layout engine (void*).
         pub(super) static mut font_layout_engine: *mut *mut libc::c_void;
         // font_mapping[f]: TECkit/TFM font mapping pointer (void*, xetex-xetexd.h:574).
@@ -2164,38 +2160,38 @@ pub(crate) fn set_font_used_entry(f: i32, v: bool) {
 /// Writes `bchar_label[f] = v`.
 #[inline]
 pub(crate) fn set_bchar_label_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::bchar_label.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.bchar_label[f as usize] = v;
+    });
 }
 /// Writes `font_bchar[f] = v`.
 #[inline]
 pub(crate) fn set_font_bchar_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::font_bchar.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_bchar[f as usize] = v;
+    });
 }
 /// Writes `font_false_bchar[f] = v`.
 #[inline]
 pub(crate) fn set_font_false_bchar_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::font_false_bchar.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_false_bchar[f as usize] = v;
+    });
 }
 /// Returns `bchar_label[f]`.
 #[inline]
 pub(crate) fn bchar_label_entry(f: i32) -> i32 {
-    unsafe { *raw::bchar_label.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.bchar_label[f as usize])
 }
 /// Returns `font_bchar[f]`.
 #[inline]
 pub(crate) fn font_bchar_entry(f: i32) -> i32 {
-    unsafe { *raw::font_bchar.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_bchar[f as usize])
 }
 /// Returns `font_false_bchar[f]`.
 #[inline]
 pub(crate) fn font_false_bchar_entry(f: i32) -> i32 {
-    unsafe { *raw::font_false_bchar.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_false_bchar[f as usize])
 }
 /// Returns `font_layout_engine[f]`.
 #[inline]

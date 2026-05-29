@@ -9,6 +9,75 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 37 — 2026-05-29 — font boundary-character arrays -> FontState
+
+**Type:** execution (workstream 01, Phase-B ownership slice).
+
+**Goal:** move the coherent boundary-character font subgroup
+(`bchar_label`, `font_bchar`, and `font_false_bchar`) out of C `malloc`
+storage and into Rust-owned state on `EngineState.fonts`. One larger but
+bounded ownership slice, one commit.
+
+**Why this slice:** the user asked for a bigger session, and these three arrays
+are adjacent per-font boundary/ligature metadata with the same
+init/dump/cleanup shape. They are not hot tokenizer/main-loop scratch state,
+and their reader greps are clean.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `bchar_label` is `font_index *`; `font_bchar` and
+  `font_false_bchar` are `nine_bits *`.
+- (b) cleanup/link aliases: `src/ini.rs` had the expected allocation and
+  cleanup `#[link_name]` aliases for all three symbols; all six were removed.
+- (c) C readers: only `xetex/xetex-ini.c`.
+- (c, extended) C/C++ readers: only `xetex/xetex-ini.c`.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs`
+  aliases; no other Rust redeclarations.
+
+**Work done:**
+- Added `bchar_label: Vec<i32>`, `font_bchar: Vec<i32>`, and
+  `font_false_bchar: Vec<i32>` to `FontState`.
+- Repointed the three getter/setter pairs to index the Rust-owned vectors.
+- Replaced init and format-load allocation with `vec![0i32; font_max + 1]`
+  for all three arrays.
+- Repointed format dump and checked undump to state-derived storage at
+  `FONT_BASE`; computed the repeated `font_count`/`fmem_ptr()` bounds before
+  entering the mutable state closures.
+- Dropped all three vectors in `tt_cleanup`.
+- Removed all six `src/ini.rs` `#[link_name]` aliases, the raw externs in
+  `globals.rs`, and the C definitions in `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** added rows for `bchar_label[]`
+(`font_index *` -> `Vec<FontIndex>`) and `font_bchar[]` /
+`font_false_bchar[]` (`nine_bits *` -> `Vec<NineBits>`) to the deferred
+newtype worklist.
+
+**longjmp / Drop (§7):** owned vectors live in the `'static` thread-local
+`EngineState` and are released explicitly by `tt_cleanup`; abort paths skip
+Drop as intended by the existing arena pattern.
+
+**Surprise:** none. Extended `.cpp` reader grep was clean.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 197 -> 194 (-3).
+- Raw `unsafe { ... }` text-search count: 481 -> 475 (-6, three
+  getter/setter pairs became fully safe).
+- `#[no_mangle]` exports: unchanged at 578.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of `bchar_label`/`font_bchar`/`font_false_bchar` in `xetex/*.c`
+  (minus macos): empty.
+- Extended grep of those symbols in `xetex/*.{c,cpp}` (minus macos): empty.
+
+**For the next session:**
+- Continue with another bounded `fonts` table subgroup. Good candidates:
+  `font_glue` alone (semantic memory pointer / checked undump bound against
+  `lo_mem_max`) or `font_used` alone (plain `bool *`, not format-dumped).
+- Keep including `.cpp` in reader greps for font-table slices.
+- Avoid nested `with_state_mut` borrows in format load paths when bounds
+  depend on other state-backed accessors.
+
 ## Idiom session 36 — 2026-05-29 — font character-range arrays -> FontState
 
 **Type:** execution (workstream 01, Phase-B ownership slice).
