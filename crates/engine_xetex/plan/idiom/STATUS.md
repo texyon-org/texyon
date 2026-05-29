@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 43 (2026-05-29).
+Last updated: idiom session 44 (2026-05-29).
 
 ## How to read this file
 
@@ -378,6 +378,14 @@ least-coupled non-`misc` clusters:
     `with_state`/`with_state_mut`; raw extern statics and C definitions removed in
     the same commit. Not in format dump. No newtype debts: all plain
     `int32_t`/`unsigned char` (confirmed).
+-   **`misc` bucket resolved (session 44 — planning only, no code change):** the
+    former `misc` holding bucket (34 linebreak-scratch raw externs + 8 private
+    statics) was resolved into concrete sub-structs and the inventory's cluster
+    columns updated — `LinebreakState` (34 externs), `ShipoutState` fold (4
+    pagebuilder statics), `EngineState.synctex` (`SYNCTEX_CTXT`), `TexmfState` (3 io
+    statics). Decision block + per-field lists + newtype-debt candidates in
+    `01a-global-inventory.md`. No `MathState`/`DviState` created — those rows are
+    already classified `scanner`/`shipout`. Sets up sessions 45+ batch migrations.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -455,54 +463,45 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **STOP the one-by-one scalar approach. The easy candidates are exhausted.**
+1.  **The `misc` bucket is now resolved (session 44 planning). Resume batch migrations.**
 
-    After session 43, only 139 raw statics remain. They break into four buckets:
+    Session 44 was a **planning session** (no code changed): it resolved the former `misc`
+    bucket into concrete sub-structs. The decision block + per-field lists live in
+    `01a-global-inventory.md` ("Sub-struct decisions — session 44"). Key finding: the
+    `MathState`/`DviState`/`OutputState`/`NativeTextState` fields that earlier prose floated
+    are **already classified into `scanner`/`shipout`** in the inventory (classified, not
+    migrated) — no new sub-struct is needed for them. The genuinely-undecided rows were only
+    the 34 linebreak-scratch externs + 8 private statics. Resolution:
+
+    | Target | Members | Shape | Session |
+    |---|---|---|---|
+    | **`LinebreakState`** (new) | 34 linebreak/LR-reverse scratch externs | scalar/inline-array move; **`hlist_stack[513]` heap-backed as `Vec<i32>`** (inline 2 KB array risks the session-26 thread-stack overflow — `EngineState` is inline in the thread-local, not boxed) | **45 (next)** |
+    | `ShipoutState` (extend) | 4 pagebuilder private statics (`BEST_PAGE_BREAK`, `BEST_SIZE`, `LEAST_PAGE_COST`, `PAGE_MAX_DEPTH`) | fold in; repoint `pagebuilder.rs` accessors | 46 |
+    | `EngineState.synctex: SynctexCtxt` (new) | `SYNCTEX_CTXT` | move struct whole; confirm `Default`/lifecycle | 46 |
+    | `TexmfState` (new) | `LAST_SOURCE_NAME`, `LAST_LINENO`, `START_TIME_STR[30]` | `LAST_SOURCE_NAME` is an owned C string — note free lifecycle | 46 |
+
+    **Session 45 = the `LinebreakState` batch migration** (next migration session). Follow the
+    §11 recipe: grep checks (already pre-verified in the session-44 decision block — no
+    `ini.rs` aliases, not in format dump, readers are `linebreak.rs`/`scan.rs`), add the
+    `LinebreakState` sub-struct + field to `EngineState`, repoint all ~34 accessor pairs in
+    `globals.rs`, delete the `mod raw` externs and the C defs in `xetex-ini.c` /
+    `xetex-linebreak.c`, add §4 newtype-worklist rows for the `scaled_t`/`MemPtr`/`small_number`
+    fields (candidate list is in the decision block), run the dashboard (29/2/7/4), update docs,
+    one commit. This moves ~34 globals at once.
+
+    **Sessions 46+ = the remaining small clusters** (pagebuilder fold, synctex, texmf), then
+    the deferred Phase-C globals (`cur_cmd/chr/tok/cs/val`, mem arena) are the only `mod raw`
+    statics of substance and **Phase C becomes viable**: threading `&mut EngineState` through
+    signatures, removing the thread-local bridge, near-zero unsafe.
+
+    After session 43, ~139 raw statics remained, in four buckets:
 
     | Bucket | ~Count | Fate |
     |---|---:|---|
     | Intentionally deferred: hot tokenizer (`cur_cmd/chr/tok/cs/val`), mem arena (`mem`, `lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`, `dyn_used`), hot lig/kern (`main_*`, `cur_l/r/q`, etc.) | 37 | Stay raw until Phase C |
     | Ownership slices (`eqtb`, `hash`, `prim`, `sa_root`, `xdv_buffer`, `name_of_file*`, `native_text`) | 12 | Need format-dump or alloc rewrite work |
-    | Cold `misc` scratch (linebreak, DVI/shipout, math, scanner output) | ~85 | **Bulk of remaining work** |
+    | Now-resolved scratch (linebreak → `LinebreakState`; the math/DVI/scanner/native rows are already `scanner`/`shipout` and await migration) | ~85 | **Bulk of remaining work — sub-structs decided** |
     | Capacity/size limits (`stack_size`, `nest_size`, etc.) | 5 | Probably stay as C forever |
-
-    The `misc` cluster (~85 globals) has no sub-structs decided yet. Continuing one-by-one
-    without planning would take **20+ more sessions** before Phase C is viable. The fast path:
-
-    **Session 44 = sub-struct planning session (not a migration session).** Do NOT execute
-    a migration. Instead, read `01a-global-inventory.md` and enumerate the `misc` rows,
-    then decide and document the target sub-structs:
-    - `LinebreakState` — linebreak scratch (`first_p`, `global_prev_p`, `cur_p`, `passive`,
-      `active_width`, `cur_active_width`, `background`, `break_width`, `best_place`,
-      `best_pl_line`, `disc_width`, `final_pass`, `threshold`, `minimal_demerits`,
-      `minimum_demerits`, `easy_line`, `do_last_line_fit`, `active_node_size`, `fill_width`,
-      `best_pl_short`, `best_pl_glue`, `last_special_line`, `first_width`, `second_width`,
-      `first_indent`, `second_indent`, `best_bet`, `best_line`, `hn`, `ha`, `hb`, `just_box`,
-      `best_height_plus_depth`, `pack_begin_line` and related)
-    - `DviState` (or extend `ShipoutState`) — DVI/output scratch (`total_pages`, `max_v`,
-      `max_h`, `max_push`, `last_bop`, `doing_leaders`, `rule_ht/dp/wd`, `cur_h/v`,
-      `cur_page_width/height`, `cur_h/v_offset`, `write_loc`, `cur_dir`, `LR_ptr/problems`,
-      `last_leftmost/rightmost_char`, `hlist_stack`, `hlist_stack_level`)
-    - `MathState` — math scratch (`cur_mlist`, `cur_style`, `cur_size`, `cur_mu`,
-      `mlist_penalties`, `empty`, `cur_f`, `cur_c`, `cur_i`)
-    - Extend `ScannerState` or new `OutputState` — scanner/output misc (`cur_box`,
-      `after_token`, `cur_order`, `adjust_tail`, `pre_adjust_tail`, `total_stretch`,
-      `total_shrink`, `set_box_allowed`, `space_class`, `prev_class`, `bchar`, `false_bchar`,
-      `cancel_boundary`, `ins_disc`)
-    - `NativeTextState` (or `FontState`) — native/ext text scratch (`native_text`,
-      `native_text_size`, `native_len`, `save_native_len`)
-
-    Write the sub-struct names + field lists into `01a-global-inventory.md` (update each
-    `misc` row's cluster column). **Do not write any Rust code yet.** Commit only `plan/idiom/*`.
-
-    **Sessions 45–50 = batch cluster migrations**, one sub-struct per session (same §11 recipe
-    as sessions 5–10 did for `errors`/`config`/`scanner`/`fonts`). Each batch session moves
-    10–30 globals at once instead of 1–3.
-
-    **After sessions 45–50**, the deferred Phase-C globals (`cur_cmd/chr/tok/cs/val`, mem arena)
-    are the only remaining `mod raw` statics of substance, and **Phase C becomes viable**:
-    threading `&mut EngineState` through function signatures, removing the thread-local bridge,
-    getting to near-zero unsafe.
 
     **Do not bridge the hot tokenizer scalars** (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`,
     `cur_val`) through the thread-local — they are read on nearly every

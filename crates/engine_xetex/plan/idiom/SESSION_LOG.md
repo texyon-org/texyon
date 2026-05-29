@@ -9,6 +9,81 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 44 — 2026-05-29 — `misc` sub-struct planning (no code change)
+
+**Type:** planning (workstream 01). Per `STATUS.md` → "Next action" step 1,
+session 44 was designated a **sub-struct planning session, not a migration**.
+No Rust/C code changed; only `plan/idiom/*` edited. This overrides the generic
+"do a migration" framing in the session kickoff — the plan docs are the source
+of truth.
+
+**Goal:** resolve the former `misc` holding bucket into concrete `EngineState`
+sub-structs so sessions 45+ can batch-migrate instead of moving 1–3 globals at a
+time. Update `01a-global-inventory.md` cluster columns + decision block; fix
+STATUS's stale Next-action prose.
+
+**Verification done before deciding:**
+- The `misc` bucket = 34 raw extern globals + 8 private module-local statics
+  (matches the inventory summary counts 34 + 8).
+- The 34 raw externs are all line-breaking / LR-reverse / hyphenation-attempt
+  scratch: `grep` shows they are used in `src/linebreak.rs`
+  (`last_leftmost_char`/`last_rightmost_char` also in `src/scan.rs` via the
+  LR-reverse helper). Cold relative to the tokenizer (run per paragraph), so
+  safe to bridge through the thread-local in Phase B.
+- None of the 34 have a `#[link_name]` alias in `src/ini.rs` (grep: none) and
+  none are in the format dump → pure BSS scalar/inline-array move (sessions
+  39–43 shape), **not** an ownership slice.
+- The fields STATUS's earlier prose floated as `MathState`/`DviState`/
+  `OutputState`/`NativeTextState` candidates (`cur_mlist`, `cur_style`,
+  `total_pages`, `cur_box`, `native_text`, `space_class`, `LR_ptr`, `cur_dir`,
+  …) are **already classified `scanner`/`shipout`** in the inventory — verified
+  by grep against the inventory rows. They need no new sub-struct, only
+  eventual migration into their assigned clusters. **No `MathState`/`DviState`
+  created.**
+- `EngineState` is stored *inline* in the thread-local `RefCell`
+  (`src/state.rs:502`), not boxed → a 2 KB inline array (`hlist_stack[513]`)
+  risks the session-26 `engine_rust` thread-stack overflow during
+  `EngineState::default()`. Decision: heap-back `hlist_stack` as `Vec<i32>`.
+
+**Decisions (written into `01a-global-inventory.md`):**
+- **`LinebreakState`** (new sub-struct) ← the 34 former-`misc` raw externs.
+  `hlist_stack` heap-backed `Vec<i32>` (513); small arrays stay inline.
+  Target: session 45.
+- **`ShipoutState`** (extend) ← 4 pagebuilder private statics
+  (`BEST_PAGE_BREAK`, `BEST_SIZE`, `LEAST_PAGE_COST`, `PAGE_MAX_DEPTH`).
+  Target: session 46.
+- **`EngineState.synctex: SynctexCtxt`** (new field) ← `SYNCTEX_CTXT`.
+  Target: session 46.
+- **`TexmfState`** (new sub-struct) ← `LAST_SOURCE_NAME` (owned C string —
+  note free lifecycle), `LAST_LINENO`, `START_TIME_STR[30]`. Target: session 46.
+
+**Newtype debts:** none added (no fields migrated). Candidate `scaled_t`/
+`MemPtr`/`small_number` rows for the linebreak fields are pre-listed in the
+decision block; the actual worklist rows get added at session 45 per the §4
+rule (in the migrating commit).
+
+**Metrics:** unchanged (no code touched). Raw extern globals still 139.
+
+**Validation:** none required — no code changed. Did not run the dashboard
+(planning-only session; nothing to regress).
+
+**For the next session (45):**
+- Execute the `LinebreakState` batch migration per §11. The grep checks are
+  pre-done (see decision block) but re-confirm before deleting C defs.
+- C defs to remove span **two** files: 6 fields in `xetex/xetex-ini.c`
+  (`last_leftmost_char`, `last_rightmost_char`, `hlist_stack`,
+  `hlist_stack_level`, `first_p`, `global_prev_p`) and 28 in
+  `xetex/xetex-linebreak.c` (the rest) — grep each, watch for symbols
+  interleaved with kept ones (e.g. `no_shrink_error_yet`, `hyf_*` sit between
+  the linebreak rows and belong to `errors`/`hyph`).
+- `LinebreakState` needs a hand-written `impl Default` (contains `Vec` +
+  fixed arrays; `hlist_stack` Vec starts empty and is sized at init — confirm
+  whether init writes it or it's zero-filled; C BSS is zero, so `vec![0;513]`
+  at init or lazy-size both work, match the C alloc shape).
+- Add §4 newtype-worklist rows in the same commit.
+
+---
+
 ## Idiom session 43 — 2026-05-29 — read_file[16] → InputClusterState
 
 **Type:** execution (workstream 01, Phase-B; inline BSS array slice).

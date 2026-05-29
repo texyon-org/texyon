@@ -15,8 +15,8 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
   - `fonts`: 42
   - `hyph`: 49
   - `input`: 42
+  - `linebreak`: 34 (was `misc`; resolved session 44 — see decision block)
   - `mem`: 9
-  - `misc`: 34
   - `save_stack`: 8
   - `scanner`: 100
   - `shipout`: 58
@@ -24,15 +24,66 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 - Private-static cluster counts:
   - `fonts`: 5
   - `input`: 5
-  - `misc`: 8
+  - `shipout`: 4 (was `misc`; pagebuilder cost scratch, folded — session 44)
+  - `synctex`: 1 (was `misc`; resolved session 44)
+  - `texmf`: 3 (was `misc`; resolved session 44)
 
 ## Classification notes
 
 - `C/link status` lists non-macOS C definitions, non-macOS C `extern` declarations/references, and Rust `#[link_name]` aliases only.
 - `link src/ini.rs:<line>` means init/load/cleanup glue reaches the symbol by C name; the Phase-B commit that moves that symbol must remove or redirect that alias/free path.
-- `misc` entries are real state not covered cleanly by the original `02-state.md` cluster table. Most are linebreaker/pagebuilder/synctex/io scratch. Decide their final sub-struct before migrating them.
+- The `misc` holding bucket is **resolved as of session 44**; see the
+  "Sub-struct decisions" block below. No row is tagged `misc` anymore.
 - Accessor names are mechanically detected by exact `raw::<symbol>` references in `globals.rs`; module-local direct extern aliases outside `globals.rs` are reflected in `C/link status`, not in `accessors`.
 - `xetex-macos.c` is intentionally excluded and must not block Linux-validated idiomatization.
+
+## Sub-struct decisions (misc resolution — session 44)
+
+The former `misc` bucket (34 raw extern globals + 8 private module-local
+statics) was resolved into concrete sub-structs this session. **Planning
+only — no Rust/C code changed.** Verification done before deciding:
+
+- All 34 raw externs are line-breaking / LR-reverse / hyphenation-attempt
+  scratch, used almost entirely in `src/linebreak.rs`
+  (`last_leftmost_char`/`last_rightmost_char` are also read by the
+  LR-reverse helper in `src/scan.rs`). They are line-breaker working state
+  (`line_break`/`try_break`/`post_line_break`/`hyphenate`), run **per
+  paragraph**, not on the tokenizer hot path — so they sit in the "cold
+  misc scratch" bucket and are safe to bridge through the thread-local in
+  Phase B (the only hard deferral is the tokenizer scalars).
+- None of the 34 have a `#[link_name]` alias in `src/ini.rs` and none are
+  in the format dump (grep-confirmed): they are pure BSS scalars/inline
+  arrays. So the migration is a **scalar/inline-array move** (sessions
+  39–43 shape), *not* an ownership slice — no `ini.rs` alloc, no
+  `tt_cleanup` free, no format-dump reconciliation.
+- The fields STATUS's earlier prose floated as `MathState` / `DviState` /
+  `OutputState` / `NativeTextState` candidates (`cur_mlist`, `cur_style`,
+  `cur_size`, `cur_mu`, `mlist_penalties`, `cur_f/c/i`, `total_pages`,
+  `max_v/h`, `cur_h/v`, `cur_box`, `after_token`, `cur_order`,
+  `native_text`, `space_class`, `LR_ptr`, `cur_dir`, …) are **already
+  classified into `scanner`/`shipout`** in this inventory — classified,
+  not yet migrated. They need **no new sub-struct**; they migrate into
+  their existing assigned clusters. No `MathState`/`DviState` is created.
+
+| Decision | Members | Migration shape | Target session |
+|---|---|---|---|
+| **`LinebreakState`** (new sub-struct on `EngineState`) | the 34 former-`misc` raw externs: `last_leftmost_char`, `last_rightmost_char`, `hlist_stack[513]`, `hlist_stack_level`, `first_p`, `global_prev_p`, `cur_p`, `last_special_line`, `first_width`, `second_width`, `first_indent`, `second_indent`, `best_bet`, `best_line`, `hn`, `ha`, `hb`, `passive`, `cur_active_width[7]`, `background[7]`, `break_width[7]`, `best_place[4]`, `best_pl_line[4]`, `disc_width`, `final_pass`, `threshold`, `minimal_demerits[4]`, `minimum_demerits`, `easy_line`, `do_last_line_fit`, `active_node_size`, `fill_width[3]`, `best_pl_short[4]`, `best_pl_glue[4]` | scalar/inline-array move. **`hlist_stack` (`[i32;513]`, ~2 KB) heap-back as `Vec<i32>` sized 513** — `EngineState` lives *inline* in the thread-local `RefCell` (not boxed), so a 2 KB inline array risks the session-26 `engine_rust` thread-stack overflow during `EngineState::default()`. The small arrays (`[i32;7]`, `[i32;4]`, `[i32;3]`) stay inline. | 45 |
+| **`ShipoutState`** (extend existing) | the 4 pagebuilder private statics in `src/pagebuilder.rs`: `BEST_PAGE_BREAK`, `BEST_SIZE`, `LEAST_PAGE_COST`, `PAGE_MAX_DEPTH` | private Rust statics (no C def, no alias). Fold beside the page-builder fields already in `ShipoutState` (`page_contents`, `page_so_far`, `page_tail`, `last_glue/penalty/kern`, `insert_penalties`, `output_active`, `dead_cycles`); repoint the in-module accessors. | 46 |
+| **`EngineState.synctex: SynctexCtxt`** (new field) | `SYNCTEX_CTXT` (`src/synctex.rs`) | move the whole context struct in as one field. `SynctexCtxt` holds file-handle/counter state — confirm a `Default` impl (or write one) and route any open/close lifecycle through the existing synctex entry points. | 46 |
+| **`TexmfState`** (new sub-struct) | `LAST_SOURCE_NAME` (`*mut c_char`), `LAST_LINENO` (`i32`), `START_TIME_STR[30]` (`src/texmfmp.rs`) | small io/job-context struct. **`LAST_SOURCE_NAME` is an owned C string** (`strdup`/`free` lifecycle) — keep the raw pointer in Phase B and record an ownership note (eventual `Option<CString>`); do not double-free. | 46 |
+
+**Newtype-debt note (added at migration time per §4, not now):** many of
+the linebreak fields are semantic typedefs and will need worklist rows in
+the migrating commit — the width/demerit arrays and scalars are `scaled_t`
+(`cur_active_width`, `background`, `break_width`, `disc_width`,
+`first/second_width`, `first/second_indent`, `fill_width`,
+`best_height_plus_depth`); the demerit fields are `int32_t` but
+`minimal_demerits`/`minimum_demerits`/`best_pl_glue` mix scaled and plain;
+the pointer-ish fields (`cur_p`, `first_p`, `global_prev_p`, `passive`,
+`best_bet`, `best_place`, `ha`, `hb`) are mem halfwords (`MemPtr`); `hn`
+is `small_number`; `active_node_size` is `small_number`; the `*_line`
+fields are line numbers. Plain counters (`threshold`, `easy_line`) need
+none. Resolve per field with `xetex-xetexd.h` at session 45.
 
 ## Raw extern globals
 
@@ -354,47 +405,47 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `LR_ptr` | `i32` | `scanner` | `src/globals.rs:596` C extern | `lr_ptr`, `set_lr_ptr` | def xetex/xetex-ini.c |  |
 | `LR_problems` | `i32` | `scanner` | `src/globals.rs:597` C extern | `lr_problems`, `set_lr_problems` | def xetex/xetex-ini.c |  |
 | `cur_dir` | `i16` | `scanner` | `src/globals.rs:599` C extern | `cur_dir`, `set_cur_dir` | def xetex/xetex-ini.c |  |
-| `last_leftmost_char` | `i32` | `misc` | `src/globals.rs:601` C extern | `last_leftmost_char`, `set_last_leftmost_char` | def xetex/xetex-ini.c | linebreak private/scratch; needs subcluster decision |
-| `last_rightmost_char` | `i32` | `misc` | `src/globals.rs:602` C extern | `last_rightmost_char`, `set_last_rightmost_char` | def xetex/xetex-ini.c | linebreak private/scratch; needs subcluster decision |
-| `hlist_stack` | `[i32; 513]` | `misc` | `src/globals.rs:604` C extern | `hlist_stack_entry`, `set_hlist_stack_entry` | def xetex/xetex-ini.c | linebreak private/scratch; needs subcluster decision |
-| `hlist_stack_level` | `i16` | `misc` | `src/globals.rs:605` C extern | `hlist_stack_level`, `set_hlist_stack_level` | def xetex/xetex-ini.c | linebreak private/scratch; needs subcluster decision |
-| `first_p` | `i32` | `misc` | `src/globals.rs:606` C extern | `first_p`, `set_first_p` | def xetex/xetex-ini.c | linebreak private/scratch; needs subcluster decision |
-| `global_prev_p` | `i32` | `misc` | `src/globals.rs:607` C extern | `global_prev_p`, `set_global_prev_p` | def xetex/xetex-ini.c | linebreak private/scratch; needs subcluster decision |
+| `last_leftmost_char` | `i32` | `linebreak` | `src/globals.rs:601` C extern | `last_leftmost_char`, `set_last_leftmost_char` | def xetex/xetex-ini.c | → `LinebreakState` (new; session 45) |
+| `last_rightmost_char` | `i32` | `linebreak` | `src/globals.rs:602` C extern | `last_rightmost_char`, `set_last_rightmost_char` | def xetex/xetex-ini.c | → `LinebreakState` (new; session 45) |
+| `hlist_stack` | `[i32; 513]` | `linebreak` | `src/globals.rs:604` C extern | `hlist_stack_entry`, `set_hlist_stack_entry` | def xetex/xetex-ini.c | → `LinebreakState` (new; session 45) |
+| `hlist_stack_level` | `i16` | `linebreak` | `src/globals.rs:605` C extern | `hlist_stack_level`, `set_hlist_stack_level` | def xetex/xetex-ini.c | → `LinebreakState` (new; session 45) |
+| `first_p` | `i32` | `linebreak` | `src/globals.rs:606` C extern | `first_p`, `set_first_p` | def xetex/xetex-ini.c | → `LinebreakState` (new; session 45) |
+| `global_prev_p` | `i32` | `linebreak` | `src/globals.rs:607` C extern | `global_prev_p`, `set_global_prev_p` | def xetex/xetex-ini.c | → `LinebreakState` (new; session 45) |
 | `no_shrink_error_yet` | `bool` | `errors` | `src/globals.rs:608` C extern | `no_shrink_error_yet`, `set_no_shrink_error_yet` | def xetex/xetex-linebreak.c |  |
-| `cur_p` | `i32` | `misc` | `src/globals.rs:609` C extern | `cur_p`, `set_cur_p` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `last_special_line` | `i32` | `misc` | `src/globals.rs:610` C extern | `last_special_line`, `set_last_special_line` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `first_width` | `i32` | `misc` | `src/globals.rs:611` C extern | `first_width`, `set_first_width` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `second_width` | `i32` | `misc` | `src/globals.rs:612` C extern | `second_width`, `set_second_width` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `first_indent` | `i32` | `misc` | `src/globals.rs:613` C extern | `first_indent`, `set_first_indent` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `second_indent` | `i32` | `misc` | `src/globals.rs:614` C extern | `second_indent`, `set_second_indent` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `best_bet` | `i32` | `misc` | `src/globals.rs:615` C extern | `best_bet`, `set_best_bet` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `best_line` | `i32` | `misc` | `src/globals.rs:616` C extern | `best_line`, `set_best_line` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `hn` | `i16` | `misc` | `src/globals.rs:617` C extern | `hn`, `set_hn` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `ha` | `i32` | `misc` | `src/globals.rs:618` C extern | `ha`, `set_ha` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `hb` | `i32` | `misc` | `src/globals.rs:619` C extern | `hb`, `set_hb` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
+| `cur_p` | `i32` | `linebreak` | `src/globals.rs:609` C extern | `cur_p`, `set_cur_p` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `last_special_line` | `i32` | `linebreak` | `src/globals.rs:610` C extern | `last_special_line`, `set_last_special_line` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `first_width` | `i32` | `linebreak` | `src/globals.rs:611` C extern | `first_width`, `set_first_width` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `second_width` | `i32` | `linebreak` | `src/globals.rs:612` C extern | `second_width`, `set_second_width` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `first_indent` | `i32` | `linebreak` | `src/globals.rs:613` C extern | `first_indent`, `set_first_indent` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `second_indent` | `i32` | `linebreak` | `src/globals.rs:614` C extern | `second_indent`, `set_second_indent` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `best_bet` | `i32` | `linebreak` | `src/globals.rs:615` C extern | `best_bet`, `set_best_bet` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `best_line` | `i32` | `linebreak` | `src/globals.rs:616` C extern | `best_line`, `set_best_line` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `hn` | `i16` | `linebreak` | `src/globals.rs:617` C extern | `hn`, `set_hn` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `ha` | `i32` | `linebreak` | `src/globals.rs:618` C extern | `ha`, `set_ha` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `hb` | `i32` | `linebreak` | `src/globals.rs:619` C extern | `hb`, `set_hb` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
 | `hyf_char` | `i32` | `hyph` | `src/globals.rs:620` C extern | `hyf_char`, `set_hyf_char` | def xetex/xetex-linebreak.c |  |
 | `l_hyf` | `i32` | `hyph` | `src/globals.rs:621` C extern | `l_hyf`, `set_l_hyf` | def xetex/xetex-linebreak.c |  |
 | `r_hyf` | `i32` | `hyph` | `src/globals.rs:622` C extern | `r_hyf`, `set_r_hyf` | def xetex/xetex-linebreak.c |  |
 | `init_l_hyf` | `i32` | `hyph` | `src/globals.rs:623` C extern | `init_l_hyf`, `set_init_l_hyf` | def xetex/xetex-linebreak.c |  |
 | `init_r_hyf` | `i32` | `hyph` | `src/globals.rs:624` C extern | `init_r_hyf`, `set_init_r_hyf` | def xetex/xetex-linebreak.c |  |
 | `hyf_bchar` | `i32` | `hyph` | `src/globals.rs:625` C extern | `hyf_bchar`, `set_hyf_bchar` | def xetex/xetex-linebreak.c |  |
-| `passive` | `i32` | `misc` | `src/globals.rs:626` C extern | `passive`, `set_passive` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `cur_active_width` | `[i32; 7]` | `misc` | `src/globals.rs:627` C extern | `cur_active_width`, `set_cur_active_width` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `background` | `[i32; 7]` | `misc` | `src/globals.rs:628` C extern | `background`, `set_background` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `break_width` | `[i32; 7]` | `misc` | `src/globals.rs:629` C extern | `break_width`, `set_break_width` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `best_place` | `[i32; 4]` | `misc` | `src/globals.rs:630` C extern | `best_place`, `set_best_place` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `best_pl_line` | `[i32; 4]` | `misc` | `src/globals.rs:631` C extern | `best_pl_line`, `set_best_pl_line` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `disc_width` | `i32` | `misc` | `src/globals.rs:632` C extern | `disc_width`, `set_disc_width` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `final_pass` | `bool` | `misc` | `src/globals.rs:633` C extern | `final_pass`, `set_final_pass` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `threshold` | `i32` | `misc` | `src/globals.rs:634` C extern | `threshold`, `set_threshold` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `minimal_demerits` | `[i32; 4]` | `misc` | `src/globals.rs:635` C extern | `minimal_demerits`, `set_minimal_demerits` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `minimum_demerits` | `i32` | `misc` | `src/globals.rs:636` C extern | `minimum_demerits`, `set_minimum_demerits` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `easy_line` | `i32` | `misc` | `src/globals.rs:637` C extern | `easy_line`, `set_easy_line` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `do_last_line_fit` | `bool` | `misc` | `src/globals.rs:638` C extern | `do_last_line_fit`, `set_do_last_line_fit` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `active_node_size` | `i16` | `misc` | `src/globals.rs:639` C extern | `active_node_size`, `set_active_node_size` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `fill_width` | `[i32; 3]` | `misc` | `src/globals.rs:640` C extern | `fill_width`, `set_fill_width` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `best_pl_short` | `[i32; 4]` | `misc` | `src/globals.rs:641` C extern | `best_pl_short`, `set_best_pl_short` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
-| `best_pl_glue` | `[i32; 4]` | `misc` | `src/globals.rs:642` C extern | `best_pl_glue`, `set_best_pl_glue` | def xetex/xetex-linebreak.c | linebreak private/scratch; needs subcluster decision |
+| `passive` | `i32` | `linebreak` | `src/globals.rs:626` C extern | `passive`, `set_passive` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `cur_active_width` | `[i32; 7]` | `linebreak` | `src/globals.rs:627` C extern | `cur_active_width`, `set_cur_active_width` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `background` | `[i32; 7]` | `linebreak` | `src/globals.rs:628` C extern | `background`, `set_background` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `break_width` | `[i32; 7]` | `linebreak` | `src/globals.rs:629` C extern | `break_width`, `set_break_width` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `best_place` | `[i32; 4]` | `linebreak` | `src/globals.rs:630` C extern | `best_place`, `set_best_place` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `best_pl_line` | `[i32; 4]` | `linebreak` | `src/globals.rs:631` C extern | `best_pl_line`, `set_best_pl_line` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `disc_width` | `i32` | `linebreak` | `src/globals.rs:632` C extern | `disc_width`, `set_disc_width` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `final_pass` | `bool` | `linebreak` | `src/globals.rs:633` C extern | `final_pass`, `set_final_pass` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `threshold` | `i32` | `linebreak` | `src/globals.rs:634` C extern | `threshold`, `set_threshold` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `minimal_demerits` | `[i32; 4]` | `linebreak` | `src/globals.rs:635` C extern | `minimal_demerits`, `set_minimal_demerits` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `minimum_demerits` | `i32` | `linebreak` | `src/globals.rs:636` C extern | `minimum_demerits`, `set_minimum_demerits` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `easy_line` | `i32` | `linebreak` | `src/globals.rs:637` C extern | `easy_line`, `set_easy_line` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `do_last_line_fit` | `bool` | `linebreak` | `src/globals.rs:638` C extern | `do_last_line_fit`, `set_do_last_line_fit` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `active_node_size` | `i16` | `linebreak` | `src/globals.rs:639` C extern | `active_node_size`, `set_active_node_size` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `fill_width` | `[i32; 3]` | `linebreak` | `src/globals.rs:640` C extern | `fill_width`, `set_fill_width` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `best_pl_short` | `[i32; 4]` | `linebreak` | `src/globals.rs:641` C extern | `best_pl_short`, `set_best_pl_short` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
+| `best_pl_glue` | `[i32; 4]` | `linebreak` | `src/globals.rs:642` C extern | `best_pl_glue`, `set_best_pl_glue` | def xetex/xetex-linebreak.c | → `LinebreakState` (new; session 45) |
 | `font_in_short_display` | `i32` | `errors` | `src/globals.rs:644` C extern | `font_in_short_display`, `set_font_in_short_display` | def xetex/xetex-ini.c |  |
 | `depth_threshold` | `i32` | `errors` | `src/globals.rs:646` C extern | `depth_threshold`, `set_depth_threshold` | def xetex/xetex-ini.c |  |
 | `breadth_max` | `i32` | `errors` | `src/globals.rs:647` C extern | `breadth_max`, `set_breadth_max` | def xetex/xetex-ini.c |  |
@@ -460,14 +511,14 @@ These are not C-symbol globals from `globals.rs`, but they are still mutable eng
 | `BYTE_BUFFER` | `*mut libc::c_char` | `input` | `src/io.rs:342` private static |  |
 | `UTF32_BUF` | `*mut u32` | `input` | `src/io.rs:344` private static |  |
 | `NORMALIZERS` | `[*mut libc::c_void; 2]` | `input` | `src/io.rs:346` private static |  |
-| `BEST_PAGE_BREAK` | `i32` | `misc` | `src/pagebuilder.rs:19` private static | pagebuilder private/scratch; needs subcluster decision |
-| `BEST_SIZE` | `i32` | `misc` | `src/pagebuilder.rs:20` private static | pagebuilder private/scratch; needs subcluster decision |
-| `LEAST_PAGE_COST` | `i32` | `misc` | `src/pagebuilder.rs:21` private static | pagebuilder private/scratch; needs subcluster decision |
-| `PAGE_MAX_DEPTH` | `i32` | `misc` | `src/pagebuilder.rs:22` private static | pagebuilder private/scratch; needs subcluster decision |
-| `SYNCTEX_CTXT` | `SynctexCtxt` | `misc` | `src/synctex.rs:82` private static | synctex private/scratch; needs subcluster decision |
-| `LAST_SOURCE_NAME` | `*mut libc::c_char` | `misc` | `src/texmfmp.rs:51` private static | io private/scratch; needs subcluster decision |
-| `LAST_LINENO` | `i32` | `misc` | `src/texmfmp.rs:52` private static | io private/scratch; needs subcluster decision |
-| `START_TIME_STR` | `[u8; 30]` | `misc` | `src/texmfmp.rs:54` private static | io private/scratch; needs subcluster decision |
+| `BEST_PAGE_BREAK` | `i32` | `shipout` | `src/pagebuilder.rs:19` private static | → `ShipoutState` (fold; session 46) |
+| `BEST_SIZE` | `i32` | `shipout` | `src/pagebuilder.rs:20` private static | → `ShipoutState` (fold; session 46) |
+| `LEAST_PAGE_COST` | `i32` | `shipout` | `src/pagebuilder.rs:21` private static | → `ShipoutState` (fold; session 46) |
+| `PAGE_MAX_DEPTH` | `i32` | `shipout` | `src/pagebuilder.rs:22` private static | → `ShipoutState` (fold; session 46) |
+| `SYNCTEX_CTXT` | `SynctexCtxt` | `synctex` | `src/synctex.rs:82` private static | → `EngineState.synctex: SynctexCtxt` (session 46) |
+| `LAST_SOURCE_NAME` | `*mut libc::c_char` | `texmf` | `src/texmfmp.rs:51` private static | → `TexmfState` (new; session 46) |
+| `LAST_LINENO` | `i32` | `texmf` | `src/texmfmp.rs:52` private static | → `TexmfState` (new; session 46) |
+| `START_TIME_STR` | `[u8; 30]` | `texmf` | `src/texmfmp.rs:54` private static | → `TexmfState` (new; session 46) |
 
 ## Deferred newtype worklist
 
