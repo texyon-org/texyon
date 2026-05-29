@@ -455,29 +455,67 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  Continue executing workstream 01. **All `input`-cluster arrays are Rust-owned** and a
-    large batch of scalars have been moved in sessions 41+. Do not bridge the hot tokenizer
-    scalars (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) through the thread-local
-    without benchmarking — they are read on nearly every `get_next`/`get_token`. Similarly
-    do not bridge `main_*` lig/kern loop scalars (hot per-character path).
-    The `mem` bookkeeping scalars (`var_used`, `dyn_used`, `lo_mem_max`, `hi_mem_min`,
-    `avail`, `rover`, `mem_end`) are best done with the `Mem` arena (§5).
-    **Good next candidates (session 44+):**
-    - `xdv_buffer` / `mapped_text` — dynamic write buffers owned by `ext.rs`; moving to
-      `Vec<u8>` / `Vec<u16>` feasible but requires rewriting the `ext.rs` alloc/use pattern
-      (similar to `buffer_ptr` session-15 shape; `ext.rs` extern block must be updated).
-    - `sa_*` messier members remain: `sa_root` has a link alias (ownership), `sa_null`
-      is a `MemoryWord` (no `Default`), `max_reg_help_line` is a pointer.
-    - `name_of_file` / `name_of_file16` remain as raw pointer buffers — defer until ownership
-      pattern for these name buffers is decided.
-    - All simple BSS inline-array candidates in `input` cluster are now exhausted.
-    **Recurring gotchas:**
+1.  **STOP the one-by-one scalar approach. The easy candidates are exhausted.**
+
+    After session 43, only 139 raw statics remain. They break into four buckets:
+
+    | Bucket | ~Count | Fate |
+    |---|---:|---|
+    | Intentionally deferred: hot tokenizer (`cur_cmd/chr/tok/cs/val`), mem arena (`mem`, `lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`, `dyn_used`), hot lig/kern (`main_*`, `cur_l/r/q`, etc.) | 37 | Stay raw until Phase C |
+    | Ownership slices (`eqtb`, `hash`, `prim`, `sa_root`, `xdv_buffer`, `name_of_file*`, `native_text`) | 12 | Need format-dump or alloc rewrite work |
+    | Cold `misc` scratch (linebreak, DVI/shipout, math, scanner output) | ~85 | **Bulk of remaining work** |
+    | Capacity/size limits (`stack_size`, `nest_size`, etc.) | 5 | Probably stay as C forever |
+
+    The `misc` cluster (~85 globals) has no sub-structs decided yet. Continuing one-by-one
+    without planning would take **20+ more sessions** before Phase C is viable. The fast path:
+
+    **Session 44 = sub-struct planning session (not a migration session).** Do NOT execute
+    a migration. Instead, read `01a-global-inventory.md` and enumerate the `misc` rows,
+    then decide and document the target sub-structs:
+    - `LinebreakState` — linebreak scratch (`first_p`, `global_prev_p`, `cur_p`, `passive`,
+      `active_width`, `cur_active_width`, `background`, `break_width`, `best_place`,
+      `best_pl_line`, `disc_width`, `final_pass`, `threshold`, `minimal_demerits`,
+      `minimum_demerits`, `easy_line`, `do_last_line_fit`, `active_node_size`, `fill_width`,
+      `best_pl_short`, `best_pl_glue`, `last_special_line`, `first_width`, `second_width`,
+      `first_indent`, `second_indent`, `best_bet`, `best_line`, `hn`, `ha`, `hb`, `just_box`,
+      `best_height_plus_depth`, `pack_begin_line` and related)
+    - `DviState` (or extend `ShipoutState`) — DVI/output scratch (`total_pages`, `max_v`,
+      `max_h`, `max_push`, `last_bop`, `doing_leaders`, `rule_ht/dp/wd`, `cur_h/v`,
+      `cur_page_width/height`, `cur_h/v_offset`, `write_loc`, `cur_dir`, `LR_ptr/problems`,
+      `last_leftmost/rightmost_char`, `hlist_stack`, `hlist_stack_level`)
+    - `MathState` — math scratch (`cur_mlist`, `cur_style`, `cur_size`, `cur_mu`,
+      `mlist_penalties`, `empty`, `cur_f`, `cur_c`, `cur_i`)
+    - Extend `ScannerState` or new `OutputState` — scanner/output misc (`cur_box`,
+      `after_token`, `cur_order`, `adjust_tail`, `pre_adjust_tail`, `total_stretch`,
+      `total_shrink`, `set_box_allowed`, `space_class`, `prev_class`, `bchar`, `false_bchar`,
+      `cancel_boundary`, `ins_disc`)
+    - `NativeTextState` (or `FontState`) — native/ext text scratch (`native_text`,
+      `native_text_size`, `native_len`, `save_native_len`)
+
+    Write the sub-struct names + field lists into `01a-global-inventory.md` (update each
+    `misc` row's cluster column). **Do not write any Rust code yet.** Commit only `plan/idiom/*`.
+
+    **Sessions 45–50 = batch cluster migrations**, one sub-struct per session (same §11 recipe
+    as sessions 5–10 did for `errors`/`config`/`scanner`/`fonts`). Each batch session moves
+    10–30 globals at once instead of 1–3.
+
+    **After sessions 45–50**, the deferred Phase-C globals (`cur_cmd/chr/tok/cs/val`, mem arena)
+    are the only remaining `mod raw` statics of substance, and **Phase C becomes viable**:
+    threading `&mut EngineState` through function signatures, removing the thread-local bridge,
+    getting to near-zero unsafe.
+
+    **Do not bridge the hot tokenizer scalars** (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`,
+    `cur_val`) through the thread-local — they are read on nearly every
+    `get_next`/`get_token`. Thread them in Phase C instead.
+
+    **Recurring gotchas (still apply to all batch sessions):**
     - Any scalar backed by `with_state` must NOT be called inside a `with_state_mut`
       closure — the RefCell panics. Pre-compute before the borrow.
     - Writing to a `MemoryWord` union field through a `Vec<MemoryWord>` index (via `&mut`)
       is *safe* — no `unsafe` needed for union writes, only for reads (session 41).
-    For each symbol moved, use `01a-global-inventory.md` for C defs / cleanup aliases /
-    accessors, and add a worklist row for any semantic-typed field (§4 rule).
+    - Use `01a-global-inventory.md` for C defs / cleanup aliases / accessors, and add a
+      worklist row for any semantic-typed field (§4 rule).
+
 2.  The `config` bridge pattern in `src/state.rs` is intentionally small:
     keep `with_state` / `with_state_mut` borrows to single-field
     read/write closures and avoid calling translated engine code while a
