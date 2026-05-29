@@ -237,10 +237,7 @@ mod raw {
         // disc_ptr[4]: saved discretionary break pointers (xetex-xetexd.h:716).
         pub(super) static mut disc_ptr: [i32; 4];
 
-        // Per-font encoding/layout arrays (xetex-xetexd.h:563–573).
-        // font_bc[f], font_ec[f]: first/last valid char (UTF16_code = u16).
-        pub(super) static mut font_bc: *mut u16;
-        pub(super) static mut font_ec: *mut u16;
+        // Per-font encoding/layout arrays (xetex-xetexd.h:566–573).
         // font_used[f]: whether the font has been emitted in the output.
         pub(super) static mut font_used: *mut bool;
         // Boundary-character and ligature tables (xetex-xetexd.h:570-572).
@@ -2136,26 +2133,26 @@ pub(crate) fn set_font_dsize_entry(f: i32, v: i32) {
 /// Returns `font_bc[f]` — first valid char code.
 #[inline]
 pub(crate) fn font_bc_entry(f: i32) -> u16 {
-    unsafe { *raw::font_bc.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_bc[f as usize])
 }
 /// Writes `font_bc[f] = v`.
 #[inline]
 pub(crate) fn set_font_bc_entry(f: i32, v: u16) {
-    unsafe {
-        *raw::font_bc.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_bc[f as usize] = v;
+    });
 }
 /// Returns `font_ec[f]` — last valid char code.
 #[inline]
 pub(crate) fn font_ec_entry(f: i32) -> u16 {
-    unsafe { *raw::font_ec.offset(f as isize) }
+    crate::state::with_state(|state| state.fonts.font_ec[f as usize])
 }
 /// Writes `font_ec[f] = v`.
 #[inline]
 pub(crate) fn set_font_ec_entry(f: i32, v: u16) {
-    unsafe {
-        *raw::font_ec.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.fonts.font_ec[f as usize] = v;
+    });
 }
 /// Writes `font_used[f] = v`.
 #[inline]

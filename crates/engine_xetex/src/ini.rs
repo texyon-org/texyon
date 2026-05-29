@@ -1831,10 +1831,6 @@ extern "C" {
     static mut tre_font_flags: *mut libc::c_char;
     #[link_name = "font_letter_space"]
     static mut tre_font_letter_space: *mut i32;
-    #[link_name = "font_bc"]
-    static mut tre_font_bc: *mut u16;
-    #[link_name = "font_ec"]
-    static mut tre_font_ec: *mut u16;
     #[link_name = "font_glue"]
     static mut tre_font_glue: *mut i32;
     #[link_name = "hyphen_char"]
@@ -2306,8 +2302,20 @@ pub unsafe extern "C" fn store_fmt_file() {
             font_ptr() + 1,
         );
     });
-    dump_slice(fmt_out, tre_font_bc.add(FONT_BASE as usize), font_ptr() + 1);
-    dump_slice(fmt_out, tre_font_ec.add(FONT_BASE as usize), font_ptr() + 1);
+    crate::state::with_state(|state| {
+        dump_slice(
+            fmt_out,
+            state.fonts.font_bc.as_ptr().add(FONT_BASE as usize),
+            font_ptr() + 1,
+        );
+    });
+    crate::state::with_state(|state| {
+        dump_slice(
+            fmt_out,
+            state.fonts.font_ec.as_ptr().add(FONT_BASE as usize),
+            font_ptr() + 1,
+        );
+    });
     dump_slice(
         fmt_out,
         tre_char_base.add(FONT_BASE as usize),
@@ -2835,9 +2843,9 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         state.fonts.font_params = vec![0i32; font_check_len];
         state.fonts.font_name = vec![0i32; font_check_len];
         state.fonts.font_area = vec![0i32; font_check_len];
+        state.fonts.font_bc = vec![0u16; font_check_len];
+        state.fonts.font_ec = vec![0u16; font_check_len];
     });
-    tre_font_bc = xmalloc_array::<u16>(font_max());
-    tre_font_ec = xmalloc_array::<u16>(font_max());
     tre_font_glue = xmalloc_array::<i32>(font_max());
     tre_hyphen_char = xmalloc_array::<i32>(font_max());
     tre_skew_char = xmalloc_array::<i32>(font_max());
@@ -2920,8 +2928,20 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     }) {
         bad_format_file();
     }
-    undump_slice(fmt_in, tre_font_bc.add(FONT_BASE as usize), font_ptr() + 1);
-    undump_slice(fmt_in, tre_font_ec.add(FONT_BASE as usize), font_ptr() + 1);
+    crate::state::with_state_mut(|state| {
+        undump_slice(
+            fmt_in,
+            state.fonts.font_bc.as_mut_ptr().add(FONT_BASE as usize),
+            font_count,
+        );
+    });
+    crate::state::with_state_mut(|state| {
+        undump_slice(
+            fmt_in,
+            state.fonts.font_ec.as_mut_ptr().add(FONT_BASE as usize),
+            font_count,
+        );
+    });
     undump_slice(
         fmt_in,
         tre_char_base.add(FONT_BASE as usize),
@@ -3534,9 +3554,9 @@ pub unsafe extern "C" fn tt_run_engine(
             state.fonts.font_params = vec![0i32; font_check_len];
             state.fonts.font_name = vec![0i32; font_check_len];
             state.fonts.font_area = vec![0i32; font_check_len];
+            state.fonts.font_bc = vec![0u16; font_check_len];
+            state.fonts.font_ec = vec![0u16; font_check_len];
         });
-        tre_font_bc = xcalloc_array::<u16>(font_max());
-        tre_font_ec = xcalloc_array::<u16>(font_max());
         tre_font_glue = xcalloc_array::<i32>(font_max());
         tre_hyphen_char = xcalloc_array::<i32>(font_max());
         tre_skew_char = xcalloc_array::<i32>(font_max());
@@ -3651,10 +3671,6 @@ extern "C" {
     static mut tt_cleanup_font_flags: *mut libc::c_void;
     #[link_name = "font_letter_space"]
     static mut tt_cleanup_font_letter_space: *mut libc::c_void;
-    #[link_name = "font_bc"]
-    static mut tt_cleanup_font_bc: *mut libc::c_void;
-    #[link_name = "font_ec"]
-    static mut tt_cleanup_font_ec: *mut libc::c_void;
     #[link_name = "font_glue"]
     static mut tt_cleanup_font_glue: *mut libc::c_void;
     #[link_name = "hyphen_char"]
@@ -3759,6 +3775,8 @@ pub unsafe extern "C" fn tt_cleanup() {
         state.fonts.font_params = Vec::new();
         state.fonts.font_name = Vec::new();
         state.fonts.font_area = Vec::new();
+        state.fonts.font_bc = Vec::new();
+        state.fonts.font_ec = Vec::new();
     });
     libc::free(tt_cleanup_font_info);
 
@@ -3766,8 +3784,6 @@ pub unsafe extern "C" fn tt_cleanup() {
     libc::free(tt_cleanup_font_layout_engine);
     libc::free(tt_cleanup_font_flags);
     libc::free(tt_cleanup_font_letter_space);
-    libc::free(tt_cleanup_font_bc);
-    libc::free(tt_cleanup_font_ec);
     libc::free(tt_cleanup_font_glue);
     libc::free(tt_cleanup_hyphen_char);
     libc::free(tt_cleanup_skew_char);

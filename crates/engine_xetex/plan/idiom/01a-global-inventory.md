@@ -547,6 +547,8 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `font_params[]` | `fonts` | `font_index *` | `Vec<FontIndex>` | session 34 | pending |
 | `font_name[]` | `fonts` | `str_number *` | `Vec<StrNumber>` | session 35 | pending |
 | `font_area[]` | `fonts` | `str_number *` | `Vec<StrNumber>` | session 35 | pending |
+| `font_bc[]` | `fonts` | `UTF16_code *` | `Vec<Utf16Code>` | session 36 | pending |
+| `font_ec[]` | `fonts` | `UTF16_code *` | `Vec<Utf16Code>` | session 36 | pending |
 
 
 (`input` session-13 move of the line/group stacks: `line_stack` and

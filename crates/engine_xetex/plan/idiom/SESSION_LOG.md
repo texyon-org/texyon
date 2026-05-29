@@ -9,6 +9,70 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 36 — 2026-05-29 — font character-range arrays -> FontState
+
+**Type:** execution (workstream 01, Phase-B ownership slice).
+
+**Goal:** move the paired `fonts` character-range tables (`font_bc` and
+`font_ec`) out of C `malloc` storage and into Rust-owned state on
+`EngineState.fonts`. One coherent ownership slice, one commit.
+
+**Why this slice:** session 35 and `STATUS.md` handed off `font_bc`/`font_ec`
+as the next bounded pair. Both are `UTF16_code *`, share the same
+init/dump/cleanup shape, and are format-serialized together.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C type: both symbols are `UTF16_code *`.
+- (b) cleanup/link aliases: `src/ini.rs` had the expected allocation and
+  cleanup `#[link_name]` aliases for both symbols; all four were removed.
+- (c) C readers: only `xetex/xetex-ini.c`.
+- (c, extended) C/C++ readers: only `xetex/xetex-ini.c`.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs`
+  aliases; no other Rust redeclarations.
+
+**Work done:**
+- Added `font_bc: Vec<u16>` and `font_ec: Vec<u16>` to `FontState`.
+- Repointed `font_bc_entry`/`set_font_bc_entry` and
+  `font_ec_entry`/`set_font_ec_entry` to index the Rust-owned vectors.
+- Replaced init and format-load allocation with `vec![0u16; font_max + 1]`
+  for both arrays.
+- Repointed format dump and undump to state-derived storage at `FONT_BASE`.
+- Dropped both vectors in `tt_cleanup`.
+- Removed both `src/ini.rs` `#[link_name]` aliases per array, the raw externs
+  in `globals.rs`, and the C definitions in `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):** added rows for `font_bc[]` and `font_ec[]`
+(`UTF16_code *` -> `Vec<Utf16Code>`) to the deferred newtype worklist.
+
+**longjmp / Drop (§7):** owned vectors live in the `'static` thread-local
+`EngineState` and are released explicitly by `tt_cleanup`; abort paths skip
+Drop as intended by the existing arena pattern.
+
+**Surprise:** none. Unlike the previous font slices, the extended `.cpp`
+reader grep was clean.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 199 -> 197 (-2).
+- Raw `unsafe { ... }` text-search count: 485 -> 481 (-4, two getter/setter
+  pairs became fully safe).
+- `#[no_mangle]` exports: unchanged at 578.
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4; cargo ran them in order 7/4/29/2).
+- `grep` of `font_bc`/`font_ec` in `xetex/*.c` (minus macos): empty.
+- Extended grep of `font_bc`/`font_ec` in `xetex/*.{c,cpp}` (minus macos):
+  empty.
+
+**For the next session:**
+- Continue with another bounded `fonts` table subgroup. Likely candidates are
+  `font_glue` or `font_used` (both still have `src/ini.rs` allocation/cleanup
+  aliases); use `01a-global-inventory.md` and the §11 greps to decide whether
+  either should be alone or paired with a closely related table.
+- Keep including `.cpp` in reader greps for font-table slices.
+- Avoid nested `with_state_mut` borrows in format load paths when bounds
+  depend on other state-backed accessors.
+
 ## Idiom session 35 — 2026-05-29 — font name/area arrays -> FontState
 
 **Type:** execution (workstream 01, Phase-B ownership slice).

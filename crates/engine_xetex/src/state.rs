@@ -163,6 +163,11 @@ pub(crate) struct FontState {
     /// debt tracked in 01a).
     pub font_name: Vec<i32>,
     pub font_area: Vec<i32>,
+    /// Rust-owned first/last valid character-code tables (`font_max + 1`
+    /// entries each). Serialized in the format dump. Element type is
+    /// `UTF16_code` (newtype debt tracked in 01a).
+    pub font_bc: Vec<u16>,
+    pub font_ec: Vec<u16>,
 }
 
 impl Default for FontState {
@@ -188,6 +193,8 @@ impl Default for FontState {
             font_params: Vec::new(),
             font_name: Vec::new(),
             font_area: Vec::new(),
+            font_bc: Vec::new(),
+            font_ec: Vec::new(),
         }
     }
 }
