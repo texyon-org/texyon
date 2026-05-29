@@ -21,8 +21,8 @@ memory_word *eqtb;
 int32_t bad;
 char *name_of_file;
 UTF16_code *name_of_file16;
-int32_t name_length;
-int32_t name_length16;
+/* name_length moved to EngineState.input.name_length */
+/* name_length16 moved to EngineState.input.name_length16 */
 int32_t first;
 /* last / max_buf_stack moved to EngineState.input (scalars). */
 int32_t strings_free;
@@ -82,7 +82,7 @@ int32_t cur_val;
 /* cur_val_level moved to EngineState.scanner (scalar). */
 glue_ord cur_order;
 UFILE *read_file[16];
-unsigned char read_open[17];
+/* read_open moved to EngineState.input.read_open ([u8; 17]) */
 /* cond_ptr / if_limit / cur_if / if_line / skip_line moved to EngineState.scanner (scalars). */
 int32_t format_default_length;
 char *TEX_format_default;

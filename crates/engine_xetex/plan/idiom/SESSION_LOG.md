@@ -9,6 +9,57 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 42 — 2026-05-29 — name_length / name_length16 / read_open → InputClusterState
+
+**Type:** execution (workstream 01, Phase-B; scalar + inline-array slice).
+
+**Goal:** move `name_length` (`int32_t`), `name_length16` (`int32_t`), and `read_open[17]`
+(`unsigned char[17]`) from C BSS globals into `EngineState.input` (`InputClusterState`). One
+coherent slice, one commit.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `name_length` and `name_length16` are `int32_t` (`xetex-xetexd.h:390–391`).
+  `read_open` is `unsigned char[17]` (`xetex-xetexd.h:536`). No semantic typedefs.
+- (b) cleanup aliases: none — all three are BSS globals, no `#[link_name]` aliases in `src/ini.rs`.
+- (c) C readers: `xetex-ini.c` only for all three (confirmed via grep of `xetex/*.c`; no `.cpp`
+  hits). Clean.
+- (d) cross-module extern redeclarations: none found in `src/*.rs`.
+
+**Work done (1 commit):**
+- Added `name_length: i32`, `name_length16: i32`, and `read_open: [u8; 17]` to
+  `InputClusterState` in `src/state.rs`. All three are covered by `#[derive(Default)]` (zero
+  default for scalars; `[0u8; 17]` for the array — matches C BSS zero-init). The engine
+  explicitly initializes `read_open` entries to `CLOSED` (= 2) during init, so the default value
+  is an unobservable intermediate state.
+- Repointed 6 accessor bodies in `src/globals.rs` from `unsafe { raw::SYM }` to
+  `with_state`/`with_state_mut` closures.
+- Removed 3 `pub(super) static mut` declarations from `mod raw` in `src/globals.rs`.
+- Removed 3 C definitions from `xetex/xetex-ini.c` (lines 24–25 and 85 in the original).
+
+**Newtype debt (§4 check):**
+- `name_length`, `name_length16`: plain `int32_t`, no semantic typedef, no debt.
+- `read_open`: `unsigned char`, no semantic typedef, no debt. Confirmed.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 143 → 140 (−3).
+- Raw `unsafe { ... }` text-search count: 373 → 367 (−6).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- Leftover C references: clean for all 3 symbols (grep confirmed empty).
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`:
+  pass (29/2/7/4).
+
+**For the next session:**
+- `read_file[16]` (inline BSS `*mut c_void[16]`) is the next clean inline-array candidate; it
+  has a pointer-escaping accessor (`read_file_ptr`) — same shape as `buffer_ptr`/`input_file_ptr`,
+  so should be compatible.
+- `xdv_buffer` / `mapped_text` require ext.rs alloc/use rewrite (more involved).
+- `sa_root`, `sa_null`, `max_reg_help_line` remain for their ownership/non-Default reasons.
+- Hot tokenizer scalars (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) remain deferred.
+
+---
+
 ## Idiom session 41 — 2026-05-29 — font_info arena + 30 scalar/array globals → state sub-structs
 
 **Type:** execution (workstream 01, Phase-B; six ownership/scalar slices in one large session).

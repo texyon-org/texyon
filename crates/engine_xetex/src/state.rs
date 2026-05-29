@@ -104,6 +104,13 @@ pub(crate) struct InputClusterState {
     pub last: i32,
     /// High-water mark of buffer usage (xetex-xetexd.h:395). Plain `int32_t`.
     pub max_buf_stack: i32,
+    /// Byte length of `name_of_file` (excluding NUL; xetex-xetexd.h:390). Plain `int32_t`.
+    pub name_length: i32,
+    /// Number of UTF-16 code units in `name_of_file16` (xetex-xetexd.h:391). Plain `int32_t`.
+    pub name_length16: i32,
+    /// File-open states for `\read` streams (xetex-xetexd.h:536; CLOSED=2, JUST_OPEN=1,
+    /// NORMAL=0). BSS array of 17 bytes — default all-zero = NORMAL. Plain `u8`, no newtype debt.
+    pub read_open: [u8; 17],
 }
 
 #[derive(Default)]

@@ -94,12 +94,10 @@ mod raw {
         // Name-of-file globals (xetex-xetexd.h:388–391).
         // name_of_file: current input filename (NUL-terminated C string).
         pub(super) static mut name_of_file: *mut libc::c_char;
-        // name_length: byte length of name_of_file (excluding NUL).
-        pub(super) static mut name_length: i32;
+        // name_length moved to EngineState.input.name_length (i32).
         // name_of_file16: UTF-16 encoding of name_of_file (xetex-xetexd.h:389).
         pub(super) static mut name_of_file16: *mut u16;
-        // name_length16: number of UTF-16 code units in name_of_file16.
-        pub(super) static mut name_length16: i32;
+        // name_length16 moved to EngineState.input.name_length16 (i32).
 
         // Font memory tables (xetex-xetexd.h:555–590).
         // font_info moved to EngineState.fonts.font_info (Vec<MemoryWord>).
@@ -155,8 +153,7 @@ mod raw {
         pub(super) static mut nest_size: i32;
         // Current list state (xetex-xetexd.h:479; direct struct, not a pointer).
         pub(super) static mut cur_list: crate::mem_types::ListStateRecord;
-        // File-open states for \read streams (xetex-xetexd.h:536; CLOSED=2, JUST_OPEN=1).
-        pub(super) static mut read_open: [u8; 17];
+        // read_open moved to EngineState.input.read_open ([u8; 17]).
         // Array of UFILE* for \read streams (xetex-xetexd.h:535).
         // Declared as *mut c_void to avoid a cyclic type dependency with io.rs.
         pub(super) static mut read_file: [*mut libc::c_void; 16];
@@ -815,9 +812,9 @@ pub(crate) fn set_name_of_file(v: *mut libc::c_char) {
 /// Write `name_length = v`.
 #[inline]
 pub(crate) fn set_name_length(v: i32) {
-    unsafe {
-        raw::name_length = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.name_length = v;
+    });
 }
 /// Returns `name_of_file16` (UTF-16 name buffer).
 #[inline]
@@ -834,19 +831,19 @@ pub(crate) fn set_name_of_file16(v: *mut u16) {
 /// Returns `name_length16`.
 #[inline]
 pub(crate) fn name_length16() -> i32 {
-    unsafe { raw::name_length16 }
+    crate::state::with_state(|s| s.input.name_length16)
 }
 /// Write `name_length16 = v`.
 #[inline]
 pub(crate) fn set_name_length16(v: i32) {
-    unsafe {
-        raw::name_length16 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.name_length16 = v;
+    });
 }
 /// Returns `name_length`.
 #[inline]
 pub(crate) fn name_length() -> i32 {
-    unsafe { raw::name_length }
+    crate::state::with_state(|s| s.input.name_length)
 }
 
 /// Returns the current number of strings in the string pool.
@@ -1843,13 +1840,13 @@ pub(crate) fn set_xeq_level(p: i32, v: u16) {
 
 #[inline]
 pub(crate) fn read_open_entry(n: usize) -> u8 {
-    unsafe { raw::read_open[n] }
+    crate::state::with_state(|s| s.input.read_open[n])
 }
 #[inline]
 pub(crate) fn set_read_open_entry(n: usize, v: u8) {
-    unsafe {
-        raw::read_open[n] = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.read_open[n] = v;
+    });
 }
 /// Returns `read_file[n]` (the UFILE* value at index n).
 #[inline]
