@@ -108,8 +108,7 @@ mod raw {
         pub(super) static mut cur_cs: i32;
         // Current token (xetex-xetexd.h:502; token encoded as int32).
         pub(super) static mut cur_tok: i32;
-        // Alignment state (xetex-xetexd.h:520; tracks brace nesting in alignment).
-        pub(super) static mut align_state: i32;
+        // align_state moved to EngineState.scanner (scalar).
         // Current character code (xetex-xetexd.h:500).
         pub(super) static mut cur_chr: i32;
         // Current command code (`eight_bits` = u8, xetex-xetexd.h:499).
@@ -175,15 +174,8 @@ mod raw {
         pub(super) static mut expand_depth: i32;
         // cur_val_level moved to EngineState.scanner.
 
-        // Scanner state tracking (xetex-xetexd.h:514–516).
-        // scanner_status: unsigned char (NORMAL=0 .. ABSORBING=5).
-        pub(super) static mut scanner_status: u8;
-        // warning_index: control-sequence index for error messages.
-        pub(super) static mut warning_index: i32;
-        // def_ref: head of the current macro-definition token list.
-        pub(super) static mut def_ref: i32;
-        // long_state: CALL/LONG_CALL/OUTER_CALL/LONG_OUTER_CALL (xetex-xetexd.h:528).
-        pub(super) static mut long_state: u8;
+        // scanner_status / warning_index / def_ref / long_state moved to
+        // EngineState.scanner (scalars).
 
         // Input buffer: first = next free slot; buf_size = capacity
         // last/max_buf_stack moved to EngineState.input (scalars).
@@ -1590,13 +1582,13 @@ pub(crate) fn after_token() -> i32 {
 }
 #[inline]
 pub(crate) fn align_state() -> i32 {
-    unsafe { raw::align_state }
+    crate::state::with_state(|s| s.scanner.align_state)
 }
 #[inline]
 pub(crate) fn set_align_state(v: i32) {
-    unsafe {
-        raw::align_state = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.align_state = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_chr() -> i32 {
@@ -3385,33 +3377,33 @@ pub(crate) fn set_cur_val_level(v: u8) {
 
 #[inline]
 pub(crate) fn scanner_status() -> u8 {
-    unsafe { raw::scanner_status }
+    crate::state::with_state(|s| s.scanner.scanner_status)
 }
 #[inline]
 pub(crate) fn set_scanner_status(v: u8) {
-    unsafe {
-        raw::scanner_status = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.scanner_status = v;
+    });
 }
 #[inline]
 pub(crate) fn warning_index() -> i32 {
-    unsafe { raw::warning_index }
+    crate::state::with_state(|s| s.scanner.warning_index)
 }
 #[inline]
 pub(crate) fn set_warning_index(v: i32) {
-    unsafe {
-        raw::warning_index = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.warning_index = v;
+    });
 }
 #[inline]
 pub(crate) fn def_ref() -> i32 {
-    unsafe { raw::def_ref }
+    crate::state::with_state(|s| s.scanner.def_ref)
 }
 #[inline]
 pub(crate) fn set_def_ref(v: i32) {
-    unsafe {
-        raw::def_ref = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.def_ref = v;
+    });
 }
 #[inline]
 pub(crate) fn deletions_allowed() -> bool {
@@ -3425,13 +3417,13 @@ pub(crate) fn set_deletions_allowed(v: bool) {
 }
 #[inline]
 pub(crate) fn long_state() -> u8 {
-    unsafe { raw::long_state }
+    crate::state::with_state(|s| s.scanner.long_state)
 }
 #[inline]
 pub(crate) fn set_long_state(v: u8) {
-    unsafe {
-        raw::long_state = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.long_state = v;
+    });
 }
 
 // ---------------------------------------------------------------------------

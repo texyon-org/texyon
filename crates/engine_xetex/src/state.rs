@@ -181,6 +181,21 @@ pub(crate) struct ScannerState {
     /// Second parsed value register for `scan_something_internal`
     /// (xetex-xetexd.h:531). Plain `int32_t`.
     pub cur_val1: i32,
+    /// Scanner state (xetex-xetexd.h:514; `unsigned char`; NORMAL=0..ABSORBING=5).
+    /// Plain `unsigned char`, no semantic typedef, no newtype debt.
+    pub scanner_status: u8,
+    /// Control-sequence index used in scanner-error messages (xetex-xetexd.h:515).
+    /// Plain `int32_t`.
+    pub warning_index: i32,
+    /// Head of the current macro-definition token list (xetex-xetexd.h:516).
+    /// Plain `int32_t`.
+    pub def_ref: i32,
+    /// Macro call type (xetex-xetexd.h:528; `unsigned char`;
+    /// CALL/LONG_CALL/OUTER_CALL/LONG_OUTER_CALL). Plain, no newtype debt.
+    pub long_state: u8,
+    /// Alignment brace-nesting counter (xetex-xetexd.h:520). Positive = extra
+    /// open braces; negative = unmatched `&` or `\cr`. Plain `int32_t`.
+    pub align_state: i32,
 }
 
 #[derive(Default)]

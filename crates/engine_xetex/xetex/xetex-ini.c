@@ -68,16 +68,14 @@ int32_t cur_tok;
 input_state_t cur_input;
 /* in_open / open_parens moved to EngineState.input (scalars). */
 int32_t line;
-unsigned char scanner_status;
-int32_t warning_index;
-int32_t def_ref;
+/* scanner_status / warning_index / def_ref moved to EngineState.scanner (scalars). */
 /* param_ptr / max_param_stack moved to EngineState.input (scalars). */
-int32_t align_state;
+/* align_state moved to EngineState.scanner (scalar). */
 /* base_ptr / par_loc / par_token moved to EngineState.input (scalars). */
 /* force_eof moved to EngineState.input (scalar). */
 /* is_in_csname moved to EngineState.scanner (scalar). */
 int32_t cur_mark[5];
-unsigned char long_state;
+/* long_state moved to EngineState.scanner (scalar). */
 int32_t pstack[9];
 int32_t cur_val;
 /* cur_val1 moved to EngineState.scanner (scalar). */
