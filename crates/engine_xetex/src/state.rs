@@ -146,6 +146,20 @@ pub(crate) struct ScannerState {
     pub sa_chain: i32,
     pub sa_level: u16,
     pub max_reg_num: i32,
+    /// Head of the conditional-stack list (xetex-xetexd.h:537). Plain `int32_t`.
+    pub cond_ptr: i32,
+    /// Current `\if` nesting limit code (xetex-xetexd.h:538). Stored as `u8`
+    /// (`unsigned char` in C); plain, no semantic typedef debt.
+    pub if_limit: u8,
+    /// Current `\if` type (xetex-xetexd.h:539; C type `small_number` = `short`).
+    /// Newtype debt: `SmallNumber` (tracked in 01a, same as `radix`).
+    pub cur_if: i16,
+    /// Line number where the current `\if` was entered (xetex-xetexd.h:540).
+    /// Plain `int32_t`.
+    pub if_line: i32,
+    /// Line number where the current if-skip started (xetex-xetexd.h:541).
+    /// Plain `int32_t`.
+    pub skip_line: i32,
 }
 
 #[derive(Default)]

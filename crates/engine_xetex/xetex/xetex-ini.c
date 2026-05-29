@@ -86,11 +86,7 @@ unsigned char cur_val_level;
 glue_ord cur_order;
 UFILE *read_file[16];
 unsigned char read_open[17];
-int32_t cond_ptr;
-unsigned char if_limit;
-small_number cur_if;
-int32_t if_line;
-int32_t skip_line;
+/* cond_ptr / if_limit / cur_if / if_line / skip_line moved to EngineState.scanner (scalars). */
 int32_t format_default_length;
 char *TEX_format_default;
 const char* output_file_extension;

@@ -148,15 +148,8 @@ mod raw {
         pub(super) static mut var_used: i32;
         pub(super) static mut dyn_used: i32;
 
-        // Conditional state (xetex-xetexd.h:537–540).
-        pub(super) static mut cond_ptr: i32;
-        // if_limit: unsigned char (xetex-xetexd.h:538).
-        pub(super) static mut if_limit: u8;
-        // cur_if: small_number = i16 (xetex-xetexd.h:539).
-        pub(super) static mut cur_if: i16;
-        pub(super) static mut if_line: i32;
-        // xetex-xetexd.h:541 — line number saved when entering \if-skip block.
-        pub(super) static mut skip_line: i32;
+        // cond_ptr / if_limit / cur_if / if_line / skip_line moved to
+        // EngineState.scanner (scalars).
 
         // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
         // nest_ptr/max_nest_stack moved to EngineState.input (scalars).
@@ -2963,67 +2956,67 @@ pub(crate) fn set_if_stack(k: i32, v: i32) {
 /// (xetex-xetexd.h:537).
 #[inline]
 pub(crate) fn cond_ptr() -> i32 {
-    unsafe { raw::cond_ptr }
+    crate::state::with_state(|s| s.scanner.cond_ptr)
 }
 /// Sets `cond_ptr`.
 #[inline]
 pub(crate) fn set_cond_ptr(v: i32) {
-    unsafe {
-        raw::cond_ptr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cond_ptr = v;
+    });
 }
 
 /// Returns `if_limit` — current \if nesting limit code
 /// (xetex-xetexd.h:538; unsigned char).
 #[inline]
 pub(crate) fn if_limit() -> u8 {
-    unsafe { raw::if_limit }
+    crate::state::with_state(|s| s.scanner.if_limit)
 }
 /// Sets `if_limit`.
 #[inline]
 pub(crate) fn set_if_limit(v: u8) {
-    unsafe {
-        raw::if_limit = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.if_limit = v;
+    });
 }
 
 /// Returns `cur_if` — current \if type (xetex-xetexd.h:539; small_number = i16).
 #[inline]
 pub(crate) fn cur_if() -> i16 {
-    unsafe { raw::cur_if }
+    crate::state::with_state(|s| s.scanner.cur_if)
 }
 /// Sets `cur_if`.
 #[inline]
 pub(crate) fn set_cur_if(v: i16) {
-    unsafe {
-        raw::cur_if = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_if = v;
+    });
 }
 
 /// Returns `if_line` — line number where the current \if was entered
 /// (xetex-xetexd.h:540).
 #[inline]
 pub(crate) fn if_line() -> i32 {
-    unsafe { raw::if_line }
+    crate::state::with_state(|s| s.scanner.if_line)
 }
 /// Sets `if_line`.
 #[inline]
 pub(crate) fn set_if_line(v: i32) {
-    unsafe {
-        raw::if_line = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.if_line = v;
+    });
 }
 /// Returns `skip_line` (source line where the current \if-skip started).
 #[inline]
 pub(crate) fn skip_line() -> i32 {
-    unsafe { raw::skip_line }
+    crate::state::with_state(|s| s.scanner.skip_line)
 }
 /// Sets `skip_line = v`.
 #[inline]
 pub(crate) fn set_skip_line(v: i32) {
-    unsafe {
-        raw::skip_line = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.skip_line = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
