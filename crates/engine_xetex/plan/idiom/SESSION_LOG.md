@@ -9,6 +9,89 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 49 — 2026-05-29 — eqtb inline arrays: prim + xeq_level
+
+**Type:** execution (workstream 01, Phase-B; first `eqtb`-cluster *array* move).
+First step into the `eqtb` cluster's arrays, taking the two **inline BSS** arrays
+(no `malloc`, no `#[link_name]` alias) before the hard malloc'd ones. One commit.
+
+**Slice:** `prim` (`b32x2 prim[PRIM_SIZE + 1]`, 2101 entries) and
+`_xeq_level_array` (`uint16_t[EQTB_SIZE - INT_BASE + 1]`, 1,114,730 entries),
+both → `EngineState.eqtb` (`EqtbState`).
+
+**Scoping discovery (why only these two):** the "eqtb/hash/prim" group is *not*
+one coherent slice — it is three different problems:
+- `hash` uses the `yhash` offset-pointer trick (`hash = yhash - hash_offset`)
+  plus a C alloc helper (`tt_run_engine_allocate_yhash`) → needs a dedicated
+  session.
+- `eqtb` (the equivalents table) is `malloc`'d and has a **sparse region-based**
+  format dump using raw `dump_slice(tre_eqtb.add(k), len)` (ini.rs:2124/2152/2161,
+  undump 2711) + alloc alias (1819) + cleanup alias (3676) → the real
+  format-dump-reconciliation centerpiece, dedicated session, follows the
+  font-array "state-derived pointer precomputed outside `with_state_mut`" pattern.
+- `prim` and `_xeq_level_array` are **inline** (BSS, no `malloc`, no alias):
+  `prim` is dumped/undumped/inited only through its `prim_s0`/`prim_s1` accessors
+  (transparent to a bridge), `xeq_level` is not in the format dump at all. So
+  these two are a clean inline-array move (session-45 `LinebreakState` shape), not
+  an ownership slice.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `prim` element `b32x2` (faithful `B32x2`, no typedef loss);
+  `_xeq_level_array` element `uint16_t` save level (quarterword, plain). No debts.
+- (b) cleanup aliases: none (inline BSS, never `malloc`'d). (The `eqtb`/`hash`
+  aliases at ini.rs:1813/1819/3676 are for the *other* arrays, left untouched.)
+- (c) C readers (non-macos): only `xetex-ini.c` defines them; no C uses.
+- (d) cross-module `src/*.rs`: no extern redeclarations.
+- format dump: `prim` via accessors (transparent); `xeq_level` not dumped.
+
+**Work done (1 commit):**
+- Replaced `EqtbState`'s `#[derive(Default)]` with a hand-written `impl Default`
+  (needed to pre-size the two `Vec`s) that sets the 5 existing scalars to their
+  defaults and allocates `prim: vec![B32x2 { s0: 0, s1: 0 }; 2101]` and
+  `xeq_level: vec![0u16; 1_114_730]`. Heap-backed `Vec`s (not inline arrays): the
+  2.2 MB `xeq_level` (and, for consistency, the 16 KB `prim`) would risk the
+  session-26/45 thread-stack overflow if stored inline in the thread-local
+  `RefCell`.
+- Repointed the 6 accessor bodies (`prim_s0`/`set_prim_s0`/`prim_s1`/
+  `set_prim_s1`, `xeq_level`/`set_xeq_level`) to index the `Vec`s via
+  `with_state`/`with_state_mut`. `xeq_level` keeps the exact `p - 7_826_729`
+  (`INT_BASE`) offset.
+- Removed the 2 `pub(super) static mut` decls from `mod raw` and the 2 C defs
+  from `xetex/xetex-ini.c` (move-marker comments left).
+
+**Newtype debts (§4):** none — both element types are faithful (`B32x2`,
+`u16`/quarterword), checked and noted in the worklist trailing notes.
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4**. `cargo check` clean (pre-existing warnings only). TRIP + the
+latex_goldens load a **format file**, exercising `prim`'s accessor-mediated
+dump/undump round-trip; `save_restore` + TRIP exercise `xeq_level` via eqtb
+save/restore — so both are parity-covered.
+
+**Metrics after this session:**
+- `globals.rs` raw extern count **84 → 82** (−2).
+- Raw `unsafe { }` text count **256 → 250** (−6: 4 `prim` + 2 `xeq_level`
+  accessor bodies).
+
+**For the next session (50+):**
+- **`eqtb` array proper** is the high-value next slice: convert `eqtb` from the
+  `malloc`'d `*mut MemoryWord` (alloc alias ini.rs:1819, cleanup 3676) to a
+  Rust-owned `Vec<MemoryWord>` on `EqtbState`; reconcile the sparse region dump
+  (2124/2152/2161) and undump (2711) by precomputing a state-derived base pointer
+  outside each `with_state_mut` (the proven font-array pattern, sessions 32–39).
+  Sized `eqtb_top + 1`. ~9 accessors (`eqtb_word`/`eqtb_b32s1`/`eqtb_b16s1`/…),
+  hot (every register/primitive access) — bridging is intended per §6; perf is a
+  Phase-C concern.
+- Then **`hash`** (the `yhash` offset-pointer trick + `tt_run_engine_allocate_yhash`
+  C helper): the `Vec` accessor must subtract `hash_offset`, and the C alloc
+  helper + the `yhash`/`hash` cleanup must be reworked.
+- `mem` arena (§5) remains the hottest/highest-leverage ownership move and the
+  real pivot into Phase C (too hot to bridge — thread `&mut Mem` through
+  `mem.rs`'s allocator instead).
+
+---
+
 ## Idiom session 48 — 2026-05-29 — math-list-conversion scratch (5 scalars)
 
 **Type:** execution (workstream 01, Phase-B; scalar move into an existing

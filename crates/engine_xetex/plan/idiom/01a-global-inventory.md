@@ -126,7 +126,7 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `hash_extra` | `i32` | `eqtb` | `src/globals.rs:135` C extern | `hash_extra` | def xetex/xetex-ini.c; link src/ini.rs:1822 |  |
 | `hash_high` | `i32` | `eqtb` | `src/globals.rs:136` C extern | `hash_high`, `set_hash_high` | def xetex/xetex-ini.c |  |
 | `no_new_control_sequence` | `bool` | `eqtb` | `src/globals.rs:137` C extern | `no_new_control_sequence`, `set_no_new_control_sequence` | def xetex/xetex-ini.c |  |
-| `prim` | `[crate::mem_types::B32x2; 2101]` | `eqtb` | `src/globals.rs:139` C extern | `prim_s0`, `set_prim_s0`, `prim_s1`, `set_prim_s1` | def xetex/xetex-ini.c |  |
+| `prim` | `[crate::mem_types::B32x2; 2101]` | `eqtb` | EngineState.eqtb.prim (Rust-owned Vec) | `prim_s0`, `set_prim_s0`, `prim_s1`, `set_prim_s1` | MOVED session 49: C def removed; inline BSS, sized in EqtbState::default; format dump/undump via prim_s0/s1 accessors (transparent) |
 | `prim_used` | `i32` | `eqtb` | `src/globals.rs:141` C extern | `prim_used`, `set_prim_used` | def xetex/xetex-ini.c |  |
 | `eqtb_top` | `i32` | `eqtb` | `src/globals.rs:143` C extern | `eqtb_top` | def xetex/xetex-ini.c; link src/ini.rs:1860 |  |
 | `max_strings` | `i32` | `strings` | `src/globals.rs:146` C extern | `max_strings` | def xetex/xetex-ini.c; link src/ini.rs:1792 |  |
@@ -239,7 +239,7 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `cur_level` | `u16` | `save_stack` | `src/globals.rs:346` C extern | `cur_level`, `set_cur_level` | def xetex/xetex-ini.c |  |
 | `cur_group` | `u8` | `save_stack` | `src/globals.rs:348` C extern | `cur_group`, `set_cur_group` | def xetex/xetex-ini.c |  |
 | `cur_boundary` | `i32` | `save_stack` | `src/globals.rs:350` C extern | `cur_boundary`, `set_cur_boundary` | def xetex/xetex-ini.c |  |
-| `_xeq_level_array` | `[u16; 1_114_730]` | `eqtb` | `src/globals.rs:353` C extern | `xeq_level`, `set_xeq_level` | def xetex/xetex-ini.c |  |
+| `_xeq_level_array` | `[u16; 1_114_730]` | `eqtb` | EngineState.eqtb.xeq_level (Rust-owned Vec) | `xeq_level`, `set_xeq_level` | MOVED session 49: C def removed; inline BSS, sized in EqtbState::default; not in format dump |
 | `expand_depth` | `i32` | `scanner` | `src/globals.rs:356` C extern | `expand_depth` | def xetex/xetex-ini.c; link src/ini.rs:1824 |  |
 | `expand_depth_count` | `i32` | `scanner` | `src/globals.rs:357` C extern | `expand_depth_count`, `set_expand_depth_count` | def xetex/xetex-ini.c |  |
 | `cur_val_level` | `u8` | `scanner` | `src/globals.rs:360` C extern | `cur_val_level`, `set_cur_val_level` | def xetex/xetex-ini.c |  |
@@ -645,6 +645,17 @@ Stage 1 — a `MemPtr` pointer-taxonomy-sweep candidate, not a typedef-loss row)
 `cur_size` is a plain `int32_t` size code, and `mlist_penalties` is a plain
 `bool` — none need a row. `cur_style` (`small_number`) and `cur_mu` (`scaled_t`)
 are the only debts. None are in the format dump.)
+
+(`eqtb` session-49 inline-array move: `prim` elements are `B32x2` (the
+primitive-table link/text halves — already the faithful struct, no semantic
+typedef collapsed) and `xeq_level` elements are `u16` save levels
+(`quarterword`, a plain count) — neither is a width/typedef debt, so no rows.
+Both were inline C BSS arrays (no `malloc`), so they are sized in
+`EqtbState::default` rather than allocated in `ini.rs`; `prim` is format-dumped
+but only through its `prim_s0`/`prim_s1` accessors, so the bridge is transparent;
+`xeq_level` is not in the format dump. The malloc'd `eqtb`/`hash` arrays — with
+the raw `dump_slice` reconciliation and the `yhash` offset-pointer trick — remain
+for dedicated sessions.)
 
 (`shipout` session-47 DVI-scratch move: `total_pages`, `max_push`, `last_bop`
 are plain `int32_t` counters/byte-offsets, `doing_leaders` is a plain `bool`,

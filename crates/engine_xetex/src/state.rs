@@ -200,13 +200,39 @@ pub(crate) struct InputClusterState {
     pub read_file: [*mut libc::c_void; 16],
 }
 
-#[derive(Default)]
 pub(crate) struct EqtbState {
     pub hash_used: i32,
     pub hash_high: i32,
     pub no_new_control_sequence: bool,
     pub prim_used: i32,
     pub cs_count: i32,
+    /// Primitive-lookup table (former inline C `prim[PRIM_SIZE + 1]`). Heap-
+    /// backed `Vec` sized `PRIM_SIZE + 1 = 2101`; not `malloc`'d in C (inline
+    /// BSS), so it is sized here in `Default`, not allocated in `ini.rs`.
+    /// Format dump/undump goes through the `prim_s0`/`prim_s1` accessors, so the
+    /// bridge is transparent. Element `B32x2`, no newtype debt. (session 49)
+    pub prim: Vec<crate::mem_types::B32x2>,
+    /// Per-int-parameter save-level array (former inline C
+    /// `_xeq_level_array[EQTB_SIZE - INT_BASE + 1]`). Heap-backed `Vec` sized
+    /// `1_114_730`; inline BSS in C, so sized here in `Default`. Not in the
+    /// format dump. Element `u16` save level, no newtype debt. (session 49)
+    pub xeq_level: Vec<u16>,
+}
+
+impl Default for EqtbState {
+    fn default() -> Self {
+        EqtbState {
+            hash_used: 0,
+            hash_high: 0,
+            no_new_control_sequence: false,
+            prim_used: 0,
+            cs_count: 0,
+            // PRIM_SIZE + 1 = 2101.
+            prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
+            // EQTB_SIZE - INT_BASE + 1.
+            xeq_level: vec![0u16; 1_114_730],
+        }
+    }
 }
 
 #[derive(Default)]

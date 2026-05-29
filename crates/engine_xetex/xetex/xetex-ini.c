@@ -55,7 +55,7 @@ b32x2 *hash;
 int32_t hash_extra;
 int32_t hash_top;
 int32_t eqtb_top;
-b32x2 prim[PRIM_SIZE + 1];
+/* prim[PRIM_SIZE + 1] moved to EngineState.eqtb.prim (session 49). */
 eight_bits cur_cmd;
 int32_t cur_chr;
 int32_t cur_cs;
@@ -134,7 +134,8 @@ memory_word sa_null;
 scaled_t delta;
 /* used_tectonic_coda_tokens moved to EngineState.scanner (scalar). */
 
-uint16_t _xeq_level_array[EQTB_SIZE - INT_BASE + 1];
+/* _xeq_level_array[EQTB_SIZE - INT_BASE + 1] moved to
+ * EngineState.eqtb.xeq_level (session 49). */
 
 #define NEG_TRIE_OP_SIZE -35111L
 #define MAX_TRIE_OP 65535L

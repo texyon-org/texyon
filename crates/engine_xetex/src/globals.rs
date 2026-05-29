@@ -86,8 +86,7 @@ mod raw {
         pub(super) static mut hash: *mut crate::mem_types::B32x2;
         // Hash table management globals (xetex-xetexd.h:483–488).
         pub(super) static mut hash_extra: i32;
-        // Primitive hash table: `b32x2 prim[PRIM_SIZE + 1]` (xetex-xetexd.h:490).
-        pub(super) static mut prim: [crate::mem_types::B32x2; 2101];
+        // prim[PRIM_SIZE + 1] moved to EngineState.eqtb.prim (session 49).
         // Top of the eqtb array (xetex-xetexd.h:486).
         pub(super) static mut eqtb_top: i32;
 
@@ -160,9 +159,8 @@ mod raw {
         // is Rust-owned (`EngineState.save_stack.data`); only the capacity
         // `save_size` remains a C global here.
         pub(super) static mut save_size: i32;
-        // XEQ_LEVEL array — level at which each eqtb entry was defined
-        // (xetex-xetexd.h:733; size = EQTB_SIZE - INT_BASE + 1 = 1114730).
-        pub(super) static mut _xeq_level_array: [u16; 1_114_730];
+        // _xeq_level_array (XEQ_LEVEL; EQTB_SIZE - INT_BASE + 1 = 1114730 entries)
+        // moved to EngineState.eqtb.xeq_level (session 49).
 
         // Expression-depth guard (xetex-xetexd.h:415, 525).
         pub(super) static mut expand_depth: i32;
@@ -908,27 +906,22 @@ pub(crate) fn set_hash_s1(p: i32, v: i32) {
 /// Read `prim[p].s0` (the link half of a primitive-table entry).
 #[inline]
 pub(crate) fn prim_s0(p: i32) -> i32 {
-    unsafe { raw::prim[p as usize].s0 }
+    crate::state::with_state(|s| s.eqtb.prim[p as usize].s0)
 }
 /// Write `prim[p].s0 = v`.
 #[inline]
 pub(crate) fn set_prim_s0(p: i32, v: i32) {
-    unsafe {
-        raw::prim[p as usize].s0 = v;
-    }
+    crate::state::with_state_mut(|s| s.eqtb.prim[p as usize].s0 = v);
 }
 /// Read `prim[p].s1` (the "text" half of a primitive-table entry).
 #[inline]
 pub(crate) fn prim_s1(p: i32) -> i32 {
-    // SAFETY: see module-level doc. Caller ensures p < prim.len().
-    unsafe { raw::prim[p as usize].s1 }
+    crate::state::with_state(|s| s.eqtb.prim[p as usize].s1)
 }
 /// Write `prim[p].s1 = v`.
 #[inline]
 pub(crate) fn set_prim_s1(p: i32, v: i32) {
-    unsafe {
-        raw::prim[p as usize].s1 = v;
-    }
+    crate::state::with_state_mut(|s| s.eqtb.prim[p as usize].s1 = v);
 }
 
 /// Returns `eqtb_top`.
@@ -1768,15 +1761,12 @@ pub(crate) fn set_cur_boundary(v: i32) {
 /// Read `XEQ_LEVEL(p)` = `_xeq_level_array[p - INT_BASE]`.
 #[inline]
 pub(crate) fn xeq_level(p: i32) -> u16 {
-    // SAFETY: caller ensures p >= INT_BASE and p - INT_BASE < 1_114_730.
-    unsafe { raw::_xeq_level_array[(p - 7_826_729) as usize] }
+    crate::state::with_state(|s| s.eqtb.xeq_level[(p - 7_826_729) as usize])
 }
 /// Write `XEQ_LEVEL(p) = v`.
 #[inline]
 pub(crate) fn set_xeq_level(p: i32, v: u16) {
-    unsafe {
-        raw::_xeq_level_array[(p - 7_826_729) as usize] = v;
-    }
+    crate::state::with_state_mut(|s| s.eqtb.xeq_level[(p - 7_826_729) as usize] = v);
 }
 
 // ---------------------------------------------------------------------------
