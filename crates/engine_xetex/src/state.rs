@@ -225,6 +225,12 @@ pub(crate) struct FontState {
     /// Rust-owned per-font skew-character tables (`font_max + 1` entries).
     /// Serialized in the format dump. Plain `int32_t *`, no newtype debt.
     pub skew_char: Vec<i32>,
+    /// Rust-owned font metric arena (`font_mem_size + 1` words). Holds all
+    /// per-font metric tables (widths, heights, depths, italic corrections,
+    /// lig/kern programs, kern values, extensible recipes, font parameters).
+    /// `fmem_ptr` is the next-free write pointer into this arena. Serialized
+    /// in the format dump. Plain `MemoryWord *`, no newtype debt.
+    pub font_info: Vec<crate::mem_types::MemoryWord>,
 }
 
 impl Default for FontState {
@@ -274,6 +280,7 @@ impl Default for FontState {
             param_base: Vec::new(),
             hyphen_char: Vec::new(),
             skew_char: Vec::new(),
+            font_info: Vec::new(),
         }
     }
 }

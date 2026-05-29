@@ -100,7 +100,7 @@ int32_t skip_line;
 int32_t format_default_length;
 char *TEX_format_default;
 const char* output_file_extension;
-memory_word *font_info;
+/* font_info moved to EngineState.fonts.font_info (Rust-owned Vec<MemoryWord>). */
 UTF16_code *mapped_text;
 char *xdv_buffer;
 int32_t total_pages;

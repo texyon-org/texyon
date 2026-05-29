@@ -1816,8 +1816,6 @@ extern "C" {
     #[link_name = "eqtb"]
     static mut tre_eqtb: *mut crate::mem_types::MemoryWord;
 
-    #[link_name = "font_info"]
-    static mut tre_font_info: *mut crate::mem_types::MemoryWord;
     #[link_name = "bad"]
     static mut tre_bad: i32;
 
@@ -2209,8 +2207,11 @@ pub unsafe extern "C" fn store_fmt_file() {
     crate::output::print_int(cs_count());
     crate::output::print_cstr(c" multiletter control sequences".as_ptr());
 
-    dump_int(fmt_out, fmem_ptr());
-    dump_slice(fmt_out, tre_font_info, fmem_ptr());
+    let fmp = fmem_ptr();
+    dump_int(fmt_out, fmp);
+    crate::state::with_state(|s| {
+        dump_slice(fmt_out, s.fonts.font_info.as_ptr(), fmp);
+    });
     dump_int(fmt_out, font_ptr());
     crate::state::with_state(|state| {
         dump_slice(
@@ -2508,8 +2509,8 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     set_cur_input_loc(j);
 
     if in_initex_mode() {
-        libc::free(tre_font_info as *mut libc::c_void);
         crate::state::with_state_mut(|state| {
+            state.fonts.font_info = Vec::new();
             state.strings.str_pool = Vec::new();
             state.strings.str_start = Vec::new();
         });
@@ -2788,8 +2789,15 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         set_font_mem_size(fmem_ptr());
     }
 
-    tre_font_info = xmalloc_array::<crate::mem_types::MemoryWord>(font_mem_size());
-    undump_slice(fmt_in, tre_font_info, fmem_ptr());
+    // pre-compute before mutable borrow (both backed by with_state)
+    let fms = font_mem_size();
+    let fmp = fmem_ptr();
+    let zero_word =
+        crate::mem_types::MemoryWord { b32: crate::mem_types::B32x2 { s0: 0, s1: 0 } };
+    crate::state::with_state_mut(|s| {
+        s.fonts.font_info = vec![zero_word; (fms as usize) + 1];
+        undump_slice(fmt_in, s.fonts.font_info.as_mut_ptr(), fmp);
+    });
 
     x = undump_int(fmt_in);
     if x < FONT_BASE {
@@ -3350,11 +3358,15 @@ pub unsafe extern "C" fn tt_run_engine(
         crate::globals::set_hash_used(tre_hash_top);
 
         tre_eqtb = xcalloc_array::<crate::mem_types::MemoryWord>(tre_eqtb_top);
+        // pre-compute font_mem_size before the mutable borrow (backed by with_state)
+        let fms_initex = font_mem_size();
+        let zero_word_initex =
+            crate::mem_types::MemoryWord { b32: crate::mem_types::B32x2 { s0: 0, s1: 0 } };
         crate::state::with_state_mut(|state| {
             state.strings.str_start = vec![0i32; (tre_max_strings as usize) + 1];
             state.strings.str_pool = vec![0u16; (tre_pool_size as usize) + 1];
+            state.fonts.font_info = vec![zero_word_initex; (fms_initex as usize) + 1];
         });
-        tre_font_info = xmalloc_array::<crate::mem_types::MemoryWord>(font_mem_size());
     }
 
     crate::globals::set_history(HISTORY_FATAL_ERROR);
@@ -3662,9 +3674,7 @@ extern "C" {
     static mut tt_cleanup_eqtb: *mut libc::c_void;
     #[link_name = "mem"]
     static mut tt_cleanup_mem: *mut libc::c_void;
-
-    #[link_name = "font_info"]
-    static mut tt_cleanup_font_info: *mut libc::c_void;
+    // font_info cleanup moved to EngineState.fonts.font_info (Vec::new() reset).
 }
 
 // translated from xetex-ini.c:2226 (tt_cleanup)
@@ -3746,9 +3756,9 @@ pub unsafe extern "C" fn tt_cleanup() {
         state.fonts.font_glue = Vec::new();
         state.fonts.font_used = Vec::new();
     });
-    libc::free(tt_cleanup_font_info);
 
     crate::state::with_state_mut(|state| {
+        state.fonts.font_info = Vec::new();
         state.fonts.font_layout_engine = Vec::new();
         state.fonts.font_mapping = Vec::new();
         state.fonts.font_flags = Vec::new();

@@ -105,7 +105,7 @@ mod raw {
         pub(super) static mut name_length16: i32;
 
         // Font memory tables (xetex-xetexd.h:555–590).
-        pub(super) static mut font_info: *mut MemoryWord;
+        // font_info moved to EngineState.fonts.font_info (Vec<MemoryWord>).
         pub(super) static mut xdv_buffer: *mut libc::c_char;
         // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
         pub(super) static mut cur_cs: i32;
@@ -1936,23 +1936,23 @@ pub(crate) fn set_font_name_entry(f: i32, v: i32) {
 /// Returns `font_info[k].b32.s1`.
 #[inline]
 pub(crate) fn font_info_b32s1(k: i32) -> i32 {
-    unsafe { (*raw::font_info.offset(k as isize)).b32.s1 }
+    crate::state::with_state(|s| unsafe { s.fonts.font_info[k as usize].b32.s1 })
 }
 
 /// Writes `font_info[k].b32.s1 = v`.
 #[inline]
 pub(crate) fn set_font_info_b32s1(k: i32, v: i32) {
-    unsafe {
-        (*raw::font_info.offset(k as isize)).b32.s1 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.font_info[k as usize].b32.s1 = v;
+    });
 }
 
 /// Writes `font_info[k].b16 = v`.
 #[inline]
 pub(crate) fn set_font_info_b16(k: i32, v: crate::mem_types::B16x4) {
-    unsafe {
-        (*raw::font_info.offset(k as isize)).b16 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.font_info[k as usize].b16 = v;
+    });
 }
 
 /// Returns `fmem_ptr`.
@@ -2042,7 +2042,7 @@ pub(crate) fn set_param_base(f: i32, v: i32) {
 /// Returns `font_info[k].b16` (the B16x4 view of font_info word k).
 #[inline]
 pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
-    unsafe { (*raw::font_info.offset(k as isize)).b16 }
+    crate::state::with_state(|s| unsafe { s.fonts.font_info[k as usize].b16 })
 }
 
 /// Writes `font_check[f] = v`.
