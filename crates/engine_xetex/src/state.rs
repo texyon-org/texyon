@@ -71,6 +71,31 @@ pub(crate) struct InputClusterState {
     /// `list_state_record`) — a compound struct, not a scalar typedef, no
     /// newtype debt.
     pub nest: Vec<crate::mem_types::ListStateRecord>,
+    /// Count of open pseudo-file parentheses emitted to the transcript.
+    /// Plain `int32_t`, no newtype debt.
+    pub open_parens: i32,
+    /// Current input-nesting depth (number of open input files). Plain `int32_t`.
+    pub in_open: i32,
+    /// Head of the pseudo-file linked list (xetex-xetexd.h:704). Plain `int32_t`.
+    pub pseudo_files: i32,
+    /// Current top of the semantic-nest stack. Plain `int32_t`.
+    pub nest_ptr: i32,
+    /// Peak value ever reached by `nest_ptr`. Plain `int32_t`.
+    pub max_nest_stack: i32,
+    /// Current top of the input-state stack. Plain `int32_t`.
+    pub input_ptr: i32,
+    /// Peak value ever reached by `input_ptr`. Plain `int32_t`.
+    pub max_in_stack: i32,
+    /// Search base in the input stack (xetex-xetexd.h:521). Plain `int32_t`.
+    pub base_ptr: i32,
+    /// Hash-table location of `\par` (xetex-xetexd.h:522). Plain `int32_t`.
+    pub par_loc: i32,
+    /// Token form of `\par` (CS_TOKEN_FLAG + par_loc, xetex-xetexd.h:523). Plain `int32_t`.
+    pub par_token: i32,
+    /// Next free slot in the macro-parameter stack. Plain `int32_t`.
+    pub param_ptr: i32,
+    /// Peak value ever reached by `param_ptr`. Plain `int32_t`.
+    pub max_param_stack: i32,
 }
 
 #[derive(Default)]

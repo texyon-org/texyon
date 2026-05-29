@@ -54,8 +54,7 @@ int32_t hlist_stack[MAX_HLIST_STACK + 1];
 short hlist_stack_level;
 int32_t first_p;
 int32_t global_prev_p;
-int32_t nest_ptr;
-int32_t max_nest_stack;
+/* nest_ptr / max_nest_stack moved to EngineState.input (scalars). */
 list_state_record cur_list;
 b32x2 *hash;
 int32_t hash_extra;
@@ -66,21 +65,16 @@ eight_bits cur_cmd;
 int32_t cur_chr;
 int32_t cur_cs;
 int32_t cur_tok;
-int32_t input_ptr;
-int32_t max_in_stack;
+/* input_ptr / max_in_stack moved to EngineState.input (scalars). */
 input_state_t cur_input;
-int32_t in_open;
-int32_t open_parens;
+/* in_open / open_parens moved to EngineState.input (scalars). */
 int32_t line;
 unsigned char scanner_status;
 int32_t warning_index;
 int32_t def_ref;
-int32_t param_ptr;
-int32_t max_param_stack;
+/* param_ptr / max_param_stack moved to EngineState.input (scalars). */
 int32_t align_state;
-int32_t base_ptr;
-int32_t par_loc;
-int32_t par_token;
+/* base_ptr / par_loc / par_token moved to EngineState.input (scalars). */
 bool force_eof;
 bool is_in_csname;
 int32_t cur_mark[5];
@@ -151,7 +145,7 @@ scaled_t cur_v_offset;
 int32_t LR_ptr;
 int32_t LR_problems;
 small_number cur_dir;
-int32_t pseudo_files;
+/* pseudo_files moved to EngineState.input (scalar). */
 const char* max_reg_help_line;
 int32_t sa_root[8];
 int32_t cur_ptr;

@@ -52,8 +52,7 @@ mod raw {
     extern "C" {
         // xetex-xetexd.h:506 — current input state; layout mirrors InputState above.
         pub(super) static mut cur_input: super::InputState;
-        // xetex-xetexd.h:508 — count of open pseudo-file parens.
-        pub(super) static mut open_parens: i32;
+        // open_parens moved to EngineState.input.open_parens.
         // xetex-xetexd.h:510 — current source line number.
         pub(super) static mut line: i32;
 
@@ -81,10 +80,8 @@ mod raw {
         // Current diagnostic capture handle (xetex-output.c, un-static'd session 8).
         // Null (0) means no active capture. Type is opaque `ttbc_diagnostic_t *`.
 
-        // Pseudo-file list head (xetex-xetexd.h:704; used by pseudo_input/close).
-        pub(super) static mut pseudo_files: i32;
-        // Input-level depth (xetex-xetexd.h:507).
-        pub(super) static mut in_open: i32;
+        // pseudo_files moved to EngineState.input.pseudo_files.
+        // in_open moved to EngineState.input.in_open.
         // Hash table: `b32x2 *hash` (xetex-xetexd.h:482).
         pub(super) static mut hash: *mut crate::mem_types::B32x2;
         // Hash table management globals (xetex-xetexd.h:483–488).
@@ -124,24 +121,14 @@ mod raw {
 
         // Input state stack ownership moved to EngineState.input.input_stack
         // (Rust-owned Vec<InputState>); see src/state.rs.
-        pub(super) static mut input_ptr: i32;
-        // Maximum input_ptr ever reached (xetex-xetexd.h:505).
-        pub(super) static mut max_in_stack: i32;
-        // Capacity of input_stack (xetex-xetexd.h:410).
+        // input_ptr/max_in_stack/base_ptr/par_loc/par_token moved to
+        // EngineState.input (scalars). Capacity stack_size stays a C global.
         pub(super) static mut stack_size: i32;
-        // Base pointer into input_stack (xetex-xetexd.h:521).
-        pub(super) static mut base_ptr: i32;
-        // Hash-table location of \par control sequence (xetex-xetexd.h:522).
-        pub(super) static mut par_loc: i32;
-        // Token form of \par (xetex-xetexd.h:523; cs_token = CS_TOKEN_FLAG + par_loc).
-        pub(super) static mut par_token: i32;
 
         // Macro parameter stack (xetex-xetexd.h:517–519). The `param_stack`
-        // array is Rust-owned on `EngineState.input.param_stack`; only the
-        // scalars remain C globals.
-        pub(super) static mut param_ptr: i32;
-        pub(super) static mut max_param_stack: i32;
-        // Allocated size of param_stack (xetex-ini.c:3596).
+        // array is Rust-owned on `EngineState.input.param_stack`; the scalars
+        // param_ptr/max_param_stack are now on EngineState.input too.
+        // Allocated size of param_stack stays a C global.
         pub(super) static mut param_size: i32;
 
         // SA trie cursor — scratch pointer used during SA node traversal/allocation
@@ -172,8 +159,8 @@ mod raw {
         pub(super) static mut skip_line: i32;
 
         // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
-        pub(super) static mut nest_ptr: i32;
-        pub(super) static mut max_nest_stack: i32;
+        // nest_ptr/max_nest_stack moved to EngineState.input (scalars).
+        // Capacity nest_size stays a C global.
         pub(super) static mut nest_size: i32;
         // Current list state (xetex-xetexd.h:479; direct struct, not a pointer).
         pub(super) static mut cur_list: crate::mem_types::ListStateRecord;
@@ -635,14 +622,14 @@ pub(crate) fn line() -> i32 {
 /// Returns `open_parens` (count of open pseudo-file parentheses in the transcript).
 #[inline]
 pub(crate) fn open_parens() -> i32 {
-    unsafe { raw::open_parens }
+    crate::state::with_state(|s| s.input.open_parens)
 }
 /// Sets `open_parens = v`.
 #[inline]
 pub(crate) fn set_open_parens(v: i32) {
-    unsafe {
-        raw::open_parens = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.open_parens = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -934,20 +921,19 @@ pub(crate) fn set_current_diagnostic(v: *mut std::ffi::c_void) {
 /// Returns the current input nesting depth.
 #[inline]
 pub(crate) fn in_open() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::in_open }
+    crate::state::with_state(|s| s.input.in_open)
 }
 /// Returns `pseudo_files` — head of the pseudo-file linked list (xetex-xetexd.h:704).
 #[inline]
 pub(crate) fn pseudo_files() -> i32 {
-    unsafe { raw::pseudo_files }
+    crate::state::with_state(|s| s.input.pseudo_files)
 }
 /// Sets `pseudo_files`.
 #[inline]
 pub(crate) fn set_pseudo_files(v: i32) {
-    unsafe {
-        raw::pseudo_files = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.pseudo_files = v;
+    });
 }
 
 /// Returns `full_source_filename_stack[k]` (the str_number of the source file
@@ -2623,23 +2609,23 @@ pub(crate) fn set_mag_set(v: i32) {
 
 #[inline]
 pub(crate) fn nest_ptr() -> i32 {
-    unsafe { raw::nest_ptr }
+    crate::state::with_state(|s| s.input.nest_ptr)
 }
 #[inline]
 pub(crate) fn set_nest_ptr(v: i32) {
-    unsafe {
-        raw::nest_ptr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.nest_ptr = v;
+    });
 }
 #[inline]
 pub(crate) fn max_nest_stack() -> i32 {
-    unsafe { raw::max_nest_stack }
+    crate::state::with_state(|s| s.input.max_nest_stack)
 }
 #[inline]
 pub(crate) fn set_max_nest_stack(v: i32) {
-    unsafe {
-        raw::max_nest_stack = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.max_nest_stack = v;
+    });
 }
 #[inline]
 pub(crate) fn nest_size() -> i32 {
@@ -2871,26 +2857,26 @@ pub(crate) fn set_input_stack(k: i32, v: InputState) {
 /// Returns `input_ptr` — current top of the input-stack (xetex-xetexd.h:504).
 #[inline]
 pub(crate) fn input_ptr() -> i32 {
-    unsafe { raw::input_ptr }
+    crate::state::with_state(|s| s.input.input_ptr)
 }
 /// Sets `input_ptr`.
 #[inline]
 pub(crate) fn set_input_ptr(v: i32) {
-    unsafe {
-        raw::input_ptr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.input_ptr = v;
+    });
 }
 /// Returns `max_in_stack` (xetex-xetexd.h:505).
 #[inline]
 pub(crate) fn max_in_stack() -> i32 {
-    unsafe { raw::max_in_stack }
+    crate::state::with_state(|s| s.input.max_in_stack)
 }
 /// Sets `max_in_stack`.
 #[inline]
 pub(crate) fn set_max_in_stack(v: i32) {
-    unsafe {
-        raw::max_in_stack = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.max_in_stack = v;
+    });
 }
 /// Returns `stack_size` — capacity of the input stack (xetex-xetexd.h:410).
 #[inline]
@@ -2902,39 +2888,39 @@ pub(crate) fn stack_size() -> i32 {
 /// (xetex-xetexd.h:521).
 #[inline]
 pub(crate) fn base_ptr() -> i32 {
-    unsafe { raw::base_ptr }
+    crate::state::with_state(|s| s.input.base_ptr)
 }
 /// Sets `base_ptr`.
 #[inline]
 pub(crate) fn set_base_ptr(v: i32) {
-    unsafe {
-        raw::base_ptr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.base_ptr = v;
+    });
 }
 
 /// Returns `par_loc` — hash-table location of \par (xetex-xetexd.h:522).
 #[inline]
 pub(crate) fn par_loc() -> i32 {
-    unsafe { raw::par_loc }
+    crate::state::with_state(|s| s.input.par_loc)
 }
 /// Sets `par_loc`.
 #[inline]
 pub(crate) fn set_par_loc(v: i32) {
-    unsafe {
-        raw::par_loc = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.par_loc = v;
+    });
 }
 /// Returns `par_token` — CS_TOKEN_FLAG + par_loc (xetex-xetexd.h:523).
 #[inline]
 pub(crate) fn par_token() -> i32 {
-    unsafe { raw::par_token }
+    crate::state::with_state(|s| s.input.par_token)
 }
 /// Sets `par_token`.
 #[inline]
 pub(crate) fn set_par_token(v: i32) {
-    unsafe {
-        raw::par_token = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.par_token = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3189,26 +3175,26 @@ pub(crate) fn set_param_stack(k: i32, v: i32) {
 /// Returns `param_ptr` — next free slot in param_stack (xetex-xetexd.h:518).
 #[inline]
 pub(crate) fn param_ptr() -> i32 {
-    unsafe { raw::param_ptr }
+    crate::state::with_state(|s| s.input.param_ptr)
 }
 /// Sets `param_ptr`.
 #[inline]
 pub(crate) fn set_param_ptr(v: i32) {
-    unsafe {
-        raw::param_ptr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.param_ptr = v;
+    });
 }
 /// Returns `max_param_stack` (xetex-xetexd.h:519).
 #[inline]
 pub(crate) fn max_param_stack() -> i32 {
-    unsafe { raw::max_param_stack }
+    crate::state::with_state(|s| s.input.max_param_stack)
 }
 /// Sets `max_param_stack`.
 #[inline]
 pub(crate) fn set_max_param_stack(v: i32) {
-    unsafe {
-        raw::max_param_stack = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.max_param_stack = v;
+    });
 }
 /// Returns `param_size` — allocated capacity of param_stack (xetex-ini.c:3596).
 #[inline]
@@ -3250,9 +3236,9 @@ pub(crate) fn max_in_open() -> i32 {
 /// Sets `in_open`.
 #[inline]
 pub(crate) fn set_in_open(v: i32) {
-    unsafe {
-        raw::in_open = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.input.in_open = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
