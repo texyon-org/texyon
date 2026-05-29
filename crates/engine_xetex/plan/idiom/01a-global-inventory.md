@@ -622,7 +622,19 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `hn` | `linebreak` | `small_number` (`typedef short`; hyphenation char count) | `SmallNumber` | session 45 | pending |
 | `active_node_size` | `linebreak` | `small_number` (`typedef short`; active-node word size) | `SmallNumber` | session 45 | pending |
 | `last_source_name` | `texmf` | `char *` — **owned C string** (`gettexstring`/`libc::free`), not a numeric typedef; ownership debt, not a width debt | `Option<CString>` | session 46 | pending |
+| `synctex.root_name` | `synctex` | `char *` — **owned C string** (`xstrdup`/`get_current_name`/`mfree`), ownership debt, not a width debt | `Option<CString>` | session 46 | pending |
+| `synctex.file` | `synctex` | stream handle (`usize`; 0 = INVALID_HANDLE), same shape as `rust_stdout`/`log_file` | `OutputHandle`/`Option<OutputId>` | session 46 | pending |
 
+
+(`synctex` session-46 move: `SYNCTEX_CTXT` was already a Stage-1-translated
+private Rust struct, *not* a C-header global, so its scalar fields moved into
+`EngineState.synctex` verbatim with unchanged Rust types — no typedef-loss debt.
+The C `synctex_ctxt_t` declared `curh`/`curv`/`lastv`/`magnification`/`unit`/
+`total_length` as plain `int` (sp positions, not the `scaled_t` typedef) and
+`tag`/`line`/`node`/`count`/`form_depth` as plain ints, so only the two rows
+above are debts: `root_name` (owned C string) and `file` (output handle).
+`node` is a mem pointer (pointer-taxonomy-sweep candidate, no typedef row);
+`recorder` is a fn pointer; the flags are plain `bool`.)
 
 (`linebreak` session-45 move: the `int32_t` mem-pointer fields — `cur_p`,
 `first_p`, `global_prev_p`, `passive`, `best_bet`, `best_place[]`,

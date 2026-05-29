@@ -16,6 +16,69 @@ pub(crate) struct EngineState {
     pub fonts: FontState,
     pub linebreak: LinebreakState,
     pub texmf: TexmfState,
+    pub synctex: SynctexCtxt,
+}
+
+/// SyncTeX recorder callback (`xetex-synctex.c`); a node-recording fn pointer.
+pub(crate) type Recorder = unsafe fn(i32);
+
+/// SyncTeX boolean flag block (formerly the `synctex_flags_t` bitfield struct).
+#[derive(Default)]
+pub(crate) struct SynctexFlags {
+    pub content_ready: bool,
+    pub off: bool,
+    pub not_void: bool,
+    pub warn: bool,
+    #[allow(dead_code)]
+    pub output_p: bool,
+}
+
+/// The SyncTeX context (formerly the `SYNCTEX_CTXT` file-static in
+/// `src/synctex.rs`). Migrated whole into `EngineState.synctex` in session 46.
+/// `root_name` is an owned C string managed via `synctexabort`/the synctex
+/// open path (its lifecycle stays in synctex.rs, no `tt_cleanup` edge).
+pub(crate) struct SynctexCtxt {
+    pub file: usize,
+    pub root_name: *mut libc::c_char,
+    pub count: i32,
+    pub node: i32,
+    pub recorder: Option<Recorder>,
+    pub tag: i32,
+    pub line: i32,
+    pub curh: i32,
+    pub curv: i32,
+    pub magnification: i32,
+    pub unit: i32,
+    pub total_length: i32,
+    pub lastv: i32,
+    pub form_depth: i32,
+    pub synctex_tag_counter: u32,
+    pub flags: SynctexFlags,
+}
+
+impl Default for SynctexCtxt {
+    fn default() -> Self {
+        // Matches the former `SYNCTEX_CTXT` static initializer: every field
+        // zero/null/None/false except `lastv`, which starts at -1.
+        Self {
+            file: 0, // INVALID_HANDLE
+            root_name: std::ptr::null_mut(),
+            count: 0,
+            node: 0,
+            recorder: None,
+            tag: 0,
+            line: 0,
+            curh: 0,
+            curv: 0,
+            magnification: 0,
+            unit: 0,
+            total_length: 0,
+            lastv: -1,
+            form_depth: 0,
+            synctex_tag_counter: 0,
+            flags: SynctexFlags::default(),
+        }
+    }
 }
 
 /// The `texmf` cluster: small io/job-context state formerly held as

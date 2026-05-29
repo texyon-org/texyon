@@ -43,63 +43,70 @@ extern "C" {
 }
 
 // ---------------------------------------------------------------------------
-// SynctexCtxt
+// SynctexCtxt bridge accessors
 // ---------------------------------------------------------------------------
+//
+// The SyncTeX context (formerly the `SYNCTEX_CTXT` file-static) now lives on
+// `EngineState.synctex` (session 46). These thin module-private accessors
+// bridge each field through the thread-local; each closure touches one field
+// and never holds the borrow across engine calls. The functions below read
+// fields into locals before doing I/O and write scalars back afterward, so the
+// per-field bridge is a faithful drop-in for the former direct field access.
 
-type Recorder = unsafe fn(i32);
+use crate::state::Recorder;
 
-struct SynctexFlags {
-    content_ready: bool,
-    off: bool,
-    not_void: bool,
-    warn: bool,
-    #[allow(dead_code)]
-    output_p: bool,
+macro_rules! sc_scalar {
+    ($get:ident, $set:ident, $field:ident, $ty:ty) => {
+        #[inline]
+        fn $get() -> $ty {
+            crate::state::with_state(|s| s.synctex.$field)
+        }
+        #[inline]
+        fn $set(v: $ty) {
+            crate::state::with_state_mut(|s| s.synctex.$field = v);
+        }
+    };
 }
 
-struct SynctexCtxt {
-    file: usize,
-    root_name: *mut c_char,
-    count: i32,
-    node: i32,
-    recorder: Option<Recorder>,
-    tag: i32,
-    line: i32,
-    curh: i32,
-    curv: i32,
-    magnification: i32,
-    unit: i32,
-    total_length: i32,
-    lastv: i32,
-    form_depth: i32,
-    synctex_tag_counter: u32,
-    flags: SynctexFlags,
+macro_rules! sc_flag {
+    ($get:ident, $set:ident, $field:ident) => {
+        #[inline]
+        fn $get() -> bool {
+            crate::state::with_state(|s| s.synctex.flags.$field)
+        }
+        #[inline]
+        fn $set(v: bool) {
+            crate::state::with_state_mut(|s| s.synctex.flags.$field = v);
+        }
+    };
 }
 
-static mut SYNCTEX_CTXT: SynctexCtxt = SynctexCtxt {
-    file: INVALID_HANDLE,
-    root_name: ptr::null_mut(),
-    count: 0,
-    node: 0,
-    recorder: None,
-    tag: 0,
-    line: 0,
-    curh: 0,
-    curv: 0,
-    magnification: 0,
-    unit: 0,
-    total_length: 0,
-    lastv: -1,
-    form_depth: 0,
-    synctex_tag_counter: 0,
-    flags: SynctexFlags {
-        content_ready: false,
-        off: false,
-        not_void: false,
-        warn: false,
-        output_p: false,
-    },
-};
+sc_scalar!(sc_file, set_sc_file, file, usize);
+sc_scalar!(sc_root_name, set_sc_root_name, root_name, *mut c_char);
+sc_scalar!(sc_count, set_sc_count, count, i32);
+sc_scalar!(sc_node, set_sc_node, node, i32);
+sc_scalar!(sc_recorder, set_sc_recorder, recorder, Option<Recorder>);
+sc_scalar!(sc_tag, set_sc_tag, tag, i32);
+sc_scalar!(sc_line, set_sc_line, line, i32);
+sc_scalar!(sc_curh, set_sc_curh, curh, i32);
+sc_scalar!(sc_curv, set_sc_curv, curv, i32);
+sc_scalar!(sc_magnification, set_sc_magnification, magnification, i32);
+sc_scalar!(sc_unit, set_sc_unit, unit, i32);
+sc_scalar!(sc_total_length, set_sc_total_length, total_length, i32);
+sc_scalar!(sc_lastv, set_sc_lastv, lastv, i32);
+sc_scalar!(sc_form_depth, set_sc_form_depth, form_depth, i32);
+sc_scalar!(
+    sc_synctex_tag_counter,
+    set_sc_synctex_tag_counter,
+    synctex_tag_counter,
+    u32
+);
+sc_flag!(sc_flags_content_ready, set_sc_flags_content_ready, content_ready);
+sc_flag!(sc_flags_off, set_sc_flags_off, off);
+sc_flag!(sc_flags_not_void, set_sc_flags_not_void, not_void);
+sc_flag!(sc_flags_warn, set_sc_flags_warn, warn);
+#[allow(dead_code)]
+sc_flag!(sc_flags_output_p, set_sc_flags_output_p, output_p);
 
 // ---------------------------------------------------------------------------
 // Accessors for TeX memory / parameters
@@ -204,22 +211,22 @@ unsafe fn get_current_name() -> *mut c_char {
 }
 
 unsafe fn synctexabort() {
-    if SYNCTEX_CTXT.file != INVALID_HANDLE {
-        ttstub_output_close(SYNCTEX_CTXT.file);
-        SYNCTEX_CTXT.file = INVALID_HANDLE;
+    if sc_file() != INVALID_HANDLE {
+        ttstub_output_close(sc_file());
+        set_sc_file(INVALID_HANDLE);
     }
-    SYNCTEX_CTXT.root_name = mfree_ptr(SYNCTEX_CTXT.root_name);
-    SYNCTEX_CTXT.flags.off = true;
+    set_sc_root_name(mfree_ptr(sc_root_name()));
+    set_sc_flags_off(true);
 }
 
 unsafe fn synctex_record_anchor() -> i32 {
-    let total = SYNCTEX_CTXT.total_length;
-    let file = SYNCTEX_CTXT.file;
+    let total = sc_total_length();
+    let file = sc_file();
     let s = format!("!{}\n", total);
     let len = synctex_write(file, &s);
     if len > 0 {
-        SYNCTEX_CTXT.total_length = len; // XXX: same quirk as original C (assignment, not +=)
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(len); // XXX: same quirk as original C (assignment, not +=)
+        set_sc_count(sc_count() + 1);
         return 0;
     }
     synctexabort();
@@ -227,11 +234,11 @@ unsafe fn synctex_record_anchor() -> i32 {
 }
 
 unsafe fn synctex_record_preamble() -> i32 {
-    let file = SYNCTEX_CTXT.file;
+    let file = sc_file();
     let s = format!("SyncTeX Version:{}\n", SYNCTEX_VERSION);
     let len = synctex_write(file, &s);
     if len > 0 {
-        SYNCTEX_CTXT.total_length = len; // XXX: assignment, not +=, as in C
+        set_sc_total_length(len); // XXX: assignment, not +=, as in C
         return 0;
     }
     synctexabort();
@@ -239,12 +246,12 @@ unsafe fn synctex_record_preamble() -> i32 {
 }
 
 unsafe fn synctex_record_input(tag: i32, name: *mut c_char) -> i32 {
-    let file = SYNCTEX_CTXT.file;
+    let file = sc_file();
     let name_str = std::ffi::CStr::from_ptr(name).to_string_lossy();
     let s = format!("Input:{}:{}\n", tag, name_str);
     let len = synctex_write(file, &s);
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
+        set_sc_total_length(sc_total_length() + len);
         return 0;
     }
     synctexabort();
@@ -252,13 +259,13 @@ unsafe fn synctex_record_input(tag: i32, name: *mut c_char) -> i32 {
 }
 
 unsafe fn synctex_record_settings() -> i32 {
-    if SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_file() == INVALID_HANDLE {
         return 0;
     }
     let (file, mag, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.magnification,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_magnification(),
+        sc_unit(),
     );
     let s = format!(
         "Output:pdf\nMagnification:{}\nUnit:{}\nX Offset:0\nY Offset:0\n",
@@ -266,7 +273,7 @@ unsafe fn synctex_record_settings() -> i32 {
     );
     let len = synctex_write(file, &s);
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
+        set_sc_total_length(sc_total_length() + len);
         return 0;
     }
     synctexabort();
@@ -274,10 +281,10 @@ unsafe fn synctex_record_settings() -> i32 {
 }
 
 unsafe fn synctex_record_content() -> i32 {
-    let file = SYNCTEX_CTXT.file;
+    let file = sc_file();
     let len = synctex_write(file, "Content:\n");
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
+        set_sc_total_length(sc_total_length() + len);
         return 0;
     }
     synctexabort();
@@ -285,11 +292,11 @@ unsafe fn synctex_record_content() -> i32 {
 }
 
 unsafe fn synctex_record_count() -> i32 {
-    let (file, count) = (SYNCTEX_CTXT.file, SYNCTEX_CTXT.count);
+    let (file, count) = (sc_file(), sc_count());
     let s = format!("Count:{}\n", count);
     let len = synctex_write(file, &s);
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
+        set_sc_total_length(sc_total_length() + len);
         return 0;
     }
     synctexabort();
@@ -298,15 +305,15 @@ unsafe fn synctex_record_count() -> i32 {
 
 unsafe fn synctex_record_postamble() -> i32 {
     if synctex_record_anchor() == 0 {
-        let file = SYNCTEX_CTXT.file;
+        let file = sc_file();
         let len = synctex_write(file, "Postamble:\n");
         if len > 0 {
-            SYNCTEX_CTXT.total_length += len;
+            set_sc_total_length(sc_total_length() + len);
             if synctex_record_count() == 0 && synctex_record_anchor() == 0 {
-                let file2 = SYNCTEX_CTXT.file;
+                let file2 = sc_file();
                 let len2 = synctex_write(file2, "Post scriptum:\n");
                 if len2 > 0 {
-                    SYNCTEX_CTXT.total_length += len2;
+                    set_sc_total_length(sc_total_length() + len2);
                     return 0;
                 }
             }
@@ -318,12 +325,12 @@ unsafe fn synctex_record_postamble() -> i32 {
 
 unsafe fn synctex_record_sheet(sheet: i32) -> i32 {
     if synctex_record_anchor() == 0 {
-        let file = SYNCTEX_CTXT.file;
+        let file = sc_file();
         let s = format!("{{{}\n", sheet);
         let len = synctex_write(file, &s);
         if len > 0 {
-            SYNCTEX_CTXT.total_length += len;
-            SYNCTEX_CTXT.count += 1;
+            set_sc_total_length(sc_total_length() + len);
+            set_sc_count(sc_count() + 1);
             return 0;
         }
     }
@@ -333,12 +340,12 @@ unsafe fn synctex_record_sheet(sheet: i32) -> i32 {
 
 unsafe fn synctex_record_teehs(sheet: i32) -> i32 {
     if synctex_record_anchor() == 0 {
-        let file = SYNCTEX_CTXT.file;
+        let file = sc_file();
         let s = format!("}}{}\n", sheet);
         let len = synctex_write(file, &s);
         if len > 0 {
-            SYNCTEX_CTXT.total_length += len;
-            SYNCTEX_CTXT.count += 1;
+            set_sc_total_length(sc_total_length() + len);
+            set_sc_count(sc_count() + 1);
             return 0;
         }
     }
@@ -347,16 +354,16 @@ unsafe fn synctex_record_teehs(sheet: i32) -> i32 {
 }
 
 unsafe fn synctex_record_pdfxform(_form: i32) -> i32 {
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return 0;
     }
-    SYNCTEX_CTXT.form_depth += 1;
-    let (file, depth) = (SYNCTEX_CTXT.file, SYNCTEX_CTXT.form_depth);
+    set_sc_form_depth(sc_form_depth() + 1);
+    let (file, depth) = (sc_file(), sc_form_depth());
     let s = format!("<{}\n", depth);
     let len = synctex_write(file, &s);
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
         return 0;
     }
     synctexabort();
@@ -365,12 +372,12 @@ unsafe fn synctex_record_pdfxform(_form: i32) -> i32 {
 
 unsafe fn synctex_record_mrofxfdp() -> i32 {
     if synctex_record_anchor() == 0 {
-        SYNCTEX_CTXT.form_depth -= 1;
-        let file = SYNCTEX_CTXT.file;
+        set_sc_form_depth(sc_form_depth() - 1);
+        let file = sc_file();
         let len = synctex_write(file, ">\n");
         if len > 0 {
-            SYNCTEX_CTXT.total_length += len;
-            SYNCTEX_CTXT.count += 1;
+            set_sc_total_length(sc_total_length() + len);
+            set_sc_count(sc_count() + 1);
             return 0;
         }
     }
@@ -379,23 +386,23 @@ unsafe fn synctex_record_mrofxfdp() -> i32 {
 }
 
 unsafe fn synctex_record_node_pdfrefxform(objnum: c_int) -> i32 {
-    SYNCTEX_CTXT.curh = synctex_curh();
-    SYNCTEX_CTXT.curv = synctex_curv();
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    set_sc_curh(synctex_curh());
+    set_sc_curv(synctex_curv());
+    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return 0;
     }
     let (file, curh, curv, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.curh,
-        SYNCTEX_CTXT.curv,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_curh(),
+        sc_curv(),
+        sc_unit(),
     );
     let s = format!("f{}:{},{}\n", objnum, curh / unit, curv / unit);
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
+    set_sc_lastv(sc_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
         return 0;
     }
     synctexabort();
@@ -403,12 +410,12 @@ unsafe fn synctex_record_node_pdfrefxform(objnum: c_int) -> i32 {
 }
 
 unsafe fn synctex_record_node_vlist(p: i32) {
-    SYNCTEX_CTXT.flags.not_void = true;
+    set_sc_flags_not_void(true);
     let (file, curh, curv, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.curh,
-        SYNCTEX_CTXT.curv,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_curh(),
+        sc_curv(),
+        sc_unit(),
     );
     let s = format!(
         "[{},{}:{},{}:{},{},{}\n",
@@ -421,20 +428,20 @@ unsafe fn synctex_record_node_vlist(p: i32) {
         synctex_depth(p) / unit
     );
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
+    set_sc_lastv(sc_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
     } else {
         synctexabort();
     }
 }
 
 unsafe fn synctex_record_node_tsilv(_p: i32) {
-    let file = SYNCTEX_CTXT.file;
+    let file = sc_file();
     let len = synctex_write(file, "]\n");
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
+        set_sc_total_length(sc_total_length() + len);
         // count NOT incremented here (matches C comment)
     } else {
         synctexabort();
@@ -443,10 +450,10 @@ unsafe fn synctex_record_node_tsilv(_p: i32) {
 
 unsafe fn synctex_record_node_void_vlist(p: i32) {
     let (file, curh, curv, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.curh,
-        SYNCTEX_CTXT.curv,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_curh(),
+        sc_curv(),
+        sc_unit(),
     );
     let s = format!(
         "v{},{}:{},{}:{},{},{}\n",
@@ -459,22 +466,22 @@ unsafe fn synctex_record_node_void_vlist(p: i32) {
         synctex_depth(p) / unit
     );
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
+    set_sc_lastv(sc_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
     } else {
         synctexabort();
     }
 }
 
 unsafe fn synctex_record_node_hlist(p: i32) {
-    SYNCTEX_CTXT.flags.not_void = true;
+    set_sc_flags_not_void(true);
     let (file, curh, curv, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.curh,
-        SYNCTEX_CTXT.curv,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_curh(),
+        sc_curv(),
+        sc_unit(),
     );
     let s = format!(
         "({},{}:{},{}:{},{},{}\n",
@@ -487,21 +494,21 @@ unsafe fn synctex_record_node_hlist(p: i32) {
         synctex_depth(p) / unit
     );
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
+    set_sc_lastv(sc_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
     } else {
         synctexabort();
     }
 }
 
 unsafe fn synctex_record_node_tsilh(_p: i32) {
-    let file = SYNCTEX_CTXT.file;
+    let file = sc_file();
     let len = synctex_write(file, ")\n");
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
     } else {
         synctexabort();
     }
@@ -509,10 +516,10 @@ unsafe fn synctex_record_node_tsilh(_p: i32) {
 
 unsafe fn synctex_record_node_void_hlist(p: i32) {
     let (file, curh, curv, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.curh,
-        SYNCTEX_CTXT.curv,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_curh(),
+        sc_curv(),
+        sc_unit(),
     );
     let s = format!(
         "h{},{}:{},{}:{},{},{}\n",
@@ -525,10 +532,10 @@ unsafe fn synctex_record_node_void_hlist(p: i32) {
         synctex_depth(p) / unit
     );
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
+    set_sc_lastv(sc_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
     } else {
         synctexabort();
     }
@@ -536,10 +543,10 @@ unsafe fn synctex_record_node_void_hlist(p: i32) {
 
 unsafe fn synctex_record_node_math(p: i32) {
     let (file, curh, curv, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.curh,
-        SYNCTEX_CTXT.curv,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_curh(),
+        sc_curv(),
+        sc_unit(),
     );
     let s = format!(
         "${},{}:{},{}\n",
@@ -549,10 +556,10 @@ unsafe fn synctex_record_node_math(p: i32) {
         curv / unit
     );
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
+    set_sc_lastv(sc_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
     } else {
         synctexabort();
     }
@@ -560,10 +567,10 @@ unsafe fn synctex_record_node_math(p: i32) {
 
 unsafe fn synctex_record_node_glue(p: i32) {
     let (file, curh, curv, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.curh,
-        SYNCTEX_CTXT.curv,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_curh(),
+        sc_curv(),
+        sc_unit(),
     );
     let s = format!(
         "g{},{}:{},{}\n",
@@ -573,10 +580,10 @@ unsafe fn synctex_record_node_glue(p: i32) {
         curv / unit
     );
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
+    set_sc_lastv(sc_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
     } else {
         synctexabort();
     }
@@ -586,10 +593,10 @@ unsafe fn synctex_record_node_glue(p: i32) {
 // matching `SYNCTEX_TAG_MODEL(p,GLUE)` in the C source.
 unsafe fn synctex_record_node_kern(p: i32) {
     let (file, curh, curv, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.curh,
-        SYNCTEX_CTXT.curv,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_curh(),
+        sc_curv(),
+        sc_unit(),
     );
     let s = format!(
         "k{},{}:{},{}:{}\n",
@@ -600,10 +607,10 @@ unsafe fn synctex_record_node_kern(p: i32) {
         synctex_width(p) / unit
     );
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
+    set_sc_lastv(sc_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
     } else {
         synctexabort();
     }
@@ -611,10 +618,10 @@ unsafe fn synctex_record_node_kern(p: i32) {
 
 unsafe fn synctex_record_node_rule(p: i32) {
     let (file, curh, curv, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.curh,
-        SYNCTEX_CTXT.curv,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_curh(),
+        sc_curv(),
+        sc_unit(),
     );
     let s = format!(
         "r{},{}:{},{}:{},{},{}\n",
@@ -627,10 +634,10 @@ unsafe fn synctex_record_node_rule(p: i32) {
         rule_dp() / unit
     );
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = SYNCTEX_CTXT.curv;
+    set_sc_lastv(sc_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
-        SYNCTEX_CTXT.count += 1;
+        set_sc_total_length(sc_total_length() + len);
+        set_sc_count(sc_count() + 1);
     } else {
         synctexabort();
     }
@@ -638,11 +645,11 @@ unsafe fn synctex_record_node_rule(p: i32) {
 
 // Opens the .synctex.gz output file and writes the preamble.
 unsafe fn synctex_dot_open() -> usize {
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 {
+    if sc_flags_off() || intpar_synctex() == 0 {
         return INVALID_HANDLE;
     }
-    if SYNCTEX_CTXT.file != INVALID_HANDLE {
-        return SYNCTEX_CTXT.file;
+    if sc_file() != INVALID_HANDLE {
+        return sc_file();
     }
 
     let tmp = gettexstring(job_name());
@@ -666,10 +673,10 @@ unsafe fn synctex_dot_open() -> usize {
     libc::strcat(the_name, b".synctex.gz\0".as_ptr() as *const c_char);
     libc::free(tmp as *mut libc::c_void);
 
-    SYNCTEX_CTXT.file = ttstub_output_open(the_name, 1);
+    set_sc_file(ttstub_output_open(the_name, 1));
     libc::free(the_name as *mut libc::c_void);
 
-    if SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_file() == INVALID_HANDLE {
         synctexabort();
         return INVALID_HANDLE;
     }
@@ -679,32 +686,32 @@ unsafe fn synctex_dot_open() -> usize {
         return INVALID_HANDLE;
     }
 
-    if SYNCTEX_CTXT.magnification == 0 {
-        SYNCTEX_CTXT.magnification = 1000;
+    if sc_magnification() == 0 {
+        set_sc_magnification(1000);
     }
-    SYNCTEX_CTXT.unit = 1;
+    set_sc_unit(1);
 
-    if !SYNCTEX_CTXT.root_name.is_null() {
-        let rn = SYNCTEX_CTXT.root_name;
+    if !sc_root_name().is_null() {
+        let rn = sc_root_name();
         synctex_record_input(1, rn);
-        SYNCTEX_CTXT.root_name = mfree_ptr(SYNCTEX_CTXT.root_name);
+        set_sc_root_name(mfree_ptr(sc_root_name()));
     }
 
-    SYNCTEX_CTXT.count = 0;
-    SYNCTEX_CTXT.file
+    set_sc_count(0);
+    sc_file()
 }
 
 // Ensures the synctex file is open and settings + content header are written.
 unsafe fn synctex_prepare_content() -> usize {
-    if SYNCTEX_CTXT.flags.content_ready {
-        return SYNCTEX_CTXT.file;
+    if sc_flags_content_ready() {
+        return sc_file();
     }
     if synctex_dot_open() != INVALID_HANDLE
         && synctex_record_settings() == 0
         && synctex_record_content() == 0
     {
-        SYNCTEX_CTXT.flags.content_ready = true;
-        return SYNCTEX_CTXT.file;
+        set_sc_flags_content_ready(true);
+        return sc_file();
     }
     synctexabort();
     INVALID_HANDLE
@@ -716,26 +723,26 @@ unsafe fn synctex_prepare_content() -> usize {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_init_command() {
-    SYNCTEX_CTXT.file = INVALID_HANDLE;
-    SYNCTEX_CTXT.root_name = ptr::null_mut();
-    SYNCTEX_CTXT.count = 0;
-    SYNCTEX_CTXT.node = 0;
-    SYNCTEX_CTXT.recorder = None;
-    SYNCTEX_CTXT.tag = 0;
-    SYNCTEX_CTXT.line = 0;
-    SYNCTEX_CTXT.curh = 0;
-    SYNCTEX_CTXT.curv = 0;
-    SYNCTEX_CTXT.magnification = 0;
-    SYNCTEX_CTXT.unit = 0;
-    SYNCTEX_CTXT.total_length = 0;
-    SYNCTEX_CTXT.lastv = -1;
-    SYNCTEX_CTXT.form_depth = 0;
-    SYNCTEX_CTXT.synctex_tag_counter = 0;
-    SYNCTEX_CTXT.flags.content_ready = false;
-    SYNCTEX_CTXT.flags.off = false;
-    SYNCTEX_CTXT.flags.not_void = false;
-    SYNCTEX_CTXT.flags.warn = false;
-    SYNCTEX_CTXT.flags.output_p = false;
+    set_sc_file(INVALID_HANDLE);
+    set_sc_root_name(ptr::null_mut());
+    set_sc_count(0);
+    set_sc_node(0);
+    set_sc_recorder(None);
+    set_sc_tag(0);
+    set_sc_line(0);
+    set_sc_curh(0);
+    set_sc_curv(0);
+    set_sc_magnification(0);
+    set_sc_unit(0);
+    set_sc_total_length(0);
+    set_sc_lastv(-1);
+    set_sc_form_depth(0);
+    set_sc_synctex_tag_counter(0);
+    set_sc_flags_content_ready(false);
+    set_sc_flags_off(false);
+    set_sc_flags_not_void(false);
+    set_sc_flags_warn(false);
+    set_sc_flags_output_p(false);
 
     if synctex_enabled() != 0 {
         set_eqtb_b32s1(INT_BASE + INT_PAR_SYNCTEX, 1);
@@ -746,10 +753,10 @@ pub unsafe extern "C" fn synctex_init_command() {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_terminate(_log_opened: bool) {
-    if SYNCTEX_CTXT.file != INVALID_HANDLE {
+    if sc_file() != INVALID_HANDLE {
         synctex_record_postamble();
-        ttstub_output_close(SYNCTEX_CTXT.file);
-        SYNCTEX_CTXT.file = INVALID_HANDLE;
+        ttstub_output_close(sc_file());
+        set_sc_file(INVALID_HANDLE);
     }
     synctexabort();
 }
@@ -762,32 +769,31 @@ pub unsafe extern "C" fn synctex_abort(_log_opened: bool) {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_start_input() {
-    if SYNCTEX_CTXT.flags.off {
+    if sc_flags_off() {
         return;
     }
     // ~counter > 0 ⟺ counter != u32::MAX (bitwise NOT of max is 0, not > 0)
-    if SYNCTEX_CTXT.synctex_tag_counter != u32::MAX {
-        SYNCTEX_CTXT.synctex_tag_counter += 1;
+    if sc_synctex_tag_counter() != u32::MAX {
+        set_sc_synctex_tag_counter(sc_synctex_tag_counter() + 1);
     } else {
-        SYNCTEX_CTXT.synctex_tag_counter = 0;
+        set_sc_synctex_tag_counter(0);
         return;
     }
-    let tag = SYNCTEX_CTXT.synctex_tag_counter as i32;
+    let tag = sc_synctex_tag_counter() as i32;
     set_cur_input_synctex_tag(tag);
 
-    if SYNCTEX_CTXT.synctex_tag_counter == 1 {
+    if sc_synctex_tag_counter() == 1 {
         // First file: store root name for later.
-        SYNCTEX_CTXT.root_name = get_current_name();
-        if libc::strlen(SYNCTEX_CTXT.root_name) == 0 {
+        set_sc_root_name(get_current_name());
+        if libc::strlen(sc_root_name()) == 0 {
             let texput = b"texput\0";
-            SYNCTEX_CTXT.root_name =
-                xrealloc(SYNCTEX_CTXT.root_name as *mut libc::c_void, texput.len()) as *mut c_char;
-            libc::strcpy(SYNCTEX_CTXT.root_name, texput.as_ptr() as *const c_char);
+            set_sc_root_name(xrealloc(sc_root_name() as *mut libc::c_void, texput.len()) as *mut c_char);
+            libc::strcpy(sc_root_name(), texput.as_ptr() as *const c_char);
         }
         return;
     }
 
-    if SYNCTEX_CTXT.file != INVALID_HANDLE || synctex_dot_open() != INVALID_HANDLE {
+    if sc_file() != INVALID_HANDLE || synctex_dot_open() != INVALID_HANDLE {
         let ci = cur_input();
         let tmp = get_current_name();
         synctex_record_input(ci.synctex_tag, tmp);
@@ -797,9 +803,9 @@ pub unsafe extern "C" fn synctex_start_input() {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_sheet(mag: i32) {
-    if SYNCTEX_CTXT.flags.off {
-        if intpar_synctex() != 0 && !SYNCTEX_CTXT.flags.warn {
-            SYNCTEX_CTXT.flags.warn = true;
+    if sc_flags_off() {
+        if intpar_synctex() != 0 && !sc_flags_warn() {
+            set_sc_flags_warn(true);
             ttstub_issue_warning(
                 c"SyncTeX was disabled -- changing the value of \\synctex has no effect".as_ptr(),
             );
@@ -807,7 +813,7 @@ pub unsafe extern "C" fn synctex_sheet(mag: i32) {
         return;
     }
     if total_pages() == 0 && mag > 0 {
-        SYNCTEX_CTXT.magnification = mag;
+        set_sc_magnification(mag);
     }
     if synctex_prepare_content() != INVALID_HANDLE {
         synctex_record_sheet(total_pages() + 1);
@@ -816,7 +822,7 @@ pub unsafe extern "C" fn synctex_sheet(mag: i32) {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_teehs() {
-    if SYNCTEX_CTXT.flags.off || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_flags_off() || sc_file() == INVALID_HANDLE {
         return;
     }
     synctex_record_teehs(total_pages());
@@ -824,9 +830,9 @@ pub unsafe extern "C" fn synctex_teehs() {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_pdfxform(p: i32) {
-    if SYNCTEX_CTXT.flags.off {
-        if intpar_synctex() != 0 && !SYNCTEX_CTXT.flags.warn {
-            SYNCTEX_CTXT.flags.warn = true;
+    if sc_flags_off() {
+        if intpar_synctex() != 0 && !sc_flags_warn() {
+            set_sc_flags_warn(true);
             ttstub_issue_warning(
                 c"SyncTeX was disabled - changing the value of \\synctex has no effect".as_ptr(),
             );
@@ -840,92 +846,92 @@ pub unsafe extern "C" fn synctex_pdfxform(p: i32) {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_mrofxfdp() {
-    if SYNCTEX_CTXT.file != INVALID_HANDLE {
+    if sc_file() != INVALID_HANDLE {
         synctex_record_mrofxfdp();
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_pdfrefxform(objnum: c_int) {
-    if SYNCTEX_CTXT.file != INVALID_HANDLE {
+    if sc_file() != INVALID_HANDLE {
         synctex_record_node_pdfrefxform(objnum);
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_vlist(this_box: i32) {
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return;
     }
-    SYNCTEX_CTXT.node = this_box;
-    SYNCTEX_CTXT.recorder = None;
-    SYNCTEX_CTXT.tag = synctex_tag_box(this_box);
-    SYNCTEX_CTXT.line = synctex_line_box(this_box);
-    SYNCTEX_CTXT.curh = synctex_curh();
-    SYNCTEX_CTXT.curv = synctex_curv();
+    set_sc_node(this_box);
+    set_sc_recorder(None);
+    set_sc_tag(synctex_tag_box(this_box));
+    set_sc_line(synctex_line_box(this_box));
+    set_sc_curh(synctex_curh());
+    set_sc_curv(synctex_curv());
     synctex_record_node_vlist(this_box);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_tsilv(this_box: i32) {
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return;
     }
-    SYNCTEX_CTXT.node = this_box;
-    SYNCTEX_CTXT.tag = synctex_tag_box(this_box);
-    SYNCTEX_CTXT.line = synctex_line_box(this_box);
-    SYNCTEX_CTXT.curh = synctex_curh();
-    SYNCTEX_CTXT.curv = synctex_curv();
-    SYNCTEX_CTXT.recorder = None;
+    set_sc_node(this_box);
+    set_sc_tag(synctex_tag_box(this_box));
+    set_sc_line(synctex_line_box(this_box));
+    set_sc_curh(synctex_curh());
+    set_sc_curv(synctex_curv());
+    set_sc_recorder(None);
     synctex_record_node_tsilv(this_box);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_void_vlist(p: i32, _this_box: i32) {
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return;
     }
-    SYNCTEX_CTXT.node = p;
-    SYNCTEX_CTXT.tag = synctex_tag_box(p);
-    SYNCTEX_CTXT.line = synctex_line_box(p);
-    SYNCTEX_CTXT.curh = synctex_curh();
-    SYNCTEX_CTXT.curv = synctex_curv();
-    SYNCTEX_CTXT.recorder = None;
+    set_sc_node(p);
+    set_sc_tag(synctex_tag_box(p));
+    set_sc_line(synctex_line_box(p));
+    set_sc_curh(synctex_curh());
+    set_sc_curv(synctex_curv());
+    set_sc_recorder(None);
     synctex_record_node_void_vlist(p);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_hlist(this_box: i32) {
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return;
     }
-    SYNCTEX_CTXT.node = this_box;
-    SYNCTEX_CTXT.tag = synctex_tag_box(this_box);
-    SYNCTEX_CTXT.line = synctex_line_box(this_box);
-    SYNCTEX_CTXT.curh = synctex_curh();
-    SYNCTEX_CTXT.curv = synctex_curv();
-    SYNCTEX_CTXT.recorder = None;
+    set_sc_node(this_box);
+    set_sc_tag(synctex_tag_box(this_box));
+    set_sc_line(synctex_line_box(this_box));
+    set_sc_curh(synctex_curh());
+    set_sc_curv(synctex_curv());
+    set_sc_recorder(None);
     synctex_record_node_hlist(this_box);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_tsilh(this_box: i32) {
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return;
     }
-    SYNCTEX_CTXT.node = this_box;
-    SYNCTEX_CTXT.tag = synctex_tag_box(this_box);
-    SYNCTEX_CTXT.line = synctex_line_box(this_box);
-    SYNCTEX_CTXT.curh = synctex_curh();
-    SYNCTEX_CTXT.curv = synctex_curv();
-    SYNCTEX_CTXT.recorder = None;
+    set_sc_node(this_box);
+    set_sc_tag(synctex_tag_box(this_box));
+    set_sc_line(synctex_line_box(this_box));
+    set_sc_curh(synctex_curh());
+    set_sc_curv(synctex_curv());
+    set_sc_recorder(None);
     synctex_record_node_tsilh(this_box);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_void_hlist(p: i32, _this_box: i32) {
     // Uses the second SYNCTEX_IGNORE definition: checks tag/line too.
-    if SYNCTEX_CTXT.flags.off
+    if sc_flags_off()
         || intpar_synctex() == 0
         || synctex_tag_box(p) <= 0
         || synctex_line_box(p) <= 0
@@ -933,40 +939,40 @@ pub unsafe extern "C" fn synctex_void_hlist(p: i32, _this_box: i32) {
         return;
     }
     // Flush pending recorder before context change.
-    let (rec, node) = (SYNCTEX_CTXT.recorder, SYNCTEX_CTXT.node);
+    let (rec, node) = (sc_recorder(), sc_node());
     if let Some(rec) = rec {
         rec(node);
     }
-    SYNCTEX_CTXT.node = p;
-    SYNCTEX_CTXT.tag = synctex_tag_box(p);
-    SYNCTEX_CTXT.line = synctex_line_box(p);
-    SYNCTEX_CTXT.curh = synctex_curh();
-    SYNCTEX_CTXT.curv = synctex_curv();
-    SYNCTEX_CTXT.recorder = None;
+    set_sc_node(p);
+    set_sc_tag(synctex_tag_box(p));
+    set_sc_line(synctex_line_box(p));
+    set_sc_curh(synctex_curh());
+    set_sc_curv(synctex_curv());
+    set_sc_recorder(None);
     synctex_record_node_void_hlist(p);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_math(p: i32, _this_box: i32) {
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return;
     }
     // SYNCTEX_CONTEXT_DID_CHANGE: node == 0 or tag/line differ.
-    let ctx_changed = SYNCTEX_CTXT.node == 0
-        || synctex_tag_medium(p) != SYNCTEX_CTXT.tag
-        || synctex_line_medium(p) != SYNCTEX_CTXT.line;
-    let (rec, node) = (SYNCTEX_CTXT.recorder, SYNCTEX_CTXT.node);
+    let ctx_changed = sc_node() == 0
+        || synctex_tag_medium(p) != sc_tag()
+        || synctex_line_medium(p) != sc_line();
+    let (rec, node) = (sc_recorder(), sc_node());
     if let Some(rec) = rec {
         if ctx_changed {
             rec(node);
         }
     }
-    SYNCTEX_CTXT.node = p;
-    SYNCTEX_CTXT.tag = synctex_tag_medium(p);
-    SYNCTEX_CTXT.line = synctex_line_medium(p);
-    SYNCTEX_CTXT.curh = synctex_curh();
-    SYNCTEX_CTXT.curv = synctex_curv();
-    SYNCTEX_CTXT.recorder = None;
+    set_sc_node(p);
+    set_sc_tag(synctex_tag_medium(p));
+    set_sc_line(synctex_line_medium(p));
+    set_sc_curh(synctex_curh());
+    set_sc_curv(synctex_curv());
+    set_sc_recorder(None);
     synctex_record_node_math(p);
 }
 
@@ -974,7 +980,7 @@ pub unsafe extern "C" fn synctex_math(p: i32, _this_box: i32) {
 pub unsafe extern "C" fn synctex_horizontal_rule_or_glue(p: i32, _this_box: i32) {
     let node_type = synctex_type(p);
     // Second SYNCTEX_IGNORE definition: also checks tag/line > 0.
-    let off = SYNCTEX_CTXT.flags.off || intpar_synctex() == 0;
+    let off = sc_flags_off() || intpar_synctex() == 0;
     let ignore = |tag: i32, line: i32| off || tag <= 0 || line <= 0;
 
     match node_type {
@@ -1000,24 +1006,24 @@ pub unsafe extern "C" fn synctex_horizontal_rule_or_glue(p: i32, _this_box: i32)
         }
     }
 
-    SYNCTEX_CTXT.node = p;
-    SYNCTEX_CTXT.curh = synctex_curh();
-    SYNCTEX_CTXT.curv = synctex_curv();
-    SYNCTEX_CTXT.recorder = None;
+    set_sc_node(p);
+    set_sc_curh(synctex_curh());
+    set_sc_curv(synctex_curv());
+    set_sc_recorder(None);
     match node_type {
         RULE_NODE => {
-            SYNCTEX_CTXT.tag = synctex_tag_rule(p);
-            SYNCTEX_CTXT.line = synctex_line_rule(p);
+            set_sc_tag(synctex_tag_rule(p));
+            set_sc_line(synctex_line_rule(p));
             synctex_record_node_rule(p);
         }
         GLUE_NODE => {
-            SYNCTEX_CTXT.tag = synctex_tag_medium(p);
-            SYNCTEX_CTXT.line = synctex_line_medium(p);
+            set_sc_tag(synctex_tag_medium(p));
+            set_sc_line(synctex_line_medium(p));
             synctex_record_node_glue(p);
         }
         KERN_NODE => {
-            SYNCTEX_CTXT.tag = synctex_tag_medium(p);
-            SYNCTEX_CTXT.line = synctex_line_medium(p);
+            set_sc_tag(synctex_tag_medium(p));
+            set_sc_line(synctex_line_medium(p));
             synctex_record_node_kern(p);
         }
         _ => {
@@ -1029,7 +1035,7 @@ pub unsafe extern "C" fn synctex_horizontal_rule_or_glue(p: i32, _this_box: i32)
 #[no_mangle]
 pub unsafe extern "C" fn synctex_kern(p: i32, this_box: i32) {
     // Second SYNCTEX_IGNORE definition.
-    if SYNCTEX_CTXT.flags.off
+    if sc_flags_off()
         || intpar_synctex() == 0
         || synctex_tag_medium(p) <= 0
         || synctex_line_medium(p) <= 0
@@ -1037,44 +1043,44 @@ pub unsafe extern "C" fn synctex_kern(p: i32, this_box: i32) {
         return;
     }
     // SYNCTEX_CONTEXT_DID_CHANGE
-    let ctx_changed = SYNCTEX_CTXT.node == 0
-        || synctex_tag_medium(p) != SYNCTEX_CTXT.tag
-        || synctex_line_medium(p) != SYNCTEX_CTXT.line;
+    let ctx_changed = sc_node() == 0
+        || synctex_tag_medium(p) != sc_tag()
+        || synctex_line_medium(p) != sc_line();
     if ctx_changed {
         // Flush pending recorder.
-        let (rec, node) = (SYNCTEX_CTXT.recorder, SYNCTEX_CTXT.node);
+        let (rec, node) = (sc_recorder(), sc_node());
         if let Some(rec) = rec {
             rec(node);
         }
-        SYNCTEX_CTXT.node = p;
-        SYNCTEX_CTXT.tag = synctex_tag_medium(p);
-        SYNCTEX_CTXT.line = synctex_line_medium(p);
-        if SYNCTEX_CTXT.node == this_box {
+        set_sc_node(p);
+        set_sc_tag(synctex_tag_medium(p));
+        set_sc_line(synctex_line_medium(p));
+        if sc_node() == this_box {
             // First node in hlist.
-            SYNCTEX_CTXT.recorder = Some(synctex_record_node_kern);
+            set_sc_recorder(Some(synctex_record_node_kern));
         } else {
-            SYNCTEX_CTXT.recorder = None;
+            set_sc_recorder(None);
             synctex_record_node_kern(p);
         }
     } else {
         // Same context — defer recording.
-        SYNCTEX_CTXT.node = p;
-        SYNCTEX_CTXT.tag = synctex_tag_medium(p);
-        SYNCTEX_CTXT.line = synctex_line_medium(p);
-        SYNCTEX_CTXT.recorder = Some(synctex_record_node_kern);
+        set_sc_node(p);
+        set_sc_tag(synctex_tag_medium(p));
+        set_sc_line(synctex_line_medium(p));
+        set_sc_recorder(Some(synctex_record_node_kern));
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_current() {
-    if SYNCTEX_CTXT.flags.off || intpar_synctex() == 0 || SYNCTEX_CTXT.file == INVALID_HANDLE {
+    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return;
     }
     let (file, tag, line, unit) = (
-        SYNCTEX_CTXT.file,
-        SYNCTEX_CTXT.tag,
-        SYNCTEX_CTXT.line,
-        SYNCTEX_CTXT.unit,
+        sc_file(),
+        sc_tag(),
+        sc_line(),
+        sc_unit(),
     );
     let s = format!(
         "x{},{}:{},{}\n",
@@ -1084,9 +1090,9 @@ pub unsafe extern "C" fn synctex_current() {
         synctex_curv() / unit
     );
     let len = synctex_write(file, &s);
-    SYNCTEX_CTXT.lastv = synctex_curv();
+    set_sc_lastv(synctex_curv());
     if len > 0 {
-        SYNCTEX_CTXT.total_length += len;
+        set_sc_total_length(sc_total_length() + len);
     } else {
         synctexabort();
     }
