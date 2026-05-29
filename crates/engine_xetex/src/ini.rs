@@ -1823,10 +1823,6 @@ extern "C" {
 
     #[link_name = "output_file_extension"]
     static mut tre_output_file_extension: *const libc::c_char;
-    #[link_name = "font_mapping"]
-    static mut tre_font_mapping: *mut *mut libc::c_void;
-    #[link_name = "font_layout_engine"]
-    static mut tre_font_layout_engine: *mut *mut libc::c_void;
     #[link_name = "hyphen_char"]
     static mut tre_hyphen_char: *mut i32;
     #[link_name = "skew_char"]
@@ -2806,10 +2802,10 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     }
     set_font_ptr(x);
 
-    tre_font_mapping = xcalloc_array::<*mut libc::c_void>(font_max());
-    tre_font_layout_engine = xcalloc_array::<*mut libc::c_void>(font_max());
     let font_check_len = (font_max() as usize) + 1;
     crate::state::with_state_mut(|state| {
+        state.fonts.font_layout_engine = vec![std::ptr::null_mut(); font_check_len];
+        state.fonts.font_mapping = vec![std::ptr::null_mut(); font_check_len];
         state.fonts.font_flags = vec![0i8; font_check_len];
         state.fonts.font_letter_space = vec![0i32; font_check_len];
         state.fonts.font_check = vec![
@@ -2847,10 +2843,6 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         state.fonts.exten_base = vec![0i32; base_arr_len];
         state.fonts.param_base = vec![0i32; base_arr_len];
     });
-
-    for font_idx in FONT_BASE..=font_ptr() {
-        *tre_font_mapping.add(font_idx as usize) = std::ptr::null_mut();
-    }
 
     let font_undump_count = font_ptr() + 1;
     crate::state::with_state_mut(|state| {
@@ -3543,10 +3535,10 @@ pub unsafe extern "C" fn tt_run_engine(
         set_trie_r_entry(0, 0);
         set_hyph_start(0);
 
-        tre_font_mapping = xcalloc_array::<*mut libc::c_void>(font_max());
-        tre_font_layout_engine = xcalloc_array::<*mut libc::c_void>(font_max());
         let font_check_len = (font_max() as usize) + 1;
         crate::state::with_state_mut(|state| {
+            state.fonts.font_layout_engine = vec![std::ptr::null_mut(); font_check_len];
+            state.fonts.font_mapping = vec![std::ptr::null_mut(); font_check_len];
             state.fonts.font_flags = vec![0i8; font_check_len];
             state.fonts.font_letter_space = vec![0i32; font_check_len];
             state.fonts.font_check = vec![
@@ -3673,10 +3665,6 @@ extern "C" {
 
     #[link_name = "font_info"]
     static mut tt_cleanup_font_info: *mut libc::c_void;
-    #[link_name = "font_mapping"]
-    static mut tt_cleanup_font_mapping: *mut libc::c_void;
-    #[link_name = "font_layout_engine"]
-    static mut tt_cleanup_font_layout_engine: *mut libc::c_void;
     #[link_name = "hyphen_char"]
     static mut tt_cleanup_hyphen_char: *mut libc::c_void;
     #[link_name = "skew_char"]
@@ -3764,9 +3752,9 @@ pub unsafe extern "C" fn tt_cleanup() {
     });
     libc::free(tt_cleanup_font_info);
 
-    libc::free(tt_cleanup_font_mapping);
-    libc::free(tt_cleanup_font_layout_engine);
     crate::state::with_state_mut(|state| {
+        state.fonts.font_layout_engine = Vec::new();
+        state.fonts.font_mapping = Vec::new();
         state.fonts.font_flags = Vec::new();
         state.fonts.font_letter_space = Vec::new();
     });

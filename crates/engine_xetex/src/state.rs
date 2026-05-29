@@ -137,6 +137,15 @@ pub(crate) struct ConfigState {
 pub(crate) struct FontState {
     pub loaded_font_mapping: *mut libc::c_void,
     pub loaded_font_flags: libc::c_char,
+    /// Rust-owned per-font layout engine handle table (`font_max + 1` entries).
+    /// Stores `XeTeXLayoutEngine` (opaque void *) pointers; not format-
+    /// serialized; handles are released explicitly in `tt_cleanup` before the
+    /// Vec is dropped. Plain `*mut c_void`, no newtype debt.
+    pub font_layout_engine: Vec<*mut libc::c_void>,
+    /// Rust-owned per-font TECkit mapping handle table (`font_max + 1` entries).
+    /// Stores `TECkit_Converter` (opaque void *) pointers; not format-serialized;
+    /// converters are disposed explicitly in `tt_cleanup`. Plain `*mut c_void`.
+    pub font_mapping: Vec<*mut libc::c_void>,
     pub loaded_font_letter_space: i32,
     pub xtx_ligature_present: bool,
     pub gave_char_warning_help: bool,
@@ -217,6 +226,8 @@ impl Default for FontState {
         Self {
             loaded_font_mapping: std::ptr::null_mut(),
             loaded_font_flags: 0,
+            font_layout_engine: Vec::new(),
+            font_mapping: Vec::new(),
             loaded_font_letter_space: 0,
             xtx_ligature_present: false,
             gave_char_warning_help: false,

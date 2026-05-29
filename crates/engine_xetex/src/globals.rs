@@ -233,11 +233,6 @@ mod raw {
         // disc_ptr[4]: saved discretionary break pointers (xetex-xetexd.h:716).
         pub(super) static mut disc_ptr: [i32; 4];
 
-        // Per-font encoding/layout arrays (xetex-xetexd.h:566–573).
-        // font_layout_engine[f]: pointer to AAT/OT layout engine (void*).
-        pub(super) static mut font_layout_engine: *mut *mut libc::c_void;
-        // font_mapping[f]: TECkit/TFM font mapping pointer (void*, xetex-xetexd.h:574).
-        pub(super) static mut font_mapping: *mut *mut libc::c_void;
         // mapped_text[i]: output of apply_mapping() (xetex-xetexd.h:580).
         pub(super) static mut mapped_text: *mut u16;
         // hyphen_char[f], skew_char[f] (xetex-xetexd.h:568–569).
@@ -2177,26 +2172,31 @@ pub(crate) fn font_false_bchar_entry(f: i32) -> i32 {
 /// Returns `font_layout_engine[f]`.
 #[inline]
 pub(crate) fn font_layout_engine_ptr(f: i32) -> *mut libc::c_void {
-    unsafe { *raw::font_layout_engine.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.font_layout_engine[f as usize])
 }
 /// Writes `font_layout_engine[f] = v`.
 #[inline]
 pub(crate) fn set_font_layout_engine_ptr(f: i32, v: *mut libc::c_void) {
-    unsafe {
-        *raw::font_layout_engine.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.font_layout_engine[f as usize] = v;
+    });
+}
+/// C++ bridge: returns `font_layout_engine[f]` for use in OpenType math helpers.
+#[no_mangle]
+pub unsafe extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
+    font_layout_engine_ptr(f)
 }
 /// Returns `font_mapping[f]`.
 #[inline]
 pub(crate) fn font_mapping_ptr(f: i32) -> *mut libc::c_void {
-    unsafe { *raw::font_mapping.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.font_mapping[f as usize])
 }
 /// Writes `font_mapping[f] = v`.
 #[inline]
 pub(crate) fn set_font_mapping_ptr(f: i32, v: *mut libc::c_void) {
-    unsafe {
-        *raw::font_mapping.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.font_mapping[f as usize] = v;
+    });
 }
 /// Returns `loaded_font_mapping`.
 #[inline]

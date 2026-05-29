@@ -103,8 +103,6 @@ const char* output_file_extension;
 memory_word *font_info;
 int32_t *hyphen_char;
 int32_t *skew_char;
-void **font_layout_engine;
-void **font_mapping;
 UTF16_code *mapped_text;
 char *xdv_buffer;
 int32_t total_pages;
