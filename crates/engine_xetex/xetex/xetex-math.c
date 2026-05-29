@@ -61,11 +61,8 @@ small_number make_left_right(int32_t q, small_number style, scaled_t max_d, scal
 void mlist_to_hlist(void);
 
 
-int32_t cur_mlist;
-small_number cur_style;
-int32_t cur_size;
-scaled_t cur_mu;
-bool mlist_penalties;
+/* cur_mlist, cur_style, cur_size, cur_mu, mlist_penalties moved to
+ * EngineState.scanner (session 48). */
 
 // translated to Rust: src/math.rs initialize_math_variables
 // translated to Rust: src/math.rs make_math_accent

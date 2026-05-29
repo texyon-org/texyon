@@ -259,12 +259,9 @@ mod raw {
         // cur_page_width/height, cur_h_offset/v_offset, write_loc) moved to
         // EngineState.shipout (ShipoutState); see src/state.rs (session 47).
 
-        // xetex-math.c module-level state (formerly static; exposed for after_math Rust translation).
-        pub(super) static mut cur_mlist: i32;
-        pub(super) static mut cur_style: i16;
-        pub(super) static mut cur_size: i32;
-        pub(super) static mut cur_mu: i32;
-        pub(super) static mut mlist_penalties: bool;
+        // xetex-math.c module-level state (cur_mlist, cur_style, cur_size,
+        // cur_mu, mlist_penalties) moved to EngineState.scanner (ScannerState);
+        // see src/state.rs (session 48).
 
         // The all-zero b32x2 template used to clear math-noad fields (xetex-xetexd.h:608).
         pub(super) static mut empty: crate::mem_types::B32x2;
@@ -5017,53 +5014,43 @@ pub(crate) fn set_doing_special(v: bool) {
 // ---------------------------------------------------------------------------
 #[inline]
 pub(crate) fn cur_mlist() -> i32 {
-    unsafe { raw::cur_mlist }
+    crate::state::with_state(|s| s.scanner.cur_mlist)
 }
 #[inline]
 pub(crate) fn set_cur_mlist(v: i32) {
-    unsafe {
-        raw::cur_mlist = v;
-    }
+    crate::state::with_state_mut(|s| s.scanner.cur_mlist = v);
 }
 #[inline]
 pub(crate) fn cur_style() -> i16 {
-    unsafe { raw::cur_style }
+    crate::state::with_state(|s| s.scanner.cur_style)
 }
 #[inline]
 pub(crate) fn set_cur_style(v: i16) {
-    unsafe {
-        raw::cur_style = v;
-    }
+    crate::state::with_state_mut(|s| s.scanner.cur_style = v);
 }
 #[inline]
 pub(crate) fn cur_size() -> i32 {
-    unsafe { raw::cur_size }
+    crate::state::with_state(|s| s.scanner.cur_size)
 }
 #[inline]
 pub(crate) fn set_cur_size(v: i32) {
-    unsafe {
-        raw::cur_size = v;
-    }
+    crate::state::with_state_mut(|s| s.scanner.cur_size = v);
 }
 #[inline]
 pub(crate) fn cur_mu() -> i32 {
-    unsafe { raw::cur_mu }
+    crate::state::with_state(|s| s.scanner.cur_mu)
 }
 #[inline]
 pub(crate) fn set_cur_mu(v: i32) {
-    unsafe {
-        raw::cur_mu = v;
-    }
+    crate::state::with_state_mut(|s| s.scanner.cur_mu = v);
 }
 #[inline]
 pub(crate) fn mlist_penalties() -> bool {
-    unsafe { raw::mlist_penalties }
+    crate::state::with_state(|s| s.scanner.mlist_penalties)
 }
 #[inline]
 pub(crate) fn set_mlist_penalties(v: bool) {
-    unsafe {
-        raw::mlist_penalties = v;
-    }
+    crate::state::with_state_mut(|s| s.scanner.mlist_penalties = v);
 }
 
 // ---------------------------------------------------------------------------

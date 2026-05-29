@@ -9,6 +9,67 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 48 — 2026-05-29 — math-list-conversion scratch (5 scalars)
+
+**Type:** execution (workstream 01, Phase-B; scalar move into an existing
+sub-struct). Continues the classified-but-unmigrated scratch migration: the 5
+math-list-to-hlist conversion globals folded into the existing
+`EngineState.scanner` (`ScannerState`). One coherent slice, one commit.
+
+**Slice:** `cur_mlist`, `cur_style`, `cur_size`, `cur_mu`, `mlist_penalties`
+(all defined together in `xetex-math.c`, classified `scanner` in the inventory).
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types (from `xetex-math.c`, not the shared header — these are
+  math-module-local): `cur_mlist` `int32_t`, `cur_style` `small_number`,
+  `cur_size` `int32_t`, `cur_mu` `scaled_t`, `mlist_penalties` `bool`.
+- (b) cleanup aliases in `src/ini.rs`: none.
+- (c) C readers (non-macos): only `xetex-math.c`, and only the 5 definition
+  lines (64–68) — no C *uses* anywhere.
+- (d) cross-module `src/*.rs`: no extern redeclarations.
+- format dump: none (no `ini.rs` mentions).
+
+These are math-mode typesetting scratch (`mlist_to_hlist` and friends), not on
+the tokenizer/main-loop hot path, so the thread-local bridge has no hot-path cost.
+
+**Work done (1 commit):**
+- Added the 5 fields to `ScannerState` in `src/state.rs` (covered by its
+  `#[derive(Default)]`; `cur_style` is `i16`, the rest `i32`/`bool`).
+- Repointed all 10 accessor bodies in `src/globals.rs` to
+  `with_state`/`with_state_mut(|s| s.scanner.SYM …)`.
+- Removed the 5 `pub(super) static mut` decls from `mod raw` (move-marker
+  comment left) and the 5 C defs from `xetex/xetex-math.c` (the only non-`ini.c`
+  C file touched this run; per the §11 "not always xetex-ini.c" gotcha).
+
+**Newtype debts (§4):** 2 rows added — `cur_style`→`SmallNumber`,
+`cur_mu`→`Scaled`. `cur_mlist` (plain `int32_t` mlist mem pointer; `MemPtr`
+pointer-taxonomy candidate), `cur_size` (plain `int32_t` size code), and
+`mlist_penalties` (plain `bool`) need none.
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4**. `cargo check` clean (pre-existing warnings only). tex-outputs
+`xetex_g_builtins`/`xetex_ot_builtins`/`otf_basic` and TRIP exercise math
+typesetting, so the move is parity-covered.
+
+**Metrics after this session:**
+- `globals.rs` raw extern count **89 → 84** (−5).
+- Raw `unsafe { }` text count **266 → 256** (−10: 5 getters + 5 setters).
+
+**For the next session (49+):**
+- More `scanner` box/packaging scratch (`cur_box`, `after_token`, `cur_order`,
+  `adjust_tail`, `pre_adjust_tail`, `total_stretch`, `total_shrink`, `just_box`,
+  `pack_begin_line`, `set_box_allowed`, `active_width`, `best_height_plus_depth`,
+  `LR_ptr`, `LR_problems`, `cur_dir`) — all `xetex-ini.c`-defined scalars/inline
+  arrays. Avoid `cur_f`/`cur_c`/`cur_i` (check hotness — character/lig-kern path)
+  and the hard-deferred hot tokenizer + hot lig/kern set.
+- Or the DVI promoted-Rust-statics group (`dvi_*`/`down_ptr`/`right_ptr`/
+  `cur_s`), but those are `extern`'d by `xetex-shipout.c` — verify that C edge
+  before moving.
+- Ownership slices (`eqtb`/`hash`/`prim`) remain format-dump-coupled.
+
+---
+
 ## Idiom session 47 — 2026-05-29 — shipout DVI-output scratch (16 scalars)
 
 **Type:** execution (workstream 01, Phase-B; scalar move into an existing

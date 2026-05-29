@@ -465,11 +465,11 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `cur_h_offset` | `i32` | `shipout` | EngineState.shipout.cur_h_offset (Rust-owned) | `cur_h_offset`, `set_cur_h_offset` | MOVED session 47: C def removed |
 | `cur_v_offset` | `i32` | `shipout` | EngineState.shipout.cur_v_offset (Rust-owned) | `cur_v_offset`, `set_cur_v_offset` | MOVED session 47: C def removed |
 | `write_loc` | `i32` | `shipout` | EngineState.shipout.write_loc (Rust-owned) | `write_loc`, `set_write_loc` | MOVED session 47: C def removed |
-| `cur_mlist` | `i32` | `scanner` | `src/globals.rs:672` C extern | `cur_mlist`, `set_cur_mlist` | def xetex/xetex-math.c |  |
-| `cur_style` | `i16` | `scanner` | `src/globals.rs:673` C extern | `cur_style`, `set_cur_style` | def xetex/xetex-math.c |  |
-| `cur_size` | `i32` | `scanner` | `src/globals.rs:674` C extern | `cur_size`, `set_cur_size` | def xetex/xetex-math.c |  |
-| `cur_mu` | `i32` | `scanner` | `src/globals.rs:675` C extern | `cur_mu`, `set_cur_mu` | def xetex/xetex-math.c |  |
-| `mlist_penalties` | `bool` | `scanner` | `src/globals.rs:676` C extern | `mlist_penalties`, `set_mlist_penalties` | def xetex/xetex-math.c |  |
+| `cur_mlist` | `i32` | `scanner` | EngineState.scanner.cur_mlist (Rust-owned) | `cur_mlist`, `set_cur_mlist` | MOVED session 48: C def removed |
+| `cur_style` | `i16` | `scanner` | EngineState.scanner.cur_style (Rust-owned) | `cur_style`, `set_cur_style` | MOVED session 48: C def removed |
+| `cur_size` | `i32` | `scanner` | EngineState.scanner.cur_size (Rust-owned) | `cur_size`, `set_cur_size` | MOVED session 48: C def removed |
+| `cur_mu` | `i32` | `scanner` | EngineState.scanner.cur_mu (Rust-owned) | `cur_mu`, `set_cur_mu` | MOVED session 48: C def removed |
+| `mlist_penalties` | `bool` | `scanner` | EngineState.scanner.mlist_penalties (Rust-owned) | `mlist_penalties`, `set_mlist_penalties` | MOVED session 48: C def removed |
 | `format_ident` | `i32` | `strings` | `src/globals.rs:679` C extern | `format_ident`, `set_format_ident` | def xetex/xetex-ini.c |  |
 | `edit_name_start` | `i32` | `strings` | `src/globals.rs:681` C extern | `edit_name_start`, `set_edit_name_start` | def xetex/xetex-ini.c |  |
 | `empty` | `crate::mem_types::B32x2` | `scanner` | `src/globals.rs:683` C extern | `set_empty_b32s0`, `set_empty_b32s1` | def xetex/xetex-ini.c; ref xetex/xetex-xetex0.c |  |
@@ -635,7 +635,16 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `cur_page_height` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
 | `cur_h_offset` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
 | `cur_v_offset` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `cur_style` | `scanner` | `small_number` (`typedef short`; current math style) | `SmallNumber` | session 48 | pending |
+| `cur_mu` | `scanner` | `scaled_t` (math unit `mu`) | `Scaled` | session 48 | pending |
 
+
+(`scanner` session-48 math-scratch move: `cur_mlist` is declared plain
+`int32_t` in `xetex-math.c` (mlist mem pointer; WEB pointer typedef erased in
+Stage 1 — a `MemPtr` pointer-taxonomy-sweep candidate, not a typedef-loss row),
+`cur_size` is a plain `int32_t` size code, and `mlist_penalties` is a plain
+`bool` — none need a row. `cur_style` (`small_number`) and `cur_mu` (`scaled_t`)
+are the only debts. None are in the format dump.)
 
 (`shipout` session-47 DVI-scratch move: `total_pages`, `max_push`, `last_bop`
 are plain `int32_t` counters/byte-offsets, `doing_leaders` is a plain `bool`,

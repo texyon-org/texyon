@@ -298,6 +298,21 @@ pub(crate) struct ScannerState {
     /// array of 4 `int32_t` half-word pointers. No alloc/cleanup edge. Plain
     /// `int32_t` elements, no newtype debt.
     pub disc_ptr: [i32; 4],
+    // Math-list-to-hlist conversion scratch (former xetex-math.c module
+    // globals; session 48).
+    /// Mlist being converted by `mlist_to_hlist` (xetex-math.c). Mem pointer
+    /// stored as `int32_t`; pointer-taxonomy-sweep candidate, no typedef debt.
+    pub cur_mlist: i32,
+    /// Current math style (C type `small_number` = `short`). Newtype debt:
+    /// `SmallNumber` (tracked in 01a).
+    pub cur_style: i16,
+    /// Current math size code (`int32_t`; TEXT_SIZE/SCRIPT_SIZE/...). Plain.
+    pub cur_size: i32,
+    /// Current `math unit` (`mu`) value (C type `scaled_t`). Newtype debt:
+    /// `Scaled` (tracked in 01a).
+    pub cur_mu: i32,
+    /// Whether `mlist_to_hlist` inserts penalties (`bool`). Plain.
+    pub mlist_penalties: bool,
 }
 
 #[derive(Default)]

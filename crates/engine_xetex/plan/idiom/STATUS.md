@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 47 (2026-05-29).
+Last updated: idiom session 48 (2026-05-29).
 
 ## How to read this file
 
@@ -443,6 +443,16 @@ least-coupled non-`misc` clusters:
     16 raw externs and 16 C defs (two interleaved `xetex-ini.c` blocks) removed
     in the same commit. 11 `scaled_t`→`Scaled` newtype-debt rows added; the 5
     plain `int32_t`/`bool` fields need none. Dashboard 29/2/7/4.
+-   **`scanner` math-list-conversion scratch (session 48):** 5
+    classified-but-unmigrated math globals folded into the existing
+    `EngineState.scanner` (`ScannerState`): `cur_mlist`, `cur_style`, `cur_size`,
+    `cur_mu`, `mlist_penalties`. Defined together in `xetex-math.c` (only
+    non-`ini.c` C file touched), used by `mlist_to_hlist`; cold (not on the
+    tokenizer hot path). No cleanup alias, no format dump, no C uses outside the
+    5 definition lines. 10 accessor bodies repointed; 5 raw externs and 5 C defs
+    removed in the same commit. 2 newtype-debt rows added (`cur_style`→
+    `SmallNumber`, `cur_mu`→`Scaled`); `cur_mlist`/`cur_size`/`mlist_penalties`
+    plain. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -451,12 +461,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 89 (session 47 moved 16 `shipout` DVI-output scratch scalars) |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 84 (session 48 moved 5 `scanner` math-conversion scratch scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
 | thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 160 state-backed scalars/arrays (incl. 33 `LinebreakState` inline scalars/arrays) + 68 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 266 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 256 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -525,10 +535,11 @@ the snippets in `00-overview.md` / the workstream plans.
     ownership slice, or Phase C.**
 
     Sessions 44 (planning), 45 (`LinebreakState`, 34 globals), and 46 (the three
-    private-static clusters below) drained `misc`. **Session 47** began the
-    classified-but-unmigrated scratch: 16 `shipout` DVI-output scalars folded into
-    `EngineState.shipout`. The decision block + per-field lists + newtype-debt rows
-    live in `01a-global-inventory.md`.
+    private-static clusters below) drained `misc`. **Sessions 47–48** continue the
+    classified-but-unmigrated scratch: 16 `shipout` DVI-output scalars (47) and 5
+    `scanner` math-conversion scalars (48) folded into their existing clusters.
+    The decision block + per-field lists + newtype-debt rows live in
+    `01a-global-inventory.md`.
 
     | Target | Members | Shape | Status |
     |---|---|---|---|
@@ -546,13 +557,13 @@ the snippets in `00-overview.md` / the workstream plans.
     format dump, so reconcile load/dump per §11 step 6) or begin migrating the
     classified-but-unmigrated `scanner`/`shipout` scratch into their assigned clusters.
 
-    After session 47, ~89 raw statics remained, in four buckets:
+    After session 48, ~84 raw statics remained, in four buckets:
 
     | Bucket | ~Count | Fate |
     |---|---:|---|
     | Intentionally deferred: hot tokenizer (`cur_cmd/chr/tok/cs/val`), mem arena (`mem`, `lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`, `dyn_used`), hot lig/kern (`main_*`, `cur_l/r/q`, etc.) | 37 | Stay raw until Phase C |
     | Ownership slices (`eqtb`, `hash`, `prim`, `sa_root`, `xdv_buffer`, `name_of_file*`, `native_text`) | 12 | Need format-dump or alloc rewrite work |
-    | Classified-but-unmigrated scratch (the math/scanner/native rows tagged `scanner`, plus remaining box/packaging `shipout` rows; await migration into their assigned clusters) | ~34 | sub-structs already decided |
+    | Classified-but-unmigrated scratch (remaining `scanner` box/packaging + native rows; the `shipout` DVI promoted-Rust-statics; await migration into their assigned clusters) | ~29 | sub-structs already decided |
     | Capacity/size limits (`stack_size`, `nest_size`, etc.) | 5 | Probably stay as C forever |
 
     **Do not bridge the hot tokenizer scalars** (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`,
