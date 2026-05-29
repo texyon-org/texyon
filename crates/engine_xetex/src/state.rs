@@ -413,6 +413,11 @@ pub(crate) struct ShipoutState {
     pub rust_stdout: usize,
     pub log_file: usize,
     pub current_diagnostic: *mut std::ffi::c_void,
+    // Page-builder scratch (former pagebuilder.rs file-statics; session 46).
+    pub best_page_break: i32,
+    pub best_size: i32,
+    pub least_page_cost: i32,
+    pub page_max_depth: i32,
 }
 
 pub(crate) struct ErrorState {

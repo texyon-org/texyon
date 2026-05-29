@@ -12,11 +12,40 @@ use crate::globals::{
     set_output_active, set_page_contents, set_page_so_far, set_page_tail, set_sa_root, temp_ptr,
 };
 
-// File-static variables (C module-level statics)
-static mut BEST_PAGE_BREAK: i32 = 0;
-static mut BEST_SIZE: i32 = 0;
-static mut LEAST_PAGE_COST: i32 = 0;
-static mut PAGE_MAX_DEPTH: i32 = 0;
+// Former C module-level statics, now bridged onto EngineState.shipout
+// (session 46). Thin module-private accessors over the thread-local.
+#[inline]
+fn best_page_break() -> i32 {
+    crate::state::with_state(|s| s.shipout.best_page_break)
+}
+#[inline]
+fn set_best_page_break(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.best_page_break = v);
+}
+#[inline]
+fn best_size() -> i32 {
+    crate::state::with_state(|s| s.shipout.best_size)
+}
+#[inline]
+fn set_best_size(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.best_size = v);
+}
+#[inline]
+fn least_page_cost() -> i32 {
+    crate::state::with_state(|s| s.shipout.least_page_cost)
+}
+#[inline]
+fn set_least_page_cost(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.least_page_cost = v);
+}
+#[inline]
+fn page_max_depth() -> i32 {
+    crate::state::with_state(|s| s.shipout.page_max_depth)
+}
+#[inline]
+fn set_page_max_depth(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.page_max_depth = v);
+}
 
 // Node types (xetex_format.h)
 const HLIST_NODE: i32 = 0;
@@ -124,13 +153,13 @@ extern "C" {
 
 #[no_mangle]
 pub unsafe extern "C" fn initialize_pagebuilder_variables() {
-    PAGE_MAX_DEPTH = 0;
+    set_page_max_depth(0);
 }
 
 unsafe fn freeze_page_specs(s: u8) {
     set_page_contents(s);
     set_page_so_far(0, eqtb_b32s1(DIMEN_BASE + DIMEN_PAR__vsize));
-    PAGE_MAX_DEPTH = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR__max_depth);
+    set_page_max_depth(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR__max_depth));
     set_page_so_far(7, 0);
     set_page_so_far(1, 0);
     set_page_so_far(2, 0);
@@ -138,7 +167,7 @@ unsafe fn freeze_page_specs(s: u8) {
     set_page_so_far(4, 0);
     set_page_so_far(5, 0);
     set_page_so_far(6, 0);
-    LEAST_PAGE_COST = MAX_HALFWORD;
+    set_least_page_cost(MAX_HALFWORD);
 }
 
 unsafe fn ensure_vbox(n: u8) {
@@ -163,12 +192,12 @@ unsafe fn ensure_vbox(n: u8) {
 
 unsafe fn fire_up(c: i32) {
     // 1048: Set output_penalty
-    if mem_b16s1(BEST_PAGE_BREAK) as i32 == PENALTY_NODE {
+    if mem_b16s1(best_page_break()) as i32 == PENALTY_NODE {
         geq_word_define(
             INT_BASE + INT_PAR__output_penalty,
-            mem_b32s1(BEST_PAGE_BREAK + 1),
+            mem_b32s1(best_page_break() + 1),
         );
-        set_mem_b32s1(BEST_PAGE_BREAK + 1, INF_PENALTY);
+        set_mem_b32s1(best_page_break() + 1, INF_PENALTY);
     } else {
         geq_word_define(INT_BASE + INT_PAR__output_penalty, INF_PENALTY);
     }
@@ -195,8 +224,8 @@ unsafe fn fire_up(c: i32) {
     }
 
     // 1049: Put optimal page into box 255
-    if c == BEST_PAGE_BREAK {
-        BEST_PAGE_BREAK = TEX_NULL;
+    if c == best_page_break() {
+        set_best_page_break(TEX_NULL);
     }
 
     if eqtb_b32s1(BOX_BASE + 255) != TEX_NULL {
@@ -249,7 +278,7 @@ unsafe fn fire_up(c: i32) {
     let mut p = mem_b32s1(prev_p);
 
     // Walk page list up to best_page_break, processing insertions and marks
-    while p != BEST_PAGE_BREAK {
+    while p != best_page_break() {
         let reset_p = if mem_b16s1(p) as i32 == INS_NODE && process_inserts {
             // 1055: Process insertion node
             let mut r = mem_b32s1(PAGE_INS_HEAD);
@@ -393,7 +422,7 @@ unsafe fn fire_up(c: i32) {
     set_eqtb_b32s1(DIMEN_BASE + DIMEN_PAR__vfuzz, MAX_HALFWORD);
     set_eqtb_b32s1(
         BOX_BASE + 255,
-        vpackage(mem_b32s1(PAGE_HEAD), BEST_SIZE, EXACTLY, PAGE_MAX_DEPTH),
+        vpackage(mem_b32s1(PAGE_HEAD), best_size(), EXACTLY, page_max_depth()),
     );
     set_eqtb_b32s1(INT_BASE + INT_PAR__vbadness, save_vbadness);
     set_eqtb_b32s1(DIMEN_BASE + DIMEN_PAR__vfuzz, save_vfuzz);
@@ -411,7 +440,7 @@ unsafe fn fire_up(c: i32) {
     set_last_kern(0);
     set_last_node_type(-1);
     set_page_so_far(7, 0);
-    PAGE_MAX_DEPTH = 0;
+    set_page_max_depth(0);
 
     if hold_q != HOLD_HEAD {
         set_mem_b32s1(PAGE_HEAD, mem_b32s1(HOLD_HEAD));
@@ -761,10 +790,10 @@ pub unsafe extern "C" fn build_page() {
                     c = MAX_HALFWORD;
                 }
 
-                if c <= LEAST_PAGE_COST {
-                    BEST_PAGE_BREAK = p;
-                    BEST_SIZE = page_so_far(0);
-                    LEAST_PAGE_COST = c;
+                if c <= least_page_cost() {
+                    set_best_page_break(p);
+                    set_best_size(page_so_far(0));
+                    set_least_page_cost(c);
                     let mut r = mem_b32s1(PAGE_INS_HEAD);
                     while r != PAGE_INS_HEAD {
                         // best_ins_ptr = last_ins_ptr
@@ -844,9 +873,9 @@ pub unsafe extern "C" fn build_page() {
 
         // 1038/1033: contribute — check depth limit, link p into page, goto done
         if need_contribute {
-            if page_so_far(7) > PAGE_MAX_DEPTH {
-                set_page_so_far(1, page_so_far(1) + page_so_far(7) - PAGE_MAX_DEPTH);
-                set_page_so_far(7, PAGE_MAX_DEPTH);
+            if page_so_far(7) > page_max_depth() {
+                set_page_so_far(1, page_so_far(1) + page_so_far(7) - page_max_depth());
+                set_page_so_far(7, page_max_depth());
             }
             set_mem_b32s1(page_tail(), p);
             set_page_tail(p);
