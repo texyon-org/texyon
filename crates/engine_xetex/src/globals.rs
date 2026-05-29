@@ -106,8 +106,6 @@ mod raw {
 
         // Font memory tables (xetex-xetexd.h:555–590).
         pub(super) static mut font_info: *mut MemoryWord;
-        pub(super) static mut fmem_ptr: i32;
-        pub(super) static mut font_ptr: i32;
         pub(super) static mut xdv_buffer: *mut libc::c_char;
         // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
         pub(super) static mut cur_cs: i32;
@@ -240,9 +238,6 @@ mod raw {
         pub(super) static mut font_layout_engine: *mut *mut libc::c_void;
         // font_mapping[f]: TECkit/TFM font mapping pointer (void*, xetex-xetexd.h:574).
         pub(super) static mut font_mapping: *mut *mut libc::c_void;
-        // font_flags[f], font_letter_space[f] (xetex-xetexd.h:575–576).
-        pub(super) static mut font_flags: *mut libc::c_char;
-        pub(super) static mut font_letter_space: *mut i32;
         // mapped_text[i]: output of apply_mapping() (xetex-xetexd.h:580).
         pub(super) static mut mapped_text: *mut u16;
         // hyphen_char[f], skew_char[f] (xetex-xetexd.h:568–569).
@@ -1971,29 +1966,29 @@ pub(crate) fn set_font_info_b16(k: i32, v: crate::mem_types::B16x4) {
 /// Returns `fmem_ptr`.
 #[inline]
 pub(crate) fn fmem_ptr() -> i32 {
-    unsafe { raw::fmem_ptr }
+    crate::state::with_state(|s| s.fonts.fmem_ptr)
 }
 
 /// Sets `fmem_ptr`.
 #[inline]
 pub(crate) fn set_fmem_ptr(v: i32) {
-    unsafe {
-        raw::fmem_ptr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.fmem_ptr = v;
+    });
 }
 
 /// Returns `font_ptr`.
 #[inline]
 pub(crate) fn font_ptr() -> i32 {
-    unsafe { raw::font_ptr }
+    crate::state::with_state(|s| s.fonts.font_ptr)
 }
 
 /// Sets `font_ptr`.
 #[inline]
 pub(crate) fn set_font_ptr(v: i32) {
-    unsafe {
-        raw::font_ptr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.font_ptr = v;
+    });
 }
 
 /// Returns `font_mem_size`.
@@ -2242,21 +2237,21 @@ pub(crate) fn set_loaded_font_letter_space(v: i32) {
 /// Returns `font_flags[f]`.
 #[inline]
 pub(crate) fn font_flags_entry(f: i32) -> i32 {
-    unsafe { *raw::font_flags.offset(f as isize) as i32 }
+    crate::state::with_state(|s| s.fonts.font_flags[f as usize] as i32)
 }
 /// Writes `font_flags[f] = v`.
 #[inline]
 pub(crate) fn set_font_flags_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::font_flags.offset(f as isize) = v as libc::c_char;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.font_flags[f as usize] = v as i8;
+    });
 }
 /// Writes `font_letter_space[f] = v`.
 #[inline]
 pub(crate) fn set_font_letter_space_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::font_letter_space.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.font_letter_space[f as usize] = v;
+    });
 }
 /// Returns `mapped_text[i]`, the UTF-16 output buffer from `apply_mapping`.
 #[inline]
@@ -5122,7 +5117,7 @@ pub(crate) fn xdv_buffer_entry(i: i32) -> u8 {
 }
 #[inline]
 pub(crate) fn font_letter_space_entry(f: i32) -> i32 {
-    unsafe { *raw::font_letter_space.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.font_letter_space[f as usize])
 }
 
 // ---------------------------------------------------------------------------

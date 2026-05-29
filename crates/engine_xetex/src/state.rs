@@ -143,6 +143,19 @@ pub(crate) struct FontState {
     pub native_font_type_flag: i32,
     pub font_mem_size: i32,
     pub font_max: i32,
+    /// Current font-memory write pointer; advances as font metrics are loaded.
+    /// C type `font_index` (semantic typedef for `int32_t`; newtype debt tracked
+    /// in 01a).
+    pub fmem_ptr: i32,
+    /// Highest font number loaded so far. C type `internal_font_number`
+    /// (semantic typedef; newtype debt tracked in 01a).
+    pub font_ptr: i32,
+    /// Per-font renderer flags (`char *`, one byte per font slot). Not
+    /// format-serialized; reallocated fresh at init / format-load.
+    pub font_flags: Vec<i8>,
+    /// Per-font letter-spacing value (`scaled_t *`). Not format-serialized;
+    /// reallocated fresh at init / format-load. Newtype debt tracked in 01a.
+    pub font_letter_space: Vec<i32>,
     pub null_character: crate::mem_types::B16x4,
     /// Rust-owned font checksum table (`font_max + 1` entries, matching the
     /// former `xmalloc_array` shape). Allocated at engine init / format load
@@ -210,6 +223,10 @@ impl Default for FontState {
             native_font_type_flag: 0,
             font_mem_size: 0,
             font_max: 0,
+            fmem_ptr: 0,
+            font_ptr: 0,
+            font_flags: Vec::new(),
+            font_letter_space: Vec::new(),
             null_character: crate::mem_types::B16x4 {
                 s0: 0,
                 s1: 0,
