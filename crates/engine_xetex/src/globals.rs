@@ -254,27 +254,10 @@ mod raw {
         // last_leftmost_char .. best_pl_glue (the line-breaker / LR-reverse /
         // hyphenation-attempt scratch) moved to EngineState.linebreak
         // (LinebreakState); see src/state.rs.
-        // Shipout / DVI output state (xetex-xetexd.h:592–600).
-        pub(super) static mut total_pages: i32;
-        pub(super) static mut max_v: i32;
-        pub(super) static mut max_h: i32;
-        pub(super) static mut max_push: i32;
-        pub(super) static mut last_bop: i32;
-        pub(super) static mut doing_leaders: bool;
-        // rule_ht/rule_dp/rule_wd: current rule dimensions (xetex-xetexd.h:599).
-        pub(super) static mut rule_ht: i32;
-        pub(super) static mut rule_dp: i32;
-        pub(super) static mut rule_wd: i32;
-        // cur_h/cur_v: DVI cursor position (xetex-xetexd.h:600).
-        pub(super) static mut cur_h: i32;
-        pub(super) static mut cur_v: i32;
-        // Page dimensions for XDV output (xetex-xetexd.h:694–697).
-        pub(super) static mut cur_page_width: i32;
-        pub(super) static mut cur_page_height: i32;
-        pub(super) static mut cur_h_offset: i32;
-        pub(super) static mut cur_v_offset: i32;
-        // write_loc: eqtb location of \write (xetex-xetexd.h:693).
-        pub(super) static mut write_loc: i32;
+        // Shipout / DVI output state (total_pages, max_v, max_h, max_push,
+        // last_bop, doing_leaders, rule_ht/dp/wd, cur_h, cur_v,
+        // cur_page_width/height, cur_h_offset/v_offset, write_loc) moved to
+        // EngineState.shipout (ShipoutState); see src/state.rs (session 47).
 
         // xetex-math.c module-level state (formerly static; exposed for after_math Rust translation).
         pub(super) static mut cur_mlist: i32;
@@ -4856,163 +4839,131 @@ pub(crate) fn set_null_character(v: crate::mem_types::B16x4) {
 }
 #[inline]
 pub(crate) fn total_pages() -> i32 {
-    unsafe { raw::total_pages }
+    crate::state::with_state(|s| s.shipout.total_pages)
 }
 #[inline]
 pub(crate) fn set_total_pages(v: i32) {
-    unsafe {
-        raw::total_pages = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.total_pages = v);
 }
 #[inline]
 pub(crate) fn max_v() -> i32 {
-    unsafe { raw::max_v }
+    crate::state::with_state(|s| s.shipout.max_v)
 }
 #[inline]
 pub(crate) fn set_max_v(v: i32) {
-    unsafe {
-        raw::max_v = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.max_v = v);
 }
 #[inline]
 pub(crate) fn max_h() -> i32 {
-    unsafe { raw::max_h }
+    crate::state::with_state(|s| s.shipout.max_h)
 }
 #[inline]
 pub(crate) fn set_max_h(v: i32) {
-    unsafe {
-        raw::max_h = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.max_h = v);
 }
 #[inline]
 pub(crate) fn max_push() -> i32 {
-    unsafe { raw::max_push }
+    crate::state::with_state(|s| s.shipout.max_push)
 }
 #[inline]
 pub(crate) fn set_max_push(v: i32) {
-    unsafe {
-        raw::max_push = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.max_push = v);
 }
 #[inline]
 pub(crate) fn last_bop() -> i32 {
-    unsafe { raw::last_bop }
+    crate::state::with_state(|s| s.shipout.last_bop)
 }
 #[inline]
 pub(crate) fn set_last_bop(v: i32) {
-    unsafe {
-        raw::last_bop = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.last_bop = v);
 }
 #[inline]
 pub(crate) fn doing_leaders() -> bool {
-    unsafe { raw::doing_leaders }
+    crate::state::with_state(|s| s.shipout.doing_leaders)
 }
 #[inline]
 pub(crate) fn set_doing_leaders(v: bool) {
-    unsafe {
-        raw::doing_leaders = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.doing_leaders = v);
 }
 #[inline]
 pub(crate) fn rule_ht() -> i32 {
-    unsafe { raw::rule_ht }
+    crate::state::with_state(|s| s.shipout.rule_ht)
 }
 #[inline]
 pub(crate) fn set_rule_ht(v: i32) {
-    unsafe {
-        raw::rule_ht = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.rule_ht = v);
 }
 #[inline]
 pub(crate) fn rule_dp() -> i32 {
-    unsafe { raw::rule_dp }
+    crate::state::with_state(|s| s.shipout.rule_dp)
 }
 #[inline]
 pub(crate) fn set_rule_dp(v: i32) {
-    unsafe {
-        raw::rule_dp = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.rule_dp = v);
 }
 #[inline]
 pub(crate) fn rule_wd() -> i32 {
-    unsafe { raw::rule_wd }
+    crate::state::with_state(|s| s.shipout.rule_wd)
 }
 #[inline]
 pub(crate) fn set_rule_wd(v: i32) {
-    unsafe {
-        raw::rule_wd = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.rule_wd = v);
 }
 #[inline]
 pub(crate) fn cur_h() -> i32 {
-    unsafe { raw::cur_h }
+    crate::state::with_state(|s| s.shipout.cur_h)
 }
 #[inline]
 pub(crate) fn set_cur_h(v: i32) {
-    unsafe {
-        raw::cur_h = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.cur_h = v);
 }
 #[inline]
 pub(crate) fn cur_v() -> i32 {
-    unsafe { raw::cur_v }
+    crate::state::with_state(|s| s.shipout.cur_v)
 }
 #[inline]
 pub(crate) fn set_cur_v(v: i32) {
-    unsafe {
-        raw::cur_v = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.cur_v = v);
 }
 #[inline]
 pub(crate) fn cur_page_width() -> i32 {
-    unsafe { raw::cur_page_width }
+    crate::state::with_state(|s| s.shipout.cur_page_width)
 }
 #[inline]
 pub(crate) fn set_cur_page_width(v: i32) {
-    unsafe {
-        raw::cur_page_width = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.cur_page_width = v);
 }
 #[inline]
 pub(crate) fn cur_page_height() -> i32 {
-    unsafe { raw::cur_page_height }
+    crate::state::with_state(|s| s.shipout.cur_page_height)
 }
 #[inline]
 pub(crate) fn set_cur_page_height(v: i32) {
-    unsafe {
-        raw::cur_page_height = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.cur_page_height = v);
 }
 #[inline]
 pub(crate) fn cur_h_offset() -> i32 {
-    unsafe { raw::cur_h_offset }
+    crate::state::with_state(|s| s.shipout.cur_h_offset)
 }
 #[inline]
 pub(crate) fn set_cur_h_offset(v: i32) {
-    unsafe {
-        raw::cur_h_offset = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.cur_h_offset = v);
 }
 #[inline]
 pub(crate) fn cur_v_offset() -> i32 {
-    unsafe { raw::cur_v_offset }
+    crate::state::with_state(|s| s.shipout.cur_v_offset)
 }
 #[inline]
 pub(crate) fn set_cur_v_offset(v: i32) {
-    unsafe {
-        raw::cur_v_offset = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.cur_v_offset = v);
 }
 #[inline]
 pub(crate) fn write_loc() -> i32 {
-    unsafe { raw::write_loc }
+    crate::state::with_state(|s| s.shipout.write_loc)
 }
 #[inline]
 pub(crate) fn set_write_loc(v: i32) {
-    unsafe {
-        raw::write_loc = v;
-    }
+    crate::state::with_state_mut(|s| s.shipout.write_loc = v);
 }
 
 // ---------------------------------------------------------------------------

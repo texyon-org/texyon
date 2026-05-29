@@ -498,6 +498,23 @@ pub(crate) struct ShipoutState {
     pub best_size: i32,
     pub least_page_cost: i32,
     pub page_max_depth: i32,
+    // DVI-output scratch (page/position tracking; session 47).
+    pub total_pages: i32,
+    pub max_v: i32,
+    pub max_h: i32,
+    pub max_push: i32,
+    pub last_bop: i32,
+    pub doing_leaders: bool,
+    pub rule_ht: i32,
+    pub rule_dp: i32,
+    pub rule_wd: i32,
+    pub cur_h: i32,
+    pub cur_v: i32,
+    pub cur_page_width: i32,
+    pub cur_page_height: i32,
+    pub cur_h_offset: i32,
+    pub cur_v_offset: i32,
+    pub write_loc: i32,
 }
 
 pub(crate) struct ErrorState {

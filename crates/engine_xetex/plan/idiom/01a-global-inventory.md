@@ -449,22 +449,22 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `font_in_short_display` | `i32` | `errors` | `src/globals.rs:644` C extern | `font_in_short_display`, `set_font_in_short_display` | def xetex/xetex-ini.c |  |
 | `depth_threshold` | `i32` | `errors` | `src/globals.rs:646` C extern | `depth_threshold`, `set_depth_threshold` | def xetex/xetex-ini.c |  |
 | `breadth_max` | `i32` | `errors` | `src/globals.rs:647` C extern | `breadth_max`, `set_breadth_max` | def xetex/xetex-ini.c |  |
-| `total_pages` | `i32` | `shipout` | `src/globals.rs:650` C extern | `total_pages`, `set_total_pages` | def xetex/xetex-ini.c |  |
-| `max_v` | `i32` | `shipout` | `src/globals.rs:651` C extern | `max_v`, `set_max_v` | def xetex/xetex-ini.c |  |
-| `max_h` | `i32` | `shipout` | `src/globals.rs:652` C extern | `max_h`, `set_max_h` | def xetex/xetex-ini.c; ref xetex/xetex-math.c |  |
-| `max_push` | `i32` | `shipout` | `src/globals.rs:653` C extern | `max_push`, `set_max_push` | def xetex/xetex-ini.c |  |
-| `last_bop` | `i32` | `shipout` | `src/globals.rs:654` C extern | `last_bop`, `set_last_bop` | def xetex/xetex-ini.c |  |
-| `doing_leaders` | `bool` | `shipout` | `src/globals.rs:655` C extern | `doing_leaders`, `set_doing_leaders` | def xetex/xetex-ini.c |  |
-| `rule_ht` | `i32` | `shipout` | `src/globals.rs:657` C extern | `rule_ht`, `set_rule_ht` | def xetex/xetex-ini.c |  |
-| `rule_dp` | `i32` | `shipout` | `src/globals.rs:658` C extern | `rule_dp`, `set_rule_dp` | def xetex/xetex-ini.c |  |
-| `rule_wd` | `i32` | `shipout` | `src/globals.rs:659` C extern | `rule_wd`, `set_rule_wd` | def xetex/xetex-ini.c |  |
-| `cur_h` | `i32` | `shipout` | `src/globals.rs:661` C extern | `cur_h`, `set_cur_h` | def xetex/xetex-ini.c |  |
-| `cur_v` | `i32` | `shipout` | `src/globals.rs:662` C extern | `cur_v`, `set_cur_v` | def xetex/xetex-ini.c |  |
-| `cur_page_width` | `i32` | `shipout` | `src/globals.rs:664` C extern | `cur_page_width`, `set_cur_page_width` | def xetex/xetex-ini.c |  |
-| `cur_page_height` | `i32` | `shipout` | `src/globals.rs:665` C extern | `cur_page_height`, `set_cur_page_height` | def xetex/xetex-ini.c |  |
-| `cur_h_offset` | `i32` | `shipout` | `src/globals.rs:666` C extern | `cur_h_offset`, `set_cur_h_offset` | def xetex/xetex-ini.c |  |
-| `cur_v_offset` | `i32` | `shipout` | `src/globals.rs:667` C extern | `cur_v_offset`, `set_cur_v_offset` | def xetex/xetex-ini.c |  |
-| `write_loc` | `i32` | `shipout` | `src/globals.rs:669` C extern | `write_loc`, `set_write_loc` | def xetex/xetex-ini.c |  |
+| `total_pages` | `i32` | `shipout` | EngineState.shipout.total_pages (Rust-owned) | `total_pages`, `set_total_pages` | MOVED session 47: C def removed |
+| `max_v` | `i32` | `shipout` | EngineState.shipout.max_v (Rust-owned) | `max_v`, `set_max_v` | MOVED session 47: C def removed |
+| `max_h` | `i32` | `shipout` | EngineState.shipout.max_h (Rust-owned) | `max_h`, `set_max_h` | MOVED session 47: C def removed (xetex-math.c "ref" was a `make_left_right` parameter name, not the global) |
+| `max_push` | `i32` | `shipout` | EngineState.shipout.max_push (Rust-owned) | `max_push`, `set_max_push` | MOVED session 47: C def removed |
+| `last_bop` | `i32` | `shipout` | EngineState.shipout.last_bop (Rust-owned) | `last_bop`, `set_last_bop` | MOVED session 47: C def removed |
+| `doing_leaders` | `bool` | `shipout` | EngineState.shipout.doing_leaders (Rust-owned) | `doing_leaders`, `set_doing_leaders` | MOVED session 47: C def removed |
+| `rule_ht` | `i32` | `shipout` | EngineState.shipout.rule_ht (Rust-owned) | `rule_ht`, `set_rule_ht` | MOVED session 47: C def removed |
+| `rule_dp` | `i32` | `shipout` | EngineState.shipout.rule_dp (Rust-owned) | `rule_dp`, `set_rule_dp` | MOVED session 47: C def removed |
+| `rule_wd` | `i32` | `shipout` | EngineState.shipout.rule_wd (Rust-owned) | `rule_wd`, `set_rule_wd` | MOVED session 47: C def removed |
+| `cur_h` | `i32` | `shipout` | EngineState.shipout.cur_h (Rust-owned) | `cur_h`, `set_cur_h` | MOVED session 47: C def removed |
+| `cur_v` | `i32` | `shipout` | EngineState.shipout.cur_v (Rust-owned) | `cur_v`, `set_cur_v` | MOVED session 47: C def removed |
+| `cur_page_width` | `i32` | `shipout` | EngineState.shipout.cur_page_width (Rust-owned) | `cur_page_width`, `set_cur_page_width` | MOVED session 47: C def removed |
+| `cur_page_height` | `i32` | `shipout` | EngineState.shipout.cur_page_height (Rust-owned) | `cur_page_height`, `set_cur_page_height` | MOVED session 47: C def removed |
+| `cur_h_offset` | `i32` | `shipout` | EngineState.shipout.cur_h_offset (Rust-owned) | `cur_h_offset`, `set_cur_h_offset` | MOVED session 47: C def removed |
+| `cur_v_offset` | `i32` | `shipout` | EngineState.shipout.cur_v_offset (Rust-owned) | `cur_v_offset`, `set_cur_v_offset` | MOVED session 47: C def removed |
+| `write_loc` | `i32` | `shipout` | EngineState.shipout.write_loc (Rust-owned) | `write_loc`, `set_write_loc` | MOVED session 47: C def removed |
 | `cur_mlist` | `i32` | `scanner` | `src/globals.rs:672` C extern | `cur_mlist`, `set_cur_mlist` | def xetex/xetex-math.c |  |
 | `cur_style` | `i16` | `scanner` | `src/globals.rs:673` C extern | `cur_style`, `set_cur_style` | def xetex/xetex-math.c |  |
 | `cur_size` | `i32` | `scanner` | `src/globals.rs:674` C extern | `cur_size`, `set_cur_size` | def xetex/xetex-math.c |  |
@@ -624,7 +624,27 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `last_source_name` | `texmf` | `char *` — **owned C string** (`gettexstring`/`libc::free`), not a numeric typedef; ownership debt, not a width debt | `Option<CString>` | session 46 | pending |
 | `synctex.root_name` | `synctex` | `char *` — **owned C string** (`xstrdup`/`get_current_name`/`mfree`), ownership debt, not a width debt | `Option<CString>` | session 46 | pending |
 | `synctex.file` | `synctex` | stream handle (`usize`; 0 = INVALID_HANDLE), same shape as `rust_stdout`/`log_file` | `OutputHandle`/`Option<OutputId>` | session 46 | pending |
+| `max_v` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `max_h` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `rule_ht` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `rule_dp` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `rule_wd` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `cur_h` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `cur_v` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `cur_page_width` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `cur_page_height` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `cur_h_offset` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
+| `cur_v_offset` | `shipout` | `scaled_t` | `Scaled` | session 47 | pending |
 
+
+(`shipout` session-47 DVI-scratch move: `total_pages`, `max_push`, `last_bop`
+are plain `int32_t` counters/byte-offsets, `doing_leaders` is a plain `bool`,
+and `write_loc` is a plain `int32_t` eqtb location (declared `int32_t` in the C
+source, the WEB pointer typedef already erased in Stage 1 — a `MemPtr` candidate
+for the later pointer-taxonomy sweep, not a typedef-loss row) — none need a row.
+The 11 `scaled_t` position/dimension fields above are the only debts. `write_loc`
+is in the format dump but serialized/deserialized through its accessor, so the
+bridge is transparent — no ownership reconciliation needed.)
 
 (`synctex` session-46 move: `SYNCTEX_CTXT` was already a Stage-1-translated
 private Rust struct, *not* a C-header global, so its scalar fields moved into

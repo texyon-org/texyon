@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 46 (2026-05-29).
+Last updated: idiom session 47 (2026-05-29).
 
 ## How to read this file
 
@@ -429,6 +429,20 @@ least-coupled non-`misc` clusters:
     never holds a borrow across an engine call. Debt rows: `synctex.root_name` (owned
     C string), `synctex.file` (output handle); rest moved verbatim, no typedef loss.
     Dashboard 29/2/7/4 on each commit.
+-   **`shipout` DVI-output scratch (session 47):** 16 classified-but-unmigrated
+    `shipout` scalars folded into the existing `EngineState.shipout`
+    (`ShipoutState`): `total_pages`, `max_v`, `max_h`, `max_push`, `last_bop`,
+    `doing_leaders`, `rule_ht`, `rule_dp`, `rule_wd`, `cur_h`, `cur_v`,
+    `cur_page_width`, `cur_page_height`, `cur_h_offset`, `cur_v_offset`,
+    `write_loc`. Plain scalar/BSS move (no `ini.rs` alloc, no `tt_cleanup`, no
+    cleanup alias). `write_loc` is in the format dump but dumped/undumped purely
+    through its accessor, so the thread-local bridge is transparent. The only
+    cross-references are false positives (`max_h` is a `make_left_right`
+    parameter name in `xetex-math.c`/`math.rs`) or non-nested accessor reads
+    (`cur_h()`/`cur_v()` in synctex helper fns). 32 accessor bodies repointed;
+    16 raw externs and 16 C defs (two interleaved `xetex-ini.c` blocks) removed
+    in the same commit. 11 `scaled_t`→`Scaled` newtype-debt rows added; the 5
+    plain `int32_t`/`bool` fields need none. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -437,12 +451,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 105 (unchanged by session 46 — those 8 were private module-local statics, not in `mod raw`; all 8 now drained) |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 89 (session 47 moved 16 `shipout` DVI-output scratch scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
 | thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 160 state-backed scalars/arrays (incl. 33 `LinebreakState` inline scalars/arrays) + 68 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 298 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 266 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -506,13 +520,15 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **`misc` bucket fully drained (sessions 44–46 complete). Next: Phase C, or an
-    ownership/classified-scratch slice.**
+1.  **`misc` bucket fully drained (sessions 44–46). Classified-but-unmigrated
+    scratch migration started (session 47). Next: more classified scratch, an
+    ownership slice, or Phase C.**
 
     Sessions 44 (planning), 45 (`LinebreakState`, 34 globals), and 46 (the three
-    private-static clusters below) are complete. **Every former-`misc` global is now
-    migrated.** The decision block + per-field lists + newtype-debt rows live in
-    `01a-global-inventory.md`.
+    private-static clusters below) drained `misc`. **Session 47** began the
+    classified-but-unmigrated scratch: 16 `shipout` DVI-output scalars folded into
+    `EngineState.shipout`. The decision block + per-field lists + newtype-debt rows
+    live in `01a-global-inventory.md`.
 
     | Target | Members | Shape | Status |
     |---|---|---|---|
@@ -530,13 +546,13 @@ the snippets in `00-overview.md` / the workstream plans.
     format dump, so reconcile load/dump per §11 step 6) or begin migrating the
     classified-but-unmigrated `scanner`/`shipout` scratch into their assigned clusters.
 
-    After session 46, ~105 raw statics remained, in four buckets:
+    After session 47, ~89 raw statics remained, in four buckets:
 
     | Bucket | ~Count | Fate |
     |---|---:|---|
     | Intentionally deferred: hot tokenizer (`cur_cmd/chr/tok/cs/val`), mem arena (`mem`, `lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`, `dyn_used`), hot lig/kern (`main_*`, `cur_l/r/q`, etc.) | 37 | Stay raw until Phase C |
     | Ownership slices (`eqtb`, `hash`, `prim`, `sa_root`, `xdv_buffer`, `name_of_file*`, `native_text`) | 12 | Need format-dump or alloc rewrite work |
-    | Classified-but-unmigrated scratch (the math/DVI/scanner/native rows already tagged `scanner`/`shipout`; await migration into their assigned clusters) | ~50 | sub-structs already decided |
+    | Classified-but-unmigrated scratch (the math/scanner/native rows tagged `scanner`, plus remaining box/packaging `shipout` rows; await migration into their assigned clusters) | ~34 | sub-structs already decided |
     | Capacity/size limits (`stack_size`, `nest_size`, etc.) | 5 | Probably stay as C forever |
 
     **Do not bridge the hot tokenizer scalars** (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`,

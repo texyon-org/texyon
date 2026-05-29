@@ -86,14 +86,8 @@ const char* output_file_extension;
 /* font_info moved to EngineState.fonts.font_info (Rust-owned Vec<MemoryWord>). */
 UTF16_code *mapped_text;
 char *xdv_buffer;
-int32_t total_pages;
-scaled_t max_v;
-scaled_t max_h;
-int32_t max_push;
-int32_t last_bop;
-bool doing_leaders;
-scaled_t rule_ht, rule_dp, rule_wd;
-scaled_t cur_h, cur_v;
+/* total_pages, max_v, max_h, max_push, last_bop, doing_leaders, rule_ht,
+ * rule_dp, rule_wd, cur_h, cur_v moved to EngineState.shipout (session 47). */
 scaled_t total_stretch[4], total_shrink[4];
 int32_t adjust_tail;
 int32_t pre_adjust_tail;
@@ -126,11 +120,8 @@ bool cancel_boundary;
 bool ins_disc;
 int32_t cur_box;
 int32_t after_token;
-int32_t write_loc;
-scaled_t cur_page_width;
-scaled_t cur_page_height;
-scaled_t cur_h_offset;
-scaled_t cur_v_offset;
+/* write_loc, cur_page_width, cur_page_height, cur_h_offset, cur_v_offset
+ * moved to EngineState.shipout (session 47). */
 int32_t LR_ptr;
 int32_t LR_problems;
 small_number cur_dir;

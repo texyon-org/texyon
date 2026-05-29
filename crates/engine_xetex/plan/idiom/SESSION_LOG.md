@@ -9,6 +9,79 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 47 — 2026-05-29 — shipout DVI-output scratch (16 scalars)
+
+**Type:** execution (workstream 01, Phase-B; scalar move into an existing
+sub-struct). First post-`misc` slice: a classified-but-unmigrated `shipout`
+scratch group folded into the existing `EngineState.shipout` (`ShipoutState`).
+One coherent slice (DVI page/position tracking), one commit.
+
+**Slice:** `total_pages`, `max_v`, `max_h`, `max_push`, `last_bop`,
+`doing_leaders`, `rule_ht`, `rule_dp`, `rule_wd`, `cur_h`, `cur_v`,
+`cur_page_width`, `cur_page_height`, `cur_h_offset`, `cur_v_offset`, `write_loc`.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types from `xetex-xetexd.h`: 11 `scaled_t` (`max_v`, `max_h`,
+  `rule_ht/dp/wd`, `cur_h`, `cur_v`, `cur_page_width/height`,
+  `cur_h_offset/v_offset`); `total_pages`/`max_push`/`last_bop`/`write_loc`
+  plain `int32_t`, `doing_leaders` plain `bool`.
+- (b) cleanup aliases in `src/ini.rs`: none (all plain BSS scalars, never
+  `malloc`'d).
+- (c) C readers (non-macos): only `xetex-ini.c` defines them. The single
+  `max_h` hit in `xetex-math.c` is a `make_left_right(... scaled_t max_h)`
+  **parameter name**, not the global — false positive (confirmed).
+- (d) cross-module `src/*.rs`: `make_left_right` in `src/math.rs:1693` is the
+  same parameter-name false positive; `cur_h()`/`cur_v()` are read by
+  `synctex.rs` (`synctex_curh`/`synctex_curv`) but only in standalone helper
+  fns, **not** nested inside a `with_state` closure — safe.
+- format dump: only `write_loc` (`ini.rs:2165` dump via `write_loc()`,
+  `:2743` undump via `set_write_loc(x)`). Both go through the accessor, so the
+  thread-local bridge is transparent — no ownership/format reconciliation.
+
+**Work done (1 commit):**
+- Added the 16 fields to `ShipoutState` in `src/state.rs` (covered by its
+  existing `#[derive(Default)]`; all plain `i32`/`bool`).
+- Repointed all 32 accessor bodies in `src/globals.rs` from
+  `unsafe { raw::SYM }` / `unsafe { raw::SYM = v }` to
+  `with_state`/`with_state_mut(|s| s.shipout.SYM …)`.
+- Removed the 16 `pub(super) static mut` decls from `mod raw` (one move-marker
+  comment left).
+- Removed the 16 C definitions from `xetex/xetex-ini.c` (two interleaved
+  blocks: `total_pages`…`cur_h, cur_v` around the DVI state, and
+  `write_loc`/`cur_page_*`/`cur_*_offset`), leaving move-marker comments and
+  keeping the interleaved keepers (`total_stretch`/`adjust_tail`,
+  `cur_box`/`after_token`/`LR_ptr`).
+
+**Newtype debts (§4):** 11 `scaled_t`→`Scaled` rows added to
+`01a-global-inventory.md`. The 5 plain fields
+(`total_pages`/`max_push`/`last_bop`/`doing_leaders`/`write_loc`) need none —
+`write_loc` is declared plain `int32_t` (WEB pointer typedef erased in Stage 1;
+a `MemPtr` pointer-taxonomy-sweep candidate, not a typedef-loss row).
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4**. `cargo check` clean (pre-existing warnings only). TRIP +
+tex-outputs `synctex`/`pdfoutput`/`a4paper` exercise DVI/XDV output and synctex,
+so the move is parity-covered.
+
+**Metrics after this session:**
+- `globals.rs` raw extern count **105 → 89** (−16).
+- Raw `unsafe { }` text count **298 → 266** (−32: 16 getters + 16 setters).
+
+**For the next session (48+):**
+- Continue the classified-but-unmigrated `shipout` scratch (e.g. the DVI
+  promoted Rust statics `dvi_*`/`down_ptr`/`right_ptr`/`cur_s`, which are
+  `extern`'d by `xetex-shipout.c` — check that edge), or pick a `scanner`
+  scratch group (math `cur_mlist`/`cur_style`/`cur_size`/`cur_mu`/
+  `mlist_penalties` defined in `xetex-math.c`; box/packaging
+  `cur_box`/`after_token`/`adjust_tail`/`total_stretch`/… ). Avoid the hot
+  tokenizer (`cur_cmd/chr/tok/cs/val`) and hot lig/kern (`main_*`,
+  `cur_l/r/q`, …) — defer to Phase C.
+- Ownership slices (`eqtb`/`hash`/`prim` arrays) remain available but are
+  format-dump-coupled (reconcile load/dump per §11 step 6).
+
+---
+
 ## Idiom session 46 — 2026-05-29 — three resolved-misc private-static clusters
 
 **Type:** execution (workstream 01, Phase-B). The three remaining resolved-`misc`
