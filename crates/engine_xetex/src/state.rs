@@ -219,6 +219,12 @@ pub(crate) struct FontState {
     pub kern_base: Vec<i32>,
     pub exten_base: Vec<i32>,
     pub param_base: Vec<i32>,
+    /// Rust-owned per-font hyphen-character tables (`font_max + 1` entries).
+    /// Serialized in the format dump. Plain `int32_t *`, no newtype debt.
+    pub hyphen_char: Vec<i32>,
+    /// Rust-owned per-font skew-character tables (`font_max + 1` entries).
+    /// Serialized in the format dump. Plain `int32_t *`, no newtype debt.
+    pub skew_char: Vec<i32>,
 }
 
 impl Default for FontState {
@@ -266,6 +272,8 @@ impl Default for FontState {
             kern_base: Vec::new(),
             exten_base: Vec::new(),
             param_base: Vec::new(),
+            hyphen_char: Vec::new(),
+            skew_char: Vec::new(),
         }
     }
 }

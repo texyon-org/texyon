@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 39 (2026-05-29).
+Last updated: idiom session 40 (2026-05-29).
 
 ## How to read this file
 
@@ -372,12 +372,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 177 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 175 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 92 state-backed scalars/arrays + 65 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 92 state-backed scalars/arrays + 67 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 441 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 437 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -514,13 +514,16 @@ the snippets in `00-overview.md` / the workstream plans.
     as `fmem_ptr`/`font_ptr`) must NOT be called inside a `with_state_mut`
     closure — the RefCell panics. Always pre-compute the value before the
     mutable borrow scope. Added to §11 recurring gotchas in the session log.
+-   **`hyphen_char` + `skew_char` ownership move (session 40):** both `int32_t *`
+    format-serialized arrays moved from C `malloc` storage into Rust-owned `Vec<i32>`
+    fields on `EngineState.fonts`. Init alloc and cleanup folded into existing
+    `with_state_mut` blocks; format dump/undump use state-derived pointers.
+    Removed 2 raw externs, 4 link aliases, and 2 C definitions. No newtype debt.
     Remaining `fonts` C externs: `font_info` (`*mut MemoryWord`, the main
-    font metric arena — large ownership slice), `hyphen_char`/`skew_char`
-    (`*mut i32` arrays, format-serialized, have init+cleanup aliases),
-    `xdv_buffer` (`*mut c_char`), `mapped_text` (`*mut u16`).
-    Good next candidates: `hyphen_char` + `skew_char` pair (same shape as
-    prior format-serialized int arrays, no C++ readers), or an ownership-
-    aware `eqtb`/`input` slice.
+    font metric arena — large ownership slice), `xdv_buffer` (`*mut c_char`),
+    `mapped_text` (`*mut u16`).
+    Good next candidates: `font_info` arena (large ownership slice, establishes §5
+    Mem arena pattern for the font metric memory), or a different cluster.
     For each symbol moved, use `01a-global-inventory.md` for C defs /
     cleanup aliases / accessors, and add a worklist row for any
     semantic-typed field (§4 rule).

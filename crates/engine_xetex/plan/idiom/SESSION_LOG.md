@@ -9,6 +9,71 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 40 — 2026-05-29 — hyphen_char + skew_char → FontState
+
+**Type:** execution (workstream 01, Phase-B ownership slice).
+
+**Goal:** move `hyphen_char` and `skew_char` (both `int32_t *`, format-serialized) from C `malloc`
+storage into Rust-owned `Vec<i32>` fields on `EngineState.fonts`. One coherent slice, one commit.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: both `int32_t *` in `xetex-xetexd.h:568–569`. Plain type, no semantic typedef.
+- (b) cleanup aliases: 4 total — alloc aliases at `src/ini.rs:1829/1831`, cleanup aliases at
+  `src/ini.rs:3671/3673`. Ownership slice confirmed.
+- (c) C readers: only `xetex-ini.c` (definition). No other `.c` files.
+- (c, extended) C/C++ readers: grep of `xetex/*.cpp` returned empty. No bridges needed.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs` link aliases; no
+  unexpected cross-module redeclarations.
+
+**Work done (1 commit):**
+- Added `hyphen_char: Vec<i32>` and `skew_char: Vec<i32>` fields to `FontState` in `src/state.rs`;
+  added `Vec::new()` defaults to the manual `Default` impl.
+- Repointed 4 accessors in `src/globals.rs` from raw pointer offset to `with_state` /
+  `with_state_mut` Vec indexing; removed 2 `pub(super) static mut` raw statics.
+- Replaced `xmalloc_array::<i32>(font_max())` initex allocs with `vec![0i32; font_max()+1]` folded
+  into the existing `with_state_mut` block alongside the `*_base` arrays.
+- Replaced raw-pointer `dump_slice` calls with a `with_state` closure over the Vec storage.
+- Replaced raw-pointer `undump_slice` calls with a `with_state_mut` closure over the Vec storage.
+- Replaced `xcalloc_array::<i32>(font_max())` format-load allocs with `vec![0i32; font_max()+1]`
+  folded into the existing `with_state_mut` block alongside the `*_base` arrays.
+- Replaced `libc::free(tt_cleanup_hyphen_char)` and `libc::free(tt_cleanup_skew_char)` cleanup
+  calls with `Vec::new()` resets inside the existing `with_state_mut` cleanup block.
+- Removed both alloc link aliases (`tre_hyphen_char`/`tre_skew_char`), both cleanup link aliases
+  (`tt_cleanup_hyphen_char`/`tt_cleanup_skew_char`), 2 raw externs, and 2 C definitions from
+  `xetex-ini.c`.
+
+**Newtype debt (§4 check):** both are plain `int32_t *` — no semantic typedef, no worklist row
+needed. Checked and confirmed.
+
+**longjmp / Drop (§7):** both Vecs live in the `'static` thread-local `EngineState`; Drop on abort
+intentionally skipped.
+
+**No surprises:** the `with_state` nested-borrow gotcha from session 39 did not apply here; all
+state accessor calls (`font_max()`, `font_ptr()`) were already pre-computed outside the
+`with_state_mut` closures (session-39 pattern was already in place).
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 177 → 175 (−2).
+- Raw `unsafe { ... }` text-search count: 441 → 437 (−4, accessor body cleanup).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- `grep` of `hyphen_char`/`skew_char` in `xetex/*.c` and `xetex/*.cpp` (minus macos): empty.
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`:
+  pass (29/2/7/4).
+
+**For the next session:**
+- The `fonts` cluster remaining C externs: `font_info` (`*mut MemoryWord`, the main font metric
+  arena — large ownership slice), `xdv_buffer` (`*mut c_char`), `mapped_text` (`*mut u16`).
+- `hyphen_char` and `skew_char` are now Rust-owned. The only remaining simple format-serialized
+  font arrays are done; next is either the large `font_info` arena or a different cluster.
+- Good next candidate: `font_info` arena (ownership shape: `Vec<MemoryWord>`, large; establishes
+  the §5 Mem arena pattern for the main memory). Alternatively move to an unrelated cluster
+  (e.g., `eqtb` ownership slice or a `misc` scalar group whose sub-struct is decided).
+- Continue applying the §11 nested-borrow rule.
+
+---
+
 ## Idiom session 39 — 2026-05-29 — fonts *_base arrays, flags/letter-space/fmem/font-ptr, mapping/engine → FontState
 
 **Type:** execution (workstream 01, Phase-B; three ownership/scalar slices in one session).

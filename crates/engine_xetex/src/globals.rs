@@ -235,9 +235,6 @@ mod raw {
 
         // mapped_text[i]: output of apply_mapping() (xetex-xetexd.h:580).
         pub(super) static mut mapped_text: *mut u16;
-        // hyphen_char[f], skew_char[f] (xetex-xetexd.h:568–569).
-        pub(super) static mut hyphen_char: *mut i32;
-        pub(super) static mut skew_char: *mut i32;
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
         pub(super) static mut main_p: i32;
         pub(super) static mut main_k: i32;
@@ -2273,26 +2270,22 @@ pub(crate) fn set_xtx_ligature_present(v: bool) {
 /// Returns `hyphen_char[f]`.
 #[inline]
 pub(crate) fn hyphen_char_entry(f: i32) -> i32 {
-    unsafe { *raw::hyphen_char.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.hyphen_char[f as usize])
 }
 /// Writes `hyphen_char[f] = v`.
 #[inline]
 pub(crate) fn set_hyphen_char_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::hyphen_char.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| { s.fonts.hyphen_char[f as usize] = v; })
 }
 /// Returns `skew_char[f]`.
 #[inline]
 pub(crate) fn skew_char_entry(f: i32) -> i32 {
-    unsafe { *raw::skew_char.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.skew_char[f as usize])
 }
 /// Writes `skew_char[f] = v`.
 #[inline]
 pub(crate) fn set_skew_char_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::skew_char.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| { s.fonts.skew_char[f as usize] = v; })
 }
 /// Returns `char_base[f]`.
 #[inline]

@@ -157,9 +157,12 @@ Rule for execution: use (a) only for wrappers whose invariant is
 unambiguous at the accessor boundary (`Scaled`, valid `MemIdx`, and
 checked nullable `MemPtr`/`Halfword` conversions). Use (b) for the rest.
 Newtypes must be `#[derive(Copy, Clone)]` + `#[repr(transparent)]` so
-they are zero-cost and `#[inline]` accessors compile identically to the
-raw index. Confirm with a release-mode disassembly spot-check on a hot
-accessor (e.g. `box_width`) before committing to the pattern.
+they are zero-cost. `NodePtr<K>` typed handles use the same rule: they
+carry a `MemIdx` plus compile-time-only marker state, and must compile
+identically to the raw index after inlining. Confirm with a release-mode
+disassembly spot-check on hot field access/classification paths (e.g.
+`width`, `node_type`, `glue_spec`, linebreaker traversal) before
+committing to the pattern.
 
 **Deferral must be tracked, not silent (mandatory).** Stage 1 already
 collapsed every semantic C type — `selector_t`, `tt_history_t`,
@@ -193,8 +196,9 @@ compiles and passes parity.
 ## 5. The arena: `Mem`
 
 Target shape is already specified in `plan/03-memory-and-nodes.md`
-(`Mem` struct, `word`/`word_mut`, typed accessors, `NodeType`). Build it
-there. Migration specifics for *this* codebase:
+(`Mem` struct, `word`/`word_mut`, typed `NodePtr<K>` handles,
+classification, typed views, and `NodeType`). Build it there. Migration
+specifics for *this* codebase:
 
 1.  Introduce `Mem { data: Vec<MemoryWord>, lo_mem_max, hi_mem_min,
     mem_end, avail, rover, var_used, dyn_used }`. Pre-allocate `data`
@@ -214,12 +218,14 @@ there. Migration specifics for *this* codebase:
     zero-initializing unused slots changes behavior. This is the moment
     arena storage becomes truly Rust-owned (`Drop` or explicit teardown
     frees it). Watch the longjmp and `tt_cleanup` hazards (§7).
-3.  Port the relevant `globals.rs` arena accessors onto `Mem` as inherent
-    methods, returning semantic types. The `unsafe` union field read
-    becomes a single audited site inside each accessor — and, crucially,
-    once `data` is a `Vec`, the access is a safe slice index, so the
-    `unsafe` is confined to the `MemoryWord` union projection, not the
-    pointer deref. This is where most of the 688 unsafe-block lints die.
+3.  Port the relevant `globals.rs` arena accessors onto `Mem` first as
+    bridge methods returning semantic types, then progressively replace
+    arbitrary-`MemIdx` node-field calls with checked classification plus
+    typed `NodePtr<K>` handles. The `unsafe` union field read becomes a
+    single audited site inside each field method — and, crucially, once
+    `data` is a `Vec`, the access is a safe slice index, so the `unsafe`
+    is confined to the `MemoryWord` union projection, not the pointer
+    deref. This is where most of the 688 unsafe-block lints die.
 4.  The allocator functions (`get_avail`, `get_node`, `free_node`,
     `flush_list`, `sort_avail`, the `new_*` node constructors) already
     exist in `src/mem.rs`. Re-target them from `globals::mem_word` to

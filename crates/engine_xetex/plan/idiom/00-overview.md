@@ -75,11 +75,13 @@ The user chose the most idiomatic target. "Done" means:
     cluster — see anti-pattern A.2). The Phase-B thread-local is
     deleted.
 3.  **The memory arena is a Rust-owned `Vec<MemoryWord>`** (`Mem`),
-    with typed accessors returning semantic types (`Scaled`, `FontId`,
-    `StrNumber`, valid arena indexes, nullable TeX pointers, and
-    node-type wrappers). Bare `i32` arena indices do not appear at call
-    sites, and sentinel-bearing halfwords are not mislabeled as
-    always-valid arena indices.
+    with typed handles/views over the flat storage. Checked
+    classification converts nullable TeX pointers into `NodePtr<K>`
+    handles; field methods then accept the relevant typed handle and
+    return semantic types (`Scaled`, `FontId`, `StrNumber`, valid arena
+    indexes, nullable TeX pointers, and node-type wrappers). Bare `i32`
+    arena indices do not appear at call sites, and sentinel-bearing
+    halfwords are not mislabeled as always-valid arena indices.
 4.  **`unsafe` survives only at true boundaries:** the `MemoryWord`
     union bit-fiddling (auditable in one file), the remaining FFI to
     `xetex_layout` / ICU / HarfBuzz / TECkit, and the engine entry
@@ -140,7 +142,7 @@ not a strict execution gate — see sequencing below.
 
 | # | Workstream | Plan doc | Gist |
 |---|---|---|---|
-| 01 | **State & memory redesign** | `01-state-and-memory.md` | `EngineState`, `MemIdx`/`Scaled` newtypes, typed node accessors, Phase B thread-local bridge → Phase C threading. The root-cause workstream. |
+| 01 | **State & memory redesign** | `01-state-and-memory.md` | `EngineState`, `MemIdx`/`Scaled` newtypes, typed node handles/views, Phase B thread-local bridge → Phase C threading. The root-cause workstream. |
 | 02 | Module decomposition | `02-modules.md` *(to draft)* | Split `scan.rs`/`globals.rs`/`ini.rs` into the `01-architecture.md` target layout. Largely mechanical once state boundaries exist. |
 | 03 | De-unsafe & FFI teardown | `03-deunsafe-ffi.md` *(to draft)* | Drop `#[no_mangle] extern "C"` from internal fns; convert `unsafe fn` to safe; retire `build.rs` C compilation for emptied files. Mostly *falls out* of 01. |
 | 04 | Clippy & style cleanup | `04-clippy.md` *(to draft)* | The cheap wins (~358 warnings + 6 correctness `#[allow]`s) now; the 688 unsafe-block lints resolve as a byproduct of 01/03. |

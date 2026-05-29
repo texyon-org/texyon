@@ -1823,10 +1823,6 @@ extern "C" {
 
     #[link_name = "output_file_extension"]
     static mut tre_output_file_extension: *const libc::c_char;
-    #[link_name = "hyphen_char"]
-    static mut tre_hyphen_char: *mut i32;
-    #[link_name = "skew_char"]
-    static mut tre_skew_char: *mut i32;
     #[link_name = "sa_root"]
     static mut fmt_sa_root: [i32; 8];
 }
@@ -2242,16 +2238,18 @@ pub unsafe extern "C" fn store_fmt_file() {
             font_ptr() + 1,
         );
     });
-    dump_slice(
-        fmt_out,
-        tre_hyphen_char.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    dump_slice(
-        fmt_out,
-        tre_skew_char.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
+    crate::state::with_state(|state| {
+        dump_slice(
+            fmt_out,
+            state.fonts.hyphen_char.as_ptr().add(FONT_BASE as usize),
+            font_ptr() + 1,
+        );
+        dump_slice(
+            fmt_out,
+            state.fonts.skew_char.as_ptr().add(FONT_BASE as usize),
+            font_ptr() + 1,
+        );
+    });
     crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
@@ -2829,10 +2827,10 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         state.fonts.font_false_bchar = vec![0i32; font_check_len];
         state.fonts.font_glue = vec![0i32; font_check_len];
     });
-    tre_hyphen_char = xmalloc_array::<i32>(font_max());
-    tre_skew_char = xmalloc_array::<i32>(font_max());
     let base_arr_len = (font_max() as usize) + 1;
     crate::state::with_state_mut(|state| {
+        state.fonts.hyphen_char = vec![0i32; base_arr_len];
+        state.fonts.skew_char = vec![0i32; base_arr_len];
         state.fonts.char_base = vec![0i32; base_arr_len];
         state.fonts.width_base = vec![0i32; base_arr_len];
         state.fonts.height_base = vec![0i32; base_arr_len];
@@ -2875,16 +2873,18 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     }) {
         bad_format_file();
     }
-    undump_slice(
-        fmt_in,
-        tre_hyphen_char.add(FONT_BASE as usize),
-        font_undump_count,
-    );
-    undump_slice(
-        fmt_in,
-        tre_skew_char.add(FONT_BASE as usize),
-        font_undump_count,
-    );
+    crate::state::with_state_mut(|state| {
+        undump_slice(
+            fmt_in,
+            state.fonts.hyphen_char.as_mut_ptr().add(FONT_BASE as usize),
+            font_undump_count,
+        );
+        undump_slice(
+            fmt_in,
+            state.fonts.skew_char.as_mut_ptr().add(FONT_BASE as usize),
+            font_undump_count,
+        );
+    });
     let font_count = font_undump_count;
     let max_str = str_ptr();
     if !crate::state::with_state_mut(|state| {
@@ -3562,10 +3562,10 @@ pub unsafe extern "C" fn tt_run_engine(
             state.fonts.font_false_bchar = vec![0i32; font_check_len];
             state.fonts.font_glue = vec![0i32; font_check_len];
         });
-        tre_hyphen_char = xcalloc_array::<i32>(font_max());
-        tre_skew_char = xcalloc_array::<i32>(font_max());
         let base_fmt_len = (font_max() as usize) + 1;
         crate::state::with_state_mut(|state| {
+            state.fonts.hyphen_char = vec![0i32; base_fmt_len];
+            state.fonts.skew_char = vec![0i32; base_fmt_len];
             state.fonts.char_base = vec![0i32; base_fmt_len];
             state.fonts.width_base = vec![0i32; base_fmt_len];
             state.fonts.height_base = vec![0i32; base_fmt_len];
@@ -3665,10 +3665,6 @@ extern "C" {
 
     #[link_name = "font_info"]
     static mut tt_cleanup_font_info: *mut libc::c_void;
-    #[link_name = "hyphen_char"]
-    static mut tt_cleanup_hyphen_char: *mut libc::c_void;
-    #[link_name = "skew_char"]
-    static mut tt_cleanup_skew_char: *mut libc::c_void;
 }
 
 // translated from xetex-ini.c:2226 (tt_cleanup)
@@ -3757,10 +3753,8 @@ pub unsafe extern "C" fn tt_cleanup() {
         state.fonts.font_mapping = Vec::new();
         state.fonts.font_flags = Vec::new();
         state.fonts.font_letter_space = Vec::new();
-    });
-    libc::free(tt_cleanup_hyphen_char);
-    libc::free(tt_cleanup_skew_char);
-    crate::state::with_state_mut(|state| {
+        state.fonts.hyphen_char = Vec::new();
+        state.fonts.skew_char = Vec::new();
         state.fonts.char_base = Vec::new();
         state.fonts.width_base = Vec::new();
         state.fonts.height_base = Vec::new();
