@@ -621,6 +621,7 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `best_pl_glue[]` | `linebreak` | `scaled_t[4]` | `[Scaled; 4]` | session 45 | pending |
 | `hn` | `linebreak` | `small_number` (`typedef short`; hyphenation char count) | `SmallNumber` | session 45 | pending |
 | `active_node_size` | `linebreak` | `small_number` (`typedef short`; active-node word size) | `SmallNumber` | session 45 | pending |
+| `last_source_name` | `texmf` | `char *` — **owned C string** (`gettexstring`/`libc::free`), not a numeric typedef; ownership debt, not a width debt | `Option<CString>` | session 46 | pending |
 
 
 (`linebreak` session-45 move: the `int32_t` mem-pointer fields — `cur_p`,
@@ -648,6 +649,12 @@ only `cur_group` is a debt.)
 (`file_name_quote_char` is `UTF16_code`/`u16` — a genuine character value,
 not a semantic typedef, so it needs no row; `quoted_filename`,
 `name_in_progress`, `stop_at_space` are plain `bool` flags.)
+
+(`texmf` session-46 move: `last_lineno` is a plain `int32_t` line number and
+`start_time_str` is a plain `[u8; 30]` byte buffer — neither is a semantic
+typedef, so neither needs a row. `last_source_name` is the only debt, and it is
+an *ownership* debt (owned C string → `Option<CString>`), not a width/typedef
+debt.)
 
 Earlier clusters (`config`) were re-checked: their migrated fields are
 plain `int32_t`/`bool` flags with no semantic C type, so they need no

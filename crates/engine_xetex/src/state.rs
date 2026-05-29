@@ -15,6 +15,23 @@ pub(crate) struct EngineState {
     pub hyph: HyphState,
     pub fonts: FontState,
     pub linebreak: LinebreakState,
+    pub texmf: TexmfState,
+}
+
+/// The `texmf` cluster: small io/job-context state formerly held as
+/// `xetex-texmfmp.c` file-statics (`last_source_name`, `last_lineno`,
+/// `start_time_str`). Migrated in session 46.
+///
+/// `last_source_name` is an **owned C string** (`gettexstring`/`libc::free`):
+/// its free/reassign lifecycle stays entirely in `remember_source_info`, with
+/// no `tt_cleanup` edge (matching the former C static — the last allocation
+/// leaks at teardown exactly as before). Eventual newtype target: `Option<CString>`.
+#[derive(Default)]
+pub(crate) struct TexmfState {
+    pub last_source_name: *mut libc::c_char,
+    pub last_lineno: i32,
+    /// TIME_STR_SIZE = 30 ("D:YYYYmmddHHMMSS+HH'MM'" plus NUL and headroom).
+    pub start_time_str: [u8; 30],
 }
 
 /// The `input` cluster's Rust-owned state. Distinct from

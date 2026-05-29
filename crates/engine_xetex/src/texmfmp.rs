@@ -43,12 +43,10 @@ const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
 // INVALID_HANDLE = 0 (tectonic_bridge_core_generated.h:12).
 const INVALID_HANDLE: usize = 0;
 
-// Rust-side statics replacing C file-statics (xetex-texmfmp.c:19–27).
-// Single-threaded engine execution (bridge mutex) gives same guarantees as C.
-static mut LAST_SOURCE_NAME: *mut libc::c_char = std::ptr::null_mut();
-static mut LAST_LINENO: i32 = 0;
-// TIME_STR_SIZE = 30 ("D:YYYYmmddHHMMSS+HH'MM'" plus NUL and headroom).
-static mut START_TIME_STR: [u8; 30] = [0u8; 30];
+// Former C file-statics (xetex-texmfmp.c:19–27) now live on
+// `EngineState.texmf` (session 46), bridged through the thread-local.
+// `last_source_name` is an owned C string; its free/reassign lifecycle stays
+// in `remember_source_info` (no `tt_cleanup` edge — see state.rs::TexmfState).
 
 // ---------------------------------------------------------------------------
 // get_date_and_time / get_seconds_and_micros (translated session 13)
@@ -471,7 +469,9 @@ unsafe fn compare_paths(p1: *const libc::c_char, p2: *const libc::c_char) -> i32
 #[no_mangle]
 pub unsafe extern "C" fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
     let name = gettexstring(srcfilename);
-    let changed = compare_paths(name, LAST_SOURCE_NAME) != 0 || lineno != LAST_LINENO;
+    let (last_name, last_lineno) =
+        crate::state::with_state(|s| (s.texmf.last_source_name, s.texmf.last_lineno));
+    let changed = compare_paths(name, last_name) != 0 || lineno != last_lineno;
     libc::free(name as *mut libc::c_void);
     changed
 }
@@ -482,9 +482,13 @@ pub unsafe extern "C" fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
 /// translated from xetex-texmfmp.c:264 (remember_source_info)
 #[no_mangle]
 pub unsafe extern "C" fn remember_source_info(srcfilename: i32, lineno: i32) {
-    libc::free(LAST_SOURCE_NAME as *mut libc::c_void);
-    LAST_SOURCE_NAME = gettexstring(srcfilename);
-    LAST_LINENO = lineno;
+    let old = crate::state::with_state(|s| s.texmf.last_source_name);
+    libc::free(old as *mut libc::c_void);
+    let new_name = gettexstring(srcfilename);
+    crate::state::with_state_mut(|s| {
+        s.texmf.last_source_name = new_name;
+        s.texmf.last_lineno = lineno;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -556,7 +560,9 @@ unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
 /// translated from xetex-texmfmp.c:84 (init_start_time)
 #[no_mangle]
 pub unsafe extern "C" fn init_start_time(source_date_epoch: libc::time_t) {
-    makepdftime(source_date_epoch, &mut START_TIME_STR, true);
+    let mut buf = [0u8; 30];
+    makepdftime(source_date_epoch, &mut buf, true);
+    crate::state::with_state_mut(|s| s.texmf.start_time_str = buf);
 }
 
 /// Push the creation-date string (filled by `init_start_time`) into the
@@ -565,13 +571,14 @@ pub unsafe extern "C" fn init_start_time(source_date_epoch: libc::time_t) {
 /// translated from xetex-texmfmp.c:91 (getcreationdate)
 #[no_mangle]
 pub unsafe extern "C" fn getcreationdate() {
-    let len = libc::strlen(START_TIME_STR.as_ptr() as *const libc::c_char);
+    let start = crate::state::with_state(|s| s.texmf.start_time_str);
+    let len = libc::strlen(start.as_ptr() as *const libc::c_char);
     if (pool_ptr() as usize) + len >= pool_size() as usize {
         set_pool_ptr(pool_size());
         return;
     }
     for i in 0..len {
-        set_str_pool(pool_ptr(), START_TIME_STR[i] as u16);
+        set_str_pool(pool_ptr(), start[i] as u16);
         set_pool_ptr(pool_ptr() + 1);
     }
 }
