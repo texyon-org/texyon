@@ -120,13 +120,13 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `microseconds` | `i32` | `shipout` | `src/globals.rs:215` C extern | `microseconds`, `set_microseconds` | def xetex/xetex-ini.c |  |
 | `font_name` | `*mut i32` | `fonts` | `src/globals.rs:217` C extern | `font_name_entry`, `set_font_name_entry` | def xetex/xetex-ini.c; link src/ini.rs:1896,src/ini.rs:3624 |  |
 | `font_info` | `*mut MemoryWord` | `fonts` | `src/globals.rs:219` C extern | `font_info_b32s1`, `set_font_info_b32s1`, `set_font_info_b16`, `font_info_b16` | def xetex/xetex-ini.c; link src/ini.rs:1870,src/ini.rs:3606 |  |
-| `fmem_ptr` | `i32` | `fonts` | `src/globals.rs:220` C extern | `fmem_ptr`, `set_fmem_ptr` | def xetex/xetex-ini.c |  |
-| `font_ptr` | `i32` | `fonts` | `src/globals.rs:221` C extern | `font_ptr`, `set_font_ptr` | def xetex/xetex-ini.c |  |
+| `fmem_ptr` | `i32` | `fonts` | `EngineState.fonts.fmem_ptr` (Rust-owned) | `fmem_ptr`, `set_fmem_ptr` | MOVED session 39: C def removed |  |
+| `font_ptr` | `i32` | `fonts` | `EngineState.fonts.font_ptr` (Rust-owned) | `font_ptr`, `set_font_ptr` | MOVED session 39: C def removed |  |
 | `font_check` | `Vec<crate::mem_types::B16x4>` | `fonts` | `EngineState.fonts.font_check` (Rust-owned) | `set_font_check`, `font_check_entry` | MOVED session 32: C def + both aliases removed; format dump/undump through state |
 | `xdv_buffer` | `*mut libc::c_char` | `fonts` | `src/globals.rs:223` C extern | `xdv_buffer_entry` | def xetex/xetex-ini.c |  |
 | `font_params` | `*mut i32` | `fonts` | `src/globals.rs:224` C extern | `font_params`, `set_font_params` | def xetex/xetex-ini.c; link src/ini.rs:1894,src/ini.rs:3622 |  |
 | `font_glue` | `*mut i32` | `fonts` | `src/globals.rs:225` C extern | `font_glue`, `set_font_glue` | def xetex/xetex-ini.c; link src/ini.rs:1904,src/ini.rs:3632 |  |
-| `param_base` | `*mut i32` | `fonts` | `src/globals.rs:226` C extern | `param_base`, `set_param_base` | def xetex/xetex-ini.c; link src/ini.rs:1932,src/ini.rs:3660 |  |
+| `param_base` | `*mut i32` | `fonts` | `EngineState.fonts.param_base` (Rust-owned) | `param_base`, `set_param_base` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
 | `cur_cs` | `i32` | `scanner` | `src/globals.rs:228` C extern | `cur_cs`, `set_cur_cs` | def xetex/xetex-ini.c |  |
 | `cur_tok` | `i32` | `scanner` | `src/globals.rs:230` C extern | `cur_tok`, `set_cur_tok` | def xetex/xetex-ini.c |  |
 | `align_state` | `i32` | `scanner` | `src/globals.rs:232` C extern | `align_state`, `set_align_state` | def xetex/xetex-ini.c |  |
@@ -235,10 +235,10 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `bchar_label` | `*mut i32` | `fonts` | `src/globals.rs:443` C extern | `set_bchar_label_entry`, `bchar_label_entry` | def xetex/xetex-ini.c; link src/ini.rs:1910,src/ini.rs:3638 |  |
 | `font_bchar` | `*mut i32` | `fonts` | `src/globals.rs:444` C extern | `set_font_bchar_entry`, `font_bchar_entry` | def xetex/xetex-ini.c; link src/ini.rs:1912,src/ini.rs:3640 |  |
 | `font_false_bchar` | `*mut i32` | `fonts` | `src/globals.rs:445` C extern | `set_font_false_bchar_entry`, `font_false_bchar_entry` | def xetex/xetex-ini.c; link src/ini.rs:1914,src/ini.rs:3642 |  |
-| `font_layout_engine` | `*mut *mut libc::c_void` | `fonts` | `src/globals.rs:447` C extern | `font_layout_engine_ptr`, `set_font_layout_engine_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1882,src/ini.rs:3610 |  |
-| `font_mapping` | `*mut *mut libc::c_void` | `fonts` | `src/globals.rs:449` C extern | `font_mapping_ptr`, `set_font_mapping_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1880,src/ini.rs:3608 |  |
-| `font_flags` | `*mut libc::c_char` | `fonts` | `src/globals.rs:451` C extern | `font_flags_entry`, `set_font_flags_entry` | def xetex/xetex-ini.c; link src/ini.rs:1884,src/ini.rs:3612 |  |
-| `font_letter_space` | `*mut i32` | `fonts` | `src/globals.rs:452` C extern | `set_font_letter_space_entry`, `font_letter_space_entry` | def xetex/xetex-ini.c; link src/ini.rs:1886,src/ini.rs:3614 |  |
+| `font_layout_engine` | `*mut *mut libc::c_void` | `fonts` | `EngineState.fonts.font_layout_engine` (Rust-owned) | `font_layout_engine_ptr`, `set_font_layout_engine_ptr` | MOVED session 39: C def + both aliases removed; C++ bridge `tt_get_font_layout_engine_entry` added |  |
+| `font_mapping` | `*mut *mut libc::c_void` | `fonts` | `EngineState.fonts.font_mapping` (Rust-owned) | `font_mapping_ptr`, `set_font_mapping_ptr` | MOVED session 39: C def + both aliases removed |  |
+| `font_flags` | `*mut libc::c_char` | `fonts` | `EngineState.fonts.font_flags` (Rust-owned) | `font_flags_entry`, `set_font_flags_entry` | MOVED session 39: C def + both aliases removed |  |
+| `font_letter_space` | `*mut i32` | `fonts` | `EngineState.fonts.font_letter_space` (Rust-owned) | `set_font_letter_space_entry`, `font_letter_space_entry` | MOVED session 39: C def + both aliases removed |  |
 | `loaded_font_mapping` | `*mut libc::c_void` | `fonts` | `EngineState.fonts.loaded_font_mapping` (Rust-owned) | `loaded_font_mapping`, `set_loaded_font_mapping` | MOVED session 29: C def removed |
 | `loaded_font_flags` | `libc::c_char` | `fonts` | `EngineState.fonts.loaded_font_flags` (Rust-owned) | `loaded_font_flags`, `set_loaded_font_flags` | MOVED session 29: C def removed |
 | `loaded_font_letter_space` | `i32` | `fonts` | `EngineState.fonts.loaded_font_letter_space` (Rust-owned) | `loaded_font_letter_space`, `set_loaded_font_letter_space` | MOVED session 29: C def removed |
@@ -246,14 +246,14 @@ Generated 2026-05-23 from `src/globals.rs`, promoted `pub static mut` definition
 | `hyphen_char` | `*mut i32` | `fonts` | `src/globals.rs:459` C extern | `hyphen_char_entry`, `set_hyphen_char_entry` | def xetex/xetex-ini.c; link src/ini.rs:1906,src/ini.rs:3634 |  |
 | `skew_char` | `*mut i32` | `fonts` | `src/globals.rs:460` C extern | `skew_char_entry`, `set_skew_char_entry` | def xetex/xetex-ini.c; link src/ini.rs:1908,src/ini.rs:3636 |  |
 | `xtx_ligature_present` | `bool` | `fonts` | `EngineState.fonts.xtx_ligature_present` (Rust-owned) | `xtx_ligature_present`, `set_xtx_ligature_present` | MOVED session 29: C def removed |
-| `char_base` | `*mut i32` | `fonts` | `src/globals.rs:465` C extern | `char_base_entry`, `set_char_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1916,src/ini.rs:3644 |  |
-| `width_base` | `*mut i32` | `fonts` | `src/globals.rs:466` C extern | `width_base_entry`, `set_width_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1918,src/ini.rs:3646 |  |
-| `height_base` | `*mut i32` | `fonts` | `src/globals.rs:467` C extern | `height_base_entry`, `set_height_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1920,src/ini.rs:3648 |  |
-| `depth_base` | `*mut i32` | `fonts` | `src/globals.rs:468` C extern | `depth_base_entry`, `set_depth_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1922,src/ini.rs:3650 |  |
-| `italic_base` | `*mut i32` | `fonts` | `src/globals.rs:469` C extern | `italic_base_entry`, `set_italic_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1924,src/ini.rs:3652 |  |
-| `lig_kern_base` | `*mut i32` | `fonts` | `src/globals.rs:470` C extern | `lig_kern_base_entry`, `set_lig_kern_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1926,src/ini.rs:3654 |  |
-| `kern_base` | `*mut i32` | `fonts` | `src/globals.rs:471` C extern | `kern_base_entry`, `set_kern_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1928,src/ini.rs:3656 |  |
-| `exten_base` | `*mut i32` | `fonts` | `src/globals.rs:472` C extern | `exten_base_entry`, `set_exten_base_entry` | def xetex/xetex-ini.c; link src/ini.rs:1930,src/ini.rs:3658 |  |
+| `char_base` | `*mut i32` | `fonts` | `EngineState.fonts.char_base` (Rust-owned) | `char_base_entry`, `set_char_base_entry` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
+| `width_base` | `*mut i32` | `fonts` | `EngineState.fonts.width_base` (Rust-owned) | `width_base_entry`, `set_width_base_entry` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
+| `height_base` | `*mut i32` | `fonts` | `EngineState.fonts.height_base` (Rust-owned) | `height_base_entry`, `set_height_base_entry` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
+| `depth_base` | `*mut i32` | `fonts` | `EngineState.fonts.depth_base` (Rust-owned) | `depth_base_entry`, `set_depth_base_entry` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
+| `italic_base` | `*mut i32` | `fonts` | `EngineState.fonts.italic_base` (Rust-owned) | `italic_base_entry`, `set_italic_base_entry` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
+| `lig_kern_base` | `*mut i32` | `fonts` | `EngineState.fonts.lig_kern_base` (Rust-owned) | `lig_kern_base_entry`, `set_lig_kern_base_entry` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
+| `kern_base` | `*mut i32` | `fonts` | `EngineState.fonts.kern_base` (Rust-owned) | `kern_base_entry`, `set_kern_base_entry` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
+| `exten_base` | `*mut i32` | `fonts` | `EngineState.fonts.exten_base` (Rust-owned) | `exten_base_entry`, `set_exten_base_entry` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
 | `gave_char_warning_help` | `bool` | `fonts` | `EngineState.fonts.gave_char_warning_help` (Rust-owned) | `gave_char_warning_help`, `set_gave_char_warning_help` | MOVED session 29: C def removed |
 | `native_font_type_flag` | `i32` | `fonts` | `EngineState.fonts.native_font_type_flag` (Rust-owned) | `native_font_type_flag`, `set_native_font_type_flag` | MOVED session 29: C def removed |
 | `main_p` | `i32` | `scanner` | `src/globals.rs:479` C extern | `main_p`, `set_main_p` | def xetex/xetex-ini.c |  |
@@ -553,6 +553,9 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `font_bchar[]` | `fonts` | `nine_bits *` | `Vec<NineBits>` | session 37 | pending |
 | `font_false_bchar[]` | `fonts` | `nine_bits *` | `Vec<NineBits>` | session 37 | pending |
 | `font_glue[]` | `fonts` | `int32_t *` (nullable glue-spec mem pointer; checked undump vs `lo_mem_max`) | `Vec<MemPtr>` | session 38 | pending |
+| `fmem_ptr` | `fonts` | `font_index` (semantic typedef for `int32_t`, font-info write pointer) | `FontIndex`/`FmemPtr` | session 39 | pending |
+| `font_ptr` | `fonts` | `internal_font_number` (semantic typedef for `int32_t`, current font count) | `InternalFontNumber`/`FontId` | session 39 | pending |
+| `font_letter_space[]` | `fonts` | `scaled_t *` (per-font letter spacing; not format-serialized) | `Vec<Scaled>` | session 39 | pending |
 
 
 (`input` session-13 move of the line/group stacks: `line_stack` and

@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 38 (2026-05-29).
+Last updated: idiom session 39 (2026-05-29).
 
 ## How to read this file
 
@@ -340,6 +340,30 @@ least-coupled non-`misc` clusters:
     allocation/cleanup link aliases, the two raw externs, and the two C
     definitions. Newtype debt recorded for `font_glue[]` (nullable glue-spec
     mem pointer -> `Vec<MemPtr>`); `font_used[]` is plain `bool`, no row.
+-   **9 `*_base` offset arrays ownership move (session 39):** `char_base`,
+    `width_base`, `height_base`, `depth_base`, `italic_base`, `lig_kern_base`,
+    `kern_base`, `exten_base`, and `param_base` (all `int32_t *`) moved from
+    C-`malloc`'d pointers into Rust-owned `Vec<i32>` fields on
+    `EngineState.fonts`. All format-serialized; dump/undump use state-derived
+    pointers, with `font_ptr() + 1` pre-computed outside every `with_state_mut`
+    closure to avoid nested RefCell borrows. Removed 18 link aliases, 9 raw
+    externs, and 9 C definitions. No newtype debt (plain `int32_t *`).
+-   **`font_flags`, `font_letter_space`, `fmem_ptr`, `font_ptr` move (session 39):**
+    `font_flags` (`char *` → `Vec<i8>`) and `font_letter_space` (`scaled_t *` →
+    `Vec<i32>`) not format-serialized (fresh alloc). `fmem_ptr` and `font_ptr`
+    are plain `i32` scalars with no cleanup aliases. Removed 4 raw externs, 4
+    link aliases, 4 C definitions. **New gotcha:** scalars backed by `with_state`
+    must not be called inside `with_state_mut` closures — three format-load undump
+    closures had `font_ptr() + 1` inside them, causing RefCell panics; fixed by
+    pre-computing the value before the borrow. Newtype debt rows for `fmem_ptr`,
+    `font_ptr` (semantic typedefs), and `font_letter_space[]` (`scaled_t`).
+-   **`font_mapping` + `font_layout_engine` ownership move (session 39):** both
+    `void **` pointer arrays moved into `Vec<*mut c_void>` on `EngineState.fonts`.
+    Not format-serialized; handles released explicitly in `tt_cleanup` before Vec
+    drop. `font_layout_engine` was directly accessed in `xetex-XeTeXOTMath.cpp`
+    (19 uses); routed through new `tt_get_font_layout_engine_entry` bridge (same
+    pattern as prior `font_area`/`font_size` bridges). Removed 2 raw externs, 4
+    link aliases, 2 C definitions. No newtype debt (plain opaque void *).
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -348,12 +372,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 192 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 177 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 92 state-backed scalars/arrays + 50 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, and font_used) |
-| `#[no_mangle]` exports | 576 | boundary-only | 578 |
+| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 92 state-backed scalars/arrays + 65 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine) |
+| `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 471 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 441 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -481,13 +505,22 @@ the snippets in `00-overview.md` / the workstream plans.
     table arrays, `font_glue` (`int32_t *`, format-dumped, checked undump vs
     `lo_mem_max`) and `font_used` (`bool *`, not format-dumped), moved in
     session 38; the simple per-font table arrays are now exhausted.
-    Next, the remaining `fonts` state is messier: pointer-element arrays
-    (`font_mapping`, `font_layout_engine`), the `font_info` arena and its
-    `*_base` index tables, and assorted scalars. Pick a coherent bounded
-    subgroup with its init/dump/cleanup edges, and keep including `.cpp` in
-    reader greps. Alternatively pick an ownership-aware `eqtb`/`mem` slice.
-    Avoid hot tokenizer/main-loop scratch state and do not split the `mem`
-    bookkeeping scalars from the `Mem` arena move.
+    Session 39 moved the remaining per-font metadata in three commits:
+    the 9 `*_base` offset arrays (format-serialized `Vec<i32>`), the
+    `font_flags`/`font_letter_space`/`fmem_ptr`/`font_ptr` group, and
+    the `font_mapping`/`font_layout_engine` pointer arrays (with a new
+    `tt_get_font_layout_engine_entry` C++ bridge).
+    **New recurring gotcha:** any scalar now backed by `with_state` (such
+    as `fmem_ptr`/`font_ptr`) must NOT be called inside a `with_state_mut`
+    closure — the RefCell panics. Always pre-compute the value before the
+    mutable borrow scope. Added to §11 recurring gotchas in the session log.
+    Remaining `fonts` C externs: `font_info` (`*mut MemoryWord`, the main
+    font metric arena — large ownership slice), `hyphen_char`/`skew_char`
+    (`*mut i32` arrays, format-serialized, have init+cleanup aliases),
+    `xdv_buffer` (`*mut c_char`), `mapped_text` (`*mut u16`).
+    Good next candidates: `hyphen_char` + `skew_char` pair (same shape as
+    prior format-serialized int arrays, no C++ readers), or an ownership-
+    aware `eqtb`/`input` slice.
     For each symbol moved, use `01a-global-inventory.md` for C defs /
     cleanup aliases / accessors, and add a worklist row for any
     semantic-typed field (§4 rule).

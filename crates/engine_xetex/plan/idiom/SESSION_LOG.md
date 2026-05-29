@@ -9,6 +9,106 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 39 — 2026-05-29 — fonts *_base arrays, flags/letter-space/fmem/font-ptr, mapping/engine → FontState
+
+**Type:** execution (workstream 01, Phase-B; three ownership/scalar slices in one session).
+
+**Goal:** move the remaining per-font metadata arrays and scalars into `EngineState.fonts`:
+1. 9 `*_base` offset arrays (`char_base`, `width_base`, `height_base`, `depth_base`, `italic_base`,
+   `lig_kern_base`, `kern_base`, `exten_base`, `param_base`) — all format-serialized `Vec<i32>`.
+2. `font_flags` (`char *` → `Vec<i8>`), `font_letter_space` (`scaled_t *` → `Vec<i32>`),
+   `fmem_ptr` (`font_index`), `font_ptr` (`internal_font_number`) — not format-serialized; `fmem_ptr`
+   and `font_ptr` are plain scalars without cleanup aliases.
+3. `font_mapping` and `font_layout_engine` (both `void **` → `Vec<*mut c_void>`) — not format-
+   serialized; handles released explicitly in `tt_cleanup` before Vec drop; `font_layout_engine` had
+   19 direct C++ reads requiring a new bridge.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `*_base` arrays are plain `int32_t *`; `font_flags` is `char *`; `font_letter_space`
+  is `scaled_t *`; `fmem_ptr` is `font_index`; `font_ptr` is `internal_font_number`; both pointer
+  arrays are `void **`.
+- (b) cleanup aliases: all 9 `*_base` arrays had init+cleanup aliases (18 total); `font_flags` and
+  `font_letter_space` had init+cleanup aliases (4 total); `font_mapping`/`font_layout_engine` had
+  init+cleanup aliases (4 total); `fmem_ptr`/`font_ptr` had none.
+- (c) C readers: only `xetex-ini.c` for all 15 symbols.
+- (c, extended) C/C++ readers: `font_layout_engine` was directly read in `xetex-XeTeXOTMath.cpp`
+  (19 uses); all others were clean.
+- (d) cross-module extern redeclarations: only the expected `src/ini.rs` aliases; none elsewhere.
+
+**Work done (3 commits):**
+
+*Commit 1 (9 `*_base` arrays):*
+- Added 9 `Vec<i32>` fields to `FontState`.
+- Repointed 18 accessors (9 getter/setter pairs) to index state Vecs.
+- Replaced initex and format-load allocs with `vec![0i32; font_max+1]` inside `with_state_mut`.
+- Consolidated format dump into a single `with_state` closure; consolidated undump into a single
+  `with_state_mut` closure (pre-computed `base_undump_count = font_ptr() + 1` outside the borrow).
+- Dropped all 9 in `tt_cleanup` via a single `with_state_mut` reset block.
+- Removed 9 raw externs, 18 `src/ini.rs` link aliases, and 9 C definitions.
+
+*Commit 2 (`font_flags`, `font_letter_space`, `fmem_ptr`, `font_ptr`):*
+- Added 4 fields to `FontState` (`Vec<i8>`, `Vec<i32>`, `i32`, `i32`).
+- Repointed 6 accessors.
+- Replaced allocs; `fmem_ptr`/`font_ptr` are plain scalar fields with no alloc/cleanup.
+- Folded `font_flags`/`font_letter_space` resets into the existing `with_state_mut` cleanup block.
+- Removed 4 raw externs, 4 link aliases, 4 C definitions.
+- **Gotcha (new):** `fmem_ptr()` and `font_ptr()` now go through `with_state` (RefCell borrow).
+  Any `with_state_mut` closure that contains `fmem_ptr()` or `font_ptr()` will panic with
+  "RefCell already mutably borrowed". Fixed by precomputing the values *before* each
+  `with_state_mut` closure that needs them (e.g., `let font_undump_count = font_ptr() + 1;`
+  before the undump closures). Three existing format-load undump closures had this bug.
+
+*Commit 3 (`font_mapping`, `font_layout_engine`):*
+- Added 2 `Vec<*mut c_void>` fields to `FontState` (null-initialized).
+- Repointed 4 accessors; added `#[no_mangle] tt_get_font_layout_engine_entry` Rust bridge.
+- Replaced `xcalloc_array` allocs with `vec![null_mut(); font_max+1]` inside `with_state_mut`;
+  removed the now-redundant loop that null-initialized the C mapping array.
+- Replaced `libc::free` cleanup calls with Vec resets in `with_state_mut`.
+- Removed 2 raw externs, 4 link aliases, 2 C definitions.
+- Replaced all 19 `font_layout_engine[f]` uses in `xetex-XeTeXOTMath.cpp` with
+  `tt_get_font_layout_engine_entry(f)`.
+
+**Newtype debt (§4 check):** rows added for `fmem_ptr` (`font_index`), `font_ptr`
+(`internal_font_number`), and `font_letter_space[]` (`scaled_t *`). The 9 `*_base` arrays and
+`font_flags`/`font_mapping`/`font_layout_engine` are plain integer/char/pointer types — no rows.
+
+**longjmp / Drop (§7):** all Vecs live in the `'static` thread-local `EngineState`; handles are
+released explicitly before Vec drop; longjmp/abort paths skip Drop as intended.
+
+**Gotcha (new, worth adding to §11 recurring gotchas):** once a scalar is backed by `with_state`,
+its getter must NOT be called inside a `with_state_mut` closure — RefCell panics with "already
+mutably borrowed". Always pre-compute the value outside the mutable borrow scope.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 192 → 177 (−15 across 3 commits).
+- Raw `unsafe { ... }` text-search count: 471 → 441 (−30).
+- `#[no_mangle]` exports: 578 → 579 (+1, `tt_get_font_layout_engine_entry` bridge).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- First dashboard run after Commit 2 failed with "RefCell already mutably borrowed" in `align_span`
+  (engine_rust test); root cause: `font_ptr() + 1` inside 3 `with_state_mut` undump closures.
+  Fixed by pre-computing `let font_undump_count = font_ptr() + 1` before those closures.
+- Final `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`: pass (29/2/7/4).
+- `grep` of all 15 moved symbols in `xetex/*.{c,cpp}` (minus macos): empty of C definitions.
+
+**For the next session:**
+- The `fonts` cluster is now nearly fully Rust-owned. Remaining C externs:
+  - `font_info` (`*mut MemoryWord`) — the main font metric arena; large ownership slice.
+  - `hyphen_char`, `skew_char` (still C malloc'd `*mut i32` arrays; have init+cleanup aliases).
+  - `xdv_buffer` (`*mut c_char`) — XDV output buffer.
+  - `mapped_text` (`*mut u16`) — TECkit output scratch buffer.
+  - A few session-35 stale inventory rows: `font_name`, `font_area`, `font_params`, etc. are
+    already Rust-owned; their inventory rows need updating.
+- Pick a coherent bounded next subgroup:
+  - `hyphen_char` + `skew_char` are an obvious pair (same shape as prior `*_base` arrays, no C++
+    readers expected, both format-serialized).
+  - Alternatively, move to the `eqtb` or `input` clusters, or a misc scalar group.
+- Continue applying the §11 nested-borrow rule: always pre-compute state-accessor values before
+  any `with_state_mut` closure that needs them.
+
+---
+
 ## Idiom session 38 — 2026-05-29 — font_glue + font_used arrays -> FontState
 
 **Type:** execution (workstream 01, Phase-B ownership slice).
