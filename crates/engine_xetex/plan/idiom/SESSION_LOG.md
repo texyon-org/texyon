@@ -9,6 +9,86 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 41 — 2026-05-29 — font_info arena + 30 scalar/array globals → state sub-structs
+
+**Type:** execution (workstream 01, Phase-B; six ownership/scalar slices in one large session).
+
+**Goal (six commits):**
+1. `font_info` (`memory_word *`, the main font metric arena) → `Vec<MemoryWord>` on `EngineState.fonts`.
+2. 12 input cluster scalars → `InputClusterState` scalar fields: `open_parens`, `in_open`,
+   `pseudo_files`, `nest_ptr`, `max_nest_stack`, `input_ptr`, `max_in_stack`, `base_ptr`,
+   `par_loc`, `par_token`, `param_ptr`, `max_param_stack`.
+3. 5 conditionals scalars → `ScannerState`: `cond_ptr`, `if_limit`, `cur_if`, `if_line`, `skip_line`.
+4. 7 misc scanner/input scalars → `ScannerState` / `InputClusterState`: `is_in_csname`,
+   `cur_val1`, `cur_val_level`, `used_tectonic_coda_tokens` (scanner); `force_eof`, `last`,
+   `max_buf_stack` (input).
+5. 5 scanner-status scalars → `ScannerState`: `scanner_status`, `warning_index`, `def_ref`,
+   `long_state`, `align_state`.
+6. 2 inline fixed arrays → `ScannerState`: `cur_mark[5]`, `disc_ptr[4]`.
+
+**Pre-move grep checks (§11 step 2, all six slices):**
+- (a) C types: `font_info` is `memory_word *` (no semantic typedef). All scalars are `int32_t`
+  or `unsigned char` or `bool`; inline arrays are `int32_t[N]`. No semantic typedef except
+  `cur_if` (C type `small_number` = `typedef short`).
+- (b) cleanup aliases: `font_info` had alloc alias `src/ini.rs:1822` + cleanup alias `src/ini.rs:3669`.
+  All other globals (scalars + inline arrays) had zero link aliases.
+- (c) C readers: all symbols only in `xetex-ini.c`. `last`/`max_buf_stack` also nominally
+  local variable–named in `teckit-Engine.cpp` (confirmed local, not the C global).
+- (c, extended) C++ readers: none found for any symbol.
+- (d) cross-module redeclarations: none found.
+
+**Work done (6 commits, 1 per slice):**
+- Commit 1: Added `font_info: Vec<MemoryWord>` to `FontState`; repointed 4 accessors; replaced
+  initex alloc (`xmalloc_array`) and format-load alloc/undump with `vec![zero_word; fms+1]` /
+  `undump_slice` inside `with_state_mut`; replaced dump with `with_state` closure; replaced both
+  cleanup `libc::free` calls with `state.fonts.font_info = Vec::new()`; removed 2 link aliases,
+  1 raw extern, 1 C definition. Pre-computed `fmem_ptr()`/`font_mem_size()` before every borrow
+  (session-39 nested-borrow gotcha).
+- Commits 2–6: Added scalar/array fields to `InputClusterState` / `ScannerState`; removed raw
+  statics from `mod raw`; repointed all getters/setters from `unsafe { raw::SYM }` to
+  `with_state` / `with_state_mut` closures; removed all C definitions from `xetex-ini.c`.
+
+**New gotcha (session 41):** Writing to a union field via `&mut` (`MemoryWord.b32.s1 = v`) through
+a Vec index is **safe** in Rust (union *write* via mutable reference needs no `unsafe`). The
+compiler's `unused_unsafe` warning confirms this. Reading a union field still requires `unsafe`.
+Updated the new accessors accordingly. This is the opposite of what session 39 assumed for direct
+C-pointer writes; it's a consequence of moving from `*mut MemoryWord` to `Vec<MemoryWord>`.
+
+**Newtype debt (§4 check):**
+- `font_info`: plain `memory_word *`, no debt.
+- `cur_if`: C type `small_number` (typedef for `short`, stored `i16`) — worklist row added to
+  01a-global-inventory.md (same category as `radix`, session 21).
+- All other 30 fields: plain `int32_t`/`bool`/`unsigned char`/`int32_t[N]`, no debt. Confirmed.
+
+**longjmp / Drop (§7):** all Vecs live in the `'static` thread-local; Drop on abort intentionally skipped.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 175 → 143 (−32 this session; was 175 at session start).
+- Raw `unsafe { ... }` text-search count: 437 → 373 (−64 this session).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass after each commit, pre-existing warnings only.
+- Leftover C references: clean for all 32 symbols (grep confirmed empty).
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`:
+  pass (29/2/7/4) verified after commits 1, 2, and 6.
+
+**For the next session:**
+- `fonts` cluster: `xdv_buffer` (`*mut c_char`) and `mapped_text` (`*mut u16`) remain. Both are
+  dynamically-managed write buffers used by `ext.rs` itself (free + realloc within Rust); `ext.rs`
+  has its own `extern "C"` block for them. Conversion to `Vec<u8>` / `Vec<u16>` is feasible but
+  requires rewriting the ext.rs allocation/use pattern (similar to `buffer_ptr` session-15 shape).
+- Clean cold scalar filler is getting sparse. Good next candidates:
+  - `read_open[17]` (inline `u8[17]`, BSS, no alloc edge — scalar-style move, confirmed clean).
+  - `read_file[16]` (inline `*mut c_void[16]`, but used by `read_file_ptr` pointer-escaping accessor — check first).
+  - `name_length` / `name_length16` (`int32_t`, only in xetex-ini.c, no aliases — clean scalars).
+  - `name_of_file` / `name_of_file16` (raw pointer buffers — more complex, defer until ownership pattern for these buffers is decided).
+- Hot tokenizer scalars (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) remain deferred to Phase C.
+- `mem` bookkeeping scalars (`var_used`, `dyn_used`, `lo_mem_max`, etc.) remain deferred to the `Mem` arena slice.
+- Keep applying the session-39/41 pre-borrow rule: any `with_state`-backed value must be
+  pre-computed before entering a `with_state_mut` closure.
+
+---
+
 ## Idiom session 40 — 2026-05-29 — hyphen_char + skew_char → FontState
 
 **Type:** execution (workstream 01, Phase-B ownership slice).

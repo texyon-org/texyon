@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 40 (2026-05-29).
+Last updated: idiom session 41 (2026-05-29).
 
 ## How to read this file
 
@@ -372,12 +372,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 175 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 143 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 92 state-backed scalars/arrays + 67 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 124 state-backed scalars/arrays + 67 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 437 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 373 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -441,92 +441,29 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  Continue executing workstream 01. **All `input`-cluster arrays are now
-    Rust-owned** (the arena pattern is proven across sessions 11–18:
-    `save_stack`, `param_stack`, the five `*mut i32` line/group stacks,
-    `eof_seen`, `buffer`, `input_stack`, `input_file`, and `nest`). Clean
-    (no-cleanup-alias) scalar groups are getting sparse: a few non-hot
-    `scanner` scalars remain (`shown_mode`, `mag_set`, `radix`,
-    `expand_depth_count`, …). The `mem` bookkeeping scalars (`var_used`,
-    `dyn_used`, `lo_mem_max`, `hi_mem_min`, `avail`, `rover`, `mem_end`) are
-    best done as part of the `Mem` arena move (§5), not as a loose scalar
-    slice. **Caution:** do not bridge the hot tokenizer scalars
-    (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) through the
-    thread-local without benchmarking — they are read on nearly every
-    `get_next`/`get_token`, and a `RefCell` borrow per access could
-    regress performance. Prefer threading those in Phase C.
-    The `shipout` write-stream arrays (`write_file`/`write_open`) were moved
-    scalar-style in session 19; the `scanner` alignment-state scalars
-    (`cur_align`/`cur_span`/`cur_loop`/`align_ptr`/`cur_head`/`cur_tail`/
-    `cur_pre_head`/`cur_pre_tail`) in session 20; the clean cold `scanner`
-    scalars `shown_mode`/`mag_set`/`radix`/`expand_depth_count` in session 21;
-    the clean cold sparse-array register scalars `sa_chain`/`sa_level`/
-    `max_reg_num` in session 22.
-    Clean cold `scanner` scalar filler is now **exhausted**. The remaining `sa_*`
-    members are all messier: `sa_root` has a link alias (ownership), `sa_null`
-    is a `MemoryWord`, `max_reg_help_line` is a pointer, and `cur_ptr` is too
-    broad (148 uses across save.rs/pagebuilder.rs/scan.rs) to bridge without
-    benchmarking.
-    Do **not** bridge the `main_*` ligature/main-loop scratch scalars (hot
-    per-character path), same reasoning as the tokenizer scalars.
-    The remaining `shipout` file-*handle* state (`rust_stdout`, `log_file`,
-    `current_diagnostic`) was moved in session 23.
-    The `strings` (`str_start` / `str_pool` and 11 scalar fields) was moved in session 24, establishing the pattern for format dump/undump arrays.
-    The 25 clean `hyph` scalar fields were moved in session 25, establishing `EngineState.hyph`.
-    The 11 fixed-size `hyph` arrays were moved in session 26 as heap-backed,
-    fixed-size `Vec`s on `EngineState.hyph`. The 9 dynamically allocated
-    trie arrays were moved in session 27 as Rust-owned `Vec`s on
-    `EngineState.hyph`.
-    The remaining dynamically allocated `hyph` exception arrays
-    (`hyph_word`, `hyph_list`, `hyph_link`) were moved in session 28. The
-    `hyph` cluster's scalar, fixed-array, dynamic-trie-array, and exception
-    array state is now Rust-owned.
-    The first small `fonts` scalar subgroup (`loaded_font_mapping`,
-    `loaded_font_flags`, `loaded_font_letter_space`,
-    `xtx_ligature_present`, `gave_char_warning_help`,
-    `native_font_type_flag`) was moved in session 29, establishing
-    `EngineState.fonts`.
-    The `font_mem_size`/`font_max` capacity pair and their `src/ini.rs` aliases
-    were moved in session 30. `null_character` (`b16x4`) was moved in session
-    31 after checking that its existing Rust `B16x4` struct preserves the C
-    shape. `font_check` was moved in session 32, establishing the ownership
-    shape for one format-serialized font table. `font_size`/`font_dsize` were
-    moved in session 33; note that a hidden C++ reader in
-    `xetex-XeTeXOTMath.cpp` had to be routed through a Rust bridge, so future
-    font-table slices should grep `.cpp` files as well as `.c`. `font_params`
-    was moved in session 34; its checked undump path now uses state-derived
-    storage. `font_name`/`font_area` were moved in session 35; the C++ OpenType
-    math `font_area` readers were routed through `tt_get_font_area_entry`, and
-    the checked undump path must avoid nested state borrows by computing
-    `str_ptr()` before entering `with_state_mut`. `font_bc`/`font_ec` were
-    moved in session 36; the extended `.cpp` reader grep was clean. The
-    boundary-character trio (`bchar_label`, `font_bchar`,
-    `font_false_bchar`) moved in session 37. The two remaining simple per-font
-    table arrays, `font_glue` (`int32_t *`, format-dumped, checked undump vs
-    `lo_mem_max`) and `font_used` (`bool *`, not format-dumped), moved in
-    session 38; the simple per-font table arrays are now exhausted.
-    Session 39 moved the remaining per-font metadata in three commits:
-    the 9 `*_base` offset arrays (format-serialized `Vec<i32>`), the
-    `font_flags`/`font_letter_space`/`fmem_ptr`/`font_ptr` group, and
-    the `font_mapping`/`font_layout_engine` pointer arrays (with a new
-    `tt_get_font_layout_engine_entry` C++ bridge).
-    **New recurring gotcha:** any scalar now backed by `with_state` (such
-    as `fmem_ptr`/`font_ptr`) must NOT be called inside a `with_state_mut`
-    closure — the RefCell panics. Always pre-compute the value before the
-    mutable borrow scope. Added to §11 recurring gotchas in the session log.
--   **`hyphen_char` + `skew_char` ownership move (session 40):** both `int32_t *`
-    format-serialized arrays moved from C `malloc` storage into Rust-owned `Vec<i32>`
-    fields on `EngineState.fonts`. Init alloc and cleanup folded into existing
-    `with_state_mut` blocks; format dump/undump use state-derived pointers.
-    Removed 2 raw externs, 4 link aliases, and 2 C definitions. No newtype debt.
-    Remaining `fonts` C externs: `font_info` (`*mut MemoryWord`, the main
-    font metric arena — large ownership slice), `xdv_buffer` (`*mut c_char`),
-    `mapped_text` (`*mut u16`).
-    Good next candidates: `font_info` arena (large ownership slice, establishes §5
-    Mem arena pattern for the font metric memory), or a different cluster.
-    For each symbol moved, use `01a-global-inventory.md` for C defs /
-    cleanup aliases / accessors, and add a worklist row for any
-    semantic-typed field (§4 rule).
+1.  Continue executing workstream 01. **All `input`-cluster arrays are Rust-owned** and a
+    large batch of scalars have been moved in sessions 41+. Do not bridge the hot tokenizer
+    scalars (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`, `cur_val`) through the thread-local
+    without benchmarking — they are read on nearly every `get_next`/`get_token`. Similarly
+    do not bridge `main_*` lig/kern loop scalars (hot per-character path).
+    The `mem` bookkeeping scalars (`var_used`, `dyn_used`, `lo_mem_max`, `hi_mem_min`,
+    `avail`, `rover`, `mem_end`) are best done with the `Mem` arena (§5).
+    **Good next candidates (session 42+):**
+    - `read_open[17]` — inline `u8[17]` BSS array, only `xetex-ini.c`, no aliases.
+      Scalar-style move. Check whether `read_file[16]` is interleaved or independent.
+    - `name_length` / `name_length16` — plain `int32_t`, only `xetex-ini.c`, clean scalars.
+    - `xdv_buffer` / `mapped_text` — dynamic write buffers owned by `ext.rs`; moving to
+      `Vec<u8>` / `Vec<u16>` feasible but requires rewriting the `ext.rs` alloc/use pattern
+      (similar to `buffer_ptr` session-15 shape; `ext.rs` extern block must be updated).
+    - `sa_*` messier members remain: `sa_root` has a link alias (ownership), `sa_null`
+      is a `MemoryWord` (no `Default`), `max_reg_help_line` is a pointer.
+    **Recurring gotchas:**
+    - Any scalar backed by `with_state` must NOT be called inside a `with_state_mut`
+      closure — the RefCell panics. Pre-compute before the borrow.
+    - Writing to a `MemoryWord` union field through a `Vec<MemoryWord>` index (via `&mut`)
+      is *safe* — no `unsafe` needed for union writes, only for reads (session 41).
+    For each symbol moved, use `01a-global-inventory.md` for C defs / cleanup aliases /
+    accessors, and add a worklist row for any semantic-typed field (§4 rule).
 2.  The `config` bridge pattern in `src/state.rs` is intentionally small:
     keep `with_state` / `with_state_mut` borrows to single-field
     read/write closures and avoid calling translated engine code while a
