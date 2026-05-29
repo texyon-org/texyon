@@ -111,6 +111,12 @@ pub(crate) struct InputClusterState {
     /// File-open states for `\read` streams (xetex-xetexd.h:536; CLOSED=2, JUST_OPEN=1,
     /// NORMAL=0). BSS array of 17 bytes — default all-zero = NORMAL. Plain `u8`, no newtype debt.
     pub read_open: [u8; 17],
+    /// `UFILE*` handles for `\read` streams (xetex-xetexd.h:535). BSS array of 16 pointers —
+    /// default all-null. Stored as `*mut c_void` to avoid cyclic dependency with `io.rs` (same
+    /// convention as `input_file`). The pointer-escaping accessor `read_file_ptr` is valid
+    /// because the array lives in the `'static` thread-local and is never moved. Plain opaque
+    /// pointer, no newtype debt.
+    pub read_file: [*mut libc::c_void; 16],
 }
 
 #[derive(Default)]

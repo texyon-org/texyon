@@ -81,7 +81,7 @@ int32_t cur_val;
 /* cur_val1 moved to EngineState.scanner (scalar). */
 /* cur_val_level moved to EngineState.scanner (scalar). */
 glue_ord cur_order;
-UFILE *read_file[16];
+/* read_file moved to EngineState.input.read_file ([*mut c_void; 16]) */
 /* read_open moved to EngineState.input.read_open ([u8; 17]) */
 /* cond_ptr / if_limit / cur_if / if_line / skip_line moved to EngineState.scanner (scalars). */
 int32_t format_default_length;

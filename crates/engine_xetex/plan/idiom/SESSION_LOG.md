@@ -9,6 +9,56 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 43 — 2026-05-29 — read_file[16] → InputClusterState
+
+**Type:** execution (workstream 01, Phase-B; inline BSS array slice).
+
+**Goal:** move `read_file[16]` (`UFILE *[16]`) from a C BSS array into
+`EngineState.input.read_file: [*mut libc::c_void; 16]`. One coherent slice, one commit.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C type: `UFILE *[16]` (`xetex-xetexd.h:535`). Plain opaque pointer array, no semantic
+  typedef.
+- (b) cleanup aliases: none — BSS global, no `#[link_name]` aliases in `src/ini.rs`.
+- (c) C readers: `xetex-ini.c` only (grep of `xetex/*.c` confirmed). No `.cpp` hits.
+- (d) cross-module extern redeclarations: none found in `src/*.rs`.
+
+**Work done (1 commit):**
+- Added `read_file: [*mut libc::c_void; 16]` to `InputClusterState` in `src/state.rs`.
+  Covered by `#[derive(Default)]` (raw pointers default to `null_mut()`; array of 16 defaults
+  to all-null, matching C BSS zero-init).
+- `read_file_entry(n)` repointed to `with_state(|s| s.input.read_file[n]) as *mut UFile`
+  (no `unsafe` needed for the closure itself).
+- `read_file_ptr(n)` repointed to `with_state_mut(|s| unsafe { s.input.read_file.as_mut_ptr().add(n) ... })`
+  — same pointer-escaping shape as `input_file_ptr` (session 16): valid past the borrow because
+  the array lives in the `'static` thread-local and is never moved or reallocated.
+- Removed `pub(super) static mut read_file` from `mod raw` in `src/globals.rs`.
+- Removed C definition from `xetex/xetex-ini.c`.
+
+**Newtype debt (§4 check):**
+- `read_file`: plain opaque `UFILE*`, stored as `*mut c_void`. No semantic typedef. No debt.
+  Confirmed.
+
+**Metrics after this session:**
+- `globals.rs` raw extern globals: 140 → 139 (−1).
+- Raw `unsafe { ... }` text-search count: 367 → 366 (−1).
+
+**Validation:**
+- `cargo check -p tectonic_engine_xetex`: pass, pre-existing warnings only.
+- Leftover C references: clean for `read_file` (grep confirmed empty).
+- `cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`:
+  pass (29/2/7/4).
+
+**For the next session:**
+- All simple BSS inline-array candidates in the `input` cluster are exhausted.
+- `xdv_buffer` (`*mut c_char`) and `mapped_text` (`*mut u16`) are the next reachable candidates
+  but require rewriting the `ext.rs` alloc/use pattern (more involved than scalar moves).
+- `sa_root` (has link alias → ownership slice), `sa_null` (`MemoryWord`, no Default),
+  `max_reg_help_line` (pointer) remain in `scanner`.
+- `name_of_file` / `name_of_file16` remain deferred (raw pointer buffers, ownership not decided).
+
+---
+
 ## Idiom session 42 — 2026-05-29 — name_length / name_length16 / read_open → InputClusterState
 
 **Type:** execution (workstream 01, Phase-B; scalar + inline-array slice).

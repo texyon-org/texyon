@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: idiom session 42 (2026-05-29).
+Last updated: idiom session 43 (2026-05-29).
 
 ## How to read this file
 
@@ -364,6 +364,12 @@ least-coupled non-`misc` clusters:
     (19 uses); routed through new `tt_get_font_layout_engine_entry` bridge (same
     pattern as prior `font_area`/`font_size` bridges). Removed 2 raw externs, 4
     link aliases, 2 C definitions. No newtype debt (plain opaque void *).
+-   **`read_file[16]` inline array move (session 43):** `read_file[16]` (`UFILE *[16]`)
+    moved as `[*mut c_void; 16]` into `EngineState.input`. BSS array (xetex-ini.c only,
+    no cleanup aliases). `read_file_entry` repointed to `with_state`; `read_file_ptr` repointed
+    to `with_state_mut` + `as_mut_ptr().add(n)` (same pointer-escaping pattern as
+    `input_file_ptr`; valid because the array lives in the `'static` thread-local and is never
+    moved). Removed raw extern static and C definition. No newtype debt (plain opaque pointer).
 -   **`name_length`, `name_length16`, `read_open` scalar/array move (session 42):**
     `name_length` (`int32_t`) and `name_length16` (`int32_t`) moved as plain `i32`
     scalars into `EngineState.input`; `read_open[17]` (`unsigned char[17]`) moved
@@ -380,12 +386,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 140 |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 139 |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
 | thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 127 state-backed scalars/arrays + 67 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 367 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 366 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -456,10 +462,7 @@ the snippets in `00-overview.md` / the workstream plans.
     do not bridge `main_*` lig/kern loop scalars (hot per-character path).
     The `mem` bookkeeping scalars (`var_used`, `dyn_used`, `lo_mem_max`, `hi_mem_min`,
     `avail`, `rover`, `mem_end`) are best done with the `Mem` arena (§5).
-    **Good next candidates (session 43+):**
-    - `read_file[16]` — inline BSS `*mut c_void[16]` array (also in `xetex-ini.c` only). Has a
-      pointer-escaping accessor `read_file_ptr`; check whether this is compatible with an inline
-      fixed array (should be, since BSS so no realloc risk).
+    **Good next candidates (session 44+):**
     - `xdv_buffer` / `mapped_text` — dynamic write buffers owned by `ext.rs`; moving to
       `Vec<u8>` / `Vec<u16>` feasible but requires rewriting the `ext.rs` alloc/use pattern
       (similar to `buffer_ptr` session-15 shape; `ext.rs` extern block must be updated).
@@ -467,6 +470,7 @@ the snippets in `00-overview.md` / the workstream plans.
       is a `MemoryWord` (no `Default`), `max_reg_help_line` is a pointer.
     - `name_of_file` / `name_of_file16` remain as raw pointer buffers — defer until ownership
       pattern for these name buffers is decided.
+    - All simple BSS inline-array candidates in `input` cluster are now exhausted.
     **Recurring gotchas:**
     - Any scalar backed by `with_state` must NOT be called inside a `with_state_mut`
       closure — the RefCell panics. Pre-compute before the borrow.

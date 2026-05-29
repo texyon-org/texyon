@@ -154,9 +154,7 @@ mod raw {
         // Current list state (xetex-xetexd.h:479; direct struct, not a pointer).
         pub(super) static mut cur_list: crate::mem_types::ListStateRecord;
         // read_open moved to EngineState.input.read_open ([u8; 17]).
-        // Array of UFILE* for \read streams (xetex-xetexd.h:535).
-        // Declared as *mut c_void to avoid a cyclic type dependency with io.rs.
-        pub(super) static mut read_file: [*mut libc::c_void; 16];
+        // read_file moved to EngineState.input.read_file ([*mut c_void; 16]).
 
         // Save-stack (xetex-xetexd.h:492–494). The `save_stack` array itself
         // is Rust-owned (`EngineState.save_stack.data`); only the capacity
@@ -1851,12 +1849,15 @@ pub(crate) fn set_read_open_entry(n: usize, v: u8) {
 /// Returns `read_file[n]` (the UFILE* value at index n).
 #[inline]
 pub(crate) fn read_file_entry(n: usize) -> *mut crate::io::UFile {
-    unsafe { raw::read_file[n] as *mut crate::io::UFile }
+    crate::state::with_state(|s| s.input.read_file[n]) as *mut crate::io::UFile
 }
 /// Returns a pointer to `read_file[n]`, for passing to `u_open_in`.
+/// Valid past the borrow: the array lives in the `'static` thread-local and is never moved.
 #[inline]
 pub(crate) fn read_file_ptr(n: usize) -> *mut *mut crate::io::UFile {
-    unsafe { raw::read_file.as_mut_ptr().add(n) as *mut *mut crate::io::UFile }
+    crate::state::with_state_mut(|s| unsafe {
+        s.input.read_file.as_mut_ptr().add(n) as *mut *mut crate::io::UFile
+    })
 }
 
 // ---------------------------------------------------------------------------
