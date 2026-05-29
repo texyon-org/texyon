@@ -9,6 +9,81 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 46 — 2026-05-29 — three resolved-misc private-static clusters
+
+**Type:** execution (workstream 01, Phase-B). The three remaining resolved-`misc`
+clusters from the session-44 decision block — all *private module-local* `static
+mut`s (none in `globals.rs` `mod raw`), so no C defs and no `mod raw` externs to
+remove; the move is add-field → repoint in-module accessors → delete static.
+**Three separate commits**, increasing complexity.
+
+**Pre-move grep checks (§11 step 2), all three slices:**
+- (d) cross-module readers: none. `grep` for all 8 symbols across `src/*.rs`
+  outside their home module is empty — every use is in-module.
+- (b) cleanup aliases in `src/ini.rs`: none (private Rust statics, never had any).
+- (c)/(a): not C-header globals at all, so no `xetex/*.c` defs and no
+  `xetex-xetexd.h` typedef rows — the field types are whatever Stage 1 translated.
+
+**Commit 1 — `ShipoutState` fold ← 4 pagebuilder statics** (`339714a7`):
+`BEST_PAGE_BREAK`, `BEST_SIZE`, `LEAST_PAGE_COST`, `PAGE_MAX_DEPTH` (`src/pagebuilder.rs`)
+→ 4 plain `i32` fields on `ShipoutState` (covered by its `#[derive(Default)]`).
+Added 4 module-private `with_state`/`with_state_mut` accessor pairs in
+`pagebuilder.rs`; repointed ~18 direct-use sites (reads → `best_size()` etc.,
+writes → `set_best_size(..)`). No newtype debt (all plain `i32`).
+
+**Commit 2 — `TexmfState` (new) ← 3 texmfmp io statics** (`c159465c`):
+`LAST_SOURCE_NAME` (`*mut c_char`), `LAST_LINENO` (`i32`), `START_TIME_STR[30]`
+(`src/texmfmp.rs`) → new `#[derive(Default)]` `TexmfState` on `EngineState.texmf`
+(raw ptr derives `Default` = null, as `ShipoutState.current_diagnostic` already
+does). `init_start_time` now formats into a local `[u8;30]` then stores it
+(no `&mut` into the thread-local); `getcreationdate` reads a local copy out.
+`last_source_name` free/reassign lifecycle kept entirely in `remember_source_info`
+(no `tt_cleanup` edge — last alloc leaks at teardown exactly as the C static did;
+**no double-free**). Newtype/ownership debt row added for `last_source_name`
+(owned C string → `Option<CString>`); `last_lineno`/`start_time_str` are plain,
+noted in the worklist.
+
+**Commit 3 — `EngineState.synctex: SynctexCtxt` ← `SYNCTEX_CTXT`** (`23871d14`):
+the heavy one (264 field-access sites). Moved `SynctexCtxt`/`SynctexFlags`/the
+`Recorder` type alias into `state.rs` as `pub(crate)` and added `pub synctex:
+SynctexCtxt` to `EngineState`. **Hand-written `impl Default`** because the former
+static initialized `lastv: -1` (every other field is zero/null/None/false) — a
+derived `Default` would wrongly give `lastv: 0`. Added a per-field bridge in
+`synctex.rs` via two small `macro_rules!` (`sc_scalar!`/`sc_flag!`) generating
+15 scalar + 5 flag getter/setter pairs over the thread-local. Repointed all 264
+sites with an ordered 6-pass `perl` transform (flag-writes → flag-reads →
+`+=`/`-=` → simple-writes → simple-reads; writes before reads so lvalues aren't
+turned into call exprs; the one nested read `root_name = mfree_ptr(root_name)`
+falls out correctly because the read pass runs last). Pre-collapsed the one
+multi-line assignment so the single-line regex caught it. The synctex functions
+already read fields into locals and write scalars back, so the per-field bridge is
+a faithful drop-in and no `with_state` borrow is ever held across an engine call.
+Debt rows: `synctex.root_name` (owned C string) + `synctex.file` (output handle);
+note explains the rest moved verbatim (Stage-1 Rust types unchanged, no typedef loss).
+
+**Validation (each commit ran the full dashboard before committing):**
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4** for all three. `cargo check` clean (pre-existing warnings only).
+TRIP exercises synctex output, so commit 3 is parity-covered.
+
+**Metrics after this session:**
+- The 8 resolved-`misc` private `static mut`s are gone (4 pagebuilder + 1 synctex
+  + 3 texmf). `globals.rs` raw extern count **unchanged at 105** (these were never
+  in `mod raw`). Raw `unsafe { }` text count **unchanged at 298** (the moves added
+  no explicit `unsafe` blocks — the bridge accessors are safe `with_state` closures).
+
+**For the next session (47+):**
+- The `misc` bucket is now **fully drained** — every former-`misc` global is migrated.
+  Remaining `mod raw` statics are the intentionally-deferred Phase-C set (hot
+  tokenizer `cur_cmd/chr/tok/cs/val`, mem arena, hot lig/kern), the ownership slices
+  (`eqtb`/`hash`/`prim`/`sa_root`/`xdv_buffer`/`name_of_file*`/`native_text`), the
+  classified-but-unmigrated scratch already tagged `scanner`/`shipout`, and the
+  capacity limits. See STATUS "Next action" bucket table.
+- Phase C (threading `&mut EngineState`, removing the thread-local bridge) becomes
+  viable. Coordinate with workstreams 02 (module split) / 03 (de-unsafe).
+
+---
+
 ## Idiom session 45 — 2026-05-29 — LinebreakState (34 linebreak-scratch globals)
 
 **Type:** execution (workstream 01, Phase-B; batch scalar/inline-array slice).
