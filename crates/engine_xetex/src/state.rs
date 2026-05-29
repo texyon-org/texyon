@@ -182,6 +182,21 @@ pub(crate) struct FontState {
     /// Rust-owned per-font "emitted in output" flag table (`font_max + 1`
     /// entries). Not serialized in the format dump; plain `bool`.
     pub font_used: Vec<bool>,
+    /// Rust-owned font metric offset index tables (`font_max + 1` entries
+    /// each). These hold offsets into the `font_info` arena for each per-font
+    /// metric table (char info, widths, heights, depths, italic corrections,
+    /// lig/kern, kern, extensible, parameters). All serialized in the format
+    /// dump; element type is plain `int32_t` (no semantic typedef in the C
+    /// header).
+    pub char_base: Vec<i32>,
+    pub width_base: Vec<i32>,
+    pub height_base: Vec<i32>,
+    pub depth_base: Vec<i32>,
+    pub italic_base: Vec<i32>,
+    pub lig_kern_base: Vec<i32>,
+    pub kern_base: Vec<i32>,
+    pub exten_base: Vec<i32>,
+    pub param_base: Vec<i32>,
 }
 
 impl Default for FontState {
@@ -214,6 +229,15 @@ impl Default for FontState {
             font_false_bchar: Vec::new(),
             font_glue: Vec::new(),
             font_used: Vec::new(),
+            char_base: Vec::new(),
+            width_base: Vec::new(),
+            height_base: Vec::new(),
+            depth_base: Vec::new(),
+            italic_base: Vec::new(),
+            lig_kern_base: Vec::new(),
+            kern_base: Vec::new(),
+            exten_base: Vec::new(),
+            param_base: Vec::new(),
         }
     }
 }

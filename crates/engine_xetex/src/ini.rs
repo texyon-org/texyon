@@ -1835,24 +1835,6 @@ extern "C" {
     static mut tre_hyphen_char: *mut i32;
     #[link_name = "skew_char"]
     static mut tre_skew_char: *mut i32;
-    #[link_name = "char_base"]
-    static mut tre_char_base: *mut i32;
-    #[link_name = "width_base"]
-    static mut tre_width_base: *mut i32;
-    #[link_name = "height_base"]
-    static mut tre_height_base: *mut i32;
-    #[link_name = "depth_base"]
-    static mut tre_depth_base: *mut i32;
-    #[link_name = "italic_base"]
-    static mut tre_italic_base: *mut i32;
-    #[link_name = "lig_kern_base"]
-    static mut tre_lig_kern_base: *mut i32;
-    #[link_name = "kern_base"]
-    static mut tre_kern_base: *mut i32;
-    #[link_name = "exten_base"]
-    static mut tre_exten_base: *mut i32;
-    #[link_name = "param_base"]
-    static mut tre_param_base: *mut i32;
     #[link_name = "sa_root"]
     static mut fmt_sa_root: [i32; 8];
 }
@@ -2306,51 +2288,54 @@ pub unsafe extern "C" fn store_fmt_file() {
             font_ptr() + 1,
         );
     });
-    dump_slice(
-        fmt_out,
-        tre_char_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    dump_slice(
-        fmt_out,
-        tre_width_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    dump_slice(
-        fmt_out,
-        tre_height_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    dump_slice(
-        fmt_out,
-        tre_depth_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    dump_slice(
-        fmt_out,
-        tre_italic_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    dump_slice(
-        fmt_out,
-        tre_lig_kern_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    dump_slice(
-        fmt_out,
-        tre_kern_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    dump_slice(
-        fmt_out,
-        tre_exten_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    dump_slice(
-        fmt_out,
-        tre_param_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
+    let font_dump_count = font_ptr() + 1;
+    crate::state::with_state(|state| {
+        dump_slice(
+            fmt_out,
+            state.fonts.char_base.as_ptr().add(FONT_BASE as usize),
+            font_dump_count,
+        );
+        dump_slice(
+            fmt_out,
+            state.fonts.width_base.as_ptr().add(FONT_BASE as usize),
+            font_dump_count,
+        );
+        dump_slice(
+            fmt_out,
+            state.fonts.height_base.as_ptr().add(FONT_BASE as usize),
+            font_dump_count,
+        );
+        dump_slice(
+            fmt_out,
+            state.fonts.depth_base.as_ptr().add(FONT_BASE as usize),
+            font_dump_count,
+        );
+        dump_slice(
+            fmt_out,
+            state.fonts.italic_base.as_ptr().add(FONT_BASE as usize),
+            font_dump_count,
+        );
+        dump_slice(
+            fmt_out,
+            state.fonts.lig_kern_base.as_ptr().add(FONT_BASE as usize),
+            font_dump_count,
+        );
+        dump_slice(
+            fmt_out,
+            state.fonts.kern_base.as_ptr().add(FONT_BASE as usize),
+            font_dump_count,
+        );
+        dump_slice(
+            fmt_out,
+            state.fonts.exten_base.as_ptr().add(FONT_BASE as usize),
+            font_dump_count,
+        );
+        dump_slice(
+            fmt_out,
+            state.fonts.param_base.as_ptr().add(FONT_BASE as usize),
+            font_dump_count,
+        );
+    });
     crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
@@ -2854,15 +2839,18 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     });
     tre_hyphen_char = xmalloc_array::<i32>(font_max());
     tre_skew_char = xmalloc_array::<i32>(font_max());
-    tre_char_base = xmalloc_array::<i32>(font_max());
-    tre_width_base = xmalloc_array::<i32>(font_max());
-    tre_height_base = xmalloc_array::<i32>(font_max());
-    tre_depth_base = xmalloc_array::<i32>(font_max());
-    tre_italic_base = xmalloc_array::<i32>(font_max());
-    tre_lig_kern_base = xmalloc_array::<i32>(font_max());
-    tre_kern_base = xmalloc_array::<i32>(font_max());
-    tre_exten_base = xmalloc_array::<i32>(font_max());
-    tre_param_base = xmalloc_array::<i32>(font_max());
+    let base_arr_len = (font_max() as usize) + 1;
+    crate::state::with_state_mut(|state| {
+        state.fonts.char_base = vec![0i32; base_arr_len];
+        state.fonts.width_base = vec![0i32; base_arr_len];
+        state.fonts.height_base = vec![0i32; base_arr_len];
+        state.fonts.depth_base = vec![0i32; base_arr_len];
+        state.fonts.italic_base = vec![0i32; base_arr_len];
+        state.fonts.lig_kern_base = vec![0i32; base_arr_len];
+        state.fonts.kern_base = vec![0i32; base_arr_len];
+        state.fonts.exten_base = vec![0i32; base_arr_len];
+        state.fonts.param_base = vec![0i32; base_arr_len];
+    });
 
     for font_idx in FONT_BASE..=font_ptr() {
         *tre_font_mapping.add(font_idx as usize) = std::ptr::null_mut();
@@ -2944,51 +2932,58 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
             font_count,
         );
     });
-    undump_slice(
-        fmt_in,
-        tre_char_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    undump_slice(
-        fmt_in,
-        tre_width_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    undump_slice(
-        fmt_in,
-        tre_height_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    undump_slice(
-        fmt_in,
-        tre_depth_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    undump_slice(
-        fmt_in,
-        tre_italic_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    undump_slice(
-        fmt_in,
-        tre_lig_kern_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    undump_slice(
-        fmt_in,
-        tre_kern_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    undump_slice(
-        fmt_in,
-        tre_exten_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
-    undump_slice(
-        fmt_in,
-        tre_param_base.add(FONT_BASE as usize),
-        font_ptr() + 1,
-    );
+    let base_undump_count = font_ptr() + 1;
+    crate::state::with_state_mut(|state| {
+        undump_slice(
+            fmt_in,
+            state.fonts.char_base.as_mut_ptr().add(FONT_BASE as usize),
+            base_undump_count,
+        );
+        undump_slice(
+            fmt_in,
+            state.fonts.width_base.as_mut_ptr().add(FONT_BASE as usize),
+            base_undump_count,
+        );
+        undump_slice(
+            fmt_in,
+            state.fonts.height_base.as_mut_ptr().add(FONT_BASE as usize),
+            base_undump_count,
+        );
+        undump_slice(
+            fmt_in,
+            state.fonts.depth_base.as_mut_ptr().add(FONT_BASE as usize),
+            base_undump_count,
+        );
+        undump_slice(
+            fmt_in,
+            state.fonts.italic_base.as_mut_ptr().add(FONT_BASE as usize),
+            base_undump_count,
+        );
+        undump_slice(
+            fmt_in,
+            state
+                .fonts
+                .lig_kern_base
+                .as_mut_ptr()
+                .add(FONT_BASE as usize),
+            base_undump_count,
+        );
+        undump_slice(
+            fmt_in,
+            state.fonts.kern_base.as_mut_ptr().add(FONT_BASE as usize),
+            base_undump_count,
+        );
+        undump_slice(
+            fmt_in,
+            state.fonts.exten_base.as_mut_ptr().add(FONT_BASE as usize),
+            base_undump_count,
+        );
+        undump_slice(
+            fmt_in,
+            state.fonts.param_base.as_mut_ptr().add(FONT_BASE as usize),
+            base_undump_count,
+        );
+    });
     let font_glue_count = font_ptr() + 1;
     let font_glue_max = lo_mem_max();
     if !crate::state::with_state_mut(|state| {
@@ -3580,15 +3575,18 @@ pub unsafe extern "C" fn tt_run_engine(
         });
         tre_hyphen_char = xcalloc_array::<i32>(font_max());
         tre_skew_char = xcalloc_array::<i32>(font_max());
-        tre_char_base = xcalloc_array::<i32>(font_max());
-        tre_width_base = xcalloc_array::<i32>(font_max());
-        tre_height_base = xcalloc_array::<i32>(font_max());
-        tre_depth_base = xcalloc_array::<i32>(font_max());
-        tre_italic_base = xcalloc_array::<i32>(font_max());
-        tre_lig_kern_base = xcalloc_array::<i32>(font_max());
-        tre_kern_base = xcalloc_array::<i32>(font_max());
-        tre_exten_base = xcalloc_array::<i32>(font_max());
-        tre_param_base = xcalloc_array::<i32>(font_max());
+        let base_fmt_len = (font_max() as usize) + 1;
+        crate::state::with_state_mut(|state| {
+            state.fonts.char_base = vec![0i32; base_fmt_len];
+            state.fonts.width_base = vec![0i32; base_fmt_len];
+            state.fonts.height_base = vec![0i32; base_fmt_len];
+            state.fonts.depth_base = vec![0i32; base_fmt_len];
+            state.fonts.italic_base = vec![0i32; base_fmt_len];
+            state.fonts.lig_kern_base = vec![0i32; base_fmt_len];
+            state.fonts.kern_base = vec![0i32; base_fmt_len];
+            state.fonts.exten_base = vec![0i32; base_fmt_len];
+            state.fonts.param_base = vec![0i32; base_fmt_len];
+        });
 
         crate::globals::set_font_ptr(FONT_BASE);
         crate::globals::set_fmem_ptr(7);
@@ -3690,24 +3688,6 @@ extern "C" {
     static mut tt_cleanup_hyphen_char: *mut libc::c_void;
     #[link_name = "skew_char"]
     static mut tt_cleanup_skew_char: *mut libc::c_void;
-    #[link_name = "char_base"]
-    static mut tt_cleanup_char_base: *mut libc::c_void;
-    #[link_name = "width_base"]
-    static mut tt_cleanup_width_base: *mut libc::c_void;
-    #[link_name = "height_base"]
-    static mut tt_cleanup_height_base: *mut libc::c_void;
-    #[link_name = "depth_base"]
-    static mut tt_cleanup_depth_base: *mut libc::c_void;
-    #[link_name = "italic_base"]
-    static mut tt_cleanup_italic_base: *mut libc::c_void;
-    #[link_name = "lig_kern_base"]
-    static mut tt_cleanup_lig_kern_base: *mut libc::c_void;
-    #[link_name = "kern_base"]
-    static mut tt_cleanup_kern_base: *mut libc::c_void;
-    #[link_name = "exten_base"]
-    static mut tt_cleanup_exten_base: *mut libc::c_void;
-    #[link_name = "param_base"]
-    static mut tt_cleanup_param_base: *mut libc::c_void;
 }
 
 // translated from xetex-ini.c:2226 (tt_cleanup)
@@ -3797,15 +3777,17 @@ pub unsafe extern "C" fn tt_cleanup() {
     libc::free(tt_cleanup_font_letter_space);
     libc::free(tt_cleanup_hyphen_char);
     libc::free(tt_cleanup_skew_char);
-    libc::free(tt_cleanup_char_base);
-    libc::free(tt_cleanup_width_base);
-    libc::free(tt_cleanup_height_base);
-    libc::free(tt_cleanup_depth_base);
-    libc::free(tt_cleanup_italic_base);
-    libc::free(tt_cleanup_lig_kern_base);
-    libc::free(tt_cleanup_kern_base);
-    libc::free(tt_cleanup_exten_base);
-    libc::free(tt_cleanup_param_base);
+    crate::state::with_state_mut(|state| {
+        state.fonts.char_base = Vec::new();
+        state.fonts.width_base = Vec::new();
+        state.fonts.height_base = Vec::new();
+        state.fonts.depth_base = Vec::new();
+        state.fonts.italic_base = Vec::new();
+        state.fonts.lig_kern_base = Vec::new();
+        state.fonts.kern_base = Vec::new();
+        state.fonts.exten_base = Vec::new();
+        state.fonts.param_base = Vec::new();
+    });
 
     // Release Rust-owned hyphenation trie arrays (were C `malloc`'d arrays).
     crate::state::with_state_mut(|state| {

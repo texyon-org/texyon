@@ -109,7 +109,6 @@ mod raw {
         pub(super) static mut fmem_ptr: i32;
         pub(super) static mut font_ptr: i32;
         pub(super) static mut xdv_buffer: *mut libc::c_char;
-        pub(super) static mut param_base: *mut i32;
         // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
         pub(super) static mut cur_cs: i32;
         // Current token (xetex-xetexd.h:502; token encoded as int32).
@@ -249,16 +248,6 @@ mod raw {
         // hyphen_char[f], skew_char[f] (xetex-xetexd.h:568–569).
         pub(super) static mut hyphen_char: *mut i32;
         pub(super) static mut skew_char: *mut i32;
-        // Per-font index bases into font_info (xetex-xetexd.h:582–586).
-        pub(super) static mut char_base: *mut i32;
-        pub(super) static mut width_base: *mut i32;
-        pub(super) static mut height_base: *mut i32;
-        pub(super) static mut depth_base: *mut i32;
-        pub(super) static mut italic_base: *mut i32;
-        pub(super) static mut lig_kern_base: *mut i32;
-        pub(super) static mut kern_base: *mut i32;
-        pub(super) static mut exten_base: *mut i32;
-
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
         pub(super) static mut main_p: i32;
         pub(super) static mut main_k: i32;
@@ -2052,15 +2041,15 @@ pub(crate) fn set_font_glue(f: i32, v: i32) {
 /// Returns `param_base[f]`.
 #[inline]
 pub(crate) fn param_base(f: i32) -> i32 {
-    unsafe { *raw::param_base.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.param_base[f as usize])
 }
 
 /// Sets `param_base[f] = v`.
 #[inline]
 pub(crate) fn set_param_base(f: i32, v: i32) {
-    unsafe {
-        *raw::param_base.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.param_base[f as usize] = v;
+    });
 }
 
 /// Returns `font_info[k].b16` (the B16x4 view of font_info word k).
@@ -2313,98 +2302,98 @@ pub(crate) fn set_skew_char_entry(f: i32, v: i32) {
 /// Returns `char_base[f]`.
 #[inline]
 pub(crate) fn char_base_entry(f: i32) -> i32 {
-    unsafe { *raw::char_base.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.char_base[f as usize])
 }
 /// Writes `char_base[f] = v`.
 #[inline]
 pub(crate) fn set_char_base_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::char_base.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.char_base[f as usize] = v;
+    });
 }
 /// Returns `width_base[f]`.
 #[inline]
 pub(crate) fn width_base_entry(f: i32) -> i32 {
-    unsafe { *raw::width_base.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.width_base[f as usize])
 }
 /// Writes `width_base[f] = v`.
 #[inline]
 pub(crate) fn set_width_base_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::width_base.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.width_base[f as usize] = v;
+    });
 }
 /// Returns `height_base[f]`.
 #[inline]
 pub(crate) fn height_base_entry(f: i32) -> i32 {
-    unsafe { *raw::height_base.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.height_base[f as usize])
 }
 /// Writes `height_base[f] = v`.
 #[inline]
 pub(crate) fn set_height_base_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::height_base.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.height_base[f as usize] = v;
+    });
 }
 /// Returns `depth_base[f]`.
 #[inline]
 pub(crate) fn depth_base_entry(f: i32) -> i32 {
-    unsafe { *raw::depth_base.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.depth_base[f as usize])
 }
 /// Writes `depth_base[f] = v`.
 #[inline]
 pub(crate) fn set_depth_base_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::depth_base.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.depth_base[f as usize] = v;
+    });
 }
 /// Returns `italic_base[f]`.
 #[inline]
 pub(crate) fn italic_base_entry(f: i32) -> i32 {
-    unsafe { *raw::italic_base.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.italic_base[f as usize])
 }
 /// Writes `italic_base[f] = v`.
 #[inline]
 pub(crate) fn set_italic_base_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::italic_base.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.italic_base[f as usize] = v;
+    });
 }
 /// Returns `lig_kern_base[f]`.
 #[inline]
 pub(crate) fn lig_kern_base_entry(f: i32) -> i32 {
-    unsafe { *raw::lig_kern_base.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.lig_kern_base[f as usize])
 }
 /// Writes `lig_kern_base[f] = v`.
 #[inline]
 pub(crate) fn set_lig_kern_base_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::lig_kern_base.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.lig_kern_base[f as usize] = v;
+    });
 }
 /// Returns `kern_base[f]`.
 #[inline]
 pub(crate) fn kern_base_entry(f: i32) -> i32 {
-    unsafe { *raw::kern_base.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.kern_base[f as usize])
 }
 /// Writes `kern_base[f] = v`.
 #[inline]
 pub(crate) fn set_kern_base_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::kern_base.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.kern_base[f as usize] = v;
+    });
 }
 /// Returns `exten_base[f]`.
 #[inline]
 pub(crate) fn exten_base_entry(f: i32) -> i32 {
-    unsafe { *raw::exten_base.offset(f as isize) }
+    crate::state::with_state(|s| s.fonts.exten_base[f as usize])
 }
 /// Writes `exten_base[f] = v`.
 #[inline]
 pub(crate) fn set_exten_base_entry(f: i32, v: i32) {
-    unsafe {
-        *raw::exten_base.offset(f as isize) = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.fonts.exten_base[f as usize] = v;
+    });
 }
 
 /// Returns `native_font_type_flag`.
