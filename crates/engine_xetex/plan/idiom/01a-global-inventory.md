@@ -208,12 +208,12 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `max_param_stack` | `i32` | `input` | `src/globals.rs:281` C extern | `max_param_stack`, `set_max_param_stack` | def xetex/xetex-ini.c |  |
 | `param_size` | `i32` | `input` | `src/globals.rs:283` C extern | `param_size` | def xetex/xetex-ini.c; link src/ini.rs:1810 |  |
 | `cur_ptr` | `i32` | `scanner` | `src/globals.rs:287` C extern | `cur_ptr`, `set_cur_ptr` | def xetex/xetex-ini.c |  |
-| `sa_null` | `MemoryWord` | `scanner` | `src/globals.rs:289` C extern | `sa_null`, `set_sa_null_b32s0`, `set_sa_null_b32s1` | def xetex/xetex-ini.c |  |
-| `sa_root` | `[i32; 8]` | `scanner` | `src/globals.rs:293` C extern | `sa_root`, `set_sa_root` | def xetex/xetex-ini.c; link src/ini.rs:1954 |  |
+| `sa_null` | `MemoryWord` | `scanner` | `EngineState.scanner.sa_null` (Rust-owned) | `sa_null`, `set_sa_null_b32s0`, `set_sa_null_b32s1` | MOVED session 55: C def removed |  |
+| `sa_root` | `[i32; 8]` | `scanner` | `EngineState.scanner.sa_root` (Rust-owned) | `sa_root`, `set_sa_root` | MOVED session 55: C def and link alias removed |  |
 | `sa_chain` | `i32` | `scanner` | `src/globals.rs:294` C extern | `sa_chain`, `set_sa_chain` | def xetex/xetex-ini.c |  |
 | `sa_level` | `u16` | `scanner` | `src/globals.rs:295` C extern | `sa_level`, `set_sa_level` | def xetex/xetex-ini.c |  |
 | `max_reg_num` | `i32` | `scanner` | `src/globals.rs:298` C extern | `max_reg_num`, `set_max_reg_num` | def xetex/xetex-ini.c |  |
-| `max_reg_help_line` | `*const libc::c_char` | `scanner` | `src/globals.rs:299` C extern | `set_max_reg_help_line`, `max_reg_help_line` | def xetex/xetex-ini.c |  |
+| `max_reg_help_line` | `*const libc::c_char` | `scanner` | `EngineState.scanner.max_reg_help_line` (Rust-owned) | `set_max_reg_help_line`, `max_reg_help_line` | MOVED session 55: C def removed |  |
 | `var_used` | `i32` | `mem` | `src/globals.rs:302` C extern | `var_used`, `set_var_used` | def xetex/xetex-ini.c |  |
 | `dyn_used` | `i32` | `mem` | `src/globals.rs:303` C extern | `dyn_used`, `set_dyn_used` | def xetex/xetex-ini.c |  |
 | `cs_count` | `i32` | `eqtb` | `src/globals.rs:305` C extern | `cs_count`, `set_cs_count` | def xetex/xetex-ini.c |  |
@@ -472,7 +472,7 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `mlist_penalties` | `bool` | `scanner` | EngineState.scanner.mlist_penalties (Rust-owned) | `mlist_penalties`, `set_mlist_penalties` | MOVED session 48: C def removed |
 | `format_ident` | `i32` | `strings` | `src/globals.rs:679` C extern | `format_ident`, `set_format_ident` | def xetex/xetex-ini.c |  |
 | `edit_name_start` | `i32` | `strings` | `src/globals.rs:681` C extern | `edit_name_start`, `set_edit_name_start` | def xetex/xetex-ini.c |  |
-| `empty` | `crate::mem_types::B32x2` | `scanner` | `src/globals.rs:683` C extern | `set_empty_b32s0`, `set_empty_b32s1` | def xetex/xetex-ini.c; ref xetex/xetex-xetex0.c |  |
+| `empty` | `crate::mem_types::B32x2` | `scanner` | `EngineState.scanner.empty` (Rust-owned) | `set_empty_b32s0`, `set_empty_b32s1` | MOVED session 55: C def removed |  |
 
 ## Promoted Rust statics
 
@@ -570,6 +570,7 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `active_width` | `scanner` | `scaled_t[7]` | `[Scaled; 7]` | session 54 | pending |
 | `best_height_plus_depth` | `scanner` | `scaled_t` | `Scaled` | session 54 | pending |
 | `LR_ptr` | `scanner` | `halfword` | `MemPtr`/`Halfword` | session 54 | pending |
+| `sa_root[]` | `scanner` | `int32_t[8]` (trie root pointer / `halfword`) | `[MemPtr; 8]` | session 55 | pending |
 | `cur_dir` | `scanner` | `small_number` | `SmallNumber` | session 54 | pending |
 | `cur_group` | `save_stack` | `group_code` (enum) | `GroupCode` | session 9 | pending |
 | `grp_stack[]` | `input` | `save_pointer` | `SavePointer`/`Scaled`-style index | session 13 | pending |

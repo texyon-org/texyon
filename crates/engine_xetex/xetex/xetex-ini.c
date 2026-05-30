@@ -85,8 +85,6 @@ UTF16_code *mapped_text;
 char *xdv_buffer;
 /* total_pages, max_v, max_h, max_push, last_bop, doing_leaders, rule_ht,
  * rule_dp, rule_wd, cur_h, cur_v moved to EngineState.shipout (session 47). */
-/* total_stretch, total_shrink, adjust_tail, pre_adjust_tail, pack_begin_line moved to EngineState.scanner. */
-b32x2 empty;
 /* cur_f, cur_c, cur_i, just_box, active_width moved to EngineState.scanner. */
 int32_t cur_l, cur_r;
 int32_t cur_q;
@@ -108,12 +106,9 @@ int32_t bchar;
 int32_t false_bchar;
 bool cancel_boundary;
 bool ins_disc;
-/* cur_box, after_token, LR_ptr, LR_problems, cur_dir moved to EngineState.scanner. */
+/* cur_box, after_token, LR_ptr, LR_problems, cur_dir, max_reg_help_line, sa_root, sa_null moved to EngineState.scanner. */
 /* pseudo_files moved to EngineState.input (scalar). */
-const char* max_reg_help_line;
-int32_t sa_root[8];
 int32_t cur_ptr;
-memory_word sa_null;
 /* disc_ptr[4] moved to EngineState.scanner (inline fixed array). */
 scaled_t delta;
 /* used_tectonic_coda_tokens moved to EngineState.scanner (scalar). */

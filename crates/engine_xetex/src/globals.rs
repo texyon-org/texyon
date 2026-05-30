@@ -124,15 +124,6 @@ mod raw {
         // SA trie cursor — scratch pointer used during SA node traversal/allocation
         // (xetex-xetexd.h:710; xetex-ini.c:336).
         pub(super) static mut cur_ptr: i32;
-        // SA null sentinel: a MemoryWord with both halves == TEX_NULL (xetex-ini.c:3203).
-        pub(super) static mut sa_null: MemoryWord;
-
-        // Sparse-array (SA) root table and saved-state chain (xetex-xetexd.h:709–713).
-        // sa_root[i] is the root of the trie for register class i (0..=7).
-        pub(super) static mut sa_root: [i32; 8];
-
-        // Register-size limits (xetex-xetexd.h:707–708).
-        pub(super) static mut max_reg_help_line: *const libc::c_char;
 
         // Memory-usage counters (xetex-xetexd.h:463).
         pub(super) static mut var_used: i32;
@@ -226,9 +217,6 @@ mod raw {
         // xetex-math.c module-level state (cur_mlist, cur_style, cur_size,
         // cur_mu, mlist_penalties) moved to EngineState.scanner (ScannerState);
         // see src/state.rs (session 48).
-
-        // The all-zero b32x2 template used to clear math-noad fields (xetex-xetexd.h:608).
-        pub(super) static mut empty: crate::mem_types::B32x2;
     }
 }
 
@@ -2927,14 +2915,14 @@ pub(crate) fn set_skip_line(v: i32) {
 /// Read `sa_root[i]` (the root of sparse-array trie for class i).
 #[inline]
 pub(crate) fn sa_root(i: usize) -> i32 {
-    unsafe { raw::sa_root[i] }
+    crate::state::with_state(|s| s.scanner.sa_root[i])
 }
 /// Write `sa_root[i] = v`.
 #[inline]
 pub(crate) fn set_sa_root(i: usize, v: i32) {
-    unsafe {
-        raw::sa_root[i] = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.sa_root[i] = v;
+    });
 }
 #[inline]
 pub(crate) fn sa_chain() -> i32 {
@@ -2976,7 +2964,7 @@ pub(crate) fn set_cur_ptr(v: i32) {
 /// Returns a copy of `sa_null` — the SA null memory-word sentinel.
 #[inline]
 pub(crate) fn sa_null() -> crate::mem_types::MemoryWord {
-    unsafe { raw::sa_null }
+    crate::state::with_state(|s| s.scanner.sa_null)
 }
 
 // ---------------------------------------------------------------------------
@@ -3010,9 +2998,9 @@ pub(crate) fn set_max_reg_num(v: i32) {
 }
 #[inline]
 pub(crate) fn set_max_reg_help_line(v: *const libc::c_char) {
-    unsafe {
-        raw::max_reg_help_line = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.max_reg_help_line = v;
+    });
 }
 #[inline]
 pub(crate) fn var_used() -> i32 {
@@ -3046,7 +3034,7 @@ pub(crate) fn set_cs_count(v: i32) {
 }
 #[inline]
 pub(crate) fn max_reg_help_line() -> *const libc::c_char {
-    unsafe { raw::max_reg_help_line }
+    crate::state::with_state(|s| s.scanner.max_reg_help_line)
 }
 
 // ---------------------------------------------------------------------------
@@ -5052,25 +5040,26 @@ pub(crate) fn set_edit_name_start(v: i32) {
 }
 #[inline]
 pub(crate) fn set_empty_b32s0(v: i32) {
-    unsafe {
-        raw::empty.s0 = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.scanner.empty.s0 = v;
+    });
 }
 #[inline]
 pub(crate) fn set_empty_b32s1(v: i32) {
-    unsafe {
-        raw::empty.s1 = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.scanner.empty.s1 = v;
+    });
 }
 #[inline]
 pub(crate) fn set_sa_null_b32s0(v: i32) {
-    unsafe {
-        raw::sa_null.b32.s0 = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.scanner.sa_null.b32.s0 = v;
+    });
 }
 #[inline]
 pub(crate) fn set_sa_null_b32s1(v: i32) {
-    unsafe {
-        raw::sa_null.b32.s1 = v;
-    }
+    crate::state::with_state_mut(|state| {
+        state.scanner.sa_null.b32.s1 = v;
+    });
 }
+

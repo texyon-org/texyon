@@ -1760,8 +1760,6 @@ extern "C" {
 
     #[link_name = "output_file_extension"]
     static mut tre_output_file_extension: *const libc::c_char;
-    #[link_name = "sa_root"]
-    static mut fmt_sa_root: [i32; 8];
 }
 
 #[inline]
@@ -1981,7 +1979,8 @@ pub unsafe extern "C" fn store_fmt_file() {
     dump_int(fmt_out, rover());
 
     for k in INT_VAL as usize..=INTER_CHAR_VAL as usize {
-        dump_int(fmt_out, fmt_sa_root[k]);
+        let val = crate::state::with_state(|state| state.scanner.sa_root[k]);
+        dump_int(fmt_out, val);
     }
 
     let mut p = 0;
@@ -2614,7 +2613,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         if x < MIN_HALFWORD || x > lo_mem_max() {
             bad_format_file();
         }
-        fmt_sa_root[idx as usize] = x;
+        crate::state::with_state_mut(|state| state.scanner.sa_root[idx as usize] = x);
     }
 
     p = 0;

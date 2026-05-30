@@ -16,7 +16,7 @@ use std::mem::size_of;
 /// So a straightforward `#[repr(C)]` struct with `s0` then `s1`
 /// round-trips correctly.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct B32x2 {
     pub s0: i32,
     pub s1: i32,
@@ -49,6 +49,16 @@ pub union MemoryWord {
     pub gr: f64,
     pub ptr: *mut std::ffi::c_void,
 }
+
+impl Default for MemoryWord {
+    #[inline]
+    fn default() -> Self {
+        MemoryWord {
+            b32: B32x2 { s0: 0, s1: 0 },
+        }
+    }
+}
+
 
 // The C engine's algorithms assume `sizeof(memory_word) == 8`, and the
 // layout of `mem[]` relies on it. Catch any drift at compile time.

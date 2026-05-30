@@ -380,6 +380,14 @@ pub(crate) struct ScannerState {
     pub LR_ptr: i32,
     pub LR_problems: i32,
     pub cur_dir: i16,
+    /// Sparse-array trie roots: `sa_root[0..=7]` (xetex-xetexd.h:709).
+    pub sa_root: [i32; 8],
+    /// Sparse-array null sentinel (xetex-ini.c:3203).
+    pub sa_null: crate::mem_types::MemoryWord,
+    /// The all-zero B32x2 template (xetex-xetexd.h:608).
+    pub empty: crate::mem_types::B32x2,
+    /// Register-size limit help message pointer (xetex-xetexd.h:708).
+    pub max_reg_help_line: *const libc::c_char,
 }
 
 #[derive(Default)]

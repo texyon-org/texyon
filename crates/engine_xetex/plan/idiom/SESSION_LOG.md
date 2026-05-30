@@ -7,6 +7,46 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 55 — 2026-05-30 — equivalents sparse-array metadata and sentinel globals → ScannerState
+
+**Type:** execution (workstream 01, Phase-B; equivalents sparse-array / sentinel globals migration). One commit.
+
+**Slice:** the sparse-array metadata and sentinel globals (`sa_root`, `sa_null`, `empty`, `max_reg_help_line`) → fields on `EngineState.scanner` (`ScannerState`).
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `int32_t sa_root[8]`, `memory_word sa_null`, `b32x2 empty`, `const char* max_reg_help_line`.
+- (b) aliases: `#[link_name = "sa_root"] static mut fmt_sa_root: [i32; 8]` in `src/ini.rs`.
+- (c) C readers: only `xetex-ini.c` (definition). No C code references them.
+- (d) cross-module Rust extern redeclarations: none.
+- format dump: yes, `sa_root` is format-serialized. Reconciled load/dump paths natively.
+
+**Work done (1 commit):**
+- Derived `Default` for `B32x2` struct in `src/mem_types.rs`.
+- Implemented `Default` for `MemoryWord` union in `src/mem_types.rs` so that `ScannerState` can derive `Default` with a `MemoryWord` field.
+- Added four fields (`sa_root`, `sa_null`, `empty`, `max_reg_help_line`) to `ScannerState` in `src/state.rs`.
+- Removed their raw static mut declarations from `src/globals.rs`.
+- Repointed all their getter/setter/accessor functions in `src/globals.rs` to delegate to `state.scanner` using `with_state` and `with_state_mut`.
+- Removed their C definitions from `xetex/xetex-ini.c`.
+- Removed `fmt_sa_root` raw linkage alias in `src/ini.rs` and replaced it with direct, safe `with_state` and `with_state_mut` calls.
+
+**Newtype debts (§4):**
+Added 1 row to the Deferred newtype worklist backlog in `01a-global-inventory.md`:
+- `sa_root[]` (`[MemPtr; 8]`)
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4** passes perfectly with no regressions!
+
+**Metrics after this session:**
+- `globals.rs` raw extern count: **60 → 56** (−4).
+- `thin global accessors`: 823 total / 182 state-backed scalars/arrays (+4).
+
+**For the next session (56+):**
+- Migrate the **`mem` arena** (§5) — the hottest/highest-leverage ownership move and the real pivot into Phase C.
+- Or migrate remaining ownership slices (`xdv_buffer`, `name_of_file*`, `native_text`).
+
+---
+
 ## Idiom session 54 — 2026-05-30 — remaining 18 scanner scratch globals → ScannerState
 
 **Type:** execution (workstream 01, Phase-B; remaining `scanner` scratch migration). One commit.
