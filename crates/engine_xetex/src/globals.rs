@@ -47,8 +47,6 @@ pub(crate) struct InputState {
 }
 
 mod raw {
-    use crate::mem_types::MemoryWord;
-
     extern "C" {
         // xetex-xetexd.h:506 — current input state; layout mirrors InputState above.
         pub(super) static mut cur_input: super::InputState;
@@ -61,16 +59,10 @@ mod raw {
         // xetex-xetexd.h:459 — temporary pointer register.
         pub(super) static mut temp_ptr: i32;
 
-        // Memory arena globals (xetex-xetexd.h:460–466).
-        // Allocated by C (`xmalloc_array`) during engine init; valid indices
-        // are 0 .. =MEM_TOP (4999999). TEX_NULL (-268435455) is never used
-        // as an index — it is a sentinel that callers check before indexing.
-        pub(super) static mut mem: *mut MemoryWord;
-        pub(super) static mut lo_mem_max: i32;
-        pub(super) static mut hi_mem_min: i32;
-        pub(super) static mut avail: i32;
-        pub(super) static mut mem_end: i32;
-        pub(super) static mut rover: i32;
+        // The `mem` arena (`memory_word *mem`) and its bookkeeping scalars
+        // (`lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`,
+        // `dyn_used`) are now Rust-owned on `EngineState.mem` (`MemState`);
+        // accessors index `s.mem.data` / read the scalars. (session 58)
 
         // Output file handles (xetex-xetexd.h:429–430, 691).
         // `rust_output_handle_t` is `uintptr_t` (tectonic_bridge_core_generated.h:9).
@@ -123,9 +115,8 @@ mod raw {
         // (xetex-xetexd.h:710; xetex-ini.c:336).
         pub(super) static mut cur_ptr: i32;
 
-        // Memory-usage counters (xetex-xetexd.h:463).
-        pub(super) static mut var_used: i32;
-        pub(super) static mut dyn_used: i32;
+        // `var_used` / `dyn_used` memory-usage counters moved to
+        // EngineState.mem (MemState) with the `mem` arena. (session 58)
 
         // cond_ptr / if_limit / cur_if / if_line / skip_line moved to
         // EngineState.scanner (scalars).
@@ -294,17 +285,16 @@ pub(crate) fn set_j_random(v: u8) {
 /// Read `mem[p].b32.s0` (the first 32-bit word / node-size / type field).
 #[inline]
 pub(crate) fn mem_b32s0(p: i32) -> i32 {
-    // SAFETY: see module-level doc. Caller ensures p is in-bounds.
-    unsafe { (*raw::mem.offset(p as isize)).b32.s0 }
+    // SAFETY: union projection; the `Vec` index is bounds-checked.
+    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b32.s0 })
 }
 
 /// Write `v` into `mem[p].b32.s0`.
 #[inline]
 pub(crate) fn set_mem_b32s0(p: i32, v: i32) {
-    // SAFETY: see module-level doc. Caller ensures p is in-bounds.
-    unsafe {
-        (*raw::mem.offset(p as isize)).b32.s0 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.data[p as usize].b32.s0 = v;
+    });
 }
 
 /// Read `mem[p].b32.s1` (the `LLIST_link` / successor-pointer field).
@@ -314,17 +304,16 @@ pub(crate) fn set_mem_b32s0(p: i32, v: i32) {
 /// a valid index; callers must guard against it before calling this.
 #[inline]
 pub(crate) fn mem_b32s1(p: i32) -> i32 {
-    // SAFETY: see module-level doc. Caller ensures p is in-bounds.
-    unsafe { (*raw::mem.offset(p as isize)).b32.s1 }
+    // SAFETY: union projection; the `Vec` index is bounds-checked.
+    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b32.s1 })
 }
 
 /// Write `v` into `mem[p].b32.s1`.
 #[inline]
 pub(crate) fn set_mem_b32s1(p: i32, v: i32) {
-    // SAFETY: see module-level doc. Caller ensures p is in-bounds.
-    unsafe {
-        (*raw::mem.offset(p as isize)).b32.s1 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.data[p as usize].b32.s1 = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -333,73 +322,63 @@ pub(crate) fn set_mem_b32s1(p: i32, v: i32) {
 
 #[inline]
 pub(crate) fn lo_mem_max() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::lo_mem_max }
+    crate::state::with_state(|s| s.mem.lo_mem_max)
 }
 
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn set_lo_mem_max(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::lo_mem_max = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.lo_mem_max = v;
+    });
 }
 
 #[inline]
 pub(crate) fn hi_mem_min() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::hi_mem_min }
+    crate::state::with_state(|s| s.mem.hi_mem_min)
 }
 
 #[inline]
 pub(crate) fn set_hi_mem_min(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::hi_mem_min = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.hi_mem_min = v;
+    });
 }
 
 #[inline]
 pub(crate) fn avail() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::avail }
+    crate::state::with_state(|s| s.mem.avail)
 }
 
 #[inline]
 pub(crate) fn set_avail(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::avail = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.avail = v;
+    });
 }
 
 #[inline]
 pub(crate) fn mem_end() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::mem_end }
+    crate::state::with_state(|s| s.mem.mem_end)
 }
 
 #[inline]
 pub(crate) fn set_mem_end(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::mem_end = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.mem_end = v;
+    });
 }
 
 #[inline]
 pub(crate) fn rover() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::rover }
+    crate::state::with_state(|s| s.mem.rover)
 }
 
 #[inline]
 pub(crate) fn set_rover(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::rover = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.rover = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -502,124 +481,121 @@ pub(crate) fn set_open_parens(v: i32) {
 /// Read `mem[p].b16.s0` (low 16 bits of the first 32-bit half-word).
 #[inline]
 pub(crate) fn mem_b16s0(p: i32) -> u16 {
-    // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).b16.s0 }
+    // SAFETY: union projection; the `Vec` index is bounds-checked.
+    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s0 })
 }
 /// Write `v` into `mem[p].b16.s0`.
 #[inline]
 pub(crate) fn set_mem_b16s0(p: i32, v: u16) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        (*raw::mem.offset(p as isize)).b16.s0 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.data[p as usize].b16.s0 = v;
+    });
 }
 
 /// Read `mem[p].b16.s1` (high 16 bits of the first 32-bit half-word).
 #[inline]
 pub(crate) fn mem_b16s1(p: i32) -> u16 {
-    // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).b16.s1 }
+    // SAFETY: union projection; the `Vec` index is bounds-checked.
+    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s1 })
 }
 /// Write `v` into `mem[p].b16.s1`.
 #[inline]
 pub(crate) fn set_mem_b16s1(p: i32, v: u16) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        (*raw::mem.offset(p as isize)).b16.s1 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.data[p as usize].b16.s1 = v;
+    });
 }
 /// Read `mem[p].b16.s2` (low 16 bits of the second 32-bit half-word).
 #[inline]
 pub(crate) fn mem_b16s2(p: i32) -> u16 {
-    unsafe { (*raw::mem.offset(p as isize)).b16.s2 }
+    // SAFETY: union projection; the `Vec` index is bounds-checked.
+    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s2 })
 }
 /// Read `mem[p].b16.s3` (high 16 bits of the second 32-bit half-word).
 #[inline]
 pub(crate) fn mem_b16s3(p: i32) -> u16 {
-    unsafe { (*raw::mem.offset(p as isize)).b16.s3 }
+    // SAFETY: union projection; the `Vec` index is bounds-checked.
+    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s3 })
 }
 /// Write `v` into `mem[p].b16.s2`.
 #[inline]
 pub(crate) fn set_mem_b16s2(p: i32, v: u16) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        (*raw::mem.offset(p as isize)).b16.s2 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.data[p as usize].b16.s2 = v;
+    });
 }
 /// Write `v` into `mem[p].b16.s3`.
 #[inline]
 pub(crate) fn set_mem_b16s3(p: i32, v: u16) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        (*raw::mem.offset(p as isize)).b16.s3 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.data[p as usize].b16.s3 = v;
+    });
 }
 
 /// Read the `gr` (f64) field of `mem[p]`.
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn mem_gr(p: i32) -> f64 {
-    // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).gr }
+    // SAFETY: union projection; the `Vec` index is bounds-checked.
+    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].gr })
 }
 /// Write the `gr` (f64) field of `mem[p]`.
 #[inline]
 pub(crate) fn set_mem_gr(p: i32, v: f64) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        (*raw::mem.offset(p as isize)).gr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.data[p as usize].gr = v;
+    });
 }
 
 /// Read the `ptr` (void*) field of `mem[p]`.
 #[inline]
 pub(crate) fn mem_ptr(p: i32) -> *mut std::ffi::c_void {
-    // SAFETY: see module-level doc.
-    unsafe { (*raw::mem.offset(p as isize)).ptr }
+    // SAFETY: union projection; the `Vec` index is bounds-checked.
+    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].ptr })
 }
 /// Returns `&mem[p]` as a raw pointer — for C functions that expect a
 /// `memory_word*` node pointer (e.g. `real_get_native_italic_correction`).
 /// Equivalent to the C macro `get_native_italic_correction(p)` = `&mem[p]`.
+/// Valid past the borrow because the thread-local arena owner never reallocates.
 #[inline]
 pub(crate) fn mem_node_addr(p: i32) -> *mut std::ffi::c_void {
-    unsafe { raw::mem.offset(p as isize) as *mut std::ffi::c_void }
+    crate::state::with_state_mut(|s| unsafe {
+        s.mem.data.as_mut_ptr().add(p as usize) as *mut std::ffi::c_void
+    })
 }
 /// Write the `ptr` (void*) field of `mem[p]`.
 #[inline]
 pub(crate) fn set_mem_ptr(p: i32, v: *mut std::ffi::c_void) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        (*raw::mem.offset(p as isize)).ptr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.data[p as usize].ptr = v;
+    });
 }
 
 /// Return a `*const u16` pointing to `mem[p]` — used for NATIVE_NODE_text.
+/// Valid past the borrow because the thread-local arena owner never reallocates.
 #[inline]
 pub(crate) fn mem_as_u16_ptr(p: i32) -> *const u16 {
-    // SAFETY: see module-level doc. Caller ensures p + NATIVE_NODE_SIZE is a valid mem index.
-    unsafe { raw::mem.offset(p as isize) as *const u16 }
+    crate::state::with_state(|s| s.mem.data.as_ptr().wrapping_add(p as usize) as *const u16)
 }
 
 /// Return a `*mut u16` pointing to `mem[p]` — for writing NATIVE_NODE_text.
+/// Valid past the borrow because the thread-local arena owner never reallocates.
 #[inline]
 pub(crate) fn mem_as_u16_ptr_mut(p: i32) -> *mut u16 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::mem.offset(p as isize) as *mut u16 }
+    crate::state::with_state_mut(|s| s.mem.data.as_mut_ptr().wrapping_add(p as usize) as *mut u16)
 }
 
 /// Copy the full MemoryWord at `mem[p]`.
 #[inline]
 pub(crate) fn mem_word(p: i32) -> crate::mem_types::MemoryWord {
-    // SAFETY: see module-level doc.
-    unsafe { *raw::mem.offset(p as isize) }
+    crate::state::with_state(|s| s.mem.data[p as usize])
 }
 /// Write a full MemoryWord to `mem[p]`.
 #[inline]
 pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        *raw::mem.offset(p as isize) = w;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.data[p as usize] = w;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3036,23 +3012,23 @@ pub(crate) fn set_max_reg_help_line(v: *const libc::c_char) {
 }
 #[inline]
 pub(crate) fn var_used() -> i32 {
-    unsafe { raw::var_used }
+    crate::state::with_state(|s| s.mem.var_used)
 }
 #[inline]
 pub(crate) fn set_var_used(v: i32) {
-    unsafe {
-        raw::var_used = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.var_used = v;
+    });
 }
 #[inline]
 pub(crate) fn dyn_used() -> i32 {
-    unsafe { raw::dyn_used }
+    crate::state::with_state(|s| s.mem.dyn_used)
 }
 #[inline]
 pub(crate) fn set_dyn_used(v: i32) {
-    unsafe {
-        raw::dyn_used = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.mem.dyn_used = v;
+    });
 }
 #[inline]
 pub(crate) fn cs_count() -> i32 {

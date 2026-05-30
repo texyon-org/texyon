@@ -37,13 +37,8 @@ int32_t expand_depth;
 /* native_text cluster moved to EngineState.scanner */
 bool set_box_allowed;
 int32_t temp_ptr;
-memory_word *mem;
-int32_t lo_mem_max;
-int32_t hi_mem_min;
-int32_t var_used, dyn_used;
-int32_t avail;
-int32_t mem_end;
-int32_t rover;
+/* mem / lo_mem_max / hi_mem_min / var_used / dyn_used / avail / mem_end / rover
+   moved to EngineState.mem (MemState; Rust-owned Vec + scalars). (session 58) */
 /* last_leftmost_char / last_rightmost_char / hlist_stack / hlist_stack_level /
    first_p / global_prev_p moved to EngineState.linebreak (LinebreakState). */
 /* nest_ptr / max_nest_stack moved to EngineState.input (scalars). */

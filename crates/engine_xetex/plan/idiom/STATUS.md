@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last execution = session 57, xdv_buffer, mapped_text, and native_text cluster → EngineState.fonts / ScannerState).
+Last updated: 2026-05-30 (last execution = session 58, the `mem` arena + its 7 bookkeeping scalars → EngineState.mem (MemState)).
 
 ## How to read this file
 
@@ -507,6 +507,7 @@ least-coupled non-`misc` clusters:
 -   **Equivalents sparse-array/sentinel globals moved to ScannerState (session 55):** the equivalents sparse-array metadata and sentinel globals (`sa_root`, `sa_null`, `empty`, `max_reg_help_line`) migrated to `EngineState.scanner`. `fmt_sa_root` C-linkage alias removed from `src/ini.rs` and replaced with safe, native format load/dump state accessors.
 -   **`name_of_file` & `name_of_file16` buffer globals moved to `EngineState.input` (session 56):** the filename buffer globals `name_of_file` and `name_of_file16` moved into `EngineState.input` as Rust-owned `Vec<libc::c_char>` and `Vec<u16>`. Manual `libc::free` and `xmalloc`/`xcalloc` allocations in `src/scan.rs` and `src/io.rs` replaced with safe, native vector manipulations. The module-local `static mut NAME16LEN` in `src/io.rs` and C definitions in `xetex/xetex-ini.c` were completely removed. All accessors repointed.
 -   **`xdv_buffer`, `mapped_text`, and `native_text` cluster moved to state (session 57):** the buffers `xdv_buffer`, `mapped_text`, and the `native_text` cluster (`native_text`, `native_text_size`, `native_len`, `save_native_len`) migrated to `EngineState.fonts` and `EngineState.scanner` respectively. C definitions in `xetex/xetex-ini.c` and raw static mut declarations in `src/globals.rs` were removed. Manual allocations, reallocations, and `libc::free` calls were replaced with safe, native vector manipulations. Resolved a linker error in `scan.rs` (`do_locale_linebreaks`) and designed a safe `apply_mapping` slice-pointer FFI bridge.
+-   **The `mem` arena → Rust-owned `Vec<MemoryWord>` on `EngineState.mem` (session 58):** the dynamic-memory arena `mem` (`memory_word *`, the engine's hottest storage) and its seven bookkeeping scalars (`lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`, `dyn_used`) moved into a new `MemState`. `data` is allocated in `ini.rs` (two preserved inclusive sizes: format-load `MEM_TOP + 1`, initex `MEM_TOP + 2`) and dropped by `tt_cleanup`/format-reset via `Vec::new()`; never reallocates. ~30 accessors repointed (indexed word accessors index `s.mem.data[p]`; the three pointer-escaping accessors keep the `as_mut_ptr().add(p)` shape). The free-list format dump/undump regions reconciled via a state-derived base pointer precomputed once outside `with_state`/`with_state_mut` (the session-51 eqtb pattern), valid across the interleaved `mem_*` accessor reads. Removed both `#[link_name="mem"]` aliases (`tre_mem`, `tt_cleanup_mem`), the 8 raw externs (+ the now-unused `MemoryWord` import in `mod raw`), and the 7-line C def block. No newtype debt (element `memory_word`; the 7 scalars are plain `int32_t`, the mem-pointer ones pointer-taxonomy candidates only). `xmalloc_array`/`xcalloc_array` are now dead in `ini.rs`. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -515,7 +516,7 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 48 (session 57 moved xdv_buffer, mapped_text, and native_text cluster) |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 182 state-backed scalars/arrays (incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and 33 `LinebreakState` inline scalars/arrays) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
@@ -596,7 +597,9 @@ the snippets in `00-overview.md` / the workstream plans.
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
 1.  **`misc` bucket fully drained (sessions 44–46). Classified-but-unmigrated
-    scratch completed (sessions 47-48, 53-54). Next: the `mem` arena (§5), remaining ownership slices, or Phase C.**
+    scratch completed (sessions 47-48, 53-54). All ownership slices done,
+    including the `mem` arena (session 58). Phase B essentially complete →
+    Next: Phase C (thread `&mut EngineState`, remove the thread-local bridge).**
 
     Sessions 44 (planning), 45 (`LinebreakState`, 34 globals), and 46 (the three
     private-static clusters below) drained `misc`. **Sessions 47–48** continued the
@@ -610,11 +613,14 @@ the snippets in `00-overview.md` / the workstream plans.
 
     **`eqtb` array proper done (session 51)** — the malloc'd `*mut MemoryWord`
     moved to a Rust-owned `Vec` on `EqtbState.data`, with the sparse-region
-    dump/undump reconciled via the font-array base-pointer pattern. **Next
-    high-value slice: `hash`** (the `yhash` offset-pointer trick `hash = yhash -
-    hash_offset` + the `tt_run_engine_allocate_yhash` C helper + `hash_offset`/
-    cleanup; the `Vec` accessor subtracts `hash_offset`). Then the `mem` arena
-    (§5) — the hottest move and the real pivot into Phase C.
+    dump/undump reconciled via the font-array base-pointer pattern. **`hash`
+    done (session 52)** and **the `mem` arena done (session 58)** — both via the
+    same base-pointer dump/undump reconciliation. **Phase B is essentially
+    complete:** every remaining static is the intentionally-deferred Phase-C set
+    (hot tokenizer / lig-kern), a capacity limit, or `cur_ptr`. The next move is
+    **Phase C** — thread `&mut EngineState`/`&mut MemState` through one decoupled
+    subsystem (the `src/mem.rs` allocators are the natural first consumers, §5
+    step 4) and delete its thread-local bridge.
 
     | Target | Members | Shape | Status |
     |---|---|---|---|
@@ -634,12 +640,16 @@ the snippets in `00-overview.md` / the workstream plans.
 
     After session 49, ~82 raw statics remained, in four buckets:
 
+    After session 58, **40 raw statics remain, all Phase-C / capacity / cur_ptr —
+    Phase B is essentially complete** (the last ownership slice, the `mem` arena,
+    is done):
+
     | Bucket | ~Count | Fate |
     |---|---:|---|
-    | Intentionally deferred: hot tokenizer (`cur_cmd/chr/tok/cs/val`), mem arena (`mem`, `lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`, `dyn_used`), hot lig/kern (`main_*`, `cur_l/r/q`, etc.) | 37 | Stay raw until Phase C |
-    | Ownership slices (`hash`, `sa_root`, `xdv_buffer`, `name_of_file*`, `native_text`) — `prim`/`xeq_level` done s49, `eqtb` array done s51, `hash` done s52, `sa_root` done s55 | 9 | Need format-dump or alloc rewrite work |
-    | Classified-but-unmigrated scratch (shipout DVI statics done s53, scanner box/packaging done s54) | 0 | Completed |
-    | Capacity/size limits (`stack_size`, `nest_size`, etc.) | 5 | Probably stay as C forever |
+    | Intentionally deferred: hot tokenizer (`cur_cmd/chr/tok/cs/val`), hot lig/kern (`main_*`, `cur_l/r/q`, `lig_stack`, `bchar`, …), `cur_input`/`cur_list`/`line`/`temp_ptr` | ~27 | Stay raw until Phase C threading |
+    | Ownership slices — **all done**: `prim`/`xeq_level` s49, `eqtb` array s51, `hash` s52, `sa_root` s55, `xdv_buffer`/`mapped_text`/`native_text` s57, `mem` arena **s58** | 0 | Completed |
+    | Capacity/size limits (`stack_size`, `nest_size`, `buf_size`, `param_size`, `save_size`, `max_in_open`, `expand_depth`, `first`) | 8 | Probably stay as C forever |
+    | `cur_ptr` (148 uses, too broad to bridge without benchmarking) | 1 | Thread in Phase C |
 
     **Do not bridge the hot tokenizer scalars** (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`,
     `cur_val`) through the thread-local — they are read on nearly every

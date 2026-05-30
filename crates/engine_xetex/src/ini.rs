@@ -1750,8 +1750,7 @@ extern "C" {
     static mut tre_stack_size: i32;
     #[link_name = "expand_depth"]
     static mut tre_expand_depth: i32;
-    #[link_name = "mem"]
-    static mut tre_mem: *mut crate::mem_types::MemoryWord;
+    // `mem` is now Rust-owned (`EngineState.mem.data`); no FFI alias. (session 58)
     // `eqtb` is now Rust-owned (`EngineState.eqtb.data`); no FFI alias. (session 51)
     // `hash` is now Rust-owned (`EngineState.eqtb.hash`); no FFI alias. (session 52)
 
@@ -1983,12 +1982,17 @@ pub unsafe extern "C" fn store_fmt_file() {
         dump_int(fmt_out, val);
     }
 
+    // `mem` is now a Rust-owned `Vec`; take a stable base pointer once (the
+    // thread-local owner never reallocates) so the free-list `dump_slice`
+    // calls below — interleaved with `mem_*`/`var_used` accessor reads — hold
+    // no borrow. (session 58, the session-51 eqtb pattern.)
+    let mem_ptr = crate::state::with_state(|s| s.mem.data.as_ptr());
     let mut p = 0;
     let mut q = rover();
     let mut x = 0;
     loop {
         let len = q + 2 - p;
-        dump_slice(fmt_out, tre_mem.add(p as usize), len);
+        dump_slice(fmt_out, mem_ptr.add(p as usize), len);
         x += len;
         set_var_used(var_used() + q - p);
         p = q + mem_b32s0(q);
@@ -2000,14 +2004,14 @@ pub unsafe extern "C" fn store_fmt_file() {
 
     set_var_used(var_used() + lo_mem_max() - p);
     set_dyn_used(mem_end() + 1 - hi_mem_min());
-    dump_slice(fmt_out, tre_mem.add(p as usize), lo_mem_max() + 1 - p);
+    dump_slice(fmt_out, mem_ptr.add(p as usize), lo_mem_max() + 1 - p);
     x += lo_mem_max() + 1 - p;
 
     dump_int(fmt_out, hi_mem_min());
     dump_int(fmt_out, avail());
     dump_slice(
         fmt_out,
-        tre_mem.add(hi_mem_min() as usize),
+        mem_ptr.add(hi_mem_min() as usize),
         mem_end() + 1 - hi_mem_min(),
     );
     x += mem_end() + 1 - hi_mem_min();
@@ -2454,9 +2458,8 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
             state.strings.str_start = Vec::new();
             state.eqtb.data = Vec::new();
             state.eqtb.hash = Vec::new();
+            state.mem.data = Vec::new();
         });
-        libc::free(tre_mem as *mut libc::c_void);
-        tre_mem = std::ptr::null_mut();
     }
 
     x = undump_int(fmt_in);
@@ -2525,7 +2528,16 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     set_cur_list_head(CONTRIB_HEAD);
     set_cur_list_tail(CONTRIB_HEAD);
     set_page_tail(PAGE_HEAD);
-    tre_mem = xmalloc_array::<crate::mem_types::MemoryWord>(MEM_TOP);
+    // `xmalloc_array(MEM_TOP)` allocated `MEM_TOP + 1` words; match it.
+    let mem_words_load = (MEM_TOP as usize) + 1;
+    crate::state::with_state_mut(|s| {
+        s.mem.data = vec![
+            crate::mem_types::MemoryWord {
+                b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
+            };
+            mem_words_load
+        ];
+    });
 
     x = undump_int(fmt_in);
     if x != EQTB_SIZE {
@@ -2613,10 +2625,14 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         crate::state::with_state_mut(|state| state.scanner.sa_root[idx as usize] = x);
     }
 
+    // `mem` is now a Rust-owned `Vec`; take a stable mutable base pointer once
+    // (never reallocated) for the free-list `undump_slice` calls — interleaved
+    // with `mem_*` accessor reads, so it holds no borrow. (session 58)
+    let mem_ptr = crate::state::with_state_mut(|s| s.mem.data.as_mut_ptr());
     p = 0;
     q = rover();
     loop {
-        undump_slice(fmt_in, tre_mem.add(p as usize), q + 2 - p);
+        undump_slice(fmt_in, mem_ptr.add(p as usize), q + 2 - p);
         p = q + mem_b32s0(q);
         if p > lo_mem_max() || (q >= mem_b32s1(q + 1) && mem_b32s1(q + 1) != rover()) {
             bad_format_file();
@@ -2627,7 +2643,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         }
     }
 
-    undump_slice(fmt_in, tre_mem.add(p as usize), lo_mem_max() + 1 - p);
+    undump_slice(fmt_in, mem_ptr.add(p as usize), lo_mem_max() + 1 - p);
 
     x = undump_int(fmt_in);
     if x < lo_mem_max() + 1 || x > PRE_ADJUST_HEAD {
@@ -2644,7 +2660,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     set_mem_end(MEM_TOP);
     undump_slice(
         fmt_in,
-        tre_mem.add(hi_mem_min() as usize),
+        mem_ptr.add(hi_mem_min() as usize),
         mem_end() + 1 - hi_mem_min(),
     );
     set_var_used(undump_int(fmt_in));
@@ -3293,7 +3309,16 @@ pub unsafe extern "C" fn tt_run_engine(
     }
 
     if in_initex_mode() {
-        tre_mem = xmalloc_array::<crate::mem_types::MemoryWord>(MEM_TOP + 1);
+        // `xmalloc_array(MEM_TOP + 1)` allocated `MEM_TOP + 2` words; match it.
+        let mem_words_init = (MEM_TOP as usize) + 2;
+        crate::state::with_state_mut(|s| {
+            s.mem.data = vec![
+                crate::mem_types::MemoryWord {
+                    b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
+                };
+                mem_words_init
+            ];
+        });
         crate::state::with_state_mut(|s| {
             s.eqtb.eqtb_top = EQTB_SIZE + s.eqtb.hash_extra;
             s.eqtb.hash_top = if s.eqtb.hash_extra == 0 {
@@ -3633,8 +3658,7 @@ extern "C" {
     static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
     // `eqtb` cleanup is now the Rust `Vec` drop on `EngineState.eqtb.data`. (session 51)
     // `hash` cleanup is now the Rust `Vec` drop on `EngineState.eqtb.hash`. (session 52)
-    #[link_name = "mem"]
-    static mut tt_cleanup_mem: *mut libc::c_void;
+    // `mem` cleanup is now the Rust `Vec` drop on `EngineState.mem.data`. (session 58)
     // font_info cleanup moved to EngineState.fonts.font_info (Vec::new() reset).
 }
 
@@ -3706,8 +3730,8 @@ pub unsafe fn tt_cleanup() {
     crate::state::with_state_mut(|state| {
         state.eqtb.data = Vec::new();
         state.eqtb.hash = Vec::new();
+        state.mem.data = Vec::new();
     });
-    libc::free(tt_cleanup_mem);
     crate::state::with_state_mut(|state| {
         state.strings.str_start = Vec::new();
         state.strings.str_pool = Vec::new();

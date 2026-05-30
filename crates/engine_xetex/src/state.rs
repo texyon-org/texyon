@@ -10,6 +10,7 @@ pub(crate) struct EngineState {
     pub scanner: ScannerState,
     pub save_stack: SaveStackState,
     pub eqtb: EqtbState,
+    pub mem: MemState,
     pub input: InputClusterState,
     pub strings: StringsState,
     pub hyph: HyphState,
@@ -260,6 +261,30 @@ impl Default for EqtbState {
             hash_top: 0,
         }
     }
+}
+
+/// The dynamic-memory arena (former C-`malloc`'d `memory_word *mem` plus its
+/// bookkeeping scalars). The `mem` array is the engine's hottest storage; its
+/// bookkeeping scalars (`lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`,
+/// `var_used`, `dyn_used`) move *with* the array per `01-state-and-memory.md`
+/// §11. `data` is a Rust-owned `Vec`, allocated in `ini.rs` (initex /
+/// format-load) and dropped by `tt_cleanup`; it must **never** reallocate
+/// during a run so the pointer-escaping accessors stay valid. In the format
+/// dump (the free-list `dump_slice`/`undump_slice` regions); those paths take a
+/// state-derived base pointer precomputed outside `with_state` (the eqtb /
+/// font-array pattern). Element `memory_word` (faithful `MemoryWord`) and the
+/// scalars are plain `int32_t` mem-pointers/counters — no newtype debt (the
+/// mem-pointer scalars are pointer-taxonomy candidates only). (session 58)
+#[derive(Default)]
+pub(crate) struct MemState {
+    pub data: Vec<crate::mem_types::MemoryWord>,
+    pub lo_mem_max: i32,
+    pub hi_mem_min: i32,
+    pub avail: i32,
+    pub mem_end: i32,
+    pub rover: i32,
+    pub var_used: i32,
+    pub dyn_used: i32,
 }
 
 #[derive(Default)]

@@ -7,6 +7,87 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 58 — 2026-05-30 — the `mem` arena (+ bookkeeping scalars) → EngineState.mem (MemState)
+
+**Type:** execution (workstream 01, Phase-B; the dynamic-memory arena ownership
+move — the hottest/highest-leverage slice). One commit.
+
+**Slice:** `mem` (`memory_word *`, the engine's dynamic-memory arena) → Rust-owned
+`Vec<MemoryWord>` on a new `EngineState.mem` (`MemState`), plus its seven
+bookkeeping scalars `lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`,
+`var_used`, `dyn_used` (all moved *with* the array per §11's gotcha — they are not
+a loose scalar slice). This is the only true Phase-B-bridgeable group left; the
+remaining 40 statics are intentionally-deferred Phase-C (hot tokenizer
+`cur_cmd/chr/tok/cs/val`, hot lig/kern `main_*`/`cur_l/r/q`), capacity limits
+(`stack_size`, …), or `cur_ptr` (too broad).
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types (`xetex-xetexd.h:460–466`): `memory_word *mem` (element already
+  `MemoryWord` → no debt); the 7 scalars are all plain `int32_t`.
+- (b) aliases: `tre_mem` (alloc) + `tt_cleanup_mem` (cleanup) in `src/ini.rs` —
+  this is an ownership slice (§11 step 6) with format-dump reconciliation.
+- (c) C readers: only `xetex-ini.c` (the definitions). The `mem[...]` hits in
+  `xetex-constants.h`/`xetex-xetexd.h` are unused field macros, not compiled
+  reads.
+- (d) cross-module Rust redeclarations: only the two `src/ini.rs` aliases (handled).
+- format dump: **yes** — `mem` is serialized (the free-list/upper regions via
+  `dump_slice`/`undump_slice`). Reconciled with the session-51 eqtb base-pointer
+  pattern.
+
+**Work done (1 commit):**
+- Added `MemState` (`data: Vec<MemoryWord>` + the 7 `i32` scalars) to `src/state.rs`,
+  `#[derive(Default)]` (Vec allocated in `ini.rs`); added `mem: MemState` to
+  `EngineState`.
+- Repointed ~30 accessors in `src/globals.rs`: the indexed word accessors
+  (`mem_b32s0/1`, `mem_b16s0/1/2/3`, `mem_gr`, `mem_ptr`, `mem_word` + setters) now
+  index `s.mem.data[p]` (reads keep an inner `unsafe` union projection, writes are
+  fully safe — session-41 rule); the three pointer-escaping accessors
+  (`mem_node_addr`, `mem_as_u16_ptr`, `mem_as_u16_ptr_mut`) use
+  `as_ptr()/as_mut_ptr().add(p)` (valid past the borrow — the thread-local owner
+  never reallocates); the 7 scalars are plain `with_state`/`with_state_mut`.
+- `src/ini.rs`: replaced both `xmalloc_array::<MemoryWord>(…)` allocations with
+  `vec![<zero MemoryWord>; …]` — **two different inclusive sizes preserved**:
+  format-load `xmalloc_array(MEM_TOP)` → `MEM_TOP + 1` words; initex
+  `xmalloc_array(MEM_TOP + 1)` → `MEM_TOP + 2` words. Format dump/undump take a
+  state-derived base pointer once outside the loop (the eqtb pattern), valid
+  across the interleaved `mem_*` accessor reads. The initex-reset `libc::free` and
+  the `tt_cleanup` `libc::free` are now `s.mem.data = Vec::new()`. Removed both
+  `#[link_name="mem"]` externs (`tre_mem`, `tt_cleanup_mem`).
+- Removed the 8 raw `static mut`s from `globals.rs` `mod raw` (and its now-unused
+  `use crate::mem_types::MemoryWord;`), and the 7-line C definition block from
+  `xetex/xetex-ini.c`.
+
+**Newtype debts (§4):**
+- None. The `mem` element is `memory_word` (faithful `MemoryWord`). The 7 scalars
+  are plain `int32_t` — the mem-pointer scalars (`lo_mem_max`, `hi_mem_min`,
+  `avail`, `mem_end`, `rover`) are pointer-taxonomy-sweep candidates only, not
+  semantic typedefs, so no worklist rows (checked in `xetex-xetexd.h:460–466`).
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4**, no regressions. (tex-outputs 39.4s — the hot mem path now goes
+through the thread-local `with_state` bridge; acceptable for Phase B, removed when
+the arena is threaded in Phase C.)
+
+**Metrics after this session:**
+- `globals.rs` raw extern count: **48 → 40** (−8).
+- All `input`-cluster, font, hyph, string, eqtb, **and now the `mem` arena** are
+  Rust-owned `Vec`s. `xmalloc_array`/`xcalloc_array` are now dead in `ini.rs`
+  (no remaining caller) — a candidate for removal in a follow-up.
+
+**For the next session (59+):**
+- The remaining 40 statics are the **Phase-C set**: hot tokenizer scalars
+  (`cur_cmd/chr/tok/cs/val`), the hot lig/kern block (`main_*`, `cur_l/r/q`,
+  `lig_stack`, …), capacity limits (`stack_size`, `nest_size`, `buf_size`,
+  `param_size`, `save_size`, `max_in_open`, `expand_depth`, `first`), `cur_ptr`,
+  `cur_input`/`cur_list`/`line`/`temp_ptr`. Phase B is essentially complete.
+- **Begin Phase C**: thread `&mut EngineState` (or a narrower `&mut MemState`/
+  `&mut Mem`) through one decoupled subsystem and remove its thread-local bridge.
+  The `mem` allocator functions in `src/mem.rs` (`get_avail`/`get_node`/
+  `free_node`/…) are the natural first consumers of `&mut MemState` (§5 step 4).
+
+---
+
 ## Idiom session 57 — 2026-05-30 — xdv_buffer, mapped_text, and native_text cluster → EngineState.fonts / ScannerState
 
 **Type:** execution (workstream 01, Phase-B; buffer globals migration). One commit.
