@@ -7,6 +7,77 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 60 — 2026-05-30 — planning slice: draft the Phase-C execution recipe (`01b`) to READY
+
+**Type:** planning (workstream 01, Phase-C kickoff). **No code change** — the
+deliverable is `plan/idiom/01b-phase-c-recipe.md` plus this log + STATUS updates.
+One commit (plan files only).
+
+**Why a planning slice (not a code dive):** Phase B is complete — the 40 remaining
+`mod raw` statics are all the intentionally-deferred hot-tokenizer / capacity /
+`cur_ptr` set, so there is no Phase-B slice left. Phase C is the inflection point
+and hard rule 4 (`README.md`) forbids executing without a `READY` plan. The §11
+recipe in `01-state-and-memory.md` is the Phase-**B** recipe; there was no
+equivalent for Phase-C threading. This session writes it. (User confirmed scope:
+"recipe + concretely pick the first subsystem with call-site/coupling recon.")
+
+**Recon done (grounds the recipe):**
+- **Allocator-core internals classified** (`src/mem.rs`): `free_node`/`flush_list`
+  touch the `mem` arena only, with **zero** `with_state`-bearing calls.
+  `get_avail`/`get_node` add only raw-global reads `line()` /
+  `cur_input_synctex_tag()` **plus** the cold `overflow()`/`runaway()` abort path.
+- **Session-59 blocker refuted:** `line()` (`globals.rs:457`) and
+  `cur_input_synctex_tag()` (`globals.rs:393`) read `raw::line` / `raw::cur_input`
+  directly — those are still `mod raw` (the deferred Phase-C set), **not** the
+  thread-local. So they do **not** nest-panic under a live `with_state*` borrow.
+  Only the **cold** `overflow`/`runaway` path is `with_state`-bearing (it prints
+  through migrated `selector`/`help_line` state, then `_tt_abort` longjmps —
+  never reached in any passing test). So the allocator core *is* threadable now,
+  contrary to the session-59 handoff's blanket "would nest-panic" claim.
+- **Call-site counts** (`grep -rcE`): `free_node` ~96 (scan 46, math 16,
+  linebreak 13, shipout 8, …), `flush_list` ~21 (scan 13, …), `get_avail` ~83
+  (scan 60, …), `get_node` ~86 (scan 40, mem 17, …). Large but mechanical; no
+  smaller self-contained subsystem exists because everything bottoms out here.
+
+**Decisions baked into `01b` (also added to STATUS Decisions log):**
+1. **Anchor + thread-below** (resolves §7 longjmp/`Drop`): the `EngineState`
+   owner stays in the `'static` thread-local for all of Phase C; threading
+   borrows the anchor once at a boundary and passes `&mut` down. Never stack-own
+   `EngineState` across the setjmp boundary.
+2. **Bridge-down technique** (mirror of Phase B's bridge-up): the transient bridge
+   moves from the accessor body to the *call site*
+   (`with_state_mut(|s| f(&mut s.mem, …))`); each wrap is deleted when its caller
+   is itself threaded. The thread-local is deleted when the last `with_state` site
+   is gone.
+3. **Nest-panic rule** stated precisely: `with_state*` borrows the *whole* RefCell;
+   classify every call a threaded fn makes into (a) threaded pass-through,
+   (b) raw-`mod raw` (safe under borrow), (c) still-bridged `with_state` (hazard).
+4. **Cold-error-path sentinel:** don't thread `overflow`/`confusion`/`runaway`
+   (they pull in the whole print subtree and abort anyway); threaded allocators
+   return an overflow sentinel and let the wrapper call `overflow()` after the
+   borrow drops.
+5. **Narrow borrows / `MemState` method surface** + disjoint-field borrows
+   (`&mut s.mem`, `&mut s.eqtb`), never `.clone()` an arena.
+
+**First subsystem picked (recipe §9):** the `mem` allocator core threaded as
+`&mut MemState`, commit order `free_node` → `flush_list` → `get_avail` →
+`get_node` (easiest/purest first; the cold-path sentinel arrives with
+`get_avail`). Then the `new_*` constructors become pass-through callers, then
+climb the graph (`save` → pagebuilder/shipout → math/linebreak → `scan.rs` last,
+coordinated with workstream 02).
+
+**Validation:** none required (no code changed). Dashboard untouched at 29/2/7/4.
+
+**For the next session (61):** execute the first Phase-C slice — thread
+`free_node(&mut MemState, …)` and bridge-down its ~96 call sites — following
+`01b` §7. Per-site check (`01b` §7 step 2): confirm no `free_node` call already
+sits inside a `with_state*` closure before wrapping (engine fns call it directly,
+so expected clean, but verify). Add the `impl MemState` method surface in
+`state.rs` mirroring the `globals.rs` mem accessor widths. Consider drafting
+`02-modules.md` to READY before threading reaches `scan.rs`.
+
+---
+
 ## Idiom session 59 — 2026-05-30 — dead-code cleanup: remove orphaned `xmalloc_array`/`xcalloc_array` glue
 
 **Type:** execution (workstream 01 follow-up; dead-code removal explicitly teed

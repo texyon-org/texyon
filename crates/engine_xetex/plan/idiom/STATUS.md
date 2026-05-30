@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last execution = session 59, dead-code cleanup: removed the orphaned `xmalloc_array`/`xcalloc_array` glue + the now-unused `xcalloc` extern in `ini.rs`; Phase B remains complete).
+Last updated: 2026-05-30 (last session = session 60, **planning slice**: drafted `01b-phase-c-recipe.md` to READY — the Phase-C threading recipe + recon that picks the first subsystem (the `mem` allocator core). No code change. Phase B remains complete).
 
 ## How to read this file
 
@@ -31,7 +31,8 @@ A workstream plan moves through these construction states:
 | — | `STATUS.md` | DRAFTED | This file. |
 | — | `SESSION_LOG.md` | DRAFTED | Append-only; first entry written. |
 | 01a | `01a-global-inventory.md` | READY | Exhaustive global inventory: 384 raw extern globals, 16 promoted Rust statics, 18 private module-local statics appendix. |
-| 01 | `01-state-and-memory.md` | READY | First/highest-leverage workstream. Execute least-coupled non-`misc` clusters first; do not migrate `misc` rows until their final sub-structs are decided. |
+| 01 | `01-state-and-memory.md` | READY | First/highest-leverage workstream. Phase B complete. §11 is the Phase-B recipe; Phase-C threading recipe is the separate `01b`. |
+| 01b | `01b-phase-c-recipe.md` | READY | Phase-C execution recipe (thread `&mut EngineState`/`&mut MemState`). Resolves the longjmp/`Drop` anchor (§7) + nest-panic rule; first slice = the `mem` allocator core. Drafted + recon-validated session 60. |
 | 02 | `02-modules.md` | PLANNED | Module decomposition. Draft after 01's cluster boundaries are settled. |
 | 03 | `03-deunsafe-ffi.md` | PLANNED | De-unsafe + FFI teardown. Mostly falls out of 01. |
 | 04 | `04-clippy.md` | PLANNED | Cheap clippy wins now; unsafe-block bucket after 01/03. |
@@ -598,6 +599,20 @@ the snippets in `00-overview.md` / the workstream plans.
     each module**, so literals that typed accessors will absorb are not
     named prematurely. Hard rule: no value may change — static assertions
     pin every computed base; TRIP + format goldens are the guard.
+-   **2026-05-30 (session 60)** — **Phase C is unblocked**:
+    `01b-phase-c-recipe.md` drafted to READY. Decisions baked in: (1) the
+    `EngineState` owner **stays in the thread-local anchor** for all of Phase C;
+    threading passes `&mut` *below* a single boundary borrow, never stack-owning
+    state across the setjmp boundary (resolves §7). (2) Threading uses a
+    **bridge-down** technique (call-site `with_state_mut(|s| f(&mut s.mem, …))`),
+    the mirror of Phase B's bridge-up, removed per-call-site as callers thread.
+    (3) Cold abort paths (`overflow`/`runaway`) are **not** threaded; threaded
+    allocators return an **overflow sentinel** and let the wrapper abort after the
+    borrow drops. (4) Recon corrected the session-59 blocker — `line()` /
+    `cur_input_synctex_tag()` read raw `mod raw` globals, not the thread-local, so
+    they are safe under a live borrow. (5) **First subsystem = the `mem` allocator
+    core** (`free_node`/`flush_list`/`get_avail`/`get_node`), one fn + all sites
+    per commit. No code changed this session.
 
 ## Next action for a fresh session
 
@@ -605,25 +620,36 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **`misc` bucket fully drained (sessions 44–46). Classified-but-unmigrated
-    scratch completed (sessions 47-48, 53-54). All ownership slices done,
-    including the `mem` arena (session 58). Dead `xmalloc_array`/`xcalloc_array`
-    glue removed (session 59). Phase B is complete → Next: a Phase-C PLANNING
-    slice, not a blind code dive.**
+1.  **Phase B is complete and the Phase-C recipe is now READY (session 60).
+    Next: execute the first Phase-C threading slice per `01b-phase-c-recipe.md`
+    §9 → thread `free_node` to `&mut MemState`.**
 
-    **Phase C is the inflection point and needs a READY plan first (hard rule 4).**
-    The §11 recipe is the `READY` recipe for Phase *B*; there is no equivalent
-    `READY` recipe for Phase-C threading, and workstream 02 (module split, which
-    Phase C must coordinate with) is still `PLANNED`. The STATUS/§5-step-4
-    suggestion to thread `&mut MemState` through `src/mem.rs` first was scoped in
-    session 59 and is **not** a clean one-commit slice: `get_avail`/`get_node`/
-    `free_node` have 83/86/96 call sites, and `get_node` internally calls
-    `overflow`/`cur_input_synctex_tag()`/`line()` (all `with_state`-bearing), so
-    wrapping a threaded call in `with_state_mut(|s| get_node(&mut s.mem, …))` at
-    legacy sites nest-panics. Phase C must thread a whole call-subtree top-down at
-    once. **Next session: draft the Phase-C execution recipe (longjmp/`Drop`
-    boundary per §7, nested-borrow avoidance, first decoupled subsystem) and mark
-    it READY before any threading code is written.**
+    `misc` bucket fully drained (sessions 44–46); classified-but-unmigrated
+    scratch completed (sessions 47–48, 53–54); all ownership slices done,
+    including the `mem` arena (session 58); dead `xmalloc_array`/`xcalloc_array`
+    glue removed (session 59). The 40 remaining `mod raw` statics are the
+    intentionally-deferred hot-tokenizer / capacity / `cur_ptr` set — no
+    Phase-B slice remains.
+
+    **Session 60 drafted `01b-phase-c-recipe.md` to READY** (hard rule 4 now
+    satisfied for Phase C): the bridge-down technique (mirror of Phase B), the
+    longjmp/`Drop` anchor resolution (§7 — owner stays in the thread-local,
+    thread `&mut` below it), the precise nest-panic rule, and the cold-error-path
+    sentinel for `overflow`/`runaway`. Recon **refuted** the session-59 blocker:
+    `get_node`'s internal `line()`/`cur_input_synctex_tag()` read **raw** `mod raw`
+    globals (not the thread-local), so they do **not** nest-panic under a live
+    borrow; only the cold `overflow`/`runaway` abort path is `with_state`-bearing,
+    and the sentinel technique handles it. `free_node`/`flush_list` touch `mem`
+    only with zero `with_state` calls.
+
+    **First slice (per `01b` §9):** the `mem` allocator core threaded as
+    `&mut MemState`, in commit order `free_node` → `flush_list` → `get_avail` →
+    `get_node`, one function + all its call sites per commit (recon counts:
+    ~96 / ~21 / ~83 / ~86 sites, scan.rs-dominated). It is large but mechanical
+    and is the dependency-graph foundation that makes later subsystems
+    pass-through. Workstream 02 (module split) is still `PLANNED` and does not
+    block the allocator core, but should reach READY before threading climbs into
+    `scan.rs`.
 
     Sessions 44 (planning), 45 (`LinebreakState`, 34 globals), and 46 (the three
     private-static clusters below) drained `misc`. **Sessions 47–48** continued the
