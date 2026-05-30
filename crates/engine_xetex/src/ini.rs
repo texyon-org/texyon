@@ -583,7 +583,7 @@ pub unsafe extern "C" fn new_patterns() {
                             let mut v: u16 = MIN_TRIE_OP as u16;
                             loop {
                                 if hyf_entry(l as usize) != 0 {
-                                    v = new_trie_op((k - l), hyf_entry(l as usize) as i16, v);
+                                    v = new_trie_op(k - l, hyf_entry(l as usize) as i16, v);
                                 }
                                 if l > 0 {
                                     l -= 1;

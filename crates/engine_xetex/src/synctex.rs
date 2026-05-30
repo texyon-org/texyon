@@ -626,7 +626,7 @@ unsafe fn synctex_dot_open() -> usize {
         return INVALID_HANDLE;
     }
     libc::strcpy(the_name, tmp);
-    libc::strcat(the_name, b".synctex.gz\0".as_ptr() as *const c_char);
+    libc::strcat(the_name, c".synctex.gz".as_ptr());
     libc::free(tmp as *mut libc::c_void);
 
     set_sc_file(ttstub_output_open(the_name, 1));
