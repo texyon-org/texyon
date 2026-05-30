@@ -546,7 +546,7 @@ pub unsafe extern "C" fn finite_shrink(p: i32) -> i32 {
         crate::errors::error();
     }
 
-    let q = crate::mem::new_spec(p);
+    let q = crate::mem::new_spec_global(p);
     set_mem_b16s0(q, NORMAL);
     crate::mem::delete_glue_ref(p);
     q
@@ -562,7 +562,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
         set_cur_q, set_cur_r, set_hyphen_passed, set_lft_hit, set_lig_stack, set_ligature_present,
         set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_rt_hit,
     };
-    use crate::mem::{free_node_global, get_avail_global, new_kern, new_lig_item, new_ligature};
+    use crate::mem::{free_node_global, get_avail_global, new_kern_global, new_lig_item_global, new_ligature_global};
 
     #[inline]
     fn odd(v: u8) -> bool {
@@ -678,7 +678,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
                                 if lig_stack() > TEX_NULL {
                                     set_mem_b16s0(lig_stack(), cur_r() as u16);
                                 } else {
-                                    set_lig_stack(new_lig_item(cur_r() as u16));
+                                    set_lig_stack(new_lig_item_global(cur_r() as u16));
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
                                     } else {
@@ -695,12 +695,12 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
                             3 => {
                                 set_cur_r(q.s0 as i32);
                                 let p = lig_stack();
-                                set_lig_stack(new_lig_item(cur_r() as u16));
+                                set_lig_stack(new_lig_item_global(cur_r() as u16));
                                 set_mem_b32s1(lig_stack(), p);
                             }
                             7 | 11 => {
                                 if ligature_present() {
-                                    let p = new_ligature(hf(), cur_l() as u16, mem_b32s1(cur_q()));
+                                    let p = new_ligature_global(hf(), cur_l() as u16, mem_b32s1(cur_q()));
                                     if lft_hit() {
                                         set_mem_b16s0(p, 2);
                                         set_lft_hit(false);
@@ -772,7 +772,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
         }
 
         if ligature_present() {
-            let p = new_ligature(hf(), cur_l() as u16, mem_b32s1(cur_q()));
+            let p = new_ligature_global(hf(), cur_l() as u16, mem_b32s1(cur_q()));
             if lft_hit() {
                 set_mem_b16s0(p, 2);
                 set_lft_hit(false);
@@ -787,7 +787,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
         }
 
         if w != 0 {
-            set_mem_b32s1(t, new_kern(w));
+            set_mem_b32s1(t, new_kern_global(w));
             t = mem_b32s1(t);
             w = 0;
             set_mem_b32s0(t + 2, 0);
@@ -910,7 +910,7 @@ pub unsafe fn line_break(d: bool) {
 
     let tail = cur_list_tail();
     if is_char_node(tail) || node_type(tail) != GLUE_NODE {
-        let p = crate::mem::new_penalty(INF_PENALTY);
+        let p = crate::mem::new_penalty_global(INF_PENALTY);
         set_mem_b32s1(tail, p);
         set_cur_list_tail(p);
     } else {
@@ -1610,7 +1610,7 @@ pub unsafe fn line_break(d: bool) {
         if active_node_shortfall(crate::globals::best_bet()) == 0 {
             set_do_last_line_fit(false);
         } else {
-            let q = crate::mem::new_spec(glue_ptr(last_line_fill));
+            let q = crate::mem::new_spec_global(glue_ptr(last_line_fill));
             crate::mem::delete_glue_ref(glue_ptr(last_line_fill));
             set_box_width(
                 q,
@@ -1717,7 +1717,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
                 let mut temp_ptr = lr_ptr;
                 let mut r = q;
                 loop {
-                    let s = crate::mem::new_math(0, (mem_b32s0(temp_ptr) - 1) as i16);
+                    let s = crate::mem::new_math_global(0, (mem_b32s0(temp_ptr) - 1) as i16);
                     set_mem_b32s1(s, r);
                     r = s;
                     temp_ptr = mem_b32s1(temp_ptr);
@@ -1820,7 +1820,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
 
             let w = char_pw(p, 1);
             if w != 0 {
-                let k = crate::mem::new_margin_kern(-w, last_rightmost_char(), 1);
+                let k = crate::mem::new_margin_kern_global(-w, last_rightmost_char(), 1);
                 set_mem_b32s1(k, mem_b32s1(ptmp));
                 set_mem_b32s1(ptmp, k);
                 if ptmp == q {
@@ -1846,7 +1846,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
 
             r = lr_ptr;
             while r != TEX_NULL {
-                let temp_ptr = crate::mem::new_math(0, mem_b32s0(r) as i16);
+                let temp_ptr = crate::mem::new_math_global(0, mem_b32s0(r) as i16);
                 set_mem_b32s1(s, temp_ptr);
                 s = temp_ptr;
                 r = mem_b32s1(r);
@@ -1863,7 +1863,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
             let p = find_protchar_left(q, false);
             let w = char_pw(p, 0);
             if w != 0 {
-                let k = crate::mem::new_margin_kern(-w, last_leftmost_char(), 0);
+                let k = crate::mem::new_margin_kern_global(-w, last_leftmost_char(), 0);
                 set_mem_b32s1(k, q);
                 q = k;
             }
@@ -1960,7 +1960,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
             }
 
             if pen != 0 {
-                let r = crate::mem::new_penalty(pen);
+                let r = crate::mem::new_penalty_global(pen);
                 set_mem_b32s1(cur_list_tail(), r);
                 set_cur_list_tail(r);
             }
@@ -2688,7 +2688,7 @@ pub unsafe extern "C" fn hyphenate() {
                     set_mem_b32s1(s, q);
                     s = q;
 
-                    let q = crate::mem::new_disc();
+                    let q = crate::mem::new_disc_global();
                     set_mem_b32s0(
                         q + 1,
                         crate::scan::new_native_character(hf(), hyf_char() as u32),

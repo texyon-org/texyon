@@ -26,7 +26,7 @@ use crate::globals::{
     str_start, temp_ptr, term_offset, total_pages, width_base_entry, write_file, write_loc,
     write_open, xdv_buffer_entry,
 };
-use crate::mem::{free_node_global, get_avail_global, get_node_global, new_kern, new_math};
+use crate::mem::{free_node_global, get_avail_global, get_node_global, new_kern_global, new_math_global};
 
 extern "C" {
 
@@ -1050,7 +1050,7 @@ pub unsafe extern "C" fn hlist_out() {
     if cur_dir() == RIGHT_TO_LEFT && mem_b16s0(this_box) != REVERSED {
         let save_h = cur_h();
         set_temp_ptr(p);
-        p = new_kern(0);
+        p = new_kern_global(0);
         set_mem_b32s0(p + 2, 0);
         set_mem_b32s1(prev_p, p);
         set_cur_h(0);
@@ -1983,7 +1983,7 @@ pub unsafe extern "C" fn reverse(
             return l;
         }
 
-        p = new_math(0, mem_b32s0(lr_ptr()) as i16);
+        p = new_math_global(0, mem_b32s0(lr_ptr()) as i16);
         set_lr_problems(lr_problems() + 10000);
     }
 }

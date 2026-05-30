@@ -23,9 +23,9 @@ use crate::mem::delete_glue_ref;
 use crate::mem::delete_token_ref;
 use crate::mem::free_node_global;
 use crate::mem::get_node_global;
-use crate::mem::new_null_box;
+use crate::mem::new_null_box_global;
 use crate::mem::new_skip_param;
-use crate::mem::new_spec;
+use crate::mem::new_spec_global;
 use crate::mem::push_nest;
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
@@ -251,7 +251,7 @@ unsafe fn fire_up(c: i32) {
                 let n = mem_b16s0(r) as u8; // NODE_subtype
                 ensure_vbox(n);
                 if eqtb_b32s1(BOX_BASE + n as i32) == TEX_NULL {
-                    set_eqtb_b32s1(BOX_BASE + n as i32, new_null_box());
+                    set_eqtb_b32s1(BOX_BASE + n as i32, new_null_box_global());
                 }
                 let mut p = eqtb_b32s1(BOX_BASE + n as i32) + 5;
                 while mem_b32s1(p) != TEX_NULL {
@@ -846,7 +846,7 @@ pub unsafe fn build_page() {
                         c"since the offensive shrinkability has been made finite.".as_ptr(),
                     );
                     error();
-                    let rr = new_spec(gp);
+                    let rr = new_spec_global(gp);
                     set_mem_b16s0(rr, NORMAL as u16); // GLUE_SPEC_shrink_order = NORMAL
                     delete_glue_ref(gp);
                     set_mem_b32s0(p + 1, rr); // GLUE_NODE_glue_ptr = rr

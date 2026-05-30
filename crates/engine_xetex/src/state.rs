@@ -315,6 +315,38 @@ impl MemState {
     pub(crate) fn set_b32s1(&mut self, p: i32, v: i32) {
         self.data[p as usize].b32.s1 = v;
     }
+
+    /// Write `mem[p].b16.s0` (low 16 bits of the first half-word). Mirrors
+    /// `globals::set_mem_b16s0`. Union writes through a `&mut` index are safe.
+    #[inline]
+    pub(crate) fn set_b16s0(&mut self, p: i32, v: u16) {
+        self.data[p as usize].b16.s0 = v;
+    }
+
+    /// Write `mem[p].b16.s1` (high 16 bits of the first half-word). Mirrors
+    /// `globals::set_mem_b16s1`.
+    #[inline]
+    pub(crate) fn set_b16s1(&mut self, p: i32, v: u16) {
+        self.data[p as usize].b16.s1 = v;
+    }
+
+    /// Write the `gr` (f64) field of `mem[p]`. Mirrors `globals::set_mem_gr`.
+    #[inline]
+    pub(crate) fn set_gr(&mut self, p: i32, v: f64) {
+        self.data[p as usize].gr = v;
+    }
+
+    /// Copy the full `MemoryWord` at `mem[p]`. Mirrors `globals::mem_word`.
+    #[inline]
+    pub(crate) fn word(&self, p: i32) -> crate::mem_types::MemoryWord {
+        self.data[p as usize]
+    }
+
+    /// Write a full `MemoryWord` to `mem[p]`. Mirrors `globals::set_mem_word`.
+    #[inline]
+    pub(crate) fn set_word(&mut self, p: i32, w: crate::mem_types::MemoryWord) {
+        self.data[p as usize] = w;
+    }
 }
 
 #[derive(Default)]

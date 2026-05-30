@@ -12,11 +12,11 @@ use crate::state::MemState;
 
 use crate::globals::{
     avail, cur_input_synctex_tag, cur_list_head, eqtb_b32s1, line, max_nest_stack, mem_b16s0,
-    mem_b32s0, mem_b32s1, mem_ptr, mem_word, nest_ptr, nest_size, restore_cur_list_from_nest,
+    mem_b32s0, mem_b32s1, mem_ptr, nest_ptr, nest_size, restore_cur_list_from_nest,
     save_cur_list_to_nest, set_avail, set_cur_list_e_tex_aux, set_cur_list_head,
     set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_max_nest_stack,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_ptr,
-    set_mem_word, set_nest_ptr, set_temp_ptr, temp_ptr,
+    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_ptr, set_nest_ptr,
+    set_temp_ptr, temp_ptr,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
@@ -326,19 +326,38 @@ pub unsafe fn get_node_global(s: i32) -> i32 {
 /// Allocate and zero-initialize an empty hbox node (BOX_NODE_SIZE words).
 ///
 /// translated from xetex-xetex0.c:147 (new_null_box)
-pub unsafe fn new_null_box() -> i32 {
-    let p = get_node_global(BOX_NODE_SIZE);
+///
+/// Phase-C: threaded to `&mut MemState`. Calls the threaded [`get_node`]
+/// directly and propagates its [`ALLOC_FAILED`] sentinel (`01b` §5); the
+/// [`new_null_box_global`] wrapper performs the cold `overflow()` abort.
+pub fn new_null_box(mem: &mut MemState) -> i32 {
+    let p = get_node(mem, BOX_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
     // NODE_type(p) = HLIST_NODE  →  mem[p].b16.s1 = HLIST_NODE
-    set_mem_b16s1(p, HLIST_NODE);
-    set_mem_b16s0(p, 0); // subtype
-    set_mem_b32s1(p + 1, 0); // width
-    set_mem_b32s1(p + 2, 0); // depth
-    set_mem_b32s1(p + 3, 0); // height
-    set_mem_b32s1(p + 4, 0); // shift_amount
-    set_mem_b32s1(p + 5, TEX_NULL); // list_ptr
-    set_mem_b16s1(p + 5, NORMAL); // glue_sign (b16.s1, bytes 2-3 of word 5)
-    set_mem_b16s0(p + 5, NORMAL); // glue_order (b16.s0, bytes 0-1 of word 5)
-    set_mem_gr(p + 6, 0.0); // BOX_glue_set: mem[(p)+6].gr
+    mem.set_b16s1(p, HLIST_NODE);
+    mem.set_b16s0(p, 0); // subtype
+    mem.set_b32s1(p + 1, 0); // width
+    mem.set_b32s1(p + 2, 0); // depth
+    mem.set_b32s1(p + 3, 0); // height
+    mem.set_b32s1(p + 4, 0); // shift_amount
+    mem.set_b32s1(p + 5, TEX_NULL); // list_ptr
+    mem.set_b16s1(p + 5, NORMAL); // glue_sign (b16.s1, bytes 2-3 of word 5)
+    mem.set_b16s0(p + 5, NORMAL); // glue_order (b16.s0, bytes 0-1 of word 5)
+    mem.set_gr(p + 6, 0.0); // BOX_glue_set: mem[(p)+6].gr
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_null_box` callers (`01b`
+/// §3, §5). Runs the threaded constructor under a single borrow, then performs
+/// the cold `overflow()` abort after the borrow drops if the arena was
+/// exhausted. Removed when the last legacy caller is itself threaded.
+pub unsafe fn new_null_box_global() -> i32 {
+    let p = crate::state::with_state_mut(|st| new_null_box(&mut st.mem));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -349,14 +368,27 @@ pub unsafe fn new_null_box() -> i32 {
 /// Allocate a rule node (RULE_NODE_SIZE words) with all dimensions NULL_FLAG.
 ///
 /// translated from xetex-xetex0.c:162 (new_rule)
-#[no_mangle]
-pub unsafe extern "C" fn new_rule() -> i32 {
-    let p = get_node_global(RULE_NODE_SIZE);
-    set_mem_b16s1(p, RULE_NODE);
-    set_mem_b16s0(p, 0);
-    set_mem_b32s1(p + 1, NULL_FLAG); // width
-    set_mem_b32s1(p + 2, NULL_FLAG); // depth
-    set_mem_b32s1(p + 3, NULL_FLAG); // height
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_rule_global`].
+pub fn new_rule(mem: &mut MemState) -> i32 {
+    let p = get_node(mem, RULE_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, RULE_NODE);
+    mem.set_b16s0(p, 0);
+    mem.set_b32s1(p + 1, NULL_FLAG); // width
+    mem.set_b32s1(p + 2, NULL_FLAG); // depth
+    mem.set_b32s1(p + 3, NULL_FLAG); // height
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_rule` callers (`01b` §3, §5).
+pub unsafe fn new_rule_global() -> i32 {
+    let p = crate::state::with_state_mut(|st| new_rule(&mut st.mem));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -371,16 +403,29 @@ pub unsafe extern "C" fn new_rule() -> i32 {
 /// matching the C's implicit narrowing assignment.
 ///
 /// translated from xetex-xetex0.c:174 (new_ligature)
-#[no_mangle]
-pub unsafe extern "C" fn new_ligature(f: i32, c: u16, q: i32) -> i32 {
-    let p = get_node_global(SMALL_NODE_SIZE);
-    set_mem_b16s1(p, LIGATURE_NODE);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_ligature_global`].
+pub fn new_ligature(mem: &mut MemState, f: i32, c: u16, q: i32) -> i32 {
+    let p = get_node(mem, SMALL_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, LIGATURE_NODE);
     // word p+1: b16.s1 = font, b16.s0 = char, b32.s1 = successor link.
     // b16.s1 and b16.s0 together form b32.s0; b32.s1 is independent.
-    set_mem_b16s1(p + 1, f as u16);
-    set_mem_b16s0(p + 1, c);
-    set_mem_b32s1(p + 1, q);
-    set_mem_b16s0(p, 0); // subtype
+    mem.set_b16s1(p + 1, f as u16);
+    mem.set_b16s0(p + 1, c);
+    mem.set_b32s1(p + 1, q);
+    mem.set_b16s0(p, 0); // subtype
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_ligature` callers (`01b` §3, §5).
+pub unsafe fn new_ligature_global(f: i32, c: u16, q: i32) -> i32 {
+    let p = crate::state::with_state_mut(|st| new_ligature(&mut st.mem, f, c, q));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -391,11 +436,24 @@ pub unsafe extern "C" fn new_ligature(f: i32, c: u16, q: i32) -> i32 {
 /// Allocate a lig-item node (SMALL_NODE_SIZE) for char `c`.
 ///
 /// translated from xetex-xetex0.c:186 (new_lig_item)
-#[no_mangle]
-pub unsafe extern "C" fn new_lig_item(c: u16) -> i32 {
-    let p = get_node_global(SMALL_NODE_SIZE);
-    set_mem_b16s0(p, c);
-    set_mem_b32s1(p + 1, TEX_NULL);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_lig_item_global`].
+pub fn new_lig_item(mem: &mut MemState, c: u16) -> i32 {
+    let p = get_node(mem, SMALL_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s0(p, c);
+    mem.set_b32s1(p + 1, TEX_NULL);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_lig_item` callers (`01b` §3, §5).
+pub unsafe fn new_lig_item_global(c: u16) -> i32 {
+    let p = crate::state::with_state_mut(|st| new_lig_item(&mut st.mem, c));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -406,13 +464,26 @@ pub unsafe extern "C" fn new_lig_item(c: u16) -> i32 {
 /// Allocate a discretionary node (SMALL_NODE_SIZE words) with null lists.
 ///
 /// translated from xetex-xetex0.c:195 (new_disc)
-#[no_mangle]
-pub unsafe extern "C" fn new_disc() -> i32 {
-    let p = get_node_global(SMALL_NODE_SIZE);
-    set_mem_b16s1(p, DISC_NODE);
-    set_mem_b16s0(p, 0);
-    set_mem_b32s0(p + 1, TEX_NULL); // pre-break list
-    set_mem_b32s1(p + 1, TEX_NULL); // post-break list
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_disc_global`].
+pub fn new_disc(mem: &mut MemState) -> i32 {
+    let p = get_node(mem, SMALL_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, DISC_NODE);
+    mem.set_b16s0(p, 0);
+    mem.set_b32s0(p + 1, TEX_NULL); // pre-break list
+    mem.set_b32s1(p + 1, TEX_NULL); // post-break list
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_disc` callers (`01b` §3, §5).
+pub unsafe fn new_disc_global() -> i32 {
+    let p = crate::state::with_state_mut(|st| new_disc(&mut st.mem));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -423,12 +494,25 @@ pub unsafe extern "C" fn new_disc() -> i32 {
 /// Allocate a math-on/off node of width `w` and subtype `s`.
 ///
 /// translated from xetex-xetex0.c:221 (new_math)
-#[no_mangle]
-pub unsafe extern "C" fn new_math(w: i32, s: i16) -> i32 {
-    let p = get_node_global(MEDIUM_NODE_SIZE);
-    set_mem_b16s1(p, MATH_NODE);
-    set_mem_b16s0(p, s as u16);
-    set_mem_b32s1(p + 1, w);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_math_global`].
+pub fn new_math(mem: &mut MemState, w: i32, s: i16) -> i32 {
+    let p = get_node(mem, MEDIUM_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, MATH_NODE);
+    mem.set_b16s0(p, s as u16);
+    mem.set_b32s1(p + 1, w);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_math` callers (`01b` §3, §5).
+pub unsafe fn new_math_global(w: i32, s: i16) -> i32 {
+    let p = crate::state::with_state_mut(|st| new_math(&mut st.mem, w, s));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -440,13 +524,31 @@ pub unsafe extern "C" fn new_math(w: i32, s: i16) -> i32 {
 /// at `p`, then clear the copy's reference-count / link field to TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:231 (new_spec)
-pub unsafe fn new_spec(p: i32) -> i32 {
-    let q = get_node_global(GLUE_SPEC_SIZE);
-    set_mem_word(q, mem_word(p)); // copy the whole first word (type + ref_count)
-    set_mem_b32s1(q, TEX_NULL); // clear ref_count / link
-    set_mem_b32s1(q + 1, mem_b32s1(p + 1)); // width
-    set_mem_b32s1(q + 2, mem_b32s1(p + 2)); // stretch
-    set_mem_b32s1(q + 3, mem_b32s1(p + 3)); // shrink
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_spec_global`].
+pub fn new_spec(mem: &mut MemState, p: i32) -> i32 {
+    let q = get_node(mem, GLUE_SPEC_SIZE);
+    if q == ALLOC_FAILED {
+        return q;
+    }
+    let word = mem.word(p);
+    mem.set_word(q, word); // copy the whole first word (type + ref_count)
+    mem.set_b32s1(q, TEX_NULL); // clear ref_count / link
+    let w = mem.b32s1(p + 1);
+    mem.set_b32s1(q + 1, w); // width
+    let st = mem.b32s1(p + 2);
+    mem.set_b32s1(q + 2, st); // stretch
+    let sh = mem.b32s1(p + 3);
+    mem.set_b32s1(q + 3, sh); // shrink
+    q
+}
+
+/// Transitional bridge-down wrapper for legacy `new_spec` callers (`01b` §3, §5).
+pub unsafe fn new_spec_global(p: i32) -> i32 {
+    let q = crate::state::with_state_mut(|st| new_spec(&mut st.mem, p));
+    if q == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     q
 }
 
@@ -480,16 +582,30 @@ pub unsafe extern "C" fn new_param_glue(n: i16) -> i32 {
 /// bump the spec's reference count.
 ///
 /// translated from xetex-xetex0.c:258 (new_glue)
-#[no_mangle]
-pub unsafe extern "C" fn new_glue(q: i32) -> i32 {
-    let p = get_node_global(MEDIUM_NODE_SIZE);
-    set_mem_b16s1(p, GLUE_NODE);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_glue_global`].
+pub fn new_glue(mem: &mut MemState, q: i32) -> i32 {
+    let p = get_node(mem, MEDIUM_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, GLUE_NODE);
     // GLUE_SPEC_shrink_order(p) = NORMAL  →  mem[p].b16.s0 = NORMAL
-    set_mem_b16s0(p, NORMAL);
-    set_mem_b32s1(p + 1, TEX_NULL);
-    set_mem_b32s0(p + 1, q);
+    mem.set_b16s0(p, NORMAL);
+    mem.set_b32s1(p + 1, TEX_NULL);
+    mem.set_b32s0(p + 1, q);
     // GLUE_SPEC_ref_count(q)++
-    set_mem_b32s1(q, mem_b32s1(q) + 1);
+    let rc = mem.b32s1(q);
+    mem.set_b32s1(q, rc + 1);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_glue` callers (`01b` §3, §5).
+pub unsafe fn new_glue_global(q: i32) -> i32 {
+    let p = crate::state::with_state_mut(|st| new_glue(&mut st.mem, q));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -502,8 +618,8 @@ pub unsafe extern "C" fn new_glue(q: i32) -> i32 {
 ///
 /// translated from xetex-xetex0.c:270 (new_skip_param)
 pub unsafe fn new_skip_param(n: i16) -> i32 {
-    set_temp_ptr(new_spec(eqtb_b32s1(GLUE_BASE + n as i32)));
-    let p = new_glue(temp_ptr());
+    set_temp_ptr(new_spec_global(eqtb_b32s1(GLUE_BASE + n as i32)));
+    let p = new_glue_global(temp_ptr());
     set_mem_b32s1(temp_ptr(), TEX_NULL); // clear the spec's ref_count link
     set_mem_b16s0(p, n as u16 + 1); // subtype = n + 1
     p
@@ -516,12 +632,25 @@ pub unsafe fn new_skip_param(n: i16) -> i32 {
 /// Allocate a kern node of width `w`.
 ///
 /// translated from xetex-xetex0.c:281 (new_kern)
-#[no_mangle]
-pub unsafe extern "C" fn new_kern(w: i32) -> i32 {
-    let p = get_node_global(MEDIUM_NODE_SIZE);
-    set_mem_b16s1(p, KERN_NODE);
-    set_mem_b16s0(p, NORMAL);
-    set_mem_b32s1(p + 1, w);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_kern_global`].
+pub fn new_kern(mem: &mut MemState, w: i32) -> i32 {
+    let p = get_node(mem, MEDIUM_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, KERN_NODE);
+    mem.set_b16s0(p, NORMAL);
+    mem.set_b32s1(p + 1, w);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_kern` callers (`01b` §3, §5).
+pub unsafe fn new_kern_global(w: i32) -> i32 {
+    let p = crate::state::with_state_mut(|st| new_kern(&mut st.mem, w));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -532,12 +661,25 @@ pub unsafe extern "C" fn new_kern(w: i32) -> i32 {
 /// Allocate a penalty node with value `m`.
 ///
 /// translated from xetex-xetex0.c:291 (new_penalty)
-#[no_mangle]
-pub unsafe extern "C" fn new_penalty(m: i32) -> i32 {
-    let p = get_node_global(MEDIUM_NODE_SIZE);
-    set_mem_b16s1(p, PENALTY_NODE);
-    set_mem_b16s0(p, 0);
-    set_mem_b32s1(p + 1, m);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_penalty_global`].
+pub fn new_penalty(mem: &mut MemState, m: i32) -> i32 {
+    let p = get_node(mem, MEDIUM_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, PENALTY_NODE);
+    mem.set_b16s0(p, 0);
+    mem.set_b32s1(p + 1, m);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_penalty` callers (`01b` §3, §5).
+pub unsafe fn new_penalty_global(m: i32) -> i32 {
+    let p = crate::state::with_state_mut(|st| new_penalty(&mut st.mem, m));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -693,60 +835,112 @@ pub unsafe fn prev_rightmost(s: i32, e: i32) -> i32 {
 /// Allocate and zero-initialize an ordinary noad (NOAD_SIZE = 4 words).
 ///
 /// translated from xetex-xetex0.c:10542 (new_noad)
-#[no_mangle]
-pub unsafe extern "C" fn new_noad() -> i32 {
-    let p = get_node_global(NOAD_SIZE);
-    set_mem_b16s1(p, ORD_NOAD);
-    set_mem_b16s0(p, NORMAL);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_noad_global`].
+pub fn new_noad(mem: &mut MemState) -> i32 {
+    let p = get_node(mem, NOAD_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, ORD_NOAD);
+    mem.set_b16s0(p, NORMAL);
     // mem[p+1].b32 = empty  ↔  s1=EMPTY=0, s0=TEX_NULL
-    set_mem_b32s1(p + 1, EMPTY);
-    set_mem_b32s0(p + 1, TEX_NULL);
+    mem.set_b32s1(p + 1, EMPTY);
+    mem.set_b32s0(p + 1, TEX_NULL);
     // mem[p+3].b32 = empty
-    set_mem_b32s1(p + 3, EMPTY);
-    set_mem_b32s0(p + 3, TEX_NULL);
+    mem.set_b32s1(p + 3, EMPTY);
+    mem.set_b32s0(p + 3, TEX_NULL);
     // mem[p+2].b32 = empty
-    set_mem_b32s1(p + 2, EMPTY);
-    set_mem_b32s0(p + 2, TEX_NULL);
+    mem.set_b32s1(p + 2, EMPTY);
+    mem.set_b32s0(p + 2, TEX_NULL);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_noad` callers (`01b` §3, §5).
+pub unsafe fn new_noad_global() -> i32 {
+    let p = crate::state::with_state_mut(|st| new_noad(&mut st.mem));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
 /// Allocate a style node (STYLE_NODE_SIZE = 3 words).
 ///
 /// translated from xetex-xetex0.c:10554 (new_style)
-#[no_mangle]
-pub unsafe extern "C" fn new_style(s: i16) -> i32 {
-    let p = get_node_global(STYLE_NODE_SIZE);
-    set_mem_b16s1(p, STYLE_NODE); // NODE_type(p)
-    set_mem_b16s0(p, s as u16);
-    set_mem_b32s1(p + 1, 0);
-    set_mem_b32s1(p + 2, 0);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_style_global`].
+pub fn new_style(mem: &mut MemState, s: i16) -> i32 {
+    let p = get_node(mem, STYLE_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, STYLE_NODE); // NODE_type(p)
+    mem.set_b16s0(p, s as u16);
+    mem.set_b32s1(p + 1, 0);
+    mem.set_b32s1(p + 2, 0);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_style` callers (`01b` §3, §5).
+pub unsafe fn new_style_global(s: i16) -> i32 {
+    let p = crate::state::with_state_mut(|st| new_style(&mut st.mem, s));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
 /// Allocate a choice node (STYLE_NODE_SIZE = 3 words).
 ///
 /// translated from xetex-xetex0.c:10565 (new_choice)
-#[no_mangle]
-pub unsafe extern "C" fn new_choice() -> i32 {
-    let p = get_node_global(STYLE_NODE_SIZE);
-    set_mem_b16s1(p, CHOICE_NODE); // NODE_type(p)
-    set_mem_b16s0(p, 0);
-    set_mem_b32s0(p + 1, TEX_NULL);
-    set_mem_b32s1(p + 1, TEX_NULL);
-    set_mem_b32s0(p + 2, TEX_NULL);
-    set_mem_b32s1(p + 2, TEX_NULL);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_choice_global`].
+pub fn new_choice(mem: &mut MemState) -> i32 {
+    let p = get_node(mem, STYLE_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, CHOICE_NODE); // NODE_type(p)
+    mem.set_b16s0(p, 0);
+    mem.set_b32s0(p + 1, TEX_NULL);
+    mem.set_b32s1(p + 1, TEX_NULL);
+    mem.set_b32s0(p + 2, TEX_NULL);
+    mem.set_b32s1(p + 2, TEX_NULL);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_choice` callers (`01b` §3, §5).
+pub unsafe fn new_choice_global() -> i32 {
+    let p = crate::state::with_state_mut(|st| new_choice(&mut st.mem));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
 /// Allocate a margin kern node (MARGIN_KERN_NODE_SIZE = 3 words).
 ///
 /// translated from xetex-xetex0.c:9838 (new_margin_kern)
-#[no_mangle]
-pub unsafe extern "C" fn new_margin_kern(w: i32, _p: i32, side: i16) -> i32 {
-    let k = get_node_global(MARGIN_KERN_NODE_SIZE);
-    set_mem_b16s1(k, MARGIN_KERN_NODE); // NODE_type(k)
-    set_mem_b16s0(k, side as u16);
-    set_mem_b32s1(k + 1, w);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_margin_kern_global`].
+pub fn new_margin_kern(mem: &mut MemState, w: i32, _p: i32, side: i16) -> i32 {
+    let k = get_node(mem, MARGIN_KERN_NODE_SIZE);
+    if k == ALLOC_FAILED {
+        return k;
+    }
+    mem.set_b16s1(k, MARGIN_KERN_NODE); // NODE_type(k)
+    mem.set_b16s0(k, side as u16);
+    mem.set_b32s1(k + 1, w);
+    k
+}
+
+/// Transitional bridge-down wrapper for legacy `new_margin_kern` callers (`01b` §3, §5).
+pub unsafe fn new_margin_kern_global(w: i32, p: i32, side: i16) -> i32 {
+    let k = crate::state::with_state_mut(|st| new_margin_kern(&mut st.mem, w, p, side));
+    if k == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     k
 }
 

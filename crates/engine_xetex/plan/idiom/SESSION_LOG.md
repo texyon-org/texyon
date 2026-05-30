@@ -7,6 +7,104 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 63 — 2026-05-30 — thread the mem-only `new_*` node constructors to `&mut MemState`
+
+**Type:** execution (workstream 01, Phase C — the post-allocator-core slice named in
+`01b` §9 / STATUS Next action). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the **14 `i32`-returning, mem-only** `new_*` node constructors to take
+`&mut MemState` and call the now-threaded [`get_node`] directly:
+`new_null_box`, `new_rule`, `new_ligature`, `new_lig_item`, `new_disc`, `new_math`,
+`new_spec`, `new_glue`, `new_kern`, `new_penalty`, `new_noad`, `new_style`,
+`new_choice`, `new_margin_kern`. Each now calls `get_node(mem, …)` as a direct
+pass-through instead of `get_node_global(…)`.
+
+**Recon (per `01b` §7 step 2):**
+- Rust call sites (per fn): null_box 18, rule 4, ligature 6, lig_item 6, disc 7,
+  math 12, spec 17, glue 15, kern 35, penalty 13, noad 13, style 2, choice 2,
+  margin_kern 3.
+- **No C/C++ callers** — `xetex-xetexd.h` carries only the prototypes (no `.c`/`.cpp`
+  call sites); like the session-61/62 allocator de-`#[no_mangle]`, the stale header
+  decls are left in place (harmless, no caller).
+- `grep -rnB3 … | grep with_state` empty: **no call site sits inside a `with_state*`
+  closure**, so every legacy caller becomes a clean bridge-down wrap.
+- Body classification (§4): all 14 touch the `mem` arena only (+ the already-threaded
+  `get_node`); **zero** other `with_state`-bearing internal calls.
+
+**Deferred (not closeable in a mem-only slice), left as `_global`-less legacy fns:**
+- `new_param_glue`, `new_skip_param` — read `eqtb_b32s1(GLUE_BASE+n)`, a hot-path
+  `with_state`-bearing call → nest-panic under the borrow. Need a widened disjoint
+  `&EqtbState` borrow; a follow-up slice. (`new_skip_param`'s internal `new_spec`/
+  `new_glue` calls were repointed to `new_spec_global`/`new_glue_global` this session.)
+- `new_whatsit` — returns `()`, so it can't carry the `ALLOC_FAILED` sentinel up to a
+  wrapper the way the 14 `i32`-returning ones do; threading it cleanly needs a
+  different shape (separate slice).
+
+**Sentinel propagation (`01b` §5), the new wrinkle vs. the allocator core:** because a
+threaded constructor now calls the threaded `get_node` directly (which *returns*
+`ALLOC_FAILED` on exhaustion rather than aborting under the borrow), each constructor
+guards `let p = get_node(mem, s); if p == ALLOC_FAILED { return p; }` and propagates the
+sentinel upward; its `new_X_global` bridge-down wrapper checks for it and runs
+`overflow(c"main memory size", MEM_TOP+1)` **after** the `with_state_mut` borrow drops —
+the exact message/shape `get_node_global` uses. `overflow()` never returns, so real
+callers never observe the sentinel.
+
+**Work done (1 commit):**
+1. `state.rs`: added 5 `impl MemState` methods mirroring the `globals.rs` accessor
+   widths — `set_b16s0`/`set_b16s1` (u16 writes), `set_gr` (f64 write), `word`/`set_word`
+   (full `MemoryWord` copy). (`b32s0`/`b32s1`/`set_b32s0`/`set_b32s1` already existed
+   from sessions 61–62.) Union writes through `&mut` index are safe; the `word` read is
+   a `Copy` of the union (no projection).
+2. `mem.rs`: threaded the 14 fns to `&mut MemState`, dropped `#[no_mangle] extern "C"`
+   (−12 exports; `new_null_box`/`new_spec` were already plain `pub unsafe fn`) and
+   `unsafe` from all 14 signatures (the union `unsafe` is encapsulated in the
+   `MemState` methods). Added the 14 `new_X_global` bridge-down wrappers + sentinel
+   abort. Two-phase-borrow hazards in `new_spec`/`new_glue` pre-empted by hoisting the
+   read into a local before the `&mut` write (`let w = mem.b32s1(p+1); mem.set_b32s1(…)`).
+3. Repointed `new_skip_param`'s internal `new_spec`/`new_glue` calls to the `_global`
+   wrappers (it stays legacy this session).
+4. Blanket-renamed all legacy call sites to `new_X_global` across 5 files
+   (`math`/`linebreak`/`shipout`/`pagebuilder`/`scan`) via a single bare-identifier
+   `perl` pass (idempotent — `NAME_global` doesn't re-match `\bNAME\b`); pre-checked
+   there are **no** comment/string mentions to corrupt, and the pass also fixes the
+   `use crate::mem::{…}` imports and the two aliased imports (`new_disc as _nd`,
+   `new_ligature as _nl`) in one go. `mem.rs` call sites (the wrapper closures
+   `new_X(&mut st.mem, …)`) were left untouched by editing it by hand.
+5. Removed 3 now-unused `globals` imports from `mem.rs` (`mem_word`, `set_mem_gr`,
+   `set_mem_word`) so the slice introduces **no** new warnings. The globals.rs
+   accessors themselves stay (29–35 callers each elsewhere).
+
+**Same `_global` bridge-down wrapper pattern as sessions 61–62** (named wrapper
+evaluates its args at the caller before the borrow — sidesteps the argument nest-panic
+and the `|s|`-closure shadowing). Each wrapper dies when its last legacy caller threads;
+threading these constructors already turned their own `get_node_global` calls into
+direct `get_node` pass-throughs.
+
+**Newtype debt:** none — all params (`w`/`m`/`s`/`q`/`f`/`c`/`side`/`p`) are plain
+`int32_t`/`uint16_t`/`small_number`(`i16`)/`internal_font_number`(`i32`) and the sentinel
+is plain `i32`. (`small_number`/`internal_font_number` rows already exist from prior
+sessions; the constructors preserve the existing `i16`/`i32` representation.)
+
+**Metrics:** `#[no_mangle]` exports 418 → **406** (−12). `unsafe fn` net flat (14 fns
+dropped `unsafe`; 14 `new_X_global` wrappers added it). `globals.rs` raw externs
+unchanged (40).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, no new warnings
+introduced by the slice (verified: the only newly-unused imports were the 3 removed);
+full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29 / 2 / 7 / 4**, no regressions.
+
+**For the next session (64):** thread the three deferred constructors —
+`new_param_glue`/`new_skip_param` need a widened disjoint borrow
+(`new_param_glue(mem: &mut MemState, eqtb: &EqtbState, …)`, wrapper splits
+`&mut st.mem` / `&st.eqtb`); `new_whatsit` needs an `()`→sentinel rework (or thread its
+`cur_list` writes too). Then climb the graph subsystem by subsystem
+(`save.rs` → `pagebuilder.rs`/`shipout.rs` → `math.rs`/`linebreak.rs` → `scan.rs` last).
+Draft `02-modules.md` to READY before threading reaches `scan.rs`.
+
+---
+
 ## Idiom session 62 — 2026-05-30 — finish the `mem` allocator core: thread `flush_list`, `get_avail`, `get_node`
 
 **Type:** execution (workstream 01, Phase C — slices 2–4 of `01b` §9). **One

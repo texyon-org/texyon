@@ -68,7 +68,7 @@ use crate::math::math_radical;
 use crate::math::resume_after_display;
 use crate::math::start_eq_no;
 use crate::math::sub_sup;
-use crate::mem::new_spec;
+use crate::mem::new_spec_global;
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
 use crate::pagebuilder::build_page;
@@ -104,7 +104,7 @@ use crate::globals::{
     str_ptr, str_start, temp_ptr, term_offset, texmf_log_name, warning_index, write_open,
     xtx_ligature_present,
 };
-use crate::mem::new_rule;
+use crate::mem::new_rule_global;
 use crate::output::print_cmd_chr;
 
 extern "C" {
@@ -1013,14 +1013,14 @@ pub unsafe extern "C" fn scan_expr() {
             {
                 set_arith_error(true);
                 crate::mem::delete_glue_ref(f);
-                f = crate::mem::new_spec(0);
+                f = crate::mem::new_spec_global(0);
             }
 
             // o may be modified inside case 3 (EXPR_MULT → EXPR_SCALE)
             match s {
                 0 => {
                     if l >= GLUE_VAL_EXPR && o != EXPR_NONE {
-                        t = crate::mem::new_spec(f);
+                        t = crate::mem::new_spec_global(f);
                         crate::mem::delete_glue_ref(f);
                         if mem_b32s1(t + 2) == 0 {
                             set_mem_b16s1(t, NORMAL_EXPR);
@@ -1693,7 +1693,7 @@ const DEFAULT_RULE: i32 = 26214;
 /// translated from xetex-xetex0.c:6267 (scan_rule_spec)
 #[no_mangle]
 pub unsafe extern "C" fn scan_rule_spec() -> i32 {
-    let q = new_rule();
+    let q = new_rule_global();
     if cur_cmd() == VRULE {
         set_mem_b32s1(q + 1, DEFAULT_RULE);
     } else {
@@ -3250,7 +3250,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                         if negative {
                             if (cur_val_level() as i16) >= GLUE_VAL {
                                 let gm = cur_val();
-                                set_cur_val(new_spec(gm));
+                                set_cur_val(new_spec_global(gm));
                                 crate::mem::delete_glue_ref(gm);
                                 set_mem_b32s1(cur_val() + 1, -(mem_b32s1(cur_val() + 1)));
                                 set_mem_b32s1(cur_val() + 2, -(mem_b32s1(cur_val() + 2)));
@@ -3818,7 +3818,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
     if negative {
         if (cur_val_level() as i16) >= GLUE_VAL {
             let gm = cur_val();
-            set_cur_val(new_spec(gm));
+            set_cur_val(new_spec_global(gm));
             set_mem_b32s1(cur_val() + 1, -(mem_b32s1(cur_val() + 1)));
             set_mem_b32s1(cur_val() + 2, -(mem_b32s1(cur_val() + 2)));
             set_mem_b32s1(cur_val() + 3, -(mem_b32s1(cur_val() + 3)));
@@ -4990,7 +4990,7 @@ pub unsafe extern "C" fn end_graf() {
 #[no_mangle]
 pub unsafe extern "C" fn append_penalty() {
     scan_int();
-    let p = crate::mem::new_penalty(crate::globals::cur_val());
+    let p = crate::mem::new_penalty_global(crate::globals::cur_val());
     let tail = crate::globals::cur_list_tail();
     set_mem_b32s1(tail, p);
     crate::globals::set_cur_list_tail(p);
@@ -5064,17 +5064,17 @@ pub unsafe extern "C" fn its_all_over() -> bool {
             return true;
         }
         crate::input::back_input();
-        let nb = crate::mem::new_null_box();
+        let nb = crate::mem::new_null_box_global();
         set_mem_b32s1(crate::globals::cur_list_tail(), nb);
         crate::globals::set_cur_list_tail(nb);
         set_mem_b32s1(
             crate::globals::cur_list_tail() + 1,
             eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE),
         );
-        let ng = crate::mem::new_glue(8);
+        let ng = crate::mem::new_glue_global(8);
         set_mem_b32s1(crate::globals::cur_list_tail(), ng);
         crate::globals::set_cur_list_tail(ng);
-        let np = crate::mem::new_penalty(NULL_FLAG);
+        let np = crate::mem::new_penalty_global(NULL_FLAG);
         set_mem_b32s1(crate::globals::cur_list_tail(), np);
         crate::globals::set_cur_list_tail(np);
         build_page();
@@ -5101,7 +5101,7 @@ pub unsafe extern "C" fn append_glue() {
         5 => scan_glue(MU_VAL_SCAN), // MSKIP_CODE
         _ => {}
     }
-    let p = crate::mem::new_glue(cur_val());
+    let p = crate::mem::new_glue_global(cur_val());
     set_mem_b32s1(crate::globals::cur_list_tail(), p);
     crate::globals::set_cur_list_tail(p);
     if s >= SKIP_CODE {
@@ -5117,7 +5117,7 @@ pub unsafe extern "C" fn append_glue() {
 pub unsafe extern "C" fn append_kern() {
     let s = cur_chr() as u16;
     scan_dimen(s == MU_GLUE, false, false);
-    let p = crate::mem::new_kern(cur_val());
+    let p = crate::mem::new_kern_global(cur_val());
     set_mem_b32s1(crate::globals::cur_list_tail(), p);
     crate::globals::set_cur_list_tail(p);
     set_mem_b16s0(crate::globals::cur_list_tail(), s);
@@ -5420,13 +5420,13 @@ const SUB_BOX: i32 = 2; // xetex_format.h:283
 #[no_mangle]
 pub unsafe extern "C" fn indent_in_hmode() {
     if cur_chr() > 0 {
-        let p = crate::mem::new_null_box();
+        let p = crate::mem::new_null_box_global();
         set_mem_b32s1(p + 1, eqtb_b32s1(DIMEN_BASE));
         let p = if cur_list_mode().abs() == HMODE_I {
             crate::globals::set_cur_list_aux_b32s0(1000);
             p
         } else {
-            let q = crate::mem::new_noad();
+            let q = crate::mem::new_noad_global();
             set_mem_b32s1(q + 1, SUB_BOX);
             set_mem_b32s0(q + 1, p);
             q
@@ -5734,7 +5734,7 @@ pub unsafe extern "C" fn append_discretionary() {
     extern "C" {}
 
     let tail = crate::globals::cur_list_tail();
-    set_mem_b32s1(tail, crate::mem::new_disc());
+    set_mem_b32s1(tail, crate::mem::new_disc_global());
     crate::globals::set_cur_list_tail(mem_b32s1(tail));
 
     if cur_chr() == 1 {
@@ -6211,7 +6211,7 @@ pub unsafe extern "C" fn fin_align() {
                         span_count -= 1;
                         ss = mem_b32s1(ss);
                         let v = mem_b32s0(ss + 1);
-                        set_mem_b32s1(u, crate::mem::new_glue(v));
+                        set_mem_b32s1(u, crate::mem::new_glue_global(v));
                         u = mem_b32s1(u);
                         set_mem_b16s0(u, GLUE_PAR_TAB_SKIP);
                         t += mem_b32s1(v + 1);
@@ -6228,7 +6228,7 @@ pub unsafe extern "C" fn fin_align() {
                             );
                         }
                         ss = mem_b32s1(ss);
-                        set_mem_b32s1(u, crate::mem::new_null_box());
+                        set_mem_b32s1(u, crate::mem::new_null_box_global());
                         u = mem_b32s1(u);
                         t += mem_b32s1(ss + 1);
                         if cur_list_mode() == INNER_VMODE {
@@ -6399,7 +6399,7 @@ pub unsafe extern "C" fn fin_align() {
         // Insert pre-display penalty and above-display skip
         set_mem_b32s1(
             cur_list_tail(),
-            crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY)),
+            crate::mem::new_penalty_global(eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY)),
         );
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         set_mem_b32s1(
@@ -6415,7 +6415,7 @@ pub unsafe extern "C" fn fin_align() {
         // Insert post-display penalty and below-display skip
         set_mem_b32s1(
             cur_list_tail(),
-            crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY)),
+            crate::mem::new_penalty_global(eqtb_b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY)),
         );
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         set_mem_b32s1(
@@ -6957,7 +6957,7 @@ pub unsafe extern "C" fn append_italic_correction() {
     } else if mem_b16s1(tail) == WHATSIT_NODE {
         let sub = mem_b16s0(tail);
         if sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT {
-            let kern = crate::mem::new_kern(real_get_native_italic_correction(
+            let kern = crate::mem::new_kern_global(real_get_native_italic_correction(
                 crate::globals::mem_node_addr(tail),
             ));
             set_mem_b32s1(tail, kern);
@@ -6965,7 +6965,7 @@ pub unsafe extern "C" fn append_italic_correction() {
             crate::globals::set_cur_list_tail(new_tail);
             set_mem_b16s0(new_tail, EXPLICIT);
         } else if sub == GLYPH_NODE {
-            let kern = crate::mem::new_kern(real_get_native_glyph_italic_correction(
+            let kern = crate::mem::new_kern_global(real_get_native_glyph_italic_correction(
                 crate::globals::mem_node_addr(tail),
             ));
             set_mem_b32s1(tail, kern);
@@ -6984,7 +6984,7 @@ pub unsafe extern "C" fn append_italic_correction() {
     let italic = crate::globals::font_info_b32s1(
         crate::globals::italic_base_entry(f) + (info.s1 / 4) as i32,
     );
-    let kern = crate::mem::new_kern(italic);
+    let kern = crate::mem::new_kern_global(italic);
     let tail2 = crate::globals::cur_list_tail();
     set_mem_b32s1(tail2, kern);
     let new_tail = mem_b32s1(tail2);
@@ -7082,11 +7082,11 @@ pub unsafe extern "C" fn make_accent() {
         } else {
             crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
         };
-        let r = crate::mem::new_kern(delta);
+        let r = crate::mem::new_kern_global(delta);
         set_mem_b16s0(r, ACC_KERN);
         set_mem_b32s1(crate::globals::cur_list_tail(), r);
         set_mem_b32s1(r, pa);
-        let new_tail = crate::mem::new_kern(-a - delta);
+        let new_tail = crate::mem::new_kern_global(-a - delta);
         crate::globals::set_cur_list_tail(new_tail);
         set_mem_b16s0(new_tail, ACC_KERN);
         set_mem_b32s1(pa, new_tail);
@@ -7352,7 +7352,7 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
         } else {
             scan_glue(p);
             if q == ADVANCE {
-                let qs = crate::mem::new_spec(cur_val());
+                let qs = crate::mem::new_spec_global(cur_val());
                 let r = s;
                 crate::mem::delete_glue_ref(cur_val());
                 set_mem_b32s1(qs + 1, mem_b32s1(qs + 1) + mem_b32s1(r + 1));
@@ -7400,7 +7400,7 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
                 set_cur_val(crate::scaled_math::x_over_n(w, cur_val()));
             }
         } else {
-            let r = crate::mem::new_spec(s);
+            let r = crate::mem::new_spec_global(s);
             if q == MULTIPLY {
                 set_mem_b32s1(
                     r + 1,
@@ -7777,7 +7777,7 @@ pub unsafe extern "C" fn app_space() {
         } else {
             set_main_p(font_glue(cf));
             if main_p() == crate::mem::TEX_NULL {
-                set_main_p(crate::mem::new_spec(0));
+                set_main_p(crate::mem::new_spec_global(0));
                 set_main_k(param_base(cf) + 2);
                 // width = space, stretch = space_stretch, shrink = space_shrink
                 crate::globals::set_mem_b32s1(main_p() + 1, font_info_b32s1(main_k()));
@@ -7786,7 +7786,7 @@ pub unsafe extern "C" fn app_space() {
                 set_font_glue(cf, main_p());
             }
         }
-        set_main_p(crate::mem::new_spec(main_p()));
+        set_main_p(crate::mem::new_spec_global(main_p()));
         if space_factor >= 2000 {
             // add extra_space to width
             let extra = font_info_b32s1(EXTRA_SPACE_CODE + param_base(cf));
@@ -7799,7 +7799,7 @@ pub unsafe extern "C" fn app_space() {
         // scale shrink by 1000 / space_factor
         let new_shrink = crate::scaled_math::xn_over_d(mem_b32s1(main_p() + 3), 1000, space_factor);
         crate::globals::set_mem_b32s1(main_p() + 3, new_shrink);
-        q = crate::mem::new_glue(main_p());
+        q = crate::mem::new_glue_global(main_p());
         crate::globals::set_mem_b32s1(main_p(), crate::mem::TEX_NULL);
     }
     crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), q);
@@ -7845,7 +7845,7 @@ pub unsafe extern "C" fn main_control_append_normal_space() {
     if eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP_MC as i32) == 0 {
         crate::globals::set_main_p(font_glue(cur_font));
         if crate::globals::main_p() == crate::mem::TEX_NULL {
-            crate::globals::set_main_p(crate::mem::new_spec(0));
+            crate::globals::set_main_p(crate::mem::new_spec_global(0));
             crate::globals::set_main_k(param_base(cur_font) + 2);
             set_mem_b32s1(
                 crate::globals::main_p() + 1,
@@ -7861,7 +7861,7 @@ pub unsafe extern "C" fn main_control_append_normal_space() {
             );
             set_font_glue(cur_font, crate::globals::main_p());
         }
-        crate::globals::set_temp_ptr(crate::mem::new_glue(crate::globals::main_p()));
+        crate::globals::set_temp_ptr(crate::mem::new_glue_global(crate::globals::main_p()));
     } else {
         crate::globals::set_temp_ptr(crate::mem::new_param_glue(GLUE_PAR_SPACE_SKIP_MC));
     }
@@ -8209,7 +8209,7 @@ pub unsafe extern "C" fn main_control_box_list_cases() {
         (VMODE_MC, UN_VBOX_MC) | (HMODE_MC, UN_HBOX_MC) | (MMODE_MC, UN_HBOX_MC) => unpackage(),
         (HMODE_MC, ITAL_CORR_MC) => append_italic_correction(),
         (MMODE_MC, ITAL_CORR_MC) => {
-            let p = crate::mem::new_kern(0);
+            let p = crate::mem::new_kern_global(0);
             crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), p);
             crate::globals::set_cur_list_tail(p);
         }
@@ -8253,7 +8253,7 @@ pub unsafe extern "C" fn main_control_alignment_cases() {
                     cur_cmd() as u16,
                     cur_chr(),
                 ) {
-                    let p = crate::mem::new_math(0, cur_chr() as i16);
+                    let p = crate::mem::new_math_global(0, cur_chr() as i16);
                     crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), p);
                     crate::globals::set_cur_list_tail(p);
                 }
@@ -8496,7 +8496,7 @@ pub unsafe extern "C" fn new_graf(indented: bool) {
     set_cur_list_prev_graf((lhm * 64 + rhm) * 65536 + l as i32);
 
     if indented {
-        let nb = crate::mem::new_null_box();
+        let nb = crate::mem::new_null_box_global();
         set_cur_list_tail(nb);
         set_mem_b32s1(cur_list_head(), nb);
         set_mem_b32s1(nb + 1, eqtb_b32s1(DIMEN_BASE));
@@ -8666,7 +8666,7 @@ pub unsafe extern "C" fn set_math_char(c: i32) {
         x_token();
         crate::input::back_input();
     } else {
-        let p = crate::mem::new_noad();
+        let p = crate::mem::new_noad_global();
         set_mem_b32s1(p + 1, MATH_CHAR_NODE_SM);
         let ch = math_char_fn(c);
         set_mem_b16s0(p + 1, (ch % 65536) as u16);
@@ -8786,7 +8786,7 @@ pub unsafe extern "C" fn init_row() {
         set_cur_list_aux_b32s1(0);
     }
     let align_head_link = mem_b32s1(ALIGN_HEAD_IR);
-    let glue_node = crate::mem::new_glue(mem_b32s0(align_head_link + 1));
+    let glue_node = crate::mem::new_glue_global(mem_b32s0(align_head_link + 1));
     set_mem_b32s1(cur_list_tail(), glue_node);
     set_cur_list_tail(mem_b32s1(cur_list_tail()));
     set_mem_b16s0(cur_list_tail(), GLUE_PAR_TAB_SKIP);
@@ -8920,7 +8920,7 @@ pub unsafe extern "C" fn scan_glue(level: i16) {
         }
     }
 
-    let q = new_spec(0);
+    let q = new_spec_global(0);
     set_mem_b32s1(q + 1, cur_val());
 
     if scan_keyword(c"plus".as_ptr()) {
@@ -8977,7 +8977,7 @@ pub unsafe extern "C" fn fin_col() -> bool {
     if p == TEX_NULL && mem_b32s0(cur_align() + 5) < CR_CODE {
         if cur_loop() != TEX_NULL {
             // §822: extend preamble by duplicating the loop template
-            set_mem_b32s1(q, crate::mem::new_null_box());
+            set_mem_b32s1(q, crate::mem::new_null_box_global());
             p = mem_b32s1(q);
             set_mem_b32s0(p, END_SPAN);
             set_mem_b32s1(p + 1, NULL_FLAG);
@@ -9005,7 +9005,7 @@ pub unsafe extern "C" fn fin_col() -> bool {
             set_mem_b32s1(wq, TEX_NULL);
             set_mem_b32s1(p + 2, mem_b32s1(HOLD_HEAD));
             set_cur_loop(mem_b32s1(cur_loop()));
-            set_mem_b32s1(p, crate::mem::new_glue(mem_b32s0(cur_loop() + 1)));
+            set_mem_b32s1(p, crate::mem::new_glue_global(mem_b32s0(cur_loop() + 1)));
             set_mem_b16s0(mem_b32s1(p), GLUE_PAR_TAB_SKIP);
         } else {
             error_here_with_diagnostic(c"Extra alignment tab has been changed to ".as_ptr());
@@ -9105,7 +9105,7 @@ pub unsafe extern "C" fn fin_col() -> bool {
         set_cur_list_tail(u);
         set_mem_b32s1(
             cur_list_tail(),
-            crate::mem::new_glue(mem_b32s0(mem_b32s1(cur_align()) + 1)),
+            crate::mem::new_glue_global(mem_b32s0(mem_b32s1(cur_align()) + 1)),
         );
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         set_mem_b16s0(cur_list_tail(), GLUE_PAR_TAB_SKIP);
@@ -9293,7 +9293,7 @@ pub unsafe extern "C" fn init_align() {
         }
 
         // done1: set up the column preamble node
-        set_mem_b32s1(cur_align(), crate::mem::new_null_box());
+        set_mem_b32s1(cur_align(), crate::mem::new_null_box_global());
         set_cur_align(mem_b32s1(cur_align()));
         set_mem_b32s0(cur_align(), END_SPAN);
         set_mem_b32s1(cur_align() + 1, NULL_FLAG);
@@ -9558,7 +9558,7 @@ pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
                         c"since the offensive shrinkability has been made finite.".as_ptr(),
                     );
                     error();
-                    let r = new_spec(q);
+                    let r = new_spec_global(q);
                     set_mem_b16s0(r, NORMAL); // GLUE_SPEC_shrink_order(r) = NORMAL
                     crate::mem::delete_glue_ref(q);
                     set_mem_b32s0(p + 1, r);
@@ -9761,7 +9761,7 @@ pub unsafe extern "C" fn box_end(box_context: i32) {
                 if cur_list_mode().abs() == HMODE {
                     set_cur_list_aux_b32s0(1000); // space_factor
                 } else {
-                    let p = crate::mem::new_noad();
+                    let p = crate::mem::new_noad_global();
                     set_mem_b32s1(p + 1, SUB_BOX);
                     set_mem_b32s0(p + 1, cur_box());
                     set_cur_box(p);
@@ -10640,8 +10640,8 @@ pub unsafe extern "C" fn handle_right_brace() {
                 MAX_HALFWORD,
             );
             crate::mem::pop_nest();
-            let new_noad = crate::mem::new_noad();
-            set_mem_b32s1(cur_list_tail(), new_noad);
+            let new_noad_global = crate::mem::new_noad_global();
+            set_mem_b32s1(cur_list_tail(), new_noad_global);
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
             set_mem_b16s1(cur_list_tail(), VCENTER_NOAD);
             set_mem_b32s1(cur_list_tail() + 1, SUB_BOX);
@@ -11570,7 +11570,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                         while mem_b32s1(q) != TEX_NULL {
                             q = mem_b32s1(q);
                         }
-                        let rule = crate::mem::new_rule();
+                        let rule = crate::mem::new_rule_global();
                         set_mem_b32s1(q, rule);
                         set_mem_b32s1(
                             rule + 1,
@@ -11633,7 +11633,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
             }
             loop {
                 let t = q;
-                let new_q = crate::mem::new_math(0, mem_b32s0(lr_ptr()) as i16);
+                let new_q = crate::mem::new_math_global(0, mem_b32s0(lr_ptr()) as i16);
                 set_mem_b32s1(t, new_q);
                 q = new_q;
                 set_lr_problems(lr_problems() + 10000);
@@ -16499,7 +16499,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
             if offs > 0 {
                 if prev_offs != 0 {
                     if use_penalty {
-                        let node = crate::mem::new_penalty(penalty_val);
+                        let node = crate::mem::new_penalty_global(penalty_val);
                         set_mem_b32s1(cur_list_tail(), node);
                         set_cur_list_tail(mem_b32s1(cur_list_tail()));
                     }
@@ -16588,7 +16588,7 @@ pub unsafe extern "C" fn main_control_math_cases() {
         }
 
         (MMODE_MC, LEFT_BRACE_MC) => {
-            let n = crate::mem::new_noad();
+            let n = crate::mem::new_noad_global();
             set_mem_b32s1(cur_list_tail(), n);
             set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail) = n
             crate::input::back_input();
@@ -16653,7 +16653,7 @@ pub unsafe extern "C" fn main_control_math_cases() {
         }
 
         (MMODE_MC, MATH_COMP_MC) => {
-            let n = crate::mem::new_noad();
+            let n = crate::mem::new_noad_global();
             set_mem_b32s1(cur_list_tail(), n);
             set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail)
             set_mem_b16s1(cur_list_tail(), cur_chr() as u16);
@@ -16680,13 +16680,13 @@ pub unsafe extern "C" fn main_control_math_cases() {
         }
 
         (MMODE_MC, MATH_STYLE_MC) => {
-            let s = crate::mem::new_style(cur_chr() as i16);
+            let s = crate::mem::new_style_global(cur_chr() as i16);
             set_mem_b32s1(cur_list_tail(), s);
             set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail)
         }
 
         (MMODE_MC, NON_SCRIPT_MC) => {
-            let g = crate::mem::new_glue(0);
+            let g = crate::mem::new_glue_global(0);
             set_mem_b32s1(cur_list_tail(), g);
             set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail)
             set_mem_b16s0(cur_list_tail(), COND_MATH_GLUE_MC);
@@ -16848,7 +16848,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         set_space_class, space_class,
     };
     use crate::input::{back_input, begin_token_list};
-    use crate::mem::{free_node_global, get_avail_global, new_disc, new_kern, new_ligature, TEX_NULL};
+    use crate::mem::{free_node_global, get_avail_global, new_disc_global, new_kern_global, new_ligature_global, TEX_NULL};
     use crate::save::find_sa_element;
 
 
@@ -16897,7 +16897,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
             set_cur_list_tail as _sclt, set_ins_disc as _sid, set_lft_hit as _slh,
             set_ligature_present as _slp, set_mem_b32s1 as _smb1, set_rt_hit as _srh,
         };
-        use crate::mem::{new_disc as _nd, new_ligature as _nl};
+        use crate::mem::{new_disc_global as _nd, new_ligature_global as _nl};
         if cur_l() < TOO_BIG_CHAR {
             if _mb1(_cq()) > TEX_NULL && _mb0(_clt()) == _hc(_mf()) as u16 {
                 _sid(true);
@@ -17244,7 +17244,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                 }
 
                 if main_k > 0 || is_hyph() {
-                    set_mem_b32s1(cur_list_tail(), new_disc());
+                    set_mem_b32s1(cur_list_tail(), new_disc_global());
                     set_cur_list_tail(mem_b32s1(cur_list_tail()));
                     set_main_pp(cur_list_tail());
                 }
@@ -17383,7 +17383,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                             mem_b32s1(tmp + 1) - mem_b32s1(pp + 1) - mem_b32s1(cur_list_tail() + 1);
                         free_node_global(tmp, mem_b16s3(tmp + 4) as i32);
                         if t_val != mem_b32s1(font_glue(mf) + 1) {
-                            let kn = new_kern(t_val - mem_b32s1(font_glue(mf) + 1));
+                            let kn = new_kern_global(t_val - mem_b32s1(font_glue(mf) + 1));
                             set_mem_b16s0(kn, SPACE_ADJUSTMENT);
                             set_mem_b32s1(kn, mem_b32s1(p2));
                             set_mem_b32s1(p2, kn);
@@ -17562,7 +17562,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                     set_ins_disc(true);
                 }
                 if ligature_present() {
-                    let mp = new_ligature(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
+                    let mp = new_ligature_global(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
                     if lft_hit() {
                         set_mem_b16s0(mp, 2);
                         set_lft_hit(false);
@@ -17578,7 +17578,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                 if ins_disc() {
                     set_ins_disc(false);
                     if cur_list_mode() > 0 {
-                        set_mem_b32s1(cur_list_tail(), new_disc());
+                        set_mem_b32s1(cur_list_tail(), new_disc_global());
                         set_cur_list_tail(mem_b32s1(cur_list_tail()));
                     }
                 }
@@ -17672,7 +17672,7 @@ unsafe fn lig_inner_loop(
         set_cur_q, set_cur_r, set_ins_disc, set_lft_hit, set_lig_stack, set_ligature_present,
         set_mem_b16s0, set_mem_b32s1, set_rt_hit,
     };
-    use crate::mem::{new_disc, new_kern, new_lig_item, new_ligature};
+    use crate::mem::{new_disc_global, new_kern_global, new_lig_item_global, new_ligature_global};
 
 
     #[inline(always)]
@@ -17697,7 +17697,7 @@ unsafe fn lig_inner_loop(
                             set_ins_disc(true);
                         }
                         if ligature_present() {
-                            let mp = new_ligature(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
+                            let mp = new_ligature_global(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
                             if lft_hit() {
                                 set_mem_b16s0(mp, 2);
                                 set_lft_hit(false);
@@ -17710,7 +17710,7 @@ unsafe fn lig_inner_loop(
                         if ins_disc() {
                             set_ins_disc(false);
                             if cur_list_mode() > 0 {
-                                set_mem_b32s1(cur_list_tail(), new_disc());
+                                set_mem_b32s1(cur_list_tail(), new_disc_global());
                                 set_cur_list_tail(mem_b32s1(cur_list_tail()));
                             }
                         }
@@ -17718,7 +17718,7 @@ unsafe fn lig_inner_loop(
                     let kval = crate::globals::font_info_b32s1(
                         kern_base_entry(main_f()) + 256 * mj.s1 as i32 + mj.s0 as i32,
                     );
-                    let kn = new_kern(kval);
+                    let kn = new_kern_global(kval);
                     set_mem_b32s1(cur_list_tail(), kn);
                     set_cur_list_tail(mem_b32s1(cur_list_tail()));
                     return 1; // goto main_loop_move (skip wrapup)
@@ -17743,11 +17743,11 @@ unsafe fn lig_inner_loop(
                     2 | 6 => {
                         set_cur_r(mj.s0 as i32);
                         if lig_stack() == TEX_NULL {
-                            set_lig_stack(new_lig_item(cur_r() as u16));
+                            set_lig_stack(new_lig_item_global(cur_r() as u16));
                             set_bchar(TOO_BIG_CHAR);
                         } else if is_char_node(lig_stack()) {
                             let prev = lig_stack();
-                            set_lig_stack(new_lig_item(cur_r() as u16));
+                            set_lig_stack(new_lig_item_global(cur_r() as u16));
                             set_mem_b32s1(lig_stack() + 1, prev);
                         } else {
                             set_mem_b16s0(lig_stack(), cur_r() as u16);
@@ -17756,7 +17756,7 @@ unsafe fn lig_inner_loop(
                     3 => {
                         set_cur_r(mj.s0 as i32);
                         let prev = lig_stack();
-                        set_lig_stack(new_lig_item(cur_r() as u16));
+                        set_lig_stack(new_lig_item_global(cur_r() as u16));
                         set_mem_b32s1(lig_stack(), prev);
                     }
                     7 | 11 => {
@@ -17768,7 +17768,7 @@ unsafe fn lig_inner_loop(
                                 set_ins_disc(true);
                             }
                             if ligature_present() {
-                                let mp = new_ligature(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
+                                let mp = new_ligature_global(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
                                 if lft_hit() {
                                     set_mem_b16s0(mp, 2);
                                     set_lft_hit(false);
@@ -17781,7 +17781,7 @@ unsafe fn lig_inner_loop(
                             if ins_disc() {
                                 set_ins_disc(false);
                                 if cur_list_mode() > 0 {
-                                    set_mem_b32s1(cur_list_tail(), new_disc());
+                                    set_mem_b32s1(cur_list_tail(), new_disc_global());
                                     set_cur_list_tail(mem_b32s1(cur_list_tail()));
                                 }
                             }

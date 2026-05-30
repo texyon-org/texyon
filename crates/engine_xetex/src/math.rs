@@ -24,8 +24,8 @@ use crate::globals::{
     width_base_entry,
 };
 use crate::mem::{
-    free_node_global, get_node_global, new_choice, new_glue, new_kern, new_noad, new_rule,
-    new_spec, TEX_NULL,
+    free_node_global, get_node_global, new_choice_global, new_glue_global, new_kern_global, new_noad_global, new_rule_global,
+    new_spec_global, TEX_NULL,
 };
 
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -397,7 +397,7 @@ pub unsafe extern "C" fn big_op_spacing5() -> i32 {
 /// translated from xetex-math.c:170 (fraction_rule)
 #[no_mangle]
 pub unsafe extern "C" fn fraction_rule(t: i32) -> i32 {
-    let p = new_rule();
+    let p = new_rule_global();
     set_mem_b32s1(p + 3, t);
     set_mem_b32s1(p + 2, 0);
     p
@@ -406,11 +406,11 @@ pub unsafe extern "C" fn fraction_rule(t: i32) -> i32 {
 /// translated from xetex-math.c:181 (overbar)
 #[no_mangle]
 pub unsafe extern "C" fn overbar(b: i32, k: i32, t: i32) -> i32 {
-    let mut p = new_kern(k);
+    let mut p = new_kern_global(k);
     set_mem_b32s1(p, b);
     let q = fraction_rule(t);
     set_mem_b32s1(q, p);
-    p = new_kern(t);
+    p = new_kern_global(t);
     set_mem_b32s1(p, q);
     crate::scan::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD)
 }
@@ -509,7 +509,7 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
     let q;
     match mem_b32s1(p) {
         MATH_CHAR => {
-            let mlist = new_noad();
+            let mlist = new_noad_global();
             set_cur_mlist(mlist);
             set_mem_word(mlist + 1, mem_word(p));
 
@@ -548,7 +548,7 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
             set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
         }
         _ => {
-            q = crate::mem::new_null_box();
+            q = crate::mem::new_null_box_global();
         }
     }
 
@@ -647,7 +647,7 @@ pub unsafe extern "C" fn make_over(q: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn make_under(q: i32) {
     let x = clean_box(q + 1, cur_style());
-    let p = new_kern(3 * default_rule_thickness());
+    let p = new_kern_global(3 * default_rule_thickness());
     set_mem_b32s1(x, p);
     set_mem_b32s1(p, fraction_rule(default_rule_thickness()));
     let y = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
@@ -806,7 +806,7 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
         }
     }
 
-    let v = crate::mem::new_null_box();
+    let v = crate::mem::new_null_box_global();
     set_mem_b16s1(v, VLIST_NODE);
     set_mem_b32s1(v + 3, shift_up + mem_b32s1(x + 3));
     set_mem_b32s1(v + 2, mem_b32s1(z + 2) + shift_down);
@@ -814,14 +814,14 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
 
     let mut p;
     if mem_b32s1(q + 1) == 0 {
-        p = new_kern((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(z + 3) - shift_down));
+        p = new_kern_global((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(z + 3) - shift_down));
         set_mem_b32s1(p, z);
     } else {
         let y = fraction_rule(mem_b32s1(q + 1));
-        p = new_kern((axis_height(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
+        p = new_kern_global((axis_height(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
         set_mem_b32s1(y, p);
         set_mem_b32s1(p, z);
-        p = new_kern((shift_up - mem_b32s1(x + 2)) - (axis_height(cur_size()) + delta));
+        p = new_kern_global((shift_up - mem_b32s1(x + 2)) - (axis_height(cur_size()) + delta));
         set_mem_b32s1(p, y);
     }
 
@@ -936,7 +936,7 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
         let mut x = clean_box(q + 2, 2 * (cur_style() / 4) + 4 + (cur_style() % 2));
         let mut y = clean_box(q + 1, cur_style());
         let mut z = clean_box(q + 3, 2 * (cur_style() / 4) + 5);
-        let v = crate::mem::new_null_box();
+        let v = crate::mem::new_null_box_global();
         set_mem_b16s1(v, VLIST_NODE);
         set_mem_b32s1(v + 1, mem_b32s1(y + 1));
         if mem_b32s1(x + 1) > mem_b32s1(v + 1) {
@@ -961,10 +961,10 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
             if shift_up < big_op_spacing1() {
                 shift_up = big_op_spacing1();
             }
-            let mut p = new_kern(shift_up);
+            let mut p = new_kern_global(shift_up);
             set_mem_b32s1(p, y);
             set_mem_b32s1(x, p);
-            p = new_kern(big_op_spacing5());
+            p = new_kern_global(big_op_spacing5());
             set_mem_b32s1(p, x);
             set_mem_b32s1(v + 5, p);
             set_mem_b32s1(
@@ -983,10 +983,10 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
             if shift_down < big_op_spacing2() {
                 shift_down = big_op_spacing2();
             }
-            let mut p = new_kern(shift_down);
+            let mut p = new_kern_global(shift_down);
             set_mem_b32s1(y, p);
             set_mem_b32s1(p, z);
-            p = new_kern(big_op_spacing5());
+            p = new_kern_global(big_op_spacing5());
             set_mem_b32s1(z, p);
             set_mem_b32s1(
                 v + 2,
@@ -1048,7 +1048,7 @@ pub unsafe extern "C" fn make_ord(q: i32) {
         loop {
             if cur_i().s2 == cur_c() as u16 && cur_i().s3 <= 128 {
                 if cur_i().s1 >= 128 {
-                    let p_kern = new_kern(font_info_b32s1(
+                    let p_kern = new_kern_global(font_info_b32s1(
                         kern_base_entry(cur_f()) + 256 * cur_i().s1 as i32 + cur_i().s0 as i32,
                     ));
                     set_mem_b32s1(p_kern, mem_b32s1(q));
@@ -1063,7 +1063,7 @@ pub unsafe extern "C" fn make_ord(q: i32) {
                             set_mem_b16s0(p + 1, cur_i().s0);
                         }
                         3 | 7 | 11 => {
-                            let r = new_noad();
+                            let r = new_noad_global();
                             set_mem_b16s0(r + 1, cur_i().s0);
                             set_mem_b16s1(r + 1, mem_b16s1(q + 1) % 256);
                             set_mem_b32s1(q, r);
@@ -1204,7 +1204,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
 
     if (mem_b32s1(q + 2) != EMPTY || mem_b32s1(q + 3) != EMPTY) && mem_b32s1(q + 1) == MATH_CHAR {
         crate::scan::flush_node_list(x);
-        x = new_noad();
+        x = new_noad_global();
         set_mem_word(x + 1, mem_word(q + 1));
         set_mem_word(x + 2, mem_word(q + 2));
         set_mem_word(x + 3, mem_word(q + 3));
@@ -1314,12 +1314,12 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
         set_mem_b32s0(q + 1, y);
         set_mem_b32s1(q + 1, SUB_BOX);
     } else {
-        p = new_kern(-delta);
+        p = new_kern_global(-delta);
         set_mem_b32s1(p, x);
         set_mem_b32s1(y, p);
         let y = crate::scan::vpackage(y, 0, ADDITIONAL, MAX_HALFWORD);
         if mem_b32s1(y + 3) < h {
-            p = new_kern(h - mem_b32s1(y + 3));
+            p = new_kern_global(h - mem_b32s1(y + 3));
             set_mem_b32s1(p, mem_b32s1(y + 5));
             set_mem_b32s1(y + 5, p);
             set_mem_b32s1(y + 3, h);
@@ -1335,7 +1335,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
 /// translated from xetex-math.c:275 (attach_hkern_to_new_hlist)
 #[no_mangle]
 pub unsafe extern "C" fn attach_hkern_to_new_hlist(q: i32, delta: i32) -> i32 {
-    let z = new_kern(delta);
+    let z = new_kern_global(delta);
     if mem_b32s1(q + 1) == TEX_NULL {
         set_mem_b32s1(q + 1, z);
     } else {
@@ -1648,7 +1648,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
             }
 
             set_mem_b32s1(x + 4, sup_kern + delta - sub_kern);
-            p = new_kern((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(y + 3) - shift_down));
+            p = new_kern_global((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(y + 3) - shift_down));
             set_mem_b32s1(x, p);
             set_mem_b32s1(p, y);
             x = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
@@ -1890,7 +1890,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                                 delta = 0;
                             }
                             if mem_b32s1(q + 3) == EMPTY && delta != 0 {
-                                set_mem_b32s1(p, new_kern(delta));
+                                set_mem_b32s1(p, new_kern_global(delta));
                                 delta = 0;
                             }
                         } else if cur_i().s3 > 0 {
@@ -1903,7 +1903,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                                 delta = 0;
                             }
                             if mem_b32s1(q + 3) == EMPTY && delta != 0 {
-                                set_mem_b32s1(p, new_kern(delta));
+                                set_mem_b32s1(p, new_kern_global(delta));
                                 delta = 0;
                             }
                         } else {
@@ -2091,7 +2091,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                 };
                 if x != 0 {
                     let y = math_glue(eqtb_b32s1(GLUE_BASE + x), cur_mu());
-                    let z = new_glue(y);
+                    let z = new_glue_global(y);
                     set_mem_b32s1(y, TEX_NULL);
                     set_mem_b32s1(p, z);
                     p = z;
@@ -2112,7 +2112,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
             if penalties && mem_b32s1(q) != TEX_NULL && pen < INF_PENALTY {
                 let next_type = mem_b16s1(mem_b32s1(q));
                 if next_type != PENALTY_NODE && next_type != REL_NOAD {
-                    let z = crate::mem::new_penalty(pen);
+                    let z = crate::mem::new_penalty_global(pen);
                     set_mem_b32s1(p, z);
                     p = z;
                 }
@@ -2136,7 +2136,7 @@ pub unsafe extern "C" fn char_box(f: i32, c: i32) -> i32 {
     let b;
     let p;
     if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        b = crate::mem::new_null_box();
+        b = crate::mem::new_null_box_global();
         p = crate::scan::new_native_character(f, c as u32);
         set_mem_b32s1(b + 3, mem_b32s1(p + 3));
         set_mem_b32s1(b + 1, mem_b32s1(p + 1));
@@ -2147,7 +2147,7 @@ pub unsafe extern "C" fn char_box(f: i32, c: i32) -> i32 {
         }
     } else {
         let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c as u16));
-        b = crate::mem::new_null_box();
+        b = crate::mem::new_null_box_global();
         set_mem_b32s1(
             b + 1,
             font_info_b32s1(width_base_entry(f) + q.s3 as i32)
@@ -2224,10 +2224,10 @@ pub unsafe extern "C" fn stack_glyph_into_box(b: i32, f: i32, g: i32) {
 /// translated from xetex-math.c:1517 (stack_glue_into_box)
 #[no_mangle]
 pub unsafe extern "C" fn stack_glue_into_box(b: i32, min: i32, max: i32) {
-    let q_spec = new_spec(0);
+    let q_spec = new_spec_global(0);
     set_mem_b32s1(q_spec + 1, min);
     set_mem_b32s1(q_spec + 2, max - min);
-    let p = new_glue(q_spec);
+    let p = new_glue_global(q_spec);
     if mem_b16s1(b) == HLIST_NODE {
         let mut q = mem_b32s1(b + 5);
         if q == TEX_NULL {
@@ -2407,7 +2407,7 @@ pub unsafe fn math_radical() {
 
 /// translated from xetex-math.c:533 (append_choices)
 pub unsafe fn append_choices() {
-    set_mem_b32s1(cur_list_tail(), new_choice());
+    set_mem_b32s1(cur_list_tail(), new_choice_global());
     set_cur_list_tail(mem_b32s1(cur_list_tail()));
     set_save_ptr(save_ptr() + 1);
     set_save_stack_b32s1(save_ptr() - 1, 0);
@@ -2474,7 +2474,7 @@ pub unsafe fn sub_sup() {
     }
 
     if p == TEX_NULL || t != EMPTY {
-        set_mem_b32s1(cur_list_tail(), new_noad());
+        set_mem_b32s1(cur_list_tail(), new_noad_global());
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         p = cur_list_tail() + 2 + cur_cmd() as i32 - 7;
         if t != EMPTY {
@@ -2593,7 +2593,7 @@ pub unsafe fn math_left_right() {
             crate::scan::off_save();
         }
     } else {
-        let p = new_noad();
+        let p = new_noad_global();
         set_mem_b16s1(p, t);
         scan_delimiter(p + 1, false);
         if t == 1 {
@@ -2613,7 +2613,7 @@ pub unsafe fn math_left_right() {
             set_cur_list_tail(p);
             set_cur_list_e_tex_aux(p);
         } else {
-            set_mem_b32s1(cur_list_tail(), new_noad());
+            set_mem_b32s1(cur_list_tail(), new_noad_global());
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
             set_mem_b16s1(cur_list_tail(), INNER_NOAD);
             set_mem_b32s1(cur_list_tail() + 1, SUB_MLIST);
@@ -2825,13 +2825,13 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
         }
         let (r, t);
         if j == TEX_NULL {
-            r = crate::mem::new_kern(0);
-            t = crate::mem::new_kern(0);
+            r = crate::mem::new_kern_global(0);
+            t = crate::mem::new_kern_global(0);
         } else {
             r = mem_b32s1(b + 5);
             t = mem_b32s1(r);
         }
-        let u = crate::mem::new_math(0, END_M_CODE);
+        let u = crate::mem::new_math_global(0, END_M_CODE);
         if mem_b16s1(t) == GLUE_NODE {
             let jj = crate::mem::new_skip_param(GLUE_PAR_RIGHT_SKIP as i16);
             set_mem_b32s1(q, jj);
@@ -2848,7 +2848,7 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
             set_mem_b32s1(t, u);
             set_mem_b32s1(q, t);
         }
-        let u2 = crate::mem::new_math(0, BEGIN_M_CODE);
+        let u2 = crate::mem::new_math_global(0, BEGIN_M_CODE);
         if mem_b16s1(r) == GLUE_NODE {
             let jj = crate::mem::new_skip_param(GLUE_PAR_LEFT_SKIP as i16);
             set_mem_b32s1(u2, jj);
@@ -2989,7 +2989,7 @@ pub unsafe fn after_math() {
     if m < 0 {
         // inline math (or inner/restricted hmode)
         let math_surround = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_MATH_SURROUND);
-        let node = crate::mem::new_math(math_surround, BEFORE as i16);
+        let node = crate::mem::new_math_global(math_surround, BEFORE as i16);
         set_mem_b32s1(cur_list_tail(), node);
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         set_cur_mlist(p);
@@ -3000,7 +3000,7 @@ pub unsafe fn after_math() {
         while mem_b32s1(cur_list_tail()) != TEX_NULL {
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
         }
-        let node2 = crate::mem::new_math(math_surround, AFTER);
+        let node2 = crate::mem::new_math_global(math_surround, AFTER);
         set_mem_b32s1(cur_list_tail(), node2);
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         set_cur_list_aux_b32s0(1000);
@@ -3086,7 +3086,7 @@ pub unsafe fn after_math() {
         }
 
         let penalty_node =
-            crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY));
+            crate::mem::new_penalty_global(eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY));
         set_mem_b32s1(cur_list_tail(), penalty_node);
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
 
@@ -3102,7 +3102,7 @@ pub unsafe fn after_math() {
 
         if l && e == 0 {
             app_display(j, a, 0);
-            let inf_node = crate::mem::new_penalty(INF_PENALTY);
+            let inf_node = crate::mem::new_penalty_global(INF_PENALTY);
             set_mem_b32s1(cur_list_tail(), inf_node);
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
         } else {
@@ -3112,7 +3112,7 @@ pub unsafe fn after_math() {
         }
 
         if e != 0 {
-            let r = crate::mem::new_kern(z - w - e - d);
+            let r = crate::mem::new_kern_global(z - w - e - d);
             if l {
                 set_mem_b32s1(a, r);
                 set_mem_b32s1(r, b);
@@ -3128,7 +3128,7 @@ pub unsafe fn after_math() {
         app_display(j, b, d);
 
         if a != TEX_NULL && e == 0 && !l {
-            let inf_node2 = crate::mem::new_penalty(INF_PENALTY);
+            let inf_node2 = crate::mem::new_penalty_global(INF_PENALTY);
             set_mem_b32s1(cur_list_tail(), inf_node2);
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
             app_display(j, a, z - mem_b32s1(a + 1));
@@ -3144,7 +3144,7 @@ pub unsafe fn after_math() {
             set_cur_list_tail(pre_t);
         }
 
-        let post_pen = crate::mem::new_penalty(eqtb_b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY));
+        let post_pen = crate::mem::new_penalty_global(eqtb_b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY));
         set_mem_b32s1(cur_list_tail(), post_pen);
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
 
@@ -3186,19 +3186,19 @@ pub unsafe fn init_math() {
             crate::linebreak::line_break(true);
 
             j = if eqtb_b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP) == 0 {
-                crate::mem::new_kern(0)
+                crate::mem::new_kern_global(0)
             } else {
                 crate::mem::new_param_glue(GLUE_PAR_RIGHT_SKIP as i16)
             };
 
             let p_glue = if eqtb_b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP) == 0 {
-                crate::mem::new_kern(0)
+                crate::mem::new_kern_global(0)
             } else {
                 crate::mem::new_param_glue(GLUE_PAR_LEFT_SKIP as i16)
             };
             set_mem_b32s1(p_glue, j);
 
-            j = crate::mem::new_null_box();
+            j = crate::mem::new_null_box_global();
             set_mem_b32s1(j + 1, mem_b32s1(just_box() + 1));
             set_mem_b32s1(j + 4, mem_b32s1(just_box() + 4));
             set_mem_b32s1(j + 5, p_glue);
@@ -3221,12 +3221,12 @@ pub unsafe fn init_math() {
                 set_mem_b32s1(TEMP_HEAD, TEX_NULL);
             } else {
                 v = -v - mem_b32s1(just_box() + 1);
-                p = crate::mem::new_math(0, BEGIN_L_CODE);
+                p = crate::mem::new_math_global(0, BEGIN_L_CODE);
                 set_mem_b32s1(TEMP_HEAD, p);
                 crate::scan::just_copy(
                     mem_b32s1(just_box() + 5),
                     p,
-                    crate::mem::new_math(0, END_L_CODE),
+                    crate::mem::new_math_global(0, END_L_CODE),
                 );
                 set_cur_dir(RIGHT_TO_LEFT);
             }
@@ -3481,16 +3481,16 @@ pub unsafe extern "C" fn rebox(b: i32, w: i32) -> i32 {
             let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c_raw));
             let v = font_info_b32s1(width_base_entry(f) + q.s3 as i32);
             if v != mem_b32s1(b + 1) {
-                set_mem_b32s1(p, new_kern(mem_b32s1(b + 1) - v));
+                set_mem_b32s1(p, new_kern_global(mem_b32s1(b + 1) - v));
             }
         }
         free_node_global(b, BOX_NODE_SIZE);
-        b = new_glue(12);
+        b = new_glue_global(12);
         set_mem_b32s1(b, p);
         while mem_b32s1(p) != TEX_NULL {
             p = mem_b32s1(p);
         }
-        set_mem_b32s1(p, new_glue(12));
+        set_mem_b32s1(p, new_glue_global(12));
         crate::scan::hpack(b, w, EXACTLY)
     } else {
         set_mem_b32s1(b + 1, w);
@@ -3506,7 +3506,7 @@ pub unsafe extern "C" fn build_opentype_assembly(
     s: i32,
     horiz: bool,
 ) -> i32 {
-    let b = crate::mem::new_null_box();
+    let b = crate::mem::new_null_box_global();
     if horiz {
         set_mem_b16s1(b, HLIST_NODE);
     } else {
@@ -3731,7 +3731,7 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
     if f != FONT_BASE {
         if !(font_area_entry(f) == OTGR_FONT_FLAG && usingOpenType(font_layout_engine_ptr(f))) {
             if q.s1 % 4 == EXT_TAG {
-                b = crate::mem::new_null_box();
+                b = crate::mem::new_null_box_global();
                 set_mem_b16s1(b, VLIST_NODE);
                 let r = font_info_b16(exten_base_entry(f) + q.s0 as i32);
                 c = r.s0;
@@ -3792,7 +3792,7 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
         } else if !ot_assembly_ptr.is_null() {
             b = build_opentype_assembly(f, ot_assembly_ptr, v, false);
         } else {
-            b = crate::mem::new_null_box();
+            b = crate::mem::new_null_box_global();
             set_mem_b16s1(b, VLIST_NODE);
             let p = get_node_global(GLYPH_NODE_SIZE);
             set_mem_b16s1(p, WHATSIT_NODE);
@@ -3806,7 +3806,7 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
             set_mem_b32s1(b + 2, mem_b32s1(p + 2));
         }
     } else {
-        b = crate::mem::new_null_box();
+        b = crate::mem::new_null_box_global();
         set_mem_b32s1(
             b + 1,
             eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE),
