@@ -26,7 +26,7 @@ pub struct B32x2 {
 ///
 /// Matches the C `b16x4` in `xetex-core.h:90/95`.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct B16x4 {
     pub s0: u16,
     pub s1: u16,

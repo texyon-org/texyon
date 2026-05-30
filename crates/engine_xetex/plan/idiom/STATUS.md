@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last execution = session 53, DVI positioning & output variables → ShipoutState).
+Last updated: 2026-05-30 (last execution = session 54, remaining 18 box/packaging/scratch globals → EngineState.scanner).
 
 ## How to read this file
 
@@ -511,9 +511,9 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 78 (session 52 moved hash, hash_extra, eqtb_top; 81 after session 51) |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 60 (session 54 moved remaining 18 scanner scratch globals) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
-| thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 160 state-backed scalars/arrays (incl. 33 `LinebreakState` inline scalars/arrays) + 69 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 178 state-backed scalars/arrays (incl. 18 session-54 scanner scratch and 33 `LinebreakState` inline scalars/arrays) + 69 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 236 / 688 not remeasured |
@@ -592,15 +592,17 @@ the snippets in `00-overview.md` / the workstream plans.
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
 1.  **`misc` bucket fully drained (sessions 44–46). Classified-but-unmigrated
-    scratch migration started (session 47). Next: more classified scratch, an
-    ownership slice, or Phase C.**
+    scratch completed (sessions 47-48, 53-54). Next: the `mem` arena (§5), remaining ownership slices, or Phase C.**
 
     Sessions 44 (planning), 45 (`LinebreakState`, 34 globals), and 46 (the three
     private-static clusters below) drained `misc`. **Sessions 47–48** continued the
     classified-but-unmigrated scratch: 16 `shipout` DVI-output scalars (47) and 5
     `scanner` math-conversion scalars (48). **Session 49** began the `eqtb`-cluster
-    arrays with the two inline BSS arrays (`prim`, `xeq_level`). The decision block
-    + per-field lists + newtype-debt rows live in `01a-global-inventory.md`.
+    arrays with the two inline BSS arrays (`prim`, `xeq_level`). **Session 53** moved
+    13 DVI positioning/output statics to `ShipoutState`. **Session 54** completed the
+    classified-but-unmigrated scratch by moving the remaining 18 scanner box/packaging/scratch
+    globals to `ScannerState`. The decision block + per-field lists + newtype-debt rows live in
+    `01a-global-inventory.md`.
 
     **`eqtb` array proper done (session 51)** — the malloc'd `*mut MemoryWord`
     moved to a Rust-owned `Vec` on `EqtbState.data`, with the sparse-region
@@ -632,7 +634,7 @@ the snippets in `00-overview.md` / the workstream plans.
     |---|---:|---|
     | Intentionally deferred: hot tokenizer (`cur_cmd/chr/tok/cs/val`), mem arena (`mem`, `lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`, `dyn_used`), hot lig/kern (`main_*`, `cur_l/r/q`, etc.) | 37 | Stay raw until Phase C |
     | Ownership slices (`hash`, `sa_root`, `xdv_buffer`, `name_of_file*`, `native_text`) — `prim`/`xeq_level` done s49, `eqtb` array done s51 | 9 | Need format-dump or alloc rewrite work |
-    | Classified-but-unmigrated scratch (remaining `scanner` box/packaging + native rows; shipout DVI statics done s53; await migration into their assigned clusters) | ~16 | sub-structs already decided |
+    | Classified-but-unmigrated scratch (shipout DVI statics done s53, scanner box/packaging done s54) | 0 | Completed |
     | Capacity/size limits (`stack_size`, `nest_size`, etc.) | 5 | Probably stay as C forever |
 
     **Do not bridge the hot tokenizer scalars** (`cur_cmd`, `cur_chr`, `cur_tok`, `cur_cs`,

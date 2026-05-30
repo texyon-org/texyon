@@ -7,6 +7,55 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 54 — 2026-05-30 — remaining 18 scanner scratch globals → ScannerState
+
+**Type:** execution (workstream 01, Phase-B; remaining `scanner` scratch migration). One commit.
+
+**Slice:** the remaining 18 box/packaging/scratch globals (`cur_box`, `after_token`, `cur_order`, `adjust_tail`, `pre_adjust_tail`, `total_stretch`, `total_shrink`, `just_box`, `cur_f`, `cur_c`, `cur_i`, `pack_begin_line`, `set_box_allowed`, `active_width`, `best_height_plus_depth`, `LR_ptr`, `LR_problems`, `cur_dir`) → fields on `EngineState.scanner` (`ScannerState`).
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `int32_t cur_box`, `int32_t after_token`, `glue_ord cur_order`, `int32_t adjust_tail`, `int32_t pre_adjust_tail`, `scaled_t total_stretch[4]`, `scaled_t total_shrink[4]`, `int32_t just_box`, `internal_font_number cur_f`, `int32_t cur_c`, `b16x4 cur_i`, `int32_t pack_begin_line`, `bool set_box_allowed`, `scaled_t active_width[7]`, `scaled_t best_height_plus_depth`, `int32_t LR_ptr`, `int32_t LR_problems`, `small_number cur_dir`.
+- (b) aliases: none.
+- (c) C readers: only `xetex-ini.c` (definition). No C code references them.
+- (d) cross-module Rust extern redeclarations: none.
+- format dump: none.
+
+**Work done (1 commit):**
+- Derived `Default` for `B16x4` struct in `src/mem_types.rs` so that `ScannerState` can derive `Default` with a `B16x4` field.
+- Added all 18 fields to `ScannerState` in `src/state.rs`.
+- Removed all 18 raw static mut declarations from `src/globals.rs`.
+- Repointed all 18 getter/setter accessor pairs in `src/globals.rs` to delegate to `state.scanner` using `with_state` and `with_state_mut`.
+- Removed all 18 C definitions from `xetex/xetex-ini.c`.
+
+**Newtype debts (§4):**
+Added 12 rows to the Deferred newtype worklist backlog in `01a-global-inventory.md`:
+- `cur_box` (`MemPtr`/`Halfword`)
+- `cur_order` (`GlueOrd`)
+- `adjust_tail` (`MemPtr`/`Halfword`)
+- `pre_adjust_tail` (`MemPtr`/`Halfword`)
+- `total_stretch` (`[Scaled; 4]`)
+- `total_shrink` (`[Scaled; 4]`)
+- `just_box` (`MemPtr`/`Halfword`)
+- `cur_f` (`FontId`)
+- `active_width` (`[Scaled; 7]`)
+- `best_height_plus_depth` (`Scaled`)
+- `LR_ptr` (`MemPtr`/`Halfword`)
+- `cur_dir` (`SmallNumber`)
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4** passes perfectly with no regressions!
+
+**Metrics after this session:**
+- `globals.rs` raw extern count: **78 → 60** (−18).
+- `thin global accessors`: 823 total / 178 state-backed scalars/arrays (+18).
+
+**For the next session (55+):**
+- Migrate the **`mem` arena** (§5) — the hottest/highest-leverage ownership move and the real pivot into Phase C (thread `&mut Mem` rather than bridge).
+- Or migrate remaining ownership slices (`sa_root`, `xdv_buffer`, `name_of_file*`, `native_text`).
+
+---
+
 ## Idiom session 53 — 2026-05-30 — DVI positioning & output variables → ShipoutState
 
 **Type:** execution (workstream 01, Phase-B; DVI positioning/output scratch migration). One commit.

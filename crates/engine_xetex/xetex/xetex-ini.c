@@ -73,7 +73,7 @@ int32_t pstack[9];
 int32_t cur_val;
 /* cur_val1 moved to EngineState.scanner (scalar). */
 /* cur_val_level moved to EngineState.scanner (scalar). */
-glue_ord cur_order;
+/* cur_order moved to EngineState.scanner (scalar). */
 /* read_file moved to EngineState.input.read_file ([*mut c_void; 16]) */
 /* read_open moved to EngineState.input.read_open ([u8; 17]) */
 /* cond_ptr / if_limit / cur_if / if_line / skip_line moved to EngineState.scanner (scalars). */
@@ -85,22 +85,15 @@ UTF16_code *mapped_text;
 char *xdv_buffer;
 /* total_pages, max_v, max_h, max_push, last_bop, doing_leaders, rule_ht,
  * rule_dp, rule_wd, cur_h, cur_v moved to EngineState.shipout (session 47). */
-scaled_t total_stretch[4], total_shrink[4];
-int32_t adjust_tail;
-int32_t pre_adjust_tail;
-int32_t pack_begin_line;
+/* total_stretch, total_shrink, adjust_tail, pre_adjust_tail, pack_begin_line moved to EngineState.scanner. */
 b32x2 empty;
-internal_font_number cur_f;
-int32_t cur_c;
-b16x4 cur_i;
-int32_t just_box;
-scaled_t active_width[7];
+/* cur_f, cur_c, cur_i, just_box, active_width moved to EngineState.scanner. */
 int32_t cur_l, cur_r;
 int32_t cur_q;
 int32_t lig_stack;
 bool ligature_present;
 bool lft_hit, rt_hit;
-scaled_t best_height_plus_depth;
+/* best_height_plus_depth moved to EngineState.scanner (scalar). */
 internal_font_number main_f;
 b16x4 main_i;
 b16x4 main_j;
@@ -115,13 +108,7 @@ int32_t bchar;
 int32_t false_bchar;
 bool cancel_boundary;
 bool ins_disc;
-int32_t cur_box;
-int32_t after_token;
-/* write_loc, cur_page_width, cur_page_height, cur_h_offset, cur_v_offset
- * moved to EngineState.shipout (session 47). */
-int32_t LR_ptr;
-int32_t LR_problems;
-small_number cur_dir;
+/* cur_box, after_token, LR_ptr, LR_problems, cur_dir moved to EngineState.scanner. */
 /* pseudo_files moved to EngineState.input (scalar). */
 const char* max_reg_help_line;
 int32_t sa_root[8];

@@ -362,6 +362,24 @@ pub(crate) struct ScannerState {
     pub cur_mu: i32,
     /// Whether `mlist_to_hlist` inserts penalties (`bool`). Plain.
     pub mlist_penalties: bool,
+    pub cur_box: i32,
+    pub after_token: i32,
+    pub cur_order: u8,
+    pub adjust_tail: i32,
+    pub pre_adjust_tail: i32,
+    pub total_stretch: [i32; 4],
+    pub total_shrink: [i32; 4],
+    pub just_box: i32,
+    pub cur_f: i32,
+    pub cur_c: i32,
+    pub cur_i: crate::mem_types::B16x4,
+    pub pack_begin_line: i32,
+    pub set_box_allowed: bool,
+    pub active_width: [i32; 7],
+    pub best_height_plus_depth: i32,
+    pub LR_ptr: i32,
+    pub LR_problems: i32,
+    pub cur_dir: i16,
 }
 
 #[derive(Default)]

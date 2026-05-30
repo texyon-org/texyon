@@ -379,32 +379,32 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `insert_src_special_every_par` | `bool` | `shipout` | `src/globals.rs:558` C extern | `insert_src_special_every_par` | def xetex/xetex-ini.c |  |
 | `insert_src_special_every_math` | `bool` | `shipout` | `src/globals.rs:559` C extern | `insert_src_special_every_math` | def xetex/xetex-ini.c |  |
 | `insert_src_special_every_vbox` | `bool` | `shipout` | `src/globals.rs:560` C extern | `insert_src_special_every_vbox` | def xetex/xetex-ini.c |  |
-| `cur_box` | `i32` | `scanner` | `src/globals.rs:562` C extern | `cur_box`, `set_cur_box` | def xetex/xetex-ini.c |  |
-| `after_token` | `i32` | `scanner` | `src/globals.rs:564` C extern | `set_after_token`, `after_token` | def xetex/xetex-ini.c |  |
-| `cur_order` | `u8` | `scanner` | `src/globals.rs:566` C extern | `cur_order`, `set_cur_order` | def xetex/xetex-ini.c |  |
-| `cur_align` | `i32` | `scanner` | `src/globals.rs:568` C extern | `cur_align`, `set_cur_align` | def xetex/xetex-ini.c |  |
-| `cur_span` | `i32` | `scanner` | `src/globals.rs:569` C extern | `cur_span`, `set_cur_span` | def xetex/xetex-ini.c |  |
-| `cur_loop` | `i32` | `scanner` | `src/globals.rs:570` C extern | `cur_loop`, `set_cur_loop` | def xetex/xetex-ini.c |  |
-| `align_ptr` | `i32` | `scanner` | `src/globals.rs:571` C extern | `align_ptr`, `set_align_ptr` | def xetex/xetex-ini.c |  |
-| `cur_head` | `i32` | `scanner` | `src/globals.rs:572` C extern | `cur_head`, `set_cur_head` | def xetex/xetex-ini.c |  |
-| `cur_tail` | `i32` | `scanner` | `src/globals.rs:573` C extern | `cur_tail_a`, `set_cur_tail_a` | def xetex/xetex-ini.c |  |
-| `cur_pre_head` | `i32` | `scanner` | `src/globals.rs:574` C extern | `cur_pre_head`, `set_cur_pre_head` | def xetex/xetex-ini.c |  |
-| `cur_pre_tail` | `i32` | `scanner` | `src/globals.rs:575` C extern | `cur_pre_tail`, `set_cur_pre_tail` | def xetex/xetex-ini.c |  |
-| `adjust_tail` | `i32` | `scanner` | `src/globals.rs:577` C extern | `adjust_tail`, `set_adjust_tail` | def xetex/xetex-ini.c |  |
-| `pre_adjust_tail` | `i32` | `scanner` | `src/globals.rs:578` C extern | `pre_adjust_tail`, `set_pre_adjust_tail` | def xetex/xetex-ini.c |  |
-| `total_stretch` | `[i32; 4]` | `scanner` | `src/globals.rs:579` C extern | `total_stretch`, `set_total_stretch` | def xetex/xetex-ini.c |  |
-| `total_shrink` | `[i32; 4]` | `scanner` | `src/globals.rs:580` C extern | `total_shrink`, `set_total_shrink` | def xetex/xetex-ini.c |  |
-| `just_box` | `i32` | `scanner` | `src/globals.rs:581` C extern | `just_box`, `set_just_box` | def xetex/xetex-ini.c |  |
-| `cur_f` | `i32` | `scanner` | `src/globals.rs:583` C extern | `cur_f`, `set_cur_f` | def xetex/xetex-ini.c |  |
-| `cur_c` | `i32` | `scanner` | `src/globals.rs:584` C extern | `cur_c`, `set_cur_c` | def xetex/xetex-ini.c |  |
-| `cur_i` | `crate::mem_types::B16x4` | `scanner` | `src/globals.rs:585` C extern | `cur_i`, `set_cur_i` | def xetex/xetex-ini.c |  |
-| `pack_begin_line` | `i32` | `scanner` | `src/globals.rs:587` C extern | `pack_begin_line`, `set_pack_begin_line` | def xetex/xetex-ini.c |  |
-| `set_box_allowed` | `bool` | `scanner` | `src/globals.rs:589` C extern | `set_box_allowed`, `set_set_box_allowed` | def xetex/xetex-ini.c |  |
-| `active_width` | `[i32; 7]` | `scanner` | `src/globals.rs:592` C extern | `active_width`, `set_active_width` | def xetex/xetex-ini.c |  |
-| `best_height_plus_depth` | `i32` | `scanner` | `src/globals.rs:594` C extern | `best_height_plus_depth`, `set_best_height_plus_depth` | def xetex/xetex-ini.c |  |
-| `LR_ptr` | `i32` | `scanner` | `src/globals.rs:596` C extern | `lr_ptr`, `set_lr_ptr` | def xetex/xetex-ini.c |  |
-| `LR_problems` | `i32` | `scanner` | `src/globals.rs:597` C extern | `lr_problems`, `set_lr_problems` | def xetex/xetex-ini.c |  |
-| `cur_dir` | `i16` | `scanner` | `src/globals.rs:599` C extern | `cur_dir`, `set_cur_dir` | def xetex/xetex-ini.c |  |
+| `cur_box` | `i32` | `scanner` | `src/globals.rs:562` C extern | `cur_box`, `set_cur_box` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `after_token` | `i32` | `scanner` | `src/globals.rs:564` C extern | `set_after_token`, `after_token` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `cur_order` | `u8` | `scanner` | `src/globals.rs:566` C extern | `cur_order`, `set_cur_order` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `cur_align` | `i32` | `scanner` | `src/globals.rs:568` C extern | `cur_align`, `set_cur_align` | def xetex/xetex-ini.c | → `EngineState.scanner` (prior session) |
+| `cur_span` | `i32` | `scanner` | `src/globals.rs:569` C extern | `cur_span`, `set_cur_span` | def xetex/xetex-ini.c | → `EngineState.scanner` (prior session) |
+| `cur_loop` | `i32` | `scanner` | `src/globals.rs:570` C extern | `cur_loop`, `set_cur_loop` | def xetex/xetex-ini.c | → `EngineState.scanner` (prior session) |
+| `align_ptr` | `i32` | `scanner` | `src/globals.rs:571` C extern | `align_ptr`, `set_align_ptr` | def xetex/xetex-ini.c | → `EngineState.scanner` (prior session) |
+| `cur_head` | `i32` | `scanner` | `src/globals.rs:572` C extern | `cur_head`, `set_cur_head` | def xetex/xetex-ini.c | → `EngineState.scanner` (prior session) |
+| `cur_tail` | `i32` | `scanner` | `src/globals.rs:573` C extern | `cur_tail_a`, `set_cur_tail_a` | def xetex/xetex-ini.c | → `EngineState.scanner` (prior session) |
+| `cur_pre_head` | `i32` | `scanner` | `src/globals.rs:574` C extern | `cur_pre_head`, `set_cur_pre_head` | def xetex/xetex-ini.c | → `EngineState.scanner` (prior session) |
+| `cur_pre_tail` | `i32` | `scanner` | `src/globals.rs:575` C extern | `cur_pre_tail`, `set_cur_pre_tail` | def xetex/xetex-ini.c | → `EngineState.scanner` (prior session) |
+| `adjust_tail` | `i32` | `scanner` | `src/globals.rs:577` C extern | `adjust_tail`, `set_adjust_tail` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `pre_adjust_tail` | `i32` | `scanner` | `src/globals.rs:578` C extern | `pre_adjust_tail`, `set_pre_adjust_tail` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `total_stretch` | `[i32; 4]` | `scanner` | `src/globals.rs:579` C extern | `total_stretch`, `set_total_stretch` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `total_shrink` | `[i32; 4]` | `scanner` | `src/globals.rs:580` C extern | `total_shrink`, `set_total_shrink` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `just_box` | `i32` | `scanner` | `src/globals.rs:581` C extern | `just_box`, `set_just_box` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `cur_f` | `i32` | `scanner` | `src/globals.rs:583` C extern | `cur_f`, `set_cur_f` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `cur_c` | `i32` | `scanner` | `src/globals.rs:584` C extern | `cur_c`, `set_cur_c` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `cur_i` | `crate::mem_types::B16x4` | `scanner` | `src/globals.rs:585` C extern | `cur_i`, `set_cur_i` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `pack_begin_line` | `i32` | `scanner` | `src/globals.rs:587` C extern | `pack_begin_line`, `set_pack_begin_line` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `set_box_allowed` | `bool` | `scanner` | `src/globals.rs:589` C extern | `set_box_allowed`, `set_set_box_allowed` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `active_width` | `[i32; 7]` | `scanner` | `src/globals.rs:592` C extern | `active_width`, `set_active_width` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `best_height_plus_depth` | `i32` | `scanner` | `src/globals.rs:594` C extern | `best_height_plus_depth`, `set_best_height_plus_depth` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `LR_ptr` | `i32` | `scanner` | `src/globals.rs:596` C extern | `lr_ptr`, `set_lr_ptr` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `LR_problems` | `i32` | `scanner` | `src/globals.rs:597` C extern | `lr_problems`, `set_lr_problems` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
+| `cur_dir` | `i16` | `scanner` | `src/globals.rs:599` C extern | `cur_dir`, `set_cur_dir` | def xetex/xetex-ini.c | → `EngineState.scanner` (session 54) |
 | `last_leftmost_char` | `i32` | `linebreak` | `src/globals.rs:601` C extern | `last_leftmost_char`, `set_last_leftmost_char` | def xetex/xetex-ini.c | → `LinebreakState` (new; session 45) |
 | `last_rightmost_char` | `i32` | `linebreak` | `src/globals.rs:602` C extern | `last_rightmost_char`, `set_last_rightmost_char` | def xetex/xetex-ini.c | → `LinebreakState` (new; session 45) |
 | `hlist_stack` | `[i32; 513]` | `linebreak` | `src/globals.rs:604` C extern | `hlist_stack_entry`, `set_hlist_stack_entry` | def xetex/xetex-ini.c | → `LinebreakState` (new; session 45) |
@@ -559,6 +559,18 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | `cur_ext` | `scanner` | `str_number` | `StrNumber` | session 8 | pending |
 | `area_delimiter` | `scanner` | `pool_pointer` | `PoolPtr` | session 8 | pending |
 | `ext_delimiter` | `scanner` | `pool_pointer` | `PoolPtr` | session 8 | pending |
+| `cur_box` | `scanner` | `halfword` | `MemPtr`/`Halfword` | session 54 | pending |
+| `cur_order` | `scanner` | `glue_ord` | `GlueOrd` | session 54 | pending |
+| `adjust_tail` | `scanner` | `halfword` | `MemPtr`/`Halfword` | session 54 | pending |
+| `pre_adjust_tail` | `scanner` | `halfword` | `MemPtr`/`Halfword` | session 54 | pending |
+| `total_stretch` | `scanner` | `scaled_t[4]` | `[Scaled; 4]` | session 54 | pending |
+| `total_shrink` | `scanner` | `scaled_t[4]` | `[Scaled; 4]` | session 54 | pending |
+| `just_box` | `scanner` | `halfword` | `MemPtr`/`Halfword` | session 54 | pending |
+| `cur_f` | `scanner` | `internal_font_number` | `FontId` | session 54 | pending |
+| `active_width` | `scanner` | `scaled_t[7]` | `[Scaled; 7]` | session 54 | pending |
+| `best_height_plus_depth` | `scanner` | `scaled_t` | `Scaled` | session 54 | pending |
+| `LR_ptr` | `scanner` | `halfword` | `MemPtr`/`Halfword` | session 54 | pending |
+| `cur_dir` | `scanner` | `small_number` | `SmallNumber` | session 54 | pending |
 | `cur_group` | `save_stack` | `group_code` (enum) | `GroupCode` | session 9 | pending |
 | `grp_stack[]` | `input` | `save_pointer` | `SavePointer`/`Scaled`-style index | session 13 | pending |
 | `source_filename_stack[]` | `input` | `str_number` | `StrNumber` | session 13 | pending |

@@ -214,36 +214,7 @@ mod raw {
         pub(super) static mut space_class: i32;
         pub(super) static mut prev_class: i32;
         // Hyphenation trie and exception tables (xetex-xetexd.h:635-645).
-        // Currently assembled box (xetex-xetexd.h:687; node index = i32).
-        pub(super) static mut cur_box: i32;
-        // Token saved by \afterassignment (xetex-xetexd.h:688).
-        pub(super) static mut after_token: i32;
-        // Current glue order (normal=0..filll=3; xetex-xetexd.h:534; glue_ord = u8).
-        pub(super) static mut cur_order: u8;
-        // hpack/vpackage adjust-list pointers and glue accumulators (xetex-xetexd.h:603–606).
-        pub(super) static mut adjust_tail: i32;
-        pub(super) static mut pre_adjust_tail: i32;
-        pub(super) static mut total_stretch: [i32; 4];
-        pub(super) static mut total_shrink: [i32; 4];
-        pub(super) static mut just_box: i32;
-        // Math/list conversion scratch (xetex-xetexd.h:609–611).
-        pub(super) static mut cur_f: i32;
-        pub(super) static mut cur_c: i32;
-        pub(super) static mut cur_i: crate::mem_types::B16x4;
-        // Line number at which the current box-packing started (xetex-xetexd.h:607).
-        pub(super) static mut pack_begin_line: i32;
-        // Whether \setbox is allowed in the current context (xetex-xetexd.h:446).
-        pub(super) static mut set_box_allowed: bool;
-        // Glue/kern/height accumulator for vert_break and page-builder (xetex-xetexd.h:619).
-        // 1-indexed in C; element 0 is unused.
-        pub(super) static mut active_width: [i32; 7];
-        // Height + depth of the best vertical break found so far (xetex-xetexd.h:662).
-        pub(super) static mut best_height_plus_depth: i32;
-        // Bidi LR-stack head and error counter (xetex-xetexd.h:701–702; xetex-ini.c:327–328).
-        pub(super) static mut LR_ptr: i32;
-        pub(super) static mut LR_problems: i32;
-        // Current text direction: LEFT_TO_RIGHT=0, RIGHT_TO_LEFT=1 (xetex-xetexd.h:703; small_number=i16).
-        pub(super) static mut cur_dir: i16;
+
         // last_leftmost_char .. best_pl_glue (the line-breaker / LR-reverse /
         // hyphenation-attempt scratch) moved to EngineState.linebreak
         // (LinebreakState); see src/state.rs.
@@ -1522,13 +1493,13 @@ pub(crate) fn set_cur_tok(v: i32) {
 }
 #[inline]
 pub(crate) fn set_after_token(v: i32) {
-    unsafe {
-        raw::after_token = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.after_token = v;
+    });
 }
 #[inline]
 pub(crate) fn after_token() -> i32 {
-    unsafe { raw::after_token }
+    crate::state::with_state(|s| s.scanner.after_token)
 }
 #[inline]
 pub(crate) fn align_state() -> i32 {
@@ -4066,18 +4037,15 @@ pub(crate) fn insert_src_special_every_vbox() -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// cur_box
-// ---------------------------------------------------------------------------
-
 #[inline]
 pub(crate) fn cur_box() -> i32 {
-    unsafe { raw::cur_box }
+    crate::state::with_state(|s| s.scanner.cur_box)
 }
 #[inline]
 pub(crate) fn set_cur_box(v: i32) {
-    unsafe {
-        raw::cur_box = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_box = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -4086,13 +4054,13 @@ pub(crate) fn set_cur_box(v: i32) {
 
 #[inline]
 pub(crate) fn cur_order() -> u8 {
-    unsafe { raw::cur_order }
+    crate::state::with_state(|s| s.scanner.cur_order)
 }
 #[inline]
 pub(crate) fn set_cur_order(v: u8) {
-    unsafe {
-        raw::cur_order = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_order = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -4186,103 +4154,103 @@ pub(crate) fn set_cur_pre_tail(v: i32) {
 
 #[inline]
 pub(crate) fn adjust_tail() -> i32 {
-    unsafe { raw::adjust_tail }
+    crate::state::with_state(|s| s.scanner.adjust_tail)
 }
 #[inline]
 pub(crate) fn set_adjust_tail(v: i32) {
-    unsafe {
-        raw::adjust_tail = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.adjust_tail = v;
+    });
 }
 #[inline]
 pub(crate) fn pre_adjust_tail() -> i32 {
-    unsafe { raw::pre_adjust_tail }
+    crate::state::with_state(|s| s.scanner.pre_adjust_tail)
 }
 #[inline]
 pub(crate) fn set_pre_adjust_tail(v: i32) {
-    unsafe {
-        raw::pre_adjust_tail = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.pre_adjust_tail = v;
+    });
 }
 #[inline]
 pub(crate) fn total_stretch(o: usize) -> i32 {
-    unsafe { raw::total_stretch[o] }
+    crate::state::with_state(|s| s.scanner.total_stretch[o])
 }
 #[inline]
 pub(crate) fn set_total_stretch(o: usize, v: i32) {
-    unsafe {
-        raw::total_stretch[o] = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.total_stretch[o] = v;
+    });
 }
 #[inline]
 pub(crate) fn total_shrink(o: usize) -> i32 {
-    unsafe { raw::total_shrink[o] }
+    crate::state::with_state(|s| s.scanner.total_shrink[o])
 }
 #[inline]
 pub(crate) fn set_total_shrink(o: usize, v: i32) {
-    unsafe {
-        raw::total_shrink[o] = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.total_shrink[o] = v;
+    });
 }
 #[inline]
 pub(crate) fn just_box() -> i32 {
-    unsafe { raw::just_box }
+    crate::state::with_state(|s| s.scanner.just_box)
 }
 #[inline]
 pub(crate) fn set_just_box(v: i32) {
-    unsafe {
-        raw::just_box = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.just_box = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_f() -> i32 {
-    unsafe { raw::cur_f }
+    crate::state::with_state(|s| s.scanner.cur_f)
 }
 #[inline]
 pub(crate) fn set_cur_f(v: i32) {
-    unsafe {
-        raw::cur_f = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_f = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_c() -> i32 {
-    unsafe { raw::cur_c }
+    crate::state::with_state(|s| s.scanner.cur_c)
 }
 #[inline]
 pub(crate) fn set_cur_c(v: i32) {
-    unsafe {
-        raw::cur_c = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_c = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_i() -> crate::mem_types::B16x4 {
-    unsafe { raw::cur_i }
+    crate::state::with_state(|s| s.scanner.cur_i)
 }
 #[inline]
 pub(crate) fn set_cur_i(v: crate::mem_types::B16x4) {
-    unsafe {
-        raw::cur_i = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_i = v;
+    });
 }
 #[inline]
 pub(crate) fn pack_begin_line() -> i32 {
-    unsafe { raw::pack_begin_line }
+    crate::state::with_state(|s| s.scanner.pack_begin_line)
 }
 #[inline]
 pub(crate) fn set_pack_begin_line(v: i32) {
-    unsafe {
-        raw::pack_begin_line = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.pack_begin_line = v;
+    });
 }
 #[inline]
 pub(crate) fn set_box_allowed() -> bool {
-    unsafe { raw::set_box_allowed }
+    crate::state::with_state(|s| s.scanner.set_box_allowed)
 }
 #[inline]
 pub(crate) fn set_set_box_allowed(v: bool) {
-    unsafe {
-        raw::set_box_allowed = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.set_box_allowed = v;
+    });
 }
 
 /// Returns `cur_list.mode_line` (the source line where the current mode started).
@@ -4298,29 +4266,29 @@ pub(crate) fn cur_list_mode_line() -> i32 {
 /// Read `active_width[k]` (1-indexed, k in 1..=6).
 #[inline]
 pub(crate) fn active_width(k: usize) -> i32 {
-    unsafe { raw::active_width[k] }
+    crate::state::with_state(|s| s.scanner.active_width[k])
 }
 
 /// Write `active_width[k] = v` (1-indexed, k in 1..=6).
 #[inline]
 pub(crate) fn set_active_width(k: usize, v: i32) {
-    unsafe {
-        raw::active_width[k] = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.active_width[k] = v;
+    });
 }
 
 /// Read `best_height_plus_depth`.
 #[inline]
 pub(crate) fn best_height_plus_depth() -> i32 {
-    unsafe { raw::best_height_plus_depth }
+    crate::state::with_state(|s| s.scanner.best_height_plus_depth)
 }
 
 /// Write `best_height_plus_depth`.
 #[inline]
 pub(crate) fn set_best_height_plus_depth(v: i32) {
-    unsafe {
-        raw::best_height_plus_depth = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.best_height_plus_depth = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -4329,33 +4297,33 @@ pub(crate) fn set_best_height_plus_depth(v: i32) {
 
 #[inline]
 pub(crate) fn lr_ptr() -> i32 {
-    unsafe { raw::LR_ptr }
+    crate::state::with_state(|s| s.scanner.LR_ptr)
 }
 #[inline]
 pub(crate) fn set_lr_ptr(v: i32) {
-    unsafe {
-        raw::LR_ptr = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.LR_ptr = v;
+    });
 }
 #[inline]
 pub(crate) fn lr_problems() -> i32 {
-    unsafe { raw::LR_problems }
+    crate::state::with_state(|s| s.scanner.LR_problems)
 }
 #[inline]
 pub(crate) fn set_lr_problems(v: i32) {
-    unsafe {
-        raw::LR_problems = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.LR_problems = v;
+    });
 }
 #[inline]
 pub(crate) fn cur_dir() -> i16 {
-    unsafe { raw::cur_dir }
+    crate::state::with_state(|s| s.scanner.cur_dir)
 }
 #[inline]
 pub(crate) fn set_cur_dir(v: i16) {
-    unsafe {
-        raw::cur_dir = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.cur_dir = v;
+    });
 }
 #[inline]
 pub(crate) fn last_leftmost_char() -> i32 {
