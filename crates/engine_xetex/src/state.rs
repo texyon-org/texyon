@@ -206,6 +206,14 @@ pub(crate) struct EqtbState {
     pub no_new_control_sequence: bool,
     pub prim_used: i32,
     pub cs_count: i32,
+    /// Equivalents table (former C-`malloc`'d `memory_word *eqtb`, size
+    /// `eqtb_top + 1`). Rust-owned `Vec`, allocated in `ini.rs` at init and
+    /// format-load and dropped by `tt_cleanup`; indexed by the `eqtb_*`
+    /// accessors. In the format dump (sparse region `dump_slice`/`undump_slice`);
+    /// those paths take a state-derived base pointer precomputed outside
+    /// `with_state_mut` (the font-array pattern, sessions 32–39). Element
+    /// `memory_word` (faithful `MemoryWord`), no newtype debt. (session 51)
+    pub data: Vec<crate::mem_types::MemoryWord>,
     /// Primitive-lookup table (former inline C `prim[PRIM_SIZE + 1]`). Heap-
     /// backed `Vec` sized `PRIM_SIZE + 1 = 2101`; not `malloc`'d in C (inline
     /// BSS), so it is sized here in `Default`, not allocated in `ini.rs`.
@@ -227,6 +235,9 @@ impl Default for EqtbState {
             no_new_control_sequence: false,
             prim_used: 0,
             cs_count: 0,
+            // Allocated in `ini.rs` (initex / format-load) like the other
+            // Rust-owned arena arrays; empty until then.
+            data: Vec::new(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
             // EQTB_SIZE - INT_BASE + 1.

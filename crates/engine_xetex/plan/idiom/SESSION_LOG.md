@@ -9,6 +9,75 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 51 — 2026-05-30 — eqtb array → Rust-owned `Vec<MemoryWord>`
+
+**Type:** execution (workstream 01, Phase-B; the `eqtb`-cluster ownership slice —
+the format-dump-reconciliation centerpiece flagged by sessions 49–50). One commit.
+
+**Slice:** the equivalents table `eqtb` (C-`malloc`'d `memory_word *`, size
+`eqtb_top + 1`) → Rust-owned `Vec<MemoryWord>` on `EngineState.eqtb.data`.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C type: `memory_word *eqtb` (xetex-xetexd.h:386) — element `memory_word`,
+  faithfully mirrored by `MemoryWord`; **no newtype debt** (checked).
+- (b) aliases: two `#[link_name = "eqtb"]` (alloc/dump alias `ini.rs:1818`,
+  cleanup alias `ini.rs:3675`) → ownership slice (§11 step 6).
+- (c) C readers (non-macos): only `xetex-ini.c` (the definition, line 20); no C
+  algorithm indexes `eqtb[]`.
+- (d) cross-module Rust extern redeclarations: none beyond the two ini.rs aliases.
+- format dump: **yes** — sparse region-based `dump_slice`/`undump_slice`.
+
+**Work done (1 commit):**
+- `EqtbState` gains `data: Vec<MemoryWord>` (empty in `Default`; allocated in
+  `ini.rs`, dropped in `tt_cleanup`).
+- 9 `globals.rs` accessors repointed to index `s.eqtb.data` via
+  `with_state`/`with_state_mut` (the session-11 union-Vec idiom: the 3 reads keep
+  an `unsafe` `MemoryWord` projection, the writes need none). `eqtb_is_null` →
+  `data.is_empty()`.
+- Format dump/undump reconciled with the **font-array pattern**: a state-derived
+  base pointer (`eqtb_ptr`) is precomputed once outside `with_state` (dump,
+  `as_ptr`) / `with_state_mut` (undump, `as_mut_ptr`), then used in the
+  sparse-region `dump_slice`/`undump_slice` + the undump replication loop. The Vec
+  never reallocates (thread-local owner), so the raw base stays valid across the
+  loops' interleaved `eqtb_*` accessor calls (no live borrow held).
+- initex (`ini.rs:3362`, was `xcalloc_array`) and format-load (`ini.rs:2559`, was
+  `xmalloc_array`) allocations replaced by `vec![<zero MemoryWord>; eqtb_top+1]`
+  (matching the `x*alloc_array(n)` = `n+1` inclusive size); the format-load
+  undefined-CS replication loop now uses `eqtb_word`/`set_eqtb_word`.
+- `tt_cleanup` (`ini.rs:3741`) and the format-load reset (`ini.rs:2520`) free via
+  `s.eqtb.data = Vec::new()` instead of `libc::free`.
+- Removed both `#[link_name = "eqtb"]` aliases, the `mod raw` extern static, and
+  the C definition `memory_word *eqtb;` (xetex-ini.c:20) in the same commit.
+  `eqtb_top` stays a C global (not this slice).
+
+**Newtype debts (§4):** none — element type `memory_word` is faithful
+(`MemoryWord`); checked, no worklist row.
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4**. `cargo check` clean (pre-existing warnings only). The format-load
+path (latex_goldens, TRIP, `prim_filedump`) exercises the sparse-region eqtb
+dump/undump round-trip; TRIP + `save_restore` exercise eqtb save/restore writes.
+
+**Metrics after this session:**
+- `globals.rs` raw extern count **82 → 81** (−1: `eqtb`).
+- Raw `unsafe { }` text count **250 → 244** (−6; the 3 union *reads* keep theirs).
+
+**Tooling note:** the harness tool-output channel stalled for very long stretches
+this session (results arrived in delayed bursts). The migration itself is
+unaffected — every step was verified by the clean `cargo check`, a successful
+link, and the green 29/2/7/4 dashboard.
+
+**For the next session (52+):**
+- **`hash`** is the next eqtb-cluster slice: the `yhash` offset-pointer trick
+  (`hash = yhash - hash_offset`) + the C alloc helper
+  `tt_run_engine_allocate_yhash` + `hash_offset`/cleanup must be reworked; the
+  `Vec` accessor subtracts `hash_offset`.
+- Then the **`mem` arena** (§5) — the hottest/highest-leverage ownership move and
+  the real pivot into Phase C (thread `&mut Mem` rather than bridge).
+
+---
+
 ## Idiom session 50 — 2026-05-30 — FFI Teardown of 148 Redeclared Rust-to-Rust Functions
 
 **Type:** execution (workstream 03, FFI teardown and signature conversion).

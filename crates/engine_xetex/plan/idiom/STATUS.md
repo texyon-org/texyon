@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (added workstream 06; last execution = session 49, 2026-05-29).
+Last updated: 2026-05-30 (last execution = session 51, eqtb array → Rust-owned Vec).
 
 ## How to read this file
 
@@ -470,6 +470,18 @@ least-coupled non-`misc` clusters:
     removed. No newtype debt (faithful `B32x2`/`u16`). The malloc'd `eqtb`/`hash`
     arrays (sparse `dump_slice` reconciliation; `yhash` offset trick) remain for
     dedicated sessions. Dashboard 29/2/7/4.
+-   **`eqtb` array proper → Rust-owned `Vec<MemoryWord>` (session 51):** the
+    format-dump-reconciliation centerpiece. The `malloc`'d `memory_word *eqtb`
+    moved to `EngineState.eqtb.data`; 9 accessors repointed (session-11 union-Vec
+    idiom). The sparse region-based format dump/undump (`dump_slice`/`undump_slice`
+    + undefined-CS replication) reconciled via a state-derived base pointer
+    precomputed once outside `with_state`/`with_state_mut` (the font-array
+    pattern) — valid across the loops because the thread-local Vec never
+    reallocates. initex `xcalloc_array` / format-load `xmalloc_array` replaced by
+    `vec![<zero MemoryWord>; eqtb_top+1]`; `tt_cleanup` + format-reset free via
+    `Vec::new()`. Removed both `#[link_name="eqtb"]` aliases, the raw extern, and
+    the C def (xetex-ini.c:20). No newtype debt (element `memory_word`).
+    Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -478,12 +490,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 82 (session 49 moved the 2 inline `eqtb` arrays `prim` + `xeq_level`) |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 81 (session 51 moved the malloc'd `eqtb` array; 82 after session 49) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
 | thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 160 state-backed scalars/arrays (incl. 33 `LinebreakState` inline scalars/arrays) + 68 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 250 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 244 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -569,12 +581,13 @@ the snippets in `00-overview.md` / the workstream plans.
     arrays with the two inline BSS arrays (`prim`, `xeq_level`). The decision block
     + per-field lists + newtype-debt rows live in `01a-global-inventory.md`.
 
-    **Next high-value slice: the `eqtb` array proper** (malloc'd `*mut MemoryWord`
-    → Rust-owned `Vec`; reconcile the sparse region `dump_slice`/`undump_slice`
-    via a state-derived base pointer precomputed outside `with_state_mut`, the
-    proven font-array pattern; alloc alias ini.rs:1819 + cleanup 3676 removed).
-    Then `hash` (the `yhash` offset-pointer trick + C alloc helper). Then the
-    `mem` arena (§5) — the hottest move and the real pivot into Phase C.
+    **`eqtb` array proper done (session 51)** — the malloc'd `*mut MemoryWord`
+    moved to a Rust-owned `Vec` on `EqtbState.data`, with the sparse-region
+    dump/undump reconciled via the font-array base-pointer pattern. **Next
+    high-value slice: `hash`** (the `yhash` offset-pointer trick `hash = yhash -
+    hash_offset` + the `tt_run_engine_allocate_yhash` C helper + `hash_offset`/
+    cleanup; the `Vec` accessor subtracts `hash_offset`). Then the `mem` arena
+    (§5) — the hottest move and the real pivot into Phase C.
 
     | Target | Members | Shape | Status |
     |---|---|---|---|
@@ -597,7 +610,7 @@ the snippets in `00-overview.md` / the workstream plans.
     | Bucket | ~Count | Fate |
     |---|---:|---|
     | Intentionally deferred: hot tokenizer (`cur_cmd/chr/tok/cs/val`), mem arena (`mem`, `lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`, `dyn_used`), hot lig/kern (`main_*`, `cur_l/r/q`, etc.) | 37 | Stay raw until Phase C |
-    | Ownership slices (`eqtb`, `hash`, `sa_root`, `xdv_buffer`, `name_of_file*`, `native_text`) — `prim`/`xeq_level` done session 49 | 10 | Need format-dump or alloc rewrite work |
+    | Ownership slices (`hash`, `sa_root`, `xdv_buffer`, `name_of_file*`, `native_text`) — `prim`/`xeq_level` done s49, `eqtb` array done s51 | 9 | Need format-dump or alloc rewrite work |
     | Classified-but-unmigrated scratch (remaining `scanner` box/packaging + native rows; the `shipout` DVI promoted-Rust-statics; await migration into their assigned clusters) | ~29 | sub-structs already decided |
     | Capacity/size limits (`stack_size`, `nest_size`, etc.) | 5 | Probably stay as C forever |
 

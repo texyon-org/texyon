@@ -56,9 +56,7 @@ mod raw {
         // xetex-xetexd.h:510 — current source line number.
         pub(super) static mut line: i32;
 
-        // xetex-xetexd.h:386 — equivalents table (size eqtb_top+1 words).
-        // Accessed by index like `mem`; valid indices depend on context.
-        pub(super) static mut eqtb: *mut crate::mem_types::MemoryWord;
+        // eqtb (*mut memory_word) moved to EngineState.eqtb.data (session 51).
 
         // xetex-xetexd.h:459 — temporary pointer register.
         pub(super) static mut temp_ptr: i32;
@@ -679,61 +677,63 @@ pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
 // eqtb accessor
 // ---------------------------------------------------------------------------
 
-/// Returns true if the `eqtb` pointer is null (engine not yet initialized).
+/// Returns true if the `eqtb` store is empty (engine not yet initialized).
 #[inline]
 pub(crate) fn eqtb_is_null() -> bool {
-    unsafe { raw::eqtb.is_null() }
+    crate::state::with_state(|s| s.eqtb.data.is_empty())
 }
 
 /// Copy the full MemoryWord at `eqtb[p]`.
 #[inline]
 pub(crate) fn eqtb_word(p: i32) -> crate::mem_types::MemoryWord {
-    unsafe { *raw::eqtb.offset(p as isize) }
+    crate::state::with_state(|s| s.eqtb.data[p as usize])
 }
 /// Write a full MemoryWord to `eqtb[p]`.
 #[inline]
 pub(crate) fn set_eqtb_word(p: i32, w: crate::mem_types::MemoryWord) {
-    unsafe {
-        *raw::eqtb.offset(p as isize) = w;
-    }
+    crate::state::with_state_mut(|s| {
+        s.eqtb.data[p as usize] = w;
+    });
 }
 /// Read `eqtb[p].b32.s1` (the "value" half of an equivalents entry).
 #[inline]
 pub(crate) fn eqtb_b32s1(p: i32) -> i32 {
-    // SAFETY: see module-level doc. Caller ensures p is a valid eqtb index.
-    unsafe { (*raw::eqtb.offset(p as isize)).b32.s1 }
+    // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
+    crate::state::with_state(|s| unsafe { s.eqtb.data[p as usize].b32.s1 })
 }
 /// Write `v` into `eqtb[p].b32.s1`.
 #[inline]
 pub(crate) fn set_eqtb_b32s1(p: i32, v: i32) {
-    // SAFETY: see module-level doc. Caller ensures p is a valid eqtb index.
-    unsafe {
-        (*raw::eqtb.offset(p as isize)).b32.s1 = v;
-    }
+    // Union-field write through a `Vec` index needs no `unsafe` (session 41).
+    crate::state::with_state_mut(|s| {
+        s.eqtb.data[p as usize].b32.s1 = v;
+    });
 }
 /// Read `eqtb[p].b16.s1` (the "type" half of an equivalents entry).
 #[inline]
 pub(crate) fn eqtb_b16s1(p: i32) -> u16 {
-    unsafe { (*raw::eqtb.offset(p as isize)).b16.s1 }
+    // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
+    crate::state::with_state(|s| unsafe { s.eqtb.data[p as usize].b16.s1 })
 }
 /// Write `v` into `eqtb[p].b16.s1`.
 #[inline]
 pub(crate) fn set_eqtb_b16s1(p: i32, v: u16) {
-    unsafe {
-        (*raw::eqtb.offset(p as isize)).b16.s1 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.eqtb.data[p as usize].b16.s1 = v;
+    });
 }
 /// Read `eqtb[p].b16.s0` (the "level" half of an equivalents entry).
 #[inline]
 pub(crate) fn eqtb_b16s0(p: i32) -> u16 {
-    unsafe { (*raw::eqtb.offset(p as isize)).b16.s0 }
+    // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
+    crate::state::with_state(|s| unsafe { s.eqtb.data[p as usize].b16.s0 })
 }
 /// Write `v` into `eqtb[p].b16.s0`.
 #[inline]
 pub(crate) fn set_eqtb_b16s0(p: i32, v: u16) {
-    unsafe {
-        (*raw::eqtb.offset(p as isize)).b16.s0 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.eqtb.data[p as usize].b16.s0 = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
