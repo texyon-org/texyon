@@ -1,4 +1,5 @@
 //! Math-mode command helpers translated from `xetex/xetex-math.c`.
+use crate::consts::{BOX_NODE_SIZE, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_FONT_BASE, MAX_HALFWORD, MEDIUM_NODE_SIZE, PENALTY_NODE, RULE_NODE};
 use crate::ext::real_get_native_glyph;
 use crate::input::begin_token_list;
 
@@ -26,11 +27,8 @@ use crate::mem::{
     free_node, get_node, new_choice, new_glue, new_kern, new_noad, new_rule, new_spec, TEX_NULL,
 };
 
-const INT_BASE: i32 = 7_826_729;
 const INT_PAR_CUR_FAM: i32 = 44;
-const LOCAL_BASE: i32 = 2_254_871;
 const LOCAL_EVERY_MATH: i32 = 3;
-const DEL_CODE_BASE: i32 = 7_827_068;
 
 const EVERY_MATH_TEXT: u16 = 9;
 const MATH_CHOICE_GROUP: u8 = 13;
@@ -91,7 +89,6 @@ const PUNCT_NOAD: u16 = 22;
 const LIG_TAG: u16 = 1;
 const MATH_TEXT_CHAR: i32 = 4;
 const NOAD_SIZE: i32 = 4;
-const HLIST_NODE: u16 = 0;
 const INT_PAR_DELIMITER_FACTOR: i32 = 18;
 const DIMEN_PAR_DELIMITER_SHORTFALL: i32 = 10;
 const ACCENTBASEHEIGHT: i32 = 6;
@@ -102,9 +99,6 @@ const STYLE_NODE_SIZE: i32 = 3;
 
 const MATH_SHIFT: u8 = 3;
 const MMODE: i16 = 207;
-const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
-const GLUE_BASE: i32 = 2_254_340;
-const DIMEN_BASE: i32 = 8_941_180;
 const GLUE_PAR_RIGHT_SKIP: i32 = 8;
 const GLUE_PAR_LEFT_SKIP: i32 = 7;
 const DIMEN_PAR_PRE_DISPLAY_SIZE: i32 = 13;
@@ -117,7 +111,6 @@ const INT_PAR_PRE_DISPLAY_DIRECTION: i32 = 61;
 const INT_PAR_TEXXET: i32 = 69;
 const INT_PAR_BIN_OP_PENALTY: i32 = 9;
 const INT_PAR_REL_PENALTY: i32 = 10;
-const CUR_FONT_LOC: i32 = 2_255_400;
 const QUAD_CODE: i32 = 6;
 const L_CODE: i32 = 4;
 const R_CODE: i32 = 8;
@@ -139,7 +132,6 @@ const RIGHT_TO_LEFT: i16 = 1;
 const LEFT_TO_RIGHT: i16 = 0;
 const BEFORE: i32 = 0;
 
-const MATH_FONT_BASE: i32 = 2_255_401;
 const FONT_BASE: i32 = 0;
 const TEXT_SIZE: i32 = 0;
 const SCRIPT_SIZE: i32 = 256;
@@ -169,7 +161,6 @@ const END_M_CODE: i16 = 3;
 const DISPLAY_STYLE: i16 = 0;
 const TEXT_STYLE: i16 = 2;
 const SCRIPT_STYLE: i16 = 4;
-const BOX_NODE_SIZE: i32 = 8;
 const ADJUST_HEAD: i32 = 4_999_994;
 const PRE_ADJUST_HEAD: i32 = 4_999_985;
 const FIL: usize = 1;
@@ -190,22 +181,15 @@ const GLUE_PAR_THICK_MU_SKIP: i32 = 18;
 const ADDITIONAL: i16 = 1;
 const EXACTLY: i16 = 0;
 const AFTER: i16 = 1;
-const GLUE_NODE: u16 = 10;
 const DLIST: u16 = 2;
-const GLUE_SPEC_SIZE: i32 = 4;
 const MU_GLUE: u16 = 99;
 const EXPLICIT: u16 = 1;
 const VLIST_NODE: u16 = 1;
-const RULE_NODE: u16 = 2;
 const INS_NODE: u16 = 3;
 const MARK_NODE: u16 = 4;
 const ADJUST_NODE: u16 = 5;
-const DISC_NODE: u16 = 7;
-const KERN_NODE: u16 = 11;
-const PENALTY_NODE: u16 = 12;
 const STYLE_NODE: u16 = 14;
 const CHOICE_NODE: u16 = 15;
-const MEDIUM_NODE_SIZE: i32 = 3;
 const SUB_BOX: i32 = 2;
 const COND_MATH_GLUE: u16 = 98;
 const SPACE_CODE: i32 = 2;

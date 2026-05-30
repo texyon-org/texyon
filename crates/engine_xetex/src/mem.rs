@@ -5,6 +5,7 @@
 //! `flush_list`, `get_node`, `free_node`, `new_*`). During Phase A of
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
+use crate::consts::{BOX_NODE_SIZE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE};
 use crate::errors::overflow;
 use crate::scan::runaway;
 
@@ -21,25 +22,9 @@ use crate::globals::{
 // TeX constants (xetex-constants.h / xetex_format.h)
 pub(crate) const TEX_NULL: i32 = -0x0FFF_FFFF; // MIN_HALFWORD
 const MEM_TOP: i32 = 4_999_999;
-const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
-const NULL_FLAG: i32 = -0x4000_0000; // "missing item" in rule nodes
 const NORMAL: u16 = 0;
-const MEDIUM_NODE_SIZE: i32 = 3;
-const SMALL_NODE_SIZE: i32 = 2;
-const GLUE_SPEC_SIZE: i32 = 4;
-const RULE_NODE_SIZE: i32 = 5;
-const BOX_NODE_SIZE: i32 = 8;
 // Node type values (mem[p].b16.s1)
-const HLIST_NODE: u16 = 0;
-const RULE_NODE: u16 = 2;
-const LIGATURE_NODE: u16 = 6;
-const DISC_NODE: u16 = 7;
-const MATH_NODE: u16 = 9;
-const GLUE_NODE: u16 = 10;
-const KERN_NODE: u16 = 11;
-const PENALTY_NODE: u16 = 12;
 // eqtb base indices (xetex_format.h)
-const GLUE_BASE: i32 = 2_254_340;
 
 // Math node type and size constants (xetex_format.h:394–401; xetex-constants.h:119,136).
 const NOAD_SIZE: i32 = 4;

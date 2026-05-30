@@ -5,13 +5,13 @@
 //! `str_start[k - TOO_BIG_CHAR]` giving the start offset of string `k`.
 //! Single-character strings below 65536 are stored implicitly (no pool slot).
 
+use crate::consts::{TOO_BIG_CHAR};
 use crate::globals::{
     buffer_entry, init_pool_ptr, init_str_ptr, max_strings, pool_ptr, pool_size, set_pool_ptr,
     set_str_pool, set_str_ptr, set_str_start, str_pool_entry, str_ptr, str_start,
 };
 
 // TOO_BIG_CHAR: the threshold above which str_number values index the pool.
-const TOO_BIG_CHAR: i32 = 65536;
 // EMPTY_STRING = TOO_BIG_CHAR + 1 (xetex-stringpool.h:12).
 use crate::errors::overflow;
 

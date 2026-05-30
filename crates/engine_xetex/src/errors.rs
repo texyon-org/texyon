@@ -1,5 +1,6 @@
 //! Error-handling functions translated from `xetex/xetex-errors.c`.
 
+use crate::consts::{BATCH_MODE, ERROR_STOP_MODE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY};
 use crate::globals::{
     error_count, halt_on_error_p, help_line, history, interaction, job_name, log_opened,
     rust_stdout, selector, set_error_count, set_help_line, set_help_ptr, set_history,
@@ -8,9 +9,6 @@ use crate::globals::{
 use crate::output::print_cmd_chr;
 
 // Interaction-mode constants (xetex_format.h:644–647).
-const BATCH_MODE: u8 = 0;
-const SCROLL_MODE: u8 = 2;
-const ERROR_STOP_MODE: u8 = 3;
 
 // History constants (xetex-xetexd.h:355–358).
 use crate::ini::tt_cleanup;
@@ -30,8 +28,6 @@ const HISTORY_ERROR_ISSUED: i32 = 2;
 const HISTORY_FATAL_ERROR: i32 = 3;
 
 // Selector constants (xetex-core.h:46–48).
-const SELECTOR_TERM_ONLY: i32 = 17;
-const SELECTOR_TERM_AND_LOG: i32 = 19;
 
 extern "C" {
 

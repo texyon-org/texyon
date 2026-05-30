@@ -1,4 +1,5 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
+use crate::consts::{ACTIVE_BASE, BIGGEST_CHAR, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, INT_BASE, NULL_FLAG, PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SINGLE_BASE, TEX_NULL};
 use crate::ext::print_utf8_str;
 use crate::scan::show_context;
 use crate::texmfmp::gettexstring;
@@ -21,15 +22,12 @@ use crate::globals::{
 
 // Selector constants (xetex-core.h:42–51).
 const SELECTOR_NO_PRINT: i32 = 16;
-const SELECTOR_TERM_ONLY: i32 = 17;
 const SELECTOR_LOG_ONLY: i32 = 18;
-const SELECTOR_TERM_AND_LOG: i32 = 19;
 const SELECTOR_PSEUDO: i32 = 20;
 const SELECTOR_NEW_STRING: i32 = 21;
 
 // Constants for INTPAR(escape_char) = eqtb[INT_BASE + INT_PAR__escape_char].b32.s1
 // (xetex_format.h:219,80 and xetex-constants.h:83).
-const INT_BASE: i32 = 7_826_729;
 const INT_PAR_ESCAPE_CHAR: i32 = 45;
 const INT_PAR_NEW_LINE_CHAR: i32 = 49;
 const INT_PAR_TRACING_ONLINE: i32 = 29;
@@ -42,19 +40,13 @@ const HISTORY_WARNING_ISSUED: i32 = 1;
 const MAX_COMMAND_PLUS_1: i32 = 103; // MAX_COMMAND + 1
 const BIGGEST_USV: i32 = 0x10_FFFF;
 #[allow(dead_code)]
-const BIGGEST_CHAR: i32 = 0xFFFF;
 const TEXT_SIZE: i32 = 0;
 const SCRIPT_SIZE: i32 = 256;
 // print_cs / sprint_cs constants (xetex_format.h).
-const ACTIVE_BASE: i32 = 1;
-const SINGLE_BASE: i32 = 1_114_113;
 const NULL_CS: i32 = 2_228_225;
 const HASH_BASE: i32 = 2_228_226;
-const PRIM_EQTB_BASE: i32 = 2_243_238;
 const FROZEN_NULL_FONT: i32 = 2_245_338;
 const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
-const EQTB_SIZE: i32 = 8_941_458;
-const CAT_CODE_BASE: i32 = 2_256_169;
 const LETTER: i32 = 11;
 // print_sa_num (xetex-constants.h:326).
 const DIMEN_VAL_LIMIT: i32 = 128;
@@ -1125,7 +1117,6 @@ pub unsafe extern "C" fn print_in_mode(m: i32) {
 // token_show
 // ---------------------------------------------------------------------------
 
-const TEX_NULL: i32 = -0x0FFF_FFFF;
 
 /// Display a token list headed at p.
 ///
@@ -1349,7 +1340,6 @@ pub unsafe extern "C" fn print_delimiter(p: i32) {
 const NORMAL: i32 = 0;
 const FIL: i32 = 1;
 const FILLL: i32 = 3;
-const NULL_FLAG: i32 = -0x4000_0000;
 
 /// Print a rule dimension (print '*' for a null-flag wildcard).
 ///
@@ -3055,7 +3045,6 @@ pub unsafe fn bad_utf8_warning() {
 
 // Token-word layout (xetex-constants.h:347).
 const MAX_CHAR_VAL_STL: i32 = 0x200_000; // 1 << 21
-const CS_TOKEN_FLAG_STL: i32 = 0x1FF_FFFF;
 
 // Category-code discriminants used in token words (xetex_format.h:231–250).
 const LEFT_BRACE_STL: i32 = 1;
@@ -3093,8 +3082,8 @@ pub unsafe extern "C" fn show_token_list(mut p: i32, q: i32, l: i32) {
             return;
         }
         let w = mem_b32s0(p);
-        if w >= CS_TOKEN_FLAG_STL {
-            print_cs(w - CS_TOKEN_FLAG_STL);
+        if w >= CS_TOKEN_FLAG {
+            print_cs(w - CS_TOKEN_FLAG);
         } else if w < 0 {
             print_esc_cstr(c"BAD.".as_ptr());
         } else {

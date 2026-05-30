@@ -1,5 +1,6 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
+use crate::consts::{INT_BASE};
 use crate::globals::{
     buf_size, buffer_entry, buffer_ptr, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1,
     first, last, max_buf_stack, name_length, name_length16, name_of_file, name_of_file16,
@@ -85,7 +86,6 @@ const JUST_OPEN: u8 = 1;
 const CLOSED: u8 = 2;
 
 // INT_BASE and INT_PAR offsets used by open_or_close_in (xetex_format.h:219,110–111).
-const INT_BASE: i32 = 7_826_729;
 const INT_PAR_XETEX_DEFAULT_INPUT_MODE: i32 = 75;
 const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING: i32 = 76;
 

@@ -28,6 +28,7 @@ use tectonic_errors::prelude::*;
 mod engine_interface;
 mod errors;
 mod ext;
+mod consts;
 mod globals;
 mod hash;
 mod helpers;

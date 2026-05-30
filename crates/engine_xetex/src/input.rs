@@ -1,6 +1,7 @@
 //! Input-stack management functions translated from `xetex/xetex-xetex0.c`.
 //!
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
+use crate::consts::{CS_TOKEN_FLAG, INT_BASE, LOCAL_BASE};
 use crate::io::u_close;
 use crate::output::capture_to_diagnostic;
 
@@ -32,7 +33,6 @@ const OUTPUT_TEXT: u16 = 7; // xetex-constants.h:206
 const MARK_TEXT: u16 = 15; // xetex-constants.h:214
 const WRITE_TEXT: u16 = 18; // xetex-constants.h:217
                             // Token encoding (xetex-constants.h:348, xetex_format.h:201, xetex-constants.h:62).
-const CS_TOKEN_FLAG: i32 = 0x1FFFFFF;
 const FROZEN_RELAX: i32 = 2_243_226 + 7; // FROZEN_CONTROL_SEQUENCE + 7
                                          // Scanner-state constants (xetex-constants.h:221).
 const MID_LINE: u16 = 1;
@@ -281,9 +281,7 @@ pub unsafe extern "C" fn insert_relax() {
 // ---------------------------------------------------------------------------
 
 // INT_BASE + INT_PAR__tracing_macros (xetex_format.h:208, :65)
-const INT_BASE_BTL: i32 = 7_826_729;
 const INT_PAR_TRACING_MACROS: i32 = 30; // xetex_format.h:65
-const LOCAL_BASE_BTL: i32 = 2_254_871; // xetex_format.h:208
 const LOCAL__OUTPUT_ROUTINE_BTL: i32 = 1; // xetex_format.h:173
 const ASSIGN_TOKS_BTL: u16 = 73; // xetex_format.h:313
 
@@ -306,7 +304,7 @@ pub unsafe fn begin_token_list(p: i32, t: u16) {
             set_cur_input_limit(param_ptr());
         } else {
             set_cur_input_loc(mem_b32s1(p));
-            if crate::globals::eqtb_b32s1(INT_BASE_BTL + INT_PAR_TRACING_MACROS) > 1 {
+            if crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_TRACING_MACROS) > 1 {
                 crate::output::begin_diagnostic();
                 crate::output::diagnostic_begin_capture_warning_here();
                 crate::output::print_nl_cstr(c"".as_ptr());
@@ -315,7 +313,7 @@ pub unsafe fn begin_token_list(p: i32, t: u16) {
                     WRITE_TEXT => crate::output::print_esc_cstr(c"write".as_ptr()),
                     _ => print_cmd_chr(
                         ASSIGN_TOKS_BTL,
-                        t as i32 + LOCAL_BASE_BTL + LOCAL__OUTPUT_ROUTINE_BTL - OUTPUT_TEXT as i32,
+                        t as i32 + LOCAL_BASE + LOCAL__OUTPUT_ROUTINE_BTL - OUTPUT_TEXT as i32,
                     ),
                 }
                 crate::output::print_cstr(c"->".as_ptr());

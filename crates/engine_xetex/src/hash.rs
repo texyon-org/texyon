@@ -1,6 +1,7 @@
 //! Control-sequence hash table lookups (id_lookup, prim_lookup).
 //!
 //! Translated from xetex-xetex0.c.
+use crate::consts::{BIGGEST_CHAR, EQTB_SIZE, TOO_BIG_CHAR};
 use crate::errors::overflow;
 use crate::string_pool::length;
 use crate::string_pool::make_string;
@@ -17,9 +18,7 @@ use crate::globals::{
 extern "C" {}
 
 // xetex-constants.h:25
-const BIGGEST_CHAR: i32 = 0xFFFF;
 // xetex-constants.h:340
-const TOO_BIG_CHAR: i32 = 65536;
 // xetex_format.h:15
 const HASH_SIZE: i32 = 15000;
 // xetex_format.h:18
@@ -35,7 +34,6 @@ const HASH_BASE: i32 = 2_228_226;
 // xetex_format.h:204
 const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 // xetex_format.h:224
-const EQTB_SIZE: i32 = 8_941_458;
 // xetex-constants.h:262
 const UNDEFINED_PRIMITIVE: i32 = 0;
 

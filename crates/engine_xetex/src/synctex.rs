@@ -1,6 +1,7 @@
 /* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License.
  * Translated to Rust from xetex-synctex.c. */
 
+use crate::consts::{BOX_NODE_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, MEDIUM_NODE_SIZE, RULE_NODE, RULE_NODE_SIZE};
 use libc::{c_char, c_int, size_t};
 use std::ptr;
 
@@ -10,21 +11,14 @@ use crate::globals::{
 };
 
 // INT_BASE (save.rs) and INT_PAR__synctex (xetex_format.h:116).
-const INT_BASE: i32 = 7_826_729;
 const INT_PAR_SYNCTEX: i32 = 81;
 
 // Node-size constants (xetex-constants.h).
 use crate::texmfmp::gettexstring;
 
 const SYNCTEX_FIELD_SIZE: i32 = 1;
-const BOX_NODE_SIZE: i32 = 8;
-const RULE_NODE_SIZE: i32 = 5;
-const MEDIUM_NODE_SIZE: i32 = 3; // GLUE, KERN, MATH
 
 // Node-type constants matching xetex-synctex.c.
-const RULE_NODE: u16 = 2;
-const GLUE_NODE: u16 = 10;
-const KERN_NODE: u16 = 11;
 
 const SYNCTEX_VERSION: i32 = 1;
 const INVALID_HANDLE: usize = 0;

@@ -1,5 +1,6 @@
 //! Rust translation of initialization helpers from xetex-ini.c.
 
+use crate::consts::{ACTIVE_BASE, BATCH_MODE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ERROR_STOP_MODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_HALFWORD, MIN_HALFWORD, NUMBER_USVS, PRIM_EQTB_BASE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE};
 use crate::globals::{
     after_token, avail, buf_size, cond_ptr, cs_count, cur_chr, cur_cmd, cur_cs, cur_if, cur_input,
     cur_lang, cur_level, cur_mark, cur_ptr, cur_tok, cur_val, def_ref, disc_ptr, dyn_used,
@@ -57,19 +58,13 @@ use crate::io::UFile;
 
 const INVALID_HANDLE: usize = 0;
 const UTF8: i16 = 1;
-const TOO_BIG_CHAR: i32 = 65_536;
-const SINGLE_BASE: i32 = 1_114_113;
-const PRIM_EQTB_BASE: i32 = 2_243_238;
 const LEVEL_ONE: u16 = 1;
-const MIN_HALFWORD: i32 = -0x0FFF_FFFF;
-const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
 const TRIE_OP_SIZE: i32 = 35_111;
 const NEG_TRIE_OP_SIZE: i32 = -35_111;
 const MAX_TRIE_OP: u16 = 65_535;
 const MIN_TRIE_OP: i32 = 0;
 const BIGGEST_LANG: i32 = 255;
-const BIGGEST_CHAR: i32 = 0xFFFF;
 const TRIE_OP_HASH_SIZE: usize = (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE + 1) as usize;
 
 #[no_mangle]
@@ -491,10 +486,8 @@ pub unsafe fn init_trie() {
 // translated from xetex-ini.c:643 (new_patterns)
 #[no_mangle]
 pub unsafe extern "C" fn new_patterns() {
-    const INT_BASE: i32 = 7_826_729;
     const INT_PAR_LANGUAGE: i32 = 50;
     const INT_PAR_SAVING_HYPH_CODES: i32 = 64;
-    const LC_CODE_BASE: i32 = 3_370_281;
     const LETTER: u8 = 11;
     const OTHER_CHAR: u8 = 12;
     const SPACER: u8 = 10;
@@ -710,8 +703,6 @@ pub unsafe extern "C" fn new_patterns() {
 // translated from xetex-ini.c:863 (new_hyph_exceptions)
 #[no_mangle]
 pub unsafe extern "C" fn new_hyph_exceptions() {
-    const INT_BASE: i32 = 7_826_729;
-    const LC_CODE_BASE: i32 = 3_370_281;
     const LETTER: u8 = 11;
     const OTHER_CHAR: u8 = 12;
     const CHAR_GIVEN: u8 = 68;
@@ -720,7 +711,6 @@ pub unsafe extern "C" fn new_hyph_exceptions() {
     const RIGHT_BRACE_CMD: u8 = 2;
     const INT_PAR_LANGUAGE: i32 = 50;
     const HYPH_PRIME: i32 = 607;
-    const TOO_BIG_CHAR: i32 = 65_536;
 
     crate::scan::scan_left_brace();
 
@@ -993,7 +983,6 @@ pub unsafe extern "C" fn primitive(ident: *const libc::c_char, c: u16, o: i32) {
 // translated from xetex-ini.c:2201 (final_cleanup)
 #[no_mangle]
 pub unsafe extern "C" fn final_cleanup() {
-    const INT_BASE: i32 = 7_826_729;
     const INT_PAR_NEW_LINE_CHAR: i32 = 49;
     const IF_NODE_SIZE: i32 = 2;
     const IF_TEST: u16 = 107;
@@ -1005,9 +994,6 @@ pub unsafe extern "C" fn final_cleanup() {
     const MARK_VAL: usize = 7;
     const HISTORY_SPOTLESS: i32 = 0;
     const HISTORY_WARNING_ISSUED: i32 = 1;
-    const ERROR_STOP_MODE: u8 = 3;
-    const SELECTOR_TERM_ONLY: i32 = 17;
-    const SELECTOR_TERM_AND_LOG: i32 = 19;
 
     let mut c = cur_chr();
 
@@ -1110,15 +1096,12 @@ pub unsafe extern "C" fn final_cleanup() {
 // translated from xetex-ini.c:2210 (initialize_more_variables)
 #[no_mangle]
 pub unsafe extern "C" fn initialize_more_variables() {
-    const ERROR_STOP_MODE: u8 = 3;
     const VMODE: i16 = 1;
     const MEM_TOP: i32 = 4_999_999;
     const CONTRIB_HEAD: i32 = MEM_TOP - 1;
     const PAGE_HEAD: i32 = MEM_TOP - 2;
     const IGNORE_DEPTH: i32 = -65_536_000;
     const EMPTY: u8 = 0;
-    const INT_BASE: i32 = 7_826_729;
-    const EQTB_SIZE: i32 = 8_941_458;
     const PRIM_SIZE: i32 = 2100;
     const TOP_MARK_CODE: usize = 0;
     const FIRST_MARK_CODE: usize = 1;
@@ -1317,39 +1300,19 @@ pub unsafe extern "C" fn initialize_more_initex_variables() {
     const FILL: u16 = 2;
     const HYPHENATED: u16 = 1;
     const SPLIT_UP: u16 = 1;
-    const GLUE_NODE: u16 = 10;
     const HI_MEM_STAT_USAGE: i32 = 15;
-    const CS_TOKEN_FLAG: i32 = 0x1FFF_FFF;
     const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226;
     const FROZEN_END_TEMPLATE: i32 = FROZEN_CONTROL_SEQUENCE + 5;
     const UNDEFINED_CS: u16 = 103;
     const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
     const LEVEL_ZERO: u16 = 0;
-    const ACTIVE_BASE: i32 = 1;
-    const GLUE_BASE: i32 = 2_254_340;
-    const LOCAL_BASE: i32 = 2_254_871;
     const LOCAL_PAR_SHAPE: i32 = 0;
     const LOCAL_OUTPUT_ROUTINE: i32 = 1;
-    const ETEX_PEN_BASE: i32 = 2_255_140;
     const NUM_ETEX_PENALTIES: i32 = 4;
-    const TOKS_BASE: i32 = 2_254_884;
     const NUMBER_REGS: i32 = 256;
-    const BOX_BASE: i32 = 2_255_144;
-    const CUR_FONT_LOC: i32 = 2_255_400;
     const FONT_BASE: i32 = 0;
-    const MATH_FONT_BASE: i32 = 2_255_401;
     const NUMBER_MATH_FAMILIES: i32 = 256;
     const NUMBER_MATH_FONTS: i32 = 3 * NUMBER_MATH_FAMILIES;
-    const CAT_CODE_BASE: i32 = 2_256_169;
-    const INT_BASE: i32 = 7_826_729;
-    const DIMEN_BASE: i32 = 8_941_180;
-    const DEL_CODE_BASE: i32 = 7_827_068;
-    const LC_CODE_BASE: i32 = 3_370_281;
-    const UC_CODE_BASE: i32 = 4_484_393;
-    const SF_CODE_BASE: i32 = 5_598_505;
-    const MATH_CODE_BASE: i32 = 6_712_617;
-    const EQTB_SIZE: i32 = 8_941_458;
-    const NUMBER_USVS: i32 = 0x10_FFFF + 1;
     const GLUE_REF: u16 = 119;
     const SHAPE_REF: u16 = 120;
     const BOX_REF: u16 = 121;
@@ -1586,7 +1549,6 @@ pub unsafe extern "C" fn initialize_more_initex_variables() {
 // translated from xetex-ini.c:2215 (initialize_primitives)
 #[no_mangle]
 pub unsafe extern "C" fn initialize_primitives() {
-    const CS_TOKEN_FLAG: i32 = 0x1FFF_FFF;
     const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226;
     const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE;
     const FROZEN_END_TEMPLATE: i32 = FROZEN_CONTROL_SEQUENCE + 5;
@@ -1684,12 +1646,10 @@ pub unsafe extern "C" fn initialize_primitives() {
 
 const FORMAT_HASH_OFFSET: i32 = 514;
 const MEM_TOP: i32 = 4_999_999;
-const EQTB_SIZE: i32 = 8_941_458;
 const HASH_PRIME: i32 = 557_111;
 const HASH_SIZE: i32 = 2_242_711;
 const HASH_BASE: i32 = 1_114_114;
 const HASH_TOP_UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
-const CS_TOKEN_FLAG: i32 = 0x1FFF_FFF;
 const FONT_BASE: i32 = 0;
 const MAX_FONT_MAX: i32 = 9_000;
 const CONTRIB_HEAD: i32 = MEM_TOP - 1;
@@ -1697,10 +1657,8 @@ const PAGE_HEAD: i32 = MEM_TOP - 2;
 const PRE_ADJUST_HEAD: i32 = MEM_TOP - 14;
 const HI_MEM_STAT_USAGE: i32 = 15;
 const SELECTOR_NO_PRINT: i32 = 16;
-const SELECTOR_TERM_ONLY: i32 = 17;
 const HISTORY_FATAL_ERROR: i32 = 3;
 const HISTORY_SPOTLESS: i32 = 0;
-const BATCH_MODE: u8 = 0;
 const NEW_LINE: u16 = 33;
 const EMPTY_STRING: i32 = 65_536;
 const NON_ADDRESS: i32 = 0;
@@ -1722,13 +1680,9 @@ const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226;
 const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 const FONT_ID_BASE: i32 = 2_245_338;
 const PRIM_SIZE: i32 = 2_100;
-const ACTIVE_BASE: i32 = 1;
 const FORMAT_INT_BASE: i32 = 7_826_729;
 const SELECTOR_LOG_ONLY: i32 = 18;
-const SELECTOR_TERM_AND_LOG: i32 = 19;
 const SELECTOR_NEW_STRING: i32 = 21;
-const ERROR_STOP_MODE: u8 = 3;
-const SCROLL_MODE: u8 = 2;
 const TTBC_FILE_FORMAT_FORMAT: libc::c_int = 10;
 const SUP_MAX_STRINGS: i32 = 2_097_151;
 const SUP_FONT_MEM_SIZE: i32 = 147_483_647;
@@ -3871,20 +3825,13 @@ const PROTECTED_TOKEN: i32 = 0x1C0_0000 + 1; // END_MATCH_TOKEN + 1
 const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
 const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
 const OTHER_TOKEN: i32 = 0x180_0000;
-const TEX_NULL: i32 = -0x0FFF_FFFF; // MIN_HALFWORD
 
-const CUR_FONT_LOC: i32 = 2_255_400;
 const COUNT_BASE: i32 = 7_826_812;
 const SCALED_BASE: i32 = 8_941_203;
 const SKIP_BASE: i32 = 2_254_359;
 const MU_SKIP_BASE: i32 = 2_254_615;
 const PC_LOCAL_BASE: i32 = 2_254_871;
-const TOKS_BASE: i32 = 2_254_884;
-const CAT_CODE_BASE: i32 = 2_256_169;
-const SF_CODE_BASE: i32 = 5_598_505;
-const MATH_CODE_BASE: i32 = 6_712_617;
 const PC_INT_BASE: i32 = 7_826_729;
-const DEL_CODE_BASE: i32 = 7_827_068;
 const LOCAL__PAR_SHAPE: i32 = 0;
 const LOCAL__OUTPUT_ROUTINE: i32 = 1;
 const LOCAL__XETEX_INTER_CHAR_TOKS: i32 = 11;

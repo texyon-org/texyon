@@ -5,7 +5,7 @@ duplicated `const`s with a single shared, **computed** constant module that
 mirrors the WEB `@d` definition chains. This is a distinct idiomatization
 gap not covered by workstreams 01–05.
 
-> Status: **PLANNED** (drafted 2026-05-30). Not yet `READY`. Execute the
+> Status: **EXECUTING** (2026-05-30). Execute the
 > low-risk "centralize duplicated cross-module consts" phase (§5 Phase A)
 > independently; defer the deep literal sweep (§5 Phase B) to pair with
 > Phase C / the newtype sweep.

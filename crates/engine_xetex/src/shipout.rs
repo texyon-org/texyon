@@ -1,4 +1,5 @@
 //! Shipout helpers translated from `xetex/xetex-shipout.c`.
+use crate::consts::{CS_TOKEN_FLAG, DIMEN_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FLAG, PENALTY_NODE, RULE_NODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
 use crate::ext::apply_tfm_font_mapping;
 use crate::ext::makeXDVGlyphArrayData;
 use crate::ext::make_font_def;
@@ -95,9 +96,6 @@ pub static mut dvi_f: i32 = 0;
 const DVI_BUF_SIZE: i32 = 16384;
 const HALF_BUF: i32 = 8192;
 const TEX_INFINITY: i32 = 0x7FFF_FFFF;
-const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
-const MIN_HALFWORD: i32 = -0x0FFF_FFFF;
-const TEX_NULL: i32 = -0x0FFF_FFFF;
 // xetex-constants.h:240
 const POP: u8 = 142;
 const PRE: u8 = 247;
@@ -112,29 +110,18 @@ const SET_TEXT_AND_GLYPHS: u8 = 254;
 const FNT_NUM_0: u8 = 171;
 
 // xetex-constants.h:105,114. EDGE_NODE is an alias of STYLE_NODE.
-const HLIST_NODE: u16 = 0;
 const VLIST_NODE: u16 = 1;
-const RULE_NODE: u16 = 2;
 const INS_NODE: u16 = 3;
 const MARK_NODE: u16 = 4;
 const ADJUST_NODE: u16 = 5;
-const LIGATURE_NODE: u16 = 6;
 const WHATSIT_NODE: u16 = 8;
-const MATH_NODE: u16 = 9;
-const GLUE_NODE: u16 = 10;
-const KERN_NODE: u16 = 11;
-const PENALTY_NODE: u16 = 12;
 const EDGE_NODE: u16 = 14;
 const MARGIN_KERN_NODE: u16 = 40;
-const SMALL_NODE_SIZE: i32 = 2;
-const MEDIUM_NODE_SIZE: i32 = 3;
 const EDGE_NODE_SIZE: i32 = 3;
-const GLUE_SPEC_SIZE: i32 = 4;
 const AAT_FONT_FLAG: i32 = 65533;
 const OTGR_FONT_FLAG: i32 = 65534;
 const FNT_DEF1: u8 = 243;
 const DEFINE_NATIVE_FONT: u8 = 252;
-const TOO_BIG_CHAR: i32 = 65536;
 
 // DVI movement opcodes — xetex-constants.h:241–242,244–245
 const DOWN1: u8 = 157;
@@ -196,16 +183,13 @@ const INT_PAR_TRACING_ONLINE: i32 = 29;
 // Token constants — xetex-constants.h:204,217,348–351
 const INSERTED: u16 = 5;
 const WRITE_TEXT: u16 = 18;
-const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
 const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
 const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
 // END_WRITE = FROZEN_CONTROL_SEQUENCE + 8 = 2_243_226 + 8
 const END_WRITE: i32 = 2_243_234;
 
 // Output selector values — xetex-core.h:43–50
-const SELECTOR_TERM_ONLY: i32 = 17;
 const SELECTOR_LOG_ONLY: i32 = 18;
-const SELECTOR_TERM_AND_LOG: i32 = 19;
 const SELECTOR_NEW_STRING: i32 = 21;
 
 /// Create a new edge node of subtype `s` and width `w`.
@@ -1606,10 +1590,8 @@ const SPX_ID_BYTE: u8 = 100;
 // xetex-constants.h:117
 const MOVEMENT_NODE_SIZE: i32 = 3;
 // xetex_format.h:52; xetex-xetexd.h INT_BASE
-const INT_BASE: i32 = 7_826_729;
 const INT_PAR_MAG: i32 = 17;
 const INT_PAR_TRACING_OUTPUT: i32 = 34;
-const DIMEN_BASE: i32 = 8_941_180;
 const DIMEN_PAR_H_OFFSET: i32 = 18;
 const DIMEN_PAR_V_OFFSET: i32 = 19;
 const DIMEN_PAR_PDF_PAGE_WIDTH: i32 = 21;
@@ -1621,7 +1603,6 @@ const LEFT_TO_RIGHT: i16 = 0;
 const RIGHT_TO_LEFT: i16 = 1;
 const ONE_INCH: i32 = 4_736_287;
 const ONE_INCH_LESS_ONE: i32 = 4_736_286;
-const NULL_FLAG: i32 = -0x4000_0000;
 
 // translated from xetex-shipout.c:1930 (prune_movements)
 #[no_mangle]

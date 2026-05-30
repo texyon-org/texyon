@@ -1,6 +1,7 @@
 //! Save-stack management functions translated from `xetex/xetex-xetex0.c`.
 //!
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
+use crate::consts::{EQTB_SIZE, INT_BASE, TEX_NULL};
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
 use crate::output::print_cstr;
@@ -22,7 +23,6 @@ use crate::globals::{
 };
 use crate::mem_types::MemoryWord;
 
-const TEX_NULL: i32 = -0x0FFF_FFFF; // MIN_HALFWORD
 
 extern "C" {
 
@@ -45,8 +45,6 @@ const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
 const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 
 // eqtb range constants (xetex_format.h:198,204,224).
-const INT_BASE: i32 = 7_826_729;
-const EQTB_SIZE: i32 = 8_941_458;
 const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 
 // ---------------------------------------------------------------------------

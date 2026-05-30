@@ -1,6 +1,7 @@
 //! Page builder functions translated from `xetex/xetex-pagebuilder.c`.
 #![allow(non_upper_case_globals)]
 
+use crate::consts::{BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE, MAX_HALFWORD, TEX_NULL};
 use crate::globals::{
     best_height_plus_depth, cur_mark, cur_ptr, dead_cycles, disc_ptr, eqtb_b32s1, insert_penalties,
     last_glue, line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, nest_ptr, output_active,
@@ -79,23 +80,21 @@ fn set_page_max_depth(v: i32) {
 }
 
 // Node types (xetex_format.h)
-const HLIST_NODE: i32 = 0;
+const HLIST_NODE: i32 = crate::consts::HLIST_NODE as i32;
 const VLIST_NODE: i32 = 1;
-const RULE_NODE: i32 = 2;
+const RULE_NODE: i32 = crate::consts::RULE_NODE as i32;
 const INS_NODE: i32 = 3;
 const MARK_NODE: i32 = 4;
 const WHATSIT_NODE: i32 = 8;
-const MATH_NODE: i32 = 9;
-const GLUE_NODE: i32 = 10;
-const KERN_NODE: i32 = 11;
-const PENALTY_NODE: i32 = 12;
+const MATH_NODE: i32 = crate::consts::MATH_NODE as i32;
+const GLUE_NODE: i32 = crate::consts::GLUE_NODE as i32;
+const KERN_NODE: i32 = crate::consts::KERN_NODE as i32;
+const PENALTY_NODE: i32 = crate::consts::PENALTY_NODE as i32;
 const PIC_NODE: i32 = 43;
 const PDF_NODE: i32 = 44;
 
 // Glue/page constants (xetex-constants.h)
-const TEX_NULL: i32 = -0x0FFF_FFFF;
 const MEM_TOP: i32 = 4_999_999;
-const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
 const PAGE_INS_HEAD: i32 = MEM_TOP;
 const CONTRIB_HEAD: i32 = MEM_TOP - 1;
 const PAGE_HEAD: i32 = MEM_TOP - 2;
@@ -111,7 +110,6 @@ const FIRE_UP_INIT: i16 = 1;
 const FIRE_UP_DONE: i16 = 2;
 const PAGE_INS_NODE_SIZE: i32 = 4;
 const INS_NODE_SIZE: i32 = 5;
-const BOX_NODE_SIZE: i32 = 8;
 const ADDITIONAL: i16 = 1;
 const EXACTLY: i16 = 0;
 const VMODE: i16 = 1;
@@ -129,22 +127,17 @@ const LAST_BOX_CODE: usize = 2;
 const COPY_CODE: usize = 1;
 
 // eqtb bases and parameter indices (xetex_format.h)
-const INT_BASE: i32 = 7_826_729;
 const INT_PAR__output_penalty: i32 = 39;
 const INT_PAR__max_dead_cycles: i32 = 40;
 const INT_PAR__holding_inserts: i32 = 53;
 const INT_PAR__saving_vdiscards: i32 = 63;
 const INT_PAR__vbadness: i32 = 27;
-const DIMEN_BASE: i32 = 8_941_180;
 const DIMEN_PAR__vsize: i32 = 4;
 const DIMEN_PAR__max_depth: i32 = 5;
 const DIMEN_PAR__vfuzz: i32 = 9;
-const GLUE_BASE: i32 = 2_254_340;
 const GLUE_PAR__top_skip: i32 = 9;
 const GLUE_PAR__split_top_skip: i32 = 10;
-const LOCAL_BASE: i32 = 2_254_871;
 const LOCAL__output_routine: i32 = 1;
-const BOX_BASE: i32 = 2_255_144;
 const SKIP_BASE: i32 = 2_254_359;
 const COUNT_BASE: i32 = 7_826_812;
 const SCALED_BASE: i32 = 8_941_203;
