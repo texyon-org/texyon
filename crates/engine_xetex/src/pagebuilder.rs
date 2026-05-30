@@ -1,7 +1,9 @@
 //! Page builder functions translated from `xetex/xetex-pagebuilder.c`.
 #![allow(non_upper_case_globals)]
 
-use crate::consts::{BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE, MAX_HALFWORD, TEX_NULL};
+use crate::consts::{
+    BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE, MAX_HALFWORD, TEX_NULL,
+};
 use crate::globals::{
     best_height_plus_depth, cur_mark, cur_ptr, dead_cycles, disc_ptr, eqtb_b32s1, insert_penalties,
     last_glue, line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, nest_ptr, output_active,
@@ -32,7 +34,7 @@ use crate::output::error_here_with_diagnostic;
 use crate::output::print_cstr;
 use crate::output::print_esc_cstr;
 use crate::output::print_int;
-use crate::save::find_sa_element;
+use crate::save::find_sa_element_global;
 use crate::save::geq_word_define;
 use crate::save::new_save_level;
 use crate::scaled_math::x_over_n;
@@ -349,7 +351,7 @@ unsafe fn fire_up(c: i32) {
                 if mem_b32s0(p + 1) != 0 {
                     // MARK_NODE_class != 0
                     // 1618: Update current marks (extended)
-                    find_sa_element(MARK_VAL as u16, mem_b32s0(p + 1), true);
+                    find_sa_element_global(MARK_VAL as u16, mem_b32s0(p + 1), true);
                     if mem_b32s1(cur_ptr() + 1) == TEX_NULL {
                         // ETEX_MARK_sa_first_mark == TEX_NULL
                         set_mem_b32s1(cur_ptr() + 1, mem_b32s1(p + 1)); // = MARK_NODE_ptr

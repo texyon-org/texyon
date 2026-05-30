@@ -273,7 +273,6 @@ impl EqtbState {
     }
 }
 
-
 /// The dynamic-memory arena (former C-`malloc`'d `memory_word *mem` plus its
 /// bookkeeping scalars). The `mem` array is the engine's hottest storage; its
 /// bookkeeping scalars (`lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`,
@@ -313,6 +312,13 @@ impl MemState {
     pub(crate) fn b32s1(&self, p: i32) -> i32 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         unsafe { self.data[p as usize].b32.s1 }
+    }
+
+    /// Read `mem[p].b16.s0`. Mirrors `globals::mem_b16s0`.
+    #[inline]
+    pub(crate) fn b16s0(&self, p: i32) -> u16 {
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        unsafe { self.data[p as usize].b16.s0 }
     }
 
     /// Write `mem[p].b32.s0`. Union writes through a `&mut` index are safe.

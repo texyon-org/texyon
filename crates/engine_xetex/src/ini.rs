@@ -1,6 +1,12 @@
 //! Rust translation of initialization helpers from xetex-ini.c.
 
-use crate::consts::{ACTIVE_BASE, BATCH_MODE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ERROR_STOP_MODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_HALFWORD, MIN_HALFWORD, NUMBER_USVS, PRIM_EQTB_BASE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE};
+use crate::consts::{
+    ACTIVE_BASE, BATCH_MODE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
+    DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ERROR_STOP_MODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE,
+    INT_BASE, LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_HALFWORD, MIN_HALFWORD,
+    NUMBER_USVS, PRIM_EQTB_BASE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
+    SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
+};
 use crate::globals::{
     after_token, avail, buf_size, cond_ptr, cs_count, cur_chr, cur_cmd, cur_cs, cur_if, cur_input,
     cur_lang, cur_level, cur_mark, cur_ptr, cur_tok, cur_val, def_ref, disc_ptr, dyn_used,
@@ -2733,7 +2739,11 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         (UNDEFINED_CONTROL_SEQUENCE - 1) - hash_used(),
     );
     if hash_high() > 0 {
-        undump_slice(fmt_in, hash_ptr.add((EQTB_SIZE + 1 - 514) as usize), hash_high());
+        undump_slice(
+            fmt_in,
+            hash_ptr.add((EQTB_SIZE + 1 - 514) as usize),
+            hash_high(),
+        );
     }
 
     set_cs_count(undump_int(fmt_in));
@@ -4110,7 +4120,7 @@ pub unsafe fn prefixed_command() {
                                     j = TOK_VAL;
                                 }
 
-                                crate::save::find_sa_element(j as u16, cur_val(), true);
+                                crate::save::find_sa_element_global(j as u16, cur_val(), true);
                                 set_mem_b32s0(cur_ptr() + 1, mem_b32s0(cur_ptr() + 1) + 1);
 
                                 if j == TOK_VAL {
@@ -4244,7 +4254,7 @@ pub unsafe fn prefixed_command() {
                     if cur_chr() == 0 {
                         crate::scan::scan_register_num();
                         if cur_val() > 255 {
-                            crate::save::find_sa_element(TOK_VAL as u16, cur_val(), true);
+                            crate::save::find_sa_element_global(TOK_VAL as u16, cur_val(), true);
                             set_cur_chr(cur_ptr());
                             e = true;
                         } else {
@@ -4257,7 +4267,7 @@ pub unsafe fn prefixed_command() {
                     crate::scan::scan_char_class_not_ignored();
                     set_cur_ptr(cur_val());
                     crate::scan::scan_char_class_not_ignored();
-                    crate::save::find_sa_element(
+                    crate::save::find_sa_element_global(
                         INTER_CHAR_VAL as u16,
                         cur_ptr() * CHAR_CLASS_LIMIT + cur_val(),
                         true,
@@ -4285,7 +4295,11 @@ pub unsafe fn prefixed_command() {
                             if cur_val() < 256 {
                                 q = eqtb_b32s1(TOKS_BASE + cur_val());
                             } else {
-                                crate::save::find_sa_element(TOK_VAL as u16, cur_val(), false);
+                                crate::save::find_sa_element_global(
+                                    TOK_VAL as u16,
+                                    cur_val(),
+                                    false,
+                                );
                                 if cur_ptr() == TEX_NULL {
                                     q = TEX_NULL;
                                 } else {
@@ -4299,7 +4313,7 @@ pub unsafe fn prefixed_command() {
                         crate::scan::scan_char_class_not_ignored();
                         set_cur_ptr(cur_val());
                         crate::scan::scan_char_class_not_ignored();
-                        crate::save::find_sa_element(
+                        crate::save::find_sa_element_global(
                             INTER_CHAR_VAL as u16,
                             cur_ptr() * CHAR_CLASS_LIMIT + cur_val(),
                             false,

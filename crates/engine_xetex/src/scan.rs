@@ -1,7 +1,15 @@
 //! Scanner range-validation helpers and mu_error.
 //!
 //! Translated from xetex-xetex0.c.
-use crate::consts::{ACTIVE_BASE, BATCH_MODE, BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, EQTB_SIZE, ERROR_STOP_MODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE, LOCAL_BASE, MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, RULE_NODE_SIZE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR};
+use crate::consts::{
+    ACTIVE_BASE, BATCH_MODE, BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CS_TOKEN_FLAG,
+    CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, EQTB_SIZE, ERROR_STOP_MODE, ETEX_PEN_BASE,
+    GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE,
+    LOCAL_BASE, MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FLAG,
+    PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, RULE_NODE_SIZE, SELECTOR_TERM_AND_LOG,
+    SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE,
+    TOO_BIG_CHAR,
+};
 use crate::errors::error;
 use crate::errors::int_error;
 use crate::errors::not_aat_font_error;
@@ -1745,7 +1753,7 @@ pub unsafe extern "C" fn ins_the_toks() {
 // INT_BASE = 7_826_729 (xetex_format.h); INT_PAR__new_line_char = 49
 const INT_PAR_NEW_LINE_CHAR: i32 = 49; // xetex_format.h:84
 const INT_PAR_TRACING_SCAN_TOKENS: i32 = 59; // xetex_format.h:94
-                                 // xetex-core.h / xetex-xetexd.h:430
+                                             // xetex-core.h / xetex-xetexd.h:430
 const SELECTOR_NEW_STRING: i32 = 21;
 
 /// translated from xetex-xetex0.c:6263 (pseudo_start)
@@ -2982,7 +2990,11 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                             if cur_val() < 256 {
                                 set_cur_val(eqtb_b32s1(TOKS_BASE + cur_val()));
                             } else {
-                                crate::save::find_sa_element(TOK_VAL as u16, cur_val(), false);
+                                crate::save::find_sa_element_global(
+                                    TOK_VAL as u16,
+                                    cur_val(),
+                                    false,
+                                );
                                 if cur_ptr() == TEX_NULL {
                                     set_cur_val(TEX_NULL);
                                 } else {
@@ -2996,7 +3008,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                         scan_char_class_not_ignored();
                         set_cur_ptr(cur_val());
                         scan_char_class_not_ignored();
-                        crate::save::find_sa_element(
+                        crate::save::find_sa_element_global(
                             INTER_CHAR_VAL as u16,
                             cur_ptr() * CHAR_CLASS_LIMIT + cur_val(),
                             false,
@@ -3135,7 +3147,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                 if cur_val() < 256 {
                     q = eqtb_b32s1(BOX_BASE + cur_val());
                 } else {
-                    crate::save::find_sa_element(4, cur_val(), false);
+                    crate::save::find_sa_element_global(4, cur_val(), false);
                     if cur_ptr() == TEX_NULL {
                         q = TEX_NULL;
                     } else {
@@ -3201,7 +3213,11 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                     scan_register_num();
                     set_cur_val_level(m as u8);
                     if cur_val() > 255 {
-                        crate::save::find_sa_element(cur_val_level() as u16, cur_val(), false);
+                        crate::save::find_sa_element_global(
+                            cur_val_level() as u16,
+                            cur_val(),
+                            false,
+                        );
                         if cur_ptr() == TEX_NULL {
                             set_cur_val(0);
                         } else if (cur_val_level() as i16) < GLUE_VAL {
@@ -4179,7 +4195,7 @@ pub unsafe extern "C" fn conditional() {
             p = if crate::globals::cur_val() < 256 {
                 eqtb_b32s1(BOX_BASE + crate::globals::cur_val())
             } else {
-                crate::save::find_sa_element(4, crate::globals::cur_val(), false);
+                crate::save::find_sa_element_global(4, crate::globals::cur_val(), false);
                 if crate::globals::cur_ptr() == TEX_NULL {
                     TEX_NULL
                 } else {
@@ -5173,7 +5189,6 @@ pub unsafe extern "C" fn new_interaction() {
 // alter_aux / alter_prev_graf / alter_page_so_far / alter_integer / alter_box_dimen
 // ---------------------------------------------------------------------------
 
-
 // translated from xetex-xetex0.c:10774 (alter_aux)
 #[no_mangle]
 pub unsafe extern "C" fn alter_aux() {
@@ -5274,7 +5289,7 @@ pub unsafe extern "C" fn alter_box_dimen() {
     let b = if cur_val() < 256 {
         eqtb_b32s1(BOX_BASE + cur_val())
     } else {
-        crate::save::find_sa_element(4, cur_val(), false);
+        crate::save::find_sa_element_global(4, cur_val(), false);
         if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
             crate::mem::TEX_NULL
         } else {
@@ -6780,7 +6795,7 @@ pub unsafe extern "C" fn show_whatever() {
             let p = if cur_val() < 256 {
                 eqtb_b32s1(BOX_BASE + cur_val())
             } else {
-                crate::save::find_sa_element(4, cur_val(), false);
+                crate::save::find_sa_element_global(4, cur_val(), false);
                 if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
                     crate::mem::TEX_NULL
                 } else {
@@ -7307,7 +7322,7 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
             let p = cur_chr() as i16;
             scan_register_num();
             if cur_val() > 255 {
-                crate::save::find_sa_element(p as u16, cur_val(), true);
+                crate::save::find_sa_element_global(p as u16, cur_val(), true);
                 (crate::globals::cur_ptr(), p, true)
             } else {
                 let l = match p {
@@ -7503,7 +7518,7 @@ pub unsafe extern "C" fn unpackage() {
         let p = if cur_val() < 256 {
             eqtb_b32s1(BOX_BASE + cur_val())
         } else {
-            crate::save::find_sa_element(4, cur_val(), false);
+            crate::save::find_sa_element_global(4, cur_val(), false);
             if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
                 crate::mem::TEX_NULL
             } else {
@@ -7542,7 +7557,7 @@ pub unsafe extern "C" fn unpackage() {
             if cur_val() < 256 {
                 crate::globals::set_eqtb_b32s1(BOX_BASE + cur_val(), crate::mem::TEX_NULL);
             } else {
-                crate::save::find_sa_element(4, cur_val(), false);
+                crate::save::find_sa_element_global(4, cur_val(), false);
                 if crate::globals::cur_ptr() != crate::mem::TEX_NULL {
                     set_mem_b32s1(crate::globals::cur_ptr() + 1, crate::mem::TEX_NULL);
                     let rc = mem_b32s0(crate::globals::cur_ptr() + 1) + 1;
@@ -7819,7 +7834,7 @@ pub unsafe extern "C" fn main_control_append_normal_space() {
         && crate::globals::prev_class() != CHAR_CLASS_LIMIT - 1
     {
         crate::globals::set_prev_class(CHAR_CLASS_LIMIT - 1);
-        crate::save::find_sa_element(
+        crate::save::find_sa_element_global(
             INTER_CHAR_VAL as u16,
             crate::globals::space_class() * CHAR_CLASS_LIMIT + (CHAR_CLASS_LIMIT - 1),
             false,
@@ -9246,7 +9261,10 @@ pub unsafe extern "C" fn init_align() {
     set_align_state(-1_000_000);
 
     'outer: loop {
-        set_mem_b32s1(cur_align(), crate::mem::new_param_glue_global(GLUE_PAR_TAB_SKIP));
+        set_mem_b32s1(
+            cur_align(),
+            crate::mem::new_param_glue_global(GLUE_PAR_TAB_SKIP),
+        );
         set_cur_align(mem_b32s1(cur_align()));
         if cur_cmd() == CAR_RET {
             break 'outer;
@@ -9605,7 +9623,7 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
     let v = if cur_val() < 256 {
         eqtb_b32s1(BOX_BASE + cur_val())
     } else {
-        crate::save::find_sa_element(4, cur_val(), false);
+        crate::save::find_sa_element_global(4, cur_val(), false);
         if cur_ptr() == TEX_NULL {
             TEX_NULL
         } else {
@@ -9659,7 +9677,7 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
                 let mark_class = mem_b32s0(p + 1);
                 let mark_ptr = mem_b32s1(p + 1);
                 if mark_class != 0 {
-                    crate::save::find_sa_element(MARK_VAL as u16, mark_class, true);
+                    crate::save::find_sa_element_global(MARK_VAL as u16, mark_class, true);
                     if mem_b32s1(cur_ptr() + 2) == TEX_NULL {
                         set_mem_b32s1(cur_ptr() + 2, mark_ptr);
                         set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
@@ -9695,7 +9713,7 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
     if cur_val() < 256 {
         set_eqtb_b32s1(BOX_BASE + cur_val(), q);
     } else {
-        crate::save::find_sa_element(4, cur_val(), false);
+        crate::save::find_sa_element_global(4, cur_val(), false);
         if cur_ptr() != TEX_NULL {
             set_mem_b32s1(cur_ptr() + 1, q);
             set_mem_b32s0(cur_ptr() + 1, mem_b32s0(cur_ptr() + 1) + 1);
@@ -9786,7 +9804,7 @@ pub unsafe extern "C" fn box_end(box_context: i32) {
                 crate::save::eq_define(BOX_BASE + cur_val(), BOX_REF, cur_box());
             }
         } else {
-            crate::save::find_sa_element(4, cur_val(), true);
+            crate::save::find_sa_element_global(4, cur_val(), true);
             if a >= 4 {
                 crate::save::gsa_def(cur_ptr(), cur_box());
             } else {
@@ -9874,7 +9892,7 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
             if v < 256 {
                 set_cur_box(eqtb_b32s1(BOX_BASE + v));
             } else {
-                crate::save::find_sa_element(4, v, false);
+                crate::save::find_sa_element_global(4, v, false);
                 set_cur_box(if cur_ptr() == TEX_NULL {
                     TEX_NULL
                 } else {
@@ -9884,7 +9902,7 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
             if v < 256 {
                 set_eqtb_b32s1(BOX_BASE + v, TEX_NULL);
             } else {
-                crate::save::find_sa_element(4, v, false);
+                crate::save::find_sa_element_global(4, v, false);
                 if cur_ptr() != TEX_NULL {
                     set_mem_b32s1(cur_ptr() + 1, TEX_NULL);
                     set_mem_b32s0(cur_ptr() + 1, mem_b32s0(cur_ptr() + 1) + 1);
@@ -9899,7 +9917,7 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
             let q = if v < 256 {
                 eqtb_b32s1(BOX_BASE + v)
             } else {
-                crate::save::find_sa_element(4, v, false);
+                crate::save::find_sa_element_global(4, v, false);
                 if cur_ptr() == TEX_NULL {
                     TEX_NULL
                 } else {
@@ -11714,7 +11732,7 @@ const PDF_NODE_VP: u16 = 44;
 const INT_PAR_XETEX_UPWARDS_VP: i32 = 71;
 const INT_PAR_VBADNESS_VP: i32 = 27;
 const DIMEN_PAR_VFUZZ_VP: i32 = 9;
-                                      // xetex_format.h:297 (ADDITIONAL = 1 already defined as ADDITIONAL in this file's context)
+// xetex_format.h:297 (ADDITIONAL = 1 already defined as ADDITIONAL in this file's context)
 
 /// translated from xetex-xetex0.c:7424 (vpackage)
 pub unsafe fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
@@ -12037,7 +12055,7 @@ pub unsafe extern "C" fn conv_toks() {
             if cur_val() < 256 {
                 p = eqtb_b32s1(BOX_BASE + cur_val());
             } else {
-                crate::save::find_sa_element(4, cur_val(), false);
+                crate::save::find_sa_element_global(4, cur_val(), false);
                 if cur_ptr() == TEX_NULL {
                     p = TEX_NULL;
                 } else {
@@ -14252,7 +14270,7 @@ pub unsafe extern "C" fn expand() {
                     if cur_val() == 0 {
                         set_cur_ptr(cur_mark(t));
                     } else {
-                        crate::save::find_sa_element(MARK_VAL_IDX as u16, cur_val(), false);
+                        crate::save::find_sa_element_global(MARK_VAL_IDX as u16, cur_val(), false);
                         if cur_ptr() != crate::mem::TEX_NULL {
                             if !t.is_multiple_of(2) {
                                 set_cur_ptr(mem_b32s1(cur_ptr() + (t as i32 / 2) + 1));
@@ -16504,7 +16522,8 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
                         set_cur_list_tail(mem_b32s1(cur_list_tail()));
                     }
                     if use_skip {
-                        let node = crate::mem::new_param_glue_global(GLUE_PAR_XETEX_LINEBREAK_SKIP as i16);
+                        let node =
+                            crate::mem::new_param_glue_global(GLUE_PAR_XETEX_LINEBREAK_SKIP as i16);
                         set_mem_b32s1(cur_list_tail(), node);
                         set_cur_list_tail(mem_b32s1(cur_list_tail()));
                     }
@@ -16776,7 +16795,7 @@ pub unsafe extern "C" fn main_control_hmode_inter_char_check() -> bool {
     }
 
     set_prev_class(CHAR_CLASS_LIMIT - 1);
-    crate::save::find_sa_element(
+    crate::save::find_sa_element_global(
         INTER_CHAR_VAL as u16,
         sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
         false,
@@ -16848,10 +16867,11 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         set_space_class, space_class,
     };
     use crate::input::{back_input, begin_token_list};
-    use crate::mem::{free_node_global, get_avail_global, new_disc_global, new_kern_global, new_ligature_global, TEX_NULL};
-    use crate::save::find_sa_element;
-
-
+    use crate::mem::{
+        free_node_global, get_avail_global, new_disc_global, new_kern_global, new_ligature_global,
+        TEX_NULL,
+    };
+    use crate::save::find_sa_element_global;
 
     // Constants
     const INT_PAR_LANGUAGE: i32 = 50;
@@ -16974,7 +16994,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
             {
                 if prev_class() == CHAR_CLASS_LIMIT - 1 {
                     if cur_input().state != TOKEN_LIST || cur_input().index != BACKED_UP_CHAR {
-                        find_sa_element(
+                        find_sa_element_global(
                             INTER_CHAR_VAL_U,
                             (CHAR_CLASS_LIMIT - 1) * CHAR_CLASS_LIMIT + sc,
                             false,
@@ -16991,7 +17011,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                         }
                     }
                 } else {
-                    find_sa_element(
+                    find_sa_element_global(
                         INTER_CHAR_VAL_U,
                         prev_class() * CHAR_CLASS_LIMIT + sc,
                         false,
@@ -17067,7 +17087,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                 && prev_class() != CHAR_CLASS_LIMIT - 1
             {
                 set_prev_class(CHAR_CLASS_LIMIT - 1);
-                find_sa_element(
+                find_sa_element_global(
                     INTER_CHAR_VAL_U,
                     sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
                     false,
@@ -17425,7 +17445,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
     if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0 && sc != CHAR_CLASS_LIMIT {
         if prev_class() == CHAR_CLASS_LIMIT - 1 {
             if cur_input().state != TOKEN_LIST || cur_input().index != BACKED_UP_CHAR {
-                find_sa_element(
+                find_sa_element_global(
                     INTER_CHAR_VAL_U,
                     (CHAR_CLASS_LIMIT - 1) * CHAR_CLASS_LIMIT + sc,
                     false,
@@ -17442,7 +17462,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                 }
             }
         } else {
-            find_sa_element(
+            find_sa_element_global(
                 INTER_CHAR_VAL_U,
                 prev_class() * CHAR_CLASS_LIMIT + sc,
                 false,
@@ -17674,7 +17694,6 @@ unsafe fn lig_inner_loop(
     };
     use crate::mem::{new_disc_global, new_kern_global, new_lig_item_global, new_ligature_global};
 
-
     #[inline(always)]
     unsafe fn is_char_node(p: i32) -> bool {
         p >= crate::globals::hi_mem_min()
@@ -17697,7 +17716,8 @@ unsafe fn lig_inner_loop(
                             set_ins_disc(true);
                         }
                         if ligature_present() {
-                            let mp = new_ligature_global(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
+                            let mp =
+                                new_ligature_global(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
                             if lft_hit() {
                                 set_mem_b16s0(mp, 2);
                                 set_lft_hit(false);
@@ -17768,7 +17788,11 @@ unsafe fn lig_inner_loop(
                                 set_ins_disc(true);
                             }
                             if ligature_present() {
-                                let mp = new_ligature_global(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
+                                let mp = new_ligature_global(
+                                    main_f(),
+                                    cur_l() as u16,
+                                    mem_b32s1(cur_q()),
+                                );
                                 if lft_hit() {
                                     set_mem_b16s0(mp, 2);
                                     set_lft_hit(false);
@@ -17861,7 +17885,7 @@ unsafe fn do_lookahead(
     };
     use crate::input::{back_input, begin_token_list};
     use crate::mem::get_avail_global;
-    use crate::save::find_sa_element;
+    use crate::save::find_sa_element_global;
 
     const INTER_CHAR_TEXT: u16 = 17;
     const BACKED_UP_CHAR: u16 = 4;
@@ -17921,7 +17945,7 @@ unsafe fn do_lookahead(
     if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0 && sc != CHAR_CLASS_LIMIT {
         if prev_class() == CHAR_CLASS_LIMIT - 1 {
             if cur_input().state != TOKEN_LIST || cur_input().index != BACKED_UP_CHAR {
-                find_sa_element(
+                find_sa_element_global(
                     INTER_CHAR_VAL_U,
                     (CHAR_CLASS_LIMIT - 1) * CHAR_CLASS_LIMIT + sc,
                     false,
@@ -17940,7 +17964,7 @@ unsafe fn do_lookahead(
                 }
             }
         } else {
-            find_sa_element(
+            find_sa_element_global(
                 INTER_CHAR_VAL_U,
                 prev_class() * CHAR_CLASS_LIMIT + sc,
                 false,

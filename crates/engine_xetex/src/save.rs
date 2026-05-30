@@ -8,21 +8,20 @@ use crate::output::print_cstr;
 use crate::output::print_int;
 use crate::output::print_nl_cstr;
 use crate::scan::flush_node_list;
+use crate::state::{MemState, ScannerState};
 
 use crate::globals::{
     align_state, cur_boundary, cur_group, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0,
     eqtb_b16s1, eqtb_b32s1, eqtb_word, grp_stack, in_open, line, mag_set, max_save_stack,
-    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, sa_chain, sa_level, sa_null, sa_root, save_ptr,
-    save_size, save_stack_b16s0, save_stack_b16s1, save_stack_b32s1, save_stack_word,
-    set_align_state, set_cur_boundary, set_cur_group, set_cur_input_loc, set_cur_input_start,
-    set_cur_level, set_cur_ptr, set_cur_tok, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1,
-    set_eqtb_word, set_mag_set, set_max_save_stack, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0,
-    set_mem_b32s1, set_mem_word, set_sa_chain, set_sa_level, set_sa_root, set_save_ptr,
-    set_save_stack_b16s0, set_save_stack_b16s1, set_save_stack_b32s1, set_save_stack_word,
-    set_xeq_level, xeq_level,
+    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, sa_chain, sa_level, save_ptr, save_size,
+    save_stack_b16s0, save_stack_b16s1, save_stack_b32s1, save_stack_word, set_align_state,
+    set_cur_boundary, set_cur_group, set_cur_input_loc, set_cur_input_start, set_cur_level,
+    set_cur_ptr, set_cur_tok, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word,
+    set_mag_set, set_max_save_stack, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
+    set_sa_chain, set_sa_level, set_sa_root, set_save_ptr, set_save_stack_b16s0,
+    set_save_stack_b16s1, set_save_stack_b32s1, set_save_stack_word, set_xeq_level, xeq_level,
 };
 use crate::mem_types::MemoryWord;
-
 
 extern "C" {
 
@@ -273,6 +272,7 @@ const POINTER_NODE_SIZE: i32 = 2;
 const WORD_NODE_SIZE: i32 = 3;
 const MARK_CLASS_NODE_SIZE: i32 = 4;
 const INDEX_NODE_SIZE: i32 = 33;
+const MEM_TOP: i32 = 4_999_999;
 
 // SA register type values (xetex_format.h:568–570; xetex-constants.h:288,300).
 const DIMEN_VAL: u16 = 1;
@@ -559,119 +559,169 @@ pub unsafe extern "C" fn unsave() {
 /// Allocate a new INDEX_NODE_SIZE node for the sparse-array trie.
 ///
 /// translated from xetex-xetex0.c:4111 (new_index)
-unsafe fn new_index(i: u16, q: i32) {
-    set_cur_ptr(crate::mem::get_node_global(INDEX_NODE_SIZE));
-    set_mem_b16s1(cur_ptr(), i);
-    set_mem_b16s0(cur_ptr(), 0);
-    set_mem_b32s1(cur_ptr(), q);
-    let null = sa_null();
-    for k in 1..INDEX_NODE_SIZE {
-        set_mem_word(cur_ptr() + k, null);
+fn new_index(mem: &mut MemState, scanner: &ScannerState, i: u16, q: i32) -> i32 {
+    let p = crate::mem::get_node(mem, INDEX_NODE_SIZE);
+    if p == crate::mem::ALLOC_FAILED {
+        return p;
     }
+    set_cur_ptr(p);
+    mem.set_b16s1(p, i);
+    mem.set_b16s0(p, 0);
+    mem.set_b32s1(p, q);
+    let null = scanner.sa_null;
+    for k in 1..INDEX_NODE_SIZE {
+        mem.set_word(p + k, null);
+    }
+    p
 }
 
 /// Helper: read the child pointer at trie index `i` within node `q`.
 /// Odd `i` → b32.s1; even `i` → b32.s0.
 #[inline]
-unsafe fn sa_get_child(q: i32, i: i32) -> i32 {
+fn sa_get_child(mem: &MemState, q: i32, i: i32) -> i32 {
     if i & 1 != 0 {
-        mem_b32s1(q + i / 2 + 1)
+        mem.b32s1(q + i / 2 + 1)
     } else {
-        mem_b32s0(q + i / 2 + 1)
+        mem.b32s0(q + i / 2 + 1)
     }
 }
 
 /// Helper: write the child pointer and increment the ref-count in node `q`.
 #[inline]
-unsafe fn sa_set_child(q: i32, i: i32, p: i32) {
+fn sa_set_child(mem: &mut MemState, q: i32, i: i32, p: i32) {
     if i & 1 != 0 {
-        set_mem_b32s1(q + i / 2 + 1, p);
+        mem.set_b32s1(q + i / 2 + 1, p);
     } else {
-        set_mem_b32s0(q + i / 2 + 1, p);
+        mem.set_b32s0(q + i / 2 + 1, p);
     }
-    set_mem_b16s0(q, mem_b16s0(q) + 1);
+    mem.set_b16s0(q, mem.b16s0(q) + 1);
 }
 
 /// Allocate a chain of index nodes starting at (`q`, `i`) then continuing
 /// through `rest`, finishing with a data leaf node for type `t` / register `n`.
 /// Corresponds to C's "fall-through" chain lab46 → lab47 → lab48 → lab49.
-unsafe fn sa_alloc_chain(t: u16, n: i32, mut q: i32, levels: &[i32]) {
+fn sa_alloc_chain(
+    mem: &mut MemState,
+    scanner: &ScannerState,
+    t: u16,
+    n: i32,
+    mut q: i32,
+    levels: &[i32],
+) -> i32 {
     // Allocate intermediate index nodes for all but the last level.
     for &lv_i in &levels[..levels.len() - 1] {
-        new_index(lv_i as u16, q);
-        sa_set_child(q, lv_i, cur_ptr());
+        let p = new_index(mem, scanner, lv_i as u16, q);
+        if p == crate::mem::ALLOC_FAILED {
+            return p;
+        }
+        sa_set_child(mem, q, lv_i, p);
         q = cur_ptr();
     }
     // Allocate the data (leaf) node (lab49).
     let leaf_i = levels[levels.len() - 1];
+    let p;
     if t == MARK_VAL {
-        set_cur_ptr(crate::mem::get_node_global(MARK_CLASS_NODE_SIZE));
-        set_mem_word(cur_ptr() + 1, sa_null());
-        set_mem_word(cur_ptr() + 2, sa_null());
-        set_mem_word(cur_ptr() + 3, sa_null());
-    } else if t <= DIMEN_VAL {
-        set_cur_ptr(crate::mem::get_node_global(WORD_NODE_SIZE));
-        set_mem_b32s1(cur_ptr() + 2, 0);
-        set_mem_b32s1(cur_ptr() + 1, n);
-    } else {
-        set_cur_ptr(crate::mem::get_node_global(POINTER_NODE_SIZE));
-        if t <= MU_VAL {
-            set_mem_b32s1(cur_ptr() + 1, 0);
-            // GLUE_SPEC_ref_count(0)++ : mem[0].b32.s1
-            set_mem_b32s1(0, mem_b32s1(0) + 1);
-        } else {
-            set_mem_b32s1(cur_ptr() + 1, TEX_NULL);
+        p = crate::mem::get_node(mem, MARK_CLASS_NODE_SIZE);
+        if p == crate::mem::ALLOC_FAILED {
+            return p;
         }
-        set_mem_b32s0(cur_ptr() + 1, TEX_NULL);
+        set_cur_ptr(p);
+        mem.set_word(p + 1, scanner.sa_null);
+        mem.set_word(p + 2, scanner.sa_null);
+        mem.set_word(p + 3, scanner.sa_null);
+    } else if t <= DIMEN_VAL {
+        p = crate::mem::get_node(mem, WORD_NODE_SIZE);
+        if p == crate::mem::ALLOC_FAILED {
+            return p;
+        }
+        set_cur_ptr(p);
+        mem.set_b32s1(p + 2, 0);
+        mem.set_b32s1(p + 1, n);
+    } else {
+        p = crate::mem::get_node(mem, POINTER_NODE_SIZE);
+        if p == crate::mem::ALLOC_FAILED {
+            return p;
+        }
+        set_cur_ptr(p);
+        if t <= MU_VAL {
+            mem.set_b32s1(p + 1, 0);
+            // GLUE_SPEC_ref_count(0)++ : mem[0].b32.s1
+            mem.set_b32s1(0, mem.b32s1(0) + 1);
+        } else {
+            mem.set_b32s1(p + 1, TEX_NULL);
+        }
+        mem.set_b32s0(p + 1, TEX_NULL);
     }
-    set_mem_b16s1(cur_ptr(), (64 * t as i32 + leaf_i) as u16);
-    set_mem_b16s0(cur_ptr(), 1); // level_one
-    set_mem_b32s1(cur_ptr(), q);
-    sa_set_child(q, leaf_i, cur_ptr());
+    mem.set_b16s1(p, (64 * t as i32 + leaf_i) as u16);
+    mem.set_b16s0(p, 1); // level_one
+    mem.set_b32s1(p, q);
+    sa_set_child(mem, q, leaf_i, p);
+    p
 }
 
 /// Navigate (and optionally create) a path in the sparse-array trie.
 ///
 /// translated from xetex-xetex0.c:4129 (find_sa_element)
-pub unsafe fn find_sa_element(t: u16, n: i32, w: bool) {
+pub fn find_sa_element(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    t: u16,
+    n: i32,
+    w: bool,
+) -> i32 {
     // Trie-level indices: break n into four 6-bit digits (roughly).
     let lvl = [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64];
 
     // Traversal: navigate the 4-level trie, recording parents for linking.
-    set_cur_ptr(sa_root(t as usize));
+    set_cur_ptr(scanner.sa_root[t as usize]);
 
     // Check root level (not_found in C).
     if cur_ptr() == TEX_NULL {
         if !w {
-            return;
+            return 0;
         }
-        new_index(t, TEX_NULL);
-        set_sa_root(t as usize, cur_ptr());
+        let p = new_index(mem, scanner, t, TEX_NULL);
+        if p == crate::mem::ALLOC_FAILED {
+            return p;
+        }
+        scanner.sa_root[t as usize] = cur_ptr();
         // lab46..lab49: allocate all 4 levels from this root.
-        sa_alloc_chain(t, n, cur_ptr(), &lvl);
-        return;
+        let p = sa_alloc_chain(mem, scanner, t, n, cur_ptr(), &lvl);
+        return if p == crate::mem::ALLOC_FAILED { p } else { 0 };
     }
 
     // Levels 0–2: index nodes.
     let mut qs = [TEX_NULL; 4];
     for k in 0..3usize {
         qs[k] = cur_ptr();
-        set_cur_ptr(sa_get_child(qs[k], lvl[k]));
+        set_cur_ptr(sa_get_child(mem, qs[k], lvl[k]));
         if cur_ptr() == TEX_NULL {
             if !w {
-                return;
+                return 0;
             }
             // lab46/47/48: allocate remaining levels from qs[k].
-            sa_alloc_chain(t, n, qs[k], &lvl[k..]);
-            return;
+            let p = sa_alloc_chain(mem, scanner, t, n, qs[k], &lvl[k..]);
+            return if p == crate::mem::ALLOC_FAILED { p } else { 0 };
         }
     }
 
     // Level 3: leaf.
     qs[3] = cur_ptr();
-    set_cur_ptr(sa_get_child(qs[3], lvl[3]));
+    set_cur_ptr(sa_get_child(mem, qs[3], lvl[3]));
     if cur_ptr() == TEX_NULL && w {
         // lab49: allocate just the data node.
-        sa_alloc_chain(t, n, qs[3], &lvl[3..]);
+        let p = sa_alloc_chain(mem, scanner, t, n, qs[3], &lvl[3..]);
+        if p == crate::mem::ALLOC_FAILED {
+            return p;
+        }
+    }
+    0
+}
+
+pub unsafe fn find_sa_element_global(t: u16, n: i32, w: bool) {
+    let r =
+        crate::state::with_state_mut(|st| find_sa_element(&mut st.mem, &mut st.scanner, t, n, w));
+    if r == crate::mem::ALLOC_FAILED {
+        crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
     }
 }

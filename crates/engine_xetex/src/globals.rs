@@ -2969,12 +2969,6 @@ pub(crate) fn set_cur_ptr(v: i32) {
         raw::cur_ptr = v;
     }
 }
-/// Returns a copy of `sa_null` — the SA null memory-word sentinel.
-#[inline]
-pub(crate) fn sa_null() -> crate::mem_types::MemoryWord {
-    crate::state::with_state(|s| s.scanner.sa_null)
-}
-
 // ---------------------------------------------------------------------------
 // shown_mode
 // ---------------------------------------------------------------------------
@@ -5095,4 +5089,3 @@ pub(crate) fn set_sa_null_b32s1(v: i32) {
         state.scanner.sa_null.b32.s1 = v;
     });
 }
-

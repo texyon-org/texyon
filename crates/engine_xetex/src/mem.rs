@@ -5,7 +5,11 @@
 //! `flush_list`, `get_node`, `free_node`, `new_*`). During Phase A of
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
-use crate::consts::{BOX_NODE_SIZE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE};
+use crate::consts::{
+    BOX_NODE_SIZE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE,
+    LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE,
+    RULE_NODE_SIZE, SMALL_NODE_SIZE,
+};
 use crate::errors::overflow;
 use crate::scan::runaway;
 use crate::state::{EqtbState, MemState};
@@ -101,7 +105,7 @@ pub struct StrNumber(pub i32);
 /// returns this sentinel instead and the bridge-down wrapper aborts after the
 /// borrow drops. `i32::MIN` lies outside every valid arena index, `TEX_NULL`,
 /// and `MAX_HALFWORD`, so it can never collide with a real return value.
-const ALLOC_FAILED: i32 = i32::MIN;
+pub(crate) const ALLOC_FAILED: i32 = i32::MIN;
 
 /// Allocate one word from the single-word (hi-mem) free list.
 ///

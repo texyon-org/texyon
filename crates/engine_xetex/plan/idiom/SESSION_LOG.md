@@ -8,6 +8,37 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 65 — 2026-05-30 — thread `save.rs` sparse-array allocation helpers
+
+**Type:** execution (workstream 01, Phase C — first `save.rs` call-graph slice after the allocator/constructor work). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the sparse-array allocation/traversal helper cluster in `save.rs`:
+- `find_sa_element` now takes `&mut MemState` and `&mut ScannerState`, reads/writes `scanner.sa_root` directly, and returns the `ALLOC_FAILED` sentinel for cold allocation failure.
+- Private helpers `new_index`, `sa_get_child`, `sa_set_child`, and `sa_alloc_chain` now operate on `MemState` directly and call the threaded `get_node`.
+- Legacy callers use `find_sa_element_global`, which runs under one disjoint state borrow and performs the `overflow("main memory size", MEM_TOP+1)` abort after the borrow drops.
+
+**Recon / safety checks:**
+- Header prototypes only for `find_sa_element` / `new_index`; no C/C++ callers.
+- No cleanup aliases in `src/ini.rs`.
+- `grep -lnE '\b(find_sa_element|new_index)\b' xetex/*.c | grep -v macos` was empty.
+- No cross-module extern/static/link-name redeclarations.
+
+**Work done:**
+1. `state.rs`: added `MemState::b16s0` to complete the direct mem read surface needed by `sa_set_child`.
+2. `mem.rs`: made the allocator sentinel `ALLOC_FAILED` `pub(crate)` so threaded callers above `mem.rs` can propagate it without aborting under a live borrow.
+3. `save.rs`: removed the helper cluster's internal `get_node_global` / mem-accessor use, eliminated the now-unused `globals::sa_null` bridge, and added `find_sa_element_global`.
+4. Repointed legacy callers in `ini.rs`, `pagebuilder.rs`, and `scan.rs` to the `_global` wrapper. This keeps `scan.rs` legacy for now while allowing the `save.rs` helper itself to be threaded.
+
+**Newtype debt:** none. No state fields were added; the threaded parameters remain existing `small_number`/plain integer values, and the moved direct accesses are existing `MemState` / `ScannerState` fields whose debts were already recorded when the fields moved.
+
+**Metrics:** `#[no_mangle]` exports unchanged at **404**. `globals.rs` raw externs unchanged at **40**. `unsafe fn` count now **690** (four private/public helper signatures made safe, one `_global` wrapper added). Raw `unsafe { ... }` text-search count now **159**. Removed the now-dead `globals::sa_null` accessor.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly. Post-slice C-reference grep for `find_sa_element|new_index` was empty.
+
+**For the next session (66):** continue `save.rs` before moving to `pagebuilder.rs`/`shipout.rs`. The next natural cluster is the SA save/restore/free side (`delete_sa_ref` / `sa_save` / `sa_restore`, possibly `sa_destroy`/`sa_def` only as needed); run the same grep and nest-panic checks first because those functions mix `MemState`, `ScannerState`, save-stack state, and legacy helpers like `flush_node_list`.
+
+---
+
 ## Idiom session 64 — 2026-05-30 — thread the three deferred constructors to state
 
 **Type:** execution (workstream 01, Phase C — the final three constructors named in `01b` §9 / STATUS Next action). **One commit.** Dashboard **29/2/7/4**.
