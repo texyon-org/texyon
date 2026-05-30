@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last execution = session 58, the `mem` arena + its 7 bookkeeping scalars → EngineState.mem (MemState)).
+Last updated: 2026-05-30 (last execution = session 59, dead-code cleanup: removed the orphaned `xmalloc_array`/`xcalloc_array` glue + the now-unused `xcalloc` extern in `ini.rs`; Phase B remains complete).
 
 ## How to read this file
 
@@ -508,6 +508,15 @@ least-coupled non-`misc` clusters:
 -   **`name_of_file` & `name_of_file16` buffer globals moved to `EngineState.input` (session 56):** the filename buffer globals `name_of_file` and `name_of_file16` moved into `EngineState.input` as Rust-owned `Vec<libc::c_char>` and `Vec<u16>`. Manual `libc::free` and `xmalloc`/`xcalloc` allocations in `src/scan.rs` and `src/io.rs` replaced with safe, native vector manipulations. The module-local `static mut NAME16LEN` in `src/io.rs` and C definitions in `xetex/xetex-ini.c` were completely removed. All accessors repointed.
 -   **`xdv_buffer`, `mapped_text`, and `native_text` cluster moved to state (session 57):** the buffers `xdv_buffer`, `mapped_text`, and the `native_text` cluster (`native_text`, `native_text_size`, `native_len`, `save_native_len`) migrated to `EngineState.fonts` and `EngineState.scanner` respectively. C definitions in `xetex/xetex-ini.c` and raw static mut declarations in `src/globals.rs` were removed. Manual allocations, reallocations, and `libc::free` calls were replaced with safe, native vector manipulations. Resolved a linker error in `scan.rs` (`do_locale_linebreaks`) and designed a safe `apply_mapping` slice-pointer FFI bridge.
 -   **The `mem` arena → Rust-owned `Vec<MemoryWord>` on `EngineState.mem` (session 58):** the dynamic-memory arena `mem` (`memory_word *`, the engine's hottest storage) and its seven bookkeeping scalars (`lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`, `dyn_used`) moved into a new `MemState`. `data` is allocated in `ini.rs` (two preserved inclusive sizes: format-load `MEM_TOP + 1`, initex `MEM_TOP + 2`) and dropped by `tt_cleanup`/format-reset via `Vec::new()`; never reallocates. ~30 accessors repointed (indexed word accessors index `s.mem.data[p]`; the three pointer-escaping accessors keep the `as_mut_ptr().add(p)` shape). The free-list format dump/undump regions reconciled via a state-derived base pointer precomputed once outside `with_state`/`with_state_mut` (the session-51 eqtb pattern), valid across the interleaved `mem_*` accessor reads. Removed both `#[link_name="mem"]` aliases (`tre_mem`, `tt_cleanup_mem`), the 8 raw externs (+ the now-unused `MemoryWord` import in `mod raw`), and the 7-line C def block. No newtype debt (element `memory_word`; the 7 scalars are plain `int32_t`, the mem-pointer ones pointer-taxonomy candidates only). `xmalloc_array`/`xcalloc_array` are now dead in `ini.rs`. Dashboard 29/2/7/4.
+-   **Dead-code cleanup (session 59):** removed the two now-orphaned generic
+    allocator helpers `xmalloc_array<T>` / `xcalloc_array<T>` from `src/ini.rs`
+    (zero non-comment callers after session 58's `mem` arena move) and the
+    now-unused `xcalloc` extern declaration (its only user was `xcalloc_array`;
+    the `xmalloc` extern stays — still used for `native_text` scratch and the
+    format-default name dup). Pure dead-code removal, no state migration; the
+    parity comments documenting the preserved inclusive Vec sizes were kept.
+    `globals.rs` raw extern count unchanged at 40 (Phase B complete). Dashboard
+    29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -598,8 +607,23 @@ the snippets in `00-overview.md` / the workstream plans.
     gotchas.
 1.  **`misc` bucket fully drained (sessions 44–46). Classified-but-unmigrated
     scratch completed (sessions 47-48, 53-54). All ownership slices done,
-    including the `mem` arena (session 58). Phase B essentially complete →
-    Next: Phase C (thread `&mut EngineState`, remove the thread-local bridge).**
+    including the `mem` arena (session 58). Dead `xmalloc_array`/`xcalloc_array`
+    glue removed (session 59). Phase B is complete → Next: a Phase-C PLANNING
+    slice, not a blind code dive.**
+
+    **Phase C is the inflection point and needs a READY plan first (hard rule 4).**
+    The §11 recipe is the `READY` recipe for Phase *B*; there is no equivalent
+    `READY` recipe for Phase-C threading, and workstream 02 (module split, which
+    Phase C must coordinate with) is still `PLANNED`. The STATUS/§5-step-4
+    suggestion to thread `&mut MemState` through `src/mem.rs` first was scoped in
+    session 59 and is **not** a clean one-commit slice: `get_avail`/`get_node`/
+    `free_node` have 83/86/96 call sites, and `get_node` internally calls
+    `overflow`/`cur_input_synctex_tag()`/`line()` (all `with_state`-bearing), so
+    wrapping a threaded call in `with_state_mut(|s| get_node(&mut s.mem, …))` at
+    legacy sites nest-panics. Phase C must thread a whole call-subtree top-down at
+    once. **Next session: draft the Phase-C execution recipe (longjmp/`Drop`
+    boundary per §7, nested-borrow avoidance, first decoupled subsystem) and mark
+    it READY before any threading code is written.**
 
     Sessions 44 (planning), 45 (`LinebreakState`, 34 globals), and 46 (the three
     private-static clusters below) drained `misc`. **Sessions 47–48** continued the

@@ -7,6 +7,62 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 59 — 2026-05-30 — dead-code cleanup: remove orphaned `xmalloc_array`/`xcalloc_array` glue
+
+**Type:** execution (workstream 01 follow-up; dead-code removal explicitly teed
+up by session 58). One commit. **No state migration** — Phase B is complete.
+
+**Context / why this slice (not a Phase-C dive):** Phase B is essentially done.
+The 40 remaining `mod raw` statics are all the intentionally-deferred Phase-C set
+(hot tokenizer `cur_cmd/chr/tok/cs/val`, hot lig/kern `main_*`/`cur_l/r/q`/
+`lig_stack`, cursor state `cur_input`/`line`/`cur_list`/`temp_ptr`), capacity
+limits (`stack_size`, `param_size`, `nest_size`, `save_size`, `expand_depth`,
+`first`, `buf_size`, `max_in_open`), or `cur_ptr`. None is a clean Phase-B bridge.
+The STATUS-suggested Phase-C start (thread `&mut MemState` through `src/mem.rs`)
+was scoped and is **not** a clean one-commit slice: `get_avail`/`get_node`/
+`free_node` have 83/86/96 call sites, and `get_node` internally calls `overflow`,
+`cur_input_synctex_tag()`, `line()` (all `with_state`-bearing), so wrapping a
+threaded call in `with_state_mut(|s| get_node(&mut s.mem, …))` at legacy call
+sites would nest-panic. Phase C here needs top-down threading + a READY plan
+(hard rule 4); it is not a single safe slice. User chose the safe dead-code
+cleanup this session.
+
+**Work done (1 commit):**
+- Removed the two now-dead generic helpers `xmalloc_array<T>` /
+  `xcalloc_array<T>` from `src/ini.rs`. After session 58 moved the `mem` arena to
+  a Rust `Vec`, the last `xmalloc_array`/`xcalloc_array` caller disappeared
+  (verified: zero non-comment references crate-wide).
+- Removed the now-orphaned `xcalloc` extern declaration from `ini.rs`'s
+  `extern "C"` block (its only remaining user was `xcalloc_array`). The `xmalloc`
+  extern stays — still used at `ini.rs` for `native_text` scratch (1128) and the
+  format-default name dup (3164).
+- Kept the explanatory `// xmalloc_array(n) allocated n + 1 …` comments that
+  document the preserved inclusive Vec sizes — they remain useful parity notes.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` clean (warnings only, all
+pre-existing); full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4**, no regressions. (The mid-edit rust-analyzer E0425 for `xcalloc`
+was stale line-position noise — `cargo check` is authoritative and passed.)
+
+**Metrics after this session:** `globals.rs` raw extern count unchanged at **40**
+(this slice removed dead `ini.rs` glue, not a `mod raw` static). One fewer FFI
+extern decl; two fewer `unsafe fn`s in `ini.rs`.
+
+**For the next session (60+) — the Phase-C inflection:**
+- Phase B is complete. The clean next step is **not** a blind code dive but a
+  **planning slice**: draft a READY Phase-C execution recipe (the §11 analog for
+  threading), resolving the longjmp/`Drop` boundary (§7) and the nested-borrow
+  hazard, and pick the first genuinely-decoupled subsystem to thread top-down.
+  Workstream 02 (module split) is still `PLANNED` and Phase C is told to
+  coordinate with it — consider drafting that to READY too.
+- When code threading does start: the `src/mem.rs` allocators are the §5-step-4
+  natural first consumers of `&mut MemState`, but only once their whole call
+  subtree (and the error paths they touch) can be threaded together — they cannot
+  be wrapped piecemeal.
+
+---
+
 ## Idiom session 58 — 2026-05-30 — the `mem` arena (+ bookkeeping scalars) → EngineState.mem (MemState)
 
 **Type:** execution (workstream 01, Phase-B; the dynamic-memory arena ownership

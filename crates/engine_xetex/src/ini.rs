@@ -73,7 +73,6 @@ pub static mut _trie_op_hash_array: [i32; TRIE_OP_HASH_SIZE] = [0; TRIE_OP_HASH_
 extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
-    fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut libc::c_void;
     fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
     static xetex_primitives: XetexPrimitiveDef;
     static xetex_primitives_count: libc::size_t;
@@ -1694,16 +1693,6 @@ static mut TRE_STRING_VACANCIES: i32 = 0;
 static mut TRE_MAX_STRINGS: i32 = 0;
 static mut TRE_TRIE_SIZE: i32 = 0;
 static mut TRE_HYPH_SIZE: i32 = 0;
-
-#[inline]
-unsafe fn xmalloc_array<T>(n: i32) -> *mut T {
-    xmalloc(((n as usize) + 1) * std::mem::size_of::<T>()) as *mut T
-}
-
-#[inline]
-unsafe fn xcalloc_array<T>(n: i32) -> *mut T {
-    xcalloc((n as usize) + 1, std::mem::size_of::<T>()) as *mut T
-}
 
 // Raw lifecycle state used by tt_run_engine. Kept local because this top-level
 // transition glue allocates many globals in one place and will disappear when
