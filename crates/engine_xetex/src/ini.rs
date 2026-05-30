@@ -204,11 +204,11 @@ pub unsafe extern "C" fn new_trie_op(d: i16, n: i16, v: u16) -> u16 {
 // translated from xetex-ini.c:632 (trie_node)
 #[no_mangle]
 pub unsafe extern "C" fn trie_node(p: i32) -> i32 {
-    let mut h = (trie_c_entry(p) as i32
-        + 1009 * trie_o_entry(p) as i32
-        + 2718 * trie_l_entry(p)
-        + 3142 * trie_r_entry(p))
-    .abs()
+    let mut h = (trie_c_entry(p) as i32)
+        .wrapping_add((1009_i32).wrapping_mul(trie_o_entry(p) as i32))
+        .wrapping_add((2718_i32).wrapping_mul(trie_l_entry(p)))
+        .wrapping_add((3142_i32).wrapping_mul(trie_r_entry(p)))
+        .wrapping_abs()
         % trie_size();
 
     loop {
