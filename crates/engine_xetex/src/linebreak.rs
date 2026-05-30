@@ -562,7 +562,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
         set_cur_q, set_cur_r, set_hyphen_passed, set_lft_hit, set_lig_stack, set_ligature_present,
         set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_rt_hit,
     };
-    use crate::mem::{free_node, get_avail, new_kern, new_lig_item, new_ligature};
+    use crate::mem::{free_node_global, get_avail, new_kern, new_lig_item, new_ligature};
 
     #[inline]
     fn odd(v: u8) -> bool {
@@ -724,7 +724,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
                                     }
                                     let p = lig_stack();
                                     set_lig_stack(mem_b32s1(p));
-                                    free_node(p, SMALL_NODE_SIZE);
+                                    free_node_global(p, SMALL_NODE_SIZE);
                                     if lig_stack() == TEX_NULL {
                                         cur_rh = update_right(j, n, bchar, hchar);
                                     } else {
@@ -804,7 +804,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
             }
             let p = lig_stack();
             set_lig_stack(mem_b32s1(p));
-            free_node(p, SMALL_NODE_SIZE);
+            free_node_global(p, SMALL_NODE_SIZE);
             if lig_stack() == TEX_NULL {
                 cur_rh = update_right(j, n, bchar, hchar);
             } else {
@@ -1582,9 +1582,9 @@ pub unsafe fn line_break(d: bool) {
         while q != LAST_ACTIVE {
             set_cur_p(mem_b32s1(q));
             if node_type(q) == DELTA_NODE {
-                crate::mem::free_node(q, DELTA_NODE_SIZE);
+                crate::mem::free_node_global(q, DELTA_NODE_SIZE);
             } else {
-                crate::mem::free_node(q, crate::globals::active_node_size());
+                crate::mem::free_node_global(q, crate::globals::active_node_size());
             }
             q = crate::globals::cur_p();
         }
@@ -1592,7 +1592,7 @@ pub unsafe fn line_break(d: bool) {
         q = passive();
         while q != TEX_NULL {
             set_cur_p(mem_b32s1(q));
-            crate::mem::free_node(q, PASSIVE_NODE_SIZE);
+            crate::mem::free_node_global(q, PASSIVE_NODE_SIZE);
             q = crate::globals::cur_p();
         }
 
@@ -1628,9 +1628,9 @@ pub unsafe fn line_break(d: bool) {
     while q != ACTIVE_LIST {
         let next = mem_b32s1(q);
         if node_type(q) == DELTA_NODE {
-            crate::mem::free_node(q, DELTA_NODE_SIZE);
+            crate::mem::free_node_global(q, DELTA_NODE_SIZE);
         } else {
-            crate::mem::free_node(q, crate::globals::active_node_size());
+            crate::mem::free_node_global(q, crate::globals::active_node_size());
         }
         q = next;
     }
@@ -1638,7 +1638,7 @@ pub unsafe fn line_break(d: bool) {
     q = passive();
     while q != TEX_NULL {
         let next = mem_b32s1(q);
-        crate::mem::free_node(q, PASSIVE_NODE_SIZE);
+        crate::mem::free_node_global(q, PASSIVE_NODE_SIZE);
         q = next;
     }
 
@@ -2509,7 +2509,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
         };
 
         set_mem_b32s1(*prev_r, mem_b32s1(r));
-        crate::mem::free_node(r, active_node_size());
+        crate::mem::free_node_global(r, active_node_size());
 
         if *prev_r == ACTIVE_LIST {
             let r = mem_b32s1(ACTIVE_LIST);
@@ -2519,7 +2519,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                     set_cur_active_width(k, active_width(k));
                 }
                 set_mem_b32s1(ACTIVE_LIST, mem_b32s1(r));
-                crate::mem::free_node(r, DELTA_NODE_SIZE);
+                crate::mem::free_node_global(r, DELTA_NODE_SIZE);
             }
         } else if mem_b16s1(*prev_r) as i32 == DELTA_NODE {
             let r = mem_b32s1(*prev_r);
@@ -2528,7 +2528,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                     set_cur_active_width(k, cur_active_width(k) - mem_b32s1(*prev_r + off));
                 }
                 set_mem_b32s1(*prev_prev_r, LAST_ACTIVE);
-                crate::mem::free_node(*prev_r, DELTA_NODE_SIZE);
+                crate::mem::free_node_global(*prev_r, DELTA_NODE_SIZE);
                 *prev_r = *prev_prev_r;
             } else if mem_b16s1(r) as i32 == DELTA_NODE {
                 for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
@@ -2536,7 +2536,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                     set_mem_b32s1(*prev_r + off, mem_b32s1(*prev_r + off) + mem_b32s1(r + off));
                 }
                 set_mem_b32s1(*prev_r, mem_b32s1(r));
-                crate::mem::free_node(r, DELTA_NODE_SIZE);
+                crate::mem::free_node_global(r, DELTA_NODE_SIZE);
             }
         }
     }
@@ -2754,7 +2754,7 @@ pub unsafe extern "C" fn hyphenate() {
                     set_hu_entry(0, max_hyph_char());
                     set_init_lig(false);
                 }
-                crate::mem::free_node(ha(), SMALL_NODE_SIZE);
+                crate::mem::free_node_global(ha(), SMALL_NODE_SIZE);
                 let mut s = cur_p();
                 while mem_b32s1(s) != ha() {
                     s = mem_b32s1(s);

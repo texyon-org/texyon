@@ -1040,7 +1040,7 @@ pub unsafe extern "C" fn final_cleanup() {
         set_cur_if(mem_b16s0(cond_ptr()) as i16);
         set_temp_ptr(cond_ptr());
         set_cond_ptr(mem_b32s1(cond_ptr()));
-        crate::mem::free_node(temp_ptr(), IF_NODE_SIZE);
+        crate::mem::free_node_global(temp_ptr(), IF_NODE_SIZE);
     }
 
     if history() != HISTORY_SPOTLESS

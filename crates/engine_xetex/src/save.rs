@@ -221,7 +221,7 @@ pub unsafe extern "C" fn eq_destroy(w: MemoryWord) {
         119 => crate::mem::delete_glue_ref(val),
         120 => {
             if val != TEX_NULL {
-                crate::mem::free_node(val, mem_b32s0(val) + mem_b32s0(val) + 1);
+                crate::mem::free_node_global(val, mem_b32s0(val) + mem_b32s0(val) + 1);
             }
         }
         121 => flush_node_list(val),
@@ -319,7 +319,7 @@ pub unsafe extern "C" fn delete_sa_ref(q: i32) {
         let i = (mem_b16s1(q) % 64) as i32;
         let p = q;
         q = mem_b32s1(p);
-        crate::mem::free_node(p, s);
+        crate::mem::free_node_global(p, s);
         if q == TEX_NULL {
             set_sa_root(i as usize, TEX_NULL);
             return;
@@ -468,9 +468,9 @@ pub unsafe extern "C" fn sa_restore() {
         let sc = sa_chain();
         set_sa_chain(mem_b32s1(sc));
         if mem_b16s1(sc) < DIMEN_VAL_LIMIT {
-            crate::mem::free_node(sc, WORD_NODE_SIZE);
+            crate::mem::free_node_global(sc, WORD_NODE_SIZE);
         } else {
-            crate::mem::free_node(sc, POINTER_NODE_SIZE);
+            crate::mem::free_node_global(sc, POINTER_NODE_SIZE);
         }
         if sa_chain() == TEX_NULL {
             break;

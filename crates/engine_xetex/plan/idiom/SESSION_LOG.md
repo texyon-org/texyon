@@ -7,6 +7,78 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 61 — 2026-05-30 — first Phase-C threading slice: `free_node(&mut MemState, …)`
+
+**Type:** execution (workstream 01, Phase C — the first threading slice per
+`01b-phase-c-recipe.md` §9). One commit. Dashboard **29/2/7/4**.
+
+**Slice:** thread the `mem` allocator core's purest member, `free_node`, from the
+thread-local bridge to a direct `&mut MemState` parameter, and bridge-down all its
+legacy call sites. This is the recon-justified foundation slice (`01b` §9): per the
+§4 table `free_node` touches the `mem` arena only with **zero** `with_state`-bearing
+internal calls, so it threads with no nest-panic risk on any path.
+
+**Recon (before touching anything, `01b` §7 step 2):**
+- Call sites: 95 across 9 files (scan 46, math 16, linebreak 13, shipout 8, save 4,
+  pagebuilder 4, input 2, mem 1, ini 1) — matches the session-60 count.
+- `grep -rnB3 'free_node[(]' | grep with_state` → empty: no call site already sits
+  inside a `with_state*` closure.
+- `free_node` body uses only `mem` accessors (`set_mem_b32s0`, `set_mem_b32s1`,
+  `mem_b32s0`, `rover()`) — all `mem`-cluster, no other cluster, confirming the §4
+  classification.
+
+**Work done (1 commit):**
+1. `state.rs`: added `impl MemState` with `b32s0(&self,p)` / `set_b32s0(&mut self,p,v)`
+   / `set_b32s1(&mut self,p,v)`, mirroring the `globals.rs` `mem_b32s0`/`set_mem_b32s0`/
+   `set_mem_b32s1` accessor widths (`01b` §6). The `unsafe` `MemoryWord` union *read*
+   projection lives inside `b32s0`; the writes through `&mut` index are safe. `rover`
+   stays a public field, read directly.
+2. `mem.rs`: `free_node` → `pub fn free_node(mem: &mut MemState, p: i32, s: i32)`,
+   body rewritten to the methods / direct field access (no `unsafe` needed on the fn
+   anymore). Added the transitional `pub unsafe fn free_node_global(p, s)` bridge-down
+   wrapper (`with_state_mut(|st| free_node(&mut st.mem, p, s))`). Imported `MemState`.
+3. Renamed all 95 legacy call sites `free_node(` → `free_node_global(` (8 files via
+   `perl`; the single in-`mem.rs` legacy call by hand, leaving the threaded def and
+   the wrapper's internal `free_node(&mut st.mem,…)` call untouched) and updated the
+   5 `use crate::mem::{… free_node …}` imports to `free_node_global`.
+
+**Deviation from the recipe's inline-closure shape (deliberate, documented):** `01b`
+§3 shows bridging legacy sites with an inline `with_state_mut(|s| free_node(&mut s.mem,
+…))`. That is **unsafe here** for two reasons found during the edit: (a) ~16 sites pass
+a `with_state`-bearing accessor *as an argument* (`mem_b16s3(…)`, `active_node_size()`,
+`ha()`, `eqtb_b32s1(…)`, `mem_b32s0(…)`, `mem_b32s1(…)`) — evaluated *inside* the
+closure these re-borrow `ENGINE_STATE` and panic; (b) two sites are `free_node(r, s)`
+where `s` is a local size, which an inline `|s|` closure param would shadow. A named
+`free_node_global` wrapper evaluates its arguments at the *caller* before the borrow is
+taken, eliminating both hazards, and it is just as incrementally removable (it dies
+when its last legacy caller threads). **Recommended pattern for future Phase-C slices
+of many-site / non-trivial-arg functions** — reserve the bare inline closure for
+few-site fns with only simple args. (Noted in STATUS "Next action".)
+
+**Newtype debt:** none — `p`/`s` are plain `int32_t` (checked).
+
+**Metrics:** essentially flat for this foundation slice (the payoff lands as callers
+thread and accessors are deleted). `globals.rs` raw externs unchanged (40). `unsafe fn`
+net unchanged (`free_node` dropped `unsafe`; `free_node_global` added it). One transient
+`with_state_mut` wrapper added; the `b32s0` method moved one union-read `unsafe` block
+from the `globals.rs` accessor side into `MemState`. No `#[no_mangle]` change
+(`free_node` was already internal).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` clean (0 errors; pre-existing
+warnings only); full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29 / 2 / 7 / 4**, no regressions.
+
+**For the next session (62):** thread `flush_list` next (`01b` §9, same shape as
+`free_node`, ~21 sites), then `get_avail` (first user of the §5 cold-path overflow
+sentinel — the threaded body returns a sentinel on exhaustion and the wrapper calls
+`overflow()`/`runaway()` after the borrow drops), then `get_node`. Reuse the
+`<fn>_global` bridge-down wrapper pattern. After the four-fn core, thread the `new_*`
+node constructors so they become pass-through callers (shrinking the wrapper count).
+Consider drafting `02-modules.md` to READY before threading climbs into `scan.rs`.
+
+---
+
 ## Idiom session 60 — 2026-05-30 — planning slice: draft the Phase-C execution recipe (`01b`) to READY
 
 **Type:** planning (workstream 01, Phase-C kickoff). **No code change** — the

@@ -153,7 +153,7 @@ pub unsafe extern "C" fn pseudo_close() {
     // Walk the chain and free each block node.
     while q != crate::mem::TEX_NULL {
         let next = mem_b32s1(q);
-        crate::mem::free_node(q, mem_b32s0(q));
+        crate::mem::free_node_global(q, mem_b32s0(q));
         q = next;
     }
 }
@@ -258,7 +258,7 @@ pub unsafe extern "C" fn pseudo_input() -> bool {
     while last() > first() && buffer_entry(last() - 1) == ' ' as i32 {
         set_last(last() - 1);
     }
-    crate::mem::free_node(p, sz);
+    crate::mem::free_node_global(p, sz);
     true
 }
 

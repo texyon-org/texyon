@@ -8,6 +8,7 @@
 use crate::consts::{BOX_NODE_SIZE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE};
 use crate::errors::overflow;
 use crate::scan::runaway;
+use crate::state::MemState;
 
 use crate::globals::{
     avail, cur_input_synctex_tag, cur_list_head, eqtb_b32s1, hi_mem_min, line, lo_mem_max,
@@ -499,17 +500,32 @@ pub unsafe extern "C" fn new_penalty(m: i32) -> i32 {
 /// variable-size free list rooted at `rover`.
 ///
 /// translated from xetex-xetex0.c:284 (free_node)
-pub unsafe fn free_node(p: i32, s: i32) {
+///
+/// Phase-C: threaded to take `&mut MemState` directly (no thread-local
+/// bridge). Touches the `mem` arena only — zero `with_state`-bearing calls,
+/// so it is safe under any borrow (`01b` §4). Legacy (un-threaded) callers
+/// reach it through the transitional [`free_node_global`] bridge-down wrapper.
+pub fn free_node(mem: &mut MemState, p: i32, s: i32) {
     // Record node size and mark it as a free block (MAX_HALFWORD sentinel).
-    set_mem_b32s0(p, s);
-    set_mem_b32s1(p, MAX_HALFWORD);
+    mem.set_b32s0(p, s);
+    mem.set_b32s1(p, MAX_HALFWORD);
 
     // Insert p between rover and rover's left-neighbor (rover+1.s0).
-    let q = mem_b32s0(rover() + 1);
-    set_mem_b32s0(p + 1, q);
-    set_mem_b32s1(p + 1, rover());
-    set_mem_b32s0(rover() + 1, p);
-    set_mem_b32s1(q + 1, p);
+    let rover = mem.rover;
+    let q = mem.b32s0(rover + 1);
+    mem.set_b32s0(p + 1, q);
+    mem.set_b32s1(p + 1, rover);
+    mem.set_b32s0(rover + 1, p);
+    mem.set_b32s1(q + 1, p);
+}
+
+/// Transitional bridge-down wrapper for legacy (un-threaded) `free_node`
+/// callers (`01b` §3). Its arguments are evaluated by the caller *before* the
+/// thread-local borrow is taken, so it is free of the argument nest-panic
+/// hazard an inline `with_state_mut(|s| …)` closure would have. Removed when
+/// the last legacy caller is itself threaded.
+pub unsafe fn free_node_global(p: i32, s: i32) {
+    crate::state::with_state_mut(|st| free_node(&mut st.mem, p, s));
 }
 
 // ---------------------------------------------------------------------------
@@ -558,7 +574,7 @@ pub unsafe fn delete_token_ref(p: i32) {
 /// translated from xetex-xetex0.c:984 (delete_glue_ref)
 pub unsafe fn delete_glue_ref(p: i32) {
     if mem_b32s1(p) == TEX_NULL {
-        free_node(p, GLUE_SPEC_SIZE);
+        free_node_global(p, GLUE_SPEC_SIZE);
     } else {
         set_mem_b32s1(p, mem_b32s1(p) - 1);
     }

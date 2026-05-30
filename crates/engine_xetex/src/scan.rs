@@ -1162,7 +1162,7 @@ pub unsafe extern "C" fn scan_expr() {
                 r = (mem_b16s0(q) % 4) as i16;
                 l = mem_b16s1(q) as i16;
                 p = mem_b32s1(q);
-                crate::mem::free_node(q, EXPR_NODE_SIZE);
+                crate::mem::free_node_global(q, EXPR_NODE_SIZE);
                 skip_scan = true;
                 continue; // goto found
             }
@@ -4449,7 +4449,7 @@ unsafe fn pop_cond_node() {
     set_cur_if(mem_b16s0(p) as i16);
     set_if_limit(mem_b16s1(p) as u8);
     set_cond_ptr(mem_b32s1(p));
-    crate::mem::free_node(p, IF_NODE_SIZE);
+    crate::mem::free_node_global(p, IF_NODE_SIZE);
 }
 
 // ---------------------------------------------------------------------------
@@ -6106,7 +6106,7 @@ pub unsafe extern "C" fn fin_align() {
                     if mem_b32s1(r + 1) > mem_b32s1(mem_b32s0(s) + 1) {
                         set_mem_b32s1(mem_b32s0(s) + 1, mem_b32s1(r + 1));
                     }
-                    crate::mem::free_node(r, SPAN_NODE_SIZE);
+                    crate::mem::free_node_global(r, SPAN_NODE_SIZE);
                 }
                 r = u;
                 if r == END_SPAN {
@@ -7550,7 +7550,7 @@ pub unsafe extern "C" fn unpackage() {
                     crate::save::delete_sa_ref(crate::globals::cur_ptr());
                 }
             }
-            crate::mem::free_node(p, BOX_NODE_SIZE);
+            crate::mem::free_node_global(p, BOX_NODE_SIZE);
         }
     }
 
@@ -7559,7 +7559,7 @@ pub unsafe extern "C" fn unpackage() {
         let r = mem_b32s1(crate::globals::cur_list_tail());
         if r < crate::globals::hi_mem_min() && mem_b16s1(r) == MARGIN_KERN_NODE {
             set_mem_b32s1(crate::globals::cur_list_tail(), mem_b32s1(r));
-            crate::mem::free_node(r, MARGIN_KERN_NODE_SIZE);
+            crate::mem::free_node_global(r, MARGIN_KERN_NODE_SIZE);
         } else {
             crate::globals::set_cur_list_tail(mem_b32s1(crate::globals::cur_list_tail()));
         }
@@ -8868,7 +8868,7 @@ pub unsafe extern "C" fn pop_alignment() {
     set_mem_b32s1(ALIGN_HEAD, mem_b32s0(p + 1));
     set_cur_align(mem_b32s0(p));
     set_align_ptr(mem_b32s1(p));
-    crate::mem::free_node(p, ALIGN_STACK_NODE_SIZE);
+    crate::mem::free_node_global(p, ALIGN_STACK_NODE_SIZE);
 }
 
 // translated from xetex-xetex0.c:4678 (scan_glue)
@@ -9688,7 +9688,7 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
 
     let mut q = prune_page_top(q, eqtb_b32s1(INT_BASE + INT_PAR_SAVING_VDISCARDS) > 0);
     p = mem_b32s1(v + 5);
-    crate::mem::free_node(v, BOX_NODE_SIZE);
+    crate::mem::free_node_global(v, BOX_NODE_SIZE);
     if q != TEX_NULL {
         q = vpackage(q, 0, ADDITIONAL, MAX_HALFWORD);
     }
@@ -10295,7 +10295,7 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
                                 // found edge end: set t's link and free p
                                 set_mem_b32s1(t + 1, mem_b32s1(p + 1));
                                 set_mem_b32s1(t, q);
-                                crate::mem::free_node(p, MEDIUM_NODE_SIZE);
+                                crate::mem::free_node_global(p, MEDIUM_NODE_SIZE);
                                 break 'done;
                             }
                         }
@@ -10538,7 +10538,7 @@ pub unsafe extern "C" fn handle_right_brace() {
                 crate::mem::delete_glue_ref(q);
             }
 
-            crate::mem::free_node(p, BOX_NODE_SIZE);
+            crate::mem::free_node_global(p, BOX_NODE_SIZE);
             if nest_ptr() == 0 {
                 build_page();
             }
@@ -10668,7 +10668,7 @@ pub unsafe extern "C" fn handle_right_brace() {
                     // collapse to inline field
                     set_mem_b32s0(save_loc, mem_b32s0(p + 1));
                     set_mem_b32s1(save_loc, mem_b32s1(p + 1));
-                    crate::mem::free_node(p, NOAD_SIZE);
+                    crate::mem::free_node_global(p, NOAD_SIZE);
                 } else if mem_b16s1(p) == ACCENT_NOAD
                     && save_loc == cur_list_tail() + 1
                     && mem_b16s1(cur_list_tail()) == ORD_NOAD
@@ -10679,7 +10679,7 @@ pub unsafe extern "C" fn handle_right_brace() {
                         q = mem_b32s1(q);
                     }
                     set_mem_b32s1(q, p);
-                    crate::mem::free_node(cur_list_tail(), NOAD_SIZE);
+                    crate::mem::free_node_global(cur_list_tail(), NOAD_SIZE);
                     set_cur_list_tail(p);
                 }
             }
@@ -10836,7 +10836,7 @@ pub unsafe fn do_marks(a: i16, l: i16, q: i32) -> bool {
         }
 
         if mem_b16s0(q) == 0 {
-            crate::mem::free_node(q, INDEX_NODE_SIZE_DM);
+            crate::mem::free_node_global(q, INDEX_NODE_SIZE_DM);
             q = TEX_NULL;
         }
     } else {
@@ -10895,7 +10895,7 @@ pub unsafe fn do_marks(a: i16, l: i16, q: i32) -> bool {
         }
 
         if mem_b32s0(q + 2) == TEX_NULL && mem_b32s0(q + 3) == TEX_NULL {
-            crate::mem::free_node(q, MARK_CLASS_NODE_SIZE_DM);
+            crate::mem::free_node_global(q, MARK_CLASS_NODE_SIZE_DM);
             q = TEX_NULL;
         }
     }
@@ -11292,7 +11292,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                             }
                         }
                         p = mem_b32s1(p);
-                        crate::mem::free_node(mem_b32s1(q), SMALL_NODE_SIZE);
+                        crate::mem::free_node_global(mem_b32s1(q), SMALL_NODE_SIZE);
                     } else {
                         set_mem_b32s1(adjust_tail(), p);
                         set_adjust_tail(p);
@@ -12653,36 +12653,36 @@ pub unsafe fn flush_node_list(mut p: i32) {
             set_mem_b32s1(p, avail());
             set_avail(p);
         } else {
-            // Goto-done pattern: break 'done skips free_node(p, SMALL_NODE_SIZE) at end.
+            // Goto-done pattern: break 'done skips free_node_global(p, SMALL_NODE_SIZE) at end.
             'done: {
                 match mem_b16s1(p) {
                     HLIST_NODE | VLIST_NODE_FNL | UNSET_NODE_FNL => {
                         flush_node_list(mem_b32s1(p + 5));
-                        crate::mem::free_node(p, BOX_NODE_SIZE);
+                        crate::mem::free_node_global(p, BOX_NODE_SIZE);
                         break 'done;
                     }
                     RULE_NODE => {
-                        crate::mem::free_node(p, RULE_NODE_SIZE);
+                        crate::mem::free_node_global(p, RULE_NODE_SIZE);
                         break 'done;
                     }
                     INS_NODE_FNL => {
                         flush_node_list(mem_b32s0(p + 4));
                         crate::mem::delete_glue_ref(mem_b32s1(p + 4));
-                        crate::mem::free_node(p, INS_NODE_SIZE_FNL);
+                        crate::mem::free_node_global(p, INS_NODE_SIZE_FNL);
                         break 'done;
                     }
                     WHATSIT_NODE_FNL => {
                         match mem_b16s0(p) {
                             OPEN_NODE_FNL => {
-                                crate::mem::free_node(p, OPEN_NODE_SIZE_FNL);
+                                crate::mem::free_node_global(p, OPEN_NODE_SIZE_FNL);
                             }
                             WRITE_NODE_FNL | SPECIAL_NODE_FNL => {
                                 crate::mem::delete_token_ref(mem_b32s1(p + 1));
-                                crate::mem::free_node(p, WRITE_NODE_SIZE_FNL);
+                                crate::mem::free_node_global(p, WRITE_NODE_SIZE_FNL);
                                 break 'done;
                             }
                             CLOSE_NODE_FNL | LANGUAGE_NODE_FNL => {
-                                crate::mem::free_node(p, SMALL_NODE_SIZE);
+                                crate::mem::free_node_global(p, SMALL_NODE_SIZE);
                             }
                             NATIVE_WORD_NODE_FNL | NATIVE_WORD_NODE_AT_FNL => {
                                 let glyph_ptr = mem_ptr(p + 5);
@@ -12692,19 +12692,19 @@ pub unsafe fn flush_node_list(mut p: i32) {
                                     set_mem_b16s0(p + 4, 0);
                                 }
                                 let sz = mem_b16s3(p + 4) as i32;
-                                crate::mem::free_node(p, sz);
+                                crate::mem::free_node_global(p, sz);
                             }
                             GLYPH_NODE_FNL => {
-                                crate::mem::free_node(p, GLYPH_NODE_SIZE_FNL);
+                                crate::mem::free_node_global(p, GLYPH_NODE_SIZE_FNL);
                             }
                             PIC_NODE_FNL | PDF_NODE_FNL => {
                                 let path_len = mem_b16s1(p + 4) as i32;
                                 let sz = PIC_NODE_SIZE_FNL
                                     + (path_len + MEMORY_WORD_SIZE_FNL - 1) / MEMORY_WORD_SIZE_FNL;
-                                crate::mem::free_node(p, sz);
+                                crate::mem::free_node_global(p, sz);
                             }
                             PDF_SAVE_POS_NODE_FNL => {
-                                crate::mem::free_node(p, SMALL_NODE_SIZE);
+                                crate::mem::free_node_global(p, SMALL_NODE_SIZE);
                             }
                             _ => {
                                 crate::errors::confusion(c"ext3".as_ptr());
@@ -12715,43 +12715,43 @@ pub unsafe fn flush_node_list(mut p: i32) {
                     GLUE_NODE => {
                         let spec = mem_b32s0(p + 1);
                         if mem_b32s1(spec) == crate::mem::TEX_NULL {
-                            crate::mem::free_node(spec, GLUE_SPEC_SIZE);
+                            crate::mem::free_node_global(spec, GLUE_SPEC_SIZE);
                         } else {
                             set_mem_b32s1(spec, mem_b32s1(spec) - 1);
                         }
                         if mem_b32s1(p + 1) != crate::mem::TEX_NULL {
                             flush_node_list(mem_b32s1(p + 1));
                         }
-                        crate::mem::free_node(p, MEDIUM_NODE_SIZE);
+                        crate::mem::free_node_global(p, MEDIUM_NODE_SIZE);
                         break 'done;
                     }
                     KERN_NODE | MATH_NODE | PENALTY_NODE => {
-                        crate::mem::free_node(p, MEDIUM_NODE_SIZE);
+                        crate::mem::free_node_global(p, MEDIUM_NODE_SIZE);
                         break 'done;
                     }
                     MARGIN_KERN_NODE_FNL => {
-                        crate::mem::free_node(p, MARGIN_KERN_NODE_SIZE_FNL);
+                        crate::mem::free_node_global(p, MARGIN_KERN_NODE_SIZE_FNL);
                         break 'done;
                     }
                     LIGATURE_NODE => {
                         flush_node_list(mem_b32s1(p + 1));
-                        // falls through to free_node(p, SMALL_NODE_SIZE)
+                        // falls through to free_node_global(p, SMALL_NODE_SIZE)
                     }
                     MARK_NODE_FNL => {
                         crate::mem::delete_token_ref(mem_b32s1(p + 1));
-                        // falls through to free_node(p, SMALL_NODE_SIZE)
+                        // falls through to free_node_global(p, SMALL_NODE_SIZE)
                     }
                     DISC_NODE => {
                         flush_node_list(mem_b32s0(p + 1));
                         flush_node_list(mem_b32s1(p + 1));
-                        // falls through to free_node(p, SMALL_NODE_SIZE)
+                        // falls through to free_node_global(p, SMALL_NODE_SIZE)
                     }
                     ADJUST_NODE_FNL => {
                         flush_node_list(mem_b32s1(p + 1));
-                        // falls through to free_node(p, SMALL_NODE_SIZE)
+                        // falls through to free_node_global(p, SMALL_NODE_SIZE)
                     }
                     STYLE_NODE_FNL => {
-                        crate::mem::free_node(p, STYLE_NODE_SIZE_FNL);
+                        crate::mem::free_node_global(p, STYLE_NODE_SIZE_FNL);
                         break 'done;
                     }
                     CHOICE_NODE_FNL => {
@@ -12759,7 +12759,7 @@ pub unsafe fn flush_node_list(mut p: i32) {
                         flush_node_list(mem_b32s1(p + 1));
                         flush_node_list(mem_b32s0(p + 2));
                         flush_node_list(mem_b32s1(p + 2));
-                        crate::mem::free_node(p, STYLE_NODE_SIZE_FNL);
+                        crate::mem::free_node_global(p, STYLE_NODE_SIZE_FNL);
                         break 'done;
                     }
                     ORD_NOAD_FNL | OP_NOAD_FNL | BIN_NOAD_FNL | REL_NOAD_FNL | OPEN_NOAD_FNL
@@ -12776,29 +12776,29 @@ pub unsafe fn flush_node_list(mut p: i32) {
                         }
                         let ntype = mem_b16s1(p);
                         if ntype == RADICAL_NOAD_FNL {
-                            crate::mem::free_node(p, RADICAL_NOAD_SIZE_FNL);
+                            crate::mem::free_node_global(p, RADICAL_NOAD_SIZE_FNL);
                         } else if ntype == ACCENT_NOAD_FNL {
-                            crate::mem::free_node(p, ACCENT_NOAD_SIZE_FNL);
+                            crate::mem::free_node_global(p, ACCENT_NOAD_SIZE_FNL);
                         } else {
-                            crate::mem::free_node(p, NOAD_SIZE_FNL);
+                            crate::mem::free_node_global(p, NOAD_SIZE_FNL);
                         }
                         break 'done;
                     }
                     LEFT_NOAD_FNL | RIGHT_NOAD_FNL => {
-                        crate::mem::free_node(p, NOAD_SIZE_FNL);
+                        crate::mem::free_node_global(p, NOAD_SIZE_FNL);
                         break 'done;
                     }
                     FRACTION_NOAD_FNL => {
                         flush_node_list(mem_b32s0(p + 2));
                         flush_node_list(mem_b32s0(p + 3));
-                        crate::mem::free_node(p, FRACTION_NOAD_SIZE_FNL);
+                        crate::mem::free_node_global(p, FRACTION_NOAD_SIZE_FNL);
                         break 'done;
                     }
                     _ => {
                         crate::errors::confusion(c"flushing".as_ptr());
                     }
                 }
-                crate::mem::free_node(p, SMALL_NODE_SIZE);
+                crate::mem::free_node_global(p, SMALL_NODE_SIZE);
             }
         }
         p = q;
@@ -14447,7 +14447,7 @@ pub unsafe extern "C" fn expand() {
                         set_cur_if(mem_b16s0(p) as i16);
                         set_if_limit(mem_b16s1(p) as u8);
                         set_cond_ptr(mem_b32s1(p));
-                        crate::mem::free_node(p, IF_NODE_SIZE_V);
+                        crate::mem::free_node_global(p, IF_NODE_SIZE_V);
                     }
                 }
                 INPUT => {
@@ -16424,7 +16424,7 @@ pub unsafe extern "C" fn load_native_font(u: i32, nom: i32, aire: i32, mut s: i3
         libc::free(glyph_info);
         crate::globals::set_mem_ptr(p + 5, std::ptr::null_mut());
     }
-    crate::mem::free_node(p, crate::globals::mem_b16s3(p + 4) as i32);
+    crate::mem::free_node_global(p, crate::globals::mem_b16s3(p + 4) as i32);
 
     push_font_info_b32s1(font_slant);
     push_font_info_b32s1(s);
@@ -16848,7 +16848,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         set_space_class, space_class,
     };
     use crate::input::{back_input, begin_token_list};
-    use crate::mem::{free_node, get_avail, new_disc, new_kern, new_ligature, TEX_NULL};
+    use crate::mem::{free_node_global, get_avail, new_disc, new_kern, new_ligature, TEX_NULL};
     use crate::save::find_sa_element;
 
 
@@ -17303,7 +17303,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                 }
                 set_mem_b32s1(prev, mem_b32s1(main_pp()));
                 set_mem_b32s1(main_pp(), TEX_NULL);
-                free_node(main_pp(), mem_b16s3(main_pp() + 4) as i32);
+                free_node_global(main_pp(), mem_b16s3(main_pp() + 4) as i32);
             } else {
                 let new_node = new_native_word_node(mf, mk);
                 set_mem_b32s1(main_pp(), new_node);
@@ -17381,7 +17381,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                         );
                         let t_val =
                             mem_b32s1(tmp + 1) - mem_b32s1(pp + 1) - mem_b32s1(cur_list_tail() + 1);
-                        free_node(tmp, mem_b16s3(tmp + 4) as i32);
+                        free_node_global(tmp, mem_b16s3(tmp + 4) as i32);
                         if t_val != mem_b32s1(font_glue(mf) + 1) {
                             let kn = new_kern(t_val - mem_b32s1(font_glue(mf) + 1));
                             set_mem_b16s0(kn, SPACE_ADJUSTMENT);
@@ -17606,7 +17606,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
             }
             let temp = lig_stack();
             set_lig_stack(mem_b32s1(temp));
-            free_node(temp, SMALL_NODE_SIZE);
+            free_node_global(temp, SMALL_NODE_SIZE);
             main_i = font_info_b16(
                 char_base_entry(main_f()) + effective_char(true, main_f(), cur_l() as u16),
             );

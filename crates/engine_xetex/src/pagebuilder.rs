@@ -21,7 +21,7 @@ use crate::helpers::badness;
 use crate::input::begin_token_list;
 use crate::mem::delete_glue_ref;
 use crate::mem::delete_token_ref;
-use crate::mem::free_node;
+use crate::mem::free_node_global;
 use crate::mem::get_node;
 use crate::mem::new_null_box;
 use crate::mem::new_skip_param;
@@ -309,14 +309,14 @@ unsafe fn fire_up(c: i32) {
                             // INSERTION_NODE_ins_ptr != TEX_NULL
                             let tmp = vpackage(mem_b32s0(p + 4), 0, ADDITIONAL, MAX_HALFWORD);
                             set_mem_b32s1(p + 3, mem_b32s1(tmp + 3) + mem_b32s1(tmp + 2)); // BOX_height = BOX_height(tmp)+BOX_depth(tmp)
-                            free_node(tmp, BOX_NODE_SIZE);
+                            free_node_global(tmp, BOX_NODE_SIZE);
                             inner_wait = true;
                         }
                     }
                     set_mem_b32s0(r + 2, TEX_NULL); // best_ins_ptr = TEX_NULL
                     let n2 = mem_b16s0(r) as u8;
                     let box_lp = mem_b32s1(eqtb_b32s1(BOX_BASE + n2 as i32) + 5); // BOX_list_ptr
-                    free_node(eqtb_b32s1(BOX_BASE + n2 as i32), BOX_NODE_SIZE);
+                    free_node_global(eqtb_b32s1(BOX_BASE + n2 as i32), BOX_NODE_SIZE);
                     set_eqtb_b32s1(
                         BOX_BASE + n2 as i32,
                         vpackage(box_lp, 0, ADDITIONAL, MAX_HALFWORD),
@@ -341,7 +341,7 @@ unsafe fn fire_up(c: i32) {
                 set_insert_penalties(insert_penalties() + 1);
             } else {
                 delete_glue_ref(mem_b32s1(p + 4)); // INSERTION_NODE_split_top_ptr
-                free_node(p, INS_NODE_SIZE);
+                free_node_global(p, INS_NODE_SIZE);
             }
             true // reset p to prev_p
         } else {
@@ -443,7 +443,7 @@ unsafe fn fire_up(c: i32) {
     let mut r = mem_b32s1(PAGE_INS_HEAD);
     while r != PAGE_INS_HEAD {
         let next = mem_b32s1(r);
-        free_node(r, PAGE_INS_NODE_SIZE);
+        free_node_global(r, PAGE_INS_NODE_SIZE);
         r = next;
     }
     set_mem_b32s1(PAGE_INS_HEAD, PAGE_INS_HEAD);

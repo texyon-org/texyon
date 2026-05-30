@@ -26,7 +26,7 @@ use crate::globals::{
     str_start, temp_ptr, term_offset, total_pages, width_base_entry, write_file, write_loc,
     write_open, xdv_buffer_entry,
 };
-use crate::mem::{free_node, get_avail, get_node, new_kern, new_math};
+use crate::mem::{free_node_global, get_avail, get_node, new_kern, new_math};
 
 extern "C" {
 
@@ -906,7 +906,7 @@ unsafe fn output_hlist_glue(
         || (g_sign == SHRINKING && mem_b16s0(g) == g_order)
     {
         if mem_b32s1(g) == TEX_NULL {
-            free_node(g, GLUE_SPEC_SIZE);
+            free_node_global(g, GLUE_SPEC_SIZE);
         } else {
             set_mem_b32s1(g, mem_b32s1(g) - 1);
         }
@@ -1238,7 +1238,7 @@ pub unsafe extern "C" fn hlist_out() {
                                 let save_h = cur_h();
                                 set_temp_ptr(mem_b32s1(p));
                                 set_rule_wd(mem_b32s1(p + 1));
-                                free_node(p, MEDIUM_NODE_SIZE);
+                                free_node_global(p, MEDIUM_NODE_SIZE);
                                 set_cur_dir(1 - cur_dir());
                                 p = new_edge(cur_dir(), rule_wd());
                                 set_mem_b32s1(prev_p, p);
@@ -1663,7 +1663,7 @@ pub unsafe extern "C" fn prune_movements(l: i32) {
         }
         let p = down_ptr();
         set_down_ptr(mem_b32s1(p));
-        free_node(p, MOVEMENT_NODE_SIZE);
+        free_node_global(p, MOVEMENT_NODE_SIZE);
     }
     while right_ptr() != TEX_NULL {
         if mem_b32s1(right_ptr() + 2) < l {
@@ -1671,7 +1671,7 @@ pub unsafe extern "C" fn prune_movements(l: i32) {
         }
         let p = right_ptr();
         set_right_ptr(mem_b32s1(p));
-        free_node(p, MOVEMENT_NODE_SIZE);
+        free_node_global(p, MOVEMENT_NODE_SIZE);
     }
 }
 
@@ -1883,7 +1883,7 @@ pub unsafe extern "C" fn reverse(
                             || (g_sign == SHRINKING && mem_b16s0(g) == g_order)
                         {
                             if mem_b32s1(g) == TEX_NULL {
-                                free_node(g, GLUE_SPEC_SIZE);
+                                free_node_global(g, GLUE_SPEC_SIZE);
                             } else {
                                 set_mem_b32s1(g, mem_b32s1(g) - 1);
                             }
@@ -1908,7 +1908,7 @@ pub unsafe extern "C" fn reverse(
                         p = get_avail();
                         set_mem_word(p, mem_word(temp_ptr() + 1));
                         set_mem_b32s1(p, q);
-                        free_node(temp_ptr(), SMALL_NODE_SIZE);
+                        free_node_global(temp_ptr(), SMALL_NODE_SIZE);
                         continue 'reswitch;
                     }
                     MATH_NODE => {
@@ -1933,7 +1933,7 @@ pub unsafe extern "C" fn reverse(
                                     if m > MIN_HALFWORD {
                                         m -= 1;
                                     } else {
-                                        free_node(p, MEDIUM_NODE_SIZE);
+                                        free_node_global(p, MEDIUM_NODE_SIZE);
                                         set_mem_b32s1(t, q);
                                         set_mem_b32s1(t + 1, rule_wd());
                                         set_mem_b32s1(t + 2, -cur_h() - rule_wd());
@@ -1971,7 +1971,7 @@ pub unsafe extern "C" fn reverse(
             set_mem_b32s1(p, l);
 
             if mem_b16s1(p) == KERN_NODE && (rule_wd() == 0 || l == TEX_NULL) {
-                free_node(p, MEDIUM_NODE_SIZE);
+                free_node_global(p, MEDIUM_NODE_SIZE);
                 p = l;
             }
 

@@ -287,6 +287,28 @@ pub(crate) struct MemState {
     pub dyn_used: i32,
 }
 
+impl MemState {
+    /// Read `mem[p].b32.s0`. Mirrors `globals::mem_b32s0` (the Phase-B bridge
+    /// accessor) so threaded Phase-C callers can touch the arena directly.
+    #[inline]
+    pub(crate) fn b32s0(&self, p: i32) -> i32 {
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        unsafe { self.data[p as usize].b32.s0 }
+    }
+
+    /// Write `mem[p].b32.s0`. Union writes through a `&mut` index are safe.
+    #[inline]
+    pub(crate) fn set_b32s0(&mut self, p: i32, v: i32) {
+        self.data[p as usize].b32.s0 = v;
+    }
+
+    /// Write `mem[p].b32.s1` (the `LLIST_link` field).
+    #[inline]
+    pub(crate) fn set_b32s1(&mut self, p: i32, v: i32) {
+        self.data[p as usize].b32.s1 = v;
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct SaveStackState {
     pub save_ptr: i32,

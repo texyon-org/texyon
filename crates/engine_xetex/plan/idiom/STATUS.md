@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last session = session 60, **planning slice**: drafted `01b-phase-c-recipe.md` to READY — the Phase-C threading recipe + recon that picks the first subsystem (the `mem` allocator core). No code change. Phase B remains complete).
+Last updated: 2026-05-30 (last session = session 61, **first Phase-C slice**: threaded `free_node` to `&mut MemState` and bridge-down its 95 legacy call sites via a transitional `free_node_global` wrapper. Dashboard 29/2/7/4. Phase C is now executing).
 
 ## How to read this file
 
@@ -518,6 +518,26 @@ least-coupled non-`misc` clusters:
     parity comments documenting the preserved inclusive Vec sizes were kept.
     `globals.rs` raw extern count unchanged at 40 (Phase B complete). Dashboard
     29/2/7/4.
+-   **First Phase-C threading slice — `free_node` (session 61):** threaded
+    `free_node` from `pub unsafe fn free_node(p, s)` (thread-local bridge) to
+    `pub fn free_node(mem: &mut MemState, p, s)`, touching the `mem` arena
+    directly through a new `impl MemState` method surface (`b32s0`/`set_b32s0`/
+    `set_b32s1`; the `rover` scalar is a field). Per `01b` §4 it makes zero
+    `with_state`-bearing calls, so it is safe under any borrow. All 95 legacy
+    (un-threaded) call sites across 9 files were bridged-down through a new
+    transitional `free_node_global(p, s)` wrapper
+    (`with_state_mut(|st| free_node(&mut st.mem, p, s))`), rather than the recipe's
+    inline `with_state_mut(|s| …)` closure, because ~16 sites pass
+    `with_state`-bearing accessors as arguments (`mem_b16s3(…)`,
+    `active_node_size()`, `eqtb_b32s1(…)`, …) — these would nest-panic if
+    evaluated inside the borrow — and two sites pass a local named `s`
+    (`free_node(r, s)`) that an inline `|s|` closure param would shadow. The
+    wrapper evaluates its args before borrowing, sidestepping both hazards, and is
+    still removed incrementally (per-caller, as callers thread). No newtype debt
+    (`p`/`s` are plain `int32_t`). Metrics essentially flat this foundation slice
+    (`unsafe fn` net unchanged: `free_node` dropped `unsafe`, `free_node_global`
+    added it; one transient `with_state_mut` wrapper added, to be removed as
+    callers thread). Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -620,9 +640,21 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase B is complete and the Phase-C recipe is now READY (session 60).
-    Next: execute the first Phase-C threading slice per `01b-phase-c-recipe.md`
-    §9 → thread `free_node` to `&mut MemState`.**
+1.  **Phase C is executing. Session 61 threaded `free_node` (the first slice).
+    Next: continue the `mem` allocator core per `01b-phase-c-recipe.md` §9 →
+    thread `flush_list` to `&mut MemState` (same shape as `free_node`, ~21
+    sites), then `get_avail` (introduces the §5 cold-path overflow sentinel),
+    then `get_node`.**
+
+    Reuse the session-61 pattern: add any new methods to `impl MemState` in
+    `state.rs`, thread the fn to `&mut MemState`, and bridge-down legacy call
+    sites through a transitional `<fn>_global` wrapper (args evaluated before the
+    borrow — avoids the argument nest-panic and the `|s|` closure-shadowing
+    hazards that ruled out the recipe's bare inline closure for `free_node`). The
+    wrapper dies when its last legacy caller threads. For `get_avail`/`get_node`,
+    the cold exhaustion branch returns the overflow sentinel and the wrapper calls
+    `overflow()`/`runaway()` after the borrow drops (`01b` §5). After the core,
+    thread the `new_*` node constructors so they become pass-through callers.
 
     `misc` bucket fully drained (sessions 44–46); classified-but-unmigrated
     scratch completed (sessions 47–48, 53–54); all ownership slices done,

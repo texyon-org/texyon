@@ -24,7 +24,8 @@ use crate::globals::{
     width_base_entry,
 };
 use crate::mem::{
-    free_node, get_node, new_choice, new_glue, new_kern, new_noad, new_rule, new_spec, TEX_NULL,
+    free_node_global, get_node, new_choice, new_glue, new_kern, new_noad, new_rule, new_spec,
+    TEX_NULL,
 };
 
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -567,7 +568,7 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
             && !is_char_node(r)
             && mem_b16s1(r) == KERN_NODE
         {
-            free_node(r, MEDIUM_NODE_SIZE);
+            free_node_global(r, MEDIUM_NODE_SIZE);
             set_mem_b32s1(q, TEX_NULL);
         }
     }
@@ -901,7 +902,7 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
                             let assembly_ptr = get_ot_assembly_ptr(cur_f(), c_glyph as i32, 0);
                             if !assembly_ptr.is_null() {
                                 ot_assembly_ptr = assembly_ptr;
-                                free_node(p, GLYPH_NODE_SIZE);
+                                free_node_global(p, GLYPH_NODE_SIZE);
                                 p = build_opentype_assembly(cur_f(), ot_assembly_ptr, h1, false);
                                 set_mem_b32s1(x + 5, p);
                                 delta = 0;
@@ -953,7 +954,7 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
         set_mem_b32s1(v + 2, mem_b32s1(y + 2));
         set_cur_f(save_f);
         if mem_b32s1(q + 2) == EMPTY {
-            free_node(x, BOX_NODE_SIZE);
+            free_node_global(x, BOX_NODE_SIZE);
             set_mem_b32s1(v + 5, y);
         } else {
             let mut shift_up = big_op_spacing3() - mem_b32s1(x + 2);
@@ -976,7 +977,7 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
             );
         }
         if mem_b32s1(q + 3) == EMPTY {
-            free_node(z, BOX_NODE_SIZE);
+            free_node_global(z, BOX_NODE_SIZE);
         } else {
             let mut shift_down = big_op_spacing4() - mem_b32s1(z + 3);
             if shift_down < big_op_spacing2() {
@@ -1078,7 +1079,7 @@ pub unsafe extern "C" fn make_ord(q: i32) {
                             set_mem_b16s0(q + 1, cur_i().s0);
                             set_mem_word(q + 3, mem_word(p + 3));
                             set_mem_word(q + 2, mem_word(p + 2));
-                            free_node(p, NOAD_SIZE);
+                            free_node_global(p, NOAD_SIZE);
                         }
                     }
                     if cur_i().s1 > 3 {
@@ -1231,7 +1232,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
         );
         crate::ext::measure_native_glyph(mem_node_addr(p), 1);
         let old_node = mem_b32s1(y + 5);
-        free_node(old_node, mem_b16s3(old_node + 4) as i32);
+        free_node_global(old_node, mem_b16s3(old_node + 4) as i32);
         set_mem_b32s1(y + 5, p);
         if !mem_b16s0(q).is_multiple_of(2) {
             crate::ext::measure_native_glyph(mem_node_addr(p), 1);
@@ -1255,7 +1256,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
                     let assembly_ptr = get_ot_assembly_ptr(f, c_glyph, 1);
                     if !assembly_ptr.is_null() {
                         ot_assembly_ptr = assembly_ptr;
-                        free_node(p, GLYPH_NODE_SIZE);
+                        free_node_global(p, GLYPH_NODE_SIZE);
                         p = build_opentype_assembly(f, ot_assembly_ptr, w, true);
                         set_mem_b32s1(y + 5, p);
                         break 'found;
@@ -1453,7 +1454,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
         };
         let up = mem_b32s1(z + 3) - sup_drop(t);
         let down = mem_b32s1(z + 2) + sub_drop(t);
-        free_node(z, BOX_NODE_SIZE);
+        free_node_global(z, BOX_NODE_SIZE);
         (up, down)
     };
 
@@ -1883,7 +1884,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                             set_mem_b16s2(p + 4, cur_f() as u16);
                             set_mem_b16s1(p + 4, real_get_native_glyph(mem_node_addr(z), 0));
                             crate::ext::measure_native_glyph(mem_node_addr(p), 1);
-                            free_node(z, mem_b16s3(z + 4) as i32);
+                            free_node_global(z, mem_b16s3(z + 4) as i32);
                             delta = get_ot_math_ital_corr(cur_f(), mem_b16s1(p + 4) as i32);
                             if mem_b32s1(q + 1) == MATH_TEXT_CHAR && !font_is_ot_math(cur_f()) {
                                 delta = 0;
@@ -1935,7 +1936,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                 if mem_b32s1(z + 2) > max_d {
                     max_d = mem_b32s1(z + 2);
                 }
-                free_node(z, BOX_NODE_SIZE);
+                free_node_global(z, BOX_NODE_SIZE);
 
                 r = q;
                 r_type = mem_b16s1(r);
@@ -1954,7 +1955,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                 if mem_b32s1(z + 2) > max_d {
                     max_d = mem_b32s1(z + 2);
                 }
-                free_node(z, BOX_NODE_SIZE);
+                free_node_global(z, BOX_NODE_SIZE);
 
                 r = q;
                 r_type = mem_b16s1(r);
@@ -2125,7 +2126,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
 
         r = q;
         q = mem_b32s1(q);
-        free_node(r, s);
+        free_node_global(r, s);
     }
 }
 
@@ -2794,7 +2795,7 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
             p = p_orig;
         } else {
             let r0 = mem_b32s1(p_orig + 5);
-            crate::mem::free_node(p_orig, BOX_NODE_SIZE);
+            crate::mem::free_node_global(p_orig, BOX_NODE_SIZE);
             if r0 == TEX_NULL {
                 crate::errors::confusion(c"LR4".as_ptr());
             }
@@ -3064,12 +3065,12 @@ pub unsafe fn after_math() {
                     || total_shrink(FILL) != 0
                     || total_shrink(FILLL) != 0)
             {
-                crate::mem::free_node(b, BOX_NODE_SIZE);
+                crate::mem::free_node_global(b, BOX_NODE_SIZE);
                 b = crate::scan::hpack(p, z - q, EXACTLY);
             } else {
                 e = 0;
                 if w > z {
-                    crate::mem::free_node(b, BOX_NODE_SIZE);
+                    crate::mem::free_node_global(b, BOX_NODE_SIZE);
                     b = crate::scan::hpack(p, z, EXACTLY);
                 }
             }
@@ -3483,7 +3484,7 @@ pub unsafe extern "C" fn rebox(b: i32, w: i32) -> i32 {
                 set_mem_b32s1(p, new_kern(mem_b32s1(b + 1) - v));
             }
         }
-        free_node(b, BOX_NODE_SIZE);
+        free_node_global(b, BOX_NODE_SIZE);
         b = new_glue(12);
         set_mem_b32s1(b, p);
         while mem_b32s1(p) != TEX_NULL {
