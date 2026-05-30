@@ -36,7 +36,7 @@ A workstream plan moves through these construction states:
 | 02 | `02-modules.md` | PLANNED | Module decomposition. Draft after 01's cluster boundaries are settled. |
 | 03 | `03-deunsafe-ffi.md` | PLANNED | De-unsafe + FFI teardown. Mostly falls out of 01. |
 | 04 | `04-clippy.md` | PLANNED | Cheap clippy wins now; unsafe-block bucket after 01/03. |
-| 05 | `05-errors-and-misc.md` | PLANNED | Error-handling shape, dead-comment cleanup, longjmp/Drop. Partly optional. |
+| 05 | `05-errors-and-misc.md` | PLANNED (seed) | Error-handling shape, dead-comment cleanup, longjmp/Drop. Partly optional. Seed written (session 62): target error model = `engine_bibtex` (`Result`/`History`, `with_global_lock` entry, stack-threaded state); not yet a READY recipe. Draft after Phase C + 03. |
 | 06 | `06-constants.md` | EXECUTING | Magic-number / duplicated-const cleanup into a shared computed `consts.rs`. Phase A (centralize 193 cross-module dup consts) is low-risk and independent; Phase B (call-site literal sweep) rides Phase C. Not covered by 01–05; clippy can't catch it. |
 
 ## Execution
@@ -650,6 +650,44 @@ the snippets in `00-overview.md` / the workstream plans.
     they are safe under a live borrow. (5) **First subsystem = the `mem` allocator
     core** (`free_node`/`flush_list`/`get_avail`/`get_node`), one fn + all sites
     per commit. No code changed this session.
+-   **2026-05-30 (session 62, follow-up)** — **Target error model = the
+    `engine_bibtex` shape; longjmp removal is the *output* of the Rust
+    conversion, not a separate ABI change.** Prompted by a question about the
+    `ALLOC_FAILED` sentinel and "why keep any C." Findings: the
+    `setjmp`/`longjmp` escape is **not** xetex-owned — `_tt_abort()` +
+    `ttbc_global_engine_enter()` live in the shared `tectonic_bridge_core`
+    (`crates/bridge_core/support/support.c`); every C engine plugs into them,
+    and bridge_core's own docs call setjmp/longjmp-across-FFI Undefined
+    Behavior, which is *why* the `setjmp` sits in a C frame with no Rust `Drop`.
+    **`engine_bibtex` (already fully Rust) is the existence proof of the clean
+    end-state** and is hereby the reference implementation for workstream 05:
+    (a) it has **no** `setjmp`/`longjmp`/`_tt_abort` anywhere — verified by
+    grep; (b) "fatal error" is a `Result` — `enum BibtexError { Fatal, Recover,
+    NoBst }` propagated with `?` to the top, with a code comment stating the
+    classic TeX fatal outcome "is represented as an `Err` result"; (c) the
+    `History` enum (Spotless/Warning/Error/Fatal) is returned as a *value*;
+    (d) state is **stack-owned and `&mut`-threaded** — `bibtex_main` builds the
+    state structs as locals and threads a `GlobalItems { &mut … }` bundle down
+    the call graph (no thread-local, no `with_state` bridge) — i.e. the literal
+    Phase-C end-state; (e) it enters through bridge_core's **Rust** API
+    (`CoreBridgeLauncher::with_global_lock`, returning `Result<BibtexOutcome>`),
+    not a C `tt_*_main`/`jmp_buf` shim. **Correction to an earlier verbal
+    claim:** removing xetex's longjmp does **not** require a bridge_core ABI
+    change — the Rust `with_global_lock` entry already exists and is proven;
+    xetex would switch to it once the conversion is done. The actual blockers
+    are scope-bound, not mechanism-bound: (1) xetex still has C/C++ that bibtex
+    never did — the shaping stack (harfbuzz/graphite/freetype/ICU) and
+    `xetex-XeTeXOTMath.cpp`, plus the bridge_core C alloc/abort callbacks
+    (`xmalloc`/`ttstub_*` that `_tt_abort`); the Result route tolerates external
+    shaping libs (they return values) but the alloc/abort callbacks must become
+    their Rust equivalents (largely happening as arenas became `Vec`s); (2)
+    `overflow`/`confusion`/`error` fire from hundreds of nested sites, so the
+    `Result`/`?` conversion + stack-threading is the *output* of Phase C +
+    workstream 03, not a Stage-2 slice. Until then the thin C `setjmp` anchor is
+    the correct quarantine (§7). The `ALLOC_FAILED` sentinel is consistent with
+    this: a transient borrow artifact (`01b` §5), to be deleted when the
+    allocators' callers are threaded and the fatal path becomes a `Result`.
+    Recorded as the workstream-05 target in `05-errors-and-misc.md` (seed).
 
 ## Next action for a fresh session
 
