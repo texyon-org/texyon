@@ -11,13 +11,12 @@ use crate::scan::runaway;
 use crate::state::MemState;
 
 use crate::globals::{
-    avail, cur_input_synctex_tag, cur_list_head, eqtb_b32s1, hi_mem_min, line, lo_mem_max,
-    max_nest_stack, mem_b16s0, mem_b32s0, mem_b32s1, mem_end, mem_ptr, mem_word, nest_ptr,
-    nest_size, restore_cur_list_from_nest, rover, save_cur_list_to_nest, set_avail,
-    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf,
-    set_cur_list_tail, set_hi_mem_min, set_lo_mem_max, set_max_nest_stack, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_end, set_mem_gr, set_mem_ptr,
-    set_mem_word, set_nest_ptr, set_rover, set_temp_ptr, temp_ptr,
+    avail, cur_input_synctex_tag, cur_list_head, eqtb_b32s1, line, max_nest_stack, mem_b16s0,
+    mem_b32s0, mem_b32s1, mem_ptr, mem_word, nest_ptr, nest_size, restore_cur_list_from_nest,
+    save_cur_list_to_nest, set_avail, set_cur_list_e_tex_aux, set_cur_list_head,
+    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_max_nest_stack,
+    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_ptr,
+    set_mem_word, set_nest_ptr, set_temp_ptr, temp_ptr,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
@@ -95,38 +94,60 @@ pub struct StrNumber(pub i32);
 // get_avail
 // ---------------------------------------------------------------------------
 
+/// Overflow sentinel returned by the threaded allocators ([`get_avail`],
+/// [`get_node`]) when the `mem` arena is exhausted (`01b` §5). Because
+/// `overflow()`/`runaway()` are `with_state`-bearing, they cannot be called
+/// under the live borrow held while a threaded allocator runs; the allocator
+/// returns this sentinel instead and the bridge-down wrapper aborts after the
+/// borrow drops. `i32::MIN` lies outside every valid arena index, `TEX_NULL`,
+/// and `MAX_HALFWORD`, so it can never collide with a real return value.
+const ALLOC_FAILED: i32 = i32::MIN;
+
 /// Allocate one word from the single-word (hi-mem) free list.
 ///
 /// Returns the index of the allocated word. The word's link field
-/// (`mem[p].b32.s1`) is set to `TEX_NULL`. Calls `runaway()` + `overflow()`
-/// if memory is exhausted (those functions never return).
+/// (`mem[p].b32.s1`) is set to `TEX_NULL`.
 ///
 /// translated from xetex-xetex0.c:170 (get_avail)
-#[no_mangle]
-pub unsafe extern "C" fn get_avail() -> i32 {
-    let p = avail();
+///
+/// Phase-C: threaded to `&mut MemState`. On arena exhaustion it returns
+/// [`ALLOC_FAILED`] rather than calling `runaway()`/`overflow()` under the
+/// borrow (`01b` §5); the [`get_avail_global`] wrapper performs the abort.
+pub fn get_avail(mem: &mut MemState) -> i32 {
+    let p = mem.avail;
 
     if p != TEX_NULL {
-        set_avail(mem_b32s1(avail()));
-    } else if mem_end() < MEM_TOP {
-        set_mem_end(mem_end() + 1);
-        // p already holds old mem_end; we return the incremented value
-        let p = mem_end();
-        set_mem_b32s1(p, TEX_NULL);
+        mem.avail = mem.b32s1(p);
+    } else if mem.mem_end < MEM_TOP {
+        mem.mem_end += 1;
+        let p = mem.mem_end;
+        mem.set_b32s1(p, TEX_NULL);
         return p;
     } else {
-        set_hi_mem_min(hi_mem_min() - 1);
-        let p = hi_mem_min();
+        mem.hi_mem_min -= 1;
+        let p = mem.hi_mem_min;
         // is_char_node(lo_mem_max) ≡ lo_mem_max >= hi_mem_min
-        if lo_mem_max() >= hi_mem_min() {
-            runaway();
-            overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+        if mem.lo_mem_max >= mem.hi_mem_min {
+            return ALLOC_FAILED;
         }
-        set_mem_b32s1(p, TEX_NULL);
+        mem.set_b32s1(p, TEX_NULL);
         return p;
     }
 
-    set_mem_b32s1(p, TEX_NULL);
+    mem.set_b32s1(p, TEX_NULL);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `get_avail` callers (`01b` §3,
+/// §5). Evaluates the threaded allocator under a single borrow, then — after
+/// the borrow drops — runs the cold `runaway()`+`overflow()` abort if the arena
+/// was exhausted. Removed when the last legacy caller is itself threaded.
+pub unsafe fn get_avail_global() -> i32 {
+    let p = crate::state::with_state_mut(|st| get_avail(&mut st.mem));
+    if p == ALLOC_FAILED {
+        runaway();
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -140,8 +161,10 @@ pub unsafe extern "C" fn get_avail() -> i32 {
 /// the tail, then splices the whole list onto the front of `avail`.
 ///
 /// translated from xetex-xetex0.c:192 (flush_list)
-#[no_mangle]
-pub unsafe extern "C" fn flush_list(p: i32) {
+///
+/// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only (no cold
+/// path, zero `with_state` calls). Legacy callers use [`flush_list_global`].
+pub fn flush_list(mem: &mut MemState, p: i32) {
     if p == TEX_NULL {
         return;
     }
@@ -150,14 +173,20 @@ pub unsafe extern "C" fn flush_list(p: i32) {
     let mut q;
     loop {
         q = r;
-        r = mem_b32s1(r);
+        r = mem.b32s1(r);
         if r == TEX_NULL {
             break;
         }
     }
     // q is now the tail; splice: tail.link = old_avail; avail = p
-    set_mem_b32s1(q, avail());
-    set_avail(p);
+    let avail = mem.avail;
+    mem.set_b32s1(q, avail);
+    mem.avail = p;
+}
+
+/// Transitional bridge-down wrapper for legacy `flush_list` callers (`01b` §3).
+pub unsafe fn flush_list_global(p: i32) {
+    crate::state::with_state_mut(|st| flush_list(&mut st.mem, p));
 }
 
 // ---------------------------------------------------------------------------
@@ -179,47 +208,54 @@ pub unsafe extern "C" fn flush_list(p: i32) {
 ///   - `goto restart` → `continue 'restart`
 ///
 /// translated from xetex-xetex0.c:150 (get_node)
-pub unsafe fn get_node(s: i32) -> i32 {
+///
+/// Phase-C: threaded to `&mut MemState`. The cold exhaustion path returns
+/// [`ALLOC_FAILED`] instead of calling `overflow()` under the borrow (`01b`
+/// §5); [`get_node_global`] performs the abort. The two raw-global reads
+/// (`cur_input_synctex_tag()`/`line()`) read `mod raw`, not the thread-local,
+/// so they are safe under a live borrow (`01b` §4).
+pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
     let r = 'restart: loop {
-        let mut p = rover();
+        let mut p = mem.rover;
 
         // do { … } while p != rover()
         loop {
             // Coalesce any immediately-following free blocks into one.
-            let mut q = p + mem_b32s0(p);
-            while mem_b32s1(q) == MAX_HALFWORD {
-                let t = mem_b32s1(q + 1);
-                if q == rover() {
-                    set_rover(t);
+            let mut q = p + mem.b32s0(p);
+            while mem.b32s1(q) == MAX_HALFWORD {
+                let t = mem.b32s1(q + 1);
+                if q == mem.rover {
+                    mem.rover = t;
                 }
                 // Unlink q from the doubly-linked free list.
-                set_mem_b32s0(t + 1, mem_b32s0(q + 1));
-                set_mem_b32s1(mem_b32s0(q + 1) + 1, t);
-                q = q + mem_b32s0(q);
+                let q_left = mem.b32s0(q + 1);
+                mem.set_b32s0(t + 1, q_left);
+                mem.set_b32s1(q_left + 1, t);
+                q += mem.b32s0(q);
             }
 
             let r = q - s;
 
             if r > p + 1 {
                 // Case 132: block large enough to split; keep left part as free.
-                set_mem_b32s0(p, r - p);
-                set_rover(p);
+                mem.set_b32s0(p, r - p);
+                mem.rover = p;
                 break 'restart r;
             }
 
-            if r == p && mem_b32s1(p + 1) != p {
+            if r == p && mem.b32s1(p + 1) != p {
                 // Case 133: exact fit; unlink p from the free list.
-                let new_rover = mem_b32s1(p + 1);
-                let t = mem_b32s0(p + 1);
-                set_rover(new_rover);
-                set_mem_b32s0(new_rover + 1, t);
-                set_mem_b32s1(t + 1, new_rover);
+                let new_rover = mem.b32s1(p + 1);
+                let t = mem.b32s0(p + 1);
+                mem.rover = new_rover;
+                mem.set_b32s0(new_rover + 1, t);
+                mem.set_b32s1(t + 1, new_rover);
                 break 'restart r;
             }
 
-            set_mem_b32s0(p, q - p);
-            p = mem_b32s1(p + 1);
-            if p == rover() {
+            mem.set_b32s0(p, q - p);
+            p = mem.b32s1(p + 1);
+            if p == mem.rover {
                 break;
             }
         }
@@ -229,39 +265,52 @@ pub unsafe fn get_node(s: i32) -> i32 {
             return MAX_HALFWORD;
         }
 
-        if lo_mem_max() + 2 < hi_mem_min() && lo_mem_max() + 2 <= MAX_HALFWORD {
+        if mem.lo_mem_max + 2 < mem.hi_mem_min && mem.lo_mem_max + 2 <= MAX_HALFWORD {
             // Grow lo-mem by inserting a new free block between lo_mem_max
             // and hi_mem_min, then retry.
-            let t = if hi_mem_min() - lo_mem_max() >= 1998 {
-                lo_mem_max() + 1000
+            let t = if mem.hi_mem_min - mem.lo_mem_max >= 1998 {
+                mem.lo_mem_max + 1000
             } else {
-                lo_mem_max() + 1 + (hi_mem_min() - lo_mem_max()) / 2
+                mem.lo_mem_max + 1 + (mem.hi_mem_min - mem.lo_mem_max) / 2
             };
             let t = if t > MAX_HALFWORD { MAX_HALFWORD } else { t };
 
-            let left_neighbor = mem_b32s0(rover() + 1);
-            let q = lo_mem_max();
-            set_mem_b32s1(left_neighbor + 1, q);
-            set_mem_b32s0(rover() + 1, q);
-            set_mem_b32s1(q + 1, rover());
-            set_mem_b32s0(q + 1, left_neighbor);
-            set_mem_b32s1(q, MAX_HALFWORD);
-            set_mem_b32s0(q, t - lo_mem_max());
-            set_lo_mem_max(t);
-            set_mem_b32s1(lo_mem_max(), TEX_NULL);
-            set_mem_b32s0(lo_mem_max(), TEX_NULL);
-            set_rover(q);
+            let rover = mem.rover;
+            let left_neighbor = mem.b32s0(rover + 1);
+            let q = mem.lo_mem_max;
+            mem.set_b32s1(left_neighbor + 1, q);
+            mem.set_b32s0(rover + 1, q);
+            mem.set_b32s1(q + 1, rover);
+            mem.set_b32s0(q + 1, left_neighbor);
+            mem.set_b32s1(q, MAX_HALFWORD);
+            mem.set_b32s0(q, t - mem.lo_mem_max);
+            mem.lo_mem_max = t;
+            mem.set_b32s1(mem.lo_mem_max, TEX_NULL);
+            mem.set_b32s0(mem.lo_mem_max, TEX_NULL);
+            mem.rover = q;
             continue 'restart;
         }
 
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+        return ALLOC_FAILED;
     };
 
     // found:
-    set_mem_b32s1(r, TEX_NULL);
+    mem.set_b32s1(r, TEX_NULL);
     if s >= MEDIUM_NODE_SIZE {
-        set_mem_b32s0(r + s - 1, cur_input_synctex_tag());
-        set_mem_b32s1(r + s - 1, line());
+        mem.set_b32s0(r + s - 1, cur_input_synctex_tag());
+        mem.set_b32s1(r + s - 1, line());
+    }
+    r
+}
+
+/// Transitional bridge-down wrapper for legacy `get_node` callers (`01b` §3,
+/// §5). Runs the threaded allocator under a single borrow, then — after the
+/// borrow drops — performs the cold `overflow()` abort if the arena was
+/// exhausted. Removed when the last legacy caller is itself threaded.
+pub unsafe fn get_node_global(s: i32) -> i32 {
+    let r = crate::state::with_state_mut(|st| get_node(&mut st.mem, s));
+    if r == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
     }
     r
 }
@@ -278,7 +327,7 @@ pub unsafe fn get_node(s: i32) -> i32 {
 ///
 /// translated from xetex-xetex0.c:147 (new_null_box)
 pub unsafe fn new_null_box() -> i32 {
-    let p = get_node(BOX_NODE_SIZE);
+    let p = get_node_global(BOX_NODE_SIZE);
     // NODE_type(p) = HLIST_NODE  →  mem[p].b16.s1 = HLIST_NODE
     set_mem_b16s1(p, HLIST_NODE);
     set_mem_b16s0(p, 0); // subtype
@@ -302,7 +351,7 @@ pub unsafe fn new_null_box() -> i32 {
 /// translated from xetex-xetex0.c:162 (new_rule)
 #[no_mangle]
 pub unsafe extern "C" fn new_rule() -> i32 {
-    let p = get_node(RULE_NODE_SIZE);
+    let p = get_node_global(RULE_NODE_SIZE);
     set_mem_b16s1(p, RULE_NODE);
     set_mem_b16s0(p, 0);
     set_mem_b32s1(p + 1, NULL_FLAG); // width
@@ -324,7 +373,7 @@ pub unsafe extern "C" fn new_rule() -> i32 {
 /// translated from xetex-xetex0.c:174 (new_ligature)
 #[no_mangle]
 pub unsafe extern "C" fn new_ligature(f: i32, c: u16, q: i32) -> i32 {
-    let p = get_node(SMALL_NODE_SIZE);
+    let p = get_node_global(SMALL_NODE_SIZE);
     set_mem_b16s1(p, LIGATURE_NODE);
     // word p+1: b16.s1 = font, b16.s0 = char, b32.s1 = successor link.
     // b16.s1 and b16.s0 together form b32.s0; b32.s1 is independent.
@@ -344,7 +393,7 @@ pub unsafe extern "C" fn new_ligature(f: i32, c: u16, q: i32) -> i32 {
 /// translated from xetex-xetex0.c:186 (new_lig_item)
 #[no_mangle]
 pub unsafe extern "C" fn new_lig_item(c: u16) -> i32 {
-    let p = get_node(SMALL_NODE_SIZE);
+    let p = get_node_global(SMALL_NODE_SIZE);
     set_mem_b16s0(p, c);
     set_mem_b32s1(p + 1, TEX_NULL);
     p
@@ -359,7 +408,7 @@ pub unsafe extern "C" fn new_lig_item(c: u16) -> i32 {
 /// translated from xetex-xetex0.c:195 (new_disc)
 #[no_mangle]
 pub unsafe extern "C" fn new_disc() -> i32 {
-    let p = get_node(SMALL_NODE_SIZE);
+    let p = get_node_global(SMALL_NODE_SIZE);
     set_mem_b16s1(p, DISC_NODE);
     set_mem_b16s0(p, 0);
     set_mem_b32s0(p + 1, TEX_NULL); // pre-break list
@@ -376,7 +425,7 @@ pub unsafe extern "C" fn new_disc() -> i32 {
 /// translated from xetex-xetex0.c:221 (new_math)
 #[no_mangle]
 pub unsafe extern "C" fn new_math(w: i32, s: i16) -> i32 {
-    let p = get_node(MEDIUM_NODE_SIZE);
+    let p = get_node_global(MEDIUM_NODE_SIZE);
     set_mem_b16s1(p, MATH_NODE);
     set_mem_b16s0(p, s as u16);
     set_mem_b32s1(p + 1, w);
@@ -392,7 +441,7 @@ pub unsafe extern "C" fn new_math(w: i32, s: i16) -> i32 {
 ///
 /// translated from xetex-xetex0.c:231 (new_spec)
 pub unsafe fn new_spec(p: i32) -> i32 {
-    let q = get_node(GLUE_SPEC_SIZE);
+    let q = get_node_global(GLUE_SPEC_SIZE);
     set_mem_word(q, mem_word(p)); // copy the whole first word (type + ref_count)
     set_mem_b32s1(q, TEX_NULL); // clear ref_count / link
     set_mem_b32s1(q + 1, mem_b32s1(p + 1)); // width
@@ -411,7 +460,7 @@ pub unsafe fn new_spec(p: i32) -> i32 {
 /// translated from xetex-xetex0.c:243 (new_param_glue)
 #[no_mangle]
 pub unsafe extern "C" fn new_param_glue(n: i16) -> i32 {
-    let p = get_node(MEDIUM_NODE_SIZE);
+    let p = get_node_global(MEDIUM_NODE_SIZE);
     set_mem_b16s1(p, GLUE_NODE);
     set_mem_b16s0(p, n as u16 + 1); // subtype = n + 1
     set_mem_b32s1(p + 1, TEX_NULL);
@@ -433,7 +482,7 @@ pub unsafe extern "C" fn new_param_glue(n: i16) -> i32 {
 /// translated from xetex-xetex0.c:258 (new_glue)
 #[no_mangle]
 pub unsafe extern "C" fn new_glue(q: i32) -> i32 {
-    let p = get_node(MEDIUM_NODE_SIZE);
+    let p = get_node_global(MEDIUM_NODE_SIZE);
     set_mem_b16s1(p, GLUE_NODE);
     // GLUE_SPEC_shrink_order(p) = NORMAL  →  mem[p].b16.s0 = NORMAL
     set_mem_b16s0(p, NORMAL);
@@ -469,7 +518,7 @@ pub unsafe fn new_skip_param(n: i16) -> i32 {
 /// translated from xetex-xetex0.c:281 (new_kern)
 #[no_mangle]
 pub unsafe extern "C" fn new_kern(w: i32) -> i32 {
-    let p = get_node(MEDIUM_NODE_SIZE);
+    let p = get_node_global(MEDIUM_NODE_SIZE);
     set_mem_b16s1(p, KERN_NODE);
     set_mem_b16s0(p, NORMAL);
     set_mem_b32s1(p + 1, w);
@@ -485,7 +534,7 @@ pub unsafe extern "C" fn new_kern(w: i32) -> i32 {
 /// translated from xetex-xetex0.c:291 (new_penalty)
 #[no_mangle]
 pub unsafe extern "C" fn new_penalty(m: i32) -> i32 {
-    let p = get_node(MEDIUM_NODE_SIZE);
+    let p = get_node_global(MEDIUM_NODE_SIZE);
     set_mem_b16s1(p, PENALTY_NODE);
     set_mem_b16s0(p, 0);
     set_mem_b32s1(p + 1, m);
@@ -563,7 +612,7 @@ pub unsafe extern "C" fn copy_native_glyph_info(src: i32, dest: i32) {
 /// translated from xetex-xetex0.c:976 (delete_token_ref)
 pub unsafe fn delete_token_ref(p: i32) {
     if mem_b32s0(p) == TEX_NULL {
-        flush_list(p);
+        flush_list_global(p);
     } else {
         set_mem_b32s0(p, mem_b32s0(p) - 1);
     }
@@ -596,7 +645,7 @@ pub unsafe fn push_nest() {
     }
     save_cur_list_to_nest(nest_ptr());
     set_nest_ptr(nest_ptr() + 1);
-    let h = get_avail();
+    let h = get_avail_global();
     set_cur_list_head(h);
     set_cur_list_tail(h);
     set_cur_list_prev_graf(0);
@@ -646,7 +695,7 @@ pub unsafe fn prev_rightmost(s: i32, e: i32) -> i32 {
 /// translated from xetex-xetex0.c:10542 (new_noad)
 #[no_mangle]
 pub unsafe extern "C" fn new_noad() -> i32 {
-    let p = get_node(NOAD_SIZE);
+    let p = get_node_global(NOAD_SIZE);
     set_mem_b16s1(p, ORD_NOAD);
     set_mem_b16s0(p, NORMAL);
     // mem[p+1].b32 = empty  ↔  s1=EMPTY=0, s0=TEX_NULL
@@ -666,7 +715,7 @@ pub unsafe extern "C" fn new_noad() -> i32 {
 /// translated from xetex-xetex0.c:10554 (new_style)
 #[no_mangle]
 pub unsafe extern "C" fn new_style(s: i16) -> i32 {
-    let p = get_node(STYLE_NODE_SIZE);
+    let p = get_node_global(STYLE_NODE_SIZE);
     set_mem_b16s1(p, STYLE_NODE); // NODE_type(p)
     set_mem_b16s0(p, s as u16);
     set_mem_b32s1(p + 1, 0);
@@ -679,7 +728,7 @@ pub unsafe extern "C" fn new_style(s: i16) -> i32 {
 /// translated from xetex-xetex0.c:10565 (new_choice)
 #[no_mangle]
 pub unsafe extern "C" fn new_choice() -> i32 {
-    let p = get_node(STYLE_NODE_SIZE);
+    let p = get_node_global(STYLE_NODE_SIZE);
     set_mem_b16s1(p, CHOICE_NODE); // NODE_type(p)
     set_mem_b16s0(p, 0);
     set_mem_b32s0(p + 1, TEX_NULL);
@@ -694,7 +743,7 @@ pub unsafe extern "C" fn new_choice() -> i32 {
 /// translated from xetex-xetex0.c:9838 (new_margin_kern)
 #[no_mangle]
 pub unsafe extern "C" fn new_margin_kern(w: i32, _p: i32, side: i16) -> i32 {
-    let k = get_node(MARGIN_KERN_NODE_SIZE);
+    let k = get_node_global(MARGIN_KERN_NODE_SIZE);
     set_mem_b16s1(k, MARGIN_KERN_NODE); // NODE_type(k)
     set_mem_b16s0(k, side as u16);
     set_mem_b32s1(k + 1, w);
@@ -704,7 +753,7 @@ pub unsafe extern "C" fn new_margin_kern(w: i32, _p: i32, side: i16) -> i32 {
 // translated from xetex-xetex0.c:13763 (new_whatsit)
 #[no_mangle]
 pub unsafe extern "C" fn new_whatsit(s: i16, w: i16) {
-    let p = get_node(w as i32);
+    let p = get_node_global(w as i32);
     set_mem_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
     set_mem_b16s0(p, s as u16);
     set_mem_b32s1(crate::globals::cur_list_tail(), p);

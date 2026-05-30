@@ -24,8 +24,8 @@ use crate::globals::{
     width_base_entry,
 };
 use crate::mem::{
-    free_node_global, get_node, new_choice, new_glue, new_kern, new_noad, new_rule, new_spec,
-    TEX_NULL,
+    free_node_global, get_node_global, new_choice, new_glue, new_kern, new_noad, new_rule,
+    new_spec, TEX_NULL,
 };
 
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -425,7 +425,7 @@ pub unsafe extern "C" fn math_glue(g: i32, m: i32) -> i32 {
         f += 65_536;
     }
 
-    let p = get_node(GLUE_SPEC_SIZE);
+    let p = get_node_global(GLUE_SPEC_SIZE);
     set_mem_b32s1(
         p + 1,
         crate::scaled_math::mult_and_add(
@@ -1222,7 +1222,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
     let y = char_box(f, c);
     let mut p: i32;
     if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        p = get_node(GLYPH_NODE_SIZE);
+        p = get_node_global(GLYPH_NODE_SIZE);
         set_mem_b16s1(p, WHATSIT_NODE);
         set_mem_b16s0(p, GLYPH_NODE);
         set_mem_b16s2(p + 4, f as u16);
@@ -1878,7 +1878,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                             || font_area_entry(cur_f()) == OTGR_FONT_FLAG
                         {
                             let z = crate::scan::new_native_character(cur_f(), cur_c() as u32);
-                            p = get_node(GLYPH_NODE_SIZE);
+                            p = get_node_global(GLYPH_NODE_SIZE);
                             set_mem_b16s1(p, WHATSIT_NODE);
                             set_mem_b16s0(p, GLYPH_NODE);
                             set_mem_b16s2(p + 4, cur_f() as u16);
@@ -2161,7 +2161,7 @@ pub unsafe extern "C" fn char_box(f: i32, c: i32) -> i32 {
             b + 2,
             font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16),
         );
-        p = crate::mem::get_avail();
+        p = crate::mem::get_avail_global();
         set_mem_b16s0(p, c as u16);
         set_mem_b16s1(p, f as u16);
     }
@@ -2189,7 +2189,7 @@ pub unsafe extern "C" fn height_plus_depth(f: i32, c: u16) -> i32 {
 /// translated from xetex-math.c:1482 (stack_glyph_into_box)
 #[no_mangle]
 pub unsafe extern "C" fn stack_glyph_into_box(b: i32, f: i32, g: i32) {
-    let p = get_node(GLYPH_NODE_SIZE);
+    let p = get_node_global(GLYPH_NODE_SIZE);
     set_mem_b16s1(p, WHATSIT_NODE);
     set_mem_b16s0(p, GLYPH_NODE);
     set_mem_b16s2(p + 4, f as u16);
@@ -2394,7 +2394,7 @@ pub unsafe fn math_limit_switch() {
 
 /// translated from xetex-math.c:461 (math_radical)
 pub unsafe fn math_radical() {
-    set_mem_b32s1(cur_list_tail(), get_node(RADICAL_NOAD_SIZE));
+    set_mem_b32s1(cur_list_tail(), get_node_global(RADICAL_NOAD_SIZE));
     set_cur_list_tail(mem_b32s1(cur_list_tail()));
     set_mem_b16s1(cur_list_tail(), RADICAL_NOAD);
     set_mem_b16s0(cur_list_tail(), NORMAL);
@@ -2530,7 +2530,7 @@ pub unsafe fn math_fraction() {
         );
         crate::errors::error();
     } else {
-        set_cur_list_aux_b32s1(get_node(FRACTION_NOAD_SIZE));
+        set_cur_list_aux_b32s1(get_node_global(FRACTION_NOAD_SIZE));
         set_mem_b16s1(cur_list_aux_b32s1(), FRACTION_NOAD);
         set_mem_b16s0(cur_list_aux_b32s1(), NORMAL);
         set_mem_b32s1(cur_list_aux_b32s1() + 2, SUB_MLIST);
@@ -2663,7 +2663,7 @@ pub unsafe fn math_ac() {
         crate::errors::error();
     }
 
-    set_mem_b32s1(cur_list_tail(), get_node(ACCENT_NOAD_SIZE));
+    set_mem_b32s1(cur_list_tail(), get_node_global(ACCENT_NOAD_SIZE));
     set_cur_list_tail(mem_b32s1(cur_list_tail()));
     set_mem_b16s1(cur_list_tail(), ACCENT_NOAD);
     set_mem_b16s0(cur_list_tail(), NORMAL);
@@ -3234,7 +3234,7 @@ pub unsafe fn init_math() {
             v += 2 * font_info_b32s1(QUAD_CODE + param_base(eqtb_b32s1(CUR_FONT_LOC)));
 
             if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                set_temp_ptr(crate::mem::get_avail());
+                set_temp_ptr(crate::mem::get_avail_global());
                 set_mem_b32s0(temp_ptr(), BEFORE);
                 set_mem_b32s1(temp_ptr(), lr_ptr());
                 set_lr_ptr(temp_ptr());
@@ -3292,7 +3292,7 @@ pub unsafe fn init_math() {
                                         break 'outer;
                                     }
                                 } else {
-                                    set_temp_ptr(crate::mem::get_avail());
+                                    set_temp_ptr(crate::mem::get_avail_global());
                                     set_mem_b32s0(
                                         temp_ptr(),
                                         L_CODE * (mem_b16s0(p) as i32 / L_CODE) + 3,
@@ -3794,7 +3794,7 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
         } else {
             b = crate::mem::new_null_box();
             set_mem_b16s1(b, VLIST_NODE);
-            let p = get_node(GLYPH_NODE_SIZE);
+            let p = get_node_global(GLYPH_NODE_SIZE);
             set_mem_b16s1(p, WHATSIT_NODE);
             set_mem_b16s0(p, GLYPH_NODE);
             set_mem_b16s2(p + 4, f as u16);

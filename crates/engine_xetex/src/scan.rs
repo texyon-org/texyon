@@ -835,11 +835,11 @@ pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
         loop {
             get_x_token();
             if cur_cs() == 0 && (cur_chr() == c || cur_chr() == c - 32) {
-                let q = crate::mem::get_avail();
+                let q = crate::mem::get_avail_global();
                 set_mem_b32s1(p, q);
                 set_mem_b32s0(q, cur_tok());
                 p = q;
-                crate::mem::flush_list(mem_b32s1(BACKUP_HEAD));
+                crate::mem::flush_list_global(mem_b32s1(BACKUP_HEAD));
                 return true;
             } else if cur_cmd() != SPACER || p != BACKUP_HEAD {
                 back_input();
@@ -857,7 +857,7 @@ pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
         get_x_token();
         let ch = *s.add(i) as i32;
         if cur_cs() == 0 && (cur_chr() == ch || cur_chr() == ch - 32) {
-            let q = crate::mem::get_avail();
+            let q = crate::mem::get_avail_global();
             set_mem_b32s1(p, q);
             set_mem_b32s0(q, cur_tok());
             p = q;
@@ -870,7 +870,7 @@ pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
             return false;
         }
     }
-    crate::mem::flush_list(mem_b32s1(BACKUP_HEAD));
+    crate::mem::flush_list_global(mem_b32s1(BACKUP_HEAD));
     true
 }
 
@@ -933,7 +933,7 @@ pub unsafe extern "C" fn scan_expr() {
                 }
                 if cur_tok() == OTHER_TOKEN + 40 {
                     // '('
-                    let q = crate::mem::get_node(EXPR_NODE_SIZE);
+                    let q = crate::mem::get_node_global(EXPR_NODE_SIZE);
                     set_mem_b32s1(q, p);
                     set_mem_b16s1(q, l as u16);
                     set_mem_b16s0(q, (4 * s + r) as u16);
@@ -1213,7 +1213,7 @@ pub unsafe extern "C" fn scan_general_text() {
     let d = def_ref();
     set_scanner_status(ABSORBING);
     set_warning_index(cur_cs());
-    let new_def = crate::mem::get_avail();
+    let new_def = crate::mem::get_avail_global();
     set_def_ref(new_def);
     set_mem_b32s0(new_def, crate::mem::TEX_NULL);
     let mut p = new_def;
@@ -1231,7 +1231,7 @@ pub unsafe extern "C" fn scan_general_text() {
                 }
             }
         }
-        let q = crate::mem::get_avail();
+        let q = crate::mem::get_avail_global();
         set_mem_b32s1(p, q);
         set_mem_b32s0(q, cur_tok());
         p = q;
@@ -1396,7 +1396,7 @@ pub unsafe extern "C" fn xetex_scan_dimen(
                             break 'decimal;
                         }
                         if k < 17 {
-                            let q = crate::mem::get_avail();
+                            let q = crate::mem::get_avail_global();
                             set_mem_b32s1(q, p);
                             set_mem_b32s0(q, cur_tok() - ZERO_TOKEN);
                             p = q;
@@ -1756,7 +1756,7 @@ pub unsafe extern "C" fn pseudo_start() {
     set_selector(SELECTOR_NEW_STRING);
     crate::output::token_show(TEMP_HEAD);
     set_selector(old_setting);
-    crate::mem::flush_list(mem_b32s1(TEMP_HEAD));
+    crate::mem::flush_list_global(mem_b32s1(TEMP_HEAD));
 
     if pool_ptr() + 1 > pool_size() {
         crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
@@ -1765,7 +1765,7 @@ pub unsafe extern "C" fn pseudo_start() {
     set_str_pool(pool_ptr(), b' ' as u16);
     let mut l = str_start(s - TOO_BIG_CHAR);
     let nl = eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR);
-    let p = crate::mem::get_avail();
+    let p = crate::mem::get_avail_global();
     let mut q = p;
 
     while l < pool_ptr() {
@@ -1777,7 +1777,7 @@ pub unsafe extern "C" fn pseudo_start() {
         if sz == 1 {
             sz = 2;
         }
-        let r_base = crate::mem::get_node(sz);
+        let r_base = crate::mem::get_node_global(sz);
         set_mem_b32s1(q, r_base);
         q = r_base;
         set_mem_b32s0(q, sz);
@@ -1898,7 +1898,7 @@ pub unsafe extern "C" fn str_toks_cat(b: i32, cat: i16) -> i32 {
         }
 
         let q = if avail() == TEX_NULL {
-            crate::mem::get_avail()
+            crate::mem::get_avail_global()
         } else {
             let qa = avail();
             set_avail(mem_b32s1(qa));
@@ -1940,10 +1940,10 @@ pub unsafe extern "C" fn the_toks() -> i32 {
             let old_setting = selector();
             set_selector(SELECTOR_NEW_STRING);
             let b = pool_ptr();
-            let p = crate::mem::get_avail();
+            let p = crate::mem::get_avail_global();
             set_mem_b32s1(p, mem_b32s1(TEMP_HEAD));
             crate::output::token_show(p);
-            crate::mem::flush_list(p);
+            crate::mem::flush_list_global(p);
             set_selector(old_setting);
             return str_toks(b);
         }
@@ -1954,7 +1954,7 @@ pub unsafe extern "C" fn the_toks() -> i32 {
         let mut p = TEMP_HEAD;
         set_mem_b32s1(p, TEX_NULL);
         if cur_val_level() == IDENT_VAL as u8 {
-            let q = crate::mem::get_avail();
+            let q = crate::mem::get_avail_global();
             set_mem_b32s1(p, q);
             set_mem_b32s0(q, CS_TOKEN_FLAG + cur_val());
             p = q;
@@ -1962,7 +1962,7 @@ pub unsafe extern "C" fn the_toks() -> i32 {
             let mut r = mem_b32s1(cur_val());
             while r != TEX_NULL {
                 let q = if avail() == TEX_NULL {
-                    crate::mem::get_avail()
+                    crate::mem::get_avail_global()
                 } else {
                     let qa = avail();
                     set_avail(mem_b32s1(qa));
@@ -2072,7 +2072,7 @@ pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
         set_scanner_status(ABSORBING);
     }
     set_warning_index(cur_cs());
-    let new_def = crate::mem::get_avail();
+    let new_def = crate::mem::get_avail_global();
     set_def_ref(new_def);
     set_mem_b32s0(new_def, TEX_NULL);
     let mut p = new_def;
@@ -2096,11 +2096,11 @@ pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
                         get_token();
                         if cur_tok() < LEFT_BRACE_LIMIT {
                             hash_brace = cur_tok();
-                            let q = crate::mem::get_avail();
+                            let q = crate::mem::get_avail_global();
                             set_mem_b32s1(p, q);
                             set_mem_b32s0(q, cur_tok());
                             p = q;
-                            let q2 = crate::mem::get_avail();
+                            let q2 = crate::mem::get_avail_global();
                             set_mem_b32s1(p, q2);
                             set_mem_b32s0(q2, END_MATCH_TOKEN);
                             p = q2;
@@ -2138,7 +2138,7 @@ pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
                         }
                     }
                     // append cur_tok to list
-                    let q = crate::mem::get_avail();
+                    let q = crate::mem::get_avail_global();
                     set_mem_b32s1(p, q);
                     set_mem_b32s0(q, cur_tok());
                     p = q;
@@ -2146,7 +2146,7 @@ pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
             };
             // done1: append END_MATCH_TOKEN
             if !reached_done {
-                let q = crate::mem::get_avail();
+                let q = crate::mem::get_avail_global();
                 set_mem_b32s1(p, q);
                 set_mem_b32s0(q, END_MATCH_TOKEN);
                 p = q;
@@ -2242,7 +2242,7 @@ pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
                 }
             }
             // append cur_tok to list
-            let q = crate::mem::get_avail();
+            let q = crate::mem::get_avail_global();
             set_mem_b32s1(p, q);
             set_mem_b32s0(q, cur_tok());
             p = q;
@@ -2251,7 +2251,7 @@ pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
     // found:
     set_scanner_status(NORMAL_SCANNER);
     if hash_brace != 0 {
-        let q = crate::mem::get_avail();
+        let q = crate::mem::get_avail_global();
         set_mem_b32s1(p, q);
         set_mem_b32s0(q, hash_brace);
         p = q;
@@ -2277,12 +2277,12 @@ pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
 
     set_scanner_status(DEFINING);
     set_warning_index(r);
-    let new_def = crate::mem::get_avail();
+    let new_def = crate::mem::get_avail_global();
     set_def_ref(new_def);
     set_mem_b32s0(new_def, TEX_NULL);
     let mut p = new_def;
 
-    let q = crate::mem::get_avail();
+    let q = crate::mem::get_avail_global();
     set_mem_b32s1(p, q);
     set_mem_b32s0(q, END_MATCH_TOKEN);
     p = q;
@@ -2355,7 +2355,7 @@ pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
                 };
                 set_cur_chr(c);
                 set_cur_tok(tok);
-                let q2 = crate::mem::get_avail();
+                let q2 = crate::mem::get_avail_global();
                 set_mem_b32s1(p, q2);
                 set_mem_b32s0(q2, tok);
                 p = q2;
@@ -2377,7 +2377,7 @@ pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
                     set_align_state(1_000_000);
                     break; // goto done
                 }
-                let q2 = crate::mem::get_avail();
+                let q2 = crate::mem::get_avail_global();
                 set_mem_b32s1(p, q2);
                 set_mem_b32s0(q2, cur_tok());
                 p = q2;
@@ -4059,7 +4059,7 @@ pub unsafe extern "C" fn conditional() {
         set_if_line, set_is_in_csname, set_max_buf_stack, set_mem_b16s0, set_mem_b16s1,
         set_mem_b32s1, set_scanner_status, shell_escape_enabled,
     };
-    use crate::mem::{flush_list, get_avail, get_node, TEX_NULL};
+    use crate::mem::{flush_list_global, get_avail_global, get_node_global, TEX_NULL};
 
     let mut b = false;
     let e: bool;
@@ -4076,7 +4076,7 @@ pub unsafe extern "C" fn conditional() {
         crate::output::show_cur_cmd_chr();
     }
 
-    p = get_node(IF_NODE_SIZE);
+    p = get_node_global(IF_NODE_SIZE);
     set_mem_b32s1(p, cond_ptr());
     set_mem_b16s1(p, if_limit() as u16);
     set_mem_b16s0(p, cur_if() as u16);
@@ -4249,14 +4249,14 @@ pub unsafe extern "C" fn conditional() {
             set_scanner_status(save_scanner_status);
         }
         IF_CS_CODE => {
-            n = get_avail();
+            n = get_avail_global();
             p = n;
             e = is_in_csname();
             set_is_in_csname(true);
             loop {
                 get_x_token();
                 if cur_cs() == 0 {
-                    q = get_avail();
+                    q = get_avail_global();
                     set_mem_b32s1(p, q);
                     set_mem_b32s0(q, cur_tok()); // mem[q].b32.s0 = cur_tok
                     p = q;
@@ -4299,7 +4299,7 @@ pub unsafe extern "C" fn conditional() {
                 crate::hash::id_lookup(first(), m - first())
             };
             crate::globals::set_cur_cs(cur_cs_val);
-            flush_list(n);
+            flush_list_global(n);
             b = eqtb_b16s1(cur_cs()) != UNDEFINED_CS as u16;
             set_is_in_csname(e);
         }
@@ -4978,7 +4978,7 @@ pub unsafe extern "C" fn end_graf() {
             line_break(false);
         }
         if crate::globals::cur_list_e_tex_aux() != crate::mem::TEX_NULL {
-            crate::mem::flush_list(crate::globals::cur_list_e_tex_aux());
+            crate::mem::flush_list_global(crate::globals::cur_list_e_tex_aux());
             crate::globals::set_cur_list_e_tex_aux(crate::mem::TEX_NULL);
         }
         normal_paragraph();
@@ -5139,7 +5139,7 @@ pub unsafe extern "C" fn make_mark() {
         cur_val()
     };
     scan_toks(false, true); // side effect: sets def_ref; return value discarded
-    let p = crate::mem::get_node(SMALL_NODE_SIZE);
+    let p = crate::mem::get_node_global(SMALL_NODE_SIZE);
     set_mem_b32s0(p + 1, c);
     set_mem_b16s1(p, MARK_NODE); // NODE_type(p)
     set_mem_b16s0(p, 0);
@@ -5359,7 +5359,7 @@ pub unsafe extern "C" fn off_save() {
         error();
     } else {
         crate::input::back_input();
-        let p = crate::mem::get_avail();
+        let p = crate::mem::get_avail_global();
         set_mem_b32s1(TEMP_HEAD, p);
         error_here_with_diagnostic(c"Missing ".as_ptr());
         match cur_group() {
@@ -5373,7 +5373,7 @@ pub unsafe extern "C" fn off_save() {
             }
             MATH_LEFT_GROUP => {
                 set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_RIGHT);
-                let q = crate::mem::get_avail();
+                let q = crate::mem::get_avail_global();
                 set_mem_b32s1(p, q);
                 let p2 = mem_b32s1(p); // = LLIST_link(p)
                 set_mem_b32s0(p2, OTHER_TOKEN + b'.' as i32);
@@ -5487,7 +5487,7 @@ pub unsafe extern "C" fn append_src_special() {
     if fname > 0 && crate::texmfmp::is_new_source(fname, crate::globals::line()) {
         crate::mem::new_whatsit(SPECIAL_NODE, WRITE_NODE_SIZE);
         set_mem_b32s0(crate::globals::cur_list_tail() + 1, 0);
-        let d = crate::mem::get_avail();
+        let d = crate::mem::get_avail_global();
         set_def_ref(d);
         set_mem_b32s0(d, crate::mem::TEX_NULL);
         str_toks(crate::texmfmp::make_src_special(
@@ -5921,7 +5921,7 @@ pub unsafe extern "C" fn issue_message() {
     set_selector(SELECTOR_NEW_STRING);
     crate::output::token_show(def_ref());
     set_selector(old_setting as i32);
-    crate::mem::flush_list(def_ref());
+    crate::mem::flush_list_global(def_ref());
     if pool_ptr() + 1 > pool_size() {
         crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
     }
@@ -6069,8 +6069,8 @@ pub unsafe extern "C" fn fin_align() {
     // §830: walk preamble, compute column widths, handle span nodes
     let mut q = mem_b32s1(mem_b32s1(ALIGN_HEAD));
     loop {
-        crate::mem::flush_list(mem_b32s1(q + 3));
-        crate::mem::flush_list(mem_b32s1(q + 2));
+        crate::mem::flush_list_global(mem_b32s1(q + 3));
+        crate::mem::flush_list_global(mem_b32s1(q + 2));
         let p = mem_b32s1(mem_b32s1(q));
         // §831: if NULL_FLAG width, clear the tab_skip glue leader
         if mem_b32s1(q + 1) == NULL_FLAG {
@@ -6862,7 +6862,7 @@ pub unsafe extern "C" fn show_whatever() {
             the_toks(); // the_toks populates TEMP_HEAD
             crate::output::print_nl_cstr(c"> ".as_ptr());
             crate::output::token_show(TEMP_HEAD);
-            crate::mem::flush_list(mem_b32s1(TEMP_HEAD));
+            crate::mem::flush_list_global(mem_b32s1(TEMP_HEAD));
             true
         }
     };
@@ -8321,16 +8321,16 @@ pub unsafe extern "C" fn insert_src_special() {
 
     let sfn = source_filename_stack(in_open());
     if sfn > 0 && crate::texmfmp::is_new_source(sfn, line()) {
-        let toklist = crate::mem::get_avail();
+        let toklist = crate::mem::get_avail_global();
         let mut p = toklist;
         set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-        set_mem_b32s1(p, crate::mem::get_avail());
+        set_mem_b32s1(p, crate::mem::get_avail_global());
         p = mem_b32s1(p);
         set_mem_b32s0(p, LEFT_BRACE_TOKEN + b'{' as i32);
         let q = str_toks(crate::texmfmp::make_src_special(sfn, line()));
         set_mem_b32s1(p, mem_b32s1(TEMP_HEAD));
         p = q;
-        set_mem_b32s1(p, crate::mem::get_avail());
+        set_mem_b32s1(p, crate::mem::get_avail_global());
         p = mem_b32s1(p);
         set_mem_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
         begin_token_list(toklist, INSERTED);
@@ -8355,14 +8355,14 @@ pub unsafe extern "C" fn tt_insert_special(ascii_text: *const libc::c_char) {
         set_pool_ptr(pool_ptr() + 1);
     }
     // Build token list: \special { <tokens> }
-    let toklist_start = crate::mem::get_avail();
+    let toklist_start = crate::mem::get_avail_global();
     set_mem_b32s0(toklist_start, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-    let q = crate::mem::get_avail();
+    let q = crate::mem::get_avail_global();
     set_mem_b32s0(q, LEFT_BRACE_TOKEN + b'{' as i32);
     set_mem_b32s1(toklist_start, q);
     let p = str_toks(start_pool);
     set_mem_b32s1(q, mem_b32s1(TEMP_HEAD));
-    let q2 = crate::mem::get_avail();
+    let q2 = crate::mem::get_avail_global();
     set_mem_b32s0(q2, RIGHT_BRACE_TOKEN + b'}' as i32);
     set_mem_b32s1(p, q2);
     begin_token_list(toklist_start, INSERTED);
@@ -8528,7 +8528,7 @@ pub unsafe fn new_character(f: i32, c: u16) -> i32 {
     if font_bc_entry(f) <= ec && font_ec_entry(f) >= ec {
         let info = font_info_b16(char_base_entry(f) + ec as i32);
         if info.s3 > 0 {
-            let p = crate::mem::get_avail();
+            let p = crate::mem::get_avail_global();
             crate::globals::set_mem_b16s1(p, f as u16);
             crate::globals::set_mem_b16s0(p, c);
             return p;
@@ -8823,7 +8823,7 @@ pub unsafe extern "C" fn push_alignment() {
     const ALIGN_HEAD: i32 = 4_999_991; // MEM_TOP - 8
     const ALIGN_STACK_NODE_SIZE: i32 = 6; // xetex-constants.h:129
 
-    let p = crate::mem::get_node(ALIGN_STACK_NODE_SIZE);
+    let p = crate::mem::get_node_global(ALIGN_STACK_NODE_SIZE);
     set_mem_b32s1(p, align_ptr());
     set_mem_b32s0(p, cur_align());
     set_mem_b32s0(p + 1, mem_b32s1(ALIGN_HEAD));
@@ -8835,8 +8835,8 @@ pub unsafe extern "C" fn push_alignment() {
     set_mem_b32s0(p + 5, cur_pre_head());
     set_mem_b32s1(p + 5, cur_pre_tail());
     set_align_ptr(p);
-    set_cur_head(crate::mem::get_avail());
-    set_cur_pre_head(crate::mem::get_avail());
+    set_cur_head(crate::mem::get_avail_global());
+    set_cur_pre_head(crate::mem::get_avail_global());
 }
 
 // translated from xetex-xetex0.c:7743 (pop_alignment)
@@ -8986,7 +8986,7 @@ pub unsafe extern "C" fn fin_col() -> bool {
             let mut wq = HOLD_HEAD;
             let mut r = mem_b32s1(cur_loop() + 3);
             while r != TEX_NULL {
-                set_mem_b32s1(wq, crate::mem::get_avail());
+                set_mem_b32s1(wq, crate::mem::get_avail_global());
                 wq = mem_b32s1(wq);
                 set_mem_b32s0(wq, mem_b32s0(r));
                 r = mem_b32s1(r);
@@ -8997,7 +8997,7 @@ pub unsafe extern "C" fn fin_col() -> bool {
             wq = HOLD_HEAD;
             r = mem_b32s1(cur_loop() + 2);
             while r != TEX_NULL {
-                set_mem_b32s1(wq, crate::mem::get_avail());
+                set_mem_b32s1(wq, crate::mem::get_avail_global());
                 wq = mem_b32s1(wq);
                 set_mem_b32s0(wq, mem_b32s0(r));
                 r = mem_b32s1(r);
@@ -9065,7 +9065,7 @@ pub unsafe extern "C" fn fin_col() -> bool {
                 sq = mem_b32s0(sq);
             }
             if mem_b32s1(mem_b32s0(sq)) > n {
-                let s = crate::mem::get_node(SPAN_NODE_SIZE);
+                let s = crate::mem::get_node_global(SPAN_NODE_SIZE);
                 set_mem_b32s0(s, mem_b32s0(sq));
                 set_mem_b32s1(s, n);
                 set_mem_b32s0(sq, s);
@@ -9286,7 +9286,7 @@ pub unsafe extern "C" fn init_align() {
                     break; // done1
                 }
             } else if cur_cmd() != SPACER || p != HOLD_HEAD {
-                set_mem_b32s1(p, crate::mem::get_avail());
+                set_mem_b32s1(p, crate::mem::get_avail_global());
                 p = mem_b32s1(p);
                 set_mem_b32s0(p, cur_tok());
             }
@@ -9326,13 +9326,13 @@ pub unsafe extern "C" fn init_align() {
                 error();
                 continue; // goto continue_: restart this inner loop
             }
-            set_mem_b32s1(p, crate::mem::get_avail());
+            set_mem_b32s1(p, crate::mem::get_avail_global());
             p = mem_b32s1(p);
             set_mem_b32s0(p, cur_tok());
         }
 
         // done2: append FROZEN_END_TEMPLATE and store v-template
-        set_mem_b32s1(p, crate::mem::get_avail());
+        set_mem_b32s1(p, crate::mem::get_avail_global());
         p = mem_b32s1(p);
         set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
         set_mem_b32s1(cur_align() + 2, mem_b32s1(HOLD_HEAD));
@@ -10094,11 +10094,11 @@ pub unsafe extern "C" fn just_copy(p: i32, h: i32, t: i32) {
         // Determine r and words for this node. None = skip linking (goto not_found).
         let r_opt: Option<i32> = if p >= hi_mem_min() {
             // char node
-            Some(crate::mem::get_avail())
+            Some(crate::mem::get_avail_global())
         } else {
             match mem_b16s1(p) {
                 HLIST_NODE | VLIST_NODE => {
-                    let r = crate::mem::get_node(BOX_NODE_SIZE);
+                    let r = crate::mem::get_node_global(BOX_NODE_SIZE);
                     // SYNCTEX_tag(r, BOX_NODE_SIZE) = SYNCTEX_tag(p, BOX_NODE_SIZE)
                     set_mem_b32s0(
                         r + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE,
@@ -10117,20 +10117,20 @@ pub unsafe extern "C" fn just_copy(p: i32, h: i32, t: i32) {
                 }
                 RULE_NODE => {
                     words = RULE_NODE_SIZE;
-                    Some(crate::mem::get_node(RULE_NODE_SIZE))
+                    Some(crate::mem::get_node_global(RULE_NODE_SIZE))
                 }
                 LIGATURE_NODE => {
-                    let r = crate::mem::get_avail();
+                    let r = crate::mem::get_avail_global();
                     set_mem_word(r, mem_word(p + 1)); // mem[r] = mem[p + 1]
                     words = 0; // skip the copy loop (goto found)
                     Some(r)
                 }
                 KERN_NODE | MATH_NODE => {
                     words = MEDIUM_NODE_SIZE;
-                    Some(crate::mem::get_node(MEDIUM_NODE_SIZE))
+                    Some(crate::mem::get_node_global(MEDIUM_NODE_SIZE))
                 }
                 GLUE_NODE => {
-                    let r = crate::mem::get_node(MEDIUM_NODE_SIZE);
+                    let r = crate::mem::get_node_global(MEDIUM_NODE_SIZE);
                     // GLUE_SPEC_ref_count(GLUE_NODE_glue_ptr(p))++
                     let gp = mem_b32s0(p + 1); // GLUE_NODE_glue_ptr(p)
                     set_mem_b32s1(gp, mem_b32s1(gp) + 1); // GLUE_SPEC_ref_count(gp)++
@@ -10151,10 +10151,10 @@ pub unsafe extern "C" fn just_copy(p: i32, h: i32, t: i32) {
                     match mem_b16s0(p) {
                         OPEN_NODE => {
                             words = OPEN_NODE_SIZE;
-                            Some(crate::mem::get_node(OPEN_NODE_SIZE))
+                            Some(crate::mem::get_node_global(OPEN_NODE_SIZE))
                         }
                         WRITE_NODE | SPECIAL_NODE => {
-                            let r = crate::mem::get_node(WRITE_NODE_SIZE);
+                            let r = crate::mem::get_node_global(WRITE_NODE_SIZE);
                             // TOKEN_LIST_ref_count(WRITE_NODE_tokens(p))++
                             let toks = mem_b32s1(p + 1); // WRITE_NODE_tokens(p)
                             set_mem_b32s0(toks, mem_b32s0(toks) + 1);
@@ -10163,11 +10163,11 @@ pub unsafe extern "C" fn just_copy(p: i32, h: i32, t: i32) {
                         }
                         CLOSE_NODE | LANGUAGE_NODE => {
                             words = SMALL_NODE_SIZE;
-                            Some(crate::mem::get_node(SMALL_NODE_SIZE))
+                            Some(crate::mem::get_node_global(SMALL_NODE_SIZE))
                         }
                         NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT => {
                             let sz = mem_b16s3(p + 4) as i32; // NATIVE_NODE_size(p)
-                            let r = crate::mem::get_node(sz);
+                            let r = crate::mem::get_node_global(sz);
                             let mut w = sz;
                             while w > 0 {
                                 w -= 1;
@@ -10183,15 +10183,15 @@ pub unsafe extern "C" fn just_copy(p: i32, h: i32, t: i32) {
                         }
                         GLYPH_NODE => {
                             words = GLYPH_NODE_SIZE;
-                            Some(crate::mem::get_node(GLYPH_NODE_SIZE))
+                            Some(crate::mem::get_node_global(GLYPH_NODE_SIZE))
                         }
                         PIC_NODE | PDF_NODE => {
                             let path_len = mem_b16s1(p + 4) as i32; // PIC_NODE_path_len
                             words =
                                 PIC_NODE_SIZE + (path_len + MEM_WORD_BYTES - 1) / MEM_WORD_BYTES;
-                            Some(crate::mem::get_node(words))
+                            Some(crate::mem::get_node_global(words))
                         }
-                        PDF_SAVE_POS_NODE => Some(crate::mem::get_node(SMALL_NODE_SIZE)),
+                        PDF_SAVE_POS_NODE => Some(crate::mem::get_node_global(SMALL_NODE_SIZE)),
                         _ => {
                             crate::errors::confusion(c"ext2".as_ptr());
                         }
@@ -10302,7 +10302,7 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
                     } else {
                         // even subtype = begin math node
                         // push LR_ptr
-                        set_temp_ptr(crate::mem::get_avail());
+                        set_temp_ptr(crate::mem::get_avail_global());
                         set_mem_b32s0(temp_ptr(), L_CODE * (subtype / L_CODE) + 3);
                         set_mem_b32s1(temp_ptr(), lr_ptr());
                         set_lr_ptr(temp_ptr());
@@ -10518,7 +10518,7 @@ pub unsafe extern "C" fn handle_right_brace() {
             crate::mem::pop_nest();
 
             if save_stack_b32s1(save_ptr()) < 255 {
-                let new_node = crate::mem::get_node(INS_NODE_SIZE);
+                let new_node = crate::mem::get_node_global(INS_NODE_SIZE);
                 set_mem_b32s1(cur_list_tail(), new_node);
                 set_cur_list_tail(mem_b32s1(cur_list_tail()));
                 set_mem_b16s1(cur_list_tail(), INS_NODE);
@@ -10529,7 +10529,7 @@ pub unsafe extern "C" fn handle_right_brace() {
                 set_mem_b32s1(cur_list_tail() + 2, d);
                 set_mem_b32s1(cur_list_tail() + 1, f);
             } else {
-                let new_node = crate::mem::get_node(SMALL_NODE_SIZE);
+                let new_node = crate::mem::get_node_global(SMALL_NODE_SIZE);
                 set_mem_b32s1(cur_list_tail(), new_node);
                 set_cur_list_tail(mem_b32s1(cur_list_tail()));
                 set_mem_b16s1(cur_list_tail(), ADJUST_NODE);
@@ -11204,7 +11204,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
     const GARBAGE: i32 = 4_999_999 - 12; // MEM_TOP - 12
 
     set_last_badness(0);
-    let r = crate::mem::get_node(BOX_NODE_SIZE);
+    let r = crate::mem::get_node_global(BOX_NODE_SIZE);
     set_mem_b16s1(r, HLIST_NODE);
     set_mem_b16s0(r, 0);
     set_mem_b32s1(r + 4, 0);
@@ -11223,7 +11223,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
     set_total_shrink(FILLL_HP, 0);
 
     if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
-        let t = crate::mem::get_avail();
+        let t = crate::mem::get_avail_global();
         set_mem_b32s0(t, BEFORE_HP as i32);
         set_mem_b32s1(t, lr_ptr());
         set_lr_ptr(t);
@@ -11461,7 +11461,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                         }
                     } else {
                         // even subtype: opening a direction
-                        let t = crate::mem::get_avail();
+                        let t = crate::mem::get_avail_global();
                         set_mem_b32s0(
                             t,
                             (L_CODE_HP as i32) * (mem_b16s0(p) as i32 / L_CODE_HP as i32) + 3,
@@ -11727,7 +11727,7 @@ pub unsafe fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
     const ADDITIONAL_VP: i16 = 1;
 
     set_last_badness(0);
-    let r = crate::mem::get_node(BOX_NODE_SIZE);
+    let r = crate::mem::get_node_global(BOX_NODE_SIZE);
     set_mem_b16s1(r, VLIST_NODE_VP);
     if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS_VP) > 0 {
         set_mem_b16s0(r, 1);
@@ -12846,17 +12846,17 @@ pub unsafe extern "C" fn copy_node_list(mut p: i32) -> i32 {
         avail, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, mem_word,
         set_avail, set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, set_mem_ptr, set_mem_word,
     };
-    let h = crate::mem::get_avail();
+    let h = crate::mem::get_avail_global();
     let mut q = h;
     while p != crate::mem::TEX_NULL {
         let mut words = 1i32;
         let mut r = 0i32;
         if p >= hi_mem_min() {
-            r = crate::mem::get_avail();
+            r = crate::mem::get_avail_global();
         } else {
             match mem_b16s1(p) {
                 HLIST_NODE | VLIST_NODE_CNL | UNSET_NODE_CNL => {
-                    r = crate::mem::get_node(BOX_NODE_SIZE);
+                    r = crate::mem::get_node_global(BOX_NODE_SIZE);
                     // SYNCTEX_tag(r, BOX_NODE_SIZE) = SYNCTEX_tag(p, BOX_NODE_SIZE)
                     set_mem_b32s0(r + 7, mem_b32s0(p + 7));
                     // SYNCTEX_line(r, BOX_NODE_SIZE) = SYNCTEX_line(p, BOX_NODE_SIZE)
@@ -12867,11 +12867,11 @@ pub unsafe extern "C" fn copy_node_list(mut p: i32) -> i32 {
                     words = 5;
                 }
                 RULE_NODE => {
-                    r = crate::mem::get_node(RULE_NODE_SIZE);
+                    r = crate::mem::get_node_global(RULE_NODE_SIZE);
                     words = RULE_NODE_SIZE - 1;
                 }
                 INS_NODE_CNL => {
-                    r = crate::mem::get_node(INS_NODE_SIZE_CNL);
+                    r = crate::mem::get_node_global(INS_NODE_SIZE_CNL);
                     set_mem_word(r + 4, mem_word(p + 4));
                     // GLUE_SPEC_ref_count(mem[p+4].b32.s1)++ = mem[mem[p+4].b32.s1].b32.s1++
                     let spec = mem_b32s1(p + 4);
@@ -12882,23 +12882,23 @@ pub unsafe extern "C" fn copy_node_list(mut p: i32) -> i32 {
                 WHATSIT_NODE_CNL => {
                     match mem_b16s0(p) {
                         OPEN_NODE_CNL => {
-                            r = crate::mem::get_node(OPEN_NODE_SIZE_CNL);
+                            r = crate::mem::get_node_global(OPEN_NODE_SIZE_CNL);
                             words = OPEN_NODE_SIZE_CNL;
                         }
                         WRITE_NODE_CNL | SPECIAL_NODE_CNL => {
                             // mem[mem[p+1].b32.s1].b32.s0++ (token list ref count)
                             let tok = mem_b32s1(p + 1);
                             set_mem_b32s0(tok, mem_b32s0(tok) + 1);
-                            r = crate::mem::get_node(WRITE_NODE_SIZE_CNL);
+                            r = crate::mem::get_node_global(WRITE_NODE_SIZE_CNL);
                             words = WRITE_NODE_SIZE_CNL;
                         }
                         CLOSE_NODE_CNL | LANGUAGE_NODE_CNL => {
-                            r = crate::mem::get_node(SMALL_NODE_SIZE);
+                            r = crate::mem::get_node_global(SMALL_NODE_SIZE);
                             words = SMALL_NODE_SIZE;
                         }
                         NATIVE_WORD_NODE_CNL | NATIVE_WORD_NODE_AT_CNL => {
                             let sz = mem_b16s3(p + 4) as i32;
-                            r = crate::mem::get_node(sz);
+                            r = crate::mem::get_node_global(sz);
                             let mut w = sz;
                             while w > 0 {
                                 w -= 1;
@@ -12910,18 +12910,18 @@ pub unsafe extern "C" fn copy_node_list(mut p: i32) -> i32 {
                             words = 0;
                         }
                         GLYPH_NODE_CNL => {
-                            r = crate::mem::get_node(GLYPH_NODE_SIZE_CNL);
+                            r = crate::mem::get_node_global(GLYPH_NODE_SIZE_CNL);
                             words = GLYPH_NODE_SIZE_CNL;
                         }
                         PIC_NODE_CNL | PDF_NODE_CNL => {
                             let path_len = mem_b16s1(p + 4) as i32;
                             let sz = PIC_NODE_SIZE_CNL
                                 + (path_len + MEMORY_WORD_SIZE_CNL - 1) / MEMORY_WORD_SIZE_CNL;
-                            r = crate::mem::get_node(sz);
+                            r = crate::mem::get_node_global(sz);
                             words = sz;
                         }
                         PDF_SAVE_POS_NODE_CNL => {
-                            r = crate::mem::get_node(SMALL_NODE_SIZE);
+                            r = crate::mem::get_node_global(SMALL_NODE_SIZE);
                         }
                         _ => {
                             crate::errors::confusion(c"ext2".as_ptr());
@@ -12929,7 +12929,7 @@ pub unsafe extern "C" fn copy_node_list(mut p: i32) -> i32 {
                     }
                 }
                 GLUE_NODE => {
-                    r = crate::mem::get_node(MEDIUM_NODE_SIZE);
+                    r = crate::mem::get_node_global(MEDIUM_NODE_SIZE);
                     // GLUE_SPEC_ref_count(mem[p+1].b32.s0)++ = mem[mem[p+1].b32.s0].b32.s1++
                     let spec = mem_b32s0(p + 1);
                     set_mem_b32s1(spec, mem_b32s1(spec) + 1);
@@ -12939,32 +12939,32 @@ pub unsafe extern "C" fn copy_node_list(mut p: i32) -> i32 {
                     set_mem_b32s1(r + 1, copy_node_list(mem_b32s1(p + 1)));
                 }
                 KERN_NODE | MATH_NODE | PENALTY_NODE => {
-                    r = crate::mem::get_node(MEDIUM_NODE_SIZE);
+                    r = crate::mem::get_node_global(MEDIUM_NODE_SIZE);
                     words = MEDIUM_NODE_SIZE;
                 }
                 MARGIN_KERN_NODE_CNL => {
-                    r = crate::mem::get_node(MARGIN_KERN_NODE_SIZE_CNL);
+                    r = crate::mem::get_node_global(MARGIN_KERN_NODE_SIZE_CNL);
                     words = MARGIN_KERN_NODE_SIZE_CNL;
                 }
                 LIGATURE_NODE => {
-                    r = crate::mem::get_node(SMALL_NODE_SIZE);
+                    r = crate::mem::get_node_global(SMALL_NODE_SIZE);
                     set_mem_word(r + 1, mem_word(p + 1));
                     set_mem_b32s1(r + 1, copy_node_list(mem_b32s1(p + 1)));
                 }
                 DISC_NODE => {
-                    r = crate::mem::get_node(SMALL_NODE_SIZE);
+                    r = crate::mem::get_node_global(SMALL_NODE_SIZE);
                     set_mem_b32s0(r + 1, copy_node_list(mem_b32s0(p + 1)));
                     set_mem_b32s1(r + 1, copy_node_list(mem_b32s1(p + 1)));
                 }
                 MARK_NODE_CNL => {
-                    r = crate::mem::get_node(SMALL_NODE_SIZE);
+                    r = crate::mem::get_node_global(SMALL_NODE_SIZE);
                     // mem[mem[p+1].b32.s1].b32.s0++ (token list ref count)
                     let tok = mem_b32s1(p + 1);
                     set_mem_b32s0(tok, mem_b32s0(tok) + 1);
                     words = SMALL_NODE_SIZE;
                 }
                 ADJUST_NODE_CNL => {
-                    r = crate::mem::get_node(SMALL_NODE_SIZE);
+                    r = crate::mem::get_node_global(SMALL_NODE_SIZE);
                     set_mem_b32s1(r + 1, copy_node_list(mem_b32s1(p + 1)));
                 }
                 _ => {
@@ -13120,7 +13120,7 @@ pub unsafe extern "C" fn check_outer_validity() {
     if cur_cs() != 0 {
         let ci = cur_input();
         if ci.state == TOKEN_LIST_COV || ci.name < 1 || ci.name > 17 {
-            let p = crate::mem::get_avail();
+            let p = crate::mem::get_avail_global();
             set_mem_b32s0(p, CS_TOKEN_FLAG + cur_cs());
             crate::input::begin_token_list(p, 3 /* BACKED_UP */);
         }
@@ -13138,7 +13138,7 @@ pub unsafe extern "C" fn check_outer_validity() {
             error_here_with_diagnostic(c"Forbidden control sequence found".as_ptr());
         }
 
-        let p = crate::mem::get_avail();
+        let p = crate::mem::get_avail_global();
         match scanner_status() {
             DEFINING_COV => {
                 crate::output::print_cstr(c" while scanning definition".as_ptr());
@@ -13153,7 +13153,7 @@ pub unsafe extern "C" fn check_outer_validity() {
                 crate::output::print_cstr(c" while scanning preamble".as_ptr());
                 set_mem_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
                 let q = p;
-                let p2 = crate::mem::get_avail();
+                let p2 = crate::mem::get_avail_global();
                 set_mem_b32s1(p2, q);
                 set_mem_b32s0(p2, CS_TOKEN_FLAG + FROZEN_CR_COV);
                 set_align_state(-1_000_000);
@@ -14307,7 +14307,7 @@ pub unsafe extern "C" fn expand() {
                         let t = cur_tok();
                         crate::input::back_input();
                         if t >= CS_TOKEN_FLAG {
-                            let p = crate::mem::get_avail();
+                            let p = crate::mem::get_avail_global();
                             set_mem_b32s0(p, FROZEN_CS_TOKEN);
                             set_mem_b32s1(p, cur_input().loc);
                             set_cur_input_start(p);
@@ -14335,7 +14335,7 @@ pub unsafe extern "C" fn expand() {
                                 continue 'reswitch;
                             } else {
                                 crate::input::back_input();
-                                let p = crate::mem::get_avail();
+                                let p = crate::mem::get_avail_global();
                                 set_mem_b32s0(p, FROZEN_PRIM_CS_TOKEN);
                                 set_mem_b32s1(p, cur_input().loc);
                                 set_cur_input_loc(p);
@@ -14345,14 +14345,14 @@ pub unsafe extern "C" fn expand() {
                     }
                 }
                 CS_NAME_CMD => {
-                    let r = crate::mem::get_avail();
+                    let r = crate::mem::get_avail_global();
                     let mut p = r;
                     let b = is_in_csname();
                     set_is_in_csname(true);
                     loop {
                         get_x_token();
                         if cur_cs() == 0 {
-                            let q = crate::mem::get_avail();
+                            let q = crate::mem::get_avail_global();
                             set_mem_b32s1(p, q);
                             set_mem_b32s0(q, cur_tok());
                             p = q;
@@ -14399,7 +14399,7 @@ pub unsafe extern "C" fn expand() {
                         SINGLE_BASE + buffer_entry(first())
                     };
                     set_cur_cs(cs);
-                    crate::mem::flush_list(r);
+                    crate::mem::flush_list_global(r);
                     if eqtb_b16s1(cur_cs()) == UNDEFINED_CS_CMD as u16 {
                         crate::save::eq_define(cur_cs(), RELAX as u16, TOO_BIG_USV);
                     }
@@ -15137,7 +15137,7 @@ pub unsafe extern "C" fn macro_call() {
         set_long_state, set_max_param_stack, set_mem_b32s0, set_mem_b32s1, set_param_ptr,
         set_param_stack, set_scanner_status, set_warning_index, warning_index,
     };
-    use crate::mem::{flush_list, get_avail, TEX_NULL};
+    use crate::mem::{flush_list_global, get_avail_global, TEX_NULL};
 
     const MATCHING: u8 = 3; // xetex-constants.h:185
     const LONG_CALL: u8 = 114; // xetex_format.h:356
@@ -15264,7 +15264,7 @@ pub unsafe extern "C" fn macro_call() {
                         } else {
                             let mut t = s;
                             loop {
-                                let q = get_avail();
+                                let q = get_avail_global();
                                 set_mem_b32s1(p, q);
                                 set_mem_b32s0(q, mem_b32s0(t));
                                 p = q;
@@ -15323,7 +15323,7 @@ pub unsafe extern "C" fn macro_call() {
                         pstack[n as usize] = mem_b32s1(TEMP_HEAD);
                         set_align_state(align_state() - unbalance);
                         for m2 in 0..=n {
-                            flush_list(pstack[m2 as usize]);
+                            flush_list_global(pstack[m2 as usize]);
                         }
                         break 'mac; // goto exit
                     }
@@ -15339,7 +15339,7 @@ pub unsafe extern "C" fn macro_call() {
                                     set_mem_b32s1(q, TEX_NULL);
                                     q
                                 } else {
-                                    get_avail()
+                                    get_avail_global()
                                 };
                                 set_mem_b32s1(p, q);
                                 set_mem_b32s0(q, cur_tok());
@@ -15365,7 +15365,7 @@ pub unsafe extern "C" fn macro_call() {
                                     pstack[n as usize] = mem_b32s1(TEMP_HEAD);
                                     set_align_state(align_state() - unbalance);
                                     for m2 in 0..=n {
-                                        flush_list(pstack[m2 as usize]);
+                                        flush_list_global(pstack[m2 as usize]);
                                     }
                                     break 'mac; // goto exit
                                 }
@@ -15383,7 +15383,7 @@ pub unsafe extern "C" fn macro_call() {
                             }
                             // done1:
                             rbrace_ptr = p;
-                            let q = get_avail();
+                            let q = get_avail_global();
                             set_mem_b32s1(p, q);
                             set_mem_b32s0(q, cur_tok());
                             p = q;
@@ -15435,7 +15435,7 @@ pub unsafe extern "C" fn macro_call() {
                         {
                             continue 'continue_; // goto continue_
                         }
-                        let q = get_avail();
+                        let q = get_avail_global();
                         set_mem_b32s1(p, q);
                         set_mem_b32s0(q, cur_tok());
                         p = q;
@@ -15540,7 +15540,7 @@ pub unsafe extern "C" fn new_native_word_node(f: i32, n: i32) -> i32 {
     use crate::globals::{set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_ptr};
     // sizeof(UTF16_code) = 2, sizeof(memory_word) = 8
     let l = NATIVE_NODE_SIZE_NN + (n * 2 + 7) / 8;
-    let q = crate::mem::get_node(l);
+    let q = crate::mem::get_node_global(l);
     set_mem_b16s1(q, WHATSIT_NODE_NN);
     if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
         set_mem_b16s0(q, NATIVE_WORD_NODE_AT_NN);
@@ -15625,7 +15625,7 @@ pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
             char_warning(f, c as i32);
         }
 
-        p = crate::mem::get_node(NATIVE_NODE_SIZE_NN + 1);
+        p = crate::mem::get_node_global(NATIVE_NODE_SIZE_NN + 1);
         set_mem_b16s1(p, WHATSIT_NODE_NN);
         set_mem_b16s0(p, NATIVE_WORD_NODE_NN);
         set_mem_b16s3(p + 4, (NATIVE_NODE_SIZE_NN + 1) as u16);
@@ -16848,7 +16848,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         set_space_class, space_class,
     };
     use crate::input::{back_input, begin_token_list};
-    use crate::mem::{free_node_global, get_avail, new_disc, new_kern, new_ligature, TEX_NULL};
+    use crate::mem::{free_node_global, get_avail_global, new_disc, new_kern, new_ligature, TEX_NULL};
     use crate::save::find_sa_element;
 
 
@@ -17472,7 +17472,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
 
     // Allocate lig_stack node from avail list
     let ls = if avail() == TEX_NULL {
-        get_avail()
+        get_avail_global()
     } else {
         let a = avail();
         set_avail(mem_b32s1(a));
@@ -17860,7 +17860,7 @@ unsafe fn do_lookahead(
         set_space_class, space_class,
     };
     use crate::input::{back_input, begin_token_list};
-    use crate::mem::get_avail;
+    use crate::mem::get_avail_global;
     use crate::save::find_sa_element;
 
     const INTER_CHAR_TEXT: u16 = 17;
@@ -17963,7 +17963,7 @@ unsafe fn do_lookahead(
 
     // Allocate lig_stack for the new char
     let ls = if avail() == crate::mem::TEX_NULL {
-        get_avail()
+        get_avail_global()
     } else {
         let a = avail();
         set_avail(mem_b32s1(a));

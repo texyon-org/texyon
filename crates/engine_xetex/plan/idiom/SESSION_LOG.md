@@ -7,6 +7,92 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 62 — 2026-05-30 — finish the `mem` allocator core: thread `flush_list`, `get_avail`, `get_node`
+
+**Type:** execution (workstream 01, Phase C — slices 2–4 of `01b` §9). **One
+commit** (user explicitly authorized batching the three). Dashboard **29/2/7/4**.
+Completes the four-function `mem` allocator core started in session 61.
+
+**Slice:** thread the remaining three allocator-core functions to `&mut MemState`:
+- `flush_list` — same shape as `free_node` (no cold path, mem-only).
+- `get_avail` — introduces the §5 cold-path overflow sentinel.
+- `get_node` — cold-path sentinel + the two safe raw-global reads
+  (`cur_input_synctex_tag()`/`line()`, which read `mod raw`, safe under a borrow
+  per `01b` §4).
+
+**Recon (per `01b` §7 step 2):** call-site counts (per file) matched the session-60
+recon — `flush_list` 20, `get_avail` 82, `get_node` 85 (+ wrapper defs = 21/83/86).
+`grep -rnB3 … | grep with_state` empty: no call site sits inside a `with_state*`
+closure. `get_node`'s 16 in-`mem.rs` callers are the `new_*` node constructors.
+
+**The cold-path overflow sentinel (`01b` §5), implemented:** added a module const
+`ALLOC_FAILED: i32 = i32::MIN` (outside every valid index, `TEX_NULL`, and
+`MAX_HALFWORD`, so it can never collide with a real return — and it crashes loudly
+as an index if it ever leaked). The threaded `get_avail`/`get_node` **return
+`ALLOC_FAILED`** on arena exhaustion instead of calling `runaway()`/`overflow()`
+under the borrow; their `_global` wrappers check for it and perform the abort
+**after** the `with_state_mut` borrow drops (`get_avail_global` → `runaway()` +
+`overflow()`; `get_node_global` → `overflow()`). `overflow()` never returns, so
+real callers never observe the sentinel. `get_node`'s legitimate `MAX_HALFWORD`
+return for the `s == 0x4000_0000` sentinel request is unchanged (it is *not*
+overflow).
+
+**Work done (1 commit):**
+1. `state.rs`: added `MemState::b32s1(&self, p)` (the read accessor the three fns
+   needed beyond session-61's `b32s0`/`set_b32s0`/`set_b32s1`).
+2. `mem.rs`: threaded all three fns to `&mut MemState`, touching fields/methods
+   directly (the scalars `avail`/`mem_end`/`hi_mem_min`/`lo_mem_max`/`rover` are
+   public `MemState` fields, read/written directly). Dropped `#[no_mangle]
+   extern "C"` from `get_avail`/`flush_list` (now internal) and `unsafe` from all
+   three signatures (the union `unsafe` is encapsulated in the `MemState` methods).
+   Added the three `*_global` bridge-down wrappers + the `ALLOC_FAILED` const.
+   In `get_node`, two-phase-borrow hazards were pre-empted by hoisting
+   `mem.b32s0(q + 1)` into a `q_left` local (fed both a `&mut` write arg and a
+   second write) and capturing `let rover = mem.rover` once in the lo-mem-grow
+   block (constant there until the final `mem.rover = q`).
+3. Renamed all legacy call sites to `<fn>_global` (8 files blanket via `perl`;
+   `mem.rs` via `perl` with a `&mut st.mem`/`pub fn` exclusion so the threaded
+   defs and the wrappers' internal calls were left untouched) and updated the
+   `use crate::mem::{…}` imports across math/scan/shipout/pagebuilder/linebreak.
+4. Removed the 8 now-unused `globals` imports from `mem.rs`
+   (`hi_mem_min`/`lo_mem_max`/`mem_end`/`rover` + their `set_*`) so the slice
+   introduces **no** new warnings.
+
+**Same `_global` bridge-down wrapper pattern as session 61** (rationale recorded
+there): a named wrapper evaluates its args at the caller before the borrow, which
+sidesteps both the argument nest-panic hazard and the `|s|`-closure shadowing that
+ruled out the recipe's bare inline closure. Each wrapper dies when its last legacy
+caller threads.
+
+**Newtype debt:** none — `p`/`s` are plain `int32_t`; the sentinel is a plain
+`i32` (checked).
+
+**Metrics:** `#[no_mangle]` exports −2 (`get_avail` + `flush_list` dropped their
+exports; `get_node`/`free_node` were already non-`#[no_mangle]`). `unsafe fn` net
+flat (the three fns dropped `unsafe`; three `*_global` wrappers added it). The
+`mem` allocator core (`free_node`/`flush_list`/`get_avail`/`get_node`) is now fully
+threaded — the dependency-graph foundation for the rest of Phase C. `globals.rs`
+raw externs unchanged (40).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, no new warnings
+introduced by the slice (verified by grep for unused `get_*`/`*mem*`/`rover`);
+full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29 / 2 / 7 / 4**, no regressions.
+
+**For the next session (63):** thread the `new_*` node constructors
+(`new_null_box`, `new_rule`, `new_ligature`, `new_lig_item`, `new_disc`,
+`new_math`, `new_spec`, `new_param_glue`, `new_glue`, `new_kern`, `new_penalty`,
+`new_noad`, `new_choice`, the margin-kern/style/character builders, …) — they call
+`get_node_global`/`get_avail_global`/`free_node_global`, so threading them to take
+`&mut MemState` turns those wrapper calls into direct `get_node(&mut mem, …)`
+pass-throughs, shrinking the bridge-down wrapper count. After the constructors,
+climb the graph subsystem by subsystem (`save.rs` → `pagebuilder.rs`/`shipout.rs`
+→ `math.rs`/`linebreak.rs` → `scan.rs` last). Draft `02-modules.md` to READY
+before threading reaches `scan.rs`.
+
+---
+
 ## Idiom session 61 — 2026-05-30 — first Phase-C threading slice: `free_node(&mut MemState, …)`
 
 **Type:** execution (workstream 01, Phase C — the first threading slice per

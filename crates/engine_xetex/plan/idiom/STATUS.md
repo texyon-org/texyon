@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last session = session 61, **first Phase-C slice**: threaded `free_node` to `&mut MemState` and bridge-down its 95 legacy call sites via a transitional `free_node_global` wrapper. Dashboard 29/2/7/4. Phase C is now executing).
+Last updated: 2026-05-30 (last session = session 62, **Phase-C slices 2–4**: threaded `flush_list`/`get_avail`/`get_node` to `&mut MemState` in one commit, completing the four-fn `mem` allocator core. `get_avail`/`get_node` use the §5 cold-path overflow sentinel. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -538,6 +538,23 @@ least-coupled non-`misc` clusters:
     (`unsafe fn` net unchanged: `free_node` dropped `unsafe`, `free_node_global`
     added it; one transient `with_state_mut` wrapper added, to be removed as
     callers thread). Dashboard 29/2/7/4.
+-   **`mem` allocator core completed — `flush_list`/`get_avail`/`get_node`
+    (session 62):** threaded the remaining three allocator-core functions to
+    `&mut MemState` in one commit (user-authorized batch), finishing the
+    four-function core begun with `free_node` (session 61). Added
+    `MemState::b32s1` read accessor. `get_avail`/`get_node` implement the `01b`
+    §5 cold-path overflow sentinel: a module const `ALLOC_FAILED = i32::MIN` is
+    returned on arena exhaustion (instead of calling `runaway()`/`overflow()`
+    under the borrow), and the `*_global` bridge-down wrappers perform the abort
+    after the borrow drops. `get_node`'s legitimate `MAX_HALFWORD` sentinel-size
+    return is unchanged. All ~187 legacy call sites (`flush_list` 20, `get_avail`
+    82, `get_node` 85) bridged-down through `flush_list_global`/`get_avail_global`/
+    `get_node_global` (same wrapper pattern as session 61); `get_node`'s 16
+    in-`mem.rs` callers are the `new_*` constructors, next to thread. Dropped
+    `#[no_mangle]` from `get_avail`/`flush_list` (−2 exports) and `unsafe` from all
+    three signatures (offset by the three new `unsafe` wrappers → `unsafe fn` net
+    flat). Removed 8 now-unused `globals` imports from `mem.rs` (no new warnings).
+    No newtype debt (`p`/`s`/sentinel all plain `i32`). Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -549,7 +566,7 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 182 state-backed scalars/arrays (incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and 33 `LinebreakState` inline scalars/arrays) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 579 |
+| `#[no_mangle]` exports | 576 | boundary-only | 418 (direct `grep '#[no_mangle]' src/*.rs`; the prior 579 used a different/stale basis. Session 62 dropped 2: `get_avail`/`flush_list`) |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 236 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
@@ -640,21 +657,25 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase C is executing. Session 61 threaded `free_node` (the first slice).
-    Next: continue the `mem` allocator core per `01b-phase-c-recipe.md` §9 →
-    thread `flush_list` to `&mut MemState` (same shape as `free_node`, ~21
-    sites), then `get_avail` (introduces the §5 cold-path overflow sentinel),
-    then `get_node`.**
+1.  **Phase C is executing. The `mem` allocator core is fully threaded:
+    `free_node` (session 61), `flush_list`/`get_avail`/`get_node` (session 62).
+    Next: thread the `new_*` node constructors per `01b-phase-c-recipe.md` §9.**
 
-    Reuse the session-61 pattern: add any new methods to `impl MemState` in
-    `state.rs`, thread the fn to `&mut MemState`, and bridge-down legacy call
-    sites through a transitional `<fn>_global` wrapper (args evaluated before the
-    borrow — avoids the argument nest-panic and the `|s|` closure-shadowing
-    hazards that ruled out the recipe's bare inline closure for `free_node`). The
-    wrapper dies when its last legacy caller threads. For `get_avail`/`get_node`,
-    the cold exhaustion branch returns the overflow sentinel and the wrapper calls
-    `overflow()`/`runaway()` after the borrow drops (`01b` §5). After the core,
-    thread the `new_*` node constructors so they become pass-through callers.
+    `new_null_box`, `new_rule`, `new_ligature`, `new_lig_item`, `new_disc`,
+    `new_math`, `new_spec`, `new_param_glue`, `new_glue`, `new_kern`,
+    `new_penalty`, `new_noad`, `new_choice`, and the margin-kern/style/character
+    builders all call `get_node_global`/`get_avail_global`/`free_node_global`.
+    Threading them to take `&mut MemState` turns those wrapper calls into direct
+    `get_node(&mut mem, …)` pass-throughs and shrinks the bridge-down wrapper
+    count. Reuse the session-61/62 pattern: add any new methods to `impl MemState`
+    in `state.rs`, thread the fn, and bridge-down legacy callers through a
+    transitional `<fn>_global` wrapper (args evaluated before the borrow — avoids
+    the argument nest-panic and the `|s|` closure-shadowing hazards that ruled out
+    the recipe's bare inline closure). The wrapper dies when its last legacy caller
+    threads. After the constructors, climb the graph subsystem by subsystem
+    (`save.rs` → `pagebuilder.rs`/`shipout.rs` → `math.rs`/`linebreak.rs` →
+    `scan.rs` last). Draft `02-modules.md` to READY before threading reaches
+    `scan.rs`.
 
     `misc` bucket fully drained (sessions 44–46); classified-but-unmigrated
     scratch completed (sessions 47–48, 53–54); all ownership slices done,

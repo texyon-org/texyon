@@ -562,7 +562,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
         set_cur_q, set_cur_r, set_hyphen_passed, set_lft_hit, set_lig_stack, set_ligature_present,
         set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_rt_hit,
     };
-    use crate::mem::{free_node_global, get_avail, new_kern, new_lig_item, new_ligature};
+    use crate::mem::{free_node_global, get_avail_global, new_kern, new_lig_item, new_ligature};
 
     #[inline]
     fn odd(v: u8) -> bool {
@@ -597,14 +597,14 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
             set_lft_hit(init_lft());
         }
         while p > TEX_NULL {
-            set_mem_b32s1(t, get_avail());
+            set_mem_b32s1(t, get_avail_global());
             t = mem_b32s1(t);
             set_mem_b16s1(t, hf() as u16);
             set_mem_b16s0(t, mem_b16s0(p));
             p = mem_b32s1(p);
         }
     } else if cur_l() < TOO_BIG_CHAR {
-        set_mem_b32s1(t, get_avail());
+        set_mem_b32s1(t, get_avail_global());
         t = mem_b32s1(t);
         set_mem_b16s1(t, hf() as u16);
         set_mem_b16s0(t, cur_l() as u16);
@@ -682,7 +682,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
                                     } else {
-                                        let p = get_avail();
+                                        let p = get_avail_global();
                                         set_mem_b32s1(lig_stack() + 1, p);
                                         set_mem_b16s0(
                                             p,
@@ -733,7 +733,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
                                 } else if j == n {
                                     break 'continue_;
                                 } else {
-                                    set_mem_b32s1(t, get_avail());
+                                    set_mem_b32s1(t, get_avail_global());
                                     t = mem_b32s1(t);
                                     set_mem_b16s1(t, hf() as u16);
                                     set_mem_b16s0(t, cur_r() as u16);
@@ -1055,7 +1055,7 @@ pub unsafe fn line_break(d: bool) {
             set_current_hyph_index();
         }
 
-        let q = crate::mem::get_node(crate::globals::active_node_size());
+        let q = crate::mem::get_node_global(crate::globals::active_node_size());
         set_mem_b16s1(q, UNHYPHENATED as u16);
         set_active_node_fitness(q, DECENT_FIT);
         set_mem_b32s1(q, LAST_ACTIVE);
@@ -1672,7 +1672,7 @@ unsafe fn update_lr_stack(q: i32, lr_ptr: &mut i32) {
             set_avail(temp_ptr);
         }
     } else {
-        let temp_ptr = crate::mem::get_avail();
+        let temp_ptr = crate::mem::get_avail_global();
         set_mem_b32s0(
             temp_ptr,
             L_CODE as i32 * (mem_b16s0(q) as i32 / L_CODE as i32) + END_M_CODE as i32,
@@ -2209,7 +2209,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                         set_active_width(k, break_width(k));
                     }
                 } else {
-                    let q = crate::mem::get_node(DELTA_NODE_SIZE);
+                    let q = crate::mem::get_node_global(DELTA_NODE_SIZE);
                     set_mem_b32s1(q, r);
                     set_mem_b16s1(q, DELTA_NODE as u16);
                     set_mem_b16s0(q, 0);
@@ -2230,13 +2230,13 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
 
                 for fit_class in VERY_LOOSE_FIT..=TIGHT_FIT {
                     if minimal_demerits(fit_class) <= minimum_demerits() {
-                        let passive_node = crate::mem::get_node(PASSIVE_NODE_SIZE);
+                        let passive_node = crate::mem::get_node_global(PASSIVE_NODE_SIZE);
                         set_mem_b32s1(passive_node, passive());
                         set_passive(passive_node);
                         set_mem_b32s1(passive_node + 1, cur_p());
                         set_mem_b32s0(passive_node + 1, best_place(fit_class));
 
-                        let q = crate::mem::get_node(active_node_size());
+                        let q = crate::mem::get_node_global(active_node_size());
                         set_active_node_break_node(q, passive());
                         set_active_node_line_number(q, best_pl_line(fit_class) + 1);
                         set_active_node_fitness(q, fit_class);
@@ -2259,7 +2259,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                 set_minimum_demerits(MAX_HALFWORD);
 
                 if r != LAST_ACTIVE {
-                    let q = crate::mem::get_node(DELTA_NODE_SIZE);
+                    let q = crate::mem::get_node_global(DELTA_NODE_SIZE);
                     set_mem_b32s1(q, r);
                     set_mem_b16s1(q, DELTA_NODE as u16);
                     set_mem_b16s0(q, 0);
@@ -2790,7 +2790,7 @@ pub unsafe extern "C" fn hyphenate() {
 
             if hyphen_passed() > 0 {
                 loop {
-                    let r = crate::mem::get_node(SMALL_NODE_SIZE);
+                    let r = crate::mem::get_node_global(SMALL_NODE_SIZE);
                     set_mem_b32s1(r, mem_b32s1(HOLD_HEAD));
                     set_mem_b16s1(r, DISC_NODE as u16);
                     let mut major_tail = r;
@@ -2903,6 +2903,6 @@ pub unsafe extern "C" fn hyphenate() {
         }
 
         set_mem_b32s1(s, q_final);
-        crate::mem::flush_list(crate::globals::init_list());
+        crate::mem::flush_list_global(crate::globals::init_list());
     }
 }

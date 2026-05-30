@@ -695,7 +695,7 @@ pub unsafe extern "C" fn new_patterns() {
         crate::errors::error();
 
         let _ = crate::scan::scan_toks(false, false);
-        crate::mem::flush_list(crate::globals::def_ref());
+        crate::mem::flush_list_global(crate::globals::def_ref());
     }
 }
 
@@ -741,7 +741,7 @@ pub unsafe extern "C" fn new_hyph_exceptions() {
                 LETTER | OTHER_CHAR | CHAR_GIVEN => {
                     if cur_chr() == b'-' as i32 {
                         if n < crate::scan::max_hyphenatable_length() as i16 {
-                            let q = crate::mem::get_avail();
+                            let q = crate::mem::get_avail_global();
                             crate::globals::set_mem_b32s1(q, p);
                             crate::globals::set_mem_b32s0(q, n as i32);
                             p = q;
@@ -908,7 +908,7 @@ pub unsafe extern "C" fn new_hyph_exceptions() {
 // translated from xetex-ini.c:554 (sort_avail)
 #[no_mangle]
 pub unsafe extern "C" fn sort_avail() {
-    let _ = crate::mem::get_node(GET_NODE_HEAD_SENTINEL);
+    let _ = crate::mem::get_node_global(GET_NODE_HEAD_SENTINEL);
     let mut p = mem_b32s1(rover() + 1);
     set_mem_b32s1(rover() + 1, MAX_HALFWORD);
     let old_rover = rover();
@@ -3980,7 +3980,7 @@ pub unsafe fn prefixed_command() {
                 q = crate::scan::scan_toks(true, e);
 
                 if j != 0 {
-                    q = crate::mem::get_avail();
+                    q = crate::mem::get_avail_global();
                     set_mem_b32s0(q, j);
                     set_mem_b32s1(q, mem_b32s1(def_ref()));
                     set_mem_b32s1(def_ref(), q);
@@ -4364,10 +4364,10 @@ pub unsafe fn prefixed_command() {
                     set_avail(def_ref());
                 } else {
                     if p == PC_LOCAL_BASE + LOCAL__OUTPUT_ROUTINE && !e {
-                        set_mem_b32s1(q, crate::mem::get_avail());
+                        set_mem_b32s1(q, crate::mem::get_avail_global());
                         q = mem_b32s1(q);
                         set_mem_b32s0(q, RIGHT_BRACE_TOKEN + 125);
-                        q = crate::mem::get_avail();
+                        q = crate::mem::get_avail_global();
                         set_mem_b32s0(q, LEFT_BRACE_TOKEN + 123);
                         set_mem_b32s1(q, mem_b32s1(def_ref()));
                         set_mem_b32s1(def_ref(), q);
@@ -4646,7 +4646,7 @@ pub unsafe fn prefixed_command() {
                     p = TEX_NULL;
                 } else if q > PC_LOCAL_BASE + LOCAL__PAR_SHAPE {
                     n = (cur_val() / 2) + 1;
-                    p = crate::mem::get_node(2 * n + 1);
+                    p = crate::mem::get_node_global(2 * n + 1);
                     set_mem_b32s0(p, n);
                     n = cur_val();
                     set_mem_b32s1(p + 1, n);
@@ -4662,7 +4662,7 @@ pub unsafe fn prefixed_command() {
                         set_mem_b32s1(p + n + 2, 0);
                     }
                 } else {
-                    p = crate::mem::get_node(2 * n + 1);
+                    p = crate::mem::get_node_global(2 * n + 1);
                     set_mem_b32s0(p, n);
 
                     j = 1;

@@ -358,15 +358,15 @@ pub unsafe extern "C" fn sa_save(p: i32) {
     let q: i32;
     if i < DIMEN_VAL_LIMIT {
         if mem_b32s1(p + 2) == 0 {
-            q = crate::mem::get_node(POINTER_NODE_SIZE);
+            q = crate::mem::get_node_global(POINTER_NODE_SIZE);
             i = TOK_VAL_LIMIT;
         } else {
-            q = crate::mem::get_node(WORD_NODE_SIZE);
+            q = crate::mem::get_node_global(WORD_NODE_SIZE);
             set_mem_b32s1(q + 2, mem_b32s1(p + 2));
         }
         set_mem_b32s1(q + 1, TEX_NULL);
     } else {
-        q = crate::mem::get_node(POINTER_NODE_SIZE);
+        q = crate::mem::get_node_global(POINTER_NODE_SIZE);
         set_mem_b32s1(q + 1, mem_b32s1(p + 1));
     }
     set_mem_b32s0(q + 1, p);
@@ -499,7 +499,7 @@ pub unsafe extern "C" fn unsave() {
                 let t = cur_tok();
                 set_cur_tok(p);
                 if a {
-                    let pn = crate::mem::get_avail();
+                    let pn = crate::mem::get_avail_global();
                     set_mem_b32s0(pn, cur_tok());
                     set_mem_b32s1(pn, cur_input().loc);
                     set_cur_input_loc(pn);
@@ -560,7 +560,7 @@ pub unsafe extern "C" fn unsave() {
 ///
 /// translated from xetex-xetex0.c:4111 (new_index)
 unsafe fn new_index(i: u16, q: i32) {
-    set_cur_ptr(crate::mem::get_node(INDEX_NODE_SIZE));
+    set_cur_ptr(crate::mem::get_node_global(INDEX_NODE_SIZE));
     set_mem_b16s1(cur_ptr(), i);
     set_mem_b16s0(cur_ptr(), 0);
     set_mem_b32s1(cur_ptr(), q);
@@ -605,16 +605,16 @@ unsafe fn sa_alloc_chain(t: u16, n: i32, mut q: i32, levels: &[i32]) {
     // Allocate the data (leaf) node (lab49).
     let leaf_i = levels[levels.len() - 1];
     if t == MARK_VAL {
-        set_cur_ptr(crate::mem::get_node(MARK_CLASS_NODE_SIZE));
+        set_cur_ptr(crate::mem::get_node_global(MARK_CLASS_NODE_SIZE));
         set_mem_word(cur_ptr() + 1, sa_null());
         set_mem_word(cur_ptr() + 2, sa_null());
         set_mem_word(cur_ptr() + 3, sa_null());
     } else if t <= DIMEN_VAL {
-        set_cur_ptr(crate::mem::get_node(WORD_NODE_SIZE));
+        set_cur_ptr(crate::mem::get_node_global(WORD_NODE_SIZE));
         set_mem_b32s1(cur_ptr() + 2, 0);
         set_mem_b32s1(cur_ptr() + 1, n);
     } else {
-        set_cur_ptr(crate::mem::get_node(POINTER_NODE_SIZE));
+        set_cur_ptr(crate::mem::get_node_global(POINTER_NODE_SIZE));
         if t <= MU_VAL {
             set_mem_b32s1(cur_ptr() + 1, 0);
             // GLUE_SPEC_ref_count(0)++ : mem[0].b32.s1

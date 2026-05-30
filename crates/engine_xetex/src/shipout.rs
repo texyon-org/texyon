@@ -26,7 +26,7 @@ use crate::globals::{
     str_start, temp_ptr, term_offset, total_pages, width_base_entry, write_file, write_loc,
     write_open, xdv_buffer_entry,
 };
-use crate::mem::{free_node_global, get_avail, get_node, new_kern, new_math};
+use crate::mem::{free_node_global, get_avail_global, get_node_global, new_kern, new_math};
 
 extern "C" {
 
@@ -234,7 +234,7 @@ const SELECTOR_NEW_STRING: i32 = 21;
 ///
 /// translated from xetex-shipout.c:1708 (new_edge)
 pub unsafe fn new_edge(s: i16, w: i32) -> i32 {
-    let p = get_node(EDGE_NODE_SIZE);
+    let p = get_node_global(EDGE_NODE_SIZE);
     set_mem_b16s1(p, EDGE_NODE);
     set_mem_b16s0(p, s as u16);
     set_mem_b32s1(p + 1, w);
@@ -915,7 +915,7 @@ unsafe fn output_hlist_glue(
             set_mem_b16s1(p, KERN_NODE);
             set_mem_b32s1(p + 1, rule_wd());
         } else {
-            g = get_node(GLUE_SPEC_SIZE);
+            g = get_node_global(GLUE_SPEC_SIZE);
             set_mem_b16s1(g, FILLL + 1);
             set_mem_b16s0(g, FILLL + 1);
             set_mem_b32s1(g + 1, rule_wd());
@@ -1033,7 +1033,7 @@ pub unsafe extern "C" fn hlist_out() {
     let base_line = cur_v();
     let mut prev_p = this_box + 5;
 
-    set_temp_ptr(get_avail());
+    set_temp_ptr(get_avail_global());
     set_mem_b32s0(temp_ptr(), BEFORE);
     set_mem_b32s1(temp_ptr(), lr_ptr());
     set_lr_ptr(temp_ptr());
@@ -1229,7 +1229,7 @@ pub unsafe extern "C" fn hlist_out() {
                                 set_lr_problems(lr_problems() + 1);
                             }
                         } else {
-                            set_temp_ptr(get_avail());
+                            set_temp_ptr(get_avail_global());
                             set_mem_b32s0(temp_ptr(), math_node_end_lr_type(p) as i32);
                             set_mem_b32s1(temp_ptr(), lr_ptr());
                             set_lr_ptr(temp_ptr());
@@ -1892,7 +1892,7 @@ pub unsafe extern "C" fn reverse(
                                 set_mem_b16s1(p, KERN_NODE);
                                 set_mem_b32s1(p + 1, rule_wd());
                             } else {
-                                g = get_node(GLUE_SPEC_SIZE);
+                                g = get_node_global(GLUE_SPEC_SIZE);
                                 set_mem_b16s1(g, FILLL + 1);
                                 set_mem_b16s0(g, FILLL + 1);
                                 set_mem_b32s1(g + 1, rule_wd());
@@ -1903,9 +1903,9 @@ pub unsafe extern "C" fn reverse(
                         }
                     }
                     LIGATURE_NODE => {
-                        crate::mem::flush_list(mem_b32s1(p + 1));
+                        crate::mem::flush_list_global(mem_b32s1(p + 1));
                         set_temp_ptr(p);
-                        p = get_avail();
+                        p = get_avail_global();
                         set_mem_word(p, mem_word(temp_ptr() + 1));
                         set_mem_b32s1(p, q);
                         free_node_global(temp_ptr(), SMALL_NODE_SIZE);
@@ -1942,7 +1942,7 @@ pub unsafe extern "C" fn reverse(
                                 }
                             }
                         } else {
-                            set_temp_ptr(get_avail());
+                            set_temp_ptr(get_avail_global());
                             set_mem_b32s0(temp_ptr(), math_node_end_lr_type(p) as i32);
                             set_mem_b32s1(temp_ptr(), lr_ptr());
                             set_lr_ptr(temp_ptr());
@@ -1992,7 +1992,7 @@ pub unsafe extern "C" fn reverse(
 // Called from hlist_out and vlist_out (still in C) → #[no_mangle].
 #[no_mangle]
 pub unsafe extern "C" fn movement(mut w: i32, o: u8) {
-    let mut q = crate::mem::get_node(MOVEMENT_NODE_SIZE);
+    let mut q = crate::mem::get_node_global(MOVEMENT_NODE_SIZE);
     set_mem_b32s1(q + 1, w);
     set_mem_b32s1(q + 2, dvi_offset() + dvi_ptr());
 
@@ -2169,14 +2169,14 @@ unsafe fn special_out(p: i32) {
 // translated from xetex-shipout.c:1976 (write_out)
 // Only called from out_what (Rust) → private.
 unsafe fn write_out(p: i32) {
-    let q = crate::mem::get_avail();
+    let q = crate::mem::get_avail_global();
     set_mem_b32s0(q, RIGHT_BRACE_TOKEN + b'}' as i32);
-    let r = crate::mem::get_avail();
+    let r = crate::mem::get_avail_global();
     set_mem_b32s1(q, r);
     set_mem_b32s0(r, CS_TOKEN_FLAG + END_WRITE);
     crate::input::begin_token_list(q, INSERTED);
     crate::input::begin_token_list(mem_b32s1(p + 1), WRITE_TEXT);
-    let q2 = crate::mem::get_avail();
+    let q2 = crate::mem::get_avail_global();
     set_mem_b32s0(q2, LEFT_BRACE_TOKEN + b'{' as i32);
     crate::input::begin_token_list(q2, INSERTED);
 
@@ -2222,7 +2222,7 @@ unsafe fn write_out(p: i32) {
 
     crate::output::token_show(def_ref());
     crate::output::print_ln();
-    crate::mem::flush_list(def_ref());
+    crate::mem::flush_list_global(def_ref());
 
     if j == 18 {
         if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {

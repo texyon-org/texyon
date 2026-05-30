@@ -22,7 +22,7 @@ use crate::input::begin_token_list;
 use crate::mem::delete_glue_ref;
 use crate::mem::delete_token_ref;
 use crate::mem::free_node_global;
-use crate::mem::get_node;
+use crate::mem::get_node_global;
 use crate::mem::new_null_box;
 use crate::mem::new_skip_param;
 use crate::mem::new_spec;
@@ -640,7 +640,7 @@ pub unsafe fn build_page() {
 
                 if mem_b16s0(r) as u8 != n {
                     // 1044: Create page-insertion node
-                    let q2 = get_node(PAGE_INS_NODE_SIZE);
+                    let q2 = get_node_global(PAGE_INS_NODE_SIZE);
                     set_mem_b32s1(q2, mem_b32s1(r));
                     set_mem_b32s1(r, q2);
                     r = q2;

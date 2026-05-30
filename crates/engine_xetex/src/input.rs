@@ -51,13 +51,13 @@ pub unsafe extern "C" fn end_token_list() {
     let ci = cur_input();
     if ci.index >= BACKED_UP {
         if ci.index <= INSERTED {
-            crate::mem::flush_list(ci.start);
+            crate::mem::flush_list_global(ci.start);
         } else {
             crate::mem::delete_token_ref(ci.start);
             if ci.index == MACRO {
                 while param_ptr() > ci.limit {
                     set_param_ptr(param_ptr() - 1);
-                    crate::mem::flush_list(param_stack(param_ptr()));
+                    crate::mem::flush_list_global(param_stack(param_ptr()));
                 }
             }
         }
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn back_input() {
     {
         end_token_list();
     }
-    let p = crate::mem::get_avail();
+    let p = crate::mem::get_avail_global();
     crate::globals::set_mem_b32s0(p, cur_tok());
     if cur_tok() < RIGHT_BRACE_LIMIT {
         if cur_tok() < LEFT_BRACE_LIMIT {
