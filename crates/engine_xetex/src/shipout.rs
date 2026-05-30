@@ -89,9 +89,6 @@ fn set_dvi_offset(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.dvi_offset = v);
 }
 
-fn dvi_gone() -> i32 {
-    crate::state::with_state(|s| s.shipout.dvi_gone)
-}
 fn set_dvi_gone(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.dvi_gone = v);
 }
@@ -252,36 +249,36 @@ pub unsafe fn new_edge_global(s: i16, w: i32) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn dvi_four(mut x: i32) {
     if x >= 0 {
-        dvi_out((x / 0x1000000) as u8);
+        dvi_out_global((x / 0x1000000) as u8);
     } else {
         x += 0x40000000;
         x += 0x40000000;
-        dvi_out(((x / 0x1000000) + 128) as u8);
+        dvi_out_global(((x / 0x1000000) + 128) as u8);
     }
 
     x %= 0x1000000;
-    dvi_out((x / 0x10000) as u8);
+    dvi_out_global((x / 0x10000) as u8);
 
     x %= 0x10000;
-    dvi_out((x / 0x100) as u8);
-    dvi_out((x % 0x100) as u8);
+    dvi_out_global((x / 0x100) as u8);
+    dvi_out_global((x % 0x100) as u8);
 }
 
 /// translated from xetex-shipout.c:2423 (dvi_two)
 #[no_mangle]
 pub unsafe extern "C" fn dvi_two(s: u16) {
-    dvi_out((s / 0x100) as u8);
-    dvi_out((s % 0x100) as u8);
+    dvi_out_global((s / 0x100) as u8);
+    dvi_out_global((s % 0x100) as u8);
 }
 
 /// translated from xetex-shipout.c:1784 (dvi_native_font_def)
 unsafe fn dvi_native_font_def(f: i32) {
-    dvi_out(DEFINE_NATIVE_FONT);
+    dvi_out_global(DEFINE_NATIVE_FONT);
     dvi_four(f - 1);
     let font_def_length = make_font_def(f);
 
     for i in 0..font_def_length {
-        dvi_out(xdv_buffer_entry(i));
+        dvi_out_global(xdv_buffer_entry(i));
     }
 }
 
@@ -292,22 +289,22 @@ pub unsafe extern "C" fn dvi_font_def(f: i32) {
         dvi_native_font_def(f);
     } else {
         if f <= 256 {
-            dvi_out(FNT_DEF1);
-            dvi_out((f - 1) as u8);
+            dvi_out_global(FNT_DEF1);
+            dvi_out_global((f - 1) as u8);
         } else {
-            dvi_out(FNT_DEF1 + 1);
-            dvi_out(((f - 1) / 256) as u8);
-            dvi_out(((f - 1) % 256) as u8);
+            dvi_out_global(FNT_DEF1 + 1);
+            dvi_out_global(((f - 1) / 256) as u8);
+            dvi_out_global(((f - 1) % 256) as u8);
         }
 
         let font_check = font_check_entry(f);
-        dvi_out(font_check.s3 as u8);
-        dvi_out(font_check.s2 as u8);
-        dvi_out(font_check.s1 as u8);
-        dvi_out(font_check.s0 as u8);
+        dvi_out_global(font_check.s3 as u8);
+        dvi_out_global(font_check.s2 as u8);
+        dvi_out_global(font_check.s1 as u8);
+        dvi_out_global(font_check.s0 as u8);
         dvi_four(font_size_entry(f));
         dvi_four(font_dsize_entry(f));
-        dvi_out(crate::string_pool::length(font_area_entry(f)) as u8);
+        dvi_out_global(crate::string_pool::length(font_area_entry(f)) as u8);
 
         let font_name = font_name_entry(f);
         let mut l = 0;
@@ -324,19 +321,19 @@ pub unsafe extern "C" fn dvi_font_def(f: i32) {
             l = crate::string_pool::length(font_name);
         }
 
-        dvi_out(l as u8);
+        dvi_out_global(l as u8);
 
         k = str_start(font_area_entry(f) - TOO_BIG_CHAR);
         let mut for_end = str_start(font_area_entry(f) + 1 - TOO_BIG_CHAR) - 1;
         while k <= for_end {
-            dvi_out(str_pool_entry(k) as u8);
+            dvi_out_global(str_pool_entry(k) as u8);
             k += 1;
         }
 
         k = str_start(font_name - TOO_BIG_CHAR);
         for_end = str_start(font_name - TOO_BIG_CHAR) + l - 1;
         while k <= for_end {
-            dvi_out(str_pool_entry(k) as u8);
+            dvi_out_global(str_pool_entry(k) as u8);
             k += 1;
         }
     }
@@ -369,50 +366,83 @@ pub unsafe extern "C" fn deinitialize_shipout_variables() {
 }
 
 // translated from xetex-shipout.c:2296 (write_to_dvi)
-// #[no_mangle] because finalize_dvi_file (still in C) calls this.
-#[no_mangle]
-pub unsafe extern "C" fn write_to_dvi(a: i32, b: i32) {
+//
+// Borrow-dropping byte-range flush. The FFI write / `_tt_abort` must not run
+// while the thread-local is borrowed (the abort longjmp would leak the
+// `RefCell` guard), so it grabs (file, ptr) under a short `with_state` borrow
+// and writes outside it — matching the pre-thread structure. Threads to a
+// direct `&ShipoutState` helper once its callers (`finalize_dvi_file`,
+// `dvi_swap`) are threaded.
+pub unsafe fn write_to_dvi_global(a: i32, b: i32) {
     let n = (b - a + 1) as libc::size_t;
-    let ptr = crate::state::with_state(|s| {
-        s.shipout.dvi_buf.as_ptr().add(a as usize)
+    let (file, ptr) = crate::state::with_state(|s| {
+        // The buffer Vec never reallocates, so this raw ptr stays valid past
+        // the borrow (same escaping-pointer idiom as `buffer_ptr`).
+        (s.shipout.dvi_file, s.shipout.dvi_buf.as_ptr().add(a as usize))
     });
-    if ttstub_output_write(dvi_file(), ptr as *const libc::c_char, n) != n {
+    if ttstub_output_write(file, ptr as *const libc::c_char, n) != n {
         _tt_abort(c"failed to write data to XDV file".as_ptr());
     }
 }
 
+/// What a threaded `dvi_out`/`dvi_swap` needs its bridge-down wrapper to do
+/// *after* the `with_state_mut` borrow drops: file I/O and the cold overflow
+/// abort must not run while the thread-local is borrowed (§5 sentinel rule).
+enum DviFlush {
+    /// Flush `dvi_buf[a..=b]` to the output file.
+    Write(i32, i32),
+    /// DVI length overflowed 0x7FFFFFFF — abort via `fatal_error`.
+    Fatal,
+}
+
 // translated from xetex-shipout.c:2306 (dvi_swap)
-unsafe fn dvi_swap() {
-    let limit = dvi_limit();
-    let ptr = dvi_ptr();
-    let offset = dvi_offset();
-    if ptr > TEX_INFINITY - offset {
-        set_cur_s(-2);
-        crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
+//
+// Direct `&mut ShipoutState` buffer-swap bookkeeping. The byte flush and the
+// cold overflow abort are returned to the wrapper instead of run under the
+// borrow. The state updates are reordered before the (deferred) flush, which
+// is sound: `dvi_limit/offset/ptr/gone` do not affect the bytes being written.
+fn dvi_swap(shipout: &mut ShipoutState) -> DviFlush {
+    if shipout.dvi_ptr > TEX_INFINITY - shipout.dvi_offset {
+        shipout.cur_s = -2;
+        return DviFlush::Fatal;
     }
-    if limit == DVI_BUF_SIZE {
-        write_to_dvi(0, HALF_BUF - 1);
-        set_dvi_limit(HALF_BUF);
-        set_dvi_offset(offset + DVI_BUF_SIZE);
-        set_dvi_ptr(0);
+    let range = if shipout.dvi_limit == DVI_BUF_SIZE {
+        shipout.dvi_limit = HALF_BUF;
+        shipout.dvi_offset += DVI_BUF_SIZE;
+        shipout.dvi_ptr = 0;
+        DviFlush::Write(0, HALF_BUF - 1)
     } else {
-        write_to_dvi(HALF_BUF, DVI_BUF_SIZE - 1);
-        set_dvi_limit(DVI_BUF_SIZE);
-    }
-    set_dvi_gone(dvi_gone() + HALF_BUF);
+        shipout.dvi_limit = DVI_BUF_SIZE;
+        DviFlush::Write(HALF_BUF, DVI_BUF_SIZE - 1)
+    };
+    shipout.dvi_gone += HALF_BUF;
+    range
 }
 
 // translated from xetex-shipout.c:71 (dvi_out)
-#[no_mangle]
-pub unsafe extern "C" fn dvi_out(c: u8) {
-    let ptr = dvi_ptr();
-    let limit = dvi_limit();
-    crate::state::with_state_mut(|s| {
-        s.shipout.dvi_buf[ptr as usize] = c;
-        s.shipout.dvi_ptr += 1;
-    });
-    if dvi_ptr() == limit {
-        dvi_swap();
+//
+// Direct `&mut ShipoutState` byte write. Returns the deferred flush action
+// (if the buffer filled) for the bridge-down wrapper to perform after the
+// borrow drops.
+fn dvi_out(shipout: &mut ShipoutState, c: u8) -> Option<DviFlush> {
+    let ptr = shipout.dvi_ptr;
+    shipout.dvi_buf[ptr as usize] = c;
+    shipout.dvi_ptr += 1;
+    if shipout.dvi_ptr == shipout.dvi_limit {
+        Some(dvi_swap(shipout))
+    } else {
+        None
+    }
+}
+
+pub unsafe fn dvi_out_global(c: u8) {
+    let flush = crate::state::with_state_mut(|s| dvi_out(&mut s.shipout, c));
+    match flush {
+        None => {}
+        Some(DviFlush::Write(a, b)) => write_to_dvi_global(a, b),
+        Some(DviFlush::Fatal) => {
+            crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
+        }
     }
 }
 
@@ -541,11 +571,11 @@ pub unsafe fn ship_out(p: i32) {
         }
 
         if total_pages() == 0 {
-            dvi_out(PRE);
+            dvi_out_global(PRE);
             if semantic_pagination_enabled() {
-                dvi_out(SPX_ID_BYTE);
+                dvi_out_global(SPX_ID_BYTE);
             } else {
-                dvi_out(XDV_ID_BYTE);
+                dvi_out_global(XDV_ID_BYTE);
             }
             dvi_four(25_400_000);
             dvi_four(473_628_672);
@@ -554,14 +584,14 @@ pub unsafe fn ship_out(p: i32) {
 
             let output_comment = c"tectonic";
             let l = output_comment.to_bytes().len() as u8;
-            dvi_out(l);
+            dvi_out_global(l);
             for s in 0..l {
-                dvi_out(*output_comment.as_ptr().add(s as usize) as u8);
+                dvi_out_global(*output_comment.as_ptr().add(s as usize) as u8);
             }
         }
 
         let page_loc = dvi_offset() + dvi_ptr();
-        dvi_out(BOP);
+        dvi_out_global(BOP);
         for k in 0..10 {
             dvi_four(eqtb_b32s1(COUNT_BASE + k));
         }
@@ -588,12 +618,12 @@ pub unsafe fn ship_out(p: i32) {
         }
         set_selector(old_setting);
 
-        dvi_out(XXX1);
-        dvi_out(crate::hash::cur_length() as u8);
+        dvi_out_global(XXX1);
+        dvi_out_global(crate::hash::cur_length() as u8);
         let start = str_start(str_ptr() - TOO_BIG_CHAR);
         let end = pool_ptr();
         for s in start..end {
-            dvi_out(str_pool_entry(s) as u8);
+            dvi_out_global(str_pool_entry(s) as u8);
         }
         set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
 
@@ -605,7 +635,7 @@ pub unsafe fn ship_out(p: i32) {
             hlist_out();
         }
 
-        dvi_out(EOP);
+        dvi_out_global(EOP);
         set_total_pages(total_pages() + 1);
         set_cur_s(-1);
     }
@@ -649,7 +679,7 @@ pub fn dvi_pop(shipout: &mut ShipoutState, l: i32) -> bool {
 pub unsafe fn dvi_pop_global(l: i32) {
     let emit_pop = crate::state::with_state_mut(|st| dvi_pop(&mut st.shipout, l));
     if emit_pop {
-        dvi_out(POP);
+        dvi_out_global(POP);
     }
 }
 
@@ -661,14 +691,14 @@ unsafe fn ensure_dvi_font(f: i32) {
         }
 
         if f <= 64 {
-            dvi_out((f as u8) + FNT_NUM_0 - 1);
+            dvi_out_global((f as u8) + FNT_NUM_0 - 1);
         } else if f <= 256 {
-            dvi_out(FNT1);
-            dvi_out((f - 1) as u8);
+            dvi_out_global(FNT1);
+            dvi_out_global((f - 1) as u8);
         } else {
-            dvi_out(FNT1 + 1);
-            dvi_out(((f - 1) / 256) as u8);
-            dvi_out(((f - 1) % 256) as u8);
+            dvi_out_global(FNT1 + 1);
+            dvi_out_global(((f - 1) / 256) as u8);
+            dvi_out_global(((f - 1) % 256) as u8);
         }
 
         set_dvi_f(f);
@@ -875,7 +905,7 @@ unsafe fn finish_hlist_rule(this_box: i32, base_line: i32, p: i32) {
             set_dvi_v(cur_v());
         }
 
-        dvi_out(SET_RULE);
+        dvi_out_global(SET_RULE);
         dvi_four(rule_ht());
         dvi_four(rule_wd());
         set_cur_v(base_line);
@@ -1038,7 +1068,7 @@ pub unsafe extern "C" fn hlist_out() {
     let mut p = mem_b32s1(this_box + 5);
     set_cur_s(cur_s() + 1);
     if cur_s() > 0 {
-        dvi_out(PUSH);
+        dvi_out_global(PUSH);
     }
     if cur_s() > max_push() {
         set_max_push(cur_s());
@@ -1102,9 +1132,9 @@ pub unsafe extern "C" fn hlist_out() {
                         let info = font_info_b16(char_base_entry(f) + c as i32);
                         if info.s3 > 0 {
                             if c >= 128 {
-                                dvi_out(SET1);
+                                dvi_out_global(SET1);
                             }
-                            dvi_out(c as u8);
+                            dvi_out_global(c as u8);
                             set_cur_h(cur_h() + font_character_width(f, c as i32));
                         }
                     }
@@ -1165,7 +1195,7 @@ pub unsafe extern "C" fn hlist_out() {
                             ensure_dvi_font(f);
 
                             if mem_b16s0(p) == GLYPH_NODE {
-                                dvi_out(SET_GLYPHS);
+                                dvi_out_global(SET_GLYPHS);
                                 dvi_four(mem_b32s1(p + 1));
                                 dvi_two(1);
                                 dvi_four(0);
@@ -1175,7 +1205,7 @@ pub unsafe extern "C" fn hlist_out() {
                             } else {
                                 if mem_b16s0(p) == NATIVE_WORD_NODE_AT {
                                     if mem_b16s1(p + 4) > 0 || !mem_ptr(p + 5).is_null() {
-                                        dvi_out(SET_TEXT_AND_GLYPHS);
+                                        dvi_out_global(SET_TEXT_AND_GLYPHS);
                                         let len = mem_b16s1(p + 4) as i32;
                                         dvi_two(len as u16);
                                         let text = mem_as_u16_ptr(p + 6);
@@ -1184,14 +1214,14 @@ pub unsafe extern "C" fn hlist_out() {
                                         }
                                         let len = makeXDVGlyphArrayData(mem_node_addr(p));
                                         for k in 0..len {
-                                            dvi_out(xdv_buffer_entry(k));
+                                            dvi_out_global(xdv_buffer_entry(k));
                                         }
                                     }
                                 } else if !mem_ptr(p + 5).is_null() {
-                                    dvi_out(SET_GLYPHS);
+                                    dvi_out_global(SET_GLYPHS);
                                     let len = makeXDVGlyphArrayData(mem_node_addr(p));
                                     for k in 0..len {
-                                        dvi_out(xdv_buffer_entry(k));
+                                        dvi_out_global(xdv_buffer_entry(k));
                                     }
                                 }
                                 set_cur_h(cur_h() + mem_b32s1(p + 1));
@@ -1339,7 +1369,7 @@ pub unsafe extern "C" fn vlist_out() {
 
     set_cur_s(cur_s() + 1);
     if cur_s() > 0 {
-        dvi_out(PUSH);
+        dvi_out_global(PUSH);
     }
 
     if cur_s() > max_push() {
@@ -1448,7 +1478,7 @@ pub unsafe extern "C" fn vlist_out() {
                     let f = mem_b16s2(p + 4) as i32;
                     ensure_dvi_font(f);
 
-                    dvi_out(SET_GLYPHS);
+                    dvi_out_global(SET_GLYPHS);
                     dvi_four(0);
                     dvi_two(1);
                     dvi_four(0);
@@ -1631,7 +1661,7 @@ unsafe fn finish_vlist_rule(this_box: i32, left_edge: i32, upwards: bool) {
             set_dvi_v(cur_v());
         }
 
-        dvi_out(PUT_RULE);
+        dvi_out_global(PUT_RULE);
         dvi_four(rule_ht());
         dvi_four(rule_wd());
         set_cur_h(left_edge);
@@ -1706,9 +1736,9 @@ unsafe fn print_c_string_here(s: *const libc::c_char) {
 pub unsafe fn finalize_dvi_file() {
     while cur_s() > -1 {
         if cur_s() > 0 {
-            dvi_out(POP);
+            dvi_out_global(POP);
         } else {
-            dvi_out(EOP);
+            dvi_out_global(EOP);
             set_total_pages(total_pages() + 1);
         }
         set_cur_s(cur_s() - 1);
@@ -1724,7 +1754,7 @@ pub unsafe fn finalize_dvi_file() {
         return;
     }
 
-    dvi_out(POST);
+    dvi_out_global(POST);
     dvi_four(last_bop());
     set_last_bop(dvi_offset() + dvi_ptr() - 5);
     dvi_four(25_400_000); // magic: conversion ratio for sp
@@ -1733,10 +1763,10 @@ pub unsafe fn finalize_dvi_file() {
     dvi_four(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
     dvi_four(max_v());
     dvi_four(max_h());
-    dvi_out((max_push() / 256) as u8);
-    dvi_out((max_push() % 256) as u8);
-    dvi_out(((total_pages() / 256) % 256) as u8);
-    dvi_out((total_pages() % 256) as u8);
+    dvi_out_global((max_push() / 256) as u8);
+    dvi_out_global((max_push() % 256) as u8);
+    dvi_out_global(((total_pages() / 256) % 256) as u8);
+    dvi_out_global((total_pages() % 256) as u8);
 
     let mut fp = font_ptr();
     while fp > FONT_BASE {
@@ -1747,23 +1777,23 @@ pub unsafe fn finalize_dvi_file() {
     }
     set_font_ptr(fp);
 
-    dvi_out(POST_POST);
+    dvi_out_global(POST_POST);
     dvi_four(last_bop());
 
     if semantic_pagination_enabled() {
-        dvi_out(SPX_ID_BYTE);
+        dvi_out_global(SPX_ID_BYTE);
     } else {
-        dvi_out(XDV_ID_BYTE);
+        dvi_out_global(XDV_ID_BYTE);
     }
 
     let mut k = (4 + (DVI_BUF_SIZE - dvi_ptr()) % 4) as u8;
     while k > 0 {
-        dvi_out(223);
+        dvi_out_global(223);
         k -= 1;
     }
 
     if dvi_limit() == HALF_BUF {
-        write_to_dvi(HALF_BUF, DVI_BUF_SIZE - 1);
+        write_to_dvi_global(HALF_BUF, DVI_BUF_SIZE - 1);
     }
 
     if dvi_ptr() > TEX_INFINITY - dvi_offset() {
@@ -1772,7 +1802,7 @@ pub unsafe fn finalize_dvi_file() {
     }
 
     if dvi_ptr() > 0 {
-        write_to_dvi(0, dvi_ptr() - 1);
+        write_to_dvi_global(0, dvi_ptr() - 1);
     }
 
     let k = ttstub_output_close(dvi_file()) as u8;
@@ -2158,7 +2188,7 @@ pub unsafe fn movement_global(w: i32, o: u8) {
         crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
     }
     for byte in bytes {
-        dvi_out(byte);
+        dvi_out_global(byte);
     }
 }
 
@@ -2189,17 +2219,17 @@ unsafe fn special_out(p: i32) {
 
     let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
     if cur_len < 256 {
-        dvi_out(XXX1);
-        dvi_out(cur_len as u8);
+        dvi_out_global(XXX1);
+        dvi_out_global(cur_len as u8);
     } else {
-        dvi_out(XXX4);
+        dvi_out_global(XXX4);
         dvi_four(cur_len);
     }
 
     let mut k = str_start(str_ptr() - TOO_BIG_CHAR);
     let for_end = pool_ptr() - 1;
     while k <= for_end {
-        dvi_out(str_pool_entry(k) as u8);
+        dvi_out_global(str_pool_entry(k) as u8);
         k += 1;
     }
     set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
@@ -2355,16 +2385,16 @@ pub unsafe extern "C" fn pic_out(p: i32) {
     set_selector(old_setting);
     let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
     if cur_len < 256 {
-        dvi_out(XXX1);
-        dvi_out(cur_len as u8);
+        dvi_out_global(XXX1);
+        dvi_out_global(cur_len as u8);
     } else {
-        dvi_out(XXX4);
+        dvi_out_global(XXX4);
         dvi_four(cur_len);
     }
 
     let mut k = str_start(str_ptr() - TOO_BIG_CHAR);
     while k < pool_ptr() {
-        dvi_out(str_pool_entry(k) as u8);
+        dvi_out_global(str_pool_entry(k) as u8);
         k += 1;
     }
     set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));

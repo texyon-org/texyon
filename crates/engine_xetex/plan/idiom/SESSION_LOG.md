@@ -8,6 +8,42 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 71 — 2026-05-31 — thread shipout DVI byte writer
+
+**Type:** execution (workstream 01, Phase C — third `shipout.rs` slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the buffered DVI byte-writer trio to direct `&mut ShipoutState`:
+- `dvi_out` now takes `&mut ShipoutState`, writes the byte and bumps `dvi_ptr` directly, and returns an `Option<DviFlush>` describing any deferred buffer flush instead of doing I/O under the borrow.
+- `dvi_swap` now takes `&mut ShipoutState`, does the swap bookkeeping directly, and returns `DviFlush::Write(a, b)` (the byte range to flush) or `DviFlush::Fatal` (the >2GB DVI-length overflow). State updates are reordered before the deferred flush — sound because `dvi_limit/offset/ptr/gone` do not affect the bytes written.
+- `dvi_out`'s `dvi_out_global` bridge-down wrapper runs `dvi_out` under `with_state_mut`, then after the borrow drops performs the flush (`write_to_dvi_global`) or the cold `fatal_error` (§5 sentinel).
+- `write_to_dvi` became the borrow-dropping `write_to_dvi_global` wrapper: it grabs `(dvi_file, dvi_buf ptr)` under a short `with_state` borrow and does the FFI write / `_tt_abort` outside it — preserving the pre-thread "never hold a borrow across the abort longjmp" structure (the longjmp would leak the `RefCell` guard). It threads to a direct `&ShipoutState` helper once its callers (`finalize_dvi_file`, a threaded `dvi_swap`) thread.
+
+**Classification (`01b` §4a):** `write_to_dvi` / `dvi_swap` / `dvi_out` = bucket **C** (output/error/abort under a live borrow → borrow-dropping wrappers + a deferred-action return). The ~76 legacy call sites (`dvi_out` ×71, `write_to_dvi` ×4 incl. the two `finalize_dvi_file` sites, `dvi_swap`'s single internal site) = bucket **A** mechanical rename to `dvi_out_global` / `write_to_dvi_global` (one `perl` word-boundary pass; verified no comment/string false positives first).
+
+**Recon / safety checks (§11):**
+- (a) no extern *statics* — these are functions; no state fields added → no newtype debt.
+- (b) no `ini.rs` cleanup aliases.
+- (c) C side: only stale prototypes (`xetex-shipout.c:37-40`) + "translated to Rust" comments; `finalize_dvi_file` (the reason for `write_to_dvi`'s old `#[no_mangle]`) is itself already Rust, so no executable C/C++ callers. Left the stale prototypes in place (out of commit scope; session-68/69 precedent).
+- (d) no cross-module extern/static/link-name redeclarations.
+- All `dvi_out`/`dvi_four`/`dvi_two` call sites live in `shipout.rs` (single file).
+
+**Work done:**
+1. `shipout.rs`: rewrote `dvi_out`/`dvi_swap` as direct `&mut ShipoutState` helpers returning the `DviFlush` action; added `dvi_out_global`; converted `write_to_dvi` → `write_to_dvi_global`.
+2. Renamed all legacy callers to `dvi_out_global` / `write_to_dvi_global`.
+3. Deleted the now-dead `dvi_gone()` getter (its sole caller was `dvi_swap`; movement code reads `shipout.dvi_gone` directly, and `set_dvi_gone` is still used at init).
+
+**Deferred:** `dvi_four` / `dvi_two` / `dvi_font_def` stay legacy this commit (they call `dvi_out_global`); they are the natural next slice as pure pass-throughs once threaded to forward `&mut ShipoutState` and propagate the `DviFlush` short-circuit.
+
+**Newtype debt:** none. No state fields added; parameters are existing plain `eight_bits`/`int32_t` (`u8`/`i32`).
+
+**Metrics:** `#[no_mangle]` exports **391 → 389** (−2: `write_to_dvi`, `dvi_out`; the raw `grep` also drops a stale comment that contained the literal `#[no_mangle]` text, so the grep reads 392 → 389). `globals.rs` raw externs unchanged at **40**. `unsafe fn` **688 → 687** (three unsafe defs `write_to_dvi`/`dvi_swap`/`dvi_out` → two unsafe wrappers + two safe threaded helpers). Raw `unsafe { ... }` text-search count unchanged at **160**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, no new warnings in `shipout.rs` (the lone `xmalloc` unused warning pre-dates this slice on HEAD); full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (72):** continue `shipout.rs` with the pure DVI byte formatters `dvi_four` / `dvi_two` (and then `dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`) as pass-through callers of the now-threaded `dvi_out`. They thread to take `&mut ShipoutState`, forward it to `dvi_out`, and must short-circuit / propagate the `DviFlush` overflow so the abort still fires after the borrow drops. Keep climbing `shipout.rs` (then `math.rs`/`linebreak.rs`, `scan.rs` last). Draft `02-modules.md` to READY before threading reaches scanner-heavy code.
+
+---
+
 ## Idiom session 70 — 2026-05-31 — add classified codemod lane
 
 **Type:** planning update (workstream 01, Phase C recipe). **One commit.** No code changed; dashboard not run.

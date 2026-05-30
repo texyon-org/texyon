@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 70, **Phase-C planning update**: added classified codemod guidance to `01b-phase-c-recipe.md` so future slices classify functions before using regex/scripted rewrites. Plan-only change; no dashboard run).
+Last updated: 2026-05-31 (last session = session 71, **Phase-C execution**: threaded the `shipout.rs` buffered DVI byte writer — `dvi_out`/`dvi_swap` to `&mut ShipoutState` returning a `DviFlush` deferred-action, `write_to_dvi` → borrow-dropping `write_to_dvi_global`. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -628,6 +628,20 @@ least-coupled non-`misc` clusters:
     accessors; init writes those state fields directly. C references are stale
     prototype/comment only; no C/C++ callers. No newtype debt. Dashboard
     29/2/7/4.
+-   **Third `shipout.rs` call-graph slice (session 71):** threaded the buffered
+    DVI byte writer. `dvi_out`/`dvi_swap` now take `&mut ShipoutState`, do the
+    buffer/bookkeeping work directly, and return an `Option<DviFlush>` /
+    `DviFlush` deferred-action (`Write(a, b)` byte range or `Fatal` overflow)
+    instead of doing file I/O or the cold `fatal_error` under the borrow.
+    `dvi_out_global` runs the deferred flush / abort after the `with_state_mut`
+    borrow drops (§5 sentinel). `write_to_dvi` became the borrow-dropping
+    `write_to_dvi_global` wrapper (grabs `dvi_file`/buffer ptr under a short
+    borrow, FFI-writes / `_tt_abort`s outside it — preserving the no-borrow-
+    across-longjmp structure). ~76 legacy call sites renamed by a `perl` pass
+    (bucket A); the trio is bucket C. Deleted the now-dead `dvi_gone()` getter.
+    `dvi_four`/`dvi_two`/`dvi_font_def` left legacy (next slice, pure
+    pass-throughs). C references are stale prototypes/comments only; no C/C++
+    callers; no cleanup aliases. No newtype debt. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -639,8 +653,8 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 182 state-backed scalars/arrays (incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and 33 `LinebreakState` inline scalars/arrays) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 392 (direct `grep '#[no_mangle]' src/*.rs`; session 69 dropped `movement`) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 688 |
+| `#[no_mangle]` exports | 576 | boundary-only | 389 (direct `grep '#[no_mangle]' src/*.rs`; session 71 dropped `write_to_dvi`/`dvi_out` and a stale comment containing the literal) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 687 (session 71 −1) |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 160 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
@@ -768,7 +782,7 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run, and sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`. Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. Next: continue `shipout.rs` with the next clean DVI/output-position cluster, likely `dvi_out` / `dvi_four` / `dvi_two` or another helper that can be split into direct state mutation plus borrow-dropping output wrappers. Then continue to `math.rs`/`linebreak.rs`, with `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
+1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`). Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. Next: continue `shipout.rs` with the pure DVI byte formatters `dvi_four` / `dvi_two` (then `dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`) as pass-through callers of the now-threaded `dvi_out` — they take `&mut ShipoutState`, forward it, and propagate/short-circuit the `DviFlush` overflow so the abort still fires after the borrow drops. Then continue to `math.rs`/`linebreak.rs`, with `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the
