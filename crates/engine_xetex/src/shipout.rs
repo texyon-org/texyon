@@ -45,52 +45,90 @@ extern "C" {
     static output_file_extension: *const libc::c_char;
 }
 
-// DVI output file state — file-statics promoted from xetex-shipout.c.
-// Each carries #[no_mangle] so the remaining C functions in xetex-shipout.c
-// can reach them via `extern` declarations.
-// #[allow] because the names must match C for the ABI link.
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut dvi_file: usize = 0;
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut output_file_name: i32 = 0;
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut dvi_buf: *mut u8 = core::ptr::null_mut();
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut dvi_limit: i32 = 0;
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut dvi_ptr: i32 = 0;
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut dvi_offset: i32 = 0;
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut dvi_gone: i32 = 0;
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut down_ptr: i32 = 0;
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut right_ptr: i32 = 0;
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut cur_s: i32 = 0;
-// Promoted from C file-statics in session 113 — used by movement, special_out, pic_out.
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut dvi_h: i32 = 0;
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut dvi_v: i32 = 0;
-// Promoted from C file-static in session 115 so Rust ship_out and remaining C
-// list-output functions share the current DVI font.
-#[allow(non_upper_case_globals)]
-#[no_mangle]
-pub static mut dvi_f: i32 = 0;
+// DVI output file state — positioning and output variables bridged to ShipoutState.
+fn dvi_file() -> usize {
+    crate::state::with_state(|s| s.shipout.dvi_file)
+}
+fn set_dvi_file(v: usize) {
+    crate::state::with_state_mut(|s| s.shipout.dvi_file = v);
+}
+
+fn output_file_name() -> i32 {
+    crate::state::with_state(|s| s.shipout.output_file_name)
+}
+fn set_output_file_name(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.output_file_name = v);
+}
+
+fn dvi_limit() -> i32 {
+    crate::state::with_state(|s| s.shipout.dvi_limit)
+}
+fn set_dvi_limit(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.dvi_limit = v);
+}
+
+fn dvi_ptr() -> i32 {
+    crate::state::with_state(|s| s.shipout.dvi_ptr)
+}
+fn set_dvi_ptr(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.dvi_ptr = v);
+}
+
+fn dvi_offset() -> i32 {
+    crate::state::with_state(|s| s.shipout.dvi_offset)
+}
+fn set_dvi_offset(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.dvi_offset = v);
+}
+
+fn dvi_gone() -> i32 {
+    crate::state::with_state(|s| s.shipout.dvi_gone)
+}
+fn set_dvi_gone(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.dvi_gone = v);
+}
+
+fn down_ptr() -> i32 {
+    crate::state::with_state(|s| s.shipout.down_ptr)
+}
+fn set_down_ptr(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.down_ptr = v);
+}
+
+fn right_ptr() -> i32 {
+    crate::state::with_state(|s| s.shipout.right_ptr)
+}
+fn set_right_ptr(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.right_ptr = v);
+}
+
+fn cur_s() -> i32 {
+    crate::state::with_state(|s| s.shipout.cur_s)
+}
+fn set_cur_s(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.cur_s = v);
+}
+
+fn dvi_h() -> i32 {
+    crate::state::with_state(|s| s.shipout.dvi_h)
+}
+fn set_dvi_h(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.dvi_h = v);
+}
+
+fn dvi_v() -> i32 {
+    crate::state::with_state(|s| s.shipout.dvi_v)
+}
+fn set_dvi_v(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.dvi_v = v);
+}
+
+fn dvi_f() -> i32 {
+    crate::state::with_state(|s| s.shipout.dvi_f)
+}
+fn set_dvi_f(v: i32) {
+    crate::state::with_state_mut(|s| s.shipout.dvi_f = v);
+}
 
 // xetex-shipout.c:11–12
 const DVI_BUF_SIZE: i32 = 16384;
@@ -301,23 +339,25 @@ pub unsafe extern "C" fn dvi_font_def(f: i32) {
 // translated from xetex-shipout.c:48 (initialize_shipout_variables)
 #[no_mangle]
 pub unsafe extern "C" fn initialize_shipout_variables() {
-    output_file_name = 0;
-    // xmalloc_array(eight_bits, DVI_BUF_SIZE) = xmalloc((DVI_BUF_SIZE+1) * sizeof(u8))
-    dvi_buf = xmalloc((DVI_BUF_SIZE + 1) as libc::size_t) as *mut u8;
-    dvi_limit = DVI_BUF_SIZE;
-    dvi_ptr = 0;
-    dvi_offset = 0;
-    dvi_gone = 0;
-    down_ptr = TEX_NULL;
-    right_ptr = TEX_NULL;
-    cur_s = -1;
+    set_output_file_name(0);
+    crate::state::with_state_mut(|s| {
+        s.shipout.dvi_buf = vec![0u8; (DVI_BUF_SIZE + 1) as usize];
+    });
+    set_dvi_limit(DVI_BUF_SIZE);
+    set_dvi_ptr(0);
+    set_dvi_offset(0);
+    set_dvi_gone(0);
+    set_down_ptr(TEX_NULL);
+    set_right_ptr(TEX_NULL);
+    set_cur_s(-1);
 }
 
 // translated from xetex-shipout.c:63 (deinitialize_shipout_variables)
 #[no_mangle]
 pub unsafe extern "C" fn deinitialize_shipout_variables() {
-    libc::free(dvi_buf as *mut libc::c_void);
-    dvi_buf = core::ptr::null_mut();
+    crate::state::with_state_mut(|s| {
+        s.shipout.dvi_buf = Vec::new();
+    });
 }
 
 // translated from xetex-shipout.c:2296 (write_to_dvi)
@@ -325,35 +365,45 @@ pub unsafe extern "C" fn deinitialize_shipout_variables() {
 #[no_mangle]
 pub unsafe extern "C" fn write_to_dvi(a: i32, b: i32) {
     let n = (b - a + 1) as libc::size_t;
-    if ttstub_output_write(dvi_file, dvi_buf.add(a as usize) as *const libc::c_char, n) != n {
+    let ptr = crate::state::with_state(|s| {
+        s.shipout.dvi_buf.as_ptr().add(a as usize)
+    });
+    if ttstub_output_write(dvi_file(), ptr as *const libc::c_char, n) != n {
         _tt_abort(c"failed to write data to XDV file".as_ptr());
     }
 }
 
 // translated from xetex-shipout.c:2306 (dvi_swap)
 unsafe fn dvi_swap() {
-    if dvi_ptr > TEX_INFINITY - dvi_offset {
-        cur_s = -2;
+    let limit = dvi_limit();
+    let ptr = dvi_ptr();
+    let offset = dvi_offset();
+    if ptr > TEX_INFINITY - offset {
+        set_cur_s(-2);
         crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
     }
-    if dvi_limit == DVI_BUF_SIZE {
+    if limit == DVI_BUF_SIZE {
         write_to_dvi(0, HALF_BUF - 1);
-        dvi_limit = HALF_BUF;
-        dvi_offset += DVI_BUF_SIZE;
-        dvi_ptr = 0;
+        set_dvi_limit(HALF_BUF);
+        set_dvi_offset(offset + DVI_BUF_SIZE);
+        set_dvi_ptr(0);
     } else {
         write_to_dvi(HALF_BUF, DVI_BUF_SIZE - 1);
-        dvi_limit = DVI_BUF_SIZE;
+        set_dvi_limit(DVI_BUF_SIZE);
     }
-    dvi_gone += HALF_BUF;
+    set_dvi_gone(dvi_gone() + HALF_BUF);
 }
 
 // translated from xetex-shipout.c:71 (dvi_out)
 #[no_mangle]
 pub unsafe extern "C" fn dvi_out(c: u8) {
-    *dvi_buf.add(dvi_ptr as usize) = c;
-    dvi_ptr += 1;
-    if dvi_ptr == dvi_limit {
+    let ptr = dvi_ptr();
+    let limit = dvi_limit();
+    crate::state::with_state_mut(|s| {
+        s.shipout.dvi_buf[ptr as usize] = c;
+        s.shipout.dvi_ptr += 1;
+    });
+    if dvi_ptr() == limit {
         dvi_swap();
     }
 }
@@ -437,10 +487,10 @@ pub unsafe fn ship_out(p: i32) {
             set_max_h(page_width);
         }
 
-        dvi_h = 0;
-        dvi_v = 0;
+        set_dvi_h(0);
+        set_dvi_v(0);
         set_cur_h(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET));
-        dvi_f = FONT_BASE;
+        set_dvi_f(FONT_BASE);
 
         set_cur_h_offset(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) + ONE_INCH);
         set_cur_v_offset(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET) + ONE_INCH);
@@ -463,13 +513,13 @@ pub unsafe fn ship_out(p: i32) {
             );
         }
 
-        if output_file_name == 0 {
+        if output_file_name() == 0 {
             if job_name() == 0 {
                 crate::scan::open_log_file();
             }
             crate::scan::pack_job_name(output_file_extension);
-            dvi_file = ttstub_output_open(name_of_file(), 0);
-            if dvi_file == INVALID_HANDLE {
+            set_dvi_file(ttstub_output_open(name_of_file(), 0));
+            if dvi_file() == INVALID_HANDLE {
                 let mut buf = [0u8; 512];
                 libc::snprintf(
                     buf.as_mut_ptr() as *mut libc::c_char,
@@ -479,7 +529,7 @@ pub unsafe fn ship_out(p: i32) {
                 );
                 _tt_abort(buf.as_ptr() as *const libc::c_char);
             }
-            output_file_name = crate::scan::make_name_string();
+            set_output_file_name(crate::scan::make_name_string());
         }
 
         if total_pages() == 0 {
@@ -502,7 +552,7 @@ pub unsafe fn ship_out(p: i32) {
             }
         }
 
-        let page_loc = dvi_offset + dvi_ptr;
+        let page_loc = dvi_offset() + dvi_ptr();
         dvi_out(BOP);
         for k in 0..10 {
             dvi_four(eqtb_b32s1(COUNT_BASE + k));
@@ -549,7 +599,7 @@ pub unsafe fn ship_out(p: i32) {
 
         dvi_out(EOP);
         set_total_pages(total_pages() + 1);
-        cur_s = -1;
+        set_cur_s(-1);
     }
 
     if lr_problems() > 0 {
@@ -581,15 +631,15 @@ pub unsafe fn ship_out(p: i32) {
 // translated from xetex-shipout.c:2332 (dvi_pop)
 #[no_mangle]
 pub unsafe extern "C" fn dvi_pop(l: i32) {
-    if l == dvi_offset + dvi_ptr && dvi_ptr > 0 {
-        dvi_ptr -= 1;
+    if l == dvi_offset() + dvi_ptr() && dvi_ptr() > 0 {
+        set_dvi_ptr(dvi_ptr() - 1);
     } else {
         dvi_out(POP);
     }
 }
 
 unsafe fn ensure_dvi_font(f: i32) {
-    if f != dvi_f {
+    if f != dvi_f() {
         if !font_used_entry(f) {
             dvi_font_def(f);
             set_font_used_entry(f, true);
@@ -606,7 +656,7 @@ unsafe fn ensure_dvi_font(f: i32) {
             dvi_out(((f - 1) % 256) as u8);
         }
 
-        dvi_f = f;
+        set_dvi_f(f);
     }
 }
 
@@ -799,22 +849,22 @@ unsafe fn finish_hlist_rule(this_box: i32, base_line: i32, p: i32) {
     set_rule_ht(rule_ht() + rule_dp());
 
     if rule_ht() > 0 && rule_wd() > 0 {
-        if cur_h() != dvi_h {
-            movement(cur_h() - dvi_h, RIGHT1);
-            dvi_h = cur_h();
+        if cur_h() != dvi_h() {
+            movement(cur_h() - dvi_h(), RIGHT1);
+            set_dvi_h(cur_h());
         }
 
         set_cur_v(base_line + rule_dp());
-        if cur_v() != dvi_v {
-            movement(cur_v() - dvi_v, DOWN1);
-            dvi_v = cur_v();
+        if cur_v() != dvi_v() {
+            movement(cur_v() - dvi_v(), DOWN1);
+            set_dvi_v(cur_v());
         }
 
         dvi_out(SET_RULE);
         dvi_four(rule_ht());
         dvi_four(rule_wd());
         set_cur_v(base_line);
-        dvi_h += rule_wd();
+        set_dvi_h(dvi_h() + rule_wd());
     }
 
     set_cur_h(cur_h() + rule_wd());
@@ -912,17 +962,17 @@ unsafe fn output_hlist_glue(
 
             while cur_h() + leader_wd <= edge {
                 set_cur_v(base_line + mem_b32s1(leader_box + 4));
-                if cur_v() != dvi_v {
-                    movement(cur_v() - dvi_v, DOWN1);
-                    dvi_v = cur_v();
+                if cur_v() != dvi_v() {
+                    movement(cur_v() - dvi_v(), DOWN1);
+                    set_dvi_v(cur_v());
                 }
-                let save_v = dvi_v;
+                let save_v = dvi_v();
 
-                if cur_h() != dvi_h {
-                    movement(cur_h() - dvi_h, RIGHT1);
-                    dvi_h = cur_h();
+                if cur_h() != dvi_h() {
+                    movement(cur_h() - dvi_h(), RIGHT1);
+                    set_dvi_h(cur_h());
                 }
-                let save_h = dvi_h;
+                let save_h = dvi_h();
 
                 set_temp_ptr(leader_box);
                 if cur_dir() == RIGHT_TO_LEFT {
@@ -938,8 +988,8 @@ unsafe fn output_hlist_glue(
                 }
                 set_doing_leaders(outer_doing_leaders);
 
-                dvi_v = save_v;
-                dvi_h = save_h;
+                set_dvi_v(save_v);
+                set_dvi_h(save_h);
                 set_cur_v(base_line);
                 set_cur_h(save_h + leader_wd + lx);
             }
@@ -971,15 +1021,15 @@ pub unsafe extern "C" fn hlist_out() {
     }
 
     let mut p = mem_b32s1(this_box + 5);
-    cur_s += 1;
-    if cur_s > 0 {
+    set_cur_s(cur_s() + 1);
+    if cur_s() > 0 {
         dvi_out(PUSH);
     }
-    if cur_s > max_push() {
-        set_max_push(cur_s);
+    if cur_s() > max_push() {
+        set_max_push(cur_s());
     }
 
-    let save_loc = dvi_offset + dvi_ptr;
+    let save_loc = dvi_offset() + dvi_ptr();
     let base_line = cur_v();
     let mut prev_p = this_box + 5;
 
@@ -1016,13 +1066,13 @@ pub unsafe extern "C" fn hlist_out() {
     while p != TEX_NULL {
         'reswitch: loop {
             if is_char_node(p) {
-                if cur_h() != dvi_h {
-                    movement(cur_h() - dvi_h, RIGHT1);
-                    dvi_h = cur_h();
+                if cur_h() != dvi_h() {
+                    movement(cur_h() - dvi_h(), RIGHT1);
+                    set_dvi_h(cur_h());
                 }
-                if cur_v() != dvi_v {
-                    movement(cur_v() - dvi_v, DOWN1);
-                    dvi_v = cur_v();
+                if cur_v() != dvi_v() {
+                    movement(cur_v() - dvi_v(), DOWN1);
+                    set_dvi_v(cur_v());
                 }
 
                 while is_char_node(p) {
@@ -1049,7 +1099,7 @@ pub unsafe extern "C" fn hlist_out() {
                 }
 
                 crate::synctex::synctex_current();
-                dvi_h = cur_h();
+                set_dvi_h(cur_h());
             } else {
                 match mem_b16s1(p) {
                     HLIST_NODE | VLIST_NODE => {
@@ -1061,8 +1111,8 @@ pub unsafe extern "C" fn hlist_out() {
                             }
                             set_cur_h(cur_h() + mem_b32s1(p + 1));
                         } else {
-                            let save_h = dvi_h;
-                            let save_v = dvi_v;
+                            let save_h = dvi_h();
+                            let save_v = dvi_v();
                             set_cur_v(base_line + mem_b32s1(p + 4));
                             set_temp_ptr(p);
                             let edge = cur_h() + mem_b32s1(p + 1);
@@ -1074,8 +1124,8 @@ pub unsafe extern "C" fn hlist_out() {
                             } else {
                                 hlist_out();
                             }
-                            dvi_h = save_h;
-                            dvi_v = save_v;
+                            set_dvi_h(save_h);
+                            set_dvi_v(save_v);
                             set_cur_h(edge);
                             set_cur_v(base_line);
                         }
@@ -1088,13 +1138,13 @@ pub unsafe extern "C" fn hlist_out() {
                     }
                     WHATSIT_NODE => match mem_b16s0(p) {
                         NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
-                            if cur_h() != dvi_h {
-                                movement(cur_h() - dvi_h, RIGHT1);
-                                dvi_h = cur_h();
+                            if cur_h() != dvi_h() {
+                                movement(cur_h() - dvi_h(), RIGHT1);
+                                set_dvi_h(cur_h());
                             }
-                            if cur_v() != dvi_v {
-                                movement(cur_v() - dvi_v, DOWN1);
-                                dvi_v = cur_v();
+                            if cur_v() != dvi_v() {
+                                movement(cur_v() - dvi_v(), DOWN1);
+                                set_dvi_v(cur_v());
                             }
                             let f = mem_b16s2(p + 4) as i32;
                             ensure_dvi_font(f);
@@ -1131,16 +1181,16 @@ pub unsafe extern "C" fn hlist_out() {
                                 }
                                 set_cur_h(cur_h() + mem_b32s1(p + 1));
                             }
-                            dvi_h = cur_h();
+                            set_dvi_h(cur_h());
                         }
                         PIC_NODE | PDF_NODE => {
-                            let save_h = dvi_h;
-                            let save_v = dvi_v;
+                            let save_h = dvi_h();
+                            let save_v = dvi_v();
                             set_cur_v(base_line);
                             let edge = cur_h() + mem_b32s1(p + 1);
                             pic_out(p);
-                            dvi_h = save_h;
-                            dvi_v = save_v;
+                            set_dvi_h(save_h);
+                            set_dvi_v(save_v);
                             set_cur_h(edge);
                             set_cur_v(base_line);
                         }
@@ -1255,10 +1305,10 @@ pub unsafe extern "C" fn hlist_out() {
     }
 
     prune_movements(save_loc);
-    if cur_s > 0 {
+    if cur_s() > 0 {
         dvi_pop(save_loc);
     }
-    cur_s -= 1;
+    set_cur_s(cur_s() - 1);
 }
 
 // translated from xetex-shipout.c:866 (vlist_out)
@@ -1272,16 +1322,16 @@ pub unsafe extern "C" fn vlist_out() {
     let mut p = mem_b32s1(this_box + 5);
     let upwards = mem_b16s0(this_box) == 1;
 
-    cur_s += 1;
-    if cur_s > 0 {
+    set_cur_s(cur_s() + 1);
+    if cur_s() > 0 {
         dvi_out(PUSH);
     }
 
-    if cur_s > max_push() {
-        set_max_push(cur_s);
+    if cur_s() > max_push() {
+        set_max_push(cur_s());
     }
 
-    let save_loc = dvi_offset + dvi_ptr;
+    let save_loc = dvi_offset() + dvi_ptr();
     let left_edge = cur_h();
     crate::synctex::synctex_vlist(this_box);
 
@@ -1326,13 +1376,13 @@ pub unsafe extern "C" fn vlist_out() {
                         set_cur_v(cur_v() + mem_b32s1(p + 3));
                     }
 
-                    if cur_v() != dvi_v {
-                        movement(cur_v() - dvi_v, DOWN1);
-                        dvi_v = cur_v();
+                    if cur_v() != dvi_v() {
+                        movement(cur_v() - dvi_v(), DOWN1);
+                        set_dvi_v(cur_v());
                     }
 
-                    let save_h = dvi_h;
-                    let save_v = dvi_v;
+                    let save_h = dvi_h();
+                    let save_v = dvi_v();
 
                     if cur_dir() == RIGHT_TO_LEFT {
                         set_cur_h(left_edge - mem_b32s1(p + 4));
@@ -1347,8 +1397,8 @@ pub unsafe extern "C" fn vlist_out() {
                         hlist_out();
                     }
 
-                    dvi_h = save_h;
-                    dvi_v = save_v;
+                    set_dvi_h(save_h);
+                    set_dvi_v(save_v);
 
                     if upwards {
                         set_cur_v(save_v - mem_b32s1(p + 3));
@@ -1370,14 +1420,14 @@ pub unsafe extern "C" fn vlist_out() {
                     set_cur_v(cur_v() + mem_b32s1(p + 3));
                     set_cur_h(left_edge);
 
-                    if cur_h() != dvi_h {
-                        movement(cur_h() - dvi_h, RIGHT1);
-                        dvi_h = cur_h();
+                    if cur_h() != dvi_h() {
+                        movement(cur_h() - dvi_h(), RIGHT1);
+                        set_dvi_h(cur_h());
                     }
 
-                    if cur_v() != dvi_v {
-                        movement(cur_v() - dvi_v, DOWN1);
-                        dvi_v = cur_v();
+                    if cur_v() != dvi_v() {
+                        movement(cur_v() - dvi_v(), DOWN1);
+                        set_dvi_v(cur_v());
                     }
 
                     let f = mem_b16s2(p + 4) as i32;
@@ -1394,12 +1444,12 @@ pub unsafe extern "C" fn vlist_out() {
                     set_cur_h(left_edge);
                 }
                 PIC_NODE | PDF_NODE => {
-                    let save_h = dvi_h;
-                    let save_v = dvi_v;
+                    let save_h = dvi_h();
+                    let save_v = dvi_v();
                     set_cur_v(cur_v() + mem_b32s1(p + 3));
                     pic_out(p);
-                    dvi_h = save_h;
-                    dvi_v = save_v;
+                    set_dvi_h(save_h);
+                    set_dvi_v(save_v);
                     set_cur_v(save_v + mem_b32s1(p + 2));
                     set_cur_h(left_edge);
                 }
@@ -1473,20 +1523,20 @@ pub unsafe extern "C" fn vlist_out() {
                                     set_cur_h(left_edge + mem_b32s1(leader_box + 4));
                                 }
 
-                                if cur_h() != dvi_h {
-                                    movement(cur_h() - dvi_h, RIGHT1);
-                                    dvi_h = cur_h();
+                                if cur_h() != dvi_h() {
+                                    movement(cur_h() - dvi_h(), RIGHT1);
+                                    set_dvi_h(cur_h());
                                 }
 
-                                let save_h = dvi_h;
+                                let save_h = dvi_h();
                                 set_cur_v(cur_v() + mem_b32s1(leader_box + 3));
 
-                                if cur_v() != dvi_v {
-                                    movement(cur_v() - dvi_v, DOWN1);
-                                    dvi_v = cur_v();
+                                if cur_v() != dvi_v() {
+                                    movement(cur_v() - dvi_v(), DOWN1);
+                                    set_dvi_v(cur_v());
                                 }
 
-                                let save_v = dvi_v;
+                                let save_v = dvi_v();
                                 set_temp_ptr(leader_box);
                                 let outer_doing_leaders = doing_leaders();
                                 set_doing_leaders(true);
@@ -1498,8 +1548,8 @@ pub unsafe extern "C" fn vlist_out() {
                                 }
 
                                 set_doing_leaders(outer_doing_leaders);
-                                dvi_v = save_v;
-                                dvi_h = save_h;
+                                set_dvi_v(save_v);
+                                set_dvi_h(save_h);
                                 set_cur_h(left_edge);
                                 set_cur_v(save_v - mem_b32s1(leader_box + 3) + leader_ht + lx);
                             }
@@ -1532,10 +1582,10 @@ pub unsafe extern "C" fn vlist_out() {
     crate::synctex::synctex_tsilv(this_box);
     prune_movements(save_loc);
 
-    if cur_s > 0 {
+    if cur_s() > 0 {
         dvi_pop(save_loc);
     }
-    cur_s -= 1;
+    set_cur_s(cur_s() - 1);
 }
 
 unsafe fn finish_vlist_rule(this_box: i32, left_edge: i32, upwards: bool) {
@@ -1556,14 +1606,14 @@ unsafe fn finish_vlist_rule(this_box: i32, left_edge: i32, upwards: bool) {
             set_cur_h(cur_h() - rule_wd());
         }
 
-        if cur_h() != dvi_h {
-            movement(cur_h() - dvi_h, RIGHT1);
-            dvi_h = cur_h();
+        if cur_h() != dvi_h() {
+            movement(cur_h() - dvi_h(), RIGHT1);
+            set_dvi_h(cur_h());
         }
 
-        if cur_v() != dvi_v {
-            movement(cur_v() - dvi_v, DOWN1);
-            dvi_v = cur_v();
+        if cur_v() != dvi_v() {
+            movement(cur_v() - dvi_v(), DOWN1);
+            set_dvi_v(cur_v());
         }
 
         dvi_out(PUT_RULE);
@@ -1607,20 +1657,20 @@ const ONE_INCH_LESS_ONE: i32 = 4_736_286;
 // translated from xetex-shipout.c:1930 (prune_movements)
 #[no_mangle]
 pub unsafe extern "C" fn prune_movements(l: i32) {
-    while down_ptr != TEX_NULL {
-        if mem_b32s1(down_ptr + 2) < l {
+    while down_ptr() != TEX_NULL {
+        if mem_b32s1(down_ptr() + 2) < l {
             break;
         }
-        let p = down_ptr;
-        down_ptr = mem_b32s1(p);
+        let p = down_ptr();
+        set_down_ptr(mem_b32s1(p));
         free_node(p, MOVEMENT_NODE_SIZE);
     }
-    while right_ptr != TEX_NULL {
-        if mem_b32s1(right_ptr + 2) < l {
+    while right_ptr() != TEX_NULL {
+        if mem_b32s1(right_ptr() + 2) < l {
             return;
         }
-        let p = right_ptr;
-        right_ptr = mem_b32s1(p);
+        let p = right_ptr();
+        set_right_ptr(mem_b32s1(p));
         free_node(p, MOVEMENT_NODE_SIZE);
     }
 }
@@ -1636,14 +1686,14 @@ unsafe fn print_c_string_here(s: *const libc::c_char) {
 
 // translated from xetex-shipout.c:2173 (finalize_dvi_file)
 pub unsafe fn finalize_dvi_file() {
-    while cur_s > -1 {
-        if cur_s > 0 {
+    while cur_s() > -1 {
+        if cur_s() > 0 {
             dvi_out(POP);
         } else {
             dvi_out(EOP);
             set_total_pages(total_pages() + 1);
         }
-        cur_s -= 1;
+        set_cur_s(cur_s() - 1);
     }
 
     if total_pages() == 0 {
@@ -1651,14 +1701,14 @@ pub unsafe fn finalize_dvi_file() {
         return;
     }
 
-    if cur_s == -2 {
+    if cur_s() == -2 {
         // DVI got too big; message already printed
         return;
     }
 
     dvi_out(POST);
     dvi_four(last_bop());
-    set_last_bop(dvi_offset + dvi_ptr - 5);
+    set_last_bop(dvi_offset() + dvi_ptr() - 5);
     dvi_four(25_400_000); // magic: conversion ratio for sp
     dvi_four(473_628_672); // magic: conversion ratio for sp
     crate::save::prepare_mag();
@@ -1688,30 +1738,30 @@ pub unsafe fn finalize_dvi_file() {
         dvi_out(XDV_ID_BYTE);
     }
 
-    let mut k = (4 + (DVI_BUF_SIZE - dvi_ptr) % 4) as u8;
+    let mut k = (4 + (DVI_BUF_SIZE - dvi_ptr()) % 4) as u8;
     while k > 0 {
         dvi_out(223);
         k -= 1;
     }
 
-    if dvi_limit == HALF_BUF {
+    if dvi_limit() == HALF_BUF {
         write_to_dvi(HALF_BUF, DVI_BUF_SIZE - 1);
     }
 
-    if dvi_ptr > TEX_INFINITY - dvi_offset {
-        cur_s = -2;
+    if dvi_ptr() > TEX_INFINITY - dvi_offset() {
+        set_cur_s(-2);
         crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
     }
 
-    if dvi_ptr > 0 {
-        write_to_dvi(0, dvi_ptr - 1);
+    if dvi_ptr() > 0 {
+        write_to_dvi(0, dvi_ptr() - 1);
     }
 
-    let k = ttstub_output_close(dvi_file) as u8;
+    let k = ttstub_output_close(dvi_file()) as u8;
 
     if k == 0 {
         crate::output::print_nl_cstr(c"Output written on ".as_ptr());
-        crate::output::print(output_file_name);
+        crate::output::print(output_file_name());
         crate::output::print_cstr(c" (".as_ptr());
         crate::output::print_int(total_pages());
         if total_pages() != 1 {
@@ -1720,7 +1770,7 @@ pub unsafe fn finalize_dvi_file() {
             crate::output::print_cstr(c" page".as_ptr());
         }
         crate::output::print_cstr(c", ".as_ptr());
-        crate::output::print_int(dvi_offset + dvi_ptr);
+        crate::output::print_int(dvi_offset() + dvi_ptr());
         crate::output::print_cstr(c" bytes).".as_ptr());
     } else {
         crate::output::print_nl_cstr(c"Error ".as_ptr());
@@ -1729,7 +1779,7 @@ pub unsafe fn finalize_dvi_file() {
         print_c_string_here(libc::strerror(k as libc::c_int));
         crate::output::print_cstr(c") generating output;".as_ptr());
         crate::output::print_nl_cstr(c"file ".as_ptr());
-        crate::output::print(output_file_name);
+        crate::output::print(output_file_name());
         crate::output::print_cstr(c" may not be valid.".as_ptr());
         // XeTeX adds history = OUTPUT_FAILURE = 4 here; not implemented.
     }
@@ -1944,14 +1994,14 @@ pub unsafe extern "C" fn reverse(
 pub unsafe extern "C" fn movement(mut w: i32, o: u8) {
     let mut q = crate::mem::get_node(MOVEMENT_NODE_SIZE);
     set_mem_b32s1(q + 1, w);
-    set_mem_b32s1(q + 2, dvi_offset + dvi_ptr);
+    set_mem_b32s1(q + 2, dvi_offset() + dvi_ptr());
 
     if o == DOWN1 {
-        set_mem_b32s1(q, down_ptr);
-        down_ptr = q;
+        set_mem_b32s1(q, down_ptr());
+        set_down_ptr(q);
     } else {
-        set_mem_b32s1(q, right_ptr);
-        right_ptr = q;
+        set_mem_b32s1(q, right_ptr());
+        set_right_ptr(q);
     }
 
     let mut p = mem_b32s1(q);
@@ -1964,27 +2014,31 @@ pub unsafe extern "C" fn movement(mut w: i32, o: u8) {
                 match mstate + mem_b32s0(p) {
                     // NONE_SEEN+YZ_OK=3, NONE_SEEN+Y_OK=4, Z_SEEN+YZ_OK=15, Z_SEEN+Y_OK=16
                     3 | 4 | 15 | 16 => {
-                        if mem_b32s1(p + 2) < dvi_gone {
+                        if mem_b32s1(p + 2) < dvi_gone() {
                             break 'search None;
                         }
-                        let mut k = mem_b32s1(p + 2) - dvi_offset;
+                        let mut k = mem_b32s1(p + 2) - dvi_offset();
                         if k < 0 {
                             k += DVI_BUF_SIZE;
                         }
-                        *dvi_buf.add(k as usize) += 5;
+                        crate::state::with_state_mut(|s| {
+                            s.shipout.dvi_buf[k as usize] += 5;
+                        });
                         set_mem_b32s0(p, MOV_Y_HERE);
                         break 'search Some(p);
                     }
                     // NONE_SEEN+Z_OK=5, Y_SEEN+YZ_OK=9, Y_SEEN+Z_OK=11
                     5 | 9 | 11 => {
-                        if mem_b32s1(p + 2) < dvi_gone {
+                        if mem_b32s1(p + 2) < dvi_gone() {
                             break 'search None;
                         }
-                        let mut k = mem_b32s1(p + 2) - dvi_offset;
+                        let mut k = mem_b32s1(p + 2) - dvi_offset();
                         if k < 0 {
                             k += DVI_BUF_SIZE;
                         }
-                        *dvi_buf.add(k as usize) += 10;
+                        crate::state::with_state_mut(|s| {
+                            s.shipout.dvi_buf[k as usize] += 10;
+                        });
                         set_mem_b32s0(p, MOV_Z_HERE);
                         break 'search Some(p);
                     }
@@ -2071,13 +2125,13 @@ pub unsafe extern "C" fn movement(mut w: i32, o: u8) {
 // translated from xetex-shipout.c:1930 (special_out)
 // Only called from out_what (Rust) → private.
 unsafe fn special_out(p: i32) {
-    if cur_h() != dvi_h {
-        movement(cur_h() - dvi_h, RIGHT1);
-        dvi_h = cur_h();
+    if cur_h() != dvi_h() {
+        movement(cur_h() - dvi_h(), RIGHT1);
+        set_dvi_h(cur_h());
     }
-    if cur_v() != dvi_v {
-        movement(cur_v() - dvi_v, DOWN1);
-        dvi_v = cur_v();
+    if cur_v() != dvi_v() {
+        movement(cur_v() - dvi_v(), DOWN1);
+        set_dvi_v(cur_v());
     }
     set_doing_special(true);
     let old_setting = selector();
@@ -2212,13 +2266,13 @@ unsafe fn write_out(p: i32) {
 // Called from hlist_out (still in C) → #[no_mangle].
 #[no_mangle]
 pub unsafe extern "C" fn pic_out(p: i32) {
-    if cur_h() != dvi_h {
-        movement(cur_h() - dvi_h, RIGHT1);
-        dvi_h = cur_h();
+    if cur_h() != dvi_h() {
+        movement(cur_h() - dvi_h(), RIGHT1);
+        set_dvi_h(cur_h());
     }
-    if cur_v() != dvi_v {
-        movement(cur_v() - dvi_v, DOWN1);
-        dvi_v = cur_v();
+    if cur_v() != dvi_v() {
+        movement(cur_v() - dvi_v(), DOWN1);
+        set_dvi_v(cur_v());
     }
 
     let old_setting = selector();

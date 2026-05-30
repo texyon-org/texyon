@@ -579,6 +579,20 @@ pub(crate) struct ShipoutState {
     pub cur_h_offset: i32,
     pub cur_v_offset: i32,
     pub write_loc: i32,
+    // DVI promoted Rust statics (dvi_* positioning and output variables).
+    pub dvi_file: usize,
+    pub output_file_name: i32,
+    pub dvi_buf: Vec<u8>,
+    pub dvi_limit: i32,
+    pub dvi_ptr: i32,
+    pub dvi_offset: i32,
+    pub dvi_gone: i32,
+    pub down_ptr: i32,
+    pub right_ptr: i32,
+    pub cur_s: i32,
+    pub dvi_h: i32,
+    pub dvi_v: i32,
+    pub dvi_f: i32,
 }
 
 pub(crate) struct ErrorState {

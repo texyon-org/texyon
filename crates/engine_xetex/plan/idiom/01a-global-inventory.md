@@ -540,6 +540,12 @@ Status: `pending` until the newtype exists and the accessor returns it.
 | field | cluster | original C type | target newtype | migrated in | status |
 |---|---|---|---|---|---|
 | `selector` | `shipout` | `selector_t` (enum, 0–21) | `Selector` | session 7 | pending |
+| `output_file_name` | `shipout` | `str_number` | `StrNumber` | session 53 | pending |
+| `dvi_f` | `shipout` | `internal_font_number` | `FontId` | session 53 | pending |
+| `down_ptr` | `shipout` | `halfword` | `MemPtr`/`Halfword` | session 53 | pending |
+| `right_ptr` | `shipout` | `halfword` | `MemPtr`/`Halfword` | session 53 | pending |
+| `dvi_h` | `shipout` | `scaled_t` | `Scaled` | session 53 | pending |
+| `dvi_v` | `shipout` | `scaled_t` | `Scaled` | session 53 | pending |
 | `page_contents` | `shipout` | `unsigned char` (PC_* state code) | `PageContents` | session 7 | pending |
 | `last_node_type` | `shipout` | `int32_t` (node-type code) | `NodeType`/`Option<NodeType>` | session 7 | pending |
 | `last_glue` | `shipout` | `int32_t` (glue node ptr) | `MemPtr`/`Halfword` | session 7 | pending |

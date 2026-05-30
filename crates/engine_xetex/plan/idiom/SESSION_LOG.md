@@ -7,6 +7,49 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 53 — 2026-05-30 — DVI positioning & output variables → ShipoutState
+
+**Type:** execution (workstream 01, Phase-B; DVI positioning/output scratch migration). One commit.
+
+**Slice:** the 13 DVI positioning and output variables (`dvi_file`, `output_file_name`, `dvi_buf`, `dvi_limit`, `dvi_ptr`, `dvi_offset`, `dvi_gone`, `down_ptr`, `right_ptr`, `cur_s`, `dvi_h`, `dvi_v`, `dvi_f`) → Rust-owned fields on `EngineState.shipout` (`ShipoutState`).
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `rust_output_handle_t dvi_file`, `str_number output_file_name`, `eight_bits *dvi_buf`, `int32_t dvi_limit`, `int32_t dvi_ptr`, `int32_t dvi_offset`, `int32_t dvi_gone`, `int32_t down_ptr`, `int32_t right_ptr`, `int32_t cur_s`, `scaled_t dvi_h`, `scaled_t dvi_v`, `internal_font_number dvi_f`.
+- (b) aliases: none. Genuinely promoted Rust statics.
+- (c) C readers: none. Audit shows no other compiled non-macOS C algorithms reference them.
+- (d) cross-module Rust extern redeclarations: none.
+- format dump: none.
+
+**Work done (1 commit):**
+- Added all 13 fields to `ShipoutState` in `src/state.rs`. `dvi_buf` is now owned as a `Vec<u8>`.
+- Removed all 13 module-level `pub static mut` declarations from `src/shipout.rs`.
+- Defined thin module-local helper getter/setter functions in `src/shipout.rs` that delegate to the `'static` thread-local `EngineState.shipout` struct.
+- Updated `initialize_shipout_variables` to natively allocate the buffer with `vec![0u8; (DVI_BUF_SIZE + 1) as usize]` on the thread-local state instead of raw `xmalloc`.
+- Updated `deinitialize_shipout_variables` to natively release the buffer with `Vec::new()` instead of manually invoking `libc::free`.
+- Updated `write_to_dvi` to pass `s.shipout.dvi_buf.as_ptr().add(a as usize)` to FFI instead of pointer arithmetic on raw pointers.
+- Refactored `dvi_out`, `dvi_swap`, `movement`, `special_out`, and `pic_out` to use the helper functions and safe vector indexing/modifications instead of direct raw pointer arithmetic.
+
+**Newtype debts (§4):**
+Added 6 rows to the Deferred newtype worklist backlog in `01a-global-inventory.md`:
+- `output_file_name` (`StrNumber`)
+- `dvi_f` (`FontId`)
+- `down_ptr` (`MemPtr`/`Halfword`)
+- `right_ptr` (`MemPtr`/`Halfword`)
+- `dvi_h` (`Scaled`)
+- `dvi_v` (`Scaled`)
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4** passes perfectly with no regressions!
+
+**Metrics after this session:**
+- Promoted Rust `pub static mut` globals outside `globals.rs`: **16 → 3** (-13: `dvi_file`, `output_file_name`, `dvi_buf`, `dvi_limit`, `dvi_ptr`, `dvi_offset`, `dvi_gone`, `down_ptr`, `right_ptr`, `cur_s`, `dvi_h`, `dvi_v`, `dvi_f`).
+- `globals.rs` raw extern count: **78** (unchanged).
+
+**For the next session (54+):**
+- Migrate the **`mem` arena** (§5) — the hottest/highest-leverage ownership move and the real pivot into Phase C (thread `&mut Mem` rather than bridge).
+- Or migrate remaining classified-but-unmigrated scratch: box/packaging scratch (`cur_box`, `adjust_tail`, etc.).
+
 ---
 
 ## Idiom session 52 — 2026-05-30 — eqtb hash table → Rust-owned `Vec<B32x2>`
