@@ -8,6 +8,23 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 70 — 2026-05-31 — add classified codemod lane
+
+**Type:** planning update (workstream 01, Phase C recipe). **One commit.** No code changed; dashboard not run.
+
+**Why:** Phase C threading is repetitive enough that hand-editing every call/site is not the right operating model. The safe version is not blind regex; it is classify first, then codemod only the mechanically safe subset.
+
+**Work done:**
+1. `01b-phase-c-recipe.md`: added §4a, "Classified codemod passes".
+2. The new rule divides targets into A/B codemod-safe work (pure pass-through threading and direct accessor rewrites) vs. C/D manual work (borrow-dropping wrappers, output/error/scanner boundaries, argument-evaluation hazards).
+3. The per-slice recipe now has step 2a: classify the rewrite shape before editing and review the scripted diff before semantic work.
+
+**Validation:** documentation-only change; no dashboard run.
+
+**For the next session (71):** continue `shipout.rs` with the next clean DVI/output-position cluster, likely `dvi_out` / `dvi_four` / `dvi_two`. Start by classifying the cluster per `01b` §4a, codemod only A/B pieces, then manually handle any borrow-dropping DVI output or error paths. Keep scanner-heavy work for later; draft `02-modules.md` to READY before threading reaches scanner internals.
+
+---
+
 ## Idiom session 69 — 2026-05-31 — thread shipout DVI movement
 
 **Type:** execution (workstream 01, Phase C — second `shipout.rs` slice). **One commit.** Dashboard **29/2/7/4**.

@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 69, **Phase-C `shipout.rs` DVI movement slice**: threaded `movement` to direct `&mut MemState` / `&mut ShipoutState`, returned DVI bytes for borrow-dropping output in `movement_global`, and kept the dashboard at 29/2/7/4. `#[no_mangle]` 394→392; `unsafe fn` unchanged at 688; raw externs unchanged at 40).
+Last updated: 2026-05-31 (last session = session 70, **Phase-C planning update**: added classified codemod guidance to `01b-phase-c-recipe.md` so future slices classify functions before using regex/scripted rewrites. Plan-only change; no dashboard run).
 
 ## How to read this file
 
@@ -768,7 +768,7 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run, and sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`. Next: continue `shipout.rs` with the next clean DVI/output-position cluster, likely `dvi_out` / `dvi_four` / `dvi_two` or another helper that can be split into direct state mutation plus borrow-dropping output wrappers. Then continue to `math.rs`/`linebreak.rs`, with `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
+1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run, and sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`. Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. Next: continue `shipout.rs` with the next clean DVI/output-position cluster, likely `dvi_out` / `dvi_four` / `dvi_two` or another helper that can be split into direct state mutation plus borrow-dropping output wrappers. Then continue to `math.rs`/`linebreak.rs`, with `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

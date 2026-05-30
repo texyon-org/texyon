@@ -160,6 +160,44 @@ call it makes into (a) about-to-be-threaded (passes `&mut` through),
 Any (c) call on a *hot* path means the slice is not closed yet — thread
 its callee first, or widen the slice to include it.
 
+## 4a. Classified codemod passes
+
+Phase C should not be hand-edited one call at a time where the shape is
+mechanical. Use a two-step workflow:
+
+1.  **Classify first.** For each target function/group, record which of
+    these buckets it falls into before editing:
+    -   **A: pure pass-through threading** — body only needs already-
+        threaded helpers or direct state methods; callers only need
+        `foo(...)` → `foo_global(...)` or pass existing `&mut` arguments.
+    -   **B: accessor rewrite** — body has direct equivalents such as
+        `mem_b32s1(p)` → `mem.b32s1(p)`, `set_mem_b32s1(p, v)` →
+        `mem.set_b32s1(p, v)`, or `get_node_global(n)` →
+        `get_node(mem, n)` plus the established sentinel handling.
+    -   **C: borrow-dropping wrapper** — body calls output/printing/error
+        helpers (`dvi_out`, `write_to_dvi`, `overflow`, `confusion`,
+        `runaway`, `flush_node_list`, scanner/output routines) and must
+        split into a direct prepare/mutate helper plus a `_global` wrapper
+        that performs those calls after the state borrow drops.
+    -   **D: manual only** — argument evaluation or control flow can
+        re-borrow state, depend on side effects, or cross a scanner/error
+        boundary. Read and rewrite by hand.
+
+2.  **Codemod only buckets A/B.** Regex/scripted edits are encouraged
+    for classified-safe work: legacy call-site rename to `_global`,
+    removal of `#[no_mangle] extern "C"` from no-C-caller functions,
+    wrapper skeleton insertion, narrow-state parameter threading, obvious
+    accessor-to-method rewrites, and import cleanup. Keep the codemod
+    manifest small enough to review in the diff: function name, required
+    state borrows, caller files, and the allowed rewrite rules.
+
+Do not apply blind regexes to buckets C/D. The migration is repetitive,
+but the correctness hazards are semantic: borrow lifetime, abort
+sentinels, DVI byte ordering, output flushing, and argument evaluation
+under `with_state`. A good session can still be large: classify a whole
+cluster, run the codemod for the A/B subset, then manually finish the C
+wrappers in the same coherent commit.
+
 ## 5. Cold error/abort paths (`overflow`, `confusion`, `runaway`)
 
 These are `-> !` longjmp paths reached only on capacity exhaustion /
@@ -230,6 +268,11 @@ grep -rnB3 '\bFN\(' src/*.rs | grep -iE 'with_state'
 If a call site is already inside a `with_state*` closure, that wrap must
 be restructured (the closure can't call a function that re-borrows) —
 handle it explicitly, do not wrap blind.
+
+**2a. Classify the rewrite shape (§4a).** Before editing, decide which
+calls/functions are A/B codemod-safe and which are C/D manual. Run
+scripted or regex rewrites only for the A/B subset, and review the diff
+before doing the semantic C/D work.
 
 **3. Add the method surface** (§6) on the target sub-struct in
 `state.rs` if not present (`impl MemState { … }`), mirroring the exact
