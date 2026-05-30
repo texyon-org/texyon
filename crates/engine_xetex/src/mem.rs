@@ -8,7 +8,7 @@
 use crate::consts::{BOX_NODE_SIZE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE};
 use crate::errors::overflow;
 use crate::scan::runaway;
-use crate::state::MemState;
+use crate::state::{EqtbState, MemState};
 
 use crate::globals::{
     avail, cur_input_synctex_tag, cur_list_head, eqtb_b32s1, line, max_nest_stack, mem_b16s0,
@@ -560,17 +560,34 @@ pub unsafe fn new_spec_global(p: i32) -> i32 {
 /// parameter table.
 ///
 /// translated from xetex-xetex0.c:243 (new_param_glue)
-#[no_mangle]
-pub unsafe extern "C" fn new_param_glue(n: i16) -> i32 {
-    let p = get_node_global(MEDIUM_NODE_SIZE);
-    set_mem_b16s1(p, GLUE_NODE);
-    set_mem_b16s0(p, n as u16 + 1); // subtype = n + 1
-    set_mem_b32s1(p + 1, TEX_NULL);
+///
+/// Phase-C: threaded to `&mut MemState` and `&EqtbState`; legacy callers use [`new_param_glue_global`].
+pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
+    let p = get_node(mem, MEDIUM_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, GLUE_NODE);
+    mem.set_b16s0(p, n as u16 + 1); // subtype = n + 1
+    mem.set_b32s1(p + 1, TEX_NULL);
     // q = eqtb[GLUE_BASE + n].b32.s1
-    let q = eqtb_b32s1(GLUE_BASE + n as i32);
-    set_mem_b32s0(p + 1, q);
+    let q = eqtb.b32s1(GLUE_BASE + n as i32);
+    mem.set_b32s0(p + 1, q);
     // GLUE_SPEC_ref_count(q)++  →  mem[q].b32.s1 += 1
-    set_mem_b32s1(q, mem_b32s1(q) + 1);
+    let rc = mem.b32s1(q);
+    mem.set_b32s1(q, rc + 1);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_param_glue` callers (`01b` §3, §5).
+pub unsafe fn new_param_glue_global(n: i16) -> i32 {
+    let p = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        new_param_glue(&mut s.mem, &s.eqtb, n)
+    });
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -617,11 +634,33 @@ pub unsafe fn new_glue_global(q: i32) -> i32 {
 /// setting `temp_ptr` to the copy.
 ///
 /// translated from xetex-xetex0.c:270 (new_skip_param)
-pub unsafe fn new_skip_param(n: i16) -> i32 {
-    set_temp_ptr(new_spec_global(eqtb_b32s1(GLUE_BASE + n as i32)));
-    let p = new_glue_global(temp_ptr());
-    set_mem_b32s1(temp_ptr(), TEX_NULL); // clear the spec's ref_count link
-    set_mem_b16s0(p, n as u16 + 1); // subtype = n + 1
+///
+/// Phase-C: threaded to `&mut MemState` and `&EqtbState`; legacy callers use [`new_skip_param_global`].
+pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
+    let spec = eqtb.b32s1(GLUE_BASE + n as i32);
+    let s = new_spec(mem, spec);
+    if s == ALLOC_FAILED {
+        return s;
+    }
+    crate::globals::set_temp_ptr(s);
+    let p = new_glue(mem, s);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b32s1(s, TEX_NULL); // clear the spec's ref_count link
+    mem.set_b16s0(p, n as u16 + 1); // subtype = n + 1
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_skip_param` callers (`01b` §3, §5).
+pub unsafe fn new_skip_param_global(n: i16) -> i32 {
+    let p = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        new_skip_param(&mut s.mem, &s.eqtb, n)
+    });
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -945,11 +984,24 @@ pub unsafe fn new_margin_kern_global(w: i32, p: i32, side: i16) -> i32 {
 }
 
 // translated from xetex-xetex0.c:13763 (new_whatsit)
-#[no_mangle]
-pub unsafe extern "C" fn new_whatsit(s: i16, w: i16) {
-    let p = get_node_global(w as i32);
-    set_mem_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
-    set_mem_b16s0(p, s as u16);
-    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_whatsit_global`].
+pub fn new_whatsit(mem: &mut MemState, s: i16, w: i16) -> i32 {
+    let p = get_node(mem, w as i32);
+    if p == ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
+    mem.set_b16s0(p, s as u16);
+    mem.set_b32s1(crate::globals::cur_list_tail(), p);
     crate::globals::set_cur_list_tail(p);
+    p
+}
+
+/// Transitional bridge-down wrapper for legacy `new_whatsit` callers (`01b` §3, §5).
+pub unsafe fn new_whatsit_global(s: i16, w: i16) {
+    let p = crate::state::with_state_mut(|st| new_whatsit(&mut st.mem, s, w));
+    if p == ALLOC_FAILED {
+        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
 }

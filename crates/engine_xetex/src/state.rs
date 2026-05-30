@@ -263,6 +263,17 @@ impl Default for EqtbState {
     }
 }
 
+impl EqtbState {
+    /// Read `eqtb[p].b32.s1`. Mirrors `globals::eqtb_b32s1` (the Phase-B bridge
+    /// accessor) so threaded Phase-C callers can touch the eqtb directly.
+    #[inline]
+    pub fn b32s1(&self, p: i32) -> i32 {
+        // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
+        unsafe { self.data[p as usize].b32.s1 }
+    }
+}
+
+
 /// The dynamic-memory arena (former C-`malloc`'d `memory_word *mem` plus its
 /// bookkeeping scalars). The `mem` array is the engine's hottest storage; its
 /// bookkeeping scalars (`lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`,

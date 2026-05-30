@@ -405,7 +405,7 @@ pub unsafe fn load_picture(is_pdf: bool) {
         cur_area, cur_ext, cur_list_tail, cur_name, cur_val, mem_node_addr, set_mem_b16s0,
         set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
     };
-    use crate::mem::new_whatsit;
+    use crate::mem::new_whatsit_global;
     use crate::output::{print_cstr, print_file_name, print_scaled};
     use crate::scan::{
         pack_file_name, scan_decimal, scan_dimen, scan_file_name, scan_int, scan_keyword,
@@ -653,7 +653,7 @@ pub unsafe fn load_picture(is_pdf: bool) {
         let path_len = libc::strlen(pic_path);
         let mem_word_bytes = std::mem::size_of::<crate::mem_types::MemoryWord>() as i32;
         let extra_words = (path_len as i32 + mem_word_bytes - 1) / mem_word_bytes;
-        new_whatsit(PIC_NODE, (PIC_NODE_SIZE + extra_words) as i16);
+        new_whatsit_global(PIC_NODE, (PIC_NODE_SIZE + extra_words) as i16);
 
         let tail = cur_list_tail();
         if is_pdf {

@@ -24,7 +24,7 @@ use crate::mem::delete_token_ref;
 use crate::mem::free_node_global;
 use crate::mem::get_node_global;
 use crate::mem::new_null_box_global;
-use crate::mem::new_skip_param;
+use crate::mem::new_skip_param_global;
 use crate::mem::new_spec_global;
 use crate::mem::push_nest;
 use crate::output::capture_to_diagnostic;
@@ -565,8 +565,8 @@ pub unsafe fn build_page() {
                     } else {
                         set_page_contents(BOX_THERE);
                     }
-                    let q = new_skip_param(GLUE_PAR__top_skip as i16);
-                    // temp_ptr = glue_ptr(q) after new_skip_param
+                    let q = new_skip_param_global(GLUE_PAR__top_skip as i16);
+                    // temp_ptr = glue_ptr(q) after new_skip_param_global
                     if mem_b32s1(temp_ptr() + 1) > mem_b32s1(p + 3) {
                         // BOX_width(temp_ptr) > BOX_height(p)
                         set_mem_b32s1(temp_ptr() + 1, mem_b32s1(temp_ptr() + 1) - mem_b32s1(p + 3));

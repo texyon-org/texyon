@@ -7,6 +7,41 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+
+## Idiom session 64 — 2026-05-30 — thread the three deferred constructors to state
+
+**Type:** execution (workstream 01, Phase C — the final three constructors named in `01b` §9 / STATUS Next action). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the final three deferred constructors:
+- `new_param_glue` and `new_skip_param` — both read equivalents table state (`eqtb`). Threaded with a **widened disjoint borrow** (`mem: &mut MemState, eqtb: &EqtbState`). Added an `EqtbState::b32s1` read method mirroring `globals::eqtb_b32s1`. `new_skip_param` directly calls the threaded `new_spec` and `new_glue` now.
+- `new_whatsit` — originally returned `()`. Rewritten to return `i32` to cleanly propagate the `ALLOC_FAILED` sentinel upwards, allowing `new_whatsit_global` to perform the `overflow()` abort outside the mutable borrow.
+
+**Recon (per `01b` §7 step 2):**
+- Rust call sites (per fn): `new_param_glue` 16, `new_skip_param` 5, `new_whatsit` 8.
+- **No C/C++ callers** — only legacy prototype in `xetex-xetexd.h` which is left in place.
+- `grep` checks proved no call sites inside `with_state` closures, and no other internal state-backed calls.
+
+**Work done (1 commit):**
+1. `state.rs`: implemented `EqtbState::b32s1` to allow threaded access to the equivalents table.
+2. `mem.rs`:
+   - Imported `EqtbState` along with `MemState`.
+   - Threaded `new_param_glue` to `new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32` and `new_skip_param` to `new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32`.
+   - Threaded `new_whatsit` to `new_whatsit(mem: &mut MemState, s: i16, w: i16) -> i32`.
+   - Removed `#[no_mangle] extern "C"` from `new_param_glue` and `new_whatsit` (-2 exports) and dropped `unsafe` from all three signatures.
+   - Added the transitional `_global` bridge-down wrappers (`new_param_glue_global`, `new_skip_param_global`, and `new_whatsit_global`) to cleanly handle sentinel-based overflow checks after the borrow drops.
+3. Repointed all legacy callers across `src/math.rs`, `src/linebreak.rs`, `src/scan.rs`, `src/pagebuilder.rs`, and `src/pic.rs` to the `_global` wrappers via a single idempotent `perl` pass.
+4. Verified that the crate checks successfully with zero new warnings.
+
+**Newtype debt:** none — all params are plain integers (`i16`/`i32`), and no new fields were added to the state structs themselves.
+
+**Metrics:** `#[no_mangle]` exports 406 → **404** (−2). `unsafe fn` net flat (3 signatures dropped `unsafe`; 3 wrappers added it). `globals.rs` raw externs unchanged (40).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, no new warnings; full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (65):** climb the call graph subsystem by subsystem, starting with `save.rs` (e.g. `save.rs` → `pagebuilder.rs`/`shipout.rs` → `math.rs`/`linebreak.rs` → `scan.rs` last). Draft `02-modules.md` to READY before threading reaches `scan.rs`.
+
+---
+
 ## Idiom session 63 — 2026-05-30 — thread the mem-only `new_*` node constructors to `&mut MemState`
 
 **Type:** execution (workstream 01, Phase C — the post-allocator-core slice named in

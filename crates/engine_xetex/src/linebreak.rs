@@ -920,7 +920,7 @@ pub unsafe fn line_break(d: bool) {
         set_penalty_node_penalty(tail, INF_PENALTY);
     }
 
-    let last_line_fill = crate::mem::new_param_glue(GLUE_PAR_PAR_FILL_SKIP);
+    let last_line_fill = crate::mem::new_param_glue_global(GLUE_PAR_PAR_FILL_SKIP);
     set_mem_b32s1(cur_list_tail(), last_line_fill);
     set_init_l_hyf(cur_list_prev_graf() / 0x0400000);
     set_init_r_hyf((cur_list_prev_graf() / 65_536) % 64);
@@ -1830,7 +1830,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
         }
 
         if !glue_break {
-            let r = crate::mem::new_param_glue(GLUE_PAR_RIGHT_SKIP);
+            let r = crate::mem::new_param_glue_global(GLUE_PAR_RIGHT_SKIP);
             set_mem_b32s1(r, mem_b32s1(q));
             set_mem_b32s1(q, r);
             q = r;
@@ -1870,7 +1870,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
         }
 
         if eqtb_b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP as i32) != 0 {
-            let r = crate::mem::new_param_glue(GLUE_PAR_LEFT_SKIP);
+            let r = crate::mem::new_param_glue_global(GLUE_PAR_LEFT_SKIP);
             set_mem_b32s1(r, q);
             q = r;
         }

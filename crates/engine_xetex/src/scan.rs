@@ -5321,7 +5321,7 @@ pub unsafe extern "C" fn fix_language() {
     let lang = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
     let l = if lang <= 0 || lang > 255 { 0i32 } else { lang };
     if l != crate::globals::cur_list_aux_b32s1() {
-        crate::mem::new_whatsit(LANGUAGE_NODE_SUBTYPE, SMALL_NODE_SIZE as i16);
+        crate::mem::new_whatsit_global(LANGUAGE_NODE_SUBTYPE, SMALL_NODE_SIZE as i16);
         let tail = crate::globals::cur_list_tail();
         set_mem_b32s1(tail + 1, l);
         crate::globals::set_cur_list_aux_b32s1(l);
@@ -5485,7 +5485,7 @@ const WRITE_NODE_SIZE: i16 = 2; // xetex-constants.h:112
 pub unsafe extern "C" fn append_src_special() {
     let fname = crate::globals::source_filename_stack(crate::globals::in_open());
     if fname > 0 && crate::texmfmp::is_new_source(fname, crate::globals::line()) {
-        crate::mem::new_whatsit(SPECIAL_NODE, WRITE_NODE_SIZE);
+        crate::mem::new_whatsit_global(SPECIAL_NODE, WRITE_NODE_SIZE);
         set_mem_b32s0(crate::globals::cur_list_tail() + 1, 0);
         let d = crate::mem::get_avail_global();
         set_def_ref(d);
@@ -5576,7 +5576,7 @@ pub unsafe extern "C" fn compare_strings() {
 // translated from xetex-xetex0.c:11045 (new_write_whatsit)
 #[no_mangle]
 pub unsafe extern "C" fn new_write_whatsit(w: i16) {
-    crate::mem::new_whatsit(cur_chr() as i16, w);
+    crate::mem::new_whatsit_global(cur_chr() as i16, w);
     if w != WRITE_NODE_SIZE {
         scan_four_bit_int();
     } else {
@@ -5992,9 +5992,9 @@ pub unsafe extern "C" fn append_to_vlist(b: i32) {
                 mem_b32s1(b + 3)
             };
         let p = if d < eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_LINE_SKIP_LIMIT) {
-            crate::mem::new_param_glue(GLUE_PAR_LINE_SKIP)
+            crate::mem::new_param_glue_global(GLUE_PAR_LINE_SKIP)
         } else {
-            let p = crate::mem::new_skip_param(GLUE_PAR_BASELINE_SKIP as i16);
+            let p = crate::mem::new_skip_param_global(GLUE_PAR_BASELINE_SKIP as i16);
             set_mem_b32s1(crate::globals::temp_ptr() + 1, d);
             p
         };
@@ -6404,7 +6404,7 @@ pub unsafe extern "C" fn fin_align() {
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         set_mem_b32s1(
             cur_list_tail(),
-            crate::mem::new_param_glue(GLUE_PAR_ABOVE_DISPLAY),
+            crate::mem::new_param_glue_global(GLUE_PAR_ABOVE_DISPLAY),
         );
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         // Attach alignment rows
@@ -6420,7 +6420,7 @@ pub unsafe extern "C" fn fin_align() {
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         set_mem_b32s1(
             cur_list_tail(),
-            crate::mem::new_param_glue(GLUE_PAR_BELOW_DISPLAY),
+            crate::mem::new_param_glue_global(GLUE_PAR_BELOW_DISPLAY),
         );
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         // Only prevdepth (aux.b32.s1) is restored for MMODE (C: cur_list.aux.b32.s1 = aux_save.b32.s1)
@@ -7770,7 +7770,7 @@ pub unsafe extern "C" fn app_space() {
     let cf = eqtb_b32s1(CUR_FONT_LOC);
     let q;
     if space_factor >= 2000 && eqtb_b32s1(GLUE_BASE + GLUE_PAR_XSPACE_SKIP) != 0 {
-        q = crate::mem::new_param_glue(GLUE_PAR_XSPACE_SKIP as i16);
+        q = crate::mem::new_param_glue_global(GLUE_PAR_XSPACE_SKIP as i16);
     } else {
         if eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP) != 0 {
             set_main_p(eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP));
@@ -7863,7 +7863,7 @@ pub unsafe extern "C" fn main_control_append_normal_space() {
         }
         crate::globals::set_temp_ptr(crate::mem::new_glue_global(crate::globals::main_p()));
     } else {
-        crate::globals::set_temp_ptr(crate::mem::new_param_glue(GLUE_PAR_SPACE_SKIP_MC));
+        crate::globals::set_temp_ptr(crate::mem::new_param_glue_global(GLUE_PAR_SPACE_SKIP_MC));
     }
 
     set_mem_b32s1(crate::globals::cur_list_tail(), crate::globals::temp_ptr());
@@ -8474,7 +8474,7 @@ pub unsafe extern "C" fn new_graf(indented: bool) {
     set_cur_list_prev_graf(0);
 
     if cur_list_mode() == VMODE_I16 || cur_list_head() != cur_list_tail() {
-        let pg = crate::mem::new_param_glue(GLUE_PAR_PAR_SKIP);
+        let pg = crate::mem::new_param_glue_global(GLUE_PAR_PAR_SKIP);
         set_mem_b32s1(cur_list_tail(), pg);
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
     }
@@ -9246,7 +9246,7 @@ pub unsafe extern "C" fn init_align() {
     set_align_state(-1_000_000);
 
     'outer: loop {
-        set_mem_b32s1(cur_align(), crate::mem::new_param_glue(GLUE_PAR_TAB_SKIP));
+        set_mem_b32s1(cur_align(), crate::mem::new_param_glue_global(GLUE_PAR_TAB_SKIP));
         set_cur_align(mem_b32s1(cur_align()));
         if cur_cmd() == CAR_RET {
             break 'outer;
@@ -10754,7 +10754,7 @@ pub unsafe fn prune_page_top(p: i32, s: bool) -> i32 {
     while p != TEX_NULL {
         match mem_b16s1(p) {
             HLIST_NODE | VLIST_NODE_PPT | RULE_NODE => {
-                q = crate::mem::new_skip_param(GLUE_PAR_SPLIT_TOP_SKIP_PPT);
+                q = crate::mem::new_skip_param_global(GLUE_PAR_SPLIT_TOP_SKIP_PPT);
                 set_mem_b32s1(prev_p, q);
                 set_mem_b32s1(q, p);
                 if mem_b32s1(temp_ptr() + 1) > mem_b32s1(p + 3) {
@@ -10912,10 +10912,10 @@ const OPEN_NODE_DE: i32 = 0;
 const WRITE_NODE_DE: i32 = 1;
 const CLOSE_NODE_DE: i32 = 2;
 const SPECIAL_NODE_DE: i32 = 3;
-const LANGUAGE_NODE_DE_W: i16 = 4; // as i16 for new_whatsit
+const LANGUAGE_NODE_DE_W: i16 = 4; // as i16 for new_whatsit_global
 const PDF_SAVE_POS_NODE_DE: i32 = 21;
-const PDF_SAVE_POS_NODE_DE_W: i16 = 21; // as i16 for new_whatsit
-const GLYPH_NODE_TYPE_DE_W: i16 = 42; // node type 42 for new_whatsit
+const PDF_SAVE_POS_NODE_DE_W: i16 = 21; // as i16 for new_whatsit_global
+const GLYPH_NODE_TYPE_DE_W: i16 = 42; // node type 42 for new_whatsit_global
 const IMMEDIATE_CODE_DE: i32 = 4;
 const SET_LANGUAGE_CODE_DE: i32 = 5;
 const RESET_TIMER_CODE_DE: i32 = 31;
@@ -10985,7 +10985,7 @@ pub unsafe extern "C" fn do_extension() {
         }
 
         SPECIAL_NODE_DE => {
-            crate::mem::new_whatsit(SPECIAL_NODE_DE as i16, WRITE_NODE_SIZE_DE);
+            crate::mem::new_whatsit_global(SPECIAL_NODE_DE as i16, WRITE_NODE_SIZE_DE);
             set_mem_b32s0(cur_list_tail() + 1, TEX_NULL);
             scan_toks(false, true);
             set_mem_b32s1(cur_list_tail() + 1, def_ref());
@@ -11009,7 +11009,7 @@ pub unsafe extern "C" fn do_extension() {
             if (cur_list_mode() as i32).abs() != HMODE_DE as i32 {
                 report_illegal_case();
             } else {
-                crate::mem::new_whatsit(LANGUAGE_NODE_DE_W, SMALL_NODE_SIZE_DE);
+                crate::mem::new_whatsit_global(LANGUAGE_NODE_DE_W, SMALL_NODE_SIZE_DE);
                 scan_int();
                 let lang = if cur_val() <= 0 || cur_val() > 255 {
                     0
@@ -11032,7 +11032,7 @@ pub unsafe extern "C" fn do_extension() {
         }
 
         PDF_SAVE_POS_NODE_DE => {
-            crate::mem::new_whatsit(PDF_SAVE_POS_NODE_DE_W, SMALL_NODE_SIZE_DE);
+            crate::mem::new_whatsit_global(PDF_SAVE_POS_NODE_DE_W, SMALL_NODE_SIZE_DE);
         }
 
         RESET_TIMER_CODE_DE => {
@@ -11078,7 +11078,7 @@ pub unsafe extern "C" fn do_extension() {
                 let cur_font = eqtb_b32s1(CUR_FONT_LOC);
                 let fa = font_area_entry(cur_font);
                 if fa == AAT_FONT_FLAG_DE || fa == OTGR_FONT_FLAG_DE {
-                    crate::mem::new_whatsit(GLYPH_NODE_TYPE_DE_W, GLYPH_NODE_SIZE_DE);
+                    crate::mem::new_whatsit_global(GLYPH_NODE_TYPE_DE_W, GLYPH_NODE_SIZE_DE);
                     scan_int();
                     if cur_val() < 0 || cur_val() > 65535 {
                         let errmsg = error_here_with_diagnostic(c"Bad glyph number".as_ptr());
@@ -16504,7 +16504,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
                         set_cur_list_tail(mem_b32s1(cur_list_tail()));
                     }
                     if use_skip {
-                        let node = crate::mem::new_param_glue(GLUE_PAR_XETEX_LINEBREAK_SKIP as i16);
+                        let node = crate::mem::new_param_glue_global(GLUE_PAR_XETEX_LINEBREAK_SKIP as i16);
                         set_mem_b32s1(cur_list_tail(), node);
                         set_cur_list_tail(mem_b32s1(cur_list_tail()));
                     }

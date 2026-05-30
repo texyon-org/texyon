@@ -2833,7 +2833,7 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
         }
         let u = crate::mem::new_math_global(0, END_M_CODE);
         if mem_b16s1(t) == GLUE_NODE {
-            let jj = crate::mem::new_skip_param(GLUE_PAR_RIGHT_SKIP as i16);
+            let jj = crate::mem::new_skip_param_global(GLUE_PAR_RIGHT_SKIP as i16);
             set_mem_b32s1(q, jj);
             set_mem_b32s1(jj, u);
             let jspec = mem_b32s0(t + 1);
@@ -2850,7 +2850,7 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
         }
         let u2 = crate::mem::new_math_global(0, BEGIN_M_CODE);
         if mem_b16s1(r) == GLUE_NODE {
-            let jj = crate::mem::new_skip_param(GLUE_PAR_LEFT_SKIP as i16);
+            let jj = crate::mem::new_skip_param_global(GLUE_PAR_LEFT_SKIP as i16);
             set_mem_b32s1(u2, jj);
             set_mem_b32s1(jj, p);
             let jspec = mem_b32s0(r + 1);
@@ -3106,7 +3106,7 @@ pub unsafe fn after_math() {
             set_mem_b32s1(cur_list_tail(), inf_node);
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
         } else {
-            let g1_node = crate::mem::new_param_glue(g1);
+            let g1_node = crate::mem::new_param_glue_global(g1);
             set_mem_b32s1(cur_list_tail(), g1_node);
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
         }
@@ -3149,7 +3149,7 @@ pub unsafe fn after_math() {
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
 
         if g2 > 0 {
-            let g2_node = crate::mem::new_param_glue(g2);
+            let g2_node = crate::mem::new_param_glue_global(g2);
             set_mem_b32s1(cur_list_tail(), g2_node);
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
         }
@@ -3188,13 +3188,13 @@ pub unsafe fn init_math() {
             j = if eqtb_b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP) == 0 {
                 crate::mem::new_kern_global(0)
             } else {
-                crate::mem::new_param_glue(GLUE_PAR_RIGHT_SKIP as i16)
+                crate::mem::new_param_glue_global(GLUE_PAR_RIGHT_SKIP as i16)
             };
 
             let p_glue = if eqtb_b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP) == 0 {
                 crate::mem::new_kern_global(0)
             } else {
-                crate::mem::new_param_glue(GLUE_PAR_LEFT_SKIP as i16)
+                crate::mem::new_param_glue_global(GLUE_PAR_LEFT_SKIP as i16)
             };
             set_mem_b32s1(p_glue, j);
 
