@@ -80,13 +80,10 @@ mod raw {
 
         // pseudo_files moved to EngineState.input.pseudo_files.
         // in_open moved to EngineState.input.in_open.
-        // Hash table: `b32x2 *hash` (xetex-xetexd.h:482).
-        pub(super) static mut hash: *mut crate::mem_types::B32x2;
-        // Hash table management globals (xetex-xetexd.h:483–488).
-        pub(super) static mut hash_extra: i32;
+        // Hash table: `b32x2 *hash` moved to EngineState.eqtb.hash (session 52).
+        // Hash table management globals: `hash_extra` moved to EngineState.eqtb.hash_extra (session 52).
         // prim[PRIM_SIZE + 1] moved to EngineState.eqtb.prim (session 49).
-        // Top of the eqtb array (xetex-xetexd.h:486).
-        pub(super) static mut eqtb_top: i32;
+        // Top of the eqtb array: `eqtb_top` moved to EngineState.eqtb.eqtb_top (session 52).
 
         // Name-of-file globals (xetex-xetexd.h:388–391).
         // name_of_file: current input filename (NUL-terminated C string).
@@ -880,27 +877,26 @@ pub(crate) fn set_file_line_error_style_p(v: i32) {
 /// Read `hash[p].s0` (the "link" half of a hash-table entry).
 #[inline]
 pub(crate) fn hash_s0(p: i32) -> i32 {
-    unsafe { (*raw::hash.offset(p as isize)).s0 }
+    crate::state::with_state(|s| s.eqtb.hash[(p as usize) - 514].s0)
 }
 /// Write `hash[p].s0 = v`.
 #[inline]
 pub(crate) fn set_hash_s0(p: i32, v: i32) {
-    unsafe {
-        (*raw::hash.offset(p as isize)).s0 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.eqtb.hash[(p as usize) - 514].s0 = v;
+    });
 }
 /// Read `hash[p].s1` (the "text" half of a hash-table entry).
 #[inline]
 pub(crate) fn hash_s1(p: i32) -> i32 {
-    // SAFETY: see module-level doc. Caller ensures p is a valid hash index.
-    unsafe { (*raw::hash.offset(p as isize)).s1 }
+    crate::state::with_state(|s| s.eqtb.hash[(p as usize) - 514].s1)
 }
 /// Write `hash[p].s1 = v`.
 #[inline]
 pub(crate) fn set_hash_s1(p: i32, v: i32) {
-    unsafe {
-        (*raw::hash.offset(p as isize)).s1 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.eqtb.hash[(p as usize) - 514].s1 = v;
+    });
 }
 
 /// Read `prim[p].s0` (the link half of a primitive-table entry).
@@ -927,8 +923,13 @@ pub(crate) fn set_prim_s1(p: i32, v: i32) {
 /// Returns `eqtb_top`.
 #[inline]
 pub(crate) fn eqtb_top() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::eqtb_top }
+    crate::state::with_state(|state| state.eqtb.eqtb_top)
+}
+#[inline]
+pub(crate) fn set_eqtb_top(v: i32) {
+    crate::state::with_state_mut(|state| {
+        state.eqtb.eqtb_top = v;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -948,7 +949,23 @@ pub(crate) fn set_hash_used(v: i32) {
 }
 #[inline]
 pub(crate) fn hash_extra() -> i32 {
-    unsafe { raw::hash_extra }
+    crate::state::with_state(|state| state.eqtb.hash_extra)
+}
+#[inline]
+pub(crate) fn set_hash_extra(v: i32) {
+    crate::state::with_state_mut(|state| {
+        state.eqtb.hash_extra = v;
+    });
+}
+#[inline]
+pub(crate) fn hash_top() -> i32 {
+    crate::state::with_state(|state| state.eqtb.hash_top)
+}
+#[inline]
+pub(crate) fn set_hash_top(v: i32) {
+    crate::state::with_state_mut(|state| {
+        state.eqtb.hash_top = v;
+    });
 }
 #[inline]
 pub(crate) fn hash_high() -> i32 {

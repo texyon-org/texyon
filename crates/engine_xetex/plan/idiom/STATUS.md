@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last execution = session 51, eqtb array → Rust-owned Vec).
+Last updated: 2026-05-30 (last execution = session 52, eqtb hash table → Rust-owned Vec).
 
 ## How to read this file
 
@@ -482,6 +482,16 @@ least-coupled non-`misc` clusters:
     `Vec::new()`. Removed both `#[link_name="eqtb"]` aliases, the raw extern, and
     the C def (xetex-ini.c:20). No newtype debt (element `memory_word`).
     Dashboard 29/2/7/4.
+-   **`eqtb` hash table proper → Rust-owned `Vec<B32x2>` (session 52):** the
+    equivalents hash table `hash` moved to `EngineState.eqtb.hash`; 4 accessors
+    repointed (`hash_s0`/`set_hash_s0`/`hash_s1`/`set_hash_s1`), which are now
+    fully safe (no `unsafe` block). The scalars `hash_extra`, `eqtb_top`, and
+    `hash_top` also moved into `EqtbState`. Native allocations replaced the C FFI
+    allocator helper `tt_run_engine_allocate_yhash()` and FFI free cleanup helper
+    `tt_cleanup_free_yhash()`. Reconciled `undump_slice` for format load using
+    pre-computed `hash_ptr` and subtracting `514` from indices. Removed FFI link aliases,
+    raw extern statics in `globals.rs`, and C variables/helpers in `xetex-ini.c`.
+    Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -490,12 +500,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 81 (session 51 moved the malloc'd `eqtb` array; 82 after session 49) |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 78 (session 52 moved hash, hash_extra, eqtb_top; 81 after session 51) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 16 |
-| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 160 state-backed scalars/arrays (incl. 33 `LinebreakState` inline scalars/arrays) + 68 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 160 state-backed scalars/arrays (incl. 33 `LinebreakState` inline scalars/arrays) + 69 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 244 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 236 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |

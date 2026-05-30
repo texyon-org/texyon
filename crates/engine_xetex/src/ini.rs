@@ -1771,8 +1771,6 @@ extern "C" {
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
     fn ttstub_input_close(handle: usize) -> libc::c_int;
     fn ttstub_output_open_stdout() -> usize;
-    fn tt_run_engine_allocate_yhash();
-    fn tt_cleanup_free_yhash();
     fn pdf_files_init();
 
     #[link_name = "TEX_format_default"]
@@ -1796,19 +1794,12 @@ extern "C" {
     static mut tre_save_size: i32;
     #[link_name = "stack_size"]
     static mut tre_stack_size: i32;
-    #[link_name = "hash_extra"]
-    static mut tre_hash_extra: i32;
     #[link_name = "expand_depth"]
     static mut tre_expand_depth: i32;
     #[link_name = "mem"]
     static mut tre_mem: *mut crate::mem_types::MemoryWord;
-    #[link_name = "hash"]
-    static mut tre_hash: *mut crate::mem_types::B32x2;
-    #[link_name = "eqtb_top"]
-    static mut tre_eqtb_top: i32;
-    #[link_name = "hash_top"]
-    static mut tre_hash_top: i32;
     // `eqtb` is now Rust-owned (`EngineState.eqtb.data`); no FFI alias. (session 51)
+    // `hash` is now Rust-owned (`EngineState.eqtb.hash`); no FFI alias. (session 52)
 
     #[link_name = "bad"]
     static mut tre_bad: i32;
@@ -2512,8 +2503,8 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
             state.strings.str_pool = Vec::new();
             state.strings.str_start = Vec::new();
             state.eqtb.data = Vec::new();
+            state.eqtb.hash = Vec::new();
         });
-        tt_cleanup_free_yhash();
         libc::free(tre_mem as *mut libc::c_void);
         tre_mem = std::ptr::null_mut();
     }
@@ -2533,27 +2524,30 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         bad_format_file();
     }
     set_hash_high(x);
-    if tre_hash_extra < hash_high() {
-        tre_hash_extra = hash_high();
-    }
+    let hash_high_val = hash_high();
+    crate::state::with_state_mut(|s| {
+        if s.eqtb.hash_extra < hash_high_val {
+            s.eqtb.hash_extra = hash_high_val;
+        }
+        s.eqtb.eqtb_top = EQTB_SIZE + s.eqtb.hash_extra;
+        s.eqtb.hash_top = if s.eqtb.hash_extra == 0 {
+            UNDEFINED_CONTROL_SEQUENCE
+        } else {
+            s.eqtb.eqtb_top
+        };
+        let n = (1 + s.eqtb.hash_top - 514) as usize;
+        s.eqtb.hash = vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; n];
+    });
 
-    tre_eqtb_top = EQTB_SIZE + tre_hash_extra;
-    if tre_hash_extra == 0 {
-        tre_hash_top = UNDEFINED_CONTROL_SEQUENCE;
-    } else {
-        tre_hash_top = tre_eqtb_top;
-    }
-
-    tt_run_engine_allocate_yhash();
     crate::globals::set_hash_s0(FORMAT_HASH_BASE, 0);
     crate::globals::set_hash_s1(FORMAT_HASH_BASE, 0);
-    for h in (FORMAT_HASH_BASE + 1)..=tre_hash_top {
+    for h in (FORMAT_HASH_BASE + 1)..=crate::globals::hash_top() {
         crate::globals::set_hash_s0(h, crate::globals::hash_s0(FORMAT_HASH_BASE));
         crate::globals::set_hash_s1(h, crate::globals::hash_s1(FORMAT_HASH_BASE));
     }
 
     // `xmalloc_array(n)` allocated `n + 1` words; match that inclusive size.
-    let eqtb_words_load = (tre_eqtb_top as usize) + 1;
+    let eqtb_words_load = (crate::globals::eqtb_top() as usize) + 1;
     crate::state::with_state_mut(|s| {
         s.eqtb.data = vec![
             crate::mem_types::MemoryWord {
@@ -2566,7 +2560,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     set_eqtb_b32s1(UNDEFINED_CONTROL_SEQUENCE, crate::mem::TEX_NULL);
     set_eqtb_b16s0(UNDEFINED_CONTROL_SEQUENCE, 0);
     let undefined_entry = eqtb_word(UNDEFINED_CONTROL_SEQUENCE);
-    for e in (EQTB_SIZE + 1)..=tre_eqtb_top {
+    for e in (EQTB_SIZE + 1)..=crate::globals::eqtb_top() {
         set_eqtb_word(e, undefined_entry);
     }
 
@@ -2738,14 +2732,14 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     }
 
     x = undump_int(fmt_in);
-    if x < FORMAT_HASH_BASE || x > tre_hash_top {
+    if x < FORMAT_HASH_BASE || x > crate::globals::hash_top() {
         bad_format_file();
     }
     set_par_loc(x);
     set_par_token(CS_TOKEN_FLAG + par_loc());
 
     x = undump_int(fmt_in);
-    if x < FORMAT_HASH_BASE || x > tre_hash_top {
+    if x < FORMAT_HASH_BASE || x > crate::globals::hash_top() {
         bad_format_file();
     }
     set_write_loc(x);
@@ -2777,13 +2771,14 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         }
     }
 
+    let hash_ptr = crate::state::with_state_mut(|s| s.eqtb.hash.as_mut_ptr());
     undump_slice(
         fmt_in,
-        tre_hash.add((hash_used() + 1) as usize),
+        hash_ptr.add((hash_used() + 1 - 514) as usize),
         (UNDEFINED_CONTROL_SEQUENCE - 1) - hash_used(),
     );
     if hash_high() > 0 {
-        undump_slice(fmt_in, tre_hash.add((EQTB_SIZE + 1) as usize), hash_high());
+        undump_slice(fmt_in, hash_ptr.add((EQTB_SIZE + 1 - 514) as usize), hash_high());
     }
 
     set_cs_count(undump_int(fmt_in));
@@ -3224,10 +3219,10 @@ pub unsafe extern "C" fn tt_run_engine(
     set_error_line(79);
     set_half_error_line(50);
     set_max_print_line(79);
-    tre_hash_extra = 600_000;
     tre_expand_depth = 10_000;
 
     crate::state::with_state_mut(|state| {
+        state.eqtb.hash_extra = 600_000;
         state.strings.pool_size = TRE_POOL_SIZE;
         state.strings.string_vacancies = TRE_STRING_VACANCIES;
         state.strings.max_strings = TRE_MAX_STRINGS;
@@ -3349,25 +3344,30 @@ pub unsafe extern "C" fn tt_run_engine(
 
     if in_initex_mode() {
         tre_mem = xmalloc_array::<crate::mem_types::MemoryWord>(MEM_TOP + 1);
-        tre_eqtb_top = EQTB_SIZE + tre_hash_extra;
-        tre_hash_top = if tre_hash_extra == 0 {
-            HASH_TOP_UNDEFINED_CONTROL_SEQUENCE
-        } else {
-            tre_eqtb_top
-        };
+        crate::state::with_state_mut(|s| {
+            s.eqtb.eqtb_top = EQTB_SIZE + s.eqtb.hash_extra;
+            s.eqtb.hash_top = if s.eqtb.hash_extra == 0 {
+                HASH_TOP_UNDEFINED_CONTROL_SEQUENCE
+            } else {
+                s.eqtb.eqtb_top
+            };
 
-        tt_run_engine_allocate_yhash();
+            let n = (1 + s.eqtb.hash_top - 514) as usize;
+            s.eqtb.hash = vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; n];
+        });
+
         crate::globals::set_hash_s0(HASH_BASE, 0);
         crate::globals::set_hash_s1(HASH_BASE, 0);
         let hash_base = crate::globals::hash_s0(HASH_BASE);
         let hash_base_s1 = crate::globals::hash_s1(HASH_BASE);
         let mut h = HASH_BASE + 1;
-        while h <= tre_hash_top {
+        let h_top = crate::globals::hash_top();
+        while h <= h_top {
             crate::globals::set_hash_s0(h, hash_base);
             crate::globals::set_hash_s1(h, hash_base_s1);
             h += 1;
         }
-        crate::globals::set_hash_used(tre_hash_top);
+        crate::globals::set_hash_used(h_top);
 
         // pre-compute font_mem_size before the mutable borrow (backed by with_state)
         let fms_initex = font_mem_size();
@@ -3375,7 +3375,7 @@ pub unsafe extern "C" fn tt_run_engine(
             b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
         };
         // `xcalloc_array(n)` allocated `n + 1` zeroed words; match that.
-        let eqtb_words_initex = (tre_eqtb_top as usize) + 1;
+        let eqtb_words_initex = (crate::globals::eqtb_top() as usize) + 1;
         crate::state::with_state_mut(|state| {
             state.eqtb.data = vec![zero_word_initex; eqtb_words_initex];
             state.strings.str_start = vec![0i32; (TRE_MAX_STRINGS as usize) + 1];
@@ -3421,7 +3421,7 @@ pub unsafe extern "C" fn tt_run_engine(
     if tre_buf_size > MAX_HALFWORD {
         tre_bad = 18;
     }
-    if CS_TOKEN_FLAG + EQTB_SIZE + tre_hash_extra > MAX_HALFWORD {
+    if CS_TOKEN_FLAG + EQTB_SIZE + crate::globals::hash_extra() > MAX_HALFWORD {
         tre_bad = 21;
     }
     if FORMAT_HASH_OFFSET < 0 || FORMAT_HASH_OFFSET > HASH_BASE {
@@ -3683,9 +3683,8 @@ extern "C" {
     static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
     #[link_name = "native_text"]
     static mut tt_cleanup_native_text: *mut libc::c_void;
-    #[link_name = "tt_cleanup_free_yhash"]
-    fn tt_cleanup_yhash();
     // `eqtb` cleanup is now the Rust `Vec` drop on `EngineState.eqtb.data`. (session 51)
+    // `hash` cleanup is now the Rust `Vec` drop on `EngineState.eqtb.hash`. (session 52)
     #[link_name = "mem"]
     static mut tt_cleanup_mem: *mut libc::c_void;
     // font_info cleanup moved to EngineState.fonts.font_info (Vec::new() reset).
@@ -3749,9 +3748,9 @@ pub unsafe fn tt_cleanup() {
     libc::free(tt_cleanup_native_text);
 
     // Free arrays allocated in load_fmt_file
-    tt_cleanup_yhash(); // frees file-static yhash via C helper
     crate::state::with_state_mut(|state| {
         state.eqtb.data = Vec::new();
+        state.eqtb.hash = Vec::new();
     });
     libc::free(tt_cleanup_mem);
     crate::state::with_state_mut(|state| {

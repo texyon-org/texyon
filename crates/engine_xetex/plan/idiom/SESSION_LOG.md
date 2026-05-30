@@ -9,6 +9,46 @@ dashboard if code changed, surprises, and a handoff.
 
 ---
 
+## Idiom session 52 — 2026-05-30 — eqtb hash table → Rust-owned `Vec<B32x2>`
+
+**Type:** execution (workstream 01, Phase-B; the `eqtb`-cluster hash ownership slice). One commit.
+
+**Slice:** the equivalents hash table `hash` (C-`malloc`d `b32x2 *`, size `1 + hash_top - hash_offset`) and its control scalars (`hash_extra`, `hash_top`, `eqtb_top`) → Rust-owned fields on `EngineState.eqtb` (`EqtbState`).
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `b32x2 *hash`, `int32_t hash_extra`, `int32_t hash_top`, `int32_t eqtb_top`. No newtype debt (plain `B32x2` and `int32_t`).
+- (b) aliases: 4 total FFI aliases/helpers in `ini.rs` (`tre_hash_extra`, `tre_hash`, `tre_eqtb_top`, `tre_hash_top`, `tt_run_engine_allocate_yhash`, `tt_cleanup_free_yhash`, `tt_cleanup_yhash`) → ownership slice (§11 step 6).
+- (c) C readers: only `xetex-ini.c` (definition). No C code references them.
+- (d) cross-module Rust extern redeclarations: none.
+- format dump: **yes** — undump_slice used in `ini.rs:2783-2790`.
+
+**Work done (1 commit):**
+- `EqtbState` gains `hash: Vec<B32x2>`, `hash_extra: i32`, `eqtb_top: i32`, `hash_top: i32` fields (empty/zero by default).
+- 4 `globals.rs` accessors (`hash_s0`, `set_hash_s0`, `hash_s1`, `set_hash_s1`) repointed to index `s.eqtb.hash[(p as usize) - 514]`. No `unsafe` needed.
+- `hash_extra()`, `eqtb_top()`, `hash_top()` and their setters repointed to state.
+- Removed raw statics `hash`, `hash_extra`, `eqtb_top` from `globals.rs` `mod raw`.
+- Completely removed `yhash` static, FFI allocation helpers `tt_run_engine_allocate_yhash`/`tt_cleanup_free_yhash`, and variables `hash`/`hash_extra`/`hash_top`/`eqtb_top` from C (`xetex/xetex-ini.c`).
+- Replaced FFI `tt_run_engine_allocate_yhash()` and FFI alias cleanup with safe, native Rust `Vec::new()` and `vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; n]` allocations inside `src/ini.rs` (Initex and Format Load paths).
+- Reconciled `undump_slice` for the hash table at format load using the proven **font-array pattern**: a state-derived mutable pointer `hash_ptr` is precomputed, then used with subtracting `514` from indices.
+- Cleared `state.eqtb.hash = Vec::new()` inside `tt_cleanup()` and format load reset.
+
+**Newtype debts (§4):**
+- `hash[].s0` (link) -> `Halfword` / `MemPtr` (original C type: `halfword`)
+- `hash[].s1` (text) -> `StrNumber` (original C type: `str_number`)
+Added rows in the tracking backlog (noted, plain `B32x2` structure wrapper keeps them safe for now).
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4** passes perfectly with no regressions! Format undump roundtrip fully verified.
+
+**Metrics after this session:**
+- `globals.rs` raw extern count **81 → 78** (−3: `hash`, `hash_extra`, `eqtb_top`).
+- Raw `unsafe { }` text count **244 → 236** (−8).
+
+**For the next session (53+):**
+- Migrate the **`mem` arena** (§5) — the hottest/highest-leverage ownership move and the real pivot into Phase C (thread `&mut Mem` rather than bridge).
+- Or migrate remaining classified-but-unmigrated scratch: DVI promoted Rust statics (`dvi_*`), box/packaging scratch (`cur_box`, `adjust_tail`, etc.).
+
 ## Idiom session 51 — 2026-05-30 — eqtb array → Rust-owned `Vec<MemoryWord>`
 
 **Type:** execution (workstream 01, Phase-B; the `eqtb`-cluster ownership slice —

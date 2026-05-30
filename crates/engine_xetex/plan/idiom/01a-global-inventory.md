@@ -121,14 +121,14 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `full_source_filename_stack` | `*mut i32` | `input` | `src/globals.rs:125` C extern | `full_source_filename_stack`, `set_full_source_filename_stack` | def xetex/xetex-ini.c; link src/ini.rs:1846,src/ini.rs:3584 |  |
 | `line_stack` | `*mut i32` | `input` | `src/globals.rs:127` C extern | `line_stack`, `set_line_stack` | def xetex/xetex-ini.c; link src/ini.rs:1836,src/ini.rs:3574 |  |
 | `file_line_error_style_p` | `i32` | `config` | `src/globals.rs:129` C extern | `file_line_error_style_p` | def xetex/xetex-ini.c; link src/ini.rs:1784 |  |
-| `hash` | `*mut crate::mem_types::B32x2` | `eqtb` | `src/globals.rs:132` C extern | `hash_s0`, `set_hash_s0`, `hash_s1`, `set_hash_s1` | def xetex/xetex-ini.c; link src/ini.rs:1858; yhash helper |  |
+| `hash` | `Vec<crate::mem_types::B32x2>` | `eqtb` | `EngineState.eqtb.hash` (Rust-owned) | `hash_s0`, `set_hash_s0`, `hash_s1`, `set_hash_s1` | MOVED session 52: C def, static yhash, and FFI yhash helpers removed |
 | `hash_used` | `i32` | `eqtb` | `src/globals.rs:134` C extern | `hash_used`, `set_hash_used` | def xetex/xetex-ini.c |  |
-| `hash_extra` | `i32` | `eqtb` | `src/globals.rs:135` C extern | `hash_extra` | def xetex/xetex-ini.c; link src/ini.rs:1822 |  |
+| `hash_extra` | `i32` | `eqtb` | `EngineState.eqtb.hash_extra` (Rust-owned) | `hash_extra`, `set_hash_extra` | MOVED session 52: C def and link alias removed |
 | `hash_high` | `i32` | `eqtb` | `src/globals.rs:136` C extern | `hash_high`, `set_hash_high` | def xetex/xetex-ini.c |  |
 | `no_new_control_sequence` | `bool` | `eqtb` | `src/globals.rs:137` C extern | `no_new_control_sequence`, `set_no_new_control_sequence` | def xetex/xetex-ini.c |  |
 | `prim` | `[crate::mem_types::B32x2; 2101]` | `eqtb` | EngineState.eqtb.prim (Rust-owned Vec) | `prim_s0`, `set_prim_s0`, `prim_s1`, `set_prim_s1` | MOVED session 49: C def removed; inline BSS, sized in EqtbState::default; format dump/undump via prim_s0/s1 accessors (transparent) |
 | `prim_used` | `i32` | `eqtb` | `src/globals.rs:141` C extern | `prim_used`, `set_prim_used` | def xetex/xetex-ini.c |  |
-| `eqtb_top` | `i32` | `eqtb` | `src/globals.rs:143` C extern | `eqtb_top` | def xetex/xetex-ini.c; link src/ini.rs:1860 |  |
+| `eqtb_top` | `i32` | `eqtb` | `EngineState.eqtb.eqtb_top` (Rust-owned) | `eqtb_top`, `set_eqtb_top` | MOVED session 52: C def and link alias removed |
 | `max_strings` | `i32` | `strings` | `src/globals.rs:146` C extern | `max_strings` | def xetex/xetex-ini.c; link src/ini.rs:1792 |  |
 | `init_str_ptr` | `i32` | `strings` | `src/globals.rs:147` C extern | `init_str_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1874 |  |
 | `init_pool_ptr` | `i32` | `strings` | `src/globals.rs:148` C extern | `init_pool_ptr` | def xetex/xetex-ini.c; link src/ini.rs:1876 |  |

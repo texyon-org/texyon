@@ -206,7 +206,7 @@ pub(crate) struct EqtbState {
     pub no_new_control_sequence: bool,
     pub prim_used: i32,
     pub cs_count: i32,
-    /// Equivalents table (former C-`malloc`'d `memory_word *eqtb`, size
+    /// equivalents table (former C-`malloc`'d `memory_word *eqtb`, size
     /// `eqtb_top + 1`). Rust-owned `Vec`, allocated in `ini.rs` at init and
     /// format-load and dropped by `tt_cleanup`; indexed by the `eqtb_*`
     /// accessors. In the format dump (sparse region `dump_slice`/`undump_slice`);
@@ -225,6 +225,14 @@ pub(crate) struct EqtbState {
     /// `1_114_730`; inline BSS in C, so sized here in `Default`. Not in the
     /// format dump. Element `u16` save level, no newtype debt. (session 49)
     pub xeq_level: Vec<u16>,
+    /// Hash table (former C-`malloc`'d `b32x2 *hash`, size `1 + hash_top - hash_offset`).
+    /// Rust-owned `Vec`, allocated in `ini.rs` at init and format-load and dropped by `tt_cleanup`;
+    /// indexed by `hash_s0`/`hash_s1` accessors with `- 514` (hash_offset) indexing offset.
+    /// Element `B32x2`, no newtype debt. (session 52)
+    pub hash: Vec<crate::mem_types::B32x2>,
+    pub hash_extra: i32,
+    pub eqtb_top: i32,
+    pub hash_top: i32,
 }
 
 impl Default for EqtbState {
@@ -242,6 +250,10 @@ impl Default for EqtbState {
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
             // EQTB_SIZE - INT_BASE + 1.
             xeq_level: vec![0u16; 1_114_730],
+            hash: Vec::new(),
+            hash_extra: 0,
+            eqtb_top: 0,
+            hash_top: 0,
         }
     }
 }

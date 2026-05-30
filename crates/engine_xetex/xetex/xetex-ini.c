@@ -51,10 +51,7 @@ int32_t rover;
    first_p / global_prev_p moved to EngineState.linebreak (LinebreakState). */
 /* nest_ptr / max_nest_stack moved to EngineState.input (scalars). */
 list_state_record cur_list;
-b32x2 *hash;
-int32_t hash_extra;
-int32_t hash_top;
-int32_t eqtb_top;
+/* hash / hash_extra / hash_top / eqtb_top moved to EngineState.eqtb (session 52). */
 /* prim[PRIM_SIZE + 1] moved to EngineState.eqtb.prim (session 49). */
 eight_bits cur_cmd;
 int32_t cur_chr;
@@ -143,7 +140,7 @@ scaled_t delta;
 extern int32_t _trie_op_hash_array[TRIE_OP_SIZE - NEG_TRIE_OP_SIZE + 1];
 #define TRIE_OP_HASH(i) _trie_op_hash_array[(i) - NEG_TRIE_OP_SIZE]
 
-static b32x2 *yhash;
+/* yhash moved to EngineState.eqtb.hash (session 52). */
 
 #define FORMAT_HEADER_MAGIC 0x54544E43 /* "TTNC" in ASCII */
 #define FORMAT_FOOTER_MAGIC 0x0000029A
@@ -223,19 +220,6 @@ void get_strings_started(void);
 /*:1001*/
 
 // translated to Rust: src/ini.rs tt_cleanup
-// Helper for tt_cleanup: free the file-static yhash pointer.
-void
-tt_cleanup_free_yhash(void) {
-    free(yhash);
-    yhash = NULL;
-}
-
-// Helper for Rust tt_run_engine: allocate the file-static yhash pointer and
-// wire the public hash pointer just as the C body did.
-void
-tt_run_engine_allocate_yhash(void) {
-    yhash = xmalloc_array(b32x2, 1 + hash_top - hash_offset);
-    hash = yhash - hash_offset;
-}
+/* tt_cleanup_free_yhash and tt_run_engine_allocate_yhash moved to Rust (session 52) */
 
 // translated to Rust: src/ini.rs tt_run_engine
