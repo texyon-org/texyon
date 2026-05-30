@@ -3,7 +3,6 @@ use crate::ini::init_trie;
 use crate::mem::prev_rightmost;
 use crate::scan::char_pw;
 
-
 const MAX_HLIST_STACK: i16 = 512;
 const TEX_NULL: i32 = -0x0FFF_FFFF;
 const HLIST_NODE: i32 = 0;
@@ -99,12 +98,7 @@ const INF_BAD: i32 = 10_000;
 const INF_PENALTY: i32 = 10_000;
 const EJECT_PENALTY: i32 = -10_000;
 
-extern "C" {
-    
-    
-    
-    
-}
+extern "C" {}
 
 // translated from xetex-linebreak.c:77 (get_native_usv)
 #[no_mangle]

@@ -8,7 +8,6 @@ use crate::output::print_int;
 use crate::output::print_nl_cstr;
 use crate::scan::flush_node_list;
 
-
 use crate::globals::{
     align_state, cur_boundary, cur_group, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0,
     eqtb_b16s1, eqtb_b32s1, eqtb_word, grp_stack, in_open, line, mag_set, max_save_stack,
@@ -26,13 +25,9 @@ use crate::mem_types::MemoryWord;
 const TEX_NULL: i32 = -0x0FFF_FFFF; // MIN_HALFWORD
 
 extern "C" {
-    
-    
-    
-    
-    
+
     fn ttstub_diag_printf(d: *mut libc::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
-    
+
 }
 
 // Save-stack discriminant values (xetex-constants.h:260–285).

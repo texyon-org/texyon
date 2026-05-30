@@ -159,29 +159,13 @@ extern "C" {
     fn TECkit_ResetConverter(converter: *mut libc::c_void) -> i64;
 
     // bad_utf8_warning remains in C (xetex-xetexd.h:912).
-    
 
     // gettexstring — translated to Rust (texmfmp.rs) but called via FFI.
-    
 
     // Output helpers — all translated to Rust in output.rs.
-    
-    
-    
-    
-    
-    
-    
-    
 
     // Callees of open_or_close_in still in C.
-    
-    
-    
-    
-    
-    
-    
+
 }
 
 // ---------------------------------------------------------------------------
@@ -297,11 +281,7 @@ pub unsafe extern "C" fn u_open_in(
 }
 
 /// Wrapper so scan.rs can call `set_input_file_encoding` without re-declaring it.
-pub(crate) unsafe fn call_set_input_file_encoding(
-    f: *mut UFile,
-    mode: i32,
-    encoding_data: i32,
-) {
+pub(crate) unsafe fn call_set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32) {
     set_input_file_encoding(f, mode, encoding_data);
 }
 

@@ -4,7 +4,6 @@ use crate::ext::makeXDVGlyphArrayData;
 use crate::ext::make_font_def;
 use crate::ext::store_justified_native_glyphs;
 
-
 use crate::globals::{
     avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name,
     cur_page_height, cur_tok, cur_v, def_ref, doing_leaders, eqtb_b32s1, file_offset,
@@ -29,7 +28,7 @@ use crate::globals::{
 use crate::mem::{free_node, get_avail, get_node, new_kern, new_math};
 
 extern "C" {
-    
+
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     fn ttstub_output_write(
         handle: usize,
@@ -41,9 +40,7 @@ extern "C" {
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn ttstub_shell_escape(cmd: *const u16, len: libc::size_t);
     fn _tt_abort(fmt: *const libc::c_char) -> !;
-    
-    
-    
+
     static output_file_extension: *const libc::c_char;
 }
 

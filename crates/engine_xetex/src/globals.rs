@@ -1790,9 +1790,7 @@ pub(crate) fn read_file_entry(n: usize) -> *mut crate::io::UFile {
 /// Valid past the borrow: the array lives in the `'static` thread-local and is never moved.
 #[inline]
 pub(crate) fn read_file_ptr(n: usize) -> *mut *mut crate::io::UFile {
-    crate::state::with_state_mut(|s| unsafe {
-        s.input.read_file.as_mut_ptr().add(n)
-    })
+    crate::state::with_state_mut(|s| unsafe { s.input.read_file.as_mut_ptr().add(n) })
 }
 
 // ---------------------------------------------------------------------------
@@ -2165,7 +2163,9 @@ pub(crate) fn hyphen_char_entry(f: i32) -> i32 {
 /// Writes `hyphen_char[f] = v`.
 #[inline]
 pub(crate) fn set_hyphen_char_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| { s.fonts.hyphen_char[f as usize] = v; })
+    crate::state::with_state_mut(|s| {
+        s.fonts.hyphen_char[f as usize] = v;
+    })
 }
 /// Returns `skew_char[f]`.
 #[inline]
@@ -2175,7 +2175,9 @@ pub(crate) fn skew_char_entry(f: i32) -> i32 {
 /// Writes `skew_char[f] = v`.
 #[inline]
 pub(crate) fn set_skew_char_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| { s.fonts.skew_char[f as usize] = v; })
+    crate::state::with_state_mut(|s| {
+        s.fonts.skew_char[f as usize] = v;
+    })
 }
 /// Returns `char_base[f]`.
 #[inline]
@@ -3220,9 +3222,7 @@ pub(crate) fn set_input_file(k: i32, v: *mut crate::io::UFile) {
 /// past the borrow.
 #[inline]
 pub(crate) fn input_file_ptr(k: i32) -> *mut *mut crate::io::UFile {
-    crate::state::with_state_mut(|s| unsafe {
-        s.input.input_file.as_mut_ptr().add(k as usize)
-    })
+    crate::state::with_state_mut(|s| unsafe { s.input.input_file.as_mut_ptr().add(k as usize) })
 }
 
 // ---------------------------------------------------------------------------

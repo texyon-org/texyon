@@ -7,7 +7,6 @@ use crate::string_pool::make_string;
 use crate::string_pool::str_eq_buf;
 use crate::string_pool::str_eq_str;
 
-
 use crate::globals::{
     buffer_entry, hash_extra, hash_high, hash_s0, hash_s1, hash_used, init_pool_ptr,
     no_new_control_sequence, pool_ptr, pool_size, prim_s0, prim_s1, prim_used, set_hash_high,
@@ -15,13 +14,7 @@ use crate::globals::{
     set_str_pool, str_pool_entry, str_ptr, str_start,
 };
 
-extern "C" {
-    
-    
-    
-    
-    
-}
+extern "C" {}
 
 // xetex-constants.h:25
 const BIGGEST_CHAR: i32 = 0xFFFF;

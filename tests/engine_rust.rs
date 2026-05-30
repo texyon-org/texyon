@@ -44,7 +44,9 @@ fn golden_dir() -> PathBuf {
 }
 
 fn bless_mode() -> bool {
-    env::var("TECTONIC_BLESS").map(|v| v == "1").unwrap_or(false)
+    env::var("TECTONIC_BLESS")
+        .map(|v| v == "1")
+        .unwrap_or(false)
 }
 
 /// Run the plain TeX engine on `<stem>.tex` found in `src_dir()`, then either
@@ -77,8 +79,7 @@ fn run_case(stem: &str, expect: TexOutcome) {
         let mut status = NoopStatusBackend::default();
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
 
-        TexEngine::default()
-            .process(&mut launcher, "plain.fmt", &texname)
+        TexEngine::default().process(&mut launcher, "plain.fmt", &texname)
     };
 
     // Check engine outcome.

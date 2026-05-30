@@ -110,8 +110,7 @@ extern "C" {
     fn min4(v1: c_double, v2: c_double, v3: c_double, v4: c_double) -> c_double;
     fn max4(v1: c_double, v2: c_double, v3: c_double, v4: c_double) -> c_double;
     // xetex-ext.c conversion helpers (still in C)
-    
-    
+
     // bridge I/O
     fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
     fn ttstub_input_close(handle: usize) -> c_int;

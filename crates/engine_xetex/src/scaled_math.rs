@@ -14,19 +14,12 @@ use crate::output::error_here_with_diagnostic;
 use crate::output::print_cstr;
 use crate::output::print_scaled;
 
-
 use crate::globals::{
     j_random, random_entry, set_arith_error, set_help_line, set_help_ptr, set_j_random,
     set_random_entry, set_tex_remainder, spec_log, two_to_the,
 };
 
-extern "C" {
-    
-    
-    
-    
-    
-}
+extern "C" {}
 
 // ---------------------------------------------------------------------------
 // tex_round

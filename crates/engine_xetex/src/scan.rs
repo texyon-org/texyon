@@ -80,7 +80,6 @@ use crate::shipout::ship_out;
 use crate::synctex::synctex_start_input;
 use crate::synctex::synctex_terminate;
 
-
 use crate::globals::{
     active_width, align_state, arith_error, avail, buffer_entry, char_base_entry, cur_chr, cur_cmd,
     cur_cs, cur_group, cur_input, cur_list_mode, cur_tok, cur_val, cur_val_level, def_ref,
@@ -108,81 +107,31 @@ use crate::mem::new_rule;
 use crate::output::print_cmd_chr;
 
 extern "C" {
-    
-    
-    
-    
+
     fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
-    
+
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
-    
-    
-    
-    
+
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
-    
-    
-    
-    
-    
-    
+
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
-    
-    
-    
-    
-    
-    
+
     fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
-    
-    
+
     fn ttstub_output_close(handle: usize) -> libc::c_int;
     fn ttstub_output_putc(handle: usize, c: i32) -> i32;
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
     fn get_loaded_font_design_size() -> i32;
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
-    
-    
+
     fn get_ot_math_constant(f: i32, n: i32) -> i32;
     fn ttstub_input_getc(handle: usize) -> libc::c_int;
     fn ttstub_input_close(handle: usize) -> libc::c_int;
-    
-    
-    
+
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
@@ -4532,7 +4481,6 @@ unsafe fn pop_cond_node() {
     crate::mem::free_node(p, IF_NODE_SIZE);
 }
 
-
 // ---------------------------------------------------------------------------
 // open_log_file
 // ---------------------------------------------------------------------------
@@ -5822,9 +5770,7 @@ const DISC_GROUP: u8 = 10; // xetex-constants.h:162
 // translated from xetex-xetex0.c:9956 (append_discretionary)
 #[no_mangle]
 pub unsafe extern "C" fn append_discretionary() {
-    extern "C" {
-        
-    }
+    extern "C" {}
 
     let tail = crate::globals::cur_list_tail();
     set_mem_b32s1(tail, crate::mem::new_disc());
@@ -7045,8 +6991,7 @@ pub unsafe extern "C" fn show_whatever() {
 pub unsafe extern "C" fn append_italic_correction() {
     extern "C" {
         // Note: in C these are macros: get_native_italic_correction(p) = real_get_native_italic_correction(&mem[p])
-        
-        
+
     }
     const LIGATURE_NODE: u16 = 6; // xetex_format.h:386
     const EXPLICIT: u16 = 1; // xetex_format.h:428
@@ -7107,11 +7052,7 @@ pub unsafe extern "C" fn append_italic_correction() {
 // translated from xetex-xetex0.c:9910 (make_accent)
 #[no_mangle]
 pub unsafe extern "C" fn make_accent() {
-    extern "C" {
-        
-        
-        
-    }
+    extern "C" {}
     const SLANT_CODE: i32 = 1; // xetex-constants.h:273
     const X_HEIGHT_CODE: i32 = 5; // xetex-constants.h:294
     const ACC_KERN: u16 = 2; // xetex_format.h:429
@@ -7219,9 +7160,7 @@ pub unsafe extern "C" fn make_accent() {
 // translated from xetex-xetex0.c:10233 (new_font)
 #[no_mangle]
 pub unsafe extern "C" fn new_font(a: i16) {
-    extern "C" {
-        
-    }
+    extern "C" {}
     const TOO_BIG_CHAR: i32 = 65536; // xetex-constants.h
 
     if crate::globals::job_name() == 0 {
@@ -7994,9 +7933,7 @@ pub unsafe extern "C" fn main_control_append_normal_space() {
 // translated from xetex-xetex0.c:7277 (main_control mode-independent cases)
 #[no_mangle]
 pub unsafe extern "C" fn main_control_mode_independent() {
-    extern "C" {
-        
-    }
+    extern "C" {}
 
     const AFTER_ASSIGNMENT_MC: u8 = 40;
     const AFTER_GROUP_MC: u8 = 41;
@@ -8644,9 +8581,7 @@ pub unsafe extern "C" fn new_graf(indented: bool) {
 
 // translated from xetex-xetex0.c:7048 (new_character)
 pub unsafe fn new_character(f: i32, c: u16) -> i32 {
-    extern "C" {
-        
-    }
+    extern "C" {}
     use crate::globals::{char_base_entry, font_bc_entry, font_ec_entry, font_info_b16};
 
     let fa = crate::globals::font_area_entry(f);
@@ -9486,9 +9421,7 @@ pub unsafe extern "C" fn init_align() {
 // translated from xetex-xetex0.c:10745 (do_assignments)
 #[no_mangle]
 pub unsafe extern "C" fn do_assignments() {
-    extern "C" {
-        
-    }
+    extern "C" {}
 
     const MAX_NON_PREFIXED_COMMAND: u8 = 71; // xetex_format.h:312
     const RELAX: u8 = 0; // xetex_format.h:229
@@ -10221,9 +10154,7 @@ pub unsafe extern "C" fn just_copy(p: i32, h: i32, t: i32) {
     use crate::globals::hi_mem_min;
     use crate::mem::TEX_NULL;
 
-    extern "C" {
-        
-    }
+    extern "C" {}
 
     const BOX_NODE_SIZE: i32 = 8; // xetex-constants.h:132
     const RULE_NODE_SIZE: i32 = 5; // xetex-constants.h:128
@@ -10399,9 +10330,7 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
     };
     use crate::mem::TEX_NULL;
 
-    extern "C" {
-        
-    }
+    extern "C" {}
 
     const MEDIUM_NODE_SIZE: i32 = 3;
     const TEMP_HEAD: i32 = 4_999_996; // MEM_TOP - 3
@@ -15270,10 +15199,7 @@ pub unsafe extern "C" fn get_next() {
                                     set_force_eof(true);
                                 }
                             } else {
-                                if input_line(
-                                    input_file(cur_input().index as i32)
-                                ) != 0
-                                {
+                                if input_line(input_file(cur_input().index as i32)) != 0 {
                                     set_cur_input_limit(last());
                                 } else if eqtb_b32s1(LOCAL_BASE_GN + LOCAL_EVERY_EOF) != TEX_NULL_GN
                                     && !eof_seen(cur_input().index as i32)
@@ -16756,8 +16682,7 @@ const INT_PAR_XETEX_LINEBREAK_PENALTY: i32 = 67;
 const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
 
 extern "C" {
-    
-    
+
     static mut main_f: i32;
     static mut native_text: *mut u16;
 }
@@ -16830,18 +16755,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
 // translated from xetex-xetex0.c:7006 (main_control math entry/exit cases)
 #[no_mangle]
 pub unsafe extern "C" fn main_control_math_cases() {
-    extern "C" {
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-    }
+    extern "C" {}
 
     const HMODE_MC: u16 = 104; // xetex_format.h:369
     const MMODE_MC: u16 = 207; // xetex_format.h:370
@@ -17168,9 +17082,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
 
     extern "C" {
         fn xrealloc(p: *mut libc::c_void, n: usize) -> *mut libc::c_void;
-        
-        
-        
+
     }
 
     // Constants
@@ -17543,7 +17455,8 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                         && (*native_text().add((temp_ptr + main_h()) as usize) as i32)
                             != hyphen_char_entry(main_f())
                         && (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) <= 0
-                            || ((*native_text().add((temp_ptr + main_h()) as usize) as i32) != 8212
+                            || ((*native_text().add((temp_ptr + main_h()) as usize) as i32)
+                                != 8212
                                 && (*native_text().add((temp_ptr + main_h()) as usize) as i32)
                                     != 8211))
                     {
@@ -17568,7 +17481,8 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                         && (*native_text().add((temp_ptr + main_h()) as usize) as i32)
                             != hyphen_char_entry(main_f())
                         && (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) <= 0
-                            || ((*native_text().add((temp_ptr + main_h()) as usize) as i32) != 8212
+                            || ((*native_text().add((temp_ptr + main_h()) as usize) as i32)
+                                != 8212
                                 && (*native_text().add((temp_ptr + main_h()) as usize) as i32)
                                     != 8211))
                     {

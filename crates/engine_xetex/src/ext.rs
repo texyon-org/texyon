@@ -10,7 +10,6 @@ use crate::scan::get_tracing_fonts_state;
 use crate::texmfmp::gettexstring;
 use crate::texmfmp::maketexstring;
 
-
 use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
 use std::ptr;
 
@@ -92,11 +91,7 @@ extern "C" {
     ) -> i64;
     fn TECkit_ResetConverter(converter: *mut c_void) -> i64;
     fn hb_tag_from_string(str_: *const c_char, len: c_int) -> u32;
-    
-    
-    
-    
-    
+
     fn deleteLayoutEngine(engine: XeTeXLayoutEngine);
     fn createLayoutEngine(
         font: XeTeXFont,
@@ -211,7 +206,7 @@ extern "C" {
     fn cacheGlyphBBox(font_id: u16, glyph_id: u16, bbox: *const GlyphBBox);
     fn getGlyphBounds(engine: XeTeXLayoutEngine, glyph_id: u32, bbox: *mut GlyphBBox);
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
-    
+
     #[link_name = concat!("ubidi_open", env!("ICU_VERSION_SUFFIX"))]
     fn ubidi_open() -> *mut c_void;
     #[link_name = concat!("ubidi_close", env!("ICU_VERSION_SUFFIX"))]
@@ -252,10 +247,7 @@ extern "C" {
     fn ubrk_next(bi: *mut c_void) -> c_int;
     fn initGraphiteBreaking(engine: XeTeXLayoutEngine, txt_ptr: *const u16, txt_len: u32) -> bool;
     fn findNextGraphiteBreak(engine: XeTeXLayoutEngine) -> c_int;
-    
-    
-    
-    
+
     fn getFontFilename(engine: XeTeXLayoutEngine, index: *mut u32) -> *const c_char;
     fn freeFontFilename(filename: *const c_char);
     fn getRgbValue(engine: XeTeXLayoutEngine) -> u32;
@@ -1329,12 +1321,7 @@ pub unsafe fn ot_font_get_1(what: i32, p_engine: *mut c_void, param: i32) -> i32
 }
 
 // translated from xetex-ext.c:608 (ot_font_get_2)
-pub unsafe fn ot_font_get_2(
-    what: i32,
-    p_engine: *mut c_void,
-    param1: i32,
-    param2: i32,
-) -> i32 {
+pub unsafe fn ot_font_get_2(what: i32, p_engine: *mut c_void, param1: i32, param2: i32) -> i32 {
     let engine = p_engine as XeTeXLayoutEngine;
     let font_inst = getFont(engine);
     match what {
@@ -1369,12 +1356,7 @@ pub unsafe fn ot_font_get_3(
 }
 
 // translated from xetex-ext.c:651 (gr_print_font_name)
-pub unsafe fn gr_print_font_name(
-    what: i32,
-    p_engine: *mut c_void,
-    param1: i32,
-    param2: i32,
-) {
+pub unsafe fn gr_print_font_name(what: i32, p_engine: *mut c_void, param1: i32, param2: i32) {
     let engine = p_engine as XeTeXLayoutEngine;
     let name = match what {
         XETEX_FEATURE_NAME_CODE => getGraphiteFeatureLabel(engine, param1 as u32),
@@ -1759,12 +1741,7 @@ unsafe fn snap_zone(value: *mut i32, snap_value: i32, fuzz: i32) {
 }
 
 // translated from xetex-ext.c:785 (get_native_char_height_depth)
-pub unsafe fn get_native_char_height_depth(
-    font: i32,
-    ch: i32,
-    height: *mut i32,
-    depth: *mut i32,
-) {
+pub unsafe fn get_native_char_height_depth(font: i32, ch: i32, height: *mut i32, depth: *mut i32) {
     let mut ht = 0.0f32;
     let mut dp = 0.0f32;
 
@@ -1814,12 +1791,7 @@ pub unsafe fn getnativechardp(f: i32, c: i32) -> i32 {
 }
 
 // translated from xetex-ext.c:838 (get_native_char_sidebearings)
-pub unsafe fn get_native_char_sidebearings(
-    font: i32,
-    ch: i32,
-    lsb: *mut i32,
-    rsb: *mut i32,
-) {
+pub unsafe fn get_native_char_sidebearings(font: i32, ch: i32, lsb: *mut i32, rsb: *mut i32) {
     let mut l = 0.0f32;
     let mut r = 0.0f32;
 
@@ -1920,12 +1892,7 @@ pub unsafe fn get_font_char_range(font: i32, first: i32) -> i32 {
 }
 
 // translated from xetex-ext.c:72 (linebreak_start)
-pub unsafe fn linebreak_start(
-    f: c_int,
-    locale_str_num: i32,
-    text: *mut u16,
-    text_length: i32,
-) {
+pub unsafe fn linebreak_start(f: c_int, locale_str_num: i32, text: *mut u16, text_length: i32) {
     let mut status: i32 = 0; // U_ZERO_ERROR
     let locale = gettexstring(locale_str_num);
 
@@ -2156,11 +2123,7 @@ pub unsafe fn make_font_def(f: i32) -> c_int {
 
 // translated from xetex-ext.c:738 (apply_mapping)
 // outLength was a C function-static; promoted to module-level APPLY_MAPPING_OUT_LENGTH
-pub unsafe fn apply_mapping(
-    p_cnv: *mut c_void,
-    txt_ptr: *mut u16,
-    txt_len: c_int,
-) -> c_int {
+pub unsafe fn apply_mapping(p_cnv: *mut c_void, txt_ptr: *mut u16, txt_len: c_int) -> c_int {
     const K_STATUS_NO_ERROR: i64 = 0;
     const K_STATUS_OUTPUT_BUFFER_FULL: i64 = 1;
     let txt_bytes = txt_len as u32 * 2; // sizeof(UniChar) == 2
@@ -2262,11 +2225,7 @@ pub unsafe fn aat_font_get(_what: c_int, _attributes: *mut c_void) -> c_int {
 }
 
 // translated from xetex-ext.c:1067 (aat_font_get_1)
-pub unsafe fn aat_font_get_1(
-    _what: c_int,
-    _attributes: *mut c_void,
-    _param: c_int,
-) -> c_int {
+pub unsafe fn aat_font_get_1(_what: c_int, _attributes: *mut c_void, _param: c_int) -> c_int {
     -1
 }
 
@@ -2286,11 +2245,7 @@ pub unsafe fn aat_font_get_named(_what: c_int, _attributes: *mut c_void) -> c_in
 }
 
 // translated from xetex-ext.c:1193 (aat_font_get_named_1)
-pub unsafe fn aat_font_get_named_1(
-    _what: c_int,
-    _attributes: *mut c_void,
-    _param: c_int,
-) -> c_int {
+pub unsafe fn aat_font_get_named_1(_what: c_int, _attributes: *mut c_void, _param: c_int) -> c_int {
     -1
 }
 

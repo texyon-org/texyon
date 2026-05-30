@@ -46,7 +46,9 @@ fn hashes_dir() -> PathBuf {
 }
 
 fn bless_mode() -> bool {
-    env::var("TECTONIC_BLESS").map(|v| v == "1").unwrap_or(false)
+    env::var("TECTONIC_BLESS")
+        .map(|v| v == "1")
+        .unwrap_or(false)
 }
 
 /// Return the path to the `tectonic` binary built by Cargo.
@@ -139,7 +141,9 @@ fn run_case(stem: &str) {
                 }
             }
             Err(_) => {
-                eprintln!("SKIP {stem}: no golden hash yet. Run with TECTONIC_BLESS=1 to generate.");
+                eprintln!(
+                    "SKIP {stem}: no golden hash yet. Run with TECTONIC_BLESS=1 to generate."
+                );
             }
         }
     }

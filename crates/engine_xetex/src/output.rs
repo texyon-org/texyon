@@ -3,7 +3,6 @@ use crate::ext::print_utf8_str;
 use crate::scan::show_context;
 use crate::texmfmp::gettexstring;
 
-
 use crate::globals::{
     base_ptr, cond_ptr, cur_boundary, cur_chr, cur_cmd, cur_group, cur_if, cur_input, cur_level,
     cur_list_mode, cur_mark, current_diagnostic, dig_entry, doing_special, eqtb_b32s1, eqtb_top,
@@ -85,9 +84,9 @@ extern "C" {
     fn ttbc_diag_begin_warning() -> *mut std::ffi::c_void;
     fn ttbc_diag_begin_error() -> *mut std::ffi::c_void;
     fn ttstub_diag_printf(diag: *mut std::ffi::c_void, fmt: *const libc::c_char, ...);
-    
+
     // Still in C — complex context display.
-    
+
 }
 
 // ---------------------------------------------------------------------------
@@ -687,9 +686,7 @@ pub unsafe fn diagnostic_begin_capture_warning_here() -> *mut std::ffi::c_void {
 /// Begin an error diagnostic with file/line context, and emit to TeX output.
 ///
 /// translated from xetex-output.c:58 (error_here_with_diagnostic)
-pub unsafe fn error_here_with_diagnostic(
-    message: *const libc::c_char,
-) -> *mut std::ffi::c_void {
+pub unsafe fn error_here_with_diagnostic(message: *const libc::c_char) -> *mut std::ffi::c_void {
     let error = ttbc_diag_begin_error();
     diagnostic_print_file_line(error);
     ttstub_diag_printf(error, c"%s".as_ptr(), message);
@@ -2948,9 +2945,7 @@ pub unsafe extern "C" fn change_if_limit(l: i16, p: i32) {
     }
 }
 
-extern "C" {
-    
-}
+extern "C" {}
 
 // ---------------------------------------------------------------------------
 // font_feature_warning / font_mapping_warning / graphite_warning

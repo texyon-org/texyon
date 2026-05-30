@@ -18,9 +18,7 @@ use crate::errors::overflow;
 const EMPTY_STRING: i32 = 65537;
 
 // C function still needed — not yet translated.
-extern "C" {
-    
-}
+extern "C" {}
 
 // ---------------------------------------------------------------------------
 // length

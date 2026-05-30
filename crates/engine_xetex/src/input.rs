@@ -4,7 +4,6 @@
 use crate::io::u_close;
 use crate::output::capture_to_diagnostic;
 
-
 use crate::globals::{
     align_state, avail, buf_size, buffer_entry, cond_ptr, cur_boundary, cur_cs, cur_input, cur_tok,
     first, in_open, input_file, input_ptr, input_stack, last, line, line_stack, max_buf_stack,
@@ -20,10 +19,7 @@ use crate::globals::{
 
 use crate::output::print_cmd_chr;
 
-extern "C" {
-    
-    
-}
+extern "C" {}
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).
 const TOKEN_LIST: u16 = 0;

@@ -38,7 +38,6 @@ extern "C" {
 
     fn xstrdup(s: *const c_char) -> *mut c_char;
     fn xrealloc(ptr: *mut libc::c_void, size: size_t) -> *mut libc::c_void;
-    
 
     // abspath_of_input_file: #[no_mangle] pub static in io.rs, char[1024].
     static abspath_of_input_file: [c_char; 1024];
@@ -103,7 +102,11 @@ sc_scalar!(
     synctex_tag_counter,
     u32
 );
-sc_flag!(sc_flags_content_ready, set_sc_flags_content_ready, content_ready);
+sc_flag!(
+    sc_flags_content_ready,
+    set_sc_flags_content_ready,
+    content_ready
+);
 sc_flag!(sc_flags_off, set_sc_flags_off, off);
 sc_flag!(sc_flags_not_void, set_sc_flags_not_void, not_void);
 sc_flag!(sc_flags_warn, set_sc_flags_warn, warn);
@@ -264,11 +267,7 @@ unsafe fn synctex_record_settings() -> i32 {
     if sc_file() == INVALID_HANDLE {
         return 0;
     }
-    let (file, mag, unit) = (
-        sc_file(),
-        sc_magnification(),
-        sc_unit(),
-    );
+    let (file, mag, unit) = (sc_file(), sc_magnification(), sc_unit());
     let s = format!(
         "Output:pdf\nMagnification:{}\nUnit:{}\nX Offset:0\nY Offset:0\n",
         mag, unit
@@ -393,12 +392,7 @@ unsafe fn synctex_record_node_pdfrefxform(objnum: c_int) -> i32 {
     if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return 0;
     }
-    let (file, curh, curv, unit) = (
-        sc_file(),
-        sc_curh(),
-        sc_curv(),
-        sc_unit(),
-    );
+    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!("f{}:{},{}\n", objnum, curh / unit, curv / unit);
     let len = synctex_write(file, &s);
     set_sc_lastv(sc_curv());
@@ -413,12 +407,7 @@ unsafe fn synctex_record_node_pdfrefxform(objnum: c_int) -> i32 {
 
 unsafe fn synctex_record_node_vlist(p: i32) {
     set_sc_flags_not_void(true);
-    let (file, curh, curv, unit) = (
-        sc_file(),
-        sc_curh(),
-        sc_curv(),
-        sc_unit(),
-    );
+    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "[{},{}:{},{}:{},{},{}\n",
         synctex_tag_box(p),
@@ -451,12 +440,7 @@ unsafe fn synctex_record_node_tsilv(_p: i32) {
 }
 
 unsafe fn synctex_record_node_void_vlist(p: i32) {
-    let (file, curh, curv, unit) = (
-        sc_file(),
-        sc_curh(),
-        sc_curv(),
-        sc_unit(),
-    );
+    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "v{},{}:{},{}:{},{},{}\n",
         synctex_tag_box(p),
@@ -479,12 +463,7 @@ unsafe fn synctex_record_node_void_vlist(p: i32) {
 
 unsafe fn synctex_record_node_hlist(p: i32) {
     set_sc_flags_not_void(true);
-    let (file, curh, curv, unit) = (
-        sc_file(),
-        sc_curh(),
-        sc_curv(),
-        sc_unit(),
-    );
+    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "({},{}:{},{}:{},{},{}\n",
         synctex_tag_box(p),
@@ -517,12 +496,7 @@ unsafe fn synctex_record_node_tsilh(_p: i32) {
 }
 
 unsafe fn synctex_record_node_void_hlist(p: i32) {
-    let (file, curh, curv, unit) = (
-        sc_file(),
-        sc_curh(),
-        sc_curv(),
-        sc_unit(),
-    );
+    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "h{},{}:{},{}:{},{},{}\n",
         synctex_tag_box(p),
@@ -544,12 +518,7 @@ unsafe fn synctex_record_node_void_hlist(p: i32) {
 }
 
 unsafe fn synctex_record_node_math(p: i32) {
-    let (file, curh, curv, unit) = (
-        sc_file(),
-        sc_curh(),
-        sc_curv(),
-        sc_unit(),
-    );
+    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "${},{}:{},{}\n",
         synctex_tag_medium(p),
@@ -568,12 +537,7 @@ unsafe fn synctex_record_node_math(p: i32) {
 }
 
 unsafe fn synctex_record_node_glue(p: i32) {
-    let (file, curh, curv, unit) = (
-        sc_file(),
-        sc_curh(),
-        sc_curv(),
-        sc_unit(),
-    );
+    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "g{},{}:{},{}\n",
         synctex_tag_medium(p),
@@ -594,12 +558,7 @@ unsafe fn synctex_record_node_glue(p: i32) {
 // Note: kern record uses synctex_tag_medium / synctex_line_medium (GLUE node size),
 // matching `SYNCTEX_TAG_MODEL(p,GLUE)` in the C source.
 unsafe fn synctex_record_node_kern(p: i32) {
-    let (file, curh, curv, unit) = (
-        sc_file(),
-        sc_curh(),
-        sc_curv(),
-        sc_unit(),
-    );
+    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "k{},{}:{},{}:{}\n",
         synctex_tag_medium(p),
@@ -619,12 +578,7 @@ unsafe fn synctex_record_node_kern(p: i32) {
 }
 
 unsafe fn synctex_record_node_rule(p: i32) {
-    let (file, curh, curv, unit) = (
-        sc_file(),
-        sc_curh(),
-        sc_curv(),
-        sc_unit(),
-    );
+    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "r{},{}:{},{}:{},{},{}\n",
         synctex_tag_rule(p),
@@ -787,7 +741,9 @@ pub unsafe fn synctex_start_input() {
         set_sc_root_name(get_current_name());
         if libc::strlen(sc_root_name()) == 0 {
             let texput = b"texput\0";
-            set_sc_root_name(xrealloc(sc_root_name() as *mut libc::c_void, texput.len()) as *mut c_char);
+            set_sc_root_name(
+                xrealloc(sc_root_name() as *mut libc::c_void, texput.len()) as *mut c_char
+            );
             libc::strcpy(sc_root_name(), texput.as_ptr() as *const c_char);
         }
         return;
@@ -958,9 +914,8 @@ pub unsafe extern "C" fn synctex_math(p: i32, _this_box: i32) {
         return;
     }
     // SYNCTEX_CONTEXT_DID_CHANGE: node == 0 or tag/line differ.
-    let ctx_changed = sc_node() == 0
-        || synctex_tag_medium(p) != sc_tag()
-        || synctex_line_medium(p) != sc_line();
+    let ctx_changed =
+        sc_node() == 0 || synctex_tag_medium(p) != sc_tag() || synctex_line_medium(p) != sc_line();
     let (rec, node) = (sc_recorder(), sc_node());
     if let Some(rec) = rec {
         if ctx_changed {
@@ -1043,9 +998,8 @@ pub unsafe extern "C" fn synctex_kern(p: i32, this_box: i32) {
         return;
     }
     // SYNCTEX_CONTEXT_DID_CHANGE
-    let ctx_changed = sc_node() == 0
-        || synctex_tag_medium(p) != sc_tag()
-        || synctex_line_medium(p) != sc_line();
+    let ctx_changed =
+        sc_node() == 0 || synctex_tag_medium(p) != sc_tag() || synctex_line_medium(p) != sc_line();
     if ctx_changed {
         // Flush pending recorder.
         let (rec, node) = (sc_recorder(), sc_node());
@@ -1076,12 +1030,7 @@ pub unsafe extern "C" fn synctex_current() {
     if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
         return;
     }
-    let (file, tag, line, unit) = (
-        sc_file(),
-        sc_tag(),
-        sc_line(),
-        sc_unit(),
-    );
+    let (file, tag, line, unit) = (sc_file(), sc_tag(), sc_line(), sc_unit());
     let s = format!(
         "x{},{}:{},{}\n",
         tag,

@@ -2,7 +2,6 @@
 use crate::ext::real_get_native_glyph;
 use crate::input::begin_token_list;
 
-
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_c, cur_chr, cur_cmd, cur_dir, cur_f, cur_group, cur_i,
     cur_lang, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
@@ -212,12 +211,12 @@ const COND_MATH_GLUE: u16 = 98;
 const SPACE_CODE: i32 = 2;
 
 extern "C" {
-    
+
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
     fn get_native_mathsy_param(f: i32, n: i32) -> i32;
     fn get_native_mathex_param(f: i32, n: i32) -> i32;
-    
+
     fn get_ot_math_accent_pos(f: i32, g: i32) -> i32;
     fn get_ot_math_constant(f: i32, n: i32) -> i32;
     fn get_ot_math_kern(

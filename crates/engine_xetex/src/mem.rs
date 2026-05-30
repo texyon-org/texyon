@@ -8,7 +8,6 @@
 use crate::errors::overflow;
 use crate::scan::runaway;
 
-
 use crate::globals::{
     avail, cur_input_synctex_tag, cur_list_head, eqtb_b32s1, hi_mem_min, line, lo_mem_max,
     max_nest_stack, mem_b16s0, mem_b32s0, mem_b32s1, mem_end, mem_ptr, mem_word, nest_ptr,
@@ -59,8 +58,7 @@ const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 
 // C functions not yet translated — still live in xetex-xetex0.c.
 extern "C" {
-    
-    
+
     // bridge_core: tectonic_bridge_core.h:155
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
 }

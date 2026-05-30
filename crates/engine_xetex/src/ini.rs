@@ -2807,8 +2807,9 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     // pre-compute before mutable borrow (both backed by with_state)
     let fms = font_mem_size();
     let fmp = fmem_ptr();
-    let zero_word =
-        crate::mem_types::MemoryWord { b32: crate::mem_types::B32x2 { s0: 0, s1: 0 } };
+    let zero_word = crate::mem_types::MemoryWord {
+        b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
+    };
     crate::state::with_state_mut(|s| {
         s.fonts.font_info = vec![zero_word; (fms as usize) + 1];
         undump_slice(fmt_in, s.fonts.font_info.as_mut_ptr(), fmp);
@@ -3374,8 +3375,9 @@ pub unsafe extern "C" fn tt_run_engine(
 
         // pre-compute font_mem_size before the mutable borrow (backed by with_state)
         let fms_initex = font_mem_size();
-        let zero_word_initex =
-            crate::mem_types::MemoryWord { b32: crate::mem_types::B32x2 { s0: 0, s1: 0 } };
+        let zero_word_initex = crate::mem_types::MemoryWord {
+            b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
+        };
         // `xcalloc_array(n)` allocated `n + 1` zeroed words; match that.
         let eqtb_words_initex = (tre_eqtb_top as usize) + 1;
         crate::state::with_state_mut(|state| {

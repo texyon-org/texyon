@@ -34,18 +34,7 @@ const SELECTOR_TERM_ONLY: i32 = 17;
 const SELECTOR_TERM_AND_LOG: i32 = 19;
 
 extern "C" {
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn _tt_abort(fmt: *const libc::c_char) -> !;
 }

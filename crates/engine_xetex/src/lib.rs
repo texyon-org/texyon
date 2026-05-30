@@ -19,7 +19,6 @@
 // engine has a nicer approach that we should probably start using.
 use crate::engine_interface::tt_xetex_set_int_variable;
 
-
 use std::{ffi::CString, time::SystemTime};
 use tectonic_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
 use tectonic_errors::prelude::*;
@@ -267,7 +266,6 @@ pub mod c_api {
 
     #[allow(improper_ctypes)] // for CoreBridgeState
     extern "C" {
-        
 
         pub fn tt_engine_xetex_main(
             api: &mut CoreBridgeState,

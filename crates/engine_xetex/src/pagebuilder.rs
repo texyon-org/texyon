@@ -149,38 +149,7 @@ const SKIP_BASE: i32 = 2_254_359;
 const COUNT_BASE: i32 = 7_826_812;
 const SCALED_BASE: i32 = 8_941_203;
 
-extern "C" {
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-}
+extern "C" {}
 
 #[no_mangle]
 pub unsafe extern "C" fn initialize_pagebuilder_variables() {
