@@ -8,6 +8,37 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 67 — 2026-05-30 — thread `save.rs` SA restore/define helpers
+
+**Type:** execution (workstream 01, Phase C — third `save.rs` call-graph slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the remaining sparse-array restore/define side:
+- `sa_destroy` is now a direct `&mut MemState` helper. Its glue/token branches use threaded mem helpers; its box-list branch returns a pending `flush_node_list` pointer so wrappers can drop the state borrow before calling the still-legacy `scan.rs` flusher.
+- `sa_def`, `sa_w_def`, `gsa_def`, and `gsa_w_def` now operate on direct mem/scanner/save-stack borrows where needed, call threaded `sa_save`, and propagate `ALLOC_FAILED` / `SAVE_OVERFLOW` through one wrapper finisher.
+- `sa_restore` is split into a direct prepare step plus a `_global` wrapper loop that performs any pending `flush_node_list` between borrow phases, then calls threaded `delete_sa_ref` / `free_node`.
+
+**Recon / safety checks:**
+- Header prototypes only for `sa_destroy` / `sa_restore` / definition helpers; no C/C++ callers.
+- No cleanup aliases in `src/ini.rs`.
+- `grep -rnE '\b(sa_destroy|sa_restore|sa_def|sa_w_def|gsa_def|gsa_w_def)\b' xetex/*.c | grep -v macos` was empty before and after.
+- No cross-module extern/static/link-name redeclarations.
+
+**Work done:**
+1. `save.rs`: removed `#[no_mangle] extern "C"` and `unsafe` from the six helper definitions; added bridge-down wrappers for legacy callers.
+2. Added a small threaded token-ref helper and reused threaded `flush_list`, `free_node`, `delete_sa_ref`, and `sa_save`.
+3. Repointed legacy callers in `save.rs`, `scan.rs`, and `ini.rs` to the `_global` wrappers.
+4. Removed now-dead `sa_save_global` / `sa_destroy_global` wrappers.
+
+**Newtype debt:** none. No state fields were added; moved parameters are plain TeX integer pointers/values, and the direct state fields were already tracked when `MemState`, `ScannerState`, and `SaveStackState` moved.
+
+**Metrics:** `#[no_mangle]` exports **402 → 396**. `globals.rs` raw externs unchanged at **40**. `unsafe fn` **690 → 689** (six unsafe exports removed, five legacy wrappers plus one finisher added, two dead unsafe wrappers removed). Raw `unsafe { ... }` text-search count unchanged at **160**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly. Post-slice C-reference grep for the six helpers was empty.
+
+**For the next session (68):** move out of `save.rs` and climb to `pagebuilder.rs`/`shipout.rs`. Pick a clean call-graph cluster that depends on the now-threaded save/mem helpers; keep `scan.rs` last, and draft `02-modules.md` to READY before threading reaches scanner-heavy code.
+
+---
+
 ## Idiom session 66 — 2026-05-30 — thread `save.rs` SA ref/save helpers
 
 **Type:** execution (workstream 01, Phase C — second `save.rs` call-graph slice). **One commit.** Dashboard **29/2/7/4**.

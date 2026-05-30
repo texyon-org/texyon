@@ -4330,9 +4330,9 @@ pub unsafe fn prefixed_command() {
                     if q == TEX_NULL {
                         if e {
                             if a >= 4 {
-                                crate::save::gsa_def(p, TEX_NULL);
+                                crate::save::gsa_def_global(p, TEX_NULL);
                             } else {
-                                crate::save::sa_def(p, TEX_NULL);
+                                crate::save::sa_def_global(p, TEX_NULL);
                             }
                         } else if a >= 4 {
                             crate::save::geq_define(p, UNDEFINED_CS as u16, TEX_NULL);
@@ -4343,9 +4343,9 @@ pub unsafe fn prefixed_command() {
                         set_mem_b32s0(q, mem_b32s0(q) + 1);
                         if e {
                             if a >= 4 {
-                                crate::save::gsa_def(p, q);
+                                crate::save::gsa_def_global(p, q);
                             } else {
-                                crate::save::sa_def(p, q);
+                                crate::save::sa_def_global(p, q);
                             }
                         } else if a >= 4 {
                             crate::save::geq_define(p, CALL as u16, q);
@@ -4364,9 +4364,9 @@ pub unsafe fn prefixed_command() {
                 if mem_b32s1(def_ref()) == TEX_NULL {
                     if e {
                         if a >= 4 {
-                            crate::save::gsa_def(p, TEX_NULL);
+                            crate::save::gsa_def_global(p, TEX_NULL);
                         } else {
-                            crate::save::sa_def(p, TEX_NULL);
+                            crate::save::sa_def_global(p, TEX_NULL);
                         }
                     } else if a >= 4 {
                         crate::save::geq_define(p, UNDEFINED_CS as u16, TEX_NULL);
@@ -4389,9 +4389,9 @@ pub unsafe fn prefixed_command() {
 
                     if e {
                         if a >= 4 {
-                            crate::save::gsa_def(p, def_ref());
+                            crate::save::gsa_def_global(p, def_ref());
                         } else {
-                            crate::save::sa_def(p, def_ref());
+                            crate::save::sa_def_global(p, def_ref());
                         }
                     } else if a >= 4 {
                         crate::save::geq_define(p, CALL as u16, def_ref());

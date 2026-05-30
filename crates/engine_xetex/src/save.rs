@@ -13,13 +13,12 @@ use crate::state::{MemState, SaveStackState, ScannerState};
 use crate::globals::{
     align_state, cur_boundary, cur_group, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0,
     eqtb_b16s1, eqtb_b32s1, eqtb_word, grp_stack, in_open, line, mag_set, max_save_stack,
-    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, sa_chain, save_ptr, save_size, save_stack_b16s0,
-    save_stack_b16s1, save_stack_b32s1, save_stack_word, set_align_state, set_cur_boundary,
-    set_cur_group, set_cur_input_loc, set_cur_input_start, set_cur_level, set_cur_ptr, set_cur_tok,
-    set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word, set_mag_set, set_max_save_stack,
-    set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, set_sa_chain, set_sa_level, set_save_ptr,
-    set_save_stack_b16s0, set_save_stack_b16s1, set_save_stack_b32s1, set_save_stack_word,
-    set_xeq_level, xeq_level,
+    mem_b32s0, save_ptr, save_size, save_stack_b16s0, save_stack_b16s1, save_stack_b32s1,
+    save_stack_word, set_align_state, set_cur_boundary, set_cur_group, set_cur_input_loc,
+    set_cur_input_start, set_cur_level, set_cur_ptr, set_cur_tok, set_eqtb_b16s0, set_eqtb_b16s1,
+    set_eqtb_b32s1, set_eqtb_word, set_mag_set, set_max_save_stack, set_mem_b32s0, set_mem_b32s1,
+    set_sa_chain, set_sa_level, set_save_ptr, set_save_stack_b16s0, set_save_stack_b16s1,
+    set_save_stack_b32s1, set_save_stack_word, set_xeq_level, xeq_level,
 };
 use crate::mem_types::MemoryWord;
 
@@ -297,6 +296,14 @@ fn delete_glue_ref_threaded(mem: &mut MemState, p: i32) {
     }
 }
 
+fn delete_token_ref_threaded(mem: &mut MemState, p: i32) {
+    if mem.b32s0(p) == TEX_NULL {
+        crate::mem::flush_list(mem, p);
+    } else {
+        mem.set_b32s0(p, mem.b32s0(p) - 1);
+    }
+}
+
 // translated from xetex-xetex0.c:2789 (delete_sa_ref)
 pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: i32) {
     mem.set_b32s0(q + 1, mem.b32s0(q + 1) - 1);
@@ -403,114 +410,191 @@ pub fn sa_save(
     0
 }
 
-pub unsafe fn sa_save_global(p: i32) {
-    let r = crate::state::with_state_mut(|st| {
-        sa_save(&mut st.mem, &mut st.scanner, &mut st.save_stack, p)
-    });
-    if r == crate::mem::ALLOC_FAILED {
-        crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    if r == SAVE_OVERFLOW {
-        crate::errors::overflow(c"save size".as_ptr(), save_size());
-    }
+#[derive(Default)]
+pub(crate) struct SaMutationResult {
+    flush_list: Option<i32>,
+    status: i32,
 }
 
 // translated from xetex-xetex0.c:2878 (sa_destroy)
-#[no_mangle]
-pub unsafe extern "C" fn sa_destroy(p: i32) {
-    if mem_b16s1(p) < MU_VAL_LIMIT {
-        crate::mem::delete_glue_ref(mem_b32s1(p + 1));
-    } else if mem_b32s1(p + 1) != TEX_NULL {
-        if mem_b16s1(p) < BOX_VAL_LIMIT {
-            flush_node_list(mem_b32s1(p + 1));
+pub(crate) fn sa_destroy(mem: &mut MemState, p: i32) -> Option<i32> {
+    if mem.b16s1(p) < MU_VAL_LIMIT {
+        delete_glue_ref_threaded(mem, mem.b32s1(p + 1));
+        None
+    } else if mem.b32s1(p + 1) != TEX_NULL {
+        if mem.b16s1(p) < BOX_VAL_LIMIT {
+            Some(mem.b32s1(p + 1))
         } else {
-            crate::mem::delete_token_ref(mem_b32s1(p + 1));
+            delete_token_ref_threaded(mem, mem.b32s1(p + 1));
+            None
         }
+    } else {
+        None
     }
 }
 
 // translated from xetex-xetex0.c:2891 (sa_def)
-#[no_mangle]
-pub unsafe extern "C" fn sa_def(p: i32, e: i32) {
-    set_mem_b32s0(p + 1, mem_b32s0(p + 1) + 1);
-    if mem_b32s1(p + 1) == e {
-        sa_destroy(p);
+pub(crate) fn sa_def(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    save_stack: &mut SaveStackState,
+    p: i32,
+    e: i32,
+) -> SaMutationResult {
+    mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
+    let mut result = SaMutationResult::default();
+    if mem.b32s1(p + 1) == e {
+        result.flush_list = sa_destroy(mem, p);
     } else {
-        if mem_b16s0(p) == cur_level() {
-            sa_destroy(p);
+        if mem.b16s0(p) == save_stack.cur_level {
+            result.flush_list = sa_destroy(mem, p);
         } else {
-            sa_save_global(p);
+            let status = sa_save(mem, scanner, save_stack, p);
+            if status != 0 {
+                result.status = status;
+                return result;
+            }
         }
-        set_mem_b16s0(p, cur_level());
-        set_mem_b32s1(p + 1, e);
+        mem.set_b16s0(p, save_stack.cur_level);
+        mem.set_b32s1(p + 1, e);
     }
-    delete_sa_ref_global(p);
+    result
+}
+
+pub unsafe fn sa_def_global(p: i32, e: i32) {
+    let result = crate::state::with_state_mut(|st| {
+        sa_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, e)
+    });
+    finish_sa_mutation(p, result);
 }
 
 // translated from xetex-xetex0.c:2908 (sa_w_def)
-#[no_mangle]
-pub unsafe extern "C" fn sa_w_def(p: i32, w: i32) {
-    set_mem_b32s0(p + 1, mem_b32s0(p + 1) + 1);
-    if mem_b32s1(p + 2) != w {
-        if mem_b16s0(p) != cur_level() {
-            sa_save_global(p);
+pub(crate) fn sa_w_def(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    save_stack: &mut SaveStackState,
+    p: i32,
+    w: i32,
+) -> SaMutationResult {
+    mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
+    let mut result = SaMutationResult::default();
+    if mem.b32s1(p + 2) != w {
+        if mem.b16s0(p) != save_stack.cur_level {
+            let status = sa_save(mem, scanner, save_stack, p);
+            if status != 0 {
+                result.status = status;
+                return result;
+            }
         }
-        set_mem_b16s0(p, cur_level());
-        set_mem_b32s1(p + 2, w);
+        mem.set_b16s0(p, save_stack.cur_level);
+        mem.set_b32s1(p + 2, w);
+    }
+    result
+}
+
+pub unsafe fn sa_w_def_global(p: i32, w: i32) {
+    let result = crate::state::with_state_mut(|st| {
+        sa_w_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, w)
+    });
+    finish_sa_mutation(p, result);
+}
+
+// translated from xetex-xetex0.c:2923 (gsa_def)
+pub(crate) fn gsa_def(mem: &mut MemState, p: i32, e: i32) -> SaMutationResult {
+    mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
+    let flush_list = sa_destroy(mem, p);
+    mem.set_b16s0(p, LEVEL_ONE);
+    mem.set_b32s1(p + 1, e);
+    SaMutationResult {
+        flush_list,
+        status: 0,
+    }
+}
+
+pub unsafe fn gsa_def_global(p: i32, e: i32) {
+    let result = crate::state::with_state_mut(|st| gsa_def(&mut st.mem, p, e));
+    finish_sa_mutation(p, result);
+}
+
+// translated from xetex-xetex0.c:2933 (gsa_w_def)
+pub(crate) fn gsa_w_def(mem: &mut MemState, p: i32, w: i32) -> SaMutationResult {
+    mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
+    mem.set_b16s0(p, LEVEL_ONE);
+    mem.set_b32s1(p + 2, w);
+    SaMutationResult::default()
+}
+
+pub unsafe fn gsa_w_def_global(p: i32, w: i32) {
+    let result = crate::state::with_state_mut(|st| gsa_w_def(&mut st.mem, p, w));
+    finish_sa_mutation(p, result);
+}
+
+unsafe fn finish_sa_mutation(p: i32, result: SaMutationResult) {
+    if result.status == crate::mem::ALLOC_FAILED {
+        crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
+    if result.status == SAVE_OVERFLOW {
+        crate::errors::overflow(c"save size".as_ptr(), save_size());
+    }
+    if let Some(list) = result.flush_list {
+        flush_node_list(list);
     }
     delete_sa_ref_global(p);
 }
 
-// translated from xetex-xetex0.c:2923 (gsa_def)
-#[no_mangle]
-pub unsafe extern "C" fn gsa_def(p: i32, e: i32) {
-    set_mem_b32s0(p + 1, mem_b32s0(p + 1) + 1);
-    sa_destroy(p);
-    set_mem_b16s0(p, LEVEL_ONE);
-    set_mem_b32s1(p + 1, e);
-    delete_sa_ref_global(p);
-}
-
-// translated from xetex-xetex0.c:2933 (gsa_w_def)
-#[no_mangle]
-pub unsafe extern "C" fn gsa_w_def(p: i32, w: i32) {
-    set_mem_b32s0(p + 1, mem_b32s0(p + 1) + 1);
-    set_mem_b16s0(p, LEVEL_ONE);
-    set_mem_b32s1(p + 2, w);
-    delete_sa_ref_global(p);
+struct SaRestoreStep {
+    p: i32,
+    chain: i32,
+    flush_list: Option<i32>,
 }
 
 // translated from xetex-xetex0.c:2942 (sa_restore)
-#[no_mangle]
-pub unsafe extern "C" fn sa_restore() {
-    loop {
-        let p = mem_b32s0(sa_chain() + 1);
-        if mem_b16s0(p) == LEVEL_ONE {
-            if mem_b16s1(p) >= DIMEN_VAL_LIMIT {
-                sa_destroy(sa_chain());
-            }
-        } else {
-            if mem_b16s1(p) < DIMEN_VAL_LIMIT {
-                if mem_b16s1(sa_chain()) < DIMEN_VAL_LIMIT {
-                    set_mem_b32s1(p + 2, mem_b32s1(sa_chain() + 2));
-                } else {
-                    set_mem_b32s1(p + 2, 0);
-                }
+fn sa_restore_prepare(mem: &mut MemState, scanner: &mut ScannerState) -> SaRestoreStep {
+    let sc = scanner.sa_chain;
+    let p = mem.b32s0(sc + 1);
+    let mut flush_list = None;
+    if mem.b16s0(p) == LEVEL_ONE {
+        if mem.b16s1(p) >= DIMEN_VAL_LIMIT {
+            flush_list = sa_destroy(mem, sc);
+        }
+    } else {
+        if mem.b16s1(p) < DIMEN_VAL_LIMIT {
+            if mem.b16s1(sc) < DIMEN_VAL_LIMIT {
+                mem.set_b32s1(p + 2, mem.b32s1(sc + 2));
             } else {
-                sa_destroy(p);
-                set_mem_b32s1(p + 1, mem_b32s1(sa_chain() + 1));
+                mem.set_b32s1(p + 2, 0);
             }
-            set_mem_b16s0(p, mem_b16s0(sa_chain()));
-        }
-        delete_sa_ref_global(p);
-        let sc = sa_chain();
-        set_sa_chain(mem_b32s1(sc));
-        if mem_b16s1(sc) < DIMEN_VAL_LIMIT {
-            crate::mem::free_node_global(sc, WORD_NODE_SIZE);
         } else {
-            crate::mem::free_node_global(sc, POINTER_NODE_SIZE);
+            flush_list = sa_destroy(mem, p);
+            mem.set_b32s1(p + 1, mem.b32s1(sc + 1));
         }
-        if sa_chain() == TEX_NULL {
+        mem.set_b16s0(p, mem.b16s0(sc));
+    }
+    SaRestoreStep {
+        p,
+        chain: sc,
+        flush_list,
+    }
+}
+
+pub unsafe fn sa_restore_global() {
+    loop {
+        let step =
+            crate::state::with_state_mut(|st| sa_restore_prepare(&mut st.mem, &mut st.scanner));
+        if let Some(list) = step.flush_list {
+            flush_node_list(list);
+        }
+        let done = crate::state::with_state_mut(|st| {
+            delete_sa_ref(&mut st.mem, &mut st.scanner, step.p);
+            st.scanner.sa_chain = st.mem.b32s1(step.chain);
+            if st.mem.b16s1(step.chain) < DIMEN_VAL_LIMIT {
+                crate::mem::free_node(&mut st.mem, step.chain, WORD_NODE_SIZE);
+            } else {
+                crate::mem::free_node(&mut st.mem, step.chain, POINTER_NODE_SIZE);
+            }
+            st.scanner.sa_chain == TEX_NULL
+        });
+        if done {
             break;
         }
     }
@@ -555,7 +639,7 @@ pub unsafe extern "C" fn unsave() {
                 }
                 set_cur_tok(t);
             } else if save_stack_b16s1(save_ptr()) == RESTORE_SA {
-                sa_restore();
+                sa_restore_global();
                 set_sa_chain(p);
                 set_sa_level(save_stack_b16s0(save_ptr()));
             } else {

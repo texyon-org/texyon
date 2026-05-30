@@ -7466,9 +7466,9 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
     if p < GLUE_VAL {
         if e {
             if a >= 4 {
-                crate::save::gsa_w_def(l, cur_val());
+                crate::save::gsa_w_def_global(l, cur_val());
             } else {
-                crate::save::sa_w_def(l, cur_val());
+                crate::save::sa_w_def_global(l, cur_val());
             }
         } else if a >= 4 {
             crate::save::geq_word_define(l, cur_val());
@@ -7479,9 +7479,9 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
         trap_zero_glue();
         if e {
             if a >= 4 {
-                crate::save::gsa_def(l, cur_val());
+                crate::save::gsa_def_global(l, cur_val());
             } else {
-                crate::save::sa_def(l, cur_val());
+                crate::save::sa_def_global(l, cur_val());
             }
         } else if a >= 4 {
             crate::save::geq_define(l, GLUE_REF, cur_val());
@@ -9806,9 +9806,9 @@ pub unsafe extern "C" fn box_end(box_context: i32) {
         } else {
             crate::save::find_sa_element_global(4, cur_val(), true);
             if a >= 4 {
-                crate::save::gsa_def(cur_ptr(), cur_box());
+                crate::save::gsa_def_global(cur_ptr(), cur_box());
             } else {
-                crate::save::sa_def(cur_ptr(), cur_box());
+                crate::save::sa_def_global(cur_ptr(), cur_box());
             }
         }
     } else if cur_box() != TEX_NULL {
