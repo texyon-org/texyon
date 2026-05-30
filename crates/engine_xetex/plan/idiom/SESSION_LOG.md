@@ -8,6 +8,36 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 66 — 2026-05-30 — thread `save.rs` SA ref/save helpers
+
+**Type:** execution (workstream 01, Phase C — second `save.rs` call-graph slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the clean SA refcount/save half of the save subsystem:
+- `delete_sa_ref` now takes `&mut MemState` and `&mut ScannerState`, updates SA trie roots directly, and calls threaded `free_node` / a small direct `delete_glue_ref_threaded` helper instead of the thread-local mem bridge.
+- `sa_save` now takes `&mut MemState`, `&mut ScannerState`, and `&mut SaveStackState`, calls threaded `get_node`, writes the save stack directly, and propagates `ALLOC_FAILED` / `SAVE_OVERFLOW` sentinels to its wrapper.
+- Legacy callers use `delete_sa_ref_global` / `sa_save_global`; `sa_save_global` performs `overflow("main memory size", MEM_TOP+1)` or `overflow("save size", save_size())` after the borrow drops.
+
+**Recon / safety checks:**
+- Header prototypes only for `delete_sa_ref` / `sa_save`; no C/C++ callers.
+- No cleanup aliases in `src/ini.rs`.
+- `grep -rnE '\b(delete_sa_ref|sa_save)\b' xetex/*.c | grep -v macos` was empty before and after the slice.
+- No cross-module extern/static/link-name redeclarations.
+
+**Work done:**
+1. `state.rs`: added `MemState::b16s1` to support direct SA node-type reads.
+2. `save.rs`: dropped `#[no_mangle] extern "C"` and `unsafe` from `delete_sa_ref` and `sa_save`; added bridge-down wrappers; removed the now-dead `globals::sa_level` bridge.
+3. Repointed legacy callers in `save.rs` and `scan.rs` to the `_global` wrappers.
+
+**Newtype debt:** none. No new state fields were added. The newly threaded parameters are existing mem/save/scanner state borrows plus plain integer pointers; `sa_level` debt, if any, was already covered when the scanner SA state moved.
+
+**Metrics:** `#[no_mangle]` exports **404 → 402**. `globals.rs` raw externs unchanged at **40**. `unsafe fn` unchanged at **690** (two safe threaded functions replacing two unsafe exports, two unsafe wrappers added). Raw `unsafe { ... }` text-search count now **160** (the new `MemState::b16s1` union read accounts for the +1).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly. Post-slice C-reference grep for `delete_sa_ref|sa_save` was empty.
+
+**For the next session (67):** continue `save.rs` with the restore/destroy/define side. Natural next cluster: `sa_destroy` + `sa_restore`, then the definition wrappers (`sa_def` / `sa_w_def` / `gsa_def` / `gsa_w_def`) if the direct `sa_destroy` shape is clean. Watch the `flush_node_list` dependency: it still lives in `scan.rs`, so either keep `sa_destroy` legacy for that path or thread only the mem-only branches until list flushing has a clean bridge.
+
+---
+
 ## Idiom session 65 — 2026-05-30 — thread `save.rs` sparse-array allocation helpers
 
 **Type:** execution (workstream 01, Phase C — first `save.rs` call-graph slice after the allocator/constructor work). **One commit.** Dashboard **29/2/7/4**.

@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last session = session 65, **Phase-C `save.rs` sparse-array allocation slice**: threaded `find_sa_element` plus private `new_index`/`sa_alloc_chain` helpers to `&mut MemState` + `&mut ScannerState`, bridged legacy callers through `find_sa_element_global`, and kept the dashboard at 29/2/7/4. `#[no_mangle]` unchanged at 404; `unsafe fn` now 690; raw externs unchanged at 40).
+Last updated: 2026-05-30 (last session = session 66, **Phase-C `save.rs` SA ref/save slice**: threaded `delete_sa_ref` and `sa_save` to direct `&mut MemState` / `&mut ScannerState` / `&mut SaveStackState`, bridged legacy callers through `_global` wrappers, and kept the dashboard at 29/2/7/4. `#[no_mangle]` 404→402; `unsafe fn` unchanged at 690; raw externs unchanged at 40).
 
 ## How to read this file
 
@@ -590,6 +590,16 @@ least-coupled non-`misc` clusters:
     `find_sa_element_global` for legacy callers in `ini.rs`, `pagebuilder.rs`,
     and `scan.rs`; removed the now-dead `globals::sa_null` accessor. No C callers
     or redeclarations; no cleanup aliases. No newtype debt. Dashboard 29/2/7/4.
+-   **Second `save.rs` call-graph slice (session 66):** threaded the clean SA
+    refcount/save helpers (`delete_sa_ref`, `sa_save`) to direct state borrows.
+    `delete_sa_ref` now uses `&mut MemState` / `&mut ScannerState` and calls
+    threaded `free_node` plus a tiny direct glue-ref helper. `sa_save` now uses
+    `&mut MemState`, `&mut ScannerState`, and `&mut SaveStackState`, calling
+    threaded `get_node` and propagating `ALLOC_FAILED` / `SAVE_OVERFLOW` to
+    `sa_save_global` so cold aborts happen after the borrow drops. Legacy callers
+    in `save.rs`/`scan.rs` use `_global` wrappers. Removed the now-dead
+    `globals::sa_level` accessor. No C callers or redeclarations; no cleanup
+    aliases. No newtype debt. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -601,9 +611,9 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 182 state-backed scalars/arrays (incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and 33 `LinebreakState` inline scalars/arrays) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 404 (direct `grep '#[no_mangle]' src/*.rs`; unchanged in session 65) |
+| `#[no_mangle]` exports | 576 | boundary-only | 402 (direct `grep '#[no_mangle]' src/*.rs`; session 66 dropped `delete_sa_ref`/`sa_save`) |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 690 |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 159 / 688 not remeasured |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 160 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -730,7 +740,7 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Session 65 began `save.rs` by threading the sparse-array allocation/traversal helper cluster. Next: continue `save.rs` with the SA save/restore/free side (`delete_sa_ref` / `sa_save` / `sa_restore`, possibly `sa_destroy`/`sa_def` only as needed), then climb subsystem by subsystem (`save.rs` → `pagebuilder.rs`/`shipout.rs` → `math.rs`/`linebreak.rs` → `scan.rs` last). Draft `02-modules.md` to READY before threading reaches `scan.rs`.**
+1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–66 began `save.rs` by threading the sparse-array allocation/traversal helper cluster and the clean SA ref/save helpers (`delete_sa_ref` / `sa_save`). Next: continue `save.rs` with the restore/destroy/define side (`sa_destroy` + `sa_restore`, then `sa_def` / `sa_w_def` / `gsa_def` / `gsa_w_def` if clean). Watch the `flush_node_list` dependency in `sa_destroy`; it still lives in `scan.rs`. Then climb subsystem by subsystem (`save.rs` → `pagebuilder.rs`/`shipout.rs` → `math.rs`/`linebreak.rs` → `scan.rs` last). Draft `02-modules.md` to READY before threading reaches `scan.rs`.**
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

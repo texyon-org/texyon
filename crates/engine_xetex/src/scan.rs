@@ -7562,7 +7562,7 @@ pub unsafe extern "C" fn unpackage() {
                     set_mem_b32s1(crate::globals::cur_ptr() + 1, crate::mem::TEX_NULL);
                     let rc = mem_b32s0(crate::globals::cur_ptr() + 1) + 1;
                     set_mem_b32s0(crate::globals::cur_ptr() + 1, rc);
-                    crate::save::delete_sa_ref(crate::globals::cur_ptr());
+                    crate::save::delete_sa_ref_global(crate::globals::cur_ptr());
                 }
             }
             crate::mem::free_node_global(p, BOX_NODE_SIZE);
@@ -9717,7 +9717,7 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
         if cur_ptr() != TEX_NULL {
             set_mem_b32s1(cur_ptr() + 1, q);
             set_mem_b32s0(cur_ptr() + 1, mem_b32s0(cur_ptr() + 1) + 1);
-            crate::save::delete_sa_ref(cur_ptr());
+            crate::save::delete_sa_ref_global(cur_ptr());
         }
     }
     vpackage(p, h, EXACTLY, split_max_d)
@@ -9906,7 +9906,7 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
                 if cur_ptr() != TEX_NULL {
                     set_mem_b32s1(cur_ptr() + 1, TEX_NULL);
                     set_mem_b32s0(cur_ptr() + 1, mem_b32s0(cur_ptr() + 1) + 1);
-                    crate::save::delete_sa_ref(cur_ptr());
+                    crate::save::delete_sa_ref_global(cur_ptr());
                 }
             }
         }

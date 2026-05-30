@@ -2943,10 +2943,6 @@ pub(crate) fn set_sa_chain(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn sa_level() -> u16 {
-    crate::state::with_state(|s| s.scanner.sa_level)
-}
-#[inline]
 pub(crate) fn set_sa_level(v: u16) {
     crate::state::with_state_mut(|s| {
         s.scanner.sa_level = v;

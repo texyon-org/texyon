@@ -321,6 +321,13 @@ impl MemState {
         unsafe { self.data[p as usize].b16.s0 }
     }
 
+    /// Read `mem[p].b16.s1`. Mirrors `globals::mem_b16s1`.
+    #[inline]
+    pub(crate) fn b16s1(&self, p: i32) -> u16 {
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        unsafe { self.data[p as usize].b16.s1 }
+    }
+
     /// Write `mem[p].b32.s0`. Union writes through a `&mut` index are safe.
     #[inline]
     pub(crate) fn set_b32s0(&mut self, p: i32, v: i32) {
