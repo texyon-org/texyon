@@ -987,9 +987,7 @@ pub unsafe extern "C" fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i
         // If x == 0, skip to `found`.
         if x != 0 {
             if x < n {
-                let tmp = x;
-                x = n;
-                n = tmp;
+                std::mem::swap(&mut x, &mut n);
             }
             let mut f = 0i32;
             let mut r = (d / 2) - d;
@@ -1011,15 +1009,13 @@ pub unsafe extern "C" fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i
                     x += x;
                 } else {
                     let tmp = x - d;
-                    x = tmp + x;
+                    x += tmp;
                     f += n;
                     if x < n {
                         if x == 0 {
                             break;
                         }
-                        let tmp = x;
-                        x = n;
-                        n = tmp;
+                        std::mem::swap(&mut x, &mut n);
                     }
                 }
             }

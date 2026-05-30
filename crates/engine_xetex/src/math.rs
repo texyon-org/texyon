@@ -882,7 +882,7 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
             }
             delta = font_info_b32s1(italic_base_entry(cur_f()) + cur_i().s1 as i32 / 4);
         }
-        let mut x = clean_box(q + 1, cur_style());
+        let x = clean_box(q + 1, cur_style());
         if font_area_entry(cur_f()) == OTGR_FONT_FLAG
             && isOpenTypeMathFont(font_layout_engine_ptr(cur_f()))
         {
@@ -1061,49 +1061,47 @@ pub unsafe extern "C" fn make_ord(q: i32) {
             set_cur_i(font_info_b16(a));
         }
         loop {
-            if cur_i().s2 == cur_c() as u16 {
-                if cur_i().s3 <= 128 {
-                    if cur_i().s1 >= 128 {
-                        let p_kern = new_kern(font_info_b32s1(
-                            kern_base_entry(cur_f()) + 256 * cur_i().s1 as i32 + cur_i().s0 as i32,
-                        ));
-                        set_mem_b32s1(p_kern, mem_b32s1(q));
-                        set_mem_b32s1(q, p_kern);
-                        return;
-                    } else {
-                        match cur_i().s1 {
-                            1 | 5 => {
-                                set_mem_b16s0(q + 1, cur_i().s0);
-                            }
-                            2 | 6 => {
-                                set_mem_b16s0(p + 1, cur_i().s0);
-                            }
-                            3 | 7 | 11 => {
-                                let r = new_noad();
-                                set_mem_b16s0(r + 1, cur_i().s0);
-                                set_mem_b16s1(r + 1, mem_b16s1(q + 1) % 256);
-                                set_mem_b32s1(q, r);
-                                set_mem_b32s1(r, p);
-                                if cur_i().s1 < 11 {
-                                    set_mem_b32s1(r + 1, MATH_CHAR);
-                                } else {
-                                    set_mem_b32s1(r + 1, MATH_TEXT_CHAR);
-                                }
-                            }
-                            _ => {
-                                set_mem_b32s1(q, mem_b32s1(p));
-                                set_mem_b16s0(q + 1, cur_i().s0);
-                                set_mem_word(q + 3, mem_word(p + 3));
-                                set_mem_word(q + 2, mem_word(p + 2));
-                                free_node(p, NOAD_SIZE);
+            if cur_i().s2 == cur_c() as u16 && cur_i().s3 <= 128 {
+                if cur_i().s1 >= 128 {
+                    let p_kern = new_kern(font_info_b32s1(
+                        kern_base_entry(cur_f()) + 256 * cur_i().s1 as i32 + cur_i().s0 as i32,
+                    ));
+                    set_mem_b32s1(p_kern, mem_b32s1(q));
+                    set_mem_b32s1(q, p_kern);
+                    return;
+                } else {
+                    match cur_i().s1 {
+                        1 | 5 => {
+                            set_mem_b16s0(q + 1, cur_i().s0);
+                        }
+                        2 | 6 => {
+                            set_mem_b16s0(p + 1, cur_i().s0);
+                        }
+                        3 | 7 | 11 => {
+                            let r = new_noad();
+                            set_mem_b16s0(r + 1, cur_i().s0);
+                            set_mem_b16s1(r + 1, mem_b16s1(q + 1) % 256);
+                            set_mem_b32s1(q, r);
+                            set_mem_b32s1(r, p);
+                            if cur_i().s1 < 11 {
+                                set_mem_b32s1(r + 1, MATH_CHAR);
+                            } else {
+                                set_mem_b32s1(r + 1, MATH_TEXT_CHAR);
                             }
                         }
-                        if cur_i().s1 > 3 {
-                            return;
+                        _ => {
+                            set_mem_b32s1(q, mem_b32s1(p));
+                            set_mem_b16s0(q + 1, cur_i().s0);
+                            set_mem_word(q + 3, mem_word(p + 3));
+                            set_mem_word(q + 2, mem_word(p + 2));
+                            free_node(p, NOAD_SIZE);
                         }
-                        set_mem_b32s1(q + 1, MATH_CHAR);
-                        continue 'restart;
                     }
+                    if cur_i().s1 > 3 {
+                        return;
+                    }
+                    set_mem_b32s1(q + 1, MATH_CHAR);
+                    continue 'restart;
                 }
             }
             if cur_i().s3 >= 128 {
@@ -1122,9 +1120,9 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
     let mut x: i32 = TEX_NULL;
     let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
     let mut c: i32;
-    let mut f: i32;
+    let f: i32;
     let mut s: i32;
-    let mut w: i32;
+    let w: i32;
     let mut h: i32;
 
     if font_area_entry(cur_f()) == AAT_FONT_FLAG || font_area_entry(cur_f()) == OTGR_FONT_FLAG {
@@ -1187,7 +1185,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
             }
             let y_tmp = acc_i.s0 as i32;
             acc_i = font_info_b16(char_base_entry(f) + y_tmp);
-            if !(acc_i.s3 > 0) {
+            if acc_i.s3 <= 0 {
                 break;
             }
             if font_info_b32s1(width_base_entry(f) + acc_i.s3 as i32) > w {
@@ -1219,23 +1217,21 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
         delta = if h < x_height { h } else { x_height };
     }
 
-    if mem_b32s1(q + 2) != EMPTY || mem_b32s1(q + 3) != EMPTY {
-        if mem_b32s1(q + 1) == MATH_CHAR {
-            crate::scan::flush_node_list(x);
-            x = new_noad();
-            set_mem_word(x + 1, mem_word(q + 1));
-            set_mem_word(x + 2, mem_word(q + 2));
-            set_mem_word(x + 3, mem_word(q + 3));
-            set_mem_b32s0(q + 2, 0);
-            set_mem_b32s1(q + 2, 0);
-            set_mem_b32s0(q + 3, 0);
-            set_mem_b32s1(q + 3, 0);
-            set_mem_b32s1(q + 1, SUB_MLIST);
-            set_mem_b32s0(q + 1, x);
-            x = clean_box(q + 1, cur_style());
-            delta += mem_b32s1(x + 3) - h;
-            h = mem_b32s1(x + 3);
-        }
+    if (mem_b32s1(q + 2) != EMPTY || mem_b32s1(q + 3) != EMPTY) && mem_b32s1(q + 1) == MATH_CHAR {
+        crate::scan::flush_node_list(x);
+        x = new_noad();
+        set_mem_word(x + 1, mem_word(q + 1));
+        set_mem_word(x + 2, mem_word(q + 2));
+        set_mem_word(x + 3, mem_word(q + 3));
+        set_mem_b32s0(q + 2, 0);
+        set_mem_b32s1(q + 2, 0);
+        set_mem_b32s0(q + 3, 0);
+        set_mem_b32s1(q + 3, 0);
+        set_mem_b32s1(q + 1, SUB_MLIST);
+        set_mem_b32s0(q + 1, x);
+        x = clean_box(q + 1, cur_style());
+        delta += mem_b32s1(x + 3) - h;
+        h = mem_b32s1(x + 3);
     }
 
     let y = char_box(f, c);
@@ -1253,7 +1249,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
         let old_node = mem_b32s1(y + 5);
         free_node(old_node, mem_b16s3(old_node + 4) as i32);
         set_mem_b32s1(y + 5, p);
-        if mem_b16s0(q) % 2 != 0 {
+        if !mem_b16s0(q).is_multiple_of(2) {
             crate::ext::measure_native_glyph(mem_node_addr(p), 1);
         } else {
             let c_glyph = mem_b16s1(p + 4) as i32;
@@ -2165,9 +2161,7 @@ pub unsafe extern "C" fn char_box(f: i32, c: i32) -> i32 {
             set_mem_b32s1(b + 2, mem_b32s1(p + 2));
         }
     } else {
-        let q = font_info_b16(
-            char_base_entry(f) + crate::scan::effective_char(true, f, c as u16) as i32,
-        );
+        let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c as u16));
         b = crate::mem::new_null_box();
         set_mem_b32s1(
             b + 1,
@@ -2202,7 +2196,7 @@ pub unsafe extern "C" fn stack_into_box(b: i32, f: i32, c: u16) {
 /// translated from xetex-math.c:1474 (height_plus_depth)
 #[no_mangle]
 pub unsafe extern "C" fn height_plus_depth(f: i32, c: u16) -> i32 {
-    let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c) as i32);
+    let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c));
     font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16)
         + font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16)
 }
@@ -2488,7 +2482,7 @@ pub unsafe fn sub_sup() {
 
     if cur_list_tail() != cur_list_head() {
         let node_type = mem_b16s1(cur_list_tail());
-        if node_type >= 16 && node_type < LEFT_NOAD {
+        if (16..LEFT_NOAD).contains(&node_type) {
             p = cur_list_tail() + 2 + cur_cmd() as i32 - 7;
             t = mem_b32s1(p);
         }
@@ -2720,10 +2714,7 @@ pub unsafe fn math_ac() {
 
     set_mem_b16s0(cur_list_tail() + 4, (cur_val() % 65536) as u16);
     let intpar_cur_fam = eqtb_b32s1(INT_BASE + INT_PAR_CUR_FAM);
-    if math_class_field(cur_val()) == 7
-        && intpar_cur_fam >= 0
-        && intpar_cur_fam < NUMBER_MATH_FAMILIES
-    {
+    if math_class_field(cur_val()) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam) {
         set_mem_b16s1(cur_list_tail() + 4, intpar_cur_fam as u16);
     } else {
         set_mem_b16s1(cur_list_tail() + 4, math_fam_field(cur_val()) as u16);
@@ -3080,7 +3071,7 @@ pub unsafe fn after_math() {
             q = 0;
         } else {
             e = mem_b32s1(a + 1);
-            q = e + math_quad(TEXT_SIZE as i32);
+            q = e + math_quad(TEXT_SIZE);
         }
         if w + q > z {
             if e != 0
@@ -3283,7 +3274,7 @@ pub unsafe fn init_math() {
                         break 'reswitch;
                     }
                     match mem_b16s1(p) {
-                        0 | 1 | 2 => {
+                        0..=2 => {
                             d = mem_b32s1(p + 1);
                             is_found = true;
                             break 'reswitch;
@@ -3350,12 +3341,11 @@ pub unsafe fn init_math() {
                                 {
                                     v = MAX_HALFWORD;
                                 }
-                            } else if mem_b16s1(just_box() + 5) == SHRINKING {
-                                if mem_b16s0(just_box() + 5) == mem_b16s0(q)
-                                    && mem_b32s1(q + 3) != 0
-                                {
-                                    v = MAX_HALFWORD;
-                                }
+                            } else if mem_b16s1(just_box() + 5) == SHRINKING
+                                && mem_b16s0(just_box() + 5) == mem_b16s0(q)
+                                && mem_b32s1(q + 3) != 0
+                            {
+                                v = MAX_HALFWORD;
                             }
                             if mem_b16s0(p) >= A_LEADERS {
                                 is_found = true;
@@ -3760,7 +3750,7 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                 set_mem_b16s1(b, VLIST_NODE);
                 let r = font_info_b16(exten_base_entry(f) + q.s0 as i32);
                 c = r.s0;
-                let mut u = height_plus_depth(f, c);
+                let u = height_plus_depth(f, c);
                 w = 0;
                 q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c));
                 set_mem_b32s1(

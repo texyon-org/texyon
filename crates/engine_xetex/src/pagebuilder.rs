@@ -203,10 +203,8 @@ unsafe fn fire_up(c: i32) {
     }
 
     // Update extended marks
-    if sa_root(MARK_VAL) != TEX_NULL {
-        if do_marks(FIRE_UP_INIT, 0, sa_root(MARK_VAL)) {
-            set_sa_root(MARK_VAL, TEX_NULL);
-        }
+    if sa_root(MARK_VAL) != TEX_NULL && do_marks(FIRE_UP_INIT, 0, sa_root(MARK_VAL)) {
+        set_sa_root(MARK_VAL, TEX_NULL);
     }
 
     // 1047: Update top_mark / first_mark / bot_mark
@@ -297,28 +295,29 @@ unsafe fn fire_up(c: i32) {
                 if mem_b32s0(r + 2) == p {
                     // 1056: best_ins_ptr == p — wrap up the box
                     let mut inner_wait = false;
-                    if mem_b16s1(r) as i32 == SPLIT_UP {
-                        if mem_b32s0(r + 1) == p && mem_b32s1(r + 1) != TEX_NULL {
-                            // broken_ins == p && broken_ptr != TEX_NULL
-                            while mem_b32s1(s) != mem_b32s1(r + 1) {
-                                s = mem_b32s1(s);
-                            }
-                            set_mem_b32s1(s, TEX_NULL);
-                            set_eqtb_b32s1(
-                                GLUE_BASE + GLUE_PAR__split_top_skip,
-                                mem_b32s1(p + 4), // INSERTION_NODE_split_top_ptr
-                            );
-                            set_mem_b32s0(
-                                p + 4,
-                                prune_page_top(mem_b32s1(r + 1), false), // broken_ptr
-                            );
-                            if mem_b32s0(p + 4) != TEX_NULL {
-                                // INSERTION_NODE_ins_ptr != TEX_NULL
-                                let tmp = vpackage(mem_b32s0(p + 4), 0, ADDITIONAL, MAX_HALFWORD);
-                                set_mem_b32s1(p + 3, mem_b32s1(tmp + 3) + mem_b32s1(tmp + 2)); // BOX_height = BOX_height(tmp)+BOX_depth(tmp)
-                                free_node(tmp, BOX_NODE_SIZE);
-                                inner_wait = true;
-                            }
+                    if mem_b16s1(r) as i32 == SPLIT_UP
+                        && mem_b32s0(r + 1) == p
+                        && mem_b32s1(r + 1) != TEX_NULL
+                    {
+                        // broken_ins == p && broken_ptr != TEX_NULL
+                        while mem_b32s1(s) != mem_b32s1(r + 1) {
+                            s = mem_b32s1(s);
+                        }
+                        set_mem_b32s1(s, TEX_NULL);
+                        set_eqtb_b32s1(
+                            GLUE_BASE + GLUE_PAR__split_top_skip,
+                            mem_b32s1(p + 4), // INSERTION_NODE_split_top_ptr
+                        );
+                        set_mem_b32s0(
+                            p + 4,
+                            prune_page_top(mem_b32s1(r + 1), false), // broken_ptr
+                        );
+                        if mem_b32s0(p + 4) != TEX_NULL {
+                            // INSERTION_NODE_ins_ptr != TEX_NULL
+                            let tmp = vpackage(mem_b32s0(p + 4), 0, ADDITIONAL, MAX_HALFWORD);
+                            set_mem_b32s1(p + 3, mem_b32s1(tmp + 3) + mem_b32s1(tmp + 2)); // BOX_height = BOX_height(tmp)+BOX_depth(tmp)
+                            free_node(tmp, BOX_NODE_SIZE);
+                            inner_wait = true;
                         }
                     }
                     set_mem_b32s0(r + 2, TEX_NULL); // best_ins_ptr = TEX_NULL
@@ -457,10 +456,8 @@ unsafe fn fire_up(c: i32) {
     set_mem_b32s1(PAGE_INS_HEAD, PAGE_INS_HEAD);
 
     // Handle extended marks after new-page setup
-    if sa_root(MARK_VAL) != TEX_NULL {
-        if do_marks(FIRE_UP_DONE, 0, sa_root(MARK_VAL)) {
-            set_sa_root(MARK_VAL, TEX_NULL);
-        }
+    if sa_root(MARK_VAL) != TEX_NULL && do_marks(FIRE_UP_DONE, 0, sa_root(MARK_VAL)) {
+        set_sa_root(MARK_VAL, TEX_NULL);
     }
 
     if cur_mark(TOP_MARK_CODE) != TEX_NULL && cur_mark(FIRST_MARK_CODE) == TEX_NULL {
@@ -814,7 +811,7 @@ pub unsafe fn build_page() {
             }
 
             // After break check: decide contribute vs update_heights
-            if nt < GLUE_NODE || nt > KERN_NODE {
+            if !(GLUE_NODE..=KERN_NODE).contains(&nt) {
                 need_contribute = true;
             } else {
                 need_update_heights = true;

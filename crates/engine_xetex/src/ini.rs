@@ -583,11 +583,7 @@ pub unsafe extern "C" fn new_patterns() {
                             let mut v: u16 = MIN_TRIE_OP as u16;
                             loop {
                                 if hyf_entry(l as usize) != 0 {
-                                    v = new_trie_op(
-                                        (k - l) as i16,
-                                        hyf_entry(l as usize) as i16,
-                                        v,
-                                    );
+                                    v = new_trie_op((k - l), hyf_entry(l as usize) as i16, v);
                                 }
                                 if l > 0 {
                                     l -= 1;
@@ -1036,7 +1032,7 @@ pub unsafe extern "C" fn final_cleanup() {
         set_open_parens(open_parens() - 1);
     }
 
-    if cur_level() as u16 > LEVEL_ONE {
+    if cur_level() > LEVEL_ONE {
         crate::output::print_nl(b'(' as i32);
         crate::output::print_esc_cstr(c"end occurred ".as_ptr());
         crate::output::print_cstr(c"inside a group at level ".as_ptr());
@@ -1063,7 +1059,7 @@ pub unsafe extern "C" fn final_cleanup() {
     }
 
     if history() != HISTORY_SPOTLESS
-        && (history() == HISTORY_WARNING_ISSUED || (interaction() as u8) < ERROR_STOP_MODE)
+        && (history() == HISTORY_WARNING_ISSUED || interaction() < ERROR_STOP_MODE)
         && selector() == SELECTOR_TERM_AND_LOG
     {
         set_selector(SELECTOR_TERM_ONLY);
@@ -1384,10 +1380,10 @@ pub unsafe extern "C" fn initialize_more_initex_variables() {
 
     // set_family(x) = (x & 0xFF) << 24; set_class(x) = (x & 0x07) << 21
     fn set_family(x: i32) -> i32 {
-        ((x & 0xFF) << 24) as i32
+        (x & 0xFF) << 24
     }
     fn set_class(x: i32) -> i32 {
-        ((x & 0x07) << 21) as i32
+        (x & 0x07) << 21
     }
 
     for k in 1..=19 {
@@ -1739,11 +1735,11 @@ const SUP_FONT_MEM_SIZE: i32 = 147_483_647;
 const SUP_POOL_SIZE: i32 = 40_000_000;
 const SUP_HASH_EXTRA: i32 = 2_097_151;
 
-static mut tre_pool_size: i32 = 0;
-static mut tre_string_vacancies: i32 = 0;
-static mut tre_max_strings: i32 = 0;
-static mut tre_trie_size: i32 = 0;
-static mut tre_hyph_size: i32 = 0;
+static mut TRE_POOL_SIZE: i32 = 0;
+static mut TRE_STRING_VACANCIES: i32 = 0;
+static mut TRE_MAX_STRINGS: i32 = 0;
+static mut TRE_TRIE_SIZE: i32 = 0;
+static mut TRE_HYPH_SIZE: i32 = 0;
 
 #[inline]
 unsafe fn xmalloc_array<T>(n: i32) -> *mut T {
@@ -2533,7 +2529,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     }
 
     x = undump_int(fmt_in);
-    if x < 0 || x > SUP_HASH_EXTRA {
+    if !(0..=SUP_HASH_EXTRA).contains(&x) {
         bad_format_file();
     }
     set_hash_high(x);
@@ -2608,11 +2604,11 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         _tt_abort(c"must increase string_pool_size".as_ptr());
     }
     set_pool_ptr(x);
-    if tre_pool_size < pool_ptr() + tre_pool_free {
-        tre_pool_size = pool_ptr() + tre_pool_free;
+    if TRE_POOL_SIZE < pool_ptr() + tre_pool_free {
+        TRE_POOL_SIZE = pool_ptr() + tre_pool_free;
     }
     crate::state::with_state_mut(|state| {
-        state.strings.pool_size = tre_pool_size;
+        state.strings.pool_size = TRE_POOL_SIZE;
     });
 
     x = undump_int(fmt_in);
@@ -2623,15 +2619,15 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         _tt_abort(c"must increase sup_strings".as_ptr());
     }
     set_str_ptr(x);
-    if tre_max_strings < str_ptr() + tre_strings_free {
-        tre_max_strings = str_ptr() + tre_strings_free;
+    if TRE_MAX_STRINGS < str_ptr() + tre_strings_free {
+        TRE_MAX_STRINGS = str_ptr() + tre_strings_free;
     }
     crate::state::with_state_mut(|state| {
-        state.strings.max_strings = tre_max_strings;
+        state.strings.max_strings = TRE_MAX_STRINGS;
     });
 
     crate::state::with_state_mut(|state| {
-        state.strings.str_start = vec![0i32; (tre_max_strings as usize) + 1];
+        state.strings.str_start = vec![0i32; (TRE_MAX_STRINGS as usize) + 1];
     });
     let n = str_ptr() - TOO_BIG_CHAR + 1;
     let limit = pool_ptr();
@@ -2641,7 +2637,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         bad_format_file();
     }
     crate::state::with_state_mut(|state| {
-        state.strings.str_pool = vec![0u16; (tre_pool_size as usize) + 1];
+        state.strings.str_pool = vec![0u16; (TRE_POOL_SIZE as usize) + 1];
     });
     let limit = pool_ptr();
     crate::state::with_state_mut(|state| {
@@ -2654,7 +2650,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     });
 
     x = undump_int(fmt_in);
-    if x < 1019 || x > MEM_TOP - HI_MEM_STAT_USAGE {
+    if !(1019..=MEM_TOP - HI_MEM_STAT_USAGE).contains(&x) {
         bad_format_file();
     }
     set_lo_mem_max(x);
@@ -2696,7 +2692,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     set_hi_mem_min(x);
 
     x = undump_int(fmt_in);
-    if x < MIN_HALFWORD || x > MEM_TOP {
+    if !(MIN_HALFWORD..=MEM_TOP).contains(&x) {
         bad_format_file();
     }
     set_avail(x);
@@ -2761,7 +2757,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
     }
 
     x = undump_int(fmt_in);
-    if x < FORMAT_HASH_BASE || x > FROZEN_CONTROL_SEQUENCE {
+    if !(FORMAT_HASH_BASE..=FROZEN_CONTROL_SEQUENCE).contains(&x) {
         bad_format_file();
     }
     set_hash_used(x);
@@ -3092,7 +3088,7 @@ pub unsafe extern "C" fn load_fmt_file() -> bool {
         set_hyph_word_entry(j, x);
 
         x = undump_int(fmt_in);
-        if x < MIN_HALFWORD || x > MAX_HALFWORD {
+        if !(MIN_HALFWORD..=MAX_HALFWORD).contains(&x) {
             bad_format_file();
         }
         set_hyph_list_entry(j, x);
@@ -3210,15 +3206,15 @@ pub unsafe extern "C" fn tt_run_engine(
         set_file_line_error_style_p(0);
     }
 
-    tre_pool_size = 6_250_000;
-    tre_string_vacancies = 90_000;
+    TRE_POOL_SIZE = 6_250_000;
+    TRE_STRING_VACANCIES = 90_000;
     tre_pool_free = 47_500;
-    tre_max_strings = 565_536;
+    TRE_MAX_STRINGS = 565_536;
     tre_strings_free = 100;
     set_font_mem_size(8_000_000);
     set_font_max(9_000);
-    tre_trie_size = 1_000_000;
-    tre_hyph_size = 8_191;
+    TRE_TRIE_SIZE = 1_000_000;
+    TRE_HYPH_SIZE = 8_191;
     tre_buf_size = 200_000;
     tre_nest_size = 500;
     tre_max_in_open = 15;
@@ -3232,11 +3228,11 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_expand_depth = 10_000;
 
     crate::state::with_state_mut(|state| {
-        state.strings.pool_size = tre_pool_size;
-        state.strings.string_vacancies = tre_string_vacancies;
-        state.strings.max_strings = tre_max_strings;
-        state.hyph.trie_size = tre_trie_size;
-        state.hyph.hyph_size = tre_hyph_size;
+        state.strings.pool_size = TRE_POOL_SIZE;
+        state.strings.string_vacancies = TRE_STRING_VACANCIES;
+        state.strings.max_strings = TRE_MAX_STRINGS;
+        state.hyph.trie_size = TRE_TRIE_SIZE;
+        state.hyph.hyph_size = TRE_HYPH_SIZE;
     });
 
     {
@@ -3343,7 +3339,7 @@ pub unsafe extern "C" fn tt_run_engine(
         // matching the former `xmalloc_array` shape). Allocated fresh each
         // run; released by `tt_cleanup`. Serialized in format dump/undump
         // through the normal accessors.
-        let n = (tre_hyph_size as usize) + 1;
+        let n = (TRE_HYPH_SIZE as usize) + 1;
         crate::state::with_state_mut(|s| {
             s.hyph.hyph_word = vec![0i32; n];
             s.hyph.hyph_list = vec![0i32; n];
@@ -3382,8 +3378,8 @@ pub unsafe extern "C" fn tt_run_engine(
         let eqtb_words_initex = (tre_eqtb_top as usize) + 1;
         crate::state::with_state_mut(|state| {
             state.eqtb.data = vec![zero_word_initex; eqtb_words_initex];
-            state.strings.str_start = vec![0i32; (tre_max_strings as usize) + 1];
-            state.strings.str_pool = vec![0u16; (tre_pool_size as usize) + 1];
+            state.strings.str_start = vec![0i32; (TRE_MAX_STRINGS as usize) + 1];
+            state.strings.str_pool = vec![0u16; (TRE_POOL_SIZE as usize) + 1];
             state.fonts.font_info = vec![zero_word_initex; (fms_initex as usize) + 1];
         });
     }
@@ -3419,7 +3415,7 @@ pub unsafe extern "C" fn tt_run_engine(
     if font_max() > FONT_BASE + 9000 {
         tre_bad = 16;
     }
-    if tre_save_size > MAX_HALFWORD || tre_max_strings > MAX_HALFWORD {
+    if tre_save_size > MAX_HALFWORD || TRE_MAX_STRINGS > MAX_HALFWORD {
         tre_bad = 17;
     }
     if tre_buf_size > MAX_HALFWORD {
@@ -3925,9 +3921,9 @@ pub unsafe fn prefixed_command() {
     }
 
     let mut a: i32 = 0;
-    let mut f: i32;
+    let f: i32;
     let mut j: i32;
-    let mut k: i32;
+    let k: i32;
     let mut p: i32 = 0;
     let mut q: i32;
     let mut n: i32;
@@ -4065,10 +4061,10 @@ pub unsafe fn prefixed_command() {
 
                 if cur_cmd() as i32 >= CALL {
                     set_mem_b32s0(cur_chr(), mem_b32s0(cur_chr()) + 1);
-                } else if cur_cmd() as i32 == REGISTER || cur_cmd() as i32 == TOKS_REGISTER {
-                    if cur_chr() < 0 || cur_chr() > 19 {
-                        set_mem_b32s0(cur_chr() + 1, mem_b32s0(cur_chr() + 1) + 1);
-                    }
+                } else if (cur_cmd() as i32 == REGISTER || cur_cmd() as i32 == TOKS_REGISTER)
+                    && (cur_chr() < 0 || cur_chr() > 19)
+                {
+                    set_mem_b32s0(cur_chr() + 1, mem_b32s0(cur_chr() + 1) + 1);
                 }
 
                 if a >= 4 {

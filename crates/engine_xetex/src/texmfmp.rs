@@ -83,16 +83,16 @@ pub unsafe extern "C" fn get_microinterval() -> i32 {
     let mut m = 0i32;
     get_seconds_and_micros(&mut s, &mut m);
     if (s - crate::globals::epochseconds()) > 0x7FFF {
-        return -1;
+        -1
     } else if crate::globals::microseconds() > m {
         let t = (s - 1 - crate::globals::epochseconds()) as f64 * 65536.0
             + ((m as f64 + 1_000_000.0 - crate::globals::microseconds() as f64) / 100.0) * 65536.0
                 / 10_000.0;
-        return t as i32;
+        t as i32
     } else {
         let t = (s - crate::globals::epochseconds()) as f64 * 65536.0
             + ((m - crate::globals::microseconds()) as f64 / 100.0) * 65536.0 / 10_000.0;
-        return t as i32;
+        t as i32
     }
 }
 
@@ -132,10 +132,10 @@ pub unsafe fn gettexstring(s: i32) -> *mut libc::c_char {
     while i < len {
         let base = str_start(s - 65536);
         let mut c = str_pool_entry(i + base) as u32;
-        if c >= 0xD800 && c <= 0xDBFF {
+        if (0xD800..=0xDBFF).contains(&c) {
             i += 1;
             let lo = str_pool_entry(i + base) as u32;
-            c = if lo >= 0xDC00 && lo <= 0xDFFF {
+            c = if (0xDC00..=0xDFFF).contains(&lo) {
                 (c - 0xD800) * 0x0400 + lo - 0xDC00 + 0x10000
             } else {
                 0xFFFD
@@ -239,7 +239,7 @@ pub unsafe fn maketexstring(s: *const libc::c_char) -> i32 {
                 cp = cp.add(1);
             }
         }
-        rval -= raw::offsetsFromUTF8[extra_bytes] as u32;
+        rval -= raw::offsetsFromUTF8[extra_bytes];
 
         if rval > 0xffff {
             rval -= 0x10000;

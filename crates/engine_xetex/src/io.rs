@@ -661,7 +661,7 @@ pub unsafe extern "C" fn get_uni_c(f: *mut UFile) -> libc::c_int {
                 // Translates C's falling-through switch (goto bad_utf8 on error).
                 for _ in 0..extra_bytes {
                     c = ttstub_input_getc((*f).handle);
-                    if c < 0x80 || c >= 0xC0 {
+                    if !(0x80..0xC0).contains(&c) {
                         if c != libc::EOF {
                             ttstub_input_ungetc((*f).handle, c);
                         }
@@ -673,7 +673,7 @@ pub unsafe extern "C" fn get_uni_c(f: *mut UFile) -> libc::c_int {
                 // Subtract offset and validate range.
                 let offset = raw::offsetsFromUTF8[extra_bytes];
                 rval = (rval as u32).wrapping_sub(offset) as i32;
-                if rval < 0 || rval > 0x10ffff {
+                if !(0..=0x10ffff).contains(&rval) {
                     bad_utf8_warning();
                     return 0xfffd;
                 }
@@ -685,17 +685,17 @@ pub unsafe extern "C" fn get_uni_c(f: *mut UFile) -> libc::c_int {
             if rval != libc::EOF {
                 rval <<= 8;
                 rval += ttstub_input_getc((*f).handle);
-                if rval >= 0xd800 && rval <= 0xdbff {
+                if (0xd800..=0xdbff).contains(&rval) {
                     let mut lo = ttstub_input_getc((*f).handle);
                     lo <<= 8;
                     lo += ttstub_input_getc((*f).handle);
-                    if lo >= 0xdc00 && lo <= 0xdfff {
+                    if (0xdc00..=0xdfff).contains(&lo) {
                         rval = 0x10000 + (rval - 0xd800) * 0x400 + (lo - 0xdc00);
                     } else {
                         rval = 0xfffd;
                         (*f).saved_char = lo as i64;
                     }
-                } else if rval >= 0xdc00 && rval <= 0xdfff {
+                } else if (0xdc00..=0xdfff).contains(&rval) {
                     rval = 0xfffd;
                 }
             }
@@ -705,16 +705,16 @@ pub unsafe extern "C" fn get_uni_c(f: *mut UFile) -> libc::c_int {
             rval = ttstub_input_getc((*f).handle);
             if rval != libc::EOF {
                 rval += ttstub_input_getc((*f).handle) << 8;
-                if rval >= 0xd800 && rval <= 0xdbff {
+                if (0xd800..=0xdbff).contains(&rval) {
                     let mut lo = ttstub_input_getc((*f).handle);
                     lo += ttstub_input_getc((*f).handle) << 8;
-                    if lo >= 0xdc00 && lo <= 0xdfff {
+                    if (0xdc00..=0xdfff).contains(&lo) {
                         rval = 0x10000 + (rval - 0xd800) * 0x400 + (lo - 0xdc00);
                     } else {
                         rval = 0xfffd;
                         (*f).saved_char = lo as i64;
                     }
-                } else if rval >= 0xdc00 && rval <= 0xdfff {
+                } else if (0xdc00..=0xdfff).contains(&rval) {
                     rval = 0xfffd;
                 }
             }

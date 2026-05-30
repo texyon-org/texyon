@@ -219,7 +219,7 @@ pub unsafe extern "C" fn eq_destroy(w: MemoryWord) {
     let typ = w.b16.s1;
     let val = w.b32.s1;
     match typ {
-        113 | 114 | 115 | 116 => crate::mem::delete_token_ref(val),
+        113..=116 => crate::mem::delete_token_ref(val),
         119 => crate::mem::delete_glue_ref(val),
         120 => {
             if val != TEX_NULL {
@@ -228,7 +228,7 @@ pub unsafe extern "C" fn eq_destroy(w: MemoryWord) {
         }
         121 => flush_node_list(val),
         72 | 91 => {
-            if val < 0 || val > 19 {
+            if !(0..=19).contains(&val) {
                 delete_sa_ref(val);
             }
         }
@@ -529,7 +529,7 @@ pub unsafe extern "C" fn unsave() {
                 } else {
                     set_save_stack_word(save_ptr(), eqtb_word(UNDEFINED_CONTROL_SEQUENCE));
                 }
-                if p < INT_BASE || p > EQTB_SIZE {
+                if !(INT_BASE..=EQTB_SIZE).contains(&p) {
                     if eqtb_b16s0(p) == LEVEL_ONE {
                         eq_destroy(save_stack_word(save_ptr()));
                     } else {

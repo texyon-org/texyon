@@ -511,7 +511,7 @@ pub unsafe fn ship_out(p: i32) {
             dvi_four(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
 
             let output_comment = c"tectonic";
-            let l = libc::strlen(output_comment.as_ptr()) as u8;
+            let l = output_comment.to_bytes().len() as u8;
             dvi_out(l);
             for s in 0..l {
                 dvi_out(*output_comment.as_ptr().add(s as usize) as u8);
@@ -1185,7 +1185,7 @@ pub unsafe extern "C" fn hlist_out() {
                     }
                     MATH_NODE => {
                         crate::synctex::synctex_math(p, this_box);
-                        if mem_b16s0(p) % 2 != 0 {
+                        if !mem_b16s0(p).is_multiple_of(2) {
                             if mem_b32s0(lr_ptr()) as u16 == math_node_end_lr_type(p) {
                                 set_temp_ptr(lr_ptr());
                                 set_lr_ptr(mem_b32s1(temp_ptr()));
@@ -1883,7 +1883,7 @@ pub unsafe extern "C" fn reverse(
                     MATH_NODE => {
                         set_rule_wd(mem_b32s1(p + 1));
 
-                        if mem_b16s0(p) % 2 != 0 {
+                        if !mem_b16s0(p).is_multiple_of(2) {
                             if mem_b32s0(lr_ptr()) as u16 != math_node_end_lr_type(p) {
                                 set_mem_b16s1(p, KERN_NODE);
                                 set_lr_problems(lr_problems() + 1);

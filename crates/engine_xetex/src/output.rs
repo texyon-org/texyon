@@ -1369,7 +1369,7 @@ pub unsafe extern "C" fn print_rule_dimen(d: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn print_glue(d: i32, order: i32, s: *const libc::c_char) {
     print_scaled(d);
-    if order < NORMAL || order > FILLL {
+    if !(NORMAL..=FILLL).contains(&order) {
         print_cstr(c"foul".as_ptr());
     } else if order > NORMAL {
         print_cstr(c"fil".as_ptr());
@@ -1598,23 +1598,23 @@ const CC_SF_CODE_BASE: i32 = 5_598_505;
 const CC_MATH_CODE_BASE: i32 = 6_712_617;
 const CC_DEL_CODE_BASE: i32 = 7_827_068;
 // LOCAL__ offsets (xetex_format.h:172–184)
-const CC_LOCAL__par_shape: i32 = 0;
-const CC_LOCAL__output_routine: i32 = 1;
-const CC_LOCAL__every_par: i32 = 2;
-const CC_LOCAL__every_math: i32 = 3;
-const CC_LOCAL__every_display: i32 = 4;
-const CC_LOCAL__every_hbox: i32 = 5;
-const CC_LOCAL__every_vbox: i32 = 6;
-const CC_LOCAL__every_job: i32 = 7;
-const CC_LOCAL__every_cr: i32 = 8;
-const CC_LOCAL__every_eof: i32 = 10;
-const CC_LOCAL__xetex_inter_char_toks: i32 = 11;
-const CC_LOCAL__tectonic_coda_tokens: i32 = 12;
+const CC_LOCAL_PAR_SHAPE: i32 = 0;
+const CC_LOCAL_OUTPUT_ROUTINE: i32 = 1;
+const CC_LOCAL_EVERY_PAR: i32 = 2;
+const CC_LOCAL_EVERY_MATH: i32 = 3;
+const CC_LOCAL_EVERY_DISPLAY: i32 = 4;
+const CC_LOCAL_EVERY_HBOX: i32 = 5;
+const CC_LOCAL_EVERY_VBOX: i32 = 6;
+const CC_LOCAL_EVERY_JOB: i32 = 7;
+const CC_LOCAL_EVERY_CR: i32 = 8;
+const CC_LOCAL_EVERY_EOF: i32 = 10;
+const CC_LOCAL_XETEX_INTER_CHAR_TOKS: i32 = 11;
+const CC_LOCAL_TECTONIC_CODA_TOKENS: i32 = 12;
 // ETEX_PENALTIES_PAR__ offsets (xetex_format.h:189–192)
-const CC_ETEX_PENALTIES_PAR__inter_line_penalties: i32 = 0;
-const CC_ETEX_PENALTIES_PAR__club_penalties: i32 = 1;
-const CC_ETEX_PENALTIES_PAR__widow_penalties: i32 = 2;
-const CC_ETEX_PENALTIES_PAR__display_widow_penalties: i32 = 3;
+const CC_ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES: i32 = 0;
+const CC_ETEX_PENALTIES_PAR_CLUB_PENALTIES: i32 = 1;
+const CC_ETEX_PENALTIES_PAR_WIDOW_PENALTIES: i32 = 2;
+const CC_ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES: i32 = 3;
 // IF_TEST chr_codes (xetex_format.h:544–564)
 const CC_IF_CHAR_CODE: i32 = 0;
 const CC_IF_CAT_CODE: i32 = 1;
@@ -1735,13 +1735,13 @@ const CC_XETEX_GLYPH_NAME_CODE: i32 = 37;
 const CC_XETEX_UCHAR_CODE: i32 = 38;
 const CC_XETEX_UCHARCAT_CODE: i32 = 39;
 // SET_SHAPE sub-codes
-const CC_LOCAL_BASE_PAR_SHAPE: i32 = CC_LOCAL_BASE + CC_LOCAL__par_shape;
+const CC_LOCAL_BASE_PAR_SHAPE: i32 = CC_LOCAL_BASE + CC_LOCAL_PAR_SHAPE;
 const CC_ETEX_PEN_BASE_INTER_LINE: i32 =
-    CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__inter_line_penalties;
-const CC_ETEX_PEN_BASE_CLUB: i32 = CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__club_penalties;
-const CC_ETEX_PEN_BASE_WIDOW: i32 = CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__widow_penalties;
+    CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES;
+const CC_ETEX_PEN_BASE_CLUB: i32 = CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR_CLUB_PENALTIES;
+const CC_ETEX_PEN_BASE_WIDOW: i32 = CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR_WIDOW_PENALTIES;
 const CC_ETEX_PEN_BASE_DISPLAY_WIDOW: i32 =
-    CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR__display_widow_penalties;
+    CC_ETEX_PEN_BASE + CC_ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES;
 // MAKE_BOX sub-codes (xetex_format.h:480–484)
 const CC_BOX_CODE: i32 = 0;
 const CC_COPY_CODE: i32 = 1;
@@ -1916,37 +1916,37 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
                 print_int(chr_code - CC_TOKS_BASE);
             } else {
                 match chr_code {
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__output_routine => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_OUTPUT_ROUTINE => {
                         print_esc_cstr(c"output".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_par => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_PAR => {
                         print_esc_cstr(c"everypar".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_math => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_MATH => {
                         print_esc_cstr(c"everymath".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_display => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_DISPLAY => {
                         print_esc_cstr(c"everydisplay".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_hbox => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_HBOX => {
                         print_esc_cstr(c"everyhbox".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_vbox => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_VBOX => {
                         print_esc_cstr(c"everyvbox".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_job => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB => {
                         print_esc_cstr(c"everyjob".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_cr => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_CR => {
                         print_esc_cstr(c"everycr".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__every_eof => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_EOF => {
                         print_esc_cstr(c"everyeof".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__xetex_inter_char_toks => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_XETEX_INTER_CHAR_TOKS => {
                         print_esc_cstr(c"XeTeXinterchartoks".as_ptr())
                     }
-                    x if x == CC_LOCAL_BASE + CC_LOCAL__tectonic_coda_tokens => {
+                    x if x == CC_LOCAL_BASE + CC_LOCAL_TECTONIC_CODA_TOKENS => {
                         print_esc_cstr(c"TectonicCodaTokens".as_ptr())
                     }
                     _ => print_esc_cstr(c"errhelp".as_ptr()),
@@ -2121,7 +2121,7 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
             }
         }
         CMD_REGISTER => {
-            let (the_cmd, the_chr) = if chr_code < 0 || chr_code > 19 {
+            let (the_cmd, the_chr) = if !(0..=19).contains(&chr_code) {
                 (mem_b16s1(chr_code) as i32 / 64, chr_code)
             } else {
                 (chr_code, TEX_NULL)
@@ -2882,36 +2882,35 @@ pub unsafe extern "C" fn show_cur_cmd_chr() {
     begin_diagnostic();
     diagnostic_begin_capture_warning_here();
     print_nl(b'{' as i32);
-    if cur_list_mode() != shown_mode() as i16 {
+    if cur_list_mode() != shown_mode() {
         print_mode(cur_list_mode() as i32);
         print_cstr(c": ".as_ptr());
         set_shown_mode(cur_list_mode());
     }
     print_cmd_chr(cur_cmd() as u16, cur_chr());
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0 {
-        if cur_cmd() >= IF_TEST as u8 {
-            if cur_cmd() <= FI_OR_ELSE {
-                print_cstr(c": ".as_ptr());
-                let (mut n, mut l) = if cur_cmd() == FI_OR_ELSE {
-                    print_cmd_chr(IF_TEST, cur_if() as i32);
-                    print_char(b' ' as i32);
-                    (0_i32, if_line())
-                } else {
-                    (1_i32, line())
-                };
-                let mut p = cond_ptr();
-                while p != TEX_NULL {
-                    n += 1;
-                    p = mem_b32s1(p);
-                }
-                print_cstr(c"(level ".as_ptr());
-                print_int(n);
-                print_char(b')' as i32);
-                if l != 0 {
-                    print_cstr(c" entered on line ".as_ptr());
-                    print_int(l);
-                }
-            }
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
+        && cur_cmd() >= IF_TEST as u8
+        && cur_cmd() <= FI_OR_ELSE
+    {
+        print_cstr(c": ".as_ptr());
+        let (mut n, l) = if cur_cmd() == FI_OR_ELSE {
+            print_cmd_chr(IF_TEST, cur_if() as i32);
+            print_char(b' ' as i32);
+            (0_i32, if_line())
+        } else {
+            (1_i32, line())
+        };
+        let mut p = cond_ptr();
+        while p != TEX_NULL {
+            n += 1;
+            p = mem_b32s1(p);
+        }
+        print_cstr(c"(level ".as_ptr());
+        print_int(n);
+        print_char(b')' as i32);
+        if l != 0 {
+            print_cstr(c" entered on line ".as_ptr());
+            print_int(l);
         }
     }
     print_char(b'}' as i32);

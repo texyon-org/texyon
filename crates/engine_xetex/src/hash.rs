@@ -67,10 +67,8 @@ pub unsafe extern "C" fn id_lookup(j: i32, l: i32) -> i32 {
     }
 
     loop {
-        if hash_s1(p) > 0 {
-            if length(hash_s1(p)) == ll && str_eq_buf(hash_s1(p), j) {
-                return p; // found
-            }
+        if hash_s1(p) > 0 && length(hash_s1(p)) == ll && str_eq_buf(hash_s1(p), j) {
+            return p; // found
         }
 
         if hash_s0(p) == 0 {

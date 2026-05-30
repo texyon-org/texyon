@@ -152,7 +152,7 @@ unsafe fn pdf_get_rect(
         page_num = pages;
     }
     if page_num < 0 {
-        page_num = pages + 1 + page_num;
+        page_num += pages + 1;
     }
     if page_num < 1 {
         page_num = 1;

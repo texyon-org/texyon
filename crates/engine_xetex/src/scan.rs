@@ -818,10 +818,11 @@ pub unsafe extern "C" fn get_x_or_protected() {
         if cur_cmd() <= MAX_COMMAND {
             return;
         }
-        if cur_cmd() >= CALL && cur_cmd() < END_TEMPLATE {
-            if mem_b32s0(mem_b32s1(cur_chr())) == PROTECTED_TOKEN {
-                return;
-            }
+        if cur_cmd() >= CALL
+            && cur_cmd() < END_TEMPLATE
+            && mem_b32s0(mem_b32s1(cur_chr())) == PROTECTED_TOKEN
+        {
+            return;
         }
         expand();
     }
@@ -1015,7 +1016,7 @@ pub unsafe extern "C" fn scan_expr() {
 
             set_arith_error(b);
             if l == INT_VAL || s > EXPR_SUB {
-                if f > TEX_INFINITY || f < -TEX_INFINITY {
+                if !(-TEX_INFINITY..=TEX_INFINITY).contains(&f) {
                     set_arith_error(true);
                     f = 0;
                 }
@@ -1024,15 +1025,13 @@ pub unsafe extern "C" fn scan_expr() {
                     set_arith_error(true);
                     f = 0;
                 }
-            } else {
-                if mem_b32s1(f + 1).abs() > MAX_HALFWORD
-                    || mem_b32s1(f + 2).abs() > MAX_HALFWORD
-                    || mem_b32s1(f + 3).abs() > MAX_HALFWORD
-                {
-                    set_arith_error(true);
-                    crate::mem::delete_glue_ref(f);
-                    f = crate::mem::new_spec(0);
-                }
+            } else if mem_b32s1(f + 1).abs() > MAX_HALFWORD
+                || mem_b32s1(f + 2).abs() > MAX_HALFWORD
+                || mem_b32s1(f + 3).abs() > MAX_HALFWORD
+            {
+                set_arith_error(true);
+                crate::mem::delete_glue_ref(f);
+                f = crate::mem::new_spec(0);
             }
 
             // o may be modified inside case 3 (EXPR_MULT → EXPR_SCALE)
@@ -1563,7 +1562,7 @@ pub unsafe extern "C" fn xetex_scan_dimen(
                         set_cur_val(crate::scaled_math::xn_over_d(cur_val(), 1000, mag));
                         f = (1000 * f + 65536 * tex_remainder()) / mag;
                         set_cur_val(cur_val() + f / 65536);
-                        f = f % 65536;
+                        f %= 65536;
                     }
                 }
 
@@ -1619,7 +1618,7 @@ pub unsafe extern "C" fn xetex_scan_dimen(
                 set_cur_val(crate::scaled_math::xn_over_d(cur_val(), num, denom));
                 f = (num * f + 65536 * tex_remainder()) / denom;
                 set_cur_val(cur_val() + f / 65536);
-                f = f % 65536;
+                f %= 65536;
 
                 (true, true) // attach_fraction
             };
@@ -1901,20 +1900,20 @@ pub unsafe extern "C" fn str_toks_cat(b: i32, cat: i16) -> i32 {
             t = SPACE_TOKEN;
         } else {
             // decode UTF-16 surrogate pair
-            if t >= 0xD800 && t < 0xDC00 && k + 1 < pool_ptr() {
+            if (0xD800..0xDC00).contains(&t) && k + 1 < pool_ptr() {
                 let lo = str_pool_entry(k + 1) as i32;
-                if lo >= 0xDC00 && lo < 0xE000 {
+                if (0xDC00..0xE000).contains(&lo) {
                     k += 1;
                     t = 0x10000 + ((t - 0xD800) << 10) + (str_pool_entry(k) as i32 - 0xDC00);
                 }
             }
 
             if cat == 0 {
-                t = OTHER_TOKEN + t;
+                t += OTHER_TOKEN;
             } else if cat == ACTIVE_CHAR as i16 {
-                t = CS_TOKEN_FLAG + 1 + t;
+                t += CS_TOKEN_FLAG + 1;
             } else {
-                t = MAX_CHAR_VAL * cat as i32 + t;
+                t += MAX_CHAR_VAL * cat as i32;
             }
         }
 
@@ -1996,7 +1995,7 @@ pub unsafe extern "C" fn the_toks() -> i32 {
                 r = mem_b32s1(r);
             }
         }
-        return p;
+        p
     } else {
         let old_setting = selector();
         set_selector(SELECTOR_NEW_STRING);
@@ -2198,11 +2197,9 @@ pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
                 // §497: expand, but handle \the specially
                 loop {
                     get_next();
-                    if cur_cmd() >= CALL {
-                        if mem_b32s0(mem_b32s1(cur_chr())) == PROTECTED_TOKEN {
-                            set_cur_cmd(RELAX);
-                            set_cur_chr(NO_EXPAND_FLAG);
-                        }
+                    if cur_cmd() >= CALL && mem_b32s0(mem_b32s1(cur_chr())) == PROTECTED_TOKEN {
+                        set_cur_cmd(RELAX);
+                        set_cur_chr(NO_EXPAND_FLAG);
                     }
                     if cur_cmd() <= MAX_COMMAND {
                         break; // done2
@@ -2232,39 +2229,35 @@ pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
                         break 'found; // goto found
                     }
                 }
-            } else if cur_cmd() == MAC_PARAM {
-                if macro_def {
-                    // §498: parameter reference in definition body
-                    let s = cur_tok();
-                    if xpand {
-                        get_x_token();
+            } else if cur_cmd() == MAC_PARAM && macro_def {
+                // §498: parameter reference in definition body
+                let s = cur_tok();
+                if xpand {
+                    get_x_token();
+                } else {
+                    get_token();
+                }
+                if cur_cmd() != MAC_PARAM {
+                    if cur_tok() <= ZERO_TOKEN || cur_tok() > t {
+                        error_here_with_diagnostic(
+                            c"Illegal parameter number in definition of ".as_ptr(),
+                        );
+                        crate::output::sprint_cs(warning_index());
+                        capture_to_diagnostic(std::ptr::null_mut());
+                        set_help_ptr(3);
+                        set_help_line(2, c"You meant to type ## instead of #, right?".as_ptr());
+                        set_help_line(
+                            1,
+                            c"Or maybe a } was forgotten somewhere earlier, and things".as_ptr(),
+                        );
+                        set_help_line(
+                            0,
+                            c"are all screwed up? I'm going to assume that you meant ##.".as_ptr(),
+                        );
+                        crate::input::back_error();
+                        set_cur_tok(s);
                     } else {
-                        get_token();
-                    }
-                    if cur_cmd() != MAC_PARAM {
-                        if cur_tok() <= ZERO_TOKEN || cur_tok() > t {
-                            error_here_with_diagnostic(
-                                c"Illegal parameter number in definition of ".as_ptr(),
-                            );
-                            crate::output::sprint_cs(warning_index());
-                            capture_to_diagnostic(std::ptr::null_mut());
-                            set_help_ptr(3);
-                            set_help_line(2, c"You meant to type ## instead of #, right?".as_ptr());
-                            set_help_line(
-                                1,
-                                c"Or maybe a } was forgotten somewhere earlier, and things"
-                                    .as_ptr(),
-                            );
-                            set_help_line(
-                                0,
-                                c"are all screwed up? I'm going to assume that you meant ##."
-                                    .as_ptr(),
-                            );
-                            crate::input::back_error();
-                            set_cur_tok(s);
-                        } else {
-                            set_cur_tok((OUT_PARAM_TOKEN - 48) + cur_chr());
-                        }
+                        set_cur_tok((OUT_PARAM_TOKEN - 48) + cur_chr());
                     }
                 }
             }
@@ -2314,7 +2307,11 @@ pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
     set_mem_b32s0(q, END_MATCH_TOKEN);
     p = q;
 
-    let m: usize = if n < 0 || n > 15 { 16 } else { n as usize };
+    let m: usize = if !(0..=15).contains(&n) {
+        16
+    } else {
+        n as usize
+    };
 
     let s = align_state();
     set_align_state(1_000_000);
@@ -2356,7 +2353,7 @@ pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
         let lim = last();
         set_cur_input_limit(lim);
         let end_char = eqtb_b32s1(INT_BASE_PSEUDO + INT_PAR_END_LINE_CHAR);
-        if end_char < 0 || end_char > 255 {
+        if !(0..=255).contains(&end_char) {
             set_cur_input_limit(lim - 1);
         } else {
             set_buffer_entry(lim, end_char);
@@ -2440,8 +2437,8 @@ pub unsafe fn begin_name() {
 /// translated from xetex-xetex0.c:7837 (more_name)
 pub unsafe fn more_name(c: u16) -> bool {
     use crate::globals::{
-        area_delimiter, ext_delimiter, file_name_quote_char, quoted_filename, set_area_delimiter,
-        set_ext_delimiter, set_file_name_quote_char, set_quoted_filename, stop_at_space,
+        file_name_quote_char, set_area_delimiter, set_ext_delimiter, set_file_name_quote_char,
+        set_quoted_filename, stop_at_space,
     };
 
     if stop_at_space() && file_name_quote_char() == 0 && c == b' ' as u16 {
@@ -2476,8 +2473,8 @@ pub unsafe fn more_name(c: u16) -> bool {
 /// translated from xetex-xetex0.c:7870 (end_name)
 pub unsafe fn end_name() {
     use crate::globals::{
-        area_delimiter, cur_area, cur_ext, cur_name, ext_delimiter, init_str_ptr, max_strings,
-        set_cur_area, set_cur_ext, set_cur_name, set_pool_ptr, set_str_ptr,
+        area_delimiter, cur_area, cur_name, ext_delimiter, init_str_ptr, max_strings, set_cur_area,
+        set_cur_ext, set_cur_name, set_pool_ptr, set_str_ptr,
     };
 
     if str_ptr() + 3 > max_strings() {
@@ -2684,7 +2681,7 @@ pub unsafe extern "C" fn find_font_dimen(writing: bool) {
     if n <= 0 {
         set_cur_val(fmem_ptr());
     } else {
-        if writing && n <= SPACE_SHRINK_CODE && n >= SPACE_CODE && font_glue(f) != TEX_NULL {
+        if writing && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n) && font_glue(f) != TEX_NULL {
             crate::mem::delete_glue_ref(font_glue(f));
             set_font_glue(f, TEX_NULL);
         }
@@ -2847,15 +2844,15 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
         char_base_entry, cur_chr, cur_cmd, cur_cs, cur_group, cur_if, cur_level,
         cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
         cur_ptr, cur_val, cur_val1, cur_val_level, dead_cycles, depth_base_entry, eqtb_b32s1,
-        eqtb_is_null, font_area_entry, font_bc_entry, font_ec_entry, font_info_b16,
-        font_info_b32s1, font_layout_engine_ptr, hash_s1, height_base_entry, hi_mem_min,
-        hyphen_char_entry, if_limit, insert_penalties, interaction, italic_base_entry,
-        last_badness, last_glue, last_kern, last_node_type, last_penalty, mem_b16s0, mem_b16s1,
-        mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, nest_mode, nest_prev_graf, nest_ptr,
-        output_active, page_contents, page_so_far, pdf_last_x_pos, pdf_last_y_pos, random_seed,
-        save_cur_list_to_nest, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_ptr, set_cur_tok,
-        set_cur_val, set_cur_val1, set_cur_val_level, set_help_line, set_help_ptr, set_mem_b32s1,
-        shell_escape_enabled, skew_char_entry, width_base_entry,
+        font_area_entry, font_bc_entry, font_ec_entry, font_info_b16, font_info_b32s1,
+        font_layout_engine_ptr, hash_s1, height_base_entry, hi_mem_min, hyphen_char_entry,
+        if_limit, insert_penalties, interaction, italic_base_entry, last_badness, last_glue,
+        last_kern, last_node_type, last_penalty, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1,
+        nest_mode, nest_prev_graf, nest_ptr, output_active, page_contents, page_so_far,
+        pdf_last_x_pos, pdf_last_y_pos, random_seed, save_cur_list_to_nest, set_cur_chr,
+        set_cur_cmd, set_cur_cs, set_cur_ptr, set_cur_tok, set_cur_val, set_cur_val1,
+        set_cur_val_level, set_help_line, set_help_ptr, set_mem_b32s1, shell_escape_enabled,
+        skew_char_entry, width_base_entry,
     };
     use crate::mem::TEX_NULL;
 
@@ -3214,7 +3211,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                 }
             }
             REGISTER => {
-                if m < 0 || m > 19 {
+                if !(0..=19).contains(&m) {
                     set_cur_val_level((mem_b16s1(m) / 64) as u8);
                     if (cur_val_level() as i16) < GLUE_VAL {
                         set_cur_val(mem_b32s1(m + 2));
@@ -3293,7 +3290,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                                 if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                                     scan_int();
                                     n = cur_val();
-                                    if n < 1 || n > 4 {
+                                    if !(1..=4).contains(&n) {
                                         error_here_with_diagnostic(
                                             c"\\\\XeTeXglyphbounds requires an edge index from 1 to 4;".as_ptr());
                                         crate::output::print_nl_cstr(
@@ -3866,7 +3863,6 @@ pub unsafe extern "C" fn scan_int() {
         cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1, hash_s1, set_cur_chr, set_cur_cmd,
         set_cur_cs, set_cur_tok, set_cur_val, set_help_line, set_help_ptr, set_radix,
     };
-    use crate::mem::TEX_NULL;
 
     let mut negative = false;
     let mut m: i32 = 0;
@@ -4080,29 +4076,26 @@ pub unsafe extern "C" fn conditional() {
         buf_size, buffer_entry, char_base_entry, cond_ptr, cur_chr, cur_cmd, cur_cs, cur_if,
         cur_list_mode, eqtb_b16s1, eqtb_b32s1, first, font_area_entry, font_bc_entry,
         font_ec_entry, font_info_b16, hash_s1, if_limit, if_line, if_stack, in_open, is_in_csname,
-        line, max_buf_stack, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, read_open_entry,
-        scanner_status, set_buffer_entry, set_cond_ptr, set_cur_chr, set_cur_cmd, set_cur_cs,
-        set_cur_if, set_if_limit, set_if_line, set_is_in_csname, set_max_buf_stack, set_mem_b16s0,
-        set_mem_b16s1, set_mem_b32s1, set_scanner_status, shell_escape_enabled,
+        line, max_buf_stack, mem_b16s1, mem_b32s0, mem_b32s1, read_open_entry, scanner_status,
+        set_buffer_entry, set_cond_ptr, set_cur_chr, set_cur_cmd, set_cur_if, set_if_limit,
+        set_if_line, set_is_in_csname, set_max_buf_stack, set_mem_b16s0, set_mem_b16s1,
+        set_mem_b32s1, set_scanner_status, shell_escape_enabled,
     };
-    use crate::mem::{flush_list, free_node, get_avail, get_node, TEX_NULL};
+    use crate::mem::{flush_list, get_avail, get_node, TEX_NULL};
 
     let mut b = false;
-    let mut e: bool;
+    let e: bool;
     let mut r: u8 = 0;
     let mut m: i32 = 0;
     let mut n: i32 = 0;
     let mut p: i32;
     let mut q: i32;
     let save_scanner_status: u8;
-    let save_cond_ptr: i32;
-    let this_if: i16;
-    let is_unless: bool;
 
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0 {
-        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) <= 1 {
-            crate::output::show_cur_cmd_chr();
-        }
+    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
+        && eqtb_b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) <= 1
+    {
+        crate::output::show_cur_cmd_chr();
     }
 
     p = get_node(IF_NODE_SIZE);
@@ -4115,9 +4108,9 @@ pub unsafe extern "C" fn conditional() {
     set_if_limit(IF_CODE);
     set_if_line(line());
 
-    save_cond_ptr = cond_ptr();
-    is_unless = cur_chr() >= UNLESS_CODE as i32;
-    this_if = (cur_chr() % UNLESS_CODE as i32) as i16;
+    let save_cond_ptr: i32 = cond_ptr();
+    let is_unless: bool = cur_chr() >= UNLESS_CODE;
+    let this_if: i16 = (cur_chr() % UNLESS_CODE) as i16;
 
     match this_if {
         IF_CHAR_CODE | IF_CAT_CODE => {
@@ -4470,8 +4463,8 @@ pub unsafe extern "C" fn conditional() {
 #[inline]
 unsafe fn pop_cond_node() {
     use crate::globals::{
-        cond_ptr, cur_if, if_limit, if_line, mem_b16s0, mem_b16s1, mem_b32s1, set_cond_ptr,
-        set_cur_if, set_if_limit, set_if_line,
+        cond_ptr, mem_b16s0, mem_b16s1, mem_b32s1, set_cond_ptr, set_cur_if, set_if_limit,
+        set_if_line,
     };
     let p = cond_ptr();
     set_if_line(mem_b32s1(p + 1));
@@ -4602,7 +4595,7 @@ pub unsafe extern "C" fn start_input(primary_input_name: *const libc::c_char) {
                     rval <<= 6;
                 }
             }
-            rval -= raw_utf8::offsetsFromUTF8[extra_bytes] as u32;
+            rval -= raw_utf8::offsetsFromUTF8[extra_bytes];
 
             if rval > 0xffff {
                 rval -= 0x10000;
@@ -5505,7 +5498,7 @@ pub unsafe extern "C" fn head_for_vmode() {
         crate::input::back_input();
         set_cur_tok(crate::globals::par_token());
         crate::input::back_input();
-        set_cur_input_index(INSERTED as u16);
+        set_cur_input_index(INSERTED);
     }
 }
 
@@ -5779,7 +5772,7 @@ pub unsafe extern "C" fn append_discretionary() {
     if cur_chr() == 1 {
         let f = eqtb_b32s1(CUR_FONT_LOC);
         let c = crate::globals::hyphen_char_entry(f);
-        if c >= 0 && c <= BIGGEST_CHAR {
+        if (0..=BIGGEST_CHAR).contains(&c) {
             let tail2 = crate::globals::cur_list_tail();
             set_mem_b32s0(tail2 + 1, new_character(f, c as u16));
         }
@@ -6180,7 +6173,7 @@ pub unsafe extern "C" fn fin_align() {
 
     // §833: pop the spec from save_stack and pack the whole alignment
     set_save_ptr(save_ptr() - 2);
-    set_pack_begin_line(-(cur_list_mode_line() as i32));
+    set_pack_begin_line(-cur_list_mode_line());
     let p = if cur_list_mode() == INNER_VMODE {
         let rule_save = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE);
         set_eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE, 0);
@@ -6270,12 +6263,11 @@ pub unsafe extern "C" fn fin_align() {
                                     mem_gr(p + 6) * mem_b32s1(v + 2) as f64,
                                 );
                             }
-                        } else if mem_b16s1(p + 5) == SHRINKING {
-                            if mem_b16s0(v) == mem_b16s0(p + 5) {
-                                t -= crate::scaled_math::tex_round(
-                                    mem_gr(p + 6) * mem_b32s1(v + 3) as f64,
-                                );
-                            }
+                        } else if mem_b16s1(p + 5) == SHRINKING && mem_b16s0(v) == mem_b16s0(p + 5)
+                        {
+                            t -= crate::scaled_math::tex_round(
+                                mem_gr(p + 6) * mem_b32s1(v + 3) as f64,
+                            );
                         }
                         ss = mem_b32s1(ss);
                         set_mem_b32s1(u, crate::mem::new_null_box());
@@ -6928,12 +6920,12 @@ pub unsafe extern "C" fn show_whatever() {
             crate::output::print_nl_cstr(c"! ".as_ptr());
         }
         crate::output::print_cstr(c"OK".as_ptr());
-        if crate::globals::selector() == SELECTOR_TERM_AND_LOG {
-            if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {
-                crate::globals::set_selector(SELECTOR_TERM_ONLY);
-                crate::output::print_cstr(c" (see the transcript file)".as_ptr());
-                crate::globals::set_selector(SELECTOR_TERM_AND_LOG);
-            }
+        if crate::globals::selector() == SELECTOR_TERM_AND_LOG
+            && eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0
+        {
+            crate::globals::set_selector(SELECTOR_TERM_ONLY);
+            crate::output::print_cstr(c" (see the transcript file)".as_ptr());
+            crate::globals::set_selector(SELECTOR_TERM_AND_LOG);
         }
     }
 
@@ -8571,7 +8563,7 @@ pub unsafe extern "C" fn new_graf(indented: bool) {
 
     let every_par = eqtb_b32s1(LOCAL_BASE + LOCAL__EVERY_PAR);
     if every_par != crate::mem::TEX_NULL {
-        begin_token_list(every_par, EVERY_PAR_TEXT as u16);
+        begin_token_list(every_par, EVERY_PAR_TEXT);
     }
 
     if nest_ptr() == 1 {
@@ -8702,12 +8694,12 @@ pub unsafe extern "C" fn scan_math(p: i32) {
     set_mem_b32s1(p, MATH_CHAR_NODE);
     crate::globals::set_mem_b16s0(p, (c % 65536) as u16);
     let cur_fam_val = eqtb_b32s1(INT_BASE + INT_PAR_CUR_FAM);
-    let fam: u16 =
-        if math_class_fn(c) == 7 && cur_fam_val >= 0 && cur_fam_val < NUMBER_MATH_FAMILIES_VAL {
-            cur_fam_val as u16
-        } else {
-            math_fam_fn(c) as u16
-        };
+    let fam: u16 = if math_class_fn(c) == 7 && (0..NUMBER_MATH_FAMILIES_VAL).contains(&cur_fam_val)
+    {
+        cur_fam_val as u16
+    } else {
+        math_fam_fn(c) as u16
+    };
     crate::globals::set_mem_b16s1(p, fam + (math_char_fn(c) / 65536) as u16 * 256);
 }
 
@@ -8738,7 +8730,7 @@ pub unsafe extern "C" fn set_math_char(c: i32) {
         set_mem_b16s1(p + 1, math_fam_fn(c) as u16);
         if math_class_fn(c) == 7 {
             let cf = eqtb_b32s1(INT_BASE + INT_PAR_CUR_FAM_SM);
-            if cf >= 0 && cf < NUMBER_MATH_FAM_SM {
+            if (0..NUMBER_MATH_FAM_SM).contains(&cf) {
                 set_mem_b16s1(p + 1, cf as u16);
             }
             crate::globals::set_mem_b16s1(p, ORD_NOAD);
@@ -8881,7 +8873,7 @@ pub unsafe extern "C" fn init_col() {
 #[no_mangle]
 pub unsafe extern "C" fn push_alignment() {
     use crate::globals::{
-        align_ptr, align_state, avail, cur_align, cur_head, cur_loop, cur_pre_head, cur_pre_tail,
+        align_ptr, align_state, cur_align, cur_head, cur_loop, cur_pre_head, cur_pre_tail,
         cur_span, cur_tail_a, set_align_ptr, set_cur_head, set_cur_pre_head, set_mem_b32s0,
         set_mem_b32s1,
     };
@@ -8908,9 +8900,9 @@ pub unsafe extern "C" fn push_alignment() {
 #[no_mangle]
 pub unsafe extern "C" fn pop_alignment() {
     use crate::globals::{
-        align_ptr, avail, cur_align, cur_head, cur_loop, cur_pre_head, cur_pre_tail, cur_span,
-        mem_b32s0, set_align_ptr, set_align_state, set_cur_align, set_cur_head, set_cur_loop,
-        set_cur_pre_head, set_cur_pre_tail, set_cur_span, set_cur_tail_a, set_mem_b32s1,
+        align_ptr, avail, cur_head, cur_pre_head, mem_b32s0, set_align_ptr, set_align_state,
+        set_cur_align, set_cur_head, set_cur_loop, set_cur_pre_head, set_cur_pre_tail,
+        set_cur_span, set_cur_tail_a, set_mem_b32s1,
     };
     const ALIGN_HEAD: i32 = 4_999_991;
     const ALIGN_STACK_NODE_SIZE: i32 = 6;
@@ -8981,7 +8973,7 @@ pub unsafe extern "C" fn scan_glue(level: i16) {
         crate::input::back_input();
         scan_dimen(mu, false, false);
         if negative {
-            set_cur_val(-(cur_val() as i32));
+            set_cur_val(-cur_val());
         }
     }
 
@@ -9007,10 +8999,10 @@ pub unsafe extern "C" fn scan_glue(level: i16) {
 pub unsafe extern "C" fn fin_col() -> bool {
     use crate::globals::{
         adjust_tail, cur_align, cur_list_head, cur_list_mode, cur_list_tail, cur_loop,
-        cur_pre_tail, cur_span, cur_tail_a, mem_b16s0, mem_b32s0, mem_b32s1, pre_adjust_tail,
-        set_adjust_tail, set_cur_align, set_cur_list_tail, set_cur_loop, set_cur_pre_tail,
-        set_cur_span, set_cur_tail_a, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-        set_pre_adjust_tail, total_shrink, total_stretch,
+        cur_pre_tail, cur_span, cur_tail_a, mem_b32s0, mem_b32s1, pre_adjust_tail, set_adjust_tail,
+        set_cur_align, set_cur_list_tail, set_cur_loop, set_cur_pre_tail, set_cur_tail_a,
+        set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_pre_adjust_tail,
+        total_shrink, total_stretch,
     };
     use crate::mem::TEX_NULL;
 
@@ -9517,7 +9509,7 @@ pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
             Next::CheckPi(EJECT_PENALTY)
         } else {
             match mem_b16s1(p) {
-                0 | 1 | 2 => {
+                0..=2 => {
                     set_active_width(1, active_width(1) + prev_dp + mem_b32s1(p + 3));
                     prev_dp = mem_b32s1(p + 2);
                     Next::NotFound
@@ -9598,7 +9590,7 @@ pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
                 // reached only when pi >= INF_PENALTY, or (pi < INF_PENALTY and did not break);
                 // in the TEX_NULL case pi == EJECT_PENALTY so we always break above — p is valid.
                 let nt = mem_b16s1(p);
-                nt >= GLUE_NODE && nt <= KERN_NODE
+                (GLUE_NODE..=KERN_NODE).contains(&nt)
             }
         };
 
@@ -9696,10 +9688,8 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
     flush_node_list(disc_ptr(VSPLIT_CODE));
     set_disc_ptr(VSPLIT_CODE, TEX_NULL);
 
-    if sa_root(MARK_VAL) != TEX_NULL {
-        if do_marks(0, 0, sa_root(MARK_VAL)) {
-            set_sa_root(MARK_VAL, TEX_NULL);
-        }
+    if sa_root(MARK_VAL) != TEX_NULL && do_marks(0, 0, sa_root(MARK_VAL)) {
+        set_sa_root(MARK_VAL, TEX_NULL);
     }
 
     if cur_mark(SPLIT_FIRST_MARK_CODE) != TEX_NULL {
@@ -9791,9 +9781,9 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn box_end(box_context: i32) {
     use crate::globals::{
-        adjust_tail, cur_box, cur_list_aux_b32s0, cur_list_mode, cur_list_tail, cur_ptr,
-        pre_adjust_tail, set_adjust_tail, set_cur_box, set_cur_list_aux_b32s0, set_cur_list_tail,
-        set_cur_val, set_pre_adjust_tail,
+        adjust_tail, cur_box, cur_list_mode, cur_list_tail, cur_ptr, pre_adjust_tail,
+        set_adjust_tail, set_cur_box, set_cur_list_aux_b32s0, set_cur_list_tail, set_cur_val,
+        set_pre_adjust_tail,
     };
     use crate::mem::TEX_NULL;
 
@@ -9923,9 +9913,8 @@ pub unsafe extern "C" fn box_end(box_context: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn begin_box(box_context: i32) {
     use crate::globals::{
-        cur_box, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode,
-        cur_list_tail, cur_ptr, hi_mem_min, set_cur_box, set_cur_list_aux_b32s0,
-        set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_tail, set_cur_val,
+        cur_box, cur_list_head, cur_list_mode, cur_list_tail, cur_ptr, hi_mem_min, set_cur_box,
+        set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_tail,
         set_save_stack_b32s1,
     };
     use crate::mem::TEX_NULL;
@@ -9956,7 +9945,7 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
     const LOCAL_EVERY_HBOX: i32 = 5; // xetex_format.h:177
     const LOCAL_EVERY_VBOX: i32 = 6; // xetex_format.h:178
 
-    match cur_chr() as i32 {
+    match cur_chr() {
         BOX_CODE => {
             scan_register_num();
             let v = cur_val();
@@ -10017,16 +10006,14 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
                 error();
             } else {
                 let mut tx = cur_list_tail();
-                if tx < hi_mem_min() {
-                    if mem_b16s1(tx) == MATH_NODE && mem_b16s0(tx) == END_M_CODE {
-                        let mut r = cur_list_head();
-                        loop {
-                            let prev = r;
-                            r = mem_b32s1(prev);
-                            if r == tx {
-                                tx = prev;
-                                break;
-                            }
+                if tx < hi_mem_min() && mem_b16s1(tx) == MATH_NODE && mem_b16s0(tx) == END_M_CODE {
+                    let mut r = cur_list_head();
+                    loop {
+                        let prev = r;
+                        r = mem_b32s1(prev);
+                        if r == tx {
+                            tx = prev;
+                            break;
                         }
                     }
                 }
@@ -10102,7 +10089,7 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
         }
 
         _ => {
-            let k = cur_chr() as i32 - 4;
+            let k = cur_chr() - 4;
             set_save_stack_b32s1(save_ptr(), box_context);
             if k == HMODE as i32 {
                 if box_context < BOX_FLAG && cur_list_mode().abs() == VMODE {
@@ -10520,9 +10507,8 @@ pub unsafe fn char_pw(p: i32, side: i16) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn handle_right_brace() {
     use crate::globals::{
-        adjust_tail, cur_group, cur_input, cur_list_head, cur_list_tail, disc_ptr,
-        insert_penalties, nest_ptr, nest_tail, output_active, page_tail, pre_adjust_tail, save_ptr,
-        save_stack_b32s1, set_adjust_tail, set_cur_list_tail, set_cur_tok, set_disc_ptr,
+        cur_group, cur_input, cur_list_head, cur_list_tail, disc_ptr, nest_ptr, page_tail,
+        save_ptr, save_stack_b32s1, set_adjust_tail, set_cur_list_tail, set_cur_tok, set_disc_ptr,
         set_insert_penalties, set_mem_b16s0, set_mem_b16s1, set_nest_tail, set_output_active,
         set_page_tail, set_pre_adjust_tail, set_save_ptr,
     };
@@ -10946,16 +10932,14 @@ pub unsafe fn do_marks(a: i16, l: i16, q: i32) -> bool {
             };
             set_cur_ptr(cp);
 
-            if cur_ptr() != TEX_NULL {
-                if do_marks(a, l + 1, cur_ptr()) {
-                    if i % 2 != 0 {
-                        set_mem_b32s1(q + (i / 2) as i32 + 1, TEX_NULL);
-                    } else {
-                        set_mem_b32s0(q + (i / 2) as i32 + 1, TEX_NULL);
-                    }
-                    // mem[q].b16.s0-- (reference count of index node)
-                    set_mem_b16s0(q, mem_b16s0(q) - 1);
+            if cur_ptr() != TEX_NULL && do_marks(a, l + 1, cur_ptr()) {
+                if i % 2 != 0 {
+                    set_mem_b32s1(q + (i / 2) as i32 + 1, TEX_NULL);
+                } else {
+                    set_mem_b32s0(q + (i / 2) as i32 + 1, TEX_NULL);
                 }
+                // mem[q].b16.s0-- (reference count of index node)
+                set_mem_b16s0(q, mem_b16s0(q) - 1);
             }
         }
 
@@ -11330,14 +11314,12 @@ const HLIST_NODE_VAL_HP: u16 = 0;
 #[no_mangle]
 pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
     use crate::globals::{
-        adjust_tail, avail, char_base_entry, depth_base_entry, font_in_short_display,
-        font_info_b16, font_info_b32s1, height_base_entry, hi_mem_min, last_badness, line,
-        lr_problems, lr_ptr, mem_as_u16_ptr, mem_as_u16_ptr_mut, mem_b16s2, mem_gr, mem_word,
-        output_active, pack_begin_line, pre_adjust_tail, set_adjust_tail, set_avail,
-        set_font_in_short_display, set_last_badness, set_lr_problems, set_lr_ptr, set_mem_gr,
-        set_mem_word, set_pre_adjust_tail, set_total_shrink, set_total_stretch,
-        set_xtx_ligature_present, total_shrink, total_stretch, width_base_entry,
-        xtx_ligature_present,
+        adjust_tail, avail, char_base_entry, depth_base_entry, font_info_b16, font_info_b32s1,
+        height_base_entry, hi_mem_min, last_badness, line, lr_problems, lr_ptr, mem_as_u16_ptr,
+        mem_as_u16_ptr_mut, mem_b16s2, mem_word, output_active, pack_begin_line, pre_adjust_tail,
+        set_adjust_tail, set_avail, set_font_in_short_display, set_last_badness, set_lr_problems,
+        set_lr_ptr, set_mem_gr, set_mem_word, set_pre_adjust_tail, set_total_shrink,
+        set_total_stretch, set_xtx_ligature_present, total_shrink, total_stretch, width_base_entry,
     };
     use crate::mem::TEX_NULL;
 
@@ -11502,7 +11484,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                                 }
                                 scan_p = mem_b32s1(scan_p);
                             }
-                            let mut scan_p = mem_b32s1(q);
+                            let scan_p = mem_b32s1(q);
                             let merged =
                                 new_native_word_node(mem_b16s2(scan_p + 4) as i32, total_chars);
                             set_mem_b16s0(merged, mem_b16s0(scan_p));
@@ -11550,7 +11532,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                         }
                         x += mem_b32s1(p + 1);
                     }
-                    42 | 43 | 44 => {
+                    42..=44 => {
                         // GLYPH_NODE (42), PIC_NODE (43), PDF_NODE (44)
                         if mem_b32s1(p + 3) > h {
                             h = mem_b32s1(p + 3);
@@ -11586,7 +11568,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
             MATH_NODE_HP => {
                 x += mem_b32s1(p + 1);
                 if eqtb_b32s1(INT_BASE_HP + INT_PAR_TEXXET_HP) > 0 {
-                    if mem_b16s0(p) % 2 != 0 {
+                    if !mem_b16s0(p).is_multiple_of(2) {
                         // odd subtype: closing a direction
                         let expected =
                             (L_CODE_HP as u32) * (mem_b16s0(p) as u32 / L_CODE_HP as u32) + 3;
@@ -11866,7 +11848,7 @@ const DIMEN_BASE_VP: i32 = 8_941_180; // xetex_format.h:222
 /// translated from xetex-xetex0.c:7424 (vpackage)
 pub unsafe fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
     use crate::globals::{
-        hi_mem_min, last_badness, line, mem_gr, output_active, pack_begin_line, set_last_badness,
+        hi_mem_min, last_badness, line, output_active, pack_begin_line, set_last_badness,
         set_mem_gr, set_total_shrink, set_total_stretch, total_shrink, total_stretch,
     };
     use crate::mem::TEX_NULL;
@@ -12138,7 +12120,7 @@ pub unsafe extern "C" fn conv_toks() {
     const CONVERT: u16 = 110;
 
     let mut cat: i32 = 0;
-    let c = cur_chr() as i32;
+    let c = cur_chr();
     let mut fnt: i32 = 0;
     let mut arg1: i32 = 0;
     let mut arg2: i32 = 0;
@@ -12537,7 +12519,7 @@ pub unsafe extern "C" fn conv_toks() {
             if cur_cs() != 0 {
                 crate::output::sprint_cs(cur_cs());
             } else {
-                crate::output::print_char(cur_chr() as i32);
+                crate::output::print_char(cur_chr());
             }
         }
         MEANING_CODE_CT => {
@@ -13020,9 +13002,8 @@ const MEMORY_WORD_SIZE_CNL: i32 = 8;
 #[no_mangle]
 pub unsafe extern "C" fn copy_node_list(mut p: i32) -> i32 {
     use crate::globals::{
-        avail, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, mem_ptr,
-        mem_word, set_avail, set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, set_mem_ptr,
-        set_mem_word,
+        avail, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, mem_word,
+        set_avail, set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, set_mem_ptr, set_mem_word,
     };
     let h = crate::mem::get_avail();
     let mut q = h;
@@ -13292,9 +13273,9 @@ const TOKEN_LIST_COV: u16 = 0;
 #[no_mangle]
 pub unsafe extern "C" fn check_outer_validity() {
     use crate::globals::{
-        cur_cs, cur_if, cur_input, error_line, par_token, scanner_status, set_align_state,
-        set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_tok, set_deletions_allowed, set_help_line,
-        set_help_ptr, set_long_state, set_mem_b32s0, set_mem_b32s1, skip_line, warning_index,
+        cur_cs, cur_if, cur_input, par_token, scanner_status, set_align_state, set_cur_chr,
+        set_cur_cmd, set_cur_cs, set_cur_tok, set_deletions_allowed, set_help_line, set_help_ptr,
+        set_long_state, set_mem_b32s0, set_mem_b32s1, skip_line, warning_index,
     };
     if scanner_status() == NORMAL_COV {
         return;
@@ -14132,18 +14113,18 @@ pub unsafe extern "C" fn show_node_list(mut p: i32) {
                         crate::output::print_scaled(mem_b32s1(p + 1));
                     }
                     // left delimiter check
-                    if mem_b16s3(p + 4) % 256 != 0
+                    if !mem_b16s3(p + 4).is_multiple_of(256)
                         || (mem_b16s2(p + 4) as i32 + (mem_b16s3(p + 4) as i32 / 256) * 65536) != 0
-                        || mem_b16s1(p + 4) % 256 != 0
+                        || !mem_b16s1(p + 4).is_multiple_of(256)
                         || (mem_b16s0(p + 4) as i32 + (mem_b16s1(p + 4) as i32 / 256) * 65536) != 0
                     {
                         crate::output::print_cstr(c", left-delimiter ".as_ptr());
                         crate::output::print_delimiter(p + 4);
                     }
                     // right delimiter check
-                    if mem_b16s3(p + 5) % 256 != 0
+                    if !mem_b16s3(p + 5).is_multiple_of(256)
                         || (mem_b16s2(p + 5) as i32 + (mem_b16s3(p + 5) as i32 / 256) * 65536) != 0
-                        || mem_b16s1(p + 5) % 256 != 0
+                        || !mem_b16s1(p + 5).is_multiple_of(256)
                         || (mem_b16s0(p + 5) as i32 + (mem_b16s1(p + 5) as i32 / 256) * 65536) != 0
                     {
                         crate::output::print_cstr(c", right-delimiter ".as_ptr());
@@ -14205,10 +14186,8 @@ pub unsafe fn show_context() {
     'outer: loop {
         set_cur_input(input_stack(base_ptr()));
         let ci = cur_input();
-        if ci.state != TOKEN_LIST {
-            if ci.name > 19 || base_ptr() == 0 {
-                bottom_line = true;
-            }
+        if ci.state != TOKEN_LIST && (ci.name > 19 || base_ptr() == 0) {
+            bottom_line = true;
         }
         let error_context_lines = eqtb_b32s1(INT_BASE + INT_PAR_ERROR_CONTEXT_LINES);
         if base_ptr() == input_ptr() || bottom_line || nn < error_context_lines {
@@ -14343,7 +14322,7 @@ pub unsafe fn show_context() {
                 };
                 let fc = first_count();
                 let mut q = p;
-                while q <= fc - 1 {
+                while q < fc {
                     crate::output::print_char(trick_buf((q % error_line()) as usize) as i32);
                     q += 1;
                 }
@@ -14359,7 +14338,7 @@ pub unsafe fn show_context() {
                     fc + (error_line() - n - 3)
                 };
                 let mut q3 = fc;
-                while q3 <= p - 1 {
+                while q3 < p {
                     crate::output::print_char(trick_buf((q3 % error_line()) as usize) as i32);
                     q3 += 1;
                 }
@@ -14388,11 +14367,10 @@ pub unsafe fn show_context() {
 #[no_mangle]
 pub unsafe extern "C" fn expand() {
     use crate::globals::{
-        buf_size, cond_ptr, cur_if, cur_mark, cur_order, cur_ptr, cur_val_level, eqtb_b16s1,
-        force_eof, hash_s1, if_limit, if_line, if_stack, in_open, is_in_csname, max_buf_stack,
-        no_new_control_sequence, radix, set_cond_ptr, set_cur_if, set_cur_mark, set_cur_order,
-        set_cur_ptr, set_cur_val_level, set_force_eof, set_if_limit, set_if_line, set_is_in_csname,
-        set_max_buf_stack, set_no_new_control_sequence, set_radix,
+        buf_size, cond_ptr, cur_mark, cur_order, cur_ptr, cur_val_level, eqtb_b16s1, hash_s1,
+        if_limit, if_stack, in_open, is_in_csname, max_buf_stack, radix, set_cond_ptr, set_cur_if,
+        set_cur_order, set_cur_ptr, set_cur_val_level, set_force_eof, set_if_limit, set_if_line,
+        set_is_in_csname, set_max_buf_stack, set_no_new_control_sequence, set_radix,
     };
 
     const TOP_BOT_MARK: u8 = 112;
@@ -14455,7 +14433,7 @@ pub unsafe extern "C" fn expand() {
                     } else {
                         crate::save::find_sa_element(MARK_VAL_IDX as u16, cur_val(), false);
                         if cur_ptr() != crate::mem::TEX_NULL {
-                            if t % 2 != 0 {
+                            if !t.is_multiple_of(2) {
                                 set_cur_ptr(mem_b32s1(cur_ptr() + (t as i32 / 2) + 1));
                             } else {
                                 set_cur_ptr(mem_b32s0(cur_ptr() + (t as i32 / 2) + 1));
@@ -14617,10 +14595,10 @@ pub unsafe extern "C" fn expand() {
                     conditional();
                 }
                 FI_OR_ELSE_CMD => {
-                    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0 {
-                        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) <= 1 {
-                            crate::output::show_cur_cmd_chr();
-                        }
+                    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
+                        && eqtb_b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) <= 1
+                    {
+                        crate::output::show_cur_cmd_chr();
                     }
                     if cur_chr() > if_limit() as i32 {
                         if if_limit() == IF_CODE_VAL {
@@ -14709,10 +14687,10 @@ pub unsafe extern "C" fn expand() {
 #[no_mangle]
 pub unsafe extern "C" fn get_next() {
     use crate::globals::{
-        cond_ptr, cur_align, cur_boundary, deletions_allowed, eof_seen, eqtb_b16s1, force_eof,
-        grp_stack, if_stack, in_open, input_file, input_ptr, line, par_loc, param_stack,
-        set_cur_input, set_cur_input_index, set_deletions_allowed, set_eof_seen, set_force_eof,
-        set_line, set_mem_b32s1, set_used_tectonic_coda_tokens, used_tectonic_coda_tokens,
+        cond_ptr, cur_align, cur_boundary, eof_seen, eqtb_b16s1, force_eof, grp_stack, if_stack,
+        in_open, input_file, input_ptr, line, par_loc, param_stack, set_deletions_allowed,
+        set_eof_seen, set_force_eof, set_line, set_used_tectonic_coda_tokens,
+        used_tectonic_coda_tokens,
     };
 
     // State codes (xetex-constants.h)
@@ -14767,7 +14745,7 @@ pub unsafe extern "C" fn get_next() {
 
     #[inline(always)]
     fn is_lc_hex(c: i32) -> bool {
-        (c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x66)
+        (0x30..=0x39).contains(&c) || (0x61..=0x66).contains(&c)
     }
 
     'restart: loop {
@@ -15198,32 +15176,29 @@ pub unsafe extern "C" fn get_next() {
                                 } else {
                                     set_force_eof(true);
                                 }
+                            } else if input_line(input_file(cur_input().index as i32)) != 0 {
+                                set_cur_input_limit(last());
+                            } else if eqtb_b32s1(LOCAL_BASE_GN + LOCAL_EVERY_EOF) != TEX_NULL_GN
+                                && !eof_seen(cur_input().index as i32)
+                            {
+                                set_cur_input_limit(first() - 1);
+                                set_eof_seen(cur_input().index as i32, true);
+                                crate::input::begin_token_list(
+                                    eqtb_b32s1(LOCAL_BASE_GN + LOCAL_EVERY_EOF),
+                                    EVERY_EOF_TEXT_GN,
+                                );
+                                continue 'restart;
                             } else {
-                                if input_line(input_file(cur_input().index as i32)) != 0 {
-                                    set_cur_input_limit(last());
-                                } else if eqtb_b32s1(LOCAL_BASE_GN + LOCAL_EVERY_EOF) != TEX_NULL_GN
-                                    && !eof_seen(cur_input().index as i32)
-                                {
-                                    set_cur_input_limit(first() - 1);
-                                    set_eof_seen(cur_input().index as i32, true);
-                                    crate::input::begin_token_list(
-                                        eqtb_b32s1(LOCAL_BASE_GN + LOCAL_EVERY_EOF),
-                                        EVERY_EOF_TEXT_GN,
-                                    );
-                                    continue 'restart;
-                                } else {
-                                    set_force_eof(true);
-                                }
+                                set_force_eof(true);
                             }
                         }
 
                         if force_eof() {
-                            if eqtb_b32s1(INT_BASE_GN + INT_PAR_TRACING_NESTING) > 0 {
-                                if grp_stack(in_open() as i32) != cur_boundary()
-                                    || if_stack(in_open() as i32) != cond_ptr()
-                                {
-                                    crate::output::file_warning();
-                                }
+                            if eqtb_b32s1(INT_BASE_GN + INT_PAR_TRACING_NESTING) > 0
+                                && (grp_stack(in_open()) != cur_boundary()
+                                    || if_stack(in_open()) != cond_ptr())
+                            {
+                                crate::output::file_warning();
                             }
                             if cur_input().name >= 19 {
                                 crate::output::print_char(b')' as i32);
@@ -15237,7 +15212,7 @@ pub unsafe extern "C" fn get_next() {
                         }
 
                         let end_char = eqtb_b32s1(INT_BASE_GN + INT_PAR_END_LINE_CHAR_GN);
-                        if end_char < 0 || end_char > 255 {
+                        if !(0..=255).contains(&end_char) {
                             set_cur_input_limit(cur_input().limit - 1);
                         } else {
                             set_buffer_entry(cur_input().limit, end_char);
@@ -15350,10 +15325,10 @@ pub unsafe extern "C" fn get_next() {
 pub unsafe extern "C" fn macro_call() {
     use crate::globals::{
         align_state, avail, cur_chr, cur_cs, cur_tok, eqtb_b16s1, input_ptr, long_state,
-        max_param_stack, mem_b32s0, mem_b32s1, par_token, param_ptr, param_size, param_stack,
-        scanner_status, set_align_state, set_avail, set_cur_input_loc, set_cur_input_name,
-        set_cur_tok, set_long_state, set_max_param_stack, set_mem_b32s0, set_mem_b32s1,
-        set_param_ptr, set_param_stack, set_scanner_status, set_warning_index, warning_index,
+        max_param_stack, mem_b32s0, mem_b32s1, par_token, param_ptr, param_size, scanner_status,
+        set_align_state, set_avail, set_cur_input_loc, set_cur_input_name, set_cur_tok,
+        set_long_state, set_max_param_stack, set_mem_b32s0, set_mem_b32s1, set_param_ptr,
+        set_param_stack, set_scanner_status, set_warning_index, warning_index,
     };
     use crate::mem::{flush_list, get_avail, TEX_NULL};
 
@@ -15514,39 +15489,36 @@ pub unsafe extern "C" fn macro_call() {
                         }
                     }
 
-                    if cur_tok() == par_token() {
-                        if long_state() != LONG_CALL {
-                            if long_state() == CALL {
-                                runaway();
-                                error_here_with_diagnostic(c"Paragraph ended before ".as_ptr());
-                                crate::output::sprint_cs(warning_index());
-                                crate::output::print_cstr(c" was complete".as_ptr());
-                                capture_to_diagnostic(std::ptr::null_mut());
-                                set_help_ptr(3);
-                                set_help_line(
-                                    2,
-                                    c"I suspect you've forgotten a `}', causing me to apply this"
-                                        .as_ptr(),
-                                );
-                                set_help_line(
-                                    1,
-                                    c"control sequence to too much text. How can we recover?"
-                                        .as_ptr(),
-                                );
-                                set_help_line(
-                                    0,
-                                    c"My plan is to forget the whole thing and hope for the best."
-                                        .as_ptr(),
-                                );
-                                crate::input::back_error();
-                            }
-                            pstack[n as usize] = mem_b32s1(TEMP_HEAD);
-                            set_align_state(align_state() - unbalance);
-                            for m2 in 0..=n {
-                                flush_list(pstack[m2 as usize]);
-                            }
-                            break 'mac; // goto exit
+                    if cur_tok() == par_token() && long_state() != LONG_CALL {
+                        if long_state() == CALL {
+                            runaway();
+                            error_here_with_diagnostic(c"Paragraph ended before ".as_ptr());
+                            crate::output::sprint_cs(warning_index());
+                            crate::output::print_cstr(c" was complete".as_ptr());
+                            capture_to_diagnostic(std::ptr::null_mut());
+                            set_help_ptr(3);
+                            set_help_line(
+                                2,
+                                c"I suspect you've forgotten a `}', causing me to apply this"
+                                    .as_ptr(),
+                            );
+                            set_help_line(
+                                1,
+                                c"control sequence to too much text. How can we recover?".as_ptr(),
+                            );
+                            set_help_line(
+                                0,
+                                c"My plan is to forget the whole thing and hope for the best."
+                                    .as_ptr(),
+                            );
+                            crate::input::back_error();
                         }
+                        pstack[n as usize] = mem_b32s1(TEMP_HEAD);
+                        set_align_state(align_state() - unbalance);
+                        for m2 in 0..=n {
+                            flush_list(pstack[m2 as usize]);
+                        }
+                        break 'mac; // goto exit
                     }
 
                     if cur_tok() < RIGHT_BRACE_LIMIT {
@@ -15568,29 +15540,27 @@ pub unsafe extern "C" fn macro_call() {
 
                                 get_token();
 
-                                if cur_tok() == par_token() {
-                                    if long_state() != LONG_CALL {
-                                        if long_state() == CALL {
-                                            runaway();
-                                            error_here_with_diagnostic(
-                                                c"Paragraph ended before ".as_ptr(),
-                                            );
-                                            crate::output::sprint_cs(warning_index());
-                                            crate::output::print_cstr(c" was complete".as_ptr());
-                                            capture_to_diagnostic(std::ptr::null_mut());
-                                            set_help_ptr(3);
-                                            set_help_line(2, c"I suspect you've forgotten a `}', causing me to apply this".as_ptr());
-                                            set_help_line(1, c"control sequence to too much text. How can we recover?".as_ptr());
-                                            set_help_line(0, c"My plan is to forget the whole thing and hope for the best.".as_ptr());
-                                            crate::input::back_error();
-                                        }
-                                        pstack[n as usize] = mem_b32s1(TEMP_HEAD);
-                                        set_align_state(align_state() - unbalance);
-                                        for m2 in 0..=n {
-                                            flush_list(pstack[m2 as usize]);
-                                        }
-                                        break 'mac; // goto exit
+                                if cur_tok() == par_token() && long_state() != LONG_CALL {
+                                    if long_state() == CALL {
+                                        runaway();
+                                        error_here_with_diagnostic(
+                                            c"Paragraph ended before ".as_ptr(),
+                                        );
+                                        crate::output::sprint_cs(warning_index());
+                                        crate::output::print_cstr(c" was complete".as_ptr());
+                                        capture_to_diagnostic(std::ptr::null_mut());
+                                        set_help_ptr(3);
+                                        set_help_line(2, c"I suspect you've forgotten a `}', causing me to apply this".as_ptr());
+                                        set_help_line(1, c"control sequence to too much text. How can we recover?".as_ptr());
+                                        set_help_line(0, c"My plan is to forget the whole thing and hope for the best.".as_ptr());
+                                        crate::input::back_error();
                                     }
+                                    pstack[n as usize] = mem_b32s1(TEMP_HEAD);
+                                    set_align_state(align_state() - unbalance);
+                                    for m2 in 0..=n {
+                                        flush_list(pstack[m2 as usize]);
+                                    }
+                                    break 'mac; // goto exit
                                 }
 
                                 if cur_tok() < RIGHT_BRACE_LIMIT {
@@ -15652,10 +15622,11 @@ pub unsafe extern "C" fn macro_call() {
                         }
                     } else {
                         // 411: non-brace token
-                        if cur_tok() == SPACE_TOKEN {
-                            if mem_b32s0(r) <= END_MATCH_TOKEN && mem_b32s0(r) >= MATCH_TOKEN {
-                                continue 'continue_; // goto continue_
-                            }
+                        if cur_tok() == SPACE_TOKEN
+                            && mem_b32s0(r) <= END_MATCH_TOKEN
+                            && mem_b32s0(r) >= MATCH_TOKEN
+                        {
+                            continue 'continue_; // goto continue_
                         }
                         let q = get_avail();
                         set_mem_b32s1(p, q);
@@ -16149,7 +16120,7 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
         crate::globals::set_font_size_entry(f, z);
 
         let mut k = crate::globals::fmem_ptr();
-        while k <= crate::globals::width_base_entry(f) - 1 {
+        while k < crate::globals::width_base_entry(f) {
             let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
                 Some(v) => v,
                 None => bad!(),
@@ -16204,7 +16175,7 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
         alpha *= z;
 
         k = crate::globals::width_base_entry(f);
-        while k <= crate::globals::lig_kern_base_entry(f) - 1 {
+        while k < crate::globals::lig_kern_base_entry(f) {
             let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
                 Some(v) => v,
                 None => bad!(),
@@ -16226,7 +16197,7 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
 
         if nl > 0 {
             k = crate::globals::lig_kern_base_entry(f);
-            while k <= crate::globals::kern_base_entry(f) + 256 * 128 - 1 {
+            while k < crate::globals::kern_base_entry(f) + 256 * 128 {
                 let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
                     Some(v) => v,
                     None => bad!(),
@@ -16279,7 +16250,7 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
         }
 
         k = crate::globals::kern_base_entry(f) + 256 * 128;
-        while k <= crate::globals::exten_base_entry(f) - 1 {
+        while k < crate::globals::exten_base_entry(f) {
             let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
                 Some(v) => v,
                 None => bad!(),
@@ -16289,7 +16260,7 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
         }
 
         k = crate::globals::exten_base_entry(f);
-        while k <= crate::globals::param_base(f) - 1 {
+        while k < crate::globals::param_base(f) {
             let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
                 Some(v) => v,
                 None => bad!(),
@@ -17059,25 +17030,22 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
     use crate::globals::{
         avail, bchar, bchar_label_entry, cancel_boundary, char_base_entry, cur_chr, cur_cmd,
         cur_input, cur_l, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode,
-        cur_list_tail, cur_ptr, cur_q, cur_r, cur_tok, eqtb_b32s1, false_bchar, font_area_entry,
-        font_bc_entry, font_bchar_entry, font_ec_entry, font_false_bchar_entry, font_glue,
-        font_info_b16, font_mapping_ptr, hi_mem_min, hyphen_char_entry, ins_disc,
-        insert_src_special_auto, is_hyph, kern_base_entry, lft_hit, lig_kern_base_entry, lig_stack,
-        ligature_present, main_f, main_h, main_p, main_pp, main_ppp, main_s, mapped_text_entry,
-        mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s1, mem_node_addr, native_len,
-        native_text, native_text_size, prev_class, rt_hit, save_native_len, set_avail, set_bchar,
-        set_cancel_boundary, set_cur_chr, set_cur_cmd, set_cur_input_index, set_cur_l,
-        set_cur_list_aux_b32s0, set_cur_list_tail, set_cur_ptr, set_cur_q, set_cur_r, set_cur_tok,
-        set_false_bchar, set_ins_disc, set_is_hyph, set_lft_hit, set_lig_stack,
-        set_ligature_present, set_main_f, set_main_h, set_main_p, set_main_pp, set_main_ppp,
-        set_main_s, set_mem_b16s0, set_mem_b16s1, set_mem_b32s1, set_native_len, set_native_text,
-        set_native_text_size, set_prev_class, set_rt_hit, set_save_native_len, set_space_class,
-        space_class,
+        cur_list_tail, cur_ptr, cur_q, cur_r, eqtb_b32s1, font_area_entry, font_bc_entry,
+        font_bchar_entry, font_ec_entry, font_false_bchar_entry, font_glue, font_info_b16,
+        font_mapping_ptr, hyphen_char_entry, ins_disc, insert_src_special_auto, is_hyph, lft_hit,
+        lig_kern_base_entry, lig_stack, ligature_present, main_f, main_h, main_p, main_pp,
+        main_ppp, mapped_text_entry, mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2,
+        mem_b32s1, mem_node_addr, native_len, native_text, native_text_size, prev_class, rt_hit,
+        save_native_len, set_avail, set_bchar, set_cancel_boundary, set_cur_chr, set_cur_cmd,
+        set_cur_input_index, set_cur_l, set_cur_list_aux_b32s0, set_cur_list_tail, set_cur_ptr,
+        set_cur_q, set_cur_r, set_cur_tok, set_false_bchar, set_ins_disc, set_is_hyph, set_lft_hit,
+        set_lig_stack, set_ligature_present, set_main_f, set_main_h, set_main_p, set_main_pp,
+        set_main_ppp, set_main_s, set_mem_b16s0, set_mem_b16s1, set_mem_b32s1, set_native_len,
+        set_native_text, set_native_text_size, set_prev_class, set_rt_hit, set_save_native_len,
+        set_space_class, space_class,
     };
     use crate::input::{back_input, begin_token_list};
-    use crate::mem::{
-        free_node, get_avail, new_disc, new_kern, new_lig_item, new_ligature, TEX_NULL,
-    };
+    use crate::mem::{free_node, get_avail, new_disc, new_kern, new_ligature, TEX_NULL};
     use crate::save::find_sa_element;
 
     extern "C" {
@@ -17132,17 +17100,14 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         use crate::globals::{
             cur_list_mode as _clm, cur_list_tail as _clt, cur_q as _cq, hyphen_char_entry as _hc,
             ins_disc as _id, lft_hit as _lh, lig_stack as _ls, ligature_present as _lp,
-            main_f as _mf, main_p as _mp, mem_b16s0 as _mb0, mem_b32s1 as _mb1, rt_hit as _rh,
+            main_f as _mf, mem_b16s0 as _mb0, mem_b32s1 as _mb1, rt_hit as _rh,
             set_cur_list_tail as _sclt, set_ins_disc as _sid, set_lft_hit as _slh,
-            set_lig_stack as _sls, set_ligature_present as _slp, set_main_p as _smp,
-            set_mem_b32s1 as _smb1, set_rt_hit as _srh,
+            set_ligature_present as _slp, set_mem_b32s1 as _smb1, set_rt_hit as _srh,
         };
-        use crate::mem::{free_node as _fn, new_disc as _nd, new_ligature as _nl};
+        use crate::mem::{new_disc as _nd, new_ligature as _nl};
         if cur_l() < TOO_BIG_CHAR {
-            if _mb1(_cq()) > TEX_NULL {
-                if _mb0(_clt()) == _hc(_mf()) as u16 {
-                    _sid(true);
-                }
+            if _mb1(_cq()) > TEX_NULL && _mb0(_clt()) == _hc(_mf()) as u16 {
+                _sid(true);
             }
             if _lp() {
                 let mp = _nl(_mf(), cur_l() as u16, _mb1(_cq()));
@@ -17170,10 +17135,8 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
 
     // === main_loop: entry point ===
     // SyncTeX: append special at start of new paragraph
-    if cur_list_head() == cur_list_tail() && cur_list_mode() > 0 {
-        if insert_src_special_auto() {
-            append_src_special();
-        }
+    if cur_list_head() == cur_list_tail() && cur_list_mode() > 0 && insert_src_special_auto() {
+        append_src_special();
     }
     set_prev_class(CHAR_CLASS_LIMIT - 1);
 
@@ -17184,10 +17147,8 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
     // AAT / OTGR native font path (collect_native loop)
     // =========================================================================
     if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-        if cur_list_mode() > 0 {
-            if eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE) != cur_list_aux_b32s1() {
-                fix_language();
-            }
+        if cur_list_mode() > 0 && eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE) != cur_list_aux_b32s1() {
+            fix_language();
         }
         set_main_h(0);
         set_main_f(mf);
@@ -17286,7 +17247,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
             }
 
             // Check if this char is a hyphen/dash
-            let is_h = ch == hyphen_char_entry(main_f()) as i32
+            let is_h = ch == hyphen_char_entry(main_f())
                 || (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) > 0
                     && (ch == 8212 || ch == 8211));
             set_is_hyph(is_h);
@@ -17372,7 +17333,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
             while tp < native_len() {
                 let mut mc = *native_text().add(tp as usize) as i32;
                 tp += 1;
-                if mc >= 0xD800 && mc < 0xDC00 {
+                if (0xD800..0xDC00).contains(&mc) {
                     mc = 65536 + (mc - 0xD800) * 1024;
                     mc += *native_text().add(tp as usize) as i32 - 0xDC00;
                     tp += 1;
@@ -17716,10 +17677,8 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
     set_bchar(font_bchar_entry(mf));
     set_false_bchar(font_false_bchar_entry(mf));
 
-    if cur_list_mode() > 0 {
-        if eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE) != cur_list_aux_b32s1() {
-            fix_language();
-        }
+    if cur_list_mode() > 0 && eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE) != cur_list_aux_b32s1() {
+        fix_language();
     }
 
     // Allocate lig_stack node from avail list
@@ -17808,10 +17767,10 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         if lig_result == 0 {
             // main_loop_wrapup: only when lig_result==0 (result 1=goto_move, 2=goto_move1 both skip wrapup)
             if cur_l() < TOO_BIG_CHAR {
-                if mem_b32s1(cur_q()) > TEX_NULL {
-                    if mem_b16s0(cur_list_tail()) == hyphen_char_entry(main_f()) as u16 {
-                        set_ins_disc(true);
-                    }
+                if mem_b32s1(cur_q()) > TEX_NULL
+                    && mem_b16s0(cur_list_tail()) == hyphen_char_entry(main_f()) as u16
+                {
+                    set_ins_disc(true);
                 }
                 if ligature_present() {
                     let mp = new_ligature(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
@@ -17860,7 +17819,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
             set_lig_stack(mem_b32s1(temp));
             free_node(temp, SMALL_NODE_SIZE);
             main_i = font_info_b16(
-                char_base_entry(main_f()) + effective_char(true, main_f(), cur_l() as u16) as i32,
+                char_base_entry(main_f()) + effective_char(true, main_f(), cur_l() as u16),
             );
             set_ligature_present(true);
 
@@ -17918,13 +17877,13 @@ unsafe fn lig_inner_loop(
     enter_lig1_k: &mut Option<i32>,
 ) -> u8 {
     use crate::globals::{
-        bchar, bchar_label_entry, char_base_entry, cur_l, cur_list_mode, cur_list_tail, cur_q,
-        cur_r, font_info_b16, hyphen_char_entry, ins_disc, kern_base_entry, lft_hit,
-        lft_hit as _lh, lig_stack, ligature_present, main_f, mem_b16s0, mem_b16s1, mem_b32s1,
-        rt_hit, set_bchar, set_cur_l, set_cur_list_tail, set_cur_q, set_cur_r, set_ins_disc,
-        set_lft_hit, set_lig_stack, set_ligature_present, set_mem_b16s0, set_mem_b32s1, set_rt_hit,
+        bchar_label_entry, char_base_entry, cur_l, cur_list_mode, cur_list_tail, cur_q, cur_r,
+        font_info_b16, hyphen_char_entry, ins_disc, kern_base_entry, lft_hit, lig_stack,
+        ligature_present, main_f, mem_b16s0, mem_b32s1, set_bchar, set_cur_l, set_cur_list_tail,
+        set_cur_q, set_cur_r, set_ins_disc, set_lft_hit, set_lig_stack, set_ligature_present,
+        set_mem_b16s0, set_mem_b32s1, set_rt_hit,
     };
-    use crate::mem::{free_node, new_disc, new_kern, new_lig_item, new_ligature};
+    use crate::mem::{new_disc, new_kern, new_lig_item, new_ligature};
 
     const TOO_BIG_CHAR: i32 = 65536;
     const TEX_NULL: i32 = crate::mem::TEX_NULL;
@@ -17947,10 +17906,10 @@ unsafe fn lig_inner_loop(
                 if mj.s1 >= 128 {
                     // Kern case: partial wrapup + append kern
                     if cur_l() < TOO_BIG_CHAR {
-                        if mem_b32s1(cur_q()) > TEX_NULL {
-                            if mem_b16s0(cur_list_tail()) == hyphen_char_entry(main_f()) as u16 {
-                                set_ins_disc(true);
-                            }
+                        if mem_b32s1(cur_q()) > TEX_NULL
+                            && mem_b16s0(cur_list_tail()) == hyphen_char_entry(main_f()) as u16
+                        {
+                            set_ins_disc(true);
                         }
                         if ligature_present() {
                             let mp = new_ligature(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
@@ -17992,7 +17951,7 @@ unsafe fn lig_inner_loop(
                         set_cur_l(mj.s0 as i32);
                         *main_i = font_info_b16(
                             char_base_entry(main_f())
-                                + effective_char(true, main_f(), cur_l() as u16) as i32,
+                                + effective_char(true, main_f(), cur_l() as u16),
                         );
                         set_ligature_present(true);
                     }
@@ -18018,11 +17977,10 @@ unsafe fn lig_inner_loop(
                     7 | 11 => {
                         // Partial wrapup
                         if cur_l() < TOO_BIG_CHAR {
-                            if mem_b32s1(cur_q()) > TEX_NULL {
-                                if mem_b16s0(cur_list_tail()) == hyphen_char_entry(main_f()) as u16
-                                {
-                                    set_ins_disc(true);
-                                }
+                            if mem_b32s1(cur_q()) > TEX_NULL
+                                && mem_b16s0(cur_list_tail()) == hyphen_char_entry(main_f()) as u16
+                            {
+                                set_ins_disc(true);
                             }
                             if ligature_present() {
                                 let mp = new_ligature(main_f(), cur_l() as u16, mem_b32s1(cur_q()));
@@ -18047,7 +18005,7 @@ unsafe fn lig_inner_loop(
                         set_cur_l(mj.s0 as i32);
                         *main_i = font_info_b16(
                             char_base_entry(main_f())
-                                + effective_char(true, main_f(), cur_l() as u16) as i32,
+                                + effective_char(true, main_f(), cur_l() as u16),
                         );
                         set_ligature_present(true);
                     }
@@ -18064,10 +18022,8 @@ unsafe fn lig_inner_loop(
                 }
 
                 // Post-switch tail for types 1,2,3,5,6,7,11:
-                if mj.s1 > 4 {
-                    if mj.s1 != 7 {
-                        return 0; // types 5,6,11 → wrapup
-                    }
+                if mj.s1 > 4 && mj.s1 != 7 {
+                    return 0; // types 5,6,11 → wrapup
                 }
                 // Types 1,2,3,7: re-enter lig loop
                 if cur_l() < TOO_BIG_CHAR {
@@ -18112,12 +18068,11 @@ unsafe fn do_lookahead(
     _mf: i32,
 ) -> bool {
     use crate::globals::{
-        avail, bchar, char_base_entry, cur_chr, cur_cmd, cur_input, cur_list_aux_b32s0, cur_ptr,
-        cur_r, cur_tok, eqtb_b32s1, false_bchar, font_info_b16, kern_base_entry,
-        lig_kern_base_entry, lig_stack, main_f, mem_b16s0, mem_b32s1, prev_class, set_avail,
-        set_bchar, set_cur_chr, set_cur_cmd, set_cur_input_index, set_cur_list_aux_b32s0,
-        set_cur_ptr, set_cur_r, set_cur_tok, set_lig_stack, set_mem_b16s0, set_mem_b16s1,
-        set_mem_b32s1, set_prev_class, set_space_class, space_class,
+        avail, bchar, cur_chr, cur_cmd, cur_input, cur_list_aux_b32s0, cur_ptr, eqtb_b32s1,
+        false_bchar, main_f, mem_b32s1, prev_class, set_avail, set_bchar, set_cur_chr, set_cur_cmd,
+        set_cur_input_index, set_cur_list_aux_b32s0, set_cur_ptr, set_cur_r, set_cur_tok,
+        set_lig_stack, set_mem_b16s0, set_mem_b16s1, set_mem_b32s1, set_prev_class,
+        set_space_class, space_class,
     };
     use crate::input::{back_input, begin_token_list};
     use crate::mem::get_avail;
@@ -18371,8 +18326,7 @@ pub unsafe extern "C" fn main_control() {
     const INT_PAR_TRACING_COMMANDS: i32 = 36; // xetex_format.h:71
 
     use crate::globals::{
-        cancel_boundary, cur_cmd, cur_list_mode, cur_val, eqtb_b32s1, set_cancel_boundary,
-        set_cur_chr,
+        cur_cmd, cur_list_mode, cur_val, eqtb_b32s1, set_cancel_boundary, set_cur_chr,
     };
     use crate::mem::TEX_NULL;
 

@@ -1376,15 +1376,12 @@ pub unsafe fn gr_print_font_name(what: i32, p_engine: *mut c_void, param1: i32, 
 pub unsafe fn gr_font_get_named(what: i32, p_engine: *mut c_void) -> i32 {
     let mut rval: c_long = -1;
     let engine = p_engine as XeTeXLayoutEngine;
-    match what {
-        XETEX_FIND_FEATURE_BY_NAME => {
-            rval = findGraphiteFeatureNamed(
-                engine,
-                crate::globals::name_of_file(),
-                crate::globals::name_length(),
-            );
-        }
-        _ => {}
+    if what == XETEX_FIND_FEATURE_BY_NAME {
+        rval = findGraphiteFeatureNamed(
+            engine,
+            crate::globals::name_of_file(),
+            crate::globals::name_length(),
+        );
     }
     rval as i32
 }
@@ -1393,16 +1390,13 @@ pub unsafe fn gr_font_get_named(what: i32, p_engine: *mut c_void) -> i32 {
 pub unsafe fn gr_font_get_named_1(what: i32, p_engine: *mut c_void, param: i32) -> i32 {
     let mut rval: c_long = -1;
     let engine = p_engine as XeTeXLayoutEngine;
-    match what {
-        XETEX_FIND_SELECTOR_BY_NAME => {
-            rval = findGraphiteFeatureSettingNamed(
-                engine,
-                param as u32,
-                crate::globals::name_of_file(),
-                crate::globals::name_length(),
-            );
-        }
-        _ => {}
+    if what == XETEX_FIND_SELECTOR_BY_NAME {
+        rval = findGraphiteFeatureSettingNamed(
+            engine,
+            param as u32,
+            crate::globals::name_of_file(),
+            crate::globals::name_length(),
+        );
     }
     rval as i32
 }
@@ -1853,7 +1847,7 @@ pub unsafe fn getnativecharwd(f: i32, c: i32) -> i32 {
 
 // translated from xetex-ext.c:1261 (map_char_to_glyph)
 pub unsafe fn map_char_to_glyph(font: i32, ch: i32) -> i32 {
-    if ch > 0x10ffff || (ch >= 0xd800 && ch <= 0xdfff) {
+    if ch > 0x10ffff || (0xd800..=0xdfff).contains(&ch) {
         return 0;
     }
     if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
