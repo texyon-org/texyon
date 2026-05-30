@@ -903,7 +903,6 @@ const EXPR_DIV: i16 = 4;
 const EXPR_SCALE: i16 = 5;
 const EXPR_NODE_SIZE: i32 = 4;
 const GLUE_VAL_EXPR: i16 = 2;
-const MU_VAL_EXPR: i16 = 3;
 const NORMAL_EXPR: u16 = 0;
 const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
@@ -2634,7 +2633,6 @@ pub unsafe extern "C" fn extra_right_brace() {
 // ---------------------------------------------------------------------------
 
 const FONT_BASE: i32 = 0;
-const FROZEN_NULL_FONT: i32 = 2_245_338;
 const SPACE_CODE: i32 = 2;
 const SPACE_SHRINK_CODE: i32 = 4;
 
@@ -5601,8 +5599,6 @@ pub unsafe extern "C" fn compare_strings() {
 // ---------------------------------------------------------------------------
 // new_write_whatsit
 // ---------------------------------------------------------------------------
-
-const OPEN_NODE_SIZE: i16 = 3; // xetex-constants.h:118
 
 // translated from xetex-xetex0.c:11045 (new_write_whatsit)
 #[no_mangle]
@@ -9255,7 +9251,6 @@ pub unsafe extern "C" fn init_align() {
     const MMODE: i16 = 207;
     const ALIGNING: u8 = 4;
     const NORMAL_SCANNER: u8 = 0;
-    const IGNORE_DEPTH: i32 = -65536000;
     const TAB_MARK: u8 = 4;
     const CAR_RET: u8 = 5;
     const MAC_PARAM: u8 = 6;
@@ -11023,7 +11018,6 @@ const SPECIAL_NODE_DE: i32 = 3;
 const LANGUAGE_NODE_DE_W: i16 = 4; // as i16 for new_whatsit
 const PDF_SAVE_POS_NODE_DE: i32 = 21;
 const PDF_SAVE_POS_NODE_DE_W: i16 = 21; // as i16 for new_whatsit
-const GLYPH_NODE_DE: i32 = 43; // used in not_native_font_error (GLYPH_CODE = 43 = GLYPH_CODE_DE)
 const GLYPH_NODE_TYPE_DE_W: i16 = 42; // node type 42 for new_whatsit
 const IMMEDIATE_CODE_DE: i32 = 4;
 const SET_LANGUAGE_CODE_DE: i32 = 5;
@@ -14384,11 +14378,6 @@ pub unsafe extern "C" fn expand() {
     const FI_OR_ELSE_CMD: u8 = 108;
     const MARKS_CODE: i32 = 5;
     const MARK_VAL_IDX: usize = 7;
-    const TOP_MARK_CODE: usize = 0;
-    const FIRST_MARK_CODE: usize = 1;
-    const BOT_MARK_CODE: usize = 2;
-    const SPLIT_FIRST_MARK_CODE: usize = 3;
-    const SPLIT_BOT_MARK_CODE: usize = 4;
     const MARK_TEXT_TL: u16 = 15;
     const FROZEN_DONT_EXPAND: i32 = 2_243_226 + 9;
     const FROZEN_CS_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_DONT_EXPAND;
@@ -14699,22 +14688,13 @@ pub unsafe extern "C" fn get_next() {
     const SKIP_BLANKS: u16 = 17;
     const NEW_LINE: u16 = 33;
     // Category codes (xetex_format.h)
-    const ESCAPE: u8 = 0;
     const LEFT_BRACE_CAT: u8 = 1;
     const RIGHT_BRACE_CAT: u8 = 2;
-    const MATH_SHIFT: u8 = 3;
     const TAB_MARK_CAT: u8 = 4;
     const CAR_RET: u8 = 5;
-    const MAC_PARAM: u8 = 6;
     const SUP_MARK: u8 = 7;
-    const SUB_MARK: u8 = 8;
-    const IGNORE: u8 = 9;
     const SPACER: u8 = 10;
     const LETTER: u8 = 11;
-    const OTHER_CHAR: u8 = 12;
-    const ACTIVE_CHAR: u8 = 13;
-    const COMMENT: u8 = 14;
-    const INVALID_CHAR: u8 = 15;
     // Other constants
     const CAT_CODE_BASE: i32 = 2_256_169; // xetex_format.h:214
     const NULL_CS_GN: i32 = 2_228_225; // xetex_format.h:199
@@ -17085,7 +17065,6 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
     const OTHER_CHAR: u8 = 12;
     const CHAR_GIVEN: u8 = 68;
     const CHAR_NUM: u8 = 16;
-    const NO_BOUNDARY: u8 = 65;
     const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
 
     #[inline(always)]
@@ -17887,8 +17866,6 @@ unsafe fn lig_inner_loop(
 
     const TOO_BIG_CHAR: i32 = 65536;
     const TEX_NULL: i32 = crate::mem::TEX_NULL;
-    const SMALL_NODE_SIZE: i32 = 2;
-    const LIG_TAG: u8 = 1;
 
     #[inline(always)]
     unsafe fn is_char_node(p: i32) -> bool {
@@ -18084,9 +18061,7 @@ unsafe fn do_lookahead(
     const INTER_CHAR_VAL_U: u16 = 6;
     const CHAR_CLASS_LIMIT: i32 = 4096;
     const MAX_CHAR_VAL: i32 = 0x200000;
-    const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
     const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73;
-    const INT_PAR_XETEX_DASH_BREAK: i32 = 70;
     const SF_CODE_BASE: i32 = 5_598_505;
     const LETTER: u8 = 11;
     const OTHER_CHAR: u8 = 12;
