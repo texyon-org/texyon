@@ -2419,11 +2419,8 @@ pub unsafe extern "C" fn store_fmt_file() {
 
 // translated from xetex-ini.c:590 (pack_buffered_name)
 unsafe fn pack_buffered_name(_n: i16, _a: i32, _b: i32) {
-    libc::free(crate::globals::name_of_file() as *mut libc::c_void);
-    let name = xmalloc((tre_format_default_length as usize) + 1) as *mut libc::c_char;
-    libc::strcpy(name, tre_TEX_format_default);
-    crate::globals::set_name_of_file(name);
-    crate::globals::set_name_length(libc::strlen(name) as i32);
+    crate::globals::set_name_of_file(tre_TEX_format_default as *mut libc::c_char);
+    crate::globals::set_name_length(libc::strlen(tre_TEX_format_default) as i32);
 }
 
 #[inline]
@@ -3634,8 +3631,6 @@ extern "C" {
     fn tt_cleanup_TECkit_DisposeConverter(cnv: *mut libc::c_void);
     #[link_name = "TEX_format_default"]
     static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
-    #[link_name = "native_text"]
-    static mut tt_cleanup_native_text: *mut libc::c_void;
     // `eqtb` cleanup is now the Rust `Vec` drop on `EngineState.eqtb.data`. (session 51)
     // `hash` cleanup is now the Rust `Vec` drop on `EngineState.eqtb.hash`. (session 52)
     #[link_name = "mem"]
@@ -3690,6 +3685,8 @@ pub unsafe fn tt_cleanup() {
         s.input.full_source_filename_stack = Vec::new();
         s.input.eof_seen = Vec::new();
         s.input.buffer = Vec::new();
+        s.input.name_of_file = Vec::new();
+        s.input.name_of_file16 = Vec::new();
     });
     crate::state::with_state_mut(|s| {
         s.hyph.hyph_word = Vec::new();
@@ -3697,8 +3694,13 @@ pub unsafe fn tt_cleanup() {
         s.hyph.hyph_link = Vec::new();
     });
 
-    // initialize_more_variables @ 3277
-    libc::free(tt_cleanup_native_text);
+    // Clear scanner native_text state
+    crate::state::with_state_mut(|s| {
+        s.scanner.native_text = Vec::new();
+        s.scanner.native_text_size = 0;
+        s.scanner.native_len = 0;
+        s.scanner.save_native_len = 0;
+    });
 
     // Free arrays allocated in load_fmt_file
     crate::state::with_state_mut(|state| {
@@ -3741,6 +3743,8 @@ pub unsafe fn tt_cleanup() {
         state.fonts.kern_base = Vec::new();
         state.fonts.exten_base = Vec::new();
         state.fonts.param_base = Vec::new();
+        state.fonts.xdv_buffer = Vec::new();
+        state.fonts.mapped_text = Vec::new();
     });
 
     // Release Rust-owned hyphenation trie arrays (were C `malloc`'d arrays).

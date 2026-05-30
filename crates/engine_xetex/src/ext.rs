@@ -253,8 +253,6 @@ extern "C" {
     fn getRgbValue(engine: XeTeXLayoutEngine) -> u32;
     fn getEmboldenFactor(engine: XeTeXLayoutEngine) -> f32;
     fn getPointSize(engine: XeTeXLayoutEngine) -> f32;
-    static mut xdv_buffer: *mut c_char;
-    static mut mapped_text: *mut u16;
     #[cfg(target_os = "macos")]
     fn CFRelease(cf: *const c_void);
 }
@@ -274,8 +272,7 @@ const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 
 static mut BRK_ITER: *mut c_void = ptr::null_mut();
 static mut BRK_LOCALE_STR_NUM: i32 = 0;
-static mut XDV_BUF_SIZE: c_int = 0;
-static mut APPLY_MAPPING_OUT_LENGTH: u32 = 0;
+
 
 #[repr(C)]
 struct FixedPoint {
@@ -1950,18 +1947,19 @@ pub unsafe fn makeXDVGlyphArrayData(p_node: *mut c_void) -> c_int {
     let node = p_node as *mut crate::mem_types::MemoryWord;
     let glyph_count = (*node.add(4)).b16.s0 as usize;
 
-    let needed = (glyph_count * NATIVE_GLYPH_INFO_SIZE + 8) as c_int;
-    if needed > XDV_BUF_SIZE {
-        libc::free(xdv_buffer as *mut c_void);
-        XDV_BUF_SIZE = ((needed / 1024) + 1) * 1024;
-        xdv_buffer = xmalloc(XDV_BUF_SIZE as libc::size_t) as *mut c_char;
-    }
+    let needed = glyph_count * NATIVE_GLYPH_INFO_SIZE + 8;
+    crate::state::with_state_mut(|state| {
+        if state.fonts.xdv_buffer.len() < needed {
+            state.fonts.xdv_buffer.resize(needed, 0);
+        }
+    });
 
     let glyph_info = (*node.add(5)).ptr as *const u8;
     let locations = glyph_info as *const FixedPoint;
     let glyph_ids = glyph_info.add(glyph_count * 8) as *const u16;
 
-    let mut cp = xdv_buffer as *mut u8;
+    let xdv_ptr = crate::state::with_state(|state| state.fonts.xdv_buffer.as_ptr() as *mut u8);
+    let mut cp = xdv_ptr;
     let width = (*node.add(1)).b32.s1 as u32;
 
     *cp = (width >> 24) as u8;
@@ -2007,7 +2005,7 @@ pub unsafe fn makeXDVGlyphArrayData(p_node: *mut c_void) -> c_int {
         cp = cp.add(1);
     }
 
-    cp.offset_from(xdv_buffer as *mut u8) as c_int
+    cp.offset_from(xdv_ptr) as c_int
 }
 
 // translated from xetex-ext.c:584 (make_font_def)
@@ -2063,13 +2061,15 @@ pub unsafe fn make_font_def(f: i32) -> c_int {
         flags |= XDV_FLAG_EMBOLDEN;
     }
 
-    if font_def_length as c_int > XDV_BUF_SIZE {
-        libc::free(xdv_buffer as *mut c_void);
-        XDV_BUF_SIZE = (((font_def_length / 1024) + 1) * 1024) as c_int;
-        xdv_buffer = xmalloc(XDV_BUF_SIZE as libc::size_t) as *mut c_char;
-    }
+    let needed = font_def_length as usize;
+    crate::state::with_state_mut(|state| {
+        if state.fonts.xdv_buffer.len() < needed {
+            state.fonts.xdv_buffer.resize(needed, 0);
+        }
+    });
 
-    let mut cp = xdv_buffer as *mut u8;
+    let xdv_ptr = crate::state::with_state(|state| state.fonts.xdv_buffer.as_ptr() as *mut u8);
+    let mut cp = xdv_ptr;
 
     std::ptr::write_unaligned(cp as *mut u32, (size as u32).to_be());
     cp = cp.add(4);
@@ -2112,28 +2112,32 @@ pub unsafe fn make_font_def(f: i32) -> c_int {
 }
 
 // translated from xetex-ext.c:738 (apply_mapping)
-// outLength was a C function-static; promoted to module-level APPLY_MAPPING_OUT_LENGTH
 pub unsafe fn apply_mapping(p_cnv: *mut c_void, txt_ptr: *mut u16, txt_len: c_int) -> c_int {
     const K_STATUS_NO_ERROR: i64 = 0;
     const K_STATUS_OUTPUT_BUFFER_FULL: i64 = 1;
     let txt_bytes = txt_len as u32 * 2; // sizeof(UniChar) == 2
 
-    if APPLY_MAPPING_OUT_LENGTH < txt_bytes + 32 {
-        libc::free(mapped_text as *mut c_void);
-        APPLY_MAPPING_OUT_LENGTH = txt_bytes + 32;
-        mapped_text = xmalloc(APPLY_MAPPING_OUT_LENGTH as libc::size_t) as *mut u16;
-    }
+    let mut needed = (txt_bytes + 32) as usize;
+    crate::state::with_state_mut(|state| {
+        let needed_u16 = needed / 2;
+        if state.fonts.mapped_text.len() < needed_u16 {
+            state.fonts.mapped_text.resize(needed_u16, 0);
+        }
+    });
 
     loop {
         let mut in_used: u32 = 0;
         let mut out_used: u32 = 0;
+        let (mapped_ptr, mapped_len_bytes) = crate::state::with_state(|state| {
+            (state.fonts.mapped_text.as_ptr() as *mut u8, (state.fonts.mapped_text.len() * 2) as u32)
+        });
         let status = TECkit_ConvertBuffer(
             p_cnv,
             txt_ptr as *const u8,
             txt_bytes,
             &mut in_used,
-            mapped_text as *mut u8,
-            APPLY_MAPPING_OUT_LENGTH,
+            mapped_ptr,
+            mapped_len_bytes,
             &mut out_used,
             1,
         );
@@ -2142,9 +2146,11 @@ pub unsafe fn apply_mapping(p_cnv: *mut c_void, txt_ptr: *mut u16, txt_len: c_in
         match status {
             K_STATUS_NO_ERROR => return (out_used / 2) as c_int,
             K_STATUS_OUTPUT_BUFFER_FULL => {
-                APPLY_MAPPING_OUT_LENGTH += txt_bytes + 32;
-                libc::free(mapped_text as *mut c_void);
-                mapped_text = xmalloc(APPLY_MAPPING_OUT_LENGTH as libc::size_t) as *mut u16;
+                needed += (txt_bytes + 32) as usize;
+                crate::state::with_state_mut(|state| {
+                    let needed_u16 = needed / 2;
+                    state.fonts.mapped_text.resize(needed_u16, 0);
+                });
             }
             _ => return 0,
         }

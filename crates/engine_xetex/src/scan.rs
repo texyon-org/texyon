@@ -8306,10 +8306,7 @@ pub unsafe fn pack_file_name(n: i32, a: i32, e: i32) {
 
     let nl = libc::strlen(work_buffer) as i32;
     crate::globals::set_name_length(nl);
-    libc::free(crate::globals::name_of_file() as *mut libc::c_void);
-    let new_buf = xmalloc((nl + 2) as libc::size_t) as *mut libc::c_char;
-    libc::strcpy(new_buf, work_buffer);
-    crate::globals::set_name_of_file(new_buf);
+    crate::globals::set_name_of_file(work_buffer);
     libc::free(work_buffer as *mut libc::c_void);
 }
 
@@ -16462,9 +16459,7 @@ const INT_PAR_XETEX_LINEBREAK_PENALTY: i32 = 67;
 const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
 
 extern "C" {
-
     static mut main_f: i32;
-    static mut native_text: *mut u16;
 }
 
 /// Insert locale-aware linebreaking nodes for `len` glyphs starting at `native_text[s]`.
@@ -16475,6 +16470,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
     use crate::globals::{
         cur_list_tail, mem_as_u16_ptr_mut, mem_b32s1, set_cur_list_tail, set_mem_b32s1,
     };
+    let native_text = crate::globals::native_text();
 
     let locale = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE);
     let use_glyph = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
@@ -16855,10 +16851,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
     use crate::mem::{free_node, get_avail, new_disc, new_kern, new_ligature, TEX_NULL};
     use crate::save::find_sa_element;
 
-    extern "C" {
-        fn xrealloc(p: *mut libc::c_void, n: usize) -> *mut libc::c_void;
 
-    }
 
     // Constants
     const INT_PAR_LANGUAGE: i32 = 50;
@@ -17022,12 +17015,11 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
             let ch = cur_chr();
             if ch > 65535 {
                 while native_text_size() <= native_len() + 2 {
-                    set_native_text_size(native_text_size() + 128);
-                    let np = xrealloc(
-                        native_text() as *mut libc::c_void,
-                        (native_text_size() * 2) as usize,
-                    );
-                    set_native_text(np as *mut u16);
+                    crate::state::with_state_mut(|s| {
+                        let size = s.scanner.native_text_size + 128;
+                        s.scanner.native_text_size = size;
+                        s.scanner.native_text.resize(size as usize, 0);
+                    });
                 }
                 *native_text().add(native_len() as usize) = ((ch - 65536) / 1024 + 0xD800) as u16;
                 set_native_len(native_len() + 1);
@@ -17035,12 +17027,11 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                 set_native_len(native_len() + 1);
             } else {
                 while native_text_size() <= native_len() + 1 {
-                    set_native_text_size(native_text_size() + 128);
-                    let np = xrealloc(
-                        native_text() as *mut libc::c_void,
-                        (native_text_size() * 2) as usize,
-                    );
-                    set_native_text(np as *mut u16);
+                    crate::state::with_state_mut(|s| {
+                        let size = s.scanner.native_text_size + 128;
+                        s.scanner.native_text_size = size;
+                        s.scanner.native_text.resize(size as usize, 0);
+                    });
                 }
                 *native_text().add(native_len() as usize) = ch as u16;
                 set_native_len(native_len() + 1);
@@ -17105,12 +17096,11 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
             let mk = apply_mapping(fm, native_text(), native_len());
             set_native_len(0);
             while native_text_size() <= native_len() + mk {
-                set_native_text_size(native_text_size() + 128);
-                let np = xrealloc(
-                    native_text() as *mut libc::c_void,
-                    (native_text_size() * 2) as usize,
-                );
-                set_native_text(np as *mut u16);
+                crate::state::with_state_mut(|s| {
+                    let size = s.scanner.native_text_size + 128;
+                    s.scanner.native_text_size = size;
+                    s.scanner.native_text.resize(size as usize, 0);
+                });
             }
             set_main_h(0);
             for mp in 0..mk {
@@ -17189,12 +17179,11 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                     let old_len = mem_b16s1(main_pp() + 4) as i32;
                     main_k = main_h() + old_len;
                     while native_text_size() <= native_len() + main_k {
-                        set_native_text_size(native_text_size() + 128);
-                        let np = xrealloc(
-                            native_text() as *mut libc::c_void,
-                            (native_text_size() * 2) as usize,
-                        );
-                        set_native_text(np as *mut u16);
+                        crate::state::with_state_mut(|s| {
+                            let size = s.scanner.native_text_size + 128;
+                            s.scanner.native_text_size = size;
+                            s.scanner.native_text.resize(size as usize, 0);
+                        });
                     }
                     set_save_native_len(native_len());
                     for i in 0..old_len {

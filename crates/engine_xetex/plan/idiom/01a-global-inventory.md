@@ -162,9 +162,9 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `pool_size` | `i32` | `strings` | `src/globals.rs:197` C extern | `pool_size` | def xetex/xetex-ini.c; link src/ini.rs:1786 |  |
 | `str_pool` | `*mut u16` | `strings` | `src/globals.rs:198` C extern | `str_pool_entry`, `str_pool_ptr`, `set_str_pool` | def xetex/xetex-ini.c; link src/ini.rs:1868,src/ini.rs:3604 |  |
 | `pool_ptr` | `i32` | `strings` | `src/globals.rs:199` C extern | `pool_ptr`, `set_pool_ptr` | def xetex/xetex-ini.c |  |
-| `name_of_file` | `*mut libc::c_char` | `input` | `src/globals.rs:203` C extern | `name_of_file`, `set_name_of_file` | def xetex/xetex-ini.c |  |
+| `name_of_file` | `Vec<libc::c_char>` | `input` | `EngineState.input.name_of_file` (Rust-owned) | `name_of_file`, `set_name_of_file` | MOVED session 56: C def and C allocations removed |  |
 | `name_length` | `i32` | `input` | `src/globals.rs:205` C extern | `set_name_length`, `name_length` | def xetex/xetex-ini.c |  |
-| `name_of_file16` | `*mut u16` | `input` | `src/globals.rs:207` C extern | `name_of_file16`, `set_name_of_file16`, `name_of_file16_entry` | def xetex/xetex-ini.c |  |
+| `name_of_file16` | `Vec<u16>` | `input` | `EngineState.input.name_of_file16` (Rust-owned) | `name_of_file16`, `set_name_of_file16`, `name_of_file16_entry` | MOVED session 56: C def and C allocations removed |  |
 | `name_length16` | `i32` | `input` | `src/globals.rs:209` C extern | `name_length16`, `set_name_length16` | def xetex/xetex-ini.c |  |
 | `old_setting` | `u8` | `shipout` | `src/globals.rs:212` C extern | `old_setting`, `set_old_setting` | def xetex/xetex-ini.c |  |
 | `epochseconds` | `i32` | `shipout` | `src/globals.rs:214` C extern | `epochseconds`, `set_epochseconds` | def xetex/xetex-ini.c |  |
@@ -174,7 +174,7 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `fmem_ptr` | `i32` | `fonts` | `EngineState.fonts.fmem_ptr` (Rust-owned) | `fmem_ptr`, `set_fmem_ptr` | MOVED session 39: C def removed |  |
 | `font_ptr` | `i32` | `fonts` | `EngineState.fonts.font_ptr` (Rust-owned) | `font_ptr`, `set_font_ptr` | MOVED session 39: C def removed |  |
 | `font_check` | `Vec<crate::mem_types::B16x4>` | `fonts` | `EngineState.fonts.font_check` (Rust-owned) | `set_font_check`, `font_check_entry` | MOVED session 32: C def + both aliases removed; format dump/undump through state |
-| `xdv_buffer` | `*mut libc::c_char` | `fonts` | `src/globals.rs:223` C extern | `xdv_buffer_entry` | def xetex/xetex-ini.c |  |
+| `xdv_buffer` | `Vec<u8>` | `fonts` | `EngineState.fonts.xdv_buffer` (Rust-owned) | `xdv_buffer_entry`, `xdv_buffer` | MOVED session 57: C def, static C XDV_BUF_SIZE, and C allocations removed |  |
 | `font_params` | `*mut i32` | `fonts` | `src/globals.rs:224` C extern | `font_params`, `set_font_params` | def xetex/xetex-ini.c; link src/ini.rs:1894,src/ini.rs:3622 |  |
 | `font_glue` | `*mut i32` | `fonts` | `src/globals.rs:225` C extern | `font_glue`, `set_font_glue` | def xetex/xetex-ini.c; link src/ini.rs:1904,src/ini.rs:3632 |  |
 | `param_base` | `*mut i32` | `fonts` | `EngineState.fonts.param_base` (Rust-owned) | `param_base`, `set_param_base` | MOVED session 39: C def + both aliases removed; format dump/undump through state |  |
@@ -293,7 +293,7 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `loaded_font_mapping` | `*mut libc::c_void` | `fonts` | `EngineState.fonts.loaded_font_mapping` (Rust-owned) | `loaded_font_mapping`, `set_loaded_font_mapping` | MOVED session 29: C def removed |
 | `loaded_font_flags` | `libc::c_char` | `fonts` | `EngineState.fonts.loaded_font_flags` (Rust-owned) | `loaded_font_flags`, `set_loaded_font_flags` | MOVED session 29: C def removed |
 | `loaded_font_letter_space` | `i32` | `fonts` | `EngineState.fonts.loaded_font_letter_space` (Rust-owned) | `loaded_font_letter_space`, `set_loaded_font_letter_space` | MOVED session 29: C def removed |
-| `mapped_text` | `*mut u16` | `fonts` | `src/globals.rs:457` C extern | `mapped_text_entry` | def xetex/xetex-ini.c |  |
+| `mapped_text` | `Vec<u16>` | `fonts` | `EngineState.fonts.mapped_text` (Rust-owned) | `mapped_text_entry`, `mapped_text` | MOVED session 57: C def, static C APPLY_MAPPING_OUT_LENGTH, and C allocations removed |  |
 | `hyphen_char` | `*mut i32` | `fonts` | `src/globals.rs:459` C extern | `hyphen_char_entry`, `set_hyphen_char_entry` | def xetex/xetex-ini.c; link src/ini.rs:1906,src/ini.rs:3634 |  |
 | `skew_char` | `*mut i32` | `fonts` | `src/globals.rs:460` C extern | `skew_char_entry`, `set_skew_char_entry` | def xetex/xetex-ini.c; link src/ini.rs:1908,src/ini.rs:3636 |  |
 | `xtx_ligature_present` | `bool` | `fonts` | `EngineState.fonts.xtx_ligature_present` (Rust-owned) | `xtx_ligature_present`, `set_xtx_ligature_present` | MOVED session 29: C def removed |
@@ -323,10 +323,10 @@ none. Resolve per field with `xetex-xetexd.h` at session 45.
 | `ligature_present` | `bool` | `scanner` | `src/globals.rs:494` C extern | `ligature_present`, `set_ligature_present` | def xetex/xetex-ini.c |  |
 | `lft_hit` | `bool` | `scanner` | `src/globals.rs:495` C extern | `lft_hit`, `set_lft_hit` | def xetex/xetex-ini.c |  |
 | `rt_hit` | `bool` | `scanner` | `src/globals.rs:496` C extern | `rt_hit`, `set_rt_hit` | def xetex/xetex-ini.c |  |
-| `native_text` | `*mut u16` | `scanner` | `src/globals.rs:498` C extern | `native_text`, `set_native_text` | def xetex/xetex-ini.c; link src/ini.rs:3594 |  |
-| `native_text_size` | `i32` | `scanner` | `src/globals.rs:499` C extern | `native_text_size`, `set_native_text_size` | def xetex/xetex-ini.c |  |
-| `native_len` | `i32` | `scanner` | `src/globals.rs:500` C extern | `native_len`, `set_native_len` | def xetex/xetex-ini.c |  |
-| `save_native_len` | `i32` | `scanner` | `src/globals.rs:501` C extern | `save_native_len`, `set_save_native_len` | def xetex/xetex-ini.c |  |
+| `native_text` | `Vec<u16>` | `scanner` | `EngineState.scanner.native_text` (Rust-owned) | `native_text`, `set_native_text` | MOVED session 57: C def, link alias, and C allocations removed |  |
+| `native_text_size` | `i32` | `scanner` | `EngineState.scanner.native_text_size` (Rust-owned) | `native_text_size`, `set_native_text_size` | MOVED session 57: C def removed |  |
+| `native_len` | `i32` | `scanner` | `EngineState.scanner.native_len` (Rust-owned) | `native_len`, `set_native_len` | MOVED session 57: C def removed |  |
+| `save_native_len` | `i32` | `scanner` | `EngineState.scanner.save_native_len` (Rust-owned) | `save_native_len`, `set_save_native_len` | MOVED session 57: C def removed |  |
 | `is_hyph` | `bool` | `hyph` | `src/globals.rs:503` C extern | `is_hyph`, `set_is_hyph` | def xetex/xetex-ini.c |  |
 | `bchar` | `i32` | `scanner` | `src/globals.rs:504` C extern | `bchar`, `set_bchar` | def xetex/xetex-ini.c |  |
 | `false_bchar` | `i32` | `scanner` | `src/globals.rs:505` C extern | `false_bchar`, `set_false_bchar` | def xetex/xetex-ini.c |  |

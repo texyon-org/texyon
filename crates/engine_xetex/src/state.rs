@@ -198,6 +198,10 @@ pub(crate) struct InputClusterState {
     /// because the array lives in the `'static` thread-local and is never moved. Plain opaque
     /// pointer, no newtype debt.
     pub read_file: [*mut crate::io::UFile; 16],
+    /// Rust-owned name buffer (NUL-terminated C string).
+    pub name_of_file: Vec<libc::c_char>,
+    /// Rust-owned UTF-16 name buffer.
+    pub name_of_file16: Vec<u16>,
 }
 
 pub(crate) struct EqtbState {
@@ -388,6 +392,11 @@ pub(crate) struct ScannerState {
     pub empty: crate::mem_types::B32x2,
     /// Register-size limit help message pointer (xetex-xetexd.h:708).
     pub max_reg_help_line: *const libc::c_char,
+    /// Rust-owned dynamic native text buffer.
+    pub native_text: Vec<u16>,
+    pub native_text_size: i32,
+    pub native_len: i32,
+    pub save_native_len: i32,
 }
 
 #[derive(Default)]
@@ -498,6 +507,10 @@ pub(crate) struct FontState {
     /// `fmem_ptr` is the next-free write pointer into this arena. Serialized
     /// in the format dump. Plain `MemoryWord *`, no newtype debt.
     pub font_info: Vec<crate::mem_types::MemoryWord>,
+    /// Rust-owned dynamic XDV buffer.
+    pub xdv_buffer: Vec<u8>,
+    /// Rust-owned dynamic mapped text buffer.
+    pub mapped_text: Vec<u16>,
 }
 
 impl Default for FontState {
@@ -548,6 +561,8 @@ impl Default for FontState {
             hyphen_char: Vec::new(),
             skew_char: Vec::new(),
             font_info: Vec::new(),
+            xdv_buffer: Vec::new(),
+            mapped_text: Vec::new(),
         }
     }
 }

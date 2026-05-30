@@ -7,6 +7,87 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 57 — 2026-05-30 — xdv_buffer, mapped_text, and native_text cluster → EngineState.fonts / ScannerState
+
+**Type:** execution (workstream 01, Phase-B; buffer globals migration). One commit.
+
+**Slice:** `xdv_buffer`, `mapped_text`, and the `native_text` cluster (`native_text`, `native_text_size`, `native_len`, `save_native_len`) → Rust-owned `Vec<u8>` (for `xdv_buffer`), `Vec<u16>` (for `mapped_text`), and `Vec<u16>` (for `native_text`) on `EngineState.fonts` (`FontState`) and `EngineState.scanner` (`ScannerState`) respectively.
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `char *xdv_buffer`, `UTF16_code *mapped_text`, `UTF16_code *native_text`, `int32_t native_text_size`, `int32_t native_len`, `int32_t save_native_len`.
+- (b) aliases: none.
+- (c) C readers: only `xetex-ini.c` (definition). No C code references them.
+- (d) cross-module Rust extern redeclarations: `native_text` was redeclared in `src/scan.rs` inside an `extern "C"` block.
+- format dump: none.
+
+**Work done (1 commit):**
+- Added `xdv_buffer: Vec<u8>` and `mapped_text: Vec<u16>` to `FontState` in `src/state.rs`.
+- Added `native_text: Vec<u16>`, `native_text_size: i32`, `native_len: i32`, and `save_native_len: i32` to `ScannerState` in `src/state.rs`.
+- Removed their raw static mut declarations from `src/globals.rs`.
+- Repointed accessors `xdv_buffer_entry`, `mapped_text_entry`, `native_text`, `set_native_text`, `native_text_size`, `set_native_text_size`, `native_len`, `set_native_len`, `save_native_len`, and `set_save_native_len` in `src/globals.rs` to delegate to their respective thread-local state.
+- Added type-safe `xdv_buffer()` and `mapped_text()` accessors that return pointer references to vector storage for FFI/ext compatibility.
+- Cleaned up the manual allocation and reallocation in `src/ext.rs` (`makeXDVGlyphArrayData`, `make_font_def`, and `apply_mapping`) to use native vector resizing and slice pointers rather than dynamic malloc/free.
+- Replaced all `xrealloc` loops on `native_text` in `src/scan.rs` with safe, native vector `resize` calls.
+- Resolved a linker error (`undefined symbol: native_text`) by removing `native_text` from the `extern "C"` block in `src/scan.rs` (`do_locale_linebreaks`) and instead using a safe local pointer retrieved via `crate::globals::native_text()`.
+- Updated `tt_cleanup()` in `src/ini.rs` to clear the buffers and reset tracking variables, completely removing the manual `libc::free(tt_cleanup_native_text)`.
+- Removed C definitions from `xetex/xetex-ini.c`.
+
+**Newtype debts (§4):**
+- None.
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4** passes perfectly with no regressions!
+
+**Metrics after this session:**
+- `globals.rs` raw extern count: **54 → 48** (−6).
+- `thin global accessors`: 823 total / 182 state-backed scalars/arrays (+6) + 74 Rust-owned arrays/arenas (+3 Rust-owned vectors: `xdv_buffer`, `mapped_text`, `native_text`).
+
+**For the next session (58+):**
+- Migrate the **`mem` arena** (§5) — the hottest/highest-leverage ownership move and the real pivot into Phase C.
+- Or transition to **Phase C** by threading state explicitly and removing the thread-local bridge for one of the decoupled subsystems (e.g., `config`, `errors`, or `shipout`).
+
+---
+
+## Idiom session 56 — 2026-05-30 — filename buffer globals name_of_file and name_of_file16 → EngineState.input
+
+**Type:** execution (workstream 01, Phase-B; filename buffer globals migration). One commit.
+
+**Slice:** the filename buffer globals (`name_of_file` and `name_of_file16`) → Rust-owned `Vec<libc::c_char>` and `Vec<u16>` on `EngineState.input` (`InputClusterState`).
+
+**Pre-move grep checks (§11 step 2):**
+- (a) C types: `char *name_of_file`, `UTF16_code *name_of_file16`. No newtype debt (plain character pointer arrays).
+- (b) aliases: none.
+- (c) C readers: only `xetex-ini.c` (definition). No C code references them.
+- (d) cross-module Rust extern redeclarations: none.
+- format dump: none.
+
+**Work done (1 commit):**
+- Added `name_of_file: Vec<libc::c_char>` and `name_of_file16: Vec<u16>` fields to `InputClusterState` in `src/state.rs`.
+- Removed their raw static mut declarations from `src/globals.rs`.
+- Repointed accessors `name_of_file`, `set_name_of_file`, `name_of_file16`, `set_name_of_file16`, and `name_of_file16_entry` in `src/globals.rs` to delegate to `state.input`. Accessors return pointer to `Vec` storage (`.as_ptr()` / `.as_mut_ptr()`), preserving the interface at FFI boundaries.
+- Cleaned up the manual allocation and reallocation in `src/scan.rs` (`pack_file_name`) and `src/io.rs` (`make_utf16_name`), completely eliminating `libc::free` and `xmalloc`/`xcalloc` on filename buffers in favor of safe, native vector manipulations.
+- Removed the module-local `static mut NAME16LEN` from `src/io.rs`.
+- Removed C definitions from `xetex/xetex-ini.c`.
+- Updated `tt_cleanup()` in `src/ini.rs` to clear the filename vectors on session teardown.
+
+**Newtype debts (§4):**
+- None. `name_of_file` and `name_of_file16` are plain character pointers, not semantic scalar typedefs.
+
+**Validation:** full dashboard
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust --test latex_goldens`
+→ **29/2/7/4** passes perfectly with no regressions!
+
+**Metrics after this session:**
+- `globals.rs` raw extern count: **56 → 54** (−2).
+- `thin global accessors`: 823 total / 182 state-backed scalars/arrays (+2 Rust-owned vectors).
+
+**For the next session (57+):**
+- Migrate the **`mem` arena** (§5) — the hottest/highest-leverage ownership move and the real pivot into Phase C.
+- Or migrate remaining ownership slices (`xdv_buffer`, `native_text`).
+
+---
+
 ## Idiom session 55 — 2026-05-30 — equivalents sparse-array metadata and sentinel globals → ScannerState
 
 **Type:** execution (workstream 01, Phase-B; equivalents sparse-array / sentinel globals migration). One commit.

@@ -19,8 +19,8 @@
 /* All the following variables are declared in xetex-xetexd.h */
 memory_word *eqtb;
 int32_t bad;
-char *name_of_file;
-UTF16_code *name_of_file16;
+/* name_of_file moved to EngineState.input.name_of_file */
+/* name_of_file16 moved to EngineState.input.name_of_file16 */
 /* name_length moved to EngineState.input.name_length */
 /* name_length16 moved to EngineState.input.name_length16 */
 int32_t first;
@@ -34,10 +34,7 @@ int32_t param_size;
 int32_t nest_size;
 int32_t save_size;
 int32_t expand_depth;
-UTF16_code *native_text;
-int32_t native_text_size;
-int32_t native_len;
-int32_t save_native_len;
+/* native_text cluster moved to EngineState.scanner */
 bool set_box_allowed;
 int32_t temp_ptr;
 memory_word *mem;
@@ -81,8 +78,8 @@ int32_t format_default_length;
 char *TEX_format_default;
 const char* output_file_extension;
 /* font_info moved to EngineState.fonts.font_info (Rust-owned Vec<MemoryWord>). */
-UTF16_code *mapped_text;
-char *xdv_buffer;
+/* mapped_text moved to EngineState.fonts.mapped_text */
+/* xdv_buffer moved to EngineState.fonts.xdv_buffer */
 /* total_pages, max_v, max_h, max_push, last_bop, doing_leaders, rule_ht,
  * rule_dp, rule_wd, cur_h, cur_v moved to EngineState.shipout (session 47). */
 /* cur_f, cur_c, cur_i, just_box, active_width moved to EngineState.scanner. */

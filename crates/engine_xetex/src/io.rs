@@ -180,9 +180,7 @@ pub static mut name_of_input_file: *mut libc::c_char = std::ptr::null_mut();
 #[no_mangle]
 pub static mut abspath_of_input_file: [libc::c_char; 1024] = [0; 1024];
 
-/// Static local from make_utf16_name: tracks the allocated size of
-/// `name_of_file16`.
-static mut NAME16LEN: i32 = 0;
+
 
 // ---------------------------------------------------------------------------
 // tt_xetex_open_input
@@ -590,13 +588,13 @@ pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
 /// translated from xetex-io.c:481 (make_utf16_name)
 #[no_mangle]
 pub unsafe extern "C" fn make_utf16_name() {
-    if NAME16LEN <= name_length() {
-        libc::free(name_of_file16() as *mut libc::c_void);
-        NAME16LEN = name_length() + 10;
-        set_name_of_file16(
-            xcalloc(NAME16LEN as libc::size_t, std::mem::size_of::<u16>()) as *mut u16,
-        );
-    }
+    crate::state::with_state_mut(|state| {
+        let name_len = state.input.name_length as usize;
+        let needed = name_len + 10;
+        if state.input.name_of_file16.len() < needed {
+            state.input.name_of_file16.resize(needed, 0);
+        }
+    });
     let mut t = name_of_file16();
     let end = (name_of_file() as *const u8).add(name_length() as usize);
     let mut s = name_of_file() as *const u8;

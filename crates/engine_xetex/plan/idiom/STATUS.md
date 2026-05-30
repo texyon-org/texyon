@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last execution = session 55, equivalents sparse-array metadata and sentinel globals → EngineState.scanner).
+Last updated: 2026-05-30 (last execution = session 57, xdv_buffer, mapped_text, and native_text cluster → EngineState.fonts / ScannerState).
 
 ## How to read this file
 
@@ -505,6 +505,8 @@ least-coupled non-`misc` clusters:
     `01a-global-inventory.md`.
 -   **Scanner box/packaging/scratch variables moved to ScannerState (session 54):** the remaining 18 scanner box/packaging/scratch globals moved into `EngineState.scanner` (`ScannerState`). Accessors delegate to the thread-local state.
 -   **Equivalents sparse-array/sentinel globals moved to ScannerState (session 55):** the equivalents sparse-array metadata and sentinel globals (`sa_root`, `sa_null`, `empty`, `max_reg_help_line`) migrated to `EngineState.scanner`. `fmt_sa_root` C-linkage alias removed from `src/ini.rs` and replaced with safe, native format load/dump state accessors.
+-   **`name_of_file` & `name_of_file16` buffer globals moved to `EngineState.input` (session 56):** the filename buffer globals `name_of_file` and `name_of_file16` moved into `EngineState.input` as Rust-owned `Vec<libc::c_char>` and `Vec<u16>`. Manual `libc::free` and `xmalloc`/`xcalloc` allocations in `src/scan.rs` and `src/io.rs` replaced with safe, native vector manipulations. The module-local `static mut NAME16LEN` in `src/io.rs` and C definitions in `xetex/xetex-ini.c` were completely removed. All accessors repointed.
+-   **`xdv_buffer`, `mapped_text`, and `native_text` cluster moved to state (session 57):** the buffers `xdv_buffer`, `mapped_text`, and the `native_text` cluster (`native_text`, `native_text_size`, `native_len`, `save_native_len`) migrated to `EngineState.fonts` and `EngineState.scanner` respectively. C definitions in `xetex/xetex-ini.c` and raw static mut declarations in `src/globals.rs` were removed. Manual allocations, reallocations, and `libc::free` calls were replaced with safe, native vector manipulations. Resolved a linker error in `scan.rs` (`do_locale_linebreaks`) and designed a safe `apply_mapping` slice-pointer FFI bridge.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -513,9 +515,9 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 56 (session 55 moved 4 equivalents sparse-array/sentinel globals) |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 48 (session 57 moved xdv_buffer, mapped_text, and native_text cluster) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
-| thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 182 state-backed scalars/arrays (incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and 33 `LinebreakState` inline scalars/arrays) + 69 Rust-owned arrays/arenas (save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 182 state-backed scalars/arrays (incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and 33 `LinebreakState` inline scalars/arrays) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
 | `#[no_mangle]` exports | 576 | boundary-only | 579 |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 694 |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 236 / 688 not remeasured |

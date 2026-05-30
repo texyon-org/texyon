@@ -86,16 +86,14 @@ mod raw {
         // Top of the eqtb array: `eqtb_top` moved to EngineState.eqtb.eqtb_top (session 52).
 
         // Name-of-file globals (xetex-xetexd.h:388–391).
-        // name_of_file: current input filename (NUL-terminated C string).
-        pub(super) static mut name_of_file: *mut libc::c_char;
+        // name_of_file moved to EngineState.input.name_of_file.
         // name_length moved to EngineState.input.name_length (i32).
-        // name_of_file16: UTF-16 encoding of name_of_file (xetex-xetexd.h:389).
-        pub(super) static mut name_of_file16: *mut u16;
+        // name_of_file16 moved to EngineState.input.name_of_file16.
         // name_length16 moved to EngineState.input.name_length16 (i32).
 
         // Font memory tables (xetex-xetexd.h:555–590).
         // font_info moved to EngineState.fonts.font_info (Vec<MemoryWord>).
-        pub(super) static mut xdv_buffer: *mut libc::c_char;
+        // xdv_buffer moved to EngineState.fonts.xdv_buffer.
         // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
         pub(super) static mut cur_cs: i32;
         // Current token (xetex-xetexd.h:502; token encoded as int32).
@@ -170,8 +168,7 @@ mod raw {
 
         // disc_ptr[4] moved to EngineState.scanner (inline fixed array).
 
-        // mapped_text[i]: output of apply_mapping() (xetex-xetexd.h:580).
-        pub(super) static mut mapped_text: *mut u16;
+        // mapped_text moved to EngineState.fonts.mapped_text.
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
         pub(super) static mut main_p: i32;
         pub(super) static mut main_k: i32;
@@ -191,11 +188,7 @@ mod raw {
         pub(super) static mut ligature_present: bool;
         pub(super) static mut lft_hit: bool;
         pub(super) static mut rt_hit: bool;
-        // Native text buffer (xetex-xetexd.h:440–443).
-        pub(super) static mut native_text: *mut u16;
-        pub(super) static mut native_text_size: i32;
-        pub(super) static mut native_len: i32;
-        pub(super) static mut save_native_len: i32;
+        // native_text cluster moved to EngineState.scanner.
         // Further main_loop state (xetex-xetexd.h:679–686).
         pub(super) static mut bchar: i32;
         pub(super) static mut false_bchar: i32;
@@ -699,14 +692,28 @@ pub(crate) fn set_eqtb_b16s0(p: i32, v: u16) {
 /// Returns `name_of_file` as a raw pointer (NUL-terminated C string).
 #[inline]
 pub(crate) fn name_of_file() -> *mut libc::c_char {
-    unsafe { raw::name_of_file }
+    crate::state::with_state(|s| {
+        if s.input.name_of_file.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            s.input.name_of_file.as_ptr() as *mut libc::c_char
+        }
+    })
 }
 /// Write `name_of_file = v`.
 #[inline]
 pub(crate) fn set_name_of_file(v: *mut libc::c_char) {
-    unsafe {
-        raw::name_of_file = v;
-    }
+    crate::state::with_state_mut(|s| {
+        if v.is_null() {
+            s.input.name_of_file.clear();
+        } else {
+            unsafe {
+                let len = libc::strlen(v);
+                s.input.name_of_file.resize(len + 1, 0);
+                libc::strcpy(s.input.name_of_file.as_mut_ptr(), v);
+            }
+        }
+    });
 }
 /// Write `name_length = v`.
 #[inline]
@@ -718,14 +725,28 @@ pub(crate) fn set_name_length(v: i32) {
 /// Returns `name_of_file16` (UTF-16 name buffer).
 #[inline]
 pub(crate) fn name_of_file16() -> *mut u16 {
-    unsafe { raw::name_of_file16 }
+    crate::state::with_state(|s| {
+        if s.input.name_of_file16.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            s.input.name_of_file16.as_ptr() as *mut u16
+        }
+    })
 }
 /// Write `name_of_file16 = v`.
 #[inline]
 pub(crate) fn set_name_of_file16(v: *mut u16) {
-    unsafe {
-        raw::name_of_file16 = v;
-    }
+    crate::state::with_state_mut(|s| {
+        if v.is_null() {
+            s.input.name_of_file16.clear();
+        } else {
+            let len = s.input.name_length16 as usize;
+            s.input.name_of_file16.resize(len + 1, 0);
+            unsafe {
+                std::ptr::copy_nonoverlapping(v, s.input.name_of_file16.as_mut_ptr(), len + 1);
+            }
+        }
+    });
 }
 /// Returns `name_length16`.
 #[inline]
@@ -1776,7 +1797,7 @@ pub(crate) fn read_file_ptr(n: usize) -> *mut *mut crate::io::UFile {
 /// Returns `name_of_file16[k]`.
 #[inline]
 pub(crate) fn name_of_file16_entry(k: i32) -> u16 {
-    unsafe { *raw::name_of_file16.add(k as usize) }
+    crate::state::with_state(|s| s.input.name_of_file16[k as usize])
 }
 
 // ---------------------------------------------------------------------------
@@ -2117,7 +2138,18 @@ pub(crate) fn set_font_letter_space_entry(f: i32, v: i32) {
 /// Returns `mapped_text[i]`, the UTF-16 output buffer from `apply_mapping`.
 #[inline]
 pub(crate) fn mapped_text_entry(i: i32) -> u16 {
-    unsafe { *raw::mapped_text.offset(i as isize) }
+    crate::state::with_state(|state| state.fonts.mapped_text[i as usize])
+}
+/// Returns pointer to `mapped_text` storage.
+#[inline]
+pub(crate) fn mapped_text() -> *mut u16 {
+    crate::state::with_state(|s| {
+        if s.fonts.mapped_text.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            s.fonts.mapped_text.as_ptr() as *mut u16
+        }
+    })
 }
 /// Returns `xtx_ligature_present`.
 #[inline]
@@ -3494,43 +3526,57 @@ pub(crate) fn set_rt_hit(v: bool) {
 }
 #[inline]
 pub(crate) fn native_text() -> *mut u16 {
-    unsafe { raw::native_text }
+    crate::state::with_state(|s| {
+        if s.scanner.native_text.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            s.scanner.native_text.as_ptr() as *mut u16
+        }
+    })
 }
 #[inline]
 pub(crate) fn set_native_text(v: *mut u16) {
-    unsafe {
-        raw::native_text = v;
-    }
+    crate::state::with_state_mut(|s| {
+        if v.is_null() {
+            s.scanner.native_text.clear();
+        } else {
+            let len = s.scanner.native_text_size as usize;
+            s.scanner.native_text.resize(len, 0);
+            unsafe {
+                std::ptr::copy_nonoverlapping(v, s.scanner.native_text.as_mut_ptr(), len);
+            }
+        }
+    });
 }
 #[inline]
 pub(crate) fn native_text_size() -> i32 {
-    unsafe { raw::native_text_size }
+    crate::state::with_state(|s| s.scanner.native_text_size)
 }
 #[inline]
 pub(crate) fn set_native_text_size(v: i32) {
-    unsafe {
-        raw::native_text_size = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.native_text_size = v;
+    });
 }
 #[inline]
 pub(crate) fn native_len() -> i32 {
-    unsafe { raw::native_len }
+    crate::state::with_state(|s| s.scanner.native_len)
 }
 #[inline]
 pub(crate) fn set_native_len(v: i32) {
-    unsafe {
-        raw::native_len = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.native_len = v;
+    });
 }
 #[inline]
 pub(crate) fn save_native_len() -> i32 {
-    unsafe { raw::save_native_len }
+    crate::state::with_state(|s| s.scanner.save_native_len)
 }
 #[inline]
 pub(crate) fn set_save_native_len(v: i32) {
-    unsafe {
-        raw::save_native_len = v;
-    }
+    crate::state::with_state_mut(|s| {
+        s.scanner.save_native_len = v;
+    });
 }
 #[inline]
 pub(crate) fn is_hyph() -> bool {
@@ -4937,7 +4983,18 @@ pub(crate) fn font_check_entry(f: i32) -> crate::mem_types::B16x4 {
 }
 #[inline]
 pub(crate) fn xdv_buffer_entry(i: i32) -> u8 {
-    unsafe { *raw::xdv_buffer.offset(i as isize) as u8 }
+    crate::state::with_state(|state| state.fonts.xdv_buffer[i as usize])
+}
+/// Returns pointer to `xdv_buffer` storage.
+#[inline]
+pub(crate) fn xdv_buffer() -> *mut libc::c_char {
+    crate::state::with_state(|s| {
+        if s.fonts.xdv_buffer.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            s.fonts.xdv_buffer.as_ptr() as *mut libc::c_char
+        }
+    })
 }
 #[inline]
 pub(crate) fn font_letter_space_entry(f: i32) -> i32 {
