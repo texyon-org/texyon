@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-30 (last session = session 68, **Phase-C `shipout.rs` DVI movement-node slice**: threaded `new_edge`, `prune_movements`, and `dvi_pop` to direct `&mut MemState` / `&mut ShipoutState` helpers, bridged legacy callers through `_global` wrappers, and kept the dashboard at 29/2/7/4. `#[no_mangle]` 396→394; `unsafe fn` 689→688; raw externs unchanged at 40).
+Last updated: 2026-05-31 (last session = session 69, **Phase-C `shipout.rs` DVI movement slice**: threaded `movement` to direct `&mut MemState` / `&mut ShipoutState`, returned DVI bytes for borrow-dropping output in `movement_global`, and kept the dashboard at 29/2/7/4. `#[no_mangle]` 394→392; `unsafe fn` unchanged at 688; raw externs unchanged at 40).
 
 ## How to read this file
 
@@ -620,6 +620,14 @@ least-coupled non-`misc` clusters:
     after the borrow drops. No cleanup aliases. C references are stale
     prototypes/comments only; no C/C++ callers. No newtype debt. Dashboard
     29/2/7/4.
+-   **Second `shipout.rs` call-graph slice (session 69):** threaded
+    `movement` to direct `MemState` / `ShipoutState` borrows. The direct helper
+    now allocates and links the movement node with threaded `get_node`, patches
+    `dvi_buf` directly, and returns the DVI bytes that `movement_global` emits
+    after the borrow drops. Removed dead `down_ptr` / `right_ptr` bridge
+    accessors; init writes those state fields directly. C references are stale
+    prototype/comment only; no C/C++ callers. No newtype debt. Dashboard
+    29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -631,7 +639,7 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 182 state-backed scalars/arrays (incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and 33 `LinebreakState` inline scalars/arrays) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 394 (direct `grep '#[no_mangle]' src/*.rs`; session 68 dropped `prune_movements`/`dvi_pop`) |
+| `#[no_mangle]` exports | 576 | boundary-only | 392 (direct `grep '#[no_mangle]' src/*.rs`; session 69 dropped `movement`) |
 | `unsafe fn` (crate-wide) | 694 | boundary-only | 688 |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 160 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
@@ -760,7 +768,7 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run, and session 68 started `shipout.rs` with DVI movement-node helpers (`new_edge`, `prune_movements`, `dvi_pop`). Next: continue `shipout.rs` with the next clean cluster. `movement` is the obvious follow-up but must avoid calling `dvi_out` / `dvi_four` while a state borrow is live, likely by returning DVI emission commands to a wrapper. Then continue to `math.rs`/`linebreak.rs`, with `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
+1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run, and sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`. Next: continue `shipout.rs` with the next clean DVI/output-position cluster, likely `dvi_out` / `dvi_four` / `dvi_two` or another helper that can be split into direct state mutation plus borrow-dropping output wrappers. Then continue to `math.rs`/`linebreak.rs`, with `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

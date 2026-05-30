@@ -96,20 +96,6 @@ fn set_dvi_gone(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.dvi_gone = v);
 }
 
-fn down_ptr() -> i32 {
-    crate::state::with_state(|s| s.shipout.down_ptr)
-}
-fn set_down_ptr(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.down_ptr = v);
-}
-
-fn right_ptr() -> i32 {
-    crate::state::with_state(|s| s.shipout.right_ptr)
-}
-fn set_right_ptr(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.right_ptr = v);
-}
-
 fn cur_s() -> i32 {
     crate::state::with_state(|s| s.shipout.cur_s)
 }
@@ -367,8 +353,10 @@ pub unsafe extern "C" fn initialize_shipout_variables() {
     set_dvi_ptr(0);
     set_dvi_offset(0);
     set_dvi_gone(0);
-    set_down_ptr(TEX_NULL);
-    set_right_ptr(TEX_NULL);
+    crate::state::with_state_mut(|s| {
+        s.shipout.down_ptr = TEX_NULL;
+        s.shipout.right_ptr = TEX_NULL;
+    });
     set_cur_s(-1);
 }
 
@@ -877,13 +865,13 @@ unsafe fn finish_hlist_rule(this_box: i32, base_line: i32, p: i32) {
 
     if rule_ht() > 0 && rule_wd() > 0 {
         if cur_h() != dvi_h() {
-            movement(cur_h() - dvi_h(), RIGHT1);
+            movement_global(cur_h() - dvi_h(), RIGHT1);
             set_dvi_h(cur_h());
         }
 
         set_cur_v(base_line + rule_dp());
         if cur_v() != dvi_v() {
-            movement(cur_v() - dvi_v(), DOWN1);
+            movement_global(cur_v() - dvi_v(), DOWN1);
             set_dvi_v(cur_v());
         }
 
@@ -990,13 +978,13 @@ unsafe fn output_hlist_glue(
             while cur_h() + leader_wd <= edge {
                 set_cur_v(base_line + mem_b32s1(leader_box + 4));
                 if cur_v() != dvi_v() {
-                    movement(cur_v() - dvi_v(), DOWN1);
+                    movement_global(cur_v() - dvi_v(), DOWN1);
                     set_dvi_v(cur_v());
                 }
                 let save_v = dvi_v();
 
                 if cur_h() != dvi_h() {
-                    movement(cur_h() - dvi_h(), RIGHT1);
+                    movement_global(cur_h() - dvi_h(), RIGHT1);
                     set_dvi_h(cur_h());
                 }
                 let save_h = dvi_h();
@@ -1094,11 +1082,11 @@ pub unsafe extern "C" fn hlist_out() {
         'reswitch: loop {
             if is_char_node(p) {
                 if cur_h() != dvi_h() {
-                    movement(cur_h() - dvi_h(), RIGHT1);
+                    movement_global(cur_h() - dvi_h(), RIGHT1);
                     set_dvi_h(cur_h());
                 }
                 if cur_v() != dvi_v() {
-                    movement(cur_v() - dvi_v(), DOWN1);
+                    movement_global(cur_v() - dvi_v(), DOWN1);
                     set_dvi_v(cur_v());
                 }
 
@@ -1166,11 +1154,11 @@ pub unsafe extern "C" fn hlist_out() {
                     WHATSIT_NODE => match mem_b16s0(p) {
                         NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
                             if cur_h() != dvi_h() {
-                                movement(cur_h() - dvi_h(), RIGHT1);
+                                movement_global(cur_h() - dvi_h(), RIGHT1);
                                 set_dvi_h(cur_h());
                             }
                             if cur_v() != dvi_v() {
-                                movement(cur_v() - dvi_v(), DOWN1);
+                                movement_global(cur_v() - dvi_v(), DOWN1);
                                 set_dvi_v(cur_v());
                             }
                             let f = mem_b16s2(p + 4) as i32;
@@ -1404,7 +1392,7 @@ pub unsafe extern "C" fn vlist_out() {
                     }
 
                     if cur_v() != dvi_v() {
-                        movement(cur_v() - dvi_v(), DOWN1);
+                        movement_global(cur_v() - dvi_v(), DOWN1);
                         set_dvi_v(cur_v());
                     }
 
@@ -1448,12 +1436,12 @@ pub unsafe extern "C" fn vlist_out() {
                     set_cur_h(left_edge);
 
                     if cur_h() != dvi_h() {
-                        movement(cur_h() - dvi_h(), RIGHT1);
+                        movement_global(cur_h() - dvi_h(), RIGHT1);
                         set_dvi_h(cur_h());
                     }
 
                     if cur_v() != dvi_v() {
-                        movement(cur_v() - dvi_v(), DOWN1);
+                        movement_global(cur_v() - dvi_v(), DOWN1);
                         set_dvi_v(cur_v());
                     }
 
@@ -1551,7 +1539,7 @@ pub unsafe extern "C" fn vlist_out() {
                                 }
 
                                 if cur_h() != dvi_h() {
-                                    movement(cur_h() - dvi_h(), RIGHT1);
+                                    movement_global(cur_h() - dvi_h(), RIGHT1);
                                     set_dvi_h(cur_h());
                                 }
 
@@ -1559,7 +1547,7 @@ pub unsafe extern "C" fn vlist_out() {
                                 set_cur_v(cur_v() + mem_b32s1(leader_box + 3));
 
                                 if cur_v() != dvi_v() {
-                                    movement(cur_v() - dvi_v(), DOWN1);
+                                    movement_global(cur_v() - dvi_v(), DOWN1);
                                     set_dvi_v(cur_v());
                                 }
 
@@ -1634,12 +1622,12 @@ unsafe fn finish_vlist_rule(this_box: i32, left_edge: i32, upwards: bool) {
         }
 
         if cur_h() != dvi_h() {
-            movement(cur_h() - dvi_h(), RIGHT1);
+            movement_global(cur_h() - dvi_h(), RIGHT1);
             set_dvi_h(cur_h());
         }
 
         if cur_v() != dvi_v() {
-            movement(cur_v() - dvi_v(), DOWN1);
+            movement_global(cur_v() - dvi_v(), DOWN1);
             set_dvi_v(cur_v());
         }
 
@@ -2018,58 +2006,97 @@ pub unsafe extern "C" fn reverse(
     }
 }
 
+fn movement_bytes(mut w: i32, o: u8) -> Vec<u8> {
+    let mut out = Vec::with_capacity(5);
+    if w.abs() >= 0x800000 {
+        out.push(o.wrapping_add(3));
+        if w >= 0 {
+            out.push((w / 0x1000000) as u8);
+        } else {
+            w += 0x40000000;
+            w += 0x40000000;
+            out.push(((w / 0x1000000) + 128) as u8);
+        }
+        w %= 0x1000000;
+        out.push((w / 0x10000) as u8);
+        w %= 0x10000;
+        out.push((w / 0x100) as u8);
+        out.push((w % 0x100) as u8);
+    } else if w.abs() >= 0x8000 {
+        out.push(o.wrapping_add(2));
+        if w < 0 {
+            w += 0x1000000;
+        }
+        out.push((w / 0x10000) as u8);
+        w %= 0x10000;
+        out.push((w / 256) as u8);
+        out.push((w % 256) as u8);
+    } else if w.abs() >= 128 {
+        out.push(o.wrapping_add(1));
+        if w < 0 {
+            w += 0x10000;
+        }
+        out.push((w / 256) as u8);
+        out.push((w % 256) as u8);
+    } else {
+        out.push(o);
+        if w < 0 {
+            w += 256;
+        }
+        out.push((w % 256) as u8);
+    }
+    out
+}
+
 // translated from xetex-shipout.c:1763 (movement)
-// Called from hlist_out and vlist_out (still in C) → #[no_mangle].
-#[no_mangle]
-pub unsafe extern "C" fn movement(mut w: i32, o: u8) {
-    let mut q = crate::mem::get_node_global(MOVEMENT_NODE_SIZE);
-    set_mem_b32s1(q + 1, w);
-    set_mem_b32s1(q + 2, dvi_offset() + dvi_ptr());
+pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -> Vec<u8> {
+    let mut q = crate::mem::get_node(mem, MOVEMENT_NODE_SIZE);
+    if q == crate::mem::ALLOC_FAILED {
+        return Vec::new();
+    }
+    mem.set_b32s1(q + 1, w);
+    mem.set_b32s1(q + 2, shipout.dvi_offset + shipout.dvi_ptr);
 
     if o == DOWN1 {
-        set_mem_b32s1(q, down_ptr());
-        set_down_ptr(q);
+        mem.set_b32s1(q, shipout.down_ptr);
+        shipout.down_ptr = q;
     } else {
-        set_mem_b32s1(q, right_ptr());
-        set_right_ptr(q);
+        mem.set_b32s1(q, shipout.right_ptr);
+        shipout.right_ptr = q;
     }
 
-    let mut p = mem_b32s1(q);
+    let mut p = mem.b32s1(q);
     let mut mstate: i32 = MOV_NONE_SEEN;
 
     // 'search either breaks with Some(found_node) or falls through with None.
     let found_p: Option<i32> = 'search: {
         while p != TEX_NULL {
-            if mem_b32s1(p + 1) == w {
-                match mstate + mem_b32s0(p) {
+            if mem.b32s1(p + 1) == w {
+                match mstate + mem.b32s0(p) {
                     // NONE_SEEN+YZ_OK=3, NONE_SEEN+Y_OK=4, Z_SEEN+YZ_OK=15, Z_SEEN+Y_OK=16
                     3 | 4 | 15 | 16 => {
-                        if mem_b32s1(p + 2) < dvi_gone() {
+                        if mem.b32s1(p + 2) < shipout.dvi_gone {
                             break 'search None;
                         }
-                        let mut k = mem_b32s1(p + 2) - dvi_offset();
+                        let mut k = mem.b32s1(p + 2) - shipout.dvi_offset;
                         if k < 0 {
                             k += DVI_BUF_SIZE;
                         }
-                        crate::state::with_state_mut(|s| {
-                            s.shipout.dvi_buf[k as usize] += 5;
-                        });
-                        set_mem_b32s0(p, MOV_Y_HERE);
+                        shipout.dvi_buf[k as usize] += 5;
+                        mem.set_b32s0(p, MOV_Y_HERE);
                         break 'search Some(p);
                     }
                     // NONE_SEEN+Z_OK=5, Y_SEEN+YZ_OK=9, Y_SEEN+Z_OK=11
                     5 | 9 | 11 => {
-                        if mem_b32s1(p + 2) < dvi_gone() {
+                        if mem.b32s1(p + 2) < shipout.dvi_gone {
                             break 'search None;
                         }
-                        let mut k = mem_b32s1(p + 2) - dvi_offset();
+                        let mut k = mem.b32s1(p + 2) - shipout.dvi_offset;
                         if k < 0 {
                             k += DVI_BUF_SIZE;
                         }
-                        crate::state::with_state_mut(|s| {
-                            s.shipout.dvi_buf[k as usize] += 10;
-                        });
-                        set_mem_b32s0(p, MOV_Z_HERE);
+                        shipout.dvi_buf[k as usize] += 10;
+                        mem.set_b32s0(p, MOV_Z_HERE);
                         break 'search Some(p);
                     }
                     // NONE_SEEN+Y_HERE=1, NONE_SEEN+Z_HERE=2, Y_SEEN+Z_HERE=8, Z_SEEN+Y_HERE=13
@@ -2077,14 +2104,14 @@ pub unsafe extern "C" fn movement(mut w: i32, o: u8) {
                     _ => {}
                 }
             } else {
-                match mstate + mem_b32s0(p) {
+                match mstate + mem.b32s0(p) {
                     1 => mstate = MOV_Y_SEEN,     // NONE_SEEN+Y_HERE
                     2 => mstate = MOV_Z_SEEN,     // NONE_SEEN+Z_HERE
                     8 | 13 => break 'search None, // Y_SEEN+Z_HERE, Z_SEEN+Y_HERE
                     _ => {}
                 }
             }
-            p = mem_b32s1(p); // LLIST_link(p)
+            p = mem.b32s1(p); // LLIST_link(p)
         }
         None
     };
@@ -2092,63 +2119,46 @@ pub unsafe extern "C" fn movement(mut w: i32, o: u8) {
     match found_p {
         None => {
             // not_found: emit the shortest encoding
-            set_mem_b32s0(q, MOV_YZ_OK);
-            if w.abs() >= 0x800000 {
-                dvi_out(o.wrapping_add(3));
-                dvi_four(w);
-                return;
-            }
-            if w.abs() >= 0x8000 {
-                dvi_out(o.wrapping_add(2));
-                if w < 0 {
-                    w += 0x1000000;
-                }
-                dvi_out((w / 0x10000) as u8); // lab2
-                w %= 0x10000;
-                dvi_out((w / 256) as u8); // lab1
-                dvi_out((w % 256) as u8);
-                return;
-            }
-            if w.abs() >= 128 {
-                dvi_out(o.wrapping_add(1));
-                if w < 0 {
-                    w += 0x10000;
-                }
-                dvi_out((w / 256) as u8); // lab2
-                dvi_out((w % 256) as u8); // lab1
-                return;
-            }
-            dvi_out(o);
-            if w < 0 {
-                w += 256;
-            }
-            dvi_out((w % 256) as u8); // lab1
+            mem.set_b32s0(q, MOV_YZ_OK);
+            movement_bytes(w, o)
         }
         Some(p) => {
             // found: reuse previous y/z command
-            set_mem_b32s0(q, mem_b32s0(p));
-            if mem_b32s0(q) == MOV_Y_HERE {
-                dvi_out(o.wrapping_add(4));
-                while mem_b32s1(q) != p {
-                    q = mem_b32s1(q);
-                    match mem_b32s0(q) {
-                        MOV_YZ_OK => set_mem_b32s0(q, MOV_Z_OK),
-                        MOV_Y_OK => set_mem_b32s0(q, MOV_D_FIXED),
+            mem.set_b32s0(q, mem.b32s0(p));
+            if mem.b32s0(q) == MOV_Y_HERE {
+                let out = vec![o.wrapping_add(4)];
+                while mem.b32s1(q) != p {
+                    q = mem.b32s1(q);
+                    match mem.b32s0(q) {
+                        MOV_YZ_OK => mem.set_b32s0(q, MOV_Z_OK),
+                        MOV_Y_OK => mem.set_b32s0(q, MOV_D_FIXED),
                         _ => {}
                     }
                 }
+                out
             } else {
-                dvi_out(o.wrapping_add(9));
-                while mem_b32s1(q) != p {
-                    q = mem_b32s1(q);
-                    match mem_b32s0(q) {
-                        MOV_YZ_OK => set_mem_b32s0(q, MOV_Y_OK),
-                        MOV_Z_OK => set_mem_b32s0(q, MOV_D_FIXED),
+                let out = vec![o.wrapping_add(9)];
+                while mem.b32s1(q) != p {
+                    q = mem.b32s1(q);
+                    match mem.b32s0(q) {
+                        MOV_YZ_OK => mem.set_b32s0(q, MOV_Y_OK),
+                        MOV_Z_OK => mem.set_b32s0(q, MOV_D_FIXED),
                         _ => {}
                     }
                 }
+                out
             }
         }
+    }
+}
+
+pub unsafe fn movement_global(w: i32, o: u8) {
+    let bytes = crate::state::with_state_mut(|st| movement(&mut st.mem, &mut st.shipout, w, o));
+    if bytes.is_empty() {
+        crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
+    for byte in bytes {
+        dvi_out(byte);
     }
 }
 
@@ -2156,11 +2166,11 @@ pub unsafe extern "C" fn movement(mut w: i32, o: u8) {
 // Only called from out_what (Rust) → private.
 unsafe fn special_out(p: i32) {
     if cur_h() != dvi_h() {
-        movement(cur_h() - dvi_h(), RIGHT1);
+        movement_global(cur_h() - dvi_h(), RIGHT1);
         set_dvi_h(cur_h());
     }
     if cur_v() != dvi_v() {
-        movement(cur_v() - dvi_v(), DOWN1);
+        movement_global(cur_v() - dvi_v(), DOWN1);
         set_dvi_v(cur_v());
     }
     set_doing_special(true);
@@ -2297,11 +2307,11 @@ unsafe fn write_out(p: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn pic_out(p: i32) {
     if cur_h() != dvi_h() {
-        movement(cur_h() - dvi_h(), RIGHT1);
+        movement_global(cur_h() - dvi_h(), RIGHT1);
         set_dvi_h(cur_h());
     }
     if cur_v() != dvi_v() {
-        movement(cur_v() - dvi_v(), DOWN1);
+        movement_global(cur_v() - dvi_v(), DOWN1);
         set_dvi_v(cur_v());
     }
 

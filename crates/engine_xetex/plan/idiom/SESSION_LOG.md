@@ -8,6 +8,35 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 69 — 2026-05-31 — thread shipout DVI movement
+
+**Type:** execution (workstream 01, Phase C — second `shipout.rs` slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread `movement`, the DVI movement command/list helper:
+- `movement` now takes `&mut MemState` and `&mut ShipoutState`, allocates and links the movement node with threaded `get_node`, patches `dvi_buf` directly, and updates movement-list state directly.
+- The direct helper returns the DVI bytes to emit instead of calling `dvi_out` / `dvi_four` under the borrow.
+- `movement_global` performs the legacy `dvi_out` writes after the borrow drops.
+
+**Recon / safety checks:**
+- `movement` has only a stale prototype/comment in `xetex/xetex-shipout.c`; no executable C/C++ callers.
+- No cleanup aliases in `src/ini.rs`.
+- No cross-module extern/static/link-name redeclarations beyond the pre-slice Rust definition itself.
+
+**Work done:**
+1. `shipout.rs`: removed `#[no_mangle] extern "C"` from `movement`, made the direct helper safe, and added `movement_global`.
+2. Repointed all `shipout.rs` callers to `movement_global`.
+3. Replaced the no-longer-used `down_ptr` / `right_ptr` bridge accessors with direct init writes in `initialize_shipout_variables`.
+
+**Newtype debt:** none. No state fields were added. Parameters are existing plain `scaled_t` / `eight_bits` representations (`i32` / `u8`), and movement-list pointers remain raw TeX integer pointers.
+
+**Metrics:** `#[no_mangle]` exports **394 → 392** (measured by direct grep). `globals.rs` raw externs unchanged at **40**. `unsafe fn` unchanged at **688**. Raw `unsafe { ... }` text-search count unchanged at **160**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (70):** continue `shipout.rs`. Natural candidates are the smaller DVI byte helpers (`dvi_out` / `dvi_four` / `dvi_two`) or another output-position cluster that can be split into direct state mutation plus borrow-dropping output wrappers. Keep scanner-heavy work for later; draft `02-modules.md` to READY before threading reaches scanner internals.
+
+---
+
 ## Idiom session 68 — 2026-05-30 — thread shipout DVI movement-node helpers
 
 **Type:** execution (workstream 01, Phase C — first `shipout.rs` slice after the `save.rs` run). **One commit.** Dashboard **29/2/7/4**.
