@@ -1,5 +1,10 @@
 //! Shipout helpers translated from `xetex/xetex-shipout.c`.
-use crate::consts::{CS_TOKEN_FLAG, DIMEN_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FLAG, PENALTY_NODE, RULE_NODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
+use crate::consts::{
+    CS_TOKEN_FLAG, DIMEN_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE,
+    LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FLAG,
+    PENALTY_NODE, RULE_NODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, TEX_NULL,
+    TOO_BIG_CHAR,
+};
 use crate::ext::apply_tfm_font_mapping;
 use crate::ext::makeXDVGlyphArrayData;
 use crate::ext::make_font_def;
@@ -26,7 +31,10 @@ use crate::globals::{
     str_start, temp_ptr, term_offset, total_pages, width_base_entry, write_file, write_loc,
     write_open, xdv_buffer_entry,
 };
-use crate::mem::{free_node_global, get_avail_global, get_node_global, new_kern_global, new_math_global};
+use crate::mem::{
+    free_node_global, get_avail_global, get_node_global, new_kern_global, new_math_global,
+};
+use crate::state::{MemState, ShipoutState};
 
 extern "C" {
 
@@ -156,6 +164,7 @@ const WHATSIT_NODE: u16 = 8;
 const EDGE_NODE: u16 = 14;
 const MARGIN_KERN_NODE: u16 = 40;
 const EDGE_NODE_SIZE: i32 = 3;
+const MEM_TOP: i32 = 4_999_999;
 const AAT_FONT_FLAG: i32 = 65533;
 const OTGR_FONT_FLAG: i32 = 65534;
 const FNT_DEF1: u8 = 243;
@@ -233,12 +242,23 @@ const SELECTOR_NEW_STRING: i32 = 21;
 /// Create a new edge node of subtype `s` and width `w`.
 ///
 /// translated from xetex-shipout.c:1708 (new_edge)
-pub unsafe fn new_edge(s: i16, w: i32) -> i32 {
-    let p = get_node_global(EDGE_NODE_SIZE);
-    set_mem_b16s1(p, EDGE_NODE);
-    set_mem_b16s0(p, s as u16);
-    set_mem_b32s1(p + 1, w);
-    set_mem_b32s1(p + 2, 0);
+pub fn new_edge(mem: &mut MemState, s: i16, w: i32) -> i32 {
+    let p = crate::mem::get_node(mem, EDGE_NODE_SIZE);
+    if p == crate::mem::ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b16s1(p, EDGE_NODE);
+    mem.set_b16s0(p, s as u16);
+    mem.set_b32s1(p + 1, w);
+    mem.set_b32s1(p + 2, 0);
+    p
+}
+
+pub unsafe fn new_edge_global(s: i16, w: i32) -> i32 {
+    let p = crate::state::with_state_mut(|st| new_edge(&mut st.mem, s, w));
+    if p == crate::mem::ALLOC_FAILED {
+        crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+    }
     p
 }
 
@@ -629,11 +649,18 @@ pub unsafe fn ship_out(p: i32) {
 }
 
 // translated from xetex-shipout.c:2332 (dvi_pop)
-#[no_mangle]
-pub unsafe extern "C" fn dvi_pop(l: i32) {
-    if l == dvi_offset() + dvi_ptr() && dvi_ptr() > 0 {
-        set_dvi_ptr(dvi_ptr() - 1);
+pub fn dvi_pop(shipout: &mut ShipoutState, l: i32) -> bool {
+    if l == shipout.dvi_offset + shipout.dvi_ptr && shipout.dvi_ptr > 0 {
+        shipout.dvi_ptr -= 1;
+        false
     } else {
+        true
+    }
+}
+
+pub unsafe fn dvi_pop_global(l: i32) {
+    let emit_pop = crate::state::with_state_mut(|st| dvi_pop(&mut st.shipout, l));
+    if emit_pop {
         dvi_out(POP);
     }
 }
@@ -1240,14 +1267,14 @@ pub unsafe extern "C" fn hlist_out() {
                                 set_rule_wd(mem_b32s1(p + 1));
                                 free_node_global(p, MEDIUM_NODE_SIZE);
                                 set_cur_dir(1 - cur_dir());
-                                p = new_edge(cur_dir(), rule_wd());
+                                p = new_edge_global(cur_dir(), rule_wd());
                                 set_mem_b32s1(prev_p, p);
                                 set_cur_h(cur_h() - left_edge + rule_wd());
                                 set_mem_b32s1(
                                     p,
                                     reverse(
                                         this_box,
-                                        new_edge(1 - cur_dir(), 0),
+                                        new_edge_global(1 - cur_dir(), 0),
                                         &mut cur_g,
                                         &mut cur_glue,
                                     ),
@@ -1304,9 +1331,9 @@ pub unsafe extern "C" fn hlist_out() {
         set_cur_dir(RIGHT_TO_LEFT);
     }
 
-    prune_movements(save_loc);
+    prune_movements_global(save_loc);
     if cur_s() > 0 {
-        dvi_pop(save_loc);
+        dvi_pop_global(save_loc);
     }
     set_cur_s(cur_s() - 1);
 }
@@ -1580,10 +1607,10 @@ pub unsafe extern "C" fn vlist_out() {
     }
 
     crate::synctex::synctex_tsilv(this_box);
-    prune_movements(save_loc);
+    prune_movements_global(save_loc);
 
     if cur_s() > 0 {
-        dvi_pop(save_loc);
+        dvi_pop_global(save_loc);
     }
     set_cur_s(cur_s() - 1);
 }
@@ -1655,24 +1682,27 @@ const ONE_INCH: i32 = 4_736_287;
 const ONE_INCH_LESS_ONE: i32 = 4_736_286;
 
 // translated from xetex-shipout.c:1930 (prune_movements)
-#[no_mangle]
-pub unsafe extern "C" fn prune_movements(l: i32) {
-    while down_ptr() != TEX_NULL {
-        if mem_b32s1(down_ptr() + 2) < l {
+pub fn prune_movements(mem: &mut MemState, shipout: &mut ShipoutState, l: i32) {
+    while shipout.down_ptr != TEX_NULL {
+        if mem.b32s1(shipout.down_ptr + 2) < l {
             break;
         }
-        let p = down_ptr();
-        set_down_ptr(mem_b32s1(p));
-        free_node_global(p, MOVEMENT_NODE_SIZE);
+        let p = shipout.down_ptr;
+        shipout.down_ptr = mem.b32s1(p);
+        crate::mem::free_node(mem, p, MOVEMENT_NODE_SIZE);
     }
-    while right_ptr() != TEX_NULL {
-        if mem_b32s1(right_ptr() + 2) < l {
+    while shipout.right_ptr != TEX_NULL {
+        if mem.b32s1(shipout.right_ptr + 2) < l {
             return;
         }
-        let p = right_ptr();
-        set_right_ptr(mem_b32s1(p));
-        free_node_global(p, MOVEMENT_NODE_SIZE);
+        let p = shipout.right_ptr;
+        shipout.right_ptr = mem.b32s1(p);
+        crate::mem::free_node(mem, p, MOVEMENT_NODE_SIZE);
     }
+}
+
+pub fn prune_movements_global(l: i32) {
+    crate::state::with_state_mut(|st| prune_movements(&mut st.mem, &mut st.shipout, l));
 }
 
 // print_c_string: local equivalent of xetex-xetexd.h static inline print_c_string.

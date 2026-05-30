@@ -83,7 +83,7 @@ use crate::pagebuilder::build_page;
 use crate::pic::count_pdf_file_pages;
 use crate::pic::load_picture;
 use crate::shipout::finalize_dvi_file;
-use crate::shipout::new_edge;
+use crate::shipout::new_edge_global;
 use crate::shipout::out_what;
 use crate::shipout::ship_out;
 use crate::synctex::synctex_start_input;
@@ -10267,7 +10267,7 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
         q
     };
 
-    let t = new_edge(cur_dir(), 0);
+    let t = new_edge_global(cur_dir(), 0);
     let mut l = t;
     set_cur_dir(1 - cur_dir());
 

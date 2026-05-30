@@ -8,6 +8,36 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 68 — 2026-05-30 — thread shipout DVI movement-node helpers
+
+**Type:** execution (workstream 01, Phase C — first `shipout.rs` slice after the `save.rs` run). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the clean DVI movement-node maintenance helpers:
+- `new_edge` now takes `&mut MemState`, calls threaded `get_node`, initializes the edge node directly, and propagates `ALLOC_FAILED` to `new_edge_global`.
+- `prune_movements` now takes `&mut MemState` and `&mut ShipoutState`, walks `down_ptr` / `right_ptr` directly, and calls threaded `free_node`.
+- `dvi_pop` now takes `&mut ShipoutState` and returns whether a POP byte must be emitted; `dvi_pop_global` drops the borrow before calling legacy `dvi_out`.
+
+**Recon / safety checks:**
+- `new_edge` is header-prototype-only (`xetex-xetexd.h`); no C/C++ callers.
+- `prune_movements` / `dvi_pop` have stale prototypes and "translated to Rust" comments in `xetex/xetex-shipout.c`, but no executable C callers.
+- No cleanup aliases in `src/ini.rs`.
+- No cross-module extern/static/link-name redeclarations beyond the pre-slice Rust definitions themselves.
+
+**Work done:**
+1. `shipout.rs`: added direct-state helper signatures for `new_edge`, `prune_movements`, and `dvi_pop`; added `_global` wrappers for legacy callers.
+2. `scan.rs` and remaining `shipout.rs` callers now use `new_edge_global`, `prune_movements_global`, and `dvi_pop_global`.
+3. Left `movement` legacy for now because it interleaves mem-list edits with `dvi_out`/`dvi_four` output and DVI-buffer mutation; that needs its own borrow-dropping command shape.
+
+**Newtype debt:** none. No state fields were added. `new_edge` parameters are existing plain `small_number`/`scaled_t` representations (`i16`/`i32`), and DVI list pointers are existing raw TeX integer pointers.
+
+**Metrics:** `#[no_mangle]` exports **396 → 394**. `globals.rs` raw externs unchanged at **40**. `unsafe fn` **689 → 688**. Raw `unsafe { ... }` text-search count unchanged at **160**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (69):** continue `shipout.rs` with the next clean cluster. Likely candidates are `movement` (requires a direct mem/shipout pass that returns DVI op emissions for the wrapper) or a smaller output-position helper that can avoid calling `dvi_out` while a state borrow is live. Keep scanner-heavy code for later; draft `02-modules.md` to READY before threading reaches scanner internals.
+
+---
+
 ## Idiom session 67 — 2026-05-30 — thread `save.rs` SA restore/define helpers
 
 **Type:** execution (workstream 01, Phase C — third `save.rs` call-graph slice). **One commit.** Dashboard **29/2/7/4**.
