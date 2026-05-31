@@ -1766,30 +1766,47 @@ fn odd_i32(v: i32) -> bool {
     (v & 1) != 0
 }
 
+/// Phase-C: threaded to `&mut MemState`. Touches the `mem` arena directly and
+/// allocates through the threaded [`crate::mem::get_avail`]. On arena
+/// exhaustion it returns `true` (the `01b` §5 sentinel) rather than calling
+/// `runaway()`/`overflow()` under the borrow; [`update_lr_stack_global`]
+/// performs the abort after the borrow drops.
 #[inline]
-unsafe fn update_lr_stack(q: i32, lr_ptr: &mut i32) {
-    use crate::globals::{
-        avail, mem_b16s0, mem_b32s0, mem_b32s1, set_avail, set_mem_b32s0, set_mem_b32s1,
-    };
-
-    if odd_i32(mem_b16s0(q) as i32) {
+fn update_lr_stack(mem: &mut MemState, q: i32, lr_ptr: &mut i32) -> bool {
+    if odd_i32(mem.b16s0(q) as i32) {
         if *lr_ptr != TEX_NULL
-            && mem_b32s0(*lr_ptr)
-                == L_CODE as i32 * (mem_b16s0(q) as i32 / L_CODE as i32) + END_M_CODE as i32
+            && mem.b32s0(*lr_ptr)
+                == L_CODE as i32 * (mem.b16s0(q) as i32 / L_CODE as i32) + END_M_CODE as i32
         {
             let temp_ptr = *lr_ptr;
-            *lr_ptr = mem_b32s1(temp_ptr);
-            set_mem_b32s1(temp_ptr, avail());
-            set_avail(temp_ptr);
+            *lr_ptr = mem.b32s1(temp_ptr);
+            mem.set_b32s1(temp_ptr, mem.avail);
+            mem.avail = temp_ptr;
         }
     } else {
-        let temp_ptr = crate::mem::get_avail_global();
-        set_mem_b32s0(
+        let temp_ptr = crate::mem::get_avail(mem);
+        if temp_ptr == crate::mem::ALLOC_FAILED {
+            return true;
+        }
+        mem.set_b32s0(
             temp_ptr,
-            L_CODE as i32 * (mem_b16s0(q) as i32 / L_CODE as i32) + END_M_CODE as i32,
+            L_CODE as i32 * (mem.b16s0(q) as i32 / L_CODE as i32) + END_M_CODE as i32,
         );
-        set_mem_b32s1(temp_ptr, *lr_ptr);
+        mem.set_b32s1(temp_ptr, *lr_ptr);
         *lr_ptr = temp_ptr;
+    }
+    false
+}
+
+/// Transitional bridge-down wrapper for the legacy `post_line_break` callers
+/// (`01b` §3). Runs the threaded [`update_lr_stack`] under a single borrow,
+/// then — after the borrow drops — performs the cold `runaway()`+`overflow()`
+/// abort if the arena was exhausted (mirroring [`crate::mem::get_avail_global`]).
+unsafe fn update_lr_stack_global(q: i32, lr_ptr: &mut i32) {
+    let failed = crate::state::with_state_mut(|s| update_lr_stack(&mut s.mem, q, lr_ptr));
+    if failed {
+        crate::scan::runaway();
+        crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
     }
 }
 
@@ -1841,7 +1858,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
 
             while q != mem_b32s1(crate::globals::cur_p() + 1) {
                 if q < hi_mem_min() && mem_b16s1(q) as i32 == MATH_NODE {
-                    update_lr_stack(q, &mut lr_ptr);
+                    update_lr_stack_global(q, &mut lr_ptr);
                 }
                 q = mem_b32s1(q);
             }
@@ -1913,7 +1930,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
             set_mem_b32s1(q + 1, 0);
 
             if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                update_lr_stack(q, &mut lr_ptr);
+                update_lr_stack_global(q, &mut lr_ptr);
             }
         }
 
@@ -2073,7 +2090,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
                 r = q;
 
                 if mem_b16s1(q) as i32 == MATH_NODE && eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                    update_lr_stack(q, &mut lr_ptr);
+                    update_lr_stack_global(q, &mut lr_ptr);
                 }
             }
 

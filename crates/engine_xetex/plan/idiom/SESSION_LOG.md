@@ -8,6 +8,33 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 78 — 2026-05-31 — thread linebreak LR-stack update
+
+**Type:** execution (workstream 01, Phase C — fifth `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread `update_lr_stack`, the `post_line_break` TeXXeT LR-stack maintenance helper:
+- `update_lr_stack` now takes `&mut MemState`, touches the `mem` arena directly through `MemState` methods (`b16s0`/`b32s0`/`b32s1`/`set_b32s0`/`set_b32s1` + the `avail` scalar), and allocates through the threaded `get_avail` instead of `get_avail_global`.
+- On arena exhaustion it returns the `01b` §5 sentinel (`true`) rather than aborting under the borrow.
+- New `update_lr_stack_global` bridge-down wrapper runs the helper under one `with_state_mut` borrow, then performs the cold `runaway()`+`overflow()` abort after the borrow drops (mirroring `get_avail_global`).
+- The three legacy callers in `post_line_break` now use the `_global` wrapper.
+
+**Classification (`01b` §4a):** bucket **B** (accessor-to-direct-state rewrite) plus the bucket-**C** cold allocation-overflow edge deferred to the wrapper.
+
+**Recon / safety checks (§11 + `01b`):**
+- helper, not a global — no extern statics or `ini.rs` cleanup aliases.
+- no C/C++ callers (grep empty); Rust-internal helper only.
+- all three call sites are in `post_line_break`; none sit inside a `with_state*` closure.
+
+**Newtype debt:** none. No state fields added; params/return are plain `i32`/`&mut i32`/`bool`.
+
+**Metrics:** `#[no_mangle]` exports unchanged at **381**. `globals.rs` raw externs unchanged at **40**. `unsafe fn` net unchanged at **684** (`update_lr_stack` dropped `unsafe`; `update_lr_stack_global` added it). Raw `unsafe { ... }` text-search count unchanged at **160**. Thin accessors unchanged (no bridge accessor lost its last caller).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (79):** `post_line_break` itself is now closer to threadable — its remaining bridge calls are mem/eqtb/scanner accessors plus `cur_list_*`. Consider threading another closed `post_line_break` sub-block, or begin classifying `post_line_break` as a larger bucket-C/D target. Keep `scan.rs` last and draft `02-modules.md` to READY before scanner-heavy work.
+
+---
+
 ## Idiom session 77 — 2026-05-31 — thread linebreak margin-kern protrusion insertion
 
 **Type:** execution (workstream 01, Phase C — fourth `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.
