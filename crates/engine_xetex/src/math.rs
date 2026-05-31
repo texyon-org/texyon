@@ -11,19 +11,19 @@ use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_c, cur_chr, cur_cmd, cur_dir, cur_f, cur_group, cur_i,
     cur_lang, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
     cur_list_prev_graf, cur_list_tail, cur_mu, cur_size, cur_style, cur_val, cur_val1,
-    depth_base_entry, eqtb_b32s1, exten_base_entry, file_line_error_style_p, font_area_entry,
-    font_bc_entry, font_ec_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr,
-    height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
-    lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1,
-    mem_gr, mem_node_addr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr,
-    save_stack_b32s1, semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir,
-    set_cur_f, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
-    set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
-    set_cur_mlist, set_cur_mu, set_cur_size, set_cur_style, set_cur_val, set_cur_val1,
-    set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1,
-    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_word,
-    set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
-    set_xtx_ligature_present, temp_ptr, tex_remainder, total_shrink, width_base_entry,
+    depth_base_entry, eqtb_b32s1, file_line_error_style_p, font_area_entry, font_info_b16,
+    font_info_b32s1, font_layout_engine_ptr, height_base_entry, hi_mem_min,
+    insert_src_special_every_math, italic_base_entry, just_box, lr_problems, lr_ptr, mem_b16s0,
+    mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_gr, mem_node_addr, mem_word,
+    nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
+    set_adjust_tail, set_avail, set_cur_dir, set_cur_f, set_cur_lang, set_cur_list_aux_b32s0,
+    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf,
+    set_cur_list_tail, set_cur_mlist, set_cur_mu, set_cur_size, set_cur_style, set_cur_val,
+    set_cur_val1, set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr,
+    set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1,
+    set_temp_ptr, set_xtx_ligature_present, temp_ptr, tex_remainder, total_shrink,
+    width_base_entry,
 };
 use crate::mem::{
     free_node, free_node_global, get_avail, get_node, get_node_global, new_choice_global, new_glue,
@@ -892,7 +892,7 @@ pub unsafe fn make_radical_global(q: i32) {
         rule_thickness + rule_thickness.abs() / 4
     };
 
-    let y = var_delimiter(
+    let y = var_delimiter_global(
         q + 4,
         cur_size(),
         mem_b32s1(x + 3) + mem_b32s1(x + 2) + clr + rule_thickness,
@@ -1101,8 +1101,8 @@ pub unsafe fn make_fraction_global(q: i32) {
         delim2_global(cur_size())
     };
 
-    let left_delim = var_delimiter(q + 4, cur_size(), delimiter_size);
-    let right_delim = var_delimiter(q + 5, cur_size(), delimiter_size);
+    let left_delim = var_delimiter_global(q + 4, cur_size(), delimiter_size);
+    let right_delim = var_delimiter_global(q + 5, cur_size(), delimiter_size);
     crate::state::with_state_mut(|st| {
         make_fraction_link_delimiters(&mut st.mem, left_delim, v, right_delim)
     });
@@ -2145,30 +2145,42 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
 }
 
 /// translated from xetex-math.c:759 (make_left_right)
-#[no_mangle]
-pub unsafe extern "C" fn make_left_right(q: i32, style: i16, max_d: i32, max_h: i32) -> i16 {
-    set_cur_style(style);
-    if cur_style() < SCRIPT_STYLE {
-        set_cur_size(TEXT_SIZE);
+pub unsafe fn make_left_right_global(q: i32, style: i16, max_d: i32, max_h: i32) -> i16 {
+    let size = if style < SCRIPT_STYLE {
+        TEXT_SIZE
     } else {
-        set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
-    }
-    set_cur_mu(crate::scaled_math::x_over_n(
-        math_quad_global(cur_size()),
-        18,
-    ));
-    let mut delta2 = max_d + axis_height_global(cur_size());
+        SCRIPT_SIZE * ((style as i32 - 2) / 2)
+    };
+    let math_quad = crate::state::with_state(|st| math_quad(&st.fonts, &st.eqtb, size));
+    let mu = crate::scaled_math::x_over_n(math_quad, 18);
+    crate::state::with_state_mut(|st| {
+        st.scanner.cur_style = style;
+        st.scanner.cur_size = size;
+        st.scanner.cur_mu = mu;
+    });
+
+    let (axis_height, delimiter_factor, delimiter_shortfall) = crate::state::with_state(|st| {
+        (
+            axis_height(&st.fonts, &st.eqtb, size),
+            st.eqtb.b32s1(INT_BASE + INT_PAR_DELIMITER_FACTOR),
+            st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DELIMITER_SHORTFALL),
+        )
+    });
+    let mut delta2 = max_d + axis_height;
     let mut delta1 = max_h + max_d - delta2;
     if delta2 > delta1 {
         delta1 = delta2;
     }
-    let mut delta = (delta1 / 500) * eqtb_b32s1(INT_BASE + INT_PAR_DELIMITER_FACTOR);
-    delta2 = delta1 + delta1 - eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DELIMITER_SHORTFALL);
+    let mut delta = (delta1 / 500) * delimiter_factor;
+    delta2 = delta1 + delta1 - delimiter_shortfall;
     if delta < delta2 {
         delta = delta2;
     }
-    set_mem_b32s1(q + 1, var_delimiter(q + 1, cur_size(), delta));
-    (mem_b16s1(q) as i32 - (LEFT_NOAD as i32 - 20)) as i16
+    let delimiter = var_delimiter_global(q + 1, size, delta);
+    crate::state::with_state_mut(|st| {
+        st.mem.set_b32s1(q + 1, delimiter);
+        (st.mem.b16s1(q) as i32 - (LEFT_NOAD as i32 - 20)) as i16
+    })
 }
 
 #[inline]
@@ -2511,7 +2523,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                 true
             }
             LEFT_NOAD | RIGHT_NOAD => {
-                t = make_left_right(q, style, max_d, max_h) as u16;
+                t = make_left_right_global(q, style, max_d, max_h) as u16;
                 true
             }
             STYLE_NODE => {
@@ -2730,18 +2742,12 @@ pub unsafe fn stack_into_box_global(b: i32, f: i32, c: u16) {
 
 /// translated from xetex-math.c:1474 (height_plus_depth)
 ///
-/// Phase-C: threaded to `&mut FontState`; legacy callers use
-/// [`height_plus_depth_global`].
+/// Phase-C: threaded to `&mut FontState`.
 pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
     let c = crate::scan::effective_char(fonts, true, f, c);
     let q = fonts.font_info_b16(fonts.char_base_entry(f) + c);
     fonts.font_info_b32s1(fonts.height_base_entry(f) + q.s2 as i32 / 16)
         + fonts.font_info_b32s1(fonts.depth_base_entry(f) + q.s2 as i32 % 16)
-}
-
-/// Transitional bridge-down wrapper for legacy `height_plus_depth` callers.
-pub unsafe fn height_plus_depth_global(f: i32, c: u16) -> i32 {
-    crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c))
 }
 
 fn new_stack_glyph(mem: &mut MemState, f: i32, g: i32) -> Result<i32, NodeRecycleAbort> {
@@ -4338,8 +4344,7 @@ pub unsafe extern "C" fn build_opentype_assembly(
 }
 
 /// translated from xetex-math.c:1017 (var_delimiter)
-#[no_mangle]
-pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
+pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
     let mut f: i32 = FONT_BASE;
     let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
     let mut c: u16 = 0;
@@ -4351,8 +4356,9 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
         s0: 0,
     };
     let mut large_attempt = false;
-    let mut z = mem_b16s3(d) as i32 % 256;
-    let mut x = mem_b16s2(d) as i32 + (mem_b16s3(d) as i32 / 256) * 65536;
+    let d_s3 = mem_b16s3(d) as i32;
+    let mut z = d_s3 % 256;
+    let mut x = mem_b16s2(d) as i32 + (d_s3 / 256) * 65536;
     // Outer loop: try small delimiter family first, then large.
     // All exits break to 'found.
     'found: {
@@ -4362,11 +4368,16 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                 // Scan font sizes from s down to SCRIPT_SCRIPT_SIZE.
                 loop {
                     z -= 256;
-                    let g = math_font_global(z);
+                    let g = crate::state::with_state(|st| math_font(&st.eqtb, z));
                     if g != FONT_BASE {
-                        if font_area_entry(g) == AAT_FONT_FLAG
-                            || (font_area_entry(g) == OTGR_FONT_FLAG
-                                && usingOpenType(font_layout_engine_ptr(g)))
+                        let (font_area, layout_engine) = crate::state::with_state(|st| {
+                            (
+                                st.fonts.font_area_entry(g),
+                                st.fonts.font_layout_engine_ptr(g),
+                            )
+                        });
+                        if font_area == AAT_FONT_FLAG
+                            || (font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine))
                         {
                             x = crate::ext::map_char_to_glyph(g, x) as i32;
                             f = g;
@@ -4395,28 +4406,32 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                             }
                         } else {
                             let mut y = x as u16;
-                            if y >= font_bc_entry(g) && y <= font_ec_entry(g) {
+                            let scan = crate::state::with_state(|st| {
+                                let fonts = &st.fonts;
+                                if y < fonts.font_bc_entry(g) || y > fonts.font_ec_entry(g) {
+                                    return None;
+                                }
                                 // Follow character list chain, looking for tallest glyph.
                                 loop {
-                                    q = font_info_b16(char_base_entry(g) + y as i32);
+                                    let q_tmp =
+                                        fonts.font_info_b16(fonts.char_base_entry(g) + y as i32);
+                                    q = q_tmp;
                                     if q.s3 > 0 {
                                         if q.s1 % 4 == EXT_TAG {
-                                            f = g;
-                                            c = y;
-                                            break 'found;
+                                            return Some((g, y, w, q, true));
                                         }
-                                        let u = font_info_b32s1(
-                                            height_base_entry(g) + q.s2 as i32 / 16,
-                                        ) + font_info_b32s1(
-                                            depth_base_entry(g) + q.s2 as i32 % 16,
+                                        let u = fonts.font_info_b32s1(
+                                            fonts.height_base_entry(g) + q.s2 as i32 / 16,
+                                        ) + fonts.font_info_b32s1(
+                                            fonts.depth_base_entry(g) + q.s2 as i32 % 16,
                                         );
                                         if u > w {
+                                            if u >= v {
+                                                return Some((g, y, u, q, true));
+                                            }
                                             f = g;
                                             c = y;
                                             w = u;
-                                            if u >= v {
-                                                break 'found;
-                                            }
                                         }
                                         if q.s1 % 4 == LIST_TAG {
                                             y = q.s0;
@@ -4424,6 +4439,16 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                                         }
                                     }
                                     break; // exit character-list loop
+                                }
+                                None
+                            });
+                            if let Some((found_f, found_c, found_w, found_q, stop)) = scan {
+                                f = found_f;
+                                c = found_c;
+                                w = found_w;
+                                q = found_q;
+                                if stop {
+                                    break 'found;
                                 }
                             }
                         }
@@ -4437,40 +4462,58 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                 break 'found;
             }
             large_attempt = true;
-            z = mem_b16s1(d) as i32 % 256;
-            x = mem_b16s0(d) as i32 + (mem_b16s1(d) as i32 / 256) * 65536;
+            (z, x) = crate::state::with_state(|st| {
+                (
+                    st.mem.b16s1(d) as i32 % 256,
+                    st.mem.b16s0(d) as i32 + (st.mem.b16s1(d) as i32 / 256) * 65536,
+                )
+            });
         }
     }
     // found:
     let b;
     if f != FONT_BASE {
-        if !(font_area_entry(f) == OTGR_FONT_FLAG && usingOpenType(font_layout_engine_ptr(f))) {
+        let (font_area, layout_engine) = crate::state::with_state(|st| {
+            (
+                st.fonts.font_area_entry(f),
+                st.fonts.font_layout_engine_ptr(f),
+            )
+        });
+        if !(font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine)) {
             if q.s1 % 4 == EXT_TAG {
-                b = crate::mem::new_null_box_global();
-                set_mem_b16s1(b, VLIST_NODE);
-                let r = font_info_b16(exten_base_entry(f) + q.s0 as i32);
+                b = crate::state::with_state_mut(|st| crate::mem::new_null_box(&mut st.mem));
+                if b == ALLOC_FAILED {
+                    node_recycle_abort(NodeRecycleAbort::Overflow);
+                }
+                crate::state::with_state_mut(|st| {
+                    st.mem.set_b16s1(b, VLIST_NODE);
+                });
+                let r = crate::state::with_state(|st| {
+                    st.fonts
+                        .font_info_b16(st.fonts.exten_base_entry(f) + q.s0 as i32)
+                });
                 c = r.s0;
-                let u = height_plus_depth_global(f, c);
+                let u = crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c));
                 w = 0;
-                q = font_info_b16(
-                    char_base_entry(f) + crate::scan::effective_char_global(true, f, c),
-                );
-                set_mem_b32s1(
-                    b + 1,
-                    font_info_b32s1(width_base_entry(f) + q.s3 as i32)
-                        + font_info_b32s1(italic_base_entry(f) + q.s1 as i32 / 4),
-                );
+                let box_width = crate::state::with_state_mut(|st| {
+                    let fonts = &mut st.fonts;
+                    let effective_c = crate::scan::effective_char(fonts, true, f, c);
+                    q = fonts.font_info_b16(fonts.char_base_entry(f) + effective_c);
+                    fonts.font_info_b32s1(fonts.width_base_entry(f) + q.s3 as i32)
+                        + fonts.font_info_b32s1(fonts.italic_base_entry(f) + q.s1 as i32 / 4)
+                });
+                crate::state::with_state_mut(|st| st.mem.set_b32s1(b + 1, box_width));
                 c = r.s1;
                 if c != 0 {
-                    w += height_plus_depth_global(f, c);
+                    w += crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c));
                 }
                 c = r.s2;
                 if c != 0 {
-                    w += height_plus_depth_global(f, c);
+                    w += crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c));
                 }
                 c = r.s3;
                 if c != 0 {
-                    w += height_plus_depth_global(f, c);
+                    w += crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c));
                 }
                 let mut n: i32 = 0;
                 if u > 0 {
@@ -4502,7 +4545,10 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                 if c != 0 {
                     stack_into_box_global(b, f, c);
                 }
-                set_mem_b32s1(b + 2, w - mem_b32s1(b + 3));
+                crate::state::with_state_mut(|st| {
+                    let height = st.mem.b32s1(b + 3);
+                    st.mem.set_b32s1(b + 2, w - height);
+                });
             } else {
                 b = char_box_global(f, c as i32);
             }
@@ -4512,16 +4558,22 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
             b = native_glyph_vbox_global(f, c);
         }
     } else {
-        b = crate::mem::new_null_box_global();
-        set_mem_b32s1(
-            b + 1,
-            eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE),
-        );
+        let width = crate::state::with_state(|st| {
+            st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE)
+        });
+        b = crate::state::with_state_mut(|st| crate::mem::new_null_box(&mut st.mem));
+        if b == ALLOC_FAILED {
+            node_recycle_abort(NodeRecycleAbort::Overflow);
+        }
+        crate::state::with_state_mut(|st| st.mem.set_b32s1(b + 1, width));
     }
-    set_mem_b32s1(
-        b + 4,
-        crate::scaled_math::half(mem_b32s1(b + 3) - mem_b32s1(b + 2)) - axis_height_global(s),
-    );
+    crate::state::with_state_mut(|st| {
+        let state = &mut *st;
+        let axis = axis_height(&state.fonts, &state.eqtb, s);
+        let shift =
+            crate::scaled_math::half(state.mem.b32s1(b + 3) - state.mem.b32s1(b + 2)) - axis;
+        state.mem.set_b32s1(b + 4, shift);
+    });
     free_ot_assembly(ot_assembly_ptr);
     b
 }

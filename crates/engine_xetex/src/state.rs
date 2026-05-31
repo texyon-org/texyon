@@ -811,6 +811,11 @@ impl FontState {
     }
 
     #[inline]
+    pub(crate) fn exten_base_entry(&self, f: i32) -> i32 {
+        self.exten_base[f as usize]
+    }
+
+    #[inline]
     pub(crate) fn lig_kern_base_entry(&self, f: i32) -> i32 {
         self.lig_kern_base[f as usize]
     }

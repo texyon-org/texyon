@@ -7,6 +7,30 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 93 — 2026-05-31 — thread math delimiter helpers
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings **78**.
+
+**Slice:** `var_delimiter` + `make_left_right` (`src/math.rs`), with the small `height_plus_depth_global` bridge cleanup needed after the delimiter path stopped using it. Recon found only stale xetex-math.c prototypes/comments, no cleanup aliases, no cross-module redeclarations, and no live call site already inside a `with_state*` closure.
+
+**Classification:** both targets are bucket **C/D**. `var_delimiter` scans delimiter variants through mem/font/eqtb data and interleaves OT-math/native glyph calls, `new_null_box`, TFM metric reads, `effective_char`, `char_box_global`, `stack_into_box_global`, `build_opentype_assembly`, and `native_glyph_vbox_global`. `make_left_right` mutates scanner style/size/mu, computes delimiter sizing from `axis_height` and eqtb parameters, then stores the delimiter node in mem. Callees were classified explicitly: `math_font`/`math_quad`/`axis_height`/`height_plus_depth` have threaded cores; mem/font/eqtb/scanner accessors are with-state bridges unless rewritten to direct state methods; `char_box_global`, `stack_into_box_global`, `build_opentype_assembly`, `native_glyph_vbox_global`, OT-math calls, and the initial remaining `mem_b16s2` bridge are kept outside live borrows.
+
+**Structure:** dropped the two internal `#[no_mangle] extern "C"` exports. `make_left_right_global` now computes `math_quad`/`x_over_n` into locals, updates scanner style/size/mu under one short borrow, computes `axis_height`/delimiter parameters under a read borrow, calls `var_delimiter_global` with no live borrow, and stores the result under a final mem borrow. `var_delimiter_global` became a borrow-dropping orchestrator: delimiter-family and font-table reads use direct `FontState`/`EqtbState`/`MemState` methods in short borrows, OT variant/assembly/native calls run between borrows, and cold `new_null_box` allocation overflow returns through `node_recycle_abort(NodeRecycleAbort::Overflow)` only after the mem borrow drops.
+
+**Bridged call sites:** `make_radical_global`, `make_fraction_global`, and `make_left_right_global` now call `var_delimiter_global`; `mlist_to_hlist` now calls `make_left_right_global`. `char_box_global`, `stack_into_box_global`, `build_opentype_assembly`, and `native_glyph_vbox_global` remain intentionally bridged because they build boxes or call native/OT code between delimiter borrow slices.
+
+**Method surface / deleted accessors:** added `FontState::exten_base_entry`, mirroring the existing globals accessor. Deleted the now-dead `height_plus_depth_global` wrapper after confirming no remaining `src/*.rs` callers. `font_bc_entry`/`font_ec_entry`/`exten_base_entry` globals remain live outside this slice.
+
+**Newtype debt:** none. No state fields moved; the new method exposes an existing plain `int32_t` font-table field.
+
+**Metrics:** `#[no_mangle]` **330 → 328**. raw externs **40** unchanged. raw `unsafe {}` **176** unchanged. Crate warnings stayed **78**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 78 warnings; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (94):** continue math noad cleanup with another bounded helper block. Good candidates are deeper threading inside `make_scripts_global` around its `clean_box`/OT-math/vpackage regions, or a small remaining box/list helper adjacent to delimiter construction. Do not take a whole high-count orchestrator (`mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, `line_break`) in one session; keep all with-state-bearing calls between short disjoint borrows.
+
+---
+
 ## Idiom session 92 — 2026-05-31 — thread math script glyph discovery
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings **78**.
