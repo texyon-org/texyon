@@ -1889,6 +1889,91 @@ unsafe fn clean_script_box_global(
     ScriptBoxPrep { node, shift }
 }
 
+fn append_script_box(mem: &mut MemState, q: i32, box_node: i32) {
+    if mem.b32s1(q + 1) == TEX_NULL {
+        mem.set_b32s1(q + 1, box_node);
+    } else {
+        let mut p = mem.b32s1(q + 1);
+        while mem.b32s1(p) != TEX_NULL {
+            p = mem.b32s1(p);
+        }
+        mem.set_b32s1(p, box_node);
+    }
+}
+
+unsafe fn append_script_box_global(q: i32, box_node: i32) {
+    crate::state::with_state_mut(|st| append_script_box(&mut st.mem, q, box_node));
+}
+
+struct SubSupStackInput {
+    q: i32,
+    p: i32,
+    x: i32,
+    y: i32,
+    sub_f: i32,
+    sub_g: u16,
+    sup_f: i32,
+    sup_g: u16,
+    shift_down: i32,
+    shift_up: i32,
+    delta: i32,
+}
+
+unsafe fn finish_subsup_stack_global(input: SubSupStackInput) {
+    let mut p = input.p;
+    let mut sub_kern;
+    let mut sup_kern = 0;
+    let attachment = maybe_attach_script_kern_global(
+        input.q,
+        p,
+        input.sub_f,
+        input.sub_g,
+        SUB_CMD,
+        input.shift_down,
+    );
+    p = attachment.p;
+    sub_kern = attachment.kern;
+    if attachment.is_ot_math {
+        let sub_empty = crate::state::with_state(|st| st.mem.b32s1(input.q + 3) == EMPTY);
+        if sub_empty {
+            let attachment = maybe_attach_script_kern_global(
+                input.q,
+                p,
+                input.sup_f,
+                input.sup_g,
+                SUP_CMD,
+                input.shift_up,
+            );
+            sup_kern = attachment.kern;
+        }
+    } else {
+        sup_kern = 0;
+        sub_kern = 0;
+    }
+
+    let kern_width = crate::state::with_state(|st| {
+        (input.shift_up - st.mem.b32s1(input.x + 2))
+            - (st.mem.b32s1(input.y + 3) - input.shift_down)
+    });
+    let kern = crate::state::with_state_mut(|st| {
+        st.mem
+            .set_b32s1(input.x + 4, sup_kern + input.delta - sub_kern);
+        let kern = new_kern(&mut st.mem, kern_width);
+        if kern != ALLOC_FAILED {
+            st.mem.set_b32s1(input.x, kern);
+            st.mem.set_b32s1(kern, input.y);
+        }
+        kern
+    });
+    if kern == ALLOC_FAILED {
+        node_recycle_abort(NodeRecycleAbort::Overflow);
+    }
+
+    let packaged = crate::scan::vpackage(input.x, 0, ADDITIONAL, MAX_HALFWORD);
+    crate::state::with_state_mut(|st| st.mem.set_b32s1(packaged + 4, input.shift_down));
+    append_script_box_global(input.q, packaged);
+}
+
 // translated from xetex-math.c:805 (repeated script glyph discovery block)
 fn first_script_glyph_step(
     mem: &MemState,
@@ -1998,7 +2083,7 @@ unsafe fn first_script_glyph_global(script_head: i32) -> (u16, i32) {
 /// translated from xetex-math.c:84 (make_scripts)
 unsafe fn make_scripts_global(q: i32, delta: i32) {
     let mut p = crate::state::with_state(|st| st.mem.b32s1(q + 1));
-    let mut x: i32;
+    let x: i32;
     let y: i32;
     let mut clr: i32;
     let sup_g: u16;
@@ -2060,7 +2145,7 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
 
         crate::state::with_state_mut(|st| st.mem.set_b32s1(x + 4, shift_down));
 
-        p = maybe_attach_script_kern_global(q, p, sub_f, sub_g, SUB_CMD, shift_down).p;
+        let _ = maybe_attach_script_kern_global(q, p, sub_f, sub_g, SUB_CMD, shift_down);
     } else {
         let (script_g, script_f) = first_script_glyph_global(q + 2);
         sup_g = script_g;
@@ -2156,56 +2241,24 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
                 }
             }
 
-            let mut sub_kern;
-            let mut sup_kern = 0;
-            let attachment =
-                maybe_attach_script_kern_global(q, p, sub_f, sub_g, SUB_CMD, shift_down);
-            p = attachment.p;
-            sub_kern = attachment.kern;
-            if attachment.is_ot_math {
-                let sub_empty = crate::state::with_state(|st| st.mem.b32s1(q + 3) == EMPTY);
-                if sub_empty {
-                    let attachment =
-                        maybe_attach_script_kern_global(q, p, sup_f, sup_g, SUP_CMD, shift_up);
-                    p = attachment.p;
-                    sup_kern = attachment.kern;
-                }
-            } else {
-                sup_kern = 0;
-                sub_kern = 0;
-            }
-
-            let kern_width = crate::state::with_state(|st| {
-                (shift_up - st.mem.b32s1(x + 2)) - (st.mem.b32s1(y + 3) - shift_down)
+            finish_subsup_stack_global(SubSupStackInput {
+                q,
+                p,
+                x,
+                y,
+                sub_f,
+                sub_g,
+                sup_f,
+                sup_g,
+                shift_down,
+                shift_up,
+                delta,
             });
-            let kern = crate::state::with_state_mut(|st| {
-                st.mem.set_b32s1(x + 4, sup_kern + delta - sub_kern);
-                let kern = new_kern(&mut st.mem, kern_width);
-                if kern != ALLOC_FAILED {
-                    st.mem.set_b32s1(x, kern);
-                    st.mem.set_b32s1(kern, y);
-                }
-                kern
-            });
-            if kern == ALLOC_FAILED {
-                node_recycle_abort(NodeRecycleAbort::Overflow);
-            }
-            x = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
-            crate::state::with_state_mut(|st| st.mem.set_b32s1(x + 4, shift_down));
+            return;
         }
     }
 
-    crate::state::with_state_mut(|st| {
-        if st.mem.b32s1(q + 1) == TEX_NULL {
-            st.mem.set_b32s1(q + 1, x);
-        } else {
-            p = st.mem.b32s1(q + 1);
-            while st.mem.b32s1(p) != TEX_NULL {
-                p = st.mem.b32s1(p);
-            }
-            st.mem.set_b32s1(p, x);
-        }
-    });
+    append_script_box_global(q, x);
 }
 
 /// translated from xetex-math.c:759 (make_left_right)

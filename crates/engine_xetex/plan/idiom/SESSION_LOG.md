@@ -7,6 +7,28 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 97 — 2026-05-31 — extract `make_scripts_global` sub/sup stack tail
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` reports **51** Rust warnings in this worktree).
+
+**Slice:** bounded structural cleanup inside `make_scripts_global` (`src/math.rs`) for the remaining sub/sup stack tail: OT kern attachment results, inter-script kern allocation/linking, `vpackage`, final shift write, and nearby final box append. Recon found only stale `xetex-math.c` prototype/comment hits for `make_scripts`; `clean_box` is still the live Rust export already known from earlier sessions. No cleanup aliases; no cross-module extern/static redeclarations for the new helper slice; the single live `make_scripts_global` caller in `mlist_to_hlist` is not inside a live `with_state*` closure. Candidate bridge accessors (`mem_b32s1`, `set_mem_b32s1`, `mem_b16s*`, `math_x_height_global`, `default_rule_thickness_global`, scanner accessors) still have other callers, so none were deleted.
+
+**Classification:** `make_scripts_global` remains bucket **C/D**. New `finish_subsup_stack_global` is bucket **C/D** because it calls with-state-bearing `maybe_attach_script_kern_global` and `crate::scan::vpackage` between direct borrow islands. New `append_script_box` is bucket **B** over `MemState`; `append_script_box_global` is the legacy wrapper. `maybe_attach_script_kern_global` remains bucket **C**; `new_kern` is bucket **B** with `ALLOC_FAILED` converted to `NodeRecycleAbort::Overflow` only after the borrow drops. `clean_box`, `first_script_glyph_global`, `font_is_ot_math_global`, OT-math C calls, and `vpackage` remain outside live borrows.
+
+**Structure:** added `append_script_box`, `append_script_box_global`, `SubSupStackInput`, and `finish_subsup_stack_global`. The helper attaches sub/sup script kerns at wrapper level, computes the inter-script kern width under a read borrow, allocates and links the kern under one short `MemState` borrow, aborts on allocation failure after that borrow drops, calls `vpackage` after all borrows drop, writes the final box shift under a fresh borrow, and appends the packaged stack through the same final append helper used by the single-script paths.
+
+**Bridged call sites / deleted accessors:** no external call-site rename. No bridge accessor lost its last caller, so none deleted. No new state method surface.
+
+**Newtype debt:** none. No state fields moved; helper input fields are existing plain `i32`/`u16` values.
+
+**Metrics:** `#[no_mangle]` unchanged. raw extern statics unchanged. raw `unsafe {}` unchanged. Current worktree counts after validation: `#[no_mangle]` **328**, raw extern statics **38**, raw `unsafe {}` **174**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` -> 0 errors, 51 warnings; full dashboard -> **29 / 2 / 7 / 4**.
+
+**For the next session (98):** continue bounded math noad cleanup adjacent to `make_scripts_global` or move to another small box/list helper near delimiter/script construction. Remaining `make_scripts_global` work is mostly local readability around the earlier shift/gap calculations and single-script append paths; avoid pulling in unrelated noad construction. Keep `clean_box`, `vpackage`, OT-math calls, `font_is_ot_math_global`, `first_script_glyph_global`, and `attach_hkern_to_new_hlist_global` outside live borrows unless explicitly classified/threaded. Do not take `mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, or `line_break` as a whole session.
+
+---
+
 ## Idiom session 96 — 2026-05-31 — extract `make_scripts_global` script-box prep helper
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` reports **51** Rust warnings in this worktree).
