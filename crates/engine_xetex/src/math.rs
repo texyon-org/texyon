@@ -24,9 +24,12 @@ use crate::globals::{
     width_base_entry,
 };
 use crate::mem::{
-    free_node_global, get_node_global, new_choice_global, new_glue_global, new_kern_global, new_noad_global, new_rule_global,
-    new_spec_global, TEX_NULL,
+    free_node_global, get_avail, get_node_global, new_choice_global, new_glue, new_glue_global,
+    new_kern, new_kern_global, new_noad_global, new_null_box, new_rule, new_spec, ALLOC_FAILED,
+    TEX_NULL,
 };
+use crate::scan::{node_recycle_abort, NodeRecycleAbort};
+use crate::state::MemState;
 
 const INT_PAR_CUR_FAM: i32 = 44;
 const LOCAL_EVERY_MATH: i32 = 3;
@@ -395,23 +398,60 @@ pub unsafe extern "C" fn big_op_spacing5() -> i32 {
 }
 
 /// translated from xetex-math.c:170 (fraction_rule)
-#[no_mangle]
-pub unsafe extern "C" fn fraction_rule(t: i32) -> i32 {
-    let p = new_rule_global();
-    set_mem_b32s1(p + 3, t);
-    set_mem_b32s1(p + 2, 0);
-    p
+///
+/// Phase-C: threaded to `&mut MemState`; bottoms out on the threaded
+/// [`new_rule`] and propagates its [`ALLOC_FAILED`] sentinel as
+/// [`NodeRecycleAbort::Overflow`] (`01b` §5). Legacy callers use
+/// [`fraction_rule_global`].
+pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<i32, NodeRecycleAbort> {
+    let p = new_rule(mem);
+    if p == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(p + 3, t);
+    mem.set_b32s1(p + 2, 0);
+    Ok(p)
+}
+
+/// Transitional bridge-down wrapper for legacy `fraction_rule` callers
+/// (`01b` §3, §5).
+pub unsafe fn fraction_rule_global(t: i32) -> i32 {
+    match crate::state::with_state_mut(|st| fraction_rule(&mut st.mem, t)) {
+        Ok(p) => p,
+        Err(e) => node_recycle_abort(e),
+    }
 }
 
 /// translated from xetex-math.c:181 (overbar)
-#[no_mangle]
-pub unsafe extern "C" fn overbar(b: i32, k: i32, t: i32) -> i32 {
-    let mut p = new_kern_global(k);
-    set_mem_b32s1(p, b);
-    let q = fraction_rule(t);
-    set_mem_b32s1(q, p);
-    p = new_kern_global(t);
-    set_mem_b32s1(p, q);
+///
+/// Phase-C: threaded to `&mut MemState`. Builds the kern/rule/kern chain
+/// directly through the threaded [`new_kern`]/[`fraction_rule`] and returns its
+/// head; the with_state-bearing `vpackage` finish runs in [`overbar_global`]
+/// after the borrow drops (bucket C). Allocation failure propagates the
+/// [`NodeRecycleAbort`] sentinel (`01b` §5).
+pub fn overbar(mem: &mut MemState, b: i32, k: i32, t: i32) -> Result<i32, NodeRecycleAbort> {
+    let mut p = new_kern(mem, k);
+    if p == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(p, b);
+    let q = fraction_rule(mem, t)?;
+    mem.set_b32s1(q, p);
+    p = new_kern(mem, t);
+    if p == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(p, q);
+    Ok(p)
+}
+
+/// Transitional bridge-down wrapper for legacy `overbar` callers (`01b` §3, §5).
+/// Builds the chain under one borrow, then vpackages it after the borrow drops.
+pub unsafe fn overbar_global(b: i32, k: i32, t: i32) -> i32 {
+    let p = match crate::state::with_state_mut(|st| overbar(&mut st.mem, b, k, t)) {
+        Ok(p) => p,
+        Err(e) => node_recycle_abort(e),
+    };
     crate::scan::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD)
 }
 
@@ -634,7 +674,7 @@ pub unsafe extern "C" fn fetch(a: i32) {
 pub unsafe extern "C" fn make_over(q: i32) {
     set_mem_b32s0(
         q + 1,
-        overbar(
+        overbar_global(
             clean_box(q + 1, 2 * (cur_style() / 2) + 1),
             3 * default_rule_thickness(),
             default_rule_thickness(),
@@ -649,7 +689,7 @@ pub unsafe extern "C" fn make_under(q: i32) {
     let x = clean_box(q + 1, cur_style());
     let p = new_kern_global(3 * default_rule_thickness());
     set_mem_b32s1(x, p);
-    set_mem_b32s1(p, fraction_rule(default_rule_thickness()));
+    set_mem_b32s1(p, fraction_rule_global(default_rule_thickness()));
     let y = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
     let delta = mem_b32s1(y + 3) + mem_b32s1(y + 2) + default_rule_thickness();
     set_mem_b32s1(y + 3, mem_b32s1(x + 3));
@@ -711,7 +751,7 @@ pub unsafe extern "C" fn make_radical(q: i32) {
         clr += crate::scaled_math::half(delta);
     }
     set_mem_b32s1(y + 4, -(mem_b32s1(x + 3) + clr));
-    set_mem_b32s1(y, overbar(x, clr, mem_b32s1(y + 3)));
+    set_mem_b32s1(y, overbar_global(x, clr, mem_b32s1(y + 3)));
     set_mem_b32s0(q + 1, crate::scan::hpack(y, 0, ADDITIONAL));
     set_mem_b32s1(q + 1, SUB_BOX);
 }
@@ -817,7 +857,7 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
         p = new_kern_global((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(z + 3) - shift_down));
         set_mem_b32s1(p, z);
     } else {
-        let y = fraction_rule(mem_b32s1(q + 1));
+        let y = fraction_rule_global(mem_b32s1(q + 1));
         p = new_kern_global((axis_height(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
         set_mem_b32s1(y, p);
         set_mem_b32s1(p, z);
@@ -1219,7 +1259,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
         h = mem_b32s1(x + 3);
     }
 
-    let y = char_box(f, c);
+    let y = char_box_global(f, c);
     let mut p: i32;
     if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
         p = get_node_global(GLYPH_NODE_SIZE);
@@ -2130,52 +2170,115 @@ pub unsafe extern "C" fn mlist_to_hlist() {
     }
 }
 
+/// Precomputed (outside the `mem` borrow) inputs for the threaded [`char_box`].
+/// Both the native-character allocation and the TFM font-table reads are
+/// `with_state`-bearing, so [`char_box_global`] performs them before borrowing
+/// (bucket C, "precompute font reads outside the mem borrow").
+enum CharBoxInput {
+    /// Native (AAT/OTGR) font: `p` is the `new_native_character` node.
+    Native { p: i32 },
+    /// TFM font: precomputed width/height/depth and the (char, font) pair.
+    Tfm {
+        width: i32,
+        height: i32,
+        depth: i32,
+        c: u16,
+        f: i32,
+    },
+}
+
 /// translated from xetex-math.c:1432 (char_box)
-#[no_mangle]
-pub unsafe extern "C" fn char_box(f: i32, c: i32) -> i32 {
-    let b;
-    let p;
-    if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        b = crate::mem::new_null_box_global();
-        p = crate::scan::new_native_character(f, c as u32);
-        set_mem_b32s1(b + 3, mem_b32s1(p + 3));
-        set_mem_b32s1(b + 1, mem_b32s1(p + 1));
-        if mem_b32s1(p + 2) < 0 {
-            set_mem_b32s1(b + 2, 0);
-        } else {
-            set_mem_b32s1(b + 2, mem_b32s1(p + 2));
+///
+/// Phase-C: threaded to `&mut MemState`. The `with_state`-bearing work — the
+/// native-character allocation and the TFM font-table reads — is precomputed
+/// into [`CharBoxInput`] by [`char_box_global`] before the borrow. Allocation
+/// failure propagates the [`NodeRecycleAbort`] sentinel (`01b` §5).
+///
+/// Note: on the native branch the `new_native_character` node is now allocated
+/// (in the wrapper) *before* the box, the reverse of the C order, because that
+/// allocation is `with_state`-bearing; only absolute `mem` addresses differ,
+/// which no output (`.xdv`/`.log`) or `mem`-image (TRIP uses TFM fonts only)
+/// path observes.
+fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleAbort> {
+    let b = new_null_box(mem);
+    if b == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    let p = match input {
+        CharBoxInput::Native { p } => {
+            let h = mem.b32s1(p + 3);
+            let w = mem.b32s1(p + 1);
+            let d = mem.b32s1(p + 2);
+            mem.set_b32s1(b + 3, h);
+            mem.set_b32s1(b + 1, w);
+            mem.set_b32s1(b + 2, if d < 0 { 0 } else { d });
+            p
+        }
+        CharBoxInput::Tfm {
+            width,
+            height,
+            depth,
+            c,
+            f,
+        } => {
+            mem.set_b32s1(b + 1, width);
+            mem.set_b32s1(b + 3, height);
+            mem.set_b32s1(b + 2, depth);
+            let p = get_avail(mem);
+            if p == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::OverflowRunaway);
+            }
+            mem.set_b16s0(p, c);
+            mem.set_b16s1(p, f as u16);
+            p
+        }
+    };
+    mem.set_b32s1(b + 5, p);
+    Ok(b)
+}
+
+/// Transitional bridge-down wrapper for legacy `char_box` callers (`01b` §3,
+/// §5). Performs the `with_state`-bearing native-character allocation / TFM
+/// font-table reads, then builds the box under a single `mem` borrow.
+pub unsafe fn char_box_global(f: i32, c: i32) -> i32 {
+    let input = if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
+        CharBoxInput::Native {
+            p: crate::scan::new_native_character(f, c as u32),
         }
     } else {
         let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c as u16));
-        b = crate::mem::new_null_box_global();
-        set_mem_b32s1(
-            b + 1,
-            font_info_b32s1(width_base_entry(f) + q.s3 as i32)
+        CharBoxInput::Tfm {
+            width: font_info_b32s1(width_base_entry(f) + q.s3 as i32)
                 + font_info_b32s1(italic_base_entry(f) + q.s1 as i32 / 4),
-        );
-        set_mem_b32s1(
-            b + 3,
-            font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16),
-        );
-        set_mem_b32s1(
-            b + 2,
-            font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16),
-        );
-        p = crate::mem::get_avail_global();
-        set_mem_b16s0(p, c as u16);
-        set_mem_b16s1(p, f as u16);
+            height: font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16),
+            depth: font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16),
+            c: c as u16,
+            f,
+        }
+    };
+    match crate::state::with_state_mut(|st| char_box(&mut st.mem, input)) {
+        Ok(b) => b,
+        Err(e) => node_recycle_abort(e),
     }
-    set_mem_b32s1(b + 5, p);
-    b
 }
 
 /// translated from xetex-math.c:1463 (stack_into_box)
-#[no_mangle]
-pub unsafe extern "C" fn stack_into_box(b: i32, f: i32, c: u16) {
-    let p = char_box(f, c as i32);
-    set_mem_b32s1(p, mem_b32s1(b + 5));
-    set_mem_b32s1(b + 5, p);
-    set_mem_b32s1(b + 3, mem_b32s1(p + 3));
+///
+/// Phase-C: threaded to `&mut MemState`; takes the character box `p` already
+/// built by [`char_box_global`] (in [`stack_into_box_global`]) and links it.
+fn stack_into_box(mem: &mut MemState, b: i32, p: i32) {
+    let link = mem.b32s1(b + 5);
+    mem.set_b32s1(p, link);
+    mem.set_b32s1(b + 5, p);
+    let ph = mem.b32s1(p + 3);
+    mem.set_b32s1(b + 3, ph);
+}
+
+/// Transitional bridge-down wrapper for legacy `stack_into_box` callers
+/// (`01b` §3). Builds the character box, then links it under one `mem` borrow.
+pub unsafe fn stack_into_box_global(b: i32, f: i32, c: u16) {
+    let p = char_box_global(f, c as i32);
+    crate::state::with_state_mut(|st| stack_into_box(&mut st.mem, b, p));
 }
 
 /// translated from xetex-math.c:1474 (height_plus_depth)
@@ -2222,27 +2325,54 @@ pub unsafe extern "C" fn stack_glyph_into_box(b: i32, f: i32, g: i32) {
 }
 
 /// translated from xetex-math.c:1517 (stack_glue_into_box)
-#[no_mangle]
-pub unsafe extern "C" fn stack_glue_into_box(b: i32, min: i32, max: i32) {
-    let q_spec = new_spec_global(0);
-    set_mem_b32s1(q_spec + 1, min);
-    set_mem_b32s1(q_spec + 2, max - min);
-    let p = new_glue_global(q_spec);
-    if mem_b16s1(b) == HLIST_NODE {
-        let mut q = mem_b32s1(b + 5);
+///
+/// Phase-C: threaded to `&mut MemState`; bottoms out on the threaded
+/// [`new_spec`]/[`new_glue`] and propagates their [`ALLOC_FAILED`] sentinel as
+/// [`NodeRecycleAbort::Overflow`] (`01b` §5). Legacy callers use
+/// [`stack_glue_into_box_global`].
+fn stack_glue_into_box(
+    mem: &mut MemState,
+    b: i32,
+    min: i32,
+    max: i32,
+) -> Result<(), NodeRecycleAbort> {
+    let q_spec = new_spec(mem, 0);
+    if q_spec == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(q_spec + 1, min);
+    mem.set_b32s1(q_spec + 2, max - min);
+    let p = new_glue(mem, q_spec);
+    if p == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    if mem.b16s1(b) == HLIST_NODE {
+        let mut q = mem.b32s1(b + 5);
         if q == TEX_NULL {
-            set_mem_b32s1(b + 5, p);
+            mem.set_b32s1(b + 5, p);
         } else {
-            while mem_b32s1(q) != TEX_NULL {
-                q = mem_b32s1(q);
+            while mem.b32s1(q) != TEX_NULL {
+                q = mem.b32s1(q);
             }
-            set_mem_b32s1(q, p);
+            mem.set_b32s1(q, p);
         }
     } else {
-        set_mem_b32s1(p, mem_b32s1(b + 5));
-        set_mem_b32s1(b + 5, p);
-        set_mem_b32s1(b + 3, mem_b32s1(p + 3));
-        set_mem_b32s1(b + 1, mem_b32s1(p + 1));
+        let link = mem.b32s1(b + 5);
+        mem.set_b32s1(p, link);
+        mem.set_b32s1(b + 5, p);
+        let pd = mem.b32s1(p + 3);
+        mem.set_b32s1(b + 3, pd);
+        let pw = mem.b32s1(p + 1);
+        mem.set_b32s1(b + 1, pw);
+    }
+    Ok(())
+}
+
+/// Transitional bridge-down wrapper for legacy `stack_glue_into_box` callers
+/// (`01b` §3, §5).
+pub unsafe fn stack_glue_into_box_global(b: i32, min: i32, max: i32) {
+    if let Err(e) = crate::state::with_state_mut(|st| stack_glue_into_box(&mut st.mem, b, min, max)) {
+        node_recycle_abort(e);
     }
 }
 
@@ -3564,7 +3694,7 @@ pub unsafe extern "C" fn build_opentype_assembly(
                     o = min_o;
                 }
                 if oo > 0 {
-                    stack_glue_into_box(b, -oo, -o);
+                    stack_glue_into_box_global(b, -oo, -o);
                 }
                 stack_glyph_into_box(b, f, ot_part_glyph(a, i));
                 prev_o = ot_part_end_connector(f, a, i);
@@ -3579,7 +3709,7 @@ pub unsafe extern "C" fn build_opentype_assembly(
                 o = min_o;
             }
             if oo > 0 {
-                stack_glue_into_box(b, -oo, -o);
+                stack_glue_into_box_global(b, -oo, -o);
             }
             stack_glyph_into_box(b, f, ot_part_glyph(a, i));
             prev_o = ot_part_end_connector(f, a, i);
@@ -3767,27 +3897,27 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                 }
                 c = r.s1;
                 if c != 0 {
-                    stack_into_box(b, f, c);
+                    stack_into_box_global(b, f, c);
                 }
                 c = r.s0;
                 for _ in 1..=n {
-                    stack_into_box(b, f, c);
+                    stack_into_box_global(b, f, c);
                 }
                 c = r.s2;
                 if c != 0 {
-                    stack_into_box(b, f, c);
+                    stack_into_box_global(b, f, c);
                     c = r.s0;
                     for _ in 1..=n {
-                        stack_into_box(b, f, c);
+                        stack_into_box_global(b, f, c);
                     }
                 }
                 c = r.s3;
                 if c != 0 {
-                    stack_into_box(b, f, c);
+                    stack_into_box_global(b, f, c);
                 }
                 set_mem_b32s1(b + 2, w - mem_b32s1(b + 3));
             } else {
-                b = char_box(f, c as i32);
+                b = char_box_global(f, c as i32);
             }
         } else if !ot_assembly_ptr.is_null() {
             b = build_opentype_assembly(f, ot_assembly_ptr, v, false);

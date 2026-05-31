@@ -8,6 +8,39 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 81 — 2026-05-31 — thread the math box-building helper cluster
+
+**Type:** execution (workstream 01, Phase C — `math.rs` box-construction cluster). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice (5 functions):** the math box-building leaf helpers that now bottom out on the threaded allocator (`get_avail`/`new_rule`/`new_kern`/`new_spec`/`new_glue`/`new_null_box`), threaded to `&mut MemState`:
+- `fraction_rule(mem, t) -> Result<i32, NodeRecycleAbort>` (math.rs) — bucket **B**, pure mem over threaded `new_rule`.
+- `overbar(mem, b, k, t) -> Result<i32, NodeRecycleAbort>` (math.rs) — bucket **C**: builds the kern/rule/kern chain directly (threaded `new_kern`/`fraction_rule`) and returns its head; the `with_state`-bearing `vpackage` finish runs in `overbar_global` after the borrow drops.
+- `char_box(mem, CharBoxInput) -> Result<i32, NodeRecycleAbort>` (math.rs) — bucket **C**: the `with_state`-bearing native-character allocation (`new_native_character`) and TFM font-table reads (`effective_char` + `font_info`/`*_base` reads) are precomputed into a `CharBoxInput` enum by `char_box_global` *before* the borrow ("precompute font reads outside the mem borrow"). Threaded core does only the mem allocation/field writes.
+- `stack_into_box(mem, b, p)` (math.rs) — bucket **B**: links the precomputed character box; `stack_into_box_global` builds the box via `char_box_global` first.
+- `stack_glue_into_box(mem, b, min, max) -> Result<(), NodeRecycleAbort>` (math.rs) — bucket **B**, pure mem over threaded `new_spec`/`new_glue`.
+
+**Sentinel design:** reused session-80's shared `NodeRecycleAbort { Overflow, OverflowRunaway, Confusion }` (made `node_recycle_abort` `pub(crate)` in scan.rs). `new_*`/`get_node`-flavoured exhaustion → **Overflow**; `char_box`'s TFM `get_avail` exhaustion → **OverflowRunaway** (matches `get_avail_global`'s `runaway()`-then-`overflow`). Each `_global` wrapper drops the `with_state` borrow then runs `node_recycle_abort`.
+
+**Allocation-order note (char_box native branch):** `new_native_character` is `with_state`-bearing, so it now runs (in the wrapper) *before* the box allocation — the reverse of the C order. Only absolute `mem` addresses differ; no `.xdv`/`.log` output or `mem`-image path observes them (TRIP uses TFM fonts only, so its native branch is never taken). Confirmed by the green dashboard, incl. the native-font tex-outputs cases (otf_*/graphite_*). The TFM branch preserves order (font reads have no allocation; `new_null_box` before `get_avail` as in C).
+
+**Classification (`01b` §4a):** `fraction_rule`/`stack_into_box`/`stack_glue_into_box` bucket **B**; `overbar`/`char_box` bucket **C** (font/scanner calls precomputed or deferred via the shared sentinel).
+
+**Bridged call sites:** fraction_rule 2 external (the 3rd is the now-direct call inside `overbar`), overbar 2, char_box 2 (the 3rd is now inside `stack_into_box_global`), stack_into_box 5, stack_glue_into_box 2 → **13 external** legacy sites repointed to `_global` wrappers, all in math.rs.
+
+**Deliberately excluded:** `height_plus_depth` (pure font read, no mem — belongs to a future `&FontState` slice) and `stack_glyph_into_box` (`measure_native_glyph` is `with_state`-bearing mid-function → needs a fragmenting two-borrow split; deferred).
+
+**Recon / safety checks (§11 + `01b`):** no extern statics; no `ini.rs` cleanup aliases; no C/C++ callers (only stale prototypes/`translated to Rust` comments in `xetex-math.c`); no call site already inside a `with_state*` closure. No globals.rs bridge accessor lost its last caller (font/mem accessors still used throughout); `new_rule_global`/`new_spec_global` still have many non-math callers.
+
+**Newtype debt:** none. The C prototypes use `scaled_t`/`internal_font_number`, but those are function parameters, not moved state fields (the §4 rule applies to moved fields) — no semantic typedef moved, no `MemState` field added.
+
+**Metrics:** `#[no_mangle]` **380 → 375** (the 5 functions dropped their export). raw externs **40** (unchanged). `unsafe fn` net **680** (5 bodies dropped `unsafe`, 5 `_global` wrappers added it). raw `unsafe {}` **165** (unchanged — the threaded bodies and wrappers have no explicit `unsafe` blocks).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (82):** with the box-building leaves threaded, the remaining math layout (`make_fraction`/`make_op`/`make_ord`/`var_delimiter`/`rebox`) is still bucket-C/D — gated on the `with_state`-heavy `hpack`/`vpack`/`vpackage`/`mlist_to_hlist`/`new_native_character`, none of which is threaded yet. Cleaner next targets: thread `effective_char`/`height_plus_depth` as a small `&mut FontState` slice (would unblock the TFM font-read paths across math and the main loop), thread `stack_glyph_into_box` with the two-borrow `measure_native_glyph` split, or climb a `pagebuilder.rs`/`linebreak.rs` block. Keep `scan.rs`'s scanner hot path last; draft `02-modules.md` to READY before the big `scan.rs` decomposition.
+
+---
+
 ## Idiom session 80 — 2026-05-31 — thread the node-copy / mark-recycle / page-prune cluster
 
 **Type:** execution (workstream 01, Phase C — `mem`/`scan` node-recycling cluster). **One commit.** Dashboard **29/2/7/4**.

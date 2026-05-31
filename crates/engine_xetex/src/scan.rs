@@ -12959,7 +12959,7 @@ pub(crate) enum NodeRecycleAbort {
 
 /// Run the deferred cold abort for a [`NodeRecycleAbort`] after the state
 /// borrow has dropped. Never returns (each arm longjmps).
-unsafe fn node_recycle_abort(e: NodeRecycleAbort) -> ! {
+pub(crate) unsafe fn node_recycle_abort(e: NodeRecycleAbort) -> ! {
     const MEM_TOP_NR: i32 = 4_999_999;
     match e {
         NodeRecycleAbort::Overflow => {

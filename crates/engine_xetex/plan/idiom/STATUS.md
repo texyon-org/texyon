@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 80, **Phase-C execution**: threaded the node-copy / mark-recycle / page-prune cluster — `copy_native_glyph_info` (mem.rs), the recursive `copy_node_list`, the recursive `do_marks`, and `prune_page_top` (scan.rs) — to `&mut MemState` (+ `&mut ScannerState`/`&EqtbState` for `prune_page_top`); 10 external legacy sites bridged, ~15 internal allocator/disposal `_global` calls became pass-throughs; cold abort via a shared `NodeRecycleAbort` sentinel. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 81, **Phase-C execution**: threaded the math box-building helper cluster — `fraction_rule`, `overbar`, `char_box`, `stack_into_box`, `stack_glue_into_box` (math.rs) — to `&mut MemState`; bucket-C font/native reads precomputed outside the borrow (`char_box`) and `vpackage` deferred (`overbar`); 13 external legacy sites bridged; reused the shared `NodeRecycleAbort` sentinel. `#[no_mangle]` 380→375. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -740,6 +740,30 @@ least-coupled non-`misc` clusters:
     C/C++ callers (only stale `.h` prototypes); no cleanup aliases; no newtype
     debt. `#[no_mangle]` 381→380, `unsafe fn` 682→680, raw `unsafe {}` 163→165.
     Dashboard 29/2/7/4.
+-   **Math box-building helper cluster threaded (session 81):** the five
+    math box-construction leaf helpers — `fraction_rule`, `overbar`, `char_box`,
+    `stack_into_box`, `stack_glue_into_box` (all `math.rs`) — threaded to
+    `&mut MemState`, bottoming out on the threaded allocator
+    (`new_rule`/`new_kern`/`new_spec`/`new_glue`/`new_null_box`/`get_avail`).
+    `fraction_rule`/`stack_into_box`/`stack_glue_into_box` are bucket B (pure mem
+    / precomputed box pointer). `overbar` is bucket C — builds the kern/rule/kern
+    chain directly and defers the `with_state`-bearing `vpackage` finish to
+    `overbar_global`. `char_box` is bucket C — its native-character allocation
+    (`new_native_character`) and TFM font-table reads (`effective_char` +
+    `font_info`/`*_base`) are precomputed into a `CharBoxInput` enum by
+    `char_box_global` *before* the borrow; the threaded core does only the mem
+    work. Reused session-80's shared `NodeRecycleAbort` sentinel (made
+    `node_recycle_abort` `pub(crate)`): `get_avail` exhaustion → `OverflowRunaway`,
+    `new_*`/`get_node` → `Overflow`. **13 external** legacy sites (all in math.rs)
+    bridged to `_global` wrappers. The native `char_box` branch now allocates the
+    native node before the box (reverse of C order, forced by the `with_state`
+    allocation) — only `mem` addresses differ, invisible to all output/`mem`-image
+    paths (TRIP is TFM-only); confirmed by the green native-font tex-outputs cases.
+    Excluded `height_plus_depth` (pure font read, no mem) and `stack_glyph_into_box`
+    (`measure_native_glyph` is `with_state`-bearing mid-function). No C/C++ callers
+    (stale `xetex-math.c` prototypes only); no cleanup aliases; no newtype debt.
+    `#[no_mangle]` 380→375, `unsafe fn` 680 (net 0), raw `unsafe {}` 165 (unchanged).
+    Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -751,9 +775,9 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 817 total / 176 state-backed scalars/arrays (session 76 removed `first_p` / `global_prev_p` getters after threading `total_pw`; incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and remaining `LinebreakState` accessors) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 380 (direct `grep '#[no_mangle]' src/*.rs`; session 80 dropped `copy_node_list`) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 680 (session 80 threaded `copy_native_glyph_info`/`copy_node_list`/`do_marks`/`prune_page_top`; all four bodies dropped `unsafe`) |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 165 / 688 not remeasured (session 80 +2: the audited `xmalloc`/`copy_nonoverlapping` block in the threaded `copy_native_glyph_info`) |
+| `#[no_mangle]` exports | 576 | boundary-only | 375 (direct `grep '#[no_mangle]' src/*.rs`; session 81 dropped the 5 math box-building helpers) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 680 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 81 net 0 — 5 math bodies dropped `unsafe`, 5 `_global` wrappers added it) |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 165 / 688 not remeasured (session 81 unchanged — threaded math bodies/wrappers have no explicit `unsafe` blocks) |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -880,7 +904,7 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`); session 72 threaded the pure DVI byte formatters (`dvi_four`/`dvi_two`) with continuation-aware flush propagation; session 73 threaded the DVI font-definition / font-selection path (`dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`); sessions 74–78 continued `linebreak.rs` with the hlist-stack helper pair, protrusion scanners, `total_pw`, post-line-break margin-kern protrusion insertion, and the `post_line_break` LR-stack maintenance helper `update_lr_stack` (→ direct `LinebreakState`/`MemState`, allocating via threaded `get_avail` with cold overflow deferred to a `_global` wrapper; `char_pw` kept outside live state borrows). Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. **Session 79 threaded the node-disposal cluster** (`delete_token_ref`/`delete_glue_ref` + the big recursive `flush_node_list`, 116 call sites). **Session 80 threaded the node-copy / mark-recycle / page-prune cluster** (`copy_native_glyph_info`, `copy_node_list`, `do_marks`, `prune_page_top` → `&mut MemState` ± `&mut ScannerState`/`&EqtbState`; shared `NodeRecycleAbort` §5 sentinel), the counterpart of the disposal cluster. Next: climb `pagebuilder.rs` (`fire_up`/`build_page`) and `math.rs` box-stacking helpers (`char_box`/`stack_*_into_box`/`fraction_rule` — bucket-C: precompute font-table reads outside the mem borrow) that now bottom out on the threaded copy+disposal clusters, or thread another `linebreak.rs`/`post_line_break` block. Keep `scan.rs`'s scanner hot path last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
+1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`); session 72 threaded the pure DVI byte formatters (`dvi_four`/`dvi_two`) with continuation-aware flush propagation; session 73 threaded the DVI font-definition / font-selection path (`dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`); sessions 74–78 continued `linebreak.rs` with the hlist-stack helper pair, protrusion scanners, `total_pw`, post-line-break margin-kern protrusion insertion, and the `post_line_break` LR-stack maintenance helper `update_lr_stack` (→ direct `LinebreakState`/`MemState`, allocating via threaded `get_avail` with cold overflow deferred to a `_global` wrapper; `char_pw` kept outside live state borrows). Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. **Session 79 threaded the node-disposal cluster** (`delete_token_ref`/`delete_glue_ref` + the big recursive `flush_node_list`, 116 call sites). **Session 80 threaded the node-copy / mark-recycle / page-prune cluster** (`copy_native_glyph_info`, `copy_node_list`, `do_marks`, `prune_page_top` → `&mut MemState` ± `&mut ScannerState`/`&EqtbState`; shared `NodeRecycleAbort` §5 sentinel). **Session 81 threaded the math box-building helper cluster** (`fraction_rule`, `overbar`, `char_box`, `stack_into_box`, `stack_glue_into_box` → `&mut MemState`; bucket-C font/native reads precomputed outside the borrow, `vpackage` deferred; 13 external sites). Next: the remaining math layout (`make_fraction`/`make_op`/`make_ord`/`var_delimiter`/`rebox`) is gated on the `with_state`-heavy `hpack`/`vpack`/`vpackage`/`mlist_to_hlist`/`new_native_character` (none threaded yet) — cleaner targets are a small `&mut FontState` slice (`effective_char`/`height_plus_depth`, which unblocks TFM font-read paths), `stack_glyph_into_box` (two-borrow `measure_native_glyph` split), or a `pagebuilder.rs`/`linebreak.rs` block. Keep `scan.rs`'s scanner hot path last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the
