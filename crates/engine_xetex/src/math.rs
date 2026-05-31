@@ -4554,6 +4554,90 @@ pub unsafe extern "C" fn build_opentype_assembly(
     b
 }
 
+/// Build the extensible (`EXT_TAG`) delimiter box for [`var_delimiter_global`].
+///
+/// Phase-C (`01b` §4a bucket C, session-81/83 style): the box allocation and
+/// all the TFM font reads (the `exten` table row, the repeatable piece's width
+/// and height-plus-depth, and the top/mid/bottom piece extents) run under a
+/// single `mem`+`fonts` borrow island instead of the ~12 scattered bridge
+/// closures the C translation left behind. The repeat-count arithmetic is pure,
+/// and the piece stacking uses the already-threaded [`stack_into_box_global`]
+/// (which builds each char box + links it under its own borrow). Allocation
+/// order is preserved (the vlist box first, then each stacked char box), so the
+/// mem image is byte-identical to the inline version.
+unsafe fn build_ext_delimiter_box_global(f: i32, q: crate::mem_types::B16x4, v: i32) -> i32 {
+    struct ExtGeom {
+        b: i32,
+        r: crate::mem_types::B16x4,
+        u: i32,
+        w: i32,
+    }
+    let ExtGeom { b, r, u, mut w } = match crate::state::with_state_mut(|st| {
+        let st = &mut *st;
+        let b = crate::mem::new_null_box(&mut st.mem);
+        if b == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        st.mem.set_b16s1(b, VLIST_NODE);
+        let r = st
+            .fonts
+            .font_info_b16(st.fonts.exten_base_entry(f) + q.s0 as i32);
+        // The repeatable (s0) piece sets the box width and the per-step height.
+        let u = height_plus_depth(&mut st.fonts, f, r.s0);
+        let effective_c = crate::scan::effective_char(&mut st.fonts, true, f, r.s0);
+        let qq = st
+            .fonts
+            .font_info_b16(st.fonts.char_base_entry(f) + effective_c);
+        let box_width = st.fonts.font_info_b32s1(st.fonts.width_base_entry(f) + qq.s3 as i32)
+            + st.fonts.font_info_b32s1(st.fonts.italic_base_entry(f) + qq.s1 as i32 / 4);
+        st.mem.set_b32s1(b + 1, box_width);
+        let mut w = 0;
+        if r.s1 != 0 {
+            w += height_plus_depth(&mut st.fonts, f, r.s1);
+        }
+        if r.s2 != 0 {
+            w += height_plus_depth(&mut st.fonts, f, r.s2);
+        }
+        if r.s3 != 0 {
+            w += height_plus_depth(&mut st.fonts, f, r.s3);
+        }
+        Ok(ExtGeom { b, r, u, w })
+    }) {
+        Ok(geom) => geom,
+        Err(e) => node_recycle_abort(e),
+    };
+    let mut n: i32 = 0;
+    if u > 0 {
+        while w < v {
+            w += u;
+            n += 1;
+            if r.s2 != 0 {
+                w += u;
+            }
+        }
+    }
+    if r.s1 != 0 {
+        stack_into_box_global(b, f, r.s1);
+    }
+    for _ in 1..=n {
+        stack_into_box_global(b, f, r.s0);
+    }
+    if r.s2 != 0 {
+        stack_into_box_global(b, f, r.s2);
+        for _ in 1..=n {
+            stack_into_box_global(b, f, r.s0);
+        }
+    }
+    if r.s3 != 0 {
+        stack_into_box_global(b, f, r.s3);
+    }
+    crate::state::with_state_mut(|st| {
+        let height = st.mem.b32s1(b + 3);
+        st.mem.set_b32s1(b + 2, w - height);
+    });
+    b
+}
+
 /// translated from xetex-math.c:1017 (var_delimiter)
 pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
     let mut f: i32 = FONT_BASE;
@@ -4692,74 +4776,7 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
         });
         if !(font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine)) {
             if q.s1 % 4 == EXT_TAG {
-                b = crate::state::with_state_mut(|st| crate::mem::new_null_box(&mut st.mem));
-                if b == ALLOC_FAILED {
-                    node_recycle_abort(NodeRecycleAbort::Overflow);
-                }
-                crate::state::with_state_mut(|st| {
-                    st.mem.set_b16s1(b, VLIST_NODE);
-                });
-                let r = crate::state::with_state(|st| {
-                    st.fonts
-                        .font_info_b16(st.fonts.exten_base_entry(f) + q.s0 as i32)
-                });
-                c = r.s0;
-                let u = crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c));
-                w = 0;
-                let box_width = crate::state::with_state_mut(|st| {
-                    let fonts = &mut st.fonts;
-                    let effective_c = crate::scan::effective_char(fonts, true, f, c);
-                    q = fonts.font_info_b16(fonts.char_base_entry(f) + effective_c);
-                    fonts.font_info_b32s1(fonts.width_base_entry(f) + q.s3 as i32)
-                        + fonts.font_info_b32s1(fonts.italic_base_entry(f) + q.s1 as i32 / 4)
-                });
-                crate::state::with_state_mut(|st| st.mem.set_b32s1(b + 1, box_width));
-                c = r.s1;
-                if c != 0 {
-                    w += crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c));
-                }
-                c = r.s2;
-                if c != 0 {
-                    w += crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c));
-                }
-                c = r.s3;
-                if c != 0 {
-                    w += crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c));
-                }
-                let mut n: i32 = 0;
-                if u > 0 {
-                    while w < v {
-                        w += u;
-                        n += 1;
-                        if r.s2 != 0 {
-                            w += u;
-                        }
-                    }
-                }
-                c = r.s1;
-                if c != 0 {
-                    stack_into_box_global(b, f, c);
-                }
-                c = r.s0;
-                for _ in 1..=n {
-                    stack_into_box_global(b, f, c);
-                }
-                c = r.s2;
-                if c != 0 {
-                    stack_into_box_global(b, f, c);
-                    c = r.s0;
-                    for _ in 1..=n {
-                        stack_into_box_global(b, f, c);
-                    }
-                }
-                c = r.s3;
-                if c != 0 {
-                    stack_into_box_global(b, f, c);
-                }
-                crate::state::with_state_mut(|st| {
-                    let height = st.mem.b32s1(b + 3);
-                    st.mem.set_b32s1(b + 2, w - height);
-                });
+                b = build_ext_delimiter_box_global(f, q, v);
             } else {
                 b = char_box_global(f, c as i32);
             }
@@ -4769,14 +4786,21 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
             b = native_glyph_vbox_global(f, c);
         }
     } else {
-        let width = crate::state::with_state(|st| {
-            st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE)
-        });
-        b = crate::state::with_state_mut(|st| crate::mem::new_null_box(&mut st.mem));
-        if b == ALLOC_FAILED {
-            node_recycle_abort(NodeRecycleAbort::Overflow);
-        }
-        crate::state::with_state_mut(|st| st.mem.set_b32s1(b + 1, width));
+        // Null delimiter: an empty box of \nulldelimiterspace width. One borrow
+        // island over disjoint `mem` (alloc) + `eqtb` (the dimen read).
+        b = match crate::state::with_state_mut(|st| {
+            let st = &mut *st;
+            let bb = crate::mem::new_null_box(&mut st.mem);
+            if bb == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow);
+            }
+            let width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE);
+            st.mem.set_b32s1(bb + 1, width);
+            Ok(bb)
+        }) {
+            Ok(bb) => bb,
+            Err(e) => node_recycle_abort(e),
+        };
     }
     crate::state::with_state_mut(|st| {
         let state = &mut *st;

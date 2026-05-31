@@ -7,6 +7,26 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 100 — 2026-06-01 — thread `var_delimiter` delimiter-box construction into borrow islands
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).
+
+**Slice:** the EXT_TAG extensible-delimiter box-building block inside `var_delimiter_global` (`src/math.rs`), the documented session-99 next target. Recon: only stale `xetex-math.c` prototype/comment hits for `var_delimiter`; 4 live callers (`make_fraction`/`make_left_right`/`make_op` family) all in `math.rs`, none rewritten; no cleanup aliases, no cross-module redeclarations.
+
+**Classification:** bucket **C** (session-81/83 style). Extracted `build_ext_delimiter_box_global(f, q, v)`: the box allocation + every TFM font read (the `exten` table row `r`, the repeatable piece's width via `effective_char`, and the `height_plus_depth` of the top/mid/bottom/repeat pieces) now run under **one** `mem`+`fonts` borrow island using the already-threaded `new_null_box`/`effective_char`/`height_plus_depth` directly — replacing ~12 scattered single-statement `with_state`/`with_state_mut` closures the C translation left behind. The repeat-count arithmetic is pure; the piece stacking keeps the threaded `stack_into_box_global` (each call builds + links a char box under its own borrow), so allocation order (vlist box first, then each stacked char box) is **byte-identical** to the inline version — the parity guarantee for the EXT_TAG (TFM) path that TRIP/`display_math` exercise. `ALLOC_FAILED` propagates as `NodeRecycleAbort::Overflow` to a post-borrow `node_recycle_abort` (`01b` §5). Also consolidated the null-delimiter branch (`\nulldelimiterspace`) from 3 closures into one disjoint `mem`(alloc)+`eqtb`(dimen read) island.
+
+**Bridged call sites / deleted accessors:** no external call-site rename (the helper is internal to `var_delimiter_global`). No bridge accessor lost its last caller, so none deleted. No new state method surface (`new_null_box`/`effective_char`/`height_plus_depth` already threaded; `MemState`/`FontState`/`EqtbState` methods all pre-existed).
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328** unchanged. raw extern statics unchanged. raw `unsafe {}` **174** unchanged. `unsafe fn` 655→**656** (+1, the new `build_ext_delimiter_box_global` helper; `var_delimiter_global` itself unchanged). This is a threading/consolidation slice — the win is removing ~15 bridge closures from a hot-but-cold math leaf and pointing it at direct state, not a headline metric drop.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 51 warnings; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (101):** `var_delimiter_global`'s remaining bridge churn is the two big small/large-family scan loops (deeply interleaved `math_font`/`map_char_to_glyph`/`get_ot_math_variant`/`get_ot_assembly_ptr`/TFM char-list scan — bucket **D**, leave on the bridge) plus single-island reads (`font_area`, the final `axis_height` shift) that are already minimal. Good next math leaves: `build_choices`/`append_choices` mem work (mind `unsave`/`push_math`/`scan_left_brace` — keep scanner calls outside live borrows), or a pagebuilder/linebreak leaf. Keep `clean_box`, `vpackage`, `hpack`, `mlist_to_hlist`, OT-math calls, and `build_opentype_assembly` outside live borrows / off the single-session table (they are high-count orchestrators). Keep scanner-heavy `scan.rs` last; draft `02-modules.md` to READY before threading reaches it.
+
+---
+
 ## Idiom session 99 — 2026-05-31 — thread `flush_math` + `fin_mlist` to `&mut MemState`
 
 **Type:** execution (workstream 01, Phase C — math noad family). **Three commits**: a preceding docs-refresh commit for the pre-existing WIP plan-doc/metrics changes, then two threading slices (`flush_math`, `fin_mlist`), one function + all call sites each. Dashboard **29/2/7/4** after each. Crate warnings did not regress.
