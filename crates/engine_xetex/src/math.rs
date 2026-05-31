@@ -1776,6 +1776,12 @@ struct ScriptGlyphNucleus {
     glyph: u16,
 }
 
+struct ScriptKernAttachment {
+    p: i32,
+    kern: i32,
+    is_ot_math: bool,
+}
+
 fn glyph_nucleus(mem: &MemState, p: i32) -> Option<ScriptGlyphNucleus> {
     if p != TEX_NULL
         && !is_char_node_in(mem, p)
@@ -1788,6 +1794,45 @@ fn glyph_nucleus(mem: &MemState, p: i32) -> Option<ScriptGlyphNucleus> {
         })
     } else {
         None
+    }
+}
+
+unsafe fn maybe_attach_script_kern_global(
+    q: i32,
+    p: i32,
+    script_f: i32,
+    script_g: u16,
+    cmd: i32,
+    shift: i32,
+) -> ScriptKernAttachment {
+    let (cur_f, nucleus) =
+        crate::state::with_state(|st| (st.scanner.cur_f, glyph_nucleus(&st.mem, p)));
+
+    if !font_is_ot_math_global(cur_f) {
+        return ScriptKernAttachment {
+            p,
+            kern: 0,
+            is_ot_math: false,
+        };
+    }
+
+    let Some(nucleus) = nucleus else {
+        return ScriptKernAttachment {
+            p,
+            kern: 0,
+            is_ot_math: true,
+        };
+    };
+
+    let kern = get_ot_math_kern(nucleus.font, nucleus.glyph, script_f, script_g, cmd, shift);
+    ScriptKernAttachment {
+        p: if kern == 0 {
+            p
+        } else {
+            attach_hkern_to_new_hlist_global(q, kern)
+        },
+        kern,
+        is_ot_math: true,
     }
 }
 
@@ -1917,8 +1962,6 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
     let mut x: i32;
     let y: i32;
     let mut clr: i32;
-    let mut sub_kern = 0;
-    let mut sup_kern = 0;
     let sup_g: u16;
     let sup_f: i32;
     let sub_g: u16;
@@ -1980,23 +2023,7 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
 
         crate::state::with_state_mut(|st| st.mem.set_b32s1(x + 4, shift_down));
 
-        let (cur_f, nucleus) =
-            crate::state::with_state(|st| (st.scanner.cur_f, glyph_nucleus(&st.mem, p)));
-        if font_is_ot_math_global(cur_f) && nucleus.is_some() {
-            let nucleus = nucleus.unwrap();
-            sub_kern = get_ot_math_kern(
-                nucleus.font,
-                nucleus.glyph,
-                sub_f,
-                sub_g,
-                SUB_CMD,
-                shift_down,
-            );
-
-            if sub_kern != 0 {
-                p = attach_hkern_to_new_hlist_global(q, sub_kern);
-            }
-        }
+        p = maybe_attach_script_kern_global(q, p, sub_f, sub_g, SUB_CMD, shift_down).p;
     } else {
         let (script_g, script_f) = first_script_glyph_global(q + 2);
         sup_g = script_g;
@@ -2041,21 +2068,9 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
             shift_up = clr;
         }
 
-        let (cur_f, sub_empty, nucleus) = crate::state::with_state(|st| {
-            (
-                st.scanner.cur_f,
-                st.mem.b32s1(q + 3) == EMPTY,
-                glyph_nucleus(&st.mem, p),
-            )
-        });
-        if font_is_ot_math_global(cur_f) && sub_empty && nucleus.is_some() {
-            let nucleus = nucleus.unwrap();
-            sup_kern =
-                get_ot_math_kern(nucleus.font, nucleus.glyph, sup_f, sup_g, SUP_CMD, shift_up);
-
-            if sup_kern != 0 {
-                p = attach_hkern_to_new_hlist_global(q, sup_kern);
-            }
+        let sub_empty = crate::state::with_state(|st| st.mem.b32s1(q + 3) == EMPTY);
+        if sub_empty {
+            p = maybe_attach_script_kern_global(q, p, sup_f, sup_g, SUP_CMD, shift_up).p;
         }
 
         if crate::state::with_state(|st| st.mem.b32s1(q + 3)) == EMPTY {
@@ -2119,41 +2134,19 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
                 }
             }
 
-            let (cur_f, nucleus) =
-                crate::state::with_state(|st| (st.scanner.cur_f, glyph_nucleus(&st.mem, p)));
-            if font_is_ot_math_global(cur_f) {
-                if let Some(nucleus) = nucleus {
-                    sub_kern = get_ot_math_kern(
-                        nucleus.font,
-                        nucleus.glyph,
-                        sub_f,
-                        sub_g,
-                        SUB_CMD,
-                        shift_down,
-                    );
-
-                    if sub_kern != 0 {
-                        p = attach_hkern_to_new_hlist_global(q, sub_kern);
-                    }
-                }
-
-                let (sub_empty, nucleus) = crate::state::with_state(|st| {
-                    (st.mem.b32s1(q + 3) == EMPTY, glyph_nucleus(&st.mem, p))
-                });
-                if sub_empty && nucleus.is_some() {
-                    let nucleus = nucleus.unwrap();
-                    sup_kern = get_ot_math_kern(
-                        nucleus.font,
-                        nucleus.glyph,
-                        sup_f,
-                        sup_g,
-                        SUP_CMD,
-                        shift_up,
-                    );
-
-                    if sup_kern != 0 {
-                        p = attach_hkern_to_new_hlist_global(q, sup_kern);
-                    }
+            let mut sub_kern;
+            let mut sup_kern = 0;
+            let attachment =
+                maybe_attach_script_kern_global(q, p, sub_f, sub_g, SUB_CMD, shift_down);
+            p = attachment.p;
+            sub_kern = attachment.kern;
+            if attachment.is_ot_math {
+                let sub_empty = crate::state::with_state(|st| st.mem.b32s1(q + 3) == EMPTY);
+                if sub_empty {
+                    let attachment =
+                        maybe_attach_script_kern_global(q, p, sup_f, sup_g, SUP_CMD, shift_up);
+                    p = attachment.p;
+                    sup_kern = attachment.kern;
                 }
             } else {
                 sup_kern = 0;

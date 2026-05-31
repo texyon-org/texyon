@@ -7,6 +7,28 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 95 — 2026-05-31 — extract `make_scripts_global` OT script-kern helper
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` reports **51** Rust warnings in this worktree).
+
+**Slice:** bounded helper extraction inside `make_scripts_global` (`src/math.rs`) for the repeated OT-math script-kern calculation/attachment block. Recon found only stale `xetex-math.c` prototype/comment hits for `make_scripts`/`attach_hkern_to_new_hlist`; no cleanup aliases; no cross-module extern/static redeclarations; the single live `make_scripts_global` caller in `mlist_to_hlist` is not inside a live `with_state*` closure. Candidate bridge accessors (`cur_f`, `mem_b16s2`, `set_mem_b16s2`, `math_x_height_global`, `default_rule_thickness_global`) still have other callers, so none were deleted.
+
+**Classification:** `make_scripts_global` remains bucket **C/D** as an orchestrator. New `maybe_attach_script_kern_global` is bucket **C**: it performs one short state read for `scanner.cur_f` plus `glyph_nucleus(&MemState, p)`; then drops the borrow before calling `font_is_ot_math_global`, the OT-math C `get_ot_math_kern`, and the with-state-bearing `attach_hkern_to_new_hlist_global`. `glyph_nucleus` is bucket **B** over `MemState`; `attach_hkern_to_new_hlist_global` remains the existing bucket-B bridge with `NodeRecycleAbort::Overflow` cold sentinel.
+
+**Structure:** added `ScriptKernAttachment` and `maybe_attach_script_kern_global`, then replaced the repeated subscript/superscript kern blocks in `make_scripts_global`. The helper returns the possibly-updated noad hlist head, the kern amount when the caller needs it for sub/sup stacking, and whether the active font was OT math. `clean_box`, `vpackage`, `first_script_glyph_global`, `font_is_ot_math_global`, OT-math C calls, and `attach_hkern_to_new_hlist_global` all remain outside live state borrows.
+
+**Bridged call sites / deleted accessors:** no external call-site rename. No bridge accessor lost its last caller, so none deleted. No new method surface.
+
+**Newtype debt:** none. No state fields moved; helper parameters and returned kerns are plain `i32`/`u16`.
+
+**Metrics:** `#[no_mangle]` unchanged by this slice. raw extern statics unchanged. raw `unsafe {}` unchanged. Current worktree counts after validation: `#[no_mangle]` **328**, raw extern statics **38**, raw `unsafe {}` **174** (`unsafe fn` grep: **646**).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 51 warnings; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (96):** continue bounded math noad cleanup adjacent to `make_scripts_global`, or take another small box/list helper near delimiter/script construction. Remaining higher-risk `make_scripts_global` work is structural cleanup around script box adjustment and the sub/sup stack; keep `clean_box`, `vpackage`, OT-math calls, `font_is_ot_math_global`, `first_script_glyph_global`, and `attach_hkern_to_new_hlist_global` outside live borrows unless explicitly classified/threaded. Do not take `mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, or `line_break` as a whole session.
+
+---
+
 ## Idiom session 94 — 2026-05-31 — split `make_scripts_global` borrow islands
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` in this worktree reports **51** Rust warnings).

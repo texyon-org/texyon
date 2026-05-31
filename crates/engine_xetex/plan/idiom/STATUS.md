@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 94, **Phase-C execution**: split deeper `make_scripts_global` borrow islands around `hpack`/`clean_box`/OT-math/`vpackage` without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits; no cleanup aliases or redeclarations. Added `MemState::b16s2`, local glyph/script helpers, and deleted now-dead `sup1`/`sup2`/`sup3`/`sub1`/`sub2`/`sup_drop`/`sub_drop` `_global` bridges. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 329, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 95, **Phase-C execution**: extracted a bounded OT script-kern helper inside `make_scripts_global` without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits; no cleanup aliases or redeclarations; no candidate bridge accessor lost its last caller. Added `maybe_attach_script_kern_global` / `ScriptKernAttachment`; kept `font_is_ot_math_global`, OT-math C calls, and `attach_hkern_to_new_hlist_global` outside live borrows. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -895,6 +895,19 @@ least-coupled non-`misc` clusters:
     cleanup aliases; no fields moved → no newtype debt (`italic_base` is plain
     `int32_t *`, already no-debt per session 39). `#[no_mangle]` 334→333, raw externs
     40, `unsafe fn` 647 (net flat), raw `unsafe {}` 176 unchanged. Dashboard 29/2/7/4.
+-   **Math `make_scripts_global` OT script-kern helper extracted (session 95):**
+    bounded cleanup inside the existing `make_scripts_global` orchestrator (`src/math.rs`).
+    Added `ScriptKernAttachment` and `maybe_attach_script_kern_global` to consolidate
+    the repeated OT-math script-kern calculation/attachment blocks. The helper is
+    bucket **C**: one short state read for `scanner.cur_f` plus `glyph_nucleus(&MemState,
+    p)`, then the borrow drops before `font_is_ot_math_global`, OT-math C
+    `get_ot_math_kern`, and the with-state-bearing `attach_hkern_to_new_hlist_global`.
+    No external call-site rename, no bridge accessor deletion, no method surface, and no
+    state fields moved → no newtype debt. Recon found only stale `xetex-math.c`
+    prototype/comment hits; no cleanup aliases or redeclarations; no call site inside a
+    live `with_state*` closure. Metrics unchanged by the slice; current counts after
+    validation are `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174
+    (`unsafe fn` grep 646). Dashboard 29/2/7/4; `cargo check` reports 51 warnings.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -903,12 +916,12 @@ the snippets in `00-overview.md` / the workstream plans.
 
 | Metric | Baseline (2026-05-23) | Target | Current |
 |---|---:|---|---:|
-| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
+| `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 38 (current direct grep) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 174 state-backed scalars/arrays (session 82 deleted `xtx_ligature_present` and `init_lig` getters after threading the font/effective-char + linebreak reconstruction slice) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 331 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 91 dropped 2: `make_math_accent` + `compute_ot_math_accent_pos`) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 647 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 91 net flat: moved the two math-accent helpers off `extern "C"` but kept unsafe wrappers) |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 176 / 688 not remeasured (session 87 made the two native-node text-pointer writes explicit in the safe `build_native_character` core) |
+| `#[no_mangle]` exports | 576 | boundary-only | 328 (current direct grep) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 646 (current direct grep) |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 174 / 688 not remeasured (current direct grep) |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
