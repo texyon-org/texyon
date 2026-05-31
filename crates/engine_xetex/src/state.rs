@@ -376,6 +376,12 @@ impl MemState {
         self.data[p as usize].b16.s1 = v;
     }
 
+    /// Write `mem[p].b16.s2`. Mirrors `globals::set_mem_b16s2`.
+    #[inline]
+    pub(crate) fn set_b16s2(&mut self, p: i32, v: u16) {
+        self.data[p as usize].b16.s2 = v;
+    }
+
     /// Write the `gr` (f64) field of `mem[p]`. Mirrors `globals::set_mem_gr`.
     #[inline]
     pub(crate) fn set_gr(&mut self, p: i32, v: f64) {

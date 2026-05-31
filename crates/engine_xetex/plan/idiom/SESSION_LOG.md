@@ -7,6 +7,25 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 83 — 2026-05-31 — thread the math native-glyph stack split
+
+**Type:** execution (workstream 01, Phase C — math native-glyph helper split). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** split `math::stack_glyph_into_box` so allocation/initialization (`new_stack_glyph`) and final splicing (`stack_glyph_into_box`) run under narrow `&mut MemState` borrows, while the with-state-bearing `measure_native_glyph` call runs between borrows in `stack_glyph_into_box_global`. Also folded the adjacent native-glyph vbox fallback in `var_delimiter` into the same start/measure/finish pattern.
+
+**Classification (`01b` §4a):** bucket **B** for direct `MemState` accessor rewrites and threaded `get_node`/`new_null_box`; bucket **C** for the borrow-dropping `measure_native_glyph` boundary. Recon found no cleanup aliases, no call sites inside an existing `with_state*` closure, and no live C/C++ callers (only stale `xetex-math.c` prototypes/comments).
+
+**Bridged call sites:** 2 legacy `stack_glyph_into_box` sites in `build_opentype_assembly` now call `stack_glyph_into_box_global`; the native vbox fallback now calls `native_glyph_vbox_global`.
+
+**Newtype debt:** none. No state fields moved; semantic typedefs here are function parameters (`internal_font_number`, `scaled_t`), not moved fields.
+
+**Metrics:** `#[no_mangle]` **370 → 369**. raw externs **40** unchanged. `unsafe fn` **679 → 680** (one extra transitional wrapper net). raw `unsafe {}` **168** unchanged. Crate warning count during `cargo check` stayed **79**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (84):** good closeable targets are a pagebuilder helper block that bottoms out on threaded allocator/disposal, another closed linebreak block, or a larger math helper only if its scanner/output/error/font calls can be precomputed or deferred outside live state borrows. Keep the scanner hot path in `scan.rs` last; draft `02-modules.md` before the big scanner decomposition.
+
+---
 
 ## Idiom session 82 — 2026-05-31 — thread font/effective-char plus linebreak ligature reconstruction
 

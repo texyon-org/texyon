@@ -2303,39 +2303,95 @@ pub unsafe fn height_plus_depth_global(f: i32, c: u16) -> i32 {
     crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c))
 }
 
+fn new_stack_glyph(mem: &mut MemState, f: i32, g: i32) -> Result<i32, NodeRecycleAbort> {
+    let p = crate::mem::get_node(mem, GLYPH_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b16s1(p, WHATSIT_NODE);
+    mem.set_b16s0(p, GLYPH_NODE);
+    mem.set_b16s2(p + 4, f as u16);
+    mem.set_b16s1(p + 4, g as u16);
+    Ok(p)
+}
+
 /// translated from xetex-math.c:1482 (stack_glyph_into_box)
-#[no_mangle]
-pub unsafe extern "C" fn stack_glyph_into_box(b: i32, f: i32, g: i32) {
-    let p = get_node_global(GLYPH_NODE_SIZE);
-    set_mem_b16s1(p, WHATSIT_NODE);
-    set_mem_b16s0(p, GLYPH_NODE);
-    set_mem_b16s2(p + 4, f as u16);
-    set_mem_b16s1(p + 4, g as u16);
-    crate::ext::measure_native_glyph(mem_node_addr(p), 1);
-    if mem_b16s1(b) == HLIST_NODE {
-        let mut q = mem_b32s1(b + 5);
+///
+/// Phase-C: the measured glyph node `p` is spliced under a narrow `MemState`
+/// borrow. Legacy callers use [`stack_glyph_into_box_global`], which allocates
+/// the node, drops the borrow for `measure_native_glyph`, then links it here.
+pub fn stack_glyph_into_box(mem: &mut MemState, b: i32, p: i32) {
+    if mem.b16s1(b) == HLIST_NODE {
+        let mut q = mem.b32s1(b + 5);
         if q == TEX_NULL {
-            set_mem_b32s1(b + 5, p);
+            mem.set_b32s1(b + 5, p);
         } else {
-            while mem_b32s1(q) != TEX_NULL {
-                q = mem_b32s1(q);
+            while mem.b32s1(q) != TEX_NULL {
+                q = mem.b32s1(q);
             }
-            set_mem_b32s1(q, p);
-            if mem_b32s1(b + 3) < mem_b32s1(p + 3) {
-                set_mem_b32s1(b + 3, mem_b32s1(p + 3));
+            mem.set_b32s1(q, p);
+            let glyph_height = mem.b32s1(p + 3);
+            if mem.b32s1(b + 3) < glyph_height {
+                mem.set_b32s1(b + 3, glyph_height);
             }
-            if mem_b32s1(b + 2) < mem_b32s1(p + 2) {
-                set_mem_b32s1(b + 2, mem_b32s1(p + 2));
+            let glyph_depth = mem.b32s1(p + 2);
+            if mem.b32s1(b + 2) < glyph_depth {
+                mem.set_b32s1(b + 2, glyph_depth);
             }
         }
     } else {
-        set_mem_b32s1(p, mem_b32s1(b + 5));
-        set_mem_b32s1(b + 5, p);
-        set_mem_b32s1(b + 3, mem_b32s1(p + 3));
-        if mem_b32s1(b + 1) < mem_b32s1(p + 1) {
-            set_mem_b32s1(b + 1, mem_b32s1(p + 1));
+        mem.set_b32s1(p, mem.b32s1(b + 5));
+        mem.set_b32s1(b + 5, p);
+        mem.set_b32s1(b + 3, mem.b32s1(p + 3));
+        let glyph_width = mem.b32s1(p + 1);
+        if mem.b32s1(b + 1) < glyph_width {
+            mem.set_b32s1(b + 1, glyph_width);
         }
     }
+}
+
+/// Transitional bridge-down wrapper for legacy `stack_glyph_into_box` callers.
+/// The native-glyph measurement path reads font state via bridge accessors, so
+/// it must run between the allocation and linking borrows.
+pub unsafe fn stack_glyph_into_box_global(b: i32, f: i32, g: i32) {
+    let p = match crate::state::with_state_mut(|st| new_stack_glyph(&mut st.mem, f, g)) {
+        Ok(p) => p,
+        Err(e) => node_recycle_abort(e),
+    };
+    crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+    crate::state::with_state_mut(|st| stack_glyph_into_box(&mut st.mem, b, p));
+}
+
+fn native_glyph_vbox_start(
+    mem: &mut MemState,
+    f: i32,
+    g: u16,
+) -> Result<(i32, i32), NodeRecycleAbort> {
+    let b = new_null_box(mem);
+    if b == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b16s1(b, VLIST_NODE);
+    let p = new_stack_glyph(mem, f, g as i32)?;
+    Ok((b, p))
+}
+
+fn native_glyph_vbox_finish(mem: &mut MemState, b: i32, p: i32) {
+    mem.set_b32s1(b + 5, p);
+    mem.set_b32s1(b + 1, mem.b32s1(p + 1));
+    mem.set_b32s1(b + 3, mem.b32s1(p + 3));
+    mem.set_b32s1(b + 2, mem.b32s1(p + 2));
+}
+
+unsafe fn native_glyph_vbox_global(f: i32, g: u16) -> i32 {
+    let (b, p) = match crate::state::with_state_mut(|st| native_glyph_vbox_start(&mut st.mem, f, g))
+    {
+        Ok(nodes) => nodes,
+        Err(e) => node_recycle_abort(e),
+    };
+    crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+    crate::state::with_state_mut(|st| native_glyph_vbox_finish(&mut st.mem, b, p));
+    b
 }
 
 /// translated from xetex-math.c:1517 (stack_glue_into_box)
@@ -3714,7 +3770,7 @@ pub unsafe extern "C" fn build_opentype_assembly(
                 if oo > 0 {
                     stack_glue_into_box_global(b, -oo, -o);
                 }
-                stack_glyph_into_box(b, f, ot_part_glyph(a, i));
+                stack_glyph_into_box_global(b, f, ot_part_glyph(a, i));
                 prev_o = ot_part_end_connector(f, a, i);
             }
         } else {
@@ -3729,7 +3785,7 @@ pub unsafe extern "C" fn build_opentype_assembly(
             if oo > 0 {
                 stack_glue_into_box_global(b, -oo, -o);
             }
-            stack_glyph_into_box(b, f, ot_part_glyph(a, i));
+            stack_glyph_into_box_global(b, f, ot_part_glyph(a, i));
             prev_o = ot_part_end_connector(f, a, i);
         }
     }
@@ -3942,18 +3998,7 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
         } else if !ot_assembly_ptr.is_null() {
             b = build_opentype_assembly(f, ot_assembly_ptr, v, false);
         } else {
-            b = crate::mem::new_null_box_global();
-            set_mem_b16s1(b, VLIST_NODE);
-            let p = get_node_global(GLYPH_NODE_SIZE);
-            set_mem_b16s1(p, WHATSIT_NODE);
-            set_mem_b16s0(p, GLYPH_NODE);
-            set_mem_b16s2(p + 4, f as u16);
-            set_mem_b16s1(p + 4, c);
-            crate::ext::measure_native_glyph(mem_node_addr(p), 1);
-            set_mem_b32s1(b + 5, p);
-            set_mem_b32s1(b + 1, mem_b32s1(p + 1));
-            set_mem_b32s1(b + 3, mem_b32s1(p + 3));
-            set_mem_b32s1(b + 2, mem_b32s1(p + 2));
+            b = native_glyph_vbox_global(f, c);
         }
     } else {
         b = crate::mem::new_null_box_global();
