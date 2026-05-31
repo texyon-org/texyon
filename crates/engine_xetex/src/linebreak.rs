@@ -394,43 +394,56 @@ pub fn pop_node(linebreak: &mut LinebreakState) -> Option<i32> {
 }
 
 // translated from xetex-linebreak.c:2692 (total_pw)
-#[no_mangle]
-pub unsafe extern "C" fn total_pw(q: i32, p: i32) -> i32 {
-    use crate::globals::{first_p, global_prev_p, mem_b16s1, mem_b32s0, mem_b32s1};
-
-    let mut l = if mem_b32s1(q + 1) == TEX_NULL {
-        first_p()
+pub fn total_pw(
+    mem: &mut MemState,
+    linebreak: &mut LinebreakState,
+    q: i32,
+    p: i32,
+) -> Option<(i32, i32)> {
+    let mut l = if mem.b32s1(q + 1) == TEX_NULL {
+        linebreak.first_p
     } else {
-        mem_b32s1(mem_b32s1(q + 1) + 1)
+        mem.b32s1(mem.b32s1(q + 1) + 1)
     };
 
-    let mut r = prev_rightmost(global_prev_p(), p);
-    if p != TEX_NULL && mem_b16s1(p) as i32 == DISC_NODE && mem_b32s0(p + 1) != TEX_NULL {
-        r = mem_b32s0(p + 1);
-        while mem_b32s1(r) != TEX_NULL {
-            r = mem_b32s1(r);
+    let mut r = prev_rightmost_in(mem, linebreak.global_prev_p, p);
+    if p != TEX_NULL && mem.b16s1(p) as i32 == DISC_NODE && mem.b32s0(p + 1) != TEX_NULL {
+        r = mem.b32s0(p + 1);
+        while mem.b32s1(r) != TEX_NULL {
+            r = mem.b32s1(r);
         }
     } else {
-        r = find_protchar_right_global(l, r);
+        r = find_protchar_right(mem, linebreak, l, r)?;
     }
 
-    if l != TEX_NULL && mem_b16s1(l) as i32 == DISC_NODE {
-        if mem_b32s1(l + 1) != TEX_NULL {
-            l = mem_b32s1(l + 1);
+    if l != TEX_NULL && mem.b16s1(l) as i32 == DISC_NODE {
+        if mem.b32s1(l + 1) != TEX_NULL {
+            l = mem.b32s1(l + 1);
         } else {
-            let mut n = crate::globals::mem_b16s0(l);
-            l = mem_b32s1(l);
+            let mut n = mem.b16s0(l);
+            l = mem.b32s1(l);
             while n > 0 {
-                if mem_b32s1(l) != TEX_NULL {
-                    l = mem_b32s1(l);
+                if mem.b32s1(l) != TEX_NULL {
+                    l = mem.b32s1(l);
                 }
                 n -= 1;
             }
-            l = find_protchar_left_global(l, true);
+            l = find_protchar_left(mem, linebreak, l, true)?;
         }
     } else {
-        l = find_protchar_left_global(l, true);
+        l = find_protchar_left(mem, linebreak, l, true)?;
     }
+
+    Some((l, r))
+}
+
+pub unsafe fn total_pw_global(q: i32, p: i32) -> i32 {
+    let (l, r) = match crate::state::with_state_mut(|state| {
+        total_pw(&mut state.mem, &mut state.linebreak, q, p)
+    }) {
+        Some(pair) => pair,
+        None => crate::errors::pdf_error(c"total_pw".as_ptr(), c"hlist stack failure".as_ptr()),
+    };
 
     char_pw(l, 0) + char_pw(r, 1)
 }
@@ -2334,7 +2347,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
             artificial_demerits = false;
             shortfall = line_width - cur_active_width(1);
             if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 1 {
-                shortfall += total_pw(r, cur_p());
+                shortfall += total_pw_global(r, cur_p());
             }
         }
 

@@ -8,6 +8,34 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 76 — 2026-05-31 — thread linebreak total_pw
+
+**Type:** execution (workstream 01, Phase C — third `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread `total_pw`, the line-break protrusion-width node selector:
+- `total_pw` now takes `&mut MemState` and `&mut LinebreakState`, reads `first_p` / `global_prev_p` directly, walks mem through `MemState`, and calls the direct protrusion scanners.
+- `total_pw_global` preserves the legacy caller, defers cold hlist-stack `pdf_error`, and runs `char_pw` after the state borrow drops because `char_pw` still crosses linebreak/font/scanner bridges.
+- The sole legacy caller in `try_break` now uses `total_pw_global`.
+- Removed the now-dead `first_p` / `global_prev_p` bridge getters; setters remain because `line_break` still updates those fields.
+
+**Classification (`01b` §4a):** bucket **C**. The search itself is direct accessor rewrite, but `char_pw` must stay outside the borrow until scanner/font/string state is threaded.
+
+**Recon / safety checks (§11 + `01b`):**
+- no extern statics or `ini.rs` cleanup aliases.
+- no executable C/C++ callers; post-slice C-reference grep is empty.
+- no cross-module extern/static/link-name redeclarations beyond the Rust definition before the slice.
+- no call site already inside a `with_state*` closure.
+
+**Newtype debt:** none. No state fields added; parameters and returned nodes are existing plain TeX integer node pointers (`i32`).
+
+**Metrics:** `#[no_mangle]` exports **382 → 381** (`total_pw`). `globals.rs` raw externs unchanged at **40**. `unsafe fn` unchanged at **685** (`total_pw` export became a direct safe helper plus unsafe `_global` wrapper). Raw `unsafe { ... }` text-search count unchanged at **160**. Thin accessors **819 → 817** by removing `first_p` / `global_prev_p` getters.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (77):** continue `linebreak.rs` with another closed protrusion/linebreak helper. Good candidates are the nearby post-line-break protrusion insertion blocks that already use `find_protchar_*_global` plus `char_pw`; keep `char_pw` outside live state borrows until scanner/font/string state is threaded. Keep `scan.rs` last and draft `02-modules.md` to READY before scanner-heavy work.
+
+---
+
 ## Idiom session 75 — 2026-05-31 — thread linebreak protrusion scanners
 
 **Type:** execution (workstream 01, Phase C — second `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.

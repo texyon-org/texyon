@@ -4345,18 +4345,11 @@ pub(crate) fn set_last_rightmost_char(v: i32) {
         state.linebreak.last_rightmost_char = v;
     });
 }
-pub(crate) fn first_p() -> i32 {
-    crate::state::with_state(|state| state.linebreak.first_p)
-}
 #[inline]
 pub(crate) fn set_first_p(v: i32) {
     crate::state::with_state_mut(|state| {
         state.linebreak.first_p = v;
     });
-}
-#[inline]
-pub(crate) fn global_prev_p() -> i32 {
-    crate::state::with_state(|state| state.linebreak.global_prev_p)
 }
 #[inline]
 pub(crate) fn set_global_prev_p(v: i32) {
