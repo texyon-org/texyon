@@ -7,6 +7,26 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 85 — 2026-05-31 — thread math glue/rebox node helpers
+
+**Type:** execution (workstream 01, Phase C — math node-building/recycling helpers). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** threaded `math_glue`, `math_kern`, `rebox`, and the underline assembly around `make_under` to narrow `&mut MemState` cores. Legacy math callers now use `_global` wrappers; `rebox_global` drops the borrow around `hpack` / `effective_char_global`, and `make_under_global` drops it around `clean_box` / `vpackage`.
+
+**Classification (`01b` §4a):** `math_glue` / `math_kern` are bucket **B** after precomputing scaled-math values outside the borrow; `rebox` and `make_under` are bucket **C** borrow-dropping wrappers. Recon found no call site inside an existing `with_state*` closure, no cleanup aliases, and no live C/C++ caller beyond stale `xetex-math.c` prototypes/comments.
+
+**Bridged call sites:** 10 legacy math call sites moved to `_global` wrappers. No `globals.rs` bridge accessor lost its last caller.
+
+**Newtype debt:** none. No state fields moved; semantic typedefs here (`scaled_t`, `small_number`, `internal_font_number`) are function parameters or existing field debt, not new moved fields.
+
+**Metrics:** `#[no_mangle]` **346 → 342**. raw externs **40** unchanged. `unsafe fn` **651** unchanged. raw `unsafe {}` **171 → 173** (the scaled-math calls are now explicit before the borrow). Crate warning count during `cargo check` stayed **79**.
+
+**Validation:** first full-dashboard attempt exposed a `RefCell` nest panic from `tex_remainder()`/`x_over_n()` inside `math_glue`'s borrow; fixed by precomputing scaled values before `with_state_mut`. Then `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (86):** good closeable targets remain a pagebuilder helper block, another math node-building block whose font/scanner/output calls can be precomputed or deferred, or a closed linebreak/post-line-break block. Keep scanner-heavy `scan.rs` paths last; draft `02-modules.md` before the big scanner decomposition.
+
+---
+
 ## Idiom session 84 — 2026-05-31 — thread the math parameter helper cluster
 
 **Type:** execution (workstream 01, Phase C — math font/parameter reads). **One commit.** Dashboard **29/2/7/4**.

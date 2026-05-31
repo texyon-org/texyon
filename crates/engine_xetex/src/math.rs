@@ -13,9 +13,9 @@ use crate::globals::{
     cur_list_prev_graf, cur_list_tail, cur_mu, cur_size, cur_style, cur_val, cur_val1,
     depth_base_entry, eqtb_b32s1, exten_base_entry, file_line_error_style_p, font_area_entry,
     font_bc_entry, font_ec_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr,
-    height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry,
-    just_box, kern_base_entry, lig_kern_base_entry, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
-    mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, mem_word, nest_ptr,
+    height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
+    kern_base_entry, lig_kern_base_entry, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2,
+    mem_b16s3, mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, mem_word, nest_ptr,
     null_character, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
     semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_c, set_cur_dir, set_cur_f,
     set_cur_i, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
@@ -28,9 +28,9 @@ use crate::globals::{
     width_base_entry,
 };
 use crate::mem::{
-    free_node_global, get_avail, get_node_global, new_choice_global, new_glue, new_glue_global,
-    new_kern, new_kern_global, new_noad_global, new_null_box, new_rule, new_spec, ALLOC_FAILED,
-    TEX_NULL,
+    free_node, free_node_global, get_avail, get_node, get_node_global, new_choice_global, new_glue,
+    new_glue_global, new_kern, new_kern_global, new_noad_global, new_null_box, new_rule, new_spec,
+    ALLOC_FAILED, TEX_NULL,
 };
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState};
@@ -551,77 +551,83 @@ pub unsafe fn overbar_global(b: i32, k: i32, t: i32) -> i32 {
 }
 
 /// translated from xetex-math.c:195 (math_glue)
-#[no_mangle]
-pub unsafe extern "C" fn math_glue(g: i32, m: i32) -> i32 {
-    let mut n = crate::scaled_math::x_over_n(m, 65_536);
+struct MathGlueInput {
+    width: i32,
+    stretch_order: u16,
+    stretch: i32,
+    shrink_order: u16,
+    shrink: i32,
+}
+
+fn scaled_mu_value(v: i32, m: i32) -> i32 {
+    let mut n = unsafe { crate::scaled_math::x_over_n(m, 65_536) };
     let mut f = tex_remainder();
     if f < 0 {
         n -= 1;
         f += 65_536;
     }
-
-    let p = get_node_global(GLUE_SPEC_SIZE);
-    set_mem_b32s1(
-        p + 1,
+    unsafe {
         crate::scaled_math::mult_and_add(
             n,
-            mem_b32s1(g + 1),
-            crate::scaled_math::xn_over_d(mem_b32s1(g + 1), f, 65_536),
+            v,
+            crate::scaled_math::xn_over_d(v, f, 65_536),
             MAX_HALFWORD,
-        ),
-    );
-    set_mem_b16s1(p, mem_b16s1(g));
-    if mem_b16s1(p) == NORMAL {
-        set_mem_b32s1(
-            p + 2,
-            crate::scaled_math::mult_and_add(
-                n,
-                mem_b32s1(g + 2),
-                crate::scaled_math::xn_over_d(mem_b32s1(g + 2), f, 65_536),
-                MAX_HALFWORD,
-            ),
-        );
-    } else {
-        set_mem_b32s1(p + 2, mem_b32s1(g + 2));
+        )
     }
-    set_mem_b16s0(p, mem_b16s0(g));
-    if mem_b16s0(p) == NORMAL {
-        set_mem_b32s1(
-            p + 3,
-            crate::scaled_math::mult_and_add(
-                n,
-                mem_b32s1(g + 3),
-                crate::scaled_math::xn_over_d(mem_b32s1(g + 3), f, 65_536),
-                MAX_HALFWORD,
-            ),
-        );
-    } else {
-        set_mem_b32s1(p + 3, mem_b32s1(g + 3));
+}
+
+fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycleAbort> {
+    let p = get_node(mem, GLUE_SPEC_SIZE);
+    if p == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
     }
-    p
+    mem.set_b32s1(p + 1, input.width);
+    mem.set_b16s1(p, input.stretch_order);
+    mem.set_b32s1(p + 2, input.stretch);
+    mem.set_b16s0(p, input.shrink_order);
+    mem.set_b32s1(p + 3, input.shrink);
+    Ok(p)
+}
+
+pub unsafe fn math_glue_global(g: i32, m: i32) -> i32 {
+    let stretch_order = mem_b16s1(g);
+    let shrink_order = mem_b16s0(g);
+    let input = MathGlueInput {
+        width: scaled_mu_value(mem_b32s1(g + 1), m),
+        stretch_order,
+        stretch: if stretch_order == NORMAL {
+            scaled_mu_value(mem_b32s1(g + 2), m)
+        } else {
+            mem_b32s1(g + 2)
+        },
+        shrink_order,
+        shrink: if shrink_order == NORMAL {
+            scaled_mu_value(mem_b32s1(g + 3), m)
+        } else {
+            mem_b32s1(g + 3)
+        },
+    };
+    match crate::state::with_state_mut(|st| math_glue(&mut st.mem, input)) {
+        Ok(p) => p,
+        Err(e) => node_recycle_abort(e),
+    }
 }
 
 /// translated from xetex-math.c:223 (math_kern)
-#[no_mangle]
-pub unsafe extern "C" fn math_kern(p: i32, m: i32) {
-    if mem_b16s0(p) == MU_GLUE {
-        let mut n = crate::scaled_math::x_over_n(m, 65_536);
-        let mut f = tex_remainder();
-        if f < 0 {
-            n -= 1;
-            f += 65_536;
-        }
-        set_mem_b32s1(
-            p + 1,
-            crate::scaled_math::mult_and_add(
-                n,
-                mem_b32s1(p + 1),
-                crate::scaled_math::xn_over_d(mem_b32s1(p + 1), f, 65_536),
-                MAX_HALFWORD,
-            ),
-        );
-        set_mem_b16s0(p, EXPLICIT);
+fn math_kern(mem: &mut MemState, p: i32, scaled_width: Option<i32>) {
+    if let Some(width) = scaled_width {
+        mem.set_b32s1(p + 1, width);
+        mem.set_b16s0(p, EXPLICIT);
     }
+}
+
+pub unsafe fn math_kern_global(p: i32, m: i32) {
+    let scaled_width = if mem_b16s0(p) == MU_GLUE {
+        Some(scaled_mu_value(mem_b32s1(p + 1), m))
+    } else {
+        None
+    };
+    crate::state::with_state_mut(|st| math_kern(&mut st.mem, p, scaled_width));
 }
 
 /// translated from xetex-math.c:80 (flush_math)
@@ -660,7 +666,10 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
             } else {
                 set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
             }
-            set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
+            set_cur_mu(crate::scaled_math::x_over_n(
+                math_quad_global(cur_size()),
+                18,
+            ));
         }
         SUB_BOX => {
             q = mem_b32s0(p);
@@ -680,7 +689,10 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
             } else {
                 set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
             }
-            set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
+            set_cur_mu(crate::scaled_math::x_over_n(
+                math_quad_global(cur_size()),
+                18,
+            ));
         }
         _ => {
             q = crate::mem::new_null_box_global();
@@ -779,18 +791,39 @@ pub unsafe extern "C" fn make_over(q: i32) {
 }
 
 /// translated from xetex-math.c:207 (make_under)
-#[no_mangle]
-pub unsafe extern "C" fn make_under(q: i32) {
+fn make_under_prepare(
+    mem: &mut MemState,
+    x: i32,
+    rule_thickness: i32,
+) -> Result<(), NodeRecycleAbort> {
+    let p = new_kern(mem, 3 * rule_thickness);
+    if p == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(x, p);
+    let rule = fraction_rule(mem, rule_thickness)?;
+    mem.set_b32s1(p, rule);
+    Ok(())
+}
+
+fn make_under_finish(mem: &mut MemState, q: i32, x: i32, y: i32, rule_thickness: i32) {
+    let delta = mem.b32s1(y + 3) + mem.b32s1(y + 2) + rule_thickness;
+    mem.set_b32s1(y + 3, mem.b32s1(x + 3));
+    mem.set_b32s1(y + 2, delta - mem.b32s1(y + 3));
+    mem.set_b32s0(q + 1, y);
+    mem.set_b32s1(q + 1, SUB_BOX);
+}
+
+pub unsafe fn make_under_global(q: i32) {
     let x = clean_box(q + 1, cur_style());
-    let p = new_kern_global(3 * default_rule_thickness_global());
-    set_mem_b32s1(x, p);
-    set_mem_b32s1(p, fraction_rule_global(default_rule_thickness_global()));
+    let rule_thickness = default_rule_thickness_global();
+    if let Err(e) =
+        crate::state::with_state_mut(|st| make_under_prepare(&mut st.mem, x, rule_thickness))
+    {
+        node_recycle_abort(e);
+    }
     let y = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
-    let delta = mem_b32s1(y + 3) + mem_b32s1(y + 2) + default_rule_thickness_global();
-    set_mem_b32s1(y + 3, mem_b32s1(x + 3));
-    set_mem_b32s1(y + 2, delta - mem_b32s1(y + 3));
-    set_mem_b32s0(q + 1, y);
-    set_mem_b32s1(q + 1, SUB_BOX);
+    crate::state::with_state_mut(|st| make_under_finish(&mut st.mem, q, x, y, rule_thickness));
 }
 
 /// translated from xetex-math.c:225 (make_vcenter)
@@ -862,9 +895,9 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
     let mut z = clean_box(q + 3, 2 * (cur_style() / 2) + 3 - 2 * (cur_style() / 6));
 
     if mem_b32s1(x + 1) < mem_b32s1(z + 1) {
-        x = rebox(x, mem_b32s1(z + 1));
+        x = rebox_global(x, mem_b32s1(z + 1));
     } else {
-        z = rebox(z, mem_b32s1(x + 1));
+        z = rebox_global(z, mem_b32s1(x + 1));
     }
 
     let (mut shift_up, mut shift_down) = if cur_style() < TEXT_STYLE {
@@ -909,16 +942,16 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
             } else {
                 get_ot_math_constant(cur_f(), FRACTIONNUMERATORGAPMIN)
             };
-            let delta1 =
-                clr_num - ((shift_up - mem_b32s1(x + 2)) - (axis_height_global(cur_size()) + delta));
+            let delta1 = clr_num
+                - ((shift_up - mem_b32s1(x + 2)) - (axis_height_global(cur_size()) + delta));
 
             let clr_den = if cur_style() < TEXT_STYLE {
                 get_ot_math_constant(cur_f(), FRACTIONDENOMDISPLAYSTYLEGAPMIN)
             } else {
                 get_ot_math_constant(cur_f(), FRACTIONDENOMINATORGAPMIN)
             };
-            let delta2 =
-                clr_den - ((axis_height_global(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
+            let delta2 = clr_den
+                - ((axis_height_global(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
             (delta1, delta2)
         } else {
             let clr = if cur_style() < TEXT_STYLE {
@@ -953,10 +986,14 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
         set_mem_b32s1(p, z);
     } else {
         let y = fraction_rule_global(mem_b32s1(q + 1));
-        p = new_kern_global((axis_height_global(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
+        p = new_kern_global(
+            (axis_height_global(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down),
+        );
         set_mem_b32s1(y, p);
         set_mem_b32s1(p, z);
-        p = new_kern_global((shift_up - mem_b32s1(x + 2)) - (axis_height_global(cur_size()) + delta));
+        p = new_kern_global(
+            (shift_up - mem_b32s1(x + 2)) - (axis_height_global(cur_size()) + delta),
+        );
         set_mem_b32s1(p, y);
     }
 
@@ -1060,7 +1097,8 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
         }
         set_mem_b32s1(
             x + 4,
-            crate::scaled_math::half(mem_b32s1(x + 3) - mem_b32s1(x + 2)) - axis_height_global(cur_size()),
+            crate::scaled_math::half(mem_b32s1(x + 3) - mem_b32s1(x + 2))
+                - axis_height_global(cur_size()),
         );
         set_mem_b32s1(q + 1, SUB_BOX);
         set_mem_b32s0(q + 1, x);
@@ -1080,9 +1118,9 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
         if mem_b32s1(z + 1) > mem_b32s1(v + 1) {
             set_mem_b32s1(v + 1, mem_b32s1(z + 1));
         }
-        x = rebox(x, mem_b32s1(v + 1));
-        y = rebox(y, mem_b32s1(v + 1));
-        z = rebox(z, mem_b32s1(v + 1));
+        x = rebox_global(x, mem_b32s1(v + 1));
+        y = rebox_global(y, mem_b32s1(v + 1));
+        z = rebox_global(z, mem_b32s1(v + 1));
         set_mem_b32s1(x + 4, crate::scaled_math::half(delta));
         set_mem_b32s1(z + 4, -mem_b32s1(x + 4));
         set_mem_b32s1(v + 3, mem_b32s1(y + 3));
@@ -1535,7 +1573,10 @@ unsafe fn first_script_glyph(mut script_head: i32) -> (u16, i32) {
             set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
         }
 
-        set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
+        set_cur_mu(crate::scaled_math::x_over_n(
+            math_quad_global(cur_size()),
+            18,
+        ));
         fetch(script_head);
 
         if font_is_ot_math_global(cur_f()) {
@@ -1552,7 +1593,10 @@ unsafe fn first_script_glyph(mut script_head: i32) -> (u16, i32) {
         } else {
             set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
         }
-        set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
+        set_cur_mu(crate::scaled_math::x_over_n(
+            math_quad_global(cur_size()),
+            18,
+        ));
     }
 
     (script_g, script_f)
@@ -1811,7 +1855,10 @@ pub unsafe extern "C" fn make_left_right(q: i32, style: i16, max_d: i32, max_h: 
     } else {
         set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
     }
-    set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
+    set_cur_mu(crate::scaled_math::x_over_n(
+        math_quad_global(cur_size()),
+        18,
+    ));
     let mut delta2 = max_d + axis_height_global(cur_size());
     let mut delta1 = max_h + max_d - delta2;
     if delta2 > delta1 {
@@ -1833,7 +1880,10 @@ unsafe fn update_math_style_params() {
     } else {
         set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
     }
-    set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
+    set_cur_mu(crate::scaled_math::x_over_n(
+        math_quad_global(cur_size()),
+        18,
+    ));
 }
 
 /// translated from xetex-math.c:84 (mlist_to_hlist)
@@ -1907,7 +1957,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 UNDER_NOAD => {
-                    make_under(q);
+                    make_under_global(q);
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 ACCENT_NOAD => {
@@ -1980,7 +2030,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                 GLUE_NODE => {
                     if mem_b16s0(q) == MU_GLUE {
                         let x = mem_b32s0(q + 1);
-                        let y = math_glue(x, cur_mu());
+                        let y = math_glue_global(x, cur_mu());
                         crate::mem::delete_glue_ref_global(x);
                         set_mem_b32s0(q + 1, y);
                         set_mem_b16s0(q, NORMAL);
@@ -1996,7 +2046,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 KERN_NODE => {
-                    math_kern(q, cur_mu());
+                    math_kern_global(q, cur_mu());
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 _ => crate::errors::confusion(c"mlist1".as_ptr()),
@@ -2021,7 +2071,9 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                             crate::ext::measure_native_glyph(mem_node_addr(p), 1);
                             free_node_global(z, mem_b16s3(z + 4) as i32);
                             delta = get_ot_math_ital_corr(cur_f(), mem_b16s1(p + 4) as i32);
-                            if mem_b32s1(q + 1) == MATH_TEXT_CHAR && !font_is_ot_math_global(cur_f()) {
+                            if mem_b32s1(q + 1) == MATH_TEXT_CHAR
+                                && !font_is_ot_math_global(cur_f())
+                            {
                                 delta = 0;
                             }
                             if mem_b32s1(q + 3) == EMPTY && delta != 0 {
@@ -2225,7 +2277,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                     _ => crate::errors::confusion(c"mlist4".as_ptr()),
                 };
                 if x != 0 {
-                    let y = math_glue(eqtb_b32s1(GLUE_BASE + x), cur_mu());
+                    let y = math_glue_global(eqtb_b32s1(GLUE_BASE + x), cur_mu());
                     let z = new_glue_global(y);
                     set_mem_b32s1(y, TEX_NULL);
                     set_mem_b32s1(p, z);
@@ -3174,7 +3226,10 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
 
 /// Emit error for insufficient math fonts, flush the math list, set danger.
 unsafe fn check_math_font_params(danger: &mut bool) {
-    if !sym_font_ok_global(TEXT_SIZE) || !sym_font_ok_global(SCRIPT_SIZE) || !sym_font_ok_global(SCRIPT_SCRIPT_SIZE) {
+    if !sym_font_ok_global(TEXT_SIZE)
+        || !sym_font_ok_global(SCRIPT_SIZE)
+        || !sym_font_ok_global(SCRIPT_SCRIPT_SIZE)
+    {
         crate::output::error_here_with_diagnostic(
             c"Math formula deleted: Insufficient symbol fonts".as_ptr(),
         );
@@ -3765,36 +3820,78 @@ pub unsafe extern "C" fn initialize_math_variables() {
 }
 
 /// translated from xetex-math.c:1356 (rebox)
-#[no_mangle]
-pub unsafe extern "C" fn rebox(b: i32, w: i32) -> i32 {
+enum ReboxResult {
+    Done(i32),
+    Hpack(i32),
+}
+
+fn rebox(
+    mem: &mut MemState,
+    b: i32,
+    w: i32,
+    char_kern_width: Option<i32>,
+) -> Result<ReboxResult, NodeRecycleAbort> {
+    let mut b = b;
+    if mem.b32s1(b + 1) != w && mem.b32s1(b + 5) != TEX_NULL {
+        let mut p = mem.b32s1(b + 5);
+        if let Some(v) = char_kern_width {
+            if v != mem.b32s1(b + 1) {
+                let k = new_kern(mem, mem.b32s1(b + 1) - v);
+                if k == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow);
+                }
+                mem.set_b32s1(p, k);
+            }
+        }
+        free_node(mem, b, BOX_NODE_SIZE);
+        b = new_glue(mem, 12);
+        if b == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        mem.set_b32s1(b, p);
+        while mem.b32s1(p) != TEX_NULL {
+            p = mem.b32s1(p);
+        }
+        let tail_glue = new_glue(mem, 12);
+        if tail_glue == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        mem.set_b32s1(p, tail_glue);
+        Ok(ReboxResult::Hpack(b))
+    } else {
+        mem.set_b32s1(b + 1, w);
+        Ok(ReboxResult::Done(b))
+    }
+}
+
+pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
     let mut b = b;
     if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL {
         if mem_b16s1(b) == VLIST_NODE {
             b = crate::scan::hpack(b, 0, ADDITIONAL);
         }
-        let mut p = mem_b32s1(b + 5);
+    }
+
+    let char_kern_width = if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL {
+        let p = mem_b32s1(b + 5);
         if is_char_node(p) && mem_b32s1(p) == TEX_NULL {
             let f = mem_b16s1(p) as i32;
             let c_raw = mem_b16s0(p);
             let q = font_info_b16(
                 char_base_entry(f) + crate::scan::effective_char_global(true, f, c_raw),
             );
-            let v = font_info_b32s1(width_base_entry(f) + q.s3 as i32);
-            if v != mem_b32s1(b + 1) {
-                set_mem_b32s1(p, new_kern_global(mem_b32s1(b + 1) - v));
-            }
+            Some(font_info_b32s1(width_base_entry(f) + q.s3 as i32))
+        } else {
+            None
         }
-        free_node_global(b, BOX_NODE_SIZE);
-        b = new_glue_global(12);
-        set_mem_b32s1(b, p);
-        while mem_b32s1(p) != TEX_NULL {
-            p = mem_b32s1(p);
-        }
-        set_mem_b32s1(p, new_glue_global(12));
-        crate::scan::hpack(b, w, EXACTLY)
     } else {
-        set_mem_b32s1(b + 1, w);
-        b
+        None
+    };
+
+    match crate::state::with_state_mut(|st| rebox(&mut st.mem, b, w, char_kern_width)) {
+        Ok(ReboxResult::Done(b)) => b,
+        Ok(ReboxResult::Hpack(b)) => crate::scan::hpack(b, w, EXACTLY),
+        Err(e) => node_recycle_abort(e),
     }
 }
 
