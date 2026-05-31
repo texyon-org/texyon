@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 85, **Phase-C execution**: threaded the math glue/rebox node helper cluster — `math_glue`, `math_kern`, `rebox`, and `make_under`'s node assembly — to narrow `&mut MemState` cores; 10 legacy math call sites bridged to `_global`. `#[no_mangle]` 346→342. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 86, **Phase-C execution**: threaded the math noad-finishing assembly cluster — `make_over`, `make_radical`, `make_vcenter`, and `make_fraction` — to narrow `&mut MemState` cores; 4 legacy `mlist_to_hlist` call sites bridged to `_global`; dead `fraction_rule_global`/`overbar_global` wrappers removed. `#[no_mangle]` 342→338. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -798,6 +798,16 @@ least-coupled non-`misc` clusters:
     `xetex-math.c`; no moved fields, so no newtype debt. `#[no_mangle]`
     346→342, `unsafe fn` 651 (unchanged), raw `unsafe {}` 171→173. Dashboard
     29/2/7/4.
+-   **Math noad-finishing assembly cluster threaded (session 86):** threaded
+    `make_over`, `make_radical`, `make_vcenter`, and `make_fraction` to narrow
+    `&mut MemState` cores. Classification: bucket B for `make_vcenter` plus a
+    cold `Confusion("vcenter")` sentinel; bucket C for the over/radical/fraction
+    wrappers, with `clean_box`/`vpackage`/`hpack`/`var_delimiter` and font reads
+    outside live borrows. Bridged 4 `mlist_to_hlist` noad-switch call sites and
+    deleted dead `fraction_rule_global` / `overbar_global` wrappers. No cleanup
+    aliases; no live C/C++ caller beyond stale `xetex-math.c`; no moved fields,
+    so no newtype debt. `#[no_mangle]` 342→338, `unsafe fn` 651→650, raw
+    `unsafe {}` 173→174. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -809,9 +819,9 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 174 state-backed scalars/arrays (session 82 deleted `xtx_ligature_present` and `init_lig` getters after threading the font/effective-char + linebreak reconstruction slice) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 342 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 85 dropped 4 math node helper exports) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 651 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 85 net unchanged) |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 173 / 688 not remeasured (session 85 made scaled-math calls explicit before borrow) |
+| `#[no_mangle]` exports | 576 | boundary-only | 338 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 86 dropped 4 math noad helper exports) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 650 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 86 removed two dead wrappers and added `_global` bridges) |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 174 / 688 not remeasured (session 86 made `scaled_math::half` explicit in a safe core) |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -939,6 +949,13 @@ the snippets in `00-overview.md` / the workstream plans.
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
 1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`); session 72 threaded the pure DVI byte formatters (`dvi_four`/`dvi_two`) with continuation-aware flush propagation; session 73 threaded the DVI font-definition / font-selection path (`dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`); sessions 74–78 continued `linebreak.rs` with the hlist-stack helper pair, protrusion scanners, `total_pw`, post-line-break margin-kern protrusion insertion, and the `post_line_break` LR-stack maintenance helper `update_lr_stack` (→ direct `LinebreakState`/`MemState`, allocating via threaded `get_avail` with cold overflow deferred to a `_global` wrapper; `char_pw` kept outside live state borrows). Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. **Session 79 threaded the node-disposal cluster** (`delete_token_ref`/`delete_glue_ref` + the big recursive `flush_node_list`, 116 call sites). **Session 80 threaded the node-copy / mark-recycle / page-prune cluster** (`copy_native_glyph_info`, `copy_node_list`, `do_marks`, `prune_page_top` → `&mut MemState` ± `&mut ScannerState`/`&EqtbState`; shared `NodeRecycleAbort` §5 sentinel). **Session 81 threaded the math box-building helper cluster** (`fraction_rule`, `overbar`, `char_box`, `stack_into_box`, `stack_glue_into_box` → `&mut MemState`; bucket-C font/native reads precomputed outside the borrow, `vpackage` deferred; 13 external sites). **Session 82 threaded the font/effective-char + linebreak reconstruction cluster** (`effective_char`, `effective_char_info`, `height_plus_depth`, `finite_shrink`, `reconstitute` → `&mut FontState` / `&mut MemState` / `&mut HyphState`; 29 bridged legacy call sites; two dead bridge getters deleted). **Session 83 threaded the native-glyph stack split** (`stack_glyph_into_box` + native vbox start/finish around `measure_native_glyph`). **Session 84 threaded the math parameter helper cluster** (`math_font`/`font_is_ot_math`/`math_sy_param`/`math_ext_param`, `sym_font_ok`/`ext_font_ok`, and `math_x_height` through `big_op_spacing5` → `&FontState`/`&EqtbState`; 79 bridged legacy call sites). **Session 85 threaded the math glue/rebox node helper cluster** (`math_glue`, `math_kern`, `rebox`, `make_under` node assembly → `&mut MemState`; 10 bridged legacy call sites; scaled-math values precomputed outside borrows). Next: a pagebuilder helper block, another math node-building block, or another closed linebreak/post-line-break block. Keep `scan.rs`'s scanner hot path last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
+
+    **Session 86 update:** the math noad-finishing assembly cluster
+    (`make_over`, `make_radical`, `make_vcenter`, `make_fraction`) is now
+    threaded to `&mut MemState`; 4 `mlist_to_hlist` sites were bridged and the
+    dead `fraction_rule_global` / `overbar_global` wrappers were removed. Next
+    targets remain a pagebuilder helper block, another math noad helper block,
+    or another closed linebreak/post-line-break block.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

@@ -496,8 +496,7 @@ pub fn big_op_spacing5_global() -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; bottoms out on the threaded
 /// [`new_rule`] and propagates its [`ALLOC_FAILED`] sentinel as
-/// [`NodeRecycleAbort::Overflow`] (`01b` §5). Legacy callers use
-/// [`fraction_rule_global`].
+/// [`NodeRecycleAbort::Overflow`] (`01b` §5).
 pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<i32, NodeRecycleAbort> {
     let p = new_rule(mem);
     if p == ALLOC_FAILED {
@@ -508,21 +507,12 @@ pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<i32, NodeRecycleAbort
     Ok(p)
 }
 
-/// Transitional bridge-down wrapper for legacy `fraction_rule` callers
-/// (`01b` §3, §5).
-pub unsafe fn fraction_rule_global(t: i32) -> i32 {
-    match crate::state::with_state_mut(|st| fraction_rule(&mut st.mem, t)) {
-        Ok(p) => p,
-        Err(e) => node_recycle_abort(e),
-    }
-}
-
 /// translated from xetex-math.c:181 (overbar)
 ///
 /// Phase-C: threaded to `&mut MemState`. Builds the kern/rule/kern chain
 /// directly through the threaded [`new_kern`]/[`fraction_rule`] and returns its
-/// head; the with_state-bearing `vpackage` finish runs in [`overbar_global`]
-/// after the borrow drops (bucket C). Allocation failure propagates the
+/// head; with_state-bearing `vpackage` callers run after the borrow drops
+/// (bucket C). Allocation failure propagates the
 /// [`NodeRecycleAbort`] sentinel (`01b` §5).
 pub fn overbar(mem: &mut MemState, b: i32, k: i32, t: i32) -> Result<i32, NodeRecycleAbort> {
     let mut p = new_kern(mem, k);
@@ -538,16 +528,6 @@ pub fn overbar(mem: &mut MemState, b: i32, k: i32, t: i32) -> Result<i32, NodeRe
     }
     mem.set_b32s1(p, q);
     Ok(p)
-}
-
-/// Transitional bridge-down wrapper for legacy `overbar` callers (`01b` §3, §5).
-/// Builds the chain under one borrow, then vpackages it after the borrow drops.
-pub unsafe fn overbar_global(b: i32, k: i32, t: i32) -> i32 {
-    let p = match crate::state::with_state_mut(|st| overbar(&mut st.mem, b, k, t)) {
-        Ok(p) => p,
-        Err(e) => node_recycle_abort(e),
-    };
-    crate::scan::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD)
 }
 
 /// translated from xetex-math.c:195 (math_glue)
@@ -777,17 +757,22 @@ pub unsafe extern "C" fn fetch(a: i32) {
 }
 
 /// translated from xetex-math.c:198 (make_over)
-#[no_mangle]
-pub unsafe extern "C" fn make_over(q: i32) {
-    set_mem_b32s0(
-        q + 1,
-        overbar_global(
-            clean_box(q + 1, 2 * (cur_style() / 2) + 1),
-            3 * default_rule_thickness_global(),
-            default_rule_thickness_global(),
-        ),
-    );
-    set_mem_b32s1(q + 1, SUB_BOX);
+fn make_over(mem: &mut MemState, q: i32, x: i32) {
+    mem.set_b32s0(q + 1, x);
+    mem.set_b32s1(q + 1, SUB_BOX);
+}
+
+pub unsafe fn make_over_global(q: i32) {
+    let x = clean_box(q + 1, 2 * (cur_style() / 2) + 1);
+    let rule_thickness = default_rule_thickness_global();
+    let p = match crate::state::with_state_mut(|st| {
+        overbar(&mut st.mem, x, 3 * rule_thickness, rule_thickness)
+    }) {
+        Ok(p) => p,
+        Err(e) => node_recycle_abort(e),
+    };
+    let x = crate::scan::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
+    crate::state::with_state_mut(|st| make_over(&mut st.mem, q, x));
 }
 
 /// translated from xetex-math.c:207 (make_under)
@@ -827,23 +812,34 @@ pub unsafe fn make_under_global(q: i32) {
 }
 
 /// translated from xetex-math.c:225 (make_vcenter)
-#[no_mangle]
-pub unsafe extern "C" fn make_vcenter(q: i32) {
-    let v = mem_b32s0(q + 1);
-    if mem_b16s1(v) != VLIST_NODE {
-        crate::errors::confusion(c"vcenter".as_ptr());
+fn make_vcenter(mem: &mut MemState, q: i32, axis_height: i32) -> Result<(), NodeRecycleAbort> {
+    let v = mem.b32s0(q + 1);
+    if mem.b16s1(v) != VLIST_NODE {
+        return Err(NodeRecycleAbort::Confusion(c"vcenter"));
     }
-    let delta = mem_b32s1(v + 3) + mem_b32s1(v + 2);
-    set_mem_b32s1(
+    let delta = mem.b32s1(v + 3) + mem.b32s1(v + 2);
+    mem.set_b32s1(
         v + 3,
-        axis_height_global(cur_size()) + crate::scaled_math::half(delta),
+        axis_height + unsafe { crate::scaled_math::half(delta) },
     );
-    set_mem_b32s1(v + 2, delta - mem_b32s1(v + 3));
+    mem.set_b32s1(v + 2, delta - mem.b32s1(v + 3));
+    Ok(())
+}
+
+pub unsafe fn make_vcenter_global(q: i32) {
+    let axis_height = axis_height_global(cur_size());
+    if let Err(e) = crate::state::with_state_mut(|st| make_vcenter(&mut st.mem, q, axis_height)) {
+        node_recycle_abort(e);
+    }
+}
+
+fn make_radical_finish(mem: &mut MemState, q: i32, x: i32) {
+    mem.set_b32s0(q + 1, x);
+    mem.set_b32s1(q + 1, SUB_BOX);
 }
 
 /// translated from xetex-math.c:80 (make_radical)
-#[no_mangle]
-pub unsafe extern "C" fn make_radical(q: i32) {
+pub unsafe fn make_radical_global(q: i32) {
     let f = math_font_global((mem_b16s3(q + 4) as i32 % 256) + cur_size());
     let rule_thickness = if font_is_ot_math_global(f) {
         get_ot_math_constant(f, RADICALRULETHICKNESS)
@@ -879,14 +875,87 @@ pub unsafe extern "C" fn make_radical(q: i32) {
         clr += crate::scaled_math::half(delta);
     }
     set_mem_b32s1(y + 4, -(mem_b32s1(x + 3) + clr));
-    set_mem_b32s1(y, overbar_global(x, clr, mem_b32s1(y + 3)));
-    set_mem_b32s0(q + 1, crate::scan::hpack(y, 0, ADDITIONAL));
-    set_mem_b32s1(q + 1, SUB_BOX);
+    let rule_height = mem_b32s1(y + 3);
+    let p = match crate::state::with_state_mut(|st| overbar(&mut st.mem, x, clr, rule_height)) {
+        Ok(p) => p,
+        Err(e) => node_recycle_abort(e),
+    };
+    let overbar_box = crate::scan::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
+    set_mem_b32s1(y, overbar_box);
+    let hbox = crate::scan::hpack(y, 0, ADDITIONAL);
+    crate::state::with_state_mut(|st| make_radical_finish(&mut st.mem, q, hbox));
+}
+
+struct FractionAssembly {
+    x: i32,
+    z: i32,
+    rule_thickness: i32,
+    shift_up: i32,
+    shift_down: i32,
+    delta: i32,
+    axis_height: i32,
+}
+
+fn make_fraction(mem: &mut MemState, assembly: FractionAssembly) -> Result<i32, NodeRecycleAbort> {
+    let v = new_null_box(mem);
+    if v == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b16s1(v, VLIST_NODE);
+    mem.set_b32s1(v + 3, assembly.shift_up + mem.b32s1(assembly.x + 3));
+    mem.set_b32s1(v + 2, mem.b32s1(assembly.z + 2) + assembly.shift_down);
+    mem.set_b32s1(v + 1, mem.b32s1(assembly.x + 1));
+
+    let p;
+    if assembly.rule_thickness == 0 {
+        p = new_kern(
+            mem,
+            (assembly.shift_up - mem.b32s1(assembly.x + 2))
+                - (mem.b32s1(assembly.z + 3) - assembly.shift_down),
+        );
+        if p == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        mem.set_b32s1(p, assembly.z);
+    } else {
+        let y = fraction_rule(mem, assembly.rule_thickness)?;
+        let p1 = new_kern(
+            mem,
+            (assembly.axis_height - assembly.delta)
+                - (mem.b32s1(assembly.z + 3) - assembly.shift_down),
+        );
+        if p1 == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        mem.set_b32s1(y, p1);
+        mem.set_b32s1(p1, assembly.z);
+        p = new_kern(
+            mem,
+            (assembly.shift_up - mem.b32s1(assembly.x + 2))
+                - (assembly.axis_height + assembly.delta),
+        );
+        if p == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        mem.set_b32s1(p, y);
+    }
+
+    mem.set_b32s1(assembly.x, p);
+    mem.set_b32s1(v + 5, assembly.x);
+    Ok(v)
+}
+
+fn make_fraction_link_delimiters(mem: &mut MemState, left_delim: i32, v: i32, right_delim: i32) {
+    mem.set_b32s1(left_delim, v);
+    mem.set_b32s1(v, right_delim);
+}
+
+fn make_fraction_finish(mem: &mut MemState, q: i32, hbox: i32) {
+    mem.set_b32s1(q + 1, hbox);
 }
 
 /// translated from xetex-math.c:313 (make_fraction)
-#[no_mangle]
-pub unsafe extern "C" fn make_fraction(q: i32) {
+pub unsafe fn make_fraction_global(q: i32) {
     if mem_b32s1(q + 1) == DEFAULT_CODE {
         set_mem_b32s1(q + 1, default_rule_thickness_global());
     }
@@ -974,43 +1043,39 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
         }
     }
 
-    let v = crate::mem::new_null_box_global();
-    set_mem_b16s1(v, VLIST_NODE);
-    set_mem_b32s1(v + 3, shift_up + mem_b32s1(x + 3));
-    set_mem_b32s1(v + 2, mem_b32s1(z + 2) + shift_down);
-    set_mem_b32s1(v + 1, mem_b32s1(x + 1));
+    let axis_height = axis_height_global(cur_size());
+    let rule_thickness = mem_b32s1(q + 1);
+    let v = match crate::state::with_state_mut(|st| {
+        make_fraction(
+            &mut st.mem,
+            FractionAssembly {
+                x,
+                z,
+                rule_thickness,
+                shift_up,
+                shift_down,
+                delta,
+                axis_height,
+            },
+        )
+    }) {
+        Ok(v) => v,
+        Err(e) => node_recycle_abort(e),
+    };
 
-    let mut p;
-    if mem_b32s1(q + 1) == 0 {
-        p = new_kern_global((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(z + 3) - shift_down));
-        set_mem_b32s1(p, z);
-    } else {
-        let y = fraction_rule_global(mem_b32s1(q + 1));
-        p = new_kern_global(
-            (axis_height_global(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down),
-        );
-        set_mem_b32s1(y, p);
-        set_mem_b32s1(p, z);
-        p = new_kern_global(
-            (shift_up - mem_b32s1(x + 2)) - (axis_height_global(cur_size()) + delta),
-        );
-        set_mem_b32s1(p, y);
-    }
-
-    set_mem_b32s1(x, p);
-    set_mem_b32s1(v + 5, x);
-
-    delta = if cur_style() < TEXT_STYLE {
+    let delimiter_size = if cur_style() < TEXT_STYLE {
         delim1_global(cur_size())
     } else {
         delim2_global(cur_size())
     };
 
-    x = var_delimiter(q + 4, cur_size(), delta);
-    set_mem_b32s1(x, v);
-    z = var_delimiter(q + 5, cur_size(), delta);
-    set_mem_b32s1(v, z);
-    set_mem_b32s1(q + 1, crate::scan::hpack(x, 0, ADDITIONAL));
+    let left_delim = var_delimiter(q + 4, cur_size(), delimiter_size);
+    let right_delim = var_delimiter(q + 5, cur_size(), delimiter_size);
+    crate::state::with_state_mut(|st| {
+        make_fraction_link_delimiters(&mut st.mem, left_delim, v, right_delim)
+    });
+    let hbox = crate::scan::hpack(left_delim, 0, ADDITIONAL);
+    crate::state::with_state_mut(|st| make_fraction_finish(&mut st.mem, q, hbox));
 }
 
 /// translated from xetex-math.c:270 (make_op)
@@ -1933,7 +1998,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                 }
                 LEFT_NOAD => break 'reswitch FirstPass::DoneWithNoad,
                 FRACTION_NOAD => {
-                    make_fraction(q);
+                    make_fraction_global(q);
                     break 'reswitch FirstPass::CheckDimensions;
                 }
                 OP_NOAD => {
@@ -1949,11 +2014,11 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                 }
                 OPEN_NOAD | INNER_NOAD => break 'reswitch FirstPass::ProcessNucleus,
                 RADICAL_NOAD => {
-                    make_radical(q);
+                    make_radical_global(q);
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 OVER_NOAD => {
-                    make_over(q);
+                    make_over_global(q);
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 UNDER_NOAD => {
@@ -1965,7 +2030,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 VCENTER_NOAD => {
-                    make_vcenter(q);
+                    make_vcenter_global(q);
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 STYLE_NODE => {

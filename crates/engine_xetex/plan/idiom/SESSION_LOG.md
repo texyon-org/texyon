@@ -7,6 +7,26 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 86 — 2026-05-31 — thread math noad finishing assembly
+
+**Type:** execution (workstream 01, Phase C — math node-building helpers). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** threaded the noad-finishing assembly for `make_over`, `make_radical`, `make_vcenter`, and `make_fraction` to narrow `&mut MemState` cores. The `_global` wrappers keep `clean_box`, `vpackage`, `hpack`, `var_delimiter`, font-parameter reads, and delimiter construction outside live state borrows, then run only direct node linking/allocation under `MemState`.
+
+**Classification (`01b` §4a):** `make_vcenter` is bucket **B** plus a cold `Confusion("vcenter")` sentinel. `make_over` / `make_radical` / `make_fraction` are bucket **C** borrow-dropping wrappers with bucket **B** node assembly inside. Recon found no call site inside an existing `with_state*` closure, no cleanup aliases, and no live C/C++ caller beyond stale `xetex-math.c` prototypes/comments.
+
+**Bridged call sites:** 4 `mlist_to_hlist` noad-switch call sites now use `_global` wrappers. Deleted the now-dead `fraction_rule_global` and `overbar_global` bridge wrappers.
+
+**Newtype debt:** none. No state fields moved; typedefs here are function parameters or already-tracked state fields, not newly moved fields.
+
+**Metrics:** `#[no_mangle]` **342 → 338**. raw externs **40** unchanged. `unsafe fn` **651 → 650**. raw `unsafe {}` **173 → 174** (the safe `make_vcenter` core wraps `scaled_math::half` explicitly). Crate warning count during `cargo check` stayed **79**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (87):** good closeable targets remain the next math noad helper block (`make_op`, `make_ord`, or `make_math_accent` only if font/native calls can be cleanly split), a pagebuilder helper block, or another linebreak/post-line-break block. Keep scanner-heavy `scan.rs` paths last; draft `02-modules.md` before the big scanner decomposition.
+
+---
+
 ## Idiom session 85 — 2026-05-31 — thread math glue/rebox node helpers
 
 **Type:** execution (workstream 01, Phase C — math node-building/recycling helpers). **One commit.** Dashboard **29/2/7/4**.
