@@ -13,7 +13,7 @@ use crate::globals::{
     cur_list_prev_graf, cur_list_tail, cur_mu, cur_size, cur_style, cur_val, cur_val1,
     depth_base_entry, eqtb_b32s1, exten_base_entry, file_line_error_style_p, font_area_entry,
     font_bc_entry, font_ec_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr,
-    font_params, height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry,
+    height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry,
     just_box, kern_base_entry, lig_kern_base_entry, lr_problems, lr_ptr, mem_b16s0, mem_b16s1,
     mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, mem_word, nest_ptr,
     null_character, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
@@ -33,7 +33,7 @@ use crate::mem::{
     TEX_NULL,
 };
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
-use crate::state::{FontState, MemState};
+use crate::state::{EqtbState, FontState, MemState};
 
 const INT_PAR_CUR_FAM: i32 = 44;
 const LOCAL_EVERY_MATH: i32 = 3;
@@ -239,166 +239,257 @@ unsafe fn set_empty_math_field(p: i32) {
 }
 
 #[inline]
-unsafe fn math_font(n: i32) -> i32 {
-    eqtb_b32s1(MATH_FONT_BASE + n)
+fn math_font(eqtb: &EqtbState, n: i32) -> i32 {
+    eqtb.b32s1(MATH_FONT_BASE + n)
 }
 
 #[inline]
-unsafe fn math_sy_param(size_code: i32, param: i32) -> i32 {
-    let f = math_font(2 + size_code);
-    if font_is_ot_math(f) {
-        get_native_mathsy_param(f, param)
+fn math_font_global(n: i32) -> i32 {
+    crate::state::with_state(|st| math_font(&st.eqtb, n))
+}
+
+#[inline]
+fn font_is_ot_math(fonts: &FontState, f: i32) -> bool {
+    fonts.font_area_entry(f) == OTGR_FONT_FLAG
+        && unsafe { isOpenTypeMathFont(fonts.font_layout_engine_ptr(f)) }
+}
+
+#[inline]
+fn font_is_ot_math_global(f: i32) -> bool {
+    crate::state::with_state(|st| font_is_ot_math(&st.fonts, f))
+}
+
+#[inline]
+fn math_sy_param(fonts: &FontState, eqtb: &EqtbState, size_code: i32, param: i32) -> i32 {
+    let f = math_font(eqtb, 2 + size_code);
+    if font_is_ot_math(fonts, f) {
+        unsafe { get_native_mathsy_param(f, param) }
     } else {
-        font_info_b32s1(param + param_base(f))
+        fonts.font_info_b32s1(param + fonts.param_base(f))
     }
 }
 
 #[inline]
-unsafe fn math_ext_param(param: i32) -> i32 {
-    let f = math_font(3 + cur_size());
-    if font_is_ot_math(f) {
-        get_native_mathex_param(f, param)
+fn math_ext_param(fonts: &FontState, eqtb: &EqtbState, cur_size: i32, param: i32) -> i32 {
+    let f = math_font(eqtb, 3 + cur_size);
+    if font_is_ot_math(fonts, f) {
+        unsafe { get_native_mathex_param(f, param) }
     } else {
-        font_info_b32s1(param + param_base(f))
+        fonts.font_info_b32s1(param + fonts.param_base(f))
     }
 }
 
 /// translated from xetex-math.c:86 (math_x_height)
-#[no_mangle]
-pub unsafe extern "C" fn math_x_height(size_code: i32) -> i32 {
-    math_sy_param(size_code, 5)
+pub fn math_x_height(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 5)
+}
+
+pub fn math_x_height_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| math_x_height(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:101 (math_quad)
-#[no_mangle]
-pub unsafe extern "C" fn math_quad(size_code: i32) -> i32 {
-    math_sy_param(size_code, 6)
+pub fn math_quad(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 6)
+}
+
+pub fn math_quad_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| math_quad(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:115 (num1)
-#[no_mangle]
-pub unsafe extern "C" fn num1(size_code: i32) -> i32 {
-    math_sy_param(size_code, 8)
+pub fn num1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 8)
+}
+
+pub fn num1_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| num1(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:130 (num2)
-#[no_mangle]
-pub unsafe extern "C" fn num2(size_code: i32) -> i32 {
-    math_sy_param(size_code, 9)
+pub fn num2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 9)
+}
+
+pub fn num2_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| num2(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:145 (num3)
-#[no_mangle]
-pub unsafe extern "C" fn num3(size_code: i32) -> i32 {
-    math_sy_param(size_code, 10)
+pub fn num3(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 10)
+}
+
+pub fn num3_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| num3(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:160 (denom1)
-#[no_mangle]
-pub unsafe extern "C" fn denom1(size_code: i32) -> i32 {
-    math_sy_param(size_code, 11)
+pub fn denom1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 11)
+}
+
+pub fn denom1_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| denom1(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:175 (denom2)
-#[no_mangle]
-pub unsafe extern "C" fn denom2(size_code: i32) -> i32 {
-    math_sy_param(size_code, 12)
+pub fn denom2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 12)
+}
+
+pub fn denom2_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| denom2(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:190 (sup1)
-#[no_mangle]
-pub unsafe extern "C" fn sup1(size_code: i32) -> i32 {
-    math_sy_param(size_code, 13)
+pub fn sup1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 13)
+}
+
+pub fn sup1_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| sup1(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:205 (sup2)
-#[no_mangle]
-pub unsafe extern "C" fn sup2(size_code: i32) -> i32 {
-    math_sy_param(size_code, 14)
+pub fn sup2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 14)
+}
+
+pub fn sup2_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| sup2(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:219 (sup3)
-#[no_mangle]
-pub unsafe extern "C" fn sup3(size_code: i32) -> i32 {
-    math_sy_param(size_code, 15)
+pub fn sup3(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 15)
+}
+
+pub fn sup3_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| sup3(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:233 (sub1)
-#[no_mangle]
-pub unsafe extern "C" fn sub1(size_code: i32) -> i32 {
-    math_sy_param(size_code, 16)
+pub fn sub1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 16)
+}
+
+pub fn sub1_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| sub1(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:247 (sub2)
-#[no_mangle]
-pub unsafe extern "C" fn sub2(size_code: i32) -> i32 {
-    math_sy_param(size_code, 17)
+pub fn sub2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 17)
+}
+
+pub fn sub2_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| sub2(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:261 (sup_drop)
-#[no_mangle]
-pub unsafe extern "C" fn sup_drop(size_code: i32) -> i32 {
-    math_sy_param(size_code, 18)
+pub fn sup_drop(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 18)
+}
+
+pub fn sup_drop_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| sup_drop(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:275 (sub_drop)
-#[no_mangle]
-pub unsafe extern "C" fn sub_drop(size_code: i32) -> i32 {
-    math_sy_param(size_code, 19)
+pub fn sub_drop(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 19)
+}
+
+pub fn sub_drop_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| sub_drop(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:289 (delim1)
-#[no_mangle]
-pub unsafe extern "C" fn delim1(size_code: i32) -> i32 {
-    math_sy_param(size_code, 20)
+pub fn delim1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 20)
+}
+
+pub fn delim1_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| delim1(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:303 (delim2)
-#[no_mangle]
-pub unsafe extern "C" fn delim2(size_code: i32) -> i32 {
-    math_sy_param(size_code, 21)
+pub fn delim2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 21)
+}
+
+pub fn delim2_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| delim2(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:317 (axis_height)
-#[no_mangle]
-pub unsafe extern "C" fn axis_height(size_code: i32) -> i32 {
-    math_sy_param(size_code, 22)
+pub fn axis_height(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
+    math_sy_param(fonts, eqtb, size_code, 22)
+}
+
+pub fn axis_height_global(size_code: i32) -> i32 {
+    crate::state::with_state(|st| axis_height(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:88 (default_rule_thickness)
-#[no_mangle]
-pub unsafe extern "C" fn default_rule_thickness() -> i32 {
-    math_ext_param(8)
+pub fn default_rule_thickness(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    math_ext_param(fonts, eqtb, cur_size, 8)
+}
+
+pub fn default_rule_thickness_global() -> i32 {
+    let size = cur_size();
+    crate::state::with_state(|st| default_rule_thickness(&st.fonts, &st.eqtb, size))
 }
 
 /// translated from xetex-math.c:102 (big_op_spacing1)
-#[no_mangle]
-pub unsafe extern "C" fn big_op_spacing1() -> i32 {
-    math_ext_param(9)
+pub fn big_op_spacing1(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    math_ext_param(fonts, eqtb, cur_size, 9)
+}
+
+pub fn big_op_spacing1_global() -> i32 {
+    let size = cur_size();
+    crate::state::with_state(|st| big_op_spacing1(&st.fonts, &st.eqtb, size))
 }
 
 /// translated from xetex-math.c:116 (big_op_spacing2)
-#[no_mangle]
-pub unsafe extern "C" fn big_op_spacing2() -> i32 {
-    math_ext_param(10)
+pub fn big_op_spacing2(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    math_ext_param(fonts, eqtb, cur_size, 10)
+}
+
+pub fn big_op_spacing2_global() -> i32 {
+    let size = cur_size();
+    crate::state::with_state(|st| big_op_spacing2(&st.fonts, &st.eqtb, size))
 }
 
 /// translated from xetex-math.c:130 (big_op_spacing3)
-#[no_mangle]
-pub unsafe extern "C" fn big_op_spacing3() -> i32 {
-    math_ext_param(11)
+pub fn big_op_spacing3(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    math_ext_param(fonts, eqtb, cur_size, 11)
+}
+
+pub fn big_op_spacing3_global() -> i32 {
+    let size = cur_size();
+    crate::state::with_state(|st| big_op_spacing3(&st.fonts, &st.eqtb, size))
 }
 
 /// translated from xetex-math.c:144 (big_op_spacing4)
-#[no_mangle]
-pub unsafe extern "C" fn big_op_spacing4() -> i32 {
-    math_ext_param(12)
+pub fn big_op_spacing4(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    math_ext_param(fonts, eqtb, cur_size, 12)
+}
+
+pub fn big_op_spacing4_global() -> i32 {
+    let size = cur_size();
+    crate::state::with_state(|st| big_op_spacing4(&st.fonts, &st.eqtb, size))
 }
 
 /// translated from xetex-math.c:158 (big_op_spacing5)
-#[no_mangle]
-pub unsafe extern "C" fn big_op_spacing5() -> i32 {
-    math_ext_param(13)
+pub fn big_op_spacing5(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    math_ext_param(fonts, eqtb, cur_size, 13)
+}
+
+pub fn big_op_spacing5_global() -> i32 {
+    let size = cur_size();
+    crate::state::with_state(|st| big_op_spacing5(&st.fonts, &st.eqtb, size))
 }
 
 /// translated from xetex-math.c:170 (fraction_rule)
@@ -569,7 +660,7 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
             } else {
                 set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
             }
-            set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+            set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
         }
         SUB_BOX => {
             q = mem_b32s0(p);
@@ -589,7 +680,7 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
             } else {
                 set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
             }
-            set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+            set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
         }
         _ => {
             q = crate::mem::new_null_box_global();
@@ -623,7 +714,7 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn fetch(a: i32) {
     set_cur_c(mem_b16s0(a) as i32);
-    set_cur_f(math_font((mem_b16s1(a) as i32 % 256) + cur_size()));
+    set_cur_f(math_font_global((mem_b16s1(a) as i32 % 256) + cur_size()));
     set_cur_c(cur_c() + (mem_b16s1(a) as i32 / 256) * 65_536);
 
     if cur_f() == FONT_BASE {
@@ -680,8 +771,8 @@ pub unsafe extern "C" fn make_over(q: i32) {
         q + 1,
         overbar_global(
             clean_box(q + 1, 2 * (cur_style() / 2) + 1),
-            3 * default_rule_thickness(),
-            default_rule_thickness(),
+            3 * default_rule_thickness_global(),
+            default_rule_thickness_global(),
         ),
     );
     set_mem_b32s1(q + 1, SUB_BOX);
@@ -691,11 +782,11 @@ pub unsafe extern "C" fn make_over(q: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn make_under(q: i32) {
     let x = clean_box(q + 1, cur_style());
-    let p = new_kern_global(3 * default_rule_thickness());
+    let p = new_kern_global(3 * default_rule_thickness_global());
     set_mem_b32s1(x, p);
-    set_mem_b32s1(p, fraction_rule_global(default_rule_thickness()));
+    set_mem_b32s1(p, fraction_rule_global(default_rule_thickness_global()));
     let y = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
-    let delta = mem_b32s1(y + 3) + mem_b32s1(y + 2) + default_rule_thickness();
+    let delta = mem_b32s1(y + 3) + mem_b32s1(y + 2) + default_rule_thickness_global();
     set_mem_b32s1(y + 3, mem_b32s1(x + 3));
     set_mem_b32s1(y + 2, delta - mem_b32s1(y + 3));
     set_mem_b32s0(q + 1, y);
@@ -712,7 +803,7 @@ pub unsafe extern "C" fn make_vcenter(q: i32) {
     let delta = mem_b32s1(v + 3) + mem_b32s1(v + 2);
     set_mem_b32s1(
         v + 3,
-        axis_height(cur_size()) + crate::scaled_math::half(delta),
+        axis_height_global(cur_size()) + crate::scaled_math::half(delta),
     );
     set_mem_b32s1(v + 2, delta - mem_b32s1(v + 3));
 }
@@ -720,22 +811,22 @@ pub unsafe extern "C" fn make_vcenter(q: i32) {
 /// translated from xetex-math.c:80 (make_radical)
 #[no_mangle]
 pub unsafe extern "C" fn make_radical(q: i32) {
-    let f = math_font((mem_b16s3(q + 4) as i32 % 256) + cur_size());
-    let rule_thickness = if font_is_ot_math(f) {
+    let f = math_font_global((mem_b16s3(q + 4) as i32 % 256) + cur_size());
+    let rule_thickness = if font_is_ot_math_global(f) {
         get_ot_math_constant(f, RADICALRULETHICKNESS)
     } else {
-        default_rule_thickness()
+        default_rule_thickness_global()
     };
 
     let x = clean_box(q + 1, 2 * (cur_style() / 2) + 1);
-    let mut clr = if font_is_ot_math(f) {
+    let mut clr = if font_is_ot_math_global(f) {
         if cur_style() < TEXT_STYLE {
             get_ot_math_constant(f, RADICALDISPLAYSTYLEVERTICALGAP)
         } else {
             get_ot_math_constant(f, RADICALVERTICALGAP)
         }
     } else if cur_style() < TEXT_STYLE {
-        rule_thickness + math_x_height(cur_size()).abs() / 4
+        rule_thickness + math_x_height_global(cur_size()).abs() / 4
     } else {
         rule_thickness + rule_thickness.abs() / 4
     };
@@ -745,7 +836,7 @@ pub unsafe extern "C" fn make_radical(q: i32) {
         cur_size(),
         mem_b32s1(x + 3) + mem_b32s1(x + 2) + clr + rule_thickness,
     );
-    if font_is_ot_math(f) {
+    if font_is_ot_math_global(f) {
         set_mem_b32s1(y + 2, mem_b32s1(y + 3) + mem_b32s1(y + 2) - rule_thickness);
         set_mem_b32s1(y + 3, rule_thickness);
     }
@@ -764,7 +855,7 @@ pub unsafe extern "C" fn make_radical(q: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn make_fraction(q: i32) {
     if mem_b32s1(q + 1) == DEFAULT_CODE {
-        set_mem_b32s1(q + 1, default_rule_thickness());
+        set_mem_b32s1(q + 1, default_rule_thickness_global());
     }
 
     let mut x = clean_box(q + 2, cur_style() + 2 - 2 * (cur_style() / 6));
@@ -777,30 +868,30 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
     }
 
     let (mut shift_up, mut shift_down) = if cur_style() < TEXT_STYLE {
-        (num1(cur_size()), denom1(cur_size()))
+        (num1_global(cur_size()), denom1_global(cur_size()))
     } else {
         (
             if mem_b32s1(q + 1) != 0 {
-                num2(cur_size())
+                num2_global(cur_size())
             } else {
-                num3(cur_size())
+                num3_global(cur_size())
             },
-            denom2(cur_size()),
+            denom2_global(cur_size()),
         )
     };
 
     let mut delta = 0;
     if mem_b32s1(q + 1) == 0 {
-        let clr = if font_is_ot_math(cur_f()) {
+        let clr = if font_is_ot_math_global(cur_f()) {
             if cur_style() < TEXT_STYLE {
                 get_ot_math_constant(cur_f(), STACKDISPLAYSTYLEGAPMIN)
             } else {
                 get_ot_math_constant(cur_f(), STACKGAPMIN)
             }
         } else if cur_style() < TEXT_STYLE {
-            7 * default_rule_thickness()
+            7 * default_rule_thickness_global()
         } else {
-            3 * default_rule_thickness()
+            3 * default_rule_thickness_global()
         };
 
         delta = crate::scaled_math::half(
@@ -811,7 +902,7 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
             shift_down += delta;
         }
     } else {
-        let (delta1, delta2) = if font_is_ot_math(cur_f()) {
+        let (delta1, delta2) = if font_is_ot_math_global(cur_f()) {
             delta = crate::scaled_math::half(mem_b32s1(q + 1));
             let clr_num = if cur_style() < TEXT_STYLE {
                 get_ot_math_constant(cur_f(), FRACTIONNUMDISPLAYSTYLEGAPMIN)
@@ -819,7 +910,7 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
                 get_ot_math_constant(cur_f(), FRACTIONNUMERATORGAPMIN)
             };
             let delta1 =
-                clr_num - ((shift_up - mem_b32s1(x + 2)) - (axis_height(cur_size()) + delta));
+                clr_num - ((shift_up - mem_b32s1(x + 2)) - (axis_height_global(cur_size()) + delta));
 
             let clr_den = if cur_style() < TEXT_STYLE {
                 get_ot_math_constant(cur_f(), FRACTIONDENOMDISPLAYSTYLEGAPMIN)
@@ -827,7 +918,7 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
                 get_ot_math_constant(cur_f(), FRACTIONDENOMINATORGAPMIN)
             };
             let delta2 =
-                clr_den - ((axis_height(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
+                clr_den - ((axis_height_global(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
             (delta1, delta2)
         } else {
             let clr = if cur_style() < TEXT_STYLE {
@@ -837,8 +928,8 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
             };
             delta = crate::scaled_math::half(mem_b32s1(q + 1));
             (
-                clr - ((shift_up - mem_b32s1(x + 2)) - (axis_height(cur_size()) + delta)),
-                clr - ((axis_height(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down)),
+                clr - ((shift_up - mem_b32s1(x + 2)) - (axis_height_global(cur_size()) + delta)),
+                clr - ((axis_height_global(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down)),
             )
         };
 
@@ -862,10 +953,10 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
         set_mem_b32s1(p, z);
     } else {
         let y = fraction_rule_global(mem_b32s1(q + 1));
-        p = new_kern_global((axis_height(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
+        p = new_kern_global((axis_height_global(cur_size()) - delta) - (mem_b32s1(z + 3) - shift_down));
         set_mem_b32s1(y, p);
         set_mem_b32s1(p, z);
-        p = new_kern_global((shift_up - mem_b32s1(x + 2)) - (axis_height(cur_size()) + delta));
+        p = new_kern_global((shift_up - mem_b32s1(x + 2)) - (axis_height_global(cur_size()) + delta));
         set_mem_b32s1(p, y);
     }
 
@@ -873,9 +964,9 @@ pub unsafe extern "C" fn make_fraction(q: i32) {
     set_mem_b32s1(v + 5, x);
 
     delta = if cur_style() < TEXT_STYLE {
-        delim1(cur_size())
+        delim1_global(cur_size())
     } else {
-        delim2(cur_size())
+        delim2_global(cur_size())
     };
 
     x = var_delimiter(q + 4, cur_size(), delta);
@@ -969,7 +1060,7 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
         }
         set_mem_b32s1(
             x + 4,
-            crate::scaled_math::half(mem_b32s1(x + 3) - mem_b32s1(x + 2)) - axis_height(cur_size()),
+            crate::scaled_math::half(mem_b32s1(x + 3) - mem_b32s1(x + 2)) - axis_height_global(cur_size()),
         );
         set_mem_b32s1(q + 1, SUB_BOX);
         set_mem_b32s0(q + 1, x);
@@ -1001,20 +1092,20 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
             free_node_global(x, BOX_NODE_SIZE);
             set_mem_b32s1(v + 5, y);
         } else {
-            let mut shift_up = big_op_spacing3() - mem_b32s1(x + 2);
-            if shift_up < big_op_spacing1() {
-                shift_up = big_op_spacing1();
+            let mut shift_up = big_op_spacing3_global() - mem_b32s1(x + 2);
+            if shift_up < big_op_spacing1_global() {
+                shift_up = big_op_spacing1_global();
             }
             let mut p = new_kern_global(shift_up);
             set_mem_b32s1(p, y);
             set_mem_b32s1(x, p);
-            p = new_kern_global(big_op_spacing5());
+            p = new_kern_global(big_op_spacing5_global());
             set_mem_b32s1(p, x);
             set_mem_b32s1(v + 5, p);
             set_mem_b32s1(
                 v + 3,
                 mem_b32s1(v + 3)
-                    + big_op_spacing5()
+                    + big_op_spacing5_global()
                     + mem_b32s1(x + 3)
                     + mem_b32s1(x + 2)
                     + shift_up,
@@ -1023,19 +1114,19 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
         if mem_b32s1(q + 3) == EMPTY {
             free_node_global(z, BOX_NODE_SIZE);
         } else {
-            let mut shift_down = big_op_spacing4() - mem_b32s1(z + 3);
-            if shift_down < big_op_spacing2() {
-                shift_down = big_op_spacing2();
+            let mut shift_down = big_op_spacing4_global() - mem_b32s1(z + 3);
+            if shift_down < big_op_spacing2_global() {
+                shift_down = big_op_spacing2_global();
             }
             let mut p = new_kern_global(shift_down);
             set_mem_b32s1(y, p);
             set_mem_b32s1(p, z);
-            p = new_kern_global(big_op_spacing5());
+            p = new_kern_global(big_op_spacing5_global());
             set_mem_b32s1(z, p);
             set_mem_b32s1(
                 v + 2,
                 mem_b32s1(v + 2)
-                    + big_op_spacing5()
+                    + big_op_spacing5_global()
                     + mem_b32s1(z + 3)
                     + mem_b32s1(z + 2)
                     + shift_down,
@@ -1444,10 +1535,10 @@ unsafe fn first_script_glyph(mut script_head: i32) -> (u16, i32) {
             set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
         }
 
-        set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+        set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
         fetch(script_head);
 
-        if font_is_ot_math(cur_f()) {
+        if font_is_ot_math_global(cur_f()) {
             let script_c = crate::scan::new_native_character(cur_f(), cur_c() as u32);
             script_g = real_get_native_glyph(mem_node_addr(script_c), 0);
             script_f = cur_f();
@@ -1461,7 +1552,7 @@ unsafe fn first_script_glyph(mut script_head: i32) -> (u16, i32) {
         } else {
             set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
         }
-        set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+        set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
     }
 
     (script_g, script_f)
@@ -1496,8 +1587,8 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
         } else {
             SCRIPT_SCRIPT_SIZE
         };
-        let up = mem_b32s1(z + 3) - sup_drop(t);
-        let down = mem_b32s1(z + 2) + sub_drop(t);
+        let up = mem_b32s1(z + 3) - sup_drop_global(t);
+        let down = mem_b32s1(z + 2) + sub_drop_global(t);
         free_node_global(z, BOX_NODE_SIZE);
         (up, down)
     };
@@ -1515,14 +1606,14 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
             mem_b32s1(x + 1) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE),
         );
 
-        if shift_down < sub1(cur_size()) {
-            shift_down = sub1(cur_size());
+        if shift_down < sub1_global(cur_size()) {
+            shift_down = sub1_global(cur_size());
         }
 
-        clr = if font_is_ot_math(cur_f()) {
+        clr = if font_is_ot_math_global(cur_f()) {
             mem_b32s1(x + 3) - get_ot_math_constant(cur_f(), SUBSCRIPTTOPMAX)
         } else {
-            mem_b32s1(x + 3) - (math_x_height(cur_size()) * 4).abs() / 5
+            mem_b32s1(x + 3) - (math_x_height_global(cur_size()) * 4).abs() / 5
         };
 
         if shift_down < clr {
@@ -1531,7 +1622,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
 
         set_mem_b32s1(x + 4, shift_down);
 
-        if font_is_ot_math(cur_f())
+        if font_is_ot_math_global(cur_f())
             && p != TEX_NULL
             && !is_char_node(p)
             && mem_b16s1(p) == WHATSIT_NODE
@@ -1564,28 +1655,28 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
         );
 
         clr = if cur_style() % 2 != 0 {
-            sup3(cur_size())
+            sup3_global(cur_size())
         } else if cur_style() < TEXT_STYLE {
-            sup1(cur_size())
+            sup1_global(cur_size())
         } else {
-            sup2(cur_size())
+            sup2_global(cur_size())
         };
 
         if shift_up < clr {
             shift_up = clr;
         }
 
-        clr = if font_is_ot_math(cur_f()) {
+        clr = if font_is_ot_math_global(cur_f()) {
             mem_b32s1(x + 2) + get_ot_math_constant(cur_f(), SUPERSCRIPTBOTTOMMIN)
         } else {
-            mem_b32s1(x + 2) + math_x_height(cur_size()).abs() / 4
+            mem_b32s1(x + 2) + math_x_height_global(cur_size()).abs() / 4
         };
 
         if shift_up < clr {
             shift_up = clr;
         }
 
-        if font_is_ot_math(cur_f())
+        if font_is_ot_math_global(cur_f())
             && mem_b32s1(q + 3) == EMPTY
             && p != TEX_NULL
             && !is_char_node(p)
@@ -1621,25 +1712,25 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
                 mem_b32s1(y + 1) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE),
             );
 
-            if shift_down < sub2(cur_size()) {
-                shift_down = sub2(cur_size());
+            if shift_down < sub2_global(cur_size()) {
+                shift_down = sub2_global(cur_size());
             }
 
-            clr = if font_is_ot_math(cur_f()) {
+            clr = if font_is_ot_math_global(cur_f()) {
                 get_ot_math_constant(cur_f(), SUBSUPERSCRIPTGAPMIN)
                     - ((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(y + 3) - shift_down))
             } else {
-                4 * default_rule_thickness()
+                4 * default_rule_thickness_global()
                     - ((shift_up - mem_b32s1(x + 2)) - (mem_b32s1(y + 3) - shift_down))
             };
 
             if clr > 0 {
                 shift_down += clr;
-                clr = if font_is_ot_math(cur_f()) {
+                clr = if font_is_ot_math_global(cur_f()) {
                     get_ot_math_constant(cur_f(), SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT)
                         - (shift_up - mem_b32s1(x + 2))
                 } else {
-                    (math_x_height(cur_size()) * 4).abs() / 5 - (shift_up - mem_b32s1(x + 2))
+                    (math_x_height_global(cur_size()) * 4).abs() / 5 - (shift_up - mem_b32s1(x + 2))
                 };
                 if clr > 0 {
                     shift_up += clr;
@@ -1647,7 +1738,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
                 }
             }
 
-            if font_is_ot_math(cur_f()) {
+            if font_is_ot_math_global(cur_f()) {
                 if p != TEX_NULL
                     && !is_char_node(p)
                     && mem_b16s1(p) == WHATSIT_NODE
@@ -1720,8 +1811,8 @@ pub unsafe extern "C" fn make_left_right(q: i32, style: i16, max_d: i32, max_h: 
     } else {
         set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
     }
-    set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
-    let mut delta2 = max_d + axis_height(cur_size());
+    set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
+    let mut delta2 = max_d + axis_height_global(cur_size());
     let mut delta1 = max_h + max_d - delta2;
     if delta2 > delta1 {
         delta1 = delta2;
@@ -1742,7 +1833,7 @@ unsafe fn update_math_style_params() {
     } else {
         set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
     }
-    set_cur_mu(crate::scaled_math::x_over_n(math_quad(cur_size()), 18));
+    set_cur_mu(crate::scaled_math::x_over_n(math_quad_global(cur_size()), 18));
 }
 
 /// translated from xetex-math.c:84 (mlist_to_hlist)
@@ -1930,7 +2021,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                             crate::ext::measure_native_glyph(mem_node_addr(p), 1);
                             free_node_global(z, mem_b16s3(z + 4) as i32);
                             delta = get_ot_math_ital_corr(cur_f(), mem_b16s1(p + 4) as i32);
-                            if mem_b32s1(q + 1) == MATH_TEXT_CHAR && !font_is_ot_math(cur_f()) {
+                            if mem_b32s1(q + 1) == MATH_TEXT_CHAR && !font_is_ot_math_global(cur_f()) {
                                 delta = 0;
                             }
                             if mem_b32s1(q + 3) == EMPTY && delta != 0 {
@@ -2946,20 +3037,25 @@ pub unsafe fn resume_after_display() {
 }
 
 #[inline]
-unsafe fn font_is_ot_math(f: i32) -> bool {
-    font_area_entry(f) == OTGR_FONT_FLAG && isOpenTypeMathFont(font_layout_engine_ptr(f))
+fn sym_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
+    let f = eqtb.b32s1(MATH_FONT_BASE + 2 + size);
+    fonts.font_params(f) >= TOTAL_MATHSY_PARAMS || font_is_ot_math(fonts, f)
 }
 
 #[inline]
-unsafe fn sym_font_ok(size: i32) -> bool {
-    let f = eqtb_b32s1(MATH_FONT_BASE + 2 + size);
-    font_params(f) >= TOTAL_MATHSY_PARAMS || font_is_ot_math(f)
+fn sym_font_ok_global(size: i32) -> bool {
+    crate::state::with_state(|st| sym_font_ok(&st.fonts, &st.eqtb, size))
 }
 
 #[inline]
-unsafe fn ext_font_ok(size: i32) -> bool {
-    let f = eqtb_b32s1(MATH_FONT_BASE + 3 + size);
-    font_params(f) >= TOTAL_MATHEX_PARAMS || font_is_ot_math(f)
+fn ext_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
+    let f = eqtb.b32s1(MATH_FONT_BASE + 3 + size);
+    fonts.font_params(f) >= TOTAL_MATHEX_PARAMS || font_is_ot_math(fonts, f)
+}
+
+#[inline]
+fn ext_font_ok_global(size: i32) -> bool {
+    crate::state::with_state(|st| ext_font_ok(&st.fonts, &st.eqtb, size))
 }
 
 /// translated from xetex-math.c:82 (app_display) — private helper
@@ -3078,7 +3174,7 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
 
 /// Emit error for insufficient math fonts, flush the math list, set danger.
 unsafe fn check_math_font_params(danger: &mut bool) {
-    if !sym_font_ok(TEXT_SIZE) || !sym_font_ok(SCRIPT_SIZE) || !sym_font_ok(SCRIPT_SCRIPT_SIZE) {
+    if !sym_font_ok_global(TEXT_SIZE) || !sym_font_ok_global(SCRIPT_SIZE) || !sym_font_ok_global(SCRIPT_SCRIPT_SIZE) {
         crate::output::error_here_with_diagnostic(
             c"Math formula deleted: Insufficient symbol fonts".as_ptr(),
         );
@@ -3099,9 +3195,9 @@ unsafe fn check_math_font_params(danger: &mut bool) {
         crate::errors::error();
         flush_math();
         *danger = true;
-    } else if !ext_font_ok(TEXT_SIZE)
-        || !ext_font_ok(SCRIPT_SIZE)
-        || !ext_font_ok(SCRIPT_SCRIPT_SIZE)
+    } else if !ext_font_ok_global(TEXT_SIZE)
+        || !ext_font_ok_global(SCRIPT_SIZE)
+        || !ext_font_ok_global(SCRIPT_SCRIPT_SIZE)
     {
         crate::output::error_here_with_diagnostic(
             c"Math formula deleted: Insufficient extension fonts".as_ptr(),
@@ -3257,7 +3353,7 @@ pub unsafe fn after_math() {
             q = 0;
         } else {
             e = mem_b32s1(a + 1);
-            q = e + math_quad(TEXT_SIZE);
+            q = e + math_quad_global(TEXT_SIZE);
         }
         if w + q > z {
             if e != 0
@@ -3851,7 +3947,7 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                 // Scan font sizes from s down to SCRIPT_SCRIPT_SIZE.
                 loop {
                     z -= 256;
-                    let g = math_font(z);
+                    let g = math_font_global(z);
                     if g != FONT_BASE {
                         if font_area_entry(g) == AAT_FONT_FLAG
                             || (font_area_entry(g) == OTGR_FONT_FLAG
@@ -4009,7 +4105,7 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
     }
     set_mem_b32s1(
         b + 4,
-        crate::scaled_math::half(mem_b32s1(b + 3) - mem_b32s1(b + 2)) - axis_height(s),
+        crate::scaled_math::half(mem_b32s1(b + 3) - mem_b32s1(b + 2)) - axis_height_global(s),
     );
     free_ot_assembly(ot_assembly_ptr);
     b

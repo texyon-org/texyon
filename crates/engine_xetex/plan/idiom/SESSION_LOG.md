@@ -7,6 +7,26 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 84 — 2026-05-31 — thread the math parameter helper cluster
+
+**Type:** execution (workstream 01, Phase C — math font/parameter reads). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** threaded the shared math parameter helpers (`math_font`, `font_is_ot_math`, `math_sy_param`, `math_ext_param`, `sym_font_ok`, `ext_font_ok`) plus the 23 public math parameter helpers (`math_x_height` through `big_op_spacing5`) to narrow `&FontState`/`&EqtbState` reads. Legacy math callers now use `_global` bridges; the bridge wrappers pre-read `cur_size()` before borrowing for the mathex helpers.
+
+**Classification (`01b` §4a):** bucket **B** accessor rewrite. Hot callees are direct state reads plus native-font C helpers (`isOpenTypeMathFont`, `get_native_mathsy_param`, `get_native_mathex_param`), not `with_state` calls. Recon found 79 Rust legacy call sites, no call site inside an existing `with_state*` closure, no cleanup aliases, and no live C/C++ caller beyond stale `xetex-math.c` source comments/definitions.
+
+**Bridged call sites:** 79 legacy math call sites moved to `_global` wrappers. No `globals.rs` bridge accessor lost its last caller; font/eqtb bridge accessors are still used across other modules.
+
+**Newtype debt:** none. No state fields moved; this slice only added `FontState` methods over already-moved fields. Semantic typedefs involved here (`internal_font_number`, `scaled_t`, `str_number`) are existing field debt already tracked from the font-state ownership sessions, not new moved fields.
+
+**Metrics:** `#[no_mangle]` **369 → 346**. raw externs **40** unchanged. `unsafe fn` **680 → 651**. raw `unsafe {}` **168 → 171** (native-font C calls are now explicit inside safe threaded helpers). Crate warning count during `cargo check` stayed **79**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (85):** good closeable targets remain a pagebuilder node-building/recycling helper block or another linebreak/post-line-break block that bottoms out on threaded allocator/disposal helpers. Keep scanner-heavy `scan.rs` paths last; draft `02-modules.md` before the big scanner decomposition.
+
+---
+
 ## Idiom session 83 — 2026-05-31 — thread the math native-glyph stack split
 
 **Type:** execution (workstream 01, Phase C — math native-glyph helper split). **One commit.** Dashboard **29/2/7/4**.

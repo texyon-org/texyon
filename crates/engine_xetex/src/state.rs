@@ -708,6 +708,16 @@ impl Default for FontState {
 
 impl FontState {
     #[inline]
+    pub(crate) fn font_area_entry(&self, f: i32) -> i32 {
+        self.font_area[f as usize]
+    }
+
+    #[inline]
+    pub(crate) fn font_layout_engine_ptr(&self, f: i32) -> *mut libc::c_void {
+        self.font_layout_engine[f as usize]
+    }
+
+    #[inline]
     pub(crate) fn font_mapping_ptr(&self, f: i32) -> *mut libc::c_void {
         self.font_mapping[f as usize]
     }
@@ -732,6 +742,16 @@ impl FontState {
     pub(crate) fn font_info_b32s1(&self, k: i32) -> i32 {
         // SAFETY: union projection; callers preserve the original font-info indexing contract.
         unsafe { self.font_info[k as usize].b32.s1 }
+    }
+
+    #[inline]
+    pub(crate) fn font_params(&self, f: i32) -> i32 {
+        self.font_params[f as usize]
+    }
+
+    #[inline]
+    pub(crate) fn param_base(&self, f: i32) -> i32 {
+        self.param_base[f as usize]
     }
 
     #[inline]
