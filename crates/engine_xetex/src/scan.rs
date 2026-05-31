@@ -11446,7 +11446,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                             }
                             let scan_p = mem_b32s1(q);
                             let merged =
-                                new_native_word_node(mem_b16s2(scan_p + 4) as i32, total_chars);
+                                new_native_word_node_global(mem_b16s2(scan_p + 4) as i32, total_chars);
                             set_mem_b16s0(merged, mem_b16s0(scan_p));
                             set_mem_b32s1(q, merged);
                             // find last node before pp
@@ -15742,24 +15742,45 @@ const INT_PAR_XETEX_GENERATE_ACTUAL_TEXT: i32 = 79;
 /// Allocate a native-word whatsit node for `n` UTF-16 code units of font `f`.
 ///
 /// translated from xetex-xetex0.c:6250 (new_native_word_node)
-#[no_mangle]
-pub unsafe extern "C" fn new_native_word_node(f: i32, n: i32) -> i32 {
-    use crate::globals::{set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_ptr};
+///
+/// Phase-C: threaded to `&mut MemState` (+ a disjoint `&EqtbState` read for the
+/// `xetex_generate_actual_text` int-param). Bucket **B**: pure mem allocation
+/// over the threaded [`crate::mem::get_node`], propagating the `01b` §5
+/// [`NodeRecycleAbort::Overflow`] sentinel; [`new_native_word_node_global`]
+/// runs the cold `overflow()` abort after the borrow drops.
+pub(crate) fn new_native_word_node(
+    mem: &mut crate::state::MemState,
+    eqtb: &crate::state::EqtbState,
+    f: i32,
+    n: i32,
+) -> Result<i32, NodeRecycleAbort> {
     // sizeof(UTF16_code) = 2, sizeof(memory_word) = 8
     let l = NATIVE_NODE_SIZE_NN + (n * 2 + 7) / 8;
-    let q = crate::mem::get_node_global(l);
-    set_mem_b16s1(q, WHATSIT_NODE_NN);
-    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
-        set_mem_b16s0(q, NATIVE_WORD_NODE_AT_NN);
+    let q = cnl_get_node!(mem, l);
+    mem.set_b16s1(q, WHATSIT_NODE_NN);
+    if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
+        mem.set_b16s0(q, NATIVE_WORD_NODE_AT_NN);
     } else {
-        set_mem_b16s0(q, NATIVE_WORD_NODE_NN);
+        mem.set_b16s0(q, NATIVE_WORD_NODE_NN);
     }
-    set_mem_b16s3(q + 4, l as u16);
-    set_mem_b16s2(q + 4, f as u16);
-    set_mem_b16s1(q + 4, n as u16);
-    set_mem_b16s0(q + 4, 0);
-    set_mem_ptr(q + 5, std::ptr::null_mut());
-    q
+    mem.set_b16s3(q + 4, l as u16);
+    mem.set_b16s2(q + 4, f as u16);
+    mem.set_b16s1(q + 4, n as u16);
+    mem.set_b16s0(q + 4, 0);
+    mem.set_ptr(q + 5, std::ptr::null_mut());
+    Ok(q)
+}
+
+/// Transitional bridge-down wrapper for legacy `new_native_word_node` callers
+/// (`01b` §3, §5). Removed when its last legacy caller is itself threaded.
+pub unsafe fn new_native_word_node_global(f: i32, n: i32) -> i32 {
+    match crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        new_native_word_node(&mut s.mem, &s.eqtb, f, n)
+    }) {
+        Ok(q) => q,
+        Err(e) => node_recycle_abort(e),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -15769,16 +15790,80 @@ pub unsafe extern "C" fn new_native_word_node(f: i32, n: i32) -> i32 {
 const INT_PAR_TRACING_LOST_CHARS_NC: i32 = 35;
 const INT_PAR_XETEX_USE_GLYPH_METRICS_NC: i32 = 72;
 
+/// Source of the UTF-16 text payload for [`build_native_character`].
+enum NativeCharSrc {
+    /// A TECkit-mapped run: `len` UTF-16 units already sitting in
+    /// `FontState::mapped_text`.
+    Mapped(i32),
+    /// A single Unicode scalar, encoded inline (1 or 2 UTF-16 units).
+    Single(u32),
+}
+
+/// Phase-C threaded mem core of [`new_native_character`]: allocate the native
+/// node and fill its UTF-16 payload under a narrow `&mut MemState` (+ disjoint
+/// `&EqtbState` for `new_native_word_node`, `&FontState` for the mapped text).
+/// Bucket **B**; propagates the `01b` §5 [`NodeRecycleAbort::Overflow`] sentinel.
+/// All the `with_state`-bearing work (string pool, TECkit mapping, lost-char
+/// warnings, native measurement) stays in the [`new_native_character`] wrapper,
+/// outside this borrow.
+fn build_native_character(
+    mem: &mut crate::state::MemState,
+    eqtb: &crate::state::EqtbState,
+    fonts: &crate::state::FontState,
+    f: i32,
+    src: NativeCharSrc,
+) -> Result<i32, NodeRecycleAbort> {
+    match src {
+        NativeCharSrc::Mapped(len) => {
+            let p = new_native_word_node(mem, eqtb, f, len)?;
+            let text = mem.as_u16_ptr_mut(p + NATIVE_NODE_SIZE_NN);
+            for i in 0..len {
+                // SAFETY: node sized for `len` UTF-16 units; `i < len`. The
+                // arena never reallocates, so `text` stays valid.
+                unsafe {
+                    *text.add(i as usize) = fonts.mapped_text[i as usize];
+                }
+            }
+            Ok(p)
+        }
+        NativeCharSrc::Single(c) => {
+            let p = cnl_get_node!(mem, NATIVE_NODE_SIZE_NN + 1);
+            mem.set_b16s1(p, WHATSIT_NODE_NN);
+            mem.set_b16s0(p, NATIVE_WORD_NODE_NN);
+            mem.set_b16s3(p + 4, (NATIVE_NODE_SIZE_NN + 1) as u16);
+            mem.set_b16s0(p + 4, 0);
+            mem.set_ptr(p + 5, std::ptr::null_mut());
+            mem.set_b16s2(p + 4, f as u16);
+            if c > 65_535 {
+                mem.set_b16s1(p + 4, 2);
+            } else {
+                mem.set_b16s1(p + 4, 1);
+            }
+            let text = mem.as_u16_ptr_mut(p + NATIVE_NODE_SIZE_NN);
+            // SAFETY: node sized for up to 2 UTF-16 units; arena never moves.
+            unsafe {
+                if c > 65_535 {
+                    *text.add(0) = ((c - 65_536) / 1024 + 0xD800) as u16;
+                    *text.add(1) = ((c - 65_536) % 1024 + 0xDC00) as u16;
+                } else {
+                    *text.add(0) = c as u16;
+                }
+            }
+            Ok(p)
+        }
+    }
+}
+
 /// Allocate a native text node for one Unicode scalar, applying font mappings.
 ///
 /// translated from xetex-xetex0.c:6276 (new_native_character)
+///
+/// Phase-C: the mem allocation/fill is threaded into [`build_native_character`]
+/// (one `with_state_mut` borrow); this function remains the with_state-bearing
+/// orchestrator (bucket **C**) — string pool, TECkit mapping, lost-char
+/// warnings, and native measurement all run outside the mem borrow.
 pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
-    use crate::globals::{
-        mem_as_u16_ptr_mut, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_ptr,
-    };
-
-    let p;
-    if !font_mapping_ptr(f).is_null() {
+    let src = if !font_mapping_ptr(f).is_null() {
         if c > 65_535 {
             if pool_ptr() + 2 > pool_size() {
                 crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
@@ -15820,11 +15905,7 @@ pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
             }
         }
 
-        p = new_native_word_node(f, len);
-        let text = mem_as_u16_ptr_mut(p + NATIVE_NODE_SIZE_NN);
-        for i in 0..len {
-            *text.add(i as usize) = mapped_text_entry(i);
-        }
+        NativeCharSrc::Mapped(len)
     } else {
         if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS_NC) > 0
             && map_char_to_glyph(f, c as i32) == 0
@@ -15832,24 +15913,16 @@ pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
             char_warning(f, c as i32);
         }
 
-        p = crate::mem::get_node_global(NATIVE_NODE_SIZE_NN + 1);
-        set_mem_b16s1(p, WHATSIT_NODE_NN);
-        set_mem_b16s0(p, NATIVE_WORD_NODE_NN);
-        set_mem_b16s3(p + 4, (NATIVE_NODE_SIZE_NN + 1) as u16);
-        set_mem_b16s0(p + 4, 0);
-        set_mem_ptr(p + 5, std::ptr::null_mut());
-        set_mem_b16s2(p + 4, f as u16);
+        NativeCharSrc::Single(c)
+    };
 
-        let text = mem_as_u16_ptr_mut(p + NATIVE_NODE_SIZE_NN);
-        if c > 65_535 {
-            set_mem_b16s1(p + 4, 2);
-            *text.add(0) = ((c - 65_536) / 1024 + 0xD800) as u16;
-            *text.add(1) = ((c - 65_536) % 1024 + 0xDC00) as u16;
-        } else {
-            set_mem_b16s1(p + 4, 1);
-            *text.add(0) = c as u16;
-        }
-    }
+    let p = match crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        build_native_character(&mut s.mem, &s.eqtb, &s.fonts, f, src)
+    }) {
+        Ok(p) => p,
+        Err(e) => node_recycle_abort(e),
+    };
 
     measure_native_node(
         crate::globals::mem_node_addr(p),
@@ -16683,7 +16756,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
     let use_glyph = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
 
     if locale == 0 || len == 1 {
-        let node = new_native_word_node(main_f, len);
+        let node = new_native_word_node_global(main_f, len);
         set_mem_b32s1(cur_list_tail(), node);
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
         let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
@@ -16717,7 +16790,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
                         set_cur_list_tail(mem_b32s1(cur_list_tail()));
                     }
                 }
-                let node = new_native_word_node(main_f, offs - prev_offs);
+                let node = new_native_word_node_global(main_f, offs - prev_offs);
                 set_mem_b32s1(cur_list_tail(), node);
                 set_cur_list_tail(mem_b32s1(cur_list_tail()));
                 let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
@@ -17489,7 +17562,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
 
             if tail_is_native {
                 let old_len = mem_b16s1(main_pp() + 4) as i32;
-                let new_node = new_native_word_node(mf, mk + old_len);
+                let new_node = new_native_word_node_global(mf, mk + old_len);
                 set_mem_b32s1(main_pp(), new_node);
                 set_cur_list_tail(mem_b32s1(main_pp()));
                 for i in 0..old_len {
@@ -17514,7 +17587,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                 set_mem_b32s1(main_pp(), TEX_NULL);
                 free_node_global(main_pp(), mem_b16s3(main_pp() + 4) as i32);
             } else {
-                let new_node = new_native_word_node(mf, mk);
+                let new_node = new_native_word_node_global(mf, mk);
                 set_mem_b32s1(main_pp(), new_node);
                 set_cur_list_tail(mem_b32s1(main_pp()));
                 for i in 0..mk {
@@ -17568,7 +17641,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                     if p3m == cur_list_tail() {
                         let pp_len = mem_b16s1(pp + 4) as i32;
                         let tail_len = mem_b16s1(cur_list_tail() + 4) as i32;
-                        let tmp = new_native_word_node(mf, pp_len + 1 + tail_len);
+                        let tmp = new_native_word_node_global(mf, pp_len + 1 + tail_len);
                         let mut ki = 0i32;
                         for t in 0..pp_len {
                             *mem_as_u16_ptr_mut(tmp + NATIVE_NODE_SIZE).add(ki as usize) =

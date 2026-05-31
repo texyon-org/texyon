@@ -1479,7 +1479,7 @@ pub unsafe fn line_break(d: bool) {
 
                                         if hc_entry(0) == 0 {
                                             if hn() > 0 {
-                                                q = crate::scan::new_native_word_node(
+                                                q = crate::scan::new_native_word_node_global(
                                                     crate::globals::hf(),
                                                     native_node_len(crate::globals::ha()) - l,
                                                 );
@@ -1496,7 +1496,7 @@ pub unsafe fn line_break(d: bool) {
                                                 break 'restart_native;
                                             }
                                         } else if hn() == 0 && l > 0 {
-                                            q = crate::scan::new_native_word_node(
+                                            q = crate::scan::new_native_word_node_global(
                                                 crate::globals::hf(),
                                                 native_node_len(crate::globals::ha()) - l,
                                             );
@@ -2867,7 +2867,7 @@ pub unsafe extern "C" fn hyphenate() {
             set_hyphen_passed(0);
             for j in l_hyf() as i16..=(hn_v - r_hyf() as i16) {
                 if odd(hyf_entry(j as usize)) {
-                    let q = crate::scan::new_native_word_node(hf(), (j - hyphen_passed()) as i32);
+                    let q = crate::scan::new_native_word_node_global(hf(), (j - hyphen_passed()) as i32);
                     set_mem_b16s0(q, mem_b16s0(ha()));
                     for i in 0..=(j - hyphen_passed() - 1) {
                         *mem_as_u16_ptr_mut(q + NATIVE_NODE_SIZE).add(i as usize) =
@@ -2891,7 +2891,7 @@ pub unsafe extern "C" fn hyphenate() {
 
             hn_v = mem_b16s1(ha() + 4) as i16;
             set_hn(hn_v);
-            let q = crate::scan::new_native_word_node(hf(), (hn_v - hyphen_passed()) as i32);
+            let q = crate::scan::new_native_word_node_global(hf(), (hn_v - hyphen_passed()) as i32);
             set_mem_b16s0(q, mem_b16s0(ha()));
             for i in 0..=(hn_v - hyphen_passed() - 1) {
                 *mem_as_u16_ptr_mut(q + NATIVE_NODE_SIZE).add(i as usize) =

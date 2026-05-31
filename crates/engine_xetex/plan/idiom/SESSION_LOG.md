@@ -7,6 +7,26 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 87 — 2026-05-31 — thread the native text-node constructor cluster
+
+**Type:** execution (workstream 01, Phase C — native-text node constructors). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** threaded the two functions that build XeTeX native-text nodes — `new_native_word_node` and `new_native_character` (both `scan.rs`) — onto narrow state borrows. `new_native_word_node(mem: &mut MemState, eqtb: &EqtbState, f, n)` is now pure-mem over the threaded `get_node` (using the `cnl_get_node!` macro / `NodeRecycleAbort::Overflow` §5 sentinel); `new_native_word_node_global` aborts after the borrow drops. For `new_native_character`, the mem allocation + UTF-16 payload fill (both the mapped-run and single-scalar branches) were extracted into a threaded `build_native_character(&mut MemState, &EqtbState, &FontState, …)` core run under one `with_state_mut` borrow; the orchestrator keeps the with_state-bearing work (string pool, TECkit `apply_mapping`, lost-char `char_warning`, `measure_native_node`) outside that borrow.
+
+**Classification (`01b` §4a):** `new_native_word_node` bucket **B** (mem + one disjoint eqtb read). `new_native_character` bucket **C** (the `build_native_character` mem core is B; the surrounding string/mapping/output/measurement stays in the orchestrator). Recon: header prototypes only (`xetex-xetexd.h:905-906`), **no** C/C++ callers, no cleanup aliases, no cross-module redeclaration, and no call site sat inside an existing `with_state*` closure.
+
+**Bridged call sites:** 11 external `new_native_word_node` sites renamed to `_global` (scan 6, linebreak 4, shipout 1) via a guarded `perl` pass; the internal call inside `build_native_character` and the wrapper call the threaded core directly. `new_native_character`'s 7 callers are unchanged — it remains the (inherently with_state-bearing) public orchestrator, not a transient `_global` wrapper, so it keeps its name.
+
+**Newtype debt:** none. No state fields moved; only two `MemState` methods added (`set_b16s3`, `as_u16_ptr_mut`). The header typedefs (`internal_font_number`, `UnicodeScalar`) are function parameters, not moved fields (checked).
+
+**Metrics:** `#[no_mangle]` **338 → 337** (dropped the `new_native_word_node` export). raw externs **40** unchanged. `unsafe fn` measured **649** (net flat: `new_native_word_node` lost `unsafe`, `new_native_word_node_global` added). raw `unsafe {}` **174 → 176** (the two explicit text-pointer write blocks now live in the safe `build_native_character` core). Crate warning count during `cargo check` stayed **79**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** (native-font cases `otf_basic`/`graphite_basic`/`file_encoding`/`unicode_file_name` all green, confirming the native-node restructure is behavior-identical).
+
+**For the next session (88):** good closeable targets remain a math noad helper block (`make_op`/`make_ord` are large bucket-C — split each `clean_box`/`rebox`/`fetch`/OT-math call out of the borrow), a pagebuilder helper block, or another linebreak/post-line-break block. The clean leaf-helper slices are thinning out; remaining high-count functions are mostly orchestrators (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`). Keep scanner-heavy `scan.rs` paths last; draft `02-modules.md` before the big scanner decomposition.
+
+---
+
 ## Idiom session 86 — 2026-05-31 — thread math noad finishing assembly
 
 **Type:** execution (workstream 01, Phase C — math node-building helpers). **One commit.** Dashboard **29/2/7/4**.

@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 86, **Phase-C execution**: threaded the math noad-finishing assembly cluster — `make_over`, `make_radical`, `make_vcenter`, and `make_fraction` — to narrow `&mut MemState` cores; 4 legacy `mlist_to_hlist` call sites bridged to `_global`; dead `fraction_rule_global`/`overbar_global` wrappers removed. `#[no_mangle]` 342→338. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 87, **Phase-C execution**: threaded the native text-node constructor cluster — `new_native_word_node` (→ `&mut MemState` + disjoint `&EqtbState`, bucket B) and `new_native_character` (mem core `build_native_character` under one borrow; string/mapping/warning/measurement stay in the orchestrator, bucket C); 11 external `new_native_word_node` sites bridged to `_global`. `#[no_mangle]` 338→337. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -808,6 +808,25 @@ least-coupled non-`misc` clusters:
     aliases; no live C/C++ caller beyond stale `xetex-math.c`; no moved fields,
     so no newtype debt. `#[no_mangle]` 342→338, `unsafe fn` 651→650, raw
     `unsafe {}` 173→174. Dashboard 29/2/7/4.
+-   **Native text-node constructor cluster threaded (session 87):** the two
+    functions that build XeTeX native-text nodes — `new_native_word_node` and
+    `new_native_character` (`scan.rs`) — threaded onto narrow state borrows.
+    `new_native_word_node(mem: &mut MemState, eqtb: &EqtbState, f, n)` is bucket
+    **B** (pure mem over the threaded `get_node` / `cnl_get_node!`
+    `NodeRecycleAbort::Overflow` §5 sentinel; `new_native_word_node_global`
+    aborts after the borrow drops). `new_native_character` is bucket **C**: its
+    mem allocation + UTF-16 payload fill (mapped-run and single-scalar branches)
+    moved into a threaded `build_native_character(&mut MemState, &EqtbState,
+    &FontState, …)` core run under one `with_state_mut` borrow, while the
+    orchestrator keeps the with_state-bearing string-pool / TECkit
+    `apply_mapping` / lost-char `char_warning` / `measure_native_node` work
+    outside the borrow (so `new_native_character` keeps its name — it is the
+    permanent orchestrator, not a transient `_global` wrapper). Added two
+    `MemState` methods (`set_b16s3`, `as_u16_ptr_mut`). Bridged 11 external
+    `new_native_word_node` sites to `_global` (scan 6, linebreak 4, shipout 1).
+    No C/C++ callers (header prototypes only); no cleanup aliases; no newtype
+    debt (no fields moved). `#[no_mangle]` 338→337, raw externs 40 unchanged,
+    `unsafe fn` net flat (~649), raw `unsafe {}` 174→176. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -819,9 +838,9 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 174 state-backed scalars/arrays (session 82 deleted `xtx_ligature_present` and `init_lig` getters after threading the font/effective-char + linebreak reconstruction slice) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 338 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 86 dropped 4 math noad helper exports) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 650 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 86 removed two dead wrappers and added `_global` bridges) |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 174 / 688 not remeasured (session 86 made `scaled_math::half` explicit in a safe core) |
+| `#[no_mangle]` exports | 576 | boundary-only | 337 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 87 dropped the `new_native_word_node` export) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 649 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 87 net-flat: `new_native_word_node` de-`unsafe`'d, `_global` wrapper added) |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 176 / 688 not remeasured (session 87 made the two native-node text-pointer writes explicit in the safe `build_native_character` core) |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -953,9 +972,19 @@ the snippets in `00-overview.md` / the workstream plans.
     **Session 86 update:** the math noad-finishing assembly cluster
     (`make_over`, `make_radical`, `make_vcenter`, `make_fraction`) is now
     threaded to `&mut MemState`; 4 `mlist_to_hlist` sites were bridged and the
-    dead `fraction_rule_global` / `overbar_global` wrappers were removed. Next
-    targets remain a pagebuilder helper block, another math noad helper block,
-    or another closed linebreak/post-line-break block.
+    dead `fraction_rule_global` / `overbar_global` wrappers were removed.
+
+    **Session 87 update:** the native text-node constructor cluster
+    (`new_native_word_node` → `&mut MemState` + disjoint `&EqtbState`;
+    `new_native_character`'s mem alloc/fill → threaded `build_native_character`
+    core, orchestrator keeps string/mapping/warning/measurement outside the
+    borrow) is now threaded; 11 external `new_native_word_node` sites bridged to
+    `_global`. Next targets: a math noad helper block (`make_op`/`make_ord` are
+    large bucket-C — split each `clean_box`/`rebox`/`fetch`/OT-math call out of
+    the borrow), a pagebuilder helper block, or another linebreak/post-line-break
+    block. Clean leaf-helper slices are thinning; remaining high-count functions
+    are mostly orchestrators (`hpack`/`vpackage`/`build_page`/`line_break`/
+    `mlist_to_hlist`). Keep scanner-heavy `scan.rs` last.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

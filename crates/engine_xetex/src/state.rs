@@ -382,10 +382,24 @@ impl MemState {
         self.data[p as usize].b16.s2 = v;
     }
 
+    /// Write `mem[p].b16.s3`. Mirrors `globals::set_mem_b16s3`.
+    #[inline]
+    pub(crate) fn set_b16s3(&mut self, p: i32, v: u16) {
+        self.data[p as usize].b16.s3 = v;
+    }
+
     /// Write the `gr` (f64) field of `mem[p]`. Mirrors `globals::set_mem_gr`.
     #[inline]
     pub(crate) fn set_gr(&mut self, p: i32, v: f64) {
         self.data[p as usize].gr = v;
+    }
+
+    /// Reinterpret the arena from word `p` onward as a `*mut u16`. Mirrors
+    /// `globals::mem_as_u16_ptr_mut`; valid past the borrow because the
+    /// thread-local owner never reallocates.
+    #[inline]
+    pub(crate) fn as_u16_ptr_mut(&mut self, p: i32) -> *mut u16 {
+        self.data.as_mut_ptr().wrapping_add(p as usize) as *mut u16
     }
 
     /// Copy the full `MemoryWord` at `mem[p]`. Mirrors `globals::mem_word`.

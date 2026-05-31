@@ -952,7 +952,7 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
                     q = mem_b32s1(q);
                 }
 
-                q = crate::scan::new_native_word_node(
+                q = crate::scan::new_native_word_node_global(
                     mem_b16s2(r + 4) as i32,
                     crate::hash::cur_length(),
                 );
