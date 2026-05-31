@@ -8,6 +8,34 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 77 — 2026-05-31 — thread linebreak margin-kern protrusion insertion
+
+**Type:** execution (workstream 01, Phase C — fourth `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the post-line-break margin-kern protrusion insertion blocks:
+- Added direct target-selection helpers for the right and left margin-kern paths. They take `&mut MemState` + `&mut LinebreakState`, walk mem directly, and call the direct protrusion scanners.
+- Added borrow-dropping insertion wrappers that compute protrusion targets under state, run `char_pw` after the borrow drops, then reborrow briefly to allocate/link the margin kern directly with `new_margin_kern`.
+- `post_line_break` now delegates both protrusion insertion blocks to these wrappers, keeping `char_pw` and cold `overflow` outside live state borrows.
+- Removed the now-dead `find_protchar_left_global` / `find_protchar_right_global` wrappers, the old `prev_rightmost` import, and the dead `new_margin_kern_global` bridge.
+
+**Classification (`01b` §4a):** bucket **C**. Direct target selection and margin-kern linking are B-style accessor rewrites, but `char_pw` still crosses linebreak/font/scanner bridges and allocation overflow must remain borrow-dropping.
+
+**Recon / safety checks (§11 + `01b`):**
+- no extern statics or `ini.rs` cleanup aliases.
+- no executable C/C++ callers; post-slice C-reference grep is empty for the removed wrappers.
+- no cross-module extern/static/link-name redeclarations.
+- no call sites already inside a `with_state*` closure.
+
+**Newtype debt:** none. No state fields added; parameters and return values are existing plain TeX integer node pointers (`i32`) and booleans.
+
+**Metrics:** `#[no_mangle]` exports unchanged at **381**. `globals.rs` raw externs unchanged at **40**. `unsafe fn` **685 → 684** by removing `new_margin_kern_global` (two protrusion `_global` wrappers were replaced by two new borrow-dropping helpers). Raw `unsafe { ... }` text-search count unchanged at **160**. Thin accessors unchanged at **817**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (78):** continue `linebreak.rs`, likely with another closed `post_line_break` helper such as the LR-stack update path. Keep `char_pw` outside live state borrows until scanner/font/string state is threaded. Keep `scan.rs` last and draft `02-modules.md` to READY before scanner-heavy work.
+
+---
+
 ## Idiom session 76 — 2026-05-31 — thread linebreak total_pw
 
 **Type:** execution (workstream 01, Phase C — third `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.

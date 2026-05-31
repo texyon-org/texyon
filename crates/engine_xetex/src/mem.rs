@@ -966,7 +966,7 @@ pub unsafe fn new_choice_global() -> i32 {
 ///
 /// translated from xetex-xetex0.c:9838 (new_margin_kern)
 ///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_margin_kern_global`].
+/// Phase-C: threaded to `&mut MemState`.
 pub fn new_margin_kern(mem: &mut MemState, w: i32, _p: i32, side: i16) -> i32 {
     let k = get_node(mem, MARGIN_KERN_NODE_SIZE);
     if k == ALLOC_FAILED {
@@ -975,15 +975,6 @@ pub fn new_margin_kern(mem: &mut MemState, w: i32, _p: i32, side: i16) -> i32 {
     mem.set_b16s1(k, MARGIN_KERN_NODE); // NODE_type(k)
     mem.set_b16s0(k, side as u16);
     mem.set_b32s1(k + 1, w);
-    k
-}
-
-/// Transitional bridge-down wrapper for legacy `new_margin_kern` callers (`01b` §3, §5).
-pub unsafe fn new_margin_kern_global(w: i32, p: i32, side: i16) -> i32 {
-    let k = crate::state::with_state_mut(|st| new_margin_kern(&mut st.mem, w, p, side));
-    if k == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
     k
 }
 

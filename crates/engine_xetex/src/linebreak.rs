@@ -1,7 +1,6 @@
 use crate::consts::{DIMEN_BASE, ETEX_PEN_BASE, GLUE_BASE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MAX_HALFWORD, SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
 use crate::ext::measure_native_node;
 use crate::ini::init_trie;
-use crate::mem::prev_rightmost;
 use crate::scan::char_pw;
 use crate::state::{LinebreakState, MemState};
 
@@ -494,13 +493,6 @@ pub fn find_protchar_left(
     Some(l)
 }
 
-pub unsafe fn find_protchar_left_global(l: i32, d: bool) -> i32 {
-    match crate::state::with_state_mut(|state| find_protchar_left(&mut state.mem, &mut state.linebreak, l, d)) {
-        Some(p) => p,
-        None => crate::errors::pdf_error(c"find_protchar_left".as_ptr(), c"hlist stack failure".as_ptr()),
-    }
-}
-
 // translated from xetex-linebreak.c:2778 (find_protchar_right)
 pub fn find_protchar_right(
     mem: &mut MemState,
@@ -548,11 +540,84 @@ pub fn find_protchar_right(
     Some(r)
 }
 
-pub unsafe fn find_protchar_right_global(l: i32, r: i32) -> i32 {
-    match crate::state::with_state_mut(|state| find_protchar_right(&mut state.mem, &mut state.linebreak, l, r)) {
-        Some(p) => p,
-        None => crate::errors::pdf_error(c"find_protchar_right".as_ptr(), c"hlist stack failure".as_ptr()),
+fn right_margin_kern_target(
+    mem: &mut MemState,
+    linebreak: &mut LinebreakState,
+    q: i32,
+    disc_break: bool,
+) -> Option<(i32, i32)> {
+    if disc_break && (is_char_node_in(mem, q) || mem.b16s1(q) as i32 != DISC_NODE) {
+        Some((q, q))
+    } else {
+        let ptmp = prev_rightmost_in(mem, mem.b32s1(TEMP_HEAD), q);
+        let p = find_protchar_right(mem, linebreak, mem.b32s1(TEMP_HEAD), ptmp)?;
+        Some((p, ptmp))
     }
+}
+
+unsafe fn insert_right_margin_kern_global(q: i32, disc_break: bool) -> i32 {
+    let (p, ptmp) = match crate::state::with_state_mut(|state| {
+        right_margin_kern_target(&mut state.mem, &mut state.linebreak, q, disc_break)
+    }) {
+        Some(pair) => pair,
+        None => crate::errors::pdf_error(c"insert_right_margin_kern".as_ptr(), c"hlist stack failure".as_ptr()),
+    };
+
+    let w = char_pw(p, 1);
+    if w == 0 {
+        return q;
+    }
+
+    let last_rightmost = crate::globals::last_rightmost_char();
+    let new_q = crate::state::with_state_mut(|state| {
+        let k = crate::mem::new_margin_kern(&mut state.mem, -w, last_rightmost, 1);
+        if k == crate::mem::ALLOC_FAILED {
+            return crate::mem::ALLOC_FAILED;
+        }
+        state.mem.set_b32s1(k, state.mem.b32s1(ptmp));
+        state.mem.set_b32s1(ptmp, k);
+        if ptmp == q {
+            state.mem.b32s1(q)
+        } else {
+            q
+        }
+    });
+    if new_q == crate::mem::ALLOC_FAILED {
+        crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
+    }
+    new_q
+}
+
+fn left_margin_kern_target(mem: &mut MemState, linebreak: &mut LinebreakState, q: i32) -> Option<i32> {
+    find_protchar_left(mem, linebreak, q, false)
+}
+
+unsafe fn insert_left_margin_kern_global(q: i32) -> i32 {
+    let p = match crate::state::with_state_mut(|state| {
+        left_margin_kern_target(&mut state.mem, &mut state.linebreak, q)
+    }) {
+        Some(p) => p,
+        None => crate::errors::pdf_error(c"insert_left_margin_kern".as_ptr(), c"hlist stack failure".as_ptr()),
+    };
+
+    let w = char_pw(p, 0);
+    if w == 0 {
+        return q;
+    }
+
+    let last_leftmost = crate::globals::last_leftmost_char();
+    let k = crate::state::with_state_mut(|state| {
+        let k = crate::mem::new_margin_kern(&mut state.mem, -w, last_leftmost, 0);
+        if k == crate::mem::ALLOC_FAILED {
+            return crate::mem::ALLOC_FAILED;
+        }
+        state.mem.set_b32s1(k, q);
+        k
+    });
+    if k == crate::mem::ALLOC_FAILED {
+        crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
+    }
+    k
 }
 
 // translated from xetex-linebreak.c:2377 (finite_shrink)
@@ -1733,11 +1798,11 @@ unsafe fn update_lr_stack(q: i32, lr_ptr: &mut i32) {
 pub unsafe extern "C" fn post_line_break(d: bool) {
     use crate::globals::{
         adjust_tail, best_bet, best_line, cur_list_e_tex_aux, cur_list_prev_graf, cur_list_tail,
-        eqtb_b32s1, first_indent, first_width, hi_mem_min, just_box, last_leftmost_char,
-        last_rightmost_char, last_special_line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1,
-        pre_adjust_tail, second_indent, second_width, semantic_pagination_enabled, set_adjust_tail,
-        set_cur_list_e_tex_aux, set_cur_list_prev_graf, set_cur_list_tail, set_cur_p, set_just_box,
-        set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, set_pre_adjust_tail,
+        eqtb_b32s1, first_indent, first_width, hi_mem_min, just_box, last_special_line,
+        mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, pre_adjust_tail, second_indent,
+        second_width, semantic_pagination_enabled, set_adjust_tail, set_cur_list_e_tex_aux,
+        set_cur_list_prev_graf, set_cur_list_tail, set_cur_p, set_just_box, set_mem_b16s0,
+        set_mem_b32s0, set_mem_b32s1, set_pre_adjust_tail,
     };
 
     let mut lr_ptr = cur_list_e_tex_aux();
@@ -1853,26 +1918,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
         }
 
         if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 0 {
-            let mut p;
-            let ptmp;
-            if disc_break && (is_char_node(q) || mem_b16s1(q) as i32 != DISC_NODE) {
-                p = q;
-                ptmp = p;
-            } else {
-                p = prev_rightmost(mem_b32s1(TEMP_HEAD), q);
-                ptmp = p;
-                p = find_protchar_right_global(mem_b32s1(TEMP_HEAD), p);
-            }
-
-            let w = char_pw(p, 1);
-            if w != 0 {
-                let k = crate::mem::new_margin_kern_global(-w, last_rightmost_char(), 1);
-                set_mem_b32s1(k, mem_b32s1(ptmp));
-                set_mem_b32s1(ptmp, k);
-                if ptmp == q {
-                    q = mem_b32s1(q);
-                }
-            }
+            q = insert_right_margin_kern_global(q, disc_break);
         }
 
         if !glue_break {
@@ -1906,13 +1952,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
         set_mem_b32s1(TEMP_HEAD, r);
 
         if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 0 {
-            let p = find_protchar_left_global(q, false);
-            let w = char_pw(p, 0);
-            if w != 0 {
-                let k = crate::mem::new_margin_kern_global(-w, last_leftmost_char(), 0);
-                set_mem_b32s1(k, q);
-                q = k;
-            }
+            q = insert_left_margin_kern_global(q);
         }
 
         if eqtb_b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP as i32) != 0 {
