@@ -791,6 +791,11 @@ impl FontState {
     }
 
     #[inline]
+    pub(crate) fn width_base_entry(&self, f: i32) -> i32 {
+        self.width_base[f as usize]
+    }
+
+    #[inline]
     pub(crate) fn italic_base_entry(&self, f: i32) -> i32 {
         self.italic_base[f as usize]
     }
@@ -813,6 +818,11 @@ impl FontState {
     #[inline]
     pub(crate) fn kern_base_entry(&self, f: i32) -> i32 {
         self.kern_base[f as usize]
+    }
+
+    #[inline]
+    pub(crate) fn skew_char_entry(&self, f: i32) -> i32 {
+        self.skew_char[f as usize]
     }
 }
 

@@ -4211,13 +4211,6 @@ pub(crate) fn cur_c() -> i32 {
 pub(crate) fn cur_i() -> crate::mem_types::B16x4 {
     crate::state::with_state(|s| s.scanner.cur_i)
 }
-#[inline]
-pub(crate) fn set_cur_i(v: crate::mem_types::B16x4) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_i = v;
-    });
-}
-#[inline]
 pub(crate) fn pack_begin_line() -> i32 {
     crate::state::with_state(|s| s.scanner.pack_begin_line)
 }

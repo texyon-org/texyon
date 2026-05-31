@@ -14,18 +14,16 @@ use crate::globals::{
     depth_base_entry, eqtb_b32s1, exten_base_entry, file_line_error_style_p, font_area_entry,
     font_bc_entry, font_ec_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr,
     height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
-    kern_base_entry, lig_kern_base_entry, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2,
-    mem_b16s3, mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, mem_word, nest_ptr,
-    param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
-    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_f,
-    set_cur_i, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
+    lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end,
+    mem_gr, mem_node_addr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr,
+    save_stack_b32s1, semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir,
+    set_cur_f, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
     set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
     set_cur_mlist, set_cur_mu, set_cur_size, set_cur_style, set_cur_val, set_cur_val1,
     set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1,
     set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_word,
     set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
-    set_xtx_ligature_present, skew_char_entry, temp_ptr, tex_remainder, total_shrink,
-    width_base_entry,
+    set_xtx_ligature_present, temp_ptr, tex_remainder, total_shrink, width_base_entry,
 };
 use crate::mem::{
     free_node, free_node_global, get_avail, get_node, get_node_global, new_choice_global, new_glue,
@@ -1150,16 +1148,18 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
             if !is_ot {
                 if st.scanner.cur_style < TEXT_STYLE && st.scanner.cur_i.s1 % 4 == LIST_TAG {
                     let c = st.scanner.cur_i.s0;
-                    let i_info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c as i32);
+                    let i_info = st
+                        .fonts
+                        .font_info_b16(st.fonts.char_base_entry(f) + c as i32);
                     if i_info.s3 > 0 {
                         st.scanner.cur_c = c as i32;
                         st.scanner.cur_i = i_info;
                         st.mem.set_b16s0(q + 1, c);
                     }
                 }
-                delta = st
-                    .fonts
-                    .font_info_b32s1(st.fonts.italic_base_entry(f) + st.scanner.cur_i.s1 as i32 / 4);
+                delta = st.fonts.font_info_b32s1(
+                    st.fonts.italic_base_entry(f) + st.scanner.cur_i.s1 as i32 / 4,
+                );
             }
         });
 
@@ -1508,10 +1508,9 @@ pub unsafe fn make_ord_global(q: i32) {
 }
 
 /// translated from xetex-math.c:79 (make_math_accent)
-#[no_mangle]
-pub unsafe extern "C" fn make_math_accent(q: i32) {
+pub unsafe fn make_math_accent_global(q: i32) {
     fetch_global(q + 4);
-    let mut x: i32 = TEX_NULL;
+    let mut x: i32;
     let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
     let mut c: i32;
     let f: i32;
@@ -1519,70 +1518,90 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
     let w: i32;
     let mut h: i32;
 
-    if font_area_entry(cur_f()) == AAT_FONT_FLAG || font_area_entry(cur_f()) == OTGR_FONT_FLAG {
-        c = cur_c();
-        f = cur_f();
-        if !(mem_b16s0(q) == BOTTOM_ACC || mem_b16s0(q) == BOTTOM_ACC + 1) {
-            s = compute_ot_math_accent_pos(q);
+    let (initial_f, initial_c, initial_i, initial_area, initial_kind) =
+        crate::state::with_state(|st| {
+            (
+                st.scanner.cur_f,
+                st.scanner.cur_c,
+                st.scanner.cur_i,
+                st.fonts.font_area_entry(st.scanner.cur_f),
+                st.mem.b16s0(q),
+            )
+        });
+
+    if initial_area == AAT_FONT_FLAG || initial_area == OTGR_FONT_FLAG {
+        c = initial_c;
+        f = initial_f;
+        if !(initial_kind == BOTTOM_ACC || initial_kind == BOTTOM_ACC + 1) {
+            s = compute_ot_math_accent_pos_global(q);
         } else {
             s = 0;
         }
-        x = clean_box(q + 1, 2 * (cur_style() / 2) + 1);
-        w = mem_b32s1(x + 1);
-        h = mem_b32s1(x + 3);
-    } else if cur_i().s3 > 0 {
-        let mut acc_i = cur_i();
-        c = cur_c();
-        f = cur_f();
+        let clean_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 2) + 1);
+        x = clean_box(q + 1, clean_style);
+        (w, h) = crate::state::with_state(|st| (st.mem.b32s1(x + 1), st.mem.b32s1(x + 3)));
+    } else if initial_i.s3 > 0 {
+        let mut acc_i = initial_i;
+        c = initial_c;
+        f = initial_f;
         s = 0;
-        'done1: {
-            if mem_b32s1(q + 1) == MATH_CHAR {
-                fetch_global(q + 1);
-                if cur_i().s1 % 4 == LIG_TAG {
-                    let mut a = lig_kern_base_entry(cur_f()) + cur_i().s0 as i32;
-                    set_cur_i(font_info_b16(a));
-                    if cur_i().s3 > 128 {
-                        a = lig_kern_base_entry(cur_f())
-                            + 256 * cur_i().s1 as i32
-                            + cur_i().s0 as i32
-                            + 32768
-                            - 256 * 128;
-                        set_cur_i(font_info_b16(a));
-                    }
-                    loop {
-                        if cur_i().s2 == skew_char_entry(cur_f()) as u16 {
-                            if cur_i().s1 >= 128 && cur_i().s3 <= 128 {
-                                s = font_info_b32s1(
-                                    kern_base_entry(cur_f())
-                                        + 256 * cur_i().s1 as i32
-                                        + cur_i().s0 as i32,
-                                );
-                            }
-                            break 'done1;
-                        }
-                        if cur_i().s3 >= 128 {
-                            break 'done1;
-                        }
-                        a += cur_i().s3 as i32 + 1;
-                        set_cur_i(font_info_b16(a));
-                    }
+        let base_is_math_char = crate::state::with_state(|st| st.mem.b32s1(q + 1) == MATH_CHAR);
+        if base_is_math_char {
+            fetch_global(q + 1);
+            s = crate::state::with_state_mut(|st| {
+                let st = &mut *st;
+                if st.scanner.cur_i.s1 % 4 != LIG_TAG {
+                    return 0;
                 }
-            }
+                let mut a =
+                    st.fonts.lig_kern_base_entry(st.scanner.cur_f) + st.scanner.cur_i.s0 as i32;
+                st.scanner.cur_i = st.fonts.font_info_b16(a);
+                if st.scanner.cur_i.s3 > 128 {
+                    a = st.fonts.lig_kern_base_entry(st.scanner.cur_f)
+                        + 256 * st.scanner.cur_i.s1 as i32
+                        + st.scanner.cur_i.s0 as i32
+                        + 32768
+                        - 256 * 128;
+                    st.scanner.cur_i = st.fonts.font_info_b16(a);
+                }
+                loop {
+                    if st.scanner.cur_i.s2 == st.fonts.skew_char_entry(st.scanner.cur_f) as u16 {
+                        if st.scanner.cur_i.s1 >= 128 && st.scanner.cur_i.s3 <= 128 {
+                            return st.fonts.font_info_b32s1(
+                                st.fonts.kern_base_entry(st.scanner.cur_f)
+                                    + 256 * st.scanner.cur_i.s1 as i32
+                                    + st.scanner.cur_i.s0 as i32,
+                            );
+                        }
+                        return 0;
+                    }
+                    if st.scanner.cur_i.s3 >= 128 {
+                        return 0;
+                    }
+                    a += st.scanner.cur_i.s3 as i32 + 1;
+                    st.scanner.cur_i = st.fonts.font_info_b16(a);
+                }
+            });
         }
-        // done1:
-        x = clean_box(q + 1, 2 * (cur_style() / 2) + 1);
-        w = mem_b32s1(x + 1);
-        h = mem_b32s1(x + 3);
+        let clean_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 2) + 1);
+        x = clean_box(q + 1, clean_style);
+        (w, h) = crate::state::with_state(|st| (st.mem.b32s1(x + 1), st.mem.b32s1(x + 3)));
         loop {
             if acc_i.s1 % 4 != LIST_TAG {
                 break;
             }
             let y_tmp = acc_i.s0 as i32;
-            acc_i = font_info_b16(char_base_entry(f) + y_tmp);
+            acc_i = crate::state::with_state(|st| {
+                st.fonts.font_info_b16(st.fonts.char_base_entry(f) + y_tmp)
+            });
             if acc_i.s3 <= 0 {
                 break;
             }
-            if font_info_b32s1(width_base_entry(f) + acc_i.s3 as i32) > w {
+            let acc_width = crate::state::with_state(|st| {
+                st.fonts
+                    .font_info_b32s1(st.fonts.width_base_entry(f) + acc_i.s3 as i32)
+            });
+            if acc_width > w {
                 break;
             }
             c = y_tmp;
@@ -2214,7 +2233,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 ACCENT_NOAD => {
-                    make_math_accent(q);
+                    make_math_accent_global(q);
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 VCENTER_NOAD => {
@@ -2843,23 +2862,43 @@ pub unsafe fn stack_glue_into_box_global(b: i32, min: i32, max: i32) {
     }
 }
 
-/// translated from xetex-math.c:199 (compute_ot_math_accent_pos)
-#[no_mangle]
-pub unsafe extern "C" fn compute_ot_math_accent_pos(p: i32) -> i32 {
-    if mem_b32s1(p + 1) == MATH_CHAR {
-        fetch_global(p + 1);
-        let q = crate::scan::new_native_character(cur_f(), cur_c() as u32);
-        let g = real_get_native_glyph(mem_node_addr(q), 0);
-        get_ot_math_accent_pos(cur_f(), g as i32)
-    } else if mem_b32s1(p + 1) == SUB_MLIST {
-        let r = mem_b32s0(p + 1);
-        if r != TEX_NULL && mem_b16s1(r) == ACCENT_NOAD {
-            compute_ot_math_accent_pos(r)
+enum OtMathAccentPosStep {
+    FetchMathChar,
+    Recurse(i32),
+    Infinity,
+}
+
+fn compute_ot_math_accent_pos_step(mem: &MemState, p: i32) -> OtMathAccentPosStep {
+    if mem.b32s1(p + 1) == MATH_CHAR {
+        OtMathAccentPosStep::FetchMathChar
+    } else if mem.b32s1(p + 1) == SUB_MLIST {
+        let r = mem.b32s0(p + 1);
+        if r != TEX_NULL && mem.b16s1(r) == ACCENT_NOAD {
+            OtMathAccentPosStep::Recurse(r)
         } else {
-            TEX_INFINITY
+            OtMathAccentPosStep::Infinity
         }
     } else {
-        TEX_INFINITY
+        OtMathAccentPosStep::Infinity
+    }
+}
+
+/// translated from xetex-math.c:199 (compute_ot_math_accent_pos)
+unsafe fn compute_ot_math_accent_pos_global(mut p: i32) -> i32 {
+    loop {
+        match crate::state::with_state(|st| compute_ot_math_accent_pos_step(&st.mem, p)) {
+            OtMathAccentPosStep::FetchMathChar => {
+                fetch_global(p + 1);
+                let (f, c) = crate::state::with_state(|st| (st.scanner.cur_f, st.scanner.cur_c));
+                let q = crate::scan::new_native_character(f, c as u32);
+                let g = real_get_native_glyph(mem_node_addr(q), 0);
+                return get_ot_math_accent_pos(f, g as i32);
+            }
+            OtMathAccentPosStep::Recurse(r) => {
+                p = r;
+            }
+            OtMathAccentPosStep::Infinity => return TEX_INFINITY,
+        }
     }
 }
 

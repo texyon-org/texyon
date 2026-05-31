@@ -906,8 +906,8 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 174 state-backed scalars/arrays (session 82 deleted `xtx_ligature_present` and `init_lig` getters after threading the font/effective-char + linebreak reconstruction slice) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 333 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 90 dropped 1: `make_op`) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 647 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 90 net flat: `make_op` `unsafe extern "C" fn` → `make_op_global` `unsafe fn`; the deleted `big_op_spacing*_global`/`set_cur_c` were safe `fn`s) |
+| `#[no_mangle]` exports | 576 | boundary-only | 331 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 91 dropped 2: `make_math_accent` + `compute_ot_math_accent_pos`) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 647 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 91 net flat: moved the two math-accent helpers off `extern "C"` but kept unsafe wrappers) |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 176 / 688 not remeasured (session 87 made the two native-node text-pointer writes explicit in the safe `build_native_character` core) |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
@@ -1076,11 +1076,22 @@ the snippets in `00-overview.md` / the workstream plans.
     bridge (bucket D). Added `FontState::italic_base_entry`; deleted the five dead
     `big_op_spacing*_global` wrappers + the dead `globals::set_cur_c` setter. Next
     targets: `make_scripts` (large), `make_math_accent`, the interleaved
-    `first_script_glyph` + `compute_ot_math_accent_pos` pair (deferred in session 90 —
-    not clean leaf helpers), `var_delimiter`/`make_left_right`, or a pagebuilder/
+    `first_script_glyph`, `var_delimiter`/`make_left_right`, or a pagebuilder/
     linebreak block. Remaining high-count functions are orchestrators
     (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — do not take one
     whole in a single session. Keep scanner-heavy `scan.rs` last.
+
+    **Session 91 update:** `make_math_accent` + `compute_ot_math_accent_pos` are now
+    threaded to borrow-dropping `_global` orchestration. The recursive OT accent-position
+    helper is a short `MemState` dispatcher loop, with `fetch_global`,
+    `new_native_character`, `real_get_native_glyph`, and `get_ot_math_accent_pos` kept
+    outside live borrows. `make_math_accent_global` precomputes initial scanner/font/mem
+    state in short borrows, keeps `clean_box`/native glyph/OT-math/measurement calls
+    between borrows, and threads the TFM skew-kern scan through direct
+    `FontState`/`ScannerState` access. Added `FontState::width_base_entry` and
+    `FontState::skew_char_entry`; deleted dead `globals::set_cur_i`. Next targets:
+    `make_scripts` + `first_script_glyph` (large hard C/D), `var_delimiter`/
+    `make_left_right`, or a pagebuilder/linebreak block.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

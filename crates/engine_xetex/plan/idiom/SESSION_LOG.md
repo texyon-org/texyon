@@ -7,6 +7,26 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 91 — 2026-05-31 — thread math accent prep + OT accent-position helper
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings **78**.
+
+**Slice:** `make_math_accent` + `compute_ot_math_accent_pos` (`src/math.rs`). Both classified bucket **C/D**: they interleave `fetch_global`, native-character/glyph helpers, OT-math calls, `clean_box`, and scattered mem/font/scanner access. C recon found only stale xetex-math.c prototypes/comments, no cleanup aliases, no cross-module redeclarations, and no call site already inside a live `with_state*` closure.
+
+**Structure:** dropped the two internal `#[no_mangle] extern "C"` exports. `compute_ot_math_accent_pos` is now a thin `compute_ot_math_accent_pos_global` dispatcher: a short `MemState` read classifies `MATH_CHAR` / recursive `SUB_MLIST` / infinity, then the wrapper performs `fetch_global`, `new_native_character`, `real_get_native_glyph`, and `get_ot_math_accent_pos` after the borrow drops; recursive args are carried as locals through a loop. `make_math_accent_global` now precomputes initial scanner/font/mem state in one short borrow, keeps `fetch_global` and `clean_box` outside borrows, and threads the TFM skew-kern scan through direct `FontState`/`ScannerState` access.
+
+**Method surface:** added `FontState::width_base_entry` and `FontState::skew_char_entry`, mirroring existing globals accessors. Deleted the now-dead `globals::set_cur_i` bridge after confirming no remaining `src/*.rs` caller.
+
+**Newtype debt:** none. No state fields moved; the new methods expose existing `int32_t` font-table fields, and the slice parameters/locals are plain `i32`.
+
+**Metrics:** `#[no_mangle]` **333 → 331**. raw externs **40** unchanged. `unsafe fn` **647** unchanged. raw `unsafe {}` **176** unchanged. Crate warnings **79 → 78** after removing the orphaned `set_cur_i` bridge/imports.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (92):** continue the remaining math noad family with either `make_scripts` + `first_script_glyph` (large, hard bucket C/D: scanner/font/fetch/native-char interleaving inside a mem walk) or `var_delimiter`/`make_left_right`. Keep scanner-heavy `scan.rs` last; draft `02-modules.md` to READY before the big scanner decomposition.
+
+---
+
 ## Idiom session 90 — 2026-05-31 — thread `make_op` (the last big noad-finishing helper)
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. The hard bucket-C/D `make_op` threaded as a series of short borrows.
