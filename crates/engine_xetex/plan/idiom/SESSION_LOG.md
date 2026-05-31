@@ -7,6 +7,32 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 89 — 2026-05-31 — thread the math `fetch` keystone + `make_ord` + leaf helpers
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. A deliberately larger slice (4 functions, the keystone among them).
+
+**Slice:** threaded `fetch` (the math-char setter the whole noad family funnels through), `make_ord`, `attach_hkern_to_new_hlist`, and `set_empty_math_field` (all `src/math.rs`).
+- **`fetch`** (bucket **C**): split into a threaded `fetch_core(&mut MemState, &FontState, &EqtbState, &mut ScannerState, a) -> FetchOutcome` that sets `cur_c`/`cur_f`/`cur_i` directly from state, plus the `fetch_global` wrapper that emits the two cold deferred paths after the borrow drops — the undefined-math-font diagnostic + recoverable `error()` (`FetchOutcome::UndefinedFont`) and the missing-character `char_warning` (`FetchOutcome::CharMissing`). The core sets the `cur_*`/`mem[a]` fields before returning the signal; since `error()`/`char_warning` don't read them, the print-before-vs-after reorder is invisible (same idiom as sessions 85/86; `set_b32s1(a,EMPTY)` writes a union projection disjoint from the `b16.s1` family field the diagnostic prints — checked).
+- **`make_ord`** (bucket **C/B**): the orchestrator `make_ord_global` keeps the early mem checks + the with_state-bearing `fetch_global` between borrows; each `\restart` iteration runs the threaded `make_ord_body(&mut MemState, &FontState, &mut ScannerState, q, p)` under one disjoint borrow doing the ligature/kern lookup + node assembly on direct field access. A `MakeOrdStep { Return, Restart, Overflow }` enum carries control back out so the loop re-runs `fetch_global` outside the borrow and a cold `new_kern`/`new_noad` exhaustion aborts via `node_recycle_abort(Overflow)` after it drops.
+- **`attach_hkern_to_new_hlist`** (bucket **B**): pure mem over the threaded `new_kern`, `ALLOC_FAILED` → `NodeRecycleAbort::Overflow`, `_global` wrapper aborts after the borrow.
+- **`set_empty_math_field`** (bucket **B**): trivial mem writes; `_global` wrapper.
+
+**Classification / recon (`01b` §4a, §11):** key finding — `cur_f`/`cur_c`/`cur_i` and the `font_info`/`*_base` reads are **all with_state-bearing** (scanner/font clusters), so the noad helpers can't hold a mem borrow across the bare accessors; threading them to direct `&mut ScannerState`/`&FontState` removes the bridge entirely, with `fetch` the only remaining with_state-bearing call (kept between borrows). C readers: only stale prototypes/comments in the translated `xetex-math.c` stub (`fetch`/`make_ord`/`attach_hkern` have header-only `void …;` decls, no bodies/callers). No cleanup aliases, no cross-module redeclaration, no call site inside an existing `with_state*` closure.
+
+**Method surface:** added `FontState::font_bc_entry` / `font_ec_entry` (mirroring the `globals` accessors); reused `MemState`/`EqtbState`/`ScannerState` fields + existing `FontState` reads + `math_font(eqtb, n)`.
+
+**Bridged call sites:** `fetch` 6 external sites + the internal `make_ord` site → `fetch_global`; `make_ord` 1 site (`mlist_to_hlist`) → `make_ord_global`; `attach_hkern_to_new_hlist` 4 sites (`make_scripts`) → `_global`; `set_empty_math_field` 7 sites → `_global`. Deleted the now-dead `globals::null_character` getter (its last caller was the removed math.rs import; `set_null_character` stays — used by `ini.rs`).
+
+**Newtype debt:** none. No state fields moved (only added `FontState` methods over existing fields); params (`a`/`q`/`delta`/`p`) are plain `i32` (checked).
+
+**Metrics:** `#[no_mangle]` **337 → 334** (`fetch`/`make_ord`/`attach_hkern` dropped the export). raw externs **40** unchanged. `unsafe fn` **648 → 647** (`set_empty_math_field` de-`unsafe`'d with a safe wrapper; the three `_core`/`_body`+`_global` pairs are net-flat). raw `unsafe {}` **176** unchanged. Crate warnings stayed **79** (removed the orphaned `null_character` import + getter to hold the line).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** (the `otf_basic`/`graphite_basic` native-math + TRIP ligature/kern paths exercise `fetch`/`make_ord` directly — green confirms parity). rust-analyzer again showed transient stale E0425/E0061 during the rename; `cargo check` is ground truth.
+
+**For the next session (90):** `make_op` is the remaining large noad helper — bucket **C/D**, interleaving `clean_box`/`rebox`/OT-math (`get_ot_math_*`, `build_opentype_assembly`)/`measure_native_glyph`/font reads with mem writes; thread it as a series of short borrows with all the with_state-bearing calls between them (now that `fetch`/`rebox`/`new_kern`/`axis_height`/`big_op_spacing*` are threaded, the pieces exist). Also available: `make_scripts` (large), `make_math_accent`, or a pagebuilder/linebreak block. Remaining high-count functions are orchestrators (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — don't take one whole in one session. Keep scanner-heavy `scan.rs` last; draft `02-modules.md` to READY before the big scanner decomposition.
+
+---
+
 ## Idiom session 88 — 2026-05-31 — thread the pagebuilder leaf-helper block
 
 **Type:** execution (workstream 01, Phase C — pagebuilder leaf helpers). **One commit.** Dashboard **29/2/7/4**.

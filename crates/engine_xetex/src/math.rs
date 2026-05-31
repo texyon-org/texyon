@@ -16,7 +16,7 @@ use crate::globals::{
     height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
     kern_base_entry, lig_kern_base_entry, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2,
     mem_b16s3, mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, mem_word, nest_ptr,
-    null_character, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
+    param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
     semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_c, set_cur_dir, set_cur_f,
     set_cur_i, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
     set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
@@ -29,11 +29,11 @@ use crate::globals::{
 };
 use crate::mem::{
     free_node, free_node_global, get_avail, get_node, get_node_global, new_choice_global, new_glue,
-    new_glue_global, new_kern, new_kern_global, new_noad_global, new_null_box, new_rule, new_spec,
-    ALLOC_FAILED, TEX_NULL,
+    new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_rule,
+    new_spec, ALLOC_FAILED, TEX_NULL,
 };
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
-use crate::state::{EqtbState, FontState, MemState};
+use crate::state::{EqtbState, FontState, MemState, ScannerState};
 
 const INT_PAR_CUR_FAM: i32 = 44;
 const LOCAL_EVERY_MATH: i32 = 3;
@@ -232,10 +232,16 @@ extern "C" {
     fn ot_part_full_advance(f: i32, a: *mut libc::c_void, i: i32) -> i32;
 }
 
+/// Threaded core (Phase C, bucket B): pure `mem` writes, no `with_state`-bearing
+/// call. Legacy callers go through `set_empty_math_field_global`.
 #[inline]
-unsafe fn set_empty_math_field(p: i32) {
-    set_mem_b32s1(p, EMPTY);
-    set_mem_b32s0(p, TEX_NULL);
+fn set_empty_math_field(mem: &mut MemState, p: i32) {
+    mem.set_b32s1(p, EMPTY);
+    mem.set_b32s0(p, TEX_NULL);
+}
+
+fn set_empty_math_field_global(p: i32) {
+    crate::state::with_state_mut(|st| set_empty_math_field(&mut st.mem, p));
 }
 
 #[inline]
@@ -703,55 +709,108 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
 }
 
 /// translated from xetex-math.c:115 (fetch)
-#[no_mangle]
-pub unsafe extern "C" fn fetch(a: i32) {
-    set_cur_c(mem_b16s0(a) as i32);
-    set_cur_f(math_font_global((mem_b16s1(a) as i32 % 256) + cur_size()));
-    set_cur_c(cur_c() + (mem_b16s1(a) as i32 / 256) * 65_536);
+/// Deferred-output signal from the threaded [`fetch_core`] (`01b` §4a bucket C):
+/// the cold diagnostic / warning paths cannot run under a live state borrow, so
+/// the core sets the `cur_*` fields directly and returns what `fetch_global`
+/// must emit after the borrow drops.
+enum FetchOutcome {
+    /// Normal: nothing to emit.
+    Ok,
+    /// The math font family is undefined — emit the diagnostic + recoverable
+    /// `error()`. Carries the values the message prints (`cur_*` already set).
+    UndefinedFont { size: i32, fam: i32, c: i32 },
+    /// The requested character is missing from the font — emit
+    /// `char_warning(f, c)`.
+    CharMissing { f: i32, c: i32 },
+}
 
-    if cur_f() == FONT_BASE {
-        crate::output::error_here_with_diagnostic(c"".as_ptr());
-        crate::output::print_size(cur_size());
-        crate::output::print_char(' ' as i32);
-        crate::output::print_int(mem_b16s1(a) as i32 % 256);
-        crate::output::print_cstr(c" is undefined (character ".as_ptr());
-        crate::output::print(cur_c());
-        crate::output::print_char(')' as i32);
-        crate::output::capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(4);
-        set_help_line(
-            3,
-            c"Somewhere in the math formula just ended, you used the".as_ptr(),
-        );
-        set_help_line(
-            2,
-            c"stated character from an undefined font family. For example,".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"plain TeX doesn't allow \\it or \\sl in subscripts. Proceed,".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"and I'll try to forget that I needed that character.".as_ptr(),
-        );
-        crate::errors::error();
-        set_cur_i(null_character());
-        set_mem_b32s1(a, EMPTY);
-    } else if font_area_entry(cur_f()) == AAT_FONT_FLAG
-        || font_area_entry(cur_f()) == OTGR_FONT_FLAG
-    {
-        set_cur_i(null_character());
+/// Threaded core (Phase C): set `cur_c` / `cur_f` / `cur_i` for math char `a`
+/// directly from `mem` / `fonts` / `eqtb` / `scanner`. The with_state-bearing
+/// diagnostic and `char_warning` paths are deferred to `fetch_global` via
+/// [`FetchOutcome`].
+fn fetch_core(
+    mem: &mut MemState,
+    fonts: &FontState,
+    eqtb: &EqtbState,
+    scanner: &mut ScannerState,
+    a: i32,
+) -> FetchOutcome {
+    let size = scanner.cur_size;
+    let fam = mem.b16s1(a) as i32 % 256;
+    scanner.cur_c = mem.b16s0(a) as i32;
+    scanner.cur_f = math_font(eqtb, fam + size);
+    scanner.cur_c += (mem.b16s1(a) as i32 / 256) * 65_536;
+
+    if scanner.cur_f == FONT_BASE {
+        let c = scanner.cur_c;
+        scanner.cur_i = fonts.null_character;
+        mem.set_b32s1(a, EMPTY);
+        return FetchOutcome::UndefinedFont { size, fam, c };
+    }
+
+    let area = fonts.font_area_entry(scanner.cur_f);
+    if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
+        scanner.cur_i = fonts.null_character;
     } else {
-        if cur_c() >= font_bc_entry(cur_f()) as i32 && cur_c() <= font_ec_entry(cur_f()) as i32 {
-            set_cur_i(font_info_b16(char_base_entry(cur_f()) + cur_c()));
+        if scanner.cur_c >= fonts.font_bc_entry(scanner.cur_f) as i32
+            && scanner.cur_c <= fonts.font_ec_entry(scanner.cur_f) as i32
+        {
+            scanner.cur_i =
+                fonts.font_info_b16(fonts.char_base_entry(scanner.cur_f) + scanner.cur_c);
         } else {
-            set_cur_i(null_character());
+            scanner.cur_i = fonts.null_character;
         }
-        if cur_i().s3 == 0 {
-            crate::scan::char_warning(cur_f(), cur_c());
-            set_mem_b32s1(a, EMPTY);
-            set_cur_i(null_character());
+        if scanner.cur_i.s3 == 0 {
+            let f = scanner.cur_f;
+            let c = scanner.cur_c;
+            mem.set_b32s1(a, EMPTY);
+            scanner.cur_i = fonts.null_character;
+            return FetchOutcome::CharMissing { f, c };
+        }
+    }
+    FetchOutcome::Ok
+}
+
+/// Bridge-down wrapper for legacy callers: run the threaded `fetch_core` under a
+/// short disjoint borrow, then (cold paths only) emit the diagnostic / warning
+/// after the borrow has dropped.
+pub unsafe fn fetch_global(a: i32) {
+    let outcome = crate::state::with_state_mut(|st| {
+        let st = &mut *st;
+        fetch_core(&mut st.mem, &st.fonts, &st.eqtb, &mut st.scanner, a)
+    });
+    match outcome {
+        FetchOutcome::Ok => {}
+        FetchOutcome::UndefinedFont { size, fam, c } => {
+            crate::output::error_here_with_diagnostic(c"".as_ptr());
+            crate::output::print_size(size);
+            crate::output::print_char(' ' as i32);
+            crate::output::print_int(fam);
+            crate::output::print_cstr(c" is undefined (character ".as_ptr());
+            crate::output::print(c);
+            crate::output::print_char(')' as i32);
+            crate::output::capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(4);
+            set_help_line(
+                3,
+                c"Somewhere in the math formula just ended, you used the".as_ptr(),
+            );
+            set_help_line(
+                2,
+                c"stated character from an undefined font family. For example,".as_ptr(),
+            );
+            set_help_line(
+                1,
+                c"plain TeX doesn't allow \\it or \\sl in subscripts. Proceed,".as_ptr(),
+            );
+            set_help_line(
+                0,
+                c"and I'll try to forget that I needed that character.".as_ptr(),
+            );
+            crate::errors::error();
+        }
+        FetchOutcome::CharMissing { f, c } => {
+            crate::scan::char_warning(f, c);
         }
     }
 }
@@ -1089,7 +1148,7 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
     }
 
     if mem_b32s1(q + 1) == MATH_CHAR {
-        fetch(q + 1);
+        fetch_global(q + 1);
         if !(font_area_entry(cur_f()) == OTGR_FONT_FLAG
             && usingOpenType(font_layout_engine_ptr(cur_f())))
         {
@@ -1242,96 +1301,151 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
     delta
 }
 
-/// translated from xetex-math.c:272 (make_ord)
-#[no_mangle]
-pub unsafe extern "C" fn make_ord(q: i32) {
+/// Outcome of one threaded [`make_ord_body`] pass (`01b` §4a / §5): the body
+/// runs under a disjoint `mem`/`fonts`/`scanner` borrow, but the `\restart`
+/// re-runs the with_state-bearing `fetch_global`, and allocator exhaustion must
+/// abort after the borrow drops, so it cannot loop or abort itself.
+enum MakeOrdStep {
+    /// Done — return from `make_ord`.
+    Return,
+    /// A ligature replaced the nucleus — re-run the `\restart` loop.
+    Restart,
+    /// `new_kern` / `new_noad` exhausted the arena — abort after the borrow drops.
+    Overflow,
+}
+
+/// Threaded core (Phase C, bucket B): the ligature/kern body of `make_ord`,
+/// running entirely on direct `mem` / `fonts` / `scanner` access (no
+/// `with_state`-bearing call). `cur_f` / `cur_i` were already set by the
+/// preceding `fetch_global`. Allocator exhaustion returns `Overflow`.
+fn make_ord_body(
+    mem: &mut MemState,
+    fonts: &FontState,
+    scanner: &mut ScannerState,
+    q: i32,
+    p: i32,
+) -> MakeOrdStep {
+    let mut a = fonts.lig_kern_base_entry(scanner.cur_f) + scanner.cur_i.s0 as i32;
+    scanner.cur_c = mem.b16s0(p + 1) as i32;
+    scanner.cur_i = fonts.font_info_b16(a);
+    if scanner.cur_i.s3 > 128 {
+        a = fonts.lig_kern_base_entry(scanner.cur_f)
+            + 256 * scanner.cur_i.s1 as i32
+            + scanner.cur_i.s0 as i32
+            + 32768
+            - 256 * 128;
+        scanner.cur_i = fonts.font_info_b16(a);
+    }
+    loop {
+        if scanner.cur_i.s2 == scanner.cur_c as u16 && scanner.cur_i.s3 <= 128 {
+            if scanner.cur_i.s1 >= 128 {
+                let p_kern = new_kern(
+                    mem,
+                    fonts.font_info_b32s1(
+                        fonts.kern_base_entry(scanner.cur_f)
+                            + 256 * scanner.cur_i.s1 as i32
+                            + scanner.cur_i.s0 as i32,
+                    ),
+                );
+                if p_kern == ALLOC_FAILED {
+                    return MakeOrdStep::Overflow;
+                }
+                let link_q = mem.b32s1(q);
+                mem.set_b32s1(p_kern, link_q);
+                mem.set_b32s1(q, p_kern);
+                return MakeOrdStep::Return;
+            } else {
+                match scanner.cur_i.s1 {
+                    1 | 5 => {
+                        mem.set_b16s0(q + 1, scanner.cur_i.s0);
+                    }
+                    2 | 6 => {
+                        mem.set_b16s0(p + 1, scanner.cur_i.s0);
+                    }
+                    3 | 7 | 11 => {
+                        let r = new_noad(mem);
+                        if r == ALLOC_FAILED {
+                            return MakeOrdStep::Overflow;
+                        }
+                        mem.set_b16s0(r + 1, scanner.cur_i.s0);
+                        mem.set_b16s1(r + 1, mem.b16s1(q + 1) % 256);
+                        mem.set_b32s1(q, r);
+                        mem.set_b32s1(r, p);
+                        if scanner.cur_i.s1 < 11 {
+                            mem.set_b32s1(r + 1, MATH_CHAR);
+                        } else {
+                            mem.set_b32s1(r + 1, MATH_TEXT_CHAR);
+                        }
+                    }
+                    _ => {
+                        let link_p = mem.b32s1(p);
+                        mem.set_b32s1(q, link_p);
+                        mem.set_b16s0(q + 1, scanner.cur_i.s0);
+                        let w3 = mem.word(p + 3);
+                        mem.set_word(q + 3, w3);
+                        let w2 = mem.word(p + 2);
+                        mem.set_word(q + 2, w2);
+                        free_node(mem, p, NOAD_SIZE);
+                    }
+                }
+                if scanner.cur_i.s1 > 3 {
+                    return MakeOrdStep::Return;
+                }
+                mem.set_b32s1(q + 1, MATH_CHAR);
+                return MakeOrdStep::Restart;
+            }
+        }
+        if scanner.cur_i.s3 >= 128 {
+            return MakeOrdStep::Return;
+        }
+        a += scanner.cur_i.s3 as i32 + 1;
+        scanner.cur_i = fonts.font_info_b16(a);
+    }
+}
+
+/// translated from xetex-math.c:272 (make_ord). Orchestrator: the early mem
+/// checks + the with_state-bearing `fetch_global` run between borrows; each
+/// `\restart` iteration runs the threaded [`make_ord_body`] under one disjoint
+/// `mem`/`fonts`/`scanner` borrow and aborts a cold allocator overflow after it
+/// drops.
+pub unsafe fn make_ord_global(q: i32) {
     'restart: loop {
         if mem_b32s1(q + 3) != EMPTY {
-            break 'restart;
+            return;
         }
         if mem_b32s1(q + 2) != EMPTY {
-            break 'restart;
+            return;
         }
         if mem_b32s1(q + 1) != MATH_CHAR {
-            break 'restart;
+            return;
         }
         let p = mem_b32s1(q);
         if p == TEX_NULL {
-            break 'restart;
+            return;
         }
         if mem_b16s1(p) < ORD_NOAD || mem_b16s1(p) > PUNCT_NOAD {
-            break 'restart;
+            return;
         }
         if mem_b32s1(p + 1) != MATH_CHAR {
-            break 'restart;
+            return;
         }
         if mem_b16s1(p + 1) % 256 != mem_b16s1(q + 1) % 256 {
-            break 'restart;
+            return;
         }
 
         set_mem_b32s1(q + 1, MATH_TEXT_CHAR);
-        fetch(q + 1);
+        fetch_global(q + 1);
         if cur_i().s1 % 4 != LIG_TAG {
-            break 'restart;
+            return;
         }
 
-        let mut a = lig_kern_base_entry(cur_f()) + cur_i().s0 as i32;
-        set_cur_c(mem_b16s0(p + 1) as i32);
-        set_cur_i(font_info_b16(a));
-        if cur_i().s3 > 128 {
-            a = lig_kern_base_entry(cur_f()) + 256 * cur_i().s1 as i32 + cur_i().s0 as i32 + 32768
-                - 256 * 128;
-            set_cur_i(font_info_b16(a));
-        }
-        loop {
-            if cur_i().s2 == cur_c() as u16 && cur_i().s3 <= 128 {
-                if cur_i().s1 >= 128 {
-                    let p_kern = new_kern_global(font_info_b32s1(
-                        kern_base_entry(cur_f()) + 256 * cur_i().s1 as i32 + cur_i().s0 as i32,
-                    ));
-                    set_mem_b32s1(p_kern, mem_b32s1(q));
-                    set_mem_b32s1(q, p_kern);
-                    return;
-                } else {
-                    match cur_i().s1 {
-                        1 | 5 => {
-                            set_mem_b16s0(q + 1, cur_i().s0);
-                        }
-                        2 | 6 => {
-                            set_mem_b16s0(p + 1, cur_i().s0);
-                        }
-                        3 | 7 | 11 => {
-                            let r = new_noad_global();
-                            set_mem_b16s0(r + 1, cur_i().s0);
-                            set_mem_b16s1(r + 1, mem_b16s1(q + 1) % 256);
-                            set_mem_b32s1(q, r);
-                            set_mem_b32s1(r, p);
-                            if cur_i().s1 < 11 {
-                                set_mem_b32s1(r + 1, MATH_CHAR);
-                            } else {
-                                set_mem_b32s1(r + 1, MATH_TEXT_CHAR);
-                            }
-                        }
-                        _ => {
-                            set_mem_b32s1(q, mem_b32s1(p));
-                            set_mem_b16s0(q + 1, cur_i().s0);
-                            set_mem_word(q + 3, mem_word(p + 3));
-                            set_mem_word(q + 2, mem_word(p + 2));
-                            free_node_global(p, NOAD_SIZE);
-                        }
-                    }
-                    if cur_i().s1 > 3 {
-                        return;
-                    }
-                    set_mem_b32s1(q + 1, MATH_CHAR);
-                    continue 'restart;
-                }
-            }
-            if cur_i().s3 >= 128 {
-                return;
-            }
-            a += cur_i().s3 as i32 + 1;
-            set_cur_i(font_info_b16(a));
+        match crate::state::with_state_mut(|st| {
+            let st = &mut *st;
+            make_ord_body(&mut st.mem, &st.fonts, &mut st.scanner, q, p)
+        }) {
+            MakeOrdStep::Return => return,
+            MakeOrdStep::Restart => continue 'restart,
+            MakeOrdStep::Overflow => node_recycle_abort(NodeRecycleAbort::Overflow),
         }
     }
 }
@@ -1339,7 +1453,7 @@ pub unsafe extern "C" fn make_ord(q: i32) {
 /// translated from xetex-math.c:79 (make_math_accent)
 #[no_mangle]
 pub unsafe extern "C" fn make_math_accent(q: i32) {
-    fetch(q + 4);
+    fetch_global(q + 4);
     let mut x: i32 = TEX_NULL;
     let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
     let mut c: i32;
@@ -1366,7 +1480,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
         s = 0;
         'done1: {
             if mem_b32s1(q + 1) == MATH_CHAR {
-                fetch(q + 1);
+                fetch_global(q + 1);
                 if cur_i().s1 % 4 == LIG_TAG {
                     let mut a = lig_kern_base_entry(cur_f()) + cur_i().s0 as i32;
                     set_cur_i(font_info_b16(a));
@@ -1571,19 +1685,36 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
 }
 
 /// translated from xetex-math.c:275 (attach_hkern_to_new_hlist)
-#[no_mangle]
-pub unsafe extern "C" fn attach_hkern_to_new_hlist(q: i32, delta: i32) -> i32 {
-    let z = new_kern_global(delta);
-    if mem_b32s1(q + 1) == TEX_NULL {
-        set_mem_b32s1(q + 1, z);
-    } else {
-        let mut y = mem_b32s1(q + 1);
-        while mem_b32s1(y) != TEX_NULL {
-            y = mem_b32s1(y);
-        }
-        set_mem_b32s1(y, z);
+/// Threaded core (Phase C, bucket B): builds a kern and appends it to the
+/// `new_hlist` of noad `q`, all in `mem`. `new_kern` exhaustion propagates the
+/// `01b` §5 [`NodeRecycleAbort::Overflow`] sentinel; `attach_hkern_to_new_hlist_global`
+/// aborts after the borrow drops.
+fn attach_hkern_to_new_hlist(
+    mem: &mut MemState,
+    q: i32,
+    delta: i32,
+) -> Result<i32, NodeRecycleAbort> {
+    let z = new_kern(mem, delta);
+    if z == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
     }
-    mem_b32s1(q + 1)
+    if mem.b32s1(q + 1) == TEX_NULL {
+        mem.set_b32s1(q + 1, z);
+    } else {
+        let mut y = mem.b32s1(q + 1);
+        while mem.b32s1(y) != TEX_NULL {
+            y = mem.b32s1(y);
+        }
+        mem.set_b32s1(y, z);
+    }
+    Ok(mem.b32s1(q + 1))
+}
+
+unsafe fn attach_hkern_to_new_hlist_global(q: i32, delta: i32) -> i32 {
+    match crate::state::with_state_mut(|st| attach_hkern_to_new_hlist(&mut st.mem, q, delta)) {
+        Ok(p) => p,
+        Err(e) => node_recycle_abort(e),
+    }
 }
 
 // translated from xetex-math.c:805 (repeated script glyph discovery block)
@@ -1642,7 +1773,7 @@ unsafe fn first_script_glyph(mut script_head: i32) -> (u16, i32) {
             math_quad_global(cur_size()),
             18,
         ));
-        fetch(script_head);
+        fetch_global(script_head);
 
         if font_is_ot_math_global(cur_f()) {
             let script_c = crate::scan::new_native_character(cur_f(), cur_c() as u32);
@@ -1747,7 +1878,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
             );
 
             if sub_kern != 0 {
-                p = attach_hkern_to_new_hlist(q, sub_kern);
+                p = attach_hkern_to_new_hlist_global(q, sub_kern);
             }
         }
     } else {
@@ -1802,7 +1933,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
             );
 
             if sup_kern != 0 {
-                p = attach_hkern_to_new_hlist(q, sup_kern);
+                p = attach_hkern_to_new_hlist_global(q, sup_kern);
             }
         }
 
@@ -1863,7 +1994,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
                     );
 
                     if sub_kern != 0 {
-                        p = attach_hkern_to_new_hlist(q, sub_kern);
+                        p = attach_hkern_to_new_hlist_global(q, sub_kern);
                     }
                 }
 
@@ -1883,7 +2014,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
                     );
 
                     if sup_kern != 0 {
-                        p = attach_hkern_to_new_hlist(q, sup_kern);
+                        p = attach_hkern_to_new_hlist_global(q, sup_kern);
                     }
                 }
             } else {
@@ -2009,7 +2140,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 ORD_NOAD => {
-                    make_ord(q);
+                    make_ord_global(q);
                     break 'reswitch FirstPass::ProcessNucleus;
                 }
                 OPEN_NOAD | INNER_NOAD => break 'reswitch FirstPass::ProcessNucleus,
@@ -2122,7 +2253,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
             FirstPass::ProcessNucleus => {
                 let p = match mem_b32s1(q + 1) {
                     MATH_CHAR | MATH_TEXT_CHAR => {
-                        fetch(q + 1);
+                        fetch_global(q + 1);
                         let p;
                         if font_area_entry(cur_f()) == AAT_FONT_FLAG
                             || font_area_entry(cur_f()) == OTGR_FONT_FLAG
@@ -2659,7 +2790,7 @@ pub unsafe fn stack_glue_into_box_global(b: i32, min: i32, max: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn compute_ot_math_accent_pos(p: i32) -> i32 {
     if mem_b32s1(p + 1) == MATH_CHAR {
-        fetch(p + 1);
+        fetch_global(p + 1);
         let q = crate::scan::new_native_character(cur_f(), cur_c() as u32);
         let g = real_get_native_glyph(mem_node_addr(q), 0);
         get_ot_math_accent_pos(cur_f(), g as i32)
@@ -2807,9 +2938,9 @@ pub unsafe fn math_radical() {
     set_cur_list_tail(mem_b32s1(cur_list_tail()));
     set_mem_b16s1(cur_list_tail(), RADICAL_NOAD);
     set_mem_b16s0(cur_list_tail(), NORMAL);
-    set_empty_math_field(cur_list_tail() + 1);
-    set_empty_math_field(cur_list_tail() + 3);
-    set_empty_math_field(cur_list_tail() + 2);
+    set_empty_math_field_global(cur_list_tail() + 1);
+    set_empty_math_field_global(cur_list_tail() + 3);
+    set_empty_math_field_global(cur_list_tail() + 2);
     scan_delimiter(cur_list_tail() + 4, true);
     crate::scan::scan_math(cur_list_tail() + 1);
 }
@@ -2944,7 +3075,7 @@ pub unsafe fn math_fraction() {
         set_mem_b16s0(cur_list_aux_b32s1(), NORMAL);
         set_mem_b32s1(cur_list_aux_b32s1() + 2, SUB_MLIST);
         set_mem_b32s0(cur_list_aux_b32s1() + 2, mem_b32s1(cur_list_head()));
-        set_empty_math_field(cur_list_aux_b32s1() + 3);
+        set_empty_math_field_global(cur_list_aux_b32s1() + 3);
         set_mem_b16s3(cur_list_aux_b32s1() + 4, 0);
         set_mem_b16s2(cur_list_aux_b32s1() + 4, 0);
         set_mem_b16s1(cur_list_aux_b32s1() + 4, 0);
@@ -3076,9 +3207,9 @@ pub unsafe fn math_ac() {
     set_cur_list_tail(mem_b32s1(cur_list_tail()));
     set_mem_b16s1(cur_list_tail(), ACCENT_NOAD);
     set_mem_b16s0(cur_list_tail(), NORMAL);
-    set_empty_math_field(cur_list_tail() + 1);
-    set_empty_math_field(cur_list_tail() + 3);
-    set_empty_math_field(cur_list_tail() + 2);
+    set_empty_math_field_global(cur_list_tail() + 1);
+    set_empty_math_field_global(cur_list_tail() + 3);
+    set_empty_math_field_global(cur_list_tail() + 2);
     set_mem_b32s1(cur_list_tail() + 4, MATH_CHAR);
 
     if cur_chr() == 1 {

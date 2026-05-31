@@ -4761,10 +4761,6 @@ pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
 // Shipout / DVI output globals (xetex-xetexd.h:592–600, 694–697, 693)
 // ---------------------------------------------------------------------------
 #[inline]
-pub(crate) fn null_character() -> crate::mem_types::B16x4 {
-    crate::state::with_state(|state| state.fonts.null_character)
-}
-#[inline]
 pub(crate) fn set_null_character(v: crate::mem_types::B16x4) {
     crate::state::with_state_mut(|state| {
         state.fonts.null_character = v;

@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 88, **Phase-C execution**: threaded the pagebuilder leaf-helper block — `freeze_page_specs` (→ disjoint `&EqtbState` + `&mut ShipoutState`, bucket B) and `ensure_vbox` (threaded predicate `ensure_vbox_is_hbox` + cold `box_error` deferred to `ensure_vbox_global`, bucket C); added `impl ShipoutState` page-spec setters; 4 `build_page`/`fire_up` sites bridged to `_global`. `unsafe fn` 649→648. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 89, **Phase-C execution**: threaded the math `fetch` keystone + `make_ord` + `attach_hkern_to_new_hlist` + `set_empty_math_field` — `fetch` split into `fetch_core(&mut MemState,&FontState,&EqtbState,&mut ScannerState)` + `fetch_global` emitting the cold undefined-font / missing-char paths after the borrow; `make_ord` orchestrator keeps `fetch_global` between borrows and runs the threaded `make_ord_body` per `\restart`; added `FontState::font_bc_entry`/`font_ec_entry`; deleted dead `globals::null_character` getter. `#[no_mangle]` 337→334, `unsafe fn` 648→647. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -844,6 +844,30 @@ least-coupled non-`misc` clusters:
     cleanup aliases; no fields moved, so no newtype debt. `#[no_mangle]` 337 unchanged,
     `unsafe fn` 649→648, raw externs 40 / raw `unsafe {}` 176 unchanged. Dashboard
     29/2/7/4.
+-   **Math `fetch` keystone + `make_ord` + leaf helpers threaded (session 89):**
+    a deliberately larger 4-function slice in the math noad family (`src/math.rs`).
+    **`fetch`** (bucket C) — the math-char setter the whole noad family funnels
+    through — split into a threaded `fetch_core(&mut MemState, &FontState,
+    &EqtbState, &mut ScannerState, a) -> FetchOutcome` (sets `cur_c`/`cur_f`/`cur_i`
+    directly) plus `fetch_global`, which emits the two cold deferred paths after the
+    borrow drops (undefined-math-font diagnostic + recoverable `error()`; missing-char
+    `char_warning`). **`make_ord`** (bucket C/B) — orchestrator `make_ord_global`
+    keeps the early mem checks + `fetch_global` between borrows, each `\restart`
+    iteration runs the threaded `make_ord_body(&mut MemState, &FontState,
+    &mut ScannerState, q, p)` under one disjoint borrow, with a
+    `MakeOrdStep { Return, Restart, Overflow }` enum carrying control back out so the
+    cold allocator overflow aborts via `node_recycle_abort` after the borrow.
+    **`attach_hkern_to_new_hlist`** (bucket B, mem + threaded `new_kern`, `_global`
+    wrapper) and **`set_empty_math_field`** (bucket B, trivial mem) round it out.
+    Key recon finding: `cur_f`/`cur_c`/`cur_i` and the `font_info`/`*_base` reads are
+    all with_state-bearing, so threading to direct `&mut ScannerState`/`&FontState`
+    removes the bridge, leaving `fetch` the only with_state-bearing call (kept between
+    borrows). Added `FontState::font_bc_entry`/`font_ec_entry`. Bridged the call sites
+    (`fetch` 6 ext + 1 internal, `make_ord` 1, `attach_hkern` 4, `set_empty_math_field`
+    7) and deleted the now-dead `globals::null_character` getter. No C/C++ callers
+    (translated `xetex-math.c` stub, header prototypes only); no cleanup aliases; no
+    fields moved → no newtype debt. `#[no_mangle]` 337→334, `unsafe fn` 648→647, raw
+    externs 40 / raw `unsafe {}` 176 unchanged. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -855,8 +879,8 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 174 state-backed scalars/arrays (session 82 deleted `xtx_ligature_present` and `init_lig` getters after threading the font/effective-char + linebreak reconstruction slice) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 337 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 88 unchanged — neither pagebuilder helper was exported) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 648 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 88 dropped 1: `freeze_page_specs` de-`unsafe`'d with a safe wrapper, `ensure_vbox` pair net-flat) |
+| `#[no_mangle]` exports | 576 | boundary-only | 334 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 89 dropped 3: `fetch`/`make_ord`/`attach_hkern_to_new_hlist`) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 647 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 89 dropped 1: `set_empty_math_field` de-`unsafe`'d with a safe wrapper, the three `_core`/`_body`+`_global` pairs net-flat) |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 176 / 688 not remeasured (session 87 made the two native-node text-pointer writes explicit in the safe `build_native_character` core) |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
@@ -1003,13 +1027,24 @@ the snippets in `00-overview.md` / the workstream plans.
     threaded `ensure_vbox_is_hbox` predicate + cold `box_error` deferred to
     `ensure_vbox_global`, bucket C) is now threaded; added the first `impl
     ShipoutState` page-spec setters; 4 `build_page`/`fire_up` sites bridged to
-    `_global`. Next targets: a math noad helper block (`make_op`/`make_ord` are
-    large bucket-C/D — split each `clean_box`/`rebox`/`fetch`/OT-math call across
-    a series of short borrows; expect a large careful session), or another
-    linebreak/post-line-break block. Clean leaf-helper slices are nearly
-    exhausted; remaining high-count functions are mostly orchestrators
-    (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — do not take
-    one whole in a single session. Keep scanner-heavy `scan.rs` last.
+    `_global`.
+
+    **Session 89 update:** the math `fetch` keystone + `make_ord` +
+    `attach_hkern_to_new_hlist` + `set_empty_math_field` are now threaded (a
+    deliberately larger 4-function slice). `fetch` → `fetch_core` (direct
+    `mem`/`fonts`/`eqtb`/`scanner`) + `fetch_global` (cold undefined-font /
+    missing-char emit deferred); `make_ord` → `make_ord_global` orchestrator +
+    threaded `make_ord_body` with a `MakeOrdStep` control enum so `fetch_global`
+    stays between borrows and cold overflow aborts after the borrow. Added
+    `FontState::font_bc_entry`/`font_ec_entry`; deleted dead `globals::null_character`
+    getter. Next target: **`make_op`** — the remaining large noad helper, bucket
+    **C/D** (interleaves `clean_box`/`rebox`/OT-math/`measure_native_glyph`/font reads
+    with mem writes; now that `fetch`/`rebox`/`new_kern`/`axis_height`/`big_op_spacing*`
+    are all threaded, build it as a series of short borrows with the with_state-bearing
+    calls between them). Also available: `make_scripts`, `make_math_accent`, or a
+    pagebuilder/linebreak block. Remaining high-count functions are orchestrators
+    (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — do not take one
+    whole in a single session. Keep scanner-heavy `scan.rs` last.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

@@ -731,6 +731,18 @@ impl FontState {
         self.font_layout_engine[f as usize]
     }
 
+    /// Read `font_bc[f]`. Mirrors `globals::font_bc_entry`.
+    #[inline]
+    pub(crate) fn font_bc_entry(&self, f: i32) -> u16 {
+        self.font_bc[f as usize]
+    }
+
+    /// Read `font_ec[f]`. Mirrors `globals::font_ec_entry`.
+    #[inline]
+    pub(crate) fn font_ec_entry(&self, f: i32) -> u16 {
+        self.font_ec[f as usize]
+    }
+
     #[inline]
     pub(crate) fn font_mapping_ptr(&self, f: i32) -> *mut libc::c_void {
         self.font_mapping[f as usize]
