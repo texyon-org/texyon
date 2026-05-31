@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 98, **Phase-C execution**: collapsed the remaining large branch bodies inside `make_scripts_global` into helpers without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits for `make_scripts`; no cleanup aliases; no cross-module redeclarations for the helper slice; no candidate bridge accessor lost its last caller. Added `ScriptShifts` / `PreparedScript` / `initial_script_shifts_global` / `prepare_subscript_global` / `finish_subscript_only_global` / `prepare_superscript_global` / `finish_superscript_branch_global`; preserved the original saved-font ordering around `first_script_glyph_global`; kept `hpack`, `clean_box`, `maybe_attach_script_kern_global`, `vpackage`, OT-math calls, `font_is_ot_math_global`, and `first_script_glyph_global` outside live borrows. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 99, **Phase-C execution**: threaded the small math-mode list-flusher `flush_math` to `pub fn flush_math(mem: &mut MemState) -> Result<(), &CStr>`, calling the threaded `flush_node_list` directly under the same borrow; added the `flush_math_global` bridge-down wrapper that fires the cold `confusion` after the borrow drops. The `cur_list` head/tail/aux reads use the raw deferred global, safe under a live borrow. 3 legacy call sites bridged; `scan.rs` import updated. Metrics flat (`#[no_mangle]` 328, raw externs 38, raw `unsafe {}` 174, `unsafe fn` net 0). A preceding docs-refresh commit captured the pre-existing WIP plan-doc/metrics changes. Dashboard 29/2/7/4. — prior session 98 collapsed the remaining large branch bodies inside `make_scripts_global` into helpers without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits for `make_scripts`; no cleanup aliases; no cross-module redeclarations for the helper slice; no candidate bridge accessor lost its last caller. Added `ScriptShifts` / `PreparedScript` / `initial_script_shifts_global` / `prepare_subscript_global` / `finish_subscript_only_global` / `prepare_superscript_global` / `finish_superscript_branch_global`; preserved the original saved-font ordering around `first_script_glyph_global`; kept `hpack`, `clean_box`, `maybe_attach_script_kern_global`, `vpackage`, OT-math calls, `font_is_ot_math_global`, and `first_script_glyph_global` outside live borrows. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -908,6 +908,22 @@ least-coupled non-`misc` clusters:
     live `with_state*` closure. Metrics unchanged by the slice; current counts after
     validation are `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174
     (`unsafe fn` grep 646). Dashboard 29/2/7/4; `cargo check` reports 51 warnings.
+-   **Sessions 96–98** continued bounded structural cleanup inside
+    `make_scripts_global` (script-box prep helper, sub/sup stack tail, branch-body
+    helpers); see `SESSION_LOG.md`. Metrics flat across all three.
+-   **`flush_math` threaded (session 99):** the small math-mode list-flusher
+    threaded off the bridge to `pub fn flush_math(mem: &mut MemState) -> Result<(),
+    &CStr>` (was `pub unsafe fn flush_math()`). It recycles the two current-list
+    chains via the already-threaded `crate::scan::flush_node_list` under the same
+    borrow and resets `cur_list` (raw deferred global, safe under a live borrow per
+    `01b` §4); the two impossible corrupt-node `confusion` arms propagate as `Err`,
+    fired by the new `flush_math_global` bridge-down wrapper after the borrow drops
+    (`01b` §5). 3 legacy call sites (`math.rs` ×2, `scan.rs` ×1, none inside a live
+    `with_state*` closure) bridged to `flush_math_global`; `scan.rs` import updated.
+    No bridge accessor lost its last caller; no new method surface; no fields moved
+    → no newtype debt. No C/C++ callers (stale `xetex-math.c` prototype/comment
+    only); no cleanup aliases. Metrics flat: `#[no_mangle]` 328, raw extern statics
+    38, raw `unsafe {}` 174, `unsafe fn` net 0. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -1102,9 +1118,22 @@ the snippets in `00-overview.md` / the workstream plans.
     state in short borrows, keeps `clean_box`/native glyph/OT-math/measurement calls
     between borrows, and threads the TFM skew-kern scan through direct
     `FontState`/`ScannerState` access. Added `FontState::width_base_entry` and
-    `FontState::skew_char_entry`; deleted dead `globals::set_cur_i`. Next targets:
-    `make_scripts` + `first_script_glyph` (large hard C/D), `var_delimiter`/
-    `make_left_right`, or a pagebuilder/linebreak block.
+    `FontState::skew_char_entry`; deleted dead `globals::set_cur_i`.
+
+    **Sessions 92–98 update:** `make_scripts_global` (the last large noad helper) and
+    the math delimiter helpers were threaded/decomposed across seven bounded slices —
+    borrow-island splits, then extracted helpers for OT script-kern attachment,
+    script-box prep, the sub/sup stack tail, and the dispatcher branch bodies. It is now
+    a small dispatcher. See `SESSION_LOG.md` for each.
+
+    **Session 99 update:** `flush_math` threaded to `pub fn flush_math(mem: &mut
+    MemState) -> Result<(), &CStr>` + `flush_math_global` wrapper (3 sites). Next
+    targets: another small math/list leaf — `fin_mlist` (bucket C: drop the borrow
+    before `pop_nest`), the EXT_TAG extensible-delimiter box-building block inside
+    `var_delimiter_global` (extract in the session-81/83 style), or a pagebuilder/
+    linebreak leaf. Remaining high-count functions are orchestrators
+    (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — do not take one
+    whole in a single session. Keep scanner-heavy `scan.rs` last.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

@@ -562,12 +562,32 @@ pub unsafe fn math_kern_global(p: i32, m: i32) {
 }
 
 /// translated from xetex-math.c:80 (flush_math)
-pub unsafe fn flush_math() {
-    crate::scan::flush_node_list_global(mem_b32s1(cur_list_head()));
-    crate::scan::flush_node_list_global(cur_list_aux_b32s1());
-    set_mem_b32s1(cur_list_head(), TEX_NULL);
-    set_cur_list_tail(cur_list_head());
+///
+/// Phase C (`01b` §4a bucket B/C): touches the `mem` arena directly through
+/// `&mut MemState` and recycles the two current-list chains via the threaded
+/// [`crate::scan::flush_node_list`]. The `cur_list` reads/writes go through the
+/// raw `cur_list` global (the deferred Phase-C set — safe under a live borrow).
+/// The two impossible corrupt-node `confusion` arms propagate out as `Err`, fired
+/// by [`flush_math_global`] after the borrow drops.
+pub fn flush_math(mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
+    let head = cur_list_head();
+    let p1 = mem.b32s1(head);
+    crate::scan::flush_node_list(mem, p1)?;
+    let p2 = cur_list_aux_b32s1();
+    crate::scan::flush_node_list(mem, p2)?;
+    mem.set_b32s1(head, TEX_NULL);
+    set_cur_list_tail(head);
     set_cur_list_aux_b32s1(TEX_NULL);
+    Ok(())
+}
+
+/// Bridge-down wrapper for legacy callers (`01b` §3): borrows the anchor, runs
+/// the threaded [`flush_math`], then fires the cold `confusion` after the borrow
+/// drops if a corrupt node was hit.
+pub unsafe fn flush_math_global() {
+    if let Err(msg) = crate::state::with_state_mut(|st| flush_math(&mut st.mem)) {
+        crate::errors::confusion(msg.as_ptr());
+    }
 }
 
 #[inline]
@@ -3739,7 +3759,7 @@ unsafe fn check_math_font_params(danger: &mut bool) {
             c"the \\fontdimen values needed in math symbol fonts.".as_ptr(),
         );
         crate::errors::error();
-        flush_math();
+        flush_math_global();
         *danger = true;
     } else if !ext_font_ok_global(TEXT_SIZE)
         || !ext_font_ok_global(SCRIPT_SIZE)
@@ -3763,7 +3783,7 @@ unsafe fn check_math_font_params(danger: &mut bool) {
             c"the \\fontdimen values needed in math extension fonts.".as_ptr(),
         );
         crate::errors::error();
-        flush_math();
+        flush_math_global();
         *danger = true;
     }
 }

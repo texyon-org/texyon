@@ -66,7 +66,7 @@ use crate::math::after_math;
 use crate::math::append_choices;
 use crate::math::build_choices;
 use crate::math::fin_mlist;
-use crate::math::flush_math;
+use crate::math::flush_math_global;
 use crate::math::init_math;
 use crate::math::math_ac;
 use crate::math::math_fraction;
@@ -9254,7 +9254,7 @@ pub unsafe extern "C" fn init_align() {
             c"So I've deleted the formulas that preceded this alignment.".as_ptr(),
         );
         error();
-        flush_math();
+        flush_math_global();
     }
 
     crate::mem::push_nest();

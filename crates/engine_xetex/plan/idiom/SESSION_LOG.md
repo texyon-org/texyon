@@ -7,6 +7,28 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 99 — 2026-05-31 — thread `flush_math` to `&mut MemState`
+
+**Type:** execution (workstream 01, Phase C — math noad family). **Two commits** (a preceding docs-refresh commit for the pre-existing WIP plan-doc/metrics changes, then this slice). Dashboard **29/2/7/4**. Crate warnings did not regress.
+
+**Slice:** threaded the small math-mode list-flusher `flush_math` (`src/math.rs`) off the bridge. It is a clean, fully-closeable leaf: it recycles the two current-list chains and resets `cur_list`. Recon: 3 call sites (`math.rs` ×2 in the math-symbol/extension-font-deleted error paths, `scan.rs` ×1 in `after_math`); none sits inside a live `with_state*` closure; only stale `xetex-math.c` prototype/comment hits for `flush_math`; no cleanup aliases, no cross-module redeclarations.
+
+**Classification:** bucket **B/C**. `flush_math(mem: &mut MemState)` does its mem work directly and calls the already-threaded `crate::scan::flush_node_list(mem, …)` under the same borrow (so the two `flush_node_list_global` bridge calls become direct threaded calls). The `cur_list` head/tail/aux reads/writes go through the raw `cur_list` global (the deferred Phase-C set — safe under a live borrow per `01b` §4). The two impossible corrupt-node `confusion` arms inside `flush_node_list` propagate out as `Err`, and `flush_math_global` fires the cold `confusion` after the borrow drops (`01b` §5).
+
+**Structure:** `flush_math` changed from `pub unsafe fn flush_math()` to `pub fn flush_math(mem: &mut MemState) -> Result<(), &'static CStr>`; added the bridge-down wrapper `flush_math_global`. All 3 legacy call sites renamed to `flush_math_global()`; `scan.rs`'s `use crate::math::flush_math` import updated to `flush_math_global`.
+
+**Bridged call sites / deleted accessors:** 3 sites bridged to `flush_math_global`. No bridge accessor lost its last caller, so none deleted. No new state method surface (`MemState::b32s1`/`set_b32s1` already existed).
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328** (unchanged — `flush_math` was not exported). raw extern statics **38** unchanged. raw `unsafe {}` **174** unchanged. `unsafe fn` net flat (`flush_math` dropped `unsafe`; `flush_math_global` added it).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (100):** continue bounded Phase-C threading of small math/list leaf helpers. Candidates near the math noad family: `fin_mlist` (mem + raw `cur_list` reads + a cold `confusion` + `pop_nest` — bucket C, must drop the borrow before `pop_nest`), or a box/list helper near delimiter/script construction (the EXT_TAG extensible-delimiter box-building block inside `var_delimiter_global` is a candidate for extraction in the session-81/83 style). Keep `clean_box`, `vpackage`, `hpack`, OT-math calls, `font_is_ot_math_global`, and `first_script_glyph_global` outside live borrows. Do not take a whole high-count orchestrator (`mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, `line_break`). Keep scanner-heavy `scan.rs` last; draft `02-modules.md` to READY before threading reaches it.
+
+---
+
 ## Idiom session 98 — 2026-05-31 — collapse `make_scripts_global` branch bodies into helpers
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` reports **51** Rust warnings in this worktree).
