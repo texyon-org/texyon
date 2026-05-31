@@ -7,6 +7,28 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 92 — 2026-05-31 — thread math script glyph discovery
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings **78**.
+
+**Slice:** `make_scripts` + `first_script_glyph` (`src/math.rs`). Recon found only the stale xetex-math.c `make_scripts` prototype/comment, no cleanup aliases, no cross-module redeclarations, and the one live `make_scripts` caller in `mlist_to_hlist` was not inside a live `with_state*` closure.
+
+**Classification:** both targets are bucket **C/D**. `first_script_glyph` walks mem, mutates scanner math style/size/mu/font scratch, calls `fetch_global`, computes `math_quad_global`/`x_over_n`, checks `font_is_ot_math_global`, and runs `new_native_character`/`real_get_native_glyph`. `make_scripts` interleaves mem reads/writes with `hpack`, `clean_box`, `attach_hkern_to_new_hlist_global`, OT-math kern/constant calls, `vpackage`, and threaded allocator wrappers. Callees were classified explicitly: mem/scanner/font/eqtb accessors are with-state bridge accessors unless threaded; `clean_box`, `hpack`, `vpackage`, `fetch_global`, `font_is_ot_math_global`, `math_quad_global`, `new_native_character`, `real_get_native_glyph`, and OT-math calls stay outside live borrows; `attach_hkern_to_new_hlist` and `new_kern`/`free_node` already have threaded cores with `NodeRecycleAbort` bridge handling.
+
+**Structure:** dropped the internal `#[no_mangle] extern "C"` export from `make_scripts` and rewired the `mlist_to_hlist` call to `make_scripts_global`. Split `first_script_glyph` into a pure `first_script_glyph_step(&MemState, ...)` mem-walk/classification core plus a borrow-dropping `first_script_glyph_global` orchestrator. The wrapper precomputes `math_quad_global`/`x_over_n` results before scanner borrows, runs `fetch_global`, native character construction, native glyph lookup, and `font_is_ot_math_global` between borrows, and restores `cur_f`/`cur_style`/`cur_size`/`cur_mu` in a final short scanner borrow.
+
+**Bridged call sites:** `make_scripts`'s one Rust caller now uses `make_scripts_global`; `first_script_glyph`'s three internal callers use `first_script_glyph_global`. No globals.rs accessor lost its last caller; scanner/font/math bridge accessors still have many remaining legacy math callers, so none were deleted.
+
+**Newtype debt:** none. No state fields moved; the touched scanner fields and params were already tracked where semantic (`cur_style`, `cur_mu`) or are plain integer scratch.
+
+**Metrics:** `#[no_mangle]` **331 → 330**. raw externs unchanged. raw `unsafe {}` **176** unchanged. Crate warnings stayed **78**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 78 warnings; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (93):** continue math noad cleanup with `var_delimiter`/`make_left_right`, or take another bounded math helper block. `make_scripts_global` still contains legacy bridge accessors around `clean_box`/OT-math/vpackage regions; deeper threading should split those regions only with the with-state-bearing calls between short borrows. Do not take a whole high-count orchestrator.
+
+---
+
 ## Idiom session 91 — 2026-05-31 — thread math accent prep + OT accent-position helper
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings **78**.

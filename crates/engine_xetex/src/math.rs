@@ -14,7 +14,7 @@ use crate::globals::{
     depth_base_entry, eqtb_b32s1, exten_base_entry, file_line_error_style_p, font_area_entry,
     font_bc_entry, font_ec_entry, font_info_b16, font_info_b32s1, font_layout_engine_ptr,
     height_base_entry, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
-    lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end,
+    lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1,
     mem_gr, mem_node_addr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr,
     save_stack_b32s1, semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir,
     set_cur_f, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
@@ -1794,20 +1794,23 @@ unsafe fn attach_hkern_to_new_hlist_global(q: i32, delta: i32) -> i32 {
 }
 
 // translated from xetex-math.c:805 (repeated script glyph discovery block)
-unsafe fn first_script_glyph(mut script_head: i32) -> (u16, i32) {
-    let mut script_g: u16 = 0;
-    let mut script_f: i32 = 0;
-    let mut this_math_style = 2 * (cur_style() / 4) + 5;
+fn first_script_glyph_step(
+    mem: &MemState,
+    script_head: i32,
+    initial_math_style: i16,
+) -> (i32, i16) {
+    let mut script_head = script_head;
+    let mut this_math_style = initial_math_style;
 
-    if mem_b32s1(script_head) == SUB_MLIST {
-        let mut script_ptr = mem_b32s0(script_head);
+    if mem.b32s1(script_head) == SUB_MLIST {
+        let mut script_ptr = mem.b32s0(script_head);
         script_head = TEX_NULL;
 
-        while script_ptr >= 0 && script_ptr <= mem_end() {
-            match mem_b16s1(script_ptr) {
+        while script_ptr >= 0 && script_ptr <= mem.mem_end {
+            match mem.b16s1(script_ptr) {
                 KERN_NODE | GLUE_NODE | CHOICE_NODE => {}
                 STYLE_NODE => {
-                    this_math_style = mem_b16s0(script_ptr) as i16;
+                    this_math_style = mem.b16s0(script_ptr) as i16;
                 }
                 ORD_NOAD | OP_NOAD | BIN_NOAD | REL_NOAD | OPEN_NOAD | CLOSE_NOAD | PUNCT_NOAD => {
                     script_head = script_ptr + 1;
@@ -1818,65 +1821,88 @@ unsafe fn first_script_glyph(mut script_head: i32) -> (u16, i32) {
                 }
             }
 
-            if script_ptr >= 0 && script_ptr <= mem_end() {
-                if mem_b16s1(script_ptr) == CHOICE_NODE {
+            if script_ptr >= 0 && script_ptr <= mem.mem_end {
+                if mem.b16s1(script_ptr) == CHOICE_NODE {
                     script_ptr = match this_math_style / 2 {
-                        0 => mem_b32s0(script_ptr + 1),
-                        1 => mem_b32s1(script_ptr + 1),
-                        2 => mem_b32s0(script_ptr + 2),
-                        3 => mem_b32s1(script_ptr + 2),
+                        0 => mem.b32s0(script_ptr + 1),
+                        1 => mem.b32s1(script_ptr + 1),
+                        2 => mem.b32s0(script_ptr + 2),
+                        3 => mem.b32s1(script_ptr + 2),
                         _ => script_ptr,
                     };
                 } else {
-                    script_ptr = mem_b32s1(script_ptr);
+                    script_ptr = mem.b32s1(script_ptr);
                 }
             }
         }
     }
 
-    if script_head >= 0 && script_head <= mem_end() && mem_b32s1(script_head) == MATH_CHAR {
-        let save_f = cur_f();
-        let saved_math_style = cur_style();
-        set_cur_style(this_math_style);
+    (script_head, this_math_style)
+}
 
-        if cur_style() < SCRIPT_STYLE {
-            set_cur_size(TEXT_SIZE);
+unsafe fn first_script_glyph_global(script_head: i32) -> (u16, i32) {
+    let mut script_g: u16 = 0;
+    let mut script_f: i32 = 0;
+
+    let initial_math_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 4) + 5);
+    let (script_head, this_math_style, is_math_char) = crate::state::with_state(|st| {
+        let (script_head, this_math_style) =
+            first_script_glyph_step(&st.mem, script_head, initial_math_style);
+        (
+            script_head,
+            this_math_style,
+            script_head >= 0
+                && script_head <= st.mem.mem_end
+                && st.mem.b32s1(script_head) == MATH_CHAR,
+        )
+    });
+
+    if is_math_char {
+        let (save_f, saved_math_style) =
+            crate::state::with_state(|st| (st.scanner.cur_f, st.scanner.cur_style));
+        let cur_size_for_script = if this_math_style < SCRIPT_STYLE {
+            TEXT_SIZE
         } else {
-            set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
-        }
-
-        set_cur_mu(crate::scaled_math::x_over_n(
-            math_quad_global(cur_size()),
-            18,
-        ));
+            SCRIPT_SIZE * ((this_math_style as i32 - 2) / 2)
+        };
+        let script_mu =
+            crate::scaled_math::x_over_n(math_quad_global(cur_size_for_script), 18);
+        crate::state::with_state_mut(|st| {
+            st.scanner.cur_style = this_math_style;
+            st.scanner.cur_size = cur_size_for_script;
+            st.scanner.cur_mu = script_mu;
+        });
         fetch_global(script_head);
 
-        if font_is_ot_math_global(cur_f()) {
-            let script_c = crate::scan::new_native_character(cur_f(), cur_c() as u32);
+        let (cur_f_after_fetch, cur_c_after_fetch) =
+            crate::state::with_state(|st| (st.scanner.cur_f, st.scanner.cur_c));
+        if font_is_ot_math_global(cur_f_after_fetch) {
+            let script_c =
+                crate::scan::new_native_character(cur_f_after_fetch, cur_c_after_fetch as u32);
             script_g = real_get_native_glyph(mem_node_addr(script_c), 0);
-            script_f = cur_f();
+            script_f = cur_f_after_fetch;
         }
 
-        set_cur_f(save_f);
-        set_cur_style(saved_math_style);
-
-        if cur_style() < SCRIPT_STYLE {
-            set_cur_size(TEXT_SIZE);
+        let restored_size = if saved_math_style < SCRIPT_STYLE {
+            TEXT_SIZE
         } else {
-            set_cur_size(SCRIPT_SIZE * ((cur_style() as i32 - 2) / 2));
-        }
-        set_cur_mu(crate::scaled_math::x_over_n(
-            math_quad_global(cur_size()),
-            18,
-        ));
+            SCRIPT_SIZE * ((saved_math_style as i32 - 2) / 2)
+        };
+        let restored_mu =
+            crate::scaled_math::x_over_n(math_quad_global(restored_size), 18);
+        crate::state::with_state_mut(|st| {
+            st.scanner.cur_f = save_f;
+            st.scanner.cur_style = saved_math_style;
+            st.scanner.cur_size = restored_size;
+            st.scanner.cur_mu = restored_mu;
+        });
     }
 
     (script_g, script_f)
 }
 
 /// translated from xetex-math.c:84 (make_scripts)
-#[no_mangle]
-pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
+unsafe fn make_scripts_global(q: i32, delta: i32) {
     let mut p = mem_b32s1(q + 1);
     let mut x: i32;
     let y: i32;
@@ -1910,7 +1936,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
     };
 
     if mem_b32s1(q + 2) == EMPTY {
-        let (script_g, script_f) = first_script_glyph(q + 3);
+        let (script_g, script_f) = first_script_glyph_global(q + 3);
         sub_g = script_g;
         sub_f = script_f;
 
@@ -1958,7 +1984,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
             }
         }
     } else {
-        let (script_g, script_f) = first_script_glyph(q + 2);
+        let (script_g, script_f) = first_script_glyph_global(q + 2);
         sup_g = script_g;
         sup_f = script_f;
 
@@ -2017,7 +2043,7 @@ pub unsafe extern "C" fn make_scripts(q: i32, delta: i32) {
             set_mem_b32s1(x + 4, -shift_up);
         } else {
             save_f = cur_f();
-            let (script_g, script_f) = first_script_glyph(q + 3);
+            let (script_g, script_f) = first_script_glyph_global(q + 3);
             sub_g = script_g;
             sub_f = script_f;
 
@@ -2385,7 +2411,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                 };
                 set_mem_b32s1(q + 1, p);
                 if mem_b32s1(q + 3) != EMPTY || mem_b32s1(q + 2) != EMPTY {
-                    make_scripts(q, delta);
+                    make_scripts_global(q, delta);
                 }
 
                 let z = crate::scan::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);

@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 90, **Phase-C execution**: threaded `make_op` — the last big noad-finishing helper, hard bucket-C/D — to `make_op_global` as a series of short disjoint `mem`/`fonts`/`eqtb`/`scanner` borrows (NORMAL→LIMITS latch, non-OT italic/list-tag delta block, MATH_CHAR box finish via threaded `axis_height`, and the whole LIMITS tail via threaded `big_op_spacing1..5`/`new_kern`/`new_null_box`/`free_node`), keeping `fetch`/`clean_box`/`rebox`/measurement between borrows and leaving the `measure_native_glyph`-interleaved OT-math glyph-variant/assembly region on the bridge (bucket D). Added `FontState::italic_base_entry`; deleted the five now-dead `big_op_spacing*_global` wrappers + the dead `globals::set_cur_c` setter. `#[no_mangle]` 334→333, `unsafe fn` 647 net flat. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 92, **Phase-C execution**: threaded the math scripts helper slice by dropping the internal `make_scripts` C export, rewiring its one Rust caller to `make_scripts_global`, and splitting `first_script_glyph` into a pure `MemState` walk/classification core plus a borrow-dropping wrapper that runs `math_quad_global`/`x_over_n`, `fetch_global`, `font_is_ot_math_global`, `new_native_character`, and `real_get_native_glyph` only between short scanner/mem borrows. Recon found only stale xetex-math.c prototype/comment hits; no cleanup aliases or redeclarations. No accessors deleted; no newtype debt. `#[no_mangle]` 331→330, warnings stayed 78. Dashboard 29/2/7/4).
 
 ## How to read this file
 
