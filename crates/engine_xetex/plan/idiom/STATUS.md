@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 95, **Phase-C execution**: extracted a bounded OT script-kern helper inside `make_scripts_global` without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits; no cleanup aliases or redeclarations; no candidate bridge accessor lost its last caller. Added `maybe_attach_script_kern_global` / `ScriptKernAttachment`; kept `font_is_ot_math_global`, OT-math C calls, and `attach_hkern_to_new_hlist_global` outside live borrows. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 96, **Phase-C execution**: extracted a bounded script-box prep helper inside `make_scripts_global` without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits; no cleanup aliases; no cross-module redeclarations except the live `clean_box` Rust export itself; no candidate bridge accessor lost its last caller. Added `clean_script_box_global` / `ScriptBoxAdjustment` / `ScriptBoxPrep`; kept `clean_box`, OT-math calls, `font_is_ot_math_global`, `maybe_attach_script_kern_global`, `new_kern`, and `vpackage` outside live borrows. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
 
 ## How to read this file
 

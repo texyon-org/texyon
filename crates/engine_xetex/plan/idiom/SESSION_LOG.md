@@ -7,6 +7,28 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 96 — 2026-05-31 — extract `make_scripts_global` script-box prep helper
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` reports **51** Rust warnings in this worktree).
+
+**Slice:** bounded structural cleanup inside `make_scripts_global` (`src/math.rs`) for the repeated `clean_box` + script-space/font-restore + min-shift calculation blocks. Recon found only stale `xetex-math.c` prototype/comment hits for `make_scripts`, `clean_box`, and the math-parameter prototypes; no cleanup aliases; no cross-module extern/static redeclarations except the live `clean_box` Rust export itself; the single live `make_scripts_global` caller in `mlist_to_hlist` is not inside a live `with_state*` closure. Candidate bridge accessors (`math_x_height_global`, `default_rule_thickness_global`, `mem_b16s2`, `set_mem_b16s2`) still have other callers, so none were deleted.
+
+**Classification:** `make_scripts_global` remains bucket **C/D** as an orchestrator. New `clean_script_box_global` is bucket **C**: it calls with-state-bearing `clean_box` before any borrow, then runs one short direct state mutation/read for `add_script_space_and_restore_font` plus `sub1`/`sub2`/`sup1`/`sup2`/`sup3`. `add_script_space_and_restore_font` remains bucket **B** over direct `MemState`/`EqtbState`/`ScannerState`; the math-parameter helpers are bucket **B** over `FontState`/`EqtbState`. No with-state-bearing callee is reached under the helper borrow.
+
+**Structure:** added `ScriptBoxAdjustment`, `ScriptBoxPrep`, and `clean_script_box_global`, then replaced the three repeated subscript/superscript box-prep blocks in `make_scripts_global`. `clean_box` stays outside live borrows; the helper returns the box node plus the relevant min-shift/clr value for the caller to merge into `shift_down` or `shift_up`. OT-math calls, `font_is_ot_math_global`, `maybe_attach_script_kern_global`, `new_kern`, and `vpackage` remain between short disjoint borrows.
+
+**Bridged call sites / deleted accessors:** no external call-site rename. No bridge accessor lost its last caller, so none deleted. No new state method surface.
+
+**Newtype debt:** none. No state fields moved; helper parameters and returned shifts are plain `i32`/`i16`.
+
+**Metrics:** `#[no_mangle]` unchanged. raw extern statics unchanged. raw `unsafe {}` unchanged. Current worktree counts after validation: `#[no_mangle]` **328**, raw extern statics **38**, raw `unsafe {}` **174**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 51 warnings; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (97):** continue bounded math noad cleanup adjacent to `make_scripts_global`. Good next targets are the remaining sub/sup stack tail in `make_scripts_global` (kern-width allocation + `vpackage`/final append structure) or another small box/list helper near delimiter/script construction. Keep `clean_box`, `vpackage`, OT-math calls, `font_is_ot_math_global`, `first_script_glyph_global`, and `attach_hkern_to_new_hlist_global` outside live borrows unless explicitly classified/threaded. Do not take `mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, or `line_break` as a whole session.
+
+---
+
 ## Idiom session 95 — 2026-05-31 — extract `make_scripts_global` OT script-kern helper
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` reports **51** Rust warnings in this worktree).

@@ -1850,6 +1850,45 @@ fn add_script_space_and_restore_font(
     );
 }
 
+#[derive(Clone, Copy)]
+enum ScriptBoxAdjustment {
+    Sub1,
+    Sub2,
+    Superscript,
+}
+
+struct ScriptBoxPrep {
+    node: i32,
+    shift: i32,
+}
+
+unsafe fn clean_script_box_global(
+    script_field: i32,
+    clean_style: i16,
+    saved_font: i32,
+    adjustment: ScriptBoxAdjustment,
+) -> ScriptBoxPrep {
+    let node = clean_box(script_field, clean_style);
+    let shift = crate::state::with_state_mut(|st| {
+        add_script_space_and_restore_font(&mut st.mem, &st.eqtb, &mut st.scanner, node, saved_font);
+        match adjustment {
+            ScriptBoxAdjustment::Sub1 => sub1(&st.fonts, &st.eqtb, st.scanner.cur_size),
+            ScriptBoxAdjustment::Sub2 => sub2(&st.fonts, &st.eqtb, st.scanner.cur_size),
+            ScriptBoxAdjustment::Superscript => {
+                if st.scanner.cur_style % 2 != 0 {
+                    sup3(&st.fonts, &st.eqtb, st.scanner.cur_size)
+                } else if st.scanner.cur_style < TEXT_STYLE {
+                    sup1(&st.fonts, &st.eqtb, st.scanner.cur_size)
+                } else {
+                    sup2(&st.fonts, &st.eqtb, st.scanner.cur_size)
+                }
+            }
+        }
+    });
+
+    ScriptBoxPrep { node, shift }
+}
+
 // translated from xetex-math.c:805 (repeated script glyph discovery block)
 fn first_script_glyph_step(
     mem: &MemState,
@@ -1995,14 +2034,12 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
 
         let (save_f, clean_style) =
             crate::state::with_state(|st| (st.scanner.cur_f, 2 * (st.scanner.cur_style / 4) + 5));
-        x = clean_box(q + 3, clean_style);
-        crate::state::with_state_mut(|st| {
-            add_script_space_and_restore_font(&mut st.mem, &st.eqtb, &mut st.scanner, x, save_f);
-            let min_shift_down = sub1(&st.fonts, &st.eqtb, st.scanner.cur_size);
-            if shift_down < min_shift_down {
-                shift_down = min_shift_down;
-            }
-        });
+        let prepared =
+            clean_script_box_global(q + 3, clean_style, save_f, ScriptBoxAdjustment::Sub1);
+        x = prepared.node;
+        if shift_down < prepared.shift {
+            shift_down = prepared.shift;
+        }
 
         let (cur_f, box_depth, x_height) = crate::state::with_state(|st| {
             (
@@ -2035,17 +2072,10 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
                 2 * (st.scanner.cur_style / 4) + 4 + (st.scanner.cur_style % 2),
             )
         });
-        x = clean_box(q + 2, clean_style);
-        clr = crate::state::with_state_mut(|st| {
-            add_script_space_and_restore_font(&mut st.mem, &st.eqtb, &mut st.scanner, x, save_f);
-            if st.scanner.cur_style % 2 != 0 {
-                sup3(&st.fonts, &st.eqtb, st.scanner.cur_size)
-            } else if st.scanner.cur_style < TEXT_STYLE {
-                sup1(&st.fonts, &st.eqtb, st.scanner.cur_size)
-            } else {
-                sup2(&st.fonts, &st.eqtb, st.scanner.cur_size)
-            }
-        });
+        let prepared =
+            clean_script_box_global(q + 2, clean_style, save_f, ScriptBoxAdjustment::Superscript);
+        x = prepared.node;
+        clr = prepared.shift;
 
         if shift_up < clr {
             shift_up = clr;
@@ -2082,20 +2112,12 @@ unsafe fn make_scripts_global(q: i32, delta: i32) {
             sub_f = script_f;
 
             let clean_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 4) + 5);
-            y = clean_box(q + 3, clean_style);
-            crate::state::with_state_mut(|st| {
-                add_script_space_and_restore_font(
-                    &mut st.mem,
-                    &st.eqtb,
-                    &mut st.scanner,
-                    y,
-                    save_f,
-                );
-                let min_shift_down = sub2(&st.fonts, &st.eqtb, st.scanner.cur_size);
-                if shift_down < min_shift_down {
-                    shift_down = min_shift_down;
-                }
-            });
+            let prepared =
+                clean_script_box_global(q + 3, clean_style, save_f, ScriptBoxAdjustment::Sub2);
+            y = prepared.node;
+            if shift_down < prepared.shift {
+                shift_down = prepared.shift;
+            }
 
             let (cur_f, x_height_node, y_depth, default_rule_thickness) =
                 crate::state::with_state(|st| {
