@@ -8,6 +8,33 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 75 — 2026-05-31 — thread linebreak protrusion scanners
+
+**Type:** execution (workstream 01, Phase C — second `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the protrusion scanner helper pair:
+- `find_protchar_left` and `find_protchar_right` now take `&mut MemState` and `&mut LinebreakState`, read the mem arena directly, and use the direct `push_node` / `pop_node` hlist-stack helpers.
+- Added direct local predicates for the threaded path (`*_in` variants) plus a direct `prev_rightmost_in` helper, avoiding nested `with_state` calls under the borrow.
+- `find_protchar_left_global` / `find_protchar_right_global` preserve legacy callers and run the cold hlist-stack failure `pdf_error` after the state borrow drops.
+- Removed the now-dead `push_node_global` / `pop_node_global`, old bridged protrusion predicates, and the last hlist-stack bridge accessors (`hlist_stack_level` / `set_hlist_stack_level`).
+
+**Classification (`01b` §4a):** main rewrite is bucket **B** (accessor-to-direct-state rewrite). The impossible hlist stack overflow/underflow edge is bucket **C** and is deferred to the `_global` wrappers.
+
+**Recon / safety checks (§11 + `01b`):**
+- no extern statics or `ini.rs` cleanup aliases.
+- no executable C/C++ callers; post-slice C-reference grep is empty.
+- no cross-module extern/static/link-name redeclarations beyond the Rust definitions themselves before the slice.
+
+**Newtype debt:** none. No state fields added; parameters/returns are existing plain TeX integer node pointers (`i32`).
+
+**Metrics:** `#[no_mangle]` exports **384 → 382** (`find_protchar_left` / `find_protchar_right`). `globals.rs` raw externs unchanged at **40**. `unsafe fn` **687 → 685** (two unsafe exports became direct safe helpers; wrappers are unsafe but two now-dead hlist-stack wrappers were removed). Raw `unsafe { ... }` text-search count unchanged at **160**. Thin accessors **821 → 819** by removing the last two hlist-stack bridge accessors.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (76):** continue `linebreak.rs`, likely by threading `total_pw` now that the protrusion scanners are direct. Watch `char_pw`: if it still crosses scanner/string/font state through bridges, either keep `total_pw` as a wrapper-only slice or choose another closed linebreak helper first. Keep `scan.rs` last and draft `02-modules.md` to READY before scanner-heavy work.
+
+---
+
 ## Idiom session 74 — 2026-05-31 — thread linebreak hlist stack helpers
 
 **Type:** execution (workstream 01, Phase C — first `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.

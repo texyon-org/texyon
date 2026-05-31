@@ -4345,17 +4345,6 @@ pub(crate) fn set_last_rightmost_char(v: i32) {
         state.linebreak.last_rightmost_char = v;
     });
 }
-#[inline]
-pub(crate) fn hlist_stack_level() -> i16 {
-    crate::state::with_state(|state| state.linebreak.hlist_stack_level)
-}
-#[inline]
-pub(crate) fn set_hlist_stack_level(v: i16) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.hlist_stack_level = v;
-    });
-}
-#[inline]
 pub(crate) fn first_p() -> i32 {
     crate::state::with_state(|state| state.linebreak.first_p)
 }

@@ -3,7 +3,7 @@ use crate::ext::measure_native_node;
 use crate::ini::init_trie;
 use crate::mem::prev_rightmost;
 use crate::scan::char_pw;
-use crate::state::LinebreakState;
+use crate::state::{LinebreakState, MemState};
 
 const MAX_HLIST_STACK: i16 = 512;
 const HLIST_NODE: i32 = crate::consts::HLIST_NODE as i32;
@@ -318,37 +318,56 @@ fn is_non_discardable_node(p: i32) -> bool {
 }
 
 #[inline]
-fn is_empty_box(p: i32) -> bool {
-    use crate::globals::mem_b32s1;
-
-    crate::globals::mem_b16s1(p) as i32 == HLIST_NODE
-        && mem_b32s1(p + 1) == 0
-        && mem_b32s1(p + 3) == 0
-        && mem_b32s1(p + 2) == 0
-        && mem_b32s1(p + 5) == TEX_NULL
+fn is_char_node_in(mem: &MemState, p: i32) -> bool {
+    p >= mem.hi_mem_min
 }
 
 #[inline]
-fn ignorable_protrusion_node(p: i32) -> bool {
-    use crate::globals::{mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1};
+fn is_non_discardable_node_in(mem: &MemState, p: i32) -> bool {
+    (mem.b16s1(p) as i32) < MATH_NODE
+}
 
-    !is_char_node(p)
-        && match mem_b16s1(p) as i32 {
+#[inline]
+fn is_empty_box_in(mem: &MemState, p: i32) -> bool {
+    mem.b16s1(p) as i32 == HLIST_NODE
+        && mem.b32s1(p + 1) == 0
+        && mem.b32s1(p + 3) == 0
+        && mem.b32s1(p + 2) == 0
+        && mem.b32s1(p + 5) == TEX_NULL
+}
+
+#[inline]
+fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
+    !is_char_node_in(mem, p)
+        && match mem.b16s1(p) as i32 {
             INS_NODE | MARK_NODE | ADJUST_NODE | PENALTY_NODE => true,
-            DISC_NODE => {
-                mem_b32s0(p + 1) == TEX_NULL && mem_b32s1(p + 1) == TEX_NULL && mem_b16s0(p) == 0
-            }
-            MATH_NODE => mem_b32s1(p + 1) == 0,
-            KERN_NODE => mem_b32s1(p + 1) == 0 || mem_b16s0(p) == NORMAL,
-            GLUE_NODE => mem_b32s0(p + 1) == 0,
+            DISC_NODE => mem.b32s0(p + 1) == TEX_NULL && mem.b32s1(p + 1) == TEX_NULL && mem.b16s0(p) == 0,
+            MATH_NODE => mem.b32s1(p + 1) == 0,
+            KERN_NODE => mem.b32s1(p + 1) == 0 || mem.b16s0(p) == NORMAL,
+            GLUE_NODE => mem.b32s0(p + 1) == 0,
             HLIST_NODE => {
-                mem_b32s1(p + 1) == 0
-                    && mem_b32s1(p + 3) == 0
-                    && mem_b32s1(p + 2) == 0
-                    && mem_b32s1(p + 5) == TEX_NULL
+                mem.b32s1(p + 1) == 0
+                    && mem.b32s1(p + 3) == 0
+                    && mem.b32s1(p + 2) == 0
+                    && mem.b32s1(p + 5) == TEX_NULL
             }
             _ => false,
         }
+}
+
+#[inline]
+fn prev_rightmost_in(mem: &MemState, s: i32, e: i32) -> i32 {
+    let mut p = s;
+    if p == TEX_NULL {
+        return TEX_NULL;
+    }
+    while mem.b32s1(p) != e {
+        p = mem.b32s1(p);
+        if p == TEX_NULL {
+            return TEX_NULL;
+        }
+    }
+    p
 }
 
 // translated from xetex-linebreak.c:2827 (push_node)
@@ -363,12 +382,6 @@ pub fn push_node(linebreak: &mut LinebreakState, p: i32) -> bool {
     true
 }
 
-pub unsafe fn push_node_global(p: i32) {
-    if !crate::state::with_state_mut(|state| push_node(&mut state.linebreak, p)) {
-        crate::errors::pdf_error(c"push_node".as_ptr(), c"stack overflow".as_ptr());
-    }
-}
-
 // translated from xetex-linebreak.c:2837 (pop_node)
 pub fn pop_node(linebreak: &mut LinebreakState) -> Option<i32> {
     let level = linebreak.hlist_stack_level - 1;
@@ -378,16 +391,6 @@ pub fn pop_node(linebreak: &mut LinebreakState) -> Option<i32> {
     }
 
     Some(linebreak.hlist_stack[level as usize])
-}
-
-pub unsafe fn pop_node_global() -> i32 {
-    match crate::state::with_state_mut(|state| pop_node(&mut state.linebreak)) {
-        Some(p) => p,
-        None => crate::errors::pdf_error(
-            c"pop_node".as_ptr(),
-            c"stack underflow (internal error)".as_ptr(),
-        ),
-    }
 }
 
 // translated from xetex-linebreak.c:2692 (total_pw)
@@ -408,7 +411,7 @@ pub unsafe extern "C" fn total_pw(q: i32, p: i32) -> i32 {
             r = mem_b32s1(r);
         }
     } else {
-        r = find_protchar_right(l, r);
+        r = find_protchar_right_global(l, r);
     }
 
     if l != TEX_NULL && mem_b16s1(l) as i32 == DISC_NODE {
@@ -423,45 +426,49 @@ pub unsafe extern "C" fn total_pw(q: i32, p: i32) -> i32 {
                 }
                 n -= 1;
             }
-            l = find_protchar_left(l, true);
+            l = find_protchar_left_global(l, true);
         }
     } else {
-        l = find_protchar_left(l, true);
+        l = find_protchar_left_global(l, true);
     }
 
     char_pw(l, 0) + char_pw(r, 1)
 }
 
 // translated from xetex-linebreak.c:2731 (find_protchar_left)
-#[no_mangle]
-pub unsafe extern "C" fn find_protchar_left(mut l: i32, d: bool) -> i32 {
-    use crate::globals::{hlist_stack_level, mem_b16s1, mem_b32s1, set_hlist_stack_level};
-
-    if is_empty_box(l) {
-        l = mem_b32s1(l);
+pub fn find_protchar_left(
+    mem: &mut MemState,
+    linebreak: &mut LinebreakState,
+    mut l: i32,
+    d: bool,
+) -> Option<i32> {
+    if is_empty_box_in(mem, l) {
+        l = mem.b32s1(l);
     } else if d {
-        while mem_b32s1(l) != TEX_NULL && !(is_char_node(l) || is_non_discardable_node(l)) {
-            l = mem_b32s1(l);
+        while mem.b32s1(l) != TEX_NULL && !(is_char_node_in(mem, l) || is_non_discardable_node_in(mem, l)) {
+            l = mem.b32s1(l);
         }
     }
 
-    set_hlist_stack_level(0);
+    linebreak.hlist_stack_level = 0;
     let mut run = true;
     loop {
         let t = l;
-        while run && mem_b16s1(l) as i32 == HLIST_NODE && mem_b32s1(l + 5) != TEX_NULL {
-            push_node_global(l);
-            l = mem_b32s1(l + 5);
+        while run && mem.b16s1(l) as i32 == HLIST_NODE && mem.b32s1(l + 5) != TEX_NULL {
+            if !push_node(linebreak, l) {
+                return None;
+            }
+            l = mem.b32s1(l + 5);
         }
 
-        while run && ignorable_protrusion_node(l) {
-            while mem_b32s1(l) == TEX_NULL && hlist_stack_level() > 0 {
-                l = pop_node_global();
+        while run && ignorable_protrusion_node_in(mem, l) {
+            while mem.b32s1(l) == TEX_NULL && linebreak.hlist_stack_level > 0 {
+                l = pop_node(linebreak)?;
             }
 
-            if mem_b32s1(l) != TEX_NULL {
-                l = mem_b32s1(l);
-            } else if hlist_stack_level() == 0 {
+            if mem.b32s1(l) != TEX_NULL {
+                l = mem.b32s1(l);
+            } else if linebreak.hlist_stack_level == 0 {
                 run = false;
             }
         }
@@ -471,41 +478,51 @@ pub unsafe extern "C" fn find_protchar_left(mut l: i32, d: bool) -> i32 {
         }
     }
 
-    l
+    Some(l)
+}
+
+pub unsafe fn find_protchar_left_global(l: i32, d: bool) -> i32 {
+    match crate::state::with_state_mut(|state| find_protchar_left(&mut state.mem, &mut state.linebreak, l, d)) {
+        Some(p) => p,
+        None => crate::errors::pdf_error(c"find_protchar_left".as_ptr(), c"hlist stack failure".as_ptr()),
+    }
 }
 
 // translated from xetex-linebreak.c:2778 (find_protchar_right)
-#[no_mangle]
-pub unsafe extern "C" fn find_protchar_right(mut l: i32, mut r: i32) -> i32 {
-    use crate::globals::{hlist_stack_level, mem_b16s1, mem_b32s1, set_hlist_stack_level};
-
+pub fn find_protchar_right(
+    mem: &mut MemState,
+    linebreak: &mut LinebreakState,
+    mut l: i32,
+    mut r: i32,
+) -> Option<i32> {
     if r == TEX_NULL {
-        return TEX_NULL;
+        return Some(TEX_NULL);
     }
 
-    set_hlist_stack_level(0);
+    linebreak.hlist_stack_level = 0;
     let mut run = true;
     loop {
         let t = r;
-        while run && mem_b16s1(r) as i32 == HLIST_NODE && mem_b32s1(r + 5) != TEX_NULL {
-            push_node_global(l);
-            push_node_global(r);
-            l = mem_b32s1(r + 5);
+        while run && mem.b16s1(r) as i32 == HLIST_NODE && mem.b32s1(r + 5) != TEX_NULL {
+            if !push_node(linebreak, l) || !push_node(linebreak, r) {
+                return None;
+            }
+            l = mem.b32s1(r + 5);
             r = l;
-            while mem_b32s1(r) != TEX_NULL {
-                r = mem_b32s1(r);
+            while mem.b32s1(r) != TEX_NULL {
+                r = mem.b32s1(r);
             }
         }
 
-        while run && ignorable_protrusion_node(r) {
-            while r == l && hlist_stack_level() > 0 {
-                r = pop_node_global();
-                l = pop_node_global();
+        while run && ignorable_protrusion_node_in(mem, r) {
+            while r == l && linebreak.hlist_stack_level > 0 {
+                r = pop_node(linebreak)?;
+                l = pop_node(linebreak)?;
             }
 
             if r != l && r != TEX_NULL {
-                r = prev_rightmost(l, r);
-            } else if r == l && hlist_stack_level() == 0 {
+                r = prev_rightmost_in(mem, l, r);
+            } else if r == l && linebreak.hlist_stack_level == 0 {
                 run = false;
             }
         }
@@ -515,7 +532,14 @@ pub unsafe extern "C" fn find_protchar_right(mut l: i32, mut r: i32) -> i32 {
         }
     }
 
-    r
+    Some(r)
+}
+
+pub unsafe fn find_protchar_right_global(l: i32, r: i32) -> i32 {
+    match crate::state::with_state_mut(|state| find_protchar_right(&mut state.mem, &mut state.linebreak, l, r)) {
+        Some(p) => p,
+        None => crate::errors::pdf_error(c"find_protchar_right".as_ptr(), c"hlist stack failure".as_ptr()),
+    }
 }
 
 // translated from xetex-linebreak.c:2377 (finite_shrink)
@@ -1824,7 +1848,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
             } else {
                 p = prev_rightmost(mem_b32s1(TEMP_HEAD), q);
                 ptmp = p;
-                p = find_protchar_right(mem_b32s1(TEMP_HEAD), p);
+                p = find_protchar_right_global(mem_b32s1(TEMP_HEAD), p);
             }
 
             let w = char_pw(p, 1);
@@ -1869,7 +1893,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
         set_mem_b32s1(TEMP_HEAD, r);
 
         if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 0 {
-            let p = find_protchar_left(q, false);
+            let p = find_protchar_left_global(q, false);
             let w = char_pw(p, 0);
             if w != 0 {
                 let k = crate::mem::new_margin_kern_global(-w, last_leftmost_char(), 0);

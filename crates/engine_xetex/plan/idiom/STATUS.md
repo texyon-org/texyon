@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 74, **Phase-C execution**: threaded the `linebreak.rs` hlist-stack helper pair — `push_node` / `pop_node` to direct `&mut LinebreakState`, with cold `pdf_error` paths deferred to `_global` wrappers. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 75, **Phase-C execution**: threaded the `linebreak.rs` protrusion scanner pair — `find_protchar_left` / `find_protchar_right` to direct `&mut MemState` + `&mut LinebreakState`, with cold stack failures deferred to `_global` wrappers. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -671,6 +671,16 @@ least-coupled non-`misc` clusters:
     now-dead `hlist_stack_entry` / `set_hlist_stack_entry` bridge accessors were
     removed. No executable C/C++ callers; no cleanup aliases; no newtype debt.
     Dashboard 29/2/7/4.
+-   **Second `linebreak.rs` call-graph slice (session 75):** threaded the
+    protrusion scanner helpers `find_protchar_left` / `find_protchar_right` to
+    direct `MemState` / `LinebreakState` borrows. The threaded path reads the
+    mem arena directly, uses direct local predicates and `prev_rightmost_in`,
+    and calls direct `push_node` / `pop_node`; `_global` wrappers preserve
+    legacy callers and defer cold hlist-stack failure `pdf_error` calls until
+    after the borrow drops. Removed dead `push_node_global` / `pop_node_global`,
+    old bridged protrusion predicates, and the last hlist-stack bridge
+    accessors. No executable C/C++ callers; no cleanup aliases; no newtype debt.
+    Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -681,9 +691,9 @@ the snippets in `00-overview.md` / the workstream plans.
 |---|---:|---|---:|
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
-| thin global accessors (`globals.rs`) | 811 | 0 | 821 total / 180 state-backed scalars/arrays (session 74 removed 2 hlist-stack entry accessors; incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and remaining `LinebreakState` accessors) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 384 (direct `grep '#[no_mangle]' src/*.rs`; session 74 dropped `push_node` / `pop_node`) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 687 (unchanged in session 74) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 819 total / 178 state-backed scalars/arrays (sessions 74–75 removed all hlist-stack bridge accessors; incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and remaining `LinebreakState` accessors) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
+| `#[no_mangle]` exports | 576 | boundary-only | 382 (direct `grep '#[no_mangle]' src/*.rs`; session 75 dropped `find_protchar_left` / `find_protchar_right`) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 685 (session 75 removed two dead hlist-stack wrappers after threading the protrusion scanners) |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 160 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
@@ -811,7 +821,7 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`); session 72 threaded the pure DVI byte formatters (`dvi_four`/`dvi_two`) with continuation-aware flush propagation; session 73 threaded the DVI font-definition / font-selection path (`dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`); session 74 began `linebreak.rs` with the hlist-stack helper pair (`push_node` / `pop_node` → `&mut LinebreakState`). Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. Next: continue `linebreak.rs` with another closed non-scanner Phase-C cluster. Prefer small protrusion/linebreak-state helpers before large routines like `line_break`; keep `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
+1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`); session 72 threaded the pure DVI byte formatters (`dvi_four`/`dvi_two`) with continuation-aware flush propagation; session 73 threaded the DVI font-definition / font-selection path (`dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`); sessions 74–75 began `linebreak.rs` with the hlist-stack helper pair and protrusion scanners (`push_node` / `pop_node` / `find_protchar_left` / `find_protchar_right` → direct `LinebreakState`/`MemState`). Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. Next: continue `linebreak.rs`, likely `total_pw` if `char_pw` can be kept outside the borrow or otherwise choose another closed helper. Keep `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the
