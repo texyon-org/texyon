@@ -47,6 +47,7 @@ use crate::scan::scan_left_brace;
 use crate::scan::vert_break;
 use crate::scan::vpackage;
 use crate::shipout::ship_out;
+use crate::state::{EqtbState, MemState, ShipoutState};
 
 #[inline]
 fn best_page_break() -> i32 {
@@ -151,26 +152,47 @@ pub unsafe extern "C" fn initialize_pagebuilder_variables() {
     set_page_max_depth(0);
 }
 
-unsafe fn freeze_page_specs(s: u8) {
-    set_page_contents(s);
-    set_page_so_far(0, eqtb_b32s1(DIMEN_BASE + DIMEN_PAR__vsize));
-    set_page_max_depth(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR__max_depth));
-    set_page_so_far(7, 0);
-    set_page_so_far(1, 0);
-    set_page_so_far(2, 0);
-    set_page_so_far(3, 0);
-    set_page_so_far(4, 0);
-    set_page_so_far(5, 0);
-    set_page_so_far(6, 0);
-    set_least_page_cost(MAX_HALFWORD);
+/// Threaded core (Phase C, bucket B): pure `EqtbState` read + `ShipoutState`
+/// writes, no `with_state`-bearing engine calls. Legacy callers go through
+/// `freeze_page_specs_global`.
+fn freeze_page_specs(eqtb: &EqtbState, shipout: &mut ShipoutState, s: u8) {
+    shipout.set_page_contents(s);
+    shipout.set_page_so_far(0, eqtb.b32s1(DIMEN_BASE + DIMEN_PAR__vsize));
+    shipout.set_page_max_depth(eqtb.b32s1(DIMEN_BASE + DIMEN_PAR__max_depth));
+    shipout.set_page_so_far(7, 0);
+    shipout.set_page_so_far(1, 0);
+    shipout.set_page_so_far(2, 0);
+    shipout.set_page_so_far(3, 0);
+    shipout.set_page_so_far(4, 0);
+    shipout.set_page_so_far(5, 0);
+    shipout.set_page_so_far(6, 0);
+    shipout.set_least_page_cost(MAX_HALFWORD);
 }
 
-unsafe fn ensure_vbox(n: u8) {
-    let p = eqtb_b32s1(BOX_BASE + n as i32);
+/// Bridge-down wrapper for legacy (still-`with_state`) callers: borrow the
+/// anchor once and pass the disjoint `&EqtbState` / `&mut ShipoutState` down.
+fn freeze_page_specs_global(s: u8) {
+    crate::state::with_state_mut(|st| freeze_page_specs(&st.eqtb, &mut st.shipout, s));
+}
+
+/// Threaded core (Phase C, bucket B): decides whether box register `n` is an
+/// `\hbox` that must be flagged. Pure `EqtbState` / `MemState` reads, no
+/// `with_state`-bearing calls; the cold diagnostic/`box_error` path runs in
+/// `ensure_vbox_global` after the borrow drops.
+fn ensure_vbox_is_hbox(eqtb: &EqtbState, mem: &MemState, n: u8) -> bool {
+    let p = eqtb.b32s1(BOX_BASE + n as i32);
     if p == TEX_NULL {
-        return;
+        return false;
     }
-    if mem_b16s1(p) as i32 != HLIST_NODE {
+    mem.b16s1(p) as i32 == HLIST_NODE
+}
+
+/// Bridge-down wrapper for legacy callers: run the threaded predicate under a
+/// short borrow, then (cold path only) emit the diagnostic + `box_error` after
+/// the borrow has dropped.
+unsafe fn ensure_vbox_global(n: u8) {
+    let is_hbox = crate::state::with_state(|st| ensure_vbox_is_hbox(&st.eqtb, &st.mem, n));
+    if !is_hbox {
         return;
     }
     error_here_with_diagnostic(c"Insertions can only be added to a vbox".as_ptr());
@@ -251,7 +273,7 @@ unsafe fn fire_up(c: i32) {
             if mem_b32s0(r + 2) != TEX_NULL {
                 // PAGE_INS_NODE_best_ins_ptr != TEX_NULL
                 let n = mem_b16s0(r) as u8; // NODE_subtype
-                ensure_vbox(n);
+                ensure_vbox_global(n);
                 if eqtb_b32s1(BOX_BASE + n as i32) == TEX_NULL {
                     set_eqtb_b32s1(BOX_BASE + n as i32, new_null_box_global());
                 }
@@ -563,7 +585,7 @@ pub unsafe fn build_page() {
                 if page_contents() < BOX_THERE {
                     // 1036: Initialize page, insert \topskip, continue loop
                     if page_contents() == EMPTY {
-                        freeze_page_specs(BOX_THERE);
+                        freeze_page_specs_global(BOX_THERE);
                     } else {
                         set_page_contents(BOX_THERE);
                     }
@@ -632,7 +654,7 @@ pub unsafe fn build_page() {
             INS_NODE => {
                 // 1043: Append insertion to current page
                 if page_contents() == EMPTY {
-                    freeze_page_specs(INSERTS_ONLY);
+                    freeze_page_specs_global(INSERTS_ONLY);
                 }
                 let n = mem_b16s0(p) as u8; // NODE_subtype(p)
                 let mut r = PAGE_INS_HEAD;
@@ -648,7 +670,7 @@ pub unsafe fn build_page() {
                     r = q2;
                     set_mem_b16s0(r, n as u16); // NODE_subtype = n
                     set_mem_b16s1(r, INSERTING); // NODE_type = INSERTING
-                    ensure_vbox(n);
+                    ensure_vbox_global(n);
                     if eqtb_b32s1(BOX_BASE + n as i32) == TEX_NULL {
                         set_mem_b32s1(r + 3, 0); // BOX_height(r) = 0
                     } else {

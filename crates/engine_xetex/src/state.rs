@@ -868,6 +868,33 @@ pub(crate) struct ShipoutState {
     pub dvi_f: i32,
 }
 
+impl ShipoutState {
+    /// Set `page_contents`. Mirrors `globals::set_page_contents` so threaded
+    /// Phase-C callers (the page builder) can touch the field directly.
+    #[inline]
+    pub(crate) fn set_page_contents(&mut self, v: u8) {
+        self.page_contents = v;
+    }
+
+    /// Set `page_so_far[k]`. Mirrors `globals::set_page_so_far`.
+    #[inline]
+    pub(crate) fn set_page_so_far(&mut self, k: usize, v: i32) {
+        self.page_so_far[k] = v;
+    }
+
+    /// Set `page_max_depth`. Mirrors `pagebuilder::set_page_max_depth`.
+    #[inline]
+    pub(crate) fn set_page_max_depth(&mut self, v: i32) {
+        self.page_max_depth = v;
+    }
+
+    /// Set `least_page_cost`. Mirrors `pagebuilder::set_least_page_cost`.
+    #[inline]
+    pub(crate) fn set_least_page_cost(&mut self, v: i32) {
+        self.least_page_cost = v;
+    }
+}
+
 pub(crate) struct ErrorState {
     pub arith_error: bool,
     pub tex_remainder: i32,

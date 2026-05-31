@@ -7,6 +7,28 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 88 — 2026-05-31 — thread the pagebuilder leaf-helper block
+
+**Type:** execution (workstream 01, Phase C — pagebuilder leaf helpers). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** threaded the two pagebuilder leaf helpers `freeze_page_specs` and `ensure_vbox` (`src/pagebuilder.rs`) onto narrow state borrows. Chose this clean, fully-closeable block over the session-87 handoff's designated `make_op`/`make_ord` (genuinely large bucket-C/D: each interleaves `fetch`/`clean_box`/`rebox`/OT-math/font reads with scattered mem writes throughout a loop — high regression risk for one session, deferred). `freeze_page_specs(eqtb: &EqtbState, shipout: &mut ShipoutState, s: u8)` writes the page-spec scratch directly from a disjoint `EqtbState` read; `ensure_vbox` split into a threaded predicate `ensure_vbox_is_hbox(&EqtbState, &MemState, n) -> bool` plus the `ensure_vbox_global` wrapper that runs the cold diagnostic + `box_error` only after the borrow drops.
+
+**Classification (`01b` §4a):** `freeze_page_specs` is bucket **B** (pure `EqtbState` read + `ShipoutState` writes, zero `with_state`-bearing calls). `ensure_vbox` is bucket **C** (the cold `error_here_with_diagnostic`/`box_error` path is the with_state-bearing portion, deferred to the `_global` wrapper; the threaded core is just two `EqtbState`/`MemState` reads). Recon (§11 a–d): C readers grep hits only the comment header in the translated `xetex-pagebuilder.c` stub (no live C/C++ caller); no cleanup aliases; no cross-module redeclaration; no call site sat inside an existing `with_state*` closure.
+
+**Method surface:** added `impl ShipoutState` (first methods on this sub-struct) with `set_page_contents`, `set_page_so_far`, `set_page_max_depth`, `set_least_page_cost`, mirroring the `globals`/pagebuilder accessors. Reused existing `EqtbState::b32s1` and `MemState::b16s1`.
+
+**Bridged call sites:** 4 `build_page`/`fire_up` legacy call sites renamed to `_global` (`freeze_page_specs` ×2, `ensure_vbox` ×2). No `globals.rs` (or module-private) bridge accessor lost its last caller — `set_page_*`/`page_*` are still used across `build_page`, `fire_up`, `ini.rs`, `scan.rs`, `output.rs` — so nothing deleted.
+
+**Newtype debt:** none. No state fields moved (only added methods over existing `ShipoutState` fields + read `EqtbState`); the `s: u8` / `n: u8` parameters are plain (checked).
+
+**Metrics:** `#[no_mangle]` **337** unchanged (neither fn was exported). raw externs **40** unchanged. `unsafe fn` **649 → 648** (`freeze_page_specs` de-`unsafe`'d to a safe fn with a safe wrapper; `ensure_vbox` pair net flat). raw `unsafe {}` **176** unchanged. Crate warning count during `cargo check` stayed **79**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**. (rust-analyzer showed transient stale E0107/E0412 errors mid-edit; `cargo check` is ground truth and is clean.)
+
+**For the next session (89):** good closeable targets remain a math noad helper (`make_op`/`make_ord` — split each `clean_box`/`rebox`/`fetch`/OT-math call out of a series of short borrows, the session 85/86 pattern scaled up; expect a large, careful session) or another linebreak/post-line-break block. Clean leaf helpers are nearly exhausted; the remaining high-call-count functions are orchestrators (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — do not take one whole in a single session. Keep scanner-heavy `scan.rs` last; draft `02-modules.md` to READY before the big scanner decomposition.
+
+---
+
 ## Idiom session 87 — 2026-05-31 — thread the native text-node constructor cluster
 
 **Type:** execution (workstream 01, Phase C — native-text node constructors). **One commit.** Dashboard **29/2/7/4**.

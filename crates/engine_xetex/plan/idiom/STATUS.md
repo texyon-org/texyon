@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 87, **Phase-C execution**: threaded the native text-node constructor cluster — `new_native_word_node` (→ `&mut MemState` + disjoint `&EqtbState`, bucket B) and `new_native_character` (mem core `build_native_character` under one borrow; string/mapping/warning/measurement stay in the orchestrator, bucket C); 11 external `new_native_word_node` sites bridged to `_global`. `#[no_mangle]` 338→337. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 88, **Phase-C execution**: threaded the pagebuilder leaf-helper block — `freeze_page_specs` (→ disjoint `&EqtbState` + `&mut ShipoutState`, bucket B) and `ensure_vbox` (threaded predicate `ensure_vbox_is_hbox` + cold `box_error` deferred to `ensure_vbox_global`, bucket C); added `impl ShipoutState` page-spec setters; 4 `build_page`/`fire_up` sites bridged to `_global`. `unsafe fn` 649→648. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -827,6 +827,23 @@ least-coupled non-`misc` clusters:
     No C/C++ callers (header prototypes only); no cleanup aliases; no newtype
     debt (no fields moved). `#[no_mangle]` 338→337, raw externs 40 unchanged,
     `unsafe fn` net flat (~649), raw `unsafe {}` 174→176. Dashboard 29/2/7/4.
+-   **Pagebuilder leaf-helper block threaded (session 88):** threaded
+    `freeze_page_specs` and `ensure_vbox` (`src/pagebuilder.rs`). `freeze_page_specs`
+    is bucket **B** — pure disjoint `&EqtbState` read + `&mut ShipoutState` page-spec
+    writes, no `with_state`-bearing call. `ensure_vbox` is bucket **C** — split into a
+    threaded predicate `ensure_vbox_is_hbox(&EqtbState, &MemState, n) -> bool` plus the
+    `ensure_vbox_global` wrapper that runs the cold `error_here_with_diagnostic` /
+    `box_error` only after the borrow drops. Added the first `impl ShipoutState`
+    methods (`set_page_contents`/`set_page_so_far`/`set_page_max_depth`/
+    `set_least_page_cost`); reused `EqtbState::b32s1` / `MemState::b16s1`. Bridged 4
+    `build_page`/`fire_up` sites to `_global`; no bridge accessor lost its last caller
+    (the `set_page_*`/`page_*` accessors are still used across build_page/fire_up/ini/
+    scan/output), so none deleted. The chosen-over alternative `make_op`/`make_ord`
+    remain large bucket-C/D (heavy `fetch`/`clean_box`/OT-math interleaving) — deferred.
+    No C/C++ callers (translated `xetex-pagebuilder.c` stub, comment-only mentions); no
+    cleanup aliases; no fields moved, so no newtype debt. `#[no_mangle]` 337 unchanged,
+    `unsafe fn` 649→648, raw externs 40 / raw `unsafe {}` 176 unchanged. Dashboard
+    29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -838,8 +855,8 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 174 state-backed scalars/arrays (session 82 deleted `xtx_ligature_present` and `init_lig` getters after threading the font/effective-char + linebreak reconstruction slice) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 337 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 87 dropped the `new_native_word_node` export) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 649 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 87 net-flat: `new_native_word_node` de-`unsafe`'d, `_global` wrapper added) |
+| `#[no_mangle]` exports | 576 | boundary-only | 337 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 88 unchanged — neither pagebuilder helper was exported) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 648 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 88 dropped 1: `freeze_page_specs` de-`unsafe`'d with a safe wrapper, `ensure_vbox` pair net-flat) |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 176 / 688 not remeasured (session 87 made the two native-node text-pointer writes explicit in the safe `build_native_character` core) |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
@@ -979,12 +996,20 @@ the snippets in `00-overview.md` / the workstream plans.
     `new_native_character`'s mem alloc/fill → threaded `build_native_character`
     core, orchestrator keeps string/mapping/warning/measurement outside the
     borrow) is now threaded; 11 external `new_native_word_node` sites bridged to
+    `_global`.
+
+    **Session 88 update:** the pagebuilder leaf-helper block (`freeze_page_specs`
+    → disjoint `&EqtbState` + `&mut ShipoutState`, bucket B; `ensure_vbox` →
+    threaded `ensure_vbox_is_hbox` predicate + cold `box_error` deferred to
+    `ensure_vbox_global`, bucket C) is now threaded; added the first `impl
+    ShipoutState` page-spec setters; 4 `build_page`/`fire_up` sites bridged to
     `_global`. Next targets: a math noad helper block (`make_op`/`make_ord` are
-    large bucket-C — split each `clean_box`/`rebox`/`fetch`/OT-math call out of
-    the borrow), a pagebuilder helper block, or another linebreak/post-line-break
-    block. Clean leaf-helper slices are thinning; remaining high-count functions
-    are mostly orchestrators (`hpack`/`vpackage`/`build_page`/`line_break`/
-    `mlist_to_hlist`). Keep scanner-heavy `scan.rs` last.
+    large bucket-C/D — split each `clean_box`/`rebox`/`fetch`/OT-math call across
+    a series of short borrows; expect a large careful session), or another
+    linebreak/post-line-break block. Clean leaf-helper slices are nearly
+    exhausted; remaining high-count functions are mostly orchestrators
+    (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — do not take
+    one whole in a single session. Keep scanner-heavy `scan.rs` last.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the
