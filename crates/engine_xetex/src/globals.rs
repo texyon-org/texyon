@@ -165,8 +165,6 @@ mod raw {
         pub(super) static mut main_k: i32;
         // main_control inner-loop state (xetex-xetexd.h:672–686).
         pub(super) static mut main_f: i32; // internal_font_number
-        pub(super) static mut main_i: crate::mem_types::B16x4;
-        pub(super) static mut main_j: crate::mem_types::B16x4;
         pub(super) static mut main_h: i32;
         pub(super) static mut main_pp: i32;
         pub(super) static mut main_ppp: i32;
@@ -709,21 +707,6 @@ pub(crate) fn name_of_file16() -> *mut u16 {
         }
     })
 }
-/// Write `name_of_file16 = v`.
-#[inline]
-pub(crate) fn set_name_of_file16(v: *mut u16) {
-    crate::state::with_state_mut(|s| {
-        if v.is_null() {
-            s.input.name_of_file16.clear();
-        } else {
-            let len = s.input.name_length16 as usize;
-            s.input.name_of_file16.resize(len + 1, 0);
-            unsafe {
-                std::ptr::copy_nonoverlapping(v, s.input.name_of_file16.as_mut_ptr(), len + 1);
-            }
-        }
-    });
-}
 /// Returns `name_length16`.
 #[inline]
 pub(crate) fn name_length16() -> i32 {
@@ -881,12 +864,6 @@ pub(crate) fn set_prim_s1(p: i32, v: i32) {
 pub(crate) fn eqtb_top() -> i32 {
     crate::state::with_state(|state| state.eqtb.eqtb_top)
 }
-#[inline]
-pub(crate) fn set_eqtb_top(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.eqtb.eqtb_top = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // hash management globals (hash_used / hash_extra / hash_high /
@@ -908,20 +885,8 @@ pub(crate) fn hash_extra() -> i32 {
     crate::state::with_state(|state| state.eqtb.hash_extra)
 }
 #[inline]
-pub(crate) fn set_hash_extra(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.eqtb.hash_extra = v;
-    });
-}
-#[inline]
 pub(crate) fn hash_top() -> i32 {
     crate::state::with_state(|state| state.eqtb.hash_top)
-}
-#[inline]
-pub(crate) fn set_hash_top(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.eqtb.hash_top = v;
-    });
 }
 #[inline]
 pub(crate) fn hash_high() -> i32 {
@@ -1643,24 +1608,11 @@ pub(crate) fn save_stack_b32s1(k: i32) -> i32 {
     // SAFETY: union projection; the entry was last written via the b32 view.
     crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b32.s1 })
 }
-/// Read `save_stack[k].b32.s0`.
-#[inline]
-pub(crate) fn save_stack_b32s0(k: i32) -> i32 {
-    // SAFETY: union projection; the entry was last written via the b32 view.
-    crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b32.s0 })
-}
 /// Write `save_stack[k].b32.s1 = v`.
 #[inline]
 pub(crate) fn set_save_stack_b32s1(k: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.save_stack.data[k as usize].b32.s1 = v;
-    });
-}
-/// Write `save_stack[k].b32.s0 = v`.
-#[inline]
-pub(crate) fn set_save_stack_b32s0(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.save_stack.data[k as usize].b32.s0 = v;
     });
 }
 /// Read `save_stack[k].b16.s1`.
@@ -2116,17 +2068,7 @@ pub(crate) fn set_font_letter_space_entry(f: i32, v: i32) {
 pub(crate) fn mapped_text_entry(i: i32) -> u16 {
     crate::state::with_state(|state| state.fonts.mapped_text[i as usize])
 }
-/// Returns pointer to `mapped_text` storage.
-#[inline]
-pub(crate) fn mapped_text() -> *mut u16 {
-    crate::state::with_state(|s| {
-        if s.fonts.mapped_text.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            s.fonts.mapped_text.as_ptr() as *mut u16
-        }
-    })
-}
+
 /// Sets `xtx_ligature_present = v`.
 #[inline]
 pub(crate) fn set_xtx_ligature_present(v: bool) {
@@ -2596,11 +2538,7 @@ pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
 pub(crate) fn nest_mode(k: i32) -> i16 {
     crate::state::with_state(|s| s.input.nest[k as usize].mode)
 }
-/// Returns `nest[k].tail`.
-#[inline]
-pub(crate) fn nest_tail(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.nest[k as usize].tail)
-}
+
 /// Sets `nest[k].tail = v`.
 #[inline]
 pub(crate) fn set_nest_tail(k: i32, v: i32) {
@@ -2927,10 +2865,7 @@ pub(crate) fn set_sa_root(i: usize, v: i32) {
         s.scanner.sa_root[i] = v;
     });
 }
-#[inline]
-pub(crate) fn sa_chain() -> i32 {
-    crate::state::with_state(|s| s.scanner.sa_chain)
-}
+
 #[inline]
 pub(crate) fn set_sa_chain(v: i32) {
     crate::state::with_state_mut(|s| {
@@ -3305,10 +3240,7 @@ pub(crate) fn set_def_ref(v: i32) {
         s.scanner.def_ref = v;
     });
 }
-#[inline]
-pub(crate) fn deletions_allowed() -> bool {
-    crate::state::with_state(|state| state.errors.deletions_allowed)
-}
+
 #[inline]
 pub(crate) fn set_deletions_allowed(v: bool) {
     crate::state::with_state_mut(|state| {
@@ -3405,10 +3337,7 @@ pub(crate) fn set_main_ppp(v: i32) {
         raw::main_ppp = v;
     }
 }
-#[inline]
-pub(crate) fn main_s() -> i32 {
-    unsafe { raw::main_s }
-}
+
 #[inline]
 pub(crate) fn set_main_s(v: i32) {
     unsafe {
@@ -4842,10 +4771,6 @@ pub(crate) fn set_cur_v(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.cur_v = v);
 }
 #[inline]
-pub(crate) fn cur_page_width() -> i32 {
-    crate::state::with_state(|s| s.shipout.cur_page_width)
-}
-#[inline]
 pub(crate) fn set_cur_page_width(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.cur_page_width = v);
 }
@@ -4858,16 +4783,8 @@ pub(crate) fn set_cur_page_height(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.cur_page_height = v);
 }
 #[inline]
-pub(crate) fn cur_h_offset() -> i32 {
-    crate::state::with_state(|s| s.shipout.cur_h_offset)
-}
-#[inline]
 pub(crate) fn set_cur_h_offset(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.cur_h_offset = v);
-}
-#[inline]
-pub(crate) fn cur_v_offset() -> i32 {
-    crate::state::with_state(|s| s.shipout.cur_v_offset)
 }
 #[inline]
 pub(crate) fn set_cur_v_offset(v: i32) {
@@ -4897,17 +4814,7 @@ pub(crate) fn font_check_entry(f: i32) -> crate::mem_types::B16x4 {
 pub(crate) fn xdv_buffer_entry(i: i32) -> u8 {
     crate::state::with_state(|state| state.fonts.xdv_buffer[i as usize])
 }
-/// Returns pointer to `xdv_buffer` storage.
-#[inline]
-pub(crate) fn xdv_buffer() -> *mut libc::c_char {
-    crate::state::with_state(|s| {
-        if s.fonts.xdv_buffer.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            s.fonts.xdv_buffer.as_ptr() as *mut libc::c_char
-        }
-    })
-}
+
 #[inline]
 pub(crate) fn font_letter_space_entry(f: i32) -> i32 {
     crate::state::with_state(|s| s.fonts.font_letter_space[f as usize])
@@ -4997,10 +4904,7 @@ pub(crate) fn set_format_ident(v: i32) {
         state.strings.format_ident = v;
     });
 }
-#[inline]
-pub(crate) fn edit_name_start() -> i32 {
-    crate::state::with_state(|state| state.strings.edit_name_start)
-}
+
 #[inline]
 pub(crate) fn set_edit_name_start(v: i32) {
     crate::state::with_state_mut(|state| {

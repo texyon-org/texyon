@@ -37,8 +37,6 @@ use crate::mem::{
 use crate::state::{MemState, ShipoutState};
 
 extern "C" {
-
-    fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     fn ttstub_output_write(
         handle: usize,
         data: *const libc::c_char,

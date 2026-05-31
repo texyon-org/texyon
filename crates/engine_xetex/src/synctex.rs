@@ -55,10 +55,12 @@ use crate::state::Recorder;
 macro_rules! sc_scalar {
     ($get:ident, $set:ident, $field:ident, $ty:ty) => {
         #[inline]
+        #[allow(dead_code)]
         fn $get() -> $ty {
             crate::state::with_state(|s| s.synctex.$field)
         }
         #[inline]
+        #[allow(dead_code)]
         fn $set(v: $ty) {
             crate::state::with_state_mut(|s| s.synctex.$field = v);
         }
@@ -68,10 +70,12 @@ macro_rules! sc_scalar {
 macro_rules! sc_flag {
     ($get:ident, $set:ident, $field:ident) => {
         #[inline]
+        #[allow(dead_code)]
         fn $get() -> bool {
             crate::state::with_state(|s| s.synctex.flags.$field)
         }
         #[inline]
+        #[allow(dead_code)]
         fn $set(v: bool) {
             crate::state::with_state_mut(|s| s.synctex.flags.$field = v);
         }
@@ -106,7 +110,6 @@ sc_flag!(
 sc_flag!(sc_flags_off, set_sc_flags_off, off);
 sc_flag!(sc_flags_not_void, set_sc_flags_not_void, not_void);
 sc_flag!(sc_flags_warn, set_sc_flags_warn, warn);
-#[allow(dead_code)]
 sc_flag!(sc_flags_output_p, set_sc_flags_output_p, output_p);
 
 // ---------------------------------------------------------------------------

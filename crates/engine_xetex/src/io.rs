@@ -6,7 +6,7 @@ use crate::globals::{
     first, last, max_buf_stack, name_length, name_length16, name_of_file, name_of_file16,
     name_of_file16_entry, read_file_entry, read_file_ptr, read_open_entry, set_buffer_entry,
     set_last, set_max_buf_stack, set_name_in_progress, set_name_length, set_name_length16,
-    set_name_of_file16, set_read_open_entry, set_stop_at_space,
+    set_read_open_entry, set_stop_at_space,
 };
 
 // ---------------------------------------------------------------------------

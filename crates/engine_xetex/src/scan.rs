@@ -11445,8 +11445,10 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                                 scan_p = mem_b32s1(scan_p);
                             }
                             let scan_p = mem_b32s1(q);
-                            let merged =
-                                new_native_word_node_global(mem_b16s2(scan_p + 4) as i32, total_chars);
+                            let merged = new_native_word_node_global(
+                                mem_b16s2(scan_p + 4) as i32,
+                                total_chars,
+                            );
                             set_mem_b16s0(merged, mem_b16s0(scan_p));
                             set_mem_b32s1(q, merged);
                             // find last node before pp
@@ -17125,8 +17127,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         set_cur_q, set_cur_r, set_cur_tok, set_false_bchar, set_ins_disc, set_is_hyph, set_lft_hit,
         set_lig_stack, set_ligature_present, set_main_f, set_main_h, set_main_p, set_main_pp,
         set_main_ppp, set_main_s, set_mem_b16s0, set_mem_b16s1, set_mem_b32s1, set_native_len,
-        set_native_text, set_native_text_size, set_prev_class, set_rt_hit, set_save_native_len,
-        set_space_class, space_class,
+        set_prev_class, set_rt_hit, set_save_native_len, set_space_class, space_class,
     };
     use crate::input::{back_input, begin_token_list};
     use crate::mem::{
@@ -17166,46 +17167,6 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
     #[inline(always)]
     unsafe fn is_char_node(p: i32) -> bool {
         p >= crate::globals::hi_mem_min()
-    }
-
-    // Helper: inline partial-wrapup used in kern case and lig type 7/11
-    // C: "if (cur_l < TOO_BIG_CHAR) { if (mem[cur_q].b32.s1 > TEX_NULL) { ... } if (ligature_present) { ... } if (ins_disc) { ... } }"
-    #[inline(always)]
-    unsafe fn partial_wrapup() {
-        use crate::globals::{
-            cur_list_mode as _clm, cur_list_tail as _clt, cur_q as _cq, hyphen_char_entry as _hc,
-            ins_disc as _id, lft_hit as _lh, lig_stack as _ls, ligature_present as _lp,
-            main_f as _mf, mem_b16s0 as _mb0, mem_b32s1 as _mb1, rt_hit as _rh,
-            set_cur_list_tail as _sclt, set_ins_disc as _sid, set_lft_hit as _slh,
-            set_ligature_present as _slp, set_mem_b32s1 as _smb1, set_rt_hit as _srh,
-        };
-        use crate::mem::{new_disc_global as _nd, new_ligature_global as _nl};
-        if cur_l() < TOO_BIG_CHAR {
-            if _mb1(_cq()) > TEX_NULL && _mb0(_clt()) == _hc(_mf()) as u16 {
-                _sid(true);
-            }
-            if _lp() {
-                let mp = _nl(_mf(), cur_l() as u16, _mb1(_cq()));
-                if _lh() {
-                    set_mem_b16s0(mp, 2);
-                    _slh(false);
-                }
-                if _rh() && _ls() == TEX_NULL {
-                    set_mem_b16s0(mp, mem_b16s0(mp) + 1);
-                    _srh(false);
-                }
-                _smb1(_cq(), mp);
-                _sclt(mp);
-                _slp(false);
-            }
-            if _id() {
-                _sid(false);
-                if _clm() > 0 {
-                    _smb1(_clt(), _nd());
-                    _sclt(_mb1(_clt()));
-                }
-            }
-        }
     }
 
     // === main_loop: entry point ===
