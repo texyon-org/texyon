@@ -328,6 +328,13 @@ impl MemState {
         unsafe { self.data[p as usize].b16.s1 }
     }
 
+    /// Read `mem[p].b16.s2`. Mirrors `globals::mem_b16s2`.
+    #[inline]
+    pub(crate) fn b16s2(&self, p: i32) -> u16 {
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        unsafe { self.data[p as usize].b16.s2 }
+    }
+
     /// Read `mem[p].b16.s3`. Mirrors `globals::mem_b16s3`.
     #[inline]
     pub(crate) fn b16s3(&self, p: i32) -> u16 {

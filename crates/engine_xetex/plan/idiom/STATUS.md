@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 93, **Phase-C execution**: threaded the math delimiter helper slice by dropping the internal `make_left_right`/`var_delimiter` C exports, routing all Rust callers through `_global` wrappers, and rewriting the delimiter path as short scanner/mem/font/eqtb borrows with OT/native/box-building calls between borrows. Recon found only stale xetex-math.c prototype/comment hits; no cleanup aliases or redeclarations. Deleted the now-dead `height_plus_depth_global` bridge; added `FontState::exten_base_entry`; no newtype debt. `#[no_mangle]` 330→328, raw externs stayed 40, raw `unsafe {}` stayed 176, warnings stayed 78. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 94, **Phase-C execution**: split deeper `make_scripts_global` borrow islands around `hpack`/`clean_box`/OT-math/`vpackage` without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits; no cleanup aliases or redeclarations. Added `MemState::b16s2`, local glyph/script helpers, and deleted now-dead `sup1`/`sup2`/`sup3`/`sub1`/`sub2`/`sup_drop`/`sub_drop` `_global` bridges. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 329, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
 
 ## How to read this file
 

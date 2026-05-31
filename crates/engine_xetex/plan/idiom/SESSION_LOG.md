@@ -7,6 +7,28 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 94 — 2026-05-31 — split `make_scripts_global` borrow islands
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` in this worktree reports **51** Rust warnings).
+
+**Slice:** bounded deeper threading inside `make_scripts_global` (`src/math.rs`) around its `hpack`/`clean_box`/OT-math/`vpackage` regions. Recon found only stale xetex-math.c prototype/comment hits for `make_scripts`/`attach_hkern_to_new_hlist`, no cleanup aliases, no cross-module redeclarations, and the single live `make_scripts_global` caller in `mlist_to_hlist` is not inside a live `with_state*` closure.
+
+**Classification:** `make_scripts_global` remains bucket **C/D** as an orchestrator. The threaded sub-blocks are bucket **B/C** islands: direct mem/eqtb/scanner reads and script math-parameter calculations are safe under short borrows; `hpack`, `clean_box`, `first_script_glyph_global`, `attach_hkern_to_new_hlist_global`, `vpackage`, `font_is_ot_math_global`, and all OT-math C calls stay between borrows. The local `new_kern` call in the sub/sup stack path uses the existing `ALLOC_FAILED` → `NodeRecycleAbort::Overflow` cold sentinel and aborts only after the borrow drops.
+
+**Structure:** added a direct `MemState::b16s2` method plus local `is_char_node_in`, `glyph_nucleus`, and `add_script_space_and_restore_font` helpers. `make_scripts_global` now snapshots `p`, classifies glyph nuclei, restores `cur_f`, adds script space, computes `sup/sub` shifts, reads box dimensions, links the final script box, and allocates the inter-script kern through short disjoint state borrows. `clean_box`, OT kern/constant calls, and `vpackage` remain outside live borrows.
+
+**Bridged call sites / deleted accessors:** no external call-site rename this session. Deleted now-dead math-parameter bridges `sup1_global`, `sup2_global`, `sup3_global`, `sub1_global`, `sub2_global`, `sup_drop_global`, and `sub_drop_global` after confirming their last caller was the rewritten `make_scripts_global`. `default_rule_thickness_global` and `math_x_height_global` remain live elsewhere.
+
+**Newtype debt:** none. No state fields moved; `MemState::b16s2` mirrors an existing `u16` halfword accessor.
+
+**Metrics:** `#[no_mangle]` unchanged in this slice. raw extern statics unchanged. raw `unsafe {}` unchanged by the slice after deleting only safe bridge wrappers. Current worktree counts after validation: `#[no_mangle]` **329**, raw extern statics **38**, raw `unsafe {}` **174**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (95):** continue bounded math noad cleanup. Remaining `make_scripts_global` work is the larger structural step: consider extracting a threaded helper for the repeated script-box adjustment/kern calculation while keeping `clean_box`, OT-math calls, `font_is_ot_math_global`, and `vpackage` outside live borrows. Another good small target is a box/list helper adjacent to delimiter/script construction. Do not take `mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, or `line_break` as a whole session.
+
+---
+
 ## Idiom session 93 — 2026-05-31 — thread math delimiter helpers
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings **78**.
