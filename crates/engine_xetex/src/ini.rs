@@ -1074,7 +1074,7 @@ pub unsafe extern "C" fn final_cleanup() {
             }
 
             if sa_root(MARK_VAL) != crate::mem::TEX_NULL
-                && crate::scan::do_marks(3, 0, sa_root(MARK_VAL))
+                && crate::scan::do_marks_global(3, 0, sa_root(MARK_VAL))
             {
                 set_sa_root(MARK_VAL, crate::mem::TEX_NULL);
             }

@@ -39,10 +39,10 @@ use crate::save::geq_word_define;
 use crate::save::new_save_level;
 use crate::scaled_math::x_over_n;
 use crate::scan::box_error;
-use crate::scan::do_marks;
+use crate::scan::do_marks_global;
 use crate::scan::flush_node_list_global;
 use crate::scan::normal_paragraph;
-use crate::scan::prune_page_top;
+use crate::scan::prune_page_top_global;
 use crate::scan::scan_left_brace;
 use crate::scan::vert_break;
 use crate::scan::vpackage;
@@ -198,7 +198,7 @@ unsafe fn fire_up(c: i32) {
     }
 
     // Update extended marks
-    if sa_root(MARK_VAL) != TEX_NULL && do_marks(FIRE_UP_INIT, 0, sa_root(MARK_VAL)) {
+    if sa_root(MARK_VAL) != TEX_NULL && do_marks_global(FIRE_UP_INIT, 0, sa_root(MARK_VAL)) {
         set_sa_root(MARK_VAL, TEX_NULL);
     }
 
@@ -305,7 +305,7 @@ unsafe fn fire_up(c: i32) {
                         );
                         set_mem_b32s0(
                             p + 4,
-                            prune_page_top(mem_b32s1(r + 1), false), // broken_ptr
+                            prune_page_top_global(mem_b32s1(r + 1), false), // broken_ptr
                         );
                         if mem_b32s0(p + 4) != TEX_NULL {
                             // INSERTION_NODE_ins_ptr != TEX_NULL
@@ -451,7 +451,7 @@ unsafe fn fire_up(c: i32) {
     set_mem_b32s1(PAGE_INS_HEAD, PAGE_INS_HEAD);
 
     // Handle extended marks after new-page setup
-    if sa_root(MARK_VAL) != TEX_NULL && do_marks(FIRE_UP_DONE, 0, sa_root(MARK_VAL)) {
+    if sa_root(MARK_VAL) != TEX_NULL && do_marks_global(FIRE_UP_DONE, 0, sa_root(MARK_VAL)) {
         set_sa_root(MARK_VAL, TEX_NULL);
     }
 

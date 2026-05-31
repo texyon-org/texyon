@@ -2781,7 +2781,7 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
             d = z - e - mem_b32s1(p_orig + 1);
         }
         if j != TEX_NULL {
-            b = crate::scan::copy_node_list(j);
+            b = crate::scan::copy_node_list_global(j);
             set_mem_b32s1(b + 3, mem_b32s1(p_orig + 3));
             set_mem_b32s1(b + 2, mem_b32s1(p_orig + 2));
             let b4 = mem_b32s1(b + 4);

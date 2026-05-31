@@ -8,6 +8,34 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 80 — 2026-05-31 — thread the node-copy / mark-recycle / page-prune cluster
+
+**Type:** execution (workstream 01, Phase C — `mem`/`scan` node-recycling cluster). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice (large, 4 functions):** the natural counterpart to session 79's node-*disposal* cluster — the node-*copy* / mark-tree-recycle / page-top-prune routines, all of which now bottom out on the threaded allocator (`get_avail`/`get_node`/`new_skip_param`) and disposal (`free_node`/`flush_node_list`/`delete_token_ref`/`copy_native_glyph_info`) primitives:
+- `copy_native_glyph_info(mem: &mut MemState, src, dest)` (mem.rs) — bucket **B**, mem-only + a raw `xmalloc`/`copy_nonoverlapping` of the native-glyph buffer. Added `copy_native_glyph_info_global`.
+- `copy_node_list(mem: &mut MemState, p) -> Result<i32, NodeRecycleAbort>` (scan.rs) — the big recursive list copy. Rewrote the whole body onto `MemState` methods, recurses on itself (recursive-call args precomputed into locals to avoid overlapping the `&mut mem` reborrow), allocates via two local macros (`cnl_get_node!`/`cnl_get_avail!`) that return the `01b` §5 sentinel on exhaustion, and the two impossible corrupt-node `confusion` arms return the sentinel too.
+- `do_marks(mem: &mut MemState, a, l, q) -> bool` (scan.rs) — recursive mark-class-tree recycler. Pure mem + threaded `free_node`/`delete_token_ref`; `cur_ptr` is a raw `mod raw` global (safe under the borrow). **No cold path.** Free-function calls taking a `mem`-derived arg precompute it (no two-phase borrow for free fns).
+- `prune_page_top(mem: &mut MemState, scanner: &mut ScannerState, eqtb: &EqtbState, p, s) -> Result<i32, NodeRecycleAbort>` (scan.rs) — disjoint triple borrow: `disc_ptr` is on `ScannerState`, `new_skip_param` needs `&EqtbState`, `temp_ptr` is a raw global. Frees discarded nodes via threaded `flush_node_list`.
+
+**Sentinel design:** one shared `NodeRecycleAbort { Overflow, OverflowRunaway, Confusion(&CStr) }` enum + a `node_recycle_abort(e) -> !` helper. `get_avail` failure maps to **OverflowRunaway** (the `get_avail_global` path runs `runaway()` *before* `overflow`); `get_node`/`new_skip_param` failure to **Overflow**; the corrupt-node arms to **Confusion**. Each `_global` wrapper drops the `with_state` borrow, then runs `node_recycle_abort`.
+
+**Classification (`01b` §4a):** all four bucket **B** + the cold abort edges as bucket **C** via the shared sentinel.
+
+**Bridged call sites:** copy_node_list 3 (math 1, scan 2), copy_native_glyph_info 1 (scan; the in-`copy_node_list` site is now a pass-through), do_marks 4 (ini 1, pagebuilder 2, scan 1), prune_page_top 2 (pagebuilder 1, scan 1) → **10 external** legacy sites repointed to `_global` wrappers; pagebuilder's `do_marks`/`prune_page_top` imports repointed. Internally, ~15 `get_node_global`/`get_avail_global` + several `free_node_global`/`delete_token_ref_global`/`flush_node_list_global`/`new_skip_param_global` calls became direct threaded pass-throughs.
+
+**Recon / safety checks (§11 + `01b`):** no extern statics; no `ini.rs` cleanup aliases; no C/C++ callers (only stale `.h` prototypes for `copy_node_list`/`copy_native_glyph_info`); no call site already inside a `with_state*` closure. `disc_ptr`/`set_disc_ptr` global accessors still have many other callers — none deleted.
+
+**Newtype debt:** none. Params/returns are plain `i32` / `bool` / `*mut c_void` (native-glyph pointer) / `&'static CStr` (confusion message) — no semantic typedef moved.
+
+**Metrics:** `#[no_mangle]` **381 → 380** (`copy_node_list`). raw externs **40** (unchanged). `unsafe fn` **682 → 680** (the four bodies dropped `unsafe`; two safe + two unsafe `_global` wrappers + `node_recycle_abort`). raw `unsafe {}` text-search **163 → 165** (+2: the audited `xmalloc`/`copy_nonoverlapping` block in `copy_native_glyph_info`).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (81):** the node-copy and node-disposal clusters are both threaded, so more of `pagebuilder.rs` (`fire_up`/`build_page`) and `math.rs` box-stacking now bottom out cleanly. Math box helpers (`char_box`/`stack_*_into_box`/`height_plus_depth`/`fraction_rule`) are bucket-C (font-table reads must be precomputed outside the mem borrow). Keep `scan.rs`'s scanner hot path last; draft `02-modules.md` to READY before the big `scan.rs` decomposition.
+
+---
+
 ## Idiom session 79 — 2026-05-31 — thread the node-disposal cluster (flush_node_list + delete_glue_ref/delete_token_ref)
 
 **Type:** execution (workstream 01, Phase C — `mem`/`scan` node-disposal cluster). **One commit.** Dashboard **29/2/7/4**.

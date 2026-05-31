@@ -15,10 +15,10 @@ use crate::scan::runaway;
 use crate::state::{EqtbState, MemState};
 
 use crate::globals::{
-    avail, cur_input_synctex_tag, cur_list_head, line, max_nest_stack, mem_b16s0, mem_b32s1,
-    mem_ptr, nest_ptr, nest_size, restore_cur_list_from_nest, save_cur_list_to_nest, set_avail,
-    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf,
-    set_cur_list_tail, set_max_nest_stack, set_mem_b16s0, set_mem_b32s1, set_mem_ptr, set_nest_ptr,
+    avail, cur_input_synctex_tag, cur_list_head, line, max_nest_stack, mem_b32s1, nest_ptr,
+    nest_size, restore_cur_list_from_nest, save_cur_list_to_nest, set_avail, set_cur_list_e_tex_aux,
+    set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
+    set_max_nest_stack, set_mem_b32s1, set_nest_ptr,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
@@ -772,18 +772,32 @@ pub unsafe fn free_node_global(p: i32, s: i32) {
 ///
 /// translated from xetex-xetex0.c:146 (copy_native_glyph_info)
 #[no_mangle]
-pub unsafe extern "C" fn copy_native_glyph_info(src: i32, dest: i32) {
-    let src_ptr = mem_ptr(src + 5);
+///
+/// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only plus a
+/// raw `xmalloc`/`copy_nonoverlapping` of the native-glyph buffer (no
+/// `with_state` calls, no cold path). Legacy callers use
+/// [`copy_native_glyph_info_global`].
+pub fn copy_native_glyph_info(mem: &mut MemState, src: i32, dest: i32) {
+    let src_ptr = mem.ptr(src + 5);
     if !src_ptr.is_null() {
-        let glyph_count = mem_b16s0(src + 4) as usize;
+        let glyph_count = mem.b16s0(src + 4) as usize;
         let byte_count = glyph_count * NATIVE_GLYPH_INFO_SIZE;
         // xmalloc_array(char, glyph_count * NATIVE_GLYPH_INFO_SIZE)
         //   = xmalloc((glyph_count * NATIVE_GLYPH_INFO_SIZE + 1) * sizeof(char))
-        let new_ptr = xmalloc(byte_count + 1);
-        std::ptr::copy_nonoverlapping(src_ptr as *const u8, new_ptr as *mut u8, byte_count);
-        set_mem_ptr(dest + 5, new_ptr);
-        set_mem_b16s0(dest + 4, glyph_count as u16);
+        // SAFETY: `xmalloc` returns an owned buffer of `byte_count + 1` bytes;
+        // `src_ptr` (checked non-null) holds at least `byte_count` bytes.
+        let new_ptr = unsafe { xmalloc(byte_count + 1) };
+        unsafe {
+            std::ptr::copy_nonoverlapping(src_ptr as *const u8, new_ptr as *mut u8, byte_count);
+        }
+        mem.set_ptr(dest + 5, new_ptr);
+        mem.set_b16s0(dest + 4, glyph_count as u16);
     }
+}
+
+/// Transitional bridge-down wrapper for legacy `copy_native_glyph_info` callers.
+pub fn copy_native_glyph_info_global(src: i32, dest: i32) {
+    crate::state::with_state_mut(|st| copy_native_glyph_info(&mut st.mem, src, dest));
 }
 
 // ---------------------------------------------------------------------------
