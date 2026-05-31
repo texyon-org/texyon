@@ -75,10 +75,11 @@ The user chose the most idiomatic target. "Done" means:
     cluster — see anti-pattern A.2). The Phase-B thread-local is
     deleted.
 3.  **The memory arena is a Rust-owned `Vec<MemoryWord>`** (`Mem`),
-    with typed handles/views over the flat storage. Checked
+    with typed `NodePtr<K>` handles over the flat storage. Checked
     classification converts nullable TeX pointers into `NodePtr<K>`
-    handles; field methods then accept the relevant typed handle and
-    return semantic types (`Scaled`, `FontId`, `StrNumber`, valid arena
+    handles; field methods then are implemented directly on `NodePtr<K>`
+    parameterized by capability traits (taking `&Mem` or `&mut Mem` context)
+    and return semantic types (`Scaled`, `FontId`, `StrNumber`, valid arena
     indexes, nullable TeX pointers, and node-type wrappers). Bare `i32`
     arena indices do not appear at call sites, and sentinel-bearing
     halfwords are not mislabeled as always-valid arena indices.

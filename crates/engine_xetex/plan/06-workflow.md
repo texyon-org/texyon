@@ -85,7 +85,7 @@ Before writing any Rust:
     or an `Option` return, or a small state enum. Don't use
     `labels_in_blocks` contortions.
 4.  Note any macros used (`LLIST_link`, `BOX_width`, …). Each of these
-    must already have a Rust counterpart on `Mem` / a typed view. Add it
+    must already have a Rust counterpart on `NodePtr<K>` or `Mem`. Add it
     if missing.
 5.  Identify *everything* the function calls. If any callee is still in
     C, the Rust version calls it via `extern "C"`. That's fine — it's

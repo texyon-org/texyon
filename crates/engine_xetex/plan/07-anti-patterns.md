@@ -49,20 +49,20 @@ when translating a function is to dump all referenced globals into a single
 ## A.3 — `unsafe` as a transliteration shortcut
 
 Pointer arithmetic in C becomes `unsafe` slice arithmetic in Rust. This
-is an *anti-pattern* unless the alternative is measurably slower. The
-right tool for `mem[p + 1].b32.s1` is a typed handle/view plus a field
-method on the arena:
+The
+right tool for `mem[p + 1].b32.s1` is a typed `NodePtr<K>` handle plus a field
+method defined directly on it (taking the `Mem` context as a parameter):
 
 ```rust
 let p: NodePtr<HListNode> = mem.expect_hlist(raw_p)?;
 
-impl Mem {
-    pub fn width<K: HasDimensions>(&self, p: NodePtr<K>) -> Scaled {
-        self[p.idx().offset(1)].scaled_s1()
+impl<K: HasDimensions> NodePtr<K> {
+    pub fn width(self, mem: &Mem) -> Scaled {
+        mem[self.idx().offset(1)].scaled_s1()
     }
 
-    pub fn set_width<K: HasDimensions>(&mut self, p: NodePtr<K>, w: Scaled) {
-        self[p.idx().offset(1)].set_scaled_s1(w);
+    pub fn set_width(self, mem: &mut Mem, w: Scaled) {
+        mem[self.idx().offset(1)].set_scaled_s1(w);
     }
 }
 ```

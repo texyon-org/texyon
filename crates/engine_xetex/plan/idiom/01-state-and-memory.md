@@ -197,7 +197,7 @@ compiles and passes parity.
 
 Target shape is already specified in `plan/03-memory-and-nodes.md`
 (`Mem` struct, `word`/`word_mut`, typed `NodePtr<K>` handles,
-classification, typed views, and `NodeType`). Build it there. Migration
+classification, and `NodeType`). Build it there. Migration
 specifics for *this* codebase:
 
 1.  Introduce `Mem { data: Vec<MemoryWord>, lo_mem_max, hi_mem_min,

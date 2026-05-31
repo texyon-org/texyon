@@ -918,13 +918,13 @@ the snippets in `00-overview.md` / the workstream plans.
 |---|---:|---|---:|
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 38 (current direct grep) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
-| thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 174 state-backed scalars/arrays (session 82 deleted `xtx_ligature_present` and `init_lig` getters after threading the font/effective-char + linebreak reconstruction slice) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
+| thin global accessors (`globals.rs`) | 811 | 0 | 799 function defs / 706 `with_state*` call sites in `globals.rs` (current direct grep) |
 | `#[no_mangle]` exports | 576 | boundary-only | 328 (current direct grep) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 646 (current direct grep) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 655 (current direct grep over `unsafe fn` / `unsafe extern "C" fn`) |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 174 / 688 not remeasured (current direct grep) |
-| clippy errors | 694 | 0 | 694 not remeasured |
-| clippy warnings | 358 | 0 | 358 not remeasured |
-| largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
+| clippy errors | 694 | 0 | 110 (`cargo clippy -p tectonic_engine_xetex --message-format=short`) |
+| clippy warnings | 358 | 0 | 61 (`cargo clippy -p tectonic_engine_xetex --message-format=short`) |
+| largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,677 (`scan.rs`) |
 
 ### Test dashboard (must never regress)
 

@@ -172,8 +172,9 @@ compile-time only. It is the core handle type for translated algorithms
 because it is `Copy`, cheap to pass, and does not hold a borrow of
 `Mem`.
 
-Field methods on `Mem` should take the most specific typed handle they
-can. Example, from the BOX macros:
+Field methods should be defined directly on `NodePtr<K>` using layout capability
+traits, taking `&Mem` or `&mut Mem` as their context parameter. Example, from the
+BOX macros:
 
 ```c
 #define BOX_width(p)        mem[(p) + 1].b32.s1
@@ -200,25 +201,23 @@ impl HasListPtr for VListNode {}
 impl HasShiftAmount for HListNode {}
 impl HasShiftAmount for VListNode {}
 
-impl Mem {
+impl<K: HasDimensions> NodePtr<K> {
     #[inline]
-    pub fn width<K: HasDimensions>(&self, p: NodePtr<K>) -> Scaled {
-        Scaled(unsafe { self.word(p.idx.offset(1)).b32.s1 })
+    pub fn width(self, mem: &Mem) -> Scaled {
+        Scaled(unsafe { mem.word(self.idx.offset(1)).b32.s1 })
     }
 
     #[inline]
-    pub fn set_width<K: HasDimensions>(&mut self, p: NodePtr<K>, w: Scaled) {
-        self.word_mut(p.idx.offset(1)).b32.s1 = w.0;
+    pub fn set_width(self, mem: &mut Mem, w: Scaled) {
+        mem.word_mut(self.idx.offset(1)).b32.s1 = w.0;
     }
-
-    // ... depth, height, shift_amount, list_ptr, list_ptr_idx ...
 }
 ```
 
 This makes irrelevant field access fail to compile: a `NodePtr<GlueNode>`
-cannot be passed to `width()` unless `GlueNode` explicitly implements the
+cannot call `.width(mem)` unless `GlueNode` explicitly implements the
 layout capability. Use capability traits for shared layouts (`width`,
-`height`, `list_ptr`, `shift_amount`) and concrete marker types for
+`height`, `list_ptr`, `shift_amount`) and concrete implementations for
 fields that belong to one node family (`penalty`, `glue_spec`,
 `native_word_len`, etc.).
 
@@ -232,8 +231,9 @@ Field-access conventions:
     `#[inline] pub fn` whose contract is "the caller owns a valid
     typed node handle". The docs say so.
 -   Accessors are `#[inline]` because they are hot and trivial.
--   Transitional `MemIdx`-taking accessors are allowed during migration,
-    but should be treated as bridge/private primitives, not the final API.
+-   Transitional `MemIdx`-taking accessors are allowed during migration
+    inside `Mem` as private primitives, but the final API operates on
+    `NodePtr<K>` methods.
 
 ## Node-type variants
 
@@ -307,48 +307,15 @@ families such as whatsits should get a second checked classification
 layer (`AnyWhatsitNode` -> `NativeWordNode`, `LanguageNode`, etc.) so
 subtype-specific fields are also guarded by typed handles.
 
-## Typed view structs
+## Avoidance of View Structs
 
-For readability in translation-heavy code, define short-lived OOP-like
-view types over typed handles. They are ergonomic sugar, not storage:
+We explicitly avoid intermediate typed view structs (such as `HListRef` or `HListMut`). They add unnecessary lifetime and borrow-checker complexity without offering real ergonomic advantages. Instead, the final API relies purely on type-safe, `Copy` `NodePtr<K>` handles whose fields are accessed by passing the `Mem` context (e.g., `p.width(mem)` and `p.set_width(mem, w)`).
 
-```rust
-pub struct HListRef<'m> {
-    mem: &'m Mem,
-    p: NodePtr<HListNode>,
-}
-
-impl HListRef<'_> {
-    pub fn width(&self) -> Scaled { self.mem.width(self.p) }
-    pub fn list_ptr(&self) -> MemPtr { self.mem.list_ptr(self.p) }
-    // ...
-}
-
-impl Mem {
-    pub fn hlist(&self, p: MemPtr) -> Option<HListRef<'_>> {
-        // checked classification, then return the view
-    }
-
-    pub fn with_hlist_mut<R>(
-        &mut self,
-        p: MemPtr,
-        f: impl FnOnce(HListMut<'_>) -> R,
-    ) -> Option<R> {
-        // checked classification, short mutable borrow, then call f
-    }
-}
-```
-
-Immutable views are cheap (`&Mem` + typed index) and make local code read
-well. Mutable views should stay short-lived, preferably closure-scoped as
-above. TeX algorithms often keep many arena indices live while walking,
-allocating, freeing, and mutating nodes; the core API should therefore
-remain typed `NodePtr<K>` handles plus `&mut Mem` methods, with mutable
-views used only where they improve a small local edit.
+This allows us to maintain direct C-like pointer access syntax, fully decoupled from borrow-checker lifetimes.
 
 ## Performance rules for the typed layer
 
-Typed handles and views must preserve C-like performance:
+Typed handles must preserve C-like performance:
 
 -   No heap allocation per node. Storage remains one flat
     `Vec<MemoryWord>`.
@@ -461,12 +428,9 @@ Phase B, ownership transfers to Rust:
 
 -   Flat `Vec<MemoryWord>`, no enum-per-node.
 -   `MemIdx` newtype, never bare `i32` at call sites.
--   Typed `NodePtr<K>` handles after checked classification; field
-    methods accept typed handles, not arbitrary `MemIdx` values.
--   Capability traits model shared layouts (`HasDimensions`,
-    `HasListPtr`, etc.) without dynamic dispatch.
--   Short-lived OOP-like views are allowed for readability; long-lived
-    mutable node objects are not the storage model.
+-   Typed `NodePtr<K>` handles after checked classification; field methods are implemented directly on `NodePtr<K>` parameterized by capability traits (taking `&Mem` or `&mut Mem` context).
+-   Capability traits model shared layouts (`HasDimensions`, `HasListPtr`, etc.) without dynamic dispatch.
+-   No intermediate view structs; the API is purely copyable `NodePtr<K>` handles with direct field accessors.
 -   `MemoryWord` is a `#[repr(C)]` union for FFI compatibility in
     Phase A.
 -   Cache locality, semantic fidelity, and format-file

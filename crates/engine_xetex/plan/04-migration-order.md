@@ -57,7 +57,7 @@ unlocks everything downstream.
 **Translation rules:**
 -   Take `&mut Mem` (Phase B) — but in Phase A, read/write the C
     globals for now. Add the `&mut Mem` parameter later.
--   Add typed handles/views and field methods (see
+-   Add typed `NodePtr<K>` handles and field methods (see
     `03-memory-and-nodes.md`) as you need them. Don't preemptively add
     node APIs for nodes you haven't touched yet. Transitional raw
     `MemIdx` field helpers are allowed only as bridge/private code.
@@ -68,8 +68,7 @@ unlocks everything downstream.
 
 **Expected deliverables:**
 -   ~20 allocation functions in Rust.
--   Typed accessors for `LLIST_*`, `NODE_*`, `BOX_*`, `GLUE_NODE_*`
-    in `Mem`.
+-   Typed accessors on `NodePtr<K>` handles (e.g. `p.width(mem)`).
 -   `NodeType` enum with all variants.
 
 ## Phase 3 — Printing and error plumbing (target: `src/output.rs`, `src/errors.rs`)

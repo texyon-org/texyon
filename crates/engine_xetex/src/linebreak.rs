@@ -2867,7 +2867,10 @@ pub unsafe extern "C" fn hyphenate() {
             set_hyphen_passed(0);
             for j in l_hyf() as i16..=(hn_v - r_hyf() as i16) {
                 if odd(hyf_entry(j as usize)) {
-                    let q = crate::scan::new_native_word_node_global(hf(), (j - hyphen_passed()) as i32);
+                    let q = crate::scan::new_native_word_node_global(
+                        hf(),
+                        (j - hyphen_passed()) as i32,
+                    );
                     set_mem_b16s0(q, mem_b16s0(ha()));
                     for i in 0..=(j - hyphen_passed() - 1) {
                         *mem_as_u16_ptr_mut(q + NATIVE_NODE_SIZE).add(i as usize) =

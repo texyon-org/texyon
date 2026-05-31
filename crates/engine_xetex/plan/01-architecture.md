@@ -68,7 +68,7 @@ crates/engine_xetex/
 │   │   ├── hash.rs               # control-sequence hash
 │   │   └── fonts.rs              # font table
 │   ├── node/
-│   │   ├── mod.rs                # typed views: HBoxRef, GlueRef, ...
+│   │   ├── mod.rs                # NodePtr<K> types & field accessor traits
 │   │   ├── hlist.rs
 │   │   ├── vlist.rs
 │   │   ├── glue.rs
