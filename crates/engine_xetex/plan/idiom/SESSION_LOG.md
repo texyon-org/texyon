@@ -8,6 +8,34 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 73 — 2026-05-31 — thread DVI font emission path
+
+**Type:** execution (workstream 01, Phase C — fifth `shipout.rs` slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the DVI font-definition / font-selection path:
+- `dvi_font_def` is now the direct `&mut ShipoutState` byte emitter over a prebuilt byte slice; `dvi_font_def_global` prepares the bytes outside the state borrow, then emits with the same continuation-aware `DviFlush` loop as `dvi_four` / `dvi_two`.
+- `dvi_native_font_def` now prepares its byte vector (`DEFINE_NATIVE_FONT`, the four-byte font id, and the `make_font_def` / `xdv_buffer` payload) without holding `ShipoutState`.
+- The non-native font-definition path builds the exact old byte sequence from font/string-pool state before borrowing `ShipoutState`.
+- `ensure_dvi_font` now emits only the font-selection bytes under `&mut ShipoutState`; `ensure_dvi_font_global` handles the font-used check, possible `dvi_font_def_global`, deferred flushes, and updates `dvi_f` after emission is fully complete (including the edge case where the last selection byte triggers a flush).
+
+**Classification (`01b` §4a):** bucket **C/D manual**. The byte emission itself is direct `&mut ShipoutState`, but font/string-pool reads and `make_font_def` stay outside the borrow. Legacy call-site renames to `dvi_font_def_global` / `ensure_dvi_font_global` were bucket **A** after the wrappers were established.
+
+**Recon / safety checks (§11 + `01b`):**
+- no extern statics or `ini.rs` cleanup aliases.
+- C side has only a stale `dvi_font_def` prototype and translated-to-Rust comments in `xetex/xetex-shipout.c`; no executable C/C++ callers.
+- no cross-module extern/static/link-name redeclarations.
+- no call sites already inside a `with_state*` closure.
+
+**Newtype debt:** none. No state fields added; parameters are existing plain `internal_font_number` representation (`i32`) and byte slices.
+
+**Metrics:** `#[no_mangle]` exports **387 → 386** (`dvi_font_def`). `globals.rs` raw externs unchanged at **40**. `unsafe fn` unchanged at **687**. Raw `unsafe { ... }` text-search count unchanged at **160**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (74):** continue past the now-threaded shipout DVI font path toward the next non-scanner Phase-C subsystem. Prefer `math.rs` / `linebreak.rs` next as STATUS says; keep `scan.rs` last and draft `02-modules.md` to READY before scanner-heavy work. If taking another `shipout.rs` slice first, pick a closed DVI command-emission helper and keep output/error calls as deferred actions.
+
+---
+
 ## Idiom session 72 — 2026-05-31 — thread DVI byte formatters
 
 **Type:** execution (workstream 01, Phase C — fourth `shipout.rs` slice). **One commit.** Dashboard **29/2/7/4**.

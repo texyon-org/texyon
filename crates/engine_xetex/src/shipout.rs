@@ -334,70 +334,115 @@ unsafe fn dvi_two_global(s: u16) {
 }
 
 /// translated from xetex-shipout.c:1784 (dvi_native_font_def)
-unsafe fn dvi_native_font_def(f: i32) {
-    dvi_out_global(DEFINE_NATIVE_FONT);
-    dvi_four_global(f - 1);
+unsafe fn dvi_native_font_def(f: i32) -> Vec<u8> {
+    let mut bytes = vec![DEFINE_NATIVE_FONT];
+    bytes.extend_from_slice(&dvi_four_bytes(f - 1));
     let font_def_length = make_font_def(f);
 
     for i in 0..font_def_length {
-        dvi_out_global(xdv_buffer_entry(i));
+        bytes.push(xdv_buffer_entry(i));
     }
+    bytes
 }
 
 /// translated from xetex-shipout.c:1798 (dvi_font_def)
-#[no_mangle]
-pub unsafe extern "C" fn dvi_font_def(f: i32) {
-    if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        dvi_native_font_def(f);
+fn dvi_font_def(shipout: &mut ShipoutState, bytes: &[u8], start: usize) -> DviEmit {
+    emit_dvi_bytes(shipout, bytes, start)
+}
+
+unsafe fn dvi_font_def_global(f: i32) {
+    let bytes = if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
+        dvi_native_font_def(f)
     } else {
-        if f <= 256 {
-            dvi_out_global(FNT_DEF1);
-            dvi_out_global((f - 1) as u8);
-        } else {
-            dvi_out_global(FNT_DEF1 + 1);
-            dvi_out_global(((f - 1) / 256) as u8);
-            dvi_out_global(((f - 1) % 256) as u8);
-        }
-
-        let font_check = font_check_entry(f);
-        dvi_out_global(font_check.s3 as u8);
-        dvi_out_global(font_check.s2 as u8);
-        dvi_out_global(font_check.s1 as u8);
-        dvi_out_global(font_check.s0 as u8);
-        dvi_four_global(font_size_entry(f));
-        dvi_four_global(font_dsize_entry(f));
-        dvi_out_global(crate::string_pool::length(font_area_entry(f)) as u8);
-
+        let font_area = font_area_entry(f);
         let font_name = font_name_entry(f);
-        let mut l = 0;
-        let mut k = str_start(font_name - TOO_BIG_CHAR);
-
-        while l == 0 && k < str_start(font_name + 1 - TOO_BIG_CHAR) {
-            if str_pool_entry(k) == b':' as u16 {
-                l = k - str_start(font_name - TOO_BIG_CHAR);
+        dvi_font_def_bytes(
+            f,
+            font_area,
+            crate::string_pool::length(font_area),
+            font_name,
+            crate::string_pool::length(font_name),
+        )
+    };
+    let mut start = 0;
+    while start < bytes.len() {
+        let result = crate::state::with_state_mut(|s| dvi_font_def(&mut s.shipout, &bytes, start));
+        start = result.next;
+        match result.flush {
+            None => {}
+            Some(DviFlush::Write(a, b)) => write_to_dvi_global(a, b),
+            Some(DviFlush::Fatal) => {
+                crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
             }
-            k += 1;
         }
+    }
+}
 
-        if l == 0 {
-            l = crate::string_pool::length(font_name);
+fn dvi_font_def_bytes(
+    f: i32,
+    font_area: i32,
+    font_area_len: i32,
+    font_name: i32,
+    font_name_len: i32,
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    if f <= 256 {
+        bytes.push(FNT_DEF1);
+        bytes.push((f - 1) as u8);
+    } else {
+        bytes.push(FNT_DEF1 + 1);
+        bytes.push(((f - 1) / 256) as u8);
+        bytes.push(((f - 1) % 256) as u8);
+    }
+
+    let font_check = font_check_entry(f);
+    bytes.push(font_check.s3 as u8);
+    bytes.push(font_check.s2 as u8);
+    bytes.push(font_check.s1 as u8);
+    bytes.push(font_check.s0 as u8);
+    bytes.extend_from_slice(&dvi_four_bytes(font_size_entry(f)));
+    bytes.extend_from_slice(&dvi_four_bytes(font_dsize_entry(f)));
+    bytes.push(font_area_len as u8);
+
+    let mut l = 0;
+    let mut k = str_start(font_name - TOO_BIG_CHAR);
+
+    while l == 0 && k < str_start(font_name + 1 - TOO_BIG_CHAR) {
+        if str_pool_entry(k) == b':' as u16 {
+            l = k - str_start(font_name - TOO_BIG_CHAR);
         }
+        k += 1;
+    }
 
-        dvi_out_global(l as u8);
+    if l == 0 {
+        l = font_name_len;
+    }
 
-        k = str_start(font_area_entry(f) - TOO_BIG_CHAR);
-        let mut for_end = str_start(font_area_entry(f) + 1 - TOO_BIG_CHAR) - 1;
-        while k <= for_end {
-            dvi_out_global(str_pool_entry(k) as u8);
-            k += 1;
-        }
+    bytes.push(l as u8);
 
-        k = str_start(font_name - TOO_BIG_CHAR);
-        for_end = str_start(font_name - TOO_BIG_CHAR) + l - 1;
-        while k <= for_end {
-            dvi_out_global(str_pool_entry(k) as u8);
-            k += 1;
-        }
+    k = str_start(font_area - TOO_BIG_CHAR);
+    let mut for_end = str_start(font_area + 1 - TOO_BIG_CHAR) - 1;
+    while k <= for_end {
+        bytes.push(str_pool_entry(k) as u8);
+        k += 1;
+    }
+
+    k = str_start(font_name - TOO_BIG_CHAR);
+    for_end = str_start(font_name - TOO_BIG_CHAR) + l - 1;
+    while k <= for_end {
+        bytes.push(str_pool_entry(k) as u8);
+        k += 1;
+    }
+    bytes
+}
+
+fn dvi_font_select_bytes(f: i32) -> Vec<u8> {
+    if f <= 64 {
+        vec![(f as u8) + FNT_NUM_0 - 1]
+    } else if f <= 256 {
+        vec![FNT1, (f - 1) as u8]
+    } else {
+        vec![FNT1 + 1, ((f - 1) / 256) as u8, ((f - 1) % 256) as u8]
     }
 }
 
@@ -738,26 +783,37 @@ pub unsafe fn dvi_pop_global(l: i32) {
     }
 }
 
-unsafe fn ensure_dvi_font(f: i32) {
-    if f != dvi_f() {
-        if !font_used_entry(f) {
-            dvi_font_def(f);
-            set_font_used_entry(f, true);
-        }
+fn ensure_dvi_font(shipout: &mut ShipoutState, bytes: &[u8], start: usize) -> DviEmit {
+    emit_dvi_bytes(shipout, bytes, start)
+}
 
-        if f <= 64 {
-            dvi_out_global((f as u8) + FNT_NUM_0 - 1);
-        } else if f <= 256 {
-            dvi_out_global(FNT1);
-            dvi_out_global((f - 1) as u8);
-        } else {
-            dvi_out_global(FNT1 + 1);
-            dvi_out_global(((f - 1) / 256) as u8);
-            dvi_out_global(((f - 1) % 256) as u8);
-        }
-
-        set_dvi_f(f);
+unsafe fn ensure_dvi_font_global(f: i32) {
+    if f == dvi_f() {
+        return;
     }
+
+    if !font_used_entry(f) {
+        dvi_font_def_global(f);
+        set_font_used_entry(f, true);
+    }
+
+    let bytes = dvi_font_select_bytes(f);
+    let mut start = 0;
+    while start < bytes.len() {
+        let result =
+            crate::state::with_state_mut(|s| ensure_dvi_font(&mut s.shipout, &bytes, start));
+        start = result.next;
+        match result.flush {
+            None => {}
+            Some(DviFlush::Write(a, b)) => write_to_dvi_global(a, b),
+            Some(DviFlush::Fatal) => {
+                crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
+            }
+        }
+    }
+    crate::state::with_state_mut(|s| {
+        s.shipout.dvi_f = f;
+    });
 }
 
 #[inline]
@@ -1182,7 +1238,7 @@ pub unsafe extern "C" fn hlist_out() {
                         c = apply_tfm_font_mapping(font_mapping_ptr(f), c as libc::c_int) as u16;
                     }
 
-                    ensure_dvi_font(f);
+                    ensure_dvi_font_global(f);
                     if font_ec_entry(f) >= c && font_bc_entry(f) <= c {
                         let info = font_info_b16(char_base_entry(f) + c as i32);
                         if info.s3 > 0 {
@@ -1247,7 +1303,7 @@ pub unsafe extern "C" fn hlist_out() {
                                 set_dvi_v(cur_v());
                             }
                             let f = mem_b16s2(p + 4) as i32;
-                            ensure_dvi_font(f);
+                            ensure_dvi_font_global(f);
 
                             if mem_b16s0(p) == GLYPH_NODE {
                                 dvi_out_global(SET_GLYPHS);
@@ -1531,7 +1587,7 @@ pub unsafe extern "C" fn vlist_out() {
                     }
 
                     let f = mem_b16s2(p + 4) as i32;
-                    ensure_dvi_font(f);
+                    ensure_dvi_font_global(f);
 
                     dvi_out_global(SET_GLYPHS);
                     dvi_four_global(0);
@@ -1826,7 +1882,7 @@ pub unsafe fn finalize_dvi_file() {
     let mut fp = font_ptr();
     while fp > FONT_BASE {
         if font_used_entry(fp) {
-            dvi_font_def(fp);
+            dvi_font_def_global(fp);
         }
         fp -= 1;
     }

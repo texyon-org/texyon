@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 72, **Phase-C execution**: threaded the `shipout.rs` DVI byte formatters — `dvi_four`/`dvi_two` to `&mut ShipoutState` with continuation-aware `DviFlush` propagation. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 73, **Phase-C execution**: threaded the `shipout.rs` DVI font emission path — `dvi_font_def` / `ensure_dvi_font` to `&mut ShipoutState` byte emission with font/string-pool work outside the borrow. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -651,6 +651,17 @@ least-coupled non-`misc` clusters:
     use `dvi_four_global` / `dvi_two_global`. C references are stale
     prototypes/comments only; no C/C++ callers; no cleanup aliases. No newtype
     debt. Dashboard 29/2/7/4.
+-   **Fifth `shipout.rs` call-graph slice (session 73):** threaded the DVI
+    font-definition / font-selection path. `dvi_font_def` is now a direct
+    `&mut ShipoutState` byte emitter over a prebuilt byte slice;
+    `dvi_font_def_global` prepares native and non-native font-definition bytes
+    outside the state borrow (including `make_font_def` and string-pool reads),
+    then emits with continuation-aware `DviFlush` handling. `ensure_dvi_font`
+    now emits font-selection bytes under `&mut ShipoutState`, while
+    `ensure_dvi_font_global` handles font-used bookkeeping and updates
+    `dvi_f` only after emission is fully complete. C references are stale
+    prototype/comment only; no C/C++ callers; no cleanup aliases. No newtype
+    debt. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -662,8 +673,8 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 823 total / 182 state-backed scalars/arrays (incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and 33 `LinebreakState` inline scalars/arrays) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 387 (direct `grep '#[no_mangle]' src/*.rs`; session 72 dropped `dvi_four`/`dvi_two`) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 687 (unchanged in session 72: two unsafe externs became two unsafe bridge wrappers) |
+| `#[no_mangle]` exports | 576 | boundary-only | 386 (direct `grep '#[no_mangle]' src/*.rs`; session 73 dropped `dvi_font_def`) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 687 (unchanged in session 73) |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 160 / 688 not remeasured |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
@@ -791,7 +802,7 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`); session 72 threaded the pure DVI byte formatters (`dvi_four`/`dvi_two`) with continuation-aware flush propagation. Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. Next: continue `shipout.rs` with `dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`. They are not pure byte formatters: they read font/string-pool state and call `make_font_def`, so avoid holding `ShipoutState` across those bridged reads and use the new `dvi_four`/`dvi_two` continuation shape only where byte emission is actually under the borrow. Then continue to `math.rs`/`linebreak.rs`, with `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
+1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`); session 72 threaded the pure DVI byte formatters (`dvi_four`/`dvi_two`) with continuation-aware flush propagation; session 73 threaded the DVI font-definition / font-selection path (`dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`). Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. Next: continue past the now-threaded shipout DVI font path toward the next non-scanner Phase-C subsystem. Prefer `math.rs` / `linebreak.rs` next; keep `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the
