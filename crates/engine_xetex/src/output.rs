@@ -1,5 +1,8 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
-use crate::consts::{ACTIVE_BASE, BIGGEST_CHAR, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, INT_BASE, NULL_FLAG, PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SINGLE_BASE, TEX_NULL};
+use crate::consts::{
+    ACTIVE_BASE, BIGGEST_CHAR, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, INT_BASE, NULL_FLAG,
+    PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SINGLE_BASE, TEX_NULL,
+};
 use crate::ext::print_utf8_str;
 use crate::scan::show_context;
 use crate::texmfmp::gettexstring;
@@ -1116,7 +1119,6 @@ pub unsafe extern "C" fn print_in_mode(m: i32) {
 // ---------------------------------------------------------------------------
 // token_show
 // ---------------------------------------------------------------------------
-
 
 /// Display a token list headed at p.
 ///

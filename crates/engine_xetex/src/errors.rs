@@ -1,6 +1,8 @@
 //! Error-handling functions translated from `xetex/xetex-errors.c`.
 
-use crate::consts::{BATCH_MODE, ERROR_STOP_MODE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY};
+use crate::consts::{
+    BATCH_MODE, ERROR_STOP_MODE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
+};
 use crate::globals::{
     error_count, halt_on_error_p, help_line, history, interaction, job_name, log_opened,
     rust_stdout, selector, set_error_count, set_help_line, set_help_ptr, set_history,

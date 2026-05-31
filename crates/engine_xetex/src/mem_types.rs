@@ -59,7 +59,6 @@ impl Default for MemoryWord {
     }
 }
 
-
 // The C engine's algorithms assume `sizeof(memory_word) == 8`, and the
 // layout of `mem[]` relies on it. Catch any drift at compile time.
 const _: () = {

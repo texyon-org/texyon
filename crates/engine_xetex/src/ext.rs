@@ -273,7 +273,6 @@ const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 static mut BRK_ITER: *mut c_void = ptr::null_mut();
 static mut BRK_LOCALE_STR_NUM: i32 = 0;
 
-
 #[repr(C)]
 struct FixedPoint {
     x: i32,
@@ -1912,13 +1911,7 @@ pub unsafe fn linebreak_start(f: c_int, locale_str_num: i32, text: *mut u16, tex
                 ubrk_close(BRK_ITER);
             }
             status = 0;
-            BRK_ITER = ubrk_open(
-                UBRK_LINE,
-                c"en_us".as_ptr(),
-                ptr::null(),
-                0,
-                &mut status,
-            );
+            BRK_ITER = ubrk_open(UBRK_LINE, c"en_us".as_ptr(), ptr::null(), 0, &mut status);
         }
         libc::free(locale as *mut c_void);
         BRK_LOCALE_STR_NUM = locale_str_num;
@@ -2129,7 +2122,10 @@ pub unsafe fn apply_mapping(p_cnv: *mut c_void, txt_ptr: *mut u16, txt_len: c_in
         let mut in_used: u32 = 0;
         let mut out_used: u32 = 0;
         let (mapped_ptr, mapped_len_bytes) = crate::state::with_state(|state| {
-            (state.fonts.mapped_text.as_ptr() as *mut u8, (state.fonts.mapped_text.len() * 2) as u32)
+            (
+                state.fonts.mapped_text.as_ptr() as *mut u8,
+                (state.fonts.mapped_text.len() * 2) as u32,
+            )
         });
         let status = TECkit_ConvertBuffer(
             p_cnv,

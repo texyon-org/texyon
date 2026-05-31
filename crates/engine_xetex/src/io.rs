@@ -1,6 +1,6 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
-use crate::consts::{INT_BASE};
+use crate::consts::INT_BASE;
 use crate::globals::{
     buf_size, buffer_entry, buffer_ptr, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1,
     first, last, max_buf_stack, name_length, name_length16, name_of_file, name_of_file16,
@@ -179,8 +179,6 @@ pub static mut name_of_input_file: *mut libc::c_char = std::ptr::null_mut();
 /// Replaces `char abspath_of_input_file[1024] = ""` in xetex-io.c.
 #[no_mangle]
 pub static mut abspath_of_input_file: [libc::c_char; 1024] = [0; 1024];
-
-
 
 // ---------------------------------------------------------------------------
 // tt_xetex_open_input

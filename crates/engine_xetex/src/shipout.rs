@@ -1988,7 +1988,11 @@ pub unsafe extern "C" fn reverse(
                     let f = mem_b16s1(p) as i32;
                     let c = mem_b16s0(p);
                     set_cur_h(
-                        cur_h() + font_character_width(f, crate::scan::effective_char(true, f, c)),
+                        cur_h()
+                            + font_character_width(
+                                f,
+                                crate::scan::effective_char_global(true, f, c),
+                            ),
                     );
                     let q = mem_b32s1(p);
                     set_mem_b32s1(p, l);

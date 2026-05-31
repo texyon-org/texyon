@@ -2127,11 +2127,6 @@ pub(crate) fn mapped_text() -> *mut u16 {
         }
     })
 }
-/// Returns `xtx_ligature_present`.
-#[inline]
-pub(crate) fn xtx_ligature_present() -> bool {
-    crate::state::with_state(|state| state.fonts.xtx_ligature_present)
-}
 /// Sets `xtx_ligature_present = v`.
 #[inline]
 pub(crate) fn set_xtx_ligature_present(v: bool) {
@@ -3683,10 +3678,6 @@ pub(crate) fn set_init_list(v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.init_list = v;
     });
-}
-#[inline]
-pub(crate) fn init_lig() -> bool {
-    crate::state::with_state(|state| state.hyph.init_lig)
 }
 #[inline]
 pub(crate) fn set_init_lig(v: bool) {

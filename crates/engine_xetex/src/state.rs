@@ -700,6 +700,65 @@ impl Default for FontState {
     }
 }
 
+impl FontState {
+    #[inline]
+    pub(crate) fn font_mapping_ptr(&self, f: i32) -> *mut libc::c_void {
+        self.font_mapping[f as usize]
+    }
+
+    #[inline]
+    pub(crate) fn xtx_ligature_present(&self) -> bool {
+        self.xtx_ligature_present
+    }
+
+    #[inline]
+    pub(crate) fn set_xtx_ligature_present(&mut self, v: bool) {
+        self.xtx_ligature_present = v;
+    }
+
+    #[inline]
+    pub(crate) fn font_info_b16(&self, k: i32) -> crate::mem_types::B16x4 {
+        // SAFETY: union projection; callers preserve the original font-info indexing contract.
+        unsafe { self.font_info[k as usize].b16 }
+    }
+
+    #[inline]
+    pub(crate) fn font_info_b32s1(&self, k: i32) -> i32 {
+        // SAFETY: union projection; callers preserve the original font-info indexing contract.
+        unsafe { self.font_info[k as usize].b32.s1 }
+    }
+
+    #[inline]
+    pub(crate) fn bchar_label_entry(&self, f: i32) -> i32 {
+        self.bchar_label[f as usize]
+    }
+
+    #[inline]
+    pub(crate) fn char_base_entry(&self, f: i32) -> i32 {
+        self.char_base[f as usize]
+    }
+
+    #[inline]
+    pub(crate) fn height_base_entry(&self, f: i32) -> i32 {
+        self.height_base[f as usize]
+    }
+
+    #[inline]
+    pub(crate) fn depth_base_entry(&self, f: i32) -> i32 {
+        self.depth_base[f as usize]
+    }
+
+    #[inline]
+    pub(crate) fn lig_kern_base_entry(&self, f: i32) -> i32 {
+        self.lig_kern_base[f as usize]
+    }
+
+    #[inline]
+    pub(crate) fn kern_base_entry(&self, f: i32) -> i32 {
+        self.kern_base[f as usize]
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct ShipoutState {
     pub insert_src_special_every_par: bool,

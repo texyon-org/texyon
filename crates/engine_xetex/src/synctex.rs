@@ -1,7 +1,9 @@
 /* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License.
  * Translated to Rust from xetex-synctex.c. */
 
-use crate::consts::{BOX_NODE_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, MEDIUM_NODE_SIZE, RULE_NODE, RULE_NODE_SIZE};
+use crate::consts::{
+    BOX_NODE_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, MEDIUM_NODE_SIZE, RULE_NODE, RULE_NODE_SIZE,
+};
 use libc::{c_char, c_int, size_t};
 use std::ptr;
 

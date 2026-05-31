@@ -1,5 +1,9 @@
 //! Math-mode command helpers translated from `xetex/xetex-math.c`.
-use crate::consts::{BOX_NODE_SIZE, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_FONT_BASE, MAX_HALFWORD, MEDIUM_NODE_SIZE, PENALTY_NODE, RULE_NODE};
+use crate::consts::{
+    BOX_NODE_SIZE, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, GLUE_BASE, GLUE_NODE,
+    GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_FONT_BASE, MAX_HALFWORD,
+    MEDIUM_NODE_SIZE, PENALTY_NODE, RULE_NODE,
+};
 use crate::ext::real_get_native_glyph;
 use crate::input::begin_token_list;
 
@@ -29,7 +33,7 @@ use crate::mem::{
     TEX_NULL,
 };
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
-use crate::state::MemState;
+use crate::state::{FontState, MemState};
 
 const INT_PAR_CUR_FAM: i32 = 44;
 const LOCAL_EVERY_MATH: i32 = 3;
@@ -2246,7 +2250,9 @@ pub unsafe fn char_box_global(f: i32, c: i32) -> i32 {
             p: crate::scan::new_native_character(f, c as u32),
         }
     } else {
-        let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c as u16));
+        let q = font_info_b16(
+            char_base_entry(f) + crate::scan::effective_char_global(true, f, c as u16),
+        );
         CharBoxInput::Tfm {
             width: font_info_b32s1(width_base_entry(f) + q.s3 as i32)
                 + font_info_b32s1(italic_base_entry(f) + q.s1 as i32 / 4),
@@ -2282,11 +2288,19 @@ pub unsafe fn stack_into_box_global(b: i32, f: i32, c: u16) {
 }
 
 /// translated from xetex-math.c:1474 (height_plus_depth)
-#[no_mangle]
-pub unsafe extern "C" fn height_plus_depth(f: i32, c: u16) -> i32 {
-    let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c));
-    font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16)
-        + font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16)
+///
+/// Phase-C: threaded to `&mut FontState`; legacy callers use
+/// [`height_plus_depth_global`].
+pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
+    let c = crate::scan::effective_char(fonts, true, f, c);
+    let q = fonts.font_info_b16(fonts.char_base_entry(f) + c);
+    fonts.font_info_b32s1(fonts.height_base_entry(f) + q.s2 as i32 / 16)
+        + fonts.font_info_b32s1(fonts.depth_base_entry(f) + q.s2 as i32 % 16)
+}
+
+/// Transitional bridge-down wrapper for legacy `height_plus_depth` callers.
+pub unsafe fn height_plus_depth_global(f: i32, c: u16) -> i32 {
+    crate::state::with_state_mut(|st| height_plus_depth(&mut st.fonts, f, c))
 }
 
 /// translated from xetex-math.c:1482 (stack_glyph_into_box)
@@ -2371,7 +2385,8 @@ fn stack_glue_into_box(
 /// Transitional bridge-down wrapper for legacy `stack_glue_into_box` callers
 /// (`01b` §3, §5).
 pub unsafe fn stack_glue_into_box_global(b: i32, min: i32, max: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| stack_glue_into_box(&mut st.mem, b, min, max)) {
+    if let Err(e) = crate::state::with_state_mut(|st| stack_glue_into_box(&mut st.mem, b, min, max))
+    {
         node_recycle_abort(e);
     }
 }
@@ -3274,7 +3289,8 @@ pub unsafe fn after_math() {
             set_cur_list_tail(pre_t);
         }
 
-        let post_pen = crate::mem::new_penalty_global(eqtb_b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY));
+        let post_pen =
+            crate::mem::new_penalty_global(eqtb_b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY));
         set_mem_b32s1(cur_list_tail(), post_pen);
         set_cur_list_tail(mem_b32s1(cur_list_tail()));
 
@@ -3381,7 +3397,7 @@ pub unsafe fn init_math() {
                 'reswitch: loop {
                     if p >= hi_mem_min() {
                         let f = mem_b16s1(p) as i32;
-                        let c = crate::scan::effective_char(true, f, mem_b16s0(p));
+                        let c = crate::scan::effective_char_global(true, f, mem_b16s0(p));
                         d = font_info_b32s1(
                             width_base_entry(f) + font_info_b16(char_base_entry(f) + c).s3 as i32,
                         );
@@ -3608,7 +3624,9 @@ pub unsafe extern "C" fn rebox(b: i32, w: i32) -> i32 {
         if is_char_node(p) && mem_b32s1(p) == TEX_NULL {
             let f = mem_b16s1(p) as i32;
             let c_raw = mem_b16s0(p);
-            let q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c_raw));
+            let q = font_info_b16(
+                char_base_entry(f) + crate::scan::effective_char_global(true, f, c_raw),
+            );
             let v = font_info_b32s1(width_base_entry(f) + q.s3 as i32);
             if v != mem_b32s1(b + 1) {
                 set_mem_b32s1(p, new_kern_global(mem_b32s1(b + 1) - v));
@@ -3865,9 +3883,11 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                 set_mem_b16s1(b, VLIST_NODE);
                 let r = font_info_b16(exten_base_entry(f) + q.s0 as i32);
                 c = r.s0;
-                let u = height_plus_depth(f, c);
+                let u = height_plus_depth_global(f, c);
                 w = 0;
-                q = font_info_b16(char_base_entry(f) + crate::scan::effective_char(true, f, c));
+                q = font_info_b16(
+                    char_base_entry(f) + crate::scan::effective_char_global(true, f, c),
+                );
                 set_mem_b32s1(
                     b + 1,
                     font_info_b32s1(width_base_entry(f) + q.s3 as i32)
@@ -3875,15 +3895,15 @@ pub unsafe extern "C" fn var_delimiter(d: i32, s: i32, v: i32) -> i32 {
                 );
                 c = r.s1;
                 if c != 0 {
-                    w += height_plus_depth(f, c);
+                    w += height_plus_depth_global(f, c);
                 }
                 c = r.s2;
                 if c != 0 {
-                    w += height_plus_depth(f, c);
+                    w += height_plus_depth_global(f, c);
                 }
                 c = r.s3;
                 if c != 0 {
-                    w += height_plus_depth(f, c);
+                    w += height_plus_depth_global(f, c);
                 }
                 let mut n: i32 = 0;
                 if u > 0 {

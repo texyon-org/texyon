@@ -8,6 +8,28 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 82 — 2026-05-31 — thread font/effective-char plus linebreak ligature reconstruction
+
+**Type:** execution (workstream 01, Phase C — font/read + linebreak helper cluster). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice (5 functions):** threaded `scan::effective_char` / `effective_char_info` to `&mut FontState`; `math::height_plus_depth` to `&mut FontState`; `linebreak::finite_shrink` to `&mut MemState`; and the larger `linebreak::reconstitute` to `&mut MemState` + `&mut HyphState` + `&mut FontState`.
+
+**Classification (`01b` §4a):** `effective_char` / `effective_char_info` / `height_plus_depth` are bucket **B** font accessor rewrites (the TECkit mapping call uses the pre-read mapping pointer, no `with_state`). `finite_shrink` is bucket **C**: the cold no-shrink diagnostic stays in `finite_shrink_global`, then the threaded core mutates only `mem`. `reconstitute` is bucket **B** plus cold allocator sentinels: font/hyph bridge accessors became direct state reads, raw ligature scratch globals remain raw `mod raw`, and `get_avail` exhaustion returns **OverflowRunaway** while `new_lig_item`/`new_ligature`/`new_kern` exhaustion returns **Overflow**.
+
+**Bridged call sites:** `effective_char` 17 external legacy sites + `effective_char_info` 1, `height_plus_depth` 4, `finite_shrink` 3, `reconstitute` 4. Deleted the now-dead `globals.rs` getters `xtx_ligature_present` and `init_lig`.
+
+**Recon / safety checks (§11 + `01b`):** no cleanup aliases; no call site already inside a `with_state*` closure; no live C/C++ callers (only the stale `xetex-math.c` prototype/comment for `height_plus_depth`). `scan.rs` scanner-heavy callers stay bridged through `_global` wrappers.
+
+**Newtype debt:** none. No state fields moved; only methods were added on existing `FontState` fields. Function parameters still use legacy `i32`/`u16` typedef erasure, so there is no `01a` moved-field row to add.
+
+**Metrics:** `#[no_mangle]` **375 → 370**. raw externs **40** unchanged. `unsafe fn` measured **679**. raw `unsafe {}` **168** (+3: two `FontState` font-info union projections + the TECkit mapping call now explicit in `effective_char`). Crate warning count during `cargo check` **82 → 79**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (83):** good closeable targets are `stack_glyph_into_box` (two-borrow split around `measure_native_glyph`), a pagebuilder helper block that bottoms out on threaded mem/disposal, or another linebreak block whose hot callees can all take narrow state. Keep the scanner hot path in `scan.rs` last; draft `02-modules.md` before the big scanner decomposition.
+
+---
+
 ## Idiom session 81 — 2026-05-31 — thread the math box-building helper cluster
 
 **Type:** execution (workstream 01, Phase C — `math.rs` box-construction cluster). **One commit.** Dashboard **29/2/7/4**.

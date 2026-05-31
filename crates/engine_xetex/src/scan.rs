@@ -86,31 +86,31 @@ use crate::shipout::finalize_dvi_file;
 use crate::shipout::new_edge_global;
 use crate::shipout::out_what;
 use crate::shipout::ship_out;
+use crate::state::FontState;
 use crate::synctex::synctex_start_input;
 use crate::synctex::synctex_terminate;
 
 use crate::globals::{
-    active_width, align_state, arith_error, avail, buffer_entry, char_base_entry, cur_chr, cur_cmd,
-    cur_cs, cur_group, cur_input, cur_list_mode, cur_tok, cur_val, cur_val_level, def_ref,
-    eqtb_b32s1, eqtb_is_null, expand_depth, expand_depth_count, file_offset, first, fmem_ptr,
-    font_glue, font_info_b16, font_mapping_ptr, font_mem_size, font_params, font_ptr, hash_s1,
-    init_pool_ptr, last, mapped_text_entry, max_print_line, max_reg_help_line, max_reg_num,
-    mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, mem_word, name_in_progress, old_setting,
-    open_parens, param_base, pool_ptr, pool_size, pseudo_files, read_file_entry, read_open_entry,
-    rust_stdout, save_ptr, save_stack_b32s1, scanner_status, selector, set_active_width,
-    set_align_state, set_arith_error, set_avail, set_best_height_plus_depth, set_buffer_entry,
-    set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_input_limit,
-    set_cur_input_loc, set_cur_input_name, set_cur_input_start, set_cur_input_state,
-    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
-    set_eqtb_b32s1, set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue,
-    set_font_info_b32s1, set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_ptr,
-    set_mem_word, set_name_in_progress, set_no_new_control_sequence, set_old_setting,
-    set_open_parens, set_pool_ptr, set_pseudo_files, set_read_open_entry, set_save_ptr,
-    set_save_stack_b32s1, set_scanner_status, set_selector, set_stop_at_space, set_str_pool,
-    set_str_ptr, set_warning_index, set_xtx_ligature_present, stop_at_space, str_pool_entry,
-    str_ptr, str_start, temp_ptr, term_offset, texmf_log_name, warning_index, write_open,
-    xtx_ligature_present,
+    active_width, align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs,
+    cur_group, cur_input, cur_list_mode, cur_tok, cur_val, cur_val_level, def_ref, eqtb_b32s1,
+    eqtb_is_null, expand_depth, expand_depth_count, file_offset, first, fmem_ptr, font_glue,
+    font_mapping_ptr, font_mem_size, font_params, font_ptr, hash_s1, init_pool_ptr, last,
+    mapped_text_entry, max_print_line, max_reg_help_line, max_reg_num, mem_b16s0, mem_b16s1,
+    mem_b16s3, mem_b32s0, mem_b32s1, mem_word, name_in_progress, old_setting, open_parens,
+    param_base, pool_ptr, pool_size, pseudo_files, read_file_entry, read_open_entry, rust_stdout,
+    save_ptr, save_stack_b32s1, scanner_status, selector, set_active_width, set_align_state,
+    set_arith_error, set_avail, set_best_height_plus_depth, set_buffer_entry, set_cur_chr,
+    set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_input_limit, set_cur_input_loc,
+    set_cur_input_name, set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag,
+    set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref, set_eqtb_b32s1,
+    set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue, set_font_info_b32s1,
+    set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1,
+    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_ptr, set_mem_word,
+    set_name_in_progress, set_no_new_control_sequence, set_old_setting, set_open_parens,
+    set_pool_ptr, set_pseudo_files, set_read_open_entry, set_save_ptr, set_save_stack_b32s1,
+    set_scanner_status, set_selector, set_stop_at_space, set_str_pool, set_str_ptr,
+    set_warning_index, stop_at_space, str_pool_entry, str_ptr, str_start, temp_ptr, term_offset,
+    texmf_log_name, warning_index, write_open,
 };
 use crate::mem::new_rule_global;
 use crate::output::print_cmd_chr;
@@ -3323,7 +3323,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                                     if bc <= cur_val() && ec >= cur_val() {
                                         let i = font_info_b16(
                                             char_base_entry(q)
-                                                + effective_char(true, q, cur_val() as u16),
+                                                + effective_char_global(true, q, cur_val() as u16),
                                         );
                                         set_cur_val(match m {
                                             FONT_CHAR_WD_CODE => {
@@ -4335,7 +4335,7 @@ pub unsafe extern "C" fn conditional() {
                 if bc <= crate::globals::cur_val() && ec >= crate::globals::cur_val() {
                     font_info_b16(
                         char_base_entry(n)
-                            + effective_char(true, n, crate::globals::cur_val() as u16),
+                            + effective_char_global(true, n, crate::globals::cur_val() as u16),
                     )
                     .s3 > 0
                 } else {
@@ -4762,26 +4762,38 @@ pub unsafe extern "C" fn eTeX_enabled(b: bool, j: u16, k: i32) -> bool {
 // effective_char / effective_char_info
 // ---------------------------------------------------------------------------
 
-// translated from xetex-xetex0.c:4457 (effective_char)
-#[no_mangle]
-pub unsafe extern "C" fn effective_char(_err_p: bool, f: i32, c: u16) -> i32 {
+/// translated from xetex-xetex0.c:4457 (effective_char)
+///
+/// Phase-C: threaded to `&mut FontState`; legacy callers use
+/// [`effective_char_global`].
+pub fn effective_char(fonts: &mut FontState, _err_p: bool, f: i32, c: u16) -> i32 {
     let mut c = c;
-    if !xtx_ligature_present() && !font_mapping_ptr(f).is_null() {
-        c = apply_tfm_font_mapping(font_mapping_ptr(f), c as i32) as u16;
+    let mapping = fonts.font_mapping_ptr(f);
+    if !fonts.xtx_ligature_present() && !mapping.is_null() {
+        // SAFETY: preserves the legacy call into the external TECkit mapping layer.
+        c = unsafe { apply_tfm_font_mapping(mapping, c as i32) } as u16;
     }
-    set_xtx_ligature_present(false);
+    fonts.set_xtx_ligature_present(false);
     c as i32
 }
 
-// translated from xetex-xetex0.c:6434 (effective_char_info)
-#[no_mangle]
-pub unsafe extern "C" fn effective_char_info(f: i32, c: u16) -> crate::mem_types::B16x4 {
-    let mut c = c;
-    if !xtx_ligature_present() && !font_mapping_ptr(f).is_null() {
-        c = apply_tfm_font_mapping(font_mapping_ptr(f), c as i32) as u16;
-    }
-    set_xtx_ligature_present(false);
-    font_info_b16(char_base_entry(f) + c as i32)
+/// Transitional bridge-down wrapper for legacy `effective_char` callers.
+pub unsafe fn effective_char_global(err_p: bool, f: i32, c: u16) -> i32 {
+    crate::state::with_state_mut(|st| effective_char(&mut st.fonts, err_p, f, c))
+}
+
+/// translated from xetex-xetex0.c:6434 (effective_char_info)
+///
+/// Phase-C: threaded to `&mut FontState`; legacy callers use
+/// [`effective_char_info_global`].
+pub fn effective_char_info(fonts: &mut FontState, f: i32, c: u16) -> crate::mem_types::B16x4 {
+    let c = effective_char(fonts, true, f, c);
+    fonts.font_info_b16(fonts.char_base_entry(f) + c)
+}
+
+/// Transitional bridge-down wrapper for legacy `effective_char_info` callers.
+pub unsafe fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B16x4 {
+    crate::state::with_state_mut(|st| effective_char_info(&mut st.fonts, f, c))
 }
 
 // ---------------------------------------------------------------------------
@@ -6994,7 +7006,7 @@ pub unsafe extern "C" fn append_italic_correction() {
     };
 
     let f = mem_b16s1(p) as i32; // CHAR_NODE_font(p)
-    let c = effective_char(true, f, mem_b16s0(p));
+    let c = effective_char_global(true, f, mem_b16s0(p));
     let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
     let italic = crate::globals::font_info_b32s1(
         crate::globals::italic_base_entry(f) + (info.s1 / 4) as i32,
@@ -7047,7 +7059,7 @@ pub unsafe extern "C" fn make_accent() {
         }
         av
     } else {
-        let c = effective_char(true, f, mem_b16s0(p));
+        let c = effective_char_global(true, f, mem_b16s0(p));
         let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
         crate::globals::font_info_b32s1(crate::globals::width_base_entry(f) + info.s3 as i32)
     };
@@ -7075,7 +7087,7 @@ pub unsafe extern "C" fn make_accent() {
             get_native_char_height_depth(f, cur_val(), &mut hv, &mut dv);
             (wv, hv)
         } else {
-            let c = effective_char(true, f, mem_b16s0(q));
+            let c = effective_char_global(true, f, mem_b16s0(q));
             let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
             let wv = crate::globals::font_info_b32s1(
                 crate::globals::width_base_entry(f) + info.s3 as i32,
@@ -7551,7 +7563,10 @@ pub unsafe extern "C" fn unpackage() {
 
         let list_head = mem_b32s1(p + 5);
         if c == COPY_CODE {
-            set_mem_b32s1(crate::globals::cur_list_tail(), copy_node_list_global(list_head));
+            set_mem_b32s1(
+                crate::globals::cur_list_tail(),
+                copy_node_list_global(list_head),
+            );
         } else {
             set_mem_b32s1(crate::globals::cur_list_tail(), list_head);
             if cur_val() < 256 {
@@ -8539,7 +8554,7 @@ pub unsafe fn new_character(f: i32, c: u16) -> i32 {
     if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
         return new_native_character(f, c as u32);
     }
-    let ec = effective_char(false, f, c) as u16;
+    let ec = effective_char_global(false, f, c) as u16;
     if font_bc_entry(f) <= ec && font_ec_entry(f) >= ec {
         let info = font_info_b16(char_base_entry(f) + ec as i32);
         if info.s3 > 0 {
@@ -11303,7 +11318,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
         // char-node inner loop
         while p >= hi_mem_min() {
             let f = mem_b16s1(p) as i32; // CHAR_NODE_font(p)
-            let c = effective_char(true, f, mem_b16s0(p));
+            let c = effective_char_global(true, f, mem_b16s0(p));
             let info = font_info_b16(char_base_entry(f) + c);
             x += font_info_b32s1(width_base_entry(f) + info.s3 as i32);
             let s = font_info_b32s1(height_base_entry(f) + info.s2 as i32 / 16);
@@ -12718,7 +12733,10 @@ const MEMORY_WORD_SIZE_FNL: i32 = 8;
 /// sentinel) and [`flush_node_list_global`] performs the abort after the borrow
 /// drops. Recursive-call arguments are precomputed into locals so the immutable
 /// arena read does not overlap the `&mut mem` reborrow.
-pub fn flush_node_list(mem: &mut crate::state::MemState, mut p: i32) -> Result<(), &'static std::ffi::CStr> {
+pub fn flush_node_list(
+    mem: &mut crate::state::MemState,
+    mut p: i32,
+) -> Result<(), &'static std::ffi::CStr> {
     while p != crate::mem::TEX_NULL {
         let q = mem.b32s1(p);
         if p >= mem.hi_mem_min {
@@ -17799,7 +17817,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
             set_lig_stack(mem_b32s1(temp));
             free_node_global(temp, SMALL_NODE_SIZE);
             main_i = font_info_b16(
-                char_base_entry(main_f()) + effective_char(true, main_f(), cur_l() as u16),
+                char_base_entry(main_f()) + effective_char_global(true, main_f(), cur_l() as u16),
             );
             set_ligature_present(true);
 
@@ -17822,14 +17840,14 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
         }
 
         // main_loop_move_2: validate and append the char node (lig_stack is char)
-        let eff = effective_char(false, main_f(), cur_chr() as u16);
+        let eff = effective_char_global(false, main_f(), cur_chr() as u16);
         if eff > font_ec_entry(main_f()) as i32 || eff < font_bc_entry(main_f()) as i32 {
             char_warning(main_f(), cur_chr());
             set_mem_b32s1(lig_stack(), avail());
             set_avail(lig_stack());
             return true; // goto big_switch
         }
-        main_i = effective_char_info(main_f(), cur_l() as u16);
+        main_i = effective_char_info_global(main_f(), cur_l() as u16);
         if main_i.s3 == 0 {
             char_warning(main_f(), cur_chr());
             set_mem_b32s1(lig_stack(), avail());
@@ -17927,7 +17945,7 @@ unsafe fn lig_inner_loop(
                         set_cur_l(mj.s0 as i32);
                         *main_i = font_info_b16(
                             char_base_entry(main_f())
-                                + effective_char(true, main_f(), cur_l() as u16),
+                                + effective_char_global(true, main_f(), cur_l() as u16),
                         );
                         set_ligature_present(true);
                     }
@@ -17985,7 +18003,7 @@ unsafe fn lig_inner_loop(
                         set_cur_l(mj.s0 as i32);
                         *main_i = font_info_b16(
                             char_base_entry(main_f())
-                                + effective_char(true, main_f(), cur_l() as u16),
+                                + effective_char_global(true, main_f(), cur_l() as u16),
                         );
                         set_ligature_present(true);
                     }

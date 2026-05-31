@@ -1,8 +1,11 @@
-use crate::consts::{DIMEN_BASE, ETEX_PEN_BASE, GLUE_BASE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MAX_HALFWORD, SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
+use crate::consts::{
+    DIMEN_BASE, ETEX_PEN_BASE, GLUE_BASE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MAX_HALFWORD,
+    SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR,
+};
 use crate::ext::measure_native_node;
 use crate::ini::init_trie;
-use crate::scan::char_pw;
-use crate::state::{LinebreakState, MemState};
+use crate::scan::{char_pw, node_recycle_abort, NodeRecycleAbort};
+use crate::state::{FontState, HyphState, LinebreakState, MemState};
 
 const MAX_HLIST_STACK: i16 = 512;
 const HLIST_NODE: i32 = crate::consts::HLIST_NODE as i32;
@@ -112,7 +115,8 @@ fn is_char_node(p: i32) -> bool {
 #[inline]
 fn font_character_width(f: i32, c: u16) -> i32 {
     let info = crate::globals::font_info_b16(
-        crate::globals::char_base_entry(f) + unsafe { crate::scan::effective_char(true, f, c) },
+        crate::globals::char_base_entry(f)
+            + unsafe { crate::scan::effective_char_global(true, f, c) },
     );
     crate::globals::font_info_b32s1(crate::globals::width_base_entry(f) + info.s3 as i32)
 }
@@ -340,7 +344,9 @@ fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
     !is_char_node_in(mem, p)
         && match mem.b16s1(p) as i32 {
             INS_NODE | MARK_NODE | ADJUST_NODE | PENALTY_NODE => true,
-            DISC_NODE => mem.b32s0(p + 1) == TEX_NULL && mem.b32s1(p + 1) == TEX_NULL && mem.b16s0(p) == 0,
+            DISC_NODE => {
+                mem.b32s0(p + 1) == TEX_NULL && mem.b32s1(p + 1) == TEX_NULL && mem.b16s0(p) == 0
+            }
             MATH_NODE => mem.b32s1(p + 1) == 0,
             KERN_NODE => mem.b32s1(p + 1) == 0 || mem.b16s0(p) == NORMAL,
             GLUE_NODE => mem.b32s0(p + 1) == 0,
@@ -457,7 +463,9 @@ pub fn find_protchar_left(
     if is_empty_box_in(mem, l) {
         l = mem.b32s1(l);
     } else if d {
-        while mem.b32s1(l) != TEX_NULL && !(is_char_node_in(mem, l) || is_non_discardable_node_in(mem, l)) {
+        while mem.b32s1(l) != TEX_NULL
+            && !(is_char_node_in(mem, l) || is_non_discardable_node_in(mem, l))
+        {
             l = mem.b32s1(l);
         }
     }
@@ -560,7 +568,10 @@ unsafe fn insert_right_margin_kern_global(q: i32, disc_break: bool) -> i32 {
         right_margin_kern_target(&mut state.mem, &mut state.linebreak, q, disc_break)
     }) {
         Some(pair) => pair,
-        None => crate::errors::pdf_error(c"insert_right_margin_kern".as_ptr(), c"hlist stack failure".as_ptr()),
+        None => crate::errors::pdf_error(
+            c"insert_right_margin_kern".as_ptr(),
+            c"hlist stack failure".as_ptr(),
+        ),
     };
 
     let w = char_pw(p, 1);
@@ -588,7 +599,11 @@ unsafe fn insert_right_margin_kern_global(q: i32, disc_break: bool) -> i32 {
     new_q
 }
 
-fn left_margin_kern_target(mem: &mut MemState, linebreak: &mut LinebreakState, q: i32) -> Option<i32> {
+fn left_margin_kern_target(
+    mem: &mut MemState,
+    linebreak: &mut LinebreakState,
+    q: i32,
+) -> Option<i32> {
     find_protchar_left(mem, linebreak, q, false)
 }
 
@@ -597,7 +612,10 @@ unsafe fn insert_left_margin_kern_global(q: i32) -> i32 {
         left_margin_kern_target(&mut state.mem, &mut state.linebreak, q)
     }) {
         Some(p) => p,
-        None => crate::errors::pdf_error(c"insert_left_margin_kern".as_ptr(), c"hlist stack failure".as_ptr()),
+        None => crate::errors::pdf_error(
+            c"insert_left_margin_kern".as_ptr(),
+            c"hlist stack failure".as_ptr(),
+        ),
     };
 
     let w = char_pw(p, 0);
@@ -620,11 +638,24 @@ unsafe fn insert_left_margin_kern_global(q: i32) -> i32 {
     k
 }
 
-// translated from xetex-linebreak.c:2377 (finite_shrink)
-#[no_mangle]
-pub unsafe extern "C" fn finite_shrink(p: i32) -> i32 {
+/// translated from xetex-linebreak.c:2377 (finite_shrink)
+///
+/// Phase-C: threaded to `&mut MemState`; legacy callers use
+/// [`finite_shrink_global`].
+pub fn finite_shrink(mem: &mut MemState, p: i32) -> Result<i32, NodeRecycleAbort> {
+    let q = crate::mem::new_spec(mem, p);
+    if q == crate::mem::ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b16s0(q, NORMAL);
+    crate::mem::delete_glue_ref(mem, p);
+    Ok(q)
+}
+
+/// Transitional bridge-down wrapper for legacy `finite_shrink` callers.
+pub unsafe fn finite_shrink_global(p: i32) -> i32 {
     use crate::globals::{
-        no_shrink_error_yet, set_help_line, set_help_ptr, set_mem_b16s0, set_no_shrink_error_yet,
+        no_shrink_error_yet, set_help_line, set_help_ptr, set_no_shrink_error_yet,
     };
 
     if no_shrink_error_yet() {
@@ -657,23 +688,29 @@ pub unsafe extern "C" fn finite_shrink(p: i32) -> i32 {
         crate::errors::error();
     }
 
-    let q = crate::mem::new_spec_global(p);
-    set_mem_b16s0(q, NORMAL);
-    crate::mem::delete_glue_ref_global(p);
-    q
+    match crate::state::with_state_mut(|st| finite_shrink(&mut st.mem, p)) {
+        Ok(q) => q,
+        Err(e) => node_recycle_abort(e),
+    }
 }
 
-// translated from xetex-linebreak.c:2402 (reconstitute)
-#[no_mangle]
-pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hchar: i32) -> i16 {
+/// translated from xetex-linebreak.c:2402 (reconstitute)
+///
+/// Phase-C: threaded to `&mut MemState`, `&mut HyphState`, and
+/// `&mut FontState`; legacy callers use [`reconstitute_global`].
+pub fn reconstitute(
+    mem: &mut MemState,
+    hyph: &mut HyphState,
+    fonts: &mut FontState,
+    mut j: i16,
+    n: i16,
+    mut bchar: i32,
+    mut hchar: i32,
+) -> Result<i16, NodeRecycleAbort> {
     use crate::globals::{
-        bchar_label_entry, char_base_entry, cur_l, cur_q, cur_r, font_info_b16, font_info_b32s1,
-        hf, hyf_entry, init_lft, init_lig, init_list, kern_base_entry, lft_hit,
-        lig_kern_base_entry, lig_stack, ligature_present, mem_b16s0, mem_b32s1, rt_hit, set_cur_l,
-        set_cur_q, set_cur_r, set_hyphen_passed, set_lft_hit, set_lig_stack, set_ligature_present,
-        set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_rt_hit,
+        cur_l, cur_q, cur_r, lft_hit, lig_stack, ligature_present, rt_hit, set_cur_l, set_cur_q,
+        set_cur_r, set_lft_hit, set_lig_stack, set_ligature_present, set_rt_hit,
     };
-    use crate::mem::{free_node_global, get_avail_global, new_kern_global, new_lig_item_global, new_ligature_global};
 
     #[inline]
     fn odd(v: u8) -> bool {
@@ -681,48 +718,56 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
     }
 
     #[inline]
-    unsafe fn update_right(j: i16, n: i16, bchar: i32, hchar: i32) -> i32 {
+    fn update_right(hyph: &HyphState, j: i16, n: i16, bchar: i32, hchar: i32) -> i32 {
         if j < n {
-            set_cur_r(crate::globals::hu_entry((j + 1) as usize));
+            set_cur_r(hyph.hu[(j + 1) as usize]);
         } else {
             set_cur_r(bchar);
         }
-        if odd(hyf_entry(j as usize)) {
+        if odd(hyph.hyf[j as usize]) {
             hchar
         } else {
             TOO_BIG_CHAR
         }
     }
 
-    set_hyphen_passed(0);
+    hyph.hyphen_passed = 0;
     let mut t = HOLD_HEAD;
     let mut w = 0;
-    set_mem_b32s1(HOLD_HEAD, TEX_NULL);
-    set_cur_l(crate::globals::hu_entry(j as usize));
+    mem.set_b32s1(HOLD_HEAD, TEX_NULL);
+    set_cur_l(hyph.hu[j as usize]);
     set_cur_q(t);
 
     if j == 0 {
-        set_ligature_present(init_lig());
-        let mut p = init_list();
+        set_ligature_present(hyph.init_lig);
+        let mut p = hyph.init_list;
         if ligature_present() {
-            set_lft_hit(init_lft());
+            set_lft_hit(hyph.init_lft);
         }
         while p > TEX_NULL {
-            set_mem_b32s1(t, get_avail_global());
-            t = mem_b32s1(t);
-            set_mem_b16s1(t, hf() as u16);
-            set_mem_b16s0(t, mem_b16s0(p));
-            p = mem_b32s1(p);
+            let q = crate::mem::get_avail(mem);
+            if q == crate::mem::ALLOC_FAILED {
+                return Err(NodeRecycleAbort::OverflowRunaway);
+            }
+            mem.set_b32s1(t, q);
+            t = mem.b32s1(t);
+            mem.set_b16s1(t, hyph.hf as u16);
+            mem.set_b16s0(t, mem.b16s0(p));
+            p = mem.b32s1(p);
         }
     } else if cur_l() < TOO_BIG_CHAR {
-        set_mem_b32s1(t, get_avail_global());
-        t = mem_b32s1(t);
-        set_mem_b16s1(t, hf() as u16);
-        set_mem_b16s0(t, cur_l() as u16);
+        let q = crate::mem::get_avail(mem);
+        if q == crate::mem::ALLOC_FAILED {
+            return Err(NodeRecycleAbort::OverflowRunaway);
+        }
+        mem.set_b32s1(t, q);
+        t = mem.b32s1(t);
+        mem.set_b16s1(t, hyph.hf as u16);
+        mem.set_b16s0(t, cur_l() as u16);
     }
 
     set_lig_stack(TEX_NULL);
-    let mut cur_rh = update_right(j, n, bchar, hchar);
+    let mut cur_rh = update_right(hyph, j, n, bchar, hchar);
 
     loop {
         'continue_: loop {
@@ -730,24 +775,27 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
             let mut q;
 
             if cur_l() == TOO_BIG_CHAR {
-                k = bchar_label_entry(hf());
+                k = fonts.bchar_label_entry(hyph.hf);
                 if k == NON_ADDRESS {
                     break 'continue_;
                 }
-                q = font_info_b16(k);
+                q = fonts.font_info_b16(k);
             } else {
-                q = font_info_b16(
-                    char_base_entry(hf()) + crate::scan::effective_char(true, hf(), cur_l() as u16),
-                );
+                let char_base = fonts.char_base_entry(hyph.hf);
+                let effective = crate::scan::effective_char(fonts, true, hyph.hf, cur_l() as u16);
+                q = fonts.font_info_b16(char_base + effective);
                 if q.s1 % 4 != LIG_TAG {
                     break 'continue_;
                 }
-                k = lig_kern_base_entry(hf()) + q.s0 as i32;
-                q = font_info_b16(k);
+                k = fonts.lig_kern_base_entry(hyph.hf) + q.s0 as i32;
+                q = fonts.font_info_b16(k);
                 if q.s3 > 128 {
-                    k = lig_kern_base_entry(hf()) + 256 * q.s1 as i32 + q.s0 as i32 + 32768
+                    k = fonts.lig_kern_base_entry(hyph.hf)
+                        + 256 * q.s1 as i32
+                        + q.s0 as i32
+                        + 32768
                         - 256 * 128;
-                    q = font_info_b16(k);
+                    q = fonts.font_info_b16(k);
                 }
             }
 
@@ -760,14 +808,14 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
             loop {
                 if q.s2 as i32 == test_char && q.s3 <= 128 {
                     if cur_rh < TOO_BIG_CHAR {
-                        set_hyphen_passed(j);
+                        hyph.hyphen_passed = j;
                         hchar = TOO_BIG_CHAR;
                         cur_rh = TOO_BIG_CHAR;
                         continue 'continue_;
                     }
 
-                    if hchar < TOO_BIG_CHAR && odd(hyf_entry(j as usize)) {
-                        set_hyphen_passed(j);
+                    if hchar < TOO_BIG_CHAR && odd(hyph.hyf[j as usize]) {
+                        hyph.hyphen_passed = j;
                         hchar = TOO_BIG_CHAR;
                     }
 
@@ -787,36 +835,52 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
                             2 | 6 => {
                                 set_cur_r(q.s0 as i32);
                                 if lig_stack() > TEX_NULL {
-                                    set_mem_b16s0(lig_stack(), cur_r() as u16);
+                                    mem.set_b16s0(lig_stack(), cur_r() as u16);
                                 } else {
-                                    set_lig_stack(new_lig_item_global(cur_r() as u16));
+                                    let lig_item = crate::mem::new_lig_item(mem, cur_r() as u16);
+                                    if lig_item == crate::mem::ALLOC_FAILED {
+                                        return Err(NodeRecycleAbort::Overflow);
+                                    }
+                                    set_lig_stack(lig_item);
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
                                     } else {
-                                        let p = get_avail_global();
-                                        set_mem_b32s1(lig_stack() + 1, p);
-                                        set_mem_b16s0(
-                                            p,
-                                            crate::globals::hu_entry((j + 1) as usize) as u16,
-                                        );
-                                        set_mem_b16s1(p, hf() as u16);
+                                        let p = crate::mem::get_avail(mem);
+                                        if p == crate::mem::ALLOC_FAILED {
+                                            return Err(NodeRecycleAbort::OverflowRunaway);
+                                        }
+                                        mem.set_b32s1(lig_stack() + 1, p);
+                                        mem.set_b16s0(p, hyph.hu[(j + 1) as usize] as u16);
+                                        mem.set_b16s1(p, hyph.hf as u16);
                                     }
                                 }
                             }
                             3 => {
                                 set_cur_r(q.s0 as i32);
                                 let p = lig_stack();
-                                set_lig_stack(new_lig_item_global(cur_r() as u16));
-                                set_mem_b32s1(lig_stack(), p);
+                                let lig_item = crate::mem::new_lig_item(mem, cur_r() as u16);
+                                if lig_item == crate::mem::ALLOC_FAILED {
+                                    return Err(NodeRecycleAbort::Overflow);
+                                }
+                                set_lig_stack(lig_item);
+                                mem.set_b32s1(lig_stack(), p);
                             }
                             7 | 11 => {
                                 if ligature_present() {
-                                    let p = new_ligature_global(hf(), cur_l() as u16, mem_b32s1(cur_q()));
+                                    let p = crate::mem::new_ligature(
+                                        mem,
+                                        hyph.hf,
+                                        cur_l() as u16,
+                                        mem.b32s1(cur_q()),
+                                    );
+                                    if p == crate::mem::ALLOC_FAILED {
+                                        return Err(NodeRecycleAbort::Overflow);
+                                    }
                                     if lft_hit() {
-                                        set_mem_b16s0(p, 2);
+                                        mem.set_b16s0(p, 2);
                                         set_lft_hit(false);
                                     }
-                                    set_mem_b32s1(cur_q(), p);
+                                    mem.set_b32s1(cur_q(), p);
                                     t = p;
                                     set_ligature_present(false);
                                 }
@@ -828,28 +892,32 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
                                 set_cur_l(q.s0 as i32);
                                 set_ligature_present(true);
                                 if lig_stack() > TEX_NULL {
-                                    if mem_b32s1(lig_stack() + 1) > TEX_NULL {
-                                        set_mem_b32s1(t, mem_b32s1(lig_stack() + 1));
-                                        t = mem_b32s1(t);
+                                    if mem.b32s1(lig_stack() + 1) > TEX_NULL {
+                                        mem.set_b32s1(t, mem.b32s1(lig_stack() + 1));
+                                        t = mem.b32s1(t);
                                         j += 1;
                                     }
                                     let p = lig_stack();
-                                    set_lig_stack(mem_b32s1(p));
-                                    free_node_global(p, SMALL_NODE_SIZE);
+                                    set_lig_stack(mem.b32s1(p));
+                                    crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                                     if lig_stack() == TEX_NULL {
-                                        cur_rh = update_right(j, n, bchar, hchar);
+                                        cur_rh = update_right(hyph, j, n, bchar, hchar);
                                     } else {
-                                        set_cur_r(mem_b16s0(lig_stack()) as i32);
+                                        set_cur_r(mem.b16s0(lig_stack()) as i32);
                                     }
                                 } else if j == n {
                                     break 'continue_;
                                 } else {
-                                    set_mem_b32s1(t, get_avail_global());
-                                    t = mem_b32s1(t);
-                                    set_mem_b16s1(t, hf() as u16);
-                                    set_mem_b16s0(t, cur_r() as u16);
+                                    let p = crate::mem::get_avail(mem);
+                                    if p == crate::mem::ALLOC_FAILED {
+                                        return Err(NodeRecycleAbort::OverflowRunaway);
+                                    }
+                                    mem.set_b32s1(t, p);
+                                    t = mem.b32s1(t);
+                                    mem.set_b16s1(t, hyph.hf as u16);
+                                    mem.set_b16s0(t, cur_r() as u16);
                                     j += 1;
-                                    cur_rh = update_right(j, n, bchar, hchar);
+                                    cur_rh = update_right(hyph, j, n, bchar, hchar);
                                 }
                             }
                         }
@@ -860,7 +928,9 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
                         continue 'continue_;
                     }
 
-                    w = font_info_b32s1(kern_base_entry(hf()) + 256 * q.s1 as i32 + q.s0 as i32);
+                    w = fonts.font_info_b32s1(
+                        fonts.kern_base_entry(hyph.hf) + 256 * q.s1 as i32 + q.s0 as i32,
+                    );
                     break 'continue_;
                 }
 
@@ -873,7 +943,7 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
                 }
 
                 k += q.s3 as i32 + 1;
-                q = font_info_b16(k);
+                q = fonts.font_info_b16(k);
                 test_char = if cur_rh < TOO_BIG_CHAR {
                     cur_rh
                 } else {
@@ -883,48 +953,65 @@ pub unsafe extern "C" fn reconstitute(mut j: i16, n: i16, mut bchar: i32, mut hc
         }
 
         if ligature_present() {
-            let p = new_ligature_global(hf(), cur_l() as u16, mem_b32s1(cur_q()));
+            let p = crate::mem::new_ligature(mem, hyph.hf, cur_l() as u16, mem.b32s1(cur_q()));
+            if p == crate::mem::ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow);
+            }
             if lft_hit() {
-                set_mem_b16s0(p, 2);
+                mem.set_b16s0(p, 2);
                 set_lft_hit(false);
             }
             if rt_hit() && lig_stack() == TEX_NULL {
-                set_mem_b16s0(p, mem_b16s0(p) + 1);
+                mem.set_b16s0(p, mem.b16s0(p) + 1);
                 set_rt_hit(false);
             }
-            set_mem_b32s1(cur_q(), p);
+            mem.set_b32s1(cur_q(), p);
             t = p;
             set_ligature_present(false);
         }
 
         if w != 0 {
-            set_mem_b32s1(t, new_kern_global(w));
-            t = mem_b32s1(t);
+            let p = crate::mem::new_kern(mem, w);
+            if p == crate::mem::ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow);
+            }
+            mem.set_b32s1(t, p);
+            t = mem.b32s1(t);
             w = 0;
-            set_mem_b32s0(t + 2, 0);
+            mem.set_b32s0(t + 2, 0);
         }
 
         if lig_stack() > TEX_NULL {
             set_cur_q(t);
-            set_cur_l(mem_b16s0(lig_stack()) as i32);
+            set_cur_l(mem.b16s0(lig_stack()) as i32);
             set_ligature_present(true);
-            if mem_b32s1(lig_stack() + 1) > TEX_NULL {
-                set_mem_b32s1(t, mem_b32s1(lig_stack() + 1));
-                t = mem_b32s1(t);
+            if mem.b32s1(lig_stack() + 1) > TEX_NULL {
+                mem.set_b32s1(t, mem.b32s1(lig_stack() + 1));
+                t = mem.b32s1(t);
                 j += 1;
             }
             let p = lig_stack();
-            set_lig_stack(mem_b32s1(p));
-            free_node_global(p, SMALL_NODE_SIZE);
+            set_lig_stack(mem.b32s1(p));
+            crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
             if lig_stack() == TEX_NULL {
-                cur_rh = update_right(j, n, bchar, hchar);
+                cur_rh = update_right(hyph, j, n, bchar, hchar);
             } else {
-                set_cur_r(mem_b16s0(lig_stack()) as i32);
+                set_cur_r(mem.b16s0(lig_stack()) as i32);
             }
             continue;
         }
 
-        return j;
+        return Ok(j);
+    }
+}
+
+/// Transitional bridge-down wrapper for legacy `reconstitute` callers.
+pub unsafe fn reconstitute_global(j: i16, n: i16, bchar: i32, hchar: i32) -> i16 {
+    match crate::state::with_state_mut(|st| {
+        reconstitute(&mut st.mem, &mut st.hyph, &mut st.fonts, j, n, bchar, hchar)
+    }) {
+        Ok(j) => j,
+        Err(e) => node_recycle_abort(e),
     }
 }
 
@@ -1043,13 +1130,13 @@ pub unsafe fn line_break(d: bool) {
     if glue_spec_shrink_order(glue_par(GLUE_PAR_LEFT_SKIP)) != NORMAL
         && glue_spec_shrink(glue_par(GLUE_PAR_LEFT_SKIP)) != 0
     {
-        let p = finite_shrink(glue_par(GLUE_PAR_LEFT_SKIP));
+        let p = finite_shrink_global(glue_par(GLUE_PAR_LEFT_SKIP));
         crate::globals::set_eqtb_b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP as i32, p);
     }
     if glue_spec_shrink_order(glue_par(GLUE_PAR_RIGHT_SKIP)) != NORMAL
         && glue_spec_shrink(glue_par(GLUE_PAR_RIGHT_SKIP)) != 0
     {
-        let p = finite_shrink(glue_par(GLUE_PAR_RIGHT_SKIP));
+        let p = finite_shrink_global(glue_par(GLUE_PAR_RIGHT_SKIP));
         crate::globals::set_eqtb_b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP as i32, p);
     }
 
@@ -1239,7 +1326,7 @@ pub unsafe fn line_break(d: bool) {
 
                     let mut q = glue_ptr(cur);
                     if glue_spec_shrink_order(q) != NORMAL && glue_spec_shrink(q) != 0 {
-                        q = finite_shrink(q);
+                        q = finite_shrink_global(q);
                         set_glue_ptr(cur, q);
                     }
                     add_active_width(1, box_width(q));
@@ -1815,9 +1902,9 @@ unsafe fn update_lr_stack_global(q: i32, lr_ptr: &mut i32) {
 pub unsafe extern "C" fn post_line_break(d: bool) {
     use crate::globals::{
         adjust_tail, best_bet, best_line, cur_list_e_tex_aux, cur_list_prev_graf, cur_list_tail,
-        eqtb_b32s1, first_indent, first_width, hi_mem_min, just_box, last_special_line,
-        mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, pre_adjust_tail, second_indent,
-        second_width, semantic_pagination_enabled, set_adjust_tail, set_cur_list_e_tex_aux,
+        eqtb_b32s1, first_indent, first_width, hi_mem_min, just_box, last_special_line, mem_b16s0,
+        mem_b16s1, mem_b32s0, mem_b32s1, pre_adjust_tail, second_indent, second_width,
+        semantic_pagination_enabled, set_adjust_tail, set_cur_list_e_tex_aux,
         set_cur_list_prev_graf, set_cur_list_tail, set_cur_p, set_just_box, set_mem_b16s0,
         set_mem_b32s0, set_mem_b32s1, set_pre_adjust_tail,
     };
@@ -2878,7 +2965,7 @@ pub unsafe extern "C" fn hyphenate() {
 
         loop {
             let mut l = j;
-            j = reconstitute(j, hn_v, bchar, hyf_char()) + 1;
+            j = reconstitute_global(j, hn_v, bchar, hyf_char()) + 1;
             if hyphen_passed() == 0 {
                 set_mem_b32s1(s, mem_b32s1(HOLD_HEAD));
                 while mem_b32s1(s) > TEX_NULL {
@@ -2918,7 +3005,7 @@ pub unsafe extern "C" fn hyphenate() {
                     }
 
                     while l <= i {
-                        l = reconstitute(l, i, font_bchar_entry(hf()), TOO_BIG_CHAR) + 1;
+                        l = reconstitute_global(l, i, font_bchar_entry(hf()), TOO_BIG_CHAR) + 1;
                         if mem_b32s1(HOLD_HEAD) > TEX_NULL {
                             if minor_tail == TEX_NULL {
                                 set_mem_b32s0(r + 1, mem_b32s1(HOLD_HEAD));
@@ -2951,7 +3038,7 @@ pub unsafe extern "C" fn hyphenate() {
 
                     while l < j {
                         loop {
-                            l = reconstitute(l, hn_v, bchar, TOO_BIG_CHAR) + 1;
+                            l = reconstitute_global(l, hn_v, bchar, TOO_BIG_CHAR) + 1;
                             if c_loc > 0 {
                                 set_hu_entry(c_loc as usize, c);
                                 c_loc = 0;
@@ -2973,7 +3060,7 @@ pub unsafe extern "C" fn hyphenate() {
                         }
 
                         while l > j {
-                            j = reconstitute(j, hn_v, bchar, TOO_BIG_CHAR) + 1;
+                            j = reconstitute_global(j, hn_v, bchar, TOO_BIG_CHAR) + 1;
                             set_mem_b32s1(major_tail, mem_b32s1(HOLD_HEAD));
                             while mem_b32s1(major_tail) > TEX_NULL {
                                 major_tail = mem_b32s1(major_tail);

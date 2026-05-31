@@ -16,9 +16,9 @@ use crate::state::{EqtbState, MemState};
 
 use crate::globals::{
     avail, cur_input_synctex_tag, cur_list_head, line, max_nest_stack, mem_b32s1, nest_ptr,
-    nest_size, restore_cur_list_from_nest, save_cur_list_to_nest, set_avail, set_cur_list_e_tex_aux,
-    set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
-    set_max_nest_stack, set_mem_b32s1, set_nest_ptr,
+    nest_size, restore_cur_list_from_nest, save_cur_list_to_nest, set_avail,
+    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf,
+    set_cur_list_tail, set_max_nest_stack, set_mem_b32s1, set_nest_ptr,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
