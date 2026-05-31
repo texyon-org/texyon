@@ -8,6 +8,33 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 74 — 2026-05-31 — thread linebreak hlist stack helpers
+
+**Type:** execution (workstream 01, Phase C — first `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice:** thread the closed hlist-stack helper pair:
+- `push_node` now takes `&mut LinebreakState` and mutates `hlist_stack` / `hlist_stack_level` directly.
+- `pop_node` now takes `&mut LinebreakState`, decrements `hlist_stack_level` directly, and returns the stack entry.
+- `push_node_global` / `pop_node_global` preserve legacy callers and run the cold `pdf_error` paths after the state borrow drops.
+- `find_protchar_left` / `find_protchar_right` now call the `_global` wrappers; the now-dead `hlist_stack_entry` / `set_hlist_stack_entry` bridge accessors were removed.
+
+**Classification (`01b` §4a):** direct stack mutation is bucket **B** (accessor rewrite). The overflow/underflow `pdf_error` edge makes the wrappers bucket **C** so no error/longjmp path runs under a live `with_state_mut` borrow.
+
+**Recon / safety checks (§11 + `01b`):**
+- no extern statics or `ini.rs` cleanup aliases.
+- no executable C/C++ callers; post-slice C-reference grep is empty.
+- no cross-module extern/static/link-name redeclarations beyond the Rust definitions themselves before the slice.
+
+**Newtype debt:** none. No state fields added; parameters/return values are existing plain TeX integer node pointers (`i32`), and `hlist_stack_level` was already recorded when `LinebreakState` moved.
+
+**Metrics:** `#[no_mangle]` exports **386 → 384** (`push_node` / `pop_node`). `globals.rs` raw externs unchanged at **40**. `unsafe fn` unchanged at **687** (two unsafe exports became two unsafe bridge wrappers). Raw `unsafe { ... }` text-search count unchanged at **160**. Thin accessors **823 → 821** by removing the two hlist-stack entry accessors.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** passed perfectly.
+
+**For the next session (75):** continue `linebreak.rs` with another closed non-scanner Phase-C cluster. Good candidates are small helpers around protrusion/linebreak state before attempting large routines like `line_break`; classify first and keep `scan.rs` last. Draft `02-modules.md` to READY before scanner-heavy work.
+
+---
+
 ## Idiom session 73 — 2026-05-31 — thread DVI font emission path
 
 **Type:** execution (workstream 01, Phase C — fifth `shipout.rs` slice). **One commit.** Dashboard **29/2/7/4**.

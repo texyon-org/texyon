@@ -3,6 +3,7 @@ use crate::ext::measure_native_node;
 use crate::ini::init_trie;
 use crate::mem::prev_rightmost;
 use crate::scan::char_pw;
+use crate::state::LinebreakState;
 
 const MAX_HLIST_STACK: i16 = 512;
 const HLIST_NODE: i32 = crate::consts::HLIST_NODE as i32;
@@ -351,34 +352,42 @@ fn ignorable_protrusion_node(p: i32) -> bool {
 }
 
 // translated from xetex-linebreak.c:2827 (push_node)
-#[no_mangle]
-pub unsafe extern "C" fn push_node(p: i32) {
-    use crate::globals::{hlist_stack_level, set_hlist_stack_entry, set_hlist_stack_level};
-
-    let level = hlist_stack_level();
+pub fn push_node(linebreak: &mut LinebreakState, p: i32) -> bool {
+    let level = linebreak.hlist_stack_level;
     if level > MAX_HLIST_STACK {
-        crate::errors::pdf_error(c"push_node".as_ptr(), c"stack overflow".as_ptr());
+        return false;
     }
 
-    set_hlist_stack_entry(level, p);
-    set_hlist_stack_level(level + 1);
+    linebreak.hlist_stack[level as usize] = p;
+    linebreak.hlist_stack_level = level + 1;
+    true
+}
+
+pub unsafe fn push_node_global(p: i32) {
+    if !crate::state::with_state_mut(|state| push_node(&mut state.linebreak, p)) {
+        crate::errors::pdf_error(c"push_node".as_ptr(), c"stack overflow".as_ptr());
+    }
 }
 
 // translated from xetex-linebreak.c:2837 (pop_node)
-#[no_mangle]
-pub unsafe extern "C" fn pop_node() -> i32 {
-    use crate::globals::{hlist_stack_entry, hlist_stack_level, set_hlist_stack_level};
-
-    let level = hlist_stack_level() - 1;
-    set_hlist_stack_level(level);
+pub fn pop_node(linebreak: &mut LinebreakState) -> Option<i32> {
+    let level = linebreak.hlist_stack_level - 1;
+    linebreak.hlist_stack_level = level;
     if level < 0 {
-        crate::errors::pdf_error(
-            c"pop_node".as_ptr(),
-            c"stack underflow (internal error)".as_ptr(),
-        );
+        return None;
     }
 
-    hlist_stack_entry(level)
+    Some(linebreak.hlist_stack[level as usize])
+}
+
+pub unsafe fn pop_node_global() -> i32 {
+    match crate::state::with_state_mut(|state| pop_node(&mut state.linebreak)) {
+        Some(p) => p,
+        None => crate::errors::pdf_error(
+            c"pop_node".as_ptr(),
+            c"stack underflow (internal error)".as_ptr(),
+        ),
+    }
 }
 
 // translated from xetex-linebreak.c:2692 (total_pw)
@@ -441,13 +450,13 @@ pub unsafe extern "C" fn find_protchar_left(mut l: i32, d: bool) -> i32 {
     loop {
         let t = l;
         while run && mem_b16s1(l) as i32 == HLIST_NODE && mem_b32s1(l + 5) != TEX_NULL {
-            push_node(l);
+            push_node_global(l);
             l = mem_b32s1(l + 5);
         }
 
         while run && ignorable_protrusion_node(l) {
             while mem_b32s1(l) == TEX_NULL && hlist_stack_level() > 0 {
-                l = pop_node();
+                l = pop_node_global();
             }
 
             if mem_b32s1(l) != TEX_NULL {
@@ -479,8 +488,8 @@ pub unsafe extern "C" fn find_protchar_right(mut l: i32, mut r: i32) -> i32 {
     loop {
         let t = r;
         while run && mem_b16s1(r) as i32 == HLIST_NODE && mem_b32s1(r + 5) != TEX_NULL {
-            push_node(l);
-            push_node(r);
+            push_node_global(l);
+            push_node_global(r);
             l = mem_b32s1(r + 5);
             r = l;
             while mem_b32s1(r) != TEX_NULL {
@@ -490,8 +499,8 @@ pub unsafe extern "C" fn find_protchar_right(mut l: i32, mut r: i32) -> i32 {
 
         while run && ignorable_protrusion_node(r) {
             while r == l && hlist_stack_level() > 0 {
-                r = pop_node();
-                l = pop_node();
+                r = pop_node_global();
+                l = pop_node_global();
             }
 
             if r != l && r != TEX_NULL {

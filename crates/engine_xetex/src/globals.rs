@@ -4346,16 +4346,6 @@ pub(crate) fn set_last_rightmost_char(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn hlist_stack_entry(k: i16) -> i32 {
-    crate::state::with_state(|state| state.linebreak.hlist_stack[k as usize])
-}
-#[inline]
-pub(crate) fn set_hlist_stack_entry(k: i16, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.hlist_stack[k as usize] = v;
-    });
-}
-#[inline]
 pub(crate) fn hlist_stack_level() -> i16 {
     crate::state::with_state(|state| state.linebreak.hlist_stack_level)
 }
