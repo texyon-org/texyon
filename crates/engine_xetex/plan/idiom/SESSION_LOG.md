@@ -7,6 +7,36 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 90 — 2026-05-31 — thread `make_op` (the last big noad-finishing helper)
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. The hard bucket-C/D `make_op` threaded as a series of short borrows.
+
+**Slice:** **`make_op` alone** (`src/math.rs`), threaded to `make_op_global` (drops `#[no_mangle] extern "C"`, returns `delta: i32`). Deliberately *did not* add the handoff's suggested companions — `first_script_glyph` is itself a hard interleaved scanner/font/`fetch`/native-char function (its own bucket-C/D session) and `compute_ot_math_accent_pos` is a thin recursive dispatcher dominated by with_state-bearing calls with no extractable mem core. Either would raise RefCell-nest risk without making the slice *cleaner*; `make_op` alone is genuinely large.
+
+**Structure (bucket C/D, the session 85/86/89 pattern scaled up):** the clean mem-write clusters run under short disjoint `with_state_mut` borrows, the with_state-bearing calls stay between them:
+- **NORMAL→LIMITS latch** — one `(mem + scanner)` borrow.
+- **Non-OT italic/list-tag delta block** — one disjoint `(mem + fonts + scanner)` borrow: `cur_f`/`cur_i`/`cur_style` are scanner fields, the `font_area`/`*_base`/`font_info` lookups are `FontState` reads, and `usingOpenType` is a pure C call safe under the borrow, so the whole guard + `cur_c`/`cur_i` updates + `delta` read run in one borrow (no bridge).
+- **`clean_box(q+1, …)`** — with_state-bearing, between borrows.
+- **OT-math glyph-variant/assembly region** (bucket **D**) — *left on bridge accessors* with no live borrow held, because the variant loop runs `measure_native_glyph` (with_state-bearing) between mem writes and `build_opentype_assembly` mid-block; threading it would need drop/reborrow inside the loop (deferred).
+- **MATH_CHAR box finish** — one `(mem + fonts + eqtb)` borrow calling the threaded `axis_height(&fonts, &eqtb, size)` directly (`cur_size` precomputed).
+- **LIMITS branch:** 3 `clean_box` (between borrows) → one `(mem)` borrow allocating the wrapper vbox via threaded `new_null_box` and computing its width into a local `w` → 3 `rebox_global(_, w)` (between borrows) → one big `(mem + fonts + eqtb + scanner)` borrow doing the entire tail: the threaded `big_op_spacing1..5(&fonts, &eqtb, size)` (precomputed into locals *before* the mem mutations to avoid overlapping reborrows), threaded `new_kern`/`free_node`, the `cur_f = save_f` scanner write, all direct mem writes; allocator exhaustion returns `NodeRecycleAbort::Overflow` so `node_recycle_abort` fires after the borrow drops (`01b` §5).
+
+**Classification / recon (`01b` §4a, §11):** bucket **C/D**. C readers — only the header prototype (`xetex-math.c:56`) + a "translated to Rust" comment (`:71`); no body, no caller. No cleanup alias; no cross-module redeclaration; the lone call site (`mlist_to_hlist`, math.rs) is not inside a `with_state*` closure. Carried gotcha confirmed: `cur_f`/`cur_c`/`cur_i`, the `font_info`/`*_base` reads, `clean_box`, `rebox_global`, and the OT-math/measurement calls are all with_state-bearing — none called under a live borrow.
+
+**Method surface:** added `FontState::italic_base_entry` (the handoff said it already existed — it did **not**; only the `italic_base` field was present). Reused existing `FontState`/`EqtbState`/`ScannerState`/`MemState` methods + the threaded `axis_height`/`big_op_spacing1..5`/`new_null_box`/`new_kern`/`free_node`.
+
+**Bridged call sites:** the 1 `make_op` site (`mlist_to_hlist`) → `make_op_global`. **Deleted now-dead bridge accessors (§6):** all five `big_op_spacing{1,2,3,4,5}_global` wrappers (make_op was their last caller; the threaded cores are now called directly under the LIMITS-tail borrow) and the `globals::set_cur_c` setter (math.rs was its last caller; `fetch_core` and this slice write `scanner.cur_c` directly).
+
+**Newtype debt:** none. No state fields moved (only added `FontState::italic_base_entry` over the existing field); `italic_base` is plain `int32_t *` (already recorded no-debt in session 39); `q`/`delta` are plain `i32` (checked).
+
+**Metrics:** `#[no_mangle]` **334 → 333** (`make_op` dropped the export). raw externs **40** unchanged. `unsafe fn` **647** unchanged (`make_op` `unsafe extern "C" fn` → `make_op_global` `unsafe fn`, net flat; the deleted `big_op_spacing*_global`/`set_cur_c` were safe `fn`s). raw `unsafe {}` **176** unchanged. Crate warnings stayed **79**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4** (the `otf_basic`/`graphite_basic` native-math + TRIP ligature/kern paths exercise `make_op` directly — green confirms parity, including the OT-math display-operator variant/assembly path left on the bridge). rust-analyzer again showed transient stale E0107/E0425 mid-edit; `cargo check` is ground truth.
+
+**For the next session (91):** the big noad-finishing helpers are now all threaded (`make_ord`/`make_op`/`make_over`/`make_radical`/`make_vcenter`/`make_fraction`/`make_under`). Remaining math targets: `make_scripts` (large), `make_math_accent` (interleaves `fetch`/`compute_ot_math_accent_pos`/native-glyph), `first_script_glyph` + `compute_ot_math_accent_pos` (the two interleaved scanner/font/fetch/native helpers deferred this session), or `var_delimiter`/`make_left_right`. Also available: a pagebuilder/linebreak block. Remaining high-count functions are orchestrators (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — don't take one whole in one session. Keep scanner-heavy `scan.rs` last; draft `02-modules.md` to READY before the big scanner decomposition.
+
+---
+
 ## Idiom session 89 — 2026-05-31 — thread the math `fetch` keystone + `make_ord` + leaf helpers
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. A deliberately larger slice (4 functions, the keystone among them).

@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 89, **Phase-C execution**: threaded the math `fetch` keystone + `make_ord` + `attach_hkern_to_new_hlist` + `set_empty_math_field` — `fetch` split into `fetch_core(&mut MemState,&FontState,&EqtbState,&mut ScannerState)` + `fetch_global` emitting the cold undefined-font / missing-char paths after the borrow; `make_ord` orchestrator keeps `fetch_global` between borrows and runs the threaded `make_ord_body` per `\restart`; added `FontState::font_bc_entry`/`font_ec_entry`; deleted dead `globals::null_character` getter. `#[no_mangle]` 337→334, `unsafe fn` 648→647. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 90, **Phase-C execution**: threaded `make_op` — the last big noad-finishing helper, hard bucket-C/D — to `make_op_global` as a series of short disjoint `mem`/`fonts`/`eqtb`/`scanner` borrows (NORMAL→LIMITS latch, non-OT italic/list-tag delta block, MATH_CHAR box finish via threaded `axis_height`, and the whole LIMITS tail via threaded `big_op_spacing1..5`/`new_kern`/`new_null_box`/`free_node`), keeping `fetch`/`clean_box`/`rebox`/measurement between borrows and leaving the `measure_native_glyph`-interleaved OT-math glyph-variant/assembly region on the bridge (bucket D). Added `FontState::italic_base_entry`; deleted the five now-dead `big_op_spacing*_global` wrappers + the dead `globals::set_cur_c` setter. `#[no_mangle]` 334→333, `unsafe fn` 647 net flat. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -868,6 +868,33 @@ least-coupled non-`misc` clusters:
     (translated `xetex-math.c` stub, header prototypes only); no cleanup aliases; no
     fields moved → no newtype debt. `#[no_mangle]` 337→334, `unsafe fn` 648→647, raw
     externs 40 / raw `unsafe {}` 176 unchanged. Dashboard 29/2/7/4.
+-   **Math `make_op` threaded (session 90):** the last big noad-finishing helper
+    (`src/math.rs`), a hard bucket-**C/D** function, threaded to `make_op_global`
+    (drops `#[no_mangle] extern "C"`, returns `delta: i32`) as a series of short
+    disjoint `with_state_mut` borrows with the with_state-bearing calls between
+    them: NORMAL→LIMITS latch `(mem+scanner)`; the non-OT italic/list-tag delta
+    block in one `(mem+fonts+scanner)` borrow (`cur_f`/`cur_i`/`cur_style` scanner +
+    `font_area`/`*_base`/`font_info` font reads + the pure-C `usingOpenType`, all
+    under the borrow); `clean_box` between borrows; the MATH_CHAR box finish via the
+    threaded `axis_height(&fonts,&eqtb,size)` in one borrow; and the whole LIMITS
+    branch — 3 `clean_box` → a `(mem)` borrow allocating the wrapper vbox + width →
+    3 `rebox_global` → one big `(mem+fonts+eqtb+scanner)` tail borrow with the
+    threaded `big_op_spacing1..5` precomputed into locals before the mem mutations,
+    threaded `new_kern`/`new_null_box`/`free_node`, the `cur_f=save_f` write, and
+    `NodeRecycleAbort::Overflow` deferred to a post-borrow `node_recycle_abort`
+    (`01b` §5). The `measure_native_glyph`-interleaved OT-math glyph-variant/assembly
+    region is left on bridge accessors (bucket **D** — no live borrow held).
+    Classification recon: header prototype/comment only in `xetex-math.c` (no body,
+    no caller); no cleanup alias; no cross-module redeclaration; the lone
+    `mlist_to_hlist` call site is not inside a `with_state*` closure. Added
+    `FontState::italic_base_entry` (the handoff wrongly assumed it existed — only the
+    `italic_base` field did). Bridged the 1 call site to `make_op_global`; **deleted**
+    the five now-dead `big_op_spacing{1,2,3,4,5}_global` wrappers (make_op was their
+    last caller; the cores are now called directly under the LIMITS tail) and the dead
+    `globals::set_cur_c` setter (math.rs was its last caller). No C/C++ callers; no
+    cleanup aliases; no fields moved → no newtype debt (`italic_base` is plain
+    `int32_t *`, already no-debt per session 39). `#[no_mangle]` 334→333, raw externs
+    40, `unsafe fn` 647 (net flat), raw `unsafe {}` 176 unchanged. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -879,8 +906,8 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 40 (session 58 moved the `mem` arena + 7 bookkeeping scalars) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 815 total / 174 state-backed scalars/arrays (session 82 deleted `xtx_ligature_present` and `init_lig` getters after threading the font/effective-char + linebreak reconstruction slice) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
-| `#[no_mangle]` exports | 576 | boundary-only | 334 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 89 dropped 3: `fetch`/`make_ord`/`attach_hkern_to_new_hlist`) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 647 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 89 dropped 1: `set_empty_math_field` de-`unsafe`'d with a safe wrapper, the three `_core`/`_body`+`_global` pairs net-flat) |
+| `#[no_mangle]` exports | 576 | boundary-only | 333 (direct `grep -roh '#\[no_mangle\]' src/*.rs | wc -l`; session 90 dropped 1: `make_op`) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 647 (`grep -rohE 'unsafe (extern "C" )?fn '`; session 90 net flat: `make_op` `unsafe extern "C" fn` → `make_op_global` `unsafe fn`; the deleted `big_op_spacing*_global`/`set_cur_c` were safe `fn`s) |
 | raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 176 / 688 not remeasured (session 87 made the two native-node text-pointer writes explicit in the safe `build_native_character` core) |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
@@ -1037,12 +1064,21 @@ the snippets in `00-overview.md` / the workstream plans.
     threaded `make_ord_body` with a `MakeOrdStep` control enum so `fetch_global`
     stays between borrows and cold overflow aborts after the borrow. Added
     `FontState::font_bc_entry`/`font_ec_entry`; deleted dead `globals::null_character`
-    getter. Next target: **`make_op`** — the remaining large noad helper, bucket
-    **C/D** (interleaves `clean_box`/`rebox`/OT-math/`measure_native_glyph`/font reads
-    with mem writes; now that `fetch`/`rebox`/`new_kern`/`axis_height`/`big_op_spacing*`
-    are all threaded, build it as a series of short borrows with the with_state-bearing
-    calls between them). Also available: `make_scripts`, `make_math_accent`, or a
-    pagebuilder/linebreak block. Remaining high-count functions are orchestrators
+    getter.
+
+    **Session 90 update:** **`make_op`** is now threaded to `make_op_global` (the last
+    big noad-finishing helper). Built as a series of short disjoint borrows
+    (NORMAL→LIMITS latch; non-OT italic/list-tag delta block; MATH_CHAR box finish via
+    threaded `axis_height`; LIMITS tail via threaded `big_op_spacing1..5`/`new_kern`/
+    `new_null_box`/`free_node` with overflow deferred to `node_recycle_abort`), keeping
+    `fetch`/`clean_box`/`rebox`/measurement between borrows and leaving the
+    `measure_native_glyph`-interleaved OT-math glyph-variant/assembly region on the
+    bridge (bucket D). Added `FontState::italic_base_entry`; deleted the five dead
+    `big_op_spacing*_global` wrappers + the dead `globals::set_cur_c` setter. Next
+    targets: `make_scripts` (large), `make_math_accent`, the interleaved
+    `first_script_glyph` + `compute_ot_math_accent_pos` pair (deferred in session 90 —
+    not clean leaf helpers), `var_delimiter`/`make_left_right`, or a pagebuilder/
+    linebreak block. Remaining high-count functions are orchestrators
     (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — do not take one
     whole in a single session. Keep scanner-heavy `scan.rs` last.
 

@@ -791,6 +791,11 @@ impl FontState {
     }
 
     #[inline]
+    pub(crate) fn italic_base_entry(&self, f: i32) -> i32 {
+        self.italic_base[f as usize]
+    }
+
+    #[inline]
     pub(crate) fn height_base_entry(&self, f: i32) -> i32 {
         self.height_base[f as usize]
     }

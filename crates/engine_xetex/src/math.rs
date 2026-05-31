@@ -17,7 +17,7 @@ use crate::globals::{
     kern_base_entry, lig_kern_base_entry, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2,
     mem_b16s3, mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, mem_word, nest_ptr,
     param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
-    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_c, set_cur_dir, set_cur_f,
+    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_f,
     set_cur_i, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
     set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
     set_cur_mlist, set_cur_mu, set_cur_size, set_cur_style, set_cur_val, set_cur_val1,
@@ -453,19 +453,9 @@ pub fn big_op_spacing1(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i3
     math_ext_param(fonts, eqtb, cur_size, 9)
 }
 
-pub fn big_op_spacing1_global() -> i32 {
-    let size = cur_size();
-    crate::state::with_state(|st| big_op_spacing1(&st.fonts, &st.eqtb, size))
-}
-
 /// translated from xetex-math.c:116 (big_op_spacing2)
 pub fn big_op_spacing2(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
     math_ext_param(fonts, eqtb, cur_size, 10)
-}
-
-pub fn big_op_spacing2_global() -> i32 {
-    let size = cur_size();
-    crate::state::with_state(|st| big_op_spacing2(&st.fonts, &st.eqtb, size))
 }
 
 /// translated from xetex-math.c:130 (big_op_spacing3)
@@ -473,29 +463,14 @@ pub fn big_op_spacing3(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i3
     math_ext_param(fonts, eqtb, cur_size, 11)
 }
 
-pub fn big_op_spacing3_global() -> i32 {
-    let size = cur_size();
-    crate::state::with_state(|st| big_op_spacing3(&st.fonts, &st.eqtb, size))
-}
-
 /// translated from xetex-math.c:144 (big_op_spacing4)
 pub fn big_op_spacing4(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
     math_ext_param(fonts, eqtb, cur_size, 12)
 }
 
-pub fn big_op_spacing4_global() -> i32 {
-    let size = cur_size();
-    crate::state::with_state(|st| big_op_spacing4(&st.fonts, &st.eqtb, size))
-}
-
 /// translated from xetex-math.c:158 (big_op_spacing5)
 pub fn big_op_spacing5(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
     math_ext_param(fonts, eqtb, cur_size, 13)
-}
-
-pub fn big_op_spacing5_global() -> i32 {
-    let size = cur_size();
-    crate::state::with_state(|st| big_op_spacing5(&st.fonts, &st.eqtb, size))
 }
 
 /// translated from xetex-math.c:170 (fraction_rule)
@@ -1137,33 +1112,62 @@ pub unsafe fn make_fraction_global(q: i32) {
     crate::state::with_state_mut(|st| make_fraction_finish(&mut st.mem, q, hbox));
 }
 
-/// translated from xetex-math.c:270 (make_op)
-#[no_mangle]
-pub unsafe extern "C" fn make_op(q: i32) -> i32 {
+/// translated from xetex-math.c:270 (make_op). Phase-C orchestrator (bucket
+/// C/D): the clean mem-write clusters run under short disjoint `mem`/`fonts`/
+/// `eqtb`/`scanner` borrows (threaded `new_kern`/`new_null_box`/`free_node` +
+/// threaded `big_op_spacing*`/`axis_height`), while the with_state-bearing
+/// `fetch_global`/`clean_box`/`rebox_global`/OT-math/measurement stay between
+/// borrows. The OT-math glyph-variant/assembly region is left on bridge
+/// accessors (genuinely interleaved with `measure_native_glyph` —
+/// bucket D). Returns the math `delta` italic correction. A cold allocator
+/// exhaustion in the LIMITS tail aborts via `node_recycle_abort` after the
+/// borrow drops (`01b` §5).
+pub unsafe fn make_op_global(q: i32) -> i32 {
     let mut delta: i32 = 0;
     let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
 
-    if mem_b16s0(q) == NORMAL && cur_style() < TEXT_STYLE {
-        set_mem_b16s0(q, LIMITS);
-    }
+    // NORMAL -> LIMITS latch.
+    crate::state::with_state_mut(|st| {
+        if st.mem.b16s0(q) == NORMAL && st.scanner.cur_style < TEXT_STYLE {
+            st.mem.set_b16s0(q, LIMITS);
+        }
+    });
 
     if mem_b32s1(q + 1) == MATH_CHAR {
         fetch_global(q + 1);
-        if !(font_area_entry(cur_f()) == OTGR_FONT_FLAG
-            && usingOpenType(font_layout_engine_ptr(cur_f())))
-        {
-            if cur_style() < TEXT_STYLE && cur_i().s1 % 4 == LIST_TAG {
-                let c = cur_i().s0;
-                let i_info = font_info_b16(char_base_entry(cur_f()) + c as i32);
-                if i_info.s3 > 0 {
-                    set_cur_c(c as i32);
-                    set_cur_i(i_info);
-                    set_mem_b16s0(q + 1, c);
+
+        // Non-OpenType italic-correction / list-tag bump: `cur_f`/`cur_i`/
+        // `cur_style` are scanner reads, the `*_base`/`font_info` lookups are
+        // font reads, and the only with_state-bearing thing here would be the
+        // bridge — so a single disjoint mem/fonts/scanner borrow does it all.
+        // `usingOpenType` is a pure C call on the layout-engine pointer, safe
+        // under the borrow.
+        crate::state::with_state_mut(|st| {
+            let st = &mut *st;
+            let f = st.scanner.cur_f;
+            let is_ot = st.fonts.font_area_entry(f) == OTGR_FONT_FLAG
+                && usingOpenType(st.fonts.font_layout_engine_ptr(f));
+            if !is_ot {
+                if st.scanner.cur_style < TEXT_STYLE && st.scanner.cur_i.s1 % 4 == LIST_TAG {
+                    let c = st.scanner.cur_i.s0;
+                    let i_info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c as i32);
+                    if i_info.s3 > 0 {
+                        st.scanner.cur_c = c as i32;
+                        st.scanner.cur_i = i_info;
+                        st.mem.set_b16s0(q + 1, c);
+                    }
                 }
+                delta = st
+                    .fonts
+                    .font_info_b32s1(st.fonts.italic_base_entry(f) + st.scanner.cur_i.s1 as i32 / 4);
             }
-            delta = font_info_b32s1(italic_base_entry(cur_f()) + cur_i().s1 as i32 / 4);
-        }
+        });
+
         let x = clean_box(q + 1, cur_style());
+
+        // OT-math glyph variant / assembly selection (bucket D): the loop runs
+        // `measure_native_glyph` (with_state-bearing) between mem writes, so it
+        // stays on bridge accessors with no live borrow held.
         if font_area_entry(cur_f()) == OTGR_FONT_FLAG
             && isOpenTypeMathFont(font_layout_engine_ptr(cur_f()))
         {
@@ -1216,85 +1220,138 @@ pub unsafe extern "C" fn make_op(q: i32) -> i32 {
                 set_mem_b32s1(x + 2, mem_b32s1(p + 2));
             }
         }
-        if mem_b32s1(q + 3) != EMPTY && mem_b16s0(q) != LIMITS {
-            set_mem_b32s1(x + 1, mem_b32s1(x + 1) - delta);
-        }
-        set_mem_b32s1(
-            x + 4,
-            crate::scaled_math::half(mem_b32s1(x + 3) - mem_b32s1(x + 2))
-                - axis_height_global(cur_size()),
-        );
-        set_mem_b32s1(q + 1, SUB_BOX);
-        set_mem_b32s0(q + 1, x);
+
+        // Finish the MATH_CHAR box: `axis_height` is the threaded font helper,
+        // so the writes + `axis_height` run together under one disjoint borrow.
+        let size = cur_size();
+        crate::state::with_state_mut(|st| {
+            let st = &mut *st;
+            if st.mem.b32s1(q + 3) != EMPTY && st.mem.b16s0(q) != LIMITS {
+                let v = st.mem.b32s1(x + 1) - delta;
+                st.mem.set_b32s1(x + 1, v);
+            }
+            let ah = axis_height(&st.fonts, &st.eqtb, size);
+            let v = crate::scaled_math::half(st.mem.b32s1(x + 3) - st.mem.b32s1(x + 2)) - ah;
+            st.mem.set_b32s1(x + 4, v);
+            st.mem.set_b32s1(q + 1, SUB_BOX);
+            st.mem.set_b32s0(q + 1, x);
+        });
     }
 
     let save_f = cur_f();
     if mem_b16s0(q) == LIMITS {
-        let mut x = clean_box(q + 2, 2 * (cur_style() / 4) + 4 + (cur_style() % 2));
+        let cs = cur_style() as i32;
+        let mut x = clean_box(q + 2, (2 * (cs / 4) + 4 + (cs % 2)) as i16);
         let mut y = clean_box(q + 1, cur_style());
-        let mut z = clean_box(q + 3, 2 * (cur_style() / 4) + 5);
-        let v = crate::mem::new_null_box_global();
-        set_mem_b16s1(v, VLIST_NODE);
-        set_mem_b32s1(v + 1, mem_b32s1(y + 1));
-        if mem_b32s1(x + 1) > mem_b32s1(v + 1) {
-            set_mem_b32s1(v + 1, mem_b32s1(x + 1));
-        }
-        if mem_b32s1(z + 1) > mem_b32s1(v + 1) {
-            set_mem_b32s1(v + 1, mem_b32s1(z + 1));
-        }
-        x = rebox_global(x, mem_b32s1(v + 1));
-        y = rebox_global(y, mem_b32s1(v + 1));
-        z = rebox_global(z, mem_b32s1(v + 1));
-        set_mem_b32s1(x + 4, crate::scaled_math::half(delta));
-        set_mem_b32s1(z + 4, -mem_b32s1(x + 4));
-        set_mem_b32s1(v + 3, mem_b32s1(y + 3));
-        set_mem_b32s1(v + 2, mem_b32s1(y + 2));
-        set_cur_f(save_f);
-        if mem_b32s1(q + 2) == EMPTY {
-            free_node_global(x, BOX_NODE_SIZE);
-            set_mem_b32s1(v + 5, y);
-        } else {
-            let mut shift_up = big_op_spacing3_global() - mem_b32s1(x + 2);
-            if shift_up < big_op_spacing1_global() {
-                shift_up = big_op_spacing1_global();
+        let mut z = clean_box(q + 3, (2 * (cs / 4) + 5) as i16);
+
+        // Allocate the wrapper vbox and set its width to the max of x/y/z.
+        let (v, w) = crate::state::with_state_mut(|st| {
+            let v = new_null_box(&mut st.mem);
+            if v == ALLOC_FAILED {
+                return (v, 0);
             }
-            let mut p = new_kern_global(shift_up);
-            set_mem_b32s1(p, y);
-            set_mem_b32s1(x, p);
-            p = new_kern_global(big_op_spacing5_global());
-            set_mem_b32s1(p, x);
-            set_mem_b32s1(v + 5, p);
-            set_mem_b32s1(
-                v + 3,
-                mem_b32s1(v + 3)
-                    + big_op_spacing5_global()
-                    + mem_b32s1(x + 3)
-                    + mem_b32s1(x + 2)
-                    + shift_up,
-            );
-        }
-        if mem_b32s1(q + 3) == EMPTY {
-            free_node_global(z, BOX_NODE_SIZE);
-        } else {
-            let mut shift_down = big_op_spacing4_global() - mem_b32s1(z + 3);
-            if shift_down < big_op_spacing2_global() {
-                shift_down = big_op_spacing2_global();
+            st.mem.set_b16s1(v, VLIST_NODE);
+            let mut w = st.mem.b32s1(y + 1);
+            if st.mem.b32s1(x + 1) > w {
+                w = st.mem.b32s1(x + 1);
             }
-            let mut p = new_kern_global(shift_down);
-            set_mem_b32s1(y, p);
-            set_mem_b32s1(p, z);
-            p = new_kern_global(big_op_spacing5_global());
-            set_mem_b32s1(z, p);
-            set_mem_b32s1(
-                v + 2,
-                mem_b32s1(v + 2)
-                    + big_op_spacing5_global()
-                    + mem_b32s1(z + 3)
-                    + mem_b32s1(z + 2)
-                    + shift_down,
-            );
+            if st.mem.b32s1(z + 1) > w {
+                w = st.mem.b32s1(z + 1);
+            }
+            st.mem.set_b32s1(v + 1, w);
+            (v, w)
+        });
+        if v == ALLOC_FAILED {
+            node_recycle_abort(NodeRecycleAbort::Overflow);
         }
-        set_mem_b32s1(q + 1, v);
+
+        x = rebox_global(x, w);
+        y = rebox_global(y, w);
+        z = rebox_global(z, w);
+
+        // The LIMITS tail is pure mem + threaded `big_op_spacing*` (font reads)
+        // + threaded allocators, so it runs under one disjoint mem/fonts/eqtb/
+        // scanner borrow. `cur_size` is precomputed for the spacing reads;
+        // allocator exhaustion returns `Overflow` for the post-borrow abort.
+        let size = cur_size();
+        let step = crate::state::with_state_mut(|st| -> Result<(), NodeRecycleAbort> {
+            let st = &mut *st;
+            let half_delta = crate::scaled_math::half(delta);
+            st.mem.set_b32s1(x + 4, half_delta);
+            st.mem.set_b32s1(z + 4, -half_delta);
+            let y3 = st.mem.b32s1(y + 3);
+            st.mem.set_b32s1(v + 3, y3);
+            let y2 = st.mem.b32s1(y + 2);
+            st.mem.set_b32s1(v + 2, y2);
+            st.scanner.cur_f = save_f;
+
+            if st.mem.b32s1(q + 2) == EMPTY {
+                free_node(&mut st.mem, x, BOX_NODE_SIZE);
+                st.mem.set_b32s1(v + 5, y);
+            } else {
+                let bos1 = big_op_spacing1(&st.fonts, &st.eqtb, size);
+                let bos3 = big_op_spacing3(&st.fonts, &st.eqtb, size);
+                let bos5 = big_op_spacing5(&st.fonts, &st.eqtb, size);
+                let mut shift_up = bos3 - st.mem.b32s1(x + 2);
+                if shift_up < bos1 {
+                    shift_up = bos1;
+                }
+                let p = new_kern(&mut st.mem, shift_up);
+                if p == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow);
+                }
+                st.mem.set_b32s1(p, y);
+                st.mem.set_b32s1(x, p);
+                let p2 = new_kern(&mut st.mem, bos5);
+                if p2 == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow);
+                }
+                st.mem.set_b32s1(p2, x);
+                st.mem.set_b32s1(v + 5, p2);
+                let v3 = st.mem.b32s1(v + 3)
+                    + bos5
+                    + st.mem.b32s1(x + 3)
+                    + st.mem.b32s1(x + 2)
+                    + shift_up;
+                st.mem.set_b32s1(v + 3, v3);
+            }
+
+            if st.mem.b32s1(q + 3) == EMPTY {
+                free_node(&mut st.mem, z, BOX_NODE_SIZE);
+            } else {
+                let bos2 = big_op_spacing2(&st.fonts, &st.eqtb, size);
+                let bos4 = big_op_spacing4(&st.fonts, &st.eqtb, size);
+                let bos5 = big_op_spacing5(&st.fonts, &st.eqtb, size);
+                let mut shift_down = bos4 - st.mem.b32s1(z + 3);
+                if shift_down < bos2 {
+                    shift_down = bos2;
+                }
+                let p = new_kern(&mut st.mem, shift_down);
+                if p == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow);
+                }
+                st.mem.set_b32s1(y, p);
+                st.mem.set_b32s1(p, z);
+                let p2 = new_kern(&mut st.mem, bos5);
+                if p2 == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow);
+                }
+                st.mem.set_b32s1(z, p2);
+                let v2 = st.mem.b32s1(v + 2)
+                    + bos5
+                    + st.mem.b32s1(z + 3)
+                    + st.mem.b32s1(z + 2)
+                    + shift_down;
+                st.mem.set_b32s1(v + 2, v2);
+            }
+
+            st.mem.set_b32s1(q + 1, v);
+            Ok(())
+        });
+        if step.is_err() {
+            node_recycle_abort(NodeRecycleAbort::Overflow);
+        }
     }
 
     free_ot_assembly(ot_assembly_ptr);
@@ -2133,7 +2190,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                     break 'reswitch FirstPass::CheckDimensions;
                 }
                 OP_NOAD => {
-                    delta = make_op(q);
+                    delta = make_op_global(q);
                     if mem_b16s0(q) == LIMITS {
                         break 'reswitch FirstPass::CheckDimensions;
                     }
