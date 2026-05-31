@@ -7,6 +7,28 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 98 — 2026-05-31 — collapse `make_scripts_global` branch bodies into helpers
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` reports **51** Rust warnings in this worktree).
+
+**Slice:** larger but bounded structural cleanup inside `make_scripts_global` (`src/math.rs`) after session 97's sub/sup stack-tail extraction. Recon again found only stale `xetex-math.c` prototype/comment hits for `make_scripts`; no cleanup aliases; no cross-module extern/static redeclarations for the new helper slice; and the single live `make_scripts_global` caller in `mlist_to_hlist` is not inside a live `with_state*` closure. Candidate bridge accessors and math helpers still have other callers, so none were deleted.
+
+**Classification:** `make_scripts_global` remains bucket **C/D**, but is now a small dispatcher. New `initial_script_shifts_global`, `finish_subscript_only_global`, `prepare_superscript_global`, and `finish_superscript_branch_global` are bucket **C/D** wrappers: they interleave short direct borrow islands with `hpack`, `clean_box` via `clean_script_box_global`, `first_script_glyph_global`, `maybe_attach_script_kern_global`, OT-math constants, and the existing `finish_subsup_stack_global`. `prepare_subscript_global` is also bucket **C/D** because its saved-font ordering differs between the subscript-only and sub/sup paths and must preserve `first_script_glyph_global` side effects exactly. `append_script_box` stays bucket **B** over `MemState`.
+
+**Structure:** added `ScriptShifts`, `PreparedScript`, `initial_script_shifts_global`, `prepare_subscript_global`, `finish_subscript_only_global`, `prepare_superscript_global`, and `finish_superscript_branch_global`. `make_scripts_global` now reads the nucleus list head, computes initial shifts, and dispatches to either the subscript-only or superscript branch helper. The helpers preserve the original saved-font ordering: subscript-only saves after probing the subscript glyph; the sub/sup path saves before probing the subscript glyph. `hpack`, `clean_box`, `first_script_glyph_global`, `font_is_ot_math_global`, OT-math C calls, and `vpackage` remain outside live state borrows.
+
+**Bridged call sites / deleted accessors:** no external call-site rename. No bridge accessor lost its last caller, so none deleted. No new state method surface.
+
+**Newtype debt:** none. No state fields moved; helper input/return structs carry existing plain `i32`/`u16` values.
+
+**Metrics:** `#[no_mangle]` unchanged. raw extern statics unchanged. raw `unsafe {}` unchanged. Current worktree counts after validation: `#[no_mangle]` **328**, raw extern statics **38**, raw `unsafe {}` **174**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` -> 0 errors, 51 warnings; full dashboard -> **29 / 2 / 7 / 4**.
+
+**For the next session (99):** `make_scripts_global` is structurally much smaller; good next math targets are another nearby box/list helper outside `make_scripts_global`, or a narrowly scoped pass to simplify the newly extracted helpers if a clearer shared parameter shape emerges. Do not take a whole high-count orchestrator (`mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, `line_break`). Keep `clean_box`, `vpackage`, OT-math calls, `font_is_ot_math_global`, `first_script_glyph_global`, and `attach_hkern_to_new_hlist_global` outside live borrows unless explicitly classified/threaded.
+
+---
+
 ## Idiom session 97 — 2026-05-31 — extract `make_scripts_global` sub/sup stack tail
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (`cargo check` reports **51** Rust warnings in this worktree).

@@ -1889,6 +1889,34 @@ unsafe fn clean_script_box_global(
     ScriptBoxPrep { node, shift }
 }
 
+struct ScriptShifts {
+    up: i32,
+    down: i32,
+}
+
+unsafe fn initial_script_shifts_global(p: i32) -> ScriptShifts {
+    if crate::state::with_state(|st| {
+        is_char_node_in(&st.mem, p) || glyph_nucleus(&st.mem, p).is_some()
+    }) {
+        ScriptShifts { up: 0, down: 0 }
+    } else {
+        let z = crate::scan::hpack(p, 0, ADDITIONAL);
+        let shifts = crate::state::with_state(|st| {
+            let t = if st.scanner.cur_style < SCRIPT_STYLE {
+                SCRIPT_SIZE
+            } else {
+                SCRIPT_SCRIPT_SIZE
+            };
+            ScriptShifts {
+                up: st.mem.b32s1(z + 3) - sup_drop(&st.fonts, &st.eqtb, t),
+                down: st.mem.b32s1(z + 2) + sub_drop(&st.fonts, &st.eqtb, t),
+            }
+        });
+        crate::state::with_state_mut(|st| free_node(&mut st.mem, z, BOX_NODE_SIZE));
+        shifts
+    }
+}
+
 fn append_script_box(mem: &mut MemState, q: i32, box_node: i32) {
     if mem.b32s1(q + 1) == TEX_NULL {
         mem.set_b32s1(q + 1, box_node);
@@ -1972,6 +2000,196 @@ unsafe fn finish_subsup_stack_global(input: SubSupStackInput) {
     let packaged = crate::scan::vpackage(input.x, 0, ADDITIONAL, MAX_HALFWORD);
     crate::state::with_state_mut(|st| st.mem.set_b32s1(packaged + 4, input.shift_down));
     append_script_box_global(input.q, packaged);
+}
+
+struct PreparedScript {
+    node: i32,
+    glyph: u16,
+    font: i32,
+    shift: i32,
+}
+
+unsafe fn prepare_subscript_global(
+    script_field: i32,
+    adjustment: ScriptBoxAdjustment,
+    mut shift_down: i32,
+    saved_font_before_glyph_probe: Option<i32>,
+) -> PreparedScript {
+    let (save_f, glyph, font) = if let Some(save_f) = saved_font_before_glyph_probe {
+        let (glyph, font) = first_script_glyph_global(script_field);
+        (save_f, glyph, font)
+    } else {
+        let (glyph, font) = first_script_glyph_global(script_field);
+        let save_f = crate::state::with_state(|st| st.scanner.cur_f);
+        (save_f, glyph, font)
+    };
+    let clean_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 4) + 5);
+    let prepared = clean_script_box_global(script_field, clean_style, save_f, adjustment);
+    if shift_down < prepared.shift {
+        shift_down = prepared.shift;
+    }
+
+    PreparedScript {
+        node: prepared.node,
+        glyph,
+        font,
+        shift: shift_down,
+    }
+}
+
+unsafe fn finish_subscript_only_global(q: i32, p: i32, shift_down: i32) {
+    let PreparedScript {
+        node: x,
+        glyph: sub_g,
+        font: sub_f,
+        shift: mut shift_down,
+    } = prepare_subscript_global(q + 3, ScriptBoxAdjustment::Sub1, shift_down, None);
+
+    let (cur_f, box_depth, x_height) = crate::state::with_state(|st| {
+        (
+            st.scanner.cur_f,
+            st.mem.b32s1(x + 3),
+            math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
+        )
+    });
+    let clr = if font_is_ot_math_global(cur_f) {
+        box_depth - get_ot_math_constant(cur_f, SUBSCRIPTTOPMAX)
+    } else {
+        box_depth - (x_height * 4).abs() / 5
+    };
+
+    if shift_down < clr {
+        shift_down = clr;
+    }
+
+    crate::state::with_state_mut(|st| st.mem.set_b32s1(x + 4, shift_down));
+
+    let _ = maybe_attach_script_kern_global(q, p, sub_f, sub_g, SUB_CMD, shift_down);
+    append_script_box_global(q, x);
+}
+
+unsafe fn prepare_superscript_global(q: i32, mut shift_up: i32) -> PreparedScript {
+    let (glyph, font) = first_script_glyph_global(q + 2);
+    let (save_f, clean_style) = crate::state::with_state(|st| {
+        (
+            st.scanner.cur_f,
+            2 * (st.scanner.cur_style / 4) + 4 + (st.scanner.cur_style % 2),
+        )
+    });
+    let prepared =
+        clean_script_box_global(q + 2, clean_style, save_f, ScriptBoxAdjustment::Superscript);
+    if shift_up < prepared.shift {
+        shift_up = prepared.shift;
+    }
+
+    let (cur_f, box_height, x_height) = crate::state::with_state(|st| {
+        (
+            st.scanner.cur_f,
+            st.mem.b32s1(prepared.node + 2),
+            math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
+        )
+    });
+    let clr = if font_is_ot_math_global(cur_f) {
+        box_height + get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMIN)
+    } else {
+        box_height + x_height.abs() / 4
+    };
+
+    if shift_up < clr {
+        shift_up = clr;
+    }
+
+    PreparedScript {
+        node: prepared.node,
+        glyph,
+        font,
+        shift: shift_up,
+    }
+}
+
+unsafe fn finish_superscript_branch_global(
+    q: i32,
+    p: i32,
+    superscript: PreparedScript,
+    mut shift_down: i32,
+    delta: i32,
+) {
+    let x = superscript.node;
+    let shift_up = superscript.shift;
+    let sub_empty = crate::state::with_state(|st| st.mem.b32s1(q + 3) == EMPTY);
+    if sub_empty {
+        let _ = maybe_attach_script_kern_global(
+            q,
+            p,
+            superscript.font,
+            superscript.glyph,
+            SUP_CMD,
+            shift_up,
+        );
+        crate::state::with_state_mut(|st| st.mem.set_b32s1(x + 4, -shift_up));
+        append_script_box_global(q, x);
+        return;
+    }
+
+    let save_f = crate::state::with_state(|st| st.scanner.cur_f);
+    let PreparedScript {
+        node: y,
+        glyph: sub_g,
+        font: sub_f,
+        shift,
+    } = prepare_subscript_global(q + 3, ScriptBoxAdjustment::Sub2, shift_down, Some(save_f));
+    shift_down = shift;
+
+    let (cur_f, x_height_node, y_depth, default_rule_thickness) = crate::state::with_state(|st| {
+        (
+            st.scanner.cur_f,
+            st.mem.b32s1(x + 2),
+            st.mem.b32s1(y + 3),
+            default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size),
+        )
+    });
+    let mut clr = if font_is_ot_math_global(cur_f) {
+        get_ot_math_constant(cur_f, SUBSUPERSCRIPTGAPMIN)
+            - ((shift_up - x_height_node) - (y_depth - shift_down))
+    } else {
+        4 * default_rule_thickness - ((shift_up - x_height_node) - (y_depth - shift_down))
+    };
+
+    let mut shift_up = shift_up;
+    if clr > 0 {
+        shift_down += clr;
+        let (cur_f, x_height_node, x_height) = crate::state::with_state(|st| {
+            (
+                st.scanner.cur_f,
+                st.mem.b32s1(x + 2),
+                math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
+            )
+        });
+        clr = if font_is_ot_math_global(cur_f) {
+            get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT)
+                - (shift_up - x_height_node)
+        } else {
+            (x_height * 4).abs() / 5 - (shift_up - x_height_node)
+        };
+        if clr > 0 {
+            shift_up += clr;
+            shift_down -= clr;
+        }
+    }
+
+    finish_subsup_stack_global(SubSupStackInput {
+        q,
+        p,
+        x,
+        y,
+        sub_f,
+        sub_g,
+        sup_f: superscript.font,
+        sup_g: superscript.glyph,
+        shift_down,
+        shift_up,
+        delta,
+    });
 }
 
 // translated from xetex-math.c:805 (repeated script glyph discovery block)
@@ -2082,183 +2300,15 @@ unsafe fn first_script_glyph_global(script_head: i32) -> (u16, i32) {
 
 /// translated from xetex-math.c:84 (make_scripts)
 unsafe fn make_scripts_global(q: i32, delta: i32) {
-    let mut p = crate::state::with_state(|st| st.mem.b32s1(q + 1));
-    let x: i32;
-    let y: i32;
-    let mut clr: i32;
-    let sup_g: u16;
-    let sup_f: i32;
-    let sub_g: u16;
-    let sub_f: i32;
-
-    let (mut shift_up, mut shift_down) = if crate::state::with_state(|st| {
-        is_char_node_in(&st.mem, p) || glyph_nucleus(&st.mem, p).is_some()
-    }) {
-        (0, 0)
-    } else {
-        let z = crate::scan::hpack(p, 0, ADDITIONAL);
-        let (up, down) = crate::state::with_state(|st| {
-            let t = if st.scanner.cur_style < SCRIPT_STYLE {
-                SCRIPT_SIZE
-            } else {
-                SCRIPT_SCRIPT_SIZE
-            };
-            (
-                st.mem.b32s1(z + 3) - sup_drop(&st.fonts, &st.eqtb, t),
-                st.mem.b32s1(z + 2) + sub_drop(&st.fonts, &st.eqtb, t),
-            )
-        });
-        crate::state::with_state_mut(|st| free_node(&mut st.mem, z, BOX_NODE_SIZE));
-        (up, down)
-    };
+    let p = crate::state::with_state(|st| st.mem.b32s1(q + 1));
+    let shifts = initial_script_shifts_global(p);
 
     if crate::state::with_state(|st| st.mem.b32s1(q + 2)) == EMPTY {
-        let (script_g, script_f) = first_script_glyph_global(q + 3);
-        sub_g = script_g;
-        sub_f = script_f;
-
-        let (save_f, clean_style) =
-            crate::state::with_state(|st| (st.scanner.cur_f, 2 * (st.scanner.cur_style / 4) + 5));
-        let prepared =
-            clean_script_box_global(q + 3, clean_style, save_f, ScriptBoxAdjustment::Sub1);
-        x = prepared.node;
-        if shift_down < prepared.shift {
-            shift_down = prepared.shift;
-        }
-
-        let (cur_f, box_depth, x_height) = crate::state::with_state(|st| {
-            (
-                st.scanner.cur_f,
-                st.mem.b32s1(x + 3),
-                math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
-            )
-        });
-        clr = if font_is_ot_math_global(cur_f) {
-            box_depth - get_ot_math_constant(cur_f, SUBSCRIPTTOPMAX)
-        } else {
-            box_depth - (x_height * 4).abs() / 5
-        };
-
-        if shift_down < clr {
-            shift_down = clr;
-        }
-
-        crate::state::with_state_mut(|st| st.mem.set_b32s1(x + 4, shift_down));
-
-        let _ = maybe_attach_script_kern_global(q, p, sub_f, sub_g, SUB_CMD, shift_down);
+        finish_subscript_only_global(q, p, shifts.down);
     } else {
-        let (script_g, script_f) = first_script_glyph_global(q + 2);
-        sup_g = script_g;
-        sup_f = script_f;
-
-        let (mut save_f, clean_style) = crate::state::with_state(|st| {
-            (
-                st.scanner.cur_f,
-                2 * (st.scanner.cur_style / 4) + 4 + (st.scanner.cur_style % 2),
-            )
-        });
-        let prepared =
-            clean_script_box_global(q + 2, clean_style, save_f, ScriptBoxAdjustment::Superscript);
-        x = prepared.node;
-        clr = prepared.shift;
-
-        if shift_up < clr {
-            shift_up = clr;
-        }
-
-        let (cur_f, box_height, x_height) = crate::state::with_state(|st| {
-            (
-                st.scanner.cur_f,
-                st.mem.b32s1(x + 2),
-                math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
-            )
-        });
-        clr = if font_is_ot_math_global(cur_f) {
-            box_height + get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMIN)
-        } else {
-            box_height + x_height.abs() / 4
-        };
-
-        if shift_up < clr {
-            shift_up = clr;
-        }
-
-        let sub_empty = crate::state::with_state(|st| st.mem.b32s1(q + 3) == EMPTY);
-        if sub_empty {
-            p = maybe_attach_script_kern_global(q, p, sup_f, sup_g, SUP_CMD, shift_up).p;
-        }
-
-        if crate::state::with_state(|st| st.mem.b32s1(q + 3)) == EMPTY {
-            crate::state::with_state_mut(|st| st.mem.set_b32s1(x + 4, -shift_up));
-        } else {
-            save_f = crate::state::with_state(|st| st.scanner.cur_f);
-            let (script_g, script_f) = first_script_glyph_global(q + 3);
-            sub_g = script_g;
-            sub_f = script_f;
-
-            let clean_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 4) + 5);
-            let prepared =
-                clean_script_box_global(q + 3, clean_style, save_f, ScriptBoxAdjustment::Sub2);
-            y = prepared.node;
-            if shift_down < prepared.shift {
-                shift_down = prepared.shift;
-            }
-
-            let (cur_f, x_height_node, y_depth, default_rule_thickness) =
-                crate::state::with_state(|st| {
-                    (
-                        st.scanner.cur_f,
-                        st.mem.b32s1(x + 2),
-                        st.mem.b32s1(y + 3),
-                        default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size),
-                    )
-                });
-            clr = if font_is_ot_math_global(cur_f) {
-                get_ot_math_constant(cur_f, SUBSUPERSCRIPTGAPMIN)
-                    - ((shift_up - x_height_node) - (y_depth - shift_down))
-            } else {
-                4 * default_rule_thickness - ((shift_up - x_height_node) - (y_depth - shift_down))
-            };
-
-            if clr > 0 {
-                shift_down += clr;
-                let (cur_f, x_height_node, x_height) = crate::state::with_state(|st| {
-                    (
-                        st.scanner.cur_f,
-                        st.mem.b32s1(x + 2),
-                        math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
-                    )
-                });
-                clr = if font_is_ot_math_global(cur_f) {
-                    get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT)
-                        - (shift_up - x_height_node)
-                } else {
-                    (x_height * 4).abs() / 5 - (shift_up - x_height_node)
-                };
-                if clr > 0 {
-                    shift_up += clr;
-                    shift_down -= clr;
-                }
-            }
-
-            finish_subsup_stack_global(SubSupStackInput {
-                q,
-                p,
-                x,
-                y,
-                sub_f,
-                sub_g,
-                sup_f,
-                sup_g,
-                shift_down,
-                shift_up,
-                delta,
-            });
-            return;
-        }
+        let superscript = prepare_superscript_global(q, shifts.up);
+        finish_superscript_branch_global(q, p, superscript, shifts.down, delta);
     }
-
-    append_script_box_global(q, x);
 }
 
 /// translated from xetex-math.c:759 (make_left_right)
