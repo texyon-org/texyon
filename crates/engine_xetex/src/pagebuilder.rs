@@ -21,8 +21,8 @@ use crate::errors::confusion;
 use crate::errors::error;
 use crate::helpers::badness;
 use crate::input::begin_token_list;
-use crate::mem::delete_glue_ref;
-use crate::mem::delete_token_ref;
+use crate::mem::delete_glue_ref_global;
+use crate::mem::delete_token_ref_global;
 use crate::mem::free_node_global;
 use crate::mem::get_node_global;
 use crate::mem::new_null_box_global;
@@ -40,7 +40,7 @@ use crate::save::new_save_level;
 use crate::scaled_math::x_over_n;
 use crate::scan::box_error;
 use crate::scan::do_marks;
-use crate::scan::flush_node_list;
+use crate::scan::flush_node_list_global;
 use crate::scan::normal_paragraph;
 use crate::scan::prune_page_top;
 use crate::scan::scan_left_brace;
@@ -205,14 +205,14 @@ unsafe fn fire_up(c: i32) {
     // 1047: Update top_mark / first_mark / bot_mark
     if cur_mark(BOT_MARK_CODE) != TEX_NULL {
         if cur_mark(TOP_MARK_CODE) != TEX_NULL {
-            delete_token_ref(cur_mark(TOP_MARK_CODE));
+            delete_token_ref_global(cur_mark(TOP_MARK_CODE));
         }
         set_cur_mark(TOP_MARK_CODE, cur_mark(BOT_MARK_CODE));
         set_mem_b32s0(
             cur_mark(TOP_MARK_CODE),
             mem_b32s0(cur_mark(TOP_MARK_CODE)) + 1,
         ); // TOKEN_LIST_ref_count++
-        delete_token_ref(cur_mark(FIRST_MARK_CODE));
+        delete_token_ref_global(cur_mark(FIRST_MARK_CODE));
         set_cur_mark(FIRST_MARK_CODE, TEX_NULL);
     }
 
@@ -342,7 +342,7 @@ unsafe fn fire_up(c: i32) {
                 hold_q = p;
                 set_insert_penalties(insert_penalties() + 1);
             } else {
-                delete_glue_ref(mem_b32s1(p + 4)); // INSERTION_NODE_split_top_ptr
+                delete_glue_ref_global(mem_b32s1(p + 4)); // INSERTION_NODE_split_top_ptr
                 free_node_global(p, INS_NODE_SIZE);
             }
             true // reset p to prev_p
@@ -360,7 +360,7 @@ unsafe fn fire_up(c: i32) {
                     }
                     if mem_b32s0(cur_ptr() + 2) != TEX_NULL {
                         // ETEX_MARK_sa_bot_mark != TEX_NULL
-                        delete_token_ref(mem_b32s0(cur_ptr() + 2));
+                        delete_token_ref_global(mem_b32s0(cur_ptr() + 2));
                     }
                     set_mem_b32s0(cur_ptr() + 2, mem_b32s1(p + 1)); // sa_bot_mark = MARK_NODE_ptr
                     set_mem_b32s0(mem_b32s1(p + 1), mem_b32s0(mem_b32s1(p + 1)) + 1);
@@ -375,7 +375,7 @@ unsafe fn fire_up(c: i32) {
                         );
                     }
                     if cur_mark(BOT_MARK_CODE) != TEX_NULL {
-                        delete_token_ref(cur_mark(BOT_MARK_CODE));
+                        delete_token_ref_global(cur_mark(BOT_MARK_CODE));
                     }
                     set_cur_mark(BOT_MARK_CODE, mem_b32s1(p + 1));
                     set_mem_b32s0(
@@ -422,7 +422,7 @@ unsafe fn fire_up(c: i32) {
     set_eqtb_b32s1(DIMEN_BASE + DIMEN_PAR__vfuzz, save_vfuzz);
 
     if last_glue() != MAX_HALFWORD {
-        delete_glue_ref(last_glue());
+        delete_glue_ref_global(last_glue());
     }
 
     // 1026: Start a new current page
@@ -516,7 +516,7 @@ unsafe fn fire_up(c: i32) {
         set_page_tail(PAGE_HEAD);
     }
 
-    flush_node_list(disc_ptr(LAST_BOX_CODE));
+    flush_node_list_global(disc_ptr(LAST_BOX_CODE));
     set_disc_ptr(LAST_BOX_CODE, TEX_NULL);
     ship_out(eqtb_b32s1(BOX_BASE + 255));
     set_eqtb_b32s1(BOX_BASE + 255, TEX_NULL);
@@ -532,7 +532,7 @@ pub unsafe fn build_page() {
 
         // 1031: Update last_glue, last_penalty, last_kern, last_node_type
         if last_glue() != MAX_HALFWORD {
-            delete_glue_ref(last_glue());
+            delete_glue_ref_global(last_glue());
         }
         set_last_penalty(0);
         set_last_kern(0);
@@ -850,7 +850,7 @@ pub unsafe fn build_page() {
                     error();
                     let rr = new_spec_global(gp);
                     set_mem_b16s0(rr, NORMAL as u16); // GLUE_SPEC_shrink_order = NORMAL
-                    delete_glue_ref(gp);
+                    delete_glue_ref_global(gp);
                     set_mem_b32s0(p + 1, rr); // GLUE_NODE_glue_ptr = rr
                     rr
                 } else {
@@ -883,7 +883,7 @@ pub unsafe fn build_page() {
             set_mem_b32s1(CONTRIB_HEAD, mem_b32s1(p));
             set_mem_b32s1(p, TEX_NULL);
             if eqtb_b32s1(INT_BASE + INT_PAR__saving_vdiscards) <= 0 {
-                flush_node_list(p);
+                flush_node_list_global(p);
             } else {
                 if disc_ptr(LAST_BOX_CODE) == TEX_NULL {
                     set_disc_ptr(LAST_BOX_CODE, p);

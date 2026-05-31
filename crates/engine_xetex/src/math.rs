@@ -491,8 +491,8 @@ pub unsafe extern "C" fn math_kern(p: i32, m: i32) {
 
 /// translated from xetex-math.c:80 (flush_math)
 pub unsafe fn flush_math() {
-    crate::scan::flush_node_list(mem_b32s1(cur_list_head()));
-    crate::scan::flush_node_list(cur_list_aux_b32s1());
+    crate::scan::flush_node_list_global(mem_b32s1(cur_list_head()));
+    crate::scan::flush_node_list_global(cur_list_aux_b32s1());
     set_mem_b32s1(cur_list_head(), TEX_NULL);
     set_cur_list_tail(cur_list_head());
     set_cur_list_aux_b32s1(TEX_NULL);
@@ -1203,7 +1203,7 @@ pub unsafe extern "C" fn make_math_accent(q: i32) {
     }
 
     if (mem_b32s1(q + 2) != EMPTY || mem_b32s1(q + 3) != EMPTY) && mem_b32s1(q + 1) == MATH_CHAR {
-        crate::scan::flush_node_list(x);
+        crate::scan::flush_node_list_global(x);
         x = new_noad_global();
         set_mem_word(x + 1, mem_word(q + 1));
         set_mem_word(x + 2, mem_word(q + 2));
@@ -1812,10 +1812,10 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                         }
                         _ => TEX_NULL,
                     };
-                    crate::scan::flush_node_list(mem_b32s0(q + 1));
-                    crate::scan::flush_node_list(mem_b32s1(q + 1));
-                    crate::scan::flush_node_list(mem_b32s0(q + 2));
-                    crate::scan::flush_node_list(mem_b32s1(q + 2));
+                    crate::scan::flush_node_list_global(mem_b32s0(q + 1));
+                    crate::scan::flush_node_list_global(mem_b32s1(q + 1));
+                    crate::scan::flush_node_list_global(mem_b32s0(q + 2));
+                    crate::scan::flush_node_list_global(mem_b32s1(q + 2));
                     set_mem_b16s1(q, STYLE_NODE);
                     set_mem_b16s0(q, cur_style() as u16);
                     set_mem_b32s1(q + 1, 0);
@@ -1846,7 +1846,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                     if mem_b16s0(q) == MU_GLUE {
                         let x = mem_b32s0(q + 1);
                         let y = math_glue(x, cur_mu());
-                        crate::mem::delete_glue_ref(x);
+                        crate::mem::delete_glue_ref_global(x);
                         set_mem_b32s0(q + 1, y);
                         set_mem_b16s0(q, NORMAL);
                     } else if cur_size() != TEXT_SIZE && mem_b16s0(q) == COND_MATH_GLUE {
@@ -1855,7 +1855,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                         {
                             set_mem_b32s1(q, mem_b32s1(p));
                             set_mem_b32s1(p, TEX_NULL);
-                            crate::scan::flush_node_list(p);
+                            crate::scan::flush_node_list_global(p);
                         }
                     }
                     break 'reswitch FirstPass::DoneWithNode;
@@ -3154,7 +3154,7 @@ pub unsafe fn after_math() {
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
         }
 
-        crate::scan::flush_node_list(j);
+        crate::scan::flush_node_list_global(j);
 
         if semantic_pagination_enabled() {
             crate::scan::tt_insert_special(c"tdux:ce dmath".as_ptr());
@@ -3392,7 +3392,7 @@ pub unsafe fn init_math() {
             }
 
             set_cur_dir(LEFT_TO_RIGHT);
-            crate::scan::flush_node_list(mem_b32s1(TEMP_HEAD));
+            crate::scan::flush_node_list_global(mem_b32s1(TEMP_HEAD));
         }
 
         let l;

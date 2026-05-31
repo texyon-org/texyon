@@ -328,6 +328,28 @@ impl MemState {
         unsafe { self.data[p as usize].b16.s1 }
     }
 
+    /// Read `mem[p].b16.s3`. Mirrors `globals::mem_b16s3`.
+    #[inline]
+    pub(crate) fn b16s3(&self, p: i32) -> u16 {
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        unsafe { self.data[p as usize].b16.s3 }
+    }
+
+    /// Read `mem[p].ptr` (the native-glyph pointer field). Mirrors
+    /// `globals::mem_ptr`.
+    #[inline]
+    pub(crate) fn ptr(&self, p: i32) -> *mut std::ffi::c_void {
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        unsafe { self.data[p as usize].ptr }
+    }
+
+    /// Write `mem[p].ptr`. Mirrors `globals::set_mem_ptr`. Union writes through
+    /// a `&mut` index are safe.
+    #[inline]
+    pub(crate) fn set_ptr(&mut self, p: i32, v: *mut std::ffi::c_void) {
+        self.data[p as usize].ptr = v;
+    }
+
     /// Write `mem[p].b32.s0`. Union writes through a `&mut` index are safe.
     #[inline]
     pub(crate) fn set_b32s0(&mut self, p: i32, v: i32) {

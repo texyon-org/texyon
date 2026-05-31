@@ -15,12 +15,10 @@ use crate::scan::runaway;
 use crate::state::{EqtbState, MemState};
 
 use crate::globals::{
-    avail, cur_input_synctex_tag, cur_list_head, eqtb_b32s1, line, max_nest_stack, mem_b16s0,
-    mem_b32s0, mem_b32s1, mem_ptr, nest_ptr, nest_size, restore_cur_list_from_nest,
-    save_cur_list_to_nest, set_avail, set_cur_list_e_tex_aux, set_cur_list_head,
-    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_max_nest_stack,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_ptr, set_nest_ptr,
-    set_temp_ptr, temp_ptr,
+    avail, cur_input_synctex_tag, cur_list_head, line, max_nest_stack, mem_b16s0, mem_b32s1,
+    mem_ptr, nest_ptr, nest_size, restore_cur_list_from_nest, save_cur_list_to_nest, set_avail,
+    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf,
+    set_cur_list_tail, set_max_nest_stack, set_mem_b16s0, set_mem_b32s1, set_mem_ptr, set_nest_ptr,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
@@ -795,23 +793,41 @@ pub unsafe extern "C" fn copy_native_glyph_info(src: i32, dest: i32) {
 /// Decrement the reference count of a token list; free if it reaches TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:976 (delete_token_ref)
-pub unsafe fn delete_token_ref(p: i32) {
-    if mem_b32s0(p) == TEX_NULL {
-        flush_list_global(p);
+///
+/// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only and calls
+/// the threaded [`flush_list`] (no cold path, zero `with_state` calls). Legacy
+/// callers use [`delete_token_ref_global`].
+pub fn delete_token_ref(mem: &mut MemState, p: i32) {
+    if mem.b32s0(p) == TEX_NULL {
+        flush_list(mem, p);
     } else {
-        set_mem_b32s0(p, mem_b32s0(p) - 1);
+        mem.set_b32s0(p, mem.b32s0(p) - 1);
     }
+}
+
+/// Transitional bridge-down wrapper for legacy `delete_token_ref` callers.
+pub fn delete_token_ref_global(p: i32) {
+    crate::state::with_state_mut(|st| delete_token_ref(&mut st.mem, p));
 }
 
 /// Decrement the reference count of a glue spec; free if it reaches TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:984 (delete_glue_ref)
-pub unsafe fn delete_glue_ref(p: i32) {
-    if mem_b32s1(p) == TEX_NULL {
-        free_node_global(p, GLUE_SPEC_SIZE);
+///
+/// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only and calls
+/// the threaded [`free_node`] (no cold path, zero `with_state` calls). Legacy
+/// callers use [`delete_glue_ref_global`].
+pub fn delete_glue_ref(mem: &mut MemState, p: i32) {
+    if mem.b32s1(p) == TEX_NULL {
+        free_node(mem, p, GLUE_SPEC_SIZE);
     } else {
-        set_mem_b32s1(p, mem_b32s1(p) - 1);
+        mem.set_b32s1(p, mem.b32s1(p) - 1);
     }
+}
+
+/// Transitional bridge-down wrapper for legacy `delete_glue_ref` callers.
+pub fn delete_glue_ref_global(p: i32) {
+    crate::state::with_state_mut(|st| delete_glue_ref(&mut st.mem, p));
 }
 
 // ---------------------------------------------------------------------------

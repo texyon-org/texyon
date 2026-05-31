@@ -1065,7 +1065,7 @@ pub unsafe extern "C" fn final_cleanup() {
             c = TOP_MARK_CODE as i32;
             loop {
                 if cur_mark(c as usize) != crate::mem::TEX_NULL {
-                    crate::mem::delete_token_ref(cur_mark(c as usize));
+                    crate::mem::delete_token_ref_global(cur_mark(c as usize));
                 }
                 if c as usize >= SPLIT_BOT_MARK_CODE {
                     break;
@@ -1081,7 +1081,7 @@ pub unsafe extern "C" fn final_cleanup() {
 
             c = LAST_BOX_CODE as i32;
             loop {
-                crate::scan::flush_node_list(disc_ptr(c as usize));
+                crate::scan::flush_node_list_global(disc_ptr(c as usize));
                 if c as usize >= VSPLIT_CODE {
                     break;
                 }
@@ -1089,7 +1089,7 @@ pub unsafe extern "C" fn final_cleanup() {
             }
 
             if last_glue() != MAX_HALFWORD {
-                crate::mem::delete_glue_ref(last_glue());
+                crate::mem::delete_glue_ref_global(last_glue());
             }
             store_fmt_file();
             return;

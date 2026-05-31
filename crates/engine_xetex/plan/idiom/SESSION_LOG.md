@@ -8,6 +8,32 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 79 — 2026-05-31 — thread the node-disposal cluster (flush_node_list + delete_glue_ref/delete_token_ref)
+
+**Type:** execution (workstream 01, Phase C — `mem`/`scan` node-disposal cluster). **One commit.** Dashboard **29/2/7/4**.
+
+**Slice (large):** threaded the three fundamental node-recycling routines that bottom out the dependency graph for `post_line_break`, `sa_destroy`, math, pagebuilder, etc.:
+- `delete_token_ref(mem: &mut MemState, p)` and `delete_glue_ref(mem: &mut MemState, p)` (mem.rs) — bucket **B**, mem-only, call the already-threaded `flush_list`/`free_node`. Added safe `_global` wrappers.
+- `flush_node_list(mem: &mut MemState, p) -> Result<(), &'static CStr>` (scan.rs) — the big recursive list-disposal. Rewrote the whole body onto `MemState` methods (added `b16s3`/`ptr`/`set_ptr`), recurses on itself, calls the threaded `free_node`/`delete_glue_ref`/`delete_token_ref`. Recursive-call arguments are precomputed into locals to avoid overlapping the `&mut mem` reborrow. The two impossible corrupt-node `confusion()` arms return the `01b` §5 sentinel `Err(msg)`; `flush_node_list_global` fires `confusion()` after the borrow drops. The `libc::free` of the native-glyph buffer stays, wrapped in an audited `unsafe` block (the fn is now safe).
+- Bridged **116 legacy call sites** across 7 files (scan, math, linebreak, save, pagebuilder, shipout, ini) to the `_global` wrappers via a scripted rename, with the 4 bare-name `use` imports repointed.
+
+**Classification (`01b` §4a):** `delete_*` bucket **B**; `flush_node_list` bucket **B** + the cold `confusion` edge handled as bucket **C** via the `Result` sentinel.
+
+**Recon / safety checks (§11 + `01b`):**
+- no extern statics, no `ini.rs` cleanup aliases.
+- no C/C++ callers (grep empty for all three).
+- no call site already inside a `with_state*` closure (the one save.rs hit is a different threaded helper, not these).
+
+**Newtype debt:** none. Params/returns are plain `i32` / `*mut c_void` (native-glyph pointer) / `&'static CStr` (the confusion message) — no semantic typedef moved.
+
+**Metrics:** `#[no_mangle]` unchanged at **381** (none were exported). raw externs **40**. `unsafe fn` **684 → 682** (both `delete_*` dropped `unsafe`, safe wrappers; `flush_node_list`↔`flush_node_list_global` net zero). raw `unsafe {}` blocks **160 → 163** (+3: the three audited union projections in the new `MemState` methods + the explicit `libc::free` block; the old bodies' unsafe was implicit in `unsafe fn`). Net crate warnings **90 → 89**.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (80):** `flush_node_list` is now threaded, which unblocks more of `post_line_break` and `sa_destroy`. Good next targets: continue climbing `math.rs`/`pagebuilder.rs` node helpers that now bottom out on the threaded disposal cluster, or thread another `linebreak.rs` block. Keep `scan.rs`'s scanner hot path last; draft `02-modules.md` to READY before the big `scan.rs` decomposition.
+
+---
+
 ## Idiom session 78 — 2026-05-31 — thread linebreak LR-stack update
 
 **Type:** execution (workstream 01, Phase C — fifth `linebreak.rs` slice). **One commit.** Dashboard **29/2/7/4**.

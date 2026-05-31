@@ -1020,7 +1020,7 @@ pub unsafe extern "C" fn scan_expr() {
                 || mem_b32s1(f + 3).abs() > MAX_HALFWORD
             {
                 set_arith_error(true);
-                crate::mem::delete_glue_ref(f);
+                crate::mem::delete_glue_ref_global(f);
                 f = crate::mem::new_spec_global(0);
             }
 
@@ -1029,7 +1029,7 @@ pub unsafe extern "C" fn scan_expr() {
                 0 => {
                     if l >= GLUE_VAL_EXPR && o != EXPR_NONE {
                         t = crate::mem::new_spec_global(f);
-                        crate::mem::delete_glue_ref(f);
+                        crate::mem::delete_glue_ref_global(f);
                         if mem_b32s1(t + 2) == 0 {
                             set_mem_b16s1(t, NORMAL_EXPR);
                         }
@@ -1146,7 +1146,7 @@ pub unsafe extern "C" fn scan_expr() {
                         set_mem_b32s1(e + 3, mem_b32s1(t + 3));
                         set_mem_b16s0(e, mem_b16s0(t));
                     }
-                    crate::mem::delete_glue_ref(t);
+                    crate::mem::delete_glue_ref_global(t);
                     if mem_b32s1(e + 2) == 0 {
                         set_mem_b16s1(e, NORMAL_EXPR);
                     }
@@ -1188,7 +1188,7 @@ pub unsafe extern "C" fn scan_expr() {
         set_help_line(0, c"since the result is out of range.".as_ptr());
         crate::errors::error();
         if l >= GLUE_VAL_EXPR {
-            crate::mem::delete_glue_ref(e);
+            crate::mem::delete_glue_ref_global(e);
             e = 0;
             set_mem_b32s1(e, mem_b32s1(e) + 1); // GLUE_SPEC_ref_count(e)++
         } else {
@@ -1364,7 +1364,7 @@ pub unsafe extern "C" fn xetex_scan_dimen(
                     scan_something_internal(MU_VAL, false);
                     if cur_val_level() as i16 >= GLUE_VAL {
                         let v = mem_b32s1(cur_val() + 1);
-                        crate::mem::delete_glue_ref(cur_val());
+                        crate::mem::delete_glue_ref_global(cur_val());
                         set_cur_val(v);
                     }
                     if cur_val_level() as i16 == MU_VAL {
@@ -1467,7 +1467,7 @@ pub unsafe extern "C" fn xetex_scan_dimen(
                         scan_something_internal(MU_VAL, false);
                         if cur_val_level() as i16 >= GLUE_VAL {
                             let v = mem_b32s1(cur_val() + 1);
-                            crate::mem::delete_glue_ref(cur_val());
+                            crate::mem::delete_glue_ref_global(cur_val());
                             set_cur_val(v);
                         }
                         if cur_val_level() as i16 != MU_VAL {
@@ -1996,11 +1996,11 @@ pub unsafe extern "C" fn the_toks() -> i32 {
             }
             2 => {
                 crate::output::print_spec(cur_val(), c"pt".as_ptr());
-                crate::mem::delete_glue_ref(cur_val());
+                crate::mem::delete_glue_ref_global(cur_val());
             }
             3 => {
                 crate::output::print_spec(cur_val(), c"mu".as_ptr());
-                crate::mem::delete_glue_ref(cur_val());
+                crate::mem::delete_glue_ref_global(cur_val());
             }
             _ => {}
         }
@@ -2669,7 +2669,7 @@ pub unsafe extern "C" fn find_font_dimen(writing: bool) {
         set_cur_val(fmem_ptr());
     } else {
         if writing && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n) && font_glue(f) != TEX_NULL {
-            crate::mem::delete_glue_ref(font_glue(f));
+            crate::mem::delete_glue_ref_global(font_glue(f));
             set_font_glue(f, TEX_NULL);
         }
 
@@ -2745,7 +2745,7 @@ unsafe fn scan_file_name_braced() {
     set_selector(old_setting() as i32);
 
     let s = crate::string_pool::make_string();
-    crate::mem::delete_token_ref(def_ref());
+    crate::mem::delete_token_ref_global(def_ref());
     set_def_ref(save_def_ref);
     set_cur_cs(save_cur_cs);
     set_scanner_status(save_scanner_status);
@@ -3257,7 +3257,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                             if (cur_val_level() as i16) == GLUE_VAL {
                                 let gm = cur_val();
                                 set_cur_val(mem_b32s1(gm + 1));
-                                crate::mem::delete_glue_ref(gm);
+                                crate::mem::delete_glue_ref_global(gm);
                             } else if (cur_val_level() as i16) == MU_VAL {
                                 mu_error();
                             }
@@ -3267,7 +3267,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                             if (cur_val_level() as i16) >= GLUE_VAL {
                                 let gm = cur_val();
                                 set_cur_val(new_spec_global(gm));
-                                crate::mem::delete_glue_ref(gm);
+                                crate::mem::delete_glue_ref_global(gm);
                                 set_mem_b32s1(cur_val() + 1, -(mem_b32s1(cur_val() + 1)));
                                 set_mem_b32s1(cur_val() + 2, -(mem_b32s1(cur_val() + 2)));
                                 set_mem_b32s1(cur_val() + 3, -(mem_b32s1(cur_val() + 3)));
@@ -3373,7 +3373,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                                 } else {
                                     set_cur_val(mem_b32s1(q + 3));
                                 }
-                                crate::mem::delete_glue_ref(q);
+                                crate::mem::delete_glue_ref_global(q);
                             }
                             _ => {}
                         }
@@ -3698,7 +3698,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                                 } else {
                                     set_cur_val(mem_b16s0(q) as i32);
                                 }
-                                crate::mem::delete_glue_ref(q);
+                                crate::mem::delete_glue_ref_global(q);
                             }
                             _ => {}
                         }
@@ -5057,7 +5057,7 @@ pub unsafe fn box_error(n: u8) {
     show_box(box_val);
     capture_to_diagnostic(std::ptr::null_mut());
     crate::output::end_diagnostic(true);
-    flush_node_list(box_val);
+    flush_node_list_global(box_val);
     // BOX_REG(n) = TEX_NULL — direct eqtb write, no save-stack involvement
     crate::globals::set_eqtb_b32s1(BOX_BASE + n as i32, crate::mem::TEX_NULL);
 }
@@ -5316,7 +5316,7 @@ pub unsafe extern "C" fn trap_zero_glue() {
     {
         // GLUE_SPEC_ref_count(0)++ = mem[0].b32.s1++
         set_mem_b32s1(0, mem_b32s1(0) + 1);
-        crate::mem::delete_glue_ref(cur_val());
+        crate::mem::delete_glue_ref_global(cur_val());
         set_cur_val(0);
     }
 }
@@ -5545,11 +5545,11 @@ pub unsafe extern "C" fn compare_strings() {
     let save_cur_cs = cur_cs();
     scan_toks(false, true);
     let s1 = tokens_to_string(def_ref());
-    crate::mem::delete_token_ref(def_ref());
+    crate::mem::delete_token_ref_global(def_ref());
     set_cur_cs(save_cur_cs);
     scan_toks(false, true);
     let s2 = tokens_to_string(def_ref());
-    crate::mem::delete_token_ref(def_ref());
+    crate::mem::delete_token_ref_global(def_ref());
 
     let i1 = str_start(s1 - 65536);
     let j1 = str_start(s1 + 1 - 65536);
@@ -5847,7 +5847,7 @@ pub unsafe extern "C" fn build_discretionary() {
                     capture_to_diagnostic(std::ptr::null_mut());
                     crate::output::end_diagnostic(true);
 
-                    flush_node_list(p);
+                    flush_node_list_global(p);
                     set_mem_b32s1(q, crate::mem::TEX_NULL);
                     break 'walk;
                 }
@@ -5883,7 +5883,7 @@ pub unsafe extern "C" fn build_discretionary() {
                     0,
                     c"empty, in math formulas. I had to delete your third part.".as_ptr(),
                 );
-                flush_node_list(p);
+                flush_node_list_global(p);
                 n = 0;
                 error();
             } else {
@@ -6094,7 +6094,7 @@ pub unsafe extern "C" fn fin_align() {
             let s = mem_b32s0(r + 1);
             if s != 0 {
                 set_mem_b32s1(0, mem_b32s1(0) + 1); // GLUE_SPEC_ref_count(0)++
-                crate::mem::delete_glue_ref(s);
+                crate::mem::delete_glue_ref_global(s);
                 set_mem_b32s0(r + 1, 0);
             }
         }
@@ -6365,7 +6365,7 @@ pub unsafe extern "C" fn fin_align() {
         q = mem_b32s1(q);
     }
 
-    flush_node_list(p);
+    flush_node_list_global(p);
     pop_alignment();
 
     // Save aux and pop nest to get back to the outer list
@@ -6409,7 +6409,7 @@ pub unsafe extern "C" fn fin_align() {
                 crate::input::back_error();
             }
         }
-        flush_node_list(cur_list_e_tex_aux());
+        flush_node_list_global(cur_list_e_tex_aux());
         crate::mem::pop_nest();
         // Insert pre-display penalty and above-display skip
         set_mem_b32s1(
@@ -7369,7 +7369,7 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
             if q == ADVANCE {
                 let qs = crate::mem::new_spec_global(cur_val());
                 let r = s;
-                crate::mem::delete_glue_ref(cur_val());
+                crate::mem::delete_glue_ref_global(cur_val());
                 set_mem_b32s1(qs + 1, mem_b32s1(qs + 1) + mem_b32s1(r + 1));
                 if mem_b32s1(qs + 2) == 0 {
                     set_mem_b16s1(qs, NORMAL);
@@ -7457,7 +7457,7 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
         );
         set_help_line(0, c"since the result is out of range.".as_ptr());
         if p >= GLUE_VAL {
-            crate::mem::delete_glue_ref(cur_val());
+            crate::mem::delete_glue_ref_global(cur_val());
         }
         error();
         return;
@@ -7678,9 +7678,9 @@ pub unsafe extern "C" fn delete_last() {
     } else if fm {
         crate::globals::set_cur_list_tail(r_save);
         set_mem_b32s1(r_save, crate::mem::TEX_NULL);
-        flush_node_list(p);
+        flush_node_list_global(p);
     }
-    flush_node_list(tx);
+    flush_node_list_global(tx);
 }
 
 // translated from xetex-xetex0.c:6428 (char_warning)
@@ -9578,7 +9578,7 @@ pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
                     error();
                     let r = new_spec_global(q);
                     set_mem_b16s0(r, NORMAL); // GLUE_SPEC_shrink_order(r) = NORMAL
-                    crate::mem::delete_glue_ref(q);
+                    crate::mem::delete_glue_ref_global(q);
                     set_mem_b32s0(p + 1, r);
                     r
                 } else {
@@ -9631,7 +9631,7 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
         }
     };
 
-    flush_node_list(disc_ptr(VSPLIT_CODE));
+    flush_node_list_global(disc_ptr(VSPLIT_CODE));
     set_disc_ptr(VSPLIT_CODE, TEX_NULL);
 
     if sa_root(MARK_VAL) != TEX_NULL && do_marks(0, 0, sa_root(MARK_VAL)) {
@@ -9639,9 +9639,9 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
     }
 
     if cur_mark(SPLIT_FIRST_MARK_CODE) != TEX_NULL {
-        crate::mem::delete_token_ref(cur_mark(SPLIT_FIRST_MARK_CODE));
+        crate::mem::delete_token_ref_global(cur_mark(SPLIT_FIRST_MARK_CODE));
         set_cur_mark(SPLIT_FIRST_MARK_CODE, TEX_NULL);
-        crate::mem::delete_token_ref(cur_mark(SPLIT_BOT_MARK_CODE));
+        crate::mem::delete_token_ref_global(cur_mark(SPLIT_BOT_MARK_CODE));
         set_cur_mark(SPLIT_BOT_MARK_CODE, TEX_NULL);
     }
 
@@ -9682,7 +9682,7 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
                         set_mem_b32s1(cur_ptr() + 2, mark_ptr);
                         set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
                     } else {
-                        crate::mem::delete_token_ref(mem_b32s0(cur_ptr() + 3));
+                        crate::mem::delete_token_ref_global(mem_b32s0(cur_ptr() + 3));
                     }
                     set_mem_b32s0(cur_ptr() + 3, mark_ptr);
                     set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
@@ -9691,7 +9691,7 @@ pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
                     set_cur_mark(SPLIT_BOT_MARK_CODE, mark_ptr);
                     set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 2);
                 } else {
-                    crate::mem::delete_token_ref(cur_mark(SPLIT_BOT_MARK_CODE));
+                    crate::mem::delete_token_ref_global(cur_mark(SPLIT_BOT_MARK_CODE));
                     set_cur_mark(SPLIT_BOT_MARK_CODE, mark_ptr);
                     set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
                 }
@@ -9846,7 +9846,7 @@ pub unsafe extern "C" fn box_end(box_context: i32) {
                     c"<hskip or vskip>, so I'm ignoring these leaders.".as_ptr(),
                 );
                 crate::input::back_error();
-                flush_node_list(cur_box());
+                flush_node_list_global(cur_box());
             }
         } else {
             ship_out(cur_box());
@@ -10000,7 +10000,7 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
                             } else if fm {
                                 set_cur_list_tail(r);
                                 set_mem_b32s1(r, TEX_NULL);
-                                flush_node_list(p);
+                                flush_node_list_global(p);
                             }
                             set_cur_box(tx);
                             set_mem_b32s1(cur_box() + 4, 0);
@@ -10263,7 +10263,7 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
     } else {
         let q = mem_b32s1(p);
         set_mem_b32s1(p, TEX_NULL);
-        flush_node_list(mem_b32s1(TEMP_HEAD));
+        flush_node_list_global(mem_b32s1(TEMP_HEAD));
         q
     };
 
@@ -10553,7 +10553,7 @@ pub unsafe extern "C" fn handle_right_brace() {
                 set_mem_b16s1(cur_list_tail(), ADJUST_NODE);
                 set_mem_b16s0(cur_list_tail(), save_stack_b32s1(save_ptr() + 1) as u16);
                 set_mem_b32s1(cur_list_tail() + 1, mem_b32s1(p + 5));
-                crate::mem::delete_glue_ref(q);
+                crate::mem::delete_glue_ref_global(q);
             }
 
             crate::mem::free_node_global(p, BOX_NODE_SIZE);
@@ -10616,7 +10616,7 @@ pub unsafe extern "C" fn handle_right_brace() {
                 set_page_tail(PAGE_HEAD);
             }
 
-            flush_node_list(disc_ptr(LAST_BOX_CODE));
+            flush_node_list_global(disc_ptr(LAST_BOX_CODE));
             set_disc_ptr(LAST_BOX_CODE, TEX_NULL);
             crate::mem::pop_nest();
             build_page();
@@ -10799,7 +10799,7 @@ pub unsafe fn prune_page_top(p: i32, s: bool) -> i32 {
                     }
                     r = q;
                 } else {
-                    flush_node_list(q);
+                    flush_node_list_global(q);
                 }
             }
             _ => {
@@ -10861,22 +10861,22 @@ pub unsafe fn do_marks(a: i16, l: i16, q: i32) -> bool {
         match a {
             VSPLIT_INIT_DM => {
                 if mem_b32s1(q + 2) != TEX_NULL {
-                    crate::mem::delete_token_ref(mem_b32s1(q + 2));
+                    crate::mem::delete_token_ref_global(mem_b32s1(q + 2));
                     set_mem_b32s1(q + 2, TEX_NULL);
-                    crate::mem::delete_token_ref(mem_b32s0(q + 3));
+                    crate::mem::delete_token_ref_global(mem_b32s0(q + 3));
                     set_mem_b32s0(q + 3, TEX_NULL);
                 }
             }
             FIRE_UP_INIT_DM => {
                 if mem_b32s0(q + 2) != TEX_NULL {
                     if mem_b32s0(q + 1) != TEX_NULL {
-                        crate::mem::delete_token_ref(mem_b32s0(q + 1));
+                        crate::mem::delete_token_ref_global(mem_b32s0(q + 1));
                     }
-                    crate::mem::delete_token_ref(mem_b32s1(q + 1));
+                    crate::mem::delete_token_ref_global(mem_b32s1(q + 1));
                     set_mem_b32s1(q + 1, TEX_NULL);
                     let ref_ptr = mem_b32s0(q + 2);
                     if mem_b32s1(ref_ptr) == TEX_NULL {
-                        crate::mem::delete_token_ref(ref_ptr);
+                        crate::mem::delete_token_ref_global(ref_ptr);
                         set_mem_b32s0(q + 2, TEX_NULL);
                     } else {
                         set_mem_b32s0(ref_ptr, mem_b32s0(ref_ptr) + 1);
@@ -10900,7 +10900,7 @@ pub unsafe fn do_marks(a: i16, l: i16, q: i32) -> bool {
                     set_cur_ptr(cp);
 
                     if cur_ptr() != TEX_NULL {
-                        crate::mem::delete_token_ref(cur_ptr());
+                        crate::mem::delete_token_ref_global(cur_ptr());
                         if i % 2 != 0 {
                             set_mem_b32s1(q + (i / 2) as i32 + 1, TEX_NULL);
                         } else {
@@ -11015,7 +11015,7 @@ pub unsafe extern "C" fn do_extension() {
                 let p = cur_list_tail();
                 do_extension();
                 out_what(cur_list_tail());
-                flush_node_list(cur_list_tail());
+                flush_node_list_global(cur_list_tail());
                 set_cur_list_tail(p);
                 set_mem_b32s1(p, TEX_NULL);
             } else {
@@ -11410,7 +11410,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                                 }
                                 src_p = mem_b32s1(src_p);
                             }
-                            flush_node_list(scan_p);
+                            flush_node_list_global(scan_p);
                             p = mem_b32s1(q);
                             let use_glyph_metrics = eqtb_b32s1(INT_BASE + 72) > 0;
                             measure_native_node(
@@ -12101,7 +12101,7 @@ pub unsafe extern "C" fn conv_toks() {
             );
             set_selector(old_sel);
             s = crate::string_pool::make_string();
-            crate::mem::delete_token_ref(def_ref());
+            crate::mem::delete_token_ref_global(def_ref());
             set_def_ref(save_dr);
             set_warning_index(save_wi);
             set_scanner_status(save_ss);
@@ -12143,7 +12143,7 @@ pub unsafe extern "C" fn conv_toks() {
             );
             set_selector(old_sel);
             s = crate::string_pool::make_string();
-            crate::mem::delete_token_ref(def_ref());
+            crate::mem::delete_token_ref_global(def_ref());
             set_def_ref(save_dr);
             set_warning_index(save_wi);
             set_scanner_status(save_ss);
@@ -12186,7 +12186,7 @@ pub unsafe extern "C" fn conv_toks() {
             );
             set_selector(old_sel);
             s = crate::string_pool::make_string();
-            crate::mem::delete_token_ref(def_ref());
+            crate::mem::delete_token_ref_global(def_ref());
             set_def_ref(save_dr);
             set_warning_index(save_wi);
             set_scanner_status(save_ss);
@@ -12256,7 +12256,7 @@ pub unsafe extern "C" fn conv_toks() {
             );
             set_selector(old_sel);
             s = crate::string_pool::make_string();
-            crate::mem::delete_token_ref(def_ref());
+            crate::mem::delete_token_ref_global(def_ref());
             set_def_ref(save_dr);
             set_warning_index(save_wi);
             set_scanner_status(save_ss);
@@ -12659,167 +12659,204 @@ const SUB_BOX_FNL: i32 = 2; // xetex-constants.h:283
 const MEMORY_WORD_SIZE_FNL: i32 = 8;
 
 /// translated from xetex-xetex0.c:765 (flush_node_list)
-pub unsafe fn flush_node_list(mut p: i32) {
-    use crate::globals::{
-        avail, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, mem_ptr,
-        set_avail, set_mem_b16s0, set_mem_b32s1, set_mem_ptr,
-    };
+///
+/// Phase-C: threaded to `&mut MemState`. Touches the `mem` arena directly,
+/// recurses on itself, and calls the threaded [`crate::mem::free_node`] /
+/// [`crate::mem::delete_glue_ref`] / [`crate::mem::delete_token_ref`]. The two
+/// impossible corrupt-node arms cannot call the `with_state`-bearing
+/// `confusion()` under the borrow, so they return `Err(message)` (the `01b` §5
+/// sentinel) and [`flush_node_list_global`] performs the abort after the borrow
+/// drops. Recursive-call arguments are precomputed into locals so the immutable
+/// arena read does not overlap the `&mut mem` reborrow.
+pub fn flush_node_list(mem: &mut crate::state::MemState, mut p: i32) -> Result<(), &'static std::ffi::CStr> {
     while p != crate::mem::TEX_NULL {
-        let q = mem_b32s1(p);
-        if p >= hi_mem_min() {
+        let q = mem.b32s1(p);
+        if p >= mem.hi_mem_min {
             // is_char_node(p): free to avail list
-            set_mem_b32s1(p, avail());
-            set_avail(p);
+            mem.set_b32s1(p, mem.avail);
+            mem.avail = p;
         } else {
-            // Goto-done pattern: break 'done skips free_node_global(p, SMALL_NODE_SIZE) at end.
+            // Goto-done pattern: break 'done skips free_node(p, SMALL_NODE_SIZE) at end.
             'done: {
-                match mem_b16s1(p) {
+                match mem.b16s1(p) {
                     HLIST_NODE | VLIST_NODE_FNL | UNSET_NODE_FNL => {
-                        flush_node_list(mem_b32s1(p + 5));
-                        crate::mem::free_node_global(p, BOX_NODE_SIZE);
+                        let c = mem.b32s1(p + 5);
+                        flush_node_list(mem, c)?;
+                        crate::mem::free_node(mem, p, BOX_NODE_SIZE);
                         break 'done;
                     }
                     RULE_NODE => {
-                        crate::mem::free_node_global(p, RULE_NODE_SIZE);
+                        crate::mem::free_node(mem, p, RULE_NODE_SIZE);
                         break 'done;
                     }
                     INS_NODE_FNL => {
-                        flush_node_list(mem_b32s0(p + 4));
-                        crate::mem::delete_glue_ref(mem_b32s1(p + 4));
-                        crate::mem::free_node_global(p, INS_NODE_SIZE_FNL);
+                        let c = mem.b32s0(p + 4);
+                        flush_node_list(mem, c)?;
+                        let g = mem.b32s1(p + 4);
+                        crate::mem::delete_glue_ref(mem, g);
+                        crate::mem::free_node(mem, p, INS_NODE_SIZE_FNL);
                         break 'done;
                     }
                     WHATSIT_NODE_FNL => {
-                        match mem_b16s0(p) {
+                        match mem.b16s0(p) {
                             OPEN_NODE_FNL => {
-                                crate::mem::free_node_global(p, OPEN_NODE_SIZE_FNL);
+                                crate::mem::free_node(mem, p, OPEN_NODE_SIZE_FNL);
                             }
                             WRITE_NODE_FNL | SPECIAL_NODE_FNL => {
-                                crate::mem::delete_token_ref(mem_b32s1(p + 1));
-                                crate::mem::free_node_global(p, WRITE_NODE_SIZE_FNL);
+                                let t = mem.b32s1(p + 1);
+                                crate::mem::delete_token_ref(mem, t);
+                                crate::mem::free_node(mem, p, WRITE_NODE_SIZE_FNL);
                                 break 'done;
                             }
                             CLOSE_NODE_FNL | LANGUAGE_NODE_FNL => {
-                                crate::mem::free_node_global(p, SMALL_NODE_SIZE);
+                                crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                             }
                             NATIVE_WORD_NODE_FNL | NATIVE_WORD_NODE_AT_FNL => {
-                                let glyph_ptr = mem_ptr(p + 5);
+                                let glyph_ptr = mem.ptr(p + 5);
                                 if !glyph_ptr.is_null() {
-                                    libc::free(glyph_ptr);
-                                    set_mem_ptr(p + 5, std::ptr::null_mut());
-                                    set_mem_b16s0(p + 4, 0);
+                                    // SAFETY: glyph_ptr was xmalloc'd by the native-word shaper.
+                                    unsafe { libc::free(glyph_ptr) };
+                                    mem.set_ptr(p + 5, std::ptr::null_mut());
+                                    mem.set_b16s0(p + 4, 0);
                                 }
-                                let sz = mem_b16s3(p + 4) as i32;
-                                crate::mem::free_node_global(p, sz);
+                                let sz = mem.b16s3(p + 4) as i32;
+                                crate::mem::free_node(mem, p, sz);
                             }
                             GLYPH_NODE_FNL => {
-                                crate::mem::free_node_global(p, GLYPH_NODE_SIZE_FNL);
+                                crate::mem::free_node(mem, p, GLYPH_NODE_SIZE_FNL);
                             }
                             PIC_NODE_FNL | PDF_NODE_FNL => {
-                                let path_len = mem_b16s1(p + 4) as i32;
+                                let path_len = mem.b16s1(p + 4) as i32;
                                 let sz = PIC_NODE_SIZE_FNL
                                     + (path_len + MEMORY_WORD_SIZE_FNL - 1) / MEMORY_WORD_SIZE_FNL;
-                                crate::mem::free_node_global(p, sz);
+                                crate::mem::free_node(mem, p, sz);
                             }
                             PDF_SAVE_POS_NODE_FNL => {
-                                crate::mem::free_node_global(p, SMALL_NODE_SIZE);
+                                crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                             }
                             _ => {
-                                crate::errors::confusion(c"ext3".as_ptr());
+                                return Err(c"ext3");
                             }
                         }
                         break 'done;
                     }
                     GLUE_NODE => {
-                        let spec = mem_b32s0(p + 1);
-                        if mem_b32s1(spec) == crate::mem::TEX_NULL {
-                            crate::mem::free_node_global(spec, GLUE_SPEC_SIZE);
+                        let spec = mem.b32s0(p + 1);
+                        if mem.b32s1(spec) == crate::mem::TEX_NULL {
+                            crate::mem::free_node(mem, spec, GLUE_SPEC_SIZE);
                         } else {
-                            set_mem_b32s1(spec, mem_b32s1(spec) - 1);
+                            mem.set_b32s1(spec, mem.b32s1(spec) - 1);
                         }
-                        if mem_b32s1(p + 1) != crate::mem::TEX_NULL {
-                            flush_node_list(mem_b32s1(p + 1));
+                        if mem.b32s1(p + 1) != crate::mem::TEX_NULL {
+                            let c = mem.b32s1(p + 1);
+                            flush_node_list(mem, c)?;
                         }
-                        crate::mem::free_node_global(p, MEDIUM_NODE_SIZE);
+                        crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
                         break 'done;
                     }
                     KERN_NODE | MATH_NODE | PENALTY_NODE => {
-                        crate::mem::free_node_global(p, MEDIUM_NODE_SIZE);
+                        crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
                         break 'done;
                     }
                     MARGIN_KERN_NODE_FNL => {
-                        crate::mem::free_node_global(p, MARGIN_KERN_NODE_SIZE_FNL);
+                        crate::mem::free_node(mem, p, MARGIN_KERN_NODE_SIZE_FNL);
                         break 'done;
                     }
                     LIGATURE_NODE => {
-                        flush_node_list(mem_b32s1(p + 1));
-                        // falls through to free_node_global(p, SMALL_NODE_SIZE)
+                        let c = mem.b32s1(p + 1);
+                        flush_node_list(mem, c)?;
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
                     MARK_NODE_FNL => {
-                        crate::mem::delete_token_ref(mem_b32s1(p + 1));
-                        // falls through to free_node_global(p, SMALL_NODE_SIZE)
+                        let t = mem.b32s1(p + 1);
+                        crate::mem::delete_token_ref(mem, t);
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
                     DISC_NODE => {
-                        flush_node_list(mem_b32s0(p + 1));
-                        flush_node_list(mem_b32s1(p + 1));
-                        // falls through to free_node_global(p, SMALL_NODE_SIZE)
+                        let c1 = mem.b32s0(p + 1);
+                        flush_node_list(mem, c1)?;
+                        let c2 = mem.b32s1(p + 1);
+                        flush_node_list(mem, c2)?;
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
                     ADJUST_NODE_FNL => {
-                        flush_node_list(mem_b32s1(p + 1));
-                        // falls through to free_node_global(p, SMALL_NODE_SIZE)
+                        let c = mem.b32s1(p + 1);
+                        flush_node_list(mem, c)?;
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
                     STYLE_NODE_FNL => {
-                        crate::mem::free_node_global(p, STYLE_NODE_SIZE_FNL);
+                        crate::mem::free_node(mem, p, STYLE_NODE_SIZE_FNL);
                         break 'done;
                     }
                     CHOICE_NODE_FNL => {
-                        flush_node_list(mem_b32s0(p + 1));
-                        flush_node_list(mem_b32s1(p + 1));
-                        flush_node_list(mem_b32s0(p + 2));
-                        flush_node_list(mem_b32s1(p + 2));
-                        crate::mem::free_node_global(p, STYLE_NODE_SIZE_FNL);
+                        let c1 = mem.b32s0(p + 1);
+                        flush_node_list(mem, c1)?;
+                        let c2 = mem.b32s1(p + 1);
+                        flush_node_list(mem, c2)?;
+                        let c3 = mem.b32s0(p + 2);
+                        flush_node_list(mem, c3)?;
+                        let c4 = mem.b32s1(p + 2);
+                        flush_node_list(mem, c4)?;
+                        crate::mem::free_node(mem, p, STYLE_NODE_SIZE_FNL);
                         break 'done;
                     }
                     ORD_NOAD_FNL | OP_NOAD_FNL | BIN_NOAD_FNL | REL_NOAD_FNL | OPEN_NOAD_FNL
                     | CLOSE_NOAD_FNL | PUNCT_NOAD_FNL | INNER_NOAD_FNL | RADICAL_NOAD_FNL
                     | OVER_NOAD_FNL | UNDER_NOAD_FNL | VCENTER_NOAD_FNL | ACCENT_NOAD_FNL => {
-                        if mem_b32s1(p + 1) >= SUB_BOX_FNL {
-                            flush_node_list(mem_b32s0(p + 1));
+                        if mem.b32s1(p + 1) >= SUB_BOX_FNL {
+                            let c = mem.b32s0(p + 1);
+                            flush_node_list(mem, c)?;
                         }
-                        if mem_b32s1(p + 2) >= SUB_BOX_FNL {
-                            flush_node_list(mem_b32s0(p + 2));
+                        if mem.b32s1(p + 2) >= SUB_BOX_FNL {
+                            let c = mem.b32s0(p + 2);
+                            flush_node_list(mem, c)?;
                         }
-                        if mem_b32s1(p + 3) >= SUB_BOX_FNL {
-                            flush_node_list(mem_b32s0(p + 3));
+                        if mem.b32s1(p + 3) >= SUB_BOX_FNL {
+                            let c = mem.b32s0(p + 3);
+                            flush_node_list(mem, c)?;
                         }
-                        let ntype = mem_b16s1(p);
+                        let ntype = mem.b16s1(p);
                         if ntype == RADICAL_NOAD_FNL {
-                            crate::mem::free_node_global(p, RADICAL_NOAD_SIZE_FNL);
+                            crate::mem::free_node(mem, p, RADICAL_NOAD_SIZE_FNL);
                         } else if ntype == ACCENT_NOAD_FNL {
-                            crate::mem::free_node_global(p, ACCENT_NOAD_SIZE_FNL);
+                            crate::mem::free_node(mem, p, ACCENT_NOAD_SIZE_FNL);
                         } else {
-                            crate::mem::free_node_global(p, NOAD_SIZE_FNL);
+                            crate::mem::free_node(mem, p, NOAD_SIZE_FNL);
                         }
                         break 'done;
                     }
                     LEFT_NOAD_FNL | RIGHT_NOAD_FNL => {
-                        crate::mem::free_node_global(p, NOAD_SIZE_FNL);
+                        crate::mem::free_node(mem, p, NOAD_SIZE_FNL);
                         break 'done;
                     }
                     FRACTION_NOAD_FNL => {
-                        flush_node_list(mem_b32s0(p + 2));
-                        flush_node_list(mem_b32s0(p + 3));
-                        crate::mem::free_node_global(p, FRACTION_NOAD_SIZE_FNL);
+                        let c1 = mem.b32s0(p + 2);
+                        flush_node_list(mem, c1)?;
+                        let c2 = mem.b32s0(p + 3);
+                        flush_node_list(mem, c2)?;
+                        crate::mem::free_node(mem, p, FRACTION_NOAD_SIZE_FNL);
                         break 'done;
                     }
                     _ => {
-                        crate::errors::confusion(c"flushing".as_ptr());
+                        return Err(c"flushing");
                     }
                 }
-                crate::mem::free_node_global(p, SMALL_NODE_SIZE);
+                crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
             }
         }
         p = q;
+    }
+    Ok(())
+}
+
+/// Transitional bridge-down wrapper for legacy `flush_node_list` callers
+/// (`01b` §3, §5). Runs the threaded list disposal under a single borrow, then
+/// — after the borrow drops — fires the cold `confusion()` abort if a corrupt
+/// node was encountered. `confusion()` never returns, so the `Err` is only ever
+/// observed here, never by real callers.
+pub unsafe fn flush_node_list_global(p: i32) {
+    if let Err(msg) = crate::state::with_state_mut(|st| flush_node_list(&mut st.mem, p)) {
+        crate::errors::confusion(msg.as_ptr());
     }
 }
 
@@ -17237,7 +17274,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                     }
                     set_mem_b32s1(main_ppp(), mem_b32s1(main_pp()));
                     set_mem_b32s1(main_pp(), TEX_NULL);
-                    flush_node_list(main_pp());
+                    flush_node_list_global(main_pp());
                     set_main_pp(cur_list_tail());
                     while mem_b32s1(main_ppp()) != main_pp() {
                         set_main_ppp(mem_b32s1(main_ppp()));

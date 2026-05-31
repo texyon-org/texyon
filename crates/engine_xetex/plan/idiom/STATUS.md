@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 78, **Phase-C execution**: threaded the `post_line_break` LR-stack maintenance helper `update_lr_stack` to direct `&mut MemState`, allocating through threaded `get_avail` and deferring the cold overflow abort to a borrow-dropping `_global` wrapper. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 79, **Phase-C execution**: threaded the node-disposal cluster — `delete_token_ref`/`delete_glue_ref` (mem.rs) and the big recursive `flush_node_list` (scan.rs) — to `&mut MemState`, bridging 116 legacy call sites across 7 files; cold `confusion` deferred via a `Result` sentinel. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -707,6 +707,20 @@ least-coupled non-`misc` clusters:
     `runaway()`+`overflow()` abort after the borrow drops. The three legacy
     callers in `post_line_break` use the wrapper. No executable C/C++ callers; no
     cleanup aliases; no newtype debt. Dashboard 29/2/7/4.
+-   **Node-disposal cluster threaded (session 79):** threaded the three
+    fundamental node-recycling routines — `delete_token_ref` / `delete_glue_ref`
+    (mem.rs) and the big recursive `flush_node_list` (scan.rs) — to
+    `&mut MemState`. `flush_node_list`'s body was rewritten onto `MemState`
+    methods (added `b16s3`/`ptr`/`set_ptr`), recurses on itself, calls the
+    threaded `free_node`/`delete_glue_ref`/`delete_token_ref`, precomputes
+    recursive-call args into locals, and returns the `01b` §5 sentinel
+    (`Err(msg)`) for the two impossible corrupt-node `confusion` arms;
+    `flush_node_list_global` fires `confusion` after the borrow drops. Bridged
+    **116 legacy call sites** across 7 files (scan, math, linebreak, save,
+    pagebuilder, shipout, ini) to `_global` wrappers. This bottoms out the
+    disposal dependency for `post_line_break`/`sa_destroy`/math. No C/C++
+    callers; no cleanup aliases; no newtype debt. `unsafe fn` 684→682, raw
+    `unsafe {}` 160→163. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 
@@ -719,8 +733,8 @@ the snippets in `00-overview.md` / the workstream plans.
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 817 total / 176 state-backed scalars/arrays (session 76 removed `first_p` / `global_prev_p` getters after threading `total_pw`; incl. 4 session-55 SA/sentinels, 18 session-54 scanner scratch, and remaining `LinebreakState` accessors) + 74 Rust-owned arrays/arenas (xdv_buffer, mapped_text, native_text, name_of_file, name_of_file16, save_stack, param_stack, line/grp/if/source_filename/full_source_filename stacks, eof_seen, buffer, input_stack, input_file, nest, str_start, str_pool, 11 fixed-size hyph arrays, 9 dynamic trie arrays, 3 hyph exception arrays, font_check, font_size, font_dsize, font_params, font_name, font_area, font_bc, font_ec, bchar_label, font_bchar, font_false_bchar, font_glue, font_used, 9 *_base arrays, font_flags, font_letter_space, font_mapping, font_layout_engine, hyphen_char, skew_char, font_info, hlist_stack, hash) + session-46 clusters: 4 `ShipoutState` pagebuilder scalars, `TexmfState` (3 fields), `EngineState.synctex` (`SynctexCtxt`, 15 scalar + 5 flag accessor pairs) |
 | `#[no_mangle]` exports | 576 | boundary-only | 381 (direct `grep '#[no_mangle]' src/*.rs`; session 76 dropped `total_pw`) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 684 (session 78 net flat: `update_lr_stack` dropped `unsafe`, `update_lr_stack_global` added it) |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 160 / 688 not remeasured |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 682 (session 79 threaded `delete_token_ref`/`delete_glue_ref`/`flush_node_list`; both `delete_*` dropped `unsafe`) |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 163 / 688 not remeasured (session 79 +3: the three audited union projections in the new `MemState` `b16s3`/`ptr`/`set_ptr` methods + the explicit `libc::free` block, replacing implicit `unsafe fn` body unsafety) |
 | clippy errors | 694 | 0 | 694 not remeasured |
 | clippy warnings | 358 | 0 | 358 not remeasured |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,748 (`scan.rs`) |
@@ -847,7 +861,7 @@ the snippets in `00-overview.md` / the workstream plans.
     (grep checks → add field → repoint accessors → remove defs/aliases →
     worklist rows → dashboard → docs → commit) and heed its recurring
     gotchas.
-1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`); session 72 threaded the pure DVI byte formatters (`dvi_four`/`dvi_two`) with continuation-aware flush propagation; session 73 threaded the DVI font-definition / font-selection path (`dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`); sessions 74–78 continued `linebreak.rs` with the hlist-stack helper pair, protrusion scanners, `total_pw`, post-line-break margin-kern protrusion insertion, and the `post_line_break` LR-stack maintenance helper `update_lr_stack` (→ direct `LinebreakState`/`MemState`, allocating via threaded `get_avail` with cold overflow deferred to a `_global` wrapper; `char_pw` kept outside live state borrows). Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. Next: continue `linebreak.rs` with another closed `post_line_break` sub-block, or begin classifying `post_line_break` itself as a larger bucket-C/D target. Keep `scan.rs` last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
+1.  **Phase C is executing. The `mem` allocator core and all 17 `new_*` node constructors are fully threaded (sessions 61–64). Sessions 65–67 completed the current `save.rs` sparse-array helper run; sessions 68–69 started `shipout.rs` with DVI movement-node helpers plus `movement`; session 71 threaded the buffered DVI byte writer (`dvi_out`/`dvi_swap` → `&mut ShipoutState` returning a `DviFlush` deferred-action; `write_to_dvi` → borrow-dropping `write_to_dvi_global`); session 72 threaded the pure DVI byte formatters (`dvi_four`/`dvi_two`) with continuation-aware flush propagation; session 73 threaded the DVI font-definition / font-selection path (`dvi_font_def` / `dvi_native_font_def` / `ensure_dvi_font`); sessions 74–78 continued `linebreak.rs` with the hlist-stack helper pair, protrusion scanners, `total_pw`, post-line-break margin-kern protrusion insertion, and the `post_line_break` LR-stack maintenance helper `update_lr_stack` (→ direct `LinebreakState`/`MemState`, allocating via threaded `get_avail` with cold overflow deferred to a `_global` wrapper; `char_pw` kept outside live state borrows). Session 70 added the `01b` §4a classified-codemod lane: classify each target/group first, use regex/scripted rewrites only for the A/B mechanical buckets, and keep borrow-dropping/error/output/scanner cases manual. **Session 79 threaded the node-disposal cluster** (`delete_token_ref`/`delete_glue_ref` + the big recursive `flush_node_list`, 116 call sites across 7 files), bottoming out the disposal dependency for `post_line_break`/`sa_destroy`/math. Next: climb `math.rs`/`pagebuilder.rs` node helpers that now bottom out on the threaded disposal cluster, or thread another `linebreak.rs`/`post_line_break` block. Keep `scan.rs`'s scanner hot path last. Draft `02-modules.md` to READY before threading reaches scanner-heavy code.**
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

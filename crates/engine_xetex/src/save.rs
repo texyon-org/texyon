@@ -7,7 +7,7 @@ use crate::output::error_here_with_diagnostic;
 use crate::output::print_cstr;
 use crate::output::print_int;
 use crate::output::print_nl_cstr;
-use crate::scan::flush_node_list;
+use crate::scan::flush_node_list_global;
 use crate::state::{MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
@@ -215,14 +215,14 @@ pub unsafe extern "C" fn eq_destroy(w: MemoryWord) {
     let typ = w.b16.s1;
     let val = w.b32.s1;
     match typ {
-        113..=116 => crate::mem::delete_token_ref(val),
-        119 => crate::mem::delete_glue_ref(val),
+        113..=116 => crate::mem::delete_token_ref_global(val),
+        119 => crate::mem::delete_glue_ref_global(val),
         120 => {
             if val != TEX_NULL {
                 crate::mem::free_node_global(val, mem_b32s0(val) + mem_b32s0(val) + 1);
             }
         }
-        121 => flush_node_list(val),
+        121 => flush_node_list_global(val),
         72 | 91 => {
             if !(0..=19).contains(&val) {
                 delete_sa_ref_global(val);
@@ -537,7 +537,7 @@ unsafe fn finish_sa_mutation(p: i32, result: SaMutationResult) {
         crate::errors::overflow(c"save size".as_ptr(), save_size());
     }
     if let Some(list) = result.flush_list {
-        flush_node_list(list);
+        flush_node_list_global(list);
     }
     delete_sa_ref_global(p);
 }
@@ -582,7 +582,7 @@ pub unsafe fn sa_restore_global() {
         let step =
             crate::state::with_state_mut(|st| sa_restore_prepare(&mut st.mem, &mut st.scanner));
         if let Some(list) = step.flush_list {
-            flush_node_list(list);
+            flush_node_list_global(list);
         }
         let done = crate::state::with_state_mut(|st| {
             delete_sa_ref(&mut st.mem, &mut st.scanner, step.p);

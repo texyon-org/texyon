@@ -659,7 +659,7 @@ pub unsafe extern "C" fn finite_shrink(p: i32) -> i32 {
 
     let q = crate::mem::new_spec_global(p);
     set_mem_b16s0(q, NORMAL);
-    crate::mem::delete_glue_ref(p);
+    crate::mem::delete_glue_ref_global(p);
     q
 }
 
@@ -1026,8 +1026,8 @@ pub unsafe fn line_break(d: bool) {
         set_cur_list_tail(p);
     } else {
         set_mem_b16s1(tail, PENALTY_NODE as u16);
-        crate::mem::delete_glue_ref(glue_ptr(tail));
-        crate::scan::flush_node_list(glue_leader_ptr(tail));
+        crate::mem::delete_glue_ref_global(glue_ptr(tail));
+        crate::scan::flush_node_list_global(glue_leader_ptr(tail));
         set_penalty_node_penalty(tail, INF_PENALTY);
     }
 
@@ -1722,7 +1722,7 @@ pub unsafe fn line_break(d: bool) {
             set_do_last_line_fit(false);
         } else {
             let q = crate::mem::new_spec_global(glue_ptr(last_line_fill));
-            crate::mem::delete_glue_ref(glue_ptr(last_line_fill));
+            crate::mem::delete_glue_ref_global(glue_ptr(last_line_fill));
             set_box_width(
                 q,
                 box_width(q) + active_node_shortfall(crate::globals::best_bet())
@@ -1875,7 +1875,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
                 q = mem_b32s1(q);
             }
         } else if mem_b16s1(q) as i32 == GLUE_NODE {
-            crate::mem::delete_glue_ref(mem_b32s0(q + 1));
+            crate::mem::delete_glue_ref_global(mem_b32s0(q + 1));
             let right_skip = eqtb_b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP as i32);
             set_mem_b32s0(q + 1, right_skip);
             set_mem_b16s0(q, GLUE_PAR_RIGHT_SKIP as u16 + 1);
@@ -1897,7 +1897,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
                 let s = mem_b32s1(r);
                 r = mem_b32s1(s);
                 set_mem_b32s1(s, TEX_NULL);
-                crate::scan::flush_node_list(mem_b32s1(q));
+                crate::scan::flush_node_list_global(mem_b32s1(q));
                 set_mem_b16s0(q, 0);
             }
 
@@ -2096,7 +2096,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
 
             if r != TEMP_HEAD {
                 set_mem_b32s1(r, TEX_NULL);
-                crate::scan::flush_node_list(mem_b32s1(TEMP_HEAD));
+                crate::scan::flush_node_list_global(mem_b32s1(TEMP_HEAD));
                 set_mem_b32s1(TEMP_HEAD, q);
             }
         }
@@ -2816,7 +2816,7 @@ pub unsafe extern "C" fn hyphenate() {
             let q = mem_b32s1(ha());
             set_mem_b32s1(s, q);
             set_mem_b32s1(ha(), TEX_NULL);
-            crate::scan::flush_node_list(ha());
+            crate::scan::flush_node_list_global(ha());
             return;
         }
 
@@ -2874,7 +2874,7 @@ pub unsafe extern "C" fn hyphenate() {
             (ha(), 1)
         };
 
-        crate::scan::flush_node_list(r);
+        crate::scan::flush_node_list_global(r);
 
         loop {
             let mut l = j;
@@ -2985,7 +2985,7 @@ pub unsafe extern "C" fn hyphenate() {
                     if r_count > 127 {
                         set_mem_b32s1(s, mem_b32s1(r));
                         set_mem_b32s1(r, TEX_NULL);
-                        crate::scan::flush_node_list(r);
+                        crate::scan::flush_node_list_global(r);
                     } else {
                         set_mem_b32s1(s, r);
                         set_mem_b16s0(r, r_count as u16);
