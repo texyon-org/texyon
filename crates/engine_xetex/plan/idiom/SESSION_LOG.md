@@ -7,9 +7,19 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
-## Idiom session 99 — 2026-05-31 — thread `flush_math` to `&mut MemState`
+## Idiom session 99 — 2026-05-31 — thread `flush_math` + `fin_mlist` to `&mut MemState`
 
-**Type:** execution (workstream 01, Phase C — math noad family). **Two commits** (a preceding docs-refresh commit for the pre-existing WIP plan-doc/metrics changes, then this slice). Dashboard **29/2/7/4**. Crate warnings did not regress.
+**Type:** execution (workstream 01, Phase C — math noad family). **Three commits**: a preceding docs-refresh commit for the pre-existing WIP plan-doc/metrics changes, then two threading slices (`flush_math`, `fin_mlist`), one function + all call sites each. Dashboard **29/2/7/4** after each. Crate warnings did not regress.
+
+### Slice 2 — `fin_mlist`
+
+Threaded the math-mode mlist finalizer `fin_mlist` (`src/math.rs`) off the bridge. Recon: 5 call sites (`math.rs` ×4 — `build_choices`, `after_math`, `init_math` deletion paths; `scan.rs` ×1 in `its_all_over`/eqno handling); none inside a live `with_state*` closure; only stale `xetex-math.c` prototype/comment hits; no cleanup aliases, no cross-module redeclarations.
+
+**Classification:** bucket **C**. `fin_mlist(mem: &mut MemState, p) -> Result<i32, &CStr>` does the mem-link work + raw `cur_list` head/tail/aux reads under one borrow. Two with_state hazards are deferred to `fin_mlist_global` after the borrow drops: the impossible corrupt-node `confusion` (the `q`-not-`LEFT_NOAD` arm → `Err(c"right")`), and the trailing `pop_nest` (with_state-bearing through the `nest` array). `pop_nest` only recycles `cur_list.head`, which the core never modifies, so the original ordering (`pop_nest` last) is preserved exactly. Local temporaries (`head_link`, `etex_link`) avoid `&mut mem` + `&mem` argument-evaluation conflicts.
+
+**Bridged call sites:** 5 sites renamed to `fin_mlist_global`; `scan.rs`'s `use crate::math::fin_mlist` import updated. No bridge accessor lost its last caller; no new method surface; no fields moved → no newtype debt. Metrics flat (`unsafe fn` net 0: `fin_mlist` dropped `unsafe`, `fin_mlist_global` added it).
+
+### Slice 1 — `flush_math`
 
 **Slice:** threaded the small math-mode list-flusher `flush_math` (`src/math.rs`) off the bridge. It is a clean, fully-closeable leaf: it recycles the two current-list chains and resets `cur_list`. Recon: 3 call sites (`math.rs` ×2 in the math-symbol/extension-font-deleted error paths, `scan.rs` ×1 in `after_math`); none sits inside a live `with_state*` closure; only stale `xetex-math.c` prototype/comment hits for `flush_math`; no cleanup aliases, no cross-module redeclarations.
 
@@ -25,7 +35,7 @@ dashboard if code changed, surprises, and a handoff.
 
 **Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors; full dashboard → **29 / 2 / 7 / 4**.
 
-**For the next session (100):** continue bounded Phase-C threading of small math/list leaf helpers. Candidates near the math noad family: `fin_mlist` (mem + raw `cur_list` reads + a cold `confusion` + `pop_nest` — bucket C, must drop the borrow before `pop_nest`), or a box/list helper near delimiter/script construction (the EXT_TAG extensible-delimiter box-building block inside `var_delimiter_global` is a candidate for extraction in the session-81/83 style). Keep `clean_box`, `vpackage`, `hpack`, OT-math calls, `font_is_ot_math_global`, and `first_script_glyph_global` outside live borrows. Do not take a whole high-count orchestrator (`mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, `line_break`). Keep scanner-heavy `scan.rs` last; draft `02-modules.md` to READY before threading reaches it.
+**For the next session (100):** continue bounded Phase-C threading of small math/list leaf helpers (`flush_math` and `fin_mlist` are now done). Good candidates near the math noad family: the EXT_TAG extensible-delimiter box-building block inside `var_delimiter_global` (extract a threaded mem-only stacker in the session-81/83 style; keep `height_plus_depth`/`stack_into_box_global`/`effective_char` between borrows), or `build_choices`/`append_choices` mem work (mind the `unsave`/`push_math`/`scan_left_brace` scanner calls — bucket C/D, keep them outside live borrows). Keep `clean_box`, `vpackage`, `hpack`, OT-math calls, `font_is_ot_math_global`, and `first_script_glyph_global` outside live borrows. Do not take a whole high-count orchestrator (`mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, `line_break`). Keep scanner-heavy `scan.rs` last; draft `02-modules.md` to READY before threading reaches it.
 
 ---
 

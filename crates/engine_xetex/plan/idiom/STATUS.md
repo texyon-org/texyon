@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-05-31 (last session = session 99, **Phase-C execution**: threaded the small math-mode list-flusher `flush_math` to `pub fn flush_math(mem: &mut MemState) -> Result<(), &CStr>`, calling the threaded `flush_node_list` directly under the same borrow; added the `flush_math_global` bridge-down wrapper that fires the cold `confusion` after the borrow drops. The `cur_list` head/tail/aux reads use the raw deferred global, safe under a live borrow. 3 legacy call sites bridged; `scan.rs` import updated. Metrics flat (`#[no_mangle]` 328, raw externs 38, raw `unsafe {}` 174, `unsafe fn` net 0). A preceding docs-refresh commit captured the pre-existing WIP plan-doc/metrics changes. Dashboard 29/2/7/4. — prior session 98 collapsed the remaining large branch bodies inside `make_scripts_global` into helpers without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits for `make_scripts`; no cleanup aliases; no cross-module redeclarations for the helper slice; no candidate bridge accessor lost its last caller. Added `ScriptShifts` / `PreparedScript` / `initial_script_shifts_global` / `prepare_subscript_global` / `finish_subscript_only_global` / `prepare_superscript_global` / `finish_superscript_branch_global`; preserved the original saved-font ordering around `first_script_glyph_global`; kept `hpack`, `clean_box`, `maybe_attach_script_kern_global`, `vpackage`, OT-math calls, `font_is_ot_math_global`, and `first_script_glyph_global` outside live borrows. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
+Last updated: 2026-05-31 (last session = session 99, **Phase-C execution**, two threading slices: (1) `flush_math` → `pub fn flush_math(mem: &mut MemState) -> Result<(), &CStr>`, calling the threaded `flush_node_list` directly under the same borrow, with `flush_math_global` firing the cold `confusion` after the borrow drops (3 sites); (2) `fin_mlist` → `fn fin_mlist(mem: &mut MemState, p) -> Result<i32, &CStr>`, deferring both the cold corrupt-node `confusion` and the with_state-bearing trailing `pop_nest` to `fin_mlist_global` after the borrow drops (5 sites). Both use raw `cur_list` reads (deferred global, safe under a live borrow). Metrics flat (`#[no_mangle]` 328, raw externs 38, raw `unsafe {}` 174, `unsafe fn` net 0). A preceding docs-refresh commit captured the pre-existing WIP plan-doc/metrics changes. Dashboard 29/2/7/4. — prior session 98 collapsed the remaining large branch bodies inside `make_scripts_global` into helpers without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits for `make_scripts`; no cleanup aliases; no cross-module redeclarations for the helper slice; no candidate bridge accessor lost its last caller. Added `ScriptShifts` / `PreparedScript` / `initial_script_shifts_global` / `prepare_subscript_global` / `finish_subscript_only_global` / `prepare_superscript_global` / `finish_superscript_branch_global`; preserved the original saved-font ordering around `first_script_glyph_global`; kept `hpack`, `clean_box`, `maybe_attach_script_kern_global`, `vpackage`, OT-math calls, `font_is_ot_math_global`, and `first_script_glyph_global` outside live borrows. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
 
 ## How to read this file
 
@@ -924,6 +924,20 @@ least-coupled non-`misc` clusters:
     → no newtype debt. No C/C++ callers (stale `xetex-math.c` prototype/comment
     only); no cleanup aliases. Metrics flat: `#[no_mangle]` 328, raw extern statics
     38, raw `unsafe {}` 174, `unsafe fn` net 0. Dashboard 29/2/7/4.
+-   **`fin_mlist` threaded (session 99, slice 2):** the math-mode mlist finalizer
+    threaded off the bridge to `fn fin_mlist(mem: &mut MemState, p) -> Result<i32,
+    &CStr>` (was `pub unsafe fn fin_mlist(p) -> i32`). The mem-link work + raw
+    `cur_list` head/tail/aux reads run under one borrow; the impossible corrupt-node
+    `confusion` (`q`-not-`LEFT_NOAD`) propagates as `Err`, and the trailing
+    `pop_nest` (with_state-bearing through the `nest` array) is deferred — both fired
+    by the new `fin_mlist_global` wrapper after the borrow drops. `pop_nest` only
+    recycles `cur_list.head`, which the core never modifies, so the original ordering
+    is preserved. 5 legacy call sites (`math.rs` ×4, `scan.rs` ×1, none inside a live
+    `with_state*` closure) bridged; `scan.rs` import updated. No bridge accessor lost
+    its last caller; no new method surface; no fields moved → no newtype debt. No
+    C/C++ callers (stale `xetex-math.c` prototype/comment only); no cleanup aliases.
+    Metrics flat: `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174,
+    `unsafe fn` net 0. Dashboard 29/2/7/4.
 
 ### Idiom metrics (baseline = session 132, end of Stage 1)
 

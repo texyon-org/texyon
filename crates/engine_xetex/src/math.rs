@@ -3271,26 +3271,50 @@ pub unsafe fn append_choices() {
 }
 
 /// translated from xetex-math.c:545 (fin_mlist)
-pub unsafe fn fin_mlist(p: i32) -> i32 {
+///
+/// Phase C (`01b` §4a bucket C): the mem work + raw `cur_list` reads run under a
+/// single `&mut MemState` borrow; the impossible corrupt-node `confusion`
+/// (`q` not a `LEFT_NOAD`) propagates out as `Err` and the final `pop_nest` (which
+/// is `with_state`-bearing through the `nest` array) is deferred to
+/// [`fin_mlist_global`], both fired after the borrow drops. `pop_nest` only
+/// recycles `cur_list.head`, which the core never modifies, so the original
+/// ordering (`pop_nest` last) is preserved.
+fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr> {
     let q;
-    if cur_list_aux_b32s1() != TEX_NULL {
-        set_mem_b32s1(cur_list_aux_b32s1() + 3, SUB_MLIST);
-        set_mem_b32s0(cur_list_aux_b32s1() + 3, mem_b32s1(cur_list_head()));
+    let aux = cur_list_aux_b32s1();
+    if aux != TEX_NULL {
+        mem.set_b32s1(aux + 3, SUB_MLIST);
+        let head_link = mem.b32s1(cur_list_head());
+        mem.set_b32s0(aux + 3, head_link);
         if p == TEX_NULL {
-            q = cur_list_aux_b32s1();
+            q = aux;
         } else {
-            q = mem_b32s0(cur_list_aux_b32s1() + 2);
-            if mem_b16s1(q) != LEFT_NOAD || cur_list_e_tex_aux() == TEX_NULL {
-                crate::errors::confusion(c"right".as_ptr());
+            q = mem.b32s0(aux + 2);
+            let etex_aux = cur_list_e_tex_aux();
+            if mem.b16s1(q) != LEFT_NOAD || etex_aux == TEX_NULL {
+                return Err(c"right");
             }
-            set_mem_b32s0(cur_list_aux_b32s1() + 2, mem_b32s1(cur_list_e_tex_aux()));
-            set_mem_b32s1(cur_list_e_tex_aux(), cur_list_aux_b32s1());
-            set_mem_b32s1(cur_list_aux_b32s1(), p);
+            let etex_link = mem.b32s1(etex_aux);
+            mem.set_b32s0(aux + 2, etex_link);
+            mem.set_b32s1(etex_aux, aux);
+            mem.set_b32s1(aux, p);
         }
     } else {
-        set_mem_b32s1(cur_list_tail(), p);
-        q = mem_b32s1(cur_list_head());
+        mem.set_b32s1(cur_list_tail(), p);
+        q = mem.b32s1(cur_list_head());
     }
+    Ok(q)
+}
+
+/// Bridge-down wrapper for legacy callers (`01b` §3): runs the threaded
+/// [`fin_mlist`] under one borrow, fires the cold `confusion` if it hit the
+/// corrupt-node arm, then runs the `with_state`-bearing `pop_nest` after the
+/// borrow drops.
+pub unsafe fn fin_mlist_global(p: i32) -> i32 {
+    let q = match crate::state::with_state_mut(|st| fin_mlist(&mut st.mem, p)) {
+        Ok(q) => q,
+        Err(msg) => crate::errors::confusion(msg.as_ptr()),
+    };
     crate::mem::pop_nest();
     q
 }
@@ -3298,7 +3322,7 @@ pub unsafe fn fin_mlist(p: i32) -> i32 {
 /// translated from xetex-math.c:571 (build_choices)
 pub unsafe fn build_choices() {
     crate::save::unsave();
-    let p = fin_mlist(TEX_NULL);
+    let p = fin_mlist_global(TEX_NULL);
     match save_stack_b32s1(save_ptr() - 1) {
         0 => set_mem_b32s0(cur_list_tail() + 1, p),
         1 => set_mem_b32s1(cur_list_tail() + 1, p),
@@ -3458,7 +3482,7 @@ pub unsafe fn math_left_right() {
         let q = if t == LEFT_NOAD {
             p
         } else {
-            let q = fin_mlist(p);
+            let q = fin_mlist_global(p);
             crate::save::unsave();
             q
         };
@@ -3802,7 +3826,7 @@ pub unsafe fn after_math() {
 
     let mut m = cur_list_mode() as i32;
     let mut l = false;
-    let mut p = fin_mlist(TEX_NULL);
+    let mut p = fin_mlist_global(TEX_NULL);
 
     let a;
     if cur_list_mode() as i32 == -m {
@@ -3844,7 +3868,7 @@ pub unsafe fn after_math() {
         check_math_font_params(&mut danger);
 
         m = cur_list_mode() as i32;
-        p = fin_mlist(TEX_NULL);
+        p = fin_mlist_global(TEX_NULL);
     } else {
         a = TEX_NULL;
     }

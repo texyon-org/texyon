@@ -65,7 +65,7 @@ use crate::linebreak::line_break;
 use crate::math::after_math;
 use crate::math::append_choices;
 use crate::math::build_choices;
-use crate::math::fin_mlist;
+use crate::math::fin_mlist_global;
 use crate::math::flush_math_global;
 use crate::math::init_math;
 use crate::math::math_ac;
@@ -10690,7 +10690,7 @@ pub unsafe extern "C" fn handle_right_brace() {
             set_save_ptr(save_ptr() - 1);
             let save_loc = save_stack_b32s1(save_ptr());
             set_mem_b32s1(save_loc, SUB_MLIST);
-            let p = fin_mlist(TEX_NULL);
+            let p = fin_mlist_global(TEX_NULL);
             set_mem_b32s0(save_loc, p);
 
             if p != TEX_NULL && mem_b32s1(p) == TEX_NULL {
