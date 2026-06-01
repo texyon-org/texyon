@@ -8,6 +8,71 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 120 — 2026-06-01 — workstream 02 slice 3: relocate the file-naming / `start_input` / `close_files` group out of `scan.rs`
+
+**Type:** execution (workstream 02, module decomposition — third mechanical
+relocation slice). **One commit.** Dashboard **29/2/7/4**. Warnings **51 → 51**.
+
+**Slice:** moved the 12 file-naming / input-bootstrap / shutdown functions
+verbatim from `src/scan.rs` (= xetex0.c) into `src/io.rs` (= xetex-io.c, their
+natural home): `begin_name`, `more_name`, `end_name`, `make_name_string`,
+`scan_and_pack_name`, `scan_file_name_braced`, `scan_file_name`, `pack_job_name`,
+`open_log_file`, `start_input`, `pack_file_name`, `close_files_and_terminate`.
+**No bytes changed inside any function** — `move_fns.py` (dry-run → `--apply`),
+559 fn-lines.
+
+**Fixup (cargo-check-driven, larger than slices 1–2 because `start_input`/
+`close_files_and_terminate` reach broadly):**
+* `io.rs` gained: 40 `globals` accessors (a second `use crate::globals::{…}`
+  block); 3 `consts.rs` consts (`BIGGEST_CHAR`/`SELECTOR_TERM_ONLY`/
+  `TOO_BIG_CHAR`); scanner fns `get_x_token`/`scan_toks`; `shipout::finalize_dvi_file`;
+  13 module-private consts duplicated from `scan.rs`
+  (`EMPTY_STRING`/`LEFT_BRACE`/`SPACER`/`RELAX`/`OTHER_CHAR`/`NEW_LINE`/
+  `SELECTOR_LOG_ONLY`/`SELECTOR_NEW_STRING`/`INT_PAR_*`/`TTBC_FILE_FORMAT_*`); 4
+  `ttstub_output_*` extern decls. Removed `io.rs`'s now-stale
+  `use crate::scan::{begin_name,end_name,more_name,pack_file_name,scan_file_name}`
+  (those are local now).
+* **Private `mod raw_utf8` relocated too.** `start_input`'s only dependency on a
+  `scan.rs`-private item was `mod raw_utf8 { extern { bytesFromUTF8, offsetsFromUTF8 } }`
+  (its sole user). Moved the module verbatim into `io.rs`; its `pub(super)`
+  statics now resolve against the `io` module. (Mover only handles `fn`s, so the
+  module move was a manual cut/paste — the one non-fn relocation this slice.)
+* `scan.rs` re-imports the 5 moved fns it still calls bare
+  (`open_log_file`/`pack_file_name`/`scan_and_pack_name`/`scan_file_name`/
+  `start_input`); repointed all external `crate::scan::<fn>` call-sites and `use`
+  imports to `crate::io::` in `ini.rs`, `shipout.rs`, `errors.rs`, `pic.rs`.
+* **Orphan cleanup (the warning-count discipline, §7):** moving the fns left a
+  pile of now-dead items in `scan.rs` that only the §5 warning count surfaced:
+  6 unused imports (`finalize_dvi_file` + globals `set_name_in_progress`/
+  `set_stop_at_space`/`stop_at_space`/`texmf_log_name`/`write_open`), 7 orphaned
+  module-private consts (`SELECTOR_LOG_ONLY`/`TTBC_FILE_FORMAT_*`/
+  `INT_PAR_XETEX_DEFAULT_INPUT_MODE`/`…_ENCODING`/`INT_PAR_TRACING_STACK_LEVELS`/
+  `INT_PAR_NEW_LINE_CHAR_CFT` — the `INPUT_MODE`/`ENCODING` pair was already
+  defined in `io.rs`, so those copies were pure duplicates), and 3 now-dead
+  `ttstub_output_close`/`open`/`putc` extern decls (`flush` stays — still used).
+  Deleted all; also removed 4 stale section-banner comments. Each removal walked
+  the count back toward 51.
+
+**No pattern-const trap this slice** — the moved file-naming code matches on
+fewer node consts, and the `cmd`-code consts it does touch (`LEFT_BRACE`/`SPACER`/
+`RELAX`/`OTHER_CHAR`) were referenced in *expression* context, so they surfaced
+as hard `E0425` errors, not silent bindings. (Confirmed by watching the count.)
+
+**Metrics:** `scan.rs` 16,850 → **16,255** LOC (−595). `io.rs` 800 → 1,385. No
+signature/`#[no_mangle]`/`unsafe` changes (relocation only). Dashboard 29/2/7/4,
+warnings 51.
+
+**For the next session (121):** continue 02 per §8 — next leaves: `ext.rs`
+(`do_extension`/`\special` whatsits: `do_extension`/`new_write_whatsit`/
+`append_src_special`/`insert_src_special`/`tt_insert_special`), then `fonts.rs`
+(TFM/native loading: `read_font_info`/`read_tfm_word`/…/`load_native_font`/
+`new_native_*`/`effective_char*`), then `linebreak.rs`
+(`do_locale_linebreaks`/`char_pw_in`). Same recipe; watch the warning count for
+the trap and orphan cleanup. `ini.rs` (`format_io.rs`/`engine.rs`/hyphenation)
+drains independently. Core carve (scanner/expand/main_control/packaging) after
+the leaves.
+
+
 ## Idiom session 119 — 2026-06-01 — workstream 02 slice 2: relocate the `show_*`/display group out of `scan.rs`
 
 **Type:** execution (workstream 02, module decomposition — second mechanical

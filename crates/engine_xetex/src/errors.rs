@@ -25,8 +25,8 @@ use crate::output::print_cstr;
 use crate::output::print_int;
 use crate::output::print_ln;
 use crate::output::print_nl_cstr;
-use crate::scan::close_files_and_terminate;
-use crate::scan::open_log_file;
+use crate::io::close_files_and_terminate;
+use crate::io::open_log_file;
 use crate::output::show_context;
 
 const HISTORY_ERROR_ISSUED: i32 = 2;

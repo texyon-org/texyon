@@ -1007,7 +1007,7 @@ pub unsafe extern "C" fn final_cleanup() {
     }
 
     if job_name() == 0 {
-        crate::scan::open_log_file();
+        crate::io::open_log_file();
     }
 
     while crate::globals::input_ptr() > 0 {
@@ -1895,7 +1895,7 @@ pub unsafe extern "C" fn store_fmt_file() {
         }
 
         crate::globals::set_history(HISTORY_FATAL_ERROR);
-        crate::scan::close_files_and_terminate();
+        crate::io::close_files_and_terminate();
         ttstub_output_flush(crate::globals::rust_stdout());
         _tt_abort(c"\\dump inside a group".as_ptr());
     }
@@ -1922,7 +1922,7 @@ pub unsafe extern "C" fn store_fmt_file() {
     }
 
     set_format_ident(crate::string_pool::make_string());
-    crate::scan::pack_job_name(c".fmt".as_ptr());
+    crate::io::pack_job_name(c".fmt".as_ptr());
 
     let fmt_out = ttstub_output_open(crate::globals::name_of_file(), 0);
     if fmt_out == INVALID_HANDLE {
@@ -1930,7 +1930,7 @@ pub unsafe extern "C" fn store_fmt_file() {
     }
 
     crate::output::print_nl_cstr(c"Beginning to dump on file ".as_ptr());
-    crate::output::print(crate::scan::make_name_string());
+    crate::output::print(crate::io::make_name_string());
 
     set_str_ptr(str_ptr() - 1);
     set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
@@ -3634,11 +3634,11 @@ pub unsafe extern "C" fn tt_run_engine(
 
     pdf_files_init();
     crate::state::with_state_mut(|st| crate::synctex::synctex_init_command(st));
-    crate::scan::start_input(input_file_name);
+    crate::io::start_input(input_file_name);
     crate::globals::set_history(HISTORY_SPOTLESS);
     crate::scan::main_control();
     final_cleanup();
-    crate::scan::close_files_and_terminate();
+    crate::io::close_files_and_terminate();
     tt_cleanup();
 
     history()

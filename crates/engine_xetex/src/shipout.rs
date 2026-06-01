@@ -574,7 +574,7 @@ pub unsafe fn ship_out(p: i32) {
     crate::state::with_state_mut(|st| crate::synctex::synctex_sheet(st, mag, synctex_tmp));
 
     if job_name() == 0 {
-        crate::scan::open_log_file();
+        crate::io::open_log_file();
     }
 
     if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) > 0 {
@@ -676,9 +676,9 @@ pub unsafe fn ship_out(p: i32) {
 
         if output_file_name() == 0 {
             if job_name() == 0 {
-                crate::scan::open_log_file();
+                crate::io::open_log_file();
             }
-            crate::scan::pack_job_name(output_file_extension);
+            crate::io::pack_job_name(output_file_extension);
             set_dvi_file(ttstub_output_open(name_of_file(), 0));
             if dvi_file() == INVALID_HANDLE {
                 let mut buf = [0u8; 512];
@@ -690,7 +690,7 @@ pub unsafe fn ship_out(p: i32) {
                 );
                 _tt_abort(buf.as_ptr() as *const libc::c_char);
             }
-            set_output_file_name(crate::scan::make_name_string());
+            set_output_file_name(crate::io::make_name_string());
         }
 
         if total_pages() == 0 {
@@ -2691,7 +2691,7 @@ pub unsafe fn out_what(p: i32) {
                     if crate::string_pool::length(cur_ext()) == 0 {
                         set_cur_ext(crate::texmfmp::maketexstring(c".tex".as_ptr()));
                     }
-                    crate::scan::pack_file_name(cur_name(), cur_area(), cur_ext());
+                    crate::io::pack_file_name(cur_name(), cur_area(), cur_ext());
                     let handle = ttstub_output_open(name_of_file(), 0);
                     if handle == INVALID_HANDLE {
                         let mut buf = [0u8; 512];

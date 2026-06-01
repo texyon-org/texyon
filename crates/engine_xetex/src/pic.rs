@@ -407,9 +407,8 @@ pub unsafe fn load_picture(is_pdf: bool) {
     };
     use crate::mem::new_whatsit_global;
     use crate::output::{print_cstr, print_file_name, print_scaled};
-    use crate::scan::{
-        pack_file_name, scan_decimal, scan_dimen, scan_file_name, scan_int, scan_keyword,
-    };
+    use crate::io::{pack_file_name, scan_file_name};
+    use crate::scan::{scan_decimal, scan_dimen, scan_int, scan_keyword};
 
     scan_file_name();
     pack_file_name(cur_name(), cur_area(), cur_ext());
