@@ -9,6 +9,22 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 113 — 2026-06-01 — thread all remaining synctex node-field recorders and FFI call sites in `src/synctex.rs`
+
+**Type:** execution (workstream 01, Phase C — synctex node-field recorders and FFI call sites). **One commit.** Dashboard **29/2/7/4**. Crate warnings **52 → 51** (-1, due to deleting 9 unused transitional `_global` wrappers, offset by resolver cleanup).
+
+**Slice:**
+* **`synctex_record_node_*` / FFI call sites (`src/synctex.rs`).** Threaded all remaining `synctex_record_node_*` helper calls inside the public FFI wrappers at the bottom of `src/synctex.rs` (`synctex_vlist`, `synctex_void_vlist`, `synctex_hlist`, `synctex_void_hlist`, `synctex_math`, `synctex_horizontal_rule_or_glue`, `synctex_kern`) to directly pass safe state borrows (`&st.mem` / `&st.shipout`).
+* **`_global` internal accessors deleted (`src/synctex.rs`).** Deleted 9 now-completely-unused `_global` wrapper definitions (`synctex_tag_box_global`, `synctex_line_box_global`, `synctex_tag_rule_global`, `synctex_line_rule_global`, `synctex_tag_medium_global`, `synctex_line_medium_global`, `synctex_width_global`, `synctex_depth_global`, `synctex_height_global`), cleanly removing all corresponding compiler warnings.
+
+**Metrics:** `#[no_mangle]` **327** unchanged. raw extern statics **38** unchanged. raw `unsafe {}` **175** unchanged. `unsafe fn` **640** unchanged. Warnings **51** (down from 52).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 51 warnings; cargo test -p tectonic --test engine_rust --test tex-outputs --test trip --test latex_goldens → all 29/2/7/4 tests pass green.
+
+**For the next session (114):** continue bounded slices only. Read `plan/idiom/STATUS.md` and `plan/idiom/01-state-and-memory.md` before starting. Good options remain rounding out the synctex cluster (`intpar_synctex` → `&EqtbState`, ~16 callers), or selecting another small leaf from `phase_c_recon.py`. Avoid scanner-heavy `scan.rs` or orchestrators until planned.
+
+---
+
 ## Idiom session 112 — 2026-06-01 — thread all remaining Bucket-B leaf helpers in `src/shipout.rs` and `src/linebreak.rs`
 
 **Type:** execution (workstream 01, Phase C — shipout and linebreak leaf helpers). **One commit.** Dashboard **29/2/7/4**. Crate warnings **52 → 52** (flat).

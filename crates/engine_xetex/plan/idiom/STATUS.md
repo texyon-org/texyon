@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 112, **threaded all remaining Bucket-B leaf helpers in `src/shipout.rs` and `src/linebreak.rs`** — threaded `insert_right_margin_kern`, `insert_left_margin_kern`, `copy_native_tail`, and `set_native_metrics` in `src/linebreak.rs` to safe state borrows (`&mut MemState`, `&mut LinebreakState`, `&MemState`, `&EqtbState`), with `_global` bridge-down wrappers for legacy call sites, and consolidated `is_non_discardable_node`. Dashboard 29/2/7/4, `unsafe fn` 640, warnings 52. — prior session 111 finished synctex readers + consolidated math `is_char_node`.)
+Last updated: 2026-06-01 (last session = session 113, **threaded all remaining synctex node-field recorders and FFI call sites in `src/synctex.rs`** — threaded `synctex_record_node_*` and public FFI recording wrappers to safe state borrows (`&MemState`, `&ShipoutState` or `&mut SynctexCtxt` etc.) and deleted the dead/unused transitional `_global` wrappers in `synctex.rs`. Dashboard 29/2/7/4, warnings 51. — prior session 112 finished linebreak/shipout Bucket-B leaf helpers.)
 
 ## How to read this file
 
@@ -1232,9 +1232,9 @@ the snippets in `00-overview.md` / the workstream plans.
     `unsafe fn is_char_node(p)` global-bridge form in `math.rs` deleted; its 6
     callers routed through `crate::mem::is_char_node` via a safe `is_char_node_global`
     wrapper. `#[no_mangle]` 327, raw `unsafe {}` 175, raw externs 38 unchanged;
-    `unsafe fn` 651→640. Next: round out the synctex cluster (`intpar_synctex` →
-    `&EqtbState`, ~16 callers) or another small leaf; `ext.rs` stays scan.rs-deferred;
-    shipout's remainder is bucket C (output/diagnostic).
+    `unsafe fn` 651→640.
+
+    **Session 113 update:** fully threaded remaining `synctex_record_node_*` recorders and FFI call sites inside `src/synctex.rs` to accept explicit safe state borrows (`&MemState` / `&ShipoutState` / etc.) instead of calling unthreaded global wrappers. Cleaned up the now-dead internal `_global` accessor wrappers from `src/synctex.rs`, bringing Rust compiler warnings successfully down to **51**. All 29/2/7/4 tests pass green. Next: round out the synctex cluster (`intpar_synctex` -> `&EqtbState`, ~16 callers) or another small leaf; `ext.rs` stays scan.rs-deferred.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

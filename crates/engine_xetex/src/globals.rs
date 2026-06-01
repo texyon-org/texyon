@@ -4738,6 +4738,7 @@ pub(crate) fn set_rule_ht(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.rule_ht = v);
 }
 #[inline]
+#[allow(dead_code)]
 pub(crate) fn rule_dp() -> i32 {
     crate::state::with_state(|s| s.shipout.rule_dp)
 }

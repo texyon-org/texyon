@@ -8,8 +8,7 @@ use libc::{c_char, c_int, size_t};
 use std::ptr;
 
 use crate::globals::{
-    cur_h, cur_input, cur_v, eqtb_b32s1, job_name, rule_dp, rule_ht, rule_wd,
-    set_cur_input_synctex_tag, set_eqtb_b32s1, synctex_enabled, total_pages,
+    cur_input, set_cur_input_synctex_tag, set_eqtb_b32s1, synctex_enabled,
 };
 
 // INT_BASE (save.rs) and INT_PAR__synctex (xetex_format.h:116).
@@ -50,7 +49,7 @@ extern "C" {
 // fields into locals before doing I/O and write scalars back afterward, so the
 // per-field bridge is a faithful drop-in for the former direct field access.
 
-use crate::state::Recorder;
+use crate::state::{EqtbState, Recorder, ShipoutState};
 
 macro_rules! sc_scalar {
     ($get:ident, $set:ident, $field:ident, $ty:ty) => {
@@ -118,12 +117,12 @@ sc_flag!(sc_flags_output_p, set_sc_flags_output_p, output_p);
 
 // SYNCTEX_CURH / SYNCTEX_CURV (xetex-synctex.c:19-20).
 #[inline]
-unsafe fn synctex_curh() -> i32 {
-    cur_h() + 4736287
+fn synctex_curh(shipout: &ShipoutState) -> i32 {
+    shipout.cur_h + 4736287
 }
 #[inline]
-unsafe fn synctex_curv() -> i32 {
-    cur_v() + 4736287
+fn synctex_curv(shipout: &ShipoutState) -> i32 {
+    shipout.cur_v + 4736287
 }
 
 // Phase-C: the synctex node-field readers below are pure `mem`-arena leaves.
@@ -138,16 +137,8 @@ fn synctex_tag_box(mem: &crate::state::MemState, p: i32) -> i32 {
     mem.b32s0(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE)
 }
 #[inline]
-fn synctex_tag_box_global(p: i32) -> i32 {
-    crate::state::with_state(|st| synctex_tag_box(&st.mem, p))
-}
-#[inline]
 fn synctex_line_box(mem: &crate::state::MemState, p: i32) -> i32 {
     mem.b32s1(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE)
-}
-#[inline]
-fn synctex_line_box_global(p: i32) -> i32 {
-    crate::state::with_state(|st| synctex_line_box(&st.mem, p))
 }
 
 // For RULE (RULE_NODE_SIZE = 5, field at offset 4).
@@ -156,16 +147,8 @@ fn synctex_tag_rule(mem: &crate::state::MemState, p: i32) -> i32 {
     mem.b32s0(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE)
 }
 #[inline]
-fn synctex_tag_rule_global(p: i32) -> i32 {
-    crate::state::with_state(|st| synctex_tag_rule(&st.mem, p))
-}
-#[inline]
 fn synctex_line_rule(mem: &crate::state::MemState, p: i32) -> i32 {
     mem.b32s1(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE)
-}
-#[inline]
-fn synctex_line_rule_global(p: i32) -> i32 {
-    crate::state::with_state(|st| synctex_line_rule(&st.mem, p))
 }
 
 // For GLUE / KERN / MATH (MEDIUM_NODE_SIZE = 3, field at offset 2).
@@ -174,26 +157,14 @@ fn synctex_tag_medium(mem: &crate::state::MemState, p: i32) -> i32 {
     mem.b32s0(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE)
 }
 #[inline]
-fn synctex_tag_medium_global(p: i32) -> i32 {
-    crate::state::with_state(|st| synctex_tag_medium(&st.mem, p))
-}
-#[inline]
 fn synctex_line_medium(mem: &crate::state::MemState, p: i32) -> i32 {
     mem.b32s1(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE)
-}
-#[inline]
-fn synctex_line_medium_global(p: i32) -> i32 {
-    crate::state::with_state(|st| synctex_line_medium(&st.mem, p))
 }
 
 // SYNCTEX_TYPE: mem[p].b16.s1
 #[inline]
 fn synctex_type(mem: &crate::state::MemState, p: i32) -> u16 {
     mem.b16s1(p)
-}
-#[inline]
-fn synctex_type_global(p: i32) -> u16 {
-    crate::state::with_state(|st| synctex_type(&st.mem, p))
 }
 
 // SYNCTEX_WIDTH/DEPTH/HEIGHT (width_offset=1, depth_offset=2, height_offset=3).
@@ -202,30 +173,18 @@ fn synctex_width(mem: &crate::state::MemState, p: i32) -> i32 {
     mem.b32s1(p + 1)
 }
 #[inline]
-fn synctex_width_global(p: i32) -> i32 {
-    crate::state::with_state(|st| synctex_width(&st.mem, p))
-}
-#[inline]
 fn synctex_depth(mem: &crate::state::MemState, p: i32) -> i32 {
     mem.b32s1(p + 2)
-}
-#[inline]
-fn synctex_depth_global(p: i32) -> i32 {
-    crate::state::with_state(|st| synctex_depth(&st.mem, p))
 }
 #[inline]
 fn synctex_height(mem: &crate::state::MemState, p: i32) -> i32 {
     mem.b32s1(p + 3)
 }
-#[inline]
-fn synctex_height_global(p: i32) -> i32 {
-    crate::state::with_state(|st| synctex_height(&st.mem, p))
-}
 
 // INTPAR(synctex) = eqtb[INT_BASE + INT_PAR__synctex].b32.s1
 #[inline]
-unsafe fn intpar_synctex() -> i32 {
-    eqtb_b32s1(INT_BASE + INT_PAR_SYNCTEX)
+fn intpar_synctex(eqtb: &EqtbState) -> i32 {
+    eqtb.b32s1(INT_BASE + INT_PAR_SYNCTEX)
 }
 
 // ---------------------------------------------------------------------------
@@ -260,404 +219,408 @@ unsafe fn get_current_name() -> *mut c_char {
     xstrdup(abspath_of_input_file.as_ptr())
 }
 
-unsafe fn synctexabort() {
-    if sc_file() != INVALID_HANDLE {
-        ttstub_output_close(sc_file());
-        set_sc_file(INVALID_HANDLE);
+unsafe fn synctexabort(synctex: &mut crate::state::SynctexCtxt) {
+    if synctex.file != INVALID_HANDLE {
+        ttstub_output_close(synctex.file);
+        synctex.file = INVALID_HANDLE;
     }
-    set_sc_root_name(mfree_ptr(sc_root_name()));
-    set_sc_flags_off(true);
+    synctex.root_name = mfree_ptr(synctex.root_name);
+    synctex.flags.off = true;
 }
 
-unsafe fn synctex_record_anchor() -> i32 {
-    let total = sc_total_length();
-    let file = sc_file();
+unsafe fn synctex_record_anchor(synctex: &mut crate::state::SynctexCtxt) -> i32 {
+    let total = synctex.total_length;
+    let file = synctex.file;
     let s = format!("!{}\n", total);
     let len = synctex_write(file, &s);
     if len > 0 {
-        set_sc_total_length(len); // XXX: same quirk as original C (assignment, not +=)
-        set_sc_count(sc_count() + 1);
+        synctex.total_length = len; // XXX: same quirk as original C (assignment, not +=)
+        synctex.count += 1;
         return 0;
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_preamble() -> i32 {
-    let file = sc_file();
+unsafe fn synctex_record_preamble(synctex: &mut crate::state::SynctexCtxt) -> i32 {
+    let file = synctex.file;
     let s = format!("SyncTeX Version:{}\n", SYNCTEX_VERSION);
     let len = synctex_write(file, &s);
     if len > 0 {
-        set_sc_total_length(len); // XXX: assignment, not +=, as in C
+        synctex.total_length = len; // XXX: assignment, not +=, as in C
         return 0;
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_input(tag: i32, name: *mut c_char) -> i32 {
-    let file = sc_file();
+unsafe fn synctex_record_input(synctex: &mut crate::state::SynctexCtxt, tag: i32, name: *mut c_char) -> i32 {
+    let file = synctex.file;
     let name_str = std::ffi::CStr::from_ptr(name).to_string_lossy();
     let s = format!("Input:{}:{}\n", tag, name_str);
     let len = synctex_write(file, &s);
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
+        synctex.total_length += len;
         return 0;
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_settings() -> i32 {
-    if sc_file() == INVALID_HANDLE {
+unsafe fn synctex_record_settings(synctex: &mut crate::state::SynctexCtxt) -> i32 {
+    if synctex.file == INVALID_HANDLE {
         return 0;
     }
-    let (file, mag, unit) = (sc_file(), sc_magnification(), sc_unit());
+    let (file, mag, unit) = (synctex.file, synctex.magnification, synctex.unit);
     let s = format!(
         "Output:pdf\nMagnification:{}\nUnit:{}\nX Offset:0\nY Offset:0\n",
         mag, unit
     );
     let len = synctex_write(file, &s);
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
+        synctex.total_length += len;
         return 0;
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_content() -> i32 {
-    let file = sc_file();
+unsafe fn synctex_record_content(synctex: &mut crate::state::SynctexCtxt) -> i32 {
+    let file = synctex.file;
     let len = synctex_write(file, "Content:\n");
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
+        synctex.total_length += len;
         return 0;
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_count() -> i32 {
-    let (file, count) = (sc_file(), sc_count());
+unsafe fn synctex_record_count(synctex: &mut crate::state::SynctexCtxt) -> i32 {
+    let (file, count) = (synctex.file, synctex.count);
     let s = format!("Count:{}\n", count);
     let len = synctex_write(file, &s);
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
+        synctex.total_length += len;
         return 0;
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_postamble() -> i32 {
-    if synctex_record_anchor() == 0 {
-        let file = sc_file();
+unsafe fn synctex_record_postamble(synctex: &mut crate::state::SynctexCtxt) -> i32 {
+    if synctex_record_anchor(synctex) == 0 {
+        let file = synctex.file;
         let len = synctex_write(file, "Postamble:\n");
         if len > 0 {
-            set_sc_total_length(sc_total_length() + len);
-            if synctex_record_count() == 0 && synctex_record_anchor() == 0 {
-                let file2 = sc_file();
+            synctex.total_length += len;
+            if synctex_record_count(synctex) == 0 && synctex_record_anchor(synctex) == 0 {
+                let file2 = synctex.file;
                 let len2 = synctex_write(file2, "Post scriptum:\n");
                 if len2 > 0 {
-                    set_sc_total_length(sc_total_length() + len2);
+                    synctex.total_length += len2;
                     return 0;
                 }
             }
         }
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_sheet(sheet: i32) -> i32 {
-    if synctex_record_anchor() == 0 {
-        let file = sc_file();
+unsafe fn synctex_record_sheet(synctex: &mut crate::state::SynctexCtxt, sheet: i32) -> i32 {
+    if synctex_record_anchor(synctex) == 0 {
+        let file = synctex.file;
         let s = format!("{{{}\n", sheet);
         let len = synctex_write(file, &s);
         if len > 0 {
-            set_sc_total_length(sc_total_length() + len);
-            set_sc_count(sc_count() + 1);
+            synctex.total_length += len;
+            synctex.count += 1;
             return 0;
         }
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_teehs(sheet: i32) -> i32 {
-    if synctex_record_anchor() == 0 {
-        let file = sc_file();
+unsafe fn synctex_record_teehs(synctex: &mut crate::state::SynctexCtxt, sheet: i32) -> i32 {
+    if synctex_record_anchor(synctex) == 0 {
+        let file = synctex.file;
         let s = format!("}}{}\n", sheet);
         let len = synctex_write(file, &s);
         if len > 0 {
-            set_sc_total_length(sc_total_length() + len);
-            set_sc_count(sc_count() + 1);
+            synctex.total_length += len;
+            synctex.count += 1;
             return 0;
         }
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_pdfxform(_form: i32) -> i32 {
-    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
+unsafe fn synctex_record_pdfxform(synctex: &mut crate::state::SynctexCtxt, eqtb: &crate::state::EqtbState, _form: i32) -> i32 {
+    if synctex.flags.off || intpar_synctex(eqtb) == 0 || synctex.file == INVALID_HANDLE {
         return 0;
     }
-    set_sc_form_depth(sc_form_depth() + 1);
-    let (file, depth) = (sc_file(), sc_form_depth());
+    synctex.form_depth += 1;
+    let (file, depth) = (synctex.file, synctex.form_depth);
     let s = format!("<{}\n", depth);
     let len = synctex_write(file, &s);
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
         return 0;
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_mrofxfdp() -> i32 {
-    if synctex_record_anchor() == 0 {
-        set_sc_form_depth(sc_form_depth() - 1);
-        let file = sc_file();
+unsafe fn synctex_record_mrofxfdp(synctex: &mut crate::state::SynctexCtxt) -> i32 {
+    if synctex_record_anchor(synctex) == 0 {
+        synctex.form_depth -= 1;
+        let file = synctex.file;
         let len = synctex_write(file, ">\n");
         if len > 0 {
-            set_sc_total_length(sc_total_length() + len);
-            set_sc_count(sc_count() + 1);
+            synctex.total_length += len;
+            synctex.count += 1;
             return 0;
         }
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_node_pdfrefxform(objnum: c_int) -> i32 {
-    set_sc_curh(synctex_curh());
-    set_sc_curv(synctex_curv());
-    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
+unsafe fn synctex_record_node_pdfrefxform(synctex: &mut crate::state::SynctexCtxt, shipout: &crate::state::ShipoutState, objnum: c_int) -> i32 {
+    synctex.curh = synctex_curh(shipout);
+    synctex.curv = synctex_curv(shipout);
+    if synctex.flags.off || synctex.file == INVALID_HANDLE {
         return 0;
     }
-    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
+    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!("f{}:{},{}\n", objnum, curh / unit, curv / unit);
     let len = synctex_write(file, &s);
-    set_sc_lastv(sc_curv());
+    synctex.lastv = synctex.curv;
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
         return 0;
     }
-    synctexabort();
+    synctexabort(synctex);
     -1
 }
 
-unsafe fn synctex_record_node_vlist(p: i32) {
-    set_sc_flags_not_void(true);
-    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
+unsafe fn synctex_record_node_vlist(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+    synctex.flags.not_void = true;
+    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "[{},{}:{},{}:{},{},{}\n",
-        synctex_tag_box_global(p),
-        synctex_line_box_global(p),
+        synctex_tag_box(mem, p),
+        synctex_line_box(mem, p),
         curh / unit,
         curv / unit,
-        synctex_width_global(p) / unit,
-        synctex_height_global(p) / unit,
-        synctex_depth_global(p) / unit
+        synctex_width(mem, p) / unit,
+        synctex_height(mem, p) / unit,
+        synctex_depth(mem, p) / unit
     );
     let len = synctex_write(file, &s);
-    set_sc_lastv(sc_curv());
+    synctex.lastv = synctex.curv;
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-unsafe fn synctex_record_node_tsilv(_p: i32) {
-    let file = sc_file();
+unsafe fn synctex_record_node_tsilv(synctex: &mut crate::state::SynctexCtxt, _p: i32) {
+    let file = synctex.file;
     let len = synctex_write(file, "]\n");
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
+        synctex.total_length += len;
         // count NOT incremented here (matches C comment)
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-unsafe fn synctex_record_node_void_vlist(p: i32) {
-    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
+unsafe fn synctex_record_node_void_vlist(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "v{},{}:{},{}:{},{},{}\n",
-        synctex_tag_box_global(p),
-        synctex_line_box_global(p),
+        synctex_tag_box(mem, p),
+        synctex_line_box(mem, p),
         curh / unit,
         curv / unit,
-        synctex_width_global(p) / unit,
-        synctex_height_global(p) / unit,
-        synctex_depth_global(p) / unit
+        synctex_width(mem, p) / unit,
+        synctex_height(mem, p) / unit,
+        synctex_depth(mem, p) / unit
     );
     let len = synctex_write(file, &s);
-    set_sc_lastv(sc_curv());
+    synctex.lastv = synctex.curv;
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-unsafe fn synctex_record_node_hlist(p: i32) {
-    set_sc_flags_not_void(true);
-    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
+unsafe fn synctex_record_node_hlist(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+    synctex.flags.not_void = true;
+    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "({},{}:{},{}:{},{},{}\n",
-        synctex_tag_box_global(p),
-        synctex_line_box_global(p),
+        synctex_tag_box(mem, p),
+        synctex_line_box(mem, p),
         curh / unit,
         curv / unit,
-        synctex_width_global(p) / unit,
-        synctex_height_global(p) / unit,
-        synctex_depth_global(p) / unit
+        synctex_width(mem, p) / unit,
+        synctex_height(mem, p) / unit,
+        synctex_depth(mem, p) / unit
     );
     let len = synctex_write(file, &s);
-    set_sc_lastv(sc_curv());
+    synctex.lastv = synctex.curv;
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-unsafe fn synctex_record_node_tsilh(_p: i32) {
-    let file = sc_file();
+unsafe fn synctex_record_node_tsilh(synctex: &mut crate::state::SynctexCtxt, _p: i32) {
+    let file = synctex.file;
     let len = synctex_write(file, ")\n");
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-unsafe fn synctex_record_node_void_hlist(p: i32) {
-    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
+unsafe fn synctex_record_node_void_hlist(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "h{},{}:{},{}:{},{},{}\n",
-        synctex_tag_box_global(p),
-        synctex_line_box_global(p),
+        synctex_tag_box(mem, p),
+        synctex_line_box(mem, p),
         curh / unit,
         curv / unit,
-        synctex_width_global(p) / unit,
-        synctex_height_global(p) / unit,
-        synctex_depth_global(p) / unit
+        synctex_width(mem, p) / unit,
+        synctex_height(mem, p) / unit,
+        synctex_depth(mem, p) / unit
     );
     let len = synctex_write(file, &s);
-    set_sc_lastv(sc_curv());
+    synctex.lastv = synctex.curv;
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-unsafe fn synctex_record_node_math(p: i32) {
-    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
+unsafe fn synctex_record_node_math(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "${},{}:{},{}\n",
-        synctex_tag_medium_global(p),
-        synctex_line_medium_global(p),
+        synctex_tag_medium(mem, p),
+        synctex_line_medium(mem, p),
         curh / unit,
         curv / unit
     );
     let len = synctex_write(file, &s);
-    set_sc_lastv(sc_curv());
+    synctex.lastv = synctex.curv;
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-unsafe fn synctex_record_node_glue(p: i32) {
-    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
+unsafe fn synctex_record_node_glue(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "g{},{}:{},{}\n",
-        synctex_tag_medium_global(p),
-        synctex_line_medium_global(p),
+        synctex_tag_medium(mem, p),
+        synctex_line_medium(mem, p),
         curh / unit,
         curv / unit
     );
     let len = synctex_write(file, &s);
-    set_sc_lastv(sc_curv());
+    synctex.lastv = synctex.curv;
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-// Note: kern record uses synctex_tag_medium / synctex_line_medium (GLUE node size),
-// matching `SYNCTEX_TAG_MODEL(p,GLUE)` in the C source.
-unsafe fn synctex_record_node_kern(p: i32) {
-    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
+unsafe fn synctex_record_node_kern(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "k{},{}:{},{}:{}\n",
-        synctex_tag_medium_global(p),
-        synctex_line_medium_global(p),
+        synctex_tag_medium(mem, p),
+        synctex_line_medium(mem, p),
         curh / unit,
         curv / unit,
-        synctex_width_global(p) / unit
+        synctex_width(mem, p) / unit
     );
     let len = synctex_write(file, &s);
-    set_sc_lastv(sc_curv());
+    synctex.lastv = synctex.curv;
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-unsafe fn synctex_record_node_rule(p: i32) {
-    let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
+unsafe fn synctex_record_node_rule(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, shipout: &crate::state::ShipoutState, p: i32) {
+    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "r{},{}:{},{}:{},{},{}\n",
-        synctex_tag_rule_global(p),
-        synctex_line_rule_global(p),
+        synctex_tag_rule(mem, p),
+        synctex_line_rule(mem, p),
         curh / unit,
         curv / unit,
-        rule_wd() / unit,
-        rule_ht() / unit,
-        rule_dp() / unit
+        shipout.rule_wd / unit,
+        shipout.rule_ht / unit,
+        shipout.rule_dp / unit
     );
     let len = synctex_write(file, &s);
-    set_sc_lastv(sc_curv());
+    synctex.lastv = synctex.curv;
     if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-        set_sc_count(sc_count() + 1);
+        synctex.total_length += len;
+        synctex.count += 1;
     } else {
-        synctexabort();
+        synctexabort(synctex);
     }
 }
 
-// Opens the .synctex.gz output file and writes the preamble.
-unsafe fn synctex_dot_open() -> usize {
-    if sc_flags_off() || intpar_synctex() == 0 {
+unsafe fn synctex_record_node_kern_global(p: i32) {
+    crate::state::with_state_mut(|st| {
+        synctex_record_node_kern(&mut st.synctex, &st.mem, p);
+    });
+}
+
+unsafe fn synctex_dot_open(synctex: &mut crate::state::SynctexCtxt, eqtb: &crate::state::EqtbState, tmp: *mut c_char) -> usize {
+    if synctex.flags.off || intpar_synctex(eqtb) == 0 {
+        libc::free(tmp as *mut libc::c_void);
         return INVALID_HANDLE;
     }
-    if sc_file() != INVALID_HANDLE {
-        return sc_file();
+    if synctex.file != INVALID_HANDLE {
+        libc::free(tmp as *mut libc::c_void);
+        return synctex.file;
     }
 
-    let tmp = gettexstring(job_name());
     let job_len = libc::strlen(tmp);
     if job_len == 0 {
         libc::free(tmp as *mut libc::c_void);
-        synctexabort();
+        synctexabort(synctex);
         return INVALID_HANDLE;
     }
 
@@ -667,54 +630,54 @@ unsafe fn synctex_dot_open() -> usize {
     let the_name = libc::malloc(total) as *mut c_char;
     if the_name.is_null() {
         libc::free(tmp as *mut libc::c_void);
-        synctexabort();
+        synctexabort(synctex);
         return INVALID_HANDLE;
     }
     libc::strcpy(the_name, tmp);
     libc::strcat(the_name, c".synctex.gz".as_ptr());
     libc::free(tmp as *mut libc::c_void);
 
-    set_sc_file(ttstub_output_open(the_name, 1));
+    synctex.file = ttstub_output_open(the_name, 1);
     libc::free(the_name as *mut libc::c_void);
 
-    if sc_file() == INVALID_HANDLE {
-        synctexabort();
+    if synctex.file == INVALID_HANDLE {
+        synctexabort(synctex);
         return INVALID_HANDLE;
     }
 
-    if synctex_record_preamble() != 0 {
-        synctexabort();
+    if synctex_record_preamble(synctex) != 0 {
+        synctexabort(synctex);
         return INVALID_HANDLE;
     }
 
-    if sc_magnification() == 0 {
-        set_sc_magnification(1000);
+    if synctex.magnification == 0 {
+        synctex.magnification = 1000;
     }
-    set_sc_unit(1);
+    synctex.unit = 1;
 
-    if !sc_root_name().is_null() {
-        let rn = sc_root_name();
-        synctex_record_input(1, rn);
-        set_sc_root_name(mfree_ptr(sc_root_name()));
+    if !synctex.root_name.is_null() {
+        let rn = synctex.root_name;
+        synctex_record_input(synctex, 1, rn);
+        synctex.root_name = mfree_ptr(synctex.root_name);
     }
 
-    set_sc_count(0);
-    sc_file()
+    synctex.count = 0;
+    synctex.file
 }
 
-// Ensures the synctex file is open and settings + content header are written.
-unsafe fn synctex_prepare_content() -> usize {
-    if sc_flags_content_ready() {
-        return sc_file();
+unsafe fn synctex_prepare_content(synctex: &mut crate::state::SynctexCtxt, eqtb: &crate::state::EqtbState, tmp: *mut c_char) -> usize {
+    if synctex.flags.content_ready {
+        libc::free(tmp as *mut libc::c_void);
+        return synctex.file;
     }
-    if synctex_dot_open() != INVALID_HANDLE
-        && synctex_record_settings() == 0
-        && synctex_record_content() == 0
+    if synctex_dot_open(synctex, eqtb, tmp) != INVALID_HANDLE
+        && synctex_record_settings(synctex) == 0
+        && synctex_record_content(synctex) == 0
     {
-        set_sc_flags_content_ready(true);
-        return sc_file();
+        synctex.flags.content_ready = true;
+        return synctex.file;
     }
-    synctexabort();
+    synctexabort(synctex);
     INVALID_HANDLE
 }
 
@@ -724,26 +687,29 @@ unsafe fn synctex_prepare_content() -> usize {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_init_command() {
-    set_sc_file(INVALID_HANDLE);
-    set_sc_root_name(ptr::null_mut());
-    set_sc_count(0);
-    set_sc_node(0);
-    set_sc_recorder(None);
-    set_sc_tag(0);
-    set_sc_line(0);
-    set_sc_curh(0);
-    set_sc_curv(0);
-    set_sc_magnification(0);
-    set_sc_unit(0);
-    set_sc_total_length(0);
-    set_sc_lastv(-1);
-    set_sc_form_depth(0);
-    set_sc_synctex_tag_counter(0);
-    set_sc_flags_content_ready(false);
-    set_sc_flags_off(false);
-    set_sc_flags_not_void(false);
-    set_sc_flags_warn(false);
-    set_sc_flags_output_p(false);
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        synctex.file = INVALID_HANDLE;
+        synctex.root_name = ptr::null_mut();
+        synctex.count = 0;
+        synctex.node = 0;
+        synctex.recorder = None;
+        synctex.tag = 0;
+        synctex.line = 0;
+        synctex.curh = 0;
+        synctex.curv = 0;
+        synctex.magnification = 0;
+        synctex.unit = 0;
+        synctex.total_length = 0;
+        synctex.lastv = -1;
+        synctex.form_depth = 0;
+        synctex.synctex_tag_counter = 0;
+        synctex.flags.content_ready = false;
+        synctex.flags.off = false;
+        synctex.flags.not_void = false;
+        synctex.flags.warn = false;
+        synctex.flags.output_p = false;
+    });
 
     if synctex_enabled() != 0 {
         set_eqtb_b32s1(INT_BASE + INT_PAR_SYNCTEX, 1);
@@ -753,343 +719,433 @@ pub unsafe extern "C" fn synctex_init_command() {
 }
 
 pub unsafe fn synctex_terminate(_log_opened: bool) {
-    if sc_file() != INVALID_HANDLE {
-        synctex_record_postamble();
-        ttstub_output_close(sc_file());
-        set_sc_file(INVALID_HANDLE);
-    }
-    synctexabort();
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.file != INVALID_HANDLE {
+            synctex_record_postamble(synctex);
+            ttstub_output_close(synctex.file);
+            synctex.file = INVALID_HANDLE;
+        }
+        synctexabort(synctex);
+    });
 }
 
-// synctex_abort declared in xetex-synctex.h but not implemented in original C.
 #[no_mangle]
 pub unsafe extern "C" fn synctex_abort(_log_opened: bool) {
-    synctexabort();
+    crate::state::with_state_mut(|st| {
+        synctexabort(&mut st.synctex);
+    });
 }
 
 pub unsafe fn synctex_start_input() {
-    if sc_flags_off() {
-        return;
-    }
-    // ~counter > 0 ⟺ counter != u32::MAX (bitwise NOT of max is 0, not > 0)
-    if sc_synctex_tag_counter() != u32::MAX {
-        set_sc_synctex_tag_counter(sc_synctex_tag_counter() + 1);
-    } else {
-        set_sc_synctex_tag_counter(0);
-        return;
-    }
-    let tag = sc_synctex_tag_counter() as i32;
-    set_cur_input_synctex_tag(tag);
+    let mut root_to_store = None;
+    let mut input_to_record = None;
 
-    if sc_synctex_tag_counter() == 1 {
-        // First file: store root name for later.
-        set_sc_root_name(get_current_name());
-        if libc::strlen(sc_root_name()) == 0 {
-            let texput = b"texput\0";
-            set_sc_root_name(
-                xrealloc(sc_root_name() as *mut libc::c_void, texput.len()) as *mut c_char
-            );
-            libc::strcpy(sc_root_name(), texput.as_ptr() as *const c_char);
+    let job_name = crate::state::with_state(|st| st.strings.job_name);
+    let tmp = gettexstring(job_name);
+
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.flags.off {
+            libc::free(tmp as *mut libc::c_void);
+            return;
         }
-        return;
+        if synctex.synctex_tag_counter != u32::MAX {
+            synctex.synctex_tag_counter += 1;
+        } else {
+            synctex.synctex_tag_counter = 0;
+            libc::free(tmp as *mut libc::c_void);
+            return;
+        }
+        let tag = synctex.synctex_tag_counter as i32;
+        set_cur_input_synctex_tag(tag);
+
+        if synctex.synctex_tag_counter == 1 {
+            root_to_store = Some(get_current_name());
+            libc::free(tmp as *mut libc::c_void);
+            return;
+        }
+
+        if synctex.file != INVALID_HANDLE || synctex_dot_open(synctex, &st.eqtb, tmp) != INVALID_HANDLE {
+            let ci = cur_input();
+            let tmp_name = get_current_name();
+            input_to_record = Some((ci.synctex_tag, tmp_name));
+        }
+    });
+
+    if let Some(rn) = root_to_store {
+        crate::state::with_state_mut(|st| {
+            let synctex = &mut st.synctex;
+            synctex.root_name = rn;
+            if libc::strlen(synctex.root_name) == 0 {
+                let texput = b"texput\0";
+                synctex.root_name = xrealloc(synctex.root_name as *mut libc::c_void, texput.len()) as *mut c_char;
+                libc::strcpy(synctex.root_name, texput.as_ptr() as *const c_char);
+            }
+        });
     }
 
-    if sc_file() != INVALID_HANDLE || synctex_dot_open() != INVALID_HANDLE {
-        let ci = cur_input();
-        let tmp = get_current_name();
-        synctex_record_input(ci.synctex_tag, tmp);
-        libc::free(tmp as *mut libc::c_void);
+    if let Some((tag, tmp_name)) = input_to_record {
+        crate::state::with_state_mut(|st| {
+            synctex_record_input(&mut st.synctex, tag, tmp_name);
+        });
+        libc::free(tmp_name as *mut libc::c_void);
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_sheet(mag: i32) {
-    if sc_flags_off() {
-        if intpar_synctex() != 0 && !sc_flags_warn() {
-            set_sc_flags_warn(true);
-            ttstub_issue_warning(
-                c"SyncTeX was disabled -- changing the value of \\synctex has no effect".as_ptr(),
-            );
-        }
+    let (job_name, is_off, total_pages) = crate::state::with_state(|st| {
+        (st.strings.job_name, st.synctex.flags.off, st.shipout.total_pages)
+    });
+
+    if is_off {
+        crate::state::with_state_mut(|st| {
+            if intpar_synctex(&st.eqtb) != 0 && !st.synctex.flags.warn {
+                st.synctex.flags.warn = true;
+                ttstub_issue_warning(
+                    c"SyncTeX was disabled -- changing the value of \\synctex has no effect".as_ptr(),
+                );
+            }
+        });
         return;
     }
-    if total_pages() == 0 && mag > 0 {
-        set_sc_magnification(mag);
-    }
-    if synctex_prepare_content() != INVALID_HANDLE {
-        synctex_record_sheet(total_pages() + 1);
-    }
+
+    let tmp = gettexstring(job_name);
+
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if total_pages == 0 && mag > 0 {
+            synctex.magnification = mag;
+        }
+        if synctex_prepare_content(synctex, &st.eqtb, tmp) != INVALID_HANDLE {
+            synctex_record_sheet(synctex, total_pages + 1);
+        }
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_teehs() {
-    if sc_flags_off() || sc_file() == INVALID_HANDLE {
-        return;
-    }
-    synctex_record_teehs(total_pages());
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.flags.off || synctex.file == INVALID_HANDLE {
+            return;
+        }
+        synctex_record_teehs(synctex, st.shipout.total_pages);
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_pdfxform(p: i32) {
-    if sc_flags_off() {
-        if intpar_synctex() != 0 && !sc_flags_warn() {
-            set_sc_flags_warn(true);
-            ttstub_issue_warning(
-                c"SyncTeX was disabled - changing the value of \\synctex has no effect".as_ptr(),
-            );
-        }
+    let (job_name, is_off) = crate::state::with_state(|st| {
+        (st.strings.job_name, st.synctex.flags.off)
+    });
+
+    if is_off {
+        crate::state::with_state_mut(|st| {
+            if intpar_synctex(&st.eqtb) != 0 && !st.synctex.flags.warn {
+                st.synctex.flags.warn = true;
+                ttstub_issue_warning(
+                    c"SyncTeX was disabled - changing the value of \\synctex has no effect".as_ptr(),
+                );
+            }
+        });
         return;
     }
-    if synctex_prepare_content() != INVALID_HANDLE {
-        synctex_record_pdfxform(p);
-    }
+
+    let tmp = gettexstring(job_name);
+
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex_prepare_content(synctex, &st.eqtb, tmp) != INVALID_HANDLE {
+            synctex_record_pdfxform(synctex, &st.eqtb, p);
+        }
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_mrofxfdp() {
-    if sc_file() != INVALID_HANDLE {
-        synctex_record_mrofxfdp();
-    }
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.file != INVALID_HANDLE {
+            synctex_record_mrofxfdp(synctex);
+        }
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_pdfrefxform(objnum: c_int) {
-    if sc_file() != INVALID_HANDLE {
-        synctex_record_node_pdfrefxform(objnum);
-    }
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.file != INVALID_HANDLE {
+            synctex_record_node_pdfrefxform(synctex, &st.shipout, objnum);
+        }
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_vlist(this_box: i32) {
-    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
-        return;
-    }
-    set_sc_node(this_box);
-    set_sc_recorder(None);
-    set_sc_tag(synctex_tag_box_global(this_box));
-    set_sc_line(synctex_line_box_global(this_box));
-    set_sc_curh(synctex_curh());
-    set_sc_curv(synctex_curv());
-    synctex_record_node_vlist(this_box);
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
+            return;
+        }
+        synctex.node = this_box;
+        synctex.recorder = None;
+        synctex.tag = synctex_tag_box(&st.mem, this_box);
+        synctex.line = synctex_line_box(&st.mem, this_box);
+        synctex.curh = synctex_curh(&st.shipout);
+        synctex.curv = synctex_curv(&st.shipout);
+        synctex_record_node_vlist(synctex, &st.mem, this_box);
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_tsilv(this_box: i32) {
-    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
-        return;
-    }
-    set_sc_node(this_box);
-    set_sc_tag(synctex_tag_box_global(this_box));
-    set_sc_line(synctex_line_box_global(this_box));
-    set_sc_curh(synctex_curh());
-    set_sc_curv(synctex_curv());
-    set_sc_recorder(None);
-    synctex_record_node_tsilv(this_box);
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
+            return;
+        }
+        synctex.node = this_box;
+        synctex.tag = synctex_tag_box(&st.mem, this_box);
+        synctex.line = synctex_line_box(&st.mem, this_box);
+        synctex.curh = synctex_curh(&st.shipout);
+        synctex.curv = synctex_curv(&st.shipout);
+        synctex.recorder = None;
+        synctex_record_node_tsilv(synctex, this_box);
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_void_vlist(p: i32, _this_box: i32) {
-    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
-        return;
-    }
-    set_sc_node(p);
-    set_sc_tag(synctex_tag_box_global(p));
-    set_sc_line(synctex_line_box_global(p));
-    set_sc_curh(synctex_curh());
-    set_sc_curv(synctex_curv());
-    set_sc_recorder(None);
-    synctex_record_node_void_vlist(p);
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
+            return;
+        }
+        synctex.node = p;
+        synctex.tag = synctex_tag_box(&st.mem, p);
+        synctex.line = synctex_line_box(&st.mem, p);
+        synctex.curh = synctex_curh(&st.shipout);
+        synctex.curv = synctex_curv(&st.shipout);
+        synctex.recorder = None;
+        synctex_record_node_void_vlist(synctex, &st.mem, p);
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_hlist(this_box: i32) {
-    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
-        return;
-    }
-    set_sc_node(this_box);
-    set_sc_tag(synctex_tag_box_global(this_box));
-    set_sc_line(synctex_line_box_global(this_box));
-    set_sc_curh(synctex_curh());
-    set_sc_curv(synctex_curv());
-    set_sc_recorder(None);
-    synctex_record_node_hlist(this_box);
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
+            return;
+        }
+        synctex.node = this_box;
+        synctex.tag = synctex_tag_box(&st.mem, this_box);
+        synctex.line = synctex_line_box(&st.mem, this_box);
+        synctex.curh = synctex_curh(&st.shipout);
+        synctex.curv = synctex_curv(&st.shipout);
+        synctex.recorder = None;
+        synctex_record_node_hlist(synctex, &st.mem, this_box);
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_tsilh(this_box: i32) {
-    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
-        return;
-    }
-    set_sc_node(this_box);
-    set_sc_tag(synctex_tag_box_global(this_box));
-    set_sc_line(synctex_line_box_global(this_box));
-    set_sc_curh(synctex_curh());
-    set_sc_curv(synctex_curv());
-    set_sc_recorder(None);
-    synctex_record_node_tsilh(this_box);
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
+            return;
+        }
+        synctex.node = this_box;
+        synctex.tag = synctex_tag_box(&st.mem, this_box);
+        synctex.line = synctex_line_box(&st.mem, this_box);
+        synctex.curh = synctex_curh(&st.shipout);
+        synctex.curv = synctex_curv(&st.shipout);
+        synctex.recorder = None;
+        synctex_record_node_tsilh(synctex, this_box);
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_void_hlist(p: i32, _this_box: i32) {
-    // Uses the second SYNCTEX_IGNORE definition: checks tag/line too.
-    if sc_flags_off()
-        || intpar_synctex() == 0
-        || synctex_tag_box_global(p) <= 0
-        || synctex_line_box_global(p) <= 0
-    {
-        return;
-    }
-    // Flush pending recorder before context change.
-    let (rec, node) = (sc_recorder(), sc_node());
-    if let Some(rec) = rec {
-        rec(node);
-    }
-    set_sc_node(p);
-    set_sc_tag(synctex_tag_box_global(p));
-    set_sc_line(synctex_line_box_global(p));
-    set_sc_curh(synctex_curh());
-    set_sc_curv(synctex_curv());
-    set_sc_recorder(None);
-    synctex_record_node_void_hlist(p);
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        let tag = synctex_tag_box(&st.mem, p);
+        let line = synctex_line_box(&st.mem, p);
+        if synctex.flags.off
+            || intpar_synctex(&st.eqtb) == 0
+            || tag <= 0
+            || line <= 0
+        {
+            return;
+        }
+        // Flush pending recorder before context change.
+        if let Some(rec) = synctex.recorder {
+            rec(synctex.node);
+        }
+        synctex.node = p;
+        synctex.tag = tag;
+        synctex.line = line;
+        synctex.curh = synctex_curh(&st.shipout);
+        synctex.curv = synctex_curv(&st.shipout);
+        synctex.recorder = None;
+        synctex_record_node_void_hlist(synctex, &st.mem, p);
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_math(p: i32, _this_box: i32) {
-    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
-        return;
-    }
-    // SYNCTEX_CONTEXT_DID_CHANGE: node == 0 or tag/line differ.
-    let ctx_changed = sc_node() == 0
-        || synctex_tag_medium_global(p) != sc_tag()
-        || synctex_line_medium_global(p) != sc_line();
-    let (rec, node) = (sc_recorder(), sc_node());
-    if let Some(rec) = rec {
-        if ctx_changed {
-            rec(node);
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
+            return;
         }
-    }
-    set_sc_node(p);
-    set_sc_tag(synctex_tag_medium_global(p));
-    set_sc_line(synctex_line_medium_global(p));
-    set_sc_curh(synctex_curh());
-    set_sc_curv(synctex_curv());
-    set_sc_recorder(None);
-    synctex_record_node_math(p);
+        let tag = synctex_tag_medium(&st.mem, p);
+        let line = synctex_line_medium(&st.mem, p);
+        // SYNCTEX_CONTEXT_DID_CHANGE: node == 0 or tag/line differ.
+        let ctx_changed = synctex.node == 0
+            || tag != synctex.tag
+            || line != synctex.line;
+        if let Some(rec) = synctex.recorder {
+            if ctx_changed {
+                rec(synctex.node);
+            }
+        }
+        synctex.node = p;
+        synctex.tag = tag;
+        synctex.line = line;
+        synctex.curh = synctex_curh(&st.shipout);
+        synctex.curv = synctex_curv(&st.shipout);
+        synctex.recorder = None;
+        synctex_record_node_math(synctex, &st.mem, p);
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_horizontal_rule_or_glue(p: i32, _this_box: i32) {
-    let node_type = synctex_type_global(p);
-    // Second SYNCTEX_IGNORE definition: also checks tag/line > 0.
-    let off = sc_flags_off() || intpar_synctex() == 0;
-    let ignore = |tag: i32, line: i32| off || tag <= 0 || line <= 0;
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        let node_type = synctex_type(&st.mem, p);
+        // Second SYNCTEX_IGNORE definition: also checks tag/line > 0.
+        let off = synctex.flags.off || intpar_synctex(&st.eqtb) == 0;
+        let ignore = |tag: i32, line: i32| off || tag <= 0 || line <= 0;
 
-    match node_type {
-        RULE_NODE => {
-            if ignore(synctex_tag_rule_global(p), synctex_line_rule_global(p)) {
+        match node_type {
+            RULE_NODE => {
+                if ignore(synctex_tag_rule(&st.mem, p), synctex_line_rule(&st.mem, p)) {
+                    return;
+                }
+            }
+            GLUE_NODE => {
+                if ignore(synctex_tag_medium(&st.mem, p), synctex_line_medium(&st.mem, p)) {
+                    return;
+                }
+            }
+            KERN_NODE => {
+                if ignore(synctex_tag_medium(&st.mem, p), synctex_line_medium(&st.mem, p)) {
+                    return;
+                }
+            }
+            _ => {
+                let s = format!("unknown node type {} in SyncTeX\0", node_type);
+                ttstub_issue_error(s.as_ptr() as *const c_char);
                 return;
             }
         }
-        GLUE_NODE => {
-            if ignore(synctex_tag_medium_global(p), synctex_line_medium_global(p)) {
-                return;
-            }
-        }
-        KERN_NODE => {
-            if ignore(synctex_tag_medium_global(p), synctex_line_medium_global(p)) {
-                return;
-            }
-        }
-        _ => {
-            let s = format!("unknown node type {} in SyncTeX\0", node_type);
-            ttstub_issue_error(s.as_ptr() as *const c_char);
-            return;
-        }
-    }
 
-    set_sc_node(p);
-    set_sc_curh(synctex_curh());
-    set_sc_curv(synctex_curv());
-    set_sc_recorder(None);
-    match node_type {
-        RULE_NODE => {
-            set_sc_tag(synctex_tag_rule_global(p));
-            set_sc_line(synctex_line_rule_global(p));
-            synctex_record_node_rule(p);
+        synctex.node = p;
+        synctex.curh = synctex_curh(&st.shipout);
+        synctex.curv = synctex_curv(&st.shipout);
+        synctex.recorder = None;
+        match node_type {
+            RULE_NODE => {
+                synctex.tag = synctex_tag_rule(&st.mem, p);
+                synctex.line = synctex_line_rule(&st.mem, p);
+                synctex_record_node_rule(synctex, &st.mem, &st.shipout, p);
+            }
+            GLUE_NODE => {
+                synctex.tag = synctex_tag_medium(&st.mem, p);
+                synctex.line = synctex_line_medium(&st.mem, p);
+                synctex_record_node_glue(synctex, &st.mem, p);
+            }
+            KERN_NODE => {
+                synctex.tag = synctex_tag_medium(&st.mem, p);
+                synctex.line = synctex_line_medium(&st.mem, p);
+                synctex_record_node_kern(synctex, &st.mem, p);
+            }
+            _ => {
+                // Already handled above — unreachable in practice.
+            }
         }
-        GLUE_NODE => {
-            set_sc_tag(synctex_tag_medium_global(p));
-            set_sc_line(synctex_line_medium_global(p));
-            synctex_record_node_glue(p);
-        }
-        KERN_NODE => {
-            set_sc_tag(synctex_tag_medium_global(p));
-            set_sc_line(synctex_line_medium_global(p));
-            synctex_record_node_kern(p);
-        }
-        _ => {
-            // Already handled above — unreachable in practice.
-        }
-    }
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_kern(p: i32, this_box: i32) {
-    // Second SYNCTEX_IGNORE definition.
-    if sc_flags_off()
-        || intpar_synctex() == 0
-        || synctex_tag_medium_global(p) <= 0
-        || synctex_line_medium_global(p) <= 0
-    {
-        return;
-    }
-    // SYNCTEX_CONTEXT_DID_CHANGE
-    let ctx_changed = sc_node() == 0
-        || synctex_tag_medium_global(p) != sc_tag()
-        || synctex_line_medium_global(p) != sc_line();
-    if ctx_changed {
-        // Flush pending recorder.
-        let (rec, node) = (sc_recorder(), sc_node());
-        if let Some(rec) = rec {
-            rec(node);
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        let tag = synctex_tag_medium(&st.mem, p);
+        let line = synctex_line_medium(&st.mem, p);
+        // Second SYNCTEX_IGNORE definition.
+        if synctex.flags.off
+            || intpar_synctex(&st.eqtb) == 0
+            || tag <= 0
+            || line <= 0
+        {
+            return;
         }
-        set_sc_node(p);
-        set_sc_tag(synctex_tag_medium_global(p));
-        set_sc_line(synctex_line_medium_global(p));
-        if sc_node() == this_box {
-            // First node in hlist.
-            set_sc_recorder(Some(synctex_record_node_kern));
+        // SYNCTEX_CONTEXT_DID_CHANGE
+        let ctx_changed = synctex.node == 0
+            || tag != synctex.tag
+            || line != synctex.line;
+        if ctx_changed {
+            // Flush pending recorder.
+            if let Some(rec) = synctex.recorder {
+                rec(synctex.node);
+            }
+            synctex.node = p;
+            synctex.tag = tag;
+            synctex.line = line;
+            if synctex.node == this_box {
+                // First node in hlist.
+                synctex.recorder = Some(synctex_record_node_kern_global);
+            } else {
+                synctex.recorder = None;
+                synctex_record_node_kern(synctex, &st.mem, p);
+            }
         } else {
-            set_sc_recorder(None);
-            synctex_record_node_kern(p);
+            // Same context — defer recording.
+            synctex.node = p;
+            synctex.tag = tag;
+            synctex.line = line;
+            synctex.recorder = Some(synctex_record_node_kern_global);
         }
-    } else {
-        // Same context — defer recording.
-        set_sc_node(p);
-        set_sc_tag(synctex_tag_medium_global(p));
-        set_sc_line(synctex_line_medium_global(p));
-        set_sc_recorder(Some(synctex_record_node_kern));
-    }
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_current() {
-    if sc_flags_off() || intpar_synctex() == 0 || sc_file() == INVALID_HANDLE {
-        return;
-    }
-    let (file, tag, line, unit) = (sc_file(), sc_tag(), sc_line(), sc_unit());
-    let s = format!(
-        "x{},{}:{},{}\n",
-        tag,
-        line,
-        synctex_curh() / unit,
-        synctex_curv() / unit
-    );
-    let len = synctex_write(file, &s);
-    set_sc_lastv(synctex_curv());
-    if len > 0 {
-        set_sc_total_length(sc_total_length() + len);
-    } else {
-        synctexabort();
-    }
+    crate::state::with_state_mut(|st| {
+        let synctex = &mut st.synctex;
+        if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
+            return;
+        }
+        let (file, tag, line, unit) = (synctex.file, synctex.tag, synctex.line, synctex.unit);
+        let s = format!(
+            "x{},{}:{},{}\n",
+            tag,
+            line,
+            synctex_curh(&st.shipout) / unit,
+            synctex_curv(&st.shipout) / unit
+        );
+        let len = synctex_write(file, &s);
+        synctex.lastv = synctex_curv(&st.shipout);
+        if len > 0 {
+            synctex.total_length += len;
+        } else {
+            synctexabort(synctex);
+        }
+    });
 }

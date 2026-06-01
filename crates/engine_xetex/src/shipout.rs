@@ -17,7 +17,7 @@ use crate::globals::{
     font_letter_space_entry, font_mapping_ptr, font_ptr, font_used_entry, init_pool_ptr, job_name,
     last_bop, log_opened, lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v,
     mem_as_u16_ptr, mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1,
-    mem_gr, mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size, rule_dp, rule_ht,
+    mem_gr, mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size, rule_ht,
     rule_wd, rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area,
     set_cur_cs, set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode,
     set_cur_name, set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset,
@@ -1019,36 +1019,81 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
     }
 }
 
-unsafe fn finish_hlist_rule(this_box: i32, base_line: i32, p: i32) {
-    if rule_ht() == NULL_FLAG {
-        set_rule_ht(mem_b32s1(this_box + 3));
-    }
-    if rule_dp() == NULL_FLAG {
-        set_rule_dp(mem_b32s1(this_box + 2));
-    }
-    set_rule_ht(rule_ht() + rule_dp());
+struct HListRuleAction {
+    emit: bool,
+    h_move: Option<i32>,
+    v_move: Option<i32>,
+    rule_ht: i32,
+    rule_wd: i32,
+    synctex_p: i32,
+    synctex_box: i32,
+}
 
-    if rule_ht() > 0 && rule_wd() > 0 {
-        if cur_h() != dvi_h() {
-            movement_global(cur_h() - dvi_h(), RIGHT1);
-            set_dvi_h(cur_h());
+fn finish_hlist_rule(
+    mem: &MemState,
+    shipout: &mut ShipoutState,
+    this_box: i32,
+    base_line: i32,
+    p: i32,
+) -> HListRuleAction {
+    if shipout.rule_ht == NULL_FLAG {
+        shipout.rule_ht = mem.b32s1(this_box + 3);
+    }
+    if shipout.rule_dp == NULL_FLAG {
+        shipout.rule_dp = mem.b32s1(this_box + 2);
+    }
+    shipout.rule_ht += shipout.rule_dp;
+
+    let mut emit = false;
+    let mut h_move = None;
+    let mut v_move = None;
+
+    if shipout.rule_ht > 0 && shipout.rule_wd > 0 {
+        emit = true;
+        if shipout.cur_h != shipout.dvi_h {
+            h_move = Some(shipout.cur_h - shipout.dvi_h);
+            shipout.dvi_h = shipout.cur_h;
         }
 
-        set_cur_v(base_line + rule_dp());
-        if cur_v() != dvi_v() {
-            movement_global(cur_v() - dvi_v(), DOWN1);
-            set_dvi_v(cur_v());
+        shipout.cur_v = base_line + shipout.rule_dp;
+        if shipout.cur_v != shipout.dvi_v {
+            v_move = Some(shipout.cur_v - shipout.dvi_v);
+            shipout.dvi_v = shipout.cur_v;
         }
 
+        shipout.cur_v = base_line;
+        shipout.dvi_h += shipout.rule_wd;
+    }
+
+    shipout.cur_h += shipout.rule_wd;
+
+    HListRuleAction {
+        emit,
+        h_move,
+        v_move,
+        rule_ht: shipout.rule_ht,
+        rule_wd: shipout.rule_wd,
+        synctex_p: p,
+        synctex_box: this_box,
+    }
+}
+
+pub unsafe fn finish_hlist_rule_global(this_box: i32, base_line: i32, p: i32) {
+    let action = crate::state::with_state_mut(|st| {
+        finish_hlist_rule(&st.mem, &mut st.shipout, this_box, base_line, p)
+    });
+    if action.emit {
+        if let Some(h_move) = action.h_move {
+            movement_global(h_move, RIGHT1);
+        }
+        if let Some(v_move) = action.v_move {
+            movement_global(v_move, DOWN1);
+        }
         dvi_out_global(SET_RULE);
-        dvi_four_global(rule_ht());
-        dvi_four_global(rule_wd());
-        set_cur_v(base_line);
-        set_dvi_h(dvi_h() + rule_wd());
+        dvi_four_global(action.rule_ht);
+        dvi_four_global(action.rule_wd);
     }
-
-    set_cur_h(cur_h() + rule_wd());
-    crate::synctex::synctex_horizontal_rule_or_glue(p, this_box);
+    crate::synctex::synctex_horizontal_rule_or_glue(action.synctex_p, action.synctex_box);
 }
 
 unsafe fn output_hlist_glue(
@@ -1110,7 +1155,7 @@ unsafe fn output_hlist_glue(
         if mem_b16s1(leader_box) == RULE_NODE {
             set_rule_ht(mem_b32s1(leader_box + 3));
             set_rule_dp(mem_b32s1(leader_box + 2));
-            finish_hlist_rule(this_box, base_line, p);
+            finish_hlist_rule_global(this_box, base_line, p);
             return;
         }
 
@@ -1314,7 +1359,7 @@ pub unsafe extern "C" fn hlist_out() {
                         set_rule_ht(mem_b32s1(p + 3));
                         set_rule_dp(mem_b32s1(p + 2));
                         set_rule_wd(mem_b32s1(p + 1));
-                        finish_hlist_rule(this_box, base_line, p);
+                        finish_hlist_rule_global(this_box, base_line, p);
                     }
                     WHATSIT_NODE => match mem_b16s0(p) {
                         NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
@@ -1593,7 +1638,7 @@ pub unsafe extern "C" fn vlist_out() {
                 set_rule_ht(mem_b32s1(p + 3));
                 set_rule_dp(mem_b32s1(p + 2));
                 set_rule_wd(mem_b32s1(p + 1));
-                finish_vlist_rule(this_box, left_edge, upwards);
+                finish_vlist_rule_global(this_box, left_edge, upwards);
             }
             WHATSIT_NODE => match mem_b16s0(p) {
                 GLYPH_NODE => {
@@ -1667,7 +1712,7 @@ pub unsafe extern "C" fn vlist_out() {
                     if mem_b16s1(leader_box) == RULE_NODE {
                         set_rule_wd(mem_b32s1(leader_box + 1));
                         set_rule_dp(0);
-                        finish_vlist_rule(this_box, left_edge, upwards);
+                        finish_vlist_rule_global(this_box, left_edge, upwards);
                     } else {
                         let leader_ht = mem_b32s1(leader_box + 3) + mem_b32s1(leader_box + 2);
 
@@ -1768,38 +1813,81 @@ pub unsafe extern "C" fn vlist_out() {
     set_cur_s(cur_s() - 1);
 }
 
-unsafe fn finish_vlist_rule(this_box: i32, left_edge: i32, upwards: bool) {
-    if rule_wd() == NULL_FLAG {
-        set_rule_wd(mem_b32s1(this_box + 1));
+struct VListRuleAction {
+    emit: bool,
+    h_move: Option<i32>,
+    v_move: Option<i32>,
+    rule_ht: i32,
+    rule_wd: i32,
+}
+
+fn finish_vlist_rule(
+    mem: &MemState,
+    shipout: &mut ShipoutState,
+    this_box: i32,
+    left_edge: i32,
+    upwards: bool,
+    cur_dir: i16,
+) -> VListRuleAction {
+    if shipout.rule_wd == NULL_FLAG {
+        shipout.rule_wd = mem.b32s1(this_box + 1);
     }
 
-    set_rule_ht(rule_ht() + rule_dp());
+    shipout.rule_ht += shipout.rule_dp;
 
     if upwards {
-        set_cur_v(cur_v() - rule_ht());
+        shipout.cur_v -= shipout.rule_ht;
     } else {
-        set_cur_v(cur_v() + rule_ht());
+        shipout.cur_v += shipout.rule_ht;
     }
 
-    if rule_ht() > 0 && rule_wd() > 0 {
-        if cur_dir() == RIGHT_TO_LEFT {
-            set_cur_h(cur_h() - rule_wd());
+    let mut emit = false;
+    let mut h_move = None;
+    let mut v_move = None;
+
+    if shipout.rule_ht > 0 && shipout.rule_wd > 0 {
+        emit = true;
+        if cur_dir == RIGHT_TO_LEFT {
+            shipout.cur_h -= shipout.rule_wd;
         }
 
-        if cur_h() != dvi_h() {
-            movement_global(cur_h() - dvi_h(), RIGHT1);
-            set_dvi_h(cur_h());
+        if shipout.cur_h != shipout.dvi_h {
+            h_move = Some(shipout.cur_h - shipout.dvi_h);
+            shipout.dvi_h = shipout.cur_h;
         }
 
-        if cur_v() != dvi_v() {
-            movement_global(cur_v() - dvi_v(), DOWN1);
-            set_dvi_v(cur_v());
+        if shipout.cur_v != shipout.dvi_v {
+            v_move = Some(shipout.cur_v - shipout.dvi_v);
+            shipout.dvi_v = shipout.cur_v;
         }
 
+        shipout.cur_h = left_edge;
+    }
+
+    VListRuleAction {
+        emit,
+        h_move,
+        v_move,
+        rule_ht: shipout.rule_ht,
+        rule_wd: shipout.rule_wd,
+    }
+}
+
+pub unsafe fn finish_vlist_rule_global(this_box: i32, left_edge: i32, upwards: bool) {
+    let cur_dir_val = cur_dir();
+    let action = crate::state::with_state_mut(|st| {
+        finish_vlist_rule(&st.mem, &mut st.shipout, this_box, left_edge, upwards, cur_dir_val)
+    });
+    if action.emit {
+        if let Some(h_move) = action.h_move {
+            movement_global(h_move, RIGHT1);
+        }
+        if let Some(v_move) = action.v_move {
+            movement_global(v_move, DOWN1);
+        }
         dvi_out_global(PUT_RULE);
-        dvi_four_global(rule_ht());
-        dvi_four_global(rule_wd());
-        set_cur_h(left_edge);
+        dvi_four_global(action.rule_ht);
+        dvi_four_global(action.rule_wd);
     }
 }
 
