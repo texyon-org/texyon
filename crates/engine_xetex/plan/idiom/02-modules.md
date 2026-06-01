@@ -172,9 +172,22 @@ Run from the crate root. One function group (one destination module) per commit.
 2. **Create/locate the destination module.** New modules (`scanner.rs`,
    `expand.rs`, `main_control.rs`, `packaging.rs`, `engine.rs`,
    `format_io.rs`, `hyphenation.rs`) need a `mod` line in `lib.rs`.
-3. **Move the function bodies verbatim.** Cut from `scan.rs`/`ini.rs`, paste
-   into the destination. **Do not change signatures, `#[no_mangle]`, `unsafe`,
-   or bodies** — this commit is behavior-preserving relocation only.
+3. **Move the function bodies verbatim — with the script, not by hand.** Use
+   `plan/idiom/move_fns.py`, which extracts each top-level `fn` (with its
+   leading `// translated from …` comment + `#[…]` attributes, through the
+   column-0 closing brace) and relocates it unchanged. Editing function bodies
+   across with the manual edit tool is pure token waste and risks transcription
+   error — the move changes **no bytes inside any function**, so it is exactly a
+   scripted operation.
+   ```bash
+   # dry run first — eyeball the line ranges:
+   python3 plan/idiom/move_fns.py --src src/scan.rs --dst src/errors.rs \
+       --fns you_cant,report_illegal_case,privileged,cs_error,box_error,mu_error,runaway,extra_right_brace
+   # then apply:
+   python3 plan/idiom/move_fns.py --src ... --dst ... --fns ... --apply
+   ```
+   **Do not change signatures, `#[no_mangle]`, `unsafe`, or bodies** — this
+   commit is behavior-preserving relocation only.
 4. **Fix visibility + imports.** Functions called cross-module become
    `pub(crate)`. Add `use crate::scanner::…` (etc.) at call sites; move the
    relevant `use crate::globals::{…}` / `use crate::consts::{…}` imports into
