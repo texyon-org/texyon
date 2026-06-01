@@ -7,6 +7,26 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 103 — 2026-06-01 — thread `make_radical_global` delimiter adjustment
+
+**Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).
+
+**Slice:** local simplification inside `src/math.rs`'s `make_radical_global`, chosen after recon found the small linebreak/shipout leaves were already in threaded-core + `_global` wrapper shape and their live callers sit inside high-count orchestrators (`line_break` / output walkers).
+
+**Classification:** bucket **B/C**. The radical helper remains a borrow-dropping orchestrator: `clean_box`, `var_delimiter_global`, `overbar`, `vpackage`, and `hpack` stay outside live borrows. The direct font/eqtb/scanner reads for `math_font`, `font_is_ot_math`, `default_rule_thickness`, and `math_x_height` now use short `with_state` closures calling threaded cores. The delimiter adjustment (`y` height/depth rewrites, clearance delta, final vertical shift, overbar link) runs through short direct `MemState` borrows; the `half(delta)` call stays in the existing unsafe wrapper context so raw unsafe-block count remains flat.
+
+**Method surface / deleted accessors:** no new state methods. Deleted now-dead `math_font_global` and `math_x_height_global` wrappers after confirming no remaining `src/*.rs` callers.
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328** unchanged. raw extern statics **38** unchanged. raw `unsafe {}` **174** unchanged. `unsafe fn` **655** unchanged. Warnings **51** unchanged.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` -> 0 errors, 51 warnings; full dashboard -> **29 / 2 / 7 / 4**.
+
+**For the next session (104):** continue bounded slices only. Good options remain a small pagebuilder/linebreak/shipout leaf if it has live callers outside high-count orchestrators, or another clearly closeable local math simplification. Avoid whole-session work on scanner-heavy `scan.rs`, `mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, and `line_break`; keep `clean_box`, delimiter scans, scanner calls, diagnostics, and output routines between short disjoint borrows.
+
+---
+
 ## Idiom session 102 — 2026-06-01 — thread adjacent math fraction/accent/left-right islands
 
 **Type:** execution (workstream 01, Phase C — math noad/command family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).

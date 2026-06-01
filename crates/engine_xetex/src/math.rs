@@ -244,11 +244,6 @@ fn math_font(eqtb: &EqtbState, n: i32) -> i32 {
 }
 
 #[inline]
-fn math_font_global(n: i32) -> i32 {
-    crate::state::with_state(|st| math_font(&st.eqtb, n))
-}
-
-#[inline]
 fn font_is_ot_math(fonts: &FontState, f: i32) -> bool {
     fonts.font_area_entry(f) == OTGR_FONT_FLAG
         && unsafe { isOpenTypeMathFont(fonts.font_layout_engine_ptr(f)) }
@@ -282,10 +277,6 @@ fn math_ext_param(fonts: &FontState, eqtb: &EqtbState, cur_size: i32, param: i32
 /// translated from xetex-math.c:86 (math_x_height)
 pub fn math_x_height(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 5)
-}
-
-pub fn math_x_height_global(size_code: i32) -> i32 {
-    crate::state::with_state(|st| math_x_height(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:101 (math_quad)
@@ -863,50 +854,76 @@ fn make_radical_finish(mem: &mut MemState, q: i32, x: i32) {
     mem.set_b32s1(q + 1, SUB_BOX);
 }
 
+fn make_radical_prepare_delimiter(
+    mem: &mut MemState,
+    y: i32,
+    x: i32,
+    clr: i32,
+    rule_thickness: i32,
+    is_ot_math: bool,
+) -> (i32, i32, i32) {
+    if is_ot_math {
+        mem.set_b32s1(y + 2, mem.b32s1(y + 3) + mem.b32s1(y + 2) - rule_thickness);
+        mem.set_b32s1(y + 3, rule_thickness);
+    }
+
+    let delta = mem.b32s1(y + 2) - (mem.b32s1(x + 3) + mem.b32s1(x + 2) + clr);
+    let x_height = mem.b32s1(x + 3);
+    let rule_height = mem.b32s1(y + 3);
+    (delta, x_height, rule_height)
+}
+
 /// translated from xetex-math.c:80 (make_radical)
 pub unsafe fn make_radical_global(q: i32) {
-    let f = math_font_global((mem_b16s3(q + 4) as i32 % 256) + cur_size());
-    let rule_thickness = if font_is_ot_math_global(f) {
+    let (f, is_ot_math) = crate::state::with_state(|st| {
+        let f = math_font(
+            &st.eqtb,
+            (st.mem.b16s3(q + 4) as i32 % 256) + st.scanner.cur_size,
+        );
+        (f, font_is_ot_math(&st.fonts, f))
+    });
+    let rule_thickness = if is_ot_math {
         get_ot_math_constant(f, RADICALRULETHICKNESS)
     } else {
-        default_rule_thickness_global()
+        crate::state::with_state(|st| {
+            default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size)
+        })
     };
 
-    let x = clean_box(q + 1, 2 * (cur_style() / 2) + 1);
-    let mut clr = if font_is_ot_math_global(f) {
-        if cur_style() < TEXT_STYLE {
+    let clean_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 2) + 1);
+    let x = clean_box(q + 1, clean_style);
+    let (cur_style, cur_size) =
+        crate::state::with_state(|st| (st.scanner.cur_style, st.scanner.cur_size));
+    let mut clr = if is_ot_math {
+        if cur_style < TEXT_STYLE {
             get_ot_math_constant(f, RADICALDISPLAYSTYLEVERTICALGAP)
         } else {
             get_ot_math_constant(f, RADICALVERTICALGAP)
         }
-    } else if cur_style() < TEXT_STYLE {
-        rule_thickness + math_x_height_global(cur_size()).abs() / 4
+    } else if cur_style < TEXT_STYLE {
+        rule_thickness
+            + crate::state::with_state(|st| math_x_height(&st.fonts, &st.eqtb, cur_size)).abs() / 4
     } else {
         rule_thickness + rule_thickness.abs() / 4
     };
 
-    let y = var_delimiter_global(
-        q + 4,
-        cur_size(),
-        mem_b32s1(x + 3) + mem_b32s1(x + 2) + clr + rule_thickness,
-    );
-    if font_is_ot_math_global(f) {
-        set_mem_b32s1(y + 2, mem_b32s1(y + 3) + mem_b32s1(y + 2) - rule_thickness);
-        set_mem_b32s1(y + 3, rule_thickness);
-    }
-
-    let delta = mem_b32s1(y + 2) - (mem_b32s1(x + 3) + mem_b32s1(x + 2) + clr);
+    let delimiter_height = crate::state::with_state(|st| {
+        st.mem.b32s1(x + 3) + st.mem.b32s1(x + 2) + clr + rule_thickness
+    });
+    let y = var_delimiter_global(q + 4, cur_size, delimiter_height);
+    let (delta, x_height, rule_height) = crate::state::with_state_mut(|st| {
+        make_radical_prepare_delimiter(&mut st.mem, y, x, clr, rule_thickness, is_ot_math)
+    });
     if delta > 0 {
         clr += crate::scaled_math::half(delta);
     }
-    set_mem_b32s1(y + 4, -(mem_b32s1(x + 3) + clr));
-    let rule_height = mem_b32s1(y + 3);
+    crate::state::with_state_mut(|st| st.mem.set_b32s1(y + 4, -(x_height + clr)));
     let p = match crate::state::with_state_mut(|st| overbar(&mut st.mem, x, clr, rule_height)) {
         Ok(p) => p,
         Err(e) => node_recycle_abort(e),
     };
     let overbar_box = crate::scan::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
-    set_mem_b32s1(y, overbar_box);
+    crate::state::with_state_mut(|st| st.mem.set_b32s1(y, overbar_box));
     let hbox = crate::scan::hpack(y, 0, ADDITIONAL);
     crate::state::with_state_mut(|st| make_radical_finish(&mut st.mem, q, hbox));
 }
