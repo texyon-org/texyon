@@ -785,7 +785,7 @@ pub unsafe fn ship_out(p: i32) {
 
     set_dead_cycles(0);
     ttstub_output_flush(rust_stdout());
-    crate::scan::flush_node_list_global(p);
+    crate::packaging::flush_node_list_global(p);
     crate::state::with_state_mut(|st| crate::synctex::synctex_teehs(st));
 }
 
@@ -1011,7 +1011,7 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
                     p = mem_b32s1(p);
                 }
 
-                crate::scan::flush_node_list_global(r);
+                crate::packaging::flush_node_list_global(r);
                 set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
                 p = q;
             }

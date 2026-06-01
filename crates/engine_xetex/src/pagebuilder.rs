@@ -40,7 +40,7 @@ use crate::save::new_save_level;
 use crate::errors::box_error;
 use crate::scaled_math::x_over_n;
 use crate::scan::do_marks_global;
-use crate::scan::flush_node_list_global;
+use crate::packaging::flush_node_list_global;
 use crate::scan::normal_paragraph;
 use crate::scan::prune_page_top_global;
 use crate::scan::scan_left_brace;

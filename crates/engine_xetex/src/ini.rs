@@ -1081,7 +1081,7 @@ pub unsafe extern "C" fn final_cleanup() {
 
             c = LAST_BOX_CODE as i32;
             loop {
-                crate::scan::flush_node_list_global(disc_ptr(c as usize));
+                crate::packaging::flush_node_list_global(disc_ptr(c as usize));
                 if c as usize >= VSPLIT_CODE {
                     break;
                 }

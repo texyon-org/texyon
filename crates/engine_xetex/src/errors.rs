@@ -10,7 +10,7 @@ use crate::globals::{
     use_err_help,
 };
 use crate::output::print_cmd_chr;
-use crate::scan::flush_node_list_global;
+use crate::packaging::flush_node_list_global;
 use crate::output::show_box;
 
 // Interaction-mode constants (xetex_format.h:644–647).

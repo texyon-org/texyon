@@ -43,6 +43,7 @@ mod mem;
 #[allow(dead_code)]
 mod mem_types;
 mod output;
+mod packaging;
 mod pagebuilder;
 mod pic;
 mod save;

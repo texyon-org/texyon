@@ -552,16 +552,16 @@ pub unsafe fn math_kern_global(p: i32, m: i32) {
 ///
 /// Phase C (`01b` §4a bucket B/C): touches the `mem` arena directly through
 /// `&mut MemState` and recycles the two current-list chains via the threaded
-/// [`crate::scan::flush_node_list`]. The `cur_list` reads/writes go through the
+/// [`crate::packaging::flush_node_list`]. The `cur_list` reads/writes go through the
 /// raw `cur_list` global (the deferred Phase-C set — safe under a live borrow).
 /// The two impossible corrupt-node `confusion` arms propagate out as `Err`, fired
 /// by [`flush_math_global`] after the borrow drops.
 pub fn flush_math(mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
     let head = cur_list_head();
     let p1 = mem.b32s1(head);
-    crate::scan::flush_node_list(mem, p1)?;
+    crate::packaging::flush_node_list(mem, p1)?;
     let p2 = cur_list_aux_b32s1();
-    crate::scan::flush_node_list(mem, p2)?;
+    crate::packaging::flush_node_list(mem, p2)?;
     mem.set_b32s1(head, TEX_NULL);
     set_cur_list_tail(head);
     set_cur_list_aux_b32s1(TEX_NULL);
@@ -1639,7 +1639,7 @@ pub unsafe fn make_math_accent_global(q: i32) {
     }
 
     if (mem_b32s1(q + 2) != EMPTY || mem_b32s1(q + 3) != EMPTY) && mem_b32s1(q + 1) == MATH_CHAR {
-        crate::scan::flush_node_list_global(x);
+        crate::packaging::flush_node_list_global(x);
         x = new_noad_global();
         set_mem_word(x + 1, mem_word(q + 1));
         set_mem_word(x + 2, mem_word(q + 2));
@@ -2505,10 +2505,10 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                         }
                         _ => TEX_NULL,
                     };
-                    crate::scan::flush_node_list_global(mem_b32s0(q + 1));
-                    crate::scan::flush_node_list_global(mem_b32s1(q + 1));
-                    crate::scan::flush_node_list_global(mem_b32s0(q + 2));
-                    crate::scan::flush_node_list_global(mem_b32s1(q + 2));
+                    crate::packaging::flush_node_list_global(mem_b32s0(q + 1));
+                    crate::packaging::flush_node_list_global(mem_b32s1(q + 1));
+                    crate::packaging::flush_node_list_global(mem_b32s0(q + 2));
+                    crate::packaging::flush_node_list_global(mem_b32s1(q + 2));
                     set_mem_b16s1(q, STYLE_NODE);
                     set_mem_b16s0(q, cur_style() as u16);
                     set_mem_b32s1(q + 1, 0);
@@ -2548,7 +2548,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                         {
                             set_mem_b32s1(q, mem_b32s1(p));
                             set_mem_b32s1(p, TEX_NULL);
-                            crate::scan::flush_node_list_global(p);
+                            crate::packaging::flush_node_list_global(p);
                         }
                     }
                     break 'reswitch FirstPass::DoneWithNode;
@@ -3833,7 +3833,7 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
             d = z - e - mem_b32s1(p_orig + 1);
         }
         if j != TEX_NULL {
-            b = crate::scan::copy_node_list_global(j);
+            b = crate::packaging::copy_node_list_global(j);
             set_mem_b32s1(b + 3, mem_b32s1(p_orig + 3));
             set_mem_b32s1(b + 2, mem_b32s1(p_orig + 2));
             let b4 = mem_b32s1(b + 4);
@@ -4210,7 +4210,7 @@ pub unsafe fn after_math() {
             set_cur_list_tail(mem_b32s1(cur_list_tail()));
         }
 
-        crate::scan::flush_node_list_global(j);
+        crate::packaging::flush_node_list_global(j);
 
         if semantic_pagination_enabled() {
             crate::ext::tt_insert_special(c"tdux:ce dmath".as_ptr());
@@ -4279,7 +4279,7 @@ pub unsafe fn init_math() {
                 v = -v - mem_b32s1(just_box() + 1);
                 p = crate::mem::new_math_global(0, BEGIN_L_CODE);
                 set_mem_b32s1(TEMP_HEAD, p);
-                crate::scan::just_copy(
+                crate::packaging::just_copy(
                     mem_b32s1(just_box() + 5),
                     p,
                     crate::mem::new_math_global(0, END_L_CODE),
@@ -4356,7 +4356,7 @@ pub unsafe fn init_math() {
                                     set_mem_b32s1(temp_ptr(), lr_ptr());
                                     set_lr_ptr(temp_ptr());
                                     if mem_b16s0(p) as i32 / R_CODE != cur_dir() as i32 {
-                                        crate::scan::just_reverse(p);
+                                        crate::packaging::just_reverse(p);
                                         p = TEMP_HEAD;
                                     }
                                 }
@@ -4448,7 +4448,7 @@ pub unsafe fn init_math() {
             }
 
             set_cur_dir(LEFT_TO_RIGHT);
-            crate::scan::flush_node_list_global(mem_b32s1(TEMP_HEAD));
+            crate::packaging::flush_node_list_global(mem_b32s1(TEMP_HEAD));
         }
 
         let l;

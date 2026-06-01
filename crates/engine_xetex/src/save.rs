@@ -7,7 +7,7 @@ use crate::output::error_here_with_diagnostic;
 use crate::output::print_cstr;
 use crate::output::print_int;
 use crate::output::print_nl_cstr;
-use crate::scan::flush_node_list_global;
+use crate::packaging::flush_node_list_global;
 use crate::state::{MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
