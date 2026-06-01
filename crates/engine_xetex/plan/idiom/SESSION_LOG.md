@@ -8,10 +8,69 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
-## Idiom session 124 — 2026-06-01 — workstream 02 slice 7: the packaging carve (box/node packing & list utils → new `packaging.rs`)
+## Idiom session 124 — 2026-06-01 — workstream 02 slices 7+8: the packaging carve and the expander carve
 
-**Type:** execution (workstream 02, module decomposition — **first core-carve
-slice**, §8 Decision 2/3). **Two commits** (7a recycle utils, 7b packers; the
+**Type:** execution (workstream 02, module decomposition — **core carve**, §8
+Decision 2/3). Slice 7 (packaging) + slice 8 (expand) — **four code commits +
+docs**. Dashboard **29/2/7/4** throughout. Warnings **50 → 50**.
+
+### Slice 8 — the expander carve (`expand`/`macro_call`/`conditional`/`pop_cond_node`/`conv_toks`/`ins_the_toks` → new `expand.rs`)
+
+**One commit.** Relocated the 6 expansion functions verbatim (`move_fns.py`,
+1,737 fn-lines) from `scan.rs` into a **new `expand.rs`** (created + `mod expand;`
+in lib.rs). This is the **most const-entangled slice so far**: the big match-heavy
+expander functions reference ~30 `scan.rs` **module-private** consts that are *not*
+centralized in `consts.rs` (command/token codes `CALL`/`RELAX`/`SPACER`/
+`MAX_COMMAND`/`OTHER_TOKEN`/`MAX_CHAR_VAL`/…, brace/match-token limits
+`LEFT_BRACE_LIMIT`/`RIGHT_BRACE_LIMIT`/`MATCH_TOKEN`/`END_MATCH_TOKEN`/
+`SPACE_TOKEN`/`PROTECTED_TOKEN`, frozen-cs offsets `FROZEN_ENDV`/
+`FROZEN_PRIMITIVE`, `HASH_BASE`/`SINGLE_BASE`/`BIGGEST_USV`/`VMODE`/`NO_EXPAND_FLAG`/
+`UNDEFINED_PRIMITIVE`/`UNLESS_CODE`/`AAT_FONT_FLAG`/`OTGR_FONT_FLAG`/
+`INT_PAR_TRACING_IFS`/…). These can't be moved (used pervasively by the residual
+scan.rs), so **duplicated each into `expand.rs` with its scan.rs value** — the §7
+recipe's "duplicate shared const" step, at scale (~30 dups). Also relocated the
+conditional `IF_*_CODE`/`_C`-suffixed private const block wholesale, and
+duplicated `GARBAGE`/`TEMP_HEAD`/`INSERTED`/`NULL_CS` (still used in scan.rs;
+`NULL_CS` duplicated *back* into scan.rs).
+
+**§7 trap surfaced as hard E0408 + E0308, not silent.** The `IF_*_CODE` match
+arms in `conditional` came up as `variable … not bound in all patterns` (E0408)
+until the const block was added — caught at compile time. One typed cousin: I
+first declared `SELECTOR_NEW_STRING` as `u8` but `selector()` returns `i32`
+(E0308); fixed the dup to `i32` to match the original referent. No silent rebind
+(warnings held at 50).
+
+**Imports added to `expand.rs`:** consts (ACTIVE_BASE/BOX_BASE/CS_TOKEN_FLAG/
+node-types/INT_BASE/PRIM_EQTB_BASE/TOO_BIG_CHAR), `errors`
+(error/int_error/not_*_font_error/runaway), `ext` (aat_print_font_name/
+gr_print_font_name/map_char_to_glyph/print_glyph_name), `globals` (the hot
+`cur_*` scalars + `mem_*`/`set_*`/`eqtb_b32s1`/`buffer_entry`/`first`/…),
+`input::begin_token_list`, `io::start_input`, `output` (capture_to_diagnostic/
+error_here_with_diagnostic/print_cmd_chr), `scan` (effective_char_global/get_*/
+scan_*/pass_text/pseudo_start/the_toks), and a `usingGraphite` extern. `scan.rs`
+imports `expand`/`macro_call` back from `expand.rs` (still called there);
+cleaned scan.rs orphans (`name_in_progress`/`set_cur_input_start`/`start_input`/
+`GARBAGE`/3 `ext::*_print_font_name`/`print_glyph_name`).
+
+**Metrics:** `scan.rs` 12,633 → **10,846** LOC (−1,787). new `expand.rs` =
+1,848. Dashboard 29/2/7/4, warnings 50.
+
+**For the next session:** continue the §8 core carve — (3) **main_control.rs**
+(new, the gnarliest: the `main_control*` dispatch giant match + verbs +
+`\halign` alignment family + `prefixed_command` spanning scan.rs+ini.rs; expect
+heavy hot-scalar + module-private-const entanglement, like slice 8 but larger —
+budget for ~50+ duplicated consts and a big globals import); (4) residual
+`scan_*`/`get_*`/`get_next` stay as `scanner.rs` (rename or leave `scan.rs`);
+(5) `token.rs` consts last. `ini.rs` drains independently. The slice-8 lesson:
+the core fns reference many *scan.rs-module-private* consts (not in `consts.rs`)
+— grep each missing symbol's definition and **duplicate with its exact type**
+(watch the E0308 typed-rebind cousin). The trap mostly surfaces as hard E0408/
+E0425 errors here (match arms over private consts), but keep the warning-count
+check for the silent cases.
+
+### Slice 7 — the packaging carve (box/node packing & list utils → new `packaging.rs`)
+
+**Two commits** (7a recycle utils, 7b packers; the
 §8 handoff authorized splitting packaging if too large for one green commit).
 Dashboard **29/2/7/4** on each. Warnings **50 → 50**.
 
@@ -63,18 +122,8 @@ node_recycle_abort, NodeRecycleAbort}`.
 
 **Metrics:** `scan.rs` 14,710 → **12,633** LOC (−2,077). new `packaging.rs` =
 2,110. No signature/`#[no_mangle]`/`unsafe`/body changes (relocation only).
-Dashboard 29/2/7/4 on both commits, warnings 50.
-
-**For the next session:** continue the §8 core carve in order — (2) **expand.rs**
-(new) — `expand`/`macro_call`/`conditional`/`pop_cond_node`/`conv_toks`/
-`ins_the_toks`; (3) **main_control.rs** (new) — the `main_control*` dispatch +
-verbs + `\halign` alignment family (gnarliest: giant match, hot scalars,
-`prefixed_command` spanning scan.rs+ini.rs); (4) residual `scan_*`/`get_*`/
-`get_next` stay as `scanner.rs` (rename or leave `scan.rs`); (5) `token.rs`
-consts last. `ini.rs` drains independently. Recipe unchanged; lean on
-`move_fns.py`, wholesale const-block relocation, `pub(crate) use` for shared
-macros, and the warning-count check (the §7 trap surfaces as
-unreachable-pattern/binding warnings on moved match arms).
+Dashboard 29/2/7/4 on both commits, warnings 50. (Slice 8 above continued
+straight into the expander carve; the session handoff is in the slice-8 block.)
 
 
 ## Idiom session 123 — 2026-06-01 — workstream 02 slice 6: relocate the locale-linebreak group out of `scan.rs` (last leaf)

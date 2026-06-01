@@ -28,6 +28,7 @@ use tectonic_errors::prelude::*;
 mod consts;
 mod engine_interface;
 mod errors;
+mod expand;
 mod ext;
 mod fonts;
 mod globals;
