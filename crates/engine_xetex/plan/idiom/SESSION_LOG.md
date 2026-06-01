@@ -7,6 +7,20 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 106 — 2026-06-01 — refine Phase-C recon helper after first-use feedback
+
+**Type:** tooling (workstream 01, Phase C acceleration). **One commit.** No engine code changed; dashboard not rerun.
+
+**Slice:** improved `plan/idiom/phase_c_recon.py` based on the session-105 usefulness report. The helper now recognizes Rust lifetime / loop-label tokens while matching braces, which fixes truncated bodies such as `merge_justifiable_native_words` with `'check_next`. It also detects threaded state parameters, marks already-threaded helpers with a `threaded` bucket, hides those helpers from default rankings unless `--include-threaded` is passed, and adds `string_pool` as a hazard class.
+
+**Classification changes checked:** `python3 plan/idiom/phase_c_recon.py --bucket B --module src/math.rs` no longer lists already-threaded math parameter helpers such as `math_ext_param`, `big_op_spacing*`, or `fraction_rule` by default. They are visible with `--bucket threaded --module src/math.rs --include-threaded`. `merge_justifiable_native_words` now parses the full body and is reclassified as bucket **C** with `_global` callees plus `diagnostic,string_pool` hazards instead of a misleading clean bucket B.
+
+**Validation:** `python3 -m py_compile plan/idiom/phase_c_recon.py`; smoke-tested default scan, math B scan, threaded math scan, shipout scan, and dead-wrapper scan.
+
+**For the next session (107):** use the refined helper as before, but note that the default ranking now emphasizes not-yet-threaded candidates. Use `--include-threaded` only when auditing existing threaded cores. The helper is still heuristic; inspect bodies/callers before editing, especially around string-pool, output, scanner, and `_global` edges.
+
+---
+
 ## Idiom session 105 — 2026-06-01 — thread `try_break` active-node deactivation leaf
 
 **Type:** execution (workstream 01, Phase C — linebreak leaf). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).

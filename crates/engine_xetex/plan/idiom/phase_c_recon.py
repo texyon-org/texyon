@@ -37,10 +37,22 @@ ACCESSOR_RE = re.compile(
 )
 
 STATE_METHOD_RE = re.compile(r"\bst\.(?:mem|eqtb|fonts|scanner|shipout|linebreak|save_stack)\b")
+THREADED_PARAM_RE = re.compile(
+    r"&(?:mut\s+)?(?:"
+    r"EngineState|MemState|EqtbState|FontState|ScannerState|ShipoutState|"
+    r"LinebreakState|SaveStackState|HyphState|StringsState"
+    r")\b"
+)
 ALLOC_RE = re.compile(r"\b(?:get_node|new_[A-Za-z0-9_]+|fraction_rule|overbar)\b")
 WITH_STATE_RE = re.compile(r"\bwith_state(?:_mut)?\s*\(")
 GLOBAL_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*_global)\s*\(")
 CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+STRING_POOL_RE = re.compile(
+    r"\b(?:"
+    r"pool_ptr|set_pool_ptr|pool_size|init_pool_ptr|str_pool|set_str_pool|"
+    r"str_pool_(?:entry|ptr)|str_start|str_ptr|string_pool::length|cur_length"
+    r")\b"
+)
 
 HAZARD_PATTERNS = {
     "scanner": re.compile(r"\b(?:scan_|get_x_token|get_token|back_input|begin_token_list|end_token_list)\b"),
@@ -48,6 +60,7 @@ HAZARD_PATTERNS = {
     "output": re.compile(r"\b(?:dvi_out|write_to_dvi|ship_out|hlist_out|vlist_out|ttstub_output|synctex)\b"),
     "packing": re.compile(r"\b(?:hpack|vpackage|clean_box|rebox|var_delimiter|mlist_to_hlist)\b"),
     "native_ot": re.compile(r"\b(?:get_ot_|isOpenType|usingOpenType|measure_native|native_glyph|build_opentype)\b"),
+    "string_pool": STRING_POOL_RE,
 }
 
 AVOID_FUNCTIONS = {
@@ -83,12 +96,14 @@ class FunctionInfo:
     global_calls: list[str]
     accessors: int
     state_methods: int
+    threaded_params: int
     alloc_calls: int
     hazards: list[str]
     caller_count: int = 0
     caller_files: list[str] = field(default_factory=list)
     callers_with_state_context: int = 0
     definition_only: bool = False
+    already_threaded: bool = False
     bucket: str = "?"
     score: int = 0
     notes: list[str] = field(default_factory=list)
@@ -165,6 +180,14 @@ def find_matching_brace(text: str, open_idx: int) -> int:
             i += 1
             continue
         if c == "'":
+            if n.isalpha() or n == "_":
+                j = i + 2
+                while j < len(text) and (text[j].isalnum() or text[j] == "_"):
+                    j += 1
+                if j >= len(text) or text[j] != "'":
+                    # Rust lifetime / loop-label token, not a character literal.
+                    i = j
+                    continue
             in_char = True
             i += 1
             continue
@@ -215,6 +238,7 @@ def extract_functions(path: Path) -> list[FunctionInfo]:
                 global_calls=global_calls,
                 accessors=len(ACCESSOR_RE.findall(body)),
                 state_methods=len(STATE_METHOD_RE.findall(body)),
+                threaded_params=len(THREADED_PARAM_RE.findall(sig)),
                 alloc_calls=len(ALLOC_RE.findall(body)),
                 hazards=hazards,
             )
@@ -267,6 +291,15 @@ def classify(info: FunctionInfo) -> None:
     if info.with_state_calls:
         notes.append(f"{info.with_state_calls} internal with_state call(s)")
         score -= 20
+    if info.threaded_params:
+        notes.append(f"{info.threaded_params} threaded state parameter(s)")
+        score -= 20
+        if info.accessors == 0:
+            notes.append("already mostly/directly threaded")
+            score -= 20
+    if info.global_calls:
+        notes.append(f"{len(info.global_calls)} _global callee(s)")
+        score -= 15
     if info.hazards:
         notes.append("hazards: " + ",".join(info.hazards))
         score -= 12 * len(info.hazards)
@@ -286,13 +319,29 @@ def classify(info: FunctionInfo) -> None:
         notes.append(f"{info.state_methods} direct state hit(s)")
         score += min(info.state_methods, 10)
 
-    if info.definition_only and info.is_global:
+    info.already_threaded = (
+        info.threaded_params > 0
+        and not info.is_global
+        and not info.is_no_mangle
+        and not info.is_extern
+        and info.with_state_calls == 0
+        and not info.global_calls
+        and not info.hazards
+    )
+
+    if info.already_threaded:
+        notes.append("already threaded helper")
+        score -= 40
+
+    if info.already_threaded:
+        bucket = "threaded"
+    elif info.definition_only and info.is_global:
         bucket = "dead-wrapper"
     elif info.name in AVOID_FUNCTIONS:
         bucket = "D"
     elif "scanner" in info.hazards or len(info.hazards) >= 3 or info.callers_with_state_context:
         bucket = "D"
-    elif info.hazards or info.with_state_calls:
+    elif info.hazards or info.with_state_calls or info.global_calls:
         bucket = "C"
     elif info.accessors or info.global_calls or info.alloc_calls:
         bucket = "B"
@@ -330,11 +379,12 @@ def main() -> int:
     parser.add_argument(
         "--bucket",
         action="append",
-        choices=["A", "B", "C", "D", "dead-wrapper"],
+        choices=["A", "B", "C", "D", "dead-wrapper", "threaded"],
         help="filter by inferred bucket; repeatable",
     )
     parser.add_argument("--module", help="filter path substring, e.g. src/math.rs")
     parser.add_argument("--include-avoid", action="store_true", help="include known large orchestrators")
+    parser.add_argument("--include-threaded", action="store_true", help="include already-threaded helpers")
     parser.add_argument("--include-scan", action="store_true", help="include src/scan.rs in broad rankings")
     parser.add_argument("--include-unused", action="store_true", help="include uncalled non-wrapper helpers")
     parser.add_argument("--dead-wrappers", action="store_true", help="show only possible dead _global wrappers")
@@ -355,6 +405,8 @@ def main() -> int:
         rows = [r for r in rows if r.bucket == "dead-wrapper"]
     elif not args.include_unused:
         rows = [r for r in rows if r.caller_count > 0 or r.is_global]
+    if not args.include_threaded:
+        rows = [r for r in rows if not r.already_threaded]
     if args.bucket:
         wanted = set(args.bucket)
         rows = [r for r in rows if r.bucket in wanted]
