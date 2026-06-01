@@ -13,23 +13,22 @@ use crate::ext::store_justified_native_glyphs;
 use crate::globals::{
     avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name,
     cur_page_height, cur_tok, cur_v, def_ref, doing_leaders, eqtb_b32s1, file_offset,
-    font_area_entry, font_bc_entry, font_dsize_entry, font_ec_entry, font_glue, font_info_b16,
-    font_info_b32s1, font_letter_space_entry, font_mapping_ptr, font_name_entry, font_ptr,
-    font_size_entry, font_used_entry, hi_mem_min, init_pool_ptr, job_name, last_bop, log_opened,
-    lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v, mem_as_u16_ptr,
-    mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1, mem_gr,
-    mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size, rule_dp, rule_ht, rule_wd,
-    rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area, set_cur_cs,
-    set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode, set_cur_name,
-    set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset, set_dead_cycles,
-    set_doing_leaders, set_doing_special, set_font_ptr, set_font_used_entry, set_help_line,
-    set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_push, set_max_v,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pdf_last_x_pos,
-    set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht, set_rule_wd, set_selector,
-    set_str_pool, set_temp_ptr, set_total_pages, set_write_file, set_write_open,
-    set_xtx_ligature_present, shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr,
-    str_start, temp_ptr, term_offset, total_pages, width_base_entry, write_file, write_loc,
-    write_open, xdv_buffer_entry,
+    font_area_entry, font_bc_entry, font_ec_entry, font_glue, font_info_b16,
+    font_letter_space_entry, font_mapping_ptr, font_ptr, font_used_entry, init_pool_ptr, job_name,
+    last_bop, log_opened, lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v,
+    mem_as_u16_ptr, mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1,
+    mem_gr, mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size, rule_dp, rule_ht,
+    rule_wd, rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area,
+    set_cur_cs, set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode,
+    set_cur_name, set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset,
+    set_dead_cycles, set_doing_leaders, set_doing_special, set_font_ptr, set_font_used_entry,
+    set_help_line, set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h,
+    set_max_push, set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
+    set_mem_word, set_pdf_last_x_pos, set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht,
+    set_rule_wd, set_selector, set_str_pool, set_temp_ptr, set_total_pages, set_write_file,
+    set_write_open, set_xtx_ligature_present, shell_escape_enabled, str_pool_entry, str_pool_ptr,
+    str_ptr, str_start, temp_ptr, term_offset, total_pages, write_file, write_loc, write_open,
+    xdv_buffer_entry,
 };
 use crate::mem::{
     free_node_global, get_avail_global, get_node_global, new_kern_global, new_math_global,
@@ -838,13 +837,8 @@ unsafe fn ensure_dvi_font_global(f: i32) {
 }
 
 #[inline]
-fn is_char_node_in(mem: &MemState, p: i32) -> bool {
-    p >= mem.hi_mem_min
-}
-
-#[inline]
 fn is_ignorable_interword_node(mem: &MemState, p: i32) -> bool {
-    !is_char_node_in(mem, p)
+    !crate::mem::is_char_node(mem, p)
         && (mem.b16s1(p) == PENALTY_NODE
             || mem.b16s1(p) == INS_NODE
             || mem.b16s1(p) == MARK_NODE
@@ -865,7 +859,7 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
 
     while p != TEX_NULL {
         if mem_b32s1(p) != TEX_NULL
-            && !is_char_node(p)
+            && !is_char_node_global(p)
             && mem_b16s1(p) == WHATSIT_NODE
             && (mem_b16s0(p) == NATIVE_WORD_NODE || mem_b16s0(p) == NATIVE_WORD_NODE_AT)
             && font_letter_space_entry(mem_b16s2(p + 4) as i32) == 0
@@ -877,7 +871,7 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
             'check_next: loop {
                 q = crate::state::with_state(|st| skip_ignorable_interword_nodes(&st.mem, q));
 
-                if q != TEX_NULL && !is_char_node(q) {
+                if q != TEX_NULL && !is_char_node_global(q) {
                     if mem_b16s1(q) == GLUE_NODE && mem_b16s0(mem_b32s0(q + 1)) == NORMAL {
                         if mem_b32s0(q + 1) == font_glue(mem_b16s2(r + 4) as i32) {
                             q = crate::state::with_state(|st| {
@@ -885,7 +879,7 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
                             });
 
                             if q != TEX_NULL
-                                && !is_char_node(q)
+                                && !is_char_node_global(q)
                                 && mem_b16s1(q) == WHATSIT_NODE
                                 && (mem_b16s0(q) == NATIVE_WORD_NODE
                                     || mem_b16s0(q) == NATIVE_WORD_NODE_AT)
@@ -901,7 +895,7 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
                         }
 
                         if q != TEX_NULL
-                            && !is_char_node(q)
+                            && !is_char_node_global(q)
                             && mem_b16s1(q) == KERN_NODE
                             && mem_b16s0(q) == SPACE_ADJUSTMENT
                         {
@@ -910,7 +904,7 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
                             });
 
                             if q != TEX_NULL
-                                && !is_char_node(q)
+                                && !is_char_node_global(q)
                                 && mem_b16s1(q) == WHATSIT_NODE
                                 && (mem_b16s0(q) == NATIVE_WORD_NODE
                                     || mem_b16s0(q) == NATIVE_WORD_NODE_AT)
@@ -1251,7 +1245,7 @@ pub unsafe extern "C" fn hlist_out() {
 
     while p != TEX_NULL {
         'reswitch: loop {
-            if is_char_node(p) {
+            if is_char_node_global(p) {
                 if cur_h() != dvi_h() {
                     movement_global(cur_h() - dvi_h(), RIGHT1);
                     set_dvi_h(cur_h());
@@ -1261,7 +1255,7 @@ pub unsafe extern "C" fn hlist_out() {
                     set_dvi_v(cur_v());
                 }
 
-                while is_char_node(p) {
+                while is_char_node_global(p) {
                     let f = mem_b16s1(p) as i32;
                     let mut c = mem_b16s0(p);
                     if p != LIG_TRICK && !font_mapping_ptr(f).is_null() {
@@ -1276,7 +1270,7 @@ pub unsafe extern "C" fn hlist_out() {
                                 dvi_out_global(SET1);
                             }
                             dvi_out_global(c as u8);
-                            set_cur_h(cur_h() + font_character_width(f, c as i32));
+                            set_cur_h(cur_h() + font_character_width_global(f, c as i32));
                         }
                     }
 
@@ -1530,7 +1524,7 @@ pub unsafe extern "C" fn vlist_out() {
     let top_edge = cur_v();
 
     while p != TEX_NULL {
-        if is_char_node(p) {
+        if is_char_node_global(p) {
             crate::errors::confusion(c"vlistout".as_ptr());
         }
 
@@ -1979,8 +1973,8 @@ pub unsafe fn finalize_dvi_file() {
 }
 
 #[inline]
-fn is_char_node(p: i32) -> bool {
-    p >= hi_mem_min()
+fn is_char_node_global(p: i32) -> bool {
+    crate::state::with_state(|st| crate::mem::is_char_node(&st.mem, p))
 }
 
 #[inline]
@@ -2004,9 +1998,14 @@ fn math_node_end_lr_type_global(p: i32) -> u16 {
 }
 
 #[inline]
-fn font_character_width(f: i32, c: i32) -> i32 {
-    let info = font_info_b16(char_base_entry(f) + c);
-    font_info_b32s1(width_base_entry(f) + info.s3 as i32)
+fn font_character_width(fonts: &FontState, f: i32, c: i32) -> i32 {
+    let info = fonts.font_info_b16(fonts.char_base_entry(f) + c);
+    fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32)
+}
+
+#[inline]
+fn font_character_width_global(f: i32, c: i32) -> i32 {
+    crate::state::with_state(|st| font_character_width(&st.fonts, f, c))
 }
 
 // translated from xetex-shipout.c:1470 (reverse)
@@ -2027,13 +2026,13 @@ pub unsafe extern "C" fn reverse(
 
     loop {
         while p != TEX_NULL {
-            if is_char_node(p) {
+            if is_char_node_global(p) {
                 loop {
                     let f = mem_b16s1(p) as i32;
                     let c = mem_b16s0(p);
                     set_cur_h(
                         cur_h()
-                            + font_character_width(
+                            + font_character_width_global(
                                 f,
                                 crate::scan::effective_char_global(true, f, c),
                             ),
@@ -2042,7 +2041,7 @@ pub unsafe extern "C" fn reverse(
                     set_mem_b32s1(p, l);
                     l = p;
                     p = q;
-                    if !is_char_node(p) {
+                    if !is_char_node_global(p) {
                         break;
                     }
                 }

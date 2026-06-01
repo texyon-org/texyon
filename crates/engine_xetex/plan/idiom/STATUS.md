@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 109, **Phase-C shipout/linebreak leaves threaded**, threaded `move_past_vlist_rule`, `math_node_lr_dir`, `math_node_end_lr_type` in `src/shipout.rs`, and threaded `set_current_hyph_index`, `int_par`, `dimen_par`, `glue_par`, `lc_code` in `src/linebreak.rs`, dashboard 29/2/7/4. — prior session 108 Phase-C memory/shipout leaves threaded.)
+Last updated: 2026-06-01 (last session = session 110, **finished font-metric/native-USV leaves + consolidated `is_char_node`**: completed an uncommitted WIP slice that did not compile (threaded `get_native_usv` + `font_character_width` in `src/linebreak.rs`, `font_character_width` + `is_char_node` in `src/shipout.rs`; fixed an E0502 in `font_character_width`), then added one canonical `crate::mem::is_char_node` and deleted the three duplicated `is_char_node_in`/`is_char_node` copies across linebreak/math/shipout. Dashboard 29/2/7/4, warnings 53→52. — prior session 109 Phase-C shipout/linebreak leaves threaded.)
 
 ## How to read this file
 
@@ -969,9 +969,9 @@ the snippets in `00-overview.md` / the workstream plans.
 | `extern static mut` globals (`globals.rs`) | 384 | 0 (non-const) | 38 (current direct grep) |
 | promoted Rust `pub static mut` globals | 16 | 0 (non-const) | 3 (session 53 moved 13 DVI positioning/output statics) |
 | thin global accessors (`globals.rs`) | 811 | 0 | 799 function defs / 706 `with_state*` call sites in `globals.rs` (current direct grep) |
-| `#[no_mangle]` exports | 576 | boundary-only | 328 (current direct grep) |
-| `unsafe fn` (crate-wide) | 694 | boundary-only | 656 (current direct grep over `unsafe fn` / `unsafe extern "C" fn`; +1 session 100 transitional helper) |
-| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 174 / 688 not remeasured (current direct grep) |
+| `#[no_mangle]` exports | 576 | boundary-only | 327 (current direct grep; session 110 de-exported `get_native_usv`) |
+| `unsafe fn` (crate-wide) | 694 | boundary-only | 651 (current direct grep over `unsafe fn` / `unsafe extern "C" fn`) |
+| raw `unsafe { ... }` blocks | 846 text-search / 688 clippy-documented bucket | boundary-only | 175 / 688 not remeasured (current direct grep) |
 | clippy errors | 694 | 0 | 110 (`cargo clippy -p tectonic_engine_xetex --message-format=short`) |
 | clippy warnings | 358 | 0 | 61 (`cargo clippy -p tectonic_engine_xetex --message-format=short`) |
 | largest module LOC | 18,748 (`scan.rs`) | none >~3k | 18,677 (`scan.rs`) |
@@ -1217,6 +1217,8 @@ the snippets in `00-overview.md` / the workstream plans.
     from `src/globals.rs`.
 
     **Session 108 update:** the core memory leaf helper `prev_rightmost` is now threaded to `&MemState` in `src/mem.rs` and the redundant duplicate helper `prev_rightmost_in` is fully deleted from `src/linebreak.rs`. Legacy `scan.rs` call sites are repointed to `prev_rightmost_global`. We also threaded the local `is_ignorable_interword_node` and `skip_ignorable_interword_nodes` helpers in `src/shipout.rs` to safe `&MemState` borrows, calling them inside `merge_justifiable_native_words` via transient borrows.
+
+    **Session 110 update:** completed an uncommitted WIP slice (it did **not** compile — an E0502 borrow conflict in `font_character_width`, fixed by precomputing `effective_char` into a local): `get_native_usv` (→ `&MemState`) and `font_character_width` (→ `&mut FontState`) in `src/linebreak.rs`, plus `font_character_width` (→ `&FontState`) and `is_char_node` (→ `&MemState`) in `src/shipout.rs`, all with `_global` bridge-down wrappers; removed 6 now-unused font `globals` imports from `shipout.rs`. Then **consolidated `is_char_node`**: added one canonical `pub fn is_char_node(mem: &MemState, p)` to `src/mem.rs` and deleted the three duplicated `is_char_node_in`/`is_char_node` copies in linebreak/math/shipout, repointing all `(mem, p)`-form callers to `crate::mem::is_char_node` (session-108 `prev_rightmost` dedup precedent). The separate `unsafe fn is_char_node(p)` global-bridge form in `math.rs` (6 in-module callers) is left for a later slice. **Recon note:** the `ext.rs` native-metric cluster scores as clean bucket B but its callers concentrate in `scan.rs`, so it is deferred until scanner threading — do not pull it in early.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

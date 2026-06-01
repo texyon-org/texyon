@@ -903,6 +903,19 @@ pub unsafe fn prev_rightmost_global(s: i32, e: i32) -> i32 {
 }
 
 // ---------------------------------------------------------------------------
+// is_char_node
+// ---------------------------------------------------------------------------
+
+/// `is_char_node(p)` ≡ `p >= hi_mem_min`: a node pointer that lives in the
+/// upper "one-word" region of `mem` is a character node. Canonical threaded
+/// form, shared by linebreak / math / shipout (was duplicated as
+/// `is_char_node_in`).
+#[inline]
+pub fn is_char_node(mem: &MemState, p: i32) -> bool {
+    p >= mem.hi_mem_min
+}
+
+// ---------------------------------------------------------------------------
 // new_noad / new_style / new_choice
 // ---------------------------------------------------------------------------
 

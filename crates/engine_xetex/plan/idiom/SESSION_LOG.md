@@ -8,6 +8,38 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 110 — 2026-06-01 — finish font-metric/native-USV leaves, consolidate `is_char_node`
+
+**Type:** execution (workstream 01, Phase C — font-metric / node-predicate leaves). **One commit.** Dashboard **29/2/7/4**. Crate warnings **53 → 52** (removed 6 now-unused `globals` font imports from `shipout.rs`).
+
+**Picked up uncommitted WIP first.** The working tree already held a partial slice (threading `get_native_usv` + `font_character_width` in `src/linebreak.rs`, and `font_character_width` + `is_char_node` in `src/shipout.rs`) that **did not compile** — `font_character_width` in `linebreak.rs` held an immutable `&fonts` borrow (`fonts.font_info_b16(...)`) across a `&mut fonts` argument (`crate::scan::effective_char(fonts, …)`), an E0502. Completed it by precomputing `effective_char` into a local before the immutable borrow (parity-safe: the index is just `char_base_entry(f) + effective_char(…)`), removing a stray duplicate `#[inline]` on `is_char_node_global`, and deleting the 6 font `globals` imports the threaded bodies no longer use.
+
+**Slice (the WIP, now correct):**
+- `get_native_usv(mem: &MemState, p, i)` (was `#[no_mangle] pub unsafe extern "C" fn`) — pure UTF-16 surrogate decode over `mem.as_u16_ptr`; `get_native_usv_global` wraps the two legacy `line_break` call sites.
+- `font_character_width(fonts: &mut FontState, f, c: u16)` in `linebreak.rs` — reads `char_base`/`width_base`/`font_info` directly and calls the threaded `crate::scan::effective_char`; `font_character_width_global` wraps the ~8 `line_break`/`try_break` call sites.
+- `font_character_width(fonts: &FontState, f, c: i32)` in `shipout.rs` (no `effective_char`; caller passes the effective char) + `font_character_width_global`; `is_char_node` over `&MemState` + `is_char_node_global` for `hlist_out`/`vlist_out`/`reverse`/`merge_justifiable_native_words`.
+
+**Extension — `is_char_node` dedup (session-108 `prev_rightmost` precedent).** The threaded predicate `p >= mem.hi_mem_min` was duplicated three times: `is_char_node_in` in `src/linebreak.rs` and `src/math.rs`, and (renamed by the WIP) `is_char_node` in `src/shipout.rs`. Added one canonical `pub fn is_char_node(mem: &MemState, p)` to `src/mem.rs`, deleted all three local copies, and repointed every `(mem, p)`-form caller (linebreak ×4, math ×2, shipout ×2) to `crate::mem::is_char_node`. The separate `unsafe fn is_char_node(p)` *global-bridge* version in `math.rs` (6 in-module callers, reads `hi_mem_min()`) is untouched — that is the not-yet-threaded form, a later target.
+
+**Classification:** bucket **B** throughout. Font-metric leaves read `FontState`/`MemState` and call native FFI (`effective_char`, surrogate decode) that is not `with_state`-bearing; the predicate dedup is pure code consolidation.
+
+**Recon-helper usefulness report:**
+- Commands: `python3 plan/idiom/phase_c_recon.py --limit 40`, `--bucket B --module src/ext.rs --limit 30`.
+- Surfaced: the whole `ext.rs` native-metric cluster (`map_char_to_glyph`, `measure_native_node`, `get_native_char_height_depth`, …) as bucket B. **Rejected on caller analysis:** their external callers are almost entirely in `src/scan.rs` (the scanner hot path the recipe defers), so threading them would dump ~25 `_global` wrappers into `scan.rs` against documented strategy. Recon classification was accurate; the *call-graph* (which the score doesn't weight) is what ruled them out — a possible script improvement: penalize candidates whose callers concentrate in `scan.rs`.
+- It also flagged the WIP's `font_character_width_global`/`is_char_node_global` as "dead-wrapper" (0 callers), a **false positive** — they have many callers; the dead-wrapper heuristic miscounts wrappers defined after the WIP edits.
+
+**Method surface / deleted accessors:** added `MemState`-free function `crate::mem::is_char_node`; deleted three local `is_char_node`/`is_char_node_in` copies. No `globals.rs` accessor lost its last caller (removed imports were unused free-function aliases, not accessor definitions).
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328 → 327** (`get_native_usv` de-exported). raw extern statics **38** unchanged. raw `unsafe {}` **174 → 175** (`get_native_usv`'s single `unsafe extern fn` became two `unsafe {}` pointer reads). `unsafe fn` **650 → 651** (`get_native_usv` de-`unsafe`d, `get_native_usv_global` wrapper added; predicate dedup net 0). Warnings **53 → 52**.
+
+**Validation:** `cargo fmt`; `cargo check -p tectonic_engine_xetex` → 0 errors, 52 warnings; full dashboard → **29 / 2 / 7 / 4** green.
+
+**For the next session (111):** continue bounded leaves only. The `ext.rs` native-metric cluster is clean but **scan.rs-coupled** — defer it until scanner threading begins (coordinate with `02-modules.md`). Better near-term targets: another small pagebuilder/shipout/linebreak leaf, or thread `math.rs`'s remaining `unsafe fn is_char_node(p)` global bridge (6 in-module callers) by repointing them to `crate::mem::is_char_node` under short borrows. Avoid whole-session work on `line_break`, `try_break`, `hlist_out`, `vlist_out`, `ship_out`, `scan.rs`, `mlist_to_hlist`, `hpack`, `vpackage`, or `build_page`.
+
+---
+
 ## Idiom session 109 — 2026-06-01 — thread shipout movement and linebreak equivalents leaves
 
 **Type:** execution (workstream 01, Phase C — shipout and linebreak leaves). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (53).

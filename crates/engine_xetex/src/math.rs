@@ -582,11 +582,6 @@ unsafe fn is_char_node(p: i32) -> bool {
     p >= hi_mem_min()
 }
 
-#[inline]
-fn is_char_node_in(mem: &MemState, p: i32) -> bool {
-    p >= mem.hi_mem_min
-}
-
 /// translated from xetex-math.c:91 (clean_box)
 #[no_mangle]
 pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
@@ -1817,7 +1812,7 @@ struct ScriptKernAttachment {
 
 fn glyph_nucleus(mem: &MemState, p: i32) -> Option<ScriptGlyphNucleus> {
     if p != TEX_NULL
-        && !is_char_node_in(mem, p)
+        && !crate::mem::is_char_node(mem, p)
         && mem.b16s1(p) == WHATSIT_NODE
         && mem.b16s0(p) == GLYPH_NODE
     {
@@ -1929,7 +1924,7 @@ struct ScriptShifts {
 
 unsafe fn initial_script_shifts_global(p: i32) -> ScriptShifts {
     if crate::state::with_state(|st| {
-        is_char_node_in(&st.mem, p) || glyph_nucleus(&st.mem, p).is_some()
+        crate::mem::is_char_node(&st.mem, p) || glyph_nucleus(&st.mem, p).is_some()
     }) {
         ScriptShifts { up: 0, down: 0 }
     } else {

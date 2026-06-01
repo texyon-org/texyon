@@ -95,21 +95,25 @@ const EJECT_PENALTY: i32 = -10_000;
 extern "C" {}
 
 // translated from xetex-linebreak.c:77 (get_native_usv)
-#[no_mangle]
-pub unsafe extern "C" fn get_native_usv(p: i32, i: i32) -> i32 {
-    let text = crate::globals::mem_as_u16_ptr(p + NATIVE_NODE_SIZE);
-    let c = *text.add(i as usize);
+pub fn get_native_usv(mem: &MemState, p: i32, i: i32) -> i32 {
+    let text = mem.as_u16_ptr(p + NATIVE_NODE_SIZE);
+    let c = unsafe { *text.add(i as usize) };
 
     if (0xD800..0xDC00).contains(&c) {
-        return 0x10000 + (c as i32 - 0xD800) * 0x400 + *text.add(i as usize + 1) as i32 - 0xDC00;
+        return 0x10000 + (c as i32 - 0xD800) * 0x400 + unsafe { *text.add(i as usize + 1) as i32 }
+            - 0xDC00;
     }
 
     c as i32
 }
 
+pub unsafe fn get_native_usv_global(p: i32, i: i32) -> i32 {
+    crate::state::with_state(|st| get_native_usv(&st.mem, p, i))
+}
+
 #[inline]
 fn is_char_node_global(p: i32) -> bool {
-    crate::state::with_state(|st| is_char_node_in(&st.mem, p))
+    crate::state::with_state(|st| crate::mem::is_char_node(&st.mem, p))
 }
 
 #[inline]
@@ -118,12 +122,15 @@ fn is_non_discardable_node_global(p: i32) -> bool {
 }
 
 #[inline]
-fn font_character_width(f: i32, c: u16) -> i32 {
-    let info = crate::globals::font_info_b16(
-        crate::globals::char_base_entry(f)
-            + unsafe { crate::scan::effective_char_global(true, f, c) },
-    );
-    crate::globals::font_info_b32s1(crate::globals::width_base_entry(f) + info.s3 as i32)
+fn font_character_width(fonts: &mut FontState, f: i32, c: u16) -> i32 {
+    let ec = crate::scan::effective_char(fonts, true, f, c);
+    let info = fonts.font_info_b16(fonts.char_base_entry(f) + ec);
+    fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32)
+}
+
+#[inline]
+fn font_character_width_global(f: i32, c: u16) -> i32 {
+    crate::state::with_state_mut(|st| font_character_width(&mut st.fonts, f, c))
 }
 
 #[inline]
@@ -511,11 +518,6 @@ unsafe fn copy_native_tail(q: i32, ha: i32, start: i32) {
 }
 
 #[inline]
-fn is_char_node_in(mem: &MemState, p: i32) -> bool {
-    p >= mem.hi_mem_min
-}
-
-#[inline]
 fn is_non_discardable_node_in(mem: &MemState, p: i32) -> bool {
     (mem.b16s1(p) as i32) < MATH_NODE
 }
@@ -531,7 +533,7 @@ fn is_empty_box_in(mem: &MemState, p: i32) -> bool {
 
 #[inline]
 fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
-    !is_char_node_in(mem, p)
+    !crate::mem::is_char_node(mem, p)
         && match mem.b16s1(p) as i32 {
             INS_NODE | MARK_NODE | ADJUST_NODE | PENALTY_NODE => true,
             DISC_NODE => {
@@ -639,7 +641,7 @@ pub fn find_protchar_left(
         l = mem.b32s1(l);
     } else if d {
         while mem.b32s1(l) != TEX_NULL
-            && !(is_char_node_in(mem, l) || is_non_discardable_node_in(mem, l))
+            && !(crate::mem::is_char_node(mem, l) || is_non_discardable_node_in(mem, l))
         {
             l = mem.b32s1(l);
         }
@@ -729,7 +731,7 @@ fn right_margin_kern_target(
     q: i32,
     disc_break: bool,
 ) -> Option<(i32, i32)> {
-    if disc_break && (is_char_node_in(mem, q) || mem.b16s1(q) as i32 != DISC_NODE) {
+    if disc_break && (crate::mem::is_char_node(mem, q) || mem.b16s1(q) as i32 != DISC_NODE) {
         Some((q, q))
     } else {
         let ptmp = crate::mem::prev_rightmost(mem, mem.b32s1(TEMP_HEAD), q);
@@ -1281,7 +1283,7 @@ pub unsafe fn line_break(d: bool) {
     unsafe fn add_node_width_to_active(p: i32, confusion_name: *const libc::c_char) {
         if is_char_node_global(p) {
             let f = mem_b16s1(p) as i32;
-            add_active_width(1, font_character_width(f, mem_b16s0(p)));
+            add_active_width(1, font_character_width_global(f, mem_b16s0(p)));
             return;
         }
 
@@ -1289,7 +1291,7 @@ pub unsafe fn line_break(d: bool) {
             LIGATURE_NODE => {
                 let f = ligature_node_lig_font(p);
                 set_xtx_ligature_present(true);
-                add_active_width(1, font_character_width(f, ligature_node_lig_char(p)));
+                add_active_width(1, font_character_width_global(f, ligature_node_lig_char(p)));
             }
             HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
                 add_active_width(1, box_width(p));
@@ -1495,7 +1497,7 @@ pub unsafe fn line_break(d: bool) {
                 set_global_prev_p(cur);
                 loop {
                     let f = mem_b16s1(cur) as i32;
-                    add_active_width(1, font_character_width(f, mem_b16s0(cur)));
+                    add_active_width(1, font_character_width_global(f, mem_b16s0(cur)));
                     cur = mem_b32s1(cur);
                     set_cur_p(cur);
                     if !is_char_node_global(cur) {
@@ -1585,7 +1587,7 @@ pub unsafe fn line_break(d: bool) {
                                     {
                                         l = 0;
                                         while l < native_node_len(s) {
-                                            c = get_native_usv(s, l);
+                                            c = get_native_usv_global(s, l);
                                             if lc_code_global(c) != 0 {
                                                 set_hf(native_node_font(s));
                                                 prev_s = s;
@@ -1680,7 +1682,7 @@ pub unsafe fn line_break(d: bool) {
                                     let len = native_node_len(crate::globals::ha());
                                     l = 0;
                                     while l < len {
-                                        c = get_native_usv(crate::globals::ha(), l);
+                                        c = get_native_usv_global(crate::globals::ha(), l);
                                         if hyph_index() == 0 || c > 255 {
                                             set_hc_entry(0, lc_code_global(c));
                                         } else if trie_trc_entry(hyph_index() + c) != c as u16 {
@@ -1876,7 +1878,10 @@ pub unsafe fn line_break(d: bool) {
                 LIGATURE_NODE => {
                     let f = ligature_node_lig_font(cur);
                     set_xtx_ligature_present(true);
-                    add_active_width(1, font_character_width(f, ligature_node_lig_char(cur)));
+                    add_active_width(
+                        1,
+                        font_character_width_global(f, ligature_node_lig_char(cur)),
+                    );
                 }
                 DISC_NODE => {
                     let mut s = disc_pre_break(cur);
@@ -2492,7 +2497,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                                 let f = mem_b16s1(v) as i32;
                                 set_break_width(
                                     1,
-                                    break_width(1) - font_character_width(f, mem_b16s0(v)),
+                                    break_width(1) - font_character_width_global(f, mem_b16s0(v)),
                                 );
                             } else {
                                 match mem_b16s1(v) as i32 {
@@ -2502,7 +2507,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                                         set_break_width(
                                             1,
                                             break_width(1)
-                                                - font_character_width(f, mem_b16s0(v + 1)),
+                                                - font_character_width_global(f, mem_b16s0(v + 1)),
                                         );
                                     }
                                     HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
@@ -2531,7 +2536,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                                 let f = mem_b16s1(s) as i32;
                                 set_break_width(
                                     1,
-                                    break_width(1) + font_character_width(f, mem_b16s0(s)),
+                                    break_width(1) + font_character_width_global(f, mem_b16s0(s)),
                                 );
                             } else {
                                 match mem_b16s1(s) as i32 {
@@ -2541,7 +2546,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                                         set_break_width(
                                             1,
                                             break_width(1)
-                                                + font_character_width(f, mem_b16s0(s + 1)),
+                                                + font_character_width_global(f, mem_b16s0(s + 1)),
                                         );
                                     }
                                     HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
