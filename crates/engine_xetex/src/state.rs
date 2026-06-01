@@ -409,6 +409,22 @@ impl MemState {
         self.data.as_mut_ptr().wrapping_add(p as usize) as *mut u16
     }
 
+    /// Reinterpret the arena from word `p` onward as a `*const u16`. Mirrors
+    /// `globals::mem_as_u16_ptr`; valid past the borrow because the
+    /// thread-local owner never reallocates.
+    #[inline]
+    pub(crate) fn as_u16_ptr(&self, p: i32) -> *const u16 {
+        self.data.as_ptr().wrapping_add(p as usize) as *const u16
+    }
+
+    /// Reinterpret the arena from word `p` onward as a `*mut std::ffi::c_void`. Mirrors
+    /// `globals::mem_node_addr`; valid past the borrow because the
+    /// thread-local owner never reallocates.
+    #[inline]
+    pub(crate) fn node_addr(&self, p: i32) -> *mut std::ffi::c_void {
+        self.data.as_ptr().wrapping_add(p as usize) as *mut std::ffi::c_void
+    }
+
     /// Copy the full `MemoryWord` at `mem[p]`. Mirrors `globals::mem_word`.
     #[inline]
     pub(crate) fn word(&self, p: i32) -> crate::mem_types::MemoryWord {

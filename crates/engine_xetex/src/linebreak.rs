@@ -5,7 +5,7 @@ use crate::consts::{
 use crate::ext::measure_native_node;
 use crate::ini::init_trie;
 use crate::scan::{char_pw, node_recycle_abort, NodeRecycleAbort};
-use crate::state::{FontState, HyphState, LinebreakState, MemState, ScannerState};
+use crate::state::{EqtbState, FontState, HyphState, LinebreakState, MemState, ScannerState};
 
 const MAX_HLIST_STACK: i16 = 512;
 const HLIST_NODE: i32 = crate::consts::HLIST_NODE as i32;
@@ -108,8 +108,13 @@ pub unsafe extern "C" fn get_native_usv(p: i32, i: i32) -> i32 {
 }
 
 #[inline]
-fn is_char_node(p: i32) -> bool {
-    p >= crate::globals::hi_mem_min()
+fn is_char_node_global(p: i32) -> bool {
+    crate::state::with_state(|st| is_char_node_in(&st.mem, p))
+}
+
+#[inline]
+fn is_non_discardable_node_global(p: i32) -> bool {
+    crate::state::with_state(|st| is_non_discardable_node_in(&st.mem, p))
 }
 
 #[inline]
@@ -122,202 +127,387 @@ fn font_character_width(f: i32, c: u16) -> i32 {
 }
 
 #[inline]
+fn active_node_break_node_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 1)
+}
+
+#[inline]
 fn active_node_break_node(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 1)
+    crate::state::with_state(|st| active_node_break_node_in(&st.mem, p))
+}
+
+#[inline]
+fn set_active_node_break_node_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b32s1(p + 1, v);
 }
 
 #[inline]
 fn set_active_node_break_node(p: i32, v: i32) {
-    crate::globals::set_mem_b32s1(p + 1, v);
+    crate::state::with_state_mut(|st| set_active_node_break_node_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn active_node_line_number_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s0(p + 1)
 }
 
 #[inline]
 fn active_node_line_number(p: i32) -> i32 {
-    crate::globals::mem_b32s0(p + 1)
+    crate::state::with_state(|st| active_node_line_number_in(&st.mem, p))
+}
+
+#[inline]
+fn set_active_node_line_number_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b32s0(p + 1, v);
 }
 
 #[inline]
 fn set_active_node_line_number(p: i32, v: i32) {
-    crate::globals::set_mem_b32s0(p + 1, v);
+    crate::state::with_state_mut(|st| set_active_node_line_number_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn active_node_fitness_in(mem: &MemState, p: i32) -> u16 {
+    mem.b16s0(p)
 }
 
 #[inline]
 fn active_node_fitness(p: i32) -> u16 {
-    crate::globals::mem_b16s0(p)
+    crate::state::with_state(|st| active_node_fitness_in(&st.mem, p))
+}
+
+#[inline]
+fn set_active_node_fitness_in(mem: &mut MemState, p: i32, v: usize) {
+    mem.set_b16s0(p, v as u16);
 }
 
 #[inline]
 fn set_active_node_fitness(p: i32, v: usize) {
-    crate::globals::set_mem_b16s0(p, v as u16);
+    crate::state::with_state_mut(|st| set_active_node_fitness_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn active_node_total_demerits_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 2)
 }
 
 #[inline]
 fn active_node_total_demerits(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 2)
+    crate::state::with_state(|st| active_node_total_demerits_in(&st.mem, p))
+}
+
+#[inline]
+fn set_active_node_total_demerits_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b32s1(p + 2, v);
 }
 
 #[inline]
 fn set_active_node_total_demerits(p: i32, v: i32) {
-    crate::globals::set_mem_b32s1(p + 2, v);
+    crate::state::with_state_mut(|st| set_active_node_total_demerits_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn active_node_shortfall_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 3)
 }
 
 #[inline]
 fn active_node_shortfall(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 3)
+    crate::state::with_state(|st| active_node_shortfall_in(&st.mem, p))
+}
+
+#[inline]
+fn set_active_node_shortfall_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b32s1(p + 3, v);
 }
 
 #[inline]
 fn set_active_node_shortfall(p: i32, v: i32) {
-    crate::globals::set_mem_b32s1(p + 3, v);
+    crate::state::with_state_mut(|st| set_active_node_shortfall_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn active_node_glue_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 4)
 }
 
 #[inline]
 fn active_node_glue(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 4)
+    crate::state::with_state(|st| active_node_glue_in(&st.mem, p))
+}
+
+#[inline]
+fn set_active_node_glue_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b32s1(p + 4, v);
 }
 
 #[inline]
 fn set_active_node_glue(p: i32, v: i32) {
-    crate::globals::set_mem_b32s1(p + 4, v);
+    crate::state::with_state_mut(|st| set_active_node_glue_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn node_type_in(mem: &MemState, p: i32) -> i32 {
+    mem.b16s1(p) as i32
 }
 
 #[inline]
 fn node_type(p: i32) -> i32 {
-    crate::globals::mem_b16s1(p) as i32
+    crate::state::with_state(|st| node_type_in(&st.mem, p))
+}
+
+#[inline]
+fn node_subtype_in(mem: &MemState, p: i32) -> u16 {
+    mem.b16s0(p)
 }
 
 #[inline]
 fn node_subtype(p: i32) -> u16 {
-    crate::globals::mem_b16s0(p)
+    crate::state::with_state(|st| node_subtype_in(&st.mem, p))
+}
+
+#[inline]
+fn box_width_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 1)
 }
 
 #[inline]
 fn box_width(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 1)
+    crate::state::with_state(|st| box_width_in(&st.mem, p))
+}
+
+#[inline]
+fn set_box_width_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b32s1(p + 1, v);
 }
 
 #[inline]
 fn set_box_width(p: i32, v: i32) {
-    crate::globals::set_mem_b32s1(p + 1, v);
+    crate::state::with_state_mut(|st| set_box_width_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn glue_ptr_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s0(p + 1)
 }
 
 #[inline]
 fn glue_ptr(p: i32) -> i32 {
-    crate::globals::mem_b32s0(p + 1)
+    crate::state::with_state(|st| glue_ptr_in(&st.mem, p))
+}
+
+#[inline]
+fn set_glue_ptr_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b32s0(p + 1, v);
 }
 
 #[inline]
 fn set_glue_ptr(p: i32, v: i32) {
-    crate::globals::set_mem_b32s0(p + 1, v);
+    crate::state::with_state_mut(|st| set_glue_ptr_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn glue_leader_ptr_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 1)
 }
 
 #[inline]
 fn glue_leader_ptr(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 1)
+    crate::state::with_state(|st| glue_leader_ptr_in(&st.mem, p))
+}
+
+#[inline]
+fn glue_spec_stretch_order_in(mem: &MemState, p: i32) -> u16 {
+    mem.b16s1(p)
 }
 
 #[inline]
 fn glue_spec_stretch_order(p: i32) -> u16 {
-    crate::globals::mem_b16s1(p)
+    crate::state::with_state(|st| glue_spec_stretch_order_in(&st.mem, p))
+}
+
+#[inline]
+fn glue_spec_shrink_order_in(mem: &MemState, p: i32) -> u16 {
+    mem.b16s0(p)
 }
 
 #[inline]
 fn glue_spec_shrink_order(p: i32) -> u16 {
-    crate::globals::mem_b16s0(p)
+    crate::state::with_state(|st| glue_spec_shrink_order_in(&st.mem, p))
+}
+
+#[inline]
+fn glue_spec_stretch_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 2)
 }
 
 #[inline]
 fn glue_spec_stretch(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 2)
+    crate::state::with_state(|st| glue_spec_stretch_in(&st.mem, p))
+}
+
+#[inline]
+fn set_glue_spec_stretch_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b32s1(p + 2, v);
 }
 
 #[inline]
 fn set_glue_spec_stretch(p: i32, v: i32) {
-    crate::globals::set_mem_b32s1(p + 2, v);
+    crate::state::with_state_mut(|st| set_glue_spec_stretch_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn glue_spec_shrink_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 3)
 }
 
 #[inline]
 fn glue_spec_shrink(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 3)
+    crate::state::with_state(|st| glue_spec_shrink_in(&st.mem, p))
+}
+
+#[inline]
+fn penalty_node_penalty_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 1)
 }
 
 #[inline]
 fn penalty_node_penalty(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 1)
+    crate::state::with_state(|st| penalty_node_penalty_in(&st.mem, p))
+}
+
+#[inline]
+fn set_penalty_node_penalty_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b32s1(p + 1, v);
 }
 
 #[inline]
 fn set_penalty_node_penalty(p: i32, v: i32) {
-    crate::globals::set_mem_b32s1(p + 1, v);
+    crate::state::with_state_mut(|st| set_penalty_node_penalty_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn language_node_what_lang_in(mem: &MemState, p: i32) -> u8 {
+    mem.b32s1(p + 1) as u8
 }
 
 #[inline]
 fn language_node_what_lang(p: i32) -> u8 {
-    crate::globals::mem_b32s1(p + 1) as u8
+    crate::state::with_state(|st| language_node_what_lang_in(&st.mem, p))
+}
+
+#[inline]
+fn language_node_what_lhm_in(mem: &MemState, p: i32) -> i32 {
+    mem.b16s1(p + 1) as i32
 }
 
 #[inline]
 fn language_node_what_lhm(p: i32) -> i32 {
-    crate::globals::mem_b16s1(p + 1) as i32
+    crate::state::with_state(|st| language_node_what_lhm_in(&st.mem, p))
+}
+
+#[inline]
+fn language_node_what_rhm_in(mem: &MemState, p: i32) -> i32 {
+    mem.b16s0(p + 1) as i32
 }
 
 #[inline]
 fn language_node_what_rhm(p: i32) -> i32 {
-    crate::globals::mem_b16s0(p + 1) as i32
+    crate::state::with_state(|st| language_node_what_rhm_in(&st.mem, p))
+}
+
+#[inline]
+fn ligature_node_lig_font_in(mem: &MemState, p: i32) -> i32 {
+    mem.b16s1(p + 1) as i32
 }
 
 #[inline]
 fn ligature_node_lig_font(p: i32) -> i32 {
-    crate::globals::mem_b16s1(p + 1) as i32
+    crate::state::with_state(|st| ligature_node_lig_font_in(&st.mem, p))
+}
+
+#[inline]
+fn ligature_node_lig_char_in(mem: &MemState, p: i32) -> u16 {
+    mem.b16s0(p + 1)
 }
 
 #[inline]
 fn ligature_node_lig_char(p: i32) -> u16 {
-    crate::globals::mem_b16s0(p + 1)
+    crate::state::with_state(|st| ligature_node_lig_char_in(&st.mem, p))
+}
+
+#[inline]
+fn ligature_node_lig_ptr_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s1(p + 1)
 }
 
 #[inline]
 fn ligature_node_lig_ptr(p: i32) -> i32 {
-    crate::globals::mem_b32s1(p + 1)
+    crate::state::with_state(|st| ligature_node_lig_ptr_in(&st.mem, p))
+}
+
+#[inline]
+fn disc_pre_break_in(mem: &MemState, p: i32) -> i32 {
+    mem.b32s0(p + 1)
 }
 
 #[inline]
 fn disc_pre_break(p: i32) -> i32 {
-    crate::globals::mem_b32s0(p + 1)
+    crate::state::with_state(|st| disc_pre_break_in(&st.mem, p))
+}
+
+#[inline]
+fn disc_replace_count_in(mem: &MemState, p: i32) -> i32 {
+    mem.b16s0(p) as i32
 }
 
 #[inline]
 fn disc_replace_count(p: i32) -> i32 {
-    crate::globals::mem_b16s0(p) as i32
+    crate::state::with_state(|st| disc_replace_count_in(&st.mem, p))
+}
+
+#[inline]
+fn native_node_len_in(mem: &MemState, p: i32) -> i32 {
+    mem.b16s1(p + 4) as i32
 }
 
 #[inline]
 fn native_node_len(p: i32) -> i32 {
-    crate::globals::mem_b16s1(p + 4) as i32
+    crate::state::with_state(|st| native_node_len_in(&st.mem, p))
+}
+
+#[inline]
+fn set_native_node_len_in(mem: &mut MemState, p: i32, v: i32) {
+    mem.set_b16s1(p + 4, v as u16);
 }
 
 #[inline]
 fn set_native_node_len(p: i32, v: i32) {
-    crate::globals::set_mem_b16s1(p + 4, v as u16);
+    crate::state::with_state_mut(|st| set_native_node_len_in(&mut st.mem, p, v));
+}
+
+#[inline]
+fn native_node_font_in(mem: &MemState, p: i32) -> i32 {
+    mem.b16s2(p + 4) as i32
 }
 
 #[inline]
 fn native_node_font(p: i32) -> i32 {
-    crate::globals::mem_b16s2(p + 4) as i32
+    crate::state::with_state(|st| native_node_font_in(&st.mem, p))
 }
 
 #[inline]
-unsafe fn copy_native_tail(q: i32, ha: i32, start: i32) {
-    let dst = crate::globals::mem_as_u16_ptr_mut(q + NATIVE_NODE_SIZE);
-    let src = crate::globals::mem_as_u16_ptr(ha + NATIVE_NODE_SIZE);
-    for i in start..native_node_len(ha) {
+unsafe fn copy_native_tail_in(mem: &mut MemState, q: i32, ha: i32, start: i32) {
+    let dst = mem.as_u16_ptr_mut(q + NATIVE_NODE_SIZE);
+    let src = mem.as_u16_ptr(ha + NATIVE_NODE_SIZE);
+    for i in start..native_node_len_in(mem, ha) {
         *dst.add((i - start) as usize) = *src.add(i as usize);
     }
 }
 
 #[inline]
-fn is_non_discardable_node(p: i32) -> bool {
-    (crate::globals::mem_b16s1(p) as i32) < MATH_NODE
+unsafe fn copy_native_tail(q: i32, ha: i32, start: i32) {
+    crate::state::with_state_mut(|st| copy_native_tail_in(&mut st.mem, q, ha, start));
 }
 
 #[inline]
@@ -1001,11 +1191,70 @@ pub unsafe fn reconstitute_global(j: i16, n: i16, bchar: i32, hchar: i32) -> i16
 }
 
 #[inline]
-unsafe fn set_native_metrics(p: i32) {
+unsafe fn set_native_metrics_in(mem: &MemState, eqtb: &EqtbState, p: i32) {
     measure_native_node(
-        crate::globals::mem_node_addr(p),
-        (crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
+        mem.node_addr(p),
+        (eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
     );
+}
+
+#[inline]
+unsafe fn set_native_metrics(p: i32) {
+    crate::state::with_state(|st| set_native_metrics_in(&st.mem, &st.eqtb, p));
+}
+
+#[inline]
+fn int_par(eqtb: &EqtbState, n: i32) -> i32 {
+    eqtb.b32s1(INT_BASE + n)
+}
+
+#[inline]
+fn int_par_global(n: i32) -> i32 {
+    crate::state::with_state(|st| int_par(&st.eqtb, n))
+}
+
+#[inline]
+fn dimen_par(eqtb: &EqtbState, n: i32) -> i32 {
+    eqtb.b32s1(DIMEN_BASE + n)
+}
+
+#[inline]
+fn dimen_par_global(n: i32) -> i32 {
+    crate::state::with_state(|st| dimen_par(&st.eqtb, n))
+}
+
+#[inline]
+fn glue_par(eqtb: &EqtbState, n: i16) -> i32 {
+    eqtb.b32s1(GLUE_BASE + n as i32)
+}
+
+#[inline]
+fn glue_par_global(n: i16) -> i32 {
+    crate::state::with_state(|st| glue_par(&st.eqtb, n))
+}
+
+#[inline]
+fn lc_code(eqtb: &EqtbState, c: i32) -> i32 {
+    eqtb.b32s1(LC_CODE_BASE + c)
+}
+
+#[inline]
+fn lc_code_global(c: i32) -> i32 {
+    crate::state::with_state(|st| lc_code(&st.eqtb, c))
+}
+
+fn set_current_hyph_index(hyph: &mut HyphState) {
+    let lang = hyph.cur_lang as i32;
+    let start = hyph.hyph_start;
+    if hyph.trie_trc[(start + lang) as usize] != hyph.cur_lang as u16 {
+        hyph.hyph_index = 0;
+    } else {
+        hyph.hyph_index = hyph.trie_trl[(start + lang) as usize];
+    }
+}
+
+fn set_current_hyph_index_global() {
+    crate::state::with_state_mut(|st| set_current_hyph_index(&mut st.hyph));
 }
 
 // translated from xetex-linebreak.c:90 (line_break)
@@ -1025,38 +1274,12 @@ pub unsafe fn line_break(d: bool) {
         set_threshold, set_xtx_ligature_present, trie_not_ready, trie_trc_entry, trie_tro_entry,
     };
 
-    fn int_par(n: i32) -> i32 {
-        crate::globals::eqtb_b32s1(INT_BASE + n)
-    }
-
-    fn dimen_par(n: i32) -> i32 {
-        crate::globals::eqtb_b32s1(DIMEN_BASE + n)
-    }
-
-    fn glue_par(n: i16) -> i32 {
-        crate::globals::eqtb_b32s1(GLUE_BASE + n as i32)
-    }
-
-    fn lc_code(c: i32) -> i32 {
-        crate::globals::eqtb_b32s1(LC_CODE_BASE + c)
-    }
-
-    fn set_current_hyph_index() {
-        let lang = crate::globals::cur_lang() as i32;
-        let start = crate::globals::hyph_start();
-        if crate::globals::trie_trc_entry(start + lang) != crate::globals::cur_lang() as u16 {
-            crate::globals::set_hyph_index(0);
-        } else {
-            crate::globals::set_hyph_index(crate::globals::trie_trl_entry(start + lang));
-        }
-    }
-
     fn add_active_width(k: usize, v: i32) {
         crate::globals::set_active_width(k, crate::globals::active_width(k) + v);
     }
 
     unsafe fn add_node_width_to_active(p: i32, confusion_name: *const libc::c_char) {
-        if is_char_node(p) {
+        if is_char_node_global(p) {
             let f = mem_b16s1(p) as i32;
             add_active_width(1, font_character_width(f, mem_b16s0(p)));
             return;
@@ -1092,7 +1315,7 @@ pub unsafe fn line_break(d: bool) {
     set_mem_b32s1(TEMP_HEAD, mem_b32s1(cur_list_head()));
 
     let tail = cur_list_tail();
-    if is_char_node(tail) || node_type(tail) != GLUE_NODE {
+    if is_char_node_global(tail) || node_type(tail) != GLUE_NODE {
         let p = crate::mem::new_penalty_global(INF_PENALTY);
         set_mem_b32s1(tail, p);
         set_cur_list_tail(p);
@@ -1112,21 +1335,21 @@ pub unsafe fn line_break(d: bool) {
     crate::mem::pop_nest();
     set_no_shrink_error_yet(true);
 
-    if glue_spec_shrink_order(glue_par(GLUE_PAR_LEFT_SKIP)) != NORMAL
-        && glue_spec_shrink(glue_par(GLUE_PAR_LEFT_SKIP)) != 0
+    if glue_spec_shrink_order(glue_par_global(GLUE_PAR_LEFT_SKIP)) != NORMAL
+        && glue_spec_shrink(glue_par_global(GLUE_PAR_LEFT_SKIP)) != 0
     {
-        let p = finite_shrink_global(glue_par(GLUE_PAR_LEFT_SKIP));
+        let p = finite_shrink_global(glue_par_global(GLUE_PAR_LEFT_SKIP));
         crate::globals::set_eqtb_b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP as i32, p);
     }
-    if glue_spec_shrink_order(glue_par(GLUE_PAR_RIGHT_SKIP)) != NORMAL
-        && glue_spec_shrink(glue_par(GLUE_PAR_RIGHT_SKIP)) != 0
+    if glue_spec_shrink_order(glue_par_global(GLUE_PAR_RIGHT_SKIP)) != NORMAL
+        && glue_spec_shrink(glue_par_global(GLUE_PAR_RIGHT_SKIP)) != 0
     {
-        let p = finite_shrink_global(glue_par(GLUE_PAR_RIGHT_SKIP));
+        let p = finite_shrink_global(glue_par_global(GLUE_PAR_RIGHT_SKIP));
         crate::globals::set_eqtb_b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP as i32, p);
     }
 
-    let q = glue_par(GLUE_PAR_LEFT_SKIP);
-    let r = glue_par(GLUE_PAR_RIGHT_SKIP);
+    let q = glue_par_global(GLUE_PAR_LEFT_SKIP);
+    let r = glue_par_global(GLUE_PAR_RIGHT_SKIP);
     set_background(1, box_width(q) + box_width(r));
     for k in 2..=5 {
         set_background(k, 0);
@@ -1143,7 +1366,7 @@ pub unsafe fn line_break(d: bool) {
 
     set_do_last_line_fit(false);
     set_active_node_size(ACTIVE_NODE_SIZE_NORMAL);
-    if int_par(INT_PAR_LAST_LINE_FIT) > 0 {
+    if int_par_global(INT_PAR_LAST_LINE_FIT) > 0 {
         let q = glue_ptr(last_line_fill);
         if glue_spec_stretch(q) > 0
             && glue_spec_stretch_order(q) > NORMAL
@@ -1169,31 +1392,33 @@ pub unsafe fn line_break(d: bool) {
     }
 
     if eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE) == TEX_NULL {
-        if dimen_par(DIMEN_PAR_HANG_INDENT) == 0 {
+        if dimen_par_global(DIMEN_PAR_HANG_INDENT) == 0 {
             set_last_special_line(0);
-            set_second_width(dimen_par(DIMEN_PAR_HSIZE));
+            set_second_width(dimen_par_global(DIMEN_PAR_HSIZE));
             set_second_indent(0);
         } else {
-            set_last_special_line(int_par(INT_PAR_HANG_AFTER).abs());
-            if int_par(INT_PAR_HANG_AFTER) < 0 {
+            set_last_special_line(int_par_global(INT_PAR_HANG_AFTER).abs());
+            if int_par_global(INT_PAR_HANG_AFTER) < 0 {
                 set_first_width(
-                    dimen_par(DIMEN_PAR_HSIZE) - dimen_par(DIMEN_PAR_HANG_INDENT).abs(),
+                    dimen_par_global(DIMEN_PAR_HSIZE)
+                        - dimen_par_global(DIMEN_PAR_HANG_INDENT).abs(),
                 );
-                set_first_indent(if dimen_par(DIMEN_PAR_HANG_INDENT) >= 0 {
-                    dimen_par(DIMEN_PAR_HANG_INDENT)
+                set_first_indent(if dimen_par_global(DIMEN_PAR_HANG_INDENT) >= 0 {
+                    dimen_par_global(DIMEN_PAR_HANG_INDENT)
                 } else {
                     0
                 });
-                set_second_width(dimen_par(DIMEN_PAR_HSIZE));
+                set_second_width(dimen_par_global(DIMEN_PAR_HSIZE));
                 set_second_indent(0);
             } else {
-                set_first_width(dimen_par(DIMEN_PAR_HSIZE));
+                set_first_width(dimen_par_global(DIMEN_PAR_HSIZE));
                 set_first_indent(0);
                 set_second_width(
-                    dimen_par(DIMEN_PAR_HSIZE) - dimen_par(DIMEN_PAR_HANG_INDENT).abs(),
+                    dimen_par_global(DIMEN_PAR_HSIZE)
+                        - dimen_par_global(DIMEN_PAR_HANG_INDENT).abs(),
                 );
-                set_second_indent(if dimen_par(DIMEN_PAR_HANG_INDENT) >= 0 {
-                    dimen_par(DIMEN_PAR_HANG_INDENT)
+                set_second_indent(if dimen_par_global(DIMEN_PAR_HANG_INDENT) >= 0 {
+                    dimen_par_global(DIMEN_PAR_HANG_INDENT)
                 } else {
                     0
                 });
@@ -1206,21 +1431,21 @@ pub unsafe fn line_break(d: bool) {
         set_second_indent(mem_b32s1(par_shape + 2 * last_special_line() + 1));
     }
 
-    if int_par(INT_PAR_LOOSENESS) == 0 {
+    if int_par_global(INT_PAR_LOOSENESS) == 0 {
         set_easy_line(last_special_line());
     } else {
         set_easy_line(MAX_HALFWORD);
     }
 
-    set_threshold(int_par(INT_PAR_PRETOLERANCE));
+    set_threshold(int_par_global(INT_PAR_PRETOLERANCE));
     let mut second_pass;
     if crate::globals::threshold() >= 0 {
         second_pass = false;
         set_final_pass(false);
     } else {
-        set_threshold(int_par(INT_PAR_TOLERANCE));
+        set_threshold(int_par_global(INT_PAR_TOLERANCE));
         second_pass = true;
-        set_final_pass(dimen_par(DIMEN_PAR_EMERGENCY_STRETCH) <= 0);
+        set_final_pass(dimen_par_global(DIMEN_PAR_EMERGENCY_STRETCH) <= 0);
     }
 
     'passes: loop {
@@ -1235,7 +1460,7 @@ pub unsafe fn line_break(d: bool) {
             set_cur_lang(init_cur_lang);
             set_l_hyf(crate::globals::init_l_hyf());
             set_r_hyf(crate::globals::init_r_hyf());
-            set_current_hyph_index();
+            set_current_hyph_index_global();
         }
 
         let q = crate::mem::get_node_global(crate::globals::active_node_size());
@@ -1265,7 +1490,7 @@ pub unsafe fn line_break(d: bool) {
         while crate::globals::cur_p() != TEX_NULL && mem_b32s1(ACTIVE_LIST) != LAST_ACTIVE {
             let mut cur = crate::globals::cur_p();
 
-            if is_char_node(cur) {
+            if is_char_node_global(cur) {
                 prev_p = cur;
                 set_global_prev_p(cur);
                 loop {
@@ -1273,7 +1498,7 @@ pub unsafe fn line_break(d: bool) {
                     add_active_width(1, font_character_width(f, mem_b16s0(cur)));
                     cur = mem_b32s1(cur);
                     set_cur_p(cur);
-                    if !is_char_node(cur) {
+                    if !is_char_node_global(cur) {
                         break;
                     }
                 }
@@ -1290,7 +1515,7 @@ pub unsafe fn line_break(d: bool) {
                         set_cur_lang(language_node_what_lang(cur));
                         set_l_hyf(language_node_what_lhm(cur));
                         set_r_hyf(language_node_what_rhm(cur));
-                        set_current_hyph_index();
+                        set_current_hyph_index_global();
                     } else if subtype == NATIVE_WORD_NODE
                         || subtype == NATIVE_WORD_NODE_AT
                         || subtype == GLYPH_NODE
@@ -1302,8 +1527,8 @@ pub unsafe fn line_break(d: bool) {
                 }
                 GLUE_NODE => {
                     if auto_breaking
-                        && (is_char_node(prev_p)
-                            || is_non_discardable_node(prev_p)
+                        && (is_char_node_global(prev_p)
+                            || is_non_discardable_node_global(prev_p)
                             || (node_type(prev_p) == KERN_NODE && node_subtype(prev_p) != EXPLICIT))
                     {
                         try_break(0, UNHYPHENATED);
@@ -1334,7 +1559,7 @@ pub unsafe fn line_break(d: bool) {
                             let mut l: i32 = 0;
 
                             loop {
-                                if is_char_node(s) {
+                                if is_char_node_global(s) {
                                     c = mem_b16s0(s) as i32;
                                     set_hf(mem_b16s1(s) as i32);
                                 } else if node_type(s) == LIGATURE_NODE {
@@ -1361,10 +1586,12 @@ pub unsafe fn line_break(d: bool) {
                                         l = 0;
                                         while l < native_node_len(s) {
                                             c = get_native_usv(s, l);
-                                            if lc_code(c) != 0 {
+                                            if lc_code_global(c) != 0 {
                                                 set_hf(native_node_font(s));
                                                 prev_s = s;
-                                                if lc_code(c) == c || int_par(INT_PAR_UC_HYPH) > 0 {
+                                                if lc_code_global(c) == c
+                                                    || int_par_global(INT_PAR_UC_HYPH) > 0
+                                                {
                                                     break;
                                                 } else {
                                                     break 'hyphen_probe;
@@ -1384,7 +1611,7 @@ pub unsafe fn line_break(d: bool) {
                                         set_cur_lang(language_node_what_lang(s));
                                         set_l_hyf(language_node_what_lhm(s));
                                         set_r_hyf(language_node_what_rhm(s));
-                                        set_current_hyph_index();
+                                        set_current_hyph_index_global();
                                     }
                                     prev_s = s;
                                     s = mem_b32s1(prev_s);
@@ -1394,7 +1621,7 @@ pub unsafe fn line_break(d: bool) {
                                 }
 
                                 if hyph_index() == 0 || c > 255 {
-                                    set_hc_entry(0, lc_code(c));
+                                    set_hc_entry(0, lc_code_global(c));
                                 } else if trie_trc_entry(hyph_index() + c) != c as u16 {
                                     set_hc_entry(0, 0);
                                 } else {
@@ -1402,7 +1629,7 @@ pub unsafe fn line_break(d: bool) {
                                 }
 
                                 if hc_entry(0) != 0 {
-                                    if hc_entry(0) == c || int_par(INT_PAR_UC_HYPH) > 0 {
+                                    if hc_entry(0) == c || int_par_global(INT_PAR_UC_HYPH) > 0 {
                                         break;
                                     } else {
                                         break 'hyphen_probe;
@@ -1432,7 +1659,7 @@ pub unsafe fn line_break(d: bool) {
                             {
                                 s = mem_b32s1(crate::globals::ha());
                                 loop {
-                                    if !is_char_node(s) {
+                                    if !is_char_node_global(s) {
                                         match node_type(s) {
                                             LIGATURE_NODE => {}
                                             KERN_NODE => {
@@ -1455,7 +1682,7 @@ pub unsafe fn line_break(d: bool) {
                                     while l < len {
                                         c = get_native_usv(crate::globals::ha(), l);
                                         if hyph_index() == 0 || c > 255 {
-                                            set_hc_entry(0, lc_code(c));
+                                            set_hc_entry(0, lc_code_global(c));
                                         } else if trie_trc_entry(hyph_index() + c) != c as u16 {
                                             set_hc_entry(0, 0);
                                         } else {
@@ -1529,14 +1756,14 @@ pub unsafe fn line_break(d: bool) {
                             } else {
                                 set_hn(0);
                                 'collect_word: loop {
-                                    if is_char_node(s) {
+                                    if is_char_node_global(s) {
                                         if mem_b16s1(s) as i32 != crate::globals::hf() {
                                             break;
                                         }
                                         set_hyf_bchar(mem_b16s0(s) as i32);
                                         c = crate::globals::hyf_bchar();
                                         if hyph_index() == 0 || c > 255 {
-                                            set_hc_entry(0, lc_code(c));
+                                            set_hc_entry(0, lc_code_global(c));
                                         } else if trie_trc_entry(hyph_index() + c) != c as u16 {
                                             set_hc_entry(0, 0);
                                         } else {
@@ -1565,7 +1792,7 @@ pub unsafe fn line_break(d: bool) {
                                         while q > TEX_NULL {
                                             c = mem_b16s0(q) as i32;
                                             if hyph_index() == 0 || c > 255 {
-                                                set_hc_entry(0, lc_code(c));
+                                                set_hc_entry(0, lc_code_global(c));
                                             } else if trie_trc_entry(hyph_index() + c) != c as u16 {
                                                 set_hc_entry(0, 0);
                                             } else {
@@ -1606,7 +1833,7 @@ pub unsafe fn line_break(d: bool) {
                             }
 
                             loop {
-                                if !is_char_node(s) {
+                                if !is_char_node_global(s) {
                                     match node_type(s) {
                                         LIGATURE_NODE => {}
                                         KERN_NODE => {
@@ -1635,7 +1862,7 @@ pub unsafe fn line_break(d: bool) {
                 }
                 KERN_NODE => {
                     if node_subtype(cur) == EXPLICIT {
-                        if !is_char_node(mem_b32s1(cur))
+                        if !is_char_node_global(mem_b32s1(cur))
                             && auto_breaking
                             && node_type(mem_b32s1(cur)) == GLUE_NODE
                         {
@@ -1655,7 +1882,7 @@ pub unsafe fn line_break(d: bool) {
                     let mut s = disc_pre_break(cur);
                     set_disc_width(0);
                     if s == TEX_NULL {
-                        try_break(int_par(INT_PAR_EX_HYPHEN_PENALTY), HYPHENATED);
+                        try_break(int_par_global(INT_PAR_EX_HYPHEN_PENALTY), HYPHENATED);
                     } else {
                         set_disc_width(0);
                         while s != TEX_NULL {
@@ -1666,7 +1893,7 @@ pub unsafe fn line_break(d: bool) {
                             s = mem_b32s1(s);
                         }
                         add_active_width(1, crate::globals::disc_width());
-                        try_break(int_par(INT_PAR_HYPHEN_PENALTY), HYPHENATED);
+                        try_break(int_par_global(INT_PAR_HYPHEN_PENALTY), HYPHENATED);
                         add_active_width(1, -crate::globals::disc_width());
                     }
 
@@ -1687,7 +1914,7 @@ pub unsafe fn line_break(d: bool) {
                     if node_subtype(cur) < L_CODE {
                         auto_breaking = odd(node_subtype(cur) as u8);
                     }
-                    if !is_char_node(mem_b32s1(cur))
+                    if !is_char_node_global(mem_b32s1(cur))
                         && auto_breaking
                         && node_type(mem_b32s1(cur)) == GLUE_NODE
                     {
@@ -1725,7 +1952,7 @@ pub unsafe fn line_break(d: bool) {
                 }
                 set_best_line(active_node_line_number(crate::globals::best_bet()));
 
-                if int_par(INT_PAR_LOOSENESS) == 0 {
+                if int_par_global(INT_PAR_LOOSENESS) == 0 {
                     break 'passes;
                 }
 
@@ -1734,9 +1961,10 @@ pub unsafe fn line_break(d: bool) {
                 loop {
                     if node_type(r) != DELTA_NODE {
                         let line_diff = active_node_line_number(r) - crate::globals::best_line();
-                        if (line_diff < actual_looseness && int_par(INT_PAR_LOOSENESS) <= line_diff)
+                        if (line_diff < actual_looseness
+                            && int_par_global(INT_PAR_LOOSENESS) <= line_diff)
                             || (line_diff > actual_looseness
-                                && int_par(INT_PAR_LOOSENESS) >= line_diff)
+                                && int_par_global(INT_PAR_LOOSENESS) >= line_diff)
                         {
                             set_best_bet(r);
                             actual_looseness = line_diff;
@@ -1755,7 +1983,9 @@ pub unsafe fn line_break(d: bool) {
                 }
 
                 set_best_line(active_node_line_number(crate::globals::best_bet()));
-                if actual_looseness == int_par(INT_PAR_LOOSENESS) || crate::globals::final_pass() {
+                if actual_looseness == int_par_global(INT_PAR_LOOSENESS)
+                    || crate::globals::final_pass()
+                {
                     break 'passes;
                 }
             }
@@ -1780,11 +2010,14 @@ pub unsafe fn line_break(d: bool) {
         }
 
         if !second_pass {
-            set_threshold(int_par(INT_PAR_TOLERANCE));
+            set_threshold(int_par_global(INT_PAR_TOLERANCE));
             second_pass = true;
-            set_final_pass(dimen_par(DIMEN_PAR_EMERGENCY_STRETCH) <= 0);
+            set_final_pass(dimen_par_global(DIMEN_PAR_EMERGENCY_STRETCH) <= 0);
         } else {
-            set_background(2, background(2) + dimen_par(DIMEN_PAR_EMERGENCY_STRETCH));
+            set_background(
+                2,
+                background(2) + dimen_par_global(DIMEN_PAR_EMERGENCY_STRETCH),
+            );
             set_final_pass(true);
         }
     }
@@ -2150,8 +2383,8 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
                 q = mem_b32s1(r);
 
                 if q == mem_b32s1(crate::globals::cur_p() + 1)
-                    || is_char_node(q)
-                    || is_non_discardable_node(q)
+                    || is_char_node_global(q)
+                    || is_non_discardable_node_global(q)
                     || (mem_b16s1(q) as i32 == KERN_NODE
                         && mem_b16s0(q) != EXPLICIT
                         && mem_b16s0(q) != SPACE_ADJUSTMENT)
@@ -2255,7 +2488,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                         while t > 0 {
                             t -= 1;
                             v = mem_b32s1(v);
-                            if is_char_node(v) {
+                            if is_char_node_global(v) {
                                 let f = mem_b16s1(v) as i32;
                                 set_break_width(
                                     1,
@@ -2294,7 +2527,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                         }
 
                         while s != TEX_NULL {
-                            if is_char_node(s) {
+                            if is_char_node_global(s) {
                                 let f = mem_b16s1(s) as i32;
                                 set_break_width(
                                     1,
@@ -2341,7 +2574,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
                     }
 
                     while s != TEX_NULL {
-                        if is_char_node(s) {
+                        if is_char_node_global(s) {
                             break;
                         }
 
@@ -2860,7 +3093,7 @@ pub unsafe extern "C" fn hyphenate() {
         }
 
         if ha() != TEX_NULL
-            && !is_char_node(ha())
+            && !is_char_node_global(ha())
             && mem_b16s1(ha()) as i32 == WHATSIT_NODE
             && (mem_b16s0(ha()) == NATIVE_WORD_NODE || mem_b16s0(ha()) == NATIVE_WORD_NODE_AT)
         {
@@ -2921,7 +3154,7 @@ pub unsafe extern "C" fn hyphenate() {
         set_mem_b32s1(ha(), TEX_NULL);
         let bchar = hyf_bchar();
 
-        let (mut s, mut j) = if is_char_node(ha()) {
+        let (mut s, mut j) = if is_char_node_global(ha()) {
             if mem_b16s1(ha()) as i32 != hf() {
                 set_hu_entry(0, max_hyph_char());
                 set_init_lig(false);
@@ -2959,7 +3192,10 @@ pub unsafe extern "C" fn hyphenate() {
                 }
                 (s, 0)
             }
-        } else if !is_char_node(r) && mem_b16s1(r) as i32 == LIGATURE_NODE && mem_b16s0(r) > 1 {
+        } else if !is_char_node_global(r)
+            && mem_b16s1(r) as i32 == LIGATURE_NODE
+            && mem_b16s0(r) > 1
+        {
             set_hu_entry(0, max_hyph_char());
             set_init_lig(false);
             set_init_list(TEX_NULL);

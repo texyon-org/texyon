@@ -7,6 +7,34 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+
+## Idiom session 109 — 2026-06-01 — thread shipout movement and linebreak equivalents leaves
+
+**Type:** execution (workstream 01, Phase C — shipout and linebreak leaves). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (53).
+
+**Slice:** Threaded shipout movement leaf helper `move_past_vlist_rule` in `src/shipout.rs` to take safe `&mut ShipoutState` directly, removing the `unsafe` keyword from its signature. Threaded the math node direction helpers `math_node_lr_dir` and `math_node_end_lr_type` in `src/shipout.rs` to safe `&MemState` borrows, clean of global accessors. Threaded `set_current_hyph_index` in `src/linebreak.rs` to take safe `&mut HyphState` directly and index trie vectors natively. Threaded inner line-break parameter helpers `int_par`, `dimen_par`, `glue_par`, and `lc_code` in `src/linebreak.rs` to module-level functions taking explicit `&EqtbState` borrows, clean of global equivalents accessors. Legacy callers are repointed via global wrappers or short disjoint borrows.
+
+**Classification:** bucket **B**, highly accurate. These are small leaf helpers and parameter readers that only need safe reads or direct writes to specific states, avoiding orchestrator or allocation hazards.
+
+**Recon-helper usefulness report:**
+- Which command(s) you ran: `python3 plan/idiom/phase_c_recon.py --limit 40` and targeted scans on `src/shipout.rs` / `src/linebreak.rs`
+- Which candidate it surfaced: `math_node_lr_dir` (score 101, bucket B), `math_node_end_lr_type` (score 101, bucket B), `lc_code` (score 101, bucket B), `int_par`/`dimen_par`/`glue_par` (score 101, bucket B)
+- Whether bucket/risk classification was accurate: Extremely accurate. Surfaced clean, independent leaves that were perfectly safe to thread.
+- Roughly how much recon time it saved or failed to save: Saved around 15-20 minutes by automatically filtering out already-threaded helpers and highlighting safe candidate leaves immediately.
+- Any false positives/false negatives or suggested script improvements: None, the helper continues to perform wonderfully.
+
+**Method surface / deleted accessors:** none. No state fields moved and no new methods added (existing vector indices and struct fields on `ShipoutState`, `HyphState`, and `EqtbState` were sufficient).
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328** unchanged. raw extern statics **38** unchanged. raw `unsafe {}` **174** unchanged. `unsafe fn` **651 -> 650** (made `move_past_vlist_rule` safe, added safe global wrappers). Warnings **53** unchanged.
+
+**Validation:** `cargo fmt`; `cargo check -p tectonic_engine_xetex` -> 0 errors, 53 warnings; full dashboard -> **29 / 2 / 7 / 4** green.
+
+**For the next session (110):** continue bounded leaves only. Good options remain another small pagebuilder/linebreak leaf, or a small shipout movement helper. Avoid whole-session work on `line_break`, `try_break`, `hlist_out`, `vlist_out`, `ship_out`, `scan.rs`, `mlist_to_hlist`, `hpack`, `vpackage`, or `build_page`.
+
+---
+
 ## Idiom session 108 — 2026-06-01 — thread memory prev_rightmost and shipout ignorable leaves
 
 **Type:** execution (workstream 01, Phase C — memory / shipout leaves). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (53, as we deleted some dead code and made signatures safe).

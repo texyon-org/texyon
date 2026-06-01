@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 108, **Phase-C memory/shipout leaves threaded**, threaded `prev_rightmost` to `&MemState` in `src/mem.rs` and removed redundant `prev_rightmost_in` from `src/linebreak.rs`, threaded `is_ignorable_interword_node` and `skip_ignorable_interword_nodes` in `src/shipout.rs` to safe `&MemState` borrows, dashboard 29/2/7/4. — prior session 107 threaded DVI font def leaves. — prior session 106 refined the Phase-C recon helper. — prior session 105 threaded `try_break`'s local `deactivate_node`.)
+Last updated: 2026-06-01 (last session = session 109, **Phase-C shipout/linebreak leaves threaded**, threaded `move_past_vlist_rule`, `math_node_lr_dir`, `math_node_end_lr_type` in `src/shipout.rs`, and threaded `set_current_hyph_index`, `int_par`, `dimen_par`, `glue_par`, `lc_code` in `src/linebreak.rs`, dashboard 29/2/7/4. — prior session 108 Phase-C memory/shipout leaves threaded.)
 
 ## How to read this file
 

@@ -1406,7 +1406,7 @@ pub unsafe extern "C" fn hlist_out() {
                     MATH_NODE => {
                         crate::synctex::synctex_math(p, this_box);
                         if !mem_b16s0(p).is_multiple_of(2) {
-                            if mem_b32s0(lr_ptr()) as u16 == math_node_end_lr_type(p) {
+                            if mem_b32s0(lr_ptr()) as u16 == math_node_end_lr_type_global(p) {
                                 set_temp_ptr(lr_ptr());
                                 set_lr_ptr(mem_b32s1(temp_ptr()));
                                 set_mem_b32s1(temp_ptr(), avail());
@@ -1416,11 +1416,11 @@ pub unsafe extern "C" fn hlist_out() {
                             }
                         } else {
                             set_temp_ptr(get_avail_global());
-                            set_mem_b32s0(temp_ptr(), math_node_end_lr_type(p) as i32);
+                            set_mem_b32s0(temp_ptr(), math_node_end_lr_type_global(p) as i32);
                             set_mem_b32s1(temp_ptr(), lr_ptr());
                             set_lr_ptr(temp_ptr());
 
-                            if math_node_lr_dir(p) as i16 != cur_dir() {
+                            if math_node_lr_dir_global(p) as i16 != cur_dir() {
                                 let save_h = cur_h();
                                 set_temp_ptr(mem_b32s1(p));
                                 set_rule_wd(mem_b32s1(p + 1));
@@ -1743,11 +1743,11 @@ pub unsafe extern "C" fn vlist_out() {
                             set_cur_v(edge - 10);
                             go_next = true;
                         } else {
-                            move_past_vlist_rule(upwards);
+                            move_past_vlist_rule_global(upwards);
                         }
                     }
                 } else {
-                    move_past_vlist_rule(upwards);
+                    move_past_vlist_rule_global(upwards);
                 }
             }
             KERN_NODE => {
@@ -1809,12 +1809,16 @@ unsafe fn finish_vlist_rule(this_box: i32, left_edge: i32, upwards: bool) {
     }
 }
 
-unsafe fn move_past_vlist_rule(upwards: bool) {
+fn move_past_vlist_rule(shipout: &mut ShipoutState, upwards: bool) {
     if upwards {
-        set_cur_v(cur_v() - rule_ht());
+        shipout.cur_v -= shipout.rule_ht;
     } else {
-        set_cur_v(cur_v() + rule_ht());
+        shipout.cur_v += shipout.rule_ht;
     }
+}
+
+fn move_past_vlist_rule_global(upwards: bool) {
+    crate::state::with_state_mut(|st| move_past_vlist_rule(&mut st.shipout, upwards));
 }
 
 // xetex-constants.h:238,240,248,249,226,227
@@ -1980,13 +1984,23 @@ fn is_char_node(p: i32) -> bool {
 }
 
 #[inline]
-fn math_node_lr_dir(p: i32) -> u16 {
-    mem_b16s0(p) / R_CODE
+fn math_node_lr_dir(mem: &MemState, p: i32) -> u16 {
+    mem.b16s0(p) / R_CODE
 }
 
 #[inline]
-fn math_node_end_lr_type(p: i32) -> u16 {
-    L_CODE * (mem_b16s0(p) / L_CODE) + END_M_CODE
+fn math_node_lr_dir_global(p: i32) -> u16 {
+    crate::state::with_state(|st| math_node_lr_dir(&st.mem, p))
+}
+
+#[inline]
+fn math_node_end_lr_type(mem: &MemState, p: i32) -> u16 {
+    L_CODE * (mem.b16s0(p) / L_CODE) + END_M_CODE
+}
+
+#[inline]
+fn math_node_end_lr_type_global(p: i32) -> u16 {
+    crate::state::with_state(|st| math_node_end_lr_type(&st.mem, p))
 }
 
 #[inline]
@@ -2108,7 +2122,7 @@ pub unsafe extern "C" fn reverse(
                         set_rule_wd(mem_b32s1(p + 1));
 
                         if !mem_b16s0(p).is_multiple_of(2) {
-                            if mem_b32s0(lr_ptr()) as u16 != math_node_end_lr_type(p) {
+                            if mem_b32s0(lr_ptr()) as u16 != math_node_end_lr_type_global(p) {
                                 set_mem_b16s1(p, KERN_NODE);
                                 set_lr_problems(lr_problems() + 1);
                             } else {
@@ -2136,11 +2150,11 @@ pub unsafe extern "C" fn reverse(
                             }
                         } else {
                             set_temp_ptr(get_avail_global());
-                            set_mem_b32s0(temp_ptr(), math_node_end_lr_type(p) as i32);
+                            set_mem_b32s0(temp_ptr(), math_node_end_lr_type_global(p) as i32);
                             set_mem_b32s1(temp_ptr(), lr_ptr());
                             set_lr_ptr(temp_ptr());
 
-                            if n > MIN_HALFWORD || math_node_lr_dir(p) as i16 != cur_dir() {
+                            if n > MIN_HALFWORD || math_node_lr_dir_global(p) as i16 != cur_dir() {
                                 n += 1;
                                 set_mem_b16s0(p, mem_b16s0(p) + 1);
                             } else {
