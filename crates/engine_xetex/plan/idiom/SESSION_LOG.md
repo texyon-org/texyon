@@ -7,6 +7,26 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 102 — 2026-06-01 — thread adjacent math fraction/accent/left-right islands
+
+**Type:** execution (workstream 01, Phase C — math noad/command family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).
+
+**Slice:** three adjacent math command helpers in `src/math.rs`: `math_fraction`, `math_ac`, and `math_left_right`. Recon found only stale `xetex-xetexd.h` prototype hits for the legacy names; the live callers are the `scan.rs` math cases.
+
+**Classification:** bucket **B/C**. The noad allocation/finalization work is direct and closeable; scanner/error calls remain outside live borrows. `math_fraction_global` now allocates and initializes the fraction noad under `MemState`, runs delimiter/dimen scans after the borrow drops, then writes the rule field under a final mem borrow. `math_ac_global` allocates the accent noad under `MemState`, keeps keyword/class/family/USV scans outside borrows, and writes the final accent field under a `mem`+`eqtb` borrow. `math_left_right_global` allocates the left/right noad, scans the delimiter outside the borrow, performs the middle/right adjustments under short mem borrows, and keeps `fin_mlist_global`, `unsave`, and `push_math` outside live borrows.
+
+**Method surface / deleted accessors:** no new state methods. Deleted the now-dead `set_empty_math_field_global` bridge after its last users moved to the threaded `set_empty_math_field` core. No `globals.rs` bridge accessor lost all callers.
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328** unchanged. raw extern statics **38** unchanged. raw `unsafe {}` **174** unchanged. `unsafe fn` **655** unchanged. Warnings **51** unchanged.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 51 warnings; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (103):** nearby `math.rs` command helpers are no longer as uniformly small. Either take a small pagebuilder/linebreak/shipout leaf, or do a careful local simplification only if a remaining math island is clearly closeable. Keep delimiter scans, scanner-heavy `scan.rs`, `mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, and `line_break` out of whole-session scope.
+
+---
+
 ## Idiom session 101 — 2026-06-01 — thread bounded math-command helpers
 
 **Type:** execution (workstream 01, Phase C — math noad/command family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).

@@ -231,15 +231,11 @@ extern "C" {
 }
 
 /// Threaded core (Phase C, bucket B): pure `mem` writes, no `with_state`-bearing
-/// call. Legacy callers go through `set_empty_math_field_global`.
+/// call.
 #[inline]
 fn set_empty_math_field(mem: &mut MemState, p: i32) {
     mem.set_b32s1(p, EMPTY);
     mem.set_b32s0(p, TEX_NULL);
-}
-
-fn set_empty_math_field_global(p: i32) {
-    crate::state::with_state_mut(|st| set_empty_math_field(&mut st.mem, p));
 }
 
 #[inline]
@@ -3454,7 +3450,41 @@ pub unsafe fn sub_sup_global() {
 }
 
 /// translated from xetex-math.c:644 (math_fraction)
-pub unsafe fn math_fraction() {
+fn start_fraction_noad(mem: &mut MemState) -> Result<i32, NodeRecycleAbort> {
+    let fraction = get_node(mem, FRACTION_NOAD_SIZE);
+    if fraction == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    set_cur_list_aux_b32s1(fraction);
+    let aux = cur_list_aux_b32s1();
+    mem.set_b16s1(aux, FRACTION_NOAD);
+    mem.set_b16s0(aux, NORMAL);
+    mem.set_b32s1(aux + 2, SUB_MLIST);
+    mem.set_b32s0(aux + 2, mem.b32s1(cur_list_head()));
+    set_empty_math_field(mem, aux + 3);
+    mem.set_b16s3(aux + 4, 0);
+    mem.set_b16s2(aux + 4, 0);
+    mem.set_b16s1(aux + 4, 0);
+    mem.set_b16s0(aux + 4, 0);
+    mem.set_b16s3(aux + 5, 0);
+    mem.set_b16s2(aux + 5, 0);
+    mem.set_b16s1(aux + 5, 0);
+    mem.set_b16s0(aux + 5, 0);
+    mem.set_b32s1(cur_list_head(), TEX_NULL);
+    set_cur_list_tail(cur_list_head());
+    Ok(aux)
+}
+
+fn finish_fraction_rule(mem: &mut MemState, c: i32, rule_thickness: i32) {
+    match c % DELIMITED_CODE {
+        ABOVE_CODE => mem.set_b32s1(cur_list_aux_b32s1() + 1, rule_thickness),
+        OVER_CODE => mem.set_b32s1(cur_list_aux_b32s1() + 1, DEFAULT_CODE),
+        ATOP_CODE => mem.set_b32s1(cur_list_aux_b32s1() + 1, 0),
+        _ => {}
+    }
+}
+
+pub unsafe fn math_fraction_global() {
     let c = cur_chr();
 
     if cur_list_aux_b32s1() != TEX_NULL {
@@ -3488,43 +3518,97 @@ pub unsafe fn math_fraction() {
         );
         crate::errors::error();
     } else {
-        set_cur_list_aux_b32s1(get_node_global(FRACTION_NOAD_SIZE));
-        set_mem_b16s1(cur_list_aux_b32s1(), FRACTION_NOAD);
-        set_mem_b16s0(cur_list_aux_b32s1(), NORMAL);
-        set_mem_b32s1(cur_list_aux_b32s1() + 2, SUB_MLIST);
-        set_mem_b32s0(cur_list_aux_b32s1() + 2, mem_b32s1(cur_list_head()));
-        set_empty_math_field_global(cur_list_aux_b32s1() + 3);
-        set_mem_b16s3(cur_list_aux_b32s1() + 4, 0);
-        set_mem_b16s2(cur_list_aux_b32s1() + 4, 0);
-        set_mem_b16s1(cur_list_aux_b32s1() + 4, 0);
-        set_mem_b16s0(cur_list_aux_b32s1() + 4, 0);
-        set_mem_b16s3(cur_list_aux_b32s1() + 5, 0);
-        set_mem_b16s2(cur_list_aux_b32s1() + 5, 0);
-        set_mem_b16s1(cur_list_aux_b32s1() + 5, 0);
-        set_mem_b16s0(cur_list_aux_b32s1() + 5, 0);
-        set_mem_b32s1(cur_list_head(), TEX_NULL);
-
-        set_cur_list_tail(cur_list_head());
+        let aux = match crate::state::with_state_mut(|st| start_fraction_noad(&mut st.mem)) {
+            Ok(aux) => aux,
+            Err(abort) => node_recycle_abort(abort),
+        };
 
         if c >= DELIMITED_CODE {
-            scan_delimiter(cur_list_aux_b32s1() + 4, false);
-            scan_delimiter(cur_list_aux_b32s1() + 5, false);
+            scan_delimiter(aux + 4, false);
+            scan_delimiter(aux + 5, false);
         }
 
-        match c % DELIMITED_CODE {
-            ABOVE_CODE => {
-                crate::scan::scan_dimen(false, false, false);
-                set_mem_b32s1(cur_list_aux_b32s1() + 1, cur_val());
-            }
-            OVER_CODE => set_mem_b32s1(cur_list_aux_b32s1() + 1, DEFAULT_CODE),
-            ATOP_CODE => set_mem_b32s1(cur_list_aux_b32s1() + 1, 0),
-            _ => {}
-        }
+        let rule_thickness = if c % DELIMITED_CODE == ABOVE_CODE {
+            crate::scan::scan_dimen(false, false, false);
+            cur_val()
+        } else {
+            0
+        };
+        crate::state::with_state_mut(|st| finish_fraction_rule(&mut st.mem, c, rule_thickness));
     }
 }
 
+fn append_accent_noad(mem: &mut MemState) -> Result<i32, NodeRecycleAbort> {
+    let accent = get_node(mem, ACCENT_NOAD_SIZE);
+    if accent == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(cur_list_tail(), accent);
+    set_cur_list_tail(mem.b32s1(cur_list_tail()));
+    let tail = cur_list_tail();
+    mem.set_b16s1(tail, ACCENT_NOAD);
+    mem.set_b16s0(tail, NORMAL);
+    set_empty_math_field(mem, tail + 1);
+    set_empty_math_field(mem, tail + 3);
+    set_empty_math_field(mem, tail + 2);
+    mem.set_b32s1(tail + 4, MATH_CHAR);
+    Ok(tail)
+}
+
+fn finish_accent_math_field(mem: &mut MemState, eqtb: &EqtbState, tail: i32, value: i32) {
+    mem.set_b16s0(tail + 4, (value % 65536) as u16);
+    let intpar_cur_fam = eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM);
+    if math_class_field(value) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam) {
+        mem.set_b16s1(tail + 4, intpar_cur_fam as u16);
+    } else {
+        mem.set_b16s1(tail + 4, math_fam_field(value) as u16);
+    }
+    mem.set_b16s1(
+        tail + 4,
+        mem.b16s1(tail + 4) + (math_char_field(value) / 65536) as u16 * 256,
+    );
+}
+
+fn set_accent_kind(mem: &mut MemState, tail: i32, kind: u16) {
+    mem.set_b16s0(tail, kind);
+}
+
 /// translated from xetex-math.c:703 (math_left_right)
-pub unsafe fn math_left_right() {
+fn append_left_right_noad(mem: &mut MemState, node_type: u16) -> Result<i32, NodeRecycleAbort> {
+    let p = new_noad(mem);
+    if p == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b16s1(p, node_type);
+    Ok(p)
+}
+
+fn mark_middle_noad(mem: &mut MemState, p: i32) {
+    mem.set_b16s1(p, RIGHT_NOAD);
+    mem.set_b16s0(p, 1);
+}
+
+fn finish_left_right_group(mem: &mut MemState, q: i32, p: i32) {
+    mem.set_b32s1(cur_list_head(), q);
+    set_cur_list_tail(p);
+    set_cur_list_e_tex_aux(p);
+}
+
+fn append_inner_noad_for_right(mem: &mut MemState, q: i32) -> Result<(), NodeRecycleAbort> {
+    let inner = new_noad(mem);
+    if inner == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(cur_list_tail(), inner);
+    set_cur_list_tail(mem.b32s1(cur_list_tail()));
+    let tail = cur_list_tail();
+    mem.set_b16s1(tail, INNER_NOAD);
+    mem.set_b32s1(tail + 1, SUB_MLIST);
+    mem.set_b32s0(tail + 1, q);
+    Ok(())
+}
+
+pub unsafe fn math_left_right_global() {
     let t = cur_chr() as u16;
     if t != LEFT_NOAD && cur_group() != MATH_LEFT_GROUP {
         if cur_group() == MATH_SHIFT_GROUP {
@@ -3551,12 +3635,13 @@ pub unsafe fn math_left_right() {
             crate::scan::off_save();
         }
     } else {
-        let p = new_noad_global();
-        set_mem_b16s1(p, t);
+        let p = match crate::state::with_state_mut(|st| append_left_right_noad(&mut st.mem, t)) {
+            Ok(p) => p,
+            Err(abort) => node_recycle_abort(abort),
+        };
         scan_delimiter(p + 1, false);
         if t == 1 {
-            set_mem_b16s1(p, RIGHT_NOAD);
-            set_mem_b16s0(p, 1);
+            crate::state::with_state_mut(|st| mark_middle_noad(&mut st.mem, p));
         }
         let q = if t == LEFT_NOAD {
             p
@@ -3567,15 +3652,13 @@ pub unsafe fn math_left_right() {
         };
         if t != RIGHT_NOAD {
             crate::scan::push_math(MATH_LEFT_GROUP);
-            set_mem_b32s1(cur_list_head(), q);
-            set_cur_list_tail(p);
-            set_cur_list_e_tex_aux(p);
+            crate::state::with_state_mut(|st| finish_left_right_group(&mut st.mem, q, p));
         } else {
-            set_mem_b32s1(cur_list_tail(), new_noad_global());
-            set_cur_list_tail(mem_b32s1(cur_list_tail()));
-            set_mem_b16s1(cur_list_tail(), INNER_NOAD);
-            set_mem_b32s1(cur_list_tail() + 1, SUB_MLIST);
-            set_mem_b32s0(cur_list_tail() + 1, q);
+            if let Err(abort) =
+                crate::state::with_state_mut(|st| append_inner_noad_for_right(&mut st.mem, q))
+            {
+                node_recycle_abort(abort);
+            }
         }
     }
 }
@@ -3603,7 +3686,7 @@ fn set_family_bits(x: i32) -> i32 {
 }
 
 /// translated from xetex-math.c:355 (math_ac)
-pub unsafe fn math_ac() {
+pub unsafe fn math_ac_global() {
     if cur_cmd() == ACCENT {
         crate::output::error_here_with_diagnostic(c"Please use ".as_ptr());
         crate::output::print_esc_cstr(c"mathaccent".as_ptr());
@@ -3621,23 +3704,21 @@ pub unsafe fn math_ac() {
         crate::errors::error();
     }
 
-    set_mem_b32s1(cur_list_tail(), get_node_global(ACCENT_NOAD_SIZE));
-    set_cur_list_tail(mem_b32s1(cur_list_tail()));
-    set_mem_b16s1(cur_list_tail(), ACCENT_NOAD);
-    set_mem_b16s0(cur_list_tail(), NORMAL);
-    set_empty_math_field_global(cur_list_tail() + 1);
-    set_empty_math_field_global(cur_list_tail() + 3);
-    set_empty_math_field_global(cur_list_tail() + 2);
-    set_mem_b32s1(cur_list_tail() + 4, MATH_CHAR);
+    let tail = match crate::state::with_state_mut(|st| append_accent_noad(&mut st.mem)) {
+        Ok(tail) => tail,
+        Err(abort) => node_recycle_abort(abort),
+    };
 
     if cur_chr() == 1 {
         if crate::scan::scan_keyword(c"fixed".as_ptr()) {
-            set_mem_b16s0(cur_list_tail(), FIXED_ACC);
+            crate::state::with_state_mut(|st| set_accent_kind(&mut st.mem, tail, FIXED_ACC));
         } else if crate::scan::scan_keyword(c"bottom".as_ptr()) {
             if crate::scan::scan_keyword(c"fixed".as_ptr()) {
-                set_mem_b16s0(cur_list_tail(), BOTTOM_ACC + 1);
+                crate::state::with_state_mut(|st| {
+                    set_accent_kind(&mut st.mem, tail, BOTTOM_ACC + 1)
+                });
             } else {
-                set_mem_b16s0(cur_list_tail(), BOTTOM_ACC);
+                crate::state::with_state_mut(|st| set_accent_kind(&mut st.mem, tail, BOTTOM_ACC));
             }
         }
         crate::scan::scan_math_class_int();
@@ -3655,18 +3736,11 @@ pub unsafe fn math_ac() {
         );
     }
 
-    set_mem_b16s0(cur_list_tail() + 4, (cur_val() % 65536) as u16);
-    let intpar_cur_fam = eqtb_b32s1(INT_BASE + INT_PAR_CUR_FAM);
-    if math_class_field(cur_val()) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam) {
-        set_mem_b16s1(cur_list_tail() + 4, intpar_cur_fam as u16);
-    } else {
-        set_mem_b16s1(cur_list_tail() + 4, math_fam_field(cur_val()) as u16);
-    }
-    set_mem_b16s1(
-        cur_list_tail() + 4,
-        mem_b16s1(cur_list_tail() + 4) + (math_char_field(cur_val()) / 65536) as u16 * 256,
-    );
-    crate::scan::scan_math(cur_list_tail() + 1);
+    let value = cur_val();
+    crate::state::with_state_mut(|st| {
+        finish_accent_math_field(&mut st.mem, &st.eqtb, tail, value);
+    });
+    crate::scan::scan_math(tail + 1);
 }
 
 /// translated from xetex-math.c:786 (resume_after_display)
@@ -4667,8 +4741,11 @@ unsafe fn build_ext_delimiter_box_global(f: i32, q: crate::mem_types::B16x4, v: 
         let qq = st
             .fonts
             .font_info_b16(st.fonts.char_base_entry(f) + effective_c);
-        let box_width = st.fonts.font_info_b32s1(st.fonts.width_base_entry(f) + qq.s3 as i32)
-            + st.fonts.font_info_b32s1(st.fonts.italic_base_entry(f) + qq.s1 as i32 / 4);
+        let box_width = st
+            .fonts
+            .font_info_b32s1(st.fonts.width_base_entry(f) + qq.s3 as i32)
+            + st.fonts
+                .font_info_b32s1(st.fonts.italic_base_entry(f) + qq.s1 as i32 / 4);
         st.mem.set_b32s1(b + 1, box_width);
         let mut w = 0;
         if r.s1 != 0 {

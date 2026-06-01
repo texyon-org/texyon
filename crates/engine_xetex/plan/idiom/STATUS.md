@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 101, **Phase-C execution**, one larger math-command slice: threaded `math_limit_switch`, `math_radical`, `append_choices`, `build_choices`, and `sub_sup` into direct `MemState` / `SaveStackState` borrow islands with scanner/error calls kept outside live borrows. Added `SaveStackState::b32s1` / `set_b32s1`, repointed the old `globals::save_stack_b32s1` bridge to that method, and deleted the now-dead `new_choice_global` wrapper. External live callers in `scan.rs` now use `_global` wrappers; stale C prototype hits remain only in `xetex-xetexd.h`. No state fields moved, no newtype debt. Metrics: `#[no_mangle]` **328** unchanged, raw extern statics **38** unchanged, raw `unsafe {}` **174** unchanged, `unsafe fn` **656→655** (dead `new_choice_global` removed), warnings **51**. Dashboard **29/2/7/4**. — prior session 100 extracted `build_ext_delimiter_box_global` from `var_delimiter_global` (`math.rs`) and consolidated the null-delimiter branch; dashboard 29/2/7/4. — prior session 99 threaded `flush_math` + `fin_mlist`; dashboard 29/2/7/4.)
+Last updated: 2026-06-01 (last session = session 102, **Phase-C execution**, one adjacent math-command slice: threaded `math_fraction`, `math_ac`, and `math_left_right` allocation/finalization islands into direct `MemState`/`EqtbState` borrows while keeping diagnostics, keyword scans, delimiter scans, `scan_dimen`, `scan_math`, `fin_mlist_global`, `unsave`, and `push_math` outside live borrows. Deleted the now-dead `set_empty_math_field_global` bridge. External live callers in `scan.rs` now use `_global` wrappers; stale C prototype hits remain only in `xetex-xetexd.h`. No state fields moved, no newtype debt. Metrics: `#[no_mangle]` **328** unchanged, raw extern statics **38** unchanged, raw `unsafe {}` **174** unchanged, `unsafe fn` **655** unchanged, warnings **51**. Dashboard **29/2/7/4**. — prior session 101 threaded `math_limit_switch`, `math_radical`, `append_choices`, `build_choices`, and `sub_sup`, deleted `new_choice_global`, dashboard 29/2/7/4. — prior session 100 extracted `build_ext_delimiter_box_global`; dashboard 29/2/7/4.)
 
 ## How to read this file
 
@@ -1188,6 +1188,17 @@ the snippets in `00-overview.md` / the workstream plans.
     of `math_fraction`, or a very small `math_left_right` allocation island.
     Keep the delimiter scan / keyword scan / fraction error paths outside live
     borrows, and avoid taking `scan.rs` proper or any high-count orchestrator.
+
+    **Session 102 update:** `math_fraction_global`, `math_ac_global`, and
+    `math_left_right_global` now split their noad allocation/finalization work
+    into short direct `MemState`/`EqtbState` borrow islands. Delimiter scans,
+    keyword scans, `scan_dimen`, `scan_math`, `fin_mlist_global`, `unsave`,
+    `push_math`, and diagnostics stay outside live borrows. Deleted the dead
+    `set_empty_math_field_global` bridge. The remaining nearby math-command
+    helpers are less uniformly small: good next targets are local write islands
+    inside `math_fraction`/`math_left_right` only if a follow-up simplification
+    is obvious, or move to a pagebuilder/linebreak/shipout leaf. Keep
+    scanner-heavy `scan.rs` and high-count orchestrators deferred.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

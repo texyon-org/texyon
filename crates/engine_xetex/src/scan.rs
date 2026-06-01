@@ -68,9 +68,9 @@ use crate::math::build_choices_global;
 use crate::math::fin_mlist_global;
 use crate::math::flush_math_global;
 use crate::math::init_math;
-use crate::math::math_ac;
-use crate::math::math_fraction;
-use crate::math::math_left_right;
+use crate::math::math_ac_global;
+use crate::math::math_fraction_global;
+use crate::math::math_left_right_global;
 use crate::math::math_limit_switch_global;
 use crate::math::math_radical_global;
 use crate::math::resume_after_display;
@@ -16945,7 +16945,7 @@ pub unsafe extern "C" fn main_control_math_cases() {
 
         (MMODE_MC, LIMIT_SWITCH_MC) => math_limit_switch_global(),
         (MMODE_MC, RADICAL_MC) => math_radical_global(),
-        (MMODE_MC, ACCENT_MC) | (MMODE_MC, MATH_ACCENT_MC) => math_ac(),
+        (MMODE_MC, ACCENT_MC) | (MMODE_MC, MATH_ACCENT_MC) => math_ac_global(),
 
         (MMODE_MC, VCENTER_MC) => {
             scan_spec(VCENTER_GROUP_MC, false);
@@ -16977,8 +16977,8 @@ pub unsafe extern "C" fn main_control_math_cases() {
 
         (MMODE_MC, MATH_CHOICE_MC) => append_choices_global(),
         (MMODE_MC, SUB_MARK_MC) | (MMODE_MC, SUP_MARK_MC) => sub_sup_global(),
-        (MMODE_MC, ABOVE_MC) => math_fraction(),
-        (MMODE_MC, LEFT_RIGHT_MC) => math_left_right(),
+        (MMODE_MC, ABOVE_MC) => math_fraction_global(),
+        (MMODE_MC, LEFT_RIGHT_MC) => math_left_right_global(),
 
         (MMODE_MC, MATH_SHIFT_MC) => {
             if cur_group() == MATH_SHIFT_GROUP_MC {
