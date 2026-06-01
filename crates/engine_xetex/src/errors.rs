@@ -16,7 +16,7 @@ use crate::packaging::flush_node_list_global;
 // Interaction-mode constants (xetex_format.h:644–647).
 
 // History constants (xetex-xetexd.h:355–358).
-use crate::ini::tt_cleanup;
+use crate::engine::tt_cleanup;
 use crate::io::close_files_and_terminate;
 use crate::io::open_log_file;
 use crate::output::capture_to_diagnostic;

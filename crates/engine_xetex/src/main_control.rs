@@ -15,6 +15,7 @@ use crate::consts::{
     MAX_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_ONLY,
     SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
+use crate::engine::intpar;
 use crate::errors::{
     box_error, cs_error, error, extra_right_brace, int_error, privileged, report_illegal_case,
     you_cant,
@@ -38,7 +39,6 @@ use crate::globals::{
     set_str_ptr, str_ptr, str_start,
 };
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
-use crate::ini::intpar;
 use crate::input::begin_token_list;
 use crate::io::{open_log_file, scan_file_name};
 use crate::linebreak::{do_locale_linebreaks, line_break};

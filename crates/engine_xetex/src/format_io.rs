@@ -5,6 +5,7 @@ use crate::consts::{
     ACTIVE_BASE, BATCH_MODE, CS_TOKEN_FLAG, EQTB_SIZE, ERROR_STOP_MODE, MAX_HALFWORD, MIN_HALFWORD,
     SCROLL_MODE, SELECTOR_TERM_AND_LOG, TOO_BIG_CHAR,
 };
+use crate::engine::{intpar, sort_avail, TRE_MAX_STRINGS, TRE_POOL_SIZE};
 use crate::globals::{
     avail, cs_count, cur_input, dyn_used, eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, eqtb_word, fmem_ptr,
     font_area_entry, font_dsize_entry, font_mapping_ptr, font_max, font_mem_size, font_name_entry,
@@ -24,7 +25,6 @@ use crate::globals::{
     write_loc,
 };
 use crate::hyphenation::{init_trie, BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
-use crate::ini::{intpar, sort_avail, TRE_MAX_STRINGS, TRE_POOL_SIZE};
 
 extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
