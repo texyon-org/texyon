@@ -8,6 +8,121 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 125 — 2026-06-02 — workstream 02 slice 9b: the main-control carve (4 sub-commits) + the §10 plan
+
+**Type:** execution (workstream 02, module decomposition — **the main_control carve**).
+First recon'd + wrote the `02-modules.md` §10 plan, then **executed all four
+sub-commits**. Dashboard **29/2/7/4** on each; warnings **50 → 50** throughout.
+`scan.rs` 9,690 → **5,011** LOC (now pure scanner core); `main_control.rs`
+1,185 → **6,821**; `ini.rs` 4,789 → **3,804** (`prefixed_command` left).
+
+### What executed (4 commits)
+
+* **9b-i** — box/mode verbs (19 fns, scan.rs −1,297). Repointed qualified
+  `crate::scan::<fn>` callers in math/linebreak/ini/ext/pagebuilder (the recon's
+  "zero external callers" was **wrong** — the first zsh grep loop silently failed
+  on a glob error; these verbs *do* have external callers via qualified paths).
+* **9b-ii** — assign/font verbs (20 fns). **§7 trap fired** (caught by the
+  warning-count check, 50→99, not by errors): `off_save`'s group-match
+  (SEMI_SIMPLE_GROUP/MATH_SHIFT_GROUP/MATH_LEFT_GROUP) and `do_register_command`'s
+  value-match (DIMEN_VAL/MU_VAL) silently rebound until those 5 consts were
+  duplicated in. ~40 module-private consts duplicated.
+* **9b-iii** — the dispatch loop (14 fns, ~2,325 lines: the 11 `main_control_*`
+  helpers + `lig_inner_loop` + `do_lookahead` + `main_control`). Repointed the
+  `ini.rs:3642` entry call. Made `back_input`/`set_class_fn`/`set_family_fn`
+  pub(crate). No trap.
+* **9b-iv** — `prefixed_command` from ini.rs (~900 lines). Its 87 i32-typed consts
+  were **inlined as function-local consts** inside the moved fn, not relocated
+  module-level: 22 collide by name with main_control consts (13 type-incompatible,
+  e.g. `SPACER` i32 vs u8) and 9 are still used by other ini.rs code — so the §10
+  "move the block wholesale" assumption was wrong; function-local scope is the
+  clean faithful fix. `intpar` stays in ini.rs (date code uses it; made
+  pub(crate)); `set_cp_code`'s FFI extern moved with the fn. Removed 81 dead block
+  consts + the dead extern from ini.rs.
+
+### Lessons for the handoff
+
+* The recon's "zero external callers" claim came from a **silently-failed zsh grep
+  loop** (`--include=*.rs` glob error printed once, then the corrected loop's
+  output was empty for an unrelated reason). **Verify recon greps actually ran** —
+  a clean `cargo check` after the move is the real authority, not pre-move greps.
+* The §7 trap is real and silent — the **warning-count check (baseline 50) caught
+  it**, exactly as the recipe says. Watch `non_snake_case` "variable X should have
+  snake case" + `unreachable_patterns` on all-caps match arms.
+* Large const blocks that **collide by type** with the destination's consts →
+  inline them function-local instead of relocating module-level.
+
+### Next session — slice 10 (small) + ini.rs drains
+
+`scan.rs` is now 5,011 LOC of **pure scanner core** (scan_*/get_*/get_next/
+check_outer_validity/scan_something_internal/token builders). Slice 10: optionally
+rename `scan.rs` → `scanner.rs` and carve `token.rs` (the token/command consts) per
+§4 — small. Then `ini.rs` (3,804 LOC) drains independently into
+`engine.rs`/`format_io.rs`/`hyphenation.rs` (§5). Then Phase-C threading (ws01)
+resumes inside the now-navigable modules per `01b`. `main_control.rs` at 6,821 LOC
+is a coherent subsystem (not a grab-bag) — internal sub-splitting is later cosmetic.
+
+---
+
+### Original §10 plan (written at the start of this session, pre-execution)
+
+Wrote `02-modules.md` §10 —
+the detailed, recon-backed execution plan for slice 9b, the biggest remaining carve.
+Next session executes it; this session de-risks it so it can be done cold.
+
+### What slice 9b is
+
+Drain the **entire main-control dispatch + verb family out of `scan.rs`** (53 fns,
+~4,806 fn-lines) **plus `prefixed_command` out of `ini.rs`** (~900 lines) into the
+existing `main_control.rs` (1,185 LOC, seeded session 124 with the alignment family).
+After it, `scan.rs` (9,690 LOC now) drops to ≈4,900 LOC of **pure scanner core** —
+making slice 10 a near-trivial rename to `scanner.rs` + carving `token.rs` consts.
+
+### The key recon findings (de-risks)
+
+1. **Zero external callers.** Greppd every fn in the verb+dispatch family outside
+   `scan.rs`/`main_control.rs`/`ini.rs` → **nothing**. Unlike slice 7 (packaging,
+   8-module repoint), this carve is fully contained: `scan.rs`↔`main_control.rs`
+   mutual `use` (Rust allows the cycle) plus exactly **two** `ini.rs` edges:
+   - `ini.rs:3642` `crate::scan::main_control()` → `crate::main_control::main_control()`.
+   - `scan.rs:51` `use crate::ini::prefixed_command;` (sites 5534, 6318) →
+     `use crate::main_control::prefixed_command;` after 9b-iv.
+2. **`prefixed_command` is clean to move.** It is `ini.rs:3890–4789` (the last fn in
+   the file) and is **immediately preceded by its own dedicated 87-const private
+   block (`ini.rs:3790–3889`)** — that block moves wholesale with it, which is the
+   §7 trap-dodge done for free. Its callees are all already importable: `eq_define`/
+   `geq_define`/`eq_word_define`/`geq_word_define` (`save.rs`), `def_ref`
+   (`globals.rs`), `find_sa_element_global`/`sa_def_global`/`gsa_def_global`, and the
+   `scan_*`/`get_*` family. After it leaves, `ini.rs` is ~3,890 LOC.
+3. **Sub-commit split (4 commits = one big session)**, sizes computed from spans:
+   - **9b-i** box/mode verbs — 19 fns, ~1,384 fn-lines.
+   - **9b-ii** assign/font verbs — 20 fns, ~1,091 fn-lines.
+   - **9b-iii** dispatch loop — 14 fns, ~2,331 fn-lines (the 11 `main_control_*`
+     helpers + `lig_inner_loop` + `do_lookahead` + `main_control`; the giant match).
+   - **9b-iv** `prefixed_command` from `ini.rs` — 1 fn + its 87-const block.
+   (Full fn lists in `02-modules.md` §10.2.)
+4. **Const entanglement is the real work** (per §7 step 4–5): the verbs/dispatch
+   `match` on `scan.rs`-module-private command/token codes not centralized in
+   `consts.rs`; duplicate each into `main_control.rs` with exact type+value. Budget
+   ~50+ dups. **The §7 warning-count check (baseline 50) is mandatory** — the
+   pattern-const rebind trap is silent (shows only as `unreachable_patterns`/
+   `non_snake_case`/`unused_variables` rises, no error), with the slice-8 E0308
+   typed-cousin (`u8`-vs-`i32`) as the other failure mode.
+
+### Post-9b & sequencing
+
+`main_control.rs` ends ≈6,900 LOC — over the §6 "no >~3k-line module" aspiration,
+but a single coherent subsystem (not a grab-bag), acceptable as transitional like
+`packaging.rs`; internal sub-splitting is a later cosmetic slice. **Slice 10:**
+rename `scan.rs`→`scanner.rs` + carve `token.rs` consts (small). `ini.rs` drains
+independently (`engine.rs`/`format_io.rs`/`hyphenation.rs`, §5). Then Phase-C
+threading (ws01) resumes inside the navigable modules per `01b`.
+
+**Handoff:** execute `02-modules.md` §10 next session — `move_fns.py` per sub-commit
+(for 9b-iv `--src src/ini.rs`; hand-move the const block), 29/2/7/4 + warnings→50
+per commit, prefix `engine_xetex: ws02 slice 9b-… —`.
+
+
 ## Idiom session 124 — 2026-06-01 — workstream 02 slices 7+8+9a: the packaging, expander, and alignment carves
 
 **Type:** execution (workstream 02, module decomposition — **core carve**, §8

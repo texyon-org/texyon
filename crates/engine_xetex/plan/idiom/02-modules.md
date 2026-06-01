@@ -256,3 +256,87 @@ Open items for the first execution session to confirm (not blockers): exact
 line spans (the §4 spans are guides), and whether hyphenation-trie code lands in
 a new `hyphenation.rs` or folds into `linebreak.rs` (recommend the former; it is
 a coherent ~900-LOC unit and keeps `linebreak.rs` at its C-file scope).
+
+---
+
+## 10. Slice 9b — the main_control dispatch + verbs + `prefixed_command` carve (recon'd session 125)
+
+**This is the big remaining carve and the next execution session.** `main_control.rs`
+already exists (seeded session 124 with the 14 `\halign` alignment fns, 1,185 LOC).
+Slice 9b drains the **entire main-control dispatch + verb family out of `scan.rs`**
+(~4,806 fn-lines, 53 fns) **plus `prefixed_command` out of `ini.rs`** (~900 lines)
+into `main_control.rs`. After 9b, `scan.rs` (9,690 LOC now) drops to ≈4,900 LOC of
+**pure scanner core** — at which point slice 10 is a near-trivial rename to
+`scanner.rs` + carving `token.rs` consts.
+
+### 10.1 The single biggest de-risk: zero external callers
+
+A grep of every fn in the verb+dispatch family (outside `scan.rs`/`main_control.rs`/
+`ini.rs`) returns **nothing**. Unlike slice 7 (packaging, "biggest external-caller
+repoint yet" across 8 modules), this carve is **fully contained**: the only repoints
+are `scan.rs`↔`main_control.rs` (mutual `use`; Rust allows the cycle) plus **two**
+ini.rs edges (below). No math/shipout/linebreak/pagebuilder/save churn at all.
+
+The two `ini.rs` edges:
+- `ini.rs:3642` `crate::scan::main_control()` → `crate::main_control::main_control()`.
+- `scan.rs:51` `use crate::ini::prefixed_command;` (called at scan.rs:5534, 6318) →
+  becomes `use crate::main_control::prefixed_command;` once 9b-iv lands.
+
+### 10.2 Sub-commit split (4 commits — one "big session")
+
+Mirror the packaging 7a/7b precedent; each commit is independently green (29/2/7/4).
+
+| Commit | Group | fns | ~fn-lines | Notes |
+|---|---|---:|---:|---|
+| **9b-i** | box/mode verbs | 19 | ~1,384 | `push_math`, `end_graf`, `append_penalty`, `normal_paragraph`, `its_all_over`, `indent_in_hmode`, `head_for_vmode`, `begin_insert_or_adjust`, `do_endv`, `app_space`, `scan_box`, `package`, `new_graf`, `box_end`, `begin_box`, `handle_right_brace`, `unpackage`, `delete_last`, `new_character` |
+| **9b-ii** | assign/font verbs | 20 | ~1,091 | `append_glue`, `append_kern`, `make_mark`, `new_interaction`, `alter_aux`, `alter_prev_graf`, `alter_page_so_far`, `alter_integer`, `alter_box_dimen`, `trap_zero_glue`, `fix_language`, `off_save`, `append_discretionary`, `shift_case`, `build_discretionary`, `append_italic_correction`, `make_accent`, `new_font`, `do_register_command`, `do_assignments` |
+| **9b-iii** | dispatch loop | 14 | ~2,331 | the 11 `main_control_*` helpers + `lig_inner_loop` + `do_lookahead` + `main_control` itself. The giant match. Repoint the `ini.rs:3642` entry call here. |
+| **9b-iv** | `prefixed_command` (from `ini.rs`) | 1 | ~900 | The assignment-verb monster. **Moves with its dedicated 87-const private block** (`ini.rs:3790–3889`, immediately preceding it) wholesale — that block is the §7 trap-dodge done for you. Repoint `scan.rs:51` import. |
+
+Splitting 9b-iii further is optional if the dispatch commit won't go green in one
+step, but it is one coherent match — prefer to keep it whole.
+
+### 10.3 Const + import entanglement (the real work, per §7 step 4–5)
+
+Expect this to be the most const-entangled carve yet (the handoff budgeted "~50+
+duplicated consts"). The verbs/dispatch `match` on command/token codes that are
+**`scan.rs`-module-private** (not centralized in `consts.rs`). Per §7: grep each
+unresolved symbol's `const` definition and **duplicate it into `main_control.rs`
+with its exact type and value**. The `9b-iv` block is the easy one — its 87 consts
+relocate as a unit.
+
+**Run the §7 warning-count check after every `cargo check`.** The pattern-const
+trap (a `match` arm silently rebinding instead of matching a missing const) shows
+up *only* as a rise in `unreachable_patterns`/`non_snake_case`/`unused_variables`,
+not as an error. Baseline is **50 warnings** — it must return to 50 before commit.
+Watch the typed cousin too (the slice-8 `SELECTOR_NEW_STRING` u8-vs-i32 E0308):
+duplicate with the *original referent's* type.
+
+Helpers `prefixed_command` calls are all already importable — no duplication needed:
+`eq_define`/`geq_define`/`eq_word_define`/`geq_word_define` (`save.rs`), `def_ref`
+(`globals.rs`), `find_sa_element_global`/`sa_def_global`/`gsa_def_global`, and the
+`scan_*`/`get_*` family (`scan.rs`).
+
+### 10.4 Tooling & validation
+
+- Use `plan/idiom/move_fns.py --src … --dst src/main_control.rs --fns … [--apply]`
+  (dry-run first). For 9b-iv the `--src` is `src/ini.rs`; move the 87-const block
+  by hand (it is not a `fn`) or with a separate paste, then the fn with the script.
+- Full dashboard (`cargo test -p tectonic --test tex-outputs --test trip
+  --test engine_rust --test latex_goldens` → **29/2/7/4**) per commit; warnings → 50.
+- Prefix commits `engine_xetex: ws02 slice 9b-… —`.
+
+### 10.5 Post-9b state & sequencing note
+
+After 9b: `scan.rs` ≈ 4,900 LOC (scanner only); `main_control.rs` ≈ 6,900 LOC.
+That exceeds the "no >~3k-line module" aspiration of `00-overview.md` §6, but
+`main_control.rs` is then a **single coherent subsystem** (xetex0.c's main-control
+part), not a grab-bag — acceptable as the transitional home, same status as
+`packaging.rs`. Internal sub-splitting (box-building / register / dispatch
+sub-modules) is a later cosmetic slice, not a blocker.
+
+**Slice 10 (after 9b):** rename `scan.rs` → `scanner.rs` (or leave; it is now the
+scanner) and carve `token.rs` (the token/command consts) per §4 — small. `ini.rs`
+(now ~3,890 LOC after `prefixed_command` leaves) drains independently into
+`engine.rs`/`format_io.rs`/`hyphenation.rs` per §5 whenever convenient. Then
+Phase-C threading (workstream 01) resumes inside the navigable modules per `01b`.
