@@ -32,7 +32,6 @@ use crate::ext::apply_mapping;
 use crate::ext::apply_tfm_font_mapping;
 use crate::ext::check_for_tfm_font_mapping;
 use crate::ext::find_native_font;
-use crate::ext::get_encoding_mode_and_info;
 use crate::ext::get_font_char_range;
 use crate::ext::get_glyph_bounds;
 use crate::ext::get_native_char_height_depth;
@@ -49,7 +48,6 @@ use crate::ext::linebreak_start;
 use crate::ext::load_tfm_font_mapping;
 use crate::ext::map_char_to_glyph;
 use crate::ext::map_glyph_to_index;
-use crate::ext::measure_native_glyph;
 use crate::ext::measure_native_node;
 use crate::ext::ot_font_get;
 use crate::ext::ot_font_get_1;
@@ -86,9 +84,7 @@ use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
 use crate::pagebuilder::build_page;
 use crate::pic::count_pdf_file_pages;
-use crate::pic::load_picture;
 use crate::shipout::new_edge_global;
-use crate::shipout::out_what;
 use crate::shipout::ship_out;
 use crate::state::{FontState, LinebreakState, MemState};
 
@@ -115,6 +111,7 @@ use crate::globals::{
     warning_index,
 };
 use crate::mem::new_rule_global;
+use crate::ext::{append_src_special, do_extension, insert_src_special};
 use crate::io::{
     open_log_file, pack_file_name, scan_and_pack_name, scan_file_name, start_input,
 };
@@ -4850,33 +4847,6 @@ pub unsafe extern "C" fn head_for_vmode() {
 }
 
 // ---------------------------------------------------------------------------
-// append_src_special
-// ---------------------------------------------------------------------------
-
-const SPECIAL_NODE: i16 = 3; // xetex_format.h:460
-const WRITE_NODE_SIZE: i16 = 2; // xetex-constants.h:112
-
-// translated from xetex-xetex0.c:11376 (append_src_special)
-#[no_mangle]
-pub unsafe extern "C" fn append_src_special() {
-    let fname = crate::globals::source_filename_stack(crate::globals::in_open());
-    if fname > 0 && crate::texmfmp::is_new_source(fname, crate::globals::line()) {
-        crate::mem::new_whatsit_global(SPECIAL_NODE, WRITE_NODE_SIZE);
-        set_mem_b32s0(crate::globals::cur_list_tail() + 1, 0);
-        let d = crate::mem::get_avail_global();
-        set_def_ref(d);
-        set_mem_b32s0(d, crate::mem::TEX_NULL);
-        str_toks(crate::texmfmp::make_src_special(
-            fname,
-            crate::globals::line(),
-        ));
-        set_mem_b32s1(d, mem_b32s1(TEMP_HEAD));
-        set_mem_b32s1(crate::globals::cur_list_tail() + 1, d);
-        crate::texmfmp::remember_source_info(fname, crate::globals::line());
-    }
-}
-
-// ---------------------------------------------------------------------------
 // tokens_to_string
 // ---------------------------------------------------------------------------
 
@@ -4943,27 +4913,6 @@ pub unsafe extern "C" fn compare_strings() {
     crate::string_pool::flush_str(s1);
     set_cur_val(result);
     set_cur_val_level(INT_VAL as u8);
-}
-
-// ---------------------------------------------------------------------------
-// new_write_whatsit
-// ---------------------------------------------------------------------------
-
-// translated from xetex-xetex0.c:11045 (new_write_whatsit)
-#[no_mangle]
-pub unsafe extern "C" fn new_write_whatsit(w: i16) {
-    crate::mem::new_whatsit_global(cur_chr() as i16, w);
-    if w != WRITE_NODE_SIZE {
-        scan_four_bit_int();
-    } else {
-        scan_int();
-        if cur_val() < 0 {
-            set_cur_val(17);
-        } else if cur_val() > 15 && cur_val() != 18 {
-            set_cur_val(16);
-        }
-    }
-    set_mem_b32s0(crate::globals::cur_list_tail() + 1, cur_val());
 }
 
 // ---------------------------------------------------------------------------
@@ -7055,64 +7004,6 @@ pub unsafe extern "C" fn main_control_alignment_cases() {
         }
         _ => {}
     }
-}
-
-// translated from xetex-xetex0.c:9978 (insert_src_special)
-#[no_mangle]
-pub unsafe extern "C" fn insert_src_special() {
-    use crate::globals::{
-        in_open, line, mem_b32s1, set_mem_b32s0, set_mem_b32s1, source_filename_stack,
-    };
-    const FROZEN_SPECIAL: i32 = 2_243_226 + 10; // FROZEN_CONTROL_SEQUENCE + 10
-    const RIGHT_BRACE_TOKEN: i32 = 0x400000; // xetex-constants.h:351
-
-    let sfn = source_filename_stack(in_open());
-    if sfn > 0 && crate::texmfmp::is_new_source(sfn, line()) {
-        let toklist = crate::mem::get_avail_global();
-        let mut p = toklist;
-        set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-        set_mem_b32s1(p, crate::mem::get_avail_global());
-        p = mem_b32s1(p);
-        set_mem_b32s0(p, LEFT_BRACE_TOKEN + b'{' as i32);
-        let q = str_toks(crate::texmfmp::make_src_special(sfn, line()));
-        set_mem_b32s1(p, mem_b32s1(TEMP_HEAD));
-        p = q;
-        set_mem_b32s1(p, crate::mem::get_avail_global());
-        p = mem_b32s1(p);
-        set_mem_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
-        begin_token_list(toklist, INSERTED);
-        crate::texmfmp::remember_source_info(sfn, line());
-    }
-}
-
-// translated from xetex-xetex0.c:9984 (tt_insert_special)
-#[no_mangle]
-pub unsafe extern "C" fn tt_insert_special(ascii_text: *const libc::c_char) {
-    const FROZEN_SPECIAL: i32 = 2_243_226 + 10; // FROZEN_CONTROL_SEQUENCE + 10
-    const RIGHT_BRACE_TOKEN: i32 = 0x400000; // xetex-constants.h:351
-
-    let start_pool = pool_ptr();
-    // Copy ASCII text into str_pool
-    let text = std::ffi::CStr::from_ptr(ascii_text).to_bytes();
-    if pool_ptr() + text.len() as i32 >= crate::globals::pool_size() {
-        crate::errors::overflow(c"string pool overflow".as_ptr(), 0);
-    }
-    for &b in text {
-        set_str_pool(pool_ptr(), b as u16);
-        set_pool_ptr(pool_ptr() + 1);
-    }
-    // Build token list: \special { <tokens> }
-    let toklist_start = crate::mem::get_avail_global();
-    set_mem_b32s0(toklist_start, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-    let q = crate::mem::get_avail_global();
-    set_mem_b32s0(q, LEFT_BRACE_TOKEN + b'{' as i32);
-    set_mem_b32s1(toklist_start, q);
-    let p = str_toks(start_pool);
-    set_mem_b32s1(q, mem_b32s1(TEMP_HEAD));
-    let q2 = crate::mem::get_avail_global();
-    set_mem_b32s0(q2, RIGHT_BRACE_TOKEN + b'}' as i32);
-    set_mem_b32s1(p, q2);
-    begin_token_list(toklist_start, INSERTED);
 }
 
 // translated from xetex-xetex0.c:9485 (scan_box)
@@ -9637,255 +9528,6 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
 /// Transitional bridge-down wrapper for legacy `do_marks` callers.
 pub fn do_marks_global(a: i16, l: i16, q: i32) -> bool {
     crate::state::with_state_mut(|st| do_marks(&mut st.mem, a, l, q))
-}
-
-// ---------------------------------------------------------------------------
-// do_extension
-// ---------------------------------------------------------------------------
-
-// xetex_format.h:457–461, 462, 465, 524–533
-const OPEN_NODE_DE: i32 = 0;
-const WRITE_NODE_DE: i32 = 1;
-const CLOSE_NODE_DE: i32 = 2;
-const SPECIAL_NODE_DE: i32 = 3;
-const LANGUAGE_NODE_DE_W: i16 = 4; // as i16 for new_whatsit_global
-const PDF_SAVE_POS_NODE_DE: i32 = 21;
-const PDF_SAVE_POS_NODE_DE_W: i16 = 21; // as i16 for new_whatsit_global
-const GLYPH_NODE_TYPE_DE_W: i16 = 42; // node type 42 for new_whatsit_global
-const IMMEDIATE_CODE_DE: i32 = 4;
-const SET_LANGUAGE_CODE_DE: i32 = 5;
-const RESET_TIMER_CODE_DE: i32 = 31;
-const SET_RANDOM_SEED_CODE_DE: i32 = 33;
-const PIC_FILE_CODE_DE: i32 = 41;
-const PDF_FILE_CODE_DE: i32 = 42;
-const GLYPH_CODE_DE: i32 = 43;
-const XETEX_INPUT_ENCODING_EXTENSION_CODE_DE: i32 = 44;
-const XETEX_DEFAULT_ENCODING_EXTENSION_CODE_DE: i32 = 45;
-const XETEX_LINEBREAK_LOCALE_EXTENSION_CODE_DE: i32 = 46;
-// xetex-constants.h:110, 112, 118, 126
-const WRITE_NODE_SIZE_DE: i16 = 2;
-const OPEN_NODE_SIZE_DE: i16 = 3;
-const GLYPH_NODE_SIZE_DE: i16 = 5;
-const SMALL_NODE_SIZE_DE: i16 = crate::consts::SMALL_NODE_SIZE as i16;
-// xetex_format.h:297, 368–370
-const EXTENSION_DE: u8 = 59;
-const VMODE_DE: i16 = 1;
-const HMODE_DE: i16 = 104;
-const MMODE_DE: i16 = 207;
-// xetex_format.h:212
-// xetex-ext.h:47–48
-const AAT_FONT_FLAG_DE: i32 = 0xFFFF;
-const OTGR_FONT_FLAG_DE: i32 = 0xFFFE;
-// xetex-constants.h:254
-const XETEX_INPUT_MODE_AUTO_DE: i32 = 0;
-// xetex_format.h:86–87, 66, 72, 75–76
-const INT_PAR_LEFT_HYPHEN_MIN_DE: i32 = 51;
-const INT_PAR_RIGHT_HYPHEN_MIN_DE: i32 = 52;
-const INT_PAR_XETEX_LINEBREAK_LOCALE_DE: i32 = 66;
-const INT_PAR_XETEX_USE_GLYPH_METRICS_DE: i32 = 72;
-const INT_PAR_XETEX_DEFAULT_INPUT_MODE_DE: i32 = 75;
-const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING_DE: i32 = 76;
-
-/// translated from xetex-xetex0.c:8024 (do_extension)
-#[no_mangle]
-pub unsafe extern "C" fn do_extension() {
-    use crate::globals::{
-        cur_area, cur_cs, cur_ext, cur_list_aux_b32s1, cur_list_mode, cur_list_tail, cur_name,
-        epochseconds, font_area_entry, in_open, input_file, microseconds, random_seed, set_cur_cs,
-        set_cur_list_aux_b32s1, set_cur_list_tail, set_epochseconds, set_microseconds,
-        set_random_seed,
-    };
-    use crate::mem::TEX_NULL;
-
-    match cur_chr() {
-        OPEN_NODE_DE => {
-            crate::scan::new_write_whatsit(OPEN_NODE_SIZE_DE);
-            scan_optional_equals();
-            crate::io::scan_file_name();
-            set_mem_b32s1(cur_list_tail() + 1, cur_name());
-            set_mem_b32s0(cur_list_tail() + 2, cur_area());
-            set_mem_b32s1(cur_list_tail() + 2, cur_ext());
-        }
-
-        WRITE_NODE_DE => {
-            let k = cur_cs();
-            crate::scan::new_write_whatsit(WRITE_NODE_SIZE_DE);
-            set_cur_cs(k);
-            scan_toks(false, false);
-            set_mem_b32s1(cur_list_tail() + 1, def_ref());
-        }
-
-        CLOSE_NODE_DE => {
-            crate::scan::new_write_whatsit(WRITE_NODE_SIZE_DE);
-            set_mem_b32s1(cur_list_tail() + 1, TEX_NULL);
-        }
-
-        SPECIAL_NODE_DE => {
-            crate::mem::new_whatsit_global(SPECIAL_NODE_DE as i16, WRITE_NODE_SIZE_DE);
-            set_mem_b32s0(cur_list_tail() + 1, TEX_NULL);
-            scan_toks(false, true);
-            set_mem_b32s1(cur_list_tail() + 1, def_ref());
-        }
-
-        IMMEDIATE_CODE_DE => {
-            get_x_token();
-            if cur_cmd() == EXTENSION_DE && cur_chr() <= CLOSE_NODE_DE {
-                let p = cur_list_tail();
-                do_extension();
-                out_what(cur_list_tail());
-                flush_node_list_global(cur_list_tail());
-                set_cur_list_tail(p);
-                set_mem_b32s1(p, TEX_NULL);
-            } else {
-                crate::input::back_input();
-            }
-        }
-
-        SET_LANGUAGE_CODE_DE => {
-            if (cur_list_mode() as i32).abs() != HMODE_DE as i32 {
-                report_illegal_case();
-            } else {
-                crate::mem::new_whatsit_global(LANGUAGE_NODE_DE_W, SMALL_NODE_SIZE_DE);
-                scan_int();
-                let lang = if cur_val() <= 0 || cur_val() > 255 {
-                    0
-                } else {
-                    cur_val()
-                };
-                set_cur_list_aux_b32s1(lang);
-                set_mem_b32s1(cur_list_tail() + 1, cur_list_aux_b32s1());
-                set_mem_b16s1(
-                    cur_list_tail() + 1,
-                    crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN_DE))
-                        as u16,
-                );
-                set_mem_b16s0(
-                    cur_list_tail() + 1,
-                    crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN_DE))
-                        as u16,
-                );
-            }
-        }
-
-        PDF_SAVE_POS_NODE_DE => {
-            crate::mem::new_whatsit_global(PDF_SAVE_POS_NODE_DE_W, SMALL_NODE_SIZE_DE);
-        }
-
-        RESET_TIMER_CODE_DE => {
-            let mut s = epochseconds();
-            let mut m = microseconds();
-            crate::texmfmp::get_seconds_and_micros(&mut s, &mut m);
-            set_epochseconds(s);
-            set_microseconds(m);
-        }
-
-        SET_RANDOM_SEED_CODE_DE => {
-            scan_int();
-            if cur_val() < 0 {
-                set_cur_val(-cur_val());
-            }
-            set_random_seed(cur_val());
-            crate::scaled_math::init_randoms(random_seed());
-        }
-
-        PIC_FILE_CODE_DE => {
-            if (cur_list_mode() as i32).abs() == MMODE_DE as i32 {
-                report_illegal_case();
-            } else {
-                load_picture(false);
-            }
-        }
-
-        PDF_FILE_CODE_DE => {
-            if (cur_list_mode() as i32).abs() == MMODE_DE as i32 {
-                report_illegal_case();
-            } else {
-                load_picture(true);
-            }
-        }
-
-        GLYPH_CODE_DE => {
-            if (cur_list_mode() as i32).abs() == VMODE_DE as i32 {
-                crate::input::back_input();
-                new_graf(true);
-            } else if (cur_list_mode() as i32).abs() == MMODE_DE as i32 {
-                report_illegal_case();
-            } else {
-                let cur_font = eqtb_b32s1(CUR_FONT_LOC);
-                let fa = font_area_entry(cur_font);
-                if fa == AAT_FONT_FLAG_DE || fa == OTGR_FONT_FLAG_DE {
-                    crate::mem::new_whatsit_global(GLYPH_NODE_TYPE_DE_W, GLYPH_NODE_SIZE_DE);
-                    scan_int();
-                    if cur_val() < 0 || cur_val() > 65535 {
-                        let errmsg = error_here_with_diagnostic(c"Bad glyph number".as_ptr());
-                        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-                        capture_to_diagnostic(std::ptr::null_mut());
-                        set_help_ptr(2);
-                        set_help_line(1, c"A glyph number must be between 0 and 65535.".as_ptr());
-                        set_help_line(0, c"I changed this one to zero.".as_ptr());
-                        int_error(cur_val());
-                        set_cur_val(0);
-                    }
-                    set_mem_b16s2(cur_list_tail() + 4, cur_font as u16);
-                    set_mem_b16s1(cur_list_tail() + 4, cur_val() as u16);
-                    // set_native_glyph_metrics(cur_list.tail, ...) expands to
-                    // measure_native_glyph(&mem[cur_list.tail], use_glyph_metrics)
-                    let use_glyph_metrics =
-                        eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_DE) > 0;
-                    let node_ptr = crate::globals::mem_node_addr(cur_list_tail());
-                    measure_native_glyph(node_ptr, use_glyph_metrics as i32);
-                } else {
-                    not_native_font_error(EXTENSION_DE as i32, GLYPH_CODE_DE, cur_font);
-                }
-            }
-        }
-
-        XETEX_INPUT_ENCODING_EXTENSION_CODE_DE => {
-            scan_and_pack_name();
-            let mut j: i32 = 0;
-            let i = get_encoding_mode_and_info(&mut j);
-            if i == XETEX_INPUT_MODE_AUTO_DE {
-                error_here_with_diagnostic(
-                    c"Encoding mode `auto' is not valid for \\XeTeXinputencoding".as_ptr(),
-                );
-                capture_to_diagnostic(std::ptr::null_mut());
-                set_help_ptr(2);
-                set_help_line(
-                    1,
-                    c"You can't use `auto' encoding here, only for \\XeTeXdefaultencoding."
-                        .as_ptr(),
-                );
-                set_help_line(
-                    0,
-                    c"I'll ignore this and leave the current encoding unchanged.".as_ptr(),
-                );
-                error();
-            } else {
-                crate::io::call_set_input_file_encoding(input_file(in_open()), i, j);
-            }
-        }
-
-        XETEX_DEFAULT_ENCODING_EXTENSION_CODE_DE => {
-            scan_and_pack_name();
-            let mut j: i32 = 0;
-            let i = get_encoding_mode_and_info(&mut j);
-            set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE_DE, i);
-            set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING_DE, j);
-        }
-
-        XETEX_LINEBREAK_LOCALE_EXTENSION_CODE_DE => {
-            crate::io::scan_file_name();
-            if crate::string_pool::length(cur_name()) == 0 {
-                set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE_DE, 0);
-            } else {
-                set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE_DE, cur_name());
-            }
-        }
-
-        _ => {
-            crate::errors::confusion(c"ext1".as_ptr());
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

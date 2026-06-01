@@ -8,6 +8,66 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 121 — 2026-06-01 — workstream 02 slice 4: relocate the extensions / `\special` group out of `scan.rs`
+
+**Type:** execution (workstream 02, module decomposition — fourth mechanical
+relocation slice). **One commit.** Dashboard **29/2/7/4**. Warnings **51 → 50**
+(a *drop*; see below — no trap).
+
+**Slice:** moved the 5 extension / `\special` whatsit functions verbatim from
+`src/scan.rs` (= xetex0.c) into `src/ext.rs` (= xetex-ext.c, their natural home):
+`append_src_special`, `new_write_whatsit`, `insert_src_special`,
+`tt_insert_special`, `do_extension`. **No bytes changed inside any function** —
+`move_fns.py` (dry-run → `--apply`), 297 fn-lines.
+
+**Const handling — relocate the whole `_DE` block, don't cherry-pick.**
+`do_extension` carries a 35-const private block (all `*_DE`/`*_DE_W`-suffixed,
+named for the function). Only ~21 surfaced as `cannot find` errors; the rest are
+used in `match` arms and would have silently rebound (the §7 trap). Rather than
+chase the error list, **relocated the entire contiguous block wholesale**
+(verified all 35 orphaned in `scan.rs` first — 0 still-referenced), which fixes
+the errored *and* the trap-prone consts in one move and keeps the warning count
+honest. Plus duplicated 5 shared consts still used in `scan.rs`
+(`LEFT_BRACE_TOKEN`/`INSERTED`/`TEMP_HEAD` stay dup'd; `SPECIAL_NODE`/
+`WRITE_NODE_SIZE` turned out orphaned in `scan.rs` after the move and were
+deleted there).
+
+**Fixup:** `ext.rs` gained 3 `consts.rs` consts (`CS_TOKEN_FLAG`/`CUR_FONT_LOC`/
+`INT_BASE`), 19 `globals` accessors, 8 `scan` fns (`flush_node_list_global`/
+`get_x_token`/`new_graf`/`scan_*`/`str_toks`), `errors`
+(`error`/`int_error`/`not_native_font_error`/`report_illegal_case`), `output`
+(`capture_to_diagnostic`/`error_here_with_diagnostic`), `input::begin_token_list`,
+`io::scan_and_pack_name` (from slice 3), `pic::load_picture`, `shipout::out_what`,
+and a `ttstub_diag_printf` extern decl. Repointed `crate::scan::<fn>` call-sites
+in `math.rs` (+others) to `crate::ext::`; `scan.rs` re-imports the 3 it still
+calls bare (`append_src_special`/`do_extension`/`insert_src_special`). Orphan
+cleanup in `scan.rs`: 4 now-dead module imports (`get_encoding_mode_and_info`/
+`measure_native_glyph`/`load_picture`/`out_what` — all do_extension-only), the 2
+orphaned shared consts, 2 stale banners.
+
+**Why 51 → 50 (a drop, not a trap):** adding `ext.rs`'s `ttstub_diag_printf`
+extern decl (`-> libc::c_int`, matching `scan.rs`/`save.rs`) shifted which module
+the `clashing_extern_declarations` lint picks as canonical vs. `output.rs`'s
+divergent `()` return, netting one fewer clash warning. Pure lint-ordering noise
+over a *pre-existing* signature inconsistency; no behavior change, 0 errors, and
+crucially **the count did not rise**, so the `_DE` block relocation closed the
+trap cleanly.
+
+**Metrics:** `scan.rs` 16,255 → **15,897** LOC (−358). `ext.rs` 2,385 → 2,750.
+No signature/`#[no_mangle]`/`unsafe` changes (relocation only). Dashboard 29/2/7/4.
+
+**For the next session (122):** continue 02 per §8 — next leaf: `fonts.rs`
+(TFM/native loading: `read_font_info`/`read_tfm_word`/`read_scaled_word`/
+`read_fifteen`/`tfm_getc`/`load_native_font`/`new_native_word_node`/
+`build_native_character`/`new_native_character`/`effective_char`/
+`effective_char_info` — note `fonts.rs` may not exist yet; create it + add the
+`mod` line to `lib.rs` per §7 step 2), then `linebreak.rs`
+(`do_locale_linebreaks`/`char_pw_in`). Then `ini.rs` drains
+(`format_io.rs`/`engine.rs`/hyphenation), then the core carve. Same recipe;
+watch the warning count, and prefer **wholesale block relocation** for
+single-function-private const clusters (it dodges the match-arm trap).
+
+
 ## Idiom session 120 — 2026-06-01 — workstream 02 slice 3: relocate the file-naming / `start_input` / `close_files` group out of `scan.rs`
 
 **Type:** execution (workstream 02, module decomposition — third mechanical

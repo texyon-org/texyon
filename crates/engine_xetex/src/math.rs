@@ -3231,7 +3231,7 @@ pub unsafe fn start_eq_no() {
     crate::scan::push_math(MATH_SHIFT_GROUP);
     crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
     if insert_src_special_every_math() {
-        crate::scan::insert_src_special();
+        crate::ext::insert_src_special();
     }
     let every_math = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_MATH);
     if every_math != TEX_NULL {
@@ -4061,7 +4061,7 @@ pub unsafe fn after_math() {
         set_cur_list_aux_b32s0(1000);
 
         if semantic_pagination_enabled() {
-            crate::scan::tt_insert_special(c"tdux:ce math".as_ptr());
+            crate::ext::tt_insert_special(c"tdux:ce math".as_ptr());
         }
 
         crate::save::unsave();
@@ -4213,7 +4213,7 @@ pub unsafe fn after_math() {
         crate::scan::flush_node_list_global(j);
 
         if semantic_pagination_enabled() {
-            crate::scan::tt_insert_special(c"tdux:ce dmath".as_ptr());
+            crate::ext::tt_insert_special(c"tdux:ce dmath".as_ptr());
         }
 
         resume_after_display();
@@ -4488,7 +4488,7 @@ pub unsafe fn init_math() {
         crate::save::eq_word_define(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s);
 
         if semantic_pagination_enabled() {
-            crate::scan::tt_insert_special(c"tdux:cs dmath".as_ptr());
+            crate::ext::tt_insert_special(c"tdux:cs dmath".as_ptr());
         }
 
         let every_display = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_DISPLAY);
@@ -4503,10 +4503,10 @@ pub unsafe fn init_math() {
         crate::scan::push_math(MATH_SHIFT_GROUP);
         crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
         if insert_src_special_every_math() {
-            crate::scan::insert_src_special();
+            crate::ext::insert_src_special();
         }
         if semantic_pagination_enabled() {
-            crate::scan::tt_insert_special(c"tdux:cs math".as_ptr());
+            crate::ext::tt_insert_special(c"tdux:cs math".as_ptr());
         }
         let every_math = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_MATH);
         if every_math != TEX_NULL {
