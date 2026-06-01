@@ -8,6 +8,86 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 126 — 2026-06-02 — workstream 02 slice 11: the `ini.rs` drain (4 sub-commits) — `ini.rs` fully dissolved
+
+**Type:** execution (workstream 02, module decomposition — **the `ini.rs` drain**, §5).
+Split the entire `xetex-ini.c` translation into its three new home modules plus
+`io.rs`, and **deleted `ini.rs`**. Dashboard **29/2/7/4** on every commit; warnings
+**50 → 50** throughout. `ini.rs` 3,804 → **0 (gone)**.
+
+### What executed (4 commits)
+
+* **11a — `hyphenation.rs` (new).** The 11 trie-build / pattern-exception fns
+  (`trie_op_hash`/`set_trie_op_hash`/`new_trie_op`/`trie_node`/`compress_trie`/
+  `first_fit`/`trie_pack`/`trie_fix`/`init_trie`/`new_patterns`/`new_hyph_exceptions`)
+  + the trie consts (`TRIE_OP_SIZE`/`NEG_TRIE_OP_SIZE`/`MAX_TRIE_OP`/`MIN_TRIE_OP`/
+  `BIGGEST_LANG`/`TRIE_OP_HASH_SIZE`) + the `_trie_op_hash_array` static.
+  `TRIE_OP_SIZE`/`MAX_TRIE_OP`/`BIGGEST_LANG` kept pub(crate) (format-dump reads
+  them); `set_trie_op_hash` made pub(crate) (`load_fmt_file` calls it). Repointed
+  `init_trie` (linebreak.rs) and `new_hyph_exceptions`/`new_patterns`
+  (main_control.rs); `intpar` import split off. 803 LOC.
+* **11b — `format_io.rs` (new).** The 16 format dump/load fns (`dump_*`/`undump_*`
+  helpers, `store_fmt_file`, `pack_buffered_name`, `bad_format_file`,
+  `load_fmt_file`). The module-local format-const block (`FORMAT_*`/`SUP_*`/
+  `HASH_*`/selector + node-head consts) moved with them; the engine-side subset
+  still used by `ini.rs`'s remaining code was **duplicated back** into `ini.rs`
+  (faithful, identical values). The shared `TRE_POOL_SIZE`/`TRE_MAX_STRINGS`
+  capacity statics made pub(crate). `format_io.rs` declares its own focused
+  `ttstub_*`/`_tt_abort`/`tre_*` extern block; removed the now-dead ttstub
+  output/input externs from `ini.rs`. 1,478 LOC.
+* **11c — `engine.rs` (new).** The 9 driver fns (`get_strings_started`/
+  `sort_avail`/`primitive`/`final_cleanup`/`initialize_more_variables`/
+  `initialize_more_initex_variables`/`initialize_primitives`/`tt_run_engine`/
+  `tt_cleanup`) + all support: the const subset, the `TRE_*` statics, the
+  `tt_run_engine`+`tt_cleanup_*` extern blocks, the `XetexPrimitiveDef` struct,
+  and the `intpar` accessor (`PC_INT_BASE`). Repointed `tt_cleanup` (errors.rs),
+  `intpar`/`sort_avail`/`TRE_*` (format_io.rs), `intpar` (main_control.rs). After
+  this, `ini.rs` was a 42-line stub holding only `init_io`. 1,533 LOC.
+* **11d — dissolve `ini.rs`.** Moved `init_io`+`STDIN_UFILE` into `io.rs`,
+  reusing its existing `UFile`/`INVALID_HANDLE`/`UTF8` (the i16 `encoding_mode`
+  field takes `UTF8 as i16`, value-identical to ini.rs's old `i16` const); added
+  `set_input_file` to io.rs's globals import. Repointed `crate::ini::init_io` →
+  `crate::io::` in engine.rs, removed `mod ini;` from lib.rs, **deleted
+  `src/ini.rs`**.
+
+### Lessons for the handoff
+
+* **Generous-copy-then-prune is the fast reliable path for big shared-import
+  carves.** Rather than hand-curate the destination's `use` lists, copy the whole
+  `use crate::consts::{…}` + `use crate::globals::{…}` blocks (and the relevant
+  module-const block) into the new module, get `cargo check` to 0 errors, then
+  `cargo fix --lib --broken-code` to prune unused imports and a `dead_code` sweep
+  to remove over-copied consts. The §7 warning-count check (baseline 50) is what
+  tells you the prune is complete.
+* **No §7 trap this slice**, but the same signal caught the over-copy: warnings
+  rose 50→70 in 11b purely from `dead_code` (`constant X is never used`), not
+  `unreachable_patterns`/`non_snake_case` — i.e. a *benign* rise. Distinguish the
+  two by grepping the warning text: dead-const ⇒ clean it; pattern/binding ⇒ a
+  missing match-const needs duplicating in.
+* **Shared consts get duplicated, not back-imported.** Consts used by both the
+  moved code and the residue (e.g. `MEM_TOP`, `HASH_BASE`, `INT_PAR_YEAR`) were
+  defined in *both* destination and source rather than re-imported, keeping module
+  dependencies acyclic-ish and matching the §7 "duplicate with exact value" rule.
+* **Slice 10 deferred deliberately.** Renaming `scan.rs`→`scanner.rs` touches
+  every `crate::scan::` reference across the crate for a cosmetic gain; carving
+  `token.rs` is blocked on the hot-scalar migration (Decision 4, out of scope).
+  `scan.rs` as the 4,998-LOC scanner core is fine to leave; recorded as a non-goal.
+
+### Next session
+
+**Workstream 02's decomposition is essentially done** — both grab-bags are gone:
+`scan.rs` is 4,998 LOC of pure scanner core, `ini.rs` is deleted, and
+`main_control.rs` (6,823), `engine.rs`, `format_io.rs`, `hyphenation.rs`,
+`packaging.rs`, `expand.rs`, `output.rs`, `errors.rs`, `io.rs`, `ext.rs`,
+`fonts.rs` are all carved. **Resume Phase-C threading (workstream 01) per
+`01b`** inside these now-navigable modules — the scanner/expander/main-control
+call graph is the next real target, and threading a function there no longer
+means moving an 18k-line grab-bag. Optional cosmetic later: internal sub-split of
+`main_control.rs` (6.8k, a coherent subsystem) and the `state/` tree split
+(Decision 5).
+
+---
+
 ## Idiom session 125 — 2026-06-02 — workstream 02 slice 9b: the main-control carve (4 sub-commits) + the §10 plan
 
 **Type:** execution (workstream 02, module decomposition — **the main_control carve**).
