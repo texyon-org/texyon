@@ -39,8 +39,6 @@ use crate::ext::getnativecharwd;
 use crate::ext::gr_font_get_named;
 use crate::ext::gr_font_get_named_1;
 use crate::ext::gr_print_font_name;
-use crate::ext::linebreak_next;
-use crate::ext::linebreak_start;
 use crate::ext::map_char_to_glyph;
 use crate::ext::map_glyph_to_index;
 use crate::ext::measure_native_node;
@@ -51,12 +49,11 @@ use crate::ext::ot_font_get_3;
 use crate::ext::print_glyph_name;
 use crate::ext::real_get_native_glyph_italic_correction;
 use crate::ext::real_get_native_italic_correction;
-use crate::ext::real_get_native_word_cp;
 use crate::ini::prefixed_command;
 use crate::input::begin_token_list;
 use crate::io::input_line;
 use crate::io::u_close;
-use crate::linebreak::line_break;
+use crate::linebreak::{do_locale_linebreaks, line_break};
 use crate::math::after_math;
 use crate::math::append_choices_global;
 use crate::math::build_choices_global;
@@ -78,7 +75,6 @@ use crate::pagebuilder::build_page;
 use crate::pic::count_pdf_file_pages;
 use crate::shipout::new_edge_global;
 use crate::shipout::ship_out;
-use crate::state::{FontState, LinebreakState, MemState};
 
 use crate::globals::{
     active_width, align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs,
@@ -8889,99 +8885,6 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
     set_mem_b32s1(TEMP_HEAD, l);
 }
 
-// translated from xetex-xetex0.c:6968 (char_pw)
-pub fn char_pw_in(
-    mem: &MemState,
-    fonts: &FontState,
-    linebreak: &mut LinebreakState,
-    p: i32,
-    side: i16,
-) -> i32 {
-    const WHATSIT_NODE: u16 = 8;
-    const NATIVE_WORD_NODE: u16 = 40;
-    const NATIVE_WORD_NODE_AT: u16 = 41;
-    const GLYPH_NODE: u16 = 42;
-    const QUAD_CODE: i32 = 6; // xetex-constants.h:298
-
-    if side == 0 {
-        linebreak.last_leftmost_char = TEX_NULL;
-    } else {
-        linebreak.last_rightmost_char = TEX_NULL;
-    }
-    if p == TEX_NULL {
-        return 0;
-    }
-
-    // NATIVE_WORD_NODE or NATIVE_WORD_NODE_AT whatsit
-    if p != TEX_NULL
-        && p < mem.hi_mem_min
-        && mem.b16s1(p) == WHATSIT_NODE
-        && (mem.b16s0(p) == NATIVE_WORD_NODE || mem.b16s0(p) == NATIVE_WORD_NODE_AT)
-    {
-        if !mem.ptr(p + 5).is_null() {
-            // NATIVE_NODE_glyph_info_ptr != NULL
-            let f = mem.b16s2(p + 4) as i32; // NATIVE_NODE_font
-            let cp = unsafe { real_get_native_word_cp(mem.node_addr(p), side as libc::c_int) };
-            return unsafe {
-                crate::scaled_math::round_xn_over_d(
-                    fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
-                    cp,
-                    1000,
-                )
-            };
-        } else {
-            return 0;
-        }
-    }
-
-    // GLYPH_NODE whatsit
-    if p != TEX_NULL
-        && p < mem.hi_mem_min
-        && mem.b16s1(p) == WHATSIT_NODE
-        && mem.b16s0(p) == GLYPH_NODE
-    {
-        let f = mem.b16s2(p + 4) as i32; // mem[p + 4].b16.s2
-        let code = mem.b16s1(p + 4) as u32; // mem[p + 4].b16.s1 (char code)
-        let cp = unsafe { get_cp_code(f, code, side as i32) };
-        return unsafe {
-            crate::scaled_math::round_xn_over_d(
-                fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
-                cp,
-                1000,
-            )
-        };
-    }
-
-    // Adjust p for ligature node or non-char node
-    let p = if p < mem.hi_mem_min {
-        if mem.b16s1(p) == LIGATURE_NODE {
-            p + 1 // LIGATURE_NODE: the char is at p+1
-        } else {
-            return 0;
-        }
-    } else {
-        p
-    };
-
-    let f = mem.b16s1(p) as i32; // CHAR_NODE_font(p) = mem[p].b16.s1
-    let c = unsafe { get_cp_code(f, mem.b16s0(p) as u32, side as i32) };
-    if side == 0 {
-        linebreak.last_leftmost_char = p;
-    } else {
-        linebreak.last_rightmost_char = p;
-    }
-    if c == 0 {
-        return 0;
-    }
-    unsafe {
-        crate::scaled_math::round_xn_over_d(
-            fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
-            c,
-            1000,
-        )
-    }
-}
-
 // translated from xetex-xetex0.c:8265 (handle_right_brace)
 #[no_mangle]
 pub unsafe extern "C" fn handle_right_brace() {
@@ -12916,7 +12819,6 @@ pub unsafe extern "C" fn macro_call() {
 // ---------------------------------------------------------------------------
 
 // Node type/subtype constants (xetex_format.h)
-const NATIVE_NODE_SIZE_NN: i32 = 6;
 // INT_PAR offset for xetex_generate_actual_text (xetex_format.h:114)
 
 /// Transitional bridge-down wrapper for legacy `new_native_word_node` callers
@@ -12940,88 +12842,6 @@ pub(crate) unsafe fn push_font_info_b32s1(v: i32) {
     let k = crate::globals::fmem_ptr();
     crate::globals::set_font_info_b32s1(k, v);
     crate::globals::set_fmem_ptr(k + 1);
-}
-
-// ---------------------------------------------------------------------------
-// do_locale_linebreaks
-// ---------------------------------------------------------------------------
-
-// GLUE_BASE + GLUE_PAR__xetex_linebreak_skip (xetex_format.h:205,164)
-const GLUE_PAR_XETEX_LINEBREAK_SKIP: i32 = 15;
-// INT_PAR offsets (xetex_format.h:101,102,107)
-const INT_PAR_XETEX_LINEBREAK_LOCALE: i32 = 66;
-const INT_PAR_XETEX_LINEBREAK_PENALTY: i32 = 67;
-const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
-
-extern "C" {
-    static mut main_f: i32;
-}
-
-/// Insert locale-aware linebreaking nodes for `len` glyphs starting at `native_text[s]`.
-///
-/// translated from xetex-xetex0.c:6493 (do_locale_linebreaks)
-#[no_mangle]
-pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
-    use crate::globals::{
-        cur_list_tail, mem_as_u16_ptr_mut, mem_b32s1, set_cur_list_tail, set_mem_b32s1,
-    };
-    let native_text = crate::globals::native_text();
-
-    let locale = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE);
-    let use_glyph = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
-
-    if locale == 0 || len == 1 {
-        let node = new_native_word_node_global(main_f, len);
-        set_mem_b32s1(cur_list_tail(), node);
-        set_cur_list_tail(mem_b32s1(cur_list_tail()));
-        let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
-        for i in 0..len {
-            *text.add(i as usize) = *native_text.add((s + i) as usize);
-        }
-        measure_native_node(
-            crate::globals::mem_node_addr(cur_list_tail()),
-            use_glyph as libc::c_int,
-        );
-    } else {
-        let use_skip = eqtb_b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
-        let penalty_val = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_PENALTY);
-        let use_penalty = penalty_val != 0 || !use_skip;
-        linebreak_start(main_f, locale, native_text.add(s as usize), len);
-        let mut offs: i32 = 0;
-        loop {
-            let prev_offs = offs;
-            offs = linebreak_next(main_f);
-            if offs > 0 {
-                if prev_offs != 0 {
-                    if use_penalty {
-                        let node = crate::mem::new_penalty_global(penalty_val);
-                        set_mem_b32s1(cur_list_tail(), node);
-                        set_cur_list_tail(mem_b32s1(cur_list_tail()));
-                    }
-                    if use_skip {
-                        let node =
-                            crate::mem::new_param_glue_global(GLUE_PAR_XETEX_LINEBREAK_SKIP as i16);
-                        set_mem_b32s1(cur_list_tail(), node);
-                        set_cur_list_tail(mem_b32s1(cur_list_tail()));
-                    }
-                }
-                let node = new_native_word_node_global(main_f, offs - prev_offs);
-                set_mem_b32s1(cur_list_tail(), node);
-                set_cur_list_tail(mem_b32s1(cur_list_tail()));
-                let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
-                for i in prev_offs..offs {
-                    *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
-                }
-                measure_native_node(
-                    crate::globals::mem_node_addr(cur_list_tail()),
-                    use_glyph as libc::c_int,
-                );
-            }
-            if offs < 0 {
-                break;
-            }
-        }
-    }
 }
 
 // translated from xetex-xetex0.c:7006 (main_control math entry/exit cases)

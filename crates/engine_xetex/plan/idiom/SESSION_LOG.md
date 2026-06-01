@@ -8,6 +8,77 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 123 — 2026-06-01 — workstream 02 slice 6: relocate the locale-linebreak group out of `scan.rs` (last leaf)
+
+**Type:** execution (workstream 02, module decomposition — sixth slice; **the
+last scan.rs *leaf***, completing the §8 "drain the home-having groups out" phase
+before the core carve). **One commit.** Dashboard **29/2/7/4**. Warnings
+**50 → 50**.
+
+**Slice:** moved the 2 locale-linebreak functions verbatim from `src/scan.rs`
+(= xetex0.c) into `src/linebreak.rs` (= xetex-linebreak.c): `char_pw_in` (the
+protrusion-width helper threaded in session 116) and `do_locale_linebreaks` (the
+ICU/locale word-segmentation node builder). `move_fns.py`, 160 fn-lines.
+
+**Two forced name-disambiguations (faithful, not behavior changes).** The
+destination `linebreak.rs` already had same-named items shadowing what the moved
+code's bare names resolved to in `scan.rs`; resolving each to its *original
+referent* preserves the exact value/type:
+* `LIGATURE_NODE`: `linebreak.rs` defines a local `const LIGATURE_NODE: i32`,
+  but `char_pw_in` compares it against `mem.b16s1(p)` (`u16`) — in `scan.rs` it
+  resolved to the imported `consts::LIGATURE_NODE` (`u16`, value 6). Qualified
+  the one comparison to `crate::consts::LIGATURE_NODE` (same const, dodges the
+  i32 shadow). Same value, same type as before.
+* `main_f`: `do_locale_linebreaks` read the **raw `static mut main_f: i32`**
+  (a hot tokenizer scalar kept raw per Decision 4) via a module-level
+  `extern "C"` block that sat *outside* the function in `scan.rs` (so the mover
+  didn't carry it). Re-declared the same `extern "C" { static mut main_f: i32; }`
+  in `linebreak.rs` and read it raw under the existing `unsafe fn` — identical to
+  the original. (Did **not** route through `globals::main_f()`, which would be a
+  real body change.)
+
+These are the §7 trap's *typed* cousin: a moved bare identifier silently
+re-binding to a different in-scope item. Here both surfaced as hard `E0308` type
+errors (not silent), so the compiler caught them; the fix restores the original
+referent.
+
+**Imports:** `linebreak.rs` gained `ext::{linebreak_next, linebreak_start,
+real_get_native_word_cp}` (pub fns) + a `get_cp_code` raw extern, `globals::eqtb_b32s1`,
+`scan::new_native_word_node_global`, and 4 relocated orphan consts
+(`GLUE_PAR_XETEX_LINEBREAK_SKIP`/`INT_PAR_XETEX_LINEBREAK_LOCALE`/`…_PENALTY`/
+`NATIVE_NODE_SIZE_NN`); dropped its now-local `use crate::scan::char_pw_in`.
+`scan.rs` imports `linebreak::do_locale_linebreaks`; orphan cleanup: 3 dead
+`use crate::ext::` imports, the dead `use crate::state::{FontState, LinebreakState,
+MemState}`, the orphaned top-level `INT_PAR_XETEX_USE_GLYPH_METRICS` const, and the
+dead `extern { static mut main_f }` block. No trap; warnings 50→50.
+
+**Metrics:** `scan.rs` 14,890 → **14,710** LOC (−180). `linebreak.rs` 3,385 →
+3,557. Dashboard 29/2/7/4.
+
+**Milestone:** all six home-having leaf groups are now drained out of `scan.rs`
+(errors→errors.rs s118, show_*→output.rs s119, file-naming→io.rs s120,
+ext→ext.rs s121, fonts→fonts.rs s122, locale-linebreak→linebreak.rs s123).
+`scan.rs` is down from 18,689 (ws02 start) to **14,710** and now holds
+essentially the **scanner / expander / main_control / packaging core** — the §8
+core carve. That is the harder, more entangled phase (giant `match` dispatch,
+shared hot scalars, the `prefixed_command` family spanning `scan.rs`+`ini.rs`).
+
+**For the next session (124):** begin the **core carve** (§4, Decision 2/3).
+Recommended order, smallest-blast-radius first: (1) **packaging.rs** (new,
+transitional → `node/` in ws03) — `hpack`/`vpackage`/`vsplit`/`vert_break`/
+`copy_node_list`/`flush_node_list`/`just_copy`/`just_reverse`/`prune_page_top`/
+`do_marks` (node-layer utils, relatively self-contained); (2) **expand.rs** (new)
+— `expand`/`macro_call`/`conditional`/`pop_cond_node`/`conv_toks`/`ins_the_toks`;
+(3) **main_control.rs** (new) — the `main_control*` dispatch + verbs + alignment;
+(4) residual `scan_*`/`get_*`/`get_next` stay as `scanner.rs` (rename or leave
+`scan.rs`); (5) `token.rs` consts last. Expect heavier const/macro/hot-scalar
+entanglement than the leaves — lean on `move_fns.py` (now handles `pub(crate)`),
+`pub(crate) use` for shared macros, wholesale const-block relocation, and the
+warning-count check. If a carve step won't go green cleanly, stop at the prior
+green commit and hand off. `ini.rs` drains independently
+(`format_io.rs`/`engine.rs`/hyphenation).
+
+
 ## Idiom session 122 — 2026-06-01 — workstream 02 slice 5: relocate the TFM/native font-loading group out of `scan.rs` into a new `fonts.rs`
 
 **Type:** execution (workstream 02, module decomposition — fifth mechanical

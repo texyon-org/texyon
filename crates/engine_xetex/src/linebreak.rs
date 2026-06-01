@@ -2,10 +2,17 @@ use crate::consts::{
     DIMEN_BASE, ETEX_PEN_BASE, GLUE_BASE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MAX_HALFWORD,
     SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR,
 };
-use crate::ext::measure_native_node;
+use crate::ext::{linebreak_next, linebreak_start, measure_native_node, real_get_native_word_cp};
+use crate::globals::eqtb_b32s1;
 use crate::ini::init_trie;
-use crate::scan::{char_pw_in, node_recycle_abort, NodeRecycleAbort};
+use crate::scan::{new_native_word_node_global, node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, HyphState, LinebreakState, MemState, ScannerState};
+
+// Consts relocated from scan.rs with the locale-linebreak group (workstream 02).
+const GLUE_PAR_XETEX_LINEBREAK_SKIP: i32 = 15;
+const INT_PAR_XETEX_LINEBREAK_LOCALE: i32 = 66;
+const INT_PAR_XETEX_LINEBREAK_PENALTY: i32 = 67;
+const NATIVE_NODE_SIZE_NN: i32 = 6;
 
 const MAX_HLIST_STACK: i16 = 512;
 const HLIST_NODE: i32 = crate::consts::HLIST_NODE as i32;
@@ -92,7 +99,11 @@ const INF_BAD: i32 = 10_000;
 const INF_PENALTY: i32 = 10_000;
 const EJECT_PENALTY: i32 = -10_000;
 
-extern "C" {}
+extern "C" {
+    fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
+    // Hot tokenizer scalar — stays raw per ws02 Decision 4 (read under `unsafe`).
+    static mut main_f: i32;
+}
 
 // translated from xetex-linebreak.c:77 (get_native_usv)
 pub fn get_native_usv(mem: &MemState, p: i32, i: i32) -> i32 {
@@ -3379,5 +3390,166 @@ pub unsafe extern "C" fn hyphenate() {
 
         set_mem_b32s1(s, q_final);
         crate::mem::flush_list_global(crate::globals::init_list());
+    }
+}
+
+// ---- moved verbatim from scan.rs (workstream 02) ----
+
+// translated from xetex-xetex0.c:6968 (char_pw)
+pub fn char_pw_in(
+    mem: &MemState,
+    fonts: &FontState,
+    linebreak: &mut LinebreakState,
+    p: i32,
+    side: i16,
+) -> i32 {
+    const WHATSIT_NODE: u16 = 8;
+    const NATIVE_WORD_NODE: u16 = 40;
+    const NATIVE_WORD_NODE_AT: u16 = 41;
+    const GLYPH_NODE: u16 = 42;
+    const QUAD_CODE: i32 = 6; // xetex-constants.h:298
+
+    if side == 0 {
+        linebreak.last_leftmost_char = TEX_NULL;
+    } else {
+        linebreak.last_rightmost_char = TEX_NULL;
+    }
+    if p == TEX_NULL {
+        return 0;
+    }
+
+    // NATIVE_WORD_NODE or NATIVE_WORD_NODE_AT whatsit
+    if p != TEX_NULL
+        && p < mem.hi_mem_min
+        && mem.b16s1(p) == WHATSIT_NODE
+        && (mem.b16s0(p) == NATIVE_WORD_NODE || mem.b16s0(p) == NATIVE_WORD_NODE_AT)
+    {
+        if !mem.ptr(p + 5).is_null() {
+            // NATIVE_NODE_glyph_info_ptr != NULL
+            let f = mem.b16s2(p + 4) as i32; // NATIVE_NODE_font
+            let cp = unsafe { real_get_native_word_cp(mem.node_addr(p), side as libc::c_int) };
+            return unsafe {
+                crate::scaled_math::round_xn_over_d(
+                    fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
+                    cp,
+                    1000,
+                )
+            };
+        } else {
+            return 0;
+        }
+    }
+
+    // GLYPH_NODE whatsit
+    if p != TEX_NULL
+        && p < mem.hi_mem_min
+        && mem.b16s1(p) == WHATSIT_NODE
+        && mem.b16s0(p) == GLYPH_NODE
+    {
+        let f = mem.b16s2(p + 4) as i32; // mem[p + 4].b16.s2
+        let code = mem.b16s1(p + 4) as u32; // mem[p + 4].b16.s1 (char code)
+        let cp = unsafe { get_cp_code(f, code, side as i32) };
+        return unsafe {
+            crate::scaled_math::round_xn_over_d(
+                fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
+                cp,
+                1000,
+            )
+        };
+    }
+
+    // Adjust p for ligature node or non-char node
+    let p = if p < mem.hi_mem_min {
+        if mem.b16s1(p) == crate::consts::LIGATURE_NODE {
+            p + 1 // LIGATURE_NODE: the char is at p+1
+        } else {
+            return 0;
+        }
+    } else {
+        p
+    };
+
+    let f = mem.b16s1(p) as i32; // CHAR_NODE_font(p) = mem[p].b16.s1
+    let c = unsafe { get_cp_code(f, mem.b16s0(p) as u32, side as i32) };
+    if side == 0 {
+        linebreak.last_leftmost_char = p;
+    } else {
+        linebreak.last_rightmost_char = p;
+    }
+    if c == 0 {
+        return 0;
+    }
+    unsafe {
+        crate::scaled_math::round_xn_over_d(
+            fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
+            c,
+            1000,
+        )
+    }
+}
+/// Insert locale-aware linebreaking nodes for `len` glyphs starting at `native_text[s]`.
+///
+/// translated from xetex-xetex0.c:6493 (do_locale_linebreaks)
+#[no_mangle]
+pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
+    use crate::globals::{
+        cur_list_tail, mem_as_u16_ptr_mut, mem_b32s1, set_cur_list_tail, set_mem_b32s1,
+    };
+    let native_text = crate::globals::native_text();
+
+    let locale = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE);
+    let use_glyph = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
+
+    if locale == 0 || len == 1 {
+        let node = new_native_word_node_global(main_f, len);
+        set_mem_b32s1(cur_list_tail(), node);
+        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
+        for i in 0..len {
+            *text.add(i as usize) = *native_text.add((s + i) as usize);
+        }
+        measure_native_node(
+            crate::globals::mem_node_addr(cur_list_tail()),
+            use_glyph as libc::c_int,
+        );
+    } else {
+        let use_skip = eqtb_b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
+        let penalty_val = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_PENALTY);
+        let use_penalty = penalty_val != 0 || !use_skip;
+        linebreak_start(main_f, locale, native_text.add(s as usize), len);
+        let mut offs: i32 = 0;
+        loop {
+            let prev_offs = offs;
+            offs = linebreak_next(main_f);
+            if offs > 0 {
+                if prev_offs != 0 {
+                    if use_penalty {
+                        let node = crate::mem::new_penalty_global(penalty_val);
+                        set_mem_b32s1(cur_list_tail(), node);
+                        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                    }
+                    if use_skip {
+                        let node =
+                            crate::mem::new_param_glue_global(GLUE_PAR_XETEX_LINEBREAK_SKIP as i16);
+                        set_mem_b32s1(cur_list_tail(), node);
+                        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                    }
+                }
+                let node = new_native_word_node_global(main_f, offs - prev_offs);
+                set_mem_b32s1(cur_list_tail(), node);
+                set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
+                for i in prev_offs..offs {
+                    *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
+                }
+                measure_native_node(
+                    crate::globals::mem_node_addr(cur_list_tail()),
+                    use_glyph as libc::c_int,
+                );
+            }
+            if offs < 0 {
+                break;
+            }
+        }
     }
 }
