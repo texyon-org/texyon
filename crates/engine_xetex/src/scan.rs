@@ -12546,7 +12546,7 @@ pub unsafe extern "C" fn conv_toks() {
         }
         RIGHT_MARGIN_KERN_CODE_CT => {
             let q = mem_b32s1(p + 5);
-            p = crate::mem::prev_rightmost(q, TEX_NULL);
+            p = crate::mem::prev_rightmost_global(q, TEX_NULL);
             while p != TEX_NULL {
                 let tp = mem_b16s1(p);
                 let is_low = p < hi_mem_min();
@@ -12573,7 +12573,7 @@ pub unsafe extern "C" fn conv_toks() {
                 if !skip {
                     break;
                 }
-                p = crate::mem::prev_rightmost(q, p);
+                p = crate::mem::prev_rightmost_global(q, p);
             }
             if p != TEX_NULL
                 && p < hi_mem_min()

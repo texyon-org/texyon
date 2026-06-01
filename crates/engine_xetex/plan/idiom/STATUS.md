@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 107, **Phase-C DVI font def leaves threaded**, threaded `dvi_native_font_def` and `dvi_font_def_bytes` to `FontState` and `StringsState` inside `src/shipout.rs`, deleted dead `font_check_entry` from `src/globals.rs`, resolved nested borrow panics by calling `make_font_def` outside `state` borrows in `dvi_font_def_global` wrapper, dashboard 29/2/7/4. — prior session 106 refined the Phase-C recon helper. — prior session 105 threaded `try_break`'s local `deactivate_node`.)
+Last updated: 2026-06-01 (last session = session 108, **Phase-C memory/shipout leaves threaded**, threaded `prev_rightmost` to `&MemState` in `src/mem.rs` and removed redundant `prev_rightmost_in` from `src/linebreak.rs`, threaded `is_ignorable_interword_node` and `skip_ignorable_interword_nodes` in `src/shipout.rs` to safe `&MemState` borrows, dashboard 29/2/7/4. — prior session 107 threaded DVI font def leaves. — prior session 106 refined the Phase-C recon helper. — prior session 105 threaded `try_break`'s local `deactivate_node`.)
 
 ## How to read this file
 
@@ -1215,6 +1215,8 @@ the snippets in `00-overview.md` / the workstream plans.
     completely outside the borrow to prevent nested mutable borrows, then formats and emits the
     DVI bytes under short, disjoint borrows. The dead bridge accessor `font_check_entry` is deleted
     from `src/globals.rs`.
+
+    **Session 108 update:** the core memory leaf helper `prev_rightmost` is now threaded to `&MemState` in `src/mem.rs` and the redundant duplicate helper `prev_rightmost_in` is fully deleted from `src/linebreak.rs`. Legacy `scan.rs` call sites are repointed to `prev_rightmost_global`. We also threaded the local `is_ignorable_interword_node` and `skip_ignorable_interword_nodes` helpers in `src/shipout.rs` to safe `&MemState` borrows, calling them inside `merge_justifiable_native_words` via transient borrows.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

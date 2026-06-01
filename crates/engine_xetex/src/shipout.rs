@@ -838,18 +838,23 @@ unsafe fn ensure_dvi_font_global(f: i32) {
 }
 
 #[inline]
-unsafe fn is_ignorable_interword_node(p: i32) -> bool {
-    !is_char_node(p)
-        && (mem_b16s1(p) == PENALTY_NODE
-            || mem_b16s1(p) == INS_NODE
-            || mem_b16s1(p) == MARK_NODE
-            || mem_b16s1(p) == ADJUST_NODE
-            || (mem_b16s1(p) == WHATSIT_NODE && mem_b16s0(p) <= LANGUAGE_NODE))
+fn is_char_node_in(mem: &MemState, p: i32) -> bool {
+    p >= mem.hi_mem_min
 }
 
-unsafe fn skip_ignorable_interword_nodes(mut q: i32) -> i32 {
-    while q != TEX_NULL && is_ignorable_interword_node(q) {
-        q = mem_b32s1(q);
+#[inline]
+fn is_ignorable_interword_node(mem: &MemState, p: i32) -> bool {
+    !is_char_node_in(mem, p)
+        && (mem.b16s1(p) == PENALTY_NODE
+            || mem.b16s1(p) == INS_NODE
+            || mem.b16s1(p) == MARK_NODE
+            || mem.b16s1(p) == ADJUST_NODE
+            || (mem.b16s1(p) == WHATSIT_NODE && mem.b16s0(p) <= LANGUAGE_NODE))
+}
+
+fn skip_ignorable_interword_nodes(mem: &MemState, mut q: i32) -> i32 {
+    while q != TEX_NULL && is_ignorable_interword_node(mem, q) {
+        q = mem.b32s1(q);
     }
     q
 }
@@ -870,12 +875,14 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
             let mut q = mem_b32s1(p);
 
             'check_next: loop {
-                q = skip_ignorable_interword_nodes(q);
+                q = crate::state::with_state(|st| skip_ignorable_interword_nodes(&st.mem, q));
 
                 if q != TEX_NULL && !is_char_node(q) {
                     if mem_b16s1(q) == GLUE_NODE && mem_b16s0(mem_b32s0(q + 1)) == NORMAL {
                         if mem_b32s0(q + 1) == font_glue(mem_b16s2(r + 4) as i32) {
-                            q = skip_ignorable_interword_nodes(mem_b32s1(q));
+                            q = crate::state::with_state(|st| {
+                                skip_ignorable_interword_nodes(&st.mem, mem_b32s1(q))
+                            });
 
                             if q != TEX_NULL
                                 && !is_char_node(q)
@@ -898,7 +905,9 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
                             && mem_b16s1(q) == KERN_NODE
                             && mem_b16s0(q) == SPACE_ADJUSTMENT
                         {
-                            q = skip_ignorable_interword_nodes(mem_b32s1(q));
+                            q = crate::state::with_state(|st| {
+                                skip_ignorable_interword_nodes(&st.mem, mem_b32s1(q))
+                            });
 
                             if q != TEX_NULL
                                 && !is_char_node(q)
@@ -994,7 +1003,7 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
                 p = mem_b32s1(r);
 
                 while p != TEX_NULL {
-                    if is_ignorable_interword_node(p) {
+                    if crate::state::with_state(|st| is_ignorable_interword_node(&st.mem, p)) {
                         set_mem_b32s1(prev_p, mem_b32s1(p));
                         set_mem_b32s1(p, mem_b32s1(q));
                         set_mem_b32s1(q, p);

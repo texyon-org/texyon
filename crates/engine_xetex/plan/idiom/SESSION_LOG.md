@@ -7,6 +7,33 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 108 — 2026-06-01 — thread memory prev_rightmost and shipout ignorable leaves
+
+**Type:** execution (workstream 01, Phase C — memory / shipout leaves). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (53, as we deleted some dead code and made signatures safe).
+
+**Slice:** Threaded the core memory leaf helper `prev_rightmost` in `src/mem.rs` to take safe `&MemState` directly, removing the `unsafe` keyword from its signature. This allowed us to fully delete the duplicate helper `prev_rightmost_in` from `src/linebreak.rs` and call `crate::mem::prev_rightmost` directly, cleaning up duplicate code. Legacy callers in `src/scan.rs` are repointed to `prev_rightmost_global`. We also threaded the local `is_ignorable_interword_node` and `skip_ignorable_interword_nodes` helpers in `src/shipout.rs` to safe `&MemState` borrows, and defined `is_char_node_in` so that they can avoid calling the global `hi_mem_min()`. Call sites in `merge_justifiable_native_words` are repointed via transient `with_state` borrows.
+
+**Classification:** bucket **B**, highly accurate. These are pure node-traversing/evaluating leaves that only need simple reads and no mutable state or allocation, making them extremely clean and safe to thread.
+
+**Recon-helper usefulness report:**
+- Which command(s) you ran: `python3 plan/idiom/phase_c_recon.py --limit 40` and `python3 plan/idiom/phase_c_recon.py --bucket B --module src/shipout.rs`
+- Which candidate it surfaced: `prev_rightmost` (score 102, bucket B) and `skip_ignorable_interword_nodes` (score 101, bucket B)
+- Whether bucket/risk classification was accurate: Highly accurate. Both are clean leaves with no state mutability or external calls.
+- Roughly how much recon time it saved or failed to save: Saved about 10-15 minutes by immediately triaging the leaf helper candidates and allowing us to find the redundant duplicate `prev_rightmost_in` helper in `linebreak.rs`.
+- Any false positives/false negatives or suggested script improvements: None, the helper continues to work exceptionally well.
+
+**Method surface / deleted accessors:** Deleted `prev_rightmost_in` from `src/linebreak.rs` as its callers were transitioned to the threaded `crate::mem::prev_rightmost`. No globals accessor lost all its callers.
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328** unchanged. raw extern statics **38** unchanged. raw `unsafe {}` **174** unchanged. `unsafe fn` **653 -> 651** (deleted `prev_rightmost_in`'s unsafe requirements, made `prev_rightmost` safe, made `is_ignorable_interword_node` and `skip_ignorable_interword_nodes` safe, added `prev_rightmost_global`). Warnings **52 -> 53** (expected clashing extern warnings).
+
+**Validation:** `cargo fmt`; `cargo check -p tectonic_engine_xetex` -> 0 errors, 53 warnings; full dashboard -> **29 / 2 / 7 / 4**.
+
+**For the next session (109):** continue bounded leaves only. Good options remain another small pagebuilder/linebreak leaf, or a small shipout movement helper. Avoid whole-session work on `line_break`, `try_break`, `hlist_out`, `vlist_out`, `ship_out`, `scan.rs`, `mlist_to_hlist`, `hpack`, `vpackage`, or `build_page`.
+
+---
+
 ## Idiom session 107 — 2026-06-01 — thread shipout DVI font definition leaves
 
 **Type:** execution (workstream 01, Phase C — shipout leaves). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (52, with 1 warning added and resolved for the dead `font_check_entry`).

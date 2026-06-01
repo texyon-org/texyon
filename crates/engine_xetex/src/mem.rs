@@ -884,21 +884,22 @@ pub unsafe extern "C" fn pop_nest() {
 // prev_rightmost
 // ---------------------------------------------------------------------------
 
-/// Return the last node in [s..e) whose successor is e, or TEX_NULL if none.
-///
-/// translated from xetex-xetex0.c:140 (prev_rightmost)
-pub unsafe fn prev_rightmost(s: i32, e: i32) -> i32 {
+pub fn prev_rightmost(mem: &MemState, s: i32, e: i32) -> i32 {
     let mut p = s;
     if p == TEX_NULL {
         return TEX_NULL;
     }
-    while mem_b32s1(p) != e {
-        p = mem_b32s1(p);
+    while mem.b32s1(p) != e {
+        p = mem.b32s1(p);
         if p == TEX_NULL {
             return TEX_NULL;
         }
     }
     p
+}
+
+pub unsafe fn prev_rightmost_global(s: i32, e: i32) -> i32 {
+    crate::state::with_state(|st| prev_rightmost(&st.mem, s, e))
 }
 
 // ---------------------------------------------------------------------------

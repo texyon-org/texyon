@@ -360,21 +360,6 @@ fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
         }
 }
 
-#[inline]
-fn prev_rightmost_in(mem: &MemState, s: i32, e: i32) -> i32 {
-    let mut p = s;
-    if p == TEX_NULL {
-        return TEX_NULL;
-    }
-    while mem.b32s1(p) != e {
-        p = mem.b32s1(p);
-        if p == TEX_NULL {
-            return TEX_NULL;
-        }
-    }
-    p
-}
-
 // translated from xetex-linebreak.c:2827 (push_node)
 pub fn push_node(linebreak: &mut LinebreakState, p: i32) -> bool {
     let level = linebreak.hlist_stack_level;
@@ -411,7 +396,7 @@ pub fn total_pw(
         mem.b32s1(mem.b32s1(q + 1) + 1)
     };
 
-    let mut r = prev_rightmost_in(mem, linebreak.global_prev_p, p);
+    let mut r = crate::mem::prev_rightmost(mem, linebreak.global_prev_p, p);
     if p != TEX_NULL && mem.b16s1(p) as i32 == DISC_NODE && mem.b32s0(p + 1) != TEX_NULL {
         r = mem.b32s0(p + 1);
         while mem.b32s1(r) != TEX_NULL {
@@ -534,7 +519,7 @@ pub fn find_protchar_right(
             }
 
             if r != l && r != TEX_NULL {
-                r = prev_rightmost_in(mem, l, r);
+                r = crate::mem::prev_rightmost(mem, l, r);
             } else if r == l && linebreak.hlist_stack_level == 0 {
                 run = false;
             }
@@ -557,7 +542,7 @@ fn right_margin_kern_target(
     if disc_break && (is_char_node_in(mem, q) || mem.b16s1(q) as i32 != DISC_NODE) {
         Some((q, q))
     } else {
-        let ptmp = prev_rightmost_in(mem, mem.b32s1(TEMP_HEAD), q);
+        let ptmp = crate::mem::prev_rightmost(mem, mem.b32s1(TEMP_HEAD), q);
         let p = find_protchar_right(mem, linebreak, mem.b32s1(TEMP_HEAD), ptmp)?;
         Some((p, ptmp))
     }
