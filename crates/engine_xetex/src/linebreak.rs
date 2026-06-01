@@ -5,7 +5,7 @@ use crate::consts::{
 use crate::ext::measure_native_node;
 use crate::ini::init_trie;
 use crate::scan::{char_pw, node_recycle_abort, NodeRecycleAbort};
-use crate::state::{FontState, HyphState, LinebreakState, MemState};
+use crate::state::{FontState, HyphState, LinebreakState, MemState, ScannerState};
 
 const MAX_HLIST_STACK: i16 = 512;
 const HLIST_NODE: i32 = crate::consts::HLIST_NODE as i32;
@@ -2624,7 +2624,16 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
             {
                 artificial_demerits = true;
             } else if b > threshold() {
-                deactivate_node(r, &mut prev_r, &mut prev_prev_r);
+                crate::state::with_state_mut(|st| {
+                    deactivate_node(
+                        &mut st.mem,
+                        &mut st.scanner,
+                        &mut st.linebreak,
+                        r,
+                        &mut prev_r,
+                        &mut prev_prev_r,
+                    )
+                });
                 continue;
             }
             node_r_stays_active = false;
@@ -2689,44 +2698,55 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
             continue;
         }
 
-        deactivate_node(r, &mut prev_r, &mut prev_prev_r);
+        crate::state::with_state_mut(|st| {
+            deactivate_node(
+                &mut st.mem,
+                &mut st.scanner,
+                &mut st.linebreak,
+                r,
+                &mut prev_r,
+                &mut prev_prev_r,
+            )
+        });
     }
 
-    unsafe fn deactivate_node(r: i32, prev_r: &mut i32, prev_prev_r: &mut i32) {
-        use crate::globals::{
-            active_node_size, active_width, cur_active_width, mem_b16s1, mem_b32s1,
-            set_active_width, set_cur_active_width, set_mem_b32s1,
-        };
-
-        set_mem_b32s1(*prev_r, mem_b32s1(r));
-        crate::mem::free_node_global(r, active_node_size());
+    fn deactivate_node(
+        mem: &mut MemState,
+        scanner: &mut ScannerState,
+        linebreak: &mut LinebreakState,
+        r: i32,
+        prev_r: &mut i32,
+        prev_prev_r: &mut i32,
+    ) {
+        mem.set_b32s1(*prev_r, mem.b32s1(r));
+        crate::mem::free_node(mem, r, linebreak.active_node_size as i32);
 
         if *prev_r == ACTIVE_LIST {
-            let r = mem_b32s1(ACTIVE_LIST);
-            if mem_b16s1(r) as i32 == DELTA_NODE {
+            let r = mem.b32s1(ACTIVE_LIST);
+            if mem.b16s1(r) as i32 == DELTA_NODE {
                 for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
-                    set_active_width(k, active_width(k) + mem_b32s1(r + off));
-                    set_cur_active_width(k, active_width(k));
+                    scanner.active_width[k] += mem.b32s1(r + off);
+                    linebreak.cur_active_width[k] = scanner.active_width[k];
                 }
-                set_mem_b32s1(ACTIVE_LIST, mem_b32s1(r));
-                crate::mem::free_node_global(r, DELTA_NODE_SIZE);
+                mem.set_b32s1(ACTIVE_LIST, mem.b32s1(r));
+                crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
             }
-        } else if mem_b16s1(*prev_r) as i32 == DELTA_NODE {
-            let r = mem_b32s1(*prev_r);
+        } else if mem.b16s1(*prev_r) as i32 == DELTA_NODE {
+            let r = mem.b32s1(*prev_r);
             if r == LAST_ACTIVE {
                 for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
-                    set_cur_active_width(k, cur_active_width(k) - mem_b32s1(*prev_r + off));
+                    linebreak.cur_active_width[k] -= mem.b32s1(*prev_r + off);
                 }
-                set_mem_b32s1(*prev_prev_r, LAST_ACTIVE);
-                crate::mem::free_node_global(*prev_r, DELTA_NODE_SIZE);
+                mem.set_b32s1(*prev_prev_r, LAST_ACTIVE);
+                crate::mem::free_node(mem, *prev_r, DELTA_NODE_SIZE);
                 *prev_r = *prev_prev_r;
-            } else if mem_b16s1(r) as i32 == DELTA_NODE {
+            } else if mem.b16s1(r) as i32 == DELTA_NODE {
                 for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
-                    set_cur_active_width(k, cur_active_width(k) + mem_b32s1(r + off));
-                    set_mem_b32s1(*prev_r + off, mem_b32s1(*prev_r + off) + mem_b32s1(r + off));
+                    linebreak.cur_active_width[k] += mem.b32s1(r + off);
+                    mem.set_b32s1(*prev_r + off, mem.b32s1(*prev_r + off) + mem.b32s1(r + off));
                 }
-                set_mem_b32s1(*prev_r, mem_b32s1(r));
-                crate::mem::free_node_global(r, DELTA_NODE_SIZE);
+                mem.set_b32s1(*prev_r, mem.b32s1(r));
+                crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
             }
         }
     }

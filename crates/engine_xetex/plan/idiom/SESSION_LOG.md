@@ -7,6 +7,28 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 105 — 2026-06-01 — thread `try_break` active-node deactivation leaf
+
+**Type:** execution (workstream 01, Phase C — linebreak leaf). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).
+
+**Slice:** threaded the local `deactivate_node` helper inside `src/linebreak.rs`'s `try_break` to direct `MemState`, `ScannerState`, and `LinebreakState` borrows. The two legacy call sites now bridge down once with `with_state_mut`, then the helper mutates active-list links, active-width arrays, current-active-width arrays, and node recycling directly through the borrowed state. `try_break` / `line_break` remain legacy orchestrators and were not taken as whole-session scope.
+
+**Classification:** bucket **B**, accurate. The body only needed bridge-accessor rewrites (`mem_b*` / `set_mem_b*`, `active_width`, `cur_active_width`, `active_node_size`) plus direct `crate::mem::free_node`; `free_node` has no with-state-bearing internal calls. No scanner, diagnostic, output, packing, or allocator-failure boundary is crossed, so no borrow-dropping wrapper or abort sentinel was needed.
+
+**Recon helper report:** ran `python3 plan/idiom/phase_c_recon.py --limit 40`, `--bucket B --module src/math.rs`, `--bucket B --module src/shipout.rs`, `--bucket C --module src/shipout.rs`, and `--dead-wrappers`. The default scan surfaced `deactivate_node` at score 121 / bucket B, which became the chosen slice after body/caller inspection. It saved roughly 15-20 minutes by pointing at a closeable linebreak leaf after the math/shipout scans produced less useful candidates. False positives: the math B scan listed already-threaded parameter helpers (`math_ext_param`, `big_op_spacing*`, `fraction_rule`) that did not need a session; `merge_justifiable_native_words` ranked B but inspection showed string-pool, native-word allocation, and `flush_node_list_global` edges that make it C/D rather than a quick B slice. Suggested improvement: discount functions that already take state parameters, and raise risk when a candidate body touches string-pool bridge accessors or calls `_global` wrappers outside the current module's direct hazard list.
+
+**Method surface / deleted accessors:** no new state methods and no bridge accessor deletions. `ScannerState::active_width`, `LinebreakState::cur_active_width` / `active_node_size`, and existing `MemState` methods were sufficient.
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328** unchanged. raw extern statics **38** unchanged. raw `unsafe {}` **174** unchanged. `unsafe fn` **655 -> 654** (the nested `deactivate_node` is now safe and directly threaded). Warnings **51** unchanged.
+
+**Validation:** `cargo fmt`; `cargo check -p tectonic_engine_xetex` -> 0 errors, 51 warnings; full dashboard -> **29 / 2 / 7 / 4**.
+
+**For the next session (106):** continue bounded leaves only. The recon helper is useful for surfacing small candidates, but inspect and down-rank already-threaded helpers and bodies with string-pool/output/scanner edges. Good next options may be another local linebreak/pagebuilder leaf or a small shipout rule/movement helper, but avoid whole-session work on `line_break`, `try_break`, `hlist_out`, `vlist_out`, `ship_out`, `scan.rs`, `mlist_to_hlist`, `hpack`, `vpackage`, or `build_page`.
+
+---
+
 ## Idiom session 104 — 2026-06-01 — add Phase-C recon helper
 
 **Type:** tooling (workstream 01, Phase C acceleration). **One commit.** No engine code changed; dashboard not rerun.
