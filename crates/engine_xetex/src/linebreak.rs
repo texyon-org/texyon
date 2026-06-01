@@ -2350,9 +2350,9 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
         set_pre_adjust_tail(PRE_ADJUST_HEAD);
 
         if semantic_pagination_enabled() {
-            set_just_box(crate::scan::hpack(q, 0, ADDITIONAL));
+            set_just_box(crate::packaging::hpack(q, 0, ADDITIONAL));
         } else {
-            set_just_box(crate::scan::hpack(q, cur_width, EXACTLY));
+            set_just_box(crate::packaging::hpack(q, cur_width, EXACTLY));
         }
         set_mem_b32s1(just_box() + 4, cur_indent);
 
@@ -2362,7 +2362,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
         }
 
         set_pre_adjust_tail(TEX_NULL);
-        crate::scan::append_to_vlist(just_box());
+        crate::packaging::append_to_vlist(just_box());
 
         if ADJUST_HEAD != adjust_tail() {
             set_mem_b32s1(cur_list_tail(), mem_b32s1(ADJUST_HEAD));

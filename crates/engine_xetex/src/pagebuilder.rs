@@ -39,13 +39,13 @@ use crate::save::geq_word_define;
 use crate::save::new_save_level;
 use crate::errors::box_error;
 use crate::scaled_math::x_over_n;
-use crate::scan::do_marks_global;
+use crate::packaging::do_marks_global;
 use crate::packaging::flush_node_list_global;
 use crate::scan::normal_paragraph;
-use crate::scan::prune_page_top_global;
+use crate::packaging::prune_page_top_global;
 use crate::scan::scan_left_brace;
-use crate::scan::vert_break;
-use crate::scan::vpackage;
+use crate::packaging::vert_break;
+use crate::packaging::vpackage;
 use crate::shipout::ship_out;
 use crate::state::{EqtbState, MemState, ShipoutState};
 

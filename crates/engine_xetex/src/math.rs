@@ -641,11 +641,11 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
     }
 
     let x = if is_char_node_global(q) || q == TEX_NULL {
-        crate::scan::hpack(q, 0, ADDITIONAL)
+        crate::packaging::hpack(q, 0, ADDITIONAL)
     } else if mem_b32s1(q) == TEX_NULL && mem_b16s1(q) <= VLIST_NODE && mem_b32s1(q + 4) == 0 {
         q
     } else {
-        crate::scan::hpack(q, 0, ADDITIONAL)
+        crate::packaging::hpack(q, 0, ADDITIONAL)
     };
 
     let q = mem_b32s1(x + 5);
@@ -785,7 +785,7 @@ pub unsafe fn make_over_global(q: i32) {
         Ok(p) => p,
         Err(e) => node_recycle_abort(e),
     };
-    let x = crate::scan::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
+    let x = crate::packaging::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
     crate::state::with_state_mut(|st| make_over(&mut st.mem, q, x));
 }
 
@@ -821,7 +821,7 @@ pub unsafe fn make_under_global(q: i32) {
     {
         node_recycle_abort(e);
     }
-    let y = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
+    let y = crate::packaging::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
     crate::state::with_state_mut(|st| make_under_finish(&mut st.mem, q, x, y, rule_thickness));
 }
 
@@ -920,9 +920,9 @@ pub unsafe fn make_radical_global(q: i32) {
         Ok(p) => p,
         Err(e) => node_recycle_abort(e),
     };
-    let overbar_box = crate::scan::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
+    let overbar_box = crate::packaging::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
     crate::state::with_state_mut(|st| st.mem.set_b32s1(y, overbar_box));
-    let hbox = crate::scan::hpack(y, 0, ADDITIONAL);
+    let hbox = crate::packaging::hpack(y, 0, ADDITIONAL);
     crate::state::with_state_mut(|st| make_radical_finish(&mut st.mem, q, hbox));
 }
 
@@ -1114,7 +1114,7 @@ pub unsafe fn make_fraction_global(q: i32) {
     crate::state::with_state_mut(|st| {
         make_fraction_link_delimiters(&mut st.mem, left_delim, v, right_delim)
     });
-    let hbox = crate::scan::hpack(left_delim, 0, ADDITIONAL);
+    let hbox = crate::packaging::hpack(left_delim, 0, ADDITIONAL);
     crate::state::with_state_mut(|st| make_fraction_finish(&mut st.mem, q, hbox));
 }
 
@@ -1744,7 +1744,7 @@ pub unsafe fn make_math_accent_global(q: i32) {
     set_mem_b32s1(y + 1, 0);
     if mem_b16s0(q) == BOTTOM_ACC || mem_b16s0(q) == BOTTOM_ACC + 1 {
         set_mem_b32s1(x, y);
-        let y = crate::scan::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
+        let y = crate::packaging::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
         set_mem_b32s1(y + 4, -(h - mem_b32s1(y + 3)));
         set_mem_b32s1(y + 1, mem_b32s1(x + 1));
         set_mem_b32s0(q + 1, y);
@@ -1753,7 +1753,7 @@ pub unsafe fn make_math_accent_global(q: i32) {
         p = new_kern_global(-delta);
         set_mem_b32s1(p, x);
         set_mem_b32s1(y, p);
-        let y = crate::scan::vpackage(y, 0, ADDITIONAL, MAX_HALFWORD);
+        let y = crate::packaging::vpackage(y, 0, ADDITIONAL, MAX_HALFWORD);
         if mem_b32s1(y + 3) < h {
             p = new_kern_global(h - mem_b32s1(y + 3));
             set_mem_b32s1(p, mem_b32s1(y + 5));
@@ -1931,7 +1931,7 @@ unsafe fn initial_script_shifts_global(p: i32) -> ScriptShifts {
     }) {
         ScriptShifts { up: 0, down: 0 }
     } else {
-        let z = crate::scan::hpack(p, 0, ADDITIONAL);
+        let z = crate::packaging::hpack(p, 0, ADDITIONAL);
         let shifts = crate::state::with_state(|st| {
             let t = if st.scanner.cur_style < SCRIPT_STYLE {
                 SCRIPT_SIZE
@@ -2028,7 +2028,7 @@ unsafe fn finish_subsup_stack_global(input: SubSupStackInput) {
         node_recycle_abort(NodeRecycleAbort::Overflow);
     }
 
-    let packaged = crate::scan::vpackage(input.x, 0, ADDITIONAL, MAX_HALFWORD);
+    let packaged = crate::packaging::vpackage(input.x, 0, ADDITIONAL, MAX_HALFWORD);
     crate::state::with_state_mut(|st| st.mem.set_b32s1(packaged + 4, input.shift_down));
     append_script_box_global(input.q, packaged);
 }
@@ -2615,7 +2615,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                         mlist_to_hlist();
                         set_cur_style(save_style);
                         update_math_style_params();
-                        crate::scan::hpack(mem_b32s1(TEMP_HEAD), 0, ADDITIONAL)
+                        crate::packaging::hpack(mem_b32s1(TEMP_HEAD), 0, ADDITIONAL)
                     }
                     _ => crate::errors::confusion(c"mlist2".as_ptr()),
                 };
@@ -2624,7 +2624,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                     make_scripts_global(q, delta);
                 }
 
-                let z = crate::scan::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
+                let z = crate::packaging::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
                 if mem_b32s1(z + 3) > max_h {
                     max_h = mem_b32s1(z + 3);
                 }
@@ -2643,7 +2643,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                 q = mem_b32s1(q);
             }
             FirstPass::CheckDimensions => {
-                let z = crate::scan::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
+                let z = crate::packaging::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
                 if mem_b32s1(z + 3) > max_h {
                     max_h = mem_b32s1(z + 3);
                 }
@@ -3917,14 +3917,14 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
             set_mem_b32s1(r, p);
             set_mem_b32s1(u2, r);
             if j == TEX_NULL {
-                b = crate::scan::hpack(u2, 0, ADDITIONAL);
+                b = crate::packaging::hpack(u2, 0, ADDITIONAL);
                 set_mem_b32s1(b + 4, s);
             } else {
                 set_mem_b32s1(b + 5, u2);
             }
         }
     }
-    crate::scan::append_to_vlist(b);
+    crate::packaging::append_to_vlist(b);
 }
 
 /// Emit error for insufficient math fonts, flush the math list, set danger.
@@ -4018,7 +4018,7 @@ pub unsafe fn after_math() {
         set_cur_style(TEXT_STYLE);
         set_mlist_penalties(false);
         mlist_to_hlist();
-        a = crate::scan::hpack(mem_b32s1(TEMP_HEAD), 0, ADDITIONAL);
+        a = crate::packaging::hpack(mem_b32s1(TEMP_HEAD), 0, ADDITIONAL);
         set_mem_b16s0(a, DLIST);
         crate::save::unsave();
         set_save_ptr(save_ptr() - 1);
@@ -4093,7 +4093,7 @@ pub unsafe fn after_math() {
         p = mem_b32s1(TEMP_HEAD);
         set_adjust_tail(ADJUST_HEAD);
         set_pre_adjust_tail(PRE_ADJUST_HEAD);
-        let mut b = crate::scan::hpack(p, 0, ADDITIONAL);
+        let mut b = crate::packaging::hpack(p, 0, ADDITIONAL);
         p = mem_b32s1(b + 5);
         let t = adjust_tail();
         set_adjust_tail(TEX_NULL);
@@ -4121,12 +4121,12 @@ pub unsafe fn after_math() {
                     || total_shrink(FILLL) != 0)
             {
                 crate::mem::free_node_global(b, BOX_NODE_SIZE);
-                b = crate::scan::hpack(p, z - q, EXACTLY);
+                b = crate::packaging::hpack(p, z - q, EXACTLY);
             } else {
                 e = 0;
                 if w > z {
                     crate::mem::free_node_global(b, BOX_NODE_SIZE);
-                    b = crate::scan::hpack(p, z, EXACTLY);
+                    b = crate::packaging::hpack(p, z, EXACTLY);
                 }
             }
             w = mem_b32s1(b + 1);
@@ -4177,7 +4177,7 @@ pub unsafe fn after_math() {
                 set_mem_b32s1(b, r);
                 set_mem_b32s1(r, a);
             }
-            b = crate::scan::hpack(b, 0, ADDITIONAL);
+            b = crate::packaging::hpack(b, 0, ADDITIONAL);
         }
 
         app_display(j, b, d);
@@ -4571,7 +4571,7 @@ pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
     let mut b = b;
     if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL {
         if mem_b16s1(b) == VLIST_NODE {
-            b = crate::scan::hpack(b, 0, ADDITIONAL);
+            b = crate::packaging::hpack(b, 0, ADDITIONAL);
         }
     }
 
@@ -4593,7 +4593,7 @@ pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
 
     match crate::state::with_state_mut(|st| rebox(&mut st.mem, b, w, char_kern_width)) {
         Ok(ReboxResult::Done(b)) => b,
-        Ok(ReboxResult::Hpack(b)) => crate::scan::hpack(b, w, EXACTLY),
+        Ok(ReboxResult::Hpack(b)) => crate::packaging::hpack(b, w, EXACTLY),
         Err(e) => node_recycle_abort(e),
     }
 }
