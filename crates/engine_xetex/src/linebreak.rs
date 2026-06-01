@@ -118,7 +118,7 @@ fn is_char_node_global(p: i32) -> bool {
 
 #[inline]
 fn is_non_discardable_node_global(p: i32) -> bool {
-    crate::state::with_state(|st| is_non_discardable_node_in(&st.mem, p))
+    crate::state::with_state(|st| is_non_discardable_node(&st.mem, p))
 }
 
 #[inline]
@@ -504,7 +504,7 @@ fn native_node_font(p: i32) -> i32 {
 }
 
 #[inline]
-unsafe fn copy_native_tail_in(mem: &mut MemState, q: i32, ha: i32, start: i32) {
+pub unsafe fn copy_native_tail(mem: &mut MemState, q: i32, ha: i32, start: i32) {
     let dst = mem.as_u16_ptr_mut(q + NATIVE_NODE_SIZE);
     let src = mem.as_u16_ptr(ha + NATIVE_NODE_SIZE);
     for i in start..native_node_len_in(mem, ha) {
@@ -513,12 +513,12 @@ unsafe fn copy_native_tail_in(mem: &mut MemState, q: i32, ha: i32, start: i32) {
 }
 
 #[inline]
-unsafe fn copy_native_tail(q: i32, ha: i32, start: i32) {
-    crate::state::with_state_mut(|st| copy_native_tail_in(&mut st.mem, q, ha, start));
+unsafe fn copy_native_tail_global(q: i32, ha: i32, start: i32) {
+    crate::state::with_state_mut(|st| copy_native_tail(&mut st.mem, q, ha, start));
 }
 
 #[inline]
-fn is_non_discardable_node_in(mem: &MemState, p: i32) -> bool {
+fn is_non_discardable_node(mem: &MemState, p: i32) -> bool {
     (mem.b16s1(p) as i32) < MATH_NODE
 }
 
@@ -641,7 +641,7 @@ pub fn find_protchar_left(
         l = mem.b32s1(l);
     } else if d {
         while mem.b32s1(l) != TEX_NULL
-            && !(crate::mem::is_char_node(mem, l) || is_non_discardable_node_in(mem, l))
+            && !(crate::mem::is_char_node(mem, l) || is_non_discardable_node(mem, l))
         {
             l = mem.b32s1(l);
         }
@@ -740,40 +740,57 @@ fn right_margin_kern_target(
     }
 }
 
-unsafe fn insert_right_margin_kern_global(q: i32, disc_break: bool) -> i32 {
-    let (p, ptmp) = match crate::state::with_state_mut(|state| {
-        right_margin_kern_target(&mut state.mem, &mut state.linebreak, q, disc_break)
-    }) {
-        Some(pair) => pair,
-        None => crate::errors::pdf_error(
-            c"insert_right_margin_kern".as_ptr(),
-            c"hlist stack failure".as_ptr(),
-        ),
-    };
+pub(crate) enum MarginKernAbort {
+    Overflow,
+    PdfError,
+}
 
-    let w = char_pw(p, 1);
+pub fn insert_right_margin_kern(
+    mem: &mut MemState,
+    linebreak: &mut LinebreakState,
+    q: i32,
+    disc_break: bool,
+    last_rightmost: i32,
+) -> Result<i32, MarginKernAbort> {
+    let (p, ptmp) = right_margin_kern_target(mem, linebreak, q, disc_break)
+        .ok_or(MarginKernAbort::PdfError)?;
+
+    let w = unsafe { char_pw(p, 1) };
     if w == 0 {
-        return q;
+        return Ok(q);
     }
 
-    let last_rightmost = crate::globals::last_rightmost_char();
-    let new_q = crate::state::with_state_mut(|state| {
-        let k = crate::mem::new_margin_kern(&mut state.mem, -w, last_rightmost, 1);
-        if k == crate::mem::ALLOC_FAILED {
-            return crate::mem::ALLOC_FAILED;
-        }
-        state.mem.set_b32s1(k, state.mem.b32s1(ptmp));
-        state.mem.set_b32s1(ptmp, k);
-        if ptmp == q {
-            state.mem.b32s1(q)
-        } else {
-            q
-        }
-    });
-    if new_q == crate::mem::ALLOC_FAILED {
-        crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
+    let k = crate::mem::new_margin_kern(mem, -w, last_rightmost, 1);
+    if k == crate::mem::ALLOC_FAILED {
+        return Err(MarginKernAbort::Overflow);
     }
-    new_q
+    mem.set_b32s1(k, mem.b32s1(ptmp));
+    mem.set_b32s1(ptmp, k);
+    let new_q = if ptmp == q {
+        mem.b32s1(q)
+    } else {
+        q
+    };
+    Ok(new_q)
+}
+
+unsafe fn insert_right_margin_kern_global(q: i32, disc_break: bool) -> i32 {
+    let last_rightmost = crate::globals::last_rightmost_char();
+    let res = crate::state::with_state_mut(|state| {
+        insert_right_margin_kern(&mut state.mem, &mut state.linebreak, q, disc_break, last_rightmost)
+    });
+    match res {
+        Ok(new_q) => new_q,
+        Err(MarginKernAbort::PdfError) => {
+            crate::errors::pdf_error(
+                c"insert_right_margin_kern".as_ptr(),
+                c"hlist stack failure".as_ptr(),
+            )
+        }
+        Err(MarginKernAbort::Overflow) => {
+            crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
+        }
+    }
 }
 
 fn left_margin_kern_target(
@@ -784,35 +801,45 @@ fn left_margin_kern_target(
     find_protchar_left(mem, linebreak, q, false)
 }
 
-unsafe fn insert_left_margin_kern_global(q: i32) -> i32 {
-    let p = match crate::state::with_state_mut(|state| {
-        left_margin_kern_target(&mut state.mem, &mut state.linebreak, q)
-    }) {
-        Some(p) => p,
-        None => crate::errors::pdf_error(
-            c"insert_left_margin_kern".as_ptr(),
-            c"hlist stack failure".as_ptr(),
-        ),
-    };
+pub fn insert_left_margin_kern(
+    mem: &mut MemState,
+    linebreak: &mut LinebreakState,
+    q: i32,
+    last_leftmost: i32,
+) -> Result<i32, MarginKernAbort> {
+    let p = left_margin_kern_target(mem, linebreak, q)
+        .ok_or(MarginKernAbort::PdfError)?;
 
-    let w = char_pw(p, 0);
+    let w = unsafe { char_pw(p, 0) };
     if w == 0 {
-        return q;
+        return Ok(q);
     }
 
-    let last_leftmost = crate::globals::last_leftmost_char();
-    let k = crate::state::with_state_mut(|state| {
-        let k = crate::mem::new_margin_kern(&mut state.mem, -w, last_leftmost, 0);
-        if k == crate::mem::ALLOC_FAILED {
-            return crate::mem::ALLOC_FAILED;
-        }
-        state.mem.set_b32s1(k, q);
-        k
-    });
+    let k = crate::mem::new_margin_kern(mem, -w, last_leftmost, 0);
     if k == crate::mem::ALLOC_FAILED {
-        crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
+        return Err(MarginKernAbort::Overflow);
     }
-    k
+    mem.set_b32s1(k, q);
+    Ok(k)
+}
+
+unsafe fn insert_left_margin_kern_global(q: i32) -> i32 {
+    let last_leftmost = crate::globals::last_leftmost_char();
+    let res = crate::state::with_state_mut(|state| {
+        insert_left_margin_kern(&mut state.mem, &mut state.linebreak, q, last_leftmost)
+    });
+    match res {
+        Ok(k) => k,
+        Err(MarginKernAbort::PdfError) => {
+            crate::errors::pdf_error(
+                c"insert_left_margin_kern".as_ptr(),
+                c"hlist stack failure".as_ptr(),
+            )
+        }
+        Err(MarginKernAbort::Overflow) => {
+            crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
+        }
+    }
 }
 
 /// translated from xetex-linebreak.c:2377 (finite_shrink)
@@ -1193,7 +1220,7 @@ pub unsafe fn reconstitute_global(j: i16, n: i16, bchar: i32, hchar: i32) -> i16
 }
 
 #[inline]
-unsafe fn set_native_metrics_in(mem: &MemState, eqtb: &EqtbState, p: i32) {
+pub unsafe fn set_native_metrics(mem: &MemState, eqtb: &EqtbState, p: i32) {
     measure_native_node(
         mem.node_addr(p),
         (eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
@@ -1201,8 +1228,8 @@ unsafe fn set_native_metrics_in(mem: &MemState, eqtb: &EqtbState, p: i32) {
 }
 
 #[inline]
-unsafe fn set_native_metrics(p: i32) {
-    crate::state::with_state(|st| set_native_metrics_in(&st.mem, &st.eqtb, p));
+unsafe fn set_native_metrics_global(p: i32) {
+    crate::state::with_state(|st| set_native_metrics(&st.mem, &st.eqtb, p));
 }
 
 #[inline]
@@ -1701,12 +1728,12 @@ pub unsafe fn line_break(d: bool) {
                                                     q,
                                                     node_subtype(crate::globals::ha()),
                                                 );
-                                                copy_native_tail(q, crate::globals::ha(), l);
-                                                set_native_metrics(q);
+                                                copy_native_tail_global(q, crate::globals::ha(), l);
+                                                set_native_metrics_global(q);
                                                 set_mem_b32s1(q, mem_b32s1(crate::globals::ha()));
                                                 set_mem_b32s1(crate::globals::ha(), q);
                                                 set_native_node_len(crate::globals::ha(), l);
-                                                set_native_metrics(crate::globals::ha());
+                                                set_native_metrics_global(crate::globals::ha());
                                                 break 'restart_native;
                                             }
                                         } else if hn() == 0 && l > 0 {
@@ -1715,12 +1742,12 @@ pub unsafe fn line_break(d: bool) {
                                                 native_node_len(crate::globals::ha()) - l,
                                             );
                                             set_mem_b16s0(q, node_subtype(crate::globals::ha()));
-                                            copy_native_tail(q, crate::globals::ha(), l);
-                                            set_native_metrics(q);
+                                            copy_native_tail_global(q, crate::globals::ha(), l);
+                                            set_native_metrics_global(q);
                                             set_mem_b32s1(q, mem_b32s1(crate::globals::ha()));
                                             set_mem_b32s1(crate::globals::ha(), q);
                                             set_native_node_len(crate::globals::ha(), l);
-                                            set_native_metrics(crate::globals::ha());
+                                            set_native_metrics_global(crate::globals::ha());
                                             set_ha(mem_b32s1(crate::globals::ha()));
                                             continue 'restart_native;
                                         } else if hn() as i32
@@ -3120,7 +3147,7 @@ pub unsafe extern "C" fn hyphenate() {
                             *mem_as_u16_ptr(ha() + NATIVE_NODE_SIZE)
                                 .add((i + hyphen_passed()) as usize);
                     }
-                    set_native_metrics(q);
+                    set_native_metrics_global(q);
                     set_mem_b32s1(s, q);
                     s = q;
 
@@ -3143,7 +3170,7 @@ pub unsafe extern "C" fn hyphenate() {
                 *mem_as_u16_ptr_mut(q + NATIVE_NODE_SIZE).add(i as usize) =
                     *mem_as_u16_ptr(ha() + NATIVE_NODE_SIZE).add((i + hyphen_passed()) as usize);
             }
-            set_native_metrics(q);
+            set_native_metrics_global(q);
             set_mem_b32s1(s, q);
             s = q;
             let q = mem_b32s1(ha());

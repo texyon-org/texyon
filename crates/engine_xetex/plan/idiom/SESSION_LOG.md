@@ -8,6 +8,25 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+
+## Idiom session 112 — 2026-06-01 — thread all remaining Bucket-B leaf helpers in `src/shipout.rs` and `src/linebreak.rs`
+
+**Type:** execution (workstream 01, Phase C — shipout and linebreak leaf helpers). **One commit.** Dashboard **29/2/7/4**. Crate warnings **52 → 52** (flat).
+
+**Slice:**
+* **`insert_right_margin_kern` / `insert_left_margin_kern` (`src/linebreak.rs`).** Threaded the two margin-kern builders to safe functions taking safe borrows (`mem: &mut MemState, linebreak: &mut LinebreakState`) and returning `Result<i32, MarginKernAbort>`, handling allocation and stack failures through a custom `MarginKernAbort` enum. Wrapped them in global legacy wrappers `insert_right_margin_kern_global` and `insert_left_margin_kern_global` to print errors and abort after the borrow is dropped.
+* **`copy_native_tail` (`src/linebreak.rs`).** Threaded `copy_native_tail_in` to a clean signature `pub unsafe fn copy_native_tail(mem: &mut MemState, q: i32, ha: i32, start: i32)` and renamed the legacy wrapper to `copy_native_tail_global`.
+* **`set_native_metrics` (`src/linebreak.rs`).** Threaded `set_native_metrics_in` to a clean signature `pub unsafe fn set_native_metrics(mem: &MemState, eqtb: &EqtbState, p: i32)` and renamed the legacy wrapper to `set_native_metrics_global`.
+* **`is_non_discardable_node` (`src/linebreak.rs`).** Threaded `is_non_discardable_node_in` to `is_non_discardable_node` taking `mem: &MemState`.
+
+**Metrics:** `#[no_mangle]` **327** unchanged. raw extern statics **38** unchanged. raw `unsafe {}` **175** unchanged. `unsafe fn` **640** unchanged. Warnings **52** unchanged.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 52 warnings; full dashboard → **29 / 2 / 7 / 4** green.
+
+**For the next session (113):** continue bounded leaves or start executing the module splits outlined in `plan/02-modules.md`. Remaining targets include synctex `intpar_synctex` or other local pagebuilder leaf helpers.
+
+---
+
 ## Idiom session 111 — 2026-06-01 — thread the synctex node-field reader cluster + fold in math `is_char_node` dedup
 
 **Type:** execution (workstream 01, Phase C — synctex mem-reader leaves + math predicate dedup). **One commit.** Dashboard **29/2/7/4**. Crate warnings **52 → 52** (flat; removed 3 now-unused `mem_*` `globals` imports from `synctex.rs`, balancing the threading). Deliberately larger than session 110 (two coherent leaf clusters batched).

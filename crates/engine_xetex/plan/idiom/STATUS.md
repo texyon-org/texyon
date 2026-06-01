@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 111, **threaded the synctex node-field reader cluster + folded in the math `is_char_node` dedup** — two coherent leaf clusters in one commit, deliberately larger than 110: the 10 pure `mem`-arena synctex readers (`synctex_tag_box`/`line_box`/`tag_rule`/`line_rule`/`tag_medium`/`line_medium`/`type`/`width`/`depth`/`height`) threaded to `&MemState` with `_global` bridge-down wrappers and ~40 in-module call sites renamed (parity-covered by the `synctex` golden); and the deferred `unsafe fn is_char_node(p)` global-bridge form in `math.rs` deleted, its 6 callers routed through `crate::mem::is_char_node` via a `_global` wrapper. Dashboard 29/2/7/4, `unsafe fn` 651→640, warnings 52. — prior session 110 finished font-metric/native-USV leaves + consolidated `is_char_node`.)
+Last updated: 2026-06-01 (last session = session 112, **threaded all remaining Bucket-B leaf helpers in `src/shipout.rs` and `src/linebreak.rs`** — threaded `insert_right_margin_kern`, `insert_left_margin_kern`, `copy_native_tail`, and `set_native_metrics` in `src/linebreak.rs` to safe state borrows (`&mut MemState`, `&mut LinebreakState`, `&MemState`, `&EqtbState`), with `_global` bridge-down wrappers for legacy call sites, and consolidated `is_non_discardable_node`. Dashboard 29/2/7/4, `unsafe fn` 640, warnings 52. — prior session 111 finished synctex readers + consolidated math `is_char_node`.)
 
 ## How to read this file
 
