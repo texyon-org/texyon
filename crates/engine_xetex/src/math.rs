@@ -4570,10 +4570,9 @@ fn rebox(
 
 pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
     let mut b = b;
-    if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL
-        && mem_b16s1(b) == VLIST_NODE {
-            b = crate::packaging::hpack(b, 0, ADDITIONAL);
-        }
+    if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL && mem_b16s1(b) == VLIST_NODE {
+        b = crate::packaging::hpack(b, 0, ADDITIONAL);
+    }
 
     let char_kern_width = if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL {
         let p = mem_b32s1(b + 5);
