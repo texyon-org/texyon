@@ -8,6 +8,77 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 122 — 2026-06-01 — workstream 02 slice 5: relocate the TFM/native font-loading group out of `scan.rs` into a new `fonts.rs`
+
+**Type:** execution (workstream 02, module decomposition — fifth mechanical
+relocation slice; **first one that creates a new destination module**). **One
+commit.** Dashboard **29/2/7/4**. Warnings **50 → 50**.
+
+**Slice:** moved the 11 font-loading functions verbatim from `src/scan.rs`
+(= xetex0.c) into a **new `src/fonts.rs`** (= xetex0.c's font-loading group;
+created the file + added `mod fonts;` to `lib.rs` per §7 step 2):
+`effective_char`, `effective_char_info`, `read_font_info` (the 524-line TFM
+reader), `read_tfm_word`, `read_fifteen`, `read_scaled_word`, `tfm_getc`,
+`load_native_font`, `new_native_word_node`, `build_native_character`,
+`new_native_character`. **No bytes changed inside any function** —
+`move_fns.py`, 966 fn-lines.
+
+**Tooling fix:** `move_fns.py`'s `FN_START` regex only matched `pub ` (with a
+space), so `pub(crate) fn new_native_word_node` was invisible to it. Generalized
+the visibility group to `pub(\([^)]+\))?` (handles `pub(crate)`/`pub(super)`) and
+bumped the name capture from group 4 → 5. The mover now relocates restricted-vis
+fns.
+
+**Non-fn items relocated (the mover only does `fn`s, so these were manual):**
+* the private `enum NativeCharSrc` (build_native_character's payload tag, sole
+  user moved) → `fonts.rs`;
+* the `cnl_get_node!` macro: a `scan.rs`-local `macro_rules!` that two moved fns
+  use. Exposed it with `pub(crate) use cnl_get_node;` right after the macro def
+  in `scan.rs`, then `use crate::scan::cnl_get_node;` in `fonts.rs` (the
+  path-based macro re-export idiom — avoids `#[macro_export]` crate-root
+  pollution). Made `push_font_info_b32s1` `pub(crate)` (TFM reader helper that
+  stays in `scan.rs`).
+
+**Const handling (relocate orphans, duplicate shared — §7):** 15 single-fn-private
+consts (`*_RFI`/`*_NN`/`*_NC`/`*_LNF` + `EMPTY_STRING`/`INVALID_HANDLE`/…)
+relocated to `fonts.rs` (all verified orphaned in `scan.rs` post-move); 5 shared
+(`AAT_FONT_FLAG`/`OTGR_FONT_FLAG`/`FONT_BASE`/`NATIVE_NODE_SIZE_NN`/
+`INT_PAR_XETEX_TRACING_FONTS`) duplicated.
+
+**Imports:** `fonts.rs` pulls 10 `ext.rs` font-engine `pub fn`s
+(`find_native_font`/`map_char_to_glyph`/`apply_mapping`/`measure_native_node`/
+`*_get_font_metrics`/…), 10 `globals` accessors, `io::{pack_file_name,
+tt_xetex_open_input}`, `output::{capture_to_diagnostic, char_warning,
+error_here_with_diagnostic}`, `errors::error`, `scan::{node_recycle_abort,
+push_font_info_b32s1, NodeRecycleAbort, cnl_get_node}`, `state::FontState`, and a
+6-decl `extern "C"` block for the raw FFI it owns (`get_loaded_font_design_size`/
+`isOpenTypeMathFont`/`get_ot_math_constant`/`ttstub_input_getc`/`_close`/
+`_tt_abort`). Repointed `crate::scan::<fn>` → `crate::fonts::` in `math.rs`/
+`linebreak.rs`; `scan.rs` re-imports the 6 it still calls bare. Orphan cleanup in
+`scan.rs`: 8 dead `use crate::ext::`/`io::` font imports, 2 dead globals imports,
+`pack_file_name`/`load_native_font` from grouped imports, 5 now-dead raw `extern`
+decls (`get_loaded_font_design_size`/`isOpenTypeMathFont`/`get_ot_math_constant`/
+`ttstub_input_getc`/`_close`), 1 stale banner.
+
+**No trap.** Warnings held at 50 throughout (the `effective_char`/native fns
+match on few node consts, and the shared node-type consts were already imported
+or relocated). 0 errors.
+
+**Metrics:** `scan.rs` 15,897 → **14,890** LOC (−1,007 — biggest single-slice
+dent yet). new `fonts.rs` = 1,025. No signature/`#[no_mangle]`/`unsafe` changes
+(relocation only). Dashboard 29/2/7/4.
+
+**For the next session (123):** continue 02 per §8 — last `scan.rs` *leaf*:
+`linebreak.rs` (`do_locale_linebreaks`/`char_pw_in`). Then `scan.rs` holds the
+scanner/expand/main_control/packaging core — start the **core carve** (§4/§8):
+box/list utils → `packaging.rs` (new, transitional), expand/macro/conditional →
+`expand.rs` (new), main_control dispatch + alignment → `main_control.rs` (new),
+residual scanners → `scanner.rs` (new), token consts → `token.rs`. `ini.rs`
+drains independently (`format_io.rs`/`engine.rs`/hyphenation). Recipe unchanged;
+`move_fns.py` now handles `pub(crate)` fns; for macros use `pub(crate) use`, for
+private enums/consts relocate wholesale, and watch the warning count.
+
+
 ## Idiom session 121 — 2026-06-01 — workstream 02 slice 4: relocate the extensions / `\special` group out of `scan.rs`
 
 **Type:** execution (workstream 02, module decomposition — fourth mechanical

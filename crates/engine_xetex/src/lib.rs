@@ -29,6 +29,7 @@ mod consts;
 mod engine_interface;
 mod errors;
 mod ext;
+mod fonts;
 mod globals;
 mod hash;
 mod helpers;

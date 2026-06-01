@@ -123,7 +123,7 @@ fn is_non_discardable_node_global(p: i32) -> bool {
 
 #[inline]
 fn font_character_width(fonts: &mut FontState, f: i32, c: u16) -> i32 {
-    let ec = crate::scan::effective_char(fonts, true, f, c);
+    let ec = crate::fonts::effective_char(fonts, true, f, c);
     let info = fonts.font_info_b16(fonts.char_base_entry(f) + ec);
     fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32)
 }
@@ -995,7 +995,7 @@ pub fn reconstitute(
                 q = fonts.font_info_b16(k);
             } else {
                 let char_base = fonts.char_base_entry(hyph.hf);
-                let effective = crate::scan::effective_char(fonts, true, hyph.hf, cur_l() as u16);
+                let effective = crate::fonts::effective_char(fonts, true, hyph.hf, cur_l() as u16);
                 q = fonts.font_info_b16(char_base + effective);
                 if q.s1 % 4 != LIG_TAG {
                     break 'continue_;
@@ -3163,7 +3163,7 @@ pub unsafe extern "C" fn hyphenate() {
                     let q = crate::mem::new_disc_global();
                     set_mem_b32s0(
                         q + 1,
-                        crate::scan::new_native_character(hf(), hyf_char() as u32),
+                        crate::fonts::new_native_character(hf(), hyf_char() as u32),
                     );
                     set_mem_b32s1(s, q);
                     s = q;

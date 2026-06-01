@@ -2307,7 +2307,7 @@ unsafe fn first_script_glyph_global(script_head: i32) -> (u16, i32) {
             crate::state::with_state(|st| (st.scanner.cur_f, st.scanner.cur_c));
         if font_is_ot_math_global(cur_f_after_fetch) {
             let script_c =
-                crate::scan::new_native_character(cur_f_after_fetch, cur_c_after_fetch as u32);
+                crate::fonts::new_native_character(cur_f_after_fetch, cur_c_after_fetch as u32);
             script_g = real_get_native_glyph(mem_node_addr(script_c), 0);
             script_f = cur_f_after_fetch;
         }
@@ -2570,7 +2570,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                         if font_area_entry(cur_f()) == AAT_FONT_FLAG
                             || font_area_entry(cur_f()) == OTGR_FONT_FLAG
                         {
-                            let z = crate::scan::new_native_character(cur_f(), cur_c() as u32);
+                            let z = crate::fonts::new_native_character(cur_f(), cur_c() as u32);
                             p = get_node_global(GLYPH_NODE_SIZE);
                             set_mem_b16s1(p, WHATSIT_NODE);
                             set_mem_b16s0(p, GLYPH_NODE);
@@ -2898,7 +2898,7 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleA
 pub unsafe fn char_box_global(f: i32, c: i32) -> i32 {
     let input = if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
         CharBoxInput::Native {
-            p: crate::scan::new_native_character(f, c as u32),
+            p: crate::fonts::new_native_character(f, c as u32),
         }
     } else {
         let q = font_info_b16(
@@ -2942,7 +2942,7 @@ pub unsafe fn stack_into_box_global(b: i32, f: i32, c: u16) {
 ///
 /// Phase-C: threaded to `&mut FontState`.
 pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
-    let c = crate::scan::effective_char(fonts, true, f, c);
+    let c = crate::fonts::effective_char(fonts, true, f, c);
     let q = fonts.font_info_b16(fonts.char_base_entry(f) + c);
     fonts.font_info_b32s1(fonts.height_base_entry(f) + q.s2 as i32 / 16)
         + fonts.font_info_b32s1(fonts.depth_base_entry(f) + q.s2 as i32 % 16)
@@ -3120,7 +3120,7 @@ unsafe fn compute_ot_math_accent_pos_global(mut p: i32) -> i32 {
             OtMathAccentPosStep::FetchMathChar => {
                 fetch_global(p + 1);
                 let (f, c) = crate::state::with_state(|st| (st.scanner.cur_f, st.scanner.cur_c));
-                let q = crate::scan::new_native_character(f, c as u32);
+                let q = crate::fonts::new_native_character(f, c as u32);
                 let g = real_get_native_glyph(mem_node_addr(q), 0);
                 return get_ot_math_accent_pos(f, g as i32);
             }
@@ -4752,7 +4752,7 @@ unsafe fn build_ext_delimiter_box_global(f: i32, q: crate::mem_types::B16x4, v: 
             .font_info_b16(st.fonts.exten_base_entry(f) + q.s0 as i32);
         // The repeatable (s0) piece sets the box width and the per-step height.
         let u = height_plus_depth(&mut st.fonts, f, r.s0);
-        let effective_c = crate::scan::effective_char(&mut st.fonts, true, f, r.s0);
+        let effective_c = crate::fonts::effective_char(&mut st.fonts, true, f, r.s0);
         let qq = st
             .fonts
             .font_info_b16(st.fonts.char_base_entry(f) + effective_c);

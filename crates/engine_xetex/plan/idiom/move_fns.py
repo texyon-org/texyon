@@ -36,7 +36,7 @@ import re
 import sys
 from pathlib import Path
 
-FN_START = re.compile(r'^(pub\s+)?(unsafe\s+)?(extern\s+"C"\s+)?fn\s+(\w+)\b')
+FN_START = re.compile(r'^(pub(\([^)]+\))?\s+)?(unsafe\s+)?(extern\s+"C"\s+)?fn\s+(\w+)\b')
 PREAMBLE = re.compile(r'^\s*(#!?\[|//)')  # attribute or comment line
 
 
@@ -45,7 +45,7 @@ def find_span(lines: list[str], name: str) -> tuple[int, int]:
     leading comment/attribute block. Raises on ambiguity / not found."""
     hits = [
         i for i, ln in enumerate(lines)
-        if (m := FN_START.match(ln)) and m.group(4) == name
+        if (m := FN_START.match(ln)) and m.group(5) == name
     ]
     if not hits:
         raise SystemExit(f"error: fn `{name}` not found in source")
