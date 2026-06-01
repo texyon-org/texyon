@@ -2594,7 +2594,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                         } else if cur_i().s3 > 0 {
                             delta =
                                 font_info_b32s1(italic_base_entry(cur_f()) + cur_i().s1 as i32 / 4);
-                            p = crate::scan::new_character(cur_f(), cur_c() as u16);
+                            p = crate::main_control::new_character(cur_f(), cur_c() as u16);
                             if mem_b32s1(q + 1) == MATH_TEXT_CHAR
                                 && font_info_b32s1(SPACE_CODE + param_base(cur_f())) != 0
                             {
@@ -3231,7 +3231,7 @@ pub unsafe fn start_eq_no() {
     set_save_stack_b32s1(save_ptr(), cur_chr());
     set_save_ptr(save_ptr() + 1);
 
-    crate::scan::push_math(MATH_SHIFT_GROUP);
+    crate::main_control::push_math(MATH_SHIFT_GROUP);
     crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
     if insert_src_special_every_math() {
         crate::ext::insert_src_special();
@@ -3318,7 +3318,7 @@ pub unsafe fn append_choices_global() {
     {
         node_recycle_abort(abort);
     }
-    crate::scan::push_math(MATH_CHOICE_GROUP);
+    crate::main_control::push_math(MATH_CHOICE_GROUP);
     crate::scan::scan_left_brace();
 }
 
@@ -3397,7 +3397,7 @@ pub unsafe fn build_choices_global() {
     if complete {
         return;
     }
-    crate::scan::push_math(MATH_CHOICE_GROUP);
+    crate::main_control::push_math(MATH_CHOICE_GROUP);
     crate::scan::scan_left_brace();
 }
 
@@ -3669,7 +3669,7 @@ pub unsafe fn math_left_right_global() {
             q
         };
         if t != RIGHT_NOAD {
-            crate::scan::push_math(MATH_LEFT_GROUP);
+            crate::main_control::push_math(MATH_LEFT_GROUP);
             crate::state::with_state_mut(|st| finish_left_right_group(&mut st.mem, q, p));
         } else if let Err(abort) =
             crate::state::with_state_mut(|st| append_inner_noad_for_right(&mut st.mem, q))
@@ -4479,7 +4479,7 @@ pub unsafe fn init_math() {
             l = mem_b32s1(p);
         }
 
-        crate::scan::push_math(MATH_SHIFT_GROUP);
+        crate::main_control::push_math(MATH_SHIFT_GROUP);
         set_cur_list_mode(MMODE);
         crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
         crate::save::eq_word_define(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w);
@@ -4501,7 +4501,7 @@ pub unsafe fn init_math() {
         }
     } else {
         crate::input::back_input();
-        crate::scan::push_math(MATH_SHIFT_GROUP);
+        crate::main_control::push_math(MATH_SHIFT_GROUP);
         crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
         if insert_src_special_every_math() {
             crate::ext::insert_src_special();

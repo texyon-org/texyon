@@ -4612,7 +4612,7 @@ pub unsafe fn prefixed_command() {
                 crate::scan::scan_optional_equals();
 
                 if set_box_allowed() {
-                    crate::scan::scan_box(n);
+                    crate::main_control::scan_box(n);
                 } else {
                     crate::output::error_here_with_diagnostic(c"Improper ".as_ptr());
                     crate::output::print_esc_cstr(c"setbox".as_ptr());

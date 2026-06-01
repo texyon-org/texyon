@@ -3290,7 +3290,7 @@ pub unsafe extern "C" fn hyphenate() {
                     set_hyf_entry(i as usize, 0);
                     let mut minor_tail = TEX_NULL;
                     set_mem_b32s0(r + 1, TEX_NULL);
-                    let hyf_node = crate::scan::new_character(hf(), hyf_char() as u16);
+                    let hyf_node = crate::main_control::new_character(hf(), hyf_char() as u16);
                     let mut saved_c = 0;
                     if hyf_node != TEX_NULL {
                         i += 1;

@@ -44,7 +44,7 @@ use crate::save::find_sa_element_global;
 use crate::save::geq_word_define;
 use crate::save::new_save_level;
 use crate::scaled_math::x_over_n;
-use crate::scan::normal_paragraph;
+use crate::main_control::normal_paragraph;
 use crate::scan::scan_left_brace;
 use crate::shipout::ship_out;
 use crate::state::{EqtbState, MemState, ShipoutState};
