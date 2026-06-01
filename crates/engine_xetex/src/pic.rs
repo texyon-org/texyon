@@ -405,9 +405,9 @@ pub unsafe fn load_picture(is_pdf: bool) {
         cur_area, cur_ext, cur_list_tail, cur_name, cur_val, mem_node_addr, set_mem_b16s0,
         set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
     };
+    use crate::io::{pack_file_name, scan_file_name};
     use crate::mem::new_whatsit_global;
     use crate::output::{print_cstr, print_file_name, print_scaled};
-    use crate::io::{pack_file_name, scan_file_name};
     use crate::scan::{scan_decimal, scan_dimen, scan_int, scan_keyword};
 
     scan_file_name();

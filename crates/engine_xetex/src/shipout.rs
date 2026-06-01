@@ -17,17 +17,17 @@ use crate::globals::{
     font_letter_space_entry, font_mapping_ptr, font_ptr, font_used_entry, init_pool_ptr, job_name,
     last_bop, log_opened, lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v,
     mem_as_u16_ptr, mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1,
-    mem_gr, mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size, rule_ht,
-    rule_wd, rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area,
-    set_cur_cs, set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode,
-    set_cur_name, set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset,
-    set_dead_cycles, set_doing_leaders, set_doing_special, set_font_ptr, set_font_used_entry,
-    set_help_line, set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h,
-    set_max_push, set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-    set_mem_word, set_pdf_last_x_pos, set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht,
-    set_rule_wd, set_selector, set_str_pool, set_temp_ptr, set_total_pages, set_write_file,
-    set_write_open, set_xtx_ligature_present, shell_escape_enabled, str_pool_entry, str_pool_ptr,
-    str_ptr, str_start, temp_ptr, term_offset, total_pages, write_file, write_loc, write_open,
+    mem_gr, mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size, rule_ht, rule_wd,
+    rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area, set_cur_cs,
+    set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode, set_cur_name,
+    set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset, set_dead_cycles,
+    set_doing_leaders, set_doing_special, set_font_ptr, set_font_used_entry, set_help_line,
+    set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_push, set_max_v,
+    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pdf_last_x_pos,
+    set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht, set_rule_wd, set_selector,
+    set_str_pool, set_temp_ptr, set_total_pages, set_write_file, set_write_open,
+    set_xtx_ligature_present, shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr,
+    str_start, temp_ptr, term_offset, total_pages, write_file, write_loc, write_open,
     xdv_buffer_entry,
 };
 use crate::mem::{
@@ -1895,7 +1895,14 @@ fn finish_vlist_rule(
 pub unsafe fn finish_vlist_rule_global(this_box: i32, left_edge: i32, upwards: bool) {
     let cur_dir_val = cur_dir();
     let action = crate::state::with_state_mut(|st| {
-        finish_vlist_rule(&st.mem, &mut st.shipout, this_box, left_edge, upwards, cur_dir_val)
+        finish_vlist_rule(
+            &st.mem,
+            &mut st.shipout,
+            this_box,
+            left_edge,
+            upwards,
+            cur_dir_val,
+        )
     });
     if action.emit {
         if let Some(h_move) = action.h_move {

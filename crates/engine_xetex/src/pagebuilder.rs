@@ -17,6 +17,7 @@ use crate::globals::{
 
 // Former C module-level statics, now bridged onto EngineState.shipout
 // (session 46). Thin module-private accessors over the thread-local.
+use crate::errors::box_error;
 use crate::errors::confusion;
 use crate::errors::error;
 use crate::helpers::badness;
@@ -34,18 +35,17 @@ use crate::output::error_here_with_diagnostic;
 use crate::output::print_cstr;
 use crate::output::print_esc_cstr;
 use crate::output::print_int;
+use crate::packaging::do_marks_global;
+use crate::packaging::flush_node_list_global;
+use crate::packaging::prune_page_top_global;
+use crate::packaging::vert_break;
+use crate::packaging::vpackage;
 use crate::save::find_sa_element_global;
 use crate::save::geq_word_define;
 use crate::save::new_save_level;
-use crate::errors::box_error;
 use crate::scaled_math::x_over_n;
-use crate::packaging::do_marks_global;
-use crate::packaging::flush_node_list_global;
 use crate::scan::normal_paragraph;
-use crate::packaging::prune_page_top_global;
 use crate::scan::scan_left_brace;
-use crate::packaging::vert_break;
-use crate::packaging::vpackage;
 use crate::shipout::ship_out;
 use crate::state::{EqtbState, MemState, ShipoutState};
 

@@ -20,8 +20,8 @@ use crate::globals::{
 use crate::input::begin_token_list;
 use crate::io::scan_and_pack_name;
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
-use crate::pic::load_picture;
 use crate::packaging::flush_node_list_global;
+use crate::pic::load_picture;
 use crate::scan::{
     get_x_token, new_graf, scan_four_bit_int, scan_int, scan_optional_equals, scan_toks, str_toks,
 };

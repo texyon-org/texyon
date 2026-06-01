@@ -4,9 +4,8 @@
 use crate::consts::{
     ACTIVE_BASE, BATCH_MODE, BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CS_TOKEN_FLAG,
     CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, EQTB_SIZE, ERROR_STOP_MODE, ETEX_PEN_BASE,
-    GLUE_BASE, GLUE_NODE, HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE,
-    LOCAL_BASE, MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD, NULL_FLAG,
-    PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE,
+    GLUE_BASE, GLUE_NODE, HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE, LOCAL_BASE,
+    MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE,
     SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE,
     TOO_BIG_CHAR,
 };
@@ -71,25 +70,22 @@ use crate::pic::count_pdf_file_pages;
 use crate::shipout::ship_out;
 
 use crate::globals::{
-    align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs,
-    cur_group, cur_input, cur_list_mode, cur_tok, cur_val, cur_val_level, def_ref, eqtb_b32s1,
-    eqtb_is_null, expand_depth, expand_depth_count, file_offset, first, fmem_ptr, font_glue,
-    font_mem_size, font_params, font_ptr, hash_s1, init_pool_ptr, last,
-    max_print_line, max_reg_help_line, max_reg_num, mem_b16s0, mem_b16s1,
-    mem_b16s3, mem_b32s0, mem_b32s1, old_setting, open_parens,
+    align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_group, cur_input,
+    cur_list_mode, cur_tok, cur_val, cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null,
+    expand_depth, expand_depth_count, file_offset, first, fmem_ptr, font_glue, font_mem_size,
+    font_params, font_ptr, hash_s1, init_pool_ptr, last, max_print_line, max_reg_help_line,
+    max_reg_num, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, old_setting, open_parens,
     param_base, pool_ptr, pool_size, pseudo_files, read_file_entry, read_open_entry, rust_stdout,
-    save_ptr, save_stack_b32s1, scanner_status, selector, set_align_state,
-    set_arith_error, set_avail, set_buffer_entry, set_cur_chr,
-    set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_input_limit, set_cur_input_loc,
-    set_cur_input_name, set_cur_input_state, set_cur_input_synctex_tag,
-    set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref, set_eqtb_b32s1,
-    set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue, set_font_info_b32s1,
-    set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1,
-    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1,
-    set_no_new_control_sequence, set_old_setting, set_open_parens,
-    set_pool_ptr, set_pseudo_files, set_read_open_entry, set_save_ptr, set_save_stack_b32s1,
-    set_scanner_status, set_selector, set_str_pool, set_str_ptr,
-    set_warning_index, str_pool_entry, str_ptr, str_start, term_offset,
+    save_ptr, save_stack_b32s1, scanner_status, selector, set_align_state, set_arith_error,
+    set_avail, set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index,
+    set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
+    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
+    set_eqtb_b32s1, set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue,
+    set_font_info_b32s1, set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1,
+    set_no_new_control_sequence, set_old_setting, set_open_parens, set_pool_ptr, set_pseudo_files,
+    set_read_open_entry, set_save_ptr, set_save_stack_b32s1, set_scanner_status, set_selector,
+    set_str_pool, set_str_ptr, set_warning_index, str_pool_entry, str_ptr, str_start, term_offset,
     warning_index,
 };
 use crate::mem::new_rule_global;
@@ -108,8 +104,7 @@ use crate::main_control::{
 const NULL_CS: i32 = 2_228_225; // xetex_format.h:199
 use crate::ext::{append_src_special, do_extension, insert_src_special};
 use crate::fonts::{
-    effective_char, effective_char_info, new_native_character, new_native_word_node,
-    read_font_info,
+    effective_char, effective_char_info, new_native_character, new_native_word_node, read_font_info,
 };
 use crate::io::{open_log_file, scan_and_pack_name, scan_file_name};
 use crate::output::print_cmd_chr;
@@ -7822,7 +7817,6 @@ pub unsafe fn new_native_word_node_global(f: i32, n: i32) -> i32 {
 // ---------------------------------------------------------------------------
 // load_native_font
 // ---------------------------------------------------------------------------
-
 
 pub(crate) unsafe fn push_font_info_b32s1(v: i32) {
     let k = crate::globals::fmem_ptr();

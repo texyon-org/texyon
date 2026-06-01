@@ -10,13 +10,15 @@ use crate::globals::{
     use_err_help,
 };
 use crate::output::print_cmd_chr;
-use crate::packaging::flush_node_list_global;
 use crate::output::show_box;
+use crate::packaging::flush_node_list_global;
 
 // Interaction-mode constants (xetex_format.h:644–647).
 
 // History constants (xetex-xetexd.h:355–358).
 use crate::ini::tt_cleanup;
+use crate::io::close_files_and_terminate;
+use crate::io::open_log_file;
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
 use crate::output::print;
@@ -25,8 +27,6 @@ use crate::output::print_cstr;
 use crate::output::print_int;
 use crate::output::print_ln;
 use crate::output::print_nl_cstr;
-use crate::io::close_files_and_terminate;
-use crate::io::open_log_file;
 use crate::output::show_context;
 
 const HISTORY_ERROR_ISSUED: i32 = 2;

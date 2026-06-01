@@ -1232,13 +1232,13 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
         // Finish the MATH_CHAR box: `axis_height` is the threaded font helper,
         // so the writes + `axis_height` run together under one disjoint borrow.
         let size = cur_size();
+        let ah = axis_height_global(size);
         crate::state::with_state_mut(|st| {
             let st = &mut *st;
             if st.mem.b32s1(q + 3) != EMPTY && st.mem.b16s0(q) != LIMITS {
                 let v = st.mem.b32s1(x + 1) - delta;
                 st.mem.set_b32s1(x + 1, v);
             }
-            let ah = axis_height(&st.fonts, &st.eqtb, size);
             let v = crate::scaled_math::half(st.mem.b32s1(x + 3) - st.mem.b32s1(x + 2)) - ah;
             st.mem.set_b32s1(x + 4, v);
             st.mem.set_b32s1(q + 1, SUB_BOX);
@@ -1283,6 +1283,15 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
         // scanner borrow. `cur_size` is precomputed for the spacing reads;
         // allocator exhaustion returns `Overflow` for the post-borrow abort.
         let size = cur_size();
+        let (bos1, bos2, bos3, bos4, bos5) = crate::state::with_state(|st| {
+            (
+                big_op_spacing1(&st.fonts, &st.eqtb, size),
+                big_op_spacing2(&st.fonts, &st.eqtb, size),
+                big_op_spacing3(&st.fonts, &st.eqtb, size),
+                big_op_spacing4(&st.fonts, &st.eqtb, size),
+                big_op_spacing5(&st.fonts, &st.eqtb, size),
+            )
+        });
         let step = crate::state::with_state_mut(|st| -> Result<(), NodeRecycleAbort> {
             let st = &mut *st;
             let half_delta = crate::scaled_math::half(delta);
@@ -1298,9 +1307,6 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
                 free_node(&mut st.mem, x, BOX_NODE_SIZE);
                 st.mem.set_b32s1(v + 5, y);
             } else {
-                let bos1 = big_op_spacing1(&st.fonts, &st.eqtb, size);
-                let bos3 = big_op_spacing3(&st.fonts, &st.eqtb, size);
-                let bos5 = big_op_spacing5(&st.fonts, &st.eqtb, size);
                 let mut shift_up = bos3 - st.mem.b32s1(x + 2);
                 if shift_up < bos1 {
                     shift_up = bos1;
@@ -1328,9 +1334,6 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
             if st.mem.b32s1(q + 3) == EMPTY {
                 free_node(&mut st.mem, z, BOX_NODE_SIZE);
             } else {
-                let bos2 = big_op_spacing2(&st.fonts, &st.eqtb, size);
-                let bos4 = big_op_spacing4(&st.fonts, &st.eqtb, size);
-                let bos5 = big_op_spacing5(&st.fonts, &st.eqtb, size);
                 let mut shift_down = bos4 - st.mem.b32s1(z + 3);
                 if shift_down < bos2 {
                     shift_down = bos2;
@@ -1900,21 +1903,21 @@ unsafe fn clean_script_box_global(
     adjustment: ScriptBoxAdjustment,
 ) -> ScriptBoxPrep {
     let node = clean_box(script_field, clean_style);
-    let shift = crate::state::with_state_mut(|st| {
-        add_script_space_and_restore_font(&mut st.mem, &st.eqtb, &mut st.scanner, node, saved_font);
-        match adjustment {
-            ScriptBoxAdjustment::Sub1 => sub1(&st.fonts, &st.eqtb, st.scanner.cur_size),
-            ScriptBoxAdjustment::Sub2 => sub2(&st.fonts, &st.eqtb, st.scanner.cur_size),
-            ScriptBoxAdjustment::Superscript => {
-                if st.scanner.cur_style % 2 != 0 {
-                    sup3(&st.fonts, &st.eqtb, st.scanner.cur_size)
-                } else if st.scanner.cur_style < TEXT_STYLE {
-                    sup1(&st.fonts, &st.eqtb, st.scanner.cur_size)
-                } else {
-                    sup2(&st.fonts, &st.eqtb, st.scanner.cur_size)
-                }
+    let shift = crate::state::with_state(|st| match adjustment {
+        ScriptBoxAdjustment::Sub1 => sub1(&st.fonts, &st.eqtb, st.scanner.cur_size),
+        ScriptBoxAdjustment::Sub2 => sub2(&st.fonts, &st.eqtb, st.scanner.cur_size),
+        ScriptBoxAdjustment::Superscript => {
+            if st.scanner.cur_style % 2 != 0 {
+                sup3(&st.fonts, &st.eqtb, st.scanner.cur_size)
+            } else if st.scanner.cur_style < TEXT_STYLE {
+                sup1(&st.fonts, &st.eqtb, st.scanner.cur_size)
+            } else {
+                sup2(&st.fonts, &st.eqtb, st.scanner.cur_size)
             }
         }
+    });
+    crate::state::with_state_mut(|st| {
+        add_script_space_and_restore_font(&mut st.mem, &st.eqtb, &mut st.scanner, node, saved_font);
     });
 
     ScriptBoxPrep { node, shift }
@@ -4973,9 +4976,9 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
             Err(e) => node_recycle_abort(e),
         };
     }
+    let axis = axis_height_global(s);
     crate::state::with_state_mut(|st| {
         let state = &mut *st;
-        let axis = axis_height(&state.fonts, &state.eqtb, s);
         let shift =
             crate::scaled_math::half(state.mem.b32s1(b + 3) - state.mem.b32s1(b + 2)) - axis;
         state.mem.set_b32s1(b + 4, shift);

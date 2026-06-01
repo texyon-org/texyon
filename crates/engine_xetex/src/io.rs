@@ -2,6 +2,13 @@
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{
+    buf_size, buffer_entry, buffer_ptr, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1,
+    first, last, max_buf_stack, name_length, name_length16, name_of_file, name_of_file16,
+    name_of_file16_entry, read_file_entry, read_file_ptr, read_open_entry, set_buffer_entry,
+    set_last, set_max_buf_stack, set_name_in_progress, set_name_length, set_name_length16,
+    set_read_open_entry, set_stop_at_space,
+};
+use crate::globals::{
     cur_cmd, cur_cs, cur_input, def_ref, file_offset, init_pool_ptr, max_print_line, mem_b32s1,
     old_setting, open_parens, pool_ptr, pool_size, rust_stdout, scanner_status, selector,
     set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
@@ -9,13 +16,6 @@ use crate::globals::{
     set_pool_ptr, set_scanner_status, set_selector, set_str_pool, set_str_ptr, set_warning_index,
     stop_at_space, str_pool_entry, str_ptr, str_start, term_offset, texmf_log_name, warning_index,
     write_open,
-};
-use crate::globals::{
-    buf_size, buffer_entry, buffer_ptr, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1,
-    first, last, max_buf_stack, name_length, name_length16, name_of_file, name_of_file16,
-    name_of_file16_entry, read_file_entry, read_file_ptr, read_open_entry, set_buffer_entry,
-    set_last, set_max_buf_stack, set_name_in_progress, set_name_length, set_name_length16,
-    set_read_open_entry, set_stop_at_space,
 };
 
 // ---------------------------------------------------------------------------
