@@ -3671,12 +3671,10 @@ pub unsafe fn math_left_right_global() {
         if t != RIGHT_NOAD {
             crate::scan::push_math(MATH_LEFT_GROUP);
             crate::state::with_state_mut(|st| finish_left_right_group(&mut st.mem, q, p));
-        } else {
-            if let Err(abort) =
-                crate::state::with_state_mut(|st| append_inner_noad_for_right(&mut st.mem, q))
-            {
-                node_recycle_abort(abort);
-            }
+        } else if let Err(abort) =
+            crate::state::with_state_mut(|st| append_inner_noad_for_right(&mut st.mem, q))
+        {
+            node_recycle_abort(abort);
         }
     }
 }
@@ -4572,11 +4570,10 @@ fn rebox(
 
 pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
     let mut b = b;
-    if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL {
-        if mem_b16s1(b) == VLIST_NODE {
+    if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL
+        && mem_b16s1(b) == VLIST_NODE {
             b = crate::packaging::hpack(b, 0, ADDITIONAL);
         }
-    }
 
     let char_kern_width = if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL {
         let p = mem_b32s1(b + 5);
