@@ -31,6 +31,7 @@ mod errors;
 mod expand;
 mod ext;
 mod fonts;
+mod format_io;
 mod globals;
 mod hash;
 mod helpers;
