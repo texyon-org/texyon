@@ -37,7 +37,8 @@ use crate::globals::{
     set_pool_ptr, set_save_ptr, set_save_stack_b32s1, set_selector, set_skew_char_entry,
     set_str_ptr, str_ptr, str_start,
 };
-use crate::ini::{intpar, new_hyph_exceptions, new_patterns};
+use crate::hyphenation::{new_hyph_exceptions, new_patterns};
+use crate::ini::intpar;
 use crate::input::begin_token_list;
 use crate::io::{open_log_file, scan_file_name};
 use crate::linebreak::{do_locale_linebreaks, line_break};

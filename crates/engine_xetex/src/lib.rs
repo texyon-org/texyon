@@ -34,6 +34,7 @@ mod fonts;
 mod globals;
 mod hash;
 mod helpers;
+mod hyphenation;
 mod ini;
 mod input;
 #[allow(dead_code)] // used as the translation progresses

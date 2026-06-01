@@ -4,7 +4,7 @@ use crate::consts::{
 };
 use crate::ext::{linebreak_next, linebreak_start, measure_native_node, real_get_native_word_cp};
 use crate::globals::eqtb_b32s1;
-use crate::ini::init_trie;
+use crate::hyphenation::init_trie;
 use crate::scan::{new_native_word_node_global, node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, HyphState, LinebreakState, MemState, ScannerState};
 
