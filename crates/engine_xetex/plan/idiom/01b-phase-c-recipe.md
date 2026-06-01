@@ -183,6 +183,19 @@ mechanical. Use a two-step workflow:
         re-borrow state, depend on side effects, or cross a scanner/error
         boundary. Read and rewrite by hand.
 
+    Use the read-only recon helper to get a first-pass ranked list:
+
+    ```bash
+    python3 plan/idiom/phase_c_recon.py --limit 40
+    python3 plan/idiom/phase_c_recon.py --bucket B --module src/math.rs
+    python3 plan/idiom/phase_c_recon.py --dead-wrappers
+    ```
+
+    The script is heuristic, not authoritative. It deliberately defaults
+    broad scans away from `src/scan.rs`; use `--module src/scan.rs` or
+    `--include-scan` only when you are intentionally investigating scanner
+    work.
+
 2.  **Codemod only buckets A/B.** Regex/scripted edits are encouraged
     for classified-safe work: legacy call-site rename to `_global`,
     removal of `#[no_mangle] extern "C"` from no-C-caller functions,

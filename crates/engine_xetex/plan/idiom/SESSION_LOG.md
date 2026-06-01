@@ -7,6 +7,20 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 104 — 2026-06-01 — add Phase-C recon helper
+
+**Type:** tooling (workstream 01, Phase C acceleration). **One commit.** No engine code changed; dashboard not rerun.
+
+**Slice:** added `plan/idiom/phase_c_recon.py`, a read-only dependency-free Python helper for ranking likely Phase-C threading candidates. The script extracts Rust functions from `src/*.rs`, counts callers in one pass, detects caller contexts near `with_state`, records `_global` calls, bridge-accessor hits, direct-state hits, allocator-like calls, and scanner/diagnostic/output/packing/native hazards, then assigns a conservative A/B/C/D or `dead-wrapper` bucket and score. It supports table and JSON output plus filters such as `--bucket`, `--module`, `--dead-wrappers`, `--include-scan`, and `--include-unused`.
+
+**Docs:** updated `01b-phase-c-recipe.md` §4a with example invocations and a reminder that the helper is heuristic and defaults broad scans away from `src/scan.rs`.
+
+**Validation:** `python3 -m py_compile plan/idiom/phase_c_recon.py`; smoke-tested default table output, JSON output piped through `head`, and dead-wrapper mode. Full-crate default scan runs in about 0.7s in this worktree.
+
+**For the next session (105):** use `python3 plan/idiom/phase_c_recon.py --limit 40` at recon start, then narrow with `--bucket B --module src/math.rs` or a specific shipout/linebreak module. Treat the output as triage only: inspect bodies before editing, and keep scanner-heavy or high-count orchestrators out of broad codemod scope.
+
+---
+
 ## Idiom session 103 — 2026-06-01 — thread `make_radical_global` delimiter adjustment
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).
