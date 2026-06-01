@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 106, **Phase-C recon helper refinement**, improved `plan/idiom/phase_c_recon.py` after session-105 findings. The helper now recognizes Rust lifetimes/loop labels in brace matching, detects threaded state parameters, hides already-threaded helpers by default unless `--include-threaded` is passed, and treats string-pool access plus surviving `_global` callees as higher-risk C-style edges. Smoke-tested py_compile plus default, math-B, threaded-math, shipout, and dead-wrapper scans. No engine code changed; dashboard not rerun. — prior session 105 threaded `try_break`'s local `deactivate_node`, dashboard 29/2/7/4. — prior session 104 added the initial recon helper.)
+Last updated: 2026-06-01 (last session = session 107, **Phase-C DVI font def leaves threaded**, threaded `dvi_native_font_def` and `dvi_font_def_bytes` to `FontState` and `StringsState` inside `src/shipout.rs`, deleted dead `font_check_entry` from `src/globals.rs`, resolved nested borrow panics by calling `make_font_def` outside `state` borrows in `dvi_font_def_global` wrapper, dashboard 29/2/7/4. — prior session 106 refined the Phase-C recon helper. — prior session 105 threaded `try_break`'s local `deactivate_node`.)
 
 ## How to read this file
 
@@ -1199,6 +1199,22 @@ the snippets in `00-overview.md` / the workstream plans.
     inside `math_fraction`/`math_left_right` only if a follow-up simplification
     is obvious, or move to a pagebuilder/linebreak/shipout leaf. Keep
     scanner-heavy `scan.rs` and high-count orchestrators deferred.
+
+    **Session 103 update:** the math radical-making delimiter adjustment
+    in `make_radical_global` is now threaded. Skew/clearance adjustments and rule/overbar
+    links run under direct disjoint `MemState` borrows, while `clean_box`, `overbar`,
+    `vpackage`, and delimiter scans stay outside live borrows.
+
+    **Session 105 update:** the local `deactivate_node` helper inside `src/linebreak.rs`'s
+    `try_break` is now threaded to `&mut MemState`, `&ScannerState`, and `&mut LinebreakState`,
+    directing active-list mutations and deallocations under safe borrows.
+
+    **Session 107 update:** the DVI native/standard font definition helper functions
+    `dvi_native_font_def` and `dvi_font_def_bytes` are now threaded to `&FontState` and
+    `&StringsState` in `src/shipout.rs`. The `dvi_font_def_global` wrapper runs `make_font_def`
+    completely outside the borrow to prevent nested mutable borrows, then formats and emits the
+    DVI bytes under short, disjoint borrows. The dead bridge accessor `font_check_entry` is deleted
+    from `src/globals.rs`.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

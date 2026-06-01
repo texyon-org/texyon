@@ -7,6 +7,33 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 107 — 2026-06-01 — thread shipout DVI font definition leaves
+
+**Type:** execution (workstream 01, Phase C — shipout leaves). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (52, with 1 warning added and resolved for the dead `font_check_entry`).
+
+**Slice:** Threaded `dvi_native_font_def` and `dvi_font_def_bytes` in `src/shipout.rs` off the bridge-up accessors, passing safe `&FontState` and `&StringsState` references directly. The `dvi_font_def_global` wrapper was refactored to perform the `make_font_def` call (which requires nested mutable state borrows internally to resize `xdv_buffer`) completely outside any state borrow, and then formats and emits the resulting font definition bytes under short, disjoint state borrows. This guarantees absolute borrow safety and avoids nested mutable borrows. We also completely removed the dead bridge accessor `font_check_entry` from `src/globals.rs` and cleaned up its imports.
+
+**Classification:** bucket **B/C**, highly accurate. The core definition byte formatters are pure threaded parameter reads, while the legacy wrapper orchestrates state-borrow disjointness around C-like output routines and external calls.
+
+**Recon-helper usefulness report:**
+- Which command(s) you ran: `python3 plan/idiom/phase_c_recon.py --bucket B --module src/shipout.rs`
+- Which candidate it surfaced: `dvi_native_font_def` (bucket B, score 101)
+- Whether bucket/risk classification was accurate: Extremely accurate! The function itself is a very clean B leaf once the wrapper handles the emission side.
+- Roughly how much recon time it saved or failed to save: Saved around 10-15 minutes by immediately pointing us at the right decoupled DVI-emission leaves rather than auditing candidates manually.
+- Any false positives/false negatives or suggested script improvements: The script is working perfectly and the refinement to hide already-threaded helpers makes it extremely pleasant to use.
+
+**Method surface / deleted accessors:** Deleted `font_check_entry` from `src/globals.rs` as its last caller was threaded. No new state methods were required, as `FontState` and `StringsState` vectors were sufficient.
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328** unchanged. raw extern statics **38** unchanged. raw `unsafe {}` **174** unchanged. `unsafe fn` **654 -> 653** (deleted `font_check_entry`, and `dvi_native_font_def` dropped `unsafe` since it now takes safe references). Warnings **51 -> 52** (one clashing extern warning remains, the dead-code warning was successfully cleaned).
+
+**Validation:** `cargo fmt`; `cargo check -p tectonic_engine_xetex` -> 0 errors, 52 warnings; full dashboard -> **29 / 2 / 7 / 4**.
+
+**For the next session (108):** continue bounded leaves only. Good options remain another small pagebuilder/linebreak leaf, or a small shipout movement helper. Avoid whole-session work on `line_break`, `try_break`, `hlist_out`, `vlist_out`, `ship_out`, `scan.rs`, `mlist_to_hlist`, `hpack`, `vpackage`, or `build_page`.
+
+---
+
 ## Idiom session 106 — 2026-06-01 — refine Phase-C recon helper after first-use feedback
 
 **Type:** tooling (workstream 01, Phase C acceleration). **One commit.** No engine code changed; dashboard not rerun.

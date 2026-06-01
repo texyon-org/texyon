@@ -13,10 +13,10 @@ use crate::ext::store_justified_native_glyphs;
 use crate::globals::{
     avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name,
     cur_page_height, cur_tok, cur_v, def_ref, doing_leaders, eqtb_b32s1, file_offset,
-    font_area_entry, font_bc_entry, font_check_entry, font_dsize_entry, font_ec_entry, font_glue,
-    font_info_b16, font_info_b32s1, font_letter_space_entry, font_mapping_ptr, font_name_entry,
-    font_ptr, font_size_entry, font_used_entry, hi_mem_min, init_pool_ptr, job_name, last_bop,
-    log_opened, lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v, mem_as_u16_ptr,
+    font_area_entry, font_bc_entry, font_dsize_entry, font_ec_entry, font_glue, font_info_b16,
+    font_info_b32s1, font_letter_space_entry, font_mapping_ptr, font_name_entry, font_ptr,
+    font_size_entry, font_used_entry, hi_mem_min, init_pool_ptr, job_name, last_bop, log_opened,
+    lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v, mem_as_u16_ptr,
     mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1, mem_gr,
     mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size, rule_dp, rule_ht, rule_wd,
     rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area, set_cur_cs,
@@ -34,7 +34,7 @@ use crate::globals::{
 use crate::mem::{
     free_node_global, get_avail_global, get_node_global, new_kern_global, new_math_global,
 };
-use crate::state::{MemState, ShipoutState};
+use crate::state::{FontState, MemState, ShipoutState, StringsState};
 
 extern "C" {
     fn ttstub_output_write(
@@ -331,14 +331,30 @@ unsafe fn dvi_two_global(s: u16) {
     }
 }
 
+fn strings_length(strings: &StringsState, s: i32) -> i32 {
+    if s >= TOO_BIG_CHAR {
+        return strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize]
+            - strings.str_start[(s - TOO_BIG_CHAR) as usize];
+    }
+    if (32..127).contains(&s) {
+        return 1;
+    }
+    if s <= 127 {
+        return 3;
+    }
+    if s < 256 {
+        return 4;
+    }
+    5
+}
+
 /// translated from xetex-shipout.c:1784 (dvi_native_font_def)
-unsafe fn dvi_native_font_def(f: i32) -> Vec<u8> {
+fn dvi_native_font_def(fonts: &FontState, f: i32, font_def_length: i32) -> Vec<u8> {
     let mut bytes = vec![DEFINE_NATIVE_FONT];
     bytes.extend_from_slice(&dvi_four_bytes(f - 1));
-    let font_def_length = make_font_def(f);
 
     for i in 0..font_def_length {
-        bytes.push(xdv_buffer_entry(i));
+        bytes.push(fonts.xdv_buffer[i as usize]);
     }
     bytes
 }
@@ -350,17 +366,22 @@ fn dvi_font_def(shipout: &mut ShipoutState, bytes: &[u8], start: usize) -> DviEm
 
 unsafe fn dvi_font_def_global(f: i32) {
     let bytes = if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        dvi_native_font_def(f)
+        let font_def_length = make_font_def(f);
+        crate::state::with_state(|s| dvi_native_font_def(&s.fonts, f, font_def_length))
     } else {
-        let font_area = font_area_entry(f);
-        let font_name = font_name_entry(f);
-        dvi_font_def_bytes(
-            f,
-            font_area,
-            crate::string_pool::length(font_area),
-            font_name,
-            crate::string_pool::length(font_name),
-        )
+        crate::state::with_state(|s| {
+            let font_area = s.fonts.font_area_entry(f);
+            let font_name = s.fonts.font_name[f as usize];
+            dvi_font_def_bytes(
+                &s.fonts,
+                &s.strings,
+                f,
+                font_area,
+                strings_length(&s.strings, font_area),
+                font_name,
+                strings_length(&s.strings, font_name),
+            )
+        })
     };
     let mut start = 0;
     while start < bytes.len() {
@@ -377,6 +398,8 @@ unsafe fn dvi_font_def_global(f: i32) {
 }
 
 fn dvi_font_def_bytes(
+    fonts: &FontState,
+    strings: &StringsState,
     f: i32,
     font_area: i32,
     font_area_len: i32,
@@ -393,21 +416,21 @@ fn dvi_font_def_bytes(
         bytes.push(((f - 1) % 256) as u8);
     }
 
-    let font_check = font_check_entry(f);
+    let font_check = fonts.font_check[f as usize];
     bytes.push(font_check.s3 as u8);
     bytes.push(font_check.s2 as u8);
     bytes.push(font_check.s1 as u8);
     bytes.push(font_check.s0 as u8);
-    bytes.extend_from_slice(&dvi_four_bytes(font_size_entry(f)));
-    bytes.extend_from_slice(&dvi_four_bytes(font_dsize_entry(f)));
+    bytes.extend_from_slice(&dvi_four_bytes(fonts.font_size[f as usize]));
+    bytes.extend_from_slice(&dvi_four_bytes(fonts.font_dsize[f as usize]));
     bytes.push(font_area_len as u8);
 
     let mut l = 0;
-    let mut k = str_start(font_name - TOO_BIG_CHAR);
+    let mut k = strings.str_start[(font_name - TOO_BIG_CHAR) as usize];
 
-    while l == 0 && k < str_start(font_name + 1 - TOO_BIG_CHAR) {
-        if str_pool_entry(k) == b':' as u16 {
-            l = k - str_start(font_name - TOO_BIG_CHAR);
+    while l == 0 && k < strings.str_start[(font_name + 1 - TOO_BIG_CHAR) as usize] {
+        if strings.str_pool[k as usize] == b':' as u16 {
+            l = k - strings.str_start[(font_name - TOO_BIG_CHAR) as usize];
         }
         k += 1;
     }
@@ -418,17 +441,17 @@ fn dvi_font_def_bytes(
 
     bytes.push(l as u8);
 
-    k = str_start(font_area - TOO_BIG_CHAR);
-    let mut for_end = str_start(font_area + 1 - TOO_BIG_CHAR) - 1;
+    k = strings.str_start[(font_area - TOO_BIG_CHAR) as usize];
+    let mut for_end = strings.str_start[(font_area + 1 - TOO_BIG_CHAR) as usize] - 1;
     while k <= for_end {
-        bytes.push(str_pool_entry(k) as u8);
+        bytes.push(strings.str_pool[k as usize] as u8);
         k += 1;
     }
 
-    k = str_start(font_name - TOO_BIG_CHAR);
-    for_end = str_start(font_name - TOO_BIG_CHAR) + l - 1;
+    k = strings.str_start[(font_name - TOO_BIG_CHAR) as usize];
+    for_end = strings.str_start[(font_name - TOO_BIG_CHAR) as usize] + l - 1;
     while k <= for_end {
-        bytes.push(str_pool_entry(k) as u8);
+        bytes.push(strings.str_pool[k as usize] as u8);
         k += 1;
     }
     bytes

@@ -4806,10 +4806,6 @@ pub(crate) fn font_used_entry(f: i32) -> bool {
     crate::state::with_state(|state| state.fonts.font_used[f as usize])
 }
 #[inline]
-pub(crate) fn font_check_entry(f: i32) -> crate::mem_types::B16x4 {
-    crate::state::with_state(|state| state.fonts.font_check[f as usize])
-}
-#[inline]
 pub(crate) fn xdv_buffer_entry(i: i32) -> u8 {
     crate::state::with_state(|state| state.fonts.xdv_buffer[i as usize])
 }
