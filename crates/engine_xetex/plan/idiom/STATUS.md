@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 100, **Phase-C execution**, one slice: extracted `build_ext_delimiter_box_global` from `var_delimiter_global` (`math.rs`) — the EXT_TAG extensible-delimiter box builder now allocates the vlist box and reads the whole TFM `exten` row + piece widths/heights under a single `mem`+`fonts` borrow island via the already-threaded `new_null_box`/`effective_char`/`height_plus_depth`, replacing ~12 scattered bridge closures; the piece stacking keeps `stack_into_box_global` so allocation order is byte-identical (parity guarantee for the TFM/`display_math`/TRIP path). Also consolidated the null-delimiter branch into one disjoint `mem`+`eqtb` island. No external call-site rename; no accessor deleted; no newtype debt. Metrics: `#[no_mangle]` 328, raw `unsafe {}` 174 unchanged, `unsafe fn` 655→656 (+1 helper). Dashboard 29/2/7/4. — prior session 99, **Phase-C execution**, two threading slices: (1) `flush_math` → `pub fn flush_math(mem: &mut MemState) -> Result<(), &CStr>`, calling the threaded `flush_node_list` directly under the same borrow, with `flush_math_global` firing the cold `confusion` after the borrow drops (3 sites); (2) `fin_mlist` → `fn fin_mlist(mem: &mut MemState, p) -> Result<i32, &CStr>`, deferring both the cold corrupt-node `confusion` and the with_state-bearing trailing `pop_nest` to `fin_mlist_global` after the borrow drops (5 sites). Both use raw `cur_list` reads (deferred global, safe under a live borrow). Metrics flat (`#[no_mangle]` 328, raw externs 38, raw `unsafe {}` 174, `unsafe fn` net 0). A preceding docs-refresh commit captured the pre-existing WIP plan-doc/metrics changes. Dashboard 29/2/7/4. — prior session 98 collapsed the remaining large branch bodies inside `make_scripts_global` into helpers without taking a high-count orchestrator. Recon found only stale xetex-math.c prototype/comment hits for `make_scripts`; no cleanup aliases; no cross-module redeclarations for the helper slice; no candidate bridge accessor lost its last caller. Added `ScriptShifts` / `PreparedScript` / `initial_script_shifts_global` / `prepare_subscript_global` / `finish_subscript_only_global` / `prepare_superscript_global` / `finish_superscript_branch_global`; preserved the original saved-font ordering around `first_script_glyph_global`; kept `hpack`, `clean_box`, `maybe_attach_script_kern_global`, `vpackage`, OT-math calls, `font_is_ot_math_global`, and `first_script_glyph_global` outside live borrows. No newtype debt. Current worktree metrics after validation: `#[no_mangle]` 328, raw extern statics 38, raw `unsafe {}` 174; `cargo check` reports 51 Rust warnings in this worktree. Dashboard 29/2/7/4).
+Last updated: 2026-06-01 (last session = session 101, **Phase-C execution**, one larger math-command slice: threaded `math_limit_switch`, `math_radical`, `append_choices`, `build_choices`, and `sub_sup` into direct `MemState` / `SaveStackState` borrow islands with scanner/error calls kept outside live borrows. Added `SaveStackState::b32s1` / `set_b32s1`, repointed the old `globals::save_stack_b32s1` bridge to that method, and deleted the now-dead `new_choice_global` wrapper. External live callers in `scan.rs` now use `_global` wrappers; stale C prototype hits remain only in `xetex-xetexd.h`. No state fields moved, no newtype debt. Metrics: `#[no_mangle]` **328** unchanged, raw extern statics **38** unchanged, raw `unsafe {}` **174** unchanged, `unsafe fn` **656→655** (dead `new_choice_global` removed), warnings **51**. Dashboard **29/2/7/4**. — prior session 100 extracted `build_ext_delimiter_box_global` from `var_delimiter_global` (`math.rs`) and consolidated the null-delimiter branch; dashboard 29/2/7/4. — prior session 99 threaded `flush_math` + `fin_mlist`; dashboard 29/2/7/4.)
 
 ## How to read this file
 
@@ -1176,6 +1176,18 @@ the snippets in `00-overview.md` / the workstream plans.
     linebreak leaf. Remaining high-count functions are orchestrators
     (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`) — do not take one
     whole in a single session. Keep scanner-heavy `scan.rs` last.
+
+    **Session 101 update:** the bounded math-command helpers
+    `math_limit_switch`, `math_radical`, `append_choices`, `build_choices`, and
+    `sub_sup` now run their allocator/mem/save-stack work under short direct
+    borrows and expose legacy `_global` wrappers to `scan.rs`. Scanner/error
+    calls (`push_math`, `scan_left_brace`, `scan_delimiter`, `scan_math`, double
+    sub/sup diagnostics) stay after borrow drop. `new_choice_global` is gone.
+    Good next targets are adjacent command helpers with the same shape:
+    `math_ac`'s noad allocation/final accent field writes, the allocation branch
+    of `math_fraction`, or a very small `math_left_right` allocation island.
+    Keep the delimiter scan / keyword scan / fraction error paths outside live
+    borrows, and avoid taking `scan.rs` proper or any high-count orchestrator.
 
     Reuse the session-61/62/63 pattern: add any new methods to `impl MemState` (or
     `impl EqtbState`) in `state.rs`, thread the fn (propagating `ALLOC_FAILED` for the

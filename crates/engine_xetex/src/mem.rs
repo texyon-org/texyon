@@ -968,7 +968,7 @@ pub unsafe fn new_style_global(s: i16) -> i32 {
 ///
 /// translated from xetex-xetex0.c:10565 (new_choice)
 ///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_choice_global`].
+/// Phase-C: threaded to `&mut MemState`.
 pub fn new_choice(mem: &mut MemState) -> i32 {
     let p = get_node(mem, STYLE_NODE_SIZE);
     if p == ALLOC_FAILED {
@@ -980,15 +980,6 @@ pub fn new_choice(mem: &mut MemState) -> i32 {
     mem.set_b32s1(p + 1, TEX_NULL);
     mem.set_b32s0(p + 2, TEX_NULL);
     mem.set_b32s1(p + 2, TEX_NULL);
-    p
-}
-
-/// Transitional bridge-down wrapper for legacy `new_choice` callers (`01b` §3, §5).
-pub unsafe fn new_choice_global() -> i32 {
-    let p = crate::state::with_state_mut(|st| new_choice(&mut st.mem));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
     p
 }
 

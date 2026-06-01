@@ -435,6 +435,21 @@ pub(crate) struct SaveStackState {
     pub data: Vec<crate::mem_types::MemoryWord>,
 }
 
+impl SaveStackState {
+    /// Read `save_stack[k].b32.s1`. Mirrors `globals::save_stack_b32s1`.
+    #[inline]
+    pub(crate) fn b32s1(&self, k: i32) -> i32 {
+        // SAFETY: union projection; the entry was last written via the b32 view.
+        unsafe { self.data[k as usize].b32.s1 }
+    }
+
+    /// Write `save_stack[k].b32.s1`. Union writes through a `&mut` index are safe.
+    #[inline]
+    pub(crate) fn set_b32s1(&mut self, k: i32, v: i32) {
+        self.data[k as usize].b32.s1 = v;
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct ScannerState {
     pub cur_name: i32,

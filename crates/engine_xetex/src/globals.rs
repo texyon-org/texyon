@@ -1605,8 +1605,7 @@ pub(crate) fn save_size() -> i32 {
 /// Read `save_stack[k].b32.s1`.
 #[inline]
 pub(crate) fn save_stack_b32s1(k: i32) -> i32 {
-    // SAFETY: union projection; the entry was last written via the b32 view.
-    crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b32.s1 })
+    crate::state::with_state(|s| s.save_stack.b32s1(k))
 }
 /// Write `save_stack[k].b32.s1 = v`.
 #[inline]

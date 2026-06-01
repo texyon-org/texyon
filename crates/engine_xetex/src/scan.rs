@@ -63,19 +63,19 @@ use crate::io::tt_xetex_open_input;
 use crate::io::u_close;
 use crate::linebreak::line_break;
 use crate::math::after_math;
-use crate::math::append_choices;
-use crate::math::build_choices;
+use crate::math::append_choices_global;
+use crate::math::build_choices_global;
 use crate::math::fin_mlist_global;
 use crate::math::flush_math_global;
 use crate::math::init_math;
 use crate::math::math_ac;
 use crate::math::math_fraction;
 use crate::math::math_left_right;
-use crate::math::math_limit_switch;
-use crate::math::math_radical;
+use crate::math::math_limit_switch_global;
+use crate::math::math_radical_global;
 use crate::math::resume_after_display;
 use crate::math::start_eq_no;
-use crate::math::sub_sup;
+use crate::math::sub_sup_global;
 use crate::mem::new_spec_global;
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
@@ -10682,7 +10682,7 @@ pub unsafe extern "C" fn handle_right_brace() {
         }
 
         MATH_CHOICE_GROUP => {
-            build_choices();
+            build_choices_global();
         }
 
         MATH_GROUP => {
@@ -16943,8 +16943,8 @@ pub unsafe extern "C" fn main_control_math_cases() {
             scan_math(cur_list_tail() + 1);
         }
 
-        (MMODE_MC, LIMIT_SWITCH_MC) => math_limit_switch(),
-        (MMODE_MC, RADICAL_MC) => math_radical(),
+        (MMODE_MC, LIMIT_SWITCH_MC) => math_limit_switch_global(),
+        (MMODE_MC, RADICAL_MC) => math_radical_global(),
         (MMODE_MC, ACCENT_MC) | (MMODE_MC, MATH_ACCENT_MC) => math_ac(),
 
         (MMODE_MC, VCENTER_MC) => {
@@ -16975,8 +16975,8 @@ pub unsafe extern "C" fn main_control_math_cases() {
             set_mem_b16s0(cur_list_tail(), COND_MATH_GLUE_MC);
         }
 
-        (MMODE_MC, MATH_CHOICE_MC) => append_choices(),
-        (MMODE_MC, SUB_MARK_MC) | (MMODE_MC, SUP_MARK_MC) => sub_sup(),
+        (MMODE_MC, MATH_CHOICE_MC) => append_choices_global(),
+        (MMODE_MC, SUB_MARK_MC) | (MMODE_MC, SUP_MARK_MC) => sub_sup_global(),
         (MMODE_MC, ABOVE_MC) => math_fraction(),
         (MMODE_MC, LEFT_RIGHT_MC) => math_left_right(),
 

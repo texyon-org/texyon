@@ -7,6 +7,26 @@ Append-only log for Stage 2 (idiomatization). Newest entry at the
 Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
+## Idiom session 101 — 2026-06-01 — thread bounded math-command helpers
+
+**Type:** execution (workstream 01, Phase C — math noad/command family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).
+
+**Slice:** five adjacent math command helpers in `src/math.rs`: `math_limit_switch`, `math_radical`, `append_choices`, `build_choices`, and `sub_sup`. Recon found only stale `xetex-xetexd.h` prototype hits for these legacy names; the live callers are the `scan.rs` math cases / right-brace handler.
+
+**Classification:** bucket **B/C**. The mem/save-stack work is direct and closeable; scanner/error calls remain outside live borrows. `math_limit_switch` now mutates an operator noad through `MemState` and emits the misplaced-limit diagnostic after the borrow drops. `math_radical` allocates and initializes the radical noad under one `MemState` borrow, then runs `scan_delimiter` / `scan_math`. `append_choices` allocates the choice node and updates `SaveStackState` directly, then calls `push_math` / `scan_left_brace`. `build_choices` keeps `unsave` and `fin_mlist_global` before the borrow, stores the finished mlist and save-stack state directly, then either returns or scans the next choice. `sub_sup` prepares or allocates the script field under `MemState`, defers the double sub/sup diagnostic until after the borrow drops, then calls `scan_math`.
+
+**Method surface / deleted accessors:** added `SaveStackState::b32s1` / `set_b32s1`; repointed `globals::save_stack_b32s1` to the method so the raw unsafe-block count stays flat. Deleted the now-dead `new_choice_global` wrapper after `append_choices_global` became its last replacement. No `globals.rs` bridge accessor lost all callers.
+
+**Newtype debt:** none. No state fields moved.
+
+**Metrics:** `#[no_mangle]` **328** unchanged. raw extern statics **38** unchanged. raw `unsafe {}` **174** unchanged. `unsafe fn` **656 → 655** (deleted `new_choice_global`; new helpers are safe cores plus legacy unsafe wrappers). Warnings **51** unchanged.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 51 warnings; full dashboard → **29 / 2 / 7 / 4**.
+
+**For the next session (102):** continue adjacent bounded math-command islands. Best candidates: `math_ac`'s noad allocation/final accent-field writes, the allocation branch of `math_fraction`, or a very small `math_left_right` allocation island. Keep keyword scans, delimiter scans, `scan_math`, `scan_dimen`, `fin_mlist_global`, `unsave`, and diagnostics outside live borrows. Do not take scanner-heavy `scan.rs`, `mlist_to_hlist`, `hpack`, `vpackage`, `build_page`, or `line_break` as a whole session.
+
+---
+
 ## Idiom session 100 — 2026-06-01 — thread `var_delimiter` delimiter-box construction into borrow islands
 
 **Type:** execution (workstream 01, Phase C — math noad family). **One commit.** Dashboard **29/2/7/4**. Crate warnings did not regress (51).

@@ -26,12 +26,12 @@ use crate::globals::{
     width_base_entry,
 };
 use crate::mem::{
-    free_node, free_node_global, get_avail, get_node, get_node_global, new_choice_global, new_glue,
+    free_node, free_node_global, get_avail, get_node, get_node_global, new_choice, new_glue,
     new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_rule,
     new_spec, ALLOC_FAILED, TEX_NULL,
 };
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
-use crate::state::{EqtbState, FontState, MemState, ScannerState};
+use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
 
 const INT_PAR_CUR_FAM: i32 = 44;
 const LOCAL_EVERY_MATH: i32 = 3;
@@ -3229,12 +3229,21 @@ pub unsafe fn start_eq_no() {
 }
 
 /// translated from xetex-math.c:368 (math_limit_switch)
-pub unsafe fn math_limit_switch() {
-    if cur_list_head() != cur_list_tail() && mem_b16s1(cur_list_tail()) == OP_NOAD {
-        set_mem_b16s0(cur_list_tail(), cur_chr() as u16);
+fn apply_math_limit_switch(mem: &mut MemState, limit: u16) -> bool {
+    if cur_list_head() != cur_list_tail() && mem.b16s1(cur_list_tail()) == OP_NOAD {
+        mem.set_b16s0(cur_list_tail(), limit);
+        true
+    } else {
+        false
+    }
+}
+
+pub unsafe fn math_limit_switch_global() {
+    let applied =
+        crate::state::with_state_mut(|st| apply_math_limit_switch(&mut st.mem, cur_chr() as u16));
+    if applied {
         return;
     }
-
     crate::output::error_here_with_diagnostic(
         c"Limit controls must follow a math operator".as_ptr(),
     );
@@ -3248,24 +3257,53 @@ pub unsafe fn math_limit_switch() {
 }
 
 /// translated from xetex-math.c:461 (math_radical)
-pub unsafe fn math_radical() {
-    set_mem_b32s1(cur_list_tail(), get_node_global(RADICAL_NOAD_SIZE));
-    set_cur_list_tail(mem_b32s1(cur_list_tail()));
-    set_mem_b16s1(cur_list_tail(), RADICAL_NOAD);
-    set_mem_b16s0(cur_list_tail(), NORMAL);
-    set_empty_math_field_global(cur_list_tail() + 1);
-    set_empty_math_field_global(cur_list_tail() + 3);
-    set_empty_math_field_global(cur_list_tail() + 2);
-    scan_delimiter(cur_list_tail() + 4, true);
-    crate::scan::scan_math(cur_list_tail() + 1);
+fn append_radical_noad(mem: &mut MemState) -> Result<i32, NodeRecycleAbort> {
+    let node = get_node(mem, RADICAL_NOAD_SIZE);
+    if node == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(cur_list_tail(), node);
+    set_cur_list_tail(mem.b32s1(cur_list_tail()));
+    let tail = cur_list_tail();
+    mem.set_b16s1(tail, RADICAL_NOAD);
+    mem.set_b16s0(tail, NORMAL);
+    set_empty_math_field(mem, tail + 1);
+    set_empty_math_field(mem, tail + 3);
+    set_empty_math_field(mem, tail + 2);
+    Ok(tail)
+}
+
+pub unsafe fn math_radical_global() {
+    let tail = match crate::state::with_state_mut(|st| append_radical_noad(&mut st.mem)) {
+        Ok(tail) => tail,
+        Err(abort) => node_recycle_abort(abort),
+    };
+    scan_delimiter(tail + 4, true);
+    crate::scan::scan_math(tail + 1);
 }
 
 /// translated from xetex-math.c:533 (append_choices)
-pub unsafe fn append_choices() {
-    set_mem_b32s1(cur_list_tail(), new_choice_global());
-    set_cur_list_tail(mem_b32s1(cur_list_tail()));
-    set_save_ptr(save_ptr() + 1);
-    set_save_stack_b32s1(save_ptr() - 1, 0);
+fn append_choices_core(
+    mem: &mut MemState,
+    save_stack: &mut SaveStackState,
+) -> Result<(), NodeRecycleAbort> {
+    let choice = new_choice(mem);
+    if choice == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(cur_list_tail(), choice);
+    set_cur_list_tail(mem.b32s1(cur_list_tail()));
+    save_stack.save_ptr += 1;
+    save_stack.set_b32s1(save_stack.save_ptr - 1, 0);
+    Ok(())
+}
+
+pub unsafe fn append_choices_global() {
+    if let Err(abort) =
+        crate::state::with_state_mut(|st| append_choices_core(&mut st.mem, &mut st.save_stack))
+    {
+        node_recycle_abort(abort);
+    }
     crate::scan::push_math(MATH_CHOICE_GROUP);
     crate::scan::scan_left_brace();
 }
@@ -3320,56 +3358,97 @@ pub unsafe fn fin_mlist_global(p: i32) -> i32 {
 }
 
 /// translated from xetex-math.c:571 (build_choices)
-pub unsafe fn build_choices() {
-    crate::save::unsave();
-    let p = fin_mlist_global(TEX_NULL);
-    match save_stack_b32s1(save_ptr() - 1) {
-        0 => set_mem_b32s0(cur_list_tail() + 1, p),
-        1 => set_mem_b32s1(cur_list_tail() + 1, p),
-        2 => set_mem_b32s0(cur_list_tail() + 2, p),
+fn build_choices_finish(mem: &mut MemState, save_stack: &mut SaveStackState, p: i32) -> bool {
+    match save_stack.b32s1(save_stack.save_ptr - 1) {
+        0 => mem.set_b32s0(cur_list_tail() + 1, p),
+        1 => mem.set_b32s1(cur_list_tail() + 1, p),
+        2 => mem.set_b32s0(cur_list_tail() + 2, p),
         3 => {
-            set_mem_b32s1(cur_list_tail() + 2, p);
-            set_save_ptr(save_ptr() - 1);
-            return;
+            mem.set_b32s1(cur_list_tail() + 2, p);
+            save_stack.save_ptr -= 1;
+            return true;
         }
         _ => {}
     }
-    set_save_stack_b32s1(save_ptr() - 1, save_stack_b32s1(save_ptr() - 1) + 1);
+    let choice_state = save_stack.b32s1(save_stack.save_ptr - 1);
+    save_stack.set_b32s1(save_stack.save_ptr - 1, choice_state + 1);
+    false
+}
+
+pub unsafe fn build_choices_global() {
+    crate::save::unsave();
+    let p = fin_mlist_global(TEX_NULL);
+    let complete =
+        crate::state::with_state_mut(|st| build_choices_finish(&mut st.mem, &mut st.save_stack, p));
+    if complete {
+        return;
+    }
     crate::scan::push_math(MATH_CHOICE_GROUP);
     crate::scan::scan_left_brace();
 }
 
 /// translated from xetex-math.c:599 (sub_sup)
-pub unsafe fn sub_sup() {
+enum ScriptDuplication {
+    Superscript,
+    Subscript,
+}
+
+fn prepare_sub_sup(
+    mem: &mut MemState,
+    cmd: u8,
+) -> Result<(i32, Option<ScriptDuplication>), NodeRecycleAbort> {
     let mut t = EMPTY;
     let mut p = TEX_NULL;
 
     if cur_list_tail() != cur_list_head() {
-        let node_type = mem_b16s1(cur_list_tail());
+        let node_type = mem.b16s1(cur_list_tail());
         if (16..LEFT_NOAD).contains(&node_type) {
-            p = cur_list_tail() + 2 + cur_cmd() as i32 - 7;
-            t = mem_b32s1(p);
+            p = cur_list_tail() + 2 + cmd as i32 - 7;
+            t = mem.b32s1(p);
         }
     }
 
+    let mut duplicate = None;
     if p == TEX_NULL || t != EMPTY {
-        set_mem_b32s1(cur_list_tail(), new_noad_global());
-        set_cur_list_tail(mem_b32s1(cur_list_tail()));
-        p = cur_list_tail() + 2 + cur_cmd() as i32 - 7;
+        let noad = new_noad(mem);
+        if noad == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        mem.set_b32s1(cur_list_tail(), noad);
+        set_cur_list_tail(mem.b32s1(cur_list_tail()));
+        p = cur_list_tail() + 2 + cmd as i32 - 7;
         if t != EMPTY {
-            if cur_cmd() == SUP_MARK {
-                crate::output::error_here_with_diagnostic(c"Double superscript".as_ptr());
-                crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                set_help_ptr(1);
-                set_help_line(0, c"I treat `x^1^2' essentially like `x^1{}^2'.".as_ptr());
+            duplicate = Some(if cmd == SUP_MARK {
+                ScriptDuplication::Superscript
             } else {
+                ScriptDuplication::Subscript
+            });
+        }
+    }
+    Ok((p, duplicate))
+}
+
+pub unsafe fn sub_sup_global() {
+    let cmd = cur_cmd();
+    let (p, duplicate) = match crate::state::with_state_mut(|st| prepare_sub_sup(&mut st.mem, cmd))
+    {
+        Ok(result) => result,
+        Err(abort) => node_recycle_abort(abort),
+    };
+    if let Some(duplicate) = duplicate {
+        match duplicate {
+            ScriptDuplication::Superscript => {
+                crate::output::error_here_with_diagnostic(c"Double superscript".as_ptr());
+                set_help_line(0, c"I treat `x^1^2' essentially like `x^1{}^2'.".as_ptr());
+            }
+            ScriptDuplication::Subscript => {
                 crate::output::error_here_with_diagnostic(c"Double subscript".as_ptr());
-                crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                set_help_ptr(1);
                 set_help_line(0, c"I treat `x_1_2' essentially like `x_1{}_2'.".as_ptr());
             }
-            crate::errors::error();
         }
+        crate::output::capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(1);
+        crate::errors::error();
     }
     crate::scan::scan_math(p);
 }
