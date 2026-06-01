@@ -48,7 +48,7 @@ use crate::globals::{
     string_vacancies, temp_ptr, trie_not_ready, two_to_the,
 };
 use crate::hyphenation::set_trie_op_hash;
-use crate::ini::init_io;
+use crate::io::init_io;
 
 const LEVEL_ONE: u16 = 1;
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;

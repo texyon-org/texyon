@@ -5,8 +5,8 @@ use crate::globals::{
     buf_size, buffer_entry, buffer_ptr, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1,
     first, last, max_buf_stack, name_length, name_length16, name_of_file, name_of_file16,
     name_of_file16_entry, read_file_entry, read_file_ptr, read_open_entry, set_buffer_entry,
-    set_last, set_max_buf_stack, set_name_in_progress, set_name_length, set_name_length16,
-    set_read_open_entry, set_stop_at_space,
+    set_input_file, set_last, set_max_buf_stack, set_name_in_progress, set_name_length,
+    set_name_length16, set_read_open_entry, set_stop_at_space,
 };
 use crate::globals::{
     cur_cmd, cur_cs, cur_input, def_ref, file_offset, init_pool_ptr, max_print_line, mem_b32s1,
@@ -1379,4 +1379,30 @@ pub unsafe fn close_files_and_terminate() {
     }
 
     crate::output::print_ln();
+}
+
+static mut STDIN_UFILE: UFile = UFile {
+    handle: INVALID_HANDLE,
+    saved_char: -1,
+    skip_next_lf: 0,
+    encoding_mode: UTF8 as i16,
+    conversion_data: std::ptr::null_mut(),
+};
+
+// translated from xetex-ini.c:3035 (init_io)
+#[no_mangle]
+pub unsafe extern "C" fn init_io() {
+    // This is largely vestigial at this point.
+    STDIN_UFILE.handle = INVALID_HANDLE;
+    STDIN_UFILE.saved_char = -1;
+    STDIN_UFILE.skip_next_lf = 0;
+    STDIN_UFILE.encoding_mode = UTF8 as i16;
+    STDIN_UFILE.conversion_data = std::ptr::null_mut();
+    set_input_file(0, (&raw mut STDIN_UFILE).cast());
+
+    set_buffer_entry(first(), 0);
+    set_last(first());
+    set_cur_input_loc(first());
+    set_cur_input_limit(last());
+    set_first(last() + 1);
 }
