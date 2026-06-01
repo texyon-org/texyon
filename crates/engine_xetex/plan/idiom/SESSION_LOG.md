@@ -8,6 +8,52 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 118 — 2026-06-01 — workstream 02 slice 1: relocate the `errors` group out of `scan.rs`
+
+**Type:** execution (workstream 02, module decomposition — first mechanical
+relocation slice). **One commit.** Dashboard **29/2/7/4**. Warnings **51 → 51**.
+
+**Slice:** moved the 8 `errors`-group functions verbatim from `src/scan.rs`
+(= xetex0.c) into `src/errors.rs` (= xetex-errors.c, their natural home):
+`you_cant`, `report_illegal_case`, `privileged`, `cs_error`, `box_error`,
+`mu_error`, `runaway`, `extra_right_brace`. **No bytes changed inside any
+function** — pure relocation per `02-modules.md` §7.
+
+**Method (the point of the slice):** used the new `plan/idiom/move_fns.py`
+mechanical relocator (dry-run → `--apply`), *not* the manual edit tool. The
+script cut each top-level fn with its `// translated from …` comment + `#[…]`
+attributes through the column-0 closing brace (157 lines) and appended them to
+`errors.rs`. The only hand-work was the visibility/import fixup driven by
+`cargo check`:
+* scan.rs imports the 8 back (`use crate::errors::{…}`) — still called there;
+* errors.rs gained imports for the symbols the moved bodies reference
+  (`BOX_BASE`; globals `align_state`/`cur_chr`/`cur_cmd`/`cur_list_mode`/
+  `eqtb_b32s1`/`set_align_state`; `crate::scan::{show_box, flush_node_list_global}`);
+* the 2 external importers repointed (`mem.rs` + `linebreak.rs:2156` →
+  `crate::errors::runaway`; `pagebuilder.rs` → `crate::errors::box_error`).
+
+**Latent-bug caught (now a recipe gotcha, §7):** `extra_right_brace` `match`es
+on the module-private consts `SEMI_SIMPLE_GROUP`/`MATH_SHIFT_GROUP`/
+`MATH_LEFT_GROUP` (14/15/16), which stayed in `scan.rs`. Without them in
+`errors.rs` the code **still compiled**, but Rust silently turned the first arm
+into an irrefutable catch-all *binding* — a real behavior change. The only
+signal was a +9 warning jump (`unreachable_patterns` + `non_snake_case` +
+`unused_variable`). Fixed by duplicating the 3 consts into `errors.rs`; warnings
+returned to 51. **Lesson: check the warning count, not just errors, after every
+relocation** — recorded in §7.
+
+**Metrics:** `scan.rs` 18,689 → **18,537** LOC (−152 net; first dent in the
+grab-bag). `errors.rs` 268 → 433. No signature/`#[no_mangle]`/`unsafe` changes
+(relocation only). Dashboard 29/2/7/4.
+
+**For the next session (119):** continue 02 slice-by-slice per §8 (Decision 2,
+leaves first). Next clean leaves: the `show_*`/display group → `output.rs`
+(largest, ~1.5k LOC; watch for the pattern-const trap), then `io.rs`
+(file-naming/`start_input`), `ext.rs`, `fonts.rs`. Use `move_fns.py` for the
+relocation; the manual part is only the import fixup + warning-count check.
+`ini.rs` (`format_io.rs`/`engine.rs`/hyphenation) drains independently.
+
+
 ## Idiom session 117 — 2026-06-01 — draft `02-modules.md` to READY (lift the scanner deferral)
 
 **Type:** plan construction (workstream 02). **No code change** — docs only.

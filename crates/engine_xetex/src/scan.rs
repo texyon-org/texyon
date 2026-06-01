@@ -16,6 +16,11 @@ use crate::errors::not_aat_font_error;
 use crate::errors::not_aat_gr_font_error;
 use crate::errors::not_native_font_error;
 use crate::errors::not_ot_font_error;
+// Relocated to errors.rs (workstream 02); still called from scan.rs.
+use crate::errors::{
+    box_error, cs_error, extra_right_brace, mu_error, privileged, report_illegal_case, runaway,
+    you_cant,
+};
 use crate::ext::aat_font_get;
 use crate::ext::aat_font_get_1;
 use crate::ext::aat_font_get_2;
@@ -306,19 +311,6 @@ const CONTINENTAL_POINT_TOKEN: i32 = OTHER_TOKEN + b',' as i32;
 const POINT_TOKEN: i32 = OTHER_TOKEN + b'.' as i32;
 const ALPHA_TOKEN: i32 = OTHER_TOKEN + b'`' as i32;
 const FROZEN_PRIM_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_PRIMITIVE;
-
-// translated from xetex-xetex0.c:5050 (mu_error)
-#[no_mangle]
-pub unsafe extern "C" fn mu_error() {
-    error_here_with_diagnostic(c"Incompatible glue units".as_ptr());
-    capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(1);
-    set_help_line(
-        0,
-        c"I'm going to assume that 1mu=1pt when they're mixed.".as_ptr(),
-    );
-    error();
-}
 
 // translated from xetex-xetex0.c:5078 (scan_char_class)
 #[no_mangle]
@@ -2580,41 +2572,6 @@ const SEMI_SIMPLE_GROUP: u8 = 14;
 const MATH_SHIFT_GROUP: u8 = 15;
 const MATH_LEFT_GROUP: u8 = 16;
 
-/// translated from xetex-xetex0.c:7411 (extra_right_brace)
-#[no_mangle]
-pub unsafe extern "C" fn extra_right_brace() {
-    use crate::globals::cur_group;
-
-    error_here_with_diagnostic(c"Extra }, or forgotten ".as_ptr());
-    match cur_group() {
-        SEMI_SIMPLE_GROUP => crate::output::print_esc_cstr(c"endgroup".as_ptr()),
-        MATH_SHIFT_GROUP => crate::output::print_char(b'$' as i32),
-        MATH_LEFT_GROUP => crate::output::print_esc_cstr(c"right".as_ptr()),
-        _ => {}
-    }
-    capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(5);
-    set_help_line(
-        4,
-        c"I've deleted a group-closing symbol because it seems to be".as_ptr(),
-    );
-    set_help_line(
-        3,
-        c"spurious, as in `$x}$'. But perhaps the } is legitimate and".as_ptr(),
-    );
-    set_help_line(
-        2,
-        c"you forgot something else, as in `\\hbox{$x}'. In such cases".as_ptr(),
-    );
-    set_help_line(
-        1,
-        c"the way to recover is to insert both the forgotten and the".as_ptr(),
-    );
-    set_help_line(0, c"deleted material, e.g., by typing `I$}'.".as_ptr());
-    error();
-    set_align_state(align_state() + 1);
-}
-
 // ---------------------------------------------------------------------------
 // scan_font_ident
 // ---------------------------------------------------------------------------
@@ -4800,47 +4757,6 @@ pub unsafe fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B1
 // you_cant / report_illegal_case / privileged
 // ---------------------------------------------------------------------------
 
-// translated from xetex-xetex0.c:9326 (you_cant)
-#[no_mangle]
-pub unsafe extern "C" fn you_cant() {
-    error_here_with_diagnostic(c"You can't use `".as_ptr());
-    print_cmd_chr(cur_cmd() as u16, cur_chr());
-    crate::output::print_in_mode(cur_list_mode() as i32);
-    capture_to_diagnostic(std::ptr::null_mut());
-}
-
-// translated from xetex-xetex0.c:9334 (report_illegal_case)
-#[no_mangle]
-pub unsafe extern "C" fn report_illegal_case() {
-    you_cant();
-    set_help_ptr(4);
-    set_help_line(
-        3,
-        c"Sorry, but I'm not programmed to handle this case;".as_ptr(),
-    );
-    set_help_line(2, c"I'll just pretend that you didn't ask for it.".as_ptr());
-    set_help_line(
-        1,
-        c"If you're in the wrong mode, you might be able to".as_ptr(),
-    );
-    set_help_line(
-        0,
-        c"return to the right one by typing `I}' or `I$' or `I\\par'.".as_ptr(),
-    );
-    error();
-}
-
-// translated from xetex-xetex0.c:9347 (privileged)
-#[no_mangle]
-pub unsafe extern "C" fn privileged() -> bool {
-    if cur_list_mode() > 0 {
-        true
-    } else {
-        report_illegal_case();
-        false
-    }
-}
-
 // ---------------------------------------------------------------------------
 // align_error / no_align_error / omit_error / cs_error
 // ---------------------------------------------------------------------------
@@ -4962,20 +4878,6 @@ pub unsafe extern "C" fn omit_error() {
     error();
 }
 
-// translated from xetex-xetex0.c:10489 (cs_error)
-#[no_mangle]
-pub unsafe extern "C" fn cs_error() {
-    error_here_with_diagnostic(c"Extra ".as_ptr());
-    crate::output::print_esc_cstr(c"endcsname".as_ptr());
-    capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(1);
-    set_help_line(
-        0,
-        c"I'm ignoring this, since I wasn't doing a \\csname.".as_ptr(),
-    );
-    error();
-}
-
 // ---------------------------------------------------------------------------
 // push_math
 // ---------------------------------------------------------------------------
@@ -5058,21 +4960,6 @@ pub unsafe fn normal_paragraph() {
 // ---------------------------------------------------------------------------
 // box_error
 // ---------------------------------------------------------------------------
-
-// translated from xetex-xetex0.c:9270 (box_error)
-pub unsafe fn box_error(n: u8) {
-    let box_val = eqtb_b32s1(BOX_BASE + n as i32);
-    error();
-    crate::output::begin_diagnostic();
-    crate::output::diagnostic_begin_capture_warning_here();
-    crate::output::print_nl_cstr(c"The following box has been deleted:".as_ptr());
-    show_box(box_val);
-    capture_to_diagnostic(std::ptr::null_mut());
-    crate::output::end_diagnostic(true);
-    flush_node_list_global(box_val);
-    // BOX_REG(n) = TEX_NULL — direct eqtb write, no save-stack involvement
-    crate::globals::set_eqtb_b32s1(BOX_BASE + n as i32, crate::mem::TEX_NULL);
-}
 
 // ---------------------------------------------------------------------------
 // its_all_over
@@ -9402,45 +9289,6 @@ pub unsafe extern "C" fn do_assignments() {
         crate::globals::set_set_box_allowed(false);
         prefixed_command();
         crate::globals::set_set_box_allowed(true);
-    }
-}
-
-// translated from xetex-xetex0.c:107 (runaway)
-pub unsafe fn runaway() {
-    use crate::globals::{def_ref, error_line, mem_b32s1, scanner_status};
-    use crate::mem::TEX_NULL;
-
-    const SKIPPING: u8 = 1;
-    const DEFINING: u8 = 2;
-    const MATCHING: u8 = 3;
-    const ALIGNING: u8 = 4;
-    const ABSORBING: u8 = 5;
-    const TEMP_HEAD: i32 = 4_999_996; // MEM_TOP - 3
-    const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
-
-    if scanner_status() > SKIPPING {
-        let p = match scanner_status() {
-            DEFINING => {
-                crate::output::print_nl_cstr(c"Runaway definition".as_ptr());
-                def_ref()
-            }
-            MATCHING => {
-                crate::output::print_nl_cstr(c"Runaway argument".as_ptr());
-                TEMP_HEAD
-            }
-            ALIGNING => {
-                crate::output::print_nl_cstr(c"Runaway preamble".as_ptr());
-                HOLD_HEAD
-            }
-            ABSORBING => {
-                crate::output::print_nl_cstr(c"Runaway text".as_ptr());
-                def_ref()
-            }
-            _ => return,
-        };
-        crate::output::print_char('?' as i32);
-        crate::output::print_ln();
-        crate::output::show_token_list(mem_b32s1(p), TEX_NULL, error_line() - 10);
     }
 }
 

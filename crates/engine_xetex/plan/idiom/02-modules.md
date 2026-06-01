@@ -194,6 +194,16 @@ Run from the crate root. One function group (one destination module) per commit.
    the destination module. Module-private consts used by a moved fn move with it
    (or become `pub(crate)` in a shared home).
 5. **`cargo check`** — resolve visibility/import errors (the bulk of the work).
+   **Then re-check the warning count, not just errors** (`cargo check … 2>&1 |
+   grep 'generated .* warning'`). **Latent-bug trap (session 118):** a moved fn
+   that `match`es on a **module-private `const`** (e.g. `extra_right_brace`'s
+   `SEMI_SIMPLE_GROUP`/`MATH_SHIFT_GROUP`/`MATH_LEFT_GROUP`) compiles *without
+   error* if that const isn't imported — Rust silently reinterprets the arm as
+   an irrefutable catch-all **binding**, changing the match semantics. The only
+   signal is a jump in `unreachable_patterns` + `non_snake_case` +
+   `unused_variable` warnings on the moved arms. So the warning count **must
+   return to baseline** before commit; a rise there means a pattern-const (or
+   similar) needs importing/duplicating into the destination.
 6. **Full dashboard. Never regress** (hard rule 1):
    ```bash
    cargo test -p tectonic --test tex-outputs --test trip \

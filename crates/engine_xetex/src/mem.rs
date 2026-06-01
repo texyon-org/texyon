@@ -11,7 +11,7 @@ use crate::consts::{
     RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
 use crate::errors::overflow;
-use crate::scan::runaway;
+use crate::errors::runaway;
 use crate::state::{EqtbState, MemState};
 
 use crate::globals::{

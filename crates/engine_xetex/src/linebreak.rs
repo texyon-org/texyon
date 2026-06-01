@@ -2151,7 +2151,7 @@ fn update_lr_stack(mem: &mut MemState, q: i32, lr_ptr: &mut i32) -> bool {
 unsafe fn update_lr_stack_global(q: i32, lr_ptr: &mut i32) {
     let failed = crate::state::with_state_mut(|s| update_lr_stack(&mut s.mem, q, lr_ptr));
     if failed {
-        crate::scan::runaway();
+        crate::errors::runaway();
         crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
     }
 }
