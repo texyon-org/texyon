@@ -8,6 +8,75 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 124 — 2026-06-01 — workstream 02 slice 7: the packaging carve (box/node packing & list utils → new `packaging.rs`)
+
+**Type:** execution (workstream 02, module decomposition — **first core-carve
+slice**, §8 Decision 2/3). **Two commits** (7a recycle utils, 7b packers; the
+§8 handoff authorized splitting packaging if too large for one green commit).
+Dashboard **29/2/7/4** on each. Warnings **50 → 50**.
+
+**Slice:** drained the entire box/node-packing & list-utility group verbatim
+from `src/scan.rs` (= xetex0.c) into a **new `src/packaging.rs`** (created the
+file + `mod packaging;` in lib.rs; transitional home per Decision 3 → `node/` in
+ws03). `move_fns.py`, 11 fns / 1,905 fn-lines total.
+
+* **7a — node-recycle utils (655 fn-lines):** `flush_node_list`(+`_global`),
+  `copy_node_list`(+`_global`), `just_copy`, `just_reverse`. Relocated the
+  `_FNL`/`_CNL` single-fn-private const blocks wholesale (§7 trap-dodge). The
+  shared `NodeRecycleAbort` enum, `node_recycle_abort` fn, and
+  `cnl_get_node!`/`cnl_get_avail!` macros **stay in `scan.rs`** as the common
+  home (also used by `prune_page_top` and the already-moved `fonts.rs`); added a
+  `pub(crate) use cnl_get_avail;` re-export and imported the set into
+  `packaging.rs`. **§7 trap fired once:** `DISC_NODE` (a `consts.rs` const used in
+  `flush_node_list`'s match, not `_FNL`-suffixed so not in the relocated block)
+  silently rebound → `unreachable_patterns`/`unused_variables` warnings until
+  imported. `scan.rs` 14,710 → 13,967.
+* **7b — the packers (1,250 fn-lines):** `append_to_vlist`, `vert_break`,
+  `vsplit`, `prune_page_top`(+`_global`), `do_marks`(+`_global`), `hpack`,
+  `vpackage`. Relocated the four `_PPT`/`_DM`/`_HP`/`_VP` const blocks wholesale.
+  Duplicated the module-private `TEMP_HEAD` (`4_999_999 - 3`) and `IGNORE_DEPTH`
+  (`-65_536_000`) consts (scan.rs still uses both). The pre-existing
+  `KERN_NODE | KERN_NODE` unreachable-pattern in `hpack` **relocated with it** —
+  warnings held at 50, confirming it was the same pre-existing warning moving
+  modules, not a new trap. `scan.rs` 13,967 → 12,633.
+
+**Big external repoint (Decision 3's "biggest external-caller repoint yet").**
+`hpack`/`vpackage`/`flush_node_list`/etc. are called from
+math.rs/shipout.rs/linebreak.rs/pagebuilder.rs/ext.rs/save.rs/ini.rs/errors.rs.
+Repointed all `crate::scan::<fn>` → `crate::packaging::<fn>` (perl for
+qualified paths; hand-fixed two grouped `use crate::scan::{…}` blocks in
+ext.rs/pagebuilder that the perl's qualified-path pattern missed). `scan.rs`
+re-imports the 5 packers/utils it still calls (`hpack`/`vpackage`/`vsplit`/
+`append_to_vlist`/`flush_node_list_global`/`copy_node_list_global`) from
+`crate::packaging`. Cleaned `scan.rs` orphans across both commits (8 consts/
+imports: `GLUE_SPEC_SIZE`/`MEDIUM_NODE_SIZE`/`MIN_HALFWORD`/`RULE_NODE_SIZE`,
+`new_edge_global`, `mem_word`/`set_mem_ptr`/`set_mem_word`, `active_width`/
+`set_active_width`/`set_best_height_plus_depth`/`temp_ptr`, `short_display`).
+
+**Imports added to `packaging.rs`:** `consts` (BOX_BASE/DIMEN_BASE/GLUE_BASE/
+INT_BASE/MAX_HALFWORD/DISC_NODE + the node-type set), `globals` (active_width/
+eqtb_b32s1/cur_val/the `set_mem_*` accessors/set_active_width/…), `errors::error`,
+`ext::measure_native_node`, `mem::new_spec_global`, `output::{capture_to_diagnostic,
+error_here_with_diagnostic, short_display, show_box}`, `shipout::new_edge_global`,
+`scan::{cnl_get_avail, cnl_get_node, effective_char_global, new_native_word_node_global,
+node_recycle_abort, NodeRecycleAbort}`.
+
+**Metrics:** `scan.rs` 14,710 → **12,633** LOC (−2,077). new `packaging.rs` =
+2,110. No signature/`#[no_mangle]`/`unsafe`/body changes (relocation only).
+Dashboard 29/2/7/4 on both commits, warnings 50.
+
+**For the next session:** continue the §8 core carve in order — (2) **expand.rs**
+(new) — `expand`/`macro_call`/`conditional`/`pop_cond_node`/`conv_toks`/
+`ins_the_toks`; (3) **main_control.rs** (new) — the `main_control*` dispatch +
+verbs + `\halign` alignment family (gnarliest: giant match, hot scalars,
+`prefixed_command` spanning scan.rs+ini.rs); (4) residual `scan_*`/`get_*`/
+`get_next` stay as `scanner.rs` (rename or leave `scan.rs`); (5) `token.rs`
+consts last. `ini.rs` drains independently. Recipe unchanged; lean on
+`move_fns.py`, wholesale const-block relocation, `pub(crate) use` for shared
+macros, and the warning-count check (the §7 trap surfaces as
+unreachable-pattern/binding warnings on moved match arms).
+
+
 ## Idiom session 123 — 2026-06-01 — workstream 02 slice 6: relocate the locale-linebreak group out of `scan.rs` (last leaf)
 
 **Type:** execution (workstream 02, module decomposition — sixth slice; **the
