@@ -1029,7 +1029,7 @@ pub unsafe extern "C" fn final_cleanup() {
         crate::output::print_cstr(c"inside a group at level ".as_ptr());
         crate::output::print_int(cur_level() as i32 - 1);
         crate::output::print_char(b')' as i32);
-        crate::scan::show_save_groups();
+        crate::output::show_save_groups();
     }
 
     while cond_ptr() != crate::mem::TEX_NULL {

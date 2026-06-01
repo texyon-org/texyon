@@ -8,6 +8,80 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 119 — 2026-06-01 — workstream 02 slice 2: relocate the `show_*`/display group out of `scan.rs`
+
+**Type:** execution (workstream 02, module decomposition — second mechanical
+relocation slice). **One commit.** Dashboard **29/2/7/4**. Warnings **51 → 51**.
+
+**Slice:** moved the 12 `show_*`/display/messaging functions verbatim from
+`src/scan.rs` (= xetex0.c) into `src/output.rs` (= xetex-output.c, their natural
+home): `show_box`, `show_node_list`, `short_display`, `short_display_n`,
+`show_activities`, `show_context`, `show_save_groups`, `show_whatever`,
+`show_info`, `print_subsidiary_data`, `issue_message`, `char_warning`. **No bytes
+changed inside any function** — pure relocation per `02-modules.md` §7. Used
+`plan/idiom/move_fns.py` (dry-run → `--apply`); 1,556 fn-lines moved.
+
+**The big lift vs. slice 1: the pattern-const trap fired at scale.** The
+show-group functions match on far more node-type/group consts than the errors
+group did. Two distinct const classes had to follow the functions:
+* **78 single-function-private suffixed consts** (`*_SD`/`*_SA`/`*_SNL`, defined
+  in three contiguous blocks immediately above the moved fns: short_display,
+  show_activities, show_node_list/print_subsidiary_data). These were orphaned in
+  `scan.rs` once their only callers left. Relocated the three blocks verbatim
+  into `output.rs` (none collided with existing `output.rs` consts; none still
+  referenced in `scan.rs`).
+* **7 shared node-type consts** (`RULE_NODE`/`GLUE_NODE`/`MATH_NODE`/
+  `LIGATURE_NODE`/`DISC_NODE`/`KERN_NODE`/`PENALTY_NODE`) live in `consts.rs` as
+  `pub const`; `scan.rs` imported them. `output.rs` did **not** — so the moved
+  `show_node_list`/`short_display` match arms `RULE_NODE => …` silently became
+  catch-all **bindings** (the §7 trap), cascading into **22 `unreachable
+  pattern` + 14 `non_snake_case`/`unused_variable`** warnings (51 → **102**).
+  Fixed by adding the 7 to `output.rs`'s `use crate::consts::{…}`. **The warning
+  count was the only signal** — zero compile errors from these. (HLIST_NODE,
+  used in an *or*-pattern, did error out via `E0408`/`E0384`, the one place the
+  trap surfaces as a hard error.)
+
+**Other fixup (cargo-check-driven):**
+* `output.rs` gained imports for the symbols the moved bodies reference that
+  stayed in `scan.rs`/elsewhere: scanner fns (`get_token`/`scan_register_num`/
+  `scan_toks`/`the_toks`), `errors::error`, globals accessors (`cur_val`/
+  `cur_cs`/`def_ref`/`init_pool_ptr`/`set_help_line`/`set_help_ptr`/
+  `set_mem_b32s1`/`set_str_ptr`), consts from `consts.rs`
+  (`BOX_BASE`/`ERROR_STOP_MODE`/`HLIST_NODE`/`LOCAL_BASE`/`TOO_BIG_CHAR`), and 8
+  module-private consts duplicated from `scan.rs` (still used there too:
+  `TEMP_HEAD`/`GARBAGE`/`AAT_FONT_FLAG`/`OTGR_FONT_FLAG`/`INT_PAR_END_LINE_CHAR`
+  + 3 that were `scan.rs`-orphaned and **deleted** from `scan.rs`:
+  `LOCAL__ERR_HELP`/`INT_PAR_SHOW_BOX_DEPTH`/`INT_PAR_SHOW_BOX_BREADTH`). Added
+  `ttstub_issue_warning`/`ttstub_output_flush` to `output.rs`'s `extern "C"`
+  block.
+* `scan.rs` re-imports the 5 moved fns it still calls
+  (`char_warning`/`issue_message`/`short_display`/`show_box`/`show_whatever`);
+  removed the now-unused `SELECTOR_TERM_AND_LOG` import and the now-dead
+  `ttstub_issue_warning` extern decl (its only user, `char_warning`, left).
+* External `crate::scan::` callers of moved fns repointed to `crate::output::`:
+  `errors.rs` (`show_box`/`show_context`), `shipout.rs` (`show_box` ×2),
+  `ini.rs` (`show_save_groups`), `math.rs` (`char_warning`).
+* Removed 4 stale section-banner comments left over `scan.rs` where fns departed.
+
+**Gotcha refinement for §7:** when the moved fns are *match-heavy display code*,
+expect the trap to fire **in bulk** — the fix is to import the shared node-type
+consts from `consts.rs` (they are `pub const` there) rather than duplicating, and
+to relocate the single-function-private suffixed const blocks wholesale. The
+warning delta (here +51) localizes precisely to the missing consts.
+
+**Metrics:** `scan.rs` 18,537 → **16,850** LOC (−1,687). `output.rs` 3,169 →
+4,823. No signature/`#[no_mangle]`/`unsafe` changes (relocation only). Dashboard
+29/2/7/4, warnings 51.
+
+**For the next session (120):** continue 02 per §8 — next clean leaves: `io.rs`
+(file naming + `start_input`/`open_log_file`/`close_files_and_terminate`), then
+`ext.rs` (`do_extension`/`\special` whatsits), `fonts.rs` (TFM/native loading +
+`effective_char*`), `linebreak.rs` (`do_locale_linebreaks`/`char_pw_in`). Same
+recipe: `move_fns.py`, then cargo-check the imports + **warning-count** the trap.
+`ini.rs` drains independently. The core carve (scanner/expand/main_control/
+packaging) comes after the leaves.
+
+
 ## Idiom session 118 — 2026-06-01 — workstream 02 slice 1: relocate the `errors` group out of `scan.rs`
 
 **Type:** execution (workstream 02, module decomposition — first mechanical

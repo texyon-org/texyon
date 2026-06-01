@@ -11,7 +11,7 @@ use crate::globals::{
 };
 use crate::output::print_cmd_chr;
 use crate::scan::flush_node_list_global;
-use crate::scan::show_box;
+use crate::output::show_box;
 
 // Interaction-mode constants (xetex_format.h:644–647).
 
@@ -27,7 +27,7 @@ use crate::output::print_ln;
 use crate::output::print_nl_cstr;
 use crate::scan::close_files_and_terminate;
 use crate::scan::open_log_file;
-use crate::scan::show_context;
+use crate::output::show_context;
 
 const HISTORY_ERROR_ISSUED: i32 = 2;
 const HISTORY_FATAL_ERROR: i32 = 3;

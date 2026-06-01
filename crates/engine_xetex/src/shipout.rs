@@ -607,7 +607,7 @@ pub unsafe fn ship_out(p: i32) {
     if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) > 0 {
         crate::output::print_char(b']' as i32);
         crate::output::begin_diagnostic();
-        crate::scan::show_box(p);
+        crate::output::show_box(p);
         crate::output::end_diagnostic(true);
     }
 
@@ -633,7 +633,7 @@ pub unsafe fn ship_out(p: i32) {
         if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) <= 0 {
             crate::output::begin_diagnostic();
             crate::output::print_nl_cstr(c"The following box has been deleted:".as_ptr());
-            crate::scan::show_box(p);
+            crate::output::show_box(p);
             crate::output::end_diagnostic(true);
         }
     } else {

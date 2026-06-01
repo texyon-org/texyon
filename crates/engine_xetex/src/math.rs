@@ -765,7 +765,7 @@ pub unsafe fn fetch_global(a: i32) {
             crate::errors::error();
         }
         FetchOutcome::CharMissing { f, c } => {
-            crate::scan::char_warning(f, c);
+            crate::output::char_warning(f, c);
         }
     }
 }
