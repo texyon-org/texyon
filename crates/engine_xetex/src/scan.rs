@@ -86,7 +86,7 @@ use crate::shipout::finalize_dvi_file;
 use crate::shipout::new_edge_global;
 use crate::shipout::out_what;
 use crate::shipout::ship_out;
-use crate::state::FontState;
+use crate::state::{FontState, LinebreakState, MemState};
 
 use crate::globals::{
     active_width, align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs,
@@ -10362,13 +10362,13 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
 }
 
 // translated from xetex-xetex0.c:6968 (char_pw)
-pub unsafe fn char_pw(p: i32, side: i16) -> i32 {
-    use crate::globals::{
-        font_info_b32s1, hi_mem_min, mem_b16s2, mem_node_addr, mem_ptr, param_base,
-        set_last_leftmost_char, set_last_rightmost_char,
-    };
-    use crate::mem::TEX_NULL;
-
+pub fn char_pw_in(
+    mem: &MemState,
+    fonts: &FontState,
+    linebreak: &mut LinebreakState,
+    p: i32,
+    side: i16,
+) -> i32 {
     const WHATSIT_NODE: u16 = 8;
     const NATIVE_WORD_NODE: u16 = 40;
     const NATIVE_WORD_NODE_AT: u16 = 41;
@@ -10376,9 +10376,9 @@ pub unsafe fn char_pw(p: i32, side: i16) -> i32 {
     const QUAD_CODE: i32 = 6; // xetex-constants.h:298
 
     if side == 0 {
-        set_last_leftmost_char(TEX_NULL);
+        linebreak.last_leftmost_char = TEX_NULL;
     } else {
-        set_last_rightmost_char(TEX_NULL);
+        linebreak.last_rightmost_char = TEX_NULL;
     }
     if p == TEX_NULL {
         return 0;
@@ -10386,19 +10386,21 @@ pub unsafe fn char_pw(p: i32, side: i16) -> i32 {
 
     // NATIVE_WORD_NODE or NATIVE_WORD_NODE_AT whatsit
     if p != TEX_NULL
-        && p < hi_mem_min()
-        && mem_b16s1(p) == WHATSIT_NODE
-        && (mem_b16s0(p) == NATIVE_WORD_NODE || mem_b16s0(p) == NATIVE_WORD_NODE_AT)
+        && p < mem.hi_mem_min
+        && mem.b16s1(p) == WHATSIT_NODE
+        && (mem.b16s0(p) == NATIVE_WORD_NODE || mem.b16s0(p) == NATIVE_WORD_NODE_AT)
     {
-        if !mem_ptr(p + 5).is_null() {
+        if !mem.ptr(p + 5).is_null() {
             // NATIVE_NODE_glyph_info_ptr != NULL
-            let f = mem_b16s2(p + 4) as i32; // NATIVE_NODE_font
-            let cp = real_get_native_word_cp(mem_node_addr(p), side as libc::c_int);
-            return crate::scaled_math::round_xn_over_d(
-                font_info_b32s1(QUAD_CODE + param_base(f)),
-                cp,
-                1000,
-            );
+            let f = mem.b16s2(p + 4) as i32; // NATIVE_NODE_font
+            let cp = unsafe { real_get_native_word_cp(mem.node_addr(p), side as libc::c_int) };
+            return unsafe {
+                crate::scaled_math::round_xn_over_d(
+                    fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
+                    cp,
+                    1000,
+                )
+            };
         } else {
             return 0;
         }
@@ -10406,22 +10408,25 @@ pub unsafe fn char_pw(p: i32, side: i16) -> i32 {
 
     // GLYPH_NODE whatsit
     if p != TEX_NULL
-        && p < hi_mem_min()
-        && mem_b16s1(p) == WHATSIT_NODE
-        && mem_b16s0(p) == GLYPH_NODE
+        && p < mem.hi_mem_min
+        && mem.b16s1(p) == WHATSIT_NODE
+        && mem.b16s0(p) == GLYPH_NODE
     {
-        let f = mem_b16s2(p + 4) as i32; // mem[p + 4].b16.s2
-        let code = mem_b16s1(p + 4) as u32; // mem[p + 4].b16.s1 (char code)
-        return crate::scaled_math::round_xn_over_d(
-            font_info_b32s1(QUAD_CODE + param_base(f)),
-            get_cp_code(f, code, side as i32),
-            1000,
-        );
+        let f = mem.b16s2(p + 4) as i32; // mem[p + 4].b16.s2
+        let code = mem.b16s1(p + 4) as u32; // mem[p + 4].b16.s1 (char code)
+        let cp = unsafe { get_cp_code(f, code, side as i32) };
+        return unsafe {
+            crate::scaled_math::round_xn_over_d(
+                fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
+                cp,
+                1000,
+            )
+        };
     }
 
     // Adjust p for ligature node or non-char node
-    let p = if p < hi_mem_min() {
-        if mem_b16s1(p) == LIGATURE_NODE {
+    let p = if p < mem.hi_mem_min {
+        if mem.b16s1(p) == LIGATURE_NODE {
             p + 1 // LIGATURE_NODE: the char is at p+1
         } else {
             return 0;
@@ -10430,17 +10435,23 @@ pub unsafe fn char_pw(p: i32, side: i16) -> i32 {
         p
     };
 
-    let f = mem_b16s1(p) as i32; // CHAR_NODE_font(p) = mem[p].b16.s1
-    let c = get_cp_code(f, mem_b16s0(p) as u32, side as i32);
+    let f = mem.b16s1(p) as i32; // CHAR_NODE_font(p) = mem[p].b16.s1
+    let c = unsafe { get_cp_code(f, mem.b16s0(p) as u32, side as i32) };
     if side == 0 {
-        set_last_leftmost_char(p);
+        linebreak.last_leftmost_char = p;
     } else {
-        set_last_rightmost_char(p);
+        linebreak.last_rightmost_char = p;
     }
     if c == 0 {
         return 0;
     }
-    crate::scaled_math::round_xn_over_d(font_info_b32s1(QUAD_CODE + param_base(f)), c, 1000)
+    unsafe {
+        crate::scaled_math::round_xn_over_d(
+            fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
+            c,
+            1000,
+        )
+    }
 }
 
 // translated from xetex-xetex0.c:8265 (handle_right_brace)

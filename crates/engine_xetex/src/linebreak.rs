@@ -4,7 +4,7 @@ use crate::consts::{
 };
 use crate::ext::measure_native_node;
 use crate::ini::init_trie;
-use crate::scan::{char_pw, node_recycle_abort, NodeRecycleAbort};
+use crate::scan::{char_pw_in, node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, HyphState, LinebreakState, MemState, ScannerState};
 
 const MAX_HLIST_STACK: i16 = 512;
@@ -578,10 +578,11 @@ pub fn pop_node(linebreak: &mut LinebreakState) -> Option<i32> {
 // translated from xetex-linebreak.c:2692 (total_pw)
 pub fn total_pw(
     mem: &mut MemState,
+    fonts: &FontState,
     linebreak: &mut LinebreakState,
     q: i32,
     p: i32,
-) -> Option<(i32, i32)> {
+) -> Option<i32> {
     let mut l = if mem.b32s1(q + 1) == TEX_NULL {
         linebreak.first_p
     } else {
@@ -616,18 +617,20 @@ pub fn total_pw(
         l = find_protchar_left(mem, linebreak, l, true)?;
     }
 
-    Some((l, r))
+    // `char_pw_in` is fully threaded (mem/font reads only, no `with_state`
+    // bridge), so the protrusion widths fold directly into this borrow rather
+    // than running after it drops (the session-76 split is no longer needed).
+    Some(char_pw_in(mem, fonts, linebreak, l, 0) + char_pw_in(mem, fonts, linebreak, r, 1))
 }
 
 pub unsafe fn total_pw_global(q: i32, p: i32) -> i32 {
-    let (l, r) = match crate::state::with_state_mut(|state| {
-        total_pw(&mut state.mem, &mut state.linebreak, q, p)
+    match crate::state::with_state_mut(|state| {
+        let state = &mut *state;
+        total_pw(&mut state.mem, &state.fonts, &mut state.linebreak, q, p)
     }) {
-        Some(pair) => pair,
+        Some(w) => w,
         None => crate::errors::pdf_error(c"total_pw".as_ptr(), c"hlist stack failure".as_ptr()),
-    };
-
-    char_pw(l, 0) + char_pw(r, 1)
+    }
 }
 
 // translated from xetex-linebreak.c:2731 (find_protchar_left)
@@ -747,15 +750,16 @@ pub(crate) enum MarginKernAbort {
 
 pub fn insert_right_margin_kern(
     mem: &mut MemState,
+    fonts: &FontState,
     linebreak: &mut LinebreakState,
     q: i32,
     disc_break: bool,
     last_rightmost: i32,
 ) -> Result<i32, MarginKernAbort> {
-    let (p, ptmp) = right_margin_kern_target(mem, linebreak, q, disc_break)
-        .ok_or(MarginKernAbort::PdfError)?;
+    let (p, ptmp) =
+        right_margin_kern_target(mem, linebreak, q, disc_break).ok_or(MarginKernAbort::PdfError)?;
 
-    let w = unsafe { char_pw(p, 1) };
+    let w = char_pw_in(mem, fonts, linebreak, p, 1);
     if w == 0 {
         return Ok(q);
     }
@@ -766,27 +770,28 @@ pub fn insert_right_margin_kern(
     }
     mem.set_b32s1(k, mem.b32s1(ptmp));
     mem.set_b32s1(ptmp, k);
-    let new_q = if ptmp == q {
-        mem.b32s1(q)
-    } else {
-        q
-    };
+    let new_q = if ptmp == q { mem.b32s1(q) } else { q };
     Ok(new_q)
 }
 
 unsafe fn insert_right_margin_kern_global(q: i32, disc_break: bool) -> i32 {
     let last_rightmost = crate::globals::last_rightmost_char();
     let res = crate::state::with_state_mut(|state| {
-        insert_right_margin_kern(&mut state.mem, &mut state.linebreak, q, disc_break, last_rightmost)
+        insert_right_margin_kern(
+            &mut state.mem,
+            &state.fonts,
+            &mut state.linebreak,
+            q,
+            disc_break,
+            last_rightmost,
+        )
     });
     match res {
         Ok(new_q) => new_q,
-        Err(MarginKernAbort::PdfError) => {
-            crate::errors::pdf_error(
-                c"insert_right_margin_kern".as_ptr(),
-                c"hlist stack failure".as_ptr(),
-            )
-        }
+        Err(MarginKernAbort::PdfError) => crate::errors::pdf_error(
+            c"insert_right_margin_kern".as_ptr(),
+            c"hlist stack failure".as_ptr(),
+        ),
         Err(MarginKernAbort::Overflow) => {
             crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
         }
@@ -803,14 +808,14 @@ fn left_margin_kern_target(
 
 pub fn insert_left_margin_kern(
     mem: &mut MemState,
+    fonts: &FontState,
     linebreak: &mut LinebreakState,
     q: i32,
     last_leftmost: i32,
 ) -> Result<i32, MarginKernAbort> {
-    let p = left_margin_kern_target(mem, linebreak, q)
-        .ok_or(MarginKernAbort::PdfError)?;
+    let p = left_margin_kern_target(mem, linebreak, q).ok_or(MarginKernAbort::PdfError)?;
 
-    let w = unsafe { char_pw(p, 0) };
+    let w = char_pw_in(mem, fonts, linebreak, p, 0);
     if w == 0 {
         return Ok(q);
     }
@@ -826,16 +831,20 @@ pub fn insert_left_margin_kern(
 unsafe fn insert_left_margin_kern_global(q: i32) -> i32 {
     let last_leftmost = crate::globals::last_leftmost_char();
     let res = crate::state::with_state_mut(|state| {
-        insert_left_margin_kern(&mut state.mem, &mut state.linebreak, q, last_leftmost)
+        insert_left_margin_kern(
+            &mut state.mem,
+            &state.fonts,
+            &mut state.linebreak,
+            q,
+            last_leftmost,
+        )
     });
     match res {
         Ok(k) => k,
-        Err(MarginKernAbort::PdfError) => {
-            crate::errors::pdf_error(
-                c"insert_left_margin_kern".as_ptr(),
-                c"hlist stack failure".as_ptr(),
-            )
-        }
+        Err(MarginKernAbort::PdfError) => crate::errors::pdf_error(
+            c"insert_left_margin_kern".as_ptr(),
+            c"hlist stack failure".as_ptr(),
+        ),
         Err(MarginKernAbort::Overflow) => {
             crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
         }

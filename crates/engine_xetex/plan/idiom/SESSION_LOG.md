@@ -8,6 +8,75 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 116 — 2026-06-01 — finish `char_pw` threading; fold protrusion widths into `total_pw`
+
+**Type:** execution (workstream 01, Phase C — linebreak protrusion-width leaf).
+**One commit.** Dashboard **29/2/7/4**. Crate warnings **51 → 51** (flat).
+
+**Inherited WIP triage.** The working tree carried an uncommitted slice from a
+prior aborted session: `char_pw` (`src/scan.rs`) had been split into a fully
+threaded `char_pw_in(mem: &MemState, fonts: &FontState, linebreak: &mut
+LinebreakState, p, side)` plus a thin `char_pw` `with_state_mut` wrapper, and
+the two margin-kern inserters (`insert_left/right_margin_kern`, `src/linebreak.rs`)
+had been repointed to `char_pw_in` (gaining a `&FontState` param). That part was
+sound and kept. The same WIP also carried **unrelated `src/math.rs` churn**
+(moving `axis_height`/`big_op_spacing*`/`sub1..sup3` reads out of `with_state_mut`
+into a separate `with_state` in `make_op_global`/`var_delimiter_global`/
+`clean_script_box_global`). Those helpers are already threaded direct-ref
+functions (`fn(&FontState, &EqtbState, size)`), **not** `with_state`-bearing
+wrappers, so calling them under a live `with_state_mut` borrow is safe — the
+reshuffle fixed no bug, and the `clean_script_box_global` variant reordered
+`add_script_space_and_restore_font` after the shift computation. Reverted
+`src/math.rs` to HEAD as provably-unnecessary noise (kept the slice coherent).
+
+**Slice (the kept + finished work):**
+* **Folded the protrusion-width sum into `total_pw`.** `char_pw_in` is fully
+  threaded (mem/font reads + `linebreak.last_*` writes only; no `with_state`
+  bridge, no cold/abort path), so the session-76 split — which deferred the two
+  `char_pw` calls until after the `total_pw` borrow dropped — is no longer
+  needed. `total_pw` now takes `&FontState`, returns `Option<i32>` (the summed
+  width), and computes `char_pw_in(.., l, 0) + char_pw_in(.., r, 1)` inside the
+  same borrow. `total_pw_global` is now a thin bridge + `pdf_error` on the
+  hlist-stack-failure `None`.
+* **Deleted the legacy `char_pw` wrapper** (`src/scan.rs`); `total_pw_global`
+  was its last caller.
+* **Deleted two now-dead bridge accessors** (`src/globals.rs`):
+  `set_last_leftmost_char` / `set_last_rightmost_char`. `char_pw_in` writes
+  `linebreak.last_leftmost_char` / `last_rightmost_char` directly, so the
+  setters had no remaining caller (this is exactly the +2 dead-code warnings the
+  WIP had introduced — deleting them restores warnings to 51). The matching
+  getters `last_leftmost_char()` / `last_rightmost_char()` stay (still read by
+  the margin-kern `_global` wrappers).
+
+**Classification:** bucket **B/C**. `char_pw_in` body is a bucket-B accessor
+rewrite (`mem_*`/`font_*` free-fn accessors → `mem.`/`fonts.` methods); folding
+it into `total_pw` and dropping the deferred-call wrapper is the bucket-C
+borrow-island collapse (here a *simplification*, since the deferred call turned
+out to be borrow-safe to inline).
+
+**Metrics (direct grep):** `#[no_mangle]` unchanged (`char_pw` was not
+exported). `unsafe fn` −1 (`char_pw` deleted). Two thin `globals.rs` accessors
+removed. Warnings 51 (flat).
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 51 warnings.
+`cargo test -p tectonic --test tex-outputs --test trip --test engine_rust
+--test latex_goldens` → **29/2/7/4** all green.
+
+**For the next session (117):** the easy bounded leaves outside `src/scan.rs`
+and `src/ext.rs` are largely exhausted (synctex fully threaded sessions 111–115;
+mem/allocator core, node constructors, math noad family, save/shipout/linebreak
+leaves all done). `phase_c_recon.py`'s top entries are now mostly test fns,
+`lib.rs` config getters, and `output.rs` print routines (the latter go through
+`selector`/output state — a much later target). Remaining real work is the
+orchestrators (`hpack`/`vpackage`/`build_page`/`line_break`/`mlist_to_hlist`,
+thread internal blocks only, never whole) and `src/scan.rs` (largest, most
+coupled — keep last; draft `02-modules.md` to READY first). **Note:** the
+recon's `dead-wrapper` rows (`is_char_node_global`, `font_character_width_global`,
+`is_non_discardable_node_global`, `get_native_usv_global`) are **false positives**
+— those `#[inline] fn` wrappers are heavily used across linebreak/shipout/math;
+the heuristic just misses non-`pub` inline callers. Do not delete them.
+
+
 ## Idiom session 115 — 2026-06-01 — thread SyncTeX public entry points to `EngineState`
 
 **Type:** execution (workstream 01, Phase C — complete `src/synctex.rs`

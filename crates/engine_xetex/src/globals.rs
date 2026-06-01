@@ -4232,20 +4232,8 @@ pub(crate) fn last_leftmost_char() -> i32 {
     crate::state::with_state(|state| state.linebreak.last_leftmost_char)
 }
 #[inline]
-pub(crate) fn set_last_leftmost_char(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.last_leftmost_char = v;
-    });
-}
-#[inline]
 pub(crate) fn last_rightmost_char() -> i32 {
     crate::state::with_state(|state| state.linebreak.last_rightmost_char)
-}
-#[inline]
-pub(crate) fn set_last_rightmost_char(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.last_rightmost_char = v;
-    });
 }
 #[inline]
 pub(crate) fn set_first_p(v: i32) {
