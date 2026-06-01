@@ -8,6 +8,58 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 117 — 2026-06-01 — draft `02-modules.md` to READY (lift the scanner deferral)
+
+**Type:** plan construction (workstream 02). **No code change** — docs only.
+
+**Why:** asked "what do we do to no longer have [`scan.rs`/scanner] deferred?"
+Traced the deferral to two gates: (1) the hard one — `02-modules.md` never
+existed, and hard rule 4 forbids executing a workstream without a READY plan;
+(2) a soft perf gate — the hot tokenizer scalars, already covered by the
+existing `bench_phase_c.py` harness and not actually a blocker for *starting*
+scanner threading (the raw reads are borrow-safe per `01b` §4). The `ext.rs` /
+`eq_define` deferrals are not gated by any doc — they just fall out once scanner
+threading is underway. So the unblock = write workstream 02.
+
+**What I wrote (`plan/idiom/02-modules.md`, ~270 lines, READY):**
+* **Source-verified the giant files** (direct grep): `scan.rs` 18,689 LOC /
+  222 fn defs / 151 `#[no_mangle]` / 192 `unsafe fn` (= `xetex-xetex0.c`);
+  `ini.rs` 4,789 LOC (= `xetex-ini.c`); `globals.rs` 4,920 LOC (transitional
+  bridge, dissolves). `math`/`linebreak`/`shipout` are already 1:1 with their C
+  files — not decomposition targets.
+* **Inventoried + group-mapped all 222 `scan.rs` fns** to destination modules
+  (scanner / expand / main_control / packaging / output / errors / fonts / io /
+  ext / linebreak), and `ini.rs` to engine / format_io / hyphenation /
+  main_control / io. New modules needed: `scanner`, `expand`, `main_control`,
+  `token`, `engine`, `format_io`, `packaging`, `hyphenation`.
+* **Decision 1 (the crux): mechanically pre-split first, thread in place after.**
+  A pure relocation is parity-trivial (visibility + `mod`/`use`; `#[no_mangle]`
+  symbols are global so C linkage is unaffected) and decouples the
+  18k-line-grab-bag problem from the semantic threading problem. This
+  **supersedes `01b` §9's "thread + move together"** for the giant-file case
+  (noted here per the README "newer doc wins, flag it" rule) — with the move
+  done first, threading then proceeds in the destination module one subsystem
+  per commit, exactly like every prior Phase-C slice.
+* **Fenced out-of-scope work:** `node/` typed accessors belong to ws03
+  (`packaging.rs` is the transitional home for `hpack`/`vpackage`/list utils);
+  hot-scalar migration is a later benchmarked slice; the `state.rs` → `state/`
+  split is independent filler. `globals.rs` is not split — it dissolves.
+* **Recipe + parity argument + first slice** (§7/§8): drain the `errors` or
+  `output` leaf group out of `scan.rs` first (small, self-contained), then the
+  other home-having leaves, then `ini.rs`, then the core scanner/expand/
+  main_control carve.
+
+**No dashboard run** (docs-only). `STATUS.md` plan-construction table: 02
+PLANNED → **READY**.
+
+**For the next session (118):** execute 02's first slice per §8 — relocate the
+`errors`-group fns (`you_cant`/`report_illegal_case`/`privileged`/`cs_error`/
+`box_error`/`mu_error`/`runaway`) from `scan.rs` into `errors.rs`,
+behavior-preserving, dashboard-green, per the §7 recipe. Or, if you'd rather
+keep threading leaves, that lane still exists (orchestrator-internal blocks) —
+but the module drain is now the higher-leverage path and is unblocked.
+
+
 ## Idiom session 116 — 2026-06-01 — finish `char_pw` threading; fold protrusion widths into `total_pw`
 
 **Type:** execution (workstream 01, Phase C — linebreak protrusion-width leaf).
