@@ -3636,7 +3636,7 @@ pub unsafe extern "C" fn tt_run_engine(
     crate::state::with_state_mut(|st| crate::synctex::synctex_init_command(st));
     crate::io::start_input(input_file_name);
     crate::globals::set_history(HISTORY_SPOTLESS);
-    crate::scan::main_control();
+    crate::main_control::main_control();
     final_cleanup();
     crate::io::close_files_and_terminate();
     tt_cleanup();
