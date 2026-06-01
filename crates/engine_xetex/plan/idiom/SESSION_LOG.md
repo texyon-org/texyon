@@ -8,6 +8,53 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 115 — 2026-06-01 — thread SyncTeX public entry points to `EngineState`
+
+**Type:** execution (workstream 01, Phase C — complete `src/synctex.rs`
+entry-point threading). **One commit.** Dashboard **29/2/7/4**. Crate warnings
+**51 → 51** (flat).
+
+**Slice:**
+* **Converted the remaining SyncTeX API surface to explicit state.** The
+  `src/synctex.rs` entry points now take `&mut EngineState` directly and operate
+  through `st.synctex`, `st.eqtb`, `st.mem`, and `st.shipout` without borrowing
+  thread-local state internally.
+* **Bridged callers at current legacy boundaries.** Updated
+  `synctex_init_command` from engine startup, `synctex_start_input` and
+  `synctex_terminate` from scanner orchestration, and the shipout/hlist/vlist
+  SyncTeX calls to acquire state once at the caller boundary.
+* **Kept bridge-sensitive arguments outside live borrows.** `gettexstring`,
+  `job_name`, `eqtb_b32s1(INTPAR(mag))`, and `log_opened` values are computed
+  before entering `with_state_mut` where they still use legacy accessors. This
+  avoids nested `RefCell` borrows while preserving the old allocation/free
+  behavior for SyncTeX path strings.
+* **Deleted unused de-exported remnants.** Removing the C export surface exposed
+  dead `synctex_abort`, `synctex_pdfxform`, `synctex_mrofxfdp`,
+  `synctex_pdfrefxform`, and their private record helpers. They had no live
+  Rust/C callers in the crate, so they were removed instead of kept as private
+  dead code.
+
+**Surprise:** the first `engine_rust` validation hit a nested `RefCell` borrow
+in `start_input`: `synctex_start_input` was still calling `gettexstring` after
+the caller had entered `with_state_mut`. The fix was to pass the already
+allocated `tmp` string into `synctex_start_input`, matching the same pattern
+used for `synctex_sheet`.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 51 warnings.
+`cargo test -p tectonic --test engine_rust` → **7/7** green after the nested
+borrow fix. Full dashboard
+`cargo test -p tectonic --test engine_rust --test tex-outputs --test trip --test latex_goldens`
+→ all **29/2/7/4** tests pass; `tex-outputs::synctex` is green. `git diff
+--check` is clean. Recon check: `src/synctex.rs` has no `with_state*` calls and
+no active `#[no_mangle]` exports.
+
+**For the next session (116):** SyncTeX is now fully threaded locally for Phase
+C; remaining `with_state_mut` calls are caller-boundary bridges in
+`ini.rs`/`scan.rs`/`shipout.rs`. Move to another bounded leaf from
+`phase_c_recon.py`, or plan a broader caller-threading slice before trying to
+push state through scanner/shipout orchestrators.
+
+
 ## Idiom session 114 — 2026-06-01 — finish local SyncTeX bridge cleanup
 
 **Type:** execution (workstream 01, Phase C — bounded `src/synctex.rs`

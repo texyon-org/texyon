@@ -568,7 +568,10 @@ pub unsafe fn dvi_out_global(c: u8) {
 
 // translated from xetex-shipout.c:56 (ship_out)
 pub unsafe fn ship_out(p: i32) {
-    crate::synctex::synctex_sheet(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
+    let mag = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
+    let synctex_job_name = job_name();
+    let synctex_tmp = crate::texmfmp::gettexstring(synctex_job_name);
+    crate::state::with_state_mut(|st| crate::synctex::synctex_sheet(st, mag, synctex_tmp));
 
     if job_name() == 0 {
         crate::scan::open_log_file();
@@ -783,7 +786,7 @@ pub unsafe fn ship_out(p: i32) {
     set_dead_cycles(0);
     ttstub_output_flush(rust_stdout());
     crate::scan::flush_node_list_global(p);
-    crate::synctex::synctex_teehs();
+    crate::state::with_state_mut(|st| crate::synctex::synctex_teehs(st));
 }
 
 // translated from xetex-shipout.c:2332 (dvi_pop)
@@ -1093,7 +1096,9 @@ pub unsafe fn finish_hlist_rule_global(this_box: i32, base_line: i32, p: i32) {
         dvi_four_global(action.rule_ht);
         dvi_four_global(action.rule_wd);
     }
-    crate::synctex::synctex_horizontal_rule_or_glue(action.synctex_p, action.synctex_box);
+    crate::state::with_state_mut(|st| {
+        crate::synctex::synctex_horizontal_rule_or_glue(st, action.synctex_p, action.synctex_box)
+    });
 }
 
 unsafe fn output_hlist_glue(
@@ -1229,7 +1234,9 @@ unsafe fn output_hlist_glue(
     }
 
     set_cur_h(cur_h() + rule_wd());
-    crate::synctex::synctex_horizontal_rule_or_glue(p, this_box);
+    crate::state::with_state_mut(|st| {
+        crate::synctex::synctex_horizontal_rule_or_glue(st, p, this_box)
+    });
 }
 
 // translated from xetex-shipout.c:63 (hlist_out)
@@ -1286,7 +1293,7 @@ pub unsafe extern "C" fn hlist_out() {
     }
 
     let mut left_edge = cur_h();
-    crate::synctex::synctex_hlist(this_box);
+    crate::state::with_state_mut(|st| crate::synctex::synctex_hlist(st, this_box));
 
     while p != TEX_NULL {
         'reswitch: loop {
@@ -1323,16 +1330,20 @@ pub unsafe extern "C" fn hlist_out() {
                     p = mem_b32s1(p);
                 }
 
-                crate::synctex::synctex_current();
+                crate::state::with_state_mut(|st| crate::synctex::synctex_current(st));
                 set_dvi_h(cur_h());
             } else {
                 match mem_b16s1(p) {
                     HLIST_NODE | VLIST_NODE => {
                         if mem_b32s1(p + 5) == TEX_NULL {
                             if mem_b16s1(p) == VLIST_NODE {
-                                crate::synctex::synctex_void_vlist(p, this_box);
+                                crate::state::with_state_mut(|st| {
+                                    crate::synctex::synctex_void_vlist(st, p, this_box)
+                                });
                             } else {
-                                crate::synctex::synctex_void_hlist(p, this_box);
+                                crate::state::with_state_mut(|st| {
+                                    crate::synctex::synctex_void_hlist(st, p, this_box)
+                                });
                             }
                             set_cur_h(cur_h() + mem_b32s1(p + 1));
                         } else {
@@ -1439,11 +1450,15 @@ pub unsafe extern "C" fn hlist_out() {
                     }
                     MARGIN_KERN_NODE => set_cur_h(cur_h() + mem_b32s1(p + 1)),
                     KERN_NODE => {
-                        crate::synctex::synctex_kern(p, this_box);
+                        crate::state::with_state_mut(|st| {
+                            crate::synctex::synctex_kern(st, p, this_box)
+                        });
                         set_cur_h(cur_h() + mem_b32s1(p + 1));
                     }
                     MATH_NODE => {
-                        crate::synctex::synctex_math(p, this_box);
+                        crate::state::with_state_mut(|st| {
+                            crate::synctex::synctex_math(st, p, this_box)
+                        });
                         if !mem_b16s0(p).is_multiple_of(2) {
                             if mem_b32s0(lr_ptr()) as u16 == math_node_end_lr_type_global(p) {
                                 set_temp_ptr(lr_ptr());
@@ -1508,7 +1523,7 @@ pub unsafe extern "C" fn hlist_out() {
         }
     }
 
-    crate::synctex::synctex_tsilh(this_box);
+    crate::state::with_state_mut(|st| crate::synctex::synctex_tsilh(st, this_box));
 
     while mem_b32s0(lr_ptr()) != BEFORE {
         if mem_b32s0(lr_ptr()) as u16 > L_CODE {
@@ -1558,7 +1573,7 @@ pub unsafe extern "C" fn vlist_out() {
 
     let save_loc = dvi_offset() + dvi_ptr();
     let left_edge = cur_h();
-    crate::synctex::synctex_vlist(this_box);
+    crate::state::with_state_mut(|st| crate::synctex::synctex_vlist(st, this_box));
 
     if upwards {
         set_cur_v(cur_v() + mem_b32s1(this_box + 2));
@@ -1584,9 +1599,13 @@ pub unsafe extern "C" fn vlist_out() {
                     }
 
                     if mem_b16s1(p) == VLIST_NODE {
-                        crate::synctex::synctex_void_vlist(p, this_box);
+                        crate::state::with_state_mut(|st| {
+                            crate::synctex::synctex_void_vlist(st, p, this_box)
+                        });
                     } else {
-                        crate::synctex::synctex_void_hlist(p, this_box);
+                        crate::state::with_state_mut(|st| {
+                            crate::synctex::synctex_void_hlist(st, p, this_box)
+                        });
                     }
 
                     if upwards {
@@ -1804,7 +1823,7 @@ pub unsafe extern "C" fn vlist_out() {
         }
     }
 
-    crate::synctex::synctex_tsilv(this_box);
+    crate::state::with_state_mut(|st| crate::synctex::synctex_tsilv(st, this_box));
     prune_movements_global(save_loc);
 
     if cur_s() > 0 {

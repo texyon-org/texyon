@@ -87,8 +87,6 @@ use crate::shipout::new_edge_global;
 use crate::shipout::out_what;
 use crate::shipout::ship_out;
 use crate::state::FontState;
-use crate::synctex::synctex_start_input;
-use crate::synctex::synctex_terminate;
 
 use crate::globals::{
     active_width, align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs,
@@ -4714,7 +4712,9 @@ pub unsafe extern "C" fn start_input(primary_input_name: *const libc::c_char) {
     }
 
     set_cur_input_state(NEW_LINE);
-    synctex_start_input();
+    let synctex_job_name = job_name();
+    let synctex_tmp = crate::texmfmp::gettexstring(synctex_job_name);
+    crate::state::with_state_mut(|st| crate::synctex::synctex_start_input(st, synctex_tmp));
     set_line(1);
     input_line(input_file(idx));
     set_cur_input_limit(last());
@@ -10744,7 +10744,8 @@ pub unsafe fn close_files_and_terminate() {
     set_eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR_CFT, -1);
 
     finalize_dvi_file();
-    synctex_terminate(log_opened());
+    let log_was_opened = log_opened();
+    crate::state::with_state_mut(|st| crate::synctex::synctex_terminate(st, log_was_opened));
 
     if log_opened() {
         ttstub_output_putc(log_file(), b'\n' as i32);

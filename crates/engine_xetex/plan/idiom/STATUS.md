@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 114, **finished the local SyncTeX threading cleanup in `src/synctex.rs`** — deleted the obsolete `sc_*` thread-local accessor bridge, threaded the deferred recorder callback through `&mut SynctexCtxt` + `&MemState`, initialized `\synctex` through direct `ConfigState`/`EqtbState` borrows, and removed the now-dead `globals::synctex_enabled` getter. Dashboard 29/2/7/4, warnings 51. — prior session 113 threaded synctex node recorders and FFI call sites.)
+Last updated: 2026-06-01 (last session = session 115, **completed the `src/synctex.rs` Phase-C threading pass** — converted SyncTeX entry points to explicit `&mut EngineState` functions, bridged callers at the current legacy boundaries in `ini.rs`/`scan.rs`/`shipout.rs`, deleted unused xform/abort API remnants exposed by de-exporting, and left `src/synctex.rs` with no active `#[no_mangle]` exports and no `with_state*` calls. Dashboard 29/2/7/4, warnings 51. — prior session 114 finished local SyncTeX bridge cleanup.)
 
 ## How to read this file
 

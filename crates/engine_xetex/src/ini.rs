@@ -3633,7 +3633,7 @@ pub unsafe extern "C" fn tt_run_engine(
     }
 
     pdf_files_init();
-    crate::synctex::synctex_init_command();
+    crate::state::with_state_mut(|st| crate::synctex::synctex_init_command(st));
     crate::scan::start_input(input_file_name);
     crate::globals::set_history(HISTORY_SPOTLESS);
     crate::scan::main_control();
