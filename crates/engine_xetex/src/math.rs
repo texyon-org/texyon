@@ -577,9 +577,12 @@ pub unsafe fn flush_math_global() {
     }
 }
 
+// Phase-C: routes through the canonical `crate::mem::is_char_node` predicate
+// (session 110 dedup) via a short bridge borrow; the prior local copy
+// (`p >= hi_mem_min()`) duplicated that logic.
 #[inline]
-unsafe fn is_char_node(p: i32) -> bool {
-    p >= hi_mem_min()
+fn is_char_node_global(p: i32) -> bool {
+    crate::state::with_state(|st| crate::mem::is_char_node(&st.mem, p))
 }
 
 /// translated from xetex-math.c:91 (clean_box)
@@ -637,7 +640,7 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
         }
     }
 
-    let x = if is_char_node(q) || q == TEX_NULL {
+    let x = if is_char_node_global(q) || q == TEX_NULL {
         crate::scan::hpack(q, 0, ADDITIONAL)
     } else if mem_b32s1(q) == TEX_NULL && mem_b16s1(q) <= VLIST_NODE && mem_b32s1(q + 4) == 0 {
         q
@@ -646,11 +649,11 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
     };
 
     let q = mem_b32s1(x + 5);
-    if is_char_node(q) {
+    if is_char_node_global(q) {
         let r = mem_b32s1(q);
         if r != TEX_NULL
             && mem_b32s1(r) == TEX_NULL
-            && !is_char_node(r)
+            && !is_char_node_global(r)
             && mem_b16s1(r) == KERN_NODE
         {
             free_node_global(r, MEDIUM_NODE_SIZE);
@@ -1178,7 +1181,7 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
         {
             let mut p = mem_b32s1(x + 5);
             if p != TEX_NULL
-                && !is_char_node(p)
+                && !is_char_node_global(p)
                 && mem_b16s1(p) == WHATSIT_NODE
                 && mem_b16s0(p) == GLYPH_NODE
             {
@@ -1712,7 +1715,7 @@ pub unsafe fn make_math_accent_global(q: i32) {
         }
         let sa: i32;
         if p != TEX_NULL
-            && !is_char_node(p)
+            && !is_char_node_global(p)
             && mem_b16s1(p) == WHATSIT_NODE
             && mem_b16s0(p) == GLYPH_NODE
         {
@@ -4574,7 +4577,7 @@ pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
 
     let char_kern_width = if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL {
         let p = mem_b32s1(b + 5);
-        if is_char_node(p) && mem_b32s1(p) == TEX_NULL {
+        if is_char_node_global(p) && mem_b32s1(p) == TEX_NULL {
             let f = mem_b16s1(p) as i32;
             let c_raw = mem_b16s0(p);
             let q = font_info_b16(

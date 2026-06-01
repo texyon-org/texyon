@@ -8,8 +8,8 @@ use libc::{c_char, c_int, size_t};
 use std::ptr;
 
 use crate::globals::{
-    cur_h, cur_input, cur_v, eqtb_b32s1, job_name, mem_b16s1, mem_b32s0, mem_b32s1, rule_dp,
-    rule_ht, rule_wd, set_cur_input_synctex_tag, set_eqtb_b32s1, synctex_enabled, total_pages,
+    cur_h, cur_input, cur_v, eqtb_b32s1, job_name, rule_dp, rule_ht, rule_wd,
+    set_cur_input_synctex_tag, set_eqtb_b32s1, synctex_enabled, total_pages,
 };
 
 // INT_BASE (save.rs) and INT_PAR__synctex (xetex_format.h:116).
@@ -126,54 +126,100 @@ unsafe fn synctex_curv() -> i32 {
     cur_v() + 4736287
 }
 
+// Phase-C: the synctex node-field readers below are pure `mem`-arena leaves.
+// Each is threaded onto a narrow `&MemState` borrow (direct, safe slice
+// indexing), with a transitional `_global` bridge-down wrapper for the legacy
+// in-module callers (the not-yet-threaded `synctex_record_node_*` / public
+// `synctex_*` recording functions). The wrappers die when those callers thread.
+
 // SYNCTEX_TAG_MODEL / SYNCTEX_LINE_MODEL for BOX (BOX_NODE_SIZE = 8, field = offset 7).
 #[inline]
-unsafe fn synctex_tag_box(p: i32) -> i32 {
-    mem_b32s0(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+fn synctex_tag_box(mem: &crate::state::MemState, p: i32) -> i32 {
+    mem.b32s0(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE)
 }
 #[inline]
-unsafe fn synctex_line_box(p: i32) -> i32 {
-    mem_b32s1(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+fn synctex_tag_box_global(p: i32) -> i32 {
+    crate::state::with_state(|st| synctex_tag_box(&st.mem, p))
+}
+#[inline]
+fn synctex_line_box(mem: &crate::state::MemState, p: i32) -> i32 {
+    mem.b32s1(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+}
+#[inline]
+fn synctex_line_box_global(p: i32) -> i32 {
+    crate::state::with_state(|st| synctex_line_box(&st.mem, p))
 }
 
 // For RULE (RULE_NODE_SIZE = 5, field at offset 4).
 #[inline]
-unsafe fn synctex_tag_rule(p: i32) -> i32 {
-    mem_b32s0(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+fn synctex_tag_rule(mem: &crate::state::MemState, p: i32) -> i32 {
+    mem.b32s0(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE)
 }
 #[inline]
-unsafe fn synctex_line_rule(p: i32) -> i32 {
-    mem_b32s1(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+fn synctex_tag_rule_global(p: i32) -> i32 {
+    crate::state::with_state(|st| synctex_tag_rule(&st.mem, p))
+}
+#[inline]
+fn synctex_line_rule(mem: &crate::state::MemState, p: i32) -> i32 {
+    mem.b32s1(p + RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+}
+#[inline]
+fn synctex_line_rule_global(p: i32) -> i32 {
+    crate::state::with_state(|st| synctex_line_rule(&st.mem, p))
 }
 
 // For GLUE / KERN / MATH (MEDIUM_NODE_SIZE = 3, field at offset 2).
 #[inline]
-unsafe fn synctex_tag_medium(p: i32) -> i32 {
-    mem_b32s0(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+fn synctex_tag_medium(mem: &crate::state::MemState, p: i32) -> i32 {
+    mem.b32s0(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE)
 }
 #[inline]
-unsafe fn synctex_line_medium(p: i32) -> i32 {
-    mem_b32s1(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+fn synctex_tag_medium_global(p: i32) -> i32 {
+    crate::state::with_state(|st| synctex_tag_medium(&st.mem, p))
+}
+#[inline]
+fn synctex_line_medium(mem: &crate::state::MemState, p: i32) -> i32 {
+    mem.b32s1(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE)
+}
+#[inline]
+fn synctex_line_medium_global(p: i32) -> i32 {
+    crate::state::with_state(|st| synctex_line_medium(&st.mem, p))
 }
 
 // SYNCTEX_TYPE: mem[p].b16.s1
 #[inline]
-unsafe fn synctex_type(p: i32) -> u16 {
-    mem_b16s1(p)
+fn synctex_type(mem: &crate::state::MemState, p: i32) -> u16 {
+    mem.b16s1(p)
+}
+#[inline]
+fn synctex_type_global(p: i32) -> u16 {
+    crate::state::with_state(|st| synctex_type(&st.mem, p))
 }
 
 // SYNCTEX_WIDTH/DEPTH/HEIGHT (width_offset=1, depth_offset=2, height_offset=3).
 #[inline]
-unsafe fn synctex_width(p: i32) -> i32 {
-    mem_b32s1(p + 1)
+fn synctex_width(mem: &crate::state::MemState, p: i32) -> i32 {
+    mem.b32s1(p + 1)
 }
 #[inline]
-unsafe fn synctex_depth(p: i32) -> i32 {
-    mem_b32s1(p + 2)
+fn synctex_width_global(p: i32) -> i32 {
+    crate::state::with_state(|st| synctex_width(&st.mem, p))
 }
 #[inline]
-unsafe fn synctex_height(p: i32) -> i32 {
-    mem_b32s1(p + 3)
+fn synctex_depth(mem: &crate::state::MemState, p: i32) -> i32 {
+    mem.b32s1(p + 2)
+}
+#[inline]
+fn synctex_depth_global(p: i32) -> i32 {
+    crate::state::with_state(|st| synctex_depth(&st.mem, p))
+}
+#[inline]
+fn synctex_height(mem: &crate::state::MemState, p: i32) -> i32 {
+    mem.b32s1(p + 3)
+}
+#[inline]
+fn synctex_height_global(p: i32) -> i32 {
+    crate::state::with_state(|st| synctex_height(&st.mem, p))
 }
 
 // INTPAR(synctex) = eqtb[INT_BASE + INT_PAR__synctex].b32.s1
@@ -409,13 +455,13 @@ unsafe fn synctex_record_node_vlist(p: i32) {
     let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "[{},{}:{},{}:{},{},{}\n",
-        synctex_tag_box(p),
-        synctex_line_box(p),
+        synctex_tag_box_global(p),
+        synctex_line_box_global(p),
         curh / unit,
         curv / unit,
-        synctex_width(p) / unit,
-        synctex_height(p) / unit,
-        synctex_depth(p) / unit
+        synctex_width_global(p) / unit,
+        synctex_height_global(p) / unit,
+        synctex_depth_global(p) / unit
     );
     let len = synctex_write(file, &s);
     set_sc_lastv(sc_curv());
@@ -442,13 +488,13 @@ unsafe fn synctex_record_node_void_vlist(p: i32) {
     let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "v{},{}:{},{}:{},{},{}\n",
-        synctex_tag_box(p),
-        synctex_line_box(p),
+        synctex_tag_box_global(p),
+        synctex_line_box_global(p),
         curh / unit,
         curv / unit,
-        synctex_width(p) / unit,
-        synctex_height(p) / unit,
-        synctex_depth(p) / unit
+        synctex_width_global(p) / unit,
+        synctex_height_global(p) / unit,
+        synctex_depth_global(p) / unit
     );
     let len = synctex_write(file, &s);
     set_sc_lastv(sc_curv());
@@ -465,13 +511,13 @@ unsafe fn synctex_record_node_hlist(p: i32) {
     let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "({},{}:{},{}:{},{},{}\n",
-        synctex_tag_box(p),
-        synctex_line_box(p),
+        synctex_tag_box_global(p),
+        synctex_line_box_global(p),
         curh / unit,
         curv / unit,
-        synctex_width(p) / unit,
-        synctex_height(p) / unit,
-        synctex_depth(p) / unit
+        synctex_width_global(p) / unit,
+        synctex_height_global(p) / unit,
+        synctex_depth_global(p) / unit
     );
     let len = synctex_write(file, &s);
     set_sc_lastv(sc_curv());
@@ -498,13 +544,13 @@ unsafe fn synctex_record_node_void_hlist(p: i32) {
     let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "h{},{}:{},{}:{},{},{}\n",
-        synctex_tag_box(p),
-        synctex_line_box(p),
+        synctex_tag_box_global(p),
+        synctex_line_box_global(p),
         curh / unit,
         curv / unit,
-        synctex_width(p) / unit,
-        synctex_height(p) / unit,
-        synctex_depth(p) / unit
+        synctex_width_global(p) / unit,
+        synctex_height_global(p) / unit,
+        synctex_depth_global(p) / unit
     );
     let len = synctex_write(file, &s);
     set_sc_lastv(sc_curv());
@@ -520,8 +566,8 @@ unsafe fn synctex_record_node_math(p: i32) {
     let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "${},{}:{},{}\n",
-        synctex_tag_medium(p),
-        synctex_line_medium(p),
+        synctex_tag_medium_global(p),
+        synctex_line_medium_global(p),
         curh / unit,
         curv / unit
     );
@@ -539,8 +585,8 @@ unsafe fn synctex_record_node_glue(p: i32) {
     let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "g{},{}:{},{}\n",
-        synctex_tag_medium(p),
-        synctex_line_medium(p),
+        synctex_tag_medium_global(p),
+        synctex_line_medium_global(p),
         curh / unit,
         curv / unit
     );
@@ -560,11 +606,11 @@ unsafe fn synctex_record_node_kern(p: i32) {
     let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "k{},{}:{},{}:{}\n",
-        synctex_tag_medium(p),
-        synctex_line_medium(p),
+        synctex_tag_medium_global(p),
+        synctex_line_medium_global(p),
         curh / unit,
         curv / unit,
-        synctex_width(p) / unit
+        synctex_width_global(p) / unit
     );
     let len = synctex_write(file, &s);
     set_sc_lastv(sc_curv());
@@ -580,8 +626,8 @@ unsafe fn synctex_record_node_rule(p: i32) {
     let (file, curh, curv, unit) = (sc_file(), sc_curh(), sc_curv(), sc_unit());
     let s = format!(
         "r{},{}:{},{}:{},{},{}\n",
-        synctex_tag_rule(p),
-        synctex_line_rule(p),
+        synctex_tag_rule_global(p),
+        synctex_line_rule_global(p),
         curh / unit,
         curv / unit,
         rule_wd() / unit,
@@ -820,8 +866,8 @@ pub unsafe extern "C" fn synctex_vlist(this_box: i32) {
     }
     set_sc_node(this_box);
     set_sc_recorder(None);
-    set_sc_tag(synctex_tag_box(this_box));
-    set_sc_line(synctex_line_box(this_box));
+    set_sc_tag(synctex_tag_box_global(this_box));
+    set_sc_line(synctex_line_box_global(this_box));
     set_sc_curh(synctex_curh());
     set_sc_curv(synctex_curv());
     synctex_record_node_vlist(this_box);
@@ -833,8 +879,8 @@ pub unsafe extern "C" fn synctex_tsilv(this_box: i32) {
         return;
     }
     set_sc_node(this_box);
-    set_sc_tag(synctex_tag_box(this_box));
-    set_sc_line(synctex_line_box(this_box));
+    set_sc_tag(synctex_tag_box_global(this_box));
+    set_sc_line(synctex_line_box_global(this_box));
     set_sc_curh(synctex_curh());
     set_sc_curv(synctex_curv());
     set_sc_recorder(None);
@@ -847,8 +893,8 @@ pub unsafe extern "C" fn synctex_void_vlist(p: i32, _this_box: i32) {
         return;
     }
     set_sc_node(p);
-    set_sc_tag(synctex_tag_box(p));
-    set_sc_line(synctex_line_box(p));
+    set_sc_tag(synctex_tag_box_global(p));
+    set_sc_line(synctex_line_box_global(p));
     set_sc_curh(synctex_curh());
     set_sc_curv(synctex_curv());
     set_sc_recorder(None);
@@ -861,8 +907,8 @@ pub unsafe extern "C" fn synctex_hlist(this_box: i32) {
         return;
     }
     set_sc_node(this_box);
-    set_sc_tag(synctex_tag_box(this_box));
-    set_sc_line(synctex_line_box(this_box));
+    set_sc_tag(synctex_tag_box_global(this_box));
+    set_sc_line(synctex_line_box_global(this_box));
     set_sc_curh(synctex_curh());
     set_sc_curv(synctex_curv());
     set_sc_recorder(None);
@@ -875,8 +921,8 @@ pub unsafe extern "C" fn synctex_tsilh(this_box: i32) {
         return;
     }
     set_sc_node(this_box);
-    set_sc_tag(synctex_tag_box(this_box));
-    set_sc_line(synctex_line_box(this_box));
+    set_sc_tag(synctex_tag_box_global(this_box));
+    set_sc_line(synctex_line_box_global(this_box));
     set_sc_curh(synctex_curh());
     set_sc_curv(synctex_curv());
     set_sc_recorder(None);
@@ -888,8 +934,8 @@ pub unsafe extern "C" fn synctex_void_hlist(p: i32, _this_box: i32) {
     // Uses the second SYNCTEX_IGNORE definition: checks tag/line too.
     if sc_flags_off()
         || intpar_synctex() == 0
-        || synctex_tag_box(p) <= 0
-        || synctex_line_box(p) <= 0
+        || synctex_tag_box_global(p) <= 0
+        || synctex_line_box_global(p) <= 0
     {
         return;
     }
@@ -899,8 +945,8 @@ pub unsafe extern "C" fn synctex_void_hlist(p: i32, _this_box: i32) {
         rec(node);
     }
     set_sc_node(p);
-    set_sc_tag(synctex_tag_box(p));
-    set_sc_line(synctex_line_box(p));
+    set_sc_tag(synctex_tag_box_global(p));
+    set_sc_line(synctex_line_box_global(p));
     set_sc_curh(synctex_curh());
     set_sc_curv(synctex_curv());
     set_sc_recorder(None);
@@ -913,8 +959,9 @@ pub unsafe extern "C" fn synctex_math(p: i32, _this_box: i32) {
         return;
     }
     // SYNCTEX_CONTEXT_DID_CHANGE: node == 0 or tag/line differ.
-    let ctx_changed =
-        sc_node() == 0 || synctex_tag_medium(p) != sc_tag() || synctex_line_medium(p) != sc_line();
+    let ctx_changed = sc_node() == 0
+        || synctex_tag_medium_global(p) != sc_tag()
+        || synctex_line_medium_global(p) != sc_line();
     let (rec, node) = (sc_recorder(), sc_node());
     if let Some(rec) = rec {
         if ctx_changed {
@@ -922,8 +969,8 @@ pub unsafe extern "C" fn synctex_math(p: i32, _this_box: i32) {
         }
     }
     set_sc_node(p);
-    set_sc_tag(synctex_tag_medium(p));
-    set_sc_line(synctex_line_medium(p));
+    set_sc_tag(synctex_tag_medium_global(p));
+    set_sc_line(synctex_line_medium_global(p));
     set_sc_curh(synctex_curh());
     set_sc_curv(synctex_curv());
     set_sc_recorder(None);
@@ -932,24 +979,24 @@ pub unsafe extern "C" fn synctex_math(p: i32, _this_box: i32) {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_horizontal_rule_or_glue(p: i32, _this_box: i32) {
-    let node_type = synctex_type(p);
+    let node_type = synctex_type_global(p);
     // Second SYNCTEX_IGNORE definition: also checks tag/line > 0.
     let off = sc_flags_off() || intpar_synctex() == 0;
     let ignore = |tag: i32, line: i32| off || tag <= 0 || line <= 0;
 
     match node_type {
         RULE_NODE => {
-            if ignore(synctex_tag_rule(p), synctex_line_rule(p)) {
+            if ignore(synctex_tag_rule_global(p), synctex_line_rule_global(p)) {
                 return;
             }
         }
         GLUE_NODE => {
-            if ignore(synctex_tag_medium(p), synctex_line_medium(p)) {
+            if ignore(synctex_tag_medium_global(p), synctex_line_medium_global(p)) {
                 return;
             }
         }
         KERN_NODE => {
-            if ignore(synctex_tag_medium(p), synctex_line_medium(p)) {
+            if ignore(synctex_tag_medium_global(p), synctex_line_medium_global(p)) {
                 return;
             }
         }
@@ -966,18 +1013,18 @@ pub unsafe extern "C" fn synctex_horizontal_rule_or_glue(p: i32, _this_box: i32)
     set_sc_recorder(None);
     match node_type {
         RULE_NODE => {
-            set_sc_tag(synctex_tag_rule(p));
-            set_sc_line(synctex_line_rule(p));
+            set_sc_tag(synctex_tag_rule_global(p));
+            set_sc_line(synctex_line_rule_global(p));
             synctex_record_node_rule(p);
         }
         GLUE_NODE => {
-            set_sc_tag(synctex_tag_medium(p));
-            set_sc_line(synctex_line_medium(p));
+            set_sc_tag(synctex_tag_medium_global(p));
+            set_sc_line(synctex_line_medium_global(p));
             synctex_record_node_glue(p);
         }
         KERN_NODE => {
-            set_sc_tag(synctex_tag_medium(p));
-            set_sc_line(synctex_line_medium(p));
+            set_sc_tag(synctex_tag_medium_global(p));
+            set_sc_line(synctex_line_medium_global(p));
             synctex_record_node_kern(p);
         }
         _ => {
@@ -991,14 +1038,15 @@ pub unsafe extern "C" fn synctex_kern(p: i32, this_box: i32) {
     // Second SYNCTEX_IGNORE definition.
     if sc_flags_off()
         || intpar_synctex() == 0
-        || synctex_tag_medium(p) <= 0
-        || synctex_line_medium(p) <= 0
+        || synctex_tag_medium_global(p) <= 0
+        || synctex_line_medium_global(p) <= 0
     {
         return;
     }
     // SYNCTEX_CONTEXT_DID_CHANGE
-    let ctx_changed =
-        sc_node() == 0 || synctex_tag_medium(p) != sc_tag() || synctex_line_medium(p) != sc_line();
+    let ctx_changed = sc_node() == 0
+        || synctex_tag_medium_global(p) != sc_tag()
+        || synctex_line_medium_global(p) != sc_line();
     if ctx_changed {
         // Flush pending recorder.
         let (rec, node) = (sc_recorder(), sc_node());
@@ -1006,8 +1054,8 @@ pub unsafe extern "C" fn synctex_kern(p: i32, this_box: i32) {
             rec(node);
         }
         set_sc_node(p);
-        set_sc_tag(synctex_tag_medium(p));
-        set_sc_line(synctex_line_medium(p));
+        set_sc_tag(synctex_tag_medium_global(p));
+        set_sc_line(synctex_line_medium_global(p));
         if sc_node() == this_box {
             // First node in hlist.
             set_sc_recorder(Some(synctex_record_node_kern));
@@ -1018,8 +1066,8 @@ pub unsafe extern "C" fn synctex_kern(p: i32, this_box: i32) {
     } else {
         // Same context — defer recording.
         set_sc_node(p);
-        set_sc_tag(synctex_tag_medium(p));
-        set_sc_line(synctex_line_medium(p));
+        set_sc_tag(synctex_tag_medium_global(p));
+        set_sc_line(synctex_line_medium_global(p));
         set_sc_recorder(Some(synctex_record_node_kern));
     }
 }
