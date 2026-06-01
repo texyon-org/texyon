@@ -4432,7 +4432,7 @@ pub unsafe fn prefixed_command() {
                 } else {
                     crate::scan::scan_glue(GLUE_VAL as i16);
                 }
-                crate::scan::trap_zero_glue();
+                crate::main_control::trap_zero_glue();
                 if a >= 4 {
                     crate::save::geq_define(p, GLUE_REF as u16, cur_val());
                 } else {
@@ -4598,7 +4598,7 @@ pub unsafe fn prefixed_command() {
             }
 
             REGISTER | ADVANCE | MULTIPLY | DIVIDE => {
-                crate::scan::do_register_command(a as i16);
+                crate::main_control::do_register_command(a as i16);
             }
 
             SET_BOX => {
@@ -4631,23 +4631,23 @@ pub unsafe fn prefixed_command() {
             }
 
             SET_AUX => {
-                crate::scan::alter_aux();
+                crate::main_control::alter_aux();
             }
 
             SET_PREV_GRAF => {
-                crate::scan::alter_prev_graf();
+                crate::main_control::alter_prev_graf();
             }
 
             SET_PAGE_DIMEN => {
-                crate::scan::alter_page_so_far();
+                crate::main_control::alter_page_so_far();
             }
 
             SET_PAGE_INT => {
-                crate::scan::alter_integer();
+                crate::main_control::alter_integer();
             }
 
             SET_BOX_DIMEN => {
-                crate::scan::alter_box_dimen();
+                crate::main_control::alter_box_dimen();
             }
 
             SET_SHAPE => {
@@ -4764,11 +4764,11 @@ pub unsafe fn prefixed_command() {
             }
 
             DEF_FONT => {
-                crate::scan::new_font(a as i16);
+                crate::main_control::new_font(a as i16);
             }
 
             SET_INTERACTION => {
-                crate::scan::new_interaction();
+                crate::main_control::new_interaction();
             }
 
             _ => {

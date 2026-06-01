@@ -9,37 +9,50 @@
 //! and verbs follow in later slices.
 
 use crate::consts::{
-    BOX_BASE, BOX_NODE_SIZE, CS_TOKEN_FLAG, CUR_FONT_LOC, DIMEN_BASE, DISC_NODE, ETEX_PEN_BASE,
-    GLUE_BASE, GLUE_NODE, HLIST_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_NODE, MAX_HALFWORD,
-    NULL_FLAG, RULE_NODE, SMALL_NODE_SIZE,
+    BATCH_MODE, BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE, CS_TOKEN_FLAG, CUR_FONT_LOC, DIMEN_BASE,
+    DISC_NODE, ERROR_STOP_MODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE, HLIST_NODE, INT_BASE,
+    KERN_NODE, LIGATURE_NODE, LOCAL_BASE, MATH_NODE, MAX_HALFWORD, NULL_FLAG, RULE_NODE,
+    SELECTOR_TERM_ONLY, SINGLE_BASE, SMALL_NODE_SIZE, TOO_BIG_CHAR,
 };
-use crate::errors::{box_error, error, extra_right_brace, privileged, you_cant};
+use crate::errors::{
+    box_error, error, extra_right_brace, int_error, privileged, report_illegal_case, you_cant,
+};
 use crate::expand::expand;
-use crate::ext::insert_src_special;
-use crate::fonts::new_native_character;
-use crate::globals::{
-    align_state, cur_chr, cur_cmd, cur_group, cur_list_mode, cur_tok, cur_val, eqtb_b32s1,
-    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, save_ptr, set_align_state, set_cur_input_index,
-    set_cur_tok, set_cur_val, set_eqtb_b32s1, set_help_line, set_help_ptr, set_mem_b16s0,
-    set_mem_b32s0, set_mem_b32s1, set_save_ptr, set_save_stack_b32s1,
+use crate::ext::{
+    get_native_char_height_depth, get_native_char_sidebearings, insert_src_special,
+    real_get_native_glyph_italic_correction, real_get_native_italic_correction,
 };
+use crate::fonts::{new_native_character, read_font_info};
+use crate::globals::{
+    align_state, avail, cur_chr, cur_cmd, cur_cs, cur_group, cur_list_mode, cur_tok, cur_val,
+    def_ref, eqtb_b32s1, hash_s1, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, pool_ptr, save_ptr,
+    save_stack_b32s1, selector, set_align_state, set_avail, set_cur_chr, set_cur_input_index,
+    set_cur_tok, set_cur_val, set_eqtb_b32s1, set_help_line, set_help_ptr, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_pool_ptr, set_save_ptr, set_save_stack_b32s1,
+    set_selector, set_str_ptr, str_ptr, str_start,
+};
+use crate::ini::prefixed_command;
 use crate::input::begin_token_list;
+use crate::io::{open_log_file, scan_file_name};
 use crate::linebreak::line_break;
 use crate::math::{build_choices_global, fin_mlist_global, flush_math_global, resume_after_display};
 use crate::output::{
-    capture_to_diagnostic, char_warning, error_here_with_diagnostic, print_cmd_chr,
+    capture_to_diagnostic, char_warning, error_here_with_diagnostic, print_cmd_chr, show_box,
 };
 use crate::packaging::{
     append_to_vlist, copy_node_list_global, flush_node_list_global, hpack, vpackage, vsplit,
 };
 use crate::pagebuilder::build_page;
 use crate::scan::{
-    append_glue, build_discretionary, do_assignments, effective_char_global, get_token,
-    get_x_or_protected, get_x_token, off_save, scan_dimen, scan_eight_bit_int, scan_glue, scan_int,
-    scan_keyword, scan_left_brace, scan_optional_equals, scan_register_num, scan_rule_spec,
-    scan_spec,
+    effective_char_global, get_r_token, get_token, get_x_or_protected, get_x_token, scan_char_num,
+    scan_dimen, scan_eight_bit_int, scan_glue, scan_int, scan_keyword, scan_left_brace,
+    scan_optional_equals, scan_register_num, scan_rule_spec, scan_spec, scan_toks,
 };
 use crate::shipout::ship_out;
+
+extern "C" {
+    fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
+}
 
 // Command/token/code consts that live module-private in scan.rs (duplicated
 // here, same values — referenced bare by the moved alignment functions).
@@ -74,6 +87,48 @@ const SHAPE_REF: u16 = 120; // xetex_format.h:362
 const SUB_BOX: i32 = 2; // xetex_format.h:283
 const VADJUST: u8 = 38; // xetex_format.h:276
 const VMODE: i16 = 1;
+const ASSIGN_INT: u8 = 74;
+const ASSIGN_MU_GLUE: u8 = 77;
+const BACKED_UP: u16 = 3;
+const BOTTOM_LEVEL: u8 = 0; // xetex_format.h (group level 0)
+const CHAR_GIVEN: u8 = 68;
+const COUNT_BASE: i32 = 7_826_812;
+const DISC_GROUP: u8 = 10; // xetex-constants.h:162
+const FONT_BASE: i32 = 0;
+const FONT_ID_BASE: i32 = 2_245_338; // FROZEN_NULL_FONT
+const FROZEN_END_GROUP: i32 = 2_243_226 + 2; // xetex_format.h:201 + xetex-constants.h:57
+const FROZEN_RIGHT: i32 = 2_243_226 + 3; // xetex_format.h:201 + xetex-constants.h:58
+const GLYPH_NODE_BD: u16 = 42; // xetex_format.h:465
+const HASH_BASE: i32 = 2_228_226;
+const INT_VAL: i16 = 0;
+const LANGUAGE_NODE_SUBTYPE: i16 = 4; // xetex_format.h:461 (whatsit subtype)
+const MARK_NODE: u16 = 4; // xetex_format.h:384
+const MATH_SHIFT_TOKEN: i32 = 0x600000;
+const MAX_CHAR_VAL: i32 = 0x200000; // 1 << 21
+const MMODE: i16 = 207; // xetex_format.h:370
+const MU_GLUE: u16 = 99;
+const MU_SKIP_BASE: i32 = 2_254_615;
+const MU_VAL_SCAN: i16 = 3;
+const NATIVE_WORD_NODE: u16 = 40; // xetex_format.h:463
+const NATIVE_WORD_NODE_AT: u16 = 41; // xetex_format.h:464
+const NULL_CS: i32 = 2_228_225; // xetex_format.h:199
+const OTHER_CHAR: u8 = 12;
+const OTHER_TOKEN: i32 = 0x1800000; // OTHER_CHAR << 21
+const REGISTER: u8 = 91;
+const SCALED_BASE: i32 = 8_941_203;
+const SELECTOR_NEW_STRING: i32 = 21;
+const SELECTOR_NO_PRINT: i32 = 16; // xetex-core.h:45
+const SET_FONT: u8 = 89;
+const SKIP_BASE: i32 = 2_254_359;
+const SKIP_CODE: i16 = 4; // xetex_format.h:674
+const TEMP_HEAD: i32 = 4_999_999 - 3;
+const TEX_INFINITY: i32 = 0x7FFF_FFFF;
+const WHATSIT_NODE: u16 = 8; // xetex_format.h:388
+const SEMI_SIMPLE_GROUP: u8 = 14;
+const MATH_SHIFT_GROUP: u8 = 15;
+const MATH_LEFT_GROUP: u8 = 16;
+const DIMEN_VAL: i16 = 1;
+const MU_VAL: i16 = 3;
 
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
@@ -2444,5 +2499,989 @@ pub unsafe extern "C" fn handle_right_brace() {
         _ => {
             crate::errors::confusion(c"rightbrace".as_ptr());
         }
+    }
+}
+
+// ---- moved verbatim from scan.rs (workstream 02) ----
+
+// translated from xetex-xetex0.c:9358 (append_glue)
+#[no_mangle]
+pub unsafe extern "C" fn append_glue() {
+    let s = cur_chr() as i16;
+    match s {
+        0 => set_cur_val(4),
+        1 => set_cur_val(8),
+        2 => set_cur_val(12),
+        3 => set_cur_val(16),
+        4 => scan_glue(GLUE_VAL),    // SKIP_CODE
+        5 => scan_glue(MU_VAL_SCAN), // MSKIP_CODE
+        _ => {}
+    }
+    let p = crate::mem::new_glue_global(cur_val());
+    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+    crate::globals::set_cur_list_tail(p);
+    if s >= SKIP_CODE {
+        set_mem_b32s1(cur_val(), mem_b32s1(cur_val()) - 1);
+        if s > SKIP_CODE {
+            set_mem_b16s0(crate::globals::cur_list_tail(), MU_GLUE);
+        }
+    }
+}
+// translated from xetex-xetex0.c:9395 (append_kern)
+#[no_mangle]
+pub unsafe extern "C" fn append_kern() {
+    let s = cur_chr() as u16;
+    scan_dimen(s == MU_GLUE, false, false);
+    let p = crate::mem::new_kern_global(cur_val());
+    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+    crate::globals::set_cur_list_tail(p);
+    set_mem_b16s0(crate::globals::cur_list_tail(), s);
+}
+// translated from xetex-xetex0.c:9896 (make_mark)
+#[no_mangle]
+pub unsafe extern "C" fn make_mark() {
+    let c = if cur_chr() == 0 {
+        0
+    } else {
+        scan_register_num();
+        cur_val()
+    };
+    scan_toks(false, true); // side effect: sets def_ref; return value discarded
+    let p = crate::mem::get_node_global(SMALL_NODE_SIZE);
+    set_mem_b32s0(p + 1, c);
+    set_mem_b16s1(p, MARK_NODE); // NODE_type(p)
+    set_mem_b16s0(p, 0);
+    set_mem_b32s1(p + 1, def_ref());
+    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+    crate::globals::set_cur_list_tail(p);
+}
+// translated from xetex-xetex0.c:11040 (new_interaction)
+#[no_mangle]
+pub unsafe extern "C" fn new_interaction() {
+    crate::output::print_ln();
+    crate::globals::set_interaction(cur_chr() as u8);
+    if crate::globals::interaction() == BATCH_MODE {
+        set_selector(SELECTOR_NO_PRINT);
+    } else {
+        set_selector(SELECTOR_TERM_ONLY);
+    }
+    if crate::globals::log_opened() {
+        set_selector(selector() + 2);
+    }
+}
+// translated from xetex-xetex0.c:10774 (alter_aux)
+#[no_mangle]
+pub unsafe extern "C" fn alter_aux() {
+    if cur_chr() != cur_list_mode().unsigned_abs() as i32 {
+        report_illegal_case();
+    } else {
+        let c = cur_chr();
+        scan_optional_equals();
+        if c == VMODE as i32 {
+            scan_dimen(false, false, false);
+            crate::globals::set_cur_list_aux_b32s1(cur_val());
+        } else {
+            scan_int();
+            if cur_val() <= 0 || cur_val() > 32767 {
+                let errmsg = error_here_with_diagnostic(c"Bad space factor".as_ptr());
+                ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(1);
+                set_help_line(
+                    0,
+                    c"I allow only values in the range 1..32767 here.".as_ptr(),
+                );
+                int_error(cur_val());
+            } else {
+                crate::globals::set_cur_list_aux_b32s0(cur_val());
+            }
+        }
+    }
+}
+// translated from xetex-xetex0.c:10805 (alter_prev_graf)
+#[no_mangle]
+pub unsafe extern "C" fn alter_prev_graf() {
+    crate::globals::save_cur_list_to_nest(crate::globals::nest_ptr());
+    let mut p = crate::globals::nest_ptr();
+    while crate::globals::nest_mode(p).unsigned_abs() != VMODE as u16 {
+        p -= 1;
+    }
+    scan_optional_equals();
+    scan_int();
+    if cur_val() < 0 {
+        let errmsg = error_here_with_diagnostic(c"Bad ".as_ptr());
+        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+        crate::output::print_esc_cstr(c"prevgraf".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(1);
+        set_help_line(0, c"I allow only nonnegative values here.".as_ptr());
+        int_error(cur_val());
+    } else {
+        crate::globals::set_nest_prev_graf(p, cur_val());
+        crate::globals::restore_cur_list_from_nest(crate::globals::nest_ptr());
+    }
+}
+// translated from xetex-xetex0.c:10837 (alter_page_so_far)
+#[no_mangle]
+pub unsafe extern "C" fn alter_page_so_far() {
+    let c = cur_chr() as usize;
+    scan_optional_equals();
+    scan_dimen(false, false, false);
+    crate::globals::set_page_so_far(c, cur_val());
+}
+// translated from xetex-xetex0.c:10846 (alter_integer)
+#[no_mangle]
+pub unsafe extern "C" fn alter_integer() {
+    let c = cur_chr() as u8;
+    scan_optional_equals();
+    scan_int();
+    if c == 0 {
+        crate::globals::set_dead_cycles(cur_val());
+    } else if c == 2 {
+        if cur_val() < BATCH_MODE as i32 || cur_val() > ERROR_STOP_MODE as i32 {
+            let errmsg = error_here_with_diagnostic(c"Bad interaction mode".as_ptr());
+            ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(2);
+            set_help_line(1, c"Modes are 0=batch, 1=nonstop, 2=scroll, and".as_ptr());
+            set_help_line(
+                0,
+                c"3=errorstop. Proceed, and I'll ignore this case.".as_ptr(),
+            );
+            int_error(cur_val());
+        } else {
+            set_cur_chr(cur_val());
+            new_interaction();
+        }
+    } else {
+        crate::globals::set_insert_penalties(cur_val());
+    }
+}
+// translated from xetex-xetex0.c:10874 (alter_box_dimen)
+#[no_mangle]
+pub unsafe extern "C" fn alter_box_dimen() {
+    let c = cur_chr();
+    scan_register_num();
+    let b = if cur_val() < 256 {
+        eqtb_b32s1(BOX_BASE + cur_val())
+    } else {
+        crate::save::find_sa_element_global(4, cur_val(), false);
+        if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
+            crate::mem::TEX_NULL
+        } else {
+            mem_b32s1(crate::globals::cur_ptr() + 1)
+        }
+    };
+    scan_optional_equals();
+    scan_dimen(false, false, false);
+    if b != crate::mem::TEX_NULL {
+        set_mem_b32s1(b + c, cur_val());
+    }
+}
+// translated from xetex-xetex0.c:10570 (trap_zero_glue)
+#[no_mangle]
+pub unsafe extern "C" fn trap_zero_glue() {
+    if mem_b32s1(cur_val() + 1) == 0
+        && mem_b32s1(cur_val() + 2) == 0
+        && mem_b32s1(cur_val() + 3) == 0
+    {
+        // GLUE_SPEC_ref_count(0)++ = mem[0].b32.s1++
+        set_mem_b32s1(0, mem_b32s1(0) + 1);
+        crate::mem::delete_glue_ref_global(cur_val());
+        set_cur_val(0);
+    }
+}
+// translated from xetex-xetex0.c:11357 (fix_language)
+#[no_mangle]
+pub unsafe extern "C" fn fix_language() {
+    let lang = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
+    let l = if lang <= 0 || lang > 255 { 0i32 } else { lang };
+    if l != crate::globals::cur_list_aux_b32s1() {
+        crate::mem::new_whatsit_global(LANGUAGE_NODE_SUBTYPE, SMALL_NODE_SIZE as i16);
+        let tail = crate::globals::cur_list_tail();
+        set_mem_b32s1(tail + 1, l);
+        crate::globals::set_cur_list_aux_b32s1(l);
+        set_mem_b16s1(
+            tail + 1,
+            crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as u16,
+        );
+        set_mem_b16s0(
+            tail + 1,
+            crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as u16,
+        );
+    }
+}
+// translated from xetex-xetex0.c:9325 (off_save)
+#[no_mangle]
+pub unsafe extern "C" fn off_save() {
+    if cur_group() == BOTTOM_LEVEL {
+        error_here_with_diagnostic(c"Extra ".as_ptr());
+        print_cmd_chr(cur_cmd() as u16, cur_chr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(1);
+        set_help_line(
+            0,
+            c"Things are pretty mixed up, but I think the worst is over.".as_ptr(),
+        );
+        error();
+    } else {
+        crate::input::back_input();
+        let p = crate::mem::get_avail_global();
+        set_mem_b32s1(TEMP_HEAD, p);
+        error_here_with_diagnostic(c"Missing ".as_ptr());
+        match cur_group() {
+            SEMI_SIMPLE_GROUP => {
+                set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_END_GROUP);
+                crate::output::print_esc_cstr(c"endgroup".as_ptr());
+            }
+            MATH_SHIFT_GROUP => {
+                set_mem_b32s0(p, MATH_SHIFT_TOKEN + b'$' as i32);
+                crate::output::print_char(b'$' as i32);
+            }
+            MATH_LEFT_GROUP => {
+                set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_RIGHT);
+                let q = crate::mem::get_avail_global();
+                set_mem_b32s1(p, q);
+                let p2 = mem_b32s1(p); // = LLIST_link(p)
+                set_mem_b32s0(p2, OTHER_TOKEN + b'.' as i32);
+                crate::output::print_esc_cstr(c"right.".as_ptr());
+            }
+            _ => {
+                set_mem_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
+                crate::output::print_char(b'}' as i32);
+            }
+        }
+        crate::output::print_cstr(c" inserted".as_ptr());
+        begin_token_list(mem_b32s1(TEMP_HEAD), INSERTED);
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(5);
+        set_help_line(
+            4,
+            c"I've inserted something that you may have forgotten.".as_ptr(),
+        );
+        set_help_line(3, c"(See the <inserted text> above.)".as_ptr());
+        set_help_line(
+            2,
+            c"With luck, this will get me unwedged. But if you".as_ptr(),
+        );
+        set_help_line(
+            1,
+            c"really didn't forget anything, try typing `2' now; then".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"my insertion and my current dilemma will both disappear.".as_ptr(),
+        );
+        error();
+    }
+}
+// translated from xetex-xetex0.c:9956 (append_discretionary)
+#[no_mangle]
+pub unsafe extern "C" fn append_discretionary() {
+    extern "C" {}
+
+    let tail = crate::globals::cur_list_tail();
+    set_mem_b32s1(tail, crate::mem::new_disc_global());
+    crate::globals::set_cur_list_tail(mem_b32s1(tail));
+
+    if cur_chr() == 1 {
+        let f = eqtb_b32s1(CUR_FONT_LOC);
+        let c = crate::globals::hyphen_char_entry(f);
+        if (0..=BIGGEST_CHAR).contains(&c) {
+            let tail2 = crate::globals::cur_list_tail();
+            set_mem_b32s0(tail2 + 1, new_character(f, c as u16));
+        }
+    } else {
+        set_save_stack_b32s1(save_ptr(), 0);
+        set_save_ptr(save_ptr() + 1);
+        crate::save::new_save_level(DISC_GROUP);
+        scan_left_brace();
+        crate::mem::push_nest();
+        crate::globals::set_cur_list_mode(-104); // -HMODE
+        crate::globals::set_cur_list_aux_b32s0(1000);
+    }
+}
+// translated from xetex-xetex0.c:10765 (shift_case)
+#[no_mangle]
+pub unsafe extern "C" fn shift_case() {
+    let b = cur_chr();
+    scan_toks(false, false);
+    let mut p = mem_b32s1(def_ref());
+    while p != crate::mem::TEX_NULL {
+        let t = mem_b32s0(p);
+        if t < CS_TOKEN_FLAG + SINGLE_BASE {
+            let c = t % MAX_CHAR_VAL;
+            if eqtb_b32s1(b + c) != 0 {
+                set_mem_b32s0(p, t - c + eqtb_b32s1(b + c));
+            }
+        }
+        p = mem_b32s1(p);
+    }
+    begin_token_list(mem_b32s1(def_ref()), BACKED_UP);
+    set_mem_b32s1(def_ref(), avail());
+    set_avail(def_ref());
+}
+// translated from xetex-xetex0.c:9958 (build_discretionary)
+#[no_mangle]
+pub unsafe extern "C" fn build_discretionary() {
+    crate::save::unsave();
+    let q_head = crate::globals::cur_list_head();
+    let mut q = q_head;
+    let mut p = mem_b32s1(q);
+    let mut n: i32 = 0;
+
+    'walk: loop {
+        if p == crate::mem::TEX_NULL {
+            break;
+        }
+        if p < crate::globals::hi_mem_min() {
+            // not a char node — check node type
+            let ntype = mem_b16s1(p);
+            if ntype > RULE_NODE {
+                let ok = ntype == KERN_NODE   // 11
+                    || ntype == LIGATURE_NODE  // 6
+                    || ntype == WHATSIT_NODE && {
+                        let sub = mem_b16s0(p);
+                        sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT || sub == GLYPH_NODE_BD
+                    };
+                if !ok {
+                    error_here_with_diagnostic(c"Improper discretionary list".as_ptr());
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    set_help_ptr(1);
+                    set_help_line(
+                        0,
+                        c"Discretionary lists must contain only boxes and kerns.".as_ptr(),
+                    );
+                    error();
+
+                    crate::output::begin_diagnostic();
+                    crate::output::diagnostic_begin_capture_warning_here();
+                    crate::output::print_nl_cstr(
+                        c"The following discretionary sublist has been deleted:".as_ptr(),
+                    );
+                    show_box(p);
+                    capture_to_diagnostic(std::ptr::null_mut());
+                    crate::output::end_diagnostic(true);
+
+                    flush_node_list_global(p);
+                    set_mem_b32s1(q, crate::mem::TEX_NULL);
+                    break 'walk;
+                }
+            }
+        }
+        q = p;
+        p = mem_b32s1(q);
+        n += 1;
+    }
+
+    p = mem_b32s1(q_head);
+    crate::mem::pop_nest();
+
+    let slot = save_stack_b32s1(save_ptr() - 1);
+    match slot {
+        0 => {
+            set_mem_b32s0(crate::globals::cur_list_tail() + 1, p);
+        }
+        1 => {
+            set_mem_b32s1(crate::globals::cur_list_tail() + 1, p);
+        }
+        2 => {
+            if n > 0 && cur_list_mode().abs() == MMODE {
+                error_here_with_diagnostic(c"Illegal math ".as_ptr());
+                crate::output::print_esc_cstr(c"discretionary".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(2);
+                set_help_line(
+                    1,
+                    c"Sorry: The third part of a discretionary break must be".as_ptr(),
+                );
+                set_help_line(
+                    0,
+                    c"empty, in math formulas. I had to delete your third part.".as_ptr(),
+                );
+                flush_node_list_global(p);
+                n = 0;
+                error();
+            } else {
+                set_mem_b32s1(crate::globals::cur_list_tail(), p);
+            }
+            if n <= u16::MAX as i32 {
+                set_mem_b16s0(crate::globals::cur_list_tail(), n as u16);
+            } else {
+                error_here_with_diagnostic(c"Discretionary list is too long".as_ptr());
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(2);
+                set_help_line(
+                    1,
+                    c"Wow---I never thought anybody would tweak me here.".as_ptr(),
+                );
+                set_help_line(
+                    0,
+                    c"You can't seriously need such a huge discretionary list?".as_ptr(),
+                );
+                error();
+            }
+            if n > 0 {
+                crate::globals::set_cur_list_tail(q);
+            }
+            set_save_ptr(save_ptr() - 1);
+            return;
+        }
+        _ => {}
+    }
+    set_save_stack_b32s1(save_ptr() - 1, slot + 1);
+    crate::save::new_save_level(DISC_GROUP);
+    scan_left_brace();
+    crate::mem::push_nest();
+    crate::globals::set_cur_list_mode(-104); // -HMODE
+    crate::globals::set_cur_list_aux_b32s0(1000);
+}
+// translated from xetex-xetex0.c:9868 (append_italic_correction)
+#[no_mangle]
+pub unsafe extern "C" fn append_italic_correction() {
+    extern "C" {
+        // Note: in C these are macros: get_native_italic_correction(p) = real_get_native_italic_correction(&mem[p])
+
+    }
+    const EXPLICIT: u16 = 1; // xetex_format.h:428
+    const GLYPH_NODE: u16 = 42; // xetex_format.h:465
+
+    let tail = crate::globals::cur_list_tail();
+    if tail == crate::globals::cur_list_head() {
+        return;
+    }
+
+    let p = if tail >= crate::globals::hi_mem_min() {
+        // is_char_node
+        tail
+    } else if mem_b16s1(tail) == LIGATURE_NODE {
+        tail + 1
+    } else if mem_b16s1(tail) == WHATSIT_NODE {
+        let sub = mem_b16s0(tail);
+        if sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT {
+            let kern = crate::mem::new_kern_global(real_get_native_italic_correction(
+                crate::globals::mem_node_addr(tail),
+            ));
+            set_mem_b32s1(tail, kern);
+            let new_tail = mem_b32s1(tail);
+            crate::globals::set_cur_list_tail(new_tail);
+            set_mem_b16s0(new_tail, EXPLICIT);
+        } else if sub == GLYPH_NODE {
+            let kern = crate::mem::new_kern_global(real_get_native_glyph_italic_correction(
+                crate::globals::mem_node_addr(tail),
+            ));
+            set_mem_b32s1(tail, kern);
+            let new_tail = mem_b32s1(tail);
+            crate::globals::set_cur_list_tail(new_tail);
+            set_mem_b16s0(new_tail, EXPLICIT);
+        }
+        return;
+    } else {
+        return;
+    };
+
+    let f = mem_b16s1(p) as i32; // CHAR_NODE_font(p)
+    let c = effective_char_global(true, f, mem_b16s0(p));
+    let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
+    let italic = crate::globals::font_info_b32s1(
+        crate::globals::italic_base_entry(f) + (info.s1 / 4) as i32,
+    );
+    let kern = crate::mem::new_kern_global(italic);
+    let tail2 = crate::globals::cur_list_tail();
+    set_mem_b32s1(tail2, kern);
+    let new_tail = mem_b32s1(tail2);
+    crate::globals::set_cur_list_tail(new_tail);
+    set_mem_b16s0(new_tail, EXPLICIT);
+}
+// translated from xetex-xetex0.c:9910 (make_accent)
+#[no_mangle]
+pub unsafe extern "C" fn make_accent() {
+    extern "C" {}
+    const SLANT_CODE: i32 = 1; // xetex-constants.h:273
+    const X_HEIGHT_CODE: i32 = 5; // xetex-constants.h:294
+    const ACC_KERN: u16 = 2; // xetex_format.h:429
+    const ADDITIONAL: i16 = 1; // xetex-constants.h:264
+    const LETTER: u8 = 11; // xetex_format.h:243
+    const CHAR_NUM: u8 = 16; // xetex_format.h:253
+
+    let is_native = |fnt: i32| -> bool {
+        crate::globals::font_area_entry(fnt) == AAT_FONT_FLAG
+            || crate::globals::font_area_entry(fnt) == OTGR_FONT_FLAG
+    };
+
+    scan_char_num();
+    let mut f = eqtb_b32s1(CUR_FONT_LOC);
+    let p = new_character(f, cur_val() as u16);
+
+    if p == crate::mem::TEX_NULL {
+        return;
+    }
+
+    let x = crate::globals::font_info_b32s1(X_HEIGHT_CODE + crate::globals::param_base(f));
+    let s = crate::globals::font_info_b32s1(SLANT_CODE + crate::globals::param_base(f)) as f64
+        / 65536.0;
+    let mut lsb: i32 = 0;
+    let mut rsb: i32 = 0;
+    let a = if is_native(f) {
+        let av = mem_b32s1(p + 1);
+        if av == 0 {
+            get_native_char_sidebearings(f, cur_val(), &mut lsb, &mut rsb);
+        }
+        av
+    } else {
+        let c = effective_char_global(true, f, mem_b16s0(p));
+        let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
+        crate::globals::font_info_b32s1(crate::globals::width_base_entry(f) + info.s3 as i32)
+    };
+
+    do_assignments();
+    let mut q = crate::mem::TEX_NULL;
+    f = eqtb_b32s1(CUR_FONT_LOC);
+    if cur_cmd() == LETTER || cur_cmd() == OTHER_CHAR || cur_cmd() == CHAR_GIVEN {
+        q = new_character(f, cur_chr() as u16);
+        set_cur_val(cur_chr());
+    } else if cur_cmd() == CHAR_NUM {
+        scan_char_num();
+        q = new_character(f, cur_val() as u16);
+    } else {
+        crate::input::back_input();
+    }
+
+    if q != crate::mem::TEX_NULL {
+        let t = crate::globals::font_info_b32s1(SLANT_CODE + crate::globals::param_base(f)) as f64
+            / 65536.0;
+        let (w, h) = if is_native(f) {
+            let wv = mem_b32s1(q + 1);
+            let mut hv: i32 = 0;
+            let mut dv: i32 = 0;
+            get_native_char_height_depth(f, cur_val(), &mut hv, &mut dv);
+            (wv, hv)
+        } else {
+            let c = effective_char_global(true, f, mem_b16s0(q));
+            let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
+            let wv = crate::globals::font_info_b32s1(
+                crate::globals::width_base_entry(f) + info.s3 as i32,
+            );
+            let hv = crate::globals::font_info_b32s1(
+                crate::globals::height_base_entry(f) + (info.s2 / 16) as i32,
+            );
+            (wv, hv)
+        };
+        let mut pa = p;
+        if h != x {
+            pa = hpack(p, 0, ADDITIONAL);
+            set_mem_b32s1(pa + 4, x - h);
+        }
+        let delta = if is_native(f) && a == 0 {
+            crate::scaled_math::tex_round(
+                (w - lsb + rsb) as f64 / 2.0 + h as f64 * t - x as f64 * s,
+            )
+        } else {
+            crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
+        };
+        let r = crate::mem::new_kern_global(delta);
+        set_mem_b16s0(r, ACC_KERN);
+        set_mem_b32s1(crate::globals::cur_list_tail(), r);
+        set_mem_b32s1(r, pa);
+        let new_tail = crate::mem::new_kern_global(-a - delta);
+        crate::globals::set_cur_list_tail(new_tail);
+        set_mem_b16s0(new_tail, ACC_KERN);
+        set_mem_b32s1(pa, new_tail);
+        // p = q (in C); we use q directly below
+    }
+
+    // Append p (q if base was found, else accent) to hlist.
+    let p_final = if q != crate::mem::TEX_NULL { q } else { p };
+    set_mem_b32s1(crate::globals::cur_list_tail(), p_final);
+    crate::globals::set_cur_list_tail(p_final);
+    crate::globals::set_cur_list_aux_b32s0(1000);
+}
+// translated from xetex-xetex0.c:10233 (new_font)
+#[no_mangle]
+pub unsafe extern "C" fn new_font(a: i16) {
+    extern "C" {}
+
+    if crate::globals::job_name() == 0 {
+        open_log_file();
+    }
+
+    get_r_token();
+    let u = cur_cs();
+    let t = if u >= HASH_BASE {
+        hash_s1(u)
+    } else if u >= SINGLE_BASE {
+        if u == NULL_CS {
+            crate::texmfmp::maketexstring(c"FONT".as_ptr())
+        } else {
+            u - SINGLE_BASE
+        }
+    } else {
+        let old_setting = crate::globals::selector();
+        crate::globals::set_selector(SELECTOR_NEW_STRING);
+        crate::output::print_cstr(c"FONT".as_ptr());
+        crate::output::print(u - 1);
+        crate::globals::set_selector(old_setting);
+        if pool_ptr() + 1 > crate::globals::pool_size() {
+            crate::errors::overflow(
+                c"pool size".as_ptr(),
+                crate::globals::pool_size() - crate::globals::init_pool_ptr(),
+            );
+        }
+        crate::string_pool::make_string()
+    };
+
+    if a >= 4 {
+        crate::save::geq_define(u, SET_FONT as u16, FONT_BASE);
+    } else {
+        crate::save::eq_define(u, SET_FONT as u16, FONT_BASE);
+    }
+    scan_optional_equals();
+    scan_file_name();
+    crate::globals::set_name_in_progress(true);
+
+    let s = if scan_keyword(c"at".as_ptr()) {
+        scan_dimen(false, false, false);
+        let sv = cur_val();
+        if sv <= 0 || sv >= 0x800_0000 {
+            error_here_with_diagnostic(c"Improper `at' size (".as_ptr());
+            crate::output::print_scaled(sv);
+            crate::output::print_cstr(c"pt), replaced by 10pt".as_ptr());
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(2);
+            set_help_line(
+                1,
+                c"I can only handle fonts at positive sizes that are".as_ptr(),
+            );
+            set_help_line(
+                0,
+                c"less than 2048pt, so I've changed what you said to 10pt.".as_ptr(),
+            );
+            error();
+            10 * 65536_i32
+        } else {
+            sv
+        }
+    } else if scan_keyword(c"scaled".as_ptr()) {
+        scan_int();
+        let sv = cur_val();
+        if sv <= 0 || sv > 32768 {
+            let errmsg = error_here_with_diagnostic(
+                c"Illegal magnification has been changed to 1000".as_ptr(),
+            );
+            ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), sv);
+            capture_to_diagnostic(std::ptr::null_mut());
+            set_help_ptr(1);
+            set_help_line(
+                0,
+                c"The magnification ratio must be between 1 and 32768.".as_ptr(),
+            );
+            int_error(sv);
+            -1000_i32
+        } else {
+            -sv
+        }
+    } else {
+        -1000_i32
+    };
+
+    crate::globals::set_name_in_progress(false);
+
+    let f = 'search: {
+        let mut fi = FONT_BASE + 1;
+        while fi <= crate::globals::font_ptr() {
+            if crate::string_pool::str_eq_str(
+                crate::globals::font_name_entry(fi),
+                crate::globals::cur_name(),
+            ) && ((crate::string_pool::length(crate::globals::cur_area()) == 0
+                && (crate::globals::font_area_entry(fi) == AAT_FONT_FLAG
+                    || crate::globals::font_area_entry(fi) == OTGR_FONT_FLAG))
+                || crate::string_pool::str_eq_str(
+                    crate::globals::font_area_entry(fi),
+                    crate::globals::cur_area(),
+                ))
+            {
+                if s > 0 {
+                    if s == crate::globals::font_size_entry(fi) {
+                        break 'search fi;
+                    }
+                } else if crate::globals::font_size_entry(fi)
+                    == crate::scaled_math::xn_over_d(crate::globals::font_dsize_entry(fi), -s, 1000)
+                {
+                    break 'search fi;
+                }
+            }
+            crate::string_pool::append_str(crate::globals::cur_area());
+            crate::string_pool::append_str(crate::globals::cur_name());
+            crate::string_pool::append_str(crate::globals::cur_ext());
+            let ms = crate::string_pool::make_string();
+            if crate::string_pool::str_eq_str(crate::globals::font_name_entry(fi), ms) {
+                set_str_ptr(str_ptr() - 1);
+                set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+                if crate::globals::font_area_entry(fi) == AAT_FONT_FLAG
+                    || crate::globals::font_area_entry(fi) == OTGR_FONT_FLAG
+                {
+                    if s > 0 {
+                        if s == crate::globals::font_size_entry(fi) {
+                            break 'search fi;
+                        }
+                    } else if crate::globals::font_size_entry(fi)
+                        == crate::scaled_math::xn_over_d(
+                            crate::globals::font_dsize_entry(fi),
+                            -s,
+                            1000,
+                        )
+                    {
+                        break 'search fi;
+                    }
+                }
+            } else {
+                set_str_ptr(str_ptr() - 1);
+                set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+            }
+            fi += 1;
+        }
+        read_font_info(u, crate::globals::cur_name(), crate::globals::cur_area(), s)
+    };
+
+    // common_ending:
+    if a >= 4 {
+        crate::save::geq_define(u, SET_FONT as u16, f);
+    } else {
+        crate::save::eq_define(u, SET_FONT as u16, f);
+    }
+    crate::globals::set_eqtb_word(FONT_ID_BASE + f, crate::globals::eqtb_word(u));
+    crate::globals::set_hash_s1(FONT_ID_BASE + f, t);
+}
+// translated from xetex-xetex0.c:10220 (do_register_command)
+#[no_mangle]
+pub unsafe extern "C" fn do_register_command(a: i16) {
+    const ADVANCE: u8 = 92; // xetex_format.h:332
+    const MULTIPLY: u8 = 93; // xetex_format.h:334
+    const GLUE_REF: u16 = 119; // xetex_format.h:361
+    const NORMAL: u16 = 0; // xetex_format.h:420
+
+    let q = cur_cmd();
+    let mut w: i32 = 0;
+    let mut s: i32 = crate::mem::TEX_NULL;
+
+    // Determine (l, p, e): register address, value type, is_extended_SA
+    let (l, p, e) = 'determine: {
+        if q != REGISTER {
+            get_x_token();
+            if cur_cmd() >= ASSIGN_INT && cur_cmd() <= ASSIGN_MU_GLUE {
+                break 'determine (cur_chr(), (cur_cmd() - ASSIGN_INT) as i16, false);
+            }
+            if cur_cmd() != REGISTER {
+                error_here_with_diagnostic(c"You can't use `".as_ptr());
+                print_cmd_chr(cur_cmd() as u16, cur_chr());
+                crate::output::print_cstr(c"' after ".as_ptr());
+                print_cmd_chr(q as u16, 0);
+                capture_to_diagnostic(std::ptr::null_mut());
+                set_help_ptr(1);
+                set_help_line(
+                    0,
+                    c"I'm forgetting what you said and not changing anything.".as_ptr(),
+                );
+                error();
+                return;
+            }
+        }
+        if cur_chr() < 0 || cur_chr() > 19 {
+            let l = cur_chr();
+            let p = (mem_b16s1(l) / 64) as i16;
+            (l, p, true)
+        } else {
+            let p = cur_chr() as i16;
+            scan_register_num();
+            if cur_val() > 255 {
+                crate::save::find_sa_element_global(p as u16, cur_val(), true);
+                (crate::globals::cur_ptr(), p, true)
+            } else {
+                let l = match p {
+                    INT_VAL => cur_val() + COUNT_BASE,
+                    DIMEN_VAL => cur_val() + SCALED_BASE,
+                    GLUE_VAL => cur_val() + SKIP_BASE,
+                    MU_VAL => cur_val() + MU_SKIP_BASE,
+                    _ => unreachable!(),
+                };
+                (l, p, false)
+            }
+        }
+    };
+
+    // found: read current value into w (int/dimen) or s (glue/mu)
+    if p < GLUE_VAL {
+        w = if e { mem_b32s1(l + 2) } else { eqtb_b32s1(l) };
+    } else if e {
+        s = mem_b32s1(l + 1);
+    } else {
+        s = eqtb_b32s1(l);
+    }
+
+    if q == REGISTER {
+        scan_optional_equals();
+    } else {
+        scan_keyword(c"by".as_ptr());
+    }
+
+    crate::globals::set_arith_error(false);
+
+    if q < MULTIPLY {
+        if p < GLUE_VAL {
+            if p == INT_VAL {
+                scan_int();
+            } else {
+                scan_dimen(false, false, false);
+            }
+            if q == ADVANCE {
+                set_cur_val(cur_val() + w);
+            }
+        } else {
+            scan_glue(p);
+            if q == ADVANCE {
+                let qs = crate::mem::new_spec_global(cur_val());
+                let r = s;
+                crate::mem::delete_glue_ref_global(cur_val());
+                set_mem_b32s1(qs + 1, mem_b32s1(qs + 1) + mem_b32s1(r + 1));
+                if mem_b32s1(qs + 2) == 0 {
+                    set_mem_b16s1(qs, NORMAL);
+                }
+                if mem_b16s1(qs) == mem_b16s1(r) {
+                    set_mem_b32s1(qs + 2, mem_b32s1(qs + 2) + mem_b32s1(r + 2));
+                } else if mem_b16s1(qs) < mem_b16s1(r) && mem_b32s1(r + 2) != 0 {
+                    set_mem_b32s1(qs + 2, mem_b32s1(r + 2));
+                    set_mem_b16s1(qs, mem_b16s1(r));
+                }
+                if mem_b32s1(qs + 3) == 0 {
+                    set_mem_b16s0(qs, NORMAL);
+                }
+                if mem_b16s0(qs) == mem_b16s0(r) {
+                    set_mem_b32s1(qs + 3, mem_b32s1(qs + 3) + mem_b32s1(r + 3));
+                } else if mem_b16s0(qs) < mem_b16s0(r) && mem_b32s1(r + 3) != 0 {
+                    set_mem_b32s1(qs + 3, mem_b32s1(r + 3));
+                    set_mem_b16s0(qs, mem_b16s0(r));
+                }
+                set_cur_val(qs);
+            }
+        }
+    } else {
+        scan_int();
+        if p < GLUE_VAL {
+            if q == MULTIPLY {
+                if p == INT_VAL {
+                    set_cur_val(crate::scaled_math::mult_and_add(
+                        w,
+                        cur_val(),
+                        0,
+                        TEX_INFINITY,
+                    ));
+                } else {
+                    set_cur_val(crate::scaled_math::mult_and_add(
+                        w,
+                        cur_val(),
+                        0,
+                        MAX_HALFWORD,
+                    ));
+                }
+            } else {
+                set_cur_val(crate::scaled_math::x_over_n(w, cur_val()));
+            }
+        } else {
+            let r = crate::mem::new_spec_global(s);
+            if q == MULTIPLY {
+                set_mem_b32s1(
+                    r + 1,
+                    crate::scaled_math::mult_and_add(mem_b32s1(s + 1), cur_val(), 0, MAX_HALFWORD),
+                );
+                set_mem_b32s1(
+                    r + 2,
+                    crate::scaled_math::mult_and_add(mem_b32s1(s + 2), cur_val(), 0, MAX_HALFWORD),
+                );
+                set_mem_b32s1(
+                    r + 3,
+                    crate::scaled_math::mult_and_add(mem_b32s1(s + 3), cur_val(), 0, MAX_HALFWORD),
+                );
+            } else {
+                set_mem_b32s1(
+                    r + 1,
+                    crate::scaled_math::x_over_n(mem_b32s1(s + 1), cur_val()),
+                );
+                set_mem_b32s1(
+                    r + 2,
+                    crate::scaled_math::x_over_n(mem_b32s1(s + 2), cur_val()),
+                );
+                set_mem_b32s1(
+                    r + 3,
+                    crate::scaled_math::x_over_n(mem_b32s1(s + 3), cur_val()),
+                );
+            }
+            set_cur_val(r);
+        }
+    }
+
+    if crate::globals::arith_error() {
+        error_here_with_diagnostic(c"Arithmetic overflow".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(2);
+        set_help_line(
+            1,
+            c"I can't carry out that multiplication or division,".as_ptr(),
+        );
+        set_help_line(0, c"since the result is out of range.".as_ptr());
+        if p >= GLUE_VAL {
+            crate::mem::delete_glue_ref_global(cur_val());
+        }
+        error();
+        return;
+    }
+
+    if p < GLUE_VAL {
+        if e {
+            if a >= 4 {
+                crate::save::gsa_w_def_global(l, cur_val());
+            } else {
+                crate::save::sa_w_def_global(l, cur_val());
+            }
+        } else if a >= 4 {
+            crate::save::geq_word_define(l, cur_val());
+        } else {
+            crate::save::eq_word_define(l, cur_val());
+        }
+    } else {
+        trap_zero_glue();
+        if e {
+            if a >= 4 {
+                crate::save::gsa_def_global(l, cur_val());
+            } else {
+                crate::save::sa_def_global(l, cur_val());
+            }
+        } else if a >= 4 {
+            crate::save::geq_define(l, GLUE_REF, cur_val());
+        } else {
+            crate::save::eq_define(l, GLUE_REF, cur_val());
+        }
+    }
+}
+// translated from xetex-xetex0.c:10745 (do_assignments)
+#[no_mangle]
+pub unsafe extern "C" fn do_assignments() {
+    extern "C" {}
+
+    const MAX_NON_PREFIXED_COMMAND: u8 = 71; // xetex_format.h:312
+    const RELAX: u8 = 0; // xetex_format.h:229
+
+    loop {
+        loop {
+            get_x_token();
+            if cur_cmd() != SPACER && cur_cmd() != RELAX {
+                break;
+            }
+        }
+        if cur_cmd() <= MAX_NON_PREFIXED_COMMAND {
+            return;
+        }
+        crate::globals::set_set_box_allowed(false);
+        prefixed_command();
+        crate::globals::set_set_box_allowed(true);
     }
 }

@@ -3650,7 +3650,7 @@ pub unsafe fn math_left_right_global() {
             crate::output::capture_to_diagnostic(std::ptr::null_mut());
             crate::errors::error();
         } else {
-            crate::scan::off_save();
+            crate::main_control::off_save();
         }
     } else {
         let p = match crate::state::with_state_mut(|st| append_left_right_noad(&mut st.mem, t)) {
