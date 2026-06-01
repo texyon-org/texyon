@@ -7,9 +7,7 @@ use crate::consts::{
 use libc::{c_char, c_int, size_t};
 use std::ptr;
 
-use crate::globals::{
-    cur_input, set_cur_input_synctex_tag, set_eqtb_b32s1, synctex_enabled,
-};
+use crate::globals::{cur_input, set_cur_input_synctex_tag};
 
 // INT_BASE (save.rs) and INT_PAR__synctex (xetex_format.h:116).
 const INT_PAR_SYNCTEX: i32 = 81;
@@ -38,78 +36,7 @@ extern "C" {
     static abspath_of_input_file: [c_char; 1024];
 }
 
-// ---------------------------------------------------------------------------
-// SynctexCtxt bridge accessors
-// ---------------------------------------------------------------------------
-//
-// The SyncTeX context (formerly the `SYNCTEX_CTXT` file-static) now lives on
-// `EngineState.synctex` (session 46). These thin module-private accessors
-// bridge each field through the thread-local; each closure touches one field
-// and never holds the borrow across engine calls. The functions below read
-// fields into locals before doing I/O and write scalars back afterward, so the
-// per-field bridge is a faithful drop-in for the former direct field access.
-
-use crate::state::{EqtbState, Recorder, ShipoutState};
-
-macro_rules! sc_scalar {
-    ($get:ident, $set:ident, $field:ident, $ty:ty) => {
-        #[inline]
-        #[allow(dead_code)]
-        fn $get() -> $ty {
-            crate::state::with_state(|s| s.synctex.$field)
-        }
-        #[inline]
-        #[allow(dead_code)]
-        fn $set(v: $ty) {
-            crate::state::with_state_mut(|s| s.synctex.$field = v);
-        }
-    };
-}
-
-macro_rules! sc_flag {
-    ($get:ident, $set:ident, $field:ident) => {
-        #[inline]
-        #[allow(dead_code)]
-        fn $get() -> bool {
-            crate::state::with_state(|s| s.synctex.flags.$field)
-        }
-        #[inline]
-        #[allow(dead_code)]
-        fn $set(v: bool) {
-            crate::state::with_state_mut(|s| s.synctex.flags.$field = v);
-        }
-    };
-}
-
-sc_scalar!(sc_file, set_sc_file, file, usize);
-sc_scalar!(sc_root_name, set_sc_root_name, root_name, *mut c_char);
-sc_scalar!(sc_count, set_sc_count, count, i32);
-sc_scalar!(sc_node, set_sc_node, node, i32);
-sc_scalar!(sc_recorder, set_sc_recorder, recorder, Option<Recorder>);
-sc_scalar!(sc_tag, set_sc_tag, tag, i32);
-sc_scalar!(sc_line, set_sc_line, line, i32);
-sc_scalar!(sc_curh, set_sc_curh, curh, i32);
-sc_scalar!(sc_curv, set_sc_curv, curv, i32);
-sc_scalar!(sc_magnification, set_sc_magnification, magnification, i32);
-sc_scalar!(sc_unit, set_sc_unit, unit, i32);
-sc_scalar!(sc_total_length, set_sc_total_length, total_length, i32);
-sc_scalar!(sc_lastv, set_sc_lastv, lastv, i32);
-sc_scalar!(sc_form_depth, set_sc_form_depth, form_depth, i32);
-sc_scalar!(
-    sc_synctex_tag_counter,
-    set_sc_synctex_tag_counter,
-    synctex_tag_counter,
-    u32
-);
-sc_flag!(
-    sc_flags_content_ready,
-    set_sc_flags_content_ready,
-    content_ready
-);
-sc_flag!(sc_flags_off, set_sc_flags_off, off);
-sc_flag!(sc_flags_not_void, set_sc_flags_not_void, not_void);
-sc_flag!(sc_flags_warn, set_sc_flags_warn, warn);
-sc_flag!(sc_flags_output_p, set_sc_flags_output_p, output_p);
+use crate::state::{EqtbState, ShipoutState};
 
 // ---------------------------------------------------------------------------
 // Accessors for TeX memory / parameters
@@ -127,9 +54,8 @@ fn synctex_curv(shipout: &ShipoutState) -> i32 {
 
 // Phase-C: the synctex node-field readers below are pure `mem`-arena leaves.
 // Each is threaded onto a narrow `&MemState` borrow (direct, safe slice
-// indexing), with a transitional `_global` bridge-down wrapper for the legacy
-// in-module callers (the not-yet-threaded `synctex_record_node_*` / public
-// `synctex_*` recording functions). The wrappers die when those callers thread.
+// indexing). Public recording entry points borrow the thread-local once at the
+// boundary and pass disjoint state fields through.
 
 // SYNCTEX_TAG_MODEL / SYNCTEX_LINE_MODEL for BOX (BOX_NODE_SIZE = 8, field = offset 7).
 #[inline]
@@ -254,7 +180,11 @@ unsafe fn synctex_record_preamble(synctex: &mut crate::state::SynctexCtxt) -> i3
     -1
 }
 
-unsafe fn synctex_record_input(synctex: &mut crate::state::SynctexCtxt, tag: i32, name: *mut c_char) -> i32 {
+unsafe fn synctex_record_input(
+    synctex: &mut crate::state::SynctexCtxt,
+    tag: i32,
+    name: *mut c_char,
+) -> i32 {
     let file = synctex.file;
     let name_str = std::ffi::CStr::from_ptr(name).to_string_lossy();
     let s = format!("Input:{}:{}\n", tag, name_str);
@@ -358,7 +288,11 @@ unsafe fn synctex_record_teehs(synctex: &mut crate::state::SynctexCtxt, sheet: i
     -1
 }
 
-unsafe fn synctex_record_pdfxform(synctex: &mut crate::state::SynctexCtxt, eqtb: &crate::state::EqtbState, _form: i32) -> i32 {
+unsafe fn synctex_record_pdfxform(
+    synctex: &mut crate::state::SynctexCtxt,
+    eqtb: &crate::state::EqtbState,
+    _form: i32,
+) -> i32 {
     if synctex.flags.off || intpar_synctex(eqtb) == 0 || synctex.file == INVALID_HANDLE {
         return 0;
     }
@@ -390,7 +324,11 @@ unsafe fn synctex_record_mrofxfdp(synctex: &mut crate::state::SynctexCtxt) -> i3
     -1
 }
 
-unsafe fn synctex_record_node_pdfrefxform(synctex: &mut crate::state::SynctexCtxt, shipout: &crate::state::ShipoutState, objnum: c_int) -> i32 {
+unsafe fn synctex_record_node_pdfrefxform(
+    synctex: &mut crate::state::SynctexCtxt,
+    shipout: &crate::state::ShipoutState,
+    objnum: c_int,
+) -> i32 {
     synctex.curh = synctex_curh(shipout);
     synctex.curv = synctex_curv(shipout);
     if synctex.flags.off || synctex.file == INVALID_HANDLE {
@@ -409,7 +347,11 @@ unsafe fn synctex_record_node_pdfrefxform(synctex: &mut crate::state::SynctexCtx
     -1
 }
 
-unsafe fn synctex_record_node_vlist(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+unsafe fn synctex_record_node_vlist(
+    synctex: &mut crate::state::SynctexCtxt,
+    mem: &crate::state::MemState,
+    p: i32,
+) {
     synctex.flags.not_void = true;
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
@@ -443,7 +385,11 @@ unsafe fn synctex_record_node_tsilv(synctex: &mut crate::state::SynctexCtxt, _p:
     }
 }
 
-unsafe fn synctex_record_node_void_vlist(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+unsafe fn synctex_record_node_void_vlist(
+    synctex: &mut crate::state::SynctexCtxt,
+    mem: &crate::state::MemState,
+    p: i32,
+) {
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "v{},{}:{},{}:{},{},{}\n",
@@ -465,7 +411,11 @@ unsafe fn synctex_record_node_void_vlist(synctex: &mut crate::state::SynctexCtxt
     }
 }
 
-unsafe fn synctex_record_node_hlist(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+unsafe fn synctex_record_node_hlist(
+    synctex: &mut crate::state::SynctexCtxt,
+    mem: &crate::state::MemState,
+    p: i32,
+) {
     synctex.flags.not_void = true;
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
@@ -499,7 +449,11 @@ unsafe fn synctex_record_node_tsilh(synctex: &mut crate::state::SynctexCtxt, _p:
     }
 }
 
-unsafe fn synctex_record_node_void_hlist(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+unsafe fn synctex_record_node_void_hlist(
+    synctex: &mut crate::state::SynctexCtxt,
+    mem: &crate::state::MemState,
+    p: i32,
+) {
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "h{},{}:{},{}:{},{},{}\n",
@@ -521,7 +475,11 @@ unsafe fn synctex_record_node_void_hlist(synctex: &mut crate::state::SynctexCtxt
     }
 }
 
-unsafe fn synctex_record_node_math(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+unsafe fn synctex_record_node_math(
+    synctex: &mut crate::state::SynctexCtxt,
+    mem: &crate::state::MemState,
+    p: i32,
+) {
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "${},{}:{},{}\n",
@@ -540,7 +498,11 @@ unsafe fn synctex_record_node_math(synctex: &mut crate::state::SynctexCtxt, mem:
     }
 }
 
-unsafe fn synctex_record_node_glue(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+unsafe fn synctex_record_node_glue(
+    synctex: &mut crate::state::SynctexCtxt,
+    mem: &crate::state::MemState,
+    p: i32,
+) {
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "g{},{}:{},{}\n",
@@ -559,7 +521,11 @@ unsafe fn synctex_record_node_glue(synctex: &mut crate::state::SynctexCtxt, mem:
     }
 }
 
-unsafe fn synctex_record_node_kern(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, p: i32) {
+unsafe fn synctex_record_node_kern(
+    synctex: &mut crate::state::SynctexCtxt,
+    mem: &crate::state::MemState,
+    p: i32,
+) {
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "k{},{}:{},{}:{}\n",
@@ -579,7 +545,12 @@ unsafe fn synctex_record_node_kern(synctex: &mut crate::state::SynctexCtxt, mem:
     }
 }
 
-unsafe fn synctex_record_node_rule(synctex: &mut crate::state::SynctexCtxt, mem: &crate::state::MemState, shipout: &crate::state::ShipoutState, p: i32) {
+unsafe fn synctex_record_node_rule(
+    synctex: &mut crate::state::SynctexCtxt,
+    mem: &crate::state::MemState,
+    shipout: &crate::state::ShipoutState,
+    p: i32,
+) {
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "r{},{}:{},{}:{},{},{}\n",
@@ -601,13 +572,11 @@ unsafe fn synctex_record_node_rule(synctex: &mut crate::state::SynctexCtxt, mem:
     }
 }
 
-unsafe fn synctex_record_node_kern_global(p: i32) {
-    crate::state::with_state_mut(|st| {
-        synctex_record_node_kern(&mut st.synctex, &st.mem, p);
-    });
-}
-
-unsafe fn synctex_dot_open(synctex: &mut crate::state::SynctexCtxt, eqtb: &crate::state::EqtbState, tmp: *mut c_char) -> usize {
+unsafe fn synctex_dot_open(
+    synctex: &mut crate::state::SynctexCtxt,
+    eqtb: &crate::state::EqtbState,
+    tmp: *mut c_char,
+) -> usize {
     if synctex.flags.off || intpar_synctex(eqtb) == 0 {
         libc::free(tmp as *mut libc::c_void);
         return INVALID_HANDLE;
@@ -665,7 +634,11 @@ unsafe fn synctex_dot_open(synctex: &mut crate::state::SynctexCtxt, eqtb: &crate
     synctex.file
 }
 
-unsafe fn synctex_prepare_content(synctex: &mut crate::state::SynctexCtxt, eqtb: &crate::state::EqtbState, tmp: *mut c_char) -> usize {
+unsafe fn synctex_prepare_content(
+    synctex: &mut crate::state::SynctexCtxt,
+    eqtb: &crate::state::EqtbState,
+    tmp: *mut c_char,
+) -> usize {
     if synctex.flags.content_ready {
         libc::free(tmp as *mut libc::c_void);
         return synctex.file;
@@ -709,13 +682,11 @@ pub unsafe extern "C" fn synctex_init_command() {
         synctex.flags.not_void = false;
         synctex.flags.warn = false;
         synctex.flags.output_p = false;
-    });
 
-    if synctex_enabled() != 0 {
-        set_eqtb_b32s1(INT_BASE + INT_PAR_SYNCTEX, 1);
-    } else {
-        set_eqtb_b32s1(INT_BASE + INT_PAR_SYNCTEX, 0);
-    }
+        let synctex_enabled = st.config.synctex_enabled != 0;
+        st.eqtb
+            .set_b32s1(INT_BASE + INT_PAR_SYNCTEX, i32::from(synctex_enabled));
+    });
 }
 
 pub unsafe fn synctex_terminate(_log_opened: bool) {
@@ -766,7 +737,9 @@ pub unsafe fn synctex_start_input() {
             return;
         }
 
-        if synctex.file != INVALID_HANDLE || synctex_dot_open(synctex, &st.eqtb, tmp) != INVALID_HANDLE {
+        if synctex.file != INVALID_HANDLE
+            || synctex_dot_open(synctex, &st.eqtb, tmp) != INVALID_HANDLE
+        {
             let ci = cur_input();
             let tmp_name = get_current_name();
             input_to_record = Some((ci.synctex_tag, tmp_name));
@@ -779,7 +752,8 @@ pub unsafe fn synctex_start_input() {
             synctex.root_name = rn;
             if libc::strlen(synctex.root_name) == 0 {
                 let texput = b"texput\0";
-                synctex.root_name = xrealloc(synctex.root_name as *mut libc::c_void, texput.len()) as *mut c_char;
+                synctex.root_name =
+                    xrealloc(synctex.root_name as *mut libc::c_void, texput.len()) as *mut c_char;
                 libc::strcpy(synctex.root_name, texput.as_ptr() as *const c_char);
             }
         });
@@ -796,7 +770,11 @@ pub unsafe fn synctex_start_input() {
 #[no_mangle]
 pub unsafe extern "C" fn synctex_sheet(mag: i32) {
     let (job_name, is_off, total_pages) = crate::state::with_state(|st| {
-        (st.strings.job_name, st.synctex.flags.off, st.shipout.total_pages)
+        (
+            st.strings.job_name,
+            st.synctex.flags.off,
+            st.shipout.total_pages,
+        )
     });
 
     if is_off {
@@ -804,7 +782,8 @@ pub unsafe extern "C" fn synctex_sheet(mag: i32) {
             if intpar_synctex(&st.eqtb) != 0 && !st.synctex.flags.warn {
                 st.synctex.flags.warn = true;
                 ttstub_issue_warning(
-                    c"SyncTeX was disabled -- changing the value of \\synctex has no effect".as_ptr(),
+                    c"SyncTeX was disabled -- changing the value of \\synctex has no effect"
+                        .as_ptr(),
                 );
             }
         });
@@ -837,16 +816,16 @@ pub unsafe extern "C" fn synctex_teehs() {
 
 #[no_mangle]
 pub unsafe extern "C" fn synctex_pdfxform(p: i32) {
-    let (job_name, is_off) = crate::state::with_state(|st| {
-        (st.strings.job_name, st.synctex.flags.off)
-    });
+    let (job_name, is_off) =
+        crate::state::with_state(|st| (st.strings.job_name, st.synctex.flags.off));
 
     if is_off {
         crate::state::with_state_mut(|st| {
             if intpar_synctex(&st.eqtb) != 0 && !st.synctex.flags.warn {
                 st.synctex.flags.warn = true;
                 ttstub_issue_warning(
-                    c"SyncTeX was disabled - changing the value of \\synctex has no effect".as_ptr(),
+                    c"SyncTeX was disabled - changing the value of \\synctex has no effect"
+                        .as_ptr(),
                 );
             }
         });
@@ -974,16 +953,13 @@ pub unsafe extern "C" fn synctex_void_hlist(p: i32, _this_box: i32) {
         let synctex = &mut st.synctex;
         let tag = synctex_tag_box(&st.mem, p);
         let line = synctex_line_box(&st.mem, p);
-        if synctex.flags.off
-            || intpar_synctex(&st.eqtb) == 0
-            || tag <= 0
-            || line <= 0
-        {
+        if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || tag <= 0 || line <= 0 {
             return;
         }
         // Flush pending recorder before context change.
         if let Some(rec) = synctex.recorder {
-            rec(synctex.node);
+            let node = synctex.node;
+            rec(synctex, &st.mem, node);
         }
         synctex.node = p;
         synctex.tag = tag;
@@ -1005,12 +981,11 @@ pub unsafe extern "C" fn synctex_math(p: i32, _this_box: i32) {
         let tag = synctex_tag_medium(&st.mem, p);
         let line = synctex_line_medium(&st.mem, p);
         // SYNCTEX_CONTEXT_DID_CHANGE: node == 0 or tag/line differ.
-        let ctx_changed = synctex.node == 0
-            || tag != synctex.tag
-            || line != synctex.line;
+        let ctx_changed = synctex.node == 0 || tag != synctex.tag || line != synctex.line;
         if let Some(rec) = synctex.recorder {
             if ctx_changed {
-                rec(synctex.node);
+                let node = synctex.node;
+                rec(synctex, &st.mem, node);
             }
         }
         synctex.node = p;
@@ -1039,12 +1014,18 @@ pub unsafe extern "C" fn synctex_horizontal_rule_or_glue(p: i32, _this_box: i32)
                 }
             }
             GLUE_NODE => {
-                if ignore(synctex_tag_medium(&st.mem, p), synctex_line_medium(&st.mem, p)) {
+                if ignore(
+                    synctex_tag_medium(&st.mem, p),
+                    synctex_line_medium(&st.mem, p),
+                ) {
                     return;
                 }
             }
             KERN_NODE => {
-                if ignore(synctex_tag_medium(&st.mem, p), synctex_line_medium(&st.mem, p)) {
+                if ignore(
+                    synctex_tag_medium(&st.mem, p),
+                    synctex_line_medium(&st.mem, p),
+                ) {
                     return;
                 }
             }
@@ -1089,28 +1070,23 @@ pub unsafe extern "C" fn synctex_kern(p: i32, this_box: i32) {
         let tag = synctex_tag_medium(&st.mem, p);
         let line = synctex_line_medium(&st.mem, p);
         // Second SYNCTEX_IGNORE definition.
-        if synctex.flags.off
-            || intpar_synctex(&st.eqtb) == 0
-            || tag <= 0
-            || line <= 0
-        {
+        if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || tag <= 0 || line <= 0 {
             return;
         }
         // SYNCTEX_CONTEXT_DID_CHANGE
-        let ctx_changed = synctex.node == 0
-            || tag != synctex.tag
-            || line != synctex.line;
+        let ctx_changed = synctex.node == 0 || tag != synctex.tag || line != synctex.line;
         if ctx_changed {
             // Flush pending recorder.
             if let Some(rec) = synctex.recorder {
-                rec(synctex.node);
+                let node = synctex.node;
+                rec(synctex, &st.mem, node);
             }
             synctex.node = p;
             synctex.tag = tag;
             synctex.line = line;
             if synctex.node == this_box {
                 // First node in hlist.
-                synctex.recorder = Some(synctex_record_node_kern_global);
+                synctex.recorder = Some(synctex_record_node_kern);
             } else {
                 synctex.recorder = None;
                 synctex_record_node_kern(synctex, &st.mem, p);
@@ -1120,7 +1096,7 @@ pub unsafe extern "C" fn synctex_kern(p: i32, this_box: i32) {
             synctex.node = p;
             synctex.tag = tag;
             synctex.line = line;
-            synctex.recorder = Some(synctex_record_node_kern_global);
+            synctex.recorder = Some(synctex_record_node_kern);
         }
     });
 }

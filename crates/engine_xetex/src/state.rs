@@ -20,8 +20,9 @@ pub(crate) struct EngineState {
     pub synctex: SynctexCtxt,
 }
 
-/// SyncTeX recorder callback (`xetex-synctex.c`); a node-recording fn pointer.
-pub(crate) type Recorder = unsafe fn(i32);
+/// SyncTeX recorder callback (`xetex-synctex.c`); a deferred node-recording fn
+/// pointer threaded through the already-borrowed SyncTeX context and mem arena.
+pub(crate) type Recorder = unsafe fn(&mut SynctexCtxt, &MemState, i32);
 
 /// SyncTeX boolean flag block (formerly the `synctex_flags_t` bitfield struct).
 #[derive(Default)]
@@ -270,6 +271,13 @@ impl EqtbState {
     pub fn b32s1(&self, p: i32) -> i32 {
         // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
         unsafe { self.data[p as usize].b32.s1 }
+    }
+
+    /// Write `eqtb[p].b32.s1`. Mirrors `globals::set_eqtb_b32s1` for threaded
+    /// Phase-C callers.
+    #[inline]
+    pub fn set_b32s1(&mut self, p: i32, v: i32) {
+        self.data[p as usize].b32.s1 = v;
     }
 }
 

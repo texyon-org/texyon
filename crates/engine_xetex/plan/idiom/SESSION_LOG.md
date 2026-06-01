@@ -8,6 +8,52 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 114 — 2026-06-01 — finish local SyncTeX bridge cleanup
+
+**Type:** execution (workstream 01, Phase C — bounded `src/synctex.rs`
+threading cleanup). **One commit.** Dashboard **29/2/7/4**. Crate warnings
+**51 → 51** (flat).
+
+**Slice:**
+* **Deleted the obsolete SyncTeX field bridge (`src/synctex.rs`).** Removed the
+  `sc_scalar!` / `sc_flag!` macro block and all `sc_*` getter/setter
+  definitions. The public SyncTeX entry points already borrow the thread-local
+  once and pass disjoint state fields through, so the per-field bridge was dead
+  local scaffolding.
+* **Threaded deferred recorder callbacks.** Changed `state::Recorder` from
+  `unsafe fn(i32)` to
+  `unsafe fn(&mut SynctexCtxt, &MemState, i32)`, then stored
+  `synctex_record_node_kern` directly as the deferred callback. The three flush
+  sites now call the recorder with the already-borrowed SyncTeX context and mem
+  arena, deleting the last in-module `synctex_record_node_kern_global`
+  bridge-down wrapper and avoiding any nested `with_state_mut` edge.
+* **Threaded `synctex_init_command`'s `\synctex` initialization.** Added
+  `EqtbState::set_b32s1` and used the existing `with_state_mut` boundary to
+  read `ConfigState::synctex_enabled` and write `INTPAR(synctex)` directly.
+  Removed the now-dead `globals::synctex_enabled()` getter; the setter remains
+  live from `engine_interface.rs`.
+
+**Classification:** bucket **B** / local cleanup. The deleted `sc_*` accessors
+were unused after session 113. The recorder callback is a pure pass-through
+threading change over already-available `SynctexCtxt` + `MemState`; it has no
+new output ordering or abort-path behavior. `synctex_init_command` already had
+a `with_state_mut` boundary, so folding the config read and eqtb write into
+that borrow removes two bridge calls without changing initialization order.
+
+**Method surface / deleted accessors:** added `EqtbState::set_b32s1`. Deleted
+`globals::synctex_enabled()` and the local `synctex_record_node_kern_global`
+wrapper. No new state fields.
+
+**Validation:** `cargo check -p tectonic_engine_xetex` → 0 errors, 51 warnings.
+`cargo test -p tectonic --test engine_rust --test tex-outputs --test trip --test latex_goldens`
+→ all **29/2/7/4** tests pass; the `tex-outputs::synctex` case is green.
+
+**For the next session (115):** continue bounded Phase-C leaves. The SyncTeX
+module is locally cleaned up: no `sc_*` bridge remains and no local
+`_global` recorder wrapper remains. Remaining progress should probably move to
+another small leaf surfaced by `phase_c_recon.py`, or begin carefully planning
+broader caller threading in `shipout.rs` before touching scanner-heavy paths.
+
 
 ## Idiom session 113 — 2026-06-01 — thread all remaining synctex node-field recorders and FFI call sites in `src/synctex.rs`
 

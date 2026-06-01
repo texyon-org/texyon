@@ -4,7 +4,7 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
-Last updated: 2026-06-01 (last session = session 113, **threaded all remaining synctex node-field recorders and FFI call sites in `src/synctex.rs`** — threaded `synctex_record_node_*` and public FFI recording wrappers to safe state borrows (`&MemState`, `&ShipoutState` or `&mut SynctexCtxt` etc.) and deleted the dead/unused transitional `_global` wrappers in `synctex.rs`. Dashboard 29/2/7/4, warnings 51. — prior session 112 finished linebreak/shipout Bucket-B leaf helpers.)
+Last updated: 2026-06-01 (last session = session 114, **finished the local SyncTeX threading cleanup in `src/synctex.rs`** — deleted the obsolete `sc_*` thread-local accessor bridge, threaded the deferred recorder callback through `&mut SynctexCtxt` + `&MemState`, initialized `\synctex` through direct `ConfigState`/`EqtbState` borrows, and removed the now-dead `globals::synctex_enabled` getter. Dashboard 29/2/7/4, warnings 51. — prior session 113 threaded synctex node recorders and FFI call sites.)
 
 ## How to read this file
 

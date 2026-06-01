@@ -1372,10 +1372,6 @@ pub(crate) fn set_in_initex_mode(v: bool) {
     });
 }
 #[inline]
-pub(crate) fn synctex_enabled() -> i32 {
-    crate::state::with_state(|state| state.config.synctex_enabled)
-}
-#[inline]
 pub(crate) fn set_synctex_enabled(v: i32) {
     crate::state::with_state_mut(|state| {
         state.config.synctex_enabled = v;
