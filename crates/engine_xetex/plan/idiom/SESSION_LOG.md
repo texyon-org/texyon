@@ -8,11 +8,46 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
-## Idiom session 124 — 2026-06-01 — workstream 02 slices 7+8: the packaging carve and the expander carve
+## Idiom session 124 — 2026-06-01 — workstream 02 slices 7+8+9a: the packaging, expander, and alignment carves
 
 **Type:** execution (workstream 02, module decomposition — **core carve**, §8
-Decision 2/3). Slice 7 (packaging) + slice 8 (expand) — **four code commits +
-docs**. Dashboard **29/2/7/4** throughout. Warnings **50 → 50**.
+Decision 2/3). Slice 7 (packaging, 2 commits) + slice 8 (expand, 1 commit) +
+slice 9a (alignment → `main_control.rs`, 1 commit) — **four code commits +
+docs**. Dashboard **29/2/7/4** throughout. Warnings **50 → 50**. `scan.rs`
+14,710 → **9,696** LOC across the session (−5,014; now under 10k).
+
+### Slice 9a — the `\halign` alignment family (→ new `main_control.rs`)
+
+**One commit.** Relocated the 14 alignment functions verbatim (`move_fns.py`,
+1,151 fn-lines) — `align_error`/`no_align_error`/`omit_error`/`fin_align`/
+`align_peek`/`get_preamble_token`/`init_span`/`init_row`/`init_col`/
+`push_alignment`/`pop_alignment`/`fin_col`/`fin_row`/`init_align` — from
+`scan.rs` into a **new `main_control.rs`** (created + `mod main_control;` in
+lib.rs). This **seeds** the main_control module; the `main_control*` dispatch +
+verbs + `prefixed_command` are the **gnarliest** remaining piece (slice 9b, next
+session).
+
+**Zero external callers** — the alignment family is only called from `scan.rs`
+(the residual main-loop dispatch + `do_endv`), so the repoint is fully contained:
+`scan.rs` imports the 7 it still calls back from `main_control`. The big fns
+(`fin_align`/`init_align`/…) carry their consts inline (move with them); only the
+small error fns reference module-scope consts. Duplicated 10 `scan.rs`
+module-private consts into `main_control.rs` (`RIGHT_BRACE_TOKEN`/`LEFT_BRACE_TOKEN`/
+`TAB_TOKEN`/`RIGHT_BRACE`/`MAX_COMMAND`/`ENDV`/`GLUE_VAL`/`ASSIGN_GLUE`/`SPACER`/
+`IGNORE_DEPTH`); imported the rest (consts.rs node/base consts; globals hot
+scalars; `packaging` hpack/vpackage/append_to_vlist/flush_node_list_global;
+`math` flush_math_global/resume_after_display; `pagebuilder::build_page`;
+`expand`; `scan` get_*/scan_*/do_assignments/normal_paragraph). **No §7 trap** —
+the `LOCAL__EVERY_CR` consts are inline (moved with the fns). Cleaned scan.rs
+orphans (flush_math_global/resume_after_display imports, TAB_TOKEN const).
+
+**Metrics:** `scan.rs` 10,846 → **9,696** LOC (−1,150). new `main_control.rs` =
+1,185. Dashboard 29/2/7/4, warnings 50.
+
+### Slices 7 & 8 (earlier in the session)
+
+Slice 7 = packaging carve (2 commits); slice 8 = expander carve (1 commit). See
+the per-slice blocks below for the recipe details.
 
 ### Slice 8 — the expander carve (`expand`/`macro_call`/`conditional`/`pop_cond_node`/`conv_toks`/`ins_the_toks` → new `expand.rs`)
 
@@ -55,18 +90,31 @@ cleaned scan.rs orphans (`name_in_progress`/`set_cur_input_start`/`start_input`/
 **Metrics:** `scan.rs` 12,633 → **10,846** LOC (−1,787). new `expand.rs` =
 1,848. Dashboard 29/2/7/4, warnings 50.
 
-**For the next session:** continue the §8 core carve — (3) **main_control.rs**
-(new, the gnarliest: the `main_control*` dispatch giant match + verbs +
-`\halign` alignment family + `prefixed_command` spanning scan.rs+ini.rs; expect
-heavy hot-scalar + module-private-const entanglement, like slice 8 but larger —
-budget for ~50+ duplicated consts and a big globals import); (4) residual
-`scan_*`/`get_*`/`get_next` stay as `scanner.rs` (rename or leave `scan.rs`);
-(5) `token.rs` consts last. `ini.rs` drains independently. The slice-8 lesson:
-the core fns reference many *scan.rs-module-private* consts (not in `consts.rs`)
-— grep each missing symbol's definition and **duplicate with its exact type**
-(watch the E0308 typed-rebind cousin). The trap mostly surfaces as hard E0408/
-E0425 errors here (match arms over private consts), but keep the warning-count
-check for the silent cases.
+**(Handoff superseded — slice 9a below started the main_control carve with the
+alignment family. The authoritative next-session handoff is at the top of this
+session entry, in the slice-9a block's lead-in and the §8 status. The slice-8
+lesson stands: the core fns reference many *scan.rs-module-private* consts not in
+`consts.rs` — grep each missing symbol's definition and **duplicate with its
+exact type** (watch the E0308 typed-rebind cousin); the trap mostly surfaces as
+hard E0408/E0425 errors here, but keep the warning-count check for silent cases.)**
+
+**For the next session — slice 9b (main_control dispatch + verbs):** the
+gnarliest remaining piece. `main_control.rs` now exists (seeded with the
+alignment family). Relocate the `main_control*` dispatch (giant match) + the verb
+family (§4: `do_lookahead`/`its_all_over`/`append_glue`/`append_kern`/`make_mark`/
+`new_interaction`/`alter_*`/`indent_in_hmode`/`head_for_vmode`/
+`begin_insert_or_adjust`/`do_endv`/`append_discretionary`/`build_discretionary`/
+`shift_case`/`make_accent`/`new_font`/`do_register_command`/`unpackage`/
+`delete_last`/`app_space`/`new_graf`/`package`/`box_end`/`begin_box`/`scan_box`/
+`handle_right_brace`/`off_save`/`trap_zero_glue`/`fix_language` + `do_assignments`)
+into `main_control.rs`, and `prefixed_command` (which **spans scan.rs + ini.rs** —
+coordinate the ini.rs half). Expect heavy hot-scalar + module-private-const
+entanglement, **larger than slice 8** — budget for ~50+ duplicated consts and a
+big globals import, and consider splitting into sub-commits (e.g. the box-building
+family, the register/assignment family, the dispatch loop) the way packaging
+split 7a/7b. Then (4) residual `scan_*`/`get_*`/`get_next` stay as `scanner.rs`
+(rename or leave `scan.rs`); (5) `token.rs` consts last. `ini.rs` drains
+independently.
 
 ### Slice 7 — the packaging carve (box/node packing & list utils → new `packaging.rs`)
 
