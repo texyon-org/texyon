@@ -8,39 +8,38 @@ use crate::consts::{
     SF_CODE_BASE, SINGLE_BASE, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
 };
 use crate::globals::{
-    avail, buf_size, cond_ptr, cs_count, cur_chr, cur_cmd, cur_if, cur_input,
-    cur_lang, cur_level, cur_mark, cur_val, disc_ptr, dyn_used,
-    eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, eqtb_top, eqtb_word, first, fmem_ptr, font_area_entry,
-    font_dsize_entry, font_layout_engine_ptr, font_mapping_ptr, font_max, font_mem_size,
-    font_name_entry, font_ptr, font_size_entry, format_ident, hash_high, hash_used, hc_entry,
-    hi_mem_min, history, hyf_distance_entry, hyf_entry, hyf_next_entry, hyf_num_entry, hyph_count,
-    hyph_index, hyph_link_entry, hyph_list_entry, hyph_next, hyph_size, hyph_start,
-    hyph_word_entry, if_line, in_initex_mode, in_open, init_pool_ptr, input_file, interaction,
-    job_name, last, last_glue, lo_mem_max, max_hyph_char, max_op_used, mem_b16s0, mem_b32s0,
-    mem_b32s1, mem_end, op_start_entry, open_parens, par_loc, pool_ptr, pool_size, rover, sa_root,
-    selector, set_adjust_tail, set_after_token, set_align_ptr, set_avail,
+    avail, buf_size, cond_ptr, cs_count, cur_chr, cur_cmd, cur_if, cur_input, cur_lang, cur_level,
+    cur_mark, cur_val, disc_ptr, dyn_used, eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, eqtb_top, eqtb_word,
+    first, fmem_ptr, font_area_entry, font_dsize_entry, font_layout_engine_ptr, font_mapping_ptr,
+    font_max, font_mem_size, font_name_entry, font_ptr, font_size_entry, format_ident, hash_high,
+    hash_used, hc_entry, hi_mem_min, history, hyf_distance_entry, hyf_entry, hyf_next_entry,
+    hyf_num_entry, hyph_count, hyph_index, hyph_link_entry, hyph_list_entry, hyph_next, hyph_size,
+    hyph_start, hyph_word_entry, if_line, in_initex_mode, in_open, init_pool_ptr, input_file,
+    interaction, job_name, last, last_glue, lo_mem_max, max_hyph_char, max_op_used, mem_b16s0,
+    mem_b32s0, mem_b32s1, mem_end, op_start_entry, open_parens, par_loc, pool_ptr, pool_size,
+    rover, sa_root, selector, set_adjust_tail, set_after_token, set_align_ptr, set_avail,
     set_buffer_entry, set_cancel_boundary, set_cond_ptr, set_cs_count, set_cur_align,
     set_cur_boundary, set_cur_chr, set_cur_cmd, set_cur_dir, set_cur_f, set_cur_group,
     set_cur_head, set_cur_if, set_cur_input_limit, set_cur_input_loc, set_cur_lang, set_cur_level,
     set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
     set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_cur_loop, set_cur_mark,
-    set_cur_order, set_cur_pre_head, set_cur_pre_tail, set_cur_span, set_cur_tail_a, set_cur_val, set_cur_val_level, set_dead_cycles, set_deletions_allowed,
-    set_disc_ptr, set_doing_leaders, set_doing_special, set_dyn_used, set_edit_name_start,
-    set_empty_b32s0, set_empty_b32s1, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1,
-    set_eqtb_word, set_error_count, set_error_line, set_expand_depth_count,
-    set_file_line_error_style_p, set_first, set_fmem_ptr, set_font_info_b32s1, set_font_max,
-    set_font_mem_size, set_font_ptr, set_format_ident, set_half_error_line, set_hash_high,
-    set_hash_s1, set_hash_used, set_hc_entry, set_help_line, set_help_ptr, set_hi_mem_min,
-    set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry, set_hyf_num_entry, set_hyph_count,
-    set_hyph_index, set_hyph_link_entry, set_hyph_list_entry, set_hyph_next, set_hyph_start,
-    set_hyph_word_entry, set_hyphen_char_entry, set_if_limit, set_if_line, set_input_file,
-    set_ins_disc, set_insert_penalties, set_interaction, set_is_in_csname, set_last,
-    set_last_badness, set_last_bop, set_last_glue, set_last_kern, set_last_node_type,
-    set_last_penalty, set_lft_hit, set_ligature_present, set_lo_mem_max, set_long_help_seen,
-    set_lr_problems, set_lr_ptr, set_mag_set, set_max_h, set_max_hyph_char, set_max_nest_stack,
-    set_max_op_used, set_max_print_line, set_max_push, set_max_reg_help_line, set_max_reg_num,
-    set_max_save_stack, set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-    set_mem_end, set_mem_word, set_native_text, set_native_text_size, set_nest_ptr,
+    set_cur_order, set_cur_pre_head, set_cur_pre_tail, set_cur_span, set_cur_tail_a, set_cur_val,
+    set_cur_val_level, set_dead_cycles, set_deletions_allowed, set_disc_ptr, set_doing_leaders,
+    set_doing_special, set_dyn_used, set_edit_name_start, set_empty_b32s0, set_empty_b32s1,
+    set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word, set_error_count, set_error_line,
+    set_expand_depth_count, set_file_line_error_style_p, set_first, set_fmem_ptr,
+    set_font_info_b32s1, set_font_max, set_font_mem_size, set_font_ptr, set_format_ident,
+    set_half_error_line, set_hash_high, set_hash_s1, set_hash_used, set_hc_entry, set_help_line,
+    set_help_ptr, set_hi_mem_min, set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry,
+    set_hyf_num_entry, set_hyph_count, set_hyph_index, set_hyph_link_entry, set_hyph_list_entry,
+    set_hyph_next, set_hyph_start, set_hyph_word_entry, set_hyphen_char_entry, set_if_limit,
+    set_if_line, set_input_file, set_ins_disc, set_insert_penalties, set_interaction,
+    set_is_in_csname, set_last, set_last_badness, set_last_bop, set_last_glue, set_last_kern,
+    set_last_node_type, set_last_penalty, set_lft_hit, set_ligature_present, set_lo_mem_max,
+    set_long_help_seen, set_lr_problems, set_lr_ptr, set_mag_set, set_max_h, set_max_hyph_char,
+    set_max_nest_stack, set_max_op_used, set_max_print_line, set_max_push, set_max_reg_help_line,
+    set_max_reg_num, set_max_save_stack, set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0,
+    set_mem_b32s1, set_mem_end, set_mem_word, set_native_text, set_native_text_size, set_nest_ptr,
     set_no_new_control_sequence, set_null_character, set_op_start_entry, set_open_parens,
     set_output_active, set_pack_begin_line, set_page_contents, set_page_so_far, set_page_tail,
     set_par_loc, set_par_token, set_pool_ptr, set_pre_adjust_tail, set_prim_s0, set_prim_s1,
@@ -3785,9 +3784,7 @@ pub unsafe fn tt_cleanup() {
 const UNDEFINED_CS: i32 = 103;
 const NORMAL: i32 = 0;
 
-
 const INTER_CHAR_VAL: i32 = 6;
-
 
 const PC_INT_BASE: i32 = 7_826_729;
 
@@ -3798,4 +3795,3 @@ const OTGR_FONT_FLAG: i32 = 0xFFFE;
 pub(crate) unsafe fn intpar(n: i32) -> i32 {
     eqtb_b32s1(PC_INT_BASE + n)
 }
-

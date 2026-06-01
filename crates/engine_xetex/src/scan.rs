@@ -2,10 +2,9 @@
 //!
 //! Translated from xetex-xetex0.c.
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG,
-    CUR_FONT_LOC, DEL_CODE_BASE, EQTB_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, LOCAL_BASE,
-    MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD, PENALTY_NODE, PRIM_EQTB_BASE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE,
-    TOO_BIG_CHAR,
+    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE,
+    EQTB_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD,
+    PENALTY_NODE, PRIM_EQTB_BASE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
 use crate::errors::error;
 use crate::errors::int_error;
@@ -14,9 +13,7 @@ use crate::errors::not_aat_gr_font_error;
 use crate::errors::not_native_font_error;
 use crate::errors::not_ot_font_error;
 // Relocated to errors.rs (workstream 02); still called from scan.rs.
-use crate::errors::{
-    mu_error, runaway,
-};
+use crate::errors::{mu_error, runaway};
 use crate::ext::aat_font_get;
 use crate::ext::aat_font_get_1;
 use crate::ext::aat_font_get_2;
@@ -45,15 +42,16 @@ use crate::output::error_here_with_diagnostic;
 use crate::pic::count_pdf_file_pages;
 
 use crate::globals::{
-    align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null,
-    expand_depth, expand_depth_count, file_offset, first, fmem_ptr, font_glue, font_mem_size,
-    font_params, font_ptr, hash_s1, init_pool_ptr, last, max_print_line, max_reg_help_line,
-    max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, open_parens,
-    param_base, pool_ptr, pool_size, pseudo_files, read_file_entry, read_open_entry, rust_stdout,
-    save_ptr, save_stack_b32s1, scanner_status, selector, set_align_state, set_arith_error,
-    set_avail, set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs,
-    set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
-    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref, set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue,
+    align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok,
+    cur_val, cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth, expand_depth_count,
+    file_offset, first, fmem_ptr, font_glue, font_mem_size, font_params, font_ptr, hash_s1,
+    init_pool_ptr, last, max_print_line, max_reg_help_line, max_reg_num, mem_b16s0, mem_b16s1,
+    mem_b32s0, mem_b32s1, old_setting, open_parens, param_base, pool_ptr, pool_size, pseudo_files,
+    read_file_entry, read_open_entry, rust_stdout, save_ptr, save_stack_b32s1, scanner_status,
+    selector, set_align_state, set_arith_error, set_avail, set_buffer_entry, set_cur_chr,
+    set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
+    set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level,
+    set_def_ref, set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue,
     set_font_info_b32s1, set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0,
     set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1,
     set_no_new_control_sequence, set_old_setting, set_open_parens, set_pool_ptr, set_pseudo_files,
@@ -68,9 +66,7 @@ use crate::expand::{expand, macro_call};
 // Relocated to main_control.rs (workstream 02); still called from scan.rs.
 use crate::main_control::push_math;
 
-use crate::fonts::{
-    effective_char, effective_char_info, new_native_word_node,
-};
+use crate::fonts::{effective_char, effective_char_info, new_native_word_node};
 use crate::io::{open_log_file, scan_and_pack_name};
 use crate::output::print_cmd_chr;
 
@@ -3672,7 +3668,6 @@ pub unsafe fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B1
 // align_error / no_align_error / omit_error / cs_error
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // push_math
 // ---------------------------------------------------------------------------
@@ -3681,16 +3676,13 @@ pub unsafe fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B1
 // append_glue / append_kern
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // make_mark
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // new_interaction
 // ---------------------------------------------------------------------------
-
 
 // ---------------------------------------------------------------------------
 // alter_aux / alter_prev_graf / alter_page_so_far / alter_integer / alter_box_dimen
@@ -3704,11 +3696,9 @@ pub unsafe fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B1
 // fix_language
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // off_save
 // ---------------------------------------------------------------------------
-
 
 // ---------------------------------------------------------------------------
 // tokens_to_string
@@ -3840,7 +3830,6 @@ pub unsafe extern "C" fn get_r_token() {
 // append_discretionary
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // shift_case
 // ---------------------------------------------------------------------------
@@ -3848,7 +3837,6 @@ pub unsafe extern "C" fn get_r_token() {
 // ---------------------------------------------------------------------------
 // build_discretionary
 // ---------------------------------------------------------------------------
-
 
 // ---------------------------------------------------------------------------
 // append_to_vlist
@@ -5005,4 +4993,3 @@ pub(crate) unsafe fn push_font_info_b32s1(v: i32) {
 // ---------------------------------------------------------------------------
 // main_control
 // ---------------------------------------------------------------------------
-

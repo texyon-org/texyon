@@ -43,8 +43,9 @@ use crate::io::{open_log_file, scan_file_name};
 use crate::linebreak::{do_locale_linebreaks, line_break};
 use crate::math::{
     after_math, append_choices_global, build_choices_global, fin_mlist_global, flush_math_global,
-    init_math, math_ac_global, math_fraction_global, math_left_right_global, math_limit_switch_global,
-    math_radical_global, resume_after_display, start_eq_no, sub_sup_global,
+    init_math, math_ac_global, math_fraction_global, math_left_right_global,
+    math_limit_switch_global, math_radical_global, resume_after_display, start_eq_no,
+    sub_sup_global,
 };
 use crate::output::{
     capture_to_diagnostic, char_warning, error_here_with_diagnostic, issue_message, print_cmd_chr,
@@ -59,9 +60,9 @@ use crate::scan::{
     get_r_token, get_token, get_x_or_protected, get_x_token, insert_dollar_sign,
     new_native_word_node_global, scan_char_num, scan_delimiter_int, scan_dimen, scan_eight_bit_int,
     scan_fifteen_bit_int, scan_glue, scan_int, scan_keyword, scan_left_brace, scan_math,
-    scan_math_class_int, scan_math_fam_int, scan_optional_equals, scan_register_num, scan_rule_spec,
-    scan_spec, scan_toks, scan_usv_num, scan_xetex_math_char_int, set_class_fn, set_family_fn,
-    set_math_char, x_token,
+    scan_math_class_int, scan_math_fam_int, scan_optional_equals, scan_register_num,
+    scan_rule_spec, scan_spec, scan_toks, scan_usv_num, scan_xetex_math_char_int, set_class_fn,
+    set_family_fn, set_math_char, x_token,
 };
 use crate::shipout::ship_out;
 
