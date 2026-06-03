@@ -8,6 +8,109 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 128 — 2026-06-03 — workstream 01 Phase C: drain the rest of the `ext.rs` native-font subsystem (8 fns, 4 commits) — `font_*` cluster fully gone from `ext.rs`
+
+**Type:** execution (workstream 01, Phase C — finish the `ext.rs` native-font
+drain that session 127 started). **Four commits.** Dashboard **29/2/7/4** on every
+commit. Warnings **60 → 60** throughout (no §7 trap). **Result: every
+`crate::globals::font_*` accessor call is gone from every native-font function in
+`ext.rs`.**
+
+### What executed (4 commits)
+
+* **A — node-measuring cluster** (`441d78dc`). Threaded `measure_native_node`,
+  `measure_native_glyph`, `store_justified_native_glyphs` to take
+  `fonts: &FontState` as their first param, and `linebreak_next` likewise. The
+  three measuring fns **write node fields through the raw `*p_node` pointer**
+  (`(*node.add(k)).b32.s1 = …`), *not* via `mem_*`/`set_mem_*` accessors, so they
+  need only `&FontState`, not `&mut MemState`. Swapped
+  `crate::globals::{font_area_entry,font_layout_engine_ptr,font_letter_space_entry,height_base_entry,depth_base_entry}`
+  → `fonts.<method>` (all already existed on `FontState`). Added 4 `_global`
+  `with_state` wrappers. Renamed the ~16 external callers (math.rs ×9, linebreak
+  ×3, main_control ×3, packaging, fonts, shipout, plus the internal `do_extension`
+  `measure_native_glyph` site) to `_global` — all callers legacy, zero borrow
+  analysis. `store_justified`/`do_extension` pass `fonts` through on internal
+  ext→ext calls.
+* **B — bucket-C edges via §4a borrow-dropping** (`47e13c30`). The three native
+  fns that call a `with_state`-bearing helper:
+  - `map_glyph_to_index` — threaded to `(fonts: &FontState, font, name: *const c_char)`;
+    the with_state-bearing `name_of_file()` is read by the `_global` wrapper
+    **before** the borrow and passed in (form **a**: hoist the read into the
+    wrapper). scan.rs ×2 callers → `_global`.
+  - `print_glyph_name` (calls `print_char`) and `linebreak_start` (calls
+    `begin_diagnostic`/`print_*`) — rewritten **in place** (form **b**): read the
+    font area/engine under a short scoped `with_state` into a local, drop the
+    borrow, then run the `print_char` loop / diagnostic path outside it. **Public
+    signatures unchanged → callers untouched.** No more `crate::globals::font_*`
+    in either.
+* **C — `make_font_def` → `&mut FontState`** (`03fbf33d`). Its only non-font
+  `with_state` calls were its **own** `xdv_buffer` resize/`as_ptr` (a `FontState`
+  field) — rewrote those as direct `fonts.xdv_buffer.…` access, and
+  `font_area_entry`/`font_layout_engine_ptr`/`font_flags_entry` → `fonts.<method>`.
+  Added `FontState::font_flags_entry` (mirrors `globals::font_flags_entry`,
+  `font_flags[f] as i32`). `_global` wrapper = `with_state_mut(|s| make_font_def(&mut s.fonts, f))`;
+  shipout caller → `_global`. **Deleted the now-dead `globals::font_flags_entry`
+  read accessor** (§6 — `make_font_def` was its last caller); a benign +1
+  dead-code warning flagged it, caught by the warning-count check.
+* **D — the two name-reader loaders** (`6881530a`). `get_encoding_mode_and_info`
+  and `check_for_tfm_font_mapping` each read `name_of_file()` once; threaded both
+  to take the name pointer as a param (form **a**: `_global` wrapper reads
+  `name_of_file()` first, passes it in). These touch the **input-name** cluster,
+  not fonts — pure pointer pass-through, no `FontState`, no behavior change.
+  `get_encoding_mode_and_info`'s body keeps its diagnostic path, now borrow-free
+  (it holds no `with_state`). Callers: `do_extension` ×2 + fonts.rs → `_global`.
+
+### The §4a borrow-dropping shape has two forms
+
+Confirmed both this session: **(a)** hoist the with_state-bearing read into the
+`_global` wrapper and thread the extracted value as a param (`map_glyph_to_index`,
+`get_encoding_mode_and_info`, `check_for_tfm_font_mapping`) — used when the
+with_state call is an *input* the function consumes; **(b)** read the font fields
+under a short scoped `with_state` *inside* the function, drop the borrow, then do
+the printing/diagnostic work (`print_glyph_name`, `linebreak_start`) — used when
+the with_state call is *output* the function emits. Form (b) leaves the public
+signature intact, so callers don't change.
+
+### What remains in `ext.rs`
+
+`find_native_font` is the **only** native-font function still holding bridge calls,
+and they are all **`name_of_file`/`name_length`/`set_name_length`** — the
+input-name cluster, **not** `font_*`. It *mutates* the name buffer
+(`strcpy`/`strcat`/`free`/`set_name_length`) interleaved with logic → genuine
+bucket-D; defer to a slice that gives the input-name buffer a proper threaded
+`&mut` accessor. The other three `name_of_file()` reads in `ext.rs` are inside the
+transitional `_global` wrappers (the correct bridge-down position).
+
+### Metrics
+
+`#[no_mangle]` **310** unchanged. `unsafe fn` **338 → 346** (+8 transitional
+`_global` wrappers; collapse as callers thread). `with_state` sites **1108 →
+1113** (+5 net: 8 new wrappers, minus the body globals-call removals — esp.
+`make_font_def`'s two `xdv_buffer` borrows — minus the deleted accessor).
+Warnings **60**.
+
+### Validation
+
+`cargo fmt`; `cargo check` → 0 errors, 60 warnings each commit; full dashboard →
+**29 / 2 / 7 / 4** green each commit. (Mid-session a metrics-gathering
+`git stash`/`checkout` dance accidentally *popped* a pre-existing unrelated WIP
+stash onto `state.rs`; resolved by `git checkout HEAD -- src/state.rs` — the old
+stash stayed in the list, nothing lost. Lesson: don't `git stash`/`checkout`
+to compare refs when foreign stashes exist; use `git grep <ref>` / `git show
+<ref>:path` instead, which is what produced the metric deltas above.)
+
+### Next session
+
+`find_native_font` (input-name cluster, bucket-D) when the name buffer is
+threadable. Otherwise climb the call graph to collapse the bridge-down wrappers
+added in 127–128: thread the *callers* of `measure_native_node_global` /
+`measure_native_glyph_global` / `getnative*_global` etc. (math.rs, linebreak.rs,
+shipout.rs, main_control.rs, scan.rs) so they pass `&s.fonts` through and the
+`_global` wrappers vanish. Avoid whole-session work on `mlist_to_hlist`,
+`line_break`, `hpack`/`vpackage`, `ship_out`, `build_page`.
+
+---
+
 ## Idiom session 127 — 2026-06-03 — workstream 01 Phase C: thread the `ext.rs` native-font-metric reader cluster (11 fns) — first post-ws02 slice
 
 **Type:** execution (workstream 01, Phase C — the `ext.rs` native-font-metric
