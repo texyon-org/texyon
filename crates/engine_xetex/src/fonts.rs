@@ -841,6 +841,88 @@ unsafe fn read_font_info_tfm(
     (TfmParse::Loaded(f), scale_side_effect)
 }
 
+/// Phase-C threaded core of [`load_native_font`]: initialize the per-font
+/// metric tables for the newly-allocated native font slot under one
+/// `&mut FontState` borrow (+ disjoint `&EqtbState` for the two default
+/// hyphen/skew char int-params). Calls only the extern-C font-metric
+/// extractors (`aat_get_font_metrics`/`ot_get_font_metrics`,
+/// `get_loaded_font_design_size`), which hold no thread-local borrow. Returns
+/// `(font_ptr, x_ht, cap_ht, font_slant)`; the caller uses the latter three for
+/// the `font_info` parameter pushes after the borrow drops.
+///
+/// translated from the font-table-init body of xetex-xetex0.c:6284 (load_native_font)
+unsafe fn init_native_font_tables(
+    fonts: &mut FontState,
+    eqtb: &crate::state::EqtbState,
+    font_engine: *mut libc::c_void,
+    full_name: i32,
+    actual_size: i32,
+    num_font_dimens: i32,
+) -> (i32, i32, i32, i32) {
+    fonts.font_ptr += 1;
+    let font_ptr = fonts.font_ptr;
+    fonts.set_font_area_entry(font_ptr, fonts.native_font_type_flag);
+    fonts.set_font_name_entry(font_ptr, full_name);
+    fonts.set_font_check(
+        font_ptr,
+        crate::mem_types::B16x4 {
+            s0: 0,
+            s1: 0,
+            s2: 0,
+            s3: 0,
+        },
+    );
+    fonts.set_font_glue(font_ptr, crate::mem::TEX_NULL);
+    fonts.set_font_dsize_entry(font_ptr, get_loaded_font_design_size());
+    fonts.set_font_size_entry(font_ptr, actual_size);
+
+    let mut ascent = 0;
+    let mut descent = 0;
+    let mut x_ht = 0;
+    let mut cap_ht = 0;
+    let mut font_slant = 0;
+    if fonts.native_font_type_flag == AAT_FONT_FLAG {
+        aat_get_font_metrics(
+            font_engine,
+            &mut ascent,
+            &mut descent,
+            &mut x_ht,
+            &mut cap_ht,
+            &mut font_slant,
+        );
+    } else {
+        ot_get_font_metrics(
+            font_engine,
+            &mut ascent,
+            &mut descent,
+            &mut x_ht,
+            &mut cap_ht,
+            &mut font_slant,
+        );
+    }
+
+    fonts.set_height_base_entry(font_ptr, ascent);
+    fonts.set_depth_base_entry(font_ptr, -descent);
+    fonts.set_font_params(font_ptr, num_font_dimens);
+    fonts.set_font_bc_entry(font_ptr, 0);
+    fonts.set_font_ec_entry(font_ptr, 65_535);
+    fonts.set_font_used_entry(font_ptr, false);
+    fonts.set_hyphen_char_entry(
+        font_ptr,
+        eqtb.b32s1(INT_BASE + INT_PAR_DEFAULT_HYPHEN_CHAR_LNF),
+    );
+    fonts.set_skew_char_entry(
+        font_ptr,
+        eqtb.b32s1(INT_BASE + INT_PAR_DEFAULT_SKEW_CHAR_LNF),
+    );
+    fonts.set_param_base(font_ptr, fonts.fmem_ptr - 1);
+    fonts.set_font_layout_engine_ptr(font_ptr, font_engine);
+    fonts.set_font_mapping_ptr(font_ptr, std::ptr::null_mut());
+    fonts.set_font_letter_space_entry(font_ptr, fonts.loaded_font_letter_space);
+
+    (font_ptr, x_ht, cap_ht, font_slant)
+}
+
 /// Load a native AAT/OpenType/Graphite font and initialize TeX font tables.
 ///
 /// translated from xetex-xetex0.c:6284 (load_native_font)
@@ -946,69 +1028,25 @@ pub unsafe extern "C" fn load_native_font(u: i32, nom: i32, aire: i32, mut s: i3
         return FONT_BASE;
     }
 
-    crate::globals::set_font_ptr(crate::globals::font_ptr() + 1);
-    let font_ptr = crate::globals::font_ptr();
-    crate::globals::set_font_area_entry(font_ptr, crate::globals::native_font_type_flag());
-    crate::globals::set_font_name_entry(font_ptr, full_name);
-    crate::globals::set_font_check(
-        font_ptr,
-        crate::mem_types::B16x4 {
-            s0: 0,
-            s1: 0,
-            s2: 0,
-            s3: 0,
-        },
-    );
-    crate::globals::set_font_glue(font_ptr, crate::mem::TEX_NULL);
-    crate::globals::set_font_dsize_entry(font_ptr, get_loaded_font_design_size());
-    crate::globals::set_font_size_entry(font_ptr, actual_size);
-
-    let mut ascent = 0;
-    let mut descent = 0;
-    let mut x_ht = 0;
-    let mut cap_ht = 0;
-    let mut font_slant = 0;
-    if crate::globals::native_font_type_flag() == AAT_FONT_FLAG {
-        aat_get_font_metrics(
-            font_engine,
-            &mut ascent,
-            &mut descent,
-            &mut x_ht,
-            &mut cap_ht,
-            &mut font_slant,
-        );
-    } else {
-        ot_get_font_metrics(
-            font_engine,
-            &mut ascent,
-            &mut descent,
-            &mut x_ht,
-            &mut cap_ht,
-            &mut font_slant,
-        );
-    }
-
-    crate::globals::set_height_base_entry(font_ptr, ascent);
-    crate::globals::set_depth_base_entry(font_ptr, -descent);
-    crate::globals::set_font_params(font_ptr, num_font_dimens);
-    crate::globals::set_font_bc_entry(font_ptr, 0);
-    crate::globals::set_font_ec_entry(font_ptr, 65_535);
-    crate::globals::set_font_used_entry(font_ptr, false);
-    crate::globals::set_hyphen_char_entry(
-        font_ptr,
-        crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_DEFAULT_HYPHEN_CHAR_LNF),
-    );
-    crate::globals::set_skew_char_entry(
-        font_ptr,
-        crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_DEFAULT_SKEW_CHAR_LNF),
-    );
-    crate::globals::set_param_base(font_ptr, crate::globals::fmem_ptr() - 1);
-    crate::globals::set_font_layout_engine_ptr(font_ptr, font_engine);
-    crate::globals::set_font_mapping_ptr(font_ptr, std::ptr::null_mut());
-    crate::globals::set_font_letter_space_entry(
-        font_ptr,
-        crate::globals::loaded_font_letter_space(),
-    );
+    // Phase-C (session 129): the contiguous font-table-init block runs under
+    // one `&mut FontState` borrow (+ disjoint `&EqtbState` for the two
+    // default-char int-params). The extern-C metric extractors are borrow-safe;
+    // the with_state-bearing `new_native_character`/`free_node`/`push_font_info`
+    // calls all come *after* this block, so they stay outside the borrow.
+    let (font_ptr, x_ht, cap_ht, font_slant) = crate::state::with_state_mut(|st| {
+        let st = &mut *st;
+        // SAFETY: only the extern-C font-metric extractors are unsafe here.
+        unsafe {
+            init_native_font_tables(
+                &mut st.fonts,
+                &st.eqtb,
+                font_engine,
+                full_name,
+                actual_size,
+                num_font_dimens,
+            )
+        }
+    });
 
     let p = new_native_character(font_ptr, b' ' as u32);
     s = crate::globals::mem_b32s1(p + 1) + crate::globals::loaded_font_letter_space();

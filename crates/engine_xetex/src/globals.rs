@@ -1845,14 +1845,6 @@ pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
     crate::state::with_state(|s| unsafe { s.fonts.font_info[k as usize].b16 })
 }
 
-/// Writes `font_check[f] = v`.
-#[inline]
-pub(crate) fn set_font_check(f: i32, v: crate::mem_types::B16x4) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_check[f as usize] = v;
-    });
-}
-
 /// Returns `font_area[f]` — the str_number encoding the font's area.
 #[inline]
 pub(crate) fn font_area_entry(f: i32) -> i32 {
@@ -2036,13 +2028,6 @@ pub(crate) fn set_loaded_font_letter_space(v: i32) {
 pub(crate) fn set_font_flags_entry(f: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.fonts.font_flags[f as usize] = v as i8;
-    });
-}
-/// Writes `font_letter_space[f] = v`.
-#[inline]
-pub(crate) fn set_font_letter_space_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.font_letter_space[f as usize] = v;
     });
 }
 /// Returns `mapped_text[i]`, the UTF-16 output buffer from `apply_mapping`.

@@ -991,6 +991,22 @@ impl FontState {
     pub(crate) fn set_font_glue(&mut self, f: i32, v: i32) {
         self.font_glue[f as usize] = v;
     }
+    #[inline]
+    pub(crate) fn set_font_used_entry(&mut self, f: i32, v: bool) {
+        self.font_used[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_layout_engine_ptr(&mut self, f: i32, v: *mut libc::c_void) {
+        self.font_layout_engine[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_mapping_ptr(&mut self, f: i32, v: *mut libc::c_void) {
+        self.font_mapping[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_letter_space_entry(&mut self, f: i32, v: i32) {
+        self.font_letter_space[f as usize] = v;
+    }
 }
 
 #[derive(Default)]
