@@ -28,7 +28,7 @@ use crate::ext::getnativecharwd_global;
 use crate::ext::gr_font_get_named;
 use crate::ext::gr_font_get_named_1;
 use crate::ext::map_char_to_glyph_global;
-use crate::ext::map_glyph_to_index;
+use crate::ext::map_glyph_to_index_global;
 use crate::ext::ot_font_get;
 use crate::ext::ot_font_get_1;
 use crate::ext::ot_font_get_2;
@@ -1591,7 +1591,7 @@ pub unsafe extern "C" fn xetex_scan_dimen(
 pub unsafe extern "C" fn scan_glyph_number(f: i32) {
     if scan_keyword(c"/".as_ptr()) {
         scan_and_pack_name();
-        set_cur_val(map_glyph_to_index(f));
+        set_cur_val(map_glyph_to_index_global(f));
         set_cur_val_level(INT_VAL as u8);
     } else if scan_keyword(c"u".as_ptr()) {
         scan_char_num();
@@ -3214,7 +3214,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                                 let fa = font_area_entry(cf);
                                 if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                                     scan_and_pack_name();
-                                    set_cur_val(map_glyph_to_index(cf));
+                                    set_cur_val(map_glyph_to_index_global(cf));
                                 } else {
                                     not_native_font_error(LAST_ITEM as i32, m, cf);
                                     set_cur_val(0);

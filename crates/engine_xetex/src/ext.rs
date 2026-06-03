@@ -1903,12 +1903,18 @@ pub unsafe fn map_char_to_glyph(fonts: &crate::state::FontState, font: i32, ch: 
 }
 
 // translated from xetex-ext.c:1278 (map_glyph_to_index)
-// glyph name is at name_of_file
-pub unsafe fn map_glyph_to_index(font: i32) -> i32 {
-    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+// `name` (the glyph name to look up, originally `name_of_file`) is read by the
+// `_global` wrapper *before* the state borrow, since `name_of_file()` is itself
+// `with_state`-bearing and would nest-panic under a live borrow (§4a).
+pub unsafe fn map_glyph_to_index(
+    fonts: &crate::state::FontState,
+    font: i32,
+    name: *const c_char,
+) -> i32 {
+    if fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
         mapGlyphToIndex(
-            crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine,
-            crate::globals::name_of_file(),
+            fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine,
+            name,
         )
     } else {
         _tt_abort(c"bad native font flag in `map_glyph_to_index`".as_ptr())
@@ -1932,11 +1938,19 @@ pub unsafe fn linebreak_start(f: c_int, locale_str_num: i32, text: *mut u16, tex
     let mut status: i32 = 0; // U_ZERO_ERROR
     let locale = gettexstring(locale_str_num);
 
-    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG
-        && libc::strcmp(locale, c"G".as_ptr()) == 0
-    {
-        let engine = crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine;
-        if initGraphiteBreaking(engine, text as *const u16, text_length as u32) {
+    // Read the (Graphite) font engine under a short borrow and drop it before the
+    // with_state-bearing diagnostic path below (§4a borrow-dropping shape).
+    let graphite_engine = crate::state::with_state(|s| {
+        if s.fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+            Some(s.fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine)
+        } else {
+            None
+        }
+    });
+    if let Some(engine) = graphite_engine {
+        if libc::strcmp(locale, c"G".as_ptr()) == 0
+            && initGraphiteBreaking(engine, text as *const u16, text_length as u32)
+        {
             return; // locale intentionally not freed (matches C behavior)
         }
     }
@@ -2303,14 +2317,20 @@ pub unsafe fn aat_print_font_name(
 // translated from xetex-ext.c:1538 (print_glyph_name)
 pub unsafe fn print_glyph_name(font: i32, gid: i32) {
     let mut len: c_int = 0;
-    let s;
 
-    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
-        let engine = crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine;
-        s = getGlyphName(getFont(engine), gid as u16, &mut len);
-    } else {
-        _tt_abort(c"bad native font flag in `print_glyph_name`".as_ptr());
-    }
+    // Read the font engine under a short borrow and drop it before the
+    // with_state-bearing `print_char` loop below (§4a borrow-dropping shape).
+    let engine = crate::state::with_state(|s| {
+        if s.fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+            Some(s.fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine)
+        } else {
+            None
+        }
+    });
+    let s = match engine {
+        Some(engine) => getGlyphName(getFont(engine), gid as u16, &mut len),
+        None => _tt_abort(c"bad native font flag in `print_glyph_name`".as_ptr()),
+    };
 
     let mut p = s;
     while len > 0 {
@@ -2335,6 +2355,11 @@ pub unsafe fn store_justified_native_glyphs_global(p_node: *mut c_void) {
 }
 pub unsafe fn linebreak_next_global(f: c_int) -> c_int {
     crate::state::with_state(|s| linebreak_next(&s.fonts, f))
+}
+pub unsafe fn map_glyph_to_index_global(font: i32) -> i32 {
+    // `name_of_file()` is with_state-bearing, so read it before the borrow (§4a).
+    let name = crate::globals::name_of_file();
+    crate::state::with_state(|s| map_glyph_to_index(&s.fonts, font, name))
 }
 pub unsafe fn real_get_native_italic_correction_global(p_node: *mut c_void) -> i32 {
     crate::state::with_state(|s| real_get_native_italic_correction(&s.fonts, p_node))
