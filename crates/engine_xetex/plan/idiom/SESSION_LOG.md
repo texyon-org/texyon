@@ -8,6 +8,26 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 130 — 2026-06-03 — workstream 01 Phase C: thread a coherent math.rs consumer slice top-down
+
+**Type:** execution (workstream 01, Phase C — thread a math.rs consumer slice, removing legacy global wrappers). **1 commit.**
+Dashboard **29/2/7/4** is green. Warnings **50 → 50** throughout (no §7 trap).
+
+### What executed
+
+* **A — Threaded math.rs consumer slice** (`a83ea1c2` style). Threaded `build_ext_delimiter_box(&mut MemState, &mut FontState, ...)` and `build_opentype_assembly(&mut MemState, &FontState, ...)` to pass through states rather than calling global wrappers. Defined `char_box_tfm` (pure TFM box builder) and `native_glyph_vbox` (fully threaded native vbox maker).
+* **Wrapper collapses & deletions (§6):** Deleted 4 dead wrappers whose last caller was threaded: `stack_glyph_into_box_global`, `stack_glue_into_box_global`, `native_glyph_vbox_global`, and `build_ext_delimiter_box_global`.
+* Added `MemState::gr` getter method in `src/state.rs` to allow safe reading of the union projection `gr` under the borrow.
+* Resolved unused imports in `src/math.rs` (`depth_base_entry` and `height_base_entry`) to keep warning count flat at 50.
+
+### Metrics
+
+`#[no_mangle]` **310 → 309** (−1); `unsafe fn` **349 → 346** (−3); `with_state` sites **1111 → 1108** (−3 net). Warnings **50** (flat).
+
+### Handoff
+
+Continuing Phase-C threading of `math.rs` consumer call trees. Next candidates include threading `make_math_accent` or `make_op` leaves.
+
 ## Idiom session 129 — 2026-06-03 — workstream 01 Phase C: thread the `fonts.rs` font-LOADING core (`read_font_info` + `load_native_font`) to `&mut FontState`
 
 **Type:** execution (workstream 01, Phase C — push the native/TFM font-loading
