@@ -10,6 +10,86 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 134 — 2026-06-03 — workstream 01 Phase C: thread the save.rs save/define cluster
+
+**Type:** execution (workstream 01, Phase C — thread `save.rs`). Dashboard
+**29/2/7/4** green. This commit also carries the previously-uncommitted
+session-133 `hash.rs` work (bundled at the user's request as one commit).
+
+### What executed
+
+* **Threaded 8 of the 10 `save.rs` functions** to explicit narrow `&mut`
+  state, each with a transitional `_global` bridge-down wrapper for the
+  still-legacy callers (`01b` §3):
+  `new_save_level` (`&mut SaveStackState`), `eq_save` (`&mut SaveStackState`
+  + `&EqtbState`, internal-only, no wrapper), `eq_word_define`
+  (`EqtbState` + `SaveStackState`), `geq_word_define` (`EqtbState`),
+  `save_for_after` (`SaveStackState`), `eq_destroy` (`MemState` +
+  `ScannerState`), `eq_define` (`EqtbState`+`SaveStackState`+`MemState`+
+  `ScannerState`), `geq_define` (`EqtbState`+`MemState`+`ScannerState`).
+* **Cold-path sentinel (`01b` §5):** added a `SaveAbort` enum
+  (`Overflow`/`Confusion`). Threaded bodies return it instead of calling
+  the `with_state`-bearing `overflow`/`confusion` under a live borrow; the
+  `_global` wrappers raise it (`raise_save_abort`) after the borrow drops.
+  `save_size()` and `line()` are raw reads (`01b` §4), safe under the borrow.
+* **Dropped `#[no_mangle] extern "C"`** from the 6 exported ones (no C
+  callers — the `xetex-xetexd.h` prototypes are dead, same as the
+  already-threaded `sa_def`/`find_sa_element`). Renamed ~140 call sites
+  across `main_control.rs`/`math.rs`/`expand.rs`/`pagebuilder.rs`/`scan.rs`
+  to the `_global` wrappers.
+* **State surface:** added inherent methods to `EqtbState` (`word`,
+  `b16s0`/`b16s1` r+w, `xeq_level_at` r+w) and `SaveStackState`
+  (`set_b16s0`/`set_b16s1`, `set_word`); **deleted 3 now-dead `globals.rs`
+  accessors** (`max_save_stack`, `set_save_stack_b16s0`,
+  `set_save_stack_b16s1`).
+
+### Left bridged (deliberate)
+
+* **`unsave`** calls `back_input` (scan/input) and `group_warning` (output)
+  *mid-loop* — both still `with_state`-bearing; threading under one borrow
+  would nest-panic. Blocked on threading those scanner/output callees, which
+  `01b` §9 sequences last. Its two `eq_destroy` calls now go through
+  `eq_destroy_global`.
+* **`prepare_mag`** is bucket-C (dominated by the error-reporting subtree);
+  kept bridge-based per `01b` §5. Its mutations route through
+  `geq_word_define_global`.
+
+### Metrics (from the session-132 `string_pool` baseline at HEAD)
+
+`#[no_mangle]` exports **→ 296**; `unsafe fn` **→ 358**; `with_state` sites
+**→ 1117**. Warnings: net 0 new from the save.rs slice (the 3 added dead
+accessors were deleted in the same change). `save.rs` retains 2
+`#[no_mangle]` (`unsave`, `prepare_mag`).
+
+### Next
+
+Thread `unsave`/`prepare_mag` once `back_input`/`group_warning` are
+threaded (scanner/output cluster); otherwise continue climbing the call
+graph per `01b` §9.
+
+## Idiom session 133 — 2026-06-03 — workstream 01 Phase C: thread the entire hash.rs module
+
+**Type:** execution (workstream 01, Phase C — thread `hash.rs`). **1 commit.**
+Dashboard **29/2/7/4** is green. Warnings **50 → 50** throughout.
+
+### What executed
+
+* **Threaded the entire `src/hash.rs` module:** Replaced all global accessor calls with direct parameter threading. Threaded `id_lookup` and `prim_lookup` to take narrow states they need (`eqtb: &mut EqtbState`, `strings: &mut StringsState`, `buffer: &[i32]`).
+* **Nested-Borrow/Panic Hazard Resolution:** Replaced cold-path `overflow()` calls inside the threaded lookups by returning a dedicated `HashLookupError` enum sentinel to propagate the overflow conditions up, allowing the global wrappers to call the `overflow()` abort handler after the `with_state_mut` borrow has safely dropped.
+* **Transitional Global Wrappers:** Defined `id_lookup_global` and `prim_lookup_global` to bridge calls from the legacy Rust code, and exported C-compatible wrappers `id_lookup` and `prim_lookup` using `#[export_name]` to preserve ABI.
+* **EqtbState accessors:** Added inherent methods `hash_s0`, `set_hash_s0`, `hash_s1`, `set_hash_s1`, `prim_s0`, `set_prim_s0`, `prim_s1`, and `set_prim_s1` to `EqtbState` for direct state reads and writes.
+* **Orphan accessor cleanup:** Deleted the now-dead legacy global accessors `no_new_control_sequence()` and `prim_used()` in `globals.rs` to maintain warning parity.
+* **Repointed legacy callers:** Updated all call sites in `src/engine.rs`, `src/expand.rs`, `src/main_control.rs`, and `src/scan.rs` to use the global wrappers. Repointed `cur_length` callers in `src/fonts.rs`, `src/output.rs`, and `src/shipout.rs` to `cur_length_global`.
+
+### Metrics
+
+`#[no_mangle]` **304 → 302** (−2); `unsafe fn` **345 → 347** (+2); `with_state` sites **1112 → 1113** (+1 net). Warnings **50** (flat).
+
+### Handoff
+
+Continuing Phase-C threading of other modules.
+
+
 ## Idiom session 132 — 2026-06-03 — workstream 01 Phase C: thread the entire string_pool.rs module
 
 **Type:** execution (workstream 01, Phase C — thread `string_pool.rs`). **1 commit.**

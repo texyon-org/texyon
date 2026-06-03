@@ -167,7 +167,7 @@ pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
         let len = apply_mapping(
             font_mapping_ptr(f),
             crate::globals::str_pool_ptr(start) as *mut u16,
-            crate::hash::cur_length(),
+            crate::hash::cur_length_global(),
         );
         set_pool_ptr(start);
 

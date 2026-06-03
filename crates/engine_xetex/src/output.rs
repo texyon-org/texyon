@@ -4005,7 +4005,7 @@ unsafe fn print_subsidiary_data(p: i32, c: u16) {
         set_temp_ptr,
     };
     let _ = breadth_max; // used indirectly via show_node_list
-    if crate::hash::cur_length() >= depth_threshold() {
+    if crate::hash::cur_length_global() >= depth_threshold() {
         if mem_b32s1(p) != 0 {
             // EMPTY = 0
             crate::output::print_cstr(c" []".as_ptr());
@@ -4044,7 +4044,7 @@ pub unsafe extern "C" fn show_node_list(mut p: i32) {
         breadth_max, depth_threshold, hash_s1, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s2,
         mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, pool_ptr, set_pool_ptr, set_str_pool,
     };
-    if crate::hash::cur_length() > depth_threshold() {
+    if crate::hash::cur_length_global() > depth_threshold() {
         if p > crate::mem::TEX_NULL {
             crate::output::print_cstr(c" []".as_ptr());
         }

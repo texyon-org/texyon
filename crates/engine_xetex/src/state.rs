@@ -279,6 +279,98 @@ impl EqtbState {
     pub fn set_b32s1(&mut self, p: i32, v: i32) {
         self.data[p as usize].b32.s1 = v;
     }
+
+    /// Read `hash[p].s0` (the link half of a hash-table entry).
+    #[inline]
+    pub fn hash_s0(&self, p: i32) -> i32 {
+        self.hash[(p as usize) - 514].s0
+    }
+
+    /// Write `hash[p].s0 = v`.
+    #[inline]
+    pub fn set_hash_s0(&mut self, p: i32, v: i32) {
+        self.hash[(p as usize) - 514].s0 = v;
+    }
+
+    /// Read `hash[p].s1` (the "text" half of a hash-table entry).
+    #[inline]
+    pub fn hash_s1(&self, p: i32) -> i32 {
+        self.hash[(p as usize) - 514].s1
+    }
+
+    /// Write `hash[p].s1 = v`.
+    #[inline]
+    pub fn set_hash_s1(&mut self, p: i32, v: i32) {
+        self.hash[(p as usize) - 514].s1 = v;
+    }
+
+    /// Read `prim[p].s0` (the link half of a primitive-table entry).
+    #[inline]
+    pub fn prim_s0(&self, p: i32) -> i32 {
+        self.prim[p as usize].s0
+    }
+
+    /// Write `prim[p].s0 = v`.
+    #[inline]
+    pub fn set_prim_s0(&mut self, p: i32, v: i32) {
+        self.prim[p as usize].s0 = v;
+    }
+
+    /// Read `prim[p].s1` (the "text" half of a primitive-table entry).
+    #[inline]
+    pub fn prim_s1(&self, p: i32) -> i32 {
+        self.prim[p as usize].s1
+    }
+
+    /// Write `prim[p].s1 = v`.
+    #[inline]
+    pub fn set_prim_s1(&mut self, p: i32, v: i32) {
+        self.prim[p as usize].s1 = v;
+    }
+
+    /// Copy the full `MemoryWord` at `eqtb[p]`. Mirrors `globals::eqtb_word`.
+    #[inline]
+    pub fn word(&self, p: i32) -> crate::mem_types::MemoryWord {
+        self.data[p as usize]
+    }
+
+    /// Read `eqtb[p].b16.s1` (the "type" half). Mirrors `globals::eqtb_b16s1`.
+    #[inline]
+    pub fn b16s1(&self, p: i32) -> u16 {
+        // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
+        unsafe { self.data[p as usize].b16.s1 }
+    }
+
+    /// Write `eqtb[p].b16.s1`. Mirrors `globals::set_eqtb_b16s1`.
+    #[inline]
+    pub fn set_b16s1(&mut self, p: i32, v: u16) {
+        self.data[p as usize].b16.s1 = v;
+    }
+
+    /// Read `eqtb[p].b16.s0` (the "level" half). Mirrors `globals::eqtb_b16s0`.
+    #[inline]
+    pub fn b16s0(&self, p: i32) -> u16 {
+        // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
+        unsafe { self.data[p as usize].b16.s0 }
+    }
+
+    /// Write `eqtb[p].b16.s0`. Mirrors `globals::set_eqtb_b16s0`.
+    #[inline]
+    pub fn set_b16s0(&mut self, p: i32, v: u16) {
+        self.data[p as usize].b16.s0 = v;
+    }
+
+    /// Read `XEQ_LEVEL(p)` = `xeq_level[p - INT_BASE]`. Mirrors `globals::xeq_level`.
+    #[inline]
+    pub fn xeq_level_at(&self, p: i32) -> u16 {
+        self.xeq_level[(p - crate::consts::INT_BASE) as usize]
+    }
+
+    /// Write `XEQ_LEVEL(p) = v`. Mirrors `globals::set_xeq_level`.
+    #[inline]
+    pub fn set_xeq_level_at(&mut self, p: i32, v: u16) {
+        self.xeq_level[(p - crate::consts::INT_BASE) as usize] = v;
+    }
 }
 
 /// The dynamic-memory arena (former C-`malloc`'d `memory_word *mem` plus its
@@ -478,6 +570,24 @@ impl SaveStackState {
     #[inline]
     pub(crate) fn set_b32s1(&mut self, k: i32, v: i32) {
         self.data[k as usize].b32.s1 = v;
+    }
+
+    /// Write `save_stack[k].b16.s1`. Union writes through a `&mut` index are safe.
+    #[inline]
+    pub(crate) fn set_b16s1(&mut self, k: i32, v: u16) {
+        self.data[k as usize].b16.s1 = v;
+    }
+
+    /// Write `save_stack[k].b16.s0`. Union writes through a `&mut` index are safe.
+    #[inline]
+    pub(crate) fn set_b16s0(&mut self, k: i32, v: u16) {
+        self.data[k as usize].b16.s0 = v;
+    }
+
+    /// Write a full `MemoryWord` to `save_stack[k]`. Mirrors `globals::set_save_stack_word`.
+    #[inline]
+    pub(crate) fn set_word(&mut self, k: i32, w: crate::mem_types::MemoryWord) {
+        self.data[k as usize] = w;
     }
 }
 

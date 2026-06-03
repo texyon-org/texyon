@@ -1222,7 +1222,7 @@ pub unsafe extern "C" fn scan_spec(c: u8, three_codes: bool) {
     set_save_stack_b32s1(save_ptr(), spec_code as i32);
     set_save_stack_b32s1(save_ptr() + 1, cur_val());
     set_save_ptr(save_ptr() + 2);
-    crate::save::new_save_level(c);
+    crate::save::new_save_level_global(c);
     scan_left_brace();
 }
 
@@ -3384,9 +3384,9 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                 if cur_chr() == 1 {
                     crate::scan::get_token();
                     if cur_cs() < HASH_BASE {
-                        set_cur_cs(crate::hash::prim_lookup(cur_cs() - SINGLE_BASE));
+                        set_cur_cs(crate::hash::prim_lookup_global(cur_cs() - SINGLE_BASE));
                     } else {
-                        set_cur_cs(crate::hash::prim_lookup(hash_s1(cur_cs())));
+                        set_cur_cs(crate::hash::prim_lookup_global(hash_s1(cur_cs())));
                     }
                     if cur_cs() != UNDEFINED_PRIMITIVE {
                         set_cur_cmd(crate::globals::eqtb_b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
@@ -3526,9 +3526,9 @@ pub unsafe extern "C" fn scan_int() {
         } else if cur_tok() == FROZEN_PRIM_TOKEN {
             get_token();
             if cur_cs() < HASH_BASE {
-                set_cur_cs(crate::hash::prim_lookup(cur_cs() - SINGLE_BASE));
+                set_cur_cs(crate::hash::prim_lookup_global(cur_cs() - SINGLE_BASE));
             } else {
-                set_cur_cs(crate::hash::prim_lookup(hash_s1(cur_cs())));
+                set_cur_cs(crate::hash::prim_lookup_global(hash_s1(cur_cs())));
             }
             if cur_cs() != UNDEFINED_PRIMITIVE {
                 set_cur_cmd(crate::globals::eqtb_b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
@@ -4528,7 +4528,7 @@ pub unsafe extern "C" fn get_next() {
                                                 k -= 1;
                                             }
                                             if k > cur_input().loc + 1 {
-                                                set_cur_cs(crate::hash::id_lookup(
+                                                set_cur_cs(crate::hash::id_lookup_global(
                                                     cur_input().loc,
                                                     k - cur_input().loc,
                                                 ));
@@ -4616,7 +4616,7 @@ pub unsafe extern "C" fn get_next() {
 
                                         // Single-char CS: either buffer > 65535 uses id_lookup(1), else SINGLE_BASE
                                         if buffer_entry(cur_input().loc) > 65535 {
-                                            set_cur_cs(crate::hash::id_lookup(cur_input().loc, 1));
+                                            set_cur_cs(crate::hash::id_lookup_global(cur_input().loc, 1));
                                             set_cur_input_loc(cur_input().loc + 1);
                                             break 'start_cs; // goto found
                                         }

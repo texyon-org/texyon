@@ -42,8 +42,8 @@ use crate::packaging::prune_page_top_global;
 use crate::packaging::vert_break;
 use crate::packaging::vpackage;
 use crate::save::find_sa_element_global;
-use crate::save::geq_word_define;
-use crate::save::new_save_level;
+use crate::save::geq_word_define_global;
+use crate::save::new_save_level_global;
 use crate::scaled_math::x_over_n;
 use crate::scan::scan_left_brace;
 use crate::shipout::ship_out;
@@ -210,13 +210,13 @@ unsafe fn ensure_vbox_global(n: u8) {
 unsafe fn fire_up(c: i32) {
     // 1048: Set output_penalty
     if mem_b16s1(best_page_break()) as i32 == PENALTY_NODE {
-        geq_word_define(
+        geq_word_define_global(
             INT_BASE + INT_PAR__output_penalty,
             mem_b32s1(best_page_break() + 1),
         );
         set_mem_b32s1(best_page_break() + 1, INF_PENALTY);
     } else {
-        geq_word_define(INT_BASE + INT_PAR__output_penalty, INF_PENALTY);
+        geq_word_define_global(INT_BASE + INT_PAR__output_penalty, INF_PENALTY);
     }
 
     // Update extended marks
@@ -515,7 +515,7 @@ unsafe fn fire_up(c: i32) {
             set_cur_list_aux_b32s1(IGNORE_DEPTH); // prev_depth
             set_cur_list_mode_line(-line());
             begin_token_list(eqtb_b32s1(LOCAL_BASE + LOCAL__output_routine), OUTPUT_TEXT);
-            new_save_level(OUTPUT_GROUP);
+            new_save_level_global(OUTPUT_GROUP);
             normal_paragraph();
             scan_left_brace();
             return;

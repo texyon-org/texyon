@@ -899,18 +899,10 @@ pub(crate) fn set_hash_high(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn no_new_control_sequence() -> bool {
-    crate::state::with_state(|state| state.eqtb.no_new_control_sequence)
-}
-#[inline]
 pub(crate) fn set_no_new_control_sequence(v: bool) {
     crate::state::with_state_mut(|state| {
         state.eqtb.no_new_control_sequence = v;
     });
-}
-#[inline]
-pub(crate) fn prim_used() -> i32 {
-    crate::state::with_state(|state| state.eqtb.prim_used)
 }
 #[inline]
 pub(crate) fn set_prim_used(v: i32) {
@@ -1585,10 +1577,6 @@ pub(crate) fn set_save_ptr(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn max_save_stack() -> i32 {
-    crate::state::with_state(|state| state.save_stack.max_save_stack)
-}
-#[inline]
 pub(crate) fn set_max_save_stack(v: i32) {
     crate::state::with_state_mut(|state| {
         state.save_stack.max_save_stack = v;
@@ -1621,20 +1609,6 @@ pub(crate) fn save_stack_b16s1(k: i32) -> u16 {
 pub(crate) fn save_stack_b16s0(k: i32) -> u16 {
     // SAFETY: union projection; the entry was last written via the b16 view.
     crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b16.s0 })
-}
-/// Write `save_stack[k].b16.s1 = v`.
-#[inline]
-pub(crate) fn set_save_stack_b16s1(k: i32, v: u16) {
-    crate::state::with_state_mut(|s| {
-        s.save_stack.data[k as usize].b16.s1 = v;
-    });
-}
-/// Write `save_stack[k].b16.s0 = v`.
-#[inline]
-pub(crate) fn set_save_stack_b16s0(k: i32, v: u16) {
-    crate::state::with_state_mut(|s| {
-        s.save_stack.data[k as usize].b16.s0 = v;
-    });
 }
 /// Copy the full MemoryWord at `save_stack[k]`.
 #[inline]

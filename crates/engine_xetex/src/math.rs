@@ -3326,7 +3326,7 @@ pub unsafe fn start_eq_no() {
     set_save_ptr(save_ptr() + 1);
 
     crate::main_control::push_math(MATH_SHIFT_GROUP);
-    crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
+    crate::save::eq_word_define_global(INT_BASE + INT_PAR_CUR_FAM, -1);
     if insert_src_special_every_math() {
         crate::ext::insert_src_special();
     }
@@ -4575,12 +4575,12 @@ pub unsafe fn init_math() {
 
         crate::main_control::push_math(MATH_SHIFT_GROUP);
         set_cur_list_mode(MMODE);
-        crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
-        crate::save::eq_word_define(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w);
+        crate::save::eq_word_define_global(INT_BASE + INT_PAR_CUR_FAM, -1);
+        crate::save::eq_word_define_global(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w);
         set_cur_list_e_tex_aux(j);
-        crate::save::eq_word_define(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION, x);
-        crate::save::eq_word_define(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH, l);
-        crate::save::eq_word_define(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s);
+        crate::save::eq_word_define_global(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION, x);
+        crate::save::eq_word_define_global(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH, l);
+        crate::save::eq_word_define_global(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s);
 
         if semantic_pagination_enabled() {
             crate::ext::tt_insert_special(c"tdux:cs dmath".as_ptr());
@@ -4596,7 +4596,7 @@ pub unsafe fn init_math() {
     } else {
         crate::input::back_input();
         crate::main_control::push_math(MATH_SHIFT_GROUP);
-        crate::save::eq_word_define(INT_BASE + INT_PAR_CUR_FAM, -1);
+        crate::save::eq_word_define_global(INT_BASE + INT_PAR_CUR_FAM, -1);
         if insert_src_special_every_math() {
             crate::ext::insert_src_special();
         }

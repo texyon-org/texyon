@@ -235,15 +235,15 @@ pub unsafe extern "C" fn primitive(ident: *const libc::c_char, c: u16, o: i32) {
             set_buffer_entry(first() + i, b);
         }
 
-        set_cur_val(crate::hash::id_lookup(first(), len));
+        set_cur_val(crate::hash::id_lookup_global(first(), len));
         set_str_ptr(str_ptr() - 1);
         set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
         set_hash_s1(cur_val(), s);
-        prim_val = crate::hash::prim_lookup(s);
+        prim_val = crate::hash::prim_lookup_global(s);
     } else {
         let ch = *ident as u8 as i32;
         set_cur_val(ch + SINGLE_BASE);
-        prim_val = crate::hash::prim_lookup(ch);
+        prim_val = crate::hash::prim_lookup_global(ch);
     }
 
     set_eqtb_b16s0(cur_val(), LEVEL_ONE);

@@ -8,17 +8,15 @@ use crate::output::print_cstr;
 use crate::output::print_int;
 use crate::output::print_nl_cstr;
 use crate::packaging::flush_node_list_global;
-use crate::state::{MemState, SaveStackState, ScannerState};
+use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
-    align_state, cur_boundary, cur_group, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0,
-    eqtb_b16s1, eqtb_b32s1, eqtb_word, grp_stack, in_open, line, mag_set, max_save_stack,
-    mem_b32s0, save_ptr, save_size, save_stack_b16s0, save_stack_b16s1, save_stack_b32s1,
-    save_stack_word, set_align_state, set_cur_boundary, set_cur_group, set_cur_input_loc,
-    set_cur_input_start, set_cur_level, set_cur_ptr, set_cur_tok, set_eqtb_b16s0, set_eqtb_b16s1,
-    set_eqtb_b32s1, set_eqtb_word, set_mag_set, set_max_save_stack, set_mem_b32s0, set_mem_b32s1,
-    set_sa_chain, set_sa_level, set_save_ptr, set_save_stack_b16s0, set_save_stack_b16s1,
-    set_save_stack_b32s1, set_save_stack_word, set_xeq_level, xeq_level,
+    align_state, cur_boundary, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0,
+    eqtb_b32s1, eqtb_word, grp_stack, in_open, line, mag_set, save_ptr, save_size, save_stack_b16s0,
+    save_stack_b16s1, save_stack_b32s1, save_stack_word, set_align_state, set_cur_boundary,
+    set_cur_group, set_cur_input_loc, set_cur_input_start, set_cur_level, set_cur_ptr, set_cur_tok,
+    set_eqtb_word, set_mag_set, set_mem_b32s0, set_mem_b32s1, set_sa_chain, set_sa_level,
+    set_save_ptr, set_save_stack_word, set_xeq_level, xeq_level,
 };
 use crate::mem_types::MemoryWord;
 
@@ -46,31 +44,75 @@ const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 
 // ---------------------------------------------------------------------------
+// Cold-path abort sentinel (01b §5)
+// ---------------------------------------------------------------------------
+
+/// A cold-path abort requested by a threaded save-stack function. The threaded
+/// body returns it instead of calling the `with_state`-bearing
+/// `overflow`/`confusion` (which would nest-panic under the live state borrow);
+/// the `_global` wrapper raises it *after* the borrow drops (`01b` §5). Both
+/// abort paths `longjmp`, so a real caller never observes the sentinel — only
+/// the wrapper does, on a capacity/consistency failure that no passing test
+/// reaches.
+pub(crate) enum SaveAbort {
+    /// `overflow(msg, n)` — capacity exhaustion.
+    Overflow(&'static std::ffi::CStr, i32),
+    /// `confusion(msg)` — internal-consistency failure.
+    Confusion(&'static std::ffi::CStr),
+}
+
+/// Raise a deferred [`SaveAbort`] after the state borrow has dropped. Never
+/// returns when `a` is `Some` (both arms `longjmp`).
+#[inline]
+unsafe fn raise_save_abort(a: Option<SaveAbort>) {
+    match a {
+        Some(SaveAbort::Overflow(s, n)) => crate::errors::overflow(s.as_ptr(), n),
+        Some(SaveAbort::Confusion(s)) => crate::errors::confusion(s.as_ptr()),
+        None => {}
+    }
+}
+
+// ---------------------------------------------------------------------------
 // new_save_level
 // ---------------------------------------------------------------------------
 
 /// Push a new grouping level onto the save stack.
 ///
+/// Phase-C: threaded to `&mut SaveStackState`; touches the save stack only plus
+/// the raw `line()` read (safe under a borrow, `01b` §4). The two cold capacity
+/// branches return the `01b` §5 [`SaveAbort`] sentinel, raised by
+/// [`new_save_level_global`] after the borrow drops. Legacy callers use
+/// [`new_save_level_global`].
+///
 /// translated from xetex-xetex0.c:3932 (new_save_level)
-pub unsafe fn new_save_level(c: u8) {
-    if save_ptr() > max_save_stack() {
-        set_max_save_stack(save_ptr());
-        if max_save_stack() > save_size() - 7 {
-            crate::errors::overflow(c"semantic nest size".as_ptr(), save_size());
+pub(crate) fn new_save_level(save_stack: &mut SaveStackState, c: u8) -> Option<SaveAbort> {
+    if save_stack.save_ptr > save_stack.max_save_stack {
+        save_stack.max_save_stack = save_stack.save_ptr;
+        if save_stack.max_save_stack > save_size() - 7 {
+            return Some(SaveAbort::Overflow(c"semantic nest size", save_size()));
         }
     }
-    set_save_stack_b32s1(save_ptr(), line());
-    set_save_ptr(save_ptr() + 1);
-    set_save_stack_b16s1(save_ptr(), LEVEL_BOUNDARY);
-    set_save_stack_b16s0(save_ptr(), cur_group() as u16);
-    set_save_stack_b32s1(save_ptr(), cur_boundary());
-    if cur_level() == u16::MAX {
-        crate::errors::overflow(c"grouping levels".as_ptr(), u16::MAX as i32);
+    // `line()` reads the raw `line` global (deferred Phase-C set); it is not
+    // `with_state`-bearing, so it is safe to call directly here (`01b` §4).
+    save_stack.set_b32s1(save_stack.save_ptr, line());
+    save_stack.save_ptr += 1;
+    save_stack.set_b16s1(save_stack.save_ptr, LEVEL_BOUNDARY);
+    save_stack.set_b16s0(save_stack.save_ptr, save_stack.cur_group as u16);
+    save_stack.set_b32s1(save_stack.save_ptr, save_stack.cur_boundary);
+    if save_stack.cur_level == u16::MAX {
+        return Some(SaveAbort::Overflow(c"grouping levels", u16::MAX as i32));
     }
-    set_cur_boundary(save_ptr());
-    set_cur_group(c);
-    set_cur_level(cur_level() + 1);
-    set_save_ptr(save_ptr() + 1);
+    save_stack.cur_boundary = save_stack.save_ptr;
+    save_stack.cur_group = c;
+    save_stack.cur_level += 1;
+    save_stack.save_ptr += 1;
+    None
+}
+
+/// Transitional bridge-down wrapper for legacy `new_save_level` callers.
+pub unsafe fn new_save_level_global(c: u8) {
+    let abort = crate::state::with_state_mut(|st| new_save_level(&mut st.save_stack, c));
+    raise_save_abort(abort);
 }
 
 // ---------------------------------------------------------------------------
@@ -79,25 +121,34 @@ pub unsafe fn new_save_level(c: u8) {
 
 /// Save the current value of `eqtb[p]` at level `l` on the save stack.
 ///
+/// Phase-C: threaded to `&mut SaveStackState` + `&EqtbState`. The cold capacity
+/// branch returns the [`SaveAbort`] sentinel; callers within `save.rs` propagate
+/// it to their own `_global` wrappers (`01b` §5).
+///
 /// translated from xetex-xetex0.c:3914 (eq_save)
-#[no_mangle]
-pub unsafe extern "C" fn eq_save(p: i32, l: u16) {
-    if save_ptr() > max_save_stack() {
-        set_max_save_stack(save_ptr());
-        if max_save_stack() > save_size() - 7 {
-            crate::errors::overflow(c"save size".as_ptr(), save_size());
+pub(crate) fn eq_save(
+    save_stack: &mut SaveStackState,
+    eqtb: &EqtbState,
+    p: i32,
+    l: u16,
+) -> Option<SaveAbort> {
+    if save_stack.save_ptr > save_stack.max_save_stack {
+        save_stack.max_save_stack = save_stack.save_ptr;
+        if save_stack.max_save_stack > save_size() - 7 {
+            return Some(SaveAbort::Overflow(c"save size", save_size()));
         }
     }
     if l == LEVEL_ZERO {
-        set_save_stack_b16s1(save_ptr(), RESTORE_ZERO);
+        save_stack.set_b16s1(save_stack.save_ptr, RESTORE_ZERO);
     } else {
-        set_save_stack_word(save_ptr(), eqtb_word(p));
-        set_save_ptr(save_ptr() + 1);
-        set_save_stack_b16s1(save_ptr(), RESTORE_OLD_VALUE);
+        save_stack.set_word(save_stack.save_ptr, eqtb.word(p));
+        save_stack.save_ptr += 1;
+        save_stack.set_b16s1(save_stack.save_ptr, RESTORE_OLD_VALUE);
     }
-    set_save_stack_b16s0(save_ptr(), l);
-    set_save_stack_b32s1(save_ptr(), p);
-    set_save_ptr(save_ptr() + 1);
+    save_stack.set_b16s0(save_stack.save_ptr, l);
+    save_stack.set_b32s1(save_stack.save_ptr, p);
+    save_stack.save_ptr += 1;
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -106,17 +157,39 @@ pub unsafe extern "C" fn eq_save(p: i32, l: u16) {
 
 /// Assign `eqtb[p].b32.s1 = w`, saving the old value if necessary.
 ///
+/// Phase-C: threaded to `&mut EqtbState` + `&mut SaveStackState`; propagates the
+/// cold [`SaveAbort`] from [`eq_save`]. Legacy callers use
+/// [`eq_word_define_global`].
+///
 /// translated from xetex-xetex0.c:3954 (eq_word_define)
-#[no_mangle]
-pub unsafe extern "C" fn eq_word_define(p: i32, w: i32) {
-    if eqtb_b32s1(p) == w {
-        return;
+pub(crate) fn eq_word_define(
+    eqtb: &mut EqtbState,
+    save_stack: &mut SaveStackState,
+    p: i32,
+    w: i32,
+) -> Option<SaveAbort> {
+    if eqtb.b32s1(p) == w {
+        return None;
     }
-    if xeq_level(p) != cur_level() {
-        eq_save(p, xeq_level(p));
-        set_xeq_level(p, cur_level());
+    if eqtb.xeq_level_at(p) != save_stack.cur_level {
+        let l = eqtb.xeq_level_at(p);
+        let abort = eq_save(save_stack, eqtb, p, l);
+        if abort.is_some() {
+            return abort;
+        }
+        eqtb.set_xeq_level_at(p, save_stack.cur_level);
     }
-    set_eqtb_b32s1(p, w);
+    eqtb.set_b32s1(p, w);
+    None
+}
+
+/// Transitional bridge-down wrapper for legacy `eq_word_define` callers.
+pub unsafe fn eq_word_define_global(p: i32, w: i32) {
+    let abort = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        eq_word_define(&mut s.eqtb, &mut s.save_stack, p, w)
+    });
+    raise_save_abort(abort);
 }
 
 // ---------------------------------------------------------------------------
@@ -125,10 +198,18 @@ pub unsafe extern "C" fn eq_word_define(p: i32, w: i32) {
 
 /// Globally assign `eqtb[p].b32.s1 = w` at LEVEL_ONE.
 ///
+/// Phase-C: threaded to `&mut EqtbState`. Legacy callers use
+/// [`geq_word_define_global`].
+///
 /// translated from xetex-xetex0.c:3977 (geq_word_define)
-pub unsafe fn geq_word_define(p: i32, w: i32) {
-    set_eqtb_b32s1(p, w);
-    set_xeq_level(p, LEVEL_ONE);
+pub(crate) fn geq_word_define(eqtb: &mut EqtbState, p: i32, w: i32) {
+    eqtb.set_b32s1(p, w);
+    eqtb.set_xeq_level_at(p, LEVEL_ONE);
+}
+
+/// Transitional bridge-down wrapper for legacy `geq_word_define` callers.
+pub unsafe fn geq_word_define_global(p: i32, w: i32) {
+    crate::state::with_state_mut(|st| geq_word_define(&mut st.eqtb, p, w));
 }
 
 // ---------------------------------------------------------------------------
@@ -137,21 +218,30 @@ pub unsafe fn geq_word_define(p: i32, w: i32) {
 
 /// Push token `t` onto the save stack for deferred processing after `}`.
 ///
+/// Phase-C: threaded to `&mut SaveStackState`; cold capacity branch returns the
+/// [`SaveAbort`] sentinel. Legacy callers use [`save_for_after_global`].
+///
 /// translated from xetex-xetex0.c:3984 (save_for_after)
-#[no_mangle]
-pub unsafe extern "C" fn save_for_after(t: i32) {
-    if cur_level() > LEVEL_ONE {
-        if save_ptr() > max_save_stack() {
-            set_max_save_stack(save_ptr());
-            if max_save_stack() > save_size() - 7 {
-                crate::errors::overflow(c"save size".as_ptr(), save_size());
+pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Option<SaveAbort> {
+    if save_stack.cur_level > LEVEL_ONE {
+        if save_stack.save_ptr > save_stack.max_save_stack {
+            save_stack.max_save_stack = save_stack.save_ptr;
+            if save_stack.max_save_stack > save_size() - 7 {
+                return Some(SaveAbort::Overflow(c"save size", save_size()));
             }
         }
-        set_save_stack_b16s1(save_ptr(), INSERT_TOKEN);
-        set_save_stack_b16s0(save_ptr(), LEVEL_ZERO);
-        set_save_stack_b32s1(save_ptr(), t);
-        set_save_ptr(save_ptr() + 1);
+        save_stack.set_b16s1(save_stack.save_ptr, INSERT_TOKEN);
+        save_stack.set_b16s0(save_stack.save_ptr, LEVEL_ZERO);
+        save_stack.set_b32s1(save_stack.save_ptr, t);
+        save_stack.save_ptr += 1;
     }
+    None
+}
+
+/// Transitional bridge-down wrapper for legacy `save_for_after` callers.
+pub unsafe fn save_for_after_global(t: i32) {
+    let abort = crate::state::with_state_mut(|st| save_for_after(&mut st.save_stack, t));
+    raise_save_abort(abort);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +274,7 @@ pub unsafe extern "C" fn prepare_mag() {
             c"reverted to the magnification you used earlier on this run.".as_ptr(),
         );
         crate::errors::int_error(mag_set());
-        geq_word_define(INT_BASE + INT_PAR_MAG, mag_set());
+        geq_word_define_global(INT_BASE + INT_PAR_MAG, mag_set());
     }
     let mag2 = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
     if mag2 <= 0 || mag2 > 32768 {
@@ -198,7 +288,7 @@ pub unsafe extern "C" fn prepare_mag() {
             c"The magnification ratio must be between 1 and 32768.".as_ptr(),
         );
         crate::errors::int_error(mag2);
-        geq_word_define(INT_BASE + INT_PAR_MAG, 1000);
+        geq_word_define_global(INT_BASE + INT_PAR_MAG, 1000);
     }
     set_mag_set(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
 }
@@ -209,57 +299,134 @@ pub unsafe extern "C" fn prepare_mag() {
 
 /// Free any heap resource held by an eqtb entry (token list, glue, box, or sa-ref).
 ///
+/// Phase-C: threaded to `&mut MemState` + `&mut ScannerState`; calls the threaded
+/// node-recycling helpers directly. The cold box-flush arm (`flush_node_list`)
+/// returns a [`SaveAbort::Confusion`] sentinel on a corrupt node; callers raise
+/// it after the borrow drops (`01b` §5). Legacy callers use [`eq_destroy_global`].
+///
 /// translated from xetex-xetex0.c:3831 (eq_destroy)
-#[no_mangle]
-pub unsafe extern "C" fn eq_destroy(w: MemoryWord) {
-    let typ = w.b16.s1;
-    let val = w.b32.s1;
+pub(crate) fn eq_destroy(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    w: MemoryWord,
+) -> Option<SaveAbort> {
+    // SAFETY: `MemoryWord` union projections; the eqtb entry was last written
+    // through these views by `eq_define`/`geq_define`.
+    let typ = unsafe { w.b16.s1 };
+    let val = unsafe { w.b32.s1 };
     match typ {
-        113..=116 => crate::mem::delete_token_ref_global(val),
-        119 => crate::mem::delete_glue_ref_global(val),
+        113..=116 => crate::mem::delete_token_ref(mem, val),
+        119 => crate::mem::delete_glue_ref(mem, val),
         120 => {
             if val != TEX_NULL {
-                crate::mem::free_node_global(val, mem_b32s0(val) + mem_b32s0(val) + 1);
+                crate::mem::free_node(mem, val, mem.b32s0(val) + mem.b32s0(val) + 1);
             }
         }
-        121 => flush_node_list_global(val),
+        121 => {
+            if let Err(msg) = crate::packaging::flush_node_list(mem, val) {
+                return Some(SaveAbort::Confusion(msg));
+            }
+        }
         72 | 91 => {
             if !(0..=19).contains(&val) {
-                delete_sa_ref_global(val);
+                delete_sa_ref(mem, scanner, val);
             }
         }
         _ => {}
     }
+    None
+}
+
+/// Transitional bridge-down wrapper for legacy `eq_destroy` callers.
+pub unsafe fn eq_destroy_global(w: MemoryWord) {
+    let abort = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        eq_destroy(&mut s.mem, &mut s.scanner, w)
+    });
+    raise_save_abort(abort);
 }
 
 /// Assign `eqtb[p] = (level=cur_level, type=t, value=e)`, saving if needed.
 ///
+/// Phase-C: threaded to `&mut EqtbState` + `&mut SaveStackState` + `&mut MemState`
+/// + `&mut ScannerState`; propagates the cold [`SaveAbort`] from
+/// [`eq_destroy`]/[`eq_save`]. Legacy callers use [`eq_define_global`].
+///
 /// translated from xetex-xetex0.c:3867 (eq_define)
-#[no_mangle]
-pub unsafe extern "C" fn eq_define(p: i32, t: u16, e: i32) {
-    if eqtb_b16s1(p) == t && eqtb_b32s1(p) == e {
-        eq_destroy(eqtb_word(p));
-        return;
+pub(crate) fn eq_define(
+    eqtb: &mut EqtbState,
+    save_stack: &mut SaveStackState,
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    p: i32,
+    t: u16,
+    e: i32,
+) -> Option<SaveAbort> {
+    if eqtb.b16s1(p) == t && eqtb.b32s1(p) == e {
+        let w = eqtb.word(p);
+        return eq_destroy(mem, scanner, w);
     }
-    if eqtb_b16s0(p) == cur_level() {
-        eq_destroy(eqtb_word(p));
-    } else if cur_level() > LEVEL_ONE {
-        eq_save(p, eqtb_b16s0(p));
+    if eqtb.b16s0(p) == save_stack.cur_level {
+        let w = eqtb.word(p);
+        let abort = eq_destroy(mem, scanner, w);
+        if abort.is_some() {
+            return abort;
+        }
+    } else if save_stack.cur_level > LEVEL_ONE {
+        let l = eqtb.b16s0(p);
+        let abort = eq_save(save_stack, eqtb, p, l);
+        if abort.is_some() {
+            return abort;
+        }
     }
-    set_eqtb_b16s0(p, cur_level());
-    set_eqtb_b16s1(p, t);
-    set_eqtb_b32s1(p, e);
+    eqtb.set_b16s0(p, save_stack.cur_level);
+    eqtb.set_b16s1(p, t);
+    eqtb.set_b32s1(p, e);
+    None
+}
+
+/// Transitional bridge-down wrapper for legacy `eq_define` callers.
+pub unsafe fn eq_define_global(p: i32, t: u16, e: i32) {
+    let abort = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        eq_define(&mut s.eqtb, &mut s.save_stack, &mut s.mem, &mut s.scanner, p, t, e)
+    });
+    raise_save_abort(abort);
 }
 
 /// Globally assign `eqtb[p] = (level=LEVEL_ONE, type=t, value=e)`.
 ///
+/// Phase-C: threaded to `&mut EqtbState` + `&mut MemState` + `&mut ScannerState`;
+/// propagates the cold [`SaveAbort`] from [`eq_destroy`]. Legacy callers use
+/// [`geq_define_global`].
+///
 /// translated from xetex-xetex0.c:3886 (geq_define)
-#[no_mangle]
-pub unsafe extern "C" fn geq_define(p: i32, t: u16, e: i32) {
-    eq_destroy(eqtb_word(p));
-    set_eqtb_b16s0(p, LEVEL_ONE);
-    set_eqtb_b16s1(p, t);
-    set_eqtb_b32s1(p, e);
+pub(crate) fn geq_define(
+    eqtb: &mut EqtbState,
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    p: i32,
+    t: u16,
+    e: i32,
+) -> Option<SaveAbort> {
+    let w = eqtb.word(p);
+    let abort = eq_destroy(mem, scanner, w);
+    if abort.is_some() {
+        return abort;
+    }
+    eqtb.set_b16s0(p, LEVEL_ONE);
+    eqtb.set_b16s1(p, t);
+    eqtb.set_b32s1(p, e);
+    None
+}
+
+/// Transitional bridge-down wrapper for legacy `geq_define` callers.
+pub unsafe fn geq_define_global(p: i32, t: u16, e: i32) {
+    let abort = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        geq_define(&mut s.eqtb, &mut s.mem, &mut s.scanner, p, t, e)
+    });
+    raise_save_abort(abort);
 }
 
 // ---------------------------------------------------------------------------
@@ -651,9 +818,9 @@ pub unsafe extern "C" fn unsave() {
                 }
                 if !(INT_BASE..=EQTB_SIZE).contains(&p) {
                     if eqtb_b16s0(p) == LEVEL_ONE {
-                        eq_destroy(save_stack_word(save_ptr()));
+                        eq_destroy_global(save_stack_word(save_ptr()));
                     } else {
-                        eq_destroy(eqtb_word(p));
+                        eq_destroy_global(eqtb_word(p));
                         set_eqtb_word(p, save_stack_word(save_ptr()));
                     }
                 } else if xeq_level(p) != LEVEL_ONE {

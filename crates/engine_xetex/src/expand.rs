@@ -369,7 +369,7 @@ pub unsafe extern "C" fn conditional() {
             } else if m == first() + 1 {
                 SINGLE_BASE + buffer_entry(first())
             } else {
-                crate::hash::id_lookup(first(), m - first())
+                crate::hash::id_lookup_global(first(), m - first())
             };
             crate::globals::set_cur_cs(cur_cs_val);
             flush_list_global(n);
@@ -446,9 +446,9 @@ pub unsafe extern "C" fn conditional() {
             set_scanner_status(save_scanner_status);
             let cs = cur_cs();
             m = if cs < HASH_BASE {
-                crate::hash::prim_lookup(cs - SINGLE_BASE)
+                crate::hash::prim_lookup_global(cs - SINGLE_BASE)
             } else {
-                crate::hash::prim_lookup(hash_s1(cs))
+                crate::hash::prim_lookup_global(hash_s1(cs))
             };
             b = cur_cmd() != UNDEFINED_CS
                 && m != UNDEFINED_PRIMITIVE
@@ -1270,9 +1270,9 @@ pub unsafe extern "C" fn expand() {
                         get_token();
                         set_scanner_status(save_scanner_status);
                         let cs = if cur_cs() < HASH_BASE {
-                            crate::hash::prim_lookup(cur_cs() - SINGLE_BASE)
+                            crate::hash::prim_lookup_global(cur_cs() - SINGLE_BASE)
                         } else {
-                            crate::hash::prim_lookup(hash_s1(cur_cs()))
+                            crate::hash::prim_lookup_global(hash_s1(cur_cs()))
                         };
                         set_cur_cs(cs);
                         if cur_cs() != UNDEFINED_PRIMITIVE {
@@ -1340,7 +1340,7 @@ pub unsafe extern "C" fn expand() {
                     }
                     let cs = if j > first() + 1 || buffer_entry(first()) > 65535 {
                         set_no_new_control_sequence(false);
-                        let cs = crate::hash::id_lookup(first(), j - first());
+                        let cs = crate::hash::id_lookup_global(first(), j - first());
                         set_no_new_control_sequence(true);
                         cs
                     } else if j == first() {
@@ -1351,7 +1351,7 @@ pub unsafe extern "C" fn expand() {
                     set_cur_cs(cs);
                     crate::mem::flush_list_global(r);
                     if eqtb_b16s1(cur_cs()) == UNDEFINED_CS_CMD as u16 {
-                        crate::save::eq_define(cur_cs(), RELAX as u16, TOO_BIG_USV);
+                        crate::save::eq_define_global(cur_cs(), RELAX as u16, TOO_BIG_USV);
                     }
                     set_cur_tok(cur_cs() + CS_TOKEN_FLAG);
                     crate::input::back_input();

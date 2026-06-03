@@ -742,7 +742,7 @@ pub unsafe fn ship_out(p: i32) {
         set_selector(old_setting);
 
         dvi_out_global(XXX1);
-        dvi_out_global(crate::hash::cur_length() as u8);
+        dvi_out_global(crate::hash::cur_length_global() as u8);
         let start = str_start(str_ptr() - TOO_BIG_CHAR);
         let end = pool_ptr();
         for s in start..end {
@@ -981,13 +981,13 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
 
                 q = crate::scan::new_native_word_node_global(
                     mem_b16s2(r + 4) as i32,
-                    crate::hash::cur_length(),
+                    crate::hash::cur_length_global(),
                 );
                 set_mem_b16s0(q, mem_b16s0(r));
 
                 let src = str_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
                 let dst = mem_as_u16_ptr_mut(q + 6);
-                for j in 0..crate::hash::cur_length() {
+                for j in 0..crate::hash::cur_length_global() {
                     *dst.add(j as usize) = *src.add(j as usize);
                 }
 
