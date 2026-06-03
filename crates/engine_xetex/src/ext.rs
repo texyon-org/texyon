@@ -473,8 +473,10 @@ pub unsafe extern "C" fn read_rgb_a(cp: *mut *const c_char) -> c_uint {
 }
 
 // translated from xetex-ext.c:127 (get_encoding_mode_and_info)
-pub unsafe fn get_encoding_mode_and_info(info: *mut i32) -> c_int {
-    let name_of_file = crate::globals::name_of_file();
+// `name_of_file` (the encoding name to parse) is read by the `_global` wrapper
+// from `name_of_file()` before the call (it is with_state-bearing); the core
+// only reads the passed pointer, leaving its diagnostic path borrow-free (§4a).
+pub unsafe fn get_encoding_mode_and_info(name_of_file: *const c_char, info: *mut i32) -> c_int {
     *info = 0;
 
     if libc::strcasecmp(name_of_file, c"auto".as_ptr()) == 0 {
@@ -665,8 +667,11 @@ unsafe fn load_mapping_file(
 }
 
 // translated from xetex-ext.c:236 (check_for_tfm_font_mapping)
-pub unsafe fn check_for_tfm_font_mapping() {
-    let cp = libc::strstr(crate::globals::name_of_file(), c":mapping=".as_ptr());
+// `name_of_file` is read (and the `:mapping=` separator nulled out) through the
+// pointer passed by the `_global` wrapper, which reads `name_of_file()` (itself
+// with_state-bearing) before the call.
+pub unsafe fn check_for_tfm_font_mapping(name_of_file: *mut c_char) {
+    let cp = libc::strstr(name_of_file, c":mapping=".as_ptr());
     SAVED_MAPPING_NAME = mfree_ptr(SAVED_MAPPING_NAME);
     if !cp.is_null() {
         *cp = 0;
@@ -2362,6 +2367,16 @@ pub unsafe fn map_glyph_to_index_global(font: i32) -> i32 {
 pub unsafe fn make_font_def_global(f: i32) -> c_int {
     crate::state::with_state_mut(|s| make_font_def(&mut s.fonts, f))
 }
+pub unsafe fn get_encoding_mode_and_info_global(info: *mut i32) -> c_int {
+    // `name_of_file()` is with_state-bearing, so read it before the call (§4a).
+    let name = crate::globals::name_of_file();
+    get_encoding_mode_and_info(name, info)
+}
+pub unsafe fn check_for_tfm_font_mapping_global() {
+    // `name_of_file()` is with_state-bearing, so read it before the call (§4a).
+    let name = crate::globals::name_of_file();
+    check_for_tfm_font_mapping(name)
+}
 pub unsafe fn real_get_native_italic_correction_global(p_node: *mut c_void) -> i32 {
     crate::state::with_state(|s| real_get_native_italic_correction(&s.fonts, p_node))
 }
@@ -2767,7 +2782,7 @@ pub unsafe extern "C" fn do_extension() {
         XETEX_INPUT_ENCODING_EXTENSION_CODE_DE => {
             scan_and_pack_name();
             let mut j: i32 = 0;
-            let i = get_encoding_mode_and_info(&mut j);
+            let i = get_encoding_mode_and_info_global(&mut j);
             if i == XETEX_INPUT_MODE_AUTO_DE {
                 error_here_with_diagnostic(
                     c"Encoding mode `auto' is not valid for \\XeTeXinputencoding".as_ptr(),
@@ -2792,7 +2807,7 @@ pub unsafe extern "C" fn do_extension() {
         XETEX_DEFAULT_ENCODING_EXTENSION_CODE_DE => {
             scan_and_pack_name();
             let mut j: i32 = 0;
-            let i = get_encoding_mode_and_info(&mut j);
+            let i = get_encoding_mode_and_info_global(&mut j);
             set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE_DE, i);
             set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING_DE, j);
         }

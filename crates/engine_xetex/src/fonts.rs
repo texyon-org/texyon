@@ -5,7 +5,7 @@
 use crate::consts::{INT_BASE, TOO_BIG_CHAR};
 use crate::errors::error;
 use crate::ext::{
-    aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping,
+    aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping_global,
     find_native_font, load_tfm_font_mapping, map_char_to_glyph_global, measure_native_node_global,
     ot_get_font_metrics, release_font_engine,
 };
@@ -317,7 +317,7 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
         }
 
         pack_file_name(nom, aire, EMPTY_STRING);
-        check_for_tfm_font_mapping();
+        check_for_tfm_font_mapping_global();
 
         tfm_file = tt_xetex_open_input(TTBC_FILE_FORMAT_TFM);
         if tfm_file == INVALID_HANDLE {
