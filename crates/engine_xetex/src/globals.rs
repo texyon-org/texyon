@@ -2039,11 +2039,6 @@ pub(crate) fn set_loaded_font_letter_space(v: i32) {
         state.fonts.loaded_font_letter_space = v;
     });
 }
-/// Returns `font_flags[f]`.
-#[inline]
-pub(crate) fn font_flags_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.font_flags[f as usize] as i32)
-}
 /// Writes `font_flags[f] = v`.
 #[inline]
 pub(crate) fn set_font_flags_entry(f: i32, v: i32) {

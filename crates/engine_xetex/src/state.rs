@@ -782,6 +782,12 @@ impl FontState {
         self.font_letter_space[f as usize]
     }
 
+    /// Read `font_flags[f]`. Mirrors `globals::font_flags_entry`.
+    #[inline]
+    pub(crate) fn font_flags_entry(&self, f: i32) -> i32 {
+        self.font_flags[f as usize] as i32
+    }
+
     /// Read `font_bc[f]`. Mirrors `globals::font_bc_entry`.
     #[inline]
     pub(crate) fn font_bc_entry(&self, f: i32) -> u16 {

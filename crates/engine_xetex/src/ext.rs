@@ -2067,7 +2067,7 @@ pub unsafe fn makeXDVGlyphArrayData(p_node: *mut c_void) -> c_int {
 
 // translated from xetex-ext.c:584 (make_font_def)
 // xdvBufSize was a C file-static; shared with makeXDVGlyphArrayData via XDV_BUF_SIZE
-pub unsafe fn make_font_def(f: i32) -> c_int {
+pub unsafe fn make_font_def(fonts: &mut crate::state::FontState, f: i32) -> c_int {
     let mut flags: u16 = 0;
     let rgba: u32;
     let size: i32;
@@ -2077,15 +2077,15 @@ pub unsafe fn make_font_def(f: i32) -> c_int {
     let slant: f32;
     let embolden: f32;
 
-    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
-        let engine = crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine;
+    if fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+        let engine = fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine;
         let mut idx: u32 = 0;
         filename = getFontFilename(engine, &mut idx);
         assert!(!filename.is_null());
         index = idx;
 
         rgba = getRgbValue(engine);
-        if (crate::globals::font_flags_entry(f) & FONT_FLAGS_VERTICAL) != 0 {
+        if (fonts.font_flags_entry(f) & FONT_FLAGS_VERTICAL) != 0 {
             flags |= XDV_FLAG_VERTICAL;
         }
 
@@ -2101,7 +2101,7 @@ pub unsafe fn make_font_def(f: i32) -> c_int {
 
     let mut font_def_length: usize = 4 + 2 + 1 + filename_len as usize + 4;
 
-    if (crate::globals::font_flags_entry(f) & FONT_FLAGS_COLORED) != 0 {
+    if (fonts.font_flags_entry(f) & FONT_FLAGS_COLORED) != 0 {
         font_def_length += 4;
         flags |= XDV_FLAG_COLORED;
     }
@@ -2118,14 +2118,12 @@ pub unsafe fn make_font_def(f: i32) -> c_int {
         flags |= XDV_FLAG_EMBOLDEN;
     }
 
-    let needed = font_def_length as usize;
-    crate::state::with_state_mut(|state| {
-        if state.fonts.xdv_buffer.len() < needed {
-            state.fonts.xdv_buffer.resize(needed, 0);
-        }
-    });
+    let needed = font_def_length;
+    if fonts.xdv_buffer.len() < needed {
+        fonts.xdv_buffer.resize(needed, 0);
+    }
 
-    let xdv_ptr = crate::state::with_state(|state| state.fonts.xdv_buffer.as_ptr() as *mut u8);
+    let xdv_ptr = fonts.xdv_buffer.as_ptr() as *mut u8;
     let mut cp = xdv_ptr;
 
     std::ptr::write_unaligned(cp as *mut u32, (size as u32).to_be());
@@ -2146,7 +2144,7 @@ pub unsafe fn make_font_def(f: i32) -> c_int {
     std::ptr::write_unaligned(cp as *mut u32, index.to_be());
     cp = cp.add(4);
 
-    if (crate::globals::font_flags_entry(f) & FONT_FLAGS_COLORED) != 0 {
+    if (fonts.font_flags_entry(f) & FONT_FLAGS_COLORED) != 0 {
         std::ptr::write_unaligned(cp as *mut u32, rgba.to_be());
         cp = cp.add(4);
     }
@@ -2360,6 +2358,9 @@ pub unsafe fn map_glyph_to_index_global(font: i32) -> i32 {
     // `name_of_file()` is with_state-bearing, so read it before the borrow (§4a).
     let name = crate::globals::name_of_file();
     crate::state::with_state(|s| map_glyph_to_index(&s.fonts, font, name))
+}
+pub unsafe fn make_font_def_global(f: i32) -> c_int {
+    crate::state::with_state_mut(|s| make_font_def(&mut s.fonts, f))
 }
 pub unsafe fn real_get_native_italic_correction_global(p_node: *mut c_void) -> i32 {
     crate::state::with_state(|s| real_get_native_italic_correction(&s.fonts, p_node))

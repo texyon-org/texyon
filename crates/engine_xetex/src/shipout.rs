@@ -7,7 +7,7 @@ use crate::consts::{
 };
 use crate::ext::apply_tfm_font_mapping;
 use crate::ext::makeXDVGlyphArrayData;
-use crate::ext::make_font_def;
+use crate::ext::make_font_def_global;
 use crate::ext::store_justified_native_glyphs_global;
 
 use crate::globals::{
@@ -365,7 +365,7 @@ fn dvi_font_def(shipout: &mut ShipoutState, bytes: &[u8], start: usize) -> DviEm
 
 unsafe fn dvi_font_def_global(f: i32) {
     let bytes = if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        let font_def_length = make_font_def(f);
+        let font_def_length = make_font_def_global(f);
         crate::state::with_state(|s| dvi_native_font_def(&s.fonts, f, font_def_length))
     } else {
         crate::state::with_state(|s| {
