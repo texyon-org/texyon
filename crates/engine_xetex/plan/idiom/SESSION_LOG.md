@@ -8,6 +8,107 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 129 — 2026-06-03 — workstream 01 Phase C: thread the `fonts.rs` font-LOADING core (`read_font_info` + `load_native_font`) to `&mut FontState`
+
+**Type:** execution (workstream 01, Phase C — push the native/TFM font-loading
+core into its sibling `fonts.rs`, the largest font-cluster debt). **Two commits.**
+Dashboard **29/2/7/4** on every commit. Warnings **50 → 50** throughout (no §7
+trap). **Result: `fonts.rs` `crate::globals::` calls 151 → 58; the two giant
+loaders' interleaved `font_*` accessor runs collapse into two `with_state_mut`
+borrows.** (Note: the 127–128 entries said "warnings 60" — that was stale; the
+actual count via the recipe command `cargo check -p tectonic_engine_xetex` is
+**50**, confirmed flat all session.)
+
+### What executed (2 commits)
+
+* **A — `read_font_info`'s TFM-parse core** (`9f1948fb`). Extracted the
+  metric-reading + font-table-fill body (xetex0.c:6350, the part after
+  `file_opened = true`) into `read_font_info_tfm(&mut FontState, &EqtbState,
+  tfm_file, nom, aire, s) -> (TfmParse, Option<(i32,bool)>)`, run under **one**
+  `with_state_mut` borrow. ~38 `crate::globals::font_*` calls became direct
+  `FontState` method / field access. Borrow-dropping (01b §4a/§5): the cold
+  `_tt_abort` font-table-full path returns a `TfmParse::OutOfMemory` sentinel
+  (run after the borrow drops); the with_state-bearing `load_tfm_font_mapping`
+  trailing write stays in the wrapper. **The hidden with_state call:**
+  `scaled_math::xn_over_d` is *not* pure — it sets `tex_remainder` (and
+  `arith_error` on overflow). It is reached only on the `s < 0` scaled-font
+  branch, which **etrip** exercises (tex-outputs/engine_rust/latex all passed; only
+  TRIP's etrip caught it as a `RefCell already borrowed` nest-panic — a clean test
+  run does **not** prove safety, exactly the 127 lesson). Fix: added pure
+  `xn_over_d_parts(x,n,d) -> (quotient, remainder, overflowed)` in
+  `scaled_math.rs` (and `xn_over_d` now wraps it), used it inside the borrow, and
+  applied the `set_tex_remainder`/`set_arith_error` side effects in the wrapper
+  after the borrow drops — captured via the returned `Option` so the `bad_tfm`
+  path preserves them too (timing observably identical: nothing between the
+  scaling point and there reads those globals).
+* **B — `load_native_font`'s font-table-init block** (`7f5d1dc6`). Extracted the
+  contiguous per-font metric-table init block (xetex0.c:6284, lines ~952–1014)
+  into `init_native_font_tables(&mut FontState, &EqtbState, font_engine,
+  full_name, actual_size, num_font_dimens) -> (font_ptr, x_ht, cap_ht,
+  font_slant)`, run under one borrow. ~25 `font_*` calls collapsed. The block is
+  bucket-C-clean: it touches only fonts + eqtb + the **extern-C** metric
+  extractors (`aat`/`ot_get_font_metrics`, `get_loaded_font_design_size` — all
+  borrow-safe, no thread-local) + locals. The with_state-bearing
+  `new_native_character` / `free_node` / `push_font_info` calls all come **after**
+  the block, so they stay outside. The metric out-params straddling the boundary
+  (`x_ht`/`cap_ht`/`font_slant`, needed by the later `font_info` pushes) are
+  computed by the helper and returned.
+
+### Method surface + dead accessors (§6)
+
+Added the mirroring `FontState` `set_*` methods (plain field writes, **parity-exact**
+with the `globals.rs` accessor bodies — each globals setter was already a bare
+`s.fonts.<field>[f] = v` with no width conversion, so the methods copy the exact
+RHS; reads reused the existing `FontState` getters / direct `pub` field access).
+Deleted four now-dead `globals.rs` accessors as their last callers threaded:
+`set_font_info_b16`, `exten_base_entry` (commit A); `set_font_check`,
+`set_font_letter_space_entry` (commit B). Each surfaced as a benign +1 dead-code
+warning, caught by the warning-count check and removed in the same commit.
+
+### Metrics
+
+`#[no_mangle]` **310** unchanged. `unsafe fn` **347 → 349** (+2: the two new
+`unsafe` helpers `read_font_info_tfm` / `init_native_font_tables`, which wrap the
+unsafe TFM byte readers / extern-C metric extractors). `with_state` sites **1113
+→ 1111** (−2 net: ~63 individual `globals` font accessor call sites in `fonts.rs`
+replaced by 2 borrows, minus 4 deleted accessor definitions, plus 2 new wrapper
+borrows). Warnings **50** (measured via `cargo check -p tectonic_engine_xetex`).
+`fonts.rs` `crate::globals::` calls **151 → 58** (`font_*` specifically **→ 17**,
+all now correctly *outside* the borrows — in `new_native_character` and the
+error/diagnostic paths of the two loaders).
+
+### Surprises / lessons
+
+* **`xn_over_d` is with_state-bearing** (sets `tex_remainder`/`arith_error`) —
+  a "pure math" helper that is not. The split-pure-core (`*_parts`) +
+  apply-side-effects-after-the-borrow pattern is the clean fix and is reusable
+  for any other arithmetic helper with a global-remainder side effect.
+* **etrip is the only guard for the scaled-TFM path.** tex-outputs/engine_rust/
+  latex all stayed green while etrip nest-panicked; lean on the **full** dashboard
+  (esp. TRIP/etrip) for any TFM-loading change, never the cheaper subset.
+
+### What remains in `fonts.rs`
+
+The remaining 58 `globals::` calls are the **correctly-outside-the-borrow** edges:
+`read_font_info`'s top tracing block + `bad_tfm` error path (diagnostic/help-line),
+`load_native_font`'s string-pool / `make_string` / dedup-loop / not-enough-room
+error path, and `new_native_character` (a bucket-C orchestrator: string pool,
+TECkit mapping, `map_char_to_glyph_global` ×3, lost-char warnings,
+`measure_native_node_global`). Threading `new_native_character` itself would
+require a signature change rippling into `load_native_font`/math/main_control —
+deferred. `find_native_font` (ext.rs, input-name buffer, bucket-D) still deferred.
+
+### Next session
+
+Either: thread `new_native_character` to take `&FontState`/`&mut MemState` (collapses
+`map_char_to_glyph_global`/`measure_native_node_global`/`char_warning` there) and
+ripple through its handful of callers; **or** collapse the 127–128 `_global`
+wrappers by threading their callers — but those callers are mostly the giants
+(`mlist_to_hlist`, `line_break`, `hpack`/`vpackage`, `ship_out`, `build_page`),
+each a whole-session job. `find_native_font` once the input-name buffer is threadable.
+
+---
+
 ## Idiom session 128 — 2026-06-03 — workstream 01 Phase C: drain the rest of the `ext.rs` native-font subsystem (8 fns, 4 commits) — `font_*` cluster fully gone from `ext.rs`
 
 **Type:** execution (workstream 01, Phase C — finish the `ext.rs` native-font
