@@ -2592,7 +2592,7 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
             let font_name_str = font_name_entry(chr_code);
             let fa = font_area_entry(chr_code);
             if fa == CC_AAT_FONT_FLAG || fa == CC_OTGR_FONT_FLAG {
-                let len = crate::string_pool::length(font_name_str);
+                let len = crate::string_pool::length_global(font_name_str);
                 let mut quote_char = b'"' as i32;
                 for n in 0..len {
                     if str_pool_entry(str_start(font_name_str - 65536) + n) == b'"' as u16 {
@@ -3202,9 +3202,9 @@ pub unsafe extern "C" fn issue_message() {
     if pool_ptr() + 1 > pool_size() {
         crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
     }
-    let s = crate::string_pool::make_string();
+    let s = crate::string_pool::make_string_global();
     if c == 0 {
-        let len = crate::string_pool::length(s);
+        let len = crate::string_pool::length_global(s);
         if term_offset() + len > max_print_line() - 2 {
             crate::output::print_ln();
         } else if term_offset() > 0 || file_offset() > 0 {
@@ -3747,7 +3747,7 @@ pub unsafe extern "C" fn char_warning(f: i32, c: i32) {
         crate::output::print_char(c);
     }
     crate::globals::set_selector(prev_sel);
-    let s = crate::string_pool::make_string();
+    let s = crate::string_pool::make_string_global();
     let chr_c = crate::texmfmp::gettexstring(s);
     // flush_string: str_ptr--, pool_ptr = str_start[str_ptr - TOO_BIG_CHAR]
     set_str_ptr(str_ptr() - 1);

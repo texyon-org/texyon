@@ -2695,7 +2695,7 @@ pub unsafe fn out_what(p: i32) {
                     set_cur_name(mem_b32s1(p + 1));
                     set_cur_area(mem_b32s0(p + 2));
                     set_cur_ext(mem_b32s1(p + 2));
-                    if crate::string_pool::length(cur_ext()) == 0 {
+                    if crate::string_pool::length_global(cur_ext()) == 0 {
                         set_cur_ext(crate::texmfmp::maketexstring(c".tex".as_ptr()));
                     }
                     crate::io::pack_file_name(cur_name(), cur_area(), cur_ext());

@@ -3054,7 +3054,7 @@ pub unsafe extern "C" fn hyphenate() {
             break;
         }
 
-        if crate::string_pool::length(k) == hn_v as i32 {
+        if crate::string_pool::length_global(k) == hn_v as i32 {
             let mut j = 1;
             let mut u = str_start(k - TOO_BIG_CHAR);
             loop {

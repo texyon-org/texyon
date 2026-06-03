@@ -1683,7 +1683,7 @@ pub unsafe extern "C" fn pseudo_start() {
     if pool_ptr() + 1 > pool_size() {
         crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
     }
-    let s = crate::string_pool::make_string();
+    let s = crate::string_pool::make_string_global();
     set_str_pool(pool_ptr(), b' ' as u16);
     let mut l = str_start(s - TOO_BIG_CHAR);
     let nl = eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR);
@@ -3717,7 +3717,7 @@ pub unsafe extern "C" fn tokens_to_string(p: i32) -> i32 {
     set_selector(SELECTOR_NEW_STRING);
     crate::output::show_token_list(mem_b32s1(p), crate::mem::TEX_NULL, pool_size() - pool_ptr());
     set_selector(old_setting() as i32);
-    crate::string_pool::make_string()
+    crate::string_pool::make_string_global()
 }
 
 // ---------------------------------------------------------------------------
@@ -3763,8 +3763,8 @@ pub unsafe extern "C" fn compare_strings() {
         }
     };
 
-    crate::string_pool::flush_str(s2);
-    crate::string_pool::flush_str(s1);
+    crate::string_pool::flush_str_global(s2);
+    crate::string_pool::flush_str_global(s1);
     set_cur_val(result);
     set_cur_val_level(INT_VAL as u8);
 }

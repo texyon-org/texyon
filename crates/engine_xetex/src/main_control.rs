@@ -3149,7 +3149,7 @@ pub unsafe extern "C" fn new_font(a: i16) {
                 crate::globals::pool_size() - crate::globals::init_pool_ptr(),
             );
         }
-        crate::string_pool::make_string()
+        crate::string_pool::make_string_global()
     };
 
     if a >= 4 {
@@ -3211,13 +3211,13 @@ pub unsafe extern "C" fn new_font(a: i16) {
     let f = 'search: {
         let mut fi = FONT_BASE + 1;
         while fi <= crate::globals::font_ptr() {
-            if crate::string_pool::str_eq_str(
+            if crate::string_pool::str_eq_str_global(
                 crate::globals::font_name_entry(fi),
                 crate::globals::cur_name(),
-            ) && ((crate::string_pool::length(crate::globals::cur_area()) == 0
+            ) && ((crate::string_pool::length_global(crate::globals::cur_area()) == 0
                 && (crate::globals::font_area_entry(fi) == AAT_FONT_FLAG
                     || crate::globals::font_area_entry(fi) == OTGR_FONT_FLAG))
-                || crate::string_pool::str_eq_str(
+                || crate::string_pool::str_eq_str_global(
                     crate::globals::font_area_entry(fi),
                     crate::globals::cur_area(),
                 ))
@@ -3232,11 +3232,11 @@ pub unsafe extern "C" fn new_font(a: i16) {
                     break 'search fi;
                 }
             }
-            crate::string_pool::append_str(crate::globals::cur_area());
-            crate::string_pool::append_str(crate::globals::cur_name());
-            crate::string_pool::append_str(crate::globals::cur_ext());
-            let ms = crate::string_pool::make_string();
-            if crate::string_pool::str_eq_str(crate::globals::font_name_entry(fi), ms) {
+            crate::string_pool::append_str_global(crate::globals::cur_area());
+            crate::string_pool::append_str_global(crate::globals::cur_name());
+            crate::string_pool::append_str_global(crate::globals::cur_ext());
+            let ms = crate::string_pool::make_string_global();
+            if crate::string_pool::str_eq_str_global(crate::globals::font_name_entry(fi), ms) {
                 set_str_ptr(str_ptr() - 1);
                 set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
                 if crate::globals::font_area_entry(fi) == AAT_FONT_FLAG

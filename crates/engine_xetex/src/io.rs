@@ -900,7 +900,7 @@ pub unsafe fn end_name() {
         let new_start = str_start(str_ptr() - TOO_BIG_CHAR) + area_delimiter();
         crate::globals::set_str_start(str_ptr() + 1 - TOO_BIG_CHAR, new_start);
         set_str_ptr(str_ptr() + 1);
-        let temp_str = crate::string_pool::search_string(cur_area());
+        let temp_str = crate::string_pool::search_string_global(cur_area());
         if temp_str > 0 {
             set_cur_area(temp_str);
             set_str_ptr(str_ptr() - 1);
@@ -918,7 +918,7 @@ pub unsafe fn end_name() {
 
     if ext_delimiter() == 0 {
         set_cur_ext(EMPTY_STRING);
-        set_cur_name(crate::string_pool::slow_make_string());
+        set_cur_name(crate::string_pool::slow_make_string_global());
     } else {
         set_cur_name(str_ptr());
         // str_start[str_ptr+1 - TOO_BIG_CHAR] = str_start[str_ptr - TOO_BIG_CHAR]
@@ -928,9 +928,9 @@ pub unsafe fn end_name() {
         crate::globals::set_str_start(str_ptr() + 1 - TOO_BIG_CHAR, new_start);
         set_str_ptr(str_ptr() + 1);
 
-        set_cur_ext(crate::string_pool::make_string());
+        set_cur_ext(crate::string_pool::make_string_global());
         set_str_ptr(str_ptr() - 1);
-        let temp_str = crate::string_pool::search_string(cur_name());
+        let temp_str = crate::string_pool::search_string_global(cur_name());
         if temp_str > 0 {
             set_cur_name(temp_str);
             set_str_ptr(str_ptr() - 1);
@@ -946,7 +946,7 @@ pub unsafe fn end_name() {
             }
             set_pool_ptr(pp - shift);
         }
-        set_cur_ext(crate::string_pool::slow_make_string());
+        set_cur_ext(crate::string_pool::slow_make_string_global());
     }
 }
 /// translated from xetex-xetex0.c:7928 (make_name_string)
@@ -969,7 +969,7 @@ pub unsafe extern "C" fn make_name_string() -> i32 {
         set_pool_ptr(pool_ptr() + 1);
     }
 
-    let result = crate::string_pool::make_string();
+    let result = crate::string_pool::make_string_global();
     let save_area_delimiter = area_delimiter();
     let save_ext_delimiter = ext_delimiter();
     let save_name_in_progress = name_in_progress();
@@ -1019,7 +1019,7 @@ unsafe fn scan_file_name_braced() {
     );
     set_selector(old_setting() as i32);
 
-    let s = crate::string_pool::make_string();
+    let s = crate::string_pool::make_string_global();
     crate::mem::delete_token_ref_global(def_ref());
     set_def_ref(save_def_ref);
     set_cur_cs(save_cur_cs);
@@ -1253,7 +1253,7 @@ pub unsafe extern "C" fn start_input(primary_input_name: *const libc::c_char) {
     );
 
     if cur_input().name == str_ptr() - 1 {
-        let temp_str = crate::string_pool::search_string(cur_input().name);
+        let temp_str = crate::string_pool::search_string_global(cur_input().name);
         if temp_str > 0 {
             set_cur_input_name(temp_str);
             set_str_ptr(str_ptr() - 1);
@@ -1267,7 +1267,7 @@ pub unsafe extern "C" fn start_input(primary_input_name: *const libc::c_char) {
     }
 
     let fss = full_source_filename_stack(in_open());
-    if term_offset() + crate::string_pool::length(fss) > max_print_line() - 2 {
+    if term_offset() + crate::string_pool::length_global(fss) > max_print_line() - 2 {
         crate::output::print_ln();
     } else if term_offset() > 0 || file_offset() > 0 {
         crate::output::print_char(b' ' as i32);
@@ -1326,9 +1326,9 @@ pub unsafe fn pack_file_name(n: i32, a: i32, e: i32) {
         fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     }
 
-    let len_a = crate::string_pool::length(a) as usize;
-    let len_n = crate::string_pool::length(n) as usize;
-    let len_e = crate::string_pool::length(e) as usize;
+    let len_a = crate::string_pool::length_global(a) as usize;
+    let len_n = crate::string_pool::length_global(n) as usize;
+    let len_e = crate::string_pool::length_global(e) as usize;
     // Each TeX character is at most 3 UTF-8 bytes; +2 for NUL terminators.
     let work_size = (len_a + len_n + len_e) * 3 + 2;
     let work_buffer = xmalloc(work_size as libc::size_t) as *mut libc::c_char;

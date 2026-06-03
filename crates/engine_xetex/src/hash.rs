@@ -3,10 +3,10 @@
 //! Translated from xetex-xetex0.c.
 use crate::consts::{BIGGEST_CHAR, EQTB_SIZE, TOO_BIG_CHAR};
 use crate::errors::overflow;
-use crate::string_pool::length;
-use crate::string_pool::make_string;
-use crate::string_pool::str_eq_buf;
-use crate::string_pool::str_eq_str;
+use crate::string_pool::length_global as length;
+use crate::string_pool::make_string_global as make_string;
+use crate::string_pool::str_eq_buf_global as str_eq_buf;
+use crate::string_pool::str_eq_str_global as str_eq_str;
 
 use crate::globals::{
     buffer_entry, hash_extra, hash_high, hash_s0, hash_s1, hash_used, init_pool_ptr,

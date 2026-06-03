@@ -610,7 +610,7 @@ pub unsafe extern "C" fn conv_toks() {
             let save_wi = warning_index();
             let save_dr = def_ref();
             let u = if str_start(str_ptr() - TOO_BIG_CHAR) < pool_ptr() {
-                crate::string_pool::make_string()
+                crate::string_pool::make_string_global()
             } else {
                 0
             };
@@ -657,7 +657,7 @@ pub unsafe extern "C" fn conv_toks() {
             let save_wi = warning_index();
             let save_dr = def_ref();
             let u = if str_start(str_ptr() - TOO_BIG_CHAR) < pool_ptr() {
-                crate::string_pool::make_string()
+                crate::string_pool::make_string_global()
             } else {
                 0
             };
@@ -676,7 +676,7 @@ pub unsafe extern "C" fn conv_toks() {
                 pool_size() - pool_ptr(),
             );
             set_selector(old_sel);
-            s = crate::string_pool::make_string();
+            s = crate::string_pool::make_string_global();
             crate::mem::delete_token_ref_global(def_ref());
             set_def_ref(save_dr);
             set_warning_index(save_wi);
@@ -699,7 +699,7 @@ pub unsafe extern "C" fn conv_toks() {
             let save_wi = warning_index();
             let save_dr = def_ref();
             let u = if str_start(str_ptr() - TOO_BIG_CHAR) < pool_ptr() {
-                crate::string_pool::make_string()
+                crate::string_pool::make_string_global()
             } else {
                 0
             };
@@ -718,7 +718,7 @@ pub unsafe extern "C" fn conv_toks() {
                 pool_size() - pool_ptr(),
             );
             set_selector(old_sel);
-            s = crate::string_pool::make_string();
+            s = crate::string_pool::make_string_global();
             crate::mem::delete_token_ref_global(def_ref());
             set_def_ref(save_dr);
             set_warning_index(save_wi);
@@ -741,7 +741,7 @@ pub unsafe extern "C" fn conv_toks() {
             let save_wi = warning_index();
             let save_dr = def_ref();
             let u = if str_start(str_ptr() - TOO_BIG_CHAR) < pool_ptr() {
-                crate::string_pool::make_string()
+                crate::string_pool::make_string_global()
             } else {
                 0
             };
@@ -761,7 +761,7 @@ pub unsafe extern "C" fn conv_toks() {
                 pool_size() - pool_ptr(),
             );
             set_selector(old_sel);
-            s = crate::string_pool::make_string();
+            s = crate::string_pool::make_string_global();
             crate::mem::delete_token_ref_global(def_ref());
             set_def_ref(save_dr);
             set_warning_index(save_wi);
@@ -784,7 +784,7 @@ pub unsafe extern "C" fn conv_toks() {
             let save_wi = warning_index();
             let save_dr = def_ref();
             let u = if str_start(str_ptr() - TOO_BIG_CHAR) < pool_ptr() {
-                crate::string_pool::make_string()
+                crate::string_pool::make_string_global()
             } else {
                 0
             };
@@ -831,7 +831,7 @@ pub unsafe extern "C" fn conv_toks() {
                 pool_size() - pool_ptr(),
             );
             set_selector(old_sel);
-            s = crate::string_pool::make_string();
+            s = crate::string_pool::make_string_global();
             crate::mem::delete_token_ref_global(def_ref());
             set_def_ref(save_dr);
             set_warning_index(save_wi);
@@ -854,7 +854,7 @@ pub unsafe extern "C" fn conv_toks() {
             let save_wi = warning_index();
             let save_dr = def_ref();
             let u = if str_start(str_ptr() - TOO_BIG_CHAR) < pool_ptr() {
-                crate::string_pool::make_string()
+                crate::string_pool::make_string_global()
             } else {
                 0
             };
@@ -992,7 +992,7 @@ pub unsafe extern "C" fn conv_toks() {
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 let mut quote_char: i32 = '"' as i32;
                 let base = str_start(font_name_str - TOO_BIG_CHAR);
-                for i in 0..crate::string_pool::length(font_name_str) {
+                for i in 0..crate::string_pool::length_global(font_name_str) {
                     if str_pool_entry(base + i) == b'"' as u16 {
                         quote_char = '\'' as i32;
                     }

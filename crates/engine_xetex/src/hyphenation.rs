@@ -700,7 +700,7 @@ pub unsafe extern "C" fn new_hyph_exceptions() {
                             set_pool_ptr(pool_ptr() + 1);
                         }
 
-                        let mut s = crate::string_pool::make_string();
+                        let mut s = crate::string_pool::make_string_global();
 
                         if hyph_next() <= HYPH_PRIME {
                             while hyph_next() > 0 && hyph_word_entry(hyph_next() - 1) > 0 {
@@ -722,24 +722,25 @@ pub unsafe extern "C" fn new_hyph_exceptions() {
                             let k = hyph_word_entry(h);
 
                             // Check if this slot holds the same word
-                            let matched =
-                                if crate::string_pool::length(k) != crate::string_pool::length(s) {
-                                    false
-                                } else {
-                                    let mut u = str_start(k - TOO_BIG_CHAR);
-                                    let mut v = str_start(s - TOO_BIG_CHAR);
-                                    let end = str_start(k + 1 - TOO_BIG_CHAR);
-                                    let mut ok = true;
-                                    while u != end {
-                                        if str_pool_entry(u) != str_pool_entry(v) {
-                                            ok = false;
-                                            break;
-                                        }
-                                        u += 1;
-                                        v += 1;
+                            let matched = if crate::string_pool::length_global(k)
+                                != crate::string_pool::length_global(s)
+                            {
+                                false
+                            } else {
+                                let mut u = str_start(k - TOO_BIG_CHAR);
+                                let mut v = str_start(s - TOO_BIG_CHAR);
+                                let end = str_start(k + 1 - TOO_BIG_CHAR);
+                                let mut ok = true;
+                                while u != end {
+                                    if str_pool_entry(u) != str_pool_entry(v) {
+                                        ok = false;
+                                        break;
                                     }
-                                    ok
-                                };
+                                    u += 1;
+                                    v += 1;
+                                }
+                                ok
+                            };
 
                             if matched {
                                 // found: merge into existing slot

@@ -310,8 +310,8 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
             }
         }
 
-        name_too_long =
-            crate::string_pool::length(nom) > 255 || crate::string_pool::length(aire) > 255;
+        name_too_long = crate::string_pool::length_global(nom) > 255
+            || crate::string_pool::length_global(aire) > 255;
         if name_too_long {
             bad!();
         }
@@ -956,12 +956,12 @@ pub unsafe extern "C" fn load_native_font(u: i32, nom: i32, aire: i32, mut s: i3
         crate::globals::set_pool_ptr(crate::globals::pool_ptr() + 1);
     }
 
-    let full_name = crate::string_pool::make_string();
+    let full_name = crate::string_pool::make_string_global();
 
     let mut f = FONT_BASE + 1;
     while f <= crate::globals::font_ptr() {
         if crate::globals::font_area_entry(f) == crate::globals::native_font_type_flag()
-            && crate::string_pool::str_eq_str(crate::globals::font_name_entry(f), full_name)
+            && crate::string_pool::str_eq_str_global(crate::globals::font_name_entry(f), full_name)
             && crate::globals::font_size_entry(f) == actual_size
         {
             release_font_engine(font_engine, crate::globals::native_font_type_flag());

@@ -177,7 +177,7 @@ pub unsafe extern "C" fn get_strings_started() {
     set_str_start(0, 0);
     set_str_ptr(TOO_BIG_CHAR);
 
-    if crate::string_pool::load_pool_strings(pool_size() - string_vacancies()) == 0 {
+    if crate::string_pool::load_pool_strings_global(pool_size() - string_vacancies()) == 0 {
         _tt_abort(c"must increase pool_size".as_ptr());
     }
 }

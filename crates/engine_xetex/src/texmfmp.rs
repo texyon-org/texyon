@@ -253,7 +253,7 @@ pub unsafe fn maketexstring(s: *const libc::c_char) -> i32 {
         }
     }
 
-    crate::string_pool::make_string()
+    crate::string_pool::make_string_global()
 }
 
 // ---------------------------------------------------------------------------

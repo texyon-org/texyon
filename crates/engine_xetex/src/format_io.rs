@@ -248,7 +248,7 @@ pub unsafe extern "C" fn store_fmt_file() {
         crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
     }
 
-    set_format_ident(crate::string_pool::make_string());
+    set_format_ident(crate::string_pool::make_string_global());
     crate::io::pack_job_name(c".fmt".as_ptr());
 
     let fmt_out = ttstub_output_open(crate::globals::name_of_file(), 0);

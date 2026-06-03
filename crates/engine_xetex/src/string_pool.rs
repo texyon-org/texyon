@@ -6,19 +6,10 @@
 //! Single-character strings below 65536 are stored implicitly (no pool slot).
 
 use crate::consts::TOO_BIG_CHAR;
-use crate::globals::{
-    buffer_entry, init_pool_ptr, init_str_ptr, max_strings, pool_ptr, pool_size, set_pool_ptr,
-    set_str_pool, set_str_ptr, set_str_start, str_pool_entry, str_ptr, str_start,
-};
-
-// TOO_BIG_CHAR: the threshold above which str_number values index the pool.
-// EMPTY_STRING = TOO_BIG_CHAR + 1 (xetex-stringpool.h:12).
-use crate::errors::overflow;
+use crate::scan::NodeRecycleAbort;
+use crate::state::StringsState;
 
 const EMPTY_STRING: i32 = 65537;
-
-// C function still needed — not yet translated.
-extern "C" {}
 
 // ---------------------------------------------------------------------------
 // length
@@ -27,9 +18,10 @@ extern "C" {}
 /// Return the number of UTF-16 code units in string `s`.
 ///
 /// translated from xetex-stringpool.c:42 (length)
-pub unsafe fn length(s: i32) -> i32 {
+pub fn length(strings: &StringsState, s: i32) -> i32 {
     if s >= TOO_BIG_CHAR {
-        return str_start(s + 1 - TOO_BIG_CHAR) - str_start(s - TOO_BIG_CHAR);
+        return strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize]
+            - strings.str_start[(s - TOO_BIG_CHAR) as usize];
     }
     if (32..127).contains(&s) {
         return 1;
@@ -43,6 +35,10 @@ pub unsafe fn length(s: i32) -> i32 {
     8
 }
 
+pub unsafe fn length_global(s: i32) -> i32 {
+    crate::state::with_state(|st| length(&st.strings, s))
+}
+
 // ---------------------------------------------------------------------------
 // make_string
 // ---------------------------------------------------------------------------
@@ -50,16 +46,27 @@ pub unsafe fn length(s: i32) -> i32 {
 /// Finalise a string being assembled in the pool and return its str_number.
 ///
 /// translated from xetex-stringpool.c:57 (make_string)
-pub unsafe fn make_string() -> i32 {
-    if str_ptr() == max_strings() {
-        overflow(
-            c"number of strings".as_ptr(),
-            max_strings() - init_str_ptr(),
-        );
+pub fn make_string(strings: &mut StringsState) -> Result<i32, NodeRecycleAbort> {
+    if strings.str_ptr == strings.max_strings {
+        return Err(NodeRecycleAbort::Overflow);
     }
-    set_str_ptr(str_ptr() + 1);
-    set_str_start(str_ptr() - TOO_BIG_CHAR, pool_ptr());
-    str_ptr() - 1
+    strings.str_ptr += 1;
+    strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize] = strings.pool_ptr;
+    Ok(strings.str_ptr - 1)
+}
+
+pub unsafe fn make_string_global() -> i32 {
+    let res = crate::state::with_state_mut(|st| make_string(&mut st.strings));
+    match res {
+        Ok(val) => val,
+        Err(NodeRecycleAbort::Overflow) => crate::errors::overflow(
+            c"number of strings".as_ptr(),
+            crate::globals::max_strings() - crate::globals::init_str_ptr(),
+        ),
+        Err(e) => {
+            crate::scan::node_recycle_abort(e);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -70,19 +77,33 @@ pub unsafe fn make_string() -> i32 {
 /// being built by a prior `make_string` caller).
 ///
 /// translated from xetex-stringpool.c:69 (append_str)
-#[no_mangle]
-pub unsafe extern "C" fn append_str(s: i32) {
-    let i = length(s);
-    if pool_ptr() + i > pool_size() {
-        overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+pub fn append_str(strings: &mut StringsState, s: i32) -> Result<(), NodeRecycleAbort> {
+    let i = length(strings, s);
+    if strings.pool_ptr + i > strings.pool_size {
+        return Err(NodeRecycleAbort::Overflow);
     }
-    let mut j = str_start(s - TOO_BIG_CHAR);
+    let mut j = strings.str_start[(s - TOO_BIG_CHAR) as usize];
     let mut remaining = i;
     while remaining > 0 {
-        set_str_pool(pool_ptr(), str_pool_entry(j));
-        set_pool_ptr(pool_ptr() + 1);
+        strings.str_pool[strings.pool_ptr as usize] = strings.str_pool[j as usize];
+        strings.pool_ptr += 1;
         j += 1;
         remaining -= 1;
+    }
+    Ok(())
+}
+
+pub unsafe fn append_str_global(s: i32) {
+    let res = crate::state::with_state_mut(|st| append_str(&mut st.strings, s));
+    match res {
+        Ok(()) => {}
+        Err(NodeRecycleAbort::Overflow) => crate::errors::overflow(
+            c"pool size".as_ptr(),
+            crate::globals::pool_size() - crate::globals::init_pool_ptr(),
+        ),
+        Err(e) => {
+            crate::scan::node_recycle_abort(e);
+        }
     }
 }
 
@@ -93,25 +114,31 @@ pub unsafe extern "C" fn append_str(s: i32) {
 /// Return true if string `s` equals the buffer run starting at position `k`.
 ///
 /// translated from xetex-stringpool.c:91 (str_eq_buf)
-pub unsafe fn str_eq_buf(s: i32, mut k: i32) -> bool {
-    let mut j = str_start(s - TOO_BIG_CHAR);
-    while j < str_start(s + 1 - TOO_BIG_CHAR) {
-        let bk = buffer_entry(k);
+pub fn str_eq_buf(strings: &StringsState, buffer: &[i32], s: i32, mut k: i32) -> bool {
+    let mut j = strings.str_start[(s - TOO_BIG_CHAR) as usize];
+    while j < strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize] {
+        let bk = buffer[k as usize];
         if bk >= TOO_BIG_CHAR {
             // Surrogate pair in buffer: two pool slots needed.
             let hi = 0xD800 + (bk - TOO_BIG_CHAR) / 1024;
             let lo = 0xDC00 + (bk - TOO_BIG_CHAR) % 1024;
-            if str_pool_entry(j) as i32 != hi || str_pool_entry(j + 1) as i32 != lo {
+            if strings.str_pool[j as usize] as i32 != hi
+                || strings.str_pool[(j + 1) as usize] as i32 != lo
+            {
                 return false;
             }
             j += 1;
-        } else if str_pool_entry(j) as i32 != bk {
+        } else if strings.str_pool[j as usize] as i32 != bk {
             return false;
         }
         j += 1;
         k += 1;
     }
     true
+}
+
+pub unsafe fn str_eq_buf_global(s: i32, k: i32) -> bool {
+    crate::state::with_state(|st| str_eq_buf(&st.strings, &st.input.buffer, s, k))
 }
 
 // ---------------------------------------------------------------------------
@@ -121,35 +148,39 @@ pub unsafe fn str_eq_buf(s: i32, mut k: i32) -> bool {
 /// Return true if strings `s` and `t` have the same content.
 ///
 /// translated from xetex-stringpool.c:119 (str_eq_str)
-pub unsafe fn str_eq_str(s: i32, t: i32) -> bool {
-    if length(s) != length(t) {
+pub fn str_eq_str(strings: &StringsState, s: i32, t: i32) -> bool {
+    if length(strings, s) != length(strings, t) {
         return false;
     }
-    if length(s) == 1 {
+    if length(strings, s) == 1 {
         // Single-code-unit strings: may be implicit (< TOO_BIG_CHAR) or pooled.
         let cs = if s < TOO_BIG_CHAR {
             s as u16
         } else {
-            str_pool_entry(str_start(s - TOO_BIG_CHAR))
+            strings.str_pool[strings.str_start[(s - TOO_BIG_CHAR) as usize] as usize]
         };
         let ct = if t < TOO_BIG_CHAR {
             t as u16
         } else {
-            str_pool_entry(str_start(t - TOO_BIG_CHAR))
+            strings.str_pool[strings.str_start[(t - TOO_BIG_CHAR) as usize] as usize]
         };
         return cs == ct;
     }
     // General case: both are pooled strings.
-    let mut j = str_start(s - TOO_BIG_CHAR);
-    let mut k = str_start(t - TOO_BIG_CHAR);
-    while j < str_start(s + 1 - TOO_BIG_CHAR) {
-        if str_pool_entry(j) != str_pool_entry(k) {
+    let mut j = strings.str_start[(s - TOO_BIG_CHAR) as usize];
+    let mut k = strings.str_start[(t - TOO_BIG_CHAR) as usize];
+    while j < strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize] {
+        if strings.str_pool[j as usize] != strings.str_pool[k as usize] {
             return false;
         }
         j += 1;
         k += 1;
     }
     true
+}
+
+pub unsafe fn str_eq_str_global(s: i32, t: i32) -> bool {
+    crate::state::with_state(|st| str_eq_str(&st.strings, s, t))
 }
 
 // ---------------------------------------------------------------------------
@@ -159,20 +190,23 @@ pub unsafe fn str_eq_str(s: i32, t: i32) -> bool {
 /// Find an existing string equal to `search` and return it; return 0 if none.
 ///
 /// translated from xetex-stringpool.c:162 (search_string)
-#[no_mangle]
-pub unsafe extern "C" fn search_string(search: i32) -> i32 {
-    let len = length(search);
+pub fn search_string(strings: &StringsState, search: i32) -> i32 {
+    let len = length(strings, search);
     if len == 0 {
         return EMPTY_STRING;
     }
     let mut s = search - 1;
     while s > TOO_BIG_CHAR - 1 {
-        if length(s) == len && str_eq_str(s, search) {
+        if length(strings, s) == len && str_eq_str(strings, s, search) {
             return s;
         }
         s -= 1;
     }
     0
+}
+
+pub unsafe fn search_string_global(search: i32) -> i32 {
+    crate::state::with_state(|st| search_string(&st.strings, search))
 }
 
 // ---------------------------------------------------------------------------
@@ -183,16 +217,29 @@ pub unsafe extern "C" fn search_string(search: i32) -> i32 {
 /// discard the new pool entry and return the existing str_number.
 ///
 /// translated from xetex-stringpool.c:190 (slow_make_string)
-#[no_mangle]
-pub unsafe extern "C" fn slow_make_string() -> i32 {
-    let t = make_string();
-    let s = search_string(t);
+pub fn slow_make_string(strings: &mut StringsState) -> Result<i32, NodeRecycleAbort> {
+    let t = make_string(strings)?;
+    let s = search_string(strings, t);
     if s > 0 {
-        set_str_ptr(str_ptr() - 1);
-        set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
-        return s;
+        strings.str_ptr -= 1;
+        strings.pool_ptr = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
+        return Ok(s);
     }
-    t
+    Ok(t)
+}
+
+pub unsafe fn slow_make_string_global() -> i32 {
+    let res = crate::state::with_state_mut(|st| slow_make_string(&mut st.strings));
+    match res {
+        Ok(val) => val,
+        Err(NodeRecycleAbort::Overflow) => crate::errors::overflow(
+            c"number of strings".as_ptr(),
+            crate::globals::max_strings() - crate::globals::init_str_ptr(),
+        ),
+        Err(e) => {
+            crate::scan::node_recycle_abort(e);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -203,8 +250,10 @@ pub unsafe extern "C" fn slow_make_string() -> i32 {
 /// str_number on success, 0 if the pool would overflow.
 ///
 /// translated from xetex-stringpool.c:17 (load_pool_strings)
-#[no_mangle]
-pub unsafe extern "C" fn load_pool_strings(spare_size: i32) -> i32 {
+pub fn load_pool_strings(
+    strings: &mut StringsState,
+    spare_size: i32,
+) -> Result<i32, NodeRecycleAbort> {
     // The C version iterates a NULL-terminated `string_constants[]` array.
     // Tectonic's array has exactly two entries: a sentinel string and "",
     // so the loop body runs once (for the sentinel) and then once more for "".
@@ -218,16 +267,26 @@ pub unsafe extern "C" fn load_pool_strings(spare_size: i32) -> i32 {
         let len = s.len();
         total_len += len;
         if total_len >= spare_size as usize {
-            return 0;
+            return Ok(0);
         }
         for &byte in *s {
-            set_str_pool(pool_ptr(), byte as u16);
-            set_pool_ptr(pool_ptr() + 1);
+            strings.str_pool[strings.pool_ptr as usize] = byte as u16;
+            strings.pool_ptr += 1;
         }
-        g = make_string();
+        g = make_string(strings)?;
     }
 
-    g
+    Ok(g)
+}
+
+pub unsafe fn load_pool_strings_global(spare_size: i32) -> i32 {
+    let res = crate::state::with_state_mut(|st| load_pool_strings(&mut st.strings, spare_size));
+    match res {
+        Ok(val) => val,
+        Err(e) => {
+            crate::scan::node_recycle_abort(e);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -237,10 +296,13 @@ pub unsafe extern "C" fn load_pool_strings(spare_size: i32) -> i32 {
 /// Free the top-of-pool string if it equals s.
 ///
 /// translated from xetex-xetex0.c:15948 (flush_str)
-#[no_mangle]
-pub unsafe extern "C" fn flush_str(s: i32) {
-    if s == str_ptr() - 1 {
-        set_str_ptr(str_ptr() - 1);
-        set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+pub fn flush_str(strings: &mut StringsState, s: i32) {
+    if s == strings.str_ptr - 1 {
+        strings.str_ptr -= 1;
+        strings.pool_ptr = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
     }
+}
+
+pub unsafe fn flush_str_global(s: i32) {
+    crate::state::with_state_mut(|st| flush_str(&mut st.strings, s));
 }

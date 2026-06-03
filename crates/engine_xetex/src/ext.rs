@@ -2814,7 +2814,7 @@ pub unsafe extern "C" fn do_extension() {
 
         XETEX_LINEBREAK_LOCALE_EXTENSION_CODE_DE => {
             crate::io::scan_file_name();
-            if crate::string_pool::length(cur_name()) == 0 {
+            if crate::string_pool::length_global(cur_name()) == 0 {
                 set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE_DE, 0);
             } else {
                 set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE_DE, cur_name());

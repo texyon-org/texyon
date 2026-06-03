@@ -8,6 +8,28 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+
+
+## Idiom session 132 — 2026-06-03 — workstream 01 Phase C: thread the entire string_pool.rs module
+
+**Type:** execution (workstream 01, Phase C — thread `string_pool.rs`). **1 commit.**
+Dashboard **29/2/7/4** is green. Warnings **50 → 50** throughout (no §7 trap).
+
+### What executed
+
+* **Threaded the entire `src/string_pool.rs` module:** Replaced all global accessor calls with direct parameter threading. Threaded `length`, `make_string`, `append_str`, `str_eq_buf`, `str_eq_str`, `search_string`, `slow_make_string`, `load_pool_strings`, and `flush_str` to take narrow states they need (e.g., `strings: &mut StringsState`, `strings: &StringsState`, `buffer: &[i32]`).
+* **Transitional Global Wrappers:** Defined `length_global`, `make_string_global`, `append_str_global`, `str_eq_buf_global`, `str_eq_str_global`, `search_string_global`, `slow_make_string_global`, `load_pool_strings_global`, and `flush_str_global` using §4a borrow-dropping/island rules to handle legacy callers.
+* **Repointed legacy callers:** Updated all callers in `src/engine.rs`, `src/expand.rs`, `src/ext.rs`, `src/fonts.rs`, `src/format_io.rs`, `src/hash.rs`, `src/hyphenation.rs`, `src/io.rs`, `src/linebreak.rs`, `src/main_control.rs`, `src/output.rs`, `src/scan.rs`, `src/shipout.rs`, and `src/texmfmp.rs`.
+* **Cleaned C-FFI exports:** Removed `#[no_mangle] extern "C"` exports from the threaded internal functions since they are no longer called from C.
+
+### Metrics
+
+`#[no_mangle]` **309 → 304** (−5); `unsafe fn` **345** (flat); `with_state` sites **1103 → 1112** (+9 net). Warnings **50** (flat).
+
+### Handoff
+
+Continuing Phase-C threading of other modules.
+
 ## Idiom session 131 — 2026-06-03 — workstream 01 Phase C: thread script/superscript-processing helper slice in math.rs
 
 **Type:** execution (workstream 01, Phase C — thread the script/superscript-processing helper slice in math.rs). **1 commit.**
