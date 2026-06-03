@@ -1755,14 +1755,6 @@ pub(crate) fn set_font_info_b32s1(k: i32, v: i32) {
     });
 }
 
-/// Writes `font_info[k].b16 = v`.
-#[inline]
-pub(crate) fn set_font_info_b16(k: i32, v: crate::mem_types::B16x4) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.font_info[k as usize].b16 = v;
-    });
-}
-
 /// Returns `fmem_ptr`.
 #[inline]
 pub(crate) fn fmem_ptr() -> i32 {
@@ -2173,11 +2165,6 @@ pub(crate) fn set_kern_base_entry(f: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.fonts.kern_base[f as usize] = v;
     });
-}
-/// Returns `exten_base[f]`.
-#[inline]
-pub(crate) fn exten_base_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.exten_base[f as usize])
 }
 /// Writes `exten_base[f] = v`.
 #[inline]

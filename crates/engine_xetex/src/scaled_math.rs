@@ -183,15 +183,28 @@ pub unsafe fn x_over_n(mut x: i32, mut n: i32) -> i32 {
 ///
 /// translated from xetex-scaledmath.c:105 (xn_over_d)
 #[no_mangle]
-pub unsafe extern "C" fn xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
+pub unsafe extern "C" fn xn_over_d(x: i32, n: i32, d: i32) -> i32 {
+    let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
+    if overflowed {
+        set_arith_error(true);
+    }
+    set_tex_remainder(remainder);
+    quotient
+}
+
+/// Pure arithmetic core of [`xn_over_d`]: returns
+/// `(quotient, remainder, overflowed)` with **no** global side effects (unlike
+/// `xn_over_d`, which sets `tex_remainder`, and `arith_error` on overflow).
+///
+/// Phase-C callers that compute `xn_over_d` while holding a state borrow use
+/// this and apply the side effects (`set_tex_remainder` / `set_arith_error`)
+/// after the borrow drops — see `fonts::read_font_info`.
+pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
     // scaled_t is i32
 
-    let positive: bool;
-    if x >= 0 {
-        positive = true;
-    } else {
+    let positive = x >= 0;
+    if !positive {
         x = x.wrapping_neg();
-        positive = false;
     }
 
     // 32768 == 2^15; the code splits x into high/low halves to keep
@@ -205,18 +218,15 @@ pub unsafe extern "C" fn xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
     let mut u = (x / 32768).wrapping_mul(n).wrapping_add(t / 32768);
     let v = (u % d).wrapping_mul(32768).wrapping_add(t % 32768);
 
-    if u / d >= 32768 {
-        set_arith_error(true);
-    } else {
+    let overflowed = u / d >= 32768;
+    if !overflowed {
         u = 32768i32.wrapping_mul(u / d).wrapping_add(v / d);
     }
 
     if positive {
-        set_tex_remainder(v % d);
-        u
+        (u, v % d, overflowed)
     } else {
-        set_tex_remainder((v % d).wrapping_neg());
-        u.wrapping_neg()
+        (u.wrapping_neg(), (v % d).wrapping_neg(), overflowed)
     }
 }
 

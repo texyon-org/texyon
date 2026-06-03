@@ -886,6 +886,111 @@ impl FontState {
     pub(crate) fn skew_char_entry(&self, f: i32) -> i32 {
         self.skew_char[f as usize]
     }
+
+    // ---- setters mirroring the `globals.rs` font accessors (Phase-C, session
+    // 129). Each is a plain field write, identical to the corresponding
+    // `with_state_mut` accessor body — no width conversion, so parity-exact. ----
+
+    #[inline]
+    pub(crate) fn set_char_base_entry(&mut self, f: i32, v: i32) {
+        self.char_base[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_width_base_entry(&mut self, f: i32, v: i32) {
+        self.width_base[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_height_base_entry(&mut self, f: i32, v: i32) {
+        self.height_base[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_depth_base_entry(&mut self, f: i32, v: i32) {
+        self.depth_base[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_italic_base_entry(&mut self, f: i32, v: i32) {
+        self.italic_base[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_lig_kern_base_entry(&mut self, f: i32, v: i32) {
+        self.lig_kern_base[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_kern_base_entry(&mut self, f: i32, v: i32) {
+        self.kern_base[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_exten_base_entry(&mut self, f: i32, v: i32) {
+        self.exten_base[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_param_base(&mut self, f: i32, v: i32) {
+        self.param_base[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_check(&mut self, f: i32, v: crate::mem_types::B16x4) {
+        self.font_check[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_dsize_entry(&mut self, f: i32, v: i32) {
+        self.font_dsize[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_size_entry(&mut self, f: i32, v: i32) {
+        self.font_size[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_info_b16(&mut self, k: i32, v: crate::mem_types::B16x4) {
+        self.font_info[k as usize].b16 = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_info_b32s1(&mut self, k: i32, v: i32) {
+        self.font_info[k as usize].b32.s1 = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_params(&mut self, f: i32, v: i32) {
+        self.font_params[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_hyphen_char_entry(&mut self, f: i32, v: i32) {
+        self.hyphen_char[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_skew_char_entry(&mut self, f: i32, v: i32) {
+        self.skew_char[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_bchar_label_entry(&mut self, f: i32, v: i32) {
+        self.bchar_label[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_bchar_entry(&mut self, f: i32, v: i32) {
+        self.font_bchar[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_false_bchar_entry(&mut self, f: i32, v: i32) {
+        self.font_false_bchar[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_name_entry(&mut self, f: i32, v: i32) {
+        self.font_name[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_area_entry(&mut self, f: i32, v: i32) {
+        self.font_area[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_bc_entry(&mut self, f: i32, v: u16) {
+        self.font_bc[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_ec_entry(&mut self, f: i32, v: u16) {
+        self.font_ec[f as usize] = v;
+    }
+    #[inline]
+    pub(crate) fn set_font_glue(&mut self, f: i32, v: i32) {
+        self.font_glue[f as usize] = v;
+    }
 }
 
 #[derive(Default)]

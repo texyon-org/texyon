@@ -332,385 +332,36 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
 
         file_opened = true;
 
-        let mut lf = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let mut lh = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let mut bc = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let mut ec = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-
-        if bc > ec + 1 || ec > 255 {
-            bad!();
-        }
-
-        if bc > 255 {
-            bc = 1;
-            ec = 0;
-        }
-
-        let nw = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let nh = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let nd = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let ni = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let nl = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let nk = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let ne = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let np = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-
-        if lf != 6 + lh + (ec - bc + 1) + nw + nh + nd + ni + nl + nk + ne + np {
-            bad!();
-        }
-        if nw == 0 || nh == 0 || nd == 0 || ni == 0 {
-            bad!();
-        }
-
-        lf = lf - 6 - lh;
-        if np < 7 {
-            lf = lf + 7 - np;
-        }
-
-        if crate::globals::font_ptr() == crate::globals::font_max()
-            || crate::globals::fmem_ptr() + lf > crate::globals::font_mem_size()
-        {
-            _tt_abort(c"not enough memory to load another font".as_ptr());
-        }
-
-        let f = crate::globals::font_ptr() + 1;
-        crate::globals::set_char_base_entry(f, crate::globals::fmem_ptr() - bc);
-        crate::globals::set_width_base_entry(f, crate::globals::char_base_entry(f) + ec + 1);
-        crate::globals::set_height_base_entry(f, crate::globals::width_base_entry(f) + nw);
-        crate::globals::set_depth_base_entry(f, crate::globals::height_base_entry(f) + nh);
-        crate::globals::set_italic_base_entry(f, crate::globals::depth_base_entry(f) + nd);
-        crate::globals::set_lig_kern_base_entry(f, crate::globals::italic_base_entry(f) + ni);
-        crate::globals::set_kern_base_entry(
-            f,
-            crate::globals::lig_kern_base_entry(f) + nl - 256 * 128,
-        );
-        crate::globals::set_exten_base_entry(
-            f,
-            crate::globals::kern_base_entry(f) + 256 * 128 + nk,
-        );
-        crate::globals::set_param_base(f, crate::globals::exten_base_entry(f) + ne);
-
-        if lh < 2 {
-            bad!();
-        }
-
-        let (mut qw, a, b, c, d) = match read_tfm_word(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        let _ = (a, b, c, d);
-        crate::globals::set_font_check(f, qw);
-
-        let mut z = match read_fifteen(tfm_file) {
-            Some(v) => v,
-            None => bad!(),
-        };
-        z = z * 256 + tfm_getc(tfm_file);
-        z = (z * 16) + (tfm_getc(tfm_file) / 16);
-        if z < 65_536 {
-            bad!();
-        }
-
-        while lh > 2 {
-            tfm_getc(tfm_file);
-            tfm_getc(tfm_file);
-            tfm_getc(tfm_file);
-            tfm_getc(tfm_file);
-            lh -= 1;
-        }
-
-        crate::globals::set_font_dsize_entry(f, z);
-        if s != -1000 {
-            if s >= 0 {
-                z = s;
-            } else {
-                z = crate::scaled_math::xn_over_d(z, -s, 1000);
+        // Phase-C (session 129): the pure TFM parse + font-table fill runs
+        // under one `&mut FontState` borrow (plus a disjoint `&EqtbState` read
+        // for the two default-char int-params). The cold `_tt_abort` overflow
+        // path and the with_state-bearing `load_tfm_font_mapping` are kept
+        // OUTSIDE the borrow (01b §4a/§5 borrow-dropping).
+        let (parse, scale_side_effect) = crate::state::with_state_mut(|st| {
+            let st = &mut *st;
+            // SAFETY: `read_font_info_tfm` only wraps the unsafe TFM byte
+            // readers; it touches no thread-local state beyond the borrows.
+            unsafe { read_font_info_tfm(&mut st.fonts, &st.eqtb, tfm_file, nom, aire, s) }
+        });
+        // Apply the borrow-free `xn_over_d` side effects (01b §4a). Timing is
+        // observably identical to the original: nothing between the scaling
+        // point and here reads `tex_remainder`/`arith_error`.
+        if let Some((remainder, overflowed)) = scale_side_effect {
+            crate::globals::set_tex_remainder(remainder);
+            if overflowed {
+                crate::globals::set_arith_error(true);
             }
         }
-
-        crate::globals::set_font_size_entry(f, z);
-
-        let mut k = crate::globals::fmem_ptr();
-        while k < crate::globals::width_base_entry(f) {
-            let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
-                Some(v) => v,
-                None => bad!(),
-            };
-            qw = word;
-            crate::globals::set_font_info_b16(k, qw);
-
-            if a >= nw || b / 16 >= nh || b % 16 >= nd || c / 4 >= ni {
-                bad!();
+        match parse {
+            TfmParse::OutOfMemory => {
+                _tt_abort(c"not enough memory to load another font".as_ptr());
             }
-
-            match c % 4 {
-                1 => {
-                    if d >= nl {
-                        bad!();
-                    }
-                }
-                3 => {
-                    if d >= ne {
-                        bad!();
-                    }
-                }
-                2 => {
-                    if d < bc || d > ec {
-                        bad!();
-                    }
-
-                    let mut dd = d;
-                    while dd < k + bc - crate::globals::fmem_ptr() {
-                        qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + dd);
-                        if qw.s1 % 4 != LIST_TAG_RFI {
-                            break;
-                        }
-                        dd = qw.s0 as i32;
-                    }
-
-                    if dd == k + bc - crate::globals::fmem_ptr() {
-                        bad!();
-                    }
-                }
-                _ => {}
-            }
-            k += 1;
-        }
-
-        let mut alpha = 16;
-        while z >= 0x800000 {
-            z /= 2;
-            alpha += alpha;
-        }
-        let beta = 256 / alpha;
-        alpha *= z;
-
-        k = crate::globals::width_base_entry(f);
-        while k < crate::globals::lig_kern_base_entry(f) {
-            let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
-                Some(v) => v,
-                None => bad!(),
-            };
-            crate::globals::set_font_info_b32s1(k, sw);
-            k += 1;
-        }
-
-        if crate::globals::font_info_b32s1(crate::globals::width_base_entry(f)) != 0
-            || crate::globals::font_info_b32s1(crate::globals::height_base_entry(f)) != 0
-            || crate::globals::font_info_b32s1(crate::globals::depth_base_entry(f)) != 0
-            || crate::globals::font_info_b32s1(crate::globals::italic_base_entry(f)) != 0
-        {
-            bad!();
-        }
-
-        let mut bch_label = 32_767;
-        let mut bchar = 256;
-
-        if nl > 0 {
-            k = crate::globals::lig_kern_base_entry(f);
-            while k < crate::globals::kern_base_entry(f) + 256 * 128 {
-                let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
-                    Some(v) => v,
-                    None => bad!(),
-                };
-                qw = word;
-                crate::globals::set_font_info_b16(k, qw);
-
-                if a > 128 {
-                    if 256 * c + d >= nl {
-                        bad!();
-                    }
-
-                    if a == 255 && k == crate::globals::lig_kern_base_entry(f) {
-                        bchar = b;
-                    }
-                } else {
-                    if b != bchar {
-                        if b < bc || b > ec {
-                            bad!();
-                        }
-
-                        qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + b);
-                        if qw.s3 == 0 {
-                            bad!();
-                        }
-                    }
-
-                    if c < 128 {
-                        if d < bc || d > ec {
-                            bad!();
-                        }
-                        qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + d);
-                        if qw.s3 == 0 {
-                            bad!();
-                        }
-                    } else if 256 * (c - 128) + d >= nk {
-                        bad!();
-                    }
-
-                    if a < 128 && k - crate::globals::lig_kern_base_entry(f) + a + 1 >= nl {
-                        bad!();
-                    }
-                }
-
-                if k == crate::globals::kern_base_entry(f) + 256 * 128 - 1 && a == 255 {
-                    bch_label = 256 * c + d;
-                }
-                k += 1;
+            TfmParse::Bad => bad!(),
+            TfmParse::Loaded(f) => {
+                g = f;
+                crate::globals::set_font_mapping_ptr(f, load_tfm_font_mapping());
             }
         }
-
-        k = crate::globals::kern_base_entry(f) + 256 * 128;
-        while k < crate::globals::exten_base_entry(f) {
-            let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
-                Some(v) => v,
-                None => bad!(),
-            };
-            crate::globals::set_font_info_b32s1(k, sw);
-            k += 1;
-        }
-
-        k = crate::globals::exten_base_entry(f);
-        while k < crate::globals::param_base(f) {
-            let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
-                Some(v) => v,
-                None => bad!(),
-            };
-            crate::globals::set_font_info_b16(k, word);
-
-            for ch in [a, b, c] {
-                if ch != 0 {
-                    if ch < bc || ch > ec {
-                        bad!();
-                    }
-                    qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + ch);
-                    if qw.s3 == 0 {
-                        bad!();
-                    }
-                }
-            }
-
-            if d < bc || d > ec {
-                bad!();
-            }
-            qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + d);
-            if qw.s3 == 0 {
-                bad!();
-            }
-            k += 1;
-        }
-
-        k = 1;
-        while k <= np {
-            if k == 1 {
-                let mut sw = tfm_getc(tfm_file);
-                if sw == EOF_RFI {
-                    bad!();
-                }
-                if sw > 127 {
-                    sw -= 256;
-                }
-
-                sw = sw * 256 + tfm_getc(tfm_file);
-                sw = sw * 256 + tfm_getc(tfm_file);
-                crate::globals::set_font_info_b32s1(
-                    crate::globals::param_base(f),
-                    (sw * 16) + (tfm_getc(tfm_file) / 16),
-                );
-            } else {
-                let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
-                    Some(v) => v,
-                    None => bad!(),
-                };
-                crate::globals::set_font_info_b32s1(crate::globals::param_base(f) + k - 1, sw);
-            }
-            k += 1;
-        }
-
-        k = np + 1;
-        while k <= 7 {
-            crate::globals::set_font_info_b32s1(crate::globals::param_base(f) + k - 1, 0);
-            k += 1;
-        }
-
-        if np >= 7 {
-            crate::globals::set_font_params(f, np);
-        } else {
-            crate::globals::set_font_params(f, 7);
-        }
-
-        crate::globals::set_hyphen_char_entry(
-            f,
-            crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_DEFAULT_HYPHEN_CHAR_LNF),
-        );
-        crate::globals::set_skew_char_entry(
-            f,
-            crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_DEFAULT_SKEW_CHAR_LNF),
-        );
-        if bch_label < nl {
-            crate::globals::set_bchar_label_entry(
-                f,
-                bch_label + crate::globals::lig_kern_base_entry(f),
-            );
-        } else {
-            crate::globals::set_bchar_label_entry(f, NON_ADDRESS_RFI);
-        }
-        crate::globals::set_font_bchar_entry(f, bchar);
-        crate::globals::set_font_false_bchar_entry(f, bchar);
-
-        if bchar <= ec && bchar >= bc {
-            qw = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + bchar);
-            if qw.s3 > 0 {
-                crate::globals::set_font_false_bchar_entry(f, TOO_BIG_CHAR);
-            }
-        }
-
-        crate::globals::set_font_name_entry(f, nom);
-        crate::globals::set_font_area_entry(f, aire);
-        crate::globals::set_font_bc_entry(f, bc as u16);
-        crate::globals::set_font_ec_entry(f, ec as u16);
-        crate::globals::set_font_glue(f, crate::mem::TEX_NULL);
-        crate::globals::set_param_base(f, crate::globals::param_base(f) - 1);
-        crate::globals::set_fmem_ptr(crate::globals::fmem_ptr() + lf);
-        crate::globals::set_font_ptr(f);
-        g = f;
-        crate::globals::set_font_mapping_ptr(f, load_tfm_font_mapping());
     }
 
     if bad_tfm && eqtb_b32s1(INT_BASE + INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR_RFI) == 0 {
@@ -787,6 +438,409 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
 
     g
 }
+
+/// Outcome of the threaded TFM-parse core ([`read_font_info_tfm`]).
+enum TfmParse {
+    /// Metrics parsed and font tables filled; the new font is `f`.
+    Loaded(i32),
+    /// The TFM file is malformed; the caller takes the `bad_tfm` error path.
+    Bad,
+    /// The font tables are full (the `01b` §5 cold abort sentinel): the caller
+    /// runs `_tt_abort` after the `&mut FontState` borrow has dropped.
+    OutOfMemory,
+}
+
+/// Phase-C threaded core of [`read_font_info`]: read the opened TFM file
+/// (`tfm_file`) and fill the font-metric tables for the next font slot under a
+/// single `&mut FontState` borrow (plus a disjoint `&EqtbState` for the two
+/// default hyphen/skew char int-params). Touches **no** with_state-bearing
+/// helper — the cold `_tt_abort` overflow path returns [`TfmParse::OutOfMemory`]
+/// and the trailing `load_tfm_font_mapping` write stays in the wrapper (01b §4a).
+///
+/// translated from the metric-reading body of xetex-xetex0.c:6350 (read_font_info)
+unsafe fn read_font_info_tfm(
+    fonts: &mut FontState,
+    eqtb: &crate::state::EqtbState,
+    tfm_file: usize,
+    nom: i32,
+    aire: i32,
+    s: i32,
+) -> (TfmParse, Option<(i32, bool)>) {
+    // Captured side effect of the size-scaling `xn_over_d` (remainder, overflow);
+    // applied by the wrapper after the borrow drops (01b §4a). `None` until the
+    // `s < 0` scaling branch runs; returned on every exit so the `bad_tfm` path
+    // preserves the original `tex_remainder`/`arith_error` writes.
+    let mut scale_side_effect: Option<(i32, bool)> = None;
+    macro_rules! bad {
+        () => {
+            return (TfmParse::Bad, scale_side_effect)
+        };
+    }
+
+    let mut lf = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let mut lh = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let mut bc = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let mut ec = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+
+    if bc > ec + 1 || ec > 255 {
+        bad!();
+    }
+
+    if bc > 255 {
+        bc = 1;
+        ec = 0;
+    }
+
+    let nw = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let nh = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let nd = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let ni = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let nl = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let nk = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let ne = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let np = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+
+    if lf != 6 + lh + (ec - bc + 1) + nw + nh + nd + ni + nl + nk + ne + np {
+        bad!();
+    }
+    if nw == 0 || nh == 0 || nd == 0 || ni == 0 {
+        bad!();
+    }
+
+    lf = lf - 6 - lh;
+    if np < 7 {
+        lf = lf + 7 - np;
+    }
+
+    if fonts.font_ptr == fonts.font_max || fonts.fmem_ptr + lf > fonts.font_mem_size {
+        return (TfmParse::OutOfMemory, None);
+    }
+
+    let f = fonts.font_ptr + 1;
+    fonts.set_char_base_entry(f, fonts.fmem_ptr - bc);
+    fonts.set_width_base_entry(f, fonts.char_base_entry(f) + ec + 1);
+    fonts.set_height_base_entry(f, fonts.width_base_entry(f) + nw);
+    fonts.set_depth_base_entry(f, fonts.height_base_entry(f) + nh);
+    fonts.set_italic_base_entry(f, fonts.depth_base_entry(f) + nd);
+    fonts.set_lig_kern_base_entry(f, fonts.italic_base_entry(f) + ni);
+    fonts.set_kern_base_entry(f, fonts.lig_kern_base_entry(f) + nl - 256 * 128);
+    fonts.set_exten_base_entry(f, fonts.kern_base_entry(f) + 256 * 128 + nk);
+    fonts.set_param_base(f, fonts.exten_base_entry(f) + ne);
+
+    if lh < 2 {
+        bad!();
+    }
+
+    let (mut qw, a, b, c, d) = match read_tfm_word(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    let _ = (a, b, c, d);
+    fonts.set_font_check(f, qw);
+
+    let mut z = match read_fifteen(tfm_file) {
+        Some(v) => v,
+        None => bad!(),
+    };
+    z = z * 256 + tfm_getc(tfm_file);
+    z = (z * 16) + (tfm_getc(tfm_file) / 16);
+    if z < 65_536 {
+        bad!();
+    }
+
+    while lh > 2 {
+        tfm_getc(tfm_file);
+        tfm_getc(tfm_file);
+        tfm_getc(tfm_file);
+        tfm_getc(tfm_file);
+        lh -= 1;
+    }
+
+    fonts.set_font_dsize_entry(f, z);
+    if s != -1000 {
+        if s >= 0 {
+            z = s;
+        } else {
+            // Borrow-free `xn_over_d`; the wrapper applies the
+            // `tex_remainder`/`arith_error` side effects after the borrow drops.
+            let (q, rem, overflowed) = crate::scaled_math::xn_over_d_parts(z, -s, 1000);
+            z = q;
+            scale_side_effect = Some((rem, overflowed));
+        }
+    }
+
+    fonts.set_font_size_entry(f, z);
+
+    let mut k = fonts.fmem_ptr;
+    while k < fonts.width_base_entry(f) {
+        let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
+            Some(v) => v,
+            None => bad!(),
+        };
+        qw = word;
+        fonts.set_font_info_b16(k, qw);
+
+        if a >= nw || b / 16 >= nh || b % 16 >= nd || c / 4 >= ni {
+            bad!();
+        }
+
+        match c % 4 {
+            1 => {
+                if d >= nl {
+                    bad!();
+                }
+            }
+            3 => {
+                if d >= ne {
+                    bad!();
+                }
+            }
+            2 => {
+                if d < bc || d > ec {
+                    bad!();
+                }
+
+                let mut dd = d;
+                while dd < k + bc - fonts.fmem_ptr {
+                    qw = fonts.font_info_b16(fonts.char_base_entry(f) + dd);
+                    if qw.s1 % 4 != LIST_TAG_RFI {
+                        break;
+                    }
+                    dd = qw.s0 as i32;
+                }
+
+                if dd == k + bc - fonts.fmem_ptr {
+                    bad!();
+                }
+            }
+            _ => {}
+        }
+        k += 1;
+    }
+
+    let mut alpha = 16;
+    while z >= 0x800000 {
+        z /= 2;
+        alpha += alpha;
+    }
+    let beta = 256 / alpha;
+    alpha *= z;
+
+    k = fonts.width_base_entry(f);
+    while k < fonts.lig_kern_base_entry(f) {
+        let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
+            Some(v) => v,
+            None => bad!(),
+        };
+        fonts.set_font_info_b32s1(k, sw);
+        k += 1;
+    }
+
+    if fonts.font_info_b32s1(fonts.width_base_entry(f)) != 0
+        || fonts.font_info_b32s1(fonts.height_base_entry(f)) != 0
+        || fonts.font_info_b32s1(fonts.depth_base_entry(f)) != 0
+        || fonts.font_info_b32s1(fonts.italic_base_entry(f)) != 0
+    {
+        bad!();
+    }
+
+    let mut bch_label = 32_767;
+    let mut bchar = 256;
+
+    if nl > 0 {
+        k = fonts.lig_kern_base_entry(f);
+        while k < fonts.kern_base_entry(f) + 256 * 128 {
+            let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
+                Some(v) => v,
+                None => bad!(),
+            };
+            qw = word;
+            fonts.set_font_info_b16(k, qw);
+
+            if a > 128 {
+                if 256 * c + d >= nl {
+                    bad!();
+                }
+
+                if a == 255 && k == fonts.lig_kern_base_entry(f) {
+                    bchar = b;
+                }
+            } else {
+                if b != bchar {
+                    if b < bc || b > ec {
+                        bad!();
+                    }
+
+                    qw = fonts.font_info_b16(fonts.char_base_entry(f) + b);
+                    if qw.s3 == 0 {
+                        bad!();
+                    }
+                }
+
+                if c < 128 {
+                    if d < bc || d > ec {
+                        bad!();
+                    }
+                    qw = fonts.font_info_b16(fonts.char_base_entry(f) + d);
+                    if qw.s3 == 0 {
+                        bad!();
+                    }
+                } else if 256 * (c - 128) + d >= nk {
+                    bad!();
+                }
+
+                if a < 128 && k - fonts.lig_kern_base_entry(f) + a + 1 >= nl {
+                    bad!();
+                }
+            }
+
+            if k == fonts.kern_base_entry(f) + 256 * 128 - 1 && a == 255 {
+                bch_label = 256 * c + d;
+            }
+            k += 1;
+        }
+    }
+
+    k = fonts.kern_base_entry(f) + 256 * 128;
+    while k < fonts.exten_base_entry(f) {
+        let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
+            Some(v) => v,
+            None => bad!(),
+        };
+        fonts.set_font_info_b32s1(k, sw);
+        k += 1;
+    }
+
+    k = fonts.exten_base_entry(f);
+    while k < fonts.param_base(f) {
+        let (word, a, b, c, d) = match read_tfm_word(tfm_file) {
+            Some(v) => v,
+            None => bad!(),
+        };
+        fonts.set_font_info_b16(k, word);
+
+        for ch in [a, b, c] {
+            if ch != 0 {
+                if ch < bc || ch > ec {
+                    bad!();
+                }
+                qw = fonts.font_info_b16(fonts.char_base_entry(f) + ch);
+                if qw.s3 == 0 {
+                    bad!();
+                }
+            }
+        }
+
+        if d < bc || d > ec {
+            bad!();
+        }
+        qw = fonts.font_info_b16(fonts.char_base_entry(f) + d);
+        if qw.s3 == 0 {
+            bad!();
+        }
+        k += 1;
+    }
+
+    k = 1;
+    while k <= np {
+        if k == 1 {
+            let mut sw = tfm_getc(tfm_file);
+            if sw == EOF_RFI {
+                bad!();
+            }
+            if sw > 127 {
+                sw -= 256;
+            }
+
+            sw = sw * 256 + tfm_getc(tfm_file);
+            sw = sw * 256 + tfm_getc(tfm_file);
+            fonts.set_font_info_b32s1(fonts.param_base(f), (sw * 16) + (tfm_getc(tfm_file) / 16));
+        } else {
+            let sw = match read_scaled_word(tfm_file, z, beta, alpha) {
+                Some(v) => v,
+                None => bad!(),
+            };
+            fonts.set_font_info_b32s1(fonts.param_base(f) + k - 1, sw);
+        }
+        k += 1;
+    }
+
+    k = np + 1;
+    while k <= 7 {
+        fonts.set_font_info_b32s1(fonts.param_base(f) + k - 1, 0);
+        k += 1;
+    }
+
+    if np >= 7 {
+        fonts.set_font_params(f, np);
+    } else {
+        fonts.set_font_params(f, 7);
+    }
+
+    fonts.set_hyphen_char_entry(f, eqtb.b32s1(INT_BASE + INT_PAR_DEFAULT_HYPHEN_CHAR_LNF));
+    fonts.set_skew_char_entry(f, eqtb.b32s1(INT_BASE + INT_PAR_DEFAULT_SKEW_CHAR_LNF));
+    if bch_label < nl {
+        fonts.set_bchar_label_entry(f, bch_label + fonts.lig_kern_base_entry(f));
+    } else {
+        fonts.set_bchar_label_entry(f, NON_ADDRESS_RFI);
+    }
+    fonts.set_font_bchar_entry(f, bchar);
+    fonts.set_font_false_bchar_entry(f, bchar);
+
+    if bchar <= ec && bchar >= bc {
+        qw = fonts.font_info_b16(fonts.char_base_entry(f) + bchar);
+        if qw.s3 > 0 {
+            fonts.set_font_false_bchar_entry(f, TOO_BIG_CHAR);
+        }
+    }
+
+    fonts.set_font_name_entry(f, nom);
+    fonts.set_font_area_entry(f, aire);
+    fonts.set_font_bc_entry(f, bc as u16);
+    fonts.set_font_ec_entry(f, ec as u16);
+    fonts.set_font_glue(f, crate::mem::TEX_NULL);
+    fonts.set_param_base(f, fonts.param_base(f) - 1);
+    fonts.fmem_ptr += lf;
+    fonts.font_ptr = f;
+    (TfmParse::Loaded(f), scale_side_effect)
+}
+
 /// Load a native AAT/OpenType/Graphite font and initialize TeX font tables.
 ///
 /// translated from xetex-xetex0.c:6284 (load_native_font)
