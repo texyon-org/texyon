@@ -4,7 +4,8 @@ use crate::consts::{
     GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_FONT_BASE, MAX_HALFWORD,
     MEDIUM_NODE_SIZE, PENALTY_NODE, RULE_NODE,
 };
-use crate::ext::real_get_native_glyph;
+use crate::ext::{map_char_to_glyph, measure_native_node, real_get_native_glyph};
+use crate::fonts::{build_native_character, NativeCharSrc};
 use crate::input::begin_token_list;
 
 use crate::globals::{
@@ -667,6 +668,7 @@ pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
 /// the cold diagnostic / warning paths cannot run under a live state borrow, so
 /// the core sets the `cur_*` fields directly and returns what `fetch_global`
 /// must emit after the borrow drops.
+#[derive(Clone, Copy, Debug)]
 enum FetchOutcome {
     /// Normal: nothing to emit.
     Ok,
@@ -728,14 +730,10 @@ fn fetch_core(
 /// Bridge-down wrapper for legacy callers: run the threaded `fetch_core` under a
 /// short disjoint borrow, then (cold paths only) emit the diagnostic / warning
 /// after the borrow has dropped.
-pub unsafe fn fetch_global(a: i32) {
-    let outcome = crate::state::with_state_mut(|st| {
-        let st = &mut *st;
-        fetch_core(&mut st.mem, &st.fonts, &st.eqtb, &mut st.scanner, a)
-    });
+fn handle_fetch_outcome(outcome: FetchOutcome) {
     match outcome {
         FetchOutcome::Ok => {}
-        FetchOutcome::UndefinedFont { size, fam, c } => {
+        FetchOutcome::UndefinedFont { size, fam, c } => unsafe {
             crate::output::error_here_with_diagnostic(c"".as_ptr());
             crate::output::print_size(size);
             crate::output::print_char(' ' as i32);
@@ -762,11 +760,19 @@ pub unsafe fn fetch_global(a: i32) {
                 c"and I'll try to forget that I needed that character.".as_ptr(),
             );
             crate::errors::error();
-        }
-        FetchOutcome::CharMissing { f, c } => {
+        },
+        FetchOutcome::CharMissing { f, c } => unsafe {
             crate::output::char_warning(f, c);
-        }
+        },
     }
+}
+
+pub unsafe fn fetch_global(a: i32) {
+    let outcome = crate::state::with_state_mut(|st| {
+        let st = &mut *st;
+        fetch_core(&mut st.mem, &st.fonts, &st.eqtb, &mut st.scanner, a)
+    });
+    handle_fetch_outcome(outcome);
 }
 
 /// translated from xetex-math.c:198 (make_over)
@@ -2106,29 +2112,25 @@ unsafe fn finish_subscript_only_global(q: i32, p: i32, shift_down: i32) {
     append_script_box_global(q, x);
 }
 
-unsafe fn prepare_superscript_global(q: i32, mut shift_up: i32) -> PreparedScript {
-    let (glyph, font) = first_script_glyph_global(q + 2);
-    let (save_f, clean_style) = crate::state::with_state(|st| {
-        (
-            st.scanner.cur_f,
-            2 * (st.scanner.cur_style / 4) + 4 + (st.scanner.cur_style % 2),
-        )
-    });
-    let prepared =
-        clean_script_box_global(q + 2, clean_style, save_f, ScriptBoxAdjustment::Superscript);
+fn prepare_superscript(
+    mem: &MemState,
+    fonts: &FontState,
+    eqtb: &EqtbState,
+    scanner: &ScannerState,
+    prepared: ScriptBoxPrep,
+    glyph: u16,
+    font: i32,
+    mut shift_up: i32,
+) -> PreparedScript {
     if shift_up < prepared.shift {
         shift_up = prepared.shift;
     }
 
-    let (cur_f, box_height, x_height) = crate::state::with_state(|st| {
-        (
-            st.scanner.cur_f,
-            st.mem.b32s1(prepared.node + 2),
-            math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
-        )
-    });
-    let clr = if font_is_ot_math_global(cur_f) {
-        box_height + get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMIN)
+    let cur_f = scanner.cur_f;
+    let box_height = mem.b32s1(prepared.node + 2);
+    let x_height = math_x_height(fonts, eqtb, scanner.cur_size);
+    let clr = if font_is_ot_math(fonts, cur_f) {
+        box_height + unsafe { get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMIN) }
     } else {
         box_height + x_height.abs() / 4
     };
@@ -2143,6 +2145,31 @@ unsafe fn prepare_superscript_global(q: i32, mut shift_up: i32) -> PreparedScrip
         font,
         shift: shift_up,
     }
+}
+
+unsafe fn prepare_superscript_global(q: i32, shift_up: i32) -> PreparedScript {
+    let (glyph, font) = first_script_glyph_global(q + 2);
+    let (save_f, clean_style) = crate::state::with_state(|st| {
+        (
+            st.scanner.cur_f,
+            2 * (st.scanner.cur_style / 4) + 4 + (st.scanner.cur_style % 2),
+        )
+    });
+    let prepared =
+        clean_script_box_global(q + 2, clean_style, save_f, ScriptBoxAdjustment::Superscript);
+
+    crate::state::with_state(|st| {
+        prepare_superscript(
+            &st.mem,
+            &st.fonts,
+            &st.eqtb,
+            &st.scanner,
+            prepared,
+            glyph,
+            font,
+            shift_up,
+        )
+    })
 }
 
 unsafe fn finish_superscript_branch_global(
@@ -2277,46 +2304,89 @@ fn first_script_glyph_step(
     (script_head, this_math_style)
 }
 
-unsafe fn first_script_glyph_global(script_head: i32) -> (u16, i32) {
+#[derive(Clone, Copy, Debug)]
+enum FirstScriptGlyphOutcome {
+    Ok,
+    Fetch(FetchOutcome),
+    LostCharWarning { f: i32, c: i32 },
+}
+
+fn first_script_glyph(
+    mem: &mut MemState,
+    fonts: &FontState,
+    eqtb: &EqtbState,
+    scanner: &mut ScannerState,
+    script_head: i32,
+) -> Result<(u16, i32, FirstScriptGlyphOutcome, i32, i32), NodeRecycleAbort> {
+    const INT_PAR_TRACING_LOST_CHARS: i32 = 35;
+    const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
+
     let mut script_g: u16 = 0;
     let mut script_f: i32 = 0;
+    let mut outcome = FirstScriptGlyphOutcome::Ok;
+    let mut script_mu_rem = 0;
+    let mut restored_mu_rem = 0;
 
-    let initial_math_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 4) + 5);
-    let (script_head, this_math_style, is_math_char) = crate::state::with_state(|st| {
-        let (script_head, this_math_style) =
-            first_script_glyph_step(&st.mem, script_head, initial_math_style);
-        (
-            script_head,
-            this_math_style,
-            script_head >= 0
-                && script_head <= st.mem.mem_end
-                && st.mem.b32s1(script_head) == MATH_CHAR,
-        )
-    });
+    let initial_math_style = 2 * (scanner.cur_style / 4) + 5;
+    let (script_head_step, this_math_style) =
+        first_script_glyph_step(mem, script_head, initial_math_style);
+    let is_math_char = script_head_step >= 0
+        && script_head_step <= mem.mem_end
+        && mem.b32s1(script_head_step) == MATH_CHAR;
 
     if is_math_char {
-        let (save_f, saved_math_style) =
-            crate::state::with_state(|st| (st.scanner.cur_f, st.scanner.cur_style));
+        let save_f = scanner.cur_f;
+        let saved_math_style = scanner.cur_style;
         let cur_size_for_script = if this_math_style < SCRIPT_STYLE {
             TEXT_SIZE
         } else {
             SCRIPT_SIZE * ((this_math_style as i32 - 2) / 2)
         };
-        let script_mu = crate::scaled_math::x_over_n(math_quad_global(cur_size_for_script), 18);
-        crate::state::with_state_mut(|st| {
-            st.scanner.cur_style = this_math_style;
-            st.scanner.cur_size = cur_size_for_script;
-            st.scanner.cur_mu = script_mu;
-        });
-        fetch_global(script_head);
+        let (script_mu_val, script_mu_rem_val, _) =
+            crate::scaled_math::x_over_n_parts(math_quad(fonts, eqtb, cur_size_for_script), 18);
+        let script_mu = script_mu_val;
+        script_mu_rem = script_mu_rem_val;
+        scanner.cur_style = this_math_style;
+        scanner.cur_size = cur_size_for_script;
+        scanner.cur_mu = script_mu;
 
-        let (cur_f_after_fetch, cur_c_after_fetch) =
-            crate::state::with_state(|st| (st.scanner.cur_f, st.scanner.cur_c));
-        if font_is_ot_math_global(cur_f_after_fetch) {
-            let script_c =
-                crate::fonts::new_native_character(cur_f_after_fetch, cur_c_after_fetch as u32);
-            script_g = real_get_native_glyph(mem_node_addr(script_c), 0);
-            script_f = cur_f_after_fetch;
+        let fetch_outcome = fetch_core(mem, fonts, eqtb, scanner, script_head_step);
+        match fetch_outcome {
+            FetchOutcome::Ok => {
+                let cur_f_after_fetch = scanner.cur_f;
+                let cur_c_after_fetch = scanner.cur_c;
+                if font_is_ot_math(fonts, cur_f_after_fetch) {
+                    if eqtb.b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS) > 0
+                        && unsafe { map_char_to_glyph(fonts, cur_f_after_fetch, cur_c_after_fetch) }
+                            == 0
+                    {
+                        outcome = FirstScriptGlyphOutcome::LostCharWarning {
+                            f: cur_f_after_fetch,
+                            c: cur_c_after_fetch,
+                        };
+                    }
+                    let script_c = build_native_character(
+                        mem,
+                        eqtb,
+                        fonts,
+                        cur_f_after_fetch,
+                        NativeCharSrc::Single(cur_c_after_fetch as u32),
+                    )?;
+                    unsafe {
+                        measure_native_node(
+                            fonts,
+                            mem_node_addr(script_c),
+                            (eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0)
+                                as libc::c_int,
+                        );
+                    }
+                    script_g = unsafe { real_get_native_glyph(mem_node_addr(script_c), 0) };
+                    script_f = cur_f_after_fetch;
+                }
+            }
+            other => {
+                outcome = FirstScriptGlyphOutcome::Fetch(other);
+            }
         }
 
         let restored_size = if saved_math_style < SCRIPT_STYLE {
@@ -2324,16 +2394,48 @@ unsafe fn first_script_glyph_global(script_head: i32) -> (u16, i32) {
         } else {
             SCRIPT_SIZE * ((saved_math_style as i32 - 2) / 2)
         };
-        let restored_mu = crate::scaled_math::x_over_n(math_quad_global(restored_size), 18);
-        crate::state::with_state_mut(|st| {
-            st.scanner.cur_f = save_f;
-            st.scanner.cur_style = saved_math_style;
-            st.scanner.cur_size = restored_size;
-            st.scanner.cur_mu = restored_mu;
-        });
+        let (restored_mu_val, restored_mu_rem_val, _) =
+            crate::scaled_math::x_over_n_parts(math_quad(fonts, eqtb, restored_size), 18);
+        let restored_mu = restored_mu_val;
+        restored_mu_rem = restored_mu_rem_val;
+        scanner.cur_f = save_f;
+        scanner.cur_style = saved_math_style;
+        scanner.cur_size = restored_size;
+        scanner.cur_mu = restored_mu;
     }
 
-    (script_g, script_f)
+    Ok((script_g, script_f, outcome, script_mu_rem, restored_mu_rem))
+}
+
+unsafe fn first_script_glyph_global(script_head: i32) -> (u16, i32) {
+    let result = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        first_script_glyph(&mut s.mem, &s.fonts, &s.eqtb, &mut s.scanner, script_head)
+    });
+    match result {
+        Ok((glyph, font, outcome, script_mu_rem, restored_mu_rem)) => {
+            if script_mu_rem != 0 {
+                crate::globals::set_tex_remainder(script_mu_rem);
+            }
+            if restored_mu_rem != 0 {
+                crate::globals::set_tex_remainder(restored_mu_rem);
+            }
+
+            match outcome {
+                FirstScriptGlyphOutcome::Ok => {}
+                FirstScriptGlyphOutcome::Fetch(fetch_outcome) => {
+                    handle_fetch_outcome(fetch_outcome);
+                }
+                FirstScriptGlyphOutcome::LostCharWarning { f, c } => {
+                    crate::output::char_warning(f, c);
+                }
+            }
+            (glyph, font)
+        }
+        Err(e) => {
+            crate::scan::node_recycle_abort(e);
+        }
+    }
 }
 
 /// translated from xetex-math.c:84 (make_scripts)

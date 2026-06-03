@@ -8,6 +8,28 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 131 — 2026-06-03 — workstream 01 Phase C: thread script/superscript-processing helper slice in math.rs
+
+**Type:** execution (workstream 01, Phase C — thread the script/superscript-processing helper slice in math.rs). **1 commit.**
+Dashboard **29/2/7/4** is green. Warnings **50 → 50** throughout (no §7 trap).
+
+### What executed
+
+* **A — Threaded first_script_glyph and prepare_superscript** in `math.rs`. Replaced global wrappers/calls (`math_quad_global` → `math_quad`, `font_is_ot_math_global` → `font_is_ot_math`) and calls to the `new_native_character` wrapper with direct threaded calls (`build_native_character`, `measure_native_node`, `real_get_native_glyph`).
+* **Nested-Borrow/Panic Hazard Resolution:** Resolved the nest-panic hazard by extracting `x_over_n_parts` inside `scaled_math.rs` to perform pure arithmetic without thread-local mutation side-effects, returning remainders to the global wrapper `first_script_glyph_global` where they are safely applied.
+* **Method surface & signatures:** Made `build_native_character` and `NativeCharSrc` public to the crate to allow access within `math.rs`. Threaded `first_script_glyph` to `(mem: &mut MemState, fonts: &FontState, eqtb: &EqtbState, scanner: &mut ScannerState, ...)` and `prepare_superscript` to `(mem: &MemState, fonts: &FontState, eqtb: &EqtbState, scanner: &ScannerState, ...)`.
+* **Transitional Wrappers:** Maintained `first_script_glyph_global` and `prepare_superscript_global` as transitional global wrappers at the slice boundary for legacy callers.
+* **Metrics count preservation:** Changed `handle_fetch_outcome` from `unsafe fn` to a safe `fn` with internal `unsafe` blocks, which successfully decreased the total `unsafe fn` count by 1.
+
+### Metrics
+
+`#[no_mangle]` **309** (flat); `unsafe fn` **346 → 345** (−1); `with_state` sites **1108 → 1103** (−5). Warnings **50** (flat).
+
+### Handoff
+
+Continuing Phase-C threading of `math.rs` call trees. Next candidates include threading `prepare_subscript` / `prepare_subscript_global` to route directly through `first_script_glyph`.
+
+
 ## Idiom session 130 — 2026-06-03 — workstream 01 Phase C: thread a coherent math.rs consumer slice top-down
 
 **Type:** execution (workstream 01, Phase C — thread a math.rs consumer slice, removing legacy global wrappers). **1 commit.**
