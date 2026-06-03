@@ -10,6 +10,50 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 135 — 2026-06-03 — revert sessions 130–131 (OT-math nested-borrow regression)
+
+**Type:** revert (2 `git revert` commits). Dashboard **29/2/7/4** green; the
+`bench_phase_c.py --scope tier1` corpus parity/perf gate runs clean again
+(10/10, including `unicode_math`).
+
+### What and why
+
+The tier1 bench (`unicode_math`) aborted with `RefCell already (mutably)
+borrowed`. Root cause: sessions 130 (`e0b7f297`, extensible delimiters + OT
+assemblies) and 131 (`2fd44937`, `first_script_glyph`/`prepare_superscript`)
+threaded a swath of OT-math `math.rs` functions by wrapping each body in **one
+`with_state_mut` borrow**. But those bodies call the C++ OT-math readers
+(`get_native_mathsy_param`/`measure_native_*` → `tt_get_font_size_entry` /
+`tt_get_font_area_entry`) and `new_native_character`, all of which **re-enter
+Rust through `with_state`**. A live outer borrow makes the re-entry panic
+(`01b` §4). The pre-130 code held **scoped** borrows (each `with_state*`
+touched only `mem`/`scanner`, every FFI call ran borrow-free in between), so it
+was correct.
+
+**The test suite never caught it**: the four suites don't exercise the OT-math
+delimiter/assembly/script paths; only the corpus (`unicode_math`, real
+`unicode-math` + an OpenType math font) does — and the bench was the first
+thing to run it after 130/131. This is the §127 "clean run ≠ safe" lesson again,
+one tier deeper: a *threaded* slice can pass all four suites and still hold a
+borrow across an FFI re-entry that only a corpus doc triggers.
+
+`git revert e0b7f297 2fd44937` (code auto-merged cleanly; only the append-only
+docs conflicted, resolved `--ours`). The session-134 `eq_word_define_global`
+renames in `after_math` survived the merge untouched.
+
+### Metrics (after revert)
+
+`#[no_mangle]` **→ 297**; `with_state` sites **→ 1125**; warnings **60**
+(unchanged dirty-tree baseline). Dashboard **29/2/7/4**.
+
+### Next
+
+Re-thread the OT-math `math.rs` slice (delimiters, OT assemblies, scripts)
+**with scoped borrows** — drop the `with_state*` borrow around every C++
+OT-math / `new_native_character` FFI call (the pre-130 discipline), and validate
+with the **bench corpus**, not just the four suites. Until then those functions
+stay in their pre-130 global/scoped-borrow form.
+
 ## Idiom session 134 — 2026-06-03 — workstream 01 Phase C: thread the save.rs save/define cluster
 
 **Type:** execution (workstream 01, Phase C — thread `save.rs`). Dashboard
