@@ -495,13 +495,6 @@ impl MemState {
         self.data[p as usize].b16.s3 = v;
     }
 
-    /// Read the `gr` (f64) field of `mem[p]`. Mirrors `globals::mem_gr`.
-    #[inline]
-    pub(crate) fn gr(&self, p: i32) -> f64 {
-        // SAFETY: union read projection.
-        unsafe { self.data[p as usize].gr }
-    }
-
     /// Write the `gr` (f64) field of `mem[p]`. Mirrors `globals::set_mem_gr`.
     #[inline]
     pub(crate) fn set_gr(&mut self, p: i32, v: f64) {

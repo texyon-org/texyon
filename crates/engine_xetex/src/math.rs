@@ -10,19 +10,20 @@ use crate::input::begin_token_list;
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_c, cur_chr, cur_cmd, cur_dir, cur_f, cur_group, cur_i,
     cur_lang, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
-    cur_list_prev_graf, cur_list_tail, cur_mu, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1,
-    file_line_error_style_p, font_area_entry, font_info_b16, font_info_b32s1,
-    font_layout_engine_ptr, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
-    lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_gr,
-    mem_node_addr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
-    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_lang,
-    set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode,
-    set_cur_list_prev_graf, set_cur_list_tail, set_cur_mlist, set_cur_mu, set_cur_size,
-    set_cur_style, set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems,
-    set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0,
-    set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties, set_pre_adjust_tail,
-    set_save_ptr, set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr,
-    tex_remainder, total_shrink, width_base_entry,
+    cur_list_prev_graf, cur_list_tail, cur_mu, cur_size, cur_style, cur_val, cur_val1,
+    depth_base_entry, eqtb_b32s1, file_line_error_style_p, font_area_entry, font_info_b16,
+    font_info_b32s1, font_layout_engine_ptr, height_base_entry, hi_mem_min,
+    insert_src_special_every_math, italic_base_entry, just_box, lr_problems, lr_ptr, mem_b16s0,
+    mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_gr, mem_node_addr, mem_word,
+    nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
+    set_adjust_tail, set_avail, set_cur_dir, set_cur_lang, set_cur_list_aux_b32s0,
+    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf,
+    set_cur_list_tail, set_cur_mlist, set_cur_mu, set_cur_size, set_cur_style, set_cur_val,
+    set_cur_val1, set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr,
+    set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1,
+    set_temp_ptr, set_xtx_ligature_present, temp_ptr, tex_remainder, total_shrink,
+    width_base_entry,
 };
 use crate::mem::{
     free_node, free_node_global, get_avail, get_node, get_node_global, new_choice, new_glue,
@@ -1210,12 +1211,7 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
                             if !assembly_ptr.is_null() {
                                 ot_assembly_ptr = assembly_ptr;
                                 free_node_global(p, GLYPH_NODE_SIZE);
-                                p = build_opentype_assembly_global(
-                                    cur_f(),
-                                    ot_assembly_ptr,
-                                    h1,
-                                    false,
-                                );
+                                p = build_opentype_assembly(cur_f(), ot_assembly_ptr, h1, false);
                                 set_mem_b32s1(x + 5, p);
                                 delta = 0;
                                 break 'found;
@@ -1700,7 +1696,7 @@ pub unsafe fn make_math_accent_global(q: i32) {
                     if !assembly_ptr.is_null() {
                         ot_assembly_ptr = assembly_ptr;
                         free_node_global(p, GLYPH_NODE_SIZE);
-                        p = build_opentype_assembly_global(f, ot_assembly_ptr, w, true);
+                        p = build_opentype_assembly(f, ot_assembly_ptr, w, true);
                         set_mem_b32s1(y + 5, p);
                         break 'found;
                     }
@@ -2899,42 +2895,31 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleA
     Ok(b)
 }
 
+/// Transitional bridge-down wrapper for legacy `char_box` callers (`01b` §3,
+/// §5). Performs the `with_state`-bearing native-character allocation / TFM
+/// font-table reads, then builds the box under a single `mem` borrow.
 pub unsafe fn char_box_global(f: i32, c: i32) -> i32 {
-    if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        let input = CharBoxInput::Native {
+    let input = if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
+        CharBoxInput::Native {
             p: crate::fonts::new_native_character(f, c as u32),
-        };
-        match crate::state::with_state_mut(|st| char_box(&mut st.mem, input)) {
-            Ok(b) => b,
-            Err(e) => node_recycle_abort(e),
         }
     } else {
-        match crate::state::with_state_mut(|st| {
-            char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)
-        }) {
-            Ok(b) => b,
-            Err(e) => node_recycle_abort(e),
+        let q = font_info_b16(
+            char_base_entry(f) + crate::scan::effective_char_global(true, f, c as u16),
+        );
+        CharBoxInput::Tfm {
+            width: font_info_b32s1(width_base_entry(f) + q.s3 as i32)
+                + font_info_b32s1(italic_base_entry(f) + q.s1 as i32 / 4),
+            height: font_info_b32s1(height_base_entry(f) + q.s2 as i32 / 16),
+            depth: font_info_b32s1(depth_base_entry(f) + q.s2 as i32 % 16),
+            c: c as u16,
+            f,
         }
-    }
-}
-
-fn char_box_tfm(
-    mem: &mut MemState,
-    fonts: &mut FontState,
-    f: i32,
-    c: u16,
-) -> Result<i32, NodeRecycleAbort> {
-    let c_eff = crate::fonts::effective_char(fonts, true, f, c);
-    let q = fonts.font_info_b16(fonts.char_base_entry(f) + c_eff);
-    let input = CharBoxInput::Tfm {
-        width: fonts.font_info_b32s1(fonts.width_base_entry(f) + q.s3 as i32)
-            + fonts.font_info_b32s1(fonts.italic_base_entry(f) + q.s1 as i32 / 4),
-        height: fonts.font_info_b32s1(fonts.height_base_entry(f) + q.s2 as i32 / 16),
-        depth: fonts.font_info_b32s1(fonts.depth_base_entry(f) + q.s2 as i32 % 16),
-        c,
-        f,
     };
-    char_box(mem, input)
+    match crate::state::with_state_mut(|st| char_box(&mut st.mem, input)) {
+        Ok(b) => b,
+        Err(e) => node_recycle_abort(e),
+    }
 }
 
 /// translated from xetex-math.c:1463 (stack_into_box)
@@ -2947,6 +2932,13 @@ fn stack_into_box(mem: &mut MemState, b: i32, p: i32) {
     mem.set_b32s1(b + 5, p);
     let ph = mem.b32s1(p + 3);
     mem.set_b32s1(b + 3, ph);
+}
+
+/// Transitional bridge-down wrapper for legacy `stack_into_box` callers
+/// (`01b` §3). Builds the character box, then links it under one `mem` borrow.
+pub unsafe fn stack_into_box_global(b: i32, f: i32, c: u16) {
+    let p = char_box_global(f, c as i32);
+    crate::state::with_state_mut(|st| stack_into_box(&mut st.mem, b, p));
 }
 
 /// translated from xetex-math.c:1474 (height_plus_depth)
@@ -3006,41 +2998,48 @@ pub fn stack_glyph_into_box(mem: &mut MemState, b: i32, p: i32) {
     }
 }
 
-fn stack_glyph_into_box_threaded(
-    mem: &mut MemState,
-    fonts: &FontState,
-    b: i32,
-    f: i32,
-    g: i32,
-) -> Result<(), NodeRecycleAbort> {
-    let p = new_stack_glyph(mem, f, g)?;
-    unsafe {
-        crate::ext::measure_native_glyph(fonts, mem_node_addr(p), 1);
-    }
-    stack_glyph_into_box(mem, b, p);
-    Ok(())
+/// Transitional bridge-down wrapper for legacy `stack_glyph_into_box` callers.
+/// The native-glyph measurement path reads font state via bridge accessors, so
+/// it must run between the allocation and linking borrows.
+pub unsafe fn stack_glyph_into_box_global(b: i32, f: i32, g: i32) {
+    let p = match crate::state::with_state_mut(|st| new_stack_glyph(&mut st.mem, f, g)) {
+        Ok(p) => p,
+        Err(e) => node_recycle_abort(e),
+    };
+    crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
+    crate::state::with_state_mut(|st| stack_glyph_into_box(&mut st.mem, b, p));
 }
 
-fn native_glyph_vbox(
+fn native_glyph_vbox_start(
     mem: &mut MemState,
-    fonts: &FontState,
     f: i32,
     g: u16,
-) -> Result<i32, NodeRecycleAbort> {
+) -> Result<(i32, i32), NodeRecycleAbort> {
     let b = new_null_box(mem);
     if b == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
     mem.set_b16s1(b, VLIST_NODE);
     let p = new_stack_glyph(mem, f, g as i32)?;
-    unsafe {
-        crate::ext::measure_native_glyph(fonts, mem_node_addr(p), 1);
-    }
+    Ok((b, p))
+}
+
+fn native_glyph_vbox_finish(mem: &mut MemState, b: i32, p: i32) {
     mem.set_b32s1(b + 5, p);
     mem.set_b32s1(b + 1, mem.b32s1(p + 1));
     mem.set_b32s1(b + 3, mem.b32s1(p + 3));
     mem.set_b32s1(b + 2, mem.b32s1(p + 2));
-    Ok(b)
+}
+
+unsafe fn native_glyph_vbox_global(f: i32, g: u16) -> i32 {
+    let (b, p) = match crate::state::with_state_mut(|st| native_glyph_vbox_start(&mut st.mem, f, g))
+    {
+        Ok(nodes) => nodes,
+        Err(e) => node_recycle_abort(e),
+    };
+    crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
+    crate::state::with_state_mut(|st| native_glyph_vbox_finish(&mut st.mem, b, p));
+    b
 }
 
 /// translated from xetex-math.c:1517 (stack_glue_into_box)
@@ -3085,6 +3084,15 @@ fn stack_glue_into_box(
         mem.set_b32s1(b + 1, pw);
     }
     Ok(())
+}
+
+/// Transitional bridge-down wrapper for legacy `stack_glue_into_box` callers
+/// (`01b` §3, §5).
+pub unsafe fn stack_glue_into_box_global(b: i32, min: i32, max: i32) {
+    if let Err(e) = crate::state::with_state_mut(|st| stack_glue_into_box(&mut st.mem, b, min, max))
+    {
+        node_recycle_abort(e);
+    }
 }
 
 enum OtMathAccentPosStep {
@@ -4589,22 +4597,19 @@ pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
     }
 }
 
-pub unsafe fn build_opentype_assembly(
-    mem: &mut MemState,
-    fonts: &FontState,
+/// translated from xetex-math.c:1206 (build_opentype_assembly)
+#[no_mangle]
+pub unsafe extern "C" fn build_opentype_assembly(
     f: i32,
     a: *mut libc::c_void,
     s: i32,
     horiz: bool,
-) -> Result<i32, NodeRecycleAbort> {
-    let b = crate::mem::new_null_box(mem);
-    if b == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
+) -> i32 {
+    let b = crate::mem::new_null_box_global();
     if horiz {
-        mem.set_b16s1(b, HLIST_NODE);
+        set_mem_b16s1(b, HLIST_NODE);
     } else {
-        mem.set_b16s1(b, VLIST_NODE);
+        set_mem_b16s1(b, VLIST_NODE);
     }
     let mut n: i32 = -1;
     let mut no_extenders = true;
@@ -4658,9 +4663,9 @@ pub unsafe fn build_opentype_assembly(
                     o = min_o;
                 }
                 if oo > 0 {
-                    stack_glue_into_box(mem, b, -oo, -o)?;
+                    stack_glue_into_box_global(b, -oo, -o);
                 }
-                stack_glyph_into_box_threaded(mem, fonts, b, f, ot_part_glyph(a, i))?;
+                stack_glyph_into_box_global(b, f, ot_part_glyph(a, i));
                 prev_o = ot_part_end_connector(f, a, i);
             }
         } else {
@@ -4673,94 +4678,104 @@ pub unsafe fn build_opentype_assembly(
                 o = min_o;
             }
             if oo > 0 {
-                stack_glue_into_box(mem, b, -oo, -o)?;
+                stack_glue_into_box_global(b, -oo, -o);
             }
-            stack_glyph_into_box_threaded(mem, fonts, b, f, ot_part_glyph(a, i))?;
+            stack_glyph_into_box_global(b, f, ot_part_glyph(a, i));
             prev_o = ot_part_end_connector(f, a, i);
         }
     }
     // Measure natural size and total stretch.
-    let mut p = mem.b32s1(b + 5);
+    let mut p = mem_b32s1(b + 5);
     let mut nat: i32 = 0;
     let mut str: i32 = 0;
     while p != TEX_NULL {
-        if mem.b16s1(p) == WHATSIT_NODE {
+        if mem_b16s1(p) == WHATSIT_NODE {
             if horiz {
-                nat += mem.b32s1(p + 1);
+                nat += mem_b32s1(p + 1);
             } else {
-                nat += mem.b32s1(p + 3) + mem.b32s1(p + 2);
+                nat += mem_b32s1(p + 3) + mem_b32s1(p + 2);
             }
-        } else if mem.b16s1(p) == GLUE_NODE {
-            let gptr = mem.b32s0(p + 1);
-            nat += mem.b32s1(gptr + 1);
-            str += mem.b32s1(gptr + 2);
+        } else if mem_b16s1(p) == GLUE_NODE {
+            let gptr = mem_b32s0(p + 1);
+            nat += mem_b32s1(gptr + 1);
+            str += mem_b32s1(gptr + 2);
         }
-        p = mem.b32s1(p);
+        p = mem_b32s1(p);
     }
     if s > nat && str > 0 {
         let o = if s - nat > str { str } else { s - nat };
-        mem.set_b16s0(b + 5, NORMAL);
-        mem.set_b16s1(b + 5, STRETCHING);
-        mem.set_gr(b + 6, o as f64 / str as f64);
-        let set_dim = nat + crate::scaled_math::tex_round(str as f64 * mem.gr(b + 6));
+        set_mem_b16s0(b + 5, NORMAL);
+        set_mem_b16s1(b + 5, STRETCHING);
+        set_mem_gr(b + 6, o as f64 / str as f64);
+        let set_dim = nat + crate::scaled_math::tex_round(str as f64 * mem_gr(b + 6));
         if horiz {
-            mem.set_b32s1(b + 1, set_dim);
+            set_mem_b32s1(b + 1, set_dim);
         } else {
-            mem.set_b32s1(b + 3, set_dim);
+            set_mem_b32s1(b + 3, set_dim);
         }
     } else if horiz {
-        mem.set_b32s1(b + 1, nat);
+        set_mem_b32s1(b + 1, nat);
     } else {
-        mem.set_b32s1(b + 3, nat);
+        set_mem_b32s1(b + 3, nat);
     }
-    Ok(b)
+    b
 }
 
-pub unsafe fn build_opentype_assembly_global(
-    f: i32,
-    a: *mut libc::c_void,
-    s: i32,
-    horiz: bool,
-) -> i32 {
-    match crate::state::with_state_mut(|st| {
-        build_opentype_assembly(&mut st.mem, &st.fonts, f, a, s, horiz)
+/// Build the extensible (`EXT_TAG`) delimiter box for [`var_delimiter_global`].
+///
+/// Phase-C (`01b` §4a bucket C, session-81/83 style): the box allocation and
+/// all the TFM font reads (the `exten` table row, the repeatable piece's width
+/// and height-plus-depth, and the top/mid/bottom piece extents) run under a
+/// single `mem`+`fonts` borrow island instead of the ~12 scattered bridge
+/// closures the C translation left behind. The repeat-count arithmetic is pure,
+/// and the piece stacking uses the already-threaded [`stack_into_box_global`]
+/// (which builds each char box + links it under its own borrow). Allocation
+/// order is preserved (the vlist box first, then each stacked char box), so the
+/// mem image is byte-identical to the inline version.
+unsafe fn build_ext_delimiter_box_global(f: i32, q: crate::mem_types::B16x4, v: i32) -> i32 {
+    struct ExtGeom {
+        b: i32,
+        r: crate::mem_types::B16x4,
+        u: i32,
+        w: i32,
+    }
+    let ExtGeom { b, r, u, mut w } = match crate::state::with_state_mut(|st| {
+        let st = &mut *st;
+        let b = crate::mem::new_null_box(&mut st.mem);
+        if b == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        st.mem.set_b16s1(b, VLIST_NODE);
+        let r = st
+            .fonts
+            .font_info_b16(st.fonts.exten_base_entry(f) + q.s0 as i32);
+        // The repeatable (s0) piece sets the box width and the per-step height.
+        let u = height_plus_depth(&mut st.fonts, f, r.s0);
+        let effective_c = crate::fonts::effective_char(&mut st.fonts, true, f, r.s0);
+        let qq = st
+            .fonts
+            .font_info_b16(st.fonts.char_base_entry(f) + effective_c);
+        let box_width = st
+            .fonts
+            .font_info_b32s1(st.fonts.width_base_entry(f) + qq.s3 as i32)
+            + st.fonts
+                .font_info_b32s1(st.fonts.italic_base_entry(f) + qq.s1 as i32 / 4);
+        st.mem.set_b32s1(b + 1, box_width);
+        let mut w = 0;
+        if r.s1 != 0 {
+            w += height_plus_depth(&mut st.fonts, f, r.s1);
+        }
+        if r.s2 != 0 {
+            w += height_plus_depth(&mut st.fonts, f, r.s2);
+        }
+        if r.s3 != 0 {
+            w += height_plus_depth(&mut st.fonts, f, r.s3);
+        }
+        Ok(ExtGeom { b, r, u, w })
     }) {
-        Ok(b) => b,
+        Ok(geom) => geom,
         Err(e) => node_recycle_abort(e),
-    }
-}
-
-fn build_ext_delimiter_box(
-    mem: &mut MemState,
-    fonts: &mut FontState,
-    f: i32,
-    q: crate::mem_types::B16x4,
-    v: i32,
-) -> Result<i32, NodeRecycleAbort> {
-    let b = crate::mem::new_null_box(mem);
-    if b == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b16s1(b, VLIST_NODE);
-    let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
-    // The repeatable (s0) piece sets the box width and the per-step height.
-    let u = height_plus_depth(fonts, f, r.s0);
-    let effective_c = crate::fonts::effective_char(fonts, true, f, r.s0);
-    let qq = fonts.font_info_b16(fonts.char_base_entry(f) + effective_c);
-    let box_width = fonts.font_info_b32s1(fonts.width_base_entry(f) + qq.s3 as i32)
-        + fonts.font_info_b32s1(fonts.italic_base_entry(f) + qq.s1 as i32 / 4);
-    mem.set_b32s1(b + 1, box_width);
-    let mut w = 0;
-    if r.s1 != 0 {
-        w += height_plus_depth(fonts, f, r.s1);
-    }
-    if r.s2 != 0 {
-        w += height_plus_depth(fonts, f, r.s2);
-    }
-    if r.s3 != 0 {
-        w += height_plus_depth(fonts, f, r.s3);
-    }
-
+    };
     let mut n: i32 = 0;
     if u > 0 {
         while w < v {
@@ -4772,28 +4787,25 @@ fn build_ext_delimiter_box(
         }
     }
     if r.s1 != 0 {
-        let p = char_box_tfm(mem, fonts, f, r.s1)?;
-        stack_into_box(mem, b, p);
+        stack_into_box_global(b, f, r.s1);
     }
     for _ in 1..=n {
-        let p = char_box_tfm(mem, fonts, f, r.s0)?;
-        stack_into_box(mem, b, p);
+        stack_into_box_global(b, f, r.s0);
     }
     if r.s2 != 0 {
-        let p = char_box_tfm(mem, fonts, f, r.s2)?;
-        stack_into_box(mem, b, p);
+        stack_into_box_global(b, f, r.s2);
         for _ in 1..=n {
-            let p = char_box_tfm(mem, fonts, f, r.s0)?;
-            stack_into_box(mem, b, p);
+            stack_into_box_global(b, f, r.s0);
         }
     }
     if r.s3 != 0 {
-        let p = char_box_tfm(mem, fonts, f, r.s3)?;
-        stack_into_box(mem, b, p);
+        stack_into_box_global(b, f, r.s3);
     }
-    let height = mem.b32s1(b + 3);
-    mem.set_b32s1(b + 2, w - height);
-    Ok(b)
+    crate::state::with_state_mut(|st| {
+        let height = st.mem.b32s1(b + 3);
+        st.mem.set_b32s1(b + 2, w - height);
+    });
+    b
 }
 
 /// translated from xetex-math.c:1017 (var_delimiter)
@@ -4934,29 +4946,14 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
         });
         if !(font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine)) {
             if q.s1 % 4 == EXT_TAG {
-                b = match crate::state::with_state_mut(|st| {
-                    build_ext_delimiter_box(&mut st.mem, &mut st.fonts, f, q, v)
-                }) {
-                    Ok(b) => b,
-                    Err(e) => node_recycle_abort(e),
-                };
+                b = build_ext_delimiter_box_global(f, q, v);
             } else {
                 b = char_box_global(f, c as i32);
             }
         } else if !ot_assembly_ptr.is_null() {
-            b = match crate::state::with_state_mut(|st| {
-                build_opentype_assembly(&mut st.mem, &st.fonts, f, ot_assembly_ptr, v, false)
-            }) {
-                Ok(b) => b,
-                Err(e) => node_recycle_abort(e),
-            };
+            b = build_opentype_assembly(f, ot_assembly_ptr, v, false);
         } else {
-            b = match crate::state::with_state_mut(|st| {
-                native_glyph_vbox(&mut st.mem, &st.fonts, f, c)
-            }) {
-                Ok(b) => b,
-                Err(e) => node_recycle_abort(e),
-            };
+            b = native_glyph_vbox_global(f, c);
         }
     } else {
         // Null delimiter: an empty box of \nulldelimiterspace width. One borrow
