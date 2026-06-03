@@ -8,6 +8,89 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 127 — 2026-06-03 — workstream 01 Phase C: thread the `ext.rs` native-font-metric reader cluster (11 fns) — first post-ws02 slice
+
+**Type:** execution (workstream 01, Phase C — the `ext.rs` native-font-metric
+reader cluster, recon's long-standing #1 target, **unblocked by ws02**). **One
+commit.** Dashboard **29/2/7/4**. Warnings **60 → 60** (flat; no §7 trap).
+
+### What this slice is
+
+The `ext.rs` native-font-metric readers were ranked bucket-B #1 by the recon for
+many sessions (105–112) but **deferred every time** because their callers
+concentrated in the then-18k-line `scan.rs` grab-bag (threading them would dump
+`_global` wraps into the scanner against strategy). ws02 (sessions 118–126)
+decomposed `scan.rs`, so the cluster is now threadable. Threaded **11** pure
+`&FontState`-read functions to take `fonts: &crate::state::FontState` as their
+first param and call the existing `FontState` methods directly instead of the
+`crate::globals::font_*` `with_state` bridge accessors:
+
+`map_char_to_glyph`, `get_font_char_range`, `get_glyph_bounds`, `getnativecharwd`,
+`getnativecharic`, `get_native_char_sidebearings`, `getnativecharht`,
+`getnativechardp`, `get_native_char_height_depth`,
+`real_get_native_italic_correction`, `real_get_native_glyph_italic_correction`.
+
+Each got a transitional bridge-down `_global` wrapper
+(`pub unsafe fn X_global(..) { with_state(|s| X(&s.fonts, ..)) }`); the ~22
+external call sites (scan/expand/fonts/math/main_control) were blanket-renamed to
+`_global` by script (bucket-A; **all callers are legacy** — none takes a
+`&FontState`, so zero pass-through threading and zero borrow analysis). Internal
+ext→ext calls (`getnativecharic`→`get_native_char_sidebearings`,
+`getnativecharht`/`dp`→`get_native_char_height_depth`) pass `fonts` through.
+
+### The one real hazard (and why 2 functions were excluded)
+
+The recon ranks `print_glyph_name` and `map_glyph_to_index` in the same cluster,
+but **both call a `with_state`-bearing function** (`print_char` and
+`name_of_file()` respectively). A `with_state(|s| f(&s.fonts, ..))` wrapper holds
+the whole-`RefCell` borrow across those calls → **nest-panic** (the §4 rule).
+Neither path is exercised by the 29/2/7/4 suite (so tests stayed green even with
+the broken wrappers), but introducing a latent panic on the `\glyphname` /
+glyph-index path is a behavior change — so both were **excluded** and reverted to
+their original bare-`crate::globals` form. They are genuine **bucket-C** (output /
+input-name edges) needing borrow-dropping wrappers; defer to a manual slice.
+**Lesson:** a function being bucket-B on the score (few accessors) is not enough —
+grep its body for *any* `with_state`-bearing callee (`print_*`, `name_of_file`,
+scanner/error helpers) before wrapping it with `with_state`.
+
+### Method surface
+
+Added one `FontState` method, `font_letter_space_entry(&self, f)` (mirrors
+`globals::font_letter_space_entry`); the other four reads
+(`font_area_entry`/`font_layout_engine_ptr`/`font_info_b32s1`/`param_base`)
+already existed as `FontState` methods. No `globals.rs` accessor lost its last
+caller (all five still used by `measure_native_glyph`/other ext code), so none
+deleted.
+
+### Metrics
+
+`#[no_mangle]` **310** unchanged (these fns were never exported). `unsafe fn`
+**327 → 338** (+11: the threaded fns stay `unsafe` — they call C FFI — and 11
+transitional `_global` wrappers were added; this is the inherent bridge-down
+surface, identical in shape to session-110/112 `_global` wrappers, and collapses
+as each caller threads). `with_state` call sites **1135 → 1146** (+11, the new
+wrappers; also falls as callers thread). Warnings **60**.
+
+### Validation
+
+`cargo fmt`; `cargo check -p tectonic_engine_xetex` → 0 errors, 60 warnings; full
+dashboard → **29 / 2 / 7 / 4** green.
+
+### Next session
+
+Continue Phase-C threading inside the navigable post-ws02 modules. Clean
+follow-ups: (1) the **bucket-C** `print_glyph_name` / `map_glyph_to_index` pair —
+read the font fields under a short borrow, drop it, then do the `print_char` /
+`name_of_file`+FFI work (the borrow-dropping wrapper shape of §4a). (2)
+`measure_native_node` / `measure_native_glyph` / `store_justified_native_glyphs`
+(write node fields → `&mut MemState` + `&FontState`; still all-legacy callers →
+`_global`). (3) The scanner-core `scan.rs` font-dimension call sites
+(`scan_something_internal`) are now plain `_global` renames — the cluster they
+fed is threaded. Avoid whole-session work on `mlist_to_hlist`, `line_break`,
+`hpack`/`vpackage`, `ship_out`, `build_page`.
+
+---
+
 ## Idiom session 126 — 2026-06-02 — workstream 02 slice 11: the `ini.rs` drain (4 sub-commits) — `ini.rs` fully dissolved
 
 **Type:** execution (workstream 02, module decomposition — **the `ini.rs` drain**, §5).

@@ -777,6 +777,11 @@ impl FontState {
         self.font_layout_engine[f as usize]
     }
 
+    #[inline]
+    pub(crate) fn font_letter_space_entry(&self, f: i32) -> i32 {
+        self.font_letter_space[f as usize]
+    }
+
     /// Read `font_bc[f]`. Mirrors `globals::font_bc_entry`.
     #[inline]
     pub(crate) fn font_bc_entry(&self, f: i32) -> u16 {

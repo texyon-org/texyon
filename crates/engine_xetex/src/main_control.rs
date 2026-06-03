@@ -22,9 +22,10 @@ use crate::errors::{
 };
 use crate::expand::expand;
 use crate::ext::{
-    append_src_special, apply_mapping, do_extension, get_native_char_height_depth,
-    get_native_char_sidebearings, insert_src_special, map_char_to_glyph, measure_native_node,
-    real_get_native_glyph_italic_correction, real_get_native_italic_correction,
+    append_src_special, apply_mapping, do_extension, get_native_char_height_depth_global,
+    get_native_char_sidebearings_global, insert_src_special, map_char_to_glyph_global,
+    measure_native_node, real_get_native_glyph_italic_correction_global,
+    real_get_native_italic_correction_global,
 };
 use crate::fonts::{new_native_character, read_font_info};
 use crate::globals::{
@@ -2961,7 +2962,7 @@ pub unsafe extern "C" fn build_discretionary() {
 #[no_mangle]
 pub unsafe extern "C" fn append_italic_correction() {
     extern "C" {
-        // Note: in C these are macros: get_native_italic_correction(p) = real_get_native_italic_correction(&mem[p])
+        // Note: in C these are macros: get_native_italic_correction(p) = real_get_native_italic_correction_global(&mem[p])
 
     }
     const EXPLICIT: u16 = 1; // xetex_format.h:428
@@ -2980,7 +2981,7 @@ pub unsafe extern "C" fn append_italic_correction() {
     } else if mem_b16s1(tail) == WHATSIT_NODE {
         let sub = mem_b16s0(tail);
         if sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT {
-            let kern = crate::mem::new_kern_global(real_get_native_italic_correction(
+            let kern = crate::mem::new_kern_global(real_get_native_italic_correction_global(
                 crate::globals::mem_node_addr(tail),
             ));
             set_mem_b32s1(tail, kern);
@@ -2988,7 +2989,7 @@ pub unsafe extern "C" fn append_italic_correction() {
             crate::globals::set_cur_list_tail(new_tail);
             set_mem_b16s0(new_tail, EXPLICIT);
         } else if sub == GLYPH_NODE {
-            let kern = crate::mem::new_kern_global(real_get_native_glyph_italic_correction(
+            let kern = crate::mem::new_kern_global(real_get_native_glyph_italic_correction_global(
                 crate::globals::mem_node_addr(tail),
             ));
             set_mem_b32s1(tail, kern);
@@ -3046,7 +3047,7 @@ pub unsafe extern "C" fn make_accent() {
     let a = if is_native(f) {
         let av = mem_b32s1(p + 1);
         if av == 0 {
-            get_native_char_sidebearings(f, cur_val(), &mut lsb, &mut rsb);
+            get_native_char_sidebearings_global(f, cur_val(), &mut lsb, &mut rsb);
         }
         av
     } else {
@@ -3075,7 +3076,7 @@ pub unsafe extern "C" fn make_accent() {
             let wv = mem_b32s1(q + 1);
             let mut hv: i32 = 0;
             let mut dv: i32 = 0;
-            get_native_char_height_depth(f, cur_val(), &mut hv, &mut dv);
+            get_native_char_height_depth_global(f, cur_val(), &mut hv, &mut dv);
             (wv, hv)
         } else {
             let c = effective_char_global(true, f, mem_b16s0(q));
@@ -4527,7 +4528,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                     mc += *native_text().add(tp as usize) as i32 - 0xDC00;
                     tp += 1;
                 }
-                if map_char_to_glyph(main_f(), mc) == 0 {
+                if map_char_to_glyph_global(main_f(), mc) == 0 {
                     char_warning(main_f(), mc);
                 }
             }

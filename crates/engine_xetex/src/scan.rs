@@ -19,15 +19,15 @@ use crate::ext::aat_font_get_1;
 use crate::ext::aat_font_get_2;
 use crate::ext::aat_font_get_named;
 use crate::ext::aat_font_get_named_1;
-use crate::ext::get_font_char_range;
-use crate::ext::get_glyph_bounds;
-use crate::ext::getnativechardp;
-use crate::ext::getnativecharht;
-use crate::ext::getnativecharic;
-use crate::ext::getnativecharwd;
+use crate::ext::get_font_char_range_global;
+use crate::ext::get_glyph_bounds_global;
+use crate::ext::getnativechardp_global;
+use crate::ext::getnativecharht_global;
+use crate::ext::getnativecharic_global;
+use crate::ext::getnativecharwd_global;
 use crate::ext::gr_font_get_named;
 use crate::ext::gr_font_get_named_1;
-use crate::ext::map_char_to_glyph;
+use crate::ext::map_char_to_glyph_global;
 use crate::ext::map_glyph_to_index;
 use crate::ext::ot_font_get;
 use crate::ext::ot_font_get_1;
@@ -1595,7 +1595,7 @@ pub unsafe extern "C" fn scan_glyph_number(f: i32) {
         set_cur_val_level(INT_VAL as u8);
     } else if scan_keyword(c"u".as_ptr()) {
         scan_char_num();
-        set_cur_val(map_char_to_glyph(f, cur_val()));
+        set_cur_val(map_char_to_glyph_global(f, cur_val()));
         set_cur_val_level(INT_VAL as u8);
     } else {
         scan_int();
@@ -2901,7 +2901,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                                         set_cur_val(0);
                                     } else {
                                         scan_int();
-                                        set_cur_val(get_glyph_bounds(cf, n, cur_val()));
+                                        set_cur_val(get_glyph_bounds_global(cf, n, cur_val()));
                                     }
                                 } else {
                                     not_native_font_error(LAST_ITEM as i32, m, cf);
@@ -2916,10 +2916,10 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                                 let fa = font_area_entry(q);
                                 if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                                     set_cur_val(match m {
-                                        FONT_CHAR_WD_CODE => getnativecharwd(q, cur_val()),
-                                        FONT_CHAR_HT_CODE => getnativecharht(q, cur_val()),
-                                        FONT_CHAR_DP_CODE => getnativechardp(q, cur_val()),
-                                        _ => getnativecharic(q, cur_val()),
+                                        FONT_CHAR_WD_CODE => getnativecharwd_global(q, cur_val()),
+                                        FONT_CHAR_HT_CODE => getnativecharht_global(q, cur_val()),
+                                        FONT_CHAR_DP_CODE => getnativechardp_global(q, cur_val()),
+                                        _ => getnativecharic_global(q, cur_val()),
                                     });
                                 } else {
                                     let bc = font_bc_entry(q) as i32;
@@ -3203,7 +3203,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                                 if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                                     scan_int();
                                     n = cur_val();
-                                    set_cur_val(map_char_to_glyph(cf, n));
+                                    set_cur_val(map_char_to_glyph_global(cf, n));
                                 } else {
                                     not_native_font_error(LAST_ITEM as i32, m, cf);
                                     set_cur_val(0);
@@ -3240,7 +3240,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
                                 n = cur_val();
                                 let fa = font_area_entry(n);
                                 if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                                    set_cur_val(get_font_char_range(
+                                    set_cur_val(get_font_char_range_global(
                                         n,
                                         (m == XETEX_FIRST_CHAR_CODE) as i32,
                                     ));

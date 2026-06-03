@@ -4844,7 +4844,7 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
                         if font_area == AAT_FONT_FLAG
                             || (font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine))
                         {
-                            x = crate::ext::map_char_to_glyph(g, x) as i32;
+                            x = crate::ext::map_char_to_glyph_global(g, x) as i32;
                             f = g;
                             c = x as u16;
                             w = 0;

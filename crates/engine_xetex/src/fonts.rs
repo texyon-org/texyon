@@ -6,7 +6,7 @@ use crate::consts::{INT_BASE, TOO_BIG_CHAR};
 use crate::errors::error;
 use crate::ext::{
     aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping,
-    find_native_font, load_tfm_font_mapping, map_char_to_glyph, measure_native_node,
+    find_native_font, load_tfm_font_mapping, map_char_to_glyph_global, measure_native_node,
     ot_get_font_metrics, release_font_engine,
 };
 use crate::globals::{
@@ -176,12 +176,12 @@ pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
             let mapped = mapped_text_entry(i);
             if (0xD800..0xDC00).contains(&mapped) {
                 c = ((mapped as u32 - 0xD800) * 1024) + mapped_text_entry(i + 1) as u32 + 9216;
-                if map_char_to_glyph(f, c as i32) == 0 {
+                if map_char_to_glyph_global(f, c as i32) == 0 {
                     char_warning(f, c as i32);
                 }
                 i += 2;
             } else {
-                if map_char_to_glyph(f, mapped as i32) == 0 {
+                if map_char_to_glyph_global(f, mapped as i32) == 0 {
                     char_warning(f, mapped as i32);
                 }
                 i += 1;
@@ -191,7 +191,7 @@ pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
         NativeCharSrc::Mapped(len)
     } else {
         if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS_NC) > 0
-            && map_char_to_glyph(f, c as i32) == 0
+            && map_char_to_glyph_global(f, c as i32) == 0
         {
             char_warning(f, c as i32);
         }

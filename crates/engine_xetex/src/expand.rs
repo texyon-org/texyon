@@ -84,7 +84,9 @@ const INT_PAR_TRACING_IFS: i32 = 58;
 use crate::errors::{
     error, int_error, not_aat_font_error, not_aat_gr_font_error, not_native_font_error, runaway,
 };
-use crate::ext::{aat_print_font_name, gr_print_font_name, map_char_to_glyph, print_glyph_name};
+use crate::ext::{
+    aat_print_font_name, gr_print_font_name, map_char_to_glyph_global, print_glyph_name,
+};
 use crate::globals::{
     buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, eqtb_b32s1, expand_depth,
     expand_depth_count, first, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, name_in_progress,
@@ -383,7 +385,7 @@ pub unsafe extern "C" fn conditional() {
             scan_usv_num();
             let fa = font_area_entry(n);
             b = if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                map_char_to_glyph(n, crate::globals::cur_val()) > 0
+                map_char_to_glyph_global(n, crate::globals::cur_val()) > 0
             } else {
                 let bc = font_bc_entry(n) as i32;
                 let ec = font_ec_entry(n) as i32;

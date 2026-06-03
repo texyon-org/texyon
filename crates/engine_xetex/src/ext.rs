@@ -1659,7 +1659,10 @@ pub unsafe fn real_get_native_glyph(p_node: *mut c_void, index: u32) -> u16 {
 }
 
 // translated from xetex-ext.c:1183 (real_get_native_italic_correction)
-pub unsafe fn real_get_native_italic_correction(p_node: *mut c_void) -> i32 {
+pub unsafe fn real_get_native_italic_correction(
+    fonts: &crate::state::FontState,
+    p_node: *mut c_void,
+) -> i32 {
     let node = p_node as *mut crate::mem_types::MemoryWord;
     let f = (*node.add(4)).b16.s2 as i32; // native_font
     let n = (*node.add(4)).b16.s0 as usize; // native_glyph_count
@@ -1667,25 +1670,28 @@ pub unsafe fn real_get_native_italic_correction(p_node: *mut c_void) -> i32 {
         let glyph_info = (*node.add(5)).ptr as *const u8; // native_glyph_info_ptr
         let glyph_ids = glyph_info.add(n * 8) as *const u16;
         let last_glyph = *glyph_ids.add(n - 1);
-        if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+        if fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
             return D2Fix(getGlyphItalCorr(
-                crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine,
+                fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine,
                 last_glyph as u32,
             ) as c_double)
-                + crate::globals::font_letter_space_entry(f);
+                + fonts.font_letter_space_entry(f);
         }
     }
     0
 }
 
 // translated from xetex-ext.c:1207 (real_get_native_glyph_italic_correction)
-pub unsafe fn real_get_native_glyph_italic_correction(p_node: *mut c_void) -> i32 {
+pub unsafe fn real_get_native_glyph_italic_correction(
+    fonts: &crate::state::FontState,
+    p_node: *mut c_void,
+) -> i32 {
     let node = p_node as *mut crate::mem_types::MemoryWord;
     let gid = (*node.add(4)).b16.s1; // native_glyph = native_length
     let f = (*node.add(4)).b16.s2 as i32; // native_font
-    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+    if fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
         return D2Fix(getGlyphItalCorr(
-            crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine,
+            fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine,
             gid as u32,
         ) as c_double);
     }
@@ -1750,12 +1756,18 @@ unsafe fn snap_zone(value: *mut i32, snap_value: i32, fuzz: i32) {
 }
 
 // translated from xetex-ext.c:785 (get_native_char_height_depth)
-pub unsafe fn get_native_char_height_depth(font: i32, ch: i32, height: *mut i32, depth: *mut i32) {
+pub unsafe fn get_native_char_height_depth(
+    fonts: &crate::state::FontState,
+    font: i32,
+    ch: i32,
+    height: *mut i32,
+    depth: *mut i32,
+) {
     let mut ht = 0.0f32;
     let mut dp = 0.0f32;
 
-    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
-        let engine = crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine;
+    if fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        let engine = fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine;
         let gid = mapCharToGlyph(engine, ch as u32);
         getGlyphHeightDepth(engine, gid, &mut ht, &mut dp);
     } else {
@@ -1766,44 +1778,50 @@ pub unsafe fn get_native_char_height_depth(font: i32, ch: i32, height: *mut i32,
     *depth = D2Fix(dp as c_double);
 
     // snap to known zones (baseline, x-height, cap-height) if within 4% of em-size
-    let fuzz = crate::globals::font_info_b32s1(6 + crate::globals::param_base(font)) / 25;
+    let fuzz = fonts.font_info_b32s1(6 + fonts.param_base(font)) / 25;
     snap_zone(depth, 0, fuzz);
     snap_zone(height, 0, fuzz);
     snap_zone(
         height,
-        crate::globals::font_info_b32s1(5 + crate::globals::param_base(font)),
+        fonts.font_info_b32s1(5 + fonts.param_base(font)),
         fuzz,
     );
     snap_zone(
         height,
-        crate::globals::font_info_b32s1(8 + crate::globals::param_base(font)),
+        fonts.font_info_b32s1(8 + fonts.param_base(font)),
         fuzz,
     );
 }
 
 // translated from xetex-ext.c:822 (getnativecharht)
-pub unsafe fn getnativecharht(f: i32, c: i32) -> i32 {
+pub unsafe fn getnativecharht(fonts: &crate::state::FontState, f: i32, c: i32) -> i32 {
     let mut h = 0i32;
     let mut d = 0i32;
-    get_native_char_height_depth(f, c, &mut h, &mut d);
+    get_native_char_height_depth(fonts, f, c, &mut h, &mut d);
     h
 }
 
 // translated from xetex-ext.c:830 (getnativechardp)
-pub unsafe fn getnativechardp(f: i32, c: i32) -> i32 {
+pub unsafe fn getnativechardp(fonts: &crate::state::FontState, f: i32, c: i32) -> i32 {
     let mut h = 0i32;
     let mut d = 0i32;
-    get_native_char_height_depth(f, c, &mut h, &mut d);
+    get_native_char_height_depth(fonts, f, c, &mut h, &mut d);
     d
 }
 
 // translated from xetex-ext.c:838 (get_native_char_sidebearings)
-pub unsafe fn get_native_char_sidebearings(font: i32, ch: i32, lsb: *mut i32, rsb: *mut i32) {
+pub unsafe fn get_native_char_sidebearings(
+    fonts: &crate::state::FontState,
+    font: i32,
+    ch: i32,
+    lsb: *mut i32,
+    rsb: *mut i32,
+) {
     let mut l = 0.0f32;
     let mut r = 0.0f32;
 
-    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
-        let engine = crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine;
+    if fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        let engine = fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine;
         let gid = mapCharToGlyph(engine, ch as u32);
         getGlyphSidebearings(engine, gid, &mut l, &mut r);
     } else {
@@ -1815,13 +1833,18 @@ pub unsafe fn get_native_char_sidebearings(font: i32, ch: i32, lsb: *mut i32, rs
 }
 
 // translated from xetex-ext.c:862 (get_glyph_bounds)
-pub unsafe fn get_glyph_bounds(font: i32, edge: i32, gid: i32) -> i32 {
+pub unsafe fn get_glyph_bounds(
+    fonts: &crate::state::FontState,
+    font: i32,
+    edge: i32,
+    gid: i32,
+) -> i32 {
     // edge codes: 1,2,3,4 => L T R B
     let mut a = 0.0f32;
     let mut b = 0.0f32;
 
-    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
-        let engine = crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine;
+    if fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        let engine = fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine;
         if edge & 1 != 0 {
             getGlyphSidebearings(engine, gid as u32, &mut a, &mut b);
         } else {
@@ -1834,21 +1857,21 @@ pub unsafe fn get_glyph_bounds(font: i32, edge: i32, gid: i32) -> i32 {
 }
 
 // translated from xetex-ext.c:889 (getnativecharic)
-pub unsafe fn getnativecharic(f: i32, c: i32) -> i32 {
+pub unsafe fn getnativecharic(fonts: &crate::state::FontState, f: i32, c: i32) -> i32 {
     let mut lsb = 0i32;
     let mut rsb = 0i32;
-    get_native_char_sidebearings(f, c, &mut lsb, &mut rsb);
+    get_native_char_sidebearings(fonts, f, c, &mut lsb, &mut rsb);
     if rsb < 0 {
-        crate::globals::font_letter_space_entry(f) - rsb
+        fonts.font_letter_space_entry(f) - rsb
     } else {
-        crate::globals::font_letter_space_entry(f)
+        fonts.font_letter_space_entry(f)
     }
 }
 
 // translated from xetex-ext.c:900 (getnativecharwd)
-pub unsafe fn getnativecharwd(f: i32, c: i32) -> i32 {
-    if crate::globals::font_area_entry(f) as u32 == OTGR_FONT_FLAG {
-        let engine = crate::globals::font_layout_engine_ptr(f) as XeTeXLayoutEngine;
+pub unsafe fn getnativecharwd(fonts: &crate::state::FontState, f: i32, c: i32) -> i32 {
+    if fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+        let engine = fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine;
         let gid = mapCharToGlyph(engine, c as u32);
         D2Fix(getGlyphWidthFromEngine(engine, gid) as c_double)
     } else {
@@ -1857,13 +1880,13 @@ pub unsafe fn getnativecharwd(f: i32, c: i32) -> i32 {
 }
 
 // translated from xetex-ext.c:1261 (map_char_to_glyph)
-pub unsafe fn map_char_to_glyph(font: i32, ch: i32) -> i32 {
+pub unsafe fn map_char_to_glyph(fonts: &crate::state::FontState, font: i32, ch: i32) -> i32 {
     if ch > 0x10ffff || (0xd800..=0xdfff).contains(&ch) {
         return 0;
     }
-    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+    if fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
         mapCharToGlyph(
-            crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine,
+            fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine,
             ch as u32,
         ) as i32
     } else {
@@ -1885,10 +1908,10 @@ pub unsafe fn map_glyph_to_index(font: i32) -> i32 {
 }
 
 // translated from xetex-ext.c:1293 (get_font_char_range)
-pub unsafe fn get_font_char_range(font: i32, first: i32) -> i32 {
-    if crate::globals::font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+pub unsafe fn get_font_char_range(fonts: &crate::state::FontState, font: i32, first: i32) -> i32 {
+    if fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
         getFontCharRange(
-            crate::globals::font_layout_engine_ptr(font) as XeTeXLayoutEngine,
+            fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine,
             first,
         )
     } else {
@@ -2188,7 +2211,7 @@ pub unsafe fn store_justified_native_glyphs(p_node: *mut c_void) {
         let locations = glyph_info as *mut FixedPoint;
         let glyph_ids = glyph_info.add(glyph_count * 8) as *mut u16;
 
-        let space_glyph = map_char_to_glyph(f, b' ' as i32);
+        let space_glyph = map_char_to_glyph_global(f, b' ' as i32);
         let mut space_count = 0i32;
         for i in 0..glyph_count {
             if *glyph_ids.add(i) as i32 == space_glyph {
@@ -2290,6 +2313,51 @@ pub unsafe fn print_glyph_name(font: i32, gid: i32) {
     if !s.is_null() {
         freeGlyphName(s as *mut c_char);
     }
+}
+
+// ---- Phase-C bridge-down wrappers (native font metric readers) ----
+pub unsafe fn real_get_native_italic_correction_global(p_node: *mut c_void) -> i32 {
+    crate::state::with_state(|s| real_get_native_italic_correction(&s.fonts, p_node))
+}
+pub unsafe fn real_get_native_glyph_italic_correction_global(p_node: *mut c_void) -> i32 {
+    crate::state::with_state(|s| real_get_native_glyph_italic_correction(&s.fonts, p_node))
+}
+pub unsafe fn get_native_char_height_depth_global(
+    font: i32,
+    ch: i32,
+    height: *mut i32,
+    depth: *mut i32,
+) {
+    crate::state::with_state(|s| get_native_char_height_depth(&s.fonts, font, ch, height, depth))
+}
+pub unsafe fn getnativecharht_global(f: i32, c: i32) -> i32 {
+    crate::state::with_state(|s| getnativecharht(&s.fonts, f, c))
+}
+pub unsafe fn getnativechardp_global(f: i32, c: i32) -> i32 {
+    crate::state::with_state(|s| getnativechardp(&s.fonts, f, c))
+}
+pub unsafe fn get_native_char_sidebearings_global(
+    font: i32,
+    ch: i32,
+    lsb: *mut i32,
+    rsb: *mut i32,
+) {
+    crate::state::with_state(|s| get_native_char_sidebearings(&s.fonts, font, ch, lsb, rsb))
+}
+pub unsafe fn get_glyph_bounds_global(font: i32, edge: i32, gid: i32) -> i32 {
+    crate::state::with_state(|s| get_glyph_bounds(&s.fonts, font, edge, gid))
+}
+pub unsafe fn getnativecharic_global(f: i32, c: i32) -> i32 {
+    crate::state::with_state(|s| getnativecharic(&s.fonts, f, c))
+}
+pub unsafe fn getnativecharwd_global(f: i32, c: i32) -> i32 {
+    crate::state::with_state(|s| getnativecharwd(&s.fonts, f, c))
+}
+pub unsafe fn map_char_to_glyph_global(font: i32, ch: i32) -> i32 {
+    crate::state::with_state(|s| map_char_to_glyph(&s.fonts, font, ch))
+}
+pub unsafe fn get_font_char_range_global(font: i32, first: i32) -> i32 {
+    crate::state::with_state(|s| get_font_char_range(&s.fonts, font, first))
 }
 
 #[cfg(test)]
