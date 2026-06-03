@@ -24,7 +24,7 @@ use crate::expand::expand;
 use crate::ext::{
     append_src_special, apply_mapping, do_extension, get_native_char_height_depth_global,
     get_native_char_sidebearings_global, insert_src_special, map_char_to_glyph_global,
-    measure_native_node, real_get_native_glyph_italic_correction_global,
+    measure_native_node_global, real_get_native_glyph_italic_correction_global,
     real_get_native_italic_correction_global,
 };
 use crate::fonts::{new_native_character, read_font_info};
@@ -4691,7 +4691,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                     *mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE)
                         .add((i + old_len) as usize) = *native_text().add(i as usize);
                 }
-                measure_native_node(
+                measure_native_node_global(
                     mem_node_addr(cur_list_tail()),
                     (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
                 );
@@ -4712,7 +4712,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                     *mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE).add(i as usize) =
                         *native_text().add(i as usize);
                 }
-                measure_native_node(
+                measure_native_node_global(
                     mem_node_addr(cur_list_tail()),
                     (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
                 );
@@ -4774,7 +4774,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
                                     .add(t as usize);
                             ki += 1;
                         }
-                        measure_native_node(
+                        measure_native_node_global(
                             mem_node_addr(tmp),
                             (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0)
                                 as libc::c_int,

@@ -2,7 +2,9 @@ use crate::consts::{
     DIMEN_BASE, ETEX_PEN_BASE, GLUE_BASE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MAX_HALFWORD,
     SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR,
 };
-use crate::ext::{linebreak_next, linebreak_start, measure_native_node, real_get_native_word_cp};
+use crate::ext::{
+    linebreak_next_global, linebreak_start, measure_native_node_global, real_get_native_word_cp,
+};
 use crate::globals::eqtb_b32s1;
 use crate::hyphenation::init_trie;
 use crate::scan::{new_native_word_node_global, node_recycle_abort, NodeRecycleAbort};
@@ -1241,7 +1243,7 @@ pub unsafe fn reconstitute_global(j: i16, n: i16, bchar: i32, hchar: i32) -> i16
 
 #[inline]
 pub unsafe fn set_native_metrics(mem: &MemState, eqtb: &EqtbState, p: i32) {
-    measure_native_node(
+    measure_native_node_global(
         mem.node_addr(p),
         (eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
     );
@@ -3508,7 +3510,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
         for i in 0..len {
             *text.add(i as usize) = *native_text.add((s + i) as usize);
         }
-        measure_native_node(
+        measure_native_node_global(
             crate::globals::mem_node_addr(cur_list_tail()),
             use_glyph as libc::c_int,
         );
@@ -3520,7 +3522,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
         let mut offs: i32 = 0;
         loop {
             let prev_offs = offs;
-            offs = linebreak_next(main_f);
+            offs = linebreak_next_global(main_f);
             if offs > 0 {
                 if prev_offs != 0 {
                     if use_penalty {
@@ -3542,7 +3544,7 @@ pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
                 for i in prev_offs..offs {
                     *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
                 }
-                measure_native_node(
+                measure_native_node_global(
                     crate::globals::mem_node_addr(cur_list_tail()),
                     use_glyph as libc::c_int,
                 );

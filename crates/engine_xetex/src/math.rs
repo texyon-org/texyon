@@ -1199,7 +1199,7 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
                             let g = get_ot_math_variant(cur_f(), c_glyph as i32, n, &mut h2, 0);
                             if h2 > 0 {
                                 set_mem_b16s1(p + 4, g as u16);
-                                crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+                                crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
                             }
                             n += 1;
                             if h2 < 0 || h2 >= h1 {
@@ -1217,7 +1217,7 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
                                 break 'found;
                             }
                         } else {
-                            crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+                            crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
                         }
                     }
                     delta = get_ot_math_ital_corr(cur_f(), mem_b16s1(p + 4) as i32);
@@ -1669,12 +1669,12 @@ pub unsafe fn make_math_accent_global(q: i32) {
             p + 4,
             real_get_native_glyph(mem_node_addr(mem_b32s1(y + 5)), 0),
         );
-        crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+        crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
         let old_node = mem_b32s1(y + 5);
         free_node_global(old_node, mem_b16s3(old_node + 4) as i32);
         set_mem_b32s1(y + 5, p);
         if !mem_b16s0(q).is_multiple_of(2) {
-            crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+            crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
         } else {
             let c_glyph = mem_b16s1(p + 4) as i32;
             let mut a_var: i32 = 0;
@@ -1683,7 +1683,7 @@ pub unsafe fn make_math_accent_global(q: i32) {
                 let g = get_ot_math_variant(f, c_glyph, a_var, &mut w2, 1);
                 if w2 > 0 && w2 <= w {
                     set_mem_b16s1(p + 4, g as u16);
-                    crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+                    crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
                     a_var += 1;
                 }
                 if w2 < 0 || w2 >= w {
@@ -1701,7 +1701,7 @@ pub unsafe fn make_math_accent_global(q: i32) {
                         break 'found;
                     }
                 } else {
-                    crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+                    crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
                 }
             }
             // found:
@@ -2579,7 +2579,7 @@ pub unsafe extern "C" fn mlist_to_hlist() {
                             set_mem_b16s0(p, GLYPH_NODE);
                             set_mem_b16s2(p + 4, cur_f() as u16);
                             set_mem_b16s1(p + 4, real_get_native_glyph(mem_node_addr(z), 0));
-                            crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+                            crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
                             free_node_global(z, mem_b16s3(z + 4) as i32);
                             delta = get_ot_math_ital_corr(cur_f(), mem_b16s1(p + 4) as i32);
                             if mem_b32s1(q + 1) == MATH_TEXT_CHAR
@@ -3006,7 +3006,7 @@ pub unsafe fn stack_glyph_into_box_global(b: i32, f: i32, g: i32) {
         Ok(p) => p,
         Err(e) => node_recycle_abort(e),
     };
-    crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+    crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
     crate::state::with_state_mut(|st| stack_glyph_into_box(&mut st.mem, b, p));
 }
 
@@ -3037,7 +3037,7 @@ unsafe fn native_glyph_vbox_global(f: i32, g: u16) -> i32 {
         Ok(nodes) => nodes,
         Err(e) => node_recycle_abort(e),
     };
-    crate::ext::measure_native_glyph(mem_node_addr(p), 1);
+    crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
     crate::state::with_state_mut(|st| native_glyph_vbox_finish(&mut st.mem, b, p));
     b
 }

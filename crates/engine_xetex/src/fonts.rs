@@ -6,7 +6,7 @@ use crate::consts::{INT_BASE, TOO_BIG_CHAR};
 use crate::errors::error;
 use crate::ext::{
     aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping,
-    find_native_font, load_tfm_font_mapping, map_char_to_glyph_global, measure_native_node,
+    find_native_font, load_tfm_font_mapping, map_char_to_glyph_global, measure_native_node_global,
     ot_get_font_metrics, release_font_engine,
 };
 use crate::globals::{
@@ -207,7 +207,7 @@ pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
         Err(e) => node_recycle_abort(e),
     };
 
-    measure_native_node(
+    measure_native_node_global(
         crate::globals::mem_node_addr(p),
         (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_NC) > 0) as libc::c_int,
     );

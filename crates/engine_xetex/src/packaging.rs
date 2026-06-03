@@ -14,7 +14,7 @@ use crate::consts::{
     MIN_HALFWORD, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
 use crate::errors::error;
-use crate::ext::measure_native_node;
+use crate::ext::measure_native_node_global;
 use crate::globals::{
     active_width, cur_val, eqtb_b32s1, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1,
     mem_word, set_active_width, set_best_height_plus_depth, set_cur_val, set_eqtb_b32s1,
@@ -1596,7 +1596,7 @@ pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
                             flush_node_list_global(scan_p);
                             p = mem_b32s1(q);
                             let use_glyph_metrics = eqtb_b32s1(INT_BASE + 72) > 0;
-                            measure_native_node(
+                            measure_native_node_global(
                                 crate::globals::mem_node_addr(p),
                                 use_glyph_metrics as libc::c_int,
                             );

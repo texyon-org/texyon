@@ -8,7 +8,7 @@ use crate::consts::{
 use crate::ext::apply_tfm_font_mapping;
 use crate::ext::makeXDVGlyphArrayData;
 use crate::ext::make_font_def;
-use crate::ext::store_justified_native_glyphs;
+use crate::ext::store_justified_native_glyphs_global;
 
 use crate::globals::{
     avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name,
@@ -992,7 +992,7 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
                 }
 
                 set_mem_b32s1(q + 1, k);
-                store_justified_native_glyphs(mem_node_addr(q));
+                store_justified_native_glyphs_global(mem_node_addr(q));
                 set_mem_b32s1(prev_p, q);
                 set_mem_b32s1(q, mem_b32s1(p));
                 set_mem_b32s1(p, TEX_NULL);
