@@ -90,7 +90,7 @@ pub(crate) fn new_native_word_node(
 /// All the `with_state`-bearing work (string pool, TECkit mapping, lost-char
 /// warnings, native measurement) stays in the [`new_native_character`] wrapper,
 /// outside this borrow.
-pub(crate) fn build_native_character(
+fn build_native_character(
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
     fonts: &crate::state::FontState,
@@ -1081,7 +1081,7 @@ pub unsafe extern "C" fn load_native_font(u: i32, nom: i32, aire: i32, mut s: i3
 // ---- consts + NativeCharSrc moved/duplicated from scan.rs (workstream 02) ----
 
 /// Source of the UTF-16 text payload for [`build_native_character`].
-pub(crate) enum NativeCharSrc {
+enum NativeCharSrc {
     /// A TECkit-mapped run: `len` UTF-16 units already sitting in
     /// `FontState::mapped_text`.
     Mapped(i32),

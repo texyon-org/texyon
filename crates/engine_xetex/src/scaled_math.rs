@@ -134,34 +134,41 @@ pub unsafe extern "C" fn mult_and_add(
 /// 0, with `tex_remainder = x`) on division by zero.
 ///
 /// translated from xetex-scaledmath.c:79 (x_over_n)
-pub unsafe fn x_over_n(x: i32, n: i32) -> i32 {
-    let (quotient, remainder, overflow) = x_over_n_parts(x, n);
-    if overflow {
-        set_arith_error(true);
-    }
-    set_tex_remainder(remainder);
-    quotient
-}
+pub unsafe fn x_over_n(mut x: i32, mut n: i32) -> i32 {
+    // scaled_t is i32
 
-pub(crate) fn x_over_n_parts(mut x: i32, mut n: i32) -> (i32, i32, bool) {
     if n == 0 {
-        return (0, x, true);
+        set_arith_error(true);
+        set_tex_remainder(x);
+        return 0;
     }
 
+    // Track the running remainder across sign flips — the C writes
+    // this into the shared global between sign-flipping the inputs
+    // and doing the divide. We read the current remainder via an
+    // extra helper to match that behaviour.
+    //
+    // In the C body:
+    //   if (n < 0) { x = -x; n = -n; tex_remainder = -tex_remainder; }
+    // The `-tex_remainder` looks pointless (it's immediately
+    // overwritten below), but we preserve it for faithfulness.
     if n < 0 {
         x = x.wrapping_neg();
         n = n.wrapping_neg();
+        set_tex_remainder(crate::globals::tex_remainder().wrapping_neg());
     }
 
     if x >= 0 {
-        (x / n, x % n, false)
+        set_tex_remainder(x % n);
+        x / n
     } else {
+        // Negating x may wrap (if x was i32::MIN), but that case is
+        // still handled correctly: i32::MIN % positive_n and
+        // i32::MIN / positive_n are both defined in Rust and match
+        // C's behaviour after the implicit cast-through-wrap.
         let neg_x = x.wrapping_neg();
-        (
-            (neg_x / n).wrapping_neg(),
-            (neg_x % n).wrapping_neg(),
-            false,
-        )
+        set_tex_remainder((neg_x % n).wrapping_neg());
+        (neg_x / n).wrapping_neg()
     }
 }
 
