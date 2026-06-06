@@ -84,7 +84,17 @@ HAZARD_RE = re.compile(
     r"print_\w*|print\b|print_cstr|print_nl_cstr|print_esc\w*|print_int|print_scaled|print_ln|"
     r"diagnostic\w*|begin_diagnostic|end_diagnostic|error_here_with_diagnostic|"
     r"capture_to_diagnostic|\berror\s*\(|confusion|overflow|runaway|"
-    r"back_input|get_next|get_token|get_x_token|scan_\w+|group_warning"
+    r"back_input|get_next|get_token|get_x_token|scan_\w+|group_warning|"
+    # session-138: re-entrant giants/helpers the earlier regex missed (they
+    # call `with_state` transitively, so a body that interleaves any of these
+    # with mem allocation nest-panics — clean_box/ins_the_toks/app_space all
+    # looked HAZARD-free but call one of these). The packaging packers, the
+    # math list builder, the token-list builders, and `xn_over_d` (which sets
+    # the `tex_remainder`/`arith_error` globals via `with_state`, the §129
+    # lesson) are NOT single-borrow threadable.
+    r"mlist_to_hlist|hpack|vpackage|vsplit|vert_break|"
+    r"the_toks|begin_token_list|macro_call|conv_toks|expand\b|"
+    r"xn_over_d|x_over_n|unsave\b|build_page|push_nest|pop_nest|insert_src_special"
     r")\b"
 )
 

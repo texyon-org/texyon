@@ -10,6 +10,127 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 138 — 2026-06-06 — batch-thread no-HAZARD leaf clusters with thread_fn.py (throughput test)
+
+**Type:** execution (workstream 01, Phase C — the session-137 "speed it up" /
+batch-with-the-codemod decision, tested in practice). **2 commits, 5 functions
+threaded.** Dashboard **29/2/7/4** green on every commit; bench `--scope tier1`
+**12/12** and `--scope tier1-real` **2/2** (exit 0) on the math/typesetting
+cluster.
+
+### What and why
+
+The brief was to BATCH-thread a coherent cluster of no-HAZARD leaf functions off
+`with_state` using `thread_fn.py`, committing the cluster in one validation pass
+(vs session-137's one-function-per-commit), and to **measure the throughput** so
+the "is the codemod worth it / should we keep targeting `with_state`→0" decision
+is grounded in data.
+
+First I surveyed the actual leaf backlog (not just the recon's bucket-B-by-score,
+which is dominated by output/print = true bucket-C). I wrote a one-off scanner
+that enumerates every column-0 fn that (a) does **not** already take a state
+borrow, (b) still calls the bridge's indexed `mem_*`/`eqtb_*` accessors, and (c)
+is HAZARD-free per `thread_fn.py`'s `HAZARD_RE`. That produced ~30 candidates —
+but **eyeballing each (the mandatory §4/§135 gate) eliminated most**, because the
+regex has false-negatives (see "codemod blind spots" below). The genuinely-clean
+remainder was small.
+
+* **Commit 1 (`289e36a8`) — the main_control paragraph/mode-reset verb cluster
+  (4 fns), one validation pass.** `trap_zero_glue` → `&mut MemState` (calls the
+  threaded `delete_glue_ref` core; no allocation → no sentinel). `fix_language`
+  and `indent_in_hmode` → `&mut MemState` + `&EqtbState` (the `new_whatsit` /
+  `new_null_box` / `new_noad` cores' `ALLOC_FAILED` → the `01b` §5
+  `NodeRecycleAbort::Overflow` sentinel, raised by the `_global` wrappers after
+  the borrow drops; `norm_min` is an `unsafe extern` so it stays in an unsafe
+  block). `normal_paragraph` → disjoint `&mut EqtbState`/`&mut SaveStackState`/
+  `&mut MemState`/`&mut ScannerState` (calls the threaded `eq_word_define`/
+  `eq_define` cores, short-circuits on the first `SaveAbort`, raised by
+  `normal_paragraph_global`; made `save::raise_save_abort` `pub(crate)`). All
+  `cur_val`/`cur_chr`/`cur_list.*` accessors are **raw** (safe under the borrow,
+  §4); the 12 callers (main_control giant + `pagebuilder::build_page`) are all
+  legacy → bridge-down `_global` wraps. Three `#[no_mangle] extern "C"` cores
+  de-exported.
+* **Commit 2 (`dd0a73ca`) — `pseudo_close` → `&mut MemState` + `&mut
+  InputClusterState`.** The `\scantokens` pseudo-file closer: pure node
+  recycling, no allocation → no sentinel. `pseudo_files` is an
+  `InputClusterState` field, `avail` a `MemState` field; the per-node free size
+  is hoisted before the `&mut free_node` call (free-fn arg-borrow, unlike a
+  two-phase method receiver). De-exported; both callers (`input.rs` +
+  `format_io.rs`) → `pseudo_close_global`; removed 4 now-dead `globals` imports.
+
+### Throughput result (the number this session was for)
+
+**5 functions threaded, 2 validation passes** (commit 1 = build + 4 suites +
+bench tier1/tier1-real; commit 2 = build + 4 suites). Session 137 did **3
+functions, 3 full validation passes**. So batching + the codemod is roughly
+**~1.7× the functions per session and ~2.5× the functions per validation pass**
+— a real but **modest** speed-up, well short of a 3× per-function win. Why it's
+modest, honestly:
+
+1. **The dominant cost was not the keystrokes the codemod removes.** `thread_fn.py`
+   genuinely eliminated the indexed-accessor swaps (22 substitutions across the 4
+   main_control fns) and the first-pass hazard grep. But the *binding* cost this
+   session was (a) **finding** clean leaves and (b) the **manual hazard eyeball**
+   the regex cannot do — both unchanged by the tool.
+2. **Clean single-borrow leaves are nearly drained.** `save.rs`, `mem.rs`,
+   `pagebuilder.rs` are essentially done; the recon's bucket-B is now mostly
+   output/print (bucket-C). Of ~30 mechanically-"clean" candidates, all but ~6
+   were really bucket-C/D once eyeballed.
+
+### Codemod blind spots found + fixed (the eyeball gate is still mandatory)
+
+The HAZARD_RE missed several real `with_state` re-entries, making bucket-C bodies
+look threadable: `app_space` calls `xn_over_d` (sets `tex_remainder`/`arith_error`
+via `with_state` — the §129 lesson) + fonts accessors; `clean_box` calls
+`mlist_to_hlist` (the C++ measurer path) + `hpack`; `ins_the_toks` calls
+`the_toks` + `begin_token_list`. **Caught all three by reading the body, not the
+tool** — exactly hard-discipline #1. Then **hardened `thread_fn.py`'s HAZARD_RE**
+to flag `mlist_to_hlist`/`hpack`/`vpackage`/`vsplit`/`vert_break`/`the_toks`/
+`begin_token_list`/`macro_call`/`conv_toks`/`expand`/`xn_over_d`/`x_over_n`/
+`unsave`/`build_page`/`push_nest`/`pop_nest`/`insert_src_special` (the re-entrant
+giants/helpers without a safe threaded core). Verified it now correctly flags
+`clean_box`/`app_space`/`ins_the_toks`. (`prune_page_top` deliberately *excluded*
+— it has a safe threaded core, so flagging it would be a false-positive.)
+
+### Strategy implication (for the re-scope decision)
+
+This session's data answers the session-137 question: the codemod buys a **modest
+~1.7×**, and the rate-limiter has shifted from per-function keystrokes to **leaf
+scarcity + the regex's irreducible false-negatives** (the manual eyeball can't be
+codemodded away). Combined with the prior that the giants (`hpack`/`line_break`/
+`mlist_to_hlist`/`build_page`/`main_control`) are the real gate on `with_state`→0
+and are bucket-C scoped-island work, this supports **redirecting the codemod
+toward driving `#[no_mangle]` (293→289 this session) and `unsafe fn` down** —
+mechanical, abundant, and not blocked on the giants — rather than chasing
+`with_state`→0 through a near-empty clean-leaf backlog. The next session's
+vpackage scoped-island spike will give the cost-per-giant half of that decision.
+
+### Metrics (from the session-137 baseline)
+
+`#[no_mangle]` exports **293 → 289** (−4: three main_control cores + `pseudo_close`
+de-exported; `normal_paragraph` was already non-exported; dead `xetex-xetexd.h`
+prototypes left as harmless declarations). `with_state` sites
+(`grep -rhoE 'with_state(_mut)?\s*\('` over `src/*.rs`) **1129 → 1134** (+5: five
+new `_global` wrappers — the accepted transitional rise, cf. 127/128/132/137).
+`unsafe fn` **363 → 367** (+4: five new `pub unsafe fn` wrappers minus the one
+old `unsafe fn normal_paragraph`; the four `extern "C"` cores were never counted
+by the `unsafe fn ` grep — they were `unsafe extern`). Warnings **50 → 50** (no
+§7 trap; cleaned the 4 dead `input.rs` imports the threading orphaned).
+Dashboard **29/2/7/4**.
+
+### Next
+
+The clean single-borrow mem/eqtb leaf backlog is now drained to the dregs (the
+remaining "clean-by-tool" candidates are high-churn many-caller readers like
+`max_hyphenatable_length` — 8 scattered hot-loop callers — that just create
+bridge-down wraps for no net gain until their giants thread). Per the looking-
+ahead note and this session's throughput finding: **(a)** do the deliberate
+vpackage scoped-island bucket-C spike to get cost-per-giant, then **(b)** make
+the keep-targeting-`with_state`→0-vs-redirect-to-`#[no_mangle]`/`unsafe`-teardown
+call. If redirecting, point `thread_fn.py` (or a new codemod) at the mechanical
+de-export / de-unsafe of no-C-caller functions — that's where the abundant
+idiomatic value now is.
+
 ## Idiom session 137 — 2026-06-06 — thread the FFI-free packaging node-recycle / vlist-append cluster
 
 **Type:** execution (workstream 01, Phase C — continue climbing the call graph
