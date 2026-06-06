@@ -57,6 +57,11 @@ mod shipout;
 mod state;
 #[allow(dead_code)]
 mod string_pool;
+// Typed-memory foundation (`plan/idiom/01c` §2 Stage 1). Built before its
+// consumers (the Phase-C "type-as-you-thread" slices, `01`-§4a), so its
+// items are intentionally unused until Stage 2/3 adopt them.
+#[allow(dead_code)]
+mod units;
 mod synctex;
 #[allow(dead_code)]
 mod texmfmp;

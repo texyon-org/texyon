@@ -9,6 +9,72 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 145 — 2026-06-06 — Execution: typed foundation Stage 1 — the scalar-newtypes module (`01c` §2)
+
+**Type:** execution (workstream 01 / `01c` §2 Stage 1, the typed
+foundation). **1 commit.** Dashboard **29/2/7/4** green; warnings **48 →
+42** (−6).
+
+### What and how
+
+The first execution slice off the now-`READY` `01c` cookbook: build the
+scalar-newtypes module that the Phase-C type-as-you-thread slices adopt.
+
+- **NEW `src/units.rs`** — the canonical `#[repr(transparent)]` + `Copy`
+  scalar newtypes: `MemIdx` (valid index, **no** null), `MemPtr` (nullable
+  halfword), `Scaled`, `StrNumber`, `FontId`, `Token`. With the two
+  `01c`-§2 source-fixes applied:
+  1. `MemPtr::NULL = MemPtr(TEX_NULL)` where `TEX_NULL = MIN_HALFWORD =
+     -0x0FFFFFFF` (`crate::consts::TEX_NULL`) — **not** `0`. Null-ness is on
+     `MemPtr`, not `MemIdx`. `MemPtr::as_idx() -> Option<MemIdx>` is the
+     single checked classification boundary (`01c` §3).
+  2. `FontId` wraps `i32` (not the vestigial `u16`) — `internal_font_number`
+     is `int32_t` (`xetex-xetexd.h:326`).
+  - `MemIdx::new` debug-asserts `!= TEX_NULL`; `offset`/`index` helpers for
+    node-field walking.
+  - 3 unit tests (all pass): `#[repr(transparent)]` size == `i32`
+    (the Stage-1 zero-cost evidence; the real disasm gate, `01c` §4, lands
+    with the first `NodePtr<K>` field method in Stage 3), and the
+    null-is-`TEX_NULL`-not-`0` correction.
+- **`src/lib.rs`** — `#[allow(dead_code)] mod units;` (foundation built
+  before its consumers, `01`-§4a; same pattern as `string_pool`/`texmfmp`).
+- **`src/mem.rs`** — deleted the vestigial duplicate newtypes (lines
+  56–96; the old wrong `MemIdx::NULL = MemIdx(0)`). They had **zero**
+  method call sites (verified: every `.is_null()` in the crate is on a raw
+  pointer) and were not re-exported, so removal is behavior-neutral and
+  drops 6 dead-code warnings.
+
+### Scope decision
+
+Scoped this slice to the **pure scalar newtypes** only. `NodeType` +
+`from_raw` (listed in `01c` §2 Stage 1) is **deferred to its own slice**:
+a faithful node-type enumeration (~30 discriminants from
+`xetex-constants.h`) is a parity hazard best cross-checked alongside the
+classification boundary it serves (Stage 3), and folding it in here would
+violate A.12 (keep the commit trivially-safe and bisectable). Recorded so
+the next session picks it up.
+
+### Metrics & validation
+
+- Warnings **48 → 42** (−6, all from deleting the dead `mem.rs` stubs; the
+  new module is `#[allow(dead_code)]` and adds none). `with_state` /
+  `unsafe fn` / `#[no_mangle]` **unchanged** (this slice threads nothing
+  and touches no `unsafe`).
+- Behavior-neutral by construction: added an unused module + removed dead
+  code. Dashboard **29/2/7/4** (tex-outputs 29, trip 2, engine_rust 7,
+  latex_goldens 4) all green; `units::` unit tests 3/3. Bench not run
+  (no `ORACLE_BIN` configured here; this slice changes no code path).
+
+**Handoff / Next:** continue the `01c` foundation. Stage-1 remainder =
+the **`NodeType` enum + checked `from_raw`** slice (enumerate faithfully
+from `xetex-constants.h`, TRIP-validate). Then **Stage 2** — the `Mem`
+`Vec<MemoryWord>` ownership move (`01`-§5 steps 1–2: `ini.rs` alloc, the
+`tt_cleanup`/longjmp reconciliation `01`-§7, the `n+1` inclusive sizing
+gotcha, and the byte-exact `.fmt` dump/undump `01c` §7.2). Then **Stage 3**
+— the per-family `NodePtr<K>` layer in the `01c` §1 order (box first),
+where the §4 disasm gate becomes load-bearing. Phase-C giant-threading may
+proceed in parallel via the `01`-§4a worklist fallback.
+
 ## Idiom session 144 — 2026-06-06 — Plan construction: the typed-foundation cookbook (`01c`) + node-field recon
 
 **Type:** plan construction (no engine code change, no dashboard run — hard
