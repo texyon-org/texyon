@@ -252,8 +252,7 @@ const ALPHA_TOKEN: i32 = OTHER_TOKEN + b'`' as i32;
 const FROZEN_PRIM_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_PRIMITIVE;
 
 // translated from xetex-xetex0.c:5078 (scan_char_class)
-#[no_mangle]
-pub unsafe extern "C" fn scan_char_class() {
+pub unsafe fn scan_char_class() {
     scan_int();
     if cur_val() < 0 || cur_val() > CHAR_CLASS_LIMIT {
         let errmsg = error_here_with_diagnostic(c"Bad character class".as_ptr());
@@ -268,8 +267,7 @@ pub unsafe extern "C" fn scan_char_class() {
 }
 
 // translated from xetex-xetex0.c:5096 (scan_char_class_not_ignored)
-#[no_mangle]
-pub unsafe extern "C" fn scan_char_class_not_ignored() {
+pub unsafe fn scan_char_class_not_ignored() {
     scan_int();
     if cur_val() < 0 || cur_val() > CHAR_CLASS_LIMIT {
         let errmsg = error_here_with_diagnostic(c"Bad character class".as_ptr());
@@ -287,8 +285,7 @@ pub unsafe extern "C" fn scan_char_class_not_ignored() {
 }
 
 // translated from xetex-xetex0.c:5114 (scan_eight_bit_int)
-#[no_mangle]
-pub unsafe extern "C" fn scan_eight_bit_int() {
+pub unsafe fn scan_eight_bit_int() {
     scan_int();
     if cur_val() < 0 || cur_val() > 255 {
         let errmsg = error_here_with_diagnostic(c"Bad register code".as_ptr());
@@ -306,8 +303,7 @@ pub unsafe extern "C" fn scan_eight_bit_int() {
 }
 
 // translated from xetex-xetex0.c:5132 (scan_usv_num)
-#[no_mangle]
-pub unsafe extern "C" fn scan_usv_num() {
+pub unsafe fn scan_usv_num() {
     scan_int();
     if cur_val() < 0 || cur_val() > BIGGEST_USV {
         let errmsg = error_here_with_diagnostic(c"Bad character code".as_ptr());
@@ -325,8 +321,7 @@ pub unsafe extern "C" fn scan_usv_num() {
 }
 
 // translated from xetex-xetex0.c:5150 (scan_char_num)
-#[no_mangle]
-pub unsafe extern "C" fn scan_char_num() {
+pub unsafe fn scan_char_num() {
     scan_int();
     if cur_val() < 0 || cur_val() > BIGGEST_CHAR {
         let errmsg = error_here_with_diagnostic(c"Bad character code".as_ptr());
@@ -344,8 +339,7 @@ pub unsafe extern "C" fn scan_char_num() {
 }
 
 // translated from xetex-xetex0.c:5330 (scan_math_class_int)
-#[no_mangle]
-pub unsafe extern "C" fn scan_math_class_int() {
+pub unsafe fn scan_math_class_int() {
     scan_int();
     if cur_val() < 0 || cur_val() > 7 {
         let errmsg = error_here_with_diagnostic(c"Bad math class".as_ptr());
@@ -363,8 +357,7 @@ pub unsafe extern "C" fn scan_math_class_int() {
 }
 
 // translated from xetex-xetex0.c:5348 (scan_math_fam_int)
-#[no_mangle]
-pub unsafe extern "C" fn scan_math_fam_int() {
+pub unsafe fn scan_math_fam_int() {
     scan_int();
     if cur_val() < 0 || cur_val() > NUMBER_MATH_FAMILIES - 1 {
         let errmsg = error_here_with_diagnostic(c"Bad math family".as_ptr());
@@ -400,8 +393,7 @@ pub unsafe fn scan_four_bit_int() {
 }
 
 // translated from xetex-xetex0.c:5384 (scan_fifteen_bit_int)
-#[no_mangle]
-pub unsafe extern "C" fn scan_fifteen_bit_int() {
+pub unsafe fn scan_fifteen_bit_int() {
     scan_int();
     if cur_val() < 0 || cur_val() > 32767 {
         let errmsg = error_here_with_diagnostic(c"Bad mathchar".as_ptr());
@@ -420,8 +412,7 @@ pub unsafe extern "C" fn scan_fifteen_bit_int() {
 
 // translated from xetex-xetex0.c:5168 (scan_xetex_math_char_int)
 // math_char(x) = (x as u32) & 0x1FFFFF (xetex-xetexd.h:1205)
-#[no_mangle]
-pub unsafe extern "C" fn scan_xetex_math_char_int() {
+pub unsafe fn scan_xetex_math_char_int() {
     scan_int();
     let mc = (cur_val() as u32) & 0x1F_FFFF;
     if mc == ACTIVE_MATH_CHAR as u32 {
@@ -454,8 +445,7 @@ pub unsafe extern "C" fn scan_xetex_math_char_int() {
 }
 
 // translated from xetex-xetex0.c:5245 (scan_register_num)
-#[no_mangle]
-pub unsafe extern "C" fn scan_register_num() {
+pub unsafe fn scan_register_num() {
     scan_int();
     if cur_val() < 0 || cur_val() > max_reg_num() {
         let errmsg = error_here_with_diagnostic(c"Bad register code".as_ptr());
@@ -470,8 +460,7 @@ pub unsafe extern "C" fn scan_register_num() {
 }
 
 // translated from xetex-xetex0.c:5263 (scan_four_bit_int_or_18)
-#[no_mangle]
-pub unsafe extern "C" fn scan_four_bit_int_or_18() {
+pub unsafe fn scan_four_bit_int_or_18() {
     scan_int();
     if cur_val() < 0 || (cur_val() > 15 && cur_val() != 18) {
         let errmsg = error_here_with_diagnostic(c"Bad number".as_ptr());
@@ -489,8 +478,7 @@ pub unsafe extern "C" fn scan_four_bit_int_or_18() {
 }
 
 // translated from xetex-xetex0.c:5403 (scan_delimiter_int)
-#[no_mangle]
-pub unsafe extern "C" fn scan_delimiter_int() {
+pub unsafe fn scan_delimiter_int() {
     scan_int();
     if cur_val() < 0 || cur_val() > 0x7FF_FFFF {
         let errmsg = error_here_with_diagnostic(c"Bad delimiter code".as_ptr());
@@ -514,8 +502,7 @@ pub unsafe extern "C" fn scan_delimiter_int() {
 /// Returns the maximum hyphenatable word length, clamped to HYPHENATABLE_LENGTH_LIMIT.
 ///
 /// translated from xetex-xetex0.c:11330 (max_hyphenatable_length)
-#[no_mangle]
-pub unsafe extern "C" fn max_hyphenatable_length() -> i32 {
+pub unsafe fn max_hyphenatable_length() -> i32 {
     let v = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH);
     if v > HYPHENATABLE_LENGTH_LIMIT {
         HYPHENATABLE_LENGTH_LIMIT
@@ -531,16 +518,14 @@ pub unsafe extern "C" fn max_hyphenatable_length() -> i32 {
 /// Scan a glue specification (non-math).
 ///
 /// translated from xetex-xetex0.c:6519 (scan_normal_glue)
-#[no_mangle]
-pub unsafe extern "C" fn scan_normal_glue() {
+pub unsafe fn scan_normal_glue() {
     scan_glue(GLUE_VAL);
 }
 
 /// Scan a mu-glue specification (math mode).
 ///
 /// translated from xetex-xetex0.c:6524 (scan_mu_glue)
-#[no_mangle]
-pub unsafe extern "C" fn scan_mu_glue() {
+pub unsafe fn scan_mu_glue() {
     scan_glue(MU_VAL_SCAN);
 }
 
@@ -551,8 +536,7 @@ pub unsafe extern "C" fn scan_mu_glue() {
 /// Returns INTPAR(xetex_input_normalization), or 0 if eqtb is not yet initialized.
 ///
 /// translated from xetex-xetex0.c:9073 (get_input_normalization_state)
-#[no_mangle]
-pub unsafe extern "C" fn get_input_normalization_state() -> i32 {
+pub unsafe fn get_input_normalization_state() -> i32 {
     if eqtb_is_null() {
         0
     } else {
@@ -570,8 +554,7 @@ pub unsafe fn get_tracing_fonts_state() -> i32 {
 /// Scan a PDF extension token list (xpand=true, macro_def=false).
 ///
 /// translated from xetex-xetex0.c:15945 (scan_pdf_ext_toks)
-#[no_mangle]
-pub unsafe extern "C" fn scan_pdf_ext_toks() {
+pub unsafe fn scan_pdf_ext_toks() {
     scan_toks(false, true);
 }
 
@@ -584,8 +567,7 @@ pub unsafe extern "C" fn scan_pdf_ext_toks() {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3653 (get_token)
-#[no_mangle]
-pub unsafe extern "C" fn get_token() {
+pub unsafe fn get_token() {
     set_no_new_control_sequence(false);
     get_next();
     set_no_new_control_sequence(true);
@@ -610,8 +592,7 @@ const FROZEN_ENDV: i32 = 2_243_226 + 6;
 const PROTECTED_TOKEN: i32 = 0x1C00001;
 
 /// translated from xetex-xetex0.c:4316 (x_token)
-#[no_mangle]
-pub unsafe extern "C" fn x_token() {
+pub unsafe fn x_token() {
     while cur_cmd() > MAX_COMMAND {
         expand();
         get_next();
@@ -627,8 +608,7 @@ pub unsafe extern "C" fn x_token() {
 const MATH_SHIFT_TOKEN: i32 = 0x600000;
 
 /// translated from xetex-xetex0.c:11444 (insert_dollar_sign)
-#[no_mangle]
-pub unsafe extern "C" fn insert_dollar_sign() {
+pub unsafe fn insert_dollar_sign() {
     crate::input::back_input();
     set_cur_tok(MATH_SHIFT_TOKEN + '$' as i32);
     crate::output::error_here_with_diagnostic(c"Missing $ inserted".as_ptr());
@@ -704,8 +684,7 @@ pub unsafe fn scan_left_brace() {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:4272 (get_x_token)
-#[no_mangle]
-pub unsafe extern "C" fn get_x_token() {
+pub unsafe fn get_x_token() {
     loop {
         get_next();
         if cur_cmd() <= MAX_COMMAND {
@@ -731,8 +710,7 @@ pub unsafe extern "C" fn get_x_token() {
 }
 
 /// translated from xetex-xetex0.c:4533 (get_x_or_protected)
-#[no_mangle]
-pub unsafe extern "C" fn get_x_or_protected() {
+pub unsafe fn get_x_or_protected() {
     loop {
         get_token();
         if cur_cmd() <= MAX_COMMAND {
@@ -758,8 +736,7 @@ const BACKUP_HEAD: i32 = 4_999_999 - 13;
 const BACKED_UP: u16 = 3;
 
 /// translated from xetex-xetex0.c:4284 (scan_keyword)
-#[no_mangle]
-pub unsafe extern "C" fn scan_keyword(s: *const libc::c_char) -> bool {
+pub unsafe fn scan_keyword(s: *const libc::c_char) -> bool {
     let mut p = BACKUP_HEAD;
     set_mem_b32s1(p, crate::mem::TEX_NULL);
 
@@ -827,8 +804,7 @@ const NORMAL_EXPR: u16 = 0;
 const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 
 /// translated from xetex-xetex0.c:6025 (scan_expr)
-#[no_mangle]
-pub unsafe extern "C" fn scan_expr() {
+pub unsafe fn scan_expr() {
     let mut l = cur_val_level() as i16;
     let a = arith_error();
     let mut b = false;
@@ -1142,8 +1118,7 @@ const RIGHT_BRACE_LIMIT: i32 = 0x600000;
 const TEMP_HEAD: i32 = 4_999_999 - 3;
 
 /// translated from xetex-xetex0.c:6262 (scan_general_text)
-#[no_mangle]
-pub unsafe extern "C" fn scan_general_text() {
+pub unsafe fn scan_general_text() {
     let s = scanner_status();
     let w = warning_index();
     let d = def_ref();
@@ -1196,8 +1171,7 @@ const EXACTLY: u8 = 0;
 const ADDITIONAL: u8 = 1;
 
 /// translated from xetex-xetex0.c:9215 (scan_spec)
-#[no_mangle]
-pub unsafe extern "C" fn scan_spec(c: u8, three_codes: bool) {
+pub unsafe fn scan_spec(c: u8, three_codes: bool) {
     let s = if three_codes {
         save_stack_b32s1(save_ptr())
     } else {
@@ -1243,8 +1217,7 @@ unsafe fn round_decimals(k: i32) -> i32 {
 }
 
 /// translated from xetex-xetex0.c:4406 (xetex_scan_dimen)
-#[no_mangle]
-pub unsafe extern "C" fn xetex_scan_dimen(
+pub unsafe fn xetex_scan_dimen(
     mu: bool,
     inf: bool,
     shortcut: bool,
@@ -1587,8 +1560,7 @@ pub unsafe extern "C" fn xetex_scan_dimen(
 }
 
 /// translated from xetex-xetex0.c:4302 (scan_glyph_number)
-#[no_mangle]
-pub unsafe extern "C" fn scan_glyph_number(f: i32) {
+pub unsafe fn scan_glyph_number(f: i32) {
     if scan_keyword(c"/".as_ptr()) {
         scan_and_pack_name();
         set_cur_val(map_glyph_to_index_global(f));
@@ -1607,14 +1579,12 @@ pub unsafe extern "C" fn scan_glyph_number(f: i32) {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:5956 (scan_dimen)
-#[no_mangle]
-pub unsafe extern "C" fn scan_dimen(mu: bool, inf: bool, shortcut: bool) {
+pub unsafe fn scan_dimen(mu: bool, inf: bool, shortcut: bool) {
     xetex_scan_dimen(mu, inf, shortcut, true);
 }
 
 /// translated from xetex-xetex0.c:5961 (scan_decimal)
-#[no_mangle]
-pub unsafe extern "C" fn scan_decimal() {
+pub unsafe fn scan_decimal() {
     xetex_scan_dimen(false, false, false, false);
 }
 
@@ -1627,8 +1597,7 @@ const VRULE: u8 = 35;
 const DEFAULT_RULE: i32 = 26214;
 
 /// translated from xetex-xetex0.c:6267 (scan_rule_spec)
-#[no_mangle]
-pub unsafe extern "C" fn scan_rule_spec() -> i32 {
+pub unsafe fn scan_rule_spec() -> i32 {
     let q = new_rule_global();
     if cur_cmd() == VRULE {
         set_mem_b32s1(q + 1, DEFAULT_RULE);
@@ -1671,8 +1640,7 @@ const INT_PAR_TRACING_SCAN_TOKENS: i32 = 59; // xetex_format.h:94
 const SELECTOR_NEW_STRING: i32 = 21;
 
 /// translated from xetex-xetex0.c:6263 (pseudo_start)
-#[no_mangle]
-pub unsafe extern "C" fn pseudo_start() {
+pub unsafe fn pseudo_start() {
     scan_general_text();
     let old_setting = selector();
     set_selector(SELECTOR_NEW_STRING);
@@ -1783,8 +1751,7 @@ const SPACE_TOKEN: i32 = 0x1400020;
 const ACTIVE_CHAR: i32 = 13;
 
 /// translated from xetex-xetex0.c:6363 (str_toks_cat)
-#[no_mangle]
-pub unsafe extern "C" fn str_toks_cat(b: i32, cat: i16) -> i32 {
+pub unsafe fn str_toks_cat(b: i32, cat: i16) -> i32 {
     use crate::mem::TEX_NULL;
 
     if pool_ptr() + 1 > pool_size() {
@@ -1839,8 +1806,7 @@ pub unsafe extern "C" fn str_toks_cat(b: i32, cat: i16) -> i32 {
 }
 
 /// translated from xetex-xetex0.c:6417 (str_toks)
-#[no_mangle]
-pub unsafe extern "C" fn str_toks(b: i32) -> i32 {
+pub unsafe fn str_toks(b: i32) -> i32 {
     str_toks_cat(b, 0)
 }
 
@@ -1849,8 +1815,7 @@ pub unsafe extern "C" fn str_toks(b: i32) -> i32 {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:6427 (the_toks)
-#[no_mangle]
-pub unsafe extern "C" fn the_toks() -> i32 {
+pub unsafe fn the_toks() -> i32 {
     use crate::mem::TEX_NULL;
 
     if cur_chr() & 1 != 0 {
@@ -1935,8 +1900,7 @@ const FI_OR_ELSE: u8 = 108;
 const INT_PAR_TRACING_IFS: i32 = 58;
 
 /// translated from xetex-xetex0.c:7380 (pass_text)
-#[no_mangle]
-pub unsafe extern "C" fn pass_text() {
+pub unsafe fn pass_text() {
     let save_scanner_status = scanner_status();
     set_scanner_status(SKIPPING);
     let mut l: i32 = 0;
@@ -1984,8 +1948,7 @@ const END_MATCH_TOKEN: i32 = 0x1C00000;
 const ZERO_TOKEN: i32 = OTHER_TOKEN + b'0' as i32;
 
 /// translated from xetex-xetex0.c:7081 (scan_toks)
-#[no_mangle]
-pub unsafe extern "C" fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
+pub unsafe fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
     use crate::mem::TEX_NULL;
 
     if macro_def {
@@ -2193,8 +2156,7 @@ const NEW_LINE: u16 = 33;
 const INT_PAR_END_LINE_CHAR: i32 = 48;
 
 /// translated from xetex-xetex0.c:7268 (read_toks)
-#[no_mangle]
-pub unsafe extern "C" fn read_toks(n: i32, r: i32, j: i32) {
+pub unsafe fn read_toks(n: i32, r: i32, j: i32) {
     use crate::mem::TEX_NULL;
 
     set_scanner_status(DEFINING);
@@ -2335,8 +2297,7 @@ const SPACE_CODE: i32 = 2;
 const SPACE_SHRINK_CODE: i32 = 4;
 
 /// translated from xetex-xetex0.c:4467 (scan_font_ident)
-#[no_mangle]
-pub unsafe extern "C" fn scan_font_ident() {
+pub unsafe fn scan_font_ident() {
     let f;
     loop {
         get_x_token();
@@ -2365,8 +2326,7 @@ pub unsafe extern "C" fn scan_font_ident() {
 }
 
 /// translated from xetex-xetex0.c:4501 (find_font_dimen)
-#[no_mangle]
-pub unsafe extern "C" fn find_font_dimen(writing: bool) {
+pub unsafe fn find_font_dimen(writing: bool) {
     use crate::mem::TEX_NULL;
 
     scan_int();
@@ -2429,8 +2389,7 @@ pub unsafe extern "C" fn find_font_dimen(writing: bool) {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:4505 (scan_something_internal)
-#[no_mangle]
-pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
+pub unsafe fn scan_something_internal(level: i16, negative: bool) {
     use crate::globals::{
         char_base_entry, cur_chr, cur_cmd, cur_cs, cur_group, cur_if, cur_level,
         cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
@@ -3456,8 +3415,7 @@ pub unsafe extern "C" fn scan_something_internal(level: i16, negative: bool) {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:5465 (scan_int)
-#[no_mangle]
-pub unsafe extern "C" fn scan_int() {
+pub unsafe fn scan_int() {
     use crate::globals::{
         cur_cmd, cur_cs, cur_tok, cur_val, eqtb_b32s1, hash_s1, set_cur_chr, set_cur_cmd,
         set_cur_cs, set_cur_tok, set_cur_val, set_help_line, set_help_ptr, set_radix,
@@ -3630,8 +3588,8 @@ pub unsafe extern "C" fn scan_int() {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:8811 (eTeX_enabled)
-#[no_mangle]
-pub unsafe extern "C" fn eTeX_enabled(b: bool, j: u16, k: i32) -> bool {
+#[allow(non_snake_case)]
+pub unsafe fn eTeX_enabled(b: bool, j: u16, k: i32) -> bool {
     if !b {
         error_here_with_diagnostic(c"Improper ".as_ptr());
         print_cmd_chr(j, k);
@@ -3705,8 +3663,7 @@ pub unsafe fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B1
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:13060 (tokens_to_string)
-#[no_mangle]
-pub unsafe extern "C" fn tokens_to_string(p: i32) -> i32 {
+pub unsafe fn tokens_to_string(p: i32) -> i32 {
     if selector() == SELECTOR_NEW_STRING {
         crate::errors::pdf_error(
             c"tokens".as_ptr(),
@@ -3725,8 +3682,7 @@ pub unsafe extern "C" fn tokens_to_string(p: i32) -> i32 {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:13073 (compare_strings)
-#[no_mangle]
-pub unsafe extern "C" fn compare_strings() {
+pub unsafe fn compare_strings() {
     let save_cur_cs = cur_cs();
     scan_toks(false, true);
     let s1 = tokens_to_string(def_ref());
@@ -3781,8 +3737,7 @@ const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226; // xetex_format.h:201
 const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE; // xetex-constants.h:55
 
 // translated from xetex-xetex0.c:10407 (get_r_token)
-#[no_mangle]
-pub unsafe extern "C" fn get_r_token() {
+pub unsafe fn get_r_token() {
     loop {
         loop {
             get_token();
@@ -3875,8 +3830,7 @@ pub unsafe extern "C" fn get_r_token() {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:4313 (scan_math)
-#[no_mangle]
-pub unsafe extern "C" fn scan_math(p: i32) {
+pub unsafe fn scan_math(p: i32) {
     use crate::globals::{
         cur_chr, cur_cmd, cur_cs, eqtb_b16s1, set_cur_chr, set_cur_cmd, set_cur_cs,
     };
@@ -3983,8 +3937,7 @@ pub unsafe extern "C" fn scan_math(p: i32) {
 }
 
 // translated from xetex-xetex0.c:4315 (set_math_char)
-#[no_mangle]
-pub unsafe extern "C" fn set_math_char(c: i32) {
+pub unsafe fn set_math_char(c: i32) {
     use crate::globals::{
         cur_chr, cur_cs, set_cur_chr, set_cur_cmd, set_cur_cs, set_mem_b16s0, set_mem_b16s1,
         set_mem_b32s1,
@@ -4047,8 +4000,7 @@ pub(crate) fn set_family_fn(x: i32) -> i32 {
 }
 
 // translated from xetex-xetex0.c:4678 (scan_glue)
-#[no_mangle]
-pub unsafe extern "C" fn scan_glue(level: i16) {
+pub unsafe fn scan_glue(level: i16) {
     use crate::globals::{
         cur_order, cur_val_level, set_cur_val, set_mem_b16s0, set_mem_b16s1, set_mem_b32s1,
     };
@@ -4193,8 +4145,7 @@ const IF_TEST_COV: u16 = 107; // xetex_format.h:349
 const TOKEN_LIST_COV: u16 = 0;
 
 /// translated from xetex-xetex0.c:3036 (check_outer_validity)
-#[no_mangle]
-pub unsafe extern "C" fn check_outer_validity() {
+pub unsafe fn check_outer_validity() {
     use crate::globals::{
         cur_cs, cur_if, cur_input, par_token, scanner_status, set_align_state, set_cur_chr,
         set_cur_cmd, set_cur_cs, set_cur_tok, set_deletions_allowed, set_help_line, set_help_ptr,
@@ -4335,8 +4286,7 @@ pub unsafe extern "C" fn check_outer_validity() {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:3167 (get_next)
-#[no_mangle]
-pub unsafe extern "C" fn get_next() {
+pub unsafe fn get_next() {
     use crate::globals::{
         cond_ptr, cur_align, cur_boundary, eof_seen, eqtb_b16s1, force_eof, grp_stack, if_stack,
         in_open, input_file, input_ptr, line, par_loc, param_stack, set_deletions_allowed,
