@@ -9,6 +9,87 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 151 — 2026-06-07 — Execution: typesafe node allocation (`NodePtr::<GlueSpecNode>::alloc`) — confine `from_idx_unchecked`, remove the `math_glue` unsafe
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` §8), prompted by a
+design question: *"in `math_glue` you do an unsafe type assertion —
+shouldn't there be a typesafe way to allocate a node of the correct type?
+Isn't that a common usecase? What does the plan say?"* **1 commit.**
+Dashboard **29/2/7/4**; warnings **42 → 42**; `node::` **16/16**.
+
+### What the plan says (and the answer)
+
+The plan **supports** a typed allocator and is explicit that the free-list
+arena stays (`01c` §8 NON-GOAL: no per-node heap alloc; `03` perf rules).
+The `unsafe { from_idx_unchecked }` at the `math_glue` call site was a
+*symptom* — `math_glue` was hand-rolling the `get_node` + handle
+construction that belongs in one audited place. `from_idx_unchecked` is
+"unsafe" only as a **parity**-discipline marker (its own docs: not
+memory-unsafe), so the fix is to **centralise** it in the allocator, not to
+sprinkle it at call sites.
+
+### The change
+
+- **`NodePtr::<GlueSpecNode>::alloc(mem: &mut MemState) -> Option<Self>`**
+  (`src/node.rs`): wraps the existing `get_node(GLUE_SPEC_SIZE)`, maps the
+  `ALLOC_FAILED` sentinel to `None` (the §5 arena-exhaustion signal, handled
+  by the caller after the borrow drops), and constructs the handle via the
+  family's **single audited** `from_idx_unchecked`. Doc records the design
+  rules: a node *being initialised* has no `NODE_type` to classify (so
+  `from_idx_unchecked`, not `classify_*`, is correct here); a type-stamping
+  family's `alloc` additionally `set_b16s1(NODE_type)` before returning
+  (glue_spec carries no type → stamps nothing); it is the typed lift of
+  TeX's `new_*` constructors, **not** a new allocator (free-list arena
+  unchanged); do **not** generalise to one `alloc<K>()` until ≥2 families
+  share it with real consumers (A.6). `01c` §8 + `01b` §3a updated.
+- **`math_glue`** (`src/math.rs`) now: `let spec =
+  NodePtr::<GlueSpecNode>::alloc(mem).ok_or(NodeRecycleAbort::Overflow)?;`
+  then the five typed setters — **`unsafe`-free**. Removed the now-unused
+  `GLUE_SPEC_SIZE` import. (The one remaining `from_idx_unchecked` in
+  `math.rs` is the *justified* kern-classification boundary in
+  `math_kern_global`, gated by its `KERN_NODE` match-arm caller.)
+- **Unit test** (16th in `node::`): builds a minimal single-free-block arena
+  (rover → self, `MAX_HALFWORD` free marker) and asserts `alloc` carves a
+  usable, in-bounds, writable glue_spec handle — isolated coverage of the
+  allocator wiring (`GLUE_SPEC_SIZE` + null check + construction), since
+  `mem.rs` has no unit tests and otherwise relies on the parity suites.
+
+### Why `Option`, not `Result<_, NodeRecycleAbort>`
+
+`alloc` returns the most primitive, decoupled form — `Option<Self>`, the
+typed lift of `get_node`'s `ALLOC_FAILED` — so `node.rs` does not depend on
+`scan.rs`'s abort enum, and each caller chooses its abort policy
+(`.ok_or(NodeRecycleAbort::Overflow)?` here).
+
+### The companion question (subtype-as-enum) — deferred by design
+
+Same turn asked whether `subtype` should be an enum instead of `u16` +
+consts. Recorded the answer (not implemented): the plan mandates a checked
+enum for the node *type* field and a second classification layer only for
+subtypes that change *field layout* (whatsits). Plain tag subtypes stay
+`u16` because **several are used arithmetically** — verified: glue node
+`subtype = skip_param + 1` (`mem.rs:540,620`), recovered by subtraction — so
+a blanket subtype enum is unfaithful (A.7) and lossy. A per-family tag enum
+(`subtype_kind()`) on top of the raw accessor is fine **only** where the
+subtype is a verified closed tag with no arithmetic use (kern qualifies;
+glue does not). Opt-in polish, not a foundation requirement.
+
+### Metrics & validation
+
+- Behavior-preserving: `alloc` lowers to the identical `get_node` +
+  index the old code emitted; `math_glue`'s writes are unchanged. Full
+  dashboard green (commit touches the live `mlist_to_hlist` glue path).
+- The raw `unsafe {}` block net-**moved** from `math.rs` into the one
+  `node.rs` allocator site (confined, now reusable). `unsafe fn` /
+  `#[no_mangle]` / `with_state` counts unchanged. `node::` 16/16.
+
+**Handoff / Next:** unchanged from session 150 (more fused adoptions —
+box-dimension readers in `packaging.rs`/`shipout.rs` are the biggest `01b`
+§8 metric win; or build rank-5 **rule** with its running-dimension wrapper).
+Plus: **extend the typed `alloc` pattern** to kern/penalty/box (each
+stamping its `NODE_type`) the next time a real *allocating* consumer of
+those families threads — do not add them speculatively (A.6).
+
 ## Idiom session 150 — 2026-06-07 — Execution: the FIRST fused `01b` §3a threading+typing adoptions (`math_kern`, `math_glue`) + glue_spec family fix
 
 **Type:** execution (workstream 01 / `01b` §3a — the first adoptions of the

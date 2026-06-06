@@ -476,3 +476,20 @@ typed `NodePtr<K>` handles — **not** removing Knuth's allocator algorithm.
 That is the only point in the design space that wins the safety/idiom
 prize without paying the perf, format, and parity costs. (A one-line
 version of this is folded into `01`-§5.)
+
+**Typesafe allocation rides the same arena (session 151).** Keeping the
+free-list does not mean call sites keep writing `unsafe { from_idx_unchecked
+}` after every `get_node`. The idiomatic boundary is a per-family typed
+allocator that wraps the existing `get_node(SIZE)` and returns the typed
+handle, confining the family's one `from_idx_unchecked` to a single audited
+site (a node *being initialised* has no `NODE_type` to classify, so
+`from_idx_unchecked` is correct there — not `classify_*`). First instance:
+`NodePtr::<GlueSpecNode>::alloc(mem) -> Option<Self>` (`src/node.rs`) —
+`None` is the arena-exhaustion sentinel (`01b` §5), mapped to the caller's
+abort after the borrow drops; `math_glue` now allocates through it and is
+`unsafe`-free. The pattern extends per family as consumers appear: a
+**type-stamping** family's `alloc` additionally `set_b16s1(NODE_type)`
+before returning (glue_spec carries no type, so it stamps nothing). This is
+the typed lift of TeX's `new_*` constructors — same `get_node`, same arena,
+no per-node heap alloc — **not** a new allocator. Do **not** generalise to a
+single `alloc<K>()` until ≥2 families share it with real consumers (A.6).

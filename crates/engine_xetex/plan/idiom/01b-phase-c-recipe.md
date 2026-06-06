@@ -177,12 +177,15 @@ family's layer or record the debt.
 >   `math_kern_global`, whose sole caller is the `KERN_NODE` match arm — so
 >   `from_idx_unchecked` after `MemIdx::new(p)` is justified (the dispatch
 >   already classified it).
-> - `math_glue(mem, …) -> i32` — its freshly `get_node`'d glue_spec is
->   wrapped as `NodePtr<GlueSpecNode>` and filled via the typed setters
->   (`set_width`/`set_stretch_order`/`set_stretch`/`set_shrink_order`/
->   `set_shrink`). This is the "construct a handle to a node I am
->   *initializing*" boundary — a fresh node has no `NODE_type` to classify,
->   so `from_idx_unchecked` is the right tool, not `classify_*`.
+> - `math_glue(mem, …) -> i32` — its freshly-allocated glue_spec is filled
+>   via the typed setters (`set_width`/`set_stretch_order`/`set_stretch`/
+>   `set_shrink_order`/`set_shrink`). The allocation goes through the typed
+>   constructor `NodePtr::<GlueSpecNode>::alloc(mem) -> Option<Self>`
+>   (session 151), which **confines the one `from_idx_unchecked`** to a single
+>   audited site — `math_glue` itself is now `unsafe`-free. This is the
+>   "construct a handle to a node I am *initializing*" boundary (a fresh node
+>   has no `NODE_type` to classify); see `01c` §8 for the typed-allocator
+>   pattern (it wraps the existing `get_node`, keeps the free-list arena).
 >
 > Both are behavior-preserving (each typed setter lowers to the identical
 > `set_b32s1`/`set_b16s*`); dashboard 29/2/7/4. Lesson: the cheapest first
