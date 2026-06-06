@@ -123,6 +123,117 @@ pub struct FontId(pub i32);
 #[repr(transparent)]
 pub struct Token(pub i32);
 
+/// The kind of a node, as stored in `mem[p].b16.s1` (the `NODE_type`
+/// field). Codes mirror `xetex/xetex_format.h:380–416` exactly.
+///
+/// This is the *first* classification layer. Two subtleties (`01c` §1):
+///
+/// - **Context aliases, not separate codes.** `DELTA_NODE` reuses
+///   [`Rule`](NodeType::Rule)'s code `2` and `EDGE_NODE` reuses
+///   [`Style`](NodeType::Style)'s code `14` (`xetex-constants.h:104–105`).
+///   They are disambiguated by *list context* (linebreaker / bidi), not by
+///   the type field, so they are not distinct discriminants here.
+/// - **Whatsit subtypes are a second layer.** A [`Whatsit`](NodeType::Whatsit)
+///   node's `NODE_subtype` (`b16.s0`) selects `OPEN_NODE`/`WRITE_NODE`/…/
+///   `NATIVE_WORD_NODE`(40)/`GLYPH_NODE`(42)/`PIC_NODE`(43)/`PDF_NODE`(44)
+///   (`xetex_format.h:457–467`). Those are *subtype* codes in a different
+///   field, classified separately (`03-memory-and-nodes.md`), and must not
+///   be confused with the `MARGIN_KERN_NODE`(40) *type* code below.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[repr(u16)]
+pub enum NodeType {
+    HList = 0,
+    VList = 1,
+    Rule = 2, // also DELTA_NODE (context-disambiguated)
+    Ins = 3,
+    Mark = 4,
+    Adjust = 5,
+    Ligature = 6,
+    Disc = 7,
+    Whatsit = 8,
+    Math = 9,
+    Glue = 10,
+    Kern = 11,
+    Penalty = 12,
+    Unset = 13,
+    Style = 14, // also EDGE_NODE (context-disambiguated)
+    Choice = 15,
+    OrdNoad = 16,
+    OpNoad = 17,
+    BinNoad = 18,
+    RelNoad = 19,
+    OpenNoad = 20,
+    CloseNoad = 21,
+    PunctNoad = 22,
+    InnerNoad = 23,
+    RadicalNoad = 24,
+    FractionNoad = 25,
+    UnderNoad = 26,
+    OverNoad = 27,
+    AccentNoad = 28,
+    VcenterNoad = 29,
+    LeftNoad = 30,
+    RightNoad = 31,
+    MarginKern = 40,
+}
+
+/// Error from [`NodeType::from_raw`]: the `b16.s1` value is not a valid
+/// node-type code (e.g. the 32–39 gap, or 41+).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct InvalidNodeType(pub u16);
+
+impl NodeType {
+    /// Convert a raw `mem[p].b16.s1` value to a [`NodeType`] with a
+    /// **checked** path (never `transmute` — an invalid discriminant is
+    /// Rust UB, `03-memory-and-nodes.md`).
+    #[inline]
+    pub fn from_raw(raw: u16) -> Result<NodeType, InvalidNodeType> {
+        use NodeType::*;
+        Ok(match raw {
+            0 => HList,
+            1 => VList,
+            2 => Rule,
+            3 => Ins,
+            4 => Mark,
+            5 => Adjust,
+            6 => Ligature,
+            7 => Disc,
+            8 => Whatsit,
+            9 => Math,
+            10 => Glue,
+            11 => Kern,
+            12 => Penalty,
+            13 => Unset,
+            14 => Style,
+            15 => Choice,
+            16 => OrdNoad,
+            17 => OpNoad,
+            18 => BinNoad,
+            19 => RelNoad,
+            20 => OpenNoad,
+            21 => CloseNoad,
+            22 => PunctNoad,
+            23 => InnerNoad,
+            24 => RadicalNoad,
+            25 => FractionNoad,
+            26 => UnderNoad,
+            27 => OverNoad,
+            28 => AccentNoad,
+            29 => VcenterNoad,
+            30 => LeftNoad,
+            31 => RightNoad,
+            40 => MarginKern,
+            other => return Err(InvalidNodeType(other)),
+        })
+    }
+
+    /// The raw `b16.s1` code for this node type (zero-cost: `self as u16`).
+    #[inline]
+    pub fn as_raw(self) -> u16 {
+        self as u16
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +270,43 @@ mod tests {
         let p = MemIdx::new(100);
         assert_eq!(p.offset(1), MemIdx(101));
         assert_eq!(p.offset(5).index(), 105);
+    }
+
+    /// Every discriminant must equal the C `NODE_type` code
+    /// (`xetex_format.h:380–416`), and `from_raw` must round-trip it.
+    #[test]
+    fn nodetype_codes_match_c_and_roundtrip() {
+        use NodeType::*;
+        let all = [
+            (HList, 0u16), (VList, 1), (Rule, 2), (Ins, 3), (Mark, 4),
+            (Adjust, 5), (Ligature, 6), (Disc, 7), (Whatsit, 8), (Math, 9),
+            (Glue, 10), (Kern, 11), (Penalty, 12), (Unset, 13), (Style, 14),
+            (Choice, 15), (OrdNoad, 16), (OpNoad, 17), (BinNoad, 18),
+            (RelNoad, 19), (OpenNoad, 20), (CloseNoad, 21), (PunctNoad, 22),
+            (InnerNoad, 23), (RadicalNoad, 24), (FractionNoad, 25),
+            (UnderNoad, 26), (OverNoad, 27), (AccentNoad, 28),
+            (VcenterNoad, 29), (LeftNoad, 30), (RightNoad, 31),
+            (MarginKern, 40),
+        ];
+        for (nt, code) in all {
+            assert_eq!(nt.as_raw(), code);
+            assert_eq!(NodeType::from_raw(code), Ok(nt));
+        }
+        // MARGIN_KERN_NODE type code is 40; the whatsit *subtype* codes
+        // (GLYPH_NODE 42, PIC_NODE 43, PDF_NODE 44) are NOT node types.
+        assert_eq!(NodeType::from_raw(40), Ok(MarginKern));
+    }
+
+    #[test]
+    fn nodetype_from_raw_rejects_invalid() {
+        // the 32..=39 gap, and 41+ (incl. whatsit subtype codes 42/43/44)
+        for raw in [32u16, 35, 39, 41, 42, 43, 44, 100, u16::MAX] {
+            assert_eq!(NodeType::from_raw(raw), Err(InvalidNodeType(raw)));
+        }
+    }
+
+    #[test]
+    fn nodetype_is_two_bytes() {
+        assert_eq!(size_of::<NodeType>(), size_of::<u16>());
     }
 }

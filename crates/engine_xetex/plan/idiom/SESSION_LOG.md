@@ -9,6 +9,63 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 146 — 2026-06-06 — Execution: typed foundation Stage 1 — `NodeType` enum + checked `from_raw` (`01c` §2)
+
+**Type:** execution (workstream 01 / `01c` §2 Stage 1, completing the
+scalar-newtype foundation). **1 commit.** Dashboard **29/2/7/4** green;
+warnings **42 → 42** (flat).
+
+### What and how
+
+The Stage-1 remainder deferred by session 145: the node-type classifier.
+
+- **`src/units.rs`** — added `NodeType` (`#[repr(u16)]`, 33 discriminants)
+  + `InvalidNodeType(u16)` + `NodeType::from_raw(u16) -> Result<…>` (checked
+  `match`, **never** `transmute`) + `as_raw()`. Discriminants mirror
+  `xetex/xetex_format.h:380–416` exactly: `HList`=0 … `RightNoad`=31, plus
+  `MarginKern`=40.
+- **Faithfulness checks encoded in the code + tests:**
+  - **Context aliases are not separate codes:** `DELTA_NODE` reuses
+    `Rule`'s `2`, `EDGE_NODE` reuses `Style`'s `14`
+    (`xetex-constants.h:104–105`) — disambiguated by list context, so no
+    distinct discriminant (commented at the variants).
+  - **Whatsit subtypes are a different field:** `OPEN_NODE`/`WRITE_NODE`/…/
+    `NATIVE_WORD_NODE`(40)/`GLYPH_NODE`(42)/`PIC_NODE`(43)/`PDF_NODE`(44)
+    live in `NODE_subtype` (`b16.s0`), classified separately — **not** node
+    types. The `MARGIN_KERN_NODE` *type* code 40 and `NATIVE_WORD_NODE`
+    *subtype* code 40 share a number in different fields; do not conflate.
+  - `from_raw` rejects the 32–39 gap and 41+ (incl. 42/43/44).
+- 3 new unit tests (6 total in `units::`, all pass): every discriminant ==
+  its C code + round-trips through `from_raw`; the invalid/gap codes are
+  rejected; `size_of::<NodeType>() == 2`.
+
+### Why this was its own slice
+
+Split from the session-145 scalar newtypes precisely because a faithful
+~33-discriminant enumeration is the one part of Stage 1 with real parity
+risk (a wrong code silently breaks Stage-3 classification later). Isolating
+it keeps the diff trivially auditable against the header (A.12) and gives
+the discriminant table its own focused review + test.
+
+### Metrics & validation
+
+- Warnings **42 → 42** (the enum lives in the `#[allow(dead_code)]`
+  `units` module; nothing consumes it until Stage 3). `with_state` /
+  `unsafe fn` / `#[no_mangle]` unchanged. Behavior-neutral by construction
+  (purely additive). Dashboard **29/2/7/4** all green; `units::` 6/6.
+
+**Handoff / Next:** Stage 1 of `01c` §2 is **complete** (scalar newtypes +
+`NodeType`). Next is **`01c` Stage 2 — the `Mem` `Vec<MemoryWord>`
+ownership move** (`01`-§5 steps 1–2): replace the `xmalloc_array` arena
+with a Rust-owned `Vec` on `MemState` (it is already a thread-local field
+group — confirm the current shape first), preserving the `n+1` inclusive
+sizing (`01`-§11 gotcha), the `tt_cleanup`/longjmp teardown (`01`-§7), and
+the **byte-exact `.fmt` dump/undump** (`01c` §7.2; `format_io.rs:299–339`).
+This is the first Stage that touches a live code path, so it is a real
+parity slice — baseline, change, full dashboard. Then **Stage 3** — the
+per-family `NodePtr<K>` layer (box first, `01c` §1 order), where the §4
+disasm gate becomes load-bearing.
+
 ## Idiom session 145 — 2026-06-06 — Execution: typed foundation Stage 1 — the scalar-newtypes module (`01c` §2)
 
 **Type:** execution (workstream 01 / `01c` §2 Stage 1, the typed
