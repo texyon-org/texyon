@@ -9,6 +9,92 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 149 — 2026-06-07 — Execution: Stage 3 rank-3 + rank-4 — the kern and penalty `NodePtr<K>` families (`01c`)
+
+**Type:** execution (workstream 01 / `01c` §3 Stage 3, ranks 3 + 4). **2
+code commits** (one family each, A.12) + **1 docs commit**. Dashboard
+**29/2/7/4** green; warnings **42 → 42** (flat); `node::` **15/15**.
+
+### Recon before building
+
+Verified offsets against the C source + the live allocators first:
+`xetex-xetexd.h:283` gives `PENALTY_NODE_penalty(p) = mem[(p)+1].b32.s1`
+(commented "was originally the `mem[x+1].int` field" → an **`i32`**, not a
+`Scaled`). Kern has no dedicated field macro; `src/mem.rs` `new_kern` writes
+`mem.set_b32s1(p+1, w)` after `set_b16s1(p, KERN_NODE)` / `set_b16s0(p,
+NORMAL)` → width at +1.b32.s1, subtype at 0.b16.s0. `xetex_format.h` gives
+`KERN_NODE = 11`, `PENALTY_NODE = 12`. **Recon finding:** both `new_kern`
+and `new_penalty` `get_node(MEDIUM_NODE_SIZE=3)`, not `SMALL_NODE_SIZE=2` —
+the §1 table's penalty "small (2)" is the generic-TeX value; this xetex
+build (SyncTeX) uses medium nodes. Corrected the §1 table + added a
+footnote. (Documentation-only: the typed layer encodes offsets, not size.)
+
+### Commit 1 — kern family (rank 3)
+
+`KernNode` (`NODE_type` = 11) in `src/node.rs`: concrete impls `subtype`
+(0.b16.s0 → `u16`) and `width` (+1.b32.s1 → `Scaled`), plus
+`MemState::classify_kern`. **Design note:** kern's `width` is the same
++1.b32.s1 `Scaled` slot as the box family's `width`, but a kern node has
+**no** depth/height/shift_amount — those offsets hold other data (the
+SyncTeX word) — so kern uses a **concrete** `width` method, **not** the
+`HasDimensions` capability trait (which would falsely expose +2..+4). This
+is the recipe's "capability traits where a layout is shared; concrete impls
+for family-specific fields" applied at the boundary. 3 unit tests.
+
+### Commit 2 — penalty family (rank 4)
+
+`PenaltyNode` (`NODE_type` = 12): `penalty` (+1.b32.s1 → **`i32`**) +
+`MemState::classify_penalty`. **The trap encoded (`01c` §3):** the penalty
+shares the +1.b32.s1 slot with box/kern `width` (a `Scaled`) but is a plain
+integer breakpoint penalty — returning `Scaled` would be a silent
+type/parity error, so it is `penalty() -> i32`. A unit test pins it with
+`let v: i32 = pen.penalty(&mem)` (would not compile if it returned
+`Scaled`) and a negative value to exercise sign semantics. 3 unit tests.
+
+### Disasm gate (`01c` §4) — PASSED, both accessors
+
+Per-family temporary `#[no_mangle] #[inline(never)]` harnesses, release
+build, `objdump -t`: `__disasm_typed_kern_width` (`Scaled` +1.b32.s1)
+ICF-folded to `.text.__disasm_raw_kern_width` (size 0x28);
+`__disasm_typed_penalty` (raw `i32` +1.b32.s1) folded to
+`.text.__disasm_raw_penalty` (size 0x28). Both byte-identical to the raw
+read. Harnesses removed before commit; recorded in `01c` §4.
+
+### Commit 3 — docs
+
+`01c` §1 (built-so-far + penalty-size footnote), §3 (progress note), §4
+(gate result); STATUS.md + SESSION_LOG.md.
+
+### Metrics & validation
+
+- Warnings **42 → 42**. `with_state`/`unsafe fn`/`#[no_mangle]` unchanged.
+  Behavior-neutral (additive types). Dashboard **29/2/7/4** on every commit;
+  `node::` 15/15, `units::` 6/6.
+
+**Handoff / Next:** box + glue + kern + penalty are built — the cheap,
+high-traffic, fixed-layout families are now done. Two valid tracks:
+1. **Continue Stage 3 — rank 5 = rule, the first NON-trivial family.** Its
+   `width`/`depth`/`height` (+1/+2/+3.b32.s1) are **`Scaled`-or-`NULL_FLAG`
+   running dimensions** (`NULL_FLAG = -0x40000000`, `xetex-constants.h:16`):
+   a rule with a "running" dimension inherits it from the enclosing box.
+   This is the slice where the typed layer **first models a sentinel-bearing
+   field** — do NOT return bare `Scaled`. Introduce a running-dimension
+   wrapper (e.g. `enum RuleDimen { Running, Set(Scaled) }`, or a `RuleDimen`
+   newtype with `is_running()`/`as_scaled()`), mirror the exact `NULL_FLAG`
+   compare, and unit-test both the running and set cases + the round-trip
+   through the raw word. Verify the offset/sentinel against `xetex-xetexd.h`
+   (the `RULE_NODE_*` macros) and how `new_rule`/the packers read it. After
+   rule: disc → ligature → math → native (progressively harder).
+2. **First fused adoption (`01b` §3a)** — now well-supported: thread a small
+   leaf that reads box dims / glue / a kern width / a penalty to `&mut
+   MemState` **and** retype its node pointer to the matching `NodePtr<…>` in
+   the same commit, proving the type-as-you-thread loop end-to-end and
+   starting the bare-`i32` node-ptr-param metric (`01b` §8) downward. Grep
+   `packaging.rs`/`shipout.rs`/`linebreak.rs` for a leaf reading these under
+   a single `mem` borrow. (Recommended soon — the foundation now covers
+   enough families that a real adoption would validate the whole approach
+   against a live call site, not just unit tests + disasm.)
+
 ## Idiom session 148 — 2026-06-07 — Execution: Stage 3 rank-2 — the glue/glue_spec `NodePtr<K>` family (`01c`)
 
 **Type:** execution (workstream 01 / `01c` §3 Stage 3, rank 2). **1 code

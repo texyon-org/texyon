@@ -95,7 +95,7 @@ are `xetex/xetex-constants.h:107–139`; the field map is
 | **1** | **box (hlist/vlist)** | 8 (fixed) | `width` +1.b32.s1, `depth` +2.b32.s1, `height` +3.b32.s1 → `Scaled`; `shift_amount` +4.b32.s1 → `Scaled`; `list_ptr` +5.b32.s1 → `MemPtr`; `glue_sign` +5.b16.s1, `glue_order` +5.b16.s0; `glue_set` +6.gr → `f64` | **simplest**: fixed size, dims are pure `Scaled`, one nullable ptr | owns the widest high-traffic band (+1..+6); dims dominate packaging/shipout/linebreak |
 | **2** | **glue_spec + glue node** | spec 4, glue node small (2) | spec: `ref_count` 0.b32.s1 (**a count, NOT a link**), `stretch_order` 0.b16.s1, `shrink_order` 0.b16.s0, `stretch` +2.b32.s1, `shrink` +3.b32.s1 → `Scaled`; glue node: `glue_ptr` +1.b32.s0 → `MemPtr`, `leader_ptr` +1.b32.s1 → `MemPtr` | fixed size; **one trap**: glue_spec reuses the header `b32.s1` word as a refcount | high traffic; pervasive in every list |
 | **3** | **kern** | 3 (fixed) | `width` +1.b32.s1 → `Scaled` | trivial: one `Scaled` field | single field, fixed size |
-| **4** | **penalty** | small (2) | `penalty` +1.b32.s1 → **`i32` (NOT `Scaled`)** | trivial; just don't mistype it `Scaled` | single field, fixed size |
+| **4** | **penalty** | medium (3) in this build [^pen-size] | `penalty` +1.b32.s1 → **`i32` (NOT `Scaled`)** | trivial; just don't mistype it `Scaled` | single field, fixed size |
 | **5** | **rule** | 5 (fixed) | `width`/`depth`/`height` +1/+2/+3.b32.s1 → **`Scaled`-or-`NULL_FLAG`** (running dimension) | fixed size, **but** the running-dimension sentinel `NULL_FLAG = -0x40000000` (`xetex-constants.h:16`) means these are not plain `Scaled` | needs the running-dimension wrapper before its fields are typed |
 | **6** | **disc** | small (2) | `pre_break` +1.b32.s0, `post_break` +1.b32.s1 → `MemPtr` (llink/rlink) | two nullable ptrs | moderate traffic; pointer fields |
 | **7** | **ligature** | small (2) | `lig_font` +1.b16.s1 → `FontId`, `lig_char` +1.b16.s0 → char, `lig_ptr` +1.b32.s1 → `MemPtr` | mixed-width subfields of one word | moderate; mixed types |
@@ -105,13 +105,21 @@ are `xetex/xetex-constants.h:107–139`; the field map is
 | **11** | linebreak/page internals: active/passive/delta, page_ins, mark/ins/adjust, unset/align, edge, span, expr | 2–7 | per the macros at `xetex-xetexd.h:221–322` | specialized, lower traffic | thread with their owning subsystem (`linebreak.rs`/`pagebuilder.rs`), not up front |
 
 **Built so far:** rank 0+1 (header word + box, session 147), rank 2
-(glue/glue_spec, session 148). **Next: rank 3 (kern).**
+(glue/glue_spec, session 148), rank 3 (kern, session 149), rank 4
+(penalty, session 149). **Next: rank 5 (rule — needs the running-dimension
+wrapper type first; `width`/`depth`/`height` are `Scaled`-or-`NULL_FLAG`).**
 
 **Build the layer in this order, one family per slice** (rank 0 lands
 with rank 1). Stop promoting families to typed handles when the remaining
 ranks are low-traffic enough that the worklist-fallback (§6) is cheaper
 than a dedicated slice — those families stay `MemIdx`/`i32` with a
 worklist row and get typed opportunistically as their subsystem threads.
+
+[^pen-size]: Recon (session 149): `new_penalty`/`new_kern` (`src/mem.rs`)
+    both `get_node(MEDIUM_NODE_SIZE=3)` in this xetex build — the generic-TeX
+    "small (2)" grows to medium when SyncTeX rides along. The typed layer
+    encodes field *offsets*, not node size (allocation stays in `mem.rs`), so
+    this is documentation-only; the offsets above are unaffected.
 
 ## 2. Foundation build order and gating (concrete `01`-§4a)
 
@@ -224,8 +232,19 @@ of the 688 unsafe-block lints die (`01`-§5 step 3).
 > impls). 5 unit tests (offset round-trips, the ref_count-is-not-a-link
 > distinction, glue_ptr/leader_ptr nullability, classify dispatch); the §4
 > disasm gate passed on `glue_ptr` (+1.b32.s0) AND `stretch` (+2.b32.s1).
-> Remaining families in §1 order: kern → penalty → rule → disc → ligature →
-> math → native.
+>
+> **Progress (session 149): kern (rank 3) + penalty (rank 4) built** — two
+> commits, one family each. `KernNode` (`NODE_type` = 11): concrete impls
+> `subtype` 0.b16.s0, `width` +1.b32.s1 → `Scaled` (concrete, **not**
+> `HasDimensions` — a kern has no depth/height/shift_amount at +2..+4) +
+> `MemState::classify_kern`. `PenaltyNode` (`NODE_type` = 12): `penalty`
+> +1.b32.s1 → **`i32` NOT `Scaled`** (the trap — same slot as box/kern
+> `width` but an integer breakpoint penalty; encoded in the return type +
+> tested) + `MemState::classify_penalty`. Recon finding: both nodes allocate
+> `MEDIUM_NODE_SIZE` = 3 in this build (the §1 "penalty small (2)" is the
+> generic-TeX value; SyncTeX fields make them medium). 6 unit tests (15 total
+> in `node::`); §4 disasm gate passed on `kern.width` and `penalty.penalty`.
+> Remaining families in §1 order: rule → disc → ligature → math → native.
 
 For each family in the §1 ranking (rank 0+1 together, then 2, 3, …): add
 its `NodeKind` marker, its capability-trait impls, its field methods, and
@@ -295,6 +314,14 @@ concrete rules for *this* codebase:
 > byte-identical machine code. Proves the `+1.b32.s0` "other word half" shape
 > and the `+2.b32.s1` `Scaled`-at-offset shape are both zero-cost. Harness
 > removed before commit.
+
+> **Kern + penalty result (session 149): PASSED.** Same ICF outcome:
+> `__disasm_typed_kern_width` (`Scaled` at +1.b32.s1) folded to
+> `.text.__disasm_raw_kern_width` (size 0x28); `__disasm_typed_penalty`
+> (raw `i32` at +1.b32.s1) folded to `.text.__disasm_raw_penalty` (size
+> 0x28). The penalty accessor is the trivial case (no newtype wrap — a plain
+> `i32` return), folding byte-identically as expected. Harnesses removed
+> before commit.
 
 **Before any fused slice depends on a wrapper**, prove in a *release-mode*
 build that the typed access compiles to the same load/store as the raw
