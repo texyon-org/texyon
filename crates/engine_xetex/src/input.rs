@@ -80,8 +80,7 @@ pub unsafe extern "C" fn end_token_list() {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3136 (back_input)
-#[no_mangle]
-pub unsafe extern "C" fn back_input() {
+pub unsafe fn back_input() {
     while cur_input().state == TOKEN_LIST
         && cur_input().loc == crate::mem::TEX_NULL
         && cur_input().index != V_TEMPLATE
@@ -117,8 +116,7 @@ pub unsafe extern "C" fn back_input() {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3167 (back_error)
-#[no_mangle]
-pub unsafe extern "C" fn back_error() {
+pub unsafe fn back_error() {
     back_input();
     crate::errors::error();
 }
@@ -128,8 +126,7 @@ pub unsafe extern "C" fn back_error() {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3174 (ins_error)
-#[no_mangle]
-pub unsafe extern "C" fn ins_error() {
+pub unsafe fn ins_error() {
     back_input();
     set_cur_input_index(INSERTED);
     crate::errors::error();
@@ -180,8 +177,7 @@ pub unsafe fn pseudo_close_global() {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3097 (begin_file_reading)
-#[no_mangle]
-pub unsafe extern "C" fn begin_file_reading() {
+pub unsafe fn begin_file_reading() {
     if in_open() == max_in_open() {
         crate::errors::overflow(c"text input levels".as_ptr(), max_in_open());
     }
@@ -217,8 +213,7 @@ pub unsafe extern "C" fn begin_file_reading() {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3127 (end_file_reading)
-#[no_mangle]
-pub unsafe extern "C" fn end_file_reading() {
+pub unsafe fn end_file_reading() {
     set_first(cur_input().start);
     set_line(line_stack(cur_input().index as i32));
     let name = cur_input().name;
@@ -240,8 +235,7 @@ pub unsafe extern "C" fn end_file_reading() {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:2722 (pseudo_input)
-#[no_mangle]
-pub unsafe extern "C" fn pseudo_input() -> bool {
+pub unsafe fn pseudo_input() -> bool {
     set_last(first());
     let p = mem_b32s0(pseudo_files());
     if p == crate::mem::TEX_NULL {
@@ -284,8 +278,7 @@ pub unsafe extern "C" fn pseudo_input() -> bool {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3998 (insert_relax)
-#[no_mangle]
-pub unsafe extern "C" fn insert_relax() {
+pub unsafe fn insert_relax() {
     set_cur_tok(CS_TOKEN_FLAG + cur_cs());
     back_input();
     set_cur_tok(CS_TOKEN_FLAG + FROZEN_RELAX);

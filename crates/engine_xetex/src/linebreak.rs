@@ -2170,8 +2170,7 @@ unsafe fn update_lr_stack_global(q: i32, lr_ptr: &mut i32) {
 }
 
 // translated from xetex-linebreak.c:971 (post_line_break)
-#[no_mangle]
-pub unsafe extern "C" fn post_line_break(d: bool) {
+pub unsafe fn post_line_break(d: bool) {
     use crate::globals::{
         adjust_tail, best_bet, best_line, cur_list_e_tex_aux, cur_list_prev_graf, cur_list_tail,
         eqtb_b32s1, first_indent, first_width, hi_mem_min, just_box, last_special_line, mem_b16s0,
@@ -2474,8 +2473,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
 }
 
 // translated from xetex-linebreak.c:978 (try_break)
-#[no_mangle]
-pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
+pub unsafe fn try_break(mut pi: i32, break_type: i16) {
     use crate::globals::{
         active_node_size, active_width, background, best_pl_glue, best_pl_line, best_pl_short,
         best_place, break_width, cur_active_width, cur_p, disc_width, do_last_line_fit, easy_line,
@@ -3025,8 +3023,7 @@ pub unsafe extern "C" fn try_break(mut pi: i32, break_type: i16) {
 }
 
 // translated from xetex-linebreak.c:2010 (hyphenate)
-#[no_mangle]
-pub unsafe extern "C" fn hyphenate() {
+pub unsafe fn hyphenate() {
     use crate::globals::{
         cur_lang, hc_entry, hn, hyf_distance_entry, hyf_entry, hyf_next_entry, hyf_num_entry,
         hyph_link_entry, hyph_list_entry, hyph_word_entry, max_hyph_char, mem_b32s0, mem_b32s1,
@@ -3492,8 +3489,7 @@ pub fn char_pw_in(
 /// Insert locale-aware linebreaking nodes for `len` glyphs starting at `native_text[s]`.
 ///
 /// translated from xetex-xetex0.c:6493 (do_locale_linebreaks)
-#[no_mangle]
-pub unsafe extern "C" fn do_locale_linebreaks(s: i32, len: i32) {
+pub unsafe fn do_locale_linebreaks(s: i32, len: i32) {
     use crate::globals::{
         cur_list_tail, mem_as_u16_ptr_mut, mem_b32s1, set_cur_list_tail, set_mem_b32s1,
     };

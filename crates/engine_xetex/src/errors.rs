@@ -137,8 +137,7 @@ pub unsafe fn error() {
 /// Print `s` as a fatal "Emergency stop" message and abort.
 ///
 /// translated from xetex-errors.c:98 (fatal_error)
-#[no_mangle]
-pub unsafe extern "C" fn fatal_error(s: *const libc::c_char) {
+pub unsafe fn fatal_error(s: *const libc::c_char) {
     pre_error_message();
     print_cstr(c"Emergency stop".as_ptr());
     print_nl_cstr(s);
@@ -254,8 +253,7 @@ pub unsafe fn not_native_font_error(cmd: i32, c: i32, f: i32) {
 
 ///
 /// translated from xetex-errors.c:157 (pdf_error)
-#[no_mangle]
-pub unsafe extern "C" fn pdf_error(t: *const libc::c_char, p: *const libc::c_char) -> ! {
+pub unsafe fn pdf_error(t: *const libc::c_char, p: *const libc::c_char) -> ! {
     pre_error_message();
     print_cstr(c"Error".as_ptr());
     if !t.is_null() {
@@ -270,8 +268,7 @@ pub unsafe extern "C" fn pdf_error(t: *const libc::c_char, p: *const libc::c_cha
 }
 
 // translated from xetex-xetex0.c:13499 (give_err_help)
-#[no_mangle]
-pub unsafe extern "C" fn give_err_help() {
+pub unsafe fn give_err_help() {
     // LOCAL(err_help) = eqtb[LOCAL_BASE + LOCAL__err_help].b32.s1
     // LOCAL_BASE = 2_254_871, LOCAL__err_help = 9
     crate::output::token_show(crate::globals::eqtb_b32s1(2_254_871 + 9));
@@ -280,8 +277,7 @@ pub unsafe extern "C" fn give_err_help() {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:5050 (mu_error)
-#[no_mangle]
-pub unsafe extern "C" fn mu_error() {
+pub unsafe fn mu_error() {
     error_here_with_diagnostic(c"Incompatible glue units".as_ptr());
     capture_to_diagnostic(std::ptr::null_mut());
     set_help_ptr(1);
@@ -292,8 +288,7 @@ pub unsafe extern "C" fn mu_error() {
     error();
 }
 /// translated from xetex-xetex0.c:7411 (extra_right_brace)
-#[no_mangle]
-pub unsafe extern "C" fn extra_right_brace() {
+pub unsafe fn extra_right_brace() {
     use crate::globals::cur_group;
 
     error_here_with_diagnostic(c"Extra }, or forgotten ".as_ptr());
@@ -326,16 +321,14 @@ pub unsafe extern "C" fn extra_right_brace() {
     set_align_state(align_state() + 1);
 }
 // translated from xetex-xetex0.c:9326 (you_cant)
-#[no_mangle]
-pub unsafe extern "C" fn you_cant() {
+pub unsafe fn you_cant() {
     error_here_with_diagnostic(c"You can't use `".as_ptr());
     print_cmd_chr(cur_cmd() as u16, cur_chr());
     crate::output::print_in_mode(cur_list_mode() as i32);
     capture_to_diagnostic(std::ptr::null_mut());
 }
 // translated from xetex-xetex0.c:9334 (report_illegal_case)
-#[no_mangle]
-pub unsafe extern "C" fn report_illegal_case() {
+pub unsafe fn report_illegal_case() {
     you_cant();
     set_help_ptr(4);
     set_help_line(
@@ -354,8 +347,7 @@ pub unsafe extern "C" fn report_illegal_case() {
     error();
 }
 // translated from xetex-xetex0.c:9347 (privileged)
-#[no_mangle]
-pub unsafe extern "C" fn privileged() -> bool {
+pub unsafe fn privileged() -> bool {
     if cur_list_mode() > 0 {
         true
     } else {
@@ -364,8 +356,7 @@ pub unsafe extern "C" fn privileged() -> bool {
     }
 }
 // translated from xetex-xetex0.c:10489 (cs_error)
-#[no_mangle]
-pub unsafe extern "C" fn cs_error() {
+pub unsafe fn cs_error() {
     error_here_with_diagnostic(c"Extra ".as_ptr());
     crate::output::print_esc_cstr(c"endcsname".as_ptr());
     capture_to_diagnostic(std::ptr::null_mut());

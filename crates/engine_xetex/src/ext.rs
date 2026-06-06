@@ -441,8 +441,7 @@ unsafe fn read_hex_digit(cp: *mut *const c_char) -> Option<u32> {
 }
 
 // translated from xetex-ext.c:344 (read_rgb_a)
-#[no_mangle]
-pub unsafe extern "C" fn read_rgb_a(cp: *mut *const c_char) -> c_uint {
+pub unsafe fn read_rgb_a(cp: *mut *const c_char) -> c_uint {
     let mut rgb_value = 0u32;
     let mut alpha = 0u32;
 
@@ -516,8 +515,7 @@ pub unsafe fn get_encoding_mode_and_info(name_of_file: *const c_char, info: *mut
 }
 
 // translated from xetex-ext.c:173 (read_tag_with_param)
-#[no_mangle]
-pub unsafe extern "C" fn read_tag_with_param(cp: *const c_char, param: *mut c_int) -> u32 {
+pub unsafe fn read_tag_with_param(cp: *const c_char, param: *mut c_int) -> u32 {
     let mut cp2 = cp;
     while peek(cp2) != 0
         && peek(cp2) != b':'
@@ -551,8 +549,8 @@ pub unsafe extern "C" fn read_tag_with_param(cp: *const c_char, param: *mut c_in
 }
 
 // translated from xetex-ext.c:204 (readFeatureNumber)
-#[no_mangle]
-pub unsafe extern "C" fn readFeatureNumber(
+#[allow(non_snake_case)]
+pub unsafe fn readFeatureNumber(
     mut s: *const c_char,
     e: *const c_char,
     f: *mut u32,
@@ -1197,8 +1195,8 @@ pub unsafe fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut
 }
 
 // translated from xetex-ext.c:440 (splitFontName)
-#[no_mangle]
-pub unsafe extern "C" fn splitFontName(
+#[allow(non_snake_case)]
+pub unsafe fn splitFontName(
     mut name: *mut c_char,
     var: *mut *mut c_char,
     feat: *mut *mut c_char,
@@ -2535,8 +2533,7 @@ mod tests {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:11376 (append_src_special)
-#[no_mangle]
-pub unsafe extern "C" fn append_src_special() {
+pub unsafe fn append_src_special() {
     let fname = crate::globals::source_filename_stack(crate::globals::in_open());
     if fname > 0 && crate::texmfmp::is_new_source(fname, crate::globals::line()) {
         crate::mem::new_whatsit_global(SPECIAL_NODE, WRITE_NODE_SIZE);
@@ -2554,8 +2551,7 @@ pub unsafe extern "C" fn append_src_special() {
     }
 }
 // translated from xetex-xetex0.c:11045 (new_write_whatsit)
-#[no_mangle]
-pub unsafe extern "C" fn new_write_whatsit(w: i16) {
+pub unsafe fn new_write_whatsit(w: i16) {
     crate::mem::new_whatsit_global(cur_chr() as i16, w);
     if w != WRITE_NODE_SIZE {
         scan_four_bit_int();
@@ -2570,8 +2566,7 @@ pub unsafe extern "C" fn new_write_whatsit(w: i16) {
     set_mem_b32s0(crate::globals::cur_list_tail() + 1, cur_val());
 }
 // translated from xetex-xetex0.c:9978 (insert_src_special)
-#[no_mangle]
-pub unsafe extern "C" fn insert_src_special() {
+pub unsafe fn insert_src_special() {
     use crate::globals::{
         in_open, line, mem_b32s1, set_mem_b32s0, set_mem_b32s1, source_filename_stack,
     };
@@ -2597,8 +2592,7 @@ pub unsafe extern "C" fn insert_src_special() {
     }
 }
 // translated from xetex-xetex0.c:9984 (tt_insert_special)
-#[no_mangle]
-pub unsafe extern "C" fn tt_insert_special(ascii_text: *const libc::c_char) {
+pub unsafe fn tt_insert_special(ascii_text: *const libc::c_char) {
     const FROZEN_SPECIAL: i32 = 2_243_226 + 10; // FROZEN_CONTROL_SEQUENCE + 10
     const RIGHT_BRACE_TOKEN: i32 = 0x400000; // xetex-constants.h:351
 
@@ -2626,8 +2620,7 @@ pub unsafe extern "C" fn tt_insert_special(ascii_text: *const libc::c_char) {
     begin_token_list(toklist_start, INSERTED);
 }
 /// translated from xetex-xetex0.c:8024 (do_extension)
-#[no_mangle]
-pub unsafe extern "C" fn do_extension() {
+pub unsafe fn do_extension() {
     use crate::globals::{
         cur_area, cur_cs, cur_ext, cur_list_aux_b32s1, cur_list_mode, cur_list_tail, cur_name,
         epochseconds, font_area_entry, in_open, input_file, microseconds, random_seed, set_cur_cs,

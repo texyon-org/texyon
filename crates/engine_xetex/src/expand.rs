@@ -115,14 +115,12 @@ extern "C" {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 /// translated from xetex-xetex0.c:6511 (ins_the_toks)
-#[no_mangle]
-pub unsafe extern "C" fn ins_the_toks() {
+pub unsafe fn ins_the_toks() {
     set_mem_b32s1(GARBAGE, the_toks());
     begin_token_list(mem_b32s1(TEMP_HEAD), INSERTED);
 }
 /// translated from xetex-xetex0.c:6271 (conditional)
-#[no_mangle]
-pub unsafe extern "C" fn conditional() {
+pub unsafe fn conditional() {
     use crate::globals::{
         buf_size, buffer_entry, char_base_entry, cond_ptr, cur_chr, cur_cmd, cur_cs, cur_if,
         cur_list_mode, eqtb_b16s1, eqtb_b32s1, first, font_area_entry, font_bc_entry,
@@ -526,8 +524,7 @@ unsafe fn pop_cond_node() {
 // conv_toks
 //
 // translated from xetex-xetex0.c:5163 (conv_toks)
-#[no_mangle]
-pub unsafe extern "C" fn conv_toks() {
+pub unsafe fn conv_toks() {
     use crate::globals::{
         avail, cur_chr, cur_cs, cur_ptr, cur_val, def_ref, font_area_entry, font_dsize_entry,
         font_layout_engine_ptr, font_name_entry, font_size_entry, hi_mem_min, job_name, mem_b16s0,
@@ -1140,8 +1137,7 @@ pub unsafe extern "C" fn conv_toks() {
     begin_token_list(mem_b32s1(TEMP_HEAD_CT), INSERTED);
 }
 // translated from xetex-xetex0.c:4003 (expand)
-#[no_mangle]
-pub unsafe extern "C" fn expand() {
+pub unsafe fn expand() {
     use crate::globals::{
         buf_size, cond_ptr, cur_mark, cur_order, cur_ptr, cur_val_level, eqtb_b16s1, hash_s1,
         if_limit, if_stack, in_open, is_in_csname, max_buf_stack, radix, set_cond_ptr, set_cur_if,
@@ -1454,8 +1450,7 @@ pub unsafe extern "C" fn expand() {
     set_expand_depth_count(expand_depth_count() - 1);
 }
 // translated from xetex-xetex0.c:3665 (macro_call)
-#[no_mangle]
-pub unsafe extern "C" fn macro_call() {
+pub unsafe fn macro_call() {
     use crate::globals::{
         align_state, avail, cur_chr, cur_cs, cur_tok, eqtb_b16s1, input_ptr, long_state,
         max_param_stack, mem_b32s0, mem_b32s1, par_token, param_ptr, param_size, scanner_status,
