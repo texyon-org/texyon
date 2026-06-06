@@ -9,6 +9,101 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 139 — 2026-06-06 — the de-export sweep (workstream 03 / overview target #5), the session-138 strategic redirect executed at scale
+
+**Type:** execution (workstream 03, the "redirect to de-export/de-unsafe"
+half of the decision session 138 teed up). **9 commits, ~270 functions
+de-exported.** Dashboard **29/2/7/4** green on every commit; warnings **50 →
+50** throughout.
+
+### The decision
+
+Session 138 framed this session's call as *keep chasing `with_state`→0 through
+the giant callers (the vpackage scoped-island spike) vs. redirect to the
+mechanical, abundant `#[no_mangle]`/`unsafe fn` reduction*. Recon settled it
+decisively for the **redirect**:
+
+* **Every compiled `xetex/*.c` is a prototype-only empty compilation unit.**
+  I counted function bodies per file: all 0 except `xetex-engine-interface.c`
+  (the setjmp shim — `tt_engine_xetex_main` + the aarch64 linker hack), whose
+  only Rust call is `tt_run_engine`. So the ~285 `#[no_mangle] extern "C"` on
+  internal fns are **vestigial** — their only C references are dead prototype
+  declarations, which the linker never resolves.
+* **The genuine FFI keep-set is tiny and enumerable:** the engine entry/config
+  ABI (`tt_run_engine`, `tt_xetex_set_int_variable`,
+  `tt_xetex_set_string_variable`), the C-ABI fixed-point pair
+  (`D2Fix`/`Fix2D`), the macOS-referenced trio (`font_feature_warning`,
+  `readCommonFeatures`, `read_double` — `xetex-macos.c`, out of scope but kept
+  buildable), and — the one non-obvious case — the **C++→Rust boundary**
+  `tt_get_font_{area,size,layout_engine}_entry`, which are *really called* from
+  the compiled `xetex-XeTeXOTMath.cpp` (verified by grepping the `.cpp`, not
+  just `.c`; `cargo check` would NOT catch a wrong de-export here because it
+  doesn't link C++ — only `cargo test`'s link step does).
+* This is the "abundant, not blocked on the giants" direction: ~270 clean
+  mechanical wins vs. one risky bucket-C giant. The vpackage scoped-island
+  spike is **deferred** to its own focused session (cost-per-giant data point);
+  the de-export abundance already answers the strategic question.
+
+### What and how
+
+Built `plan/idiom/deexport.py`: removes `#[no_mangle]` + strips `extern "C" `
+from internal fns, skipping a `KEEP` set (the FFI boundary above) and **never**
+touching `#[no_mangle]` statics. Two refinements the warning-count discipline
+(§7) forced:
+
+* **non_snake_case:** `#[no_mangle]` had been suppressing that lint;
+  de-exporting `eTeX_enabled`/`readFeatureNumber`/`splitFontName` re-exposed it.
+  The codemod now replaces `#[no_mangle]` with `#[allow(non_snake_case)]` for
+  camelCase names (keeps the faithful name, warnings flat; a later cosmetic
+  rename can drop both).
+* **dead-on-de-export:** four fns (`graphite_warning`, `print_two`,
+  `short_display_n`, `print_chars`) have **zero** Rust callers and no C/C++
+  caller — `#[no_mangle]` was their only "use", so de-exporting surfaces
+  `dead_code`. Left exported, flagged in the codemod's defer set for a separate
+  dead-code-removal pass (deleting them risks a cascade; out of scope here).
+
+Commits (module-grouped, full dashboard each): scan (51) · main_control (60) ·
+output (47) · math+scaled_math (19) · errors/expand/ext/input/linebreak (34) ·
+io/texmfmp/fonts/format_io/helpers (26) · engine/hyphenation/packaging/save/
+mem/shipout (26) · the 3 "self-FFI" (`end_token_list`/
+`initialize_pagebuilder_variables`/`tex_round` — turned out to have **no**
+extern decl at all, a false positive from an over-running awk; trivially
+de-exported) · finally `copy_native_glyph_info` (a `#[no_mangle] pub fn` with
+no `extern "C"`, so the codemod had skipped it) + 3 stale shipout comments
+corrected.
+
+### Metrics (honest accounting — two grep artifacts to know about)
+
+* **`#[no_mangle]` (real attribute lines): 285 → 18** (−267). The 18 = the FFI
+  keep-set (11) + 3 exported statics (`_trie_op_hash_array`,
+  `name_of_input_file`, `abspath_of_input_file`) + the 4 deferred-dead fns.
+  *Caveat:* a naive `grep -c '#\[no_mangle\]'` over-counts because stale prose
+  comments contain the literal text `#[no_mangle]`; use
+  `grep -cE '^[[:space:]]*#\[no_mangle\][[:space:]]*$'` for the true count.
+* **`unsafe fn`:** the naive `grep '\bunsafe fn\b'` JUMPS 368 → 634 — this is a
+  **measurement artifact, not a regression.** `unsafe extern "C" fn` does not
+  match `\bunsafe fn\b`, but `unsafe fn` does; de-exporting merely
+  re-textualised already-unsafe fns into the counted form. The **true**
+  unsafe-fn total (`unsafe (extern "C" )?fn`) is **651 before = 651 after,
+  perfectly flat.** Nothing became more unsafe. De-unsafe is the *next*
+  redirect step (many of these can now drop `unsafe` since the extern is gone).
+* `with_state` sites **1190**, unchanged (de-export doesn't touch the bridge).
+* warnings **50 → 50**; dashboard **29/2/7/4** on all 9 commits.
+
+### Handoff / next
+
+The headline `#[no_mangle]` number is now essentially at its floor (18, of
+which only 11 are genuine FFI + 3 statics + 4 dead). **Next options, in
+priority order:** (1) **de-unsafe sweep** — the natural continuation: hundreds
+of the just-de-exported `unsafe fn` no longer need `unsafe` now that the
+`extern "C"` is gone; classify which bodies are actually safe (no raw deref /
+union read / FFI call) and drop `unsafe`, the real target-#4 metric mover. (2)
+**dead-code-removal pass** — delete the 4 deferred-dead fns (+ any cascade) and
+revisit whether the 3 exported statics can move into `EngineState`. (3) the
+**vpackage scoped-island spike** still owed from session 138 (cost-per-giant
+for the `with_state`→0 path) if/when that path is revived. (4) keep threading
+leaves, but session 138 showed that backlog is nearly drained.
+
 
 ## Idiom session 138 — 2026-06-06 — batch-thread no-HAZARD leaf clusters with thread_fn.py (throughput test)
 
