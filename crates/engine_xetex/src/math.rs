@@ -30,8 +30,10 @@ use crate::mem::{
     new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_rule,
     new_spec, ALLOC_FAILED, TEX_NULL,
 };
+use crate::node::{KernNode, NodePtr};
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
+use crate::units::{MemIdx, Scaled};
 
 const INT_PAR_CUR_FAM: i32 = 44;
 const LOCAL_EVERY_MATH: i32 = 3;
@@ -530,20 +532,27 @@ pub unsafe fn math_glue_global(g: i32, m: i32) -> i32 {
 }
 
 /// translated from xetex-math.c:223 (math_kern)
-fn math_kern(mem: &mut MemState, p: i32, scaled_width: Option<i32>) {
+fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scaled>) {
     if let Some(width) = scaled_width {
-        mem.set_b32s1(p + 1, width);
-        mem.set_b16s0(p, EXPLICIT);
+        p.set_width(mem, width);
+        p.set_subtype(mem, EXPLICIT);
     }
 }
 
 pub fn math_kern_global(p: i32, m: i32) {
     let scaled_width = if mem_b16s0(p) == MU_GLUE {
-        Some(scaled_mu_value(mem_b32s1(p + 1), m))
+        Some(Scaled(scaled_mu_value(mem_b32s1(p + 1), m)))
     } else {
         None
     };
-    crate::state::with_state_mut(|st| math_kern(&mut st.mem, p, scaled_width));
+    crate::state::with_state_mut(|st| {
+        // SAFETY: `math_kern_global`'s sole caller is the `KERN_NODE` arm of
+        // `mlist_to_hlist`'s first pass (below), which dispatches on
+        // `mem_b16s1(q) == KERN_NODE` — so `p` is already classified as a kern
+        // node. This is the typed-region boundary (`01b` §3a).
+        let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) };
+        math_kern(&mut st.mem, kern, scaled_width)
+    });
 }
 
 /// translated from xetex-math.c:80 (flush_math)
