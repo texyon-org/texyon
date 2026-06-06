@@ -30,7 +30,7 @@ use crate::mem::{
     new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_rule,
     new_spec, ALLOC_FAILED, TEX_NULL,
 };
-use crate::node::{KernNode, NodePtr};
+use crate::node::{GlueSpecNode, KernNode, NodePtr};
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, Scaled};
@@ -499,12 +499,17 @@ fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycl
     if p == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    mem.set_b32s1(p + 1, input.width);
-    mem.set_b16s1(p, input.stretch_order);
-    mem.set_b32s1(p + 2, input.stretch);
-    mem.set_b16s0(p, input.shrink_order);
-    mem.set_b32s1(p + 3, input.shrink);
-    Ok(p)
+    // SAFETY: `p` is a glue_spec record just allocated at `GLUE_SPEC_SIZE`;
+    // we fill its fields below. A fresh node has no `NODE_type` to classify
+    // yet, so this is the "construct a handle to a node I am initializing"
+    // boundary (`01b` §3a) — `from_idx_unchecked` is the right tool here.
+    let spec = unsafe { NodePtr::<GlueSpecNode>::from_idx_unchecked(MemIdx::new(p)) };
+    spec.set_width(mem, Scaled(input.width));
+    spec.set_stretch_order(mem, input.stretch_order);
+    spec.set_stretch(mem, Scaled(input.stretch));
+    spec.set_shrink_order(mem, input.shrink_order);
+    spec.set_shrink(mem, Scaled(input.shrink));
+    Ok(spec.idx().0)
 }
 
 pub unsafe fn math_glue_global(g: i32, m: i32) -> i32 {
