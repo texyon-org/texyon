@@ -272,8 +272,14 @@ impl MemState {
 // | `ref_count`     | 0.b32.s1        | `i32` — a REFERENCE COUNT, not a link |
 // | `stretch_order` | 0.b16.s1        | `u16` (the fil order of `stretch`) |
 // | `shrink_order`  | 0.b16.s0        | `u16` (the fil order of `shrink`)  |
+// | `width`         | +1.b32.s1       | `Scaled` (the natural glue amount) |
 // | `stretch`       | +2.b32.s1       | `Scaled`                          |
 // | `shrink`        | +3.b32.s1       | `Scaled`                          |
+//
+// (`width` shares the generic `BOX_width` +1.b32.s1 offset, so there is no
+// dedicated `GLUE_SPEC_width` C macro — verified against `new_spec`/
+// `math_glue` in `src/mem.rs`/`src/math.rs`, which read/write `mem[p+1]` as
+// the spec width.)
 //
 // **Classification differs from the box family.** A glue_spec is *not*
 // found via `NODE_type`: its `0.b16.s1` word holds `stretch_order`, not a
@@ -398,6 +404,18 @@ impl NodePtr<GlueSpecNode> {
     #[inline]
     pub fn set_shrink_order(self, mem: &mut MemState, v: u16) {
         mem.set_b16s0(self.idx.0, v);
+    }
+
+    /// Glue-spec `width` = `mem[(p) + 1].b32.s1` — the natural glue amount.
+    /// Shares the generic `BOX_width` +1.b32.s1 slot (no dedicated
+    /// `GLUE_SPEC_width` macro), but on a glue_spec it is the rigid width.
+    #[inline]
+    pub fn width(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_width(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
     }
 
     /// `GLUE_SPEC_stretch(p)` = `mem[(p) + 2].b32.s1` — the stretchability.
@@ -701,12 +719,14 @@ mod tests {
         s.set_ref_count(&mut mem, 42);
         s.set_stretch_order(&mut mem, 2);
         s.set_shrink_order(&mut mem, 1);
+        s.set_width(&mut mem, Scaled(0x4444));
         s.set_stretch(&mut mem, Scaled(0x5555));
         s.set_shrink(&mut mem, Scaled(0x6666));
 
         assert_eq!(s.ref_count(&mem), 42);
         assert_eq!(s.stretch_order(&mem), 2);
         assert_eq!(s.shrink_order(&mem), 1);
+        assert_eq!(s.width(&mem), Scaled(0x4444));
         assert_eq!(s.stretch(&mem), Scaled(0x5555));
         assert_eq!(s.shrink(&mem), Scaled(0x6666));
 
@@ -717,6 +737,7 @@ mod tests {
         assert_eq!(mem.b32s1(p.0), 42);
         assert_eq!(mem.b16s1(p.0), 2); // stretch_order
         assert_eq!(mem.b16s0(p.0), 1); // shrink_order
+        assert_eq!(mem.b32s1(p.0 + 1), 0x4444); // width
         assert_eq!(mem.b32s1(p.0 + 2), 0x5555); // stretch
         assert_eq!(mem.b32s1(p.0 + 3), 0x6666); // shrink
     }
