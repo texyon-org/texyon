@@ -1833,7 +1833,7 @@ pub(crate) fn set_font_area_entry(f: i32, v: i32) {
 }
 /// C++ bridge for OpenType math helpers that still need font_area.
 #[no_mangle]
-pub unsafe extern "C" fn tt_get_font_area_entry(f: i32) -> i32 {
+pub extern "C" fn tt_get_font_area_entry(f: i32) -> i32 {
     font_area_entry(f)
 }
 /// Returns `font_size[f]` — the current at-size (scaled_t) for font f.
@@ -1843,7 +1843,7 @@ pub(crate) fn font_size_entry(f: i32) -> i32 {
 }
 /// C++ bridge for the remaining OpenType math helper.
 #[no_mangle]
-pub unsafe extern "C" fn tt_get_font_size_entry(f: i32) -> i32 {
+pub extern "C" fn tt_get_font_size_entry(f: i32) -> i32 {
     font_size_entry(f)
 }
 /// Writes `font_size[f] = v`.
@@ -1946,7 +1946,7 @@ pub(crate) fn set_font_layout_engine_ptr(f: i32, v: *mut libc::c_void) {
 }
 /// C++ bridge: returns `font_layout_engine[f]` for use in OpenType math helpers.
 #[no_mangle]
-pub unsafe extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
+pub extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
     font_layout_engine_ptr(f)
 }
 /// Returns `font_mapping[f]`.

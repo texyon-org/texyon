@@ -376,13 +376,13 @@ unsafe fn copy_c_slice(start: *const c_char, end: *const c_char) -> *mut c_char 
 
 // translated from xetex-ext.c:1882 (D2Fix)
 #[no_mangle]
-pub unsafe extern "C" fn D2Fix(d: c_double) -> i32 {
+pub extern "C" fn D2Fix(d: c_double) -> i32 {
     (d * 65536.0 + 0.5) as i32
 }
 
 // translated from xetex-ext.c:1888 (Fix2D)
 #[no_mangle]
-pub unsafe extern "C" fn Fix2D(f: i32) -> c_double {
+pub extern "C" fn Fix2D(f: i32) -> c_double {
     f as c_double / 65536.0
 }
 
@@ -2266,7 +2266,7 @@ pub unsafe fn store_justified_native_glyphs(fonts: &crate::state::FontState, p_n
 }
 
 // translated from xetex-ext.c:1027 (aat_get_font_metrics)
-pub unsafe fn aat_get_font_metrics(
+pub fn aat_get_font_metrics(
     _attributes: *mut c_void,
     _ascent: *mut i32,
     _descent: *mut i32,
@@ -2277,17 +2277,17 @@ pub unsafe fn aat_get_font_metrics(
 }
 
 // translated from xetex-ext.c:1041 (aat_font_get)
-pub unsafe fn aat_font_get(_what: c_int, _attributes: *mut c_void) -> c_int {
+pub fn aat_font_get(_what: c_int, _attributes: *mut c_void) -> c_int {
     -1
 }
 
 // translated from xetex-ext.c:1067 (aat_font_get_1)
-pub unsafe fn aat_font_get_1(_what: c_int, _attributes: *mut c_void, _param: c_int) -> c_int {
+pub fn aat_font_get_1(_what: c_int, _attributes: *mut c_void, _param: c_int) -> c_int {
     -1
 }
 
 // translated from xetex-ext.c:1125 (aat_font_get_2)
-pub unsafe fn aat_font_get_2(
+pub fn aat_font_get_2(
     _what: c_int,
     _attributes: *mut c_void,
     _param1: c_int,
@@ -2297,17 +2297,17 @@ pub unsafe fn aat_font_get_2(
 }
 
 // translated from xetex-ext.c:1168 (aat_font_get_named)
-pub unsafe fn aat_font_get_named(_what: c_int, _attributes: *mut c_void) -> c_int {
+pub fn aat_font_get_named(_what: c_int, _attributes: *mut c_void) -> c_int {
     -1
 }
 
 // translated from xetex-ext.c:1193 (aat_font_get_named_1)
-pub unsafe fn aat_font_get_named_1(_what: c_int, _attributes: *mut c_void, _param: c_int) -> c_int {
+pub fn aat_font_get_named_1(_what: c_int, _attributes: *mut c_void, _param: c_int) -> c_int {
     -1
 }
 
 // translated from xetex-ext.c:1218 (aat_print_font_name)
-pub unsafe fn aat_print_font_name(
+pub fn aat_print_font_name(
     _what: c_int,
     _attributes: *mut c_void,
     _param1: c_int,

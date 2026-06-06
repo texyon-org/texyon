@@ -840,7 +840,7 @@ pub unsafe fn push_alignment() {
     set_cur_pre_head(crate::mem::get_avail_global());
 }
 // translated from xetex-xetex0.c:7743 (pop_alignment)
-pub unsafe fn pop_alignment() {
+pub fn pop_alignment() {
     use crate::globals::{
         align_ptr, avail, cur_head, cur_pre_head, mem_b32s0, set_align_ptr, set_align_state,
         set_cur_align, set_cur_head, set_cur_loop, set_cur_pre_head, set_cur_pre_tail,
@@ -2757,7 +2757,7 @@ pub(crate) fn trap_zero_glue(mem: &mut crate::state::MemState) {
 }
 
 /// Transitional bridge-down wrapper for legacy `trap_zero_glue` callers.
-pub unsafe fn trap_zero_glue_global() {
+pub fn trap_zero_glue_global() {
     crate::state::with_state_mut(|st| trap_zero_glue(&mut st.mem));
 }
 // translated from xetex-xetex0.c:11357 (fix_language)
@@ -2782,12 +2782,12 @@ pub(crate) fn fix_language(
         crate::globals::set_cur_list_aux_b32s1(l);
         mem.set_b16s1(
             tail + 1,
-            unsafe { crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) }
+            crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN))
                 as u16,
         );
         mem.set_b16s0(
             tail + 1,
-            unsafe { crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) }
+            crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN))
                 as u16,
         );
     }
@@ -4373,7 +4373,7 @@ pub unsafe fn main_control_main_loop() -> bool {
     const CHAR_NUM: u8 = 16;
 
     #[inline(always)]
-    unsafe fn is_char_node(p: i32) -> bool {
+    fn is_char_node(p: i32) -> bool {
         p >= crate::globals::hi_mem_min()
     }
 
@@ -5125,7 +5125,7 @@ unsafe fn lig_inner_loop(
     use crate::mem::{new_disc_global, new_kern_global, new_lig_item_global, new_ligature_global};
 
     #[inline(always)]
-    unsafe fn is_char_node(p: i32) -> bool {
+    fn is_char_node(p: i32) -> bool {
         p >= crate::globals::hi_mem_min()
     }
 

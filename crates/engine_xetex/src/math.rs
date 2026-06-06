@@ -478,20 +478,18 @@ struct MathGlueInput {
 }
 
 fn scaled_mu_value(v: i32, m: i32) -> i32 {
-    let mut n = unsafe { crate::scaled_math::x_over_n(m, 65_536) };
+    let mut n = crate::scaled_math::x_over_n(m, 65_536);
     let mut f = tex_remainder();
     if f < 0 {
         n -= 1;
         f += 65_536;
     }
-    unsafe {
-        crate::scaled_math::mult_and_add(
-            n,
-            v,
-            crate::scaled_math::xn_over_d(v, f, 65_536),
-            MAX_HALFWORD,
-        )
-    }
+    crate::scaled_math::mult_and_add(
+        n,
+        v,
+        crate::scaled_math::xn_over_d(v, f, 65_536),
+        MAX_HALFWORD,
+    )
 }
 
 fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycleAbort> {
@@ -539,7 +537,7 @@ fn math_kern(mem: &mut MemState, p: i32, scaled_width: Option<i32>) {
     }
 }
 
-pub unsafe fn math_kern_global(p: i32, m: i32) {
+pub fn math_kern_global(p: i32, m: i32) {
     let scaled_width = if mem_b16s0(p) == MU_GLUE {
         Some(scaled_mu_value(mem_b32s1(p + 1), m))
     } else {
@@ -833,7 +831,7 @@ fn make_vcenter(mem: &mut MemState, q: i32, axis_height: i32) -> Result<(), Node
     let delta = mem.b32s1(v + 3) + mem.b32s1(v + 2);
     mem.set_b32s1(
         v + 3,
-        axis_height + unsafe { crate::scaled_math::half(delta) },
+        axis_height + crate::scaled_math::half(delta),
     );
     mem.set_b32s1(v + 2, delta - mem.b32s1(v + 3));
     Ok(())
@@ -1962,7 +1960,7 @@ fn append_script_box(mem: &mut MemState, q: i32, box_node: i32) {
     }
 }
 
-unsafe fn append_script_box_global(q: i32, box_node: i32) {
+fn append_script_box_global(q: i32, box_node: i32) {
     crate::state::with_state_mut(|st| append_script_box(&mut st.mem, q, box_node));
 }
 
@@ -2384,7 +2382,7 @@ pub unsafe fn make_left_right_global(q: i32, style: i16, max_d: i32, max_h: i32)
 }
 
 #[inline]
-unsafe fn update_math_style_params() {
+fn update_math_style_params() {
     if cur_style() < SCRIPT_STYLE {
         set_cur_size(TEXT_SIZE);
     } else {
@@ -4529,7 +4527,7 @@ pub unsafe fn init_math() {
 }
 
 /// translated from xetex-math.c:71 (initialize_math_variables)
-pub unsafe fn initialize_math_variables() {
+pub fn initialize_math_variables() {
     // null_delimiter is a file-static b16x4 that is never read outside this
     // function; zeroing it is redundant (C zero-initializes statics) and a no-op.
 }

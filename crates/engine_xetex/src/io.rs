@@ -829,7 +829,7 @@ pub unsafe fn open_or_close_in() {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 /// translated from xetex-xetex0.c:7827 (begin_name)
-pub unsafe fn begin_name() {
+pub fn begin_name() {
     use crate::globals::{
         set_area_delimiter, set_ext_delimiter, set_file_name_quote_char, set_quoted_filename,
     };

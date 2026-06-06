@@ -502,7 +502,7 @@ pub unsafe fn scan_delimiter_int() {
 /// Returns the maximum hyphenatable word length, clamped to HYPHENATABLE_LENGTH_LIMIT.
 ///
 /// translated from xetex-xetex0.c:11330 (max_hyphenatable_length)
-pub unsafe fn max_hyphenatable_length() -> i32 {
+pub fn max_hyphenatable_length() -> i32 {
     let v = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH);
     if v > HYPHENATABLE_LENGTH_LIMIT {
         HYPHENATABLE_LENGTH_LIMIT
@@ -536,7 +536,7 @@ pub unsafe fn scan_mu_glue() {
 /// Returns INTPAR(xetex_input_normalization), or 0 if eqtb is not yet initialized.
 ///
 /// translated from xetex-xetex0.c:9073 (get_input_normalization_state)
-pub unsafe fn get_input_normalization_state() -> i32 {
+pub fn get_input_normalization_state() -> i32 {
     if eqtb_is_null() {
         0
     } else {
@@ -547,7 +547,7 @@ pub unsafe fn get_input_normalization_state() -> i32 {
 /// Returns INTPAR(xetex_tracing_fonts).
 ///
 /// translated from xetex-xetex0.c:9082 (get_tracing_fonts_state)
-pub unsafe fn get_tracing_fonts_state() -> i32 {
+pub fn get_tracing_fonts_state() -> i32 {
     eqtb_b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS)
 }
 
@@ -1205,7 +1205,7 @@ pub unsafe fn scan_spec(c: u8, three_codes: bool) {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:4392 (round_decimals, was static)
-unsafe fn round_decimals(k: i32) -> i32 {
+fn round_decimals(k: i32) -> i32 {
     use crate::globals::dig_entry;
     let mut a: i32 = 0;
     let mut k = k;
@@ -3609,12 +3609,12 @@ pub unsafe fn eTeX_enabled(b: bool, j: u16, k: i32) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Transitional bridge-down wrapper for legacy `effective_char` callers.
-pub unsafe fn effective_char_global(err_p: bool, f: i32, c: u16) -> i32 {
+pub fn effective_char_global(err_p: bool, f: i32, c: u16) -> i32 {
     crate::state::with_state_mut(|st| effective_char(&mut st.fonts, err_p, f, c))
 }
 
 /// Transitional bridge-down wrapper for legacy `effective_char_info` callers.
-pub unsafe fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B16x4 {
+pub fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B16x4 {
     crate::state::with_state_mut(|st| effective_char_info(&mut st.fonts, f, c))
 }
 
@@ -4930,7 +4930,7 @@ pub unsafe fn new_native_word_node_global(f: i32, n: i32) -> i32 {
 // load_native_font
 // ---------------------------------------------------------------------------
 
-pub(crate) unsafe fn push_font_info_b32s1(v: i32) {
+pub(crate) fn push_font_info_b32s1(v: i32) {
     let k = crate::globals::fmem_ptr();
     crate::globals::set_font_info_b32s1(k, v);
     crate::globals::set_fmem_ptr(k + 1);

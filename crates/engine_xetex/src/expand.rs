@@ -509,7 +509,7 @@ pub unsafe fn conditional() {
 }
 /// Pop a cond_ptr node — repeated pattern in conditional (§515).
 #[inline]
-unsafe fn pop_cond_node() {
+fn pop_cond_node() {
     use crate::globals::{
         cond_ptr, mem_b16s0, mem_b16s1, mem_b32s1, set_cond_ptr, set_cur_if, set_if_limit,
         set_if_line,

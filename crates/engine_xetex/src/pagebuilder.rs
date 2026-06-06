@@ -147,7 +147,7 @@ const SCALED_BASE: i32 = 8_941_203;
 
 extern "C" {}
 
-pub unsafe fn initialize_pagebuilder_variables() {
+pub fn initialize_pagebuilder_variables() {
     set_page_max_depth(0);
 }
 

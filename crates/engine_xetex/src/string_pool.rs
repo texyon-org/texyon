@@ -35,7 +35,7 @@ pub fn length(strings: &StringsState, s: i32) -> i32 {
     8
 }
 
-pub unsafe fn length_global(s: i32) -> i32 {
+pub fn length_global(s: i32) -> i32 {
     crate::state::with_state(|st| length(&st.strings, s))
 }
 
@@ -137,7 +137,7 @@ pub fn str_eq_buf(strings: &StringsState, buffer: &[i32], s: i32, mut k: i32) ->
     true
 }
 
-pub unsafe fn str_eq_buf_global(s: i32, k: i32) -> bool {
+pub fn str_eq_buf_global(s: i32, k: i32) -> bool {
     crate::state::with_state(|st| str_eq_buf(&st.strings, &st.input.buffer, s, k))
 }
 
@@ -179,7 +179,7 @@ pub fn str_eq_str(strings: &StringsState, s: i32, t: i32) -> bool {
     true
 }
 
-pub unsafe fn str_eq_str_global(s: i32, t: i32) -> bool {
+pub fn str_eq_str_global(s: i32, t: i32) -> bool {
     crate::state::with_state(|st| str_eq_str(&st.strings, s, t))
 }
 
@@ -205,7 +205,7 @@ pub fn search_string(strings: &StringsState, search: i32) -> i32 {
     0
 }
 
-pub unsafe fn search_string_global(search: i32) -> i32 {
+pub fn search_string_global(search: i32) -> i32 {
     crate::state::with_state(|st| search_string(&st.strings, search))
 }
 
@@ -303,6 +303,6 @@ pub fn flush_str(strings: &mut StringsState, s: i32) {
     }
 }
 
-pub unsafe fn flush_str_global(s: i32) {
+pub fn flush_str_global(s: i32) {
     crate::state::with_state_mut(|st| flush_str(&mut st.strings, s));
 }

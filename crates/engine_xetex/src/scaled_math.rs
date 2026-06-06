@@ -30,7 +30,7 @@ extern "C" {}
 /// range.
 ///
 /// translated from xetex-scaledmath.c:11 (tex_round)
-pub unsafe fn tex_round(r: f64) -> i32 {
+pub fn tex_round(r: f64) -> i32 {
     // We must reproduce very particular rounding semantics to pass the
     // TRIP test (see comment in the C source). Values outside the i32
     // range are clipped; within-range values round half-away-from-zero.
@@ -62,7 +62,7 @@ pub unsafe fn tex_round(r: f64) -> i32 {
 /// than 0 (because `(x + 1) / 2` in C truncates toward zero).
 ///
 /// translated from xetex-scaledmath.c:51 (half)
-pub unsafe fn half(x: i32) -> i32 {
+pub fn half(x: i32) -> i32 {
     // The C macro `odd(x)` is `((x) & 1)`; Rust's `x & 1 != 0` is the
     // same. We wrap the add/divide in `wrapping_*` to match the C's
     // implementation-defined-but-well-known behaviour for i32 overflow.
@@ -83,7 +83,7 @@ pub unsafe fn half(x: i32) -> i32 {
 /// exceed `max_answer` in magnitude.
 ///
 /// translated from xetex-scaledmath.c:60 (mult_and_add)
-pub unsafe fn mult_and_add(
+pub fn mult_and_add(
     mut n: i32,
     mut x: i32,      // scaled_t
     y: i32,          // scaled_t
@@ -131,7 +131,7 @@ pub unsafe fn mult_and_add(
 /// 0, with `tex_remainder = x`) on division by zero.
 ///
 /// translated from xetex-scaledmath.c:79 (x_over_n)
-pub unsafe fn x_over_n(mut x: i32, mut n: i32) -> i32 {
+pub fn x_over_n(mut x: i32, mut n: i32) -> i32 {
     // scaled_t is i32
 
     if n == 0 {
@@ -179,7 +179,7 @@ pub unsafe fn x_over_n(mut x: i32, mut n: i32) -> i32 {
 /// `x`.
 ///
 /// translated from xetex-scaledmath.c:105 (xn_over_d)
-pub unsafe fn xn_over_d(x: i32, n: i32, d: i32) -> i32 {
+pub fn xn_over_d(x: i32, n: i32, d: i32) -> i32 {
     let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
     if overflowed {
         set_arith_error(true);
@@ -234,7 +234,7 @@ pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
 /// (ties away from zero). Does not touch `tex_remainder`.
 ///
 /// translated from xetex-scaledmath.c:137 (round_xn_over_d)
-pub unsafe fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
+pub fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
     // scaled_t is i32
 
     let positive: bool;
@@ -277,7 +277,7 @@ pub unsafe fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
 /// ±0x7FFFFFFF if |p/q| >= 8.
 ///
 /// translated from xetex-scaledmath.c:165 (make_frac)
-pub unsafe fn make_frac(mut p: i32, mut q: i32) -> i32 {
+pub fn make_frac(mut p: i32, mut q: i32) -> i32 {
     let mut negative = p < 0;
     if negative {
         p = -p;
@@ -333,7 +333,7 @@ pub unsafe fn make_frac(mut p: i32, mut q: i32) -> i32 {
 /// a scaled integer. Sets `arith_error` on overflow.
 ///
 /// translated from xetex-scaledmath.c:220 (take_frac)
-pub unsafe fn take_frac(mut q: i32, mut f: i32) -> i32 {
+pub fn take_frac(mut q: i32, mut f: i32) -> i32 {
     let mut negative = f < 0;
     if negative {
         f = -f;
@@ -406,7 +406,7 @@ pub unsafe fn take_frac(mut q: i32, mut f: i32) -> i32 {
 /// Compare `a*b` vs `c*d` without overflow, returning 1, 0, or -1.
 ///
 /// translated from xetex-scaledmath.c:332 (ab_vs_cd)
-pub unsafe fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
+pub fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
     if a < 0 {
         a = -a;
         b = -b;
@@ -476,7 +476,7 @@ pub unsafe fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
 /// subtraction generator).
 ///
 /// translated from xetex-scaledmath.c:418 (new_randoms)
-pub unsafe fn new_randoms() {
+pub fn new_randoms() {
     for k in 0_usize..24 {
         let x = random_entry(k).wrapping_sub(random_entry(k + 31));
         set_random_entry(k, if x < 0 { x + 0x1000_0000 } else { x });
@@ -497,7 +497,7 @@ pub unsafe fn new_randoms() {
 /// Seed the pseudo-random table and run three warmup cycles.
 ///
 /// translated from xetex-scaledmath.c:441 (init_randoms)
-pub unsafe fn init_randoms(seed: i32) {
+pub fn init_randoms(seed: i32) {
     let mut j = seed.abs();
 
     while j >= 0x1000_0000 {
@@ -529,7 +529,7 @@ pub unsafe fn init_randoms(seed: i32) {
 /// `[0, abs(x))` (or `(-abs(x), 0]` when `x < 0`).
 ///
 /// translated from xetex-scaledmath.c:468 (unif_rand)
-pub unsafe fn unif_rand(x: i32) -> i32 {
+pub fn unif_rand(x: i32) -> i32 {
     if j_random() == 0 {
         new_randoms();
     } else {
@@ -678,27 +678,23 @@ mod tests {
 
     #[test]
     fn tex_round_basics() {
-        unsafe {
-            assert_eq!(tex_round(0.0), 0);
-            assert_eq!(tex_round(0.5), 1);
-            assert_eq!(tex_round(-0.5), -1);
-            assert_eq!(tex_round(0.49), 0);
-            assert_eq!(tex_round(-0.49), 0);
-            assert_eq!(tex_round(0.51), 1);
-            assert_eq!(tex_round(-0.51), -1);
-            assert_eq!(tex_round(1.5), 2);
-            assert_eq!(tex_round(-1.5), -2);
-        }
+        assert_eq!(tex_round(0.0), 0);
+        assert_eq!(tex_round(0.5), 1);
+        assert_eq!(tex_round(-0.5), -1);
+        assert_eq!(tex_round(0.49), 0);
+        assert_eq!(tex_round(-0.49), 0);
+        assert_eq!(tex_round(0.51), 1);
+        assert_eq!(tex_round(-0.51), -1);
+        assert_eq!(tex_round(1.5), 2);
+        assert_eq!(tex_round(-1.5), -2);
     }
 
     #[test]
     fn tex_round_clips_to_i32_range() {
-        unsafe {
-            assert_eq!(tex_round(1e20), i32::MAX);
-            assert_eq!(tex_round(-1e20), i32::MIN);
-            assert_eq!(tex_round(2_147_483_648.0), i32::MAX);
-            assert_eq!(tex_round(-2_147_483_649.0), i32::MIN);
-        }
+        assert_eq!(tex_round(1e20), i32::MAX);
+        assert_eq!(tex_round(-1e20), i32::MIN);
+        assert_eq!(tex_round(2_147_483_648.0), i32::MAX);
+        assert_eq!(tex_round(-2_147_483_649.0), i32::MIN);
     }
 
     // -----------------------------------------------------------------
@@ -707,17 +703,15 @@ mod tests {
 
     #[test]
     fn half_basics() {
-        unsafe {
-            assert_eq!(half(0), 0);
-            assert_eq!(half(1), 1);
-            assert_eq!(half(2), 1);
-            assert_eq!(half(3), 2);
-            assert_eq!(half(4), 2);
-            assert_eq!(half(-1), 0); // (-1 + 1) / 2 == 0
-            assert_eq!(half(-2), -1);
-            assert_eq!(half(-3), -1); // (-3 + 1) / 2 == -1
-            assert_eq!(half(-4), -2);
-        }
+        assert_eq!(half(0), 0);
+        assert_eq!(half(1), 1);
+        assert_eq!(half(2), 1);
+        assert_eq!(half(3), 2);
+        assert_eq!(half(4), 2);
+        assert_eq!(half(-1), 0); // (-1 + 1) / 2 == 0
+        assert_eq!(half(-2), -1);
+        assert_eq!(half(-3), -1); // (-3 + 1) / 2 == -1
+        assert_eq!(half(-4), -2);
     }
 
     // -----------------------------------------------------------------
@@ -727,36 +721,32 @@ mod tests {
     #[test]
     fn mult_and_add_basic() {
         let _g = lock();
-        unsafe {
-            // TeX calls `mult_and_add` with `max_answer = MAX_HALFWORD`
-            // (0x3FFFFFFF) in practice — the i32::MAX value exceeds the
-            // algorithm's internal precondition that `max_answer ± y`
-            // still fits in i32, so we pick a realistic cap here.
-            const MAX: i32 = 0x3FFF_FFFF;
+        // TeX calls `mult_and_add` with `max_answer = MAX_HALFWORD`
+        // (0x3FFFFFFF) in practice — the i32::MAX value exceeds the
+        // algorithm's internal precondition that `max_answer ± y`
+        // still fits in i32, so we pick a realistic cap here.
+        const MAX: i32 = 0x3FFF_FFFF;
 
-            set_arith_error(false);
-            assert_eq!(mult_and_add(3, 7, 1, MAX), 22);
-            assert!(!arith_error());
+        set_arith_error(false);
+        assert_eq!(mult_and_add(3, 7, 1, MAX), 22);
+        assert!(!arith_error());
 
-            assert_eq!(mult_and_add(0, 7, 42, MAX), 42);
-            assert!(!arith_error());
+        assert_eq!(mult_and_add(0, 7, 42, MAX), 42);
+        assert!(!arith_error());
 
-            // Negative n flips the sign of x and continues.
-            assert_eq!(mult_and_add(-2, 3, 1, MAX), -5);
-            assert!(!arith_error());
-        }
+        // Negative n flips the sign of x and continues.
+        assert_eq!(mult_and_add(-2, 3, 1, MAX), -5);
+        assert!(!arith_error());
     }
 
     #[test]
     fn mult_and_add_detects_overflow() {
         let _g = lock();
-        unsafe {
-            set_arith_error(false);
-            // Chosen so that n*x + y > max_answer => arith_error.
-            let r = mult_and_add(2, 2_000_000_000, 1_000_000_000, i32::MAX);
-            assert_eq!(r, 0);
-            assert!(arith_error());
-        }
+        set_arith_error(false);
+        // Chosen so that n*x + y > max_answer => arith_error.
+        let r = mult_and_add(2, 2_000_000_000, 1_000_000_000, i32::MAX);
+        assert_eq!(r, 0);
+        assert!(arith_error());
     }
 
     // -----------------------------------------------------------------
@@ -766,34 +756,28 @@ mod tests {
     #[test]
     fn x_over_n_positive() {
         let _g = lock();
-        unsafe {
-            set_arith_error(false);
-            assert_eq!(x_over_n(17, 5), 3);
-            assert_eq!(tex_remainder(), 2);
-            assert!(!arith_error());
-        }
+        set_arith_error(false);
+        assert_eq!(x_over_n(17, 5), 3);
+        assert_eq!(tex_remainder(), 2);
+        assert!(!arith_error());
     }
 
     #[test]
     fn x_over_n_negative_x_gives_negative_remainder() {
         let _g = lock();
-        unsafe {
-            set_arith_error(false);
-            assert_eq!(x_over_n(-17, 5), -3);
-            assert_eq!(tex_remainder(), -2);
-            assert!(!arith_error());
-        }
+        set_arith_error(false);
+        assert_eq!(x_over_n(-17, 5), -3);
+        assert_eq!(tex_remainder(), -2);
+        assert!(!arith_error());
     }
 
     #[test]
     fn x_over_n_zero_divisor_sets_flag() {
         let _g = lock();
-        unsafe {
-            set_arith_error(false);
-            assert_eq!(x_over_n(42, 0), 0);
-            assert_eq!(tex_remainder(), 42);
-            assert!(arith_error());
-        }
+        set_arith_error(false);
+        assert_eq!(x_over_n(42, 0), 0);
+        assert_eq!(tex_remainder(), 42);
+        assert!(arith_error());
     }
 
     // -----------------------------------------------------------------
@@ -803,55 +787,47 @@ mod tests {
     #[test]
     fn xn_over_d_small_values() {
         let _g = lock();
-        unsafe {
-            set_arith_error(false);
-            // 10 * 3 / 4 = 7.5 → truncated to 7, remainder 2
-            assert_eq!(xn_over_d(10, 3, 4), 7);
-            assert_eq!(tex_remainder(), 2);
-            assert!(!arith_error());
-        }
+        set_arith_error(false);
+        // 10 * 3 / 4 = 7.5 → truncated to 7, remainder 2
+        assert_eq!(xn_over_d(10, 3, 4), 7);
+        assert_eq!(tex_remainder(), 2);
+        assert!(!arith_error());
     }
 
     #[test]
     fn xn_over_d_large_x_and_divisor() {
         let _g = lock();
-        unsafe {
-            // The C algorithm is only well-defined when
-            // `(x / 32768) / d < 32768`, i.e., `x < d * 2^30`. With a
-            // moderately-large `d`, this leaves plenty of headroom.
-            set_arith_error(false);
-            // Exact: 1_000_000_000 * 3 / 1000 = 3_000_000
-            assert_eq!(xn_over_d(1_000_000_000, 3, 1000), 3_000_000);
-            assert!(!arith_error());
-            // Remainder: 1_000_000_000 % 1000 == 0, so no remainder.
-            assert_eq!(tex_remainder(), 0);
-        }
+        // The C algorithm is only well-defined when
+        // `(x / 32768) / d < 32768`, i.e., `x < d * 2^30`. With a
+        // moderately-large `d`, this leaves plenty of headroom.
+        set_arith_error(false);
+        // Exact: 1_000_000_000 * 3 / 1000 = 3_000_000
+        assert_eq!(xn_over_d(1_000_000_000, 3, 1000), 3_000_000);
+        assert!(!arith_error());
+        // Remainder: 1_000_000_000 % 1000 == 0, so no remainder.
+        assert_eq!(tex_remainder(), 0);
     }
 
     #[test]
     fn xn_over_d_detects_overflow() {
         let _g = lock();
-        unsafe {
-            // With d=1, `u/d == u == x/32768` must stay below 32768,
-            // i.e. x < 2^30. i32::MAX exceeds this bound and triggers
-            // the arith_error path; the returned `u` is the pre-final
-            // value (still 65535 after the high-half split). We don't
-            // check the numeric return — only that the flag got set,
-            // matching the C behaviour.
-            set_arith_error(false);
-            let _ = xn_over_d(i32::MAX, 1, 1);
-            assert!(arith_error());
-        }
+        // With d=1, `u/d == u == x/32768` must stay below 32768,
+        // i.e. x < 2^30. i32::MAX exceeds this bound and triggers
+        // the arith_error path; the returned `u` is the pre-final
+        // value (still 65535 after the high-half split). We don't
+        // check the numeric return — only that the flag got set,
+        // matching the C behaviour.
+        set_arith_error(false);
+        let _ = xn_over_d(i32::MAX, 1, 1);
+        assert!(arith_error());
     }
 
     #[test]
     fn xn_over_d_negative_x_negates_result_and_remainder() {
         let _g = lock();
-        unsafe {
-            set_arith_error(false);
-            assert_eq!(xn_over_d(-10, 3, 4), -7);
-            assert_eq!(tex_remainder(), -2);
-        }
+        set_arith_error(false);
+        assert_eq!(xn_over_d(-10, 3, 4), -7);
+        assert_eq!(tex_remainder(), -2);
     }
 
     // -----------------------------------------------------------------
@@ -861,25 +837,21 @@ mod tests {
     #[test]
     fn round_xn_over_d_rounds_half_up() {
         let _g = lock();
-        unsafe {
-            set_arith_error(false);
-            // 10 * 3 / 4 = 7.5 → rounds to 8
-            assert_eq!(round_xn_over_d(10, 3, 4), 8);
-            // 10 * 3 / 5 = 6.0
-            assert_eq!(round_xn_over_d(10, 3, 5), 6);
-            // 10 * 2 / 4 = 5.0 (exact, no rounding)
-            assert_eq!(round_xn_over_d(10, 2, 4), 5);
-        }
+        set_arith_error(false);
+        // 10 * 3 / 4 = 7.5 → rounds to 8
+        assert_eq!(round_xn_over_d(10, 3, 4), 8);
+        // 10 * 3 / 5 = 6.0
+        assert_eq!(round_xn_over_d(10, 3, 5), 6);
+        // 10 * 2 / 4 = 5.0 (exact, no rounding)
+        assert_eq!(round_xn_over_d(10, 2, 4), 5);
     }
 
     #[test]
     fn round_xn_over_d_negative_x() {
         let _g = lock();
-        unsafe {
-            set_arith_error(false);
-            // -10 * 3 / 4 = -7.5 → rounds away from zero to -8
-            assert_eq!(round_xn_over_d(-10, 3, 4), -8);
-        }
+        set_arith_error(false);
+        // -10 * 3 / 4 = -7.5 → rounds away from zero to -8
+        assert_eq!(round_xn_over_d(-10, 3, 4), -8);
     }
 }
 
@@ -890,7 +862,7 @@ mod tests {
 /// Add or subtract two scaled values, setting arith_error on overflow.
 ///
 /// translated from xetex-xetex0.c:6281 (add_or_sub)
-pub unsafe fn add_or_sub(x: i32, y: i32, max_answer: i32, negative: bool) -> i32 {
+pub fn add_or_sub(x: i32, y: i32, max_answer: i32, negative: bool) -> i32 {
     let y = if negative { -y } else { y };
     if x >= 0 {
         if y <= max_answer - x {
@@ -910,7 +882,7 @@ pub unsafe fn add_or_sub(x: i32, y: i32, max_answer: i32, negative: bool) -> i32
 /// Rounded integer quotient n/d, setting arith_error on divide-by-zero.
 ///
 /// translated from xetex-xetex0.c:6305 (quotient)
-pub unsafe fn quotient(mut n: i32, mut d: i32) -> i32 {
+pub fn quotient(mut n: i32, mut d: i32) -> i32 {
     if d == 0 {
         set_arith_error(true);
         return 0;
@@ -941,7 +913,7 @@ pub unsafe fn quotient(mut n: i32, mut d: i32) -> i32 {
 /// Compute x * n / d clamped to max_answer, setting arith_error on overflow.
 ///
 /// translated from xetex-xetex0.c:6336 (fract)
-pub unsafe fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
+pub fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
     if d == 0 {
         set_arith_error(true);
         return 0;

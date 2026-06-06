@@ -164,7 +164,7 @@ pub(crate) fn pseudo_close(
 }
 
 /// Transitional bridge-down wrapper for legacy `pseudo_close` callers (`01b` §3).
-pub unsafe fn pseudo_close_global() {
+pub fn pseudo_close_global() {
     crate::state::with_state_mut(|st| {
         let s = &mut *st;
         pseudo_close(&mut s.mem, &mut s.input)

@@ -11,7 +11,7 @@ use crate::globals::{
 };
 
 #[no_mangle]
-pub unsafe extern "C" fn tt_xetex_set_int_variable(
+pub extern "C" fn tt_xetex_set_int_variable(
     var_name: *const libc::c_char,
     value: libc::c_int,
 ) -> libc::c_int {
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn tt_xetex_set_int_variable(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn tt_xetex_set_string_variable(
+pub extern "C" fn tt_xetex_set_string_variable(
     _var_name: *const libc::c_char,
     _value: *const libc::c_char,
 ) -> libc::c_int {

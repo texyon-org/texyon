@@ -120,7 +120,7 @@ pub fn get_native_usv(mem: &MemState, p: i32, i: i32) -> i32 {
     c as i32
 }
 
-pub unsafe fn get_native_usv_global(p: i32, i: i32) -> i32 {
+pub fn get_native_usv_global(p: i32, i: i32) -> i32 {
     crate::state::with_state(|st| get_native_usv(&st.mem, p, i))
 }
 
@@ -3427,13 +3427,11 @@ pub fn char_pw_in(
             // NATIVE_NODE_glyph_info_ptr != NULL
             let f = mem.b16s2(p + 4) as i32; // NATIVE_NODE_font
             let cp = unsafe { real_get_native_word_cp(mem.node_addr(p), side as libc::c_int) };
-            return unsafe {
-                crate::scaled_math::round_xn_over_d(
-                    fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
-                    cp,
-                    1000,
-                )
-            };
+            return crate::scaled_math::round_xn_over_d(
+                fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
+                cp,
+                1000,
+            );
         } else {
             return 0;
         }
@@ -3448,13 +3446,11 @@ pub fn char_pw_in(
         let f = mem.b16s2(p + 4) as i32; // mem[p + 4].b16.s2
         let code = mem.b16s1(p + 4) as u32; // mem[p + 4].b16.s1 (char code)
         let cp = unsafe { get_cp_code(f, code, side as i32) };
-        return unsafe {
-            crate::scaled_math::round_xn_over_d(
-                fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
-                cp,
-                1000,
-            )
-        };
+        return crate::scaled_math::round_xn_over_d(
+            fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
+            cp,
+            1000,
+        );
     }
 
     // Adjust p for ligature node or non-char node
@@ -3478,13 +3474,11 @@ pub fn char_pw_in(
     if c == 0 {
         return 0;
     }
-    unsafe {
-        crate::scaled_math::round_xn_over_d(
-            fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
-            c,
-            1000,
-        )
-    }
+    crate::scaled_math::round_xn_over_d(
+        fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
+        c,
+        1000,
+    )
 }
 /// Insert locale-aware linebreaking nodes for `len` glyphs starting at `native_text[s]`.
 ///

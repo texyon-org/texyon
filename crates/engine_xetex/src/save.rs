@@ -208,7 +208,7 @@ pub(crate) fn geq_word_define(eqtb: &mut EqtbState, p: i32, w: i32) {
 }
 
 /// Transitional bridge-down wrapper for legacy `geq_word_define` callers.
-pub unsafe fn geq_word_define_global(p: i32, w: i32) {
+pub fn geq_word_define_global(p: i32, w: i32) {
     crate::state::with_state_mut(|st| geq_word_define(&mut st.eqtb, p, w));
 }
 
@@ -518,7 +518,7 @@ pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: i32) {
     }
 }
 
-pub unsafe fn delete_sa_ref_global(q: i32) {
+pub fn delete_sa_ref_global(q: i32) {
     crate::state::with_state_mut(|st| delete_sa_ref(&mut st.mem, &mut st.scanner, q));
 }
 

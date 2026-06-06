@@ -15,7 +15,7 @@ const INF_BAD: i32 = 10000;
 /// or the result would exceed 10000, otherwise `(t/s)^3 * 100` rounded.
 ///
 /// translated from xetex-xetex0.c:25 (badness)
-pub unsafe fn badness(t: i32, s: i32) -> i32 {
+pub fn badness(t: i32, s: i32) -> i32 {
     if t == 0 {
         return 0;
     }
@@ -48,7 +48,7 @@ pub unsafe fn badness(t: i32, s: i32) -> i32 {
 /// Clamp `h` to the range [1, 63] for hyphenation min values.
 ///
 /// translated from xetex-xetex0.c:12014 (norm_min)
-pub unsafe fn norm_min(h: i32) -> i16 {
+pub fn norm_min(h: i32) -> i16 {
     if h <= 0 {
         1
     } else if h >= 63 {
@@ -68,41 +68,31 @@ mod tests {
 
     #[test]
     fn badness_zero_t() {
-        unsafe {
-            assert_eq!(badness(0, 1000), 0);
-        }
+        assert_eq!(badness(0, 1000), 0);
     }
 
     #[test]
     fn badness_zero_or_neg_s() {
-        unsafe {
-            assert_eq!(badness(1, 0), INF_BAD);
-            assert_eq!(badness(1, -5), INF_BAD);
-        }
+        assert_eq!(badness(1, 0), INF_BAD);
+        assert_eq!(badness(1, -5), INF_BAD);
     }
 
     #[test]
     fn badness_perfect_fit() {
         // t == s means ratio 1.0 → r = 297 → r^3/262144 = 26236551/262144 = 100
-        unsafe {
-            assert_eq!(badness(1000, 1000), 100);
-        }
+        assert_eq!(badness(1000, 1000), 100);
     }
 
     #[test]
     fn badness_small_ratio_gives_zero() {
         // Very small t/s: r = (1 * 297) / 1_000_000 = 0, so result = 0.
-        unsafe {
-            assert_eq!(badness(1, 1_000_000), 0);
-        }
+        assert_eq!(badness(1, 1_000_000), 0);
     }
 
     #[test]
     fn badness_large_t_s_path() {
         // t > 7_230_584 and s < 1_663_497 → r = t, which is > 1290, → INF_BAD.
-        unsafe {
-            assert_eq!(badness(8_000_000, 1_000_000), INF_BAD);
-        }
+        assert_eq!(badness(8_000_000, 1_000_000), INF_BAD);
     }
 
     #[test]
@@ -110,11 +100,9 @@ mod tests {
         // t > 7_230_584 and s >= 1_663_497 → use t / (s/297).
         // t = 8_000_000, s = 2_000_000 → s/297 = 6734, t/6734 = 1188 < 1290.
         // result = (1188^3 + 0x20000) / 0x40000 = (1677302272 + 131072) / 262144 = 6402
-        unsafe {
-            let b = badness(8_000_000, 2_000_000);
-            // Not checking exact value — just that it's finite.
-            assert!(b < INF_BAD);
-            assert!(b > 0);
-        }
+        let b = badness(8_000_000, 2_000_000);
+        // Not checking exact value — just that it's finite.
+        assert!(b < INF_BAD);
+        assert!(b > 0);
     }
 }

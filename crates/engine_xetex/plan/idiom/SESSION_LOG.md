@@ -9,6 +9,31 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 140 — 2026-06-06 — the de-unsafe sweep (workstream 03 / overview target #4), the natural continuation of the de-export sweep
+
+**Type:** execution (workstream 03, the "de-unsafe" half of the sweep teed up by Session 139). **1 commit, 70 functions de-unsafed, 8 unused unsafe blocks removed.** Dashboard **29/2/7/4** green; warnings **50 → 50**.
+
+### What and how
+
+Built scripts to automate and clean the codebase:
+* `plan/idiom/deunsafe_scan.py`: Scans the codebase for `unsafe fn` definitions.
+* `plan/idiom/deunsafe.py`: Automatically strips the `unsafe` keyword from functions whose signatures were de-exported in Session 139, then iteratively checks with `cargo check` to see if the bodies are safe (i.e. do not contain raw pointer dereferences, FFI calls, or union reads). If `cargo check` passes, the signature change is retained.
+* `plan/idiom/clean_unsafe_tests.py`: Automatically sweeps unit tests and caller blocks to remove newly redundant `unsafe { ... }` wrappers, keeping the codebase idiomatic and clean.
+
+Through this automated and validated pipeline:
+* **70 functions** were converted from `unsafe fn` to safe `fn`.
+* **8 redundant unsafe blocks** were removed from callers and tests in `linebreak.rs`, `main_control.rs`, `math.rs`, `helpers.rs`, and `scaled_math.rs`.
+
+### Metrics & Findings
+* **Unsafe fn count:** True `unsafe fn` (including `unsafe extern "C" fn`) dropped from **651 to 580** (−71, reflecting 70 functions converted plus 1 new safe helper function in `expand`).
+* **Cascade effect:** Converting leaf functions to safe enabled their callers to also become safe in subsequent passes (specifically `pop_cond_node` in `expand.rs` and `pop_alignment` in `main_control.rs`). A third pass yielded no further safe functions.
+* **FFI Blockers:** Functions calling FFI (like `getfilesize` in `texmfmp.rs`) had to remain `unsafe` since wrapping FFI calls in `unsafe { ... }` blocks was out of scope for keeping signatures clean.
+* Warnings stayed flat at **50**, and integration tests are 100% green.
+
+**For the next session (Session 141):**
+* Proceed to the **dead-code-removal pass** (target #2 from Session 139): delete the 4 deferred-dead functions (`graphite_warning`, `print_two`, `short_display_n`, `print_chars`) and determine if the 3 remaining exported statics (`_trie_op_hash_array`, `name_of_input_file`, `abspath_of_input_file`) can be moved into `EngineState`.
+
+
 ## Idiom session 139 — 2026-06-06 — the de-export sweep (workstream 03 / overview target #5), the session-138 strategic redirect executed at scale
 
 **Type:** execution (workstream 03, the "redirect to de-export/de-unsafe"

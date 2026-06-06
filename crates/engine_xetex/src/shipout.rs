@@ -467,7 +467,7 @@ fn dvi_font_select_bytes(f: i32) -> Vec<u8> {
 }
 
 // translated from xetex-shipout.c:48 (initialize_shipout_variables)
-pub unsafe fn initialize_shipout_variables() {
+pub fn initialize_shipout_variables() {
     set_output_file_name(0);
     crate::state::with_state_mut(|s| {
         s.shipout.dvi_buf = vec![0u8; (DVI_BUF_SIZE + 1) as usize];
@@ -484,7 +484,7 @@ pub unsafe fn initialize_shipout_variables() {
 }
 
 // translated from xetex-shipout.c:63 (deinitialize_shipout_variables)
-pub unsafe fn deinitialize_shipout_variables() {
+pub fn deinitialize_shipout_variables() {
     crate::state::with_state_mut(|s| {
         s.shipout.dvi_buf = Vec::new();
     });

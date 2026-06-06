@@ -96,7 +96,7 @@ pub unsafe fn new_trie_op(d: i16, n: i16, v: u16) -> u16 {
     }
 }
 // translated from xetex-ini.c:632 (trie_node)
-pub unsafe fn trie_node(p: i32) -> i32 {
+pub fn trie_node(p: i32) -> i32 {
     let mut h = (trie_c_entry(p) as i32)
         .wrapping_add((1009_i32).wrapping_mul(trie_o_entry(p) as i32))
         .wrapping_add((2718_i32).wrapping_mul(trie_l_entry(p)))
@@ -127,7 +127,7 @@ pub unsafe fn trie_node(p: i32) -> i32 {
     }
 }
 // translated from xetex-ini.c:655 (compress_trie)
-pub unsafe fn compress_trie(p: i32) -> i32 {
+pub fn compress_trie(p: i32) -> i32 {
     if p == 0 {
         return 0;
     }
@@ -226,7 +226,7 @@ pub unsafe fn trie_pack(mut p: i32) {
     }
 }
 // translated from xetex-ini.c:708 (trie_fix)
-pub unsafe fn trie_fix(mut p: i32) {
+pub fn trie_fix(mut p: i32) {
     let z = trie_hash_entry(p);
     loop {
         let q = trie_l_entry(p);

@@ -961,7 +961,7 @@ pub unsafe fn print_sa_num(q: i32) {
 /// Save selector and switch to log-only mode for diagnostic output.
 ///
 /// translated from xetex-xetex0.c:1785 (begin_diagnostic)
-pub unsafe fn begin_diagnostic() {
+pub fn begin_diagnostic() {
     set_old_setting(selector() as u8);
     if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 && selector() == SELECTOR_TERM_AND_LOG {
         set_selector(selector() - 1);

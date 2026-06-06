@@ -163,7 +163,7 @@ extern "C" {
 }
 
 #[inline]
-pub(crate) unsafe fn intpar(n: i32) -> i32 {
+pub(crate) fn intpar(n: i32) -> i32 {
     eqtb_b32s1(PC_INT_BASE + n)
 }
 

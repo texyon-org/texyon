@@ -596,7 +596,7 @@ unsafe fn synctex_prepare_content(
 // Public API
 // ---------------------------------------------------------------------------
 
-pub unsafe fn synctex_init_command(st: &mut crate::state::EngineState) {
+pub fn synctex_init_command(st: &mut crate::state::EngineState) {
     let synctex = &mut st.synctex;
     synctex.file = INVALID_HANDLE;
     synctex.root_name = ptr::null_mut();

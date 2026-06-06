@@ -187,7 +187,7 @@ pub fn flush_list(mem: &mut MemState, p: i32) {
 }
 
 /// Transitional bridge-down wrapper for legacy `flush_list` callers (`01b` §3).
-pub unsafe fn flush_list_global(p: i32) {
+pub fn flush_list_global(p: i32) {
     crate::state::with_state_mut(|st| flush_list(&mut st.mem, p));
 }
 
@@ -756,7 +756,7 @@ pub fn free_node(mem: &mut MemState, p: i32, s: i32) {
 /// thread-local borrow is taken, so it is free of the argument nest-panic
 /// hazard an inline `with_state_mut(|s| …)` closure would have. Removed when
 /// the last legacy caller is itself threaded.
-pub unsafe fn free_node_global(p: i32, s: i32) {
+pub fn free_node_global(p: i32, s: i32) {
     crate::state::with_state_mut(|st| free_node(&mut st.mem, p, s));
 }
 
@@ -865,7 +865,7 @@ pub unsafe fn push_nest() {
 /// Pop the top nest entry back into cur_list, freeing the old head token.
 ///
 /// translated from xetex-xetex0.c:1339 (pop_nest)
-pub unsafe fn pop_nest() {
+pub fn pop_nest() {
     // Recycle old cur_list.head into avail.
     set_mem_b32s1(cur_list_head(), avail());
     set_avail(cur_list_head());
@@ -891,7 +891,7 @@ pub fn prev_rightmost(mem: &MemState, s: i32, e: i32) -> i32 {
     p
 }
 
-pub unsafe fn prev_rightmost_global(s: i32, e: i32) -> i32 {
+pub fn prev_rightmost_global(s: i32, e: i32) -> i32 {
     crate::state::with_state(|st| prev_rightmost(&st.mem, s, e))
 }
 
