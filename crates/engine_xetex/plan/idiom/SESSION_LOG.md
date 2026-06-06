@@ -10,6 +10,95 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 136 — 2026-06-06 — re-thread the safe half of the OT-math slice (scoped borrows)
+
+**Type:** execution (workstream 01, Phase C — re-thread OT-math `math.rs`, the
+session-135 "Next"). **2 commits.** Dashboard **29/2/7/4** green on both.
+
+### What and why
+
+Session 135 reverted sessions 130–131 because they collapsed OT-math bodies
+into a **single `with_state_mut` borrow held across C++ FFI re-entries**
+(`measure_native_*`/`new_native_character`/`get_native_mathsy_param` →
+`tt_get_font_size_entry`/`tt_get_font_area_entry` → `with_state`), nest-panicking
+on the `unicode_math` corpus doc. This session re-applies **only the part of the
+slice that is safe**, with the scoped-borrow discipline the revert demanded.
+
+The key triage: after the revert the OT-math slice was *already* almost entirely
+in correct scattered-scoped-island form (the leaf helpers `char_box`/
+`stack_into_box`/`stack_glyph_into_box`/`stack_glue_into_box`/`native_glyph_vbox`
+and the scripts orchestrators). The only re-threadable wins were:
+
+* **Commit 1 (`8644172c`) — `build_ext_delimiter_box` → one `mem`+`fonts`
+  borrow.** Extensible delimiters are a **pure-TFM** path: every font read is a
+  `FontState` table lookup and every piece box is built with the new
+  `char_box_tfm` helper — **no C++ measurer, no `with_state` re-entry** — so the
+  whole construction safely runs under one disjoint borrow (the session-130 form,
+  reverted only as collateral; the `unicode_math` panic came from the OT-assembly
+  + scripts paths, not this TFM path). Extracted `char_box_tfm(&mut MemState,
+  &mut FontState, …)` (the TFM branch of `char_box_global`, now shared); deleted
+  the now-dead `stack_into_box_global` wrapper (`01b` §6) and 2 now-unused
+  globals imports. `with_state` math.rs −1.
+* **Commit 2 (`72662f8b`) — `build_opentype_assembly` re-threaded with scoped
+  islands.** This function **cannot** take a `&mut MemState` param (its part-build
+  loop calls `stack_glyph_into_box_global`, which measures native glyphs via the
+  C++ measurer — exactly the session-130 hazard). So instead of param-threading,
+  it was de-exported (`#[no_mangle] extern "C"` → `pub unsafe fn`; the C
+  prototype is a dead, fully-translated stub) and its per-access bridge accessors
+  were replaced with **three scoped `with_state` islands over borrow-free regions
+  only** (box-type set; natural-size measurement loop; final dimension write).
+  The repeat-count loop and part-build loop keep their borrow-free `ot_*` FFI and
+  scoped `stack_*_global` calls untouched. The `tex_round` step uses the stored
+  `gr` ratio directly (an f64 round-trips exactly), byte-identical to the C
+  re-read.
+
+**Left in scattered-island form (not re-threadable without nest-panic):**
+`native_glyph_vbox`, `stack_glyph_into_box`, and the whole scripts slice
+(`first_script_glyph`/`prepare_superscript`/`prepare_subscript`) — they all
+interleave the C++ measurer / `new_native_character` with mem allocation, so the
+scoped `_global` wrappers are *required*. This is precisely what session 131 got
+wrong; re-threading them is a no-op at best and a nest-panic at worst, so they
+stay as-is.
+
+### Validation (the §135 lesson: bench corpus, not just the four suites)
+
+Both commits validated on the four suites **and** the corpus parity gate:
+`bench_phase_c.py --scope tier1` **12/12** (incl. `unicode_math`) and
+`--scope tier1-real` **2/2** (incl. `unimath-example` — real `unicode-math` +
+an OpenType math font, the heaviest OT-assembly / extensible-delimiter / scripts
+exerciser). The `--scope docs` run surfaced **2 tier2 parity failures**
+(`1905.00073v1`, `1905.00148v1`) — **confirmed pre-existing**: the HEAD~2
+baseline binary and the HEAD candidate produce **byte-identical XDV** for both
+(they differ only from the oracle; the `goldens/docs.sha` entries are stale).
+My changes alter zero output; tier2 carries oracle divergences that predate this
+work, which is why session 135 gated only on tier1.
+
+### Metrics (from the session-135 post-revert baseline)
+
+`#[no_mangle]` exports **297 → 296** (−1, `build_opentype_assembly` de-exported);
+`with_state` sites **1125 → 1127** (+2 net: commit 1 −1, commit 2 +3 scoped
+islands — the accepted transitional pattern, cf. sessions 127/128/132 which also
+rose); `unsafe fn` **→ 360** (the slice deleted 1 `unsafe` wrapper and de-`unsafe`d
+`build_ext_delimiter_box`). Warnings **50 → 50**. Dashboard **29/2/7/4**.
+
+### Lesson
+
+Not every "thread the slice" Next is fully recoverable. A function whose body
+interleaves the C++ OT-math measurer with mem allocation (`build_opentype_assembly`,
+`native_glyph_vbox`, the scripts) **cannot** be param-threaded — the caller's
+borrow would span the FFI re-entry. The safe gains are (a) param-threading the
+sub-paths that are genuinely FFI-free (`build_ext_delimiter_box`), and (b)
+de-exporting + scoped-islanding the rest. Validate OT-math work with the
+`unimath-example` corpus doc, never the four suites alone.
+
+### Next
+
+The OT-math slice is now in its stable safe form. Continue climbing the call
+graph per `01b` §9 (e.g. session-134's `unsave`/`prepare_mag` once
+`back_input`/`group_warning` thread, or other FFI-free `mem`/`fonts` consumers).
+When picking an OT-math / native-font consumer, first grep its body for any C++
+measurer / `new_native_character` call before attempting a single-borrow thread.
+
 ## Idiom session 135 — 2026-06-03 — revert sessions 130–131 (OT-math nested-borrow regression)
 
 **Type:** revert (2 `git revert` commits). Dashboard **29/2/7/4** green; the
