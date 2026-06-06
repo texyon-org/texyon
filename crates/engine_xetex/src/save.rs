@@ -64,7 +64,7 @@ pub(crate) enum SaveAbort {
 /// Raise a deferred [`SaveAbort`] after the state borrow has dropped. Never
 /// returns when `a` is `Some` (both arms `longjmp`).
 #[inline]
-unsafe fn raise_save_abort(a: Option<SaveAbort>) {
+pub(crate) unsafe fn raise_save_abort(a: Option<SaveAbort>) {
     match a {
         Some(SaveAbort::Overflow(s, n)) => crate::errors::overflow(s.as_ptr(), n),
         Some(SaveAbort::Confusion(s)) => crate::errors::confusion(s.as_ptr()),

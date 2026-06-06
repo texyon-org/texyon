@@ -22,7 +22,7 @@ use crate::errors::confusion;
 use crate::errors::error;
 use crate::helpers::badness;
 use crate::input::begin_token_list;
-use crate::main_control::normal_paragraph;
+use crate::main_control::normal_paragraph_global;
 use crate::mem::delete_glue_ref_global;
 use crate::mem::delete_token_ref_global;
 use crate::mem::free_node_global;
@@ -516,7 +516,7 @@ unsafe fn fire_up(c: i32) {
             set_cur_list_mode_line(-line());
             begin_token_list(eqtb_b32s1(LOCAL_BASE + LOCAL__output_routine), OUTPUT_TEXT);
             new_save_level_global(OUTPUT_GROUP);
-            normal_paragraph();
+            normal_paragraph_global();
             scan_left_brace();
             return;
         }

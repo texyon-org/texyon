@@ -710,7 +710,7 @@ pub unsafe extern "C" fn align_peek() {
             scan_left_brace();
             crate::save::new_save_level_global(NO_ALIGN_GROUP);
             if crate::globals::cur_list_mode() == -1 {
-                normal_paragraph();
+                normal_paragraph_global();
             }
             return;
         } else if cur_cmd() == RIGHT_BRACE {
@@ -775,7 +775,7 @@ pub unsafe extern "C" fn init_span(p: i32) {
         set_cur_list_aux_b32s0(1000);
     } else {
         set_cur_list_aux_b32s1(IGNORE_DEPTH);
-        normal_paragraph();
+        normal_paragraph_global();
     }
     set_cur_span(p);
 }
@@ -1316,7 +1316,7 @@ pub unsafe extern "C" fn end_graf() {
             crate::mem::flush_list_global(crate::globals::cur_list_e_tex_aux());
             crate::globals::set_cur_list_e_tex_aux(crate::mem::TEX_NULL);
         }
-        normal_paragraph();
+        normal_paragraph_global();
         crate::globals::set_error_count(0);
     }
 }
@@ -1333,22 +1333,76 @@ pub unsafe extern "C" fn append_penalty() {
     }
 }
 // translated from xetex-xetex0.c:9496 (normal_paragraph)
-pub unsafe fn normal_paragraph() {
-    if eqtb_b32s1(INT_BASE + INT_PAR_LOOSENESS) != 0 {
-        crate::save::eq_word_define_global(INT_BASE + INT_PAR_LOOSENESS, 0);
+///
+/// Phase-C: threaded to disjoint `&mut EqtbState`/`&mut SaveStackState`/`&mut
+/// MemState`/`&mut ScannerState` borrows (`01b` §3). The `eq_word_define`/
+/// `eq_define` calls return the `01b` §5 [`crate::save::SaveAbort`] sentinel on
+/// a cold save-stack overflow; this fn short-circuits on the first one and
+/// [`normal_paragraph_global`] raises it after the borrow drops.
+pub(crate) fn normal_paragraph(
+    eqtb: &mut crate::state::EqtbState,
+    save_stack: &mut crate::state::SaveStackState,
+    mem: &mut crate::state::MemState,
+    scanner: &mut crate::state::ScannerState,
+) -> Option<crate::save::SaveAbort> {
+    if eqtb.b32s1(INT_BASE + INT_PAR_LOOSENESS) != 0 {
+        let a = crate::save::eq_word_define(eqtb, save_stack, INT_BASE + INT_PAR_LOOSENESS, 0);
+        if a.is_some() {
+            return a;
+        }
     }
-    if eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HANG_INDENT) != 0 {
-        crate::save::eq_word_define_global(DIMEN_BASE + DIMEN_PAR_HANG_INDENT, 0);
+    if eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HANG_INDENT) != 0 {
+        let a =
+            crate::save::eq_word_define(eqtb, save_stack, DIMEN_BASE + DIMEN_PAR_HANG_INDENT, 0);
+        if a.is_some() {
+            return a;
+        }
     }
-    if eqtb_b32s1(INT_BASE + INT_PAR_HANG_AFTER) != 1 {
-        crate::save::eq_word_define_global(INT_BASE + INT_PAR_HANG_AFTER, 1);
+    if eqtb.b32s1(INT_BASE + INT_PAR_HANG_AFTER) != 1 {
+        let a = crate::save::eq_word_define(eqtb, save_stack, INT_BASE + INT_PAR_HANG_AFTER, 1);
+        if a.is_some() {
+            return a;
+        }
     }
-    if eqtb_b32s1(LOCAL_BASE) != crate::mem::TEX_NULL {
-        crate::save::eq_define_global(LOCAL_BASE, SHAPE_REF, crate::mem::TEX_NULL);
+    if eqtb.b32s1(LOCAL_BASE) != crate::mem::TEX_NULL {
+        let a = crate::save::eq_define(
+            eqtb,
+            save_stack,
+            mem,
+            scanner,
+            LOCAL_BASE,
+            SHAPE_REF,
+            crate::mem::TEX_NULL,
+        );
+        if a.is_some() {
+            return a;
+        }
     }
-    if eqtb_b32s1(ETEX_PEN_BASE) != crate::mem::TEX_NULL {
-        crate::save::eq_define_global(ETEX_PEN_BASE, SHAPE_REF, crate::mem::TEX_NULL);
+    if eqtb.b32s1(ETEX_PEN_BASE) != crate::mem::TEX_NULL {
+        let a = crate::save::eq_define(
+            eqtb,
+            save_stack,
+            mem,
+            scanner,
+            ETEX_PEN_BASE,
+            SHAPE_REF,
+            crate::mem::TEX_NULL,
+        );
+        if a.is_some() {
+            return a;
+        }
     }
+    None
+}
+
+/// Transitional bridge-down wrapper for legacy `normal_paragraph` callers
+/// (`01b` §3, §5).
+pub unsafe fn normal_paragraph_global() {
+    let abort = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        normal_paragraph(&mut s.eqtb, &mut s.save_stack, &mut s.mem, &mut s.scanner)
+    });
+    crate::save::raise_save_abort(abort);
 }
 // translated from xetex-xetex0.c:9332 (its_all_over)
 #[no_mangle]
@@ -1379,23 +1433,48 @@ pub unsafe extern "C" fn its_all_over() -> bool {
     false
 }
 // translated from xetex-xetex0.c:9808 (indent_in_hmode)
-#[no_mangle]
-pub unsafe extern "C" fn indent_in_hmode() {
+///
+/// Phase-C: threaded to `&mut MemState` + `&EqtbState` (`01b` §3). The cold
+/// arena-exhaustion branches of `new_null_box`/`new_noad` return the `01b` §5
+/// [`crate::scan::NodeRecycleAbort`] sentinel; [`indent_in_hmode_global`] runs
+/// the `overflow` abort after the borrow drops.
+pub(crate) fn indent_in_hmode(
+    mem: &mut crate::state::MemState,
+    eqtb: &crate::state::EqtbState,
+) -> Result<(), crate::scan::NodeRecycleAbort> {
     if cur_chr() > 0 {
-        let p = crate::mem::new_null_box_global();
-        set_mem_b32s1(p + 1, eqtb_b32s1(DIMEN_BASE));
+        let p = crate::mem::new_null_box(mem);
+        if p == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow);
+        }
+        mem.set_b32s1(p + 1, eqtb.b32s1(DIMEN_BASE));
         let p = if cur_list_mode().abs() == HMODE_I {
             crate::globals::set_cur_list_aux_b32s0(1000);
             p
         } else {
-            let q = crate::mem::new_noad_global();
-            set_mem_b32s1(q + 1, SUB_BOX);
-            set_mem_b32s0(q + 1, p);
+            let q = crate::mem::new_noad(mem);
+            if q == crate::mem::ALLOC_FAILED {
+                return Err(crate::scan::NodeRecycleAbort::Overflow);
+            }
+            mem.set_b32s1(q + 1, SUB_BOX);
+            mem.set_b32s0(q + 1, p);
             q
         };
         let tail = crate::globals::cur_list_tail();
-        set_mem_b32s1(tail, p);
-        crate::globals::set_cur_list_tail(mem_b32s1(tail));
+        mem.set_b32s1(tail, p);
+        crate::globals::set_cur_list_tail(mem.b32s1(tail));
+    }
+    Ok(())
+}
+
+/// Transitional bridge-down wrapper for legacy `indent_in_hmode` callers (`01b`
+/// §3, §5).
+pub unsafe fn indent_in_hmode_global() {
+    if let Err(e) = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        indent_in_hmode(&mut s.mem, &s.eqtb)
+    }) {
+        crate::scan::node_recycle_abort(e);
     }
 }
 // translated from xetex-xetex0.c:9831 (head_for_vmode)
@@ -1457,7 +1536,7 @@ pub unsafe extern "C" fn begin_insert_or_adjust() {
     set_save_ptr(save_ptr() + 2);
     crate::save::new_save_level_global(INSERT_GROUP);
     scan_left_brace();
-    normal_paragraph();
+    normal_paragraph_global();
     crate::mem::push_nest();
     crate::globals::set_cur_list_mode(-1); // -VMODE
     crate::globals::set_cur_list_aux_b32s1(IGNORE_DEPTH);
@@ -2213,7 +2292,7 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
                     scan_spec(VTOP_GROUP, true);
                     // k = VMODE for the nest push below
                 }
-                normal_paragraph();
+                normal_paragraph_global();
             }
             crate::mem::push_nest();
             // If k was adjusted to VTOP_GROUP branch: k was neither HMODE nor VMODE,
@@ -2701,36 +2780,67 @@ pub unsafe extern "C" fn alter_box_dimen() {
     }
 }
 // translated from xetex-xetex0.c:10570 (trap_zero_glue)
-#[no_mangle]
-pub unsafe extern "C" fn trap_zero_glue() {
-    if mem_b32s1(cur_val() + 1) == 0
-        && mem_b32s1(cur_val() + 2) == 0
-        && mem_b32s1(cur_val() + 3) == 0
+///
+/// Phase-C: threaded to `&mut MemState` (`01b` §3); legacy callers use
+/// [`trap_zero_glue_global`]. No allocation, so no cold-path sentinel.
+pub(crate) fn trap_zero_glue(mem: &mut crate::state::MemState) {
+    if mem.b32s1(cur_val() + 1) == 0
+        && mem.b32s1(cur_val() + 2) == 0
+        && mem.b32s1(cur_val() + 3) == 0
     {
         // GLUE_SPEC_ref_count(0)++ = mem[0].b32.s1++
-        set_mem_b32s1(0, mem_b32s1(0) + 1);
-        crate::mem::delete_glue_ref_global(cur_val());
+        mem.set_b32s1(0, mem.b32s1(0) + 1);
+        crate::mem::delete_glue_ref(mem, cur_val());
         set_cur_val(0);
     }
 }
+
+/// Transitional bridge-down wrapper for legacy `trap_zero_glue` callers.
+pub unsafe fn trap_zero_glue_global() {
+    crate::state::with_state_mut(|st| trap_zero_glue(&mut st.mem));
+}
 // translated from xetex-xetex0.c:11357 (fix_language)
-#[no_mangle]
-pub unsafe extern "C" fn fix_language() {
-    let lang = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
+///
+/// Phase-C: threaded to `&mut MemState` + `&EqtbState` (`01b` §3). The cold
+/// arena-exhaustion branch of `new_whatsit` returns the `01b` §5
+/// [`crate::scan::NodeRecycleAbort`] sentinel; [`fix_language_global`] runs the
+/// `overflow` abort after the borrow drops.
+pub(crate) fn fix_language(
+    mem: &mut crate::state::MemState,
+    eqtb: &crate::state::EqtbState,
+) -> Result<(), crate::scan::NodeRecycleAbort> {
+    let lang = eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE);
     let l = if lang <= 0 || lang > 255 { 0i32 } else { lang };
     if l != crate::globals::cur_list_aux_b32s1() {
-        crate::mem::new_whatsit_global(LANGUAGE_NODE_SUBTYPE, SMALL_NODE_SIZE as i16);
+        let p = crate::mem::new_whatsit(mem, LANGUAGE_NODE_SUBTYPE, SMALL_NODE_SIZE as i16);
+        if p == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow);
+        }
         let tail = crate::globals::cur_list_tail();
-        set_mem_b32s1(tail + 1, l);
+        mem.set_b32s1(tail + 1, l);
         crate::globals::set_cur_list_aux_b32s1(l);
-        set_mem_b16s1(
+        mem.set_b16s1(
             tail + 1,
-            crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as u16,
+            unsafe { crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) }
+                as u16,
         );
-        set_mem_b16s0(
+        mem.set_b16s0(
             tail + 1,
-            crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as u16,
+            unsafe { crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) }
+                as u16,
         );
+    }
+    Ok(())
+}
+
+/// Transitional bridge-down wrapper for legacy `fix_language` callers (`01b`
+/// §3, §5).
+pub unsafe fn fix_language_global() {
+    if let Err(e) = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        fix_language(&mut s.mem, &s.eqtb)
+    }) {
+        crate::scan::node_recycle_abort(e);
     }
 }
 // translated from xetex-xetex0.c:9325 (off_save)
@@ -3470,7 +3580,7 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
             crate::save::eq_word_define_global(l, cur_val());
         }
     } else {
-        trap_zero_glue();
+        trap_zero_glue_global();
         if e {
             if a >= 4 {
                 crate::save::gsa_def_global(l, cur_val());
@@ -3873,9 +3983,9 @@ pub unsafe extern "C" fn main_control_box_list_cases() {
             crate::input::back_input();
             new_graf(true);
         }
-        (HMODE_MC, START_PAR_MC) | (MMODE_MC, START_PAR_MC) => indent_in_hmode(),
+        (HMODE_MC, START_PAR_MC) | (MMODE_MC, START_PAR_MC) => indent_in_hmode_global(),
         (VMODE_MC, PAR_END_MC) => {
-            normal_paragraph();
+            normal_paragraph_global();
             if crate::globals::cur_list_mode() > 0 {
                 build_page();
             }
@@ -4114,7 +4224,7 @@ pub unsafe extern "C" fn main_control_math_cases() {
 
         (MMODE_MC, VCENTER_MC) => {
             scan_spec(VCENTER_GROUP_MC, false);
-            normal_paragraph();
+            normal_paragraph_global();
             crate::mem::push_nest();
             set_cur_list_mode(-1);
             set_cur_list_aux_b32s1(IGNORE_DEPTH_MC);
@@ -4341,7 +4451,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
     // =========================================================================
     if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
         if cur_list_mode() > 0 && eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE) != cur_list_aux_b32s1() {
-            fix_language();
+            fix_language_global();
         }
         set_main_h(0);
         set_main_f(mf);
@@ -4867,7 +4977,7 @@ pub unsafe extern "C" fn main_control_main_loop() -> bool {
     set_false_bchar(font_false_bchar_entry(mf));
 
     if cur_list_mode() > 0 && eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE) != cur_list_aux_b32s1() {
-        fix_language();
+        fix_language_global();
     }
 
     // Allocate lig_stack node from avail list
@@ -6467,7 +6577,7 @@ pub unsafe fn prefixed_command() {
                 } else {
                     crate::scan::scan_glue(GLUE_VAL as i16);
                 }
-                crate::main_control::trap_zero_glue();
+                crate::main_control::trap_zero_glue_global();
                 if a >= 4 {
                     crate::save::geq_define_global(p, GLUE_REF as u16, cur_val());
                 } else {
