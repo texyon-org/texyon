@@ -10,6 +10,97 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 137 — 2026-06-06 — thread the FFI-free packaging node-recycle / vlist-append cluster
+
+**Type:** execution (workstream 01, Phase C — continue climbing the call graph
+per `01b` §9). **3 commits.** Dashboard **29/2/7/4** green on every commit; bench
+`--scope tier1` **12/12** and `--scope tier1-real` **2/2** (exit 0) on every
+commit.
+
+### What and why
+
+Triaged the user's primary candidate (`unsave`/`prepare_mag`) and confirmed it is
+still blocked: `unsave` interleaves `crate::input::back_input` (mid-loop, in the
+INSERT_TOKEN branch) and `crate::output::group_warning` (after the loop) — both
+`with_state`-bearing and bottoming on the large input/output-print subsystems —
+so it cannot be single-borrow threaded yet (would need those callees threaded
+first). The recon `--bucket B` list is dominated by output/print functions
+(bucket-C, bottoming on `print_char` etc.). Instead picked a genuinely **FFI-free
+mem/fonts consumer cluster that bottoms out on already-threaded leaves**: the
+`packaging.rs` node-recycle / vlist-append utilities, which sit beside the
+already-threaded `flush_node_list`/`copy_node_list`/`prune_page_top`/`do_marks`.
+Each body was grepped for a C++ measurer / `new_native_character` / print /
+scanner re-entry before threading (the session-135/136 discipline) — all three
+are clean.
+
+* **Commit 1 (`9465e7c4`) — `just_copy` → one `&mut MemState` borrow.** The
+  node-list deep-copy used by bidi LR reversal. ~30 `with_state`-bearing `mem_*`
+  accessor calls collapse to direct `MemState` methods under one borrow, reusing
+  the shared `cnl_get_node!`/`cnl_get_avail!` macros and the threaded
+  `copy_native_glyph_info`. Cold corrupt-node `confusion` + arena exhaustion →
+  the `01b` §5 `NodeRecycleAbort` sentinel; new `just_copy_global` runs
+  `node_recycle_abort` after the borrow drops. De-exported. Deleted the now-dead
+  `copy_native_glyph_info_global` wrapper (`just_copy` was its last caller).
+* **Commit 2 (`b2ac5318`) — `just_reverse` → one `&mut MemState` + `&mut
+  ScannerState` borrow.** The bidi LR list-reversal helper. `cur_dir`/`LR_ptr`/
+  `LR_problems` become `ScannerState` fields; **`temp_ptr` stays the raw global
+  accessor** (it reads `raw::temp_ptr`, *not* `with_state` — safe under the borrow
+  per `01b` §4); calls the threaded `just_copy`/`flush_node_list`/`new_edge`/
+  `get_avail`/`free_node` directly. `new_edge` ALLOC_FAILED → `Overflow`,
+  `flush_node_list` Err → `Confusion`, push-LR `get_avail` via `cnl_get_avail!`.
+  New `just_reverse_global` wrapper; removed the now-unused `new_edge_global`
+  import.
+* **Commit 3 (`bae24b48`) — `append_to_vlist` → one `&mut MemState` + `&EqtbState`
+  borrow.** The baselineskip-aware vlist appender. `eqtb_b32s1` → `EqtbState`
+  methods; the `cur_list` aux/tail scalars + `temp_ptr` stay raw; the threaded
+  `new_param_glue`/`new_skip_param` are called directly with the ALLOC_FAILED
+  check **before** the `temp_ptr` write (matching the abort-before-use order of
+  the old `new_*_global` path). New `append_to_vlist_global`; four callers
+  (main_control ×2, math, linebreak) repointed.
+
+### Why this is safe (the §135/136 lesson applied)
+
+All three functions are FFI-free: no C++ OT-math measurer, no `new_native_character`,
+no print/diagnostic, no scanner re-entry. So a single disjoint borrow held across
+the whole body never spans a `with_state` re-entry — unlike the OT-math bodies
+that 130/131 wrongly single-borrowed. Validated on the corpus gate
+(`unicode_math`/`bidi_arabic`/`unimath-example`), not just the four suites, since
+`just_copy`/`just_reverse` are on the bidi LR path the four suites only partly
+exercise.
+
+### Deferred (confirmed not param-threadable)
+
+The rest of `packaging.rs` — `vert_break`, `vsplit`, `hpack`, `vpackage` — all
+interleave the `error()`/`*_diagnostic` print path with mem allocation **inside
+their loops** (and `hpack` calls the C++ `measure_native_node` measurer). Per the
+discipline these cannot be single-borrow param-threaded; they need scoped-island
+bucket-C work (each its own careful session) and are left bridged.
+
+### Metrics (from the session-136 baseline)
+
+`#[no_mangle]` exports **296 → 293** (−3, all three de-exported; dead C
+prototypes in `xetex-xetexd.h` left as harmless declarations). `with_state` sites
+(`grep -rhoE 'with_state(_mut)?\s*\('` over `src/*.rs`) **1127 → 1129** (+2 net:
+three new `_global` wrappers, minus the deleted `copy_native_glyph_info_global` —
+the accepted transitional pattern, cf. 127/128/132). `unsafe fn` **→ 364** (+3
+transitional `unsafe fn` `_global` wrappers; the three cores are now safe `pub
+fn`, FFI ABI dropped — collapses when callers thread). Warnings **50 → 50** (the
+§7 match-pattern-const trap did not fire; the only churn was removing 4 now-unused
+`globals::` imports in `packaging.rs`). Dashboard **29/2/7/4**.
+
+### Next
+
+Continue climbing per `01b` §9. The clean surface-level FFI-free mem/fonts
+clusters near `packaging.rs` are now drained. Remaining options: (a) thread
+`back_input`/`group_warning` to unblock `unsave`/`prepare_mag` (session-134's
+deferral) — but both bottom on large input/output-print subsystems; (b)
+scoped-island bucket-C work on `vert_break`/`vsplit`/`vpackage` (diagnostic
+hoisted out of the loop, mem under scoped borrows — careful, one per session);
+(c) collapse the many `new_*_global`/`get_*_global`/`free_node_global` wrappers by
+threading their callers (the math/linebreak/main_control/shipout giants).
+**Always grep a candidate body for a C++ measurer / `new_native_character` /
+print / scanner re-entry before attempting a single-borrow thread.**
+
 ## Idiom session 136 — 2026-06-06 — re-thread the safe half of the OT-math slice (scoped borrows)
 
 **Type:** execution (workstream 01, Phase C — re-thread OT-math `math.rs`, the
