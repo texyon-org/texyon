@@ -26,6 +26,7 @@ extern "C" {
     fn ttstub_issue_warning(fmt: *const c_char, ...);
     fn ttstub_issue_error(fmt: *const c_char, ...);
 
+    fn xstrdup(s: *const c_char) -> *mut c_char;
     fn xrealloc(ptr: *mut libc::c_void, size: size_t) -> *mut libc::c_void;
 }
 
@@ -170,7 +171,7 @@ unsafe fn synctex_record_preamble(synctex: &mut crate::state::SynctexCtxt) -> i3
 unsafe fn synctex_record_input(
     synctex: &mut crate::state::SynctexCtxt,
     tag: i32,
-    name: *mut c_char,
+    name: *const c_char,
 ) -> i32 {
     let file = synctex.file;
     let name_str = std::ffi::CStr::from_ptr(name).to_string_lossy();
@@ -641,7 +642,7 @@ pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut 
     set_cur_input_synctex_tag(tag);
 
     if synctex.synctex_tag_counter == 1 {
-        synctex.root_name = st.input.get_current_name();
+        synctex.root_name = xstrdup(st.input.get_current_name().as_ptr());
         libc::free(tmp as *mut libc::c_void);
         if libc::strlen(synctex.root_name) == 0 {
             let texput = b"texput\0";
@@ -656,8 +657,7 @@ pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut 
     {
         let ci = cur_input();
         let tmp_name = st.input.get_current_name();
-        synctex_record_input(synctex, ci.synctex_tag, tmp_name);
-        libc::free(tmp_name as *mut libc::c_void);
+        synctex_record_input(synctex, ci.synctex_tag, tmp_name.as_ptr());
     }
 }
 

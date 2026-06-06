@@ -1527,13 +1527,10 @@ impl Default for HyphState {
     }
 }
 
-extern "C" {
-    fn xstrdup(s: *const libc::c_char) -> *mut libc::c_char;
-}
-
 impl InputClusterState {
-    pub(crate) unsafe fn get_current_name(&self) -> *mut libc::c_char {
-        xstrdup(self.abspath_of_input_file.0.as_ptr())
+    pub(crate) fn get_current_name(&self) -> &std::ffi::CStr {
+        // SAFETY: self.abspath_of_input_file.0 is a NUL-terminated buffer of length 1024.
+        unsafe { std::ffi::CStr::from_ptr(self.abspath_of_input_file.0.as_ptr()) }
     }
 }
 
