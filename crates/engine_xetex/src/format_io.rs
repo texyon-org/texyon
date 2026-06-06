@@ -270,7 +270,7 @@ pub unsafe extern "C" fn store_fmt_file() {
     dump_int(fmt_out, hash_high());
 
     while crate::globals::pseudo_files() != crate::mem::TEX_NULL {
-        crate::input::pseudo_close();
+        crate::input::pseudo_close_global();
     }
 
     dump_int(fmt_out, MEM_TOP);

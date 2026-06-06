@@ -6,16 +6,16 @@ use crate::io::u_close;
 use crate::output::capture_to_diagnostic;
 
 use crate::globals::{
-    align_state, avail, buf_size, buffer_entry, cond_ptr, cur_boundary, cur_cs, cur_input, cur_tok,
+    align_state, buf_size, buffer_entry, cond_ptr, cur_boundary, cur_cs, cur_input, cur_tok,
     first, in_open, input_file, input_ptr, input_stack, last, line, line_stack, max_buf_stack,
     max_in_open, max_in_stack, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1,
-    param_ptr, param_stack, pseudo_files, set_align_state, set_avail, set_buffer_entry,
+    param_ptr, param_stack, pseudo_files, set_align_state, set_buffer_entry,
     set_cur_input, set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
     set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_eof_seen,
     set_first, set_full_source_filename_stack, set_grp_stack, set_if_stack, set_in_open,
     set_input_file, set_input_ptr, set_input_stack, set_last, set_line, set_line_stack,
-    set_max_buf_stack, set_max_in_stack, set_mem_b32s0, set_mem_b32s1, set_param_ptr,
-    set_pseudo_files, set_source_filename_stack, stack_size,
+    set_max_buf_stack, set_max_in_stack, set_mem_b32s0, set_param_ptr,
+    set_source_filename_stack, stack_size,
 };
 
 use crate::output::print_cmd_chr;
@@ -142,20 +142,37 @@ pub unsafe extern "C" fn ins_error() {
 /// Close the top pseudo-file, freeing its node chain.
 ///
 /// translated from xetex-xetex0.c:2766 (pseudo_close)
-#[no_mangle]
-pub unsafe extern "C" fn pseudo_close() {
-    let p = mem_b32s1(pseudo_files());
-    let mut q = mem_b32s0(pseudo_files());
+///
+/// Phase-C: threaded to `&mut MemState` + `&mut InputState` (`01b` §3). Pure
+/// node recycling (no allocation), so no cold-path sentinel; legacy callers use
+/// [`pseudo_close_global`].
+pub(crate) fn pseudo_close(
+    mem: &mut crate::state::MemState,
+    input: &mut crate::state::InputClusterState,
+) {
+    let pf = input.pseudo_files;
+    let p = mem.b32s1(pf);
+    let mut q = mem.b32s0(pf);
     // Free the pseudo_files head node onto the avail list.
-    set_mem_b32s1(pseudo_files(), avail());
-    set_avail(pseudo_files());
-    set_pseudo_files(p);
+    let av = mem.avail;
+    mem.set_b32s1(pf, av);
+    mem.avail = pf;
+    input.pseudo_files = p;
     // Walk the chain and free each block node.
     while q != crate::mem::TEX_NULL {
-        let next = mem_b32s1(q);
-        crate::mem::free_node_global(q, mem_b32s0(q));
+        let next = mem.b32s1(q);
+        let sz = mem.b32s0(q);
+        crate::mem::free_node(mem, q, sz);
         q = next;
     }
+}
+
+/// Transitional bridge-down wrapper for legacy `pseudo_close` callers (`01b` §3).
+pub unsafe fn pseudo_close_global() {
+    crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        pseudo_close(&mut s.mem, &mut s.input)
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +223,7 @@ pub unsafe extern "C" fn end_file_reading() {
     set_line(line_stack(cur_input().index as i32));
     let name = cur_input().name;
     if name == 18 || name == 19 {
-        pseudo_close();
+        pseudo_close_global();
     } else if name > 17 {
         let idx = cur_input().index as i32;
         u_close(input_file(idx));
