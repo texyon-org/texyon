@@ -204,6 +204,38 @@ mechanical. Use a two-step workflow:
     manifest small enough to review in the diff: function name, required
     state borrows, caller files, and the allowed rewrite rules.
 
+    **Use `thread_fn.py` (built session 137) for this.** It does the two
+    automatable parts and refuses to guess the rest:
+
+    ```bash
+    # dry run: HAZARD/REVIEW report + caller list + wrapper skeleton +
+    # the rewritten body, touching nothing
+    python3 plan/idiom/thread_fn.py --module src/packaging.rs --fn just_copy --borrows mem
+    python3 plan/idiom/thread_fn.py --module src/X.rs --fn F --borrows mem,eqtb
+    # apply only the indexed-accessor rewrites in place:
+    python3 plan/idiom/thread_fn.py --module src/X.rs --fn F --borrows mem --apply
+    ```
+
+    - **It automates the §4 FFI-hazard grep the session-135/136 revert
+      made mandatory.** The HAZARD report lists every `with_state`-bearing
+      re-entry (C++ measurer, `new_native_character`, print/diagnostic,
+      scanner, `error`/`confusion`/`overflow`). *If any is interleaved with
+      mem allocation, do not single-borrow thread the function* — that is
+      the nest-panic the revert was about. A clean report (no hazards) is
+      the green light for a single disjoint borrow over the whole body.
+    - It auto-rewrites only the **regular indexed accessors** for
+      `mem`/`eqtb` (`mem_b32s1(x)`→`mem.b32s1(x)`,
+      `set_mem_b32s1(x,v)`→`mem.set_b32s1(x,v)`; pure token renames the
+      compiler then verifies). It does **not** touch the signature, return
+      type, §5 sentinel, scalar getters/setters, or `*_global` swaps —
+      those are reported and wired by hand. fonts/scanner/save accessors
+      are reported (irregular names), not auto-rewritten.
+    - **Batch it:** classify a whole module's clean (no-HAZARD) functions,
+      `--apply` each, wire the signatures/wrappers, and commit the cluster
+      together — one validation pass instead of one-per-function. This is
+      the session-137 "speed it up" decision; the headline `with_state`
+      number is still gated on threading the giant callers (see §9).
+
 Do not apply blind regexes to buckets C/D. The migration is repetitive,
 but the correctness hazards are semantic: borrow lifetime, abort
 sentinels, DVI byte ordering, output flushing, and argument evaluation

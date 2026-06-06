@@ -101,6 +101,31 @@ threading their callers (the math/linebreak/main_control/shipout giants).
 **Always grep a candidate body for a C++ measurer / `new_native_character` /
 print / scanner re-entry before attempting a single-borrow thread.**
 
+### Tooling (speed-up addendum)
+
+Asked to speed up the threading stage; diagnosed it as structurally back-loaded
+(bottom-up leaf threading creates `_global` wrappers — 158 now — and the 692
+`globals.rs` `with_state` accessors only collapse when the *giant* callers
+thread, so the headline number rises before it falls), and chose to **build the
+codemod the `01b` §4a always specified but nobody had built.** New
+`plan/idiom/thread_fn.py`: given `--module --fn --borrows`, it (1) **automates
+the §4 FFI-hazard grep** (HAZARD report of every `with_state`-bearing re-entry —
+the session-135/136 gate, now mechanical), (2) auto-rewrites the regular indexed
+`mem`/`eqtb` accessors (`mem_b32s1(x)`→`mem.b32s1(x)`, pure token renames the
+compiler verifies), and (3) prints the caller list + `_global` wrapper skeleton.
+It refuses to touch the signature / §5 sentinel / scalar set/`*_global` swaps
+(reported, wired by hand). Validated on `vert_break` (dry run): correctly
+flagged its 3 interleaved hazards — `confusion`/`error_here_with_diagnostic`/
+`capture_to_diagnostic` — i.e. it would have told a session "do not single-borrow
+thread this," and cleanly rewrote 22 indexed accessors. **Workflow going
+forward: classify a whole module's no-HAZARD functions, `--apply` each, wire
+signatures/wrappers, commit the cluster in one validation pass** (`01b` §4a
+updated with the invocation). Note the honest caveat recorded in `01b` §9 / the
+strategy discussion: this accelerates the leaf backlog but the `with_state`→0
+end-state is gated on the few giant functions (`hpack`/`line_break`/
+`mlist_to_hlist`/`build_page`/`main_control`), which are bucket-C scoped-island
+work, not codemod-able.
+
 ## Idiom session 136 — 2026-06-06 — re-thread the safe half of the OT-math slice (scoped borrows)
 
 **Type:** execution (workstream 01, Phase C — re-thread OT-math `math.rs`, the
