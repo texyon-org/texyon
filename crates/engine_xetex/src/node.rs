@@ -510,6 +510,61 @@ impl MemState {
     }
 }
 
+// --- the penalty family: penalty nodes (NODE_type 12) ---
+//
+// `PenaltyNode` (`NODE_type` = `PENALTY_NODE` = 12; allocated
+// `MEDIUM_NODE_SIZE` = 3 in this build, like kern):
+//
+// | field     | offset.subfield | type                       |
+// |-----------|-----------------|----------------------------|
+// | `penalty` | +1.b32.s1       | **`i32`** (NOT `Scaled`)    |
+//
+// **The penalty trap (`01c` §3).** `PENALTY_NODE_penalty` occupies the same
+// +1.b32.s1 slot as the box/kern `width` (a `Scaled`), but it is a plain
+// **integer breakpoint penalty** (`int`), not a scaled length. Returning
+// `Scaled` here would be a silent type/parity error — it is exposed as
+// `penalty() -> i32`.
+
+/// `PENALTY_NODE` (`NODE_type` = 12): a breakpoint penalty (a plain `i32`,
+/// `INF_PENALTY`/`EJECT_PENALTY` and everything between).
+pub enum PenaltyNode {}
+
+impl NodeKind for PenaltyNode {}
+
+impl NodePtr<PenaltyNode> {
+    /// `PENALTY_NODE_penalty(p)` = `mem[(p) + 1].b32.s1`.
+    ///
+    /// **A plain `i32`, not `Scaled`** (`01c` §3) — the breakpoint penalty,
+    /// even though it shares the +1.b32.s1 slot with box/kern `width`.
+    #[inline]
+    pub fn penalty(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_penalty(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(1).0, v);
+    }
+}
+
+impl MemState {
+    /// Classify a known lo-mem node as a penalty node. `Ok(Some(_))` if `p`
+    /// is a `PENALTY_NODE`; `Ok(None)` if some other valid type; `Err` if
+    /// invalid. `p` must already be a non-null lo-mem index (`01c` §7).
+    #[inline]
+    pub fn classify_penalty(
+        &self,
+        p: MemIdx,
+    ) -> Result<Option<NodePtr<PenaltyNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            // SAFETY: the NODE_type branch just proved the kind.
+            NodeType::Penalty => {
+                Some(unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(p) })
+            }
+            _ => None,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -742,5 +797,45 @@ mod tests {
         let bad = MemIdx::new(80);
         mem.set_b16s1(bad.0, 38); // the 32–39 gap
         assert!(mem.classify_kern(bad).is_err());
+    }
+
+    #[test]
+    fn penalty_is_zero_cost() {
+        assert_eq!(size_of::<NodePtr<PenaltyNode>>(), size_of::<i32>());
+    }
+
+    #[test]
+    fn penalty_roundtrips_as_i32_not_scaled() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Penalty.as_raw());
+        let pen = unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(p) };
+
+        // a negative penalty (eject-ish) round-trips with i32 sign semantics
+        pen.set_penalty(&mut mem, -10000);
+        assert_eq!(pen.penalty(&mem), -10000);
+        // the value lands verbatim in the +1.b32.s1 slot
+        assert_eq!(mem.b32s1(p.0 + 1), -10000);
+
+        // the return type is i32, NOT Scaled — this would not type-check if
+        // `penalty()` returned `Scaled` (the trap encoded in the type):
+        let v: i32 = pen.penalty(&mem);
+        assert_eq!(v, -10000);
+    }
+
+    #[test]
+    fn classify_penalty_dispatches_on_node_type() {
+        let mut mem = fresh_mem(200);
+        let pen = MemIdx::new(40);
+        let other = MemIdx::new(60);
+        mem.set_b16s1(pen.0, NodeType::Penalty.as_raw());
+        mem.set_b16s1(other.0, NodeType::Kern.as_raw());
+
+        assert!(matches!(mem.classify_penalty(pen), Ok(Some(_))));
+        assert!(matches!(mem.classify_penalty(other), Ok(None))); // valid, not penalty
+
+        let bad = MemIdx::new(80);
+        mem.set_b16s1(bad.0, 39); // the 32–39 gap
+        assert!(mem.classify_penalty(bad).is_err());
     }
 }
