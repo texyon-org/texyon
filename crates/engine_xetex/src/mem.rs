@@ -866,8 +866,7 @@ pub unsafe fn push_nest() {
 /// Pop the top nest entry back into cur_list, freeing the old head token.
 ///
 /// translated from xetex-xetex0.c:1339 (pop_nest)
-#[no_mangle]
-pub unsafe extern "C" fn pop_nest() {
+pub unsafe fn pop_nest() {
     // Recycle old cur_list.head into avail.
     set_mem_b32s1(cur_list_head(), avail());
     set_avail(cur_list_head());

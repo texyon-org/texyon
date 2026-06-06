@@ -43,8 +43,7 @@ pub(crate) unsafe fn set_trie_op_hash(k: i32, v: i32) {
     _trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
 }
 // translated from xetex-ini.c:630 (new_trie_op)
-#[no_mangle]
-pub unsafe extern "C" fn new_trie_op(d: i16, n: i16, v: u16) -> u16 {
+pub unsafe fn new_trie_op(d: i16, n: i16, v: u16) -> u16 {
     let mut h = (n as i32 + 313 * d as i32 + 361 * v as i32 + 1009 * cur_lang() as i32).abs()
         % (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE)
         + NEG_TRIE_OP_SIZE;
@@ -97,8 +96,7 @@ pub unsafe extern "C" fn new_trie_op(d: i16, n: i16, v: u16) -> u16 {
     }
 }
 // translated from xetex-ini.c:632 (trie_node)
-#[no_mangle]
-pub unsafe extern "C" fn trie_node(p: i32) -> i32 {
+pub unsafe fn trie_node(p: i32) -> i32 {
     let mut h = (trie_c_entry(p) as i32)
         .wrapping_add((1009_i32).wrapping_mul(trie_o_entry(p) as i32))
         .wrapping_add((2718_i32).wrapping_mul(trie_l_entry(p)))
@@ -129,8 +127,7 @@ pub unsafe extern "C" fn trie_node(p: i32) -> i32 {
     }
 }
 // translated from xetex-ini.c:655 (compress_trie)
-#[no_mangle]
-pub unsafe extern "C" fn compress_trie(p: i32) -> i32 {
+pub unsafe fn compress_trie(p: i32) -> i32 {
     if p == 0 {
         return 0;
     }
@@ -140,8 +137,7 @@ pub unsafe extern "C" fn compress_trie(p: i32) -> i32 {
     trie_node(p)
 }
 // translated from xetex-ini.c:638 (first_fit)
-#[no_mangle]
-pub unsafe extern "C" fn first_fit(p: i32) {
+pub unsafe fn first_fit(p: i32) {
     let c = trie_c_entry(p) as i32;
     let mut z = trie_min_entry(c);
     let mut h;
@@ -215,8 +211,7 @@ pub unsafe extern "C" fn first_fit(p: i32) {
     }
 }
 // translated from xetex-ini.c:695 (trie_pack)
-#[no_mangle]
-pub unsafe extern "C" fn trie_pack(mut p: i32) {
+pub unsafe fn trie_pack(mut p: i32) {
     loop {
         let q = trie_l_entry(p);
         if q > 0 && trie_hash_entry(q) == 0 {
@@ -231,8 +226,7 @@ pub unsafe extern "C" fn trie_pack(mut p: i32) {
     }
 }
 // translated from xetex-ini.c:708 (trie_fix)
-#[no_mangle]
-pub unsafe extern "C" fn trie_fix(mut p: i32) {
+pub unsafe fn trie_fix(mut p: i32) {
     let z = trie_hash_entry(p);
     loop {
         let q = trie_l_entry(p);
@@ -378,8 +372,7 @@ pub unsafe fn init_trie() {
     set_trie_not_ready(false);
 }
 // translated from xetex-ini.c:643 (new_patterns)
-#[no_mangle]
-pub unsafe extern "C" fn new_patterns() {
+pub unsafe fn new_patterns() {
     const INT_PAR_LANGUAGE: i32 = 50;
     const INT_PAR_SAVING_HYPH_CODES: i32 = 64;
     const LETTER: u8 = 11;
@@ -594,8 +587,7 @@ pub unsafe extern "C" fn new_patterns() {
     }
 }
 // translated from xetex-ini.c:863 (new_hyph_exceptions)
-#[no_mangle]
-pub unsafe extern "C" fn new_hyph_exceptions() {
+pub unsafe fn new_hyph_exceptions() {
     const LETTER: u8 = 11;
     const OTHER_CHAR: u8 = 12;
     const CHAR_GIVEN: u8 = 68;

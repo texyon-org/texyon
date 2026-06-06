@@ -170,8 +170,7 @@ pub(crate) unsafe fn intpar(n: i32) -> i32 {
 // ---- moved verbatim from ini.rs (workstream 02) ----
 
 // translated from xetex-ini.c:3452 (get_strings_started)
-#[no_mangle]
-pub unsafe extern "C" fn get_strings_started() {
+pub unsafe fn get_strings_started() {
     set_pool_ptr(0);
     set_str_ptr(0);
     set_str_start(0, 0);
@@ -182,8 +181,7 @@ pub unsafe extern "C" fn get_strings_started() {
     }
 }
 // translated from xetex-ini.c:554 (sort_avail)
-#[no_mangle]
-pub unsafe extern "C" fn sort_avail() {
+pub unsafe fn sort_avail() {
     let _ = crate::mem::get_node_global(GET_NODE_HEAD_SENTINEL);
     let mut p = mem_b32s1(rover() + 1);
     set_mem_b32s1(rover() + 1, MAX_HALFWORD);
@@ -218,8 +216,7 @@ pub unsafe extern "C" fn sort_avail() {
     crate::globals::set_mem_b32s0(rover() + 1, p);
 }
 // translated from xetex-ini.c:597 (primitive)
-#[no_mangle]
-pub unsafe extern "C" fn primitive(ident: *const libc::c_char, c: u16, o: i32) {
+pub unsafe fn primitive(ident: *const libc::c_char, c: u16, o: i32) {
     let len = libc::strlen(ident) as i32;
     let prim_val: i32;
 
@@ -254,8 +251,7 @@ pub unsafe extern "C" fn primitive(ident: *const libc::c_char, c: u16, o: i32) {
     set_eqtb_b32s1(PRIM_EQTB_BASE + prim_val, o);
 }
 // translated from xetex-ini.c:2201 (final_cleanup)
-#[no_mangle]
-pub unsafe extern "C" fn final_cleanup() {
+pub unsafe fn final_cleanup() {
     const INT_PAR_NEW_LINE_CHAR: i32 = 49;
     const IF_NODE_SIZE: i32 = 2;
     const IF_TEST: u16 = 107;
@@ -366,8 +362,7 @@ pub unsafe extern "C" fn final_cleanup() {
     }
 }
 // translated from xetex-ini.c:2210 (initialize_more_variables)
-#[no_mangle]
-pub unsafe extern "C" fn initialize_more_variables() {
+pub unsafe fn initialize_more_variables() {
     const VMODE: i16 = 1;
     const MEM_TOP: i32 = 4_999_999;
     const CONTRIB_HEAD: i32 = MEM_TOP - 1;
@@ -556,8 +551,7 @@ pub unsafe extern "C" fn initialize_more_variables() {
     set_stop_at_space(true);
 }
 // translated from xetex-ini.c:2212 (initialize_more_initex_variables)
-#[no_mangle]
-pub unsafe extern "C" fn initialize_more_initex_variables() {
+pub unsafe fn initialize_more_initex_variables() {
     const MEM_TOP: i32 = 4_999_999;
     const PAGE_INS_HEAD: i32 = MEM_TOP;
     const PAGE_HEAD: i32 = MEM_TOP - 2;
@@ -817,8 +811,7 @@ pub unsafe extern "C" fn initialize_more_initex_variables() {
     set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH, 63);
 }
 // translated from xetex-ini.c:2215 (initialize_primitives)
-#[no_mangle]
-pub unsafe extern "C" fn initialize_primitives() {
+pub unsafe fn initialize_primitives() {
     const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226;
     const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE;
     const FROZEN_END_TEMPLATE: i32 = FROZEN_CONTROL_SEQUENCE + 5;

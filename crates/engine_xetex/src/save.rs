@@ -254,8 +254,7 @@ const INT_PAR_MAG: i32 = 17;
 /// Validate and lock in the current \mag parameter.
 ///
 /// translated from xetex-xetex0.c:3997 (prepare_mag)
-#[no_mangle]
-pub unsafe extern "C" fn prepare_mag() {
+pub unsafe fn prepare_mag() {
     let mag = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
     if mag_set() > 0 && mag != mag_set() {
         let errmsg = error_here_with_diagnostic(c"Incompatible magnification (".as_ptr());
@@ -772,8 +771,7 @@ pub unsafe fn sa_restore_global() {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:2814 (unsave)
-#[no_mangle]
-pub unsafe extern "C" fn unsave() {
+pub unsafe fn unsave() {
     if cur_level() > LEVEL_ONE {
         set_cur_level(cur_level() - 1);
         let mut l: u16 = 0;

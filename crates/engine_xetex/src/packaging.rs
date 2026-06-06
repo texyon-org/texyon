@@ -1137,8 +1137,7 @@ pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
     best_place
 }
 // translated from xetex-xetex0.c:7727 (vsplit)
-#[no_mangle]
-pub unsafe extern "C" fn vsplit(n: i32, h: i32) -> i32 {
+pub unsafe fn vsplit(n: i32, h: i32) -> i32 {
     use crate::globals::{
         cur_mark, cur_ptr, disc_ptr, sa_root, set_cur_mark, set_disc_ptr, set_sa_root,
     };
@@ -1453,8 +1452,7 @@ pub fn do_marks_global(a: i16, l: i16, q: i32) -> bool {
     crate::state::with_state_mut(|st| do_marks(&mut st.mem, a, l, q))
 }
 /// translated from xetex-xetex0.c:6972 (hpack)
-#[no_mangle]
-pub unsafe extern "C" fn hpack(p: i32, w: i32, m: i16) -> i32 {
+pub unsafe fn hpack(p: i32, w: i32, m: i16) -> i32 {
     use crate::globals::{
         adjust_tail, avail, char_base_entry, depth_base_entry, font_info_b16, font_info_b32s1,
         height_base_entry, hi_mem_min, last_badness, line, lr_problems, lr_ptr, mem_as_u16_ptr,

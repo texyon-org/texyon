@@ -467,8 +467,7 @@ fn dvi_font_select_bytes(f: i32) -> Vec<u8> {
 }
 
 // translated from xetex-shipout.c:48 (initialize_shipout_variables)
-#[no_mangle]
-pub unsafe extern "C" fn initialize_shipout_variables() {
+pub unsafe fn initialize_shipout_variables() {
     set_output_file_name(0);
     crate::state::with_state_mut(|s| {
         s.shipout.dvi_buf = vec![0u8; (DVI_BUF_SIZE + 1) as usize];
@@ -485,8 +484,7 @@ pub unsafe extern "C" fn initialize_shipout_variables() {
 }
 
 // translated from xetex-shipout.c:63 (deinitialize_shipout_variables)
-#[no_mangle]
-pub unsafe extern "C" fn deinitialize_shipout_variables() {
+pub unsafe fn deinitialize_shipout_variables() {
     crate::state::with_state_mut(|s| {
         s.shipout.dvi_buf = Vec::new();
     });
@@ -1240,8 +1238,7 @@ unsafe fn output_hlist_glue(
 }
 
 // translated from xetex-shipout.c:63 (hlist_out)
-#[no_mangle]
-pub unsafe extern "C" fn hlist_out() {
+pub unsafe fn hlist_out() {
     let mut cur_g = 0;
     let mut cur_glue = 0.0;
     let this_box = temp_ptr();
@@ -1552,8 +1549,7 @@ pub unsafe extern "C" fn hlist_out() {
 }
 
 // translated from xetex-shipout.c:866 (vlist_out)
-#[no_mangle]
-pub unsafe extern "C" fn vlist_out() {
+pub unsafe fn vlist_out() {
     let mut cur_g = 0;
     let mut cur_glue = 0.0;
     let this_box = temp_ptr();
@@ -2124,8 +2120,7 @@ fn font_character_width_global(f: i32, c: i32) -> i32 {
 
 // translated from xetex-shipout.c:1470 (reverse)
 // Called by hlist_out (still in C) -> #[no_mangle].
-#[no_mangle]
-pub unsafe extern "C" fn reverse(
+pub unsafe fn reverse(
     this_box: i32,
     t: i32,
     cur_g: *mut i32,
@@ -2606,8 +2601,7 @@ unsafe fn write_out(p: i32) {
 
 // translated from xetex-shipout.c:2071 (pic_out)
 // Called from hlist_out (still in C) → #[no_mangle].
-#[no_mangle]
-pub unsafe extern "C" fn pic_out(p: i32) {
+pub unsafe fn pic_out(p: i32) {
     if cur_h() != dvi_h() {
         movement_global(cur_h() - dvi_h(), RIGHT1);
         set_dvi_h(cur_h());
