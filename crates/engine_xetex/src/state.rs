@@ -1109,6 +1109,10 @@ impl FontState {
         self.font_ec[f as usize] = v;
     }
     #[inline]
+    pub(crate) fn font_glue(&self, f: i32) -> i32 {
+        self.font_glue[f as usize]
+    }
+    #[inline]
     pub(crate) fn set_font_glue(&mut self, f: i32, v: i32) {
         self.font_glue[f as usize] = v;
     }

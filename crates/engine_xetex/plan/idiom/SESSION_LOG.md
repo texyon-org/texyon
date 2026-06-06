@@ -9,6 +9,70 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 142 — 2026-06-06 — Phase-C threading resumes: `app_space` (workstream 01)
+
+**Type:** execution (workstream 01, Phase C). **1 commit, 1 function threaded.** Dashboard **29/2/7/4** green; warnings **48 → 48** (flat).
+
+### What and how
+
+Workstream 03 finished in session 141, so Phase-C threading (ws01 per `01b`)
+resumes. With the clean single-borrow mem/eqtb leaf backlog drained (the
+session-138 finding), recon's high-scoring rows are now either the print/output
+subsystem (bucket-C, deepest, thread-last) or scanner-bearing main_control
+verbs. Picked **`app_space`** — the hmode inter-word-glue builder
+(`main_control.rs`, `xetex-xetex0.c:9223`) — a tight single-caller bucket-C
+function whose every hazard was already resolvable:
+
+- Threaded to disjoint **`&mut MemState` + `&EqtbState` + `&mut FontState`**
+  (`cur_list`/`main_p`/`main_k` stay raw globals — safe under the borrow, §4).
+- Added a `FontState::font_glue` reader method (§6 surface; `set_font_glue`
+  already existed).
+- The `new_param_glue_global`/`new_spec_global`×2/`new_glue_global` calls swap
+  to the threaded cores (`new_param_glue(mem,eqtb,…)`/`new_spec(mem,…)`/
+  `new_glue(mem,…)`), each propagating the `ALLOC_FAILED` sentinel as
+  `Err(NodeRecycleAbort::Overflow)` for the wrapper to abort on (§5), matching
+  the session-138 `indent_in_hmode` idiom.
+- **The §129 trap:** the two `xn_over_d` calls set `tex_remainder`/`arith_error`
+  (the *errors* cluster, not borrowed here) via `with_state` — a borrow held
+  across them nest-panics. Fix: compute both with the pure `xn_over_d_parts`
+  core under the borrow, return the net side effects
+  (`(tex_remainder=2nd-remainder, arith_error|=ov1||ov2)`) as an
+  `Option<(i32,bool)>`, and apply them in `app_space_global` after the borrow
+  drops. Behavior-preserving: the wrapper sets them before returning to the
+  caller, and nothing inside `app_space` reads them after the `xn_over_d` calls.
+
+The single caller (the legacy `main_control` dispatch) → `app_space_global()`.
+
+### Metrics & findings
+
+- `with_state` sites **1196 → 1197** (+1; the one transitional `app_space_global`
+  wrapper). `unsafe fn` **576 → 576** (flat: core became safe `pub(crate) fn`,
+  +1 `unsafe` wrapper). `#[no_mangle]` flat (boundary-only since ws03).
+  Warnings **48 → 48**. Dashboard **29/2/7/4**.
+- **Validation:** the four suites (which exercise `app_space` on every text doc)
+  pass. `bench_phase_c.py` not run — needs an `ORACLE_BIN` not configured in
+  this environment; `app_space` is plain hmode spacing (not an OT-math/native
+  path), so the §135 corpus gate is not load-bearing for this slice.
+- **Finding (confirms session 138):** the clean leaf backlog really is drained.
+  This was a *borderline* slice requiring three disjoint borrows, the §5
+  sentinel, AND the §129 side-effect deferral for a single one-caller function.
+  The remaining ws01 threading is genuinely the hard work: the print/output
+  subsystem (a foundational bucket-C layer, threaded like the mem core was) and
+  the scoped-island giants (`hpack`/`line_break`/`mlist_to_hlist`/`build_page`/
+  `main_control`).
+
+**Handoff / Next:**
+
+- The next high-leverage ws01 move is to begin threading the **print core**
+  (`print`/`print_char`/`print_raw_char`/`print_ln`/… in `output.rs`) onto a
+  `&mut ShipoutState` borrow (selector/offsets/tally/trick_buf) as a *new
+  foundational subsystem* — analogous to the mem allocator core — which would
+  unblock the whole `output.rs` `show_*`/`print_*` family (the dominant
+  remaining `with_state` bucket). It is a multi-session subsystem (hundreds of
+  callers), not a one-shot. Alternatively, take one scoped-island giant
+  (the deferred `vpackage` spike) for the cost-per-giant data point.
+
+
 ## Idiom session 141 — 2026-06-06 — dead-code pass & statics migration (workstream 03 / overview target #2)
 
 **Type:** execution (workstream 03, final stage). **1 commit, 4 functions deleted, 3 statics migrated to EngineState.** Dashboard **29/2/7/4** green; warnings **50 → 48** (down 2).

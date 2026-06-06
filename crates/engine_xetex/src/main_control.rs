@@ -1734,53 +1734,95 @@ pub unsafe fn delete_last() {
     flush_node_list_global(tx);
 }
 // translated from xetex-xetex0.c:9223 (app_space)
-pub unsafe fn app_space() {
-    use crate::globals::{
-        font_glue, font_info_b32s1, main_k, main_p, param_base, set_cur_list_tail, set_font_glue,
-        set_main_k, set_main_p,
-    };
+// Phase-C: threaded to `&mut MemState`/`&EqtbState`/`&mut FontState`; legacy
+// callers use [`app_space_global`]. Returns the deferred `xn_over_d` side
+// effects (`tex_remainder`, plus `arith_error` on overflow) for the wrapper to
+// apply after the state borrow drops (§129); `None` when the spacing branch
+// taken did no scaling arithmetic.
+pub(crate) fn app_space(
+    mem: &mut crate::state::MemState,
+    eqtb: &crate::state::EqtbState,
+    fonts: &mut crate::state::FontState,
+) -> Result<Option<(i32, bool)>, crate::scan::NodeRecycleAbort> {
+    use crate::globals::{main_k, main_p, set_cur_list_tail, set_main_k, set_main_p};
     const GLUE_PAR_SPACE_SKIP: i32 = 12; // xetex_format.h:161
     const GLUE_PAR_XSPACE_SKIP: i32 = 13; // xetex_format.h:162
     const EXTRA_SPACE_CODE: i32 = 7; // xetex-constants.h:299
 
     let space_factor = crate::globals::cur_list_aux_b32s0();
-    let cf = eqtb_b32s1(CUR_FONT_LOC);
+    let cf = eqtb.b32s1(CUR_FONT_LOC);
     let q;
-    if space_factor >= 2000 && eqtb_b32s1(GLUE_BASE + GLUE_PAR_XSPACE_SKIP) != 0 {
-        q = crate::mem::new_param_glue_global(GLUE_PAR_XSPACE_SKIP as i16);
+    let mut side_effects = None;
+    if space_factor >= 2000 && eqtb.b32s1(GLUE_BASE + GLUE_PAR_XSPACE_SKIP) != 0 {
+        q = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_XSPACE_SKIP as i16);
+        if q == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow);
+        }
     } else {
-        if eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP) != 0 {
-            set_main_p(eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP));
+        if eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP) != 0 {
+            set_main_p(eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP));
         } else {
-            set_main_p(font_glue(cf));
+            set_main_p(fonts.font_glue(cf));
             if main_p() == crate::mem::TEX_NULL {
-                set_main_p(crate::mem::new_spec_global(0));
-                set_main_k(param_base(cf) + 2);
+                set_main_p(crate::mem::new_spec(mem, 0));
+                if main_p() == crate::mem::ALLOC_FAILED {
+                    return Err(crate::scan::NodeRecycleAbort::Overflow);
+                }
+                set_main_k(fonts.param_base(cf) + 2);
                 // width = space, stretch = space_stretch, shrink = space_shrink
-                crate::globals::set_mem_b32s1(main_p() + 1, font_info_b32s1(main_k()));
-                crate::globals::set_mem_b32s1(main_p() + 2, font_info_b32s1(main_k() + 1));
-                crate::globals::set_mem_b32s1(main_p() + 3, font_info_b32s1(main_k() + 2));
-                set_font_glue(cf, main_p());
+                mem.set_b32s1(main_p() + 1, fonts.font_info_b32s1(main_k()));
+                mem.set_b32s1(main_p() + 2, fonts.font_info_b32s1(main_k() + 1));
+                mem.set_b32s1(main_p() + 3, fonts.font_info_b32s1(main_k() + 2));
+                fonts.set_font_glue(cf, main_p());
             }
         }
-        set_main_p(crate::mem::new_spec_global(main_p()));
+        set_main_p(crate::mem::new_spec(mem, main_p()));
+        if main_p() == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow);
+        }
         if space_factor >= 2000 {
             // add extra_space to width
-            let extra = font_info_b32s1(EXTRA_SPACE_CODE + param_base(cf));
-            crate::globals::set_mem_b32s1(main_p() + 1, mem_b32s1(main_p() + 1) + extra);
+            let extra = fonts.font_info_b32s1(EXTRA_SPACE_CODE + fonts.param_base(cf));
+            mem.set_b32s1(main_p() + 1, mem.b32s1(main_p() + 1) + extra);
         }
         // scale stretch by space_factor / 1000
-        let new_stretch =
-            crate::scaled_math::xn_over_d(mem_b32s1(main_p() + 2), space_factor, 1000);
-        crate::globals::set_mem_b32s1(main_p() + 2, new_stretch);
+        let (new_stretch, _r1, ov1) =
+            crate::scaled_math::xn_over_d_parts(mem.b32s1(main_p() + 2), space_factor, 1000);
+        mem.set_b32s1(main_p() + 2, new_stretch);
         // scale shrink by 1000 / space_factor
-        let new_shrink = crate::scaled_math::xn_over_d(mem_b32s1(main_p() + 3), 1000, space_factor);
-        crate::globals::set_mem_b32s1(main_p() + 3, new_shrink);
-        q = crate::mem::new_glue_global(main_p());
-        crate::globals::set_mem_b32s1(main_p(), crate::mem::TEX_NULL);
+        let (new_shrink, r2, ov2) =
+            crate::scaled_math::xn_over_d_parts(mem.b32s1(main_p() + 3), 1000, space_factor);
+        mem.set_b32s1(main_p() + 3, new_shrink);
+        // `xn_over_d` sets `tex_remainder` (last call wins) and `arith_error`
+        // on any overflow; defer both to after the borrow drops (§129).
+        side_effects = Some((r2, ov1 || ov2));
+        q = crate::mem::new_glue(mem, main_p());
+        if q == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow);
+        }
+        mem.set_b32s1(main_p(), crate::mem::TEX_NULL);
     }
-    crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), q);
+    mem.set_b32s1(crate::globals::cur_list_tail(), q);
     set_cur_list_tail(q);
+    Ok(side_effects)
+}
+
+/// Transitional bridge-down wrapper for legacy `app_space` callers (`01b` §3,
+/// §5, §129).
+pub unsafe fn app_space_global() {
+    match crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        app_space(&mut s.mem, &s.eqtb, &mut s.fonts)
+    }) {
+        Ok(Some((remainder, overflowed))) => {
+            if overflowed {
+                crate::globals::set_arith_error(true);
+            }
+            crate::globals::set_tex_remainder(remainder);
+        }
+        Ok(None) => {}
+        Err(e) => crate::scan::node_recycle_abort(e),
+    }
 }
 // translated from xetex-xetex0.c:9485 (scan_box)
 pub unsafe fn scan_box(box_context: i32) {
@@ -4308,7 +4350,7 @@ pub unsafe fn main_control_spacer_cases() {
             if crate::globals::cur_list_aux_b32s0() == 1000 {
                 main_control_append_normal_space();
             } else {
-                app_space();
+                app_space_global();
             }
         }
         (HMODE_MC, EX_SPACE_MC) | (MMODE_MC, EX_SPACE_MC) => {
