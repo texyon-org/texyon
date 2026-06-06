@@ -9,6 +9,30 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 141 — 2026-06-06 — dead-code pass & statics migration (workstream 03 / overview target #2)
+
+**Type:** execution (workstream 03, final stage). **1 commit, 4 functions deleted, 3 statics migrated to EngineState.** Dashboard **29/2/7/4** green; warnings **50 → 48** (down 2).
+
+### What and how
+
+- **Dead Code Removal**: Deleted the 4 functions deferred from the de-export sweep: `graphite_warning`, `print_two`, and `short_display_n` from `src/output.rs`, and `print_chars` from `src/ext.rs`. Removed their corresponding prototype declarations from `xetex/xetex-xetexd.h` and `xetex/xetex-ext.h`.
+- **Statics Migration**:
+  - Migrated `_trie_op_hash_array` into `EngineState.hyph.trie_op_hash_array` as a `Vec<i32>` initialized to `70223` elements. Removed the unused constant `TRIE_OP_HASH_SIZE` from `hyphenation.rs`.
+  - Migrated `name_of_input_file` into `EngineState.input.name_of_input_file`.
+  - Migrated `abspath_of_input_file` into `EngineState.input.abspath_of_input_file` under a new `AbsPathBuf` wrapper implementing `Default` manually to support the derived `Default` of `InputClusterState`.
+- **Borrow Checker Resolutions**:
+  - Fixed a `RefCell already mutably borrowed` panic during SyncTeX initialization by changing `get_current_name` in `src/synctex.rs` to take the file path pointer `*const c_char` directly instead of a borrow-scoped `&EngineState`.
+  - Prevented a nested `with_state` borrow in `tt_xetex_open_input` in `src/io.rs` by evaluating `name_of_file()` before entering the `with_state_mut` closure.
+
+### Metrics & Findings
+- **Warnings count:** Dropped from **50 to 48**.
+- **Parity & Tests:** Verified that all 26 unit tests and 29/29 integration tests pass, with the result recorded to `plan/parity-history.log`.
+
+**Handoff / Next:**
+- Workstream 03 is complete!
+- Move on to the next planned workstream, e.g. Workstream 06 (centralizing constants) or other planned workstreams in `STATUS.md`.
+
+
 ## Idiom session 140 — 2026-06-06 — the de-unsafe sweep (workstream 03 / overview target #4), the natural continuation of the de-export sweep
 
 **Type:** execution (workstream 03, the "de-unsafe" half of the sweep teed up by Session 139). **1 commit, 70 functions de-unsafed, 8 unused unsafe blocks removed.** Dashboard **29/2/7/4** green; warnings **50 → 50**.

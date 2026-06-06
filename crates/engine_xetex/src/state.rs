@@ -99,6 +99,13 @@ pub(crate) struct TexmfState {
     pub start_time_str: [u8; 30],
 }
 
+pub(crate) struct AbsPathBuf(pub [libc::c_char; 1024]);
+impl Default for AbsPathBuf {
+    fn default() -> Self {
+        AbsPathBuf([0; 1024])
+    }
+}
+
 /// The `input` cluster's Rust-owned state. Distinct from
 /// `crate::globals::InputState`, which is a single per-input-record struct;
 /// this holds the cluster's owned arenas (input/param/file stacks).
@@ -204,6 +211,10 @@ pub(crate) struct InputClusterState {
     pub name_of_file: Vec<libc::c_char>,
     /// Rust-owned UTF-16 name buffer.
     pub name_of_file16: Vec<u16>,
+    /// Rust-owned name of current input file.
+    pub name_of_input_file: *mut libc::c_char,
+    /// Rust-owned absolute path of current input file.
+    pub abspath_of_input_file: AbsPathBuf,
 }
 
 pub(crate) struct EqtbState {
@@ -1457,6 +1468,7 @@ pub(crate) struct HyphState {
     pub hyph_word: Vec<i32>,
     pub hyph_list: Vec<i32>,
     pub hyph_link: Vec<u16>,
+    pub trie_op_hash_array: Vec<i32>,
 }
 
 impl Default for HyphState {
@@ -1510,6 +1522,7 @@ impl Default for HyphState {
             hyph_word: Vec::new(),
             hyph_list: Vec::new(),
             hyph_link: Vec::new(),
+            trie_op_hash_array: vec![0; 70223],
         }
     }
 }

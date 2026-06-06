@@ -774,7 +774,7 @@ void print_style(int32_t c);
 void print_skip_param(int32_t n);
 void show_node_list(int32_t p);
 void show_box(int32_t p);
-void short_display_n(int32_t p, int32_t m);
+
 void delete_token_ref(int32_t p);
 void delete_glue_ref(int32_t p);
 void flush_node_list(int32_t p);
@@ -906,7 +906,7 @@ int32_t new_native_word_node(internal_font_number f, int32_t n);
 int32_t new_native_character(internal_font_number f, UnicodeScalar c);
 void font_feature_warning(const void *featureNameP, int32_t featLen, const void *settingNameP, int32_t setLen);
 void font_mapping_warning(const void *mappingNameP, int32_t mappingNameLen, int32_t warningType);
-void graphite_warning(void);
+
 internal_font_number load_native_font(int32_t u, str_number nom, str_number aire, scaled_t s);
 void do_locale_linebreaks(int32_t s, int32_t len);
 void bad_utf8_warning(void);
@@ -1141,7 +1141,7 @@ void print_write_whatsit(const char* s, int32_t p);
 void print_native_word(int32_t p);
 void print_sa_num(int32_t q);
 void print_file_line(void);
-void print_two(int32_t n);
+
 void print_hex(int32_t n);
 void print_roman_int(int32_t n);
 void print_current_string(void);

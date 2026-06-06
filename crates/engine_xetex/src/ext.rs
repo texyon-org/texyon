@@ -595,15 +595,7 @@ pub unsafe fn print_utf8_str(mut str_: *const u8, mut len: c_int) {
     }
 }
 
-// translated from xetex-ext.c:180 (print_chars)
-#[no_mangle]
-pub unsafe extern "C" fn print_chars(mut str_: *const u16, mut len: c_int) {
-    while len > 0 {
-        print_char(*str_ as i32);
-        str_ = str_.add(1);
-        len -= 1;
-    }
-}
+
 
 // translated from xetex-ext.c:187 (load_mapping_file)
 unsafe fn load_mapping_file(

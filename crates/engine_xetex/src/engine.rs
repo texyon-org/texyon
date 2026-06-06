@@ -1435,6 +1435,12 @@ pub unsafe fn tt_cleanup() {
     // Release the Rust-owned nest, input-file, input, macro-parameter, input
     // line/group, and buffer arrays (were C `malloc`'d arrays).
     crate::state::with_state_mut(|s| {
+        if !s.input.name_of_input_file.is_null() {
+            libc::free(s.input.name_of_input_file as *mut libc::c_void);
+            s.input.name_of_input_file = std::ptr::null_mut();
+        }
+        s.input.abspath_of_input_file.0 = [0; 1024];
+
         s.input.nest = Vec::new();
         s.input.input_file = Vec::new();
         s.input.input_stack = Vec::new();

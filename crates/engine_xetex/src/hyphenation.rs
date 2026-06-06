@@ -8,10 +8,8 @@ const NEG_TRIE_OP_SIZE: i32 = -35_111;
 pub(crate) const MAX_TRIE_OP: u16 = 65_535;
 const MIN_TRIE_OP: i32 = 0;
 pub(crate) const BIGGEST_LANG: i32 = 255;
-const TRIE_OP_HASH_SIZE: usize = (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE + 1) as usize;
 
-#[no_mangle]
-pub static mut _trie_op_hash_array: [i32; TRIE_OP_HASH_SIZE] = [0; TRIE_OP_HASH_SIZE];
+
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, TOO_BIG_CHAR};
 use crate::globals::{
@@ -36,11 +34,15 @@ use crate::globals::{
 
 #[inline]
 unsafe fn trie_op_hash(k: i32) -> i32 {
-    _trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize]
+    crate::state::with_state(|state| {
+        state.hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize]
+    })
 }
 #[inline]
 pub(crate) unsafe fn set_trie_op_hash(k: i32, v: i32) {
-    _trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
+    crate::state::with_state_mut(|state| {
+        state.hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
+    })
 }
 // translated from xetex-ini.c:630 (new_trie_op)
 pub unsafe fn new_trie_op(d: i16, n: i16, v: u16) -> u16 {

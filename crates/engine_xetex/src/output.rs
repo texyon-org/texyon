@@ -288,19 +288,7 @@ pub unsafe fn print_esc(s: i32) {
     print(s);
 }
 
-// ---------------------------------------------------------------------------
-// print_two
-// ---------------------------------------------------------------------------
 
-/// Print a two-digit decimal number (last two decimal digits of |n|).
-///
-/// translated from xetex-output.c:554 (print_two)
-#[no_mangle]
-pub unsafe extern "C" fn print_two(n: i32) {
-    let n = n.abs() % 100;
-    print_char(b'0' as i32 + n / 10);
-    print_char(b'0' as i32 + n % 10);
-}
 
 // ---------------------------------------------------------------------------
 // print_roman_int
@@ -2984,22 +2972,7 @@ pub unsafe fn font_mapping_warning(
     end_diagnostic(false);
 }
 
-/// translated from xetex-xetex0.c:8764 (graphite_warning)
-#[no_mangle]
-pub unsafe extern "C" fn graphite_warning() {
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
-    print_nl_cstr(c"Font `".as_ptr());
-    let nof = crate::globals::name_of_file();
-    let mut i = 0;
-    while *nof.offset(i) != 0 {
-        print_raw_char(*nof.offset(i) as u16, true);
-        i += 1;
-    }
-    print_cstr(c"' does not support Graphite. Trying OpenType layout instead.".as_ptr());
-    capture_to_diagnostic(std::ptr::null_mut());
-    end_diagnostic(false);
-}
+
 
 // ---------------------------------------------------------------------------
 // bad_utf8_warning
@@ -3745,14 +3718,7 @@ pub unsafe fn show_box(p: i32) {
     show_node_list(p);
     crate::output::print_ln();
 }
-/// translated from xetex-xetex0.c:748 (short_display_n)
-#[no_mangle]
-pub unsafe extern "C" fn short_display_n(p: i32, m: i32) {
-    use crate::globals::{pool_ptr, pool_size, set_breadth_max, set_depth_threshold};
-    set_breadth_max(m);
-    set_depth_threshold(pool_size() - pool_ptr() - 1);
-    show_node_list(p);
-}
+
 /// translated from xetex-xetex0.c:117 (short_display)
 pub unsafe fn short_display(mut p: i32) {
     use crate::globals::{

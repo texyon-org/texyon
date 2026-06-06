@@ -110,7 +110,7 @@ void linebreak_start(int f, int32_t localeStrNum, uint16_t* text, int32_t textLe
 int linebreak_next(int f);
 int get_encoding_mode_and_info(int32_t* info);
 void print_utf8_str(const unsigned char* str, int len);
-void print_chars(const unsigned short* str, int len);
+
 void* find_native_font(char* name, int32_t scaled_size);
 void release_font_engine(void* engine, int type_flag);
 int readCommonFeatures(const char* feat, const char* end, float* extend,

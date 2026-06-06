@@ -204,18 +204,6 @@ extern "C" {
 }
 
 // ---------------------------------------------------------------------------
-// Rust statics replacing C file-level variables (xetex-io.c:14,20)
-// ---------------------------------------------------------------------------
-
-/// Replaces `char *name_of_input_file = NULL` in xetex-io.c.
-#[no_mangle]
-pub static mut name_of_input_file: *mut libc::c_char = std::ptr::null_mut();
-
-/// Replaces `char abspath_of_input_file[1024] = ""` in xetex-io.c.
-#[no_mangle]
-pub static mut abspath_of_input_file: [libc::c_char; 1024] = [0; 1024];
-
-// ---------------------------------------------------------------------------
 // tt_xetex_open_input
 // ---------------------------------------------------------------------------
 
@@ -239,17 +227,22 @@ pub unsafe fn tt_xetex_open_input(filefmt: libc::c_int) -> usize {
         return INVALID_HANDLE;
     }
 
-    if ttstub_get_last_input_abspath(
-        abspath_of_input_file.as_mut_ptr(),
-        abspath_of_input_file.len(),
-    ) < 1
-    {
-        abspath_of_input_file[0] = 0;
-    }
+    crate::state::with_state_mut(|state| {
+        if ttstub_get_last_input_abspath(
+            state.input.abspath_of_input_file.0.as_mut_ptr(),
+            state.input.abspath_of_input_file.0.len(),
+        ) < 1
+        {
+            state.input.abspath_of_input_file.0[0] = 0;
+        }
+    });
 
-    set_name_length(libc::strlen(name_of_file()) as i32);
-    libc::free(name_of_input_file as *mut libc::c_void);
-    name_of_input_file = xstrdup(name_of_file());
+    let nof = name_of_file();
+    set_name_length(libc::strlen(nof) as i32);
+    crate::state::with_state_mut(|state| {
+        libc::free(state.input.name_of_input_file as *mut libc::c_void);
+        state.input.name_of_input_file = xstrdup(nof);
+    });
     handle
 }
 
@@ -1240,7 +1233,7 @@ pub unsafe fn start_input(primary_input_name: *const libc::c_char) {
     set_source_filename_stack(in_open(), cur_input().name);
     set_full_source_filename_stack(
         in_open(),
-        crate::texmfmp::maketexstring(crate::io::name_of_input_file),
+        crate::texmfmp::maketexstring(crate::state::with_state(|state| state.input.name_of_input_file)),
     );
 
     if cur_input().name == str_ptr() - 1 {
