@@ -4295,7 +4295,7 @@ pub unsafe fn init_math() {
                 v = -v - mem_b32s1(just_box() + 1);
                 p = crate::mem::new_math_global(0, BEGIN_L_CODE);
                 set_mem_b32s1(TEMP_HEAD, p);
-                crate::packaging::just_copy(
+                crate::packaging::just_copy_global(
                     mem_b32s1(just_box() + 5),
                     p,
                     crate::mem::new_math_global(0, END_L_CODE),

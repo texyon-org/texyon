@@ -775,8 +775,8 @@ pub unsafe fn free_node_global(p: i32, s: i32) {
 ///
 /// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only plus a
 /// raw `xmalloc`/`copy_nonoverlapping` of the native-glyph buffer (no
-/// `with_state` calls, no cold path). Legacy callers use
-/// [`copy_native_glyph_info_global`].
+/// `with_state` calls, no cold path). Called by the threaded `copy_node_list`
+/// and `just_copy`.
 pub fn copy_native_glyph_info(mem: &mut MemState, src: i32, dest: i32) {
     let src_ptr = mem.ptr(src + 5);
     if !src_ptr.is_null() {
@@ -793,11 +793,6 @@ pub fn copy_native_glyph_info(mem: &mut MemState, src: i32, dest: i32) {
         mem.set_ptr(dest + 5, new_ptr);
         mem.set_b16s0(dest + 4, glyph_count as u16);
     }
-}
-
-/// Transitional bridge-down wrapper for legacy `copy_native_glyph_info` callers.
-pub fn copy_native_glyph_info_global(src: i32, dest: i32) {
-    crate::state::with_state_mut(|st| copy_native_glyph_info(&mut st.mem, src, dest));
 }
 
 // ---------------------------------------------------------------------------
