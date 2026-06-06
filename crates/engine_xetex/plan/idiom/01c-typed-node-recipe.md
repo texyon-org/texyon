@@ -149,12 +149,34 @@ re-litigate):**
 **Gate:** run the §4 disasm spot-check proving the newtypes are zero-cost
 vs. raw `i32` before any later stage depends on them.
 
-### Stage 2 — the `Mem` ownership move (`01`-§5 steps 1–2)
+### Stage 2 — the `Mem` ownership move (`01`-§5 steps 1–2) — ALREADY COMPLETE
 
-`mem` is today a `static mut *mut MemoryWord` allocated by Rust via
-`xmalloc_array` (`01`-§2). Move it to a Rust-owned
+> **STATUS (verified session 147): DONE in earlier execution sessions
+> (11 = `save_stack`, 51 = `mem`), before this cookbook was written.** The
+> arena already lives on `MemState { data: Vec<MemoryWord>, lo_mem_max,
+> hi_mem_min, avail, mem_end, rover, var_used, dyn_used }` (`src/state.rs:403`)
+> — the exact shape below. Evidence: allocation is `s.mem.data = vec![…]`
+> at `src/engine.rs:1073` (initex, `MEM_TOP + 2`) and `src/format_io.rs:854`
+> (undump, `MEM_TOP + 1`), both with comments tracking the inclusive
+> `xmalloc_array` sizing (the `01`-§11 off-by-one gotcha — handled). No
+> `xmalloc_array` for `mem`, no C `mem` symbol, no `#[link_name="mem"]`, no
+> `install_mem_ptr` shim, and `tt_cleanup` does **not** `free()` it (no
+> double-free). Raw-pointer consumers (`mem_ptr`/`mem_node_addr`,
+> `src/globals.rs:553`) derive from the `Vec` and are documented as valid
+> because the arena never reallocates. Format dump/undump walk the arena via
+> `dump_slice`/`undump_slice` byte-exactly; `FORMAT_SERIAL = 33` unchanged
+> (`format_io.rs:76`). The surviving `unsafe` is already confined to the
+> `MemoryWord` union projection inside the accessors — not a pointer deref.
+>
+> **So Stage 2 requires no work.** The cookbook described it as pending
+> because it was derived from the target spec (`01`-§5, `03`) without
+> re-checking that sessions 11/51 had landed it. Proceed directly to Stage 3.
+> The original target text is kept below for reference.
+
+`mem` was originally a `static mut *mut MemoryWord` allocated by Rust via
+`xmalloc_array` (`01`-§2). It is now a Rust-owned
 `Mem { data: Vec<MemoryWord>, lo_mem_max, hi_mem_min, mem_end, avail,
-rover, var_used, dyn_used }`:
+rover, var_used, dyn_used }` (named `MemState` in the code):
 
 - Pre-allocate `data` to the **exact inclusive** size (`xmalloc_array(n)`
   allocates `n + 1`; the off-by-one gotcha, `01`-§11). It must **never

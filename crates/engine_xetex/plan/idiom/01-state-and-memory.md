@@ -229,10 +229,12 @@ exists when that slice runs. So the typing work splits into a one-time
     a release-mode disasm spot-check (§8) proving they are zero-cost vs.
     the raw `i32`** before any fused slice depends on them.
 2.  **The `Mem` arena ownership move** (§5 steps 1–2): `Vec<MemoryWord>`,
-    `ini.rs` allocation, `tt_cleanup`/longjmp reconciliation, dump/undump
+    allocation, `tt_cleanup`/longjmp reconciliation, dump/undump
     for the format-resident arrays. This must land before node-handle
     field methods, because the safe slice index is what lets the union
-    projection be the *only* surviving `unsafe`.
+    projection be the *only* surviving `unsafe`. **STATUS: already DONE
+    (sessions 11/51) — `MemState.data` is a `Vec<MemoryWord>`; see the
+    `01c` §2 Stage 2 status note for the evidence. No work remains here.**
 3.  **The `NodePtr<K>` handle layer + checked classification**, one node
     family at a time (`03-memory-and-nodes.md` target shape): the
     capability-trait'd handle, the `classify`/`from_raw` boundary, and the
