@@ -4613,19 +4613,26 @@ pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
 }
 
 /// translated from xetex-math.c:1206 (build_opentype_assembly)
-#[no_mangle]
-pub unsafe extern "C" fn build_opentype_assembly(
+///
+/// Phase-C: de-exported and converted from per-access bridge accessors to
+/// **scoped `with_state` islands**. The C++ OpenType readers (`ot_min_*`,
+/// `ot_part_*`) and the part-stacking helpers (`stack_glue_into_box_global` /
+/// `stack_glyph_into_box_global`, which themselves measure native glyphs via
+/// C++) re-enter Rust through `with_state`, so this function must **never** hold
+/// a state borrow across them (the session-135 nest-panic lesson, `01b` §4).
+/// Only the borrow-free regions take a `mem` borrow: the box-type set, and the
+/// final natural-size measurement + dimension write (neither calls any FFI).
+pub unsafe fn build_opentype_assembly(
     f: i32,
     a: *mut libc::c_void,
     s: i32,
     horiz: bool,
 ) -> i32 {
     let b = crate::mem::new_null_box_global();
-    if horiz {
-        set_mem_b16s1(b, HLIST_NODE);
-    } else {
-        set_mem_b16s1(b, VLIST_NODE);
-    }
+    crate::state::with_state_mut(|st| {
+        st.mem
+            .set_b16s1(b, if horiz { HLIST_NODE } else { VLIST_NODE });
+    });
     let mut n: i32 = -1;
     let mut no_extenders = true;
     let min_o = ot_min_connector_overlap(f);
@@ -4699,40 +4706,49 @@ pub unsafe extern "C" fn build_opentype_assembly(
             prev_o = ot_part_end_connector(f, a, i);
         }
     }
-    // Measure natural size and total stretch.
-    let mut p = mem_b32s1(b + 5);
-    let mut nat: i32 = 0;
-    let mut str: i32 = 0;
-    while p != TEX_NULL {
-        if mem_b16s1(p) == WHATSIT_NODE {
-            if horiz {
-                nat += mem_b32s1(p + 1);
-            } else {
-                nat += mem_b32s1(p + 3) + mem_b32s1(p + 2);
+    // Measure natural size and total stretch — pure `mem` reads, one borrow.
+    let (nat, str) = crate::state::with_state(|st| {
+        let mut p = st.mem.b32s1(b + 5);
+        let mut nat: i32 = 0;
+        let mut str: i32 = 0;
+        while p != TEX_NULL {
+            if st.mem.b16s1(p) == WHATSIT_NODE {
+                if horiz {
+                    nat += st.mem.b32s1(p + 1);
+                } else {
+                    nat += st.mem.b32s1(p + 3) + st.mem.b32s1(p + 2);
+                }
+            } else if st.mem.b16s1(p) == GLUE_NODE {
+                let gptr = st.mem.b32s0(p + 1);
+                nat += st.mem.b32s1(gptr + 1);
+                str += st.mem.b32s1(gptr + 2);
             }
-        } else if mem_b16s1(p) == GLUE_NODE {
-            let gptr = mem_b32s0(p + 1);
-            nat += mem_b32s1(gptr + 1);
-            str += mem_b32s1(gptr + 2);
+            p = st.mem.b32s1(p);
         }
-        p = mem_b32s1(p);
-    }
-    if s > nat && str > 0 {
-        let o = if s - nat > str { str } else { s - nat };
-        set_mem_b16s0(b + 5, NORMAL);
-        set_mem_b16s1(b + 5, STRETCHING);
-        set_mem_gr(b + 6, o as f64 / str as f64);
-        let set_dim = nat + crate::scaled_math::tex_round(str as f64 * mem_gr(b + 6));
-        if horiz {
-            set_mem_b32s1(b + 1, set_dim);
+        (nat, str)
+    });
+    // Write the resolved dimensions — pure `mem` writes, one borrow.
+    crate::state::with_state_mut(|st| {
+        if s > nat && str > 0 {
+            let o = if s - nat > str { str } else { s - nat };
+            st.mem.set_b16s0(b + 5, NORMAL);
+            st.mem.set_b16s1(b + 5, STRETCHING);
+            // The C reads MEM[b+6].gr back after storing it; an f64 round-trips
+            // exactly, so the stored `ratio` is byte-identical to the re-read.
+            let ratio = o as f64 / str as f64;
+            st.mem.set_gr(b + 6, ratio);
+            let set_dim = nat + crate::scaled_math::tex_round(str as f64 * ratio);
+            if horiz {
+                st.mem.set_b32s1(b + 1, set_dim);
+            } else {
+                st.mem.set_b32s1(b + 3, set_dim);
+            }
+        } else if horiz {
+            st.mem.set_b32s1(b + 1, nat);
         } else {
-            set_mem_b32s1(b + 3, set_dim);
+            st.mem.set_b32s1(b + 3, nat);
         }
-    } else if horiz {
-        set_mem_b32s1(b + 1, nat);
-    } else {
-        set_mem_b32s1(b + 3, nat);
-    }
+    });
     b
 }
 
