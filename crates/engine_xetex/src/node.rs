@@ -446,6 +446,70 @@ impl MemState {
     }
 }
 
+// --- the kern family: kern nodes (NODE_type 11) ---
+//
+// `KernNode` (`NODE_type` = `KERN_NODE` = 11; allocated `MEDIUM_NODE_SIZE` =
+// 3 in this build — the generic-TeX "small (2)" grows to medium when SyncTeX
+// fields ride along):
+//
+// | field     | offset.subfield | type                              |
+// |-----------|-----------------|-----------------------------------|
+// | `subtype` | 0.b16.s0        | `u16` (NORMAL/EXPLICIT/ACC_KERN/MU_GLUE) |
+// | `width`   | +1.b32.s1       | `Scaled`                          |
+//
+// `width` is the same +1.b32.s1 `Scaled` slot as the box family's `width`,
+// but a kern node has **no** depth/height/shift_amount — those offsets hold
+// other data (e.g. the SyncTeX word) — so kern uses a **concrete** `width`
+// method, *not* the `HasDimensions` capability trait (which would falsely
+// expose +2..+4).
+
+/// `KERN_NODE` (`NODE_type` = 11): inter-element kern (a single signed
+/// width).
+pub enum KernNode {}
+
+impl NodeKind for KernNode {}
+
+impl NodePtr<KernNode> {
+    /// `KERN_NODE` subtype = `mem[p].b16.s0` — `NORMAL` / `EXPLICIT` /
+    /// `ACC_KERN` / `MU_GLUE`. Lives in the header word.
+    #[inline]
+    pub fn subtype(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.0, v);
+    }
+
+    /// `KERN_NODE` width = `mem[(p) + 1].b32.s1` — the kern amount. Shares the
+    /// box `width` slot/type but is a one-field family (concrete impl).
+    #[inline]
+    pub fn width(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, w.0);
+    }
+}
+
+impl MemState {
+    /// Classify a known lo-mem node as a kern node. `Ok(Some(_))` if `p` is a
+    /// `KERN_NODE`; `Ok(None)` if some other valid type; `Err` if invalid.
+    /// `p` must already be a non-null lo-mem index (`01c` §7).
+    #[inline]
+    pub fn classify_kern(
+        &self,
+        p: MemIdx,
+    ) -> Result<Option<NodePtr<KernNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            // SAFETY: the NODE_type branch just proved the kind.
+            NodeType::Kern => Some(unsafe { NodePtr::<KernNode>::from_idx_unchecked(p) }),
+            _ => None,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,5 +703,44 @@ mod tests {
         let bad = MemIdx::new(80);
         mem.set_b16s1(bad.0, 37); // the 32–39 gap
         assert!(mem.classify_glue(bad).is_err());
+    }
+
+    #[test]
+    fn kern_is_zero_cost() {
+        assert_eq!(size_of::<NodePtr<KernNode>>(), size_of::<i32>());
+    }
+
+    #[test]
+    fn kern_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Kern.as_raw());
+        let k = unsafe { NodePtr::<KernNode>::from_idx_unchecked(p) };
+
+        k.set_subtype(&mut mem, 3);
+        k.set_width(&mut mem, Scaled(0x7777));
+
+        assert_eq!(k.subtype(&mem), 3);
+        assert_eq!(k.width(&mem), Scaled(0x7777));
+
+        // each field landed in the C-exact raw word/subfield
+        assert_eq!(mem.b16s0(p.0), 3); // subtype
+        assert_eq!(mem.b32s1(p.0 + 1), 0x7777); // width
+    }
+
+    #[test]
+    fn classify_kern_dispatches_on_node_type() {
+        let mut mem = fresh_mem(200);
+        let k = MemIdx::new(40);
+        let other = MemIdx::new(60);
+        mem.set_b16s1(k.0, NodeType::Kern.as_raw());
+        mem.set_b16s1(other.0, NodeType::Glue.as_raw());
+
+        assert!(matches!(mem.classify_kern(k), Ok(Some(_))));
+        assert!(matches!(mem.classify_kern(other), Ok(None))); // valid, not kern
+
+        let bad = MemIdx::new(80);
+        mem.set_b16s1(bad.0, 38); // the 32–39 gap
+        assert!(mem.classify_kern(bad).is_err());
     }
 }
