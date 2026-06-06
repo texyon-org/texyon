@@ -49,9 +49,6 @@ KEEP = {
     # (it does not link C++), only `cargo test`'s link step would.
     "tt_get_font_area_entry", "tt_get_font_size_entry",
     "tt_get_font_layout_engine_entry",
-    # self-FFI (declared in an extern "C" block in another module) — handled in
-    # a dedicated commit that converts the caller to a direct path first.
-    "end_token_list", "initialize_pagebuilder_variables", "tex_round",
     # Dead-on-de-export: these have zero Rust callers and no C caller; the
     # #[no_mangle] export was their only "use", so de-exporting them surfaces a
     # dead_code warning. Left exported here to keep this sweep purely about the

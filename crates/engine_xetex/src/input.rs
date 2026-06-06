@@ -46,8 +46,7 @@ const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3108 (end_token_list)
-#[no_mangle]
-pub unsafe extern "C" fn end_token_list() {
+pub unsafe fn end_token_list() {
     let ci = cur_input();
     if ci.index >= BACKED_UP {
         if ci.index <= INSERTED {

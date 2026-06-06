@@ -30,8 +30,7 @@ extern "C" {}
 /// range.
 ///
 /// translated from xetex-scaledmath.c:11 (tex_round)
-#[no_mangle]
-pub unsafe extern "C" fn tex_round(r: f64) -> i32 {
+pub unsafe fn tex_round(r: f64) -> i32 {
     // We must reproduce very particular rounding semantics to pass the
     // TRIP test (see comment in the C source). Values outside the i32
     // range are clipped; within-range values round half-away-from-zero.
