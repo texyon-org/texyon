@@ -34,6 +34,8 @@
 
 use std::marker::PhantomData;
 
+use crate::consts::GLUE_SPEC_SIZE;
+use crate::mem::{get_node, ALLOC_FAILED};
 use crate::state::MemState;
 use crate::units::{InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -366,6 +368,33 @@ impl NodePtr<GlueSpecNode> {
         // construction (it is only ever written by the spec allocators).
         p.as_idx()
             .map(|idx| unsafe { NodePtr::<GlueSpecNode>::from_idx_unchecked(idx) })
+    }
+
+    /// Allocate a fresh, **uninitialised** glue_spec record on the `mem`
+    /// free-list arena and return a typed handle to it, or `None` if the
+    /// arena is exhausted (the §5 overflow condition — the caller maps it to
+    /// its abort sentinel after the borrow drops).
+    ///
+    /// This is the **typesafe node-allocation boundary** for the family
+    /// (`01b` §3a / `01c` §8): it confines the one `from_idx_unchecked` to a
+    /// single audited site (a node *being initialised* has no `NODE_type` to
+    /// classify yet), so call sites never write `unsafe`. It keeps TeX's
+    /// free-list arena (no per-node heap alloc, `01c` §8) — it is exactly the
+    /// `get_node(GLUE_SPEC_SIZE)` the C `new_spec`/`math_glue` do, lifted to a
+    /// typed return. A glue_spec carries no `NODE_type`, so nothing is
+    /// stamped; the caller fills `width`/`stretch`/`shrink`/orders. (A
+    /// type-stamping family's `alloc` would additionally `set_b16s1(NODE_type)`
+    /// before returning — the pattern extends per family as consumers appear.)
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<GlueSpecNode>> {
+        let p = get_node(mem, GLUE_SPEC_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        // SAFETY: `p` is a freshly allocated `GLUE_SPEC_SIZE` record; this is
+        // the family's single audited construction site (the node is being
+        // initialised by the caller, so there is no tag to classify).
+        Some(unsafe { NodePtr::<GlueSpecNode>::from_idx_unchecked(MemIdx::new(p)) })
     }
 
     /// `GLUE_SPEC_ref_count(p)` = `mem[p].b32.s1`.
@@ -763,6 +792,31 @@ mod tests {
         g.set_glue_ptr(&mut mem, MemPtr::NULL);
         assert!(g.glue_spec(&mem).is_none());
         assert!(NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::NULL).is_none());
+    }
+
+    #[test]
+    fn alloc_glue_spec_carves_a_usable_typed_handle() {
+        let mut mem = fresh_mem(64);
+        // Build a single free block spanning [10, 30) on the variable-size
+        // free list: header `.s0` = block size, `.s1` = MAX_HALFWORD (the free
+        // marker); the block is its own left/right neighbour (rover → self).
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60; // no growth needed; keeps the carved node in bounds
+        mem.set_b32s0(rover, 20); // block size 20 → [10, 30)
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD); // free
+        mem.set_b32s1(rover + 1, rover); // rlink → self
+        mem.set_b32s0(rover + 1, rover); // llink → self
+        mem.set_b32s1(30, 0); // word past the block is not a free marker (stop coalescing)
+
+        let spec = NodePtr::<GlueSpecNode>::alloc(&mut mem).expect("arena has room");
+        // the returned handle is a real, in-bounds, writable glue_spec
+        spec.set_width(&mut mem, Scaled(0x1234));
+        spec.set_stretch(&mut mem, Scaled(0x5678));
+        assert_eq!(spec.width(&mem), Scaled(0x1234));
+        assert_eq!(spec.stretch(&mem), Scaled(0x5678));
+        // and `alloc` confined the construction — no `unsafe` at this call site
     }
 
     #[test]

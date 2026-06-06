@@ -1,8 +1,8 @@
 //! Math-mode command helpers translated from `xetex/xetex-math.c`.
 use crate::consts::{
     BOX_NODE_SIZE, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, GLUE_BASE, GLUE_NODE,
-    GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_FONT_BASE, MAX_HALFWORD,
-    MEDIUM_NODE_SIZE, PENALTY_NODE, RULE_NODE,
+    HLIST_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_FONT_BASE, MAX_HALFWORD, MEDIUM_NODE_SIZE,
+    PENALTY_NODE, RULE_NODE,
 };
 use crate::ext::real_get_native_glyph;
 use crate::input::begin_token_list;
@@ -495,15 +495,10 @@ fn scaled_mu_value(v: i32, m: i32) -> i32 {
 }
 
 fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycleAbort> {
-    let p = get_node(mem, GLUE_SPEC_SIZE);
-    if p == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    // SAFETY: `p` is a glue_spec record just allocated at `GLUE_SPEC_SIZE`;
-    // we fill its fields below. A fresh node has no `NODE_type` to classify
-    // yet, so this is the "construct a handle to a node I am initializing"
-    // boundary (`01b` §3a) — `from_idx_unchecked` is the right tool here.
-    let spec = unsafe { NodePtr::<GlueSpecNode>::from_idx_unchecked(MemIdx::new(p)) };
+    // Typesafe allocation: `alloc` confines the `from_idx_unchecked` to one
+    // audited site and yields the typed handle directly (`01b` §3a). `None`
+    // is the arena-exhaustion sentinel, mapped to the §5 abort here.
+    let spec = NodePtr::<GlueSpecNode>::alloc(mem).ok_or(NodeRecycleAbort::Overflow)?;
     spec.set_width(mem, Scaled(input.width));
     spec.set_stretch_order(mem, input.stretch_order);
     spec.set_stretch(mem, Scaled(input.stretch));
