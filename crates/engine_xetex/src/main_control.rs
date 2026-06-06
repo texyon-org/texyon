@@ -54,7 +54,7 @@ use crate::output::{
     show_box, show_whatever,
 };
 use crate::packaging::{
-    append_to_vlist, copy_node_list_global, flush_node_list_global, hpack, vpackage, vsplit,
+    append_to_vlist_global, copy_node_list_global, flush_node_list_global, hpack, vpackage, vsplit,
 };
 use crate::pagebuilder::build_page;
 use crate::scan::{
@@ -1091,7 +1091,7 @@ pub unsafe extern "C" fn fin_row() {
             set_mem_b32s1(cur_list_tail(), mem_b32s1(cur_pre_head()));
             set_cur_list_tail(cur_pre_tail());
         }
-        append_to_vlist(u);
+        append_to_vlist_global(u);
         if cur_head() != cur_tail_a() {
             set_mem_b32s1(cur_list_tail(), mem_b32s1(cur_head()));
             set_cur_list_tail(cur_tail_a());
@@ -1932,7 +1932,7 @@ pub unsafe extern "C" fn box_end(box_context: i32) {
                     set_pre_adjust_tail(TEX_NULL);
                 }
 
-                append_to_vlist(cur_box());
+                append_to_vlist_global(cur_box());
 
                 if adjust_tail() != TEX_NULL {
                     if ADJUST_HEAD != adjust_tail() {

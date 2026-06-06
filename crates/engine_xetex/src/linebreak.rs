@@ -2364,7 +2364,7 @@ pub unsafe extern "C" fn post_line_break(d: bool) {
         }
 
         set_pre_adjust_tail(TEX_NULL);
-        crate::packaging::append_to_vlist(just_box());
+        crate::packaging::append_to_vlist_global(just_box());
 
         if ADJUST_HEAD != adjust_tail() {
             set_mem_b32s1(cur_list_tail(), mem_b32s1(ADJUST_HEAD));

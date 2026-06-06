@@ -3940,7 +3940,7 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
             }
         }
     }
-    crate::packaging::append_to_vlist(b);
+    crate::packaging::append_to_vlist_global(b);
 }
 
 /// Emit error for insufficient math fonts, flush the math list, set danger.

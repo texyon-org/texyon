@@ -900,40 +900,71 @@ pub unsafe fn copy_node_list_global(p: i32) -> i32 {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:8020 (append_to_vlist)
-#[no_mangle]
-pub unsafe extern "C" fn append_to_vlist(b: i32) {
+//
+// Phase-C: threaded to `&mut MemState` + `&EqtbState`. The mem arena is touched
+// directly; baseline-skip parameters are read as `eqtb` fields; the `cur_list`
+// aux/tail scalars and `temp_ptr` stay raw global accessors (safe under the
+// borrow per `01b` §4). The two glue constructors `new_param_glue`/
+// `new_skip_param` are threaded; arena exhaustion propagates the `01b` §5
+// [`NodeRecycleAbort::Overflow`] sentinel, run by [`append_to_vlist_global`]
+// after the borrow drops. FFI-free (no measurer / print / scanner re-entry).
+pub fn append_to_vlist(
+    mem: &mut crate::state::MemState,
+    eqtb: &crate::state::EqtbState,
+    b: i32,
+) -> Result<(), NodeRecycleAbort> {
     const INT_PAR_XETEX_UPWARDS: i32 = 71; // xetex_format.h:106
     const GLUE_PAR_BASELINE_SKIP: i32 = 1; // xetex_format.h:150
     const GLUE_PAR_LINE_SKIP: i16 = 0; // xetex_format.h:149
     const DIMEN_PAR_LINE_SKIP_LIMIT: i32 = 2; // xetex_format.h:124
 
-    let upwards = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS) > 0;
+    let upwards = eqtb.b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS) > 0;
     if crate::globals::cur_list_aux_b32s1() > IGNORE_DEPTH {
-        let baseline_spec = eqtb_b32s1(GLUE_BASE + GLUE_PAR_BASELINE_SKIP);
-        let d = mem_b32s1(baseline_spec + 1)
+        let baseline_spec = eqtb.b32s1(GLUE_BASE + GLUE_PAR_BASELINE_SKIP);
+        let d = mem.b32s1(baseline_spec + 1)
             - crate::globals::cur_list_aux_b32s1()
             - if upwards {
-                mem_b32s1(b + 2)
+                mem.b32s1(b + 2)
             } else {
-                mem_b32s1(b + 3)
+                mem.b32s1(b + 3)
             };
-        let p = if d < eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_LINE_SKIP_LIMIT) {
-            crate::mem::new_param_glue_global(GLUE_PAR_LINE_SKIP)
+        let p = if d < eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_LINE_SKIP_LIMIT) {
+            let p = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_LINE_SKIP);
+            if p == crate::mem::ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow);
+            }
+            p
         } else {
-            let p = crate::mem::new_skip_param_global(GLUE_PAR_BASELINE_SKIP as i16);
-            set_mem_b32s1(crate::globals::temp_ptr() + 1, d);
+            let p = crate::mem::new_skip_param(mem, eqtb, GLUE_PAR_BASELINE_SKIP as i16);
+            if p == crate::mem::ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow);
+            }
+            mem.set_b32s1(crate::globals::temp_ptr() + 1, d);
             p
         };
-        set_mem_b32s1(crate::globals::cur_list_tail(), p);
+        mem.set_b32s1(crate::globals::cur_list_tail(), p);
         crate::globals::set_cur_list_tail(p);
     }
-    set_mem_b32s1(crate::globals::cur_list_tail(), b);
+    mem.set_b32s1(crate::globals::cur_list_tail(), b);
     crate::globals::set_cur_list_tail(b);
     crate::globals::set_cur_list_aux_b32s1(if upwards {
-        mem_b32s1(b + 3)
+        mem.b32s1(b + 3)
     } else {
-        mem_b32s1(b + 2)
+        mem.b32s1(b + 2)
     });
+    Ok(())
+}
+
+/// Transitional bridge-down wrapper for legacy `append_to_vlist` callers (`01b`
+/// §3, §5). Runs the threaded append under one `mem`+`eqtb` borrow, then runs
+/// the deferred arena-exhaustion `overflow` after the borrow drops.
+pub unsafe fn append_to_vlist_global(b: i32) {
+    if let Err(e) = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        append_to_vlist(&mut s.mem, &s.eqtb, b)
+    }) {
+        node_recycle_abort(e);
+    }
 }
 // translated from xetex-xetex0.c:7725 (vert_break)
 pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
