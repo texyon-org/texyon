@@ -196,6 +196,18 @@ of the 688 unsafe-block lints die (`01`-§5 step 3).
 
 ### Stage 3 — the per-family `NodePtr<K>` layer (one family per slice, §1 order)
 
+> **Progress (session 147): rank 0+1 built** — `src/node.rs` holds the
+> `NodePtr<K>` core (transparent handle + `NodeKind` + capability traits
+> `HasDimensions`/`HasListPtr`/`HasGlueSet`), the **box family**
+> (`HListNode`/`VListNode`) with all 8 box field methods
+> (`width`/`depth`/`height`/`shift_amount`/`list_ptr`/`glue_sign`/
+> `glue_order`/`glue_set`) reusing the audited `MemState` word accessors,
+> and the `MemState::node_type`/`classify_box` checked boundary. 4 unit
+> tests; the §4 disasm gate passed. Nothing consumes it yet
+> (`#[allow(dead_code)]`) — a Phase-C box-threading slice adopts it next
+> (`01b` §3a). Remaining families in §1 order: glue/glue_spec → kern →
+> penalty → rule → disc → ligature → math → native.
+
 For each family in the §1 ranking (rank 0+1 together, then 2, 3, …): add
 its `NodeKind` marker, its capability-trait impls, its field methods, and
 its classification entry (§3). Gate each family's hot accessors on the §4
@@ -244,6 +256,15 @@ concrete rules for *this* codebase:
     header word and only valid once `is_char_node` is true (§7).
 
 ## 4. The mandatory zero-cost disasm gate (blocking)
+
+> **Box-family result (session 147): PASSED — strongest form.** A release
+> build of `NodePtr::<HListNode>::width(mem)` vs. the raw `mem.b32s1(p + 1)`
+> produced **byte-identical machine code**: LLVM's identical-code-folding
+> merged the two `#[no_mangle] #[inline(never)]` harness functions to the
+> *same address/section* (`objdump -t`: both → `.text.__disasm_raw_width`,
+> size 0x28). The typed handle is provably zero-cost over the raw index for
+> the box dimension accessors. (The harness was temporary and removed before
+> commit; re-run it the same way when a new family's hot accessor lands.)
 
 **Before any fused slice depends on a wrapper**, prove in a *release-mode*
 build that the typed access compiles to the same load/store as the raw

@@ -62,6 +62,11 @@ mod string_pool;
 // items are intentionally unused until Stage 2/3 adopt them.
 #[allow(dead_code)]
 mod units;
+// Typed node-handle layer over the arena (`plan/idiom/01c` §3, Stage 3).
+// Built before its consumers (the type-as-you-thread slices), so its items
+// are intentionally unused until a threading slice adopts them.
+#[allow(dead_code)]
+mod node;
 mod synctex;
 #[allow(dead_code)]
 mod texmfmp;

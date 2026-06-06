@@ -9,6 +9,78 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 147 — 2026-06-07 — Execution: Stage 2 already-done finding + Stage 3 box-family `NodePtr<K>` layer (`01c`)
+
+**Type:** execution (workstream 01 / `01c`). **2 commits.** Dashboard
+**29/2/7/4** green; warnings **42 → 42** (flat).
+
+### Commit 1 — record `01c` Stage 2 (the `Mem` ownership move) ALREADY COMPLETE
+
+Recon before executing Stage 2 found it was **already done** in earlier
+sessions (11 = `save_stack`, 51 = `mem`), before `01c` was drafted:
+`MemState.data` is a `Vec<MemoryWord>` (`state.rs:403`), allocated
+`s.mem.data = vec![…]` at `engine.rs:1073` (initex, `MEM_TOP + 2`) and
+`format_io.rs:854` (undump, `MEM_TOP + 1`) — inclusive sizing handled; no
+`xmalloc_array`/C `mem` symbol/`#[link_name]`/`install_mem_ptr`; no
+double-free in `tt_cleanup`; raw-ptr consumers (`mem_ptr`/`mem_node_addr`)
+derive from the `Vec` (never reallocates); `.fmt` dump/undump byte-exact,
+`FORMAT_SERIAL = 33`. The cookbook had listed it pending because it was
+derived from the target spec without re-checking execution history.
+**Corrected `01c` §2 Stage 2 + `01`-§4a to record DONE** so a future
+session won't redo finished work. Plan-only commit.
+
+### Commit 2 — Stage 3 rank 0+1: the `NodePtr<K>` core + box family
+
+NEW **`src/node.rs`** (the typed node-handle layer, `01c` §3; `#[allow(dead_code)] mod node;`):
+
+- `NodePtr<K>` — `#[repr(transparent)]` over `MemIdx` + `PhantomData<fn() -> K>`.
+  Manual `Copy`/`Clone`/`PartialEq`/`Eq`/`Debug` (no `K: Trait` bounds, since
+  the kind markers are uninstantiated empty enums). `from_idx_unchecked`
+  (unsafe — caller must have classified) + `idx()`.
+- `NodeKind` markers `HListNode`/`VListNode`; capability traits
+  `HasDimensions`/`HasListPtr`/`HasGlueSet` (compile-time only, no dispatch).
+- All 8 **box** field methods at the C-exact offsets
+  (`xetex-xetexd.h:211–218`): `width`+1/`depth`+2/`height`+3/`shift_amount`+4
+  (`Scaled`, b32.s1), `list_ptr`+5 (`MemPtr`, nullable), `glue_sign`+5.b16.s1,
+  `glue_order`+5.b16.s0 (`u16`), `glue_set`+6.gr (`f64`) — each read/write
+  going through the **audited `MemState` word accessors** so the union
+  projection stays confined there (the lone exception: the `glue_set` read
+  uses `MemState::word(..).gr`, documented).
+- The checked boundary: `MemState::node_type(MemIdx) -> Result<NodeType,_>`
+  and `classify_box(MemIdx) -> Result<Option<AnyBox>,_>` (HList/VList → typed
+  handle; other valid type → `None`; invalid code → `Err`).
+- 4 unit tests (all pass): zero-cost size, box-field round-trip landing in
+  the C-exact raw subfields, empty-box `list_ptr` == null, `classify_box`
+  dispatch + invalid-code rejection.
+
+**Disasm gate (`01c` §4) — PASSED, strongest form.** Temporarily added
+`#[no_mangle] #[inline(never)]` typed-`width` vs. raw-`b32s1(p+1)`
+functions, `cargo build --release`, `objdump`: LLVM identical-code-folded
+them to the **same address/section** (`.text.__disasm_raw_width`, size
+0x28) — byte-identical machine code, i.e. the typed handle is provably
+zero-cost over the raw index. Harness removed before commit; recorded the
+result + re-run recipe in `01c` §4.
+
+### Metrics & validation
+
+- Warnings **42 → 42** (both new modules are `#[allow(dead_code)]`;
+  nothing consumes the layer yet). `with_state`/`unsafe fn`/`#[no_mangle]`
+  unchanged. Behavior-neutral by construction (additive types + a recon
+  finding). Dashboard **29/2/7/4**; `node::` 4/4, `units::` 6/6.
+
+**Handoff / Next:** the foundation is now usable for the box family. Two
+tracks, either is valid next:
+1. **Continue Stage 3** down the `01c` §1 order — next family is
+   **glue/glue_spec** (remember the trap: glue_spec's `0.b32.s1` is a
+   *ref_count*, not a link). Same additive recipe + disasm gate.
+2. **First fused adoption (`01b` §3a):** thread a small box-touching
+   function to `&mut MemState` *and* retype its box pointer to
+   `NodePtr<HListNode>`/`AnyBox`, proving the end-to-end type-as-you-thread
+   loop on a real call site (and beginning to drive the bare-`i32`
+   node-ptr-param metric down). A leaf box consumer in `packaging.rs`/
+   `shipout.rs` is a good first target — grep for one that only reads box
+   dims under a single `mem` borrow.
+
 ## Idiom session 146 — 2026-06-06 — Execution: typed foundation Stage 1 — `NodeType` enum + checked `from_raw` (`01c` §2)
 
 **Type:** execution (workstream 01 / `01c` §2 Stage 1, completing the
