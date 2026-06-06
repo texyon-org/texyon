@@ -26,7 +26,6 @@ extern "C" {
     fn ttstub_issue_warning(fmt: *const c_char, ...);
     fn ttstub_issue_error(fmt: *const c_char, ...);
 
-    fn xstrdup(s: *const c_char) -> *mut c_char;
     fn xrealloc(ptr: *mut libc::c_void, size: size_t) -> *mut libc::c_void;
 }
 
@@ -131,13 +130,7 @@ unsafe fn mfree_ptr<T>(ptr: *mut T) -> *mut T {
     ptr::null_mut()
 }
 
-// ---------------------------------------------------------------------------
-// Private helpers (static linkage in C)
-// ---------------------------------------------------------------------------
 
-unsafe fn get_current_name(abspath: *const c_char) -> *mut c_char {
-    xstrdup(abspath)
-}
 
 unsafe fn synctexabort(synctex: &mut crate::state::SynctexCtxt) {
     if synctex.file != INVALID_HANDLE {
@@ -648,7 +641,7 @@ pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut 
     set_cur_input_synctex_tag(tag);
 
     if synctex.synctex_tag_counter == 1 {
-        synctex.root_name = get_current_name(st.input.abspath_of_input_file.0.as_ptr());
+        synctex.root_name = st.input.get_current_name();
         libc::free(tmp as *mut libc::c_void);
         if libc::strlen(synctex.root_name) == 0 {
             let texput = b"texput\0";
@@ -662,7 +655,7 @@ pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut 
     if synctex.file != INVALID_HANDLE || synctex_dot_open(synctex, &st.eqtb, tmp) != INVALID_HANDLE
     {
         let ci = cur_input();
-        let tmp_name = get_current_name(st.input.abspath_of_input_file.0.as_ptr());
+        let tmp_name = st.input.get_current_name();
         synctex_record_input(synctex, ci.synctex_tag, tmp_name);
         libc::free(tmp_name as *mut libc::c_void);
     }
