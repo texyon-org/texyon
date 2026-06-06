@@ -48,8 +48,7 @@ pub unsafe fn badness(t: i32, s: i32) -> i32 {
 /// Clamp `h` to the range [1, 63] for hyphenation min values.
 ///
 /// translated from xetex-xetex0.c:12014 (norm_min)
-#[no_mangle]
-pub unsafe extern "C" fn norm_min(h: i32) -> i16 {
+pub unsafe fn norm_min(h: i32) -> i16 {
     if h <= 0 {
         1
     } else if h >= 63 {

@@ -260,8 +260,7 @@ pub unsafe fn tt_xetex_open_input(filefmt: libc::c_int) -> usize {
 /// Open a UFILE for reading with BOM-sniffing encoding detection.
 ///
 /// translated from xetex-io.c:127 (u_open_in)
-#[no_mangle]
-pub unsafe extern "C" fn u_open_in(
+pub unsafe fn u_open_in(
     f: *mut *mut UFile,
     filefmt: i32,
     _fopen_mode: *const libc::c_char,
@@ -323,8 +322,7 @@ pub(crate) unsafe fn call_set_input_file_encoding(f: *mut UFile, mode: i32, enco
 /// Set the encoding mode (and optional ICU converter) on an open UFILE.
 ///
 /// translated from xetex-io.c:47 (set_input_file_encoding)
-#[no_mangle]
-pub unsafe extern "C" fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32) {
+pub unsafe fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32) {
     if (*f).encoding_mode == ICUMAPPING as i16 && !(*f).conversion_data.is_null() {
         xetex_ucnv_close((*f).conversion_data);
     }
@@ -619,8 +617,7 @@ pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
 /// Convert `name_of_file` (UTF-8) to UTF-16 in `name_of_file16`.
 ///
 /// translated from xetex-io.c:481 (make_utf16_name)
-#[no_mangle]
-pub unsafe extern "C" fn make_utf16_name() {
+pub unsafe fn make_utf16_name() {
     crate::state::with_state_mut(|state| {
         let name_len = state.input.name_length as usize;
         let needed = name_len + 10;
@@ -667,8 +664,7 @@ pub unsafe extern "C" fn make_utf16_name() {
 /// Read one Unicode codepoint from a UFILE (handles UTF-8, UTF-16BE/LE, RAW).
 ///
 /// translated from xetex-io.c:373 (get_uni_c)
-#[no_mangle]
-pub unsafe extern "C" fn get_uni_c(f: *mut UFile) -> libc::c_int {
+pub unsafe fn get_uni_c(f: *mut UFile) -> libc::c_int {
     if (*f).saved_char != -1 {
         let rval = (*f).saved_char as i32;
         (*f).saved_char = -1;
@@ -791,8 +787,7 @@ pub unsafe fn u_close(f: *mut UFile) {
 /// Open or close a \read stream.
 ///
 /// translated from xetex-io.c:294 (open_or_close_in)
-#[no_mangle]
-pub unsafe extern "C" fn open_or_close_in() {
+pub unsafe fn open_or_close_in() {
     let c = cur_chr() as u8;
     scan_four_bit_int();
     let n = cur_val() as u8 as usize;
@@ -950,8 +945,7 @@ pub unsafe fn end_name() {
     }
 }
 /// translated from xetex-xetex0.c:7928 (make_name_string)
-#[no_mangle]
-pub unsafe extern "C" fn make_name_string() -> i32 {
+pub unsafe fn make_name_string() -> i32 {
     use crate::globals::{
         area_delimiter, ext_delimiter, max_strings, name_in_progress, name_length, name_length16,
         name_of_file16_entry, set_area_delimiter, set_ext_delimiter,
@@ -992,8 +986,7 @@ pub unsafe extern "C" fn make_name_string() -> i32 {
     result
 }
 /// translated from xetex-xetex0.c:13424 (scan_and_pack_name)
-#[no_mangle]
-pub unsafe extern "C" fn scan_and_pack_name() {
+pub unsafe fn scan_and_pack_name() {
     scan_file_name();
     pack_file_name(
         crate::globals::cur_name(),
@@ -1079,8 +1072,7 @@ pub unsafe fn scan_file_name() {
     set_warning_index(save_warning_index);
 }
 /// translated from xetex-xetex0.c:7970 (pack_job_name)
-#[no_mangle]
-pub unsafe extern "C" fn pack_job_name(s: *const libc::c_char) {
+pub unsafe fn pack_job_name(s: *const libc::c_char) {
     use crate::globals::{job_name, set_cur_area, set_cur_ext, set_cur_name};
 
     set_cur_area(EMPTY_STRING);
@@ -1134,8 +1126,7 @@ pub unsafe fn open_log_file() {
     set_selector(old_setting + 2);
 }
 /// translated from xetex-xetex0.c:6431 (start_input)
-#[no_mangle]
-pub unsafe extern "C" fn start_input(primary_input_name: *const libc::c_char) {
+pub unsafe fn start_input(primary_input_name: *const libc::c_char) {
     use crate::globals::{
         cur_area, cur_ext, cur_name, full_source_filename_stack, in_open, input_file,
         input_file_ptr, input_ptr, job_name, name_length16, name_of_file16_entry,
@@ -1390,8 +1381,7 @@ static mut STDIN_UFILE: UFile = UFile {
 };
 
 // translated from xetex-ini.c:3035 (init_io)
-#[no_mangle]
-pub unsafe extern "C" fn init_io() {
+pub unsafe fn init_io() {
     // This is largely vestigial at this point.
     STDIN_UFILE.handle = INVALID_HANDLE;
     STDIN_UFILE.saved_char = -1;

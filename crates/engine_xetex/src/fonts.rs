@@ -926,8 +926,7 @@ unsafe fn init_native_font_tables(
 /// Load a native AAT/OpenType/Graphite font and initialize TeX font tables.
 ///
 /// translated from xetex-xetex0.c:6284 (load_native_font)
-#[no_mangle]
-pub unsafe extern "C" fn load_native_font(u: i32, nom: i32, aire: i32, mut s: i32) -> i32 {
+pub unsafe fn load_native_font(u: i32, nom: i32, aire: i32, mut s: i32) -> i32 {
     let font_engine = find_native_font(crate::globals::name_of_file(), s);
     if font_engine.is_null() {
         return FONT_BASE;

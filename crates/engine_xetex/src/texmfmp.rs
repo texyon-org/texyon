@@ -53,8 +53,7 @@ const INVALID_HANDLE: usize = 0;
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-texmfmp.c:116 (get_date_and_time)
-#[no_mangle]
-pub unsafe extern "C" fn get_date_and_time(
+pub unsafe fn get_date_and_time(
     source_date_epoch: libc::time_t,
     minutes: *mut i32,
     day: *mut i32,
@@ -77,8 +76,7 @@ pub unsafe extern "C" fn get_date_and_time(
 /// Return a fixed-point scaled representation of (now - epoch) in 1/65536 sec.
 ///
 /// translated from xetex-xetex0.c:155 (get_microinterval)
-#[no_mangle]
-pub unsafe extern "C" fn get_microinterval() -> i32 {
+pub unsafe fn get_microinterval() -> i32 {
     let mut s = 0i32;
     let mut m = 0i32;
     get_seconds_and_micros(&mut s, &mut m);
@@ -97,8 +95,7 @@ pub unsafe extern "C" fn get_microinterval() -> i32 {
 }
 
 /// translated from xetex-texmfmp.c:128 (get_seconds_and_micros)
-#[no_mangle]
-pub unsafe extern "C" fn get_seconds_and_micros(seconds: *mut i32, micros: *mut i32) {
+pub unsafe fn get_seconds_and_micros(seconds: *mut i32, micros: *mut i32) {
     // SAFETY: tv is properly initialised; null timezone arg is allowed by POSIX.
     let mut tv = libc::timeval {
         tv_sec: 0,
@@ -279,8 +276,7 @@ fn convert_string_to_hex(input: &[u8; DIGEST_SIZE], out: &mut [u8; 2 * DIGEST_SI
 /// string pool.
 ///
 /// translated from xetex-texmfmp.c:413 (getmd5sum)
-#[no_mangle]
-pub unsafe extern "C" fn getmd5sum(s: i32, file: bool) {
+pub unsafe fn getmd5sum(s: i32, file: bool) {
     let mut digest = [0u8; DIGEST_SIZE];
     let mut outbuf = [0u8; 2 * DIGEST_SIZE + 1];
 
@@ -315,8 +311,7 @@ pub unsafe extern "C" fn getmd5sum(s: i32, file: bool) {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-texmfmp.c:274 (make_src_special)
-#[no_mangle]
-pub unsafe extern "C" fn make_src_special(srcfilename: i32, lineno: i32) -> i32 {
+pub unsafe fn make_src_special(srcfilename: i32, lineno: i32) -> i32 {
     let old_pool_ptr = pool_ptr();
     let filename = gettexstring(srcfilename);
 
@@ -349,8 +344,7 @@ pub unsafe extern "C" fn make_src_special(srcfilename: i32, lineno: i32) -> i32 
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-texmfmp.c:155 (getfilesize)
-#[no_mangle]
-pub unsafe extern "C" fn getfilesize(s: i32) {
+pub unsafe fn getfilesize(s: i32) {
     let name = gettexstring(s);
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
     libc::free(name as *mut libc::c_void);
@@ -382,8 +376,7 @@ pub unsafe extern "C" fn getfilesize(s: i32) {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-texmfmp.c:189 (getfiledump)
-#[no_mangle]
-pub unsafe extern "C" fn getfiledump(s: i32, offset: libc::c_int, length: libc::c_int) {
+pub unsafe fn getfiledump(s: i32, offset: libc::c_int, length: libc::c_int) {
     if length == 0 {
         return;
     }
@@ -464,8 +457,7 @@ unsafe fn compare_paths(p1: *const libc::c_char, p2: *const libc::c_char) -> i32
 /// `remember_source_info`.
 ///
 /// translated from xetex-texmfmp.c:257 (is_new_source)
-#[no_mangle]
-pub unsafe extern "C" fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
+pub unsafe fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
     let name = gettexstring(srcfilename);
     let (last_name, last_lineno) =
         crate::state::with_state(|s| (s.texmf.last_source_name, s.texmf.last_lineno));
@@ -478,8 +470,7 @@ pub unsafe extern "C" fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
 /// `is_new_source`.
 ///
 /// translated from xetex-texmfmp.c:264 (remember_source_info)
-#[no_mangle]
-pub unsafe extern "C" fn remember_source_info(srcfilename: i32, lineno: i32) {
+pub unsafe fn remember_source_info(srcfilename: i32, lineno: i32) {
     let old = crate::state::with_state(|s| s.texmf.last_source_name);
     libc::free(old as *mut libc::c_void);
     let new_name = gettexstring(srcfilename);
@@ -556,8 +547,7 @@ unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
 /// static buffer for later use by `getcreationdate`.
 ///
 /// translated from xetex-texmfmp.c:84 (init_start_time)
-#[no_mangle]
-pub unsafe extern "C" fn init_start_time(source_date_epoch: libc::time_t) {
+pub unsafe fn init_start_time(source_date_epoch: libc::time_t) {
     let mut buf = [0u8; 30];
     makepdftime(source_date_epoch, &mut buf, true);
     crate::state::with_state_mut(|s| s.texmf.start_time_str = buf);
@@ -567,8 +557,7 @@ pub unsafe extern "C" fn init_start_time(source_date_epoch: libc::time_t) {
 /// string pool.
 ///
 /// translated from xetex-texmfmp.c:91 (getcreationdate)
-#[no_mangle]
-pub unsafe extern "C" fn getcreationdate() {
+pub unsafe fn getcreationdate() {
     let start = crate::state::with_state(|s| s.texmf.start_time_str);
     let len = libc::strlen(start.as_ptr() as *const libc::c_char);
     if (pool_ptr() as usize) + len >= pool_size() as usize {
@@ -585,8 +574,7 @@ pub unsafe extern "C" fn getcreationdate() {
 /// string pool as a PDF date string.
 ///
 /// translated from xetex-texmfmp.c:120 (getfilemoddate)
-#[no_mangle]
-pub unsafe extern "C" fn getfilemoddate(s: i32) {
+pub unsafe fn getfilemoddate(s: i32) {
     let name = gettexstring(s);
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
     libc::free(name as *mut libc::c_void);

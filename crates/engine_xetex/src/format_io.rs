@@ -206,8 +206,7 @@ unsafe fn undump_upper_u16(fmt_in: usize, ptr: *mut u16, nitems: i32, high: u16)
     true
 }
 // translated from xetex-ini.c:587 (store_fmt_file)
-#[no_mangle]
-pub unsafe extern "C" fn store_fmt_file() {
+pub unsafe fn store_fmt_file() {
     if crate::globals::save_ptr() != 0 {
         crate::output::error_here_with_diagnostic(c"You can't dump inside a group".as_ptr());
         crate::output::capture_to_diagnostic(std::ptr::null_mut());
@@ -752,8 +751,7 @@ unsafe fn bad_format_file() -> ! {
     _tt_abort(c"fatal format file error".as_ptr());
 }
 // translated from xetex-ini.c:602 (load_fmt_file)
-#[no_mangle]
-pub unsafe extern "C" fn load_fmt_file() -> bool {
+pub unsafe fn load_fmt_file() -> bool {
     let mut j: i32;
     let mut k: i32;
     let mut p: i32;
