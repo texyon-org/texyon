@@ -104,6 +104,9 @@ are `xetex/xetex-constants.h:107–139`; the field map is
 | **10** | char/token one-word nodes (hi-mem) | 1 | `font` 0.b16.s1, `character` 0.b16.s0 (aliases of type/subtype) | live **above `hi_mem_min`**; identity *is* the `is_char_node` region test (§7) | a classification concern, not a `+N` concern; folds into rank 0 |
 | **11** | linebreak/page internals: active/passive/delta, page_ins, mark/ins/adjust, unset/align, edge, span, expr | 2–7 | per the macros at `xetex-xetexd.h:221–322` | specialized, lower traffic | thread with their owning subsystem (`linebreak.rs`/`pagebuilder.rs`), not up front |
 
+**Built so far:** rank 0+1 (header word + box, session 147), rank 2
+(glue/glue_spec, session 148). **Next: rank 3 (kern).**
+
 **Build the layer in this order, one family per slice** (rank 0 lands
 with rank 1). Stop promoting families to typed handles when the remaining
 ranks are low-traffic enough that the worklist-fallback (§6) is cheaper
@@ -205,8 +208,24 @@ of the 688 unsafe-block lints die (`01`-§5 step 3).
 > and the `MemState::node_type`/`classify_box` checked boundary. 4 unit
 > tests; the §4 disasm gate passed. Nothing consumes it yet
 > (`#[allow(dead_code)]`) — a Phase-C box-threading slice adopts it next
-> (`01b` §3a). Remaining families in §1 order: glue/glue_spec → kern →
-> penalty → rule → disc → ligature → math → native.
+> (`01b` §3a).
+>
+> **Progress (session 148): glue family built** — added the
+> **glue/glue_spec family** to `src/node.rs`: `GlueNode` (concrete impls:
+> `subtype` 0.b16.s0, `glue_ptr` +1.b32.s0 → `MemPtr`, `leader_ptr`
+> +1.b32.s1 → nullable `MemPtr`, plus the `glue_spec()` classify helper) and
+> `GlueSpecNode` (`ref_count` 0.b32.s1 → **`i32`, NOT a link**;
+> `stretch_order` 0.b16.s1, `shrink_order` 0.b16.s0 → `u16`; `stretch`
+> +2.b32.s1, `shrink` +3.b32.s1 → `Scaled`). Classification: glue node via
+> `MemState::classify_glue` (NODE_type == `GLUE_NODE` = 10); glue_spec via
+> `NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr)` (a from-`MemPtr` boundary,
+> **not** a `node_type` branch — a glue_spec carries no type code). No new
+> capability traits (glue/glue_spec fields are family-specific → concrete
+> impls). 5 unit tests (offset round-trips, the ref_count-is-not-a-link
+> distinction, glue_ptr/leader_ptr nullability, classify dispatch); the §4
+> disasm gate passed on `glue_ptr` (+1.b32.s0) AND `stretch` (+2.b32.s1).
+> Remaining families in §1 order: kern → penalty → rule → disc → ligature →
+> math → native.
 
 For each family in the §1 ranking (rank 0+1 together, then 2, 3, …): add
 its `NodeKind` marker, its capability-trait impls, its field methods, and
@@ -265,6 +284,17 @@ concrete rules for *this* codebase:
 > size 0x28). The typed handle is provably zero-cost over the raw index for
 > the box dimension accessors. (The harness was temporary and removed before
 > commit; re-run it the same way when a new family's hot accessor lands.)
+
+> **Glue-family result (session 148): PASSED — strongest form.** Same ICF
+> outcome for the glue accessors. Temporary `#[no_mangle] #[inline(never)]`
+> pairs `__disasm_typed_glue_ptr` vs. raw `mem.b32s0(p + 1)` and
+> `__disasm_typed_stretch` vs. raw `mem.b32s1(p + 2)`, release build,
+> `objdump -t`: each typed fn folded to the *same section/address* as its raw
+> twin (`__disasm_typed_glue_ptr` → `.text.__disasm_raw_glue_ptr` size 0x27;
+> `__disasm_typed_stretch` → `.text.__disasm_raw_stretch` size 0x29) —
+> byte-identical machine code. Proves the `+1.b32.s0` "other word half" shape
+> and the `+2.b32.s1` `Scaled`-at-offset shape are both zero-cost. Harness
+> removed before commit.
 
 **Before any fused slice depends on a wrapper**, prove in a *release-mode*
 build that the typed access compiles to the same load/store as the raw

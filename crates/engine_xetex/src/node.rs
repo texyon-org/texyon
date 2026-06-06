@@ -253,6 +253,199 @@ impl MemState {
     }
 }
 
+// --- the glue family: glue nodes and glue_spec records ---
+//
+// Two distinct node shapes that are always reached together:
+//
+// `GlueNode` (`NODE_type` = `GLUE_NODE` = 10, a `SMALL_NODE_SIZE` = 2 node):
+//
+// | field        | offset.subfield | type                          |
+// |--------------|-----------------|-------------------------------|
+// | `subtype`    | 0.b16.s0        | `u16` (the header word)        |
+// | `glue_ptr`   | +1.b32.s0       | `MemPtr` → the glue_spec       |
+// | `leader_ptr` | +1.b32.s1       | `MemPtr` (nullable: no leaders) |
+//
+// `GlueSpecNode` (`GLUE_SPEC_SIZE` = 4 — a *record*, never a list node):
+//
+// | field           | offset.subfield | type                              |
+// |-----------------|-----------------|-----------------------------------|
+// | `ref_count`     | 0.b32.s1        | `i32` — a REFERENCE COUNT, not a link |
+// | `stretch_order` | 0.b16.s1        | `u16` (the fil order of `stretch`) |
+// | `shrink_order`  | 0.b16.s0        | `u16` (the fil order of `shrink`)  |
+// | `stretch`       | +2.b32.s1       | `Scaled`                          |
+// | `shrink`        | +3.b32.s1       | `Scaled`                          |
+//
+// **Classification differs from the box family.** A glue_spec is *not*
+// found via `NODE_type`: its `0.b16.s1` word holds `stretch_order`, not a
+// type code. A glue_spec is only ever reached through a glue node's
+// `glue_ptr` (or a parameter-glue pointer), so its constructor is
+// [`NodePtr::<GlueSpecNode>::from_glue_ptr`] (a from-`MemPtr` boundary),
+// **not** a `node_type` branch. Only the glue *node* is classified by
+// `NODE_type` (== `GLUE_NODE`), via [`MemState::classify_glue`].
+//
+// **The ref_count trap (`01c` §3).** `GLUE_SPEC_ref_count` lives in the
+// `0.b32.s1` word — the same word that holds `link()` in a real list node.
+// On a glue_spec it is a reference count, so it is exposed as `ref_count() ->
+// i32`, never as `link()`/`MemPtr`. Treating it as a pointer is a silent
+// parity break.
+
+/// `GLUE_NODE` (`NODE_type` = 10): inter-element glue, pointing at a shared
+/// `GlueSpecNode` plus an optional leader box/rule list.
+pub enum GlueNode {}
+/// `GLUE_SPEC` record (`GLUE_SPEC_SIZE` = 4): the shared, reference-counted
+/// stretch/shrink specification a glue node refers to. Not a list node — it
+/// carries no `NODE_type` and never appears on a horizontal/vertical list.
+pub enum GlueSpecNode {}
+
+impl NodeKind for GlueNode {}
+impl NodeKind for GlueSpecNode {}
+
+impl NodePtr<GlueNode> {
+    /// `GLUE_NODE_subtype(p)` = `mem[p].b16.s0` — the glue subtype (normal
+    /// glue vs. a `\skip` parameter vs. leaders). Lives in the header word.
+    #[inline]
+    pub fn subtype(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.0, v);
+    }
+
+    /// `GLUE_NODE_glue_ptr(p)` = `mem[(p) + 1].b32.s0` — the pointer to this
+    /// node's [`GlueSpecNode`]. Returned as a raw [`MemPtr`]; the caller
+    /// classifies it (typically via [`NodePtr::<GlueSpecNode>::from_glue_ptr`]
+    /// or the [`glue_spec`](Self::glue_spec) helper).
+    #[inline]
+    pub fn glue_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_glue_ptr(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s0(self.idx.offset(1).0, q.0);
+    }
+
+    /// `GLUE_NODE_leader_ptr(p)` = `mem[(p) + 1].b32.s1` — the leader
+    /// box/rule list head, or `TEX_NULL` for plain glue. Nullable [`MemPtr`].
+    #[inline]
+    pub fn leader_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_leader_ptr(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, q.0);
+    }
+
+    /// Classify this glue node's `glue_ptr` as a [`GlueSpecNode`] handle, or
+    /// `None` if the pointer is null. Convenience over
+    /// `NodePtr::<GlueSpecNode>::from_glue_ptr(p.glue_ptr(mem))`.
+    #[inline]
+    pub fn glue_spec(self, mem: &MemState) -> Option<NodePtr<GlueSpecNode>> {
+        NodePtr::<GlueSpecNode>::from_glue_ptr(self.glue_ptr(mem))
+    }
+}
+
+impl NodePtr<GlueSpecNode> {
+    /// Classify a glue node's `glue_ptr` (or a parameter-glue pointer) as a
+    /// `GlueSpecNode` handle. This is the **only** entry into the family — a
+    /// glue_spec carries no `NODE_type`, so it is never produced by
+    /// [`MemState::classify_box`]/[`node_type`](MemState::node_type). Returns
+    /// `None` if `p` is null.
+    ///
+    /// In practice every glue node points at a real spec, so `None` signals a
+    /// caller bug (a null glue_ptr); the caller may `expect` it.
+    #[inline]
+    pub fn from_glue_ptr(p: MemPtr) -> Option<NodePtr<GlueSpecNode>> {
+        // SAFETY: a non-null glue_ptr always references a GLUE_SPEC record by
+        // construction (it is only ever written by the spec allocators).
+        p.as_idx()
+            .map(|idx| unsafe { NodePtr::<GlueSpecNode>::from_idx_unchecked(idx) })
+    }
+
+    /// `GLUE_SPEC_ref_count(p)` = `mem[p].b32.s1`.
+    ///
+    /// **This is a reference count, not a link** (`01c` §3). It occupies the
+    /// `0.b32.s1` word — the slot that holds the successor pointer on a real
+    /// list node — but on a glue_spec it counts the glue nodes sharing this
+    /// record. Exposed as a plain `i32`; never as `link()`/[`MemPtr`].
+    #[inline]
+    pub fn ref_count(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.0)
+    }
+    #[inline]
+    pub fn set_ref_count(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.0, v);
+    }
+
+    /// `GLUE_SPEC_stretch_order(p)` = `mem[p].b16.s1` — the fil order
+    /// (`NORMAL`/`FIL`/`FILL`/`FILLL`) of the stretch component. Lives in the
+    /// header word's high half, where a list node holds `NODE_type`.
+    #[inline]
+    pub fn stretch_order(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.0)
+    }
+    #[inline]
+    pub fn set_stretch_order(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.0, v);
+    }
+
+    /// `GLUE_SPEC_shrink_order(p)` = `mem[p].b16.s0` — the fil order of the
+    /// shrink component. Header word's low half.
+    #[inline]
+    pub fn shrink_order(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_shrink_order(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.0, v);
+    }
+
+    /// `GLUE_SPEC_stretch(p)` = `mem[(p) + 2].b32.s1` — the stretchability.
+    #[inline]
+    pub fn stretch(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(2).0))
+    }
+    #[inline]
+    pub fn set_stretch(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(2).0, v.0);
+    }
+
+    /// `GLUE_SPEC_shrink(p)` = `mem[(p) + 3].b32.s1` — the shrinkability.
+    #[inline]
+    pub fn shrink(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(3).0))
+    }
+    #[inline]
+    pub fn set_shrink(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(3).0, v.0);
+    }
+}
+
+impl MemState {
+    /// Classify a known lo-mem node as a glue node, returning the typed
+    /// handle. `Ok(Some(_))` if `p` is a `GLUE_NODE`; `Ok(None)` if it is some
+    /// other (valid) node type; `Err` if the type code is invalid. `p` must
+    /// already be a non-null lo-mem index (the caller did the list-walk
+    /// null/`is_char_node` check, `01c` §7).
+    ///
+    /// Note there is no analogous `classify_glue_spec`: a glue_spec carries no
+    /// `NODE_type`, so it is reached only through
+    /// [`NodePtr::<GlueSpecNode>::from_glue_ptr`].
+    #[inline]
+    pub fn classify_glue(
+        &self,
+        p: MemIdx,
+    ) -> Result<Option<NodePtr<GlueNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            // SAFETY: the NODE_type branch just proved the kind.
+            NodeType::Glue => {
+                Some(unsafe { NodePtr::<GlueNode>::from_idx_unchecked(p) })
+            }
+            _ => None,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,5 +541,103 @@ mod tests {
         let bad = MemIdx::new(90);
         mem.set_b16s1(bad.0, 35);
         assert!(mem.classify_box(bad).is_err());
+    }
+
+    #[test]
+    fn glue_family_is_zero_cost() {
+        assert_eq!(size_of::<NodePtr<GlueNode>>(), size_of::<i32>());
+        assert_eq!(size_of::<NodePtr<GlueSpecNode>>(), size_of::<i32>());
+    }
+
+    #[test]
+    fn glue_node_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Glue.as_raw());
+        let g = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(p) };
+
+        g.set_subtype(&mut mem, 7);
+        g.set_glue_ptr(&mut mem, MemPtr::from_raw(150));
+        g.set_leader_ptr(&mut mem, MemPtr::from_raw(160));
+
+        assert_eq!(g.subtype(&mem), 7);
+        assert_eq!(g.glue_ptr(&mem), MemPtr::from_raw(150));
+        assert_eq!(g.leader_ptr(&mem), MemPtr::from_raw(160));
+
+        // each field landed in the C-exact raw word/subfield:
+        // subtype  -> mem[p].b16.s0
+        // glue_ptr -> mem[p+1].b32.s0  (note: the *s0* half, not s1)
+        // leader_ptr -> mem[p+1].b32.s1
+        assert_eq!(mem.b16s0(p.0), 7);
+        assert_eq!(mem.b32s0(p.0 + 1), 150);
+        assert_eq!(mem.b32s1(p.0 + 1), 160);
+    }
+
+    #[test]
+    fn glue_spec_fields_roundtrip_and_ref_count_is_not_a_link() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        let s = unsafe { NodePtr::<GlueSpecNode>::from_idx_unchecked(p) };
+
+        s.set_ref_count(&mut mem, 42);
+        s.set_stretch_order(&mut mem, 2);
+        s.set_shrink_order(&mut mem, 1);
+        s.set_stretch(&mut mem, Scaled(0x5555));
+        s.set_shrink(&mut mem, Scaled(0x6666));
+
+        assert_eq!(s.ref_count(&mem), 42);
+        assert_eq!(s.stretch_order(&mem), 2);
+        assert_eq!(s.shrink_order(&mem), 1);
+        assert_eq!(s.stretch(&mem), Scaled(0x5555));
+        assert_eq!(s.shrink(&mem), Scaled(0x6666));
+
+        // The ref_count occupies the 0.b32.s1 word — the slot that holds the
+        // link/successor on a real list node — but here it is a count. The
+        // box `list_ptr`-style `MemPtr` reading of this word would be a parity
+        // bug; confirm the raw word holds the count value verbatim.
+        assert_eq!(mem.b32s1(p.0), 42);
+        assert_eq!(mem.b16s1(p.0), 2); // stretch_order
+        assert_eq!(mem.b16s0(p.0), 1); // shrink_order
+        assert_eq!(mem.b32s1(p.0 + 2), 0x5555); // stretch
+        assert_eq!(mem.b32s1(p.0 + 3), 0x6666); // shrink
+    }
+
+    #[test]
+    fn glue_ptr_classifies_to_a_spec_handle_and_handles_null() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Glue.as_raw());
+        let g = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(p) };
+
+        // a real glue_ptr classifies to a spec handle at the same index
+        g.set_glue_ptr(&mut mem, MemPtr::from_raw(150));
+        let spec = g.glue_spec(&mem).expect("non-null glue_ptr");
+        assert_eq!(spec.idx(), MemIdx::new(150));
+        assert_eq!(
+            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(150))
+                .map(|s| s.idx()),
+            Some(MemIdx::new(150))
+        );
+
+        // a null glue_ptr classifies to None (a caller bug in practice)
+        g.set_glue_ptr(&mut mem, MemPtr::NULL);
+        assert!(g.glue_spec(&mem).is_none());
+        assert!(NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::NULL).is_none());
+    }
+
+    #[test]
+    fn classify_glue_dispatches_on_node_type() {
+        let mut mem = fresh_mem(200);
+        let g = MemIdx::new(40);
+        let other = MemIdx::new(60);
+        mem.set_b16s1(g.0, NodeType::Glue.as_raw());
+        mem.set_b16s1(other.0, NodeType::HList.as_raw());
+
+        assert!(matches!(mem.classify_glue(g), Ok(Some(_))));
+        assert!(matches!(mem.classify_glue(other), Ok(None))); // valid, not glue
+
+        let bad = MemIdx::new(80);
+        mem.set_b16s1(bad.0, 37); // the 32–39 gap
+        assert!(mem.classify_glue(bad).is_err());
     }
 }

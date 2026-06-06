@@ -9,6 +9,99 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 148 — 2026-06-07 — Execution: Stage 3 rank-2 — the glue/glue_spec `NodePtr<K>` family (`01c`)
+
+**Type:** execution (workstream 01 / `01c` §3 Stage 3, rank 2). **1 code
+commit** (+ plan-doc updates). Dashboard **29/2/7/4** green; warnings
+**42 → 42** (flat); `node::` **9/9**.
+
+### Recon before building
+
+Per the handoff's "recon before you build" discipline, verified every
+offset against the C source *before* writing a line:
+`grep` of `xetex/xetex-xetexd.h` confirmed `GLUE_NODE_glue_ptr(p) =
+mem[(p)+1].b32.s0`, `GLUE_NODE_leader_ptr(p) = mem[(p)+1].b32.s1`,
+`GLUE_SPEC_ref_count(p) = mem[p].b32.s1`, `stretch_order = mem[p].b16.s1`,
+`shrink_order = mem[p].b16.s0`, `stretch = mem[(p)+2].b32.s1`, `shrink =
+mem[(p)+3].b32.s1`; `xetex-constants.h` gave `GLUE_SPEC_SIZE = 4`,
+`SMALL_NODE_SIZE = 2`; `xetex_format.h` gave `GLUE_NODE = 10` (matches the
+existing `NodeType::Glue`). Confirmed `MemState` already has the
+`b32s0`/`set_b32s0` accessor the box family didn't need (glue_ptr is the
+`b32.s0` half).
+
+### Commit — Stage 3 rank 2: the glue family
+
+Added to `src/node.rs` (still `#[allow(dead_code)]` — additive, behavior-
+neutral):
+
+- **`GlueNode`** (`NODE_type` = `GLUE_NODE` = 10, a `SMALL_NODE_SIZE` = 2
+  node) — concrete impl (no shared capability traits; glue fields are
+  family-specific, per `01c` §5): `subtype` (0.b16.s0 → `u16`), `glue_ptr`
+  (+1.b32.s0 → `MemPtr`), `leader_ptr` (+1.b32.s1 → nullable `MemPtr`), plus
+  a `glue_spec()` helper that classifies the `glue_ptr` to a
+  `NodePtr<GlueSpecNode>` (the recipe explicitly asked for this helper
+  "returns the glue_ptr as MemPtr (caller classifies)" — implemented as the
+  ergonomic `Option<NodePtr<GlueSpecNode>>` over `glue_ptr()` + `from_glue_ptr`).
+- **`GlueSpecNode`** (`GLUE_SPEC_SIZE` = 4 — a *record*, not a list node) —
+  concrete impl: `ref_count` (0.b32.s1 → **`i32`**), `stretch_order`
+  (0.b16.s1 → `u16`), `shrink_order` (0.b16.s0 → `u16`), `stretch`
+  (+2.b32.s1 → `Scaled`), `shrink` (+3.b32.s1 → `Scaled`).
+  - **The ref_count trap encoded (`01c` §3).** `GLUE_SPEC_ref_count` lives
+    in the `0.b32.s1` word — the slot that holds the successor `link()` on a
+    real list node — but on a glue_spec it is a reference count. Exposed as
+    `ref_count() -> i32`, **never** as `link()`/`MemPtr`; the doc comment and
+    a dedicated unit test (`..._ref_count_is_not_a_link`) pin the distinction.
+- **Classification differs from the box family.** A glue_spec carries no
+  `NODE_type` (its `0.b16.s1` word holds `stretch_order`), and is only ever
+  reached through a glue node's `glue_ptr` or a parameter-glue pointer. So:
+  - glue **nodes** classify via `MemState::classify_glue(MemIdx)` (a
+    `node_type` branch on `GLUE_NODE`, mirroring `classify_box`), returning
+    `Ok(Some(NodePtr<GlueNode>))` / `Ok(None)` / `Err(InvalidNodeType)`;
+  - glue **specs** classify via the from-`MemPtr` constructor
+    `NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr) -> Option<…>` — **not** a
+    `node_type` branch. Documented that there is deliberately no
+    `classify_glue_spec`.
+- **5 unit tests** (9 total in `node::`): zero-cost size of both handles;
+  glue-node field round-trip landing in the C-exact raw subfields (incl. the
+  `glue_ptr`-is-the-`s0`-half check); glue_spec field round-trip + the
+  ref_count-is-not-a-link assertion; glue_ptr→spec classification incl. the
+  null case (`from_glue_ptr(NULL) == None`); `classify_glue` dispatch +
+  invalid-code rejection.
+
+**Disasm gate (`01c` §4) — PASSED, strongest form.** Temporary
+`#[no_mangle] #[inline(never)]` pairs `__disasm_typed_glue_ptr` vs. raw
+`mem.b32s0(p+1)` and `__disasm_typed_stretch` vs. raw `mem.b32s1(p+2)`,
+`cargo build --release`, `objdump -t`: LLVM identical-code-folding merged
+each typed fn onto its raw twin at the *same section/address*
+(`__disasm_typed_glue_ptr` → `.text.__disasm_raw_glue_ptr` size 0x27;
+`__disasm_typed_stretch` → `.text.__disasm_raw_stretch` size 0x29) —
+byte-identical machine code. Proves both the `+1.b32.s0` "other word half"
+shape and the `+2.b32.s1` `Scaled`-at-offset shape are zero-cost over the
+raw index. Harness removed before commit; result recorded in `01c` §4.
+
+### Metrics & validation
+
+- Warnings **42 → 42**. `with_state`/`unsafe fn`/`#[no_mangle]` unchanged.
+  Behavior-neutral by construction (additive types). Dashboard **29/2/7/4**;
+  `node::` 9/9, `units::` 6/6.
+
+**Handoff / Next:** the glue family is usable. Two valid tracks:
+1. **Continue Stage 3** down the `01c` §1 order — next is **rank 3 = kern**
+   (trivial: one `Scaled` at +1.b32.s1, `KERN_NODE_SIZE` = 3). Then
+   **penalty** (TRAP: `+1.b32.s1` is a plain **`i32`**, NOT `Scaled` — don't
+   mistype it), then **rule** (TRAP: `width`/`depth`/`height` at +1/+2/+3 are
+   `Scaled`-**or**-`NULL_FLAG` *running dimensions* — `NULL_FLAG =
+   -0x40000000`, `xetex-constants.h`; needs a running-dimension wrapper type
+   that can represent "running", not bare `Scaled`, before its fields are
+   typed). Same additive recipe + disasm gate each slice.
+2. **First fused adoption (`01b` §3a):** thread a small box- or glue-reading
+   leaf to `&mut MemState` *and* retype its node pointer to
+   `NodePtr<…>`/`AnyBox` in the same commit — proving the end-to-end
+   type-as-you-thread loop on a real call site and starting to drive the
+   bare-`i32` node-ptr-param metric (`01b` §8) down. A leaf box/glue consumer
+   in `packaging.rs`/`shipout.rs` reading dims under a single `mem` borrow is
+   a good first target (grep for one).
+
 ## Idiom session 147 — 2026-06-07 — Execution: Stage 2 already-done finding + Stage 3 box-family `NodePtr<K>` layer (`01c`)
 
 **Type:** execution (workstream 01 / `01c`). **2 commits.** Dashboard
