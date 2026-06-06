@@ -155,8 +155,7 @@ const UNDEFINED_PRIMITIVE: i32 = 0;
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:10390 (align_error)
-#[no_mangle]
-pub unsafe extern "C" fn align_error() {
+pub unsafe fn align_error() {
     if align_state().abs() > 2 {
         error_here_with_diagnostic(c"Misplaced ".as_ptr());
         print_cmd_chr(cur_cmd() as u16, cur_chr());
@@ -232,8 +231,7 @@ pub unsafe extern "C" fn align_error() {
     }
 }
 // translated from xetex-xetex0.c:10443 (no_align_error)
-#[no_mangle]
-pub unsafe extern "C" fn no_align_error() {
+pub unsafe fn no_align_error() {
     error_here_with_diagnostic(c"Misplaced ".as_ptr());
     crate::output::print_esc_cstr(c"noalign".as_ptr());
     capture_to_diagnostic(std::ptr::null_mut());
@@ -249,8 +247,7 @@ pub unsafe extern "C" fn no_align_error() {
     error();
 }
 // translated from xetex-xetex0.c:10457 (omit_error)
-#[no_mangle]
-pub unsafe extern "C" fn omit_error() {
+pub unsafe fn omit_error() {
     error_here_with_diagnostic(c"Misplaced ".as_ptr());
     crate::output::print_esc_cstr(c"omit".as_ptr());
     capture_to_diagnostic(std::ptr::null_mut());
@@ -266,8 +263,7 @@ pub unsafe extern "C" fn omit_error() {
     error();
 }
 // translated from xetex-xetex0.c:8040 (fin_align)
-#[no_mangle]
-pub unsafe extern "C" fn fin_align() {
+pub unsafe fn fin_align() {
     use crate::globals::{
         cur_group, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head,
         cur_list_mode, cur_list_mode_line, cur_list_tail, mem_b16s0, mem_b16s1, mem_b32s0,
@@ -691,8 +687,7 @@ pub unsafe extern "C" fn fin_align() {
     }
 }
 // translated from xetex-xetex0.c:8785 (align_peek)
-#[no_mangle]
-pub unsafe extern "C" fn align_peek() {
+pub unsafe fn align_peek() {
     const NO_ALIGN: u8 = 34; // xetex_format.h:272
     const NO_ALIGN_GROUP: u8 = 7; // xetex-constants.h:159
     const CAR_RET: u8 = 5; // xetex_format.h:235
@@ -726,8 +721,7 @@ pub unsafe extern "C" fn align_peek() {
     }
 }
 // translated from xetex-xetex0.c:7728 (get_preamble_token)
-#[no_mangle]
-pub unsafe extern "C" fn get_preamble_token() {
+pub unsafe fn get_preamble_token() {
     use crate::globals::{cur_chr, cur_cmd};
     const TAB_MARK: u8 = 4; // xetex_format.h:234
     const SPAN_CODE_GPT: i32 = 1_114_113; // xetex_format.h:679
@@ -763,8 +757,7 @@ pub unsafe extern "C" fn get_preamble_token() {
     }
 }
 // translated from xetex-xetex0.c:7880 (init_span)
-#[no_mangle]
-pub unsafe extern "C" fn init_span(p: i32) {
+pub unsafe fn init_span(p: i32) {
     use crate::globals::{
         cur_list_mode, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_span,
     };
@@ -780,8 +773,7 @@ pub unsafe extern "C" fn init_span(p: i32) {
     set_cur_span(p);
 }
 // translated from xetex-xetex0.c:7893 (init_row)
-#[no_mangle]
-pub unsafe extern "C" fn init_row() {
+pub unsafe fn init_row() {
     use crate::globals::{
         cur_head, cur_list_mode, cur_list_tail, cur_pre_head, set_cur_align,
         set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_tail,
@@ -809,8 +801,7 @@ pub unsafe extern "C" fn init_row() {
     init_span(crate::globals::cur_align());
 }
 // translated from xetex-xetex0.c:7912 (init_col)
-#[no_mangle]
-pub unsafe extern "C" fn init_col() {
+pub unsafe fn init_col() {
     use crate::globals::{cur_align, cur_cmd, set_align_state, set_mem_b32s0};
     const OMIT_CMD: u8 = 63; // xetex_format.h:301
     const U_TEMPLATE: u16 = 1; // xetex-constants.h:200
@@ -824,8 +815,7 @@ pub unsafe extern "C" fn init_col() {
     }
 }
 // translated from xetex-xetex0.c:7724 (push_alignment)
-#[no_mangle]
-pub unsafe extern "C" fn push_alignment() {
+pub unsafe fn push_alignment() {
     use crate::globals::{
         align_ptr, align_state, cur_align, cur_head, cur_loop, cur_pre_head, cur_pre_tail,
         cur_span, cur_tail_a, set_align_ptr, set_cur_head, set_cur_pre_head, set_mem_b32s0,
@@ -850,8 +840,7 @@ pub unsafe extern "C" fn push_alignment() {
     set_cur_pre_head(crate::mem::get_avail_global());
 }
 // translated from xetex-xetex0.c:7743 (pop_alignment)
-#[no_mangle]
-pub unsafe extern "C" fn pop_alignment() {
+pub unsafe fn pop_alignment() {
     use crate::globals::{
         align_ptr, avail, cur_head, cur_pre_head, mem_b32s0, set_align_ptr, set_align_state,
         set_cur_align, set_cur_head, set_cur_loop, set_cur_pre_head, set_cur_pre_tail,
@@ -881,8 +870,7 @@ pub unsafe extern "C" fn pop_alignment() {
     crate::mem::free_node_global(p, ALIGN_STACK_NODE_SIZE);
 }
 // translated from xetex-xetex0.c:7859 (fin_col)
-#[no_mangle]
-pub unsafe extern "C" fn fin_col() -> bool {
+pub unsafe fn fin_col() -> bool {
     use crate::globals::{
         adjust_tail, cur_align, cur_list_head, cur_list_mode, cur_list_tail, cur_loop,
         cur_pre_tail, cur_span, cur_tail_a, mem_b32s0, mem_b32s1, pre_adjust_tail, set_adjust_tail,
@@ -1069,8 +1057,7 @@ pub unsafe extern "C" fn fin_col() -> bool {
     false
 }
 // translated from xetex-xetex0.c:8009 (fin_row)
-#[no_mangle]
-pub unsafe extern "C" fn fin_row() {
+pub unsafe fn fin_row() {
     use crate::globals::{
         cur_head, cur_list_head, cur_list_mode, cur_list_tail, cur_pre_head, cur_pre_tail,
         cur_tail_a, mem_b32s1, set_cur_list_aux_b32s0, set_cur_list_tail, set_mem_b16s1,
@@ -1114,8 +1101,7 @@ pub unsafe extern "C" fn fin_row() {
     align_peek();
 }
 // translated from xetex-xetex0.c:7732 (init_align)
-#[no_mangle]
-pub unsafe extern "C" fn init_align() {
+pub unsafe fn init_align() {
     use crate::globals::{
         cur_align, cur_cs, cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
         cur_loop, mem_b32s1, set_align_state, set_cur_align, set_cur_list_aux_b32s1,
@@ -1296,16 +1282,14 @@ pub unsafe extern "C" fn init_align() {
 
 // translated from xetex-xetex0.c:10416 (push_math)
 // group_code = unsigned char = u8 (xetex-xetexd.h:325)
-#[no_mangle]
-pub unsafe extern "C" fn push_math(c: u8) {
+pub unsafe fn push_math(c: u8) {
     crate::mem::push_nest();
     crate::globals::set_cur_list_mode(-207); // -MMODE (xetex_format.h:370)
     crate::globals::set_cur_list_aux_b32s1(crate::mem::TEX_NULL);
     crate::save::new_save_level_global(c);
 }
 // translated from xetex-xetex0.c:9942 (end_graf)
-#[no_mangle]
-pub unsafe extern "C" fn end_graf() {
+pub unsafe fn end_graf() {
     if cur_list_mode() == HMODE {
         if crate::globals::cur_list_head() == crate::globals::cur_list_tail() {
             crate::mem::pop_nest();
@@ -1321,8 +1305,7 @@ pub unsafe extern "C" fn end_graf() {
     }
 }
 // translated from xetex-xetex0.c:10016 (append_penalty)
-#[no_mangle]
-pub unsafe extern "C" fn append_penalty() {
+pub unsafe fn append_penalty() {
     scan_int();
     let p = crate::mem::new_penalty_global(crate::globals::cur_val());
     let tail = crate::globals::cur_list_tail();
@@ -1405,8 +1388,7 @@ pub unsafe fn normal_paragraph_global() {
     crate::save::raise_save_abort(abort);
 }
 // translated from xetex-xetex0.c:9332 (its_all_over)
-#[no_mangle]
-pub unsafe extern "C" fn its_all_over() -> bool {
+pub unsafe fn its_all_over() -> bool {
     if privileged() {
         if crate::globals::page_tail() == PAGE_HEAD
             && crate::globals::cur_list_head() == crate::globals::cur_list_tail()
@@ -1478,8 +1460,7 @@ pub unsafe fn indent_in_hmode_global() {
     }
 }
 // translated from xetex-xetex0.c:9831 (head_for_vmode)
-#[no_mangle]
-pub unsafe extern "C" fn head_for_vmode() {
+pub unsafe fn head_for_vmode() {
     if cur_list_mode() < 0 {
         if cur_cmd() != HRULE {
             off_save();
@@ -1507,8 +1488,7 @@ pub unsafe extern "C" fn head_for_vmode() {
     }
 }
 // translated from xetex-xetex0.c:9760 (begin_insert_or_adjust)
-#[no_mangle]
-pub unsafe extern "C" fn begin_insert_or_adjust() {
+pub unsafe fn begin_insert_or_adjust() {
     if cur_cmd() == VADJUST {
         set_cur_val(255);
     } else {
@@ -1542,8 +1522,7 @@ pub unsafe extern "C" fn begin_insert_or_adjust() {
     crate::globals::set_cur_list_aux_b32s1(IGNORE_DEPTH);
 }
 // translated from xetex-xetex0.c:10161 (do_endv)
-#[no_mangle]
-pub unsafe extern "C" fn do_endv() {
+pub unsafe fn do_endv() {
     const V_TEMPLATE: u16 = 2; // xetex-constants.h:201
     const TOKEN_LIST: u16 = 0; // xetex-constants.h:261
     const ALIGN_GROUP: u8 = 6; // xetex-constants.h:158
@@ -1572,8 +1551,7 @@ pub unsafe extern "C" fn do_endv() {
     }
 }
 // translated from xetex-xetex0.c:9799 (unpackage)
-#[no_mangle]
-pub unsafe extern "C" fn unpackage() {
+pub unsafe fn unpackage() {
     const COPY_CODE: i32 = 1; // xetex_format.h:481
     const VLIST_NODE: u16 = 1; // xetex_format.h:381
     const MARGIN_KERN_NODE: u16 = 40; // xetex_format.h:396
@@ -1660,8 +1638,7 @@ pub unsafe extern "C" fn unpackage() {
     }
 }
 // translated from xetex-xetex0.c:9716 (delete_last)
-#[no_mangle]
-pub unsafe extern "C" fn delete_last() {
+pub unsafe fn delete_last() {
     const BEGIN_M_CODE: u16 = 2; // xetex_format.h:436
 
     if cur_list_mode() == VMODE
@@ -1757,8 +1734,7 @@ pub unsafe extern "C" fn delete_last() {
     flush_node_list_global(tx);
 }
 // translated from xetex-xetex0.c:9223 (app_space)
-#[no_mangle]
-pub unsafe extern "C" fn app_space() {
+pub unsafe fn app_space() {
     use crate::globals::{
         font_glue, font_info_b32s1, main_k, main_p, param_base, set_cur_list_tail, set_font_glue,
         set_main_k, set_main_p,
@@ -1807,8 +1783,7 @@ pub unsafe extern "C" fn app_space() {
     set_cur_list_tail(q);
 }
 // translated from xetex-xetex0.c:9485 (scan_box)
-#[no_mangle]
-pub unsafe extern "C" fn scan_box(box_context: i32) {
+pub unsafe fn scan_box(box_context: i32) {
     use crate::globals::{cur_cmd, set_cur_box};
     const MAKE_BOX: u8 = 20; // xetex_format.h:258
     const HRULE: u8 = 36; // xetex_format.h:274
@@ -1845,8 +1820,7 @@ pub unsafe extern "C" fn scan_box(box_context: i32) {
     }
 }
 // translated from xetex-xetex0.c:9509 (package)
-#[no_mangle]
-pub unsafe extern "C" fn package(c: i16) {
+pub unsafe fn package(c: i16) {
     use crate::globals::{
         cur_box, cur_list_head, cur_list_mode, save_ptr, save_stack_b32s1, set_cur_box,
         set_save_ptr,
@@ -1893,8 +1867,7 @@ pub unsafe extern "C" fn package(c: i16) {
     box_end(save_stack_b32s1(save_ptr()));
 }
 // translated from xetex-xetex0.c:9549 (new_graf)
-#[no_mangle]
-pub unsafe extern "C" fn new_graf(indented: bool) {
+pub unsafe fn new_graf(indented: bool) {
     use crate::globals::{
         cur_list_head, cur_list_mode, cur_list_tail, insert_src_special_every_par, nest_ptr,
         set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_mode,
@@ -1973,8 +1946,7 @@ pub unsafe fn new_character(f: i32, c: u16) -> i32 {
     crate::mem::TEX_NULL
 }
 // translated from xetex-xetex0.c:7797 (box_end)
-#[no_mangle]
-pub unsafe extern "C" fn box_end(box_context: i32) {
+pub unsafe fn box_end(box_context: i32) {
     use crate::globals::{
         adjust_tail, cur_box, cur_list_mode, cur_list_tail, cur_ptr, pre_adjust_tail,
         set_adjust_tail, set_cur_box, set_cur_list_aux_b32s0, set_cur_list_tail, set_cur_val,
@@ -2103,8 +2075,7 @@ pub unsafe extern "C" fn box_end(box_context: i32) {
     }
 }
 // translated from xetex-xetex0.c:7794 (begin_box)
-#[no_mangle]
-pub unsafe extern "C" fn begin_box(box_context: i32) {
+pub unsafe fn begin_box(box_context: i32) {
     use crate::globals::{
         cur_box, cur_list_head, cur_list_mode, cur_list_tail, cur_ptr, hi_mem_min, set_cur_box,
         set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_tail,
@@ -2323,8 +2294,7 @@ pub unsafe extern "C" fn begin_box(box_context: i32) {
     box_end(box_context);
 }
 // translated from xetex-xetex0.c:8265 (handle_right_brace)
-#[no_mangle]
-pub unsafe extern "C" fn handle_right_brace() {
+pub unsafe fn handle_right_brace() {
     use crate::globals::{
         cur_group, cur_input, cur_list_head, cur_list_tail, disc_ptr, nest_ptr, page_tail,
         save_ptr, save_stack_b32s1, set_adjust_tail, set_cur_list_tail, set_cur_tok, set_disc_ptr,
@@ -2606,8 +2576,7 @@ pub unsafe extern "C" fn handle_right_brace() {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:9358 (append_glue)
-#[no_mangle]
-pub unsafe extern "C" fn append_glue() {
+pub unsafe fn append_glue() {
     let s = cur_chr() as i16;
     match s {
         0 => set_cur_val(4),
@@ -2629,8 +2598,7 @@ pub unsafe extern "C" fn append_glue() {
     }
 }
 // translated from xetex-xetex0.c:9395 (append_kern)
-#[no_mangle]
-pub unsafe extern "C" fn append_kern() {
+pub unsafe fn append_kern() {
     let s = cur_chr() as u16;
     scan_dimen(s == MU_GLUE, false, false);
     let p = crate::mem::new_kern_global(cur_val());
@@ -2639,8 +2607,7 @@ pub unsafe extern "C" fn append_kern() {
     set_mem_b16s0(crate::globals::cur_list_tail(), s);
 }
 // translated from xetex-xetex0.c:9896 (make_mark)
-#[no_mangle]
-pub unsafe extern "C" fn make_mark() {
+pub unsafe fn make_mark() {
     let c = if cur_chr() == 0 {
         0
     } else {
@@ -2657,8 +2624,7 @@ pub unsafe extern "C" fn make_mark() {
     crate::globals::set_cur_list_tail(p);
 }
 // translated from xetex-xetex0.c:11040 (new_interaction)
-#[no_mangle]
-pub unsafe extern "C" fn new_interaction() {
+pub unsafe fn new_interaction() {
     crate::output::print_ln();
     crate::globals::set_interaction(cur_chr() as u8);
     if crate::globals::interaction() == BATCH_MODE {
@@ -2671,8 +2637,7 @@ pub unsafe extern "C" fn new_interaction() {
     }
 }
 // translated from xetex-xetex0.c:10774 (alter_aux)
-#[no_mangle]
-pub unsafe extern "C" fn alter_aux() {
+pub unsafe fn alter_aux() {
     if cur_chr() != cur_list_mode().unsigned_abs() as i32 {
         report_illegal_case();
     } else {
@@ -2700,8 +2665,7 @@ pub unsafe extern "C" fn alter_aux() {
     }
 }
 // translated from xetex-xetex0.c:10805 (alter_prev_graf)
-#[no_mangle]
-pub unsafe extern "C" fn alter_prev_graf() {
+pub unsafe fn alter_prev_graf() {
     crate::globals::save_cur_list_to_nest(crate::globals::nest_ptr());
     let mut p = crate::globals::nest_ptr();
     while crate::globals::nest_mode(p).unsigned_abs() != VMODE as u16 {
@@ -2723,16 +2687,14 @@ pub unsafe extern "C" fn alter_prev_graf() {
     }
 }
 // translated from xetex-xetex0.c:10837 (alter_page_so_far)
-#[no_mangle]
-pub unsafe extern "C" fn alter_page_so_far() {
+pub unsafe fn alter_page_so_far() {
     let c = cur_chr() as usize;
     scan_optional_equals();
     scan_dimen(false, false, false);
     crate::globals::set_page_so_far(c, cur_val());
 }
 // translated from xetex-xetex0.c:10846 (alter_integer)
-#[no_mangle]
-pub unsafe extern "C" fn alter_integer() {
+pub unsafe fn alter_integer() {
     let c = cur_chr() as u8;
     scan_optional_equals();
     scan_int();
@@ -2759,8 +2721,7 @@ pub unsafe extern "C" fn alter_integer() {
     }
 }
 // translated from xetex-xetex0.c:10874 (alter_box_dimen)
-#[no_mangle]
-pub unsafe extern "C" fn alter_box_dimen() {
+pub unsafe fn alter_box_dimen() {
     let c = cur_chr();
     scan_register_num();
     let b = if cur_val() < 256 {
@@ -2844,8 +2805,7 @@ pub unsafe fn fix_language_global() {
     }
 }
 // translated from xetex-xetex0.c:9325 (off_save)
-#[no_mangle]
-pub unsafe extern "C" fn off_save() {
+pub unsafe fn off_save() {
     if cur_group() == BOTTOM_LEVEL {
         error_here_with_diagnostic(c"Extra ".as_ptr());
         print_cmd_chr(cur_cmd() as u16, cur_chr());
@@ -2908,8 +2868,7 @@ pub unsafe extern "C" fn off_save() {
     }
 }
 // translated from xetex-xetex0.c:9956 (append_discretionary)
-#[no_mangle]
-pub unsafe extern "C" fn append_discretionary() {
+pub unsafe fn append_discretionary() {
     extern "C" {}
 
     let tail = crate::globals::cur_list_tail();
@@ -2934,8 +2893,7 @@ pub unsafe extern "C" fn append_discretionary() {
     }
 }
 // translated from xetex-xetex0.c:10765 (shift_case)
-#[no_mangle]
-pub unsafe extern "C" fn shift_case() {
+pub unsafe fn shift_case() {
     let b = cur_chr();
     scan_toks(false, false);
     let mut p = mem_b32s1(def_ref());
@@ -2954,8 +2912,7 @@ pub unsafe extern "C" fn shift_case() {
     set_avail(def_ref());
 }
 // translated from xetex-xetex0.c:9958 (build_discretionary)
-#[no_mangle]
-pub unsafe extern "C" fn build_discretionary() {
+pub unsafe fn build_discretionary() {
     crate::save::unsave();
     let q_head = crate::globals::cur_list_head();
     let mut q = q_head;
@@ -3069,8 +3026,7 @@ pub unsafe extern "C" fn build_discretionary() {
     crate::globals::set_cur_list_aux_b32s0(1000);
 }
 // translated from xetex-xetex0.c:9868 (append_italic_correction)
-#[no_mangle]
-pub unsafe extern "C" fn append_italic_correction() {
+pub unsafe fn append_italic_correction() {
     extern "C" {
         // Note: in C these are macros: get_native_italic_correction(p) = real_get_native_italic_correction_global(&mem[p])
 
@@ -3126,8 +3082,7 @@ pub unsafe extern "C" fn append_italic_correction() {
     set_mem_b16s0(new_tail, EXPLICIT);
 }
 // translated from xetex-xetex0.c:9910 (make_accent)
-#[no_mangle]
-pub unsafe extern "C" fn make_accent() {
+pub unsafe fn make_accent() {
     extern "C" {}
     const SLANT_CODE: i32 = 1; // xetex-constants.h:273
     const X_HEIGHT_CODE: i32 = 5; // xetex-constants.h:294
@@ -3229,8 +3184,7 @@ pub unsafe extern "C" fn make_accent() {
     crate::globals::set_cur_list_aux_b32s0(1000);
 }
 // translated from xetex-xetex0.c:10233 (new_font)
-#[no_mangle]
-pub unsafe extern "C" fn new_font(a: i16) {
+pub unsafe fn new_font(a: i16) {
     extern "C" {}
 
     if crate::globals::job_name() == 0 {
@@ -3385,8 +3339,7 @@ pub unsafe extern "C" fn new_font(a: i16) {
     crate::globals::set_hash_s1(FONT_ID_BASE + f, t);
 }
 // translated from xetex-xetex0.c:10220 (do_register_command)
-#[no_mangle]
-pub unsafe extern "C" fn do_register_command(a: i16) {
+pub unsafe fn do_register_command(a: i16) {
     const ADVANCE: u8 = 92; // xetex_format.h:332
     const MULTIPLY: u8 = 93; // xetex_format.h:334
     const GLUE_REF: u16 = 119; // xetex_format.h:361
@@ -3595,8 +3548,7 @@ pub unsafe extern "C" fn do_register_command(a: i16) {
     }
 }
 // translated from xetex-xetex0.c:10745 (do_assignments)
-#[no_mangle]
-pub unsafe extern "C" fn do_assignments() {
+pub unsafe fn do_assignments() {
     extern "C" {}
 
     const MAX_NON_PREFIXED_COMMAND: u8 = 71; // xetex_format.h:312
@@ -3621,8 +3573,7 @@ pub unsafe extern "C" fn do_assignments() {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:8221 (main_control append_normal_space label)
-#[no_mangle]
-pub unsafe extern "C" fn main_control_append_normal_space() {
+pub unsafe fn main_control_append_normal_space() {
     const INT_PAR_XETEX_INTER_CHAR_TOKENS_MC: i32 = 73; // xetex_format.h:108
     const GLUE_PAR_SPACE_SKIP_MC: i16 = 12; // xetex_format.h:161
     const INTER_CHAR_TEXT_MC: u16 = 17; // xetex-constants.h:216
@@ -3684,8 +3635,7 @@ pub unsafe extern "C" fn main_control_append_normal_space() {
     crate::globals::set_cur_list_tail(crate::globals::temp_ptr());
 }
 // translated from xetex-xetex0.c:7277 (main_control mode-independent cases)
-#[no_mangle]
-pub unsafe extern "C" fn main_control_mode_independent() {
+pub unsafe fn main_control_mode_independent() {
     extern "C" {}
 
     const AFTER_ASSIGNMENT_MC: u8 = 40;
@@ -3752,8 +3702,7 @@ pub unsafe extern "C" fn main_control_mode_independent() {
     }
 }
 // translated from xetex-xetex0.c:6900 (main_control forbidden/math-mode mismatch cases)
-#[no_mangle]
-pub unsafe extern "C" fn main_control_mode_error_cases() {
+pub unsafe fn main_control_mode_error_cases() {
     const VMODE_MC: u16 = 1;
     const HMODE_MC: u16 = 104;
     const MMODE_MC: u16 = 207;
@@ -3853,8 +3802,7 @@ pub unsafe extern "C" fn main_control_mode_error_cases() {
     }
 }
 // translated from xetex-xetex0.c:6932 (main_control simple list/group cases)
-#[no_mangle]
-pub unsafe extern "C" fn main_control_simple_list_group_cases() {
+pub unsafe fn main_control_simple_list_group_cases() {
     const VMODE_MC: u16 = 1;
     const HMODE_MC: u16 = 104;
     const MMODE_MC: u16 = 207;
@@ -3908,8 +3856,7 @@ pub unsafe extern "C" fn main_control_simple_list_group_cases() {
     }
 }
 // translated from xetex-xetex0.c:6964 (main_control box/list construction cases)
-#[no_mangle]
-pub unsafe extern "C" fn main_control_box_list_cases() {
+pub unsafe fn main_control_box_list_cases() {
     const VMODE_MC: u16 = 1;
     const HMODE_MC: u16 = 104;
     const MMODE_MC: u16 = 207;
@@ -4035,8 +3982,7 @@ pub unsafe extern "C" fn main_control_box_list_cases() {
     }
 }
 // translated from xetex-xetex0.c:6993 (main_control alignment/endcsname cases)
-#[no_mangle]
-pub unsafe extern "C" fn main_control_alignment_cases() {
+pub unsafe fn main_control_alignment_cases() {
     const VMODE_MC: u16 = 1;
     const HMODE_MC: u16 = 104;
     const MMODE_MC: u16 = 207;
@@ -4087,8 +4033,7 @@ pub unsafe extern "C" fn main_control_alignment_cases() {
     }
 }
 // translated from xetex-xetex0.c:7006 (main_control math entry/exit cases)
-#[no_mangle]
-pub unsafe extern "C" fn main_control_math_cases() {
+pub unsafe fn main_control_math_cases() {
     extern "C" {}
 
     const HMODE_MC: u16 = 104; // xetex_format.h:369
@@ -4267,8 +4212,7 @@ pub unsafe extern "C" fn main_control_math_cases() {
     }
 }
 // translated from xetex-xetex0.c:6857 (main_control IGNORE_SPACES body; caller does goto reswitch)
-#[no_mangle]
-pub unsafe extern "C" fn main_control_ignore_spaces() {
+pub unsafe fn main_control_ignore_spaces() {
     const SPACER_MC: u8 = 10;
     const NORMAL_SCANNER_MC: u8 = 0;
 
@@ -4306,8 +4250,7 @@ pub unsafe extern "C" fn main_control_ignore_spaces() {
 }
 // translated from xetex-xetex0.c:6804 (main_control HMODE inter-char pre-dispatch check)
 // Returns true if the caller should goto big_switch (inter-char token was injected).
-#[no_mangle]
-pub unsafe extern "C" fn main_control_hmode_inter_char_check() -> bool {
+pub unsafe fn main_control_hmode_inter_char_check() -> bool {
     const HMODE_MC: i16 = 104;
     const CHAR_NUM_MC: u8 = 16;
     const INT_PAR_XETEX_INTER_CHAR_TOKENS_MC: i32 = 73; // xetex_format.h:108
@@ -4354,8 +4297,7 @@ pub unsafe extern "C" fn main_control_hmode_inter_char_check() -> bool {
     true
 }
 // translated from xetex-xetex0.c:6833 (main_control spacer/ex_space cases)
-#[no_mangle]
-pub unsafe extern "C" fn main_control_spacer_cases() {
+pub unsafe fn main_control_spacer_cases() {
     const HMODE_MC: u16 = 104; // xetex_format.h:369
     const MMODE_MC: u16 = 207; // xetex_format.h:370
     const SPACER_MC: u8 = 10; // xetex_format.h:242
@@ -4378,8 +4320,7 @@ pub unsafe extern "C" fn main_control_spacer_cases() {
 // translated from xetex-xetex0.c:7030 (main_loop through main_loop_move_lig)
 // Returns true → caller must goto big_switch; false → caller must goto reswitch.
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-#[no_mangle]
-pub unsafe extern "C" fn main_control_main_loop() -> bool {
+pub unsafe fn main_control_main_loop() -> bool {
     use crate::globals::{
         avail, bchar, bchar_label_entry, cancel_boundary, char_base_entry, cur_chr, cur_cmd,
         cur_input, cur_l, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode,
@@ -5495,8 +5436,7 @@ unsafe fn do_lookahead(
 }
 // translated from xetex-xetex0.c:6766 (main_control)
 // Top-level TeX command dispatcher: big_switch / reswitch loop.
-#[no_mangle]
-pub unsafe extern "C" fn main_control() {
+pub unsafe fn main_control() {
     // Mode constants (xetex_format.h)
     const VMODE: u16 = 1;
     const HMODE: u16 = 104;
