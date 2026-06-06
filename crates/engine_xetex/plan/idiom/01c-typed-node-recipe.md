@@ -93,7 +93,7 @@ are `xetex/xetex-constants.h:107–139`; the field map is
 |---:|---|---|---|---|---|
 | **0** | **shared header word** (every node) | n/a | `link` 0.b32.s1 → `MemPtr`; `info` 0.b32.s0 → `MemPtr`/raw; `type` 0.b16.s1 → `NodeType`; `subtype` 0.b16.s0 → `u16`/subtype enum | universal; `link` is nullable (`MemPtr`) | 1378 sites; the base every `NodePtr<K>` and `classify` builds on — must land with rank 1 |
 | **1** | **box (hlist/vlist)** | 8 (fixed) | `width` +1.b32.s1, `depth` +2.b32.s1, `height` +3.b32.s1 → `Scaled`; `shift_amount` +4.b32.s1 → `Scaled`; `list_ptr` +5.b32.s1 → `MemPtr`; `glue_sign` +5.b16.s1, `glue_order` +5.b16.s0; `glue_set` +6.gr → `f64` | **simplest**: fixed size, dims are pure `Scaled`, one nullable ptr | owns the widest high-traffic band (+1..+6); dims dominate packaging/shipout/linebreak |
-| **2** | **glue_spec + glue node** | spec 4, glue node small (2) | spec: `ref_count` 0.b32.s1 (**a count, NOT a link**), `stretch_order` 0.b16.s1, `shrink_order` 0.b16.s0, `stretch` +2.b32.s1, `shrink` +3.b32.s1 → `Scaled`; glue node: `glue_ptr` +1.b32.s0 → `MemPtr`, `leader_ptr` +1.b32.s1 → `MemPtr` | fixed size; **one trap**: glue_spec reuses the header `b32.s1` word as a refcount | high traffic; pervasive in every list |
+| **2** | **glue_spec + glue node** | spec 4, glue node small (2) | spec: `ref_count` 0.b32.s1 (**a count, NOT a link**), `stretch_order` 0.b16.s1, `shrink_order` 0.b16.s0, `width` +1.b32.s1, `stretch` +2.b32.s1, `shrink` +3.b32.s1 → `Scaled`; glue node: `glue_ptr` +1.b32.s0 → `MemPtr`, `leader_ptr` +1.b32.s1 → `MemPtr` | fixed size; **one trap**: glue_spec reuses the header `b32.s1` word as a refcount | high traffic; pervasive in every list |
 | **3** | **kern** | 3 (fixed) | `width` +1.b32.s1 → `Scaled` | trivial: one `Scaled` field | single field, fixed size |
 | **4** | **penalty** | medium (3) in this build [^pen-size] | `penalty` +1.b32.s1 → **`i32` (NOT `Scaled`)** | trivial; just don't mistype it `Scaled` | single field, fixed size |
 | **5** | **rule** | 5 (fixed) | `width`/`depth`/`height` +1/+2/+3.b32.s1 → **`Scaled`-or-`NULL_FLAG`** (running dimension) | fixed size, **but** the running-dimension sentinel `NULL_FLAG = -0x40000000` (`xetex-constants.h:16`) means these are not plain `Scaled` | needs the running-dimension wrapper before its fields are typed |
@@ -105,9 +105,12 @@ are `xetex/xetex-constants.h:107–139`; the field map is
 | **11** | linebreak/page internals: active/passive/delta, page_ins, mark/ins/adjust, unset/align, edge, span, expr | 2–7 | per the macros at `xetex-xetexd.h:221–322` | specialized, lower traffic | thread with their owning subsystem (`linebreak.rs`/`pagebuilder.rs`), not up front |
 
 **Built so far:** rank 0+1 (header word + box, session 147), rank 2
-(glue/glue_spec, session 148), rank 3 (kern, session 149), rank 4
-(penalty, session 149). **Next: rank 5 (rule — needs the running-dimension
-wrapper type first; `width`/`depth`/`height` are `Scaled`-or-`NULL_FLAG`).**
+(glue/glue_spec, session 148; spec `width` field completed session 150),
+rank 3 (kern, session 149), rank 4 (penalty, session 149). First fused
+`01b` §3a adoptions landed session 150 (`math_kern`/`math_glue`). **Next:
+rank 5 (rule — needs the running-dimension wrapper type first;
+`width`/`depth`/`height` are `Scaled`-or-`NULL_FLAG`), and/or more fused
+adoptions of box/glue/kern/penalty-reading leaves.**
 
 **Build the layer in this order, one family per slice** (rank 0 lands
 with rank 1). Stop promoting families to typed handles when the remaining
@@ -245,6 +248,22 @@ of the 688 unsafe-block lints die (`01`-§5 step 3).
 > generic-TeX value; SyncTeX fields make them medium). 6 unit tests (15 total
 > in `node::`); §4 disasm gate passed on `kern.width` and `penalty.penalty`.
 > Remaining families in §1 order: rule → disc → ligature → math → native.
+>
+> **Progress (session 150): glue_spec family completed + FIRST fused
+> adoptions.** Recon during the first `01b` §3a adoption found the glue_spec
+> family was **missing its `width` field** (+1.b32.s1): the session-147 field
+> map omitted it because `width` shares the generic `BOX_width` offset (no
+> dedicated `GLUE_SPEC_width` C macro), but `new_spec`/`math_glue` read/write
+> `mem[p+1]` as the spec width. Added `NodePtr::<GlueSpecNode>::width`/
+> `set_width` + extended the test (same +1.b32.s1 `Scaled` shape already
+> ICF-proven by box/kern `width`, so no new disasm run). Then the first two
+> **fused threading+typing adoptions** landed on live `mlist_to_hlist` paths
+> (`01b` §3a): `math_kern`'s node ptr → `NodePtr<KernNode>`, and
+> `math_glue`'s freshly-allocated spec → `NodePtr<GlueSpecNode>` (the
+> "construct a handle to a node I'm initializing" boundary —
+> `from_idx_unchecked`, since a fresh node has no `NODE_type` to classify).
+> `node::` is no longer fully dead code. Remaining families: rule → disc →
+> ligature → math → native.
 
 For each family in the §1 ranking (rank 0+1 together, then 2, 3, …): add
 its `NodeKind` marker, its capability-trait impls, its field methods, and

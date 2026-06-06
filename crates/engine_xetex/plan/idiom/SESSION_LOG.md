@@ -9,6 +9,99 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 150 — 2026-06-07 — Execution: the FIRST fused `01b` §3a threading+typing adoptions (`math_kern`, `math_glue`) + glue_spec family fix
+
+**Type:** execution (workstream 01 / `01b` §3a — the first adoptions of the
+`01c` typed layer on live call sites). **3 commits.** Dashboard **29/2/7/4**
+green on every commit; warnings **42 → 42**; `node::` **15/15**.
+
+This is the milestone the foundation (sessions 145–149) was built for: the
+typed `NodePtr<K>` layer now has **live consumers**, proving the
+type-as-you-thread loop end-to-end — not just unit tests + the disasm gate.
+
+### Commit 1 — `math_kern` → `NodePtr<KernNode>` (`f2e56c32`)
+
+`math_kern` (`math.rs`) was already threaded to `&mut MemState` and is
+reached only from `mlist_to_hlist`'s first-pass `KERN_NODE` match arm. The
+fused touch:
+- signature `math_kern(mem, p: i32, scaled_width: Option<i32>)` →
+  `(mem, p: NodePtr<KernNode>, scaled_width: Option<Scaled>)`;
+- body's two raw writes `mem.set_b32s1(p+1, w)` / `mem.set_b16s0(p, EXPLICIT)`
+  → `p.set_width(mem, width)` / `p.set_subtype(mem, EXPLICIT)`;
+- **classification boundary** = the `math_kern_global` bridge wrapper: its
+  sole caller is the `KERN_NODE` arm (dispatches on `mem_b16s1(q) ==
+  KERN_NODE`), so the node is already classified — `unsafe {
+  NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) }` with a SAFETY
+  note citing that arm. The `Option<i32>` → `Option<Scaled>` conversion
+  (`Scaled(scaled_mu_value(...))`) also lives in the wrapper.
+
+`math.rs` is the first module to `use crate::node`/`crate::units`.
+
+### Commit 2 — complete the glue_spec family (`2e7571a7`)
+
+**Recon during commit 1/3 found the glue_spec family was missing its `width`
+field** (+1.b32.s1). The session-147 field map (and thus the session-148
+build) omitted it because `width` shares the generic `BOX_width` +1.b32.s1
+offset — there is **no dedicated `GLUE_SPEC_width` C macro** — yet
+`new_spec` (`mem.rs`) and `math_glue` (`math.rs`) read/write `mem[p+1]` as
+the spec width. Added `NodePtr::<GlueSpecNode>::width`/`set_width` + extended
+the round-trip test to cover +1. No new disasm run: the +1.b32.s1 `Scaled`
+shape was already ICF-proven by box/kern `width`. Corrected the `01c` §1
+table row + the family doc comment. (Foundation fix; `node.rs` is
+`#[allow(dead_code)]` so it is behavior-neutral, but the full dashboard was
+still run.)
+
+### Commit 3 — `math_glue` → `NodePtr<GlueSpecNode>` (`64b80f1e`)
+
+`math_glue` (`math.rs`, already `&mut MemState`-threaded) allocates a fresh
+glue_spec via `get_node(GLUE_SPEC_SIZE)` and fills five fields. The fused
+touch wraps the fresh index as `NodePtr<GlueSpecNode>` and routes all five
+writes through typed setters (`set_width`/`set_stretch_order`/`set_stretch`/
+`set_shrink_order`/`set_shrink`, each value `Scaled(...)`-wrapped where
+scaled), returning `Ok(spec.idx().0)`. **Boundary lesson:** a *freshly
+allocated* node has no `NODE_type` to classify yet, so this is the
+"construct a handle to a node I am initializing" case — `from_idx_unchecked`
+is the correct tool, **not** `classify_*`/`from_glue_ptr`. The closure rule
+holds: every glue_spec access in the body goes through the one handle (no
+mixed typed/raw indexing).
+
+### Metrics & validation
+
+- **Both adoptions are behavior-preserving**: each typed setter lowers to
+  the identical `set_b32s1`/`set_b16s*` the raw code emitted (the Scaled
+  wrap is value-identity). Verified by the full dashboard on each live-path
+  commit (commits 1 + 3 touch `mlist_to_hlist`).
+- **`01b` §8 metric:** bare-`i32` `[pqr]: i32` params (`grep -rhoE '\b[pqr]:
+  i32\b'`) **380 → 379** — `math_kern`'s `p` retyped; the trend is now
+  moving down, as intended. (`math_glue`'s spec is a local, not a `[pqr]`
+  param, so it does not register on this proxy metric — but it removes 5 raw
+  field pokes.)
+- Warnings **42 → 42** (no unused imports — both `node`/`units` imports are
+  consumed). `with_state`/`unsafe fn`/`#[no_mangle]` unchanged. `node::`
+  15/15, `units::` 6/6.
+
+**Handoff / Next:** the loop is proven; keep driving it. Two complementary
+tracks:
+1. **More fused adoptions.** The cheapest are functions **already** threaded
+   to `&mut MemState` whose node-ptr param/local is a *single* known family.
+   Grep `math.rs`/`packaging.rs`/`shipout.rs`/`linebreak.rs` for
+   `fn …(mem: &(mut )?MemState, …, [pqr]: i32, …)` bodies that read/write
+   one family's fields via raw `mem.bXXsY(p+N)`, and retype + swap in one
+   commit. Box-dimension readers (the highest-traffic family) are the
+   biggest metric win. Candidates seen this session: `math.rs`
+   `stack_into_box`/`make_*_finish` (box `b`/`hbox` params),
+   `append_script_box`. Always confirm the param is a *single* kind (a body
+   that switches on `node_type` and handles several families can't take one
+   `NodePtr<K>` — leave it raw or classify per-arm).
+2. **Build rank-5 rule** (`01c` §1) — the first **sentinel-bearing** family:
+   `width`/`depth`/`height` (+1/+2/+3.b32.s1) are `Scaled`-**or**-`NULL_FLAG`
+   running dimensions (`NULL_FLAG = -0x40000000`, `xetex-constants.h:16`).
+   Introduce a running-dimension wrapper (e.g. `enum RuleDimen { Running,
+   Set(Scaled) }`) before typing the fields; mirror the exact `NULL_FLAG`
+   compare; unit-test both running and set cases. Verify offsets against the
+   `RULE_NODE_*` macros + `new_rule`. After rule: disc → ligature → math →
+   native.
+
 ## Idiom session 149 — 2026-06-07 — Execution: Stage 3 rank-3 + rank-4 — the kern and penalty `NodePtr<K>` families (`01c`)
 
 **Type:** execution (workstream 01 / `01c` §3 Stage 3, ranks 3 + 4). **2

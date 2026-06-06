@@ -169,6 +169,29 @@ either fully typed or has an explicit deferred-newtype-worklist row
 *same* family with no worklist row is an unclosed slice — finish the
 family's layer or record the debt.
 
+> **First adoptions (session 150).** The first two fused §3a adoptions
+> landed on already-threaded `math.rs` leaves reached from `mlist_to_hlist`:
+> - `math_kern(mem, p: NodePtr<KernNode>, …)` — `p` retyped from `i32`; its
+>   two raw writes became `p.set_width(mem, Scaled)` / `p.set_subtype(mem,
+>   EXPLICIT)`. The **classification boundary** is the bridge wrapper
+>   `math_kern_global`, whose sole caller is the `KERN_NODE` match arm — so
+>   `from_idx_unchecked` after `MemIdx::new(p)` is justified (the dispatch
+>   already classified it).
+> - `math_glue(mem, …) -> i32` — its freshly `get_node`'d glue_spec is
+>   wrapped as `NodePtr<GlueSpecNode>` and filled via the typed setters
+>   (`set_width`/`set_stretch_order`/`set_stretch`/`set_shrink_order`/
+>   `set_shrink`). This is the "construct a handle to a node I am
+>   *initializing*" boundary — a fresh node has no `NODE_type` to classify,
+>   so `from_idx_unchecked` is the right tool, not `classify_*`.
+>
+> Both are behavior-preserving (each typed setter lowers to the identical
+> `set_b32s1`/`set_b16s*`); dashboard 29/2/7/4. Lesson: the cheapest first
+> adoptions are functions **already** threaded to `&mut MemState` whose
+> node-ptr param/local is a *single* known family — retype the signature and
+> swap the raw `mem.bXXsY(p+N)` calls for the typed methods in one commit;
+> the conversion shim lives in the `_global` bridge at the classified
+> boundary (a match arm or a fresh allocation).
+
 ## 4. The nest-panic rule (precise, with the recon finding)
 
 `with_state`/`with_state_mut` borrow the **entire** `ENGINE_STATE`
