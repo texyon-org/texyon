@@ -4372,7 +4372,7 @@ pub unsafe fn init_math() {
                                     set_mem_b32s1(temp_ptr(), lr_ptr());
                                     set_lr_ptr(temp_ptr());
                                     if mem_b16s0(p) as i32 / R_CODE != cur_dir() as i32 {
-                                        crate::packaging::just_reverse(p);
+                                        crate::packaging::just_reverse_global(p);
                                         p = TEMP_HEAD;
                                     }
                                 }

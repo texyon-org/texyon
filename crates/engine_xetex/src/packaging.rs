@@ -22,7 +22,6 @@ use crate::globals::{
 };
 use crate::mem::new_spec_global;
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
-use crate::shipout::new_edge_global;
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
 // prune_page_top and the relocated font-loading group); import it here.
@@ -386,15 +385,22 @@ pub unsafe fn just_copy_global(p: i32, h: i32, t: i32) {
     }
 }
 // translated from xetex-xetex0.c:8155 (just_reverse)
-#[no_mangle]
-pub unsafe extern "C" fn just_reverse(p: i32) {
-    use crate::globals::{
-        avail, cur_dir, lr_problems, lr_ptr, set_avail, set_cur_dir, set_lr_problems, set_lr_ptr,
-        set_temp_ptr, temp_ptr,
-    };
+//
+// Phase-C: threaded to `&mut MemState` + `&mut ScannerState`. The mem arena is
+// touched directly; the `cur_dir`/`LR_ptr`/`LR_problems` scanner scalars are
+// read/written as `scanner` fields; `temp_ptr` stays the raw global accessor
+// (safe under the borrow per `01b` §4). Calls the threaded `just_copy`,
+// `flush_node_list`, `new_edge`, `get_avail`, and `free_node`; arena exhaustion
+// and the corrupt-node `confusion` propagate the `01b` §5 [`NodeRecycleAbort`]
+// sentinel, run by [`just_reverse_global`] after the borrow drops. FFI-free
+// (no C++ measurer / `new_native_character` / print / scanner re-entry).
+pub fn just_reverse(
+    mem: &mut crate::state::MemState,
+    scanner: &mut crate::state::ScannerState,
+    p: i32,
+) -> Result<(), NodeRecycleAbort> {
+    use crate::globals::{set_temp_ptr, temp_ptr};
     use crate::mem::TEX_NULL;
-
-    extern "C" {}
 
     const TEMP_HEAD: i32 = 4_999_996; // MEM_TOP - 3
     const L_CODE: i32 = 4; // xetex-constants.h:142
@@ -404,85 +410,91 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
     let mut m = MIN_HALFWORD;
     let mut n = MIN_HALFWORD;
 
-    let mut q = if mem_b32s1(TEMP_HEAD) == TEX_NULL {
-        just_copy_global(mem_b32s1(p), TEMP_HEAD, TEX_NULL);
-        mem_b32s1(TEMP_HEAD)
+    let mut q = if mem.b32s1(TEMP_HEAD) == TEX_NULL {
+        let src = mem.b32s1(p);
+        just_copy(mem, src, TEMP_HEAD, TEX_NULL)?;
+        mem.b32s1(TEMP_HEAD)
     } else {
-        let q = mem_b32s1(p);
-        set_mem_b32s1(p, TEX_NULL);
-        flush_node_list_global(mem_b32s1(TEMP_HEAD));
+        let q = mem.b32s1(p);
+        mem.set_b32s1(p, TEX_NULL);
+        let head = mem.b32s1(TEMP_HEAD);
+        flush_node_list(mem, head).map_err(NodeRecycleAbort::Confusion)?;
         q
     };
 
-    let t = new_edge_global(cur_dir(), 0);
+    let t = crate::shipout::new_edge(mem, scanner.cur_dir, 0);
+    if t == crate::mem::ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
     let mut l = t;
-    set_cur_dir(1 - cur_dir());
+    scanner.cur_dir = 1 - scanner.cur_dir;
 
     'done: loop {
         while q != TEX_NULL {
-            if q >= crate::globals::hi_mem_min() {
+            if q >= mem.hi_mem_min {
                 // char node do-while
                 loop {
                     p = q;
-                    q = mem_b32s1(p);
-                    set_mem_b32s1(p, l);
+                    q = mem.b32s1(p);
+                    mem.set_b32s1(p, l);
                     l = p;
-                    if q < crate::globals::hi_mem_min() {
+                    if q < mem.hi_mem_min {
                         break;
                     }
                 }
             } else {
                 p = q;
-                q = mem_b32s1(p);
+                q = mem.b32s1(p);
 
-                if mem_b16s1(p) == MATH_NODE {
-                    let subtype = mem_b16s0(p) as i32;
+                if mem.b16s1(p) == MATH_NODE {
+                    let subtype = mem.b16s0(p) as i32;
                     if subtype & 1 != 0 {
                         // odd subtype = end math node
                         let expected = L_CODE * (subtype / L_CODE) + 3;
-                        if mem_b32s0(lr_ptr()) != expected {
-                            set_mem_b16s1(p, KERN_NODE); // NODE_type(p) = KERN_NODE
-                            set_lr_problems(lr_problems() + 1);
+                        if mem.b32s0(scanner.LR_ptr) != expected {
+                            mem.set_b16s1(p, KERN_NODE); // NODE_type(p) = KERN_NODE
+                            scanner.LR_problems += 1;
                         } else {
                             // pop LR_ptr
-                            set_temp_ptr(lr_ptr());
-                            set_lr_ptr(mem_b32s1(temp_ptr()));
-                            set_mem_b32s1(temp_ptr(), avail());
-                            set_avail(temp_ptr());
+                            set_temp_ptr(scanner.LR_ptr);
+                            scanner.LR_ptr = mem.b32s1(temp_ptr());
+                            mem.set_b32s1(temp_ptr(), mem.avail);
+                            mem.avail = temp_ptr();
 
                             if n > MIN_HALFWORD {
                                 n -= 1;
-                                set_mem_b16s0(p, mem_b16s0(p) - 1);
+                                mem.set_b16s0(p, mem.b16s0(p) - 1);
                             } else if m > MIN_HALFWORD {
                                 m -= 1;
-                                set_mem_b16s1(p, KERN_NODE);
+                                mem.set_b16s1(p, KERN_NODE);
                             } else {
                                 // found edge end: set t's link and free p
-                                set_mem_b32s1(t + 1, mem_b32s1(p + 1));
-                                set_mem_b32s1(t, q);
-                                crate::mem::free_node_global(p, MEDIUM_NODE_SIZE);
+                                mem.set_b32s1(t + 1, mem.b32s1(p + 1));
+                                mem.set_b32s1(t, q);
+                                crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
                                 break 'done;
                             }
                         }
                     } else {
                         // even subtype = begin math node
                         // push LR_ptr
-                        set_temp_ptr(crate::mem::get_avail_global());
-                        set_mem_b32s0(temp_ptr(), L_CODE * (subtype / L_CODE) + 3);
-                        set_mem_b32s1(temp_ptr(), lr_ptr());
-                        set_lr_ptr(temp_ptr());
+                        let tp = cnl_get_avail!(mem);
+                        set_temp_ptr(tp);
+                        mem.set_b32s0(temp_ptr(), L_CODE * (subtype / L_CODE) + 3);
+                        mem.set_b32s1(temp_ptr(), scanner.LR_ptr);
+                        scanner.LR_ptr = temp_ptr();
 
-                        if n > MIN_HALFWORD || (subtype / R_CODE) != cur_dir() as i32 {
+                        if n > MIN_HALFWORD || (subtype / R_CODE) != scanner.cur_dir as i32 {
                             n += 1;
-                            set_mem_b16s0(p, mem_b16s0(p) + 1);
+                            mem.set_b16s0(p, mem.b16s0(p) + 1);
                         } else {
-                            set_mem_b16s1(p, KERN_NODE);
+                            mem.set_b16s1(p, KERN_NODE);
                             m += 1;
                         }
                     }
                 }
 
-                set_mem_b32s1(p, l);
+                mem.set_b32s1(p, l);
                 l = p;
             }
         }
@@ -490,7 +502,19 @@ pub unsafe extern "C" fn just_reverse(p: i32) {
     }
 
     // done:
-    set_mem_b32s1(TEMP_HEAD, l);
+    mem.set_b32s1(TEMP_HEAD, l);
+    Ok(())
+}
+
+/// Transitional bridge-down wrapper for legacy `just_reverse` callers (`01b`
+/// §3, §5). Runs the threaded reversal under one `mem`+`scanner` borrow, then
+/// performs the deferred cold abort after the borrow drops.
+pub unsafe fn just_reverse_global(p: i32) {
+    if let Err(e) =
+        crate::state::with_state_mut(|st| just_reverse(&mut st.mem, &mut st.scanner, p))
+    {
+        node_recycle_abort(e);
+    }
 }
 /// translated from xetex-xetex0.c:765 (flush_node_list)
 ///
