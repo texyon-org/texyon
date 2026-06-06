@@ -183,6 +183,19 @@ session. The 688-block bucket waits for 01/03.
 Error-handling (05) is the most invasive-for-least-parity-safety and is
 deliberately last and partly optional.
 
+**Typing rides with threading, not after it (decided 2026-06-06).**
+Targets #3 (typed `Mem`/`NodePtr<K>`) and #4 (de-unsafe) are *not* a
+separate call-site sweep that follows Phase C. The early Phase-C slices
+threaded with bare `i32` for speed, but every *remaining* slice now
+carries its typing in the same touch (`01`-§4 option (c), `01b` §3a):
+when a function gains its `&mut`-state signature it also adopts
+`NodePtr<K>`/`MemIdx`/`MemPtr`/`Scaled` and sheds its `unsafe`. This
+avoids a second full pass over the same functions; the only prerequisite
+is building the typed foundation up front (scalar newtypes, the `Mem`
+ownership move, the per-family `NodePtr<K>` layer — `01`-§4a, executed per
+the `01c` cookbook), and the only residual backlog is the
+deferred-newtype worklist, not a sweep.
+
 ## A hazard to design around now: longjmp vs. `Drop`
 
 The engine entry point `tt_engine_xetex_main` stays in C precisely

@@ -1,10 +1,27 @@
-# 01b — Phase-C execution recipe (threading `&mut EngineState`)
+# 01b — Phase-C execution recipe (threading `&mut EngineState` + typing)
 
 The `READY` execution recipe for **Phase C** of workstream 01: replacing
 the thread-local `with_state` bridge with explicit `&mut EngineState`
 (or narrower `&mut MemState` etc.) parameters, one subsystem at a time,
 until the thread-local can be deleted. This is the Phase-C analog of the
 §11 recipe in `01-state-and-memory.md` (which is the Phase-**B** recipe).
+
+> **Type-as-you-thread (decided 2026-06-06, `01`-§4 option (c)).** Each
+> Phase-C slice now *also* carries its typing: when a function gains its
+> `&mut`-state signature it simultaneously adopts the typed surface
+> (`NodePtr<K>`/`MemIdx`/`MemPtr`/`Scaled`/…) for every node family whose
+> handle layer is built, so threading and typing are **one touch, not two
+> passes**. The fused steps are folded into the technique (§3a), the
+> codemod (§4b), and the per-slice recipe (§7) below. This is gated on the
+> `01`-§4a foundation (scalar newtypes + the `Mem` ownership move + the
+> per-family `NodePtr<K>` layer) existing first; until a family's layer
+> exists a slice may leave that family as `i32`/`MemIdx` **and record a
+> deferred-newtype-worklist row** (`01`-§4a fallback). The worklist is the
+> only remaining typing backlog — there is no separate second sweep. The
+> foundation is built per its own `READY` cookbook,
+> **`01c-typed-node-recipe.md`** (the per-slice analog of this doc): it
+> carries the data-driven family build order, the `NodePtr<K>` design, the
+> zero-cost disasm gate, and the hard arena constraints.
 
 > Status: **READY** for execution (drafted + recon-validated session 60).
 > Hard rule 4 (`README.md`) is satisfied: threading code may now begin,
@@ -113,6 +130,44 @@ bridge-down is gone. When every function that touches a cluster is
 threaded, that cluster's `with_state` accessors in `globals.rs` are dead
 and get deleted. When *all* clusters are threaded, the thread-local
 itself is deleted. That last deletion is the end of Phase C.
+
+## 3a. Typing rides with the thread (the fused touch)
+
+Threading already rewrites `f`'s signature and body and visits every call
+site. Typing piggybacks on that same edit so the function lands in its
+final idiomatic form in one commit (`01`-§4 option (c)). The three moves,
+all inside the slice you are already doing:
+
+1.  **Accessor return types.** The `MemState`/`EngineState` methods `f`
+    now calls return the **typed** value, not raw `i32`: `mem.width(p)
+    -> Scaled`, `mem.link(p) -> MemPtr` (nullable), `mem.glue_ptr(p) ->
+    MemPtr`, a classified node read returns `NodePtr<K>`. (Add the typed
+    method to the §6 surface when the slice first needs it — mirror the
+    exact C field width; an accessor that sign-extends differently is a
+    silent parity break, §10.)
+2.  **Node-pointer params/locals.** `f(…, p: i32, …)` becomes
+    `f(…, p: NodePtr<K>, …)` (or `MemPtr` where the value is nullable /
+    not yet classified) for every node family whose handle layer is built
+    (`01`-§4a). Classification (`MemPtr` → `Option<NodePtr<K>>`) happens
+    at the **checked boundary** — typically once, where the raw halfword
+    enters the typed region — never by blind `MemIdx::new` on a field that
+    can hold `TEX_NULL` (§10 sentinel hazard).
+3.  **Push conversions outward.** Still-`i32` callers wrap the typed
+    param with a transient constructor at the call site
+    (`f(MemPtr::from_raw(q), …)`), exactly like the bridge-down
+    `with_state_mut(|s| f(&mut s.mem, …))` wrapper. **These conversion
+    shims vanish when the caller is itself threaded+typed** — the same
+    convergence that retires the `_global` wrappers (§3). Do not let a
+    raw `i32` and its typed form coexist *inside* one threaded body; the
+    boundary is the call site, not the function interior.
+
+**Fused-slice closure rule (extends §4's per-slice obligation):** a slice
+is closed when, for the function(s) it threads, (a) the state borrows are
+disjoint and nest-safe, **and** (b) every node family it touches is
+either fully typed or has an explicit deferred-newtype-worklist row
+(`01`-§4a fallback). A body that mixes typed and raw indexing for the
+*same* family with no worklist row is an unclosed slice — finish the
+family's layer or record the debt.
 
 ## 4. The nest-panic rule (precise, with the recon finding)
 
@@ -243,6 +298,32 @@ under `with_state`. A good session can still be large: classify a whole
 cluster, run the codemod for the A/B subset, then manually finish the C
 wrappers in the same coherent commit.
 
+## 4b. Typing in the codemod (what `thread_fn.py` may and may not do)
+
+The fused typing (§3a) is **mostly not codemod-safe** and must be driven
+by the compiler, not by regex:
+
+-   **Codemod-safe (extend the A/B passes):** swapping a threaded body's
+    accessor call to the typed-return variant once that variant exists
+    (`mem.b32s1(p)` → `mem.link(p)`), because the type checker then flags
+    every mismatched use. Renaming a call site's constructor shim is a
+    pure token edit the compiler verifies.
+-   **Compiler-driven, not regex (bucket C/D by nature):** choosing
+    `NodePtr<K>` vs. `MemPtr` for a param, placing the classification
+    boundary, and deciding whether a field is a valid `MemIdx` or a
+    nullable sentinel. These are the §10 sentinel/index decisions — a
+    wrong call is a silent parity break or a panic, so they are read and
+    written by hand and proven by TRIP + the disasm spot-check, never
+    auto-applied.
+
+`thread_fn.py` stays a **threading** tool. It does not infer types; treat
+its node-pointer params as `i32` placeholders that you retype by hand in
+the same edit. Do not teach it to guess `NodePtr<K>` kinds — the family
+and nullability come from reading the body and the C field layout, the
+exact judgement the §10 hazards forbid automating. (If a `--type` helper
+is ever added, scope it to *applying* a per-function manifest you wrote,
+the way `--apply` only applies the indexed-accessor rewrite.)
+
 ## 5. Cold error/abort paths (`overflow`, `confusion`, `runaway`)
 
 These are `-> !` longjmp paths reached only on capacity exhaustion /
@@ -322,17 +403,30 @@ before doing the semantic C/D work.
 **3. Add the method surface** (§6) on the target sub-struct in
 `state.rs` if not present (`impl MemState { … }`), mirroring the exact
 field widths of the `globals.rs` accessors (parity hazard: a typed
-accessor that sign-extends differently is a silent break — §10).
+accessor that sign-extends differently is a silent break — §10). **Give
+the methods this slice uses their typed return signatures now** (§3a):
+`-> Scaled` / `-> MemPtr` / `-> NodePtr<K>`, not raw `i32`, for any node
+family whose `01`-§4a layer is built.
 
-**4. Thread the function.** Change its signature to take the narrow
-`&mut` borrow; drop `#[no_mangle]`/`extern "C"` (it is now internal);
-rewrite the body to call the §6 methods / touch fields directly; replace
-any cold-path `overflow()`/`runaway()` with the sentinel return (§5).
-De-`unsafe` what the move makes safe (coordinate with workstream 03).
+**4. Thread *and type* the function** (§3a). Change its signature to take
+the narrow `&mut` borrow **and** to take its node-pointer params as
+`NodePtr<K>`/`MemPtr` (for built families); drop
+`#[no_mangle]`/`extern "C"` (it is now internal); rewrite the body to
+call the §6 methods / touch fields directly, doing classification at the
+checked boundary (§10 sentinel rule); replace any cold-path
+`overflow()`/`runaway()` with the sentinel return (§5). De-`unsafe` what
+the move makes safe (coordinate with workstream 03). For any family whose
+layer is not built, leave that part `i32`/`MemIdx` **and add the
+deferred-newtype-worklist row** (`01`-§4a fallback) — do not mix typed
+and raw indexing for the same family without a row (§3a closure rule).
 
-**5. Bridge-down every call site** (§3): legacy callers get
-`with_state_mut(|s| FN(&mut s.mem, …))`; already-threaded callers pass
-their `&mut` through. Handle the cold sentinel at the wrapper.
+**5. Bridge-down *and convert* every call site** (§3 + §3a): legacy
+callers get `with_state_mut(|s| FN(&mut s.mem, …))` and wrap any newly
+typed argument with its transient constructor shim
+(`FN(MemPtr::from_raw(q), …)`); already-threaded+typed callers pass their
+`&mut` and already-typed value straight through. Handle the cold sentinel
+at the wrapper. Both the `with_state` wrapper and the conversion shim are
+transient and vanish together when the caller is threaded+typed.
 
 **6. Delete now-dead bridge accessors.** If this slice removed the last
 caller of a `globals.rs` `with_state` accessor, delete that accessor in
@@ -364,8 +458,19 @@ Phase C is where the headline numbers fall, so track them each slice:
 -   `with_state`/`with_state_mut` call sites: trend to 0; the
     thread-local is deleted when this hits 0.
 
+Now that typing rides with threading (§3a), also track:
+
+-   **bare-`i32` node-pointer params** (`grep -rhoE '\b[pqr]: i32\b'`):
+    trend to 0 as fused slices retype signatures.
+-   **deferred-newtype-worklist length** (`01a-global-inventory.md`): the
+    typing backlog of record. A fused slice may *add* a row (a part it
+    left raw, §4a fallback) but the net trend is down; this hitting 0 is
+    the end of the typing work, the analog of `with_state` → 0 for
+    threading.
+
 They need not hit 0 until the end of Phase C / workstream 03–04, but
-must never go **up**.
+`with_state`/`#[no_mangle]`/`unsafe` must never go **up**, and the
+worklist must not grow without a recorded reason.
 
 ## 9. First subsystem to thread (recon-justified, session 60)
 

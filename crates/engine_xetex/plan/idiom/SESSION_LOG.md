@@ -9,6 +9,164 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 144 — 2026-06-06 — Plan construction: the typed-foundation cookbook (`01c`) + node-field recon
+
+**Type:** plan construction (no engine code change, no dashboard run — hard
+rule: this session changes only `plan/idiom/*`). Delivers the missing
+`READY` cookbook that session 143's handoff named as the blocker before
+fused threading+typing slices can begin.
+
+### What it produced
+
+- **NEW `plan/idiom/01c-typed-node-recipe.md` (READY)** — the per-slice
+  analog of `01b`, for building the `NodePtr<K>` typed foundation. It
+  specifies, all source-verified:
+  - **§1 node-family recon** + the ranked, data-driven build order.
+  - **§2 foundation order** made concrete from `01`-§4a: (Stage 1) scalar
+    newtypes `MemIdx`/`MemPtr`/`Scaled`/`StrNumber`/`FontId`/`Token`/`NodeType`
+    with checked constructors + `NodeType::from_raw`, `#[repr(transparent)]`+`Copy`;
+    (Stage 2) the `Mem` `Vec<MemoryWord>` ownership move (`ini.rs` alloc,
+    `tt_cleanup`/longjmp reconciliation, the `n+1` inclusive sizing gotcha);
+    (Stage 3) the per-family `NodePtr<K>` layer, one family per slice in §1 order.
+  - **§3 the `NodePtr<K>` design** concretely: `MemIdx`+compile-time marker;
+    capability-trait'd field methods taking `&Mem`/`&mut Mem`; semantic-typed
+    returns (`Scaled`/`MemPtr`/`FontId`/…); classification (`MemPtr` →
+    `Option<NodePtr<K>>`) once at a checked boundary, never by blind
+    `MemIdx::new` on a sentinel-bearing field; per-family invariant traps.
+  - **§4 the MANDATORY zero-cost disasm gate** before any fused slice depends
+    on a wrapper — names the hot accessors to check (`width`, `link`,
+    `node_type`/`classify`, `glue_ptr`, the linebreak traversal loop).
+  - **§5 the per-slice recipe**, **§6 the `01b` dovetail + worklist fallback**,
+    **§7 the hard constraints**, **§8 the free-list NON-GOAL**.
+- **NEW `plan/idiom/node_field_recon.py`** — read-only recon. Counts
+  node-field sites by `(subfield, offset)` (the signal the C field macros
+  key on; Stage 1 collapsed the per-family macros into the generic
+  `mem_b32s1(p+N)`). Output: **742 node-field sites (offset `+N`)**
+  (matches session-143's "~725 (p+N)"), **1378 header-word sites
+  (offset 0)**, 37 distinct signatures.
+- **Cross-refs to `01c`** added in `01`-§4a (replaces the "draft the cookbook"
+  TODO) and `01`-§5 (the one-line free-list non-goal), `01b` intro callout,
+  `00`-overview "Typing rides with threading" paragraph. `STATUS.md` top
+  note + the `01`/`01b` rows + a new `01c` row.
+
+### Recon → build order (highest-traffic + simplest-invariant first)
+
+shared-header-word (rank 0; 1378 sites — `link`/`info`/`type`/`subtype`) →
+**box hlist/vlist** (rank 1; fixed 8 words, dims pure `Scaled`, owns the
++1..+6 band) → **glue/glue_spec** (one trap: glue_spec's `0.b32.s1` is a
+ref_count, not a link) → **kern** (one `Scaled`) → **penalty** (`+1` is
+`i32`, NOT `Scaled`) → **rule** (`width/depth/height` are
+`Scaled`-or-`NULL_FLAG` running dimension) → disc → ligature → **math/noad**
+(packed sub-records, no C macros, 2nd sub-classification) → **whatsit/native**
+(variable-size, inline trailing data, raw native ptr — last) → char/one-word
+(the `is_char_node` region, folds into rank 0) → linebreak/page internals
+(thread with their subsystem). Per-family numbers are a header-informed
+split of the `(subfield,offset)` histogram, not per-site classification
+(disclosed in `01c`'s status + the script header) — the **order** is robust.
+
+### Verified hard constraints + two source-fixes (so a future session doesn't re-derive)
+
+- `is_char_node(p) ≡ p >= hi_mem_min` (`src/mem.rs:910`) — classification
+  is a region comparison; the typed layer preserves the lo/hi partition.
+- The `.fmt` dump stores raw indices + free-list state (`sort_avail` then
+  `lo_mem_max`/`rover`/`mem` ranges/`hi_mem_min`/`avail`,
+  `src/format_io.rs:299–339`); `FORMAT_SERIAL=33` (`format_io.rs:76`) is
+  public API — the index space + free-list cannot be abandoned.
+- `var_used`/`dyn_used` are printed on the memory-usage stats line
+  (`src/format_io.rs:355–357`) → byte-observable; don't perturb the
+  allocator bookkeeping.
+- **`TEX_NULL = MIN_HALFWORD = -0x0FFFFFFF`** (`src/consts.rs:13`), so the
+  vestigial `MemIdx::NULL = MemIdx(0)`/`is_null()` (`src/mem.rs:64–69`)
+  **and** the parent `03` `MemPtr::NULL = MemPtr(0)` sketch are both **wrong
+  for this codebase** — the scalar-newtype slice must put null-ness on
+  `MemPtr` keyed to `TEX_NULL` and remove it from `MemIdx`.
+- The existing `MemIdx`/`Scaled`/`FontId`/`Token`/`StrNumber`
+  (`src/mem.rs:56–96`) are **vestigial stubs** (used only at their defs;
+  `MemPtr`/`NodePtr` absent) — the foundation is greenfield.
+
+### Handoff / next
+
+**Fused threading+typing slices can now begin** (`01b` recipe is READY and
+its foundation gate, `01c`, is now READY too). **The first foundation
+execution slice is the scalar-newtypes module** (`01c` §2 Stage 1) — create
+`src/units.rs` (or fold into `mem_types.rs`), define the `#[repr(transparent)]`
+newtypes with the two source-fixes above, and **run the §4 disasm gate**
+before anything depends on them. Then Stage 2 (the `Mem` ownership move) and
+Stage 3 (the per-family `NodePtr<K>` layer in §1 order). Phase-C threading
+of the remaining giants may continue in the interim via the §6/`01`-§4a
+worklist fallback so it isn't blocked on the foundation.
+
+## Idiom session 143 — 2026-06-06 — Plan construction: adopt "type-as-you-thread" (fuse typing into Phase C)
+
+**Type:** plan construction (no code change, no dashboard run). Strategy
+pivot requested by the user: *do the typing together with the threading*
+instead of as a deferred second call-site pass.
+
+### Why
+
+The estimate work this session surfaced that targets #3 (typed
+`Mem`/`NodePtr<K>`) and #4 (de-unsafe) were, as written, a separate
+sweep that re-visits every function Phase C already touched — `01`-§4's
+option (b) ("a second full call-site pass"). Fusing typing into the
+threading touch removes that second pass: a function is left in its final
+idiomatic form (threaded **and** typed **and** de-unsafe'd) in one
+commit, and the borrow/sentinel/index decisions are made once, while the
+body is already open under the same parity run.
+
+### What changed (docs only)
+
+- **`01-state-and-memory.md`**
+  - §4: flipped the newtype-rollout decision to **option (c)
+    type-as-you-thread**, superseding the old (a)-mostly rule. Recorded
+    that the leaf/subsystem backlog was historically threaded with bare
+    `i32` (effectively (b)), and that from 2026-06-06 every *remaining*
+    slice carries its typing.
+  - NEW **§4a** "Type-as-you-thread: the foundation-first prerequisite":
+    splits the typing into a one-time foundation (scalar newtypes; the
+    `Mem` `Vec<MemoryWord>` ownership move; the per-family `NodePtr<K>`
+    layer, each gated on a zero-cost release-disasm check) built up front,
+    plus the per-slice fusion thereafter. Defines the **worklist
+    fallback**: a slice may leave a node family raw if its layer isn't
+    built yet, *provided it records a deferred-newtype-worklist row* — so
+    the foundation schedule never stalls the giant-threading. Notes the
+    `NodePtr<K>` per-slice cookbook (the `01b` analog) still needs
+    drafting + a node-field recon to order families data-driven.
+  - §6 (Phase C) and §9 (decision 1) updated to point at §4(c)/§4a.
+
+- **`01b-phase-c-recipe.md`** — reframed title to "threading + typing":
+  - Intro callout stating the fusion + the foundation gate + worklist
+    fallback.
+  - NEW **§3a** "Typing rides with the thread": the typed-surface
+    adoption technique (typed accessor returns; node-ptr params →
+    `NodePtr<K>`/`MemPtr`; classification at the checked boundary;
+    push conversions outward as transient shims that vanish exactly like
+    the bridge-down `_global` wrappers). Adds the fused-slice closure rule.
+  - NEW **§4b** "Typing in the codemod": typing is **compiler-driven, not
+    regex** — `thread_fn.py` stays a threading tool; the
+    `NodePtr<K>`-kind / nullability / sentinel decisions (§10 hazards)
+    are read+written by hand and proven by TRIP + disasm, never
+    auto-applied.
+  - §7 recipe steps 3/4/5 now fold in typed returns, typed params, and
+    the call-site conversion shims.
+  - §8 metrics: added bare-`i32` node-ptr params → 0 and
+    deferred-newtype-worklist length → 0.
+
+- **`00-overview.md`** — sequencing rationale gained a "Typing rides with
+  threading, not after it" paragraph.
+
+- **`STATUS.md`** — top note + the 01 / 01b plan-table rows updated.
+
+### Handoff / next
+
+The strategy is recorded but **not yet executable as fused slices**: the
+missing piece is the `READY` per-slice cookbook for the `NodePtr<K>`
+foundation (the analog of `01b`), seeded by a recon counting node-field
+access sites per node family so the family build order is data-driven
+(highest-traffic, simplest-invariant first). Draft that next; only then
+do fused threading+typing slices begin. Phase-C threading of the
+remaining giants may continue in the interim with the worklist fallback
+(§4a) so it isn't blocked on the foundation.
+
 ## Idiom session 142 — 2026-06-06 — Phase-C threading resumes: `app_space` (workstream 01)
 
 **Type:** execution (workstream 01, Phase C). **1 commit, 1 function threaded.** Dashboard **29/2/7/4** green; warnings **48 → 48** (flat).

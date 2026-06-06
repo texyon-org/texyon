@@ -141,21 +141,40 @@ but correct/strengthen the parent sketch as follows:
 
 Sequencing tension: 811 accessors return raw C-shaped values today, and
 hundreds of translated functions pass `i32` around. Converting all at
-once is a giant untestable diff
-(violates A.12). Options, to decide when drafting reaches `READY`:
+once is a giant untestable diff (violates A.12). Three sequencings were
+considered:
 
--   **(a) Newtypes at the arena boundary first.** Give the new `Mem`
-    accessors `Scaled`/valid-`MemIdx`/nullable-`MemPtr` signatures; let
-    call sites do explicit unwrap/constructor conversions at the
-    boundary initially, then sweep inward module-by-module. Pro:
-    localized, testable. Con: conversion noise during transition.
--   **(b) Defer newtypes until after ownership moves.** Do Phase B/C
-    with `i32` first, introduce newtypes as a final polishing sweep.
-    Pro: separates two hard changes. Con: a second full call-site pass.
+-   **(a) Newtypes at the arena boundary first, then sweep inward as a
+    separate effort.** Give the new `Mem` accessors
+    `Scaled`/valid-`MemIdx`/nullable-`MemPtr` signatures; let call sites
+    do explicit unwrap/constructor conversions at the boundary initially.
+    Pro: localized. Con: leaves a long boundary-conversion tail.
+-   **(b) Defer newtypes entirely until after ownership/threading.** Do
+    Phase B/C with `i32` first, introduce newtypes as a final polishing
+    sweep. Pro: separates two hard changes. Con: **a second full
+    call-site pass** over every function already touched by threading.
+-   **(c) Type as you thread (CHOSEN, 2026-06-06).** A function is
+    threaded (Phase C) and typed in the **same touch/commit**: when its
+    signature changes to take `&mut MemState`/`&mut EngineState`, its
+    node-pointer params/locals and its accessor calls simultaneously
+    adopt the typed surface (`NodePtr<K>`/`MemIdx`/`MemPtr`/`Scaled`/…).
+    Pro: one call-site pass instead of two; the function is left in its
+    final idiomatic form; the borrow-disjointness work and the
+    sentinel/index-taxonomy work are done while the body is already open
+    and under the eye of the same parity run. Con: each threading slice
+    is heavier, and it requires the typed foundation (§4a) to exist for
+    the node families that slice touches before the slice can run.
 
-Rule for execution: use (a) only for wrappers whose invariant is
-unambiguous at the accessor boundary (`Scaled`, valid `MemIdx`, and
-checked nullable `MemPtr`/`Halfword` conversions). Use (b) for the rest.
+**Decision (supersedes the earlier (a)-mostly rule):** do **(c)**. The
+project chose to thread the leaf/subsystem backlog with bare `i32` first
+(historically option (b) in practice), but **from 2026-06-06 onward every
+remaining Phase-C threading slice carries its typing with it** — see the
+fused recipe in `01b` and the foundation-first prerequisite in §4a below.
+The bridge accessors that are *not yet* threaded keep their `i32`
+signatures until their slice arrives; the newtype-debt worklist (§4, the
+mandatory-tracking rule below) remains the backlog of record for any
+field a slice is forced to leave as `i32` (see the fallback in §4a).
+
 Newtypes must be `#[derive(Copy, Clone)]` + `#[repr(transparent)]` so
 they are zero-cost. `NodePtr<K>` typed handles use the same rule: they
 carry a `MemIdx` plus compile-time-only marker state, and must compile
@@ -193,12 +212,81 @@ instead of relying on memory. Migrating a semantic-typed field **without**
 adding its worklist row is a plan violation, even though the code still
 compiles and passes parity.
 
+## 4a. Type-as-you-thread: the foundation-first prerequisite
+
+The §4(c) decision only works if the typed surface a slice needs already
+exists when that slice runs. So the typing work splits into a one-time
+**foundation** (built up front, before fused slices begin) and the
+**per-slice fusion** (carried by every threading commit thereafter).
+
+**Foundation (build first, as its own short workstream of slices):**
+
+1.  **Scalar newtypes** — `MemIdx`, `MemPtr`/`Halfword`, `Scaled`,
+    `StrNumber`, `FontId`, `Token`, and the eqtb/hash index wrappers, per
+    §4. `#[repr(transparent)]` + `#[derive(Copy, Clone)]`. Add the
+    checked constructors (`MemIdx::new`, `MemPtr::from_raw` →
+    `Option<MemIdx>`) and the `NodeType::from_raw` checked path. **Gate:
+    a release-mode disasm spot-check (§8) proving they are zero-cost vs.
+    the raw `i32`** before any fused slice depends on them.
+2.  **The `Mem` arena ownership move** (§5 steps 1–2): `Vec<MemoryWord>`,
+    `ini.rs` allocation, `tt_cleanup`/longjmp reconciliation, dump/undump
+    for the format-resident arrays. This must land before node-handle
+    field methods, because the safe slice index is what lets the union
+    projection be the *only* surviving `unsafe`.
+3.  **The `NodePtr<K>` handle layer + checked classification**, one node
+    family at a time (`03-memory-and-nodes.md` target shape): the
+    capability-trait'd handle, the `classify`/`from_raw` boundary, and the
+    per-family field methods. A fused threading slice may only adopt
+    typed handles for node families whose layer is built; until a
+    family's layer exists, a slice that touches it stays on `MemIdx`/raw
+    for *that* family and records the debt (the fallback below).
+
+The foundation is specified at the target level in
+`03-memory-and-nodes.md` and executed per the §5/§8 discipline here. Its
+per-slice cookbook — the `NodePtr<K>` analog of `01b` — is
+**`01c-typed-node-recipe.md` (READY, session 144)**: it carries the
+data-driven family build order (a recon of node-field access sites per
+family, highest-traffic + simplest-invariant first), the concrete
+`NodePtr<K>` design, the mandatory zero-cost disasm gate, the per-slice
+recipe, and the hard constraints (the `is_char_node` partition, the format
+dump, `var_used`/`dyn_used` parity). Build the foundation from `01c`
+before fused slices begin.
+
+**Per-slice fusion (every Phase-C threading commit, from 2026-06-06):**
+the `01b` recipe gains the typing steps — see `01b` §3a/§4b/§7. In one
+sentence: when you change a function's signature to thread state, you
+also (i) give the accessors it calls their typed return signatures, (ii)
+convert its node-pointer params/locals to `NodePtr<K>`/`MemPtr` for any
+built family, and (iii) push the unwrap/constructor conversions outward
+to its (still-`i32`) callers as transient boundary shims that vanish when
+those callers are themselves threaded — exactly mirroring how the
+bridge-down `_global` wrappers vanish (`01b` §3).
+
+**Fallback (keeps threading un-blocked):** a slice is *not* forced to
+type everything it touches. If a node family it uses has no layer yet, or
+a field's index-vs-sentinel invariant is not yet audited, thread it with
+`i32`/`MemIdx` for that part and **add the deferred-newtype-worklist
+row** (§4). This is the safety valve that prevents the foundation
+schedule from stalling the giant-threading that is currently flowing. The
+worklist is then the exact, auditable list of the only remaining typing
+debt — there is no separate "second full call-site pass," only a
+shrinking worklist.
+
 ## 5. The arena: `Mem`
 
 Target shape is already specified in `plan/03-memory-and-nodes.md`
 (`Mem` struct, `word`/`word_mut`, typed `NodePtr<K>` handles,
-classification, and `NodeType`). Build it there. Migration
-specifics for *this* codebase:
+classification, and `NodeType`). Build it there.
+
+**Non-goal (do not re-litigate, see `01c` §8):** keep TeX's free-list
+arena. Do **not** replace it with per-node heap allocation
+(`Box`/`enum`-per-node/`slotmap`) — that breaks the format dump, the
+`is_char_node` partition, and `var_used`/`dyn_used` parity, and ruins perf
+on the hot loops (A.5/A.7). The allocator algorithm stays as safe
+`&mut Mem` methods; "de-manual-memory" removes the unsafe raw-pointer
+derefs and bare-`i32` arithmetic, not the free-list.
+
+Migration specifics for *this* codebase:
 
 1.  Introduce `Mem { data: Vec<MemoryWord>, lo_mem_max, hi_mem_min,
     mem_end, avail, rover, var_used, dyn_used }`. Pre-allocate `data`
@@ -272,7 +360,9 @@ it is where `scan.rs`'s 179 `#[no_mangle]` fns lose their `extern "C"`
 and gain a `state: &mut EngineState` parameter. Coordinate with
 workstream 02 (module split) and 03 (de-unsafe), since a function being
 threaded is also the moment to drop its `#[no_mangle]` and de-`unsafe`
-it.
+it — **and, per §4(c)/§4a, the moment to give it its typed surface**
+(`NodePtr<K>`/`MemIdx`/`MemPtr`/`Scaled`) so threading and typing are one
+touch, not two passes. The fused per-slice steps live in `01b`.
 
 ## 7. The longjmp / `Drop` hazard (design constraint, not afterthought)
 
@@ -323,9 +413,13 @@ zero regression. Additionally for this workstream:
 These are no longer blockers for starting 01, but they constrain how it
 is executed:
 
-1.  Newtype rollout: use boundary-first newtypes only where invariants
-    are unambiguous; defer the rest. The per-accessor taxonomy is part
-    of each accessor migration.
+1.  Newtype rollout: **type as you thread** (§4 option (c), decided
+    2026-06-06). Build the §4a foundation (scalar newtypes, the `Mem`
+    ownership move, the `NodePtr<K>` layer per family) first, then every
+    Phase-C threading slice carries its typing in the same commit (`01b`
+    §3a/§4b/§7). A slice may leave a part as `i32` only by recording a
+    deferred-newtype-worklist row (§4a fallback); the worklist — not a
+    second full call-site pass — is the typing backlog of record.
 2.  Exact `EngineState` field list: use `01a-global-inventory.md` as the
     source of truth. `misc` is a real holding cluster; decide a final
     sub-struct before migrating any `misc` row.
