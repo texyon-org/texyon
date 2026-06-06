@@ -586,8 +586,7 @@ fn is_char_node_global(p: i32) -> bool {
 }
 
 /// translated from xetex-math.c:91 (clean_box)
-#[no_mangle]
-pub unsafe extern "C" fn clean_box(p: i32, s: i16) -> i32 {
+pub unsafe fn clean_box(p: i32, s: i16) -> i32 {
     let q;
     match mem_b32s1(p) {
         MATH_CHAR => {
@@ -2398,8 +2397,7 @@ unsafe fn update_math_style_params() {
 }
 
 /// translated from xetex-math.c:84 (mlist_to_hlist)
-#[no_mangle]
-pub unsafe extern "C" fn mlist_to_hlist() {
+pub unsafe fn mlist_to_hlist() {
     let mlist = crate::globals::cur_mlist();
     let penalties = crate::globals::mlist_penalties();
     let style = cur_style();
@@ -3151,8 +3149,7 @@ unsafe fn compute_ot_math_accent_pos_global(mut p: i32) -> i32 {
 }
 
 /// translated from xetex-math.c:388 (scan_delimiter)
-#[no_mangle]
-pub unsafe extern "C" fn scan_delimiter(p: i32, r: bool) {
+pub unsafe fn scan_delimiter(p: i32, r: bool) {
     if r {
         if cur_chr() == 1 {
             set_cur_val1(0x4000_0000);
@@ -4532,8 +4529,7 @@ pub unsafe fn init_math() {
 }
 
 /// translated from xetex-math.c:71 (initialize_math_variables)
-#[no_mangle]
-pub unsafe extern "C" fn initialize_math_variables() {
+pub unsafe fn initialize_math_variables() {
     // null_delimiter is a file-static b16x4 that is never read outside this
     // function; zeroing it is redundant (C zero-initializes statics) and a no-op.
 }

@@ -63,8 +63,7 @@ pub unsafe extern "C" fn tex_round(r: f64) -> i32 {
 /// than 0 (because `(x + 1) / 2` in C truncates toward zero).
 ///
 /// translated from xetex-scaledmath.c:51 (half)
-#[no_mangle]
-pub unsafe extern "C" fn half(x: i32) -> i32 {
+pub unsafe fn half(x: i32) -> i32 {
     // The C macro `odd(x)` is `((x) & 1)`; Rust's `x & 1 != 0` is the
     // same. We wrap the add/divide in `wrapping_*` to match the C's
     // implementation-defined-but-well-known behaviour for i32 overflow.
@@ -85,8 +84,7 @@ pub unsafe extern "C" fn half(x: i32) -> i32 {
 /// exceed `max_answer` in magnitude.
 ///
 /// translated from xetex-scaledmath.c:60 (mult_and_add)
-#[no_mangle]
-pub unsafe extern "C" fn mult_and_add(
+pub unsafe fn mult_and_add(
     mut n: i32,
     mut x: i32,      // scaled_t
     y: i32,          // scaled_t
@@ -182,8 +180,7 @@ pub unsafe fn x_over_n(mut x: i32, mut n: i32) -> i32 {
 /// `x`.
 ///
 /// translated from xetex-scaledmath.c:105 (xn_over_d)
-#[no_mangle]
-pub unsafe extern "C" fn xn_over_d(x: i32, n: i32, d: i32) -> i32 {
+pub unsafe fn xn_over_d(x: i32, n: i32, d: i32) -> i32 {
     let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
     if overflowed {
         set_arith_error(true);
@@ -238,8 +235,7 @@ pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
 /// (ties away from zero). Does not touch `tex_remainder`.
 ///
 /// translated from xetex-scaledmath.c:137 (round_xn_over_d)
-#[no_mangle]
-pub unsafe extern "C" fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
+pub unsafe fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
     // scaled_t is i32
 
     let positive: bool;
@@ -282,8 +278,7 @@ pub unsafe extern "C" fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
 /// ±0x7FFFFFFF if |p/q| >= 8.
 ///
 /// translated from xetex-scaledmath.c:165 (make_frac)
-#[no_mangle]
-pub unsafe extern "C" fn make_frac(mut p: i32, mut q: i32) -> i32 {
+pub unsafe fn make_frac(mut p: i32, mut q: i32) -> i32 {
     let mut negative = p < 0;
     if negative {
         p = -p;
@@ -339,8 +334,7 @@ pub unsafe extern "C" fn make_frac(mut p: i32, mut q: i32) -> i32 {
 /// a scaled integer. Sets `arith_error` on overflow.
 ///
 /// translated from xetex-scaledmath.c:220 (take_frac)
-#[no_mangle]
-pub unsafe extern "C" fn take_frac(mut q: i32, mut f: i32) -> i32 {
+pub unsafe fn take_frac(mut q: i32, mut f: i32) -> i32 {
     let mut negative = f < 0;
     if negative {
         f = -f;
@@ -413,8 +407,7 @@ pub unsafe extern "C" fn take_frac(mut q: i32, mut f: i32) -> i32 {
 /// Compare `a*b` vs `c*d` without overflow, returning 1, 0, or -1.
 ///
 /// translated from xetex-scaledmath.c:332 (ab_vs_cd)
-#[no_mangle]
-pub unsafe extern "C" fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
+pub unsafe fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
     if a < 0 {
         a = -a;
         b = -b;
@@ -484,8 +477,7 @@ pub unsafe extern "C" fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32
 /// subtraction generator).
 ///
 /// translated from xetex-scaledmath.c:418 (new_randoms)
-#[no_mangle]
-pub unsafe extern "C" fn new_randoms() {
+pub unsafe fn new_randoms() {
     for k in 0_usize..24 {
         let x = random_entry(k).wrapping_sub(random_entry(k + 31));
         set_random_entry(k, if x < 0 { x + 0x1000_0000 } else { x });
@@ -506,8 +498,7 @@ pub unsafe extern "C" fn new_randoms() {
 /// Seed the pseudo-random table and run three warmup cycles.
 ///
 /// translated from xetex-scaledmath.c:441 (init_randoms)
-#[no_mangle]
-pub unsafe extern "C" fn init_randoms(seed: i32) {
+pub unsafe fn init_randoms(seed: i32) {
     let mut j = seed.abs();
 
     while j >= 0x1000_0000 {
@@ -539,8 +530,7 @@ pub unsafe extern "C" fn init_randoms(seed: i32) {
 /// `[0, abs(x))` (or `(-abs(x), 0]` when `x < 0`).
 ///
 /// translated from xetex-scaledmath.c:468 (unif_rand)
-#[no_mangle]
-pub unsafe extern "C" fn unif_rand(x: i32) -> i32 {
+pub unsafe fn unif_rand(x: i32) -> i32 {
     if j_random() == 0 {
         new_randoms();
     } else {
@@ -564,8 +554,7 @@ pub unsafe extern "C" fn unif_rand(x: i32) -> i32 {
 /// Natural logarithm in TeX's scaled-point units (result = ln(x/2^30) * 2^24).
 ///
 /// translated from xetex-scaledmath.c:22 (m_log)
-#[no_mangle]
-pub unsafe extern "C" fn m_log(mut x: i32) -> i32 {
+pub unsafe fn m_log(mut x: i32) -> i32 {
     if x <= 0 {
         error_here_with_diagnostic(c"Logarithm of ".as_ptr());
         print_scaled(x);
@@ -616,8 +605,7 @@ pub unsafe extern "C" fn m_log(mut x: i32) -> i32 {
 /// Return a pseudo-random integer drawn from a normal distribution.
 ///
 /// translated from xetex-scaledmath.c:487 (norm_rand). Calls `m_log`.
-#[no_mangle]
-pub unsafe extern "C" fn norm_rand() -> i32 {
+pub unsafe fn norm_rand() -> i32 {
     loop {
         let (x, u);
 
@@ -903,8 +891,7 @@ mod tests {
 /// Add or subtract two scaled values, setting arith_error on overflow.
 ///
 /// translated from xetex-xetex0.c:6281 (add_or_sub)
-#[no_mangle]
-pub unsafe extern "C" fn add_or_sub(x: i32, y: i32, max_answer: i32, negative: bool) -> i32 {
+pub unsafe fn add_or_sub(x: i32, y: i32, max_answer: i32, negative: bool) -> i32 {
     let y = if negative { -y } else { y };
     if x >= 0 {
         if y <= max_answer - x {
@@ -924,8 +911,7 @@ pub unsafe extern "C" fn add_or_sub(x: i32, y: i32, max_answer: i32, negative: b
 /// Rounded integer quotient n/d, setting arith_error on divide-by-zero.
 ///
 /// translated from xetex-xetex0.c:6305 (quotient)
-#[no_mangle]
-pub unsafe extern "C" fn quotient(mut n: i32, mut d: i32) -> i32 {
+pub unsafe fn quotient(mut n: i32, mut d: i32) -> i32 {
     if d == 0 {
         set_arith_error(true);
         return 0;
@@ -956,8 +942,7 @@ pub unsafe extern "C" fn quotient(mut n: i32, mut d: i32) -> i32 {
 /// Compute x * n / d clamped to max_answer, setting arith_error on overflow.
 ///
 /// translated from xetex-xetex0.c:6336 (fract)
-#[no_mangle]
-pub unsafe extern "C" fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
+pub unsafe fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
     if d == 0 {
         set_arith_error(true);
         return 0;
