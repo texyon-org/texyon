@@ -171,8 +171,7 @@ pub unsafe fn print_int(mut n: i32) {
 /// Print an integer in hexadecimal with a leading `"`.
 ///
 /// translated from xetex-output.c:658 (print_hex)
-#[no_mangle]
-pub unsafe extern "C" fn print_hex(mut n: i32) {
+pub unsafe fn print_hex(mut n: i32) {
     let mut k: u8 = 0;
     print_char(b'"' as i32);
     loop {
@@ -193,8 +192,7 @@ pub unsafe extern "C" fn print_hex(mut n: i32) {
 /// Print a Unicode scalar value in `U+XXXX` form.
 ///
 /// translated from xetex-output.c:749 (print_ucs_code)
-#[no_mangle]
-pub unsafe extern "C" fn print_ucs_code(mut n: i32) {
+pub unsafe fn print_ucs_code(mut n: i32) {
     let mut k: u8 = 0;
     print_cstr(c"U+".as_ptr());
     loop {
@@ -282,8 +280,7 @@ pub unsafe fn print_nl(s: i32) {
 /// Print the escape character (if any) followed by string `s`.
 ///
 /// translated from xetex-output.c:310 (print_esc)
-#[no_mangle]
-pub unsafe extern "C" fn print_esc(s: i32) {
+pub unsafe fn print_esc(s: i32) {
     let c = eqtb_b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
     if (0..=BIGGEST_USV).contains(&c) {
         print_char(c);
@@ -312,8 +309,7 @@ pub unsafe extern "C" fn print_two(n: i32) {
 /// Print `n` as a Roman numeral (lowercase).
 ///
 /// translated from xetex-output.c:563 (print_roman_int)
-#[no_mangle]
-pub unsafe extern "C" fn print_roman_int(mut n: i32) {
+pub unsafe fn print_roman_int(mut n: i32) {
     // "m2d5c2l5x2v5i": alternating letter/divisor pairs encoding the
     // standard Roman numeral values and their subtraction thresholds.
     const ROMAN_DATA: &[u8] = b"m2d5c2l5x2v5i";
@@ -379,8 +375,7 @@ pub unsafe fn print_scaled(mut s: i32) {
 /// Append a single character to the active diagnostic (if any).
 ///
 /// translated from xetex-output.c:75 (warn_char)
-#[no_mangle]
-pub unsafe extern "C" fn warn_char(c: i32) {
+pub unsafe fn warn_char(c: i32) {
     let diag = current_diagnostic();
     if !diag.is_null() {
         let bytes: [u8; 2] = [c as u8, 0];
@@ -626,8 +621,7 @@ pub unsafe fn print(s: i32) {
 /// Print the currently-accumulating string (in the string pool scratch area).
 ///
 /// translated from xetex-output.c:328 (print_current_string)
-#[no_mangle]
-pub unsafe extern "C" fn print_current_string() {
+pub unsafe fn print_current_string() {
     let mut j = str_start(str_ptr() - 0x10000);
     while j < pool_ptr() {
         print_char(str_pool_entry(j) as i32);
@@ -720,8 +714,7 @@ pub unsafe fn error_here_with_diagnostic(message: *const libc::c_char) -> *mut s
 /// Emit the current file/line prefix to the TeX output stream.
 ///
 /// translated from xetex-output.c:304 (print_file_line)
-#[no_mangle]
-pub unsafe extern "C" fn print_file_line() {
+pub unsafe fn print_file_line() {
     let mut level = in_open();
     while level > 0 && full_source_filename_stack(level) == 0 {
         level -= 1;
@@ -748,8 +741,7 @@ pub unsafe extern "C" fn print_file_line() {
 /// Print the name of a math font-size selector.
 ///
 /// translated from xetex-output.c:233 (print_size)
-#[no_mangle]
-pub unsafe extern "C" fn print_size(s: i32) {
+pub unsafe fn print_size(s: i32) {
     if s == TEXT_SIZE {
         print_esc_cstr(c"textfont".as_ptr());
     } else if s == SCRIPT_SIZE {
@@ -766,8 +758,7 @@ pub unsafe extern "C" fn print_size(s: i32) {
 /// Print a write-whatsit node's label and stream number.
 ///
 /// translated from xetex-output.c:245 (print_write_whatsit)
-#[no_mangle]
-pub unsafe extern "C" fn print_write_whatsit(s: *const libc::c_char, p: i32) {
+pub unsafe fn print_write_whatsit(s: *const libc::c_char, p: i32) {
     print_esc_cstr(s);
     let v = mem_b32s0(p + 1);
     if v < 16 {
@@ -787,8 +778,7 @@ pub unsafe extern "C" fn print_write_whatsit(s: *const libc::c_char, p: i32) {
 /// quoting if needed.
 ///
 /// translated from xetex-output.c:128 (print_file_name)
-#[no_mangle]
-pub unsafe extern "C" fn print_file_name(n: i32, a: i32, e: i32) {
+pub unsafe fn print_file_name(n: i32, a: i32, e: i32) {
     // Scan all three string components to decide if quoting is needed.
     let mut must_quote = false;
     let mut quote_char: i32 = 0;
@@ -852,8 +842,7 @@ pub unsafe extern "C" fn print_file_name(n: i32, a: i32, e: i32) {
 /// Print a control-sequence name for control-sequence pointer `p`.
 ///
 /// translated from xetex-output.c:76 (print_cs)
-#[no_mangle]
-pub unsafe extern "C" fn print_cs(p: i32) {
+pub unsafe fn print_cs(p: i32) {
     if p < HASH_BASE {
         if p >= SINGLE_BASE {
             if p == NULL_CS {
@@ -892,8 +881,7 @@ pub unsafe extern "C" fn print_cs(p: i32) {
 /// Print a control-sequence name without trailing space (used in error msgs).
 ///
 /// translated from xetex-output.c:108 (sprint_cs)
-#[no_mangle]
-pub unsafe extern "C" fn sprint_cs(p: i32) {
+pub unsafe fn sprint_cs(p: i32) {
     if p < HASH_BASE {
         if p < SINGLE_BASE {
             print_char(p - 1);
@@ -917,8 +905,7 @@ pub unsafe extern "C" fn sprint_cs(p: i32) {
 /// Print the UTF-16 text of a native-word node.
 ///
 /// translated from xetex-output.c:260 (print_native_word)
-#[no_mangle]
-pub unsafe extern "C" fn print_native_word(p: i32) {
+pub unsafe fn print_native_word(p: i32) {
     // NATIVE_NODE_text(p) = (unsigned short *) &mem[p + NATIVE_NODE_SIZE]
     // NATIVE_NODE_SIZE = 6 (xetex-constants.h:130)
     // mem[p+4].b16.s1 = character count
@@ -951,8 +938,7 @@ pub unsafe extern "C" fn print_native_word(p: i32) {
 /// Print the sparse-array register number for node `q`.
 ///
 /// translated from xetex-output.c:285 (print_sa_num)
-#[no_mangle]
-pub unsafe extern "C" fn print_sa_num(q: i32) {
+pub unsafe fn print_sa_num(q: i32) {
     let n = if (mem_b16s1(q) as i32) < DIMEN_VAL_LIMIT {
         mem_b32s1(q + 1)
     } else {
@@ -1003,8 +989,7 @@ pub unsafe fn end_diagnostic(blank_line: bool) {
 /// Print a textual description of the current TeX mode m.
 ///
 /// translated from xetex-xetex0.c:1327 (print_mode)
-#[no_mangle]
-pub unsafe extern "C" fn print_mode(m: i32) {
+pub unsafe fn print_mode(m: i32) {
     if m > 0 {
         match m / MAX_COMMAND_PLUS_1 {
             0 => print_cstr(c"vertical mode".as_ptr()),
@@ -1050,8 +1035,7 @@ const MATH_LEFT_GROUP: u8 = 16;
 /// Print a textual name for the current group, with level and entry line.
 ///
 /// translated from xetex-xetex0.c:3464 (print_group)
-#[no_mangle]
-pub unsafe extern "C" fn print_group(e: bool) {
+pub unsafe fn print_group(e: bool) {
     let g = cur_group();
     match g {
         BOTTOM_LEVEL => {
@@ -1111,8 +1095,7 @@ pub unsafe extern "C" fn print_group(e: bool) {
 /// Print "' in <mode>" for use in error messages.
 ///
 /// translated from xetex-xetex0.c:1356 (print_in_mode)
-#[no_mangle]
-pub unsafe extern "C" fn print_in_mode(m: i32) {
+pub unsafe fn print_in_mode(m: i32) {
     if m > 0 {
         match m / MAX_COMMAND_PLUS_1 {
             0 => print_cstr(c"' in vertical mode".as_ptr()),
@@ -1139,8 +1122,7 @@ pub unsafe extern "C" fn print_in_mode(m: i32) {
 /// Display a token list headed at p.
 ///
 /// translated from xetex-xetex0.c:3893 (token_show)
-#[no_mangle]
-pub unsafe extern "C" fn token_show(p: i32) {
+pub unsafe fn token_show(p: i32) {
     if p != TEX_NULL {
         show_token_list(mem_b32s1(p), TEX_NULL, 10_000_000);
     }
@@ -1153,8 +1135,7 @@ pub unsafe extern "C" fn token_show(p: i32) {
 /// Print a glue spec node as "width plus stretch minus shrink".
 ///
 /// translated from xetex-xetex0.c:274 (print_spec)
-#[no_mangle]
-pub unsafe extern "C" fn print_spec(p: i32, s: *const libc::c_char) {
+pub unsafe fn print_spec(p: i32, s: *const libc::c_char) {
     if p < 0 || p >= lo_mem_max() {
         print_char('*' as i32);
     } else {
@@ -1180,8 +1161,7 @@ pub unsafe extern "C" fn print_spec(p: i32, s: *const libc::c_char) {
 /// Print the name of glue parameter n (GLUE_PAR__*).
 ///
 /// translated from xetex-xetex0.c:379 (print_skip_param)
-#[no_mangle]
-pub unsafe extern "C" fn print_skip_param(n: i32) {
+pub unsafe fn print_skip_param(n: i32) {
     match n {
         0 => print_esc_cstr(c"lineskip".as_ptr()),
         1 => print_esc_cstr(c"baselineskip".as_ptr()),
@@ -1209,8 +1189,7 @@ pub unsafe extern "C" fn print_skip_param(n: i32) {
 /// Print the name of integer parameter n (INT_PAR__*).
 ///
 /// translated from xetex-xetex0.c:1423 (print_param)
-#[no_mangle]
-pub unsafe extern "C" fn print_param(n: i32) {
+pub unsafe fn print_param(n: i32) {
     match n {
         0 => print_esc_cstr(c"pretolerance".as_ptr()),
         1 => print_esc_cstr(c"tolerance".as_ptr()),
@@ -1304,8 +1283,7 @@ pub unsafe extern "C" fn print_param(n: i32) {
 /// Print the math style name for style code c.
 ///
 /// translated from xetex-xetex0.c:319 (print_style)
-#[no_mangle]
-pub unsafe extern "C" fn print_style(c: i32) {
+pub unsafe fn print_style(c: i32) {
     match c / 2 {
         0 => print_esc_cstr(c"displaystyle".as_ptr()), // DISPLAY_STYLE / 2
         1 => print_esc_cstr(c"textstyle".as_ptr()),    // TEXT_STYLE / 2
@@ -1318,8 +1296,7 @@ pub unsafe extern "C" fn print_style(c: i32) {
 /// Print the fam number and character code stored in a math node p.
 ///
 /// translated from xetex-xetex0.c:294 (print_fam_and_char)
-#[no_mangle]
-pub unsafe extern "C" fn print_fam_and_char(p: i32) {
+pub unsafe fn print_fam_and_char(p: i32) {
     print_esc_cstr(c"fam".as_ptr());
     print_int((mem_b16s1(p) % 256) as i32);
     print_char(' ' as i32);
@@ -1334,8 +1311,7 @@ pub unsafe extern "C" fn print_fam_and_char(p: i32) {
 /// Print a delimiter code (four 16-bit fields packed as a hex number).
 ///
 /// translated from xetex-xetex0.c:307 (print_delimiter)
-#[no_mangle]
-pub unsafe extern "C" fn print_delimiter(p: i32) {
+pub unsafe fn print_delimiter(p: i32) {
     let s3 = mem_b16s3(p) as i64;
     let s2 = mem_b16s2(p) as i64;
     let s1 = mem_b16s1(p) as i64;
@@ -1362,8 +1338,7 @@ const FILLL: i32 = 3;
 /// Print a rule dimension (print '*' for a null-flag wildcard).
 ///
 /// translated from xetex-xetex0.c:250 (print_rule_dimen)
-#[no_mangle]
-pub unsafe extern "C" fn print_rule_dimen(d: i32) {
+pub unsafe fn print_rule_dimen(d: i32) {
     if d == NULL_FLAG {
         print_char('*' as i32);
     } else {
@@ -1374,8 +1349,7 @@ pub unsafe extern "C" fn print_rule_dimen(d: i32) {
 /// Print a glue dimension with optional fil/fill/filll suffix.
 ///
 /// translated from xetex-xetex0.c:258 (print_glue)
-#[no_mangle]
-pub unsafe extern "C" fn print_glue(d: i32, order: i32, s: *const libc::c_char) {
+pub unsafe fn print_glue(d: i32, order: i32, s: *const libc::c_char) {
     print_scaled(d);
     if !(NORMAL..=FILLL).contains(&order) {
         print_cstr(c"foul".as_ptr());
@@ -1394,8 +1368,7 @@ pub unsafe extern "C" fn print_glue(d: i32, order: i32, s: *const libc::c_char) 
 /// Print the name of dimen parameter n (DIMEN_PAR__*).
 ///
 /// translated from xetex-xetex0.c:1676 (print_length_param)
-#[no_mangle]
-pub unsafe extern "C" fn print_length_param(n: i32) {
+pub unsafe fn print_length_param(n: i32) {
     match n {
         0 => print_esc_cstr(c"parindent".as_ptr()),
         1 => print_esc_cstr(c"mathsurround".as_ptr()),
@@ -1431,8 +1404,7 @@ pub unsafe extern "C" fn print_length_param(n: i32) {
 /// Print the font escape-name and character for a char-node at `p`.
 ///
 /// translated from xetex-xetex0.c:225 (print_font_and_char)
-#[no_mangle]
-pub unsafe extern "C" fn print_font_and_char(p: i32) {
+pub unsafe fn print_font_and_char(p: i32) {
     if p > mem_end() {
         print_esc_cstr(c"CLOBBERED.".as_ptr());
     } else {
@@ -1454,8 +1426,7 @@ pub unsafe extern "C" fn print_font_and_char(p: i32) {
 /// Print a mark token list enclosed in `{…}`.
 ///
 /// translated from xetex-xetex0.c:240 (print_mark)
-#[no_mangle]
-pub unsafe extern "C" fn print_mark(p: i32) {
+pub unsafe fn print_mark(p: i32) {
     print_char('{' as i32);
     if p < hi_mem_min() || p > mem_end() {
         print_esc_cstr(c"CLOBBERED.".as_ptr());
@@ -1853,8 +1824,7 @@ const CC_PROTECTED_TOKEN: i32 = 0x1C00001;
 /// Print the name of command code `cmd` with subtype `chr_code`.
 ///
 /// translated from xetex-xetex0.c:1265 (print_cmd_chr)
-#[no_mangle]
-pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
+pub unsafe fn print_cmd_chr(cmd: u16, chr_code: i32) {
     use crate::globals::{font_area_entry, font_dsize_entry, font_name_entry, font_size_entry};
 
     // Helper: print a char/codepoint (> 65535 uses print_char for raw code).
@@ -2703,8 +2673,7 @@ pub unsafe extern "C" fn print_cmd_chr(cmd: u16, chr_code: i32) {
 /// Print the meaning of the current token (`cur_cmd`/`cur_chr`).
 ///
 /// translated from xetex-xetex0.c:3383 (print_meaning)
-#[no_mangle]
-pub unsafe extern "C" fn print_meaning() {
+pub unsafe fn print_meaning() {
     print_cmd_chr(cur_cmd() as u16, cur_chr());
     if cur_cmd() as u16 >= CALL {
         print_char(':' as i32);
@@ -2724,8 +2693,7 @@ pub unsafe extern "C" fn print_meaning() {
 /// Warn if a group spans file boundaries (\tracingcommands > 0).
 ///
 /// translated from xetex-xetex0.c:2961 (group_warning)
-#[no_mangle]
-pub unsafe extern "C" fn group_warning() {
+pub unsafe fn group_warning() {
     set_base_ptr(input_ptr());
     set_input_stack(base_ptr(), cur_input());
     let mut i = in_open();
@@ -2768,8 +2736,7 @@ pub unsafe extern "C" fn group_warning() {
 /// Warn if an \if spans file boundaries.
 ///
 /// translated from xetex-xetex0.c:2998 (if_warning)
-#[no_mangle]
-pub unsafe extern "C" fn if_warning() {
+pub unsafe fn if_warning() {
     set_base_ptr(input_ptr());
     set_input_stack(base_ptr(), cur_input());
     let mut i = in_open();
@@ -2816,8 +2783,7 @@ pub unsafe extern "C" fn if_warning() {
 /// Warn about unclosed groups and \if's when reaching end of file.
 ///
 /// translated from xetex-xetex0.c:3039 (file_warning)
-#[no_mangle]
-pub unsafe extern "C" fn file_warning() {
+pub unsafe fn file_warning() {
     // Save and restore save-stack / level / group state while scanning.
     let p = save_ptr();
     let l = cur_level();
@@ -2884,8 +2850,7 @@ pub unsafe extern "C" fn file_warning() {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:2824 (show_cur_cmd_chr)
-#[no_mangle]
-pub unsafe extern "C" fn show_cur_cmd_chr() {
+pub unsafe fn show_cur_cmd_chr() {
     begin_diagnostic();
     diagnostic_begin_capture_warning_here();
     print_nl(b'{' as i32);
@@ -2932,8 +2897,7 @@ pub unsafe extern "C" fn show_cur_cmd_chr() {
 /// Update the if-limit for a specific conditional pointer.
 ///
 /// translated from xetex-xetex0.c:7889 (change_if_limit)
-#[no_mangle]
-pub unsafe extern "C" fn change_if_limit(l: i16, p: i32) {
+pub unsafe fn change_if_limit(l: i16, p: i32) {
     if p == cond_ptr() {
         set_if_limit(l as u8);
     } else {
@@ -3080,8 +3044,7 @@ const MATCH_STL: i32 = 13;
 const END_MATCH_STL: i32 = 14;
 
 /// translated from xetex-xetex0.c:20 (show_token_list)
-#[no_mangle]
-pub unsafe extern "C" fn show_token_list(mut p: i32, q: i32, l: i32) {
+pub unsafe fn show_token_list(mut p: i32, q: i32, l: i32) {
     use crate::globals::{
         error_line, half_error_line, hi_mem_min, mem_b32s0, mem_b32s1, mem_end, set_first_count,
         set_tally, set_trick_count, tally,
@@ -3152,8 +3115,7 @@ pub unsafe extern "C" fn show_token_list(mut p: i32, q: i32, l: i32) {
 }
 
 // translated from xetex-xetex0.c:9282 (print_totals)
-#[no_mangle]
-pub unsafe extern "C" fn print_totals() {
+pub unsafe fn print_totals() {
     print_scaled(crate::globals::page_so_far(1));
     if crate::globals::page_so_far(2) != 0 {
         print_cstr(c" plus ".as_ptr());
@@ -3184,14 +3146,12 @@ pub unsafe extern "C" fn print_totals() {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 /// translated from xetex-xetex0.c:9942 (show_info)
-#[no_mangle]
-pub unsafe extern "C" fn show_info() {
+pub unsafe fn show_info() {
     use crate::globals::{mem_b32s0, temp_ptr};
     show_node_list(mem_b32s0(temp_ptr()));
 }
 // translated from xetex-xetex0.c:10708 (issue_message)
-#[no_mangle]
-pub unsafe extern "C" fn issue_message() {
+pub unsafe fn issue_message() {
     let c = cur_chr() as u8;
     set_mem_b32s1(GARBAGE, scan_toks(false, true));
     let old_setting = selector() as u8;
@@ -3246,8 +3206,7 @@ pub unsafe extern "C" fn issue_message() {
     set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
 }
 // translated from xetex-xetex0.c:7752 (show_save_groups)
-#[no_mangle]
-pub unsafe extern "C" fn show_save_groups() {
+pub unsafe fn show_save_groups() {
     use crate::globals::{
         cur_boundary, cur_group, cur_level, mem_b16s1, nest_e_tex_aux, nest_mode, nest_ptr,
         save_ptr, save_stack_b16s0, save_stack_b32s1, set_cur_group, set_cur_level, set_save_ptr,
@@ -3517,8 +3476,7 @@ pub unsafe extern "C" fn show_save_groups() {
     set_cur_group(c);
 }
 // translated from xetex-xetex0.c:10561 (show_whatever)
-#[no_mangle]
-pub unsafe extern "C" fn show_whatever() {
+pub unsafe fn show_whatever() {
     const INT_PAR_TRACING_ONLINE: i32 = 29; // xetex_format.h:33
     const IF_TEST: u16 = 107; // xetex_format.h:349
     const FI_CODE: u8 = 2; // xetex_format.h:537
@@ -3686,8 +3644,7 @@ pub unsafe extern "C" fn show_whatever() {
     error();
 }
 // translated from xetex-xetex0.c:6428 (char_warning)
-#[no_mangle]
-pub unsafe extern "C" fn char_warning(f: i32, c: i32) {
+pub unsafe fn char_warning(f: i32, c: i32) {
     const INT_PAR_TRACING_LOST_CHARS: i32 = 35; // xetex_format.h:70
     const INT_PAR_TRACING_ONLINE: i32 = 29; // xetex_format.h:64
 
@@ -3772,8 +3729,7 @@ pub unsafe extern "C" fn char_warning(f: i32, c: i32) {
     }
 }
 /// translated from xetex-xetex0.c:735 (show_box)
-#[no_mangle]
-pub unsafe extern "C" fn show_box(p: i32) {
+pub unsafe fn show_box(p: i32) {
     use crate::globals::{
         breadth_max, eqtb_b32s1, pool_ptr, pool_size, set_breadth_max, set_depth_threshold,
     };
@@ -3798,8 +3754,7 @@ pub unsafe extern "C" fn short_display_n(p: i32, m: i32) {
     show_node_list(p);
 }
 /// translated from xetex-xetex0.c:117 (short_display)
-#[no_mangle]
-pub unsafe extern "C" fn short_display(mut p: i32) {
+pub unsafe fn short_display(mut p: i32) {
     use crate::globals::{
         font_in_short_display, font_max, hash_s1, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s2,
         mem_b32s0, mem_b32s1, mem_end, set_font_in_short_display,
@@ -3876,8 +3831,7 @@ pub unsafe extern "C" fn short_display(mut p: i32) {
     }
 }
 /// translated from xetex-xetex0.c:1123 (show_activities)
-#[no_mangle]
-pub unsafe extern "C" fn show_activities() {
+pub unsafe fn show_activities() {
     use crate::globals::{
         eqtb_b32s1, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, nest_aux_b32s0, nest_aux_b32s1,
         nest_head, nest_mode, nest_mode_line, nest_prev_graf, nest_ptr, output_active,
@@ -4038,8 +3992,7 @@ unsafe fn print_subsidiary_data(p: i32, c: u16) {
     }
 }
 /// translated from xetex-xetex0.c:259 (show_node_list)
-#[no_mangle]
-pub unsafe extern "C" fn show_node_list(mut p: i32) {
+pub unsafe fn show_node_list(mut p: i32) {
     use crate::globals::{
         breadth_max, depth_threshold, hash_s1, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s2,
         mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, pool_ptr, set_pool_ptr, set_str_pool,

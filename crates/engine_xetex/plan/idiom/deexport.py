@@ -46,6 +46,11 @@ KEEP = {
     # self-FFI (declared in an extern "C" block in another module) — handled in
     # a dedicated commit that converts the caller to a direct path first.
     "end_token_list", "initialize_pagebuilder_variables", "tex_round",
+    # Dead-on-de-export: these have zero Rust callers and no C caller; the
+    # #[no_mangle] export was their only "use", so de-exporting them surfaces a
+    # dead_code warning. Left exported here to keep this sweep purely about the
+    # link surface; flagged for a separate dead-code-removal pass.
+    "graphite_warning", "print_two", "short_display_n",
 }
 
 NOMANGLE_RE = re.compile(r"^\s*#\[no_mangle\]\s*$")
