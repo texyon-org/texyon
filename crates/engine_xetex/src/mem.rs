@@ -771,7 +771,6 @@ pub unsafe fn free_node_global(p: i32, s: i32) {
 /// `NATIVE_NODE_glyph_count(p)`    = `mem[p+4].b16.s0`
 ///
 /// translated from xetex-xetex0.c:146 (copy_native_glyph_info)
-#[no_mangle]
 ///
 /// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only plus a
 /// raw `xmalloc`/`copy_nonoverlapping` of the native-glyph buffer (no

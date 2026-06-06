@@ -2119,7 +2119,7 @@ fn font_character_width_global(f: i32, c: i32) -> i32 {
 }
 
 // translated from xetex-shipout.c:1470 (reverse)
-// Called by hlist_out (still in C) -> #[no_mangle].
+// Called by the (now Rust) hlist_out; internal Rust fn.
 pub unsafe fn reverse(
     this_box: i32,
     t: i32,
@@ -2600,7 +2600,7 @@ unsafe fn write_out(p: i32) {
 }
 
 // translated from xetex-shipout.c:2071 (pic_out)
-// Called from hlist_out (still in C) → #[no_mangle].
+// Called from the (now Rust) hlist_out; internal Rust fn.
 pub unsafe fn pic_out(p: i32) {
     if cur_h() != dvi_h() {
         movement_global(cur_h() - dvi_h(), RIGHT1);
@@ -2667,7 +2667,7 @@ pub unsafe fn pic_out(p: i32) {
 }
 
 // translated from xetex-shipout.c:1682 (out_what)
-// Declared in xetex-xetexd.h (external linkage) → #[no_mangle].
+// Only a dead prototype remains in xetex-xetexd.h; internal Rust fn.
 pub unsafe fn out_what(p: i32) {
     match mem_b16s0(p) {
         OPEN_NODE | WRITE_NODE | CLOSE_NODE => {
