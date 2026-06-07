@@ -107,8 +107,12 @@ are `xetex/xetex-constants.h:107–139`; the field map is
 **Built so far:** rank 0+1 (header word + box, session 147), rank 2
 (glue/glue_spec, session 148; spec `width` field completed session 150),
 rank 3 (kern, session 149), rank 4 (penalty, session 149). First fused
-`01b` §3a adoptions landed session 150 (`math_kern`/`math_glue`). **Next:
-rank 5 (rule — needs the running-dimension wrapper type first;
+`01b` §3a adoptions landed session 150 (`math_kern`/`math_glue`); typed
+`alloc` boundary added session 151 (`glue_spec`) and extended to the
+**type-stamping** kern + penalty allocs session 152 (`new_kern`/`new_penalty`
+now allocate through `NodePtr::<K>::alloc`, fully typed). **Next:
+`new_null_box` (box-family `alloc`, needs a box `set_subtype` — see §8), rank
+5 (rule — needs the running-dimension wrapper type first;
 `width`/`depth`/`height` are `Scaled`-or-`NULL_FLAG`), and/or more fused
 adoptions of box/glue/kern/penalty-reading leaves.**
 
@@ -493,3 +497,24 @@ before returning (glue_spec carries no type, so it stamps nothing). This is
 the typed lift of TeX's `new_*` constructors — same `get_node`, same arena,
 no per-node heap alloc — **not** a new allocator. Do **not** generalise to a
 single `alloc<K>()` until ≥2 families share it with real consumers (A.6).
+
+**Type-stamping `alloc`s landed (session 152).** The kern and penalty
+families gained the **type-stamping** form of the pattern (the half session
+151 could not exercise — a glue_spec carries no `NODE_type`):
+`NodePtr::<KernNode>::alloc` / `NodePtr::<PenaltyNode>::alloc` each
+`get_node(MEDIUM_NODE_SIZE)`, **write `NODE_type`** (`set_b16s1(KERN_NODE)` /
+`set_b16s1(PENALTY_NODE)`), then construct via the family's one audited
+`from_idx_unchecked`. Their real consumers `new_kern`/`new_penalty`
+(`src/mem.rs`) now allocate through them and are fully typed + `unsafe`-free
+(`let Some(p) = NodePtr::<K>::alloc(mem) else { return ALLOC_FAILED };` then
+typed setters + `p.idx().0`). A new-family `alloc` test asserts the carved
+handle **classifies back** (`classify_kern`/`classify_penalty` → `Some`),
+verifying the stamp. **Three** families now share the `alloc` shape
+(glue_spec, kern, penalty); the A.6 generalisation bar is closer but not
+met — a single `alloc<K>()` needs a per-`K` "size + type-code" trait, so keep
+per-family `alloc`s until box/rule adopt the shape too. Note `subtype` (the
+rank-0 shared-header b16.s0) is still a per-family method
+(`Kern/Glue/PenaltyNode::set_subtype`); a future slice may hoist it to one
+universal `NodePtr<K>::subtype`/`set_subtype` (a blanket `impl<K: NodeKind>`
+collides with the inherent per-family copies, so they must be removed in the
+same slice).

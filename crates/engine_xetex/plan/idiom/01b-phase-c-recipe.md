@@ -194,6 +194,17 @@ family's layer or record the debt.
 > swap the raw `mem.bXXsY(p+N)` calls for the typed methods in one commit;
 > the conversion shim lives in the `_global` bridge at the classified
 > boundary (a match arm or a fresh allocation).
+>
+> **Type-stamping `alloc` adoptions (session 152).** The same "allocate
+> through a typed boundary" move extended to the kern + penalty families:
+> `new_kern`/`new_penalty` (already threaded to `&mut MemState`) now allocate
+> via `NodePtr::<KernNode>::alloc` / `NodePtr::<PenaltyNode>::alloc`, which
+> **write `NODE_type`** as well as confining `from_idx_unchecked` — the
+> type-stamping form of session 151's `glue_spec` allocator (`01c` §8). Each
+> constructor body is now fully typed (typed setters, `p.idx().0` return) and
+> `unsafe`-free. Cheapest adoptions remain: an already-threaded constructor
+> whose single-family node it builds gets a per-family `alloc` + typed setters
+> in one commit, with the `ALLOC_FAILED`/§5 sentinel preserved.
 
 ## 4. The nest-panic rule (precise, with the recon finding)
 

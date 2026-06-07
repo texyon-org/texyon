@@ -9,6 +9,92 @@ dashboard if code changed, surprises, and a handoff.
 
 
 
+## Idiom session 152 — 2026-06-07 — Execution: extend the typed alloc pattern to kern + penalty — the FIRST type-stamping `alloc`s
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` §8), the session-151
+"Next" item: *extend the typed `alloc` pattern to kern/penalty/box when a
+real allocating consumer threads*. **2 commits** (one family each, A.12).
+Dashboard **29/2/7/4**; warnings **42 → 42**; `node::` **16 → 18**.
+
+### What this session adds (and why it is new vs. 151)
+
+Session 151 built the **first** typed allocator, `NodePtr::<GlueSpecNode>::
+alloc`, but a glue_spec carries **no `NODE_type`**, so its `alloc` stamps
+nothing. This session lands the **first type-stamping `alloc`s** — the
+documented-but-never-exercised half of the `01c` §8 pattern ("a type-stamping
+family's `alloc` additionally `set_b16s1(NODE_type)` before returning"):
+
+- **`NodePtr::<KernNode>::alloc(mem) -> Option<Self>`** (`src/node.rs`):
+  `get_node(MEDIUM_NODE_SIZE)`, **writes `NODE_type = KERN_NODE`**, then
+  constructs the handle through the family's single audited
+  `from_idx_unchecked`. `None` = the §5 arena-exhaustion sentinel.
+- **`NodePtr::<PenaltyNode>::alloc`** (same shape, stamps `PENALTY_NODE`) +
+  a small **`PenaltyNode::set_subtype`** (the shared-header b16.s0 half the C
+  `new_penalty` zeroes; penalty has no meaningful subtype, doc'd as such).
+
+### The two real consumers, now fully typed + `unsafe`-free
+
+Both constructors were **already** threaded to `&mut MemState`, so this is
+pure ptr/typing adoption (no threading work — the same shape as 151's
+`math_glue`):
+
+- **`new_kern`** (`src/mem.rs`): `let Some(p) =
+  NodePtr::<KernNode>::alloc(mem) else { return ALLOC_FAILED };
+  p.set_subtype(mem, NORMAL); p.set_width(mem, Scaled(w)); p.idx().0`.
+  Fully typed, zero raw `mem.set_*` indexing, **`unsafe`-free** (it already
+  was, but the hand-rolled `get_node` + raw `set_b16s1(KERN_NODE)` /
+  `set_b16s0` / `set_b32s1(p+1)` are gone — confined into `alloc`).
+- **`new_penalty`** (`src/mem.rs`): the analogous rewrite via
+  `PenaltyNode::alloc` + `set_subtype(0)` + `set_penalty(m)`.
+
+`KERN_NODE`/`PENALTY_NODE` imports **net-moved** from `mem.rs` into
+`node.rs`'s `alloc`s (the type code now lives at the one stamping site);
+`MEDIUM_NODE_SIZE` stays in `mem.rs` (other constructors still call
+`get_node` directly).
+
+### Tests + validation
+
+Two new `node::` unit tests (16 → 18), each building a minimal single-free-
+block arena and asserting (a) `alloc` carves a usable, writable handle and
+(b) it **classifies back** (`classify_kern`/`classify_penalty` → `Some`),
+which directly verifies the type-stamp the `glue_spec` test could not. Both
+commits validated on the full dashboard (**29/2/7/4**) + the lib tests.
+
+### Metrics
+
+Behaviour-preserving (each typed setter/alloc lowers to the identical
+`get_node` + `set_b16s*`/`set_b32s1`): `with_state` **1197**, `unsafe fn`
+**571**, `#[no_mangle]` unchanged, bare-`i32` node-ptr params **379** (the
+constructors still *return* `i32`, so no param metric moves this slice — the
+win is the typed surface + the confined `from_idx_unchecked`). Net new
+`unsafe` blocks: +2 (the two `alloc` audited sites), but they are the
+single confined construction site per family — the pattern, not a leak.
+
+### Lesson / handoff
+
+The type-stamping `alloc` is now proven across two families. Per the `01c` §8
+A.6 discipline, **do NOT** generalise to one `alloc<K>()` yet — but kern +
+penalty + glue_spec means **three** families now share the shape, so the
+generalisation question is getting closer (the blocker is that a single
+`alloc<K>` needs a per-`K` "size + type-code" trait, which is the A.6
+"≥2 real consumers" bar — revisit when box/rule adopt it). **Next:**
+- **`new_null_box`** (box family) is the natural next `alloc` adoption, but
+  it needs a box-family `set_subtype` (the box methods are trait-gated;
+  `subtype` is the rank-0 *shared header* field — consider adding a single
+  universal `subtype`/`set_subtype` on `NodePtr<K>` for **all** `K` and
+  deduping the per-family copies on GlueNode/KernNode/PenaltyNode, but that
+  is its own slice because a blanket `impl<K: NodeKind>` collides with the
+  existing inherent per-family methods → method-resolution error unless they
+  are removed together).
+- **rank-5 rule family** (`new_rule` is its waiting consumer) — still the
+  first sentinel-bearing family; needs the running-dimension wrapper
+  (`Scaled`-or-`NULL_FLAG`) before `width`/`depth`/`height` can be typed.
+- box-dimension-reading **leaves** in `packaging.rs`/`shipout.rs`
+  (`append_to_vlist` is fully threaded; `b` is hlist-or-vlist → needs
+  `AnyBox` dim helpers) remain the biggest §8 *param*-metric win.
+
+---
+
 ## Idiom session 151 — 2026-06-07 — Execution: typesafe node allocation (`NodePtr::<GlueSpecNode>::alloc`) — confine `from_idx_unchecked`, remove the `math_glue` unsafe
 
 **Type:** execution (workstream 01 / `01b` §3a + `01c` §8), prompted by a
