@@ -34,7 +34,7 @@
 
 use std::marker::PhantomData;
 
-use crate::consts::{GLUE_SPEC_SIZE, KERN_NODE, MEDIUM_NODE_SIZE};
+use crate::consts::{GLUE_SPEC_SIZE, KERN_NODE, MEDIUM_NODE_SIZE, PENALTY_NODE};
 use crate::mem::{get_node, ALLOC_FAILED};
 use crate::state::MemState;
 use crate::units::{InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
@@ -608,6 +608,38 @@ pub enum PenaltyNode {}
 impl NodeKind for PenaltyNode {}
 
 impl NodePtr<PenaltyNode> {
+    /// Allocate a fresh penalty node on the `mem` free-list arena,
+    /// **type-stamped** with `NODE_type = PENALTY_NODE`, and return a typed
+    /// handle to it — or `None` on arena exhaustion (the §5 overflow condition,
+    /// mapped by the caller to its abort sentinel after the borrow drops).
+    ///
+    /// The type-stamping `alloc` form (`01b` §3a / `01c` §8), like
+    /// [`NodePtr::<KernNode>::alloc`]: it writes `NODE_type` and confines the
+    /// family's one `from_idx_unchecked` to this single audited site, keeping
+    /// TeX's free-list arena. It is the `get_node(MEDIUM_NODE_SIZE)` +
+    /// `type(p) = penalty_node` the C `new_penalty` does; the caller fills
+    /// `subtype`/`penalty`.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<PenaltyNode>> {
+        let p = get_node(mem, MEDIUM_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        // type-stamp: a penalty node carries NODE_type = PENALTY_NODE.
+        mem.set_b16s1(p, PENALTY_NODE);
+        // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just stamped
+        // PENALTY_NODE; this is the family's single audited construction site.
+        Some(unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// `PENALTY_NODE` subtype = `mem[p].b16.s0` — the shared-header subtype
+    /// half. Penalty nodes carry no meaningful subtype; the C `new_penalty`
+    /// zeroes this word half, so the constructor sets it to `0`.
+    #[inline]
+    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.0, v);
+    }
+
     /// `PENALTY_NODE_penalty(p)` = `mem[(p) + 1].b32.s1`.
     ///
     /// **A plain `i32`, not `Scaled`** (`01c` §3) — the breakpoint penalty,
@@ -950,6 +982,27 @@ mod tests {
         // `penalty()` returned `Scaled` (the trap encoded in the type):
         let v: i32 = pen.penalty(&mem);
         assert_eq!(v, -10000);
+    }
+
+    #[test]
+    fn alloc_penalty_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let pen = NodePtr::<PenaltyNode>::alloc(&mut mem).expect("arena has room");
+        // alloc type-stamped NODE_type = PENALTY_NODE, so it classifies back:
+        assert!(matches!(mem.classify_penalty(pen.idx()), Ok(Some(_))));
+        pen.set_subtype(&mut mem, 0);
+        pen.set_penalty(&mut mem, -10000);
+        assert_eq!(pen.penalty(&mem), -10000);
     }
 
     #[test]

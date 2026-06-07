@@ -7,12 +7,12 @@
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 use crate::consts::{
     BOX_NODE_SIZE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, LIGATURE_NODE,
-    MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE,
+    MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, NULL_FLAG, RULE_NODE, RULE_NODE_SIZE,
     SMALL_NODE_SIZE,
 };
 use crate::errors::overflow;
 use crate::errors::runaway;
-use crate::node::{KernNode, NodePtr};
+use crate::node::{KernNode, NodePtr, PenaltyNode};
 use crate::state::{EqtbState, MemState};
 use crate::units::Scaled;
 
@@ -673,14 +673,16 @@ pub unsafe fn new_kern_global(w: i32) -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_penalty_global`].
 pub fn new_penalty(mem: &mut MemState, m: i32) -> i32 {
-    let p = get_node(mem, MEDIUM_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, PENALTY_NODE);
-    mem.set_b16s0(p, 0);
-    mem.set_b32s1(p + 1, m);
-    p
+    // Typesafe allocation: `alloc` type-stamps NODE_type = PENALTY_NODE and
+    // confines the family's `from_idx_unchecked` (`01b` §3a / `01c` §8). This
+    // body is now `unsafe`-free and fully typed; `None` is the §5 arena-
+    // exhaustion sentinel the `new_penalty_global` wrapper maps to `overflow()`.
+    let Some(p) = NodePtr::<PenaltyNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_subtype(mem, 0);
+    p.set_penalty(mem, m);
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_penalty` callers (`01b` §3, §5).
