@@ -34,7 +34,7 @@
 
 use std::marker::PhantomData;
 
-use crate::consts::GLUE_SPEC_SIZE;
+use crate::consts::{GLUE_SPEC_SIZE, KERN_NODE, MEDIUM_NODE_SIZE};
 use crate::mem::{get_node, ALLOC_FAILED};
 use crate::state::MemState;
 use crate::units::{InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
@@ -517,6 +517,35 @@ pub enum KernNode {}
 impl NodeKind for KernNode {}
 
 impl NodePtr<KernNode> {
+    /// Allocate a fresh kern node on the `mem` free-list arena, **type-stamped**
+    /// with `NODE_type = KERN_NODE`, and return a typed handle to it — or `None`
+    /// if the arena is exhausted (the §5 overflow condition, mapped by the
+    /// caller to its abort sentinel after the borrow drops).
+    ///
+    /// This is the **type-stamping** form of the typesafe node-allocation
+    /// boundary (`01b` §3a / `01c` §8): unlike
+    /// [`NodePtr::<GlueSpecNode>::alloc`] (a glue_spec carries no `NODE_type`,
+    /// so it stamps nothing), a kern node *is* a list node, so its `alloc`
+    /// additionally writes `NODE_type` into the header before returning. It
+    /// confines the family's one `from_idx_unchecked` to this single audited
+    /// site (the node is being initialised, so there is no tag to *classify* —
+    /// `alloc` *writes* the tag), keeping TeX's free-list arena (no per-node
+    /// heap alloc). It is exactly the `get_node(MEDIUM_NODE_SIZE)` +
+    /// `type(p) = kern_node` the C `new_kern` does, lifted to a typed return;
+    /// the caller fills `subtype`/`width`.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<KernNode>> {
+        let p = get_node(mem, MEDIUM_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        // type-stamp: a kern node carries NODE_type = KERN_NODE in its header.
+        mem.set_b16s1(p, KERN_NODE);
+        // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just stamped
+        // KERN_NODE; this is the family's single audited construction site.
+        Some(unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
     /// `KERN_NODE` subtype = `mem[p].b16.s0` — `NORMAL` / `EXPLICIT` /
     /// `ACC_KERN` / `MU_GLUE`. Lives in the header word.
     #[inline]
@@ -856,6 +885,31 @@ mod tests {
         // each field landed in the C-exact raw word/subfield
         assert_eq!(mem.b16s0(p.0), 3); // subtype
         assert_eq!(mem.b32s1(p.0 + 1), 0x7777); // width
+    }
+
+    #[test]
+    fn alloc_kern_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        // single free block [10, 30) on the variable-size free list (see
+        // `alloc_glue_spec_carves_a_usable_typed_handle` for the layout).
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let k = NodePtr::<KernNode>::alloc(&mut mem).expect("arena has room");
+        // alloc type-stamped NODE_type = KERN_NODE (the type-stamping form,
+        // unlike glue_spec::alloc which stamps nothing) — so it classifies back:
+        assert!(matches!(mem.classify_kern(k.idx()), Ok(Some(_))));
+        // and the handle is a real, in-bounds, writable kern node
+        k.set_subtype(&mut mem, 0);
+        k.set_width(&mut mem, Scaled(0x2468));
+        assert_eq!(k.width(&mem), Scaled(0x2468));
     }
 
     #[test]
