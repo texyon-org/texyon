@@ -25,7 +25,7 @@ use crate::globals::{
     tex_remainder, total_shrink, width_base_entry,
 };
 use crate::mem::{
-    free_node, free_node_global, get_avail, get_node, get_node_global, new_choice, new_glue,
+    free_node, free_node_global, get_avail, get_node_global, new_choice, new_glue,
     new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec,
     ALLOC_FAILED, TEX_NULL,
 };
@@ -500,22 +500,34 @@ fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycl
 }
 
 pub unsafe fn math_glue_global(g: i32, m: i32) -> i32 {
-    let stretch_order = mem_b16s1(g);
-    let shrink_order = mem_b16s0(g);
+    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(g)).expect("non-null math glue spec");
+    let (stretch_order, shrink_order, width_val, stretch_val, shrink_val) = crate::state::with_state(|st| {
+        let mem = &st.mem;
+        (
+            spec.stretch_order(mem),
+            spec.shrink_order(mem),
+            spec.width(mem).0,
+            spec.stretch(mem).0,
+            spec.shrink(mem).0,
+        )
+    });
+    let width = scaled_mu_value(width_val, m);
+    let stretch = if stretch_order == NORMAL {
+        scaled_mu_value(stretch_val, m)
+    } else {
+        stretch_val
+    };
+    let shrink = if shrink_order == NORMAL {
+        scaled_mu_value(shrink_val, m)
+    } else {
+        shrink_val
+    };
     let input = MathGlueInput {
-        width: scaled_mu_value(mem_b32s1(g + 1), m),
+        width,
         stretch_order,
-        stretch: if stretch_order == NORMAL {
-            scaled_mu_value(mem_b32s1(g + 2), m)
-        } else {
-            mem_b32s1(g + 2)
-        },
+        stretch,
         shrink_order,
-        shrink: if shrink_order == NORMAL {
-            scaled_mu_value(mem_b32s1(g + 3), m)
-        } else {
-            mem_b32s1(g + 3)
-        },
+        shrink,
     };
     match crate::state::with_state_mut(|st| math_glue(&mut st.mem, input)) {
         Ok(p) => p,
@@ -532,8 +544,12 @@ fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scal
 }
 
 pub fn math_kern_global(p: i32, m: i32) {
-    let scaled_width = if mem_b16s0(p) == MU_GLUE {
-        Some(Scaled(scaled_mu_value(mem_b32s1(p + 1), m)))
+    let (is_mu_glue, width_val) = crate::state::with_state(|st| {
+        let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) };
+        (kern.subtype(&st.mem) == MU_GLUE, kern.width(&st.mem).0)
+    });
+    let scaled_width = if is_mu_glue {
+        Some(Scaled(scaled_mu_value(width_val, m)))
     } else {
         None
     };

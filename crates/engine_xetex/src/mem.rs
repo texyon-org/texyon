@@ -5,7 +5,7 @@
 //! `flush_list`, `get_node`, `free_node`, `new_*`). During Phase A of
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
-use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, SMALL_NODE_SIZE};
+use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE};
 use crate::errors::overflow;
 use crate::errors::runaway;
 use crate::node::{
@@ -13,7 +13,7 @@ use crate::node::{
     Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
 };
 use crate::state::{EqtbState, MemState};
-use crate::units::{FontId, MemPtr, Scaled};
+use crate::units::{FontId, MemIdx, MemPtr, Scaled};
 
 use crate::globals::{
     avail, cur_input_synctex_tag, cur_list_head, line, max_nest_stack, nest_ptr, nest_size,
@@ -474,20 +474,17 @@ pub unsafe fn new_math_global(w: i32, s: i16) -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_spec_global`].
 pub fn new_spec(mem: &mut MemState, p: i32) -> i32 {
-    let q = get_node(mem, GLUE_SPEC_SIZE);
-    if q == ALLOC_FAILED {
-        return q;
-    }
+    let Some(q) = NodePtr::<GlueSpecNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    let p_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)).expect("non-null glue spec");
     let word = mem.word(p);
-    mem.set_word(q, word); // copy the whole first word (type + ref_count)
-    mem.set_b32s1(q, TEX_NULL); // clear ref_count / link
-    let w = mem.b32s1(p + 1);
-    mem.set_b32s1(q + 1, w); // width
-    let st = mem.b32s1(p + 2);
-    mem.set_b32s1(q + 2, st); // stretch
-    let sh = mem.b32s1(p + 3);
-    mem.set_b32s1(q + 3, sh); // shrink
-    q
+    mem.set_word(q.idx().0, word); // copy the whole first word (type + ref_count)
+    q.set_ref_count(mem, TEX_NULL); // clear ref_count / link
+    q.set_width(mem, p_spec.width(mem));
+    q.set_stretch(mem, p_spec.stretch(mem));
+    q.set_shrink(mem, p_spec.shrink(mem));
+    q.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_spec` callers (`01b` §3, §5).
@@ -592,8 +589,10 @@ pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
     if p == ALLOC_FAILED {
         return p;
     }
-    mem.set_b32s1(s, TEX_NULL); // clear the spec's ref_count link
-    mem.set_b16s0(p, n as u16 + 1); // subtype = n + 1
+    let s_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s)).expect("non-null glue spec");
+    s_spec.set_ref_count(mem, TEX_NULL); // clear the spec's ref_count link
+    let p_glue = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p)) };
+    p_glue.set_subtype(mem, n as u16 + 1); // subtype = n + 1
     p
 }
 
@@ -773,10 +772,12 @@ pub fn delete_token_ref_global(p: i32) {
 /// the threaded [`free_node`] (no cold path, zero `with_state` calls). Legacy
 /// callers use [`delete_glue_ref_global`].
 pub fn delete_glue_ref(mem: &mut MemState, p: i32) {
-    if mem.b32s1(p) == TEX_NULL {
-        free_node(mem, p, GLUE_SPEC_SIZE);
-    } else {
-        mem.set_b32s1(p, mem.b32s1(p) - 1);
+    if let Some(spec) = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)) {
+        if spec.ref_count(mem) == TEX_NULL {
+            free_node(mem, spec.idx().0, GLUE_SPEC_SIZE);
+        } else {
+            spec.set_ref_count(mem, spec.ref_count(mem) - 1);
+        }
     }
 }
 
