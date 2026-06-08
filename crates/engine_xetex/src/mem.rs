@@ -5,12 +5,15 @@
 //! `flush_list`, `get_node`, `free_node`, `new_*`). During Phase A of
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
-use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE};
+use crate::consts::{
+    GLUE_BASE, GLUE_SPEC_SIZE, MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MAX_HALFWORD,
+    MEDIUM_NODE_SIZE,
+};
 use crate::errors::overflow;
 use crate::errors::runaway;
 use crate::node::{
-    ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode, MathNode,
-    Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
+    ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
+    MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
 };
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemIdx, MemPtr, Scaled};
@@ -32,9 +35,7 @@ const NORMAL: u16 = 0;
                           // empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
 const EMPTY: i32 = 0; // xetex-constants.h:230
 
-// Margin kern node (xetex-constants.h:115; xetex_format.h:396).
-const MARGIN_KERN_NODE_SIZE: i32 = 3;
-const MARGIN_KERN_NODE: u16 = 40;
+
 // native node glyph info size in bytes (xetex-constants.h:304)
 const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 
@@ -934,14 +935,12 @@ pub fn new_choice(mem: &mut MemState) -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`.
 pub fn new_margin_kern(mem: &mut MemState, w: i32, _p: i32, side: i16) -> i32 {
-    let k = get_node(mem, MARGIN_KERN_NODE_SIZE);
-    if k == ALLOC_FAILED {
-        return k;
-    }
-    mem.set_b16s1(k, MARGIN_KERN_NODE); // NODE_type(k)
-    mem.set_b16s0(k, side as u16);
-    mem.set_b32s1(k + 1, w);
-    k
+    let Some(k) = NodePtr::<MarginKernNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    k.set_subtype(mem, side as u16);
+    k.set_width(mem, Scaled(w));
+    k.idx().0
 }
 
 // translated from xetex-xetex0.c:13763 (new_whatsit)

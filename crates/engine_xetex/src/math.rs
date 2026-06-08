@@ -1812,28 +1812,34 @@ pub unsafe fn make_math_accent_global(q: i32) {
 /// aborts after the borrow drops.
 fn attach_hkern_to_new_hlist(
     mem: &mut MemState,
-    q: i32,
-    delta: i32,
-) -> Result<i32, NodeRecycleAbort> {
-    let z = new_kern(mem, delta);
-    if z == ALLOC_FAILED {
+    q: NodePtr<Noad>,
+    delta: Scaled,
+) -> Result<MemPtr, NodeRecycleAbort> {
+    let Some(z) = NodePtr::<KernNode>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
-    }
-    if mem.b32s1(q + 1) == TEX_NULL {
-        mem.set_b32s1(q + 1, z);
+    };
+    z.set_subtype(mem, NORMAL);
+    z.set_width(mem, delta);
+
+    let head = MemPtr::from_raw(q.nucleus_type(mem));
+    if head.is_null() {
+        q.set_nucleus_type(mem, z.idx().0);
     } else {
-        let mut y = mem.b32s1(q + 1);
-        while mem.b32s1(y) != TEX_NULL {
-            y = mem.b32s1(y);
+        let mut y = head.as_idx().unwrap();
+        while mem.b32s1(y.0) != TEX_NULL {
+            y = MemIdx::new(mem.b32s1(y.0));
         }
-        mem.set_b32s1(y, z);
+        mem.set_b32s1(y.0, z.idx().0);
     }
-    Ok(mem.b32s1(q + 1))
+    Ok(MemPtr::from_raw(q.nucleus_type(mem)))
 }
 
 unsafe fn attach_hkern_to_new_hlist_global(q: i32, delta: i32) -> i32 {
-    match crate::state::with_state_mut(|st| attach_hkern_to_new_hlist(&mut st.mem, q, delta)) {
-        Ok(p) => p,
+    match crate::state::with_state_mut(|st| {
+        let q_node = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q));
+        attach_hkern_to_new_hlist(&mut st.mem, q_node, Scaled(delta))
+    }) {
+        Ok(p) => p.0,
         Err(e) => node_recycle_abort(e),
     }
 }

@@ -36,8 +36,8 @@ use std::marker::PhantomData;
 
 use crate::consts::{
     BOX_NODE_SIZE, DISC_NODE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, LIGATURE_NODE,
-    MATH_NODE, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE,
-    SMALL_NODE_SIZE,
+    MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MATH_NODE, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE,
+    RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
 use crate::mem::{get_node, ALLOC_FAILED};
 use crate::state::MemState;
@@ -178,6 +178,7 @@ impl HasNodeHeader for GlueNode {}
 impl HasNodeHeader for KernNode {}
 impl HasNodeHeader for PenaltyNode {}
 impl HasNodeHeader for Noad {}
+impl HasNodeHeader for MarginKernNode {}
 
 impl<K: HasNodeHeader> NodePtr<K> {
     /// Shared list-node subtype = `mem[p].b16.s0`.
@@ -1111,6 +1112,24 @@ impl NodePtr<Noad> {
     pub fn fraction_right_delimiter_addr(self) -> i32 {
         self.idx.offset(5).0
     }
+
+    /// Get the nucleus field address (word 1)
+    #[inline]
+    pub fn nucleus_addr(self) -> i32 {
+        self.idx.offset(1).0
+    }
+
+    /// Get the subscr field address (word 2)
+    #[inline]
+    pub fn subscr_addr(self) -> i32 {
+        self.idx.offset(2).0
+    }
+
+    /// Get the supscr field address (word 3)
+    #[inline]
+    pub fn supscr_addr(self) -> i32 {
+        self.idx.offset(3).0
+    }
 }
 
 impl MemState {
@@ -1533,6 +1552,49 @@ impl MemState {
         Ok(match self.node_type(p)? {
             // SAFETY: the NODE_type branch just proved the kind.
             NodeType::Penalty => Some(unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(p) }),
+            _ => None,
+        })
+    }
+}
+
+// --- the margin kern family: margin kern nodes (NODE_type 40) ---
+
+/// `MARGIN_KERN_NODE` (`NODE_type` = 40): a margin-protrusion kern node.
+pub enum MarginKernNode {}
+
+impl NodeKind for MarginKernNode {}
+
+impl NodePtr<MarginKernNode> {
+    /// Allocate a fresh margin kern node on the `mem` free-list arena,
+    /// type-stamped with `NODE_type = MARGIN_KERN_NODE`, and return a typed
+    /// handle to it — or `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MarginKernNode>> {
+        let p = get_node(mem, MARGIN_KERN_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, MARGIN_KERN_NODE);
+        Some(unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// `MARGIN_KERN_NODE` width = `mem[(p) + 1].b32.s1`.
+    #[inline]
+    pub fn width(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, w.0);
+    }
+}
+
+impl MemState {
+    /// Classify a known lo-mem node as a margin kern node.
+    #[inline]
+    pub fn classify_margin_kern(&self, p: MemIdx) -> Result<Option<NodePtr<MarginKernNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            NodeType::MarginKern => Some(unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(p) }),
             _ => None,
         })
     }
@@ -2265,5 +2327,42 @@ mod tests {
         assert_eq!(item.character(&mem), 45);
         assert_eq!(item.link(&mem), MemPtr::from_raw(12));
         assert_eq!(item.component(&mem), MemPtr::from_raw(34));
+    }
+
+    #[test]
+    fn margin_kern_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::MarginKern.as_raw());
+        let k = unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(p) };
+
+        k.set_subtype(&mut mem, 1);
+        k.set_width(&mut mem, Scaled(0x1234));
+
+        assert_eq!(k.subtype(&mem), 1);
+        assert_eq!(k.width(&mem), Scaled(0x1234));
+        assert_eq!(mem.b16s0(p.0), 1);
+        assert_eq!(mem.b32s1(p.0 + 1), 0x1234);
+    }
+
+    #[test]
+    fn alloc_margin_kern_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let k = NodePtr::<MarginKernNode>::alloc(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_margin_kern(k.idx()), Ok(Some(_))));
+        k.set_subtype(&mut mem, 2);
+        k.set_width(&mut mem, Scaled(-123));
+        assert_eq!(k.subtype(&mem), 2);
+        assert_eq!(k.width(&mem), Scaled(-123));
     }
 }

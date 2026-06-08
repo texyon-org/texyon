@@ -15,6 +15,7 @@ pub const MEDIUM_NODE_SIZE: i32 = 3;
 pub const GLUE_SPEC_SIZE: i32 = 4;
 pub const RULE_NODE_SIZE: i32 = 5;
 pub const BOX_NODE_SIZE: i32 = 8;
+pub const MARGIN_KERN_NODE_SIZE: i32 = 3;
 
 pub const HLIST_NODE: u16 = 0;
 pub const RULE_NODE: u16 = 2;
@@ -24,6 +25,7 @@ pub const MATH_NODE: u16 = 9;
 pub const GLUE_NODE: u16 = 10;
 pub const KERN_NODE: u16 = 11;
 pub const PENALTY_NODE: u16 = 12;
+pub const MARGIN_KERN_NODE: u16 = 40;
 
 pub const SELECTOR_TERM_ONLY: i32 = 17;
 pub const SELECTOR_TERM_AND_LOG: i32 = 19;
