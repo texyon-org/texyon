@@ -8,6 +8,29 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 155 — 2026-06-08 — Execution: typed glue/math constructor adoption
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Longer
+typed-pointer constructor session, intentionally light docs.
+
+**Code:** added `NodePtr::<GlueNode>::alloc`, preserving this XeTeX build's
+`MEDIUM_NODE_SIZE` glue allocation because SyncTeX uses the extra word. Adopted
+it in `new_glue` and `new_param_glue`; both now fill `subtype`/`leader_ptr`/
+`glue_ptr` through typed setters and bump the target `GlueSpecNode` refcount
+through typed accessors. Added the narrow `MathNode` type for `MATH_NODE`
+width/subtype and adopted it in `new_math`. Noads remain untouched.
+
+**Tests:** `node::` **28/28**. Dashboard green: `tex-outputs` **29/29**,
+`trip` **2/2**, `engine_rust` **7/7**, `latex_goldens` **4/4**. Warnings stayed
+**42**.
+
+**Next:** remaining raw constructor families: `new_lig_item` if it deserves a
+narrow typed surface, then noad/style/choice. Also good: typed consumers in
+packaging/math/shipout now that the common list-node constructors are typed.
+
+---
+
+
 ## Idiom session 154 — 2026-06-08 — Execution: typed rule/ligature/disc allocation + `append_to_vlist` box typing
 
 **Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). One larger

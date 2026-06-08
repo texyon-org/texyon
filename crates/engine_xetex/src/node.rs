@@ -35,8 +35,9 @@
 use std::marker::PhantomData;
 
 use crate::consts::{
-    BOX_NODE_SIZE, DISC_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, LIGATURE_NODE,
-    MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
+    BOX_NODE_SIZE, DISC_NODE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, LIGATURE_NODE,
+    MATH_NODE, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE,
+    SMALL_NODE_SIZE,
 };
 use crate::mem::{get_node, ALLOC_FAILED};
 use crate::state::MemState;
@@ -170,6 +171,7 @@ impl HasNodeHeader for VListNode {}
 impl HasNodeHeader for RuleNode {}
 impl HasNodeHeader for DiscNode {}
 impl HasNodeHeader for LigatureNode {}
+impl HasNodeHeader for MathNode {}
 impl HasNodeHeader for GlueNode {}
 impl HasNodeHeader for KernNode {}
 impl HasNodeHeader for PenaltyNode {}
@@ -557,11 +559,58 @@ impl MemState {
     }
 }
 
+// --- the math-node family: math-on/off nodes (NODE_type 9) ---
+
+/// `MATH_NODE` (`NODE_type` = 9): an inline math boundary node with a scaled
+/// width and an LR/math subtype in the shared header's subtype field.
+pub enum MathNode {}
+
+impl NodeKind for MathNode {}
+
+impl NodePtr<MathNode> {
+    /// Allocate a fresh math node (`MEDIUM_NODE_SIZE` words), type-stamped
+    /// with `NODE_type = MATH_NODE`, returning `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MathNode>> {
+        let p = get_node(mem, MEDIUM_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, MATH_NODE);
+        // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just
+        // stamped MATH_NODE; this is the family's audited construction site.
+        Some(unsafe { NodePtr::<MathNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Math-node width = `mem[(p) + 1].b32.s1`.
+    #[inline]
+    pub fn width(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, w.0);
+    }
+}
+
+impl MemState {
+    /// Classify a known lo-mem node as a math node.
+    #[inline]
+    pub fn classify_math(&self, p: MemIdx) -> Result<Option<NodePtr<MathNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            // SAFETY: the NODE_type branch just proved the kind.
+            NodeType::Math => Some(unsafe { NodePtr::<MathNode>::from_idx_unchecked(p) }),
+            _ => None,
+        })
+    }
+}
+
 // --- the glue family: glue nodes and glue_spec records ---
 //
 // Two distinct node shapes that are always reached together:
 //
-// `GlueNode` (`NODE_type` = `GLUE_NODE` = 10, a `SMALL_NODE_SIZE` = 2 node):
+// `GlueNode` (`NODE_type` = `GLUE_NODE` = 10; allocated `MEDIUM_NODE_SIZE` = 3
+// in this build because SyncTeX rides in the extra word):
 //
 // | field        | offset.subfield | type                          |
 // |--------------|-----------------|-------------------------------|
@@ -611,6 +660,25 @@ impl NodeKind for GlueNode {}
 impl NodeKind for GlueSpecNode {}
 
 impl NodePtr<GlueNode> {
+    /// Allocate a fresh glue node on the `mem` free-list arena, type-stamped
+    /// with `NODE_type = GLUE_NODE`, returning `None` on arena exhaustion.
+    ///
+    /// This preserves the current XeTeX allocation size (`MEDIUM_NODE_SIZE`,
+    /// not the generic-TeX small-node size) and confines the family's typed
+    /// construction to this single audited site. The caller fills
+    /// `subtype`/`glue_ptr`/`leader_ptr`.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<GlueNode>> {
+        let p = get_node(mem, MEDIUM_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, GLUE_NODE);
+        // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just
+        // stamped GLUE_NODE; this is the family's audited construction site.
+        Some(unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
     /// `GLUE_NODE_glue_ptr(p)` = `mem[(p) + 1].b32.s0` — the pointer to this
     /// node's [`GlueSpecNode`]. Returned as a raw [`MemPtr`]; the caller
     /// classifies it (typically via [`NodePtr::<GlueSpecNode>::from_glue_ptr`]
@@ -1183,6 +1251,43 @@ mod tests {
     }
 
     #[test]
+    fn math_node_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Math.as_raw());
+        let math = unsafe { NodePtr::<MathNode>::from_idx_unchecked(p) };
+
+        math.set_subtype(&mut mem, 3);
+        math.set_width(&mut mem, Scaled(0x1234));
+
+        assert_eq!(math.subtype(&mem), 3);
+        assert_eq!(math.width(&mem), Scaled(0x1234));
+        assert_eq!(mem.b16s0(p.0), 3);
+        assert_eq!(mem.b32s1(p.0 + 1), 0x1234);
+    }
+
+    #[test]
+    fn alloc_math_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let math = NodePtr::<MathNode>::alloc(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_math(math.idx()), Ok(Some(_))));
+        math.set_subtype(&mut mem, 1);
+        math.set_width(&mut mem, Scaled(-99));
+        assert_eq!(math.subtype(&mem), 1);
+        assert_eq!(math.width(&mem), Scaled(-99));
+    }
+
+    #[test]
     fn glue_family_is_zero_cost() {
         assert_eq!(size_of::<NodePtr<GlueNode>>(), size_of::<i32>());
         assert_eq!(size_of::<NodePtr<GlueSpecNode>>(), size_of::<i32>());
@@ -1210,6 +1315,28 @@ mod tests {
         assert_eq!(mem.b16s0(p.0), 7);
         assert_eq!(mem.b32s0(p.0 + 1), 150);
         assert_eq!(mem.b32s1(p.0 + 1), 160);
+    }
+
+    #[test]
+    fn alloc_glue_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let g = NodePtr::<GlueNode>::alloc(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_glue(g.idx()), Ok(Some(_))));
+        g.set_subtype(&mut mem, 0);
+        g.set_glue_ptr(&mut mem, MemPtr::from_raw(22));
+        g.set_leader_ptr(&mut mem, MemPtr::NULL);
+        assert_eq!(g.glue_ptr(&mem), MemPtr::from_raw(22));
+        assert!(g.leader_ptr(&mem).is_null());
     }
 
     #[test]

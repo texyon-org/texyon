@@ -5,14 +5,12 @@
 //! `flush_list`, `get_node`, `free_node`, `new_*`). During Phase A of
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
-use crate::consts::{
-    GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE,
-    SMALL_NODE_SIZE,
-};
+use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, SMALL_NODE_SIZE};
 use crate::errors::overflow;
 use crate::errors::runaway;
 use crate::node::{
-    DiscNode, HListNode, KernNode, LigatureNode, NodePtr, PenaltyNode, RuleDimen, RuleNode,
+    DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigatureNode, MathNode, NodePtr,
+    PenaltyNode, RuleDimen, RuleNode,
 };
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
@@ -455,14 +453,12 @@ pub unsafe fn new_disc_global() -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_math_global`].
 pub fn new_math(mem: &mut MemState, w: i32, s: i16) -> i32 {
-    let p = get_node(mem, MEDIUM_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, MATH_NODE);
-    mem.set_b16s0(p, s as u16);
-    mem.set_b32s1(p + 1, w);
-    p
+    let Some(p) = NodePtr::<MathNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_subtype(mem, s as u16);
+    p.set_width(mem, Scaled(w));
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_math` callers (`01b` §3, §5).
@@ -521,20 +517,19 @@ pub unsafe fn new_spec_global(p: i32) -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState` and `&EqtbState`; legacy callers use [`new_param_glue_global`].
 pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
-    let p = get_node(mem, MEDIUM_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, GLUE_NODE);
-    mem.set_b16s0(p, n as u16 + 1); // subtype = n + 1
-    mem.set_b32s1(p + 1, TEX_NULL);
+    let Some(p) = NodePtr::<GlueNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_subtype(mem, n as u16 + 1); // subtype = n + 1
+    p.set_leader_ptr(mem, MemPtr::NULL);
     // q = eqtb[GLUE_BASE + n].b32.s1
     let q = eqtb.b32s1(GLUE_BASE + n as i32);
-    mem.set_b32s0(p + 1, q);
+    p.set_glue_ptr(mem, MemPtr::from_raw(q));
     // GLUE_SPEC_ref_count(q)++  →  mem[q].b32.s1 += 1
-    let rc = mem.b32s1(q);
-    mem.set_b32s1(q, rc + 1);
-    p
+    let spec =
+        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q)).expect("non-null glue spec");
+    spec.set_ref_count(mem, spec.ref_count(mem) + 1);
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_param_glue` callers (`01b` §3, §5).
@@ -560,19 +555,18 @@ pub unsafe fn new_param_glue_global(n: i16) -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_glue_global`].
 pub fn new_glue(mem: &mut MemState, q: i32) -> i32 {
-    let p = get_node(mem, MEDIUM_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, GLUE_NODE);
+    let Some(p) = NodePtr::<GlueNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
     // GLUE_SPEC_shrink_order(p) = NORMAL  →  mem[p].b16.s0 = NORMAL
-    mem.set_b16s0(p, NORMAL);
-    mem.set_b32s1(p + 1, TEX_NULL);
-    mem.set_b32s0(p + 1, q);
+    p.set_subtype(mem, NORMAL);
+    p.set_leader_ptr(mem, MemPtr::NULL);
+    p.set_glue_ptr(mem, MemPtr::from_raw(q));
     // GLUE_SPEC_ref_count(q)++
-    let rc = mem.b32s1(q);
-    mem.set_b32s1(q, rc + 1);
-    p
+    let spec =
+        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q)).expect("non-null glue spec");
+    spec.set_ref_count(mem, spec.ref_count(mem) + 1);
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_glue` callers (`01b` §3, §5).

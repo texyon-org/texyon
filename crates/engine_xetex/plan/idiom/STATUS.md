@@ -4,6 +4,17 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-08 (last session = session 155, **execution — typed
+glue/math constructor adoption. Added `NodePtr::<GlueNode>::alloc` (preserving
+this build's `MEDIUM_NODE_SIZE` glue allocation) and adopted it in
+`new_glue`/`new_param_glue`, including typed glue-spec refcount bumps. Added
+the narrow `MathNode` surface for `MATH_NODE` width/subtype and adopted it in
+`new_math`. `node::` 28/28; dashboard 29/2/7/4; warnings 42; metrics:
+`with_state` grep 1196, `unsafe fn` 571, direct `#[no_mangle]` grep 11.
+**Next: remaining raw constructor families (`new_lig_item`, noad/style/choice)
+or typed consumers in packaging/math/shipout now that common list-node
+constructors are typed.**)
+
 Last updated: 2026-06-08 (last session = session 154, **execution — typed
 rule/ligature/disc allocation plus `append_to_vlist` box typing. Added
 `RuleDimen` + `RuleNode`; typed `new_rule` and `fraction_rule`. Added
