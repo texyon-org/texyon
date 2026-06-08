@@ -172,6 +172,8 @@ impl HasNodeHeader for RuleNode {}
 impl HasNodeHeader for DiscNode {}
 impl HasNodeHeader for LigatureNode {}
 impl HasNodeHeader for MathNode {}
+impl HasNodeHeader for StyleNode {}
+impl HasNodeHeader for ChoiceNode {}
 impl HasNodeHeader for GlueNode {}
 impl HasNodeHeader for KernNode {}
 impl HasNodeHeader for PenaltyNode {}
@@ -600,6 +602,120 @@ impl MemState {
         Ok(match self.node_type(p)? {
             // SAFETY: the NODE_type branch just proved the kind.
             NodeType::Math => Some(unsafe { NodePtr::<MathNode>::from_idx_unchecked(p) }),
+            _ => None,
+        })
+    }
+}
+
+// --- math style/choice nodes (NODE_type 14 and 15) ---
+
+const STYLE_NODE_SIZE: i32 = 3;
+
+/// `STYLE_NODE` (`NODE_type` = 14): changes the current math style.
+pub enum StyleNode {}
+/// `CHOICE_NODE` (`NODE_type` = 15): four nullable math-list alternatives.
+pub enum ChoiceNode {}
+
+impl NodeKind for StyleNode {}
+impl NodeKind for ChoiceNode {}
+
+impl NodePtr<StyleNode> {
+    /// Allocate a fresh style node (`STYLE_NODE_SIZE` words), type-stamped
+    /// with `NODE_type = STYLE_NODE`, returning `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<StyleNode>> {
+        let p = get_node(mem, STYLE_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, NodeType::Style.as_raw());
+        // SAFETY: `p` is freshly allocated and just stamped STYLE_NODE.
+        Some(unsafe { NodePtr::<StyleNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Zero the two payload words used by the C constructor.
+    #[inline]
+    pub fn clear_payload(self, mem: &mut MemState) {
+        mem.set_b32s1(self.idx.offset(1).0, 0);
+        mem.set_b32s1(self.idx.offset(2).0, 0);
+    }
+}
+
+impl NodePtr<ChoiceNode> {
+    /// Allocate a fresh choice node (`STYLE_NODE_SIZE` words), type-stamped
+    /// with `NODE_type = CHOICE_NODE`, returning `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<ChoiceNode>> {
+        let p = get_node(mem, STYLE_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, NodeType::Choice.as_raw());
+        // SAFETY: `p` is freshly allocated and just stamped CHOICE_NODE.
+        Some(unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Display-style branch pointer = `mem[p + 1].b32.s0`.
+    #[inline]
+    pub fn display_mlist(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_display_mlist(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s0(self.idx.offset(1).0, v.0);
+    }
+
+    /// Text-style branch pointer = `mem[p + 1].b32.s1`.
+    #[inline]
+    pub fn text_mlist(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_text_mlist(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+
+    /// Script-style branch pointer = `mem[p + 2].b32.s0`.
+    #[inline]
+    pub fn script_mlist(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s0(self.idx.offset(2).0))
+    }
+    #[inline]
+    pub fn set_script_mlist(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s0(self.idx.offset(2).0, v.0);
+    }
+
+    /// Script-script-style branch pointer = `mem[p + 2].b32.s1`.
+    #[inline]
+    pub fn script_script_mlist(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(2).0))
+    }
+    #[inline]
+    pub fn set_script_script_mlist(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(2).0, v.0);
+    }
+}
+
+impl MemState {
+    /// Classify a known lo-mem node as a style node.
+    #[inline]
+    pub fn classify_style(&self, p: MemIdx) -> Result<Option<NodePtr<StyleNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            // SAFETY: the NODE_type branch just proved the kind.
+            NodeType::Style => Some(unsafe { NodePtr::<StyleNode>::from_idx_unchecked(p) }),
+            _ => None,
+        })
+    }
+
+    /// Classify a known lo-mem node as a choice node.
+    #[inline]
+    pub fn classify_choice(
+        &self,
+        p: MemIdx,
+    ) -> Result<Option<NodePtr<ChoiceNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            // SAFETY: the NODE_type branch just proved the kind.
+            NodeType::Choice => Some(unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(p) }),
             _ => None,
         })
     }
@@ -1285,6 +1401,91 @@ mod tests {
         math.set_width(&mut mem, Scaled(-99));
         assert_eq!(math.subtype(&mem), 1);
         assert_eq!(math.width(&mem), Scaled(-99));
+    }
+
+    #[test]
+    fn style_node_constructor_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Style.as_raw());
+        let style = unsafe { NodePtr::<StyleNode>::from_idx_unchecked(p) };
+
+        style.set_subtype(&mut mem, 4);
+        style.clear_payload(&mut mem);
+
+        assert_eq!(style.subtype(&mem), 4);
+        assert_eq!(mem.b16s0(p.0), 4);
+        assert_eq!(mem.b32s1(p.0 + 1), 0);
+        assert_eq!(mem.b32s1(p.0 + 2), 0);
+    }
+
+    #[test]
+    fn alloc_style_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let style = NodePtr::<StyleNode>::alloc(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_style(style.idx()), Ok(Some(_))));
+        style.set_subtype(&mut mem, 2);
+        style.clear_payload(&mut mem);
+        assert_eq!(style.subtype(&mem), 2);
+    }
+
+    #[test]
+    fn choice_node_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Choice.as_raw());
+        let choice = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(p) };
+
+        choice.set_subtype(&mut mem, 0);
+        choice.set_display_mlist(&mut mem, MemPtr::from_raw(11));
+        choice.set_text_mlist(&mut mem, MemPtr::from_raw(22));
+        choice.set_script_mlist(&mut mem, MemPtr::from_raw(33));
+        choice.set_script_script_mlist(&mut mem, MemPtr::from_raw(44));
+
+        assert_eq!(choice.subtype(&mem), 0);
+        assert_eq!(choice.display_mlist(&mem), MemPtr::from_raw(11));
+        assert_eq!(choice.text_mlist(&mem), MemPtr::from_raw(22));
+        assert_eq!(choice.script_mlist(&mem), MemPtr::from_raw(33));
+        assert_eq!(choice.script_script_mlist(&mem), MemPtr::from_raw(44));
+        assert_eq!(mem.b32s0(p.0 + 1), 11);
+        assert_eq!(mem.b32s1(p.0 + 1), 22);
+        assert_eq!(mem.b32s0(p.0 + 2), 33);
+        assert_eq!(mem.b32s1(p.0 + 2), 44);
+    }
+
+    #[test]
+    fn alloc_choice_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let choice = NodePtr::<ChoiceNode>::alloc(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_choice(choice.idx()), Ok(Some(_))));
+        choice.set_display_mlist(&mut mem, MemPtr::NULL);
+        choice.set_text_mlist(&mut mem, MemPtr::NULL);
+        choice.set_script_mlist(&mut mem, MemPtr::NULL);
+        choice.set_script_script_mlist(&mut mem, MemPtr::NULL);
+        assert!(choice.display_mlist(&mem).is_null());
+        assert!(choice.text_mlist(&mem).is_null());
+        assert!(choice.script_mlist(&mem).is_null());
+        assert!(choice.script_script_mlist(&mem).is_null());
     }
 
     #[test]

@@ -8,6 +8,28 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 156 — 2026-06-08 — Execution: typed style/choice constructor adoption
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Constructor
+typing slice.
+
+**Code:** added `StyleNode` and `ChoiceNode` typed surfaces with type-stamping
+allocators. `ChoiceNode` exposes the four nullable math-list alternatives:
+display/text/script/scriptscript. Adopted the surfaces in `new_style` and
+`new_choice`. Deliberately skipped `new_lig_item` for now because it is a
+lig-stack record with no `NODE_type` header, not a normal list node.
+
+**Tests:** `node::` **32/32**. Dashboard green: `tex-outputs` **29/29**,
+`trip` **2/2**, `engine_rust` **7/7**, `latex_goldens` **4/4**. Warnings stayed
+**42**.
+
+**Next:** either type `new_lig_item` as a non-header lig-stack record, or start
+the noad constructor surface (`new_noad`). Typed consumers in math/packaging
+also remain good targets.
+
+---
+
+
 ## Idiom session 155 — 2026-06-08 — Execution: typed glue/math constructor adoption
 
 **Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Longer

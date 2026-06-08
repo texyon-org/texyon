@@ -4,6 +4,15 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-08 (last session = session 156, **execution — typed
+style/choice constructor adoption. Added `StyleNode` and `ChoiceNode` typed
+surfaces with allocators; `ChoiceNode` models display/text/script/scriptscript
+nullable branch pointers. Adopted them in `new_style` and `new_choice`.
+`node::` 32/32; dashboard 29/2/7/4; warnings 42; metrics stable
+(`with_state` 1196, `unsafe fn` 571, direct `#[no_mangle]` grep 11). **Next:
+`new_lig_item` needs a non-header lig-stack record if typed; otherwise start
+the noad constructor surface (`new_noad`) or typed consumers in math/packaging.**)
+
 Last updated: 2026-06-08 (last session = session 155, **execution — typed
 glue/math constructor adoption. Added `NodePtr::<GlueNode>::alloc` (preserving
 this build's `MEDIUM_NODE_SIZE` glue allocation) and adopted it in

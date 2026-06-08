@@ -9,8 +9,8 @@ use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, S
 use crate::errors::overflow;
 use crate::errors::runaway;
 use crate::node::{
-    DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigatureNode, MathNode, NodePtr,
-    PenaltyNode, RuleDimen, RuleNode,
+    ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigatureNode, MathNode,
+    NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
 };
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
@@ -31,11 +31,8 @@ const NORMAL: u16 = 0;
 
 // Math node type and size constants (xetex_format.h:394–401; xetex-constants.h:119,136).
 const NOAD_SIZE: i32 = 4;
-const STYLE_NODE_SIZE: i32 = 3;
 const ORD_NOAD: u16 = 16; // xetex_format.h:401
-const STYLE_NODE: u16 = 14; // xetex_format.h:394
-const CHOICE_NODE: u16 = 15; // xetex_format.h:395
-                             // empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
+                          // empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
 const EMPTY: i32 = 0; // xetex-constants.h:230
 
 // Margin kern node (xetex-constants.h:115; xetex_format.h:396).
@@ -905,15 +902,12 @@ pub unsafe fn new_noad_global() -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_style_global`].
 pub fn new_style(mem: &mut MemState, s: i16) -> i32 {
-    let p = get_node(mem, STYLE_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, STYLE_NODE); // NODE_type(p)
-    mem.set_b16s0(p, s as u16);
-    mem.set_b32s1(p + 1, 0);
-    mem.set_b32s1(p + 2, 0);
-    p
+    let Some(p) = NodePtr::<StyleNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_subtype(mem, s as u16);
+    p.clear_payload(mem);
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_style` callers (`01b` §3, §5).
@@ -931,17 +925,15 @@ pub unsafe fn new_style_global(s: i16) -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`.
 pub fn new_choice(mem: &mut MemState) -> i32 {
-    let p = get_node(mem, STYLE_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, CHOICE_NODE); // NODE_type(p)
-    mem.set_b16s0(p, 0);
-    mem.set_b32s0(p + 1, TEX_NULL);
-    mem.set_b32s1(p + 1, TEX_NULL);
-    mem.set_b32s0(p + 2, TEX_NULL);
-    mem.set_b32s1(p + 2, TEX_NULL);
-    p
+    let Some(p) = NodePtr::<ChoiceNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_subtype(mem, 0);
+    p.set_display_mlist(mem, MemPtr::NULL);
+    p.set_text_mlist(mem, MemPtr::NULL);
+    p.set_script_mlist(mem, MemPtr::NULL);
+    p.set_script_script_mlist(mem, MemPtr::NULL);
+    p.idx().0
 }
 
 /// Allocate a margin kern node (MARGIN_KERN_NODE_SIZE = 3 words).
