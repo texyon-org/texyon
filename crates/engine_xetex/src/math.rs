@@ -29,7 +29,7 @@ use crate::mem::{
     new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec,
     ALLOC_FAILED, TEX_NULL,
 };
-use crate::node::{GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode};
+use crate::node::{AnyBox, ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode};
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
@@ -447,19 +447,22 @@ pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<i32, NodeRecycleAbort
 /// (bucket C). Allocation failure propagates the
 /// [`NodeRecycleAbort`] sentinel (`01b` §5).
 pub fn overbar(mem: &mut MemState, b: i32, k: i32, t: i32) -> Result<i32, NodeRecycleAbort> {
-    let mut p = new_kern(mem, k);
-    if p == ALLOC_FAILED {
+    let p_raw = new_kern(mem, k);
+    if p_raw == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    mem.set_b32s1(p, b);
-    let q = fraction_rule(mem, t)?;
-    mem.set_b32s1(q, p);
-    p = new_kern(mem, t);
-    if p == ALLOC_FAILED {
+    let p = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_raw)) };
+    p.set_link(mem, MemPtr::from_raw(b));
+    let q_raw = fraction_rule(mem, t)?;
+    let q = unsafe { NodePtr::<RuleNode>::from_idx_unchecked(MemIdx::new(q_raw)) };
+    q.set_link(mem, MemPtr::from_raw(p_raw));
+    let r_raw = new_kern(mem, t);
+    if r_raw == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    mem.set_b32s1(p, q);
-    Ok(p)
+    let r = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(r_raw)) };
+    r.set_link(mem, MemPtr::from_raw(q_raw));
+    Ok(r_raw)
 }
 
 /// translated from xetex-math.c:195 (math_glue)
@@ -859,8 +862,9 @@ pub unsafe fn make_vcenter_global(q: i32) {
 }
 
 fn make_radical_finish(mem: &mut MemState, q: i32, x: i32) {
-    mem.set_b32s0(q + 1, x);
-    mem.set_b32s1(q + 1, SUB_BOX);
+    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+    q_noad.set_nucleus_field(mem, x);
+    q_noad.set_nucleus_type(mem, SUB_BOX);
 }
 
 fn make_radical_prepare_delimiter(
@@ -871,15 +875,21 @@ fn make_radical_prepare_delimiter(
     rule_thickness: i32,
     is_ot_math: bool,
 ) -> (i32, i32, i32) {
+    let y_idx = MemIdx::new(y);
+    let y_box = mem.classify_box(y_idx).expect("valid box").expect("y is a box");
+    let x_idx = MemIdx::new(x);
+    let x_box = mem.classify_box(x_idx).expect("valid box").expect("x is a box");
+
     if is_ot_math {
-        mem.set_b32s1(y + 2, mem.b32s1(y + 3) + mem.b32s1(y + 2) - rule_thickness);
-        mem.set_b32s1(y + 3, rule_thickness);
+        let new_depth = Scaled(y_box.depth(mem).0 + y_box.height(mem).0 - rule_thickness);
+        y_box.set_depth(mem, new_depth);
+        y_box.set_height(mem, Scaled(rule_thickness));
     }
 
-    let delta = mem.b32s1(y + 2) - (mem.b32s1(x + 3) + mem.b32s1(x + 2) + clr);
-    let x_height = mem.b32s1(x + 3);
-    let rule_height = mem.b32s1(y + 3);
-    (delta, x_height, rule_height)
+    let delta = Scaled(y_box.depth(mem).0 - (x_box.height(mem).0 + x_box.depth(mem).0 + clr));
+    let x_height = x_box.height(mem).0;
+    let rule_height = y_box.height(mem).0;
+    (delta.0, x_height, rule_height)
 }
 
 /// translated from xetex-math.c:80 (make_radical)
@@ -917,7 +927,8 @@ pub unsafe fn make_radical_global(q: i32) {
     };
 
     let delimiter_height = crate::state::with_state(|st| {
-        st.mem.b32s1(x + 3) + st.mem.b32s1(x + 2) + clr + rule_thickness
+        let x_box = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
+        x_box.height(&st.mem).0 + x_box.depth(&st.mem).0 + clr + rule_thickness
     });
     let y = var_delimiter_global(q + 4, cur_size, delimiter_height);
     let (delta, x_height, rule_height) = crate::state::with_state_mut(|st| {
@@ -926,13 +937,21 @@ pub unsafe fn make_radical_global(q: i32) {
     if delta > 0 {
         clr += crate::scaled_math::half(delta);
     }
-    crate::state::with_state_mut(|st| st.mem.set_b32s1(y + 4, -(x_height + clr)));
+    crate::state::with_state_mut(|st| {
+        let y_idx = MemIdx::new(y);
+        let y_box = st.mem.classify_box(y_idx).unwrap().unwrap();
+        y_box.set_shift_amount(&mut st.mem, Scaled(-(x_height + clr)));
+    });
     let p = match crate::state::with_state_mut(|st| overbar(&mut st.mem, x, clr, rule_height)) {
         Ok(p) => p,
         Err(e) => node_recycle_abort(e),
     };
     let overbar_box = crate::packaging::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
-    crate::state::with_state_mut(|st| st.mem.set_b32s1(y, overbar_box));
+    crate::state::with_state_mut(|st| {
+        let y_idx = MemIdx::new(y);
+        let y_box = st.mem.classify_box(y_idx).unwrap().unwrap();
+        y_box.set_link(&mut st.mem, MemPtr::from_raw(overbar_box));
+    });
     let hbox = crate::packaging::hpack(y, 0, ADDITIONAL);
     crate::state::with_state_mut(|st| make_radical_finish(&mut st.mem, q, hbox));
 }
@@ -3364,21 +3383,25 @@ fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr>
     let q;
     let aux = cur_list_aux_b32s1();
     if aux != TEX_NULL {
-        mem.set_b32s1(aux + 3, SUB_MLIST);
+        let aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux)) };
+        aux_noad.set_supscr_type(mem, SUB_MLIST);
         let head_link = mem.b32s1(cur_list_head());
-        mem.set_b32s0(aux + 3, head_link);
+        aux_noad.set_supscr_field(mem, head_link);
         if p == TEX_NULL {
             q = aux;
         } else {
-            q = mem.b32s0(aux + 2);
+            q = aux_noad.subscr_field(mem);
+            let q_idx = MemIdx::new(q);
+            let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(q_idx) };
             let etex_aux = cur_list_e_tex_aux();
-            if mem.b16s1(q) != LEFT_NOAD || etex_aux == TEX_NULL {
+            if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
                 return Err(c"right");
             }
-            let etex_link = mem.b32s1(etex_aux);
-            mem.set_b32s0(aux + 2, etex_link);
-            mem.set_b32s1(etex_aux, aux);
-            mem.set_b32s1(aux, p);
+            let etex_aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux)) };
+            let etex_link = etex_aux_noad.link(mem);
+            aux_noad.set_subscr_field(mem, etex_link.0);
+            etex_aux_noad.set_link(mem, MemPtr::from_raw(aux));
+            aux_noad.set_link(mem, MemPtr::from_raw(p));
         }
     } else {
         mem.set_b32s1(cur_list_tail(), p);
@@ -3402,12 +3425,14 @@ pub unsafe fn fin_mlist_global(p: i32) -> i32 {
 
 /// translated from xetex-math.c:571 (build_choices)
 fn build_choices_finish(mem: &mut MemState, save_stack: &mut SaveStackState, p: i32) -> bool {
+    let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cur_list_tail())) };
+    let p_ptr = MemPtr::from_raw(p);
     match save_stack.b32s1(save_stack.save_ptr - 1) {
-        0 => mem.set_b32s0(cur_list_tail() + 1, p),
-        1 => mem.set_b32s1(cur_list_tail() + 1, p),
-        2 => mem.set_b32s0(cur_list_tail() + 2, p),
+        0 => tail.set_display_mlist(mem, p_ptr),
+        1 => tail.set_text_mlist(mem, p_ptr),
+        2 => tail.set_script_mlist(mem, p_ptr),
         3 => {
-            mem.set_b32s1(cur_list_tail() + 2, p);
+            tail.set_script_script_mlist(mem, p_ptr);
             save_stack.save_ptr -= 1;
             return true;
         }

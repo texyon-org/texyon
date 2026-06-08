@@ -356,10 +356,74 @@ impl AnyBox {
     }
 
     #[inline]
+    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
+        match self {
+            AnyBox::HList(p) => p.set_width(mem, w),
+            AnyBox::VList(p) => p.set_width(mem, w),
+        }
+    }
+
+    #[inline]
+    pub fn set_depth(self, mem: &mut MemState, d: Scaled) {
+        match self {
+            AnyBox::HList(p) => p.set_depth(mem, d),
+            AnyBox::VList(p) => p.set_depth(mem, d),
+        }
+    }
+
+    #[inline]
+    pub fn set_height(self, mem: &mut MemState, h: Scaled) {
+        match self {
+            AnyBox::HList(p) => p.set_height(mem, h),
+            AnyBox::VList(p) => p.set_height(mem, h),
+        }
+    }
+
+    #[inline]
     pub fn shift_amount(self, mem: &MemState) -> Scaled {
         match self {
             AnyBox::HList(p) => p.shift_amount(mem),
             AnyBox::VList(p) => p.shift_amount(mem),
+        }
+    }
+
+    #[inline]
+    pub fn set_shift_amount(self, mem: &mut MemState, s: Scaled) {
+        match self {
+            AnyBox::HList(p) => p.set_shift_amount(mem, s),
+            AnyBox::VList(p) => p.set_shift_amount(mem, s),
+        }
+    }
+
+    #[inline]
+    pub fn list_ptr(self, mem: &MemState) -> MemPtr {
+        match self {
+            AnyBox::HList(p) => p.list_ptr(mem),
+            AnyBox::VList(p) => p.list_ptr(mem),
+        }
+    }
+
+    #[inline]
+    pub fn set_list_ptr(self, mem: &mut MemState, q: MemPtr) {
+        match self {
+            AnyBox::HList(p) => p.set_list_ptr(mem, q),
+            AnyBox::VList(p) => p.set_list_ptr(mem, q),
+        }
+    }
+
+    #[inline]
+    pub fn link(self, mem: &MemState) -> MemPtr {
+        match self {
+            AnyBox::HList(p) => p.link(mem),
+            AnyBox::VList(p) => p.link(mem),
+        }
+    }
+
+    #[inline]
+    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
+        match self {
+            AnyBox::HList(p) => p.set_link(mem, q),
+            AnyBox::VList(p) => p.set_link(mem, q),
         }
     }
 }
@@ -854,6 +918,12 @@ impl NodePtr<Noad> {
     #[inline]
     pub fn set_noad_type(self, mem: &mut MemState, nt: NodeType) {
         mem.set_b16s1(self.idx.0, nt.as_raw());
+    }
+
+    /// Get the noad's type code = `mem[p].b16.s1`.
+    #[inline]
+    pub fn noad_type(self, mem: &MemState) -> NodeType {
+        NodeType::from_raw(mem.b16s1(self.idx.0)).expect("valid noad type")
     }
 
     /// Nucleus type = `mem[p + 1].b32.s1`
