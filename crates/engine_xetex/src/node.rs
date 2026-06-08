@@ -35,11 +35,12 @@
 use std::marker::PhantomData;
 
 use crate::consts::{
-    BOX_NODE_SIZE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, MEDIUM_NODE_SIZE, PENALTY_NODE,
+    BOX_NODE_SIZE, DISC_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, LIGATURE_NODE,
+    MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
 use crate::mem::{get_node, ALLOC_FAILED};
 use crate::state::MemState;
-use crate::units::{InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
 
 /// Marker trait for node kinds. Implemented only by the zero-sized kind
 /// markers below; never constructed.
@@ -111,6 +112,38 @@ pub enum VListNode {}
 impl NodeKind for HListNode {}
 impl NodeKind for VListNode {}
 
+/// A rule dimension: either TeX's running-dimension sentinel (`NULL_FLAG`) or
+/// a concrete scaled length.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum RuleDimen {
+    Running,
+    Set(Scaled),
+}
+
+impl RuleDimen {
+    #[inline]
+    pub fn from_raw(raw: i32) -> RuleDimen {
+        if raw == NULL_FLAG {
+            RuleDimen::Running
+        } else {
+            RuleDimen::Set(Scaled(raw))
+        }
+    }
+
+    #[inline]
+    pub fn raw(self) -> i32 {
+        match self {
+            RuleDimen::Running => NULL_FLAG,
+            RuleDimen::Set(v) => v.0,
+        }
+    }
+}
+
+/// `RULE_NODE` (`NODE_type` = 2): a rectangular rule with running dimensions.
+pub enum RuleNode {}
+
+impl NodeKind for RuleNode {}
+
 // --- capability traits: shared field layouts (compile-time only) ---
 
 /// Has the `width`/`depth`/`height`/`shift_amount` scaled dimensions at
@@ -134,6 +167,9 @@ impl HasGlueSet for HListNode {}
 impl HasGlueSet for VListNode {}
 impl HasNodeHeader for HListNode {}
 impl HasNodeHeader for VListNode {}
+impl HasNodeHeader for RuleNode {}
+impl HasNodeHeader for DiscNode {}
+impl HasNodeHeader for LigatureNode {}
 impl HasNodeHeader for GlueNode {}
 impl HasNodeHeader for KernNode {}
 impl HasNodeHeader for PenaltyNode {}
@@ -271,6 +307,48 @@ pub enum AnyBox {
     VList(NodePtr<VListNode>),
 }
 
+impl AnyBox {
+    #[inline]
+    pub fn idx(self) -> MemIdx {
+        match self {
+            AnyBox::HList(p) => p.idx(),
+            AnyBox::VList(p) => p.idx(),
+        }
+    }
+
+    #[inline]
+    pub fn width(self, mem: &MemState) -> Scaled {
+        match self {
+            AnyBox::HList(p) => p.width(mem),
+            AnyBox::VList(p) => p.width(mem),
+        }
+    }
+
+    #[inline]
+    pub fn depth(self, mem: &MemState) -> Scaled {
+        match self {
+            AnyBox::HList(p) => p.depth(mem),
+            AnyBox::VList(p) => p.depth(mem),
+        }
+    }
+
+    #[inline]
+    pub fn height(self, mem: &MemState) -> Scaled {
+        match self {
+            AnyBox::HList(p) => p.height(mem),
+            AnyBox::VList(p) => p.height(mem),
+        }
+    }
+
+    #[inline]
+    pub fn shift_amount(self, mem: &MemState) -> Scaled {
+        match self {
+            AnyBox::HList(p) => p.shift_amount(mem),
+            AnyBox::VList(p) => p.shift_amount(mem),
+        }
+    }
+}
+
 impl MemState {
     /// Read the `NODE_type` (`mem[p].b16.s1`) of a lo-mem node as a checked
     /// [`NodeType`]. `p` must be a real lo-mem node index (the caller did
@@ -296,6 +374,184 @@ impl MemState {
             NodeType::VList => Some(AnyBox::VList(unsafe {
                 NodePtr::<VListNode>::from_idx_unchecked(p)
             })),
+            _ => None,
+        })
+    }
+
+    /// Classify a known lo-mem node as a rule node.
+    #[inline]
+    pub fn classify_rule(&self, p: MemIdx) -> Result<Option<NodePtr<RuleNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            // SAFETY: the NODE_type branch just proved the kind.
+            NodeType::Rule => Some(unsafe { NodePtr::<RuleNode>::from_idx_unchecked(p) }),
+            _ => None,
+        })
+    }
+}
+
+impl NodePtr<RuleNode> {
+    /// Allocate a fresh rule node (`RULE_NODE_SIZE` words), type-stamped with
+    /// `NODE_type = RULE_NODE`, returning `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
+        let p = get_node(mem, RULE_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, RULE_NODE);
+        // SAFETY: `p` is freshly allocated as a rule-sized node and just
+        // stamped RULE_NODE.
+        Some(unsafe { NodePtr::<RuleNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    #[inline]
+    pub fn width(self, mem: &MemState) -> RuleDimen {
+        RuleDimen::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_width(self, mem: &mut MemState, v: RuleDimen) {
+        mem.set_b32s1(self.idx.offset(1).0, v.raw());
+    }
+
+    #[inline]
+    pub fn depth(self, mem: &MemState) -> RuleDimen {
+        RuleDimen::from_raw(mem.b32s1(self.idx.offset(2).0))
+    }
+    #[inline]
+    pub fn set_depth(self, mem: &mut MemState, v: RuleDimen) {
+        mem.set_b32s1(self.idx.offset(2).0, v.raw());
+    }
+
+    #[inline]
+    pub fn height(self, mem: &MemState) -> RuleDimen {
+        RuleDimen::from_raw(mem.b32s1(self.idx.offset(3).0))
+    }
+    #[inline]
+    pub fn set_height(self, mem: &mut MemState, v: RuleDimen) {
+        mem.set_b32s1(self.idx.offset(3).0, v.raw());
+    }
+}
+
+// --- the ligature family: ligature nodes (NODE_type 6) ---
+
+/// `LIGATURE_NODE` (`NODE_type` = 6): a ligature carrying font/character and a
+/// successor list pointer in word +1.
+pub enum LigatureNode {}
+
+impl NodeKind for LigatureNode {}
+
+impl NodePtr<LigatureNode> {
+    /// Allocate a fresh ligature node (`SMALL_NODE_SIZE` words), type-stamped
+    /// with `NODE_type = LIGATURE_NODE`, returning `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<LigatureNode>> {
+        let p = get_node(mem, SMALL_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, LIGATURE_NODE);
+        // SAFETY: `p` is freshly allocated as a small node and just stamped
+        // LIGATURE_NODE.
+        Some(unsafe { NodePtr::<LigatureNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Ligature font = `mem[p + 1].b16.s1`.
+    #[inline]
+    pub fn font(self, mem: &MemState) -> FontId {
+        FontId(mem.b16s1(self.idx.offset(1).0) as i32)
+    }
+    #[inline]
+    pub fn set_font(self, mem: &mut MemState, v: FontId) {
+        mem.set_b16s1(self.idx.offset(1).0, v.0 as u16);
+    }
+
+    /// Ligature character = `mem[p + 1].b16.s0`.
+    #[inline]
+    pub fn character(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_character(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.offset(1).0, v);
+    }
+
+    /// Ligature successor list = `mem[p + 1].b32.s1`.
+    #[inline]
+    pub fn lig_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_lig_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+}
+
+impl MemState {
+    /// Classify a known lo-mem node as a ligature node.
+    #[inline]
+    pub fn classify_ligature(
+        &self,
+        p: MemIdx,
+    ) -> Result<Option<NodePtr<LigatureNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            // SAFETY: the NODE_type branch just proved the kind.
+            NodeType::Ligature => Some(unsafe { NodePtr::<LigatureNode>::from_idx_unchecked(p) }),
+            _ => None,
+        })
+    }
+}
+
+// --- the discretionary family: discretionary break nodes (NODE_type 7) ---
+
+/// `DISC_NODE` (`NODE_type` = 7): discretionary break with pre/post lists.
+pub enum DiscNode {}
+
+impl NodeKind for DiscNode {}
+
+impl NodePtr<DiscNode> {
+    /// Allocate a fresh discretionary node (`SMALL_NODE_SIZE` words),
+    /// type-stamped with `NODE_type = DISC_NODE`, returning `None` on arena
+    /// exhaustion.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<DiscNode>> {
+        let p = get_node(mem, SMALL_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, DISC_NODE);
+        // SAFETY: `p` is freshly allocated as a small node and just stamped
+        // DISC_NODE.
+        Some(unsafe { NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Pre-break list = `mem[p + 1].b32.s0`.
+    #[inline]
+    pub fn pre_break(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_pre_break(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s0(self.idx.offset(1).0, v.0);
+    }
+
+    /// Post-break list = `mem[p + 1].b32.s1`.
+    #[inline]
+    pub fn post_break(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_post_break(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+}
+
+impl MemState {
+    /// Classify a known lo-mem node as a discretionary node.
+    #[inline]
+    pub fn classify_disc(&self, p: MemIdx) -> Result<Option<NodePtr<DiscNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            // SAFETY: the NODE_type branch just proved the kind.
+            NodeType::Disc => Some(unsafe { NodePtr::<DiscNode>::from_idx_unchecked(p) }),
             _ => None,
         })
     }
@@ -800,6 +1056,130 @@ mod tests {
         let bad = MemIdx::new(90);
         mem.set_b16s1(bad.0, 35);
         assert!(mem.classify_box(bad).is_err());
+    }
+
+    #[test]
+    fn rule_dimensions_model_the_running_sentinel() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Rule.as_raw());
+        let r = unsafe { NodePtr::<RuleNode>::from_idx_unchecked(p) };
+
+        r.set_width(&mut mem, RuleDimen::Running);
+        r.set_depth(&mut mem, RuleDimen::Set(Scaled(0)));
+        r.set_height(&mut mem, RuleDimen::Set(Scaled(0x2222)));
+
+        assert_eq!(r.width(&mem), RuleDimen::Running);
+        assert_eq!(r.depth(&mem), RuleDimen::Set(Scaled(0)));
+        assert_eq!(r.height(&mem), RuleDimen::Set(Scaled(0x2222)));
+        assert_eq!(mem.b32s1(p.0 + 1), crate::consts::NULL_FLAG);
+        assert_eq!(mem.b32s1(p.0 + 2), 0);
+        assert_eq!(mem.b32s1(p.0 + 3), 0x2222);
+    }
+
+    #[test]
+    fn alloc_rule_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let r = NodePtr::<RuleNode>::alloc(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_rule(r.idx()), Ok(Some(_))));
+        r.set_subtype(&mut mem, 0);
+        r.set_width(&mut mem, RuleDimen::Running);
+        r.set_height(&mut mem, RuleDimen::Set(Scaled(99)));
+        assert_eq!(r.width(&mem), RuleDimen::Running);
+        assert_eq!(r.height(&mem), RuleDimen::Set(Scaled(99)));
+    }
+
+    #[test]
+    fn ligature_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Ligature.as_raw());
+        let lig = unsafe { NodePtr::<LigatureNode>::from_idx_unchecked(p) };
+
+        lig.set_subtype(&mut mem, 0);
+        lig.set_font(&mut mem, FontId(77));
+        lig.set_character(&mut mem, 0x1234);
+        lig.set_lig_ptr(&mut mem, MemPtr::from_raw(150));
+
+        assert_eq!(lig.subtype(&mem), 0);
+        assert_eq!(lig.font(&mem), FontId(77));
+        assert_eq!(lig.character(&mem), 0x1234);
+        assert_eq!(lig.lig_ptr(&mem), MemPtr::from_raw(150));
+        assert_eq!(mem.b16s1(p.0 + 1), 77);
+        assert_eq!(mem.b16s0(p.0 + 1), 0x1234);
+        assert_eq!(mem.b32s1(p.0 + 1), 150);
+    }
+
+    #[test]
+    fn alloc_ligature_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let lig = NodePtr::<LigatureNode>::alloc(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_ligature(lig.idx()), Ok(Some(_))));
+        lig.set_font(&mut mem, FontId(5));
+        lig.set_character(&mut mem, 42);
+        lig.set_lig_ptr(&mut mem, MemPtr::NULL);
+        assert_eq!(lig.font(&mem), FontId(5));
+        assert_eq!(lig.character(&mem), 42);
+        assert!(lig.lig_ptr(&mem).is_null());
+    }
+
+    #[test]
+    fn disc_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Disc.as_raw());
+        let disc = unsafe { NodePtr::<DiscNode>::from_idx_unchecked(p) };
+
+        disc.set_subtype(&mut mem, 0);
+        disc.set_pre_break(&mut mem, MemPtr::from_raw(150));
+        disc.set_post_break(&mut mem, MemPtr::from_raw(160));
+
+        assert_eq!(disc.subtype(&mem), 0);
+        assert_eq!(disc.pre_break(&mem), MemPtr::from_raw(150));
+        assert_eq!(disc.post_break(&mem), MemPtr::from_raw(160));
+        assert_eq!(mem.b32s0(p.0 + 1), 150);
+        assert_eq!(mem.b32s1(p.0 + 1), 160);
+    }
+
+    #[test]
+    fn alloc_disc_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let disc = NodePtr::<DiscNode>::alloc(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_disc(disc.idx()), Ok(Some(_))));
+        disc.set_pre_break(&mut mem, MemPtr::NULL);
+        disc.set_post_break(&mut mem, MemPtr::NULL);
+        assert!(disc.pre_break(&mem).is_null());
+        assert!(disc.post_break(&mem).is_null());
     }
 
     #[test]

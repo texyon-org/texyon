@@ -131,8 +131,6 @@ unsafe fn mfree_ptr<T>(ptr: *mut T) -> *mut T {
     ptr::null_mut()
 }
 
-
-
 unsafe fn synctexabort(synctex: &mut crate::state::SynctexCtxt) {
     if synctex.file != INVALID_HANDLE {
         ttstub_output_close(synctex.file);

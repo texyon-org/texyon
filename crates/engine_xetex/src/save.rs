@@ -11,8 +11,8 @@ use crate::packaging::flush_node_list_global;
 use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
-    align_state, cur_boundary, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0,
-    eqtb_b32s1, eqtb_word, grp_stack, in_open, line, mag_set, save_ptr, save_size, save_stack_b16s0,
+    align_state, cur_boundary, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0, eqtb_b32s1,
+    eqtb_word, grp_stack, in_open, line, mag_set, save_ptr, save_size, save_stack_b16s0,
     save_stack_b16s1, save_stack_b32s1, save_stack_word, set_align_state, set_cur_boundary,
     set_cur_group, set_cur_input_loc, set_cur_input_start, set_cur_level, set_cur_ptr, set_cur_tok,
     set_eqtb_word, set_mag_set, set_mem_b32s0, set_mem_b32s1, set_sa_chain, set_sa_level,
@@ -388,7 +388,15 @@ pub(crate) fn eq_define(
 pub unsafe fn eq_define_global(p: i32, t: u16, e: i32) {
     let abort = crate::state::with_state_mut(|st| {
         let s = &mut *st;
-        eq_define(&mut s.eqtb, &mut s.save_stack, &mut s.mem, &mut s.scanner, p, t, e)
+        eq_define(
+            &mut s.eqtb,
+            &mut s.save_stack,
+            &mut s.mem,
+            &mut s.scanner,
+            p,
+            t,
+            e,
+        )
     });
     raise_save_abort(abort);
 }

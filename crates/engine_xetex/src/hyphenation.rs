@@ -9,8 +9,6 @@ pub(crate) const MAX_TRIE_OP: u16 = 65_535;
 const MIN_TRIE_OP: i32 = 0;
 pub(crate) const BIGGEST_LANG: i32 = 255;
 
-
-
 use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, TOO_BIG_CHAR};
 use crate::globals::{
     cur_chr, cur_cmd, cur_lang, cur_val, eqtb_b32s1, hc_entry, hyf_distance_entry, hyf_entry,
@@ -34,9 +32,7 @@ use crate::globals::{
 
 #[inline]
 unsafe fn trie_op_hash(k: i32) -> i32 {
-    crate::state::with_state(|state| {
-        state.hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize]
-    })
+    crate::state::with_state(|state| state.hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize])
 }
 #[inline]
 pub(crate) unsafe fn set_trie_op_hash(k: i32, v: i32) {

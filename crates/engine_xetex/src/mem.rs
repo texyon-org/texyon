@@ -6,14 +6,16 @@
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 use crate::consts::{
-    DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD,
-    MEDIUM_NODE_SIZE, NULL_FLAG, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
+    GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE,
+    SMALL_NODE_SIZE,
 };
 use crate::errors::overflow;
 use crate::errors::runaway;
-use crate::node::{HListNode, KernNode, NodePtr, PenaltyNode};
+use crate::node::{
+    DiscNode, HListNode, KernNode, LigatureNode, NodePtr, PenaltyNode, RuleDimen, RuleNode,
+};
 use crate::state::{EqtbState, MemState};
-use crate::units::Scaled;
+use crate::units::{FontId, MemPtr, Scaled};
 
 use crate::globals::{
     avail, cur_input_synctex_tag, cur_list_head, line, max_nest_stack, nest_ptr, nest_size,
@@ -335,16 +337,14 @@ pub unsafe fn new_null_box_global() -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_rule_global`].
 pub fn new_rule(mem: &mut MemState) -> i32 {
-    let p = get_node(mem, RULE_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, RULE_NODE);
-    mem.set_b16s0(p, 0);
-    mem.set_b32s1(p + 1, NULL_FLAG); // width
-    mem.set_b32s1(p + 2, NULL_FLAG); // depth
-    mem.set_b32s1(p + 3, NULL_FLAG); // height
-    p
+    let Some(p) = NodePtr::<RuleNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_subtype(mem, 0);
+    p.set_width(mem, RuleDimen::Running);
+    p.set_depth(mem, RuleDimen::Running);
+    p.set_height(mem, RuleDimen::Running);
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_rule` callers (`01b` §3, §5).
@@ -370,18 +370,14 @@ pub unsafe fn new_rule_global() -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_ligature_global`].
 pub fn new_ligature(mem: &mut MemState, f: i32, c: u16, q: i32) -> i32 {
-    let p = get_node(mem, SMALL_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, LIGATURE_NODE);
-    // word p+1: b16.s1 = font, b16.s0 = char, b32.s1 = successor link.
-    // b16.s1 and b16.s0 together form b32.s0; b32.s1 is independent.
-    mem.set_b16s1(p + 1, f as u16);
-    mem.set_b16s0(p + 1, c);
-    mem.set_b32s1(p + 1, q);
-    mem.set_b16s0(p, 0); // subtype
-    p
+    let Some(p) = NodePtr::<LigatureNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_font(mem, FontId(f));
+    p.set_character(mem, c);
+    p.set_lig_ptr(mem, MemPtr::from_raw(q));
+    p.set_subtype(mem, 0);
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_ligature` callers (`01b` §3, §5).
@@ -431,15 +427,13 @@ pub unsafe fn new_lig_item_global(c: u16) -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_disc_global`].
 pub fn new_disc(mem: &mut MemState) -> i32 {
-    let p = get_node(mem, SMALL_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, DISC_NODE);
-    mem.set_b16s0(p, 0);
-    mem.set_b32s0(p + 1, TEX_NULL); // pre-break list
-    mem.set_b32s1(p + 1, TEX_NULL); // post-break list
-    p
+    let Some(p) = NodePtr::<DiscNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_subtype(mem, 0);
+    p.set_pre_break(mem, MemPtr::NULL);
+    p.set_post_break(mem, MemPtr::NULL);
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_disc` callers (`01b` §3, §5).

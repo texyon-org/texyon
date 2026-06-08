@@ -8,6 +8,29 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 154 — 2026-06-08 — Execution: typed rule/ligature/disc allocation + `append_to_vlist` box typing
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). One larger
+typed-pointer session.
+
+**Code:** added `RuleDimen` (`Running` vs `Set(Scaled)`) and `RuleNode`, then
+typed `new_rule` and `fraction_rule`. Added `LigatureNode` and typed
+`new_ligature`. Added `DiscNode` and typed `new_disc`. Added `AnyBox` dimension
+helpers and retyped `append_to_vlist` so the legacy wrapper classifies `i32` to
+`AnyBox` once at the boundary.
+
+**Tests:** `node::` **25/25**. Dashboard green: `tex-outputs` **29/29**,
+`trip` **2/2**, `engine_rust` **7/7**, `latex_goldens` **4/4**. Warnings stayed
+**42**. Metrics unchanged: `with_state` 1197, `unsafe fn` 571, bare `p/q/r:
+i32` params 379, direct `#[no_mangle]` grep 11.
+
+**Next:** continue typed consumers now that rule/disc/ligature exist. Good
+targets: more already-threaded packaging/math leaves that read box/rule dims,
+or constructor families still raw (`new_math`, `new_glue`, lig-item/noad).
+
+---
+
+
 ## Idiom session 153 — 2026-06-08 — Execution: box-family typed alloc adoption for `new_null_box`
 
 **Type:** execution (workstream 01 / `01b` §3a + `01c` §8), the session-152

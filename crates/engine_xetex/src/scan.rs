@@ -1217,12 +1217,7 @@ fn round_decimals(k: i32) -> i32 {
 }
 
 /// translated from xetex-xetex0.c:4406 (xetex_scan_dimen)
-pub unsafe fn xetex_scan_dimen(
-    mu: bool,
-    inf: bool,
-    shortcut: bool,
-    requires_units: bool,
-) {
+pub unsafe fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool) {
     use crate::globals::{
         cur_order, font_info_b32s1, radix, set_cur_order, set_dig_entry, set_radix, tex_remainder,
     };
@@ -4566,7 +4561,10 @@ pub unsafe fn get_next() {
 
                                         // Single-char CS: either buffer > 65535 uses id_lookup(1), else SINGLE_BASE
                                         if buffer_entry(cur_input().loc) > 65535 {
-                                            set_cur_cs(crate::hash::id_lookup_global(cur_input().loc, 1));
+                                            set_cur_cs(crate::hash::id_lookup_global(
+                                                cur_input().loc,
+                                                1,
+                                            ));
                                             set_cur_input_loc(cur_input().loc + 1);
                                             break 'start_cs; // goto found
                                         }

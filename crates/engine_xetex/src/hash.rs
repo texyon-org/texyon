@@ -252,9 +252,7 @@ pub unsafe fn id_lookup_global(j: i32, l: i32) -> i32 {
 }
 
 pub unsafe fn prim_lookup_global(s: i32) -> i32 {
-    let res = crate::state::with_state_mut(|st| {
-        prim_lookup(&mut st.eqtb, &mut st.strings, s)
-    });
+    let res = crate::state::with_state_mut(|st| prim_lookup(&mut st.eqtb, &mut st.strings, s));
     match res {
         Ok(p) => p,
         Err(HashLookupError::HashSizeOverflow(limit)) => {

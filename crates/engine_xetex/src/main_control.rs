@@ -2824,13 +2824,11 @@ pub(crate) fn fix_language(
         crate::globals::set_cur_list_aux_b32s1(l);
         mem.set_b16s1(
             tail + 1,
-            crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN))
-                as u16,
+            crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as u16,
         );
         mem.set_b16s0(
             tail + 1,
-            crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN))
-                as u16,
+            crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as u16,
         );
     }
     Ok(())
@@ -6219,9 +6217,17 @@ pub unsafe fn prefixed_command() {
                         XETEX_MATH_CHAR_NUM_DEF_CODE => {
                             crate::scan::scan_xetex_math_char_int();
                             if a >= 4 {
-                                crate::save::geq_define_global(p, XETEX_MATH_GIVEN as u16, cur_val());
+                                crate::save::geq_define_global(
+                                    p,
+                                    XETEX_MATH_GIVEN as u16,
+                                    cur_val(),
+                                );
                             } else {
-                                crate::save::eq_define_global(p, XETEX_MATH_GIVEN as u16, cur_val());
+                                crate::save::eq_define_global(
+                                    p,
+                                    XETEX_MATH_GIVEN as u16,
+                                    cur_val(),
+                                );
                             }
                         }
                         XETEX_MATH_CHAR_DEF_CODE => {

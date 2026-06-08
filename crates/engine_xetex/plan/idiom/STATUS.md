@@ -4,6 +4,17 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-08 (last session = session 154, **execution — typed
+rule/ligature/disc allocation plus `append_to_vlist` box typing. Added
+`RuleDimen` + `RuleNode`; typed `new_rule` and `fraction_rule`. Added
+`LigatureNode`; typed `new_ligature`. Added `DiscNode`; typed `new_disc`. Added
+`AnyBox` dimension helpers and retyped `append_to_vlist` to take `AnyBox`, with
+classification in the legacy wrapper. `node::` 25/25; dashboard 29/2/7/4;
+warnings 42; metrics unchanged (`with_state` 1197, `unsafe fn` 571, bare
+`p/q/r: i32` params 379, direct `#[no_mangle]` grep 11). **Next: more typed
+consumers now that rule/disc/ligature exist, or remaining raw constructor
+families (`new_math`, `new_glue`, lig-item/noad).**)
+
 Last updated: 2026-06-08 (last session = session 153, **execution — box-family
 typed `alloc` adoption for `new_null_box`. 1 code slice. Added `HasNodeHeader`
 for real list-node families only (`HListNode`, `VListNode`, `GlueNode`,

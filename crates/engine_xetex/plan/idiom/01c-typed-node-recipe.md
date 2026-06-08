@@ -113,10 +113,10 @@ rank 3 (kern, session 149), rank 4 (penalty, session 149). First fused
 now allocate through `NodePtr::<K>::alloc`, fully typed). Session 153 added the
 list-node-header `HasNodeHeader` capability (excluding `GlueSpecNode`) and the
 box-family type-stamping `NodePtr::<HListNode>::alloc`, adopted by
-`new_null_box`. **Next:** rank 5 (rule — needs the running-dimension wrapper
-type first; `width`/`depth`/`height` are `Scaled`-or-`NULL_FLAG`), and/or more
-fused adoptions of box/glue/kern/penalty-reading leaves (`AnyBox` dim helpers
-for already-threaded box consumers are the highest-leverage box path).**
+`new_null_box`. Session 154 built/adopted rule (`RuleDimen`), ligature, and
+disc, and retyped `append_to_vlist` to `AnyBox`. **Next:** more typed consumers
+of these families, or remaining raw constructor families (`new_math`,
+`new_glue`, lig-item/noad).**
 
 **Build the layer in this order, one family per slice** (rank 0 lands
 with rank 1). Stop promoting families to typed handles when the remaining

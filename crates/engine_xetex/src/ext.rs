@@ -595,8 +595,6 @@ pub unsafe fn print_utf8_str(mut str_: *const u8, mut len: c_int) {
     }
 }
 
-
-
 // translated from xetex-ext.c:187 (load_mapping_file)
 unsafe fn load_mapping_file(
     s: *const c_char,
@@ -2299,12 +2297,7 @@ pub fn aat_font_get_named_1(_what: c_int, _attributes: *mut c_void, _param: c_in
 }
 
 // translated from xetex-ext.c:1218 (aat_print_font_name)
-pub fn aat_print_font_name(
-    _what: c_int,
-    _attributes: *mut c_void,
-    _param1: c_int,
-    _param2: c_int,
-) {
+pub fn aat_print_font_name(_what: c_int, _attributes: *mut c_void, _param1: c_int, _param2: c_int) {
 }
 
 // translated from xetex-ext.c:1538 (print_glyph_name)

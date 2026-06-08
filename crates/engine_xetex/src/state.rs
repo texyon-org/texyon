@@ -1537,4 +1537,3 @@ impl InputClusterState {
         unsafe { std::ffi::CStr::from_ptr(self.abspath_of_input_file.0.as_ptr()) }
     }
 }
-

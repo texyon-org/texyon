@@ -2120,12 +2120,7 @@ fn font_character_width_global(f: i32, c: i32) -> i32 {
 
 // translated from xetex-shipout.c:1470 (reverse)
 // Called by the (now Rust) hlist_out; internal Rust fn.
-pub unsafe fn reverse(
-    this_box: i32,
-    t: i32,
-    cur_g: *mut i32,
-    cur_glue: *mut f64,
-) -> i32 {
+pub unsafe fn reverse(this_box: i32, t: i32, cur_g: *mut i32, cur_glue: *mut f64) -> i32 {
     let g_order = mem_b16s0(this_box + 5);
     let g_sign = mem_b16s1(this_box + 5);
     let mut l = t;

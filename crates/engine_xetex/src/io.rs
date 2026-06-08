@@ -1233,7 +1233,9 @@ pub unsafe fn start_input(primary_input_name: *const libc::c_char) {
     set_source_filename_stack(in_open(), cur_input().name);
     set_full_source_filename_stack(
         in_open(),
-        crate::texmfmp::maketexstring(crate::state::with_state(|state| state.input.name_of_input_file)),
+        crate::texmfmp::maketexstring(crate::state::with_state(|state| {
+            state.input.name_of_input_file
+        })),
     );
 
     if cur_input().name == str_ptr() - 1 {

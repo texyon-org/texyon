@@ -5,6 +5,7 @@
 //! engine.
 
 use std::{env, fs, io::BufRead, path::PathBuf};
+
 use tectonic_cfg_support::*;
 
 fn main() {

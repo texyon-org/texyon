@@ -12,25 +12,24 @@ use crate::globals::{
     cur_lang, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
     cur_list_prev_graf, cur_list_tail, cur_mu, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1,
     file_line_error_style_p, font_area_entry, font_info_b16, font_info_b32s1,
-    font_layout_engine_ptr, hi_mem_min,
-    insert_src_special_every_math, italic_base_entry, just_box, lr_problems, lr_ptr, mem_b16s0,
-    mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_gr, mem_node_addr, mem_word,
-    nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
-    set_adjust_tail, set_avail, set_cur_dir, set_cur_lang, set_cur_list_aux_b32s0,
-    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf,
-    set_cur_list_tail, set_cur_mlist, set_cur_mu, set_cur_size, set_cur_style, set_cur_val,
-    set_cur_val1, set_help_line, set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr,
-    set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1,
-    set_temp_ptr, set_xtx_ligature_present, temp_ptr, tex_remainder, total_shrink,
-    width_base_entry,
+    font_layout_engine_ptr, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
+    lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_gr,
+    mem_node_addr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
+    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_lang,
+    set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode,
+    set_cur_list_prev_graf, set_cur_list_tail, set_cur_mlist, set_cur_mu, set_cur_size,
+    set_cur_style, set_cur_val, set_cur_val1, set_help_line, set_help_ptr, set_lr_problems,
+    set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0,
+    set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties, set_pre_adjust_tail,
+    set_save_ptr, set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr,
+    tex_remainder, total_shrink, width_base_entry,
 };
 use crate::mem::{
     free_node, free_node_global, get_avail, get_node, get_node_global, new_choice, new_glue,
-    new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_rule,
-    new_spec, ALLOC_FAILED, TEX_NULL,
+    new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec,
+    ALLOC_FAILED, TEX_NULL,
 };
-use crate::node::{GlueSpecNode, KernNode, NodePtr};
+use crate::node::{GlueSpecNode, KernNode, NodePtr, RuleDimen, RuleNode};
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, Scaled};
@@ -435,16 +434,17 @@ pub fn big_op_spacing5(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i3
 /// translated from xetex-math.c:170 (fraction_rule)
 ///
 /// Phase-C: threaded to `&mut MemState`; bottoms out on the threaded
-/// [`new_rule`] and propagates its [`ALLOC_FAILED`] sentinel as
+/// [`NodePtr::<RuleNode>::alloc`] and propagates its allocation sentinel as
 /// [`NodeRecycleAbort::Overflow`] (`01b` §5).
 pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<i32, NodeRecycleAbort> {
-    let p = new_rule(mem);
-    if p == ALLOC_FAILED {
+    let Some(p) = NodePtr::<RuleNode>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b32s1(p + 3, t);
-    mem.set_b32s1(p + 2, 0);
-    Ok(p)
+    };
+    p.set_subtype(mem, 0);
+    p.set_width(mem, RuleDimen::Running);
+    p.set_height(mem, RuleDimen::Set(Scaled(t)));
+    p.set_depth(mem, RuleDimen::Set(Scaled(0)));
+    Ok(p.idx().0)
 }
 
 /// translated from xetex-math.c:181 (overbar)
@@ -838,10 +838,7 @@ fn make_vcenter(mem: &mut MemState, q: i32, axis_height: i32) -> Result<(), Node
         return Err(NodeRecycleAbort::Confusion(c"vcenter"));
     }
     let delta = mem.b32s1(v + 3) + mem.b32s1(v + 2);
-    mem.set_b32s1(
-        v + 3,
-        axis_height + crate::scaled_math::half(delta),
-    );
+    mem.set_b32s1(v + 3, axis_height + crate::scaled_math::half(delta));
     mem.set_b32s1(v + 2, delta - mem.b32s1(v + 3));
     Ok(())
 }
@@ -2917,8 +2914,9 @@ pub unsafe fn char_box_global(f: i32, c: i32) -> i32 {
     } else {
         // TFM fonts: the metric reads are pure `FontState` lookups (no FFI
         // re-entry), so the whole box build runs under one `mem`+`fonts` borrow.
-        match crate::state::with_state_mut(|st| char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16))
-        {
+        match crate::state::with_state_mut(|st| {
+            char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)
+        }) {
             Ok(b) => b,
             Err(e) => node_recycle_abort(e),
         }
@@ -4625,12 +4623,7 @@ pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
 /// a state borrow across them (the session-135 nest-panic lesson, `01b` §4).
 /// Only the borrow-free regions take a `mem` borrow: the box-type set, and the
 /// final natural-size measurement + dimension write (neither calls any FFI).
-pub unsafe fn build_opentype_assembly(
-    f: i32,
-    a: *mut libc::c_void,
-    s: i32,
-    horiz: bool,
-) -> i32 {
+pub unsafe fn build_opentype_assembly(f: i32, a: *mut libc::c_void, s: i32, horiz: bool) -> i32 {
     let b = crate::mem::new_null_box_global();
     crate::state::with_state_mut(|st| {
         st.mem

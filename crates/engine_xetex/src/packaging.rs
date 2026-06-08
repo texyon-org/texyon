@@ -21,6 +21,7 @@ use crate::globals::{
     set_help_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, temp_ptr,
 };
 use crate::mem::new_spec_global;
+use crate::node::AnyBox;
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
@@ -29,6 +30,7 @@ use crate::scan::{
     cnl_get_avail, cnl_get_node, effective_char_global, new_native_word_node_global,
     node_recycle_abort, NodeRecycleAbort,
 };
+use crate::units::MemIdx;
 
 // Module-private consts shared with scan.rs (TEMP_HEAD/IGNORE_DEPTH still used
 // there too, so duplicated rather than relocated — same value).
@@ -510,8 +512,7 @@ pub fn just_reverse(
 /// §3, §5). Runs the threaded reversal under one `mem`+`scanner` borrow, then
 /// performs the deferred cold abort after the borrow drops.
 pub unsafe fn just_reverse_global(p: i32) {
-    if let Err(e) =
-        crate::state::with_state_mut(|st| just_reverse(&mut st.mem, &mut st.scanner, p))
+    if let Err(e) = crate::state::with_state_mut(|st| just_reverse(&mut st.mem, &mut st.scanner, p))
     {
         node_recycle_abort(e);
     }
@@ -911,7 +912,7 @@ pub unsafe fn copy_node_list_global(p: i32) -> i32 {
 pub fn append_to_vlist(
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
-    b: i32,
+    b: AnyBox,
 ) -> Result<(), NodeRecycleAbort> {
     const INT_PAR_XETEX_UPWARDS: i32 = 71; // xetex_format.h:106
     const GLUE_PAR_BASELINE_SKIP: i32 = 1; // xetex_format.h:150
@@ -919,14 +920,15 @@ pub fn append_to_vlist(
     const DIMEN_PAR_LINE_SKIP_LIMIT: i32 = 2; // xetex_format.h:124
 
     let upwards = eqtb.b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS) > 0;
+    let b_idx = b.idx().0;
     if crate::globals::cur_list_aux_b32s1() > IGNORE_DEPTH {
         let baseline_spec = eqtb.b32s1(GLUE_BASE + GLUE_PAR_BASELINE_SKIP);
         let d = mem.b32s1(baseline_spec + 1)
             - crate::globals::cur_list_aux_b32s1()
             - if upwards {
-                mem.b32s1(b + 2)
+                b.depth(mem).0
             } else {
-                mem.b32s1(b + 3)
+                b.height(mem).0
             };
         let p = if d < eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_LINE_SKIP_LIMIT) {
             let p = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_LINE_SKIP);
@@ -945,12 +947,12 @@ pub fn append_to_vlist(
         mem.set_b32s1(crate::globals::cur_list_tail(), p);
         crate::globals::set_cur_list_tail(p);
     }
-    mem.set_b32s1(crate::globals::cur_list_tail(), b);
-    crate::globals::set_cur_list_tail(b);
+    mem.set_b32s1(crate::globals::cur_list_tail(), b_idx);
+    crate::globals::set_cur_list_tail(b_idx);
     crate::globals::set_cur_list_aux_b32s1(if upwards {
-        mem.b32s1(b + 3)
+        b.height(mem).0
     } else {
-        mem.b32s1(b + 2)
+        b.depth(mem).0
     });
     Ok(())
 }
@@ -961,6 +963,11 @@ pub fn append_to_vlist(
 pub unsafe fn append_to_vlist_global(b: i32) {
     if let Err(e) = crate::state::with_state_mut(|st| {
         let s = &mut *st;
+        let b = s
+            .mem
+            .classify_box(MemIdx::new(b))
+            .expect("valid node type for append_to_vlist")
+            .expect("append_to_vlist receives an hlist or vlist node");
         append_to_vlist(&mut s.mem, &s.eqtb, b)
     }) {
         node_recycle_abort(e);
