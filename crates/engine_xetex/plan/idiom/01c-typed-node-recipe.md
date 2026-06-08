@@ -110,11 +110,13 @@ rank 3 (kern, session 149), rank 4 (penalty, session 149). First fused
 `01b` §3a adoptions landed session 150 (`math_kern`/`math_glue`); typed
 `alloc` boundary added session 151 (`glue_spec`) and extended to the
 **type-stamping** kern + penalty allocs session 152 (`new_kern`/`new_penalty`
-now allocate through `NodePtr::<K>::alloc`, fully typed). **Next:
-`new_null_box` (box-family `alloc`, needs a box `set_subtype` — see §8), rank
-5 (rule — needs the running-dimension wrapper type first;
-`width`/`depth`/`height` are `Scaled`-or-`NULL_FLAG`), and/or more fused
-adoptions of box/glue/kern/penalty-reading leaves.**
+now allocate through `NodePtr::<K>::alloc`, fully typed). Session 153 added the
+list-node-header `HasNodeHeader` capability (excluding `GlueSpecNode`) and the
+box-family type-stamping `NodePtr::<HListNode>::alloc`, adopted by
+`new_null_box`. **Next:** rank 5 (rule — needs the running-dimension wrapper
+type first; `width`/`depth`/`height` are `Scaled`-or-`NULL_FLAG`), and/or more
+fused adoptions of box/glue/kern/penalty-reading leaves (`AnyBox` dim helpers
+for already-threaded box consumers are the highest-leverage box path).**
 
 **Build the layer in this order, one family per slice** (rank 0 lands
 with rank 1). Stop promoting families to typed handles when the remaining

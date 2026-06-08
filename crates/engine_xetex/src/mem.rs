@@ -6,13 +6,12 @@
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 use crate::consts::{
-    BOX_NODE_SIZE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, LIGATURE_NODE,
-    MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, NULL_FLAG, RULE_NODE, RULE_NODE_SIZE,
-    SMALL_NODE_SIZE,
+    DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD,
+    MEDIUM_NODE_SIZE, NULL_FLAG, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
 use crate::errors::overflow;
 use crate::errors::runaway;
-use crate::node::{KernNode, NodePtr, PenaltyNode};
+use crate::node::{HListNode, KernNode, NodePtr, PenaltyNode};
 use crate::state::{EqtbState, MemState};
 use crate::units::Scaled;
 
@@ -299,22 +298,19 @@ pub unsafe fn get_node_global(s: i32) -> i32 {
 /// directly and propagates its [`ALLOC_FAILED`] sentinel (`01b` §5); the
 /// [`new_null_box_global`] wrapper performs the cold `overflow()` abort.
 pub fn new_null_box(mem: &mut MemState) -> i32 {
-    let p = get_node(mem, BOX_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    // NODE_type(p) = HLIST_NODE  →  mem[p].b16.s1 = HLIST_NODE
-    mem.set_b16s1(p, HLIST_NODE);
-    mem.set_b16s0(p, 0); // subtype
-    mem.set_b32s1(p + 1, 0); // width
-    mem.set_b32s1(p + 2, 0); // depth
-    mem.set_b32s1(p + 3, 0); // height
-    mem.set_b32s1(p + 4, 0); // shift_amount
-    mem.set_b32s1(p + 5, TEX_NULL); // list_ptr
-    mem.set_b16s1(p + 5, NORMAL); // glue_sign (b16.s1, bytes 2-3 of word 5)
-    mem.set_b16s0(p + 5, NORMAL); // glue_order (b16.s0, bytes 0-1 of word 5)
-    mem.set_gr(p + 6, 0.0); // BOX_glue_set: mem[(p)+6].gr
-    p
+    let Some(p) = NodePtr::<HListNode>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_subtype(mem, 0);
+    p.set_width(mem, Scaled(0));
+    p.set_depth(mem, Scaled(0));
+    p.set_height(mem, Scaled(0));
+    p.set_shift_amount(mem, Scaled(0));
+    p.set_list_ptr(mem, crate::units::MemPtr::NULL);
+    p.set_glue_sign(mem, NORMAL);
+    p.set_glue_order(mem, NORMAL);
+    p.set_glue_set(mem, 0.0);
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_null_box` callers (`01b`

@@ -34,7 +34,9 @@
 
 use std::marker::PhantomData;
 
-use crate::consts::{GLUE_SPEC_SIZE, KERN_NODE, MEDIUM_NODE_SIZE, PENALTY_NODE};
+use crate::consts::{
+    BOX_NODE_SIZE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, MEDIUM_NODE_SIZE, PENALTY_NODE,
+};
 use crate::mem::{get_node, ALLOC_FAILED};
 use crate::state::MemState;
 use crate::units::{InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
@@ -119,6 +121,10 @@ pub trait HasListPtr: NodeKind {}
 /// Has the glue-set triple (`glue_sign` +5.b16.s1, `glue_order` +5.b16.s0,
 /// `glue_set` +6.gr) — the box glue-setting fields.
 pub trait HasGlueSet: NodeKind {}
+/// Has the list-node header word (`NODE_type` in 0.b16.s1, subtype in
+/// 0.b16.s0). Glue specs deliberately do not implement this: their header word
+/// holds ref_count/stretch_order/shrink_order instead of a node type.
+pub trait HasNodeHeader: NodeKind {}
 
 impl HasDimensions for HListNode {}
 impl HasDimensions for VListNode {}
@@ -126,6 +132,46 @@ impl HasListPtr for HListNode {}
 impl HasListPtr for VListNode {}
 impl HasGlueSet for HListNode {}
 impl HasGlueSet for VListNode {}
+impl HasNodeHeader for HListNode {}
+impl HasNodeHeader for VListNode {}
+impl HasNodeHeader for GlueNode {}
+impl HasNodeHeader for KernNode {}
+impl HasNodeHeader for PenaltyNode {}
+
+impl<K: HasNodeHeader> NodePtr<K> {
+    /// Shared list-node subtype = `mem[p].b16.s0`.
+    #[inline]
+    pub fn subtype(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.0, v);
+    }
+}
+
+impl NodePtr<HListNode> {
+    /// Allocate a fresh hlist box node (`BOX_NODE_SIZE` words), type-stamped
+    /// with `NODE_type = HLIST_NODE`, and return a typed handle to it — or
+    /// `None` if the arena is exhausted.
+    ///
+    /// This is the box-family form of the typed allocation boundary (`01c`
+    /// §8): it wraps TeX's free-list allocator, writes the node type tag, and
+    /// confines the family's `from_idx_unchecked` construction to this single
+    /// audited site. The caller fills the remaining box fields.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<HListNode>> {
+        let p = get_node(mem, BOX_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        // type-stamp: an hlist node carries NODE_type = HLIST_NODE.
+        mem.set_b16s1(p, HLIST_NODE);
+        // SAFETY: `p` is a freshly allocated `BOX_NODE_SIZE` node just stamped
+        // HLIST_NODE; this is the family's audited construction site.
+        Some(unsafe { NodePtr::<HListNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+}
 
 impl<K: HasDimensions> NodePtr<K> {
     /// `BOX_width(p)` = `mem[(p) + 1].b32.s1`.
@@ -309,17 +355,6 @@ impl NodeKind for GlueNode {}
 impl NodeKind for GlueSpecNode {}
 
 impl NodePtr<GlueNode> {
-    /// `GLUE_NODE_subtype(p)` = `mem[p].b16.s0` — the glue subtype (normal
-    /// glue vs. a `\skip` parameter vs. leaders). Lives in the header word.
-    #[inline]
-    pub fn subtype(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.0, v);
-    }
-
     /// `GLUE_NODE_glue_ptr(p)` = `mem[(p) + 1].b32.s0` — the pointer to this
     /// node's [`GlueSpecNode`]. Returned as a raw [`MemPtr`]; the caller
     /// classifies it (typically via [`NodePtr::<GlueSpecNode>::from_glue_ptr`]
@@ -479,15 +514,10 @@ impl MemState {
     /// `NODE_type`, so it is reached only through
     /// [`NodePtr::<GlueSpecNode>::from_glue_ptr`].
     #[inline]
-    pub fn classify_glue(
-        &self,
-        p: MemIdx,
-    ) -> Result<Option<NodePtr<GlueNode>>, InvalidNodeType> {
+    pub fn classify_glue(&self, p: MemIdx) -> Result<Option<NodePtr<GlueNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
             // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Glue => {
-                Some(unsafe { NodePtr::<GlueNode>::from_idx_unchecked(p) })
-            }
+            NodeType::Glue => Some(unsafe { NodePtr::<GlueNode>::from_idx_unchecked(p) }),
             _ => None,
         })
     }
@@ -546,17 +576,6 @@ impl NodePtr<KernNode> {
         Some(unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) })
     }
 
-    /// `KERN_NODE` subtype = `mem[p].b16.s0` — `NORMAL` / `EXPLICIT` /
-    /// `ACC_KERN` / `MU_GLUE`. Lives in the header word.
-    #[inline]
-    pub fn subtype(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.0, v);
-    }
-
     /// `KERN_NODE` width = `mem[(p) + 1].b32.s1` — the kern amount. Shares the
     /// box `width` slot/type but is a one-field family (concrete impl).
     #[inline]
@@ -574,10 +593,7 @@ impl MemState {
     /// `KERN_NODE`; `Ok(None)` if some other valid type; `Err` if invalid.
     /// `p` must already be a non-null lo-mem index (`01c` §7).
     #[inline]
-    pub fn classify_kern(
-        &self,
-        p: MemIdx,
-    ) -> Result<Option<NodePtr<KernNode>>, InvalidNodeType> {
+    pub fn classify_kern(&self, p: MemIdx) -> Result<Option<NodePtr<KernNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
             // SAFETY: the NODE_type branch just proved the kind.
             NodeType::Kern => Some(unsafe { NodePtr::<KernNode>::from_idx_unchecked(p) }),
@@ -632,14 +648,6 @@ impl NodePtr<PenaltyNode> {
         Some(unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(MemIdx::new(p)) })
     }
 
-    /// `PENALTY_NODE` subtype = `mem[p].b16.s0` — the shared-header subtype
-    /// half. Penalty nodes carry no meaningful subtype; the C `new_penalty`
-    /// zeroes this word half, so the constructor sets it to `0`.
-    #[inline]
-    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.0, v);
-    }
-
     /// `PENALTY_NODE_penalty(p)` = `mem[(p) + 1].b32.s1`.
     ///
     /// **A plain `i32`, not `Scaled`** (`01c` §3) — the breakpoint penalty,
@@ -665,9 +673,7 @@ impl MemState {
     ) -> Result<Option<NodePtr<PenaltyNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
             // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Penalty => {
-                Some(unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(p) })
-            }
+            NodeType::Penalty => Some(unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(p) }),
             _ => None,
         })
     }
@@ -748,6 +754,32 @@ mod tests {
         let b = unsafe { NodePtr::<HListNode>::from_idx_unchecked(p) };
         assert!(b.list_ptr(&mem).is_null());
         assert_eq!(b.list_ptr(&mem).as_idx(), None);
+    }
+
+    #[test]
+    fn alloc_hlist_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let b = NodePtr::<HListNode>::alloc(&mut mem).expect("arena has room");
+        // alloc type-stamped NODE_type = HLIST_NODE, so it classifies back:
+        assert!(matches!(
+            mem.classify_box(b.idx()),
+            Ok(Some(AnyBox::HList(_)))
+        ));
+        b.set_subtype(&mut mem, 0);
+        b.set_width(&mut mem, Scaled(0x1111));
+        b.set_list_ptr(&mut mem, MemPtr::NULL);
+        assert_eq!(b.width(&mem), Scaled(0x1111));
+        assert!(b.list_ptr(&mem).is_null());
     }
 
     #[test]
@@ -844,8 +876,7 @@ mod tests {
         let spec = g.glue_spec(&mem).expect("non-null glue_ptr");
         assert_eq!(spec.idx(), MemIdx::new(150));
         assert_eq!(
-            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(150))
-                .map(|s| s.idx()),
+            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(150)).map(|s| s.idx()),
             Some(MemIdx::new(150))
         );
 

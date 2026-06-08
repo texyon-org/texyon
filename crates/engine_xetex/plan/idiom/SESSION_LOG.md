@@ -8,6 +8,63 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 153 — 2026-06-08 — Execution: box-family typed alloc adoption for `new_null_box`
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` §8), the session-152
+"Next" item: adopt the typed `alloc` pattern in **`new_null_box`**. **1 code
+slice.** Dashboard **29/2/7/4**; warnings **42 → 42**; `node::` **18 → 19**.
+
+### What changed
+
+- Added a shared list-node header capability in `src/node.rs`:
+  **`HasNodeHeader`** + `NodePtr<K>::subtype`/`set_subtype` for node families
+  that really carry a `NODE_type`/subtype header. Implemented it for
+  `HListNode`, `VListNode`, `GlueNode`, `KernNode`, and `PenaltyNode`.
+  **Deliberately not implemented for `GlueSpecNode`** because its word 0 is
+  `ref_count`/stretch-order/shrink-order, not a list-node header. This
+  resolves session 152's "box needs `set_subtype`" handoff without exposing a
+  false subtype on glue specs.
+- Deduped the per-family subtype methods from `GlueNode`, `KernNode`, and
+  `PenaltyNode`; existing call sites still use the same API, now through the
+  shared header impl.
+- Added **`NodePtr::<HListNode>::alloc(mem) -> Option<Self>`**: wraps
+  `get_node(BOX_NODE_SIZE)`, writes `NODE_type = HLIST_NODE`, and confines the
+  family construction to one audited `from_idx_unchecked` site. This is the
+  box-family type-stamping allocator, still using TeX's free-list arena.
+- Rewrote **`new_null_box`** (`src/mem.rs`) to allocate via
+  `NodePtr::<HListNode>::alloc` and fill the box through typed setters:
+  subtype, dimensions, nullable list pointer, glue sign/order/set. The legacy
+  public surface still returns `i32`; `ALLOC_FAILED` propagation and the
+  `_global` overflow wrapper are unchanged.
+
+### Tests + validation
+
+- Added `alloc_hlist_type_stamps_and_carves_a_usable_handle`, which builds a
+  minimal free-list block, allocates an hlist, asserts it classifies back as
+  `AnyBox::HList`, and verifies writable typed fields.
+- Ran:
+  - `cargo test -p tectonic_engine_xetex node:: --lib` → **19/19**
+  - `cargo test -p tectonic --test tex-outputs` → **29/29**
+  - `cargo test -p tectonic --test trip` → **2/2**
+  - `cargo test -p tectonic --test engine_rust` → **7/7**
+  - `cargo test -p tectonic --test latex_goldens` → **4/4**
+
+### Metrics / handoff
+
+Behaviour-preserving: each typed setter lowers to the same raw field write.
+Metrics by the existing grep commands: `with_state` **1197**, `unsafe fn`
+**571**, bare-`i32` node-ptr params **379**, `#[no_mangle]` direct grep **11**
+(unchanged by this slice). New audited `unsafe` construction site: +1
+(`HListNode::alloc`), matching the existing per-family `alloc` pattern.
+
+**Next:** rank-5 **rule** remains the next family-build slice, but it needs a
+running-dimension wrapper for `Scaled`-or-`NULL_FLAG` before `new_rule` can be
+typed. The biggest live Phase-C typing win is still box-dimension-reading
+leaves in `packaging.rs`/`shipout.rs`; `append_to_vlist` is already threaded
+and wants `AnyBox` dimension helpers because its `b` can be hlist or vlist.
+
+---
+
 
 ## Idiom session 152 — 2026-06-07 — Execution: extend the typed alloc pattern to kern + penalty — the FIRST type-stamping `alloc`s
 
