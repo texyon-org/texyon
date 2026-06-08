@@ -8,6 +8,19 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 157 — 2026-06-08 — Execution: typed noad constructor adoption
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Constructor typing slice.
+
+**Code:** added unified `Noad` typed surface with multiple type-stamping allocators (for standard noads of size 4, radical/accent variants of size 5, and fraction variants of size 6). Added getters and setters for math fields (nucleus, subscr, supscr), fraction thickness, and accent character. Also added helpers to get the sub-element delimiter addresses. Adopted the surface in `new_noad`. Removed unused `NOAD_SIZE` and `ORD_NOAD` constants from `src/mem.rs`.
+
+**Tests:** `node::` **34/34** unit tests pass. Dashboard green: `tex-outputs` **29/29**, `trip` **2/2**, `engine_rust` **7/7**, `latex_goldens` **4/4**. Warnings stayed at **42**.
+
+**Next:** either type `new_lig_item` as a non-header lig-stack record, or begin implementing typed consumers of these typed surfaces in `math.rs`/`packaging.rs`.
+
+---
+
+
 ## Idiom session 156 — 2026-06-08 — Execution: typed style/choice constructor adoption
 
 **Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Constructor

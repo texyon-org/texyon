@@ -29,10 +29,10 @@ use crate::mem::{
     new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec,
     ALLOC_FAILED, TEX_NULL,
 };
-use crate::node::{GlueSpecNode, KernNode, NodePtr, RuleDimen, RuleNode};
+use crate::node::{GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode};
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
-use crate::units::{MemIdx, Scaled};
+use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
 const INT_PAR_CUR_FAM: i32 = 44;
 const LOCAL_EVERY_MATH: i32 = 3;
@@ -229,14 +229,6 @@ extern "C" {
     fn ot_part_start_connector(f: i32, a: *mut libc::c_void, i: i32) -> i32;
     fn ot_part_end_connector(f: i32, a: *mut libc::c_void, i: i32) -> i32;
     fn ot_part_full_advance(f: i32, a: *mut libc::c_void, i: i32) -> i32;
-}
-
-/// Threaded core (Phase C, bucket B): pure `mem` writes, no `with_state`-bearing
-/// call.
-#[inline]
-fn set_empty_math_field(mem: &mut MemState, p: i32) {
-    mem.set_b32s1(p, EMPTY);
-    mem.set_b32s0(p, TEX_NULL);
 }
 
 #[inline]
@@ -3288,20 +3280,20 @@ pub unsafe fn math_limit_switch_global() {
 }
 
 /// translated from xetex-math.c:461 (math_radical)
-fn append_radical_noad(mem: &mut MemState) -> Result<i32, NodeRecycleAbort> {
-    let node = get_node(mem, RADICAL_NOAD_SIZE);
-    if node == ALLOC_FAILED {
+fn append_radical_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+    let Some(node) = NodePtr::<Noad>::alloc_radical(mem) else {
         return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b32s1(cur_list_tail(), node);
-    set_cur_list_tail(mem.b32s1(cur_list_tail()));
-    let tail = cur_list_tail();
-    mem.set_b16s1(tail, RADICAL_NOAD);
-    mem.set_b16s0(tail, NORMAL);
-    set_empty_math_field(mem, tail + 1);
-    set_empty_math_field(mem, tail + 3);
-    set_empty_math_field(mem, tail + 2);
-    Ok(tail)
+    };
+    mem.set_b32s1(cur_list_tail(), node.idx().0);
+    set_cur_list_tail(node.idx().0);
+    node.set_subtype(mem, NORMAL);
+    node.set_nucleus_type(mem, EMPTY);
+    node.set_nucleus_field(mem, TEX_NULL);
+    node.set_subscr_type(mem, EMPTY);
+    node.set_subscr_field(mem, TEX_NULL);
+    node.set_supscr_type(mem, EMPTY);
+    node.set_supscr_field(mem, TEX_NULL);
+    Ok(node)
 }
 
 pub unsafe fn math_radical_global() {
@@ -3309,8 +3301,8 @@ pub unsafe fn math_radical_global() {
         Ok(tail) => tail,
         Err(abort) => node_recycle_abort(abort),
     };
-    scan_delimiter(tail + 4, true);
-    crate::scan::scan_math(tail + 1);
+    scan_delimiter(tail.delimiter_addr(), true);
+    crate::scan::scan_math(tail.idx().0 + 1);
 }
 
 /// translated from xetex-math.c:533 (append_choices)
@@ -3485,37 +3477,44 @@ pub unsafe fn sub_sup_global() {
 }
 
 /// translated from xetex-math.c:644 (math_fraction)
-fn start_fraction_noad(mem: &mut MemState) -> Result<i32, NodeRecycleAbort> {
-    let fraction = get_node(mem, FRACTION_NOAD_SIZE);
-    if fraction == ALLOC_FAILED {
+fn start_fraction_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+    let Some(fraction) = NodePtr::<Noad>::alloc_fraction(mem) else {
         return Err(NodeRecycleAbort::Overflow);
-    }
-    set_cur_list_aux_b32s1(fraction);
-    let aux = cur_list_aux_b32s1();
-    mem.set_b16s1(aux, FRACTION_NOAD);
-    mem.set_b16s0(aux, NORMAL);
-    mem.set_b32s1(aux + 2, SUB_MLIST);
-    mem.set_b32s0(aux + 2, mem.b32s1(cur_list_head()));
-    set_empty_math_field(mem, aux + 3);
-    mem.set_b16s3(aux + 4, 0);
-    mem.set_b16s2(aux + 4, 0);
-    mem.set_b16s1(aux + 4, 0);
-    mem.set_b16s0(aux + 4, 0);
-    mem.set_b16s3(aux + 5, 0);
-    mem.set_b16s2(aux + 5, 0);
-    mem.set_b16s1(aux + 5, 0);
-    mem.set_b16s0(aux + 5, 0);
+    };
+    set_cur_list_aux_b32s1(fraction.idx().0);
+    fraction.set_subtype(mem, NORMAL);
+    fraction.set_subscr_type(mem, SUB_MLIST);
+    fraction.set_subscr_field(mem, mem.b32s1(cur_list_head()));
+    fraction.set_supscr_type(mem, EMPTY);
+    fraction.set_supscr_field(mem, TEX_NULL);
+
+    let delim_l = fraction.fraction_left_delimiter_addr();
+    mem.set_b16s3(delim_l, 0);
+    mem.set_b16s2(delim_l, 0);
+    mem.set_b16s1(delim_l, 0);
+    mem.set_b16s0(delim_l, 0);
+
+    let delim_r = fraction.fraction_right_delimiter_addr();
+    mem.set_b16s3(delim_r, 0);
+    mem.set_b16s2(delim_r, 0);
+    mem.set_b16s1(delim_r, 0);
+    mem.set_b16s0(delim_r, 0);
+
     mem.set_b32s1(cur_list_head(), TEX_NULL);
     set_cur_list_tail(cur_list_head());
-    Ok(aux)
+    Ok(fraction)
 }
 
 fn finish_fraction_rule(mem: &mut MemState, c: i32, rule_thickness: i32) {
-    match c % DELIMITED_CODE {
-        ABOVE_CODE => mem.set_b32s1(cur_list_aux_b32s1() + 1, rule_thickness),
-        OVER_CODE => mem.set_b32s1(cur_list_aux_b32s1() + 1, DEFAULT_CODE),
-        ATOP_CODE => mem.set_b32s1(cur_list_aux_b32s1() + 1, 0),
-        _ => {}
+    if let Some(aux) = MemPtr(cur_list_aux_b32s1()).as_idx() {
+        if let Ok(Some(fraction)) = mem.classify_noad(aux) {
+            match c % DELIMITED_CODE {
+                ABOVE_CODE => fraction.set_thickness(mem, rule_thickness),
+                OVER_CODE => fraction.set_thickness(mem, DEFAULT_CODE),
+                ATOP_CODE => fraction.set_thickness(mem, 0),
+                _ => {}
+            }
+        }
     }
 }
 
@@ -3559,8 +3558,8 @@ pub unsafe fn math_fraction_global() {
         };
 
         if c >= DELIMITED_CODE {
-            scan_delimiter(aux + 4, false);
-            scan_delimiter(aux + 5, false);
+            scan_delimiter(aux.fraction_left_delimiter_addr(), false);
+            scan_delimiter(aux.fraction_right_delimiter_addr(), false);
         }
 
         let rule_thickness = if c % DELIMITED_CODE == ABOVE_CODE {
@@ -3573,54 +3572,62 @@ pub unsafe fn math_fraction_global() {
     }
 }
 
-fn append_accent_noad(mem: &mut MemState) -> Result<i32, NodeRecycleAbort> {
-    let accent = get_node(mem, ACCENT_NOAD_SIZE);
-    if accent == ALLOC_FAILED {
+fn append_accent_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+    let Some(accent) = NodePtr::<Noad>::alloc_accent(mem) else {
         return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b32s1(cur_list_tail(), accent);
-    set_cur_list_tail(mem.b32s1(cur_list_tail()));
-    let tail = cur_list_tail();
-    mem.set_b16s1(tail, ACCENT_NOAD);
-    mem.set_b16s0(tail, NORMAL);
-    set_empty_math_field(mem, tail + 1);
-    set_empty_math_field(mem, tail + 3);
-    set_empty_math_field(mem, tail + 2);
-    mem.set_b32s1(tail + 4, MATH_CHAR);
-    Ok(tail)
+    };
+    mem.set_b32s1(cur_list_tail(), accent.idx().0);
+    set_cur_list_tail(accent.idx().0);
+    accent.set_subtype(mem, NORMAL);
+    accent.set_nucleus_type(mem, EMPTY);
+    accent.set_nucleus_field(mem, TEX_NULL);
+    accent.set_subscr_type(mem, EMPTY);
+    accent.set_subscr_field(mem, TEX_NULL);
+    accent.set_supscr_type(mem, EMPTY);
+    accent.set_supscr_field(mem, TEX_NULL);
+    accent.set_accent_char_type(mem, MATH_CHAR);
+    Ok(accent)
 }
 
-fn finish_accent_math_field(mem: &mut MemState, eqtb: &EqtbState, tail: i32, value: i32) {
-    mem.set_b16s0(tail + 4, (value % 65536) as u16);
+fn finish_accent_math_field(mem: &mut MemState, eqtb: &EqtbState, tail: NodePtr<Noad>, value: i32) {
+    mem.set_b16s0(tail.idx().offset(4).0, (value % 65536) as u16);
     let intpar_cur_fam = eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM);
     if math_class_field(value) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam) {
-        mem.set_b16s1(tail + 4, intpar_cur_fam as u16);
+        mem.set_b16s1(tail.idx().offset(4).0, intpar_cur_fam as u16);
     } else {
-        mem.set_b16s1(tail + 4, math_fam_field(value) as u16);
+        mem.set_b16s1(tail.idx().offset(4).0, math_fam_field(value) as u16);
     }
     mem.set_b16s1(
-        tail + 4,
-        mem.b16s1(tail + 4) + (math_char_field(value) / 65536) as u16 * 256,
+        tail.idx().offset(4).0,
+        mem.b16s1(tail.idx().offset(4).0) + (math_char_field(value) / 65536) as u16 * 256,
     );
 }
 
-fn set_accent_kind(mem: &mut MemState, tail: i32, kind: u16) {
-    mem.set_b16s0(tail, kind);
+fn set_accent_kind(mem: &mut MemState, tail: NodePtr<Noad>, kind: u16) {
+    tail.set_subtype(mem, kind);
 }
 
 /// translated from xetex-math.c:703 (math_left_right)
-fn append_left_right_noad(mem: &mut MemState, node_type: u16) -> Result<i32, NodeRecycleAbort> {
-    let p = new_noad(mem);
-    if p == ALLOC_FAILED {
+fn append_left_right_noad(mem: &mut MemState, node_type: u16) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+    let Some(p) = NodePtr::<Noad>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b16s1(p, node_type);
+    };
+    p.set_subtype(mem, NORMAL);
+    p.set_nucleus_type(mem, EMPTY);
+    p.set_nucleus_field(mem, TEX_NULL);
+    p.set_subscr_type(mem, EMPTY);
+    p.set_subscr_field(mem, TEX_NULL);
+    p.set_supscr_type(mem, EMPTY);
+    p.set_supscr_field(mem, TEX_NULL);
+
+    let nt = NodeType::from_raw(node_type).expect("valid noad type");
+    p.set_noad_type(mem, nt);
     Ok(p)
 }
 
-fn mark_middle_noad(mem: &mut MemState, p: i32) {
-    mem.set_b16s1(p, RIGHT_NOAD);
-    mem.set_b16s0(p, 1);
+fn mark_middle_noad(mem: &mut MemState, p: NodePtr<Noad>) {
+    p.set_noad_type(mem, NodeType::RightNoad);
+    p.set_subtype(mem, 1);
 }
 
 fn finish_left_right_group(mem: &mut MemState, q: i32, p: i32) {
@@ -3630,16 +3637,22 @@ fn finish_left_right_group(mem: &mut MemState, q: i32, p: i32) {
 }
 
 fn append_inner_noad_for_right(mem: &mut MemState, q: i32) -> Result<(), NodeRecycleAbort> {
-    let inner = new_noad(mem);
-    if inner == ALLOC_FAILED {
+    let Some(inner) = NodePtr::<Noad>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b32s1(cur_list_tail(), inner);
-    set_cur_list_tail(mem.b32s1(cur_list_tail()));
-    let tail = cur_list_tail();
-    mem.set_b16s1(tail, INNER_NOAD);
-    mem.set_b32s1(tail + 1, SUB_MLIST);
-    mem.set_b32s0(tail + 1, q);
+    };
+    inner.set_subtype(mem, NORMAL);
+    inner.set_nucleus_type(mem, EMPTY);
+    inner.set_nucleus_field(mem, TEX_NULL);
+    inner.set_subscr_type(mem, EMPTY);
+    inner.set_subscr_field(mem, TEX_NULL);
+    inner.set_supscr_type(mem, EMPTY);
+    inner.set_supscr_field(mem, TEX_NULL);
+
+    mem.set_b32s1(cur_list_tail(), inner.idx().0);
+    set_cur_list_tail(inner.idx().0);
+    inner.set_noad_type(mem, NodeType::InnerNoad);
+    inner.set_nucleus_type(mem, SUB_MLIST);
+    inner.set_nucleus_field(mem, q);
     Ok(())
 }
 
@@ -3674,20 +3687,20 @@ pub unsafe fn math_left_right_global() {
             Ok(p) => p,
             Err(abort) => node_recycle_abort(abort),
         };
-        scan_delimiter(p + 1, false);
+        scan_delimiter(p.left_right_delimiter_addr(), false);
         if t == 1 {
             crate::state::with_state_mut(|st| mark_middle_noad(&mut st.mem, p));
         }
         let q = if t == LEFT_NOAD {
-            p
+            p.idx().0
         } else {
-            let q = fin_mlist_global(p);
+            let q = fin_mlist_global(p.idx().0);
             crate::save::unsave();
             q
         };
         if t != RIGHT_NOAD {
             crate::main_control::push_math(MATH_LEFT_GROUP);
-            crate::state::with_state_mut(|st| finish_left_right_group(&mut st.mem, q, p));
+            crate::state::with_state_mut(|st| finish_left_right_group(&mut st.mem, q, p.idx().0));
         } else if let Err(abort) =
             crate::state::with_state_mut(|st| append_inner_noad_for_right(&mut st.mem, q))
         {
@@ -3773,7 +3786,7 @@ pub unsafe fn math_ac_global() {
     crate::state::with_state_mut(|st| {
         finish_accent_math_field(&mut st.mem, &st.eqtb, tail, value);
     });
-    crate::scan::scan_math(tail + 1);
+    crate::scan::scan_math(tail.idx().0 + 1);
 }
 
 /// translated from xetex-math.c:786 (resume_after_display)

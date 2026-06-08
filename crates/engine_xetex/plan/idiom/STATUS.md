@@ -4,6 +4,8 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-08 (last session = session 157, **execution — typed noad constructor adoption. Added the unified `Noad` typed surface with multiple allocators for standard noad (OrdNoad..RightNoad), radical, accent, and fraction variants. Added getters and setters for math fields (nucleus, subscr, supscr), fraction thickness, and accent char. Adopted the surface in `new_noad`. `node::` 34/34; dashboard 29/2/7/4; warnings 42; metrics stable (`with_state` 1196, `unsafe fn` 571, direct `#[no_mangle]` grep 11). **Next: `new_lig_item` needs a non-header lig-stack record if typed, or begin implementing typed consumers in math/packaging.**)
+
 Last updated: 2026-06-08 (last session = session 156, **execution — typed
 style/choice constructor adoption. Added `StyleNode` and `ChoiceNode` typed
 surfaces with allocators; `ChoiceNode` models display/text/script/scriptscript

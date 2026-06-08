@@ -177,6 +177,7 @@ impl HasNodeHeader for ChoiceNode {}
 impl HasNodeHeader for GlueNode {}
 impl HasNodeHeader for KernNode {}
 impl HasNodeHeader for PenaltyNode {}
+impl HasNodeHeader for Noad {}
 
 impl<K: HasNodeHeader> NodePtr<K> {
     /// Shared list-node subtype = `mem[p].b16.s0`.
@@ -505,6 +506,62 @@ impl MemState {
     }
 }
 
+// --- the ligature-item record (part of the ligature stack) ---
+
+/// A ligature stack item record. It is a temporary record of `SMALL_NODE_SIZE` (2)
+/// that represents a character in the ligature processing stack.
+/// It carries no `NODE_type` header (its word 0 holds character and link).
+pub enum LigItem {}
+
+impl NodeKind for LigItem {}
+
+impl NodePtr<LigItem> {
+    /// Allocate a fresh, uninitialised ligature item record on the `mem`
+    /// free-list arena and return a typed handle to it, or `None` on arena
+    /// exhaustion.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<LigItem>> {
+        let p = get_node(mem, SMALL_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        // SAFETY: `p` is a freshly allocated `SMALL_NODE_SIZE` record; this is
+        // the family's single audited construction site.
+        Some(unsafe { NodePtr::<LigItem>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Link pointer to the next stack element = `mem[p].b32.s1`.
+    #[inline]
+    pub fn link(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.0))
+    }
+    #[inline]
+    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.0, q.0);
+    }
+
+    /// Ligature item character code = `mem[p].b16.s0`.
+    #[inline]
+    pub fn character(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_character(self, mem: &mut MemState, c: u16) {
+        mem.set_b16s0(self.idx.0, c);
+    }
+
+    /// Ligature item component pointer = `mem[p + 1].b32.s1`.
+    #[inline]
+    pub fn component(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_component(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, q.0);
+    }
+}
+
+
 // --- the discretionary family: discretionary break nodes (NODE_type 7) ---
 
 /// `DISC_NODE` (`NODE_type` = 7): discretionary break with pre/post lists.
@@ -716,6 +773,212 @@ impl MemState {
         Ok(match self.node_type(p)? {
             // SAFETY: the NODE_type branch just proved the kind.
             NodeType::Choice => Some(unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(p) }),
+            _ => None,
+        })
+    }
+}
+
+// --- the math noad family (NODE_type 16 to 31) ---
+
+const NOAD_SIZE: i32 = 4;
+const RADICAL_NOAD_SIZE: i32 = 5;
+const ACCENT_NOAD_SIZE: i32 = 5;
+const FRACTION_NOAD_SIZE: i32 = 6;
+
+/// `Noad` (math noads, `NODE_type` between 16 and 31 inclusive): represents a math noad structure.
+pub enum Noad {}
+
+impl NodeKind for Noad {}
+
+impl NodePtr<Noad> {
+    /// Allocate a fresh ordinary noad (`NOAD_SIZE` = 4 words), type-stamped
+    /// with `NODE_type = OrdNoad`, returning `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+        let p = get_node(mem, NOAD_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, NodeType::OrdNoad.as_raw());
+        // SAFETY: `p` is freshly allocated and type-stamped.
+        Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Allocate a fresh radical noad (`RADICAL_NOAD_SIZE` = 5 words), type-stamped
+    /// with `NODE_type = RadicalNoad`, returning `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc_radical(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+        let p = get_node(mem, RADICAL_NOAD_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, NodeType::RadicalNoad.as_raw());
+        Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Allocate a fresh accent noad (`ACCENT_NOAD_SIZE` = 5 words), type-stamped
+    /// with `NODE_type = AccentNoad`, returning `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc_accent(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+        let p = get_node(mem, ACCENT_NOAD_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, NodeType::AccentNoad.as_raw());
+        Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Allocate a fresh fraction noad (`FRACTION_NOAD_SIZE` = 6 words), type-stamped
+    /// with `NODE_type = FractionNoad`, returning `None` on arena exhaustion.
+    #[inline]
+    pub fn alloc_fraction(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+        let p = get_node(mem, FRACTION_NOAD_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, NodeType::FractionNoad.as_raw());
+        Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Set the noad's type code = `mem[p].b16.s1`.
+    #[inline]
+    pub fn set_noad_type(self, mem: &mut MemState, nt: NodeType) {
+        mem.set_b16s1(self.idx.0, nt.as_raw());
+    }
+
+    /// Nucleus type = `mem[p + 1].b32.s1`
+    #[inline]
+    pub fn nucleus_type(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_nucleus_type(self, mem: &mut MemState, t: i32) {
+        mem.set_b32s1(self.idx.offset(1).0, t);
+    }
+    /// Nucleus field = `mem[p + 1].b32.s0`
+    #[inline]
+    pub fn nucleus_field(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_nucleus_field(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(1).0, v);
+    }
+
+    /// Subscript type = `mem[p + 2].b32.s1`
+    #[inline]
+    pub fn subscr_type(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(2).0)
+    }
+    #[inline]
+    pub fn set_subscr_type(self, mem: &mut MemState, t: i32) {
+        mem.set_b32s1(self.idx.offset(2).0, t);
+    }
+    /// Subscript field = `mem[p + 2].b32.s0`
+    #[inline]
+    pub fn subscr_field(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(2).0)
+    }
+    #[inline]
+    pub fn set_subscr_field(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(2).0, v);
+    }
+
+    /// Superscript type = `mem[p + 3].b32.s1`
+    #[inline]
+    pub fn supscr_type(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(3).0)
+    }
+    #[inline]
+    pub fn set_supscr_type(self, mem: &mut MemState, t: i32) {
+        mem.set_b32s1(self.idx.offset(3).0, t);
+    }
+    /// Superscript field = `mem[p + 3].b32.s0`
+    #[inline]
+    pub fn supscr_field(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(3).0)
+    }
+    #[inline]
+    pub fn set_supscr_field(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(3).0, v);
+    }
+
+    /// Thickness (Fraction only) = `mem[p + 1].b32.s1`
+    #[inline]
+    pub fn thickness(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_thickness(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(1).0, v);
+    }
+
+    /// Accent character type (Accent only) = `mem[p + 4].b32.s1`
+    #[inline]
+    pub fn accent_char_type(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(4).0)
+    }
+    #[inline]
+    pub fn set_accent_char_type(self, mem: &mut MemState, t: i32) {
+        mem.set_b32s1(self.idx.offset(4).0, t);
+    }
+    /// Accent character field (Accent only) = `mem[p + 4].b32.s0`
+    #[inline]
+    pub fn accent_char_field(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(4).0)
+    }
+    #[inline]
+    pub fn set_accent_char_field(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(4).0, v);
+    }
+
+    /// Delimiter field address (Radical: word 4, LeftRight: word 1)
+    #[inline]
+    pub fn delimiter_addr(self) -> i32 {
+        self.idx.offset(4).0
+    }
+
+    /// Left/right delimiter address (LeftRight: word 1)
+    #[inline]
+    pub fn left_right_delimiter_addr(self) -> i32 {
+        self.idx.offset(1).0
+    }
+
+    /// Fraction left delimiter address (Fraction: word 4)
+    #[inline]
+    pub fn fraction_left_delimiter_addr(self) -> i32 {
+        self.idx.offset(4).0
+    }
+
+    /// Fraction right delimiter address (Fraction: word 5)
+    #[inline]
+    pub fn fraction_right_delimiter_addr(self) -> i32 {
+        self.idx.offset(5).0
+    }
+}
+
+impl MemState {
+    /// Classify a known lo-mem node as a noad.
+    #[inline]
+    pub fn classify_noad(&self, p: MemIdx) -> Result<Option<NodePtr<Noad>>, InvalidNodeType> {
+        let nt = self.node_type(p)?;
+        Ok(match nt {
+            NodeType::OrdNoad
+            | NodeType::OpNoad
+            | NodeType::BinNoad
+            | NodeType::RelNoad
+            | NodeType::OpenNoad
+            | NodeType::CloseNoad
+            | NodeType::PunctNoad
+            | NodeType::InnerNoad
+            | NodeType::RadicalNoad
+            | NodeType::FractionNoad
+            | NodeType::UnderNoad
+            | NodeType::OverNoad
+            | NodeType::AccentNoad
+            | NodeType::VcenterNoad
+            | NodeType::LeftNoad
+            | NodeType::RightNoad => Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(p) }),
             _ => None,
         })
     }
@@ -1758,5 +2021,70 @@ mod tests {
         let bad = MemIdx::new(80);
         mem.set_b16s1(bad.0, 39); // the 32–39 gap
         assert!(mem.classify_penalty(bad).is_err());
+    }
+
+    #[test]
+    fn noad_is_zero_cost() {
+        assert_eq!(size_of::<NodePtr<Noad>>(), size_of::<i32>());
+    }
+
+    #[test]
+    fn alloc_noad_type_stamps_and_carves_a_usable_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let noad = NodePtr::<Noad>::alloc(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_noad(noad.idx()), Ok(Some(_))));
+        noad.set_subtype(&mut mem, 5);
+        noad.set_nucleus_type(&mut mem, 1);
+        noad.set_nucleus_field(&mut mem, 123);
+        assert_eq!(noad.subtype(&mem), 5);
+        assert_eq!(noad.nucleus_type(&mem), 1);
+        assert_eq!(noad.nucleus_field(&mem), 123);
+
+        let radical = NodePtr::<Noad>::alloc_radical(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_noad(radical.idx()), Ok(Some(_))));
+
+        let accent = NodePtr::<Noad>::alloc_accent(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_noad(accent.idx()), Ok(Some(_))));
+
+        let fraction = NodePtr::<Noad>::alloc_fraction(&mut mem).expect("arena has room");
+        assert!(matches!(mem.classify_noad(fraction.idx()), Ok(Some(_))));
+    }
+
+    #[test]
+    fn lig_item_is_zero_cost() {
+        assert_eq!(size_of::<NodePtr<LigItem>>(), size_of::<i32>());
+    }
+
+    #[test]
+    fn alloc_lig_item_carves_a_usable_typed_handle() {
+        let mut mem = fresh_mem(64);
+        let rover = 10;
+        mem.rover = rover;
+        mem.lo_mem_max = 30;
+        mem.hi_mem_min = 60;
+        mem.set_b32s0(rover, 20);
+        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover);
+        mem.set_b32s0(rover + 1, rover);
+        mem.set_b32s1(30, 0);
+
+        let item = NodePtr::<LigItem>::alloc(&mut mem).expect("arena has room");
+        item.set_character(&mut mem, 45);
+        item.set_link(&mut mem, MemPtr::from_raw(12));
+        item.set_component(&mut mem, MemPtr::from_raw(34));
+
+        assert_eq!(item.character(&mem), 45);
+        assert_eq!(item.link(&mem), MemPtr::from_raw(12));
+        assert_eq!(item.component(&mem), MemPtr::from_raw(34));
     }
 }

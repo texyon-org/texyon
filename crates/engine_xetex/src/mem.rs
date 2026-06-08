@@ -9,8 +9,8 @@ use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, S
 use crate::errors::overflow;
 use crate::errors::runaway;
 use crate::node::{
-    ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigatureNode, MathNode,
-    NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
+    ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode, MathNode,
+    Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
 };
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
@@ -29,9 +29,6 @@ const NORMAL: u16 = 0;
 // Node type values (mem[p].b16.s1)
 // eqtb base indices (xetex_format.h)
 
-// Math node type and size constants (xetex_format.h:394–401; xetex-constants.h:119,136).
-const NOAD_SIZE: i32 = 4;
-const ORD_NOAD: u16 = 16; // xetex_format.h:401
                           // empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
 const EMPTY: i32 = 0; // xetex-constants.h:230
 
@@ -394,13 +391,12 @@ pub unsafe fn new_ligature_global(f: i32, c: u16, q: i32) -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_lig_item_global`].
 pub fn new_lig_item(mem: &mut MemState, c: u16) -> i32 {
-    let p = get_node(mem, SMALL_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s0(p, c);
-    mem.set_b32s1(p + 1, TEX_NULL);
-    p
+    let Some(p) = NodePtr::<LigItem>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_character(mem, c);
+    p.set_component(mem, MemPtr::from_raw(TEX_NULL));
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_lig_item` callers (`01b` §3, §5).
@@ -869,22 +865,17 @@ pub fn is_char_node(mem: &MemState, p: i32) -> bool {
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_noad_global`].
 pub fn new_noad(mem: &mut MemState) -> i32 {
-    let p = get_node(mem, NOAD_SIZE);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, ORD_NOAD);
-    mem.set_b16s0(p, NORMAL);
-    // mem[p+1].b32 = empty  ↔  s1=EMPTY=0, s0=TEX_NULL
-    mem.set_b32s1(p + 1, EMPTY);
-    mem.set_b32s0(p + 1, TEX_NULL);
-    // mem[p+3].b32 = empty
-    mem.set_b32s1(p + 3, EMPTY);
-    mem.set_b32s0(p + 3, TEX_NULL);
-    // mem[p+2].b32 = empty
-    mem.set_b32s1(p + 2, EMPTY);
-    mem.set_b32s0(p + 2, TEX_NULL);
-    p
+    let Some(p) = NodePtr::<Noad>::alloc(mem) else {
+        return ALLOC_FAILED;
+    };
+    p.set_subtype(mem, NORMAL);
+    p.set_nucleus_type(mem, EMPTY);
+    p.set_nucleus_field(mem, TEX_NULL);
+    p.set_subscr_type(mem, EMPTY);
+    p.set_subscr_field(mem, TEX_NULL);
+    p.set_supscr_type(mem, EMPTY);
+    p.set_supscr_field(mem, TEX_NULL);
+    p.idx().0
 }
 
 /// Transitional bridge-down wrapper for legacy `new_noad` callers (`01b` §3, §5).
