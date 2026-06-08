@@ -189,6 +189,16 @@ impl<K: HasNodeHeader> NodePtr<K> {
     pub fn set_subtype(self, mem: &mut MemState, v: u16) {
         mem.set_b16s0(self.idx.0, v);
     }
+
+    /// Link pointer to the next list element = `mem[p].b32.s1`.
+    #[inline]
+    pub fn link(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.0))
+    }
+    #[inline]
+    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.0, q.0);
+    }
 }
 
 impl NodePtr<HListNode> {
@@ -865,6 +875,25 @@ impl NodePtr<Noad> {
         mem.set_b32s0(self.idx.offset(1).0, v);
     }
 
+    /// Nucleus character = `mem[p + 1].b16.s0`
+    #[inline]
+    pub fn nucleus_char(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_nucleus_char(self, mem: &mut MemState, c: u16) {
+        mem.set_b16s0(self.idx.offset(1).0, c);
+    }
+    /// Nucleus family = `mem[p + 1].b16.s1`
+    #[inline]
+    pub fn nucleus_fam(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_nucleus_fam(self, mem: &mut MemState, f: u16) {
+        mem.set_b16s1(self.idx.offset(1).0, f);
+    }
+
     /// Subscript type = `mem[p + 2].b32.s1`
     #[inline]
     pub fn subscr_type(self, mem: &MemState) -> i32 {
@@ -884,6 +913,25 @@ impl NodePtr<Noad> {
         mem.set_b32s0(self.idx.offset(2).0, v);
     }
 
+    /// Subscript character = `mem[p + 2].b16.s0`
+    #[inline]
+    pub fn subscr_char(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.offset(2).0)
+    }
+    #[inline]
+    pub fn set_subscr_char(self, mem: &mut MemState, c: u16) {
+        mem.set_b16s0(self.idx.offset(2).0, c);
+    }
+    /// Subscript family = `mem[p + 2].b16.s1`
+    #[inline]
+    pub fn subscr_fam(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(2).0)
+    }
+    #[inline]
+    pub fn set_subscr_fam(self, mem: &mut MemState, f: u16) {
+        mem.set_b16s1(self.idx.offset(2).0, f);
+    }
+
     /// Superscript type = `mem[p + 3].b32.s1`
     #[inline]
     pub fn supscr_type(self, mem: &MemState) -> i32 {
@@ -901,6 +949,25 @@ impl NodePtr<Noad> {
     #[inline]
     pub fn set_supscr_field(self, mem: &mut MemState, v: i32) {
         mem.set_b32s0(self.idx.offset(3).0, v);
+    }
+
+    /// Superscript character = `mem[p + 3].b16.s0`
+    #[inline]
+    pub fn supscr_char(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.offset(3).0)
+    }
+    #[inline]
+    pub fn set_supscr_char(self, mem: &mut MemState, c: u16) {
+        mem.set_b16s0(self.idx.offset(3).0, c);
+    }
+    /// Superscript family = `mem[p + 3].b16.s1`
+    #[inline]
+    pub fn supscr_fam(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(3).0)
+    }
+    #[inline]
+    pub fn set_supscr_fam(self, mem: &mut MemState, f: u16) {
+        mem.set_b16s1(self.idx.offset(3).0, f);
     }
 
     /// Thickness (Fraction only) = `mem[p + 1].b32.s1`
@@ -930,6 +997,25 @@ impl NodePtr<Noad> {
     #[inline]
     pub fn set_accent_char_field(self, mem: &mut MemState, v: i32) {
         mem.set_b32s0(self.idx.offset(4).0, v);
+    }
+
+    /// Accent character code = `mem[p + 4].b16.s0`
+    #[inline]
+    pub fn accent_char_val(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.offset(4).0)
+    }
+    #[inline]
+    pub fn set_accent_char_val(self, mem: &mut MemState, c: u16) {
+        mem.set_b16s0(self.idx.offset(4).0, c);
+    }
+    /// Accent character family = `mem[p + 4].b16.s1`
+    #[inline]
+    pub fn accent_char_fam(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(4).0)
+    }
+    #[inline]
+    pub fn set_accent_char_fam(self, mem: &mut MemState, f: u16) {
+        mem.set_b16s1(self.idx.offset(4).0, f);
     }
 
     /// Delimiter field address (Radical: word 4, LeftRight: word 1)
@@ -2049,6 +2135,29 @@ mod tests {
         assert_eq!(noad.subtype(&mem), 5);
         assert_eq!(noad.nucleus_type(&mem), 1);
         assert_eq!(noad.nucleus_field(&mem), 123);
+
+        noad.set_nucleus_char(&mut mem, 45);
+        noad.set_nucleus_fam(&mut mem, 2);
+        assert_eq!(noad.nucleus_char(&mem), 45);
+        assert_eq!(noad.nucleus_fam(&mem), 2);
+
+        noad.set_subscr_char(&mut mem, 46);
+        noad.set_subscr_fam(&mut mem, 3);
+        assert_eq!(noad.subscr_char(&mem), 46);
+        assert_eq!(noad.subscr_fam(&mem), 3);
+
+        noad.set_supscr_char(&mut mem, 47);
+        noad.set_supscr_fam(&mut mem, 4);
+        assert_eq!(noad.supscr_char(&mem), 47);
+        assert_eq!(noad.supscr_fam(&mem), 4);
+
+        noad.set_accent_char_val(&mut mem, 48);
+        noad.set_accent_char_fam(&mut mem, 5);
+        assert_eq!(noad.accent_char_val(&mem), 48);
+        assert_eq!(noad.accent_char_fam(&mem), 5);
+
+        noad.set_link(&mut mem, MemPtr::from_raw(1234));
+        assert_eq!(noad.link(&mem), MemPtr::from_raw(1234));
 
         let radical = NodePtr::<Noad>::alloc_radical(&mut mem).expect("arena has room");
         assert!(matches!(mem.classify_noad(radical.idx()), Ok(Some(_))));

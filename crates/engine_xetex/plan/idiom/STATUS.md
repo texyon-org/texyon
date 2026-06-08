@@ -4,6 +4,8 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-08 (last session = session 158, **execution — typed math noad consumers adoption. Added generic `link`/`set_link` to `NodePtr<K>` for all header-bearing families. Added character/family getters and setters on `Noad` for math fields (nucleus, subscr, supscr) and accent character field. Refactored `make_ord_body`, `make_ord_global`, and `finish_accent_math_field` to adopt the typed interfaces. `node::` 34/34; dashboard 29/2/7/4; warnings 44; metrics stable (`with_state` 1195, `unsafe fn` 570, direct `#[no_mangle]` grep 11). **Next: continue implementing typed consumers in math/packaging (e.g. dimension-reading leaves) or remaining raw constructor families.**)
+
 Last updated: 2026-06-08 (last session = session 157, **execution — typed noad constructor adoption. Added the unified `Noad` typed surface with multiple allocators for standard noad (OrdNoad..RightNoad), radical, accent, and fraction variants. Added getters and setters for math fields (nucleus, subscr, supscr), fraction thickness, and accent char. Adopted the surface in `new_noad`. `node::` 34/34; dashboard 29/2/7/4; warnings 42; metrics stable (`with_state` 1196, `unsafe fn` 571, direct `#[no_mangle]` grep 11). **Next: `new_lig_item` needs a non-header lig-stack record if typed, or begin implementing typed consumers in math/packaging.**)
 
 Last updated: 2026-06-08 (last session = session 156, **execution — typed

@@ -1385,11 +1385,11 @@ fn make_ord_body(
     mem: &mut MemState,
     fonts: &FontState,
     scanner: &mut ScannerState,
-    q: i32,
-    p: i32,
+    q: NodePtr<Noad>,
+    p: NodePtr<Noad>,
 ) -> MakeOrdStep {
     let mut a = fonts.lig_kern_base_entry(scanner.cur_f) + scanner.cur_i.s0 as i32;
-    scanner.cur_c = mem.b16s0(p + 1) as i32;
+    scanner.cur_c = p.nucleus_char(mem) as i32;
     scanner.cur_i = fonts.font_info_b16(a);
     if scanner.cur_i.s3 > 128 {
         a = fonts.lig_kern_base_entry(scanner.cur_f)
@@ -1402,7 +1402,7 @@ fn make_ord_body(
     loop {
         if scanner.cur_i.s2 == scanner.cur_c as u16 && scanner.cur_i.s3 <= 128 {
             if scanner.cur_i.s1 >= 128 {
-                let p_kern = new_kern(
+                let p_kern_idx = new_kern(
                     mem,
                     fonts.font_info_b32s1(
                         fonts.kern_base_entry(scanner.cur_f)
@@ -1410,51 +1410,53 @@ fn make_ord_body(
                             + scanner.cur_i.s0 as i32,
                     ),
                 );
-                if p_kern == ALLOC_FAILED {
+                if p_kern_idx == ALLOC_FAILED {
                     return MakeOrdStep::Overflow;
                 }
-                let link_q = mem.b32s1(q);
-                mem.set_b32s1(p_kern, link_q);
-                mem.set_b32s1(q, p_kern);
+                let p_kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_kern_idx)) };
+                let link_q = q.link(mem);
+                p_kern.set_link(mem, link_q);
+                q.set_link(mem, MemPtr::from_raw(p_kern_idx));
                 return MakeOrdStep::Return;
             } else {
                 match scanner.cur_i.s1 {
                     1 | 5 => {
-                        mem.set_b16s0(q + 1, scanner.cur_i.s0);
+                        q.set_nucleus_char(mem, scanner.cur_i.s0);
                     }
                     2 | 6 => {
-                        mem.set_b16s0(p + 1, scanner.cur_i.s0);
+                        p.set_nucleus_char(mem, scanner.cur_i.s0);
                     }
                     3 | 7 | 11 => {
-                        let r = new_noad(mem);
-                        if r == ALLOC_FAILED {
+                        let r_idx = new_noad(mem);
+                        if r_idx == ALLOC_FAILED {
                             return MakeOrdStep::Overflow;
                         }
-                        mem.set_b16s0(r + 1, scanner.cur_i.s0);
-                        mem.set_b16s1(r + 1, mem.b16s1(q + 1) % 256);
-                        mem.set_b32s1(q, r);
-                        mem.set_b32s1(r, p);
+                        let r = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(r_idx)) };
+                        r.set_nucleus_char(mem, scanner.cur_i.s0);
+                        r.set_nucleus_fam(mem, q.nucleus_fam(mem) % 256);
+                        q.set_link(mem, MemPtr::from_raw(r_idx));
+                        r.set_link(mem, MemPtr::from_raw(p.idx().0));
                         if scanner.cur_i.s1 < 11 {
-                            mem.set_b32s1(r + 1, MATH_CHAR);
+                            r.set_nucleus_type(mem, MATH_CHAR);
                         } else {
-                            mem.set_b32s1(r + 1, MATH_TEXT_CHAR);
+                            r.set_nucleus_type(mem, MATH_TEXT_CHAR);
                         }
                     }
                     _ => {
-                        let link_p = mem.b32s1(p);
-                        mem.set_b32s1(q, link_p);
-                        mem.set_b16s0(q + 1, scanner.cur_i.s0);
-                        let w3 = mem.word(p + 3);
-                        mem.set_word(q + 3, w3);
-                        let w2 = mem.word(p + 2);
-                        mem.set_word(q + 2, w2);
-                        free_node(mem, p, NOAD_SIZE);
+                        let link_p = p.link(mem);
+                        q.set_link(mem, link_p);
+                        q.set_nucleus_char(mem, scanner.cur_i.s0);
+                        let w3 = mem.word(p.idx().offset(3).0);
+                        mem.set_word(q.idx().offset(3).0, w3);
+                        let w2 = mem.word(p.idx().offset(2).0);
+                        mem.set_word(q.idx().offset(2).0, w2);
+                        free_node(mem, p.idx().0, NOAD_SIZE);
                     }
                 }
                 if scanner.cur_i.s1 > 3 {
                     return MakeOrdStep::Return;
                 }
-                mem.set_b32s1(q + 1, MATH_CHAR);
+                q.set_nucleus_type(mem, MATH_CHAR);
                 return MakeOrdStep::Restart;
             }
         }
@@ -1504,7 +1506,9 @@ pub unsafe fn make_ord_global(q: i32) {
 
         match crate::state::with_state_mut(|st| {
             let st = &mut *st;
-            make_ord_body(&mut st.mem, &st.fonts, &mut st.scanner, q, p)
+            let q_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+            let p_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
+            make_ord_body(&mut st.mem, &st.fonts, &mut st.scanner, q_node, p_node)
         }) {
             MakeOrdStep::Return => return,
             MakeOrdStep::Restart => continue 'restart,
@@ -3590,17 +3594,15 @@ fn append_accent_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAb
 }
 
 fn finish_accent_math_field(mem: &mut MemState, eqtb: &EqtbState, tail: NodePtr<Noad>, value: i32) {
-    mem.set_b16s0(tail.idx().offset(4).0, (value % 65536) as u16);
+    tail.set_accent_char_val(mem, (value % 65536) as u16);
     let intpar_cur_fam = eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM);
     if math_class_field(value) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam) {
-        mem.set_b16s1(tail.idx().offset(4).0, intpar_cur_fam as u16);
+        tail.set_accent_char_fam(mem, intpar_cur_fam as u16);
     } else {
-        mem.set_b16s1(tail.idx().offset(4).0, math_fam_field(value) as u16);
+        tail.set_accent_char_fam(mem, math_fam_field(value) as u16);
     }
-    mem.set_b16s1(
-        tail.idx().offset(4).0,
-        mem.b16s1(tail.idx().offset(4).0) + (math_char_field(value) / 65536) as u16 * 256,
-    );
+    let current_fam = tail.accent_char_fam(mem);
+    tail.set_accent_char_fam(mem, current_fam + (math_char_field(value) / 65536) as u16 * 256);
 }
 
 fn set_accent_kind(mem: &mut MemState, tail: NodePtr<Noad>, kind: u16) {
