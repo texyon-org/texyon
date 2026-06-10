@@ -29,7 +29,7 @@ use crate::mem::{
     new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec,
     ALLOC_FAILED, TEX_NULL,
 };
-use crate::node::{AnyBox, ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode};
+use crate::node::{ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode};
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
@@ -823,9 +823,11 @@ fn make_under_prepare(
 }
 
 fn make_under_finish(mem: &mut MemState, q: i32, x: i32, y: i32, rule_thickness: i32) {
-    let delta = mem.b32s1(y + 3) + mem.b32s1(y + 2) + rule_thickness;
-    mem.set_b32s1(y + 3, mem.b32s1(x + 3));
-    mem.set_b32s1(y + 2, delta - mem.b32s1(y + 3));
+    let yb = mem.classify_box(MemIdx::new(y)).unwrap().unwrap();
+    let xb = mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
+    let delta = yb.height(mem).0 + yb.depth(mem).0 + rule_thickness;
+    yb.set_height(mem, xb.height(mem));
+    yb.set_depth(mem, Scaled(delta - yb.height(mem).0));
     mem.set_b32s0(q + 1, y);
     mem.set_b32s1(q + 1, SUB_BOX);
 }
@@ -848,9 +850,10 @@ fn make_vcenter(mem: &mut MemState, q: i32, axis_height: i32) -> Result<(), Node
     if mem.b16s1(v) != VLIST_NODE {
         return Err(NodeRecycleAbort::Confusion(c"vcenter"));
     }
-    let delta = mem.b32s1(v + 3) + mem.b32s1(v + 2);
-    mem.set_b32s1(v + 3, axis_height + crate::scaled_math::half(delta));
-    mem.set_b32s1(v + 2, delta - mem.b32s1(v + 3));
+    let vb = mem.classify_box(MemIdx::new(v)).unwrap().unwrap();
+    let delta = vb.height(mem).0 + vb.depth(mem).0;
+    vb.set_height(mem, Scaled(axis_height + crate::scaled_math::half(delta)));
+    vb.set_depth(mem, Scaled(delta - vb.height(mem).0));
     Ok(())
 }
 
@@ -1918,10 +1921,9 @@ fn add_script_space_and_restore_font(
     saved_font: i32,
 ) {
     scanner.cur_f = saved_font;
-    mem.set_b32s1(
-        box_node + 1,
-        mem.b32s1(box_node + 1) + eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE),
-    );
+    let b = mem.classify_box(MemIdx::new(box_node)).unwrap().unwrap();
+    let w = b.width(mem).0 + eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE);
+    b.set_width(mem, Scaled(w));
 }
 
 #[derive(Clone, Copy)]
@@ -1981,9 +1983,10 @@ unsafe fn initial_script_shifts_global(p: i32) -> ScriptShifts {
             } else {
                 SCRIPT_SCRIPT_SIZE
             };
+            let zb = st.mem.classify_box(MemIdx::new(z)).unwrap().unwrap();
             ScriptShifts {
-                up: st.mem.b32s1(z + 3) - sup_drop(&st.fonts, &st.eqtb, t),
-                down: st.mem.b32s1(z + 2) + sub_drop(&st.fonts, &st.eqtb, t),
+                up: zb.height(&st.mem).0 - sup_drop(&st.fonts, &st.eqtb, t),
+                down: zb.depth(&st.mem).0 + sub_drop(&st.fonts, &st.eqtb, t),
             }
         });
         crate::state::with_state_mut(|st| free_node(&mut st.mem, z, BOX_NODE_SIZE));
@@ -2054,15 +2057,16 @@ unsafe fn finish_subsup_stack_global(input: SubSupStackInput) {
     }
 
     let kern_width = crate::state::with_state(|st| {
-        (input.shift_up - st.mem.b32s1(input.x + 2))
-            - (st.mem.b32s1(input.y + 3) - input.shift_down)
+        let xb = st.mem.classify_box(MemIdx::new(input.x)).unwrap().unwrap();
+        let yb = st.mem.classify_box(MemIdx::new(input.y)).unwrap().unwrap();
+        (input.shift_up - xb.depth(&st.mem).0) - (yb.height(&st.mem).0 - input.shift_down)
     });
     let kern = crate::state::with_state_mut(|st| {
-        st.mem
-            .set_b32s1(input.x + 4, sup_kern + input.delta - sub_kern);
+        let xb = st.mem.classify_box(MemIdx::new(input.x)).unwrap().unwrap();
+        xb.set_shift_amount(&mut st.mem, Scaled(sup_kern + input.delta - sub_kern));
         let kern = new_kern(&mut st.mem, kern_width);
         if kern != ALLOC_FAILED {
-            st.mem.set_b32s1(input.x, kern);
+            xb.set_link(&mut st.mem, MemPtr::from_raw(kern));
             st.mem.set_b32s1(kern, input.y);
         }
         kern
@@ -2072,7 +2076,10 @@ unsafe fn finish_subsup_stack_global(input: SubSupStackInput) {
     }
 
     let packaged = crate::packaging::vpackage(input.x, 0, ADDITIONAL, MAX_HALFWORD);
-    crate::state::with_state_mut(|st| st.mem.set_b32s1(packaged + 4, input.shift_down));
+    crate::state::with_state_mut(|st| {
+        let pb = st.mem.classify_box(MemIdx::new(packaged)).unwrap().unwrap();
+        pb.set_shift_amount(&mut st.mem, Scaled(input.shift_down));
+    });
     append_script_box_global(input.q, packaged);
 }
 
@@ -2120,9 +2127,10 @@ unsafe fn finish_subscript_only_global(q: i32, p: i32, shift_down: i32) {
     } = prepare_subscript_global(q + 3, ScriptBoxAdjustment::Sub1, shift_down, None);
 
     let (cur_f, box_depth, x_height) = crate::state::with_state(|st| {
+        let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
         (
             st.scanner.cur_f,
-            st.mem.b32s1(x + 3),
+            xb.height(&st.mem).0,
             math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
         )
     });
@@ -2136,7 +2144,10 @@ unsafe fn finish_subscript_only_global(q: i32, p: i32, shift_down: i32) {
         shift_down = clr;
     }
 
-    crate::state::with_state_mut(|st| st.mem.set_b32s1(x + 4, shift_down));
+    crate::state::with_state_mut(|st| {
+        let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
+        xb.set_shift_amount(&mut st.mem, Scaled(shift_down));
+    });
 
     let _ = maybe_attach_script_kern_global(q, p, sub_f, sub_g, SUB_CMD, shift_down);
     append_script_box_global(q, x);
@@ -2157,9 +2168,10 @@ unsafe fn prepare_superscript_global(q: i32, mut shift_up: i32) -> PreparedScrip
     }
 
     let (cur_f, box_height, x_height) = crate::state::with_state(|st| {
+        let nb = st.mem.classify_box(MemIdx::new(prepared.node)).unwrap().unwrap();
         (
             st.scanner.cur_f,
-            st.mem.b32s1(prepared.node + 2),
+            nb.depth(&st.mem).0,
             math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
         )
     });
@@ -2200,7 +2212,10 @@ unsafe fn finish_superscript_branch_global(
             SUP_CMD,
             shift_up,
         );
-        crate::state::with_state_mut(|st| st.mem.set_b32s1(x + 4, -shift_up));
+        crate::state::with_state_mut(|st| {
+            let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
+            xb.set_shift_amount(&mut st.mem, Scaled(-shift_up));
+        });
         append_script_box_global(q, x);
         return;
     }
@@ -2215,10 +2230,12 @@ unsafe fn finish_superscript_branch_global(
     shift_down = shift;
 
     let (cur_f, x_height_node, y_depth, default_rule_thickness) = crate::state::with_state(|st| {
+        let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
+        let yb = st.mem.classify_box(MemIdx::new(y)).unwrap().unwrap();
         (
             st.scanner.cur_f,
-            st.mem.b32s1(x + 2),
-            st.mem.b32s1(y + 3),
+            xb.depth(&st.mem).0,
+            yb.height(&st.mem).0,
             default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size),
         )
     });
@@ -2233,9 +2250,10 @@ unsafe fn finish_superscript_branch_global(
     if clr > 0 {
         shift_down += clr;
         let (cur_f, x_height_node, x_height) = crate::state::with_state(|st| {
+            let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
             (
                 st.scanner.cur_f,
-                st.mem.b32s1(x + 2),
+                xb.depth(&st.mem).0,
                 math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
             )
         });
