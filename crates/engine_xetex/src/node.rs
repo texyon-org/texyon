@@ -1791,6 +1791,89 @@ impl NodePtr<DeltaNode> {
     }
 }
 
+// --- the passive node: the line-breaker's passive list (PASSIVE_NODE_SIZE=2) ---
+//
+// A passive node records a feasible breakpoint for the second pass. Like
+// [`GlueSpecNode`], it deliberately does **not** implement [`HasNodeHeader`]:
+// its `serial` number occupies `0.b32.s0`, which overlaps the `b16`
+// type/subtype halves, so a passive node carries no `NODE_type`. It is
+// identified by *list context* (it is in the passive list), and its `link`
+// (`0.b32.s1`) chains the list — exactly as the C builder writes it
+// (`linebreak.rs` post-line-break loop). Fields verified against
+// `xetex/xetex-xetexd.h:278-281`.
+
+/// `PASSIVE_NODE`: a recorded feasible breakpoint (the line-breaker passive
+/// list). No `NODE_type` (the type/subtype slot is the `serial` number).
+pub enum PassiveNode {}
+
+impl NodeKind for PassiveNode {}
+
+impl NodePtr<PassiveNode> {
+    /// The list link `mem[p].b32.s1` chaining the passive list (nullable).
+    /// (Passive nodes have no `NODE_type`, so this is a concrete impl, not
+    /// the [`HasNodeHeader`] `link`.)
+    #[inline]
+    pub fn link(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.0))
+    }
+    #[inline]
+    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.0, q.0);
+    }
+
+    /// `PASSIVE_NODE_serial(p)` = `mem[p].b32.s0` (the "info" word) — the
+    /// 1-based serial number assigned as breakpoints are discovered.
+    #[inline]
+    pub fn serial(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_serial(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.0, v);
+    }
+
+    /// `PASSIVE_NODE_cur_break(p)` = `mem[(p) + 1].b32.s1` (the "rlink"
+    /// slot) — the node where this breakpoint occurs (nullable).
+    #[inline]
+    pub fn cur_break(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_cur_break(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, q.0);
+    }
+
+    /// `PASSIVE_NODE_prev_break(p)` = `mem[(p) + 1].b32.s0` (the "llink"
+    /// slot) — the previous passive breakpoint on the best path (nullable).
+    ///
+    /// **Aliased:** the C macro `PASSIVE_NODE_next_break` names the *same*
+    /// slot (`#define …_next_break(p) …_prev_break(p)`); use [`next_break`]
+    /// for the reading sense. They read/write identical bits.
+    ///
+    /// [`next_break`]: NodePtr::<PassiveNode>::next_break
+    #[inline]
+    pub fn prev_break(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_prev_break(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s0(self.idx.offset(1).0, q.0);
+    }
+
+    /// `PASSIVE_NODE_next_break(p)` — the C alias of [`prev_break`] (same
+    /// `+1.b32.s0` slot), used when the list is walked forward.
+    ///
+    /// [`prev_break`]: NodePtr::<PassiveNode>::prev_break
+    #[inline]
+    pub fn next_break(self, mem: &MemState) -> MemPtr {
+        self.prev_break(mem)
+    }
+    #[inline]
+    pub fn set_next_break(self, mem: &mut MemState, q: MemPtr) {
+        self.set_prev_break(mem, q);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2618,5 +2701,35 @@ mod tests {
         assert_eq!(mem.b32s1(p.0 + 4), 0x44);
         assert_eq!(mem.b32s1(p.0 + 5), 0x55);
         assert_eq!(mem.b32s1(p.0 + 6), -0x66);
+    }
+
+    #[test]
+    fn passive_node_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        let pn = unsafe { NodePtr::<PassiveNode>::from_idx_unchecked(p) };
+
+        pn.set_link(&mut mem, MemPtr::from_raw(90));
+        pn.set_serial(&mut mem, 5);
+        pn.set_cur_break(&mut mem, MemPtr::from_raw(150));
+        pn.set_prev_break(&mut mem, MemPtr::from_raw(80));
+
+        assert_eq!(pn.link(&mem), MemPtr::from_raw(90));
+        assert_eq!(pn.serial(&mem), 5);
+        assert_eq!(pn.cur_break(&mem), MemPtr::from_raw(150));
+        assert_eq!(pn.prev_break(&mem), MemPtr::from_raw(80));
+        // next_break aliases prev_break (same +1.b32.s0 slot).
+        assert_eq!(pn.next_break(&mem), MemPtr::from_raw(80));
+
+        // C-exact placement (xetex-xetexd.h:278-281).
+        assert_eq!(mem.b32s1(p.0), 90); // link
+        assert_eq!(mem.b32s0(p.0), 5); // serial (info word)
+        assert_eq!(mem.b32s1(p.0 + 1), 150); // cur_break (rlink)
+        assert_eq!(mem.b32s0(p.0 + 1), 80); // prev_break (llink)
+
+        // the alias setter writes the same slot
+        pn.set_next_break(&mut mem, MemPtr::from_raw(70));
+        assert_eq!(pn.prev_break(&mem), MemPtr::from_raw(70));
+        assert_eq!(mem.b32s0(p.0 + 1), 70);
     }
 }
