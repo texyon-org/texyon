@@ -8,6 +8,64 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 162 — 2026-06-10 — Execution: bulk box-dimension consumer typing in math.rs (large mechanical batch)
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Intentionally
+large, low-docs session per user request — typed-consumer adoption only (no new
+node families). Two commits.
+
+**Code (10 functions, ~21 raw box accessors retyped; math.rs 145→124
+method-style accessors):**
+- Commit 1 (`2ff59e2f`): `add_script_space_and_restore_font`,
+  `initial_script_shifts`, `finish_subsup_stack`, `finish_subscript_only`,
+  `prepare_superscript`, `finish_superscript_branch`, `make_under_finish`,
+  `make_vcenter` — raw `mem.b32s1(box+N)` → typed `AnyBox`
+  width/depth/height/shift_amount/list_ptr/link via `classify_box`. Dropped the
+  now-unused `AnyBox` import (warnings 44→43).
+- Commit 2 (`adbd33f9`): `char_box` (the built box `b`), `make_fraction` (vbox
+  `v` + numerator `x` / denominator `z`).
+
+**Method:** match **offset → node.rs accessor** mechanically (node.rs is the
+test-validated offset authority). Each function's **box family is fully closed**
+(per-family closure rule, `01b` §3a); other families in the same body
+(noad `q+N`, native-glyph `p`, kern/rule links) left raw — separate slices.
+Behaviour-preserving: every typed accessor lowers to the identical raw field
+access.
+
+**Skipped (recorded, not regressions):** `make_op_global` is only *partially*
+threaded (mixes `set_mem_b32s1` bridge calls and `st.mem.` closures on the same
+box `x`) — typing only the closure half would violate the closure rule. Thread
+the whole function first. `make_math_accent` box reads (`x+1`/`x+3`) likewise
+sit in a large body with other raw box accesses; defer to a whole-function
+slice.
+
+**⚠ FINDING — node.rs subscr/supscr names are inverted vs TeX (offset-correct,
+NAME-wrong):** `NodePtr<Noad>::subscr_*` reads **offset +2**, `supscr_*` reads
+**offset +3**. But TeX (and this build, per `prepare_subscript_global(q + 3)`)
+has **supscr = +2, subscr = +3**. The methods are used consistently by offset
+(dashboard green), so **no behaviour bug ships** — but the names are a landmine:
+a future consumer that calls `subscr_type` expecting the subscript gets the
+*superscript* word. This is why this session left all noad `q+2`/`q+3` reads
+**raw** rather than adopt the mislabelled accessors. **Recommended next:** a
+dedicated, atomic rename slice that swaps the `subscr_*`↔`supscr_*` method names
+*and* every call site name together (net offset unchanged at every site →
+behaviour-preserving; compiler-checked; gate on the dashboard). Until then,
+match noad fields by offset, not by these names.
+
+**Tests:** `node::` 38/38; dashboard **29/2/7/4** (both commits). Corpus
+(`plan/scripts/corpus.sh check all`): **637 passed, 2 diverged, 0
+missing-golden** — the 2 are the pre-existing known arXiv divergences
+(`1905.00073v1`, `1905.00148v1`, tier2 FP/native-text), NOT regressions; matches
+baseline. Metrics: `with_state`
+1198, `unsafe fn` 571 (unchanged — pure consumer typing, no new threading).
+
+**Next:** (a) the subscr/supscr rename slice (above) to unblock safe noad
+typing; then (b) more box-dimension consumers once their host functions are
+fully threaded (`make_op_global`, `make_math_accent`); or (c) thread
+`make_op_global` end-to-end so its box `x` can be typed.
+
+---
+
 ## Idiom session 161 — 2026-06-08 — Execution: MarginKernNode implementation and `attach_hkern_to_new_hlist` refactoring
 
 **Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). MarginKernNode & Kern attachment.
