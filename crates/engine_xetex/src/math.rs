@@ -975,46 +975,41 @@ fn make_fraction(mem: &mut MemState, assembly: FractionAssembly) -> Result<i32, 
         return Err(NodeRecycleAbort::Overflow);
     }
     mem.set_b16s1(v, VLIST_NODE);
-    mem.set_b32s1(v + 3, assembly.shift_up + mem.b32s1(assembly.x + 3));
-    mem.set_b32s1(v + 2, mem.b32s1(assembly.z + 2) + assembly.shift_down);
-    mem.set_b32s1(v + 1, mem.b32s1(assembly.x + 1));
+    let vb = mem.classify_box(MemIdx::new(v)).unwrap().unwrap();
+    let xb = mem.classify_box(MemIdx::new(assembly.x)).unwrap().unwrap();
+    let zb = mem.classify_box(MemIdx::new(assembly.z)).unwrap().unwrap();
+    vb.set_height(mem, Scaled(assembly.shift_up + xb.height(mem).0));
+    vb.set_depth(mem, Scaled(zb.depth(mem).0 + assembly.shift_down));
+    vb.set_width(mem, xb.width(mem));
 
     let p;
     if assembly.rule_thickness == 0 {
-        p = new_kern(
-            mem,
-            (assembly.shift_up - mem.b32s1(assembly.x + 2))
-                - (mem.b32s1(assembly.z + 3) - assembly.shift_down),
-        );
+        let kw = (assembly.shift_up - xb.depth(mem).0) - (zb.height(mem).0 - assembly.shift_down);
+        p = new_kern(mem, kw);
         if p == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
         mem.set_b32s1(p, assembly.z);
     } else {
         let y = fraction_rule(mem, assembly.rule_thickness)?;
-        let p1 = new_kern(
-            mem,
-            (assembly.axis_height - assembly.delta)
-                - (mem.b32s1(assembly.z + 3) - assembly.shift_down),
-        );
+        let p1w =
+            (assembly.axis_height - assembly.delta) - (zb.height(mem).0 - assembly.shift_down);
+        let p1 = new_kern(mem, p1w);
         if p1 == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
         mem.set_b32s1(y, p1);
         mem.set_b32s1(p1, assembly.z);
-        p = new_kern(
-            mem,
-            (assembly.shift_up - mem.b32s1(assembly.x + 2))
-                - (assembly.axis_height + assembly.delta),
-        );
+        let pw = (assembly.shift_up - xb.depth(mem).0) - (assembly.axis_height + assembly.delta);
+        p = new_kern(mem, pw);
         if p == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
         mem.set_b32s1(p, y);
     }
 
-    mem.set_b32s1(assembly.x, p);
-    mem.set_b32s1(v + 5, assembly.x);
+    xb.set_link(mem, MemPtr::from_raw(p));
+    vb.set_list_ptr(mem, MemPtr::from_raw(assembly.x));
     Ok(v)
 }
 
@@ -2919,14 +2914,15 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleA
     if b == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
+    let bb = mem.classify_box(MemIdx::new(b)).unwrap().unwrap();
     let p = match input {
         CharBoxInput::Native { p } => {
             let h = mem.b32s1(p + 3);
             let w = mem.b32s1(p + 1);
             let d = mem.b32s1(p + 2);
-            mem.set_b32s1(b + 3, h);
-            mem.set_b32s1(b + 1, w);
-            mem.set_b32s1(b + 2, if d < 0 { 0 } else { d });
+            bb.set_height(mem, Scaled(h));
+            bb.set_width(mem, Scaled(w));
+            bb.set_depth(mem, Scaled(if d < 0 { 0 } else { d }));
             p
         }
         CharBoxInput::Tfm {
@@ -2936,9 +2932,9 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleA
             c,
             f,
         } => {
-            mem.set_b32s1(b + 1, width);
-            mem.set_b32s1(b + 3, height);
-            mem.set_b32s1(b + 2, depth);
+            bb.set_width(mem, Scaled(width));
+            bb.set_height(mem, Scaled(height));
+            bb.set_depth(mem, Scaled(depth));
             let p = get_avail(mem);
             if p == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::OverflowRunaway);
@@ -2948,7 +2944,7 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleA
             p
         }
     };
-    mem.set_b32s1(b + 5, p);
+    bb.set_list_ptr(mem, MemPtr::from_raw(p));
     Ok(b)
 }
 
