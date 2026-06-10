@@ -789,8 +789,9 @@ pub unsafe fn fetch_global(a: i32) {
 
 /// translated from xetex-math.c:198 (make_over)
 fn make_over(mem: &mut MemState, q: i32, x: i32) {
-    mem.set_b32s0(q + 1, x);
-    mem.set_b32s1(q + 1, SUB_BOX);
+    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+    q_noad.set_nucleus_field(mem, x);
+    q_noad.set_nucleus_type(mem, SUB_BOX);
 }
 
 pub unsafe fn make_over_global(q: i32) {
@@ -828,8 +829,9 @@ fn make_under_finish(mem: &mut MemState, q: i32, x: i32, y: i32, rule_thickness:
     let delta = yb.height(mem).0 + yb.depth(mem).0 + rule_thickness;
     yb.set_height(mem, xb.height(mem));
     yb.set_depth(mem, Scaled(delta - yb.height(mem).0));
-    mem.set_b32s0(q + 1, y);
-    mem.set_b32s1(q + 1, SUB_BOX);
+    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+    q_noad.set_nucleus_field(mem, y);
+    q_noad.set_nucleus_type(mem, SUB_BOX);
 }
 
 pub unsafe fn make_under_global(q: i32) {
@@ -846,7 +848,8 @@ pub unsafe fn make_under_global(q: i32) {
 
 /// translated from xetex-math.c:225 (make_vcenter)
 fn make_vcenter(mem: &mut MemState, q: i32, axis_height: i32) -> Result<(), NodeRecycleAbort> {
-    let v = mem.b32s0(q + 1);
+    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+    let v = q_noad.nucleus_field(mem);
     if mem.b16s1(v) != VLIST_NODE {
         return Err(NodeRecycleAbort::Confusion(c"vcenter"));
     }
@@ -1019,7 +1022,8 @@ fn make_fraction_link_delimiters(mem: &mut MemState, left_delim: i32, v: i32, ri
 }
 
 fn make_fraction_finish(mem: &mut MemState, q: i32, hbox: i32) {
-    mem.set_b32s1(q + 1, hbox);
+    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+    q_noad.set_nucleus_type(mem, hbox);
 }
 
 /// translated from xetex-math.c:313 (make_fraction)
@@ -1990,10 +1994,11 @@ unsafe fn initial_script_shifts_global(p: i32) -> ScriptShifts {
 }
 
 fn append_script_box(mem: &mut MemState, q: i32, box_node: i32) {
-    if mem.b32s1(q + 1) == TEX_NULL {
-        mem.set_b32s1(q + 1, box_node);
+    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+    if q_noad.nucleus_type(mem) == TEX_NULL {
+        q_noad.set_nucleus_type(mem, box_node);
     } else {
-        let mut p = mem.b32s1(q + 1);
+        let mut p = q_noad.nucleus_type(mem);
         while mem.b32s1(p) != TEX_NULL {
             p = mem.b32s1(p);
         }
@@ -2034,7 +2039,10 @@ unsafe fn finish_subsup_stack_global(input: SubSupStackInput) {
     p = attachment.p;
     sub_kern = attachment.kern;
     if attachment.is_ot_math {
-        let sub_empty = crate::state::with_state(|st| st.mem.b32s1(input.q + 3) == EMPTY);
+        let sub_empty = crate::state::with_state(|st| {
+            let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(input.q)) };
+            q_noad.subscr_type(&st.mem) == EMPTY
+        });
         if sub_empty {
             let attachment = maybe_attach_script_kern_global(
                 input.q,
@@ -2197,7 +2205,10 @@ unsafe fn finish_superscript_branch_global(
 ) {
     let x = superscript.node;
     let shift_up = superscript.shift;
-    let sub_empty = crate::state::with_state(|st| st.mem.b32s1(q + 3) == EMPTY);
+    let sub_empty = crate::state::with_state(|st| {
+        let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+        q_noad.subscr_type(&st.mem) == EMPTY
+    });
     if sub_empty {
         let _ = maybe_attach_script_kern_global(
             q,
@@ -2387,10 +2398,17 @@ unsafe fn first_script_glyph_global(script_head: i32) -> (u16, i32) {
 
 /// translated from xetex-math.c:84 (make_scripts)
 unsafe fn make_scripts_global(q: i32, delta: i32) {
-    let p = crate::state::with_state(|st| st.mem.b32s1(q + 1));
+    let p = crate::state::with_state(|st| {
+        let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+        q_noad.nucleus_type(&st.mem)
+    });
     let shifts = initial_script_shifts_global(p);
 
-    if crate::state::with_state(|st| st.mem.b32s1(q + 2)) == EMPTY {
+    if crate::state::with_state(|st| {
+        let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+        q_noad.supscr_type(&st.mem)
+    }) == EMPTY
+    {
         finish_subscript_only_global(q, p, shifts.down);
     } else {
         let superscript = prepare_superscript_global(q, shifts.up);
@@ -2432,8 +2450,9 @@ pub unsafe fn make_left_right_global(q: i32, style: i16, max_d: i32, max_h: i32)
     }
     let delimiter = var_delimiter_global(q + 1, size, delta);
     crate::state::with_state_mut(|st| {
-        st.mem.set_b32s1(q + 1, delimiter);
-        (st.mem.b16s1(q) as i32 - (LEFT_NOAD as i32 - 20)) as i16
+        let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+        q_noad.set_nucleus_type(&mut st.mem, delimiter);
+        (q_noad.noad_type(&st.mem).as_raw() as i32 - (LEFT_NOAD as i32 - 20)) as i16
     })
 }
 
