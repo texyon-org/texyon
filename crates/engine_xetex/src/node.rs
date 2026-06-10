@@ -1712,6 +1712,85 @@ impl NodePtr<ActiveNode> {
     }
 }
 
+/// `DELTA_NODE` (line-breaker active list; `DELTA_NODE` = `RULE_NODE`(2) in
+/// the `NODE_type` word — the context alias documented on [`NodeType`]).
+/// A delta node sits *between* active nodes and records the running
+/// width/stretch/shrink change from one breakpoint to the next.
+/// `DELTA_NODE_SIZE` = 7. Fields verified against `xetex/xetex-xetexd.h:230-235`;
+/// all six are [`Scaled`] glue components (`dwidth`, the four stretch orders,
+/// `dshrink`). Context-classified like [`ActiveNode`] (see the module note).
+pub enum DeltaNode {}
+
+impl NodeKind for DeltaNode {}
+
+impl NodePtr<DeltaNode> {
+    /// `DELTA_NODE_dwidth(p)` = `mem[(p) + 1].b32.s1` — the natural-width
+    /// difference.
+    #[inline]
+    pub fn dwidth(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_dwidth(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+
+    /// `DELTA_NODE_dstretch0(p)` = `mem[(p) + 2].b32.s1` — the stretch
+    /// difference in points (order 0, `normal`).
+    #[inline]
+    pub fn dstretch0(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(2).0))
+    }
+    #[inline]
+    pub fn set_dstretch0(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(2).0, v.0);
+    }
+
+    /// `DELTA_NODE_dstretch1(p)` = `mem[(p) + 3].b32.s1` — stretch difference
+    /// in `fil`.
+    #[inline]
+    pub fn dstretch1(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(3).0))
+    }
+    #[inline]
+    pub fn set_dstretch1(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(3).0, v.0);
+    }
+
+    /// `DELTA_NODE_dstretch2(p)` = `mem[(p) + 4].b32.s1` — stretch difference
+    /// in `fill`.
+    #[inline]
+    pub fn dstretch2(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(4).0))
+    }
+    #[inline]
+    pub fn set_dstretch2(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(4).0, v.0);
+    }
+
+    /// `DELTA_NODE_dstretch3(p)` = `mem[(p) + 5].b32.s1` — stretch difference
+    /// in `filll`.
+    #[inline]
+    pub fn dstretch3(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(5).0))
+    }
+    #[inline]
+    pub fn set_dstretch3(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(5).0, v.0);
+    }
+
+    /// `DELTA_NODE_dshrink(p)` = `mem[(p) + 6].b32.s1` — the shrink
+    /// difference.
+    #[inline]
+    pub fn dshrink(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(6).0))
+    }
+    #[inline]
+    pub fn set_dshrink(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(6).0, v.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2510,5 +2589,34 @@ mod tests {
         assert_eq!(mem.b32s1(p.0 + 2), 0x5151); // total_demerits
         assert_eq!(mem.b32s1(p.0 + 3), -0x20); // shortfall
         assert_eq!(mem.b32s1(p.0 + 4), 0x30); // glue
+    }
+
+    #[test]
+    fn delta_node_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        let d = unsafe { NodePtr::<DeltaNode>::from_idx_unchecked(p) };
+
+        d.set_dwidth(&mut mem, Scaled(0x11));
+        d.set_dstretch0(&mut mem, Scaled(0x22));
+        d.set_dstretch1(&mut mem, Scaled(0x33));
+        d.set_dstretch2(&mut mem, Scaled(0x44));
+        d.set_dstretch3(&mut mem, Scaled(0x55));
+        d.set_dshrink(&mut mem, Scaled(-0x66));
+
+        assert_eq!(d.dwidth(&mem), Scaled(0x11));
+        assert_eq!(d.dstretch0(&mem), Scaled(0x22));
+        assert_eq!(d.dstretch1(&mem), Scaled(0x33));
+        assert_eq!(d.dstretch2(&mem), Scaled(0x44));
+        assert_eq!(d.dstretch3(&mem), Scaled(0x55));
+        assert_eq!(d.dshrink(&mem), Scaled(-0x66));
+
+        // C-exact placement: all six are b32.s1 at +1..+6 (xetex-xetexd.h:230-235).
+        assert_eq!(mem.b32s1(p.0 + 1), 0x11);
+        assert_eq!(mem.b32s1(p.0 + 2), 0x22);
+        assert_eq!(mem.b32s1(p.0 + 3), 0x33);
+        assert_eq!(mem.b32s1(p.0 + 4), 0x44);
+        assert_eq!(mem.b32s1(p.0 + 5), 0x55);
+        assert_eq!(mem.b32s1(p.0 + 6), -0x66);
     }
 }
