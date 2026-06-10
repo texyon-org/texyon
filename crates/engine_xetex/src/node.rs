@@ -965,89 +965,85 @@ impl NodePtr<Noad> {
         mem.set_b16s1(self.idx.offset(1).0, f);
     }
 
-    // ⚠ NAMING LANDMINE (session 162): the `subscr_*`/`supscr_*` method names
-    // below are INVERTED relative to TeX. TeX (and this build, per
-    // `prepare_subscript_global(q + 3)` in math.rs) has supscr = offset +2,
-    // subscr = offset +3 — but `subscr_*` here reads +2 and `supscr_*` reads +3.
-    // The offsets are used consistently so no behaviour bug ships, but a caller
-    // that picks a method by SEMANTIC name (wanting "the subscript") gets the
-    // wrong word. Pending fix: an atomic rename slice swapping the two name
-    // families AND every call site (offset-preserving). Until then, choose these
-    // accessors by OFFSET, not by name.
+    // Noad script layout (matches TeX/this build): superscript = offset +2,
+    // subscript = offset +3 (cf. `prepare_subscript_global(q + 3)` in math.rs).
+    // Session 163 swapped the previously-inverted `subscr_*`/`supscr_*` names so
+    // they now match their offsets; the swap was offset-preserving at every call
+    // site (names and bodies moved together).
 
-    /// Subscript type = `mem[p + 2].b32.s1`
+    /// Superscript type = `mem[p + 2].b32.s1`
     #[inline]
-    pub fn subscr_type(self, mem: &MemState) -> i32 {
+    pub fn supscr_type(self, mem: &MemState) -> i32 {
         mem.b32s1(self.idx.offset(2).0)
     }
     #[inline]
-    pub fn set_subscr_type(self, mem: &mut MemState, t: i32) {
+    pub fn set_supscr_type(self, mem: &mut MemState, t: i32) {
         mem.set_b32s1(self.idx.offset(2).0, t);
     }
-    /// Subscript field = `mem[p + 2].b32.s0`
+    /// Superscript field = `mem[p + 2].b32.s0`
     #[inline]
-    pub fn subscr_field(self, mem: &MemState) -> i32 {
+    pub fn supscr_field(self, mem: &MemState) -> i32 {
         mem.b32s0(self.idx.offset(2).0)
     }
     #[inline]
-    pub fn set_subscr_field(self, mem: &mut MemState, v: i32) {
+    pub fn set_supscr_field(self, mem: &mut MemState, v: i32) {
         mem.set_b32s0(self.idx.offset(2).0, v);
     }
 
-    /// Subscript character = `mem[p + 2].b16.s0`
+    /// Superscript character = `mem[p + 2].b16.s0`
     #[inline]
-    pub fn subscr_char(self, mem: &MemState) -> u16 {
+    pub fn supscr_char(self, mem: &MemState) -> u16 {
         mem.b16s0(self.idx.offset(2).0)
     }
     #[inline]
-    pub fn set_subscr_char(self, mem: &mut MemState, c: u16) {
+    pub fn set_supscr_char(self, mem: &mut MemState, c: u16) {
         mem.set_b16s0(self.idx.offset(2).0, c);
     }
-    /// Subscript family = `mem[p + 2].b16.s1`
+    /// Superscript family = `mem[p + 2].b16.s1`
     #[inline]
-    pub fn subscr_fam(self, mem: &MemState) -> u16 {
+    pub fn supscr_fam(self, mem: &MemState) -> u16 {
         mem.b16s1(self.idx.offset(2).0)
     }
     #[inline]
-    pub fn set_subscr_fam(self, mem: &mut MemState, f: u16) {
+    pub fn set_supscr_fam(self, mem: &mut MemState, f: u16) {
         mem.set_b16s1(self.idx.offset(2).0, f);
     }
 
-    /// Superscript type = `mem[p + 3].b32.s1`
+    /// Subscript type = `mem[p + 3].b32.s1`
     #[inline]
-    pub fn supscr_type(self, mem: &MemState) -> i32 {
+    pub fn subscr_type(self, mem: &MemState) -> i32 {
         mem.b32s1(self.idx.offset(3).0)
     }
     #[inline]
-    pub fn set_supscr_type(self, mem: &mut MemState, t: i32) {
+    pub fn set_subscr_type(self, mem: &mut MemState, t: i32) {
         mem.set_b32s1(self.idx.offset(3).0, t);
     }
-    /// Superscript field = `mem[p + 3].b32.s0`
+    /// Subscript field = `mem[p + 3].b32.s0`
     #[inline]
-    pub fn supscr_field(self, mem: &MemState) -> i32 {
+    pub fn subscr_field(self, mem: &MemState) -> i32 {
         mem.b32s0(self.idx.offset(3).0)
     }
     #[inline]
-    pub fn set_supscr_field(self, mem: &mut MemState, v: i32) {
+    pub fn set_subscr_field(self, mem: &mut MemState, v: i32) {
         mem.set_b32s0(self.idx.offset(3).0, v);
     }
 
-    /// Superscript character = `mem[p + 3].b16.s0`
+    /// Subscript character = `mem[p + 3].b16.s0`
     #[inline]
-    pub fn supscr_char(self, mem: &MemState) -> u16 {
+    pub fn subscr_char(self, mem: &MemState) -> u16 {
         mem.b16s0(self.idx.offset(3).0)
     }
     #[inline]
-    pub fn set_supscr_char(self, mem: &mut MemState, c: u16) {
+    pub fn set_subscr_char(self, mem: &mut MemState, c: u16) {
         mem.set_b16s0(self.idx.offset(3).0, c);
     }
-    /// Superscript family = `mem[p + 3].b16.s1`
+    /// Subscript family = `mem[p + 3].b16.s1`
     #[inline]
-    pub fn supscr_fam(self, mem: &MemState) -> u16 {
+    pub fn subscr_fam(self, mem: &MemState) -> u16 {
         mem.b16s1(self.idx.offset(3).0)
     }
     #[inline]
-    pub fn set_supscr_fam(self, mem: &mut MemState, f: u16) {
+    pub fn set_subscr_fam(self, mem: &mut MemState, f: u16) {
         mem.set_b16s1(self.idx.offset(3).0, f);
     }
 
@@ -1129,15 +1125,15 @@ impl NodePtr<Noad> {
         self.idx.offset(1).0
     }
 
-    /// Get the subscr field address (word 2)
+    /// Get the supscr field address (word 2)
     #[inline]
-    pub fn subscr_addr(self) -> i32 {
+    pub fn supscr_addr(self) -> i32 {
         self.idx.offset(2).0
     }
 
-    /// Get the supscr field address (word 3)
+    /// Get the subscr field address (word 3)
     #[inline]
-    pub fn supscr_addr(self) -> i32 {
+    pub fn subscr_addr(self) -> i32 {
         self.idx.offset(3).0
     }
 }

@@ -3348,10 +3348,10 @@ fn append_radical_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleA
     node.set_subtype(mem, NORMAL);
     node.set_nucleus_type(mem, EMPTY);
     node.set_nucleus_field(mem, TEX_NULL);
-    node.set_subscr_type(mem, EMPTY);
-    node.set_subscr_field(mem, TEX_NULL);
     node.set_supscr_type(mem, EMPTY);
     node.set_supscr_field(mem, TEX_NULL);
+    node.set_subscr_type(mem, EMPTY);
+    node.set_subscr_field(mem, TEX_NULL);
     Ok(node)
 }
 
@@ -3404,13 +3404,13 @@ fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr>
     let aux = cur_list_aux_b32s1();
     if aux != TEX_NULL {
         let aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux)) };
-        aux_noad.set_supscr_type(mem, SUB_MLIST);
+        aux_noad.set_subscr_type(mem, SUB_MLIST);
         let head_link = mem.b32s1(cur_list_head());
-        aux_noad.set_supscr_field(mem, head_link);
+        aux_noad.set_subscr_field(mem, head_link);
         if p == TEX_NULL {
             q = aux;
         } else {
-            q = aux_noad.subscr_field(mem);
+            q = aux_noad.supscr_field(mem);
             let q_idx = MemIdx::new(q);
             let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(q_idx) };
             let etex_aux = cur_list_e_tex_aux();
@@ -3419,7 +3419,7 @@ fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr>
             }
             let etex_aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux)) };
             let etex_link = etex_aux_noad.link(mem);
-            aux_noad.set_subscr_field(mem, etex_link.0);
+            aux_noad.set_supscr_field(mem, etex_link.0);
             etex_aux_noad.set_link(mem, MemPtr::from_raw(aux));
             aux_noad.set_link(mem, MemPtr::from_raw(p));
         }
@@ -3548,10 +3548,10 @@ fn start_fraction_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleA
     };
     set_cur_list_aux_b32s1(fraction.idx().0);
     fraction.set_subtype(mem, NORMAL);
-    fraction.set_subscr_type(mem, SUB_MLIST);
-    fraction.set_subscr_field(mem, mem.b32s1(cur_list_head()));
-    fraction.set_supscr_type(mem, EMPTY);
-    fraction.set_supscr_field(mem, TEX_NULL);
+    fraction.set_supscr_type(mem, SUB_MLIST);
+    fraction.set_supscr_field(mem, mem.b32s1(cur_list_head()));
+    fraction.set_subscr_type(mem, EMPTY);
+    fraction.set_subscr_field(mem, TEX_NULL);
 
     let delim_l = fraction.fraction_left_delimiter_addr();
     mem.set_b16s3(delim_l, 0);
@@ -3646,10 +3646,10 @@ fn append_accent_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAb
     accent.set_subtype(mem, NORMAL);
     accent.set_nucleus_type(mem, EMPTY);
     accent.set_nucleus_field(mem, TEX_NULL);
-    accent.set_subscr_type(mem, EMPTY);
-    accent.set_subscr_field(mem, TEX_NULL);
     accent.set_supscr_type(mem, EMPTY);
     accent.set_supscr_field(mem, TEX_NULL);
+    accent.set_subscr_type(mem, EMPTY);
+    accent.set_subscr_field(mem, TEX_NULL);
     accent.set_accent_char_type(mem, MATH_CHAR);
     Ok(accent)
 }
@@ -3678,10 +3678,10 @@ fn append_left_right_noad(mem: &mut MemState, node_type: u16) -> Result<NodePtr<
     p.set_subtype(mem, NORMAL);
     p.set_nucleus_type(mem, EMPTY);
     p.set_nucleus_field(mem, TEX_NULL);
-    p.set_subscr_type(mem, EMPTY);
-    p.set_subscr_field(mem, TEX_NULL);
     p.set_supscr_type(mem, EMPTY);
     p.set_supscr_field(mem, TEX_NULL);
+    p.set_subscr_type(mem, EMPTY);
+    p.set_subscr_field(mem, TEX_NULL);
 
     let nt = NodeType::from_raw(node_type).expect("valid noad type");
     p.set_noad_type(mem, nt);
@@ -3706,10 +3706,10 @@ fn append_inner_noad_for_right(mem: &mut MemState, q: i32) -> Result<(), NodeRec
     inner.set_subtype(mem, NORMAL);
     inner.set_nucleus_type(mem, EMPTY);
     inner.set_nucleus_field(mem, TEX_NULL);
-    inner.set_subscr_type(mem, EMPTY);
-    inner.set_subscr_field(mem, TEX_NULL);
     inner.set_supscr_type(mem, EMPTY);
     inner.set_supscr_field(mem, TEX_NULL);
+    inner.set_subscr_type(mem, EMPTY);
+    inner.set_subscr_field(mem, TEX_NULL);
 
     mem.set_b32s1(cur_list_tail(), inner.idx().0);
     set_cur_list_tail(inner.idx().0);

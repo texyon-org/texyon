@@ -873,10 +873,10 @@ pub fn new_noad(mem: &mut MemState) -> i32 {
     p.set_subtype(mem, NORMAL);
     p.set_nucleus_type(mem, EMPTY);
     p.set_nucleus_field(mem, TEX_NULL);
-    p.set_subscr_type(mem, EMPTY);
-    p.set_subscr_field(mem, TEX_NULL);
     p.set_supscr_type(mem, EMPTY);
     p.set_supscr_field(mem, TEX_NULL);
+    p.set_subscr_type(mem, EMPTY);
+    p.set_subscr_field(mem, TEX_NULL);
     p.idx().0
 }
 
