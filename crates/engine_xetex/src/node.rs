@@ -1606,6 +1606,112 @@ impl MemState {
     }
 }
 
+// --- the line-breaker active list: active + delta nodes ---
+//
+// The line breaker's *active list* (`linebreak.rs`) is a SEPARATE list from
+// the main vlist/hlist, so it reuses the `NODE_type` word with its own
+// codes: an active node carries `break_type` = `UNHYPHENATED`(0) /
+// `HYPHENATED`(1) in `0.b16.s1`, and a delta node carries
+// `DELTA_NODE` = `RULE_NODE`(2) there (the context alias documented on
+// [`NodeType`]). They are therefore classified by *list context* — you are
+// walking the active list — **never** through `NodeType::from_raw`, which
+// would (correctly, for the *main* list) map 0/1/2 to HList/VList/Rule. The
+// list is headed/terminated by the `LAST_ACTIVE` sentinel; the field
+// accessors below are only valid on real active/delta nodes a walk has
+// already established (so the constructor is `from_idx_unchecked`, the
+// context boundary — there is no `classify_*` for these, by design).
+
+/// `ACTIVE_NODE` (line-breaker active list; `break_type` = `UNHYPHENATED`(0)
+/// or `HYPHENATED`(1) lives in the `NODE_type` word, with `fitness` in the
+/// subtype word). Allocated `ACTIVE_NODE_SIZE_NORMAL`(3) or `_EXTENDED`(5)
+/// — the `shortfall`/`glue` fields only exist on the extended form
+/// (`\lastlinefit`). Fields verified against `xetex/xetex-xetexd.h:220-225`.
+pub enum ActiveNode {}
+
+impl NodeKind for ActiveNode {}
+
+impl NodePtr<ActiveNode> {
+    /// `ACTIVE_NODE_fitness(p)` = `mem[p].b16.s0` — the fitness class
+    /// (`VERY_LOOSE_FIT`/`LOOSE_FIT`/`DECENT_FIT`/`TIGHT_FIT`), stored in the
+    /// node's subtype word.
+    #[inline]
+    pub fn fitness(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_fitness(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.0, v);
+    }
+
+    /// The break type (`UNHYPHENATED`(0)/`HYPHENATED`(1)), stored in the
+    /// `NODE_type` word `mem[p].b16.s1` — an active-list-private use of the
+    /// type slot (not a [`NodeType`]; see the module note above).
+    #[inline]
+    pub fn break_type(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.0)
+    }
+    #[inline]
+    pub fn set_break_type(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.0, v);
+    }
+
+    /// `ACTIVE_NODE_break_node(p)` = `mem[(p) + 1].b32.s1` (the "rlink" slot)
+    /// — the passive node recording this breakpoint (nullable).
+    #[inline]
+    pub fn break_node(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_break_node(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, q.0);
+    }
+
+    /// `ACTIVE_NODE_line_number(p)` = `mem[(p) + 1].b32.s0` (the "llink"
+    /// slot) — the line number this breakpoint would end. A plain `i32`.
+    #[inline]
+    pub fn line_number(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_line_number(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(1).0, v);
+    }
+
+    /// `ACTIVE_NODE_total_demerits(p)` = `mem[(p) + 2].b32.s1` — the minimum
+    /// total demerits to reach this breakpoint. A plain `i32` (demerits, not
+    /// a scaled length).
+    #[inline]
+    pub fn total_demerits(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(2).0)
+    }
+    #[inline]
+    pub fn set_total_demerits(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(2).0, v);
+    }
+
+    /// `ACTIVE_NODE_shortfall(p)` = `mem[(p) + 3].b32.s1` (the WEB
+    /// "active_short"; extended active nodes only) — a [`Scaled`].
+    #[inline]
+    pub fn shortfall(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(3).0))
+    }
+    #[inline]
+    pub fn set_shortfall(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(3).0, v.0);
+    }
+
+    /// `ACTIVE_NODE_glue(p)` = `mem[(p) + 4].b32.s1` (extended active nodes
+    /// only) — a [`Scaled`].
+    #[inline]
+    pub fn glue(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(4).0))
+    }
+    #[inline]
+    pub fn set_glue(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(4).0, v.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2370,5 +2476,39 @@ mod tests {
         k.set_width(&mut mem, Scaled(-123));
         assert_eq!(k.subtype(&mem), 2);
         assert_eq!(k.width(&mem), Scaled(-123));
+    }
+
+    #[test]
+    fn active_node_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        // No classify boundary: active/delta nodes are context-classified
+        // (the active-list walk established the kind).
+        let a = unsafe { NodePtr::<ActiveNode>::from_idx_unchecked(p) };
+
+        a.set_break_type(&mut mem, 1); // HYPHENATED, in the NODE_type word
+        a.set_fitness(&mut mem, 2); // DECENT_FIT, in the subtype word
+        a.set_break_node(&mut mem, MemPtr::from_raw(150));
+        a.set_line_number(&mut mem, 7);
+        a.set_total_demerits(&mut mem, 0x5151);
+        a.set_shortfall(&mut mem, Scaled(-0x20));
+        a.set_glue(&mut mem, Scaled(0x30));
+
+        assert_eq!(a.break_type(&mem), 1);
+        assert_eq!(a.fitness(&mem), 2);
+        assert_eq!(a.break_node(&mem), MemPtr::from_raw(150));
+        assert_eq!(a.line_number(&mem), 7);
+        assert_eq!(a.total_demerits(&mem), 0x5151);
+        assert_eq!(a.shortfall(&mem), Scaled(-0x20));
+        assert_eq!(a.glue(&mem), Scaled(0x30));
+
+        // C-exact raw word/subfield placement (xetex-xetexd.h:220-225).
+        assert_eq!(mem.b16s1(p.0), 1); // break_type (type word)
+        assert_eq!(mem.b16s0(p.0), 2); // fitness (subtype word)
+        assert_eq!(mem.b32s1(p.0 + 1), 150); // break_node (rlink)
+        assert_eq!(mem.b32s0(p.0 + 1), 7); // line_number (llink)
+        assert_eq!(mem.b32s1(p.0 + 2), 0x5151); // total_demerits
+        assert_eq!(mem.b32s1(p.0 + 3), -0x20); // shortfall
+        assert_eq!(mem.b32s1(p.0 + 4), 0x30); // glue
     }
 }
