@@ -21,7 +21,7 @@ use crate::globals::{
     set_help_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, temp_ptr,
 };
 use crate::mem::new_spec_global;
-use crate::node::AnyBox;
+use crate::node::{AnyBox, Noad, NodePtr};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
@@ -665,19 +665,21 @@ pub fn flush_node_list(
                     ORD_NOAD_FNL | OP_NOAD_FNL | BIN_NOAD_FNL | REL_NOAD_FNL | OPEN_NOAD_FNL
                     | CLOSE_NOAD_FNL | PUNCT_NOAD_FNL | INNER_NOAD_FNL | RADICAL_NOAD_FNL
                     | OVER_NOAD_FNL | UNDER_NOAD_FNL | VCENTER_NOAD_FNL | ACCENT_NOAD_FNL => {
-                        if mem.b32s1(p + 1) >= SUB_BOX_FNL {
-                            let c = mem.b32s0(p + 1);
+                        let p_noad =
+                            unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
+                        if p_noad.nucleus_type(mem) >= SUB_BOX_FNL {
+                            let c = p_noad.nucleus_field(mem);
                             flush_node_list(mem, c)?;
                         }
-                        if mem.b32s1(p + 2) >= SUB_BOX_FNL {
-                            let c = mem.b32s0(p + 2);
+                        if p_noad.supscr_type(mem) >= SUB_BOX_FNL {
+                            let c = p_noad.supscr_field(mem);
                             flush_node_list(mem, c)?;
                         }
-                        if mem.b32s1(p + 3) >= SUB_BOX_FNL {
-                            let c = mem.b32s0(p + 3);
+                        if p_noad.subscr_type(mem) >= SUB_BOX_FNL {
+                            let c = p_noad.subscr_field(mem);
                             flush_node_list(mem, c)?;
                         }
-                        let ntype = mem.b16s1(p);
+                        let ntype = p_noad.noad_type(mem).as_raw();
                         if ntype == RADICAL_NOAD_FNL {
                             crate::mem::free_node(mem, p, RADICAL_NOAD_SIZE_FNL);
                         } else if ntype == ACCENT_NOAD_FNL {
@@ -692,9 +694,10 @@ pub fn flush_node_list(
                         break 'done;
                     }
                     FRACTION_NOAD_FNL => {
-                        let c1 = mem.b32s0(p + 2);
+                        let p_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
+                        let c1 = p_noad.supscr_field(mem);
                         flush_node_list(mem, c1)?;
-                        let c2 = mem.b32s0(p + 3);
+                        let c2 = p_noad.subscr_field(mem);
                         flush_node_list(mem, c2)?;
                         crate::mem::free_node(mem, p, FRACTION_NOAD_SIZE_FNL);
                         break 'done;
