@@ -8,6 +8,73 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 163 — 2026-06-10 — Execution: subscr/supscr rename + bulk noad & glue-spec consumer typing (large, low-docs)
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Large mechanical
+session per user request (less docs, more code). 5 commits.
+
+**Commits:**
+1. `e8c364db` **subscr/supscr rename slice** (the session-162 landmine fix).
+   Offset-preserving swap of the inverted `NodePtr<Noad>` accessor names: now
+   `supscr_*` = +2, `subscr_*` = +3 (matching TeX and this build). Method
+   *definitions* (node.rs) and *every call site* (math.rs, mem.rs) were swapped
+   together via a `subscr_`↔`supscr_` identifier swap (perl on math.rs/mem.rs,
+   hand-rewrite of node.rs methods + addr getters), so each site still hits the
+   same word — behaviour-preserving, compiler-checked. Removed the landmine
+   comment. This unblocks typing noad consumers by semantic name.
+2. `818b95a2` typed noad consumers in **math.rs**: `make_over`,
+   `make_under_finish`, `make_vcenter`, `make_fraction_finish` (nucleus
+   field/type writes via `NodePtr<Noad>`); `append_script_box`,
+   `finish_subsup_stack_global`, `finish_superscript_branch_global`,
+   `make_scripts_global`, `make_left_right_global` (nucleus/supscr/subscr reads
+   + new_hlist/noad_type). Each function's noad family fully closed.
+3. `20c6283b` typed noad consumers in **packaging.rs** `flush_node_list`:
+   standard-noad arm (Ord..Accent) + fraction-noad arm (numerator=`supscr_field`
+   +2, denominator=`subscr_field` +3). Box arm left raw (also matches
+   `UNSET_NODE`, which `classify_box` rejects).
+4. `1ff467c7` typed the glue-spec **`ref_count` trap** (the canonical
+   "ref_count is a count, NOT a link") at 4 **packaging.rs** sites: `just_copy`
+   (GLUE), `copy_node_list` (INS + GLUE), `flush_node_list` (GLUE), via
+   `NodePtr<GlueSpecNode>::from_glue_ptr` + `ref_count`/`set_ref_count`.
+
+**Method:** match **offset → node.rs accessor** mechanically; close one family
+per function (per-family closure rule). Behaviour-preserving — every typed
+accessor lowers to the identical raw field access. **Deliberately left raw**
+(recorded, not regressions): the bridge-mixed math hosts `make_op_global`,
+`make_math_accent_global`, and the giant `mlist_to_hlist` (they access noad/box
+fields via BOTH `mem_b32s1` bridges and `st.mem`, so typing one half breaks the
+closure rule — thread them whole first); the box arms of
+`flush_node_list`/`copy_node_list` (UNSET_NODE shares the layout but
+`classify_box` rejects it); linebreak.rs `*_in` accessor helpers (already a
+clean named confinement layer — re-routing through `NodePtr` is redundant).
+
+**Tests:** `node::` 38/38; dashboard **29/2/7/4** (every commit). Corpus
+(`plan/scripts/corpus.sh check all`): **637 passed, 2 diverged, 0
+missing-golden** — the 2 are the pre-existing known arXiv divergences
+(`1905.00073v1`, `1905.00148v1`, tier2 FP/native-text), matches baseline, NOT
+regressions. Metrics: `with_state` 1197, `unsafe fn` 571 (unchanged — pure
+consumer typing, no new threading), warnings 43.
+
+**On subagents (user asked):** the remaining work is concentrated in single files
+(math.rs, packaging.rs) and is parity-sensitive, so parallel subagents would
+just conflict on the same file and risk silent offset bugs; serial edits with the
+dashboard as the gate were the safer high-throughput path. Cross-file
+parallelism isn't available yet because the other high-traffic files aren't
+`mem`-threaded (packaging has 0 `mem:&MemState` fns outside the few node-walkers;
+linebreak/shipout are mostly bridge/global). A subagent ran the background corpus
+check while editing continued.
+
+**Next:** the cheap box/noad/glue *consumer* vein in already-threaded functions
+is now largely exhausted. Highest-value next steps are **threading** work, not
+consumer typing: (a) thread `make_op_global` / `make_math_accent_global`
+end-to-end (convert their `mem_b32s1` bridges to `st.mem`/typed) so their
+box+noad families can be closed; (b) build a typed family for the rule-11
+page/linebreak internals (active/passive/movement/mark/ins) or the native/whatsit
+family (rank 9) and adopt consumers in shipout/copy_node_list; (c) thread
+`hpack`/`vpackage` (the canonical box-dimension consumers, currently on bridges).
+
+---
+
 ## Idiom session 162 — 2026-06-10 — Execution: bulk box-dimension consumer typing in math.rs (large mechanical batch)
 
 **Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Intentionally
