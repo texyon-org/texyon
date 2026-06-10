@@ -21,7 +21,7 @@ use crate::globals::{
     set_help_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, temp_ptr,
 };
 use crate::mem::new_spec_global;
-use crate::node::{AnyBox, Noad, NodePtr};
+use crate::node::{AnyBox, GlueSpecNode, Noad, NodePtr};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
@@ -30,7 +30,7 @@ use crate::scan::{
     cnl_get_avail, cnl_get_node, effective_char_global, new_native_word_node_global,
     node_recycle_abort, NodeRecycleAbort,
 };
-use crate::units::MemIdx;
+use crate::units::{MemIdx, MemPtr};
 
 // Module-private consts shared with scan.rs (TEMP_HEAD/IGNORE_DEPTH still used
 // there too, so duplicated rather than relocated — same value).
@@ -289,7 +289,9 @@ pub fn just_copy(
                     let r = cnl_get_node!(mem, MEDIUM_NODE_SIZE);
                     // GLUE_SPEC_ref_count(GLUE_NODE_glue_ptr(p))++
                     let gp = mem.b32s0(p + 1); // GLUE_NODE_glue_ptr(p)
-                    mem.set_b32s1(gp, mem.b32s1(gp) + 1); // GLUE_SPEC_ref_count(gp)++
+                    let spec =
+                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(gp)).unwrap();
+                    spec.set_ref_count(mem, spec.ref_count(mem) + 1);
                                                           // SYNCTEX fields
                     mem.set_b32s0(
                         r + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE,
@@ -603,11 +605,14 @@ pub fn flush_node_list(
                         break 'done;
                     }
                     GLUE_NODE => {
-                        let spec = mem.b32s0(p + 1);
-                        if mem.b32s1(spec) == crate::mem::TEX_NULL {
-                            crate::mem::free_node(mem, spec, GLUE_SPEC_SIZE);
+                        let spec_raw = mem.b32s0(p + 1);
+                        let spec =
+                            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(spec_raw))
+                                .unwrap();
+                        if spec.ref_count(mem) == crate::mem::TEX_NULL {
+                            crate::mem::free_node(mem, spec_raw, GLUE_SPEC_SIZE);
                         } else {
-                            mem.set_b32s1(spec, mem.b32s1(spec) - 1);
+                            spec.set_ref_count(mem, spec.ref_count(mem) - 1);
                         }
                         if mem.b32s1(p + 1) != crate::mem::TEX_NULL {
                             let c = mem.b32s1(p + 1);
@@ -767,8 +772,10 @@ pub fn copy_node_list(
                     r = cnl_get_node!(mem, INS_NODE_SIZE_CNL);
                     mem.set_word(r + 4, mem.word(p + 4));
                     // GLUE_SPEC_ref_count(mem[p+4].b32.s1)++ = mem[mem[p+4].b32.s1].b32.s1++
-                    let spec = mem.b32s1(p + 4);
-                    mem.set_b32s1(spec, mem.b32s1(spec) + 1);
+                    let spec =
+                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(mem.b32s1(p + 4)))
+                            .unwrap();
+                    spec.set_ref_count(mem, spec.ref_count(mem) + 1);
                     let src = mem.b32s0(p + 4);
                     let copied = copy_node_list(mem, src)?;
                     mem.set_b32s0(r + 4, copied);
@@ -826,8 +833,10 @@ pub fn copy_node_list(
                 GLUE_NODE => {
                     r = cnl_get_node!(mem, MEDIUM_NODE_SIZE);
                     // GLUE_SPEC_ref_count(mem[p+1].b32.s0)++ = mem[mem[p+1].b32.s0].b32.s1++
-                    let spec = mem.b32s0(p + 1);
-                    mem.set_b32s1(spec, mem.b32s1(spec) + 1);
+                    let spec =
+                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(mem.b32s0(p + 1)))
+                            .unwrap();
+                    spec.set_ref_count(mem, spec.ref_count(mem) + 1);
                     mem.set_b32s0(r + 2, mem.b32s0(p + 2));
                     mem.set_b32s1(r + 2, mem.b32s1(p + 2));
                     mem.set_b32s0(r + 1, mem.b32s0(p + 1));
