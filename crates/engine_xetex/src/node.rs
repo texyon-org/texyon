@@ -965,6 +965,16 @@ impl NodePtr<Noad> {
         mem.set_b16s1(self.idx.offset(1).0, f);
     }
 
+    // ⚠ NAMING LANDMINE (session 162): the `subscr_*`/`supscr_*` method names
+    // below are INVERTED relative to TeX. TeX (and this build, per
+    // `prepare_subscript_global(q + 3)` in math.rs) has supscr = offset +2,
+    // subscr = offset +3 — but `subscr_*` here reads +2 and `supscr_*` reads +3.
+    // The offsets are used consistently so no behaviour bug ships, but a caller
+    // that picks a method by SEMANTIC name (wanting "the subscript") gets the
+    // wrong word. Pending fix: an atomic rename slice swapping the two name
+    // families AND every call site (offset-preserving). Until then, choose these
+    // accessors by OFFSET, not by name.
+
     /// Subscript type = `mem[p + 2].b32.s1`
     #[inline]
     pub fn subscr_type(self, mem: &MemState) -> i32 {
