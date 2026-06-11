@@ -8,6 +8,46 @@ Each session: what it did (plan construction or execution), the test
 dashboard if code changed, surprises, and a handoff.
 
 
+## Idiom session 164 — 2026-06-11 — Execution: typed math/linebreak consumers (larger mechanical batch)
+
+**Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Large
+mechanical session per user request; docs intentionally minimal. 2 commits.
+
+**Commits:**
+1. `28fcf31d` `engine_xetex: type more node consumers`
+   - Committed the inherited `linebreak.rs` active-list typed accessor wrapper
+     (`ActiveNode` around the old active helper layer).
+   - Typed several `math.rs` consumer islands without entering the native
+     whatsit family: `make_op_global`'s LIMITS/math-char mem clusters,
+     `compute_ot_math_accent_pos_step`, and box-side native-glyph helpers.
+2. `1d7346af` `engine_xetex: type linebreak delta consumers`
+   - Added narrow `DeltaNode`/`PassiveNode` bridge helpers and used them in
+     `try_break` / `deactivate_node` for delta widths and passive break fields.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `node::` **41/41**;
+dashboard **29/2/7/4** (`tex-outputs`, `trip`, `engine_rust`,
+`latex_goldens`). Rebuilt `target/release/tectonic` and ran
+`CANDIDATE_BIN=... plan/scripts/corpus.sh check all`: **637 passed, 2
+diverged, 0 missing-golden**. The divergences were only the known
+`1905.00073v1` and `1905.00148v1`.
+
+**Notes:** two explorers were useful for target selection: both pointed at
+`make_op_global`/linebreak internals and away from `make_math_accent_global` as
+a full-threading target. User correctly called out that helper-per-field
+wrappers like `active_node_total_demerits_in` are transitional ceremony now that
+typed pointers exist; future linebreak work should collapse toward direct typed
+handles inside threaded cores instead of growing this layer. Metrics after the
+session: warnings 43, `with_state` 1202, `unsafe fn` 571, direct
+`#[no_mangle]` grep 11.
+
+**Next:** thread `try_break`/linebreak internals properly and delete the
+transitional helper wrappers as raw pointers enter typed cores; or thread
+`hpack`/`vpackage`. Avoid adding more legacy bridge wrappers except at real
+raw-to-typed boundaries.
+
+---
+
+
 ## Idiom session 163 — 2026-06-10 — Execution: subscr/supscr rename + bulk noad & glue-spec consumer typing (large, low-docs)
 
 **Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Large mechanical
