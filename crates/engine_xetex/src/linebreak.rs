@@ -8,7 +8,7 @@ use crate::ext::{
 use crate::globals::eqtb_b32s1;
 use crate::hyphenation::init_trie;
 use crate::scan::{new_native_word_node_global, node_recycle_abort, NodeRecycleAbort};
-use crate::node::{ActiveNode, NodePtr};
+use crate::node::{ActiveNode, DeltaNode, NodePtr, PassiveNode};
 use crate::state::{EqtbState, FontState, HyphState, LinebreakState, MemState, ScannerState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -159,6 +159,77 @@ fn active(p: i32) -> NodePtr<ActiveNode> {
     // SAFETY: the caller is walking the active list; `p` is a real active
     // node (the context boundary that justifies `from_idx_unchecked`).
     unsafe { NodePtr::<ActiveNode>::from_idx_unchecked(MemIdx::new(p)) }
+}
+
+#[inline]
+fn delta_node(p: i32) -> NodePtr<DeltaNode> {
+    // SAFETY: the caller is walking the active list and has already established
+    // this node as `DELTA_NODE` in that list context.
+    unsafe { NodePtr::<DeltaNode>::from_idx_unchecked(MemIdx::new(p)) }
+}
+
+#[inline]
+fn passive_node(p: i32) -> NodePtr<PassiveNode> {
+    // SAFETY: the caller is walking or constructing the passive list; passive
+    // nodes are context-classified records with no NODE_type header.
+    unsafe { NodePtr::<PassiveNode>::from_idx_unchecked(MemIdx::new(p)) }
+}
+
+#[inline]
+fn delta_node_width_in(mem: &MemState, p: i32, k: usize) -> i32 {
+    let p = delta_node(p);
+    match k {
+        1 => p.dwidth(mem).0,
+        2 => p.dstretch0(mem).0,
+        3 => p.dstretch1(mem).0,
+        4 => p.dstretch2(mem).0,
+        5 => p.dstretch3(mem).0,
+        6 => p.dshrink(mem).0,
+        _ => unreachable!("delta width index"),
+    }
+}
+
+#[inline]
+fn delta_node_width(p: i32, k: usize) -> i32 {
+    crate::state::with_state(|st| delta_node_width_in(&st.mem, p, k))
+}
+
+#[inline]
+fn set_delta_node_width_in(mem: &mut MemState, p: i32, k: usize, v: i32) {
+    let p = delta_node(p);
+    match k {
+        1 => p.set_dwidth(mem, Scaled(v)),
+        2 => p.set_dstretch0(mem, Scaled(v)),
+        3 => p.set_dstretch1(mem, Scaled(v)),
+        4 => p.set_dstretch2(mem, Scaled(v)),
+        5 => p.set_dstretch3(mem, Scaled(v)),
+        6 => p.set_dshrink(mem, Scaled(v)),
+        _ => unreachable!("delta width index"),
+    }
+}
+
+#[inline]
+fn set_delta_node_width(p: i32, k: usize, v: i32) {
+    crate::state::with_state_mut(|st| set_delta_node_width_in(&mut st.mem, p, k, v));
+}
+
+#[inline]
+fn set_passive_node_link(p: i32, v: i32) {
+    crate::state::with_state_mut(|st| passive_node(p).set_link(&mut st.mem, MemPtr::from_raw(v)));
+}
+
+#[inline]
+fn set_passive_node_cur_break(p: i32, v: i32) {
+    crate::state::with_state_mut(|st| {
+        passive_node(p).set_cur_break(&mut st.mem, MemPtr::from_raw(v))
+    });
+}
+
+#[inline]
+fn set_passive_node_prev_break(p: i32, v: i32) {
+    crate::state::with_state_mut(|st| {
+        passive_node(p).set_prev_break(&mut st.mem, MemPtr::from_raw(v))
+    });
 }
 
 #[inline]
@@ -2496,7 +2567,7 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
         mem_b32s0, mem_b32s1, minimal_demerits, minimum_demerits, passive,
         semantic_pagination_enabled, set_active_width, set_best_pl_glue, set_best_pl_line,
         set_best_pl_short, set_best_place, set_break_width, set_cur_active_width, set_mem_b16s0,
-        set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_minimal_demerits, set_minimum_demerits,
+        set_mem_b16s1, set_mem_b32s1, set_minimal_demerits, set_minimum_demerits,
         set_passive, set_xtx_ligature_present, threshold,
     };
 
@@ -2526,12 +2597,9 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
         let r = mem_b32s1(prev_r);
 
         if mem_b16s1(r) as i32 == DELTA_NODE {
-            set_cur_active_width(1, cur_active_width(1) + mem_b32s1(r + 1));
-            set_cur_active_width(2, cur_active_width(2) + mem_b32s1(r + 2));
-            set_cur_active_width(3, cur_active_width(3) + mem_b32s1(r + 3));
-            set_cur_active_width(4, cur_active_width(4) + mem_b32s1(r + 4));
-            set_cur_active_width(5, cur_active_width(5) + mem_b32s1(r + 5));
-            set_cur_active_width(6, cur_active_width(6) + mem_b32s1(r + 6));
+            for k in 1..=6 {
+                set_cur_active_width(k, cur_active_width(k) + delta_node_width(r, k));
+            }
             prev_prev_r = prev_r;
             prev_r = r;
             continue;
@@ -2673,10 +2741,11 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
                 }
 
                 if mem_b16s1(prev_r) as i32 == DELTA_NODE {
-                    for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
-                        set_mem_b32s1(
-                            prev_r + off,
-                            mem_b32s1(prev_r + off) - cur_active_width(k) + break_width(k),
+                    for k in 1..=6 {
+                        set_delta_node_width(
+                            prev_r,
+                            k,
+                            delta_node_width(prev_r, k) - cur_active_width(k) + break_width(k),
                         );
                     }
                 } else if prev_r == ACTIVE_LIST {
@@ -2688,8 +2757,8 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
                     set_mem_b32s1(q, r);
                     set_mem_b16s1(q, DELTA_NODE as u16);
                     set_mem_b16s0(q, 0);
-                    for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
-                        set_mem_b32s1(q + off, break_width(k) - cur_active_width(k));
+                    for k in 1..=6 {
+                        set_delta_node_width(q, k, break_width(k) - cur_active_width(k));
                     }
                     set_mem_b32s1(prev_r, q);
                     prev_prev_r = prev_r;
@@ -2706,10 +2775,10 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
                 for fit_class in VERY_LOOSE_FIT..=TIGHT_FIT {
                     if minimal_demerits(fit_class) <= minimum_demerits() {
                         let passive_node = crate::mem::get_node_global(PASSIVE_NODE_SIZE);
-                        set_mem_b32s1(passive_node, passive());
+                        set_passive_node_link(passive_node, passive());
                         set_passive(passive_node);
-                        set_mem_b32s1(passive_node + 1, cur_p());
-                        set_mem_b32s0(passive_node + 1, best_place(fit_class));
+                        set_passive_node_cur_break(passive_node, cur_p());
+                        set_passive_node_prev_break(passive_node, best_place(fit_class));
 
                         let q = crate::mem::get_node_global(active_node_size());
                         set_active_node_break_node(q, passive());
@@ -2738,8 +2807,8 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
                     set_mem_b32s1(q, r);
                     set_mem_b16s1(q, DELTA_NODE as u16);
                     set_mem_b16s0(q, 0);
-                    for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
-                        set_mem_b32s1(q + off, cur_active_width(k) - break_width(k));
+                    for k in 1..=6 {
+                        set_delta_node_width(q, k, cur_active_width(k) - break_width(k));
                     }
                     set_mem_b32s1(prev_r, q);
                     prev_prev_r = prev_r;
@@ -3009,8 +3078,8 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
         if *prev_r == ACTIVE_LIST {
             let r = mem.b32s1(ACTIVE_LIST);
             if mem.b16s1(r) as i32 == DELTA_NODE {
-                for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
-                    scanner.active_width[k] += mem.b32s1(r + off);
+                for k in 1..=6 {
+                    scanner.active_width[k] += delta_node_width_in(mem, r, k);
                     linebreak.cur_active_width[k] = scanner.active_width[k];
                 }
                 mem.set_b32s1(ACTIVE_LIST, mem.b32s1(r));
@@ -3019,16 +3088,21 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
         } else if mem.b16s1(*prev_r) as i32 == DELTA_NODE {
             let r = mem.b32s1(*prev_r);
             if r == LAST_ACTIVE {
-                for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
-                    linebreak.cur_active_width[k] -= mem.b32s1(*prev_r + off);
+                for k in 1..=6 {
+                    linebreak.cur_active_width[k] -= delta_node_width_in(mem, *prev_r, k);
                 }
                 mem.set_b32s1(*prev_prev_r, LAST_ACTIVE);
                 crate::mem::free_node(mem, *prev_r, DELTA_NODE_SIZE);
                 *prev_r = *prev_prev_r;
             } else if mem.b16s1(r) as i32 == DELTA_NODE {
-                for (k, off) in [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
-                    linebreak.cur_active_width[k] += mem.b32s1(r + off);
-                    mem.set_b32s1(*prev_r + off, mem.b32s1(*prev_r + off) + mem.b32s1(r + off));
+                for k in 1..=6 {
+                    linebreak.cur_active_width[k] += delta_node_width_in(mem, r, k);
+                    set_delta_node_width_in(
+                        mem,
+                        *prev_r,
+                        k,
+                        delta_node_width_in(mem, *prev_r, k) + delta_node_width_in(mem, r, k),
+                    );
                 }
                 mem.set_b32s1(*prev_r, mem.b32s1(r));
                 crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
