@@ -29,7 +29,9 @@ use crate::mem::{
     new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec,
     ALLOC_FAILED, TEX_NULL,
 };
-use crate::node::{ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode};
+use crate::node::{
+    AnyBox, ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode,
+};
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
@@ -1026,6 +1028,136 @@ fn make_fraction_finish(mem: &mut MemState, q: i32, hbox: i32) {
     q_noad.set_nucleus_type(mem, hbox);
 }
 
+#[inline]
+fn classify_box_or_panic(mem: &MemState, p: i32) -> AnyBox {
+    mem.classify_box(MemIdx::new(p))
+        .expect("valid node type")
+        .expect("box node")
+}
+
+fn make_op_latch_limits(mem: &mut MemState, scanner: &ScannerState, q: NodePtr<Noad>) {
+    if q.subtype(mem) == NORMAL && scanner.cur_style < TEXT_STYLE {
+        q.set_subtype(mem, LIMITS);
+    }
+}
+
+fn make_op_finish_math_char(
+    mem: &mut MemState,
+    q: NodePtr<Noad>,
+    x: AnyBox,
+    delta: i32,
+    axis_height: i32,
+) {
+    if q.subscr_type(mem) != EMPTY && q.subtype(mem) != LIMITS {
+        x.set_width(mem, Scaled(x.width(mem).0 - delta));
+    }
+    let shift = crate::scaled_math::half(x.height(mem).0 - x.depth(mem).0) - axis_height;
+    x.set_shift_amount(mem, Scaled(shift));
+    q.set_nucleus_type(mem, SUB_BOX);
+    q.set_nucleus_field(mem, x.idx().0);
+}
+
+fn make_op_prepare_limits_box(
+    mem: &mut MemState,
+    v: AnyBox,
+    x: AnyBox,
+    y: AnyBox,
+    z: AnyBox,
+) -> i32 {
+    let mut w = y.width(mem).0;
+    if x.width(mem).0 > w {
+        w = x.width(mem).0;
+    }
+    if z.width(mem).0 > w {
+        w = z.width(mem).0;
+    }
+    v.set_width(mem, Scaled(w));
+    w
+}
+
+struct BigOpSpacings {
+    bos1: i32,
+    bos2: i32,
+    bos3: i32,
+    bos4: i32,
+    bos5: i32,
+}
+
+fn alloc_kern_node(mem: &mut MemState, width: i32) -> Result<NodePtr<KernNode>, NodeRecycleAbort> {
+    let Some(p) = NodePtr::<KernNode>::alloc(mem) else {
+        return Err(NodeRecycleAbort::Overflow);
+    };
+    p.set_subtype(mem, NORMAL);
+    p.set_width(mem, Scaled(width));
+    Ok(p)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn make_op_finish_limits(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    q: NodePtr<Noad>,
+    x: AnyBox,
+    y: AnyBox,
+    z: AnyBox,
+    v: AnyBox,
+    delta: i32,
+    save_f: i32,
+    spacings: BigOpSpacings,
+) -> Result<(), NodeRecycleAbort> {
+    let half_delta = crate::scaled_math::half(delta);
+    x.set_shift_amount(mem, Scaled(half_delta));
+    z.set_shift_amount(mem, Scaled(-half_delta));
+    v.set_height(mem, y.height(mem));
+    v.set_depth(mem, y.depth(mem));
+    scanner.cur_f = save_f;
+
+    if q.supscr_type(mem) == EMPTY {
+        free_node(mem, x.idx().0, BOX_NODE_SIZE);
+        v.set_list_ptr(mem, MemPtr::from_raw(y.idx().0));
+    } else {
+        let mut shift_up = spacings.bos3 - x.depth(mem).0;
+        if shift_up < spacings.bos1 {
+            shift_up = spacings.bos1;
+        }
+        let p = alloc_kern_node(mem, shift_up)?;
+        p.set_link(mem, MemPtr::from_raw(y.idx().0));
+        x.set_link(mem, MemPtr::from_raw(p.idx().0));
+        let p2 = alloc_kern_node(mem, spacings.bos5)?;
+        p2.set_link(mem, MemPtr::from_raw(x.idx().0));
+        v.set_list_ptr(mem, MemPtr::from_raw(p2.idx().0));
+        let height = v.height(mem).0
+            + spacings.bos5
+            + x.height(mem).0
+            + x.depth(mem).0
+            + shift_up;
+        v.set_height(mem, Scaled(height));
+    }
+
+    if q.subscr_type(mem) == EMPTY {
+        free_node(mem, z.idx().0, BOX_NODE_SIZE);
+    } else {
+        let mut shift_down = spacings.bos4 - z.height(mem).0;
+        if shift_down < spacings.bos2 {
+            shift_down = spacings.bos2;
+        }
+        let p = alloc_kern_node(mem, shift_down)?;
+        y.set_link(mem, MemPtr::from_raw(p.idx().0));
+        p.set_link(mem, MemPtr::from_raw(z.idx().0));
+        let p2 = alloc_kern_node(mem, spacings.bos5)?;
+        z.set_link(mem, MemPtr::from_raw(p2.idx().0));
+        let depth = v.depth(mem).0
+            + spacings.bos5
+            + z.height(mem).0
+            + z.depth(mem).0
+            + shift_down;
+        v.set_depth(mem, Scaled(depth));
+    }
+
+    q.set_nucleus_type(mem, v.idx().0);
+    Ok(())
+}
+
 /// translated from xetex-math.c:313 (make_fraction)
 pub unsafe fn make_fraction_global(q: i32) {
     if mem_b32s1(q + 1) == DEFAULT_CODE {
@@ -1166,9 +1298,8 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
 
     // NORMAL -> LIMITS latch.
     crate::state::with_state_mut(|st| {
-        if st.mem.b16s0(q) == NORMAL && st.scanner.cur_style < TEXT_STYLE {
-            st.mem.set_b16s0(q, LIMITS);
-        }
+        let q_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+        make_op_latch_limits(&mut st.mem, &st.scanner, q_node);
     });
 
     if mem_b32s1(q + 1) == MATH_CHAR {
@@ -1266,15 +1397,9 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
         let size = cur_size();
         let ah = axis_height_global(size);
         crate::state::with_state_mut(|st| {
-            let st = &mut *st;
-            if st.mem.b32s1(q + 3) != EMPTY && st.mem.b16s0(q) != LIMITS {
-                let v = st.mem.b32s1(x + 1) - delta;
-                st.mem.set_b32s1(x + 1, v);
-            }
-            let v = crate::scaled_math::half(st.mem.b32s1(x + 3) - st.mem.b32s1(x + 2)) - ah;
-            st.mem.set_b32s1(x + 4, v);
-            st.mem.set_b32s1(q + 1, SUB_BOX);
-            st.mem.set_b32s0(q + 1, x);
+            let q_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+            let x_box = classify_box_or_panic(&st.mem, x);
+            make_op_finish_math_char(&mut st.mem, q_node, x_box, delta, ah);
         });
     }
 
@@ -1291,15 +1416,12 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
             if v == ALLOC_FAILED {
                 return (v, 0);
             }
-            st.mem.set_b16s1(v, VLIST_NODE);
-            let mut w = st.mem.b32s1(y + 1);
-            if st.mem.b32s1(x + 1) > w {
-                w = st.mem.b32s1(x + 1);
-            }
-            if st.mem.b32s1(z + 1) > w {
-                w = st.mem.b32s1(z + 1);
-            }
-            st.mem.set_b32s1(v + 1, w);
+            let x_box = classify_box_or_panic(&st.mem, x);
+            let y_box = classify_box_or_panic(&st.mem, y);
+            let z_box = classify_box_or_panic(&st.mem, z);
+            st.mem.set_b16s1(v, NodeType::VList.as_raw());
+            let v_box = classify_box_or_panic(&st.mem, v);
+            let w = make_op_prepare_limits_box(&mut st.mem, v_box, x_box, y_box, z_box);
             (v, w)
         });
         if v == ALLOC_FAILED {
@@ -1325,72 +1447,30 @@ pub unsafe fn make_op_global(q: i32) -> i32 {
             )
         });
         let step = crate::state::with_state_mut(|st| -> Result<(), NodeRecycleAbort> {
-            let st = &mut *st;
-            let half_delta = crate::scaled_math::half(delta);
-            st.mem.set_b32s1(x + 4, half_delta);
-            st.mem.set_b32s1(z + 4, -half_delta);
-            let y3 = st.mem.b32s1(y + 3);
-            st.mem.set_b32s1(v + 3, y3);
-            let y2 = st.mem.b32s1(y + 2);
-            st.mem.set_b32s1(v + 2, y2);
-            st.scanner.cur_f = save_f;
-
-            if st.mem.b32s1(q + 2) == EMPTY {
-                free_node(&mut st.mem, x, BOX_NODE_SIZE);
-                st.mem.set_b32s1(v + 5, y);
-            } else {
-                let mut shift_up = bos3 - st.mem.b32s1(x + 2);
-                if shift_up < bos1 {
-                    shift_up = bos1;
-                }
-                let p = new_kern(&mut st.mem, shift_up);
-                if p == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow);
-                }
-                st.mem.set_b32s1(p, y);
-                st.mem.set_b32s1(x, p);
-                let p2 = new_kern(&mut st.mem, bos5);
-                if p2 == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow);
-                }
-                st.mem.set_b32s1(p2, x);
-                st.mem.set_b32s1(v + 5, p2);
-                let v3 = st.mem.b32s1(v + 3)
-                    + bos5
-                    + st.mem.b32s1(x + 3)
-                    + st.mem.b32s1(x + 2)
-                    + shift_up;
-                st.mem.set_b32s1(v + 3, v3);
-            }
-
-            if st.mem.b32s1(q + 3) == EMPTY {
-                free_node(&mut st.mem, z, BOX_NODE_SIZE);
-            } else {
-                let mut shift_down = bos4 - st.mem.b32s1(z + 3);
-                if shift_down < bos2 {
-                    shift_down = bos2;
-                }
-                let p = new_kern(&mut st.mem, shift_down);
-                if p == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow);
-                }
-                st.mem.set_b32s1(y, p);
-                st.mem.set_b32s1(p, z);
-                let p2 = new_kern(&mut st.mem, bos5);
-                if p2 == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow);
-                }
-                st.mem.set_b32s1(z, p2);
-                let v2 = st.mem.b32s1(v + 2)
-                    + bos5
-                    + st.mem.b32s1(z + 3)
-                    + st.mem.b32s1(z + 2)
-                    + shift_down;
-                st.mem.set_b32s1(v + 2, v2);
-            }
-
-            st.mem.set_b32s1(q + 1, v);
-            Ok(())
+            let q_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+            let x_box = classify_box_or_panic(&st.mem, x);
+            let y_box = classify_box_or_panic(&st.mem, y);
+            let z_box = classify_box_or_panic(&st.mem, z);
+            let v_box = classify_box_or_panic(&st.mem, v);
+            let spacings = BigOpSpacings {
+                bos1,
+                bos2,
+                bos3,
+                bos4,
+                bos5,
+            };
+            make_op_finish_limits(
+                &mut st.mem,
+                &mut st.scanner,
+                q_node,
+                x_box,
+                y_box,
+                z_box,
+                v_box,
+                delta,
+                save_f,
+                spacings,
+            )
         });
         if step.is_err() {
             node_recycle_abort(NodeRecycleAbort::Overflow);
@@ -3022,11 +3102,11 @@ fn char_box_tfm(
 /// Phase-C: threaded to `&mut MemState`; takes the character box `p` already
 /// built by [`char_box_tfm`] (in [`build_ext_delimiter_box`]) and links it.
 fn stack_into_box(mem: &mut MemState, b: i32, p: i32) {
-    let link = mem.b32s1(b + 5);
-    mem.set_b32s1(p, link);
-    mem.set_b32s1(b + 5, p);
-    let ph = mem.b32s1(p + 3);
-    mem.set_b32s1(b + 3, ph);
+    let b_box = classify_box_or_panic(mem, b);
+    let link = b_box.list_ptr(mem);
+    mem.set_b32s1(p, link.0);
+    b_box.set_list_ptr(mem, MemPtr::from_raw(p));
+    b_box.set_height(mem, Scaled(mem.b32s1(p + 3)));
 }
 
 /// translated from xetex-math.c:1474 (height_plus_depth)
@@ -3057,31 +3137,32 @@ fn new_stack_glyph(mem: &mut MemState, f: i32, g: i32) -> Result<i32, NodeRecycl
 /// borrow. Legacy callers use [`stack_glyph_into_box_global`], which allocates
 /// the node, drops the borrow for `measure_native_glyph`, then links it here.
 pub fn stack_glyph_into_box(mem: &mut MemState, b: i32, p: i32) {
-    if mem.b16s1(b) == HLIST_NODE {
-        let mut q = mem.b32s1(b + 5);
+    let b_box = classify_box_or_panic(mem, b);
+    if matches!(b_box, AnyBox::HList(_)) {
+        let mut q = b_box.list_ptr(mem).0;
         if q == TEX_NULL {
-            mem.set_b32s1(b + 5, p);
+            b_box.set_list_ptr(mem, MemPtr::from_raw(p));
         } else {
             while mem.b32s1(q) != TEX_NULL {
                 q = mem.b32s1(q);
             }
             mem.set_b32s1(q, p);
             let glyph_height = mem.b32s1(p + 3);
-            if mem.b32s1(b + 3) < glyph_height {
-                mem.set_b32s1(b + 3, glyph_height);
+            if b_box.height(mem).0 < glyph_height {
+                b_box.set_height(mem, Scaled(glyph_height));
             }
             let glyph_depth = mem.b32s1(p + 2);
-            if mem.b32s1(b + 2) < glyph_depth {
-                mem.set_b32s1(b + 2, glyph_depth);
+            if b_box.depth(mem).0 < glyph_depth {
+                b_box.set_depth(mem, Scaled(glyph_depth));
             }
         }
     } else {
-        mem.set_b32s1(p, mem.b32s1(b + 5));
-        mem.set_b32s1(b + 5, p);
-        mem.set_b32s1(b + 3, mem.b32s1(p + 3));
+        mem.set_b32s1(p, b_box.list_ptr(mem).0);
+        b_box.set_list_ptr(mem, MemPtr::from_raw(p));
+        b_box.set_height(mem, Scaled(mem.b32s1(p + 3)));
         let glyph_width = mem.b32s1(p + 1);
-        if mem.b32s1(b + 1) < glyph_width {
-            mem.set_b32s1(b + 1, glyph_width);
+        if b_box.width(mem).0 < glyph_width {
+            b_box.set_width(mem, Scaled(glyph_width));
         }
     }
 }
@@ -3113,10 +3194,11 @@ fn native_glyph_vbox_start(
 }
 
 fn native_glyph_vbox_finish(mem: &mut MemState, b: i32, p: i32) {
-    mem.set_b32s1(b + 5, p);
-    mem.set_b32s1(b + 1, mem.b32s1(p + 1));
-    mem.set_b32s1(b + 3, mem.b32s1(p + 3));
-    mem.set_b32s1(b + 2, mem.b32s1(p + 2));
+    let b_box = classify_box_or_panic(mem, b);
+    b_box.set_list_ptr(mem, MemPtr::from_raw(p));
+    b_box.set_width(mem, Scaled(mem.b32s1(p + 1)));
+    b_box.set_height(mem, Scaled(mem.b32s1(p + 3)));
+    b_box.set_depth(mem, Scaled(mem.b32s1(p + 2)));
 }
 
 unsafe fn native_glyph_vbox_global(f: i32, g: u16) -> i32 {
@@ -3185,17 +3267,18 @@ pub unsafe fn stack_glue_into_box_global(b: i32, min: i32, max: i32) {
 
 enum OtMathAccentPosStep {
     FetchMathChar,
-    Recurse(i32),
+    Recurse(NodePtr<Noad>),
     Infinity,
 }
 
-fn compute_ot_math_accent_pos_step(mem: &MemState, p: i32) -> OtMathAccentPosStep {
-    if mem.b32s1(p + 1) == MATH_CHAR {
+fn compute_ot_math_accent_pos_step(mem: &MemState, p: NodePtr<Noad>) -> OtMathAccentPosStep {
+    if p.nucleus_type(mem) == MATH_CHAR {
         OtMathAccentPosStep::FetchMathChar
-    } else if mem.b32s1(p + 1) == SUB_MLIST {
-        let r = mem.b32s0(p + 1);
+    } else if p.nucleus_type(mem) == SUB_MLIST {
+        let r = p.nucleus_field(mem);
         if r != TEX_NULL && mem.b16s1(r) == ACCENT_NOAD {
-            OtMathAccentPosStep::Recurse(r)
+            let r_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(r)) };
+            OtMathAccentPosStep::Recurse(r_node)
         } else {
             OtMathAccentPosStep::Infinity
         }
@@ -3207,7 +3290,8 @@ fn compute_ot_math_accent_pos_step(mem: &MemState, p: i32) -> OtMathAccentPosSte
 /// translated from xetex-math.c:199 (compute_ot_math_accent_pos)
 unsafe fn compute_ot_math_accent_pos_global(mut p: i32) -> i32 {
     loop {
-        match crate::state::with_state(|st| compute_ot_math_accent_pos_step(&st.mem, p)) {
+        let p_node = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p));
+        match crate::state::with_state(|st| compute_ot_math_accent_pos_step(&st.mem, p_node)) {
             OtMathAccentPosStep::FetchMathChar => {
                 fetch_global(p + 1);
                 let (f, c) = crate::state::with_state(|st| (st.scanner.cur_f, st.scanner.cur_c));
@@ -3216,7 +3300,7 @@ unsafe fn compute_ot_math_accent_pos_global(mut p: i32) -> i32 {
                 return get_ot_math_accent_pos(f, g as i32);
             }
             OtMathAccentPosStep::Recurse(r) => {
-                p = r;
+                p = r.idx().0;
             }
             OtMathAccentPosStep::Infinity => return TEX_INFINITY,
         }

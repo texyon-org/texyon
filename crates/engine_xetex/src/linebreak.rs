@@ -8,7 +8,9 @@ use crate::ext::{
 use crate::globals::eqtb_b32s1;
 use crate::hyphenation::init_trie;
 use crate::scan::{new_native_word_node_global, node_recycle_abort, NodeRecycleAbort};
+use crate::node::{ActiveNode, NodePtr};
 use crate::state::{EqtbState, FontState, HyphState, LinebreakState, MemState, ScannerState};
+use crate::units::{MemIdx, MemPtr, Scaled};
 
 // Consts relocated from scan.rs with the locale-linebreak group (workstream 02).
 const GLUE_PAR_XETEX_LINEBREAK_SKIP: i32 = 15;
@@ -146,9 +148,22 @@ fn font_character_width_global(f: i32, c: u16) -> i32 {
     crate::state::with_state_mut(|st| font_character_width(&mut st.fonts, f, c))
 }
 
+/// Wrap an active-list pointer as a typed [`NodePtr<ActiveNode>`]. This is
+/// the active list's single **context-classification** boundary (`01c` §3):
+/// every caller below is walking the line-breaker active list, which
+/// establishes the kind (active vs. delta is by list position, not by the
+/// type word — see the `node.rs` family note), and `p` is always a real
+/// active node, never `TEX_NULL`.
+#[inline]
+fn active(p: i32) -> NodePtr<ActiveNode> {
+    // SAFETY: the caller is walking the active list; `p` is a real active
+    // node (the context boundary that justifies `from_idx_unchecked`).
+    unsafe { NodePtr::<ActiveNode>::from_idx_unchecked(MemIdx::new(p)) }
+}
+
 #[inline]
 fn active_node_break_node_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s1(p + 1)
+    active(p).break_node(mem).0
 }
 
 #[inline]
@@ -158,7 +173,7 @@ fn active_node_break_node(p: i32) -> i32 {
 
 #[inline]
 fn set_active_node_break_node_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b32s1(p + 1, v);
+    active(p).set_break_node(mem, MemPtr::from_raw(v));
 }
 
 #[inline]
@@ -168,7 +183,7 @@ fn set_active_node_break_node(p: i32, v: i32) {
 
 #[inline]
 fn active_node_line_number_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s0(p + 1)
+    active(p).line_number(mem)
 }
 
 #[inline]
@@ -178,7 +193,7 @@ fn active_node_line_number(p: i32) -> i32 {
 
 #[inline]
 fn set_active_node_line_number_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b32s0(p + 1, v);
+    active(p).set_line_number(mem, v);
 }
 
 #[inline]
@@ -188,7 +203,7 @@ fn set_active_node_line_number(p: i32, v: i32) {
 
 #[inline]
 fn active_node_fitness_in(mem: &MemState, p: i32) -> u16 {
-    mem.b16s0(p)
+    active(p).fitness(mem)
 }
 
 #[inline]
@@ -198,7 +213,7 @@ fn active_node_fitness(p: i32) -> u16 {
 
 #[inline]
 fn set_active_node_fitness_in(mem: &mut MemState, p: i32, v: usize) {
-    mem.set_b16s0(p, v as u16);
+    active(p).set_fitness(mem, v as u16);
 }
 
 #[inline]
@@ -208,7 +223,7 @@ fn set_active_node_fitness(p: i32, v: usize) {
 
 #[inline]
 fn active_node_total_demerits_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s1(p + 2)
+    active(p).total_demerits(mem)
 }
 
 #[inline]
@@ -218,7 +233,7 @@ fn active_node_total_demerits(p: i32) -> i32 {
 
 #[inline]
 fn set_active_node_total_demerits_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b32s1(p + 2, v);
+    active(p).set_total_demerits(mem, v);
 }
 
 #[inline]
@@ -228,7 +243,7 @@ fn set_active_node_total_demerits(p: i32, v: i32) {
 
 #[inline]
 fn active_node_shortfall_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s1(p + 3)
+    active(p).shortfall(mem).0
 }
 
 #[inline]
@@ -238,7 +253,7 @@ fn active_node_shortfall(p: i32) -> i32 {
 
 #[inline]
 fn set_active_node_shortfall_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b32s1(p + 3, v);
+    active(p).set_shortfall(mem, Scaled(v));
 }
 
 #[inline]
@@ -248,7 +263,7 @@ fn set_active_node_shortfall(p: i32, v: i32) {
 
 #[inline]
 fn active_node_glue_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s1(p + 4)
+    active(p).glue(mem).0
 }
 
 #[inline]
@@ -258,7 +273,7 @@ fn active_node_glue(p: i32) -> i32 {
 
 #[inline]
 fn set_active_node_glue_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b32s1(p + 4, v);
+    active(p).set_glue(mem, Scaled(v));
 }
 
 #[inline]
