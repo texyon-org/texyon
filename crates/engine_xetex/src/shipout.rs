@@ -33,7 +33,9 @@ use crate::globals::{
 use crate::mem::{
     free_node_global, get_avail_global, get_node_global, new_kern_global, new_math_global,
 };
+use crate::node::{EdgeNode, MovementNode, NodePtr};
 use crate::state::{FontState, MemState, ShipoutState, StringsState};
+use crate::units::{MemPtr, Scaled};
 
 extern "C" {
     fn ttstub_output_write(
@@ -143,7 +145,6 @@ const ADJUST_NODE: u16 = 5;
 const WHATSIT_NODE: u16 = 8;
 const EDGE_NODE: u16 = 14;
 const MARGIN_KERN_NODE: u16 = 40;
-const EDGE_NODE_SIZE: i32 = 3;
 const MEM_TOP: i32 = 4_999_999;
 const AAT_FONT_FLAG: i32 = 65533;
 const OTGR_FONT_FLAG: i32 = 65534;
@@ -223,15 +224,13 @@ const SELECTOR_NEW_STRING: i32 = 21;
 ///
 /// translated from xetex-shipout.c:1708 (new_edge)
 pub fn new_edge(mem: &mut MemState, s: i16, w: i32) -> i32 {
-    let p = crate::mem::get_node(mem, EDGE_NODE_SIZE);
-    if p == crate::mem::ALLOC_FAILED {
-        return p;
-    }
-    mem.set_b16s1(p, EDGE_NODE);
-    mem.set_b16s0(p, s as u16);
-    mem.set_b32s1(p + 1, w);
-    mem.set_b32s1(p + 2, 0);
-    p
+    let Some(p) = NodePtr::<EdgeNode>::alloc(mem) else {
+        return crate::mem::ALLOC_FAILED;
+    };
+    p.set_subtype(mem, s as u16);
+    p.set_width(mem, Scaled(w));
+    p.set_edge_dist(mem, Scaled(0));
+    p.idx().0
 }
 
 pub unsafe fn new_edge_global(s: i16, w: i32) -> i32 {
@@ -1932,7 +1931,6 @@ const POST_POST: u8 = 249;
 const XDV_ID_BYTE: u8 = 7;
 const SPX_ID_BYTE: u8 = 100;
 // xetex-constants.h:117
-const MOVEMENT_NODE_SIZE: i32 = 3;
 // xetex_format.h:52; xetex-xetexd.h INT_BASE
 const INT_PAR_MAG: i32 = 17;
 const INT_PAR_TRACING_OUTPUT: i32 = 34;
@@ -1950,21 +1948,19 @@ const ONE_INCH_LESS_ONE: i32 = 4_736_286;
 
 // translated from xetex-shipout.c:1930 (prune_movements)
 pub fn prune_movements(mem: &mut MemState, shipout: &mut ShipoutState, l: i32) {
-    while shipout.down_ptr != TEX_NULL {
-        if mem.b32s1(shipout.down_ptr + 2) < l {
+    while let Some(p) = NodePtr::<MovementNode>::from_ptr(MemPtr::from_raw(shipout.down_ptr)) {
+        if p.location(mem) < l {
             break;
         }
-        let p = shipout.down_ptr;
-        shipout.down_ptr = mem.b32s1(p);
-        crate::mem::free_node(mem, p, MOVEMENT_NODE_SIZE);
+        shipout.down_ptr = p.link(mem).0;
+        p.free(mem);
     }
-    while shipout.right_ptr != TEX_NULL {
-        if mem.b32s1(shipout.right_ptr + 2) < l {
+    while let Some(p) = NodePtr::<MovementNode>::from_ptr(MemPtr::from_raw(shipout.right_ptr)) {
+        if p.location(mem) < l {
             return;
         }
-        let p = shipout.right_ptr;
-        shipout.right_ptr = mem.b32s1(p);
-        crate::mem::free_node(mem, p, MOVEMENT_NODE_SIZE);
+        shipout.right_ptr = p.link(mem).0;
+        p.free(mem);
     }
 }
 
@@ -2342,68 +2338,67 @@ fn movement_bytes(mut w: i32, o: u8) -> Vec<u8> {
 
 // translated from xetex-shipout.c:1763 (movement)
 pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -> Vec<u8> {
-    let mut q = crate::mem::get_node(mem, MOVEMENT_NODE_SIZE);
-    if q == crate::mem::ALLOC_FAILED {
+    let Some(mut q) = NodePtr::<MovementNode>::alloc(mem) else {
         return Vec::new();
-    }
-    mem.set_b32s1(q + 1, w);
-    mem.set_b32s1(q + 2, shipout.dvi_offset + shipout.dvi_ptr);
+    };
+    q.set_distance(mem, Scaled(w));
+    q.set_location(mem, shipout.dvi_offset + shipout.dvi_ptr);
 
     if o == DOWN1 {
-        mem.set_b32s1(q, shipout.down_ptr);
-        shipout.down_ptr = q;
+        q.set_link(mem, MemPtr::from_raw(shipout.down_ptr));
+        shipout.down_ptr = q.idx().0;
     } else {
-        mem.set_b32s1(q, shipout.right_ptr);
-        shipout.right_ptr = q;
+        q.set_link(mem, MemPtr::from_raw(shipout.right_ptr));
+        shipout.right_ptr = q.idx().0;
     }
 
-    let mut p = mem.b32s1(q);
+    let mut p = NodePtr::<MovementNode>::from_ptr(q.link(mem));
     let mut mstate: i32 = MOV_NONE_SEEN;
 
     // 'search either breaks with Some(found_node) or falls through with None.
-    let found_p: Option<i32> = 'search: {
-        while p != TEX_NULL {
-            if mem.b32s1(p + 1) == w {
-                match mstate + mem.b32s0(p) {
+    let found_p: Option<NodePtr<MovementNode>> = 'search: {
+        while let Some(p_node) = p {
+            if p_node.distance(mem).0 == w {
+                match mstate + p_node.state(mem) {
                     // NONE_SEEN+YZ_OK=3, NONE_SEEN+Y_OK=4, Z_SEEN+YZ_OK=15, Z_SEEN+Y_OK=16
                     3 | 4 | 15 | 16 => {
-                        if mem.b32s1(p + 2) < shipout.dvi_gone {
+                        if p_node.location(mem) < shipout.dvi_gone {
                             break 'search None;
                         }
-                        let mut k = mem.b32s1(p + 2) - shipout.dvi_offset;
+                        let mut k = p_node.location(mem) - shipout.dvi_offset;
                         if k < 0 {
                             k += DVI_BUF_SIZE;
                         }
                         shipout.dvi_buf[k as usize] += 5;
-                        mem.set_b32s0(p, MOV_Y_HERE);
-                        break 'search Some(p);
+                        p_node.set_state(mem, MOV_Y_HERE);
+                        break 'search Some(p_node);
                     }
                     // NONE_SEEN+Z_OK=5, Y_SEEN+YZ_OK=9, Y_SEEN+Z_OK=11
                     5 | 9 | 11 => {
-                        if mem.b32s1(p + 2) < shipout.dvi_gone {
+                        if p_node.location(mem) < shipout.dvi_gone {
                             break 'search None;
                         }
-                        let mut k = mem.b32s1(p + 2) - shipout.dvi_offset;
+                        let mut k = p_node.location(mem) - shipout.dvi_offset;
                         if k < 0 {
                             k += DVI_BUF_SIZE;
                         }
                         shipout.dvi_buf[k as usize] += 10;
-                        mem.set_b32s0(p, MOV_Z_HERE);
-                        break 'search Some(p);
+                        p_node.set_state(mem, MOV_Z_HERE);
+                        break 'search Some(p_node);
                     }
                     // NONE_SEEN+Y_HERE=1, NONE_SEEN+Z_HERE=2, Y_SEEN+Z_HERE=8, Z_SEEN+Y_HERE=13
-                    1 | 2 | 8 | 13 => break 'search Some(p),
+                    1 | 2 | 8 | 13 => break 'search Some(p_node),
                     _ => {}
                 }
             } else {
-                match mstate + mem.b32s0(p) {
+                match mstate + p_node.state(mem) {
                     1 => mstate = MOV_Y_SEEN,     // NONE_SEEN+Y_HERE
                     2 => mstate = MOV_Z_SEEN,     // NONE_SEEN+Z_HERE
                     8 | 13 => break 'search None, // Y_SEEN+Z_HERE, Z_SEEN+Y_HERE
                     _ => {}
                 }
             }
-            p = mem.b32s1(p); // LLIST_link(p)
+            p = NodePtr::<MovementNode>::from_ptr(p_node.link(mem));
         }
         None
     };
@@ -2411,30 +2406,32 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
     match found_p {
         None => {
             // not_found: emit the shortest encoding
-            mem.set_b32s0(q, MOV_YZ_OK);
+            q.set_state(mem, MOV_YZ_OK);
             movement_bytes(w, o)
         }
         Some(p) => {
             // found: reuse previous y/z command
-            mem.set_b32s0(q, mem.b32s0(p));
-            if mem.b32s0(q) == MOV_Y_HERE {
+            q.set_state(mem, p.state(mem));
+            if q.state(mem) == MOV_Y_HERE {
                 let out = vec![o.wrapping_add(4)];
-                while mem.b32s1(q) != p {
-                    q = mem.b32s1(q);
-                    match mem.b32s0(q) {
-                        MOV_YZ_OK => mem.set_b32s0(q, MOV_Z_OK),
-                        MOV_Y_OK => mem.set_b32s0(q, MOV_D_FIXED),
+                while q.link(mem).0 != p.idx().0 {
+                    q = NodePtr::<MovementNode>::from_ptr(q.link(mem))
+                        .expect("found movement record is linked from the new record");
+                    match q.state(mem) {
+                        MOV_YZ_OK => q.set_state(mem, MOV_Z_OK),
+                        MOV_Y_OK => q.set_state(mem, MOV_D_FIXED),
                         _ => {}
                     }
                 }
                 out
             } else {
                 let out = vec![o.wrapping_add(9)];
-                while mem.b32s1(q) != p {
-                    q = mem.b32s1(q);
-                    match mem.b32s0(q) {
-                        MOV_YZ_OK => mem.set_b32s0(q, MOV_Y_OK),
-                        MOV_Z_OK => mem.set_b32s0(q, MOV_D_FIXED),
+                while q.link(mem).0 != p.idx().0 {
+                    q = NodePtr::<MovementNode>::from_ptr(q.link(mem))
+                        .expect("found movement record is linked from the new record");
+                    match q.state(mem) {
+                        MOV_YZ_OK => q.set_state(mem, MOV_Y_OK),
+                        MOV_Z_OK => q.set_state(mem, MOV_D_FIXED),
                         _ => {}
                     }
                 }

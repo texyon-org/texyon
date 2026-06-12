@@ -8,6 +8,37 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 170 - 2026-06-12 - Execution: typed shipout records + threaded `post_line_break`
+
+**Type:** execution (workstream 01 / `01b` Phase-C threading + typed-node
+closure). Larger mechanical slice; docs intentionally minimal.
+
+**Code:** added typed `EdgeNode` and untagged shipout `MovementNode` records in
+`node.rs`, then adopted them directly in `shipout.rs` `new_edge`,
+`prune_movements`, and `movement`. Split `post_line_break` around the remaining
+global `hpack` boundary: the prefix and suffix now thread explicit state and use
+typed `DiscNode`, `GlueNode`, `GlueSpecNode`, `KernNode`, `MathNode`,
+`PassiveNode`, and `AnyBox` accessors. Removed dead one-line wrappers/accessors
+for margin-kern insertion, LR-stack update, `set_just_box`, linebreak
+width/indent getters, and `best_line`. The split initially exposed stale
+`just_box` state in display math; fixed by restoring `scanner.just_box` before
+the suffix calls paths that still read the global bridge.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo fmt --check -p
+tectonic_engine_xetex`; `cargo test -p tectonic_engine_xetex node::` **41/41**;
+dashboard **29/2/7/4** (`tex-outputs`, `trip`, `engine_rust`,
+`latex_goldens`); `git diff --check`. Rebuilt `target/release/tectonic`;
+corpus returned **637 passed, 2 diverged, 0 missing-golden**, only known
+`1905.00073v1` and `1905.00148v1`. Metrics: warnings **43**, `with_state`
+**1155**, `unsafe fn` **568**, direct `#[no_mangle]` grep **11**, current bare
+`[pqr]: i32` grep **341**.
+
+**Next:** `hpack` is the main remaining boundary in this area; next large slice
+should thread and type `hpack`/packaging or another closed dependency. Avoid
+pointer-only helper passes.
+
+---
+
 ## Idiom session 169 — 2026-06-12 — Execution: inline delta fields + post-line-break entry
 
 **Type:** execution (workstream 01 / `01b` Phase-C threading + typed-node

@@ -4053,12 +4053,6 @@ pub(crate) fn just_box() -> i32 {
     crate::state::with_state(|s| s.scanner.just_box)
 }
 #[inline]
-pub(crate) fn set_just_box(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.just_box = v;
-    });
-}
-#[inline]
 pub(crate) fn cur_f() -> i32 {
     crate::state::with_state(|s| s.scanner.cur_f)
 }
@@ -4169,14 +4163,6 @@ pub(crate) fn set_cur_dir(v: i16) {
     });
 }
 #[inline]
-pub(crate) fn last_leftmost_char() -> i32 {
-    crate::state::with_state(|state| state.linebreak.last_leftmost_char)
-}
-#[inline]
-pub(crate) fn last_rightmost_char() -> i32 {
-    crate::state::with_state(|state| state.linebreak.last_rightmost_char)
-}
-#[inline]
 pub(crate) fn set_global_prev_p(v: i32) {
     crate::state::with_state_mut(|state| {
         state.linebreak.global_prev_p = v;
@@ -4213,18 +4199,10 @@ pub(crate) fn set_last_special_line(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn first_width() -> i32 {
-    crate::state::with_state(|state| state.linebreak.first_width)
-}
-#[inline]
 pub(crate) fn set_first_width(v: i32) {
     crate::state::with_state_mut(|state| {
         state.linebreak.first_width = v;
     });
-}
-#[inline]
-pub(crate) fn second_width() -> i32 {
-    crate::state::with_state(|state| state.linebreak.second_width)
 }
 #[inline]
 pub(crate) fn set_second_width(v: i32) {
@@ -4233,28 +4211,16 @@ pub(crate) fn set_second_width(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn first_indent() -> i32 {
-    crate::state::with_state(|state| state.linebreak.first_indent)
-}
-#[inline]
 pub(crate) fn set_first_indent(v: i32) {
     crate::state::with_state_mut(|state| {
         state.linebreak.first_indent = v;
     });
 }
 #[inline]
-pub(crate) fn second_indent() -> i32 {
-    crate::state::with_state(|state| state.linebreak.second_indent)
-}
-#[inline]
 pub(crate) fn set_second_indent(v: i32) {
     crate::state::with_state_mut(|state| {
         state.linebreak.second_indent = v;
     });
-}
-#[inline]
-pub(crate) fn best_line() -> i32 {
-    crate::state::with_state(|state| state.linebreak.best_line)
 }
 #[inline]
 pub(crate) fn hn() -> i16 {

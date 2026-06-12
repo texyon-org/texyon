@@ -801,30 +801,6 @@ pub fn insert_right_margin_kern(
     Ok(new_q)
 }
 
-unsafe fn insert_right_margin_kern_global(q: i32, disc_break: bool) -> i32 {
-    let last_rightmost = crate::globals::last_rightmost_char();
-    let res = crate::state::with_state_mut(|state| {
-        insert_right_margin_kern(
-            &mut state.mem,
-            &state.fonts,
-            &mut state.linebreak,
-            q,
-            disc_break,
-            last_rightmost,
-        )
-    });
-    match res {
-        Ok(new_q) => new_q,
-        Err(MarginKernAbort::PdfError) => crate::errors::pdf_error(
-            c"insert_right_margin_kern".as_ptr(),
-            c"hlist stack failure".as_ptr(),
-        ),
-        Err(MarginKernAbort::Overflow) => {
-            crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
-        }
-    }
-}
-
 fn left_margin_kern_target(
     mem: &mut MemState,
     linebreak: &mut LinebreakState,
@@ -857,29 +833,6 @@ pub fn insert_left_margin_kern(
         .expect("new_margin_kern returns a margin kern node");
     k.set_link(mem, MemPtr::from_raw(q));
     Ok(k.idx().0)
-}
-
-unsafe fn insert_left_margin_kern_global(q: i32) -> i32 {
-    let last_leftmost = crate::globals::last_leftmost_char();
-    let res = crate::state::with_state_mut(|state| {
-        insert_left_margin_kern(
-            &mut state.mem,
-            &state.fonts,
-            &mut state.linebreak,
-            q,
-            last_leftmost,
-        )
-    });
-    match res {
-        Ok(k) => k,
-        Err(MarginKernAbort::PdfError) => crate::errors::pdf_error(
-            c"insert_left_margin_kern".as_ptr(),
-            c"hlist stack failure".as_ptr(),
-        ),
-        Err(MarginKernAbort::Overflow) => {
-            crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
-        }
-    }
 }
 
 /// translated from xetex-linebreak.c:2377 (finite_shrink)
@@ -2244,8 +2197,8 @@ fn odd_i32(v: i32) -> bool {
 /// Phase-C: threaded to `&mut MemState`. Touches the `mem` arena directly and
 /// allocates through the threaded [`crate::mem::get_avail`]. On arena
 /// exhaustion it returns `true` (the `01b` §5 sentinel) rather than calling
-/// `runaway()`/`overflow()` under the borrow; [`update_lr_stack_global`]
-/// performs the abort after the borrow drops.
+/// `runaway()`/`overflow()` under the borrow; `post_line_break` performs the
+/// abort after the borrow drops.
 #[inline]
 fn update_lr_stack(mem: &mut MemState, q: i32, lr_ptr: &mut i32) -> bool {
     let q_math = math_node(q);
@@ -2274,18 +2227,6 @@ fn update_lr_stack(mem: &mut MemState, q: i32, lr_ptr: &mut i32) -> bool {
     false
 }
 
-/// Transitional bridge-down wrapper for the legacy `post_line_break` callers
-/// (`01b` §3). Runs the threaded [`update_lr_stack`] under a single borrow,
-/// then — after the borrow drops — performs the cold `runaway()`+`overflow()`
-/// abort if the arena was exhausted (mirroring [`crate::mem::get_avail_global`]).
-unsafe fn update_lr_stack_global(q: i32, lr_ptr: &mut i32) {
-    let failed = crate::state::with_state_mut(|s| update_lr_stack(&mut s.mem, q, lr_ptr));
-    if failed {
-        crate::errors::runaway();
-        crate::errors::overflow(c"main memory size".as_ptr(), 5_000_000);
-    }
-}
-
 fn reverse_best_breaks(mem: &mut MemState, linebreak: &mut LinebreakState) {
     let mut q = active(linebreak.best_bet).break_node(mem).0;
     linebreak.cur_p = TEX_NULL;
@@ -2300,298 +2241,439 @@ fn reverse_best_breaks(mem: &mut MemState, linebreak: &mut LinebreakState) {
     }
 }
 
-// translated from xetex-linebreak.c:971 (post_line_break)
-pub unsafe fn post_line_break(d: bool) {
-    use crate::globals::{
-        adjust_tail, best_line, cur_list_e_tex_aux, cur_list_prev_graf, cur_list_tail, eqtb_b32s1,
-        first_indent, first_width, hi_mem_min, just_box, last_special_line, mem_b16s0, mem_b16s1,
-        mem_b32s0, mem_b32s1, pre_adjust_tail, second_indent, second_width,
-        semantic_pagination_enabled, set_adjust_tail, set_cur_list_e_tex_aux,
-        set_cur_list_prev_graf, set_cur_list_tail, set_cur_p, set_just_box, set_mem_b16s0,
-        set_mem_b32s0, set_mem_b32s1, set_pre_adjust_tail,
+struct PostLineHpack {
+    q: i32,
+    cur_width: i32,
+    cur_indent: i32,
+    semantic_pagination: bool,
+    disc_break: bool,
+    post_disc_break: bool,
+}
+
+enum PostLineAbort {
+    Node(NodeRecycleAbort),
+    HlistStackFailure,
+}
+
+fn update_lr_stack_checked(
+    mem: &mut MemState,
+    q: i32,
+    lr_ptr: &mut i32,
+) -> Result<(), PostLineAbort> {
+    if update_lr_stack(mem, q, lr_ptr) {
+        Err(PostLineAbort::Node(NodeRecycleAbort::OverflowRunaway))
+    } else {
+        Ok(())
+    }
+}
+
+fn post_line_break_prefix(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    linebreak: &mut LinebreakState,
+    eqtb: &EqtbState,
+    fonts: &FontState,
+    config: &ConfigState,
+    lr_ptr: &mut i32,
+    cur_line: i32,
+) -> Result<PostLineHpack, PostLineAbort> {
+    if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
+        let mut q = mem.b32s1(TEMP_HEAD);
+
+        if *lr_ptr != TEX_NULL {
+            let mut temp_ptr = *lr_ptr;
+            let mut r = q;
+            loop {
+                let s = crate::mem::new_math(mem, 0, (mem.b32s0(temp_ptr) - 1) as i16);
+                if s == crate::mem::ALLOC_FAILED {
+                    return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
+                }
+                math_node(s).set_link(mem, MemPtr::from_raw(r));
+                r = s;
+                temp_ptr = mem.b32s1(temp_ptr);
+                if temp_ptr == TEX_NULL {
+                    break;
+                }
+            }
+            mem.set_b32s1(TEMP_HEAD, r);
+        }
+
+        let cur_break = passive_node(linebreak.cur_p).cur_break(mem).0;
+        while q != cur_break {
+            if q < mem.hi_mem_min && mem.b16s1(q) as i32 == MATH_NODE {
+                update_lr_stack_checked(mem, q, lr_ptr)?;
+            }
+            q = mem.b32s1(q);
+        }
+    }
+
+    let mut q = passive_node(linebreak.cur_p).cur_break(mem).0;
+    let mut disc_break = false;
+    let mut post_disc_break = false;
+    let mut glue_break = false;
+
+    if q == TEX_NULL {
+        q = TEMP_HEAD;
+        while mem.b32s1(q) != TEX_NULL {
+            q = mem.b32s1(q);
+        }
+    } else if mem.b16s1(q) as i32 == GLUE_NODE {
+        let q_glue = glue_node(q);
+        let old_spec = q_glue.glue_ptr(mem);
+        crate::mem::delete_glue_ref(mem, old_spec.0);
+        let right_skip = eqtb.b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP as i32);
+        q_glue.set_glue_ptr(mem, MemPtr::from_raw(right_skip));
+        q_glue.set_subtype(mem, GLUE_PAR_RIGHT_SKIP as u16 + 1);
+        let right_skip_spec = glue_spec(right_skip);
+        right_skip_spec.set_ref_count(mem, right_skip_spec.ref_count(mem) + 1);
+        glue_break = true;
+    } else if mem.b16s1(q) as i32 == DISC_NODE {
+        let q_disc = disc_node(q);
+        let mut t = q_disc.subtype(mem);
+        let mut r;
+
+        if t == 0 {
+            r = q_disc.link(mem).0;
+        } else {
+            r = q;
+            while t > 1 {
+                r = mem.b32s1(r);
+                t -= 1;
+            }
+
+            let s = mem.b32s1(r);
+            r = mem.b32s1(s);
+            mem.set_b32s1(s, TEX_NULL);
+            crate::packaging::flush_node_list(mem, q_disc.link(mem).0)
+                .map_err(|msg| PostLineAbort::Node(NodeRecycleAbort::Confusion(msg)))?;
+            q_disc.set_subtype(mem, 0);
+        }
+
+        if q_disc.post_break(mem).0 != TEX_NULL {
+            let mut s = q_disc.post_break(mem).0;
+            while mem.b32s1(s) != TEX_NULL {
+                s = mem.b32s1(s);
+            }
+            mem.set_b32s1(s, r);
+            r = q_disc.post_break(mem).0;
+            q_disc.set_post_break(mem, MemPtr::NULL);
+            post_disc_break = true;
+        }
+
+        if q_disc.pre_break(mem).0 != TEX_NULL {
+            let mut s = q_disc.pre_break(mem).0;
+            q_disc.set_link(mem, MemPtr::from_raw(s));
+            while mem.b32s1(s) != TEX_NULL {
+                s = mem.b32s1(s);
+            }
+            q_disc.set_pre_break(mem, MemPtr::NULL);
+            q = s;
+        }
+
+        mem.set_b32s1(q, r);
+        disc_break = true;
+    } else if mem.b16s1(q) as i32 == KERN_NODE {
+        kern_node(q).set_width(mem, Scaled(0));
+    } else if mem.b16s1(q) as i32 == MATH_NODE {
+        math_node(q).set_width(mem, Scaled(0));
+
+        if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
+            update_lr_stack_checked(mem, q, lr_ptr)?;
+        }
+    }
+
+    if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 0 {
+        q = insert_right_margin_kern(
+            mem,
+            fonts,
+            linebreak,
+            q,
+            disc_break,
+            linebreak.last_rightmost_char,
+        )
+        .map_err(|e| match e {
+            MarginKernAbort::PdfError => PostLineAbort::HlistStackFailure,
+            MarginKernAbort::Overflow => PostLineAbort::Node(NodeRecycleAbort::Overflow),
+        })?;
+    }
+
+    if !glue_break {
+        let r = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_RIGHT_SKIP);
+        if r == crate::mem::ALLOC_FAILED {
+            return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
+        }
+        glue_node(r).set_link(mem, MemPtr::from_raw(mem.b32s1(q)));
+        mem.set_b32s1(q, r);
+        q = r;
+    }
+
+    if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 && *lr_ptr != TEX_NULL {
+        let mut s = TEMP_HEAD;
+        let mut r = mem.b32s1(s);
+        while r != q {
+            s = r;
+            r = mem.b32s1(s);
+        }
+
+        r = *lr_ptr;
+        while r != TEX_NULL {
+            let temp_ptr = crate::mem::new_math(mem, 0, mem.b32s0(r) as i16);
+            if temp_ptr == crate::mem::ALLOC_FAILED {
+                return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
+            }
+            mem.set_b32s1(s, temp_ptr);
+            s = temp_ptr;
+            r = mem.b32s1(r);
+        }
+        mem.set_b32s1(s, q);
+    }
+
+    let r = mem.b32s1(q);
+    mem.set_b32s1(q, TEX_NULL);
+    q = mem.b32s1(TEMP_HEAD);
+    mem.set_b32s1(TEMP_HEAD, r);
+
+    if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 0 {
+        q = insert_left_margin_kern(mem, fonts, linebreak, q, linebreak.last_leftmost_char)
+            .map_err(|e| match e {
+                MarginKernAbort::PdfError => PostLineAbort::HlistStackFailure,
+                MarginKernAbort::Overflow => PostLineAbort::Node(NodeRecycleAbort::Overflow),
+            })?;
+    }
+
+    if eqtb.b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP as i32) != 0 {
+        let r = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_LEFT_SKIP);
+        if r == crate::mem::ALLOC_FAILED {
+            return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
+        }
+        glue_node(r).set_link(mem, MemPtr::from_raw(q));
+        q = r;
+    }
+
+    let (cur_width, cur_indent) = if cur_line > linebreak.last_special_line {
+        (linebreak.second_width, linebreak.second_indent)
+    } else if eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE) == TEX_NULL {
+        (linebreak.first_width, linebreak.first_indent)
+    } else {
+        let shape = eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+        (
+            mem.b32s1(shape + 2 * cur_line),
+            mem.b32s1(shape + 2 * cur_line - 1),
+        )
     };
 
-    let mut lr_ptr = cur_list_e_tex_aux();
-    let mut q: i32;
+    scanner.adjust_tail = ADJUST_HEAD;
+    scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
+
+    Ok(PostLineHpack {
+        q,
+        cur_width,
+        cur_indent,
+        semantic_pagination: config.semantic_pagination_enabled,
+        disc_break,
+        post_disc_break,
+    })
+}
+
+fn post_line_break_suffix(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    linebreak: &mut LinebreakState,
+    eqtb: &EqtbState,
+    just_box: i32,
+    hpack: PostLineHpack,
+    d: bool,
+    lr_ptr: &mut i32,
+    cur_line: &mut i32,
+) -> Result<bool, PostLineAbort> {
+    scanner.just_box = just_box;
+    let just = mem
+        .classify_box(MemIdx::new(just_box))
+        .expect("valid hpack box type")
+        .expect("hpack returns an hlist");
+    just.set_shift_amount(mem, Scaled(hpack.cur_indent));
+
+    if PRE_ADJUST_HEAD != scanner.pre_adjust_tail {
+        mem.set_b32s1(crate::globals::cur_list_tail(), mem.b32s1(PRE_ADJUST_HEAD));
+        crate::globals::set_cur_list_tail(scanner.pre_adjust_tail);
+    }
+
+    scanner.pre_adjust_tail = TEX_NULL;
+    crate::packaging::append_to_vlist(mem, eqtb, just).map_err(PostLineAbort::Node)?;
+
+    if ADJUST_HEAD != scanner.adjust_tail {
+        mem.set_b32s1(crate::globals::cur_list_tail(), mem.b32s1(ADJUST_HEAD));
+        crate::globals::set_cur_list_tail(scanner.adjust_tail);
+    }
+
+    scanner.adjust_tail = TEX_NULL;
+
+    if *cur_line + 1 != linebreak.best_line {
+        let mut q = eqtb.b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES);
+        let mut pen;
+        if q != TEX_NULL {
+            let mut r = *cur_line;
+            if r > mem.b32s1(q + 1) {
+                r = mem.b32s1(q + 1);
+            }
+            pen = mem.b32s1(q + r + 1);
+        } else {
+            pen = eqtb.b32s1(INT_BASE + INT_PAR_INTER_LINE_PENALTY);
+        }
+
+        q = eqtb.b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_CLUB_PENALTIES);
+        if q != TEX_NULL {
+            let mut r = *cur_line - crate::globals::cur_list_prev_graf();
+            if r > mem.b32s1(q + 1) {
+                r = mem.b32s1(q + 1);
+            }
+            pen += mem.b32s1(q + r + 1);
+        } else if *cur_line == crate::globals::cur_list_prev_graf() + 1 {
+            pen += eqtb.b32s1(INT_BASE + INT_PAR_CLUB_PENALTY);
+        }
+
+        q = if d {
+            eqtb.b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES)
+        } else {
+            eqtb.b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_WIDOW_PENALTIES)
+        };
+
+        if q != TEX_NULL {
+            let mut r = linebreak.best_line - *cur_line - 1;
+            if r > mem.b32s1(q + 1) {
+                r = mem.b32s1(q + 1);
+            }
+            pen += mem.b32s1(q + r + 1);
+        } else if *cur_line + 2 == linebreak.best_line {
+            if d {
+                pen += eqtb.b32s1(INT_BASE + INT_PAR_DISPLAY_WIDOW_PENALTY);
+            } else {
+                pen += eqtb.b32s1(INT_BASE + INT_PAR_WIDOW_PENALTY);
+            }
+        }
+
+        if hpack.disc_break {
+            pen += eqtb.b32s1(INT_BASE + INT_PAR_BROKEN_PENALTY);
+        }
+
+        if pen != 0 {
+            let r = crate::mem::new_penalty(mem, pen);
+            if r == crate::mem::ALLOC_FAILED {
+                return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
+            }
+            mem.set_b32s1(crate::globals::cur_list_tail(), r);
+            crate::globals::set_cur_list_tail(r);
+        }
+    }
+
+    *cur_line += 1;
+    linebreak.cur_p = passive_node(linebreak.cur_p).next_break(mem).0;
+
+    if linebreak.cur_p != TEX_NULL && !hpack.post_disc_break {
+        let cur_break = passive_node(linebreak.cur_p).cur_break(mem).0;
+        let mut r = TEMP_HEAD;
+        let mut q;
+        loop {
+            q = mem.b32s1(r);
+
+            if q == cur_break
+                || crate::mem::is_char_node(mem, q)
+                || is_non_discardable_node(mem, q)
+                || (mem.b16s1(q) as i32 == KERN_NODE
+                    && mem.b16s0(q) != EXPLICIT
+                    && mem.b16s0(q) != SPACE_ADJUSTMENT)
+            {
+                break;
+            }
+
+            r = q;
+
+            if mem.b16s1(q) as i32 == MATH_NODE && eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
+                update_lr_stack_checked(mem, q, lr_ptr)?;
+            }
+        }
+
+        if r != TEMP_HEAD {
+            mem.set_b32s1(r, TEX_NULL);
+            crate::packaging::flush_node_list(mem, mem.b32s1(TEMP_HEAD))
+                .map_err(|msg| PostLineAbort::Node(NodeRecycleAbort::Confusion(msg)))?;
+            mem.set_b32s1(TEMP_HEAD, q);
+        }
+    }
+
+    Ok(linebreak.cur_p == TEX_NULL)
+}
+
+// translated from xetex-linebreak.c:971 (post_line_break)
+pub unsafe fn post_line_break(d: bool) {
+    let mut lr_ptr = crate::globals::cur_list_e_tex_aux();
 
     crate::state::with_state_mut(|st| reverse_best_breaks(&mut st.mem, &mut st.linebreak));
 
-    let mut cur_line = cur_list_prev_graf() + 1;
+    let mut cur_line = crate::globals::cur_list_prev_graf() + 1;
     loop {
-        if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-            q = mem_b32s1(TEMP_HEAD);
-
-            if lr_ptr != TEX_NULL {
-                let mut temp_ptr = lr_ptr;
-                let mut r = q;
-                loop {
-                    let s = crate::mem::new_math_global(0, (mem_b32s0(temp_ptr) - 1) as i16);
-                    set_mem_b32s1(s, r);
-                    r = s;
-                    temp_ptr = mem_b32s1(temp_ptr);
-                    if temp_ptr == TEX_NULL {
-                        break;
-                    }
-                }
-                set_mem_b32s1(TEMP_HEAD, r);
-            }
-
-            while q != mem_b32s1(crate::globals::cur_p() + 1) {
-                if q < hi_mem_min() && mem_b16s1(q) as i32 == MATH_NODE {
-                    update_lr_stack_global(q, &mut lr_ptr);
-                }
-                q = mem_b32s1(q);
-            }
-        }
-
-        q = mem_b32s1(crate::globals::cur_p() + 1);
-        let mut disc_break = false;
-        let mut post_disc_break = false;
-        let mut glue_break = false;
-
-        if q == TEX_NULL {
-            q = TEMP_HEAD;
-            while mem_b32s1(q) != TEX_NULL {
-                q = mem_b32s1(q);
-            }
-        } else if mem_b16s1(q) as i32 == GLUE_NODE {
-            crate::mem::delete_glue_ref_global(mem_b32s0(q + 1));
-            let right_skip = eqtb_b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP as i32);
-            set_mem_b32s0(q + 1, right_skip);
-            set_mem_b16s0(q, GLUE_PAR_RIGHT_SKIP as u16 + 1);
-            set_mem_b32s1(right_skip, mem_b32s1(right_skip) + 1);
-            glue_break = true;
-        } else if mem_b16s1(q) as i32 == DISC_NODE {
-            let mut t = mem_b16s0(q);
-            let mut r;
-
-            if t == 0 {
-                r = mem_b32s1(q);
-            } else {
-                r = q;
-                while t > 1 {
-                    r = mem_b32s1(r);
-                    t -= 1;
-                }
-
-                let s = mem_b32s1(r);
-                r = mem_b32s1(s);
-                set_mem_b32s1(s, TEX_NULL);
-                crate::packaging::flush_node_list_global(mem_b32s1(q));
-                set_mem_b16s0(q, 0);
-            }
-
-            if mem_b32s1(q + 1) != TEX_NULL {
-                let mut s = mem_b32s1(q + 1);
-                while mem_b32s1(s) != TEX_NULL {
-                    s = mem_b32s1(s);
-                }
-                set_mem_b32s1(s, r);
-                r = mem_b32s1(q + 1);
-                set_mem_b32s1(q + 1, TEX_NULL);
-                post_disc_break = true;
-            }
-
-            if mem_b32s0(q + 1) != TEX_NULL {
-                let mut s = mem_b32s0(q + 1);
-                set_mem_b32s1(q, s);
-                while mem_b32s1(s) != TEX_NULL {
-                    s = mem_b32s1(s);
-                }
-                set_mem_b32s0(q + 1, TEX_NULL);
-                q = s;
-            }
-
-            set_mem_b32s1(q, r);
-            disc_break = true;
-        } else if mem_b16s1(q) as i32 == KERN_NODE {
-            set_mem_b32s1(q + 1, 0);
-        } else if mem_b16s1(q) as i32 == MATH_NODE {
-            set_mem_b32s1(q + 1, 0);
-
-            if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                update_lr_stack_global(q, &mut lr_ptr);
-            }
-        }
-
-        if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 0 {
-            q = insert_right_margin_kern_global(q, disc_break);
-        }
-
-        if !glue_break {
-            let r = crate::mem::new_param_glue_global(GLUE_PAR_RIGHT_SKIP);
-            set_mem_b32s1(r, mem_b32s1(q));
-            set_mem_b32s1(q, r);
-            q = r;
-        }
-
-        if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 && lr_ptr != TEX_NULL {
-            let mut s = TEMP_HEAD;
-            let mut r = mem_b32s1(s);
-            while r != q {
-                s = r;
-                r = mem_b32s1(s);
-            }
-
-            r = lr_ptr;
-            while r != TEX_NULL {
-                let temp_ptr = crate::mem::new_math_global(0, mem_b32s0(r) as i16);
-                set_mem_b32s1(s, temp_ptr);
-                s = temp_ptr;
-                r = mem_b32s1(r);
-            }
-            set_mem_b32s1(s, q);
-        }
-
-        let r = mem_b32s1(q);
-        set_mem_b32s1(q, TEX_NULL);
-        q = mem_b32s1(TEMP_HEAD);
-        set_mem_b32s1(TEMP_HEAD, r);
-
-        if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 0 {
-            q = insert_left_margin_kern_global(q);
-        }
-
-        if eqtb_b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP as i32) != 0 {
-            let r = crate::mem::new_param_glue_global(GLUE_PAR_LEFT_SKIP);
-            set_mem_b32s1(r, q);
-            q = r;
-        }
-
-        let (cur_width, cur_indent) = if cur_line > last_special_line() {
-            (second_width(), second_indent())
-        } else if eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE) == TEX_NULL {
-            (first_width(), first_indent())
-        } else {
-            (
-                mem_b32s1(eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE) + 2 * cur_line),
-                mem_b32s1(eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE) + 2 * cur_line - 1),
+        let hpack = match crate::state::with_state_mut(|st| {
+            post_line_break_prefix(
+                &mut st.mem,
+                &mut st.scanner,
+                &mut st.linebreak,
+                &st.eqtb,
+                &st.fonts,
+                &st.config,
+                &mut lr_ptr,
+                cur_line,
             )
+        }) {
+            Ok(hpack) => hpack,
+            Err(PostLineAbort::Node(e)) => node_recycle_abort(e),
+            Err(PostLineAbort::HlistStackFailure) => crate::errors::pdf_error(
+                c"insert_right_margin_kern".as_ptr(),
+                c"hlist stack failure".as_ptr(),
+            ),
         };
 
-        set_adjust_tail(ADJUST_HEAD);
-        set_pre_adjust_tail(PRE_ADJUST_HEAD);
-
-        if semantic_pagination_enabled() {
-            set_just_box(crate::packaging::hpack(q, 0, ADDITIONAL));
+        let just_box = if hpack.semantic_pagination {
+            crate::packaging::hpack(hpack.q, 0, ADDITIONAL)
         } else {
-            set_just_box(crate::packaging::hpack(q, cur_width, EXACTLY));
-        }
-        set_mem_b32s1(just_box() + 4, cur_indent);
+            crate::packaging::hpack(hpack.q, hpack.cur_width, EXACTLY)
+        };
 
-        if PRE_ADJUST_HEAD != pre_adjust_tail() {
-            set_mem_b32s1(cur_list_tail(), mem_b32s1(PRE_ADJUST_HEAD));
-            set_cur_list_tail(pre_adjust_tail());
-        }
+        let done = match crate::state::with_state_mut(|st| {
+            post_line_break_suffix(
+                &mut st.mem,
+                &mut st.scanner,
+                &mut st.linebreak,
+                &st.eqtb,
+                just_box,
+                hpack,
+                d,
+                &mut lr_ptr,
+                &mut cur_line,
+            )
+        }) {
+            Ok(done) => done,
+            Err(PostLineAbort::Node(e)) => node_recycle_abort(e),
+            Err(PostLineAbort::HlistStackFailure) => crate::errors::pdf_error(
+                c"insert_left_margin_kern".as_ptr(),
+                c"hlist stack failure".as_ptr(),
+            ),
+        };
 
-        set_pre_adjust_tail(TEX_NULL);
-        crate::packaging::append_to_vlist_global(just_box());
-
-        if ADJUST_HEAD != adjust_tail() {
-            set_mem_b32s1(cur_list_tail(), mem_b32s1(ADJUST_HEAD));
-            set_cur_list_tail(adjust_tail());
-        }
-
-        set_adjust_tail(TEX_NULL);
-
-        if cur_line + 1 != best_line() {
-            q = eqtb_b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES);
-            let mut pen;
-            if q != TEX_NULL {
-                let mut r = cur_line;
-                if r > mem_b32s1(q + 1) {
-                    r = mem_b32s1(q + 1);
-                }
-                pen = mem_b32s1(q + r + 1);
-            } else {
-                pen = eqtb_b32s1(INT_BASE + INT_PAR_INTER_LINE_PENALTY);
-            }
-
-            q = eqtb_b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_CLUB_PENALTIES);
-            if q != TEX_NULL {
-                let mut r = cur_line - cur_list_prev_graf();
-                if r > mem_b32s1(q + 1) {
-                    r = mem_b32s1(q + 1);
-                }
-                pen += mem_b32s1(q + r + 1);
-            } else if cur_line == cur_list_prev_graf() + 1 {
-                pen += eqtb_b32s1(INT_BASE + INT_PAR_CLUB_PENALTY);
-            }
-
-            q = if d {
-                eqtb_b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES)
-            } else {
-                eqtb_b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_WIDOW_PENALTIES)
-            };
-
-            if q != TEX_NULL {
-                let mut r = best_line() - cur_line - 1;
-                if r > mem_b32s1(q + 1) {
-                    r = mem_b32s1(q + 1);
-                }
-                pen += mem_b32s1(q + r + 1);
-            } else if cur_line + 2 == best_line() {
-                if d {
-                    pen += eqtb_b32s1(INT_BASE + INT_PAR_DISPLAY_WIDOW_PENALTY);
-                } else {
-                    pen += eqtb_b32s1(INT_BASE + INT_PAR_WIDOW_PENALTY);
-                }
-            }
-
-            if disc_break {
-                pen += eqtb_b32s1(INT_BASE + INT_PAR_BROKEN_PENALTY);
-            }
-
-            if pen != 0 {
-                let r = crate::mem::new_penalty_global(pen);
-                set_mem_b32s1(cur_list_tail(), r);
-                set_cur_list_tail(r);
-            }
-        }
-
-        cur_line += 1;
-        set_cur_p(mem_b32s0(crate::globals::cur_p() + 1));
-
-        if crate::globals::cur_p() != TEX_NULL && !post_disc_break {
-            let mut r = TEMP_HEAD;
-            loop {
-                q = mem_b32s1(r);
-
-                if q == mem_b32s1(crate::globals::cur_p() + 1)
-                    || is_char_node_global(q)
-                    || is_non_discardable_node_global(q)
-                    || (mem_b16s1(q) as i32 == KERN_NODE
-                        && mem_b16s0(q) != EXPLICIT
-                        && mem_b16s0(q) != SPACE_ADJUSTMENT)
-                {
-                    break;
-                }
-
-                r = q;
-
-                if mem_b16s1(q) as i32 == MATH_NODE && eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                    update_lr_stack_global(q, &mut lr_ptr);
-                }
-            }
-
-            if r != TEMP_HEAD {
-                set_mem_b32s1(r, TEX_NULL);
-                crate::packaging::flush_node_list_global(mem_b32s1(TEMP_HEAD));
-                set_mem_b32s1(TEMP_HEAD, q);
-            }
-        }
-
-        if crate::globals::cur_p() == TEX_NULL {
+        if done {
             break;
         }
     }
 
-    if cur_line != best_line() || mem_b32s1(TEMP_HEAD) != TEX_NULL {
+    let confused = crate::state::with_state(|st| {
+        cur_line != st.linebreak.best_line || st.mem.b32s1(TEMP_HEAD) != TEX_NULL
+    });
+    if confused {
         crate::errors::confusion(c"line breaking".as_ptr());
     }
 
-    set_cur_list_prev_graf(best_line() - 1);
-    set_cur_list_e_tex_aux(lr_ptr);
+    let best_line = crate::state::with_state(|st| st.linebreak.best_line);
+    crate::globals::set_cur_list_prev_graf(best_line - 1);
+    crate::globals::set_cur_list_e_tex_aux(lr_ptr);
 }
 
 enum TryBreakAbort {

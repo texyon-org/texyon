@@ -39,7 +39,7 @@ use crate::consts::{
     MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MATH_NODE, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE,
     RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
-use crate::mem::{ALLOC_FAILED, get_node};
+use crate::mem::{free_node, get_node, ALLOC_FAILED};
 use crate::state::MemState;
 use crate::units::{FontId, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -744,11 +744,15 @@ const STYLE_NODE_SIZE: i32 = 3;
 
 /// `STYLE_NODE` (`NODE_type` = 14): changes the current math style.
 pub enum StyleNode {}
+/// `EDGE_NODE` (`NODE_type` = 14 in LR-edge context): a shipout edge record.
+pub enum EdgeNode {}
 /// `CHOICE_NODE` (`NODE_type` = 15): four nullable math-list alternatives.
 pub enum ChoiceNode {}
 
 impl NodeKind for StyleNode {}
+impl NodeKind for EdgeNode {}
 impl NodeKind for ChoiceNode {}
+impl HasNodeHeader for EdgeNode {}
 
 impl NodePtr<StyleNode> {
     /// Allocate a fresh style node (`STYLE_NODE_SIZE` words), type-stamped
@@ -769,6 +773,34 @@ impl NodePtr<StyleNode> {
     pub fn clear_payload(self, mem: &mut MemState) {
         mem.set_b32s1(self.idx.offset(1).0, 0);
         mem.set_b32s1(self.idx.offset(2).0, 0);
+    }
+}
+
+impl NodePtr<EdgeNode> {
+    /// Allocate a fresh edge node (`STYLE_NODE_SIZE` words), type-stamped with
+    /// `NODE_type = STYLE_NODE` because XeTeX aliases `EDGE_NODE` to code 14.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<EdgeNode>> {
+        let p = get_node(mem, STYLE_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, NodeType::Style.as_raw());
+        // SAFETY: `p` is freshly allocated and just stamped with the edge
+        // context's NODE_type code.
+        Some(unsafe { NodePtr::<EdgeNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Set edge width = `mem[p + 1].b32.s1`.
+    #[inline]
+    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, w.0);
+    }
+
+    /// Set edge distance = `mem[p + 2].b32.s1`.
+    #[inline]
+    pub fn set_edge_dist(self, mem: &mut MemState, w: Scaled) {
+        mem.set_b32s1(self.idx.offset(2).0, w.0);
     }
 }
 
@@ -1607,6 +1639,85 @@ impl MemState {
             }
             _ => None,
         })
+    }
+}
+
+// --- shipout movement records ---
+
+const MOVEMENT_NODE_SIZE: i32 = 3;
+
+/// A shipout movement record in the `down_ptr` / `right_ptr` lists.
+///
+/// These records are not ordinary list nodes: word 0 is both the linked-list
+/// successor (`b32.s1`) and movement state (`b32.s0`), with no `NODE_type`.
+pub enum MovementNode {}
+
+impl NodeKind for MovementNode {}
+
+impl NodePtr<MovementNode> {
+    /// Allocate a fresh movement record (`MOVEMENT_NODE_SIZE` words).
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MovementNode>> {
+        let p = get_node(mem, MOVEMENT_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        // SAFETY: `p` is a freshly allocated movement-sized record; it is
+        // classified by the shipout movement-list context.
+        Some(unsafe { NodePtr::<MovementNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    /// Convert a nullable movement-list pointer to a typed record handle.
+    #[inline]
+    pub fn from_ptr(p: MemPtr) -> Option<NodePtr<MovementNode>> {
+        p.as_idx()
+            .map(|idx| unsafe { NodePtr::<MovementNode>::from_idx_unchecked(idx) })
+    }
+
+    /// Free this movement record back to the node arena.
+    #[inline]
+    pub fn free(self, mem: &mut MemState) {
+        free_node(mem, self.idx.0, MOVEMENT_NODE_SIZE);
+    }
+
+    /// Movement-list successor = `mem[p].b32.s1`.
+    #[inline]
+    pub fn link(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.0))
+    }
+    #[inline]
+    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.0, q.0);
+    }
+
+    /// Movement reuse state = `mem[p].b32.s0`.
+    #[inline]
+    pub fn state(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_state(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.0, v);
+    }
+
+    /// Movement distance = `mem[p + 1].b32.s1`.
+    #[inline]
+    pub fn distance(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_distance(self, mem: &mut MemState, w: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, w.0);
+    }
+
+    /// DVI location where this movement was emitted = `mem[p + 2].b32.s1`.
+    #[inline]
+    pub fn location(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(2).0)
+    }
+    #[inline]
+    pub fn set_location(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(2).0, v);
     }
 }
 
