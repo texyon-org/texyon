@@ -39,7 +39,7 @@ use crate::consts::{
     MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MATH_NODE, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE,
     RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
-use crate::mem::{get_node, ALLOC_FAILED};
+use crate::mem::{ALLOC_FAILED, get_node};
 use crate::state::MemState;
 use crate::units::{FontId, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -635,7 +635,6 @@ impl NodePtr<LigItem> {
         mem.set_b32s1(self.idx.offset(1).0, q.0);
     }
 }
-
 
 // --- the discretionary family: discretionary break nodes (NODE_type 7) ---
 
@@ -1598,9 +1597,14 @@ impl NodePtr<MarginKernNode> {
 impl MemState {
     /// Classify a known lo-mem node as a margin kern node.
     #[inline]
-    pub fn classify_margin_kern(&self, p: MemIdx) -> Result<Option<NodePtr<MarginKernNode>>, InvalidNodeType> {
+    pub fn classify_margin_kern(
+        &self,
+        p: MemIdx,
+    ) -> Result<Option<NodePtr<MarginKernNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
-            NodeType::MarginKern => Some(unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(p) }),
+            NodeType::MarginKern => {
+                Some(unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(p) })
+            }
             _ => None,
         })
     }
@@ -1631,6 +1635,16 @@ pub enum ActiveNode {}
 impl NodeKind for ActiveNode {}
 
 impl NodePtr<ActiveNode> {
+    /// Active-list successor = `mem[p].b32.s1`.
+    #[inline]
+    pub fn link(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.0))
+    }
+    #[inline]
+    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.0, q.0);
+    }
+
     /// `ACTIVE_NODE_fitness(p)` = `mem[p].b16.s0` — the fitness class
     /// (`VERY_LOOSE_FIT`/`LOOSE_FIT`/`DECENT_FIT`/`TIGHT_FIT`), stored in the
     /// node's subtype word.
@@ -1724,6 +1738,16 @@ pub enum DeltaNode {}
 impl NodeKind for DeltaNode {}
 
 impl NodePtr<DeltaNode> {
+    /// Active-list successor = `mem[p].b32.s1`.
+    #[inline]
+    pub fn link(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.0))
+    }
+    #[inline]
+    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.idx.0, q.0);
+    }
+
     /// `DELTA_NODE_dwidth(p)` = `mem[(p) + 1].b32.s1` — the natural-width
     /// difference.
     #[inline]

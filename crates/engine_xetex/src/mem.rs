@@ -32,9 +32,8 @@ const NORMAL: u16 = 0;
 // Node type values (mem[p].b16.s1)
 // eqtb base indices (xetex_format.h)
 
-                          // empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
+// empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
 const EMPTY: i32 = 0; // xetex-constants.h:230
-
 
 // native node glyph info size in bytes (xetex-constants.h:304)
 const NATIVE_GLYPH_INFO_SIZE: usize = 10;
@@ -478,7 +477,8 @@ pub fn new_spec(mem: &mut MemState, p: i32) -> i32 {
     let Some(q) = NodePtr::<GlueSpecNode>::alloc(mem) else {
         return ALLOC_FAILED;
     };
-    let p_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)).expect("non-null glue spec");
+    let p_spec =
+        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)).expect("non-null glue spec");
     let word = mem.word(p);
     mem.set_word(q.idx().0, word); // copy the whole first word (type + ref_count)
     q.set_ref_count(mem, TEX_NULL); // clear ref_count / link
@@ -590,7 +590,8 @@ pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
     if p == ALLOC_FAILED {
         return p;
     }
-    let s_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s)).expect("non-null glue spec");
+    let s_spec =
+        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s)).expect("non-null glue spec");
     s_spec.set_ref_count(mem, TEX_NULL); // clear the spec's ref_count link
     let p_glue = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p)) };
     p_glue.set_subtype(mem, n as u16 + 1); // subtype = n + 1

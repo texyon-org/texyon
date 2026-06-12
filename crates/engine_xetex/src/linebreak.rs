@@ -7,9 +7,15 @@ use crate::ext::{
 };
 use crate::globals::eqtb_b32s1;
 use crate::hyphenation::init_trie;
-use crate::scan::{new_native_word_node_global, node_recycle_abort, NodeRecycleAbort};
-use crate::node::{ActiveNode, DeltaNode, NodePtr, PassiveNode};
-use crate::state::{EqtbState, FontState, HyphState, LinebreakState, MemState, ScannerState};
+use crate::node::{
+    ActiveNode, AnyBox, DeltaNode, DiscNode, GlueNode, GlueSpecNode, KernNode, LigatureNode,
+    MathNode, NodePtr, PassiveNode, PenaltyNode, RuleNode,
+};
+use crate::scan::{NodeRecycleAbort, new_native_word_node_global, node_recycle_abort};
+use crate::state::{
+    ConfigState, EqtbState, ErrorState, FontState, HyphState, LinebreakState, MemState,
+    ScannerState,
+};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
 // Consts relocated from scan.rs with the locale-linebreak group (workstream 02).
@@ -176,6 +182,60 @@ fn passive_node(p: i32) -> NodePtr<PassiveNode> {
 }
 
 #[inline]
+fn glue_node(node: i32) -> NodePtr<GlueNode> {
+    // SAFETY: callers enter through a `GLUE_NODE` branch.
+    unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(node)) }
+}
+
+#[inline]
+fn glue_spec(spec: i32) -> NodePtr<GlueSpecNode> {
+    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(spec)).expect("non-null glue spec")
+}
+
+#[inline]
+fn kern_node(node: i32) -> NodePtr<KernNode> {
+    // SAFETY: callers enter through a `KERN_NODE` branch.
+    unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(node)) }
+}
+
+#[inline]
+fn ligature_node(node: i32) -> NodePtr<LigatureNode> {
+    // SAFETY: callers enter through a `LIGATURE_NODE` branch.
+    unsafe { NodePtr::<LigatureNode>::from_idx_unchecked(MemIdx::new(node)) }
+}
+
+#[inline]
+fn disc_node(node: i32) -> NodePtr<DiscNode> {
+    // SAFETY: callers enter through a `DISC_NODE` branch.
+    unsafe { NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(node)) }
+}
+
+#[inline]
+fn math_node(node: i32) -> NodePtr<MathNode> {
+    // SAFETY: callers enter through a `MATH_NODE` branch.
+    unsafe { NodePtr::<MathNode>::from_idx_unchecked(MemIdx::new(node)) }
+}
+
+#[inline]
+fn penalty_node(node: i32) -> NodePtr<PenaltyNode> {
+    // SAFETY: callers enter through a `PENALTY_NODE` branch.
+    unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(MemIdx::new(node)) }
+}
+
+#[inline]
+fn rule_node(node: i32) -> NodePtr<RuleNode> {
+    // SAFETY: callers enter through a `RULE_NODE` branch.
+    unsafe { NodePtr::<RuleNode>::from_idx_unchecked(MemIdx::new(node)) }
+}
+
+#[inline]
+fn box_node(mem: &MemState, node: i32) -> AnyBox {
+    mem.classify_box(MemIdx::new(node))
+        .expect("valid box node type")
+        .expect("box node")
+}
+
+#[inline]
 fn delta_node_width_in(mem: &MemState, p: i32, k: usize) -> i32 {
     let p = delta_node(p);
     match k {
@@ -187,11 +247,6 @@ fn delta_node_width_in(mem: &MemState, p: i32, k: usize) -> i32 {
         6 => p.dshrink(mem).0,
         _ => unreachable!("delta width index"),
     }
-}
-
-#[inline]
-fn delta_node_width(p: i32, k: usize) -> i32 {
-    crate::state::with_state(|st| delta_node_width_in(&st.mem, p, k))
 }
 
 #[inline]
@@ -208,148 +263,41 @@ fn set_delta_node_width_in(mem: &mut MemState, p: i32, k: usize, v: i32) {
     }
 }
 
-#[inline]
-fn set_delta_node_width(p: i32, k: usize, v: i32) {
-    crate::state::with_state_mut(|st| set_delta_node_width_in(&mut st.mem, p, k, v));
+fn alloc_active_node(
+    mem: &mut MemState,
+    active_node_size: i32,
+    link: MemPtr,
+) -> Result<NodePtr<ActiveNode>, NodeRecycleAbort> {
+    let p = crate::mem::get_node(mem, active_node_size);
+    if p == crate::mem::ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    let p = active(p);
+    p.set_link(mem, link);
+    Ok(p)
 }
 
-#[inline]
-fn set_passive_node_link(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| passive_node(p).set_link(&mut st.mem, MemPtr::from_raw(v)));
+fn alloc_delta_node(
+    mem: &mut MemState,
+    link: MemPtr,
+) -> Result<NodePtr<DeltaNode>, NodeRecycleAbort> {
+    let p = crate::mem::get_node(mem, DELTA_NODE_SIZE);
+    if p == crate::mem::ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    let p = delta_node(p);
+    p.set_link(mem, link);
+    mem.set_b16s1(p.idx().0, DELTA_NODE as u16);
+    mem.set_b16s0(p.idx().0, 0);
+    Ok(p)
 }
 
-#[inline]
-fn set_passive_node_cur_break(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| {
-        passive_node(p).set_cur_break(&mut st.mem, MemPtr::from_raw(v))
-    });
-}
-
-#[inline]
-fn set_passive_node_prev_break(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| {
-        passive_node(p).set_prev_break(&mut st.mem, MemPtr::from_raw(v))
-    });
-}
-
-#[inline]
-fn active_node_break_node_in(mem: &MemState, p: i32) -> i32 {
-    active(p).break_node(mem).0
-}
-
-#[inline]
-fn active_node_break_node(p: i32) -> i32 {
-    crate::state::with_state(|st| active_node_break_node_in(&st.mem, p))
-}
-
-#[inline]
-fn set_active_node_break_node_in(mem: &mut MemState, p: i32, v: i32) {
-    active(p).set_break_node(mem, MemPtr::from_raw(v));
-}
-
-#[inline]
-fn set_active_node_break_node(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| set_active_node_break_node_in(&mut st.mem, p, v));
-}
-
-#[inline]
-fn active_node_line_number_in(mem: &MemState, p: i32) -> i32 {
-    active(p).line_number(mem)
-}
-
-#[inline]
-fn active_node_line_number(p: i32) -> i32 {
-    crate::state::with_state(|st| active_node_line_number_in(&st.mem, p))
-}
-
-#[inline]
-fn set_active_node_line_number_in(mem: &mut MemState, p: i32, v: i32) {
-    active(p).set_line_number(mem, v);
-}
-
-#[inline]
-fn set_active_node_line_number(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| set_active_node_line_number_in(&mut st.mem, p, v));
-}
-
-#[inline]
-fn active_node_fitness_in(mem: &MemState, p: i32) -> u16 {
-    active(p).fitness(mem)
-}
-
-#[inline]
-fn active_node_fitness(p: i32) -> u16 {
-    crate::state::with_state(|st| active_node_fitness_in(&st.mem, p))
-}
-
-#[inline]
-fn set_active_node_fitness_in(mem: &mut MemState, p: i32, v: usize) {
-    active(p).set_fitness(mem, v as u16);
-}
-
-#[inline]
-fn set_active_node_fitness(p: i32, v: usize) {
-    crate::state::with_state_mut(|st| set_active_node_fitness_in(&mut st.mem, p, v));
-}
-
-#[inline]
-fn active_node_total_demerits_in(mem: &MemState, p: i32) -> i32 {
-    active(p).total_demerits(mem)
-}
-
-#[inline]
-fn active_node_total_demerits(p: i32) -> i32 {
-    crate::state::with_state(|st| active_node_total_demerits_in(&st.mem, p))
-}
-
-#[inline]
-fn set_active_node_total_demerits_in(mem: &mut MemState, p: i32, v: i32) {
-    active(p).set_total_demerits(mem, v);
-}
-
-#[inline]
-fn set_active_node_total_demerits(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| set_active_node_total_demerits_in(&mut st.mem, p, v));
-}
-
-#[inline]
-fn active_node_shortfall_in(mem: &MemState, p: i32) -> i32 {
-    active(p).shortfall(mem).0
-}
-
-#[inline]
-fn active_node_shortfall(p: i32) -> i32 {
-    crate::state::with_state(|st| active_node_shortfall_in(&st.mem, p))
-}
-
-#[inline]
-fn set_active_node_shortfall_in(mem: &mut MemState, p: i32, v: i32) {
-    active(p).set_shortfall(mem, Scaled(v));
-}
-
-#[inline]
-fn set_active_node_shortfall(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| set_active_node_shortfall_in(&mut st.mem, p, v));
-}
-
-#[inline]
-fn active_node_glue_in(mem: &MemState, p: i32) -> i32 {
-    active(p).glue(mem).0
-}
-
-#[inline]
-fn active_node_glue(p: i32) -> i32 {
-    crate::state::with_state(|st| active_node_glue_in(&st.mem, p))
-}
-
-#[inline]
-fn set_active_node_glue_in(mem: &mut MemState, p: i32, v: i32) {
-    active(p).set_glue(mem, Scaled(v));
-}
-
-#[inline]
-fn set_active_node_glue(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| set_active_node_glue_in(&mut st.mem, p, v));
+fn alloc_passive_node(mem: &mut MemState) -> Result<NodePtr<PassiveNode>, NodeRecycleAbort> {
+    let p = crate::mem::get_node(mem, PASSIVE_NODE_SIZE);
+    if p == crate::mem::ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    Ok(passive_node(p))
 }
 
 #[inline]
@@ -383,18 +331,19 @@ fn box_width(p: i32) -> i32 {
 }
 
 #[inline]
-fn set_box_width_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b32s1(p + 1, v);
-}
-
-#[inline]
-fn set_box_width(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| set_box_width_in(&mut st.mem, p, v));
+fn typed_list_width_in(mem: &MemState, node: i32) -> i32 {
+    match node_type_in(mem, node) {
+        HLIST_NODE | VLIST_NODE => box_node(mem, node).width(mem).0,
+        RULE_NODE => rule_node(node).width(mem).raw(),
+        KERN_NODE => kern_node(node).width(mem).0,
+        MATH_NODE => math_node(node).width(mem).0,
+        _ => unreachable!("typed width for non-width node"),
+    }
 }
 
 #[inline]
 fn glue_ptr_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s0(p + 1)
+    glue_node(p).glue_ptr(mem).0
 }
 
 #[inline]
@@ -404,7 +353,7 @@ fn glue_ptr(p: i32) -> i32 {
 
 #[inline]
 fn set_glue_ptr_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b32s0(p + 1, v);
+    glue_node(p).set_glue_ptr(mem, MemPtr::from_raw(v));
 }
 
 #[inline]
@@ -414,7 +363,7 @@ fn set_glue_ptr(p: i32, v: i32) {
 
 #[inline]
 fn glue_leader_ptr_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s1(p + 1)
+    glue_node(p).leader_ptr(mem).0
 }
 
 #[inline]
@@ -424,7 +373,7 @@ fn glue_leader_ptr(p: i32) -> i32 {
 
 #[inline]
 fn glue_spec_stretch_order_in(mem: &MemState, p: i32) -> u16 {
-    mem.b16s1(p)
+    glue_spec(p).stretch_order(mem)
 }
 
 #[inline]
@@ -434,7 +383,7 @@ fn glue_spec_stretch_order(p: i32) -> u16 {
 
 #[inline]
 fn glue_spec_shrink_order_in(mem: &MemState, p: i32) -> u16 {
-    mem.b16s0(p)
+    glue_spec(p).shrink_order(mem)
 }
 
 #[inline]
@@ -444,7 +393,7 @@ fn glue_spec_shrink_order(p: i32) -> u16 {
 
 #[inline]
 fn glue_spec_stretch_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s1(p + 2)
+    glue_spec(p).stretch(mem).0
 }
 
 #[inline]
@@ -453,18 +402,8 @@ fn glue_spec_stretch(p: i32) -> i32 {
 }
 
 #[inline]
-fn set_glue_spec_stretch_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b32s1(p + 2, v);
-}
-
-#[inline]
-fn set_glue_spec_stretch(p: i32, v: i32) {
-    crate::state::with_state_mut(|st| set_glue_spec_stretch_in(&mut st.mem, p, v));
-}
-
-#[inline]
 fn glue_spec_shrink_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s1(p + 3)
+    glue_spec(p).shrink(mem).0
 }
 
 #[inline]
@@ -474,7 +413,7 @@ fn glue_spec_shrink(p: i32) -> i32 {
 
 #[inline]
 fn penalty_node_penalty_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s1(p + 1)
+    penalty_node(p).penalty(mem)
 }
 
 #[inline]
@@ -484,7 +423,7 @@ fn penalty_node_penalty(p: i32) -> i32 {
 
 #[inline]
 fn set_penalty_node_penalty_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b32s1(p + 1, v);
+    penalty_node(p).set_penalty(mem, v);
 }
 
 #[inline]
@@ -524,7 +463,7 @@ fn language_node_what_rhm(p: i32) -> i32 {
 
 #[inline]
 fn ligature_node_lig_font_in(mem: &MemState, p: i32) -> i32 {
-    mem.b16s1(p + 1) as i32
+    ligature_node(p).font(mem).0
 }
 
 #[inline]
@@ -534,7 +473,7 @@ fn ligature_node_lig_font(p: i32) -> i32 {
 
 #[inline]
 fn ligature_node_lig_char_in(mem: &MemState, p: i32) -> u16 {
-    mem.b16s0(p + 1)
+    ligature_node(p).character(mem)
 }
 
 #[inline]
@@ -544,7 +483,7 @@ fn ligature_node_lig_char(p: i32) -> u16 {
 
 #[inline]
 fn ligature_node_lig_ptr_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s1(p + 1)
+    ligature_node(p).lig_ptr(mem).0
 }
 
 #[inline]
@@ -554,7 +493,7 @@ fn ligature_node_lig_ptr(p: i32) -> i32 {
 
 #[inline]
 fn disc_pre_break_in(mem: &MemState, p: i32) -> i32 {
-    mem.b32s0(p + 1)
+    disc_node(p).pre_break(mem).0
 }
 
 #[inline]
@@ -564,7 +503,7 @@ fn disc_pre_break(p: i32) -> i32 {
 
 #[inline]
 fn disc_replace_count_in(mem: &MemState, p: i32) -> i32 {
-    mem.b16s0(p) as i32
+    disc_node(p).subtype(mem) as i32
 }
 
 #[inline]
@@ -623,11 +562,14 @@ fn is_non_discardable_node(mem: &MemState, p: i32) -> bool {
 
 #[inline]
 fn is_empty_box_in(mem: &MemState, p: i32) -> bool {
-    mem.b16s1(p) as i32 == HLIST_NODE
-        && mem.b32s1(p + 1) == 0
-        && mem.b32s1(p + 3) == 0
-        && mem.b32s1(p + 2) == 0
-        && mem.b32s1(p + 5) == TEX_NULL
+    if mem.b16s1(p) as i32 != HLIST_NODE {
+        return false;
+    }
+    let p = box_node(mem, p);
+    p.width(mem).0 == 0
+        && p.height(mem).0 == 0
+        && p.depth(mem).0 == 0
+        && p.list_ptr(mem).0 == TEX_NULL
 }
 
 #[inline]
@@ -636,16 +578,23 @@ fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
         && match mem.b16s1(p) as i32 {
             INS_NODE | MARK_NODE | ADJUST_NODE | PENALTY_NODE => true,
             DISC_NODE => {
-                mem.b32s0(p + 1) == TEX_NULL && mem.b32s1(p + 1) == TEX_NULL && mem.b16s0(p) == 0
+                let p = disc_node(p);
+                p.pre_break(mem).0 == TEX_NULL
+                    && p.post_break(mem).0 == TEX_NULL
+                    && p.subtype(mem) == 0
             }
-            MATH_NODE => mem.b32s1(p + 1) == 0,
-            KERN_NODE => mem.b32s1(p + 1) == 0 || mem.b16s0(p) == NORMAL,
-            GLUE_NODE => mem.b32s0(p + 1) == 0,
+            MATH_NODE => math_node(p).width(mem).0 == 0,
+            KERN_NODE => {
+                let p = kern_node(p);
+                p.width(mem).0 == 0 || p.subtype(mem) == NORMAL
+            }
+            GLUE_NODE => glue_node(p).glue_ptr(mem).0 == 0,
             HLIST_NODE => {
-                mem.b32s1(p + 1) == 0
-                    && mem.b32s1(p + 3) == 0
-                    && mem.b32s1(p + 2) == 0
-                    && mem.b32s1(p + 5) == TEX_NULL
+                let p = box_node(mem, p);
+                p.width(mem).0 == 0
+                    && p.height(mem).0 == 0
+                    && p.depth(mem).0 == 0
+                    && p.list_ptr(mem).0 == TEX_NULL
             }
             _ => false,
         }
@@ -682,28 +631,35 @@ pub fn total_pw(
     q: i32,
     p: i32,
 ) -> Option<i32> {
-    let mut l = if mem.b32s1(q + 1) == TEX_NULL {
+    let break_node = active(q).break_node(mem);
+    let mut l = if break_node.0 == TEX_NULL {
         linebreak.first_p
     } else {
-        mem.b32s1(mem.b32s1(q + 1) + 1)
+        passive_node(break_node.0).cur_break(mem).0
     };
 
     let mut r = crate::mem::prev_rightmost(mem, linebreak.global_prev_p, p);
-    if p != TEX_NULL && mem.b16s1(p) as i32 == DISC_NODE && mem.b32s0(p + 1) != TEX_NULL {
-        r = mem.b32s0(p + 1);
-        while mem.b32s1(r) != TEX_NULL {
-            r = mem.b32s1(r);
+    if p != TEX_NULL && mem.b16s1(p) as i32 == DISC_NODE {
+        let p_disc = disc_node(p);
+        if p_disc.pre_break(mem).0 != TEX_NULL {
+            r = p_disc.pre_break(mem).0;
+            while mem.b32s1(r) != TEX_NULL {
+                r = mem.b32s1(r);
+            }
+        } else {
+            r = find_protchar_right(mem, linebreak, l, r)?;
         }
     } else {
         r = find_protchar_right(mem, linebreak, l, r)?;
     }
 
     if l != TEX_NULL && mem.b16s1(l) as i32 == DISC_NODE {
-        if mem.b32s1(l + 1) != TEX_NULL {
-            l = mem.b32s1(l + 1);
+        let l_disc = disc_node(l);
+        if l_disc.post_break(mem).0 != TEX_NULL {
+            l = l_disc.post_break(mem).0;
         } else {
-            let mut n = mem.b16s0(l);
-            l = mem.b32s1(l);
+            let mut n = l_disc.subtype(mem);
+            l = l_disc.link(mem).0;
             while n > 0 {
                 if mem.b32s1(l) != TEX_NULL {
                     l = mem.b32s1(l);
@@ -720,16 +676,6 @@ pub fn total_pw(
     // bridge), so the protrusion widths fold directly into this borrow rather
     // than running after it drops (the session-76 split is no longer needed).
     Some(char_pw_in(mem, fonts, linebreak, l, 0) + char_pw_in(mem, fonts, linebreak, r, 1))
-}
-
-pub unsafe fn total_pw_global(q: i32, p: i32) -> i32 {
-    match crate::state::with_state_mut(|state| {
-        let state = &mut *state;
-        total_pw(&mut state.mem, &state.fonts, &mut state.linebreak, q, p)
-    }) {
-        Some(w) => w,
-        None => crate::errors::pdf_error(c"total_pw".as_ptr(), c"hlist stack failure".as_ptr()),
-    }
 }
 
 // translated from xetex-linebreak.c:2731 (find_protchar_left)
@@ -753,11 +699,14 @@ pub fn find_protchar_left(
     let mut run = true;
     loop {
         let t = l;
-        while run && mem.b16s1(l) as i32 == HLIST_NODE && mem.b32s1(l + 5) != TEX_NULL {
+        while run
+            && mem.b16s1(l) as i32 == HLIST_NODE
+            && box_node(mem, l).list_ptr(mem).0 != TEX_NULL
+        {
             if !push_node(linebreak, l) {
                 return None;
             }
-            l = mem.b32s1(l + 5);
+            l = box_node(mem, l).list_ptr(mem).0;
         }
 
         while run && ignorable_protrusion_node_in(mem, l) {
@@ -795,11 +744,14 @@ pub fn find_protchar_right(
     let mut run = true;
     loop {
         let t = r;
-        while run && mem.b16s1(r) as i32 == HLIST_NODE && mem.b32s1(r + 5) != TEX_NULL {
+        while run
+            && mem.b16s1(r) as i32 == HLIST_NODE
+            && box_node(mem, r).list_ptr(mem).0 != TEX_NULL
+        {
             if !push_node(linebreak, l) || !push_node(linebreak, r) {
                 return None;
             }
-            l = mem.b32s1(r + 5);
+            l = box_node(mem, r).list_ptr(mem).0;
             r = l;
             while mem.b32s1(r) != TEX_NULL {
                 r = mem.b32s1(r);
@@ -867,8 +819,12 @@ pub fn insert_right_margin_kern(
     if k == crate::mem::ALLOC_FAILED {
         return Err(MarginKernAbort::Overflow);
     }
-    mem.set_b32s1(k, mem.b32s1(ptmp));
-    mem.set_b32s1(ptmp, k);
+    let k = mem
+        .classify_margin_kern(MemIdx::new(k))
+        .expect("new_margin_kern stamps a valid node type")
+        .expect("new_margin_kern returns a margin kern node");
+    k.set_link(mem, MemPtr::from_raw(mem.b32s1(ptmp)));
+    mem.set_b32s1(ptmp, k.idx().0);
     let new_q = if ptmp == q { mem.b32s1(q) } else { q };
     Ok(new_q)
 }
@@ -923,8 +879,12 @@ pub fn insert_left_margin_kern(
     if k == crate::mem::ALLOC_FAILED {
         return Err(MarginKernAbort::Overflow);
     }
-    mem.set_b32s1(k, q);
-    Ok(k)
+    let k = mem
+        .classify_margin_kern(MemIdx::new(k))
+        .expect("new_margin_kern stamps a valid node type")
+        .expect("new_margin_kern returns a margin kern node");
+    k.set_link(mem, MemPtr::from_raw(q));
+    Ok(k.idx().0)
 }
 
 unsafe fn insert_left_margin_kern_global(q: i32) -> i32 {
@@ -959,7 +919,9 @@ pub fn finite_shrink(mem: &mut MemState, p: i32) -> Result<i32, NodeRecycleAbort
     if q == crate::mem::ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    mem.set_b16s0(q, NORMAL);
+    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q))
+        .expect("new_spec returns a glue spec");
+    spec.set_shrink_order(mem, NORMAL);
     crate::mem::delete_glue_ref(mem, p);
     Ok(q)
 }
@@ -1394,21 +1356,234 @@ fn set_current_hyph_index_global() {
     crate::state::with_state_mut(|st| set_current_hyph_index(&mut st.hyph));
 }
 
+fn start_linebreak_pass(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    linebreak: &mut LinebreakState,
+    errors: &mut ErrorState,
+    prev_graf: i32,
+) -> Result<i32, NodeRecycleAbort> {
+    let q_active = alloc_active_node(
+        mem,
+        linebreak.active_node_size as i32,
+        MemPtr::from_raw(LAST_ACTIVE),
+    )?;
+    q_active.set_break_type(mem, UNHYPHENATED as u16);
+    q_active.set_fitness(mem, DECENT_FIT as u16);
+    q_active.set_break_node(mem, MemPtr::NULL);
+    q_active.set_line_number(mem, prev_graf + 1);
+    q_active.set_total_demerits(mem, 0);
+    mem.set_b32s1(ACTIVE_LIST, q_active.idx().0);
+    if linebreak.do_last_line_fit {
+        q_active.set_shortfall(mem, Scaled(0));
+        q_active.set_glue(mem, Scaled(0));
+    }
+
+    for k in 1..=6 {
+        scanner.active_width[k] = linebreak.background[k];
+    }
+    linebreak.passive = TEX_NULL;
+    errors.font_in_short_display = 0;
+    linebreak.cur_p = mem.b32s1(TEMP_HEAD);
+    linebreak.global_prev_p = linebreak.cur_p;
+    linebreak.first_p = linebreak.cur_p;
+
+    Ok(linebreak.cur_p)
+}
+
+fn start_linebreak_pass_global(prev_graf: i32) -> i32 {
+    match crate::state::with_state_mut(|st| {
+        let st = &mut *st;
+        start_linebreak_pass(
+            &mut st.mem,
+            &mut st.scanner,
+            &mut st.linebreak,
+            &mut st.errors,
+            prev_graf,
+        )
+    }) {
+        Ok(p) => p,
+        Err(e) => unsafe { node_recycle_abort(e) },
+    }
+}
+
+fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakState) {
+    let mut q = mem.b32s1(ACTIVE_LIST);
+    while q != LAST_ACTIVE {
+        if mem.b16s1(q) as i32 == DELTA_NODE {
+            linebreak.cur_p = delta_node(q).link(mem).0;
+            crate::mem::free_node(mem, q, DELTA_NODE_SIZE);
+        } else {
+            linebreak.cur_p = active(q).link(mem).0;
+            crate::mem::free_node(mem, q, linebreak.active_node_size as i32);
+        }
+        q = linebreak.cur_p;
+    }
+
+    q = linebreak.passive;
+    while q != TEX_NULL {
+        linebreak.cur_p = passive_node(q).link(mem).0;
+        crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
+        q = linebreak.cur_p;
+    }
+}
+
+fn free_final_linebreak_lists(mem: &mut MemState, linebreak: &mut LinebreakState) {
+    let mut q = mem.b32s1(ACTIVE_LIST);
+    while q != ACTIVE_LIST {
+        let next = if mem.b16s1(q) as i32 == DELTA_NODE {
+            let next = delta_node(q).link(mem).0;
+            crate::mem::free_node(mem, q, DELTA_NODE_SIZE);
+            next
+        } else {
+            let next = active(q).link(mem).0;
+            crate::mem::free_node(mem, q, linebreak.active_node_size as i32);
+            next
+        };
+        q = next;
+    }
+
+    q = linebreak.passive;
+    while q != TEX_NULL {
+        let next = passive_node(q).link(mem).0;
+        crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
+        q = next;
+    }
+}
+
+fn free_active_and_passive_lists_global() {
+    crate::state::with_state_mut(|st| {
+        free_active_and_passive_lists(&mut st.mem, &mut st.linebreak)
+    });
+}
+
+fn free_final_linebreak_lists_global() {
+    crate::state::with_state_mut(|st| free_final_linebreak_lists(&mut st.mem, &mut st.linebreak));
+}
+
+fn choose_best_break(mem: &MemState, linebreak: &mut LinebreakState, eqtb: &EqtbState) -> bool {
+    if mem.b32s1(ACTIVE_LIST) == LAST_ACTIVE {
+        return false;
+    }
+
+    let mut r = mem.b32s1(ACTIVE_LIST);
+    let mut fewest_demerits = MAX_HALFWORD;
+    loop {
+        if mem.b16s1(r) as i32 != DELTA_NODE && active(r).total_demerits(mem) < fewest_demerits {
+            fewest_demerits = active(r).total_demerits(mem);
+            linebreak.best_bet = r;
+        }
+        r = if mem.b16s1(r) as i32 == DELTA_NODE {
+            delta_node(r).link(mem).0
+        } else {
+            active(r).link(mem).0
+        };
+        if r == LAST_ACTIVE {
+            break;
+        }
+    }
+    linebreak.best_line = active(linebreak.best_bet).line_number(mem);
+
+    let looseness = eqtb.b32s1(INT_BASE + INT_PAR_LOOSENESS);
+    if looseness == 0 {
+        return true;
+    }
+
+    let mut r = mem.b32s1(ACTIVE_LIST);
+    let mut actual_looseness = 0;
+    loop {
+        if mem.b16s1(r) as i32 != DELTA_NODE {
+            let line_diff = active(r).line_number(mem) - linebreak.best_line;
+            if (line_diff < actual_looseness && looseness <= line_diff)
+                || (line_diff > actual_looseness && looseness >= line_diff)
+            {
+                linebreak.best_bet = r;
+                actual_looseness = line_diff;
+                fewest_demerits = active(r).total_demerits(mem);
+            } else if line_diff == actual_looseness
+                && active(r).total_demerits(mem) < fewest_demerits
+            {
+                linebreak.best_bet = r;
+                fewest_demerits = active(r).total_demerits(mem);
+            }
+        }
+        r = if mem.b16s1(r) as i32 == DELTA_NODE {
+            delta_node(r).link(mem).0
+        } else {
+            active(r).link(mem).0
+        };
+        if r == LAST_ACTIVE {
+            break;
+        }
+    }
+
+    linebreak.best_line = active(linebreak.best_bet).line_number(mem);
+    actual_looseness == looseness || linebreak.final_pass
+}
+
+fn choose_best_break_global() -> bool {
+    crate::state::with_state_mut(|st| choose_best_break(&st.mem, &mut st.linebreak, &st.eqtb))
+}
+
+fn finish_last_line_fit(
+    mem: &mut MemState,
+    linebreak: &mut LinebreakState,
+    last_line_fill: i32,
+) -> Result<(), NodeRecycleAbort> {
+    if !linebreak.do_last_line_fit {
+        return Ok(());
+    }
+
+    let best = active(linebreak.best_bet);
+    if best.shortfall(mem).0 == 0 {
+        linebreak.do_last_line_fit = false;
+        return Ok(());
+    }
+
+    // SAFETY: `last_line_fill` is the glue node returned by new_param_glue.
+    let fill = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(last_line_fill)) };
+    let old_spec = fill.glue_ptr(mem);
+    let q = crate::mem::new_spec(mem, old_spec.0);
+    if q == crate::mem::ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    crate::mem::delete_glue_ref(mem, old_spec.0);
+
+    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q))
+        .expect("new_spec returns a glue spec");
+    spec.set_width(
+        mem,
+        Scaled(spec.width(mem).0 + best.shortfall(mem).0 - best.glue(mem).0),
+    );
+    spec.set_stretch(mem, Scaled(0));
+    fill.set_glue_ptr(mem, MemPtr::from_raw(q));
+    Ok(())
+}
+
+fn finish_last_line_fit_global(last_line_fill: i32) {
+    match crate::state::with_state_mut(|st| {
+        finish_last_line_fit(&mut st.mem, &mut st.linebreak, last_line_fill)
+    }) {
+        Ok(()) => {}
+        Err(e) => unsafe { node_recycle_abort(e) },
+    }
+}
+
 // translated from xetex-linebreak.c:90 (line_break)
 pub unsafe fn line_break(d: bool) {
     use crate::globals::{
         active_width, background, cur_list_head, cur_list_mode_line, cur_list_prev_graf,
         cur_list_tail, eqtb_b32s1, font_bchar_entry, hc_entry, hi_mem_min, hn, hyph_index,
         hyphen_char_entry, l_hyf, last_special_line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1,
-        passive, r_hyf, set_active_node_size, set_active_width, set_background, set_best_bet,
-        set_best_line, set_cur_lang, set_cur_list_tail, set_cur_p, set_disc_width,
-        set_do_last_line_fit, set_easy_line, set_fill_width, set_final_pass, set_first_indent,
-        set_first_p, set_first_width, set_font_in_short_display, set_global_prev_p, set_ha, set_hb,
-        set_hc_entry, set_hf, set_hn, set_hu_entry, set_hyf_bchar, set_hyf_char, set_init_l_hyf,
-        set_init_r_hyf, set_l_hyf, set_last_special_line, set_mem_b16s0, set_mem_b16s1,
-        set_mem_b32s1, set_minimal_demerits, set_minimum_demerits, set_no_shrink_error_yet,
-        set_pack_begin_line, set_passive, set_r_hyf, set_second_indent, set_second_width,
-        set_threshold, set_xtx_ligature_present, trie_not_ready, trie_trc_entry, trie_tro_entry,
+        r_hyf, set_active_node_size, set_active_width, set_background, set_cur_lang,
+        set_cur_list_tail, set_cur_p, set_disc_width, set_do_last_line_fit, set_easy_line,
+        set_fill_width, set_final_pass, set_first_indent, set_first_width, set_global_prev_p,
+        set_ha, set_hb, set_hc_entry, set_hf, set_hn, set_hu_entry, set_hyf_bchar, set_hyf_char,
+        set_init_l_hyf, set_init_r_hyf, set_l_hyf, set_last_special_line, set_mem_b16s0,
+        set_mem_b16s1, set_mem_b32s1, set_minimal_demerits, set_minimum_demerits,
+        set_no_shrink_error_yet, set_pack_begin_line, set_r_hyf, set_second_indent,
+        set_second_width, set_threshold, set_xtx_ligature_present, trie_not_ready, trie_trc_entry,
+        trie_tro_entry,
     };
 
     fn add_active_width(k: usize, v: i32) {
@@ -1600,29 +1775,8 @@ pub unsafe fn line_break(d: bool) {
             set_current_hyph_index_global();
         }
 
-        let q = crate::mem::get_node_global(crate::globals::active_node_size());
-        set_mem_b16s1(q, UNHYPHENATED as u16);
-        set_active_node_fitness(q, DECENT_FIT);
-        set_mem_b32s1(q, LAST_ACTIVE);
-        set_active_node_break_node(q, TEX_NULL);
-        set_active_node_line_number(q, cur_list_prev_graf() + 1);
-        set_active_node_total_demerits(q, 0);
-        set_mem_b32s1(ACTIVE_LIST, q);
-        if crate::globals::do_last_line_fit() {
-            set_active_node_shortfall(q, 0);
-            set_active_node_glue(q, 0);
-        }
-
-        for k in 1..=6 {
-            set_active_width(k, background(k));
-        }
-        set_passive(TEX_NULL);
-        set_font_in_short_display(0);
-        set_cur_p(mem_b32s1(TEMP_HEAD));
+        let mut prev_p = start_linebreak_pass_global(cur_list_prev_graf());
         let mut auto_breaking = true;
-        let mut prev_p = crate::globals::cur_p();
-        set_global_prev_p(prev_p);
-        set_first_p(prev_p);
 
         while crate::globals::cur_p() != TEX_NULL && mem_b32s1(ACTIVE_LIST) != LAST_ACTIVE {
             let mut cur = crate::globals::cur_p();
@@ -1668,7 +1822,7 @@ pub unsafe fn line_break(d: bool) {
                             || is_non_discardable_node_global(prev_p)
                             || (node_type(prev_p) == KERN_NODE && node_subtype(prev_p) != EXPLICIT))
                     {
-                        try_break(0, UNHYPHENATED);
+                        try_break_global(0, UNHYPHENATED);
                     }
 
                     let mut q = glue_ptr(cur);
@@ -2003,7 +2157,7 @@ pub unsafe fn line_break(d: bool) {
                             && auto_breaking
                             && node_type(mem_b32s1(cur)) == GLUE_NODE
                         {
-                            try_break(0, UNHYPHENATED);
+                            try_break_global(0, UNHYPHENATED);
                         }
                         add_active_width(1, box_width(cur));
                     } else {
@@ -2022,7 +2176,7 @@ pub unsafe fn line_break(d: bool) {
                     let mut s = disc_pre_break(cur);
                     set_disc_width(0);
                     if s == TEX_NULL {
-                        try_break(int_par_global(INT_PAR_EX_HYPHEN_PENALTY), HYPHENATED);
+                        try_break_global(int_par_global(INT_PAR_EX_HYPHEN_PENALTY), HYPHENATED);
                     } else {
                         set_disc_width(0);
                         while s != TEX_NULL {
@@ -2033,7 +2187,7 @@ pub unsafe fn line_break(d: bool) {
                             s = mem_b32s1(s);
                         }
                         add_active_width(1, crate::globals::disc_width());
-                        try_break(int_par_global(INT_PAR_HYPHEN_PENALTY), HYPHENATED);
+                        try_break_global(int_par_global(INT_PAR_HYPHEN_PENALTY), HYPHENATED);
                         add_active_width(1, -crate::globals::disc_width());
                     }
 
@@ -2058,12 +2212,12 @@ pub unsafe fn line_break(d: bool) {
                         && auto_breaking
                         && node_type(mem_b32s1(cur)) == GLUE_NODE
                     {
-                        try_break(0, UNHYPHENATED);
+                        try_break_global(0, UNHYPHENATED);
                     }
                     add_active_width(1, box_width(cur));
                 }
                 PENALTY_NODE => {
-                    try_break(penalty_node_penalty(cur), UNHYPHENATED);
+                    try_break_global(penalty_node_penalty(cur), UNHYPHENATED);
                 }
                 MARK_NODE | INS_NODE | ADJUST_NODE => {}
                 _ => crate::errors::confusion(c"paragraph".as_ptr()),
@@ -2075,79 +2229,13 @@ pub unsafe fn line_break(d: bool) {
         }
 
         if crate::globals::cur_p() == TEX_NULL {
-            try_break(EJECT_PENALTY, HYPHENATED);
-            if mem_b32s1(ACTIVE_LIST) != LAST_ACTIVE {
-                let mut r = mem_b32s1(ACTIVE_LIST);
-                let mut fewest_demerits = MAX_HALFWORD;
-                loop {
-                    if node_type(r) != DELTA_NODE && active_node_total_demerits(r) < fewest_demerits
-                    {
-                        fewest_demerits = active_node_total_demerits(r);
-                        set_best_bet(r);
-                    }
-                    r = mem_b32s1(r);
-                    if r == LAST_ACTIVE {
-                        break;
-                    }
-                }
-                set_best_line(active_node_line_number(crate::globals::best_bet()));
-
-                if int_par_global(INT_PAR_LOOSENESS) == 0 {
-                    break 'passes;
-                }
-
-                let mut r = mem_b32s1(ACTIVE_LIST);
-                let mut actual_looseness = 0;
-                loop {
-                    if node_type(r) != DELTA_NODE {
-                        let line_diff = active_node_line_number(r) - crate::globals::best_line();
-                        if (line_diff < actual_looseness
-                            && int_par_global(INT_PAR_LOOSENESS) <= line_diff)
-                            || (line_diff > actual_looseness
-                                && int_par_global(INT_PAR_LOOSENESS) >= line_diff)
-                        {
-                            set_best_bet(r);
-                            actual_looseness = line_diff;
-                            fewest_demerits = active_node_total_demerits(r);
-                        } else if line_diff == actual_looseness
-                            && active_node_total_demerits(r) < fewest_demerits
-                        {
-                            set_best_bet(r);
-                            fewest_demerits = active_node_total_demerits(r);
-                        }
-                    }
-                    r = mem_b32s1(r);
-                    if r == LAST_ACTIVE {
-                        break;
-                    }
-                }
-
-                set_best_line(active_node_line_number(crate::globals::best_bet()));
-                if actual_looseness == int_par_global(INT_PAR_LOOSENESS)
-                    || crate::globals::final_pass()
-                {
-                    break 'passes;
-                }
+            try_break_global(EJECT_PENALTY, HYPHENATED);
+            if choose_best_break_global() {
+                break 'passes;
             }
         }
 
-        let mut q = mem_b32s1(ACTIVE_LIST);
-        while q != LAST_ACTIVE {
-            set_cur_p(mem_b32s1(q));
-            if node_type(q) == DELTA_NODE {
-                crate::mem::free_node_global(q, DELTA_NODE_SIZE);
-            } else {
-                crate::mem::free_node_global(q, crate::globals::active_node_size());
-            }
-            q = crate::globals::cur_p();
-        }
-
-        q = passive();
-        while q != TEX_NULL {
-            set_cur_p(mem_b32s1(q));
-            crate::mem::free_node_global(q, PASSIVE_NODE_SIZE);
-            q = crate::globals::cur_p();
-        }
+        free_active_and_passive_lists_global();
 
         if !second_pass {
             set_threshold(int_par_global(INT_PAR_TOLERANCE));
@@ -2162,41 +2250,11 @@ pub unsafe fn line_break(d: bool) {
         }
     }
 
-    if crate::globals::do_last_line_fit() {
-        if active_node_shortfall(crate::globals::best_bet()) == 0 {
-            set_do_last_line_fit(false);
-        } else {
-            let q = crate::mem::new_spec_global(glue_ptr(last_line_fill));
-            crate::mem::delete_glue_ref_global(glue_ptr(last_line_fill));
-            set_box_width(
-                q,
-                box_width(q) + active_node_shortfall(crate::globals::best_bet())
-                    - active_node_glue(crate::globals::best_bet()),
-            );
-            set_glue_spec_stretch(q, 0);
-            set_glue_ptr(last_line_fill, q);
-        }
-    }
+    finish_last_line_fit_global(last_line_fill);
 
     post_line_break(d);
 
-    let mut q = mem_b32s1(ACTIVE_LIST);
-    while q != ACTIVE_LIST {
-        let next = mem_b32s1(q);
-        if node_type(q) == DELTA_NODE {
-            crate::mem::free_node_global(q, DELTA_NODE_SIZE);
-        } else {
-            crate::mem::free_node_global(q, crate::globals::active_node_size());
-        }
-        q = next;
-    }
-
-    q = passive();
-    while q != TEX_NULL {
-        let next = mem_b32s1(q);
-        crate::mem::free_node_global(q, PASSIVE_NODE_SIZE);
-        q = next;
-    }
+    free_final_linebreak_lists_global();
 
     set_pack_begin_line(0);
 }
@@ -2218,10 +2276,12 @@ fn odd_i32(v: i32) -> bool {
 /// performs the abort after the borrow drops.
 #[inline]
 fn update_lr_stack(mem: &mut MemState, q: i32, lr_ptr: &mut i32) -> bool {
-    if odd_i32(mem.b16s0(q) as i32) {
+    let q_math = math_node(q);
+    let q_subtype = q_math.subtype(mem) as i32;
+    if odd_i32(q_subtype) {
         if *lr_ptr != TEX_NULL
             && mem.b32s0(*lr_ptr)
-                == L_CODE as i32 * (mem.b16s0(q) as i32 / L_CODE as i32) + END_M_CODE as i32
+                == L_CODE as i32 * (q_subtype / L_CODE as i32) + END_M_CODE as i32
         {
             let temp_ptr = *lr_ptr;
             *lr_ptr = mem.b32s1(temp_ptr);
@@ -2235,7 +2295,7 @@ fn update_lr_stack(mem: &mut MemState, q: i32, lr_ptr: &mut i32) -> bool {
         }
         mem.set_b32s0(
             temp_ptr,
-            L_CODE as i32 * (mem.b16s0(q) as i32 / L_CODE as i32) + END_M_CODE as i32,
+            L_CODE as i32 * (q_subtype / L_CODE as i32) + END_M_CODE as i32,
         );
         mem.set_b32s1(temp_ptr, *lr_ptr);
         *lr_ptr = temp_ptr;
@@ -2558,26 +2618,30 @@ pub unsafe fn post_line_break(d: bool) {
     set_cur_list_e_tex_aux(lr_ptr);
 }
 
-// translated from xetex-linebreak.c:978 (try_break)
-pub unsafe fn try_break(mut pi: i32, break_type: i16) {
-    use crate::globals::{
-        active_node_size, active_width, background, best_pl_glue, best_pl_line, best_pl_short,
-        best_place, break_width, cur_active_width, cur_p, disc_width, do_last_line_fit, easy_line,
-        eqtb_b32s1, fill_width, final_pass, first_width, last_special_line, mem_b16s0, mem_b16s1,
-        mem_b32s0, mem_b32s1, minimal_demerits, minimum_demerits, passive,
-        semantic_pagination_enabled, set_active_width, set_best_pl_glue, set_best_pl_line,
-        set_best_pl_short, set_best_place, set_break_width, set_cur_active_width, set_mem_b16s0,
-        set_mem_b16s1, set_mem_b32s1, set_minimal_demerits, set_minimum_demerits,
-        set_passive, set_xtx_ligature_present, threshold,
-    };
+enum TryBreakAbort {
+    Node(NodeRecycleAbort),
+    HlistStackFailure,
+}
 
-    if semantic_pagination_enabled() && cur_p() != TEX_NULL {
-        return;
+// translated from xetex-linebreak.c:978 (try_break)
+unsafe fn try_break(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    linebreak: &mut LinebreakState,
+    eqtb: &EqtbState,
+    fonts: &mut FontState,
+    config: &ConfigState,
+    errors: &mut ErrorState,
+    mut pi: i32,
+    break_type: i16,
+) -> Result<(), TryBreakAbort> {
+    if config.semantic_pagination_enabled && linebreak.cur_p != TEX_NULL {
+        return Ok(());
     }
 
     if pi.abs() >= INF_PENALTY {
         if pi > 0 {
-            return;
+            return Ok(());
         }
         pi = EJECT_PENALTY;
     }
@@ -2590,262 +2654,296 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
     let mut g = 0;
 
     for k in 1..=6 {
-        set_cur_active_width(k, active_width(k));
+        linebreak.cur_active_width[k] = scanner.active_width[k];
     }
 
     loop {
-        let r = mem_b32s1(prev_r);
+        let r = if prev_r == ACTIVE_LIST {
+            mem.b32s1(ACTIVE_LIST)
+        } else if mem.b16s1(prev_r) as i32 == DELTA_NODE {
+            delta_node(prev_r).link(mem).0
+        } else {
+            active(prev_r).link(mem).0
+        };
 
-        if mem_b16s1(r) as i32 == DELTA_NODE {
+        if mem.b16s1(r) as i32 == DELTA_NODE {
             for k in 1..=6 {
-                set_cur_active_width(k, cur_active_width(k) + delta_node_width(r, k));
+                linebreak.cur_active_width[k] += delta_node_width_in(mem, r, k);
             }
             prev_prev_r = prev_r;
             prev_r = r;
             continue;
         }
 
-        let l = active_node_line_number(r);
+        let l = active(r).line_number(mem);
         if l > old_l {
-            if minimum_demerits() < AWFUL_BAD && (old_l != easy_line() || r == LAST_ACTIVE) {
+            if linebreak.minimum_demerits < AWFUL_BAD
+                && (old_l != linebreak.easy_line || r == LAST_ACTIVE)
+            {
                 if no_break_yet {
                     no_break_yet = false;
                     for k in 1..=6 {
-                        set_break_width(k, background(k));
+                        linebreak.break_width[k] = linebreak.background[k];
                     }
-                    let mut s = cur_p();
+                    let mut s = linebreak.cur_p;
 
-                    if break_type > UNHYPHENATED && cur_p() != TEX_NULL {
-                        let mut t = mem_b16s0(cur_p()) as i32;
-                        let mut v = cur_p();
-                        s = mem_b32s1(cur_p() + 1);
+                    if break_type > UNHYPHENATED && linebreak.cur_p != TEX_NULL {
+                        let cur_disc = disc_node(linebreak.cur_p);
+                        let mut t = cur_disc.subtype(mem) as i32;
+                        let mut v = linebreak.cur_p;
+                        s = cur_disc.post_break(mem).0;
 
                         while t > 0 {
                             t -= 1;
-                            v = mem_b32s1(v);
-                            if is_char_node_global(v) {
-                                let f = mem_b16s1(v) as i32;
-                                set_break_width(
-                                    1,
-                                    break_width(1) - font_character_width_global(f, mem_b16s0(v)),
-                                );
+                            v = mem.b32s1(v);
+                            if crate::mem::is_char_node(mem, v) {
+                                let f = mem.b16s1(v) as i32;
+                                linebreak.break_width[1] -=
+                                    font_character_width(fonts, f, mem.b16s0(v));
                             } else {
-                                match mem_b16s1(v) as i32 {
+                                match mem.b16s1(v) as i32 {
                                     LIGATURE_NODE => {
-                                        let f = mem_b16s1(v + 1) as i32;
-                                        set_xtx_ligature_present(true);
-                                        set_break_width(
-                                            1,
-                                            break_width(1)
-                                                - font_character_width_global(f, mem_b16s0(v + 1)),
-                                        );
+                                        let lig = ligature_node(v);
+                                        let f = lig.font(mem).0;
+                                        fonts.set_xtx_ligature_present(true);
+                                        linebreak.break_width[1] -=
+                                            font_character_width(fonts, f, lig.character(mem));
                                     }
                                     HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
-                                        set_break_width(1, break_width(1) - mem_b32s1(v + 1));
+                                        linebreak.break_width[1] -= typed_list_width_in(mem, v);
                                     }
                                     WHATSIT_NODE => {
-                                        let sub = mem_b16s0(v);
+                                        let sub = mem.b16s0(v);
                                         if sub == NATIVE_WORD_NODE
                                             || sub == NATIVE_WORD_NODE_AT
                                             || sub == GLYPH_NODE
                                             || sub == PIC_NODE
                                             || sub == PDF_NODE
                                         {
-                                            set_break_width(1, break_width(1) - mem_b32s1(v + 1));
+                                            linebreak.break_width[1] -= mem.b32s1(v + 1);
                                         } else {
-                                            crate::errors::confusion(c"disc1a".as_ptr());
+                                            return Err(TryBreakAbort::Node(
+                                                NodeRecycleAbort::Confusion(c"disc1a"),
+                                            ));
                                         }
                                     }
-                                    _ => crate::errors::confusion(c"disc1".as_ptr()),
+                                    _ => {
+                                        return Err(TryBreakAbort::Node(
+                                            NodeRecycleAbort::Confusion(c"disc1"),
+                                        ));
+                                    }
                                 }
                             }
                         }
 
                         while s != TEX_NULL {
-                            if is_char_node_global(s) {
-                                let f = mem_b16s1(s) as i32;
-                                set_break_width(
-                                    1,
-                                    break_width(1) + font_character_width_global(f, mem_b16s0(s)),
-                                );
+                            if crate::mem::is_char_node(mem, s) {
+                                let f = mem.b16s1(s) as i32;
+                                linebreak.break_width[1] +=
+                                    font_character_width(fonts, f, mem.b16s0(s));
                             } else {
-                                match mem_b16s1(s) as i32 {
+                                match mem.b16s1(s) as i32 {
                                     LIGATURE_NODE => {
-                                        let f = mem_b16s1(s + 1) as i32;
-                                        set_xtx_ligature_present(true);
-                                        set_break_width(
-                                            1,
-                                            break_width(1)
-                                                + font_character_width_global(f, mem_b16s0(s + 1)),
-                                        );
+                                        let lig = ligature_node(s);
+                                        let f = lig.font(mem).0;
+                                        fonts.set_xtx_ligature_present(true);
+                                        linebreak.break_width[1] +=
+                                            font_character_width(fonts, f, lig.character(mem));
                                     }
                                     HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
-                                        set_break_width(1, break_width(1) + mem_b32s1(s + 1));
+                                        linebreak.break_width[1] += typed_list_width_in(mem, s);
                                     }
                                     WHATSIT_NODE => {
-                                        let sub = mem_b16s0(s);
+                                        let sub = mem.b16s0(s);
                                         if sub == NATIVE_WORD_NODE
                                             || sub == NATIVE_WORD_NODE_AT
                                             || sub == GLYPH_NODE
                                             || sub == PIC_NODE
                                             || sub == PDF_NODE
                                         {
-                                            set_break_width(1, break_width(1) + mem_b32s1(s + 1));
+                                            linebreak.break_width[1] += mem.b32s1(s + 1);
                                         } else {
-                                            crate::errors::confusion(c"disc2a".as_ptr());
+                                            return Err(TryBreakAbort::Node(
+                                                NodeRecycleAbort::Confusion(c"disc2a"),
+                                            ));
                                         }
                                     }
-                                    _ => crate::errors::confusion(c"disc2".as_ptr()),
+                                    _ => {
+                                        return Err(TryBreakAbort::Node(
+                                            NodeRecycleAbort::Confusion(c"disc2"),
+                                        ));
+                                    }
                                 }
                             }
 
-                            s = mem_b32s1(s);
+                            s = mem.b32s1(s);
                         }
 
-                        set_break_width(1, break_width(1) + disc_width());
-                        if mem_b32s1(cur_p() + 1) == TEX_NULL {
-                            s = mem_b32s1(v);
+                        linebreak.break_width[1] += linebreak.disc_width;
+                        if cur_disc.post_break(mem).0 == TEX_NULL {
+                            s = mem.b32s1(v);
                         }
                     }
 
                     while s != TEX_NULL {
-                        if is_char_node_global(s) {
+                        if crate::mem::is_char_node(mem, s) {
                             break;
                         }
 
-                        match mem_b16s1(s) as i32 {
+                        match mem.b16s1(s) as i32 {
                             GLUE_NODE => {
-                                let v = mem_b32s0(s + 1);
-                                set_break_width(1, break_width(1) - mem_b32s1(v + 1));
-                                set_break_width(
-                                    2 + mem_b16s1(v) as usize,
-                                    break_width(2 + mem_b16s1(v) as usize) - mem_b32s1(v + 2),
-                                );
-                                set_break_width(6, break_width(6) - mem_b32s1(v + 3));
+                                let v = glue_node(s).glue_spec(mem).expect("glue node has spec");
+                                linebreak.break_width[1] -= v.width(mem).0;
+                                linebreak.break_width[2 + v.stretch_order(mem) as usize] -=
+                                    v.stretch(mem).0;
+                                linebreak.break_width[6] -= v.shrink(mem).0;
                             }
                             PENALTY_NODE => {}
                             MATH_NODE => {
-                                set_break_width(1, break_width(1) - mem_b32s1(s + 1));
+                                linebreak.break_width[1] -= math_node(s).width(mem).0;
                             }
                             KERN_NODE => {
-                                if mem_b16s0(s) != EXPLICIT {
+                                let kern = kern_node(s);
+                                if kern.subtype(mem) != EXPLICIT {
                                     break;
                                 }
-                                set_break_width(1, break_width(1) - mem_b32s1(s + 1));
+                                linebreak.break_width[1] -= kern.width(mem).0;
                             }
                             _ => break,
                         }
 
-                        s = mem_b32s1(s);
+                        s = mem.b32s1(s);
                     }
                 }
 
-                if mem_b16s1(prev_r) as i32 == DELTA_NODE {
+                if mem.b16s1(prev_r) as i32 == DELTA_NODE {
                     for k in 1..=6 {
-                        set_delta_node_width(
+                        set_delta_node_width_in(
+                            mem,
                             prev_r,
                             k,
-                            delta_node_width(prev_r, k) - cur_active_width(k) + break_width(k),
+                            delta_node_width_in(mem, prev_r, k) - linebreak.cur_active_width[k]
+                                + linebreak.break_width[k],
                         );
                     }
                 } else if prev_r == ACTIVE_LIST {
                     for k in 1..=6 {
-                        set_active_width(k, break_width(k));
+                        scanner.active_width[k] = linebreak.break_width[k];
                     }
                 } else {
-                    let q = crate::mem::get_node_global(DELTA_NODE_SIZE);
-                    set_mem_b32s1(q, r);
-                    set_mem_b16s1(q, DELTA_NODE as u16);
-                    set_mem_b16s0(q, 0);
+                    let q =
+                        alloc_delta_node(mem, MemPtr::from_raw(r)).map_err(TryBreakAbort::Node)?;
                     for k in 1..=6 {
-                        set_delta_node_width(q, k, break_width(k) - cur_active_width(k));
+                        set_delta_node_width_in(
+                            mem,
+                            q.idx().0,
+                            k,
+                            linebreak.break_width[k] - linebreak.cur_active_width[k],
+                        );
                     }
-                    set_mem_b32s1(prev_r, q);
+                    active(prev_r).set_link(mem, MemPtr::from_raw(q.idx().0));
                     prev_prev_r = prev_r;
-                    prev_r = q;
+                    prev_r = q.idx().0;
                 }
 
-                let adj = eqtb_b32s1(INT_BASE + INT_PAR_ADJ_DEMERITS).abs();
-                if adj >= MAX_HALFWORD - minimum_demerits() {
-                    set_minimum_demerits(AWFUL_BAD - 1);
+                let adj = eqtb.b32s1(INT_BASE + INT_PAR_ADJ_DEMERITS).abs();
+                if adj >= MAX_HALFWORD - linebreak.minimum_demerits {
+                    linebreak.minimum_demerits = AWFUL_BAD - 1;
                 } else {
-                    set_minimum_demerits(minimum_demerits() + adj);
+                    linebreak.minimum_demerits += adj;
                 }
 
                 for fit_class in VERY_LOOSE_FIT..=TIGHT_FIT {
-                    if minimal_demerits(fit_class) <= minimum_demerits() {
-                        let passive_node = crate::mem::get_node_global(PASSIVE_NODE_SIZE);
-                        set_passive_node_link(passive_node, passive());
-                        set_passive(passive_node);
-                        set_passive_node_cur_break(passive_node, cur_p());
-                        set_passive_node_prev_break(passive_node, best_place(fit_class));
+                    if linebreak.minimal_demerits[fit_class] <= linebreak.minimum_demerits {
+                        let passive_p = alloc_passive_node(mem).map_err(TryBreakAbort::Node)?;
+                        passive_p.set_link(mem, MemPtr::from_raw(linebreak.passive));
+                        linebreak.passive = passive_p.idx().0;
+                        passive_p.set_cur_break(mem, MemPtr::from_raw(linebreak.cur_p));
+                        passive_p
+                            .set_prev_break(mem, MemPtr::from_raw(linebreak.best_place[fit_class]));
 
-                        let q = crate::mem::get_node_global(active_node_size());
-                        set_active_node_break_node(q, passive());
-                        set_active_node_line_number(q, best_pl_line(fit_class) + 1);
-                        set_active_node_fitness(q, fit_class);
-                        set_mem_b16s1(q, break_type as u16);
-                        set_active_node_total_demerits(q, minimal_demerits(fit_class));
+                        let q_active = alloc_active_node(
+                            mem,
+                            linebreak.active_node_size as i32,
+                            MemPtr::from_raw(r),
+                        )
+                        .map_err(TryBreakAbort::Node)?;
+                        q_active.set_break_node(mem, MemPtr::from_raw(linebreak.passive));
+                        q_active.set_line_number(mem, linebreak.best_pl_line[fit_class] + 1);
+                        q_active.set_fitness(mem, fit_class as u16);
+                        q_active.set_break_type(mem, break_type as u16);
+                        q_active.set_total_demerits(mem, linebreak.minimal_demerits[fit_class]);
 
-                        if do_last_line_fit() {
-                            set_active_node_shortfall(q, best_pl_short(fit_class));
-                            set_active_node_glue(q, best_pl_glue(fit_class));
+                        if linebreak.do_last_line_fit {
+                            q_active.set_shortfall(mem, Scaled(linebreak.best_pl_short[fit_class]));
+                            q_active.set_glue(mem, Scaled(linebreak.best_pl_glue[fit_class]));
                         }
 
-                        set_mem_b32s1(q, r);
-                        set_mem_b32s1(prev_r, q);
-                        prev_r = q;
+                        if mem.b16s1(prev_r) as i32 == DELTA_NODE {
+                            delta_node(prev_r).set_link(mem, MemPtr::from_raw(q_active.idx().0));
+                        } else {
+                            active(prev_r).set_link(mem, MemPtr::from_raw(q_active.idx().0));
+                        }
+                        prev_r = q_active.idx().0;
                     }
 
-                    set_minimal_demerits(fit_class, MAX_HALFWORD);
+                    linebreak.minimal_demerits[fit_class] = MAX_HALFWORD;
                 }
 
-                set_minimum_demerits(MAX_HALFWORD);
+                linebreak.minimum_demerits = MAX_HALFWORD;
 
                 if r != LAST_ACTIVE {
-                    let q = crate::mem::get_node_global(DELTA_NODE_SIZE);
-                    set_mem_b32s1(q, r);
-                    set_mem_b16s1(q, DELTA_NODE as u16);
-                    set_mem_b16s0(q, 0);
+                    let q =
+                        alloc_delta_node(mem, MemPtr::from_raw(r)).map_err(TryBreakAbort::Node)?;
                     for k in 1..=6 {
-                        set_delta_node_width(q, k, cur_active_width(k) - break_width(k));
+                        set_delta_node_width_in(
+                            mem,
+                            q.idx().0,
+                            k,
+                            linebreak.cur_active_width[k] - linebreak.break_width[k],
+                        );
                     }
-                    set_mem_b32s1(prev_r, q);
+                    if mem.b16s1(prev_r) as i32 == DELTA_NODE {
+                        delta_node(prev_r).set_link(mem, MemPtr::from_raw(q.idx().0));
+                    } else {
+                        active(prev_r).set_link(mem, MemPtr::from_raw(q.idx().0));
+                    }
                     prev_prev_r = prev_r;
-                    prev_r = q;
+                    prev_r = q.idx().0;
                 }
             }
 
             if r == LAST_ACTIVE {
-                return;
+                return Ok(());
             }
 
-            if l > easy_line() {
-                line_width = crate::globals::second_width();
+            if l > linebreak.easy_line {
+                line_width = linebreak.second_width;
                 old_l = MAX_HALFWORD - 1;
             } else {
                 old_l = l;
-                if l > last_special_line() {
-                    line_width = crate::globals::second_width();
-                } else if eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE) == TEX_NULL {
-                    line_width = first_width();
+                if l > linebreak.last_special_line {
+                    line_width = linebreak.second_width;
+                } else if eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE) == TEX_NULL {
+                    line_width = linebreak.first_width;
                 } else {
-                    line_width = mem_b32s1(eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE) + 2 * l);
+                    line_width = mem.b32s1(eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE) + 2 * l);
                 }
             }
         }
 
         let mut artificial_demerits;
         let mut shortfall;
-        if semantic_pagination_enabled() {
-            line_width = cur_active_width(1);
+        if config.semantic_pagination_enabled {
+            line_width = linebreak.cur_active_width[1];
             artificial_demerits = true;
             shortfall = 0;
         } else {
             artificial_demerits = false;
-            shortfall = line_width - cur_active_width(1);
-            if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 1 {
-                shortfall += total_pw_global(r, cur_p());
+            shortfall = line_width - linebreak.cur_active_width[1];
+            if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 1 {
+                shortfall += total_pw(mem, fonts, linebreak, r, linebreak.cur_p)
+                    .ok_or(TryBreakAbort::HlistStackFailure)?;
             }
         }
 
@@ -2854,40 +2952,44 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
         let mut jumped_to_found = false;
 
         if shortfall > 0 {
-            if cur_active_width(3) != 0 || cur_active_width(4) != 0 || cur_active_width(5) != 0 {
+            if linebreak.cur_active_width[3] != 0
+                || linebreak.cur_active_width[4] != 0
+                || linebreak.cur_active_width[5] != 0
+            {
                 let mut last_line_fit_found = false;
-                if do_last_line_fit()
-                    && cur_p() == TEX_NULL
-                    && active_node_shortfall(r) != 0
-                    && active_node_glue(r) > 0
-                    && cur_active_width(3) == fill_width(0)
-                    && cur_active_width(4) == fill_width(1)
-                    && cur_active_width(5) == fill_width(2)
+                let r_active = active(r);
+                if linebreak.do_last_line_fit
+                    && linebreak.cur_p == TEX_NULL
+                    && r_active.shortfall(mem).0 != 0
+                    && r_active.glue(mem).0 > 0
+                    && linebreak.cur_active_width[3] == linebreak.fill_width[0]
+                    && linebreak.cur_active_width[4] == linebreak.fill_width[1]
+                    && linebreak.cur_active_width[5] == linebreak.fill_width[2]
                 {
-                    g = if active_node_shortfall(r) > 0 {
-                        cur_active_width(2)
+                    g = if r_active.shortfall(mem).0 > 0 {
+                        linebreak.cur_active_width[2]
                     } else {
-                        cur_active_width(6)
+                        linebreak.cur_active_width[6]
                     };
 
                     if g > 0 {
-                        crate::globals::set_arith_error(false);
+                        errors.arith_error = false;
                         g = crate::scaled_math::fract(
                             g,
-                            active_node_shortfall(r),
-                            active_node_glue(r),
+                            r_active.shortfall(mem).0,
+                            r_active.glue(mem).0,
                             MAX_HALFWORD,
                         );
-                        if eqtb_b32s1(INT_BASE + INT_PAR_LAST_LINE_FIT) < 1000 {
+                        if eqtb.b32s1(INT_BASE + INT_PAR_LAST_LINE_FIT) < 1000 {
                             g = crate::scaled_math::fract(
                                 g,
-                                eqtb_b32s1(INT_BASE + INT_PAR_LAST_LINE_FIT),
+                                eqtb.b32s1(INT_BASE + INT_PAR_LAST_LINE_FIT),
                                 1000,
                                 MAX_HALFWORD,
                             );
                         }
-                        if crate::globals::arith_error() {
-                            g = if active_node_shortfall(r) > 0 {
+                        if errors.arith_error {
+                            g = if r_active.shortfall(mem).0 > 0 {
                                 MAX_HALFWORD
                             } else {
                                 -MAX_HALFWORD
@@ -2898,17 +3000,13 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
                             if g > shortfall {
                                 g = shortfall;
                             }
-                            if g > 7_230_584 && cur_active_width(2) < 1_663_497 {
+                            if g > 7_230_584 && linebreak.cur_active_width[2] < 1_663_497 {
                                 b = INF_BAD;
                                 fit_class = VERY_LOOSE_FIT;
                             } else {
-                                b = crate::helpers::badness(g, cur_active_width(2));
+                                b = crate::helpers::badness(g, linebreak.cur_active_width[2]);
                                 fit_class = if b > 12 {
-                                    if b > 99 {
-                                        VERY_LOOSE_FIT
-                                    } else {
-                                        LOOSE_FIT
-                                    }
+                                    if b > 99 { VERY_LOOSE_FIT } else { LOOSE_FIT }
                                 } else {
                                     DECENT_FIT
                                 };
@@ -2916,10 +3014,10 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
                             last_line_fit_found = true;
                             jumped_to_found = true;
                         } else if g < 0 {
-                            if -g > cur_active_width(6) {
-                                g = -cur_active_width(6);
+                            if -g > linebreak.cur_active_width[6] {
+                                g = -linebreak.cur_active_width[6];
                             }
-                            b = crate::helpers::badness(-g, cur_active_width(6));
+                            b = crate::helpers::badness(-g, linebreak.cur_active_width[6]);
                             fit_class = if b > 12 { TIGHT_FIT } else { DECENT_FIT };
                             last_line_fit_found = true;
                             jumped_to_found = true;
@@ -2932,38 +3030,34 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
                     b = 0;
                     fit_class = DECENT_FIT;
                 }
-            } else if shortfall > 7_230_584 && cur_active_width(2) < 1_663_497 {
+            } else if shortfall > 7_230_584 && linebreak.cur_active_width[2] < 1_663_497 {
                 b = INF_BAD;
                 fit_class = VERY_LOOSE_FIT;
             } else {
-                b = crate::helpers::badness(shortfall, cur_active_width(2));
+                b = crate::helpers::badness(shortfall, linebreak.cur_active_width[2]);
                 fit_class = if b > 12 {
-                    if b > 99 {
-                        VERY_LOOSE_FIT
-                    } else {
-                        LOOSE_FIT
-                    }
+                    if b > 99 { VERY_LOOSE_FIT } else { LOOSE_FIT }
                 } else {
                     DECENT_FIT
                 };
             }
         } else {
-            if -shortfall > cur_active_width(6) {
+            if -shortfall > linebreak.cur_active_width[6] {
                 b = INF_BAD + 1;
             } else {
-                b = crate::helpers::badness(-shortfall, cur_active_width(6));
+                b = crate::helpers::badness(-shortfall, linebreak.cur_active_width[6]);
             }
             fit_class = if b > 12 { TIGHT_FIT } else { DECENT_FIT };
         }
 
-        if do_last_line_fit() && !jumped_to_found {
-            if cur_p() == TEX_NULL {
+        if linebreak.do_last_line_fit && !jumped_to_found {
+            if linebreak.cur_p == TEX_NULL {
                 shortfall = 0;
             }
             g = if shortfall > 0 {
-                cur_active_width(2)
+                linebreak.cur_active_width[2]
             } else if shortfall < 0 {
-                cur_active_width(6)
+                linebreak.cur_active_width[6]
             } else {
                 0
             };
@@ -2971,29 +3065,20 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
 
         let node_r_stays_active;
         if b > INF_BAD || pi == EJECT_PENALTY {
-            if final_pass()
-                && minimum_demerits() == AWFUL_BAD
-                && mem_b32s1(r) == LAST_ACTIVE
+            if linebreak.final_pass
+                && linebreak.minimum_demerits == AWFUL_BAD
+                && active(r).link(mem).0 == LAST_ACTIVE
                 && prev_r == ACTIVE_LIST
             {
                 artificial_demerits = true;
-            } else if b > threshold() {
-                crate::state::with_state_mut(|st| {
-                    deactivate_node(
-                        &mut st.mem,
-                        &mut st.scanner,
-                        &mut st.linebreak,
-                        r,
-                        &mut prev_r,
-                        &mut prev_prev_r,
-                    )
-                });
+            } else if b > linebreak.threshold {
+                deactivate_node(mem, scanner, linebreak, r, &mut prev_r, &mut prev_prev_r);
                 continue;
             }
             node_r_stays_active = false;
         } else {
             prev_r = r;
-            if b > threshold() {
+            if b > linebreak.threshold {
                 continue;
             }
             node_r_stays_active = true;
@@ -3002,7 +3087,7 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
         let mut d = if artificial_demerits {
             0
         } else {
-            let mut d = eqtb_b32s1(INT_BASE + INT_PAR_LINE_PENALTY) + b;
+            let mut d = eqtb.b32s1(INT_BASE + INT_PAR_LINE_PENALTY) + b;
             if d.abs() >= 10_000 {
                 d = 100_000_000;
             } else {
@@ -3017,34 +3102,34 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
                 }
             }
 
-            if break_type == HYPHENATED && mem_b16s1(r) as i16 == HYPHENATED {
-                if cur_p() != TEX_NULL {
-                    d += eqtb_b32s1(INT_BASE + INT_PAR_DOUBLE_HYPHEN_DEMERITS);
+            if break_type == HYPHENATED && active(r).break_type(mem) as i16 == HYPHENATED {
+                if linebreak.cur_p != TEX_NULL {
+                    d += eqtb.b32s1(INT_BASE + INT_PAR_DOUBLE_HYPHEN_DEMERITS);
                 } else {
-                    d += eqtb_b32s1(INT_BASE + INT_PAR_FINAL_HYPHEN_DEMERITS);
+                    d += eqtb.b32s1(INT_BASE + INT_PAR_FINAL_HYPHEN_DEMERITS);
                 }
             }
 
-            if ((fit_class as i32) - active_node_fitness(r) as i32).abs() > 1 {
-                d += eqtb_b32s1(INT_BASE + INT_PAR_ADJ_DEMERITS);
+            if ((fit_class as i32) - active(r).fitness(mem) as i32).abs() > 1 {
+                d += eqtb.b32s1(INT_BASE + INT_PAR_ADJ_DEMERITS);
             }
 
             d
         };
 
-        d += active_node_total_demerits(r);
-        if d <= minimal_demerits(fit_class) {
-            set_minimal_demerits(fit_class, d);
-            set_best_place(fit_class, active_node_break_node(r));
-            set_best_pl_line(fit_class, l);
+        d += active(r).total_demerits(mem);
+        if d <= linebreak.minimal_demerits[fit_class] {
+            linebreak.minimal_demerits[fit_class] = d;
+            linebreak.best_place[fit_class] = active(r).break_node(mem).0;
+            linebreak.best_pl_line[fit_class] = l;
 
-            if do_last_line_fit() {
-                set_best_pl_short(fit_class, shortfall);
-                set_best_pl_glue(fit_class, g);
+            if linebreak.do_last_line_fit {
+                linebreak.best_pl_short[fit_class] = shortfall;
+                linebreak.best_pl_glue[fit_class] = g;
             }
 
-            if d < minimum_demerits() {
-                set_minimum_demerits(d);
+            if d < linebreak.minimum_demerits {
+                linebreak.minimum_demerits = d;
             }
         }
 
@@ -3052,16 +3137,7 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
             continue;
         }
 
-        crate::state::with_state_mut(|st| {
-            deactivate_node(
-                &mut st.mem,
-                &mut st.scanner,
-                &mut st.linebreak,
-                r,
-                &mut prev_r,
-                &mut prev_prev_r,
-            )
-        });
+        deactivate_node(mem, scanner, linebreak, r, &mut prev_r, &mut prev_prev_r);
     }
 
     fn deactivate_node(
@@ -3072,29 +3148,42 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
         prev_r: &mut i32,
         prev_prev_r: &mut i32,
     ) {
-        mem.set_b32s1(*prev_r, mem.b32s1(r));
+        if *prev_r == ACTIVE_LIST {
+            mem.set_b32s1(ACTIVE_LIST, active(r).link(mem).0);
+        } else if mem.b16s1(*prev_r) as i32 == DELTA_NODE {
+            delta_node(*prev_r).set_link(mem, active(r).link(mem));
+        } else {
+            active(*prev_r).set_link(mem, active(r).link(mem));
+        }
         crate::mem::free_node(mem, r, linebreak.active_node_size as i32);
 
         if *prev_r == ACTIVE_LIST {
             let r = mem.b32s1(ACTIVE_LIST);
             if mem.b16s1(r) as i32 == DELTA_NODE {
+                let r_delta = delta_node(r);
                 for k in 1..=6 {
                     scanner.active_width[k] += delta_node_width_in(mem, r, k);
                     linebreak.cur_active_width[k] = scanner.active_width[k];
                 }
-                mem.set_b32s1(ACTIVE_LIST, mem.b32s1(r));
+                mem.set_b32s1(ACTIVE_LIST, r_delta.link(mem).0);
                 crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
             }
         } else if mem.b16s1(*prev_r) as i32 == DELTA_NODE {
-            let r = mem.b32s1(*prev_r);
+            let prev_delta = delta_node(*prev_r);
+            let r = prev_delta.link(mem).0;
             if r == LAST_ACTIVE {
                 for k in 1..=6 {
                     linebreak.cur_active_width[k] -= delta_node_width_in(mem, *prev_r, k);
                 }
-                mem.set_b32s1(*prev_prev_r, LAST_ACTIVE);
+                if *prev_prev_r == ACTIVE_LIST {
+                    mem.set_b32s1(ACTIVE_LIST, LAST_ACTIVE);
+                } else {
+                    active(*prev_prev_r).set_link(mem, MemPtr::from_raw(LAST_ACTIVE));
+                }
                 crate::mem::free_node(mem, *prev_r, DELTA_NODE_SIZE);
                 *prev_r = *prev_prev_r;
             } else if mem.b16s1(r) as i32 == DELTA_NODE {
+                let r_delta = delta_node(r);
                 for k in 1..=6 {
                     linebreak.cur_active_width[k] += delta_node_width_in(mem, r, k);
                     set_delta_node_width_in(
@@ -3104,9 +3193,32 @@ pub unsafe fn try_break(mut pi: i32, break_type: i16) {
                         delta_node_width_in(mem, *prev_r, k) + delta_node_width_in(mem, r, k),
                     );
                 }
-                mem.set_b32s1(*prev_r, mem.b32s1(r));
+                prev_delta.set_link(mem, r_delta.link(mem));
                 crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
             }
+        }
+    }
+}
+
+pub unsafe fn try_break_global(pi: i32, break_type: i16) {
+    match crate::state::with_state_mut(|st| {
+        let st = &mut *st;
+        try_break(
+            &mut st.mem,
+            &mut st.scanner,
+            &mut st.linebreak,
+            &st.eqtb,
+            &mut st.fonts,
+            &st.config,
+            &mut st.errors,
+            pi,
+            break_type,
+        )
+    }) {
+        Ok(()) => {}
+        Err(TryBreakAbort::Node(e)) => node_recycle_abort(e),
+        Err(TryBreakAbort::HlistStackFailure) => {
+            crate::errors::pdf_error(c"total_pw".as_ptr(), c"hlist stack failure".as_ptr())
         }
     }
 }

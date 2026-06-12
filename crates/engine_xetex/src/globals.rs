@@ -4177,12 +4177,6 @@ pub(crate) fn last_rightmost_char() -> i32 {
     crate::state::with_state(|state| state.linebreak.last_rightmost_char)
 }
 #[inline]
-pub(crate) fn set_first_p(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.first_p = v;
-    });
-}
-#[inline]
 pub(crate) fn set_global_prev_p(v: i32) {
     crate::state::with_state_mut(|state| {
         state.linebreak.global_prev_p = v;
@@ -4263,20 +4257,8 @@ pub(crate) fn best_bet() -> i32 {
     crate::state::with_state(|state| state.linebreak.best_bet)
 }
 #[inline]
-pub(crate) fn set_best_bet(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.best_bet = v;
-    });
-}
-#[inline]
 pub(crate) fn best_line() -> i32 {
     crate::state::with_state(|state| state.linebreak.best_line)
-}
-#[inline]
-pub(crate) fn set_best_line(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.best_line = v;
-    });
 }
 #[inline]
 pub(crate) fn hn() -> i16 {
@@ -4368,27 +4350,6 @@ pub(crate) fn set_hyf_bchar(v: i32) {
         state.hyph.hyf_bchar = v;
     });
 }
-#[inline]
-pub(crate) fn passive() -> i32 {
-    crate::state::with_state(|state| state.linebreak.passive)
-}
-#[inline]
-pub(crate) fn set_passive(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.passive = v;
-    });
-}
-#[inline]
-pub(crate) fn cur_active_width(k: usize) -> i32 {
-    crate::state::with_state(|state| state.linebreak.cur_active_width[k])
-}
-#[inline]
-pub(crate) fn set_cur_active_width(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.cur_active_width[k] = v;
-    });
-}
-#[inline]
 pub(crate) fn background(k: usize) -> i32 {
     crate::state::with_state(|state| state.linebreak.background[k])
 }
@@ -4398,37 +4359,6 @@ pub(crate) fn set_background(k: usize, v: i32) {
         state.linebreak.background[k] = v;
     });
 }
-#[inline]
-pub(crate) fn break_width(k: usize) -> i32 {
-    crate::state::with_state(|state| state.linebreak.break_width[k])
-}
-#[inline]
-pub(crate) fn set_break_width(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.break_width[k] = v;
-    });
-}
-#[inline]
-pub(crate) fn best_place(k: usize) -> i32 {
-    crate::state::with_state(|state| state.linebreak.best_place[k])
-}
-#[inline]
-pub(crate) fn set_best_place(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.best_place[k] = v;
-    });
-}
-#[inline]
-pub(crate) fn best_pl_line(k: usize) -> i32 {
-    crate::state::with_state(|state| state.linebreak.best_pl_line[k])
-}
-#[inline]
-pub(crate) fn set_best_pl_line(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.best_pl_line[k] = v;
-    });
-}
-#[inline]
 pub(crate) fn disc_width() -> i32 {
     crate::state::with_state(|state| state.linebreak.disc_width)
 }
@@ -4438,11 +4368,6 @@ pub(crate) fn set_disc_width(v: i32) {
         state.linebreak.disc_width = v;
     });
 }
-#[inline]
-pub(crate) fn final_pass() -> bool {
-    crate::state::with_state(|state| state.linebreak.final_pass)
-}
-#[inline]
 pub(crate) fn set_final_pass(v: bool) {
     crate::state::with_state_mut(|state| {
         state.linebreak.final_pass = v;
@@ -4459,18 +4384,10 @@ pub(crate) fn set_threshold(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn minimal_demerits(k: usize) -> i32 {
-    crate::state::with_state(|state| state.linebreak.minimal_demerits[k])
-}
-#[inline]
 pub(crate) fn set_minimal_demerits(k: usize, v: i32) {
     crate::state::with_state_mut(|state| {
         state.linebreak.minimal_demerits[k] = v;
     });
-}
-#[inline]
-pub(crate) fn minimum_demerits() -> i32 {
-    crate::state::with_state(|state| state.linebreak.minimum_demerits)
 }
 #[inline]
 pub(crate) fn set_minimum_demerits(v: i32) {
@@ -4479,38 +4396,20 @@ pub(crate) fn set_minimum_demerits(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn easy_line() -> i32 {
-    crate::state::with_state(|state| state.linebreak.easy_line)
-}
-#[inline]
 pub(crate) fn set_easy_line(v: i32) {
     crate::state::with_state_mut(|state| {
         state.linebreak.easy_line = v;
     });
 }
-#[inline]
-pub(crate) fn do_last_line_fit() -> bool {
-    crate::state::with_state(|state| state.linebreak.do_last_line_fit)
-}
-#[inline]
 pub(crate) fn set_do_last_line_fit(v: bool) {
     crate::state::with_state_mut(|state| {
         state.linebreak.do_last_line_fit = v;
     });
 }
-#[inline]
-pub(crate) fn active_node_size() -> i32 {
-    crate::state::with_state(|state| state.linebreak.active_node_size as i32)
-}
-#[inline]
 pub(crate) fn set_active_node_size(v: i16) {
     crate::state::with_state_mut(|state| {
         state.linebreak.active_node_size = v;
     });
-}
-#[inline]
-pub(crate) fn fill_width(k: usize) -> i32 {
-    crate::state::with_state(|state| state.linebreak.fill_width[k])
 }
 #[inline]
 pub(crate) fn set_fill_width(k: usize, v: i32) {
@@ -4518,27 +4417,6 @@ pub(crate) fn set_fill_width(k: usize, v: i32) {
         state.linebreak.fill_width[k] = v;
     });
 }
-#[inline]
-pub(crate) fn best_pl_short(k: usize) -> i32 {
-    crate::state::with_state(|state| state.linebreak.best_pl_short[k])
-}
-#[inline]
-pub(crate) fn set_best_pl_short(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.best_pl_short[k] = v;
-    });
-}
-#[inline]
-pub(crate) fn best_pl_glue(k: usize) -> i32 {
-    crate::state::with_state(|state| state.linebreak.best_pl_glue[k])
-}
-#[inline]
-pub(crate) fn set_best_pl_glue(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.linebreak.best_pl_glue[k] = v;
-    });
-}
-#[inline]
 pub(crate) fn font_in_short_display() -> i32 {
     crate::state::with_state(|state| state.errors.font_in_short_display)
 }

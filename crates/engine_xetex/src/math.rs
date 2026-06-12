@@ -25,13 +25,11 @@ use crate::globals::{
     tex_remainder, total_shrink, width_base_entry,
 };
 use crate::mem::{
-    free_node, free_node_global, get_avail, get_node_global, new_choice, new_glue,
-    new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec,
-    ALLOC_FAILED, TEX_NULL,
+    free_node, free_node_global, get_avail, get_node_global, new_choice, new_glue, new_glue_global,
+    new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec, ALLOC_FAILED,
+    TEX_NULL,
 };
-use crate::node::{
-    AnyBox, ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode,
-};
+use crate::node::{AnyBox, ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode};
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
@@ -505,17 +503,19 @@ fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycl
 }
 
 pub unsafe fn math_glue_global(g: i32, m: i32) -> i32 {
-    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(g)).expect("non-null math glue spec");
-    let (stretch_order, shrink_order, width_val, stretch_val, shrink_val) = crate::state::with_state(|st| {
-        let mem = &st.mem;
-        (
-            spec.stretch_order(mem),
-            spec.shrink_order(mem),
-            spec.width(mem).0,
-            spec.stretch(mem).0,
-            spec.shrink(mem).0,
-        )
-    });
+    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(g))
+        .expect("non-null math glue spec");
+    let (stretch_order, shrink_order, width_val, stretch_val, shrink_val) =
+        crate::state::with_state(|st| {
+            let mem = &st.mem;
+            (
+                spec.stretch_order(mem),
+                spec.shrink_order(mem),
+                spec.width(mem).0,
+                spec.stretch(mem).0,
+                spec.shrink(mem).0,
+            )
+        });
     let width = scaled_mu_value(width_val, m);
     let stretch = if stretch_order == NORMAL {
         scaled_mu_value(stretch_val, m)
@@ -884,9 +884,15 @@ fn make_radical_prepare_delimiter(
     is_ot_math: bool,
 ) -> (i32, i32, i32) {
     let y_idx = MemIdx::new(y);
-    let y_box = mem.classify_box(y_idx).expect("valid box").expect("y is a box");
+    let y_box = mem
+        .classify_box(y_idx)
+        .expect("valid box")
+        .expect("y is a box");
     let x_idx = MemIdx::new(x);
-    let x_box = mem.classify_box(x_idx).expect("valid box").expect("x is a box");
+    let x_box = mem
+        .classify_box(x_idx)
+        .expect("valid box")
+        .expect("x is a box");
 
     if is_ot_math {
         let new_depth = Scaled(y_box.depth(mem).0 + y_box.height(mem).0 - rule_thickness);
@@ -1126,11 +1132,7 @@ fn make_op_finish_limits(
         let p2 = alloc_kern_node(mem, spacings.bos5)?;
         p2.set_link(mem, MemPtr::from_raw(x.idx().0));
         v.set_list_ptr(mem, MemPtr::from_raw(p2.idx().0));
-        let height = v.height(mem).0
-            + spacings.bos5
-            + x.height(mem).0
-            + x.depth(mem).0
-            + shift_up;
+        let height = v.height(mem).0 + spacings.bos5 + x.height(mem).0 + x.depth(mem).0 + shift_up;
         v.set_height(mem, Scaled(height));
     }
 
@@ -1146,11 +1148,7 @@ fn make_op_finish_limits(
         p.set_link(mem, MemPtr::from_raw(z.idx().0));
         let p2 = alloc_kern_node(mem, spacings.bos5)?;
         z.set_link(mem, MemPtr::from_raw(p2.idx().0));
-        let depth = v.depth(mem).0
-            + spacings.bos5
-            + z.height(mem).0
-            + z.depth(mem).0
-            + shift_down;
+        let depth = v.depth(mem).0 + spacings.bos5 + z.height(mem).0 + z.depth(mem).0 + shift_down;
         v.set_depth(mem, Scaled(depth));
     }
 
@@ -1530,7 +1528,8 @@ fn make_ord_body(
                 if p_kern_idx == ALLOC_FAILED {
                     return MakeOrdStep::Overflow;
                 }
-                let p_kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_kern_idx)) };
+                let p_kern =
+                    unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_kern_idx)) };
                 let link_q = q.link(mem);
                 p_kern.set_link(mem, link_q);
                 q.set_link(mem, MemPtr::from_raw(p_kern_idx));
@@ -2251,7 +2250,11 @@ unsafe fn prepare_superscript_global(q: i32, mut shift_up: i32) -> PreparedScrip
     }
 
     let (cur_f, box_height, x_height) = crate::state::with_state(|st| {
-        let nb = st.mem.classify_box(MemIdx::new(prepared.node)).unwrap().unwrap();
+        let nb = st
+            .mem
+            .classify_box(MemIdx::new(prepared.node))
+            .unwrap()
+            .unwrap();
         (
             st.scanner.cur_f,
             nb.depth(&st.mem).0,
@@ -3520,7 +3523,8 @@ fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr>
             if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
                 return Err(c"right");
             }
-            let etex_aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux)) };
+            let etex_aux_noad =
+                unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux)) };
             let etex_link = etex_aux_noad.link(mem);
             aux_noad.set_supscr_field(mem, etex_link.0);
             etex_aux_noad.set_link(mem, MemPtr::from_raw(aux));
@@ -3766,7 +3770,10 @@ fn finish_accent_math_field(mem: &mut MemState, eqtb: &EqtbState, tail: NodePtr<
         tail.set_accent_char_fam(mem, math_fam_field(value) as u16);
     }
     let current_fam = tail.accent_char_fam(mem);
-    tail.set_accent_char_fam(mem, current_fam + (math_char_field(value) / 65536) as u16 * 256);
+    tail.set_accent_char_fam(
+        mem,
+        current_fam + (math_char_field(value) / 65536) as u16 * 256,
+    );
 }
 
 fn set_accent_kind(mem: &mut MemState, tail: NodePtr<Noad>, kind: u16) {
@@ -3774,7 +3781,10 @@ fn set_accent_kind(mem: &mut MemState, tail: NodePtr<Noad>, kind: u16) {
 }
 
 /// translated from xetex-math.c:703 (math_left_right)
-fn append_left_right_noad(mem: &mut MemState, node_type: u16) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+fn append_left_right_noad(
+    mem: &mut MemState,
+    node_type: u16,
+) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
     let Some(p) = NodePtr::<Noad>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };

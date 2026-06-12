@@ -8,6 +8,136 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 168 — 2026-06-12 — Execution: inline typed linebreak consumers
+
+**Type:** execution (workstream 01 / `01b` Phase-C threading + typed-node
+closure). Larger mechanical slice; docs intentionally minimal.
+
+**Code:** continued the existing uncommitted linebreak WIP. Per user direction,
+did not grow more one-line field-helper wrappers; kept context-boundary
+constructors and inlined typed calls inside threaded bodies. Typed more
+already-threaded linebreak/protrusion islands: `total_pw` active/passive/disc
+fields, active/delta/passive links in setup/cleanup/best-break/`try_break`
+deactivation, margin-kern insertion links via `MarginKernNode`, and
+`update_lr_stack` math subtype reads via `MathNode`. Native/whatsit and legacy
+`line_break`/`post_line_break` raw islands remain for later closed thread+type
+slices.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo test -p
+tectonic_engine_xetex node::` **41/41**; dashboard **29/2/7/4**
+(`tex-outputs`, `trip`, `engine_rust`, `latex_goldens`). Rebuilt
+`target/release/tectonic`; corpus returned **637 passed, 2 diverged, 0
+missing-golden**, only known `1905.00073v1` and `1905.00148v1`. Metrics:
+warnings **43**, `with_state` **1162**, `unsafe fn` **571**, direct
+`#[no_mangle]` grep **11**, current bare `[pqr]: i32` grep **277**.
+
+**Next:** thread `post_line_break` only as a closed slice with its
+allocation/global dependencies, or continue already-threaded linebreak helper
+raw islands. Do not add one-line field-helper wrappers that will be removed
+later.
+
+---
+
+## Idiom session 167 — 2026-06-12 — Execution: typed `linebreak` main-loop consumers
+
+**Type:** execution (workstream 01 / `01b` Phase-C threading + typed-node
+closure). Larger mechanical slice; docs intentionally minimal.
+
+**Code:** continued from the existing uncommitted linebreak WIP. Added typed
+context-boundary helpers for already-classified linebreak/main-list families
+(`GlueNode`/`GlueSpecNode`, `KernNode`, `LigatureNode`, `DiscNode`,
+`MathNode`, `PenaltyNode`, `RuleNode`, `AnyBox`) and used them immediately in
+threaded `try_break` and protrusion helpers. `try_break` now computes
+discretionary widths, trailing discard widths, glue-spec stretch/shrink, math
+width, kern width/subtype, ligature font/char, and passive/active/delta
+allocation setup through typed handles instead of raw `mem[p+n]` fields. Added
+typed active/delta list-link accessors in `node.rs`. Kept native/whatsit raw;
+that family is not typed yet.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo test -p
+tectonic_engine_xetex node::` **41/41**; dashboard **29/2/7/4**
+(`tex-outputs`, `trip`, `engine_rust`, `latex_goldens`). Rebuilt
+`target/release/tectonic`; `CANDIDATE_BIN=... plan/scripts/corpus.sh check all`
+returned **637 passed, 2 diverged, 0 missing-golden**, only known
+`1905.00073v1` and `1905.00148v1`. Final post-format local rename only changed
+helper parameter names; final `cargo check` still green. Metrics: warnings
+**43**, `with_state` **1162**, `unsafe fn` **571**, direct `#[no_mangle]`
+grep **11**, bare `[pqr]: i32` params **349**.
+
+**Next:** finish the remaining `line_break` main-loop raw islands or move into
+`post_line_break`; native/whatsit typing remains a separate family-sized slice.
+
+---
+
+## Idiom session 166 — 2026-06-11 — Execution: thread more `line_break` setup/teardown
+
+**Type:** execution (workstream 01 / `01b` Phase-C threading + typed-node
+closure). Larger mechanical slice; docs intentionally minimal.
+
+**Code:** continued upward from `try_break` into `line_break` without adding
+pointer-only intermediate helpers. Added threaded, typed helpers for pass setup
+(`start_linebreak_pass`), active/passive cleanup, best-break selection, and the
+last-line-fit glue adjustment. These use direct `MemState`/`ScannerState`/
+`LinebreakState`/`EqtbState`/`ErrorState` fields plus `NodePtr<ActiveNode>`,
+`GlueNode`, and `GlueSpecNode`; allocation failures still defer through
+`NodeRecycleAbort` so aborts run after the borrow drops. Also typed the
+already-threaded `finite_shrink` glue-spec shrink-order write.
+
+**Cleanup:** removed the dead active-node/delta/passive linebreak bridge
+wrappers and the now-dead `globals.rs` linebreak accessors exposed by this
+slice (`set_first_p`, best setters, passive accessors, active-node-size getter,
+`do_last_line_fit`, etc.). Warnings remained at **43**.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo test -p
+tectonic_engine_xetex node::` **41/41**; dashboard **29/2/7/4**
+(`tex-outputs`, `trip`, `engine_rust`, `latex_goldens`). Rebuilt
+`target/release/tectonic` after the final tree and ran
+`CANDIDATE_BIN=... plan/scripts/corpus.sh check all`: **637 passed, 2
+diverged, 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`.
+Metrics: `with_state` **1162**, `unsafe fn` **571**, direct `#[no_mangle]`
+grep **11**, bare `[pqr]: i32` params **344**.
+
+**Next:** continue through the remaining `line_break` main-loop islands and
+then `post_line_break`, or switch to threading `hpack`/`vpackage`.
+
+---
+
+## Idiom session 165 — 2026-06-11 — Execution: thread `try_break` directly
+
+**Type:** execution (workstream 01 / `01b` Phase-C threading + typed consumer
+closure). Large mechanical session; docs intentionally minimal.
+
+**Code:** threaded `linebreak.rs::try_break` to explicit
+`&mut MemState`, `&mut ScannerState`, `&mut LinebreakState`,
+`&EqtbState`, `&mut FontState`, `&ConfigState`, and `&mut ErrorState`.
+Inside the threaded core, active/delta/passive linebreak records now use the
+existing typed handles directly (`active(...)`, `delta_node_width_in`,
+`passive_node(...)`) and the linebreak/scanner arrays are accessed as state
+fields. Cold `get_node` exhaustion, `confusion`, and the `total_pw` pdf-error
+path are deferred through a narrow `TryBreakAbort` so aborts run after the
+thread-local borrow drops. Legacy `line_break` call sites now enter through
+`try_break_global`.
+
+**Cleanup:** deleted the now-dead linebreak bridge wrappers
+(`delta_node_width`, passive setters, active break/fitness getters,
+`total_pw_global`) and removed dead `globals.rs` bridge accessors for
+`try_break`-private fields (`cur_active_width`, `break_width`, best-place/best
+line arrays, minimal/minimum/easy/fill/best-pl reads and dead setters).
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo test -p
+tectonic_engine_xetex node::` **41/41**; dashboard **29/2/7/4**
+(`tex-outputs`, `trip`, `engine_rust`, `latex_goldens`). Rebuilt
+`target/release/tectonic`; `plan/scripts/corpus.sh check all` produced the
+expected **637 passed, 2 diverged, 0 missing-golden**, with only known
+divergences `1905.00073v1` and `1905.00148v1`. Metrics: warnings 43,
+`with_state` 1177, `unsafe fn` 571, direct `#[no_mangle]` grep 11.
+
+**Next:** continue upward into `line_break` setup/teardown so the remaining
+active-node setter wrappers can disappear at a real threaded boundary, or move
+to `hpack`/`vpackage`.
+
+---
+
 ## Idiom session 164 — 2026-06-11 — Execution: typed math/linebreak consumers (larger mechanical batch)
 
 **Type:** execution (workstream 01 / `01b` §3a + `01c` Stage 3). Large

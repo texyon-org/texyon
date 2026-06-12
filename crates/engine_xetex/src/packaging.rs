@@ -292,7 +292,7 @@ pub fn just_copy(
                     let spec =
                         NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(gp)).unwrap();
                     spec.set_ref_count(mem, spec.ref_count(mem) + 1);
-                                                          // SYNCTEX fields
+                    // SYNCTEX fields
                     mem.set_b32s0(
                         r + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE,
                         mem.b32s0(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE),
@@ -670,8 +670,7 @@ pub fn flush_node_list(
                     ORD_NOAD_FNL | OP_NOAD_FNL | BIN_NOAD_FNL | REL_NOAD_FNL | OPEN_NOAD_FNL
                     | CLOSE_NOAD_FNL | PUNCT_NOAD_FNL | INNER_NOAD_FNL | RADICAL_NOAD_FNL
                     | OVER_NOAD_FNL | UNDER_NOAD_FNL | VCENTER_NOAD_FNL | ACCENT_NOAD_FNL => {
-                        let p_noad =
-                            unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
+                        let p_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
                         if p_noad.nucleus_type(mem) >= SUB_BOX_FNL {
                             let c = p_noad.nucleus_field(mem);
                             flush_node_list(mem, c)?;
