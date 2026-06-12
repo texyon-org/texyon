@@ -4253,10 +4253,6 @@ pub(crate) fn set_second_indent(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn best_bet() -> i32 {
-    crate::state::with_state(|state| state.linebreak.best_bet)
-}
-#[inline]
 pub(crate) fn best_line() -> i32 {
     crate::state::with_state(|state| state.linebreak.best_line)
 }

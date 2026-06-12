@@ -11,7 +11,7 @@ use crate::node::{
     ActiveNode, AnyBox, DeltaNode, DiscNode, GlueNode, GlueSpecNode, KernNode, LigatureNode,
     MathNode, NodePtr, PassiveNode, PenaltyNode, RuleNode,
 };
-use crate::scan::{NodeRecycleAbort, new_native_word_node_global, node_recycle_abort};
+use crate::scan::{new_native_word_node_global, node_recycle_abort, NodeRecycleAbort};
 use crate::state::{
     ConfigState, EqtbState, ErrorState, FontState, HyphState, LinebreakState, MemState,
     ScannerState,
@@ -233,34 +233,6 @@ fn box_node(mem: &MemState, node: i32) -> AnyBox {
     mem.classify_box(MemIdx::new(node))
         .expect("valid box node type")
         .expect("box node")
-}
-
-#[inline]
-fn delta_node_width_in(mem: &MemState, p: i32, k: usize) -> i32 {
-    let p = delta_node(p);
-    match k {
-        1 => p.dwidth(mem).0,
-        2 => p.dstretch0(mem).0,
-        3 => p.dstretch1(mem).0,
-        4 => p.dstretch2(mem).0,
-        5 => p.dstretch3(mem).0,
-        6 => p.dshrink(mem).0,
-        _ => unreachable!("delta width index"),
-    }
-}
-
-#[inline]
-fn set_delta_node_width_in(mem: &mut MemState, p: i32, k: usize, v: i32) {
-    let p = delta_node(p);
-    match k {
-        1 => p.set_dwidth(mem, Scaled(v)),
-        2 => p.set_dstretch0(mem, Scaled(v)),
-        3 => p.set_dstretch1(mem, Scaled(v)),
-        4 => p.set_dstretch2(mem, Scaled(v)),
-        5 => p.set_dstretch3(mem, Scaled(v)),
-        6 => p.set_dshrink(mem, Scaled(v)),
-        _ => unreachable!("delta width index"),
-    }
 }
 
 fn alloc_active_node(
@@ -2280,8 +2252,7 @@ fn update_lr_stack(mem: &mut MemState, q: i32, lr_ptr: &mut i32) -> bool {
     let q_subtype = q_math.subtype(mem) as i32;
     if odd_i32(q_subtype) {
         if *lr_ptr != TEX_NULL
-            && mem.b32s0(*lr_ptr)
-                == L_CODE as i32 * (q_subtype / L_CODE as i32) + END_M_CODE as i32
+            && mem.b32s0(*lr_ptr) == L_CODE as i32 * (q_subtype / L_CODE as i32) + END_M_CODE as i32
         {
             let temp_ptr = *lr_ptr;
             *lr_ptr = mem.b32s1(temp_ptr);
@@ -2315,30 +2286,35 @@ unsafe fn update_lr_stack_global(q: i32, lr_ptr: &mut i32) {
     }
 }
 
+fn reverse_best_breaks(mem: &mut MemState, linebreak: &mut LinebreakState) {
+    let mut q = active(linebreak.best_bet).break_node(mem).0;
+    linebreak.cur_p = TEX_NULL;
+    loop {
+        let r = passive_node(q);
+        q = r.next_break(mem).0;
+        r.set_next_break(mem, MemPtr::from_raw(linebreak.cur_p));
+        linebreak.cur_p = r.idx().0;
+        if q == TEX_NULL {
+            break;
+        }
+    }
+}
+
 // translated from xetex-linebreak.c:971 (post_line_break)
 pub unsafe fn post_line_break(d: bool) {
     use crate::globals::{
-        adjust_tail, best_bet, best_line, cur_list_e_tex_aux, cur_list_prev_graf, cur_list_tail,
-        eqtb_b32s1, first_indent, first_width, hi_mem_min, just_box, last_special_line, mem_b16s0,
-        mem_b16s1, mem_b32s0, mem_b32s1, pre_adjust_tail, second_indent, second_width,
+        adjust_tail, best_line, cur_list_e_tex_aux, cur_list_prev_graf, cur_list_tail, eqtb_b32s1,
+        first_indent, first_width, hi_mem_min, just_box, last_special_line, mem_b16s0, mem_b16s1,
+        mem_b32s0, mem_b32s1, pre_adjust_tail, second_indent, second_width,
         semantic_pagination_enabled, set_adjust_tail, set_cur_list_e_tex_aux,
         set_cur_list_prev_graf, set_cur_list_tail, set_cur_p, set_just_box, set_mem_b16s0,
         set_mem_b32s0, set_mem_b32s1, set_pre_adjust_tail,
     };
 
     let mut lr_ptr = cur_list_e_tex_aux();
+    let mut q: i32;
 
-    let mut q = mem_b32s1(best_bet() + 1);
-    set_cur_p(TEX_NULL);
-    loop {
-        let r = q;
-        q = mem_b32s0(q + 1);
-        set_mem_b32s0(r + 1, crate::globals::cur_p());
-        set_cur_p(r);
-        if q == TEX_NULL {
-            break;
-        }
-    }
+    crate::state::with_state_mut(|st| reverse_best_breaks(&mut st.mem, &mut st.linebreak));
 
     let mut cur_line = cur_list_prev_graf() + 1;
     loop {
@@ -2667,9 +2643,13 @@ unsafe fn try_break(
         };
 
         if mem.b16s1(r) as i32 == DELTA_NODE {
-            for k in 1..=6 {
-                linebreak.cur_active_width[k] += delta_node_width_in(mem, r, k);
-            }
+            let r_delta = delta_node(r);
+            linebreak.cur_active_width[1] += r_delta.dwidth(mem).0;
+            linebreak.cur_active_width[2] += r_delta.dstretch0(mem).0;
+            linebreak.cur_active_width[3] += r_delta.dstretch1(mem).0;
+            linebreak.cur_active_width[4] += r_delta.dstretch2(mem).0;
+            linebreak.cur_active_width[5] += r_delta.dstretch3(mem).0;
+            linebreak.cur_active_width[6] += r_delta.dshrink(mem).0;
             prev_prev_r = prev_r;
             prev_r = r;
             continue;
@@ -2817,15 +2797,49 @@ unsafe fn try_break(
                 }
 
                 if mem.b16s1(prev_r) as i32 == DELTA_NODE {
-                    for k in 1..=6 {
-                        set_delta_node_width_in(
-                            mem,
-                            prev_r,
-                            k,
-                            delta_node_width_in(mem, prev_r, k) - linebreak.cur_active_width[k]
-                                + linebreak.break_width[k],
-                        );
-                    }
+                    let prev_delta = delta_node(prev_r);
+                    prev_delta.set_dwidth(
+                        mem,
+                        Scaled(
+                            prev_delta.dwidth(mem).0 - linebreak.cur_active_width[1]
+                                + linebreak.break_width[1],
+                        ),
+                    );
+                    prev_delta.set_dstretch0(
+                        mem,
+                        Scaled(
+                            prev_delta.dstretch0(mem).0 - linebreak.cur_active_width[2]
+                                + linebreak.break_width[2],
+                        ),
+                    );
+                    prev_delta.set_dstretch1(
+                        mem,
+                        Scaled(
+                            prev_delta.dstretch1(mem).0 - linebreak.cur_active_width[3]
+                                + linebreak.break_width[3],
+                        ),
+                    );
+                    prev_delta.set_dstretch2(
+                        mem,
+                        Scaled(
+                            prev_delta.dstretch2(mem).0 - linebreak.cur_active_width[4]
+                                + linebreak.break_width[4],
+                        ),
+                    );
+                    prev_delta.set_dstretch3(
+                        mem,
+                        Scaled(
+                            prev_delta.dstretch3(mem).0 - linebreak.cur_active_width[5]
+                                + linebreak.break_width[5],
+                        ),
+                    );
+                    prev_delta.set_dshrink(
+                        mem,
+                        Scaled(
+                            prev_delta.dshrink(mem).0 - linebreak.cur_active_width[6]
+                                + linebreak.break_width[6],
+                        ),
+                    );
                 } else if prev_r == ACTIVE_LIST {
                     for k in 1..=6 {
                         scanner.active_width[k] = linebreak.break_width[k];
@@ -2833,14 +2847,30 @@ unsafe fn try_break(
                 } else {
                     let q =
                         alloc_delta_node(mem, MemPtr::from_raw(r)).map_err(TryBreakAbort::Node)?;
-                    for k in 1..=6 {
-                        set_delta_node_width_in(
-                            mem,
-                            q.idx().0,
-                            k,
-                            linebreak.break_width[k] - linebreak.cur_active_width[k],
-                        );
-                    }
+                    q.set_dwidth(
+                        mem,
+                        Scaled(linebreak.break_width[1] - linebreak.cur_active_width[1]),
+                    );
+                    q.set_dstretch0(
+                        mem,
+                        Scaled(linebreak.break_width[2] - linebreak.cur_active_width[2]),
+                    );
+                    q.set_dstretch1(
+                        mem,
+                        Scaled(linebreak.break_width[3] - linebreak.cur_active_width[3]),
+                    );
+                    q.set_dstretch2(
+                        mem,
+                        Scaled(linebreak.break_width[4] - linebreak.cur_active_width[4]),
+                    );
+                    q.set_dstretch3(
+                        mem,
+                        Scaled(linebreak.break_width[5] - linebreak.cur_active_width[5]),
+                    );
+                    q.set_dshrink(
+                        mem,
+                        Scaled(linebreak.break_width[6] - linebreak.cur_active_width[6]),
+                    );
                     active(prev_r).set_link(mem, MemPtr::from_raw(q.idx().0));
                     prev_prev_r = prev_r;
                     prev_r = q.idx().0;
@@ -2895,14 +2925,30 @@ unsafe fn try_break(
                 if r != LAST_ACTIVE {
                     let q =
                         alloc_delta_node(mem, MemPtr::from_raw(r)).map_err(TryBreakAbort::Node)?;
-                    for k in 1..=6 {
-                        set_delta_node_width_in(
-                            mem,
-                            q.idx().0,
-                            k,
-                            linebreak.cur_active_width[k] - linebreak.break_width[k],
-                        );
-                    }
+                    q.set_dwidth(
+                        mem,
+                        Scaled(linebreak.cur_active_width[1] - linebreak.break_width[1]),
+                    );
+                    q.set_dstretch0(
+                        mem,
+                        Scaled(linebreak.cur_active_width[2] - linebreak.break_width[2]),
+                    );
+                    q.set_dstretch1(
+                        mem,
+                        Scaled(linebreak.cur_active_width[3] - linebreak.break_width[3]),
+                    );
+                    q.set_dstretch2(
+                        mem,
+                        Scaled(linebreak.cur_active_width[4] - linebreak.break_width[4]),
+                    );
+                    q.set_dstretch3(
+                        mem,
+                        Scaled(linebreak.cur_active_width[5] - linebreak.break_width[5]),
+                    );
+                    q.set_dshrink(
+                        mem,
+                        Scaled(linebreak.cur_active_width[6] - linebreak.break_width[6]),
+                    );
                     if mem.b16s1(prev_r) as i32 == DELTA_NODE {
                         delta_node(prev_r).set_link(mem, MemPtr::from_raw(q.idx().0));
                     } else {
@@ -3006,7 +3052,11 @@ unsafe fn try_break(
                             } else {
                                 b = crate::helpers::badness(g, linebreak.cur_active_width[2]);
                                 fit_class = if b > 12 {
-                                    if b > 99 { VERY_LOOSE_FIT } else { LOOSE_FIT }
+                                    if b > 99 {
+                                        VERY_LOOSE_FIT
+                                    } else {
+                                        LOOSE_FIT
+                                    }
                                 } else {
                                     DECENT_FIT
                                 };
@@ -3036,7 +3086,11 @@ unsafe fn try_break(
             } else {
                 b = crate::helpers::badness(shortfall, linebreak.cur_active_width[2]);
                 fit_class = if b > 12 {
-                    if b > 99 { VERY_LOOSE_FIT } else { LOOSE_FIT }
+                    if b > 99 {
+                        VERY_LOOSE_FIT
+                    } else {
+                        LOOSE_FIT
+                    }
                 } else {
                     DECENT_FIT
                 };
@@ -3161,10 +3215,18 @@ unsafe fn try_break(
             let r = mem.b32s1(ACTIVE_LIST);
             if mem.b16s1(r) as i32 == DELTA_NODE {
                 let r_delta = delta_node(r);
-                for k in 1..=6 {
-                    scanner.active_width[k] += delta_node_width_in(mem, r, k);
-                    linebreak.cur_active_width[k] = scanner.active_width[k];
-                }
+                scanner.active_width[1] += r_delta.dwidth(mem).0;
+                scanner.active_width[2] += r_delta.dstretch0(mem).0;
+                scanner.active_width[3] += r_delta.dstretch1(mem).0;
+                scanner.active_width[4] += r_delta.dstretch2(mem).0;
+                scanner.active_width[5] += r_delta.dstretch3(mem).0;
+                scanner.active_width[6] += r_delta.dshrink(mem).0;
+                linebreak.cur_active_width[1] = scanner.active_width[1];
+                linebreak.cur_active_width[2] = scanner.active_width[2];
+                linebreak.cur_active_width[3] = scanner.active_width[3];
+                linebreak.cur_active_width[4] = scanner.active_width[4];
+                linebreak.cur_active_width[5] = scanner.active_width[5];
+                linebreak.cur_active_width[6] = scanner.active_width[6];
                 mem.set_b32s1(ACTIVE_LIST, r_delta.link(mem).0);
                 crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
             }
@@ -3172,9 +3234,12 @@ unsafe fn try_break(
             let prev_delta = delta_node(*prev_r);
             let r = prev_delta.link(mem).0;
             if r == LAST_ACTIVE {
-                for k in 1..=6 {
-                    linebreak.cur_active_width[k] -= delta_node_width_in(mem, *prev_r, k);
-                }
+                linebreak.cur_active_width[1] -= prev_delta.dwidth(mem).0;
+                linebreak.cur_active_width[2] -= prev_delta.dstretch0(mem).0;
+                linebreak.cur_active_width[3] -= prev_delta.dstretch1(mem).0;
+                linebreak.cur_active_width[4] -= prev_delta.dstretch2(mem).0;
+                linebreak.cur_active_width[5] -= prev_delta.dstretch3(mem).0;
+                linebreak.cur_active_width[6] -= prev_delta.dshrink(mem).0;
                 if *prev_prev_r == ACTIVE_LIST {
                     mem.set_b32s1(ACTIVE_LIST, LAST_ACTIVE);
                 } else {
@@ -3184,15 +3249,36 @@ unsafe fn try_break(
                 *prev_r = *prev_prev_r;
             } else if mem.b16s1(r) as i32 == DELTA_NODE {
                 let r_delta = delta_node(r);
-                for k in 1..=6 {
-                    linebreak.cur_active_width[k] += delta_node_width_in(mem, r, k);
-                    set_delta_node_width_in(
-                        mem,
-                        *prev_r,
-                        k,
-                        delta_node_width_in(mem, *prev_r, k) + delta_node_width_in(mem, r, k),
-                    );
-                }
+                linebreak.cur_active_width[1] += r_delta.dwidth(mem).0;
+                linebreak.cur_active_width[2] += r_delta.dstretch0(mem).0;
+                linebreak.cur_active_width[3] += r_delta.dstretch1(mem).0;
+                linebreak.cur_active_width[4] += r_delta.dstretch2(mem).0;
+                linebreak.cur_active_width[5] += r_delta.dstretch3(mem).0;
+                linebreak.cur_active_width[6] += r_delta.dshrink(mem).0;
+                prev_delta.set_dwidth(
+                    mem,
+                    Scaled(prev_delta.dwidth(mem).0 + r_delta.dwidth(mem).0),
+                );
+                prev_delta.set_dstretch0(
+                    mem,
+                    Scaled(prev_delta.dstretch0(mem).0 + r_delta.dstretch0(mem).0),
+                );
+                prev_delta.set_dstretch1(
+                    mem,
+                    Scaled(prev_delta.dstretch1(mem).0 + r_delta.dstretch1(mem).0),
+                );
+                prev_delta.set_dstretch2(
+                    mem,
+                    Scaled(prev_delta.dstretch2(mem).0 + r_delta.dstretch2(mem).0),
+                );
+                prev_delta.set_dstretch3(
+                    mem,
+                    Scaled(prev_delta.dstretch3(mem).0 + r_delta.dstretch3(mem).0),
+                );
+                prev_delta.set_dshrink(
+                    mem,
+                    Scaled(prev_delta.dshrink(mem).0 + r_delta.dshrink(mem).0),
+                );
                 prev_delta.set_link(mem, r_delta.link(mem));
                 crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
             }

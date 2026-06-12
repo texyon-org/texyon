@@ -8,6 +8,32 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 169 — 2026-06-12 — Execution: inline delta fields + post-line-break entry
+
+**Type:** execution (workstream 01 / `01b` Phase-C threading + typed-node
+closure). Low-docs mechanical slice.
+
+**Code:** removed the index-based `delta_node_width_in` /
+`set_delta_node_width_in` wrappers and inlined direct `DeltaNode`
+`dwidth`/`dstretch*`/`dshrink` getters and setters throughout the already
+threaded `try_break` and `deactivate_node` paths. Threaded the first
+`post_line_break` island, `reverse_best_breaks`, over `MemState` +
+`LinebreakState` and typed it through `ActiveNode`/`PassiveNode`; deleted the
+now-dead `globals::best_bet` one-line bridge.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo test -p
+tectonic_engine_xetex node::` **41/41**; dashboard **29/2/7/4**
+(`tex-outputs`, `trip`, `engine_rust`, `latex_goldens`). Rebuilt
+`target/release/tectonic`; corpus returned **637 passed, 2 diverged, 0
+missing-golden**, only known `1905.00073v1` and `1905.00148v1`. Metrics:
+warnings **43**, `with_state` **1162**, `unsafe fn` **571**, direct
+`#[no_mangle]` grep **11**, current bare `[pqr]: i32` grep **343**.
+
+**Next:** continue `post_line_break` only in closed slices that can thread
+state and type nodes together; `hpack` remains a boundary until it is threaded.
+
+---
+
 ## Idiom session 168 — 2026-06-12 — Execution: inline typed linebreak consumers
 
 **Type:** execution (workstream 01 / `01b` Phase-C threading + typed-node
