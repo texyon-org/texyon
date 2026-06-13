@@ -446,6 +446,68 @@ impl AnyBox {
     }
 }
 
+/// A fully classified lo-mem node: the typed handle for every family whose
+/// `NodePtr<K>` layer is built, or a raw [`MemIdx`] for families not yet typed
+/// (`01c` §1: native/whatsit, unset, ins/mark/adjust). This is the single
+/// dispatch surface the plan calls for (`01c` §3, "classification happens
+/// ONCE"): a consumer calls [`MemState::classify`] once at the list-walk
+/// boundary and matches on the result, so the per-arm `from_idx_unchecked` that
+/// a raw `NODE_type` match forces is gone — each arm carries its static type.
+///
+/// Context-disambiguated codes are classified by their **node-list** meaning:
+/// type 2 → [`AnyNode::Rule`] (not the linebreak-active-list `DELTA_NODE`) and
+/// type 14 → [`AnyNode::Style`] (not `EDGE_NODE`). Walkers of those specialized
+/// lists carry their own context and do not call `classify`.
+#[derive(Copy, Clone, Debug)]
+pub enum AnyNode {
+    HList(NodePtr<HListNode>),
+    VList(NodePtr<VListNode>),
+    Rule(NodePtr<RuleNode>),
+    Ins(MemIdx),
+    Mark(MemIdx),
+    Adjust(MemIdx),
+    Ligature(NodePtr<LigatureNode>),
+    Disc(NodePtr<DiscNode>),
+    Whatsit(MemIdx),
+    Math(NodePtr<MathNode>),
+    Glue(NodePtr<GlueNode>),
+    Kern(NodePtr<KernNode>),
+    Penalty(NodePtr<PenaltyNode>),
+    Unset(MemIdx),
+    Style(NodePtr<StyleNode>),
+    Choice(NodePtr<ChoiceNode>),
+    /// Any noad (`NODE_type` 16–31); refine with [`NodePtr::<Noad>::noad_type`].
+    Noad(NodePtr<Noad>),
+    MarginKern(NodePtr<MarginKernNode>),
+}
+
+impl AnyNode {
+    /// The arena index of the classified node, regardless of family.
+    #[inline]
+    pub fn idx(self) -> MemIdx {
+        match self {
+            AnyNode::HList(p) => p.idx(),
+            AnyNode::VList(p) => p.idx(),
+            AnyNode::Rule(p) => p.idx(),
+            AnyNode::Ligature(p) => p.idx(),
+            AnyNode::Disc(p) => p.idx(),
+            AnyNode::Math(p) => p.idx(),
+            AnyNode::Glue(p) => p.idx(),
+            AnyNode::Kern(p) => p.idx(),
+            AnyNode::Penalty(p) => p.idx(),
+            AnyNode::Style(p) => p.idx(),
+            AnyNode::Choice(p) => p.idx(),
+            AnyNode::Noad(p) => p.idx(),
+            AnyNode::MarginKern(p) => p.idx(),
+            AnyNode::Ins(i)
+            | AnyNode::Mark(i)
+            | AnyNode::Adjust(i)
+            | AnyNode::Whatsit(i)
+            | AnyNode::Unset(i) => i,
+        }
+    }
+}
+
 impl MemState {
     /// Read the `NODE_type` (`mem[p].b16.s1`) of a lo-mem node as a checked
     /// [`NodeType`]. `p` must be a real lo-mem node index (the caller did
@@ -453,6 +515,44 @@ impl MemState {
     #[inline]
     pub fn node_type(&self, p: MemIdx) -> Result<NodeType, InvalidNodeType> {
         NodeType::from_raw(self.b16s1(p.0))
+    }
+
+    /// Classify a non-null lo-mem node into its typed handle ([`AnyNode`],
+    /// `01c` §3). `p` must be a real lo-mem node index — the caller did the
+    /// null / `is_char_node` check at the list-walk boundary (`01c` §7). `Err`
+    /// if the `NODE_type` code is not valid at all (the 32–39 gap / 41+).
+    ///
+    /// This confines every built family's `from_idx_unchecked` assertion to one
+    /// audited site; a consumer that matches the result writes no `unsafe`.
+    #[inline]
+    pub fn classify(&self, p: MemIdx) -> Result<AnyNode, InvalidNodeType> {
+        use NodeType::*;
+        // SAFETY (every typed arm): the `NODE_type` value matched just below was
+        // read from `p`, which proves `p`'s family; `from_idx_unchecked` asserts
+        // exactly that and nothing more. Its kind `K` is inferred from the
+        // `AnyNode` variant being constructed.
+        Ok(match self.node_type(p)? {
+            HList => AnyNode::HList(unsafe { NodePtr::from_idx_unchecked(p) }),
+            VList => AnyNode::VList(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Rule => AnyNode::Rule(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Ins => AnyNode::Ins(p),
+            Mark => AnyNode::Mark(p),
+            Adjust => AnyNode::Adjust(p),
+            Ligature => AnyNode::Ligature(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Disc => AnyNode::Disc(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Whatsit => AnyNode::Whatsit(p),
+            Math => AnyNode::Math(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Glue => AnyNode::Glue(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Kern => AnyNode::Kern(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Penalty => AnyNode::Penalty(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Unset => AnyNode::Unset(p),
+            Style => AnyNode::Style(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Choice => AnyNode::Choice(unsafe { NodePtr::from_idx_unchecked(p) }),
+            OrdNoad | OpNoad | BinNoad | RelNoad | OpenNoad | CloseNoad | PunctNoad | InnerNoad
+            | RadicalNoad | FractionNoad | UnderNoad | OverNoad | AccentNoad | VcenterNoad
+            | LeftNoad | RightNoad => AnyNode::Noad(unsafe { NodePtr::from_idx_unchecked(p) }),
+            MarginKern => AnyNode::MarginKern(unsafe { NodePtr::from_idx_unchecked(p) }),
+        })
     }
 
     /// Classify a known lo-mem node as a box, returning the typed handle.
@@ -2147,6 +2247,55 @@ mod tests {
         let bad = MemIdx::new(90);
         mem.set_b16s1(bad.0, 35);
         assert!(mem.classify_box(bad).is_err());
+    }
+
+    #[test]
+    fn classify_dispatches_to_typed_handles() {
+        let mut mem = fresh_mem(300);
+        let cases: &[(i32, NodeType)] = &[
+            (40, NodeType::HList),
+            (50, NodeType::VList),
+            (60, NodeType::Rule),
+            (70, NodeType::Glue),
+            (80, NodeType::Kern),
+            (90, NodeType::Math),
+            (100, NodeType::Penalty),
+            (110, NodeType::Disc),
+            (120, NodeType::Choice),
+            (130, NodeType::MarginKern),
+            (140, NodeType::OpNoad),
+            (150, NodeType::FractionNoad),
+            (160, NodeType::Whatsit),
+            (170, NodeType::Unset),
+        ];
+        for &(at, nt) in cases {
+            mem.set_b16s1(at, nt.as_raw());
+        }
+        use AnyNode::*;
+        assert!(matches!(mem.classify(MemIdx::new(40)), Ok(HList(_))));
+        assert!(matches!(mem.classify(MemIdx::new(50)), Ok(VList(_))));
+        assert!(matches!(mem.classify(MemIdx::new(60)), Ok(Rule(_))));
+        assert!(matches!(mem.classify(MemIdx::new(70)), Ok(Glue(_))));
+        assert!(matches!(mem.classify(MemIdx::new(80)), Ok(Kern(_))));
+        assert!(matches!(mem.classify(MemIdx::new(90)), Ok(Math(_))));
+        assert!(matches!(mem.classify(MemIdx::new(100)), Ok(Penalty(_))));
+        assert!(matches!(mem.classify(MemIdx::new(110)), Ok(Disc(_))));
+        assert!(matches!(mem.classify(MemIdx::new(120)), Ok(Choice(_))));
+        assert!(matches!(mem.classify(MemIdx::new(130)), Ok(MarginKern(_))));
+        // every noad code collapses to the single Noad handle
+        assert!(matches!(mem.classify(MemIdx::new(140)), Ok(Noad(_))));
+        assert!(matches!(mem.classify(MemIdx::new(150)), Ok(Noad(_))));
+        // not-yet-typed families carry the raw index
+        assert!(matches!(mem.classify(MemIdx::new(160)), Ok(Whatsit(_))));
+        assert!(matches!(mem.classify(MemIdx::new(170)), Ok(Unset(_))));
+
+        // the carried handle/index points back at the same node
+        assert_eq!(mem.classify(MemIdx::new(40)).unwrap().idx().0, 40);
+        assert_eq!(mem.classify(MemIdx::new(160)).unwrap().idx().0, 160);
+
+        // an invalid NODE_type (the 32–39 gap) is an error
+        mem.set_b16s1(180, 35);
+        assert!(mem.classify(MemIdx::new(180)).is_err());
     }
 
     #[test]
