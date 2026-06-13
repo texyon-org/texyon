@@ -1556,9 +1556,8 @@ fn hpack_in(
         match node_type {
             Ok(NodeType::HList) => {
                 // SAFETY: the `NODE_type` read above proves this list item is an hlist.
-                let b = AnyBox::HList(unsafe {
-                    NodePtr::<HListNode>::from_idx_unchecked(node_idx)
-                });
+                let b =
+                    AnyBox::HList(unsafe { NodePtr::<HListNode>::from_idx_unchecked(node_idx) });
                 x += b.width(mem).0;
                 let s = b.shift_amount(mem).0;
                 let bh = b.height(mem).0 - s;
@@ -1572,9 +1571,8 @@ fn hpack_in(
             }
             Ok(NodeType::VList) => {
                 // SAFETY: the `NODE_type` read above proves this list item is a vlist.
-                let b = AnyBox::VList(unsafe {
-                    NodePtr::<VListNode>::from_idx_unchecked(node_idx)
-                });
+                let b =
+                    AnyBox::VList(unsafe { NodePtr::<VListNode>::from_idx_unchecked(node_idx) });
                 x += b.width(mem).0;
                 let s = b.shift_amount(mem).0;
                 let bh = b.height(mem).0 - s;
@@ -2327,7 +2325,9 @@ fn print_vpack_diag(box_ptr: i32, diag: PackDiag) {
             PackDiag::HUnderfull { .. }
             | PackDiag::HOverfull { .. }
             | PackDiag::HTight { .. }
-            | PackDiag::LrProblem { .. } => unreachable!("hpack diagnostic passed to vpack printer"),
+            | PackDiag::LrProblem { .. } => {
+                unreachable!("hpack diagnostic passed to vpack printer")
+            }
         }
         print_vpack_common_ending(box_ptr);
     }

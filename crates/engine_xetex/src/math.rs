@@ -2406,8 +2406,9 @@ fn first_script_glyph_step(
             if script_ptr >= 0 && script_ptr <= mem.mem_end {
                 if mem.b16s1(script_ptr) == CHOICE_NODE {
                     // SAFETY: the `NODE_type == CHOICE_NODE` check proves the kind.
-                    let cn =
-                        unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(script_ptr)) };
+                    let cn = unsafe {
+                        NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(script_ptr))
+                    };
                     script_ptr = match this_math_style / 2 {
                         0 => cn.display_mlist(mem).0,
                         1 => cn.text_mlist(mem).0,
