@@ -8,6 +8,55 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 174 — 2026-06-13 — Execution: prettify typed packaging arm bodies
+
+**Type:** execution (workstream 01 / `01c` §3 follow-through). Continued
+the session-173 packaging work: arms already received typed `AnyNode`
+handles, but several bodies still reached back through raw `p + N` /
+`r + N` offsets for built families.
+
+**Code:**
+1. Added a small `copy_box_shell` helper for `just_copy`/`copy_node_list`:
+   it copies the full box shell, classifies the copied header as an
+   `AnyBox`, and sets `list_ptr` through the typed setter. HList/VList
+   copy paths now read child lists through `list_ptr()`; `Unset` stays raw
+   because it is not typed yet.
+2. Retyped glue/ligature/disc copy bodies: source fields now come from
+   `GlueNode::{glue_ptr,leader_ptr}`, `LigatureNode::lig_ptr`, and
+   `DiscNode::{pre_break,post_break}`; copied destination nodes copy their
+   header first, classify, then write destination pointer fields via typed
+   setters. This removed the old `mem_b32 p + 1` style bodies while keeping
+   allocation sizes and copy order equivalent.
+3. Retyped more already-classified consumers: `flush_node_list` uses typed
+   choice branch pointers; `prune_page_top` uses typed HList/VList/Rule
+   heights via a factored split-top-skip helper; `hpack`/`vpackage` measure
+   leader boxes/rules through typed dimensions when classification succeeds
+   (fallback remains the old raw read for untyped/unexpected leader records);
+   `hpack`'s ligature temporary char-node now uses ligature `font`,
+   `character`, and `link` accessors.
+4. Removed the dummy `r = 0` initialization in `copy_node_list`; the
+   compiler now verifies every copy path assigns `r`.
+
+**Left raw deliberately:** `Unset`, `Ins`, `Mark`, `Adjust`, and `Whatsit`
+fields in these walkers still use raw offsets because those families are not
+typed yet. `vert_break`/`vsplit` still read through global `mem_*` accessors;
+threading them is a separate fused slice, not an arm-body cleanup.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo fmt --check -p
+tectonic_engine_xetex`; filtered `node`/`units` tests **46/46**; dashboard
+**29/2/7/4** (`tex-outputs`, `trip`, `engine_rust`, `latex_goldens`);
+`git diff --check`. Metrics: warnings **42 → 41**; `unsafe fn` **568**;
+`from_idx_unchecked` total **123** unchanged (node.rs 74, math 34,
+linebreak 12, mem 3; packaging 0).
+
+**Next:** the remaining packaging raw offsets are either untyped-family
+fields or unthreaded/global islands. Continue with a real fused threading
+slice (`vert_break`/`vsplit`, `mlist_to_hlist`, shipout/output walkers), or
+build typed surfaces for the low-rank families still represented as raw
+`MemIdx` (`Unset`, `Ins`, `Mark`, `Adjust`, selected Whatsit/native records).
+
+---
+
 ## Idiom session 173 — 2026-06-13 — Execution: adopt `classify` across the packaging list-walkers (large, low-docs)
 
 **Type:** execution (workstream 01 / `01c` §3 — the session-172 "Next"

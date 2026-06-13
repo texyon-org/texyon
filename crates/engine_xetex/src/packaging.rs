@@ -198,6 +198,25 @@ const DIMEN_PAR_VFUZZ_VP: i32 = 9;
 
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
+fn copy_box_shell(
+    mem: &mut crate::state::MemState,
+    p: i32,
+    list_ptr: MemPtr,
+) -> Result<i32, NodeRecycleAbort> {
+    let r = cnl_get_node!(mem, BOX_NODE_SIZE);
+    let mut w = BOX_NODE_SIZE;
+    while w > 0 {
+        w -= 1;
+        mem.set_word(r + w, mem.word(p + w));
+    }
+    let r_box = mem
+        .classify_box(MemIdx::new(r))
+        .map_err(|_| NodeRecycleAbort::Confusion(c"copying"))?
+        .expect("copied box header classifies as a box");
+    r_box.set_list_ptr(mem, list_ptr);
+    Ok(r)
+}
+
 // translated from xetex-xetex0.c:8029 (just_copy)
 pub fn just_copy(
     mem: &mut crate::state::MemState,
@@ -238,21 +257,8 @@ pub fn just_copy(
         } else {
             match mem.classify(MemIdx::new(p)).ok() {
                 Some(AnyNode::HList(_)) | Some(AnyNode::VList(_)) => {
-                    let r = cnl_get_node!(mem, BOX_NODE_SIZE);
-                    // SYNCTEX_tag(r, BOX_NODE_SIZE) = SYNCTEX_tag(p, BOX_NODE_SIZE)
-                    mem.set_b32s0(
-                        r + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE,
-                        mem.b32s0(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE),
-                    );
-                    // SYNCTEX_line(r, BOX_NODE_SIZE) = SYNCTEX_line(p, BOX_NODE_SIZE)
-                    mem.set_b32s1(
-                        r + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE,
-                        mem.b32s1(p + BOX_NODE_SIZE - SYNCTEX_FIELD_SIZE),
-                    );
-                    mem.set_word(r + 6, mem.word(p + 6));
-                    mem.set_word(r + 5, mem.word(p + 5));
-                    words = 5;
-                    mem.set_b32s1(r + 5, TEX_NULL); // BOX_list_ptr(r) = TEX_NULL
+                    let r = copy_box_shell(mem, p, MemPtr::NULL)?;
+                    words = 0; // already copied
                     Some(r)
                 }
                 Some(AnyNode::Rule(_)) => {
@@ -269,24 +275,27 @@ pub fn just_copy(
                     words = MEDIUM_NODE_SIZE;
                     Some(cnl_get_node!(mem, MEDIUM_NODE_SIZE))
                 }
-                Some(AnyNode::Glue(_)) => {
+                Some(AnyNode::Glue(glue)) => {
+                    let gp = glue.glue_ptr(mem); // GLUE_NODE_glue_ptr(p)
                     let r = cnl_get_node!(mem, MEDIUM_NODE_SIZE);
                     // GLUE_SPEC_ref_count(GLUE_NODE_glue_ptr(p))++
-                    let gp = mem.b32s0(p + 1); // GLUE_NODE_glue_ptr(p)
-                    let spec =
-                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(gp)).unwrap();
+                    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(gp).unwrap();
                     spec.set_ref_count(mem, spec.ref_count(mem) + 1);
-                    // SYNCTEX fields
-                    mem.set_b32s0(
+                    mem.set_word(r, mem.word(p));
+                    mem.set_word(
                         r + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE,
-                        mem.b32s0(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE),
+                        mem.word(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE),
                     );
-                    mem.set_b32s1(
-                        r + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE,
-                        mem.b32s1(p + MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE),
-                    );
-                    mem.set_b32s0(r + 1, gp); // GLUE_NODE_glue_ptr(r) = gp
-                    mem.set_b32s1(r + 1, TEX_NULL); // GLUE_NODE_leader_ptr(r) = TEX_NULL
+                    let r_glue = match mem
+                        .classify(MemIdx::new(r))
+                        .map_err(|_| NodeRecycleAbort::Confusion(c"copying"))?
+                    {
+                        AnyNode::Glue(r_glue) => r_glue,
+                        _ => unreachable!("copied glue header classifies as glue"),
+                    };
+                    r_glue.set_glue_ptr(mem, gp);
+                    r_glue.set_leader_ptr(mem, MemPtr::NULL);
+                    words = 0; // already copied
                     Some(r)
                 }
                 Some(AnyNode::Whatsit(_)) => {
@@ -527,7 +536,20 @@ pub fn flush_node_list(
             // Goto-done pattern: break 'done skips free_node(p, SMALL_NODE_SIZE) at end.
             'done: {
                 match mem.classify(MemIdx::new(p)).map_err(|_| c"flushing")? {
-                    AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Unset(_) => {
+                    AnyNode::HList(b) => {
+                        let c = b.list_ptr(mem).0;
+                        flush_node_list(mem, c)?;
+                        crate::mem::free_node(mem, p, BOX_NODE_SIZE);
+                        break 'done;
+                    }
+                    AnyNode::VList(b) => {
+                        let c = b.list_ptr(mem).0;
+                        flush_node_list(mem, c)?;
+                        crate::mem::free_node(mem, p, BOX_NODE_SIZE);
+                        break 'done;
+                    }
+                    AnyNode::Unset(_) => {
+                        // UNSET shares the box layout; its family is not yet typed.
                         let c = mem.b32s1(p + 5);
                         flush_node_list(mem, c)?;
                         crate::mem::free_node(mem, p, BOX_NODE_SIZE);
@@ -610,8 +632,8 @@ pub fn flush_node_list(
                         crate::mem::free_node(mem, p, MARGIN_KERN_NODE_SIZE_FNL);
                         break 'done;
                     }
-                    AnyNode::Ligature(_) => {
-                        let c = mem.b32s1(p + 1);
+                    AnyNode::Ligature(lig) => {
+                        let c = lig.lig_ptr(mem).0;
                         flush_node_list(mem, c)?;
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
@@ -620,10 +642,10 @@ pub fn flush_node_list(
                         crate::mem::delete_token_ref(mem, t);
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
-                    AnyNode::Disc(_) => {
-                        let c1 = mem.b32s0(p + 1);
+                    AnyNode::Disc(disc) => {
+                        let c1 = disc.pre_break(mem).0;
                         flush_node_list(mem, c1)?;
-                        let c2 = mem.b32s1(p + 1);
+                        let c2 = disc.post_break(mem).0;
                         flush_node_list(mem, c2)?;
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
@@ -636,14 +658,14 @@ pub fn flush_node_list(
                         crate::mem::free_node(mem, p, STYLE_NODE_SIZE_FNL);
                         break 'done;
                     }
-                    AnyNode::Choice(_) => {
-                        let c1 = mem.b32s0(p + 1);
+                    AnyNode::Choice(choice) => {
+                        let c1 = choice.display_mlist(mem).0;
                         flush_node_list(mem, c1)?;
-                        let c2 = mem.b32s1(p + 1);
+                        let c2 = choice.text_mlist(mem).0;
                         flush_node_list(mem, c2)?;
-                        let c3 = mem.b32s0(p + 2);
+                        let c3 = choice.script_mlist(mem).0;
                         flush_node_list(mem, c3)?;
-                        let c4 = mem.b32s1(p + 2);
+                        let c4 = choice.script_script_mlist(mem).0;
                         flush_node_list(mem, c4)?;
                         crate::mem::free_node(mem, p, STYLE_NODE_SIZE_FNL);
                         break 'done;
@@ -721,7 +743,7 @@ pub fn copy_node_list(
     let mut q = h;
     while p != TEX_NULL {
         let mut words = 1i32;
-        let mut r = 0i32;
+        let r: i32;
         if p >= mem.hi_mem_min {
             r = cnl_get_avail!(mem);
         } else {
@@ -729,7 +751,17 @@ pub fn copy_node_list(
                 .classify(MemIdx::new(p))
                 .map_err(|_| NodeRecycleAbort::Confusion(c"copying"))?
             {
-                AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Unset(_) => {
+                AnyNode::HList(src_box) => {
+                    let copied = copy_node_list(mem, src_box.list_ptr(mem).0)?;
+                    r = copy_box_shell(mem, p, MemPtr::from_raw(copied))?;
+                    words = 0; // already copied
+                }
+                AnyNode::VList(src_box) => {
+                    let copied = copy_node_list(mem, src_box.list_ptr(mem).0)?;
+                    r = copy_box_shell(mem, p, MemPtr::from_raw(copied))?;
+                    words = 0; // already copied
+                }
+                AnyNode::Unset(_) => {
                     r = cnl_get_node!(mem, BOX_NODE_SIZE);
                     // SYNCTEX_tag(r, BOX_NODE_SIZE) = SYNCTEX_tag(p, BOX_NODE_SIZE)
                     mem.set_b32s0(r + 7, mem.b32s0(p + 7));
@@ -808,19 +840,25 @@ pub fn copy_node_list(
                         }
                     }
                 }
-                AnyNode::Glue(_) => {
+                AnyNode::Glue(glue) => {
+                    let gp = glue.glue_ptr(mem);
                     r = cnl_get_node!(mem, MEDIUM_NODE_SIZE);
-                    // GLUE_SPEC_ref_count(mem[p+1].b32.s0)++ = mem[mem[p+1].b32.s0].b32.s1++
-                    let spec =
-                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(mem.b32s0(p + 1)))
-                            .unwrap();
+                    // GLUE_SPEC_ref_count(GLUE_NODE_glue_ptr(p))++
+                    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(gp).unwrap();
                     spec.set_ref_count(mem, spec.ref_count(mem) + 1);
-                    mem.set_b32s0(r + 2, mem.b32s0(p + 2));
-                    mem.set_b32s1(r + 2, mem.b32s1(p + 2));
-                    mem.set_b32s0(r + 1, mem.b32s0(p + 1));
-                    let src = mem.b32s1(p + 1);
-                    let copied = copy_node_list(mem, src)?;
-                    mem.set_b32s1(r + 1, copied);
+                    mem.set_word(r, mem.word(p));
+                    mem.set_word(r + 2, mem.word(p + 2));
+                    let copied = copy_node_list(mem, glue.leader_ptr(mem).0)?;
+                    let r_glue = match mem
+                        .classify(MemIdx::new(r))
+                        .map_err(|_| NodeRecycleAbort::Confusion(c"copying"))?
+                    {
+                        AnyNode::Glue(r_glue) => r_glue,
+                        _ => unreachable!("copied glue header classifies as glue"),
+                    };
+                    r_glue.set_glue_ptr(mem, gp);
+                    r_glue.set_leader_ptr(mem, MemPtr::from_raw(copied));
+                    words = 0; // already copied
                 }
                 AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => {
                     r = cnl_get_node!(mem, MEDIUM_NODE_SIZE);
@@ -830,21 +868,39 @@ pub fn copy_node_list(
                     r = cnl_get_node!(mem, MARGIN_KERN_NODE_SIZE_CNL);
                     words = MARGIN_KERN_NODE_SIZE_CNL;
                 }
-                AnyNode::Ligature(_) => {
+                AnyNode::Ligature(lig) => {
                     r = cnl_get_node!(mem, SMALL_NODE_SIZE);
+                    mem.set_word(r, mem.word(p));
                     mem.set_word(r + 1, mem.word(p + 1));
-                    let src = mem.b32s1(p + 1);
+                    let src = lig.lig_ptr(mem).0;
                     let copied = copy_node_list(mem, src)?;
-                    mem.set_b32s1(r + 1, copied);
+                    let r_lig = match mem
+                        .classify(MemIdx::new(r))
+                        .map_err(|_| NodeRecycleAbort::Confusion(c"copying"))?
+                    {
+                        AnyNode::Ligature(r_lig) => r_lig,
+                        _ => unreachable!("copied ligature header classifies as ligature"),
+                    };
+                    r_lig.set_lig_ptr(mem, MemPtr::from_raw(copied));
+                    words = 0; // already copied
                 }
-                AnyNode::Disc(_) => {
+                AnyNode::Disc(disc) => {
                     r = cnl_get_node!(mem, SMALL_NODE_SIZE);
-                    let src0 = mem.b32s0(p + 1);
+                    mem.set_word(r, mem.word(p));
+                    let r_disc = match mem
+                        .classify(MemIdx::new(r))
+                        .map_err(|_| NodeRecycleAbort::Confusion(c"copying"))?
+                    {
+                        AnyNode::Disc(r_disc) => r_disc,
+                        _ => unreachable!("copied disc header classifies as disc"),
+                    };
+                    let src0 = disc.pre_break(mem).0;
                     let copied0 = copy_node_list(mem, src0)?;
-                    mem.set_b32s0(r + 1, copied0);
-                    let src1 = mem.b32s1(p + 1);
+                    r_disc.set_pre_break(mem, MemPtr::from_raw(copied0));
+                    let src1 = disc.post_break(mem).0;
                     let copied1 = copy_node_list(mem, src1)?;
-                    mem.set_b32s1(r + 1, copied1);
+                    r_disc.set_post_break(mem, MemPtr::from_raw(copied1));
+                    words = 0; // already copied
                 }
                 AnyNode::Mark(_) => {
                     r = cnl_get_node!(mem, SMALL_NODE_SIZE);
@@ -1254,6 +1310,30 @@ pub unsafe fn vsplit(n: i32, h: i32) -> i32 {
     }
     vpackage(p, h, EXACTLY, split_max_d)
 }
+
+fn insert_split_top_skip_before(
+    mem: &mut MemState,
+    eqtb: &EqtbState,
+    prev_p: i32,
+    p: i32,
+    height: i32,
+) -> Result<(), NodeRecycleAbort> {
+    let q = crate::mem::new_skip_param(mem, eqtb, GLUE_PAR_SPLIT_TOP_SKIP_PPT);
+    if q == crate::mem::ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b32s1(prev_p, q);
+    mem.set_b32s1(q, p);
+    let tp = temp_ptr();
+    let avail_ht = mem.b32s1(tp + 1);
+    if avail_ht > height {
+        mem.set_b32s1(tp + 1, avail_ht - height);
+    } else {
+        mem.set_b32s1(tp + 1, 0);
+    }
+    Ok(())
+}
+
 /// translated from xetex-xetex0.c:9761 (prune_page_top)
 ///
 /// Phase-C: threaded to disjoint `&mut MemState` / `&mut ScannerState` /
@@ -1285,21 +1365,16 @@ pub fn prune_page_top(
             .classify(MemIdx::new(p))
             .map_err(|_| NodeRecycleAbort::Confusion(c"pruning"))?
         {
-            AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) => {
-                q = crate::mem::new_skip_param(mem, eqtb, GLUE_PAR_SPLIT_TOP_SKIP_PPT);
-                if q == crate::mem::ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow);
-                }
-                mem.set_b32s1(prev_p, q);
-                mem.set_b32s1(q, p);
-                let tp = temp_ptr();
-                let height = mem.b32s1(p + 3);
-                let avail_ht = mem.b32s1(tp + 1);
-                if avail_ht > height {
-                    mem.set_b32s1(tp + 1, avail_ht - height);
-                } else {
-                    mem.set_b32s1(tp + 1, 0);
-                }
+            AnyNode::HList(b) => {
+                insert_split_top_skip_before(mem, eqtb, prev_p, p, b.height(mem).0)?;
+                p = TEX_NULL;
+            }
+            AnyNode::VList(b) => {
+                insert_split_top_skip_before(mem, eqtb, prev_p, p, b.height(mem).0)?;
+                p = TEX_NULL;
+            }
+            AnyNode::Rule(rule) => {
+                insert_split_top_skip_before(mem, eqtb, prev_p, p, rule.height(mem).raw())?;
                 p = TEX_NULL;
             }
             AnyNode::Whatsit(_) | AnyNode::Mark(_) | AnyNode::Ins(_) => {
@@ -1725,11 +1800,23 @@ fn hpack_in(
                 scanner.total_shrink[o] += spec.shrink(mem).0;
                 if glue.subtype(mem) >= A_LEADERS_HP {
                     let leader = glue.leader_ptr(mem).0;
-                    if mem.b32s1(leader + 3) > h {
-                        h = mem.b32s1(leader + 3);
+                    let (leader_h, leader_d) = match mem.classify(MemIdx::new(leader)).ok() {
+                        Some(AnyNode::HList(leader_box)) => {
+                            (leader_box.height(mem).0, leader_box.depth(mem).0)
+                        }
+                        Some(AnyNode::VList(leader_box)) => {
+                            (leader_box.height(mem).0, leader_box.depth(mem).0)
+                        }
+                        Some(AnyNode::Rule(rule)) => {
+                            (rule.height(mem).raw(), rule.depth(mem).raw())
+                        }
+                        _ => (mem.b32s1(leader + 3), mem.b32s1(leader + 2)),
+                    };
+                    if leader_h > h {
+                        h = leader_h;
                     }
-                    if mem.b32s1(leader + 2) > d {
-                        d = mem.b32s1(leader + 2);
+                    if leader_d > d {
+                        d = leader_d;
                     }
                 }
             }
@@ -1763,9 +1850,10 @@ fn hpack_in(
                     }
                 }
             }
-            Ok(AnyNode::Ligature(_)) => {
-                mem.set_word(GARBAGE, mem.word(p + 1));
-                mem.set_b32s1(GARBAGE, mem.b32s1(p));
+            Ok(AnyNode::Ligature(lig)) => {
+                mem.set_b16s1(GARBAGE, lig.font(mem).0 as u16);
+                mem.set_b16s0(GARBAGE, lig.character(mem));
+                mem.set_b32s1(GARBAGE, lig.link(mem).0);
                 p = GARBAGE;
                 fonts.set_xtx_ligature_present(true);
                 continue 'outer;
@@ -2122,8 +2210,14 @@ fn vpackage_in(
                     scanner.total_shrink[o] += spec.shrink(mem).0;
                     if glue.subtype(mem) >= A_LEADERS_VP {
                         let leader = glue.leader_ptr(mem).0;
-                        if mem.b32s1(leader + 1) > w {
-                            w = mem.b32s1(leader + 1);
+                        let leader_w = match mem.classify(MemIdx::new(leader)).ok() {
+                            Some(AnyNode::HList(leader_box)) => leader_box.width(mem).0,
+                            Some(AnyNode::VList(leader_box)) => leader_box.width(mem).0,
+                            Some(AnyNode::Rule(rule)) => rule.width(mem).raw(),
+                            _ => mem.b32s1(leader + 1),
+                        };
+                        if leader_w > w {
+                            w = leader_w;
                         }
                     }
                 }
