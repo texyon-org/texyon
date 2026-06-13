@@ -545,9 +545,8 @@ pub fn flush_node_list(
                         crate::mem::free_node(mem, p, BOX_NODE_SIZE);
                         break 'done;
                     }
-                    AnyNode::Unset(_) => {
-                        // UNSET shares the box layout; its family is not yet typed.
-                        let c = mem.b32s1(p + 5);
+                    AnyNode::Unset(u) => {
+                        let c = u.list_ptr(mem).0;
                         flush_node_list(mem, c)?;
                         crate::mem::free_node(mem, p, BOX_NODE_SIZE);
                         break 'done;
@@ -556,10 +555,10 @@ pub fn flush_node_list(
                         crate::mem::free_node(mem, p, RULE_NODE_SIZE);
                         break 'done;
                     }
-                    AnyNode::Ins(_) => {
-                        let c = mem.b32s0(p + 4);
+                    AnyNode::Ins(ins) => {
+                        let c = ins.ins_ptr(mem).0;
                         flush_node_list(mem, c)?;
-                        let g = mem.b32s1(p + 4);
+                        let g = ins.split_top_ptr(mem).0;
                         crate::mem::delete_glue_ref(mem, g);
                         crate::mem::free_node(mem, p, INS_NODE_SIZE_FNL);
                         break 'done;
@@ -634,8 +633,8 @@ pub fn flush_node_list(
                         flush_node_list(mem, c)?;
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
-                    AnyNode::Mark(_) => {
-                        let t = mem.b32s1(p + 1);
+                    AnyNode::Mark(mark) => {
+                        let t = mark.mark_ptr(mem).0;
                         crate::mem::delete_token_ref(mem, t);
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
@@ -646,8 +645,8 @@ pub fn flush_node_list(
                         flush_node_list(mem, c2)?;
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
-                    AnyNode::Adjust(_) => {
-                        let c = mem.b32s1(p + 1);
+                    AnyNode::Adjust(adjust) => {
+                        let c = adjust.adjust_ptr(mem).0;
                         flush_node_list(mem, c)?;
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
@@ -758,7 +757,8 @@ pub fn copy_node_list(
                     r = copy_box_shell(mem, p, MemPtr::from_raw(copied))?;
                     words = 0; // already copied
                 }
-                AnyNode::Unset(_) => {
+                AnyNode::Unset(u) => {
+                    let src = u.list_ptr(mem).0;
                     r = cnl_get_node!(mem, BOX_NODE_SIZE);
                     // SYNCTEX_tag(r, BOX_NODE_SIZE) = SYNCTEX_tag(p, BOX_NODE_SIZE)
                     mem.set_b32s0(r + 7, mem.b32s0(p + 7));
@@ -766,7 +766,6 @@ pub fn copy_node_list(
                     mem.set_b32s1(r + 7, mem.b32s1(p + 7));
                     mem.set_word(r + 6, mem.word(p + 6));
                     mem.set_word(r + 5, mem.word(p + 5));
-                    let src = mem.b32s1(p + 5);
                     let copied = copy_node_list(mem, src)?;
                     mem.set_b32s1(r + 5, copied);
                     words = 5;
@@ -775,15 +774,14 @@ pub fn copy_node_list(
                     r = cnl_get_node!(mem, RULE_NODE_SIZE);
                     words = RULE_NODE_SIZE - 1;
                 }
-                AnyNode::Ins(_) => {
+                AnyNode::Ins(ins) => {
                     r = cnl_get_node!(mem, INS_NODE_SIZE_CNL);
                     mem.set_word(r + 4, mem.word(p + 4));
-                    // GLUE_SPEC_ref_count(mem[p+4].b32.s1)++ = mem[mem[p+4].b32.s1].b32.s1++
+                    // GLUE_SPEC_ref_count(INSERTION_NODE_split_top_ptr(p))++
                     let spec =
-                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(mem.b32s1(p + 4)))
-                            .unwrap();
+                        NodePtr::<GlueSpecNode>::from_glue_ptr(ins.split_top_ptr(mem)).unwrap();
                     spec.set_ref_count(mem, spec.ref_count(mem) + 1);
-                    let src = mem.b32s0(p + 4);
+                    let src = ins.ins_ptr(mem).0;
                     let copied = copy_node_list(mem, src)?;
                     mem.set_b32s0(r + 4, copied);
                     words = INS_NODE_SIZE_CNL - 1;
@@ -899,16 +897,16 @@ pub fn copy_node_list(
                     r_disc.set_post_break(mem, MemPtr::from_raw(copied1));
                     words = 0; // already copied
                 }
-                AnyNode::Mark(_) => {
+                AnyNode::Mark(mark) => {
+                    // mem[MARK_NODE_ptr(p)].b32.s0++ (token list ref count)
+                    let tok = mark.mark_ptr(mem).0;
                     r = cnl_get_node!(mem, SMALL_NODE_SIZE);
-                    // mem[mem[p+1].b32.s1].b32.s0++ (token list ref count)
-                    let tok = mem.b32s1(p + 1);
                     mem.set_b32s0(tok, mem.b32s0(tok) + 1);
                     words = SMALL_NODE_SIZE;
                 }
-                AnyNode::Adjust(_) => {
+                AnyNode::Adjust(adjust) => {
+                    let src = adjust.adjust_ptr(mem).0;
                     r = cnl_get_node!(mem, SMALL_NODE_SIZE);
-                    let src = mem.b32s1(p + 1);
                     let copied = copy_node_list(mem, src)?;
                     mem.set_b32s1(r + 1, copied);
                 }
@@ -2009,13 +2007,15 @@ fn hpack_in(
                     d = rd;
                 }
             }
-            Ok(AnyNode::Unset(_)) => {
-                x += mem.b32s1(p + 1);
-                if mem.b32s1(p + 3) > h {
-                    h = mem.b32s1(p + 3);
+            Ok(AnyNode::Unset(u)) => {
+                x += u.width(mem).0;
+                let uh = u.height(mem).0;
+                if uh > h {
+                    h = uh;
                 }
-                if mem.b32s1(p + 2) > d {
-                    d = mem.b32s1(p + 2);
+                let ud = u.depth(mem).0;
+                if ud > d {
+                    d = ud;
                 }
             }
             arm @ (Ok(AnyNode::Ins(_)) | Ok(AnyNode::Mark(_)) | Ok(AnyNode::Adjust(_))) => {
@@ -2563,11 +2563,12 @@ fn vpackage_in(
                         w = width;
                     }
                 }
-                Ok(AnyNode::Unset(_)) => {
-                    x += d + mem.b32s1(p + 3);
-                    d = mem.b32s1(p + 2);
-                    if mem.b32s1(p + 1) > w {
-                        w = mem.b32s1(p + 1);
+                Ok(AnyNode::Unset(u)) => {
+                    x += d + u.height(mem).0;
+                    d = u.depth(mem).0;
+                    let uw = u.width(mem).0;
+                    if uw > w {
+                        w = uw;
                     }
                 }
                 Ok(AnyNode::Whatsit(_)) => {

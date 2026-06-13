@@ -463,9 +463,9 @@ pub enum AnyNode {
     HList(NodePtr<HListNode>),
     VList(NodePtr<VListNode>),
     Rule(NodePtr<RuleNode>),
-    Ins(MemIdx),
-    Mark(MemIdx),
-    Adjust(MemIdx),
+    Ins(NodePtr<InsNode>),
+    Mark(NodePtr<MarkNode>),
+    Adjust(NodePtr<AdjustNode>),
     Ligature(NodePtr<LigatureNode>),
     Disc(NodePtr<DiscNode>),
     Whatsit(MemIdx),
@@ -473,7 +473,7 @@ pub enum AnyNode {
     Glue(NodePtr<GlueNode>),
     Kern(NodePtr<KernNode>),
     Penalty(NodePtr<PenaltyNode>),
-    Unset(MemIdx),
+    Unset(NodePtr<UnsetNode>),
     Style(NodePtr<StyleNode>),
     Choice(NodePtr<ChoiceNode>),
     /// Any noad (`NODE_type` 16–31); refine with [`NodePtr::<Noad>::noad_type`].
@@ -499,11 +499,11 @@ impl AnyNode {
             AnyNode::Choice(p) => p.idx(),
             AnyNode::Noad(p) => p.idx(),
             AnyNode::MarginKern(p) => p.idx(),
-            AnyNode::Ins(i)
-            | AnyNode::Mark(i)
-            | AnyNode::Adjust(i)
-            | AnyNode::Whatsit(i)
-            | AnyNode::Unset(i) => i,
+            AnyNode::Mark(p) => p.idx(),
+            AnyNode::Adjust(p) => p.idx(),
+            AnyNode::Ins(p) => p.idx(),
+            AnyNode::Unset(p) => p.idx(),
+            AnyNode::Whatsit(i) => i,
         }
     }
 }
@@ -535,9 +535,9 @@ impl MemState {
             HList => AnyNode::HList(unsafe { NodePtr::from_idx_unchecked(p) }),
             VList => AnyNode::VList(unsafe { NodePtr::from_idx_unchecked(p) }),
             Rule => AnyNode::Rule(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Ins => AnyNode::Ins(p),
-            Mark => AnyNode::Mark(p),
-            Adjust => AnyNode::Adjust(p),
+            Ins => AnyNode::Ins(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Mark => AnyNode::Mark(unsafe { NodePtr::from_idx_unchecked(p) }),
+            Adjust => AnyNode::Adjust(unsafe { NodePtr::from_idx_unchecked(p) }),
             Ligature => AnyNode::Ligature(unsafe { NodePtr::from_idx_unchecked(p) }),
             Disc => AnyNode::Disc(unsafe { NodePtr::from_idx_unchecked(p) }),
             Whatsit => AnyNode::Whatsit(p),
@@ -545,7 +545,7 @@ impl MemState {
             Glue => AnyNode::Glue(unsafe { NodePtr::from_idx_unchecked(p) }),
             Kern => AnyNode::Kern(unsafe { NodePtr::from_idx_unchecked(p) }),
             Penalty => AnyNode::Penalty(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Unset => AnyNode::Unset(p),
+            Unset => AnyNode::Unset(unsafe { NodePtr::from_idx_unchecked(p) }),
             Style => AnyNode::Style(unsafe { NodePtr::from_idx_unchecked(p) }),
             Choice => AnyNode::Choice(unsafe { NodePtr::from_idx_unchecked(p) }),
             OrdNoad | OpNoad | BinNoad | RelNoad | OpenNoad | CloseNoad | PunctNoad | InnerNoad
@@ -1759,6 +1759,123 @@ impl MemState {
     }
 }
 
+// --- mark / adjust families (NODE_type 4, 5) ---
+
+/// `MARK_NODE` (`NODE_type` = 4): a `\mark` whose token list is carried into
+/// the page stream. `SMALL_NODE_SIZE` (2). Field offsets verified against
+/// `xetex/xetex-xetexd.h:258–259` (`MARK_NODE_ptr` / `MARK_NODE_class`).
+pub enum MarkNode {}
+
+impl NodeKind for MarkNode {}
+impl HasNodeHeader for MarkNode {}
+
+impl NodePtr<MarkNode> {
+    /// Mark token list = `mem[(p) + 1].b32.s1` (`MARK_NODE_ptr`).
+    #[inline]
+    pub fn mark_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_mark_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+
+    /// Mark class = `mem[(p) + 1].b32.s0` (`MARK_NODE_class`).
+    #[inline]
+    pub fn mark_class(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_mark_class(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(1).0, v);
+    }
+}
+
+/// `ADJUST_NODE` (`NODE_type` = 5): a `\vadjust` list moved to the enclosing
+/// vertical list. `SMALL_NODE_SIZE` (2); the subtype selects pre-/post-adjust
+/// placement. The adjustment list pointer reuses the box `width` slot
+/// (`mem[(p) + 1].b32.s1`).
+pub enum AdjustNode {}
+
+impl NodeKind for AdjustNode {}
+impl HasNodeHeader for AdjustNode {}
+
+impl NodePtr<AdjustNode> {
+    /// Adjustment list = `mem[(p) + 1].b32.s1` (`ADJUST_NODE_ptr`).
+    #[inline]
+    pub fn adjust_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_adjust_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+}
+
+/// `INS_NODE` (`NODE_type` = 3): an insertion (`\insert`). `INS_NODE_SIZE` (5).
+/// The subtype holds the insertion class. Field offsets verified against
+/// `xetex/xetex-xetexd.h:246–248` (`INSERTION_NODE_float_cost` /
+/// `INSERTION_NODE_split_top_ptr` / `INSERTION_NODE_ins_ptr`); height/depth
+/// share the box `height`/`depth` slots.
+pub enum InsNode {}
+
+impl NodeKind for InsNode {}
+impl HasNodeHeader for InsNode {}
+
+impl NodePtr<InsNode> {
+    /// Vlist to be inserted = `mem[(p) + 4].b32.s0` (`INSERTION_NODE_ins_ptr`).
+    #[inline]
+    pub fn ins_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s0(self.idx.offset(4).0))
+    }
+    #[inline]
+    pub fn set_ins_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s0(self.idx.offset(4).0, v.0);
+    }
+
+    /// `\splittopskip` glue spec = `mem[(p) + 4].b32.s1`
+    /// (`INSERTION_NODE_split_top_ptr`). Points at a glue spec, not a list.
+    #[inline]
+    pub fn split_top_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(4).0))
+    }
+    #[inline]
+    pub fn set_split_top_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(4).0, v.0);
+    }
+}
+
+/// `UNSET_NODE` (`NODE_type` = 13): an unset box produced while building an
+/// alignment, before column widths are known. It reuses the box layout
+/// (`BOX_NODE_SIZE` = 8) for `width`/`depth`/`height`/`list_ptr`, but its `+4`
+/// and `+5`/`+6` words hold alignment bookkeeping (`glue_shrink`/`span_count`/
+/// `glue_stretch`), so this family deliberately does **not** implement
+/// [`HasDimensions`] (its `shift_amount` slot is `glue_shrink` here). Only the
+/// box dimension/list fields shared verbatim with hlist/vlist are exposed.
+pub enum UnsetNode {}
+
+impl NodeKind for UnsetNode {}
+impl HasNodeHeader for UnsetNode {}
+impl HasListPtr for UnsetNode {}
+
+impl NodePtr<UnsetNode> {
+    /// Natural width = `mem[(p) + 1].b32.s1` (box `width`).
+    #[inline]
+    pub fn width(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(1).0))
+    }
+    /// Depth = `mem[(p) + 2].b32.s1` (box `depth`).
+    #[inline]
+    pub fn depth(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(2).0))
+    }
+    /// Height = `mem[(p) + 3].b32.s1` (box `height`).
+    #[inline]
+    pub fn height(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(3).0))
+    }
+}
+
 // --- shipout movement records ---
 
 const MOVEMENT_NODE_SIZE: i32 = 3;
@@ -2542,6 +2659,74 @@ mod tests {
         assert!(choice.text_mlist(&mem).is_null());
         assert!(choice.script_mlist(&mem).is_null());
         assert!(choice.script_script_mlist(&mem).is_null());
+    }
+
+    #[test]
+    fn mark_node_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Mark.as_raw());
+        let m = match mem.classify(p) {
+            Ok(AnyNode::Mark(m)) => m,
+            other => panic!("expected Mark, got {other:?}"),
+        };
+        m.set_mark_ptr(&mut mem, MemPtr::from_raw(77));
+        m.set_mark_class(&mut mem, 3);
+        assert_eq!(m.mark_ptr(&mem), MemPtr::from_raw(77));
+        assert_eq!(m.mark_class(&mem), 3);
+        assert_eq!(mem.b32s1(p.0 + 1), 77);
+        assert_eq!(mem.b32s0(p.0 + 1), 3);
+    }
+
+    #[test]
+    fn adjust_node_ptr_roundtrips_at_the_right_offset() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Adjust.as_raw());
+        let a = match mem.classify(p) {
+            Ok(AnyNode::Adjust(a)) => a,
+            other => panic!("expected Adjust, got {other:?}"),
+        };
+        a.set_adjust_ptr(&mut mem, MemPtr::from_raw(88));
+        assert_eq!(a.adjust_ptr(&mem), MemPtr::from_raw(88));
+        assert_eq!(mem.b32s1(p.0 + 1), 88);
+    }
+
+    #[test]
+    fn ins_node_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Ins.as_raw());
+        let ins = match mem.classify(p) {
+            Ok(AnyNode::Ins(ins)) => ins,
+            other => panic!("expected Ins, got {other:?}"),
+        };
+        ins.set_ins_ptr(&mut mem, MemPtr::from_raw(55));
+        ins.set_split_top_ptr(&mut mem, MemPtr::from_raw(66));
+        assert_eq!(ins.ins_ptr(&mem), MemPtr::from_raw(55));
+        assert_eq!(ins.split_top_ptr(&mem), MemPtr::from_raw(66));
+        assert_eq!(mem.b32s0(p.0 + 4), 55);
+        assert_eq!(mem.b32s1(p.0 + 4), 66);
+    }
+
+    #[test]
+    fn unset_node_box_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Unset.as_raw());
+        let u = match mem.classify(p) {
+            Ok(AnyNode::Unset(u)) => u,
+            other => panic!("expected Unset, got {other:?}"),
+        };
+        mem.set_b32s1(p.0 + 1, 0x111);
+        mem.set_b32s1(p.0 + 2, 0x222);
+        mem.set_b32s1(p.0 + 3, 0x333);
+        u.set_list_ptr(&mut mem, MemPtr::from_raw(0x444));
+        assert_eq!(u.width(&mem), Scaled(0x111));
+        assert_eq!(u.depth(&mem), Scaled(0x222));
+        assert_eq!(u.height(&mem), Scaled(0x333));
+        assert_eq!(u.list_ptr(&mem), MemPtr::from_raw(0x444));
+        assert_eq!(mem.b32s1(p.0 + 5), 0x444);
     }
 
     #[test]
