@@ -2814,6 +2814,36 @@ fn mlist_choice_node(
     Ok(())
 }
 
+/// Record the hpacked box `z`'s height/depth into the running maxima and
+/// recycle it (one `mem` borrow; `hpack` itself runs before, bucket C).
+fn mlist_track_box(mem: &mut MemState, z: i32, max_h: &mut i32, max_d: &mut i32) {
+    let zb = classify_box_or_panic(mem, z);
+    let h = zb.height(mem).0;
+    let d = zb.depth(mem).0;
+    if h > *max_h {
+        *max_h = h;
+    }
+    if d > *max_d {
+        *max_d = d;
+    }
+    crate::mem::free_node(mem, z, BOX_NODE_SIZE);
+}
+
+/// First-pass noad advance: remember the current noad as `r` with its type,
+/// reset to the outer `style` after a right delimiter, and step `q` to the next
+/// node. Returns the new `(r, r_type, q)`. (`r_type` and `q`'s link are read in
+/// one borrow; the intervening style reset does not touch `mem[q].link`.)
+fn mlist_advance(q: i32, style: i16) -> (i32, u16, i32) {
+    let r = q;
+    let (mut r_type, next) = crate::state::with_state(|st| (st.mem.b16s1(r), st.mem.b32s1(q)));
+    if r_type == RIGHT_NOAD {
+        r_type = LEFT_NOAD;
+        set_cur_style(style);
+        update_math_style_params();
+    }
+    (r, r_type, next)
+}
+
 /// translated from xetex-math.c:84 (mlist_to_hlist)
 pub unsafe fn mlist_to_hlist() {
     let mlist = crate::globals::cur_mlist();
@@ -3032,51 +3062,20 @@ pub unsafe fn mlist_to_hlist() {
                 }
 
                 let z = crate::packaging::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
-                if mem_b32s1(z + 3) > max_h {
-                    max_h = mem_b32s1(z + 3);
-                }
-                if mem_b32s1(z + 2) > max_d {
-                    max_d = mem_b32s1(z + 2);
-                }
-                free_node_global(z, BOX_NODE_SIZE);
-
-                r = q;
-                r_type = mem_b16s1(r);
-                if r_type == RIGHT_NOAD {
-                    r_type = LEFT_NOAD;
-                    set_cur_style(style);
-                    update_math_style_params();
-                }
-                q = mem_b32s1(q);
+                crate::state::with_state_mut(|st| {
+                    mlist_track_box(&mut st.mem, z, &mut max_h, &mut max_d)
+                });
+                (r, r_type, q) = mlist_advance(q, style);
             }
             FirstPass::CheckDimensions => {
                 let z = crate::packaging::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
-                if mem_b32s1(z + 3) > max_h {
-                    max_h = mem_b32s1(z + 3);
-                }
-                if mem_b32s1(z + 2) > max_d {
-                    max_d = mem_b32s1(z + 2);
-                }
-                free_node_global(z, BOX_NODE_SIZE);
-
-                r = q;
-                r_type = mem_b16s1(r);
-                if r_type == RIGHT_NOAD {
-                    r_type = LEFT_NOAD;
-                    set_cur_style(style);
-                    update_math_style_params();
-                }
-                q = mem_b32s1(q);
+                crate::state::with_state_mut(|st| {
+                    mlist_track_box(&mut st.mem, z, &mut max_h, &mut max_d)
+                });
+                (r, r_type, q) = mlist_advance(q, style);
             }
             FirstPass::DoneWithNoad => {
-                r = q;
-                r_type = mem_b16s1(r);
-                if r_type == RIGHT_NOAD {
-                    r_type = LEFT_NOAD;
-                    set_cur_style(style);
-                    update_math_style_params();
-                }
-                q = mem_b32s1(q);
+                (r, r_type, q) = mlist_advance(q, style);
             }
             FirstPass::DoneWithNode => {
                 q = mem_b32s1(q);
