@@ -8,6 +8,63 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 178 — 2026-06-13 — Execution: thread/type `mlist_to_hlist` (both passes)
+
+**Type:** execution (workstream 01 / fused `01b`+`01c`). Took the documented
+next bridge host — the central math driver `mlist_to_hlist` — and threaded/
+typed its tractable islands across both passes. Larger-than-usual session per
+user request (4 code commits), batched validation, single doc update. First
+committed the inherited sessions 174–177 WIP (`1dbd2808`) as a clean baseline.
+
+**Recon finding (why this shape):** there is no large block of easy bucket-A/B
+work left. The remaining raw-accessor mass is in big bucket-C/D hosts
+(`main_control` 744 raw `mem_*` calls, `math` 343, `shipout` 309). The
+`output.rs` show-node walkers the recon ranks as "B" are actually bucket-C:
+`print_char`/`print_esc`/… are `with_state`-bearing, so a walker holding a mem
+borrow across a print nest-panics. So "bigger session" = grind *many* islands
+through one host, not find easy whole-function threads.
+
+**Code (4 commits, all in `src/math.rs`):**
+1. `dfa8a34e` pass-1 reswitch CHOICE_NODE + GLUE_NODE → typed `with_state`
+   islands. CHOICE via `classify_choice` + `ChoiceNode` branch accessors +
+   threaded `flush_node_list` (new `mlist_choice_node` helper); GLUE via
+   `GlueNode` subtype/glue_ptr + threaded `delete_glue_ref`/`flush_node_list`.
+2. `9e4b3546` pass-1 action dispatch: new `mlist_track_box` (hpacked box
+   height/depth → max_h/max_d + typed `free_node`, one borrow) and
+   `mlist_advance` (noad step + style reset; r_type + link read in one borrow);
+   applied to ProcessNucleus/CheckDimensions/DoneWithNoad, deduplicating the
+   repeated tail.
+3. `ba798025` pass-2 islands: BIN_NOAD fixup + list-reset prelude; the
+   move-and-detach arm; new-hlist splice + tail walk; inter-element glue
+   spacing (threaded `new_glue`); penalty insertion (threaded `new_penalty`);
+   final link-read + threaded `free_node`. Removed the dead `new_glue_global`
+   import.
+4. `c848a53b` ProcessNucleus nucleus store: fold `set q+1 = p` + the
+   script-presence check (q+3/q+2 != EMPTY) into one borrow guarding the
+   bucket-D `make_scripts_global`.
+
+Bucket-D calls (`make_*_global`, `hpack`, native FFI, `mlist_to_hlist`
+recursion) stay outside the borrows by design.
+
+**Tests:** `cargo check`+`fmt --check`; `node::` 42/42; full dashboard
+**29/2/7/4** (run after the pass-2 batch); rebuilt `target/release/tectonic`;
+corpus `plan/scripts/corpus.sh check all`: **637 passed / 2 diverged / 0 missing-golden**, only the known FP
+divergences `1905.00073v1` and `1905.00148v1` (no regression). Metrics:
+warnings **41**; `unsafe fn` **568**; `from_idx_unchecked` total **125**
+(node 74, math 36, linebreak 12, mem 3, packaging 0; +1 in math from the
+GLUE-arm classified-boundary handle); **`math.rs` raw `mem_*` bridge calls
+343 → 276 (−67)** — the headline reduction this session.
+
+**Next:** `mlist_to_hlist`'s remaining raw islands are bucket-D-heavy (the
+ProcessNucleus MATH_CHAR/SUB_MLIST head: `fetch`, `new_native_character`,
+`measure_native_glyph` FFI, `hpack`, recursion). Continue with another bridge
+host. `make_op_global`/`make_math_accent_global` are already largely threaded;
+the biggest unblocked levers now are threading the **print subsystem**
+(`print_*` → state params), which would unblock the whole `shipout`/`output`
+show-node-walker family, or the `pagebuilder`/`hyphenate`/`line_break` tails.
+
+---
+
 ## Idiom session 177 — 2026-06-13 — Execution: thread/type `make_math_accent_global` islands
 
 **Type:** execution (workstream 01 / fused `01b`+`01c`). Followed session
