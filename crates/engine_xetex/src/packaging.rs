@@ -18,7 +18,7 @@ use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
 use crate::globals::{cur_val, mem_b32s1, set_cur_val, set_help_line, set_help_ptr, temp_ptr};
 use crate::node::{
-    AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, NodePtr, RuleDimen, VListNode,
+    AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, NodePtr, RuleDimen, SaNode, VListNode,
 };
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
 use crate::units::NodeType;
@@ -1805,95 +1805,80 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
     use crate::globals::{cur_ptr, set_cur_ptr};
     use crate::mem::TEX_NULL;
     let mut q = q;
+    // SAFETY: `do_marks` is only entered (and recursed) with a real
+    // sparse-array record index — an index node (l < 4) or a mark-class node
+    // (l == 4). This is the family's single audited construction site; it has
+    // no NODE_type to classify. Child/mark slot `i` maps to `mem[q+i/2+1].b32`.
+    let node = unsafe { NodePtr::<SaNode>::from_idx_unchecked(MemIdx::new(q)) };
 
     if l < 4 {
         for i in 0i16..=15 {
-            let cp = if i % 2 != 0 {
-                mem.b32s1(q + (i / 2) as i32 + 1)
-            } else {
-                mem.b32s0(q + (i / 2) as i32 + 1)
-            };
-            set_cur_ptr(cp);
+            set_cur_ptr(node.child(mem, i as i32).0);
 
             let cur = cur_ptr();
             if cur != TEX_NULL && do_marks(mem, a, l + 1, cur) {
-                if i % 2 != 0 {
-                    mem.set_b32s1(q + (i / 2) as i32 + 1, TEX_NULL);
-                } else {
-                    mem.set_b32s0(q + (i / 2) as i32 + 1, TEX_NULL);
-                }
-                // mem[q].b16.s0-- (reference count of index node)
-                mem.set_b16s0(q, mem.b16s0(q) - 1);
+                node.set_child(mem, i as i32, MemPtr::NULL);
+                // index node populated-child reference count--
+                node.set_ref_count(mem, node.ref_count(mem) - 1);
             }
         }
 
-        if mem.b16s0(q) == 0 {
+        if node.ref_count(mem) == 0 {
             crate::mem::free_node(mem, q, INDEX_NODE_SIZE_DM);
             q = TEX_NULL;
         }
     } else {
+        // Mark-class node child slots, by eTeX mark code:
+        //   0 = top, 1 = first, 2 = bot, 3 = split_first, 4 = split_bot.
         match a {
             VSPLIT_INIT_DM => {
-                if mem.b32s1(q + 2) != TEX_NULL {
-                    let t = mem.b32s1(q + 2);
-                    crate::mem::delete_token_ref(mem, t);
-                    mem.set_b32s1(q + 2, TEX_NULL);
-                    let t = mem.b32s0(q + 3);
-                    crate::mem::delete_token_ref(mem, t);
-                    mem.set_b32s0(q + 3, TEX_NULL);
+                if node.child(mem, 3).0 != TEX_NULL {
+                    crate::mem::delete_token_ref(mem, node.child(mem, 3).0);
+                    node.set_child(mem, 3, MemPtr::NULL);
+                    crate::mem::delete_token_ref(mem, node.child(mem, 4).0);
+                    node.set_child(mem, 4, MemPtr::NULL);
                 }
             }
             FIRE_UP_INIT_DM => {
-                if mem.b32s0(q + 2) != TEX_NULL {
-                    if mem.b32s0(q + 1) != TEX_NULL {
-                        let t = mem.b32s0(q + 1);
-                        crate::mem::delete_token_ref(mem, t);
+                if node.child(mem, 2).0 != TEX_NULL {
+                    if node.child(mem, 0).0 != TEX_NULL {
+                        crate::mem::delete_token_ref(mem, node.child(mem, 0).0);
                     }
-                    let t = mem.b32s1(q + 1);
-                    crate::mem::delete_token_ref(mem, t);
-                    mem.set_b32s1(q + 1, TEX_NULL);
-                    let ref_ptr = mem.b32s0(q + 2);
+                    crate::mem::delete_token_ref(mem, node.child(mem, 1).0);
+                    node.set_child(mem, 1, MemPtr::NULL);
+                    let ref_ptr = node.child(mem, 2).0;
                     if mem.b32s1(ref_ptr) == TEX_NULL {
                         crate::mem::delete_token_ref(mem, ref_ptr);
-                        mem.set_b32s0(q + 2, TEX_NULL);
+                        node.set_child(mem, 2, MemPtr::NULL);
                     } else {
                         mem.set_b32s0(ref_ptr, mem.b32s0(ref_ptr) + 1);
                     }
-                    let v = mem.b32s0(q + 2);
-                    mem.set_b32s0(q + 1, v);
+                    let v = node.child(mem, 2);
+                    node.set_child(mem, 0, v);
                 }
             }
             FIRE_UP_DONE_DM => {
-                if mem.b32s0(q + 1) != TEX_NULL && mem.b32s1(q + 1) == TEX_NULL {
-                    let head = mem.b32s0(q + 1);
-                    mem.set_b32s1(q + 1, head);
-                    let cur = mem.b32s0(head);
-                    mem.set_b32s0(head, cur + 1);
+                if node.child(mem, 0).0 != TEX_NULL && node.child(mem, 1).0 == TEX_NULL {
+                    let head = node.child(mem, 0);
+                    node.set_child(mem, 1, head);
+                    let cur = mem.b32s0(head.0);
+                    mem.set_b32s0(head.0, cur + 1);
                 }
             }
             DESTROY_MARKS_DM => {
                 for i in TOP_MARK_CODE_DM..=SPLIT_BOT_MARK_CODE_DM {
-                    let cp = if i % 2 != 0 {
-                        mem.b32s1(q + (i / 2) as i32 + 1)
-                    } else {
-                        mem.b32s0(q + (i / 2) as i32 + 1)
-                    };
-                    set_cur_ptr(cp);
+                    set_cur_ptr(node.child(mem, i as i32).0);
 
                     if cur_ptr() != TEX_NULL {
                         crate::mem::delete_token_ref(mem, cur_ptr());
-                        if i % 2 != 0 {
-                            mem.set_b32s1(q + (i / 2) as i32 + 1, TEX_NULL);
-                        } else {
-                            mem.set_b32s0(q + (i / 2) as i32 + 1, TEX_NULL);
-                        }
+                        node.set_child(mem, i as i32, MemPtr::NULL);
                     }
                 }
             }
             _ => {}
         }
 
-        if mem.b32s0(q + 2) == TEX_NULL && mem.b32s0(q + 3) == TEX_NULL {
+        if node.child(mem, 2).0 == TEX_NULL && node.child(mem, 4).0 == TEX_NULL {
             crate::mem::free_node(mem, q, MARK_CLASS_NODE_SIZE_DM);
             q = TEX_NULL;
         }

@@ -1876,6 +1876,51 @@ impl NodePtr<UnsetNode> {
     }
 }
 
+/// A sparse-array tree record used by the eTeX mark machinery (`do_marks`):
+/// either an *index node* (a fan-out of child pointers) or a *mark-class node*
+/// (the five `\topmark`/`\firstmark`/`\botmark`/`\splitfirstmark`/
+/// `\splitbotmark` token lists). Both pack two `b32` pointers per word starting
+/// at `+1`, so child/mark slot `i` lives at `mem[p + i/2 + 1].b32.s{0 if i even
+/// else 1}` (`xetex/xetex-xetexd.h:318–322`, `ETEX_MARK_sa_*`). `mem[p].b16.s0`
+/// is the index node's populated-child reference count. This record carries no
+/// `NODE_type` header and is reached only by context (the `do_marks` caller
+/// guarantees the kind), so it has no `classify` entry.
+pub enum SaNode {}
+
+impl NodeKind for SaNode {}
+
+impl NodePtr<SaNode> {
+    /// Populated-child reference count = `mem[p].b16.s0`.
+    #[inline]
+    pub fn ref_count(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_ref_count(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.0, v);
+    }
+
+    /// Child/mark pointer `i` = `mem[p + i/2 + 1].b32.s{0 if even else 1}`.
+    #[inline]
+    pub fn child(self, mem: &MemState, i: i32) -> MemPtr {
+        let w = self.idx.offset(i / 2 + 1).0;
+        MemPtr::from_raw(if i % 2 != 0 {
+            mem.b32s1(w)
+        } else {
+            mem.b32s0(w)
+        })
+    }
+    #[inline]
+    pub fn set_child(self, mem: &mut MemState, i: i32, v: MemPtr) {
+        let w = self.idx.offset(i / 2 + 1).0;
+        if i % 2 != 0 {
+            mem.set_b32s1(w, v.0);
+        } else {
+            mem.set_b32s0(w, v.0);
+        }
+    }
+}
+
 // --- shipout movement records ---
 
 const MOVEMENT_NODE_SIZE: i32 = 3;
@@ -2727,6 +2772,30 @@ mod tests {
         assert_eq!(u.height(&mem), Scaled(0x333));
         assert_eq!(u.list_ptr(&mem), MemPtr::from_raw(0x444));
         assert_eq!(mem.b32s1(p.0 + 5), 0x444);
+    }
+
+    #[test]
+    fn sa_node_children_map_to_packed_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        let node = unsafe { NodePtr::<SaNode>::from_idx_unchecked(p) };
+        // even child i -> +i/2+1 .b32.s0; odd child -> .b32.s1
+        for i in 0..6 {
+            node.set_child(&mut mem, i, MemPtr::from_raw(1000 + i));
+        }
+        for i in 0..6 {
+            assert_eq!(node.child(&mem, i), MemPtr::from_raw(1000 + i));
+        }
+        assert_eq!(mem.b32s0(p.0 + 1), 1000); // child 0
+        assert_eq!(mem.b32s1(p.0 + 1), 1001); // child 1
+        assert_eq!(mem.b32s0(p.0 + 2), 1002); // child 2
+        assert_eq!(mem.b32s1(p.0 + 2), 1003); // child 3
+        assert_eq!(mem.b32s0(p.0 + 3), 1004); // child 4
+        assert_eq!(mem.b32s1(p.0 + 3), 1005); // child 5
+
+        node.set_ref_count(&mut mem, 7);
+        assert_eq!(node.ref_count(&mem), 7);
+        assert_eq!(mem.b16s0(p.0), 7);
     }
 
     #[test]
