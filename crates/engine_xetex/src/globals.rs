@@ -4236,33 +4236,10 @@ pub(crate) fn set_fill_width(k: usize, v: i32) {
         state.linebreak.fill_width[k] = v;
     });
 }
-pub(crate) fn font_in_short_display() -> i32 {
-    crate::state::with_state(|state| state.errors.font_in_short_display)
-}
 #[inline]
 pub(crate) fn set_font_in_short_display(v: i32) {
     crate::state::with_state_mut(|state| {
         state.errors.font_in_short_display = v;
-    });
-}
-#[inline]
-pub(crate) fn depth_threshold() -> i32 {
-    crate::state::with_state(|state| state.errors.depth_threshold)
-}
-#[inline]
-pub(crate) fn set_depth_threshold(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.depth_threshold = v;
-    });
-}
-#[inline]
-pub(crate) fn breadth_max() -> i32 {
-    crate::state::with_state(|state| state.errors.breadth_max)
-}
-#[inline]
-pub(crate) fn set_breadth_max(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.breadth_max = v;
     });
 }
 

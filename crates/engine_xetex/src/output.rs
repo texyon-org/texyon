@@ -13,17 +13,16 @@ use crate::texmfmp::gettexstring;
 
 use crate::globals::{
     base_ptr, cond_ptr, cur_boundary, cur_chr, cur_cmd, cur_cs, cur_group, cur_if, cur_input,
-    cur_level, cur_list_mode, cur_mark, cur_val, current_diagnostic, def_ref, eqtb_b32s1, eqtb_top,
-    file_line_error_style_p, file_offset, font_max, full_source_filename_stack, grp_stack, hash_s1,
-    hi_mem_min, history, if_limit, if_line, if_stack, in_open, init_pool_ptr, input_ptr,
-    input_stack, line, line_stack, lo_mem_max, max_print_line, mem_as_u16_ptr, mem_b16s0,
-    mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_end, old_setting, pool_ptr,
-    pool_size, prim_s1, rust_stdout, save_ptr, save_stack_b16s0, save_stack_b32s1, selector,
-    set_base_ptr, set_cond_ptr, set_cur_group, set_cur_if, set_cur_level, set_current_diagnostic,
-    set_grp_stack, set_help_line, set_help_ptr, set_history, set_if_limit, set_if_line,
-    set_if_stack, set_input_stack, set_mem_b16s1, set_mem_b32s1, set_old_setting, set_pool_ptr,
-    set_save_ptr, set_selector, set_shown_mode, set_str_ptr, shown_mode, str_pool_entry, str_ptr,
-    str_start, term_offset,
+    cur_level, cur_list_mode, cur_mark, cur_val, current_diagnostic, def_ref, eqtb_b32s1,
+    file_line_error_style_p, file_offset, full_source_filename_stack, grp_stack, history, if_limit,
+    if_line, if_stack, in_open, init_pool_ptr, input_ptr, input_stack, line, line_stack,
+    max_print_line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, pool_ptr, pool_size,
+    rust_stdout, save_ptr, save_stack_b16s0, save_stack_b32s1, selector, set_base_ptr,
+    set_cond_ptr, set_cur_group, set_cur_if, set_cur_level, set_current_diagnostic, set_grp_stack,
+    set_help_line, set_help_ptr, set_history, set_if_limit, set_if_line, set_if_stack,
+    set_input_stack, set_mem_b16s1, set_mem_b32s1, set_old_setting, set_pool_ptr, set_save_ptr,
+    set_selector, set_shown_mode, set_str_ptr, shown_mode, str_pool_entry, str_ptr, str_start,
+    term_offset,
 };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
@@ -107,7 +106,7 @@ extern "C" {
 ///
 /// Corresponds to the static `print_the_digs` in xetex-output.c:350.
 /// Not exported — only called from the Rust functions below.
-pub(crate) unsafe fn print_the_digs_in(st: &mut EngineState, mut k: u8) {
+pub(crate) fn print_the_digs_in(st: &mut EngineState, mut k: u8) {
     // translated from xetex-output.c:350 (print_the_digs)
     while k > 0 {
         k -= 1;
@@ -132,7 +131,7 @@ pub unsafe fn print_int(n: i32) {
 }
 
 /// `&mut EngineState` core of [`print_int`].
-pub(crate) unsafe fn print_int_in(st: &mut EngineState, mut n: i32) {
+pub(crate) fn print_int_in(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
 
     if n < 0 {
@@ -177,7 +176,7 @@ pub unsafe fn print_hex(n: i32) {
 }
 
 /// `&mut EngineState` core of [`print_hex`].
-pub(crate) unsafe fn print_hex_in(st: &mut EngineState, mut n: i32) {
+pub(crate) fn print_hex_in(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
     print_char_in(st, b'"' as i32);
     loop {
@@ -203,7 +202,7 @@ pub unsafe fn print_ucs_code(n: i32) {
 }
 
 /// `&mut EngineState` core of [`print_ucs_code`].
-pub(crate) unsafe fn print_ucs_code_in(st: &mut EngineState, mut n: i32) {
+pub(crate) fn print_ucs_code_in(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
     print_cstr_in(st, c"U+".as_ptr());
     loop {
@@ -233,8 +232,8 @@ pub unsafe fn print_cstr(str_ptr: *const libc::c_char) {
 }
 
 /// `&mut EngineState` core of [`print_cstr`].
-pub(crate) unsafe fn print_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
-    let s = std::ffi::CStr::from_ptr(str_ptr);
+pub(crate) fn print_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
+    let s = unsafe { std::ffi::CStr::from_ptr(str_ptr) };
     for &b in s.to_bytes() {
         print_char_in(st, b as i32);
     }
@@ -252,7 +251,7 @@ pub unsafe fn print_nl_cstr(str_ptr: *const libc::c_char) {
 }
 
 /// `&mut EngineState` core of [`print_nl_cstr`].
-pub(crate) unsafe fn print_nl_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
+pub(crate) fn print_nl_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
     let sel = st.shipout.selector;
     if ((st.shipout.term_offset > 0) && (sel & 1 != 0))
         || ((st.shipout.file_offset > 0) && (sel >= SELECTOR_LOG_ONLY))
@@ -274,7 +273,7 @@ pub unsafe fn print_esc_cstr(s: *const libc::c_char) {
 }
 
 /// `&mut EngineState` core of [`print_esc_cstr`].
-pub(crate) unsafe fn print_esc_cstr_in(st: &mut EngineState, s: *const libc::c_char) {
+pub(crate) fn print_esc_cstr_in(st: &mut EngineState, s: *const libc::c_char) {
     let c = st.eqtb.b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
     if (0..=BIGGEST_USV).contains(&c) {
         print_char_in(st, c);
@@ -294,7 +293,7 @@ pub unsafe fn print_nl(s: i32) {
 }
 
 /// `&mut EngineState` core of [`print_nl`].
-pub(crate) unsafe fn print_nl_in(st: &mut EngineState, s: i32) {
+pub(crate) fn print_nl_in(st: &mut EngineState, s: i32) {
     let sel = st.shipout.selector;
     if ((st.shipout.term_offset > 0) && (sel & 1 != 0))
         || ((st.shipout.file_offset > 0) && (sel >= SELECTOR_LOG_ONLY))
@@ -316,7 +315,7 @@ pub unsafe fn print_esc(s: i32) {
 }
 
 /// `&mut EngineState` core of [`print_esc`].
-pub(crate) unsafe fn print_esc_in(st: &mut EngineState, s: i32) {
+pub(crate) fn print_esc_in(st: &mut EngineState, s: i32) {
     let c = st.eqtb.b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
     if (0..=BIGGEST_USV).contains(&c) {
         print_char_in(st, c);
@@ -336,7 +335,7 @@ pub unsafe fn print_roman_int(n: i32) {
 }
 
 /// `&mut EngineState` core of [`print_roman_int`].
-pub(crate) unsafe fn print_roman_int_in(st: &mut EngineState, mut n: i32) {
+pub(crate) fn print_roman_int_in(st: &mut EngineState, mut n: i32) {
     // "m2d5c2l5x2v5i": alternating letter/divisor pairs encoding the
     // standard Roman numeral values and their subtraction thresholds.
     const ROMAN_DATA: &[u8] = b"m2d5c2l5x2v5i";
@@ -378,7 +377,7 @@ pub unsafe fn print_scaled(s: i32) {
 }
 
 /// `&mut EngineState` core of [`print_scaled`].
-pub(crate) unsafe fn print_scaled_in(st: &mut EngineState, mut s: i32) {
+pub(crate) fn print_scaled_in(st: &mut EngineState, mut s: i32) {
     if s < 0 {
         print_char_in(st, b'-' as i32);
         s = -s;
@@ -407,11 +406,11 @@ pub(crate) unsafe fn print_scaled_in(st: &mut EngineState, mut s: i32) {
 /// Append a single character to the active diagnostic (if any).
 ///
 /// translated from xetex-output.c:75 (warn_char)
-pub(crate) unsafe fn warn_char_in(st: &mut EngineState, c: i32) {
+pub(crate) fn warn_char_in(st: &mut EngineState, c: i32) {
     let diag = st.shipout.current_diagnostic;
     if !diag.is_null() {
         let bytes: [u8; 2] = [c as u8, 0];
-        ttbc_diag_append(diag, bytes.as_ptr() as *const libc::c_char);
+        unsafe { ttbc_diag_append(diag, bytes.as_ptr() as *const libc::c_char) };
     }
 }
 
@@ -427,28 +426,28 @@ pub unsafe fn print_ln() {
 }
 
 /// `&mut EngineState` core of [`print_ln`].
-pub(crate) unsafe fn print_ln_in(st: &mut EngineState) {
+pub(crate) fn print_ln_in(st: &mut EngineState) {
     match st.shipout.selector {
         SELECTOR_TERM_AND_LOG => {
             warn_char_in(st, b'\n' as i32);
-            ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32);
-            ttstub_output_putc(st.shipout.log_file, b'\n' as i32);
+            unsafe { ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32) };
+            unsafe { ttstub_output_putc(st.shipout.log_file, b'\n' as i32) };
             st.shipout.term_offset = 0;
             st.shipout.file_offset = 0;
         }
         SELECTOR_LOG_ONLY => {
             warn_char_in(st, b'\n' as i32);
-            ttstub_output_putc(st.shipout.log_file, b'\n' as i32);
+            unsafe { ttstub_output_putc(st.shipout.log_file, b'\n' as i32) };
             st.shipout.file_offset = 0;
         }
         SELECTOR_TERM_ONLY => {
             warn_char_in(st, b'\n' as i32);
-            ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32);
+            unsafe { ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32) };
             st.shipout.term_offset = 0;
         }
         SELECTOR_NO_PRINT | SELECTOR_PSEUDO | SELECTOR_NEW_STRING => {}
         sel => {
-            ttstub_output_putc(st.shipout.write_file[sel as usize], b'\n' as i32);
+            unsafe { ttstub_output_putc(st.shipout.write_file[sel as usize], b'\n' as i32) };
         }
     }
 }
@@ -465,44 +464,44 @@ pub unsafe fn print_raw_char(s: u16, incr_offset: bool) {
 }
 
 /// `&mut EngineState` core of [`print_raw_char`].
-pub(crate) unsafe fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool) {
+pub(crate) fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool) {
     match st.shipout.selector {
         SELECTOR_TERM_AND_LOG => {
             warn_char_in(st, s as i32);
-            ttstub_output_putc(st.shipout.rust_stdout, s as i32);
-            ttstub_output_putc(st.shipout.log_file, s as i32);
+            unsafe { ttstub_output_putc(st.shipout.rust_stdout, s as i32) };
+            unsafe { ttstub_output_putc(st.shipout.log_file, s as i32) };
             if incr_offset {
                 st.shipout.term_offset += 1;
                 st.shipout.file_offset += 1;
             }
             if st.shipout.term_offset == st.config.max_print_line {
-                ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32);
+                unsafe { ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32) };
                 st.shipout.term_offset = 0;
             }
             if st.shipout.file_offset == st.config.max_print_line {
-                ttstub_output_putc(st.shipout.log_file, b'\n' as i32);
+                unsafe { ttstub_output_putc(st.shipout.log_file, b'\n' as i32) };
                 st.shipout.file_offset = 0;
             }
         }
         SELECTOR_LOG_ONLY => {
             warn_char_in(st, s as i32);
-            ttstub_output_putc(st.shipout.log_file, s as i32);
+            unsafe { ttstub_output_putc(st.shipout.log_file, s as i32) };
             if incr_offset {
                 st.shipout.file_offset += 1;
             }
             if st.shipout.file_offset == st.config.max_print_line {
-                ttstub_output_putc(st.shipout.log_file, b'\n' as i32);
+                unsafe { ttstub_output_putc(st.shipout.log_file, b'\n' as i32) };
                 st.shipout.file_offset = 0;
             }
         }
         SELECTOR_TERM_ONLY => {
             warn_char_in(st, s as i32);
-            ttstub_output_putc(st.shipout.rust_stdout, s as i32);
+            unsafe { ttstub_output_putc(st.shipout.rust_stdout, s as i32) };
             if incr_offset {
                 st.shipout.term_offset += 1;
             }
             if st.shipout.term_offset == st.config.max_print_line {
-                ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32);
+                unsafe { ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32) };
                 st.shipout.term_offset = 0;
             }
         }
@@ -521,7 +520,7 @@ pub(crate) unsafe fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset
             }
         }
         sel => {
-            ttstub_output_putc(st.shipout.write_file[sel as usize], s as i32);
+            unsafe { ttstub_output_putc(st.shipout.write_file[sel as usize], s as i32) };
         }
     }
     st.errors.tally += 1;
@@ -539,7 +538,7 @@ pub unsafe fn print_char(s: i32) {
 }
 
 /// `&mut EngineState` core of [`print_char`].
-pub(crate) unsafe fn print_char_in(st: &mut EngineState, s: i32) {
+pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {
     // Fast path for NEW_STRING: store as UTF-16 code unit(s).
     if st.shipout.selector > SELECTOR_PSEUDO && !st.shipout.doing_special {
         if s >= 0x10000 {
@@ -623,7 +622,7 @@ pub unsafe fn print(s: i32) {
 }
 
 /// `&mut EngineState` core of [`print`].
-pub(crate) unsafe fn print_in(st: &mut EngineState, s: i32) {
+pub(crate) fn print_in(st: &mut EngineState, s: i32) {
     if s >= st.strings.str_ptr {
         return print_cstr_in(st, c"???".as_ptr());
     }
@@ -679,12 +678,7 @@ pub(crate) unsafe fn print_in(st: &mut EngineState, s: i32) {
 /// Print the currently-accumulating string (in the string pool scratch area).
 ///
 /// translated from xetex-output.c:328 (print_current_string)
-pub unsafe fn print_current_string() {
-    crate::state::with_state_mut(|st| print_current_string_in(st));
-}
-
-/// `&mut EngineState` core of [`print_current_string`].
-pub(crate) unsafe fn print_current_string_in(st: &mut EngineState) {
+pub(crate) fn print_current_string_in(st: &mut EngineState) {
     let mut j = st.strings.str_start[(st.strings.str_ptr - 0x10000) as usize];
     while j < st.strings.pool_ptr {
         let c = st.strings.str_pool[j as usize];
@@ -721,7 +715,7 @@ unsafe fn diagnostic_print_file_line(diagnostic: *mut std::ffi::c_void) {
         level -= 1;
     }
     if level == 0 {
-        ttbc_diag_append(diagnostic, c"!".as_ptr());
+        unsafe { ttbc_diag_append(diagnostic, c"!".as_ptr()) };
     } else {
         let source_line = if level != in_open() {
             line_stack(level + 1)
@@ -806,12 +800,17 @@ pub unsafe fn print_file_line() {
 ///
 /// translated from xetex-output.c:233 (print_size)
 pub unsafe fn print_size(s: i32) {
+    crate::state::with_state_mut(|st| print_size_in(st, s));
+}
+
+/// `&mut EngineState` core of [`print_size`].
+pub(crate) fn print_size_in(st: &mut EngineState, s: i32) {
     if s == TEXT_SIZE {
-        print_esc_cstr(c"textfont".as_ptr());
+        print_esc_cstr_in(st, c"textfont".as_ptr());
     } else if s == SCRIPT_SIZE {
-        print_esc_cstr(c"scriptfont".as_ptr());
+        print_esc_cstr_in(st, c"scriptfont".as_ptr());
     } else {
-        print_esc_cstr(c"scriptscriptfont".as_ptr());
+        print_esc_cstr_in(st, c"scriptscriptfont".as_ptr());
     }
 }
 
@@ -822,15 +821,15 @@ pub unsafe fn print_size(s: i32) {
 /// Print a write-whatsit node's label and stream number.
 ///
 /// translated from xetex-output.c:245 (print_write_whatsit)
-pub unsafe fn print_write_whatsit(s: *const libc::c_char, p: i32) {
-    print_esc_cstr(s);
-    let v = mem_b32s0(p + 1);
+pub(crate) fn print_write_whatsit_in(st: &mut EngineState, s: *const libc::c_char, p: i32) {
+    print_esc_cstr_in(st, s);
+    let v = st.mem.b32s0(p + 1);
     if v < 16 {
-        print_int(v);
+        print_int_in(st, v);
     } else if v == 16 {
-        print_char(b'*' as i32);
+        print_char_in(st, b'*' as i32);
     } else {
-        print_char(b'-' as i32);
+        print_char_in(st, b'-' as i32);
     }
 }
 
@@ -843,16 +842,21 @@ pub unsafe fn print_write_whatsit(s: *const libc::c_char, p: i32) {
 ///
 /// translated from xetex-output.c:128 (print_file_name)
 pub unsafe fn print_file_name(n: i32, a: i32, e: i32) {
+    crate::state::with_state_mut(|st| print_file_name_in(st, n, a, e));
+}
+
+/// `&mut EngineState` core of [`print_file_name`].
+pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
     // Scan all three string components to decide if quoting is needed.
     let mut must_quote = false;
     let mut quote_char: i32 = 0;
 
     for s in [a, n, e] {
         if s != 0 {
-            let mut j = str_start(s - 0x10000);
-            let end = str_start((s + 1) - 0x10000);
+            let mut j = st.strings.str_start[(s - 0x10000) as usize];
+            let end = st.strings.str_start[((s + 1) - 0x10000) as usize];
             while (!must_quote || quote_char == 0) && j < end {
-                let c = str_pool_entry(j) as i32;
+                let c = st.strings.str_pool[j as usize] as i32;
                 if c == b' ' as i32 {
                     must_quote = true;
                 } else if c == b'"' as i32 || c == b'\'' as i32 {
@@ -868,23 +872,23 @@ pub unsafe fn print_file_name(n: i32, a: i32, e: i32) {
         if quote_char == 0 {
             quote_char = b'"' as i32;
         }
-        print_char(quote_char);
+        print_char_in(st, quote_char);
     }
 
     // Print each component with quote-char escaping.
     for s in [a, n, e] {
         if s != 0 {
-            let mut j = str_start(s - 0x10000);
-            let for_end = str_start((s + 1) - 0x10000) - 1;
+            let mut j = st.strings.str_start[(s - 0x10000) as usize];
+            let for_end = st.strings.str_start[((s + 1) - 0x10000) as usize] - 1;
             if j <= for_end {
                 loop {
-                    let c = str_pool_entry(j) as i32;
+                    let c = st.strings.str_pool[j as usize] as i32;
                     if c == quote_char {
-                        print(quote_char);
+                        print_in(st, quote_char);
                         quote_char = 73 - quote_char;
-                        print(quote_char);
+                        print_in(st, quote_char);
                     }
-                    print(c);
+                    print_in(st, c);
                     if j >= for_end {
                         break;
                     }
@@ -895,7 +899,7 @@ pub unsafe fn print_file_name(n: i32, a: i32, e: i32) {
     }
 
     if quote_char != 0 {
-        print_char(quote_char);
+        print_char_in(st, quote_char);
     }
 }
 
@@ -907,34 +911,41 @@ pub unsafe fn print_file_name(n: i32, a: i32, e: i32) {
 ///
 /// translated from xetex-output.c:76 (print_cs)
 pub unsafe fn print_cs(p: i32) {
+    crate::state::with_state_mut(|st| print_cs_in(st, p));
+}
+
+/// `&mut EngineState` core of [`print_cs`].
+pub(crate) fn print_cs_in(st: &mut EngineState, p: i32) {
     if p < HASH_BASE {
         if p >= SINGLE_BASE {
             if p == NULL_CS {
-                print_esc_cstr(c"csname".as_ptr());
-                print_esc_cstr(c"endcsname".as_ptr());
-                print_char(b' ' as i32);
+                print_esc_cstr_in(st, c"csname".as_ptr());
+                print_esc_cstr_in(st, c"endcsname".as_ptr());
+                print_char_in(st, b' ' as i32);
             } else {
-                print_esc(p - SINGLE_BASE);
-                if eqtb_b32s1(CAT_CODE_BASE + p - SINGLE_BASE) == LETTER {
-                    print_char(b' ' as i32);
+                print_esc_in(st, p - SINGLE_BASE);
+                if st.eqtb.b32s1(CAT_CODE_BASE + p - SINGLE_BASE) == LETTER {
+                    print_char_in(st, b' ' as i32);
                 }
             }
         } else if p < ACTIVE_BASE {
-            print_esc_cstr(c"IMPOSSIBLE.".as_ptr());
+            print_esc_cstr_in(st, c"IMPOSSIBLE.".as_ptr());
         } else {
-            print_char(p - 1);
+            print_char_in(st, p - 1);
         }
-    } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > eqtb_top() {
-        print_esc_cstr(c"IMPOSSIBLE.".as_ptr());
-    } else if hash_s1(p) >= str_ptr() {
-        print_esc_cstr(c"NONEXISTENT.".as_ptr());
+    } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > st.eqtb.eqtb_top {
+        print_esc_cstr_in(st, c"IMPOSSIBLE.".as_ptr());
+    } else if st.eqtb.hash_s1(p) >= st.strings.str_ptr {
+        print_esc_cstr_in(st, c"NONEXISTENT.".as_ptr());
     } else {
         if (PRIM_EQTB_BASE..FROZEN_NULL_FONT).contains(&p) {
-            print_esc(prim_s1(p - PRIM_EQTB_BASE) - 1);
+            let s = st.eqtb.prim_s1(p - PRIM_EQTB_BASE) - 1;
+            print_esc_in(st, s);
         } else {
-            print_esc(hash_s1(p));
+            let s = st.eqtb.hash_s1(p);
+            print_esc_in(st, s);
         }
-        print_char(b' ' as i32);
+        print_char_in(st, b' ' as i32);
     }
 }
 
@@ -946,19 +957,26 @@ pub unsafe fn print_cs(p: i32) {
 ///
 /// translated from xetex-output.c:108 (sprint_cs)
 pub unsafe fn sprint_cs(p: i32) {
+    crate::state::with_state_mut(|st| sprint_cs_in(st, p));
+}
+
+/// `&mut EngineState` core of [`sprint_cs`].
+pub(crate) fn sprint_cs_in(st: &mut EngineState, p: i32) {
     if p < HASH_BASE {
         if p < SINGLE_BASE {
-            print_char(p - 1);
+            print_char_in(st, p - 1);
         } else if p < NULL_CS {
-            print_esc(p - SINGLE_BASE);
+            print_esc_in(st, p - SINGLE_BASE);
         } else {
-            print_esc_cstr(c"csname".as_ptr());
-            print_esc_cstr(c"endcsname".as_ptr());
+            print_esc_cstr_in(st, c"csname".as_ptr());
+            print_esc_cstr_in(st, c"endcsname".as_ptr());
         }
     } else if (PRIM_EQTB_BASE..FROZEN_NULL_FONT).contains(&p) {
-        print_esc(prim_s1(p - PRIM_EQTB_BASE) - 1);
+        let s = st.eqtb.prim_s1(p - PRIM_EQTB_BASE) - 1;
+        print_esc_in(st, s);
     } else {
-        print_esc(hash_s1(p));
+        let s = st.eqtb.hash_s1(p);
+        print_esc_in(st, s);
     }
 }
 
@@ -969,27 +987,27 @@ pub unsafe fn sprint_cs(p: i32) {
 /// Print the UTF-16 text of a native-word node.
 ///
 /// translated from xetex-output.c:260 (print_native_word)
-pub unsafe fn print_native_word(p: i32) {
+pub(crate) fn print_native_word_in(st: &mut EngineState, p: i32) {
     // NATIVE_NODE_text(p) = (unsigned short *) &mem[p + NATIVE_NODE_SIZE]
     // NATIVE_NODE_SIZE = 6 (xetex-constants.h:130)
     // mem[p+4].b16.s1 = character count
-    let for_end = mem_b16s1(p + 4) as i32 - 1;
-    let text_ptr = mem_as_u16_ptr(p + 6);
+    let for_end = st.mem.b16s1(p + 4) as i32 - 1;
+    let text_ptr = st.mem.data.as_ptr().wrapping_add((p + 6) as usize) as *const u16;
     let mut i: i32 = 0;
     while i <= for_end {
-        let c = *text_ptr.offset(i as isize) as i32;
+        let c = unsafe { *text_ptr.offset(i as isize) } as i32;
         if (0xD800..0xDC00).contains(&c) && i < for_end {
-            let cc = *text_ptr.offset(i as isize + 1) as i32;
+            let cc = unsafe { *text_ptr.offset(i as isize + 1) } as i32;
             if (0xDC00..0xE000).contains(&cc) {
-                print_char(0x10000 + (c - 0xD800) * 1024 + (cc - 0xDC00));
+                print_char_in(st, 0x10000 + (c - 0xD800) * 1024 + (cc - 0xDC00));
                 i += 2;
                 continue;
             }
         }
         if (0xD800..0xDC00).contains(&c) {
-            print(b'.' as i32);
+            print_in(st, b'.' as i32);
         } else {
-            print_char(c);
+            print_char_in(st, c);
         }
         i += 1;
     }
@@ -1003,19 +1021,24 @@ pub unsafe fn print_native_word(p: i32) {
 ///
 /// translated from xetex-output.c:285 (print_sa_num)
 pub unsafe fn print_sa_num(q: i32) {
-    let n = if (mem_b16s1(q) as i32) < DIMEN_VAL_LIMIT {
-        mem_b32s1(q + 1)
+    crate::state::with_state_mut(|st| print_sa_num_in(st, q));
+}
+
+/// `&mut EngineState` core of [`print_sa_num`].
+pub(crate) fn print_sa_num_in(st: &mut EngineState, q: i32) {
+    let n = if (st.mem.b16s1(q) as i32) < DIMEN_VAL_LIMIT {
+        st.mem.b32s1(q + 1)
     } else {
-        let n0 = mem_b16s1(q) as i32 % 64;
-        let q1 = mem_b32s1(q);
-        let n1 = mem_b16s1(q1) as i32;
-        let q2 = mem_b32s1(q1);
-        let b16s1_q2 = mem_b16s1(q2) as i32;
-        let q3 = mem_b32s1(q2);
-        let b16s1_q3 = mem_b16s1(q3) as i32;
+        let n0 = st.mem.b16s1(q) as i32 % 64;
+        let q1 = st.mem.b32s1(q);
+        let n1 = st.mem.b16s1(q1) as i32;
+        let q2 = st.mem.b32s1(q1);
+        let b16s1_q2 = st.mem.b16s1(q2) as i32;
+        let q3 = st.mem.b32s1(q2);
+        let b16s1_q3 = st.mem.b16s1(q3) as i32;
         n0 + 64 * n1 + 64 * 64 * (b16s1_q2 + 64 * b16s1_q3)
     };
-    print_int(n);
+    print_int_in(st, n);
 }
 
 // ---------------------------------------------------------------------------
@@ -1054,20 +1077,25 @@ pub unsafe fn end_diagnostic(blank_line: bool) {
 ///
 /// translated from xetex-xetex0.c:1327 (print_mode)
 pub unsafe fn print_mode(m: i32) {
+    crate::state::with_state_mut(|st| print_mode_in(st, m));
+}
+
+/// `&mut EngineState` core of [`print_mode`].
+pub(crate) fn print_mode_in(st: &mut EngineState, m: i32) {
     if m > 0 {
         match m / MAX_COMMAND_PLUS_1 {
-            0 => print_cstr(c"vertical mode".as_ptr()),
-            1 => print_cstr(c"horizontal mode".as_ptr()),
-            2 => print_cstr(c"display math mode".as_ptr()),
+            0 => print_cstr_in(st, c"vertical mode".as_ptr()),
+            1 => print_cstr_in(st, c"horizontal mode".as_ptr()),
+            2 => print_cstr_in(st, c"display math mode".as_ptr()),
             _ => {}
         }
     } else if m == 0 {
-        print_cstr(c"no mode".as_ptr());
+        print_cstr_in(st, c"no mode".as_ptr());
     } else {
         match (-m) / MAX_COMMAND_PLUS_1 {
-            0 => print_cstr(c"internal vertical mode".as_ptr()),
-            1 => print_cstr(c"restricted horizontal mode".as_ptr()),
-            2 => print_cstr(c"math mode".as_ptr()),
+            0 => print_cstr_in(st, c"internal vertical mode".as_ptr()),
+            1 => print_cstr_in(st, c"restricted horizontal mode".as_ptr()),
+            2 => print_cstr_in(st, c"math mode".as_ptr()),
             _ => {}
         }
     }
@@ -1100,59 +1128,64 @@ const MATH_LEFT_GROUP: u8 = 16;
 ///
 /// translated from xetex-xetex0.c:3464 (print_group)
 pub unsafe fn print_group(e: bool) {
-    let g = cur_group();
+    crate::state::with_state_mut(|st| print_group_in(st, e));
+}
+
+/// `&mut EngineState` core of [`print_group`].
+pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
+    let g = st.save_stack.cur_group;
     match g {
         BOTTOM_LEVEL => {
-            print_cstr(c"bottom level".as_ptr());
+            print_cstr_in(st, c"bottom level".as_ptr());
             return;
         }
         SIMPLE_GROUP | SEMI_SIMPLE_GROUP => {
             if g == SEMI_SIMPLE_GROUP {
-                print_cstr(c"semi ".as_ptr());
+                print_cstr_in(st, c"semi ".as_ptr());
             }
-            print_cstr(c"simple".as_ptr());
+            print_cstr_in(st, c"simple".as_ptr());
         }
         HBOX_GROUP | ADJUSTED_HBOX_GROUP => {
             if g == ADJUSTED_HBOX_GROUP {
-                print_cstr(c"adjusted ".as_ptr());
+                print_cstr_in(st, c"adjusted ".as_ptr());
             }
-            print_cstr(c"hbox".as_ptr());
+            print_cstr_in(st, c"hbox".as_ptr());
         }
-        VBOX_GROUP => print_cstr(c"vbox".as_ptr()),
-        VTOP_GROUP => print_cstr(c"vtop".as_ptr()),
+        VBOX_GROUP => print_cstr_in(st, c"vbox".as_ptr()),
+        VTOP_GROUP => print_cstr_in(st, c"vtop".as_ptr()),
         ALIGN_GROUP | NO_ALIGN_GROUP => {
             if g == NO_ALIGN_GROUP {
-                print_cstr(c"no ".as_ptr());
+                print_cstr_in(st, c"no ".as_ptr());
             }
-            print_cstr(c"align".as_ptr());
+            print_cstr_in(st, c"align".as_ptr());
         }
-        OUTPUT_GROUP => print_cstr(c"output".as_ptr()),
-        DISC_GROUP => print_cstr(c"disc".as_ptr()),
-        INSERT_GROUP => print_cstr(c"insert".as_ptr()),
-        VCENTER_GROUP => print_cstr(c"vcenter".as_ptr()),
+        OUTPUT_GROUP => print_cstr_in(st, c"output".as_ptr()),
+        DISC_GROUP => print_cstr_in(st, c"disc".as_ptr()),
+        INSERT_GROUP => print_cstr_in(st, c"insert".as_ptr()),
+        VCENTER_GROUP => print_cstr_in(st, c"vcenter".as_ptr()),
         MATH_GROUP | MATH_CHOICE_GROUP | MATH_SHIFT_GROUP | MATH_LEFT_GROUP => {
-            print_cstr(c"math".as_ptr());
+            print_cstr_in(st, c"math".as_ptr());
             if g == MATH_CHOICE_GROUP {
-                print_cstr(c" choice".as_ptr());
+                print_cstr_in(st, c" choice".as_ptr());
             } else if g == MATH_SHIFT_GROUP {
-                print_cstr(c" shift".as_ptr());
+                print_cstr_in(st, c" shift".as_ptr());
             } else if g == MATH_LEFT_GROUP {
-                print_cstr(c" left".as_ptr());
+                print_cstr_in(st, c" left".as_ptr());
             }
         }
         _ => {}
     }
-    print_cstr(c" group (level ".as_ptr());
-    print_int(cur_level() as i32);
-    print_char(')' as i32);
-    let line_at = save_stack_b32s1(save_ptr() - 1);
+    print_cstr_in(st, c" group (level ".as_ptr());
+    print_int_in(st, st.save_stack.cur_level as i32);
+    print_char_in(st, ')' as i32);
+    let line_at = st.save_stack.b32s1(st.save_stack.save_ptr - 1);
     if line_at != 0 {
         if e {
-            print_cstr(c" entered at line ".as_ptr());
+            print_cstr_in(st, c" entered at line ".as_ptr());
         } else {
-            print_cstr(c" at line ".as_ptr());
+            print_cstr_in(st, c" at line ".as_ptr());
         }
-        print_int(line_at);
+        print_int_in(st, line_at);
     }
 }
 
@@ -1160,20 +1193,25 @@ pub unsafe fn print_group(e: bool) {
 ///
 /// translated from xetex-xetex0.c:1356 (print_in_mode)
 pub unsafe fn print_in_mode(m: i32) {
+    crate::state::with_state_mut(|st| print_in_mode_in(st, m));
+}
+
+/// `&mut EngineState` core of [`print_in_mode`].
+pub(crate) fn print_in_mode_in(st: &mut EngineState, m: i32) {
     if m > 0 {
         match m / MAX_COMMAND_PLUS_1 {
-            0 => print_cstr(c"' in vertical mode".as_ptr()),
-            1 => print_cstr(c"' in horizontal mode".as_ptr()),
-            2 => print_cstr(c"' in display math mode".as_ptr()),
+            0 => print_cstr_in(st, c"' in vertical mode".as_ptr()),
+            1 => print_cstr_in(st, c"' in horizontal mode".as_ptr()),
+            2 => print_cstr_in(st, c"' in display math mode".as_ptr()),
             _ => {}
         }
     } else if m == 0 {
-        print_cstr(c"' in no mode".as_ptr());
+        print_cstr_in(st, c"' in no mode".as_ptr());
     } else {
         match (-m) / MAX_COMMAND_PLUS_1 {
-            0 => print_cstr(c"' in internal vertical mode".as_ptr()),
-            1 => print_cstr(c"' in restricted horizontal mode".as_ptr()),
-            2 => print_cstr(c"' in math mode".as_ptr()),
+            0 => print_cstr_in(st, c"' in internal vertical mode".as_ptr()),
+            1 => print_cstr_in(st, c"' in restricted horizontal mode".as_ptr()),
+            2 => print_cstr_in(st, c"' in math mode".as_ptr()),
             _ => {}
         }
     }
@@ -1187,8 +1225,14 @@ pub unsafe fn print_in_mode(m: i32) {
 ///
 /// translated from xetex-xetex0.c:3893 (token_show)
 pub unsafe fn token_show(p: i32) {
+    crate::state::with_state_mut(|st| token_show_in(st, p));
+}
+
+/// `&mut EngineState` core of [`token_show`].
+pub(crate) fn token_show_in(st: &mut EngineState, p: i32) {
     if p != TEX_NULL {
-        show_token_list(mem_b32s1(p), TEX_NULL, 10_000_000);
+        let head = st.mem.b32s1(p);
+        show_token_list_in(st, head, TEX_NULL, 10_000_000);
     }
 }
 
@@ -1200,20 +1244,29 @@ pub unsafe fn token_show(p: i32) {
 ///
 /// translated from xetex-xetex0.c:274 (print_spec)
 pub unsafe fn print_spec(p: i32, s: *const libc::c_char) {
-    if p < 0 || p >= lo_mem_max() {
-        print_char('*' as i32);
+    crate::state::with_state_mut(|st| print_spec_in(st, p, s));
+}
+
+/// `&mut EngineState` core of [`print_spec`].
+pub(crate) fn print_spec_in(st: &mut EngineState, p: i32, s: *const libc::c_char) {
+    if p < 0 || p >= st.mem.lo_mem_max {
+        print_char_in(st, '*' as i32);
     } else {
-        print_scaled(mem_b32s1(p + 1));
+        print_scaled_in(st, st.mem.b32s1(p + 1));
         if !s.is_null() {
-            print_cstr(s);
+            print_cstr_in(st, s);
         }
-        if mem_b32s1(p + 2) != 0 {
-            print_cstr(c" plus ".as_ptr());
-            print_glue(mem_b32s1(p + 2), mem_b16s1(p) as i32, s);
+        if st.mem.b32s1(p + 2) != 0 {
+            print_cstr_in(st, c" plus ".as_ptr());
+            let d = st.mem.b32s1(p + 2);
+            let o = st.mem.b16s1(p) as i32;
+            print_glue_in(st, d, o, s);
         }
-        if mem_b32s1(p + 3) != 0 {
-            print_cstr(c" minus ".as_ptr());
-            print_glue(mem_b32s1(p + 3), mem_b16s0(p) as i32, s);
+        if st.mem.b32s1(p + 3) != 0 {
+            print_cstr_in(st, c" minus ".as_ptr());
+            let d = st.mem.b32s1(p + 3);
+            let o = st.mem.b16s0(p) as i32;
+            print_glue_in(st, d, o, s);
         }
     }
 }
@@ -1226,27 +1279,32 @@ pub unsafe fn print_spec(p: i32, s: *const libc::c_char) {
 ///
 /// translated from xetex-xetex0.c:379 (print_skip_param)
 pub unsafe fn print_skip_param(n: i32) {
+    crate::state::with_state_mut(|st| print_skip_param_in(st, n));
+}
+
+/// `&mut EngineState` core of [`print_skip_param`].
+pub(crate) fn print_skip_param_in(st: &mut EngineState, n: i32) {
     match n {
-        0 => print_esc_cstr(c"lineskip".as_ptr()),
-        1 => print_esc_cstr(c"baselineskip".as_ptr()),
-        2 => print_esc_cstr(c"parskip".as_ptr()),
-        3 => print_esc_cstr(c"abovedisplayskip".as_ptr()),
-        4 => print_esc_cstr(c"belowdisplayskip".as_ptr()),
-        5 => print_esc_cstr(c"abovedisplayshortskip".as_ptr()),
-        6 => print_esc_cstr(c"belowdisplayshortskip".as_ptr()),
-        7 => print_esc_cstr(c"leftskip".as_ptr()),
-        8 => print_esc_cstr(c"rightskip".as_ptr()),
-        9 => print_esc_cstr(c"topskip".as_ptr()),
-        10 => print_esc_cstr(c"splittopskip".as_ptr()),
-        11 => print_esc_cstr(c"tabskip".as_ptr()),
-        12 => print_esc_cstr(c"spaceskip".as_ptr()),
-        13 => print_esc_cstr(c"xspaceskip".as_ptr()),
-        14 => print_esc_cstr(c"parfillskip".as_ptr()),
-        15 => print_esc_cstr(c"XeTeXlinebreakskip".as_ptr()),
-        16 => print_esc_cstr(c"thinmuskip".as_ptr()),
-        17 => print_esc_cstr(c"medmuskip".as_ptr()),
-        18 => print_esc_cstr(c"thickmuskip".as_ptr()),
-        _ => print_cstr(c"[unknown glue parameter!]".as_ptr()),
+        0 => print_esc_cstr_in(st, c"lineskip".as_ptr()),
+        1 => print_esc_cstr_in(st, c"baselineskip".as_ptr()),
+        2 => print_esc_cstr_in(st, c"parskip".as_ptr()),
+        3 => print_esc_cstr_in(st, c"abovedisplayskip".as_ptr()),
+        4 => print_esc_cstr_in(st, c"belowdisplayskip".as_ptr()),
+        5 => print_esc_cstr_in(st, c"abovedisplayshortskip".as_ptr()),
+        6 => print_esc_cstr_in(st, c"belowdisplayshortskip".as_ptr()),
+        7 => print_esc_cstr_in(st, c"leftskip".as_ptr()),
+        8 => print_esc_cstr_in(st, c"rightskip".as_ptr()),
+        9 => print_esc_cstr_in(st, c"topskip".as_ptr()),
+        10 => print_esc_cstr_in(st, c"splittopskip".as_ptr()),
+        11 => print_esc_cstr_in(st, c"tabskip".as_ptr()),
+        12 => print_esc_cstr_in(st, c"spaceskip".as_ptr()),
+        13 => print_esc_cstr_in(st, c"xspaceskip".as_ptr()),
+        14 => print_esc_cstr_in(st, c"parfillskip".as_ptr()),
+        15 => print_esc_cstr_in(st, c"XeTeXlinebreakskip".as_ptr()),
+        16 => print_esc_cstr_in(st, c"thinmuskip".as_ptr()),
+        17 => print_esc_cstr_in(st, c"medmuskip".as_ptr()),
+        18 => print_esc_cstr_in(st, c"thickmuskip".as_ptr()),
+        _ => print_cstr_in(st, c"[unknown glue parameter!]".as_ptr()),
     }
 }
 
@@ -1348,45 +1406,50 @@ pub unsafe fn print_param(n: i32) {
 ///
 /// translated from xetex-xetex0.c:319 (print_style)
 pub unsafe fn print_style(c: i32) {
+    crate::state::with_state_mut(|st| print_style_in(st, c));
+}
+
+/// `&mut EngineState` core of [`print_style`].
+pub(crate) fn print_style_in(st: &mut EngineState, c: i32) {
     match c / 2 {
-        0 => print_esc_cstr(c"displaystyle".as_ptr()), // DISPLAY_STYLE / 2
-        1 => print_esc_cstr(c"textstyle".as_ptr()),    // TEXT_STYLE / 2
-        2 => print_esc_cstr(c"scriptstyle".as_ptr()),  // SCRIPT_STYLE / 2
-        3 => print_esc_cstr(c"scriptscriptstyle".as_ptr()), // SCRIPT_SCRIPT_STYLE / 2
-        _ => print_cstr(c"Unknown style!".as_ptr()),
+        0 => print_esc_cstr_in(st, c"displaystyle".as_ptr()), // DISPLAY_STYLE / 2
+        1 => print_esc_cstr_in(st, c"textstyle".as_ptr()),    // TEXT_STYLE / 2
+        2 => print_esc_cstr_in(st, c"scriptstyle".as_ptr()),  // SCRIPT_STYLE / 2
+        3 => print_esc_cstr_in(st, c"scriptscriptstyle".as_ptr()), // SCRIPT_SCRIPT_STYLE / 2
+        _ => print_cstr_in(st, c"Unknown style!".as_ptr()),
     }
 }
 
 /// Print the fam number and character code stored in a math node p.
 ///
 /// translated from xetex-xetex0.c:294 (print_fam_and_char)
-pub unsafe fn print_fam_and_char(p: i32) {
-    print_esc_cstr(c"fam".as_ptr());
-    print_int((mem_b16s1(p) % 256) as i32);
-    print_char(' ' as i32);
-    let c = (mem_b16s0(p) as i64 + ((mem_b16s1(p) as i64 / 256) * 65536)) as i32;
+pub(crate) fn print_fam_and_char_in(st: &mut EngineState, p: i32) {
+    print_esc_cstr_in(st, c"fam".as_ptr());
+    print_int_in(st, (st.mem.b16s1(p) % 256) as i32);
+    print_char_in(st, ' ' as i32);
+    let c = (st.mem.b16s0(p) as i64 + ((st.mem.b16s1(p) as i64 / 256) * 65536)) as i32;
     if c < 65536 {
-        print(c);
+        print_in(st, c);
     } else {
-        print_char(c);
+        print_char_in(st, c);
     }
 }
 
 /// Print a delimiter code (four 16-bit fields packed as a hex number).
 ///
 /// translated from xetex-xetex0.c:307 (print_delimiter)
-pub unsafe fn print_delimiter(p: i32) {
-    let s3 = mem_b16s3(p) as i64;
-    let s2 = mem_b16s2(p) as i64;
-    let s1 = mem_b16s1(p) as i64;
-    let s0 = mem_b16s0(p) as i64;
+pub(crate) fn print_delimiter_in(st: &mut EngineState, p: i32) {
+    let s3 = st.mem.b16s3(p) as i64;
+    let s2 = st.mem.b16s2(p) as i64;
+    let s1 = st.mem.b16s1(p) as i64;
+    let s0 = st.mem.b16s0(p) as i64;
     let mut a = (s3 % 256) * 256 + (s2 + (s3 / 256) * 65536);
     a = a * 4096 + (s1 % 256) * 256 + (s0 + (s1 / 256) * 65536);
     let a32 = a as i32;
     if a32 < 0 {
-        print_int(a32);
+        print_int_in(st, a32);
     } else {
-        print_hex(a32);
+        print_hex_in(st, a32);
     }
 }
 
@@ -1402,30 +1465,30 @@ const FILLL: i32 = 3;
 /// Print a rule dimension (print '*' for a null-flag wildcard).
 ///
 /// translated from xetex-xetex0.c:250 (print_rule_dimen)
-pub unsafe fn print_rule_dimen(d: i32) {
+pub(crate) fn print_rule_dimen_in(st: &mut EngineState, d: i32) {
     if d == NULL_FLAG {
-        print_char('*' as i32);
+        print_char_in(st, '*' as i32);
     } else {
-        print_scaled(d);
+        print_scaled_in(st, d);
     }
 }
 
 /// Print a glue dimension with optional fil/fill/filll suffix.
 ///
 /// translated from xetex-xetex0.c:258 (print_glue)
-pub unsafe fn print_glue(d: i32, order: i32, s: *const libc::c_char) {
-    print_scaled(d);
+pub(crate) fn print_glue_in(st: &mut EngineState, d: i32, order: i32, s: *const libc::c_char) {
+    print_scaled_in(st, d);
     if !(NORMAL..=FILLL).contains(&order) {
-        print_cstr(c"foul".as_ptr());
+        print_cstr_in(st, c"foul".as_ptr());
     } else if order > NORMAL {
-        print_cstr(c"fil".as_ptr());
+        print_cstr_in(st, c"fil".as_ptr());
         let mut ord = order;
         while ord > FIL {
-            print_char('l' as i32);
+            print_char_in(st, 'l' as i32);
             ord -= 1;
         }
     } else if !s.is_null() {
-        print_cstr(s);
+        print_cstr_in(st, s);
     }
 }
 
@@ -1468,18 +1531,19 @@ pub unsafe fn print_length_param(n: i32) {
 /// Print the font escape-name and character for a char-node at `p`.
 ///
 /// translated from xetex-xetex0.c:225 (print_font_and_char)
-pub unsafe fn print_font_and_char(p: i32) {
-    if p > mem_end() {
-        print_esc_cstr(c"CLOBBERED.".as_ptr());
+pub(crate) fn print_font_and_char_in(st: &mut EngineState, p: i32) {
+    if p > st.mem.mem_end {
+        print_esc_cstr_in(st, c"CLOBBERED.".as_ptr());
     } else {
-        if mem_b16s1(p) > font_max() as u16 {
-            print_char('*' as i32);
+        if st.mem.b16s1(p) > st.fonts.font_max as u16 {
+            print_char_in(st, '*' as i32);
         } else {
             // FONT_ID_BASE + font_id → hash entry → string number of the font name.
-            print_esc(hash_s1(FONT_ID_BASE + mem_b16s1(p) as i32));
+            let s = st.eqtb.hash_s1(FONT_ID_BASE + st.mem.b16s1(p) as i32);
+            print_esc_in(st, s);
         }
-        print_char(' ' as i32);
-        print(mem_b16s0(p) as i32);
+        print_char_in(st, ' ' as i32);
+        print_in(st, st.mem.b16s0(p) as i32);
     }
 }
 
@@ -1490,14 +1554,16 @@ pub unsafe fn print_font_and_char(p: i32) {
 /// Print a mark token list enclosed in `{…}`.
 ///
 /// translated from xetex-xetex0.c:240 (print_mark)
-pub unsafe fn print_mark(p: i32) {
-    print_char('{' as i32);
-    if p < hi_mem_min() || p > mem_end() {
-        print_esc_cstr(c"CLOBBERED.".as_ptr());
+pub(crate) fn print_mark_in(st: &mut EngineState, p: i32) {
+    print_char_in(st, '{' as i32);
+    if p < st.mem.hi_mem_min || p > st.mem.mem_end {
+        print_esc_cstr_in(st, c"CLOBBERED.".as_ptr());
     } else {
-        show_token_list(mem_b32s1(p), TEX_NULL, max_print_line() - 10);
+        let head = st.mem.b32s1(p);
+        let l = st.config.max_print_line - 10;
+        show_token_list_in(st, head, TEX_NULL, l);
     }
-    print_char('}' as i32);
+    print_char_in(st, '}' as i32);
 }
 
 // ---------------------------------------------------------------------------
@@ -3091,111 +3157,118 @@ const MATCH_STL: i32 = 13;
 const END_MATCH_STL: i32 = 14;
 
 /// translated from xetex-xetex0.c:20 (show_token_list)
-pub unsafe fn show_token_list(mut p: i32, q: i32, l: i32) {
-    use crate::globals::{
-        error_line, half_error_line, hi_mem_min, mem_b32s0, mem_b32s1, mem_end, set_first_count,
-        set_tally, set_trick_count, tally,
-    };
+pub unsafe fn show_token_list(p: i32, q: i32, l: i32) {
+    crate::state::with_state_mut(|st| show_token_list_in(st, p, q, l));
+}
+
+/// `&mut EngineState` core of [`show_token_list`].
+pub(crate) fn show_token_list_in(st: &mut EngineState, mut p: i32, q: i32, l: i32) {
     let mut match_chr: i32 = '#' as i32;
     let mut n: i32 = '0' as i32;
-    set_tally(0);
-    while p != crate::mem::TEX_NULL && tally() < l {
+    st.errors.tally = 0;
+    while p != crate::mem::TEX_NULL && st.errors.tally < l {
         if p == q {
-            set_first_count(tally());
-            let tc = tally() + 1 + error_line() - half_error_line();
-            set_trick_count(tc.max(error_line()));
+            st.errors.first_count = st.errors.tally;
+            let tc = st.errors.tally + 1 + st.errors.error_line - st.errors.half_error_line;
+            st.errors.trick_count = tc.max(st.errors.error_line);
         }
-        if p < hi_mem_min() || p > mem_end() {
-            print_esc_cstr(c"CLOBBERED.".as_ptr());
+        if p < st.mem.hi_mem_min || p > st.mem.mem_end {
+            print_esc_cstr_in(st, c"CLOBBERED.".as_ptr());
             return;
         }
-        let w = mem_b32s0(p);
+        let w = st.mem.b32s0(p);
         if w >= CS_TOKEN_FLAG {
-            print_cs(w - CS_TOKEN_FLAG);
+            print_cs_in(st, w - CS_TOKEN_FLAG);
         } else if w < 0 {
-            print_esc_cstr(c"BAD.".as_ptr());
+            print_esc_cstr_in(st, c"BAD.".as_ptr());
         } else {
             let m = w / MAX_CHAR_VAL_STL;
             let c = w % MAX_CHAR_VAL_STL;
             match m {
                 LEFT_BRACE_STL | RIGHT_BRACE_STL | MATH_SHIFT_STL | TAB_MARK_STL | SUP_MARK_STL
                 | SUB_MARK_STL | SPACER_STL | LETTER_STL | OTHER_CHAR_STL => {
-                    print_char(c);
+                    print_char_in(st, c);
                 }
                 MAC_PARAM_STL => {
-                    print_char(c);
-                    print_char(c);
+                    print_char_in(st, c);
+                    print_char_in(st, c);
                 }
                 OUT_PARAM_STL => {
-                    print_char(match_chr);
+                    print_char_in(st, match_chr);
                     if c <= 9 {
-                        print_char(c + 48);
+                        print_char_in(st, c + 48);
                     } else {
-                        print_char('!' as i32);
+                        print_char_in(st, '!' as i32);
                         return;
                     }
                 }
                 MATCH_STL => {
                     match_chr = c;
-                    print_char(c);
+                    print_char_in(st, c);
                     n += 1;
-                    print_char(n);
+                    print_char_in(st, n);
                     if n > '9' as i32 {
                         return;
                     }
                 }
                 END_MATCH_STL => {
                     if c == 0 {
-                        print_cstr(c"->".as_ptr());
+                        print_cstr_in(st, c"->".as_ptr());
                     }
                 }
                 _ => {
-                    print_esc_cstr(c"BAD.".as_ptr());
+                    print_esc_cstr_in(st, c"BAD.".as_ptr());
                 }
             }
         }
-        p = mem_b32s1(p);
+        p = st.mem.b32s1(p);
     }
     if p != crate::mem::TEX_NULL {
-        print_esc_cstr(c"ETC.".as_ptr());
+        print_esc_cstr_in(st, c"ETC.".as_ptr());
     }
 }
 
 // translated from xetex-xetex0.c:9282 (print_totals)
 pub unsafe fn print_totals() {
-    print_scaled(crate::globals::page_so_far(1));
-    if crate::globals::page_so_far(2) != 0 {
-        print_cstr(c" plus ".as_ptr());
-        print_scaled(crate::globals::page_so_far(2));
-        print_cstr(c"".as_ptr());
+    crate::state::with_state_mut(|st| print_totals_in(st));
+}
+
+/// `&mut EngineState` core of [`print_totals`].
+pub(crate) fn print_totals_in(st: &mut EngineState) {
+    print_scaled_in(st, st.shipout.page_so_far[1]);
+    if st.shipout.page_so_far[2] != 0 {
+        print_cstr_in(st, c" plus ".as_ptr());
+        print_scaled_in(st, st.shipout.page_so_far[2]);
+        print_cstr_in(st, c"".as_ptr());
     }
-    if crate::globals::page_so_far(3) != 0 {
-        print_cstr(c" plus ".as_ptr());
-        print_scaled(crate::globals::page_so_far(3));
-        print_cstr(c"fil".as_ptr());
+    if st.shipout.page_so_far[3] != 0 {
+        print_cstr_in(st, c" plus ".as_ptr());
+        print_scaled_in(st, st.shipout.page_so_far[3]);
+        print_cstr_in(st, c"fil".as_ptr());
     }
-    if crate::globals::page_so_far(4) != 0 {
-        print_cstr(c" plus ".as_ptr());
-        print_scaled(crate::globals::page_so_far(4));
-        print_cstr(c"fill".as_ptr());
+    if st.shipout.page_so_far[4] != 0 {
+        print_cstr_in(st, c" plus ".as_ptr());
+        print_scaled_in(st, st.shipout.page_so_far[4]);
+        print_cstr_in(st, c"fill".as_ptr());
     }
-    if crate::globals::page_so_far(5) != 0 {
-        print_cstr(c" plus ".as_ptr());
-        print_scaled(crate::globals::page_so_far(5));
-        print_cstr(c"filll".as_ptr());
+    if st.shipout.page_so_far[5] != 0 {
+        print_cstr_in(st, c" plus ".as_ptr());
+        print_scaled_in(st, st.shipout.page_so_far[5]);
+        print_cstr_in(st, c"filll".as_ptr());
     }
-    if crate::globals::page_so_far(6) != 0 {
-        print_cstr(c" minus ".as_ptr());
-        print_scaled(crate::globals::page_so_far(6));
+    if st.shipout.page_so_far[6] != 0 {
+        print_cstr_in(st, c" minus ".as_ptr());
+        print_scaled_in(st, st.shipout.page_so_far[6]);
     }
 }
 
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 /// translated from xetex-xetex0.c:9942 (show_info)
-pub unsafe fn show_info() {
-    use crate::globals::{mem_b32s0, temp_ptr};
-    show_node_list(mem_b32s0(temp_ptr()));
+pub(crate) fn show_info_in(st: &mut EngineState) {
+    let tp = crate::globals::temp_ptr();
+    let p = st.mem.b32s0(tp);
+    show_node_list_in(st, p);
 }
 // translated from xetex-xetex0.c:10708 (issue_message)
 pub unsafe fn issue_message() {
@@ -3777,89 +3850,94 @@ pub unsafe fn char_warning(f: i32, c: i32) {
 }
 /// translated from xetex-xetex0.c:735 (show_box)
 pub unsafe fn show_box(p: i32) {
-    use crate::globals::{
-        breadth_max, eqtb_b32s1, pool_ptr, pool_size, set_breadth_max, set_depth_threshold,
-    };
-    set_depth_threshold(eqtb_b32s1(INT_BASE + INT_PAR_SHOW_BOX_DEPTH));
-    set_breadth_max(eqtb_b32s1(INT_BASE + INT_PAR_SHOW_BOX_BREADTH));
-    if breadth_max() <= 0 {
-        set_breadth_max(5);
+    crate::state::with_state_mut(|st| show_box_in(st, p));
+}
+
+/// `&mut EngineState` core of [`show_box`].
+pub(crate) fn show_box_in(st: &mut EngineState, p: i32) {
+    st.errors.depth_threshold = st.eqtb.b32s1(INT_BASE + INT_PAR_SHOW_BOX_DEPTH);
+    st.errors.breadth_max = st.eqtb.b32s1(INT_BASE + INT_PAR_SHOW_BOX_BREADTH);
+    if st.errors.breadth_max <= 0 {
+        st.errors.breadth_max = 5;
     }
-    let dt = pool_size() - pool_ptr() - 1;
-    if crate::globals::depth_threshold() > dt {
-        set_depth_threshold(dt);
+    let dt = st.strings.pool_size - st.strings.pool_ptr - 1;
+    if st.errors.depth_threshold > dt {
+        st.errors.depth_threshold = dt;
     }
-    show_node_list(p);
-    crate::output::print_ln();
+    show_node_list_in(st, p);
+    print_ln_in(st);
 }
 
 /// translated from xetex-xetex0.c:117 (short_display)
-pub unsafe fn short_display(mut p: i32) {
-    use crate::globals::{
-        font_in_short_display, font_max, hash_s1, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s2,
-        mem_b32s0, mem_b32s1, mem_end, set_font_in_short_display,
-    };
+pub unsafe fn short_display(p: i32) {
+    crate::state::with_state_mut(|st| short_display_in(st, p));
+}
+
+/// `&mut EngineState` core of [`short_display`].
+pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
     while p > 0 {
-        if p >= hi_mem_min() {
+        if p >= st.mem.hi_mem_min {
             // is_char_node(p)
-            if p <= mem_end() {
-                let fnt = mem_b16s1(p) as i32;
-                if fnt != font_in_short_display() {
-                    if fnt > font_max() {
-                        crate::output::print_char('*' as i32);
+            if p <= st.mem.mem_end {
+                let fnt = st.mem.b16s1(p) as i32;
+                if fnt != st.errors.font_in_short_display {
+                    if fnt > st.fonts.font_max {
+                        print_char_in(st, '*' as i32);
                     } else {
-                        crate::output::print_esc(hash_s1(FONT_ID_BASE_SD + fnt));
+                        let s = st.eqtb.hash_s1(FONT_ID_BASE_SD + fnt);
+                        print_esc_in(st, s);
                     }
-                    crate::output::print_char(' ' as i32);
-                    set_font_in_short_display(fnt);
+                    print_char_in(st, ' ' as i32);
+                    st.errors.font_in_short_display = fnt;
                 }
-                crate::output::print(mem_b16s0(p) as i32);
+                print_in(st, st.mem.b16s0(p) as i32);
             }
         } else {
-            match mem_b16s1(p) {
+            match st.mem.b16s1(p) {
                 HLIST_NODE | VLIST_NODE_SD | INS_NODE_SD | MARK_NODE_SD | ADJUST_NODE_SD
                 | UNSET_NODE_SD => {
-                    crate::output::print_cstr(c"[]".as_ptr());
+                    print_cstr_in(st, c"[]".as_ptr());
                 }
-                WHATSIT_NODE_SD => match mem_b16s0(p) {
+                WHATSIT_NODE_SD => match st.mem.b16s0(p) {
                     NATIVE_WORD_NODE_SD | NATIVE_WORD_NODE_AT_SD => {
-                        let fnt = mem_b16s2(p + 4) as i32;
-                        if fnt != font_in_short_display() {
-                            crate::output::print_esc(hash_s1(FONT_ID_BASE_SD + fnt));
-                            crate::output::print_char(' ' as i32);
-                            set_font_in_short_display(fnt);
+                        let fnt = st.mem.b16s2(p + 4) as i32;
+                        if fnt != st.errors.font_in_short_display {
+                            let s = st.eqtb.hash_s1(FONT_ID_BASE_SD + fnt);
+                            print_esc_in(st, s);
+                            print_char_in(st, ' ' as i32);
+                            st.errors.font_in_short_display = fnt;
                         }
-                        crate::output::print_native_word(p);
+                        print_native_word_in(st, p);
                     }
                     _ => {
-                        crate::output::print_cstr(c"[]".as_ptr());
+                        print_cstr_in(st, c"[]".as_ptr());
                     }
                 },
                 RULE_NODE => {
-                    crate::output::print_char('|' as i32);
+                    print_char_in(st, '|' as i32);
                 }
                 GLUE_NODE => {
-                    if mem_b32s0(p + 1) != 0 {
-                        crate::output::print_char(' ' as i32);
+                    if st.mem.b32s0(p + 1) != 0 {
+                        print_char_in(st, ' ' as i32);
                     }
                 }
                 MATH_NODE => {
-                    if mem_b16s0(p) >= L_CODE_SD {
-                        crate::output::print_cstr(c"[]".as_ptr());
+                    if st.mem.b16s0(p) >= L_CODE_SD {
+                        print_cstr_in(st, c"[]".as_ptr());
                     } else {
-                        crate::output::print_char('$' as i32);
+                        print_char_in(st, '$' as i32);
                     }
                 }
                 LIGATURE_NODE => {
-                    short_display(mem_b32s1(p + 1));
+                    short_display_in(st, st.mem.b32s1(p + 1));
                 }
                 DISC_NODE => {
-                    short_display(mem_b32s0(p + 1));
-                    short_display(mem_b32s1(p + 1));
-                    let mut n = mem_b16s0(p) as i32;
+                    short_display_in(st, st.mem.b32s0(p + 1));
+                    short_display_in(st, st.mem.b32s1(p + 1));
+                    let mut n = st.mem.b16s0(p) as i32;
                     while n > 0 {
-                        if mem_b32s1(p) != crate::mem::TEX_NULL {
-                            p = mem_b32s1(p);
+                        if st.mem.b32s1(p) != crate::mem::TEX_NULL {
+                            p = st.mem.b32s1(p);
                         }
                         n -= 1;
                     }
@@ -3867,7 +3945,7 @@ pub unsafe fn short_display(mut p: i32) {
                 _ => {}
             }
         }
-        p = mem_b32s1(p);
+        p = st.mem.b32s1(p);
     }
 }
 /// translated from xetex-xetex0.c:1123 (show_activities)
@@ -3993,519 +4071,525 @@ pub unsafe fn show_activities() {
     }
 }
 /// translated from xetex-xetex0.c:215 (print_subsidiary_data)
-unsafe fn print_subsidiary_data(p: i32, c: u16) {
-    use crate::globals::{
-        breadth_max, depth_threshold, mem_b32s0, mem_b32s1, pool_ptr, set_pool_ptr, set_str_pool,
-        set_temp_ptr,
-    };
-    let _ = breadth_max; // used indirectly via show_node_list
-    if crate::hash::cur_length_global() >= depth_threshold() {
-        if mem_b32s1(p) != 0 {
+/// `&mut EngineState` core of `print_subsidiary_data`.
+fn print_subsidiary_data_in(st: &mut EngineState, p: i32, c: u16) {
+    if crate::hash::cur_length(&st.strings) >= st.errors.depth_threshold {
+        if st.mem.b32s1(p) != 0 {
             // EMPTY = 0
-            crate::output::print_cstr(c" []".as_ptr());
+            print_cstr_in(st, c" []".as_ptr());
         }
     } else {
-        set_str_pool(pool_ptr(), c);
-        set_pool_ptr(pool_ptr() + 1);
-        set_temp_ptr(p);
-        match mem_b32s1(p) {
+        st.strings.str_pool[st.strings.pool_ptr as usize] = c;
+        st.strings.pool_ptr += 1;
+        crate::globals::set_temp_ptr(p);
+        match st.mem.b32s1(p) {
             MATH_CHAR_SNL => {
-                crate::output::print_ln();
-                crate::output::print_current_string();
-                crate::output::print_fam_and_char(p);
+                print_ln_in(st);
+                print_current_string_in(st);
+                print_fam_and_char_in(st, p);
             }
             SUB_BOX_SNL => {
-                show_info();
+                show_info_in(st);
             }
             SUB_MLIST_SNL => {
-                if mem_b32s0(p) == crate::mem::TEX_NULL {
-                    crate::output::print_ln();
-                    crate::output::print_current_string();
-                    crate::output::print_cstr(c"{}".as_ptr());
+                if st.mem.b32s0(p) == crate::mem::TEX_NULL {
+                    print_ln_in(st);
+                    print_current_string_in(st);
+                    print_cstr_in(st, c"{}".as_ptr());
                 } else {
-                    show_info();
+                    show_info_in(st);
                 }
             }
             _ => {}
         }
-        set_pool_ptr(pool_ptr() - 1);
+        st.strings.pool_ptr -= 1;
     }
 }
 /// translated from xetex-xetex0.c:259 (show_node_list)
-pub unsafe fn show_node_list(mut p: i32) {
-    use crate::globals::{
-        breadth_max, depth_threshold, hash_s1, hi_mem_min, mem_b16s0, mem_b16s1, mem_b16s2,
-        mem_b32s0, mem_b32s1, mem_end, mem_gr, mem_node_addr, pool_ptr, set_pool_ptr, set_str_pool,
-    };
-    if crate::hash::cur_length_global() > depth_threshold() {
+pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
+    if crate::hash::cur_length(&st.strings) > st.errors.depth_threshold {
         if p > crate::mem::TEX_NULL {
-            crate::output::print_cstr(c" []".as_ptr());
+            print_cstr_in(st, c" []".as_ptr());
         }
         return;
     }
     let mut n = 0i32;
     while p > 0 {
-        crate::output::print_ln();
-        crate::output::print_current_string();
-        if p > mem_end() {
-            crate::output::print_cstr(c"Bad link, display aborted.".as_ptr());
+        print_ln_in(st);
+        print_current_string_in(st);
+        if p > st.mem.mem_end {
+            print_cstr_in(st, c"Bad link, display aborted.".as_ptr());
             return;
         }
         n += 1;
-        if n > breadth_max() {
-            crate::output::print_cstr(c"etc.".as_ptr());
+        if n > st.errors.breadth_max {
+            print_cstr_in(st, c"etc.".as_ptr());
             return;
         }
-        if p >= hi_mem_min() {
-            crate::output::print_font_and_char(p);
+        if p >= st.mem.hi_mem_min {
+            print_font_and_char_in(st, p);
         } else {
-            match mem_b16s1(p) {
+            match st.mem.b16s1(p) {
                 HLIST_NODE | VLIST_NODE_SNL | UNSET_NODE_SNL => {
-                    let ntype = mem_b16s1(p);
+                    let ntype = st.mem.b16s1(p);
                     if ntype == HLIST_NODE {
-                        crate::output::print_esc('h' as i32);
+                        print_esc_in(st, 'h' as i32);
                     } else if ntype == VLIST_NODE_SNL {
-                        crate::output::print_esc('v' as i32);
+                        print_esc_in(st, 'v' as i32);
                     } else {
-                        crate::output::print_esc_cstr(c"unset".as_ptr());
+                        print_esc_cstr_in(st, c"unset".as_ptr());
                     }
-                    crate::output::print_cstr(c"box(".as_ptr());
-                    crate::output::print_scaled(mem_b32s1(p + 3));
-                    crate::output::print_char('+' as i32);
-                    crate::output::print_scaled(mem_b32s1(p + 2));
-                    crate::output::print_cstr(c")x".as_ptr());
-                    crate::output::print_scaled(mem_b32s1(p + 1));
+                    print_cstr_in(st, c"box(".as_ptr());
+                    print_scaled_in(st, st.mem.b32s1(p + 3));
+                    print_char_in(st, '+' as i32);
+                    print_scaled_in(st, st.mem.b32s1(p + 2));
+                    print_cstr_in(st, c")x".as_ptr());
+                    print_scaled_in(st, st.mem.b32s1(p + 1));
                     if ntype == UNSET_NODE_SNL {
-                        if mem_b16s0(p) != 0 {
-                            crate::output::print_cstr(c" (".as_ptr());
-                            crate::output::print_int(mem_b16s0(p) as i32 + 1);
-                            crate::output::print_cstr(c" columns)".as_ptr());
+                        if st.mem.b16s0(p) != 0 {
+                            print_cstr_in(st, c" (".as_ptr());
+                            print_int_in(st, st.mem.b16s0(p) as i32 + 1);
+                            print_cstr_in(st, c" columns)".as_ptr());
                         }
-                        if mem_b32s1(p + 6) != 0 {
-                            crate::output::print_cstr(c", stretch ".as_ptr());
-                            crate::output::print_glue(
-                                mem_b32s1(p + 6),
-                                mem_b16s0(p + 5) as i32,
+                        if st.mem.b32s1(p + 6) != 0 {
+                            print_cstr_in(st, c", stretch ".as_ptr());
+                            print_glue_in(
+                                st,
+                                st.mem.b32s1(p + 6),
+                                st.mem.b16s0(p + 5) as i32,
                                 std::ptr::null(),
                             );
                         }
-                        if mem_b32s1(p + 4) != 0 {
-                            crate::output::print_cstr(c", shrink ".as_ptr());
-                            crate::output::print_glue(
-                                mem_b32s1(p + 4),
-                                mem_b16s1(p + 5) as i32,
+                        if st.mem.b32s1(p + 4) != 0 {
+                            print_cstr_in(st, c", shrink ".as_ptr());
+                            print_glue_in(
+                                st,
+                                st.mem.b32s1(p + 4),
+                                st.mem.b16s1(p + 5) as i32,
                                 std::ptr::null(),
                             );
                         }
                     } else {
-                        let g = mem_gr(p + 6);
-                        if g != 0.0 && mem_b16s1(p + 5) != NORMAL_SNL {
-                            crate::output::print_cstr(c", glue set ".as_ptr());
-                            if mem_b16s1(p + 5) == SHRINKING_SNL {
-                                crate::output::print_cstr(c"- ".as_ptr());
+                        let g = st.mem.gr(p + 6);
+                        if g != 0.0 && st.mem.b16s1(p + 5) != NORMAL_SNL {
+                            print_cstr_in(st, c", glue set ".as_ptr());
+                            if st.mem.b16s1(p + 5) == SHRINKING_SNL {
+                                print_cstr_in(st, c"- ".as_ptr());
                             }
                             if g.abs() > 20000.0 {
                                 if g > 0.0 {
-                                    crate::output::print_char('>' as i32);
+                                    print_char_in(st, '>' as i32);
                                 } else {
-                                    crate::output::print_cstr(c"< -".as_ptr());
+                                    print_cstr_in(st, c"< -".as_ptr());
                                 }
-                                crate::output::print_glue(
+                                print_glue_in(
+                                    st,
                                     20000 * 65536,
-                                    mem_b16s0(p + 5) as i32,
+                                    st.mem.b16s0(p + 5) as i32,
                                     std::ptr::null(),
                                 );
                             } else {
-                                crate::output::print_glue(
+                                print_glue_in(
+                                    st,
                                     crate::scaled_math::tex_round(65536.0 * g),
-                                    mem_b16s0(p + 5) as i32,
+                                    st.mem.b16s0(p + 5) as i32,
                                     std::ptr::null(),
                                 );
                             }
                         }
-                        if mem_b32s1(p + 4) != 0 {
-                            crate::output::print_cstr(c", shifted ".as_ptr());
-                            crate::output::print_scaled(mem_b32s1(p + 4));
+                        if st.mem.b32s1(p + 4) != 0 {
+                            print_cstr_in(st, c", shifted ".as_ptr());
+                            print_scaled_in(st, st.mem.b32s1(p + 4));
                         }
-                        if ntype == HLIST_NODE && mem_b16s0(p) == DLIST_SNL {
-                            crate::output::print_cstr(c", display".as_ptr());
+                        if ntype == HLIST_NODE && st.mem.b16s0(p) == DLIST_SNL {
+                            print_cstr_in(st, c", display".as_ptr());
                         }
                     }
-                    set_str_pool(pool_ptr(), '.' as u16);
-                    set_pool_ptr(pool_ptr() + 1);
-                    show_node_list(mem_b32s1(p + 5));
-                    set_pool_ptr(pool_ptr() - 1);
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, st.mem.b32s1(p + 5));
+                    st.strings.pool_ptr -= 1;
                 }
                 RULE_NODE => {
-                    crate::output::print_esc_cstr(c"rule(".as_ptr());
-                    crate::output::print_rule_dimen(mem_b32s1(p + 3));
-                    crate::output::print_char('+' as i32);
-                    crate::output::print_rule_dimen(mem_b32s1(p + 2));
-                    crate::output::print_cstr(c")x".as_ptr());
-                    crate::output::print_rule_dimen(mem_b32s1(p + 1));
+                    print_esc_cstr_in(st, c"rule(".as_ptr());
+                    print_rule_dimen_in(st, st.mem.b32s1(p + 3));
+                    print_char_in(st, '+' as i32);
+                    print_rule_dimen_in(st, st.mem.b32s1(p + 2));
+                    print_cstr_in(st, c")x".as_ptr());
+                    print_rule_dimen_in(st, st.mem.b32s1(p + 1));
                 }
                 INS_NODE_SNL => {
-                    crate::output::print_esc_cstr(c"insert".as_ptr());
-                    crate::output::print_int(mem_b16s0(p) as i32);
-                    crate::output::print_cstr(c", natural size ".as_ptr());
-                    crate::output::print_scaled(mem_b32s1(p + 3));
-                    crate::output::print_cstr(c"; split(".as_ptr());
-                    crate::output::print_spec(mem_b32s1(p + 4), std::ptr::null());
-                    crate::output::print_char(',' as i32);
-                    crate::output::print_scaled(mem_b32s1(p + 2));
-                    crate::output::print_cstr(c"); float cost ".as_ptr());
-                    crate::output::print_int(mem_b32s1(p + 1));
-                    set_str_pool(pool_ptr(), '.' as u16);
-                    set_pool_ptr(pool_ptr() + 1);
-                    show_node_list(mem_b32s0(p + 4));
-                    set_pool_ptr(pool_ptr() - 1);
+                    print_esc_cstr_in(st, c"insert".as_ptr());
+                    print_int_in(st, st.mem.b16s0(p) as i32);
+                    print_cstr_in(st, c", natural size ".as_ptr());
+                    print_scaled_in(st, st.mem.b32s1(p + 3));
+                    print_cstr_in(st, c"; split(".as_ptr());
+                    print_spec_in(st, st.mem.b32s1(p + 4), std::ptr::null());
+                    print_char_in(st, ',' as i32);
+                    print_scaled_in(st, st.mem.b32s1(p + 2));
+                    print_cstr_in(st, c"); float cost ".as_ptr());
+                    print_int_in(st, st.mem.b32s1(p + 1));
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, st.mem.b32s0(p + 4));
+                    st.strings.pool_ptr -= 1;
                 }
                 WHATSIT_NODE_SNL => {
-                    match mem_b16s0(p) {
+                    match st.mem.b16s0(p) {
                         OPEN_NODE_SNL => {
-                            crate::output::print_write_whatsit(c"openout".as_ptr(), p);
-                            crate::output::print_char('=' as i32);
-                            crate::output::print_file_name(
-                                mem_b32s1(p + 1),
-                                mem_b32s0(p + 2),
-                                mem_b32s1(p + 2),
+                            print_write_whatsit_in(st, c"openout".as_ptr(), p);
+                            print_char_in(st, '=' as i32);
+                            print_file_name_in(
+                                st,
+                                st.mem.b32s1(p + 1),
+                                st.mem.b32s0(p + 2),
+                                st.mem.b32s1(p + 2),
                             );
                         }
                         WRITE_NODE_SNL => {
-                            crate::output::print_write_whatsit(c"write".as_ptr(), p);
-                            crate::output::print_mark(mem_b32s1(p + 1));
+                            print_write_whatsit_in(st, c"write".as_ptr(), p);
+                            print_mark_in(st, st.mem.b32s1(p + 1));
                         }
                         CLOSE_NODE_SNL => {
-                            crate::output::print_write_whatsit(c"closeout".as_ptr(), p);
+                            print_write_whatsit_in(st, c"closeout".as_ptr(), p);
                         }
                         SPECIAL_NODE_SNL => {
-                            crate::output::print_esc_cstr(c"special".as_ptr());
-                            crate::output::print_mark(mem_b32s1(p + 1));
+                            print_esc_cstr_in(st, c"special".as_ptr());
+                            print_mark_in(st, st.mem.b32s1(p + 1));
                         }
                         LANGUAGE_NODE_SNL => {
-                            crate::output::print_esc_cstr(c"setlanguage".as_ptr());
-                            crate::output::print_int(mem_b32s1(p + 1));
-                            crate::output::print_cstr(c" (hyphenmin ".as_ptr());
-                            crate::output::print_int(mem_b16s1(p + 1) as i32);
-                            crate::output::print_char(',' as i32);
-                            crate::output::print_int(mem_b16s0(p + 1) as i32);
-                            crate::output::print_char(')' as i32);
+                            print_esc_cstr_in(st, c"setlanguage".as_ptr());
+                            print_int_in(st, st.mem.b32s1(p + 1));
+                            print_cstr_in(st, c" (hyphenmin ".as_ptr());
+                            print_int_in(st, st.mem.b16s1(p + 1) as i32);
+                            print_char_in(st, ',' as i32);
+                            print_int_in(st, st.mem.b16s0(p + 1) as i32);
+                            print_char_in(st, ')' as i32);
                         }
                         PDF_SAVE_POS_NODE_SNL => {
-                            crate::output::print_esc_cstr(c"pdfsavepos".as_ptr());
+                            print_esc_cstr_in(st, c"pdfsavepos".as_ptr());
                         }
                         NATIVE_WORD_NODE_SNL | NATIVE_WORD_NODE_AT_SNL => {
                             // hash[FONT_ID_BASE + mem[p+4].b16.s2].s1
-                            crate::output::print_esc(hash_s1(
-                                FONT_ID_BASE_SNL + mem_b16s2(p + 4) as i32,
-                            ));
-                            crate::output::print_char(' ' as i32);
-                            crate::output::print_native_word(p);
+                            print_esc_in(
+                                st,
+                                st.eqtb
+                                    .hash_s1(FONT_ID_BASE_SNL + st.mem.b16s2(p + 4) as i32),
+                            );
+                            print_char_in(st, ' ' as i32);
+                            print_native_word_in(st, p);
                         }
                         GLYPH_NODE_SNL => {
-                            crate::output::print_esc(hash_s1(
-                                FONT_ID_BASE_SNL + mem_b16s2(p + 4) as i32,
-                            ));
-                            crate::output::print_cstr(c" glyph#".as_ptr());
-                            crate::output::print_int(mem_b16s1(p + 4) as i32);
+                            print_esc_in(
+                                st,
+                                st.eqtb
+                                    .hash_s1(FONT_ID_BASE_SNL + st.mem.b16s2(p + 4) as i32),
+                            );
+                            print_cstr_in(st, c" glyph#".as_ptr());
+                            print_int_in(st, st.mem.b16s1(p + 4) as i32);
                         }
                         PIC_NODE_SNL | PDF_NODE_SNL => {
-                            if mem_b16s0(p) == PIC_NODE_SNL {
-                                crate::output::print_esc_cstr(c"XeTeXpicfile".as_ptr());
+                            if st.mem.b16s0(p) == PIC_NODE_SNL {
+                                print_esc_cstr_in(st, c"XeTeXpicfile".as_ptr());
                             } else {
-                                crate::output::print_esc_cstr(c"XeTeXpdffile".as_ptr());
+                                print_esc_cstr_in(st, c"XeTeXpdffile".as_ptr());
                             }
-                            crate::output::print_cstr(c"( ".as_ptr());
-                            let path_len = mem_b16s1(p + 4) as i32;
-                            let path_ptr = mem_node_addr(p + PIC_NODE_SIZE_SNL) as *const u8;
+                            print_cstr_in(st, c"( ".as_ptr());
+                            let path_len = st.mem.b16s1(p + 4) as i32;
+                            let path_ptr = st.mem.node_addr(p + PIC_NODE_SIZE_SNL) as *const u8;
                             for i in 0..path_len {
-                                crate::output::print_raw_char(
-                                    *path_ptr.add(i as usize) as u16,
+                                print_raw_char_in(
+                                    st,
+                                    unsafe { *path_ptr.add(i as usize) } as u16,
                                     true,
                                 );
                             }
-                            crate::output::print('"' as i32);
+                            print_in(st, '"' as i32);
                         }
                         _ => {
-                            crate::output::print_cstr(c"whatsit?".as_ptr());
+                            print_cstr_in(st, c"whatsit?".as_ptr());
                         }
                     }
                 }
                 GLUE_NODE => {
-                    let sub = mem_b16s0(p);
+                    let sub = st.mem.b16s0(p);
                     if sub >= A_LEADERS_SNL {
-                        crate::output::print_esc_cstr(c"".as_ptr());
+                        print_esc_cstr_in(st, c"".as_ptr());
                         if sub == C_LEADERS_SNL {
-                            crate::output::print_char('c' as i32);
+                            print_char_in(st, 'c' as i32);
                         } else if sub == X_LEADERS_SNL {
-                            crate::output::print_char('x' as i32);
+                            print_char_in(st, 'x' as i32);
                         }
-                        crate::output::print_cstr(c"leaders ".as_ptr());
-                        crate::output::print_spec(mem_b32s0(p + 1), std::ptr::null());
-                        set_str_pool(pool_ptr(), '.' as u16);
-                        set_pool_ptr(pool_ptr() + 1);
-                        show_node_list(mem_b32s1(p + 1));
-                        set_pool_ptr(pool_ptr() - 1);
+                        print_cstr_in(st, c"leaders ".as_ptr());
+                        print_spec_in(st, st.mem.b32s0(p + 1), std::ptr::null());
+                        st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
+                        st.strings.pool_ptr += 1;
+                        show_node_list_in(st, st.mem.b32s1(p + 1));
+                        st.strings.pool_ptr -= 1;
                     } else {
-                        crate::output::print_esc_cstr(c"glue".as_ptr());
+                        print_esc_cstr_in(st, c"glue".as_ptr());
                         if sub != NORMAL_SNL {
                             // GLUE_SPEC_shrink_order(p) != NORMAL
-                            crate::output::print_char('(' as i32);
+                            print_char_in(st, '(' as i32);
                             if sub < COND_MATH_GLUE_SNL {
-                                crate::output::print_skip_param(sub as i32 - 1);
+                                print_skip_param_in(st, sub as i32 - 1);
                             } else if sub == COND_MATH_GLUE_SNL {
-                                crate::output::print_esc_cstr(c"nonscript".as_ptr());
+                                print_esc_cstr_in(st, c"nonscript".as_ptr());
                             } else {
-                                crate::output::print_esc_cstr(c"mskip".as_ptr());
+                                print_esc_cstr_in(st, c"mskip".as_ptr());
                             }
-                            crate::output::print_char(')' as i32);
+                            print_char_in(st, ')' as i32);
                         }
                         if sub != COND_MATH_GLUE_SNL {
-                            crate::output::print_char(' ' as i32);
+                            print_char_in(st, ' ' as i32);
                             if sub < COND_MATH_GLUE_SNL {
-                                crate::output::print_spec(mem_b32s0(p + 1), std::ptr::null());
+                                print_spec_in(st, st.mem.b32s0(p + 1), std::ptr::null());
                             } else {
-                                crate::output::print_spec(mem_b32s0(p + 1), c"mu".as_ptr());
+                                print_spec_in(st, st.mem.b32s0(p + 1), c"mu".as_ptr());
                             }
                         }
                     }
                 }
                 KERN_NODE => {
-                    if mem_b16s0(p) != MU_GLUE_SNL {
-                        crate::output::print_esc_cstr(c"kern".as_ptr());
-                        if mem_b16s0(p) != NORMAL_SNL {
-                            crate::output::print_char(' ' as i32);
+                    if st.mem.b16s0(p) != MU_GLUE_SNL {
+                        print_esc_cstr_in(st, c"kern".as_ptr());
+                        if st.mem.b16s0(p) != NORMAL_SNL {
+                            print_char_in(st, ' ' as i32);
                         }
-                        crate::output::print_scaled(mem_b32s1(p + 1));
-                        let sub = mem_b16s0(p);
+                        print_scaled_in(st, st.mem.b32s1(p + 1));
+                        let sub = st.mem.b16s0(p);
                         if sub == ACC_KERN_SNL {
-                            crate::output::print_cstr(c" (for accent)".as_ptr());
+                            print_cstr_in(st, c" (for accent)".as_ptr());
                         } else if sub == SPACE_ADJUSTMENT_SNL {
-                            crate::output::print_cstr(c" (space adjustment)".as_ptr());
+                            print_cstr_in(st, c" (space adjustment)".as_ptr());
                         }
                     } else {
-                        crate::output::print_esc_cstr(c"mkern".as_ptr());
-                        crate::output::print_scaled(mem_b32s1(p + 1));
-                        crate::output::print_cstr(c"mu".as_ptr());
+                        print_esc_cstr_in(st, c"mkern".as_ptr());
+                        print_scaled_in(st, st.mem.b32s1(p + 1));
+                        print_cstr_in(st, c"mu".as_ptr());
                     }
                 }
                 MARGIN_KERN_NODE_SNL => {
-                    crate::output::print_esc_cstr(c"kern".as_ptr());
-                    crate::output::print_scaled(mem_b32s1(p + 1));
-                    if mem_b16s0(p) == 0 {
-                        crate::output::print_cstr(c" (left margin)".as_ptr());
+                    print_esc_cstr_in(st, c"kern".as_ptr());
+                    print_scaled_in(st, st.mem.b32s1(p + 1));
+                    if st.mem.b16s0(p) == 0 {
+                        print_cstr_in(st, c" (left margin)".as_ptr());
                     } else {
-                        crate::output::print_cstr(c" (right margin)".as_ptr());
+                        print_cstr_in(st, c" (right margin)".as_ptr());
                     }
                 }
                 MATH_NODE => {
-                    let sub = mem_b16s0(p);
+                    let sub = st.mem.b16s0(p);
                     if sub > AFTER_SNL {
                         if sub % 2 == 1 {
-                            crate::output::print_esc_cstr(c"end".as_ptr());
+                            print_esc_cstr_in(st, c"end".as_ptr());
                         } else {
-                            crate::output::print_esc_cstr(c"begin".as_ptr());
+                            print_esc_cstr_in(st, c"begin".as_ptr());
                         }
                         if sub > R_CODE_SNL {
-                            crate::output::print_char('R' as i32);
+                            print_char_in(st, 'R' as i32);
                         } else if sub > L_CODE_SNL {
-                            crate::output::print_char('L' as i32);
+                            print_char_in(st, 'L' as i32);
                         } else {
-                            crate::output::print_char('M' as i32);
+                            print_char_in(st, 'M' as i32);
                         }
                     } else {
-                        crate::output::print_esc_cstr(c"math".as_ptr());
+                        print_esc_cstr_in(st, c"math".as_ptr());
                         if sub == BEFORE_SNL {
-                            crate::output::print_cstr(c"on".as_ptr());
+                            print_cstr_in(st, c"on".as_ptr());
                         } else {
-                            crate::output::print_cstr(c"off".as_ptr());
+                            print_cstr_in(st, c"off".as_ptr());
                         }
-                        if mem_b32s1(p + 1) != 0 {
-                            crate::output::print_cstr(c", surrounded ".as_ptr());
-                            crate::output::print_scaled(mem_b32s1(p + 1));
+                        if st.mem.b32s1(p + 1) != 0 {
+                            print_cstr_in(st, c", surrounded ".as_ptr());
+                            print_scaled_in(st, st.mem.b32s1(p + 1));
                         }
                     }
                 }
                 LIGATURE_NODE => {
-                    crate::output::print_font_and_char(p + 1);
-                    crate::output::print_cstr(c" (ligature ".as_ptr());
-                    if mem_b16s0(p) > 1 {
-                        crate::output::print_char('|' as i32);
+                    print_font_and_char_in(st, p + 1);
+                    print_cstr_in(st, c" (ligature ".as_ptr());
+                    if st.mem.b16s0(p) > 1 {
+                        print_char_in(st, '|' as i32);
                     }
-                    crate::globals::set_font_in_short_display(mem_b16s1(p + 1) as i32);
-                    short_display(mem_b32s1(p + 1));
-                    if mem_b16s0(p) % 2 == 1 {
-                        crate::output::print_char('|' as i32);
+                    st.errors.font_in_short_display = st.mem.b16s1(p + 1) as i32;
+                    short_display_in(st, st.mem.b32s1(p + 1));
+                    if st.mem.b16s0(p) % 2 == 1 {
+                        print_char_in(st, '|' as i32);
                     }
-                    crate::output::print_char(')' as i32);
+                    print_char_in(st, ')' as i32);
                 }
                 PENALTY_NODE => {
-                    crate::output::print_esc_cstr(c"penalty ".as_ptr());
-                    crate::output::print_int(mem_b32s1(p + 1));
+                    print_esc_cstr_in(st, c"penalty ".as_ptr());
+                    print_int_in(st, st.mem.b32s1(p + 1));
                 }
                 DISC_NODE => {
-                    crate::output::print_esc_cstr(c"discretionary".as_ptr());
-                    if mem_b16s0(p) > 0 {
-                        crate::output::print_cstr(c" replacing ".as_ptr());
-                        crate::output::print_int(mem_b16s0(p) as i32);
+                    print_esc_cstr_in(st, c"discretionary".as_ptr());
+                    if st.mem.b16s0(p) > 0 {
+                        print_cstr_in(st, c" replacing ".as_ptr());
+                        print_int_in(st, st.mem.b16s0(p) as i32);
                     }
-                    set_str_pool(pool_ptr(), '.' as u16);
-                    set_pool_ptr(pool_ptr() + 1);
-                    show_node_list(mem_b32s0(p + 1));
-                    set_pool_ptr(pool_ptr() - 1);
-                    set_str_pool(pool_ptr(), '|' as u16);
-                    set_pool_ptr(pool_ptr() + 1);
-                    show_node_list(mem_b32s1(p + 1));
-                    set_pool_ptr(pool_ptr() - 1);
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, st.mem.b32s0(p + 1));
+                    st.strings.pool_ptr -= 1;
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = '|' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, st.mem.b32s1(p + 1));
+                    st.strings.pool_ptr -= 1;
                 }
                 MARK_NODE_SNL => {
-                    crate::output::print_esc_cstr(c"mark".as_ptr());
-                    if mem_b32s0(p + 1) != 0 {
-                        crate::output::print_char('s' as i32);
-                        crate::output::print_int(mem_b32s0(p + 1));
+                    print_esc_cstr_in(st, c"mark".as_ptr());
+                    if st.mem.b32s0(p + 1) != 0 {
+                        print_char_in(st, 's' as i32);
+                        print_int_in(st, st.mem.b32s0(p + 1));
                     }
-                    crate::output::print_mark(mem_b32s1(p + 1));
+                    print_mark_in(st, st.mem.b32s1(p + 1));
                 }
                 ADJUST_NODE_SNL => {
-                    crate::output::print_esc_cstr(c"vadjust".as_ptr());
-                    if mem_b16s0(p) != 0 {
-                        crate::output::print_cstr(c" pre ".as_ptr());
+                    print_esc_cstr_in(st, c"vadjust".as_ptr());
+                    if st.mem.b16s0(p) != 0 {
+                        print_cstr_in(st, c" pre ".as_ptr());
                     }
-                    set_str_pool(pool_ptr(), '.' as u16);
-                    set_pool_ptr(pool_ptr() + 1);
-                    show_node_list(mem_b32s1(p + 1));
-                    set_pool_ptr(pool_ptr() - 1);
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, st.mem.b32s1(p + 1));
+                    st.strings.pool_ptr -= 1;
                 }
                 STYLE_NODE_SNL => {
-                    crate::output::print_style(mem_b16s0(p) as i32);
+                    print_style_in(st, st.mem.b16s0(p) as i32);
                 }
                 CHOICE_NODE_SNL => {
-                    crate::output::print_esc_cstr(c"mathchoice".as_ptr());
-                    set_str_pool(pool_ptr(), 'D' as u16);
-                    set_pool_ptr(pool_ptr() + 1);
-                    show_node_list(mem_b32s0(p + 1));
-                    set_pool_ptr(pool_ptr() - 1);
-                    set_str_pool(pool_ptr(), 'T' as u16);
-                    set_pool_ptr(pool_ptr() + 1);
-                    show_node_list(mem_b32s1(p + 1));
-                    set_pool_ptr(pool_ptr() - 1);
-                    set_str_pool(pool_ptr(), 'S' as u16);
-                    set_pool_ptr(pool_ptr() + 1);
-                    show_node_list(mem_b32s0(p + 2));
-                    set_pool_ptr(pool_ptr() - 1);
-                    set_str_pool(pool_ptr(), 's' as u16);
-                    set_pool_ptr(pool_ptr() + 1);
-                    show_node_list(mem_b32s1(p + 2));
-                    set_pool_ptr(pool_ptr() - 1);
+                    print_esc_cstr_in(st, c"mathchoice".as_ptr());
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = 'D' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, st.mem.b32s0(p + 1));
+                    st.strings.pool_ptr -= 1;
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = 'T' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, st.mem.b32s1(p + 1));
+                    st.strings.pool_ptr -= 1;
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = 'S' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, st.mem.b32s0(p + 2));
+                    st.strings.pool_ptr -= 1;
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = 's' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, st.mem.b32s1(p + 2));
+                    st.strings.pool_ptr -= 1;
                 }
                 ORD_NOAD_SNL | OP_NOAD_SNL | BIN_NOAD_SNL | REL_NOAD_SNL | OPEN_NOAD_SNL
                 | CLOSE_NOAD_SNL | PUNCT_NOAD_SNL | INNER_NOAD_SNL | RADICAL_NOAD_SNL
                 | OVER_NOAD_SNL | UNDER_NOAD_SNL | VCENTER_NOAD_SNL | ACCENT_NOAD_SNL
                 | LEFT_NOAD_SNL | RIGHT_NOAD_SNL => {
-                    let ntype = mem_b16s1(p);
+                    let ntype = st.mem.b16s1(p);
                     match ntype {
                         ORD_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"mathord".as_ptr());
+                            print_esc_cstr_in(st, c"mathord".as_ptr());
                         }
                         OP_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"mathop".as_ptr());
+                            print_esc_cstr_in(st, c"mathop".as_ptr());
                         }
                         BIN_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"mathbin".as_ptr());
+                            print_esc_cstr_in(st, c"mathbin".as_ptr());
                         }
                         REL_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"mathrel".as_ptr());
+                            print_esc_cstr_in(st, c"mathrel".as_ptr());
                         }
                         OPEN_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"mathopen".as_ptr());
+                            print_esc_cstr_in(st, c"mathopen".as_ptr());
                         }
                         CLOSE_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"mathclose".as_ptr());
+                            print_esc_cstr_in(st, c"mathclose".as_ptr());
                         }
                         PUNCT_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"mathpunct".as_ptr());
+                            print_esc_cstr_in(st, c"mathpunct".as_ptr());
                         }
                         INNER_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"mathinner".as_ptr());
+                            print_esc_cstr_in(st, c"mathinner".as_ptr());
                         }
                         OVER_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"overline".as_ptr());
+                            print_esc_cstr_in(st, c"overline".as_ptr());
                         }
                         UNDER_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"underline".as_ptr());
+                            print_esc_cstr_in(st, c"underline".as_ptr());
                         }
                         VCENTER_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"vcenter".as_ptr());
+                            print_esc_cstr_in(st, c"vcenter".as_ptr());
                         }
                         RADICAL_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"radical".as_ptr());
-                            crate::output::print_delimiter(p + 4);
+                            print_esc_cstr_in(st, c"radical".as_ptr());
+                            print_delimiter_in(st, p + 4);
                         }
                         ACCENT_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"accent".as_ptr());
-                            crate::output::print_fam_and_char(p + 4);
+                            print_esc_cstr_in(st, c"accent".as_ptr());
+                            print_fam_and_char_in(st, p + 4);
                         }
                         LEFT_NOAD_SNL => {
-                            crate::output::print_esc_cstr(c"left".as_ptr());
-                            crate::output::print_delimiter(p + 1);
+                            print_esc_cstr_in(st, c"left".as_ptr());
+                            print_delimiter_in(st, p + 1);
                         }
                         RIGHT_NOAD_SNL => {
-                            if mem_b16s0(p) == NORMAL_SNL {
-                                crate::output::print_esc_cstr(c"right".as_ptr());
+                            if st.mem.b16s0(p) == NORMAL_SNL {
+                                print_esc_cstr_in(st, c"right".as_ptr());
                             } else {
-                                crate::output::print_esc_cstr(c"middle".as_ptr());
+                                print_esc_cstr_in(st, c"middle".as_ptr());
                             }
-                            crate::output::print_delimiter(p + 1);
+                            print_delimiter_in(st, p + 1);
                         }
                         _ => {}
                     }
                     if ntype < LEFT_NOAD_SNL {
-                        if mem_b16s0(p) != NORMAL_SNL {
-                            if mem_b16s0(p) == LIMITS_SNL {
-                                crate::output::print_esc_cstr(c"limits".as_ptr());
+                        if st.mem.b16s0(p) != NORMAL_SNL {
+                            if st.mem.b16s0(p) == LIMITS_SNL {
+                                print_esc_cstr_in(st, c"limits".as_ptr());
                             } else {
-                                crate::output::print_esc_cstr(c"nolimits".as_ptr());
+                                print_esc_cstr_in(st, c"nolimits".as_ptr());
                             }
                         }
-                        print_subsidiary_data(p + 1, '.' as u16);
+                        print_subsidiary_data_in(st, p + 1, '.' as u16);
                     }
-                    print_subsidiary_data(p + 2, '^' as u16);
-                    print_subsidiary_data(p + 3, '_' as u16);
+                    print_subsidiary_data_in(st, p + 2, '^' as u16);
+                    print_subsidiary_data_in(st, p + 3, '_' as u16);
                 }
                 FRACTION_NOAD_SNL => {
-                    crate::output::print_esc_cstr(c"fraction, thickness ".as_ptr());
-                    if mem_b32s1(p + 1) == DEFAULT_CODE_SNL {
-                        crate::output::print_cstr(c"= default".as_ptr());
+                    print_esc_cstr_in(st, c"fraction, thickness ".as_ptr());
+                    if st.mem.b32s1(p + 1) == DEFAULT_CODE_SNL {
+                        print_cstr_in(st, c"= default".as_ptr());
                     } else {
-                        crate::output::print_scaled(mem_b32s1(p + 1));
+                        print_scaled_in(st, st.mem.b32s1(p + 1));
                     }
                     // left delimiter check
-                    if !mem_b16s3(p + 4).is_multiple_of(256)
-                        || (mem_b16s2(p + 4) as i32 + (mem_b16s3(p + 4) as i32 / 256) * 65536) != 0
-                        || !mem_b16s1(p + 4).is_multiple_of(256)
-                        || (mem_b16s0(p + 4) as i32 + (mem_b16s1(p + 4) as i32 / 256) * 65536) != 0
+                    if !st.mem.b16s3(p + 4).is_multiple_of(256)
+                        || (st.mem.b16s2(p + 4) as i32 + (st.mem.b16s3(p + 4) as i32 / 256) * 65536)
+                            != 0
+                        || !st.mem.b16s1(p + 4).is_multiple_of(256)
+                        || (st.mem.b16s0(p + 4) as i32 + (st.mem.b16s1(p + 4) as i32 / 256) * 65536)
+                            != 0
                     {
-                        crate::output::print_cstr(c", left-delimiter ".as_ptr());
-                        crate::output::print_delimiter(p + 4);
+                        print_cstr_in(st, c", left-delimiter ".as_ptr());
+                        print_delimiter_in(st, p + 4);
                     }
                     // right delimiter check
-                    if !mem_b16s3(p + 5).is_multiple_of(256)
-                        || (mem_b16s2(p + 5) as i32 + (mem_b16s3(p + 5) as i32 / 256) * 65536) != 0
-                        || !mem_b16s1(p + 5).is_multiple_of(256)
-                        || (mem_b16s0(p + 5) as i32 + (mem_b16s1(p + 5) as i32 / 256) * 65536) != 0
+                    if !st.mem.b16s3(p + 5).is_multiple_of(256)
+                        || (st.mem.b16s2(p + 5) as i32 + (st.mem.b16s3(p + 5) as i32 / 256) * 65536)
+                            != 0
+                        || !st.mem.b16s1(p + 5).is_multiple_of(256)
+                        || (st.mem.b16s0(p + 5) as i32 + (st.mem.b16s1(p + 5) as i32 / 256) * 65536)
+                            != 0
                     {
-                        crate::output::print_cstr(c", right-delimiter ".as_ptr());
-                        crate::output::print_delimiter(p + 5);
+                        print_cstr_in(st, c", right-delimiter ".as_ptr());
+                        print_delimiter_in(st, p + 5);
                     }
-                    print_subsidiary_data(p + 2, '\\' as u16);
-                    print_subsidiary_data(p + 3, '/' as u16);
+                    print_subsidiary_data_in(st, p + 2, '\\' as u16);
+                    print_subsidiary_data_in(st, p + 3, '/' as u16);
                 }
                 _ => {
-                    crate::output::print_cstr(c"Unknown node type!".as_ptr());
+                    print_cstr_in(st, c"Unknown node type!".as_ptr());
                 }
             }
         }
-        p = mem_b32s1(p);
+        p = st.mem.b32s1(p);
     }
 }
 // translated from xetex-xetex0.c:2764 (show_context)
