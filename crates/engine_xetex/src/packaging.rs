@@ -23,8 +23,7 @@ use crate::globals::{
 };
 use crate::mem::new_spec_global;
 use crate::node::{
-    AnyBox, GlueNode, GlueSpecNode, HListNode, KernNode, MathNode, Noad, NodePtr, RuleDimen,
-    RuleNode, VListNode,
+    AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, Noad, NodePtr, RuleDimen, VListNode,
 };
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
 
@@ -32,7 +31,7 @@ use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_dis
 // prune_page_top and the relocated font-loading group); import it here.
 use crate::scan::{cnl_get_avail, cnl_get_node, node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState};
-use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{MemIdx, MemPtr, Scaled};
 
 // Module-private consts shared with scan.rs (TEMP_HEAD/IGNORE_DEPTH still used
 // there too, so duplicated rather than relocated — same value).
@@ -1552,12 +1551,9 @@ fn hpack_in(
         }
 
         let node_idx = MemIdx::new(p);
-        let node_type = NodeType::from_raw(mem.b16s1(p));
-        match node_type {
-            Ok(NodeType::HList) => {
-                // SAFETY: the `NODE_type` read above proves this list item is an hlist.
-                let b =
-                    AnyBox::HList(unsafe { NodePtr::<HListNode>::from_idx_unchecked(node_idx) });
+        match mem.classify(node_idx) {
+            Ok(AnyNode::HList(h_box)) => {
+                let b = AnyBox::HList(h_box);
                 x += b.width(mem).0;
                 let s = b.shift_amount(mem).0;
                 let bh = b.height(mem).0 - s;
@@ -1569,10 +1565,8 @@ fn hpack_in(
                     d = bd;
                 }
             }
-            Ok(NodeType::VList) => {
-                // SAFETY: the `NODE_type` read above proves this list item is a vlist.
-                let b =
-                    AnyBox::VList(unsafe { NodePtr::<VListNode>::from_idx_unchecked(node_idx) });
+            Ok(AnyNode::VList(v_box)) => {
+                let b = AnyBox::VList(v_box);
                 x += b.width(mem).0;
                 let s = b.shift_amount(mem).0;
                 let bh = b.height(mem).0 - s;
@@ -1584,9 +1578,7 @@ fn hpack_in(
                     d = bd;
                 }
             }
-            Ok(NodeType::Rule) => {
-                // SAFETY: the `NODE_type` read above proves this list item is a rule.
-                let rule = unsafe { NodePtr::<RuleNode>::from_idx_unchecked(node_idx) };
+            Ok(AnyNode::Rule(rule)) => {
                 x += rule.width(mem).raw();
                 let rh = rule.height(mem).raw();
                 if rh > h {
@@ -1597,7 +1589,7 @@ fn hpack_in(
                     d = rd;
                 }
             }
-            Ok(NodeType::Unset) => {
+            Ok(AnyNode::Unset(_)) => {
                 x += mem.b32s1(p + 1);
                 if mem.b32s1(p + 3) > h {
                     h = mem.b32s1(p + 3);
@@ -1606,12 +1598,12 @@ fn hpack_in(
                     d = mem.b32s1(p + 2);
                 }
             }
-            Ok(NodeType::Ins | NodeType::Mark | NodeType::Adjust) => {
+            arm @ (Ok(AnyNode::Ins(_)) | Ok(AnyNode::Mark(_)) | Ok(AnyNode::Adjust(_))) => {
                 if scanner.adjust_tail != TEX_NULL || scanner.pre_adjust_tail != TEX_NULL {
                     while mem.b32s1(q) != p {
                         q = mem.b32s1(q);
                     }
-                    if matches!(node_type, Ok(NodeType::Adjust)) {
+                    if matches!(arm, Ok(AnyNode::Adjust(_))) {
                         if mem.b16s0(p) != 0 {
                             if scanner.pre_adjust_tail == TEX_NULL {
                                 return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
@@ -1640,7 +1632,7 @@ fn hpack_in(
                     p = q;
                 }
             }
-            Ok(NodeType::Whatsit) => {
+            Ok(AnyNode::Whatsit(_)) => {
                 let sub = mem.b16s0(p);
                 match sub {
                     NATIVE_WORD_NODE_HP | NATIVE_WORD_NODE_AT_HP => {
@@ -1760,9 +1752,7 @@ fn hpack_in(
                     _ => {}
                 }
             }
-            Ok(NodeType::Glue) => {
-                // SAFETY: the `NODE_type` read above proves this list item is glue.
-                let glue = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(node_idx) };
+            Ok(AnyNode::Glue(glue)) => {
                 let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
                 x += spec.width(mem).0;
                 let o = spec.stretch_order(mem) as usize;
@@ -1779,14 +1769,10 @@ fn hpack_in(
                     }
                 }
             }
-            Ok(NodeType::Kern) => {
-                // SAFETY: the `NODE_type` read above proves this list item is a kern.
-                let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(node_idx) };
+            Ok(AnyNode::Kern(kern)) => {
                 x += kern.width(mem).0;
             }
-            Ok(NodeType::Math) => {
-                // SAFETY: the `NODE_type` read above proves this list item is a math node.
-                let math = unsafe { NodePtr::<MathNode>::from_idx_unchecked(node_idx) };
+            Ok(AnyNode::Math(math)) => {
                 x += math.width(mem).0;
                 if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
                     let sub = math.subtype(mem);
@@ -1813,7 +1799,7 @@ fn hpack_in(
                     }
                 }
             }
-            Ok(NodeType::Ligature) => {
+            Ok(AnyNode::Ligature(_)) => {
                 mem.set_word(GARBAGE, mem.word(p + 1));
                 mem.set_b32s1(GARBAGE, mem.b32s1(p));
                 p = GARBAGE;
@@ -2117,12 +2103,9 @@ fn vpackage_in(
             return Err(NodeRecycleAbort::Confusion(c"vpack"));
         } else {
             let node_idx = MemIdx::new(p);
-            match NodeType::from_raw(mem.b16s1(p)) {
-                Ok(NodeType::HList) => {
-                    // SAFETY: the `NODE_type` read above proves this list item is an hlist.
-                    let b = AnyBox::HList(unsafe {
-                        NodePtr::<HListNode>::from_idx_unchecked(node_idx)
-                    });
+            match mem.classify(node_idx) {
+                Ok(AnyNode::HList(h_box)) => {
+                    let b = AnyBox::HList(h_box);
                     x += d + b.height(mem).0;
                     d = b.depth(mem).0;
                     let width = b.width(mem).0 + b.shift_amount(mem).0;
@@ -2130,11 +2113,8 @@ fn vpackage_in(
                         w = width;
                     }
                 }
-                Ok(NodeType::VList) => {
-                    // SAFETY: the `NODE_type` read above proves this list item is a vlist.
-                    let b = AnyBox::VList(unsafe {
-                        NodePtr::<VListNode>::from_idx_unchecked(node_idx)
-                    });
+                Ok(AnyNode::VList(v_box)) => {
+                    let b = AnyBox::VList(v_box);
                     x += d + b.height(mem).0;
                     d = b.depth(mem).0;
                     let width = b.width(mem).0 + b.shift_amount(mem).0;
@@ -2142,9 +2122,7 @@ fn vpackage_in(
                         w = width;
                     }
                 }
-                Ok(NodeType::Rule) => {
-                    // SAFETY: the `NODE_type` read above proves this list item is a rule.
-                    let rule = unsafe { NodePtr::<RuleNode>::from_idx_unchecked(node_idx) };
+                Ok(AnyNode::Rule(rule)) => {
                     x += d + rule.height(mem).raw();
                     d = rule.depth(mem).raw();
                     let width = rule.width(mem).raw();
@@ -2152,14 +2130,14 @@ fn vpackage_in(
                         w = width;
                     }
                 }
-                Ok(NodeType::Unset) => {
+                Ok(AnyNode::Unset(_)) => {
                     x += d + mem.b32s1(p + 3);
                     d = mem.b32s1(p + 2);
                     if mem.b32s1(p + 1) > w {
                         w = mem.b32s1(p + 1);
                     }
                 }
-                Ok(NodeType::Whatsit) => {
+                Ok(AnyNode::Whatsit(_)) => {
                     let sub = mem.b16s0(p);
                     if sub == PIC_NODE_VP || sub == PDF_NODE_VP {
                         x += d + mem.b32s1(p + 3);
@@ -2169,11 +2147,9 @@ fn vpackage_in(
                         }
                     }
                 }
-                Ok(NodeType::Glue) => {
+                Ok(AnyNode::Glue(glue)) => {
                     x += d;
                     d = 0;
-                    // SAFETY: the `NODE_type` read above proves this list item is glue.
-                    let glue = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(node_idx) };
                     let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
                     x += spec.width(mem).0;
                     let o = spec.stretch_order(mem) as usize;
@@ -2187,9 +2163,7 @@ fn vpackage_in(
                         }
                     }
                 }
-                Ok(NodeType::Kern) => {
-                    // SAFETY: the `NODE_type` read above proves this list item is a kern.
-                    let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(node_idx) };
+                Ok(AnyNode::Kern(kern)) => {
                     x += d + kern.width(mem).0;
                     d = 0;
                 }
