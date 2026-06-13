@@ -468,7 +468,7 @@ pub enum AnyNode {
     Adjust(NodePtr<AdjustNode>),
     Ligature(NodePtr<LigatureNode>),
     Disc(NodePtr<DiscNode>),
-    Whatsit(MemIdx),
+    Whatsit(NodePtr<WhatsitNode>),
     Math(NodePtr<MathNode>),
     Glue(NodePtr<GlueNode>),
     Kern(NodePtr<KernNode>),
@@ -503,7 +503,7 @@ impl AnyNode {
             AnyNode::Adjust(p) => p.idx(),
             AnyNode::Ins(p) => p.idx(),
             AnyNode::Unset(p) => p.idx(),
-            AnyNode::Whatsit(i) => i,
+            AnyNode::Whatsit(p) => p.idx(),
         }
     }
 }
@@ -540,7 +540,7 @@ impl MemState {
             Adjust => AnyNode::Adjust(unsafe { NodePtr::from_idx_unchecked(p) }),
             Ligature => AnyNode::Ligature(unsafe { NodePtr::from_idx_unchecked(p) }),
             Disc => AnyNode::Disc(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Whatsit => AnyNode::Whatsit(p),
+            Whatsit => AnyNode::Whatsit(unsafe { NodePtr::from_idx_unchecked(p) }),
             Math => AnyNode::Math(unsafe { NodePtr::from_idx_unchecked(p) }),
             Glue => AnyNode::Glue(unsafe { NodePtr::from_idx_unchecked(p) }),
             Kern => AnyNode::Kern(unsafe { NodePtr::from_idx_unchecked(p) }),
@@ -1757,6 +1757,20 @@ impl MemState {
             _ => None,
         })
     }
+
+    /// Classify a known lo-mem node as a whatsit, returning the typed handle.
+    /// `Ok(Some(_))` if `p` is a `WHATSIT_NODE`; `Ok(None)` for any other valid
+    /// type; refine the result with [`NodePtr::subtype`].
+    #[inline]
+    pub fn classify_whatsit(
+        &self,
+        p: MemIdx,
+    ) -> Result<Option<NodePtr<WhatsitNode>>, InvalidNodeType> {
+        Ok(match self.node_type(p)? {
+            NodeType::Whatsit => Some(unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(p) }),
+            _ => None,
+        })
+    }
 }
 
 // --- mark / adjust families (NODE_type 4, 5) ---
@@ -1873,6 +1887,118 @@ impl NodePtr<UnsetNode> {
     #[inline]
     pub fn height(self, mem: &MemState) -> Scaled {
         Scaled(mem.b32s1(self.idx.offset(3).0))
+    }
+}
+
+/// `WHATSIT_NODE` (`NODE_type` = 8): the extension-node family — `\openout`,
+/// `\write`, `\closeout`, `\special`, `\setlanguage`, the XeTeX native-word /
+/// glyph nodes, and `\XeTeXpicfile`/PDF nodes. Unlike the fixed-layout families
+/// this one is **variable-size and sub-classified by `NODE_subtype`**
+/// (`b16.s0`, reached through [`subtype`](NodePtr::subtype)): both the node size
+/// and which `+N` fields are live depend on the subtype
+/// (`xetex_format.h:457–467`). Field offsets verified against
+/// `xetex/xetex-xetexd.h:250–289`. Only the fields the threaded list-walkers
+/// read/write are exposed; constructing and FFI-measuring native nodes stays in
+/// `ext.rs`/`fonts.rs` (the inline UTF-16/path data past `+4`/`+5` is not a
+/// typed field).
+pub enum WhatsitNode {}
+
+impl NodeKind for WhatsitNode {}
+impl HasNodeHeader for WhatsitNode {}
+
+impl NodePtr<WhatsitNode> {
+    /// `\write`/`\special` token list = `mem[(p) + 1].b32.s1`
+    /// (`WRITE_NODE_tokens`); a token-list ref, not a node list.
+    #[inline]
+    pub fn write_tokens(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+
+    /// `\setlanguage` language number = `mem[(p) + 1].b32.s1`
+    /// (`LANGUAGE_NODE_what_lang`).
+    #[inline]
+    pub fn what_lang(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(1).0)
+    }
+    /// Minimum left fragment = `mem[(p) + 1].b16.s1` (`LANGUAGE_NODE_what_lhm`).
+    #[inline]
+    pub fn what_lhm(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(1).0)
+    }
+    /// Minimum right fragment = `mem[(p) + 1].b16.s0` (`LANGUAGE_NODE_what_rhm`).
+    #[inline]
+    pub fn what_rhm(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.offset(1).0)
+    }
+
+    /// Native-node total size in words = `mem[(p) + 4].b16.s3`
+    /// (`NATIVE_NODE_size`); used as the `free_node`/copy word count.
+    #[inline]
+    pub fn native_size(self, mem: &MemState) -> i32 {
+        mem.b16s3(self.idx.offset(4).0) as i32
+    }
+    /// Native-node font = `mem[(p) + 4].b16.s2` (`NATIVE_NODE_font`).
+    #[inline]
+    pub fn native_font(self, mem: &MemState) -> FontId {
+        FontId(mem.b16s2(self.idx.offset(4).0) as i32)
+    }
+    /// Native-word UTF-16 item count = `mem[(p) + 4].b16.s1`
+    /// (`NATIVE_NODE_length`); for a `GLYPH_NODE` this same word is the glyph
+    /// number ([`native_glyph`](NodePtr::native_glyph)), and for a `PIC_NODE`
+    /// it is the path byte length ([`pic_path_len`](NodePtr::pic_path_len)).
+    #[inline]
+    pub fn native_length(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(4).0)
+    }
+    /// Glyph number = `mem[(p) + 4].b16.s1` (`NATIVE_NODE_glyph`; the
+    /// `GLYPH_NODE` reading of the [`native_length`](NodePtr::native_length)
+    /// word).
+    #[inline]
+    pub fn native_glyph(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(4).0)
+    }
+    /// Picture/PDF path byte length = `mem[(p) + 4].b16.s1`
+    /// (`PIC_NODE_path_len`; the `PIC_NODE`/`PDF_NODE` reading of the
+    /// [`native_length`](NodePtr::native_length) word).
+    #[inline]
+    pub fn pic_path_len(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(4).0)
+    }
+    /// Native-node glyph count = `mem[(p) + 4].b16.s0` (`NATIVE_NODE_glyph_count`).
+    #[inline]
+    pub fn native_glyph_count(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.offset(4).0)
+    }
+    #[inline]
+    pub fn set_native_glyph_count(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.offset(4).0, v);
+    }
+    /// Natural width = `mem[(p) + 1].b32.s1` (box `width` slot). Valid for the
+    /// box-dimensioned subtypes (native-word/glyph and `PIC_NODE`/`PDF_NODE`).
+    #[inline]
+    pub fn width(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(1).0))
+    }
+    /// Depth = `mem[(p) + 2].b32.s1` (box `depth` slot).
+    #[inline]
+    pub fn depth(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(2).0))
+    }
+    /// Height = `mem[(p) + 3].b32.s1` (box `height` slot).
+    #[inline]
+    pub fn height(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(3).0))
+    }
+    /// Native-node shaped-glyph info pointer = `mem[(p) + 5].ptr`
+    /// (`NATIVE_NODE_glyph_info_ptr`); a raw `*mut c_void` owned by the native
+    /// shaper, freed with `libc::free`.
+    #[inline]
+    pub fn native_glyph_info_ptr(self, mem: &MemState) -> *mut std::ffi::c_void {
+        mem.ptr(self.idx.offset(5).0)
+    }
+    #[inline]
+    pub fn set_native_glyph_info_ptr(self, mem: &mut MemState, v: *mut std::ffi::c_void) {
+        mem.set_ptr(self.idx.offset(5).0, v);
     }
 }
 
@@ -2772,6 +2898,59 @@ mod tests {
         assert_eq!(u.height(&mem), Scaled(0x333));
         assert_eq!(u.list_ptr(&mem), MemPtr::from_raw(0x444));
         assert_eq!(mem.b32s1(p.0 + 5), 0x444);
+    }
+
+    #[test]
+    fn whatsit_native_fields_roundtrip_at_the_right_offsets() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+        mem.set_b16s1(p.0, NodeType::Whatsit.as_raw());
+        let w = match mem.classify(p) {
+            Ok(AnyNode::Whatsit(w)) => w,
+            other => panic!("expected Whatsit, got {other:?}"),
+        };
+        // Subtype is the shared header b16.s0.
+        w.set_subtype(&mut mem, 40);
+        assert_eq!(w.subtype(&mem), 40);
+        assert_eq!(mem.b16s0(p.0), 40);
+
+        // Box-layout dimensions at +1/+2/+3 (native-word / PIC).
+        mem.set_b32s1(p.0 + 1, 0x11);
+        mem.set_b32s1(p.0 + 2, 0x22);
+        mem.set_b32s1(p.0 + 3, 0x33);
+        assert_eq!(w.width(&mem), Scaled(0x11));
+        assert_eq!(w.depth(&mem), Scaled(0x22));
+        assert_eq!(w.height(&mem), Scaled(0x33));
+
+        // Native metadata word at +4: size (b16.s3), font (b16.s2),
+        // length/glyph/path_len (b16.s1), glyph_count (b16.s0).
+        mem.set_b16s3(p.0 + 4, 6);
+        mem.set_b16s2(p.0 + 4, 7);
+        mem.set_b16s1(p.0 + 4, 9);
+        assert_eq!(w.native_size(&mem), 6);
+        assert_eq!(w.native_font(&mem), FontId(7));
+        assert_eq!(w.native_length(&mem), 9);
+        assert_eq!(w.native_glyph(&mem), 9);
+        assert_eq!(w.pic_path_len(&mem), 9);
+        w.set_native_glyph_count(&mut mem, 3);
+        assert_eq!(w.native_glyph_count(&mem), 3);
+        assert_eq!(mem.b16s0(p.0 + 4), 3);
+
+        // Glyph-info pointer at +5 (raw native pointer).
+        assert!(w.native_glyph_info_ptr(&mem).is_null());
+        let fake = 0xdead_beef_usize as *mut std::ffi::c_void;
+        w.set_native_glyph_info_ptr(&mut mem, fake);
+        assert_eq!(w.native_glyph_info_ptr(&mem), fake);
+        w.set_native_glyph_info_ptr(&mut mem, std::ptr::null_mut());
+
+        // WRITE/SPECIAL token list + LANGUAGE fields share the +1 word.
+        mem.set_b32s1(p.0 + 1, 0x55);
+        assert_eq!(w.write_tokens(&mem), MemPtr::from_raw(0x55));
+        assert_eq!(w.what_lang(&mem), 0x55);
+        mem.set_b16s1(p.0 + 1, 4);
+        mem.set_b16s0(p.0 + 1, 5);
+        assert_eq!(w.what_lhm(&mem), 4);
+        assert_eq!(w.what_rhm(&mem), 5);
     }
 
     #[test]

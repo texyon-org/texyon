@@ -295,8 +295,8 @@ pub fn just_copy(
                     words = 0; // already copied
                     Some(r)
                 }
-                Some(AnyNode::Whatsit(_)) => {
-                    match mem.b16s0(p) {
+                Some(AnyNode::Whatsit(ws)) => {
+                    match ws.subtype(mem) {
                         OPEN_NODE => {
                             words = OPEN_NODE_SIZE;
                             Some(cnl_get_node!(mem, OPEN_NODE_SIZE))
@@ -304,7 +304,7 @@ pub fn just_copy(
                         WRITE_NODE | SPECIAL_NODE => {
                             let r = cnl_get_node!(mem, WRITE_NODE_SIZE);
                             // TOKEN_LIST_ref_count(WRITE_NODE_tokens(p))++
-                            let toks = mem.b32s1(p + 1); // WRITE_NODE_tokens(p)
+                            let toks = ws.write_tokens(mem).0;
                             mem.set_b32s0(toks, mem.b32s0(toks) + 1);
                             words = WRITE_NODE_SIZE;
                             Some(r)
@@ -314,17 +314,23 @@ pub fn just_copy(
                             Some(cnl_get_node!(mem, SMALL_NODE_SIZE))
                         }
                         NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT => {
-                            let sz = mem.b16s3(p + 4) as i32; // NATIVE_NODE_size(p)
+                            let sz = ws.native_size(mem); // NATIVE_NODE_size(p)
                             let r = cnl_get_node!(mem, sz);
-                            let mut w = sz;
-                            while w > 0 {
-                                w -= 1;
-                                mem.set_word(r + w, mem.word(p + w));
+                            let mut nw = sz;
+                            while nw > 0 {
+                                nw -= 1;
+                                mem.set_word(r + nw, mem.word(p + nw));
                             }
-                            // NATIVE_NODE_glyph_info_ptr(r) = NULL
-                            mem.set_ptr(r + 5, std::ptr::null_mut());
-                            // NATIVE_NODE_glyph_count(r) = 0
-                            mem.set_b16s0(r + 4, 0);
+                            // The copy carried p's NODE_type, so r is a whatsit too.
+                            let rw = match mem
+                                .classify(MemIdx::new(r))
+                                .map_err(|_| NodeRecycleAbort::Confusion(c"ext2"))?
+                            {
+                                AnyNode::Whatsit(rw) => rw,
+                                _ => unreachable!("copied whatsit header classifies as whatsit"),
+                            };
+                            rw.set_native_glyph_info_ptr(mem, std::ptr::null_mut());
+                            rw.set_native_glyph_count(mem, 0);
                             crate::mem::copy_native_glyph_info(mem, p, r);
                             words = 0; // already copied, skip outer loop
                             Some(r)
@@ -334,7 +340,7 @@ pub fn just_copy(
                             Some(cnl_get_node!(mem, GLYPH_NODE_SIZE))
                         }
                         PIC_NODE | PDF_NODE => {
-                            let path_len = mem.b16s1(p + 4) as i32; // PIC_NODE_path_len
+                            let path_len = ws.pic_path_len(mem) as i32; // PIC_NODE_path_len
                             words =
                                 PIC_NODE_SIZE + (path_len + MEM_WORD_BYTES - 1) / MEM_WORD_BYTES;
                             Some(cnl_get_node!(mem, words))
@@ -563,13 +569,13 @@ pub fn flush_node_list(
                         crate::mem::free_node(mem, p, INS_NODE_SIZE_FNL);
                         break 'done;
                     }
-                    AnyNode::Whatsit(_) => {
-                        match mem.b16s0(p) {
+                    AnyNode::Whatsit(w) => {
+                        match w.subtype(mem) {
                             OPEN_NODE_FNL => {
                                 crate::mem::free_node(mem, p, OPEN_NODE_SIZE_FNL);
                             }
                             WRITE_NODE_FNL | SPECIAL_NODE_FNL => {
-                                let t = mem.b32s1(p + 1);
+                                let t = w.write_tokens(mem).0;
                                 crate::mem::delete_token_ref(mem, t);
                                 crate::mem::free_node(mem, p, WRITE_NODE_SIZE_FNL);
                                 break 'done;
@@ -578,21 +584,21 @@ pub fn flush_node_list(
                                 crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                             }
                             NATIVE_WORD_NODE_FNL | NATIVE_WORD_NODE_AT_FNL => {
-                                let glyph_ptr = mem.ptr(p + 5);
+                                let glyph_ptr = w.native_glyph_info_ptr(mem);
                                 if !glyph_ptr.is_null() {
                                     // SAFETY: glyph_ptr was xmalloc'd by the native-word shaper.
                                     unsafe { libc::free(glyph_ptr) };
-                                    mem.set_ptr(p + 5, std::ptr::null_mut());
-                                    mem.set_b16s0(p + 4, 0);
+                                    w.set_native_glyph_info_ptr(mem, std::ptr::null_mut());
+                                    w.set_native_glyph_count(mem, 0);
                                 }
-                                let sz = mem.b16s3(p + 4) as i32;
+                                let sz = w.native_size(mem);
                                 crate::mem::free_node(mem, p, sz);
                             }
                             GLYPH_NODE_FNL => {
                                 crate::mem::free_node(mem, p, GLYPH_NODE_SIZE_FNL);
                             }
                             PIC_NODE_FNL | PDF_NODE_FNL => {
-                                let path_len = mem.b16s1(p + 4) as i32;
+                                let path_len = w.pic_path_len(mem) as i32;
                                 let sz = PIC_NODE_SIZE_FNL
                                     + (path_len + MEMORY_WORD_SIZE_FNL - 1) / MEMORY_WORD_SIZE_FNL;
                                 crate::mem::free_node(mem, p, sz);
@@ -786,15 +792,15 @@ pub fn copy_node_list(
                     mem.set_b32s0(r + 4, copied);
                     words = INS_NODE_SIZE_CNL - 1;
                 }
-                AnyNode::Whatsit(_) => {
-                    match mem.b16s0(p) {
+                AnyNode::Whatsit(ws) => {
+                    match ws.subtype(mem) {
                         OPEN_NODE_CNL => {
                             r = cnl_get_node!(mem, OPEN_NODE_SIZE_CNL);
                             words = OPEN_NODE_SIZE_CNL;
                         }
                         WRITE_NODE_CNL | SPECIAL_NODE_CNL => {
                             // mem[mem[p+1].b32.s1].b32.s0++ (token list ref count)
-                            let tok = mem.b32s1(p + 1);
+                            let tok = ws.write_tokens(mem).0;
                             mem.set_b32s0(tok, mem.b32s0(tok) + 1);
                             r = cnl_get_node!(mem, WRITE_NODE_SIZE_CNL);
                             words = WRITE_NODE_SIZE_CNL;
@@ -804,15 +810,22 @@ pub fn copy_node_list(
                             words = SMALL_NODE_SIZE;
                         }
                         NATIVE_WORD_NODE_CNL | NATIVE_WORD_NODE_AT_CNL => {
-                            let sz = mem.b16s3(p + 4) as i32;
+                            let sz = ws.native_size(mem);
                             r = cnl_get_node!(mem, sz);
-                            let mut w = sz;
-                            while w > 0 {
-                                w -= 1;
-                                mem.set_word(r + w, mem.word(p + w));
+                            let mut nw = sz;
+                            while nw > 0 {
+                                nw -= 1;
+                                mem.set_word(r + nw, mem.word(p + nw));
                             }
-                            mem.set_ptr(r + 5, std::ptr::null_mut());
-                            mem.set_b16s0(r + 4, 0);
+                            let rw = match mem
+                                .classify(MemIdx::new(r))
+                                .map_err(|_| NodeRecycleAbort::Confusion(c"ext2"))?
+                            {
+                                AnyNode::Whatsit(rw) => rw,
+                                _ => unreachable!("copied whatsit header classifies as whatsit"),
+                            };
+                            rw.set_native_glyph_info_ptr(mem, std::ptr::null_mut());
+                            rw.set_native_glyph_count(mem, 0);
                             crate::mem::copy_native_glyph_info(mem, p, r);
                             words = 0;
                         }
@@ -821,7 +834,7 @@ pub fn copy_node_list(
                             words = GLYPH_NODE_SIZE_CNL;
                         }
                         PIC_NODE_CNL | PDF_NODE_CNL => {
-                            let path_len = mem.b16s1(p + 4) as i32;
+                            let path_len = ws.pic_path_len(mem) as i32;
                             let sz = PIC_NODE_SIZE_CNL
                                 + (path_len + MEMORY_WORD_SIZE_CNL - 1) / MEMORY_WORD_SIZE_CNL;
                             r = cnl_get_node!(mem, sz);
@@ -1115,11 +1128,11 @@ fn classify_vert_break_next(
             cursor.prev_dp = rule.depth(mem).raw();
             Ok(VertBreakNext::NotFound)
         }
-        AnyNode::Whatsit(idx) => {
-            let sub = mem.b16s0(idx.0);
+        AnyNode::Whatsit(w) => {
+            let sub = w.subtype(mem);
             if sub == PIC_NODE || sub == PDF_NODE {
-                scanner.active_width[1] += cursor.prev_dp + mem.b32s1(idx.0 + 3);
-                cursor.prev_dp = mem.b32s1(idx.0 + 2);
+                scanner.active_width[1] += cursor.prev_dp + w.height(mem).0;
+                cursor.prev_dp = w.depth(mem).0;
             }
             Ok(VertBreakNext::NotFound)
         }
@@ -2037,8 +2050,13 @@ fn hpack_in(
                     p = q;
                 }
             }
-            Ok(AnyNode::Whatsit(_)) => {
-                let sub = mem.b16s0(p);
+            Ok(AnyNode::Whatsit(w)) => {
+                let sub = w.subtype(mem);
+                // The matched node's native font, used to test mergeability of the
+                // following native-word fragments. The native-word reconstitution
+                // below walks raw cursors (`pp`/`ppp`/`scan_p`) and reassigns `p`,
+                // so those stay raw (deferred-newtype worklist: native-word merge).
+                let p_font = w.native_font(mem).0;
                 match sub {
                     NATIVE_WORD_NODE_HP | NATIVE_WORD_NODE_AT_HP => {
                         let mut k: i32 =
@@ -2062,7 +2080,7 @@ fn hpack_in(
                                 if pp_type == WHATSIT_NODE_HP
                                     && (pp_sub == NATIVE_WORD_NODE_HP
                                         || pp_sub == NATIVE_WORD_NODE_AT_HP)
-                                    && mem.b16s2(pp + 4) == mem.b16s2(p + 4)
+                                    && mem.b16s2(pp + 4) as i32 == p_font
                                 {
                                     pp = mem.b32s1(pp);
                                     continue;
@@ -2073,7 +2091,7 @@ fn hpack_in(
                                         && mem.b16s1(ppp) == WHATSIT_NODE_HP
                                         && (mem.b16s0(ppp) == NATIVE_WORD_NODE_HP
                                             || mem.b16s0(ppp) == NATIVE_WORD_NODE_AT_HP)
-                                        && mem.b16s2(ppp + 4) == mem.b16s2(p + 4)
+                                        && mem.b16s2(ppp + 4) as i32 == p_font
                                     {
                                         pp = mem.b32s1(ppp);
                                         continue;
@@ -2146,13 +2164,16 @@ fn hpack_in(
                         x += mem.b32s1(p + 1);
                     }
                     42..=44 => {
-                        if mem.b32s1(p + 3) > h {
-                            h = mem.b32s1(p + 3);
+                        // GLYPH_NODE / PIC_NODE / PDF_NODE: `p` is unchanged here
+                        // (only the native-word branch above can reassign it), so
+                        // the matched handle still applies.
+                        if w.height(mem).0 > h {
+                            h = w.height(mem).0;
                         }
-                        if mem.b32s1(p + 2) > d {
-                            d = mem.b32s1(p + 2);
+                        if w.depth(mem).0 > d {
+                            d = w.depth(mem).0;
                         }
-                        x += mem.b32s1(p + 1);
+                        x += w.width(mem).0;
                     }
                     _ => {}
                 }
@@ -2556,13 +2577,14 @@ fn vpackage_in(
                         w = uw;
                     }
                 }
-                Ok(AnyNode::Whatsit(_)) => {
-                    let sub = mem.b16s0(p);
+                Ok(AnyNode::Whatsit(wn)) => {
+                    let sub = wn.subtype(mem);
                     if sub == PIC_NODE_VP || sub == PDF_NODE_VP {
-                        x += d + mem.b32s1(p + 3);
-                        d = mem.b32s1(p + 2);
-                        if mem.b32s1(p + 1) > w {
-                            w = mem.b32s1(p + 1);
+                        x += d + wn.height(mem).0;
+                        d = wn.depth(mem).0;
+                        let ww = wn.width(mem).0;
+                        if ww > w {
+                            w = ww;
                         }
                     }
                 }
