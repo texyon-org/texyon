@@ -10,8 +10,8 @@
 
 use crate::consts::{
     BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE,
-    HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE,
-    MIN_HALFWORD, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
+    HLIST_NODE, INT_BASE, KERN_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD,
+    PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
 use crate::errors::error;
 use crate::ext::measure_native_node;
@@ -22,10 +22,9 @@ use crate::globals::{
     set_help_ptr, set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, temp_ptr,
 };
 use crate::mem::new_spec_global;
-use crate::node::{
-    AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, Noad, NodePtr, RuleDimen, VListNode,
-};
+use crate::node::{AnyBox, AnyNode, GlueSpecNode, HListNode, NodePtr, RuleDimen, VListNode};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
+use crate::units::NodeType;
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
 // prune_page_top and the relocated font-loading group); import it here.
@@ -39,34 +38,13 @@ const TEMP_HEAD: i32 = 4_999_999 - 3;
 const IGNORE_DEPTH: i32 = -65_536_000; // xetex_format.h:388
 
 // ---------------------------------------------------------------------------
-// flush_node_list (node-type constants — xetex_format.h / xetex-constants.h)
+// flush_node_list — NODE_type dispatch now goes through `MemState::classify`
+// (`AnyNode`); only the two noad variants whose *size* differs from the base
+// `NOAD_SIZE` need a raw type code to pick the free size.
 // ---------------------------------------------------------------------------
-const VLIST_NODE_FNL: u16 = 1;
-const INS_NODE_FNL: u16 = 3;
-const MARK_NODE_FNL: u16 = 4;
-const ADJUST_NODE_FNL: u16 = 5;
-const WHATSIT_NODE_FNL: u16 = 8;
-const UNSET_NODE_FNL: u16 = 13;
-const STYLE_NODE_FNL: u16 = 14;
-const CHOICE_NODE_FNL: u16 = 15;
-const ORD_NOAD_FNL: u16 = 16;
-const OP_NOAD_FNL: u16 = 17;
-const BIN_NOAD_FNL: u16 = 18;
-const REL_NOAD_FNL: u16 = 19;
-const OPEN_NOAD_FNL: u16 = 20;
-const CLOSE_NOAD_FNL: u16 = 21;
-const PUNCT_NOAD_FNL: u16 = 22;
-const INNER_NOAD_FNL: u16 = 23;
 const RADICAL_NOAD_FNL: u16 = 24;
-const FRACTION_NOAD_FNL: u16 = 25;
-const UNDER_NOAD_FNL: u16 = 26;
-const OVER_NOAD_FNL: u16 = 27;
 const ACCENT_NOAD_FNL: u16 = 28;
-const VCENTER_NOAD_FNL: u16 = 29;
-const LEFT_NOAD_FNL: u16 = 30;
-const RIGHT_NOAD_FNL: u16 = 31;
-const MARGIN_KERN_NODE_FNL: u16 = 40; // checked below
-                                      // Whatsit subtypes (xetex_format.h:457–467).
+// Whatsit subtypes (xetex_format.h:457–467).
 const OPEN_NODE_FNL: u16 = 0;
 const WRITE_NODE_FNL: u16 = 1;
 const CLOSE_NODE_FNL: u16 = 2;
@@ -95,15 +73,9 @@ const SUB_BOX_FNL: i32 = 2; // xetex-constants.h:283
 const MEMORY_WORD_SIZE_FNL: i32 = 8;
 
 // ---------------------------------------------------------------------------
-// copy_node_list (node-type constants — xetex_format.h / xetex-constants.h)
+// copy_node_list — NODE_type dispatch now goes through `MemState::classify`
+// (`AnyNode`); only the whatsit subtypes below stay as raw codes.
 // ---------------------------------------------------------------------------
-const VLIST_NODE_CNL: u16 = 1;
-const INS_NODE_CNL: u16 = 3;
-const UNSET_NODE_CNL: u16 = 13;
-const WHATSIT_NODE_CNL: u16 = 8;
-const MARGIN_KERN_NODE_CNL: u16 = 40;
-const MARK_NODE_CNL: u16 = 4;
-const ADJUST_NODE_CNL: u16 = 5;
 // Whatsit subtypes.
 const OPEN_NODE_CNL: u16 = 0;
 const WRITE_NODE_CNL: u16 = 1;
@@ -245,8 +217,6 @@ pub fn just_copy(
     const PIC_NODE_SIZE: i32 = 9; // xetex-constants.h:133
     const MEM_WORD_BYTES: i32 = 8; // sizeof(memory_word)
     const SYNCTEX_FIELD_SIZE: i32 = 1; // xetex-constants.h:102
-    const VLIST_NODE: u16 = 1;
-    const WHATSIT_NODE: u16 = 8;
     const OPEN_NODE: u16 = 0;
     const WRITE_NODE: u16 = 1;
     const CLOSE_NODE: u16 = 2;
@@ -270,8 +240,8 @@ pub fn just_copy(
             // char node
             Some(cnl_get_avail!(mem))
         } else {
-            match mem.b16s1(p) {
-                HLIST_NODE | VLIST_NODE => {
+            match mem.classify(MemIdx::new(p)).ok() {
+                Some(AnyNode::HList(_)) | Some(AnyNode::VList(_)) => {
                     let r = cnl_get_node!(mem, BOX_NODE_SIZE);
                     // SYNCTEX_tag(r, BOX_NODE_SIZE) = SYNCTEX_tag(p, BOX_NODE_SIZE)
                     mem.set_b32s0(
@@ -289,21 +259,21 @@ pub fn just_copy(
                     mem.set_b32s1(r + 5, TEX_NULL); // BOX_list_ptr(r) = TEX_NULL
                     Some(r)
                 }
-                RULE_NODE => {
+                Some(AnyNode::Rule(_)) => {
                     words = RULE_NODE_SIZE;
                     Some(cnl_get_node!(mem, RULE_NODE_SIZE))
                 }
-                LIGATURE_NODE => {
+                Some(AnyNode::Ligature(_)) => {
                     let r = cnl_get_avail!(mem);
                     mem.set_word(r, mem.word(p + 1)); // mem[r] = mem[p + 1]
                     words = 0; // skip the copy loop (goto found)
                     Some(r)
                 }
-                KERN_NODE | MATH_NODE => {
+                Some(AnyNode::Kern(_)) | Some(AnyNode::Math(_)) => {
                     words = MEDIUM_NODE_SIZE;
                     Some(cnl_get_node!(mem, MEDIUM_NODE_SIZE))
                 }
-                GLUE_NODE => {
+                Some(AnyNode::Glue(_)) => {
                     let r = cnl_get_node!(mem, MEDIUM_NODE_SIZE);
                     // GLUE_SPEC_ref_count(GLUE_NODE_glue_ptr(p))++
                     let gp = mem.b32s0(p + 1); // GLUE_NODE_glue_ptr(p)
@@ -323,7 +293,7 @@ pub fn just_copy(
                     mem.set_b32s1(r + 1, TEX_NULL); // GLUE_NODE_leader_ptr(r) = TEX_NULL
                     Some(r)
                 }
-                WHATSIT_NODE => {
+                Some(AnyNode::Whatsit(_)) => {
                     match mem.b16s0(p) {
                         OPEN_NODE => {
                             words = OPEN_NODE_SIZE;
@@ -560,18 +530,18 @@ pub fn flush_node_list(
         } else {
             // Goto-done pattern: break 'done skips free_node(p, SMALL_NODE_SIZE) at end.
             'done: {
-                match mem.b16s1(p) {
-                    HLIST_NODE | VLIST_NODE_FNL | UNSET_NODE_FNL => {
+                match mem.classify(MemIdx::new(p)).map_err(|_| c"flushing")? {
+                    AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Unset(_) => {
                         let c = mem.b32s1(p + 5);
                         flush_node_list(mem, c)?;
                         crate::mem::free_node(mem, p, BOX_NODE_SIZE);
                         break 'done;
                     }
-                    RULE_NODE => {
+                    AnyNode::Rule(_) => {
                         crate::mem::free_node(mem, p, RULE_NODE_SIZE);
                         break 'done;
                     }
-                    INS_NODE_FNL => {
+                    AnyNode::Ins(_) => {
                         let c = mem.b32s0(p + 4);
                         flush_node_list(mem, c)?;
                         let g = mem.b32s1(p + 4);
@@ -579,7 +549,7 @@ pub fn flush_node_list(
                         crate::mem::free_node(mem, p, INS_NODE_SIZE_FNL);
                         break 'done;
                     }
-                    WHATSIT_NODE_FNL => {
+                    AnyNode::Whatsit(_) => {
                         match mem.b16s0(p) {
                             OPEN_NODE_FNL => {
                                 crate::mem::free_node(mem, p, OPEN_NODE_SIZE_FNL);
@@ -622,10 +592,7 @@ pub fn flush_node_list(
                         }
                         break 'done;
                     }
-                    GLUE_NODE => {
-                        // SAFETY: the `NODE_type` match arm proves this is a glue node.
-                        let glue =
-                            unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p)) };
+                    AnyNode::Glue(glue) => {
                         let spec = glue.glue_spec(mem).expect("glue node has a glue_spec");
                         if spec.ref_count(mem) == crate::mem::TEX_NULL {
                             crate::mem::free_node(mem, spec.idx().0, GLUE_SPEC_SIZE);
@@ -639,41 +606,41 @@ pub fn flush_node_list(
                         crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
                         break 'done;
                     }
-                    KERN_NODE | MATH_NODE | PENALTY_NODE => {
+                    AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => {
                         crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
                         break 'done;
                     }
-                    MARGIN_KERN_NODE_FNL => {
+                    AnyNode::MarginKern(_) => {
                         crate::mem::free_node(mem, p, MARGIN_KERN_NODE_SIZE_FNL);
                         break 'done;
                     }
-                    LIGATURE_NODE => {
+                    AnyNode::Ligature(_) => {
                         let c = mem.b32s1(p + 1);
                         flush_node_list(mem, c)?;
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
-                    MARK_NODE_FNL => {
+                    AnyNode::Mark(_) => {
                         let t = mem.b32s1(p + 1);
                         crate::mem::delete_token_ref(mem, t);
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
-                    DISC_NODE => {
+                    AnyNode::Disc(_) => {
                         let c1 = mem.b32s0(p + 1);
                         flush_node_list(mem, c1)?;
                         let c2 = mem.b32s1(p + 1);
                         flush_node_list(mem, c2)?;
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
-                    ADJUST_NODE_FNL => {
+                    AnyNode::Adjust(_) => {
                         let c = mem.b32s1(p + 1);
                         flush_node_list(mem, c)?;
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
-                    STYLE_NODE_FNL => {
+                    AnyNode::Style(_) => {
                         crate::mem::free_node(mem, p, STYLE_NODE_SIZE_FNL);
                         break 'done;
                     }
-                    CHOICE_NODE_FNL => {
+                    AnyNode::Choice(_) => {
                         let c1 = mem.b32s0(p + 1);
                         flush_node_list(mem, c1)?;
                         let c2 = mem.b32s1(p + 1);
@@ -685,47 +652,42 @@ pub fn flush_node_list(
                         crate::mem::free_node(mem, p, STYLE_NODE_SIZE_FNL);
                         break 'done;
                     }
-                    ORD_NOAD_FNL | OP_NOAD_FNL | BIN_NOAD_FNL | REL_NOAD_FNL | OPEN_NOAD_FNL
-                    | CLOSE_NOAD_FNL | PUNCT_NOAD_FNL | INNER_NOAD_FNL | RADICAL_NOAD_FNL
-                    | OVER_NOAD_FNL | UNDER_NOAD_FNL | VCENTER_NOAD_FNL | ACCENT_NOAD_FNL => {
-                        let p_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
-                        if p_noad.nucleus_type(mem) >= SUB_BOX_FNL {
-                            let c = p_noad.nucleus_field(mem);
-                            flush_node_list(mem, c)?;
-                        }
-                        if p_noad.supscr_type(mem) >= SUB_BOX_FNL {
-                            let c = p_noad.supscr_field(mem);
-                            flush_node_list(mem, c)?;
-                        }
-                        if p_noad.subscr_type(mem) >= SUB_BOX_FNL {
-                            let c = p_noad.subscr_field(mem);
-                            flush_node_list(mem, c)?;
-                        }
-                        let ntype = p_noad.noad_type(mem).as_raw();
-                        if ntype == RADICAL_NOAD_FNL {
-                            crate::mem::free_node(mem, p, RADICAL_NOAD_SIZE_FNL);
-                        } else if ntype == ACCENT_NOAD_FNL {
-                            crate::mem::free_node(mem, p, ACCENT_NOAD_SIZE_FNL);
-                        } else {
-                            crate::mem::free_node(mem, p, NOAD_SIZE_FNL);
+                    AnyNode::Noad(p_noad) => {
+                        match p_noad.noad_type(mem) {
+                            NodeType::LeftNoad | NodeType::RightNoad => {
+                                crate::mem::free_node(mem, p, NOAD_SIZE_FNL);
+                            }
+                            NodeType::FractionNoad => {
+                                let c1 = p_noad.supscr_field(mem);
+                                flush_node_list(mem, c1)?;
+                                let c2 = p_noad.subscr_field(mem);
+                                flush_node_list(mem, c2)?;
+                                crate::mem::free_node(mem, p, FRACTION_NOAD_SIZE_FNL);
+                            }
+                            _ => {
+                                if p_noad.nucleus_type(mem) >= SUB_BOX_FNL {
+                                    let c = p_noad.nucleus_field(mem);
+                                    flush_node_list(mem, c)?;
+                                }
+                                if p_noad.supscr_type(mem) >= SUB_BOX_FNL {
+                                    let c = p_noad.supscr_field(mem);
+                                    flush_node_list(mem, c)?;
+                                }
+                                if p_noad.subscr_type(mem) >= SUB_BOX_FNL {
+                                    let c = p_noad.subscr_field(mem);
+                                    flush_node_list(mem, c)?;
+                                }
+                                let ntype = p_noad.noad_type(mem).as_raw();
+                                if ntype == RADICAL_NOAD_FNL {
+                                    crate::mem::free_node(mem, p, RADICAL_NOAD_SIZE_FNL);
+                                } else if ntype == ACCENT_NOAD_FNL {
+                                    crate::mem::free_node(mem, p, ACCENT_NOAD_SIZE_FNL);
+                                } else {
+                                    crate::mem::free_node(mem, p, NOAD_SIZE_FNL);
+                                }
+                            }
                         }
                         break 'done;
-                    }
-                    LEFT_NOAD_FNL | RIGHT_NOAD_FNL => {
-                        crate::mem::free_node(mem, p, NOAD_SIZE_FNL);
-                        break 'done;
-                    }
-                    FRACTION_NOAD_FNL => {
-                        let p_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
-                        let c1 = p_noad.supscr_field(mem);
-                        flush_node_list(mem, c1)?;
-                        let c2 = p_noad.subscr_field(mem);
-                        flush_node_list(mem, c2)?;
-                        crate::mem::free_node(mem, p, FRACTION_NOAD_SIZE_FNL);
-                        break 'done;
-                    }
-                    _ => {
-                        return Err(c"flushing");
                     }
                 }
                 crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
@@ -767,8 +729,11 @@ pub fn copy_node_list(
         if p >= mem.hi_mem_min {
             r = cnl_get_avail!(mem);
         } else {
-            match mem.b16s1(p) {
-                HLIST_NODE | VLIST_NODE_CNL | UNSET_NODE_CNL => {
+            match mem
+                .classify(MemIdx::new(p))
+                .map_err(|_| NodeRecycleAbort::Confusion(c"copying"))?
+            {
+                AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Unset(_) => {
                     r = cnl_get_node!(mem, BOX_NODE_SIZE);
                     // SYNCTEX_tag(r, BOX_NODE_SIZE) = SYNCTEX_tag(p, BOX_NODE_SIZE)
                     mem.set_b32s0(r + 7, mem.b32s0(p + 7));
@@ -781,11 +746,11 @@ pub fn copy_node_list(
                     mem.set_b32s1(r + 5, copied);
                     words = 5;
                 }
-                RULE_NODE => {
+                AnyNode::Rule(_) => {
                     r = cnl_get_node!(mem, RULE_NODE_SIZE);
                     words = RULE_NODE_SIZE - 1;
                 }
-                INS_NODE_CNL => {
+                AnyNode::Ins(_) => {
                     r = cnl_get_node!(mem, INS_NODE_SIZE_CNL);
                     mem.set_word(r + 4, mem.word(p + 4));
                     // GLUE_SPEC_ref_count(mem[p+4].b32.s1)++ = mem[mem[p+4].b32.s1].b32.s1++
@@ -798,7 +763,7 @@ pub fn copy_node_list(
                     mem.set_b32s0(r + 4, copied);
                     words = INS_NODE_SIZE_CNL - 1;
                 }
-                WHATSIT_NODE_CNL => {
+                AnyNode::Whatsit(_) => {
                     match mem.b16s0(p) {
                         OPEN_NODE_CNL => {
                             r = cnl_get_node!(mem, OPEN_NODE_SIZE_CNL);
@@ -847,7 +812,7 @@ pub fn copy_node_list(
                         }
                     }
                 }
-                GLUE_NODE => {
+                AnyNode::Glue(_) => {
                     r = cnl_get_node!(mem, MEDIUM_NODE_SIZE);
                     // GLUE_SPEC_ref_count(mem[p+1].b32.s0)++ = mem[mem[p+1].b32.s0].b32.s1++
                     let spec =
@@ -861,22 +826,22 @@ pub fn copy_node_list(
                     let copied = copy_node_list(mem, src)?;
                     mem.set_b32s1(r + 1, copied);
                 }
-                KERN_NODE | MATH_NODE | PENALTY_NODE => {
+                AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => {
                     r = cnl_get_node!(mem, MEDIUM_NODE_SIZE);
                     words = MEDIUM_NODE_SIZE;
                 }
-                MARGIN_KERN_NODE_CNL => {
+                AnyNode::MarginKern(_) => {
                     r = cnl_get_node!(mem, MARGIN_KERN_NODE_SIZE_CNL);
                     words = MARGIN_KERN_NODE_SIZE_CNL;
                 }
-                LIGATURE_NODE => {
+                AnyNode::Ligature(_) => {
                     r = cnl_get_node!(mem, SMALL_NODE_SIZE);
                     mem.set_word(r + 1, mem.word(p + 1));
                     let src = mem.b32s1(p + 1);
                     let copied = copy_node_list(mem, src)?;
                     mem.set_b32s1(r + 1, copied);
                 }
-                DISC_NODE => {
+                AnyNode::Disc(_) => {
                     r = cnl_get_node!(mem, SMALL_NODE_SIZE);
                     let src0 = mem.b32s0(p + 1);
                     let copied0 = copy_node_list(mem, src0)?;
@@ -885,14 +850,14 @@ pub fn copy_node_list(
                     let copied1 = copy_node_list(mem, src1)?;
                     mem.set_b32s1(r + 1, copied1);
                 }
-                MARK_NODE_CNL => {
+                AnyNode::Mark(_) => {
                     r = cnl_get_node!(mem, SMALL_NODE_SIZE);
                     // mem[mem[p+1].b32.s1].b32.s0++ (token list ref count)
                     let tok = mem.b32s1(p + 1);
                     mem.set_b32s0(tok, mem.b32s0(tok) + 1);
                     words = SMALL_NODE_SIZE;
                 }
-                ADJUST_NODE_CNL => {
+                AnyNode::Adjust(_) => {
                     r = cnl_get_node!(mem, SMALL_NODE_SIZE);
                     let src = mem.b32s1(p + 1);
                     let copied = copy_node_list(mem, src)?;
