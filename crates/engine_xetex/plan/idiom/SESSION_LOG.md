@@ -8,6 +8,53 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 182 — 2026-06-13 — Execution: thread the print core + the output.rs show-node walkers
+
+**Type:** execution (workstream 01 / fused `01b`+`01c`). Large low-docs batch
+per user request. Took the documented keystone — the **print subsystem** — then
+cashed it out across the `output.rs` show-node walkers, the single largest
+mechanical vein (top of `phase_c_recon.py`: `show_*`/`print_*`, all blocked
+because the print primitives were `with_state`-bearing so a walker holding a
+`mem` borrow nest-panicked on any print call).
+
+**Code (2 commits):**
+1. `f0475cdd` — threaded the **print core** over `&mut EngineState`: `_in`
+   cores for `print_char`/`print_raw_char`/`print_ln`/`print`, the
+   cstr/nl/esc wrappers, `print_int`/`hex`/`scaled`/`roman_int`/`ucs_code`,
+   `print_the_digs`, `warn_char`, `print_current_string`, touching
+   `shipout`/`errors`/`strings`/`eqtb`/`config` fields directly; the global
+   `unsafe fn`s became thin `with_state_mut` wrappers (behaviour-preserving by
+   construction). Removed dead `doing_special`/`set_trick_buf`.
+2. `9d898677` — threaded the **walkers**: `short_display`, `show_node_list`
+   (+ `show_box`/`show_info`/`print_subsidiary_data`) and ~22 leaf print
+   helpers (`print_native_word`, `print_cs`, `sprint_cs`, `print_file_name`,
+   `print_spec`, `print_glue`, `print_rule_dimen`, `print_fam_and_char`,
+   `print_delimiter`, `print_font_and_char`, `print_mark`, `show_token_list`,
+   `token_show`, `print_size`, `print_write_whatsit`, `print_sa_num`,
+   `print_mode`, `print_in_mode`, `print_group`, `print_skip_param`,
+   `print_style`, `print_totals`). Walkers read mem/eqtb/strings/save_stack
+   directly and call the print `_in` cores. Per established precedent the `_in`
+   cores are **safe `fn`** with narrow `unsafe {}` only around the genuine
+   FFI / raw-ptr / `CStr` ops (the de-unsafe drops `unsafe fn` rather than
+   raising it). Added `MemState::gr`. `show_node_list` (480 lines) converted
+   via a scoped ordered Python transform. Removed 11 now-dead global wrappers +
+   `breadth_max`/`depth_threshold`/`set_*`/`font_in_short_display` accessors.
+   `temp_ptr` stays a `mod raw` call (raw-safe under a borrow, §4).
+
+**Tests:** `cargo check`+`fmt --check`; `node::` **48/48**; dashboard
+**29/2/7/4** (after each commit); rebuilt `target/release/tectonic`;
+`plan/scripts/corpus.sh check all`: **637 passed / 2 diverged / 0
+missing-golden**, only the known FP divergences `1905.00073v1` /
+`1905.00148v1`. Metrics: warnings **41**; `unsafe fn` **564 → 551**.
+
+**Next:** thread `show_activities` (top recon target, score 125; needs the
+`nest_*` cluster), then `show_save_groups`/`show_context`/`print_cmd_chr`/
+`print_meaning`/`print_param`/`print_length_param` — all were blocked behind
+the print subsystem and are now unblocked (their callees are the `_in` cores
+landed this session).
+
+---
+
 ## Idiom session 181 — 2026-06-13 — Execution: threaded hyphenation trie-op/init/pattern insertion clusters
 
 **Type:** execution (workstream 01 / fused threading, low-docs larger
