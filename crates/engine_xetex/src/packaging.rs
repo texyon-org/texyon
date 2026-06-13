@@ -16,13 +16,10 @@ use crate::consts::{
 use crate::errors::error;
 use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
-use crate::globals::{
-    active_width, cur_val, eqtb_b32s1, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1,
-    set_active_width, set_best_height_plus_depth, set_cur_val, set_eqtb_b32s1, set_help_line,
-    set_help_ptr, set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, temp_ptr,
+use crate::globals::{cur_val, mem_b32s1, set_cur_val, set_help_line, set_help_ptr, temp_ptr};
+use crate::node::{
+    AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, NodePtr, RuleDimen, VListNode,
 };
-use crate::mem::new_spec_global;
-use crate::node::{AnyBox, AnyNode, GlueSpecNode, HListNode, NodePtr, RuleDimen, VListNode};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
 use crate::units::NodeType;
 
@@ -1020,93 +1017,185 @@ pub unsafe fn append_to_vlist_global(b: i32) {
     }
 }
 // translated from xetex-xetex0.c:7725 (vert_break)
-pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
+struct VertBreakCursor {
+    p: i32,
+    prev_p: i32,
+    least_cost: i32,
+    best_place: i32,
+    prev_dp: i32,
+    finish_glue_after_shrinkage: Option<NodePtr<GlueNode>>,
+}
+
+enum VertBreakStep {
+    Done(i32),
+    InfiniteShrinkage {
+        glue: NodePtr<GlueNode>,
+        spec: NodePtr<GlueSpecNode>,
+    },
+}
+
+enum VertBreakNext {
+    NotFound,
+    UpdateHeights,
+    CheckPi(i32),
+}
+
+fn start_vert_break(scanner: &mut ScannerState, p: i32) -> VertBreakCursor {
+    use crate::mem::TEX_NULL;
+
+    for k in 1..=6usize {
+        scanner.active_width[k] = 0;
+    }
+
+    VertBreakCursor {
+        p,
+        prev_p: p,
+        least_cost: MAX_HALFWORD,
+        best_place: TEX_NULL,
+        prev_dp: 0,
+        finish_glue_after_shrinkage: None,
+    }
+}
+
+fn advance_vert_break(
+    mem: &MemState,
+    scanner: &mut ScannerState,
+    cursor: &mut VertBreakCursor,
+    d: i32,
+) {
+    if cursor.prev_dp > d {
+        scanner.active_width[1] += cursor.prev_dp - d;
+        cursor.prev_dp = d;
+    }
+    cursor.prev_p = cursor.p;
+    cursor.p = mem.b32s1(cursor.prev_p);
+}
+
+fn finish_vert_break_updated_height(
+    mem: &MemState,
+    scanner: &mut ScannerState,
+    cursor: &mut VertBreakCursor,
+    q: i32,
+    d: i32,
+) {
+    scanner.active_width[1] += cursor.prev_dp + mem.b32s1(q + 1);
+    cursor.prev_dp = 0;
+    advance_vert_break(mem, scanner, cursor, d);
+}
+
+fn classify_vert_break_next(
+    mem: &MemState,
+    scanner: &mut ScannerState,
+    cursor: &mut VertBreakCursor,
+) -> Result<VertBreakNext, NodeRecycleAbort> {
+    use crate::mem::TEX_NULL;
+
+    const EJECT_PENALTY: i32 = -10_000; // xetex-constants.h:336
+    const PIC_NODE: u16 = 43; // xetex_format.h:466
+    const PDF_NODE: u16 = 44; // xetex_format.h:467
+
+    if cursor.p == TEX_NULL {
+        return Ok(VertBreakNext::CheckPi(EJECT_PENALTY));
+    }
+
+    let node = mem
+        .classify(MemIdx::new(cursor.p))
+        .map_err(|_| NodeRecycleAbort::Confusion(c"vertbreak"))?;
+    match node {
+        AnyNode::HList(b) => {
+            scanner.active_width[1] += cursor.prev_dp + b.height(mem).0;
+            cursor.prev_dp = b.depth(mem).0;
+            Ok(VertBreakNext::NotFound)
+        }
+        AnyNode::VList(b) => {
+            scanner.active_width[1] += cursor.prev_dp + b.height(mem).0;
+            cursor.prev_dp = b.depth(mem).0;
+            Ok(VertBreakNext::NotFound)
+        }
+        AnyNode::Rule(rule) => {
+            scanner.active_width[1] += cursor.prev_dp + rule.height(mem).raw();
+            cursor.prev_dp = rule.depth(mem).raw();
+            Ok(VertBreakNext::NotFound)
+        }
+        AnyNode::Whatsit(idx) => {
+            let sub = mem.b16s0(idx.0);
+            if sub == PIC_NODE || sub == PDF_NODE {
+                scanner.active_width[1] += cursor.prev_dp + mem.b32s1(idx.0 + 3);
+                cursor.prev_dp = mem.b32s1(idx.0 + 2);
+            }
+            Ok(VertBreakNext::NotFound)
+        }
+        AnyNode::Glue(_) => {
+            if mem.b16s1(cursor.prev_p) < MATH_NODE {
+                Ok(VertBreakNext::CheckPi(0))
+            } else {
+                Ok(VertBreakNext::UpdateHeights)
+            }
+        }
+        AnyNode::Kern(kern) => {
+            let link = kern.link(mem).0;
+            let t = if link == TEX_NULL {
+                PENALTY_NODE
+            } else {
+                mem.b16s1(link)
+            };
+            if t == GLUE_NODE {
+                Ok(VertBreakNext::CheckPi(0))
+            } else {
+                Ok(VertBreakNext::UpdateHeights)
+            }
+        }
+        AnyNode::Penalty(penalty) => Ok(VertBreakNext::CheckPi(penalty.penalty(mem))),
+        AnyNode::Ins(_) | AnyNode::Mark(_) => Ok(VertBreakNext::NotFound),
+        _ => Err(NodeRecycleAbort::Confusion(c"vertbreak")),
+    }
+}
+
+fn vert_break_resume(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    cursor: &mut VertBreakCursor,
+    h: i32,
+    d: i32,
+) -> Result<VertBreakStep, NodeRecycleAbort> {
     use crate::mem::TEX_NULL;
 
     const EJECT_PENALTY: i32 = -10_000; // xetex-constants.h:336
     const INF_PENALTY: i32 = 10_000; // xetex-constants.h:338
     const INF_BAD: i32 = 10_000; // xetex-constants.h:337
-    const PIC_NODE: u16 = 43; // xetex_format.h:466
-    const PDF_NODE: u16 = 44; // xetex_format.h:467
     const NORMAL: u16 = 0;
 
-    let mut p = p;
-    let mut prev_p = p;
-    let mut least_cost = MAX_HALFWORD;
-    let mut best_place = TEX_NULL;
-    let mut prev_dp: i32 = 0;
-    for k in 1..=6usize {
-        set_active_width(k, 0);
-    }
+    loop {
+        if let Some(glue) = cursor.finish_glue_after_shrinkage.take() {
+            let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
+            finish_vert_break_updated_height(mem, scanner, cursor, spec.idx().0, d);
+            continue;
+        }
 
-    enum Next {
-        NotFound,
-        UpdateHeights,
-        CheckPi(i32),
-    }
-
-    'done: loop {
-        let next = if p == TEX_NULL {
-            Next::CheckPi(EJECT_PENALTY)
-        } else {
-            match mem_b16s1(p) {
-                0..=2 => {
-                    set_active_width(1, active_width(1) + prev_dp + mem_b32s1(p + 3));
-                    prev_dp = mem_b32s1(p + 2);
-                    Next::NotFound
-                }
-                8 => {
-                    let sub = mem_b16s0(p);
-                    if sub == PIC_NODE || sub == PDF_NODE {
-                        set_active_width(1, active_width(1) + prev_dp + mem_b32s1(p + 3));
-                        prev_dp = mem_b32s1(p + 2);
-                    }
-                    Next::NotFound
-                }
-                10 => {
-                    // GLUE_NODE
-                    if mem_b16s1(prev_p) < MATH_NODE {
-                        // is_non_discardable_node
-                        Next::CheckPi(0)
-                    } else {
-                        Next::UpdateHeights
-                    }
-                }
-                11 => {
-                    // KERN_NODE
-                    let link = mem_b32s1(p);
-                    let t = if link == TEX_NULL {
-                        PENALTY_NODE
-                    } else {
-                        mem_b16s1(link)
-                    };
-                    if t == GLUE_NODE {
-                        Next::CheckPi(0)
-                    } else {
-                        Next::UpdateHeights
-                    }
-                }
-                12 => Next::CheckPi(mem_b32s1(p + 1)), // PENALTY_NODE
-                3 | 4 => Next::NotFound,
-                _ => crate::errors::confusion(c"vertbreak".as_ptr()),
-            }
-        };
-
-        let do_update = match next {
-            Next::NotFound => false,
-            Next::UpdateHeights => true,
-            Next::CheckPi(pi) => {
+        let do_update = match classify_vert_break_next(mem, scanner, cursor)? {
+            VertBreakNext::NotFound => false,
+            VertBreakNext::UpdateHeights => true,
+            VertBreakNext::CheckPi(pi) => {
                 if pi < INF_PENALTY {
-                    let b = if active_width(1) < h {
-                        if active_width(3) != 0 || active_width(4) != 0 || active_width(5) != 0 {
+                    let b = if scanner.active_width[1] < h {
+                        if scanner.active_width[3] != 0
+                            || scanner.active_width[4] != 0
+                            || scanner.active_width[5] != 0
+                        {
                             0
                         } else {
-                            crate::helpers::badness(h - active_width(1), active_width(2))
+                            crate::helpers::badness(
+                                h - scanner.active_width[1],
+                                scanner.active_width[2],
+                            )
                         }
-                    } else if active_width(1) - h > active_width(6) {
+                    } else if scanner.active_width[1] - h > scanner.active_width[6] {
                         MAX_HALFWORD
                     } else {
-                        crate::helpers::badness(active_width(1) - h, active_width(6))
+                        crate::helpers::badness(
+                            scanner.active_width[1] - h,
+                            scanner.active_width[6],
+                        )
                     };
                     let b = if b < MAX_HALFWORD {
                         if pi <= EJECT_PENALTY {
@@ -1119,125 +1208,424 @@ pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
                     } else {
                         b
                     };
-                    if b <= least_cost {
-                        best_place = p;
-                        least_cost = b;
-                        set_best_height_plus_depth(active_width(1) + prev_dp);
+                    if b <= cursor.least_cost {
+                        cursor.best_place = cursor.p;
+                        cursor.least_cost = b;
+                        scanner.best_height_plus_depth = scanner.active_width[1] + cursor.prev_dp;
                     }
                     if b == MAX_HALFWORD || pi <= EJECT_PENALTY {
-                        break 'done;
+                        return Ok(VertBreakStep::Done(cursor.best_place));
                     }
                 }
-                // reached only when pi >= INF_PENALTY, or (pi < INF_PENALTY and did not break);
-                // in the TEX_NULL case pi == EJECT_PENALTY so we always break above — p is valid.
-                let nt = mem_b16s1(p);
+                // In the TEX_NULL case pi == EJECT_PENALTY, so we always
+                // return above. If we continue here, p is a valid node.
+                let nt = mem.b16s1(cursor.p);
                 (GLUE_NODE..=KERN_NODE).contains(&nt)
             }
         };
 
         if do_update {
-            let q = if mem_b16s1(p) == KERN_NODE {
-                p
-            } else {
-                let q = mem_b32s0(p + 1);
-                let qi = mem_b16s1(q) as usize;
-                set_active_width(2 + qi, active_width(2 + qi) + mem_b32s1(q + 2));
-                set_active_width(6, active_width(6) + mem_b32s1(q + 3));
-                if mem_b16s0(q) != NORMAL && mem_b32s1(q + 3) != 0 {
-                    error_here_with_diagnostic(
-                        c"Infinite glue shrinkage found in box being split".as_ptr(),
-                    );
-                    capture_to_diagnostic(std::ptr::null_mut());
-                    set_help_ptr(4);
-                    set_help_line(
-                        3,
-                        c"The box you are \\vsplitting contains some infinitely".as_ptr(),
-                    );
-                    set_help_line(
-                        2,
-                        c"shrinkable glue, e.g., `\\vss' or `\\vskip 0pt minus 1fil'.".as_ptr(),
-                    );
-                    set_help_line(
-                        1,
-                        c"Such glue doesn't belong there; but you can safely proceed,".as_ptr(),
-                    );
-                    set_help_line(
-                        0,
-                        c"since the offensive shrinkability has been made finite.".as_ptr(),
-                    );
-                    error();
-                    let r = new_spec_global(q);
-                    set_mem_b16s0(r, NORMAL); // GLUE_SPEC_shrink_order(r) = NORMAL
-                    crate::mem::delete_glue_ref_global(q);
-                    set_mem_b32s0(p + 1, r);
-                    r
-                } else {
-                    q
+            match mem
+                .classify(MemIdx::new(cursor.p))
+                .map_err(|_| NodeRecycleAbort::Confusion(c"vertbreak"))?
+            {
+                AnyNode::Kern(kern) => {
+                    finish_vert_break_updated_height(mem, scanner, cursor, kern.idx().0, d);
+                    continue;
                 }
-            };
-            set_active_width(1, active_width(1) + prev_dp + mem_b32s1(q + 1));
-            prev_dp = 0;
+                AnyNode::Glue(glue) => {
+                    let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
+                    let stretch_order = spec.stretch_order(mem) as usize;
+                    scanner.active_width[2 + stretch_order] += spec.stretch(mem).0;
+                    scanner.active_width[6] += spec.shrink(mem).0;
+                    if spec.shrink_order(mem) != NORMAL && spec.shrink(mem).0 != 0 {
+                        cursor.finish_glue_after_shrinkage = Some(glue);
+                        return Ok(VertBreakStep::InfiniteShrinkage { glue, spec });
+                    }
+                    finish_vert_break_updated_height(mem, scanner, cursor, spec.idx().0, d);
+                    continue;
+                }
+                _ => {}
+            }
         }
 
-        // not_found:
-        if prev_dp > d {
-            set_active_width(1, active_width(1) + prev_dp - d);
-            prev_dp = d;
+        advance_vert_break(mem, scanner, cursor, d);
+        if cursor.p == TEX_NULL {
+            continue;
         }
-        prev_p = p;
-        p = mem_b32s1(prev_p);
     }
-    best_place
+}
+
+fn print_vert_break_infinite_shrinkage_error() {
+    unsafe {
+        error_here_with_diagnostic(c"Infinite glue shrinkage found in box being split".as_ptr());
+        capture_to_diagnostic(std::ptr::null_mut());
+        set_help_ptr(4);
+        set_help_line(
+            3,
+            c"The box you are \\vsplitting contains some infinitely".as_ptr(),
+        );
+        set_help_line(
+            2,
+            c"shrinkable glue, e.g., `\\vss' or `\\vskip 0pt minus 1fil'.".as_ptr(),
+        );
+        set_help_line(
+            1,
+            c"Such glue doesn't belong there; but you can safely proceed,".as_ptr(),
+        );
+        set_help_line(
+            0,
+            c"since the offensive shrinkability has been made finite.".as_ptr(),
+        );
+        error();
+    }
+}
+
+fn repair_vert_break_infinite_shrinkage(
+    mem: &mut MemState,
+    glue: NodePtr<GlueNode>,
+    spec: NodePtr<GlueSpecNode>,
+) -> Result<(), NodeRecycleAbort> {
+    const NORMAL: u16 = 0;
+
+    let r = crate::mem::new_spec(mem, spec.idx().0);
+    if r == crate::mem::ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    let new_spec =
+        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(r)).expect("new_spec returns spec");
+    new_spec.set_shrink_order(mem, NORMAL);
+    crate::mem::delete_glue_ref(mem, spec.idx().0);
+    glue.set_glue_ptr(mem, MemPtr::from_raw(r));
+    Ok(())
+}
+
+pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
+    let mut cursor = crate::state::with_state_mut(|st| start_vert_break(&mut st.scanner, p));
+    loop {
+        match crate::state::with_state_mut(|st| {
+            vert_break_resume(&mut st.mem, &mut st.scanner, &mut cursor, h, d)
+        }) {
+            Ok(VertBreakStep::Done(best_place)) => return best_place,
+            Ok(VertBreakStep::InfiniteShrinkage { glue, spec }) => {
+                print_vert_break_infinite_shrinkage_error();
+                if let Err(e) = crate::state::with_state_mut(|st| {
+                    repair_vert_break_infinite_shrinkage(&mut st.mem, glue, spec)
+                }) {
+                    node_recycle_abort(e);
+                }
+            }
+            Err(e) => node_recycle_abort(e),
+        }
+    }
 }
 // translated from xetex-xetex0.c:7727 (vsplit)
-pub unsafe fn vsplit(n: i32, h: i32) -> i32 {
-    use crate::globals::{
-        cur_mark, cur_ptr, disc_ptr, sa_root, set_cur_mark, set_disc_ptr, set_sa_root,
-    };
+const DIMEN_PAR_SPLIT_MAX_DEPTH_VS: i32 = 6; // xetex_format.h:128
+const INT_PAR_SAVING_VDISCARDS_VS: i32 = 63; // xetex_format.h:98
+const EXACTLY_VS: i16 = 0; // xetex-constants.h:256
+const ADDITIONAL_VS: i16 = 1; // xetex-constants.h:264
+const VSPLIT_CODE_VS: usize = 3; // xetex_format.h:483
+const MARK_VAL_VS: usize = 7; // xetex-constants.h:300
+const MARK_NODE_VS: u16 = 4; // xetex_format.h:384
+const SPLIT_FIRST_MARK_CODE_VS: usize = 3; // xetex_format.h:688
+const SPLIT_BOT_MARK_CODE_VS: usize = 4; // xetex_format.h:689
+
+struct VsplitState {
+    h: i32,
+    v: NodePtr<VListNode>,
+    split_max_d: i32,
+    vert_break: VertBreakCursor,
+}
+
+#[derive(Copy, Clone)]
+struct VsplitOutcome {
+    result: i32,
+    packages: [Option<PackOutcome>; 2],
+}
+
+enum VsplitStart {
+    Done(VsplitOutcome),
+    NeedsVboxDiagnostic,
+    Ready(VsplitState),
+}
+
+enum VsplitStep {
+    Done(VsplitOutcome),
+    InfiniteShrinkage {
+        glue: NodePtr<GlueNode>,
+        spec: NodePtr<GlueSpecNode>,
+    },
+}
+
+fn push_vsplit_package(packages: &mut [Option<PackOutcome>; 2], outcome: PackOutcome) {
+    if packages[0].is_none() {
+        packages[0] = Some(outcome);
+    } else {
+        packages[1] = Some(outcome);
+    }
+}
+
+fn empty_vsplit_outcome(result: i32) -> VsplitOutcome {
+    VsplitOutcome {
+        result,
+        packages: [None, None],
+    }
+}
+
+fn find_box_register(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    eqtb: &EqtbState,
+    n: i32,
+) -> Result<i32, NodeRecycleAbort> {
+    use crate::globals::cur_ptr;
     use crate::mem::TEX_NULL;
 
-    const DIMEN_PAR_SPLIT_MAX_DEPTH: i32 = 6; // xetex_format.h:128
-    const INT_PAR_SAVING_VDISCARDS: i32 = 63; // xetex_format.h:98
-    const EXACTLY: i16 = 0; // xetex-constants.h:256
-    const ADDITIONAL: i16 = 1; // xetex-constants.h:264
-    const VSPLIT_CODE: usize = 3; // xetex_format.h:483
-    const MARK_VAL: usize = 7; // xetex-constants.h:300
-    const VLIST_NODE: u16 = 1; // xetex_format.h:381
-    const MARK_NODE: u16 = 4; // xetex_format.h:384
-    const SPLIT_FIRST_MARK_CODE: usize = 3; // xetex_format.h:688
-    const SPLIT_BOT_MARK_CODE: usize = 4; // xetex_format.h:689
-
     set_cur_val(n);
-    let v = if cur_val() < 256 {
-        eqtb_b32s1(BOX_BASE + cur_val())
+    if cur_val() < 256 {
+        Ok(eqtb.b32s1(BOX_BASE + cur_val()))
     } else {
-        crate::save::find_sa_element_global(4, cur_val(), false);
-        if cur_ptr() == TEX_NULL {
-            TEX_NULL
-        } else {
-            mem_b32s1(cur_ptr() + 1)
+        let r = crate::save::find_sa_element(mem, scanner, 4, cur_val(), false);
+        if r == crate::mem::ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
         }
-    };
+        if cur_ptr() == TEX_NULL {
+            Ok(TEX_NULL)
+        } else {
+            Ok(mem.b32s1(cur_ptr() + 1))
+        }
+    }
+}
 
-    flush_node_list_global(disc_ptr(VSPLIT_CODE));
-    set_disc_ptr(VSPLIT_CODE, TEX_NULL);
+fn reset_vsplit_marks(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+) -> Result<(), NodeRecycleAbort> {
+    use crate::mem::TEX_NULL;
 
-    if sa_root(MARK_VAL) != TEX_NULL && do_marks_global(0, 0, sa_root(MARK_VAL)) {
-        set_sa_root(MARK_VAL, TEX_NULL);
+    let disc = scanner.disc_ptr[VSPLIT_CODE_VS];
+    flush_node_list(mem, disc).map_err(NodeRecycleAbort::Confusion)?;
+    scanner.disc_ptr[VSPLIT_CODE_VS] = TEX_NULL;
+
+    if scanner.sa_root[MARK_VAL_VS] != TEX_NULL && do_marks(mem, 0, 0, scanner.sa_root[MARK_VAL_VS])
+    {
+        scanner.sa_root[MARK_VAL_VS] = TEX_NULL;
     }
 
-    if cur_mark(SPLIT_FIRST_MARK_CODE) != TEX_NULL {
-        crate::mem::delete_token_ref_global(cur_mark(SPLIT_FIRST_MARK_CODE));
-        set_cur_mark(SPLIT_FIRST_MARK_CODE, TEX_NULL);
-        crate::mem::delete_token_ref_global(cur_mark(SPLIT_BOT_MARK_CODE));
-        set_cur_mark(SPLIT_BOT_MARK_CODE, TEX_NULL);
+    if scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] != TEX_NULL {
+        let first = scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS];
+        crate::mem::delete_token_ref(mem, first);
+        scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] = TEX_NULL;
+        let bot = scanner.cur_mark[SPLIT_BOT_MARK_CODE_VS];
+        crate::mem::delete_token_ref(mem, bot);
+        scanner.cur_mark[SPLIT_BOT_MARK_CODE_VS] = TEX_NULL;
     }
+
+    Ok(())
+}
+
+fn start_vsplit(
+    mem: &mut MemState,
+    eqtb: &EqtbState,
+    scanner: &mut ScannerState,
+    n: i32,
+    h: i32,
+) -> Result<VsplitStart, NodeRecycleAbort> {
+    use crate::mem::TEX_NULL;
+
+    let v = find_box_register(mem, scanner, eqtb, n)?;
+    reset_vsplit_marks(mem, scanner)?;
 
     if v == TEX_NULL {
-        return TEX_NULL;
+        return Ok(VsplitStart::Done(empty_vsplit_outcome(TEX_NULL)));
     }
 
-    if mem_b16s1(v) != VLIST_NODE {
+    let v = match mem
+        .classify_box(MemIdx::new(v))
+        .map_err(|_| NodeRecycleAbort::Confusion(c"vsplit"))?
+    {
+        Some(AnyBox::VList(v)) => v,
+        Some(AnyBox::HList(_)) | None => return Ok(VsplitStart::NeedsVboxDiagnostic),
+    };
+
+    let split_max_d = eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_SPLIT_MAX_DEPTH_VS);
+    let list = v.list_ptr(mem).0;
+    Ok(VsplitStart::Ready(VsplitState {
+        h,
+        v,
+        split_max_d,
+        vert_break: start_vert_break(scanner, list),
+    }))
+}
+
+fn collect_split_mark(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    p: i32,
+) -> Result<(), NodeRecycleAbort> {
+    use crate::globals::cur_ptr;
+    use crate::mem::TEX_NULL;
+
+    let mark_class = mem.b32s0(p + 1);
+    let mark_ptr = mem.b32s1(p + 1);
+    if mark_class != 0 {
+        let r = crate::save::find_sa_element(mem, scanner, MARK_VAL_VS as u16, mark_class, true);
+        if r == crate::mem::ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        if mem.b32s1(cur_ptr() + 2) == TEX_NULL {
+            mem.set_b32s1(cur_ptr() + 2, mark_ptr);
+            mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
+        } else {
+            let old = mem.b32s0(cur_ptr() + 3);
+            crate::mem::delete_token_ref(mem, old);
+        }
+        mem.set_b32s0(cur_ptr() + 3, mark_ptr);
+        mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
+    } else if scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] == TEX_NULL {
+        scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] = mark_ptr;
+        scanner.cur_mark[SPLIT_BOT_MARK_CODE_VS] = mark_ptr;
+        mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 2);
+    } else {
+        let old = scanner.cur_mark[SPLIT_BOT_MARK_CODE_VS];
+        crate::mem::delete_token_ref(mem, old);
+        scanner.cur_mark[SPLIT_BOT_MARK_CODE_VS] = mark_ptr;
+        mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
+    }
+    Ok(())
+}
+
+fn split_vlist_at_break(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    state: &VsplitState,
+    q: i32,
+) -> Result<i32, NodeRecycleAbort> {
+    use crate::mem::TEX_NULL;
+
+    let mut p = state.v.list_ptr(mem).0;
+    if p == q {
+        state.v.set_list_ptr(mem, MemPtr::NULL);
+    } else {
+        loop {
+            if mem.b16s1(p) == MARK_NODE_VS {
+                collect_split_mark(mem, scanner, p)?;
+            }
+            if mem.b32s1(p) == q {
+                mem.set_b32s1(p, TEX_NULL);
+                break;
+            }
+            p = mem.b32s1(p);
+        }
+    }
+
+    Ok(state.v.list_ptr(mem).0)
+}
+
+fn store_split_remainder(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    eqtb: &mut EqtbState,
+    q: i32,
+) -> Result<(), NodeRecycleAbort> {
+    use crate::globals::cur_ptr;
+    use crate::mem::TEX_NULL;
+
+    if cur_val() < 256 {
+        eqtb.set_b32s1(BOX_BASE + cur_val(), q);
+    } else {
+        let r = crate::save::find_sa_element(mem, scanner, 4, cur_val(), false);
+        if r == crate::mem::ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        if cur_ptr() != TEX_NULL {
+            mem.set_b32s1(cur_ptr() + 1, q);
+            mem.set_b32s0(cur_ptr() + 1, mem.b32s0(cur_ptr() + 1) + 1);
+            crate::save::delete_sa_ref(mem, scanner, cur_ptr());
+        }
+    }
+    Ok(())
+}
+
+fn finish_vsplit_after_break(
+    mem: &mut MemState,
+    eqtb: &mut EqtbState,
+    scanner: &mut ScannerState,
+    shipout: &mut ShipoutState,
+    state: &VsplitState,
+    q: i32,
+) -> Result<VsplitOutcome, NodeRecycleAbort> {
+    use crate::mem::TEX_NULL;
+
+    let mut packages = [None, None];
+    let p = split_vlist_at_break(mem, scanner, state, q)?;
+    let save_discards = eqtb.b32s1(INT_BASE + INT_PAR_SAVING_VDISCARDS_VS) > 0;
+    let mut q = prune_page_top(mem, scanner, eqtb, q, save_discards)?;
+
+    crate::mem::free_node(mem, state.v.idx().0, BOX_NODE_SIZE);
+    if q != TEX_NULL {
+        let packed = vpackage_in(
+            mem,
+            eqtb,
+            scanner,
+            shipout,
+            q,
+            0,
+            ADDITIONAL_VS,
+            MAX_HALFWORD,
+        )?;
+        q = packed.r;
+        push_vsplit_package(&mut packages, packed);
+    }
+    store_split_remainder(mem, scanner, eqtb, q)?;
+
+    let result = vpackage_in(
+        mem,
+        eqtb,
+        scanner,
+        shipout,
+        p,
+        state.h,
+        EXACTLY_VS,
+        state.split_max_d,
+    )?;
+    let r = result.r;
+    push_vsplit_package(&mut packages, result);
+
+    Ok(VsplitOutcome {
+        result: r,
+        packages,
+    })
+}
+
+fn vsplit_resume(
+    mem: &mut MemState,
+    eqtb: &mut EqtbState,
+    scanner: &mut ScannerState,
+    shipout: &mut ShipoutState,
+    state: &mut VsplitState,
+) -> Result<VsplitStep, NodeRecycleAbort> {
+    loop {
+        match vert_break_resume(
+            mem,
+            scanner,
+            &mut state.vert_break,
+            state.h,
+            state.split_max_d,
+        )? {
+            VertBreakStep::Done(q) => {
+                let outcome = finish_vsplit_after_break(mem, eqtb, scanner, shipout, state, q)?;
+                return Ok(VsplitStep::Done(outcome));
+            }
+            VertBreakStep::InfiniteShrinkage { glue, spec } => {
+                return Ok(VsplitStep::InfiniteShrinkage { glue, spec });
+            }
+        }
+    }
+}
+
+fn print_vsplit_needs_vbox_error() {
+    unsafe {
         error_here_with_diagnostic(c"".as_ptr());
         crate::output::print_esc_cstr(c"vsplit".as_ptr());
         crate::output::print_cstr(c" needs a ".as_ptr());
@@ -1250,65 +1638,58 @@ pub unsafe fn vsplit(n: i32, h: i32) -> i32 {
             c"I can't split such a box, so I'll leave it alone.".as_ptr(),
         );
         error();
-        return TEX_NULL;
     }
+}
 
-    let split_max_d = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_SPLIT_MAX_DEPTH);
-    let q = vert_break(mem_b32s1(v + 5), h, split_max_d);
-    let mut p = mem_b32s1(v + 5);
+fn print_vsplit_packages(outcome: VsplitOutcome) {
+    for package in outcome.packages.into_iter().flatten() {
+        for diag in package.diags.into_iter().flatten() {
+            print_vpack_diag(package.r, diag);
+        }
+    }
+}
 
-    if p == q {
-        set_mem_b32s1(v + 5, TEX_NULL);
-    } else {
-        loop {
-            if mem_b16s1(p) == MARK_NODE {
-                let mark_class = mem_b32s0(p + 1);
-                let mark_ptr = mem_b32s1(p + 1);
-                if mark_class != 0 {
-                    crate::save::find_sa_element_global(MARK_VAL as u16, mark_class, true);
-                    if mem_b32s1(cur_ptr() + 2) == TEX_NULL {
-                        set_mem_b32s1(cur_ptr() + 2, mark_ptr);
-                        set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
-                    } else {
-                        crate::mem::delete_token_ref_global(mem_b32s0(cur_ptr() + 3));
-                    }
-                    set_mem_b32s0(cur_ptr() + 3, mark_ptr);
-                    set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
-                } else if cur_mark(SPLIT_FIRST_MARK_CODE) == TEX_NULL {
-                    set_cur_mark(SPLIT_FIRST_MARK_CODE, mark_ptr);
-                    set_cur_mark(SPLIT_BOT_MARK_CODE, mark_ptr);
-                    set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 2);
-                } else {
-                    crate::mem::delete_token_ref_global(cur_mark(SPLIT_BOT_MARK_CODE));
-                    set_cur_mark(SPLIT_BOT_MARK_CODE, mark_ptr);
-                    set_mem_b32s0(mark_ptr, mem_b32s0(mark_ptr) + 1);
+pub unsafe fn vsplit(n: i32, h: i32) -> i32 {
+    let mut state = match crate::state::with_state_mut(|st| {
+        start_vsplit(&mut st.mem, &st.eqtb, &mut st.scanner, n, h)
+    }) {
+        Ok(VsplitStart::Done(outcome)) => {
+            print_vsplit_packages(outcome);
+            return outcome.result;
+        }
+        Ok(VsplitStart::NeedsVboxDiagnostic) => {
+            print_vsplit_needs_vbox_error();
+            return crate::mem::TEX_NULL;
+        }
+        Ok(VsplitStart::Ready(state)) => state,
+        Err(e) => node_recycle_abort(e),
+    };
+
+    loop {
+        match crate::state::with_state_mut(|st| {
+            vsplit_resume(
+                &mut st.mem,
+                &mut st.eqtb,
+                &mut st.scanner,
+                &mut st.shipout,
+                &mut state,
+            )
+        }) {
+            Ok(VsplitStep::Done(outcome)) => {
+                print_vsplit_packages(outcome);
+                return outcome.result;
+            }
+            Ok(VsplitStep::InfiniteShrinkage { glue, spec }) => {
+                print_vert_break_infinite_shrinkage_error();
+                if let Err(e) = crate::state::with_state_mut(|st| {
+                    repair_vert_break_infinite_shrinkage(&mut st.mem, glue, spec)
+                }) {
+                    node_recycle_abort(e);
                 }
             }
-            if mem_b32s1(p) == q {
-                set_mem_b32s1(p, TEX_NULL);
-                break;
-            }
-            p = mem_b32s1(p);
+            Err(e) => node_recycle_abort(e),
         }
     }
-
-    let mut q = prune_page_top_global(q, eqtb_b32s1(INT_BASE + INT_PAR_SAVING_VDISCARDS) > 0);
-    p = mem_b32s1(v + 5);
-    crate::mem::free_node_global(v, BOX_NODE_SIZE);
-    if q != TEX_NULL {
-        q = vpackage(q, 0, ADDITIONAL, MAX_HALFWORD);
-    }
-    if cur_val() < 256 {
-        set_eqtb_b32s1(BOX_BASE + cur_val(), q);
-    } else {
-        crate::save::find_sa_element_global(4, cur_val(), false);
-        if cur_ptr() != TEX_NULL {
-            set_mem_b32s1(cur_ptr() + 1, q);
-            set_mem_b32s0(cur_ptr() + 1, mem_b32s0(cur_ptr() + 1) + 1);
-            crate::save::delete_sa_ref_global(cur_ptr());
-        }
-    }
-    vpackage(p, h, EXACTLY, split_max_d)
 }
 
 fn insert_split_top_skip_before(

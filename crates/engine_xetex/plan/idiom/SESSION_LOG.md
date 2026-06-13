@@ -8,6 +8,128 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 177 — 2026-06-13 — Execution: thread/type `make_math_accent_global` islands
+
+**Type:** execution (workstream 01 / fused `01b`+`01c`). Followed session
+176 by taking another real bridge host, not pointer-only cleanup.
+
+**Code:** split `make_math_accent_global` into typed helper islands for the
+initial accent noad/font snapshot, scripted-base reclean, native glyph setup
+around `measure_native_glyph`, box dimension/shift updates, and top/bottom
+accent stack assembly. Kept `clean_box`, `vpackage`, OpenType variant/assembly
+callbacks, and native glyph measurement outside live `with_state` borrows.
+Top-accent kern insertion now uses the typed `KernNode` allocator; repeated
+noad conversions in this slice go through one local `assume_noad` boundary.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo fmt --check -p
+tectonic_engine_xetex`; `cargo test -p tectonic_engine_xetex node::` **42/42**;
+dashboard **29/2/7/4**; rebuilt `target/release/tectonic`; final
+`plan/scripts/corpus.sh check all`: **637 passed, 2 diverged, 0
+missing-golden**, only known `1905.00073v1` and `1905.00148v1`;
+`git diff --check`. Metrics: warnings **41**; `unsafe fn` **568**;
+`from_idx_unchecked` total **124** (node.rs 74, math 35, linebreak 12, mem 3;
+packaging 0).
+
+**Next:** continue with another bridge host: `mlist_to_hlist` itself,
+`make_op_global`, shipout/output walkers, or the `hyphenate`/`line_break`
+tail.
+
+---
+
+## Idiom session 176 — 2026-06-13 — Execution: thread `vsplit` as a coherent packaging slice
+
+**Type:** execution (workstream 01 / fused `01b`+`01c`). Continued the
+session-175 packaging WIP by taking the deferred `vsplit` bridge island,
+not a pointer-only cleanup.
+
+**Code:**
+1. Split `vsplit` into an explicit-state `start_vsplit`/`vsplit_resume`
+   core over `MemState`/`EqtbState`/`ScannerState`/`ShipoutState`, while
+   keeping the legacy `pub unsafe fn vsplit` wrapper. The core now threads
+   through `find_sa_element`, `delete_sa_ref`, `flush_node_list`,
+   `do_marks`, `prune_page_top`, `vpackage_in`, `free_node`, and
+   `delete_token_ref` instead of chaining the old `_global` bridge calls.
+2. Moved the migrated state boundaries into the slice: `scanner.disc_ptr`,
+   `scanner.sa_root`, `scanner.cur_mark`, and box-register `eqtb` writes are
+   direct. The source box is classified as a typed `NodePtr<VListNode>`.
+   `cur_val`/`cur_ptr` stay as raw hot globals, and Mark-node fields stay raw
+   because that family is intentionally not typed yet.
+3. Reused the resumable `vert_break` core rather than calling the legacy
+   wrapper under a borrow. Infinite-shrinkage still pauses through the
+   `vsplit` wrapper, prints the original diagnostic after dropping the state
+   borrow, repairs the glue spec through the threaded typed helper, and then
+   resumes the same `VertBreakCursor`.
+4. Plumbed `vpackage_in` outcomes through `VsplitOutcome` so vpack
+   diagnostics are printed only after the state borrow drops. Both potential
+   packages are preserved and printed in TeX order.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo fmt --check -p
+tectonic_engine_xetex`; `cargo test -p tectonic_engine_xetex node::` **42/42**;
+dashboard **29/2/7/4** (`tex-outputs`, `trip`, `engine_rust`,
+`latex_goldens`); rebuilt `target/release/tectonic`; ran
+`crates/engine_xetex/plan/scripts/corpus.sh check all`: **637 passed, 2
+diverged, 0 missing-golden**, only the known `1905.00073v1` and
+`1905.00148v1` (script exits nonzero because it reports those known diffs);
+`git diff --check`. Metrics: warnings **41**; `unsafe fn` **568**;
+`from_idx_unchecked` total **123** unchanged (node.rs 74, math 34,
+linebreak 12, mem 3; packaging 0).
+
+**Next:** packaging's `vert_break`/`vsplit` bridge island is now threaded.
+Continue with another real bridge host (`mlist_to_hlist`, shipout/output
+walkers, `make_op_global`/`make_math_accent_global`, or the
+`hyphenate`/`line_break` tail). Do not spend the next slice on pointer-only
+cleanup.
+
+---
+
+## Idiom session 175 — 2026-06-13 — Execution: thread and type `vert_break`
+
+**Type:** execution (workstream 01 / fused `01b`+`01c`). Targeted the
+remaining packaging global-accessor island instead of another pointer cleanup.
+
+**Code:**
+1. Split `vert_break` into a resumable explicit-state core over
+   `MemState`/`ScannerState` and kept the legacy `pub unsafe fn vert_break`
+   as the bridge wrapper. The core no longer calls `mem_b16s1`,
+   `mem_b32s1`, `active_width`, or `best_height_plus_depth` globals; it
+   reads/writes `scanner.active_width` and `scanner.best_height_plus_depth`
+   directly.
+2. Adopted typed/classified access in the new core: list-node dispatch goes
+   through `MemState::classify`; HList/VList/Rule dimensions use typed
+   accessors; Glue/Kern/Penalty arms use `GlueNode`, `GlueSpecNode`,
+   `KernNode`, and `PenaltyNode` methods. Whatsit PIC/PDF and untyped
+   Ins/Mark behavior remains raw as planned.
+3. Preserved the mid-loop infinite-shrinkage error ordering by making the
+   core pause with a `VertBreakStep::InfiniteShrinkage`. The wrapper drops
+   the state borrow, emits the original diagnostic/error, then reborrows to
+   copy the glue spec with threaded `new_spec`, set the copied
+   `shrink_order` through the typed glue-spec setter, delete the old ref via
+   threaded `delete_glue_ref`, and resume the same TeX loop state.
+
+**Not done:** `vsplit` was inspected but left as the next slice. It still
+crosses several bridge boundaries (`find_sa_element_global`, mark state,
+`prune_page_top_global`, `vpackage`, box-register writes); threading it
+coherently should pull those boundaries together rather than just retyping
+raw fields in place.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `cargo fmt --check -p
+tectonic_engine_xetex`; `cargo test -p tectonic_engine_xetex node::` **42/42**;
+dashboard **29/2/7/4** (`tex-outputs`, `trip`, `engine_rust`,
+`latex_goldens`); rebuilt `target/release/tectonic` and ran
+`plan/scripts/corpus.sh check all`: **637 passed, 2 diverged, 0
+missing-golden**, only the known `1905.00073v1` and `1905.00148v1`; `git
+diff --check`. Metrics: warnings **41**; `unsafe fn` **568**;
+`from_idx_unchecked` total **123** unchanged (node.rs 74, math 34,
+linebreak 12, mem 3; packaging 0).
+
+**Next:** thread `vsplit` as a coherent slice, probably including the mark
+collection loop, sparse-array calls, `prune_page_top`, and `vpackage` outcome
+plumbing so the function can stay under explicit state without nested
+bridges. Keep Unset/Ins/Mark/Adjust/Whatsit fields raw unless their typed
+surfaces are deliberately built.
+
+---
+
 ## Idiom session 174 — 2026-06-13 — Execution: prettify typed packaging arm bodies
 
 **Type:** execution (workstream 01 / `01c` §3 follow-through). Continued

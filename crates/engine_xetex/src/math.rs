@@ -25,9 +25,9 @@ use crate::globals::{
     tex_remainder, total_shrink, width_base_entry,
 };
 use crate::mem::{
-    free_node, free_node_global, get_avail, get_node_global, new_choice, new_glue, new_glue_global,
-    new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec, ALLOC_FAILED,
-    TEX_NULL,
+    free_node, free_node_global, get_avail, get_node, get_node_global, new_choice, new_glue,
+    new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec,
+    ALLOC_FAILED, TEX_NULL,
 };
 use crate::node::{
     AnyBox, ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode, VListNode,
@@ -1043,6 +1043,11 @@ fn classify_box_or_panic(mem: &MemState, p: i32) -> AnyBox {
         .expect("box node")
 }
 
+#[inline]
+fn assume_noad(p: i32) -> NodePtr<Noad> {
+    unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) }
+}
+
 fn make_op_latch_limits(mem: &mut MemState, scanner: &ScannerState, q: NodePtr<Noad>) {
     if q.subtype(mem) == NORMAL && scanner.cur_style < TEXT_STYLE {
         q.set_subtype(mem, LIMITS);
@@ -1635,6 +1640,175 @@ pub unsafe fn make_ord_global(q: i32) {
     }
 }
 
+struct MathAccentInitial {
+    f: i32,
+    c: i32,
+    i: crate::mem_types::B16x4,
+    area: i32,
+    kind: u16,
+}
+
+fn math_accent_initial(
+    mem: &MemState,
+    fonts: &FontState,
+    scanner: &ScannerState,
+    q: NodePtr<Noad>,
+) -> MathAccentInitial {
+    MathAccentInitial {
+        f: scanner.cur_f,
+        c: scanner.cur_c,
+        i: scanner.cur_i,
+        area: fonts.font_area_entry(scanner.cur_f),
+        kind: q.subtype(mem),
+    }
+}
+
+fn box_height_width(mem: &MemState, box_node: i32) -> (i32, i32) {
+    let b = classify_box_or_panic(mem, box_node);
+    (b.width(mem).0, b.height(mem).0)
+}
+
+fn accent_base_needs_reclean(mem: &MemState, q: NodePtr<Noad>) -> bool {
+    (q.supscr_type(mem) != EMPTY || q.subscr_type(mem) != EMPTY) && q.nucleus_type(mem) == MATH_CHAR
+}
+
+fn move_accent_base_scripts_to_mlist(
+    mem: &mut MemState,
+    q: NodePtr<Noad>,
+    box_node: i32,
+) -> Result<(), NodeRecycleAbort> {
+    crate::packaging::flush_node_list(mem, box_node).map_err(NodeRecycleAbort::Confusion)?;
+    let x = new_noad(mem);
+    if x == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+
+    mem.set_word(x + 1, mem.word(q.idx().offset(1).0));
+    mem.set_word(x + 2, mem.word(q.idx().offset(2).0));
+    mem.set_word(x + 3, mem.word(q.idx().offset(3).0));
+    q.set_supscr_field(mem, 0);
+    q.set_supscr_type(mem, 0);
+    q.set_subscr_field(mem, 0);
+    q.set_subscr_type(mem, 0);
+    q.set_nucleus_type(mem, SUB_MLIST);
+    q.set_nucleus_field(mem, x);
+    Ok(())
+}
+
+fn math_accent_delta(
+    fonts: &FontState,
+    f: i32,
+    kind: u16,
+    h: i32,
+    is_ot_math: bool,
+    accent_base_height: i32,
+) -> i32 {
+    if is_ot_math {
+        if kind == BOTTOM_ACC || kind == BOTTOM_ACC + 1 {
+            0
+        } else if h < accent_base_height {
+            h
+        } else {
+            accent_base_height
+        }
+    } else {
+        let x_height = fonts.font_info_b32s1(X_HEIGHT_CODE + fonts.param_base(f));
+        if h < x_height {
+            h
+        } else {
+            x_height
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct NativeAccentGlyph {
+    p: i32,
+    old_node: i32,
+}
+
+fn start_native_accent_glyph(
+    mem: &mut MemState,
+    y: AnyBox,
+    f: i32,
+) -> Result<NativeAccentGlyph, NodeRecycleAbort> {
+    let p = get_node(mem, GLYPH_NODE_SIZE);
+    if p == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    let old_node = y.list_ptr(mem).0;
+    mem.set_b16s1(p, WHATSIT_NODE);
+    mem.set_b16s0(p, GLYPH_NODE);
+    mem.set_b16s2(p + 4, f as u16);
+    Ok(NativeAccentGlyph { p, old_node })
+}
+
+fn set_native_accent_glyph_id(mem: &mut MemState, glyph: NativeAccentGlyph, glyph_id: u16) {
+    mem.set_b16s1(glyph.p + 4, glyph_id);
+}
+
+fn finish_native_accent_glyph_start(mem: &mut MemState, y: AnyBox, glyph: NativeAccentGlyph) {
+    free_node(mem, glyph.old_node, mem.b16s3(glyph.old_node + 4) as i32);
+    y.set_list_ptr(mem, MemPtr::from_raw(glyph.p));
+}
+
+fn sync_accent_box_to_glyph(mem: &mut MemState, y: AnyBox, p: i32, bottom: bool) {
+    y.set_width(mem, Scaled(mem.b32s1(p + 1)));
+    y.set_height(mem, Scaled(mem.b32s1(p + 3)));
+    y.set_depth(mem, Scaled(mem.b32s1(p + 2)));
+    if bottom {
+        if y.height(mem).0 < 0 {
+            y.set_height(mem, Scaled(0));
+        }
+    } else if y.depth(mem).0 < 0 {
+        y.set_depth(mem, Scaled(0));
+    }
+}
+
+fn set_accent_char_box_shift(mem: &mut MemState, y: AnyBox, shift: i32) {
+    y.set_shift_amount(mem, Scaled(shift));
+}
+
+fn zero_box_width(mem: &mut MemState, box_node: i32) {
+    classify_box_or_panic(mem, box_node).set_width(mem, Scaled(0));
+}
+
+fn link_bottom_accent_stack(mem: &mut MemState, x: AnyBox, y: AnyBox) {
+    x.set_link(mem, MemPtr::from_raw(y.idx().0));
+}
+
+fn start_top_accent_stack(
+    mem: &mut MemState,
+    x: AnyBox,
+    y: AnyBox,
+    delta: i32,
+) -> Result<(), NodeRecycleAbort> {
+    let p = alloc_kern_node(mem, -delta)?;
+    p.set_link(mem, MemPtr::from_raw(x.idx().0));
+    y.set_link(mem, MemPtr::from_raw(p.idx().0));
+    Ok(())
+}
+
+fn finish_top_accent_package(
+    mem: &mut MemState,
+    y: AnyBox,
+    h: i32,
+) -> Result<(), NodeRecycleAbort> {
+    if y.height(mem).0 < h {
+        let p = alloc_kern_node(mem, h - y.height(mem).0)?;
+        p.set_link(mem, y.list_ptr(mem));
+        y.set_list_ptr(mem, MemPtr::from_raw(p.idx().0));
+        y.set_height(mem, Scaled(h));
+    }
+    Ok(())
+}
+
+fn finish_accent_nucleus(mem: &mut MemState, q: NodePtr<Noad>, x: AnyBox, y: AnyBox) {
+    y.set_width(mem, x.width(mem));
+    q.set_nucleus_field(mem, y.idx().0);
+    q.set_nucleus_type(mem, SUB_BOX);
+}
+
 /// translated from xetex-math.c:79 (make_math_accent)
 pub unsafe fn make_math_accent_global(q: i32) {
     fetch_global(q + 4);
@@ -1646,34 +1820,31 @@ pub unsafe fn make_math_accent_global(q: i32) {
     let w: i32;
     let mut h: i32;
 
-    let (initial_f, initial_c, initial_i, initial_area, initial_kind) =
-        crate::state::with_state(|st| {
-            (
-                st.scanner.cur_f,
-                st.scanner.cur_c,
-                st.scanner.cur_i,
-                st.fonts.font_area_entry(st.scanner.cur_f),
-                st.mem.b16s0(q),
-            )
-        });
+    let initial = crate::state::with_state(|st| {
+        let q_node = assume_noad(q);
+        math_accent_initial(&st.mem, &st.fonts, &st.scanner, q_node)
+    });
 
-    if initial_area == AAT_FONT_FLAG || initial_area == OTGR_FONT_FLAG {
-        c = initial_c;
-        f = initial_f;
-        if !(initial_kind == BOTTOM_ACC || initial_kind == BOTTOM_ACC + 1) {
+    if initial.area == AAT_FONT_FLAG || initial.area == OTGR_FONT_FLAG {
+        c = initial.c;
+        f = initial.f;
+        if !(initial.kind == BOTTOM_ACC || initial.kind == BOTTOM_ACC + 1) {
             s = compute_ot_math_accent_pos_global(q);
         } else {
             s = 0;
         }
         let clean_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 2) + 1);
         x = clean_box(q + 1, clean_style);
-        (w, h) = crate::state::with_state(|st| (st.mem.b32s1(x + 1), st.mem.b32s1(x + 3)));
-    } else if initial_i.s3 > 0 {
-        let mut acc_i = initial_i;
-        c = initial_c;
-        f = initial_f;
+        (w, h) = crate::state::with_state(|st| box_height_width(&st.mem, x));
+    } else if initial.i.s3 > 0 {
+        let mut acc_i = initial.i;
+        c = initial.c;
+        f = initial.f;
         s = 0;
-        let base_is_math_char = crate::state::with_state(|st| st.mem.b32s1(q + 1) == MATH_CHAR);
+        let base_is_math_char = crate::state::with_state(|st| {
+            let q_node = assume_noad(q);
+            q_node.nucleus_type(&st.mem) == MATH_CHAR
+        });
         if base_is_math_char {
             fetch_global(q + 1);
             s = crate::state::with_state_mut(|st| {
@@ -1713,7 +1884,7 @@ pub unsafe fn make_math_accent_global(q: i32) {
         }
         let clean_style = crate::state::with_state(|st| 2 * (st.scanner.cur_style / 2) + 1);
         x = clean_box(q + 1, clean_style);
-        (w, h) = crate::state::with_state(|st| (st.mem.b32s1(x + 1), st.mem.b32s1(x + 3)));
+        (w, h) = crate::state::with_state(|st| box_height_width(&st.mem, x));
         loop {
             if acc_i.s1 % 4 != LIST_TAG {
                 break;
@@ -1744,53 +1915,62 @@ pub unsafe fn make_math_accent_global(q: i32) {
         return;
     }
 
-    let mut delta: i32;
-    if font_area_entry(f) == OTGR_FONT_FLAG && isOpenTypeMathFont(font_layout_engine_ptr(f)) {
-        if mem_b16s0(q) == BOTTOM_ACC || mem_b16s0(q) == BOTTOM_ACC + 1 {
-            delta = 0;
-        } else if h < get_ot_math_constant(f, ACCENTBASEHEIGHT) {
-            delta = h;
-        } else {
-            delta = get_ot_math_constant(f, ACCENTBASEHEIGHT);
-        }
+    let bottom_accent = initial.kind == BOTTOM_ACC || initial.kind == BOTTOM_ACC + 1;
+    let is_ot_math =
+        initial.area == OTGR_FONT_FLAG && isOpenTypeMathFont(font_layout_engine_ptr(f));
+    let accent_base_height = if is_ot_math && !bottom_accent {
+        get_ot_math_constant(f, ACCENTBASEHEIGHT)
     } else {
-        let x_height = font_info_b32s1(X_HEIGHT_CODE + param_base(f));
-        delta = if h < x_height { h } else { x_height };
-    }
+        0
+    };
+    let mut delta: i32 = crate::state::with_state(|st| {
+        math_accent_delta(
+            &st.fonts,
+            f,
+            initial.kind,
+            h,
+            is_ot_math,
+            accent_base_height,
+        )
+    });
 
-    if (mem_b32s1(q + 2) != EMPTY || mem_b32s1(q + 3) != EMPTY) && mem_b32s1(q + 1) == MATH_CHAR {
-        crate::packaging::flush_node_list_global(x);
-        x = new_noad_global();
-        set_mem_word(x + 1, mem_word(q + 1));
-        set_mem_word(x + 2, mem_word(q + 2));
-        set_mem_word(x + 3, mem_word(q + 3));
-        set_mem_b32s0(q + 2, 0);
-        set_mem_b32s1(q + 2, 0);
-        set_mem_b32s0(q + 3, 0);
-        set_mem_b32s1(q + 3, 0);
-        set_mem_b32s1(q + 1, SUB_MLIST);
-        set_mem_b32s0(q + 1, x);
+    let needs_reclean = crate::state::with_state(|st| {
+        let q_node = assume_noad(q);
+        accent_base_needs_reclean(&st.mem, q_node)
+    });
+    if needs_reclean {
+        if let Err(e) = crate::state::with_state_mut(|st| {
+            let q_node = assume_noad(q);
+            move_accent_base_scripts_to_mlist(&mut st.mem, q_node, x)
+        }) {
+            node_recycle_abort(e);
+        }
         x = clean_box(q + 1, cur_style());
-        delta += mem_b32s1(x + 3) - h;
-        h = mem_b32s1(x + 3);
+        let new_h =
+            crate::state::with_state(|st| classify_box_or_panic(&st.mem, x).height(&st.mem).0);
+        delta += new_h - h;
+        h = new_h;
     }
 
     let y = char_box_global(f, c);
     let mut p: i32;
-    if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        p = get_node_global(GLYPH_NODE_SIZE);
-        set_mem_b16s1(p, WHATSIT_NODE);
-        set_mem_b16s0(p, GLYPH_NODE);
-        set_mem_b16s2(p + 4, f as u16);
-        set_mem_b16s1(
-            p + 4,
-            real_get_native_glyph(mem_node_addr(mem_b32s1(y + 5)), 0),
-        );
+    if initial.area == AAT_FONT_FLAG || initial.area == OTGR_FONT_FLAG {
+        let glyph = match crate::state::with_state_mut(|st| {
+            let y_box = classify_box_or_panic(&st.mem, y);
+            start_native_accent_glyph(&mut st.mem, y_box, f)
+        }) {
+            Ok(glyph) => glyph,
+            Err(e) => node_recycle_abort(e),
+        };
+        let glyph_id = real_get_native_glyph(mem_node_addr(glyph.old_node), 0);
+        crate::state::with_state_mut(|st| set_native_accent_glyph_id(&mut st.mem, glyph, glyph_id));
+        p = glyph.p;
         crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
-        let old_node = mem_b32s1(y + 5);
-        free_node_global(old_node, mem_b16s3(old_node + 4) as i32);
-        set_mem_b32s1(y + 5, p);
-        if !mem_b16s0(q).is_multiple_of(2) {
+        crate::state::with_state_mut(|st| {
+            let y_box = classify_box_or_panic(&st.mem, y);
+            finish_native_accent_glyph_start(&mut st.mem, y_box, glyph);
+        });
+        if !initial.kind.is_multiple_of(2) {
             crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
         } else {
             let c_glyph = mem_b16s1(p + 4) as i32;
@@ -1823,16 +2003,10 @@ pub unsafe fn make_math_accent_global(q: i32) {
             }
             // found:
         }
-        set_mem_b32s1(y + 1, mem_b32s1(p + 1));
-        set_mem_b32s1(y + 3, mem_b32s1(p + 3));
-        set_mem_b32s1(y + 2, mem_b32s1(p + 2));
-        if mem_b16s0(q) == BOTTOM_ACC || mem_b16s0(q) == BOTTOM_ACC + 1 {
-            if mem_b32s1(y + 3) < 0 {
-                set_mem_b32s1(y + 3, 0);
-            }
-        } else if mem_b32s1(y + 2) < 0 {
-            set_mem_b32s1(y + 2, 0);
-        }
+        crate::state::with_state_mut(|st| {
+            let y_box = classify_box_or_panic(&st.mem, y);
+            sync_accent_box_to_glyph(&mut st.mem, y_box, p, bottom_accent);
+        });
         let sa: i32;
         if p != TEX_NULL
             && !is_char_node_global(p)
@@ -1845,44 +2019,66 @@ pub unsafe fn make_math_accent_global(q: i32) {
             } else {
                 sa
             };
-            if mem_b16s0(q) == BOTTOM_ACC || mem_b16s0(q) == BOTTOM_ACC + 1 || s == TEX_INFINITY {
+            if bottom_accent || s == TEX_INFINITY {
                 s = crate::scaled_math::half(w);
             }
             set_mem_b32s1(y + 4, s - sa);
         } else {
             let sa = crate::scaled_math::half(mem_b32s1(y + 1));
-            if mem_b16s0(q) == BOTTOM_ACC || mem_b16s0(q) == BOTTOM_ACC + 1 || s == TEX_INFINITY {
+            if bottom_accent || s == TEX_INFINITY {
                 s = crate::scaled_math::half(w);
             }
             set_mem_b32s1(y + 4, s - sa);
         }
     } else {
-        set_mem_b32s1(y + 4, s + crate::scaled_math::half(w - mem_b32s1(y + 1)));
+        let shift = crate::state::with_state(|st| {
+            let y_box = classify_box_or_panic(&st.mem, y);
+            s + crate::scaled_math::half(w - y_box.width(&st.mem).0)
+        });
+        crate::state::with_state_mut(|st| {
+            let y_box = classify_box_or_panic(&st.mem, y);
+            set_accent_char_box_shift(&mut st.mem, y_box, shift);
+        });
         p = TEX_NULL;
     }
 
-    set_mem_b32s1(y + 1, 0);
-    if mem_b16s0(q) == BOTTOM_ACC || mem_b16s0(q) == BOTTOM_ACC + 1 {
-        set_mem_b32s1(x, y);
+    crate::state::with_state_mut(|st| zero_box_width(&mut st.mem, y));
+    if bottom_accent {
+        crate::state::with_state_mut(|st| {
+            let x_box = classify_box_or_panic(&st.mem, x);
+            let y_box = classify_box_or_panic(&st.mem, y);
+            link_bottom_accent_stack(&mut st.mem, x_box, y_box);
+        });
         let y = crate::packaging::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
-        set_mem_b32s1(y + 4, -(h - mem_b32s1(y + 3)));
-        set_mem_b32s1(y + 1, mem_b32s1(x + 1));
-        set_mem_b32s0(q + 1, y);
-        set_mem_b32s1(q + 1, SUB_BOX);
+        crate::state::with_state_mut(|st| {
+            let q_node = assume_noad(q);
+            let x_box = classify_box_or_panic(&st.mem, x);
+            let y_box = classify_box_or_panic(&st.mem, y);
+            let y_height = y_box.height(&st.mem).0;
+            y_box.set_shift_amount(&mut st.mem, Scaled(-(h - y_height)));
+            finish_accent_nucleus(&mut st.mem, q_node, x_box, y_box);
+        });
     } else {
-        p = new_kern_global(-delta);
-        set_mem_b32s1(p, x);
-        set_mem_b32s1(y, p);
-        let y = crate::packaging::vpackage(y, 0, ADDITIONAL, MAX_HALFWORD);
-        if mem_b32s1(y + 3) < h {
-            p = new_kern_global(h - mem_b32s1(y + 3));
-            set_mem_b32s1(p, mem_b32s1(y + 5));
-            set_mem_b32s1(y + 5, p);
-            set_mem_b32s1(y + 3, h);
+        if let Err(e) = crate::state::with_state_mut(|st| {
+            let x_box = classify_box_or_panic(&st.mem, x);
+            let y_box = classify_box_or_panic(&st.mem, y);
+            start_top_accent_stack(&mut st.mem, x_box, y_box, delta)
+        }) {
+            node_recycle_abort(e);
         }
-        set_mem_b32s1(y + 1, mem_b32s1(x + 1));
-        set_mem_b32s0(q + 1, y);
-        set_mem_b32s1(q + 1, SUB_BOX);
+        let y = crate::packaging::vpackage(y, 0, ADDITIONAL, MAX_HALFWORD);
+        if let Err(e) = crate::state::with_state_mut(|st| {
+            let y_box = classify_box_or_panic(&st.mem, y);
+            finish_top_accent_package(&mut st.mem, y_box, h)
+        }) {
+            node_recycle_abort(e);
+        }
+        crate::state::with_state_mut(|st| {
+            let q_node = assume_noad(q);
+            let x_box = classify_box_or_panic(&st.mem, x);
+            let y_box = classify_box_or_panic(&st.mem, y);
+            finish_accent_nucleus(&mut st.mem, q_node, x_box, y_box);
+        });
     }
 
     free_ot_assembly(ot_assembly_ptr);
