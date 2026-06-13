@@ -21,12 +21,12 @@ use crate::globals::{
     set_pool_ptr, set_str_pool, set_str_ptr, set_trie_c_entry, set_trie_hash_entry,
     set_trie_l_entry, set_trie_max, set_trie_min_entry, set_trie_not_ready, set_trie_o_entry,
     set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry, set_trie_ptr, set_trie_r_entry,
-    set_trie_taken_entry, set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry,
-    set_trie_used_entry, str_pool_entry, str_ptr, str_start, trie_c_entry, trie_hash_entry,
-    trie_l_entry, trie_max, trie_min_entry, trie_not_ready, trie_o_entry, trie_op_lang_entry,
-    trie_op_ptr, trie_op_val_entry, trie_ptr, trie_r_entry, trie_size, trie_taken_entry,
-    trie_trc_entry, trie_trl_entry, trie_tro_entry, trie_used_entry,
+    set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry, set_trie_used_entry,
+    str_pool_entry, str_ptr, str_start, trie_c_entry, trie_hash_entry, trie_l_entry, trie_max,
+    trie_not_ready, trie_o_entry, trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_ptr,
+    trie_r_entry, trie_size, trie_trc_entry, trie_trl_entry, trie_tro_entry, trie_used_entry,
 };
+use crate::state::HyphState;
 
 // ---- moved verbatim from ini.rs (workstream 02) ----
 
@@ -94,25 +94,25 @@ pub unsafe fn new_trie_op(d: i16, n: i16, v: u16) -> u16 {
     }
 }
 // translated from xetex-ini.c:632 (trie_node)
-pub fn trie_node(p: i32) -> i32 {
-    let mut h = (trie_c_entry(p) as i32)
-        .wrapping_add((1009_i32).wrapping_mul(trie_o_entry(p) as i32))
-        .wrapping_add((2718_i32).wrapping_mul(trie_l_entry(p)))
-        .wrapping_add((3142_i32).wrapping_mul(trie_r_entry(p)))
+fn trie_node(hyph: &mut HyphState, p: i32) -> i32 {
+    let mut h = (hyph.trie_c[p as usize] as i32)
+        .wrapping_add((1009_i32).wrapping_mul(hyph.trie_o[p as usize] as i32))
+        .wrapping_add((2718_i32).wrapping_mul(hyph.trie_l[p as usize]))
+        .wrapping_add((3142_i32).wrapping_mul(hyph.trie_r[p as usize]))
         .wrapping_abs()
-        % trie_size();
+        % hyph.trie_size;
 
     loop {
-        let q = trie_hash_entry(h);
+        let q = hyph.trie_hash[h as usize];
         if q == 0 {
-            set_trie_hash_entry(h, p);
+            hyph.trie_hash[h as usize] = p;
             return p;
         }
 
-        if trie_c_entry(q) == trie_c_entry(p)
-            && trie_o_entry(q) == trie_o_entry(p)
-            && trie_l_entry(q) == trie_l_entry(p)
-            && trie_r_entry(q) == trie_r_entry(p)
+        if hyph.trie_c[q as usize] == hyph.trie_c[p as usize]
+            && hyph.trie_o[q as usize] == hyph.trie_o[p as usize]
+            && hyph.trie_l[q as usize] == hyph.trie_l[p as usize]
+            && hyph.trie_r[q as usize] == hyph.trie_r[p as usize]
         {
             return q;
         }
@@ -120,51 +120,66 @@ pub fn trie_node(p: i32) -> i32 {
         if h > 0 {
             h -= 1;
         } else {
-            h = trie_size();
+            h = hyph.trie_size;
         }
     }
 }
 // translated from xetex-ini.c:655 (compress_trie)
-pub fn compress_trie(p: i32) -> i32 {
+fn compress_trie(hyph: &mut HyphState, p: i32) -> i32 {
     if p == 0 {
         return 0;
     }
 
-    set_trie_l_entry(p, compress_trie(trie_l_entry(p)));
-    set_trie_r_entry(p, compress_trie(trie_r_entry(p)));
-    trie_node(p)
+    let l = compress_trie(hyph, hyph.trie_l[p as usize]);
+    hyph.trie_l[p as usize] = l;
+    let r = compress_trie(hyph, hyph.trie_r[p as usize]);
+    hyph.trie_r[p as usize] = r;
+    trie_node(hyph, p)
 }
+enum TriePackAbort {
+    PatternMemoryOverflow(i32),
+}
+
+fn trie_pack_abort(e: TriePackAbort) -> ! {
+    match e {
+        TriePackAbort::PatternMemoryOverflow(size) => unsafe {
+            crate::errors::overflow(c"pattern memory".as_ptr(), size)
+        },
+    }
+}
+
 // translated from xetex-ini.c:638 (first_fit)
-pub unsafe fn first_fit(p: i32) {
-    let c = trie_c_entry(p) as i32;
-    let mut z = trie_min_entry(c);
+fn first_fit(hyph: &mut HyphState, p: i32) -> Result<(), TriePackAbort> {
+    let c = hyph.trie_c[p as usize] as i32;
+    let mut z = hyph.trie_min[c as usize];
     let mut h;
 
     loop {
         h = z - c;
-        if trie_max() < h + max_hyph_char() {
-            if trie_size() <= h + max_hyph_char() {
-                crate::errors::overflow(c"pattern memory".as_ptr(), trie_size());
+        if hyph.trie_max < h + hyph.max_hyph_char {
+            if hyph.trie_size <= h + hyph.max_hyph_char {
+                return Err(TriePackAbort::PatternMemoryOverflow(hyph.trie_size));
             }
 
             loop {
-                set_trie_max(trie_max() + 1);
-                set_trie_taken_entry(trie_max(), false);
-                set_trie_trl_entry(trie_max(), trie_max() + 1);
-                set_trie_tro_entry(trie_max(), trie_max() - 1);
-                if trie_max() == h + max_hyph_char() {
+                hyph.trie_max += 1;
+                let max = hyph.trie_max as usize;
+                hyph.trie_taken[max] = false;
+                hyph.trie_trl[max] = hyph.trie_max + 1;
+                hyph.trie_tro[max] = hyph.trie_max - 1;
+                if hyph.trie_max == h + hyph.max_hyph_char {
                     break;
                 }
             }
         }
 
-        let mut found = !trie_taken_entry(h);
-        let mut q = trie_r_entry(p);
+        let mut found = !hyph.trie_taken[h as usize];
+        let mut q = hyph.trie_r[p as usize];
         while found && q > 0 {
-            if trie_trl_entry(h + trie_c_entry(q) as i32) == 0 {
+            if hyph.trie_trl[(h + hyph.trie_c[q as usize] as i32) as usize] == 0 {
                 found = false;
             } else {
-                q = trie_r_entry(q);
+                q = hyph.trie_r[q as usize];
             }
         }
 
@@ -172,29 +187,29 @@ pub unsafe fn first_fit(p: i32) {
             break;
         }
 
-        z = trie_trl_entry(z);
+        z = hyph.trie_trl[z as usize];
     }
 
-    set_trie_taken_entry(h, true);
-    set_trie_hash_entry(p, h);
+    hyph.trie_taken[h as usize] = true;
+    hyph.trie_hash[p as usize] = h;
     let mut q = p;
     loop {
-        z = h + trie_c_entry(q) as i32;
-        let mut l = trie_tro_entry(z);
-        let r = trie_trl_entry(z);
-        set_trie_tro_entry(r, l);
-        set_trie_trl_entry(l, r);
-        set_trie_trl_entry(z, 0);
+        z = h + hyph.trie_c[q as usize] as i32;
+        let mut l = hyph.trie_tro[z as usize];
+        let r = hyph.trie_trl[z as usize];
+        hyph.trie_tro[r as usize] = l;
+        hyph.trie_trl[l as usize] = r;
+        hyph.trie_trl[z as usize] = 0;
 
-        if l < max_hyph_char() {
-            let ll = if z < max_hyph_char() {
+        if l < hyph.max_hyph_char {
+            let ll = if z < hyph.max_hyph_char {
                 z
             } else {
-                max_hyph_char()
+                hyph.max_hyph_char
             };
 
             loop {
-                set_trie_min_entry(l, r);
+                hyph.trie_min[l as usize] = r;
                 l += 1;
                 if l == ll {
                     break;
@@ -202,42 +217,44 @@ pub unsafe fn first_fit(p: i32) {
             }
         }
 
-        q = trie_r_entry(q);
+        q = hyph.trie_r[q as usize];
         if q == 0 {
             break;
         }
     }
+    Ok(())
 }
 // translated from xetex-ini.c:695 (trie_pack)
-pub unsafe fn trie_pack(mut p: i32) {
+fn trie_pack(hyph: &mut HyphState, mut p: i32) -> Result<(), TriePackAbort> {
     loop {
-        let q = trie_l_entry(p);
-        if q > 0 && trie_hash_entry(q) == 0 {
-            first_fit(q);
-            trie_pack(q);
+        let q = hyph.trie_l[p as usize];
+        if q > 0 && hyph.trie_hash[q as usize] == 0 {
+            first_fit(hyph, q)?;
+            trie_pack(hyph, q)?;
         }
 
-        p = trie_r_entry(p);
+        p = hyph.trie_r[p as usize];
         if p == 0 {
             break;
         }
     }
+    Ok(())
 }
 // translated from xetex-ini.c:708 (trie_fix)
-pub fn trie_fix(mut p: i32) {
-    let z = trie_hash_entry(p);
+fn trie_fix(hyph: &mut HyphState, mut p: i32) {
+    let z = hyph.trie_hash[p as usize];
     loop {
-        let q = trie_l_entry(p);
-        let c = trie_c_entry(p);
-        set_trie_trl_entry(z + c as i32, trie_hash_entry(q));
-        set_trie_trc_entry(z + c as i32, c);
-        set_trie_tro_entry(z + c as i32, trie_o_entry(p) as i32);
+        let q = hyph.trie_l[p as usize];
+        let c = hyph.trie_c[p as usize];
+        hyph.trie_trl[(z + c as i32) as usize] = hyph.trie_hash[q as usize];
+        hyph.trie_trc[(z + c as i32) as usize] = c;
+        hyph.trie_tro[(z + c as i32) as usize] = hyph.trie_o[p as usize] as i32;
 
         if q > 0 {
-            trie_fix(q);
+            trie_fix(hyph, q);
         }
 
-        p = trie_r_entry(p);
+        p = hyph.trie_r[p as usize];
         if p == 0 {
             break;
         }
@@ -295,8 +312,15 @@ pub unsafe fn init_trie() {
         p += 1;
     }
 
-    set_trie_r_entry(0, compress_trie(trie_r_entry(0)));
-    set_trie_l_entry(0, compress_trie(trie_l_entry(0)));
+    crate::state::with_state_mut(|state| {
+        let r = state.hyph.trie_r[0];
+        let r = compress_trie(&mut state.hyph, r);
+        state.hyph.trie_r[0] = r;
+
+        let l = state.hyph.trie_l[0];
+        let l = compress_trie(&mut state.hyph, l);
+        state.hyph.trie_l[0] = l;
+    });
 
     p = 0;
     let trie_ptr_val = trie_ptr();
@@ -316,8 +340,12 @@ pub unsafe fn init_trie() {
 
     let trie_l0 = trie_l_entry(0);
     if trie_l0 != 0 {
-        first_fit(trie_l0);
-        trie_pack(trie_l0);
+        if let Err(e) = crate::state::with_state_mut(|state| {
+            first_fit(&mut state.hyph, trie_l0)?;
+            trie_pack(&mut state.hyph, trie_l0)
+        }) {
+            trie_pack_abort(e);
+        }
     }
 
     let trie_r0 = trie_r_entry(0);
@@ -329,8 +357,12 @@ pub unsafe fn init_trie() {
                 p += 1;
             }
         }
-        first_fit(trie_r0);
-        trie_pack(trie_r0);
+        if let Err(e) = crate::state::with_state_mut(|state| {
+            first_fit(&mut state.hyph, trie_r0)?;
+            trie_pack(&mut state.hyph, trie_r0)
+        }) {
+            trie_pack_abort(e);
+        }
         set_hyph_start(trie_hash_entry(trie_r0));
     }
 
@@ -346,10 +378,10 @@ pub unsafe fn init_trie() {
         set_trie_max(max_hyph);
     } else {
         if trie_r0 > 0 {
-            trie_fix(trie_r0);
+            crate::state::with_state_mut(|state| trie_fix(&mut state.hyph, trie_r0));
         }
         if trie_l0 > 0 {
-            trie_fix(trie_l0);
+            crate::state::with_state_mut(|state| trie_fix(&mut state.hyph, trie_l0));
         }
 
         let trie_max_val = trie_max();

@@ -3651,20 +3651,6 @@ pub(crate) fn set_trie_hash_entry(k: i32, v: i32) {
     });
 }
 #[inline]
-pub(crate) fn trie_taken_entry(k: i32) -> bool {
-    crate::state::with_state(|state| state.hyph.trie_taken[k as usize])
-}
-#[inline]
-pub(crate) fn set_trie_taken_entry(k: i32, v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_taken[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn trie_min_entry(k: i32) -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_min[k as usize])
-}
-#[inline]
 pub(crate) fn set_trie_min_entry(k: i32, v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.trie_min[k as usize] = v;
