@@ -8,6 +8,63 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 173 — 2026-06-13 — Execution: adopt `classify` across the packaging list-walkers (large, low-docs)
+
+**Type:** execution (workstream 01 / `01c` §3 — the session-172 "Next"
+item: clean `classify` adoptions). 2 commits.
+
+**Code:**
+1. `flush_node_list` / `copy_node_list` / `just_copy` now dispatch on
+   `MemState::classify(p) -> AnyNode` instead of a raw `match
+   mem.b16s1(p)` over `*_FNL`/`*_CNL` constants. This **removes all 3 of
+   packaging's `from_idx_unchecked`** (the `flush_node_list` GLUE arm now
+   binds the typed `NodePtr<GlueNode>` straight from `AnyNode::Glue`, and
+   its three noad arms — ORD..ACCENT / LEFT|RIGHT / FRACTION — collapse
+   into one `AnyNode::Noad` arm sub-dispatching on `noad_type`).
+   Per-walker exhaustiveness preserved: `flush_node_list`'s `AnyNode`
+   match is total (no catch-all); `copy_node_list` keeps `_ =>
+   confusion("copying")` for the valid-but-uncopied variants
+   (noad/style/choice) and `just_copy` keeps `_ => None` (silent skip),
+   both reached via `classify().map_err(...)?` / `classify().ok()`. Dead
+   `*_FNL`/`*_CNL` node-type consts + now-unused imports removed.
+2. `prune_page_top` adopts the same surface (`AnyNode::HList|VList|Rule`,
+   `Whatsit|Mark|Ins`, `Glue|Kern|Penalty`, `_ => confusion("pruning")`);
+   dead `*_PPT` node-type consts + `HLIST_NODE`/`RULE_NODE` imports
+   removed.
+
+**Behaviour-preserving:** every typed arm lowers to the same field
+access the raw match performed; `classify`'s `Err` (invalid type code)
+maps to the exact catch-all each walker already had.
+
+**Not done (recorded):** `ignorable_protrusion_node_in` (linebreak) and
+the math noad helpers are left raw — linebreak's `*_node()` /
+`from_idx_unchecked` are the **intentional `*_in`/confinement layer**
+(`01c` §6, session-172 note), not classify targets; the math sites are
+justified post-dispatch boundaries in helpers that receive an
+already-typed node from a caller (`mlist_to_hlist`) that is itself still
+unthreaded. The threaded-function `classify`-adoption vein is now
+**exhausted** — every remaining `match mem.b16s1` dispatch loop
+(`shipout`/`output`/`math.rs` `mlist_to_hlist`) reads through the
+`mem_b16s1` **global** accessor, i.e. is unthreaded, so adopting
+`classify` there requires threading the host first (bucket C/D).
+
+**Tests:** `cargo check`; `cargo fmt --check`; `node::` **42/42**;
+dashboard **29/2/7/4**; release corpus exit 0, only the known FP
+divergences `1905.00073v1` / `1905.00148v1` (**no regression**).
+Metrics: warnings **43 → 42**; `unsafe fn` **568**; `from_idx_unchecked`
+total **126 → 123** (packaging **3 → 0**; node.rs 74, math 34,
+linebreak 12, mem 3).
+
+**Next:** the mechanical `classify`/consumer vein is exhausted; the
+remaining levers are all **threading** large bridge/global functions so
+their dispatch loops can then adopt `classify` in the same fused slice
+(`01b` §3a): `mlist_to_hlist` (math), the `shipout`/`output`
+node-walkers, `vert_break`/`vsplit`, `make_op_global`/
+`make_math_accent_global`, the `hyphenate`/`line_break` tail. No more
+pointer-only or raw-dispatch-only passes.
+
+---
+
 ## Idiom session 172 — 2026-06-13 — Execution: unified `AnyNode` + `classify`, adopted in hpack/vpackage
 
 **Type:** execution (workstream 01 / `01c` §3 — the single classification
