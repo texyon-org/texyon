@@ -624,18 +624,18 @@ pub fn flush_node_list(
                         break 'done;
                     }
                     GLUE_NODE => {
-                        let spec_raw = mem.b32s0(p + 1);
-                        let spec =
-                            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(spec_raw))
-                                .unwrap();
+                        // SAFETY: the `NODE_type` match arm proves this is a glue node.
+                        let glue =
+                            unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p)) };
+                        let spec = glue.glue_spec(mem).expect("glue node has a glue_spec");
                         if spec.ref_count(mem) == crate::mem::TEX_NULL {
-                            crate::mem::free_node(mem, spec_raw, GLUE_SPEC_SIZE);
+                            crate::mem::free_node(mem, spec.idx().0, GLUE_SPEC_SIZE);
                         } else {
                             spec.set_ref_count(mem, spec.ref_count(mem) - 1);
                         }
-                        if mem.b32s1(p + 1) != crate::mem::TEX_NULL {
-                            let c = mem.b32s1(p + 1);
-                            flush_node_list(mem, c)?;
+                        let leader = glue.leader_ptr(mem);
+                        if leader.0 != crate::mem::TEX_NULL {
+                            flush_node_list(mem, leader.0)?;
                         }
                         crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
                         break 'done;

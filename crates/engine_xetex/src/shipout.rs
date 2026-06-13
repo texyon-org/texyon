@@ -35,7 +35,7 @@ use crate::mem::{
 };
 use crate::node::{EdgeNode, MovementNode, NodePtr};
 use crate::state::{FontState, MemState, ShipoutState, StringsState};
-use crate::units::{MemPtr, Scaled};
+use crate::units::{MemIdx, MemPtr, Scaled};
 
 extern "C" {
     fn ttstub_output_write(
@@ -1036,11 +1036,15 @@ fn finish_hlist_rule(
     base_line: i32,
     p: i32,
 ) -> HListRuleAction {
+    let bb = mem
+        .classify_box(MemIdx::new(this_box))
+        .expect("valid node type for hlist_out box")
+        .expect("hlist_out operates on a box");
     if shipout.rule_ht == NULL_FLAG {
-        shipout.rule_ht = mem.b32s1(this_box + 3);
+        shipout.rule_ht = bb.height(mem).0;
     }
     if shipout.rule_dp == NULL_FLAG {
-        shipout.rule_dp = mem.b32s1(this_box + 2);
+        shipout.rule_dp = bb.depth(mem).0;
     }
     shipout.rule_ht += shipout.rule_dp;
 
@@ -1844,7 +1848,11 @@ fn finish_vlist_rule(
     cur_dir: i16,
 ) -> VListRuleAction {
     if shipout.rule_wd == NULL_FLAG {
-        shipout.rule_wd = mem.b32s1(this_box + 1);
+        let bb = mem
+            .classify_box(MemIdx::new(this_box))
+            .expect("valid node type for vlist_out box")
+            .expect("vlist_out operates on a box");
+        shipout.rule_wd = bb.width(mem).0;
     }
 
     shipout.rule_ht += shipout.rule_dp;

@@ -29,7 +29,9 @@ use crate::mem::{
     new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec, ALLOC_FAILED,
     TEX_NULL,
 };
-use crate::node::{AnyBox, ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode};
+use crate::node::{
+    AnyBox, ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode, VListNode,
+};
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
@@ -2403,11 +2405,14 @@ fn first_script_glyph_step(
 
             if script_ptr >= 0 && script_ptr <= mem.mem_end {
                 if mem.b16s1(script_ptr) == CHOICE_NODE {
+                    // SAFETY: the `NODE_type == CHOICE_NODE` check proves the kind.
+                    let cn =
+                        unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(script_ptr)) };
                     script_ptr = match this_math_style / 2 {
-                        0 => mem.b32s0(script_ptr + 1),
-                        1 => mem.b32s1(script_ptr + 1),
-                        2 => mem.b32s0(script_ptr + 2),
-                        3 => mem.b32s1(script_ptr + 2),
+                        0 => cn.display_mlist(mem).0,
+                        1 => cn.text_mlist(mem).0,
+                        2 => cn.script_mlist(mem).0,
+                        3 => cn.script_script_mlist(mem).0,
                         _ => script_ptr,
                     };
                 } else {
@@ -3231,8 +3236,10 @@ fn stack_glue_into_box(
     if q_spec == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    mem.set_b32s1(q_spec + 1, min);
-    mem.set_b32s1(q_spec + 2, max - min);
+    // `q_spec` is a freshly allocated glue spec; type its width/stretch writes.
+    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q_spec)).unwrap();
+    spec.set_width(mem, Scaled(min));
+    spec.set_stretch(mem, Scaled(max - min));
     let p = new_glue(mem, q_spec);
     if p == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
@@ -3418,8 +3425,11 @@ pub unsafe fn start_eq_no() {
 
 /// translated from xetex-math.c:368 (math_limit_switch)
 fn apply_math_limit_switch(mem: &mut MemState, limit: u16) -> bool {
-    if cur_list_head() != cur_list_tail() && mem.b16s1(cur_list_tail()) == OP_NOAD {
-        mem.set_b16s0(cur_list_tail(), limit);
+    let tail = cur_list_tail();
+    if cur_list_head() != tail && mem.b16s1(tail) == OP_NOAD {
+        // SAFETY: the `NODE_type == OP_NOAD` check just proved this is an op noad.
+        let noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(tail)) };
+        noad.set_subtype(mem, limit);
         true
     } else {
         false
@@ -4741,11 +4751,15 @@ fn rebox(
     char_kern_width: Option<i32>,
 ) -> Result<ReboxResult, NodeRecycleAbort> {
     let mut b = b;
-    if mem.b32s1(b + 1) != w && mem.b32s1(b + 5) != TEX_NULL {
-        let mut p = mem.b32s1(b + 5);
+    let bb = mem
+        .classify_box(MemIdx::new(b))
+        .expect("valid node type for rebox")
+        .expect("rebox receives a box");
+    if bb.width(mem).0 != w && bb.list_ptr(mem).0 != TEX_NULL {
+        let mut p = bb.list_ptr(mem).0;
         if let Some(v) = char_kern_width {
-            if v != mem.b32s1(b + 1) {
-                let k = new_kern(mem, mem.b32s1(b + 1) - v);
+            if v != bb.width(mem).0 {
+                let k = new_kern(mem, bb.width(mem).0 - v);
                 if k == ALLOC_FAILED {
                     return Err(NodeRecycleAbort::Overflow);
                 }
@@ -4768,7 +4782,7 @@ fn rebox(
         mem.set_b32s1(p, tail_glue);
         Ok(ReboxResult::Hpack(b))
     } else {
-        mem.set_b32s1(b + 1, w);
+        bb.set_width(mem, Scaled(w));
         Ok(ReboxResult::Done(b))
     }
 }
@@ -4961,6 +4975,8 @@ fn build_ext_delimiter_box(
         return Err(NodeRecycleAbort::Overflow);
     }
     mem.set_b16s1(b, VLIST_NODE);
+    // SAFETY: `b` was just stamped `VLIST_NODE`.
+    let vb = unsafe { NodePtr::<VListNode>::from_idx_unchecked(MemIdx::new(b)) };
     let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
     // The repeatable (s0) piece sets the box width and the per-step height.
     let u = height_plus_depth(fonts, f, r.s0);
@@ -4968,7 +4984,7 @@ fn build_ext_delimiter_box(
     let qq = fonts.font_info_b16(fonts.char_base_entry(f) + effective_c);
     let box_width = fonts.font_info_b32s1(fonts.width_base_entry(f) + qq.s3 as i32)
         + fonts.font_info_b32s1(fonts.italic_base_entry(f) + qq.s1 as i32 / 4);
-    mem.set_b32s1(b + 1, box_width);
+    vb.set_width(mem, Scaled(box_width));
     let mut w = 0;
     if r.s1 != 0 {
         w += height_plus_depth(fonts, f, r.s1);
@@ -5010,8 +5026,8 @@ fn build_ext_delimiter_box(
         let p = char_box_tfm(mem, fonts, f, r.s3)?;
         stack_into_box(mem, b, p);
     }
-    let height = mem.b32s1(b + 3);
-    mem.set_b32s1(b + 2, w - height);
+    let height = vb.height(mem).0;
+    vb.set_depth(mem, Scaled(w - height));
     Ok(b)
 }
 
