@@ -8,6 +8,64 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 179 — 2026-06-13 — Execution: type the last untyped list-node families (Mark/Adjust/Ins/Unset + eTeX sparse-array marks)
+
+**Type:** execution (workstream 01 / `01c` Stage 3 — the typing backlog, not
+threading). Larger low-docs session per user request; 2 code commits.
+
+**Recon finding (why this shape):** the cheap typed-*consumer* vein in
+already-threaded math/packaging fns is exhausted, and the remaining math.rs
+`mem_*` mass is bucket-C/D (`init_math`/`app_display`/`after_math` are
+scanner/output-coupled; `clean_box`/`make_fraction_global` interleave
+`mlist_to_hlist`/`hpack`/OT-math globals). The genuinely-mechanical,
+compiler-checked work left is **building typed surfaces for the families
+`AnyNode` still carried as raw `MemIdx`** (`01c` §1 rank 9/11) and adopting
+them in the already-threaded packaging walkers.
+
+**Code (2 commits):**
+1. `12ea8d28` — built `MarkNode` (mark_ptr +1.b32.s1, mark_class +1.b32.s0),
+   `AdjustNode` (adjust_ptr +1.b32.s1), `InsNode` (ins_ptr +4.b32.s0,
+   split_top_ptr +4.b32.s1), and `UnsetNode` (box-layout width/depth/height +
+   `HasListPtr`; deliberately **not** `HasDimensions` — its +4 slot is
+   `glue_shrink`, not `shift_amount`, a naming landmine avoided). Promoted
+   `AnyNode::{Mark,Adjust,Ins,Unset}` from raw `MemIdx` to `NodePtr<K>`, so
+   `classify()` now confines each family's `from_idx_unchecked` to its one
+   audited arm. Adopted the typed accessors in `flush_node_list`,
+   `copy_node_list`, `hpack_in`, and `vpackage_in`. **Whatsit is now the only
+   raw `AnyNode` variant.** 4 `node::` roundtrip tests.
+2. (this commit) — built `SaNode` (eTeX sparse-array record: indexed
+   `child(mem, i)` at `mem[p+i/2+1].b32.s{0|1}` + `ref_count` at `b16.s0`) and
+   fully typed the already-threaded `do_marks` with it, replacing all ~17 raw
+   `mem.b32s{0,1}(q+N)` / `b16s0(q)` sparse-array accesses (the token-list
+   refcount reads on the *pointed-to* lists stay raw — those aren't a typed
+   family). The audited handle is built once at the `do_marks` entry by
+   context (no `NODE_type` to classify). 1 `node::` test.
+
+**Disasm gate:** skipped per the session-150 precedent — every new accessor is
+an already-ICF-proven shape (`MemPtr`/`Scaled` at +1/+2/+3/+4.b32.s0/s1,
+`b16.s0`), so no new shape was introduced.
+
+**Tests:** `cargo check` + `fmt --check`; `node::` **47/47**; full dashboard
+**29/2/7/4** (after each slice); rebuilt `target/release/tectonic`; corpus
+`plan/scripts/corpus.sh check all`: **637 passed / 2 diverged / 0
+missing-golden**, only the known FP divergences `1905.00073v1` and
+`1905.00148v1` (no regression). Metrics: warnings **41**; `unsafe fn` **568**;
+`from_idx_unchecked` **125 → 131** (+6: the 4 promoted-family classify arms + 1
+`SaNode` test + 1 `do_marks` audited handle — all single-site boundaries; node
+74→79, packaging 0→1, math 36, linebreak 12, mem 3); **packaging method-form
+`+N` accesses 89 → 52 (−37)**.
+
+**Next:** the only untyped `AnyNode` family left is **Whatsit/native** (`01c`
+§1 rank 9) — variable-size, trailing inline UTF-16/glyph data, a raw native
+pointer, FFI-measured: the documented "hardest, last" family and a dedicated
+slice, not a mechanical batch. Otherwise the remaining levers are all
+bucket-C/D threading: the print subsystem (`print_*` → state params, which
+unblocks the `shipout`/`output` show-node walkers), the display-math trio
+`init_math`/`app_display`/`after_math`, or the `pagebuilder`/`hyphenate`/
+`line_break` tails.
+
+---
+
 ## Idiom session 178 — 2026-06-13 — Execution: thread/type `mlist_to_hlist` (both passes)
 
 **Type:** execution (workstream 01 / fused `01b`+`01c`). Took the documented
