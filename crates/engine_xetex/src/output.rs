@@ -13,16 +13,15 @@ use crate::texmfmp::gettexstring;
 
 use crate::globals::{
     base_ptr, cond_ptr, cur_boundary, cur_chr, cur_cmd, cur_cs, cur_group, cur_if, cur_input,
-    cur_level, cur_list_mode, cur_mark, cur_val, current_diagnostic, def_ref, eqtb_b32s1,
+    cur_level, cur_list_mode, cur_val, current_diagnostic, def_ref, eqtb_b32s1,
     file_line_error_style_p, file_offset, full_source_filename_stack, grp_stack, history, if_limit,
     if_line, if_stack, in_open, init_pool_ptr, input_ptr, input_stack, line, line_stack,
-    max_print_line, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, old_setting, pool_ptr, pool_size,
-    rust_stdout, save_ptr, save_stack_b16s0, save_stack_b32s1, selector, set_base_ptr,
-    set_cond_ptr, set_cur_group, set_cur_if, set_cur_level, set_current_diagnostic, set_grp_stack,
-    set_help_line, set_help_ptr, set_history, set_if_limit, set_if_line, set_if_stack,
-    set_input_stack, set_mem_b16s1, set_mem_b32s1, set_old_setting, set_pool_ptr, set_save_ptr,
-    set_selector, set_shown_mode, set_str_ptr, shown_mode, str_pool_entry, str_ptr, str_start,
-    term_offset,
+    max_print_line, mem_b16s0, mem_b16s1, mem_b32s1, old_setting, pool_ptr, pool_size, rust_stdout,
+    save_ptr, save_stack_b16s0, save_stack_b32s1, selector, set_base_ptr, set_cond_ptr,
+    set_cur_group, set_cur_if, set_cur_level, set_current_diagnostic, set_grp_stack, set_help_line,
+    set_help_ptr, set_history, set_if_limit, set_if_line, set_if_stack, set_input_stack,
+    set_mem_b16s1, set_mem_b32s1, set_old_setting, set_pool_ptr, set_save_ptr, set_selector,
+    set_shown_mode, set_str_ptr, shown_mode, str_ptr, str_start, term_offset,
 };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
@@ -1017,13 +1016,6 @@ pub(crate) fn print_native_word_in(st: &mut EngineState, p: i32) {
 // print_sa_num
 // ---------------------------------------------------------------------------
 
-/// Print the sparse-array register number for node `q`.
-///
-/// translated from xetex-output.c:285 (print_sa_num)
-pub unsafe fn print_sa_num(q: i32) {
-    crate::state::with_state_mut(|st| print_sa_num_in(st, q));
-}
-
 /// `&mut EngineState` core of [`print_sa_num`].
 pub(crate) fn print_sa_num_in(st: &mut EngineState, q: i32) {
     let n = if (st.mem.b16s1(q) as i32) < DIMEN_VAL_LIMIT {
@@ -1275,13 +1267,6 @@ pub(crate) fn print_spec_in(st: &mut EngineState, p: i32, s: *const libc::c_char
 // print_skip_param / print_param / print_length_param
 // ---------------------------------------------------------------------------
 
-/// Print the name of glue parameter n (GLUE_PAR__*).
-///
-/// translated from xetex-xetex0.c:379 (print_skip_param)
-pub unsafe fn print_skip_param(n: i32) {
-    crate::state::with_state_mut(|st| print_skip_param_in(st, n));
-}
-
 /// `&mut EngineState` core of [`print_skip_param`].
 pub(crate) fn print_skip_param_in(st: &mut EngineState, n: i32) {
     match n {
@@ -1308,106 +1293,97 @@ pub(crate) fn print_skip_param_in(st: &mut EngineState, n: i32) {
     }
 }
 
-/// Print the name of integer parameter n (INT_PAR__*).
-///
-/// translated from xetex-xetex0.c:1423 (print_param)
-pub unsafe fn print_param(n: i32) {
+/// `&mut EngineState` core of [`print_param`].
+pub(crate) fn print_param_in(st: &mut EngineState, n: i32) {
     match n {
-        0 => print_esc_cstr(c"pretolerance".as_ptr()),
-        1 => print_esc_cstr(c"tolerance".as_ptr()),
-        2 => print_esc_cstr(c"linepenalty".as_ptr()),
-        3 => print_esc_cstr(c"hyphenpenalty".as_ptr()),
-        4 => print_esc_cstr(c"exhyphenpenalty".as_ptr()),
-        5 => print_esc_cstr(c"clubpenalty".as_ptr()),
-        6 => print_esc_cstr(c"widowpenalty".as_ptr()),
-        7 => print_esc_cstr(c"displaywidowpenalty".as_ptr()),
-        8 => print_esc_cstr(c"brokenpenalty".as_ptr()),
-        9 => print_esc_cstr(c"binoppenalty".as_ptr()),
-        10 => print_esc_cstr(c"relpenalty".as_ptr()),
-        11 => print_esc_cstr(c"predisplaypenalty".as_ptr()),
-        12 => print_esc_cstr(c"postdisplaypenalty".as_ptr()),
-        13 => print_esc_cstr(c"interlinepenalty".as_ptr()),
-        14 => print_esc_cstr(c"doublehyphendemerits".as_ptr()),
-        15 => print_esc_cstr(c"finalhyphendemerits".as_ptr()),
-        16 => print_esc_cstr(c"adjdemerits".as_ptr()),
-        17 => print_esc_cstr(c"mag".as_ptr()),
-        18 => print_esc_cstr(c"delimiterfactor".as_ptr()),
-        19 => print_esc_cstr(c"looseness".as_ptr()),
-        20 => print_esc_cstr(c"time".as_ptr()),
-        21 => print_esc_cstr(c"day".as_ptr()),
-        22 => print_esc_cstr(c"month".as_ptr()),
-        23 => print_esc_cstr(c"year".as_ptr()),
-        24 => print_esc_cstr(c"showboxbreadth".as_ptr()),
-        25 => print_esc_cstr(c"showboxdepth".as_ptr()),
-        26 => print_esc_cstr(c"hbadness".as_ptr()),
-        27 => print_esc_cstr(c"vbadness".as_ptr()),
-        28 => print_esc_cstr(c"pausing".as_ptr()),
-        29 => print_esc_cstr(c"tracingonline".as_ptr()),
-        30 => print_esc_cstr(c"tracingmacros".as_ptr()),
-        31 => print_esc_cstr(c"tracingstats".as_ptr()),
-        32 => print_esc_cstr(c"tracingparagraphs".as_ptr()),
-        33 => print_esc_cstr(c"tracingpages".as_ptr()),
-        34 => print_esc_cstr(c"tracingoutput".as_ptr()),
-        35 => print_esc_cstr(c"tracinglostchars".as_ptr()),
-        36 => print_esc_cstr(c"tracingcommands".as_ptr()),
-        37 => print_esc_cstr(c"tracingrestores".as_ptr()),
-        38 => print_esc_cstr(c"uchyph".as_ptr()),
-        39 => print_esc_cstr(c"outputpenalty".as_ptr()),
-        40 => print_esc_cstr(c"maxdeadcycles".as_ptr()),
-        41 => print_esc_cstr(c"hangafter".as_ptr()),
-        42 => print_esc_cstr(c"floatingpenalty".as_ptr()),
-        43 => print_esc_cstr(c"globaldefs".as_ptr()),
-        44 => print_esc_cstr(c"fam".as_ptr()),
-        45 => print_esc_cstr(c"escapechar".as_ptr()),
-        46 => print_esc_cstr(c"defaulthyphenchar".as_ptr()),
-        47 => print_esc_cstr(c"defaultskewchar".as_ptr()),
-        48 => print_esc_cstr(c"endlinechar".as_ptr()),
-        49 => print_esc_cstr(c"newlinechar".as_ptr()),
-        50 => print_esc_cstr(c"language".as_ptr()),
-        51 => print_esc_cstr(c"lefthyphenmin".as_ptr()),
-        52 => print_esc_cstr(c"righthyphenmin".as_ptr()),
-        53 => print_esc_cstr(c"holdinginserts".as_ptr()),
-        54 => print_esc_cstr(c"errorcontextlines".as_ptr()),
-        55 => print_esc_cstr(c"tracingstacklevels".as_ptr()),
-        56 => print_esc_cstr(c"tracingassigns".as_ptr()),
-        57 => print_esc_cstr(c"tracinggroups".as_ptr()),
-        58 => print_esc_cstr(c"tracingifs".as_ptr()),
-        59 => print_esc_cstr(c"tracingscantokens".as_ptr()),
-        60 => print_esc_cstr(c"tracingnesting".as_ptr()),
-        61 => print_esc_cstr(c"predisplaydirection".as_ptr()),
-        62 => print_esc_cstr(c"lastlinefit".as_ptr()),
-        63 => print_esc_cstr(c"savingvdiscards".as_ptr()),
-        64 => print_esc_cstr(c"savinghyphcodes".as_ptr()),
-        65 => print_esc_cstr(c"suppressfontnotfounderror".as_ptr()),
+        0 => print_esc_cstr_in(st, c"pretolerance".as_ptr()),
+        1 => print_esc_cstr_in(st, c"tolerance".as_ptr()),
+        2 => print_esc_cstr_in(st, c"linepenalty".as_ptr()),
+        3 => print_esc_cstr_in(st, c"hyphenpenalty".as_ptr()),
+        4 => print_esc_cstr_in(st, c"exhyphenpenalty".as_ptr()),
+        5 => print_esc_cstr_in(st, c"clubpenalty".as_ptr()),
+        6 => print_esc_cstr_in(st, c"widowpenalty".as_ptr()),
+        7 => print_esc_cstr_in(st, c"displaywidowpenalty".as_ptr()),
+        8 => print_esc_cstr_in(st, c"brokenpenalty".as_ptr()),
+        9 => print_esc_cstr_in(st, c"binoppenalty".as_ptr()),
+        10 => print_esc_cstr_in(st, c"relpenalty".as_ptr()),
+        11 => print_esc_cstr_in(st, c"predisplaypenalty".as_ptr()),
+        12 => print_esc_cstr_in(st, c"postdisplaypenalty".as_ptr()),
+        13 => print_esc_cstr_in(st, c"interlinepenalty".as_ptr()),
+        14 => print_esc_cstr_in(st, c"doublehyphendemerits".as_ptr()),
+        15 => print_esc_cstr_in(st, c"finalhyphendemerits".as_ptr()),
+        16 => print_esc_cstr_in(st, c"adjdemerits".as_ptr()),
+        17 => print_esc_cstr_in(st, c"mag".as_ptr()),
+        18 => print_esc_cstr_in(st, c"delimiterfactor".as_ptr()),
+        19 => print_esc_cstr_in(st, c"looseness".as_ptr()),
+        20 => print_esc_cstr_in(st, c"time".as_ptr()),
+        21 => print_esc_cstr_in(st, c"day".as_ptr()),
+        22 => print_esc_cstr_in(st, c"month".as_ptr()),
+        23 => print_esc_cstr_in(st, c"year".as_ptr()),
+        24 => print_esc_cstr_in(st, c"showboxbreadth".as_ptr()),
+        25 => print_esc_cstr_in(st, c"showboxdepth".as_ptr()),
+        26 => print_esc_cstr_in(st, c"hbadness".as_ptr()),
+        27 => print_esc_cstr_in(st, c"vbadness".as_ptr()),
+        28 => print_esc_cstr_in(st, c"pausing".as_ptr()),
+        29 => print_esc_cstr_in(st, c"tracingonline".as_ptr()),
+        30 => print_esc_cstr_in(st, c"tracingmacros".as_ptr()),
+        31 => print_esc_cstr_in(st, c"tracingstats".as_ptr()),
+        32 => print_esc_cstr_in(st, c"tracingparagraphs".as_ptr()),
+        33 => print_esc_cstr_in(st, c"tracingpages".as_ptr()),
+        34 => print_esc_cstr_in(st, c"tracingoutput".as_ptr()),
+        35 => print_esc_cstr_in(st, c"tracinglostchars".as_ptr()),
+        36 => print_esc_cstr_in(st, c"tracingcommands".as_ptr()),
+        37 => print_esc_cstr_in(st, c"tracingrestores".as_ptr()),
+        38 => print_esc_cstr_in(st, c"uchyph".as_ptr()),
+        39 => print_esc_cstr_in(st, c"outputpenalty".as_ptr()),
+        40 => print_esc_cstr_in(st, c"maxdeadcycles".as_ptr()),
+        41 => print_esc_cstr_in(st, c"hangafter".as_ptr()),
+        42 => print_esc_cstr_in(st, c"floatingpenalty".as_ptr()),
+        43 => print_esc_cstr_in(st, c"globaldefs".as_ptr()),
+        44 => print_esc_cstr_in(st, c"fam".as_ptr()),
+        45 => print_esc_cstr_in(st, c"escapechar".as_ptr()),
+        46 => print_esc_cstr_in(st, c"defaulthyphenchar".as_ptr()),
+        47 => print_esc_cstr_in(st, c"defaultskewchar".as_ptr()),
+        48 => print_esc_cstr_in(st, c"endlinechar".as_ptr()),
+        49 => print_esc_cstr_in(st, c"newlinechar".as_ptr()),
+        50 => print_esc_cstr_in(st, c"language".as_ptr()),
+        51 => print_esc_cstr_in(st, c"lefthyphenmin".as_ptr()),
+        52 => print_esc_cstr_in(st, c"righthyphenmin".as_ptr()),
+        53 => print_esc_cstr_in(st, c"holdinginserts".as_ptr()),
+        54 => print_esc_cstr_in(st, c"errorcontextlines".as_ptr()),
+        55 => print_esc_cstr_in(st, c"tracingstacklevels".as_ptr()),
+        56 => print_esc_cstr_in(st, c"tracingassigns".as_ptr()),
+        57 => print_esc_cstr_in(st, c"tracinggroups".as_ptr()),
+        58 => print_esc_cstr_in(st, c"tracingifs".as_ptr()),
+        59 => print_esc_cstr_in(st, c"tracingscantokens".as_ptr()),
+        60 => print_esc_cstr_in(st, c"tracingnesting".as_ptr()),
+        61 => print_esc_cstr_in(st, c"predisplaydirection".as_ptr()),
+        62 => print_esc_cstr_in(st, c"lastlinefit".as_ptr()),
+        63 => print_esc_cstr_in(st, c"savingvdiscards".as_ptr()),
+        64 => print_esc_cstr_in(st, c"savinghyphcodes".as_ptr()),
+        65 => print_esc_cstr_in(st, c"suppressfontnotfounderror".as_ptr()),
         // 66 = xetex_linebreak_locale — not in C switch (no matching case)
-        67 => print_esc_cstr(c"XeTeXlinebreakpenalty".as_ptr()),
-        68 => print_esc_cstr(c"XeTeXprotrudechars".as_ptr()),
-        69 => print_esc_cstr(c"TeXXeTstate".as_ptr()),
-        70 => print_esc_cstr(c"XeTeXdashbreakstate".as_ptr()),
-        71 => print_esc_cstr(c"XeTeXupwardsmode".as_ptr()),
-        72 => print_esc_cstr(c"XeTeXuseglyphmetrics".as_ptr()),
-        73 => print_esc_cstr(c"XeTeXinterchartokenstate".as_ptr()),
-        74 => print_esc_cstr(c"XeTeXinputnormalization".as_ptr()),
-        77 => print_esc_cstr(c"XeTeXtracingfonts".as_ptr()),
-        78 => print_esc_cstr(c"XeTeXinterwordspaceshaping".as_ptr()),
-        79 => print_esc_cstr(c"XeTeXgenerateactualtext".as_ptr()),
-        80 => print_esc_cstr(c"XeTeXhyphenatablelength".as_ptr()),
-        81 => print_esc_cstr(c"synctex".as_ptr()),
-        82 => print_esc_cstr(c"pdfoutput".as_ptr()),
-        _ => print_cstr(c"[unknown int32_t parameter!]".as_ptr()),
+        67 => print_esc_cstr_in(st, c"XeTeXlinebreakpenalty".as_ptr()),
+        68 => print_esc_cstr_in(st, c"XeTeXprotrudechars".as_ptr()),
+        69 => print_esc_cstr_in(st, c"TeXXeTstate".as_ptr()),
+        70 => print_esc_cstr_in(st, c"XeTeXdashbreakstate".as_ptr()),
+        71 => print_esc_cstr_in(st, c"XeTeXupwardsmode".as_ptr()),
+        72 => print_esc_cstr_in(st, c"XeTeXuseglyphmetrics".as_ptr()),
+        73 => print_esc_cstr_in(st, c"XeTeXinterchartokenstate".as_ptr()),
+        74 => print_esc_cstr_in(st, c"XeTeXinputnormalization".as_ptr()),
+        77 => print_esc_cstr_in(st, c"XeTeXtracingfonts".as_ptr()),
+        78 => print_esc_cstr_in(st, c"XeTeXinterwordspaceshaping".as_ptr()),
+        79 => print_esc_cstr_in(st, c"XeTeXgenerateactualtext".as_ptr()),
+        80 => print_esc_cstr_in(st, c"XeTeXhyphenatablelength".as_ptr()),
+        81 => print_esc_cstr_in(st, c"synctex".as_ptr()),
+        82 => print_esc_cstr_in(st, c"pdfoutput".as_ptr()),
+        _ => print_cstr_in(st, c"[unknown int32_t parameter!]".as_ptr()),
     }
 }
 
 // ---------------------------------------------------------------------------
 // print_style / print_fam_and_char / print_delimiter
 // ---------------------------------------------------------------------------
-
-/// Print the math style name for style code c.
-///
-/// translated from xetex-xetex0.c:319 (print_style)
-pub unsafe fn print_style(c: i32) {
-    crate::state::with_state_mut(|st| print_style_in(st, c));
-}
 
 /// `&mut EngineState` core of [`print_style`].
 pub(crate) fn print_style_in(st: &mut EngineState, c: i32) {
@@ -1492,35 +1468,33 @@ pub(crate) fn print_glue_in(st: &mut EngineState, d: i32, order: i32, s: *const 
     }
 }
 
-/// Print the name of dimen parameter n (DIMEN_PAR__*).
-///
-/// translated from xetex-xetex0.c:1676 (print_length_param)
-pub unsafe fn print_length_param(n: i32) {
+/// `&mut EngineState` core of [`print_length_param`].
+pub(crate) fn print_length_param_in(st: &mut EngineState, n: i32) {
     match n {
-        0 => print_esc_cstr(c"parindent".as_ptr()),
-        1 => print_esc_cstr(c"mathsurround".as_ptr()),
-        2 => print_esc_cstr(c"lineskiplimit".as_ptr()),
-        3 => print_esc_cstr(c"hsize".as_ptr()),
-        4 => print_esc_cstr(c"vsize".as_ptr()),
-        5 => print_esc_cstr(c"maxdepth".as_ptr()),
-        6 => print_esc_cstr(c"splitmaxdepth".as_ptr()),
-        7 => print_esc_cstr(c"boxmaxdepth".as_ptr()),
-        8 => print_esc_cstr(c"hfuzz".as_ptr()),
-        9 => print_esc_cstr(c"vfuzz".as_ptr()),
-        10 => print_esc_cstr(c"delimitershortfall".as_ptr()),
-        11 => print_esc_cstr(c"nulldelimiterspace".as_ptr()),
-        12 => print_esc_cstr(c"scriptspace".as_ptr()),
-        13 => print_esc_cstr(c"predisplaysize".as_ptr()),
-        14 => print_esc_cstr(c"displaywidth".as_ptr()),
-        15 => print_esc_cstr(c"displayindent".as_ptr()),
-        16 => print_esc_cstr(c"overfullrule".as_ptr()),
-        17 => print_esc_cstr(c"hangindent".as_ptr()),
-        18 => print_esc_cstr(c"hoffset".as_ptr()),
-        19 => print_esc_cstr(c"voffset".as_ptr()),
-        20 => print_esc_cstr(c"emergencystretch".as_ptr()),
-        21 => print_esc_cstr(c"pdfpagewidth".as_ptr()),
-        22 => print_esc_cstr(c"pdfpageheight".as_ptr()),
-        _ => print_cstr(c"[unknown dimen parameter!]".as_ptr()),
+        0 => print_esc_cstr_in(st, c"parindent".as_ptr()),
+        1 => print_esc_cstr_in(st, c"mathsurround".as_ptr()),
+        2 => print_esc_cstr_in(st, c"lineskiplimit".as_ptr()),
+        3 => print_esc_cstr_in(st, c"hsize".as_ptr()),
+        4 => print_esc_cstr_in(st, c"vsize".as_ptr()),
+        5 => print_esc_cstr_in(st, c"maxdepth".as_ptr()),
+        6 => print_esc_cstr_in(st, c"splitmaxdepth".as_ptr()),
+        7 => print_esc_cstr_in(st, c"boxmaxdepth".as_ptr()),
+        8 => print_esc_cstr_in(st, c"hfuzz".as_ptr()),
+        9 => print_esc_cstr_in(st, c"vfuzz".as_ptr()),
+        10 => print_esc_cstr_in(st, c"delimitershortfall".as_ptr()),
+        11 => print_esc_cstr_in(st, c"nulldelimiterspace".as_ptr()),
+        12 => print_esc_cstr_in(st, c"scriptspace".as_ptr()),
+        13 => print_esc_cstr_in(st, c"predisplaysize".as_ptr()),
+        14 => print_esc_cstr_in(st, c"displaywidth".as_ptr()),
+        15 => print_esc_cstr_in(st, c"displayindent".as_ptr()),
+        16 => print_esc_cstr_in(st, c"overfullrule".as_ptr()),
+        17 => print_esc_cstr_in(st, c"hangindent".as_ptr()),
+        18 => print_esc_cstr_in(st, c"hoffset".as_ptr()),
+        19 => print_esc_cstr_in(st, c"voffset".as_ptr()),
+        20 => print_esc_cstr_in(st, c"emergencystretch".as_ptr()),
+        21 => print_esc_cstr_in(st, c"pdfpagewidth".as_ptr()),
+        22 => print_esc_cstr_in(st, c"pdfpageheight".as_ptr()),
+        _ => print_cstr_in(st, c"[unknown dimen parameter!]".as_ptr()),
     }
 }
 
@@ -1955,844 +1929,868 @@ const CC_PROTECTED_TOKEN: i32 = 0x1C00001;
 ///
 /// translated from xetex-xetex0.c:1265 (print_cmd_chr)
 pub unsafe fn print_cmd_chr(cmd: u16, chr_code: i32) {
-    use crate::globals::{font_area_entry, font_dsize_entry, font_name_entry, font_size_entry};
+    crate::state::with_state_mut(|st| print_cmd_chr_in(st, cmd, chr_code));
+}
 
+/// `&mut EngineState` core of [`print_cmd_chr`].
+pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
     // Helper: print a char/codepoint (> 65535 uses print_char for raw code).
-    let print_char_or_wide = |code: i32| {
+    let print_char_or_wide = |st: &mut EngineState, code: i32| {
         if code < 65536 {
-            print(code);
+            print_in(st, code);
         } else {
-            print_char(code);
+            print_char_in(st, code);
         }
     };
 
     match cmd {
         CMD_LEFT_BRACE => {
-            print_cstr(c"begin-group character ".as_ptr());
-            print_char_or_wide(chr_code);
+            print_cstr_in(st, c"begin-group character ".as_ptr());
+            print_char_or_wide(st, chr_code);
         }
         CMD_RIGHT_BRACE => {
-            print_cstr(c"end-group character ".as_ptr());
-            print_char_or_wide(chr_code);
+            print_cstr_in(st, c"end-group character ".as_ptr());
+            print_char_or_wide(st, chr_code);
         }
         CMD_MATH_SHIFT => {
-            print_cstr(c"math shift character ".as_ptr());
-            print_char_or_wide(chr_code);
+            print_cstr_in(st, c"math shift character ".as_ptr());
+            print_char_or_wide(st, chr_code);
         }
         CMD_MAC_PARAM => {
-            print_cstr(c"macro parameter character ".as_ptr());
-            print_char_or_wide(chr_code);
+            print_cstr_in(st, c"macro parameter character ".as_ptr());
+            print_char_or_wide(st, chr_code);
         }
         CMD_SUP_MARK => {
-            print_cstr(c"superscript character ".as_ptr());
-            print_char_or_wide(chr_code);
+            print_cstr_in(st, c"superscript character ".as_ptr());
+            print_char_or_wide(st, chr_code);
         }
         CMD_SUB_MARK => {
-            print_cstr(c"subscript character ".as_ptr());
-            print_char_or_wide(chr_code);
+            print_cstr_in(st, c"subscript character ".as_ptr());
+            print_char_or_wide(st, chr_code);
         }
         CMD_ENDV => {
-            print_cstr(c"end of alignment template".as_ptr());
+            print_cstr_in(st, c"end of alignment template".as_ptr());
         }
         CMD_SPACER => {
-            print_cstr(c"blank space ".as_ptr());
-            print_char_or_wide(chr_code);
+            print_cstr_in(st, c"blank space ".as_ptr());
+            print_char_or_wide(st, chr_code);
         }
         CMD_LETTER => {
-            print_cstr(c"the letter ".as_ptr());
-            print_char_or_wide(chr_code);
+            print_cstr_in(st, c"the letter ".as_ptr());
+            print_char_or_wide(st, chr_code);
         }
         CMD_OTHER_CHAR => {
-            print_cstr(c"the character ".as_ptr());
-            print_char_or_wide(chr_code);
+            print_cstr_in(st, c"the character ".as_ptr());
+            print_char_or_wide(st, chr_code);
         }
         CMD_ASSIGN_GLUE | CMD_ASSIGN_MU_GLUE => {
             if chr_code < CC_SKIP_BASE {
-                print_skip_param(chr_code - CC_GLUE_BASE);
+                print_skip_param_in(st, chr_code - CC_GLUE_BASE);
             } else if chr_code < CC_MU_SKIP_BASE {
-                print_esc_cstr(c"skip".as_ptr());
-                print_int(chr_code - CC_SKIP_BASE);
+                print_esc_cstr_in(st, c"skip".as_ptr());
+                print_int_in(st, chr_code - CC_SKIP_BASE);
             } else {
-                print_esc_cstr(c"muskip".as_ptr());
-                print_int(chr_code - CC_MU_SKIP_BASE);
+                print_esc_cstr_in(st, c"muskip".as_ptr());
+                print_int_in(st, chr_code - CC_MU_SKIP_BASE);
             }
         }
         CMD_ASSIGN_TOKS => {
             if chr_code >= CC_TOKS_BASE {
-                print_esc_cstr(c"toks".as_ptr());
-                print_int(chr_code - CC_TOKS_BASE);
+                print_esc_cstr_in(st, c"toks".as_ptr());
+                print_int_in(st, chr_code - CC_TOKS_BASE);
             } else {
                 match chr_code {
                     x if x == CC_LOCAL_BASE + CC_LOCAL_OUTPUT_ROUTINE => {
-                        print_esc_cstr(c"output".as_ptr())
+                        print_esc_cstr_in(st, c"output".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_PAR => {
-                        print_esc_cstr(c"everypar".as_ptr())
+                        print_esc_cstr_in(st, c"everypar".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_MATH => {
-                        print_esc_cstr(c"everymath".as_ptr())
+                        print_esc_cstr_in(st, c"everymath".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_DISPLAY => {
-                        print_esc_cstr(c"everydisplay".as_ptr())
+                        print_esc_cstr_in(st, c"everydisplay".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_HBOX => {
-                        print_esc_cstr(c"everyhbox".as_ptr())
+                        print_esc_cstr_in(st, c"everyhbox".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_VBOX => {
-                        print_esc_cstr(c"everyvbox".as_ptr())
+                        print_esc_cstr_in(st, c"everyvbox".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB => {
-                        print_esc_cstr(c"everyjob".as_ptr())
+                        print_esc_cstr_in(st, c"everyjob".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_CR => {
-                        print_esc_cstr(c"everycr".as_ptr())
+                        print_esc_cstr_in(st, c"everycr".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_EVERY_EOF => {
-                        print_esc_cstr(c"everyeof".as_ptr())
+                        print_esc_cstr_in(st, c"everyeof".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_XETEX_INTER_CHAR_TOKS => {
-                        print_esc_cstr(c"XeTeXinterchartoks".as_ptr())
+                        print_esc_cstr_in(st, c"XeTeXinterchartoks".as_ptr())
                     }
                     x if x == CC_LOCAL_BASE + CC_LOCAL_TECTONIC_CODA_TOKENS => {
-                        print_esc_cstr(c"TectonicCodaTokens".as_ptr())
+                        print_esc_cstr_in(st, c"TectonicCodaTokens".as_ptr())
                     }
-                    _ => print_esc_cstr(c"errhelp".as_ptr()),
+                    _ => print_esc_cstr_in(st, c"errhelp".as_ptr()),
                 }
             }
         }
         CMD_ASSIGN_INT => {
             if chr_code < CC_COUNT_BASE {
-                print_param(chr_code - CC_INT_BASE);
+                print_param_in(st, chr_code - CC_INT_BASE);
             } else {
-                print_esc_cstr(c"count".as_ptr());
-                print_int(chr_code - CC_COUNT_BASE);
+                print_esc_cstr_in(st, c"count".as_ptr());
+                print_int_in(st, chr_code - CC_COUNT_BASE);
             }
         }
         CMD_ASSIGN_DIMEN => {
             if chr_code < CC_SCALED_BASE {
-                print_length_param(chr_code - CC_DIMEN_BASE);
+                print_length_param_in(st, chr_code - CC_DIMEN_BASE);
             } else {
-                print_esc_cstr(c"dimen".as_ptr());
-                print_int(chr_code - CC_SCALED_BASE);
+                print_esc_cstr_in(st, c"dimen".as_ptr());
+                print_int_in(st, chr_code - CC_SCALED_BASE);
             }
         }
-        CMD_ACCENT => print_esc_cstr(c"accent".as_ptr()),
-        CMD_ADVANCE => print_esc_cstr(c"advance".as_ptr()),
-        CMD_AFTER_ASSIGNMENT => print_esc_cstr(c"afterassignment".as_ptr()),
-        CMD_AFTER_GROUP => print_esc_cstr(c"aftergroup".as_ptr()),
-        CMD_ASSIGN_FONT_DIMEN => print_esc_cstr(c"fontdimen".as_ptr()),
-        CMD_BEGIN_GROUP => print_esc_cstr(c"begingroup".as_ptr()),
-        CMD_BREAK_PENALTY => print_esc_cstr(c"penalty".as_ptr()),
-        CMD_CHAR_NUM => print_esc_cstr(c"char".as_ptr()),
-        CMD_CS_NAME => print_esc_cstr(c"csname".as_ptr()),
-        CMD_DEF_FONT => print_esc_cstr(c"font".as_ptr()),
+        CMD_ACCENT => print_esc_cstr_in(st, c"accent".as_ptr()),
+        CMD_ADVANCE => print_esc_cstr_in(st, c"advance".as_ptr()),
+        CMD_AFTER_ASSIGNMENT => print_esc_cstr_in(st, c"afterassignment".as_ptr()),
+        CMD_AFTER_GROUP => print_esc_cstr_in(st, c"aftergroup".as_ptr()),
+        CMD_ASSIGN_FONT_DIMEN => print_esc_cstr_in(st, c"fontdimen".as_ptr()),
+        CMD_BEGIN_GROUP => print_esc_cstr_in(st, c"begingroup".as_ptr()),
+        CMD_BREAK_PENALTY => print_esc_cstr_in(st, c"penalty".as_ptr()),
+        CMD_CHAR_NUM => print_esc_cstr_in(st, c"char".as_ptr()),
+        CMD_CS_NAME => print_esc_cstr_in(st, c"csname".as_ptr()),
+        CMD_DEF_FONT => print_esc_cstr_in(st, c"font".as_ptr()),
         CMD_DELIM_NUM => {
             if chr_code == 1 {
-                print_esc_cstr(c"Udelimiter".as_ptr());
+                print_esc_cstr_in(st, c"Udelimiter".as_ptr());
             } else {
-                print_esc_cstr(c"delimiter".as_ptr());
+                print_esc_cstr_in(st, c"delimiter".as_ptr());
             }
         }
-        CMD_DIVIDE => print_esc_cstr(c"divide".as_ptr()),
-        CMD_END_CS_NAME => print_esc_cstr(c"endcsname".as_ptr()),
-        CMD_END_GROUP => print_esc_cstr(c"endgroup".as_ptr()),
-        CMD_EX_SPACE => print_esc(' ' as i32),
+        CMD_DIVIDE => print_esc_cstr_in(st, c"divide".as_ptr()),
+        CMD_END_CS_NAME => print_esc_cstr_in(st, c"endcsname".as_ptr()),
+        CMD_END_GROUP => print_esc_cstr_in(st, c"endgroup".as_ptr()),
+        CMD_EX_SPACE => print_esc_in(st, ' ' as i32),
         CMD_EXPAND_AFTER => {
             if chr_code == 0 {
-                print_esc_cstr(c"expandafter".as_ptr());
+                print_esc_cstr_in(st, c"expandafter".as_ptr());
             } else {
-                print_esc_cstr(c"unless".as_ptr());
+                print_esc_cstr_in(st, c"unless".as_ptr());
             }
         }
-        CMD_HALIGN => print_esc_cstr(c"halign".as_ptr()),
-        CMD_HRULE => print_esc_cstr(c"hrule".as_ptr()),
+        CMD_HALIGN => print_esc_cstr_in(st, c"halign".as_ptr()),
+        CMD_HRULE => print_esc_cstr_in(st, c"hrule".as_ptr()),
         CMD_IGNORE_SPACES => {
             if chr_code == 0 {
-                print_esc_cstr(c"ignorespaces".as_ptr());
+                print_esc_cstr_in(st, c"ignorespaces".as_ptr());
             } else {
-                print_esc_cstr(c"primitive".as_ptr());
+                print_esc_cstr_in(st, c"primitive".as_ptr());
             }
         }
-        CMD_INSERT => print_esc_cstr(c"insert".as_ptr()),
-        CMD_ITAL_CORR => print_esc('/' as i32),
+        CMD_INSERT => print_esc_cstr_in(st, c"insert".as_ptr()),
+        CMD_ITAL_CORR => print_esc_in(st, '/' as i32),
         CMD_MARK => {
-            print_esc_cstr(c"mark".as_ptr());
+            print_esc_cstr_in(st, c"mark".as_ptr());
             if chr_code > 0 {
-                print_char('s' as i32);
+                print_char_in(st, 's' as i32);
             }
         }
         CMD_MATH_ACCENT => {
             if chr_code == 1 {
-                print_esc_cstr(c"Umathaccent".as_ptr());
+                print_esc_cstr_in(st, c"Umathaccent".as_ptr());
             } else {
-                print_esc_cstr(c"mathaccent".as_ptr());
+                print_esc_cstr_in(st, c"mathaccent".as_ptr());
             }
         }
         CMD_MATH_CHAR_NUM => {
             if chr_code == 2 {
-                print_esc_cstr(c"Umathchar".as_ptr());
+                print_esc_cstr_in(st, c"Umathchar".as_ptr());
             } else if chr_code == 1 {
-                print_esc_cstr(c"Umathcharnum".as_ptr());
+                print_esc_cstr_in(st, c"Umathcharnum".as_ptr());
             } else {
-                print_esc_cstr(c"mathchar".as_ptr());
+                print_esc_cstr_in(st, c"mathchar".as_ptr());
             }
         }
-        CMD_MATH_CHOICE => print_esc_cstr(c"mathchoice".as_ptr()),
-        CMD_MULTIPLY => print_esc_cstr(c"multiply".as_ptr()),
-        CMD_NO_ALIGN => print_esc_cstr(c"noalign".as_ptr()),
-        CMD_NO_BOUNDARY => print_esc_cstr(c"noboundary".as_ptr()),
+        CMD_MATH_CHOICE => print_esc_cstr_in(st, c"mathchoice".as_ptr()),
+        CMD_MULTIPLY => print_esc_cstr_in(st, c"multiply".as_ptr()),
+        CMD_NO_ALIGN => print_esc_cstr_in(st, c"noalign".as_ptr()),
+        CMD_NO_BOUNDARY => print_esc_cstr_in(st, c"noboundary".as_ptr()),
         CMD_NO_EXPAND => {
             if chr_code == 0 {
-                print_esc_cstr(c"noexpand".as_ptr());
+                print_esc_cstr_in(st, c"noexpand".as_ptr());
             } else {
-                print_esc_cstr(c"primitive".as_ptr());
+                print_esc_cstr_in(st, c"primitive".as_ptr());
             }
         }
-        CMD_NON_SCRIPT => print_esc_cstr(c"nonscript".as_ptr()),
-        CMD_OMIT => print_esc_cstr(c"omit".as_ptr()),
+        CMD_NON_SCRIPT => print_esc_cstr_in(st, c"nonscript".as_ptr()),
+        CMD_OMIT => print_esc_cstr_in(st, c"omit".as_ptr()),
         CMD_RADICAL => {
             if chr_code == 1 {
-                print_esc_cstr(c"Uradical".as_ptr());
+                print_esc_cstr_in(st, c"Uradical".as_ptr());
             } else {
-                print_esc_cstr(c"radical".as_ptr());
+                print_esc_cstr_in(st, c"radical".as_ptr());
             }
         }
         CMD_READ_TO_CS => {
             if chr_code == 0 {
-                print_esc_cstr(c"read".as_ptr());
+                print_esc_cstr_in(st, c"read".as_ptr());
             } else {
-                print_esc_cstr(c"readline".as_ptr());
+                print_esc_cstr_in(st, c"readline".as_ptr());
             }
         }
-        CMD_RELAX => print_esc_cstr(c"relax".as_ptr()),
-        CMD_SET_BOX => print_esc_cstr(c"setbox".as_ptr()),
-        CMD_SET_PREV_GRAF => print_esc_cstr(c"prevgraf".as_ptr()),
+        CMD_RELAX => print_esc_cstr_in(st, c"relax".as_ptr()),
+        CMD_SET_BOX => print_esc_cstr_in(st, c"setbox".as_ptr()),
+        CMD_SET_PREV_GRAF => print_esc_cstr_in(st, c"prevgraf".as_ptr()),
         CMD_SET_SHAPE => match chr_code {
-            CC_LOCAL_BASE_PAR_SHAPE => print_esc_cstr(c"parshape".as_ptr()),
-            CC_ETEX_PEN_BASE_INTER_LINE => print_esc_cstr(c"interlinepenalties".as_ptr()),
-            CC_ETEX_PEN_BASE_CLUB => print_esc_cstr(c"clubpenalties".as_ptr()),
-            CC_ETEX_PEN_BASE_WIDOW => print_esc_cstr(c"widowpenalties".as_ptr()),
-            CC_ETEX_PEN_BASE_DISPLAY_WIDOW => print_esc_cstr(c"displaywidowpenalties".as_ptr()),
+            CC_LOCAL_BASE_PAR_SHAPE => print_esc_cstr_in(st, c"parshape".as_ptr()),
+            CC_ETEX_PEN_BASE_INTER_LINE => print_esc_cstr_in(st, c"interlinepenalties".as_ptr()),
+            CC_ETEX_PEN_BASE_CLUB => print_esc_cstr_in(st, c"clubpenalties".as_ptr()),
+            CC_ETEX_PEN_BASE_WIDOW => print_esc_cstr_in(st, c"widowpenalties".as_ptr()),
+            CC_ETEX_PEN_BASE_DISPLAY_WIDOW => {
+                print_esc_cstr_in(st, c"displaywidowpenalties".as_ptr())
+            }
             _ => {}
         },
         CMD_THE => {
             if chr_code == 0 {
-                print_esc_cstr(c"the".as_ptr());
+                print_esc_cstr_in(st, c"the".as_ptr());
             } else if chr_code == 1 {
-                print_esc_cstr(c"unexpanded".as_ptr());
+                print_esc_cstr_in(st, c"unexpanded".as_ptr());
             } else {
-                print_esc_cstr(c"detokenize".as_ptr());
+                print_esc_cstr_in(st, c"detokenize".as_ptr());
             }
         }
         CMD_TOKS_REGISTER => {
-            print_esc_cstr(c"toks".as_ptr());
+            print_esc_cstr_in(st, c"toks".as_ptr());
             if chr_code != 0 {
-                print_sa_num(chr_code);
+                print_sa_num_in(st, chr_code);
             }
         }
-        CMD_VADJUST => print_esc_cstr(c"vadjust".as_ptr()),
+        CMD_VADJUST => print_esc_cstr_in(st, c"vadjust".as_ptr()),
         CMD_VALIGN => {
             if chr_code == 0 {
-                print_esc_cstr(c"valign".as_ptr());
+                print_esc_cstr_in(st, c"valign".as_ptr());
             } else {
                 match chr_code {
-                    CC_BEGIN_L_CODE => print_esc_cstr(c"beginL".as_ptr()),
-                    CC_END_L_CODE => print_esc_cstr(c"endL".as_ptr()),
-                    CC_BEGIN_R_CODE => print_esc_cstr(c"beginR".as_ptr()),
-                    _ => print_esc_cstr(c"endR".as_ptr()),
+                    CC_BEGIN_L_CODE => print_esc_cstr_in(st, c"beginL".as_ptr()),
+                    CC_END_L_CODE => print_esc_cstr_in(st, c"endL".as_ptr()),
+                    CC_BEGIN_R_CODE => print_esc_cstr_in(st, c"beginR".as_ptr()),
+                    _ => print_esc_cstr_in(st, c"endR".as_ptr()),
                 }
             }
         }
-        CMD_VCENTER => print_esc_cstr(c"vcenter".as_ptr()),
-        CMD_VRULE => print_esc_cstr(c"vrule".as_ptr()),
-        CMD_PAR_END => print_esc_cstr(c"par".as_ptr()),
+        CMD_VCENTER => print_esc_cstr_in(st, c"vcenter".as_ptr()),
+        CMD_VRULE => print_esc_cstr_in(st, c"vrule".as_ptr()),
+        CMD_PAR_END => print_esc_cstr_in(st, c"par".as_ptr()),
         CMD_INPUT => {
             if chr_code == 0 {
-                print_esc_cstr(c"input".as_ptr());
+                print_esc_cstr_in(st, c"input".as_ptr());
             } else if chr_code == 2 {
-                print_esc_cstr(c"scantokens".as_ptr());
+                print_esc_cstr_in(st, c"scantokens".as_ptr());
             } else {
-                print_esc_cstr(c"endinput".as_ptr());
+                print_esc_cstr_in(st, c"endinput".as_ptr());
             }
         }
         CMD_TOP_BOT_MARK => {
             match chr_code % CC_MARKS_CODE {
-                CC_FIRST_MARK_CODE => print_esc_cstr(c"firstmark".as_ptr()),
-                CC_BOT_MARK_CODE => print_esc_cstr(c"botmark".as_ptr()),
-                CC_SPLIT_FIRST_MARK_CODE => print_esc_cstr(c"splitfirstmark".as_ptr()),
-                CC_SPLIT_BOT_MARK_CODE => print_esc_cstr(c"splitbotmark".as_ptr()),
-                _ => print_esc_cstr(c"topmark".as_ptr()),
+                CC_FIRST_MARK_CODE => print_esc_cstr_in(st, c"firstmark".as_ptr()),
+                CC_BOT_MARK_CODE => print_esc_cstr_in(st, c"botmark".as_ptr()),
+                CC_SPLIT_FIRST_MARK_CODE => print_esc_cstr_in(st, c"splitfirstmark".as_ptr()),
+                CC_SPLIT_BOT_MARK_CODE => print_esc_cstr_in(st, c"splitbotmark".as_ptr()),
+                _ => print_esc_cstr_in(st, c"topmark".as_ptr()),
             }
             if chr_code >= CC_MARKS_CODE {
-                print_char('s' as i32);
+                print_char_in(st, 's' as i32);
             }
         }
         CMD_REGISTER => {
             let (the_cmd, the_chr) = if !(0..=19).contains(&chr_code) {
-                (mem_b16s1(chr_code) as i32 / 64, chr_code)
+                (st.mem.b16s1(chr_code) as i32 / 64, chr_code)
             } else {
                 (chr_code, TEX_NULL)
             };
             if the_cmd == CC_INT_VAL {
-                print_esc_cstr(c"count".as_ptr());
+                print_esc_cstr_in(st, c"count".as_ptr());
             } else if the_cmd == CC_DIMEN_VAL {
-                print_esc_cstr(c"dimen".as_ptr());
+                print_esc_cstr_in(st, c"dimen".as_ptr());
             } else if the_cmd == CC_GLUE_VAL {
-                print_esc_cstr(c"skip".as_ptr());
+                print_esc_cstr_in(st, c"skip".as_ptr());
             } else {
-                print_esc_cstr(c"muskip".as_ptr());
+                print_esc_cstr_in(st, c"muskip".as_ptr());
             }
             if the_chr != TEX_NULL {
-                print_sa_num(the_chr);
+                print_sa_num_in(st, the_chr);
             }
         }
         CMD_SET_AUX => {
             if chr_code == CC_VMODE {
-                print_esc_cstr(c"prevdepth".as_ptr());
+                print_esc_cstr_in(st, c"prevdepth".as_ptr());
             } else {
-                print_esc_cstr(c"spacefactor".as_ptr());
+                print_esc_cstr_in(st, c"spacefactor".as_ptr());
             }
         }
         CMD_SET_PAGE_INT => {
             if chr_code == 0 {
-                print_esc_cstr(c"deadcycles".as_ptr());
+                print_esc_cstr_in(st, c"deadcycles".as_ptr());
             } else if chr_code == 2 {
-                print_esc_cstr(c"interactionmode".as_ptr());
+                print_esc_cstr_in(st, c"interactionmode".as_ptr());
             } else {
-                print_esc_cstr(c"insertpenalties".as_ptr());
+                print_esc_cstr_in(st, c"insertpenalties".as_ptr());
             }
         }
         CMD_SET_BOX_DIMEN => {
             if chr_code == CC_WIDTH_OFFSET {
-                print_esc_cstr(c"wd".as_ptr());
+                print_esc_cstr_in(st, c"wd".as_ptr());
             } else if chr_code == CC_HEIGHT_OFFSET {
-                print_esc_cstr(c"ht".as_ptr());
+                print_esc_cstr_in(st, c"ht".as_ptr());
             } else {
-                print_esc_cstr(c"dp".as_ptr());
+                print_esc_cstr_in(st, c"dp".as_ptr());
             }
         }
         CMD_LAST_ITEM => match chr_code {
-            CC_INT_VAL => print_esc_cstr(c"lastpenalty".as_ptr()),
-            CC_DIMEN_VAL => print_esc_cstr(c"lastkern".as_ptr()),
-            CC_GLUE_VAL => print_esc_cstr(c"lastskip".as_ptr()),
-            CC_INPUT_LINE_NO_CODE => print_esc_cstr(c"inputlineno".as_ptr()),
-            CC_LAST_NODE_TYPE_CODE => print_esc_cstr(c"lastnodetype".as_ptr()),
-            CC_ETEX_VERSION_CODE => print_esc_cstr(c"eTeXversion".as_ptr()),
-            CC_XETEX_VERSION_CODE => print_esc_cstr(c"XeTeXversion".as_ptr()),
-            CC_XETEX_COUNT_GLYPHS_CODE => print_esc_cstr(c"XeTeXcountglyphs".as_ptr()),
-            CC_XETEX_COUNT_VARIATIONS_CODE => print_esc_cstr(c"XeTeXcountvariations".as_ptr()),
-            CC_XETEX_VARIATION_CODE => print_esc_cstr(c"XeTeXvariation".as_ptr()),
-            CC_XETEX_FIND_VARIATION_BY_NAME_CODE => {
-                print_esc_cstr(c"XeTeXfindvariationbyname".as_ptr())
+            CC_INT_VAL => print_esc_cstr_in(st, c"lastpenalty".as_ptr()),
+            CC_DIMEN_VAL => print_esc_cstr_in(st, c"lastkern".as_ptr()),
+            CC_GLUE_VAL => print_esc_cstr_in(st, c"lastskip".as_ptr()),
+            CC_INPUT_LINE_NO_CODE => print_esc_cstr_in(st, c"inputlineno".as_ptr()),
+            CC_LAST_NODE_TYPE_CODE => print_esc_cstr_in(st, c"lastnodetype".as_ptr()),
+            CC_ETEX_VERSION_CODE => print_esc_cstr_in(st, c"eTeXversion".as_ptr()),
+            CC_XETEX_VERSION_CODE => print_esc_cstr_in(st, c"XeTeXversion".as_ptr()),
+            CC_XETEX_COUNT_GLYPHS_CODE => print_esc_cstr_in(st, c"XeTeXcountglyphs".as_ptr()),
+            CC_XETEX_COUNT_VARIATIONS_CODE => {
+                print_esc_cstr_in(st, c"XeTeXcountvariations".as_ptr())
             }
-            CC_XETEX_VARIATION_MIN_CODE => print_esc_cstr(c"XeTeXvariationmin".as_ptr()),
-            CC_XETEX_VARIATION_MAX_CODE => print_esc_cstr(c"XeTeXvariationmax".as_ptr()),
-            CC_XETEX_VARIATION_DEFAULT_CODE => print_esc_cstr(c"XeTeXvariationdefault".as_ptr()),
-            CC_XETEX_COUNT_FEATURES_CODE => print_esc_cstr(c"XeTeXcountfeatures".as_ptr()),
-            CC_XETEX_FEATURE_CODE_CODE => print_esc_cstr(c"XeTeXfeaturecode".as_ptr()),
+            CC_XETEX_VARIATION_CODE => print_esc_cstr_in(st, c"XeTeXvariation".as_ptr()),
+            CC_XETEX_FIND_VARIATION_BY_NAME_CODE => {
+                print_esc_cstr_in(st, c"XeTeXfindvariationbyname".as_ptr())
+            }
+            CC_XETEX_VARIATION_MIN_CODE => print_esc_cstr_in(st, c"XeTeXvariationmin".as_ptr()),
+            CC_XETEX_VARIATION_MAX_CODE => print_esc_cstr_in(st, c"XeTeXvariationmax".as_ptr()),
+            CC_XETEX_VARIATION_DEFAULT_CODE => {
+                print_esc_cstr_in(st, c"XeTeXvariationdefault".as_ptr())
+            }
+            CC_XETEX_COUNT_FEATURES_CODE => print_esc_cstr_in(st, c"XeTeXcountfeatures".as_ptr()),
+            CC_XETEX_FEATURE_CODE_CODE => print_esc_cstr_in(st, c"XeTeXfeaturecode".as_ptr()),
             CC_XETEX_FIND_FEATURE_BY_NAME_CODE => {
-                print_esc_cstr(c"XeTeXfindfeaturebyname".as_ptr())
+                print_esc_cstr_in(st, c"XeTeXfindfeaturebyname".as_ptr())
             }
             CC_XETEX_IS_EXCLUSIVE_FEATURE_CODE => {
-                print_esc_cstr(c"XeTeXisexclusivefeature".as_ptr())
+                print_esc_cstr_in(st, c"XeTeXisexclusivefeature".as_ptr())
             }
-            CC_XETEX_COUNT_SELECTORS_CODE => print_esc_cstr(c"XeTeXcountselectors".as_ptr()),
-            CC_XETEX_SELECTOR_CODE_CODE => print_esc_cstr(c"XeTeXselectorcode".as_ptr()),
+            CC_XETEX_COUNT_SELECTORS_CODE => print_esc_cstr_in(st, c"XeTeXcountselectors".as_ptr()),
+            CC_XETEX_SELECTOR_CODE_CODE => print_esc_cstr_in(st, c"XeTeXselectorcode".as_ptr()),
             CC_XETEX_FIND_SELECTOR_BY_NAME_CODE => {
-                print_esc_cstr(c"XeTeXfindselectorbyname".as_ptr())
+                print_esc_cstr_in(st, c"XeTeXfindselectorbyname".as_ptr())
             }
-            CC_XETEX_IS_DEFAULT_SELECTOR_CODE => print_esc_cstr(c"XeTeXisdefaultselector".as_ptr()),
-            CC_XETEX_OT_COUNT_SCRIPTS_CODE => print_esc_cstr(c"XeTeXOTcountscripts".as_ptr()),
-            CC_XETEX_OT_COUNT_LANGUAGES_CODE => print_esc_cstr(c"XeTeXOTcountlanguages".as_ptr()),
-            CC_XETEX_OT_COUNT_FEATURES_CODE => print_esc_cstr(c"XeTeXOTcountfeatures".as_ptr()),
-            CC_XETEX_OT_SCRIPT_CODE => print_esc_cstr(c"XeTeXOTscripttag".as_ptr()),
-            CC_XETEX_OT_LANGUAGE_CODE => print_esc_cstr(c"XeTeXOTlanguagetag".as_ptr()),
-            CC_XETEX_OT_FEATURE_CODE => print_esc_cstr(c"XeTeXOTfeaturetag".as_ptr()),
-            CC_XETEX_MAP_CHAR_TO_GLYPH_CODE => print_esc_cstr(c"XeTeXcharglyph".as_ptr()),
-            CC_XETEX_GLYPH_INDEX_CODE => print_esc_cstr(c"XeTeXglyphindex".as_ptr()),
-            CC_XETEX_GLYPH_BOUNDS_CODE => print_esc_cstr(c"XeTeXglyphbounds".as_ptr()),
-            CC_XETEX_FONT_TYPE_CODE => print_esc_cstr(c"XeTeXfonttype".as_ptr()),
-            CC_XETEX_FIRST_CHAR_CODE => print_esc_cstr(c"XeTeXfirstfontchar".as_ptr()),
-            CC_XETEX_LAST_CHAR_CODE => print_esc_cstr(c"XeTeXlastfontchar".as_ptr()),
-            CC_XETEX_PDF_PAGE_COUNT_CODE => print_esc_cstr(c"XeTeXpdfpagecount".as_ptr()),
-            CC_CURRENT_GROUP_LEVEL_CODE => print_esc_cstr(c"currentgrouplevel".as_ptr()),
-            CC_CURRENT_GROUP_TYPE_CODE => print_esc_cstr(c"currentgrouptype".as_ptr()),
-            CC_CURRENT_IF_LEVEL_CODE => print_esc_cstr(c"currentiflevel".as_ptr()),
-            CC_CURRENT_IF_TYPE_CODE => print_esc_cstr(c"currentiftype".as_ptr()),
-            CC_CURRENT_IF_BRANCH_CODE => print_esc_cstr(c"currentifbranch".as_ptr()),
-            CC_FONT_CHAR_WD_CODE => print_esc_cstr(c"fontcharwd".as_ptr()),
-            CC_FONT_CHAR_HT_CODE => print_esc_cstr(c"fontcharht".as_ptr()),
-            CC_FONT_CHAR_DP_CODE => print_esc_cstr(c"fontchardp".as_ptr()),
-            CC_FONT_CHAR_IC_CODE => print_esc_cstr(c"fontcharic".as_ptr()),
-            CC_PAR_SHAPE_LENGTH_CODE => print_esc_cstr(c"parshapelength".as_ptr()),
-            CC_PAR_SHAPE_INDENT_CODE => print_esc_cstr(c"parshapeindent".as_ptr()),
-            CC_PAR_SHAPE_DIMEN_CODE => print_esc_cstr(c"parshapedimen".as_ptr()),
-            x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_INT_VAL => print_esc_cstr(c"numexpr".as_ptr()),
+            CC_XETEX_IS_DEFAULT_SELECTOR_CODE => {
+                print_esc_cstr_in(st, c"XeTeXisdefaultselector".as_ptr())
+            }
+            CC_XETEX_OT_COUNT_SCRIPTS_CODE => {
+                print_esc_cstr_in(st, c"XeTeXOTcountscripts".as_ptr())
+            }
+            CC_XETEX_OT_COUNT_LANGUAGES_CODE => {
+                print_esc_cstr_in(st, c"XeTeXOTcountlanguages".as_ptr())
+            }
+            CC_XETEX_OT_COUNT_FEATURES_CODE => {
+                print_esc_cstr_in(st, c"XeTeXOTcountfeatures".as_ptr())
+            }
+            CC_XETEX_OT_SCRIPT_CODE => print_esc_cstr_in(st, c"XeTeXOTscripttag".as_ptr()),
+            CC_XETEX_OT_LANGUAGE_CODE => print_esc_cstr_in(st, c"XeTeXOTlanguagetag".as_ptr()),
+            CC_XETEX_OT_FEATURE_CODE => print_esc_cstr_in(st, c"XeTeXOTfeaturetag".as_ptr()),
+            CC_XETEX_MAP_CHAR_TO_GLYPH_CODE => print_esc_cstr_in(st, c"XeTeXcharglyph".as_ptr()),
+            CC_XETEX_GLYPH_INDEX_CODE => print_esc_cstr_in(st, c"XeTeXglyphindex".as_ptr()),
+            CC_XETEX_GLYPH_BOUNDS_CODE => print_esc_cstr_in(st, c"XeTeXglyphbounds".as_ptr()),
+            CC_XETEX_FONT_TYPE_CODE => print_esc_cstr_in(st, c"XeTeXfonttype".as_ptr()),
+            CC_XETEX_FIRST_CHAR_CODE => print_esc_cstr_in(st, c"XeTeXfirstfontchar".as_ptr()),
+            CC_XETEX_LAST_CHAR_CODE => print_esc_cstr_in(st, c"XeTeXlastfontchar".as_ptr()),
+            CC_XETEX_PDF_PAGE_COUNT_CODE => print_esc_cstr_in(st, c"XeTeXpdfpagecount".as_ptr()),
+            CC_CURRENT_GROUP_LEVEL_CODE => print_esc_cstr_in(st, c"currentgrouplevel".as_ptr()),
+            CC_CURRENT_GROUP_TYPE_CODE => print_esc_cstr_in(st, c"currentgrouptype".as_ptr()),
+            CC_CURRENT_IF_LEVEL_CODE => print_esc_cstr_in(st, c"currentiflevel".as_ptr()),
+            CC_CURRENT_IF_TYPE_CODE => print_esc_cstr_in(st, c"currentiftype".as_ptr()),
+            CC_CURRENT_IF_BRANCH_CODE => print_esc_cstr_in(st, c"currentifbranch".as_ptr()),
+            CC_FONT_CHAR_WD_CODE => print_esc_cstr_in(st, c"fontcharwd".as_ptr()),
+            CC_FONT_CHAR_HT_CODE => print_esc_cstr_in(st, c"fontcharht".as_ptr()),
+            CC_FONT_CHAR_DP_CODE => print_esc_cstr_in(st, c"fontchardp".as_ptr()),
+            CC_FONT_CHAR_IC_CODE => print_esc_cstr_in(st, c"fontcharic".as_ptr()),
+            CC_PAR_SHAPE_LENGTH_CODE => print_esc_cstr_in(st, c"parshapelength".as_ptr()),
+            CC_PAR_SHAPE_INDENT_CODE => print_esc_cstr_in(st, c"parshapeindent".as_ptr()),
+            CC_PAR_SHAPE_DIMEN_CODE => print_esc_cstr_in(st, c"parshapedimen".as_ptr()),
+            x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_INT_VAL => {
+                print_esc_cstr_in(st, c"numexpr".as_ptr())
+            }
             x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_DIMEN_VAL => {
-                print_esc_cstr(c"dimexpr".as_ptr())
+                print_esc_cstr_in(st, c"dimexpr".as_ptr())
             }
             x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_GLUE_VAL => {
-                print_esc_cstr(c"glueexpr".as_ptr())
+                print_esc_cstr_in(st, c"glueexpr".as_ptr())
             }
-            x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_MU_VAL => print_esc_cstr(c"muexpr".as_ptr()),
-            CC_GLUE_STRETCH_ORDER_CODE => print_esc_cstr(c"gluestretchorder".as_ptr()),
-            CC_GLUE_SHRINK_ORDER_CODE => print_esc_cstr(c"glueshrinkorder".as_ptr()),
-            CC_GLUE_STRETCH_CODE => print_esc_cstr(c"gluestretch".as_ptr()),
-            CC_GLUE_SHRINK_CODE => print_esc_cstr(c"glueshrink".as_ptr()),
-            CC_MU_TO_GLUE_CODE => print_esc_cstr(c"mutoglue".as_ptr()),
-            CC_GLUE_TO_MU_CODE => print_esc_cstr(c"gluetomu".as_ptr()),
-            CC_PDF_LAST_X_POS_CODE => print_esc_cstr(c"pdflastxpos".as_ptr()),
-            CC_PDF_LAST_Y_POS_CODE => print_esc_cstr(c"pdflastypos".as_ptr()),
-            CC_ELAPSED_TIME_CODE => print_esc_cstr(c"elapsedtime".as_ptr()),
-            CC_PDF_SHELL_ESCAPE_CODE => print_esc_cstr(c"shellescape".as_ptr()),
-            CC_RANDOM_SEED_CODE => print_esc_cstr(c"randomseed".as_ptr()),
-            _ => print_esc_cstr(c"badness".as_ptr()),
+            x if x == CC_ETEX_EXPR - CC_INT_VAL + CC_MU_VAL => {
+                print_esc_cstr_in(st, c"muexpr".as_ptr())
+            }
+            CC_GLUE_STRETCH_ORDER_CODE => print_esc_cstr_in(st, c"gluestretchorder".as_ptr()),
+            CC_GLUE_SHRINK_ORDER_CODE => print_esc_cstr_in(st, c"glueshrinkorder".as_ptr()),
+            CC_GLUE_STRETCH_CODE => print_esc_cstr_in(st, c"gluestretch".as_ptr()),
+            CC_GLUE_SHRINK_CODE => print_esc_cstr_in(st, c"glueshrink".as_ptr()),
+            CC_MU_TO_GLUE_CODE => print_esc_cstr_in(st, c"mutoglue".as_ptr()),
+            CC_GLUE_TO_MU_CODE => print_esc_cstr_in(st, c"gluetomu".as_ptr()),
+            CC_PDF_LAST_X_POS_CODE => print_esc_cstr_in(st, c"pdflastxpos".as_ptr()),
+            CC_PDF_LAST_Y_POS_CODE => print_esc_cstr_in(st, c"pdflastypos".as_ptr()),
+            CC_ELAPSED_TIME_CODE => print_esc_cstr_in(st, c"elapsedtime".as_ptr()),
+            CC_PDF_SHELL_ESCAPE_CODE => print_esc_cstr_in(st, c"shellescape".as_ptr()),
+            CC_RANDOM_SEED_CODE => print_esc_cstr_in(st, c"randomseed".as_ptr()),
+            _ => print_esc_cstr_in(st, c"badness".as_ptr()),
         },
         CMD_CONVERT => match chr_code {
-            CC_NUMBER_CODE => print_esc_cstr(c"number".as_ptr()),
-            CC_ROMAN_NUMERAL_CODE => print_esc_cstr(c"romannumeral".as_ptr()),
-            CC_STRING_CODE => print_esc_cstr(c"string".as_ptr()),
-            CC_MEANING_CODE => print_esc_cstr(c"meaning".as_ptr()),
-            CC_FONT_NAME_CODE => print_esc_cstr(c"fontname".as_ptr()),
-            CC_ETEX_REVISION_CODE => print_esc_cstr(c"eTeXrevision".as_ptr()),
-            CC_EXPANDED_CODE => print_esc_cstr(c"expanded".as_ptr()),
-            CC_LEFT_MARGIN_KERN_CODE => print_esc_cstr(c"leftmarginkern".as_ptr()),
-            CC_RIGHT_MARGIN_KERN_CODE => print_esc_cstr(c"rightmarginkern".as_ptr()),
-            CC_PDF_CREATION_DATE_CODE => print_esc_cstr(c"creationdate".as_ptr()),
-            CC_PDF_FILE_MOD_DATE_CODE => print_esc_cstr(c"filemoddate".as_ptr()),
-            CC_PDF_FILE_SIZE_CODE => print_esc_cstr(c"filesize".as_ptr()),
-            CC_PDF_MDFIVE_SUM_CODE => print_esc_cstr(c"mdfivesum".as_ptr()),
-            CC_PDF_FILE_DUMP_CODE => print_esc_cstr(c"filedump".as_ptr()),
-            CC_PDF_STRCMP_CODE => print_esc_cstr(c"strcmp".as_ptr()),
-            CC_UNIFORM_DEVIATE_CODE => print_esc_cstr(c"uniformdeviate".as_ptr()),
-            CC_NORMAL_DEVIATE_CODE => print_esc_cstr(c"normaldeviate".as_ptr()),
-            CC_XETEX_REVISION_CODE => print_esc_cstr(c"XeTeXrevision".as_ptr()),
-            CC_XETEX_VARIATION_NAME_CODE => print_esc_cstr(c"XeTeXvariationname".as_ptr()),
-            CC_XETEX_FEATURE_NAME_CODE => print_esc_cstr(c"XeTeXfeaturename".as_ptr()),
-            CC_XETEX_SELECTOR_NAME_CODE => print_esc_cstr(c"XeTeXselectorname".as_ptr()),
-            CC_XETEX_GLYPH_NAME_CODE => print_esc_cstr(c"XeTeXglyphname".as_ptr()),
-            CC_XETEX_UCHAR_CODE => print_esc_cstr(c"Uchar".as_ptr()),
-            CC_XETEX_UCHARCAT_CODE => print_esc_cstr(c"Ucharcat".as_ptr()),
-            _ => print_esc_cstr(c"jobname".as_ptr()),
+            CC_NUMBER_CODE => print_esc_cstr_in(st, c"number".as_ptr()),
+            CC_ROMAN_NUMERAL_CODE => print_esc_cstr_in(st, c"romannumeral".as_ptr()),
+            CC_STRING_CODE => print_esc_cstr_in(st, c"string".as_ptr()),
+            CC_MEANING_CODE => print_esc_cstr_in(st, c"meaning".as_ptr()),
+            CC_FONT_NAME_CODE => print_esc_cstr_in(st, c"fontname".as_ptr()),
+            CC_ETEX_REVISION_CODE => print_esc_cstr_in(st, c"eTeXrevision".as_ptr()),
+            CC_EXPANDED_CODE => print_esc_cstr_in(st, c"expanded".as_ptr()),
+            CC_LEFT_MARGIN_KERN_CODE => print_esc_cstr_in(st, c"leftmarginkern".as_ptr()),
+            CC_RIGHT_MARGIN_KERN_CODE => print_esc_cstr_in(st, c"rightmarginkern".as_ptr()),
+            CC_PDF_CREATION_DATE_CODE => print_esc_cstr_in(st, c"creationdate".as_ptr()),
+            CC_PDF_FILE_MOD_DATE_CODE => print_esc_cstr_in(st, c"filemoddate".as_ptr()),
+            CC_PDF_FILE_SIZE_CODE => print_esc_cstr_in(st, c"filesize".as_ptr()),
+            CC_PDF_MDFIVE_SUM_CODE => print_esc_cstr_in(st, c"mdfivesum".as_ptr()),
+            CC_PDF_FILE_DUMP_CODE => print_esc_cstr_in(st, c"filedump".as_ptr()),
+            CC_PDF_STRCMP_CODE => print_esc_cstr_in(st, c"strcmp".as_ptr()),
+            CC_UNIFORM_DEVIATE_CODE => print_esc_cstr_in(st, c"uniformdeviate".as_ptr()),
+            CC_NORMAL_DEVIATE_CODE => print_esc_cstr_in(st, c"normaldeviate".as_ptr()),
+            CC_XETEX_REVISION_CODE => print_esc_cstr_in(st, c"XeTeXrevision".as_ptr()),
+            CC_XETEX_VARIATION_NAME_CODE => print_esc_cstr_in(st, c"XeTeXvariationname".as_ptr()),
+            CC_XETEX_FEATURE_NAME_CODE => print_esc_cstr_in(st, c"XeTeXfeaturename".as_ptr()),
+            CC_XETEX_SELECTOR_NAME_CODE => print_esc_cstr_in(st, c"XeTeXselectorname".as_ptr()),
+            CC_XETEX_GLYPH_NAME_CODE => print_esc_cstr_in(st, c"XeTeXglyphname".as_ptr()),
+            CC_XETEX_UCHAR_CODE => print_esc_cstr_in(st, c"Uchar".as_ptr()),
+            CC_XETEX_UCHARCAT_CODE => print_esc_cstr_in(st, c"Ucharcat".as_ptr()),
+            _ => print_esc_cstr_in(st, c"jobname".as_ptr()),
         },
         CMD_IF_TEST => {
             if chr_code >= CC_UNLESS_CODE {
-                print_esc_cstr(c"unless".as_ptr());
+                print_esc_cstr_in(st, c"unless".as_ptr());
             }
             match chr_code % CC_UNLESS_CODE {
-                CC_IF_CAT_CODE => print_esc_cstr(c"ifcat".as_ptr()),
-                CC_IF_INT_CODE => print_esc_cstr(c"ifnum".as_ptr()),
-                CC_IF_DIM_CODE => print_esc_cstr(c"ifdim".as_ptr()),
-                CC_IF_ODD_CODE => print_esc_cstr(c"ifodd".as_ptr()),
-                CC_IF_VMODE_CODE => print_esc_cstr(c"ifvmode".as_ptr()),
-                CC_IF_HMODE_CODE => print_esc_cstr(c"ifhmode".as_ptr()),
-                CC_IF_MMODE_CODE => print_esc_cstr(c"ifmmode".as_ptr()),
-                CC_IF_INNER_CODE => print_esc_cstr(c"ifinner".as_ptr()),
-                CC_IF_VOID_CODE => print_esc_cstr(c"ifvoid".as_ptr()),
-                CC_IF_HBOX_CODE => print_esc_cstr(c"ifhbox".as_ptr()),
-                CC_IF_VBOX_CODE => print_esc_cstr(c"ifvbox".as_ptr()),
-                CC_IFX_CODE => print_esc_cstr(c"ifx".as_ptr()),
-                CC_IF_EOF_CODE => print_esc_cstr(c"ifeof".as_ptr()),
-                CC_IF_TRUE_CODE => print_esc_cstr(c"iftrue".as_ptr()),
-                CC_IF_FALSE_CODE => print_esc_cstr(c"iffalse".as_ptr()),
-                CC_IF_CASE_CODE => print_esc_cstr(c"ifcase".as_ptr()),
-                CC_IF_PRIMITIVE_CODE => print_esc_cstr(c"ifprimitive".as_ptr()),
-                CC_IF_DEF_CODE => print_esc_cstr(c"ifdefined".as_ptr()),
-                CC_IF_CS_CODE => print_esc_cstr(c"ifcsname".as_ptr()),
-                CC_IF_FONT_CHAR_CODE => print_esc_cstr(c"iffontchar".as_ptr()),
-                CC_IF_IN_CSNAME_CODE => print_esc_cstr(c"ifincsname".as_ptr()),
-                _ => print_esc_cstr(c"if".as_ptr()),
+                CC_IF_CAT_CODE => print_esc_cstr_in(st, c"ifcat".as_ptr()),
+                CC_IF_INT_CODE => print_esc_cstr_in(st, c"ifnum".as_ptr()),
+                CC_IF_DIM_CODE => print_esc_cstr_in(st, c"ifdim".as_ptr()),
+                CC_IF_ODD_CODE => print_esc_cstr_in(st, c"ifodd".as_ptr()),
+                CC_IF_VMODE_CODE => print_esc_cstr_in(st, c"ifvmode".as_ptr()),
+                CC_IF_HMODE_CODE => print_esc_cstr_in(st, c"ifhmode".as_ptr()),
+                CC_IF_MMODE_CODE => print_esc_cstr_in(st, c"ifmmode".as_ptr()),
+                CC_IF_INNER_CODE => print_esc_cstr_in(st, c"ifinner".as_ptr()),
+                CC_IF_VOID_CODE => print_esc_cstr_in(st, c"ifvoid".as_ptr()),
+                CC_IF_HBOX_CODE => print_esc_cstr_in(st, c"ifhbox".as_ptr()),
+                CC_IF_VBOX_CODE => print_esc_cstr_in(st, c"ifvbox".as_ptr()),
+                CC_IFX_CODE => print_esc_cstr_in(st, c"ifx".as_ptr()),
+                CC_IF_EOF_CODE => print_esc_cstr_in(st, c"ifeof".as_ptr()),
+                CC_IF_TRUE_CODE => print_esc_cstr_in(st, c"iftrue".as_ptr()),
+                CC_IF_FALSE_CODE => print_esc_cstr_in(st, c"iffalse".as_ptr()),
+                CC_IF_CASE_CODE => print_esc_cstr_in(st, c"ifcase".as_ptr()),
+                CC_IF_PRIMITIVE_CODE => print_esc_cstr_in(st, c"ifprimitive".as_ptr()),
+                CC_IF_DEF_CODE => print_esc_cstr_in(st, c"ifdefined".as_ptr()),
+                CC_IF_CS_CODE => print_esc_cstr_in(st, c"ifcsname".as_ptr()),
+                CC_IF_FONT_CHAR_CODE => print_esc_cstr_in(st, c"iffontchar".as_ptr()),
+                CC_IF_IN_CSNAME_CODE => print_esc_cstr_in(st, c"ifincsname".as_ptr()),
+                _ => print_esc_cstr_in(st, c"if".as_ptr()),
             }
         }
         CMD_FI_OR_ELSE => {
             if chr_code == CC_FI_CODE {
-                print_esc_cstr(c"fi".as_ptr());
+                print_esc_cstr_in(st, c"fi".as_ptr());
             } else if chr_code == CC_OR_CODE {
-                print_esc_cstr(c"or".as_ptr());
+                print_esc_cstr_in(st, c"or".as_ptr());
             } else {
-                print_esc_cstr(c"else".as_ptr());
+                print_esc_cstr_in(st, c"else".as_ptr());
             }
         }
         CMD_TAB_MARK => {
             if chr_code == CC_SPAN_CODE {
-                print_esc_cstr(c"span".as_ptr());
+                print_esc_cstr_in(st, c"span".as_ptr());
             } else {
-                print_cstr(c"alignment tab character ".as_ptr());
-                print_char_or_wide(chr_code);
+                print_cstr_in(st, c"alignment tab character ".as_ptr());
+                print_char_or_wide(st, chr_code);
             }
         }
         CMD_CAR_RET => {
             if chr_code == CC_CR_CODE {
-                print_esc_cstr(c"cr".as_ptr());
+                print_esc_cstr_in(st, c"cr".as_ptr());
             } else {
-                print_esc_cstr(c"crcr".as_ptr());
+                print_esc_cstr_in(st, c"crcr".as_ptr());
             }
         }
         CMD_SET_PAGE_DIMEN => match chr_code {
-            0 => print_esc_cstr(c"pagegoal".as_ptr()),
-            1 => print_esc_cstr(c"pagetotal".as_ptr()),
-            2 => print_esc_cstr(c"pagestretch".as_ptr()),
-            3 => print_esc_cstr(c"pagefilstretch".as_ptr()),
-            4 => print_esc_cstr(c"pagefillstretch".as_ptr()),
-            5 => print_esc_cstr(c"pagefilllstretch".as_ptr()),
-            6 => print_esc_cstr(c"pageshrink".as_ptr()),
-            _ => print_esc_cstr(c"pagedepth".as_ptr()),
+            0 => print_esc_cstr_in(st, c"pagegoal".as_ptr()),
+            1 => print_esc_cstr_in(st, c"pagetotal".as_ptr()),
+            2 => print_esc_cstr_in(st, c"pagestretch".as_ptr()),
+            3 => print_esc_cstr_in(st, c"pagefilstretch".as_ptr()),
+            4 => print_esc_cstr_in(st, c"pagefillstretch".as_ptr()),
+            5 => print_esc_cstr_in(st, c"pagefilllstretch".as_ptr()),
+            6 => print_esc_cstr_in(st, c"pageshrink".as_ptr()),
+            _ => print_esc_cstr_in(st, c"pagedepth".as_ptr()),
         },
         CMD_STOP => {
             if chr_code == 1 {
-                print_esc_cstr(c"dump".as_ptr());
+                print_esc_cstr_in(st, c"dump".as_ptr());
             } else {
-                print_esc_cstr(c"end".as_ptr());
+                print_esc_cstr_in(st, c"end".as_ptr());
             }
         }
         CMD_HSKIP => match chr_code {
-            CC_SKIP_CODE => print_esc_cstr(c"hskip".as_ptr()),
-            CC_FIL_CODE => print_esc_cstr(c"hfil".as_ptr()),
-            CC_FILL_CODE => print_esc_cstr(c"hfill".as_ptr()),
-            CC_SS_CODE => print_esc_cstr(c"hss".as_ptr()),
-            _ => print_esc_cstr(c"hfilneg".as_ptr()),
+            CC_SKIP_CODE => print_esc_cstr_in(st, c"hskip".as_ptr()),
+            CC_FIL_CODE => print_esc_cstr_in(st, c"hfil".as_ptr()),
+            CC_FILL_CODE => print_esc_cstr_in(st, c"hfill".as_ptr()),
+            CC_SS_CODE => print_esc_cstr_in(st, c"hss".as_ptr()),
+            _ => print_esc_cstr_in(st, c"hfilneg".as_ptr()),
         },
         CMD_VSKIP => match chr_code {
-            CC_SKIP_CODE => print_esc_cstr(c"vskip".as_ptr()),
-            CC_FIL_CODE => print_esc_cstr(c"vfil".as_ptr()),
-            CC_FILL_CODE => print_esc_cstr(c"vfill".as_ptr()),
-            CC_SS_CODE => print_esc_cstr(c"vss".as_ptr()),
-            _ => print_esc_cstr(c"vfilneg".as_ptr()),
+            CC_SKIP_CODE => print_esc_cstr_in(st, c"vskip".as_ptr()),
+            CC_FIL_CODE => print_esc_cstr_in(st, c"vfil".as_ptr()),
+            CC_FILL_CODE => print_esc_cstr_in(st, c"vfill".as_ptr()),
+            CC_SS_CODE => print_esc_cstr_in(st, c"vss".as_ptr()),
+            _ => print_esc_cstr_in(st, c"vfilneg".as_ptr()),
         },
-        CMD_MSKIP => print_esc_cstr(c"mskip".as_ptr()),
-        CMD_KERN => print_esc_cstr(c"kern".as_ptr()),
-        CMD_MKERN => print_esc_cstr(c"mkern".as_ptr()),
+        CMD_MSKIP => print_esc_cstr_in(st, c"mskip".as_ptr()),
+        CMD_KERN => print_esc_cstr_in(st, c"kern".as_ptr()),
+        CMD_MKERN => print_esc_cstr_in(st, c"mkern".as_ptr()),
         CMD_HMOVE => {
             if chr_code == 1 {
-                print_esc_cstr(c"moveleft".as_ptr());
+                print_esc_cstr_in(st, c"moveleft".as_ptr());
             } else {
-                print_esc_cstr(c"moveright".as_ptr());
+                print_esc_cstr_in(st, c"moveright".as_ptr());
             }
         }
         CMD_VMOVE => {
             if chr_code == 1 {
-                print_esc_cstr(c"raise".as_ptr());
+                print_esc_cstr_in(st, c"raise".as_ptr());
             } else {
-                print_esc_cstr(c"lower".as_ptr());
+                print_esc_cstr_in(st, c"lower".as_ptr());
             }
         }
         CMD_MAKE_BOX => match chr_code {
-            CC_BOX_CODE => print_esc_cstr(c"box".as_ptr()),
-            CC_COPY_CODE => print_esc_cstr(c"copy".as_ptr()),
-            CC_LAST_BOX_CODE => print_esc_cstr(c"lastbox".as_ptr()),
-            CC_VSPLIT_CODE => print_esc_cstr(c"vsplit".as_ptr()),
-            CC_VTOP_CODE => print_esc_cstr(c"vtop".as_ptr()),
-            x if x == CC_VTOP_CODE + CC_VMODE => print_esc_cstr(c"vbox".as_ptr()),
-            _ => print_esc_cstr(c"hbox".as_ptr()),
+            CC_BOX_CODE => print_esc_cstr_in(st, c"box".as_ptr()),
+            CC_COPY_CODE => print_esc_cstr_in(st, c"copy".as_ptr()),
+            CC_LAST_BOX_CODE => print_esc_cstr_in(st, c"lastbox".as_ptr()),
+            CC_VSPLIT_CODE => print_esc_cstr_in(st, c"vsplit".as_ptr()),
+            CC_VTOP_CODE => print_esc_cstr_in(st, c"vtop".as_ptr()),
+            x if x == CC_VTOP_CODE + CC_VMODE => print_esc_cstr_in(st, c"vbox".as_ptr()),
+            _ => print_esc_cstr_in(st, c"hbox".as_ptr()),
         },
         CMD_LEADER_SHIP => {
             if chr_code == CC_A_LEADERS {
-                print_esc_cstr(c"leaders".as_ptr());
+                print_esc_cstr_in(st, c"leaders".as_ptr());
             } else if chr_code == CC_C_LEADERS {
-                print_esc_cstr(c"cleaders".as_ptr());
+                print_esc_cstr_in(st, c"cleaders".as_ptr());
             } else if chr_code == CC_X_LEADERS {
-                print_esc_cstr(c"xleaders".as_ptr());
+                print_esc_cstr_in(st, c"xleaders".as_ptr());
             } else {
-                print_esc_cstr(c"shipout".as_ptr());
+                print_esc_cstr_in(st, c"shipout".as_ptr());
             }
         }
         CMD_START_PAR => {
             if chr_code == 0 {
-                print_esc_cstr(c"noindent".as_ptr());
+                print_esc_cstr_in(st, c"noindent".as_ptr());
             } else {
-                print_esc_cstr(c"indent".as_ptr());
+                print_esc_cstr_in(st, c"indent".as_ptr());
             }
         }
         CMD_REMOVE_ITEM => {
             if chr_code == CC_GLUE_NODE {
-                print_esc_cstr(c"unskip".as_ptr());
+                print_esc_cstr_in(st, c"unskip".as_ptr());
             } else if chr_code == CC_KERN_NODE {
-                print_esc_cstr(c"unkern".as_ptr());
+                print_esc_cstr_in(st, c"unkern".as_ptr());
             } else {
-                print_esc_cstr(c"unpenalty".as_ptr());
+                print_esc_cstr_in(st, c"unpenalty".as_ptr());
             }
         }
         CMD_UN_HBOX => {
             if chr_code == CC_COPY_CODE {
-                print_esc_cstr(c"unhcopy".as_ptr());
+                print_esc_cstr_in(st, c"unhcopy".as_ptr());
             } else {
-                print_esc_cstr(c"unhbox".as_ptr());
+                print_esc_cstr_in(st, c"unhbox".as_ptr());
             }
         }
         CMD_UN_VBOX => {
             if chr_code == CC_COPY_CODE {
-                print_esc_cstr(c"unvcopy".as_ptr());
+                print_esc_cstr_in(st, c"unvcopy".as_ptr());
             } else if chr_code == CC_LAST_BOX_CODE {
-                print_esc_cstr(c"pagediscards".as_ptr());
+                print_esc_cstr_in(st, c"pagediscards".as_ptr());
             } else if chr_code == CC_VSPLIT_CODE2 {
-                print_esc_cstr(c"splitdiscards".as_ptr());
+                print_esc_cstr_in(st, c"splitdiscards".as_ptr());
             } else {
-                print_esc_cstr(c"unvbox".as_ptr());
+                print_esc_cstr_in(st, c"unvbox".as_ptr());
             }
         }
         CMD_DISCRETIONARY => {
             if chr_code == 1 {
-                print_esc('-' as i32);
+                print_esc_in(st, '-' as i32);
             } else {
-                print_esc_cstr(c"discretionary".as_ptr());
+                print_esc_cstr_in(st, c"discretionary".as_ptr());
             }
         }
         CMD_EQ_NO => {
             if chr_code == 1 {
-                print_esc_cstr(c"leqno".as_ptr());
+                print_esc_cstr_in(st, c"leqno".as_ptr());
             } else {
-                print_esc_cstr(c"eqno".as_ptr());
+                print_esc_cstr_in(st, c"eqno".as_ptr());
             }
         }
         CMD_MATH_COMP => match chr_code {
-            CC_ORD_NOAD => print_esc_cstr(c"mathord".as_ptr()),
-            CC_OP_NOAD => print_esc_cstr(c"mathop".as_ptr()),
-            CC_BIN_NOAD => print_esc_cstr(c"mathbin".as_ptr()),
-            CC_REL_NOAD => print_esc_cstr(c"mathrel".as_ptr()),
-            CC_OPEN_NOAD => print_esc_cstr(c"mathopen".as_ptr()),
-            CC_CLOSE_NOAD => print_esc_cstr(c"mathclose".as_ptr()),
-            CC_PUNCT_NOAD => print_esc_cstr(c"mathpunct".as_ptr()),
-            CC_INNER_NOAD => print_esc_cstr(c"mathinner".as_ptr()),
-            CC_UNDER_NOAD => print_esc_cstr(c"underline".as_ptr()),
-            _ => print_esc_cstr(c"overline".as_ptr()),
+            CC_ORD_NOAD => print_esc_cstr_in(st, c"mathord".as_ptr()),
+            CC_OP_NOAD => print_esc_cstr_in(st, c"mathop".as_ptr()),
+            CC_BIN_NOAD => print_esc_cstr_in(st, c"mathbin".as_ptr()),
+            CC_REL_NOAD => print_esc_cstr_in(st, c"mathrel".as_ptr()),
+            CC_OPEN_NOAD => print_esc_cstr_in(st, c"mathopen".as_ptr()),
+            CC_CLOSE_NOAD => print_esc_cstr_in(st, c"mathclose".as_ptr()),
+            CC_PUNCT_NOAD => print_esc_cstr_in(st, c"mathpunct".as_ptr()),
+            CC_INNER_NOAD => print_esc_cstr_in(st, c"mathinner".as_ptr()),
+            CC_UNDER_NOAD => print_esc_cstr_in(st, c"underline".as_ptr()),
+            _ => print_esc_cstr_in(st, c"overline".as_ptr()),
         },
         CMD_LIMIT_SWITCH => {
             if chr_code == CC_LIMITS {
-                print_esc_cstr(c"limits".as_ptr());
+                print_esc_cstr_in(st, c"limits".as_ptr());
             } else if chr_code == CC_NO_LIMITS {
-                print_esc_cstr(c"nolimits".as_ptr());
+                print_esc_cstr_in(st, c"nolimits".as_ptr());
             } else {
-                print_esc_cstr(c"displaylimits".as_ptr());
+                print_esc_cstr_in(st, c"displaylimits".as_ptr());
             }
         }
-        CMD_MATH_STYLE => print_style(chr_code),
+        CMD_MATH_STYLE => print_style_in(st, chr_code),
         CMD_ABOVE => match chr_code {
-            CC_OVER_CODE => print_esc_cstr(c"over".as_ptr()),
-            CC_ATOP_CODE => print_esc_cstr(c"atop".as_ptr()),
+            CC_OVER_CODE => print_esc_cstr_in(st, c"over".as_ptr()),
+            CC_ATOP_CODE => print_esc_cstr_in(st, c"atop".as_ptr()),
             x if x == CC_DELIMITED_CODE + CC_ABOVE_CODE => {
-                print_esc_cstr(c"abovewithdelims".as_ptr())
+                print_esc_cstr_in(st, c"abovewithdelims".as_ptr())
             }
             x if x == CC_DELIMITED_CODE + CC_OVER_CODE => {
-                print_esc_cstr(c"overwithdelims".as_ptr())
+                print_esc_cstr_in(st, c"overwithdelims".as_ptr())
             }
             x if x == CC_DELIMITED_CODE + CC_ATOP_CODE => {
-                print_esc_cstr(c"atopwithdelims".as_ptr())
+                print_esc_cstr_in(st, c"atopwithdelims".as_ptr())
             }
-            _ => print_esc_cstr(c"above".as_ptr()),
+            _ => print_esc_cstr_in(st, c"above".as_ptr()),
         },
         CMD_LEFT_RIGHT => {
             if chr_code == CC_LEFT_NOAD {
-                print_esc_cstr(c"left".as_ptr());
+                print_esc_cstr_in(st, c"left".as_ptr());
             } else if chr_code == CC_MIDDLE_NOAD {
-                print_esc_cstr(c"middle".as_ptr());
+                print_esc_cstr_in(st, c"middle".as_ptr());
             } else {
-                print_esc_cstr(c"right".as_ptr());
+                print_esc_cstr_in(st, c"right".as_ptr());
             }
         }
         CMD_PREFIX => {
             if chr_code == 1 {
-                print_esc_cstr(c"long".as_ptr());
+                print_esc_cstr_in(st, c"long".as_ptr());
             } else if chr_code == 2 {
-                print_esc_cstr(c"outer".as_ptr());
+                print_esc_cstr_in(st, c"outer".as_ptr());
             } else if chr_code == 8 {
-                print_esc_cstr(c"protected".as_ptr());
+                print_esc_cstr_in(st, c"protected".as_ptr());
             } else {
-                print_esc_cstr(c"global".as_ptr());
+                print_esc_cstr_in(st, c"global".as_ptr());
             }
         }
         CMD_DEF => {
             if chr_code == 0 {
-                print_esc_cstr(c"def".as_ptr());
+                print_esc_cstr_in(st, c"def".as_ptr());
             } else if chr_code == 1 {
-                print_esc_cstr(c"gdef".as_ptr());
+                print_esc_cstr_in(st, c"gdef".as_ptr());
             } else if chr_code == 2 {
-                print_esc_cstr(c"edef".as_ptr());
+                print_esc_cstr_in(st, c"edef".as_ptr());
             } else {
-                print_esc_cstr(c"xdef".as_ptr());
+                print_esc_cstr_in(st, c"xdef".as_ptr());
             }
         }
         CMD_LET => {
             if chr_code != CC_NORMAL {
-                print_esc_cstr(c"futurelet".as_ptr());
+                print_esc_cstr_in(st, c"futurelet".as_ptr());
             } else {
-                print_esc_cstr(c"let".as_ptr());
+                print_esc_cstr_in(st, c"let".as_ptr());
             }
         }
         CMD_SHORTHAND_DEF => match chr_code {
-            CC_CHAR_DEF_CODE => print_esc_cstr(c"chardef".as_ptr()),
-            CC_MATH_CHAR_DEF_CODE => print_esc_cstr(c"mathchardef".as_ptr()),
-            CC_XETEX_MATH_CHAR_DEF_CODE => print_esc_cstr(c"Umathchardef".as_ptr()),
-            CC_XETEX_MATH_CHAR_NUM_DEF_CODE => print_esc_cstr(c"Umathcharnumdef".as_ptr()),
-            CC_COUNT_DEF_CODE => print_esc_cstr(c"countdef".as_ptr()),
-            CC_DIMEN_DEF_CODE => print_esc_cstr(c"dimendef".as_ptr()),
-            CC_SKIP_DEF_CODE => print_esc_cstr(c"skipdef".as_ptr()),
-            CC_MU_SKIP_DEF_CODE => print_esc_cstr(c"muskipdef".as_ptr()),
-            CC_CHAR_SUB_DEF_CODE => print_esc_cstr(c"charsubdef".as_ptr()),
-            _ => print_esc_cstr(c"toksdef".as_ptr()),
+            CC_CHAR_DEF_CODE => print_esc_cstr_in(st, c"chardef".as_ptr()),
+            CC_MATH_CHAR_DEF_CODE => print_esc_cstr_in(st, c"mathchardef".as_ptr()),
+            CC_XETEX_MATH_CHAR_DEF_CODE => print_esc_cstr_in(st, c"Umathchardef".as_ptr()),
+            CC_XETEX_MATH_CHAR_NUM_DEF_CODE => print_esc_cstr_in(st, c"Umathcharnumdef".as_ptr()),
+            CC_COUNT_DEF_CODE => print_esc_cstr_in(st, c"countdef".as_ptr()),
+            CC_DIMEN_DEF_CODE => print_esc_cstr_in(st, c"dimendef".as_ptr()),
+            CC_SKIP_DEF_CODE => print_esc_cstr_in(st, c"skipdef".as_ptr()),
+            CC_MU_SKIP_DEF_CODE => print_esc_cstr_in(st, c"muskipdef".as_ptr()),
+            CC_CHAR_SUB_DEF_CODE => print_esc_cstr_in(st, c"charsubdef".as_ptr()),
+            _ => print_esc_cstr_in(st, c"toksdef".as_ptr()),
         },
         CMD_CHAR_GIVEN => {
-            print_esc_cstr(c"char".as_ptr());
-            print_hex(chr_code);
+            print_esc_cstr_in(st, c"char".as_ptr());
+            print_hex_in(st, chr_code);
         }
         CMD_MATH_GIVEN => {
-            print_esc_cstr(c"mathchar".as_ptr());
-            print_hex(chr_code);
+            print_esc_cstr_in(st, c"mathchar".as_ptr());
+            print_hex_in(st, chr_code);
         }
         CMD_XETEX_MATH_GIVEN => {
-            print_esc_cstr(c"Umathchar".as_ptr());
-            print_hex(((chr_code as u32 >> 21) & 0x07) as i32); // math_class
-            print_hex(((chr_code as u32 >> 24) & 0xFF) as i32); // math_fam
-            print_hex((chr_code as u32 & 0x1FFFFF) as i32); // math_char
+            print_esc_cstr_in(st, c"Umathchar".as_ptr());
+            print_hex_in(st, ((chr_code as u32 >> 21) & 0x07) as i32); // math_class
+            print_hex_in(st, ((chr_code as u32 >> 24) & 0xFF) as i32); // math_fam
+            print_hex_in(st, (chr_code as u32 & 0x1FFFFF) as i32); // math_char
         }
         CMD_DEF_CODE => {
             if chr_code == CC_LC_CODE_BASE {
-                print_esc_cstr(c"lccode".as_ptr());
+                print_esc_cstr_in(st, c"lccode".as_ptr());
             } else if chr_code == CC_UC_CODE_BASE {
-                print_esc_cstr(c"uccode".as_ptr());
+                print_esc_cstr_in(st, c"uccode".as_ptr());
             } else if chr_code == CC_SF_CODE_BASE {
-                print_esc_cstr(c"sfcode".as_ptr());
+                print_esc_cstr_in(st, c"sfcode".as_ptr());
             } else if chr_code == CC_MATH_CODE_BASE {
-                print_esc_cstr(c"mathcode".as_ptr());
+                print_esc_cstr_in(st, c"mathcode".as_ptr());
             } else if chr_code == CC_DEL_CODE_BASE {
-                print_esc_cstr(c"delcode".as_ptr());
+                print_esc_cstr_in(st, c"delcode".as_ptr());
             } else {
-                print_esc_cstr(c"catcode".as_ptr());
+                print_esc_cstr_in(st, c"catcode".as_ptr());
             }
         }
         CMD_XETEX_DEF_CODE => {
             if chr_code == CC_SF_CODE_BASE {
-                print_esc_cstr(c"XeTeXcharclass".as_ptr());
+                print_esc_cstr_in(st, c"XeTeXcharclass".as_ptr());
             } else if chr_code == CC_MATH_CODE_BASE {
-                print_esc_cstr(c"Umathcodenum".as_ptr());
+                print_esc_cstr_in(st, c"Umathcodenum".as_ptr());
             } else if chr_code == CC_MATH_CODE_BASE + 1 {
-                print_esc_cstr(c"Umathcode".as_ptr());
+                print_esc_cstr_in(st, c"Umathcode".as_ptr());
             } else if chr_code == CC_DEL_CODE_BASE {
-                print_esc_cstr(c"Udelcodenum".as_ptr());
+                print_esc_cstr_in(st, c"Udelcodenum".as_ptr());
             } else {
-                print_esc_cstr(c"Udelcode".as_ptr());
+                print_esc_cstr_in(st, c"Udelcode".as_ptr());
             }
         }
-        CMD_DEF_FAMILY => print_size(chr_code - CC_MATH_FONT_BASE),
+        CMD_DEF_FAMILY => print_size_in(st, chr_code - CC_MATH_FONT_BASE),
         CMD_HYPH_DATA => {
             if chr_code == 1 {
-                print_esc_cstr(c"patterns".as_ptr());
+                print_esc_cstr_in(st, c"patterns".as_ptr());
             } else {
-                print_esc_cstr(c"hyphenation".as_ptr());
+                print_esc_cstr_in(st, c"hyphenation".as_ptr());
             }
         }
         CMD_ASSIGN_FONT_INT => match chr_code {
-            0 => print_esc_cstr(c"hyphenchar".as_ptr()),
-            1 => print_esc_cstr(c"skewchar".as_ptr()),
-            CC_LP_CODE_BASE => print_esc_cstr(c"lpcode".as_ptr()),
-            CC_RP_CODE_BASE => print_esc_cstr(c"rpcode".as_ptr()),
+            0 => print_esc_cstr_in(st, c"hyphenchar".as_ptr()),
+            1 => print_esc_cstr_in(st, c"skewchar".as_ptr()),
+            CC_LP_CODE_BASE => print_esc_cstr_in(st, c"lpcode".as_ptr()),
+            CC_RP_CODE_BASE => print_esc_cstr_in(st, c"rpcode".as_ptr()),
             _ => {}
         },
         CMD_SET_FONT => {
-            print_cstr(c"select font ".as_ptr());
-            let font_name_str = font_name_entry(chr_code);
-            let fa = font_area_entry(chr_code);
+            print_cstr_in(st, c"select font ".as_ptr());
+            let font_name_str = st.fonts.font_name[(chr_code) as usize];
+            let fa = st.fonts.font_area[(chr_code) as usize];
             if fa == CC_AAT_FONT_FLAG || fa == CC_OTGR_FONT_FLAG {
-                let len = crate::string_pool::length_global(font_name_str);
+                let len = crate::string_pool::length(&st.strings, font_name_str);
                 let mut quote_char = b'"' as i32;
                 for n in 0..len {
-                    if str_pool_entry(str_start(font_name_str - 65536) + n) == b'"' as u16 {
+                    if st.strings.str_pool
+                        [(st.strings.str_start[(font_name_str - 65536) as usize] + n) as usize]
+                        == b'"' as u16
+                    {
                         quote_char = b'\'' as i32;
                     }
                 }
-                print_char(quote_char);
-                print(font_name_str);
-                print_char(quote_char);
+                print_char_in(st, quote_char);
+                print_in(st, font_name_str);
+                print_char_in(st, quote_char);
             } else {
-                print(font_name_str);
+                print_in(st, font_name_str);
             }
-            if font_size_entry(chr_code) != font_dsize_entry(chr_code) {
-                print_cstr(c" at ".as_ptr());
-                print_scaled(font_size_entry(chr_code));
-                print_cstr(c"pt".as_ptr());
+            if st.fonts.font_size[(chr_code) as usize] != st.fonts.font_dsize[(chr_code) as usize] {
+                print_cstr_in(st, c" at ".as_ptr());
+                print_scaled_in(st, st.fonts.font_size[(chr_code) as usize]);
+                print_cstr_in(st, c"pt".as_ptr());
             }
         }
         CMD_SET_INTERACTION => match chr_code {
-            CC_BATCH_MODE => print_esc_cstr(c"batchmode".as_ptr()),
-            CC_NONSTOP_MODE => print_esc_cstr(c"nonstopmode".as_ptr()),
-            CC_SCROLL_MODE => print_esc_cstr(c"scrollmode".as_ptr()),
-            _ => print_esc_cstr(c"errorstopmode".as_ptr()),
+            CC_BATCH_MODE => print_esc_cstr_in(st, c"batchmode".as_ptr()),
+            CC_NONSTOP_MODE => print_esc_cstr_in(st, c"nonstopmode".as_ptr()),
+            CC_SCROLL_MODE => print_esc_cstr_in(st, c"scrollmode".as_ptr()),
+            _ => print_esc_cstr_in(st, c"errorstopmode".as_ptr()),
         },
         CMD_IN_STREAM => {
             if chr_code == 0 {
-                print_esc_cstr(c"closein".as_ptr());
+                print_esc_cstr_in(st, c"closein".as_ptr());
             } else {
-                print_esc_cstr(c"openin".as_ptr());
+                print_esc_cstr_in(st, c"openin".as_ptr());
             }
         }
         CMD_MESSAGE => {
             if chr_code == 0 {
-                print_esc_cstr(c"message".as_ptr());
+                print_esc_cstr_in(st, c"message".as_ptr());
             } else {
-                print_esc_cstr(c"errmessage".as_ptr());
+                print_esc_cstr_in(st, c"errmessage".as_ptr());
             }
         }
         CMD_CASE_SHIFT => {
             if chr_code == CC_LC_CODE_BASE {
-                print_esc_cstr(c"lowercase".as_ptr());
+                print_esc_cstr_in(st, c"lowercase".as_ptr());
             } else {
-                print_esc_cstr(c"uppercase".as_ptr());
+                print_esc_cstr_in(st, c"uppercase".as_ptr());
             }
         }
         CMD_XRAY => match chr_code {
-            CC_SHOW_BOX_CODE => print_esc_cstr(c"showbox".as_ptr()),
-            CC_SHOW_THE_CODE => print_esc_cstr(c"showthe".as_ptr()),
-            CC_SHOW_LISTS => print_esc_cstr(c"showlists".as_ptr()),
-            CC_SHOW_GROUPS => print_esc_cstr(c"showgroups".as_ptr()),
-            CC_SHOW_TOKENS => print_esc_cstr(c"showtokens".as_ptr()),
-            CC_SHOW_IFS => print_esc_cstr(c"showifs".as_ptr()),
-            _ => print_esc_cstr(c"show".as_ptr()),
+            CC_SHOW_BOX_CODE => print_esc_cstr_in(st, c"showbox".as_ptr()),
+            CC_SHOW_THE_CODE => print_esc_cstr_in(st, c"showthe".as_ptr()),
+            CC_SHOW_LISTS => print_esc_cstr_in(st, c"showlists".as_ptr()),
+            CC_SHOW_GROUPS => print_esc_cstr_in(st, c"showgroups".as_ptr()),
+            CC_SHOW_TOKENS => print_esc_cstr_in(st, c"showtokens".as_ptr()),
+            CC_SHOW_IFS => print_esc_cstr_in(st, c"showifs".as_ptr()),
+            _ => print_esc_cstr_in(st, c"show".as_ptr()),
         },
-        CMD_UNDEFINED_CS => print_cstr(c"undefined".as_ptr()),
+        CMD_UNDEFINED_CS => print_cstr_in(st, c"undefined".as_ptr()),
         CMD_CALL | CMD_LONG_CALL | CMD_OUTER_CALL | CMD_LONG_OUTER_CALL => {
             let mut n = cmd as i32 - CMD_CALL as i32;
-            if mem_b32s0(mem_b32s1(chr_code)) == CC_PROTECTED_TOKEN {
+            if st.mem.b32s0(st.mem.b32s1(chr_code)) == CC_PROTECTED_TOKEN {
                 n += 4;
             }
             if n / 4 % 2 != 0 {
-                print_esc_cstr(c"protected".as_ptr());
+                print_esc_cstr_in(st, c"protected".as_ptr());
             }
             if n % 2 != 0 {
-                print_esc_cstr(c"long".as_ptr());
+                print_esc_cstr_in(st, c"long".as_ptr());
             }
             if n / 2 % 2 != 0 {
-                print_esc_cstr(c"outer".as_ptr());
+                print_esc_cstr_in(st, c"outer".as_ptr());
             }
             if n > 0 {
-                print_char(' ' as i32);
+                print_char_in(st, ' ' as i32);
             }
-            print_cstr(c"macro".as_ptr());
+            print_cstr_in(st, c"macro".as_ptr());
         }
-        CMD_END_TEMPLATE => print_esc_cstr(c"outer endtemplate".as_ptr()),
+        CMD_END_TEMPLATE => print_esc_cstr_in(st, c"outer endtemplate".as_ptr()),
         CMD_EXTENSION => match chr_code {
-            CC_OPEN_NODE => print_esc_cstr(c"openout".as_ptr()),
-            CC_WRITE_NODE => print_esc_cstr(c"write".as_ptr()),
-            CC_CLOSE_NODE => print_esc_cstr(c"closeout".as_ptr()),
-            CC_SPECIAL_NODE => print_esc_cstr(c"special".as_ptr()),
-            CC_IMMEDIATE_CODE => print_esc_cstr(c"immediate".as_ptr()),
-            CC_SET_LANGUAGE_CODE => print_esc_cstr(c"setlanguage".as_ptr()),
-            CC_PDF_SAVE_POS_NODE => print_esc_cstr(c"pdfsavepos".as_ptr()),
-            CC_RESET_TIMER_CODE => print_esc_cstr(c"resettimer".as_ptr()),
-            CC_SET_RANDOM_SEED_CODE => print_esc_cstr(c"setrandomseed".as_ptr()),
-            CC_PIC_FILE_CODE => print_esc_cstr(c"XeTeXpicfile".as_ptr()),
-            CC_PDF_FILE_CODE => print_esc_cstr(c"XeTeXpdffile".as_ptr()),
-            CC_GLYPH_CODE => print_esc_cstr(c"XeTeXglyph".as_ptr()),
+            CC_OPEN_NODE => print_esc_cstr_in(st, c"openout".as_ptr()),
+            CC_WRITE_NODE => print_esc_cstr_in(st, c"write".as_ptr()),
+            CC_CLOSE_NODE => print_esc_cstr_in(st, c"closeout".as_ptr()),
+            CC_SPECIAL_NODE => print_esc_cstr_in(st, c"special".as_ptr()),
+            CC_IMMEDIATE_CODE => print_esc_cstr_in(st, c"immediate".as_ptr()),
+            CC_SET_LANGUAGE_CODE => print_esc_cstr_in(st, c"setlanguage".as_ptr()),
+            CC_PDF_SAVE_POS_NODE => print_esc_cstr_in(st, c"pdfsavepos".as_ptr()),
+            CC_RESET_TIMER_CODE => print_esc_cstr_in(st, c"resettimer".as_ptr()),
+            CC_SET_RANDOM_SEED_CODE => print_esc_cstr_in(st, c"setrandomseed".as_ptr()),
+            CC_PIC_FILE_CODE => print_esc_cstr_in(st, c"XeTeXpicfile".as_ptr()),
+            CC_PDF_FILE_CODE => print_esc_cstr_in(st, c"XeTeXpdffile".as_ptr()),
+            CC_GLYPH_CODE => print_esc_cstr_in(st, c"XeTeXglyph".as_ptr()),
             CC_XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => {
-                print_esc_cstr(c"XeTeXlinebreaklocale".as_ptr())
+                print_esc_cstr_in(st, c"XeTeXlinebreaklocale".as_ptr())
             }
             CC_XETEX_INPUT_ENCODING_EXTENSION_CODE => {
-                print_esc_cstr(c"XeTeXinputencoding".as_ptr())
+                print_esc_cstr_in(st, c"XeTeXinputencoding".as_ptr())
             }
             CC_XETEX_DEFAULT_ENCODING_EXTENSION_CODE => {
-                print_esc_cstr(c"XeTeXdefaultencoding".as_ptr())
+                print_esc_cstr_in(st, c"XeTeXdefaultencoding".as_ptr())
             }
-            _ => print_cstr(c"[unknown extension!]".as_ptr()),
+            _ => print_cstr_in(st, c"[unknown extension!]".as_ptr()),
         },
-        _ => print_cstr(c"[unknown command code!]".as_ptr()),
+        _ => print_cstr_in(st, c"[unknown command code!]".as_ptr()),
     }
 }
 
@@ -2804,15 +2802,20 @@ pub unsafe fn print_cmd_chr(cmd: u16, chr_code: i32) {
 ///
 /// translated from xetex-xetex0.c:3383 (print_meaning)
 pub unsafe fn print_meaning() {
-    print_cmd_chr(cur_cmd() as u16, cur_chr());
+    crate::state::with_state_mut(|st| print_meaning_in(st));
+}
+
+/// `&mut EngineState` core of [`print_meaning`].
+pub(crate) fn print_meaning_in(st: &mut EngineState) {
+    print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
     if cur_cmd() as u16 >= CALL {
-        print_char(':' as i32);
-        print_ln();
-        token_show(cur_chr());
+        print_char_in(st, ':' as i32);
+        print_ln_in(st);
+        token_show_in(st, cur_chr());
     } else if cur_cmd() as u16 == TOP_BOT_MARK && (cur_chr() as usize) < 5 {
-        print_char(':' as i32);
-        print_ln();
-        token_show(cur_mark(cur_chr() as usize));
+        print_char_in(st, ':' as i32);
+        print_ln_in(st);
+        token_show_in(st, st.scanner.cur_mark[cur_chr() as usize]);
     }
 }
 
@@ -3228,11 +3231,6 @@ pub(crate) fn show_token_list_in(st: &mut EngineState, mut p: i32, q: i32, l: i3
     }
 }
 
-// translated from xetex-xetex0.c:9282 (print_totals)
-pub unsafe fn print_totals() {
-    crate::state::with_state_mut(|st| print_totals_in(st));
-}
-
 /// `&mut EngineState` core of [`print_totals`].
 pub(crate) fn print_totals_in(st: &mut EngineState) {
     print_scaled_in(st, st.shipout.page_so_far[1]);
@@ -3327,11 +3325,11 @@ pub unsafe fn issue_message() {
 }
 // translated from xetex-xetex0.c:7752 (show_save_groups)
 pub unsafe fn show_save_groups() {
-    use crate::globals::{
-        cur_boundary, cur_group, cur_level, mem_b16s1, nest_e_tex_aux, nest_mode, nest_ptr,
-        save_ptr, save_stack_b16s0, save_stack_b32s1, set_cur_group, set_cur_level, set_save_ptr,
-    };
+    crate::state::with_state_mut(|st| show_save_groups_in(st));
+}
 
+/// `&mut EngineState` core of [`show_save_groups`].
+pub(crate) fn show_save_groups_in(st: &mut EngineState) {
     const BOTTOM_LEVEL: u8 = 0;
     const SIMPLE_GROUP: u8 = 1;
     const HBOX_GROUP: u8 = 2;
@@ -3365,23 +3363,23 @@ pub unsafe fn show_save_groups() {
     const MMODE: i16 = 207;
 
     // Save and override state for walking the group stack
-    let mut p = nest_ptr();
-    crate::globals::save_cur_list_to_nest(p);
-    let v = save_ptr();
-    let l = cur_level();
-    let c = cur_group();
-    set_save_ptr(cur_boundary());
-    set_cur_level(cur_level() - 1);
+    let mut p = st.input.nest_ptr;
+    st.input.nest[(p) as usize] = crate::globals::cur_list();
+    let v = st.save_stack.save_ptr;
+    let l = st.save_stack.cur_level;
+    let c = st.save_stack.cur_group;
+    st.save_stack.save_ptr = st.save_stack.cur_boundary;
+    st.save_stack.cur_level = st.save_stack.cur_level - 1;
     let mut a: i8 = 1;
 
-    crate::output::print_nl_cstr(c"".as_ptr());
-    crate::output::print_ln();
+    crate::output::print_nl_cstr_in(st, c"".as_ptr());
+    crate::output::print_ln_in(st);
 
     'outer: loop {
-        crate::output::print_nl_cstr(c"### ".as_ptr());
-        crate::output::print_group(true);
+        crate::output::print_nl_cstr_in(st, c"### ".as_ptr());
+        crate::output::print_group_in(st, true);
 
-        if cur_group() == BOTTOM_LEVEL {
+        if st.save_stack.cur_group == BOTTOM_LEVEL {
             break 'outer;
         }
 
@@ -3389,7 +3387,7 @@ pub unsafe fn show_save_groups() {
         // After the loop, m = the mode that stopped it, p = one below that entry.
         let m: i16;
         loop {
-            let cur_m = nest_mode(p);
+            let cur_m = st.input.nest[(p) as usize].mode;
             if p > 0 {
                 p -= 1;
             } else {
@@ -3402,7 +3400,7 @@ pub unsafe fn show_save_groups() {
             }
         }
 
-        crate::output::print_cstr(c" (".as_ptr());
+        crate::output::print_cstr_in(st, c" (".as_ptr());
 
         // Determine which continuation block to execute
         // After::Preamble = execute the i-box preamble block, then found1→found2→found
@@ -3417,7 +3415,7 @@ pub unsafe fn show_save_groups() {
         }
         let mut s: *const libc::c_char = std::ptr::null();
 
-        let after = match cur_group() {
+        let after = match st.save_stack.cur_group {
             SIMPLE_GROUP => {
                 p += 1;
                 After::Found2
@@ -3445,9 +3443,9 @@ pub unsafe fn show_save_groups() {
                     After::Found1
                 } else {
                     if a == 1 {
-                        crate::output::print_cstr(c"align entry".as_ptr());
+                        crate::output::print_cstr_in(st, c"align entry".as_ptr());
                     } else {
-                        crate::output::print_esc_cstr(c"cr".as_ptr());
+                        crate::output::print_esc_cstr_in(st, c"cr".as_ptr());
                     }
                     if p >= a as i32 {
                         p -= a as i32;
@@ -3459,35 +3457,35 @@ pub unsafe fn show_save_groups() {
             NO_ALIGN_GROUP => {
                 p += 1;
                 a = -1;
-                crate::output::print_esc_cstr(c"noalign".as_ptr());
+                crate::output::print_esc_cstr_in(st, c"noalign".as_ptr());
                 After::Found2
             }
             OUTPUT_GROUP => {
-                crate::output::print_esc_cstr(c"output".as_ptr());
+                crate::output::print_esc_cstr_in(st, c"output".as_ptr());
                 After::Found
             }
             MATH_GROUP => After::Found2,
             DISC_GROUP | MATH_CHOICE_GROUP => {
-                if cur_group() == DISC_GROUP {
-                    crate::output::print_esc_cstr(c"discretionary".as_ptr());
+                if st.save_stack.cur_group == DISC_GROUP {
+                    crate::output::print_esc_cstr_in(st, c"discretionary".as_ptr());
                 } else {
-                    crate::output::print_esc_cstr(c"mathchoice".as_ptr());
+                    crate::output::print_esc_cstr_in(st, c"mathchoice".as_ptr());
                 }
-                let limit = save_stack_b32s1(save_ptr() - 2);
+                let limit = st.save_stack.b32s1(st.save_stack.save_ptr - 2);
                 for i in 1..=3_i32 {
                     if i <= limit {
-                        crate::output::print_cstr(c"{}".as_ptr());
+                        crate::output::print_cstr_in(st, c"{}".as_ptr());
                     }
                 }
                 After::Found2
             }
             INSERT_GROUP => {
-                let val = save_stack_b32s1(save_ptr() - 2);
+                let val = st.save_stack.b32s1(st.save_stack.save_ptr - 2);
                 if val == 255 {
-                    crate::output::print_esc_cstr(c"vadjust".as_ptr());
+                    crate::output::print_esc_cstr_in(st, c"vadjust".as_ptr());
                 } else {
-                    crate::output::print_esc_cstr(c"insert".as_ptr());
-                    crate::output::print_int(val);
+                    crate::output::print_esc_cstr_in(st, c"insert".as_ptr());
+                    crate::output::print_int_in(st, val);
                 }
                 After::Found2
             }
@@ -3497,7 +3495,7 @@ pub unsafe fn show_save_groups() {
             }
             SEMI_SIMPLE_GROUP => {
                 p += 1;
-                crate::output::print_esc_cstr(c"begingroup".as_ptr());
+                crate::output::print_esc_cstr_in(st, c"begingroup".as_ptr());
                 After::Found
             }
             MATH_SHIFT_GROUP => {
@@ -3505,24 +3503,26 @@ pub unsafe fn show_save_groups() {
                 //    else if nest[p].mode==MMODE: print EQ_NO, goto found
                 //    else: (fall through to '$' + goto found)
                 if m == MMODE {
-                    crate::output::print_char('$' as i32);
-                } else if nest_mode(p) == MMODE {
-                    print_cmd_chr(EQ_NO, save_stack_b32s1(save_ptr() - 2));
+                    crate::output::print_char_in(st, '$' as i32);
+                } else if st.input.nest[(p) as usize].mode == MMODE {
+                    print_cmd_chr_in(st, EQ_NO, st.save_stack.b32s1(st.save_stack.save_ptr - 2));
                     // goto found (no '$')
-                    crate::output::print_char(')' as i32);
-                    set_cur_level(cur_level() - 1);
-                    set_cur_group(save_stack_b16s0(save_ptr()) as u8);
-                    set_save_ptr(save_stack_b32s1(save_ptr()));
+                    crate::output::print_char_in(st, ')' as i32);
+                    st.save_stack.cur_level = st.save_stack.cur_level - 1;
+                    st.save_stack.cur_group =
+                        unsafe { st.save_stack.data[(st.save_stack.save_ptr) as usize].b16.s0 }
+                            as u8;
+                    st.save_stack.save_ptr = st.save_stack.b32s1(st.save_stack.save_ptr);
                     continue 'outer;
                 }
-                crate::output::print_char('$' as i32);
+                crate::output::print_char_in(st, '$' as i32);
                 After::Found
             }
             MATH_LEFT_GROUP => {
-                if mem_b16s1(nest_e_tex_aux(p + 1)) == LEFT_NOAD {
-                    crate::output::print_esc_cstr(c"left".as_ptr());
+                if st.mem.b16s1(st.input.nest[(p + 1) as usize].e_tex_aux) == LEFT_NOAD {
+                    crate::output::print_esc_cstr_in(st, c"left".as_ptr());
                 } else {
-                    crate::output::print_esc_cstr(c"middle".as_ptr());
+                    crate::output::print_esc_cstr_in(st, c"middle".as_ptr());
                 }
                 After::Found
             }
@@ -3531,69 +3531,70 @@ pub unsafe fn show_save_groups() {
 
         // found1's preamble: print box context for hbox/vbox/vtop (move/setbox/leaders)
         if matches!(after, After::Preamble) {
-            let i = save_stack_b32s1(save_ptr() - 4);
+            let i = st.save_stack.b32s1(st.save_stack.save_ptr - 4);
             if i != 0 {
                 if i < BOX_FLAG {
-                    let j = if nest_mode(p).abs() == VMODE {
+                    let j = if st.input.nest[(p) as usize].mode.abs() == VMODE {
                         HMOVE
                     } else {
                         VMOVE
                     };
                     if i > 0 {
-                        print_cmd_chr(j, 0);
+                        print_cmd_chr_in(st, j, 0);
                     } else {
-                        print_cmd_chr(j, 1);
+                        print_cmd_chr_in(st, j, 1);
                     }
-                    crate::output::print_scaled(i.abs());
-                    crate::output::print_cstr(c"pt".as_ptr());
+                    crate::output::print_scaled_in(st, i.abs());
+                    crate::output::print_cstr_in(st, c"pt".as_ptr());
                 } else if i < SHIP_OUT_FLAG {
                     let mut ii = i;
                     if ii >= GLOBAL_BOX_FLAG {
-                        crate::output::print_esc_cstr(c"global".as_ptr());
+                        crate::output::print_esc_cstr_in(st, c"global".as_ptr());
                         ii -= GLOBAL_BOX_FLAG - BOX_FLAG;
                     }
-                    crate::output::print_esc_cstr(c"setbox".as_ptr());
-                    crate::output::print_int(ii - BOX_FLAG);
-                    crate::output::print_char('=' as i32);
+                    crate::output::print_esc_cstr_in(st, c"setbox".as_ptr());
+                    crate::output::print_int_in(st, ii - BOX_FLAG);
+                    crate::output::print_char_in(st, '=' as i32);
                 } else {
-                    print_cmd_chr(LEADER_SHIP, i - (LEADER_FLAG - A_LEADERS));
+                    print_cmd_chr_in(st, LEADER_SHIP, i - (LEADER_FLAG - A_LEADERS));
                 }
             }
         }
 
         // found1: print \s and optional size spec
         if matches!(after, After::Preamble | After::Found1) {
-            crate::output::print_esc_cstr(s);
-            let spec = save_stack_b32s1(save_ptr() - 2);
+            crate::output::print_esc_cstr_in(st, s);
+            let spec = st.save_stack.b32s1(st.save_stack.save_ptr - 2);
             if spec != 0 {
-                crate::output::print_char(' ' as i32);
+                crate::output::print_char_in(st, ' ' as i32);
                 // C: save_stack[save_ptr - 3].b32.s1 == EXACTLY
-                if save_stack_b32s1(save_ptr() - 3) == EXACTLY {
-                    crate::output::print_cstr(c"to".as_ptr());
+                if st.save_stack.b32s1(st.save_stack.save_ptr - 3) == EXACTLY {
+                    crate::output::print_cstr_in(st, c"to".as_ptr());
                 } else {
-                    crate::output::print_cstr(c"spread".as_ptr());
+                    crate::output::print_cstr_in(st, c"spread".as_ptr());
                 }
-                crate::output::print_scaled(spec);
-                crate::output::print_cstr(c"pt".as_ptr());
+                crate::output::print_scaled_in(st, spec);
+                crate::output::print_cstr_in(st, c"pt".as_ptr());
             }
         }
 
         // found2: print '{'
         if !matches!(after, After::Found) {
-            crate::output::print_char('{' as i32);
+            crate::output::print_char_in(st, '{' as i32);
         }
 
         // found: print ')', advance group-boundary chain
-        crate::output::print_char(')' as i32);
-        set_cur_level(cur_level() - 1);
-        set_cur_group(save_stack_b16s0(save_ptr()) as u8);
-        set_save_ptr(save_stack_b32s1(save_ptr()));
+        crate::output::print_char_in(st, ')' as i32);
+        st.save_stack.cur_level = st.save_stack.cur_level - 1;
+        st.save_stack.cur_group =
+            unsafe { st.save_stack.data[(st.save_stack.save_ptr) as usize].b16.s0 } as u8;
+        st.save_stack.save_ptr = st.save_stack.b32s1(st.save_stack.save_ptr);
     }
 
     // done: restore state
-    set_save_ptr(v);
-    set_cur_level(l);
-    set_cur_group(c);
+    st.save_stack.save_ptr = v;
+    st.save_stack.cur_level = l;
+    st.save_stack.cur_group = c;
 }
 // translated from xetex-xetex0.c:10561 (show_whatever)
 pub unsafe fn show_whatever() {
@@ -3950,120 +3951,123 @@ pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
 }
 /// translated from xetex-xetex0.c:1123 (show_activities)
 pub unsafe fn show_activities() {
-    use crate::globals::{
-        eqtb_b32s1, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, nest_aux_b32s0, nest_aux_b32s1,
-        nest_head, nest_mode, nest_mode_line, nest_prev_graf, nest_ptr, output_active,
-        page_contents, page_so_far, page_tail, save_cur_list_to_nest,
-    };
-    save_cur_list_to_nest(nest_ptr());
-    crate::output::print_nl_cstr(c"".as_ptr());
-    crate::output::print_ln();
-    let np = nest_ptr();
+    crate::state::with_state_mut(|st| show_activities_in(st));
+}
+
+/// `&mut EngineState` core of [`show_activities`].
+pub(crate) fn show_activities_in(st: &mut EngineState) {
+    st.input.nest[(st.input.nest_ptr) as usize] = crate::globals::cur_list();
+    crate::output::print_nl_cstr_in(st, c"".as_ptr());
+    crate::output::print_ln_in(st);
+    let np = st.input.nest_ptr;
     for p in (0..=np).rev() {
-        let m = nest_mode(p);
-        let a_s0 = nest_aux_b32s0(p);
-        let a_s1 = nest_aux_b32s1(p);
-        crate::output::print_nl_cstr(c"### ".as_ptr());
-        crate::output::print_mode(m as i32);
-        crate::output::print_cstr(c" entered at line ".as_ptr());
-        crate::output::print_int(nest_mode_line(p).abs());
+        let m = st.input.nest[(p) as usize].mode;
+        let a_s0 = unsafe { st.input.nest[(p) as usize].aux.b32.s0 };
+        let a_s1 = unsafe { st.input.nest[(p) as usize].aux.b32.s1 };
+        crate::output::print_nl_cstr_in(st, c"### ".as_ptr());
+        crate::output::print_mode_in(st, m as i32);
+        crate::output::print_cstr_in(st, c" entered at line ".as_ptr());
+        crate::output::print_int_in(st, st.input.nest[(p) as usize].mode_line.abs());
         if m == HMODE_SA {
-            let pg = nest_prev_graf(p);
+            let pg = st.input.nest[(p) as usize].prev_graf;
             if pg != 0x83_0000 {
-                crate::output::print_cstr(c" (language".as_ptr());
-                crate::output::print_int(pg % 65536);
-                crate::output::print_cstr(c":hyphenmin".as_ptr());
-                crate::output::print_int(pg / 0x40_0000);
-                crate::output::print_char(',' as i32);
-                crate::output::print_int((pg / 65536) % 64);
-                crate::output::print_char(')' as i32);
+                crate::output::print_cstr_in(st, c" (language".as_ptr());
+                crate::output::print_int_in(st, pg % 65536);
+                crate::output::print_cstr_in(st, c":hyphenmin".as_ptr());
+                crate::output::print_int_in(st, pg / 0x40_0000);
+                crate::output::print_char_in(st, ',' as i32);
+                crate::output::print_int_in(st, (pg / 65536) % 64);
+                crate::output::print_char_in(st, ')' as i32);
             }
         }
-        if nest_mode_line(p) < 0 {
-            crate::output::print_cstr(c" (\\output routine)".as_ptr());
+        if st.input.nest[(p) as usize].mode_line < 0 {
+            crate::output::print_cstr_in(st, c" (\\output routine)".as_ptr());
         }
         if p == 0 {
-            if PAGE_HEAD_SA != page_tail() {
-                crate::output::print_nl_cstr(c"### current page:".as_ptr());
-                if output_active() {
-                    crate::output::print_cstr(c" (held over for next output)".as_ptr());
+            if PAGE_HEAD_SA != st.shipout.page_tail {
+                crate::output::print_nl_cstr_in(st, c"### current page:".as_ptr());
+                if st.shipout.output_active {
+                    crate::output::print_cstr_in(st, c" (held over for next output)".as_ptr());
                 }
-                show_box(mem_b32s1(PAGE_HEAD_SA));
-                if page_contents() > EMPTY_SA {
-                    crate::output::print_nl_cstr(c"total height ".as_ptr());
-                    crate::output::print_totals();
-                    crate::output::print_nl_cstr(c" goal height ".as_ptr());
-                    crate::output::print_scaled(page_so_far(0));
-                    let mut r = mem_b32s1(PAGE_INS_HEAD_SA);
+                show_box_in(st, st.mem.b32s1(PAGE_HEAD_SA));
+                if st.shipout.page_contents > EMPTY_SA {
+                    crate::output::print_nl_cstr_in(st, c"total height ".as_ptr());
+                    crate::output::print_totals_in(st);
+                    crate::output::print_nl_cstr_in(st, c" goal height ".as_ptr());
+                    crate::output::print_scaled_in(st, st.shipout.page_so_far[0]);
+                    let mut r = st.mem.b32s1(PAGE_INS_HEAD_SA);
                     while r != PAGE_INS_HEAD_SA {
-                        crate::output::print_ln();
-                        crate::output::print_esc_cstr(c"insert".as_ptr());
-                        let mut t = mem_b16s0(r) as i32;
-                        crate::output::print_int(t);
-                        crate::output::print_cstr(c" adds ".as_ptr());
-                        let count_t = eqtb_b32s1(COUNT_BASE_SA + t);
+                        crate::output::print_ln_in(st);
+                        crate::output::print_esc_cstr_in(st, c"insert".as_ptr());
+                        let mut t = st.mem.b16s0(r) as i32;
+                        crate::output::print_int_in(st, t);
+                        crate::output::print_cstr_in(st, c" adds ".as_ptr());
+                        let count_t = st.eqtb.b32s1(COUNT_BASE_SA + t);
                         if count_t == 1000 {
-                            t = mem_b32s1(r + 3);
+                            t = st.mem.b32s1(r + 3);
                         } else {
-                            t = crate::scaled_math::x_over_n(mem_b32s1(r + 3), 1000) * count_t;
+                            let xn = st.mem.b32s1(r + 3);
+                            t = crate::scaled_math::x_over_n_in(&mut st.errors, xn, 1000) * count_t;
                         }
-                        crate::output::print_scaled(t);
-                        if mem_b16s1(r) == SPLIT_UP_SA {
+                        crate::output::print_scaled_in(st, t);
+                        if st.mem.b16s1(r) == SPLIT_UP_SA {
                             let mut q = PAGE_HEAD_SA;
                             t = 0;
                             loop {
-                                q = mem_b32s1(q);
-                                if mem_b16s1(q) == INS_NODE_SA && mem_b16s0(q) == mem_b16s0(r) {
+                                q = st.mem.b32s1(q);
+                                if st.mem.b16s1(q) == INS_NODE_SA
+                                    && st.mem.b16s0(q) == st.mem.b16s0(r)
+                                {
                                     t += 1;
                                 }
-                                if q == mem_b32s0(r + 1) {
+                                if q == st.mem.b32s0(r + 1) {
                                     break;
                                 }
                             }
-                            crate::output::print_cstr(c", #".as_ptr());
-                            crate::output::print_int(t);
-                            crate::output::print_cstr(c" might split".as_ptr());
+                            crate::output::print_cstr_in(st, c", #".as_ptr());
+                            crate::output::print_int_in(st, t);
+                            crate::output::print_cstr_in(st, c" might split".as_ptr());
                         }
-                        r = mem_b32s1(r);
+                        r = st.mem.b32s1(r);
                     }
                 }
             }
-            if mem_b32s1(CONTRIB_HEAD_SA) != crate::mem::TEX_NULL {
-                crate::output::print_nl_cstr(c"### recent contributions:".as_ptr());
+            if st.mem.b32s1(CONTRIB_HEAD_SA) != crate::mem::TEX_NULL {
+                crate::output::print_nl_cstr_in(st, c"### recent contributions:".as_ptr());
             }
         }
-        show_box(mem_b32s1(nest_head(p)));
+        show_box_in(st, st.mem.b32s1(st.input.nest[(p) as usize].head));
         match (m.abs() / (MAX_COMMAND_SA + 1)) as i32 {
             0 => {
-                crate::output::print_nl_cstr(c"prevdepth ".as_ptr());
+                crate::output::print_nl_cstr_in(st, c"prevdepth ".as_ptr());
                 if a_s1 <= IGNORE_DEPTH_SA {
-                    crate::output::print_cstr(c"ignored".as_ptr());
+                    crate::output::print_cstr_in(st, c"ignored".as_ptr());
                 } else {
-                    crate::output::print_scaled(a_s1);
+                    crate::output::print_scaled_in(st, a_s1);
                 }
-                let pg = nest_prev_graf(p);
+                let pg = st.input.nest[(p) as usize].prev_graf;
                 if pg != 0 {
-                    crate::output::print_cstr(c", prevgraf ".as_ptr());
-                    crate::output::print_int(pg);
+                    crate::output::print_cstr_in(st, c", prevgraf ".as_ptr());
+                    crate::output::print_int_in(st, pg);
                     if pg != 1 {
-                        crate::output::print_cstr(c" lines".as_ptr());
+                        crate::output::print_cstr_in(st, c" lines".as_ptr());
                     } else {
-                        crate::output::print_cstr(c" line".as_ptr());
+                        crate::output::print_cstr_in(st, c" line".as_ptr());
                     }
                 }
             }
             1 => {
-                crate::output::print_nl_cstr(c"spacefactor ".as_ptr());
-                crate::output::print_int(a_s0);
+                crate::output::print_nl_cstr_in(st, c"spacefactor ".as_ptr());
+                crate::output::print_int_in(st, a_s0);
                 if m > 0 && a_s1 > 0 {
-                    crate::output::print_cstr(c", current language ".as_ptr());
-                    crate::output::print_int(a_s1);
+                    crate::output::print_cstr_in(st, c", current language ".as_ptr());
+                    crate::output::print_int_in(st, a_s1);
                 }
             }
             2 => {
                 if a_s1 != crate::mem::TEX_NULL {
-                    crate::output::print_cstr(c"this will begin denominator of:".as_ptr());
-                    show_box(a_s1);
+                    crate::output::print_cstr_in(st, c"this will begin denominator of:".as_ptr());
+                    show_box_in(st, a_s1);
                 }
             }
             _ => {}
@@ -4594,11 +4598,12 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
 }
 // translated from xetex-xetex0.c:2764 (show_context)
 pub unsafe fn show_context() {
-    use crate::globals::{
-        base_ptr, buffer_entry, error_line, first_count, half_error_line, in_open, input_ptr,
-        input_stack, line, line_stack, set_base_ptr, set_cur_input, set_first_count,
-        set_input_stack, set_tally, set_trick_count, tally, trick_buf, trick_count,
-    };
+    crate::state::with_state_mut(|st| show_context_in(st));
+}
+
+/// `&mut EngineState` core of [`show_context`].
+pub(crate) fn show_context_in(st: &mut EngineState) {
+    use crate::globals::{line, set_cur_input};
 
     const TOKEN_LIST: u16 = 0;
     const BACKED_UP: u16 = 3;
@@ -4624,60 +4629,63 @@ pub unsafe fn show_context() {
     const SELECTOR_PSEUDO: i32 = 20;
     const INT_PAR_ERROR_CONTEXT_LINES: i32 = 54;
 
-    set_base_ptr(input_ptr());
-    set_input_stack(base_ptr(), cur_input());
+    st.input.base_ptr = st.input.input_ptr;
+    st.input.input_stack[st.input.base_ptr as usize] = cur_input();
     let mut nn: i32 = -1;
     let mut bottom_line = false;
 
     'outer: loop {
-        set_cur_input(input_stack(base_ptr()));
+        set_cur_input(st.input.input_stack[(st.input.base_ptr) as usize]);
         let ci = cur_input();
-        if ci.state != TOKEN_LIST && (ci.name > 19 || base_ptr() == 0) {
+        if ci.state != TOKEN_LIST && (ci.name > 19 || st.input.base_ptr == 0) {
             bottom_line = true;
         }
-        let error_context_lines = eqtb_b32s1(INT_BASE + INT_PAR_ERROR_CONTEXT_LINES);
-        if base_ptr() == input_ptr() || bottom_line || nn < error_context_lines {
+        let error_context_lines = st.eqtb.b32s1(INT_BASE + INT_PAR_ERROR_CONTEXT_LINES);
+        if st.input.base_ptr == st.input.input_ptr || bottom_line || nn < error_context_lines {
             let ci = cur_input();
-            if base_ptr() == input_ptr()
+            if st.input.base_ptr == st.input.input_ptr
                 || ci.state != TOKEN_LIST
                 || ci.index != BACKED_UP
                 || ci.loc != crate::mem::TEX_NULL
             {
-                set_tally(0);
-                let old_setting = selector();
+                st.errors.tally = 0;
+                let old_setting = st.shipout.selector;
                 let l;
                 if ci.state != TOKEN_LIST {
                     if ci.name <= 17 {
                         if ci.name == 0 {
-                            if base_ptr() == 0 {
-                                crate::output::print_nl_cstr(c"<*>".as_ptr());
+                            if st.input.base_ptr == 0 {
+                                crate::output::print_nl_cstr_in(st, c"<*>".as_ptr());
                             } else {
-                                crate::output::print_nl_cstr(c"<insert> ".as_ptr());
+                                crate::output::print_nl_cstr_in(st, c"<insert> ".as_ptr());
                             }
                         } else {
-                            crate::output::print_nl_cstr(c"<read ".as_ptr());
+                            crate::output::print_nl_cstr_in(st, c"<read ".as_ptr());
                             if ci.name == 17 {
-                                crate::output::print_char('*' as i32);
+                                crate::output::print_char_in(st, '*' as i32);
                             } else {
-                                crate::output::print_int(ci.name - 1);
+                                crate::output::print_int_in(st, ci.name - 1);
                             }
-                            crate::output::print_char('>' as i32);
+                            crate::output::print_char_in(st, '>' as i32);
                         }
                     } else {
-                        crate::output::print_nl_cstr(c"l.".as_ptr());
-                        if ci.index as i32 == in_open() {
-                            crate::output::print_int(line());
+                        crate::output::print_nl_cstr_in(st, c"l.".as_ptr());
+                        if ci.index as i32 == st.input.in_open {
+                            crate::output::print_int_in(st, line());
                         } else {
-                            crate::output::print_int(line_stack(ci.index as i32 + 1));
+                            crate::output::print_int_in(
+                                st,
+                                st.input.line_stack[(ci.index as i32 + 1) as usize],
+                            );
                         }
                     }
-                    crate::output::print_char(' ' as i32);
-                    l = tally();
-                    set_tally(0);
-                    set_selector(SELECTOR_PSEUDO);
-                    set_trick_count(1_000_000);
-                    let end_char = eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
-                    let j = if buffer_entry(ci.limit) == end_char {
+                    crate::output::print_char_in(st, ' ' as i32);
+                    l = st.errors.tally;
+                    st.errors.tally = 0;
+                    st.shipout.selector = SELECTOR_PSEUDO;
+                    st.errors.trick_count = 1_000_000;
+                    let end_char = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
+                    let j = if st.input.buffer[(ci.limit) as usize] == end_char {
                         ci.limit
                     } else {
                         ci.limit + 1
@@ -4688,11 +4696,12 @@ pub unsafe fn show_context() {
                         if i <= for_end {
                             loop {
                                 if i == ci.loc {
-                                    set_first_count(tally());
-                                    let tc = tally() + 1 + error_line() - half_error_line();
-                                    set_trick_count(tc.max(error_line()));
+                                    st.errors.first_count = st.errors.tally;
+                                    let tc = st.errors.tally + 1 + st.errors.error_line
+                                        - st.errors.half_error_line;
+                                    st.errors.trick_count = tc.max(st.errors.error_line);
                                 }
-                                crate::output::print_char(buffer_entry(i));
+                                crate::output::print_char_in(st, st.input.buffer[(i) as usize]);
                                 if i >= for_end {
                                     break;
                                 }
@@ -4702,107 +4711,140 @@ pub unsafe fn show_context() {
                     }
                 } else {
                     match ci.index {
-                        PARAMETER => crate::output::print_nl_cstr(c"<argument> ".as_ptr()),
+                        PARAMETER => crate::output::print_nl_cstr_in(st, c"<argument> ".as_ptr()),
                         U_TEMPLATE | V_TEMPLATE => {
-                            crate::output::print_nl_cstr(c"<template> ".as_ptr())
+                            crate::output::print_nl_cstr_in(st, c"<template> ".as_ptr())
                         }
                         BACKED_UP | BACKED_UP_CHAR => {
                             if ci.loc == crate::mem::TEX_NULL {
-                                crate::output::print_nl_cstr(c"<recently read> ".as_ptr());
+                                crate::output::print_nl_cstr_in(st, c"<recently read> ".as_ptr());
                             } else {
-                                crate::output::print_nl_cstr(c"<to be read again> ".as_ptr());
+                                crate::output::print_nl_cstr_in(
+                                    st,
+                                    c"<to be read again> ".as_ptr(),
+                                );
                             }
                         }
-                        INSERTED => crate::output::print_nl_cstr(c"<inserted text> ".as_ptr()),
+                        INSERTED => {
+                            crate::output::print_nl_cstr_in(st, c"<inserted text> ".as_ptr())
+                        }
                         MACRO => {
-                            crate::output::print_ln();
-                            crate::output::print_cs(ci.name);
+                            crate::output::print_ln_in(st);
+                            crate::output::print_cs_in(st, ci.name);
                         }
-                        OUTPUT_TEXT => crate::output::print_nl_cstr(c"<output> ".as_ptr()),
-                        EVERY_PAR_TEXT => crate::output::print_nl_cstr(c"<everypar> ".as_ptr()),
-                        EVERY_MATH_TEXT => crate::output::print_nl_cstr(c"<everymath> ".as_ptr()),
+                        OUTPUT_TEXT => crate::output::print_nl_cstr_in(st, c"<output> ".as_ptr()),
+                        EVERY_PAR_TEXT => {
+                            crate::output::print_nl_cstr_in(st, c"<everypar> ".as_ptr())
+                        }
+                        EVERY_MATH_TEXT => {
+                            crate::output::print_nl_cstr_in(st, c"<everymath> ".as_ptr())
+                        }
                         EVERY_DISPLAY_TEXT => {
-                            crate::output::print_nl_cstr(c"<everydisplay> ".as_ptr())
+                            crate::output::print_nl_cstr_in(st, c"<everydisplay> ".as_ptr())
                         }
-                        EVERY_HBOX_TEXT => crate::output::print_nl_cstr(c"<everyhbox> ".as_ptr()),
-                        EVERY_VBOX_TEXT => crate::output::print_nl_cstr(c"<everyvbox> ".as_ptr()),
-                        EVERY_JOB_TEXT => crate::output::print_nl_cstr(c"<everyjob> ".as_ptr()),
-                        EVERY_CR_TEXT => crate::output::print_nl_cstr(c"<everycr> ".as_ptr()),
-                        MARK_TEXT => crate::output::print_nl_cstr(c"<mark> ".as_ptr()),
-                        EVERY_EOF_TEXT => crate::output::print_nl_cstr(c"<everyeof> ".as_ptr()),
+                        EVERY_HBOX_TEXT => {
+                            crate::output::print_nl_cstr_in(st, c"<everyhbox> ".as_ptr())
+                        }
+                        EVERY_VBOX_TEXT => {
+                            crate::output::print_nl_cstr_in(st, c"<everyvbox> ".as_ptr())
+                        }
+                        EVERY_JOB_TEXT => {
+                            crate::output::print_nl_cstr_in(st, c"<everyjob> ".as_ptr())
+                        }
+                        EVERY_CR_TEXT => {
+                            crate::output::print_nl_cstr_in(st, c"<everycr> ".as_ptr())
+                        }
+                        MARK_TEXT => crate::output::print_nl_cstr_in(st, c"<mark> ".as_ptr()),
+                        EVERY_EOF_TEXT => {
+                            crate::output::print_nl_cstr_in(st, c"<everyeof> ".as_ptr())
+                        }
                         INTER_CHAR_TEXT => {
-                            crate::output::print_nl_cstr(c"<XeTeXinterchartoks> ".as_ptr())
+                            crate::output::print_nl_cstr_in(st, c"<XeTeXinterchartoks> ".as_ptr())
                         }
-                        WRITE_TEXT => crate::output::print_nl_cstr(c"<write> ".as_ptr()),
+                        WRITE_TEXT => crate::output::print_nl_cstr_in(st, c"<write> ".as_ptr()),
                         TECTONIC_CODA_TEXT => {
-                            crate::output::print_nl_cstr(c"<TectonicCodaTokens> ".as_ptr())
+                            crate::output::print_nl_cstr_in(st, c"<TectonicCodaTokens> ".as_ptr())
                         }
-                        _ => crate::output::print_nl('?' as i32),
+                        _ => crate::output::print_nl_in(st, '?' as i32),
                     }
-                    l = tally();
-                    set_tally(0);
-                    set_selector(SELECTOR_PSEUDO);
-                    set_trick_count(1_000_000);
+                    l = st.errors.tally;
+                    st.errors.tally = 0;
+                    st.shipout.selector = SELECTOR_PSEUDO;
+                    st.errors.trick_count = 1_000_000;
                     if ci.index < MACRO {
-                        crate::output::show_token_list(ci.start, ci.loc, 100_000);
+                        crate::output::show_token_list_in(st, ci.start, ci.loc, 100_000);
                     } else {
-                        crate::output::show_token_list(mem_b32s1(ci.start), ci.loc, 100_000);
+                        crate::output::show_token_list_in(
+                            st,
+                            st.mem.b32s1(ci.start),
+                            ci.loc,
+                            100_000,
+                        );
                     }
                 }
-                set_selector(old_setting);
-                if trick_count() == 1_000_000 {
-                    set_first_count(tally());
-                    let tc = tally() + 1 + error_line() - half_error_line();
-                    set_trick_count(tc.max(error_line()));
+                st.shipout.selector = old_setting;
+                if st.errors.trick_count == 1_000_000 {
+                    st.errors.first_count = st.errors.tally;
+                    let tc = st.errors.tally + 1 + st.errors.error_line - st.errors.half_error_line;
+                    st.errors.trick_count = tc.max(st.errors.error_line);
                 }
-                let m = if tally() < trick_count() {
-                    tally() - first_count()
+                let m = if st.errors.tally < st.errors.trick_count {
+                    st.errors.tally - st.errors.first_count
                 } else {
-                    trick_count() - first_count()
+                    st.errors.trick_count - st.errors.first_count
                 };
-                let (mut p, n) = if l + first_count() <= half_error_line() {
-                    (0i32, l + first_count())
+                let (mut p, n) = if l + st.errors.first_count <= st.errors.half_error_line {
+                    (0i32, l + st.errors.first_count)
                 } else {
-                    crate::output::print_cstr(c"...".as_ptr());
-                    (l + first_count() - half_error_line() + 3, half_error_line())
+                    crate::output::print_cstr_in(st, c"...".as_ptr());
+                    (
+                        l + st.errors.first_count - st.errors.half_error_line + 3,
+                        st.errors.half_error_line,
+                    )
                 };
-                let fc = first_count();
+                let fc = st.errors.first_count;
                 let mut q = p;
                 while q < fc {
-                    crate::output::print_char(trick_buf((q % error_line()) as usize) as i32);
+                    crate::output::print_char_in(
+                        st,
+                        st.errors.trick_buf[(q % st.errors.error_line) as usize] as i32,
+                    );
                     q += 1;
                 }
-                crate::output::print_ln();
+                crate::output::print_ln_in(st);
                 let mut q2 = 1;
                 while q2 <= n {
-                    crate::output::print_raw_char(' ' as u16, true);
+                    crate::output::print_raw_char_in(st, ' ' as u16, true);
                     q2 += 1;
                 }
-                p = if m + n <= error_line() {
+                p = if m + n <= st.errors.error_line {
                     fc + m
                 } else {
-                    fc + (error_line() - n - 3)
+                    fc + (st.errors.error_line - n - 3)
                 };
                 let mut q3 = fc;
                 while q3 < p {
-                    crate::output::print_char(trick_buf((q3 % error_line()) as usize) as i32);
+                    crate::output::print_char_in(
+                        st,
+                        st.errors.trick_buf[(q3 % st.errors.error_line) as usize] as i32,
+                    );
                     q3 += 1;
                 }
-                if m + n > error_line() {
-                    crate::output::print_cstr(c"...".as_ptr());
+                if m + n > st.errors.error_line {
+                    crate::output::print_cstr_in(st, c"...".as_ptr());
                 }
                 nn += 1;
             }
         } else if nn == error_context_lines {
-            crate::output::print_nl_cstr(c"...".as_ptr());
+            crate::output::print_nl_cstr_in(st, c"...".as_ptr());
             nn += 1;
         }
         if bottom_line {
             break 'outer;
         }
-        set_base_ptr(base_ptr() - 1);
+        st.input.base_ptr = st.input.base_ptr - 1;
     }
-    set_cur_input(input_stack(input_ptr()));
+    set_cur_input(st.input.input_stack[(st.input.input_ptr) as usize]);
 }
 
 // ---- consts moved verbatim from scan.rs with the show_* group (workstream 02) ----

@@ -131,12 +131,18 @@ pub fn mult_and_add(
 /// 0, with `tex_remainder = x`) on division by zero.
 ///
 /// translated from xetex-scaledmath.c:79 (x_over_n)
-pub fn x_over_n(mut x: i32, mut n: i32) -> i32 {
+pub fn x_over_n(x: i32, n: i32) -> i32 {
+    crate::state::with_state_mut(|st| x_over_n_in(&mut st.errors, x, n))
+}
+
+/// `&mut ErrorState` core of [`x_over_n`] (touches `tex_remainder`/`arith_error`
+/// directly so it is callable under a live state borrow).
+pub fn x_over_n_in(errors: &mut crate::state::ErrorState, mut x: i32, mut n: i32) -> i32 {
     // scaled_t is i32
 
     if n == 0 {
-        set_arith_error(true);
-        set_tex_remainder(x);
+        errors.arith_error = true;
+        errors.tex_remainder = x;
         return 0;
     }
 
@@ -152,11 +158,11 @@ pub fn x_over_n(mut x: i32, mut n: i32) -> i32 {
     if n < 0 {
         x = x.wrapping_neg();
         n = n.wrapping_neg();
-        set_tex_remainder(crate::globals::tex_remainder().wrapping_neg());
+        errors.tex_remainder = errors.tex_remainder.wrapping_neg();
     }
 
     if x >= 0 {
-        set_tex_remainder(x % n);
+        errors.tex_remainder = x % n;
         x / n
     } else {
         // Negating x may wrap (if x was i32::MIN), but that case is
@@ -164,7 +170,7 @@ pub fn x_over_n(mut x: i32, mut n: i32) -> i32 {
         // i32::MIN / positive_n are both defined in Rust and match
         // C's behaviour after the implicit cast-through-wrap.
         let neg_x = x.wrapping_neg();
-        set_tex_remainder((neg_x % n).wrapping_neg());
+        errors.tex_remainder = (neg_x % n).wrapping_neg();
         (neg_x / n).wrapping_neg()
     }
 }

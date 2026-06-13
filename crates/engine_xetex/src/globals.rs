@@ -1070,10 +1070,6 @@ pub(crate) fn set_max_print_line(v: i32) {
 }
 
 #[inline]
-pub(crate) fn tally() -> i32 {
-    crate::state::with_state(|state| state.errors.tally)
-}
-#[inline]
 pub(crate) fn set_tally(v: i32) {
     crate::state::with_state_mut(|state| {
         state.errors.tally = v;
@@ -1100,31 +1096,7 @@ pub(crate) fn set_half_error_line(v: i32) {
         state.errors.half_error_line = v;
     });
 }
-#[inline]
-pub(crate) fn first_count() -> i32 {
-    crate::state::with_state(|state| state.errors.first_count)
-}
-#[inline]
-pub(crate) fn set_first_count(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.first_count = v;
-    });
-}
-#[inline]
-pub(crate) fn set_trick_count(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.trick_count = v;
-    });
-}
 
-#[inline]
-pub(crate) fn trick_count() -> i32 {
-    crate::state::with_state(|state| state.errors.trick_count)
-}
-#[inline]
-pub(crate) fn trick_buf(k: usize) -> u16 {
-    crate::state::with_state(|state| state.errors.trick_buf[k])
-}
 #[inline]
 pub(crate) fn pool_size() -> i32 {
     crate::state::with_state(|state| state.strings.pool_size)
@@ -2388,6 +2360,12 @@ pub(crate) fn restore_cur_list_from_nest(k: i32) {
         raw::cur_list = v;
     }
 }
+/// Read `cur_list` (the raw current-list record) by value.
+#[inline]
+pub(crate) fn cur_list() -> crate::mem_types::ListStateRecord {
+    unsafe { raw::cur_list }
+}
+
 /// Copy `cur_list` to `nest[k]` (full struct assignment).
 #[inline]
 pub(crate) fn save_cur_list_to_nest(k: i32) {
@@ -2468,11 +2446,6 @@ pub(crate) fn set_nest_tail(k: i32, v: i32) {
         s.input.nest[k as usize].tail = v;
     });
 }
-/// Returns `nest[k].eTeX_aux`.
-#[inline]
-pub(crate) fn nest_e_tex_aux(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.nest[k as usize].e_tex_aux)
-}
 /// Returns `nest[k].aux.b32.s1` (prevdepth half of the aux word).
 #[inline]
 pub(crate) fn nest_aux_b32s1(k: i32) -> i32 {
@@ -2488,18 +2461,6 @@ pub(crate) fn set_nest_prev_graf(k: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.input.nest[k as usize].prev_graf = v;
     });
-}
-#[inline]
-pub(crate) fn nest_head(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.nest[k as usize].head)
-}
-#[inline]
-pub(crate) fn nest_mode_line(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.nest[k as usize].mode_line)
-}
-#[inline]
-pub(crate) fn nest_aux_b32s0(k: i32) -> i32 {
-    crate::state::with_state(|s| unsafe { s.input.nest[k as usize].aux.b32.s0 })
 }
 #[inline]
 pub(crate) fn set_cur_list_prev_graf(v: i32) {
