@@ -2000,6 +2000,20 @@ impl NodePtr<WhatsitNode> {
     pub fn set_native_glyph_info_ptr(self, mem: &mut MemState, v: *mut std::ffi::c_void) {
         mem.set_ptr(self.idx.offset(5).0, v);
     }
+
+    /// Pointer to the inline UTF-16 native-word text payload at
+    /// `mem[p + NATIVE_NODE_SIZE]` (`NATIVE_NODE_SIZE = 6`).
+    #[inline]
+    pub fn native_text_ptr(self, mem: &MemState) -> *const u16 {
+        mem.as_u16_ptr(self.idx.offset(6).0)
+    }
+
+    /// Mutable pointer to the inline UTF-16 native-word text payload at
+    /// `mem[p + NATIVE_NODE_SIZE]` (`NATIVE_NODE_SIZE = 6`).
+    #[inline]
+    pub fn native_text_ptr_mut(self, mem: &mut MemState) -> *mut u16 {
+        mem.as_u16_ptr_mut(self.idx.offset(6).0)
+    }
 }
 
 /// A sparse-array tree record used by the eTeX mark machinery (`do_marks`):

@@ -19,6 +19,7 @@ use crate::fonts::{effective_char, new_native_word_node};
 use crate::globals::{cur_val, mem_b32s1, set_cur_val, set_help_line, set_help_ptr, temp_ptr};
 use crate::node::{
     AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, NodePtr, RuleDimen, SaNode, VListNode,
+    WhatsitNode,
 };
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
 use crate::units::NodeType;
@@ -123,8 +124,6 @@ const MARK_CLASS_NODE_SIZE_DM: i32 = 4;
 // hpack
 // ---------------------------------------------------------------------------
 
-// Node type constants for hpack
-const WHATSIT_NODE_HP: u16 = 8;
 // whatsit subtypes
 const NATIVE_WORD_NODE_HP: u16 = 40;
 const NATIVE_WORD_NODE_AT_HP: u16 = 41;
@@ -146,7 +145,26 @@ const INT_PAR_TEXXET_HP: i32 = 69;
 const INT_PAR_HBADNESS_HP: i32 = 26;
 const DIMEN_PAR_HFUZZ_HP: i32 = 8;
 const DIMEN_PAR_OVERFULL_RULE_HP: i32 = 16;
-const NATIVE_NODE_SIZE_HP: i32 = 6;
+
+fn classify_native_word_hp(mem: &MemState, p: i32) -> Option<NodePtr<WhatsitNode>> {
+    if p == crate::mem::TEX_NULL || p >= mem.hi_mem_min {
+        return None;
+    }
+    let w = mem.classify_whatsit(MemIdx::new(p)).ok().flatten()?;
+    match w.subtype(mem) {
+        NATIVE_WORD_NODE_HP | NATIVE_WORD_NODE_AT_HP => Some(w),
+        _ => None,
+    }
+}
+
+fn classify_native_word_with_font_hp(
+    mem: &MemState,
+    p: i32,
+    font: i32,
+) -> Option<NodePtr<WhatsitNode>> {
+    let w = classify_native_word_hp(mem, p)?;
+    (w.native_font(mem).0 == font).then_some(w)
+}
 
 #[derive(Copy, Clone)]
 enum PackDiag {
@@ -2016,36 +2034,56 @@ fn hpack_in(
                     d = ud;
                 }
             }
-            arm @ (Ok(AnyNode::Ins(_)) | Ok(AnyNode::Mark(_)) | Ok(AnyNode::Adjust(_))) => {
+            Ok(AnyNode::Adjust(adjust)) => {
                 if scanner.adjust_tail != TEX_NULL || scanner.pre_adjust_tail != TEX_NULL {
                     while mem.b32s1(q) != p {
                         q = mem.b32s1(q);
                     }
-                    if matches!(arm, Ok(AnyNode::Adjust(_))) {
-                        if mem.b16s0(p) != 0 {
-                            if scanner.pre_adjust_tail == TEX_NULL {
-                                return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
-                            }
-                            mem.set_b32s1(scanner.pre_adjust_tail, mem.b32s1(p + 1));
-                            while mem.b32s1(scanner.pre_adjust_tail) != TEX_NULL {
-                                scanner.pre_adjust_tail = mem.b32s1(scanner.pre_adjust_tail);
-                            }
-                        } else {
-                            if scanner.adjust_tail == TEX_NULL {
-                                return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
-                            }
-                            mem.set_b32s1(scanner.adjust_tail, mem.b32s1(p + 1));
-                            while mem.b32s1(scanner.adjust_tail) != TEX_NULL {
-                                scanner.adjust_tail = mem.b32s1(scanner.adjust_tail);
-                            }
+                    let adjust_list = adjust.adjust_ptr(mem).0;
+                    if adjust.subtype(mem) != 0 {
+                        if scanner.pre_adjust_tail == TEX_NULL {
+                            return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
                         }
-                        p = mem.b32s1(p);
-                        crate::mem::free_node(mem, mem.b32s1(q), SMALL_NODE_SIZE);
+                        mem.set_b32s1(scanner.pre_adjust_tail, adjust_list);
+                        while mem.b32s1(scanner.pre_adjust_tail) != TEX_NULL {
+                            scanner.pre_adjust_tail = mem.b32s1(scanner.pre_adjust_tail);
+                        }
                     } else {
-                        mem.set_b32s1(scanner.adjust_tail, p);
-                        scanner.adjust_tail = p;
-                        p = mem.b32s1(p);
+                        if scanner.adjust_tail == TEX_NULL {
+                            return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
+                        }
+                        mem.set_b32s1(scanner.adjust_tail, adjust_list);
+                        while mem.b32s1(scanner.adjust_tail) != TEX_NULL {
+                            scanner.adjust_tail = mem.b32s1(scanner.adjust_tail);
+                        }
                     }
+                    let removed = p;
+                    p = adjust.link(mem).0;
+                    crate::mem::free_node(mem, removed, SMALL_NODE_SIZE);
+                    mem.set_b32s1(q, p);
+                    p = q;
+                }
+            }
+            Ok(AnyNode::Ins(ins)) => {
+                if scanner.adjust_tail != TEX_NULL || scanner.pre_adjust_tail != TEX_NULL {
+                    while mem.b32s1(q) != p {
+                        q = mem.b32s1(q);
+                    }
+                    mem.set_b32s1(scanner.adjust_tail, p);
+                    scanner.adjust_tail = p;
+                    p = ins.link(mem).0;
+                    mem.set_b32s1(q, p);
+                    p = q;
+                }
+            }
+            Ok(AnyNode::Mark(mark)) => {
+                if scanner.adjust_tail != TEX_NULL || scanner.pre_adjust_tail != TEX_NULL {
+                    while mem.b32s1(q) != p {
+                        q = mem.b32s1(q);
+                    }
+                    mem.set_b32s1(scanner.adjust_tail, p);
+                    scanner.adjust_tail = p;
+                    p = mark.link(mem).0;
                     mem.set_b32s1(q, p);
                     p = q;
                 }
@@ -2053,9 +2091,7 @@ fn hpack_in(
             Ok(AnyNode::Whatsit(w)) => {
                 let sub = w.subtype(mem);
                 // The matched node's native font, used to test mergeability of the
-                // following native-word fragments. The native-word reconstitution
-                // below walks raw cursors (`pp`/`ppp`/`scan_p`) and reassigns `p`,
-                // so those stay raw (deferred-newtype worklist: native-word merge).
+                // following native-word fragments.
                 let p_font = w.native_font(mem).0;
                 match sub {
                     NATIVE_WORD_NODE_HP | NATIVE_WORD_NODE_AT_HP => {
@@ -2075,25 +2111,17 @@ fn hpack_in(
                         let mut pp = mem.b32s1(p);
                         loop {
                             if k <= 0 && pp != TEX_NULL && pp < mem.hi_mem_min {
-                                let pp_type = mem.b16s1(pp);
-                                let pp_sub = mem.b16s0(pp);
-                                if pp_type == WHATSIT_NODE_HP
-                                    && (pp_sub == NATIVE_WORD_NODE_HP
-                                        || pp_sub == NATIVE_WORD_NODE_AT_HP)
-                                    && mem.b16s2(pp + 4) as i32 == p_font
+                                if let Some(ppw) =
+                                    classify_native_word_with_font_hp(mem, pp, p_font)
                                 {
-                                    pp = mem.b32s1(pp);
+                                    pp = ppw.link(mem).0;
                                     continue;
-                                } else if pp_type == DISC_NODE {
+                                } else if mem.b16s1(pp) == DISC_NODE {
                                     let ppp = mem.b32s1(pp);
-                                    if ppp != TEX_NULL
-                                        && ppp < mem.hi_mem_min
-                                        && mem.b16s1(ppp) == WHATSIT_NODE_HP
-                                        && (mem.b16s0(ppp) == NATIVE_WORD_NODE_HP
-                                            || mem.b16s0(ppp) == NATIVE_WORD_NODE_AT_HP)
-                                        && mem.b16s2(ppp + 4) as i32 == p_font
+                                    if let Some(pppw) =
+                                        classify_native_word_with_font_hp(mem, ppp, p_font)
                                     {
-                                        pp = mem.b32s1(ppp);
+                                        pp = pppw.link(mem).0;
                                         continue;
                                     }
                                 }
@@ -2104,19 +2132,25 @@ fn hpack_in(
                             let mut total_chars: i32 = 0;
                             let mut scan_p = mem.b32s1(q);
                             while scan_p != pp {
-                                if mem.b16s1(scan_p) == WHATSIT_NODE_HP {
-                                    total_chars += mem.b16s1(scan_p + 4) as i32;
+                                if let Some(scan_w) = classify_native_word_hp(mem, scan_p) {
+                                    total_chars += scan_w.native_length(mem) as i32;
                                 }
                                 scan_p = mem.b32s1(scan_p);
                             }
                             let scan_p = mem.b32s1(q);
+                            let scan_w = classify_native_word_hp(mem, scan_p)
+                                .expect("native merge starts at a native-word node");
                             let merged = new_native_word_node(
                                 mem,
                                 eqtb,
-                                mem.b16s2(scan_p + 4) as i32,
+                                scan_w.native_font(mem).0,
                                 total_chars,
                             )?;
-                            mem.set_b16s0(merged, mem.b16s0(scan_p));
+                            let merged_w = mem
+                                .classify_whatsit(MemIdx::new(merged))
+                                .map_err(|_| NodeRecycleAbort::Confusion(c"hpack"))?
+                                .expect("new_native_word_node returns a whatsit");
+                            merged_w.set_subtype(mem, scan_w.subtype(mem));
                             mem.set_b32s1(q, merged);
                             let mut last_before_pp = scan_p;
                             while mem.b32s1(last_before_pp) != pp {
@@ -2127,10 +2161,10 @@ fn hpack_in(
                             total_chars = 0;
                             let mut src_p = scan_p;
                             loop {
-                                if mem.b16s1(src_p) == WHATSIT_NODE_HP {
-                                    let count = mem.b16s1(src_p + 4) as i32;
-                                    let src = mem.as_u16_ptr(src_p + NATIVE_NODE_SIZE_HP);
-                                    let dst = mem.as_u16_ptr_mut(merged + NATIVE_NODE_SIZE_HP);
+                                if let Some(src_w) = classify_native_word_hp(mem, src_p) {
+                                    let count = src_w.native_length(mem) as i32;
+                                    let src = src_w.native_text_ptr(mem);
+                                    let dst = merged_w.native_text_ptr_mut(mem);
                                     for k_idx in 0..count {
                                         unsafe {
                                             *dst.offset((total_chars + k_idx) as isize) =
@@ -2155,13 +2189,19 @@ fn hpack_in(
                                 );
                             }
                         }
-                        if mem.b32s1(p + 3) > h {
-                            h = mem.b32s1(p + 3);
+                        let p_native = mem
+                            .classify_whatsit(MemIdx::new(p))
+                            .map_err(|_| NodeRecycleAbort::Confusion(c"hpack"))?
+                            .expect("native-word hpack cursor remains a whatsit");
+                        let ph = p_native.height(mem).0;
+                        if ph > h {
+                            h = ph;
                         }
-                        if mem.b32s1(p + 2) > d {
-                            d = mem.b32s1(p + 2);
+                        let pd = p_native.depth(mem).0;
+                        if pd > d {
+                            d = pd;
                         }
-                        x += mem.b32s1(p + 1);
+                        x += p_native.width(mem).0;
                     }
                     42..=44 => {
                         // GLYPH_NODE / PIC_NODE / PDF_NODE: `p` is unchanged here
