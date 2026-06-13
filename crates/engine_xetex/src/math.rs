@@ -30,7 +30,8 @@ use crate::mem::{
     ALLOC_FAILED, TEX_NULL,
 };
 use crate::node::{
-    AnyBox, ChoiceNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode, VListNode,
+    AnyBox, ChoiceNode, GlueNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode,
+    VListNode,
 };
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
@@ -2754,6 +2755,65 @@ fn update_math_style_params() {
     ));
 }
 
+/// First-pass `CHOICE_NODE` handling for [`mlist_to_hlist`]: keep the branch
+/// matching the current style, flush the other three, then stamp the node down
+/// to a style node and splice the kept branch into the main list after it.
+/// Returns any `flush_node_list` confusion message for the caller to raise
+/// after the `mem` borrow drops (`01b` §4a bucket C).
+fn mlist_choice_node(
+    mem: &mut MemState,
+    q: i32,
+    cur_style: i16,
+) -> Result<(), &'static std::ffi::CStr> {
+    let choice = mem
+        .classify_choice(MemIdx::new(q))
+        .expect("valid node type")
+        .expect("choice node");
+    // Detach the branch for the current style; the other three are flushed.
+    let kept = match cur_style / 2 {
+        0 => {
+            let p = choice.display_mlist(mem);
+            choice.set_display_mlist(mem, MemPtr::NULL);
+            p
+        }
+        1 => {
+            let p = choice.text_mlist(mem);
+            choice.set_text_mlist(mem, MemPtr::NULL);
+            p
+        }
+        2 => {
+            let p = choice.script_mlist(mem);
+            choice.set_script_mlist(mem, MemPtr::NULL);
+            p
+        }
+        3 => {
+            let p = choice.script_script_mlist(mem);
+            choice.set_script_script_mlist(mem, MemPtr::NULL);
+            p
+        }
+        _ => MemPtr::NULL,
+    };
+    crate::packaging::flush_node_list(mem, choice.display_mlist(mem).0)?;
+    crate::packaging::flush_node_list(mem, choice.text_mlist(mem).0)?;
+    crate::packaging::flush_node_list(mem, choice.script_mlist(mem).0)?;
+    crate::packaging::flush_node_list(mem, choice.script_script_mlist(mem).0)?;
+    // Rewrite the node as a style node carrying the current style.
+    mem.set_b16s1(q, STYLE_NODE);
+    mem.set_b16s0(q, cur_style as u16);
+    mem.set_b32s1(q + 1, 0);
+    mem.set_b32s1(q + 2, 0);
+    if let Some(kept) = kept.as_idx() {
+        let z = mem.b32s1(q);
+        mem.set_b32s1(q, kept.0);
+        let mut p = kept.0;
+        while mem.b32s1(p) != TEX_NULL {
+            p = mem.b32s1(p);
+        }
+        mem.set_b32s1(p, z);
+    }
+    Ok(())
+}
+
 /// translated from xetex-math.c:84 (mlist_to_hlist)
 pub unsafe fn mlist_to_hlist() {
     let mlist = crate::globals::cur_mlist();
@@ -2841,44 +2901,11 @@ pub unsafe fn mlist_to_hlist() {
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 CHOICE_NODE => {
-                    let mut p = match cur_style() / 2 {
-                        0 => {
-                            let p = mem_b32s0(q + 1);
-                            set_mem_b32s0(q + 1, TEX_NULL);
-                            p
-                        }
-                        1 => {
-                            let p = mem_b32s1(q + 1);
-                            set_mem_b32s1(q + 1, TEX_NULL);
-                            p
-                        }
-                        2 => {
-                            let p = mem_b32s0(q + 2);
-                            set_mem_b32s0(q + 2, TEX_NULL);
-                            p
-                        }
-                        3 => {
-                            let p = mem_b32s1(q + 2);
-                            set_mem_b32s1(q + 2, TEX_NULL);
-                            p
-                        }
-                        _ => TEX_NULL,
-                    };
-                    crate::packaging::flush_node_list_global(mem_b32s0(q + 1));
-                    crate::packaging::flush_node_list_global(mem_b32s1(q + 1));
-                    crate::packaging::flush_node_list_global(mem_b32s0(q + 2));
-                    crate::packaging::flush_node_list_global(mem_b32s1(q + 2));
-                    set_mem_b16s1(q, STYLE_NODE);
-                    set_mem_b16s0(q, cur_style() as u16);
-                    set_mem_b32s1(q + 1, 0);
-                    set_mem_b32s1(q + 2, 0);
-                    if p != TEX_NULL {
-                        let z = mem_b32s1(q);
-                        set_mem_b32s1(q, p);
-                        while mem_b32s1(p) != TEX_NULL {
-                            p = mem_b32s1(p);
-                        }
-                        set_mem_b32s1(p, z);
+                    if let Err(msg) = crate::state::with_state_mut(|st| {
+                        let cs = st.scanner.cur_style;
+                        mlist_choice_node(&mut st.mem, q, cs)
+                    }) {
+                        crate::errors::confusion(msg.as_ptr());
                     }
                     break 'reswitch FirstPass::DoneWithNode;
                 }
@@ -2895,19 +2922,40 @@ pub unsafe fn mlist_to_hlist() {
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 GLUE_NODE => {
-                    if mem_b16s0(q) == MU_GLUE {
-                        let x = mem_b32s0(q + 1);
-                        let y = math_glue_global(x, cur_mu());
-                        crate::mem::delete_glue_ref_global(x);
-                        set_mem_b32s0(q + 1, y);
-                        set_mem_b16s0(q, NORMAL);
-                    } else if cur_size() != TEXT_SIZE && mem_b16s0(q) == COND_MATH_GLUE {
-                        let p = mem_b32s1(q);
-                        if p != TEX_NULL && (mem_b16s1(p) == GLUE_NODE || mem_b16s1(p) == KERN_NODE)
-                        {
-                            set_mem_b32s1(q, mem_b32s1(p));
-                            set_mem_b32s1(p, TEX_NULL);
-                            crate::packaging::flush_node_list_global(p);
+                    let glue = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(q)) };
+                    let (subtype, mu, x) = crate::state::with_state(|st| {
+                        (
+                            glue.subtype(&st.mem),
+                            st.scanner.cur_mu,
+                            glue.glue_ptr(&st.mem).0,
+                        )
+                    });
+                    if subtype == MU_GLUE {
+                        let y = math_glue_global(x, mu);
+                        crate::state::with_state_mut(|st| {
+                            crate::mem::delete_glue_ref(&mut st.mem, x);
+                            glue.set_glue_ptr(&mut st.mem, MemPtr::from_raw(y));
+                            glue.set_subtype(&mut st.mem, NORMAL);
+                        });
+                    } else if subtype == COND_MATH_GLUE {
+                        let res = crate::state::with_state_mut(
+                            |st| -> Result<(), &'static std::ffi::CStr> {
+                                if st.scanner.cur_size != TEXT_SIZE {
+                                    let p = st.mem.b32s1(q);
+                                    if p != TEX_NULL
+                                        && (st.mem.b16s1(p) == GLUE_NODE
+                                            || st.mem.b16s1(p) == KERN_NODE)
+                                    {
+                                        st.mem.set_b32s1(q, st.mem.b32s1(p));
+                                        st.mem.set_b32s1(p, TEX_NULL);
+                                        crate::packaging::flush_node_list(&mut st.mem, p)?;
+                                    }
+                                }
+                                Ok(())
+                            },
+                        );
+                        if let Err(msg) = res {
+                            crate::errors::confusion(msg.as_ptr());
                         }
                     }
                     break 'reswitch FirstPass::DoneWithNode;
