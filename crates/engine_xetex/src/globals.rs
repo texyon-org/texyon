@@ -3575,34 +3575,12 @@ pub(crate) fn trie_trl_entry(k: i32) -> i32 {
     crate::state::with_state(|state| state.hyph.trie_trl[k as usize])
 }
 #[inline]
-pub(crate) fn set_trie_trl_entry(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_trl[k as usize] = v;
-    });
-}
-#[inline]
 pub(crate) fn trie_tro_entry(k: i32) -> i32 {
     crate::state::with_state(|state| state.hyph.trie_tro[k as usize])
 }
 #[inline]
-pub(crate) fn set_trie_tro_entry(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_tro[k as usize] = v;
-    });
-}
-#[inline]
 pub(crate) fn trie_trc_entry(k: i32) -> u16 {
     crate::state::with_state(|state| state.hyph.trie_trc[k as usize])
-}
-#[inline]
-pub(crate) fn set_trie_trc_entry(k: i32, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_trc[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn trie_c_entry(k: i32) -> u16 {
-    crate::state::with_state(|state| state.hyph.trie_c[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_c_entry(k: i32, v: u16) {
@@ -3611,49 +3589,15 @@ pub(crate) fn set_trie_c_entry(k: i32, v: u16) {
     });
 }
 #[inline]
-pub(crate) fn trie_o_entry(k: i32) -> u16 {
-    crate::state::with_state(|state| state.hyph.trie_o[k as usize])
-}
-#[inline]
-pub(crate) fn set_trie_o_entry(k: i32, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_o[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn trie_l_entry(k: i32) -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_l[k as usize])
-}
-#[inline]
 pub(crate) fn set_trie_l_entry(k: i32, v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.trie_l[k as usize] = v;
     });
 }
 #[inline]
-pub(crate) fn trie_r_entry(k: i32) -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_r[k as usize])
-}
-#[inline]
 pub(crate) fn set_trie_r_entry(k: i32, v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.trie_r[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn trie_hash_entry(k: i32) -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_hash[k as usize])
-}
-#[inline]
-pub(crate) fn set_trie_hash_entry(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_hash[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn set_trie_min_entry(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_min[k as usize] = v;
     });
 }
 #[inline]
@@ -3669,10 +3613,6 @@ pub(crate) fn set_trie_max(v: i32) {
 #[inline]
 pub(crate) fn trie_size() -> i32 {
     crate::state::with_state(|state| state.hyph.trie_size)
-}
-#[inline]
-pub(crate) fn trie_ptr() -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_ptr)
 }
 #[inline]
 pub(crate) fn set_trie_ptr(v: i32) {
@@ -3715,30 +3655,12 @@ pub(crate) fn hyf_distance_entry(k: i32) -> i16 {
     crate::state::with_state(|state| state.hyph.hyf_distance[k as usize])
 }
 #[inline]
-pub(crate) fn set_hyf_distance_entry(k: i32, v: i16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyf_distance[k as usize] = v;
-    });
-}
-#[inline]
 pub(crate) fn hyf_num_entry(k: i32) -> i16 {
     crate::state::with_state(|state| state.hyph.hyf_num[k as usize])
 }
 #[inline]
-pub(crate) fn set_hyf_num_entry(k: i32, v: i16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyf_num[k as usize] = v;
-    });
-}
-#[inline]
 pub(crate) fn hyf_next_entry(k: i32) -> u16 {
     crate::state::with_state(|state| state.hyph.hyf_next[k as usize])
-}
-#[inline]
-pub(crate) fn set_hyf_next_entry(k: i32, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyf_next[k as usize] = v;
-    });
 }
 #[inline]
 pub(crate) fn op_start_entry(k: usize) -> i32 {
@@ -3761,26 +3683,6 @@ pub(crate) fn set_trie_used_entry(k: usize, v: u16) {
     });
 }
 #[inline]
-pub(crate) fn trie_op_lang_entry(k: i32) -> u8 {
-    crate::state::with_state(|state| state.hyph.trie_op_lang[k as usize])
-}
-#[inline]
-pub(crate) fn set_trie_op_lang_entry(k: i32, v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_op_lang[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn trie_op_val_entry(k: i32) -> u16 {
-    crate::state::with_state(|state| state.hyph.trie_op_val[k as usize])
-}
-#[inline]
-pub(crate) fn set_trie_op_val_entry(k: i32, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_op_val[k as usize] = v;
-    });
-}
-#[inline]
 pub(crate) fn trie_op_ptr() -> i32 {
     crate::state::with_state(|state| state.hyph.trie_op_ptr)
 }
@@ -3790,11 +3692,6 @@ pub(crate) fn set_trie_op_ptr(v: i32) {
         state.hyph.trie_op_ptr = v;
     });
 }
-#[inline]
-pub(crate) fn max_op_used() -> u16 {
-    crate::state::with_state(|state| state.hyph.max_op_used)
-}
-#[inline]
 pub(crate) fn set_max_op_used(v: u16) {
     crate::state::with_state_mut(|state| {
         state.hyph.max_op_used = v;

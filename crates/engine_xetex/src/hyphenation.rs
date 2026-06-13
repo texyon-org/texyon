@@ -11,79 +11,105 @@ pub(crate) const BIGGEST_LANG: i32 = 255;
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, TOO_BIG_CHAR};
 use crate::globals::{
-    cur_chr, cur_cmd, cur_lang, cur_val, eqtb_b32s1, hc_entry, hyf_distance_entry, hyf_entry,
-    hyf_next_entry, hyf_num_entry, hyph_count, hyph_index, hyph_link_entry, hyph_next, hyph_size,
-    hyph_start, hyph_word_entry, init_pool_ptr, max_hyph_char, max_op_used, op_start_entry,
-    pool_ptr, pool_size, set_cur_chr, set_cur_cmd, set_cur_lang, set_hc_entry, set_help_line,
-    set_help_ptr, set_hyf_distance_entry, set_hyf_entry, set_hyf_next_entry, set_hyf_num_entry,
-    set_hyph_count, set_hyph_index, set_hyph_link_entry, set_hyph_list_entry, set_hyph_next,
-    set_hyph_start, set_hyph_word_entry, set_max_hyph_char, set_max_op_used, set_op_start_entry,
-    set_pool_ptr, set_str_pool, set_str_ptr, set_trie_c_entry, set_trie_hash_entry,
-    set_trie_l_entry, set_trie_max, set_trie_min_entry, set_trie_not_ready, set_trie_o_entry,
-    set_trie_op_lang_entry, set_trie_op_ptr, set_trie_op_val_entry, set_trie_ptr, set_trie_r_entry,
-    set_trie_trc_entry, set_trie_trl_entry, set_trie_tro_entry, set_trie_used_entry,
-    str_pool_entry, str_ptr, str_start, trie_c_entry, trie_hash_entry, trie_l_entry, trie_max,
-    trie_not_ready, trie_o_entry, trie_op_lang_entry, trie_op_ptr, trie_op_val_entry, trie_ptr,
-    trie_r_entry, trie_size, trie_trc_entry, trie_trl_entry, trie_tro_entry, trie_used_entry,
+    cur_chr, cur_cmd, cur_lang, cur_val, eqtb_b32s1, hc_entry, hyph_count, hyph_index,
+    hyph_link_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, init_pool_ptr,
+    max_hyph_char, pool_ptr, pool_size, set_cur_chr, set_cur_cmd, set_cur_lang, set_hc_entry,
+    set_help_line, set_help_ptr, set_hyf_entry, set_hyph_count, set_hyph_index,
+    set_hyph_link_entry, set_hyph_list_entry, set_hyph_next, set_hyph_word_entry,
+    set_max_hyph_char, set_pool_ptr, set_str_pool, set_str_ptr, str_pool_entry, str_ptr, str_start,
+    trie_not_ready, trie_trc_entry, trie_trl_entry, trie_tro_entry,
 };
 use crate::state::HyphState;
 
 // ---- moved verbatim from ini.rs (workstream 02) ----
 
 #[inline]
-unsafe fn trie_op_hash(k: i32) -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize])
-}
-#[inline]
 pub(crate) unsafe fn set_trie_op_hash(k: i32, v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
     })
 }
-// translated from xetex-ini.c:630 (new_trie_op)
-pub unsafe fn new_trie_op(d: i16, n: i16, v: u16) -> u16 {
-    let mut h = (n as i32 + 313 * d as i32 + 361 * v as i32 + 1009 * cur_lang() as i32).abs()
+
+#[inline]
+fn trie_op_hash_in(hyph: &HyphState, k: i32) -> i32 {
+    hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize]
+}
+
+#[inline]
+fn set_trie_op_hash_in(hyph: &mut HyphState, k: i32, v: i32) {
+    hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
+}
+
+enum TrieAbort {
+    PatternMemoryOverflow(i32),
+    PatternMemoryOpsOverflow(i32),
+    PatternMemoryOpsPerLanguageOverflow(i32),
+}
+
+fn trie_abort(e: TrieAbort) -> ! {
+    match e {
+        TrieAbort::PatternMemoryOverflow(size) => unsafe {
+            crate::errors::overflow(c"pattern memory".as_ptr(), size)
+        },
+        TrieAbort::PatternMemoryOpsOverflow(size) => unsafe {
+            crate::errors::overflow(c"pattern memory ops".as_ptr(), size)
+        },
+        TrieAbort::PatternMemoryOpsPerLanguageOverflow(size) => unsafe {
+            crate::errors::overflow(c"pattern memory ops per language".as_ptr(), size)
+        },
+    }
+}
+
+fn new_trie_op_in(
+    hyph: &mut HyphState,
+    cur_lang: u8,
+    d: i16,
+    n: i16,
+    v: u16,
+) -> Result<u16, TrieAbort> {
+    let mut h = (n as i32 + 313 * d as i32 + 361 * v as i32 + 1009 * cur_lang as i32).abs()
         % (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE)
         + NEG_TRIE_OP_SIZE;
 
     loop {
-        let l = trie_op_hash(h);
+        let l = trie_op_hash_in(hyph, h);
         if l == 0 {
-            if trie_op_ptr() == TRIE_OP_SIZE {
-                crate::errors::overflow(c"pattern memory ops".as_ptr(), TRIE_OP_SIZE);
+            if hyph.trie_op_ptr == TRIE_OP_SIZE {
+                return Err(TrieAbort::PatternMemoryOpsOverflow(TRIE_OP_SIZE));
             }
 
-            let lang = cur_lang() as usize;
-            let mut u = trie_used_entry(lang);
+            let lang = cur_lang as usize;
+            let mut u = hyph.trie_used[lang];
             if u == MAX_TRIE_OP {
-                crate::errors::overflow(
-                    c"pattern memory ops per language".as_ptr(),
+                return Err(TrieAbort::PatternMemoryOpsPerLanguageOverflow(
                     MAX_TRIE_OP as i32 - MIN_TRIE_OP,
-                );
+                ));
             }
 
-            set_trie_op_ptr(trie_op_ptr() + 1);
+            hyph.trie_op_ptr += 1;
             u += 1;
-            set_trie_used_entry(lang, u);
-            if u > max_op_used() {
-                set_max_op_used(u);
+            hyph.trie_used[lang] = u;
+            if u > hyph.max_op_used {
+                hyph.max_op_used = u;
             }
 
-            set_hyf_distance_entry(trie_op_ptr(), d);
-            set_hyf_num_entry(trie_op_ptr(), n);
-            set_hyf_next_entry(trie_op_ptr(), v);
-            set_trie_op_lang_entry(trie_op_ptr(), cur_lang());
-            set_trie_op_hash(h, trie_op_ptr());
-            set_trie_op_val_entry(trie_op_ptr(), u);
-            return u;
+            let op_ptr = hyph.trie_op_ptr as usize;
+            hyph.hyf_distance[op_ptr] = d;
+            hyph.hyf_num[op_ptr] = n;
+            hyph.hyf_next[op_ptr] = v;
+            hyph.trie_op_lang[op_ptr] = cur_lang;
+            set_trie_op_hash_in(hyph, h, hyph.trie_op_ptr);
+            hyph.trie_op_val[op_ptr] = u;
+            return Ok(u);
         }
 
-        if hyf_distance_entry(l) == d
-            && hyf_num_entry(l) == n
-            && hyf_next_entry(l) == v
-            && trie_op_lang_entry(l) == cur_lang()
+        let op = l as usize;
+        if hyph.hyf_distance[op] == d
+            && hyph.hyf_num[op] == n
+            && hyph.hyf_next[op] == v
+            && hyph.trie_op_lang[op] == cur_lang
         {
-            return trie_op_val_entry(l);
+            return Ok(hyph.trie_op_val[op]);
         }
 
         if h > -TRIE_OP_SIZE {
@@ -136,20 +162,8 @@ fn compress_trie(hyph: &mut HyphState, p: i32) -> i32 {
     hyph.trie_r[p as usize] = r;
     trie_node(hyph, p)
 }
-enum TriePackAbort {
-    PatternMemoryOverflow(i32),
-}
-
-fn trie_pack_abort(e: TriePackAbort) -> ! {
-    match e {
-        TriePackAbort::PatternMemoryOverflow(size) => unsafe {
-            crate::errors::overflow(c"pattern memory".as_ptr(), size)
-        },
-    }
-}
-
 // translated from xetex-ini.c:638 (first_fit)
-fn first_fit(hyph: &mut HyphState, p: i32) -> Result<(), TriePackAbort> {
+fn first_fit(hyph: &mut HyphState, p: i32) -> Result<(), TrieAbort> {
     let c = hyph.trie_c[p as usize] as i32;
     let mut z = hyph.trie_min[c as usize];
     let mut h;
@@ -158,7 +172,7 @@ fn first_fit(hyph: &mut HyphState, p: i32) -> Result<(), TriePackAbort> {
         h = z - c;
         if hyph.trie_max < h + hyph.max_hyph_char {
             if hyph.trie_size <= h + hyph.max_hyph_char {
-                return Err(TriePackAbort::PatternMemoryOverflow(hyph.trie_size));
+                return Err(TrieAbort::PatternMemoryOverflow(hyph.trie_size));
             }
 
             loop {
@@ -225,7 +239,7 @@ fn first_fit(hyph: &mut HyphState, p: i32) -> Result<(), TriePackAbort> {
     Ok(())
 }
 // translated from xetex-ini.c:695 (trie_pack)
-fn trie_pack(hyph: &mut HyphState, mut p: i32) -> Result<(), TriePackAbort> {
+fn trie_pack(hyph: &mut HyphState, mut p: i32) -> Result<(), TrieAbort> {
     loop {
         let q = hyph.trie_l[p as usize];
         if q > 0 && hyph.trie_hash[q as usize] == 0 {
@@ -262,135 +276,127 @@ fn trie_fix(hyph: &mut HyphState, mut p: i32) {
 }
 // translated from xetex-ini.c:858 (init_trie)
 pub unsafe fn init_trie() {
-    set_max_hyph_char(max_hyph_char() + 1);
-    set_op_start_entry(0, -MIN_TRIE_OP);
+    if let Err(e) = crate::state::with_state_mut(|state| init_trie_in(&mut state.hyph)) {
+        trie_abort(e);
+    }
+}
+
+fn init_trie_in(hyph: &mut HyphState) -> Result<(), TrieAbort> {
+    hyph.max_hyph_char += 1;
+    hyph.op_start[0] = -MIN_TRIE_OP;
 
     let mut j = 1;
     while j <= BIGGEST_LANG {
         let prev = (j - 1) as usize;
-        let val = op_start_entry(prev) + trie_used_entry(prev) as i32;
-        set_op_start_entry(j as usize, val);
+        hyph.op_start[j as usize] = hyph.op_start[prev] + hyph.trie_used[prev] as i32;
         j += 1;
     }
 
-    let op_ptr = trie_op_ptr();
+    let op_ptr = hyph.trie_op_ptr;
     j = 1;
     while j <= op_ptr {
-        let lang = trie_op_lang_entry(j) as usize;
-        let val = op_start_entry(lang) + trie_op_val_entry(j) as i32;
-        set_trie_op_hash(j, val);
+        let lang = hyph.trie_op_lang[j as usize] as usize;
+        let val = hyph.op_start[lang] + hyph.trie_op_val[j as usize] as i32;
+        set_trie_op_hash_in(hyph, j, val);
         j += 1;
     }
 
     j = 1;
     while j <= op_ptr {
-        while trie_op_hash(j) > j {
-            let k = trie_op_hash(j);
-            let t = hyf_distance_entry(k);
-            set_hyf_distance_entry(k, hyf_distance_entry(j));
-            set_hyf_distance_entry(j, t);
+        while trie_op_hash_in(hyph, j) > j {
+            let k = trie_op_hash_in(hyph, j);
+            let ju = j as usize;
+            let ku = k as usize;
 
-            let t = hyf_num_entry(k);
-            set_hyf_num_entry(k, hyf_num_entry(j));
-            set_hyf_num_entry(j, t);
+            let t = hyph.hyf_distance[ku];
+            hyph.hyf_distance[ku] = hyph.hyf_distance[ju];
+            hyph.hyf_distance[ju] = t;
 
-            let t = hyf_next_entry(k);
-            set_hyf_next_entry(k, hyf_next_entry(j));
-            set_hyf_next_entry(j, t);
+            let t = hyph.hyf_num[ku];
+            hyph.hyf_num[ku] = hyph.hyf_num[ju];
+            hyph.hyf_num[ju] = t;
 
-            let hash_k = trie_op_hash(k);
-            set_trie_op_hash(j, hash_k);
-            set_trie_op_hash(k, k);
+            let t = hyph.hyf_next[ku];
+            hyph.hyf_next[ku] = hyph.hyf_next[ju];
+            hyph.hyf_next[ju] = t;
+
+            let hash_k = trie_op_hash_in(hyph, k);
+            set_trie_op_hash_in(hyph, j, hash_k);
+            set_trie_op_hash_in(hyph, k, k);
         }
         j += 1;
     }
 
     let mut p = 0;
-    let trie_size_val = trie_size();
-    while p <= trie_size_val {
-        set_trie_hash_entry(p, 0);
+    while p <= hyph.trie_size {
+        hyph.trie_hash[p as usize] = 0;
         p += 1;
     }
 
-    crate::state::with_state_mut(|state| {
-        let r = state.hyph.trie_r[0];
-        let r = compress_trie(&mut state.hyph, r);
-        state.hyph.trie_r[0] = r;
-
-        let l = state.hyph.trie_l[0];
-        let l = compress_trie(&mut state.hyph, l);
-        state.hyph.trie_l[0] = l;
-    });
+    let r = hyph.trie_r[0];
+    hyph.trie_r[0] = compress_trie(hyph, r);
+    let l = hyph.trie_l[0];
+    hyph.trie_l[0] = compress_trie(hyph, l);
 
     p = 0;
-    let trie_ptr_val = trie_ptr();
-    while p <= trie_ptr_val {
-        set_trie_hash_entry(p, 0);
+    while p <= hyph.trie_ptr {
+        hyph.trie_hash[p as usize] = 0;
         p += 1;
     }
 
     p = 0;
     while p <= BIGGEST_CHAR {
-        set_trie_min_entry(p, p + 1);
+        hyph.trie_min[p as usize] = p + 1;
         p += 1;
     }
 
-    set_trie_trl_entry(0, 1);
-    set_trie_max(0);
+    hyph.trie_trl[0] = 1;
+    hyph.trie_max = 0;
 
-    let trie_l0 = trie_l_entry(0);
+    let trie_l0 = hyph.trie_l[0];
     if trie_l0 != 0 {
-        if let Err(e) = crate::state::with_state_mut(|state| {
-            first_fit(&mut state.hyph, trie_l0)?;
-            trie_pack(&mut state.hyph, trie_l0)
-        }) {
-            trie_pack_abort(e);
-        }
+        first_fit(hyph, trie_l0)?;
+        trie_pack(hyph, trie_l0)?;
     }
 
-    let trie_r0 = trie_r_entry(0);
+    let trie_r0 = hyph.trie_r[0];
     if trie_r0 != 0 {
         if trie_l0 == 0 {
             p = 0;
             while p <= 255 {
-                set_trie_min_entry(p, p + 2);
+                hyph.trie_min[p as usize] = p + 2;
                 p += 1;
             }
         }
-        if let Err(e) = crate::state::with_state_mut(|state| {
-            first_fit(&mut state.hyph, trie_r0)?;
-            trie_pack(&mut state.hyph, trie_r0)
-        }) {
-            trie_pack_abort(e);
-        }
-        set_hyph_start(trie_hash_entry(trie_r0));
+        first_fit(hyph, trie_r0)?;
+        trie_pack(hyph, trie_r0)?;
+        hyph.hyph_start = hyph.trie_hash[trie_r0 as usize];
     }
 
-    if trie_max() == 0 {
+    if hyph.trie_max == 0 {
         let mut r = 0;
-        let max_hyph = max_hyph_char();
-        while r <= max_hyph {
-            set_trie_trl_entry(r, 0);
-            set_trie_tro_entry(r, MIN_TRIE_OP);
-            set_trie_trc_entry(r, 0);
+        while r <= hyph.max_hyph_char {
+            hyph.trie_trl[r as usize] = 0;
+            hyph.trie_tro[r as usize] = MIN_TRIE_OP;
+            hyph.trie_trc[r as usize] = 0;
             r += 1;
         }
-        set_trie_max(max_hyph);
+        hyph.trie_max = hyph.max_hyph_char;
     } else {
         if trie_r0 > 0 {
-            crate::state::with_state_mut(|state| trie_fix(&mut state.hyph, trie_r0));
+            trie_fix(hyph, trie_r0);
         }
         if trie_l0 > 0 {
-            crate::state::with_state_mut(|state| trie_fix(&mut state.hyph, trie_l0));
+            trie_fix(hyph, trie_l0);
         }
 
-        let trie_max_val = trie_max();
+        let trie_max_val = hyph.trie_max;
         let mut r = 0;
         loop {
-            let s = trie_trl_entry(r);
-            set_trie_trl_entry(r, 0);
-            set_trie_tro_entry(r, MIN_TRIE_OP);
-            set_trie_trc_entry(r, 0);
+            let s = hyph.trie_trl[r as usize];
+            hyph.trie_trl[r as usize] = 0;
+            hyph.trie_tro[r as usize] = MIN_TRIE_OP;
+            hyph.trie_trc[r as usize] = 0;
             r = s;
             if r > trie_max_val {
                 break;
@@ -398,9 +404,140 @@ pub unsafe fn init_trie() {
         }
     }
 
-    set_trie_trc_entry(0, b'?' as u16);
-    set_trie_not_ready(false);
+    hyph.trie_trc[0] = b'?' as u16;
+    hyph.trie_not_ready = false;
+    Ok(())
 }
+
+struct PatternWordInsert {
+    q: i32,
+    op: u16,
+    duplicate: bool,
+}
+
+fn trie_insert_node_in(
+    hyph: &mut HyphState,
+    q: i32,
+    p_ref: &mut i32,
+    c: u16,
+    first_child: bool,
+) -> Result<(), TrieAbort> {
+    if hyph.trie_ptr == hyph.trie_size {
+        return Err(TrieAbort::PatternMemoryOverflow(hyph.trie_size));
+    }
+
+    hyph.trie_ptr += 1;
+    hyph.trie_r[hyph.trie_ptr as usize] = *p_ref;
+    *p_ref = hyph.trie_ptr;
+    hyph.trie_l[*p_ref as usize] = 0;
+    if first_child {
+        hyph.trie_l[q as usize] = *p_ref;
+    } else {
+        hyph.trie_r[q as usize] = *p_ref;
+    }
+    hyph.trie_c[*p_ref as usize] = c;
+    hyph.trie_o[*p_ref as usize] = MIN_TRIE_OP as u16;
+    Ok(())
+}
+
+fn insert_pattern_word_in(hyph: &mut HyphState, k: i16) -> Result<PatternWordInsert, TrieAbort> {
+    if hyph.hc[1] == 0 {
+        hyph.hyf[0] = 0;
+    }
+    if hyph.hc[k as usize] == 0 {
+        hyph.hyf[k as usize] = 0;
+    }
+
+    let mut l = k;
+    let mut v: u16 = MIN_TRIE_OP as u16;
+    loop {
+        if hyph.hyf[l as usize] != 0 {
+            v = new_trie_op_in(hyph, hyph.cur_lang, k - l, hyph.hyf[l as usize] as i16, v)?;
+        }
+        if l > 0 {
+            l -= 1;
+        } else {
+            break;
+        }
+    }
+
+    let mut q: i32 = 0;
+    hyph.hc[0] = hyph.cur_lang as i32;
+    while l <= k {
+        let c = hyph.hc[l as usize] as u16;
+        l += 1;
+        let mut p = hyph.trie_l[q as usize];
+        let mut first_child = true;
+
+        while p > 0 && c > hyph.trie_c[p as usize] {
+            q = p;
+            p = hyph.trie_r[q as usize];
+            first_child = false;
+        }
+
+        if p == 0 || c < hyph.trie_c[p as usize] {
+            trie_insert_node_in(hyph, q, &mut p, c, first_child)?;
+        }
+
+        q = p;
+    }
+
+    Ok(PatternWordInsert {
+        q,
+        op: v,
+        duplicate: hyph.trie_o[q as usize] != MIN_TRIE_OP as u16,
+    })
+}
+
+fn set_pattern_word_op_in(hyph: &mut HyphState, insert: PatternWordInsert) {
+    hyph.trie_o[insert.q as usize] = insert.op;
+}
+
+fn save_hyph_codes_in(hyph: &mut HyphState, lc_codes: &[i32; 256]) -> Result<(), TrieAbort> {
+    let c = hyph.cur_lang as u16;
+    let mut p: i32 = 0;
+
+    let mut q: i32;
+    loop {
+        q = p;
+        p = hyph.trie_r[q as usize];
+        if p == 0 || c <= hyph.trie_c[p as usize] {
+            break;
+        }
+    }
+
+    if p == 0 || c < hyph.trie_c[p as usize] {
+        trie_insert_node_in(hyph, q, &mut p, c, false)?;
+    }
+
+    q = p;
+    p = hyph.trie_l[q as usize];
+    let mut first_child = true;
+
+    for ci in 0u16..=255u16 {
+        let lc = lc_codes[ci as usize];
+        if lc > 0 || (ci == 255 && first_child) {
+            if p == 0 {
+                trie_insert_node_in(hyph, q, &mut p, ci, first_child)?;
+            } else {
+                hyph.trie_c[p as usize] = ci;
+            }
+            hyph.trie_o[p as usize] = lc as u16;
+            q = p;
+            p = hyph.trie_r[q as usize];
+            first_child = false;
+        }
+    }
+
+    if first_child {
+        hyph.trie_l[q as usize] = 0;
+    } else {
+        hyph.trie_r[q as usize] = 0;
+    }
+
+    Ok(())
+}
+
 // translated from xetex-ini.c:643 (new_patterns)
 pub unsafe fn new_patterns() {
     const INT_PAR_LANGUAGE: i32 = 50;
@@ -409,27 +546,6 @@ pub unsafe fn new_patterns() {
     const OTHER_CHAR: u8 = 12;
     const SPACER: u8 = 10;
     const RIGHT_BRACE_CMD: u8 = 2;
-
-    // Inline helper: insert a new trie node at position trie_ptr+1 and link it.
-    // Returns new p (= trie_ptr after increment).
-    macro_rules! trie_insert_node {
-        ($q:expr, $p_ref:expr, $c:expr, $first_child:expr) => {{
-            if trie_ptr() == trie_size() {
-                crate::errors::overflow(c"pattern memory".as_ptr(), trie_size());
-            }
-            set_trie_ptr(trie_ptr() + 1);
-            set_trie_r_entry(trie_ptr(), $p_ref);
-            $p_ref = trie_ptr();
-            set_trie_l_entry($p_ref, 0);
-            if $first_child {
-                set_trie_l_entry($q, $p_ref);
-            } else {
-                set_trie_r_entry($q, $p_ref);
-            }
-            set_trie_c_entry($p_ref, $c);
-            set_trie_o_entry($p_ref, MIN_TRIE_OP as u16);
-        }};
-    }
 
     if trie_not_ready() {
         let lang = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
@@ -482,49 +598,14 @@ pub unsafe fn new_patterns() {
                     }
                     SPACER | RIGHT_BRACE_CMD => {
                         if k > 0 {
-                            if hc_entry(1) == 0 {
-                                set_hyf_entry(0, 0);
-                            }
-                            if hc_entry(k as usize) == 0 {
-                                set_hyf_entry(k as usize, 0);
-                            }
+                            let insert = match crate::state::with_state_mut(|state| {
+                                insert_pattern_word_in(&mut state.hyph, k)
+                            }) {
+                                Ok(insert) => insert,
+                                Err(e) => trie_abort(e),
+                            };
 
-                            let mut l = k;
-                            let mut v: u16 = MIN_TRIE_OP as u16;
-                            loop {
-                                if hyf_entry(l as usize) != 0 {
-                                    v = new_trie_op(k - l, hyf_entry(l as usize) as i16, v);
-                                }
-                                if l > 0 {
-                                    l -= 1;
-                                } else {
-                                    break;
-                                }
-                            }
-
-                            // l is now 0; walk hc[0..=k] into trie
-                            let mut q: i32 = 0;
-                            set_hc_entry(0, cur_lang() as i32);
-                            while l <= k {
-                                let c = hc_entry(l as usize) as u16;
-                                l += 1;
-                                let mut p = trie_l_entry(q);
-                                let mut first_child = true;
-
-                                while p > 0 && c > trie_c_entry(p) {
-                                    q = p;
-                                    p = trie_r_entry(q);
-                                    first_child = false;
-                                }
-
-                                if p == 0 || c < trie_c_entry(p) {
-                                    trie_insert_node!(q, p, c, first_child);
-                                }
-
-                                q = p;
-                            }
-
-                            if trie_o_entry(q) != MIN_TRIE_OP as u16 {
+                            if insert.duplicate {
                                 crate::output::error_here_with_diagnostic(
                                     c"Duplicate pattern".as_ptr(),
                                 );
@@ -534,7 +615,9 @@ pub unsafe fn new_patterns() {
                                 crate::errors::error();
                             }
 
-                            set_trie_o_entry(q, v);
+                            crate::state::with_state_mut(|state| {
+                                set_pattern_word_op_in(&mut state.hyph, insert);
+                            });
                         }
 
                         if cur_cmd() == RIGHT_BRACE_CMD {
@@ -559,46 +642,14 @@ pub unsafe fn new_patterns() {
 
         // saving_hyph_codes: record lc_code table alongside the patterns
         if eqtb_b32s1(INT_BASE + INT_PAR_SAVING_HYPH_CODES) > 0 {
-            let c = cur_lang() as u16;
-            let mut first_child = false;
-            let mut p: i32 = 0;
-
-            let mut q: i32;
-            loop {
-                q = p;
-                p = trie_r_entry(q);
-                if p == 0 || c <= trie_c_entry(p) {
-                    break;
-                }
-            }
-
-            if p == 0 || c < trie_c_entry(p) {
-                trie_insert_node!(q, p, c, first_child);
-            }
-
-            q = p;
-            p = trie_l_entry(q);
-            first_child = true;
-
+            let mut lc_codes = [0; 256];
             for ci in 0u16..=255u16 {
-                let lc = eqtb_b32s1(LC_CODE_BASE + ci as i32);
-                if lc > 0 || (ci == 255 && first_child) {
-                    if p == 0 {
-                        trie_insert_node!(q, p, ci, first_child);
-                    } else {
-                        set_trie_c_entry(p, ci);
-                    }
-                    set_trie_o_entry(p, lc as u16);
-                    q = p;
-                    p = trie_r_entry(q);
-                    first_child = false;
-                }
+                lc_codes[ci as usize] = eqtb_b32s1(LC_CODE_BASE + ci as i32);
             }
-
-            if first_child {
-                set_trie_l_entry(q, 0);
-            } else {
-                set_trie_r_entry(q, 0);
+            if let Err(e) =
+                crate::state::with_state_mut(|state| save_hyph_codes_in(&mut state.hyph, &lc_codes))
+            {
+                trie_abort(e);
             }
         }
     } else {

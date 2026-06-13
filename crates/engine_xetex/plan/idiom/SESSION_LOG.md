@@ -8,6 +8,36 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 181 — 2026-06-13 — Execution: threaded hyphenation trie-op/init/pattern insertion clusters
+
+**Type:** execution (workstream 01 / fused threading, low-docs larger
+mechanical batch). Used two explorer subagents for sidecar scouting: one
+confirmed the next output/shipout work should start with a primitive print-core
+threading slice; one confirmed `init_trie`/`new_patterns` were the next clean
+hyphenation clusters.
+
+**Code:** threaded `new_trie_op` into `new_trie_op_in(&mut HyphState, ...)`,
+folded `init_trie` into `init_trie_in(&mut HyphState)`, and threaded the
+completed-pattern word insertion plus saved-hyphen-code insertion subclusters.
+Scanner/output calls and duplicate-pattern diagnostics stay outside hyph
+borrows; overflow diagnostics still go through `TrieAbort`/`trie_abort` after
+the borrow drops. Deleted the now-dead trie-op/trie-pack bridge accessors from
+`globals.rs`; live engine/format/linebreak bridges stayed.
+
+**Validation:** `cargo fmt --check -p tectonic_engine_xetex`; `cargo check -p
+tectonic_engine_xetex`; `cargo test -p tectonic_engine_xetex node::` 48/48;
+dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full corpus
+`plan/scripts/corpus.sh check all` = **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1` and `1905.00148v1`. Warnings
+remain **41**; `unsafe fn` **566 -> 564**.
+
+**Next:** either continue `hyphenation.rs` with short-borrow
+`new_hyph_exceptions` subclusters, or take the output print-core slice before
+`short_display`/`show_node_list` (`print_char`/`print_ln`/string/numeric
+primitives behind wrappers).
+
+---
+
 ## Idiom session 180 — 2026-06-13 — Execution: typed hpack native-word cleanup + threaded hyphenation trie packing
 
 **Type:** execution (workstream 01 / fused threading+typing), larger
