@@ -9,9 +9,9 @@
 //! (not yet built). Parked flat here until then.
 
 use crate::consts::{
-    BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE,
-    HLIST_NODE, INT_BASE, KERN_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD,
-    PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
+    BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, INT_BASE,
+    KERN_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, PENALTY_NODE,
+    RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
 use crate::errors::error;
 use crate::ext::measure_native_node;
@@ -104,10 +104,6 @@ const MEMORY_WORD_SIZE_CNL: i32 = 8;
 
 // xetex_format.h:159
 const GLUE_PAR_SPLIT_TOP_SKIP_PPT: i16 = 10;
-const VLIST_NODE_PPT: u16 = 1; // xetex_format.h:381
-const WHATSIT_NODE_PPT: u16 = 8; // xetex_format.h:388
-const MARK_NODE_PPT: u16 = 4; // xetex_format.h:384
-const INS_NODE_PPT: u16 = 3; // xetex_format.h:383
 const VSPLIT_CODE_PPT: usize = 3; // xetex_format.h:483
 
 // ---------------------------------------------------------------------------
@@ -1285,8 +1281,11 @@ pub fn prune_page_top(
     mem.set_b32s1(TEMP_HEAD, p);
 
     while p != TEX_NULL {
-        match mem.b16s1(p) {
-            HLIST_NODE | VLIST_NODE_PPT | RULE_NODE => {
+        match mem
+            .classify(MemIdx::new(p))
+            .map_err(|_| NodeRecycleAbort::Confusion(c"pruning"))?
+        {
+            AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) => {
                 q = crate::mem::new_skip_param(mem, eqtb, GLUE_PAR_SPLIT_TOP_SKIP_PPT);
                 if q == crate::mem::ALLOC_FAILED {
                     return Err(NodeRecycleAbort::Overflow);
@@ -1303,11 +1302,11 @@ pub fn prune_page_top(
                 }
                 p = TEX_NULL;
             }
-            WHATSIT_NODE_PPT | MARK_NODE_PPT | INS_NODE_PPT => {
+            AnyNode::Whatsit(_) | AnyNode::Mark(_) | AnyNode::Ins(_) => {
                 prev_p = p;
                 p = mem.b32s1(prev_p);
             }
-            GLUE_NODE | KERN_NODE | PENALTY_NODE => {
+            AnyNode::Glue(_) | AnyNode::Kern(_) | AnyNode::Penalty(_) => {
                 q = p;
                 p = mem.b32s1(q);
                 mem.set_b32s1(q, TEX_NULL);
