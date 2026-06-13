@@ -4033,20 +4033,8 @@ pub(crate) fn total_stretch(o: usize) -> i32 {
     crate::state::with_state(|s| s.scanner.total_stretch[o])
 }
 #[inline]
-pub(crate) fn set_total_stretch(o: usize, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.total_stretch[o] = v;
-    });
-}
-#[inline]
 pub(crate) fn total_shrink(o: usize) -> i32 {
     crate::state::with_state(|s| s.scanner.total_shrink[o])
-}
-#[inline]
-pub(crate) fn set_total_shrink(o: usize, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.total_shrink[o] = v;
-    });
 }
 #[inline]
 pub(crate) fn just_box() -> i32 {

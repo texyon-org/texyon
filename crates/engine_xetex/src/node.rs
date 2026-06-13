@@ -225,6 +225,23 @@ impl NodePtr<HListNode> {
     }
 }
 
+impl NodePtr<VListNode> {
+    /// Allocate a fresh vlist box node (`BOX_NODE_SIZE` words), type-stamped
+    /// with `NODE_type = VLIST_NODE`, and return a typed handle to it — or
+    /// `None` if the arena is exhausted.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<VListNode>> {
+        let p = get_node(mem, BOX_NODE_SIZE);
+        if p == ALLOC_FAILED {
+            return None;
+        }
+        mem.set_b16s1(p, NodeType::VList.as_raw());
+        // SAFETY: `p` is a freshly allocated `BOX_NODE_SIZE` node just stamped
+        // VLIST_NODE; this is the family's audited construction site.
+        Some(unsafe { NodePtr::<VListNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+}
+
 impl<K: HasDimensions> NodePtr<K> {
     /// `BOX_width(p)` = `mem[(p) + 1].b32.s1`.
     #[inline]

@@ -14,23 +14,25 @@ use crate::consts::{
     MIN_HALFWORD, PENALTY_NODE, RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
 use crate::errors::error;
-use crate::ext::measure_native_node_global;
+use crate::ext::measure_native_node;
+use crate::fonts::{effective_char, new_native_word_node};
 use crate::globals::{
     active_width, cur_val, eqtb_b32s1, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1,
     set_active_width, set_best_height_plus_depth, set_cur_val, set_eqtb_b32s1, set_help_line,
-    set_help_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, temp_ptr,
+    set_help_ptr, set_mem_b16s0, set_mem_b32s0, set_mem_b32s1, temp_ptr,
 };
 use crate::mem::new_spec_global;
-use crate::node::{AnyBox, GlueSpecNode, Noad, NodePtr};
+use crate::node::{
+    AnyBox, GlueNode, GlueSpecNode, HListNode, KernNode, MathNode, Noad, NodePtr, RuleDimen,
+    RuleNode, VListNode,
+};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
 // prune_page_top and the relocated font-loading group); import it here.
-use crate::scan::{
-    cnl_get_avail, cnl_get_node, effective_char_global, new_native_word_node_global,
-    node_recycle_abort, NodeRecycleAbort,
-};
-use crate::units::{MemIdx, MemPtr};
+use crate::scan::{cnl_get_avail, cnl_get_node, node_recycle_abort, NodeRecycleAbort};
+use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState};
+use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
 // Module-private consts shared with scan.rs (TEMP_HEAD/IGNORE_DEPTH still used
 // there too, so duplicated rather than relocated — same value).
@@ -158,13 +160,7 @@ const MARK_CLASS_NODE_SIZE_DM: i32 = 4;
 // ---------------------------------------------------------------------------
 
 // Node type constants for hpack
-const VLIST_NODE_HP: u16 = 1;
-const UNSET_NODE_HP: u16 = 13;
-const INS_NODE_HP: u16 = 3;
-const MARK_NODE_HP: u16 = 4;
-const ADJUST_NODE_HP: u16 = 5;
 const WHATSIT_NODE_HP: u16 = 8;
-const LIG_NODE_HP: u16 = 6;
 // whatsit subtypes
 const NATIVE_WORD_NODE_HP: u16 = 40;
 const NATIVE_WORD_NODE_AT_HP: u16 = 41;
@@ -188,6 +184,31 @@ const DIMEN_PAR_HFUZZ_HP: i32 = 8;
 const DIMEN_PAR_OVERFULL_RULE_HP: i32 = 16;
 const NATIVE_NODE_SIZE_HP: i32 = 6;
 
+#[derive(Copy, Clone)]
+enum PackDiag {
+    HUnderfull { badness: i32, loose: bool },
+    HOverfull { excess: i32 },
+    HTight { badness: i32 },
+    LrProblem { missing: i32, extra: i32 },
+    VUnderfull { badness: i32, loose: bool },
+    VOverfull { excess: i32 },
+    VTight { badness: i32 },
+}
+
+#[derive(Copy, Clone)]
+struct PackOutcome {
+    r: i32,
+    diags: [Option<PackDiag>; 2],
+}
+
+fn push_pack_diag(diags: &mut [Option<PackDiag>; 2], diag: PackDiag) {
+    if diags[0].is_none() {
+        diags[0] = Some(diag);
+    } else {
+        diags[1] = Some(diag);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // vpackage
 // ---------------------------------------------------------------------------
@@ -201,8 +222,6 @@ const STRETCHING_VP: u16 = 1;
 const SHRINKING_VP: u16 = 2;
 const A_LEADERS_VP: u16 = 100;
 // xetex_format.h:381, 383–384, 466–467
-const VLIST_NODE_VP: u16 = 1;
-const WHATSIT_NODE_VP: u16 = 8;
 const PIC_NODE_VP: u16 = 43;
 const PDF_NODE_VP: u16 = 44;
 // xetex_format.h:71, 106, 131
@@ -1469,721 +1488,893 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
 pub fn do_marks_global(a: i16, l: i16, q: i32) -> bool {
     crate::state::with_state_mut(|st| do_marks(&mut st.mem, a, l, q))
 }
-/// translated from xetex-xetex0.c:6972 (hpack)
-pub unsafe fn hpack(p: i32, w: i32, m: i16) -> i32 {
-    use crate::globals::{
-        adjust_tail, avail, char_base_entry, depth_base_entry, font_info_b16, font_info_b32s1,
-        height_base_entry, hi_mem_min, last_badness, line, lr_problems, lr_ptr, mem_as_u16_ptr,
-        mem_as_u16_ptr_mut, mem_b16s2, mem_word, output_active, pack_begin_line, pre_adjust_tail,
-        set_adjust_tail, set_avail, set_font_in_short_display, set_last_badness, set_lr_problems,
-        set_lr_ptr, set_mem_gr, set_mem_word, set_pre_adjust_tail, set_total_shrink,
-        set_total_stretch, set_xtx_ligature_present, total_shrink, total_stretch, width_base_entry,
-    };
-    use crate::mem::TEX_NULL;
+fn hpack_in(
+    mem: &mut MemState,
+    eqtb: &EqtbState,
+    fonts: &mut FontState,
+    scanner: &mut ScannerState,
+    shipout: &mut ShipoutState,
+    list: i32,
+    w: i32,
+    m: i16,
+) -> Result<PackOutcome, NodeRecycleAbort> {
+    use crate::mem::{get_avail, TEX_NULL};
 
     const ADDITIONAL_HP: i16 = 1;
     const GARBAGE: i32 = 4_999_999 - 12; // MEM_TOP - 12
 
-    set_last_badness(0);
-    let r = crate::mem::get_node_global(BOX_NODE_SIZE);
-    set_mem_b16s1(r, HLIST_NODE);
-    set_mem_b16s0(r, 0);
-    set_mem_b32s1(r + 4, 0);
-    let mut q = r + 5;
-    set_mem_b32s1(q, p);
+    shipout.last_badness = 0;
+    let Some(r_node) = NodePtr::<HListNode>::alloc(mem) else {
+        return Err(NodeRecycleAbort::Overflow);
+    };
+    r_node.set_subtype(mem, 0);
+    r_node.set_shift_amount(mem, Scaled(0));
+    r_node.set_list_ptr(mem, MemPtr::from_raw(list));
+    let r = r_node.idx().0;
+    let mut q = r_node.idx().offset(5).0;
     let mut h: i32 = 0;
     let mut d: i32 = 0;
     let mut x: i32 = 0;
-    set_total_stretch(NORMAL_HP, 0);
-    set_total_shrink(NORMAL_HP, 0);
-    set_total_stretch(FIL_HP, 0);
-    set_total_shrink(FIL_HP, 0);
-    set_total_stretch(FILL_HP, 0);
-    set_total_shrink(FILL_HP, 0);
-    set_total_stretch(FILLL_HP, 0);
-    set_total_shrink(FILLL_HP, 0);
+    scanner.total_stretch = [0; 4];
+    scanner.total_shrink = [0; 4];
+    let mut diags = [None, None];
 
-    if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
-        let t = crate::mem::get_avail_global();
-        set_mem_b32s0(t, BEFORE_HP as i32);
-        set_mem_b32s1(t, lr_ptr());
-        set_lr_ptr(t);
+    if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
+        let t = get_avail(mem);
+        if t == crate::mem::ALLOC_FAILED {
+            return Err(NodeRecycleAbort::OverflowRunaway);
+        }
+        mem.set_b32s0(t, BEFORE_HP as i32);
+        mem.set_b32s1(t, scanner.LR_ptr);
+        scanner.LR_ptr = t;
     }
 
-    let mut p = p;
+    let mut p = list;
     'outer: while p != TEX_NULL {
-        // reswitch:
-        // char-node inner loop
-        while p >= hi_mem_min() {
-            let f = mem_b16s1(p) as i32; // CHAR_NODE_font(p)
-            let c = effective_char_global(true, f, mem_b16s0(p));
-            let info = font_info_b16(char_base_entry(f) + c);
-            x += font_info_b32s1(width_base_entry(f) + info.s3 as i32);
-            let s = font_info_b32s1(height_base_entry(f) + info.s2 as i32 / 16);
+        while p >= mem.hi_mem_min {
+            let f = mem.b16s1(p) as i32;
+            let c = effective_char(fonts, true, f, mem.b16s0(p));
+            let info = fonts.font_info_b16(fonts.char_base_entry(f) + c);
+            x += fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32);
+            let s = fonts.font_info_b32s1(fonts.height_base_entry(f) + info.s2 as i32 / 16);
             if s > h {
                 h = s;
             }
-            let s = font_info_b32s1(depth_base_entry(f) + info.s2 as i32 % 16);
+            let s = fonts.font_info_b32s1(fonts.depth_base_entry(f) + info.s2 as i32 % 16);
             if s > d {
                 d = s;
             }
-            p = mem_b32s1(p); // LLIST_link(p)
+            p = mem.b32s1(p);
         }
 
         if p == TEX_NULL {
             break 'outer;
         }
 
-        match mem_b16s1(p) {
-            HLIST_NODE | VLIST_NODE_HP | RULE_NODE | UNSET_NODE_HP => {
-                x += mem_b32s1(p + 1);
-                let s = if mem_b16s1(p) >= RULE_NODE {
-                    0
-                } else {
-                    mem_b32s1(p + 4)
-                };
-                if mem_b32s1(p + 3) - s > h {
-                    h = mem_b32s1(p + 3) - s;
+        let node_idx = MemIdx::new(p);
+        let node_type = NodeType::from_raw(mem.b16s1(p));
+        match node_type {
+            Ok(NodeType::HList) => {
+                // SAFETY: the `NODE_type` read above proves this list item is an hlist.
+                let b = AnyBox::HList(unsafe {
+                    NodePtr::<HListNode>::from_idx_unchecked(node_idx)
+                });
+                x += b.width(mem).0;
+                let s = b.shift_amount(mem).0;
+                let bh = b.height(mem).0 - s;
+                if bh > h {
+                    h = bh;
                 }
-                if mem_b32s1(p + 2) + s > d {
-                    d = mem_b32s1(p + 2) + s;
+                let bd = b.depth(mem).0 + s;
+                if bd > d {
+                    d = bd;
                 }
             }
-            INS_NODE_HP | MARK_NODE_HP | ADJUST_NODE_HP => {
-                if adjust_tail() != TEX_NULL || pre_adjust_tail() != TEX_NULL {
-                    while mem_b32s1(q) != p {
-                        q = mem_b32s1(q);
+            Ok(NodeType::VList) => {
+                // SAFETY: the `NODE_type` read above proves this list item is a vlist.
+                let b = AnyBox::VList(unsafe {
+                    NodePtr::<VListNode>::from_idx_unchecked(node_idx)
+                });
+                x += b.width(mem).0;
+                let s = b.shift_amount(mem).0;
+                let bh = b.height(mem).0 - s;
+                if bh > h {
+                    h = bh;
+                }
+                let bd = b.depth(mem).0 + s;
+                if bd > d {
+                    d = bd;
+                }
+            }
+            Ok(NodeType::Rule) => {
+                // SAFETY: the `NODE_type` read above proves this list item is a rule.
+                let rule = unsafe { NodePtr::<RuleNode>::from_idx_unchecked(node_idx) };
+                x += rule.width(mem).raw();
+                let rh = rule.height(mem).raw();
+                if rh > h {
+                    h = rh;
+                }
+                let rd = rule.depth(mem).raw();
+                if rd > d {
+                    d = rd;
+                }
+            }
+            Ok(NodeType::Unset) => {
+                x += mem.b32s1(p + 1);
+                if mem.b32s1(p + 3) > h {
+                    h = mem.b32s1(p + 3);
+                }
+                if mem.b32s1(p + 2) > d {
+                    d = mem.b32s1(p + 2);
+                }
+            }
+            Ok(NodeType::Ins | NodeType::Mark | NodeType::Adjust) => {
+                if scanner.adjust_tail != TEX_NULL || scanner.pre_adjust_tail != TEX_NULL {
+                    while mem.b32s1(q) != p {
+                        q = mem.b32s1(q);
                     }
-                    if mem_b16s1(p) == ADJUST_NODE_HP {
-                        if mem_b16s0(p) != 0 {
-                            if pre_adjust_tail() == TEX_NULL {
-                                crate::errors::confusion(c"pre vadjust".as_ptr());
+                    if matches!(node_type, Ok(NodeType::Adjust)) {
+                        if mem.b16s0(p) != 0 {
+                            if scanner.pre_adjust_tail == TEX_NULL {
+                                return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
                             }
-                            set_mem_b32s1(pre_adjust_tail(), mem_b32s1(p + 1));
-                            while mem_b32s1(pre_adjust_tail()) != TEX_NULL {
-                                set_pre_adjust_tail(mem_b32s1(pre_adjust_tail()));
+                            mem.set_b32s1(scanner.pre_adjust_tail, mem.b32s1(p + 1));
+                            while mem.b32s1(scanner.pre_adjust_tail) != TEX_NULL {
+                                scanner.pre_adjust_tail = mem.b32s1(scanner.pre_adjust_tail);
                             }
                         } else {
-                            if adjust_tail() == TEX_NULL {
-                                crate::errors::confusion(c"pre vadjust".as_ptr());
+                            if scanner.adjust_tail == TEX_NULL {
+                                return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
                             }
-                            set_mem_b32s1(adjust_tail(), mem_b32s1(p + 1));
-                            while mem_b32s1(adjust_tail()) != TEX_NULL {
-                                set_adjust_tail(mem_b32s1(adjust_tail()));
+                            mem.set_b32s1(scanner.adjust_tail, mem.b32s1(p + 1));
+                            while mem.b32s1(scanner.adjust_tail) != TEX_NULL {
+                                scanner.adjust_tail = mem.b32s1(scanner.adjust_tail);
                             }
                         }
-                        p = mem_b32s1(p);
-                        crate::mem::free_node_global(mem_b32s1(q), SMALL_NODE_SIZE);
+                        p = mem.b32s1(p);
+                        crate::mem::free_node(mem, mem.b32s1(q), SMALL_NODE_SIZE);
                     } else {
-                        set_mem_b32s1(adjust_tail(), p);
-                        set_adjust_tail(p);
-                        p = mem_b32s1(p);
+                        mem.set_b32s1(scanner.adjust_tail, p);
+                        scanner.adjust_tail = p;
+                        p = mem.b32s1(p);
                     }
-                    set_mem_b32s1(q, p);
+                    mem.set_b32s1(q, p);
                     p = q;
                 }
-                // fall through to p = LLIST_link(p) at bottom
             }
-            WHATSIT_NODE_HP => {
-                let sub = mem_b16s0(p);
+            Ok(NodeType::Whatsit) => {
+                let sub = mem.b16s0(p);
                 match sub {
                     NATIVE_WORD_NODE_HP | NATIVE_WORD_NODE_AT_HP => {
-                        // Native word node merging logic
-                        let mut k: i32;
-                        if q != r + 5 && mem_b16s1(q) == DISC_NODE {
-                            k = mem_b16s0(q) as i32;
-                        } else {
-                            k = 0;
-                        }
-                        while mem_b32s1(q) != p {
+                        let mut k: i32 =
+                            if q != r_node.idx().offset(5).0 && mem.b16s1(q) == DISC_NODE {
+                                mem.b16s0(q) as i32
+                            } else {
+                                0
+                            };
+                        while mem.b32s1(q) != p {
                             k -= 1;
-                            q = mem_b32s1(q);
-                            if mem_b16s1(q) == DISC_NODE {
-                                k = mem_b16s0(q) as i32;
+                            q = mem.b32s1(q);
+                            if mem.b16s1(q) == DISC_NODE {
+                                k = mem.b16s0(q) as i32;
                             }
                         }
-                        let mut pp = mem_b32s1(p);
-                        // restart loop
+                        let mut pp = mem.b32s1(p);
                         loop {
-                            if k <= 0 && pp != TEX_NULL && pp < hi_mem_min() {
-                                let pp_type = mem_b16s1(pp);
-                                let pp_sub = mem_b16s0(pp);
+                            if k <= 0 && pp != TEX_NULL && pp < mem.hi_mem_min {
+                                let pp_type = mem.b16s1(pp);
+                                let pp_sub = mem.b16s0(pp);
                                 if pp_type == WHATSIT_NODE_HP
                                     && (pp_sub == NATIVE_WORD_NODE_HP
                                         || pp_sub == NATIVE_WORD_NODE_AT_HP)
-                                    && mem_b16s2(pp + 4) == mem_b16s2(p + 4)
+                                    && mem.b16s2(pp + 4) == mem.b16s2(p + 4)
                                 {
-                                    pp = mem_b32s1(pp);
-                                    continue; // goto restart
+                                    pp = mem.b32s1(pp);
+                                    continue;
                                 } else if pp_type == DISC_NODE {
-                                    let ppp = mem_b32s1(pp);
+                                    let ppp = mem.b32s1(pp);
                                     if ppp != TEX_NULL
-                                        && ppp < hi_mem_min()
-                                        && mem_b16s1(ppp) == WHATSIT_NODE_HP
-                                        && (mem_b16s0(ppp) == NATIVE_WORD_NODE_HP
-                                            || mem_b16s0(ppp) == NATIVE_WORD_NODE_AT_HP)
-                                        && mem_b16s2(ppp + 4) == mem_b16s2(p + 4)
+                                        && ppp < mem.hi_mem_min
+                                        && mem.b16s1(ppp) == WHATSIT_NODE_HP
+                                        && (mem.b16s0(ppp) == NATIVE_WORD_NODE_HP
+                                            || mem.b16s0(ppp) == NATIVE_WORD_NODE_AT_HP)
+                                        && mem.b16s2(ppp + 4) == mem.b16s2(p + 4)
                                     {
-                                        pp = mem_b32s1(ppp);
-                                        continue; // goto restart
+                                        pp = mem.b32s1(ppp);
+                                        continue;
                                     }
                                 }
                             }
                             break;
                         }
-                        // end restart loop: pp is now past the last mergeable node
-                        if pp != mem_b32s1(p) {
-                            // merge the run of native word nodes into one
+                        if pp != mem.b32s1(p) {
                             let mut total_chars: i32 = 0;
-                            let mut scan_p = mem_b32s1(q);
+                            let mut scan_p = mem.b32s1(q);
                             while scan_p != pp {
-                                if mem_b16s1(scan_p) == WHATSIT_NODE_HP {
-                                    total_chars += mem_b16s1(scan_p + 4) as i32;
+                                if mem.b16s1(scan_p) == WHATSIT_NODE_HP {
+                                    total_chars += mem.b16s1(scan_p + 4) as i32;
                                 }
-                                scan_p = mem_b32s1(scan_p);
+                                scan_p = mem.b32s1(scan_p);
                             }
-                            let scan_p = mem_b32s1(q);
-                            let merged = new_native_word_node_global(
-                                mem_b16s2(scan_p + 4) as i32,
+                            let scan_p = mem.b32s1(q);
+                            let merged = new_native_word_node(
+                                mem,
+                                eqtb,
+                                mem.b16s2(scan_p + 4) as i32,
                                 total_chars,
-                            );
-                            set_mem_b16s0(merged, mem_b16s0(scan_p));
-                            set_mem_b32s1(q, merged);
-                            // find last node before pp
+                            )?;
+                            mem.set_b16s0(merged, mem.b16s0(scan_p));
+                            mem.set_b32s1(q, merged);
                             let mut last_before_pp = scan_p;
-                            while mem_b32s1(last_before_pp) != pp {
-                                last_before_pp = mem_b32s1(last_before_pp);
+                            while mem.b32s1(last_before_pp) != pp {
+                                last_before_pp = mem.b32s1(last_before_pp);
                             }
-                            set_mem_b32s1(merged, mem_b32s1(last_before_pp));
-                            set_mem_b32s1(last_before_pp, TEX_NULL);
-                            // copy text chars
+                            mem.set_b32s1(merged, mem.b32s1(last_before_pp));
+                            mem.set_b32s1(last_before_pp, TEX_NULL);
                             total_chars = 0;
                             let mut src_p = scan_p;
                             loop {
-                                if mem_b16s1(src_p) == WHATSIT_NODE_HP {
-                                    let count = mem_b16s1(src_p + 4) as i32;
-                                    let src = mem_as_u16_ptr(src_p + NATIVE_NODE_SIZE_HP);
-                                    let dst = mem_as_u16_ptr_mut(merged + NATIVE_NODE_SIZE_HP);
+                                if mem.b16s1(src_p) == WHATSIT_NODE_HP {
+                                    let count = mem.b16s1(src_p + 4) as i32;
+                                    let src = mem.as_u16_ptr(src_p + NATIVE_NODE_SIZE_HP);
+                                    let dst = mem.as_u16_ptr_mut(merged + NATIVE_NODE_SIZE_HP);
                                     for k_idx in 0..count {
-                                        *dst.offset((total_chars + k_idx) as isize) =
-                                            *src.offset(k_idx as isize);
+                                        unsafe {
+                                            *dst.offset((total_chars + k_idx) as isize) =
+                                                *src.offset(k_idx as isize);
+                                        }
                                     }
                                     total_chars += count;
                                 }
-                                if mem_b32s1(src_p) == TEX_NULL {
+                                if mem.b32s1(src_p) == TEX_NULL {
                                     break;
                                 }
-                                src_p = mem_b32s1(src_p);
+                                src_p = mem.b32s1(src_p);
                             }
-                            flush_node_list_global(scan_p);
-                            p = mem_b32s1(q);
-                            let use_glyph_metrics = eqtb_b32s1(INT_BASE + 72) > 0;
-                            measure_native_node_global(
-                                crate::globals::mem_node_addr(p),
-                                use_glyph_metrics as libc::c_int,
-                            );
+                            flush_node_list(mem, scan_p).map_err(NodeRecycleAbort::Confusion)?;
+                            p = mem.b32s1(q);
+                            let use_glyph_metrics = eqtb.b32s1(INT_BASE + 72) > 0;
+                            unsafe {
+                                measure_native_node(
+                                    fonts,
+                                    mem.node_addr(p),
+                                    use_glyph_metrics as libc::c_int,
+                                );
+                            }
                         }
-                        // metrics are in mem[p+3].b32.s1 (height) and mem[p+2].b32.s1 (depth)
-                        if mem_b32s1(p + 3) > h {
-                            h = mem_b32s1(p + 3);
+                        if mem.b32s1(p + 3) > h {
+                            h = mem.b32s1(p + 3);
                         }
-                        if mem_b32s1(p + 2) > d {
-                            d = mem_b32s1(p + 2);
+                        if mem.b32s1(p + 2) > d {
+                            d = mem.b32s1(p + 2);
                         }
-                        x += mem_b32s1(p + 1);
+                        x += mem.b32s1(p + 1);
                     }
                     42..=44 => {
-                        // GLYPH_NODE (42), PIC_NODE (43), PDF_NODE (44)
-                        if mem_b32s1(p + 3) > h {
-                            h = mem_b32s1(p + 3);
+                        if mem.b32s1(p + 3) > h {
+                            h = mem.b32s1(p + 3);
                         }
-                        if mem_b32s1(p + 2) > d {
-                            d = mem_b32s1(p + 2);
+                        if mem.b32s1(p + 2) > d {
+                            d = mem.b32s1(p + 2);
                         }
-                        x += mem_b32s1(p + 1);
+                        x += mem.b32s1(p + 1);
                     }
                     _ => {}
                 }
             }
-            GLUE_NODE => {
-                let g = mem_b32s0(p + 1);
-                x += mem_b32s1(g + 1);
-                let o = mem_b16s1(g) as usize;
-                set_total_stretch(o, total_stretch(o) + mem_b32s1(g + 2));
-                let o = mem_b16s0(g) as usize;
-                set_total_shrink(o, total_shrink(o) + mem_b32s1(g + 3));
-                if mem_b16s0(p) >= A_LEADERS_HP {
-                    let g = mem_b32s1(p + 1);
-                    if mem_b32s1(g + 3) > h {
-                        h = mem_b32s1(g + 3);
+            Ok(NodeType::Glue) => {
+                // SAFETY: the `NODE_type` read above proves this list item is glue.
+                let glue = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(node_idx) };
+                let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
+                x += spec.width(mem).0;
+                let o = spec.stretch_order(mem) as usize;
+                scanner.total_stretch[o] += spec.stretch(mem).0;
+                let o = spec.shrink_order(mem) as usize;
+                scanner.total_shrink[o] += spec.shrink(mem).0;
+                if glue.subtype(mem) >= A_LEADERS_HP {
+                    let leader = glue.leader_ptr(mem).0;
+                    if mem.b32s1(leader + 3) > h {
+                        h = mem.b32s1(leader + 3);
                     }
-                    if mem_b32s1(g + 2) > d {
-                        d = mem_b32s1(g + 2);
+                    if mem.b32s1(leader + 2) > d {
+                        d = mem.b32s1(leader + 2);
                     }
                 }
             }
-            KERN_NODE | KERN_NODE => {
-                x += mem_b32s1(p + 1);
+            Ok(NodeType::Kern) => {
+                // SAFETY: the `NODE_type` read above proves this list item is a kern.
+                let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(node_idx) };
+                x += kern.width(mem).0;
             }
-            MATH_NODE => {
-                x += mem_b32s1(p + 1);
-                if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
-                    if !mem_b16s0(p).is_multiple_of(2) {
-                        // odd subtype: closing a direction
-                        let expected =
-                            (L_CODE_HP as u32) * (mem_b16s0(p) as u32 / L_CODE_HP as u32) + 3;
-                        if mem_b32s0(lr_ptr()) == expected as i32 {
-                            let t = lr_ptr();
-                            set_lr_ptr(mem_b32s1(t));
-                            set_mem_b32s1(t, avail());
-                            set_avail(t);
+            Ok(NodeType::Math) => {
+                // SAFETY: the `NODE_type` read above proves this list item is a math node.
+                let math = unsafe { NodePtr::<MathNode>::from_idx_unchecked(node_idx) };
+                x += math.width(mem).0;
+                if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
+                    let sub = math.subtype(mem);
+                    if !sub.is_multiple_of(2) {
+                        let expected = (L_CODE_HP as u32) * (sub as u32 / L_CODE_HP as u32) + 3;
+                        if mem.b32s0(scanner.LR_ptr) == expected as i32 {
+                            let t = scanner.LR_ptr;
+                            scanner.LR_ptr = mem.b32s1(t);
+                            mem.set_b32s1(t, mem.avail);
+                            mem.avail = t;
                         } else {
-                            set_lr_problems(lr_problems() + 1);
-                            set_mem_b16s1(p, KERN_NODE);
-                            set_mem_b16s0(p, EXPLICIT_HP);
+                            scanner.LR_problems += 1;
+                            mem.set_b16s1(p, KERN_NODE);
+                            mem.set_b16s0(p, EXPLICIT_HP);
                         }
                     } else {
-                        // even subtype: opening a direction
-                        let t = crate::mem::get_avail_global();
-                        set_mem_b32s0(
-                            t,
-                            (L_CODE_HP as i32) * (mem_b16s0(p) as i32 / L_CODE_HP as i32) + 3,
-                        );
-                        set_mem_b32s1(t, lr_ptr());
-                        set_lr_ptr(t);
+                        let t = get_avail(mem);
+                        if t == crate::mem::ALLOC_FAILED {
+                            return Err(NodeRecycleAbort::OverflowRunaway);
+                        }
+                        mem.set_b32s0(t, (L_CODE_HP as i32) * (sub as i32 / L_CODE_HP as i32) + 3);
+                        mem.set_b32s1(t, scanner.LR_ptr);
+                        scanner.LR_ptr = t;
                     }
                 }
             }
-            LIG_NODE_HP => {
-                // Ligature node: expand in place and reprocess
-                set_mem_word(GARBAGE, mem_word(p + 1));
-                set_mem_b32s1(GARBAGE, mem_b32s1(p));
+            Ok(NodeType::Ligature) => {
+                mem.set_word(GARBAGE, mem.word(p + 1));
+                mem.set_b32s1(GARBAGE, mem.b32s1(p));
                 p = GARBAGE;
-                set_xtx_ligature_present(true);
-                continue 'outer; // goto reswitch
+                fonts.set_xtx_ligature_present(true);
+                continue 'outer;
             }
-            _ => {}
+            Ok(_) | Err(_) => {}
         }
-        p = mem_b32s1(p); // LLIST_link(p)
+        p = mem.b32s1(p);
     }
 
-    if adjust_tail() != TEX_NULL {
-        set_mem_b32s1(adjust_tail(), TEX_NULL);
+    if scanner.adjust_tail != TEX_NULL {
+        mem.set_b32s1(scanner.adjust_tail, TEX_NULL);
     }
-    if pre_adjust_tail() != TEX_NULL {
-        set_mem_b32s1(pre_adjust_tail(), TEX_NULL);
+    if scanner.pre_adjust_tail != TEX_NULL {
+        mem.set_b32s1(scanner.pre_adjust_tail, TEX_NULL);
     }
-    set_mem_b32s1(r + 3, h);
-    set_mem_b32s1(r + 2, d);
+    r_node.set_height(mem, Scaled(h));
+    r_node.set_depth(mem, Scaled(d));
 
     let w = if m == ADDITIONAL_HP { x + w } else { w };
-    set_mem_b32s1(r + 1, w);
+    r_node.set_width(mem, Scaled(w));
     x = w - x;
 
-    // Glue setting: goto exit (returns r) or goto common_ending (warning + box)
-    let do_common_ending: bool = 'glue: {
-        if x == 0 {
-            set_mem_b16s1(r + 5, 0);
-            set_mem_b16s0(r + 5, 0);
-            set_mem_gr(r + 6, 0.0);
-            break 'glue false; // goto exit
-        } else if x > 0 {
-            let o: usize = if total_stretch(FILLL_HP) != 0 {
-                FILLL_HP
-            } else if total_stretch(FILL_HP) != 0 {
-                FILL_HP
-            } else if total_stretch(FIL_HP) != 0 {
-                FIL_HP
-            } else {
-                NORMAL_HP
-            };
-            set_mem_b16s0(r + 5, o as u16);
-            set_mem_b16s1(r + 5, STRETCHING_HP);
-            if total_stretch(o) != 0 {
-                set_mem_gr(r + 6, x as f64 / total_stretch(o) as f64);
-            } else {
-                set_mem_b16s1(r + 5, 0);
-                set_mem_gr(r + 6, 0.0);
-            }
-            if o == NORMAL_HP && mem_b32s1(r + 5) != TEX_NULL {
-                set_last_badness(crate::helpers::badness(x, total_stretch(NORMAL_HP)));
-                if last_badness() > eqtb_b32s1(INT_BASE + INT_PAR_HBADNESS_HP) {
-                    crate::output::print_ln();
-                    crate::output::diagnostic_begin_capture_warning_here();
-                    if last_badness() > 100 {
-                        crate::output::print_nl_cstr(c"Underfull".as_ptr());
-                    } else {
-                        crate::output::print_nl_cstr(c"Loose".as_ptr());
-                    }
-                    crate::output::print_cstr(c" \\hbox (badness ".as_ptr());
-                    crate::output::print_int(last_badness());
-                    break 'glue true; // goto common_ending
-                }
-            }
-            break 'glue false; // goto exit
+    if x == 0 {
+        r_node.set_glue_sign(mem, 0);
+        r_node.set_glue_order(mem, 0);
+        r_node.set_glue_set(mem, 0.0);
+    } else if x > 0 {
+        let o = if scanner.total_stretch[FILLL_HP] != 0 {
+            FILLL_HP
+        } else if scanner.total_stretch[FILL_HP] != 0 {
+            FILL_HP
+        } else if scanner.total_stretch[FIL_HP] != 0 {
+            FIL_HP
         } else {
-            // x < 0: shrinking
-            let o: usize = if total_shrink(FILLL_HP) != 0 {
-                FILLL_HP
-            } else if total_shrink(FILL_HP) != 0 {
-                FILL_HP
-            } else if total_shrink(FIL_HP) != 0 {
-                FIL_HP
-            } else {
-                NORMAL_HP
-            };
-            set_mem_b16s0(r + 5, o as u16);
-            set_mem_b16s1(r + 5, SHRINKING_HP);
-            if total_shrink(o) != 0 {
-                set_mem_gr(r + 6, (-x) as f64 / total_shrink(o) as f64);
-            } else {
-                set_mem_b16s1(r + 5, 0);
-                set_mem_gr(r + 6, 0.0);
+            NORMAL_HP
+        };
+        r_node.set_glue_order(mem, o as u16);
+        r_node.set_glue_sign(mem, STRETCHING_HP);
+        if scanner.total_stretch[o] != 0 {
+            r_node.set_glue_set(mem, x as f64 / scanner.total_stretch[o] as f64);
+        } else {
+            r_node.set_glue_sign(mem, 0);
+            r_node.set_glue_set(mem, 0.0);
+        }
+        if o == NORMAL_HP && r_node.list_ptr(mem).0 != TEX_NULL {
+            shipout.last_badness = crate::helpers::badness(x, scanner.total_stretch[NORMAL_HP]);
+            if shipout.last_badness > eqtb.b32s1(INT_BASE + INT_PAR_HBADNESS_HP) {
+                push_pack_diag(
+                    &mut diags,
+                    PackDiag::HUnderfull {
+                        badness: shipout.last_badness,
+                        loose: shipout.last_badness <= 100,
+                    },
+                );
             }
-            if total_shrink(o) < (-x) && o == NORMAL_HP && mem_b32s1(r + 5) != TEX_NULL {
-                set_last_badness(1_000_000);
-                set_mem_gr(r + 6, 1.0);
-                if (-x) - total_shrink(NORMAL_HP) > eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HFUZZ_HP)
-                    || eqtb_b32s1(INT_BASE + INT_PAR_HBADNESS_HP) < 100
+        }
+    } else {
+        let o = if scanner.total_shrink[FILLL_HP] != 0 {
+            FILLL_HP
+        } else if scanner.total_shrink[FILL_HP] != 0 {
+            FILL_HP
+        } else if scanner.total_shrink[FIL_HP] != 0 {
+            FIL_HP
+        } else {
+            NORMAL_HP
+        };
+        r_node.set_glue_order(mem, o as u16);
+        r_node.set_glue_sign(mem, SHRINKING_HP);
+        if scanner.total_shrink[o] != 0 {
+            r_node.set_glue_set(mem, (-x) as f64 / scanner.total_shrink[o] as f64);
+        } else {
+            r_node.set_glue_sign(mem, 0);
+            r_node.set_glue_set(mem, 0.0);
+        }
+        if scanner.total_shrink[o] < (-x) && o == NORMAL_HP && r_node.list_ptr(mem).0 != TEX_NULL {
+            shipout.last_badness = 1_000_000;
+            r_node.set_glue_set(mem, 1.0);
+            if (-x) - scanner.total_shrink[NORMAL_HP] > eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HFUZZ_HP)
+                || eqtb.b32s1(INT_BASE + INT_PAR_HBADNESS_HP) < 100
+            {
+                if eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE_HP) > 0
+                    && (-x) - scanner.total_shrink[NORMAL_HP]
+                        > eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HFUZZ_HP)
                 {
-                    if eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE_HP) > 0
-                        && (-x) - total_shrink(NORMAL_HP)
-                            > eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HFUZZ_HP)
-                    {
-                        while mem_b32s1(q) != TEX_NULL {
-                            q = mem_b32s1(q);
-                        }
-                        let rule = crate::mem::new_rule_global();
-                        set_mem_b32s1(q, rule);
-                        set_mem_b32s1(
-                            rule + 1,
-                            eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE_HP),
-                        );
+                    while mem.b32s1(q) != TEX_NULL {
+                        q = mem.b32s1(q);
                     }
-                    crate::output::print_ln();
-                    crate::output::diagnostic_begin_capture_warning_here();
-                    crate::output::print_nl_cstr(c"Overfull \\hbox (".as_ptr());
-                    crate::output::print_scaled((-x) - total_shrink(NORMAL_HP));
-                    crate::output::print_cstr(c"pt too wide".as_ptr());
-                    break 'glue true; // goto common_ending
+                    let rule = crate::mem::new_rule(mem);
+                    if rule == crate::mem::ALLOC_FAILED {
+                        return Err(NodeRecycleAbort::Overflow);
+                    }
+                    let rule_node = mem
+                        .classify_rule(MemIdx::new(rule))
+                        .expect("valid rule node type")
+                        .expect("rule node");
+                    mem.set_b32s1(q, rule);
+                    rule_node.set_width(
+                        mem,
+                        RuleDimen::Set(Scaled(eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE_HP))),
+                    );
                 }
-            } else if o == NORMAL_HP && mem_b32s1(r + 5) != TEX_NULL {
-                set_last_badness(crate::helpers::badness(-x, total_shrink(NORMAL_HP)));
-                if last_badness() > eqtb_b32s1(INT_BASE + INT_PAR_HBADNESS_HP) {
-                    crate::output::print_ln();
-                    crate::output::diagnostic_begin_capture_warning_here();
-                    crate::output::print_nl_cstr(c"Tight \\hbox (badness ".as_ptr());
-                    crate::output::print_int(last_badness());
-                    break 'glue true; // goto common_ending
-                }
+                push_pack_diag(
+                    &mut diags,
+                    PackDiag::HOverfull {
+                        excess: (-x) - scanner.total_shrink[NORMAL_HP],
+                    },
+                );
             }
-            break 'glue false; // goto exit
-        }
-    };
-
-    if do_common_ending {
-        if output_active() {
-            crate::output::print_cstr(c") has occurred while \\output is active".as_ptr());
-        } else {
-            if pack_begin_line() != 0 {
-                if pack_begin_line() > 0 {
-                    crate::output::print_cstr(c") in paragraph at lines ".as_ptr());
-                } else {
-                    crate::output::print_cstr(c") in alignment at lines ".as_ptr());
-                }
-                crate::output::print_int(pack_begin_line().abs());
-                crate::output::print_cstr(c"--".as_ptr());
-            } else {
-                crate::output::print_cstr(c") detected at line ".as_ptr());
+        } else if o == NORMAL_HP && r_node.list_ptr(mem).0 != TEX_NULL {
+            shipout.last_badness = crate::helpers::badness(-x, scanner.total_shrink[NORMAL_HP]);
+            if shipout.last_badness > eqtb.b32s1(INT_BASE + INT_PAR_HBADNESS_HP) {
+                push_pack_diag(
+                    &mut diags,
+                    PackDiag::HTight {
+                        badness: shipout.last_badness,
+                    },
+                );
             }
-            crate::output::print_int(line());
         }
-        capture_to_diagnostic(std::ptr::null_mut());
-        crate::output::print_ln();
-        set_font_in_short_display(0); // FONT_BASE = 0
-        short_display(mem_b32s1(r + 5));
-        crate::output::print_ln();
-        crate::output::begin_diagnostic();
-        show_box(r);
-        crate::output::end_diagnostic(true);
     }
 
-    // exit: LR cleanup
-    if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
-        if mem_b32s0(lr_ptr()) != BEFORE_HP as i32 {
-            while mem_b32s1(q) != TEX_NULL {
-                q = mem_b32s1(q);
+    if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
+        if mem.b32s0(scanner.LR_ptr) != BEFORE_HP as i32 {
+            while mem.b32s1(q) != TEX_NULL {
+                q = mem.b32s1(q);
             }
             loop {
                 let t = q;
-                let new_q = crate::mem::new_math_global(0, mem_b32s0(lr_ptr()) as i16);
-                set_mem_b32s1(t, new_q);
+                let new_q = crate::mem::new_math(mem, 0, mem.b32s0(scanner.LR_ptr) as i16);
+                if new_q == crate::mem::ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow);
+                }
+                mem.set_b32s1(t, new_q);
                 q = new_q;
-                set_lr_problems(lr_problems() + 10000);
-                let t2 = lr_ptr();
-                set_lr_ptr(mem_b32s1(t2));
-                set_mem_b32s1(t2, avail());
-                set_avail(t2);
-                if mem_b32s0(lr_ptr()) == BEFORE_HP as i32 {
+                scanner.LR_problems += 10000;
+                let t2 = scanner.LR_ptr;
+                scanner.LR_ptr = mem.b32s1(t2);
+                mem.set_b32s1(t2, mem.avail);
+                mem.avail = t2;
+                if mem.b32s0(scanner.LR_ptr) == BEFORE_HP as i32 {
                     break;
                 }
             }
         }
-        if lr_problems() > 0 {
-            crate::output::print_ln();
-            crate::output::diagnostic_begin_capture_warning_here();
-            crate::output::print_nl_cstr(c"\\endL or \\endR problem (".as_ptr());
-            crate::output::print_int(lr_problems() / 10000);
-            crate::output::print_cstr(c" missing, ".as_ptr());
-            crate::output::print_int(lr_problems() % 10000);
-            crate::output::print_cstr(c" extra".as_ptr());
-            set_lr_problems(0);
-            // goto common_ending equivalent - print the rest
-            if output_active() {
-                crate::output::print_cstr(c") has occurred while \\output is active".as_ptr());
-            } else {
-                if pack_begin_line() != 0 {
-                    if pack_begin_line() > 0 {
-                        crate::output::print_cstr(c") in paragraph at lines ".as_ptr());
-                    } else {
-                        crate::output::print_cstr(c") in alignment at lines ".as_ptr());
-                    }
-                    crate::output::print_int(pack_begin_line().abs());
-                    crate::output::print_cstr(c"--".as_ptr());
-                } else {
-                    crate::output::print_cstr(c") detected at line ".as_ptr());
-                }
-                crate::output::print_int(line());
-            }
-            capture_to_diagnostic(std::ptr::null_mut());
-            crate::output::print_ln();
-            set_font_in_short_display(0);
-            short_display(mem_b32s1(r + 5));
-            crate::output::print_ln();
-            crate::output::begin_diagnostic();
-            show_box(r);
-            crate::output::end_diagnostic(true);
+        if scanner.LR_problems > 0 {
+            push_pack_diag(
+                &mut diags,
+                PackDiag::LrProblem {
+                    missing: scanner.LR_problems / 10000,
+                    extra: scanner.LR_problems % 10000,
+                },
+            );
+            scanner.LR_problems = 0;
         }
-        let t = lr_ptr();
-        set_lr_ptr(mem_b32s1(t));
-        set_mem_b32s1(t, avail());
-        set_avail(t);
-        if lr_ptr() != TEX_NULL {
-            crate::errors::confusion(c"LR1".as_ptr());
+        let t = scanner.LR_ptr;
+        scanner.LR_ptr = mem.b32s1(t);
+        mem.set_b32s1(t, mem.avail);
+        mem.avail = t;
+        if scanner.LR_ptr != TEX_NULL {
+            return Err(NodeRecycleAbort::Confusion(c"LR1"));
         }
     }
 
-    r
+    Ok(PackOutcome { r, diags })
 }
-/// translated from xetex-xetex0.c:7424 (vpackage)
-pub unsafe fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
-    use crate::globals::{
-        hi_mem_min, last_badness, line, output_active, pack_begin_line, set_last_badness,
-        set_mem_gr, set_total_shrink, set_total_stretch, total_shrink, total_stretch,
-    };
-    use crate::mem::TEX_NULL;
 
-    const ADDITIONAL_VP: i16 = 1;
-
-    set_last_badness(0);
-    let r = crate::mem::get_node_global(BOX_NODE_SIZE);
-    set_mem_b16s1(r, VLIST_NODE_VP);
-    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS_VP) > 0 {
-        set_mem_b16s0(r, 1);
-    } else {
-        set_mem_b16s0(r, 0);
-    }
-    set_mem_b32s1(r + 4, 0);
-    set_mem_b32s1(r + 5, p);
-
-    let mut w: i32 = 0;
-    let mut d: i32 = 0;
-    let mut x: i32 = 0;
-    set_total_stretch(NORMAL_VP, 0);
-    set_total_shrink(NORMAL_VP, 0);
-    set_total_stretch(FIL_VP, 0);
-    set_total_shrink(FIL_VP, 0);
-    set_total_stretch(FILL_VP, 0);
-    set_total_shrink(FILL_VP, 0);
-    set_total_stretch(FILLL_VP, 0);
-    set_total_shrink(FILLL_VP, 0);
-
-    let mut p = p;
-    while p != TEX_NULL {
-        if p >= hi_mem_min() {
-            // is_char_node(p): cannot appear in vlist
-            crate::errors::confusion(c"vpack".as_ptr());
-        } else {
-            match mem_b16s1(p) {
-                0 | 1 | 2 | 13 => {
-                    // HLIST_NODE, VLIST_NODE, RULE_NODE, UNSET_NODE
-                    x += d + mem_b32s1(p + 3);
-                    d = mem_b32s1(p + 2);
-                    let s = if mem_b16s1(p) >= RULE_NODE {
-                        0
-                    } else {
-                        mem_b32s1(p + 4)
-                    };
-                    if mem_b32s1(p + 1) + s > w {
-                        w = mem_b32s1(p + 1) + s;
-                    }
+fn print_hpack_diag(box_ptr: i32, diag: PackDiag) {
+    unsafe {
+        match diag {
+            PackDiag::HUnderfull { badness, loose } => {
+                crate::output::print_ln();
+                crate::output::diagnostic_begin_capture_warning_here();
+                if loose {
+                    crate::output::print_nl_cstr(c"Loose".as_ptr());
+                } else {
+                    crate::output::print_nl_cstr(c"Underfull".as_ptr());
                 }
-                WHATSIT_NODE_VP => {
-                    let sub = mem_b16s0(p);
-                    if sub == PIC_NODE_VP || sub == PDF_NODE_VP {
-                        x += d + mem_b32s1(p + 3);
-                        d = mem_b32s1(p + 2);
-                        if mem_b32s1(p + 1) > w {
-                            w = mem_b32s1(p + 1);
-                        }
-                    }
-                }
-                GLUE_NODE => {
-                    x += d;
-                    d = 0;
-                    let g = mem_b32s0(p + 1);
-                    x += mem_b32s1(g + 1);
-                    let o = mem_b16s1(g) as usize;
-                    set_total_stretch(o, total_stretch(o) + mem_b32s1(g + 2));
-                    let o = mem_b16s0(g) as usize;
-                    set_total_shrink(o, total_shrink(o) + mem_b32s1(g + 3));
-                    if mem_b16s0(p) >= A_LEADERS_VP {
-                        let g = mem_b32s1(p + 1);
-                        if mem_b32s1(g + 1) > w {
-                            w = mem_b32s1(g + 1);
-                        }
-                    }
-                }
-                KERN_NODE => {
-                    x += d + mem_b32s1(p + 1);
-                    d = 0;
-                }
-                _ => {}
+                crate::output::print_cstr(c" \\hbox (badness ".as_ptr());
+                crate::output::print_int(badness);
+            }
+            PackDiag::HOverfull { excess } => {
+                crate::output::print_ln();
+                crate::output::diagnostic_begin_capture_warning_here();
+                crate::output::print_nl_cstr(c"Overfull \\hbox (".as_ptr());
+                crate::output::print_scaled(excess);
+                crate::output::print_cstr(c"pt too wide".as_ptr());
+            }
+            PackDiag::HTight { badness } => {
+                crate::output::print_ln();
+                crate::output::diagnostic_begin_capture_warning_here();
+                crate::output::print_nl_cstr(c"Tight \\hbox (badness ".as_ptr());
+                crate::output::print_int(badness);
+            }
+            PackDiag::LrProblem { missing, extra } => {
+                crate::output::print_ln();
+                crate::output::diagnostic_begin_capture_warning_here();
+                crate::output::print_nl_cstr(c"\\endL or \\endR problem (".as_ptr());
+                crate::output::print_int(missing);
+                crate::output::print_cstr(c" missing, ".as_ptr());
+                crate::output::print_int(extra);
+                crate::output::print_cstr(c" extra".as_ptr());
+            }
+            PackDiag::VUnderfull { .. } | PackDiag::VOverfull { .. } | PackDiag::VTight { .. } => {
+                unreachable!("vpack diagnostic passed to hpack printer")
             }
         }
-        p = mem_b32s1(p); // LLIST_link(p)
+        print_hpack_common_ending(box_ptr);
     }
+}
 
-    set_mem_b32s1(r + 1, w);
-    if d > l {
-        x += d - l;
-        set_mem_b32s1(r + 2, l);
-    } else {
-        set_mem_b32s1(r + 2, d);
-    }
-
-    let h = if m == ADDITIONAL_VP { x + h } else { h };
-    set_mem_b32s1(r + 3, h);
-    x = h - x;
-
-    // Each path below either returns early (goto exit) or sets do_common_ending
-    let do_common_ending: bool = 'glue: {
-        if x == 0 {
-            set_mem_b16s1(r + 5, 0); // NORMAL
-            set_mem_b16s0(r + 5, 0);
-            set_mem_gr(r + 6, 0.0);
-            break 'glue false; // goto exit
-        } else if x > 0 {
-            // stretching
-            let o: usize = if total_stretch(FILLL_VP) != 0 {
-                FILLL_VP
-            } else if total_stretch(FILL_VP) != 0 {
-                FILL_VP
-            } else if total_stretch(FIL_VP) != 0 {
-                FIL_VP
-            } else {
-                NORMAL_VP
-            };
-            set_mem_b16s0(r + 5, o as u16);
-            set_mem_b16s1(r + 5, STRETCHING_VP);
-            if total_stretch(o) != 0 {
-                set_mem_gr(r + 6, x as f64 / total_stretch(o) as f64);
-            } else {
-                set_mem_b16s1(r + 5, 0); // NORMAL
-                set_mem_gr(r + 6, 0.0);
-            }
-            if o == NORMAL_VP && mem_b32s1(r + 5) != TEX_NULL {
-                set_last_badness(crate::helpers::badness(x, total_stretch(NORMAL_VP)));
-                if last_badness() > eqtb_b32s1(INT_BASE + INT_PAR_VBADNESS_VP) {
-                    crate::output::print_ln();
-                    crate::output::diagnostic_begin_capture_warning_here();
-                    if last_badness() > 100 {
-                        crate::output::print_nl_cstr(c"Underfull".as_ptr());
-                    } else {
-                        crate::output::print_nl_cstr(c"Loose".as_ptr());
-                    }
-                    crate::output::print_cstr(c" \\vbox (badness ".as_ptr());
-                    crate::output::print_int(last_badness());
-                    break 'glue true; // goto common_ending
-                }
-            }
-            break 'glue false; // goto exit
-        } else {
-            // shrinking (x < 0)
-            let o: usize = if total_shrink(FILLL_VP) != 0 {
-                FILLL_VP
-            } else if total_shrink(FILL_VP) != 0 {
-                FILL_VP
-            } else if total_shrink(FIL_VP) != 0 {
-                FIL_VP
-            } else {
-                NORMAL_VP
-            };
-            set_mem_b16s0(r + 5, o as u16);
-            set_mem_b16s1(r + 5, SHRINKING_VP);
-            if total_shrink(o) != 0 {
-                set_mem_gr(r + 6, (-(x as i64)) as f64 / total_shrink(o) as f64);
-            } else {
-                set_mem_b16s1(r + 5, 0); // NORMAL
-                set_mem_gr(r + 6, 0.0);
-            }
-            if total_shrink(o) < (-x) && o == NORMAL_VP && mem_b32s1(r + 5) != TEX_NULL {
-                set_last_badness(1_000_000);
-                set_mem_gr(r + 6, 1.0);
-                if (-x) - total_shrink(NORMAL_VP) > eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_VFUZZ_VP)
-                    || eqtb_b32s1(INT_BASE + INT_PAR_VBADNESS_VP) < 100
-                {
-                    crate::output::print_ln();
-                    crate::output::diagnostic_begin_capture_warning_here();
-                    crate::output::print_nl_cstr(c"Overfull \\vbox (".as_ptr());
-                    crate::output::print_scaled((-x) - total_shrink(NORMAL_VP));
-                    crate::output::print_cstr(c"pt too high".as_ptr());
-                    break 'glue true; // goto common_ending
-                }
-            } else if o == NORMAL_VP && mem_b32s1(r + 5) != TEX_NULL {
-                set_last_badness(crate::helpers::badness(-x, total_shrink(NORMAL_VP)));
-                if last_badness() > eqtb_b32s1(INT_BASE + INT_PAR_VBADNESS_VP) {
-                    crate::output::print_ln();
-                    crate::output::diagnostic_begin_capture_warning_here();
-                    crate::output::print_nl_cstr(c"Tight \\vbox (badness ".as_ptr());
-                    crate::output::print_int(last_badness());
-                    break 'glue true; // goto common_ending
-                }
-            }
-            break 'glue false; // goto exit
-        }
-    };
-
-    if do_common_ending {
-        // common_ending:
-        if output_active() {
+fn print_hpack_common_ending(box_ptr: i32) {
+    unsafe {
+        if crate::globals::output_active() {
             crate::output::print_cstr(c") has occurred while \\output is active".as_ptr());
         } else {
-            if pack_begin_line() != 0 {
-                crate::output::print_cstr(c") in alignment at lines ".as_ptr());
-                crate::output::print_int(pack_begin_line().abs());
+            let pack_begin_line = crate::globals::pack_begin_line();
+            if pack_begin_line != 0 {
+                if pack_begin_line > 0 {
+                    crate::output::print_cstr(c") in paragraph at lines ".as_ptr());
+                } else {
+                    crate::output::print_cstr(c") in alignment at lines ".as_ptr());
+                }
+                crate::output::print_int(pack_begin_line.abs());
                 crate::output::print_cstr(c"--".as_ptr());
             } else {
                 crate::output::print_cstr(c") detected at line ".as_ptr());
             }
-            crate::output::print_int(line());
+            crate::output::print_int(crate::globals::line());
+        }
+        capture_to_diagnostic(std::ptr::null_mut());
+        crate::output::print_ln();
+        crate::globals::set_font_in_short_display(0);
+        short_display(mem_b32s1(box_ptr + 5));
+        crate::output::print_ln();
+        crate::output::begin_diagnostic();
+        show_box(box_ptr);
+        crate::output::end_diagnostic(true);
+    }
+}
+
+/// translated from xetex-xetex0.c:6972 (hpack)
+pub unsafe fn hpack(p: i32, w: i32, m: i16) -> i32 {
+    let outcome = match crate::state::with_state_mut(|st| {
+        hpack_in(
+            &mut st.mem,
+            &st.eqtb,
+            &mut st.fonts,
+            &mut st.scanner,
+            &mut st.shipout,
+            p,
+            w,
+            m,
+        )
+    }) {
+        Ok(outcome) => outcome,
+        Err(e) => node_recycle_abort(e),
+    };
+    for diag in outcome.diags.into_iter().flatten() {
+        print_hpack_diag(outcome.r, diag);
+    }
+    outcome.r
+}
+fn vpackage_in(
+    mem: &mut MemState,
+    eqtb: &EqtbState,
+    scanner: &mut ScannerState,
+    shipout: &mut ShipoutState,
+    list: i32,
+    h: i32,
+    m: i16,
+    l: i32,
+) -> Result<PackOutcome, NodeRecycleAbort> {
+    use crate::mem::TEX_NULL;
+
+    const ADDITIONAL_VP: i16 = 1;
+
+    shipout.last_badness = 0;
+    let Some(r_node) = NodePtr::<VListNode>::alloc(mem) else {
+        return Err(NodeRecycleAbort::Overflow);
+    };
+    if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS_VP) > 0 {
+        r_node.set_subtype(mem, 1);
+    } else {
+        r_node.set_subtype(mem, 0);
+    }
+    r_node.set_shift_amount(mem, Scaled(0));
+    r_node.set_list_ptr(mem, MemPtr::from_raw(list));
+
+    let mut w: i32 = 0;
+    let mut d: i32 = 0;
+    let mut x: i32 = 0;
+    scanner.total_stretch = [0; 4];
+    scanner.total_shrink = [0; 4];
+    let mut diags = [None, None];
+
+    let mut p = list;
+    while p != TEX_NULL {
+        if p >= mem.hi_mem_min {
+            return Err(NodeRecycleAbort::Confusion(c"vpack"));
+        } else {
+            let node_idx = MemIdx::new(p);
+            match NodeType::from_raw(mem.b16s1(p)) {
+                Ok(NodeType::HList) => {
+                    // SAFETY: the `NODE_type` read above proves this list item is an hlist.
+                    let b = AnyBox::HList(unsafe {
+                        NodePtr::<HListNode>::from_idx_unchecked(node_idx)
+                    });
+                    x += d + b.height(mem).0;
+                    d = b.depth(mem).0;
+                    let width = b.width(mem).0 + b.shift_amount(mem).0;
+                    if width > w {
+                        w = width;
+                    }
+                }
+                Ok(NodeType::VList) => {
+                    // SAFETY: the `NODE_type` read above proves this list item is a vlist.
+                    let b = AnyBox::VList(unsafe {
+                        NodePtr::<VListNode>::from_idx_unchecked(node_idx)
+                    });
+                    x += d + b.height(mem).0;
+                    d = b.depth(mem).0;
+                    let width = b.width(mem).0 + b.shift_amount(mem).0;
+                    if width > w {
+                        w = width;
+                    }
+                }
+                Ok(NodeType::Rule) => {
+                    // SAFETY: the `NODE_type` read above proves this list item is a rule.
+                    let rule = unsafe { NodePtr::<RuleNode>::from_idx_unchecked(node_idx) };
+                    x += d + rule.height(mem).raw();
+                    d = rule.depth(mem).raw();
+                    let width = rule.width(mem).raw();
+                    if width > w {
+                        w = width;
+                    }
+                }
+                Ok(NodeType::Unset) => {
+                    x += d + mem.b32s1(p + 3);
+                    d = mem.b32s1(p + 2);
+                    if mem.b32s1(p + 1) > w {
+                        w = mem.b32s1(p + 1);
+                    }
+                }
+                Ok(NodeType::Whatsit) => {
+                    let sub = mem.b16s0(p);
+                    if sub == PIC_NODE_VP || sub == PDF_NODE_VP {
+                        x += d + mem.b32s1(p + 3);
+                        d = mem.b32s1(p + 2);
+                        if mem.b32s1(p + 1) > w {
+                            w = mem.b32s1(p + 1);
+                        }
+                    }
+                }
+                Ok(NodeType::Glue) => {
+                    x += d;
+                    d = 0;
+                    // SAFETY: the `NODE_type` read above proves this list item is glue.
+                    let glue = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(node_idx) };
+                    let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
+                    x += spec.width(mem).0;
+                    let o = spec.stretch_order(mem) as usize;
+                    scanner.total_stretch[o] += spec.stretch(mem).0;
+                    let o = spec.shrink_order(mem) as usize;
+                    scanner.total_shrink[o] += spec.shrink(mem).0;
+                    if glue.subtype(mem) >= A_LEADERS_VP {
+                        let leader = glue.leader_ptr(mem).0;
+                        if mem.b32s1(leader + 1) > w {
+                            w = mem.b32s1(leader + 1);
+                        }
+                    }
+                }
+                Ok(NodeType::Kern) => {
+                    // SAFETY: the `NODE_type` read above proves this list item is a kern.
+                    let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(node_idx) };
+                    x += d + kern.width(mem).0;
+                    d = 0;
+                }
+                Ok(_) | Err(_) => {}
+            }
+        }
+        p = mem.b32s1(p);
+    }
+
+    r_node.set_width(mem, Scaled(w));
+    if d > l {
+        x += d - l;
+        r_node.set_depth(mem, Scaled(l));
+    } else {
+        r_node.set_depth(mem, Scaled(d));
+    }
+
+    let h = if m == ADDITIONAL_VP { x + h } else { h };
+    r_node.set_height(mem, Scaled(h));
+    x = h - x;
+
+    if x == 0 {
+        r_node.set_glue_sign(mem, 0);
+        r_node.set_glue_order(mem, 0);
+        r_node.set_glue_set(mem, 0.0);
+    } else if x > 0 {
+        let o = if scanner.total_stretch[FILLL_VP] != 0 {
+            FILLL_VP
+        } else if scanner.total_stretch[FILL_VP] != 0 {
+            FILL_VP
+        } else if scanner.total_stretch[FIL_VP] != 0 {
+            FIL_VP
+        } else {
+            NORMAL_VP
+        };
+        r_node.set_glue_order(mem, o as u16);
+        r_node.set_glue_sign(mem, STRETCHING_VP);
+        if scanner.total_stretch[o] != 0 {
+            r_node.set_glue_set(mem, x as f64 / scanner.total_stretch[o] as f64);
+        } else {
+            r_node.set_glue_sign(mem, 0);
+            r_node.set_glue_set(mem, 0.0);
+        }
+        if o == NORMAL_VP && r_node.list_ptr(mem).0 != TEX_NULL {
+            shipout.last_badness = crate::helpers::badness(x, scanner.total_stretch[NORMAL_VP]);
+            if shipout.last_badness > eqtb.b32s1(INT_BASE + INT_PAR_VBADNESS_VP) {
+                push_pack_diag(
+                    &mut diags,
+                    PackDiag::VUnderfull {
+                        badness: shipout.last_badness,
+                        loose: shipout.last_badness <= 100,
+                    },
+                );
+            }
+        }
+    } else {
+        let o = if scanner.total_shrink[FILLL_VP] != 0 {
+            FILLL_VP
+        } else if scanner.total_shrink[FILL_VP] != 0 {
+            FILL_VP
+        } else if scanner.total_shrink[FIL_VP] != 0 {
+            FIL_VP
+        } else {
+            NORMAL_VP
+        };
+        r_node.set_glue_order(mem, o as u16);
+        r_node.set_glue_sign(mem, SHRINKING_VP);
+        if scanner.total_shrink[o] != 0 {
+            r_node.set_glue_set(mem, (-(x as i64)) as f64 / scanner.total_shrink[o] as f64);
+        } else {
+            r_node.set_glue_sign(mem, 0);
+            r_node.set_glue_set(mem, 0.0);
+        }
+        if scanner.total_shrink[o] < (-x) && o == NORMAL_VP && r_node.list_ptr(mem).0 != TEX_NULL {
+            shipout.last_badness = 1_000_000;
+            r_node.set_glue_set(mem, 1.0);
+            if (-x) - scanner.total_shrink[NORMAL_VP] > eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_VFUZZ_VP)
+                || eqtb.b32s1(INT_BASE + INT_PAR_VBADNESS_VP) < 100
+            {
+                push_pack_diag(
+                    &mut diags,
+                    PackDiag::VOverfull {
+                        excess: (-x) - scanner.total_shrink[NORMAL_VP],
+                    },
+                );
+            }
+        } else if o == NORMAL_VP && r_node.list_ptr(mem).0 != TEX_NULL {
+            shipout.last_badness = crate::helpers::badness(-x, scanner.total_shrink[NORMAL_VP]);
+            if shipout.last_badness > eqtb.b32s1(INT_BASE + INT_PAR_VBADNESS_VP) {
+                push_pack_diag(
+                    &mut diags,
+                    PackDiag::VTight {
+                        badness: shipout.last_badness,
+                    },
+                );
+            }
+        }
+    }
+
+    Ok(PackOutcome {
+        r: r_node.idx().0,
+        diags,
+    })
+}
+
+fn print_vpack_diag(box_ptr: i32, diag: PackDiag) {
+    unsafe {
+        match diag {
+            PackDiag::VUnderfull { badness, loose } => {
+                crate::output::print_ln();
+                crate::output::diagnostic_begin_capture_warning_here();
+                if loose {
+                    crate::output::print_nl_cstr(c"Loose".as_ptr());
+                } else {
+                    crate::output::print_nl_cstr(c"Underfull".as_ptr());
+                }
+                crate::output::print_cstr(c" \\vbox (badness ".as_ptr());
+                crate::output::print_int(badness);
+            }
+            PackDiag::VOverfull { excess } => {
+                crate::output::print_ln();
+                crate::output::diagnostic_begin_capture_warning_here();
+                crate::output::print_nl_cstr(c"Overfull \\vbox (".as_ptr());
+                crate::output::print_scaled(excess);
+                crate::output::print_cstr(c"pt too high".as_ptr());
+            }
+            PackDiag::VTight { badness } => {
+                crate::output::print_ln();
+                crate::output::diagnostic_begin_capture_warning_here();
+                crate::output::print_nl_cstr(c"Tight \\vbox (badness ".as_ptr());
+                crate::output::print_int(badness);
+            }
+            PackDiag::HUnderfull { .. }
+            | PackDiag::HOverfull { .. }
+            | PackDiag::HTight { .. }
+            | PackDiag::LrProblem { .. } => unreachable!("hpack diagnostic passed to vpack printer"),
+        }
+        print_vpack_common_ending(box_ptr);
+    }
+}
+
+fn print_vpack_common_ending(box_ptr: i32) {
+    unsafe {
+        if crate::globals::output_active() {
+            crate::output::print_cstr(c") has occurred while \\output is active".as_ptr());
+        } else {
+            let pack_begin_line = crate::globals::pack_begin_line();
+            if pack_begin_line != 0 {
+                crate::output::print_cstr(c") in alignment at lines ".as_ptr());
+                crate::output::print_int(pack_begin_line.abs());
+                crate::output::print_cstr(c"--".as_ptr());
+            } else {
+                crate::output::print_cstr(c") detected at line ".as_ptr());
+            }
+            crate::output::print_int(crate::globals::line());
             crate::output::print_ln();
         }
         capture_to_diagnostic(std::ptr::null_mut());
         crate::output::begin_diagnostic();
-        show_box(r);
+        show_box(box_ptr);
         crate::output::end_diagnostic(true);
     }
+}
 
-    r
+/// translated from xetex-xetex0.c:7424 (vpackage)
+pub unsafe fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
+    let outcome = match crate::state::with_state_mut(|st| {
+        vpackage_in(
+            &mut st.mem,
+            &st.eqtb,
+            &mut st.scanner,
+            &mut st.shipout,
+            p,
+            h,
+            m,
+            l,
+        )
+    }) {
+        Ok(outcome) => outcome,
+        Err(e) => node_recycle_abort(e),
+    };
+    for diag in outcome.diags.into_iter().flatten() {
+        print_vpack_diag(outcome.r, diag);
+    }
+    outcome.r
 }
