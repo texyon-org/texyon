@@ -963,12 +963,6 @@ pub(crate) fn set_selector(v: i32) {
     });
 }
 
-/// Returns true while the engine is processing a `\special` (xetex-xetexd.h:439).
-#[inline]
-pub(crate) fn doing_special() -> bool {
-    crate::state::with_state(|state| state.shipout.doing_special)
-}
-
 /// Returns `term_offset` (columns written to terminal since last newline).
 #[inline]
 pub(crate) fn term_offset() -> i32 {
@@ -1131,14 +1125,6 @@ pub(crate) fn trick_count() -> i32 {
 pub(crate) fn trick_buf(k: usize) -> u16 {
     crate::state::with_state(|state| state.errors.trick_buf[k])
 }
-/// Write `trick_buf[k] = v`.
-#[inline]
-pub(crate) fn set_trick_buf(k: usize, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.errors.trick_buf[k] = v;
-    });
-}
-
 #[inline]
 pub(crate) fn pool_size() -> i32 {
     crate::state::with_state(|state| state.strings.pool_size)
