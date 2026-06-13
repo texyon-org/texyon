@@ -3056,8 +3056,11 @@ pub unsafe fn mlist_to_hlist() {
                     }
                     _ => crate::errors::confusion(c"mlist2".as_ptr()),
                 };
-                set_mem_b32s1(q + 1, p);
-                if mem_b32s1(q + 3) != EMPTY || mem_b32s1(q + 2) != EMPTY {
+                let need_scripts = crate::state::with_state_mut(|st| {
+                    st.mem.set_b32s1(q + 1, p);
+                    st.mem.b32s1(q + 3) != EMPTY || st.mem.b32s1(q + 2) != EMPTY
+                });
+                if need_scripts {
                     make_scripts_global(q, delta);
                 }
 
