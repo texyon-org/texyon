@@ -26,8 +26,8 @@ use crate::globals::{
 };
 use crate::mem::{
     free_node, free_node_global, get_avail, get_node, get_node_global, new_choice, new_glue,
-    new_glue_global, new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec,
-    ALLOC_FAILED, TEX_NULL,
+    new_kern, new_kern_global, new_noad, new_noad_global, new_null_box, new_spec, ALLOC_FAILED,
+    TEX_NULL,
 };
 use crate::node::{
     AnyBox, ChoiceNode, GlueNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode,
@@ -3083,12 +3083,13 @@ pub unsafe fn mlist_to_hlist() {
         }
     }
 
-    if r_type == BIN_NOAD {
-        set_mem_b16s1(r, ORD_NOAD);
-    }
-
     let mut p = TEMP_HEAD;
-    set_mem_b32s1(p, TEX_NULL);
+    crate::state::with_state_mut(|st| {
+        if r_type == BIN_NOAD {
+            st.mem.set_b16s1(r, ORD_NOAD);
+        }
+        st.mem.set_b32s1(p, TEX_NULL);
+    });
     q = mlist;
     r_type = 0;
     set_cur_style(style);
@@ -3138,10 +3139,17 @@ pub unsafe fn mlist_to_hlist() {
             }
             WHATSIT_NODE | PENALTY_NODE | RULE_NODE | DISC_NODE | ADJUST_NODE | INS_NODE
             | MARK_NODE | GLUE_NODE | KERN_NODE => {
-                set_mem_b32s1(p, q);
-                p = q;
-                q = mem_b32s1(q);
-                set_mem_b32s1(p, TEX_NULL);
+                // Move this node onto the output list and detach it: link the
+                // current tail `p` to `q`, advance to `q`'s successor, then null
+                // the moved node's link. One mem borrow.
+                let (np, nq) = crate::state::with_state_mut(|st| {
+                    st.mem.set_b32s1(p, q);
+                    let nq = st.mem.b32s1(q);
+                    st.mem.set_b32s1(q, TEX_NULL);
+                    (q, nq)
+                });
+                p = np;
+                q = nq;
                 false
             }
             _ => crate::errors::confusion(c"mlist3".as_ptr()),
@@ -3192,32 +3200,44 @@ pub unsafe fn mlist_to_hlist() {
                 };
                 if x != 0 {
                     let y = math_glue_global(eqtb_b32s1(GLUE_BASE + x), cur_mu());
-                    let z = new_glue_global(y);
-                    set_mem_b32s1(y, TEX_NULL);
-                    set_mem_b32s1(p, z);
-                    p = z;
-                    set_mem_b16s0(z, (x + 1) as u16);
+                    // Build the inter-element glue node and link it onto the tail
+                    // in one borrow (`math_glue` ran above, bucket C).
+                    p = crate::state::with_state_mut(|st| {
+                        let z = crate::mem::new_glue(&mut st.mem, y);
+                        st.mem.set_b32s1(y, TEX_NULL);
+                        st.mem.set_b32s1(p, z);
+                        st.mem.set_b16s0(z, (x + 1) as u16);
+                        z
+                    });
                 }
             }
 
-            if mem_b32s1(q + 1) != TEX_NULL {
-                set_mem_b32s1(p, mem_b32s1(q + 1));
-                loop {
-                    p = mem_b32s1(p);
-                    if mem_b32s1(p) == TEX_NULL {
-                        break;
+            p = crate::state::with_state_mut(|st| {
+                let head = st.mem.b32s1(q + 1);
+                if head == TEX_NULL {
+                    return p;
+                }
+                // Splice this noad's new hlist in after `p` and walk to its tail.
+                st.mem.set_b32s1(p, head);
+                let mut tail = head;
+                while st.mem.b32s1(tail) != TEX_NULL {
+                    tail = st.mem.b32s1(tail);
+                }
+                tail
+            });
+
+            p = crate::state::with_state_mut(|st| {
+                let ql = st.mem.b32s1(q);
+                if penalties && ql != TEX_NULL && pen < INF_PENALTY {
+                    let next_type = st.mem.b16s1(ql);
+                    if next_type != PENALTY_NODE && next_type != REL_NOAD {
+                        let z = crate::mem::new_penalty(&mut st.mem, pen);
+                        st.mem.set_b32s1(p, z);
+                        return z;
                     }
                 }
-            }
-
-            if penalties && mem_b32s1(q) != TEX_NULL && pen < INF_PENALTY {
-                let next_type = mem_b16s1(mem_b32s1(q));
-                if next_type != PENALTY_NODE && next_type != REL_NOAD {
-                    let z = crate::mem::new_penalty_global(pen);
-                    set_mem_b32s1(p, z);
-                    p = z;
-                }
-            }
+                p
+            });
 
             if mem_b16s1(q) == RIGHT_NOAD {
                 t = OPEN_NOAD;
@@ -3226,8 +3246,11 @@ pub unsafe fn mlist_to_hlist() {
         }
 
         r = q;
-        q = mem_b32s1(q);
-        free_node_global(r, s);
+        q = crate::state::with_state_mut(|st| {
+            let nq = st.mem.b32s1(r);
+            crate::mem::free_node(&mut st.mem, r, s);
+            nq
+        });
     }
 }
 
