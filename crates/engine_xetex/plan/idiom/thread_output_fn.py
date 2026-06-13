@@ -37,7 +37,8 @@ GETTERS = {
     "cur_level": "st.save_stack.cur_level", "cur_group": "st.save_stack.cur_group",
     "cur_boundary": "st.save_stack.cur_boundary", "nest_ptr": "st.input.nest_ptr",
     "base_ptr": "st.input.base_ptr", "input_ptr": "st.input.input_ptr",
-    "in_open": "st.input.in_open",
+    "in_open": "st.input.in_open", "old_setting": "st.shipout.old_setting",
+    "history": "st.errors.history",
 }
 
 # clean prefix-call replace NAME( -> NEWPREFIX(
@@ -58,6 +59,7 @@ INDEXED = {
     "buffer_entry": ("st.input.buffer", " as usize"),
     "input_stack": ("st.input.input_stack", " as usize"),
     "line_stack": ("st.input.line_stack", " as usize"),
+    "full_source_filename_stack": ("st.input.full_source_filename_stack", " as usize"),
     "trick_buf": ("st.errors.trick_buf", ""),
     "page_so_far": ("st.shipout.page_so_far", ""),
     "cur_mark": ("st.scanner.cur_mark", ""),
@@ -76,6 +78,7 @@ SETTERS = {
     "set_cur_group": "st.save_stack.cur_group", "set_base_ptr": "st.input.base_ptr",
     "set_first_count": "st.errors.first_count", "set_tally": "st.errors.tally",
     "set_selector": "st.shipout.selector", "set_trick_count": "st.errors.trick_count",
+    "set_old_setting": "st.shipout.old_setting", "set_history": "st.errors.history",
 }
 
 
@@ -204,9 +207,10 @@ def transform_body(body):
 
 
 def find_fn(src, name):
-    m = re.search(r"pub unsafe fn " + re.escape(name) + r"\(", src)
+    m = re.search(r"pub (unsafe )?fn " + re.escape(name) + r"\(", src)
     if not m:
         raise SystemExit(f"fn {name} not found")
+    is_unsafe = m.group(1) is not None
     # back up to include the doc-comment block
     start = m.start()
     # signature end: first ') {' at depth 0 after name
@@ -230,7 +234,7 @@ def find_fn(src, name):
         j += 1
     bodyend = j  # index after closing }
     body = src[bodystart:bodyend - 1]
-    return start, bodyend, args, body
+    return start, bodyend, args, body, is_unsafe
 
 
 def arg_names(args):
@@ -248,13 +252,14 @@ def main():
     names = sys.argv[2:]
     src = open(path).read()
     for name in names:
-        start, end, args, body = find_fn(src, name)
+        start, end, args, body, is_unsafe = find_fn(src, name)
         nbody = transform_body(body)
         anames = arg_names(args)
         callargs = ", ".join(["st"] + anames)
         sig_args = ("st: &mut EngineState, " + args) if args.strip() else "st: &mut EngineState"
+        kw = "pub unsafe fn" if is_unsafe else "pub fn"
         wrapper = (
-            f"pub unsafe fn {name}({args}) {{\n"
+            f"{kw} {name}({args}) {{\n"
             f"    crate::state::with_state_mut(|st| {name}_in({callargs}));\n"
             f"}}\n\n"
             f"/// `&mut EngineState` core of [`{name}`].\n"

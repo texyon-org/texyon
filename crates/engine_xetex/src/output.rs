@@ -16,12 +16,12 @@ use crate::globals::{
     cur_level, cur_list_mode, cur_val, current_diagnostic, def_ref, eqtb_b32s1,
     file_line_error_style_p, file_offset, full_source_filename_stack, grp_stack, history, if_limit,
     if_line, if_stack, in_open, init_pool_ptr, input_ptr, input_stack, line, line_stack,
-    max_print_line, mem_b16s0, mem_b16s1, mem_b32s1, old_setting, pool_ptr, pool_size, rust_stdout,
-    save_ptr, save_stack_b16s0, save_stack_b32s1, selector, set_base_ptr, set_cond_ptr,
-    set_cur_group, set_cur_if, set_cur_level, set_current_diagnostic, set_grp_stack, set_help_line,
-    set_help_ptr, set_history, set_if_limit, set_if_line, set_if_stack, set_input_stack,
-    set_mem_b16s1, set_mem_b32s1, set_old_setting, set_pool_ptr, set_save_ptr, set_selector,
-    set_shown_mode, set_str_ptr, shown_mode, str_ptr, str_start, term_offset,
+    max_print_line, mem_b16s0, mem_b16s1, mem_b32s1, pool_ptr, pool_size, rust_stdout, save_ptr,
+    save_stack_b16s0, save_stack_b32s1, selector, set_base_ptr, set_cond_ptr, set_cur_group,
+    set_cur_if, set_cur_level, set_current_diagnostic, set_grp_stack, set_help_line, set_help_ptr,
+    set_history, set_if_limit, set_if_line, set_if_stack, set_input_stack, set_mem_b16s1,
+    set_mem_b32s1, set_pool_ptr, set_save_ptr, set_selector, set_shown_mode, set_str_ptr,
+    shown_mode, str_ptr, str_start, term_offset,
 };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
@@ -772,22 +772,27 @@ pub unsafe fn error_here_with_diagnostic(message: *const libc::c_char) -> *mut s
 ///
 /// translated from xetex-output.c:304 (print_file_line)
 pub unsafe fn print_file_line() {
-    let mut level = in_open();
-    while level > 0 && full_source_filename_stack(level) == 0 {
+    crate::state::with_state_mut(|st| print_file_line_in(st));
+}
+
+/// `&mut EngineState` core of [`print_file_line`].
+pub(crate) fn print_file_line_in(st: &mut EngineState) {
+    let mut level = st.input.in_open;
+    while level > 0 && st.input.full_source_filename_stack[(level) as usize] == 0 {
         level -= 1;
     }
     if level == 0 {
-        print_nl_cstr(c"! ".as_ptr());
+        print_nl_cstr_in(st, c"! ".as_ptr());
     } else {
-        print_nl_cstr(c"".as_ptr());
-        print(full_source_filename_stack(level));
-        print_char(b':' as i32);
-        if level == in_open() {
-            print_int(line());
+        print_nl_cstr_in(st, c"".as_ptr());
+        print_in(st, st.input.full_source_filename_stack[(level) as usize]);
+        print_char_in(st, b':' as i32);
+        if level == st.input.in_open {
+            print_int_in(st, line());
         } else {
-            print_int(line_stack(level + 1));
+            print_int_in(st, st.input.line_stack[(level + 1) as usize]);
         }
-        print_cstr(c": ".as_ptr());
+        print_cstr_in(st, c": ".as_ptr());
     }
 }
 
@@ -1041,11 +1046,18 @@ pub(crate) fn print_sa_num_in(st: &mut EngineState, q: i32) {
 ///
 /// translated from xetex-xetex0.c:1785 (begin_diagnostic)
 pub fn begin_diagnostic() {
-    set_old_setting(selector() as u8);
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 && selector() == SELECTOR_TERM_AND_LOG {
-        set_selector(selector() - 1);
-        if history() == HISTORY_SPOTLESS {
-            set_history(HISTORY_WARNING_ISSUED);
+    crate::state::with_state_mut(|st| begin_diagnostic_in(st));
+}
+
+/// `&mut EngineState` core of [`begin_diagnostic`].
+pub(crate) fn begin_diagnostic_in(st: &mut EngineState) {
+    st.shipout.old_setting = st.shipout.selector as u8;
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0
+        && st.shipout.selector == SELECTOR_TERM_AND_LOG
+    {
+        st.shipout.selector = st.shipout.selector - 1;
+        if st.errors.history == HISTORY_SPOTLESS {
+            st.errors.history = HISTORY_WARNING_ISSUED;
         }
     }
 }
@@ -1054,11 +1066,16 @@ pub fn begin_diagnostic() {
 ///
 /// translated from xetex-xetex0.c:1797 (end_diagnostic)
 pub unsafe fn end_diagnostic(blank_line: bool) {
-    print_nl_cstr(c"".as_ptr());
+    crate::state::with_state_mut(|st| end_diagnostic_in(st, blank_line));
+}
+
+/// `&mut EngineState` core of [`end_diagnostic`].
+pub(crate) fn end_diagnostic_in(st: &mut EngineState, blank_line: bool) {
+    print_nl_cstr_in(st, c"".as_ptr());
     if blank_line {
-        print_ln();
+        print_ln_in(st);
     }
-    set_selector(old_setting() as i32);
+    st.shipout.selector = st.shipout.old_setting as i32;
 }
 
 // ---------------------------------------------------------------------------
