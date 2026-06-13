@@ -8,6 +8,52 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 171 — 2026-06-13 — Execution: land hpack/vpackage thread, drop non-fix unsafe helpers, type more consumers
+
+**Type:** execution (workstream 01 / `01b` §3a). Large low-docs session.
+
+**Code (3 commits):**
+1. Validated + cleaned + committed the inherited uncommitted WIP that
+   threads `hpack`→`hpack_in` / `vpackage`→`vpackage_in` over explicit
+   state, splitting overfull/underfull diagnostics into borrow-dropping
+   wrappers (`print_{h,v}pack_diag`/`_common_ending`, `PackDiag`) and
+   adopting `classify_box` + `VListNode::alloc`. Removed dead
+   `total_stretch`/`total_shrink` setters and the node-type constants the
+   threaded packers stopped referencing.
+2. **Design fix (user-flagged):** deleted the never-wired
+   `AnyBox::from_node_type` / `RuleNode::from_node_type` helpers the WIP
+   added. Relocating `from_idx_unchecked` into a per-call helper does NOT
+   eliminate the unsafe tag→type assertion; `classify_box`/`classify_*`
+   are the single audited boundary that turns a runtime `NODE_type` into a
+   typed handle, after which each `match` arm carries the static type with
+   zero further unsafe.
+3. Typed more box/glue/noad/choice consumers in already-threaded fns:
+   packaging `flush_node_list` GLUE arm (close the glue family), math
+   `apply_math_limit_switch`, `stack_glue_into_box` (glue spec),
+   `build_ext_delimiter_box` (vlist dims), `first_script_glyph_step`
+   (choice mlists), `rebox` (classify-once box), shipout
+   `finish_{h,v}list_rule` (classify output box).
+
+**Tests:** `cargo check`; `node::` **41/41**; dashboard **29/2/7/4**.
+Rebuilt `target/release/tectonic`; `plan/scripts/corpus.sh check all`
+exit 0 with only the known FP divergences `1905.00073v1` /
+`1905.00148v1` (**no regression**). Metrics: warnings **43**,
+`with_state` **1156**, `unsafe fn` **568**, `#[no_mangle]` **11**, bare
+`[pqr]: i32` **347** (up from new threaded packer helper params; retires
+as callers thread).
+
+**Finding for next session:** the cheap consumer-typing vein in
+already-threaded packaging/math/shipout fns is now genuinely thin (this
+session + prior ones largely exhausted it). The remaining big levers are
+**threading large bridge-based functions**: `vert_break`/`vsplit`
+(packaging; the mid-loop "infinite glue shrinkage" print+continue path
+blocks a single borrow — bucket D), `make_op_global`/`make_math_accent_global`
+(math), `hyphenate`/`line_break` tail (linebreak, 65/47 bridge sites),
+and the still-unthreaded shipout/pagebuilder/output/main_control/scan
+bodies. Each is a careful bucket-C/D slice, not a mechanical batch.
+
+---
+
 ## Idiom session 170 - 2026-06-12 - Execution: typed shipout records + threaded `post_line_break`
 
 **Type:** execution (workstream 01 / `01b` Phase-C threading + typed-node
