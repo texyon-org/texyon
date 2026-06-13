@@ -8,6 +8,49 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 172 — 2026-06-13 — Execution: unified `AnyNode` + `classify`, adopted in hpack/vpackage
+
+**Type:** execution (workstream 01 / `01c` §3 — the single classification
+boundary). Prompted by user design question: the big `match NodeType` loops
+each did a per-arm `from_idx_unchecked`; can the typed handle be found
+automatically?
+
+**Answer + code (2 commits):**
+1. Built the unified surface the plan specified but never landed (`01c` §3):
+   `AnyNode` (typed `NodePtr<K>` per built family; raw `MemIdx` for the
+   not-yet-typed native/whatsit/unset/ins/mark/adjust) + `MemState::classify(p)
+   -> Result<AnyNode, InvalidNodeType>`. It confines every built family's
+   `from_idx_unchecked` to one audited site; a consumer matches `AnyNode` and
+   writes no `unsafe`, with the static type inferred per arm. Noads collapse to
+   one `Noad` variant (refine via `noad_type`). Context-disambiguated codes are
+   classified by node-list meaning (2→Rule not Delta, 14→Style not Edge).
+   **Disasm gate (`01c` §4): a comprehensive typed classify-dispatch compiles
+   to a jump table → direct field load, no enum materialized — tighter codegen
+   than the equivalent raw multi-arm `NodeType` match (123 vs 217 bytes).** Unit
+   test `classify_dispatches_to_typed_handles`.
+2. Adopted it in the `hpack`/`vpackage` main loops: `match
+   mem.classify(node_idx)` replaces `match NodeType::from_raw(...)` + 11 per-arm
+   `from_idx_unchecked`. The Ins|Mark|Adjust arm binds the matched value (`arm
+   @ (..)`) to recover the Adjust discriminant. `packaging.rs`
+   `from_idx_unchecked` 14→3 (the rest are `flush_node_list`, which dispatches
+   on raw `*_FNL` constants — a separate, larger adoption).
+
+**Tests:** `cargo check`; `node::` **42/42**; dashboard **29/2/7/4**; release
+corpus exit 0, only known FP divergences `1905.00073v1`/`1905.00148v1` (**no
+regression**). Metrics: warnings **43**; `unsafe fn` **568**; `from_idx_unchecked`
+total **126** (node.rs **74** = the audited confinement layer + classify +
+per-family classifiers + allocs + tests; packaging **3**, math **34**,
+linebreak **12** = confined `*_in` helpers, shipout **0**).
+
+**Next clean `classify` adoptions:** `flush_node_list`/`copy_node_list`/
+`just_copy` (restructure the raw-`*_FNL`-constant match to `AnyNode`, with the
+noad arm sub-dispatching on `noad_type` and the box arm grouping
+HList|VList|Unset), then `mlist_to_hlist` (math, 34 sites). linebreak's
+`from_idx_unchecked` are the intentional `*_in` confinement helpers, **not**
+classify targets.
+
+---
+
 ## Idiom session 171 — 2026-06-13 — Execution: land hpack/vpackage thread, drop non-fix unsafe helpers, type more consumers
 
 **Type:** execution (workstream 01 / `01b` §3a). Large low-docs session.
