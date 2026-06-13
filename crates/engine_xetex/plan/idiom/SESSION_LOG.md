@@ -8,6 +8,35 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 180 — 2026-06-13 — Execution: typed hpack native-word cleanup + threaded hyphenation trie packing
+
+**Type:** execution (workstream 01 / fused threading+typing), larger
+low-docs mechanical batch. Used two explorer subagents for scouting only:
+one confirmed output/shipout walkers need a threaded print core first; the
+other identified `hyphenation.rs` trie packing as the cleanest non-node slice.
+
+**Code:** added `WhatsitNode::native_text_ptr{,_mut}` and used typed
+`WhatsitNode`/`AdjustNode`/`InsNode`/`MarkNode` accessors in the already-
+threaded `hpack_in` native-word merge / adjust extraction path. Threaded
+`trie_node`, `compress_trie`, `trie_fix`, `first_fit`, and `trie_pack` over
+`&mut HyphState`; `first_fit`/`trie_pack` return a local overflow sentinel so
+`overflow("pattern memory")` still runs after the state borrow drops. Removed
+dead `trie_taken`/`trie_min` bridge accessors from `globals.rs`.
+
+**Validation:** `cargo fmt`; `cargo check -p tectonic_engine_xetex`;
+`cargo test -p tectonic_engine_xetex node::` (**48/48**); dashboard
+**29/2/7/4**; `cargo build --release -p tectonic`; `git diff --check`;
+`plan/scripts/corpus.sh check all` = **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1` and `1905.00148v1`. Warnings
+remain **41**; `unsafe fn` **568 → 566**.
+
+**Next:** either keep going in `hyphenation.rs` with `new_trie_op` using the
+same overflow-sentinel pattern, or take the print-core slice before
+`short_display`/`show_node_list`. Avoid `shipout` walkers until the print/DVI
+bridges are threaded.
+
+---
+
 ## Idiom session 179 — 2026-06-13 — Execution: type the last untyped list-node families (Mark/Adjust/Ins/Unset + eTeX sparse-array marks)
 
 **Type:** execution (workstream 01 / `01c` Stage 3 — the typing backlog, not
