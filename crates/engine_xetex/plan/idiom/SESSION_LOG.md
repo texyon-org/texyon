@@ -8,6 +8,70 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 185 — 2026-06-14 — Execution: thread the `error()` keystone + the errors.rs helper cluster + char_warning/change_if_limit
+
+**Type:** execution (workstream 01 / fused `01b`+`01c`). Large low-docs batch
+per user request. Took the documented keystone — `error()` — which gated the
+entire errors.rs helper family (every helper bottoms out in it) and the
+output.rs `char_warning`, then cashed it out.
+
+**The §5 lever:** `error()`'s cold abort paths (`halt_on_error_p`, the 100th
+error, plus the `confusion`/`overflow` paths reached by threaded helpers) are
+`with_state`-bearing/FFI and would nest-panic under a live borrow. Resolved with
+a `#[must_use] ErrorOutcome` sentinel enum (`Continue`/`Halt`/`Hundred`/
+`Confusion(&CStr)`/`Overflow{what,n}`) + `ErrorOutcome::finish()`: the threaded
+`_in` cores do all the printing/state writes under the borrow and *return* the
+cold-abort sentinel; the thin global wrapper runs `finish()` (→
+`post_error_message`/`_tt_abort`/`confusion`/`overflow`) only after the borrow
+drops. Threaded helpers that call `error_in` propagate the outcome up to their
+wrapper. On a passing run the sentinel is always `Continue`.
+
+**Code (4 commits):**
+1. **error keystone** — `error_in(&mut EngineState) -> ErrorOutcome` (hot path
+   threaded over `errors`/`shipout`/`config` fields + `show_context_in`/
+   `print_*_in`); `error_here_with_diagnostic_in` (output.rs) and
+   `give_err_help_in` added. Deleted now-dead global wrappers `give_err_help`,
+   `show_context`, `diagnostic_print_file_line`, `print_in_mode` and the dead
+   getters `help_line`/`use_err_help`/`halt_on_error_p`.
+2. **errors.rs helper cluster** — `int_error`, `not_font_error_common` +
+   `not_{aat,aat_gr,ot,native}_font_error`, `mu_error`, `extra_right_brace`,
+   `you_cant` (returns `()` — no `error()` call), `report_illegal_case`,
+   `cs_error`, `box_error` all threaded onto `_in` cores; `box_error_in` uses
+   threaded `flush_node_list(&mut st.mem,…)` and defers its `confusion` via
+   `Confusion`. `privileged` left as-is (only raw `cur_list_mode` + the global
+   `report_illegal_case`, holds no borrow).
+3. **char_warning** — threaded onto `error_in` + threaded `make_string(&mut
+   st.strings)`; the `error()` and make_string-overflow cold paths both ride the
+   sentinel (`Overflow`). Deleted now-dead `print_hex`/`print_ucs_code` global
+   wrappers + `gave_char_warning_help` getter.
+4. **change_if_limit** — threaded; its cold `confusion("if")` (the reason
+   session 184 left it raw) now rides `ErrorOutcome::Confusion`.
+
+**Not done (recorded):** output.rs `show_whatever`/`issue_message` remain the
+only un-threaded print-family fns — both genuinely need the scanner
+(`get_x_token`/`the_toks`/`scan_toks`), bucket-D, not unblocked by `error_in`
+alone. `pre_error_message`/`post_error_message`/`fatal_error`/`overflow`/
+`confusion`/`pdf_error`/`runaway` stay global by design (they are the cold
+abort/print-and-die subtree, §5).
+
+**Tests:** `cargo check`+`fmt --check`; dashboard **29/2/7/4** after each commit
+(TRIP exercises `error()` heavily — the keystone's regression gate); rebuilt
+`target/release/tectonic`; `plan/scripts/corpus.sh check all`: **637 passed / 2
+diverged / 0 missing-golden**, only the known FP divergences `1905.00073v1` /
+`1905.00148v1`. Metrics: warnings **41** (held); `unsafe fn` **542 → 536**;
+`with_state(_mut)` call sites **1140 → 1146** (transient bridge-down wrappers for
+the newly-threaded leaves; retire as their scan/main_control callers thread).
+
+**Next:** the error/warning family is now threaded. The remaining output.rs
+targets (`show_whatever`/`issue_message`) and the deep error-emitter callers in
+`scan.rs`/`main_control.rs` are all gated on threading the scanner
+(`get_token`/`get_x_token`/`the_toks`/`scan_toks`) — that scanner slice is the
+natural next lever and unblocks them together (and lets the new error `_in`
+cores be called pass-through instead of via the bridge wrappers). Otherwise climb
+a fresh bridge host (`pagebuilder`/`main_control` tails) per the recon.
+
+---
+
 ## Idiom session 184 — 2026-06-14 — Execution: thread the output.rs diagnostic-warning cluster (+ font warnings)
 
 **Type:** execution (workstream 01 / fused `01b`+`01c`). Large low-docs batch
