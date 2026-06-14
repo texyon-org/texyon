@@ -5,7 +5,6 @@ use crate::output::font_mapping_warning;
 use crate::output::print_char;
 use crate::output::print_int;
 use crate::output::print_nl;
-use crate::output::print_raw_char;
 use crate::scan::get_tracing_fonts_state;
 use crate::texmfmp::gettexstring;
 use crate::texmfmp::maketexstring;
@@ -586,11 +585,16 @@ pub unsafe fn readFeatureNumber(
     s == e
 }
 
-// translated from xetex-ext.c:173 (print_utf8_str)
-pub unsafe fn print_utf8_str(mut str_: *const u8, mut len: c_int) {
+/// translated from xetex-ext.c:173 (print_utf8_str). Threaded core only — the
+/// global wrapper was removed once its callers (the font warnings) threaded.
+pub(crate) fn print_utf8_str_in(
+    st: &mut crate::state::EngineState,
+    mut str_: *const u8,
+    mut len: c_int,
+) {
     while len > 0 {
-        print_raw_char(*str_ as u16, true);
-        str_ = str_.add(1);
+        crate::output::print_raw_char_in(st, unsafe { *str_ } as u16, true);
+        str_ = unsafe { str_.add(1) };
         len -= 1;
     }
 }

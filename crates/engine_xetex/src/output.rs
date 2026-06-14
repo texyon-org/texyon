@@ -6,7 +6,6 @@ use crate::consts::{
     SELECTOR_TERM_ONLY, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::error;
-use crate::ext::print_utf8_str;
 use crate::scan::{get_token, scan_register_num, scan_toks, the_toks};
 use crate::state::EngineState;
 
@@ -3117,26 +3116,34 @@ pub unsafe extern "C" fn font_feature_warning(
     setting_name_p: *const libc::c_void,
     set_len: i32,
 ) {
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
-    print_nl_cstr(c"Unknown ".as_ptr());
+    crate::state::with_state_mut(|st| {
+        font_feature_warning_in(st, feature_name_p, feat_len, setting_name_p, set_len)
+    });
+}
+
+/// `&mut EngineState` core of [`font_feature_warning`].
+pub(crate) fn font_feature_warning_in(
+    st: &mut EngineState,
+    feature_name_p: *const libc::c_void,
+    feat_len: i32,
+    setting_name_p: *const libc::c_void,
+    set_len: i32,
+) {
+    begin_diagnostic_in(st);
+    diagnostic_begin_capture_warning_here_in(st);
+    print_nl_cstr_in(st, c"Unknown ".as_ptr());
     if set_len > 0 {
-        print_cstr(c"selector `".as_ptr());
-        print_utf8_str(setting_name_p as *const u8, set_len);
-        print_cstr(c"' for ".as_ptr());
+        print_cstr_in(st, c"selector `".as_ptr());
+        crate::ext::print_utf8_str_in(st, setting_name_p as *const u8, set_len);
+        print_cstr_in(st, c"' for ".as_ptr());
     }
-    print_cstr(c"feature `".as_ptr());
-    print_utf8_str(feature_name_p as *const u8, feat_len);
-    print_cstr(c"' in font `".as_ptr());
-    let nof = crate::globals::name_of_file();
-    let mut i = 0;
-    while *nof.offset(i) != 0 {
-        print_raw_char(*nof.offset(i) as u16, true);
-        i += 1;
-    }
-    print_cstr(c"'.".as_ptr());
-    capture_to_diagnostic(std::ptr::null_mut());
-    end_diagnostic(false);
+    print_cstr_in(st, c"feature `".as_ptr());
+    crate::ext::print_utf8_str_in(st, feature_name_p as *const u8, feat_len);
+    print_cstr_in(st, c"' in font `".as_ptr());
+    print_name_of_file_in(st);
+    print_cstr_in(st, c"'.".as_ptr());
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    end_diagnostic_in(st, false);
 }
 
 /// translated from xetex-xetex0.c:8732 (font_mapping_warning)
@@ -3145,31 +3152,48 @@ pub unsafe fn font_mapping_warning(
     mapping_name_len: i32,
     warning_type: i32,
 ) {
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
+    crate::state::with_state_mut(|st| {
+        font_mapping_warning_in(st, mapping_name_p, mapping_name_len, warning_type)
+    });
+}
+
+/// `&mut EngineState` core of [`font_mapping_warning`].
+pub(crate) fn font_mapping_warning_in(
+    st: &mut EngineState,
+    mapping_name_p: *const libc::c_void,
+    mapping_name_len: i32,
+    warning_type: i32,
+) {
+    begin_diagnostic_in(st);
+    diagnostic_begin_capture_warning_here_in(st);
     if warning_type == 0 {
-        print_nl_cstr(c"Loaded mapping `".as_ptr());
+        print_nl_cstr_in(st, c"Loaded mapping `".as_ptr());
     } else {
-        print_nl_cstr(c"Font mapping `".as_ptr());
+        print_nl_cstr_in(st, c"Font mapping `".as_ptr());
     }
-    print_utf8_str(mapping_name_p as *const u8, mapping_name_len);
-    print_cstr(c"' for font `".as_ptr());
-    let nof = crate::globals::name_of_file();
-    let mut i = 0;
-    while *nof.offset(i) != 0 {
-        print_raw_char(*nof.offset(i) as u16, true);
+    crate::ext::print_utf8_str_in(st, mapping_name_p as *const u8, mapping_name_len);
+    print_cstr_in(st, c"' for font `".as_ptr());
+    print_name_of_file_in(st);
+    match warning_type {
+        1 => print_cstr_in(st, c"' not found.".as_ptr()),
+        2 => {
+            print_cstr_in(st, c"' not usable;".as_ptr());
+            print_nl_cstr_in(st, c"bad mapping file or incorrect mapping type.".as_ptr());
+        }
+        _ => print_cstr_in(st, c"'.".as_ptr()),
+    }
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    end_diagnostic_in(st, false);
+}
+
+/// Print the NUL-terminated `name_of_file` bytes via `print_raw_char`.
+fn print_name_of_file_in(st: &mut EngineState) {
+    let mut i = 0usize;
+    while i < st.input.name_of_file.len() && st.input.name_of_file[i] != 0 {
+        let b = st.input.name_of_file[i] as u16;
+        print_raw_char_in(st, b, true);
         i += 1;
     }
-    match warning_type {
-        1 => print_cstr(c"' not found.".as_ptr()),
-        2 => {
-            print_cstr(c"' not usable;".as_ptr());
-            print_nl_cstr(c"bad mapping file or incorrect mapping type.".as_ptr());
-        }
-        _ => print_cstr(c"'.".as_ptr()),
-    }
-    capture_to_diagnostic(std::ptr::null_mut());
-    end_diagnostic(false);
 }
 
 // ---------------------------------------------------------------------------
