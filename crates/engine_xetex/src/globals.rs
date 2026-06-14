@@ -3111,10 +3111,6 @@ pub(crate) fn set_long_state(v: u8) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn gave_char_warning_help() -> bool {
-    crate::state::with_state(|state| state.fonts.gave_char_warning_help)
-}
-#[inline]
 pub(crate) fn set_gave_char_warning_help(v: bool) {
     crate::state::with_state_mut(|state| {
         state.fonts.gave_char_warning_help = v;

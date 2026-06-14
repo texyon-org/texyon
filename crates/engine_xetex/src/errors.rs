@@ -98,6 +98,11 @@ pub(crate) enum ErrorOutcome {
     Hundred,
     /// A threaded helper hit a `confusion(...)` cold path under the borrow.
     Confusion(&'static std::ffi::CStr),
+    /// A threaded helper hit an `overflow(what, n)` cold path under the borrow.
+    Overflow {
+        what: &'static std::ffi::CStr,
+        n: i32,
+    },
 }
 
 impl ErrorOutcome {
@@ -115,6 +120,7 @@ impl ErrorOutcome {
                 _tt_abort(c"halted after 100 potentially-recoverable errors".as_ptr());
             }
             ErrorOutcome::Confusion(msg) => confusion(msg.as_ptr()),
+            ErrorOutcome::Overflow { what, n } => overflow(what.as_ptr(), n),
         }
     }
 }

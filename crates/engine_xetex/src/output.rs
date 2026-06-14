@@ -6,6 +6,7 @@ use crate::consts::{
     SELECTOR_TERM_ONLY, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::error;
+use crate::errors::{error_in, ErrorOutcome};
 use crate::scan::{get_token, scan_register_num, scan_toks, the_toks};
 use crate::state::EngineState;
 
@@ -162,11 +163,7 @@ pub(crate) fn print_int_in(st: &mut EngineState, mut n: i32) {
 /// Print an integer in hexadecimal with a leading `"`.
 ///
 /// translated from xetex-output.c:658 (print_hex)
-pub unsafe fn print_hex(n: i32) {
-    crate::state::with_state_mut(|st| print_hex_in(st, n));
-}
-
-/// `&mut EngineState` core of [`print_hex`].
+/// `&mut EngineState` core of `print_hex`.
 pub(crate) fn print_hex_in(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
     print_char_in(st, b'"' as i32);
@@ -188,11 +185,7 @@ pub(crate) fn print_hex_in(st: &mut EngineState, mut n: i32) {
 /// Print a Unicode scalar value in `U+XXXX` form.
 ///
 /// translated from xetex-output.c:749 (print_ucs_code)
-pub unsafe fn print_ucs_code(n: i32) {
-    crate::state::with_state_mut(|st| print_ucs_code_in(st, n));
-}
-
-/// `&mut EngineState` core of [`print_ucs_code`].
+/// `&mut EngineState` core of `print_ucs_code`.
 pub(crate) fn print_ucs_code_in(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
     print_cstr_in(st, c"U+".as_ptr());
@@ -3848,88 +3841,112 @@ pub unsafe fn show_whatever() {
 }
 // translated from xetex-xetex0.c:6428 (char_warning)
 pub unsafe fn char_warning(f: i32, c: i32) {
+    crate::state::with_state_mut(|st| char_warning_in(st, f, c)).finish();
+}
+
+/// `&mut EngineState` core of [`char_warning`]. Returns the cold-abort sentinel
+/// (§5) for the `error()` / `make_string` overflow paths.
+pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome {
     const INT_PAR_TRACING_LOST_CHARS: i32 = 35; // xetex_format.h:70
     const INT_PAR_TRACING_ONLINE: i32 = 29; // xetex_format.h:64
 
-    let tracing_lost = eqtb_b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS);
+    let tracing_lost = st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS);
     if tracing_lost > 0 {
-        let old_setting = eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE);
+        let old_setting = st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE);
         if tracing_lost > 1 {
-            crate::globals::set_eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE, 1);
+            st.eqtb.set_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE, 1);
         }
         if tracing_lost > 2 {
-            if crate::globals::file_line_error_style_p() != 0 {
-                crate::output::print_file_line();
+            if st.config.file_line_error_style_p != 0 {
+                print_file_line_in(st);
             } else {
-                crate::output::print_nl_cstr(c"! ".as_ptr());
+                print_nl_cstr_in(st, c"! ".as_ptr());
             }
-            crate::output::print_cstr(c"Missing character: There is no ".as_ptr());
+            print_cstr_in(st, c"Missing character: There is no ".as_ptr());
         } else {
-            crate::output::begin_diagnostic();
-            crate::output::diagnostic_begin_capture_warning_here();
-            crate::output::print_nl_cstr(c"Missing character: There is no ".as_ptr());
+            begin_diagnostic_in(st);
+            diagnostic_begin_capture_warning_here_in(st);
+            print_nl_cstr_in(st, c"Missing character: There is no ".as_ptr());
         }
         if c < 65536 {
-            crate::output::print(c);
+            print_in(st, c);
         } else {
-            crate::output::print_char(c);
+            print_char_in(st, c);
         }
-        crate::output::print_cstr(c" (".as_ptr());
-        let fa = crate::globals::font_area_entry(f);
+        print_cstr_in(st, c" (".as_ptr());
+        let fa = st.fonts.font_area[f as usize];
         if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-            crate::output::print_ucs_code(c);
+            print_ucs_code_in(st, c);
         } else {
-            crate::output::print_hex(c);
+            print_hex_in(st, c);
         }
-        crate::output::print_char(b')' as i32);
-        crate::output::print_cstr(c" in font ".as_ptr());
-        crate::output::print(crate::globals::font_name_entry(f));
+        print_char_in(st, b')' as i32);
+        print_cstr_in(st, c" in font ".as_ptr());
+        print_in(st, st.fonts.font_name[f as usize]);
         if tracing_lost < 3 {
-            crate::output::print_char(b'!' as i32);
+            print_char_in(st, b'!' as i32);
         }
-        crate::globals::set_eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE, old_setting);
+        st.eqtb
+            .set_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE, old_setting);
         if tracing_lost > 2 {
-            crate::globals::set_help_ptr(0);
-            error();
+            st.errors.help_ptr = 0;
+            let outcome = error_in(st);
+            if !matches!(outcome, ErrorOutcome::Continue) {
+                return outcome;
+            }
         } else {
-            capture_to_diagnostic(std::ptr::null_mut());
-            crate::output::end_diagnostic(false);
+            capture_to_diagnostic_in(st, std::ptr::null_mut());
+            end_diagnostic_in(st, false);
         }
     }
 
     // Emit a machine-readable warning via ttstub_issue_warning.
-    let font_name_c = crate::texmfmp::gettexstring(crate::globals::font_name_entry(f));
-    let prev_sel = crate::globals::selector();
-    crate::globals::set_selector(SELECTOR_NEW_STRING);
+    let font_name_c =
+        unsafe { crate::texmfmp::gettexstring_in(&st.strings, st.fonts.font_name[f as usize]) };
+    let prev_sel = st.shipout.selector;
+    st.shipout.selector = SELECTOR_NEW_STRING;
     if c < 0x10000 {
-        crate::output::print(c);
+        print_in(st, c);
     } else {
-        crate::output::print_char(c);
+        print_char_in(st, c);
     }
-    crate::globals::set_selector(prev_sel);
-    let s = crate::string_pool::make_string_global();
-    let chr_c = crate::texmfmp::gettexstring(s);
+    st.shipout.selector = prev_sel;
+    let s = match crate::string_pool::make_string(&mut st.strings) {
+        Ok(s) => s,
+        Err(_) => {
+            return ErrorOutcome::Overflow {
+                what: c"number of strings",
+                n: st.strings.max_strings - st.strings.init_str_ptr,
+            }
+        }
+    };
+    let chr_c = unsafe { crate::texmfmp::gettexstring_in(&st.strings, s) };
     // flush_string: str_ptr--, pool_ptr = str_start[str_ptr - TOO_BIG_CHAR]
-    set_str_ptr(str_ptr() - 1);
-    set_pool_ptr(crate::globals::str_start(str_ptr() - TOO_BIG_CHAR));
-    ttstub_issue_warning(
-        c"could not represent character \"%s\" (0x%x) in font \"%s\"".as_ptr(),
-        chr_c,
-        c as u32,
-        font_name_c,
-    );
-    libc::free(font_name_c as *mut libc::c_void);
-    libc::free(chr_c as *mut libc::c_void);
-    if !crate::globals::gave_char_warning_help() {
+    st.strings.str_ptr -= 1;
+    st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    unsafe {
         ttstub_issue_warning(
-            c"  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to"
-                .as_ptr(),
+            c"could not represent character \"%s\" (0x%x) in font \"%s\"".as_ptr(),
+            chr_c,
+            c as u32,
+            font_name_c,
         );
-        ttstub_issue_warning(
-            c"  choose a different font that covers the unrepresentable character(s)".as_ptr(),
-        );
-        crate::globals::set_gave_char_warning_help(true);
+        libc::free(font_name_c as *mut libc::c_void);
+        libc::free(chr_c as *mut libc::c_void);
     }
+    if !st.fonts.gave_char_warning_help {
+        unsafe {
+            ttstub_issue_warning(
+                c"  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to"
+                    .as_ptr(),
+            );
+            ttstub_issue_warning(
+                c"  choose a different font that covers the unrepresentable character(s)".as_ptr(),
+            );
+        }
+        st.fonts.gave_char_warning_help = true;
+    }
+    ErrorOutcome::Continue
 }
 /// translated from xetex-xetex0.c:735 (show_box)
 pub unsafe fn show_box(p: i32) {
