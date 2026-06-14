@@ -3976,11 +3976,8 @@ pub(crate) fn show_box_in(st: &mut EngineState, p: i32) {
 }
 
 /// translated from xetex-xetex0.c:117 (short_display)
-pub unsafe fn short_display(p: i32) {
-    crate::state::with_state_mut(|st| short_display_in(st, p));
-}
-
-/// `&mut EngineState` core of [`short_display`].
+/// `&mut EngineState` core of `short_display` (the global wrapper was retired
+/// once the threaded `print_*_common_ending_in` cores became its only callers).
 pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
     while p > 0 {
         if p >= st.mem.hi_mem_min {

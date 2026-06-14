@@ -16,12 +16,12 @@ use crate::consts::{
 use crate::errors::error;
 use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
-use crate::globals::{cur_val, mem_b32s1, set_cur_val, set_help_line, set_help_ptr, temp_ptr};
+use crate::globals::{cur_val, set_cur_val, set_help_line, set_help_ptr, temp_ptr};
 use crate::node::{
     AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, NodePtr, RuleDimen, SaNode, VListNode,
     WhatsitNode,
 };
-use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, short_display, show_box};
+use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::units::NodeType;
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
@@ -167,7 +167,7 @@ fn classify_native_word_with_font_hp(
 }
 
 #[derive(Copy, Clone)]
-enum PackDiag {
+pub(crate) enum PackDiag {
     HUnderfull { badness: i32, loose: bool },
     HOverfull { excess: i32 },
     HTight { badness: i32 },
@@ -2448,77 +2448,94 @@ fn hpack_in(
 }
 
 fn print_hpack_diag(box_ptr: i32, diag: PackDiag) {
-    unsafe {
-        match diag {
-            PackDiag::HUnderfull { badness, loose } => {
-                crate::output::print_ln();
-                crate::output::diagnostic_begin_capture_warning_here();
-                if loose {
-                    crate::output::print_nl_cstr(c"Loose".as_ptr());
-                } else {
-                    crate::output::print_nl_cstr(c"Underfull".as_ptr());
-                }
-                crate::output::print_cstr(c" \\hbox (badness ".as_ptr());
-                crate::output::print_int(badness);
-            }
-            PackDiag::HOverfull { excess } => {
-                crate::output::print_ln();
-                crate::output::diagnostic_begin_capture_warning_here();
-                crate::output::print_nl_cstr(c"Overfull \\hbox (".as_ptr());
-                crate::output::print_scaled(excess);
-                crate::output::print_cstr(c"pt too wide".as_ptr());
-            }
-            PackDiag::HTight { badness } => {
-                crate::output::print_ln();
-                crate::output::diagnostic_begin_capture_warning_here();
-                crate::output::print_nl_cstr(c"Tight \\hbox (badness ".as_ptr());
-                crate::output::print_int(badness);
-            }
-            PackDiag::LrProblem { missing, extra } => {
-                crate::output::print_ln();
-                crate::output::diagnostic_begin_capture_warning_here();
-                crate::output::print_nl_cstr(c"\\endL or \\endR problem (".as_ptr());
-                crate::output::print_int(missing);
-                crate::output::print_cstr(c" missing, ".as_ptr());
-                crate::output::print_int(extra);
-                crate::output::print_cstr(c" extra".as_ptr());
-            }
-            PackDiag::VUnderfull { .. } | PackDiag::VOverfull { .. } | PackDiag::VTight { .. } => {
-                unreachable!("vpack diagnostic passed to hpack printer")
-            }
-        }
-        print_hpack_common_ending(box_ptr);
-    }
+    crate::state::with_state_mut(|st| print_hpack_diag_in(st, box_ptr, diag));
 }
 
-fn print_hpack_common_ending(box_ptr: i32) {
-    unsafe {
-        if crate::globals::output_active() {
-            crate::output::print_cstr(c") has occurred while \\output is active".as_ptr());
-        } else {
-            let pack_begin_line = crate::globals::pack_begin_line();
-            if pack_begin_line != 0 {
-                if pack_begin_line > 0 {
-                    crate::output::print_cstr(c") in paragraph at lines ".as_ptr());
-                } else {
-                    crate::output::print_cstr(c") in alignment at lines ".as_ptr());
-                }
-                crate::output::print_int(pack_begin_line.abs());
-                crate::output::print_cstr(c"--".as_ptr());
+/// Threaded core (Phase C): emit the over/underfull-`\hbox` diagnostic under a
+/// live `&mut EngineState` borrow, so a threaded caller (e.g. the line breaker)
+/// can print it in-order between its per-line islands without dropping the
+/// borrow. Byte-identical to [`print_hpack_diag`].
+pub(crate) fn print_hpack_diag_in(
+    st: &mut crate::state::EngineState,
+    box_ptr: i32,
+    diag: PackDiag,
+) {
+    use crate::output::{
+        diagnostic_begin_capture_warning_here_in, print_cstr_in, print_int_in, print_ln_in,
+        print_nl_cstr_in, print_scaled_in,
+    };
+    match diag {
+        PackDiag::HUnderfull { badness, loose } => {
+            print_ln_in(st);
+            diagnostic_begin_capture_warning_here_in(st);
+            if loose {
+                print_nl_cstr_in(st, c"Loose".as_ptr());
             } else {
-                crate::output::print_cstr(c") detected at line ".as_ptr());
+                print_nl_cstr_in(st, c"Underfull".as_ptr());
             }
-            crate::output::print_int(crate::globals::line());
+            print_cstr_in(st, c" \\hbox (badness ".as_ptr());
+            print_int_in(st, badness);
         }
-        capture_to_diagnostic(std::ptr::null_mut());
-        crate::output::print_ln();
-        crate::globals::set_font_in_short_display(0);
-        short_display(mem_b32s1(box_ptr + 5));
-        crate::output::print_ln();
-        crate::output::begin_diagnostic();
-        show_box(box_ptr);
-        crate::output::end_diagnostic(true);
+        PackDiag::HOverfull { excess } => {
+            print_ln_in(st);
+            diagnostic_begin_capture_warning_here_in(st);
+            print_nl_cstr_in(st, c"Overfull \\hbox (".as_ptr());
+            print_scaled_in(st, excess);
+            print_cstr_in(st, c"pt too wide".as_ptr());
+        }
+        PackDiag::HTight { badness } => {
+            print_ln_in(st);
+            diagnostic_begin_capture_warning_here_in(st);
+            print_nl_cstr_in(st, c"Tight \\hbox (badness ".as_ptr());
+            print_int_in(st, badness);
+        }
+        PackDiag::LrProblem { missing, extra } => {
+            print_ln_in(st);
+            diagnostic_begin_capture_warning_here_in(st);
+            print_nl_cstr_in(st, c"\\endL or \\endR problem (".as_ptr());
+            print_int_in(st, missing);
+            print_cstr_in(st, c" missing, ".as_ptr());
+            print_int_in(st, extra);
+            print_cstr_in(st, c" extra".as_ptr());
+        }
+        PackDiag::VUnderfull { .. } | PackDiag::VOverfull { .. } | PackDiag::VTight { .. } => {
+            unreachable!("vpack diagnostic passed to hpack printer")
+        }
     }
+    print_hpack_common_ending_in(st, box_ptr);
+}
+
+fn print_hpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: i32) {
+    use crate::output::{
+        begin_diagnostic_in, capture_to_diagnostic_in, end_diagnostic_in, print_cstr_in,
+        print_int_in, print_ln_in, short_display_in, show_box_in,
+    };
+    if st.shipout.output_active {
+        print_cstr_in(st, c") has occurred while \\output is active".as_ptr());
+    } else {
+        let pack_begin_line = st.scanner.pack_begin_line;
+        if pack_begin_line != 0 {
+            if pack_begin_line > 0 {
+                print_cstr_in(st, c") in paragraph at lines ".as_ptr());
+            } else {
+                print_cstr_in(st, c") in alignment at lines ".as_ptr());
+            }
+            print_int_in(st, pack_begin_line.abs());
+            print_cstr_in(st, c"--".as_ptr());
+        } else {
+            print_cstr_in(st, c") detected at line ".as_ptr());
+        }
+        print_int_in(st, crate::globals::line());
+    }
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    print_ln_in(st);
+    st.errors.font_in_short_display = 0;
+    let list = st.mem.b32s1(box_ptr + 5);
+    short_display_in(st, list);
+    print_ln_in(st);
+    begin_diagnostic_in(st);
+    show_box_in(st, box_ptr);
+    end_diagnostic_in(st, true);
 }
 
 /// translated from xetex-xetex0.c:6972 (hpack)
@@ -2757,64 +2774,78 @@ fn vpackage_in(
 }
 
 fn print_vpack_diag(box_ptr: i32, diag: PackDiag) {
-    unsafe {
-        match diag {
-            PackDiag::VUnderfull { badness, loose } => {
-                crate::output::print_ln();
-                crate::output::diagnostic_begin_capture_warning_here();
-                if loose {
-                    crate::output::print_nl_cstr(c"Loose".as_ptr());
-                } else {
-                    crate::output::print_nl_cstr(c"Underfull".as_ptr());
-                }
-                crate::output::print_cstr(c" \\vbox (badness ".as_ptr());
-                crate::output::print_int(badness);
-            }
-            PackDiag::VOverfull { excess } => {
-                crate::output::print_ln();
-                crate::output::diagnostic_begin_capture_warning_here();
-                crate::output::print_nl_cstr(c"Overfull \\vbox (".as_ptr());
-                crate::output::print_scaled(excess);
-                crate::output::print_cstr(c"pt too high".as_ptr());
-            }
-            PackDiag::VTight { badness } => {
-                crate::output::print_ln();
-                crate::output::diagnostic_begin_capture_warning_here();
-                crate::output::print_nl_cstr(c"Tight \\vbox (badness ".as_ptr());
-                crate::output::print_int(badness);
-            }
-            PackDiag::HUnderfull { .. }
-            | PackDiag::HOverfull { .. }
-            | PackDiag::HTight { .. }
-            | PackDiag::LrProblem { .. } => {
-                unreachable!("hpack diagnostic passed to vpack printer")
-            }
-        }
-        print_vpack_common_ending(box_ptr);
-    }
+    crate::state::with_state_mut(|st| print_vpack_diag_in(st, box_ptr, diag));
 }
 
-fn print_vpack_common_ending(box_ptr: i32) {
-    unsafe {
-        if crate::globals::output_active() {
-            crate::output::print_cstr(c") has occurred while \\output is active".as_ptr());
-        } else {
-            let pack_begin_line = crate::globals::pack_begin_line();
-            if pack_begin_line != 0 {
-                crate::output::print_cstr(c") in alignment at lines ".as_ptr());
-                crate::output::print_int(pack_begin_line.abs());
-                crate::output::print_cstr(c"--".as_ptr());
+/// Threaded core (Phase C): emit the over/underfull-`\vbox` diagnostic under a
+/// live `&mut EngineState` borrow. Byte-identical to [`print_vpack_diag`].
+pub(crate) fn print_vpack_diag_in(
+    st: &mut crate::state::EngineState,
+    box_ptr: i32,
+    diag: PackDiag,
+) {
+    use crate::output::{
+        diagnostic_begin_capture_warning_here_in, print_cstr_in, print_int_in, print_ln_in,
+        print_nl_cstr_in, print_scaled_in,
+    };
+    match diag {
+        PackDiag::VUnderfull { badness, loose } => {
+            print_ln_in(st);
+            diagnostic_begin_capture_warning_here_in(st);
+            if loose {
+                print_nl_cstr_in(st, c"Loose".as_ptr());
             } else {
-                crate::output::print_cstr(c") detected at line ".as_ptr());
+                print_nl_cstr_in(st, c"Underfull".as_ptr());
             }
-            crate::output::print_int(crate::globals::line());
-            crate::output::print_ln();
+            print_cstr_in(st, c" \\vbox (badness ".as_ptr());
+            print_int_in(st, badness);
         }
-        capture_to_diagnostic(std::ptr::null_mut());
-        crate::output::begin_diagnostic();
-        show_box(box_ptr);
-        crate::output::end_diagnostic(true);
+        PackDiag::VOverfull { excess } => {
+            print_ln_in(st);
+            diagnostic_begin_capture_warning_here_in(st);
+            print_nl_cstr_in(st, c"Overfull \\vbox (".as_ptr());
+            print_scaled_in(st, excess);
+            print_cstr_in(st, c"pt too high".as_ptr());
+        }
+        PackDiag::VTight { badness } => {
+            print_ln_in(st);
+            diagnostic_begin_capture_warning_here_in(st);
+            print_nl_cstr_in(st, c"Tight \\vbox (badness ".as_ptr());
+            print_int_in(st, badness);
+        }
+        PackDiag::HUnderfull { .. }
+        | PackDiag::HOverfull { .. }
+        | PackDiag::HTight { .. }
+        | PackDiag::LrProblem { .. } => {
+            unreachable!("hpack diagnostic passed to vpack printer")
+        }
     }
+    print_vpack_common_ending_in(st, box_ptr);
+}
+
+fn print_vpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: i32) {
+    use crate::output::{
+        begin_diagnostic_in, capture_to_diagnostic_in, end_diagnostic_in, print_cstr_in,
+        print_int_in, print_ln_in, show_box_in,
+    };
+    if st.shipout.output_active {
+        print_cstr_in(st, c") has occurred while \\output is active".as_ptr());
+    } else {
+        let pack_begin_line = st.scanner.pack_begin_line;
+        if pack_begin_line != 0 {
+            print_cstr_in(st, c") in alignment at lines ".as_ptr());
+            print_int_in(st, pack_begin_line.abs());
+            print_cstr_in(st, c"--".as_ptr());
+        } else {
+            print_cstr_in(st, c") detected at line ".as_ptr());
+        }
+        print_int_in(st, crate::globals::line());
+        print_ln_in(st);
+    }
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    begin_diagnostic_in(st);
+    show_box_in(st, box_ptr);
+    end_diagnostic_in(st, true);
 }
 
 /// translated from xetex-xetex0.c:7424 (vpackage)

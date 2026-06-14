@@ -3849,9 +3849,6 @@ pub(crate) fn cur_c() -> i32 {
 pub(crate) fn cur_i() -> crate::mem_types::B16x4 {
     crate::state::with_state(|s| s.scanner.cur_i)
 }
-pub(crate) fn pack_begin_line() -> i32 {
-    crate::state::with_state(|s| s.scanner.pack_begin_line)
-}
 #[inline]
 pub(crate) fn set_pack_begin_line(v: i32) {
     crate::state::with_state_mut(|s| {
@@ -4158,13 +4155,6 @@ pub(crate) fn set_fill_width(k: usize, v: i32) {
         state.linebreak.fill_width[k] = v;
     });
 }
-#[inline]
-pub(crate) fn set_font_in_short_display(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.font_in_short_display = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // force_eof (xetex-ini.c:159 / xetex-xetexd.h:524)
 // ---------------------------------------------------------------------------
