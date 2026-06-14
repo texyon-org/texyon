@@ -3,7 +3,7 @@
 //! Functions involving `makepdftime` / the C-static state (`last_source_name`,
 //! `start_time_str`) or complex bridge calls remain in C for now.
 
-use crate::globals::{pool_ptr, pool_size, set_pool_ptr, set_str_pool, str_pool_entry, str_start};
+use crate::globals::{pool_ptr, pool_size, set_pool_ptr, set_str_pool};
 
 // ---------------------------------------------------------------------------
 // C externs needed by this module
@@ -115,6 +115,14 @@ pub unsafe fn get_seconds_and_micros(seconds: *mut i32, micros: *mut i32) {
 ///
 /// translated from xetex-texmfmp.c:282 (gettexstring)
 pub unsafe fn gettexstring(s: i32) -> *mut libc::c_char {
+    crate::state::with_state(|st| gettexstring_in(&st.strings, s))
+}
+
+/// `&StringsState` core of [`gettexstring`] — safe to call under a live state
+/// borrow (the global `gettexstring` reads the pool through `with_state`).
+pub unsafe fn gettexstring_in(strings: &crate::state::StringsState, s: i32) -> *mut libc::c_char {
+    let str_start = |k: i32| strings.str_start[k as usize];
+    let str_pool_entry = |k: i32| strings.str_pool[k as usize];
     let len: i32 = if s >= 65536 {
         str_start(s + 1 - 65536) - str_start(s - 65536)
     } else {

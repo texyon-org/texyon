@@ -750,18 +750,6 @@ pub(crate) fn str_pool_ptr(k: i32) -> *const u16 {
 }
 
 // ---------------------------------------------------------------------------
-// current_diagnostic setter
-// ---------------------------------------------------------------------------
-
-/// Sets `current_diagnostic` to `v` (pass null to clear).
-#[inline]
-pub(crate) fn set_current_diagnostic(v: *mut std::ffi::c_void) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.current_diagnostic = v;
-    });
-}
-
-// ---------------------------------------------------------------------------
 // in_open / full_source_filename_stack / line_stack / file_line_error_style_p
 // ---------------------------------------------------------------------------
 
@@ -1046,12 +1034,6 @@ pub(crate) fn set_write_file(i: usize, v: usize) {
     crate::state::with_state_mut(|s| {
         s.shipout.write_file[i] = v;
     });
-}
-
-/// Returns the current diagnostic capture pointer (null = no active capture).
-#[inline]
-pub(crate) fn current_diagnostic() -> *mut std::ffi::c_void {
-    crate::state::with_state(|s| s.shipout.current_diagnostic)
 }
 
 // ---------------------------------------------------------------------------
@@ -2782,10 +2764,6 @@ pub(crate) fn set_cur_ptr(v: i32) {
 // shown_mode
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn shown_mode() -> i16 {
-    crate::state::with_state(|s| s.scanner.shown_mode)
-}
 #[inline]
 pub(crate) fn set_shown_mode(v: i16) {
     crate::state::with_state_mut(|s| {

@@ -25,6 +25,8 @@ PRINT_FNS = {
     "print_fam_and_char", "print_glue", "print_delimiter", "print_rule_dimen",
     "print_font_and_char", "print_file_name", "sprint_cs", "print_subsidiary_data",
     "print_in_mode", "short_display", "show_node_list",
+    "begin_diagnostic", "end_diagnostic", "capture_to_diagnostic",
+    "diagnostic_begin_capture_warning_here",
 }
 
 # scalar getters NAME() -> expr
@@ -39,6 +41,10 @@ GETTERS = {
     "base_ptr": "st.input.base_ptr", "input_ptr": "st.input.input_ptr",
     "in_open": "st.input.in_open", "old_setting": "st.shipout.old_setting",
     "history": "st.errors.history",
+    "cur_boundary": "st.save_stack.cur_boundary", "cur_level": "st.save_stack.cur_level",
+    "cur_group": "st.save_stack.cur_group", "cond_ptr": "st.scanner.cond_ptr",
+    "if_limit": "st.scanner.if_limit", "cur_if": "st.scanner.cur_if",
+    "if_line": "st.scanner.if_line", "shown_mode": "st.scanner.shown_mode",
 }
 
 # clean prefix-call replace NAME( -> NEWPREFIX(
@@ -63,6 +69,14 @@ INDEXED = {
     "trick_buf": ("st.errors.trick_buf", ""),
     "page_so_far": ("st.shipout.page_so_far", ""),
     "cur_mark": ("st.scanner.cur_mark", ""),
+    "grp_stack": ("st.input.grp_stack", " as usize"),
+    "if_stack": ("st.input.if_stack", " as usize"),
+}
+
+# two-arg indexed setters: NAME(k, v) -> prefix[(k) as usize] = v
+INDEXED_SETTERS = {
+    "set_grp_stack": "st.input.grp_stack",
+    "set_if_stack": "st.input.if_stack",
 }
 
 # nest field NAME(arg) -> st.input.nest[arg as usize].field  (aux ones wrap unsafe)
@@ -79,6 +93,9 @@ SETTERS = {
     "set_first_count": "st.errors.first_count", "set_tally": "st.errors.tally",
     "set_selector": "st.shipout.selector", "set_trick_count": "st.errors.trick_count",
     "set_old_setting": "st.shipout.old_setting", "set_history": "st.errors.history",
+    "set_cond_ptr": "st.scanner.cond_ptr", "set_if_limit": "st.scanner.if_limit",
+    "set_cur_if": "st.scanner.cur_if", "set_if_line": "st.scanner.if_line",
+    "set_shown_mode": "st.scanner.shown_mode", "set_cur_group": "st.save_stack.cur_group",
 }
 
 
@@ -182,6 +199,12 @@ def transform_body(body):
     if "set_input_stack" in body:
         body = apply_call(body, "set_input_stack",
                           lambda a: (lambda p: f"st.input.input_stack[{p[0].strip()} as usize] = {p[1].strip()}")(split_top(a)))
+    for name, pre in INDEXED_SETTERS.items():
+        if name in body:
+            body = apply_call(
+                body, name,
+                lambda a, p=pre: (lambda q: f"{p}[({q[0].strip()}) as usize] = {q[1].strip()}")(split_top(a)),
+            )
     body = body.replace("crate::globals::save_cur_list_to_nest", "save_cur_list_to_nest")
     if "save_cur_list_to_nest" in body:
         body = apply_call(body, "save_cur_list_to_nest",

@@ -9,19 +9,13 @@ use crate::errors::error;
 use crate::ext::print_utf8_str;
 use crate::scan::{get_token, scan_register_num, scan_toks, the_toks};
 use crate::state::EngineState;
-use crate::texmfmp::gettexstring;
 
 use crate::globals::{
-    base_ptr, cond_ptr, cur_boundary, cur_chr, cur_cmd, cur_cs, cur_group, cur_if, cur_input,
-    cur_level, cur_list_mode, cur_val, current_diagnostic, def_ref, eqtb_b32s1,
-    file_line_error_style_p, file_offset, full_source_filename_stack, grp_stack, history, if_limit,
-    if_line, if_stack, in_open, init_pool_ptr, input_ptr, input_stack, line, line_stack,
-    max_print_line, mem_b16s0, mem_b16s1, mem_b32s1, pool_ptr, pool_size, rust_stdout, save_ptr,
-    save_stack_b16s0, save_stack_b32s1, selector, set_base_ptr, set_cond_ptr, set_cur_group,
-    set_cur_if, set_cur_level, set_current_diagnostic, set_grp_stack, set_help_line, set_help_ptr,
-    set_history, set_if_limit, set_if_line, set_if_stack, set_input_stack, set_mem_b16s1,
-    set_mem_b32s1, set_pool_ptr, set_save_ptr, set_selector, set_shown_mode, set_str_ptr,
-    shown_mode, str_ptr, str_start, term_offset,
+    cond_ptr, cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, def_ref, eqtb_b32s1,
+    file_line_error_style_p, file_offset, init_pool_ptr, line, max_print_line, mem_b16s0,
+    mem_b16s1, mem_b32s1, pool_ptr, pool_size, rust_stdout, selector, set_help_line, set_help_ptr,
+    set_if_limit, set_mem_b16s1, set_mem_b32s1, set_pool_ptr, set_selector, set_str_ptr, str_ptr,
+    str_start, term_offset,
 };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
@@ -694,11 +688,16 @@ pub(crate) fn print_current_string_in(st: &mut EngineState) {
 ///
 /// translated from xetex-output.c:14 (capture_to_diagnostic)
 pub unsafe fn capture_to_diagnostic(diagnostic: *mut std::ffi::c_void) {
-    let cur = current_diagnostic();
+    crate::state::with_state_mut(|st| capture_to_diagnostic_in(st, diagnostic));
+}
+
+/// `&mut EngineState` core of [`capture_to_diagnostic`].
+pub(crate) fn capture_to_diagnostic_in(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
+    let cur = st.shipout.current_diagnostic;
     if !cur.is_null() {
-        ttstub_diag_finish(cur);
+        unsafe { ttstub_diag_finish(cur) };
     }
-    set_current_diagnostic(diagnostic);
+    st.shipout.current_diagnostic = diagnostic;
 }
 
 // ---------------------------------------------------------------------------
@@ -709,21 +708,36 @@ pub unsafe fn capture_to_diagnostic(diagnostic: *mut std::ffi::c_void) {
 ///
 /// translated from xetex-output.c:24 (diagnostic_print_file_line — was static)
 unsafe fn diagnostic_print_file_line(diagnostic: *mut std::ffi::c_void) {
-    let mut level = in_open();
-    while level > 0 && full_source_filename_stack(level) == 0 {
+    crate::state::with_state_mut(|st| diagnostic_print_file_line_in(st, diagnostic));
+}
+
+/// `&mut EngineState` core of [`diagnostic_print_file_line`].
+pub(crate) fn diagnostic_print_file_line_in(
+    st: &mut EngineState,
+    diagnostic: *mut std::ffi::c_void,
+) {
+    let mut level = st.input.in_open;
+    while level > 0 && st.input.full_source_filename_stack[level as usize] == 0 {
         level -= 1;
     }
     if level == 0 {
         unsafe { ttbc_diag_append(diagnostic, c"!".as_ptr()) };
     } else {
-        let source_line = if level != in_open() {
-            line_stack(level + 1)
+        let source_line = if level != st.input.in_open {
+            st.input.line_stack[(level + 1) as usize]
         } else {
             line()
         };
-        let filename = gettexstring(full_source_filename_stack(level));
-        ttstub_diag_printf(diagnostic, c"%s:%d: ".as_ptr(), filename, source_line);
-        libc::free(filename as *mut std::ffi::c_void);
+        let filename = unsafe {
+            crate::texmfmp::gettexstring_in(
+                &st.strings,
+                st.input.full_source_filename_stack[level as usize],
+            )
+        };
+        unsafe {
+            ttstub_diag_printf(diagnostic, c"%s:%d: ".as_ptr(), filename, source_line);
+            libc::free(filename as *mut std::ffi::c_void);
+        }
     }
 }
 
@@ -735,9 +749,16 @@ unsafe fn diagnostic_print_file_line(diagnostic: *mut std::ffi::c_void) {
 ///
 /// translated from xetex-output.c:48 (diagnostic_begin_capture_warning_here)
 pub unsafe fn diagnostic_begin_capture_warning_here() -> *mut std::ffi::c_void {
-    let warning = ttbc_diag_begin_warning();
-    diagnostic_print_file_line(warning);
-    capture_to_diagnostic(warning);
+    crate::state::with_state_mut(|st| diagnostic_begin_capture_warning_here_in(st))
+}
+
+/// `&mut EngineState` core of [`diagnostic_begin_capture_warning_here`].
+pub(crate) fn diagnostic_begin_capture_warning_here_in(
+    st: &mut EngineState,
+) -> *mut std::ffi::c_void {
+    let warning = unsafe { ttbc_diag_begin_warning() };
+    diagnostic_print_file_line_in(st, warning);
+    capture_to_diagnostic_in(st, warning);
     warning
 }
 
@@ -1085,10 +1106,6 @@ pub(crate) fn end_diagnostic_in(st: &mut EngineState, blank_line: bool) {
 /// Print a textual description of the current TeX mode m.
 ///
 /// translated from xetex-xetex0.c:1327 (print_mode)
-pub unsafe fn print_mode(m: i32) {
-    crate::state::with_state_mut(|st| print_mode_in(st, m));
-}
-
 /// `&mut EngineState` core of [`print_mode`].
 pub(crate) fn print_mode_in(st: &mut EngineState, m: i32) {
     if m > 0 {
@@ -1136,10 +1153,6 @@ const MATH_LEFT_GROUP: u8 = 16;
 /// Print a textual name for the current group, with level and entry line.
 ///
 /// translated from xetex-xetex0.c:3464 (print_group)
-pub unsafe fn print_group(e: bool) {
-    crate::state::with_state_mut(|st| print_group_in(st, e));
-}
-
 /// `&mut EngineState` core of [`print_group`].
 pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
     let g = st.save_stack.cur_group;
@@ -2844,38 +2857,45 @@ pub(crate) fn print_meaning_in(st: &mut EngineState) {
 ///
 /// translated from xetex-xetex0.c:2961 (group_warning)
 pub unsafe fn group_warning() {
-    set_base_ptr(input_ptr());
-    set_input_stack(base_ptr(), cur_input());
-    let mut i = in_open();
+    crate::state::with_state_mut(|st| group_warning_in(st));
+}
+
+/// `&mut EngineState` core of [`group_warning`].
+pub(crate) fn group_warning_in(st: &mut EngineState) {
+    st.input.base_ptr = st.input.input_ptr;
+    st.input.input_stack[st.input.base_ptr as usize] = cur_input();
+    let mut i = st.input.in_open;
     let mut w = false;
-    while grp_stack(i) == cur_boundary() && i > 0 {
-        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 0 {
-            let mut bp = base_ptr();
-            while input_stack(bp).state == TOKEN_LIST || input_stack(bp).index as i32 > i {
+    while st.input.grp_stack[(i) as usize] == st.save_stack.cur_boundary && i > 0 {
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 0 {
+            let mut bp = st.input.base_ptr;
+            while st.input.input_stack[(bp) as usize].state == TOKEN_LIST
+                || st.input.input_stack[(bp) as usize].index as i32 > i
+            {
                 bp -= 1;
-                set_base_ptr(bp);
+                st.input.base_ptr = bp;
             }
-            if input_stack(base_ptr()).name > 17 {
+            if st.input.input_stack[(st.input.base_ptr) as usize].name > 17 {
                 w = true;
             }
         }
-        set_grp_stack(i, save_stack_b32s1(save_ptr()));
+        st.input.grp_stack[(i) as usize] = st.save_stack.b32s1(st.save_stack.save_ptr);
         i -= 1;
     }
     if w {
-        print_nl_cstr(c"Warning: ".as_ptr());
-        diagnostic_begin_capture_warning_here();
-        print_cstr(c"end of ".as_ptr());
-        print_group(true);
-        print_cstr(c" of a different file".as_ptr());
-        print_ln();
-        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 1 {
-            show_context();
+        print_nl_cstr_in(st, c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here_in(st);
+        print_cstr_in(st, c"end of ".as_ptr());
+        print_group_in(st, true);
+        print_cstr_in(st, c" of a different file".as_ptr());
+        print_ln_in(st);
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 1 {
+            show_context_in(st);
         }
-        if history() == HISTORY_SPOTLESS {
-            set_history(HISTORY_WARNING_ISSUED);
+        if st.errors.history == HISTORY_SPOTLESS {
+            st.errors.history = HISTORY_WARNING_ISSUED;
         }
-        capture_to_diagnostic(std::ptr::null_mut());
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
     }
 }
 
@@ -2887,41 +2907,48 @@ pub unsafe fn group_warning() {
 ///
 /// translated from xetex-xetex0.c:2998 (if_warning)
 pub unsafe fn if_warning() {
-    set_base_ptr(input_ptr());
-    set_input_stack(base_ptr(), cur_input());
-    let mut i = in_open();
+    crate::state::with_state_mut(|st| if_warning_in(st));
+}
+
+/// `&mut EngineState` core of [`if_warning`].
+pub(crate) fn if_warning_in(st: &mut EngineState) {
+    st.input.base_ptr = st.input.input_ptr;
+    st.input.input_stack[st.input.base_ptr as usize] = cur_input();
+    let mut i = st.input.in_open;
     let mut w = false;
-    while if_stack(i) == cond_ptr() {
-        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 0 {
-            let mut bp = base_ptr();
-            while input_stack(bp).state == TOKEN_LIST || input_stack(bp).index as i32 > i {
+    while st.input.if_stack[(i) as usize] == st.scanner.cond_ptr {
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 0 {
+            let mut bp = st.input.base_ptr;
+            while st.input.input_stack[(bp) as usize].state == TOKEN_LIST
+                || st.input.input_stack[(bp) as usize].index as i32 > i
+            {
                 bp -= 1;
-                set_base_ptr(bp);
+                st.input.base_ptr = bp;
             }
-            if input_stack(base_ptr()).name > 17 {
+            if st.input.input_stack[(st.input.base_ptr) as usize].name > 17 {
                 w = true;
             }
         }
-        set_if_stack(i, mem_b32s1(cond_ptr()));
+        st.input.if_stack[(i) as usize] = st.mem.b32s1(st.scanner.cond_ptr);
         i -= 1;
     }
     if w {
-        print_nl_cstr(c"Warning: ".as_ptr());
-        diagnostic_begin_capture_warning_here();
-        print_cstr(c"end of ".as_ptr());
-        print_cmd_chr(IF_TEST, cur_if() as i32);
-        if if_line() != 0 {
-            print_cstr(c" entered on line ".as_ptr());
-            print_int(if_line());
+        print_nl_cstr_in(st, c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here_in(st);
+        print_cstr_in(st, c"end of ".as_ptr());
+        print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
+        if st.scanner.if_line != 0 {
+            print_cstr_in(st, c" entered on line ".as_ptr());
+            print_int_in(st, st.scanner.if_line);
         }
-        print_cstr(c" of a different file".as_ptr());
-        print_ln();
-        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 1 {
-            show_context();
+        print_cstr_in(st, c" of a different file".as_ptr());
+        print_ln_in(st);
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 1 {
+            show_context_in(st);
         }
-        capture_to_diagnostic(std::ptr::null_mut());
-        if history() == HISTORY_SPOTLESS {
-            set_history(HISTORY_WARNING_ISSUED);
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        if st.errors.history == HISTORY_SPOTLESS {
+            st.errors.history = HISTORY_WARNING_ISSUED;
         }
     }
 }
@@ -2934,64 +2961,70 @@ pub unsafe fn if_warning() {
 ///
 /// translated from xetex-xetex0.c:3039 (file_warning)
 pub unsafe fn file_warning() {
+    crate::state::with_state_mut(|st| file_warning_in(st));
+}
+
+/// `&mut EngineState` core of [`file_warning`].
+pub(crate) fn file_warning_in(st: &mut EngineState) {
     // Save and restore save-stack / level / group state while scanning.
-    let p = save_ptr();
-    let l = cur_level();
-    let c = cur_group();
-    // Use cur_boundary() as the traversal pointer for groups.
-    set_save_ptr(cur_boundary());
-    while grp_stack(in_open()) != save_ptr() {
-        set_cur_level(cur_level() - 1);
-        print_nl_cstr(c"Warning: ".as_ptr());
-        diagnostic_begin_capture_warning_here();
-        print_cstr(c"end of file when ".as_ptr());
-        print_group(true);
-        print_cstr(c" is incomplete".as_ptr());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_cur_group(save_stack_b16s0(save_ptr()) as u8);
-        set_save_ptr(save_stack_b32s1(save_ptr()));
+    let p = st.save_stack.save_ptr;
+    let l = st.save_stack.cur_level;
+    let c = st.save_stack.cur_group;
+    // Use st.save_stack.cur_boundary as the traversal pointer for groups.
+    st.save_stack.save_ptr = st.save_stack.cur_boundary;
+    while st.input.grp_stack[(st.input.in_open) as usize] != st.save_stack.save_ptr {
+        st.save_stack.cur_level = st.save_stack.cur_level - 1;
+        print_nl_cstr_in(st, c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here_in(st);
+        print_cstr_in(st, c"end of file when ".as_ptr());
+        print_group_in(st, true);
+        print_cstr_in(st, c" is incomplete".as_ptr());
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.save_stack.cur_group =
+            unsafe { st.save_stack.data[(st.save_stack.save_ptr) as usize].b16.s0 } as u8;
+        st.save_stack.save_ptr = st.save_stack.b32s1(st.save_stack.save_ptr);
     }
-    set_save_ptr(p);
-    set_cur_level(l);
-    set_cur_group(c);
+    st.save_stack.save_ptr = p;
+    st.save_stack.cur_level = l;
+    st.save_stack.cur_group = c;
 
     // Traverse cond_ptr chain.
-    let cp = cond_ptr();
-    let il = if_limit();
-    let ci = cur_if();
-    let iln = if_line();
-    while if_stack(in_open()) != cond_ptr() {
-        print_nl_cstr(c"Warning: ".as_ptr());
-        diagnostic_begin_capture_warning_here();
-        print_cstr(c"end of file when ".as_ptr());
-        print_cmd_chr(IF_TEST, cur_if() as i32);
-        if if_limit() == FI_CODE {
-            print_esc_cstr(c"else".as_ptr());
+    let cp = st.scanner.cond_ptr;
+    let il = st.scanner.if_limit;
+    let ci = st.scanner.cur_if;
+    let iln = st.scanner.if_line;
+    while st.input.if_stack[(st.input.in_open) as usize] != st.scanner.cond_ptr {
+        print_nl_cstr_in(st, c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here_in(st);
+        print_cstr_in(st, c"end of file when ".as_ptr());
+        print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
+        if st.scanner.if_limit == FI_CODE {
+            print_esc_cstr_in(st, c"else".as_ptr());
         }
-        if if_line() != 0 {
-            print_cstr(c" entered on line ".as_ptr());
-            print_int(if_line());
+        if st.scanner.if_line != 0 {
+            print_cstr_in(st, c" entered on line ".as_ptr());
+            print_int_in(st, st.scanner.if_line);
         }
-        print_cstr(c" is incomplete".as_ptr());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_if_line(mem_b32s1(cond_ptr() + 1));
-        set_cur_if(mem_b16s0(cond_ptr()) as i16);
-        set_if_limit(mem_b16s1(cond_ptr()) as u8);
-        set_cond_ptr(mem_b32s1(cond_ptr()));
+        print_cstr_in(st, c" is incomplete".as_ptr());
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.scanner.if_line = st.mem.b32s1(st.scanner.cond_ptr + 1);
+        st.scanner.cur_if = st.mem.b16s0(st.scanner.cond_ptr) as i16;
+        st.scanner.if_limit = st.mem.b16s1(st.scanner.cond_ptr) as u8;
+        st.scanner.cond_ptr = st.mem.b32s1(st.scanner.cond_ptr);
     }
-    set_cond_ptr(cp);
-    set_if_limit(il);
-    set_cur_if(ci);
-    set_if_line(iln);
+    st.scanner.cond_ptr = cp;
+    st.scanner.if_limit = il;
+    st.scanner.cur_if = ci;
+    st.scanner.if_line = iln;
 
-    print_ln();
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 1 {
-        diagnostic_begin_capture_warning_here();
-        show_context();
-        capture_to_diagnostic(std::ptr::null_mut());
+    print_ln_in(st);
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 1 {
+        diagnostic_begin_capture_warning_here_in(st);
+        show_context_in(st);
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
     }
-    if history() == HISTORY_SPOTLESS {
-        set_history(HISTORY_WARNING_ISSUED);
+    if st.errors.history == HISTORY_SPOTLESS {
+        st.errors.history = HISTORY_WARNING_ISSUED;
     }
 }
 
@@ -3001,43 +3034,48 @@ pub unsafe fn file_warning() {
 
 // translated from xetex-xetex0.c:2824 (show_cur_cmd_chr)
 pub unsafe fn show_cur_cmd_chr() {
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
-    print_nl(b'{' as i32);
-    if cur_list_mode() != shown_mode() {
-        print_mode(cur_list_mode() as i32);
-        print_cstr(c": ".as_ptr());
-        set_shown_mode(cur_list_mode());
+    crate::state::with_state_mut(|st| show_cur_cmd_chr_in(st));
+}
+
+/// `&mut EngineState` core of [`show_cur_cmd_chr`].
+pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
+    begin_diagnostic_in(st);
+    diagnostic_begin_capture_warning_here_in(st);
+    print_nl_in(st, b'{' as i32);
+    if cur_list_mode() != st.scanner.shown_mode {
+        print_mode_in(st, cur_list_mode() as i32);
+        print_cstr_in(st, c": ".as_ptr());
+        st.scanner.shown_mode = cur_list_mode();
     }
-    print_cmd_chr(cur_cmd() as u16, cur_chr());
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
+    print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
         && cur_cmd() >= IF_TEST as u8
         && cur_cmd() <= FI_OR_ELSE
     {
-        print_cstr(c": ".as_ptr());
+        print_cstr_in(st, c": ".as_ptr());
         let (mut n, l) = if cur_cmd() == FI_OR_ELSE {
-            print_cmd_chr(IF_TEST, cur_if() as i32);
-            print_char(b' ' as i32);
-            (0_i32, if_line())
+            print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
+            print_char_in(st, b' ' as i32);
+            (0_i32, st.scanner.if_line)
         } else {
             (1_i32, line())
         };
-        let mut p = cond_ptr();
+        let mut p = st.scanner.cond_ptr;
         while p != TEX_NULL {
             n += 1;
-            p = mem_b32s1(p);
+            p = st.mem.b32s1(p);
         }
-        print_cstr(c"(level ".as_ptr());
-        print_int(n);
-        print_char(b')' as i32);
+        print_cstr_in(st, c"(level ".as_ptr());
+        print_int_in(st, n);
+        print_char_in(st, b')' as i32);
         if l != 0 {
-            print_cstr(c" entered on line ".as_ptr());
-            print_int(l);
+            print_cstr_in(st, c" entered on line ".as_ptr());
+            print_int_in(st, l);
         }
     }
-    print_char(b'}' as i32);
-    capture_to_diagnostic(std::ptr::null_mut());
-    end_diagnostic(false);
+    print_char_in(st, b'}' as i32);
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    end_diagnostic_in(st, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -3140,18 +3178,23 @@ pub unsafe fn font_mapping_warning(
 
 /// translated from xetex-xetex0.c:8970 (bad_utf8_warning)
 pub unsafe fn bad_utf8_warning() {
-    begin_diagnostic();
-    diagnostic_begin_capture_warning_here();
-    print_nl_cstr(c"Invalid UTF-8 byte or sequence".as_ptr());
+    crate::state::with_state_mut(|st| bad_utf8_warning_in(st));
+}
+
+/// `&mut EngineState` core of [`bad_utf8_warning`].
+pub(crate) fn bad_utf8_warning_in(st: &mut EngineState) {
+    begin_diagnostic_in(st);
+    diagnostic_begin_capture_warning_here_in(st);
+    print_nl_cstr_in(st, c"Invalid UTF-8 byte or sequence".as_ptr());
     if crate::globals::cur_input().name == 0 {
-        print_cstr(c" in terminal input".as_ptr());
+        print_cstr_in(st, c" in terminal input".as_ptr());
     } else {
-        print_cstr(c" at line ".as_ptr());
-        print_int(crate::globals::line());
+        print_cstr_in(st, c" at line ".as_ptr());
+        print_int_in(st, crate::globals::line());
     }
-    print_cstr(c" replaced by U+FFFD.".as_ptr());
-    capture_to_diagnostic(std::ptr::null_mut());
-    end_diagnostic(false);
+    print_cstr_in(st, c" replaced by U+FFFD.".as_ptr());
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    end_diagnostic_in(st, false);
 }
 
 // ---------------------------------------------------------------------------
