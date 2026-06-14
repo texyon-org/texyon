@@ -8,6 +8,63 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 191 — 2026-06-14 — Execution: thread the scanner-free shipout leaves + build the threaded DVI-emit layer
+
+**Type:** execution (workstream 01). Took the session-190 "Next" (the shipout
+hub: `ship_out`/`hlist_out`/`vlist_out`). **Recon finding that reshaped the
+slice:** the hub triple is *mutually recursive* (`hlist_out`↔`vlist_out`↔
+`output_hlist_glue`) and, more importantly, gated on the **scanner** — its
+whatsit arm calls `out_what`, which calls `write_out`, which runs
+`scan_toks`/`get_token`. So a single-borrow hub is not reachable until the
+scanner threads (the "big coupling cluster"). The DVI emit path, by contrast,
+is *not* a blocker: `write_to_dvi` only re-enters `with_state` to read
+`shipout.dvi_file`/`dvi_buf`, which under a held `&mut ShipoutState` are direct
+field reads. So this session threaded the **scanner-free / DVI-free shipout
+leaves** and built the reusable threaded DVI-emit layer the future hub needs.
+
+**Code (4 commits):**
+1. `reverse(mem, shipout, scanner, fonts, …) -> Result<i32, ShipoutAbort>` —
+   does no DVI output (pure list-reverse + width accounting); the only cold path
+   is `confusion("LR2")`, deferred via the new `ShipoutAbort` sentinel. `LR_ptr`/
+   `LR_problems`/`cur_dir` are `scanner` fields; `cur_h`/`rule_wd` are `shipout`.
+2. `merge_justifiable_native_words(mem, strings, fonts, eqtb, …) -> Result<(),
+   ShipoutAbort>` — native-word coalescing; string-pool writes are direct,
+   `skip_ignorable_interword_nodes`/`is_ignorable_interword_node` called under
+   the borrow, cold `overflow("pool size")` + `new_native_word_node`'s
+   `NodeRecycle` + `flush_node_list`'s `Confusion` ride the sentinel. Deleted
+   dead `store_justified_native_glyphs_global` + global `font_letter_space_entry`.
+3. **Threaded DVI-emit layer** (the prerequisite infra for the hub):
+   `write_to_dvi(&ShipoutState,…)`, `handle_dvi_flush`, `emit_dvi_out`,
+   `emit_dvi_four`, `emit_movement(&mut Mem,&mut Shipout,…)` — each performs the
+   buffer flush by reading `shipout` fields directly and defers only the truly
+   cold aborts (`DviWriteFailed`/`DviLengthOverflow`/`MainMemoryOverflow`).
+   Threaded `pic_out_in(&mut EngineState,…)` + `special_out_in(…)` on it (both
+   print via the session-182 `print_*_in`/`show_token_list_in` cores; reached
+   only through the still-global `out_what`, so they keep thin bridge wrappers).
+   Deleted dead global `print_raw_char`.
+
+**`ShipoutAbort` sentinel (§5):** `ConfusionLr2`/`PoolSizeOverflow`/`NodeRecycle`/
+`Confusion`/`DviWriteFailed`/`DviLengthOverflow`/`MainMemoryOverflow`, fired by
+`fire_shipout_abort` after the borrow drops.
+
+**Tests:** `cargo fmt`; `cargo check`; dashboard **29/2/7/4**; rebuilt
+`target/release/tectonic`; full corpus **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1`, doc-count 639 ==
+baseline, no NOXDV/NOLOG. Metrics: warnings held; `unsafe fn` **526 → 525**;
+`with_state(_mut)` sites **1040 → 1037** (leaves still carry transient bridge
+wrappers that retire when the hubs thread).
+
+**Next:** the shipout hub triple (`hlist_out`/`vlist_out`/`ship_out` +
+`output_hlist_glue`) is **scanner-gated** via `out_what`→`write_out` — thread
+the scanner (`get_token`/`get_x_token`/`scan_toks`) first, then the hub becomes a
+single-borrow pass over the now-threaded DVI-emit layer + `reverse`/`pic_out`/
+`special_out`/`out_what` cores. Otherwise pick a non-shipout hub (`mlist_to_hlist`
+remains scoped-island form; its `make_*_global` sub-drivers are unthreaded). The
+threaded DVI-emit layer (`emit_dvi_*`/`emit_movement`) is the reusable substrate
+for that future hub slice.
+
+---
+
 ## Idiom session 190 — 2026-06-14 — Execution: thread `line_break` itself (the line-breaker hub)
 
 **Type:** execution (workstream 01). Large minimal-docs hub slice — the
