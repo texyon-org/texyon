@@ -1156,11 +1156,6 @@ pub(crate) fn set_help_ptr(v: u8) {
         state.errors.help_ptr = v;
     });
 }
-/// Read `help_line[k]` as a C string pointer.
-#[inline]
-pub(crate) fn help_line(k: usize) -> *const libc::c_char {
-    crate::state::with_state(|state| state.errors.help_line[k])
-}
 /// Write `help_line[k] = v` (a C string pointer; caller owns the lifetime).
 #[inline]
 pub(crate) fn set_help_line(k: usize, v: *const libc::c_char) {
@@ -1229,10 +1224,6 @@ pub(crate) fn set_error_count(v: i8) {
     });
 }
 #[inline]
-pub(crate) fn use_err_help() -> bool {
-    crate::state::with_state(|state| state.errors.use_err_help)
-}
-#[inline]
 pub(crate) fn set_use_err_help(v: bool) {
     crate::state::with_state_mut(|state| {
         state.errors.use_err_help = v;
@@ -1247,10 +1238,6 @@ pub(crate) fn set_long_help_seen(v: bool) {
     crate::state::with_state_mut(|state| {
         state.errors.long_help_seen = v;
     });
-}
-#[inline]
-pub(crate) fn halt_on_error_p() -> bool {
-    crate::state::with_state(|state| state.config.halt_on_error_p != 0)
 }
 #[inline]
 pub(crate) fn log_opened() -> bool {

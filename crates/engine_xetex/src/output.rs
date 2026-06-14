@@ -11,10 +11,9 @@ use crate::state::EngineState;
 
 use crate::globals::{
     cond_ptr, cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, def_ref, eqtb_b32s1,
-    file_line_error_style_p, file_offset, init_pool_ptr, line, max_print_line, mem_b16s0,
-    mem_b16s1, mem_b32s1, pool_ptr, pool_size, rust_stdout, selector, set_help_line, set_help_ptr,
-    set_if_limit, set_mem_b16s1, set_mem_b32s1, set_pool_ptr, set_selector, set_str_ptr, str_ptr,
-    str_start, term_offset,
+    file_offset, init_pool_ptr, line, max_print_line, mem_b16s0, mem_b16s1, mem_b32s1, pool_ptr,
+    pool_size, rust_stdout, selector, set_help_line, set_help_ptr, set_if_limit, set_mem_b16s1,
+    set_mem_b32s1, set_pool_ptr, set_selector, set_str_ptr, str_ptr, str_start, term_offset,
 };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
@@ -706,11 +705,6 @@ pub(crate) fn capture_to_diagnostic_in(st: &mut EngineState, diagnostic: *mut st
 /// Append `"<file>:<line>: "` (or `"!"`) to `diagnostic`.
 ///
 /// translated from xetex-output.c:24 (diagnostic_print_file_line — was static)
-unsafe fn diagnostic_print_file_line(diagnostic: *mut std::ffi::c_void) {
-    crate::state::with_state_mut(|st| diagnostic_print_file_line_in(st, diagnostic));
-}
-
-/// `&mut EngineState` core of [`diagnostic_print_file_line`].
 pub(crate) fn diagnostic_print_file_line_in(
     st: &mut EngineState,
     diagnostic: *mut std::ffi::c_void,
@@ -769,18 +763,26 @@ pub(crate) fn diagnostic_begin_capture_warning_here_in(
 ///
 /// translated from xetex-output.c:58 (error_here_with_diagnostic)
 pub unsafe fn error_here_with_diagnostic(message: *const libc::c_char) -> *mut std::ffi::c_void {
-    let error = ttbc_diag_begin_error();
-    diagnostic_print_file_line(error);
-    ttstub_diag_printf(error, c"%s".as_ptr(), message);
+    crate::state::with_state_mut(|st| error_here_with_diagnostic_in(st, message))
+}
 
-    if file_line_error_style_p() != 0 {
-        print_file_line();
+/// `&mut EngineState` core of [`error_here_with_diagnostic`].
+pub(crate) fn error_here_with_diagnostic_in(
+    st: &mut EngineState,
+    message: *const libc::c_char,
+) -> *mut std::ffi::c_void {
+    let error = unsafe { ttbc_diag_begin_error() };
+    diagnostic_print_file_line_in(st, error);
+    unsafe { ttstub_diag_printf(error, c"%s".as_ptr(), message) };
+
+    if st.config.file_line_error_style_p != 0 {
+        print_file_line_in(st);
     } else {
-        print_nl_cstr(c"! ".as_ptr());
+        print_nl_cstr_in(st, c"! ".as_ptr());
     }
-    print_cstr(message);
+    print_cstr_in(st, message);
 
-    capture_to_diagnostic(error);
+    capture_to_diagnostic_in(st, error);
     error
 }
 
@@ -4681,11 +4683,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
     }
 }
 // translated from xetex-xetex0.c:2764 (show_context)
-pub unsafe fn show_context() {
-    crate::state::with_state_mut(|st| show_context_in(st));
-}
-
-/// `&mut EngineState` core of [`show_context`].
+/// `&mut EngineState` core of `show_context`.
 pub(crate) fn show_context_in(st: &mut EngineState) {
     use crate::globals::{line, set_cur_input};
 

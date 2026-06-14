@@ -4,10 +4,9 @@ use crate::consts::{
     BATCH_MODE, BOX_BASE, ERROR_STOP_MODE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
 };
 use crate::globals::{
-    align_state, cur_chr, cur_cmd, cur_list_mode, eqtb_b32s1, error_count, halt_on_error_p,
-    help_line, history, interaction, job_name, log_opened, rust_stdout, selector, set_align_state,
-    set_error_count, set_help_line, set_help_ptr, set_history, set_interaction, set_selector,
-    use_err_help,
+    align_state, cur_chr, cur_cmd, cur_list_mode, eqtb_b32s1, history, interaction, job_name,
+    log_opened, rust_stdout, selector, set_align_state, set_help_line, set_help_ptr, set_history,
+    set_interaction, set_selector,
 };
 use crate::output::print_cmd_chr;
 use crate::output::show_box;
@@ -25,9 +24,9 @@ use crate::output::print;
 use crate::output::print_char;
 use crate::output::print_cstr;
 use crate::output::print_int;
-use crate::output::print_ln;
 use crate::output::print_nl_cstr;
-use crate::output::show_context;
+use crate::output::{print_char_in, print_ln_in, print_nl_cstr_in, show_context_in, token_show_in};
+use crate::state::EngineState;
 
 const HISTORY_ERROR_ISSUED: i32 = 2;
 const HISTORY_FATAL_ERROR: i32 = 3;
@@ -86,48 +85,85 @@ unsafe fn post_error_message(need_to_print_it: bool) {
 // error
 // ---------------------------------------------------------------------------
 
+/// Outcome of [`error_in`]: a cold abort the wrapper must run after the state
+/// borrow drops (§5 sentinel — `post_error_message`/`_tt_abort` are
+/// `with_state`-bearing/FFI and would nest-panic under a live borrow). The hot
+/// path returns [`ErrorOutcome::Continue`].
+#[must_use]
+pub(crate) enum ErrorOutcome {
+    Continue,
+    /// `halt_on_error_p` tripped.
+    Halt,
+    /// 100th recoverable error reached.
+    Hundred,
+}
+
+impl ErrorOutcome {
+    /// Run the cold abort tail (only ever non-`Continue` on a real abort, never
+    /// in a passing run). Must be called *after* the state borrow has dropped.
+    pub(crate) unsafe fn finish(self) {
+        match self {
+            ErrorOutcome::Continue => {}
+            ErrorOutcome::Halt => {
+                post_error_message(false);
+                _tt_abort(c"halted on potentially-recoverable error as specified".as_ptr());
+            }
+            ErrorOutcome::Hundred => {
+                post_error_message(false);
+                _tt_abort(c"halted after 100 potentially-recoverable errors".as_ptr());
+            }
+        }
+    }
+}
+
 /// Handle a recoverable TeX error.
 ///
 /// translated from xetex-errors.c:52 (error)
 pub unsafe fn error() {
-    if history() < HISTORY_ERROR_ISSUED {
-        set_history(HISTORY_ERROR_ISSUED);
+    let outcome = crate::state::with_state_mut(|st| error_in(st));
+    outcome.finish();
+}
+
+/// `&mut EngineState` core of [`error`]. Returns the cold-abort sentinel (§5);
+/// the hot path is `Continue`.
+pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
+    if st.errors.history < HISTORY_ERROR_ISSUED {
+        st.errors.history = HISTORY_ERROR_ISSUED;
     }
-    print_char(b'.' as i32);
-    show_context();
-    if halt_on_error_p() {
-        set_history(HISTORY_FATAL_ERROR);
-        post_error_message(false);
-        _tt_abort(c"halted on potentially-recoverable error as specified".as_ptr());
+    print_char_in(st, b'.' as i32);
+    show_context_in(st);
+    if st.config.halt_on_error_p != 0 {
+        st.errors.history = HISTORY_FATAL_ERROR;
+        return ErrorOutcome::Halt;
     }
 
-    set_error_count(error_count().wrapping_add(1));
-    if error_count() == 100 {
-        print_nl_cstr(c"(That makes 100 errors; please try again.)".as_ptr());
-        set_history(HISTORY_FATAL_ERROR);
-        post_error_message(false);
-        _tt_abort(c"halted after 100 potentially-recoverable errors".as_ptr());
+    st.errors.error_count = st.errors.error_count.wrapping_add(1);
+    if st.errors.error_count == 100 {
+        print_nl_cstr_in(st, c"(That makes 100 errors; please try again.)".as_ptr());
+        st.errors.history = HISTORY_FATAL_ERROR;
+        return ErrorOutcome::Hundred;
     }
 
-    if interaction() > BATCH_MODE {
-        set_selector(selector() - 1);
+    if st.errors.interaction > BATCH_MODE {
+        st.shipout.selector -= 1;
     }
-    if use_err_help() {
-        print_ln();
-        give_err_help();
+    if st.errors.use_err_help {
+        print_ln_in(st);
+        give_err_help_in(st);
     } else {
-        let mut hp = crate::globals::help_ptr();
+        let mut hp = st.errors.help_ptr;
         while hp > 0 {
             hp -= 1;
-            print_nl_cstr(help_line(hp as usize));
+            print_nl_cstr_in(st, st.errors.help_line[hp as usize]);
         }
-        crate::globals::set_help_ptr(hp);
+        st.errors.help_ptr = hp;
     }
-    print_ln();
-    if interaction() > BATCH_MODE {
-        set_selector(selector() + 1);
+    print_ln_in(st);
+    if st.errors.interaction > BATCH_MODE {
+        st.shipout.selector += 1;
     }
-    print_ln();
+    print_ln_in(st);
+    ErrorOutcome::Continue
 }
 
 // ---------------------------------------------------------------------------
@@ -268,10 +304,11 @@ pub unsafe fn pdf_error(t: *const libc::c_char, p: *const libc::c_char) -> ! {
 }
 
 // translated from xetex-xetex0.c:13499 (give_err_help)
-pub unsafe fn give_err_help() {
+/// `&mut EngineState` core of `give_err_help`.
+pub(crate) fn give_err_help_in(st: &mut EngineState) {
     // LOCAL(err_help) = eqtb[LOCAL_BASE + LOCAL__err_help].b32.s1
     // LOCAL_BASE = 2_254_871, LOCAL__err_help = 9
-    crate::output::token_show(crate::globals::eqtb_b32s1(2_254_871 + 9));
+    token_show_in(st, st.eqtb.b32s1(2_254_871 + 9));
 }
 
 // ---- moved verbatim from scan.rs (workstream 02) ----
