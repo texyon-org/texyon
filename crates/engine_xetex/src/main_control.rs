@@ -27,7 +27,7 @@ use crate::ext::{
     measure_native_node_global, real_get_native_glyph_italic_correction_global,
     real_get_native_italic_correction_global,
 };
-use crate::fonts::{new_native_character, read_font_info};
+use crate::fonts::read_font_info;
 use crate::globals::{
     after_token, align_state, avail, cur_chr, cur_cmd, cur_cs, cur_group, cur_list_mode, cur_ptr,
     cur_tok, cur_val, def_ref, eqtb_b32s1, font_area_entry, font_glue, hash_s1, in_initex_mode,
@@ -1965,27 +1965,70 @@ pub unsafe fn new_graf(indented: bool) {
         build_page();
     }
 }
-// translated from xetex-xetex0.c:7048 (new_character)
-pub unsafe fn new_character(f: i32, c: u16) -> i32 {
-    extern "C" {}
-    use crate::globals::{char_base_entry, font_bc_entry, font_ec_entry, font_info_b16};
+pub(crate) enum NewCharacterAbort {
+    Native(crate::fonts::NativeCharAbort),
+    Error(crate::errors::ErrorOutcome),
+    MainMemoryOverflow,
+}
 
-    let fa = crate::globals::font_area_entry(f);
-    if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-        return new_native_character(f, c as u32);
-    }
-    let ec = effective_char_global(false, f, c) as u16;
-    if font_bc_entry(f) <= ec && font_ec_entry(f) >= ec {
-        let info = font_info_b16(char_base_entry(f) + ec as i32);
-        if info.s3 > 0 {
-            let p = crate::mem::get_avail_global();
-            crate::globals::set_mem_b16s1(p, f as u16);
-            crate::globals::set_mem_b16s0(p, c);
-            return p;
+impl NewCharacterAbort {
+    pub(crate) fn finish(self) -> ! {
+        match self {
+            NewCharacterAbort::Native(a) => a.finish(),
+            NewCharacterAbort::Error(outcome) => {
+                // SAFETY: only non-Continue warning outcomes are wrapped here.
+                unsafe { outcome.finish() };
+                unreachable!("char_warning abort outcome should be divergent")
+            }
+            NewCharacterAbort::MainMemoryOverflow => unsafe {
+                const MEM_TOP: i32 = 4_999_999;
+                crate::errors::runaway();
+                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
+            },
         }
     }
-    char_warning(f, c as i32);
-    crate::mem::TEX_NULL
+}
+
+// translated from xetex-xetex0.c:7048 (new_character)
+pub(crate) fn new_character_in(
+    st: &mut crate::state::EngineState,
+    f: i32,
+    c: u16,
+) -> Result<i32, NewCharacterAbort> {
+    let fa = st.fonts.font_area_entry(f);
+    if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
+        return crate::fonts::new_native_character_in(st, f, c as u32)
+            .map_err(NewCharacterAbort::Native);
+    }
+    let ec = crate::fonts::effective_char(&mut st.fonts, false, f, c) as u16;
+    if st.fonts.font_bc_entry(f) <= ec && st.fonts.font_ec_entry(f) >= ec {
+        let info = st
+            .fonts
+            .font_info_b16(st.fonts.char_base_entry(f) + ec as i32);
+        if info.s3 > 0 {
+            let p = crate::mem::get_avail(&mut st.mem);
+            if p == crate::mem::ALLOC_FAILED {
+                return Err(NewCharacterAbort::MainMemoryOverflow);
+            }
+            st.mem.set_b16s1(p, f as u16);
+            st.mem.set_b16s0(p, c);
+            return Ok(p);
+        }
+    }
+    let outcome = crate::output::char_warning_in(st, f, c as i32);
+    if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
+        return Err(NewCharacterAbort::Error(outcome));
+    }
+    Ok(crate::mem::TEX_NULL)
+}
+
+// Legacy wrapper for callers that still use the global engine state. It runs
+// cold abort tails only after the `with_state_mut` borrow has dropped.
+pub unsafe fn new_character(f: i32, c: u16) -> i32 {
+    match crate::state::with_state_mut(|st| new_character_in(st, f, c)) {
+        Ok(p) => p,
+        Err(a) => a.finish(),
+    }
 }
 // translated from xetex-xetex0.c:7797 (box_end)
 pub unsafe fn box_end(box_context: i32) {

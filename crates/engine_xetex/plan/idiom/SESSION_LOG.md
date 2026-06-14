@@ -8,6 +8,34 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 188 — 2026-06-14 — Execution: reduce native/hyphenation bridges on the path to `line_break_in`
+
+**Type:** execution (workstream 01). Per user request, kept docs minimal and used
+subagents only for bounded side work. Explorer confirmed `line_break_in` is still
+blocked by unthreaded `hyphenate()` plus `pop_nest`/finite-shrink sentinels; a
+worker threaded `main_control::new_character`.
+
+**Code:** `new_character_in(&mut EngineState, f, c) -> Result<i32, NewCharacterAbort>`
+now handles native chars via `new_native_character_in`, classic chars via
+`get_avail` + font fields, and `char_warning_in`; the legacy wrapper fires cold
+aborts after the borrow drops. In `linebreak.rs`, collapsed the line-break native
+word split/re-measure sequence into `split_native_tail_for_linebreak(st, start,
+advance_ha)` and deleted dead `set_native_node_len`/`copy_native_tail_global`/
+`set_native_metrics_global` bridges. Extracted `hyphenate_native_word_if_needed(st,
+hn_v)` so the hardest native branch is reusable by a future `hyphenate_in`.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `fmt`; dashboard **29/2/7/4**;
+release build; full corpus **637 passed / 2 diverged / 0 missing-golden**, only
+known `1905.00073v1` / `1905.00148v1`, no NOXDV/NOLOG. Metrics: warnings **41**
+(held); `unsafe fn` **535** (held); `with_state(_mut)` sites **1140**.
+
+**Next:** finish `hyphenate_in` (now mostly mechanical state-field replacement,
+with `get_node`, `new_character_in`, `reconstitute`, and list flush/free sentinels),
+then thread `line_break_in`. `pop_nest` still needs a threaded core before the
+outer driver can hold one borrow across the whole function.
+
+---
+
 ## Idiom session 187 — 2026-06-14 — Execution: break the native-font measurer FFI re-entry wall + thread the native-word hyphenation island
 
 **Type:** execution (workstream 01). Took session 186's recommended highest-leverage
