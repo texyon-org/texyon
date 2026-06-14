@@ -3,18 +3,15 @@
 //! font-loading group) by workstream 02 (module decomposition).
 
 use crate::consts::{INT_BASE, TOO_BIG_CHAR};
-use crate::errors::error;
+use crate::errors::{error, ErrorOutcome};
 use crate::ext::{
     aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping_global,
-    find_native_font, load_tfm_font_mapping, map_char_to_glyph_global, measure_native_node_global,
+    find_native_font, load_tfm_font_mapping, map_char_to_glyph, measure_native_node,
     ot_get_font_metrics, release_font_engine,
 };
-use crate::globals::{
-    eqtb_b32s1, font_mapping_ptr, init_pool_ptr, mapped_text_entry, pool_ptr, pool_size,
-    set_pool_ptr, set_str_pool, str_ptr, str_start,
-};
+use crate::globals::eqtb_b32s1;
 use crate::io::{pack_file_name, tt_xetex_open_input};
-use crate::output::{capture_to_diagnostic, char_warning, error_here_with_diagnostic};
+use crate::output::{capture_to_diagnostic, char_warning_in, error_here_with_diagnostic};
 use crate::scan::cnl_get_node;
 use crate::scan::{node_recycle_abort, push_font_info_b32s1, NodeRecycleAbort};
 use crate::state::FontState;
@@ -137,52 +134,108 @@ fn build_native_character(
         }
     }
 }
-/// Allocate a native text node for one Unicode scalar, applying font mappings.
-///
-/// translated from xetex-xetex0.c:6276 (new_native_character)
-///
-/// Phase-C: the mem allocation/fill is threaded into [`build_native_character`]
-/// (one `with_state_mut` borrow); this function remains the with_state-bearing
-/// orchestrator (bucket **C**) — string pool, TECkit mapping, lost-char
-/// warnings, and native measurement all run outside the mem borrow.
-pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
-    let src = if !font_mapping_ptr(f).is_null() {
+/// Cold-abort sentinel (§5) for [`new_native_character_in`]: the threaded core
+/// returns this and the [`new_native_character`] wrapper runs the divergent tail
+/// *after* the state borrow drops.
+pub(crate) enum NativeCharAbort {
+    /// String-pool capacity exhausted while staging the mapped text.
+    PoolOverflow,
+    /// `build_native_character` ran out of `mem`.
+    Recycle(NodeRecycleAbort),
+    /// A lost-char `char_warning` tripped the error machinery. Every non-`Continue`
+    /// [`ErrorOutcome`] is divergent in `finish()`, so the legacy global
+    /// `char_warning` would have aborted at this exact point too (before building
+    /// the node) — deferring it to the wrapper is behaviour-identical.
+    Error(ErrorOutcome),
+}
+
+impl NativeCharAbort {
+    /// Run the divergent cold-abort tail. Must be called *after* the state borrow
+    /// that produced the sentinel has dropped (§5). Shared by the
+    /// [`new_native_character`] wrapper and the threaded hyphenation island.
+    pub(crate) fn finish(self) -> ! {
+        // SAFETY: every arm is a `-> !` cold-abort tail (overflow / confusion /
+        // _tt_abort), run only after the producing state borrow has dropped.
+        match self {
+            NativeCharAbort::PoolOverflow => {
+                let (pool_size, init_pool_ptr) =
+                    crate::state::with_state(|st| (st.strings.pool_size, st.strings.init_pool_ptr));
+                unsafe { crate::errors::overflow(c"pool size".as_ptr(), pool_size - init_pool_ptr) }
+            }
+            NativeCharAbort::Recycle(e) => unsafe { node_recycle_abort(e) },
+            NativeCharAbort::Error(outcome) => {
+                unsafe { outcome.finish() };
+                unreachable!("char_warning outcome is always divergent here")
+            }
+        }
+    }
+}
+
+/// `&mut EngineState` core of [`new_native_character`]. Threaded so it can be
+/// reached from a caller that already holds a state borrow (the hyphenation /
+/// line-break / math measurer paths — the 135/136 FFI re-entry wall): the
+/// string-pool staging, TECkit mapping, lost-char `char_warning_in`, node build,
+/// and native measurement all run under one borrow, calling the threaded
+/// `measure_native_node` / `map_char_to_glyph` / `char_warning_in` cores directly
+/// rather than the re-entrant `_global` bridges. Cold aborts ride
+/// [`NativeCharAbort`] (§5).
+pub(crate) fn new_native_character_in(
+    st: &mut crate::state::EngineState,
+    f: i32,
+    mut c: u32,
+) -> Result<i32, NativeCharAbort> {
+    let src = if !st.fonts.font_mapping[f as usize].is_null() {
         if c > 65_535 {
-            if pool_ptr() + 2 > pool_size() {
-                crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+            if st.strings.pool_ptr + 2 > st.strings.pool_size {
+                return Err(NativeCharAbort::PoolOverflow);
             }
-            set_str_pool(pool_ptr(), ((c - 65_536) / 1024 + 0xD800) as u16);
-            set_pool_ptr(pool_ptr() + 1);
-            set_str_pool(pool_ptr(), ((c - 65_536) % 1024 + 0xDC00) as u16);
-            set_pool_ptr(pool_ptr() + 1);
+            st.strings.str_pool[st.strings.pool_ptr as usize] =
+                ((c - 65_536) / 1024 + 0xD800) as u16;
+            st.strings.pool_ptr += 1;
+            st.strings.str_pool[st.strings.pool_ptr as usize] =
+                ((c - 65_536) % 1024 + 0xDC00) as u16;
+            st.strings.pool_ptr += 1;
         } else {
-            if pool_ptr() + 1 > pool_size() {
-                crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+            if st.strings.pool_ptr + 1 > st.strings.pool_size {
+                return Err(NativeCharAbort::PoolOverflow);
             }
-            set_str_pool(pool_ptr(), c as u16);
-            set_pool_ptr(pool_ptr() + 1);
+            st.strings.str_pool[st.strings.pool_ptr as usize] = c as u16;
+            st.strings.pool_ptr += 1;
         }
 
-        let start = str_start(str_ptr() - TOO_BIG_CHAR);
-        let len = apply_mapping(
-            font_mapping_ptr(f),
-            crate::globals::str_pool_ptr(start) as *mut u16,
-            crate::hash::cur_length_global(),
-        );
-        set_pool_ptr(start);
+        let start = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+        let map = st.fonts.font_mapping[f as usize];
+        let cl = crate::hash::cur_length(&st.strings);
+        // SAFETY: TECkit mapping over a raw pointer into the (non-reallocating)
+        // string pool; identical to the legacy `str_pool_ptr(start)` call. `dst`
+        // points into `st.strings`, disjoint from the `&mut st.fonts` borrow.
+        let len = unsafe {
+            let dst = st.strings.str_pool.as_mut_ptr().add(start as usize);
+            apply_mapping(&mut st.fonts, map, dst, cl)
+        };
+        st.strings.pool_ptr = start;
 
         let mut i = 0;
         while i < len {
-            let mapped = mapped_text_entry(i);
+            let mapped = st.fonts.mapped_text[i as usize];
             if (0xD800..0xDC00).contains(&mapped) {
-                c = ((mapped as u32 - 0xD800) * 1024) + mapped_text_entry(i + 1) as u32 + 9216;
-                if map_char_to_glyph_global(f, c as i32) == 0 {
-                    char_warning(f, c as i32);
+                c = ((mapped as u32 - 0xD800) * 1024)
+                    + st.fonts.mapped_text[(i + 1) as usize] as u32
+                    + 9216;
+                // SAFETY: pure font-table + FFI glyph lookup, no state re-entry.
+                if unsafe { map_char_to_glyph(&st.fonts, f, c as i32) } == 0 {
+                    let outcome = char_warning_in(st, f, c as i32);
+                    if !matches!(outcome, ErrorOutcome::Continue) {
+                        return Err(NativeCharAbort::Error(outcome));
+                    }
                 }
                 i += 2;
             } else {
-                if map_char_to_glyph_global(f, mapped as i32) == 0 {
-                    char_warning(f, mapped as i32);
+                if unsafe { map_char_to_glyph(&st.fonts, f, mapped as i32) } == 0 {
+                    let outcome = char_warning_in(st, f, mapped as i32);
+                    if !matches!(outcome, ErrorOutcome::Continue) {
+                        return Err(NativeCharAbort::Error(outcome));
+                    }
                 }
                 i += 1;
             }
@@ -190,28 +243,45 @@ pub unsafe fn new_native_character(f: i32, mut c: u32) -> i32 {
 
         NativeCharSrc::Mapped(len)
     } else {
-        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS_NC) > 0
-            && map_char_to_glyph_global(f, c as i32) == 0
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS_NC) > 0
+            && unsafe { map_char_to_glyph(&st.fonts, f, c as i32) } == 0
         {
-            char_warning(f, c as i32);
+            let outcome = char_warning_in(st, f, c as i32);
+            if !matches!(outcome, ErrorOutcome::Continue) {
+                return Err(NativeCharAbort::Error(outcome));
+            }
         }
 
         NativeCharSrc::Single(c)
     };
 
-    let p = match crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        build_native_character(&mut s.mem, &s.eqtb, &s.fonts, f, src)
-    }) {
-        Ok(p) => p,
-        Err(e) => node_recycle_abort(e),
-    };
+    let p = build_native_character(&mut st.mem, &st.eqtb, &st.fonts, f, src)
+        .map_err(NativeCharAbort::Recycle)?;
 
-    measure_native_node_global(
-        crate::globals::mem_node_addr(p),
-        (eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_NC) > 0) as libc::c_int,
-    );
-    p
+    // SAFETY: the C++ measurer only touches the passed `&FontState` + pure C FFI
+    // (re-entry-free); `node_addr(p)` points into the non-reallocating mem arena.
+    unsafe {
+        measure_native_node(
+            &st.fonts,
+            st.mem.node_addr(p),
+            (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_NC) > 0) as libc::c_int,
+        );
+    }
+    Ok(p)
+}
+
+/// Allocate a native text node for one Unicode scalar, applying font mappings.
+///
+/// translated from xetex-xetex0.c:6276 (new_native_character)
+///
+/// Phase-C: threaded into [`new_native_character_in`]; this thin wrapper takes
+/// the single `with_state_mut` borrow for the still-legacy callers and runs the
+/// §5 cold abort tail after it drops.
+pub unsafe fn new_native_character(f: i32, c: u32) -> i32 {
+    match crate::state::with_state_mut(|st| new_native_character_in(st, f, c)) {
+        Ok(p) => p,
+        Err(a) => a.finish(),
+    }
 }
 unsafe fn tfm_getc(handle: usize) -> i32 {
     ttstub_input_getc(handle) as i32

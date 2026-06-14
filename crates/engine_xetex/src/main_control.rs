@@ -4584,7 +4584,12 @@ pub unsafe fn main_control_main_loop() -> bool {
         // Apply font mapping if present
         let fm = font_mapping_ptr(main_f());
         if !fm.is_null() {
-            let mk = apply_mapping(fm, native_text(), native_len());
+            // Evaluate the with_state-bearing `native_text`/`native_len` reads
+            // before taking the `apply_mapping` borrow (it now threads `&mut
+            // FontState`); they would nest-panic inside the closure.
+            let nt = native_text();
+            let nl = native_len();
+            let mk = crate::state::with_state_mut(|s| apply_mapping(&mut s.fonts, fm, nt, nl));
             set_native_len(0);
             while native_text_size() <= native_len() + mk {
                 crate::state::with_state_mut(|s| {

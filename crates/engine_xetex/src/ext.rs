@@ -2164,28 +2164,31 @@ pub unsafe fn make_font_def(fonts: &mut crate::state::FontState, f: i32) -> c_in
 }
 
 // translated from xetex-ext.c:738 (apply_mapping)
-pub unsafe fn apply_mapping(p_cnv: *mut c_void, txt_ptr: *mut u16, txt_len: c_int) -> c_int {
+pub unsafe fn apply_mapping(
+    fonts: &mut crate::state::FontState,
+    p_cnv: *mut c_void,
+    txt_ptr: *mut u16,
+    txt_len: c_int,
+) -> c_int {
     const K_STATUS_NO_ERROR: i64 = 0;
     const K_STATUS_OUTPUT_BUFFER_FULL: i64 = 1;
     let txt_bytes = txt_len as u32 * 2; // sizeof(UniChar) == 2
 
+    // Threaded over `&mut FontState` (it only manages the `mapped_text` output
+    // buffer) so it is re-entry-free and can run under a caller's borrow — the
+    // `new_native_character_in` measurer path needs this (the legacy bridge took
+    // its own `with_state` and would nest-panic).
     let mut needed = (txt_bytes + 32) as usize;
-    crate::state::with_state_mut(|state| {
-        let needed_u16 = needed / 2;
-        if state.fonts.mapped_text.len() < needed_u16 {
-            state.fonts.mapped_text.resize(needed_u16, 0);
-        }
-    });
+    let needed_u16 = needed / 2;
+    if fonts.mapped_text.len() < needed_u16 {
+        fonts.mapped_text.resize(needed_u16, 0);
+    }
 
     loop {
         let mut in_used: u32 = 0;
         let mut out_used: u32 = 0;
-        let (mapped_ptr, mapped_len_bytes) = crate::state::with_state(|state| {
-            (
-                state.fonts.mapped_text.as_ptr() as *mut u8,
-                (state.fonts.mapped_text.len() * 2) as u32,
-            )
-        });
+        let mapped_ptr = fonts.mapped_text.as_mut_ptr() as *mut u8;
+        let mapped_len_bytes = (fonts.mapped_text.len() * 2) as u32;
         let status = TECkit_ConvertBuffer(
             p_cnv,
             txt_ptr as *const u8,
@@ -2202,10 +2205,8 @@ pub unsafe fn apply_mapping(p_cnv: *mut c_void, txt_ptr: *mut u16, txt_len: c_in
             K_STATUS_NO_ERROR => return (out_used / 2) as c_int,
             K_STATUS_OUTPUT_BUFFER_FULL => {
                 needed += (txt_bytes + 32) as usize;
-                crate::state::with_state_mut(|state| {
-                    let needed_u16 = needed / 2;
-                    state.fonts.mapped_text.resize(needed_u16, 0);
-                });
+                let needed_u16 = needed / 2;
+                fonts.mapped_text.resize(needed_u16, 0);
             }
             _ => return 0,
         }

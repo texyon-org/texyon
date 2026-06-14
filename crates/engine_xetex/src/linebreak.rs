@@ -3,7 +3,8 @@ use crate::consts::{
     SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::{
-    linebreak_next_global, linebreak_start, measure_native_node_global, real_get_native_word_cp,
+    linebreak_next_global, linebreak_start, measure_native_node, measure_native_node_global,
+    real_get_native_word_cp,
 };
 use crate::globals::eqtb_b32s1;
 use crate::hyphenation::init_trie;
@@ -1215,8 +1216,15 @@ pub unsafe fn reconstitute_global(j: i16, n: i16, bchar: i32, hchar: i32) -> i16
 }
 
 #[inline]
-pub unsafe fn set_native_metrics(mem: &MemState, eqtb: &EqtbState, p: i32) {
-    measure_native_node_global(
+pub unsafe fn set_native_metrics(mem: &MemState, eqtb: &EqtbState, fonts: &FontState, p: i32) {
+    // Call the threaded `measure_native_node(&FontState, …)` directly rather than
+    // the `measure_native_node_global` bridge: the bridge re-borrows the whole
+    // `ENGINE_STATE` `RefCell`, so it cannot be reached from a threaded caller
+    // that already holds a borrow (the 135/136 FFI re-entry wall). The C++
+    // measurer itself only touches the passed `&FontState` + pure C FFI, so it is
+    // re-entry-free under any borrow.
+    measure_native_node(
+        fonts,
         mem.node_addr(p),
         (eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
     );
@@ -1224,7 +1232,7 @@ pub unsafe fn set_native_metrics(mem: &MemState, eqtb: &EqtbState, p: i32) {
 
 #[inline]
 unsafe fn set_native_metrics_global(p: i32) {
-    crate::state::with_state(|st| set_native_metrics(&st.mem, &st.eqtb, p));
+    crate::state::with_state(|st| set_native_metrics(&st.mem, &st.eqtb, &st.fonts, p));
 }
 
 #[inline]
@@ -3425,6 +3433,15 @@ pub unsafe fn try_break_global(pi: i32, break_type: i16) {
 }
 
 // translated from xetex-linebreak.c:2010 (hyphenate)
+/// Cold-abort sentinel (§5) for the threaded native-word hyphenation island in
+/// [`hyphenate`]'s `goto_found`: the island returns this and the orchestrator
+/// runs the divergent tail after the state borrow drops.
+enum HyphNativeAbort {
+    Recycle(NodeRecycleAbort),
+    NativeChar(crate::fonts::NativeCharAbort),
+    Confusion(&'static std::ffi::CStr),
+}
+
 pub unsafe fn hyphenate() {
     use crate::globals::{
         cur_lang, hc_entry, hn, hyf_distance_entry, hyf_entry, hyf_next_entry, hyf_num_entry,
@@ -3518,13 +3535,13 @@ pub unsafe fn hyphenate() {
 
     goto_found(hn_v);
 
-    unsafe fn goto_found(mut hn_v: i16) {
+    unsafe fn goto_found(hn_v: i16) {
         use crate::globals::{
             avail, bchar_label_entry, cur_p, font_bchar_entry, ha, hb, hf, hu_entry, hyf_bchar,
-            hyf_char, hyf_entry, hyphen_passed, l_hyf, max_hyph_char, mem_as_u16_ptr,
-            mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b32s1, r_hyf, set_avail, set_hn,
-            set_hu_entry, set_hyf_entry, set_hyphen_passed, set_init_lft, set_init_lig,
-            set_init_list, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
+            hyf_char, hyf_entry, hyphen_passed, l_hyf, max_hyph_char, mem_b16s0, mem_b16s1,
+            mem_b32s1, r_hyf, set_avail, set_hu_entry, set_hyf_entry, set_hyphen_passed,
+            set_init_lft, set_init_lig, set_init_list, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0,
+            set_mem_b32s1,
         };
 
         for j in 0..=(l_hyf() as i16 - 1) {
@@ -3545,59 +3562,108 @@ pub unsafe fn hyphenate() {
             return;
         }
 
-        if ha() != TEX_NULL
-            && !is_char_node_global(ha())
-            && mem_b16s1(ha()) as i32 == WHATSIT_NODE
-            && (mem_b16s0(ha()) == NATIVE_WORD_NODE || mem_b16s0(ha()) == NATIVE_WORD_NODE_AT)
-        {
-            let mut s = cur_p();
-            while mem_b32s1(s) != ha() {
-                s = mem_b32s1(s);
-            }
+        // Native-word hyphenation: split `ha`'s native_word_node into measured
+        // fragments separated by discretionaries whose pre-break is a fresh
+        // native hyphen character. Threaded into a single `with_state_mut` island
+        // now that `new_native_character_in` no longer re-enters the state
+        // RefCell (the 135/136 measurer wall is cleared): `new_native_word_node`,
+        // `set_native_metrics`, `new_disc`, `new_native_character_in` and
+        // `flush_node_list` all run under one borrow, in the original allocation
+        // order. Cold aborts ride `HyphNativeAbort` and fire after the borrow
+        // drops (§5).
+        let is_native = crate::state::with_state(|st| {
+            let ha = st.linebreak.ha;
+            ha != TEX_NULL
+                && !crate::mem::is_char_node(&st.mem, ha)
+                && st.mem.b16s1(ha) as i32 == WHATSIT_NODE
+                && (st.mem.b16s0(ha) == NATIVE_WORD_NODE || st.mem.b16s0(ha) == NATIVE_WORD_NODE_AT)
+        });
+        if is_native {
+            let result = crate::state::with_state_mut(|st| -> Result<(), HyphNativeAbort> {
+                let ha = st.linebreak.ha;
+                let hf = st.hyph.hf;
+                let hyf_char = st.hyph.hyf_char;
+                let l_hyf = st.hyph.l_hyf;
+                let r_hyf = st.hyph.r_hyf;
 
-            set_hyphen_passed(0);
-            for j in l_hyf() as i16..=(hn_v - r_hyf() as i16) {
-                if odd(hyf_entry(j as usize)) {
-                    let q = crate::scan::new_native_word_node_global(
-                        hf(),
-                        (j - hyphen_passed()) as i32,
-                    );
-                    set_mem_b16s0(q, mem_b16s0(ha()));
-                    for i in 0..=(j - hyphen_passed() - 1) {
-                        *mem_as_u16_ptr_mut(q + NATIVE_NODE_SIZE).add(i as usize) =
-                            *mem_as_u16_ptr(ha() + NATIVE_NODE_SIZE)
-                                .add((i + hyphen_passed()) as usize);
+                let mut s = st.linebreak.cur_p;
+                while st.mem.b32s1(s) != ha {
+                    s = st.mem.b32s1(s);
+                }
+
+                st.hyph.hyphen_passed = 0;
+                for j in l_hyf as i16..=(hn_v - r_hyf as i16) {
+                    if odd(st.hyph.hyf[j as usize]) {
+                        let hp = st.hyph.hyphen_passed;
+                        let q = crate::fonts::new_native_word_node(
+                            &mut st.mem,
+                            &st.eqtb,
+                            hf,
+                            (j - hp) as i32,
+                        )
+                        .map_err(HyphNativeAbort::Recycle)?;
+                        let subtype = st.mem.b16s0(ha);
+                        st.mem.set_b16s0(q, subtype);
+                        // SAFETY: both nodes are sized for the copied UTF-16 range;
+                        // the mem arena never reallocates.
+                        unsafe {
+                            let dst = st.mem.as_u16_ptr_mut(q + NATIVE_NODE_SIZE);
+                            let src = st.mem.as_u16_ptr(ha + NATIVE_NODE_SIZE);
+                            for i in 0..=(j - hp - 1) {
+                                *dst.add(i as usize) = *src.add((i + hp) as usize);
+                            }
+                            set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q);
+                        }
+                        st.mem.set_b32s1(s, q);
+                        s = q;
+
+                        let q = crate::mem::new_disc(&mut st.mem);
+                        let nc = crate::fonts::new_native_character_in(st, hf, hyf_char as u32)
+                            .map_err(HyphNativeAbort::NativeChar)?;
+                        st.mem.set_b32s0(q + 1, nc);
+                        st.mem.set_b32s1(s, q);
+                        s = q;
+                        st.hyph.hyphen_passed = j;
                     }
-                    set_native_metrics_global(q);
-                    set_mem_b32s1(s, q);
-                    s = q;
+                }
 
-                    let q = crate::mem::new_disc_global();
-                    set_mem_b32s0(
-                        q + 1,
-                        crate::fonts::new_native_character(hf(), hyf_char() as u32),
-                    );
-                    set_mem_b32s1(s, q);
-                    s = q;
-                    set_hyphen_passed(j);
+                let new_hn = st.mem.b16s1(ha + 4) as i16;
+                st.linebreak.hn = new_hn;
+                let hp = st.hyph.hyphen_passed;
+                let q = crate::fonts::new_native_word_node(
+                    &mut st.mem,
+                    &st.eqtb,
+                    hf,
+                    (new_hn - hp) as i32,
+                )
+                .map_err(HyphNativeAbort::Recycle)?;
+                let subtype = st.mem.b16s0(ha);
+                st.mem.set_b16s0(q, subtype);
+                // SAFETY: see above.
+                unsafe {
+                    let dst = st.mem.as_u16_ptr_mut(q + NATIVE_NODE_SIZE);
+                    let src = st.mem.as_u16_ptr(ha + NATIVE_NODE_SIZE);
+                    for i in 0..=(new_hn - hp - 1) {
+                        *dst.add(i as usize) = *src.add((i + hp) as usize);
+                    }
+                    set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q);
+                }
+                st.mem.set_b32s1(s, q);
+                s = q;
+                let after = st.mem.b32s1(ha);
+                st.mem.set_b32s1(s, after);
+                st.mem.set_b32s1(ha, TEX_NULL);
+                crate::packaging::flush_node_list(&mut st.mem, ha)
+                    .map_err(HyphNativeAbort::Confusion)?;
+                Ok(())
+            });
+            if let Err(a) = result {
+                match a {
+                    HyphNativeAbort::Recycle(e) => node_recycle_abort(e),
+                    HyphNativeAbort::NativeChar(nc) => nc.finish(),
+                    HyphNativeAbort::Confusion(msg) => crate::errors::confusion(msg.as_ptr()),
                 }
             }
-
-            hn_v = mem_b16s1(ha() + 4) as i16;
-            set_hn(hn_v);
-            let q = crate::scan::new_native_word_node_global(hf(), (hn_v - hyphen_passed()) as i32);
-            set_mem_b16s0(q, mem_b16s0(ha()));
-            for i in 0..=(hn_v - hyphen_passed() - 1) {
-                *mem_as_u16_ptr_mut(q + NATIVE_NODE_SIZE).add(i as usize) =
-                    *mem_as_u16_ptr(ha() + NATIVE_NODE_SIZE).add((i + hyphen_passed()) as usize);
-            }
-            set_native_metrics_global(q);
-            set_mem_b32s1(s, q);
-            s = q;
-            let q = mem_b32s1(ha());
-            set_mem_b32s1(s, q);
-            set_mem_b32s1(ha(), TEX_NULL);
-            crate::packaging::flush_node_list_global(ha());
             return;
         }
 
