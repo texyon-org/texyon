@@ -2605,58 +2605,93 @@ fn post_line_break_suffix(
 }
 
 // translated from xetex-linebreak.c:971 (post_line_break)
+/// Deferred cold-abort signal from [`post_line_break_in`] (§5): the threaded
+/// core runs entirely under one `&mut EngineState` borrow, so the
+/// with_state-bearing abort/print-and-die paths it would hit cannot run inline
+/// — they are returned and fired by the [`post_line_break`] wrapper after the
+/// borrow drops. On a passing run the outcome is always `Done`.
+enum PostLineBreakOutcome {
+    Done,
+    Node(NodeRecycleAbort),
+    PdfError {
+        proc_name: &'static std::ffi::CStr,
+        message: &'static std::ffi::CStr,
+    },
+    Confusion(&'static std::ffi::CStr),
+}
+
 pub unsafe fn post_line_break(d: bool) {
+    match crate::state::with_state_mut(|st| post_line_break_in(st, d)) {
+        PostLineBreakOutcome::Done => {}
+        PostLineBreakOutcome::Node(e) => node_recycle_abort(e),
+        PostLineBreakOutcome::PdfError { proc_name, message } => {
+            crate::errors::pdf_error(proc_name.as_ptr(), message.as_ptr())
+        }
+        PostLineBreakOutcome::Confusion(message) => crate::errors::confusion(message.as_ptr()),
+    }
+}
+
+/// Threaded core (Phase C) of [`post_line_break`]: holds one `&mut EngineState`
+/// borrow across the whole per-line loop. The `hpack` packaging (and its
+/// in-order over/underfull diagnostic) runs via
+/// [`crate::packaging::hpack_emit_in`] under that borrow; cold aborts ride the
+/// [`PostLineBreakOutcome`] sentinel.
+fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBreakOutcome {
     let mut lr_ptr = crate::globals::cur_list_e_tex_aux();
 
-    crate::state::with_state_mut(|st| reverse_best_breaks(&mut st.mem, &mut st.linebreak));
+    reverse_best_breaks(&mut st.mem, &mut st.linebreak);
 
     let mut cur_line = crate::globals::cur_list_prev_graf() + 1;
     loop {
-        let hpack = match crate::state::with_state_mut(|st| {
-            post_line_break_prefix(
-                &mut st.mem,
-                &mut st.scanner,
-                &mut st.linebreak,
-                &st.eqtb,
-                &st.fonts,
-                &st.config,
-                &mut lr_ptr,
-                cur_line,
-            )
-        }) {
+        let hpack = match post_line_break_prefix(
+            &mut st.mem,
+            &mut st.scanner,
+            &mut st.linebreak,
+            &st.eqtb,
+            &st.fonts,
+            &st.config,
+            &mut lr_ptr,
+            cur_line,
+        ) {
             Ok(hpack) => hpack,
-            Err(PostLineAbort::Node(e)) => node_recycle_abort(e),
-            Err(PostLineAbort::HlistStackFailure) => crate::errors::pdf_error(
-                c"insert_right_margin_kern".as_ptr(),
-                c"hlist stack failure".as_ptr(),
-            ),
+            Err(PostLineAbort::Node(e)) => return PostLineBreakOutcome::Node(e),
+            Err(PostLineAbort::HlistStackFailure) => {
+                return PostLineBreakOutcome::PdfError {
+                    proc_name: c"insert_right_margin_kern",
+                    message: c"hlist stack failure",
+                }
+            }
         };
 
-        let just_box = if hpack.semantic_pagination {
-            crate::packaging::hpack(hpack.q, 0, ADDITIONAL)
+        let (w, m) = if hpack.semantic_pagination {
+            (0, ADDITIONAL)
         } else {
-            crate::packaging::hpack(hpack.q, hpack.cur_width, EXACTLY)
+            (hpack.cur_width, EXACTLY)
+        };
+        let just_box = match crate::packaging::hpack_emit_in(st, hpack.q, w, m) {
+            Ok(b) => b,
+            Err(e) => return PostLineBreakOutcome::Node(e),
         };
 
-        let done = match crate::state::with_state_mut(|st| {
-            post_line_break_suffix(
-                &mut st.mem,
-                &mut st.scanner,
-                &mut st.linebreak,
-                &st.eqtb,
-                just_box,
-                hpack,
-                d,
-                &mut lr_ptr,
-                &mut cur_line,
-            )
-        }) {
+        let done = match post_line_break_suffix(
+            &mut st.mem,
+            &mut st.scanner,
+            &mut st.linebreak,
+            &st.eqtb,
+            just_box,
+            hpack,
+            d,
+            &mut lr_ptr,
+            &mut cur_line,
+        ) {
             Ok(done) => done,
-            Err(PostLineAbort::Node(e)) => node_recycle_abort(e),
-            Err(PostLineAbort::HlistStackFailure) => crate::errors::pdf_error(
-                c"insert_left_margin_kern".as_ptr(),
-                c"hlist stack failure".as_ptr(),
-            ),
+            Err(PostLineAbort::Node(e)) => return PostLineBreakOutcome::Node(e),
+            Err(PostLineAbort::HlistStackFailure) => {
+                return PostLineBreakOutcome::PdfError {
+                    proc_name: c"insert_left_margin_kern",
+                    message: c"hlist stack failure",
+                }
+            }
         };
 
         if done {
@@ -2664,16 +2699,14 @@ pub unsafe fn post_line_break(d: bool) {
         }
     }
 
-    let confused = crate::state::with_state(|st| {
-        cur_line != st.linebreak.best_line || st.mem.b32s1(TEMP_HEAD) != TEX_NULL
-    });
-    if confused {
-        crate::errors::confusion(c"line breaking".as_ptr());
+    if cur_line != st.linebreak.best_line || st.mem.b32s1(TEMP_HEAD) != TEX_NULL {
+        return PostLineBreakOutcome::Confusion(c"line breaking");
     }
 
-    let best_line = crate::state::with_state(|st| st.linebreak.best_line);
+    let best_line = st.linebreak.best_line;
     crate::globals::set_cur_list_prev_graf(best_line - 1);
     crate::globals::set_cur_list_e_tex_aux(lr_ptr);
+    PostLineBreakOutcome::Done
 }
 
 enum TryBreakAbort {

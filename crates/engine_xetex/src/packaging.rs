@@ -2560,6 +2560,34 @@ pub unsafe fn hpack(p: i32, w: i32, m: i16) -> i32 {
     }
     outcome.r
 }
+
+/// `&mut EngineState` form of [`hpack`] for threaded callers (the line breaker):
+/// runs the [`hpack_in`] core and prints any over/underfull-`\hbox` diagnostic
+/// *under the live borrow* (via [`print_hpack_diag_in`]) so log order is
+/// preserved. The cold arena-exhaustion abort is returned, not fired, so the
+/// caller can run it after the borrow drops (§5).
+pub(crate) fn hpack_emit_in(
+    st: &mut crate::state::EngineState,
+    p: i32,
+    w: i32,
+    m: i16,
+) -> Result<i32, NodeRecycleAbort> {
+    let outcome = hpack_in(
+        &mut st.mem,
+        &st.eqtb,
+        &mut st.fonts,
+        &mut st.scanner,
+        &mut st.shipout,
+        p,
+        w,
+        m,
+    )?;
+    for diag in outcome.diags.into_iter().flatten() {
+        print_hpack_diag_in(st, outcome.r, diag);
+    }
+    Ok(outcome.r)
+}
+
 fn vpackage_in(
     mem: &mut MemState,
     eqtb: &EqtbState,
