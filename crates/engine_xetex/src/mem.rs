@@ -823,6 +823,20 @@ pub fn pop_nest() {
     restore_cur_list_from_nest(nest_ptr());
 }
 
+/// Threaded (Phase C) core of [`pop_nest`]: touches the `mem` arena and the
+/// `nest` stack directly through the borrowed clusters, so it is safe to call
+/// under a live `&mut EngineState` borrow. `cur_list` is still the deferred
+/// `mod raw` static, so reading/writing it (via `cur_list_head` /
+/// `set_cur_list_record`) is a raw access that does not re-enter `with_state`.
+pub fn pop_nest_in(mem: &mut MemState, input: &mut crate::state::InputClusterState) {
+    let head = cur_list_head();
+    mem.set_b32s1(head, mem.avail);
+    mem.avail = head;
+    input.nest_ptr -= 1;
+    let rec = input.nest[input.nest_ptr as usize];
+    crate::globals::set_cur_list_record(rec);
+}
+
 // ---------------------------------------------------------------------------
 // prev_rightmost
 // ---------------------------------------------------------------------------

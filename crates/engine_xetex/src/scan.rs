@@ -503,7 +503,14 @@ pub unsafe fn scan_delimiter_int() {
 ///
 /// translated from xetex-xetex0.c:11330 (max_hyphenatable_length)
 pub fn max_hyphenatable_length() -> i32 {
-    let v = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH);
+    crate::state::with_state(|st| max_hyphenatable_length_in(&st.eqtb))
+}
+
+/// Threaded (Phase C) core of [`max_hyphenatable_length`]: reads the
+/// `\XeTeXhyphenatablelength` integer parameter directly from the borrowed
+/// `eqtb`, so it is safe to call under a live `&mut EngineState` borrow.
+pub fn max_hyphenatable_length_in(eqtb: &crate::state::EqtbState) -> i32 {
+    let v = eqtb.b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH);
     if v > HYPHENATABLE_LENGTH_LIMIT {
         HYPHENATABLE_LENGTH_LIMIT
     } else {

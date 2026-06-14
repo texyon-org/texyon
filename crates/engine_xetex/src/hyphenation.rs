@@ -40,13 +40,13 @@ fn set_trie_op_hash_in(hyph: &mut HyphState, k: i32, v: i32) {
     hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
 }
 
-enum TrieAbort {
+pub(crate) enum TrieAbort {
     PatternMemoryOverflow(i32),
     PatternMemoryOpsOverflow(i32),
     PatternMemoryOpsPerLanguageOverflow(i32),
 }
 
-fn trie_abort(e: TrieAbort) -> ! {
+pub(crate) fn trie_abort(e: TrieAbort) -> ! {
     match e {
         TrieAbort::PatternMemoryOverflow(size) => unsafe {
             crate::errors::overflow(c"pattern memory".as_ptr(), size)
@@ -281,7 +281,7 @@ pub unsafe fn init_trie() {
     }
 }
 
-fn init_trie_in(hyph: &mut HyphState) -> Result<(), TrieAbort> {
+pub(crate) fn init_trie_in(hyph: &mut HyphState) -> Result<(), TrieAbort> {
     hyph.max_hyph_char += 1;
     hyph.op_start[0] = -MIN_TRIE_OP;
 

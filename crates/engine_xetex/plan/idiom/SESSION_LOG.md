@@ -8,6 +8,68 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 190 — 2026-06-14 — Execution: thread `line_break` itself (the line-breaker hub)
+
+**Type:** execution (workstream 01). Large minimal-docs hub slice — the
+session-189 "Next" item. Threaded the ~660-line `line_break` driver into
+`line_break_in(&mut EngineState) -> LineBreakOutcome`; `line_break(d)` is now a
+thin `with_state_mut` wrapper that dispatches the deferred cold abort.
+
+**Code:** the core holds one borrow across the whole pass and reads
+`mem`/`eqtb`/`scanner`/`linebreak`/`hyph`/`fonts` directly, calling the
+already-threaded cores under that borrow (`start_linebreak_pass`, `try_break`
+via the `line_break_try_break` split-borrow shim, `finite_shrink`,
+`hyphenate_in`, `split_native_tail_for_linebreak`, `choose_best_break`,
+`finish_last_line_fit`, `post_line_break_in`, `init_trie_in`,
+`set_current_hyph_index`). `cur_list` is the deferred `mod raw` static, so its
+reads/writes are raw and don't re-enter `with_state`. The `add_active_width`
+closure became an `aw!` temp-then-`+=` macro; the nested `add_node_width_to_active`
+became a free fn over `(mem, fonts, scanner)`. Cold aborts ride a new
+`LineBreakOutcome` sentinel (`Overflow`/`Node`/`TryBreak`/`Hyphenate`/`Trie`/
+`PostLineBreak`/`Confusion`/`Error`). New helpers: `mem::pop_nest_in(mem,input)`
++ `globals::set_cur_list_record`, `scan::max_hyphenatable_length_in(eqtb)`; made
+`hyphenation::{init_trie_in,TrieAbort,trie_abort}` `pub(crate)`.
+
+**Regression caught + fixed mid-session (TRIP):** the first cut deleted
+`finite_shrink_global`, which carried the *recoverable* "Infinite glue shrinkage
+found in a paragraph" diagnostic (`error()` that **returns**, not a `-> !`
+abort) — the threaded `finite_shrink` core only makes the shrink finite, never
+prints. The four `tex-outputs`/`engine_rust`/`latex_goldens` suites stayed green;
+only **TRIP** caught it (1/2: the message + 5 help lines missing from
+`trip.log`). Fixed with `finite_shrink_emit(st,p)`, which (when
+`no_shrink_error_yet`) emits the diagnostic through the **threaded**
+`error_here_with_diagnostic_in` / `capture_to_diagnostic_in` / `error_in` path
+under the borrow, then calls `finite_shrink`; a non-`Continue` `ErrorOutcome` is
+deferred to the wrapper via `LineBreakOutcome::Error`. **Lesson: a deleted
+`_global` wrapper may carry an inline recoverable-`error()` diagnostic the
+threaded core lacks — grep the old wrapper body for `error()`/`print_*`/help
+lines before deleting, and lean on TRIP (the only suite exercising the infinite-
+shrinkage path).**
+
+**Cleanup:** deleted 8 now-dead `_global` wrappers (`try_break_global`,
+`start_linebreak_pass_global`, `choose_best_break_global`,
+`finish_last_line_fit_global`, `free_active_and_passive_lists_global`,
+`free_final_linebreak_lists_global`, `finite_shrink_global`,
+`split_native_tail_for_linebreak_global`, `set_current_hyph_index_global`) and
+~79 orphaned bridge accessors across `linebreak.rs` (`node_type`/`box_width`/
+`glue_*`/`ligature_*`/etc.) and `globals.rs` (the linebreak/hyph scalar
+getters/setters: `active_width`/`background`/`cur_p`/`ha`/`hf`/`hn`/`threshold`/…).
+
+**Tests:** `cargo fmt --check`; `cargo check`; dashboard **29/2/7/4** (TRIP back
+to 2/2 after the fix); release build; full corpus **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1` / `1905.00148v1`, doc-count 639 ==
+baseline, no NOXDV/NOLOG. Metrics: warnings **41** (held); `unsafe fn`
+**533 → 526**; `with_state(_mut)` sites **1125 → 1040** (−85, the bridge-accessor
+collapse).
+
+**Next:** thread the next recursive hub — `mlist_to_hlist` or `hlist_out`/
+`vlist_out`/`ship_out` (their callees are largely threaded; native/OT measurer
+is now re-entry-clean). `get_next`/`expand`/`macro_call`/`main_control` and the
+scanner remain the big un-threaded coupling cluster. Per recon the mechanical
+leaf phase stays drained — one careful hub per session.
+
+---
+
 ## Idiom session 189 — 2026-06-14 — Execution: thread `hyphenate` core
 
 **Type:** execution (workstream 01). Minimal-docs batch; used one read-only explorer
