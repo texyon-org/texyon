@@ -2341,9 +2341,6 @@ pub unsafe fn measure_native_node_global(p_node: *mut c_void, use_glyph_metrics:
 pub unsafe fn measure_native_glyph_global(p_node: *mut c_void, use_glyph_metrics: c_int) {
     crate::state::with_state(|s| measure_native_glyph(&s.fonts, p_node, use_glyph_metrics))
 }
-pub unsafe fn store_justified_native_glyphs_global(p_node: *mut c_void) {
-    crate::state::with_state(|s| store_justified_native_glyphs(&s.fonts, p_node))
-}
 pub unsafe fn linebreak_next_global(f: c_int) -> c_int {
     crate::state::with_state(|s| linebreak_next(&s.fonts, f))
 }

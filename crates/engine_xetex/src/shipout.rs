@@ -8,31 +8,29 @@ use crate::consts::{
 use crate::ext::apply_tfm_font_mapping;
 use crate::ext::makeXDVGlyphArrayData;
 use crate::ext::make_font_def_global;
-use crate::ext::store_justified_native_glyphs_global;
 
 use crate::globals::{
     avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name,
     cur_page_height, cur_tok, cur_v, def_ref, doing_leaders, eqtb_b32s1, file_offset,
-    font_area_entry, font_bc_entry, font_ec_entry, font_glue, font_info_b16,
-    font_letter_space_entry, font_mapping_ptr, font_ptr, font_used_entry, init_pool_ptr, job_name,
-    last_bop, log_opened, lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v,
-    mem_as_u16_ptr, mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1,
-    mem_gr, mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size, rule_ht, rule_wd,
-    rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area, set_cur_cs,
-    set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode, set_cur_name,
-    set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset, set_dead_cycles,
-    set_doing_leaders, set_doing_special, set_font_ptr, set_font_used_entry, set_help_line,
-    set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_push, set_max_v,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pdf_last_x_pos,
-    set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht, set_rule_wd, set_selector,
-    set_str_pool, set_temp_ptr, set_total_pages, set_write_file, set_write_open,
+    font_area_entry, font_bc_entry, font_ec_entry, font_info_b16, font_mapping_ptr, font_ptr,
+    font_used_entry, init_pool_ptr, job_name, last_bop, log_opened, lr_problems, lr_ptr, max_h,
+    max_print_line, max_push, max_v, mem_as_u16_ptr, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0,
+    mem_b32s1, mem_gr, mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size,
+    rule_ht, rule_wd, rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area,
+    set_cur_cs, set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode,
+    set_cur_name, set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset,
+    set_dead_cycles, set_doing_leaders, set_doing_special, set_font_ptr, set_font_used_entry,
+    set_help_line, set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h,
+    set_max_push, set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
+    set_mem_word, set_pdf_last_x_pos, set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht,
+    set_rule_wd, set_selector, set_temp_ptr, set_total_pages, set_write_file, set_write_open,
     set_xtx_ligature_present, shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr,
     str_start, temp_ptr, term_offset, total_pages, write_file, write_loc, write_open,
     xdv_buffer_entry,
 };
 use crate::mem::{free_node_global, get_avail_global, get_node_global, new_kern_global};
 use crate::node::{EdgeNode, MovementNode, NodePtr};
-use crate::state::{FontState, MemState, ScannerState, ShipoutState, StringsState};
+use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
 extern "C" {
@@ -255,6 +253,24 @@ enum DviFlush {
 pub(crate) enum ShipoutAbort {
     /// `confusion("LR2")` — internal LR-consistency failure in `reverse`.
     ConfusionLr2,
+    /// `overflow("pool size", …)` — string-pool exhaustion in word merging.
+    PoolSizeOverflow,
+    /// A node-allocation overflow bubbled up from `new_native_word_node`.
+    NodeRecycle(crate::scan::NodeRecycleAbort),
+    /// A `confusion(msg)` bubbled up from `flush_node_list`.
+    Confusion(&'static std::ffi::CStr),
+}
+
+/// Fire a deferred shipout cold abort after the state borrow has dropped (§5).
+unsafe fn fire_shipout_abort(a: ShipoutAbort) -> ! {
+    match a {
+        ShipoutAbort::ConfusionLr2 => crate::errors::confusion(c"LR2".as_ptr()),
+        ShipoutAbort::PoolSizeOverflow => {
+            crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr())
+        }
+        ShipoutAbort::NodeRecycle(e) => crate::scan::node_recycle_abort(e),
+        ShipoutAbort::Confusion(msg) => crate::errors::confusion(msg.as_ptr()),
+    }
 }
 
 struct DviEmit {
@@ -859,75 +875,79 @@ fn skip_ignorable_interword_nodes(mem: &MemState, mut q: i32) -> i32 {
     q
 }
 
-unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u16) {
-    let mut p = mem_b32s1(this_box + 5);
+fn merge_justifiable_native_words(
+    mem: &mut MemState,
+    strings: &mut StringsState,
+    fonts: &FontState,
+    eqtb: &EqtbState,
+    this_box: i32,
+    g_order: u16,
+    g_sign: u16,
+) -> Result<(), ShipoutAbort> {
+    let mut p = mem.b32s1(this_box + 5);
     let mut prev_p = this_box + 5;
 
     while p != TEX_NULL {
-        if mem_b32s1(p) != TEX_NULL
-            && !is_char_node_global(p)
-            && mem_b16s1(p) == WHATSIT_NODE
-            && (mem_b16s0(p) == NATIVE_WORD_NODE || mem_b16s0(p) == NATIVE_WORD_NODE_AT)
-            && font_letter_space_entry(mem_b16s2(p + 4) as i32) == 0
+        if mem.b32s1(p) != TEX_NULL
+            && !crate::mem::is_char_node(mem, p)
+            && mem.b16s1(p) == WHATSIT_NODE
+            && (mem.b16s0(p) == NATIVE_WORD_NODE || mem.b16s0(p) == NATIVE_WORD_NODE_AT)
+            && fonts.font_letter_space_entry(mem.b16s2(p + 4) as i32) == 0
         {
             let r = p;
-            let mut k = mem_b16s1(r + 4) as i32;
-            let mut q = mem_b32s1(p);
+            let mut k = mem.b16s1(r + 4) as i32;
+            let mut q = mem.b32s1(p);
 
             'check_next: loop {
-                q = crate::state::with_state(|st| skip_ignorable_interword_nodes(&st.mem, q));
+                q = skip_ignorable_interword_nodes(mem, q);
 
-                if q != TEX_NULL && !is_char_node_global(q) {
-                    if mem_b16s1(q) == GLUE_NODE && mem_b16s0(mem_b32s0(q + 1)) == NORMAL {
-                        if mem_b32s0(q + 1) == font_glue(mem_b16s2(r + 4) as i32) {
-                            q = crate::state::with_state(|st| {
-                                skip_ignorable_interword_nodes(&st.mem, mem_b32s1(q))
-                            });
+                if q != TEX_NULL && !crate::mem::is_char_node(mem, q) {
+                    if mem.b16s1(q) == GLUE_NODE && mem.b16s0(mem.b32s0(q + 1)) == NORMAL {
+                        if mem.b32s0(q + 1) == fonts.font_glue(mem.b16s2(r + 4) as i32) {
+                            q = skip_ignorable_interword_nodes(mem, mem.b32s1(q));
 
                             if q != TEX_NULL
-                                && !is_char_node_global(q)
-                                && mem_b16s1(q) == WHATSIT_NODE
-                                && (mem_b16s0(q) == NATIVE_WORD_NODE
-                                    || mem_b16s0(q) == NATIVE_WORD_NODE_AT)
-                                && mem_b16s2(q + 4) == mem_b16s2(r + 4)
+                                && !crate::mem::is_char_node(mem, q)
+                                && mem.b16s1(q) == WHATSIT_NODE
+                                && (mem.b16s0(q) == NATIVE_WORD_NODE
+                                    || mem.b16s0(q) == NATIVE_WORD_NODE_AT)
+                                && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                             {
                                 p = q;
-                                k += 1 + mem_b16s1(q + 4) as i32;
-                                q = mem_b32s1(q);
+                                k += 1 + mem.b16s1(q + 4) as i32;
+                                q = mem.b32s1(q);
                                 continue 'check_next;
                             }
                         } else {
-                            q = mem_b32s1(q);
+                            q = mem.b32s1(q);
                         }
 
                         if q != TEX_NULL
-                            && !is_char_node_global(q)
-                            && mem_b16s1(q) == KERN_NODE
-                            && mem_b16s0(q) == SPACE_ADJUSTMENT
+                            && !crate::mem::is_char_node(mem, q)
+                            && mem.b16s1(q) == KERN_NODE
+                            && mem.b16s0(q) == SPACE_ADJUSTMENT
                         {
-                            q = crate::state::with_state(|st| {
-                                skip_ignorable_interword_nodes(&st.mem, mem_b32s1(q))
-                            });
+                            q = skip_ignorable_interword_nodes(mem, mem.b32s1(q));
 
                             if q != TEX_NULL
-                                && !is_char_node_global(q)
-                                && mem_b16s1(q) == WHATSIT_NODE
-                                && (mem_b16s0(q) == NATIVE_WORD_NODE
-                                    || mem_b16s0(q) == NATIVE_WORD_NODE_AT)
-                                && mem_b16s2(q + 4) == mem_b16s2(r + 4)
+                                && !crate::mem::is_char_node(mem, q)
+                                && mem.b16s1(q) == WHATSIT_NODE
+                                && (mem.b16s0(q) == NATIVE_WORD_NODE
+                                    || mem.b16s0(q) == NATIVE_WORD_NODE_AT)
+                                && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                             {
                                 p = q;
-                                k += 1 + mem_b16s1(q + 4) as i32;
-                                q = mem_b32s1(q);
+                                k += 1 + mem.b16s1(q + 4) as i32;
+                                q = mem.b32s1(q);
                                 continue 'check_next;
                             }
                         }
-                    } else if mem_b16s1(q) == WHATSIT_NODE
-                        && (mem_b16s0(q) == NATIVE_WORD_NODE || mem_b16s0(q) == NATIVE_WORD_NODE_AT)
-                        && mem_b16s2(q + 4) == mem_b16s2(r + 4)
+                    } else if mem.b16s1(q) == WHATSIT_NODE
+                        && (mem.b16s0(q) == NATIVE_WORD_NODE || mem.b16s0(q) == NATIVE_WORD_NODE_AT)
+                        && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                     {
                         p = q;
-                        q = mem_b32s1(q);
+                        q = mem.b32s1(q);
                         continue 'check_next;
                     }
                 }
@@ -936,92 +956,120 @@ unsafe fn merge_justifiable_native_words(this_box: i32, g_order: u16, g_sign: u1
             }
 
             if p != r {
-                if pool_ptr() + k > pool_size() {
-                    crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+                if strings.pool_ptr + k > strings.pool_size {
+                    return Err(ShipoutAbort::PoolSizeOverflow);
                 }
 
                 k = 0;
                 q = r;
                 loop {
-                    if mem_b16s1(q) == WHATSIT_NODE {
-                        if mem_b16s0(q) == NATIVE_WORD_NODE || mem_b16s0(q) == NATIVE_WORD_NODE_AT {
-                            let text = mem_as_u16_ptr(q + 6);
-                            for j in 0..(mem_b16s1(q + 4) as i32) {
-                                set_str_pool(pool_ptr(), *text.add(j as usize));
-                                set_pool_ptr(pool_ptr() + 1);
+                    if mem.b16s1(q) == WHATSIT_NODE {
+                        if mem.b16s0(q) == NATIVE_WORD_NODE || mem.b16s0(q) == NATIVE_WORD_NODE_AT {
+                            let text = mem.as_u16_ptr(q + 6);
+                            for j in 0..(mem.b16s1(q + 4) as i32) {
+                                // SAFETY: native-word text spans `mem[q+6..]`, length b16s1(q+4).
+                                strings.str_pool[strings.pool_ptr as usize] =
+                                    unsafe { *text.add(j as usize) };
+                                strings.pool_ptr += 1;
                             }
 
-                            k += mem_b32s1(q + 1);
+                            k += mem.b32s1(q + 1);
                         }
-                    } else if mem_b16s1(q) == GLUE_NODE {
-                        set_str_pool(pool_ptr(), b' ' as u16);
-                        set_pool_ptr(pool_ptr() + 1);
-                        let g = mem_b32s0(q + 1);
-                        k += mem_b32s1(g + 1);
+                    } else if mem.b16s1(q) == GLUE_NODE {
+                        strings.str_pool[strings.pool_ptr as usize] = b' ' as u16;
+                        strings.pool_ptr += 1;
+                        let g = mem.b32s0(q + 1);
+                        k += mem.b32s1(g + 1);
 
                         if g_sign != NORMAL {
                             if g_sign == STRETCHING {
-                                if mem_b16s1(g) == g_order {
+                                if mem.b16s1(g) == g_order {
                                     k += crate::scaled_math::tex_round(
-                                        mem_gr(this_box + 6) * mem_b32s1(g + 2) as f64,
+                                        mem.gr(this_box + 6) * mem.b32s1(g + 2) as f64,
                                     );
                                 }
-                            } else if mem_b16s0(g) == g_order {
+                            } else if mem.b16s0(g) == g_order {
                                 k -= crate::scaled_math::tex_round(
-                                    mem_gr(this_box + 6) * mem_b32s1(g + 3) as f64,
+                                    mem.gr(this_box + 6) * mem.b32s1(g + 3) as f64,
                                 );
                             }
                         }
-                    } else if mem_b16s1(q) == KERN_NODE {
-                        k += mem_b32s1(q + 1);
+                    } else if mem.b16s1(q) == KERN_NODE {
+                        k += mem.b32s1(q + 1);
                     }
 
                     if q == p {
                         break;
                     }
-                    q = mem_b32s1(q);
+                    q = mem.b32s1(q);
                 }
 
-                q = crate::scan::new_native_word_node_global(
-                    mem_b16s2(r + 4) as i32,
-                    crate::hash::cur_length_global(),
-                );
-                set_mem_b16s0(q, mem_b16s0(r));
+                let nlen = crate::hash::cur_length(strings);
+                q = crate::fonts::new_native_word_node(mem, eqtb, mem.b16s2(r + 4) as i32, nlen)
+                    .map_err(ShipoutAbort::NodeRecycle)?;
+                mem.set_b16s0(q, mem.b16s0(r));
 
-                let src = str_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
-                let dst = mem_as_u16_ptr_mut(q + 6);
-                for j in 0..crate::hash::cur_length_global() {
-                    *dst.add(j as usize) = *src.add(j as usize);
+                let base = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
+                // SAFETY: copying `nlen` UTF-16 codes from the pool tail into the
+                // freshly-allocated native-word node text region.
+                let src = unsafe { strings.str_pool.as_ptr().add(base as usize) };
+                let dst = mem.as_u16_ptr_mut(q + 6);
+                for j in 0..nlen {
+                    // SAFETY: both regions hold at least `nlen` u16 codes.
+                    unsafe { *dst.add(j as usize) = *src.add(j as usize) };
                 }
 
-                set_mem_b32s1(q + 1, k);
-                store_justified_native_glyphs_global(mem_node_addr(q));
-                set_mem_b32s1(prev_p, q);
-                set_mem_b32s1(q, mem_b32s1(p));
-                set_mem_b32s1(p, TEX_NULL);
+                mem.set_b32s1(q + 1, k);
+                let addr = mem.node_addr(q);
+                // SAFETY: `addr` points at the native-word node; FFI does not re-enter.
+                unsafe { crate::ext::store_justified_native_glyphs(fonts, addr) };
+                mem.set_b32s1(prev_p, q);
+                mem.set_b32s1(q, mem.b32s1(p));
+                mem.set_b32s1(p, TEX_NULL);
                 prev_p = r;
-                p = mem_b32s1(r);
+                p = mem.b32s1(r);
 
                 while p != TEX_NULL {
-                    if crate::state::with_state(|st| is_ignorable_interword_node(&st.mem, p)) {
-                        set_mem_b32s1(prev_p, mem_b32s1(p));
-                        set_mem_b32s1(p, mem_b32s1(q));
-                        set_mem_b32s1(q, p);
+                    if is_ignorable_interword_node(mem, p) {
+                        mem.set_b32s1(prev_p, mem.b32s1(p));
+                        mem.set_b32s1(p, mem.b32s1(q));
+                        mem.set_b32s1(q, p);
                         q = p;
                     }
 
                     prev_p = p;
-                    p = mem_b32s1(p);
+                    p = mem.b32s1(p);
                 }
 
-                crate::packaging::flush_node_list_global(r);
-                set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+                crate::packaging::flush_node_list(mem, r).map_err(ShipoutAbort::Confusion)?;
+                strings.pool_ptr = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
                 p = q;
             }
         }
 
         prev_p = p;
-        p = mem_b32s1(p);
+        p = mem.b32s1(p);
+    }
+
+    Ok(())
+}
+
+// Bridge-down wrapper; retires when `hlist_out` is threaded.
+unsafe fn merge_justifiable_native_words_global(this_box: i32, g_order: u16, g_sign: u16) {
+    let outcome = crate::state::with_state_mut(|st| {
+        let s = &mut *st;
+        merge_justifiable_native_words(
+            &mut s.mem,
+            &mut s.strings,
+            &s.fonts,
+            &s.eqtb,
+            this_box,
+            g_order,
+            g_sign,
+        )
+    });
+    if let Err(a) = outcome {
+        fire_shipout_abort(a);
     }
 }
 
@@ -1255,7 +1303,7 @@ pub unsafe fn hlist_out() {
     let g_sign = mem_b16s1(this_box + 5);
 
     if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 1 {
-        merge_justifiable_native_words(this_box, g_order, g_sign);
+        merge_justifiable_native_words_global(this_box, g_order, g_sign);
     }
 
     let mut p = mem_b32s1(this_box + 5);
@@ -1292,7 +1340,10 @@ pub unsafe fn hlist_out() {
         set_mem_b32s0(p + 2, 0);
         set_mem_b32s1(prev_p, p);
         set_cur_h(0);
-        set_mem_b32s1(p, reverse_global(this_box, TEX_NULL, &mut cur_g, &mut cur_glue));
+        set_mem_b32s1(
+            p,
+            reverse_global(this_box, TEX_NULL, &mut cur_g, &mut cur_glue),
+        );
         set_mem_b32s1(p + 1, -cur_h());
         set_cur_h(save_h);
         set_mem_b16s0(this_box, REVERSED);
@@ -2332,7 +2383,7 @@ pub unsafe fn reverse_global(this_box: i32, t: i32, cur_g: *mut i32, cur_glue: *
     });
     match outcome {
         Ok(l) => l,
-        Err(ShipoutAbort::ConfusionLr2) => crate::errors::confusion(c"LR2".as_ptr()),
+        Err(a) => fire_shipout_abort(a),
     }
 }
 

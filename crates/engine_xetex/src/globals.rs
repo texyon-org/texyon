@@ -4024,11 +4024,6 @@ pub(crate) fn xdv_buffer_entry(i: i32) -> u8 {
     crate::state::with_state(|state| state.fonts.xdv_buffer[i as usize])
 }
 
-#[inline]
-pub(crate) fn font_letter_space_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.font_letter_space[f as usize])
-}
-
 // ---------------------------------------------------------------------------
 // Missing setters for pdf_last_x/y_pos (raw already declared)
 // ---------------------------------------------------------------------------
