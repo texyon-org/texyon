@@ -11,10 +11,10 @@ use crate::scan::{get_token, scan_register_num, scan_toks, the_toks};
 use crate::state::EngineState;
 
 use crate::globals::{
-    cond_ptr, cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, def_ref, eqtb_b32s1,
-    file_offset, init_pool_ptr, line, max_print_line, mem_b16s0, mem_b16s1, mem_b32s1, pool_ptr,
-    pool_size, rust_stdout, selector, set_help_line, set_help_ptr, set_if_limit, set_mem_b16s1,
-    set_mem_b32s1, set_pool_ptr, set_selector, set_str_ptr, str_ptr, str_start, term_offset,
+    cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, def_ref, eqtb_b32s1, file_offset,
+    init_pool_ptr, line, max_print_line, mem_b16s0, mem_b16s1, mem_b32s1, pool_ptr, pool_size,
+    rust_stdout, selector, set_help_line, set_help_ptr, set_mem_b32s1, set_pool_ptr, set_selector,
+    set_str_ptr, str_ptr, str_start, term_offset,
 };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
@@ -3076,21 +3076,28 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
 ///
 /// translated from xetex-xetex0.c:7889 (change_if_limit)
 pub unsafe fn change_if_limit(l: i16, p: i32) {
-    if p == cond_ptr() {
-        set_if_limit(l as u8);
+    crate::state::with_state_mut(|st| change_if_limit_in(st, l, p)).finish();
+}
+
+/// `&mut EngineState` core of [`change_if_limit`]. Returns the cold
+/// `confusion("if")` path as a §5 sentinel.
+pub(crate) fn change_if_limit_in(st: &mut EngineState, l: i16, p: i32) -> ErrorOutcome {
+    if p == st.scanner.cond_ptr {
+        st.scanner.if_limit = l as u8;
     } else {
-        let mut q = cond_ptr();
+        let mut q = st.scanner.cond_ptr;
         loop {
             if q == crate::mem::TEX_NULL {
-                crate::errors::confusion(c"if".as_ptr());
+                return ErrorOutcome::Confusion(c"if");
             }
-            if mem_b32s1(q) == p {
-                set_mem_b16s1(q, l as u16);
-                return;
+            if st.mem.b32s1(q) == p {
+                st.mem.set_b16s1(q, l as u16);
+                return ErrorOutcome::Continue;
             }
-            q = mem_b32s1(q); // LLIST_link(q)
+            q = st.mem.b32s1(q); // LLIST_link(q)
         }
     }
+    ErrorOutcome::Continue
 }
 
 extern "C" {}
