@@ -8,6 +8,65 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 186 — 2026-06-14 — Execution: thread the line-breaker driver tail (post_line_break + hpack/vpack diag helpers)
+
+**Type:** execution (workstream 01). **Recon finding worth recording up front:**
+the cheap mechanical *leaf* phase is essentially complete — every module is
+threaded down to `_in`/core fns + thin `_global`/`with_state` bridge stubs. The
+~1140 remaining `with_state` sites are (a) the `globals.rs` accessor bridge,
+(b) bridge stubs waiting on their callers, and (c) a small set of un-threaded
+**recursive top-level hubs**: `mlist_to_hlist`, `hlist_out`/`vlist_out`/
+`ship_out`, `line_break`, `get_next`/`expand`/`macro_call`, `main_control`.
+There is **no cheap keystone left with a leaf fan-out** (182–185 drained those).
+Progress now = threading a hub, which is bucket-C/D: each is 500–2000 lines,
+recursive, and interleaves state mutation with **with_state-bearing diagnostic
+printing whose byte order is parity-critical** — so a single-borrow thread must
+print via the session-182 `print_*_in` cores, never defer-and-reorder. Most hubs
+(`line_break`/`mlist_to_hlist`/`hlist_out`) also hit the **native-font / OT-math
+measurer** (the 135/136 FFI-re-entry wall). One hub per session, real regression
+risk; subagents don't help (per-file edit serialization + hazard judgment). This
+is the honest pace from here.
+
+Took the most tractable hub vein: the **line-breaker driver**. Its two big
+callees were the blockers — `try_break` was found **already fully threaded**
+(`&mut st.mem/scanner/linebreak/eqtb/fonts/config/errors`), so only
+`post_line_break` remained, and it is **FFI-free** (only cold aborts).
+
+**Code (2 commits):**
+1. **hpack/vpack diagnostic helpers** — split `print_{hpack,vpack}_diag` +
+   `print_{hpack,vpack}_common_ending` into thin `with_state` wrappers +
+   `pub(crate)` `*_in` cores that print under a live `&mut EngineState` borrow
+   (via the `print_*_in`/`begin_diagnostic_in`/`show_box_in`/`short_display_in`
+   cores). `output_active`/`pack_begin_line`/`font_in_short_display` are now
+   field-direct (`st.shipout`/`st.scanner`/`st.errors`); `line()` stays raw.
+   `PackDiag` → `pub(crate)`. Retired now-dead global wrappers `short_display`,
+   `set_font_in_short_display`, `pack_begin_line`.
+2. **post_line_break** — collapsed from scoped-island form (3 `with_state_mut`
+   per line) to a single-borrow `post_line_break_in` held across the whole
+   per-line loop. The per-line `hpack` + its in-order over/underfull-`\hbox`
+   diagnostic now run via a new `packaging::hpack_emit_in(st,…) ->
+   Result<i32, NodeRecycleAbort>` (= `hpack_in` + `print_hpack_diag_in` under the
+   borrow, abort returned not fired). Cold aborts (`node_recycle_abort`/
+   `pdf_error`/`confusion`) ride a new `PostLineBreakOutcome` sentinel fired by
+   the thin wrapper after the borrow drops (§5). `cur_list_*` stay raw.
+
+**Tests:** `cargo check` + `fmt --check`; dashboard **29/2/7/4** after each
+commit; rebuilt `target/release/tectonic`; `plan/scripts/corpus.sh check all`:
+**637 passed / 2 diverged / 0 missing-golden**, only the known FP divergences
+`1905.00073v1` / `1905.00148v1`. Metrics: warnings **41** (held); `unsafe fn`
+**536 → 535**; `with_state(_mut)` sites **1146 → 1141**.
+
+**Next:** the line breaker's two big callees (`post_line_break`, `try_break`)
+are now both threaded, so the only thing between `line_break` and a single-borrow
+`line_break_in` is **its own hyphenation pass's native-font-measurer FFI**
+(`set_native_metrics`/`new_native_word_node`/`copy_native_tail` — the 135/136
+wall). Threading that measurer is the highest-leverage next slice (it also
+unblocks `mlist_to_hlist` and `hlist_out`); it needs the deferred-outcome /
+scoped-island treatment for the C++ measurer re-entry. Otherwise pick another
+hub. Do **not** expect mechanical fan-out — it's careful one-hub work now.
+
+---
+
 ## Idiom session 185 — 2026-06-14 — Execution: thread the `error()` keystone + the errors.rs helper cluster + char_warning/change_if_limit
 
 **Type:** execution (workstream 01 / fused `01b`+`01c`). Large low-docs batch
