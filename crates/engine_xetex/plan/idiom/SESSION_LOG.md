@@ -8,6 +8,70 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 187 — 2026-06-14 — Execution: break the native-font measurer FFI re-entry wall + thread the native-word hyphenation island
+
+**Type:** execution (workstream 01). Took session 186's recommended highest-leverage
+slice — the native-font measurer (the "135/136 FFI re-entry wall" blocking
+`line_break_in`/`mlist_to_hlist`/`hlist_out`). **One coherent commit** (`803be361`).
+
+**What the wall actually is (corrected understanding):** the C++ `measure_native_node`
+is *already* threaded (`&FontState`, re-entry-free). The real barriers are the
+**Rust** helpers on the native-char build path that re-enter `with_state`:
+`set_native_metrics` (called `measure_native_node_global`), `apply_mapping` (manages
+the `mapped_text` Vec via `with_state_mut`), and `new_native_character` (string-pool
++ apply_mapping + char_warning + build island + measurer). Note RefCell allows
+*nested shared* borrows, which is why the legacy chain (`with_state(shared)` →
+inner `with_state(shared)`) never panicked — but a threaded caller holding
+`with_state_mut` makes any inner `with_state` panic. That is the wall.
+
+**Code:**
+- `set_native_metrics(&mem,&eqtb,&fonts,p)` calls threaded `measure_native_node`
+  directly.
+- `apply_mapping(&mut FontState, …)` — threaded (only touches `mapped_text`);
+  `main_control`'s caller evaluates `native_text`/`native_len` before the borrow.
+- `new_native_character_in(&mut EngineState, f, c) -> Result<i32, NativeCharAbort>`
+  + thin wrapper. All staging/mapping/`char_warning_in`/build/measure under one
+  borrow. Cold aborts ride `NativeCharAbort` (every non-`Continue` `ErrorOutcome`
+  is divergent in `finish()`, so deferral == the legacy global `char_warning`
+  abort; `finish()` is a safe fn with narrow `unsafe`).
+- `hyphenate`'s `goto_found` native_word_node split → one `with_state_mut` island
+  over the threaded `new_native_word_node`/`set_native_metrics`/`new_disc`/
+  `new_native_character_in`/`flush_node_list` cores, original allocation order
+  preserved. Cold aborts ride `HyphNativeAbort` (`01b` §5).
+
+**Regression caught and fixed mid-session (important lesson):** the first cut
+threaded `new_native_character_in` but `apply_mapping` *also* re-enters
+`with_state` — so the wrapper panicked (`RefCell already borrowed`) on every
+mapping/native-font doc. **The four-suite dashboard did NOT catch it** (its fonts
+don't use TECkit mappings); only the full corpus did — as **NOXDV/NOLOG** (no
+output, ~49 docs), which the PARITY pass/diverge counts hide. Lesson: after any
+native-font / measurer slice, diff the corpus *doc count* (passed+diverged) vs
+baseline, not just the divergence list; a drop = crashes. Resolved by threading
+`apply_mapping`. (`testfiles/github-0081` showed a one-off DIFF in one corpus run
+but is deterministic + golden-matching standalone and doesn't hyphenate — a
+harness flake, not a regression.)
+
+**Tests:** `cargo check`+`fmt`; dashboard **29/2/7/4**; rebuilt
+`target/release/tectonic`; `corpus.sh check all` = **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1` (verified == the
+session-186 baseline binary on this machine, incl. NOXDV/NOLOG = 0). Metrics:
+warnings **41** (held); `unsafe fn` **536** (held); `with_state(_mut)` sites
+**1141 → 1144** (+3 transitional scoped islands, retire when `line_break`/
+`hyphenate` fully thread, cf. session 136's accepted +2).
+
+**Next:** the native-char/measurer leaves are now re-entry-clean, so the path is
+open to thread `line_break` itself (its two big callees `post_line_break`/
+`try_break` were done in ≤186; the remaining `set_native_metrics_global`/
+`new_native_character` call sites in its main loop can now pass borrows through),
+then `mlist_to_hlist` / `hlist_out`. Each is still a careful one-hub slice. **Re
+the broader pace: the mechanical leaf phase is genuinely drained (confirmed via
+`phase_c_recon.py` — top items are unit tests + the intentionally-deferred
+hot-tokenizer accessors + 3 trivial dead wrappers); remaining work is
+hub-by-hub, subagents don't help, and corpus doc-count must be checked, not just
+the divergence list.**
+
+---
+
 ## Idiom session 186 — 2026-06-14 — Execution: thread the line-breaker driver tail (post_line_break + hpack/vpack diag helpers)
 
 **Type:** execution (workstream 01). **Recon finding worth recording up front:**
