@@ -1215,11 +1215,7 @@ pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
 /// Print "' in <mode>" for use in error messages.
 ///
 /// translated from xetex-xetex0.c:1356 (print_in_mode)
-pub unsafe fn print_in_mode(m: i32) {
-    crate::state::with_state_mut(|st| print_in_mode_in(st, m));
-}
-
-/// `&mut EngineState` core of [`print_in_mode`].
+/// `&mut EngineState` core of `print_in_mode`.
 pub(crate) fn print_in_mode_in(st: &mut EngineState, m: i32) {
     if m > 0 {
         match m / MAX_COMMAND_PLUS_1 {

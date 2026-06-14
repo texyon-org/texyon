@@ -4,13 +4,9 @@ use crate::consts::{
     BATCH_MODE, BOX_BASE, ERROR_STOP_MODE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
 };
 use crate::globals::{
-    align_state, cur_chr, cur_cmd, cur_list_mode, eqtb_b32s1, history, interaction, job_name,
-    log_opened, rust_stdout, selector, set_align_state, set_help_line, set_help_ptr, set_history,
-    set_interaction, set_selector,
+    cur_chr, cur_cmd, cur_list_mode, history, interaction, job_name, log_opened, rust_stdout,
+    selector, set_help_line, set_help_ptr, set_history, set_interaction, set_selector,
 };
-use crate::output::print_cmd_chr;
-use crate::output::show_box;
-use crate::packaging::flush_node_list_global;
 
 // Interaction-mode constants (xetex_format.h:644–647).
 
@@ -20,12 +16,16 @@ use crate::io::close_files_and_terminate;
 use crate::io::open_log_file;
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
-use crate::output::print;
 use crate::output::print_char;
 use crate::output::print_cstr;
 use crate::output::print_int;
 use crate::output::print_nl_cstr;
-use crate::output::{print_char_in, print_ln_in, print_nl_cstr_in, show_context_in, token_show_in};
+use crate::output::{
+    begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
+    end_diagnostic_in, error_here_with_diagnostic_in, print_char_in, print_cmd_chr_in,
+    print_cstr_in, print_esc_cstr_in, print_in, print_in_mode_in, print_int_in, print_ln_in,
+    print_nl_cstr_in, show_box_in, show_context_in, token_show_in,
+};
 use crate::state::EngineState;
 
 const HISTORY_ERROR_ISSUED: i32 = 2;
@@ -96,6 +96,8 @@ pub(crate) enum ErrorOutcome {
     Halt,
     /// 100th recoverable error reached.
     Hundred,
+    /// A threaded helper hit a `confusion(...)` cold path under the borrow.
+    Confusion(&'static std::ffi::CStr),
 }
 
 impl ErrorOutcome {
@@ -112,6 +114,7 @@ impl ErrorOutcome {
                 post_error_message(false);
                 _tt_abort(c"halted after 100 potentially-recoverable errors".as_ptr());
             }
+            ErrorOutcome::Confusion(msg) => confusion(msg.as_ptr()),
         }
     }
 }
@@ -247,44 +250,85 @@ pub unsafe fn confusion(s: *const libc::c_char) -> ! {
 ///
 /// translated from xetex-xetex0.c:15 (int_error, was static)
 pub unsafe fn int_error(n: i32) {
-    print_cstr(c" (".as_ptr());
-    print_int(n);
-    print_char(b')' as i32);
-    error();
+    crate::state::with_state_mut(|st| int_error_in(st, n)).finish();
+}
+
+/// `&mut EngineState` core of [`int_error`].
+pub(crate) fn int_error_in(st: &mut EngineState, n: i32) -> ErrorOutcome {
+    print_cstr_in(st, c" (".as_ptr());
+    print_int_in(st, n);
+    print_char_in(st, b')' as i32);
+    error_in(st)
 }
 
 // ---------------------------------------------------------------------------
 // not_*_font_error cluster
 // ---------------------------------------------------------------------------
 
-unsafe fn not_font_error_common(cmd: u16, c: i32, f: i32, suffix: *const libc::c_char) {
-    error_here_with_diagnostic(c"Cannot use ".as_ptr());
-    print_cmd_chr(cmd, c);
-    print_cstr(c" with ".as_ptr());
-    print(crate::globals::font_name_entry(f));
-    print_cstr(suffix);
-    capture_to_diagnostic(std::ptr::null_mut());
-    error();
+fn not_font_error_common_in(
+    st: &mut EngineState,
+    cmd: u16,
+    c: i32,
+    f: i32,
+    suffix: *const libc::c_char,
+) -> ErrorOutcome {
+    error_here_with_diagnostic_in(st, c"Cannot use ".as_ptr());
+    print_cmd_chr_in(st, cmd, c);
+    print_cstr_in(st, c" with ".as_ptr());
+    print_in(st, st.fonts.font_name[f as usize]);
+    print_cstr_in(st, suffix);
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    error_in(st)
 }
 
 /// translated from xetex-xetex0.c:2727 (not_aat_font_error)
 pub unsafe fn not_aat_font_error(cmd: i32, c: i32, f: i32) {
-    not_font_error_common(cmd as u16, c, f, c"; not an AAT font".as_ptr());
+    crate::state::with_state_mut(|st| {
+        not_font_error_common_in(st, cmd as u16, c, f, c"; not an AAT font".as_ptr())
+    })
+    .finish();
 }
 
 /// translated from xetex-xetex0.c:2739 (not_aat_gr_font_error)
 pub unsafe fn not_aat_gr_font_error(cmd: i32, c: i32, f: i32) {
-    not_font_error_common(cmd as u16, c, f, c"; not an AAT or Graphite font".as_ptr());
+    crate::state::with_state_mut(|st| {
+        not_font_error_common_in(
+            st,
+            cmd as u16,
+            c,
+            f,
+            c"; not an AAT or Graphite font".as_ptr(),
+        )
+    })
+    .finish();
 }
 
 /// translated from xetex-xetex0.c:2751 (not_ot_font_error)
 pub unsafe fn not_ot_font_error(cmd: i32, c: i32, f: i32) {
-    not_font_error_common(cmd as u16, c, f, c"; not an OpenType Layout font".as_ptr());
+    crate::state::with_state_mut(|st| {
+        not_font_error_common_in(
+            st,
+            cmd as u16,
+            c,
+            f,
+            c"; not an OpenType Layout font".as_ptr(),
+        )
+    })
+    .finish();
 }
 
 /// translated from xetex-xetex0.c:2763 (not_native_font_error)
 pub unsafe fn not_native_font_error(cmd: i32, c: i32, f: i32) {
-    not_font_error_common(cmd as u16, c, f, c"; not a native platform font".as_ptr());
+    crate::state::with_state_mut(|st| {
+        not_font_error_common_in(
+            st,
+            cmd as u16,
+            c,
+            f,
+            c"; not a native platform font".as_ptr(),
+        )
+    })
+    .finish();
 }
 
 ///
@@ -315,73 +359,73 @@ pub(crate) fn give_err_help_in(st: &mut EngineState) {
 
 // translated from xetex-xetex0.c:5050 (mu_error)
 pub unsafe fn mu_error() {
-    error_here_with_diagnostic(c"Incompatible glue units".as_ptr());
-    capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(1);
-    set_help_line(
-        0,
-        c"I'm going to assume that 1mu=1pt when they're mixed.".as_ptr(),
-    );
-    error();
+    crate::state::with_state_mut(|st| mu_error_in(st)).finish();
+}
+
+/// `&mut EngineState` core of [`mu_error`].
+pub(crate) fn mu_error_in(st: &mut EngineState) -> ErrorOutcome {
+    error_here_with_diagnostic_in(st, c"Incompatible glue units".as_ptr());
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    st.errors.help_ptr = 1;
+    st.errors.help_line[0] = c"I'm going to assume that 1mu=1pt when they're mixed.".as_ptr();
+    error_in(st)
 }
 /// translated from xetex-xetex0.c:7411 (extra_right_brace)
 pub unsafe fn extra_right_brace() {
-    use crate::globals::cur_group;
+    crate::state::with_state_mut(|st| extra_right_brace_in(st)).finish();
+}
 
-    error_here_with_diagnostic(c"Extra }, or forgotten ".as_ptr());
-    match cur_group() {
-        SEMI_SIMPLE_GROUP => crate::output::print_esc_cstr(c"endgroup".as_ptr()),
-        MATH_SHIFT_GROUP => crate::output::print_char(b'$' as i32),
-        MATH_LEFT_GROUP => crate::output::print_esc_cstr(c"right".as_ptr()),
+/// `&mut EngineState` core of [`extra_right_brace`].
+pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
+    error_here_with_diagnostic_in(st, c"Extra }, or forgotten ".as_ptr());
+    match st.save_stack.cur_group {
+        SEMI_SIMPLE_GROUP => print_esc_cstr_in(st, c"endgroup".as_ptr()),
+        MATH_SHIFT_GROUP => print_char_in(st, b'$' as i32),
+        MATH_LEFT_GROUP => print_esc_cstr_in(st, c"right".as_ptr()),
         _ => {}
     }
-    capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(5);
-    set_help_line(
-        4,
-        c"I've deleted a group-closing symbol because it seems to be".as_ptr(),
-    );
-    set_help_line(
-        3,
-        c"spurious, as in `$x}$'. But perhaps the } is legitimate and".as_ptr(),
-    );
-    set_help_line(
-        2,
-        c"you forgot something else, as in `\\hbox{$x}'. In such cases".as_ptr(),
-    );
-    set_help_line(
-        1,
-        c"the way to recover is to insert both the forgotten and the".as_ptr(),
-    );
-    set_help_line(0, c"deleted material, e.g., by typing `I$}'.".as_ptr());
-    error();
-    set_align_state(align_state() + 1);
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    st.errors.help_ptr = 5;
+    st.errors.help_line[4] = c"I've deleted a group-closing symbol because it seems to be".as_ptr();
+    st.errors.help_line[3] =
+        c"spurious, as in `$x}$'. But perhaps the } is legitimate and".as_ptr();
+    st.errors.help_line[2] =
+        c"you forgot something else, as in `\\hbox{$x}'. In such cases".as_ptr();
+    st.errors.help_line[1] = c"the way to recover is to insert both the forgotten and the".as_ptr();
+    st.errors.help_line[0] = c"deleted material, e.g., by typing `I$}'.".as_ptr();
+    let outcome = error_in(st);
+    if matches!(outcome, ErrorOutcome::Continue) {
+        st.scanner.align_state += 1;
+    }
+    outcome
 }
 // translated from xetex-xetex0.c:9326 (you_cant)
 pub unsafe fn you_cant() {
-    error_here_with_diagnostic(c"You can't use `".as_ptr());
-    print_cmd_chr(cur_cmd() as u16, cur_chr());
-    crate::output::print_in_mode(cur_list_mode() as i32);
-    capture_to_diagnostic(std::ptr::null_mut());
+    crate::state::with_state_mut(|st| you_cant_in(st));
+}
+
+/// `&mut EngineState` core of [`you_cant`].
+pub(crate) fn you_cant_in(st: &mut EngineState) {
+    error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
+    print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+    print_in_mode_in(st, cur_list_mode() as i32);
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
 }
 // translated from xetex-xetex0.c:9334 (report_illegal_case)
 pub unsafe fn report_illegal_case() {
-    you_cant();
-    set_help_ptr(4);
-    set_help_line(
-        3,
-        c"Sorry, but I'm not programmed to handle this case;".as_ptr(),
-    );
-    set_help_line(2, c"I'll just pretend that you didn't ask for it.".as_ptr());
-    set_help_line(
-        1,
-        c"If you're in the wrong mode, you might be able to".as_ptr(),
-    );
-    set_help_line(
-        0,
-        c"return to the right one by typing `I}' or `I$' or `I\\par'.".as_ptr(),
-    );
-    error();
+    crate::state::with_state_mut(|st| report_illegal_case_in(st)).finish();
+}
+
+/// `&mut EngineState` core of [`report_illegal_case`].
+pub(crate) fn report_illegal_case_in(st: &mut EngineState) -> ErrorOutcome {
+    you_cant_in(st);
+    st.errors.help_ptr = 4;
+    st.errors.help_line[3] = c"Sorry, but I'm not programmed to handle this case;".as_ptr();
+    st.errors.help_line[2] = c"I'll just pretend that you didn't ask for it.".as_ptr();
+    st.errors.help_line[1] = c"If you're in the wrong mode, you might be able to".as_ptr();
+    st.errors.help_line[0] =
+        c"return to the right one by typing `I}' or `I$' or `I\\par'.".as_ptr();
+    error_in(st)
 }
 // translated from xetex-xetex0.c:9347 (privileged)
 pub unsafe fn privileged() -> bool {
@@ -394,29 +438,44 @@ pub unsafe fn privileged() -> bool {
 }
 // translated from xetex-xetex0.c:10489 (cs_error)
 pub unsafe fn cs_error() {
-    error_here_with_diagnostic(c"Extra ".as_ptr());
-    crate::output::print_esc_cstr(c"endcsname".as_ptr());
-    capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(1);
-    set_help_line(
-        0,
-        c"I'm ignoring this, since I wasn't doing a \\csname.".as_ptr(),
-    );
-    error();
+    crate::state::with_state_mut(|st| cs_error_in(st)).finish();
+}
+
+/// `&mut EngineState` core of [`cs_error`].
+pub(crate) fn cs_error_in(st: &mut EngineState) -> ErrorOutcome {
+    error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
+    print_esc_cstr_in(st, c"endcsname".as_ptr());
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    st.errors.help_ptr = 1;
+    st.errors.help_line[0] = c"I'm ignoring this, since I wasn't doing a \\csname.".as_ptr();
+    error_in(st)
 }
 // translated from xetex-xetex0.c:9270 (box_error)
 pub unsafe fn box_error(n: u8) {
-    let box_val = eqtb_b32s1(BOX_BASE + n as i32);
-    error();
-    crate::output::begin_diagnostic();
-    crate::output::diagnostic_begin_capture_warning_here();
-    crate::output::print_nl_cstr(c"The following box has been deleted:".as_ptr());
-    show_box(box_val);
-    capture_to_diagnostic(std::ptr::null_mut());
-    crate::output::end_diagnostic(true);
-    flush_node_list_global(box_val);
+    crate::state::with_state_mut(|st| box_error_in(st, n)).finish();
+}
+
+/// `&mut EngineState` core of [`box_error`].
+pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
+    let box_val = st.eqtb.b32s1(BOX_BASE + n as i32);
+    let outcome = error_in(st);
+    if !matches!(outcome, ErrorOutcome::Continue) {
+        return outcome;
+    }
+    begin_diagnostic_in(st);
+    diagnostic_begin_capture_warning_here_in(st);
+    print_nl_cstr_in(st, c"The following box has been deleted:".as_ptr());
+    show_box_in(st, box_val);
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    end_diagnostic_in(st, true);
+    // flush_node_list aborts via confusion before returning on a corrupt list;
+    // defer that cold path so it runs after the borrow drops, before the write.
+    if let Err(msg) = crate::packaging::flush_node_list(&mut st.mem, box_val) {
+        return ErrorOutcome::Confusion(msg);
+    }
     // BOX_REG(n) = TEX_NULL — direct eqtb write, no save-stack involvement
-    crate::globals::set_eqtb_b32s1(BOX_BASE + n as i32, crate::mem::TEX_NULL);
+    st.eqtb.set_b32s1(BOX_BASE + n as i32, crate::mem::TEX_NULL);
+    ErrorOutcome::Continue
 }
 // translated from xetex-xetex0.c:107 (runaway)
 pub unsafe fn runaway() {
