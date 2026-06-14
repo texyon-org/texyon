@@ -8,6 +8,69 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 183 — 2026-06-14 — Execution: thread the output.rs cmd/meaning/param printers + show_* walkers + diagnostic framing
+
+**Type:** execution (workstream 01 / fused `01b`+`01c`). Large low-docs batch
+per user request, run on a **mechanical Python transform** rather than
+hand-editing (the session-182 "scoped transform" lesson generalized into a
+reusable tool). Cleared the entire session-182 "Next" list, then extended.
+
+**Tooling (the speed lever):** `plan/idiom/thread_output_fn.py` splits a named
+`output.rs` print/show fn into a thin `with_state_mut` wrapper + a
+`pub(crate) fn NAME_in(st: &mut EngineState, …)` core, rewriting the body:
+print wrappers → their `_in` variants threading `st`; every `with_state`-bearing
+global accessor → direct `st.<cluster>.<field>` access (data-driven maps for
+getters/setters/indexed/nest/prefix forms, balanced-paren + literal/comment-aware
+scanning); RAW accessors (`cur_chr`/`cur_cmd`/`line`/`cur_input`) left alone
+(safe under a borrow). `plan/idiom/delete_fns.py` removes the now-dead global
+wrappers brace-safely. Subagents were **not** used: everything lives in one file
+(`output.rs`), so parallel editors would collide — the transform + batched
+validation was the high-throughput, parity-safe path (session-163 finding).
+
+**Code (3 commits):**
+1. `e8bedb2f` — threaded `print_cmd_chr` (~850 lines, incl. retyping its
+   `print_char_or_wide` closure to take `st`), `print_meaning`, `print_param`,
+   `print_length_param`, and the `show_save_groups`/`show_activities`/
+   `show_context` walkers. Added `x_over_n_in(&mut ErrorState, …)` (the global
+   `x_over_n` silently wrote `tex_remainder`/`arith_error` via `with_state`, so
+   calling it under `show_activities`'s borrow nest-panicked — caught by TRIP)
+   and a `globals::cur_list()` getter for the `save_cur_list_to_nest` inline.
+   Removed ~14 dead global wrappers (`print_param`/`length_param`/`sa_num`/
+   `skip_param`/`style`/`totals`, `tally`/`first_count`/`trick_count`/`trick_buf`,
+   `nest_head`/`mode_line`/`e_tex_aux`/`aux_b32s0`).
+2. `c382c536` — threaded `print_file_line`, `begin_diagnostic`, `end_diagnostic`
+   (clean: accessors + print only). These unblock the diagnostic-warning cluster
+   (`group/if/file_warning`, `show_cur_cmd_chr`, `bad_utf8_warning`) for a later
+   slice. Removed the now-dead `old_setting`/`set_old_setting` import.
+
+**Hazard audit:** before validating, swept all non-print/non-accessor calls in
+the threaded bodies for direct/indirect `with_state` re-entry; found and fixed
+two (`x_over_n`, `length_global` → `string_pool::length(&st.strings, …)`); the
+rest (`cur_chr`/`cur_cmd`/`line`/`cur_input`/`cur_list`) are RAW.
+
+**Not done (recorded):** the warning/`show_whatever` cluster pulls in the
+`capture_to_diagnostic`/`diagnostic_print_file_line` FFI machinery (many
+`errors.rs` callers) and, for `char_warning`/`show_whatever`, the `error`/
+`get_token`/`the_toks`/`scan_register_num` bucket-D helpers — a deliberate
+separate slice, not extended here to avoid a late regression.
+
+**Tests:** `cargo check`+`fmt --check`; dashboard **29/2/7/4** after each batch
+(the TRIP nest-panic was caught + fixed before commit); rebuilt
+`target/release/tectonic`; `plan/scripts/corpus.sh check all`: **637 passed / 2
+diverged / 0 missing-golden**, only the known FP divergences `1905.00073v1` /
+`1905.00148v1`. Metrics: warnings **41** (held); `unsafe fn` **551 → 544**;
+`with_state(_mut)` call sites **1134**.
+
+**Next:** thread the diagnostic-warning cluster as a coherent slice — first the
+capture pair (`capture_to_diagnostic`, `diagnostic_print_file_line`,
+`diagnostic_begin_capture_warning_here`, keeping global wrappers for the
+`errors.rs` callers), then `show_cur_cmd_chr`/`bad_utf8_warning`/`group_warning`/
+`if_warning`/`file_warning` (all now have their `begin/end_diagnostic_in` +
+`show_context_in` callees). Leave `char_warning`/`show_whatever` until their
+`error`/scanner bucket-D helpers are threaded.
+
+---
+
 ## Idiom session 182 — 2026-06-13 — Execution: thread the print core + the output.rs show-node walkers
 
 **Type:** execution (workstream 01 / fused `01b`+`01c`). Large low-docs batch

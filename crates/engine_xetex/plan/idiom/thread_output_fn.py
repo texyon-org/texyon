@@ -213,11 +213,12 @@ def find_fn(src, name):
     is_unsafe = m.group(1) is not None
     # back up to include the doc-comment block
     start = m.start()
-    # signature end: first ') {' at depth 0 after name
+    # signature end: the ')' closing the args, then an optional `-> Ret`
     psig = src.index("(", m.start())
     args, after = match_paren(src, psig)
-    assert src[after:after + 2] == " {", repr(src[after:after + 5])
-    bodystart = after + 2
+    bodystart = src.index("{", after)
+    ret = src[after:bodystart].strip()  # e.g. "" or "-> *mut c_void"
+    bodystart += 1
     # brace match the body
     depth = 1
     j = bodystart
@@ -234,7 +235,7 @@ def find_fn(src, name):
         j += 1
     bodyend = j  # index after closing }
     body = src[bodystart:bodyend - 1]
-    return start, bodyend, args, body, is_unsafe
+    return start, bodyend, args, body, is_unsafe, ret
 
 
 def arg_names(args):
@@ -252,18 +253,22 @@ def main():
     names = sys.argv[2:]
     src = open(path).read()
     for name in names:
-        start, end, args, body, is_unsafe = find_fn(src, name)
+        start, end, args, body, is_unsafe, ret = find_fn(src, name)
         nbody = transform_body(body)
         anames = arg_names(args)
         callargs = ", ".join(["st"] + anames)
         sig_args = ("st: &mut EngineState, " + args) if args.strip() else "st: &mut EngineState"
         kw = "pub unsafe fn" if is_unsafe else "pub fn"
+        retsig = (" " + ret) if ret else ""
+        # a value-returning fn forwards the closure result (no trailing `;`)
+        call = f"crate::state::with_state_mut(|st| {name}_in({callargs}))"
+        wbody = call if ret else (call + ";")
         wrapper = (
-            f"{kw} {name}({args}) {{\n"
-            f"    crate::state::with_state_mut(|st| {name}_in({callargs}));\n"
+            f"{kw} {name}({args}){retsig} {{\n"
+            f"    {wbody}\n"
             f"}}\n\n"
             f"/// `&mut EngineState` core of [`{name}`].\n"
-            f"pub(crate) fn {name}_in({sig_args}) {{{nbody}}}"
+            f"pub(crate) fn {name}_in({sig_args}){retsig} {{{nbody}}}"
         )
         src = src[:start] + wrapper + src[end:]
         # report leftovers
