@@ -920,7 +920,7 @@ pub unsafe fn finite_shrink_global(p: i32) -> i32 {
 /// translated from xetex-linebreak.c:2402 (reconstitute)
 ///
 /// Phase-C: threaded to `&mut MemState`, `&mut HyphState`, and
-/// `&mut FontState`; legacy callers use [`reconstitute_global`].
+/// `&mut FontState`.
 pub fn reconstitute(
     mem: &mut MemState,
     hyph: &mut HyphState,
@@ -1225,16 +1225,6 @@ pub fn reconstitute(
         }
 
         return Ok(j);
-    }
-}
-
-/// Transitional bridge-down wrapper for legacy `reconstitute` callers.
-pub unsafe fn reconstitute_global(j: i16, n: i16, bchar: i32, hchar: i32) -> i16 {
-    match crate::state::with_state_mut(|st| {
-        reconstitute(&mut st.mem, &mut st.hyph, &mut st.fonts, j, n, bchar, hchar)
-    }) {
-        Ok(j) => j,
-        Err(e) => node_recycle_abort(e),
     }
 }
 
@@ -3435,6 +3425,33 @@ enum HyphNativeAbort {
     Confusion(&'static std::ffi::CStr),
 }
 
+enum HyphenateAbort {
+    MainMemoryOverflow,
+    Native(HyphNativeAbort),
+    NewCharacter(crate::main_control::NewCharacterAbort),
+    Recycle(NodeRecycleAbort),
+    Confusion(&'static std::ffi::CStr),
+}
+
+impl HyphenateAbort {
+    fn finish(self) -> ! {
+        match self {
+            HyphenateAbort::MainMemoryOverflow => unsafe {
+                const MEM_TOP: i32 = 4_999_999;
+                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
+            },
+            HyphenateAbort::Native(HyphNativeAbort::Recycle(e)) => unsafe { node_recycle_abort(e) },
+            HyphenateAbort::Native(HyphNativeAbort::NativeChar(nc)) => nc.finish(),
+            HyphenateAbort::Native(HyphNativeAbort::Confusion(msg)) => unsafe {
+                crate::errors::confusion(msg.as_ptr())
+            },
+            HyphenateAbort::NewCharacter(nc) => nc.finish(),
+            HyphenateAbort::Recycle(e) => unsafe { node_recycle_abort(e) },
+            HyphenateAbort::Confusion(msg) => unsafe { crate::errors::confusion(msg.as_ptr()) },
+        }
+    }
+}
+
 fn hyphenate_native_word_if_needed(
     st: &mut EngineState,
     hn_v: i16,
@@ -3515,57 +3532,57 @@ fn hyphenate_native_word_if_needed(
 }
 
 pub unsafe fn hyphenate() {
-    use crate::globals::{
-        cur_lang, hc_entry, hn, hyf_distance_entry, hyf_entry, hyf_next_entry, hyf_num_entry,
-        hyph_link_entry, hyph_list_entry, hyph_word_entry, max_hyph_char, mem_b32s0, mem_b32s1,
-        op_start_entry, r_hyf, set_hc_entry, set_hn, set_hyf_entry, str_pool_entry, str_start,
-        trie_trc_entry, trie_trl_entry, trie_tro_entry,
-    };
+    match crate::state::with_state_mut(hyphenate_in) {
+        Ok(()) => {}
+        Err(a) => a.finish(),
+    }
+}
 
-    let mut hn_v = hn();
+fn hyphenate_in(st: &mut EngineState) -> Result<(), HyphenateAbort> {
+    let mut hn_v = st.linebreak.hn;
     for j in 0..=hn_v {
-        set_hyf_entry(j as usize, 0);
+        st.hyph.hyf[j as usize] = 0;
     }
 
-    let mut h = hc_entry(1);
+    let mut h = st.hyph.hc[1];
     hn_v += 1;
-    set_hn(hn_v);
-    set_hc_entry(hn_v as usize, cur_lang() as i32);
+    st.linebreak.hn = hn_v;
+    st.hyph.hc[hn_v as usize] = st.hyph.cur_lang as i32;
 
     for j in 2..=hn_v {
-        h = (h + h + hc_entry(j as usize)) % HYPH_PRIME;
+        h = (h + h + st.hyph.hc[j as usize]) % HYPH_PRIME;
     }
 
     loop {
-        let k = hyph_word_entry(h);
+        let k = st.hyph.hyph_word[h as usize];
         if k == 0 {
             break;
         }
 
-        if crate::string_pool::length_global(k) == hn_v as i32 {
+        if crate::string_pool::length(&st.strings, k) == hn_v as i32 {
             let mut j = 1;
-            let mut u = str_start(k - TOO_BIG_CHAR);
+            let mut u = st.strings.str_start[(k - TOO_BIG_CHAR) as usize];
             loop {
-                if str_pool_entry(u) as i32 != hc_entry(j as usize) {
+                if st.strings.str_pool[u as usize] as i32 != st.hyph.hc[j as usize] {
                     break;
                 }
                 j += 1;
                 u += 1;
                 if j > hn_v {
-                    let mut s = hyph_list_entry(h);
+                    let mut s = st.hyph.hyph_list[h as usize];
                     while s != TEX_NULL {
-                        set_hyf_entry(mem_b32s0(s) as usize, 1);
-                        s = mem_b32s1(s);
+                        st.hyph.hyf[st.mem.b32s0(s) as usize] = 1;
+                        s = st.mem.b32s1(s);
                     }
                     hn_v -= 1;
-                    set_hn(hn_v);
-                    goto_found(hn_v);
-                    return;
+                    st.linebreak.hn = hn_v;
+                    goto_found(st, hn_v)?;
+                    return Ok(());
                 }
             }
         }
 
-        let link = hyph_link_entry(h);
+        let link = st.hyph.hyph_link[h as usize];
         if link == 0 {
             break;
         }
@@ -3573,277 +3590,313 @@ pub unsafe fn hyphenate() {
     }
 
     hn_v -= 1;
-    set_hn(hn_v);
-    if trie_trc_entry(cur_lang() as i32 + 1) != cur_lang() as u16 {
-        return;
+    st.linebreak.hn = hn_v;
+    if st.hyph.trie_trc[st.hyph.cur_lang as usize + 1] != st.hyph.cur_lang as u16 {
+        return Ok(());
     }
 
-    set_hc_entry(0, 0);
-    set_hc_entry((hn_v + 1) as usize, 0);
-    set_hc_entry((hn_v + 2) as usize, max_hyph_char());
+    st.hyph.hc[0] = 0;
+    st.hyph.hc[(hn_v + 1) as usize] = 0;
+    st.hyph.hc[(hn_v + 2) as usize] = st.hyph.max_hyph_char;
 
-    for j in 0..=(hn_v - r_hyf() as i16 + 1) {
-        let mut z = trie_trl_entry(cur_lang() as i32 + 1) + hc_entry(j as usize);
+    for j in 0..=(hn_v - st.hyph.r_hyf as i16 + 1) {
+        let mut z = st.hyph.trie_trl[st.hyph.cur_lang as usize + 1] + st.hyph.hc[j as usize];
         let mut l = j;
-        while hc_entry(l as usize) == trie_trc_entry(z) as i32 {
-            if trie_tro_entry(z) != MIN_TRIE_OP {
-                let mut v = trie_tro_entry(z);
+        while st.hyph.hc[l as usize] == st.hyph.trie_trc[z as usize] as i32 {
+            if st.hyph.trie_tro[z as usize] != MIN_TRIE_OP {
+                let mut v = st.hyph.trie_tro[z as usize];
                 loop {
-                    v += op_start_entry(cur_lang() as usize);
-                    let i = l - hyf_distance_entry(v);
-                    if hyf_num_entry(v) as u8 > hyf_entry(i as usize) {
-                        set_hyf_entry(i as usize, hyf_num_entry(v) as u8);
+                    v += st.hyph.op_start[st.hyph.cur_lang as usize];
+                    let i = l - st.hyph.hyf_distance[v as usize];
+                    if st.hyph.hyf_num[v as usize] as u8 > st.hyph.hyf[i as usize] {
+                        st.hyph.hyf[i as usize] = st.hyph.hyf_num[v as usize] as u8;
                     }
-                    v = hyf_next_entry(v) as i32;
+                    v = st.hyph.hyf_next[v as usize] as i32;
                     if v == MIN_TRIE_OP {
                         break;
                     }
                 }
             }
             l += 1;
-            z = trie_trl_entry(z) + hc_entry(l as usize);
+            z = st.hyph.trie_trl[z as usize] + st.hyph.hc[l as usize];
         }
     }
 
-    goto_found(hn_v);
+    goto_found(st, hn_v)
+}
 
-    unsafe fn goto_found(hn_v: i16) {
-        use crate::globals::{
-            avail, bchar_label_entry, cur_p, font_bchar_entry, ha, hb, hf, hu_entry, hyf_bchar,
-            hyf_char, hyf_entry, hyphen_passed, l_hyf, max_hyph_char, mem_b16s0, mem_b16s1,
-            mem_b32s1, r_hyf, set_avail, set_hu_entry, set_hyf_entry, set_hyphen_passed,
-            set_init_lft, set_init_lig, set_init_list, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0,
-            set_mem_b32s1,
-        };
+fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
+    for j in 0..=(st.hyph.l_hyf as i16 - 1) {
+        st.hyph.hyf[j as usize] = 0;
+    }
+    for j in 0..=(st.hyph.r_hyf as i16 - 1) {
+        st.hyph.hyf[(hn_v - j) as usize] = 0;
+    }
 
-        for j in 0..=(l_hyf() as i16 - 1) {
-            set_hyf_entry(j as usize, 0);
+    let mut any_hyphen = false;
+    for j in st.hyph.l_hyf as i16..=(hn_v - st.hyph.r_hyf as i16) {
+        if odd(st.hyph.hyf[j as usize]) {
+            any_hyphen = true;
+            break;
         }
-        for j in 0..=(r_hyf() as i16 - 1) {
-            set_hyf_entry((hn_v - j) as usize, 0);
-        }
+    }
+    if !any_hyphen {
+        return Ok(());
+    }
 
-        let mut any_hyphen = false;
-        for j in l_hyf() as i16..=(hn_v - r_hyf() as i16) {
-            if odd(hyf_entry(j as usize)) {
-                any_hyphen = true;
-                break;
-            }
-        }
-        if !any_hyphen {
-            return;
-        }
+    // Native-word hyphenation: split `ha`'s native_word_node into measured
+    // fragments separated by discretionaries whose pre-break is a fresh
+    // native hyphen character. Threaded into a single `with_state_mut` island
+    // now that `new_native_character_in` no longer re-enters the state
+    // RefCell (the 135/136 measurer wall is cleared): `new_native_word_node`,
+    // `set_native_metrics`, `new_disc`, `new_native_character_in` and
+    // `flush_node_list` all run under one borrow, in the original allocation
+    // order. Cold aborts ride `HyphNativeAbort` and fire after the borrow
+    // drops (§5).
+    match hyphenate_native_word_if_needed(st, hn_v).map_err(HyphenateAbort::Native)? {
+        true => return Ok(()),
+        false => {}
+    }
 
-        // Native-word hyphenation: split `ha`'s native_word_node into measured
-        // fragments separated by discretionaries whose pre-break is a fresh
-        // native hyphen character. Threaded into a single `with_state_mut` island
-        // now that `new_native_character_in` no longer re-enters the state
-        // RefCell (the 135/136 measurer wall is cleared): `new_native_word_node`,
-        // `set_native_metrics`, `new_disc`, `new_native_character_in` and
-        // `flush_node_list` all run under one borrow, in the original allocation
-        // order. Cold aborts ride `HyphNativeAbort` and fire after the borrow
-        // drops (§5).
-        let native_result =
-            crate::state::with_state_mut(|st| hyphenate_native_word_if_needed(st, hn_v));
-        match native_result {
-            Ok(true) => return,
-            Ok(false) => {}
-            Err(HyphNativeAbort::Recycle(e)) => node_recycle_abort(e),
-            Err(HyphNativeAbort::NativeChar(nc)) => nc.finish(),
-            Err(HyphNativeAbort::Confusion(msg)) => crate::errors::confusion(msg.as_ptr()),
-        }
+    let q_final = st.mem.b32s1(st.linebreak.hb);
+    st.mem.set_b32s1(st.linebreak.hb, TEX_NULL);
+    let r = st.mem.b32s1(st.linebreak.ha);
+    st.mem.set_b32s1(st.linebreak.ha, TEX_NULL);
+    let bchar = st.hyph.hyf_bchar;
 
-        let q_final = mem_b32s1(hb());
-        set_mem_b32s1(hb(), TEX_NULL);
-        let r = mem_b32s1(ha());
-        set_mem_b32s1(ha(), TEX_NULL);
-        let bchar = hyf_bchar();
-
-        let (mut s, mut j) = if is_char_node_global(ha()) {
-            if mem_b16s1(ha()) as i32 != hf() {
-                set_hu_entry(0, max_hyph_char());
-                set_init_lig(false);
-                set_init_list(TEX_NULL);
-                (ha(), 0)
-            } else {
-                set_init_list(ha());
-                set_init_lig(false);
-                set_hu_entry(0, mem_b16s0(ha()) as i32);
-                let mut s = cur_p();
-                while mem_b32s1(s) != ha() {
-                    s = mem_b32s1(s);
-                }
-                (s, 0)
-            }
-        } else if mem_b16s1(ha()) as i32 == LIGATURE_NODE {
-            if mem_b16s1(ha() + 1) as i32 != hf() {
-                set_hu_entry(0, max_hyph_char());
-                set_init_lig(false);
-                set_init_list(TEX_NULL);
-                (ha(), 0)
-            } else {
-                set_init_list(mem_b32s1(ha() + 1));
-                set_init_lig(true);
-                set_init_lft(mem_b16s0(ha()) > 1);
-                set_hu_entry(0, mem_b16s0(ha() + 1) as i32);
-                if crate::globals::init_list() == TEX_NULL && crate::globals::init_lft() {
-                    set_hu_entry(0, max_hyph_char());
-                    set_init_lig(false);
-                }
-                crate::mem::free_node_global(ha(), SMALL_NODE_SIZE);
-                let mut s = cur_p();
-                while mem_b32s1(s) != ha() {
-                    s = mem_b32s1(s);
-                }
-                (s, 0)
-            }
-        } else if !is_char_node_global(r)
-            && mem_b16s1(r) as i32 == LIGATURE_NODE
-            && mem_b16s0(r) > 1
-        {
-            set_hu_entry(0, max_hyph_char());
-            set_init_lig(false);
-            set_init_list(TEX_NULL);
-            (ha(), 0)
+    let (mut s, mut j) = if crate::mem::is_char_node(&st.mem, st.linebreak.ha) {
+        if st.mem.b16s1(st.linebreak.ha) as i32 != st.hyph.hf {
+            st.hyph.hu[0] = st.hyph.max_hyph_char;
+            st.hyph.init_lig = false;
+            st.hyph.init_list = TEX_NULL;
+            (st.linebreak.ha, 0)
         } else {
-            set_init_list(TEX_NULL);
-            (ha(), 1)
-        };
-
-        crate::packaging::flush_node_list_global(r);
-
-        loop {
-            let mut l = j;
-            j = reconstitute_global(j, hn_v, bchar, hyf_char()) + 1;
-            if hyphen_passed() == 0 {
-                set_mem_b32s1(s, mem_b32s1(HOLD_HEAD));
-                while mem_b32s1(s) > TEX_NULL {
-                    s = mem_b32s1(s);
-                }
-                if odd(hyf_entry((j - 1) as usize)) {
-                    l = j;
-                    set_hyphen_passed(j - 1);
-                    set_mem_b32s1(HOLD_HEAD, TEX_NULL);
-                }
+            st.hyph.init_list = st.linebreak.ha;
+            st.hyph.init_lig = false;
+            st.hyph.hu[0] = st.mem.b16s0(st.linebreak.ha) as i32;
+            let mut s = st.linebreak.cur_p;
+            while st.mem.b32s1(s) != st.linebreak.ha {
+                s = st.mem.b32s1(s);
             }
-
-            if hyphen_passed() > 0 {
-                loop {
-                    let r = crate::mem::get_node_global(SMALL_NODE_SIZE);
-                    set_mem_b32s1(r, mem_b32s1(HOLD_HEAD));
-                    set_mem_b16s1(r, DISC_NODE as u16);
-                    let mut major_tail = r;
-                    let mut r_count = 0;
-                    while mem_b32s1(major_tail) > TEX_NULL {
-                        major_tail = mem_b32s1(major_tail);
-                        r_count += 1;
-                    }
-
-                    let mut i = hyphen_passed();
-                    set_hyf_entry(i as usize, 0);
-                    let mut minor_tail = TEX_NULL;
-                    set_mem_b32s0(r + 1, TEX_NULL);
-                    let hyf_node = crate::main_control::new_character(hf(), hyf_char() as u16);
-                    let mut saved_c = 0;
-                    if hyf_node != TEX_NULL {
-                        i += 1;
-                        saved_c = hu_entry(i as usize);
-                        set_hu_entry(i as usize, hyf_char());
-                        set_mem_b32s1(hyf_node, avail());
-                        set_avail(hyf_node);
-                    }
-
-                    while l <= i {
-                        l = reconstitute_global(l, i, font_bchar_entry(hf()), TOO_BIG_CHAR) + 1;
-                        if mem_b32s1(HOLD_HEAD) > TEX_NULL {
-                            if minor_tail == TEX_NULL {
-                                set_mem_b32s0(r + 1, mem_b32s1(HOLD_HEAD));
-                            } else {
-                                set_mem_b32s1(minor_tail, mem_b32s1(HOLD_HEAD));
-                            }
-                            minor_tail = mem_b32s1(HOLD_HEAD);
-                            while mem_b32s1(minor_tail) > TEX_NULL {
-                                minor_tail = mem_b32s1(minor_tail);
-                            }
-                        }
-                    }
-
-                    if hyf_node != TEX_NULL {
-                        set_hu_entry(i as usize, saved_c);
-                        l = i;
-                        i -= 1;
-                    }
-
-                    minor_tail = TEX_NULL;
-                    set_mem_b32s1(r + 1, TEX_NULL);
-                    let mut c_loc = 0;
-                    let mut c = 0;
-                    if bchar_label_entry(hf()) != NON_ADDRESS {
-                        l -= 1;
-                        c = hu_entry(l as usize);
-                        c_loc = l;
-                        set_hu_entry(l as usize, max_hyph_char());
-                    }
-
-                    while l < j {
-                        loop {
-                            l = reconstitute_global(l, hn_v, bchar, TOO_BIG_CHAR) + 1;
-                            if c_loc > 0 {
-                                set_hu_entry(c_loc as usize, c);
-                                c_loc = 0;
-                            }
-                            if mem_b32s1(HOLD_HEAD) > TEX_NULL {
-                                if minor_tail == TEX_NULL {
-                                    set_mem_b32s1(r + 1, mem_b32s1(HOLD_HEAD));
-                                } else {
-                                    set_mem_b32s1(minor_tail, mem_b32s1(HOLD_HEAD));
-                                }
-                                minor_tail = mem_b32s1(HOLD_HEAD);
-                                while mem_b32s1(minor_tail) > TEX_NULL {
-                                    minor_tail = mem_b32s1(minor_tail);
-                                }
-                            }
-                            if l >= j {
-                                break;
-                            }
-                        }
-
-                        while l > j {
-                            j = reconstitute_global(j, hn_v, bchar, TOO_BIG_CHAR) + 1;
-                            set_mem_b32s1(major_tail, mem_b32s1(HOLD_HEAD));
-                            while mem_b32s1(major_tail) > TEX_NULL {
-                                major_tail = mem_b32s1(major_tail);
-                                r_count += 1;
-                            }
-                        }
-                    }
-
-                    if r_count > 127 {
-                        set_mem_b32s1(s, mem_b32s1(r));
-                        set_mem_b32s1(r, TEX_NULL);
-                        crate::packaging::flush_node_list_global(r);
-                    } else {
-                        set_mem_b32s1(s, r);
-                        set_mem_b16s0(r, r_count as u16);
-                    }
-                    s = major_tail;
-                    set_hyphen_passed(j - 1);
-                    set_mem_b32s1(HOLD_HEAD, TEX_NULL);
-
-                    if !odd(hyf_entry((j - 1) as usize)) {
-                        break;
-                    }
-                }
+            (s, 0)
+        }
+    } else if st.mem.b16s1(st.linebreak.ha) as i32 == LIGATURE_NODE {
+        if st.mem.b16s1(st.linebreak.ha + 1) as i32 != st.hyph.hf {
+            st.hyph.hu[0] = st.hyph.max_hyph_char;
+            st.hyph.init_lig = false;
+            st.hyph.init_list = TEX_NULL;
+            (st.linebreak.ha, 0)
+        } else {
+            st.hyph.init_list = st.mem.b32s1(st.linebreak.ha + 1);
+            st.hyph.init_lig = true;
+            st.hyph.init_lft = st.mem.b16s0(st.linebreak.ha) > 1;
+            st.hyph.hu[0] = st.mem.b16s0(st.linebreak.ha + 1) as i32;
+            if st.hyph.init_list == TEX_NULL && st.hyph.init_lft {
+                st.hyph.hu[0] = st.hyph.max_hyph_char;
+                st.hyph.init_lig = false;
             }
+            crate::mem::free_node(&mut st.mem, st.linebreak.ha, SMALL_NODE_SIZE);
+            let mut s = st.linebreak.cur_p;
+            while st.mem.b32s1(s) != st.linebreak.ha {
+                s = st.mem.b32s1(s);
+            }
+            (s, 0)
+        }
+    } else if !crate::mem::is_char_node(&st.mem, r)
+        && st.mem.b16s1(r) as i32 == LIGATURE_NODE
+        && st.mem.b16s0(r) > 1
+    {
+        st.hyph.hu[0] = st.hyph.max_hyph_char;
+        st.hyph.init_lig = false;
+        st.hyph.init_list = TEX_NULL;
+        (st.linebreak.ha, 0)
+    } else {
+        st.hyph.init_list = TEX_NULL;
+        (st.linebreak.ha, 1)
+    };
 
-            if j > hn_v {
-                break;
+    crate::packaging::flush_node_list(&mut st.mem, r).map_err(HyphenateAbort::Confusion)?;
+
+    loop {
+        let mut l = j;
+        let hyf_char = st.hyph.hyf_char;
+        j = reconstitute(
+            &mut st.mem,
+            &mut st.hyph,
+            &mut st.fonts,
+            j,
+            hn_v,
+            bchar,
+            hyf_char,
+        )
+        .map_err(HyphenateAbort::Recycle)?
+            + 1;
+        if st.hyph.hyphen_passed == 0 {
+            st.mem.set_b32s1(s, st.mem.b32s1(HOLD_HEAD));
+            while st.mem.b32s1(s) > TEX_NULL {
+                s = st.mem.b32s1(s);
+            }
+            if odd(st.hyph.hyf[(j - 1) as usize]) {
+                l = j;
+                st.hyph.hyphen_passed = j - 1;
+                st.mem.set_b32s1(HOLD_HEAD, TEX_NULL);
             }
         }
 
-        set_mem_b32s1(s, q_final);
-        crate::mem::flush_list_global(crate::globals::init_list());
+        if st.hyph.hyphen_passed > 0 {
+            loop {
+                let r = crate::mem::get_node(&mut st.mem, SMALL_NODE_SIZE);
+                if r == crate::mem::ALLOC_FAILED {
+                    return Err(HyphenateAbort::MainMemoryOverflow);
+                }
+                st.mem.set_b32s1(r, st.mem.b32s1(HOLD_HEAD));
+                st.mem.set_b16s1(r, DISC_NODE as u16);
+                let mut major_tail = r;
+                let mut r_count = 0;
+                while st.mem.b32s1(major_tail) > TEX_NULL {
+                    major_tail = st.mem.b32s1(major_tail);
+                    r_count += 1;
+                }
+
+                let mut i = st.hyph.hyphen_passed;
+                st.hyph.hyf[i as usize] = 0;
+                let mut minor_tail = TEX_NULL;
+                st.mem.set_b32s0(r + 1, TEX_NULL);
+                let hyf_node =
+                    crate::main_control::new_character_in(st, st.hyph.hf, st.hyph.hyf_char as u16)
+                        .map_err(HyphenateAbort::NewCharacter)?;
+                let mut saved_c = 0;
+                if hyf_node != TEX_NULL {
+                    i += 1;
+                    saved_c = st.hyph.hu[i as usize];
+                    st.hyph.hu[i as usize] = st.hyph.hyf_char;
+                    st.mem.set_b32s1(hyf_node, st.mem.avail);
+                    st.mem.avail = hyf_node;
+                }
+
+                while l <= i {
+                    let font_bchar = st.fonts.font_bchar_entry(st.hyph.hf);
+                    l = reconstitute(
+                        &mut st.mem,
+                        &mut st.hyph,
+                        &mut st.fonts,
+                        l,
+                        i,
+                        font_bchar,
+                        TOO_BIG_CHAR,
+                    )
+                    .map_err(HyphenateAbort::Recycle)?
+                        + 1;
+                    if st.mem.b32s1(HOLD_HEAD) > TEX_NULL {
+                        if minor_tail == TEX_NULL {
+                            st.mem.set_b32s0(r + 1, st.mem.b32s1(HOLD_HEAD));
+                        } else {
+                            st.mem.set_b32s1(minor_tail, st.mem.b32s1(HOLD_HEAD));
+                        }
+                        minor_tail = st.mem.b32s1(HOLD_HEAD);
+                        while st.mem.b32s1(minor_tail) > TEX_NULL {
+                            minor_tail = st.mem.b32s1(minor_tail);
+                        }
+                    }
+                }
+
+                if hyf_node != TEX_NULL {
+                    st.hyph.hu[i as usize] = saved_c;
+                    l = i;
+                    i -= 1;
+                }
+
+                minor_tail = TEX_NULL;
+                st.mem.set_b32s1(r + 1, TEX_NULL);
+                let mut c_loc = 0;
+                let mut c = 0;
+                if st.fonts.bchar_label_entry(st.hyph.hf) != NON_ADDRESS {
+                    l -= 1;
+                    c = st.hyph.hu[l as usize];
+                    c_loc = l;
+                    st.hyph.hu[l as usize] = st.hyph.max_hyph_char;
+                }
+
+                while l < j {
+                    loop {
+                        l = reconstitute(
+                            &mut st.mem,
+                            &mut st.hyph,
+                            &mut st.fonts,
+                            l,
+                            hn_v,
+                            bchar,
+                            TOO_BIG_CHAR,
+                        )
+                        .map_err(HyphenateAbort::Recycle)?
+                            + 1;
+                        if c_loc > 0 {
+                            st.hyph.hu[c_loc as usize] = c;
+                            c_loc = 0;
+                        }
+                        if st.mem.b32s1(HOLD_HEAD) > TEX_NULL {
+                            if minor_tail == TEX_NULL {
+                                st.mem.set_b32s1(r + 1, st.mem.b32s1(HOLD_HEAD));
+                            } else {
+                                st.mem.set_b32s1(minor_tail, st.mem.b32s1(HOLD_HEAD));
+                            }
+                            minor_tail = st.mem.b32s1(HOLD_HEAD);
+                            while st.mem.b32s1(minor_tail) > TEX_NULL {
+                                minor_tail = st.mem.b32s1(minor_tail);
+                            }
+                        }
+                        if l >= j {
+                            break;
+                        }
+                    }
+
+                    while l > j {
+                        j = reconstitute(
+                            &mut st.mem,
+                            &mut st.hyph,
+                            &mut st.fonts,
+                            j,
+                            hn_v,
+                            bchar,
+                            TOO_BIG_CHAR,
+                        )
+                        .map_err(HyphenateAbort::Recycle)?
+                            + 1;
+                        st.mem.set_b32s1(major_tail, st.mem.b32s1(HOLD_HEAD));
+                        while st.mem.b32s1(major_tail) > TEX_NULL {
+                            major_tail = st.mem.b32s1(major_tail);
+                            r_count += 1;
+                        }
+                    }
+                }
+
+                if r_count > 127 {
+                    st.mem.set_b32s1(s, st.mem.b32s1(r));
+                    st.mem.set_b32s1(r, TEX_NULL);
+                    crate::packaging::flush_node_list(&mut st.mem, r)
+                        .map_err(HyphenateAbort::Confusion)?;
+                } else {
+                    st.mem.set_b32s1(s, r);
+                    st.mem.set_b16s0(r, r_count as u16);
+                }
+                s = major_tail;
+                st.hyph.hyphen_passed = j - 1;
+                st.mem.set_b32s1(HOLD_HEAD, TEX_NULL);
+
+                if !odd(st.hyph.hyf[(j - 1) as usize]) {
+                    break;
+                }
+            }
+        }
+
+        if j > hn_v {
+            break;
+        }
     }
+
+    st.mem.set_b32s1(s, q_final);
+    crate::mem::flush_list(&mut st.mem, st.hyph.init_list);
+    Ok(())
 }
 
 // ---- moved verbatim from scan.rs (workstream 02) ----

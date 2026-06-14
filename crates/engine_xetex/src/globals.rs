@@ -3413,10 +3413,6 @@ pub(crate) fn set_hc_entry(k: usize, v: i32) {
     });
 }
 #[inline]
-pub(crate) fn hu_entry(k: usize) -> i32 {
-    crate::state::with_state(|state| state.hyph.hu[k])
-}
-#[inline]
 pub(crate) fn set_hu_entry(k: usize, v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.hu[k] = v;
@@ -3433,49 +3429,9 @@ pub(crate) fn set_max_hyph_char(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn hyf_entry(k: usize) -> u8 {
-    crate::state::with_state(|state| state.hyph.hyf[k])
-}
-#[inline]
 pub(crate) fn set_hyf_entry(k: usize, v: u8) {
     crate::state::with_state_mut(|state| {
         state.hyph.hyf[k] = v;
-    });
-}
-#[inline]
-pub(crate) fn init_list() -> i32 {
-    crate::state::with_state(|state| state.hyph.init_list)
-}
-#[inline]
-pub(crate) fn set_init_list(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.init_list = v;
-    });
-}
-#[inline]
-pub(crate) fn set_init_lig(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.init_lig = v;
-    });
-}
-#[inline]
-pub(crate) fn init_lft() -> bool {
-    crate::state::with_state(|state| state.hyph.init_lft)
-}
-#[inline]
-pub(crate) fn set_init_lft(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.init_lft = v;
-    });
-}
-#[inline]
-pub(crate) fn hyphen_passed() -> i16 {
-    crate::state::with_state(|state| state.hyph.hyphen_passed)
-}
-#[inline]
-pub(crate) fn set_hyphen_passed(v: i16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyphen_passed = v;
     });
 }
 #[inline]
@@ -3557,22 +3513,6 @@ pub(crate) fn set_hyph_index(v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.hyph_index = v;
     });
-}
-#[inline]
-pub(crate) fn hyf_distance_entry(k: i32) -> i16 {
-    crate::state::with_state(|state| state.hyph.hyf_distance[k as usize])
-}
-#[inline]
-pub(crate) fn hyf_num_entry(k: i32) -> i16 {
-    crate::state::with_state(|state| state.hyph.hyf_num[k as usize])
-}
-#[inline]
-pub(crate) fn hyf_next_entry(k: i32) -> u16 {
-    crate::state::with_state(|state| state.hyph.hyf_next[k as usize])
-}
-#[inline]
-pub(crate) fn op_start_entry(k: usize) -> i32 {
-    crate::state::with_state(|state| state.hyph.op_start[k])
 }
 #[inline]
 pub(crate) fn set_op_start_entry(k: usize, v: i32) {
@@ -4017,10 +3957,6 @@ pub(crate) fn set_ha(v: i32) {
     crate::state::with_state_mut(|state| {
         state.linebreak.ha = v;
     });
-}
-#[inline]
-pub(crate) fn hb() -> i32 {
-    crate::state::with_state(|state| state.linebreak.hb)
 }
 #[inline]
 pub(crate) fn set_hb(v: i32) {

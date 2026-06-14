@@ -8,6 +8,34 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 189 — 2026-06-14 — Execution: thread `hyphenate` core
+
+**Type:** execution (workstream 01). Minimal-docs batch; used one read-only explorer
+for hazard scouting. Finished the session-188 handoff item by carving
+`hyphenate_in(&mut EngineState)` out of the legacy global `hyphenate()` wrapper.
+
+**Code:** `hyphenate()` is now a thin `with_state_mut` wrapper. The new core reads
+hyphen exceptions/pattern tries via `st.hyph` + `st.strings`, calls
+`hyphenate_native_word_if_needed`, `reconstitute`, `new_character_in`,
+`flush_node_list`, and `flush_list` directly under the borrow, and defers cold
+abort tails through `HyphenateAbort`. Removed the now-dead `reconstitute_global`
+bridge and dead hyphenation getters from `globals.rs`; added narrow
+`FontState::font_bchar_entry`.
+
+**Tests:** `cargo fmt --check`; `cargo check -p tectonic_engine_xetex`; dashboard
+**29/2/7/4**; release build; full corpus **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1` / `1905.00148v1`, no NOXDV/NOLOG.
+Metrics: warnings **41** (held); `unsafe fn` **533**; `with_state(_mut)` sites
+**1125**.
+
+**Next:** thread `line_break_in`. Remaining blockers are in the outer
+`line_break` body: `pop_nest`, finite-shrink/error sentinel handling, and the
+large accessor/global-helper collapse onto the already-threaded helpers
+(`hyphenate_in`, `try_break`, `post_line_break_in`, `start_linebreak_pass`,
+`choose_best_break`, `finish_last_line_fit`, `split_native_tail_for_linebreak`).
+
+---
+
 ## Idiom session 188 — 2026-06-14 — Execution: reduce native/hyphenation bridges on the path to `line_break_in`
 
 **Type:** execution (workstream 01). Per user request, kept docs minimal and used

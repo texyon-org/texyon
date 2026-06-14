@@ -971,6 +971,11 @@ impl FontState {
     }
 
     #[inline]
+    pub(crate) fn font_bchar_entry(&self, f: i32) -> i32 {
+        self.font_bchar[f as usize]
+    }
+
+    #[inline]
     pub(crate) fn char_base_entry(&self, f: i32) -> i32 {
         self.char_base[f as usize]
     }
