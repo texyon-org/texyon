@@ -8,6 +8,66 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 184 — 2026-06-14 — Execution: thread the output.rs diagnostic-warning cluster (+ font warnings)
+
+**Type:** execution (workstream 01 / fused `01b`+`01c`). Large low-docs batch
+per user request, run on the `thread_output_fn.py` transform. Cleared the entire
+session-183 "Next" list (the diagnostic-warning cluster), then extended into the
+font warnings.
+
+**Code (2 commits):**
+1. `b386e913` — threaded the **diagnostic capture pair**
+   (`capture_to_diagnostic`, `diagnostic_print_file_line`,
+   `diagnostic_begin_capture_warning_here`; `_in` cores are safe fns with narrow
+   `unsafe {}` around the `ttbc/ttstub` diag FFI; the global wrappers stay for
+   the ~150 `errors.rs`/`scan.rs`/`expand.rs`/… callers) and the **warning
+   walkers** `group_warning`/`if_warning`/`file_warning`/`show_cur_cmd_chr`/
+   `bad_utf8_warning`. Added `texmfmp::gettexstring_in(&StringsState, …)` so
+   `diagnostic_print_file_line_in` resolves the source filename under the borrow
+   without nest-panicking (the global `gettexstring` now delegates to it).
+   Extended the `thread_output_fn.py` maps (grp/if_stack, cond_ptr/if_limit/
+   cur_if/if_line/shown_mode, cur_boundary/level/group getters+setters, plus a
+   new 2-arg `INDEXED_SETTERS` table for `set_grp_stack`/`set_if_stack`).
+   Removed 5 now-dead global wrappers (`current_diagnostic`,
+   `set_current_diagnostic`, `shown_mode`, and the `print_mode`/`print_group`
+   global wrappers — their `_in` cores were the only remaining callers).
+2. `98f7d2c8` — threaded `font_feature_warning` (kept its `#[no_mangle]` export
+   wrapper) and `font_mapping_warning`, plus `print_utf8_str` (now a
+   threaded-only `print_utf8_str_in` in `ext.rs`; global wrapper deleted). The
+   `name_of_file()` byte loop became `print_name_of_file_in` iterating
+   `st.input.name_of_file` directly, dropping the with_state-bearing
+   `name_of_file()` nest-panic under the diagnostic borrow. Done by hand (the
+   `extern "C"` / `name_of_file` shapes are outside the transform's reach).
+
+**Hazard audit:** the threaded bodies' non-print calls (`cur_input`/`cur_cmd`/
+`cur_chr`/`cur_list_mode`/`line`) are all RAW `mod raw` reads (safe under a
+borrow); `gettexstring`/`name_of_file` were the two with_state re-entries and
+were resolved as above. `show_cur_cmd_chr`'s `cur_if` chain walk and
+`file_warning`'s save/cond restore are field-direct.
+
+**Not done (recorded, unchanged from 183):** `char_warning`/`show_whatever`/
+`issue_message` stay deferred — they call `error()`/`the_toks`/`scan_toks`
+(scanner+error bucket-D). `change_if_limit` left raw (its cold `confusion()`
+needs the §5 sentinel; isolated, low value).
+
+**Tests:** `cargo check`+`fmt --check`; dashboard **29/2/7/4** after each
+commit; rebuilt `target/release/tectonic`; `plan/scripts/corpus.sh check all`:
+**637 passed / 2 diverged / 0 missing-golden**, only the known FP divergences
+`1905.00073v1` / `1905.00148v1`. Metrics: warnings **41** (held); `unsafe fn`
+**544 → 542**; `with_state(_mut)` call sites **1134 → 1140** (transient
+bridge-down wrappers for the newly-threaded diagnostic leaves whose external
+callers are still global — they retire as those callers thread, §3; no dead
+accessor remained to offset, per the compiler).
+
+**Next:** the output.rs print/show/diagnostic vein is now exhausted. The
+remaining output.rs targets (`char_warning`, `show_whatever`, `issue_message`)
+are all gated on threading `error()`/the scanner (`get_token`/`the_toks`/
+`scan_toks`) — that scanner+error slice is the natural next lever and unblocks
+them together. Otherwise climb a fresh bridge host (`pagebuilder`/`main_control`
+tails) per the recon.
+
+---
+
 ## Idiom session 183 — 2026-06-14 — Execution: thread the output.rs cmd/meaning/param printers + show_* walkers + diagnostic framing
 
 **Type:** execution (workstream 01 / fused `01b`+`01c`). Large low-docs batch
