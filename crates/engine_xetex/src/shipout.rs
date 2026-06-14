@@ -19,14 +19,13 @@ use crate::globals::{
     rule_ht, rule_wd, rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area,
     set_cur_cs, set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode,
     set_cur_name, set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset,
-    set_dead_cycles, set_doing_leaders, set_doing_special, set_font_ptr, set_font_used_entry,
-    set_help_line, set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h,
-    set_max_push, set_max_v, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-    set_mem_word, set_pdf_last_x_pos, set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht,
-    set_rule_wd, set_selector, set_temp_ptr, set_total_pages, set_write_file, set_write_open,
-    set_xtx_ligature_present, shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr,
-    str_start, temp_ptr, term_offset, total_pages, write_file, write_loc, write_open,
-    xdv_buffer_entry,
+    set_dead_cycles, set_doing_leaders, set_font_ptr, set_font_used_entry, set_help_line,
+    set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_push, set_max_v,
+    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pdf_last_x_pos,
+    set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht, set_rule_wd, set_selector,
+    set_temp_ptr, set_total_pages, set_write_file, set_write_open, set_xtx_ligature_present,
+    shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr, str_start, temp_ptr, term_offset,
+    total_pages, write_file, write_loc, write_open, xdv_buffer_entry,
 };
 use crate::mem::{free_node_global, get_avail_global, get_node_global, new_kern_global};
 use crate::node::{EdgeNode, MovementNode, NodePtr};
@@ -259,6 +258,12 @@ pub(crate) enum ShipoutAbort {
     NodeRecycle(crate::scan::NodeRecycleAbort),
     /// A `confusion(msg)` bubbled up from `flush_node_list`.
     Confusion(&'static std::ffi::CStr),
+    /// `_tt_abort` — short write to the XDV file (I/O failure flush).
+    DviWriteFailed,
+    /// `fatal_error` — DVI length exceeded 0x7FFFFFFF.
+    DviLengthOverflow,
+    /// `overflow("main memory size", …)` — movement-node allocation failure.
+    MainMemoryOverflow,
 }
 
 /// Fire a deferred shipout cold abort after the state borrow has dropped (§5).
@@ -270,7 +275,73 @@ unsafe fn fire_shipout_abort(a: ShipoutAbort) -> ! {
         }
         ShipoutAbort::NodeRecycle(e) => crate::scan::node_recycle_abort(e),
         ShipoutAbort::Confusion(msg) => crate::errors::confusion(msg.as_ptr()),
+        ShipoutAbort::DviWriteFailed => _tt_abort(c"failed to write data to XDV file".as_ptr()),
+        ShipoutAbort::DviLengthOverflow => {
+            crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
+            unreachable!()
+        }
+        ShipoutAbort::MainMemoryOverflow => {
+            crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
+        }
     }
+}
+
+/// Threaded analog of `write_to_dvi_global`: flush `dvi_buf[a..=b]` to the
+/// output file by reading the buffer fields directly under the held borrow.
+/// The cold I/O-failure abort is deferred (§5).
+fn write_to_dvi(shipout: &ShipoutState, a: i32, b: i32) -> Result<(), ShipoutAbort> {
+    let n = (b - a + 1) as libc::size_t;
+    let file = shipout.dvi_file;
+    // SAFETY: the buffer Vec never reallocates; `a..=b` is a valid sub-range.
+    let ptr = unsafe { shipout.dvi_buf.as_ptr().add(a as usize) };
+    // SAFETY: FFI write of `n` bytes; does not re-enter the engine state.
+    if unsafe { ttstub_output_write(file, ptr as *const libc::c_char, n) } != n {
+        return Err(ShipoutAbort::DviWriteFailed);
+    }
+    Ok(())
+}
+
+/// Perform a deferred DVI buffer flush under the held borrow (§5).
+fn handle_dvi_flush(shipout: &ShipoutState, flush: Option<DviFlush>) -> Result<(), ShipoutAbort> {
+    match flush {
+        None => Ok(()),
+        Some(DviFlush::Write(a, b)) => write_to_dvi(shipout, a, b),
+        Some(DviFlush::Fatal) => Err(ShipoutAbort::DviLengthOverflow),
+    }
+}
+
+/// Threaded analog of `dvi_out_global`.
+fn emit_dvi_out(shipout: &mut ShipoutState, c: u8) -> Result<(), ShipoutAbort> {
+    let flush = dvi_out(shipout, c);
+    handle_dvi_flush(shipout, flush)
+}
+
+/// Threaded analog of `dvi_four_global`.
+fn emit_dvi_four(shipout: &mut ShipoutState, x: i32) -> Result<(), ShipoutAbort> {
+    let mut start = 0;
+    while start < 4 {
+        let result = dvi_four(shipout, x, start);
+        start = result.next;
+        handle_dvi_flush(shipout, result.flush)?;
+    }
+    Ok(())
+}
+
+/// Threaded analog of `movement_global`: build the movement bytes and emit them.
+fn emit_movement(
+    mem: &mut MemState,
+    shipout: &mut ShipoutState,
+    w: i32,
+    o: u8,
+) -> Result<(), ShipoutAbort> {
+    let bytes = movement(mem, shipout, w, o);
+    if bytes.is_empty() {
+        return Err(ShipoutAbort::MainMemoryOverflow);
+    }
+    for byte in bytes {
+        emit_dvi_out(shipout, byte)?;
+    }
+    Ok(())
 }
 
 struct DviEmit {
@@ -2546,46 +2617,57 @@ pub unsafe fn movement_global(w: i32, o: u8) {
 
 // translated from xetex-shipout.c:1930 (special_out)
 // Only called from out_what (Rust) → private.
-unsafe fn special_out(p: i32) {
-    if cur_h() != dvi_h() {
-        movement_global(cur_h() - dvi_h(), RIGHT1);
-        set_dvi_h(cur_h());
+fn special_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+    if st.shipout.cur_h != st.shipout.dvi_h {
+        let d = st.shipout.cur_h - st.shipout.dvi_h;
+        emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
+        st.shipout.dvi_h = st.shipout.cur_h;
     }
-    if cur_v() != dvi_v() {
-        movement_global(cur_v() - dvi_v(), DOWN1);
-        set_dvi_v(cur_v());
+    if st.shipout.cur_v != st.shipout.dvi_v {
+        let d = st.shipout.cur_v - st.shipout.dvi_v;
+        emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
+        st.shipout.dvi_v = st.shipout.cur_v;
     }
-    set_doing_special(true);
-    let old_setting = selector();
-    set_selector(SELECTOR_NEW_STRING);
-    crate::output::show_token_list(
-        mem_b32s1(mem_b32s1(p + 1)),
-        TEX_NULL,
-        pool_size() - pool_ptr(),
-    );
-    set_selector(old_setting);
+    st.shipout.doing_special = true;
+    let old_setting = st.shipout.selector;
+    st.shipout.selector = SELECTOR_NEW_STRING;
+    let tok = st.mem.b32s1(st.mem.b32s1(p + 1));
+    let avail = st.strings.pool_size - st.strings.pool_ptr;
+    crate::output::show_token_list_in(st, tok, TEX_NULL, avail);
+    st.shipout.selector = old_setting;
 
-    if pool_ptr() + 1 > pool_size() {
-        crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+    if st.strings.pool_ptr + 1 > st.strings.pool_size {
+        return Err(ShipoutAbort::PoolSizeOverflow);
     }
 
-    let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
+    let base = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    let cur_len = st.strings.pool_ptr - base;
     if cur_len < 256 {
-        dvi_out_global(XXX1);
-        dvi_out_global(cur_len as u8);
+        emit_dvi_out(&mut st.shipout, XXX1)?;
+        emit_dvi_out(&mut st.shipout, cur_len as u8)?;
     } else {
-        dvi_out_global(XXX4);
-        dvi_four_global(cur_len);
+        emit_dvi_out(&mut st.shipout, XXX4)?;
+        emit_dvi_four(&mut st.shipout, cur_len)?;
     }
 
-    let mut k = str_start(str_ptr() - TOO_BIG_CHAR);
-    let for_end = pool_ptr() - 1;
+    let mut k = base;
+    let for_end = st.strings.pool_ptr - 1;
     while k <= for_end {
-        dvi_out_global(str_pool_entry(k) as u8);
+        let byte = st.strings.str_pool[k as usize] as u8;
+        emit_dvi_out(&mut st.shipout, byte)?;
         k += 1;
     }
-    set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
-    set_doing_special(false);
+    st.strings.pool_ptr = base;
+    st.shipout.doing_special = false;
+    Ok(())
+}
+
+// Bridge-down wrapper; retires when `out_what` is threaded.
+unsafe fn special_out(p: i32) {
+    let outcome = crate::state::with_state_mut(|st| special_out_in(st, p));
+    if let Err(a) = outcome {
+        fire_shipout_abort(a);
+    }
 }
 
 // translated from xetex-shipout.c:1976 (write_out)
@@ -2686,69 +2768,85 @@ unsafe fn write_out(p: i32) {
 
 // translated from xetex-shipout.c:2071 (pic_out)
 // Called from the (now Rust) hlist_out; internal Rust fn.
-pub unsafe fn pic_out(p: i32) {
-    if cur_h() != dvi_h() {
-        movement_global(cur_h() - dvi_h(), RIGHT1);
-        set_dvi_h(cur_h());
+pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+    if st.shipout.cur_h != st.shipout.dvi_h {
+        let d = st.shipout.cur_h - st.shipout.dvi_h;
+        emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
+        st.shipout.dvi_h = st.shipout.cur_h;
     }
-    if cur_v() != dvi_v() {
-        movement_global(cur_v() - dvi_v(), DOWN1);
-        set_dvi_v(cur_v());
+    if st.shipout.cur_v != st.shipout.dvi_v {
+        let d = st.shipout.cur_v - st.shipout.dvi_v;
+        emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
+        st.shipout.dvi_v = st.shipout.cur_v;
     }
 
-    let old_setting = selector();
-    set_selector(SELECTOR_NEW_STRING);
-    crate::output::print_cstr(c"pdf:image ".as_ptr());
-    crate::output::print_cstr(c"matrix ".as_ptr());
-    crate::output::print_scaled(mem_b32s0(p + 5));
-    crate::output::print(b' ' as i32);
-    crate::output::print_scaled(mem_b32s1(p + 5));
-    crate::output::print(b' ' as i32);
-    crate::output::print_scaled(mem_b32s0(p + 6));
-    crate::output::print(b' ' as i32);
-    crate::output::print_scaled(mem_b32s1(p + 6));
-    crate::output::print(b' ' as i32);
-    crate::output::print_scaled(mem_b32s0(p + 7));
-    crate::output::print(b' ' as i32);
-    crate::output::print_scaled(mem_b32s1(p + 7));
-    crate::output::print(b' ' as i32);
-    crate::output::print_cstr(c"page ".as_ptr());
-    crate::output::print_int(mem_b16s0(p + 4) as i32);
-    crate::output::print(b' ' as i32);
+    let old_setting = st.shipout.selector;
+    st.shipout.selector = SELECTOR_NEW_STRING;
+    crate::output::print_cstr_in(st, c"pdf:image ".as_ptr());
+    crate::output::print_cstr_in(st, c"matrix ".as_ptr());
+    crate::output::print_scaled_in(st, st.mem.b32s0(p + 5));
+    crate::output::print_in(st, b' ' as i32);
+    crate::output::print_scaled_in(st, st.mem.b32s1(p + 5));
+    crate::output::print_in(st, b' ' as i32);
+    crate::output::print_scaled_in(st, st.mem.b32s0(p + 6));
+    crate::output::print_in(st, b' ' as i32);
+    crate::output::print_scaled_in(st, st.mem.b32s1(p + 6));
+    crate::output::print_in(st, b' ' as i32);
+    crate::output::print_scaled_in(st, st.mem.b32s0(p + 7));
+    crate::output::print_in(st, b' ' as i32);
+    crate::output::print_scaled_in(st, st.mem.b32s1(p + 7));
+    crate::output::print_in(st, b' ' as i32);
+    crate::output::print_cstr_in(st, c"page ".as_ptr());
+    crate::output::print_int_in(st, st.mem.b16s0(p + 4) as i32);
+    crate::output::print_in(st, b' ' as i32);
 
-    match mem_b16s1(p + 8) {
-        1 => crate::output::print_cstr(c"pagebox cropbox ".as_ptr()),
-        2 => crate::output::print_cstr(c"pagebox mediabox ".as_ptr()),
-        3 => crate::output::print_cstr(c"pagebox bleedbox ".as_ptr()),
-        4 => crate::output::print_cstr(c"pagebox trimbox ".as_ptr()),
-        5 => crate::output::print_cstr(c"pagebox artbox ".as_ptr()),
+    match st.mem.b16s1(p + 8) {
+        1 => crate::output::print_cstr_in(st, c"pagebox cropbox ".as_ptr()),
+        2 => crate::output::print_cstr_in(st, c"pagebox mediabox ".as_ptr()),
+        3 => crate::output::print_cstr_in(st, c"pagebox bleedbox ".as_ptr()),
+        4 => crate::output::print_cstr_in(st, c"pagebox trimbox ".as_ptr()),
+        5 => crate::output::print_cstr_in(st, c"pagebox artbox ".as_ptr()),
         _ => {}
     }
 
-    crate::output::print(b'(' as i32);
-    let path_len = mem_b16s1(p + 4) as i32;
-    let path_ptr = crate::globals::mem_node_addr(p + PIC_NODE_SIZE) as *const u8;
+    crate::output::print_in(st, b'(' as i32);
+    let path_len = st.mem.b16s1(p + 4) as i32;
+    let path_ptr = st.mem.node_addr(p + PIC_NODE_SIZE) as *const u8;
     for i in 0..path_len {
-        crate::output::print_raw_char(*path_ptr.add(i as usize) as u16, true);
+        // SAFETY: the path bytes follow the PIC node; `path_ptr` stays valid
+        // (the arena never reallocates) across the print reborrow.
+        let ch = unsafe { *path_ptr.add(i as usize) } as u16;
+        crate::output::print_raw_char_in(st, ch, true);
     }
-    crate::output::print(b')' as i32);
+    crate::output::print_in(st, b')' as i32);
 
-    set_selector(old_setting);
-    let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
+    st.shipout.selector = old_setting;
+    let base = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    let cur_len = st.strings.pool_ptr - base;
     if cur_len < 256 {
-        dvi_out_global(XXX1);
-        dvi_out_global(cur_len as u8);
+        emit_dvi_out(&mut st.shipout, XXX1)?;
+        emit_dvi_out(&mut st.shipout, cur_len as u8)?;
     } else {
-        dvi_out_global(XXX4);
-        dvi_four_global(cur_len);
+        emit_dvi_out(&mut st.shipout, XXX4)?;
+        emit_dvi_four(&mut st.shipout, cur_len)?;
     }
 
-    let mut k = str_start(str_ptr() - TOO_BIG_CHAR);
-    while k < pool_ptr() {
-        dvi_out_global(str_pool_entry(k) as u8);
+    let mut k = base;
+    while k < st.strings.pool_ptr {
+        let byte = st.strings.str_pool[k as usize] as u8;
+        emit_dvi_out(&mut st.shipout, byte)?;
         k += 1;
     }
-    set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+    st.strings.pool_ptr = base;
+    Ok(())
+}
+
+// Bridge-down wrapper; retires when `hlist_out` is threaded.
+pub unsafe fn pic_out(p: i32) {
+    let outcome = crate::state::with_state_mut(|st| pic_out_in(st, p));
+    if let Err(a) = outcome {
+        fire_shipout_abort(a);
+    }
 }
 
 // translated from xetex-shipout.c:1682 (out_what)

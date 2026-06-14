@@ -443,11 +443,7 @@ pub(crate) fn print_ln_in(st: &mut EngineState) {
 /// Write one UTF-16 code unit to the current output destination(s).
 ///
 /// translated from xetex-output.c:76 (print_raw_char)
-pub unsafe fn print_raw_char(s: u16, incr_offset: bool) {
-    crate::state::with_state_mut(|st| print_raw_char_in(st, s, incr_offset));
-}
-
-/// `&mut EngineState` core of [`print_raw_char`].
+/// `&mut EngineState` core of `print_raw_char`.
 pub(crate) fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool) {
     match st.shipout.selector {
         SELECTOR_TERM_AND_LOG => {
