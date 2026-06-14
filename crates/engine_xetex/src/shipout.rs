@@ -30,11 +30,9 @@ use crate::globals::{
     str_start, temp_ptr, term_offset, total_pages, write_file, write_loc, write_open,
     xdv_buffer_entry,
 };
-use crate::mem::{
-    free_node_global, get_avail_global, get_node_global, new_kern_global, new_math_global,
-};
+use crate::mem::{free_node_global, get_avail_global, get_node_global, new_kern_global};
 use crate::node::{EdgeNode, MovementNode, NodePtr};
-use crate::state::{FontState, MemState, ShipoutState, StringsState};
+use crate::state::{FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
 extern "C" {
@@ -249,6 +247,14 @@ enum DviFlush {
     Write(i32, i32),
     /// DVI length overflowed 0x7FFFFFFF — abort via `fatal_error`.
     Fatal,
+}
+
+/// Cold `-> !` abort sentinel for threaded shipout helpers: the work is done
+/// under the live state borrow and the divergent abort is fired by the thin
+/// `_global` wrapper after the borrow drops (§5 sentinel rule).
+pub(crate) enum ShipoutAbort {
+    /// `confusion("LR2")` — internal LR-consistency failure in `reverse`.
+    ConfusionLr2,
 }
 
 struct DviEmit {
@@ -1286,7 +1292,7 @@ pub unsafe fn hlist_out() {
         set_mem_b32s0(p + 2, 0);
         set_mem_b32s1(prev_p, p);
         set_cur_h(0);
-        set_mem_b32s1(p, reverse(this_box, TEX_NULL, &mut cur_g, &mut cur_glue));
+        set_mem_b32s1(p, reverse_global(this_box, TEX_NULL, &mut cur_g, &mut cur_glue));
         set_mem_b32s1(p + 1, -cur_h());
         set_cur_h(save_h);
         set_mem_b16s0(this_box, REVERSED);
@@ -1485,7 +1491,7 @@ pub unsafe fn hlist_out() {
                                 set_cur_h(cur_h() - left_edge + rule_wd());
                                 set_mem_b32s1(
                                     p,
-                                    reverse(
+                                    reverse_global(
                                         this_box,
                                         new_edge_global(1 - cur_dir(), 0),
                                         &mut cur_g,
@@ -2124,9 +2130,18 @@ fn font_character_width_global(f: i32, c: i32) -> i32 {
 
 // translated from xetex-shipout.c:1470 (reverse)
 // Called by the (now Rust) hlist_out; internal Rust fn.
-pub unsafe fn reverse(this_box: i32, t: i32, cur_g: *mut i32, cur_glue: *mut f64) -> i32 {
-    let g_order = mem_b16s0(this_box + 5);
-    let g_sign = mem_b16s1(this_box + 5);
+pub fn reverse(
+    mem: &mut MemState,
+    shipout: &mut ShipoutState,
+    scanner: &mut ScannerState,
+    fonts: &mut FontState,
+    this_box: i32,
+    t: i32,
+    cur_g: &mut i32,
+    cur_glue: &mut f64,
+) -> Result<i32, ShipoutAbort> {
+    let g_order = mem.b16s0(this_box + 5);
+    let g_sign = mem.b16s1(this_box + 5);
     let mut l = t;
     let mut p = temp_ptr();
     let mut m = MIN_HALFWORD;
@@ -2134,144 +2149,141 @@ pub unsafe fn reverse(this_box: i32, t: i32, cur_g: *mut i32, cur_glue: *mut f64
 
     loop {
         while p != TEX_NULL {
-            if is_char_node_global(p) {
+            if crate::mem::is_char_node(mem, p) {
                 loop {
-                    let f = mem_b16s1(p) as i32;
-                    let c = mem_b16s0(p);
-                    set_cur_h(
-                        cur_h()
-                            + font_character_width_global(
-                                f,
-                                crate::scan::effective_char_global(true, f, c),
-                            ),
-                    );
-                    let q = mem_b32s1(p);
-                    set_mem_b32s1(p, l);
+                    let f = mem.b16s1(p) as i32;
+                    let c = mem.b16s0(p);
+                    let ec = crate::fonts::effective_char(fonts, true, f, c);
+                    shipout.cur_h += font_character_width(fonts, f, ec);
+                    let q = mem.b32s1(p);
+                    mem.set_b32s1(p, l);
                     l = p;
                     p = q;
-                    if !is_char_node_global(p) {
+                    if !crate::mem::is_char_node(mem, p) {
                         break;
                     }
                 }
                 continue;
             }
 
-            let q = mem_b32s1(p);
+            let q = mem.b32s1(p);
             let mut add_width = true;
 
             'reswitch: loop {
-                match mem_b16s1(p) {
+                match mem.b16s1(p) {
                     HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
-                        set_rule_wd(mem_b32s1(p + 1));
+                        shipout.rule_wd = mem.b32s1(p + 1);
                     }
-                    WHATSIT_NODE => match mem_b16s0(p) {
+                    WHATSIT_NODE => match mem.b16s0(p) {
                         NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE | PIC_NODE
                         | PDF_NODE => {
-                            set_rule_wd(mem_b32s1(p + 1));
+                            shipout.rule_wd = mem.b32s1(p + 1);
                         }
                         _ => add_width = false,
                     },
                     GLUE_NODE => {
-                        let mut g = mem_b32s0(p + 1);
-                        set_rule_wd(mem_b32s1(g + 1) - *cur_g);
+                        let mut g = mem.b32s0(p + 1);
+                        shipout.rule_wd = mem.b32s1(g + 1) - *cur_g;
 
                         if g_sign != NORMAL {
                             if g_sign == STRETCHING {
-                                if mem_b16s1(g) == g_order {
-                                    *cur_glue += mem_b32s1(g + 2) as f64;
-                                    let mut glue_temp = mem_gr(this_box + 6) * *cur_glue;
+                                if mem.b16s1(g) == g_order {
+                                    *cur_glue += mem.b32s1(g + 2) as f64;
+                                    let mut glue_temp = mem.gr(this_box + 6) * *cur_glue;
                                     glue_temp = glue_temp.clamp(-1_000_000_000.0, 1_000_000_000.0);
                                     *cur_g = crate::scaled_math::tex_round(glue_temp);
                                 }
-                            } else if mem_b16s0(g) == g_order {
-                                *cur_glue -= mem_b32s1(g + 3) as f64;
-                                let mut glue_temp = mem_gr(this_box + 6) * *cur_glue;
+                            } else if mem.b16s0(g) == g_order {
+                                *cur_glue -= mem.b32s1(g + 3) as f64;
+                                let mut glue_temp = mem.gr(this_box + 6) * *cur_glue;
                                 glue_temp = glue_temp.clamp(-1_000_000_000.0, 1_000_000_000.0);
                                 *cur_g = crate::scaled_math::tex_round(glue_temp);
                             }
                         }
 
-                        set_rule_wd(rule_wd() + *cur_g);
+                        shipout.rule_wd += *cur_g;
 
-                        if (g_sign == STRETCHING && mem_b16s1(g) == g_order)
-                            || (g_sign == SHRINKING && mem_b16s0(g) == g_order)
+                        if (g_sign == STRETCHING && mem.b16s1(g) == g_order)
+                            || (g_sign == SHRINKING && mem.b16s0(g) == g_order)
                         {
-                            if mem_b32s1(g) == TEX_NULL {
-                                free_node_global(g, GLUE_SPEC_SIZE);
+                            if mem.b32s1(g) == TEX_NULL {
+                                crate::mem::free_node(mem, g, GLUE_SPEC_SIZE);
                             } else {
-                                set_mem_b32s1(g, mem_b32s1(g) - 1);
+                                mem.set_b32s1(g, mem.b32s1(g) - 1);
                             }
 
-                            if mem_b16s0(p) < A_LEADERS {
-                                set_mem_b16s1(p, KERN_NODE);
-                                set_mem_b32s1(p + 1, rule_wd());
+                            if mem.b16s0(p) < A_LEADERS {
+                                mem.set_b16s1(p, KERN_NODE);
+                                mem.set_b32s1(p + 1, shipout.rule_wd);
                             } else {
-                                g = get_node_global(GLUE_SPEC_SIZE);
-                                set_mem_b16s1(g, FILLL + 1);
-                                set_mem_b16s0(g, FILLL + 1);
-                                set_mem_b32s1(g + 1, rule_wd());
-                                set_mem_b32s1(g + 2, 0);
-                                set_mem_b32s1(g + 3, 0);
-                                set_mem_b32s0(p + 1, g);
+                                g = crate::mem::get_node(mem, GLUE_SPEC_SIZE);
+                                mem.set_b16s1(g, FILLL + 1);
+                                mem.set_b16s0(g, FILLL + 1);
+                                mem.set_b32s1(g + 1, shipout.rule_wd);
+                                mem.set_b32s1(g + 2, 0);
+                                mem.set_b32s1(g + 3, 0);
+                                mem.set_b32s0(p + 1, g);
                             }
                         }
                     }
                     LIGATURE_NODE => {
-                        crate::mem::flush_list_global(mem_b32s1(p + 1));
+                        crate::mem::flush_list(mem, mem.b32s1(p + 1));
                         set_temp_ptr(p);
-                        p = get_avail_global();
-                        set_mem_word(p, mem_word(temp_ptr() + 1));
-                        set_mem_b32s1(p, q);
-                        free_node_global(temp_ptr(), SMALL_NODE_SIZE);
+                        p = crate::mem::get_avail(mem);
+                        mem.set_word(p, mem.word(temp_ptr() + 1));
+                        mem.set_b32s1(p, q);
+                        crate::mem::free_node(mem, temp_ptr(), SMALL_NODE_SIZE);
                         continue 'reswitch;
                     }
                     MATH_NODE => {
-                        set_rule_wd(mem_b32s1(p + 1));
+                        shipout.rule_wd = mem.b32s1(p + 1);
 
-                        if !mem_b16s0(p).is_multiple_of(2) {
-                            if mem_b32s0(lr_ptr()) as u16 != math_node_end_lr_type_global(p) {
-                                set_mem_b16s1(p, KERN_NODE);
-                                set_lr_problems(lr_problems() + 1);
+                        if !mem.b16s0(p).is_multiple_of(2) {
+                            if mem.b32s0(scanner.LR_ptr) as u16 != math_node_end_lr_type(mem, p) {
+                                mem.set_b16s1(p, KERN_NODE);
+                                scanner.LR_problems += 1;
                             } else {
-                                set_temp_ptr(lr_ptr());
-                                set_lr_ptr(mem_b32s1(temp_ptr()));
-                                set_mem_b32s1(temp_ptr(), avail());
-                                set_avail(temp_ptr());
+                                set_temp_ptr(scanner.LR_ptr);
+                                scanner.LR_ptr = mem.b32s1(temp_ptr());
+                                mem.set_b32s1(temp_ptr(), mem.avail);
+                                mem.avail = temp_ptr();
 
                                 if n > MIN_HALFWORD {
                                     n -= 1;
-                                    set_mem_b16s0(p, mem_b16s0(p) - 1);
+                                    mem.set_b16s0(p, mem.b16s0(p) - 1);
                                 } else {
-                                    set_mem_b16s1(p, KERN_NODE);
+                                    mem.set_b16s1(p, KERN_NODE);
 
                                     if m > MIN_HALFWORD {
                                         m -= 1;
                                     } else {
-                                        free_node_global(p, MEDIUM_NODE_SIZE);
-                                        set_mem_b32s1(t, q);
-                                        set_mem_b32s1(t + 1, rule_wd());
-                                        set_mem_b32s1(t + 2, -cur_h() - rule_wd());
-                                        return l;
+                                        crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
+                                        mem.set_b32s1(t, q);
+                                        mem.set_b32s1(t + 1, shipout.rule_wd);
+                                        mem.set_b32s1(t + 2, -shipout.cur_h - shipout.rule_wd);
+                                        return Ok(l);
                                     }
                                 }
                             }
                         } else {
-                            set_temp_ptr(get_avail_global());
-                            set_mem_b32s0(temp_ptr(), math_node_end_lr_type_global(p) as i32);
-                            set_mem_b32s1(temp_ptr(), lr_ptr());
-                            set_lr_ptr(temp_ptr());
+                            set_temp_ptr(crate::mem::get_avail(mem));
+                            mem.set_b32s0(temp_ptr(), math_node_end_lr_type(mem, p) as i32);
+                            mem.set_b32s1(temp_ptr(), scanner.LR_ptr);
+                            scanner.LR_ptr = temp_ptr();
 
-                            if n > MIN_HALFWORD || math_node_lr_dir_global(p) as i16 != cur_dir() {
+                            if n > MIN_HALFWORD
+                                || math_node_lr_dir(mem, p) as i16 != scanner.cur_dir
+                            {
                                 n += 1;
-                                set_mem_b16s0(p, mem_b16s0(p) + 1);
+                                mem.set_b16s0(p, mem.b16s0(p) + 1);
                             } else {
-                                set_mem_b16s1(p, KERN_NODE);
+                                mem.set_b16s1(p, KERN_NODE);
                                 m += 1;
                             }
                         }
                     }
                     EDGE_NODE => {
-                        crate::errors::confusion(c"LR2".as_ptr());
+                        return Err(ShipoutAbort::ConfusionLr2);
                     }
                     _ => add_width = false,
                 }
@@ -2279,13 +2291,13 @@ pub unsafe fn reverse(this_box: i32, t: i32, cur_g: *mut i32, cur_glue: *mut f64
             }
 
             if add_width {
-                set_cur_h(cur_h() + rule_wd());
+                shipout.cur_h += shipout.rule_wd;
             }
 
-            set_mem_b32s1(p, l);
+            mem.set_b32s1(p, l);
 
-            if mem_b16s1(p) == KERN_NODE && (rule_wd() == 0 || l == TEX_NULL) {
-                free_node_global(p, MEDIUM_NODE_SIZE);
+            if mem.b16s1(p) == KERN_NODE && (shipout.rule_wd == 0 || l == TEX_NULL) {
+                crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
                 p = l;
             }
 
@@ -2294,11 +2306,33 @@ pub unsafe fn reverse(this_box: i32, t: i32, cur_g: *mut i32, cur_glue: *mut f64
         }
 
         if t == TEX_NULL && m == MIN_HALFWORD && n == MIN_HALFWORD {
-            return l;
+            return Ok(l);
         }
 
-        p = new_math_global(0, mem_b32s0(lr_ptr()) as i16);
-        set_lr_problems(lr_problems() + 10000);
+        p = crate::mem::new_math(mem, 0, mem.b32s0(scanner.LR_ptr) as i16);
+        scanner.LR_problems += 10000;
+    }
+}
+
+// Bridge-down wrapper: borrows the anchor once and fires the cold abort after
+// the borrow drops (§5). Retires when both callers (`hlist_out`/`vlist_out`)
+// are threaded.
+pub unsafe fn reverse_global(this_box: i32, t: i32, cur_g: *mut i32, cur_glue: *mut f64) -> i32 {
+    let outcome = crate::state::with_state_mut(|st| {
+        reverse(
+            &mut st.mem,
+            &mut st.shipout,
+            &mut st.scanner,
+            &mut st.fonts,
+            this_box,
+            t,
+            &mut *cur_g,
+            &mut *cur_glue,
+        )
+    });
+    match outcome {
+        Ok(l) => l,
+        Err(ShipoutAbort::ConfusionLr2) => crate::errors::confusion(c"LR2".as_ptr()),
     }
 }
 
