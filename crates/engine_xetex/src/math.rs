@@ -34,7 +34,7 @@ use crate::node::{
     VListNode,
 };
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
-use crate::state::{EqtbState, FontState, MemState, SaveStackState, ScannerState};
+use crate::state::{EngineState, EqtbState, FontState, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -792,6 +792,39 @@ pub unsafe fn fetch_global(a: i32) {
     }
 }
 
+/// Threaded form of [`fetch_global`]: runs [`fetch_core`] and emits its deferred
+/// diagnostic / warning under the held `&mut EngineState` borrow (the print/error
+/// `_in` cores from sessions 182–185), returning the recoverable
+/// [`ErrorOutcome`](crate::errors::ErrorOutcome) so the threaded caller can defer
+/// a non-`Continue` abort to its wrapper (`01b` §5).
+fn fetch_in(st: &mut EngineState, a: i32) -> crate::errors::ErrorOutcome {
+    use crate::errors::ErrorOutcome;
+    match fetch_core(&mut st.mem, &st.fonts, &st.eqtb, &mut st.scanner, a) {
+        FetchOutcome::Ok => ErrorOutcome::Continue,
+        FetchOutcome::UndefinedFont { size, fam, c } => {
+            crate::output::error_here_with_diagnostic_in(st, c"".as_ptr());
+            crate::output::print_size_in(st, size);
+            crate::output::print_char_in(st, ' ' as i32);
+            crate::output::print_int_in(st, fam);
+            crate::output::print_cstr_in(st, c" is undefined (character ".as_ptr());
+            crate::output::print_in(st, c);
+            crate::output::print_char_in(st, ')' as i32);
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 4;
+            st.errors.help_line[3] =
+                c"Somewhere in the math formula just ended, you used the".as_ptr();
+            st.errors.help_line[2] =
+                c"stated character from an undefined font family. For example,".as_ptr();
+            st.errors.help_line[1] =
+                c"plain TeX doesn't allow \\it or \\sl in subscripts. Proceed,".as_ptr();
+            st.errors.help_line[0] =
+                c"and I'll try to forget that I needed that character.".as_ptr();
+            crate::errors::error_in(st)
+        }
+        FetchOutcome::CharMissing { f, c } => crate::output::char_warning_in(st, f, c),
+    }
+}
+
 /// translated from xetex-math.c:198 (make_over)
 fn make_over(mem: &mut MemState, q: i32, x: i32) {
     let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
@@ -866,6 +899,12 @@ fn make_vcenter(mem: &mut MemState, q: i32, axis_height: i32) -> Result<(), Node
 }
 
 pub unsafe fn make_vcenter_global(q: i32) {
+    // NOTE: `axis_height` is computed *outside* the borrow. For an OpenType math
+    // font it falls through to `get_native_mathsy_param` (C FFI) which re-enters
+    // Rust `with_state` via `tt_get_font_area_entry`; that nested borrow is only
+    // legal under a *shared* `with_state`, so it must NOT run inside the
+    // `with_state_mut` below. (Threading make_vcenter to a single `&mut` borrow
+    // crashed `unicode_math`, session 193.)
     let axis_height = axis_height_global(cur_size());
     if let Err(e) = crate::state::with_state_mut(|st| make_vcenter(&mut st.mem, q, axis_height)) {
         node_recycle_abort(e);
@@ -1597,47 +1636,64 @@ fn make_ord_body(
 /// `\restart` iteration runs the threaded [`make_ord_body`] under one disjoint
 /// `mem`/`fonts`/`scanner` borrow and aborts a cold allocator overflow after it
 /// drops.
-pub unsafe fn make_ord_global(q: i32) {
+/// Deferred-abort sentinel for the threaded [`make_ord_in`] (`01b` §5): the
+/// allocator overflow and the recoverable `fetch` error both abort after the
+/// state borrow drops.
+enum MakeOrdAbort {
+    Overflow,
+    Error(crate::errors::ErrorOutcome),
+}
+
+fn make_ord_in(st: &mut EngineState, q: i32) -> Result<(), MakeOrdAbort> {
+    use crate::errors::ErrorOutcome;
     'restart: loop {
-        if mem_b32s1(q + 3) != EMPTY {
-            return;
+        if st.mem.b32s1(q + 3) != EMPTY {
+            return Ok(());
         }
-        if mem_b32s1(q + 2) != EMPTY {
-            return;
+        if st.mem.b32s1(q + 2) != EMPTY {
+            return Ok(());
         }
-        if mem_b32s1(q + 1) != MATH_CHAR {
-            return;
+        if st.mem.b32s1(q + 1) != MATH_CHAR {
+            return Ok(());
         }
-        let p = mem_b32s1(q);
+        let p = st.mem.b32s1(q);
         if p == TEX_NULL {
-            return;
+            return Ok(());
         }
-        if mem_b16s1(p) < ORD_NOAD || mem_b16s1(p) > PUNCT_NOAD {
-            return;
+        if st.mem.b16s1(p) < ORD_NOAD || st.mem.b16s1(p) > PUNCT_NOAD {
+            return Ok(());
         }
-        if mem_b32s1(p + 1) != MATH_CHAR {
-            return;
+        if st.mem.b32s1(p + 1) != MATH_CHAR {
+            return Ok(());
         }
-        if mem_b16s1(p + 1) % 256 != mem_b16s1(q + 1) % 256 {
-            return;
-        }
-
-        set_mem_b32s1(q + 1, MATH_TEXT_CHAR);
-        fetch_global(q + 1);
-        if cur_i().s1 % 4 != LIG_TAG {
-            return;
+        if st.mem.b16s1(p + 1) % 256 != st.mem.b16s1(q + 1) % 256 {
+            return Ok(());
         }
 
-        match crate::state::with_state_mut(|st| {
-            let st = &mut *st;
-            let q_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-            let p_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
-            make_ord_body(&mut st.mem, &st.fonts, &mut st.scanner, q_node, p_node)
-        }) {
-            MakeOrdStep::Return => return,
+        st.mem.set_b32s1(q + 1, MATH_TEXT_CHAR);
+        match fetch_in(st, q + 1) {
+            ErrorOutcome::Continue => {}
+            other => return Err(MakeOrdAbort::Error(other)),
+        }
+        if st.scanner.cur_i.s1 % 4 != LIG_TAG {
+            return Ok(());
+        }
+
+        let q_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
+        let p_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
+        match make_ord_body(&mut st.mem, &st.fonts, &mut st.scanner, q_node, p_node) {
+            MakeOrdStep::Return => return Ok(()),
             MakeOrdStep::Restart => continue 'restart,
-            MakeOrdStep::Overflow => node_recycle_abort(NodeRecycleAbort::Overflow),
+            MakeOrdStep::Overflow => return Err(MakeOrdAbort::Overflow),
         }
+    }
+}
+
+pub unsafe fn make_ord_global(q: i32) {
+    match crate::state::with_state_mut(|st| make_ord_in(st, q)) {
+        Ok(()) => {}
+        Err(MakeOrdAbort::Overflow) => node_recycle_abort(NodeRecycleAbort::Overflow),
+        Err(MakeOrdAbort::Error(o)) => o.finish(),
     }
 }
 
