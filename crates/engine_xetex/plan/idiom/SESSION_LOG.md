@@ -8,6 +8,56 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 192 — 2026-06-17 — Execution: thread `load_fmt_file` to a single-borrow core
+
+**Type:** execution (workstream 01). Took `format_io.rs` — the second-largest
+non-`globals` `with_state` host (60 sites) that prior sessions had not touched.
+**Recon split:** `load_fmt_file` is the clean win (no printing, and its only
+interleaved non-state calls are the `undump_*` file FFI, which are NOT
+`with_state`-bearing), so it threads to **one** `&mut EngineState` borrow held
+across the entire format undump. `store_fmt_file` is **not** — its dump loops are
+interspersed with six `with_state`-bearing helpers (`make_string_global`,
+`pack_job_name`, `make_name_string`, `sort_avail`, `pseudo_close_global`,
+`init_trie`) plus `print_*` that need the borrow dropped, so a single borrow
+can't span it (bucket-D); deferred.
+
+**Code (1 commit):** carved `load_fmt_file_in(st: &mut EngineState, fmt_in) ->
+Result<bool, *const c_char>` out of the ~720-line driver. The thin wrapper keeps
+the file-open prelude outside the borrow (`name_of_file`/`pack_buffered_name` are
+still `with_state`-bearing), opens `fmt_in`, then runs the core under one
+`with_state_mut`. Inside, every `crate::globals::X()`/`set_X` accessor and ~40
+`with_state(_mut)` islands (Vec (re)allocations + base-pointer grabs) became
+direct `st.<cluster>.<field>` access / `st.mem.b32s0` / `st.eqtb.set_b16s1` /
+`st.eqtb.word`, with the `mem`/`eqtb`/`hash` base pointers grabbed once after
+their `Vec` is allocated (raw ptr, no held borrow). The ~30 cold
+`bad_format_file()`/`_tt_abort(msg)` paths ride an **abort sentinel** (`Err(msg)`
+returned; the wrapper fires `_tt_abort(msg)` after the borrow drops, `01b` §5) —
+`bad_format_file` itself is now dead and deleted. Raw `mod raw` accessors
+(`cur_input().loc`, `set_cur_input_loc`, `set_cur_list_head/tail`) stay as global
+calls (safe under the borrow). Deleted 3 now-dead `globals.rs` accessors
+(`set_trie_max`, `trie_size`, `set_op_start_entry`) + 39 now-unused format_io
+imports.
+
+**Tests:** `cargo check`; `cargo fmt`; dashboard **29/2/7/4** (TRIP exercises a
+real `\dump` **and** format-load, so it directly gates this slice); rebuilt
+`target/release/tectonic`; full corpus **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1`, doc-count ==
+baseline, no NOXDV/NOLOG. Metrics: warnings **41** (held); `unsafe fn` net-neutral
+(−1 `bad_format_file`, +1 `load_fmt_file_in`); `with_state(_mut)` sites
+**1037 → 1000** (−37: format_io 60→27, all 27 remaining in `store_fmt_file`).
+
+**Next:** `store_fmt_file` is the only `with_state` host left in `format_io`
+(27 sites) but is scanner-/helper-gated (the six bucket-D helpers above + native-
+font recoverable `error()`); threading it needs those helpers threaded first, or
+a scoped-island treatment that won't collapse much — low priority. The big
+remaining levers are unchanged: the **scanner** (`get_next`/`get_x_token`/
+`scan_toks`/`get_token`) which gates the shipout hub + `main_control` handlers +
+`output.rs` `show_whatever`/`issue_message`, and the `math.rs` `make_*_global`
+sub-drivers of `mlist_to_hlist` (bucket-D scoped islands). One careful hub/host
+per session; the mechanical leaf phase stays drained.
+
+---
+
 ## Idiom session 191 — 2026-06-14 — Execution: thread the scanner-free shipout leaves + build the threaded DVI-emit layer
 
 **Type:** execution (workstream 01). Took the session-190 "Next" (the shipout

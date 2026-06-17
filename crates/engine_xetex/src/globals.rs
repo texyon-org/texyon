@@ -3462,16 +3462,6 @@ pub(crate) fn trie_max() -> i32 {
     crate::state::with_state(|state| state.hyph.trie_max)
 }
 #[inline]
-pub(crate) fn set_trie_max(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_max = v;
-    });
-}
-#[inline]
-pub(crate) fn trie_size() -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_size)
-}
-#[inline]
 pub(crate) fn set_trie_ptr(v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.trie_ptr = v;
@@ -3505,12 +3495,6 @@ pub(crate) fn hyph_index() -> i32 {
 pub(crate) fn set_hyph_index(v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.hyph_index = v;
-    });
-}
-#[inline]
-pub(crate) fn set_op_start_entry(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.op_start[k] = v;
     });
 }
 #[inline]

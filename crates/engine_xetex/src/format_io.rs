@@ -7,22 +7,15 @@ use crate::consts::{
 };
 use crate::engine::{intpar, sort_avail, TRE_MAX_STRINGS, TRE_POOL_SIZE};
 use crate::globals::{
-    avail, cs_count, cur_input, dyn_used, eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, eqtb_word, fmem_ptr,
-    font_area_entry, font_dsize_entry, font_mapping_ptr, font_max, font_mem_size, font_name_entry,
-    font_ptr, font_size_entry, format_ident, hash_high, hash_used, hi_mem_min, hyph_count,
-    hyph_link_entry, hyph_list_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry,
-    in_initex_mode, init_pool_ptr, interaction, job_name, lo_mem_max, max_hyph_char, mem_b32s0,
-    mem_b32s1, mem_end, par_loc, pool_ptr, pool_size, rover, set_avail, set_cs_count,
-    set_cur_input_loc, set_cur_list_head, set_cur_list_tail, set_dyn_used, set_eqtb_b16s0,
-    set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word, set_fmem_ptr, set_font_mem_size, set_font_ptr,
-    set_format_ident, set_hash_high, set_hash_used, set_help_line, set_help_ptr, set_hi_mem_min,
-    set_hyph_count, set_hyph_link_entry, set_hyph_list_entry, set_hyph_next, set_hyph_start,
-    set_hyph_word_entry, set_interaction, set_lo_mem_max, set_max_hyph_char, set_max_reg_help_line,
-    set_max_reg_num, set_mem_end, set_op_start_entry, set_page_tail, set_par_loc, set_par_token,
-    set_pool_ptr, set_prim_s0, set_prim_s1, set_rover, set_selector, set_str_ptr, set_trie_max,
-    set_trie_not_ready, set_trie_op_ptr, set_trie_used_entry, set_var_used, set_write_loc, str_ptr,
-    str_start, trie_max, trie_not_ready, trie_op_ptr, trie_size, trie_used_entry, var_used,
-    write_loc,
+    avail, cs_count, cur_input, dyn_used, eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, fmem_ptr,
+    font_area_entry, font_dsize_entry, font_mapping_ptr, font_name_entry, font_ptr,
+    font_size_entry, format_ident, hash_high, hash_used, hi_mem_min, hyph_count, hyph_link_entry,
+    hyph_list_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, init_pool_ptr, interaction,
+    job_name, lo_mem_max, max_hyph_char, mem_b32s0, mem_b32s1, mem_end, par_loc, pool_ptr,
+    pool_size, rover, set_cs_count, set_cur_input_loc, set_dyn_used, set_eqtb_b32s1,
+    set_format_ident, set_help_line, set_help_ptr, set_hyph_next, set_interaction, set_pool_ptr,
+    set_selector, set_str_ptr, set_var_used, str_ptr, str_start, trie_max, trie_not_ready,
+    trie_op_ptr, trie_used_entry, var_used, write_loc,
 };
 use crate::hyphenation::{init_trie, BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
 
@@ -746,19 +739,9 @@ unsafe fn pack_buffered_name(_n: i16, _a: i32, _b: i32) {
     crate::globals::set_name_of_file(tre_TEX_format_default as *mut libc::c_char);
     crate::globals::set_name_length(libc::strlen(tre_TEX_format_default) as i32);
 }
-#[inline]
-unsafe fn bad_format_file() -> ! {
-    _tt_abort(c"fatal format file error".as_ptr());
-}
 // translated from xetex-ini.c:602 (load_fmt_file)
 pub unsafe fn load_fmt_file() -> bool {
-    let mut j: i32;
-    let mut k: i32;
-    let mut p: i32;
-    let mut q: i32;
-    let mut x: i32;
-
-    j = cur_input().loc;
+    let j = cur_input().loc;
     pack_buffered_name((tre_format_default_length - 4) as i16, 1, 0);
 
     let fmt_in = ttstub_input_open(crate::globals::name_of_file(), TTBC_FILE_FORMAT_FORMAT, 0);
@@ -768,229 +751,234 @@ pub unsafe fn load_fmt_file() -> bool {
 
     set_cur_input_loc(j);
 
-    if in_initex_mode() {
-        crate::state::with_state_mut(|state| {
-            state.fonts.font_info = Vec::new();
-            state.strings.str_pool = Vec::new();
-            state.strings.str_start = Vec::new();
-            state.eqtb.data = Vec::new();
-            state.eqtb.hash = Vec::new();
-            state.mem.data = Vec::new();
-        });
+    // Phase-C (`01b` §3): the whole undump runs under one `&mut EngineState`
+    // borrow. `undump_*` are plain file FFI (not `with_state`-bearing), so they
+    // are safe under the borrow; every cold `bad_format_file()`/`_tt_abort(msg)`
+    // rides the abort sentinel, fired by this wrapper after the borrow drops
+    // (`01b` §5). The file-open prelude above stays out of the borrow because
+    // `name_of_file`/`pack_buffered_name` are still `with_state`-bearing.
+    match crate::state::with_state_mut(|st| load_fmt_file_in(st, fmt_in)) {
+        Ok(b) => b,
+        Err(msg) => _tt_abort(msg),
+    }
+}
+
+/// Threaded core of [`load_fmt_file`] (`01b` §3): holds one `&mut EngineState`
+/// borrow across the entire format undump, touching every cluster directly.
+/// Returns `Err(msg)` for the cold fatal paths so the wrapper can
+/// `_tt_abort(msg)` after the borrow drops (`01b` §5).
+unsafe fn load_fmt_file_in(
+    st: &mut crate::state::EngineState,
+    fmt_in: usize,
+) -> Result<bool, *const libc::c_char> {
+    let mut j: i32;
+    let mut k: i32;
+    let mut p: i32;
+    let mut q: i32;
+    let mut x: i32;
+
+    if st.config.in_initex_mode {
+        st.fonts.font_info = Vec::new();
+        st.strings.str_pool = Vec::new();
+        st.strings.str_start = Vec::new();
+        st.eqtb.data = Vec::new();
+        st.eqtb.hash = Vec::new();
+        st.mem.data = Vec::new();
     }
 
     x = undump_int(fmt_in);
     if x != FORMAT_HEADER_MAGIC {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
 
     x = undump_int(fmt_in);
     if x != FORMAT_SERIAL {
-        _tt_abort(c"format file is of the wrong version".as_ptr());
+        return Err(c"format file is of the wrong version".as_ptr());
     }
 
     x = undump_int(fmt_in);
     if !(0..=SUP_HASH_EXTRA).contains(&x) {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
-    set_hash_high(x);
-    let hash_high_val = hash_high();
-    crate::state::with_state_mut(|s| {
-        if s.eqtb.hash_extra < hash_high_val {
-            s.eqtb.hash_extra = hash_high_val;
-        }
-        s.eqtb.eqtb_top = EQTB_SIZE + s.eqtb.hash_extra;
-        s.eqtb.hash_top = if s.eqtb.hash_extra == 0 {
-            UNDEFINED_CONTROL_SEQUENCE
-        } else {
-            s.eqtb.eqtb_top
-        };
-        let n = (1 + s.eqtb.hash_top - 514) as usize;
-        s.eqtb.hash = vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; n];
-    });
+    st.eqtb.hash_high = x;
+    if st.eqtb.hash_extra < st.eqtb.hash_high {
+        st.eqtb.hash_extra = st.eqtb.hash_high;
+    }
+    st.eqtb.eqtb_top = EQTB_SIZE + st.eqtb.hash_extra;
+    st.eqtb.hash_top = if st.eqtb.hash_extra == 0 {
+        UNDEFINED_CONTROL_SEQUENCE
+    } else {
+        st.eqtb.eqtb_top
+    };
+    let n = (1 + st.eqtb.hash_top - 514) as usize;
+    st.eqtb.hash = vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; n];
 
-    crate::globals::set_hash_s0(FORMAT_HASH_BASE, 0);
-    crate::globals::set_hash_s1(FORMAT_HASH_BASE, 0);
-    for h in (FORMAT_HASH_BASE + 1)..=crate::globals::hash_top() {
-        crate::globals::set_hash_s0(h, crate::globals::hash_s0(FORMAT_HASH_BASE));
-        crate::globals::set_hash_s1(h, crate::globals::hash_s1(FORMAT_HASH_BASE));
+    let base_hash = crate::mem_types::B32x2 { s0: 0, s1: 0 };
+    st.eqtb.hash[(FORMAT_HASH_BASE - 514) as usize] = base_hash;
+    for h in (FORMAT_HASH_BASE + 1)..=st.eqtb.hash_top {
+        st.eqtb.hash[(h - 514) as usize] = base_hash;
     }
 
     // `xmalloc_array(n)` allocated `n + 1` words; match that inclusive size.
-    let eqtb_words_load = (crate::globals::eqtb_top() as usize) + 1;
-    crate::state::with_state_mut(|s| {
-        s.eqtb.data = vec![
-            crate::mem_types::MemoryWord {
-                b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
-            };
-            eqtb_words_load
-        ];
-    });
-    set_eqtb_b16s1(UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_CS as u16);
-    set_eqtb_b32s1(UNDEFINED_CONTROL_SEQUENCE, crate::mem::TEX_NULL);
-    set_eqtb_b16s0(UNDEFINED_CONTROL_SEQUENCE, 0);
-    let undefined_entry = eqtb_word(UNDEFINED_CONTROL_SEQUENCE);
-    for e in (EQTB_SIZE + 1)..=crate::globals::eqtb_top() {
-        set_eqtb_word(e, undefined_entry);
+    let eqtb_words_load = (st.eqtb.eqtb_top as usize) + 1;
+    st.eqtb.data = vec![
+        crate::mem_types::MemoryWord {
+            b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
+        };
+        eqtb_words_load
+    ];
+    st.eqtb
+        .set_b16s1(UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_CS as u16);
+    st.eqtb
+        .set_b32s1(UNDEFINED_CONTROL_SEQUENCE, crate::mem::TEX_NULL);
+    st.eqtb.set_b16s0(UNDEFINED_CONTROL_SEQUENCE, 0);
+    let undefined_entry = st.eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
+    for e in (EQTB_SIZE + 1)..=st.eqtb.eqtb_top {
+        st.eqtb.data[e as usize] = undefined_entry;
     }
 
-    set_max_reg_num(32_767);
-    set_max_reg_help_line(c"A register number must be between 0 and 32767.".as_ptr());
+    st.scanner.max_reg_num = 32_767;
+    st.scanner.max_reg_help_line = c"A register number must be between 0 and 32767.".as_ptr();
 
     x = undump_int(fmt_in);
     if x != MEM_TOP {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
 
-    set_cur_list_head(CONTRIB_HEAD);
-    set_cur_list_tail(CONTRIB_HEAD);
-    set_page_tail(PAGE_HEAD);
+    crate::globals::set_cur_list_head(CONTRIB_HEAD);
+    crate::globals::set_cur_list_tail(CONTRIB_HEAD);
+    st.shipout.page_tail = PAGE_HEAD;
     // `xmalloc_array(MEM_TOP)` allocated `MEM_TOP + 1` words; match it.
     let mem_words_load = (MEM_TOP as usize) + 1;
-    crate::state::with_state_mut(|s| {
-        s.mem.data = vec![
-            crate::mem_types::MemoryWord {
-                b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
-            };
-            mem_words_load
-        ];
-    });
+    st.mem.data = vec![
+        crate::mem_types::MemoryWord {
+            b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
+        };
+        mem_words_load
+    ];
 
     x = undump_int(fmt_in);
     if x != EQTB_SIZE {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
     x = undump_int(fmt_in);
     if x != FORMAT_HASH_PRIME {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
     x = undump_int(fmt_in);
     if x != FORMAT_HYPH_PRIME {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
 
     x = undump_int(fmt_in);
     if x < 0 {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
     if x > SUP_POOL_SIZE - tre_pool_free {
-        _tt_abort(c"must increase string_pool_size".as_ptr());
+        return Err(c"must increase string_pool_size".as_ptr());
     }
-    set_pool_ptr(x);
-    if TRE_POOL_SIZE < pool_ptr() + tre_pool_free {
-        TRE_POOL_SIZE = pool_ptr() + tre_pool_free;
+    st.strings.pool_ptr = x;
+    if TRE_POOL_SIZE < st.strings.pool_ptr + tre_pool_free {
+        TRE_POOL_SIZE = st.strings.pool_ptr + tre_pool_free;
     }
-    crate::state::with_state_mut(|state| {
-        state.strings.pool_size = TRE_POOL_SIZE;
-    });
+    st.strings.pool_size = TRE_POOL_SIZE;
 
     x = undump_int(fmt_in);
     if x < 0 {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
     if x > SUP_MAX_STRINGS - tre_strings_free {
-        _tt_abort(c"must increase sup_strings".as_ptr());
+        return Err(c"must increase sup_strings".as_ptr());
     }
-    set_str_ptr(x);
-    if TRE_MAX_STRINGS < str_ptr() + tre_strings_free {
-        TRE_MAX_STRINGS = str_ptr() + tre_strings_free;
+    st.strings.str_ptr = x;
+    if TRE_MAX_STRINGS < st.strings.str_ptr + tre_strings_free {
+        TRE_MAX_STRINGS = st.strings.str_ptr + tre_strings_free;
     }
-    crate::state::with_state_mut(|state| {
-        state.strings.max_strings = TRE_MAX_STRINGS;
-    });
+    st.strings.max_strings = TRE_MAX_STRINGS;
 
-    crate::state::with_state_mut(|state| {
-        state.strings.str_start = vec![0i32; (TRE_MAX_STRINGS as usize) + 1];
-    });
-    let n = str_ptr() - TOO_BIG_CHAR + 1;
-    let limit = pool_ptr();
-    if !crate::state::with_state_mut(|state| {
-        undump_checked_i32(fmt_in, state.strings.str_start.as_mut_ptr(), n, 0, limit)
-    }) {
-        bad_format_file();
+    st.strings.str_start = vec![0i32; (TRE_MAX_STRINGS as usize) + 1];
+    let n = st.strings.str_ptr - TOO_BIG_CHAR + 1;
+    let limit = st.strings.pool_ptr;
+    if !undump_checked_i32(fmt_in, st.strings.str_start.as_mut_ptr(), n, 0, limit) {
+        return Err(c"fatal format file error".as_ptr());
     }
-    crate::state::with_state_mut(|state| {
-        state.strings.str_pool = vec![0u16; (TRE_POOL_SIZE as usize) + 1];
-    });
-    let limit = pool_ptr();
-    crate::state::with_state_mut(|state| {
-        undump_slice(fmt_in, state.strings.str_pool.as_mut_ptr(), limit);
-    });
+    st.strings.str_pool = vec![0u16; (TRE_POOL_SIZE as usize) + 1];
+    let limit = st.strings.pool_ptr;
+    undump_slice(fmt_in, st.strings.str_pool.as_mut_ptr(), limit);
 
-    crate::state::with_state_mut(|state| {
-        state.strings.init_str_ptr = state.strings.str_ptr;
-        state.strings.init_pool_ptr = state.strings.pool_ptr;
-    });
+    st.strings.init_str_ptr = st.strings.str_ptr;
+    st.strings.init_pool_ptr = st.strings.pool_ptr;
 
     x = undump_int(fmt_in);
     if !(1019..=MEM_TOP - HI_MEM_STAT_USAGE).contains(&x) {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
-    set_lo_mem_max(x);
+    st.mem.lo_mem_max = x;
 
     x = undump_int(fmt_in);
-    if x < 20 || x > lo_mem_max() {
-        bad_format_file();
+    if x < 20 || x > st.mem.lo_mem_max {
+        return Err(c"fatal format file error".as_ptr());
     }
-    set_rover(x);
+    st.mem.rover = x;
 
     for idx in INT_VAL..=INTER_CHAR_VAL {
         x = undump_int(fmt_in);
-        if x < MIN_HALFWORD || x > lo_mem_max() {
-            bad_format_file();
+        if x < MIN_HALFWORD || x > st.mem.lo_mem_max {
+            return Err(c"fatal format file error".as_ptr());
         }
-        crate::state::with_state_mut(|state| state.scanner.sa_root[idx as usize] = x);
+        st.scanner.sa_root[idx as usize] = x;
     }
 
-    // `mem` is now a Rust-owned `Vec`; take a stable mutable base pointer once
-    // (never reallocated) for the free-list `undump_slice` calls — interleaved
-    // with `mem_*` accessor reads, so it holds no borrow. (session 58)
-    let mem_ptr = crate::state::with_state_mut(|s| s.mem.data.as_mut_ptr());
+    // `mem`/`eqtb`/`hash` are Rust-owned `Vec`s; take a stable mutable base
+    // pointer once (never reallocated under this borrow) for the free-list /
+    // sparse-region `undump_slice` calls, which then interleave with direct
+    // `st.mem.*` / `st.eqtb.*` reads holding no further borrow.
+    let mem_ptr = st.mem.data.as_mut_ptr();
     p = 0;
-    q = rover();
+    q = st.mem.rover;
     loop {
         undump_slice(fmt_in, mem_ptr.add(p as usize), q + 2 - p);
-        p = q + mem_b32s0(q);
-        if p > lo_mem_max() || (q >= mem_b32s1(q + 1) && mem_b32s1(q + 1) != rover()) {
-            bad_format_file();
+        p = q + st.mem.b32s0(q);
+        if p > st.mem.lo_mem_max
+            || (q >= st.mem.b32s1(q + 1) && st.mem.b32s1(q + 1) != st.mem.rover)
+        {
+            return Err(c"fatal format file error".as_ptr());
         }
-        q = mem_b32s1(q + 1);
-        if q == rover() {
+        q = st.mem.b32s1(q + 1);
+        if q == st.mem.rover {
             break;
         }
     }
 
-    undump_slice(fmt_in, mem_ptr.add(p as usize), lo_mem_max() + 1 - p);
+    undump_slice(fmt_in, mem_ptr.add(p as usize), st.mem.lo_mem_max + 1 - p);
 
     x = undump_int(fmt_in);
-    if x < lo_mem_max() + 1 || x > PRE_ADJUST_HEAD {
-        bad_format_file();
+    if x < st.mem.lo_mem_max + 1 || x > PRE_ADJUST_HEAD {
+        return Err(c"fatal format file error".as_ptr());
     }
-    set_hi_mem_min(x);
+    st.mem.hi_mem_min = x;
 
     x = undump_int(fmt_in);
     if !(MIN_HALFWORD..=MEM_TOP).contains(&x) {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
-    set_avail(x);
+    st.mem.avail = x;
 
-    set_mem_end(MEM_TOP);
+    st.mem.mem_end = MEM_TOP;
     undump_slice(
         fmt_in,
-        mem_ptr.add(hi_mem_min() as usize),
-        mem_end() + 1 - hi_mem_min(),
+        mem_ptr.add(st.mem.hi_mem_min as usize),
+        st.mem.mem_end + 1 - st.mem.hi_mem_min,
     );
-    set_var_used(undump_int(fmt_in));
-    set_dyn_used(undump_int(fmt_in));
+    st.mem.var_used = undump_int(fmt_in);
+    st.mem.dyn_used = undump_int(fmt_in);
 
-    // `eqtb` is now a Rust-owned `Vec`; take a stable mutable base pointer once
-    // (never reallocated) for the sparse-region `undump_slice`/replication below.
-    let eqtb_ptr = crate::state::with_state_mut(|s| s.eqtb.data.as_mut_ptr());
+    let eqtb_ptr = st.eqtb.data.as_mut_ptr();
     k = ACTIVE_BASE;
     loop {
         x = undump_int(fmt_in);
         if x < 1 || k + x > EQTB_SIZE + 1 {
-            bad_format_file();
+            return Err(c"fatal format file error".as_ptr());
         }
 
         undump_slice(fmt_in, eqtb_ptr.add(k as usize), x);
@@ -998,7 +986,7 @@ pub unsafe fn load_fmt_file() -> bool {
 
         x = undump_int(fmt_in);
         if x < 0 || k + x > EQTB_SIZE + 1 {
-            bad_format_file();
+            return Err(c"fatal format file error".as_ptr());
         }
 
         for j1 in k..=(k + x - 1) {
@@ -1010,464 +998,428 @@ pub unsafe fn load_fmt_file() -> bool {
         }
     }
 
-    if hash_high() > 0 {
-        undump_slice(fmt_in, eqtb_ptr.add((EQTB_SIZE + 1) as usize), hash_high());
+    if st.eqtb.hash_high > 0 {
+        undump_slice(
+            fmt_in,
+            eqtb_ptr.add((EQTB_SIZE + 1) as usize),
+            st.eqtb.hash_high,
+        );
     }
 
     x = undump_int(fmt_in);
-    if x < FORMAT_HASH_BASE || x > crate::globals::hash_top() {
-        bad_format_file();
+    if x < FORMAT_HASH_BASE || x > st.eqtb.hash_top {
+        return Err(c"fatal format file error".as_ptr());
     }
-    set_par_loc(x);
-    set_par_token(CS_TOKEN_FLAG + par_loc());
+    st.input.par_loc = x;
+    st.input.par_token = CS_TOKEN_FLAG + st.input.par_loc;
 
     x = undump_int(fmt_in);
-    if x < FORMAT_HASH_BASE || x > crate::globals::hash_top() {
-        bad_format_file();
+    if x < FORMAT_HASH_BASE || x > st.eqtb.hash_top {
+        return Err(c"fatal format file error".as_ptr());
     }
-    set_write_loc(x);
+    st.shipout.write_loc = x;
 
     for prim_idx in 0..=PRIM_SIZE {
         let value: crate::mem_types::B32x2 = undump_one(fmt_in);
-        set_prim_s0(prim_idx, value.s0);
-        set_prim_s1(prim_idx, value.s1);
+        st.eqtb.prim[prim_idx as usize].s0 = value.s0;
+        st.eqtb.prim[prim_idx as usize].s1 = value.s1;
     }
 
     x = undump_int(fmt_in);
     if !(FORMAT_HASH_BASE..=FROZEN_CONTROL_SEQUENCE).contains(&x) {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
-    set_hash_used(x);
+    st.eqtb.hash_used = x;
 
     p = FORMAT_HASH_BASE - 1;
     loop {
         x = undump_int(fmt_in);
-        if x < p + 1 || x > hash_used() {
-            bad_format_file();
+        if x < p + 1 || x > st.eqtb.hash_used {
+            return Err(c"fatal format file error".as_ptr());
         }
         p = x;
         let value: crate::mem_types::B32x2 = undump_one(fmt_in);
-        crate::globals::set_hash_s0(p, value.s0);
-        crate::globals::set_hash_s1(p, value.s1);
-        if p == hash_used() {
+        st.eqtb.hash[(p - 514) as usize].s0 = value.s0;
+        st.eqtb.hash[(p - 514) as usize].s1 = value.s1;
+        if p == st.eqtb.hash_used {
             break;
         }
     }
 
-    let hash_ptr = crate::state::with_state_mut(|s| s.eqtb.hash.as_mut_ptr());
+    let hash_ptr = st.eqtb.hash.as_mut_ptr();
     undump_slice(
         fmt_in,
-        hash_ptr.add((hash_used() + 1 - 514) as usize),
-        (UNDEFINED_CONTROL_SEQUENCE - 1) - hash_used(),
+        hash_ptr.add((st.eqtb.hash_used + 1 - 514) as usize),
+        (UNDEFINED_CONTROL_SEQUENCE - 1) - st.eqtb.hash_used,
     );
-    if hash_high() > 0 {
+    if st.eqtb.hash_high > 0 {
         undump_slice(
             fmt_in,
             hash_ptr.add((EQTB_SIZE + 1 - 514) as usize),
-            hash_high(),
+            st.eqtb.hash_high,
         );
     }
 
-    set_cs_count(undump_int(fmt_in));
+    st.eqtb.cs_count = undump_int(fmt_in);
 
     x = undump_int(fmt_in);
     if x < 7 {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
     if x > SUP_FONT_MEM_SIZE {
-        _tt_abort(c"must increase font_mem_size".as_ptr());
+        return Err(c"must increase font_mem_size".as_ptr());
     }
-    set_fmem_ptr(x);
-    if fmem_ptr() > font_mem_size() {
-        set_font_mem_size(fmem_ptr());
+    st.fonts.fmem_ptr = x;
+    if st.fonts.fmem_ptr > st.fonts.font_mem_size {
+        st.fonts.font_mem_size = st.fonts.fmem_ptr;
     }
 
-    // pre-compute before mutable borrow (both backed by with_state)
-    let fms = font_mem_size();
-    let fmp = fmem_ptr();
+    let fms = st.fonts.font_mem_size;
+    let fmp = st.fonts.fmem_ptr;
     let zero_word = crate::mem_types::MemoryWord {
         b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
     };
-    crate::state::with_state_mut(|s| {
-        s.fonts.font_info = vec![zero_word; (fms as usize) + 1];
-        undump_slice(fmt_in, s.fonts.font_info.as_mut_ptr(), fmp);
-    });
+    st.fonts.font_info = vec![zero_word; (fms as usize) + 1];
+    undump_slice(fmt_in, st.fonts.font_info.as_mut_ptr(), fmp);
 
     x = undump_int(fmt_in);
     if x < FONT_BASE {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
     if x > FONT_BASE + MAX_FONT_MAX {
-        _tt_abort(c"must increase font_max".as_ptr());
+        return Err(c"must increase font_max".as_ptr());
     }
-    set_font_ptr(x);
+    st.fonts.font_ptr = x;
 
-    let font_check_len = (font_max() as usize) + 1;
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_layout_engine = vec![std::ptr::null_mut(); font_check_len];
-        state.fonts.font_mapping = vec![std::ptr::null_mut(); font_check_len];
-        state.fonts.font_flags = vec![0i8; font_check_len];
-        state.fonts.font_letter_space = vec![0i32; font_check_len];
-        state.fonts.font_check = vec![
-            crate::mem_types::B16x4 {
-                s0: 0,
-                s1: 0,
-                s2: 0,
-                s3: 0,
-            };
-            font_check_len
-        ];
-        state.fonts.font_size = vec![0i32; font_check_len];
-        state.fonts.font_dsize = vec![0i32; font_check_len];
-        state.fonts.font_params = vec![0i32; font_check_len];
-        state.fonts.font_name = vec![0i32; font_check_len];
-        state.fonts.font_area = vec![0i32; font_check_len];
-        state.fonts.font_bc = vec![0u16; font_check_len];
-        state.fonts.font_ec = vec![0u16; font_check_len];
-        state.fonts.bchar_label = vec![0i32; font_check_len];
-        state.fonts.font_bchar = vec![0i32; font_check_len];
-        state.fonts.font_false_bchar = vec![0i32; font_check_len];
-        state.fonts.font_glue = vec![0i32; font_check_len];
-    });
-    let base_arr_len = (font_max() as usize) + 1;
-    crate::state::with_state_mut(|state| {
-        state.fonts.hyphen_char = vec![0i32; base_arr_len];
-        state.fonts.skew_char = vec![0i32; base_arr_len];
-        state.fonts.char_base = vec![0i32; base_arr_len];
-        state.fonts.width_base = vec![0i32; base_arr_len];
-        state.fonts.height_base = vec![0i32; base_arr_len];
-        state.fonts.depth_base = vec![0i32; base_arr_len];
-        state.fonts.italic_base = vec![0i32; base_arr_len];
-        state.fonts.lig_kern_base = vec![0i32; base_arr_len];
-        state.fonts.kern_base = vec![0i32; base_arr_len];
-        state.fonts.exten_base = vec![0i32; base_arr_len];
-        state.fonts.param_base = vec![0i32; base_arr_len];
-    });
+    let font_check_len = (st.fonts.font_max as usize) + 1;
+    st.fonts.font_layout_engine = vec![std::ptr::null_mut(); font_check_len];
+    st.fonts.font_mapping = vec![std::ptr::null_mut(); font_check_len];
+    st.fonts.font_flags = vec![0i8; font_check_len];
+    st.fonts.font_letter_space = vec![0i32; font_check_len];
+    st.fonts.font_check = vec![
+        crate::mem_types::B16x4 {
+            s0: 0,
+            s1: 0,
+            s2: 0,
+            s3: 0,
+        };
+        font_check_len
+    ];
+    st.fonts.font_size = vec![0i32; font_check_len];
+    st.fonts.font_dsize = vec![0i32; font_check_len];
+    st.fonts.font_params = vec![0i32; font_check_len];
+    st.fonts.font_name = vec![0i32; font_check_len];
+    st.fonts.font_area = vec![0i32; font_check_len];
+    st.fonts.font_bc = vec![0u16; font_check_len];
+    st.fonts.font_ec = vec![0u16; font_check_len];
+    st.fonts.bchar_label = vec![0i32; font_check_len];
+    st.fonts.font_bchar = vec![0i32; font_check_len];
+    st.fonts.font_false_bchar = vec![0i32; font_check_len];
+    st.fonts.font_glue = vec![0i32; font_check_len];
 
-    let font_undump_count = font_ptr() + 1;
-    crate::state::with_state_mut(|state| {
-        undump_slice(
-            fmt_in,
-            state.fonts.font_check.as_mut_ptr().add(FONT_BASE as usize),
-            font_undump_count,
-        );
-    });
-    crate::state::with_state_mut(|state| {
-        undump_slice(
-            fmt_in,
-            state.fonts.font_size.as_mut_ptr().add(FONT_BASE as usize),
-            font_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state.fonts.font_dsize.as_mut_ptr().add(FONT_BASE as usize),
-            font_undump_count,
-        );
-    });
-    if !crate::state::with_state_mut(|state| {
-        undump_checked_i32(
-            fmt_in,
-            state.fonts.font_params.as_mut_ptr().add(FONT_BASE as usize),
-            font_undump_count,
-            MIN_HALFWORD,
-            MAX_HALFWORD,
-        )
-    }) {
-        bad_format_file();
+    let base_arr_len = (st.fonts.font_max as usize) + 1;
+    st.fonts.hyphen_char = vec![0i32; base_arr_len];
+    st.fonts.skew_char = vec![0i32; base_arr_len];
+    st.fonts.char_base = vec![0i32; base_arr_len];
+    st.fonts.width_base = vec![0i32; base_arr_len];
+    st.fonts.height_base = vec![0i32; base_arr_len];
+    st.fonts.depth_base = vec![0i32; base_arr_len];
+    st.fonts.italic_base = vec![0i32; base_arr_len];
+    st.fonts.lig_kern_base = vec![0i32; base_arr_len];
+    st.fonts.kern_base = vec![0i32; base_arr_len];
+    st.fonts.exten_base = vec![0i32; base_arr_len];
+    st.fonts.param_base = vec![0i32; base_arr_len];
+
+    let font_undump_count = st.fonts.font_ptr + 1;
+    undump_slice(
+        fmt_in,
+        st.fonts.font_check.as_mut_ptr().add(FONT_BASE as usize),
+        font_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.font_size.as_mut_ptr().add(FONT_BASE as usize),
+        font_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.font_dsize.as_mut_ptr().add(FONT_BASE as usize),
+        font_undump_count,
+    );
+    if !undump_checked_i32(
+        fmt_in,
+        st.fonts.font_params.as_mut_ptr().add(FONT_BASE as usize),
+        font_undump_count,
+        MIN_HALFWORD,
+        MAX_HALFWORD,
+    ) {
+        return Err(c"fatal format file error".as_ptr());
     }
-    crate::state::with_state_mut(|state| {
-        undump_slice(
-            fmt_in,
-            state.fonts.hyphen_char.as_mut_ptr().add(FONT_BASE as usize),
-            font_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state.fonts.skew_char.as_mut_ptr().add(FONT_BASE as usize),
-            font_undump_count,
-        );
-    });
+    undump_slice(
+        fmt_in,
+        st.fonts.hyphen_char.as_mut_ptr().add(FONT_BASE as usize),
+        font_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.skew_char.as_mut_ptr().add(FONT_BASE as usize),
+        font_undump_count,
+    );
     let font_count = font_undump_count;
-    let max_str = str_ptr();
-    if !crate::state::with_state_mut(|state| {
-        undump_upper_i32(
-            fmt_in,
-            state.fonts.font_name.as_mut_ptr().add(FONT_BASE as usize),
-            font_count,
-            max_str,
-        )
-    }) {
-        bad_format_file();
+    let max_str = st.strings.str_ptr;
+    if !undump_upper_i32(
+        fmt_in,
+        st.fonts.font_name.as_mut_ptr().add(FONT_BASE as usize),
+        font_count,
+        max_str,
+    ) {
+        return Err(c"fatal format file error".as_ptr());
     }
-    if !crate::state::with_state_mut(|state| {
-        undump_upper_i32(
-            fmt_in,
-            state.fonts.font_area.as_mut_ptr().add(FONT_BASE as usize),
-            font_count,
-            max_str,
-        )
-    }) {
-        bad_format_file();
+    if !undump_upper_i32(
+        fmt_in,
+        st.fonts.font_area.as_mut_ptr().add(FONT_BASE as usize),
+        font_count,
+        max_str,
+    ) {
+        return Err(c"fatal format file error".as_ptr());
     }
-    crate::state::with_state_mut(|state| {
-        undump_slice(
-            fmt_in,
-            state.fonts.font_bc.as_mut_ptr().add(FONT_BASE as usize),
-            font_count,
-        );
-    });
-    crate::state::with_state_mut(|state| {
-        undump_slice(
-            fmt_in,
-            state.fonts.font_ec.as_mut_ptr().add(FONT_BASE as usize),
-            font_count,
-        );
-    });
-    let base_undump_count = font_ptr() + 1;
-    crate::state::with_state_mut(|state| {
-        undump_slice(
-            fmt_in,
-            state.fonts.char_base.as_mut_ptr().add(FONT_BASE as usize),
-            base_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state.fonts.width_base.as_mut_ptr().add(FONT_BASE as usize),
-            base_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state.fonts.height_base.as_mut_ptr().add(FONT_BASE as usize),
-            base_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state.fonts.depth_base.as_mut_ptr().add(FONT_BASE as usize),
-            base_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state.fonts.italic_base.as_mut_ptr().add(FONT_BASE as usize),
-            base_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state
-                .fonts
-                .lig_kern_base
-                .as_mut_ptr()
-                .add(FONT_BASE as usize),
-            base_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state.fonts.kern_base.as_mut_ptr().add(FONT_BASE as usize),
-            base_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state.fonts.exten_base.as_mut_ptr().add(FONT_BASE as usize),
-            base_undump_count,
-        );
-        undump_slice(
-            fmt_in,
-            state.fonts.param_base.as_mut_ptr().add(FONT_BASE as usize),
-            base_undump_count,
-        );
-    });
-    let font_glue_count = font_ptr() + 1;
-    let font_glue_max = lo_mem_max();
-    if !crate::state::with_state_mut(|state| {
-        undump_checked_i32(
-            fmt_in,
-            state.fonts.font_glue.as_mut_ptr().add(FONT_BASE as usize),
-            font_glue_count,
-            MIN_HALFWORD,
-            font_glue_max,
-        )
-    }) {
-        bad_format_file();
+    undump_slice(
+        fmt_in,
+        st.fonts.font_bc.as_mut_ptr().add(FONT_BASE as usize),
+        font_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.font_ec.as_mut_ptr().add(FONT_BASE as usize),
+        font_count,
+    );
+    let base_undump_count = st.fonts.font_ptr + 1;
+    undump_slice(
+        fmt_in,
+        st.fonts.char_base.as_mut_ptr().add(FONT_BASE as usize),
+        base_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.width_base.as_mut_ptr().add(FONT_BASE as usize),
+        base_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.height_base.as_mut_ptr().add(FONT_BASE as usize),
+        base_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.depth_base.as_mut_ptr().add(FONT_BASE as usize),
+        base_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.italic_base.as_mut_ptr().add(FONT_BASE as usize),
+        base_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.lig_kern_base.as_mut_ptr().add(FONT_BASE as usize),
+        base_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.kern_base.as_mut_ptr().add(FONT_BASE as usize),
+        base_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.exten_base.as_mut_ptr().add(FONT_BASE as usize),
+        base_undump_count,
+    );
+    undump_slice(
+        fmt_in,
+        st.fonts.param_base.as_mut_ptr().add(FONT_BASE as usize),
+        base_undump_count,
+    );
+    let font_glue_count = st.fonts.font_ptr + 1;
+    let font_glue_max = st.mem.lo_mem_max;
+    if !undump_checked_i32(
+        fmt_in,
+        st.fonts.font_glue.as_mut_ptr().add(FONT_BASE as usize),
+        font_glue_count,
+        MIN_HALFWORD,
+        font_glue_max,
+    ) {
+        return Err(c"fatal format file error".as_ptr());
     }
-    let max_font_index = fmem_ptr() - 1;
-    if !crate::state::with_state_mut(|state| {
-        undump_checked_i32(
-            fmt_in,
-            state.fonts.bchar_label.as_mut_ptr().add(FONT_BASE as usize),
-            font_count,
-            0,
-            max_font_index,
-        )
-    }) {
-        bad_format_file();
+    let max_font_index = st.fonts.fmem_ptr - 1;
+    if !undump_checked_i32(
+        fmt_in,
+        st.fonts.bchar_label.as_mut_ptr().add(FONT_BASE as usize),
+        font_count,
+        0,
+        max_font_index,
+    ) {
+        return Err(c"fatal format file error".as_ptr());
     }
-    if !crate::state::with_state_mut(|state| {
-        undump_checked_i32(
-            fmt_in,
-            state.fonts.font_bchar.as_mut_ptr().add(FONT_BASE as usize),
-            font_count,
-            0,
-            TOO_BIG_CHAR,
-        )
-    }) {
-        bad_format_file();
+    if !undump_checked_i32(
+        fmt_in,
+        st.fonts.font_bchar.as_mut_ptr().add(FONT_BASE as usize),
+        font_count,
+        0,
+        TOO_BIG_CHAR,
+    ) {
+        return Err(c"fatal format file error".as_ptr());
     }
-    if !crate::state::with_state_mut(|state| {
-        undump_checked_i32(
-            fmt_in,
-            state
-                .fonts
-                .font_false_bchar
-                .as_mut_ptr()
-                .add(FONT_BASE as usize),
-            font_count,
-            0,
-            TOO_BIG_CHAR,
-        )
-    }) {
-        bad_format_file();
+    if !undump_checked_i32(
+        fmt_in,
+        st.fonts
+            .font_false_bchar
+            .as_mut_ptr()
+            .add(FONT_BASE as usize),
+        font_count,
+        0,
+        TOO_BIG_CHAR,
+    ) {
+        return Err(c"fatal format file error".as_ptr());
     }
 
     x = undump_int(fmt_in);
     if x < 0 {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
-    if x > hyph_size() {
-        _tt_abort(c"must increase hyph_size".as_ptr());
+    if x > st.hyph.hyph_size {
+        return Err(c"must increase hyph_size".as_ptr());
     }
-    set_hyph_count(x);
+    st.hyph.hyph_count = x;
 
     x = undump_int(fmt_in);
     if x < FORMAT_HYPH_PRIME {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
-    if x > hyph_size() {
-        _tt_abort(c"must increase hyph_size".as_ptr());
+    if x > st.hyph.hyph_size {
+        return Err(c"must increase hyph_size".as_ptr());
     }
-    set_hyph_next(x);
+    st.hyph.hyph_next = x;
 
     j = 0;
-    for _ in 1..=hyph_count() {
+    for _ in 1..=st.hyph.hyph_count {
         j = undump_int(fmt_in);
         if j < 0 {
-            bad_format_file();
+            return Err(c"fatal format file error".as_ptr());
         }
         if j > 65_535 {
-            set_hyph_next(j / 65_536);
-            j -= hyph_next() * 65_536;
+            st.hyph.hyph_next = j / 65_536;
+            j -= st.hyph.hyph_next * 65_536;
         } else {
-            set_hyph_next(0);
+            st.hyph.hyph_next = 0;
         }
 
-        if j >= hyph_size() || hyph_next() > hyph_size() {
-            bad_format_file();
+        if j >= st.hyph.hyph_size || st.hyph.hyph_next > st.hyph.hyph_size {
+            return Err(c"fatal format file error".as_ptr());
         }
-        set_hyph_link_entry(j, hyph_next() as u16);
+        st.hyph.hyph_link[j as usize] = st.hyph.hyph_next as u16;
 
         x = undump_int(fmt_in);
-        if x < 0 || x > str_ptr() {
-            bad_format_file();
+        if x < 0 || x > st.strings.str_ptr {
+            return Err(c"fatal format file error".as_ptr());
         }
-        set_hyph_word_entry(j, x);
+        st.hyph.hyph_word[j as usize] = x;
 
         x = undump_int(fmt_in);
         if !(MIN_HALFWORD..=MAX_HALFWORD).contains(&x) {
-            bad_format_file();
+            return Err(c"fatal format file error".as_ptr());
         }
-        set_hyph_list_entry(j, x);
+        st.hyph.hyph_list[j as usize] = x;
     }
 
     j += 1;
     if j < FORMAT_HYPH_PRIME {
         j = FORMAT_HYPH_PRIME;
     }
-    set_hyph_next(j);
-    if hyph_next() >= hyph_size() {
-        set_hyph_next(FORMAT_HYPH_PRIME);
-    } else if hyph_next() >= FORMAT_HYPH_PRIME {
-        set_hyph_next(hyph_next() + 1);
+    st.hyph.hyph_next = j;
+    if st.hyph.hyph_next >= st.hyph.hyph_size {
+        st.hyph.hyph_next = FORMAT_HYPH_PRIME;
+    } else if st.hyph.hyph_next >= FORMAT_HYPH_PRIME {
+        st.hyph.hyph_next += 1;
     }
 
     x = undump_int(fmt_in);
     if x < 0 {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
-    if x > trie_size() {
-        _tt_abort(c"must increase trie_size".as_ptr());
+    if x > st.hyph.trie_size {
+        return Err(c"must increase trie_size".as_ptr());
     }
     j = x;
-    set_trie_max(j);
+    st.hyph.trie_max = j;
 
     x = undump_int(fmt_in);
     if x < 0 || x > j {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
-    set_hyph_start(x);
+    st.hyph.hyph_start = x;
 
-    crate::state::with_state_mut(|state| {
-        if state.hyph.trie_trl.is_empty() {
-            state.hyph.trie_trl = vec![0i32; (j as usize) + 1];
-        }
-        undump_slice(fmt_in, state.hyph.trie_trl.as_mut_ptr(), j + 1);
-        if state.hyph.trie_tro.is_empty() {
-            state.hyph.trie_tro = vec![0i32; (j as usize) + 1];
-        }
-        undump_slice(fmt_in, state.hyph.trie_tro.as_mut_ptr(), j + 1);
-        if state.hyph.trie_trc.is_empty() {
-            state.hyph.trie_trc = vec![0u16; (j as usize) + 1];
-        }
-        undump_slice(fmt_in, state.hyph.trie_trc.as_mut_ptr(), j + 1);
-    });
+    if st.hyph.trie_trl.is_empty() {
+        st.hyph.trie_trl = vec![0i32; (j as usize) + 1];
+    }
+    undump_slice(fmt_in, st.hyph.trie_trl.as_mut_ptr(), j + 1);
+    if st.hyph.trie_tro.is_empty() {
+        st.hyph.trie_tro = vec![0i32; (j as usize) + 1];
+    }
+    undump_slice(fmt_in, st.hyph.trie_tro.as_mut_ptr(), j + 1);
+    if st.hyph.trie_trc.is_empty() {
+        st.hyph.trie_trc = vec![0u16; (j as usize) + 1];
+    }
+    undump_slice(fmt_in, st.hyph.trie_trc.as_mut_ptr(), j + 1);
 
-    set_max_hyph_char(undump_int(fmt_in));
+    st.hyph.max_hyph_char = undump_int(fmt_in);
 
     x = undump_int(fmt_in);
     if x < 0 {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
     if x > TRIE_OP_SIZE {
-        _tt_abort(c"must increase TRIE_OP_SIZE".as_ptr());
+        return Err(c"must increase TRIE_OP_SIZE".as_ptr());
     }
     j = x;
-    set_trie_op_ptr(j);
+    st.hyph.trie_op_ptr = j;
 
-    let fmt_hyf_distance =
-        crate::state::with_state_mut(|state| state.hyph.hyf_distance.as_mut_ptr());
-    let fmt_hyf_num = crate::state::with_state_mut(|state| state.hyph.hyf_num.as_mut_ptr());
-    let fmt_hyf_next = crate::state::with_state_mut(|state| state.hyph.hyf_next.as_mut_ptr());
+    let fmt_hyf_distance = st.hyph.hyf_distance.as_mut_ptr();
+    let fmt_hyf_num = st.hyph.hyf_num.as_mut_ptr();
+    let fmt_hyf_next = st.hyph.hyf_next.as_mut_ptr();
     undump_slice(fmt_in, fmt_hyf_distance.add(1), j);
     undump_slice(fmt_in, fmt_hyf_num.add(1), j);
     if !undump_upper_u16(fmt_in, fmt_hyf_next.add(1), j, MAX_TRIE_OP) {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
 
     for lang in 0..=BIGGEST_LANG as usize {
-        set_trie_used_entry(lang, 0);
+        st.hyph.trie_used[lang] = 0;
     }
 
     k = BIGGEST_LANG + 1;
     while j > 0 {
         x = undump_int(fmt_in);
         if x < 0 || x > k - 1 {
-            bad_format_file();
+            return Err(c"fatal format file error".as_ptr());
         }
         k = x;
 
         x = undump_int(fmt_in);
         if x < 1 || x > j {
-            bad_format_file();
+            return Err(c"fatal format file error".as_ptr());
         }
-        set_trie_used_entry(k as usize, x as u16);
+        st.hyph.trie_used[k as usize] = x as u16;
         j -= x;
-        set_op_start_entry(k as usize, j);
+        st.hyph.op_start[k as usize] = j;
     }
 
-    set_trie_not_ready(false);
+    st.hyph.trie_not_ready = false;
 
     x = undump_int(fmt_in);
     if x != FORMAT_FOOTER_MAGIC {
-        bad_format_file();
+        return Err(c"fatal format file error".as_ptr());
     }
 
     ttstub_input_close(fmt_in);
-    true
+    Ok(true)
 }
