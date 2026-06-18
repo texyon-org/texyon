@@ -5,7 +5,7 @@ use crate::consts::{
     ACTIVE_BASE, BATCH_MODE, CS_TOKEN_FLAG, EQTB_SIZE, ERROR_STOP_MODE, MAX_HALFWORD, MIN_HALFWORD,
     SCROLL_MODE, SELECTOR_TERM_AND_LOG, TOO_BIG_CHAR,
 };
-use crate::engine::{intpar, sort_avail, TRE_MAX_STRINGS, TRE_POOL_SIZE};
+use crate::engine::{intpar, sort_avail_in, TRE_MAX_STRINGS, TRE_POOL_SIZE};
 use crate::globals::{
     avail, cs_count, cur_input, dyn_used, eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, fmem_ptr,
     font_area_entry, font_dsize_entry, font_mapping_ptr, font_name_entry, font_ptr,
@@ -286,7 +286,7 @@ pub unsafe fn store_fmt_file() {
     crate::output::print_cstr(c" strings of total length ".as_ptr());
     crate::output::print_int(pool_ptr());
 
-    sort_avail();
+    crate::state::with_state_mut(|st| sort_avail_in(&mut st.mem));
     set_var_used(0);
     dump_int(fmt_out, lo_mem_max());
     dump_int(fmt_out, rover());

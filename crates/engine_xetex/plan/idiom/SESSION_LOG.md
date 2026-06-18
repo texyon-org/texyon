@@ -8,6 +8,41 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 193 — 2026-06-18 — Execution: small format helper thread + Noad typed cleanup
+
+**Type:** execution (workstream 01/01c), low-docs batch with read-only
+subagents. Code kept to two safe slices: (1) threaded `engine::sort_avail` to
+`sort_avail_in(&mut MemState)` and changed `store_fmt_file` to call it through
+its own short borrow. This removes one of session-192's `store_fmt_file`
+blockers without trying to single-borrow the dump loop. (2) Retyped several
+already-threaded math noad helpers to take `NodePtr<Noad>` instead of raw `i32`:
+`make_over`, `make_under_finish`, `make_vcenter`, `make_radical_finish`,
+`make_fraction_finish`, `make_ord_in`, and `append_script_box`; the unchecked
+raw→typed conversion now stays at the existing wrapper boundary via
+`assume_noad(q)`. No packaging/native-math borrow lifetimes were widened.
+
+**Recon:** scanner scout says the real next scanner slice is `get_next_in` +
+`get_token_in`, but it is a large hub: `id_lookup`, `check_outer_validity`,
+input-line/EOF helpers, diagnostics, and fatal sentinels must be handled first.
+Main-control scout says a viable non-scanner next slice is the inter-character
+spacing path (`main_control_hmode_inter_char_check` +
+`main_control_append_normal_space`) using an action enum to defer
+`back_input`/`begin_token_list`. Shipout hub remains scanner-gated.
+
+**Tests:** `cargo fmt --check`; `cargo check -p tectonic_engine_xetex`;
+dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full corpus
+`plan/scripts/corpus.sh check all` returned **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1` (doc-count 639).
+Warnings held at **41**; `unsafe fn` **526 → 525**; `with_state(_mut)` sites
+currently **1001**.
+
+**Next:** take the scanner hub deliberately (`get_next_in` + `get_token_in` with
+sentinels), or the smaller main-control inter-character spacing action-core
+slice. `store_fmt_file` still has `make_string_global`/`pack_job_name`/
+`make_name_string` plus print/dump interleaving; do not force it into one borrow.
+
+---
+
 ## Idiom session 192 — 2026-06-17 — Execution: thread `load_fmt_file` to a single-borrow core
 
 **Type:** execution (workstream 01). Took `format_io.rs` — the second-largest

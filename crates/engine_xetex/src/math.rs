@@ -826,10 +826,9 @@ fn fetch_in(st: &mut EngineState, a: i32) -> crate::errors::ErrorOutcome {
 }
 
 /// translated from xetex-math.c:198 (make_over)
-fn make_over(mem: &mut MemState, q: i32, x: i32) {
-    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-    q_noad.set_nucleus_field(mem, x);
-    q_noad.set_nucleus_type(mem, SUB_BOX);
+fn make_over(mem: &mut MemState, q: NodePtr<Noad>, x: i32) {
+    q.set_nucleus_field(mem, x);
+    q.set_nucleus_type(mem, SUB_BOX);
 }
 
 pub unsafe fn make_over_global(q: i32) {
@@ -842,7 +841,7 @@ pub unsafe fn make_over_global(q: i32) {
         Err(e) => node_recycle_abort(e),
     };
     let x = crate::packaging::vpackage(p, 0, ADDITIONAL, MAX_HALFWORD);
-    crate::state::with_state_mut(|st| make_over(&mut st.mem, q, x));
+    crate::state::with_state_mut(|st| make_over(&mut st.mem, assume_noad(q), x));
 }
 
 /// translated from xetex-math.c:207 (make_under)
@@ -861,15 +860,14 @@ fn make_under_prepare(
     Ok(())
 }
 
-fn make_under_finish(mem: &mut MemState, q: i32, x: i32, y: i32, rule_thickness: i32) {
+fn make_under_finish(mem: &mut MemState, q: NodePtr<Noad>, x: i32, y: i32, rule_thickness: i32) {
     let yb = mem.classify_box(MemIdx::new(y)).unwrap().unwrap();
     let xb = mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
     let delta = yb.height(mem).0 + yb.depth(mem).0 + rule_thickness;
     yb.set_height(mem, xb.height(mem));
     yb.set_depth(mem, Scaled(delta - yb.height(mem).0));
-    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-    q_noad.set_nucleus_field(mem, y);
-    q_noad.set_nucleus_type(mem, SUB_BOX);
+    q.set_nucleus_field(mem, y);
+    q.set_nucleus_type(mem, SUB_BOX);
 }
 
 pub unsafe fn make_under_global(q: i32) {
@@ -881,13 +879,18 @@ pub unsafe fn make_under_global(q: i32) {
         node_recycle_abort(e);
     }
     let y = crate::packaging::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
-    crate::state::with_state_mut(|st| make_under_finish(&mut st.mem, q, x, y, rule_thickness));
+    crate::state::with_state_mut(|st| {
+        make_under_finish(&mut st.mem, assume_noad(q), x, y, rule_thickness)
+    });
 }
 
 /// translated from xetex-math.c:225 (make_vcenter)
-fn make_vcenter(mem: &mut MemState, q: i32, axis_height: i32) -> Result<(), NodeRecycleAbort> {
-    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-    let v = q_noad.nucleus_field(mem);
+fn make_vcenter(
+    mem: &mut MemState,
+    q: NodePtr<Noad>,
+    axis_height: i32,
+) -> Result<(), NodeRecycleAbort> {
+    let v = q.nucleus_field(mem);
     if mem.b16s1(v) != VLIST_NODE {
         return Err(NodeRecycleAbort::Confusion(c"vcenter"));
     }
@@ -906,15 +909,16 @@ pub unsafe fn make_vcenter_global(q: i32) {
     // `with_state_mut` below. (Threading make_vcenter to a single `&mut` borrow
     // crashed `unicode_math`, session 193.)
     let axis_height = axis_height_global(cur_size());
-    if let Err(e) = crate::state::with_state_mut(|st| make_vcenter(&mut st.mem, q, axis_height)) {
+    if let Err(e) =
+        crate::state::with_state_mut(|st| make_vcenter(&mut st.mem, assume_noad(q), axis_height))
+    {
         node_recycle_abort(e);
     }
 }
 
-fn make_radical_finish(mem: &mut MemState, q: i32, x: i32) {
-    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-    q_noad.set_nucleus_field(mem, x);
-    q_noad.set_nucleus_type(mem, SUB_BOX);
+fn make_radical_finish(mem: &mut MemState, q: NodePtr<Noad>, x: i32) {
+    q.set_nucleus_field(mem, x);
+    q.set_nucleus_type(mem, SUB_BOX);
 }
 
 fn make_radical_prepare_delimiter(
@@ -1009,7 +1013,7 @@ pub unsafe fn make_radical_global(q: i32) {
         y_box.set_link(&mut st.mem, MemPtr::from_raw(overbar_box));
     });
     let hbox = crate::packaging::hpack(y, 0, ADDITIONAL);
-    crate::state::with_state_mut(|st| make_radical_finish(&mut st.mem, q, hbox));
+    crate::state::with_state_mut(|st| make_radical_finish(&mut st.mem, assume_noad(q), hbox));
 }
 
 struct FractionAssembly {
@@ -1071,9 +1075,8 @@ fn make_fraction_link_delimiters(mem: &mut MemState, left_delim: i32, v: i32, ri
     mem.set_b32s1(v, right_delim);
 }
 
-fn make_fraction_finish(mem: &mut MemState, q: i32, hbox: i32) {
-    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-    q_noad.set_nucleus_type(mem, hbox);
+fn make_fraction_finish(mem: &mut MemState, q: NodePtr<Noad>, hbox: i32) {
+    q.set_nucleus_type(mem, hbox);
 }
 
 #[inline]
@@ -1324,7 +1327,7 @@ pub unsafe fn make_fraction_global(q: i32) {
         make_fraction_link_delimiters(&mut st.mem, left_delim, v, right_delim)
     });
     let hbox = crate::packaging::hpack(left_delim, 0, ADDITIONAL);
-    crate::state::with_state_mut(|st| make_fraction_finish(&mut st.mem, q, hbox));
+    crate::state::with_state_mut(|st| make_fraction_finish(&mut st.mem, assume_noad(q), hbox));
 }
 
 /// translated from xetex-math.c:270 (make_op). Phase-C orchestrator (bucket
@@ -1644,19 +1647,20 @@ enum MakeOrdAbort {
     Error(crate::errors::ErrorOutcome),
 }
 
-fn make_ord_in(st: &mut EngineState, q: i32) -> Result<(), MakeOrdAbort> {
+fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbort> {
     use crate::errors::ErrorOutcome;
+    let q_raw = q.idx().0;
     'restart: loop {
-        if st.mem.b32s1(q + 3) != EMPTY {
+        if st.mem.b32s1(q_raw + 3) != EMPTY {
             return Ok(());
         }
-        if st.mem.b32s1(q + 2) != EMPTY {
+        if st.mem.b32s1(q_raw + 2) != EMPTY {
             return Ok(());
         }
-        if st.mem.b32s1(q + 1) != MATH_CHAR {
+        if st.mem.b32s1(q_raw + 1) != MATH_CHAR {
             return Ok(());
         }
-        let p = st.mem.b32s1(q);
+        let p = st.mem.b32s1(q_raw);
         if p == TEX_NULL {
             return Ok(());
         }
@@ -1666,12 +1670,12 @@ fn make_ord_in(st: &mut EngineState, q: i32) -> Result<(), MakeOrdAbort> {
         if st.mem.b32s1(p + 1) != MATH_CHAR {
             return Ok(());
         }
-        if st.mem.b16s1(p + 1) % 256 != st.mem.b16s1(q + 1) % 256 {
+        if st.mem.b16s1(p + 1) % 256 != st.mem.b16s1(q_raw + 1) % 256 {
             return Ok(());
         }
 
-        st.mem.set_b32s1(q + 1, MATH_TEXT_CHAR);
-        match fetch_in(st, q + 1) {
+        st.mem.set_b32s1(q_raw + 1, MATH_TEXT_CHAR);
+        match fetch_in(st, q_raw + 1) {
             ErrorOutcome::Continue => {}
             other => return Err(MakeOrdAbort::Error(other)),
         }
@@ -1679,9 +1683,8 @@ fn make_ord_in(st: &mut EngineState, q: i32) -> Result<(), MakeOrdAbort> {
             return Ok(());
         }
 
-        let q_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
         let p_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
-        match make_ord_body(&mut st.mem, &st.fonts, &mut st.scanner, q_node, p_node) {
+        match make_ord_body(&mut st.mem, &st.fonts, &mut st.scanner, q, p_node) {
             MakeOrdStep::Return => return Ok(()),
             MakeOrdStep::Restart => continue 'restart,
             MakeOrdStep::Overflow => return Err(MakeOrdAbort::Overflow),
@@ -1690,7 +1693,7 @@ fn make_ord_in(st: &mut EngineState, q: i32) -> Result<(), MakeOrdAbort> {
 }
 
 pub unsafe fn make_ord_global(q: i32) {
-    match crate::state::with_state_mut(|st| make_ord_in(st, q)) {
+    match crate::state::with_state_mut(|st| make_ord_in(st, assume_noad(q))) {
         Ok(()) => {}
         Err(MakeOrdAbort::Overflow) => node_recycle_abort(NodeRecycleAbort::Overflow),
         Err(MakeOrdAbort::Error(o)) => o.finish(),
@@ -2327,12 +2330,11 @@ unsafe fn initial_script_shifts_global(p: i32) -> ScriptShifts {
     }
 }
 
-fn append_script_box(mem: &mut MemState, q: i32, box_node: i32) {
-    let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-    if q_noad.nucleus_type(mem) == TEX_NULL {
-        q_noad.set_nucleus_type(mem, box_node);
+fn append_script_box(mem: &mut MemState, q: NodePtr<Noad>, box_node: i32) {
+    if q.nucleus_type(mem) == TEX_NULL {
+        q.set_nucleus_type(mem, box_node);
     } else {
-        let mut p = q_noad.nucleus_type(mem);
+        let mut p = q.nucleus_type(mem);
         while mem.b32s1(p) != TEX_NULL {
             p = mem.b32s1(p);
         }
@@ -2341,7 +2343,7 @@ fn append_script_box(mem: &mut MemState, q: i32, box_node: i32) {
 }
 
 fn append_script_box_global(q: i32, box_node: i32) {
-    crate::state::with_state_mut(|st| append_script_box(&mut st.mem, q, box_node));
+    crate::state::with_state_mut(|st| append_script_box(&mut st.mem, assume_noad(q), box_node));
 }
 
 struct SubSupStackInput {

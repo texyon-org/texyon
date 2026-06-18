@@ -49,6 +49,7 @@ use crate::globals::{
 };
 use crate::hyphenation::set_trie_op_hash;
 use crate::io::init_io;
+use crate::state::MemState;
 
 const LEVEL_ONE: u16 = 1;
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -180,41 +181,42 @@ pub unsafe fn get_strings_started() {
         _tt_abort(c"must increase pool_size".as_ptr());
     }
 }
-// translated from xetex-ini.c:554 (sort_avail)
-pub unsafe fn sort_avail() {
-    let _ = crate::mem::get_node_global(GET_NODE_HEAD_SENTINEL);
-    let mut p = mem_b32s1(rover() + 1);
-    set_mem_b32s1(rover() + 1, MAX_HALFWORD);
-    let old_rover = rover();
+/// translated from xetex-ini.c:554 (sort_avail)
+pub(crate) fn sort_avail_in(mem: &mut MemState) {
+    let _ = crate::mem::get_node(mem, GET_NODE_HEAD_SENTINEL);
+    let mut p = mem.b32s1(mem.rover + 1);
+    mem.set_b32s1(mem.rover + 1, MAX_HALFWORD);
+    let old_rover = mem.rover;
 
     /*136:*/
     while p != old_rover {
-        if p < rover() {
+        if p < mem.rover {
             let q = p;
-            p = mem_b32s1(q + 1);
-            set_mem_b32s1(q + 1, rover());
-            set_rover(q);
+            p = mem.b32s1(q + 1);
+            mem.set_b32s1(q + 1, mem.rover);
+            mem.rover = q;
         } else {
-            let mut q = rover();
-            while mem_b32s1(q + 1) < p {
-                q = mem_b32s1(q + 1);
+            let mut q = mem.rover;
+            while mem.b32s1(q + 1) < p {
+                q = mem.b32s1(q + 1);
             }
-            let r = mem_b32s1(p + 1);
-            set_mem_b32s1(p + 1, mem_b32s1(q + 1));
-            set_mem_b32s1(q + 1, p);
+            let r = mem.b32s1(p + 1);
+            mem.set_b32s1(p + 1, mem.b32s1(q + 1));
+            mem.set_b32s1(q + 1, p);
             p = r;
         }
     }
 
-    p = rover();
-    while mem_b32s1(p + 1) != MAX_HALFWORD {
-        crate::globals::set_mem_b32s0(mem_b32s1(p + 1) + 1, p);
-        p = mem_b32s1(p + 1);
+    p = mem.rover;
+    while mem.b32s1(p + 1) != MAX_HALFWORD {
+        mem.set_b32s0(mem.b32s1(p + 1) + 1, p);
+        p = mem.b32s1(p + 1);
     }
 
-    set_mem_b32s1(p + 1, rover());
-    crate::globals::set_mem_b32s0(rover() + 1, p);
+    mem.set_b32s1(p + 1, mem.rover);
+    mem.set_b32s0(mem.rover + 1, p);
 }
+
 // translated from xetex-ini.c:597 (primitive)
 pub unsafe fn primitive(ident: *const libc::c_char, c: u16, o: i32) {
     let len = libc::strlen(ident) as i32;
