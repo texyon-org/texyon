@@ -8,6 +8,59 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 201 — 2026-06-18 — Execution: thread `get_next` (the central tokenizer)
+
+**Type:** execution (workstream 01). Took the session-200 "Next": thread the
+~630-line `get_next` hub into a single-borrow `get_next_in(&mut EngineState)`,
+after first threading its last blocker `input_line` (io.rs). Two commits.
+
+**Code (2 commits):**
+1. **`input_line` + io helpers** → `&mut EngineState` `_in` cores
+   (`input_line_in`/`get_uni_c_in`/`apply_normalization_in`/
+   `conversion_error_in`). Buffer reads/writes are direct `st.input.*`; input
+   normalization reads `st.eqtb` directly; the bad-UTF8 / conversion-error
+   diagnostics go through the threaded `bad_utf8_warning_in` / print cores. The
+   cold `_tt_abort` paths (buffer-too-small / invalid file mode / synthetic
+   terminal) ride a new `InputAbort::TtAbort` sentinel fired after the borrow
+   drops. `input_line()` stays a thin wrapper for its three still-global callers.
+   Deleted dead `buffer_ptr`/`eqtb_is_null`/`bad_utf8_warning` wrapper +
+   `scan::get_input_normalization_state`.
+2. **`get_next`** → `get_next_in(st) -> GetNextOutcome`; `get_next()` is now a
+   thin `with_state_mut` wrapper. The core holds **one** borrow across the whole
+   read: buffer/eqtb/mem/scanner/input/save state touched directly; the threaded
+   input-stack/error `_in` cores (`begin_token_list_in`, `end_token_list_in`,
+   `end_file_reading_in`, `check_outer_validity_in`, `pseudo_input_in`,
+   `input_line_in`, `file_warning_in`, `error_in`/`error_here_with_diagnostic_in`/
+   `capture_to_diagnostic_in`, `print_char_in`, `id_lookup`) run under it;
+   `cur_input`/`cur_chr`/`cur_cmd`/`cur_cs`/`line`/`first` stay raw `mod raw`
+   (safe). Cold tails ride a new **`GetNextOutcome`** sentinel fired by the
+   wrapper after the borrow drops: `Error(ErrorOutcome)` (recoverable-error /
+   outer-validity `finish()`), `Abort(InputAbort)` (input-stack cold abort, incl.
+   `id_lookup` overflow + interwoven-alignment `fatal_error`), and
+   `NoLegalEnd { open_log }` (the `\end`-less `open_log_file` + `fatal_error`
+   path). The bulk accessor rewrite was driven by a one-shot balanced-paren
+   transform (deleted after use), then the `_in`-call / control-flow conversions
+   were finished by hand. Deleted now-dead globals `param_stack`/`eof_seen`/
+   `set_eof_seen`/`force_eof`/`used_tectonic_coda_tokens` accessors and the
+   `pseudo_input`/`file_warning`/`check_outer_validity` global wrappers.
+
+**Tests:** `cargo check` + `fmt`; dashboard **29/2/7/4** after each commit (TRIP
+exercises `get_next` heavily — the regression gate); release rebuild; full corpus
+**637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1`/
+`1905.00148v1`, no NOXDV/NOLOG, doc-count == baseline. Metrics: warnings **41**
+(held); `unsafe fn` **527 → 520** (deleted wrappers > added input_line_in/
+get_uni_c_in); `with_state(_mut)` sites **~1093 → 1012** (get_next no longer
+calls the bridge accessors + deleted dead accessors).
+
+**Next:** `get_x_token` is gated on threading `expand` (it re-enters
+`with_state`); `get_token_in` would be speculative until a threaded caller exists.
+The natural next hub is **`expand`** (then `get_x_token`/`scan_toks`/`the_toks`,
+which unlock the scanner-gated shipout hub `ship_out`/`hlist_out`/`vlist_out` via
+`out_what`→`write_out`). `get_next_in` is now a clean pass-through for any future
+threaded scanner caller. One careful hub per session.
+
+---
+
 ## Idiom session 200 — 2026-06-18 — Execution: thread the input-stack/error-recovery layer (scanner prerequisites)
 
 **Type:** execution (workstream 01), large multi-commit threading session per
