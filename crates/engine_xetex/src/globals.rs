@@ -2804,12 +2804,6 @@ pub(crate) fn max_reg_help_line() -> *const libc::c_char {
 // param_stack / param_ptr / max_param_stack
 // ---------------------------------------------------------------------------
 
-/// Returns `param_stack[k]` — the k-th macro parameter token list
-/// (xetex-xetexd.h:517).
-#[inline]
-pub(crate) fn param_stack(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.param_stack[k as usize])
-}
 /// Writes `param_stack[k] = v`.
 #[inline]
 pub(crate) fn set_param_stack(k: i32, v: i32) {
@@ -2920,19 +2914,6 @@ pub(crate) fn set_line(v: i32) {
 // ---------------------------------------------------------------------------
 // eof_seen
 // ---------------------------------------------------------------------------
-
-/// Returns `eof_seen[k]` — whether EOF was seen at input level k.
-#[inline]
-pub(crate) fn eof_seen(k: i32) -> bool {
-    crate::state::with_state(|s| s.input.eof_seen[k as usize])
-}
-/// Sets `eof_seen[k]`.
-#[inline]
-pub(crate) fn set_eof_seen(k: i32, v: bool) {
-    crate::state::with_state_mut(|s| {
-        s.input.eof_seen[k as usize] = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // input_file
@@ -3809,10 +3790,6 @@ pub(crate) fn set_cur_dir(v: i16) {
 // force_eof (xetex-ini.c:159 / xetex-xetexd.h:524)
 // ---------------------------------------------------------------------------
 #[inline]
-pub(crate) fn force_eof() -> bool {
-    crate::state::with_state(|s| s.input.force_eof)
-}
-#[inline]
 pub(crate) fn set_force_eof(v: bool) {
     crate::state::with_state_mut(|s| {
         s.input.force_eof = v;
@@ -3822,10 +3799,6 @@ pub(crate) fn set_force_eof(v: bool) {
 // ---------------------------------------------------------------------------
 // used_tectonic_coda_tokens (xetex-xetexd.h:723)
 // ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn used_tectonic_coda_tokens() -> bool {
-    crate::state::with_state(|s| s.scanner.used_tectonic_coda_tokens)
-}
 #[inline]
 pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
     crate::state::with_state_mut(|s| {

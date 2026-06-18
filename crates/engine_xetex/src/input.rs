@@ -351,15 +351,9 @@ pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) {
 // pseudo_input
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-xetex0.c:2722 (pseudo_input)
-pub unsafe fn pseudo_input() -> bool {
-    match crate::state::with_state_mut(pseudo_input_in) {
-        Ok(b) => b,
-        Err(a) => a.fire(),
-    }
-}
-
-/// `&mut EngineState` core of [`pseudo_input`] (`01b` §3). `last`/`buffer`/
+/// `&mut EngineState` core of `pseudo_input` (translated from
+/// xetex-xetex0.c:2722); the legacy global wrapper is retired now that
+/// `get_next_in` is its only caller. `last`/`buffer`/
 /// `max_buf_stack`/`pseudo_files` are `st.input`; the block node is read/freed
 /// through `st.mem`/threaded `free_node`; `first`/`buf_size`/`set_cur_input_*`
 /// are raw `mod raw` globals (safe under the borrow). The cold buffer-size

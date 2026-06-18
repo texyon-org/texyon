@@ -2948,13 +2948,6 @@ pub(crate) fn if_warning_in(st: &mut EngineState) {
 // file_warning
 // ---------------------------------------------------------------------------
 
-/// Warn about unclosed groups and \if's when reaching end of file.
-///
-/// translated from xetex-xetex0.c:3039 (file_warning)
-pub unsafe fn file_warning() {
-    crate::state::with_state_mut(|st| file_warning_in(st));
-}
-
 /// `&mut EngineState` core of [`file_warning`].
 pub(crate) fn file_warning_in(st: &mut EngineState) {
     // Save and restore save-stack / level / group state while scanning.
