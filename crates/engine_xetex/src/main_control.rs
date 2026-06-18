@@ -151,6 +151,10 @@ const MU_VAL: i16 = 3;
 const CHAR_CLASS_LIMIT: i32 = 4096;
 const INTER_CHAR_VAL: i16 = 6;
 const UNDEFINED_PRIMITIVE: i32 = 0;
+const INTER_CHAR_TEXT: u16 = 17; // xetex-constants.h:216
+const BACKED_UP_CHAR: u16 = 4;
+const TOKEN_LIST_INPUT: u16 = 0;
+const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73; // xetex_format.h:108
 
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
@@ -3657,36 +3661,13 @@ pub unsafe fn do_assignments() {
 
 // translated from xetex-xetex0.c:8221 (main_control append_normal_space label)
 pub unsafe fn main_control_append_normal_space() {
-    const INT_PAR_XETEX_INTER_CHAR_TOKENS_MC: i32 = 73; // xetex_format.h:108
     const GLUE_PAR_SPACE_SKIP_MC: i16 = 12; // xetex_format.h:161
-    const INTER_CHAR_TEXT_MC: u16 = 17; // xetex-constants.h:216
     const CHAR_NUM_MC: u8 = 16; // xetex_format.h:253
 
-    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS_MC) > 0
-        && crate::globals::space_class() != CHAR_CLASS_LIMIT
-        && crate::globals::prev_class() != CHAR_CLASS_LIMIT - 1
+    if crate::state::with_state_mut(|st| inter_char_boundary_after_space_action(st, CHAR_NUM_MC))
+        .execute()
     {
-        crate::globals::set_prev_class(CHAR_CLASS_LIMIT - 1);
-        crate::save::find_sa_element_global(
-            INTER_CHAR_VAL as u16,
-            crate::globals::space_class() * CHAR_CLASS_LIMIT + (CHAR_CLASS_LIMIT - 1),
-            false,
-        );
-        if crate::globals::cur_ptr() != crate::mem::TEX_NULL
-            && mem_b32s1(crate::globals::cur_ptr() + 1) != crate::mem::TEX_NULL
-        {
-            if cur_cs() == 0 {
-                if cur_cmd() == CHAR_NUM_MC {
-                    set_cur_cmd(OTHER_CHAR);
-                }
-                set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
-            } else {
-                set_cur_tok(CS_TOKEN_FLAG + cur_cs());
-            }
-            back_input();
-            begin_token_list(mem_b32s1(crate::globals::cur_ptr() + 1), INTER_CHAR_TEXT_MC);
-            return;
-        }
+        return;
     }
 
     let cur_font = eqtb_b32s1(CUR_FONT_LOC);
@@ -4331,53 +4312,154 @@ pub unsafe fn main_control_ignore_spaces() {
     }
     // Caller must do: goto reswitch
 }
-// translated from xetex-xetex0.c:6804 (main_control HMODE inter-char pre-dispatch check)
-// Returns true if the caller should goto big_switch (inter-char token was injected).
-pub unsafe fn main_control_hmode_inter_char_check() -> bool {
-    const HMODE_MC: i16 = 104;
-    const CHAR_NUM_MC: u8 = 16;
-    const INT_PAR_XETEX_INTER_CHAR_TOKENS_MC: i32 = 73; // xetex_format.h:108
-    const INTER_CHAR_TEXT_MC: u16 = 17; // xetex-constants.h:216
 
-    use crate::globals::{
-        cur_chr, cur_cmd, cur_cs, cur_list_mode, cur_ptr, eqtb_b32s1, mem_b32s1, set_cur_cmd,
-        set_cur_tok, set_prev_class,
-    };
-    use crate::mem::TEX_NULL;
+enum InterCharInputAction {
+    None,
+    BackInputThenBeginTokenList {
+        token_list: i32,
+        force_cur_input_index: Option<u16>,
+    },
+}
 
-    if cur_list_mode().abs() != HMODE_MC {
-        return false;
+impl InterCharInputAction {
+    #[inline]
+    fn execute(self) -> bool {
+        match self {
+            InterCharInputAction::None => false,
+            InterCharInputAction::BackInputThenBeginTokenList {
+                token_list,
+                force_cur_input_index,
+            } => {
+                unsafe {
+                    back_input();
+                }
+                if let Some(index) = force_cur_input_index {
+                    set_cur_input_index(index);
+                }
+                unsafe {
+                    begin_token_list(token_list, INTER_CHAR_TEXT);
+                }
+                true
+            }
+        }
     }
-    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS_MC) <= 0 {
-        return false;
-    }
-    let sc = crate::globals::space_class();
-    let pc = crate::globals::prev_class();
-    if sc == CHAR_CLASS_LIMIT || pc == CHAR_CLASS_LIMIT - 1 {
-        return false;
-    }
+}
 
-    set_prev_class(CHAR_CLASS_LIMIT - 1);
-    crate::save::find_sa_element_global(
-        INTER_CHAR_VAL as u16,
-        sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
-        false,
-    );
-    if cur_ptr() == TEX_NULL || mem_b32s1(cur_ptr() + 1) == TEX_NULL {
-        return false;
-    }
-
+fn set_current_token_for_inter_char_boundary(char_num_cmd: u8) {
     if cur_cs() == 0 {
-        if cur_cmd() == CHAR_NUM_MC {
+        if cur_cmd() == char_num_cmd {
             set_cur_cmd(OTHER_CHAR);
         }
         set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
     } else {
         set_cur_tok(CS_TOKEN_FLAG + cur_cs());
     }
-    back_input();
-    crate::input::begin_token_list(mem_b32s1(cur_ptr() + 1), INTER_CHAR_TEXT_MC);
-    true
+}
+
+/// Probe `\XeTeXinterchartoks` for the current space-class followed by the
+/// boundary class. The input-stack mutation is returned as an action so callers
+/// can run `back_input`/`begin_token_list` after the state borrow drops.
+fn inter_char_boundary_after_space_action(
+    st: &mut crate::state::EngineState,
+    char_num_cmd: u8,
+) -> InterCharInputAction {
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) <= 0 {
+        return InterCharInputAction::None;
+    }
+    let sc = crate::globals::space_class();
+    if sc == CHAR_CLASS_LIMIT || crate::globals::prev_class() == CHAR_CLASS_LIMIT - 1 {
+        return InterCharInputAction::None;
+    }
+
+    crate::globals::set_prev_class(CHAR_CLASS_LIMIT - 1);
+    crate::save::find_sa_element(
+        &mut st.mem,
+        &mut st.scanner,
+        INTER_CHAR_VAL as u16,
+        sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
+        false,
+    );
+    let cur_ptr = crate::globals::cur_ptr();
+    if cur_ptr == crate::mem::TEX_NULL {
+        return InterCharInputAction::None;
+    }
+    let token_list = st.mem.b32s1(cur_ptr + 1);
+    if token_list == crate::mem::TEX_NULL {
+        return InterCharInputAction::None;
+    }
+
+    set_current_token_for_inter_char_boundary(char_num_cmd);
+    InterCharInputAction::BackInputThenBeginTokenList {
+        token_list,
+        force_cur_input_index: None,
+    }
+}
+
+fn inter_char_before_current_char_action(
+    st: &mut crate::state::EngineState,
+    sc: i32,
+    letter_cmd: u8,
+    other_cmd: u8,
+) -> InterCharInputAction {
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) <= 0 || sc == CHAR_CLASS_LIMIT {
+        return InterCharInputAction::None;
+    }
+
+    let prev = crate::globals::prev_class();
+    if prev == CHAR_CLASS_LIMIT - 1 {
+        let cur_input = crate::globals::cur_input();
+        if cur_input.state == TOKEN_LIST_INPUT && cur_input.index == BACKED_UP_CHAR {
+            return InterCharInputAction::None;
+        }
+        crate::save::find_sa_element(
+            &mut st.mem,
+            &mut st.scanner,
+            INTER_CHAR_VAL as u16,
+            (CHAR_CLASS_LIMIT - 1) * CHAR_CLASS_LIMIT + sc,
+            false,
+        );
+    } else {
+        crate::save::find_sa_element(
+            &mut st.mem,
+            &mut st.scanner,
+            INTER_CHAR_VAL as u16,
+            prev * CHAR_CLASS_LIMIT + sc,
+            false,
+        );
+    }
+
+    let cur_ptr = crate::globals::cur_ptr();
+    if cur_ptr == crate::mem::TEX_NULL {
+        return InterCharInputAction::None;
+    }
+    let token_list = st.mem.b32s1(cur_ptr + 1);
+    if token_list == crate::mem::TEX_NULL {
+        return InterCharInputAction::None;
+    }
+
+    if cur_cmd() != letter_cmd {
+        set_cur_cmd(other_cmd);
+    }
+    set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+    InterCharInputAction::BackInputThenBeginTokenList {
+        token_list,
+        force_cur_input_index: Some(BACKED_UP_CHAR),
+    }
+}
+
+// translated from xetex-xetex0.c:6804 (main_control HMODE inter-char pre-dispatch check)
+// Returns true if the caller should goto big_switch (inter-char token was injected).
+pub unsafe fn main_control_hmode_inter_char_check() -> bool {
+    const HMODE_MC: i16 = 104;
+    const CHAR_NUM_MC: u8 = 16;
+
+    use crate::globals::cur_list_mode;
+
+    if cur_list_mode().abs() != HMODE_MC {
+        return false;
+    }
+    crate::state::with_state_mut(|st| inter_char_boundary_after_space_action(st, CHAR_NUM_MC))
+        .execute()
 }
 // translated from xetex-xetex0.c:6833 (main_control spacer/ex_space cases)
 pub unsafe fn main_control_spacer_cases() {
@@ -4405,41 +4487,32 @@ pub unsafe fn main_control_spacer_cases() {
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 pub unsafe fn main_control_main_loop() -> bool {
     use crate::globals::{
-        avail, bchar, bchar_label_entry, cancel_boundary, char_base_entry, cur_chr, cur_cmd,
-        cur_input, cur_l, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode,
-        cur_list_tail, cur_ptr, cur_q, cur_r, eqtb_b32s1, font_area_entry, font_bc_entry,
-        font_bchar_entry, font_ec_entry, font_false_bchar_entry, font_glue, font_info_b16,
-        font_mapping_ptr, hyphen_char_entry, ins_disc, insert_src_special_auto, is_hyph, lft_hit,
+        avail, bchar, bchar_label_entry, cancel_boundary, char_base_entry, cur_chr, cur_cmd, cur_l,
+        cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
+        cur_ptr, cur_q, cur_r, eqtb_b32s1, font_area_entry, font_bc_entry, font_bchar_entry,
+        font_ec_entry, font_false_bchar_entry, font_glue, font_info_b16, font_mapping_ptr,
+        hyphen_char_entry, ins_disc, insert_src_special_auto, is_hyph, lft_hit,
         lig_kern_base_entry, lig_stack, ligature_present, main_f, main_h, main_p, main_pp,
         main_ppp, mapped_text_entry, mem_as_u16_ptr_mut, mem_b16s0, mem_b16s1, mem_b16s2,
         mem_b32s1, mem_node_addr, native_len, native_text, native_text_size, prev_class, rt_hit,
-        save_native_len, set_avail, set_bchar, set_cancel_boundary, set_cur_chr, set_cur_cmd,
-        set_cur_input_index, set_cur_l, set_cur_list_aux_b32s0, set_cur_list_tail, set_cur_ptr,
-        set_cur_q, set_cur_r, set_cur_tok, set_false_bchar, set_ins_disc, set_is_hyph, set_lft_hit,
-        set_lig_stack, set_ligature_present, set_main_f, set_main_h, set_main_p, set_main_pp,
-        set_main_ppp, set_main_s, set_mem_b16s0, set_mem_b16s1, set_mem_b32s1, set_native_len,
-        set_prev_class, set_rt_hit, set_save_native_len, set_space_class, space_class,
+        save_native_len, set_avail, set_bchar, set_cancel_boundary, set_cur_chr, set_cur_l,
+        set_cur_list_aux_b32s0, set_cur_list_tail, set_cur_ptr, set_cur_q, set_cur_r,
+        set_false_bchar, set_ins_disc, set_is_hyph, set_lft_hit, set_lig_stack,
+        set_ligature_present, set_main_f, set_main_h, set_main_p, set_main_pp, set_main_ppp,
+        set_main_s, set_mem_b16s0, set_mem_b16s1, set_mem_b32s1, set_native_len, set_prev_class,
+        set_rt_hit, set_save_native_len, set_space_class, space_class,
     };
-    use crate::input::{back_input, begin_token_list};
     use crate::mem::{
         free_node_global, get_avail_global, new_disc_global, new_kern_global, new_ligature_global,
         TEX_NULL,
     };
-    use crate::save::find_sa_element_global;
 
     // Constants
     const INT_PAR_LANGUAGE: i32 = 50;
     const INT_PAR_TRACING_LOST_CHARS: i32 = 35;
-    const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73;
     const INT_PAR_XETEX_INTERWORD_SPACE_SHAPING: i32 = 78;
     const INT_PAR_XETEX_DASH_BREAK: i32 = 70;
     const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
-    const CHAR_CLASS_LIMIT: i32 = 4096;
-    const MAX_CHAR_VAL: i32 = 0x200000;
-    const INTER_CHAR_TEXT: u16 = 17;
-    const BACKED_UP_CHAR: u16 = 4;
-    const TOKEN_LIST: u16 = 0;
-    const INTER_CHAR_VAL_U: u16 = 6;
     const LIG_TAG: u16 = 1;
     const NON_ADDRESS: i32 = 0;
     const NATIVE_NODE_SIZE: i32 = 6;
@@ -4503,45 +4576,20 @@ pub unsafe fn main_control_main_loop() -> bool {
             set_space_class(sf / 65536);
             let sc = space_class();
 
-            // Inter-char check (collect_native variant)
+            let was_boundary = prev_class() == CHAR_CLASS_LIMIT - 1;
+            if crate::state::with_state_mut(|st| {
+                inter_char_before_current_char_action(st, sc, LETTER, OTHER_CHAR)
+            })
+            .execute()
+            {
+                if was_boundary {
+                    return true; // goto big_switch
+                }
+                set_prev_class(CHAR_CLASS_LIMIT - 1);
+                break 'collect; // goto collected
+            }
             if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0 && sc != CHAR_CLASS_LIMIT
             {
-                if prev_class() == CHAR_CLASS_LIMIT - 1 {
-                    if cur_input().state != TOKEN_LIST || cur_input().index != BACKED_UP_CHAR {
-                        find_sa_element_global(
-                            INTER_CHAR_VAL_U,
-                            (CHAR_CLASS_LIMIT - 1) * CHAR_CLASS_LIMIT + sc,
-                            false,
-                        );
-                        if cur_ptr() != TEX_NULL && mem_b32s1(cur_ptr() + 1) != TEX_NULL {
-                            if cur_cmd() != LETTER {
-                                set_cur_cmd(OTHER_CHAR);
-                            }
-                            set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
-                            back_input();
-                            set_cur_input_index(BACKED_UP_CHAR);
-                            begin_token_list(mem_b32s1(cur_ptr() + 1), INTER_CHAR_TEXT);
-                            return true; // goto big_switch
-                        }
-                    }
-                } else {
-                    find_sa_element_global(
-                        INTER_CHAR_VAL_U,
-                        prev_class() * CHAR_CLASS_LIMIT + sc,
-                        false,
-                    );
-                    if cur_ptr() != TEX_NULL && mem_b32s1(cur_ptr() + 1) != TEX_NULL {
-                        if cur_cmd() != LETTER {
-                            set_cur_cmd(OTHER_CHAR);
-                        }
-                        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
-                        back_input();
-                        set_cur_input_index(BACKED_UP_CHAR);
-                        begin_token_list(mem_b32s1(cur_ptr() + 1), INTER_CHAR_TEXT);
-                        set_prev_class(CHAR_CLASS_LIMIT - 1);
-                        break 'collect; // goto collected
-                    }
-                }
                 set_prev_class(sc);
             }
 
@@ -4596,29 +4644,12 @@ pub unsafe fn main_control_main_loop() -> bool {
             }
 
             // End of char run: inter-char suffix check
-            if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0
-                && sc != CHAR_CLASS_LIMIT
-                && prev_class() != CHAR_CLASS_LIMIT - 1
+            if crate::state::with_state_mut(|st| {
+                inter_char_boundary_after_space_action(st, CHAR_NUM)
+            })
+            .execute()
             {
-                set_prev_class(CHAR_CLASS_LIMIT - 1);
-                find_sa_element_global(
-                    INTER_CHAR_VAL_U,
-                    sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
-                    false,
-                );
-                if cur_ptr() != TEX_NULL && mem_b32s1(cur_ptr() + 1) != TEX_NULL {
-                    if cur_cs() == 0 {
-                        if cur_cmd() == CHAR_NUM {
-                            set_cur_cmd(OTHER_CHAR);
-                        }
-                        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
-                    } else {
-                        set_cur_tok(CS_TOKEN_FLAG + cur_cs());
-                    }
-                    back_input();
-                    begin_token_list(mem_b32s1(cur_ptr() + 1), INTER_CHAR_TEXT);
-                    break 'collect; // goto collected (then process mapping)
-                }
+                break 'collect; // goto collected (then process mapping)
             }
             break 'collect; // natural end of collect_native
         } // end 'collect
@@ -4960,43 +4991,14 @@ pub unsafe fn main_control_main_loop() -> bool {
     set_space_class(sf / 65536);
     let sc = space_class();
 
-    // Inter-char check (regular font entry)
+    if crate::state::with_state_mut(|st| {
+        inter_char_before_current_char_action(st, sc, LETTER, OTHER_CHAR)
+    })
+    .execute()
+    {
+        return true; // goto big_switch
+    }
     if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0 && sc != CHAR_CLASS_LIMIT {
-        if prev_class() == CHAR_CLASS_LIMIT - 1 {
-            if cur_input().state != TOKEN_LIST || cur_input().index != BACKED_UP_CHAR {
-                find_sa_element_global(
-                    INTER_CHAR_VAL_U,
-                    (CHAR_CLASS_LIMIT - 1) * CHAR_CLASS_LIMIT + sc,
-                    false,
-                );
-                if cur_ptr() != TEX_NULL && mem_b32s1(cur_ptr() + 1) != TEX_NULL {
-                    if cur_cmd() != LETTER {
-                        set_cur_cmd(OTHER_CHAR);
-                    }
-                    set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
-                    back_input();
-                    set_cur_input_index(BACKED_UP_CHAR);
-                    begin_token_list(mem_b32s1(cur_ptr() + 1), INTER_CHAR_TEXT);
-                    return true; // goto big_switch
-                }
-            }
-        } else {
-            find_sa_element_global(
-                INTER_CHAR_VAL_U,
-                prev_class() * CHAR_CLASS_LIMIT + sc,
-                false,
-            );
-            if cur_ptr() != TEX_NULL && mem_b32s1(cur_ptr() + 1) != TEX_NULL {
-                if cur_cmd() != LETTER {
-                    set_cur_cmd(OTHER_CHAR);
-                }
-                set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
-                back_input();
-                set_cur_input_index(BACKED_UP_CHAR);
-                begin_token_list(mem_b32s1(cur_ptr() + 1), INTER_CHAR_TEXT);
-                return true; // goto big_switch
-            }
-        }
         set_prev_class(sc);
     }
 
@@ -5394,23 +5396,13 @@ unsafe fn do_lookahead(
     _mf: i32,
 ) -> bool {
     use crate::globals::{
-        avail, bchar, cur_chr, cur_cmd, cur_input, cur_list_aux_b32s0, cur_ptr, eqtb_b32s1,
-        false_bchar, main_f, mem_b32s1, prev_class, set_avail, set_bchar, set_cur_chr, set_cur_cmd,
-        set_cur_input_index, set_cur_list_aux_b32s0, set_cur_ptr, set_cur_r, set_cur_tok,
-        set_lig_stack, set_mem_b16s0, set_mem_b16s1, set_mem_b32s1, set_prev_class,
-        set_space_class, space_class,
+        avail, bchar, cur_chr, cur_cmd, cur_list_aux_b32s0, eqtb_b32s1, false_bchar, main_f,
+        mem_b32s1, prev_class, set_avail, set_bchar, set_cur_chr, set_cur_list_aux_b32s0,
+        set_cur_ptr, set_cur_r, set_lig_stack, set_mem_b16s0, set_mem_b16s1, set_mem_b32s1,
+        set_prev_class, set_space_class, space_class,
     };
-    use crate::input::{back_input, begin_token_list};
     use crate::mem::get_avail_global;
-    use crate::save::find_sa_element_global;
 
-    const INTER_CHAR_TEXT: u16 = 17;
-    const BACKED_UP_CHAR: u16 = 4;
-    const TOKEN_LIST: u16 = 0;
-    const INTER_CHAR_VAL_U: u16 = 6;
-    const CHAR_CLASS_LIMIT: i32 = 4096;
-    const MAX_CHAR_VAL: i32 = 0x200000;
-    const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73;
     const LETTER: u8 = 11;
     const OTHER_CHAR: u8 = 12;
     const CHAR_GIVEN: u8 = 68;
@@ -5459,46 +5451,18 @@ unsafe fn do_lookahead(
     let sc = space_class();
 
     // Inter-char check (lookahead_1 variant)
-    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0 && sc != CHAR_CLASS_LIMIT {
-        if prev_class() == CHAR_CLASS_LIMIT - 1 {
-            if cur_input().state != TOKEN_LIST || cur_input().index != BACKED_UP_CHAR {
-                find_sa_element_global(
-                    INTER_CHAR_VAL_U,
-                    (CHAR_CLASS_LIMIT - 1) * CHAR_CLASS_LIMIT + sc,
-                    false,
-                );
-                if cur_ptr() != crate::mem::TEX_NULL
-                    && mem_b32s1(cur_ptr() + 1) != crate::mem::TEX_NULL
-                {
-                    if cur_cmd() != LETTER {
-                        set_cur_cmd(OTHER_CHAR);
-                    }
-                    set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
-                    back_input();
-                    set_cur_input_index(BACKED_UP_CHAR);
-                    begin_token_list(mem_b32s1(cur_ptr() + 1), INTER_CHAR_TEXT);
-                    return false; // inter-char injected → caller returns true (big_switch)
-                }
-            }
-        } else {
-            find_sa_element_global(
-                INTER_CHAR_VAL_U,
-                prev_class() * CHAR_CLASS_LIMIT + sc,
-                false,
-            );
-            if cur_ptr() != crate::mem::TEX_NULL && mem_b32s1(cur_ptr() + 1) != crate::mem::TEX_NULL
-            {
-                if cur_cmd() != LETTER {
-                    set_cur_cmd(OTHER_CHAR);
-                }
-                set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
-                back_input();
-                set_cur_input_index(BACKED_UP_CHAR);
-                begin_token_list(mem_b32s1(cur_ptr() + 1), INTER_CHAR_TEXT);
-                set_prev_class(CHAR_CLASS_LIMIT - 1);
-                return false; // inter-char injected → caller returns true (big_switch)
-            }
+    let was_boundary = prev_class() == CHAR_CLASS_LIMIT - 1;
+    if crate::state::with_state_mut(|st| {
+        inter_char_before_current_char_action(st, sc, LETTER, OTHER_CHAR)
+    })
+    .execute()
+    {
+        if !was_boundary {
+            set_prev_class(CHAR_CLASS_LIMIT - 1);
         }
+        return false; // inter-char injected → caller returns true (big_switch)
+    }
+    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0 && sc != CHAR_CLASS_LIMIT {
         set_prev_class(sc);
     }
 

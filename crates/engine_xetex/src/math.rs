@@ -431,7 +431,7 @@ pub fn big_op_spacing5(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i3
 /// Phase-C: threaded to `&mut MemState`; bottoms out on the threaded
 /// [`NodePtr::<RuleNode>::alloc`] and propagates its allocation sentinel as
 /// [`NodeRecycleAbort::Overflow`] (`01b` §5).
-pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<i32, NodeRecycleAbort> {
+pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<NodePtr<RuleNode>, NodeRecycleAbort> {
     let Some(p) = NodePtr::<RuleNode>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
@@ -439,7 +439,7 @@ pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<i32, NodeRecycleAbort
     p.set_width(mem, RuleDimen::Running);
     p.set_height(mem, RuleDimen::Set(Scaled(t)));
     p.set_depth(mem, RuleDimen::Set(Scaled(0)));
-    Ok(p.idx().0)
+    Ok(p)
 }
 
 /// translated from xetex-math.c:181 (overbar)
@@ -456,15 +456,14 @@ pub fn overbar(mem: &mut MemState, b: i32, k: i32, t: i32) -> Result<i32, NodeRe
     }
     let p = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_raw)) };
     p.set_link(mem, MemPtr::from_raw(b));
-    let q_raw = fraction_rule(mem, t)?;
-    let q = unsafe { NodePtr::<RuleNode>::from_idx_unchecked(MemIdx::new(q_raw)) };
-    q.set_link(mem, MemPtr::from_raw(p_raw));
+    let q = fraction_rule(mem, t)?;
+    q.set_link(mem, MemPtr::from_raw(p.idx().0));
     let r_raw = new_kern(mem, t);
     if r_raw == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
     let r = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(r_raw)) };
-    r.set_link(mem, MemPtr::from_raw(q_raw));
+    r.set_link(mem, MemPtr::from_raw(q.idx().0));
     Ok(r_raw)
 }
 
@@ -847,16 +846,17 @@ pub unsafe fn make_over_global(q: i32) {
 /// translated from xetex-math.c:207 (make_under)
 fn make_under_prepare(
     mem: &mut MemState,
-    x: i32,
+    x: AnyBox,
     rule_thickness: i32,
 ) -> Result<(), NodeRecycleAbort> {
     let p = new_kern(mem, 3 * rule_thickness);
     if p == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    mem.set_b32s1(x, p);
+    x.set_link(mem, MemPtr::from_raw(p));
     let rule = fraction_rule(mem, rule_thickness)?;
-    mem.set_b32s1(p, rule);
+    let p = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) };
+    p.set_link(mem, MemPtr::from_raw(rule.idx().0));
     Ok(())
 }
 
@@ -873,9 +873,10 @@ fn make_under_finish(mem: &mut MemState, q: NodePtr<Noad>, x: i32, y: i32, rule_
 pub unsafe fn make_under_global(q: i32) {
     let x = clean_box(q + 1, cur_style());
     let rule_thickness = default_rule_thickness_global();
-    if let Err(e) =
-        crate::state::with_state_mut(|st| make_under_prepare(&mut st.mem, x, rule_thickness))
-    {
+    if let Err(e) = crate::state::with_state_mut(|st| {
+        let x_box = classify_box_or_panic(&st.mem, x);
+        make_under_prepare(&mut st.mem, x_box, rule_thickness)
+    }) {
         node_recycle_abort(e);
     }
     let y = crate::packaging::vpackage(x, 0, ADDITIONAL, MAX_HALFWORD);
@@ -1039,33 +1040,24 @@ fn make_fraction(mem: &mut MemState, assembly: FractionAssembly) -> Result<i32, 
     vb.set_depth(mem, Scaled(zb.depth(mem).0 + assembly.shift_down));
     vb.set_width(mem, xb.width(mem));
 
-    let p;
+    let p: NodePtr<KernNode>;
     if assembly.rule_thickness == 0 {
         let kw = (assembly.shift_up - xb.depth(mem).0) - (zb.height(mem).0 - assembly.shift_down);
-        p = new_kern(mem, kw);
-        if p == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
-        mem.set_b32s1(p, assembly.z);
+        p = alloc_kern_node(mem, kw)?;
+        p.set_link(mem, MemPtr::from_raw(assembly.z));
     } else {
         let y = fraction_rule(mem, assembly.rule_thickness)?;
         let p1w =
             (assembly.axis_height - assembly.delta) - (zb.height(mem).0 - assembly.shift_down);
-        let p1 = new_kern(mem, p1w);
-        if p1 == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
-        mem.set_b32s1(y, p1);
-        mem.set_b32s1(p1, assembly.z);
+        let p1 = alloc_kern_node(mem, p1w)?;
+        y.set_link(mem, MemPtr::from_raw(p1.idx().0));
+        p1.set_link(mem, MemPtr::from_raw(assembly.z));
         let pw = (assembly.shift_up - xb.depth(mem).0) - (assembly.axis_height + assembly.delta);
-        p = new_kern(mem, pw);
-        if p == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
-        mem.set_b32s1(p, y);
+        p = alloc_kern_node(mem, pw)?;
+        p.set_link(mem, MemPtr::from_raw(y.idx().0));
     }
 
-    xb.set_link(mem, MemPtr::from_raw(p));
+    xb.set_link(mem, MemPtr::from_raw(p.idx().0));
     vb.set_list_ptr(mem, MemPtr::from_raw(assembly.x));
     Ok(v)
 }
@@ -1829,8 +1821,8 @@ fn set_accent_char_box_shift(mem: &mut MemState, y: AnyBox, shift: i32) {
     y.set_shift_amount(mem, Scaled(shift));
 }
 
-fn zero_box_width(mem: &mut MemState, box_node: i32) {
-    classify_box_or_panic(mem, box_node).set_width(mem, Scaled(0));
+fn zero_box_width(mem: &mut MemState, box_node: AnyBox) {
+    box_node.set_width(mem, Scaled(0));
 }
 
 fn link_bottom_accent_stack(mem: &mut MemState, x: AnyBox, y: AnyBox) {
@@ -2102,7 +2094,10 @@ pub unsafe fn make_math_accent_global(q: i32) {
         p = TEX_NULL;
     }
 
-    crate::state::with_state_mut(|st| zero_box_width(&mut st.mem, y));
+    crate::state::with_state_mut(|st| {
+        let y_box = classify_box_or_panic(&st.mem, y);
+        zero_box_width(&mut st.mem, y_box);
+    });
     if bottom_accent {
         crate::state::with_state_mut(|st| {
             let x_box = classify_box_or_panic(&st.mem, x);
@@ -3437,8 +3432,7 @@ fn char_box_tfm(
 ///
 /// Phase-C: threaded to `&mut MemState`; takes the character box `p` already
 /// built by [`char_box_tfm`] (in [`build_ext_delimiter_box`]) and links it.
-fn stack_into_box(mem: &mut MemState, b: i32, p: i32) {
-    let b_box = classify_box_or_panic(mem, b);
+fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: i32) {
     let link = b_box.list_ptr(mem);
     mem.set_b32s1(p, link.0);
     b_box.set_list_ptr(mem, MemPtr::from_raw(p));
@@ -3472,8 +3466,7 @@ fn new_stack_glyph(mem: &mut MemState, f: i32, g: i32) -> Result<i32, NodeRecycl
 /// Phase-C: the measured glyph node `p` is spliced under a narrow `MemState`
 /// borrow. Legacy callers use [`stack_glyph_into_box_global`], which allocates
 /// the node, drops the borrow for `measure_native_glyph`, then links it here.
-pub fn stack_glyph_into_box(mem: &mut MemState, b: i32, p: i32) {
-    let b_box = classify_box_or_panic(mem, b);
+pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: i32) {
     if matches!(b_box, AnyBox::HList(_)) {
         let mut q = b_box.list_ptr(mem).0;
         if q == TEX_NULL {
@@ -3512,25 +3505,28 @@ pub unsafe fn stack_glyph_into_box_global(b: i32, f: i32, g: i32) {
         Err(e) => node_recycle_abort(e),
     };
     crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
-    crate::state::with_state_mut(|st| stack_glyph_into_box(&mut st.mem, b, p));
+    crate::state::with_state_mut(|st| {
+        let b_box = classify_box_or_panic(&st.mem, b);
+        stack_glyph_into_box(&mut st.mem, b_box, p);
+    });
 }
 
 fn native_glyph_vbox_start(
     mem: &mut MemState,
     f: i32,
     g: u16,
-) -> Result<(i32, i32), NodeRecycleAbort> {
+) -> Result<(AnyBox, i32), NodeRecycleAbort> {
     let b = new_null_box(mem);
     if b == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
     mem.set_b16s1(b, VLIST_NODE);
+    let b_box = AnyBox::VList(unsafe { NodePtr::<VListNode>::from_idx_unchecked(MemIdx::new(b)) });
     let p = new_stack_glyph(mem, f, g as i32)?;
-    Ok((b, p))
+    Ok((b_box, p))
 }
 
-fn native_glyph_vbox_finish(mem: &mut MemState, b: i32, p: i32) {
-    let b_box = classify_box_or_panic(mem, b);
+fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: i32) {
     b_box.set_list_ptr(mem, MemPtr::from_raw(p));
     b_box.set_width(mem, Scaled(mem.b32s1(p + 1)));
     b_box.set_height(mem, Scaled(mem.b32s1(p + 3)));
@@ -3545,7 +3541,7 @@ unsafe fn native_glyph_vbox_global(f: i32, g: u16) -> i32 {
     };
     crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
     crate::state::with_state_mut(|st| native_glyph_vbox_finish(&mut st.mem, b, p));
-    b
+    b.idx().0
 }
 
 /// translated from xetex-math.c:1517 (stack_glue_into_box)
@@ -3556,7 +3552,7 @@ unsafe fn native_glyph_vbox_global(f: i32, g: u16) -> i32 {
 /// [`stack_glue_into_box_global`].
 fn stack_glue_into_box(
     mem: &mut MemState,
-    b: i32,
+    b_box: AnyBox,
     min: i32,
     max: i32,
 ) -> Result<(), NodeRecycleAbort> {
@@ -3572,10 +3568,10 @@ fn stack_glue_into_box(
     if p == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    if mem.b16s1(b) == HLIST_NODE {
-        let mut q = mem.b32s1(b + 5);
+    if matches!(b_box, AnyBox::HList(_)) {
+        let mut q = b_box.list_ptr(mem).0;
         if q == TEX_NULL {
-            mem.set_b32s1(b + 5, p);
+            b_box.set_list_ptr(mem, MemPtr::from_raw(p));
         } else {
             while mem.b32s1(q) != TEX_NULL {
                 q = mem.b32s1(q);
@@ -3583,13 +3579,13 @@ fn stack_glue_into_box(
             mem.set_b32s1(q, p);
         }
     } else {
-        let link = mem.b32s1(b + 5);
+        let link = b_box.list_ptr(mem).0;
         mem.set_b32s1(p, link);
-        mem.set_b32s1(b + 5, p);
+        b_box.set_list_ptr(mem, MemPtr::from_raw(p));
         let pd = mem.b32s1(p + 3);
-        mem.set_b32s1(b + 3, pd);
+        b_box.set_height(mem, Scaled(pd));
         let pw = mem.b32s1(p + 1);
-        mem.set_b32s1(b + 1, pw);
+        b_box.set_width(mem, Scaled(pw));
     }
     Ok(())
 }
@@ -3597,8 +3593,10 @@ fn stack_glue_into_box(
 /// Transitional bridge-down wrapper for legacy `stack_glue_into_box` callers
 /// (`01b` §3, §5).
 pub unsafe fn stack_glue_into_box_global(b: i32, min: i32, max: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| stack_glue_into_box(&mut st.mem, b, min, max))
-    {
+    if let Err(e) = crate::state::with_state_mut(|st| {
+        let b_box = classify_box_or_panic(&st.mem, b);
+        stack_glue_into_box(&mut st.mem, b_box, min, max)
+    }) {
         node_recycle_abort(e);
     }
 }
@@ -5336,23 +5334,23 @@ fn build_ext_delimiter_box(
     }
     if r.s1 != 0 {
         let p = char_box_tfm(mem, fonts, f, r.s1)?;
-        stack_into_box(mem, b, p);
+        stack_into_box(mem, AnyBox::VList(vb), p);
     }
     for _ in 1..=n {
         let p = char_box_tfm(mem, fonts, f, r.s0)?;
-        stack_into_box(mem, b, p);
+        stack_into_box(mem, AnyBox::VList(vb), p);
     }
     if r.s2 != 0 {
         let p = char_box_tfm(mem, fonts, f, r.s2)?;
-        stack_into_box(mem, b, p);
+        stack_into_box(mem, AnyBox::VList(vb), p);
         for _ in 1..=n {
             let p = char_box_tfm(mem, fonts, f, r.s0)?;
-            stack_into_box(mem, b, p);
+            stack_into_box(mem, AnyBox::VList(vb), p);
         }
     }
     if r.s3 != 0 {
         let p = char_box_tfm(mem, fonts, f, r.s3)?;
-        stack_into_box(mem, b, p);
+        stack_into_box(mem, AnyBox::VList(vb), p);
     }
     let height = vb.height(mem).0;
     vb.set_depth(mem, Scaled(w - height));

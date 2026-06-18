@@ -1235,7 +1235,7 @@ fn choose_best_break(mem: &MemState, linebreak: &mut LinebreakState, eqtb: &Eqtb
 fn finish_last_line_fit(
     mem: &mut MemState,
     linebreak: &mut LinebreakState,
-    last_line_fill: i32,
+    last_line_fill: NodePtr<GlueNode>,
 ) -> Result<(), NodeRecycleAbort> {
     if !linebreak.do_last_line_fit {
         return Ok(());
@@ -1247,9 +1247,7 @@ fn finish_last_line_fit(
         return Ok(());
     }
 
-    // SAFETY: `last_line_fill` is the glue node returned by new_param_glue.
-    let fill = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(last_line_fill)) };
-    let old_spec = fill.glue_ptr(mem);
+    let old_spec = last_line_fill.glue_ptr(mem);
     let q = crate::mem::new_spec(mem, old_spec.0);
     if q == crate::mem::ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
@@ -1263,7 +1261,7 @@ fn finish_last_line_fit(
         Scaled(spec.width(mem).0 + best.shortfall(mem).0 - best.glue(mem).0),
     );
     spec.set_stretch(mem, Scaled(0));
-    fill.set_glue_ptr(mem, MemPtr::from_raw(q));
+    last_line_fill.set_glue_ptr(mem, MemPtr::from_raw(q));
     Ok(())
 }
 
@@ -1337,11 +1335,13 @@ fn finite_shrink_emit(st: &mut EngineState, p: i32) -> Result<i32, LineBreakOutc
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 5;
         st.errors.help_line[4] = c"The paragraph just ended includes some glue that has".as_ptr();
-        st.errors.help_line[3] = c"infinite shrinkability, e.g., `\\hskip 0pt minus 1fil'.".as_ptr();
+        st.errors.help_line[3] =
+            c"infinite shrinkability, e.g., `\\hskip 0pt minus 1fil'.".as_ptr();
         st.errors.help_line[2] = c"Such glue doesn't belong there---it allows a paragraph".as_ptr();
         st.errors.help_line[1] =
             c"of any length to fit on one line. But it's safe to proceed,".as_ptr();
-        st.errors.help_line[0] = c"since the offensive shrinkability has been made finite.".as_ptr();
+        st.errors.help_line[0] =
+            c"since the offensive shrinkability has been made finite.".as_ptr();
         match crate::errors::error_in(st) {
             crate::errors::ErrorOutcome::Continue => {}
             other => return Err(LineBreakOutcome::Error(other)),
@@ -1465,6 +1465,7 @@ fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
     if last_line_fill == crate::mem::ALLOC_FAILED {
         return LineBreakOutcome::Overflow;
     }
+    let last_line_fill_node = glue_node(last_line_fill);
     st.mem
         .set_b32s1(crate::globals::cur_list_tail(), last_line_fill);
     st.hyph.init_l_hyf = crate::globals::cur_list_prev_graf() / 0x0040_0000;
@@ -2149,7 +2150,7 @@ fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
         }
     }
 
-    if let Err(e) = finish_last_line_fit(&mut st.mem, &mut st.linebreak, last_line_fill) {
+    if let Err(e) = finish_last_line_fit(&mut st.mem, &mut st.linebreak, last_line_fill_node) {
         return LineBreakOutcome::Node(e);
     }
 
@@ -2180,9 +2181,8 @@ fn odd_i32(v: i32) -> bool {
 /// `runaway()`/`overflow()` under the borrow; `post_line_break` performs the
 /// abort after the borrow drops.
 #[inline]
-fn update_lr_stack(mem: &mut MemState, q: i32, lr_ptr: &mut i32) -> bool {
-    let q_math = math_node(q);
-    let q_subtype = q_math.subtype(mem) as i32;
+fn update_lr_stack(mem: &mut MemState, q: NodePtr<MathNode>, lr_ptr: &mut i32) -> bool {
+    let q_subtype = q.subtype(mem) as i32;
     if odd_i32(q_subtype) {
         if *lr_ptr != TEX_NULL
             && mem.b32s0(*lr_ptr) == L_CODE as i32 * (q_subtype / L_CODE as i32) + END_M_CODE as i32
@@ -2237,7 +2237,7 @@ enum PostLineAbort {
 
 fn update_lr_stack_checked(
     mem: &mut MemState,
-    q: i32,
+    q: NodePtr<MathNode>,
     lr_ptr: &mut i32,
 ) -> Result<(), PostLineAbort> {
     if update_lr_stack(mem, q, lr_ptr) {
@@ -2281,7 +2281,7 @@ fn post_line_break_prefix(
         let cur_break = passive_node(linebreak.cur_p).cur_break(mem).0;
         while q != cur_break {
             if q < mem.hi_mem_min && mem.b16s1(q) as i32 == MATH_NODE {
-                update_lr_stack_checked(mem, q, lr_ptr)?;
+                update_lr_stack_checked(mem, math_node(q), lr_ptr)?;
             }
             q = mem.b32s1(q);
         }
@@ -2355,10 +2355,11 @@ fn post_line_break_prefix(
     } else if mem.b16s1(q) as i32 == KERN_NODE {
         kern_node(q).set_width(mem, Scaled(0));
     } else if mem.b16s1(q) as i32 == MATH_NODE {
-        math_node(q).set_width(mem, Scaled(0));
+        let q_math = math_node(q);
+        q_math.set_width(mem, Scaled(0));
 
         if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-            update_lr_stack_checked(mem, q, lr_ptr)?;
+            update_lr_stack_checked(mem, q_math, lr_ptr)?;
         }
     }
 
@@ -2569,7 +2570,7 @@ fn post_line_break_suffix(
             r = q;
 
             if mem.b16s1(q) as i32 == MATH_NODE && eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                update_lr_stack_checked(mem, q, lr_ptr)?;
+                update_lr_stack_checked(mem, math_node(q), lr_ptr)?;
             }
         }
 

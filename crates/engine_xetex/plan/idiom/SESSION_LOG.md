@@ -8,6 +8,65 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 195 — 2026-06-18 — Execution: main-control inter-character action core
+
+**Type:** execution (workstream 01), low-docs continuation. Took the smaller
+main-control slice identified in session 194 instead of forcing the scanner hub.
+
+**Code:** Extracted the duplicated XeTeX inter-character token insertion logic
+in `main_control.rs` into an `InterCharInputAction` that probes
+`\XeTeXinterchartoks` under a short `&mut EngineState` borrow, then performs
+`back_input`/`begin_token_list` after the borrow drops. Applied it to
+`main_control_hmode_inter_char_check`, normal-space handling, native collection
+prefix/suffix checks, regular-font entry, and lookahead. The helper uses the
+threaded `save::find_sa_element(&mut mem, &mut scanner, ..., false)` path; token
+stack mutation stays deferred.
+
+**Tests:** `cargo fmt --check`; `cargo check -p tectonic_engine_xetex`;
+dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full corpus
+`plan/scripts/corpus.sh check all` returned **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1`. Warnings held at
+**41**; `unsafe fn` **525**; `with_state(_mut)` sites **1007**.
+
+**Next:** scanner remains the deliberate large hub (`id_lookup`,
+`check_outer_validity`, input/EOF helpers, diagnostics, fatal sentinels). If
+staying smaller, continue `main_control` by finding more duplicated short-borrow
+probe/action islands without widening input-stack borrows.
+
+---
+
+## Idiom session 194 — 2026-06-18 — Execution: typed math rule/kern/box consumers + linebreak glue/math handles
+
+**Type:** execution (workstream 01/01c), low-docs mechanical typing batch with
+read-only subagents. Scanner recon confirmed `get_next`/`get_token` remains a
+large hub, and even `scan_toks` cannot hold a single borrow across legacy token
+callees. Main-control recon confirmed the smaller inter-character action-enum
+slice is viable, but this session stayed on already-threaded typed consumers.
+
+**Code:** Retyped `math.rs` rule/kern/box consumers without widening borrow
+lifetimes: `fraction_rule` now returns `NodePtr<RuleNode>`; fraction/overbar
+linking uses typed `KernNode`/`RuleNode` handles; `make_under_prepare`,
+`zero_box_width`, `stack_into_box`, `stack_glyph_into_box`,
+`native_glyph_vbox_finish`, and `stack_glue_into_box` take `AnyBox` at their
+local boundaries. Native glyph/whatsit payloads stay raw because that typed
+family is not built. In `linebreak.rs`, `finish_last_line_fit` takes the
+`GlueNode` handle created by `new_param_glue`, and LR-stack update helpers take
+`NodePtr<MathNode>` only after existing `MATH_NODE` guards.
+
+**Tests:** `cargo fmt --check`; `cargo check -p tectonic_engine_xetex`;
+dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full corpus
+`plan/scripts/corpus.sh check all` returned **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1` (doc-count 639).
+Warnings held at **41**; `unsafe fn` **525**; `with_state(_mut)` sites **1001**.
+
+**Next:** the scanner hub still needs a deliberate multi-helper slice
+(`id_lookup`, `check_outer_validity`, input/EOF helpers, diagnostics, fatal
+sentinels). The smaller next candidate is main-control inter-character spacing:
+extract an action core for the `back_input`/`begin_token_list` deferral, starting
+with `main_control_hmode_inter_char_check`.
+
+---
+
 ## Idiom session 193 — 2026-06-18 — Execution: small format helper thread + Noad typed cleanup
 
 **Type:** execution (workstream 01/01c), low-docs batch with read-only
