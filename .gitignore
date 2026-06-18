@@ -8,6 +8,9 @@
 /tests/00*00-latex-*.fmt
 /tests/*-plain-*.fmt
 /tests/xenia/paper.pdf
+/*.expected
+/*.observed
+/tests/engine_rust/goldens/*.observed
 
 # Tectonic bundles
 *.ttb
