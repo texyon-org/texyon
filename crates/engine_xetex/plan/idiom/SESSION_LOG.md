@@ -8,6 +8,63 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 197 — 2026-06-18 — Execution: mlist/pagebuilder typed boundary cleanup
+
+**Type:** execution (workstream 01/01c), larger low-docs typed-consumer
+continuation with read-only subagents.
+
+**Code:** Continued from the session-196 dirty WIP and validated the whole
+batch. Added the remaining small typed-boundary cleanup around `mlist_to_hlist`:
+`math_kern_global` now takes `NodePtr<KernNode>`, the `CHOICE_NODE`/`RULE_NODE`/
+`GLUE_NODE`/`KERN_NODE` first-pass arms classify through `MemState` instead of
+locally constructing unchecked handles, conditional-math-glue lookahead uses
+`AnyNode`, and the second-pass passthrough move uses a typed `AnyNode` helper.
+Retyped `mlist_track_box` to accept `AnyBox` and added a typed rule-height/depth
+tracker. In `pagebuilder`, `ensure_vbox_is_hbox` now uses `AnyBox::HList`, and
+the last-node update block uses `AnyNode::{Glue,Penalty,Kern}` plus typed
+glue-spec refcount/penalty/kern access under one short borrow after the old
+`last_glue` ref is deleted.
+
+**Tests:** `cargo fmt --check`; `cargo check -p tectonic_engine_xetex`;
+dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full corpus
+`plan/scripts/corpus.sh check all` returned **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1`. Warnings held at
+**41**; `unsafe fn` **525**; `with_state(_mut)` sites **1014**.
+
+**Next:** the small typed-consumer vein is thinner now. Reasonable next slices:
+`packaging` `vert_break` typed height-source cleanup, native-word disc probes in
+`hpack_in` (higher corpus risk), or a deliberate scanner hub slice. Avoid broad
+`build_page`/shipout hub threading until scanner/token helpers are ready.
+
+---
+
+## Idiom session 196 — 2026-06-18 — Execution: larger typed consumer batch
+
+**Type:** execution (workstream 01/01c), low-docs typed-consumer batch with
+read-only subagents.
+
+**Code:** Retyped the small main-control appenders (`append_penalty`,
+`append_glue`, `append_kern`) around the built penalty/glue/kern families while
+keeping scans and pagebuilder calls outside the borrow. Retyped the math
+script-stack helpers so `make_scripts_global` and its script-kern/subsup helpers
+carry `NodePtr<Noad>` and `AnyBox` handles instead of repeatedly reclassifying
+raw `i32` noads/boxes; mixed/null nucleus list heads stay raw. Retyped
+`packaging::collect_split_mark` to take `NodePtr<MarkNode>` at the checked
+`MARK_NODE` branch.
+
+**Tests:** `cargo fmt --check`; `cargo check -p tectonic_engine_xetex`;
+dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full corpus
+`plan/scripts/corpus.sh check all` returned **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1`. Warnings held at
+**41**; `unsafe fn` **525**; `with_state(_mut)` sites **1011**.
+
+**Next:** continue the math typed-consumer seam around `mlist_to_hlist`
+(`mlist_choice_node`, `mlist_track_box`, rule/kern arms) or take another small
+typed/threaded island such as `pagebuilder`'s last-node update block. The
+scanner hub remains the larger deliberate slice.
+
+---
+
 ## Idiom session 195 — 2026-06-18 — Execution: main-control inter-character action core
 
 **Type:** execution (workstream 01), low-docs continuation. Took the smaller

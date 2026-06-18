@@ -30,8 +30,8 @@ use crate::mem::{
     TEX_NULL,
 };
 use crate::node::{
-    AnyBox, ChoiceNode, GlueNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen, RuleNode,
-    VListNode,
+    AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen,
+    RuleNode, VListNode,
 };
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{EngineState, EqtbState, FontState, MemState, SaveStackState, ScannerState};
@@ -550,24 +550,15 @@ fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scal
     }
 }
 
-pub fn math_kern_global(p: i32, m: i32) {
-    let (is_mu_glue, width_val) = crate::state::with_state(|st| {
-        let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) };
-        (kern.subtype(&st.mem) == MU_GLUE, kern.width(&st.mem).0)
-    });
+pub fn math_kern_global(p: NodePtr<KernNode>, m: i32) {
+    let (is_mu_glue, width_val) =
+        crate::state::with_state(|st| (p.subtype(&st.mem) == MU_GLUE, p.width(&st.mem).0));
     let scaled_width = if is_mu_glue {
         Some(Scaled(scaled_mu_value(width_val, m)))
     } else {
         None
     };
-    crate::state::with_state_mut(|st| {
-        // SAFETY: `math_kern_global`'s sole caller is the `KERN_NODE` arm of
-        // `mlist_to_hlist`'s first pass (below), which dispatches on
-        // `mem_b16s1(q) == KERN_NODE` — so `p` is already classified as a kern
-        // node. This is the typed-region boundary (`01b` §3a).
-        let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) };
-        math_kern(&mut st.mem, kern, scaled_width)
-    });
+    crate::state::with_state_mut(|st| math_kern(&mut st.mem, p, scaled_width));
 }
 
 /// translated from xetex-math.c:80 (flush_math)
@@ -2168,10 +2159,9 @@ fn attach_hkern_to_new_hlist(
     Ok(MemPtr::from_raw(q.nucleus_type(mem)))
 }
 
-unsafe fn attach_hkern_to_new_hlist_global(q: i32, delta: i32) -> i32 {
+unsafe fn attach_hkern_to_new_hlist_global(q: NodePtr<Noad>, delta: i32) -> i32 {
     match crate::state::with_state_mut(|st| {
-        let q_node = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q));
-        attach_hkern_to_new_hlist(&mut st.mem, q_node, Scaled(delta))
+        attach_hkern_to_new_hlist(&mut st.mem, q, Scaled(delta))
     }) {
         Ok(p) => p.0,
         Err(e) => node_recycle_abort(e),
@@ -2206,7 +2196,7 @@ fn glyph_nucleus(mem: &MemState, p: i32) -> Option<ScriptGlyphNucleus> {
 }
 
 unsafe fn maybe_attach_script_kern_global(
-    q: i32,
+    q: NodePtr<Noad>,
     p: i32,
     script_f: i32,
     script_g: u16,
@@ -2248,13 +2238,12 @@ fn add_script_space_and_restore_font(
     mem: &mut MemState,
     eqtb: &EqtbState,
     scanner: &mut ScannerState,
-    box_node: i32,
+    box_node: AnyBox,
     saved_font: i32,
 ) {
     scanner.cur_f = saved_font;
-    let b = mem.classify_box(MemIdx::new(box_node)).unwrap().unwrap();
-    let w = b.width(mem).0 + eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE);
-    b.set_width(mem, Scaled(w));
+    let w = box_node.width(mem).0 + eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE);
+    box_node.set_width(mem, Scaled(w));
 }
 
 #[derive(Clone, Copy)]
@@ -2265,7 +2254,7 @@ enum ScriptBoxAdjustment {
 }
 
 struct ScriptBoxPrep {
-    node: i32,
+    box_node: AnyBox,
     shift: i32,
 }
 
@@ -2289,11 +2278,19 @@ unsafe fn clean_script_box_global(
             }
         }
     });
-    crate::state::with_state_mut(|st| {
-        add_script_space_and_restore_font(&mut st.mem, &st.eqtb, &mut st.scanner, node, saved_font);
+    let box_node = crate::state::with_state_mut(|st| {
+        let box_node = classify_box_or_panic(&st.mem, node);
+        add_script_space_and_restore_font(
+            &mut st.mem,
+            &st.eqtb,
+            &mut st.scanner,
+            box_node,
+            saved_font,
+        );
+        box_node
     });
 
-    ScriptBoxPrep { node, shift }
+    ScriptBoxPrep { box_node, shift }
 }
 
 struct ScriptShifts {
@@ -2325,27 +2322,28 @@ unsafe fn initial_script_shifts_global(p: i32) -> ScriptShifts {
     }
 }
 
-fn append_script_box(mem: &mut MemState, q: NodePtr<Noad>, box_node: i32) {
+fn append_script_box(mem: &mut MemState, q: NodePtr<Noad>, box_node: AnyBox) {
+    let box_idx = box_node.idx().0;
     if q.nucleus_type(mem) == TEX_NULL {
-        q.set_nucleus_type(mem, box_node);
+        q.set_nucleus_type(mem, box_idx);
     } else {
         let mut p = q.nucleus_type(mem);
         while mem.b32s1(p) != TEX_NULL {
             p = mem.b32s1(p);
         }
-        mem.set_b32s1(p, box_node);
+        mem.set_b32s1(p, box_idx);
     }
 }
 
-fn append_script_box_global(q: i32, box_node: i32) {
-    crate::state::with_state_mut(|st| append_script_box(&mut st.mem, assume_noad(q), box_node));
+fn append_script_box_global(q: NodePtr<Noad>, box_node: AnyBox) {
+    crate::state::with_state_mut(|st| append_script_box(&mut st.mem, q, box_node));
 }
 
 struct SubSupStackInput {
-    q: i32,
+    q: NodePtr<Noad>,
     p: i32,
-    x: i32,
-    y: i32,
+    x: AnyBox,
+    y: AnyBox,
     sub_f: i32,
     sub_g: u16,
     sup_f: i32,
@@ -2370,10 +2368,7 @@ unsafe fn finish_subsup_stack_global(input: SubSupStackInput) {
     p = attachment.p;
     sub_kern = attachment.kern;
     if attachment.is_ot_math {
-        let sub_empty = crate::state::with_state(|st| {
-            let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(input.q)) };
-            q_noad.subscr_type(&st.mem) == EMPTY
-        });
+        let sub_empty = crate::state::with_state(|st| input.q.subscr_type(&st.mem) == EMPTY);
         if sub_empty {
             let attachment = maybe_attach_script_kern_global(
                 input.q,
@@ -2391,17 +2386,16 @@ unsafe fn finish_subsup_stack_global(input: SubSupStackInput) {
     }
 
     let kern_width = crate::state::with_state(|st| {
-        let xb = st.mem.classify_box(MemIdx::new(input.x)).unwrap().unwrap();
-        let yb = st.mem.classify_box(MemIdx::new(input.y)).unwrap().unwrap();
-        (input.shift_up - xb.depth(&st.mem).0) - (yb.height(&st.mem).0 - input.shift_down)
+        (input.shift_up - input.x.depth(&st.mem).0) - (input.y.height(&st.mem).0 - input.shift_down)
     });
     let kern = crate::state::with_state_mut(|st| {
-        let xb = st.mem.classify_box(MemIdx::new(input.x)).unwrap().unwrap();
-        xb.set_shift_amount(&mut st.mem, Scaled(sup_kern + input.delta - sub_kern));
+        input
+            .x
+            .set_shift_amount(&mut st.mem, Scaled(sup_kern + input.delta - sub_kern));
         let kern = new_kern(&mut st.mem, kern_width);
         if kern != ALLOC_FAILED {
-            xb.set_link(&mut st.mem, MemPtr::from_raw(kern));
-            st.mem.set_b32s1(kern, input.y);
+            input.x.set_link(&mut st.mem, MemPtr::from_raw(kern));
+            st.mem.set_b32s1(kern, input.y.idx().0);
         }
         kern
     });
@@ -2409,27 +2403,29 @@ unsafe fn finish_subsup_stack_global(input: SubSupStackInput) {
         node_recycle_abort(NodeRecycleAbort::Overflow);
     }
 
-    let packaged = crate::packaging::vpackage(input.x, 0, ADDITIONAL, MAX_HALFWORD);
+    let packaged = crate::packaging::vpackage(input.x.idx().0, 0, ADDITIONAL, MAX_HALFWORD);
     crate::state::with_state_mut(|st| {
         let pb = st.mem.classify_box(MemIdx::new(packaged)).unwrap().unwrap();
         pb.set_shift_amount(&mut st.mem, Scaled(input.shift_down));
     });
-    append_script_box_global(input.q, packaged);
+    let packaged_box = crate::state::with_state(|st| classify_box_or_panic(&st.mem, packaged));
+    append_script_box_global(input.q, packaged_box);
 }
 
 struct PreparedScript {
-    node: i32,
+    box_node: AnyBox,
     glyph: u16,
     font: i32,
     shift: i32,
 }
 
 unsafe fn prepare_subscript_global(
-    script_field: i32,
+    q: NodePtr<Noad>,
     adjustment: ScriptBoxAdjustment,
     mut shift_down: i32,
     saved_font_before_glyph_probe: Option<i32>,
 ) -> PreparedScript {
+    let script_field = q.subscr_addr();
     let (save_f, glyph, font) = if let Some(save_f) = saved_font_before_glyph_probe {
         let (glyph, font) = first_script_glyph_global(script_field);
         (save_f, glyph, font)
@@ -2445,26 +2441,25 @@ unsafe fn prepare_subscript_global(
     }
 
     PreparedScript {
-        node: prepared.node,
+        box_node: prepared.box_node,
         glyph,
         font,
         shift: shift_down,
     }
 }
 
-unsafe fn finish_subscript_only_global(q: i32, p: i32, shift_down: i32) {
+unsafe fn finish_subscript_only_global(q: NodePtr<Noad>, p: i32, shift_down: i32) {
     let PreparedScript {
-        node: x,
+        box_node: x,
         glyph: sub_g,
         font: sub_f,
         shift: mut shift_down,
-    } = prepare_subscript_global(q + 3, ScriptBoxAdjustment::Sub1, shift_down, None);
+    } = prepare_subscript_global(q, ScriptBoxAdjustment::Sub1, shift_down, None);
 
     let (cur_f, box_depth, x_height) = crate::state::with_state(|st| {
-        let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
         (
             st.scanner.cur_f,
-            xb.height(&st.mem).0,
+            x.height(&st.mem).0,
             math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
         )
     });
@@ -2479,37 +2474,35 @@ unsafe fn finish_subscript_only_global(q: i32, p: i32, shift_down: i32) {
     }
 
     crate::state::with_state_mut(|st| {
-        let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
-        xb.set_shift_amount(&mut st.mem, Scaled(shift_down));
+        x.set_shift_amount(&mut st.mem, Scaled(shift_down));
     });
 
     let _ = maybe_attach_script_kern_global(q, p, sub_f, sub_g, SUB_CMD, shift_down);
     append_script_box_global(q, x);
 }
 
-unsafe fn prepare_superscript_global(q: i32, mut shift_up: i32) -> PreparedScript {
-    let (glyph, font) = first_script_glyph_global(q + 2);
+unsafe fn prepare_superscript_global(q: NodePtr<Noad>, mut shift_up: i32) -> PreparedScript {
+    let (glyph, font) = first_script_glyph_global(q.supscr_addr());
     let (save_f, clean_style) = crate::state::with_state(|st| {
         (
             st.scanner.cur_f,
             2 * (st.scanner.cur_style / 4) + 4 + (st.scanner.cur_style % 2),
         )
     });
-    let prepared =
-        clean_script_box_global(q + 2, clean_style, save_f, ScriptBoxAdjustment::Superscript);
+    let prepared = clean_script_box_global(
+        q.supscr_addr(),
+        clean_style,
+        save_f,
+        ScriptBoxAdjustment::Superscript,
+    );
     if shift_up < prepared.shift {
         shift_up = prepared.shift;
     }
 
     let (cur_f, box_height, x_height) = crate::state::with_state(|st| {
-        let nb = st
-            .mem
-            .classify_box(MemIdx::new(prepared.node))
-            .unwrap()
-            .unwrap();
         (
             st.scanner.cur_f,
-            nb.depth(&st.mem).0,
+            prepared.box_node.depth(&st.mem).0,
             math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
         )
     });
@@ -2524,7 +2517,7 @@ unsafe fn prepare_superscript_global(q: i32, mut shift_up: i32) -> PreparedScrip
     }
 
     PreparedScript {
-        node: prepared.node,
+        box_node: prepared.box_node,
         glyph,
         font,
         shift: shift_up,
@@ -2532,18 +2525,15 @@ unsafe fn prepare_superscript_global(q: i32, mut shift_up: i32) -> PreparedScrip
 }
 
 unsafe fn finish_superscript_branch_global(
-    q: i32,
+    q: NodePtr<Noad>,
     p: i32,
     superscript: PreparedScript,
     mut shift_down: i32,
     delta: i32,
 ) {
-    let x = superscript.node;
+    let x = superscript.box_node;
     let shift_up = superscript.shift;
-    let sub_empty = crate::state::with_state(|st| {
-        let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-        q_noad.subscr_type(&st.mem) == EMPTY
-    });
+    let sub_empty = crate::state::with_state(|st| q.subscr_type(&st.mem) == EMPTY);
     if sub_empty {
         let _ = maybe_attach_script_kern_global(
             q,
@@ -2554,8 +2544,7 @@ unsafe fn finish_superscript_branch_global(
             shift_up,
         );
         crate::state::with_state_mut(|st| {
-            let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
-            xb.set_shift_amount(&mut st.mem, Scaled(-shift_up));
+            x.set_shift_amount(&mut st.mem, Scaled(-shift_up));
         });
         append_script_box_global(q, x);
         return;
@@ -2563,20 +2552,18 @@ unsafe fn finish_superscript_branch_global(
 
     let save_f = crate::state::with_state(|st| st.scanner.cur_f);
     let PreparedScript {
-        node: y,
+        box_node: y,
         glyph: sub_g,
         font: sub_f,
         shift,
-    } = prepare_subscript_global(q + 3, ScriptBoxAdjustment::Sub2, shift_down, Some(save_f));
+    } = prepare_subscript_global(q, ScriptBoxAdjustment::Sub2, shift_down, Some(save_f));
     shift_down = shift;
 
     let (cur_f, x_height_node, y_depth, default_rule_thickness) = crate::state::with_state(|st| {
-        let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
-        let yb = st.mem.classify_box(MemIdx::new(y)).unwrap().unwrap();
         (
             st.scanner.cur_f,
-            xb.depth(&st.mem).0,
-            yb.height(&st.mem).0,
+            x.depth(&st.mem).0,
+            y.height(&st.mem).0,
             default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size),
         )
     });
@@ -2591,10 +2578,9 @@ unsafe fn finish_superscript_branch_global(
     if clr > 0 {
         shift_down += clr;
         let (cur_f, x_height_node, x_height) = crate::state::with_state(|st| {
-            let xb = st.mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
             (
                 st.scanner.cur_f,
-                xb.depth(&st.mem).0,
+                x.depth(&st.mem).0,
                 math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size),
             )
         });
@@ -2736,18 +2722,11 @@ unsafe fn first_script_glyph_global(script_head: i32) -> (u16, i32) {
 }
 
 /// translated from xetex-math.c:84 (make_scripts)
-unsafe fn make_scripts_global(q: i32, delta: i32) {
-    let p = crate::state::with_state(|st| {
-        let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-        q_noad.nucleus_type(&st.mem)
-    });
+unsafe fn make_scripts_global(q: NodePtr<Noad>, delta: i32) {
+    let p = crate::state::with_state(|st| q.nucleus_type(&st.mem));
     let shifts = initial_script_shifts_global(p);
 
-    if crate::state::with_state(|st| {
-        let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q)) };
-        q_noad.supscr_type(&st.mem)
-    }) == EMPTY
-    {
+    if crate::state::with_state(|st| q.supscr_type(&st.mem)) == EMPTY {
         finish_subscript_only_global(q, p, shifts.down);
     } else {
         let superscript = prepare_superscript_global(q, shifts.up);
@@ -2815,13 +2794,10 @@ fn update_math_style_params() {
 /// after the `mem` borrow drops (`01b` §4a bucket C).
 fn mlist_choice_node(
     mem: &mut MemState,
-    q: i32,
+    choice: NodePtr<ChoiceNode>,
     cur_style: i16,
 ) -> Result<(), &'static std::ffi::CStr> {
-    let choice = mem
-        .classify_choice(MemIdx::new(q))
-        .expect("valid node type")
-        .expect("choice node");
+    let q = choice.idx().0;
     // Detach the branch for the current style; the other three are flushed.
     let kept = match cur_style / 2 {
         0 => {
@@ -2867,19 +2843,61 @@ fn mlist_choice_node(
     Ok(())
 }
 
-/// Record the hpacked box `z`'s height/depth into the running maxima and
-/// recycle it (one `mem` borrow; `hpack` itself runs before, bucket C).
-fn mlist_track_box(mem: &mut MemState, z: i32, max_h: &mut i32, max_d: &mut i32) {
-    let zb = classify_box_or_panic(mem, z);
-    let h = zb.height(mem).0;
-    let d = zb.depth(mem).0;
+fn mlist_track_rule(mem: &MemState, rule: NodePtr<RuleNode>, max_h: &mut i32, max_d: &mut i32) {
+    let h = rule.height(mem).raw();
+    let d = rule.depth(mem).raw();
     if h > *max_h {
         *max_h = h;
     }
     if d > *max_d {
         *max_d = d;
     }
-    crate::mem::free_node(mem, z, BOX_NODE_SIZE);
+}
+
+/// Record the hpacked box `z`'s height/depth into the running maxima and
+/// recycle it (one `mem` borrow; `hpack` itself runs before, bucket C).
+fn mlist_track_box(mem: &mut MemState, z: AnyBox, max_h: &mut i32, max_d: &mut i32) {
+    let h = z.height(mem).0;
+    let d = z.depth(mem).0;
+    if h > *max_h {
+        *max_h = h;
+    }
+    if d > *max_d {
+        *max_d = d;
+    }
+    crate::mem::free_node(mem, z.idx().0, BOX_NODE_SIZE);
+}
+
+fn mlist_cond_math_glue(
+    mem: &mut MemState,
+    glue: NodePtr<GlueNode>,
+    cur_size: i32,
+) -> Result<(), &'static std::ffi::CStr> {
+    if cur_size == TEXT_SIZE {
+        return Ok(());
+    }
+
+    let p = glue.link(mem);
+    let Some(p_idx) = p.as_idx() else {
+        return Ok(());
+    };
+    match mem.classify(p_idx).expect("valid node type") {
+        AnyNode::Glue(_) | AnyNode::Kern(_) => {
+            glue.set_link(mem, MemPtr::from_raw(mem.b32s1(p_idx.0)));
+            mem.set_b32s1(p_idx.0, TEX_NULL);
+            crate::packaging::flush_node_list(mem, p_idx.0)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn mlist_move_output_node(mem: &mut MemState, tail: i32, node: AnyNode) -> (i32, i32) {
+    let q = node.idx().0;
+    mem.set_b32s1(tail, q);
+    let next = mem.b32s1(q);
+    mem.set_b32s1(q, TEX_NULL);
+    (q, next)
 }
 
 /// First-pass noad advance: remember the current noad as `r` with its type,
@@ -2986,7 +3004,12 @@ pub unsafe fn mlist_to_hlist() {
                 CHOICE_NODE => {
                     if let Err(msg) = crate::state::with_state_mut(|st| {
                         let cs = st.scanner.cur_style;
-                        mlist_choice_node(&mut st.mem, q, cs)
+                        let choice = st
+                            .mem
+                            .classify_choice(MemIdx::new(q))
+                            .expect("valid node type")
+                            .expect("choice node");
+                        mlist_choice_node(&mut st.mem, choice, cs)
                     }) {
                         crate::errors::confusion(msg.as_ptr());
                     }
@@ -2996,17 +3019,23 @@ pub unsafe fn mlist_to_hlist() {
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 RULE_NODE => {
-                    if mem_b32s1(q + 3) > max_h {
-                        max_h = mem_b32s1(q + 3);
-                    }
-                    if mem_b32s1(q + 2) > max_d {
-                        max_d = mem_b32s1(q + 2);
-                    }
+                    crate::state::with_state(|st| {
+                        let rule = st
+                            .mem
+                            .classify_rule(MemIdx::new(q))
+                            .expect("valid node type")
+                            .expect("rule node");
+                        mlist_track_rule(&st.mem, rule, &mut max_h, &mut max_d);
+                    });
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 GLUE_NODE => {
-                    let glue = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(q)) };
                     let (subtype, mu, x) = crate::state::with_state(|st| {
+                        let glue = st
+                            .mem
+                            .classify_glue(MemIdx::new(q))
+                            .expect("valid node type")
+                            .expect("glue node");
                         (
                             glue.subtype(&st.mem),
                             st.scanner.cur_mu,
@@ -3016,6 +3045,11 @@ pub unsafe fn mlist_to_hlist() {
                     if subtype == MU_GLUE {
                         let y = math_glue_global(x, mu);
                         crate::state::with_state_mut(|st| {
+                            let glue = st
+                                .mem
+                                .classify_glue(MemIdx::new(q))
+                                .expect("valid node type")
+                                .expect("glue node");
                             crate::mem::delete_glue_ref(&mut st.mem, x);
                             glue.set_glue_ptr(&mut st.mem, MemPtr::from_raw(y));
                             glue.set_subtype(&mut st.mem, NORMAL);
@@ -3023,18 +3057,13 @@ pub unsafe fn mlist_to_hlist() {
                     } else if subtype == COND_MATH_GLUE {
                         let res = crate::state::with_state_mut(
                             |st| -> Result<(), &'static std::ffi::CStr> {
-                                if st.scanner.cur_size != TEXT_SIZE {
-                                    let p = st.mem.b32s1(q);
-                                    if p != TEX_NULL
-                                        && (st.mem.b16s1(p) == GLUE_NODE
-                                            || st.mem.b16s1(p) == KERN_NODE)
-                                    {
-                                        st.mem.set_b32s1(q, st.mem.b32s1(p));
-                                        st.mem.set_b32s1(p, TEX_NULL);
-                                        crate::packaging::flush_node_list(&mut st.mem, p)?;
-                                    }
-                                }
-                                Ok(())
+                                let glue = st
+                                    .mem
+                                    .classify_glue(MemIdx::new(q))
+                                    .expect("valid node type")
+                                    .expect("glue node");
+                                let cur_size = st.scanner.cur_size;
+                                mlist_cond_math_glue(&mut st.mem, glue, cur_size)
                             },
                         );
                         if let Err(msg) = res {
@@ -3044,7 +3073,13 @@ pub unsafe fn mlist_to_hlist() {
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 KERN_NODE => {
-                    math_kern_global(q, cur_mu());
+                    let kern = crate::state::with_state(|st| {
+                        st.mem
+                            .classify_kern(MemIdx::new(q))
+                            .expect("valid node type")
+                            .expect("kern node")
+                    });
+                    math_kern_global(kern, cur_mu());
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 _ => crate::errors::confusion(c"mlist1".as_ptr()),
@@ -3114,19 +3149,21 @@ pub unsafe fn mlist_to_hlist() {
                     st.mem.b32s1(q + 3) != EMPTY || st.mem.b32s1(q + 2) != EMPTY
                 });
                 if need_scripts {
-                    make_scripts_global(q, delta);
+                    make_scripts_global(assume_noad(q), delta);
                 }
 
                 let z = crate::packaging::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
                 crate::state::with_state_mut(|st| {
-                    mlist_track_box(&mut st.mem, z, &mut max_h, &mut max_d)
+                    let z_box = classify_box_or_panic(&st.mem, z);
+                    mlist_track_box(&mut st.mem, z_box, &mut max_h, &mut max_d)
                 });
                 (r, r_type, q) = mlist_advance(q, style);
             }
             FirstPass::CheckDimensions => {
                 let z = crate::packaging::hpack(mem_b32s1(q + 1), 0, ADDITIONAL);
                 crate::state::with_state_mut(|st| {
-                    mlist_track_box(&mut st.mem, z, &mut max_h, &mut max_d)
+                    let z_box = classify_box_or_panic(&st.mem, z);
+                    mlist_track_box(&mut st.mem, z_box, &mut max_h, &mut max_d)
                 });
                 (r, r_type, q) = mlist_advance(q, style);
             }
@@ -3199,10 +3236,8 @@ pub unsafe fn mlist_to_hlist() {
                 // current tail `p` to `q`, advance to `q`'s successor, then null
                 // the moved node's link. One mem borrow.
                 let (np, nq) = crate::state::with_state_mut(|st| {
-                    st.mem.set_b32s1(p, q);
-                    let nq = st.mem.b32s1(q);
-                    st.mem.set_b32s1(q, TEX_NULL);
-                    (q, nq)
+                    let node = st.mem.classify(MemIdx::new(q)).expect("valid node type");
+                    mlist_move_output_node(&mut st.mem, p, node)
                 });
                 p = np;
                 q = nq;

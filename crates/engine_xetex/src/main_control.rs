@@ -49,6 +49,7 @@ use crate::math::{
     math_limit_switch_global, math_radical_global, resume_after_display, start_eq_no,
     sub_sup_global,
 };
+use crate::node::{GlueNode, KernNode, NodePtr};
 use crate::output::{
     capture_to_diagnostic, char_warning, error_here_with_diagnostic, issue_message, print_cmd_chr,
     show_box, show_whatever,
@@ -67,6 +68,7 @@ use crate::scan::{
     set_family_fn, set_math_char, x_token,
 };
 use crate::shipout::ship_out;
+use crate::units::MemIdx;
 
 extern "C" {
     fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
@@ -1309,11 +1311,22 @@ pub unsafe fn end_graf() {
     }
 }
 // translated from xetex-xetex0.c:10016 (append_penalty)
+fn append_penalty_node(mem: &mut crate::state::MemState, tail: i32, penalty: i32) -> i32 {
+    let p = crate::mem::new_penalty(mem, penalty);
+    if p == crate::mem::ALLOC_FAILED {
+        return p;
+    }
+    mem.set_b32s1(tail, p);
+    p
+}
+
 pub unsafe fn append_penalty() {
     scan_int();
-    let p = crate::mem::new_penalty_global(crate::globals::cur_val());
     let tail = crate::globals::cur_list_tail();
-    set_mem_b32s1(tail, p);
+    let p = crate::state::with_state_mut(|st| append_penalty_node(&mut st.mem, tail, cur_val()));
+    if p == crate::mem::ALLOC_FAILED {
+        crate::scan::node_recycle_abort(crate::scan::NodeRecycleAbort::Overflow);
+    }
     crate::globals::set_cur_list_tail(p);
     if cur_list_mode() == VMODE {
         build_page();
@@ -2665,6 +2678,27 @@ pub unsafe fn handle_right_brace() {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:9358 (append_glue)
+fn append_glue_node(
+    mem: &mut crate::state::MemState,
+    tail: i32,
+    glue_spec: i32,
+    subtype: u16,
+    decrement_spec_ref: bool,
+) -> i32 {
+    let p_raw = crate::mem::new_glue(mem, glue_spec);
+    if p_raw == crate::mem::ALLOC_FAILED {
+        return p_raw;
+    }
+    let p = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p_raw)) };
+    mem.set_b32s1(tail, p.idx().0);
+    if decrement_spec_ref {
+        let spec = p.glue_spec(mem).expect("non-null glue spec");
+        spec.set_ref_count(mem, spec.ref_count(mem) - 1);
+        p.set_subtype(mem, subtype);
+    }
+    p.idx().0
+}
+
 pub unsafe fn append_glue() {
     let s = cur_chr() as i16;
     match s {
@@ -2676,24 +2710,37 @@ pub unsafe fn append_glue() {
         5 => scan_glue(MU_VAL_SCAN), // MSKIP_CODE
         _ => {}
     }
-    let p = crate::mem::new_glue_global(cur_val());
-    set_mem_b32s1(crate::globals::cur_list_tail(), p);
-    crate::globals::set_cur_list_tail(p);
-    if s >= SKIP_CODE {
-        set_mem_b32s1(cur_val(), mem_b32s1(cur_val()) - 1);
-        if s > SKIP_CODE {
-            set_mem_b16s0(crate::globals::cur_list_tail(), MU_GLUE);
-        }
+    let subtype = if s > SKIP_CODE { MU_GLUE } else { 0 };
+    let tail = crate::globals::cur_list_tail();
+    let p = crate::state::with_state_mut(|st| {
+        append_glue_node(&mut st.mem, tail, cur_val(), subtype, s >= SKIP_CODE)
+    });
+    if p == crate::mem::ALLOC_FAILED {
+        crate::scan::node_recycle_abort(crate::scan::NodeRecycleAbort::Overflow);
     }
+    crate::globals::set_cur_list_tail(p);
 }
 // translated from xetex-xetex0.c:9395 (append_kern)
+fn append_kern_node(mem: &mut crate::state::MemState, tail: i32, width: i32, subtype: u16) -> i32 {
+    let p_raw = crate::mem::new_kern(mem, width);
+    if p_raw == crate::mem::ALLOC_FAILED {
+        return p_raw;
+    }
+    let p = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_raw)) };
+    mem.set_b32s1(tail, p.idx().0);
+    p.set_subtype(mem, subtype);
+    p.idx().0
+}
+
 pub unsafe fn append_kern() {
     let s = cur_chr() as u16;
     scan_dimen(s == MU_GLUE, false, false);
-    let p = crate::mem::new_kern_global(cur_val());
-    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+    let tail = crate::globals::cur_list_tail();
+    let p = crate::state::with_state_mut(|st| append_kern_node(&mut st.mem, tail, cur_val(), s));
+    if p == crate::mem::ALLOC_FAILED {
+        crate::scan::node_recycle_abort(crate::scan::NodeRecycleAbort::Overflow);
+    }
     crate::globals::set_cur_list_tail(p);
-    set_mem_b16s0(crate::globals::cur_list_tail(), s);
 }
 // translated from xetex-xetex0.c:9896 (make_mark)
 pub unsafe fn make_mark() {

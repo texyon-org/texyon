@@ -31,6 +31,7 @@ use crate::mem::new_null_box_global;
 use crate::mem::new_skip_param_global;
 use crate::mem::new_spec_global;
 use crate::mem::push_nest;
+use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr};
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
 use crate::output::print_cstr;
@@ -47,7 +48,8 @@ use crate::save::new_save_level_global;
 use crate::scaled_math::x_over_n;
 use crate::scan::scan_left_brace;
 use crate::shipout::ship_out;
-use crate::state::{EqtbState, MemState, ShipoutState};
+use crate::state::{EngineState, EqtbState, MemState, ShipoutState};
+use crate::units::MemIdx;
 
 #[inline]
 fn best_page_break() -> i32 {
@@ -183,7 +185,7 @@ fn ensure_vbox_is_hbox(eqtb: &EqtbState, mem: &MemState, n: u8) -> bool {
     if p == TEX_NULL {
         return false;
     }
-    mem.b16s1(p) as i32 == HLIST_NODE
+    matches!(mem.classify_box(MemIdx::new(p)), Ok(Some(AnyBox::HList(_))))
 }
 
 /// Bridge-down wrapper for legacy callers: run the threaded predicate under a
@@ -543,6 +545,34 @@ unsafe fn fire_up(c: i32) {
     set_eqtb_b32s1(BOX_BASE + 255, TEX_NULL);
 }
 
+fn update_last_node_info(st: &mut EngineState, p: i32) {
+    st.shipout.last_penalty = 0;
+    st.shipout.last_kern = 0;
+    let nt = st.mem.b16s1(p) as i32;
+    st.shipout.last_node_type = nt + 1;
+
+    match st.mem.classify(MemIdx::new(p)).expect("valid page node") {
+        AnyNode::Glue(glue) => {
+            let gp = glue.glue_ptr(&st.mem);
+            st.shipout.last_glue = gp.0;
+            let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(gp).expect("non-null glue spec");
+            let ref_count = spec.ref_count(&st.mem);
+            spec.set_ref_count(&mut st.mem, ref_count + 1);
+        }
+        AnyNode::Penalty(penalty) => {
+            st.shipout.last_glue = MAX_HALFWORD;
+            st.shipout.last_penalty = penalty.penalty(&st.mem);
+        }
+        AnyNode::Kern(kern) => {
+            st.shipout.last_glue = MAX_HALFWORD;
+            st.shipout.last_kern = kern.width(&st.mem).0;
+        }
+        _ => {
+            st.shipout.last_glue = MAX_HALFWORD;
+        }
+    }
+}
+
 pub unsafe fn build_page() {
     if mem_b32s1(CONTRIB_HEAD) == TEX_NULL || output_active() {
         return;
@@ -555,23 +585,10 @@ pub unsafe fn build_page() {
         if last_glue() != MAX_HALFWORD {
             delete_glue_ref_global(last_glue());
         }
-        set_last_penalty(0);
-        set_last_kern(0);
-        let nt = mem_b16s1(p) as i32;
-        set_last_node_type(nt + 1);
-
-        if nt == GLUE_NODE {
-            let gp = mem_b32s0(p + 1); // GLUE_NODE_glue_ptr
-            set_last_glue(gp);
-            set_mem_b32s1(gp, mem_b32s1(gp) + 1); // GLUE_SPEC_ref_count++
-        } else {
-            set_last_glue(MAX_HALFWORD);
-            if nt == PENALTY_NODE {
-                set_last_penalty(mem_b32s1(p + 1)); // PENALTY_NODE_penalty
-            } else if nt == KERN_NODE {
-                set_last_kern(mem_b32s1(p + 1)); // BOX_width
-            }
-        }
+        let nt = crate::state::with_state_mut(|st| {
+            update_last_node_info(st, p);
+            st.mem.b16s1(p) as i32
+        });
 
         // 1032/1035: Dispatch on node type
         let mut pi: i32 = INF_PENALTY;

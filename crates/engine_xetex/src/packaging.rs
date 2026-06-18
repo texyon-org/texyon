@@ -18,8 +18,8 @@ use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
 use crate::globals::{cur_val, set_cur_val, set_help_line, set_help_ptr, temp_ptr};
 use crate::node::{
-    AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, NodePtr, RuleDimen, SaNode, VListNode,
-    WhatsitNode,
+    AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, MarkNode, NodePtr, RuleDimen, SaNode,
+    VListNode, WhatsitNode,
 };
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::units::NodeType;
@@ -1490,13 +1490,13 @@ fn start_vsplit(
 fn collect_split_mark(
     mem: &mut MemState,
     scanner: &mut ScannerState,
-    p: i32,
+    mark: NodePtr<MarkNode>,
 ) -> Result<(), NodeRecycleAbort> {
     use crate::globals::cur_ptr;
     use crate::mem::TEX_NULL;
 
-    let mark_class = mem.b32s0(p + 1);
-    let mark_ptr = mem.b32s1(p + 1);
+    let mark_class = mark.mark_class(mem);
+    let mark_ptr = mark.mark_ptr(mem).0;
     if mark_class != 0 {
         let r = crate::save::find_sa_element(mem, scanner, MARK_VAL_VS as u16, mark_class, true);
         if r == crate::mem::ALLOC_FAILED {
@@ -1538,7 +1538,8 @@ fn split_vlist_at_break(
     } else {
         loop {
             if mem.b16s1(p) == MARK_NODE_VS {
-                collect_split_mark(mem, scanner, p)?;
+                let mark = unsafe { NodePtr::<MarkNode>::from_idx_unchecked(MemIdx::new(p)) };
+                collect_split_mark(mem, scanner, mark)?;
             }
             if mem.b32s1(p) == q {
                 mem.set_b32s1(p, TEX_NULL);
