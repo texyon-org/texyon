@@ -106,10 +106,18 @@ pub fn get_avail(mem: &mut MemState) -> i32 {
 pub unsafe fn get_avail_global() -> i32 {
     let p = crate::state::with_state_mut(|st| get_avail(&mut st.mem));
     if p == ALLOC_FAILED {
-        runaway();
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
+        fire_main_memory_overflow();
     }
     p
+}
+
+/// Fire the cold `runaway()` + `overflow("main memory size")` abort that an
+/// arena-exhausted [`get_avail`] / [`get_node`] defers to its caller via the
+/// `ALLOC_FAILED` sentinel (`01b` §5). Must be called only **after** any live
+/// `with_state*`/`&mut EngineState` borrow has dropped. Never returns.
+pub(crate) unsafe fn fire_main_memory_overflow() -> ! {
+    runaway();
+    overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
 }
 
 // ---------------------------------------------------------------------------

@@ -778,12 +778,6 @@ pub(crate) fn full_source_filename_stack(k: i32) -> i32 {
     crate::state::with_state(|s| s.input.full_source_filename_stack[k as usize])
 }
 
-/// Returns `line_stack[k]` (the saved line number at nesting level k).
-#[inline]
-pub(crate) fn line_stack(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.line_stack[k as usize])
-}
-
 /// Returns non-zero when file:line-style error messages are active.
 #[inline]
 pub(crate) fn file_line_error_style_p() -> i32 {
