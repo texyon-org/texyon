@@ -8,6 +8,59 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 200 — 2026-06-18 — Execution: thread the input-stack/error-recovery layer (scanner prerequisites)
+
+**Type:** execution (workstream 01), large multi-commit threading session per
+user request for a bigger session. First committed the inherited session 198/199
+typed-consumer WIP as a clean baseline. Recon (three read-only Explore agents)
+confirmed the typed-consumer vein is thin and that `get_next` is **not** directly
+threadable — it is gated on the input-stack/error layer — so the session
+threaded that whole layer, the documented `get_next` prerequisite.
+
+**Code (6 commits):**
+1. **input-stack token-list layer** — `end_token_list`/`begin_token_list`/
+   `end_file_reading`/`back_input` → `&mut EngineState` `_in` cores. Input/param/
+   align_state reads move to direct `st.input.*`/`st.scanner.*`; `cur_input`/
+   `cur_tok`/`first`/`line` stay raw `mod raw` (safe under the borrow); list
+   recycling/avail-pop go through threaded `flush_list`/`delete_token_ref`/
+   `get_avail`; `begin_token_list`'s `\tracingmacros` diagnostic prints in-order
+   via the threaded `print_*_in`/`token_show_in`/`*_diagnostic_in` cores. New
+   `InputAbort` sentinel (§5) defers cold `overflow`/`fatal_error`/arena-
+   exhaustion; extracted `mem::fire_main_memory_overflow`.
+2. **begin_file_reading + pseudo_input** threaded (input/buffer/pseudo-file
+   state direct; `cur_boundary`/`cond_ptr` from `st.save_stack`/`st.scanner`).
+3. **runaway** → `runaway_in` (self-contained cold diagnostic, no abort path).
+4. **print_spec_in** typed glue-spec accessors (`NodePtr<GlueSpecNode>`).
+5. **back_error/ins_error/insert_relax** threaded (build on `back_input_in`/
+   `error_in`; dual `Result<ErrorOutcome, InputAbort>` shape).
+6. **check_outer_validity** → `check_outer_validity_in` — the capstone; the
+   whole runaway/forbidden-cs/incomplete-`\if` recovery runs under one borrow,
+   calling the now-threaded `begin_token_list_in`/`runaway_in`/`ins_error_in`/
+   `error_in`/print cores; terminal `ErrorOutcome` returned for the wrapper.
+
+This clears **every** `with_state`-bearing blocker between `get_next` and a
+single-borrow `get_next_in` (id_lookup/file_warning/error were already threaded;
+the input/error layer is now too). Deleted now-dead globals `line_stack`/
+`max_in_stack`/`set_line_stack`/`skip_line`.
+
+**Tests:** `cargo check`; dashboard **29/2/7/4** after each commit (TRIP gates
+the recovery paths); `cargo build --release -p tectonic`; full corpus **637
+passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1`/
+`1905.00148v1`, no NOXDV/NOLOG. Metrics: warnings **41** (held); `unsafe fn`
+**525 → 527** (+2 cold-abort fire helpers `InputAbort::fire`/
+`fire_main_memory_overflow`); `with_state(_mut)` sites **1083 → 1093** (+10
+transient bridge-down wrappers for the 11 newly-threaded leaves — retire when
+`get_next`/`expand`/`macro_call` thread and call the `_in` cores directly).
+
+**Next:** thread `get_next` itself into `get_next_in(&mut EngineState)` — the
+last input-layer blocker is `input_line` (io.rs); after that the ~620-line
+tokenizer body is a single-borrow port calling the now-threaded `_in` cores
+(`begin_token_list_in`/`end_token_list_in`/`end_file_reading_in`/
+`check_outer_validity_in`/`pseudo_input_in`/`id_lookup`). One careful hub;
+then `get_token`/`get_x_token`/`scan_toks` and the shipout hub open up.
+
+---
+
 ## Idiom session 199 — 2026-06-18 — Execution: typed split-top/pagebuilder/main-control consumers
 
 **Type:** execution (workstream 01/01c), low-docs typed-consumer continuation
