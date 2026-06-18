@@ -9,17 +9,16 @@
 //! (not yet built). Parked flat here until then.
 
 use crate::consts::{
-    BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, DISC_NODE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, INT_BASE,
-    KERN_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, PENALTY_NODE,
-    RULE_NODE_SIZE, SMALL_NODE_SIZE,
+    BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, GLUE_SPEC_SIZE, INT_BASE, KERN_NODE, MATH_NODE,
+    MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
 use crate::errors::error;
 use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
 use crate::globals::{cur_val, set_cur_val, set_help_line, set_help_ptr, temp_ptr};
 use crate::node::{
-    AnyBox, AnyNode, GlueNode, GlueSpecNode, HListNode, MarkNode, NodePtr, RuleDimen, SaNode,
-    VListNode, WhatsitNode,
+    AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, MarkNode, NodePtr,
+    RuleDimen, SaNode, VListNode, WhatsitNode,
 };
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::units::NodeType;
@@ -164,6 +163,13 @@ fn classify_native_word_with_font_hp(
 ) -> Option<NodePtr<WhatsitNode>> {
     let w = classify_native_word_hp(mem, p)?;
     (w.native_font(mem).0 == font).then_some(w)
+}
+
+fn classify_disc_hp(mem: &MemState, p: i32) -> Option<NodePtr<DiscNode>> {
+    if p >= mem.hi_mem_min {
+        return None;
+    }
+    mem.classify_disc(MemIdx::new(p)).ok().flatten()
 }
 
 #[derive(Copy, Clone)]
@@ -1047,10 +1053,10 @@ pub unsafe fn append_to_vlist_global(b: i32) {
 }
 // translated from xetex-xetex0.c:7725 (vert_break)
 struct VertBreakCursor {
-    p: i32,
-    prev_p: i32,
+    p: MemPtr,
+    prev_p: MemPtr,
     least_cost: i32,
-    best_place: i32,
+    best_place: MemPtr,
     prev_dp: i32,
     finish_glue_after_shrinkage: Option<NodePtr<GlueNode>>,
 }
@@ -1065,13 +1071,34 @@ enum VertBreakStep {
 
 enum VertBreakNext {
     NotFound,
-    UpdateHeights,
-    CheckPi(i32),
+    UpdateHeights(VertBreakUpdateSource),
+    CheckPi {
+        pi: i32,
+        update_after: Option<VertBreakUpdateSource>,
+    },
 }
 
-fn start_vert_break(scanner: &mut ScannerState, p: i32) -> VertBreakCursor {
-    use crate::mem::TEX_NULL;
+#[derive(Copy, Clone)]
+enum VertBreakUpdateSource {
+    Kern(NodePtr<KernNode>),
+    Glue(NodePtr<GlueNode>),
+}
 
+enum VertBreakHeightSource {
+    Kern(NodePtr<KernNode>),
+    GlueSpec(NodePtr<GlueSpecNode>),
+}
+
+impl VertBreakHeightSource {
+    fn width(self, mem: &MemState) -> i32 {
+        match self {
+            VertBreakHeightSource::Kern(kern) => kern.width(mem).0,
+            VertBreakHeightSource::GlueSpec(spec) => spec.width(mem).0,
+        }
+    }
+}
+
+fn start_vert_break(scanner: &mut ScannerState, p: MemPtr) -> VertBreakCursor {
     for k in 1..=6usize {
         scanner.active_width[k] = 0;
     }
@@ -1080,7 +1107,7 @@ fn start_vert_break(scanner: &mut ScannerState, p: i32) -> VertBreakCursor {
         p,
         prev_p: p,
         least_cost: MAX_HALFWORD,
-        best_place: TEX_NULL,
+        best_place: MemPtr::NULL,
         prev_dp: 0,
         finish_glue_after_shrinkage: None,
     }
@@ -1097,17 +1124,17 @@ fn advance_vert_break(
         cursor.prev_dp = d;
     }
     cursor.prev_p = cursor.p;
-    cursor.p = mem.b32s1(cursor.prev_p);
+    cursor.p = MemPtr::from_raw(mem.b32s1(cursor.prev_p.0));
 }
 
 fn finish_vert_break_updated_height(
     mem: &MemState,
     scanner: &mut ScannerState,
     cursor: &mut VertBreakCursor,
-    q: i32,
+    source: VertBreakHeightSource,
     d: i32,
 ) {
-    scanner.active_width[1] += cursor.prev_dp + mem.b32s1(q + 1);
+    scanner.active_width[1] += cursor.prev_dp + source.width(mem);
     cursor.prev_dp = 0;
     advance_vert_break(mem, scanner, cursor, d);
 }
@@ -1123,12 +1150,16 @@ fn classify_vert_break_next(
     const PIC_NODE: u16 = 43; // xetex_format.h:466
     const PDF_NODE: u16 = 44; // xetex_format.h:467
 
-    if cursor.p == TEX_NULL {
-        return Ok(VertBreakNext::CheckPi(EJECT_PENALTY));
+    if cursor.p.is_null() {
+        return Ok(VertBreakNext::CheckPi {
+            pi: EJECT_PENALTY,
+            update_after: None,
+        });
     }
 
+    let p = cursor.p.as_idx().expect("non-null vert_break cursor");
     let node = mem
-        .classify(MemIdx::new(cursor.p))
+        .classify(p)
         .map_err(|_| NodeRecycleAbort::Confusion(c"vertbreak"))?;
     match node {
         AnyNode::HList(b) => {
@@ -1154,27 +1185,41 @@ fn classify_vert_break_next(
             }
             Ok(VertBreakNext::NotFound)
         }
-        AnyNode::Glue(_) => {
-            if mem.b16s1(cursor.prev_p) < MATH_NODE {
-                Ok(VertBreakNext::CheckPi(0))
+        AnyNode::Glue(glue) => {
+            if mem.b16s1(cursor.prev_p.0) < MATH_NODE {
+                Ok(VertBreakNext::CheckPi {
+                    pi: 0,
+                    update_after: Some(VertBreakUpdateSource::Glue(glue)),
+                })
             } else {
-                Ok(VertBreakNext::UpdateHeights)
+                Ok(VertBreakNext::UpdateHeights(VertBreakUpdateSource::Glue(
+                    glue,
+                )))
             }
         }
         AnyNode::Kern(kern) => {
             let link = kern.link(mem).0;
-            let t = if link == TEX_NULL {
-                PENALTY_NODE
+            if link != TEX_NULL
+                && mem
+                    .classify_glue(MemIdx::new(link))
+                    .ok()
+                    .flatten()
+                    .is_some()
+            {
+                Ok(VertBreakNext::CheckPi {
+                    pi: 0,
+                    update_after: Some(VertBreakUpdateSource::Kern(kern)),
+                })
             } else {
-                mem.b16s1(link)
-            };
-            if t == GLUE_NODE {
-                Ok(VertBreakNext::CheckPi(0))
-            } else {
-                Ok(VertBreakNext::UpdateHeights)
+                Ok(VertBreakNext::UpdateHeights(VertBreakUpdateSource::Kern(
+                    kern,
+                )))
             }
         }
-        AnyNode::Penalty(penalty) => Ok(VertBreakNext::CheckPi(penalty.penalty(mem))),
+        AnyNode::Penalty(penalty) => Ok(VertBreakNext::CheckPi {
+            pi: penalty.penalty(mem),
+            update_after: None,
+        }),
         AnyNode::Ins(_) | AnyNode::Mark(_) => Ok(VertBreakNext::NotFound),
         _ => Err(NodeRecycleAbort::Confusion(c"vertbreak")),
     }
@@ -1187,8 +1232,6 @@ fn vert_break_resume(
     h: i32,
     d: i32,
 ) -> Result<VertBreakStep, NodeRecycleAbort> {
-    use crate::mem::TEX_NULL;
-
     const EJECT_PENALTY: i32 = -10_000; // xetex-constants.h:336
     const INF_PENALTY: i32 = 10_000; // xetex-constants.h:338
     const INF_BAD: i32 = 10_000; // xetex-constants.h:337
@@ -1197,14 +1240,20 @@ fn vert_break_resume(
     loop {
         if let Some(glue) = cursor.finish_glue_after_shrinkage.take() {
             let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
-            finish_vert_break_updated_height(mem, scanner, cursor, spec.idx().0, d);
+            finish_vert_break_updated_height(
+                mem,
+                scanner,
+                cursor,
+                VertBreakHeightSource::GlueSpec(spec),
+                d,
+            );
             continue;
         }
 
-        let do_update = match classify_vert_break_next(mem, scanner, cursor)? {
-            VertBreakNext::NotFound => false,
-            VertBreakNext::UpdateHeights => true,
-            VertBreakNext::CheckPi(pi) => {
+        let update_source = match classify_vert_break_next(mem, scanner, cursor)? {
+            VertBreakNext::NotFound => None,
+            VertBreakNext::UpdateHeights(source) => Some(source),
+            VertBreakNext::CheckPi { pi, update_after } => {
                 if pi < INF_PENALTY {
                     let b = if scanner.active_width[1] < h {
                         if scanner.active_width[3] != 0
@@ -1243,26 +1292,28 @@ fn vert_break_resume(
                         scanner.best_height_plus_depth = scanner.active_width[1] + cursor.prev_dp;
                     }
                     if b == MAX_HALFWORD || pi <= EJECT_PENALTY {
-                        return Ok(VertBreakStep::Done(cursor.best_place));
+                        return Ok(VertBreakStep::Done(cursor.best_place.0));
                     }
                 }
                 // In the TEX_NULL case pi == EJECT_PENALTY, so we always
                 // return above. If we continue here, p is a valid node.
-                let nt = mem.b16s1(cursor.p);
-                (GLUE_NODE..=KERN_NODE).contains(&nt)
+                update_after
             }
         };
 
-        if do_update {
-            match mem
-                .classify(MemIdx::new(cursor.p))
-                .map_err(|_| NodeRecycleAbort::Confusion(c"vertbreak"))?
-            {
-                AnyNode::Kern(kern) => {
-                    finish_vert_break_updated_height(mem, scanner, cursor, kern.idx().0, d);
+        if let Some(update_source) = update_source {
+            match update_source {
+                VertBreakUpdateSource::Kern(kern) => {
+                    finish_vert_break_updated_height(
+                        mem,
+                        scanner,
+                        cursor,
+                        VertBreakHeightSource::Kern(kern),
+                        d,
+                    );
                     continue;
                 }
-                AnyNode::Glue(glue) => {
+                VertBreakUpdateSource::Glue(glue) => {
                     let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
                     let stretch_order = spec.stretch_order(mem) as usize;
                     scanner.active_width[2 + stretch_order] += spec.stretch(mem).0;
@@ -1271,15 +1322,20 @@ fn vert_break_resume(
                         cursor.finish_glue_after_shrinkage = Some(glue);
                         return Ok(VertBreakStep::InfiniteShrinkage { glue, spec });
                     }
-                    finish_vert_break_updated_height(mem, scanner, cursor, spec.idx().0, d);
+                    finish_vert_break_updated_height(
+                        mem,
+                        scanner,
+                        cursor,
+                        VertBreakHeightSource::GlueSpec(spec),
+                        d,
+                    );
                     continue;
                 }
-                _ => {}
             }
         }
 
         advance_vert_break(mem, scanner, cursor, d);
-        if cursor.p == TEX_NULL {
+        if cursor.p.is_null() {
             continue;
         }
     }
@@ -1330,7 +1386,8 @@ fn repair_vert_break_infinite_shrinkage(
 }
 
 pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
-    let mut cursor = crate::state::with_state_mut(|st| start_vert_break(&mut st.scanner, p));
+    let mut cursor =
+        crate::state::with_state_mut(|st| start_vert_break(&mut st.scanner, MemPtr::from_raw(p)));
     loop {
         match crate::state::with_state_mut(|st| {
             vert_break_resume(&mut st.mem, &mut st.scanner, &mut cursor, h, d)
@@ -1355,7 +1412,6 @@ const EXACTLY_VS: i16 = 0; // xetex-constants.h:256
 const ADDITIONAL_VS: i16 = 1; // xetex-constants.h:264
 const VSPLIT_CODE_VS: usize = 3; // xetex_format.h:483
 const MARK_VAL_VS: usize = 7; // xetex-constants.h:300
-const MARK_NODE_VS: u16 = 4; // xetex_format.h:384
 const SPLIT_FIRST_MARK_CODE_VS: usize = 3; // xetex_format.h:688
 const SPLIT_BOT_MARK_CODE_VS: usize = 4; // xetex_format.h:689
 
@@ -1478,12 +1534,11 @@ fn start_vsplit(
     };
 
     let split_max_d = eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_SPLIT_MAX_DEPTH_VS);
-    let list = v.list_ptr(mem).0;
     Ok(VsplitStart::Ready(VsplitState {
         h,
         v,
         split_max_d,
-        vert_break: start_vert_break(scanner, list),
+        vert_break: start_vert_break(scanner, v.list_ptr(mem)),
     }))
 }
 
@@ -1537,8 +1592,10 @@ fn split_vlist_at_break(
         state.v.set_list_ptr(mem, MemPtr::NULL);
     } else {
         loop {
-            if mem.b16s1(p) == MARK_NODE_VS {
-                let mark = unsafe { NodePtr::<MarkNode>::from_idx_unchecked(MemIdx::new(p)) };
+            if let AnyNode::Mark(mark) = mem
+                .classify(MemIdx::new(p))
+                .map_err(|_| NodeRecycleAbort::Confusion(c"vsplit"))?
+            {
                 collect_split_mark(mem, scanner, mark)?;
             }
             if mem.b32s1(p) == q {
@@ -1735,14 +1792,75 @@ fn insert_split_top_skip_before(
     }
     mem.set_b32s1(prev_p, q);
     mem.set_b32s1(q, p);
-    let tp = temp_ptr();
-    let avail_ht = mem.b32s1(tp + 1);
+    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(temp_ptr()))
+        .expect("new_skip_param sets temp_ptr to a glue spec");
+    let avail_ht = spec.width(mem).0;
     if avail_ht > height {
-        mem.set_b32s1(tp + 1, avail_ht - height);
+        spec.set_width(mem, Scaled(avail_ht - height));
     } else {
-        mem.set_b32s1(tp + 1, 0);
+        spec.set_width(mem, Scaled(0));
     }
     Ok(())
+}
+
+#[derive(Copy, Clone)]
+enum PruneDiscardNode {
+    Glue(NodePtr<GlueNode>),
+    Kern(NodePtr<KernNode>),
+    Penalty(NodePtr<crate::node::PenaltyNode>),
+}
+
+impl PruneDiscardNode {
+    fn idx(self) -> MemIdx {
+        match self {
+            PruneDiscardNode::Glue(node) => node.idx(),
+            PruneDiscardNode::Kern(node) => node.idx(),
+            PruneDiscardNode::Penalty(node) => node.idx(),
+        }
+    }
+
+    fn link(self, mem: &MemState) -> MemPtr {
+        match self {
+            PruneDiscardNode::Glue(node) => node.link(mem),
+            PruneDiscardNode::Kern(node) => node.link(mem),
+            PruneDiscardNode::Penalty(node) => node.link(mem),
+        }
+    }
+
+    fn set_link(self, mem: &mut MemState, link: MemPtr) {
+        match self {
+            PruneDiscardNode::Glue(node) => node.set_link(mem, link),
+            PruneDiscardNode::Kern(node) => node.set_link(mem, link),
+            PruneDiscardNode::Penalty(node) => node.set_link(mem, link),
+        }
+    }
+}
+
+fn prune_discard_node(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    prev_p: i32,
+    r: &mut i32,
+    node: PruneDiscardNode,
+    save_discards: bool,
+) -> Result<i32, NodeRecycleAbort> {
+    use crate::mem::TEX_NULL;
+
+    let q = node.link(mem).0;
+    node.set_link(mem, MemPtr::NULL);
+    mem.set_b32s1(prev_p, q);
+    if save_discards {
+        let discarded = node.idx().0;
+        if scanner.disc_ptr[VSPLIT_CODE_PPT] == TEX_NULL {
+            scanner.disc_ptr[VSPLIT_CODE_PPT] = discarded;
+        } else {
+            mem.set_b32s1(*r, discarded);
+        }
+        *r = discarded;
+    } else {
+        flush_node_list(mem, node.idx().0).map_err(NodeRecycleAbort::Confusion)?;
+    }
+    Ok(q)
 }
 
 /// translated from xetex-xetex0.c:9761 (prune_page_top)
@@ -1765,7 +1883,6 @@ pub fn prune_page_top(
     use crate::mem::TEX_NULL;
     let mut p = p;
     let mut prev_p;
-    let mut q;
     let mut r = TEX_NULL;
 
     prev_p = TEMP_HEAD;
@@ -1792,21 +1909,35 @@ pub fn prune_page_top(
                 prev_p = p;
                 p = mem.b32s1(prev_p);
             }
-            AnyNode::Glue(_) | AnyNode::Kern(_) | AnyNode::Penalty(_) => {
-                q = p;
-                p = mem.b32s1(q);
-                mem.set_b32s1(q, TEX_NULL);
-                mem.set_b32s1(prev_p, p);
-                if s {
-                    if scanner.disc_ptr[VSPLIT_CODE_PPT] == TEX_NULL {
-                        scanner.disc_ptr[VSPLIT_CODE_PPT] = q;
-                    } else {
-                        mem.set_b32s1(r, q);
-                    }
-                    r = q;
-                } else {
-                    flush_node_list(mem, q).map_err(NodeRecycleAbort::Confusion)?;
-                }
+            AnyNode::Glue(node) => {
+                p = prune_discard_node(
+                    mem,
+                    scanner,
+                    prev_p,
+                    &mut r,
+                    PruneDiscardNode::Glue(node),
+                    s,
+                )?;
+            }
+            AnyNode::Kern(node) => {
+                p = prune_discard_node(
+                    mem,
+                    scanner,
+                    prev_p,
+                    &mut r,
+                    PruneDiscardNode::Kern(node),
+                    s,
+                )?;
+            }
+            AnyNode::Penalty(node) => {
+                p = prune_discard_node(
+                    mem,
+                    scanner,
+                    prev_p,
+                    &mut r,
+                    PruneDiscardNode::Penalty(node),
+                    s,
+                )?;
             }
             _ => {
                 return Err(NodeRecycleAbort::Confusion(c"pruning"));
@@ -2096,17 +2227,20 @@ fn hpack_in(
                 let p_font = w.native_font(mem).0;
                 match sub {
                     NATIVE_WORD_NODE_HP | NATIVE_WORD_NODE_AT_HP => {
-                        let mut k: i32 =
-                            if q != r_node.idx().offset(5).0 && mem.b16s1(q) == DISC_NODE {
-                                mem.b16s0(q) as i32
+                        let mut k: i32 = if q != r_node.idx().offset(5).0 {
+                            if let Some(disc) = classify_disc_hp(mem, q) {
+                                disc.subtype(mem) as i32
                             } else {
                                 0
-                            };
+                            }
+                        } else {
+                            0
+                        };
                         while mem.b32s1(q) != p {
                             k -= 1;
                             q = mem.b32s1(q);
-                            if mem.b16s1(q) == DISC_NODE {
-                                k = mem.b16s0(q) as i32;
+                            if let Some(disc) = classify_disc_hp(mem, q) {
+                                k = disc.subtype(mem) as i32;
                             }
                         }
                         let mut pp = mem.b32s1(p);
@@ -2117,8 +2251,8 @@ fn hpack_in(
                                 {
                                     pp = ppw.link(mem).0;
                                     continue;
-                                } else if mem.b16s1(pp) == DISC_NODE {
-                                    let ppp = mem.b32s1(pp);
+                                } else if let Some(disc) = classify_disc_hp(mem, pp) {
+                                    let ppp = disc.link(mem).0;
                                     if let Some(pppw) =
                                         classify_native_word_with_font_hp(mem, ppp, p_font)
                                     {

@@ -8,6 +8,70 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 199 — 2026-06-18 — Execution: typed split-top/pagebuilder/main-control consumers
+
+**Type:** execution (workstream 01/01c), low-docs typed-consumer continuation
+with two read-only subagents scouting scanner and remaining small typed slices.
+
+**Code:** Took the safe typed cleanup vein rather than forcing the full scanner
+hub. In `packaging.rs`, `insert_split_top_skip_before` now treats `temp_ptr()`
+after `new_skip_param` as a typed `GlueSpecNode` and updates its width through
+`GlueSpecNode` accessors; `prune_page_top` discards glue/kern/penalty nodes via
+a small typed `PruneDiscardNode` helper using header `link`/`set_link` instead
+of raw `b32s1` link reads/writes. In `pagebuilder.rs`, `update_last_node_info`
+uses `glue.glue_spec()` directly. In `main_control.rs`, freshly allocated
+append-glue/append-kern nodes are reclassified with `classify_glue`/
+`classify_kern` instead of local unchecked constructors. Scanner scout found
+the real next slice is still `get_next`/control-sequence lookup with deferred
+outcomes around `check_outer_validity`, input EOF helpers, token-list insertion,
+diagnostics, and fatal errors.
+
+**Tests:** `cargo fmt --check`; `cargo check -p tectonic_engine_xetex`;
+dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full corpus
+`./plan/scripts/corpus.sh check all` returned **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1` (script exit 1 due to
+those expected divergences). Warnings held at **41**; `unsafe fn` **525**;
+`with_state(_mut)` sites **1014**.
+
+**Next:** stop mining `packaging` unless a tiny typed consumer is obvious; the
+next meaningful progress is the deliberate scanner/token hub. Start with
+`get_next` control-sequence lookup and an outcome enum that defers
+`check_outer_validity`, `begin_token_list`/`end_*`, `pseudo_input`/`input_line`,
+file warnings, fatal errors, and hash/pool/string overflows until after the
+borrow drops.
+
+---
+
+## Idiom session 198 — 2026-06-18 — Execution: packaging typed cursor/probe cleanup
+
+**Type:** execution (workstream 01/01c), low-docs typed-consumer batch with two
+read-only subagents scouting `packaging` targets.
+
+**Code:** Tightened `packaging.rs` typed boundaries without changing borrow
+shape. `vert_break` now carries nullable cursor/list pointers as `MemPtr`; the
+glue/kern update decision carries typed `VertBreakUpdateSource` handles instead
+of rechecking the raw `GLUE_NODE..=KERN_NODE` range; and height updates use
+`VertBreakHeightSource::{Kern,GlueSpec}` rather than raw `q + 1` reads.
+`split_vlist_at_break` classifies split marks through `AnyNode::Mark` instead
+of unchecked construction. `hpack_in` native-word discretionary probes now use a
+guarded `classify_disc_hp` helper and typed `DiscNode` subtype/link reads,
+preserving the synthetic `r + 5` guard and hi-mem partition.
+
+**Tests:** `cargo fmt --check`; `cargo check -p tectonic_engine_xetex`;
+dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full corpus
+`plan/scripts/corpus.sh check all` returned **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1` (script exit 1 due to
+those expected divergences). Warnings held at **41**; `unsafe fn` **525**;
+`with_state(_mut)` sites **1014**.
+
+**Next:** cheap `packaging` typed-consumer cleanup is thinner now. Possible
+small follow-up: `prune_page_top`/split-top height wrapper, but preserve
+`RuleDimen::raw()` for running rule dimensions. Otherwise take the deliberate
+scanner hub slice; broad build-page/shipout hubs still depend on scanner/token
+threading.
+
+---
+
 ## Idiom session 197 — 2026-06-18 — Execution: mlist/pagebuilder typed boundary cleanup
 
 **Type:** execution (workstream 01/01c), larger low-docs typed-consumer

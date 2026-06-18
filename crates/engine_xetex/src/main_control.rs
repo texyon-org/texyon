@@ -49,7 +49,6 @@ use crate::math::{
     math_limit_switch_global, math_radical_global, resume_after_display, start_eq_no,
     sub_sup_global,
 };
-use crate::node::{GlueNode, KernNode, NodePtr};
 use crate::output::{
     capture_to_diagnostic, char_warning, error_here_with_diagnostic, issue_message, print_cmd_chr,
     show_box, show_whatever,
@@ -2689,7 +2688,10 @@ fn append_glue_node(
     if p_raw == crate::mem::ALLOC_FAILED {
         return p_raw;
     }
-    let p = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p_raw)) };
+    let p = mem
+        .classify_glue(MemIdx::new(p_raw))
+        .expect("new_glue stamped a valid node")
+        .expect("new_glue returned a glue node");
     mem.set_b32s1(tail, p.idx().0);
     if decrement_spec_ref {
         let spec = p.glue_spec(mem).expect("non-null glue spec");
@@ -2726,7 +2728,10 @@ fn append_kern_node(mem: &mut crate::state::MemState, tail: i32, width: i32, sub
     if p_raw == crate::mem::ALLOC_FAILED {
         return p_raw;
     }
-    let p = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_raw)) };
+    let p = mem
+        .classify_kern(MemIdx::new(p_raw))
+        .expect("new_kern stamped a valid node")
+        .expect("new_kern returned a kern node");
     mem.set_b32s1(tail, p.idx().0);
     p.set_subtype(mem, subtype);
     p.idx().0

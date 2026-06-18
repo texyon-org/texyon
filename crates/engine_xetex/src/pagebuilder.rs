@@ -31,7 +31,7 @@ use crate::mem::new_null_box_global;
 use crate::mem::new_skip_param_global;
 use crate::mem::new_spec_global;
 use crate::mem::push_nest;
-use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr};
+use crate::node::{AnyBox, AnyNode};
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
 use crate::output::print_cstr;
@@ -553,9 +553,8 @@ fn update_last_node_info(st: &mut EngineState, p: i32) {
 
     match st.mem.classify(MemIdx::new(p)).expect("valid page node") {
         AnyNode::Glue(glue) => {
-            let gp = glue.glue_ptr(&st.mem);
-            st.shipout.last_glue = gp.0;
-            let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(gp).expect("non-null glue spec");
+            let spec = glue.glue_spec(&st.mem).expect("non-null glue spec");
+            st.shipout.last_glue = spec.idx().0;
             let ref_count = spec.ref_count(&st.mem);
             spec.set_ref_count(&mut st.mem, ref_count + 1);
         }
