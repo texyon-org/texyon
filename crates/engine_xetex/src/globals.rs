@@ -2544,11 +2544,6 @@ pub(crate) fn set_input_ptr(v: i32) {
         s.input.input_ptr = v;
     });
 }
-/// Returns `max_in_stack` (xetex-xetexd.h:505).
-#[inline]
-pub(crate) fn max_in_stack() -> i32 {
-    crate::state::with_state(|s| s.input.max_in_stack)
-}
 /// Sets `max_in_stack`.
 #[inline]
 pub(crate) fn set_max_in_stack(v: i32) {
@@ -2923,13 +2918,6 @@ pub(crate) fn set_source_filename_stack(k: i32, v: i32) {
 pub(crate) fn set_full_source_filename_stack(k: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.input.full_source_filename_stack[k as usize] = v;
-    });
-}
-/// Sets `line_stack[k]`.
-#[inline]
-pub(crate) fn set_line_stack(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.line_stack[k as usize] = v;
     });
 }
 /// Sets `line`.

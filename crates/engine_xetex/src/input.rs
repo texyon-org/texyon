@@ -5,14 +5,10 @@ use crate::consts::{CS_TOKEN_FLAG, INT_BASE, LOCAL_BASE};
 use crate::io::u_close;
 
 use crate::globals::{
-    buf_size, buffer_entry, cond_ptr, cur_boundary, cur_cs, cur_input, cur_tok, first, in_open,
-    input_ptr, last, line, max_buf_stack, max_in_open, max_in_stack, mem_b16s0, mem_b16s1,
-    mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, pseudo_files, set_buffer_entry, set_cur_input,
+    buf_size, cur_cs, cur_input, cur_tok, first, line, max_in_open, set_cur_input,
     set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_eof_seen,
-    set_first, set_full_source_filename_stack, set_grp_stack, set_if_stack, set_in_open,
-    set_input_ptr, set_input_stack, set_last, set_line, set_line_stack, set_max_buf_stack,
-    set_max_in_stack, set_mem_b32s0, set_source_filename_stack, stack_size,
+    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_first,
+    set_line, stack_size,
 };
 
 extern "C" {}
@@ -240,34 +236,55 @@ pub fn pseudo_close_global() {
 
 /// translated from xetex-xetex0.c:3097 (begin_file_reading)
 pub unsafe fn begin_file_reading() {
-    if in_open() == max_in_open() {
-        crate::errors::overflow(c"text input levels".as_ptr(), max_in_open());
+    if let Err(a) = crate::state::with_state_mut(begin_file_reading_in) {
+        a.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`begin_file_reading`] (`01b` §3). Input-stack
+/// fields are `st.input`; `cur_boundary`/`cond_ptr` read `st.save_stack`/
+/// `st.scanner`; `cur_input`/`first`/`line`/`max_in_open`/`buf_size`/
+/// `stack_size` are raw `mod raw` globals (safe under the borrow). Cold
+/// `overflow`s ride the [`InputAbort`] sentinel.
+pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
+    if st.input.in_open == max_in_open() {
+        return Err(InputAbort::Overflow {
+            what: c"text input levels".as_ptr(),
+            n: max_in_open(),
+        });
     }
     if first() == buf_size() {
-        crate::errors::overflow(c"buffer size".as_ptr(), buf_size());
+        return Err(InputAbort::Overflow {
+            what: c"buffer size".as_ptr(),
+            n: buf_size(),
+        });
     }
-    set_in_open(in_open() + 1);
-    let ptr = input_ptr();
-    if ptr > max_in_stack() {
-        set_max_in_stack(ptr);
+    st.input.in_open += 1;
+    let ptr = st.input.input_ptr;
+    if ptr > st.input.max_in_stack {
+        st.input.max_in_stack = ptr;
         if ptr == stack_size() {
-            crate::errors::overflow(c"input stack size".as_ptr(), stack_size());
+            return Err(InputAbort::Overflow {
+                what: c"input stack size".as_ptr(),
+                n: stack_size(),
+            });
         }
     }
-    set_input_stack(ptr, cur_input());
-    set_input_ptr(ptr + 1);
-    let idx = in_open();
+    st.input.input_stack[ptr as usize] = cur_input();
+    st.input.input_ptr = ptr + 1;
+    let idx = st.input.in_open as usize;
     set_cur_input_index(idx as u16);
-    set_source_filename_stack(idx, 0);
-    set_full_source_filename_stack(idx, 0);
-    set_eof_seen(idx, false);
-    set_grp_stack(idx, cur_boundary());
-    set_if_stack(idx, cond_ptr());
-    set_line_stack(idx, line());
+    st.input.source_filename_stack[idx] = 0;
+    st.input.full_source_filename_stack[idx] = 0;
+    st.input.eof_seen[idx] = false;
+    st.input.grp_stack[idx] = st.save_stack.cur_boundary;
+    st.input.if_stack[idx] = st.scanner.cond_ptr;
+    st.input.line_stack[idx] = line();
     set_cur_input_start(first());
     set_cur_input_state(MID_LINE);
     set_cur_input_name(0);
     set_cur_input_synctex_tag(0);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -308,41 +325,59 @@ pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) {
 
 /// translated from xetex-xetex0.c:2722 (pseudo_input)
 pub unsafe fn pseudo_input() -> bool {
-    set_last(first());
-    let p = mem_b32s0(pseudo_files());
+    match crate::state::with_state_mut(pseudo_input_in) {
+        Ok(b) => b,
+        Err(a) => a.fire(),
+    }
+}
+
+/// `&mut EngineState` core of [`pseudo_input`] (`01b` §3). `last`/`buffer`/
+/// `max_buf_stack`/`pseudo_files` are `st.input`; the block node is read/freed
+/// through `st.mem`/threaded `free_node`; `first`/`buf_size`/`set_cur_input_*`
+/// are raw `mod raw` globals (safe under the borrow). The cold buffer-size
+/// `overflow` rides the [`InputAbort`] sentinel (after restoring `loc`/`limit`,
+/// matching the original).
+pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool, InputAbort> {
+    st.input.last = first();
+    let p = st.mem.b32s0(st.input.pseudo_files);
     if p == crate::mem::TEX_NULL {
-        return false;
+        return Ok(false);
     }
-    set_mem_b32s0(pseudo_files(), mem_b32s1(p));
-    let sz = mem_b32s0(p);
-    if 4 * sz - 3 >= buf_size() - last() {
+    let next = st.mem.b32s1(p);
+    st.mem.set_b32s0(st.input.pseudo_files, next);
+    let sz = st.mem.b32s0(p);
+    if 4 * sz - 3 >= buf_size() - st.input.last {
         set_cur_input_loc(first());
-        set_cur_input_limit(last() - 1);
-        crate::errors::overflow(c"buffer size".as_ptr(), buf_size());
+        set_cur_input_limit(st.input.last - 1);
+        return Err(InputAbort::Overflow {
+            what: c"buffer size".as_ptr(),
+            n: buf_size(),
+        });
     }
-    set_last(first());
+    st.input.last = first();
     let mut r = p + 1;
     let for_end = p + sz - 1;
     while r <= for_end {
-        let w0 = mem_b16s3(r) as i32;
-        let w1 = mem_b16s2(r) as i32;
-        let w2 = mem_b16s1(r) as i32;
-        let w3 = mem_b16s0(r) as i32;
-        set_buffer_entry(last(), w0);
-        set_buffer_entry(last() + 1, w1);
-        set_buffer_entry(last() + 2, w2);
-        set_buffer_entry(last() + 3, w3);
-        set_last(last() + 4);
+        let w0 = st.mem.b16s3(r) as i32;
+        let w1 = st.mem.b16s2(r) as i32;
+        let w2 = st.mem.b16s1(r) as i32;
+        let w3 = st.mem.b16s0(r) as i32;
+        let last = st.input.last as usize;
+        st.input.buffer[last] = w0;
+        st.input.buffer[last + 1] = w1;
+        st.input.buffer[last + 2] = w2;
+        st.input.buffer[last + 3] = w3;
+        st.input.last += 4;
         r += 1;
     }
-    if last() >= max_buf_stack() {
-        set_max_buf_stack(last() + 1);
+    if st.input.last >= st.input.max_buf_stack {
+        st.input.max_buf_stack = st.input.last + 1;
     }
-    while last() > first() && buffer_entry(last() - 1) == ' ' as i32 {
-        set_last(last() - 1);
+    while st.input.last > first() && st.input.buffer[(st.input.last - 1) as usize] == ' ' as i32 {
+        st.input.last -= 1;
     }
-    crate::mem::free_node_global(p, sz);
-    true
+    crate::mem::free_node(&mut st.mem, p, sz);
+    Ok(true)
 }
 
 // ---------------------------------------------------------------------------
