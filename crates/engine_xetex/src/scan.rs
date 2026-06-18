@@ -43,21 +43,20 @@ use crate::pic::count_pdf_file_pages;
 
 use crate::globals::{
     align_state, arith_error, avail, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok,
-    cur_val, cur_val_level, def_ref, eqtb_b32s1, eqtb_is_null, expand_depth, expand_depth_count,
-    file_offset, first, fmem_ptr, font_glue, font_mem_size, font_params, font_ptr, hash_s1,
-    init_pool_ptr, last, max_print_line, max_reg_help_line, max_reg_num, mem_b16s0, mem_b16s1,
-    mem_b32s0, mem_b32s1, old_setting, open_parens, param_base, pool_ptr, pool_size, pseudo_files,
-    read_file_entry, read_open_entry, rust_stdout, save_ptr, save_stack_b32s1, scanner_status,
-    selector, set_align_state, set_arith_error, set_avail, set_buffer_entry, set_cur_chr,
-    set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level,
-    set_def_ref, set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue,
-    set_font_info_b32s1, set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1,
-    set_no_new_control_sequence, set_old_setting, set_open_parens, set_pool_ptr, set_pseudo_files,
-    set_read_open_entry, set_save_ptr, set_save_stack_b32s1, set_scanner_status, set_selector,
-    set_str_pool, set_str_ptr, set_warning_index, str_pool_entry, str_ptr, str_start, term_offset,
-    warning_index,
+    cur_val, cur_val_level, def_ref, eqtb_b32s1, expand_depth, expand_depth_count, file_offset,
+    first, fmem_ptr, font_glue, font_mem_size, font_params, font_ptr, hash_s1, init_pool_ptr, last,
+    max_print_line, max_reg_help_line, max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1,
+    old_setting, open_parens, param_base, pool_ptr, pool_size, pseudo_files, read_file_entry,
+    read_open_entry, rust_stdout, save_ptr, save_stack_b32s1, scanner_status, selector,
+    set_align_state, set_arith_error, set_avail, set_buffer_entry, set_cur_chr, set_cur_cmd,
+    set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
+    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
+    set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue, set_font_info_b32s1,
+    set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1,
+    set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence,
+    set_old_setting, set_open_parens, set_pool_ptr, set_pseudo_files, set_read_open_entry,
+    set_save_ptr, set_save_stack_b32s1, set_scanner_status, set_selector, set_str_pool,
+    set_str_ptr, set_warning_index, str_pool_entry, str_ptr, str_start, term_offset, warning_index,
 };
 use crate::mem::new_rule_global;
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
@@ -92,7 +91,6 @@ const MU_VAL_SCAN: i16 = 3;
 // INT_BASE + INT_PAR__xetex_hyphenatable_length offset for max_hyphenatable_length
 // (xetex_format.h:568, xetex_format.h:115; xetex_format.h:7826729 = INT_BASE).
 const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80; // xetex_format.h:115
-const INT_PAR_XETEX_INPUT_NORMALIZATION: i32 = 74; // xetex_format.h:109
 const INT_PAR_XETEX_TRACING_FONTS: i32 = 77; // xetex_format.h:112
 const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095; // xetex-constants.h:334
 
@@ -537,19 +535,8 @@ pub unsafe fn scan_mu_glue() {
 }
 
 // ---------------------------------------------------------------------------
-// get_input_normalization_state / get_tracing_fonts_state / scan_pdf_ext_toks
+// get_tracing_fonts_state / scan_pdf_ext_toks
 // ---------------------------------------------------------------------------
-
-/// Returns INTPAR(xetex_input_normalization), or 0 if eqtb is not yet initialized.
-///
-/// translated from xetex-xetex0.c:9073 (get_input_normalization_state)
-pub fn get_input_normalization_state() -> i32 {
-    if eqtb_is_null() {
-        0
-    } else {
-        eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INPUT_NORMALIZATION)
-    }
-}
 
 /// Returns INTPAR(xetex_tracing_fonts).
 ///
@@ -4241,7 +4228,8 @@ pub(crate) fn check_outer_validity_in(
                 st.errors.help_ptr = 4;
                 st.errors.help_line[3] = c"I suspect you have forgotten a `}', causing me".as_ptr();
                 st.errors.help_line[2] = c"to read past where you wanted me to stop.".as_ptr();
-                st.errors.help_line[1] = c"I'll try to recover; but if the error is serious,".as_ptr();
+                st.errors.help_line[1] =
+                    c"I'll try to recover; but if the error is serious,".as_ptr();
                 st.errors.help_line[0] =
                     c"you'd better type `E' or `X' now and fix your file.".as_ptr();
                 let oc = crate::errors::error_in(st);

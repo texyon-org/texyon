@@ -11,7 +11,9 @@ use crate::globals::{
     set_line, stack_size,
 };
 
-extern "C" {}
+extern "C" {
+    fn _tt_abort(fmt: *const libc::c_char) -> !;
+}
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).
 const TOKEN_LIST: u16 = 0;
@@ -43,12 +45,12 @@ const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 /// Never reached on a passing run.
 pub(crate) enum InputAbort {
     /// `overflow(what, n)` — capacity exhaustion (input stack / buffer).
-    Overflow {
-        what: *const libc::c_char,
-        n: i32,
-    },
+    Overflow { what: *const libc::c_char, n: i32 },
     /// `fatal_error(msg)` — interwoven alignment preambles.
     Fatal(*const libc::c_char),
+    /// `_tt_abort(msg)` — direct longjmp abort (input-buffer overflow / invalid
+    /// file input mode). Unlike `Fatal` this does not print a TeX error first.
+    TtAbort(*const libc::c_char),
     /// Main-memory arena exhaustion (the `get_avail`/`get_node` `ALLOC_FAILED`
     /// sentinel surfaced into the input layer).
     MainMemory,
@@ -64,6 +66,7 @@ impl InputAbort {
                 crate::errors::fatal_error(msg);
                 unreachable!("fatal_error longjmps")
             }
+            InputAbort::TtAbort(msg) => _tt_abort(msg),
             InputAbort::MainMemory => crate::mem::fire_main_memory_overflow(),
         }
     }

@@ -600,12 +600,6 @@ pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
 // eqtb accessor
 // ---------------------------------------------------------------------------
 
-/// Returns true if the `eqtb` store is empty (engine not yet initialized).
-#[inline]
-pub(crate) fn eqtb_is_null() -> bool {
-    crate::state::with_state(|s| s.eqtb.data.is_empty())
-}
-
 /// Copy the full MemoryWord at `eqtb[p]`.
 #[inline]
 pub(crate) fn eqtb_word(p: i32) -> crate::mem_types::MemoryWord {
@@ -2995,13 +2989,6 @@ pub(crate) fn set_max_buf_stack(v: i32) {
 #[inline]
 pub(crate) fn set_buffer_entry(k: i32, v: i32) {
     crate::state::with_state_mut(|s| s.input.buffer[k as usize] = v);
-}
-/// Returns a raw pointer to `buffer[offset]` for use with C APIs. The buffer
-/// is a Rust-owned `Vec` held by the `'static` thread-local and never
-/// reallocated during a run, so the pointer stays valid past the borrow.
-#[inline]
-pub(crate) unsafe fn buffer_ptr(offset: i32) -> *mut i32 {
-    crate::state::with_state_mut(|s| s.input.buffer.as_mut_ptr().add(offset as usize))
 }
 /// Writes `cur_input.limit = v`.
 #[inline]

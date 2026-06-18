@@ -3199,12 +3199,9 @@ fn print_name_of_file_in(st: &mut EngineState) {
 // bad_utf8_warning
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-xetex0.c:8970 (bad_utf8_warning)
-pub unsafe fn bad_utf8_warning() {
-    crate::state::with_state_mut(|st| bad_utf8_warning_in(st));
-}
-
-/// `&mut EngineState` core of [`bad_utf8_warning`].
+/// `&mut EngineState` core of `bad_utf8_warning` (translated from
+/// xetex-xetex0.c:8970); the legacy global wrapper is retired now that
+/// `get_uni_c_in` is its only caller.
 pub(crate) fn bad_utf8_warning_in(st: &mut EngineState) {
     begin_diagnostic_in(st);
     diagnostic_begin_capture_warning_here_in(st);

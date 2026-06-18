@@ -2,11 +2,11 @@
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{
-    buf_size, buffer_entry, buffer_ptr, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1,
-    first, last, max_buf_stack, name_length, name_length16, name_of_file, name_of_file16,
-    name_of_file16_entry, read_file_entry, read_file_ptr, read_open_entry, set_buffer_entry,
-    set_input_file, set_last, set_max_buf_stack, set_name_in_progress, set_name_length,
-    set_name_length16, set_read_open_entry, set_stop_at_space,
+    buf_size, buffer_entry, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1, first, last,
+    name_length, name_length16, name_of_file, name_of_file16, name_of_file16_entry,
+    read_file_entry, read_file_ptr, read_open_entry, set_buffer_entry, set_input_file, set_last,
+    set_name_in_progress, set_name_length, set_name_length16, set_read_open_entry,
+    set_stop_at_space,
 };
 use crate::globals::{
     cur_cmd, cur_cs, cur_input, def_ref, file_offset, init_pool_ptr, max_print_line, mem_b32s1,
@@ -17,6 +17,7 @@ use crate::globals::{
     stop_at_space, str_pool_entry, str_ptr, str_start, term_offset, texmf_log_name, warning_index,
     write_open,
 };
+use crate::input::InputAbort;
 
 // ---------------------------------------------------------------------------
 // UFILE — Rust mirror of the C `UFILE` struct (xetex-io.h:12–18)
@@ -25,7 +26,6 @@ use crate::globals::{
 /// Rust mirror of `UFILE` (xetex-io.h:12–18). Must stay layout-compatible.
 ///
 /// On Linux x86_64 the C layout is:
-use crate::output::bad_utf8_warning;
 use crate::output::begin_diagnostic;
 use crate::output::capture_to_diagnostic;
 use crate::output::diagnostic_begin_capture_warning_here;
@@ -350,7 +350,7 @@ pub unsafe fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i
 }
 
 // ---------------------------------------------------------------------------
-// input_line private helpers: buffer_overflow, conversion_error, apply_normalization
+// input_line private helpers: conversion_error, apply_normalization
 // ---------------------------------------------------------------------------
 
 // Persistent state for input_line, replacing C file-statics.
@@ -361,24 +361,28 @@ static mut UTF32_BUF: *mut u32 = std::ptr::null_mut();
 // TECkit normalizer converters; replaces `static TECkit_Converter normalizers[2]` (xetex-io.c:113).
 static mut NORMALIZERS: [*mut libc::c_void; 2] = [std::ptr::null_mut(), std::ptr::null_mut()];
 
-// translated from xetex-io.c:92 (buffer_overflow, was static)
-unsafe fn buffer_overflow() -> ! {
-    _tt_abort(c"unable to read an entire line (buffer too small)".as_ptr())
-}
-
 // translated from xetex-io.c:98 (conversion_error, was static)
-unsafe fn conversion_error(errcode: i32) {
-    begin_diagnostic();
-    print_nl(b'U' as i32);
-    print_cstr(c"nicode conversion failed (ICU error code = ".as_ptr());
-    print_int(errcode);
-    print_cstr(c") discarding any remaining text".as_ptr());
-    end_diagnostic(true);
+// Threaded `_in` core (`01b` §3); prints through the threaded diagnostic cores
+// under the live `&mut EngineState` borrow.
+fn conversion_error_in(st: &mut crate::state::EngineState, errcode: i32) {
+    crate::output::begin_diagnostic_in(st);
+    crate::output::print_nl_in(st, b'U' as i32);
+    crate::output::print_cstr_in(st, c"nicode conversion failed (ICU error code = ".as_ptr());
+    crate::output::print_int_in(st, errcode);
+    crate::output::print_cstr_in(st, c") discarding any remaining text".as_ptr());
+    crate::output::end_diagnostic_in(st, true);
 }
 
 // translated from xetex-io.c:110 (apply_normalization, was static)
-// Sets `last` on return; called from `input_line`.
-unsafe fn apply_normalization(buf: *mut u32, len: i32, norm: i32) {
+// Sets `input.last` on return; called from `input_line_in`. The cold
+// converter-creation / buffer-overflow `_tt_abort`s ride the `InputAbort`
+// sentinel (`01b` §5).
+unsafe fn apply_normalization_in(
+    st: &mut crate::state::EngineState,
+    buf: *mut u32,
+    len: i32,
+    norm: i32,
+) -> Result<(), InputAbort> {
     let norm_idx = (norm - 1) as usize; // 0 for NFC, 1 for NFD
     let norm_ptr = &mut NORMALIZERS[norm_idx];
     if norm_ptr.is_null() {
@@ -392,27 +396,32 @@ unsafe fn apply_normalization(buf: *mut u32, len: i32, norm: i32) {
             norm_ptr as *mut *mut libc::c_void,
         );
         if status != K_STATUS_NO_ERROR {
-            _tt_abort(c"failed to create normalizer".as_ptr())
+            return Err(InputAbort::TtAbort(c"failed to create normalizer".as_ptr()));
         }
     }
 
     let mut in_used: u32 = 0;
     let mut out_used: u32 = 0;
+    let out_ptr = st.input.buffer.as_mut_ptr().add(first() as usize) as *mut u8;
+    let out_cap = (4 * (buf_size() - first())) as u32;
     let status = TECkit_ConvertBuffer(
         *norm_ptr,
         buf as *const u8,
         (len * 4) as u32,
         &mut in_used,
-        buffer_ptr(first()) as *mut u8,
-        (4 * (buf_size() - first())) as u32,
+        out_ptr,
+        out_cap,
         &mut out_used,
         1,
     );
     TECkit_ResetConverter(*norm_ptr);
     if status != K_STATUS_NO_ERROR {
-        buffer_overflow();
+        return Err(InputAbort::TtAbort(
+            c"unable to read an entire line (buffer too small)".as_ptr(),
+        ));
     }
-    set_last(first() + (out_used / 4) as i32);
+    st.input.last = first() + (out_used / 4) as i32;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -423,13 +432,36 @@ unsafe fn apply_normalization(buf: *mut u32, len: i32, norm: i32) {
 ///
 /// translated from xetex-io.c:135 (input_line)
 pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
-    let norm = crate::scan::get_input_normalization_state();
+    match crate::state::with_state_mut(|st| input_line_in(st, f)) {
+        Ok(v) => v,
+        Err(a) => a.fire(),
+    }
+}
+
+/// Threaded `_in` core of [`input_line`] (`01b` §3). Holds one `&mut
+/// EngineState` borrow across the read, touching `st.input` (buffer/`last`/
+/// `max_buf_stack`) and `st.eqtb` (input normalization) directly and calling
+/// the threaded `get_uni_c_in`/`apply_normalization_in`/`conversion_error_in`
+/// cores under it. Cold `_tt_abort`s ride the [`InputAbort`] sentinel.
+pub(crate) unsafe fn input_line_in(
+    st: &mut crate::state::EngineState,
+    f: *mut UFile,
+) -> Result<libc::c_int, InputAbort> {
+    // INT_PAR_XETEX_INPUT_NORMALIZATION (xetex_format.h:109), cf. scan.rs.
+    const INT_PAR_XETEX_INPUT_NORMALIZATION: i32 = 74;
+    let norm = if st.eqtb.data.is_empty() {
+        0
+    } else {
+        st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INPUT_NORMALIZATION)
+    };
 
     if (*f).handle == INVALID_HANDLE {
-        _tt_abort(c"reads from synthetic \"terminal\" file #0 should never happen".as_ptr())
+        return Err(InputAbort::TtAbort(
+            c"reads from synthetic \"terminal\" file #0 should never happen".as_ptr(),
+        ));
     }
 
-    set_last(first());
+    st.input.last = first();
 
     if (*f).encoding_mode as i32 == ICUMAPPING {
         // ICU-converter path.
@@ -462,11 +494,13 @@ pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
         }
 
         if i == libc::EOF && *libc::__errno_location() != libc::EINTR && bytes_read == 0 {
-            return 0; // false
+            return Ok(0); // false
         }
 
         if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
-            buffer_overflow();
+            return Err(InputAbort::TtAbort(
+                c"unable to read an entire line (buffer too small)".as_ptr(),
+            ));
         }
 
         // Apply ICU mapping to produce UTF-32 in buffer.
@@ -487,27 +521,28 @@ pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
                     &mut error_code,
                 );
                 if error_code != 0 {
-                    conversion_error(error_code);
-                    return 0;
+                    conversion_error_in(st, error_code);
+                    return Ok(0);
                 }
                 // tmp_len is bytes; divide by 4 to get u32 count.
-                apply_normalization(UTF32_BUF, tmp_len / 4, norm);
+                apply_normalization_in(st, UTF32_BUF, tmp_len / 4, norm)?;
             }
             _ => {
                 // No normalization: convert directly into buffer[first..].
+                let out_ptr = st.input.buffer.as_mut_ptr().add(first() as usize);
                 let out_len = xetex_ucnv_to_utf32(
                     cnv,
-                    buffer_ptr(first()) as *mut libc::c_char,
+                    out_ptr as *mut libc::c_char,
                     4 * (buf_size() - first()),
                     BYTE_BUFFER as *const libc::c_char,
                     bytes_read as i32,
                     &mut error_code,
                 );
                 if error_code != 0 {
-                    conversion_error(error_code);
-                    return 0;
+                    conversion_error_in(st, error_code);
+                    return Ok(0);
                 }
-                set_last(first() + out_len / 4);
+                st.input.last = first() + out_len / 4;
             }
         }
 
@@ -517,11 +552,11 @@ pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
         }
     } else {
         // Non-ICU path: get_uni_c reads UTF-8/16/RAW.
-        let mut i = get_uni_c(f);
+        let mut i = get_uni_c_in(st, f)?;
         if (*f).skip_next_lf != 0 {
             (*f).skip_next_lf = 0;
             if i == b'\n' as i32 {
-                i = get_uni_c(f);
+                i = get_uni_c_in(st, f)?;
             }
         }
 
@@ -537,7 +572,7 @@ pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
                     *UTF32_BUF.add(tmp_len as usize) = i as u32;
                     tmp_len += 1;
                     while tmp_len < buf_size() {
-                        i = get_uni_c(f);
+                        i = get_uni_c_in(st, f)?;
                         if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
                             break;
                         }
@@ -547,33 +582,44 @@ pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
                 }
 
                 if i == libc::EOF && *libc::__errno_location() != libc::EINTR && tmp_len == 0 {
-                    return 0;
+                    return Ok(0);
                 }
                 if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
-                    buffer_overflow();
+                    return Err(InputAbort::TtAbort(
+                        c"unable to read an entire line (buffer too small)".as_ptr(),
+                    ));
                 }
-                apply_normalization(UTF32_BUF, tmp_len, norm);
+                apply_normalization_in(st, UTF32_BUF, tmp_len, norm)?;
             }
             _ => {
                 // No normalization: store directly into buffer[last..].
-                if last() < buf_size() && i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
-                    set_buffer_entry(last(), i);
-                    set_last(last() + 1);
-                    while last() < buf_size() {
-                        i = get_uni_c(f);
+                if st.input.last < buf_size()
+                    && i != libc::EOF
+                    && i != b'\n' as i32
+                    && i != b'\r' as i32
+                {
+                    st.input.buffer[st.input.last as usize] = i;
+                    st.input.last += 1;
+                    while st.input.last < buf_size() {
+                        i = get_uni_c_in(st, f)?;
                         if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
                             break;
                         }
-                        set_buffer_entry(last(), i);
-                        set_last(last() + 1);
+                        st.input.buffer[st.input.last as usize] = i;
+                        st.input.last += 1;
                     }
                 }
 
-                if i == libc::EOF && *libc::__errno_location() != libc::EINTR && last() == first() {
-                    return 0;
+                if i == libc::EOF
+                    && *libc::__errno_location() != libc::EINTR
+                    && st.input.last == first()
+                {
+                    return Ok(0);
                 }
                 if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
-                    buffer_overflow();
+                    return Err(InputAbort::TtAbort(
+                        c"unable to read an entire line (buffer too small)".as_ptr(),
+                    ));
                 }
             }
         }
@@ -583,24 +629,24 @@ pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
         }
     }
 
-    set_buffer_entry(last(), b' ' as i32);
-    if last() >= max_buf_stack() {
-        set_max_buf_stack(last());
+    st.input.buffer[st.input.last as usize] = b' ' as i32;
+    if st.input.last >= st.input.max_buf_stack {
+        st.input.max_buf_stack = st.input.last;
     }
 
     // Trim trailing spaces and EOL characters.
     loop {
-        if last() <= first() {
+        if st.input.last <= first() {
             break;
         }
-        let c = buffer_entry(last() - 1);
+        let c = st.input.buffer[(st.input.last - 1) as usize];
         if c != b' ' as i32 && c != b'\r' as i32 && c != b'\n' as i32 {
             break;
         }
-        set_last(last() - 1);
+        st.input.last -= 1;
     }
 
-    1 // true
+    Ok(1) // true
 }
 
 // ---------------------------------------------------------------------------
@@ -657,11 +703,17 @@ pub unsafe fn make_utf16_name() {
 /// Read one Unicode codepoint from a UFILE (handles UTF-8, UTF-16BE/LE, RAW).
 ///
 /// translated from xetex-io.c:373 (get_uni_c)
-pub unsafe fn get_uni_c(f: *mut UFile) -> libc::c_int {
+// Threaded `_in` core (`01b` §3); only re-enters state through the threaded
+// `bad_utf8_warning_in`. The impossible invalid-mode `_tt_abort` rides the
+// `InputAbort` sentinel. Called only from `input_line_in`.
+pub(crate) unsafe fn get_uni_c_in(
+    st: &mut crate::state::EngineState,
+    f: *mut UFile,
+) -> Result<libc::c_int, InputAbort> {
     if (*f).saved_char != -1 {
         let rval = (*f).saved_char as i32;
         (*f).saved_char = -1;
-        return rval;
+        return Ok(rval);
     }
 
     let mut rval: i32;
@@ -674,8 +726,8 @@ pub unsafe fn get_uni_c(f: *mut UFile) -> libc::c_int {
                 let extra_bytes = raw::bytesFromUTF8[rval as usize] as usize;
                 if extra_bytes >= 4 {
                     // case 5 and 4 in C: invalid leading bytes
-                    bad_utf8_warning();
-                    return 0xFFFD;
+                    crate::output::bad_utf8_warning_in(st);
+                    return Ok(0xFFFD);
                 }
                 // cases 3, 2, 1, 0: read `extra_bytes` continuation bytes.
                 // Translates C's falling-through switch (goto bad_utf8 on error).
@@ -685,8 +737,8 @@ pub unsafe fn get_uni_c(f: *mut UFile) -> libc::c_int {
                         if c != libc::EOF {
                             ttstub_input_ungetc((*f).handle, c);
                         }
-                        bad_utf8_warning();
-                        return 0xFFFD;
+                        crate::output::bad_utf8_warning_in(st);
+                        return Ok(0xFFFD);
                     }
                     rval = (rval << 6) + c;
                 }
@@ -694,8 +746,8 @@ pub unsafe fn get_uni_c(f: *mut UFile) -> libc::c_int {
                 let offset = raw::offsetsFromUTF8[extra_bytes];
                 rval = (rval as u32).wrapping_sub(offset) as i32;
                 if !(0..=0x10ffff).contains(&rval) {
-                    bad_utf8_warning();
-                    return 0xfffd;
+                    crate::output::bad_utf8_warning_in(st);
+                    return Ok(0xfffd);
                 }
             }
         }
@@ -745,11 +797,13 @@ pub unsafe fn get_uni_c(f: *mut UFile) -> libc::c_int {
         }
 
         _ => {
-            _tt_abort(c"internal error; file input mode is invalid".as_ptr());
+            return Err(InputAbort::TtAbort(
+                c"internal error; file input mode is invalid".as_ptr(),
+            ));
         }
     }
 
-    rval
+    Ok(rval)
 }
 
 // ---------------------------------------------------------------------------
