@@ -1740,29 +1740,49 @@ const SPACE_TOKEN: i32 = 0x1400020;
 const ACTIVE_CHAR: i32 = 13;
 
 /// translated from xetex-xetex0.c:6363 (str_toks_cat)
-pub unsafe fn str_toks_cat(b: i32, cat: i16) -> i32 {
+/// Cold abort reasons threaded out of [`str_toks_cat_in`] so the bridge
+/// wrapper can run the `overflow` longjmp *after* the `with_state` borrow
+/// drops (`01b` §5). Never observed on a passing run.
+pub(crate) enum StrToksAbort {
+    /// `pool_ptr + 1 > pool_size`: `overflow("pool size", …)`.
+    PoolOverflow,
+    /// `get_avail` exhausted the arena: `runaway()` then `overflow`.
+    MainMemoryOverflow,
+}
+
+/// `&mut` core of `str_toks_cat` (`01b` §3). Touches `mem` (token list) and
+/// `strings` (pool) only; both cold overflow paths defer to the caller via
+/// [`StrToksAbort`] (`01b` §5).
+pub(crate) fn str_toks_cat_in(
+    mem: &mut crate::state::MemState,
+    strings: &mut crate::state::StringsState,
+    b: i32,
+    cat: i16,
+) -> Result<i32, StrToksAbort> {
     use crate::mem::TEX_NULL;
 
-    if pool_ptr() + 1 > pool_size() {
-        crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+    if strings.pool_ptr + 1 > strings.pool_size {
+        return Err(StrToksAbort::PoolOverflow);
     }
 
     let mut p = TEMP_HEAD;
-    set_mem_b32s1(p, TEX_NULL);
+    mem.set_b32s1(p, TEX_NULL);
     let mut k = b;
 
-    while k < pool_ptr() {
-        let mut t = str_pool_entry(k) as i32;
+    while k < strings.pool_ptr {
+        let mut t = strings.str_pool[k as usize] as i32;
 
         if t == b' ' as i32 && cat == 0 {
             t = SPACE_TOKEN;
         } else {
             // decode UTF-16 surrogate pair
-            if (0xD800..0xDC00).contains(&t) && k + 1 < pool_ptr() {
-                let lo = str_pool_entry(k + 1) as i32;
+            if (0xD800..0xDC00).contains(&t) && k + 1 < strings.pool_ptr {
+                let lo = strings.str_pool[(k + 1) as usize] as i32;
                 if (0xDC00..0xE000).contains(&lo) {
                     k += 1;
-                    t = 0x10000 + ((t - 0xD800) << 10) + (str_pool_entry(k) as i32 - 0xDC00);
+                    t = 0x10000
+                        + ((t - 0xD800) << 10)
+                        + (strings.str_pool[k as usize] as i32 - 0xDC00);
                 }
             }
 
@@ -1775,23 +1795,39 @@ pub unsafe fn str_toks_cat(b: i32, cat: i16) -> i32 {
             }
         }
 
-        let q = if avail() == TEX_NULL {
-            crate::mem::get_avail_global()
+        let q = if mem.avail == TEX_NULL {
+            let qa = crate::mem::get_avail(mem);
+            if qa == crate::mem::ALLOC_FAILED {
+                return Err(StrToksAbort::MainMemoryOverflow);
+            }
+            qa
         } else {
-            let qa = avail();
-            set_avail(mem_b32s1(qa));
-            set_mem_b32s1(qa, TEX_NULL);
+            let qa = mem.avail;
+            mem.avail = mem.b32s1(qa);
+            mem.set_b32s1(qa, TEX_NULL);
             qa
         };
 
-        set_mem_b32s1(p, q);
-        set_mem_b32s0(q, t);
+        mem.set_b32s1(p, q);
+        mem.set_b32s0(q, t);
         p = q;
         k += 1;
     }
 
-    set_pool_ptr(b);
-    p
+    strings.pool_ptr = b;
+    Ok(p)
+}
+
+/// Bridge-down wrapper for legacy `str_toks_cat` callers (`01b` §3, §5). Runs
+/// the deferred cold overflow after the state borrow drops.
+pub unsafe fn str_toks_cat(b: i32, cat: i16) -> i32 {
+    match crate::state::with_state_mut(|st| str_toks_cat_in(&mut st.mem, &mut st.strings, b, cat)) {
+        Ok(p) => p,
+        Err(StrToksAbort::PoolOverflow) => {
+            crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr())
+        }
+        Err(StrToksAbort::MainMemoryOverflow) => crate::mem::fire_main_memory_overflow(),
+    }
 }
 
 /// translated from xetex-xetex0.c:6417 (str_toks)
