@@ -3,10 +3,9 @@
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{
     buf_size, buffer_entry, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1, first, last,
-    name_length, name_length16, name_of_file, name_of_file16, name_of_file16_entry,
-    read_file_entry, read_file_ptr, read_open_entry, set_buffer_entry, set_input_file, set_last,
-    set_name_in_progress, set_name_length, set_name_length16, set_read_open_entry,
-    set_stop_at_space,
+    name_length16, name_of_file, name_of_file16_entry, read_file_entry, read_file_ptr,
+    read_open_entry, set_buffer_entry, set_input_file, set_last, set_name_in_progress,
+    set_name_length, set_read_open_entry, set_stop_at_space,
 };
 use crate::globals::{
     cur_cmd, cur_cs, cur_input, def_ref, file_offset, init_pool_ptr, max_print_line, mem_b32s1,
@@ -656,17 +655,20 @@ pub(crate) unsafe fn input_line_in(
 /// Convert `name_of_file` (UTF-8) to UTF-16 in `name_of_file16`.
 ///
 /// translated from xetex-io.c:481 (make_utf16_name)
-pub unsafe fn make_utf16_name() {
-    crate::state::with_state_mut(|state| {
-        let name_len = state.input.name_length as usize;
-        let needed = name_len + 10;
-        if state.input.name_of_file16.len() < needed {
-            state.input.name_of_file16.resize(needed, 0);
-        }
-    });
-    let mut t = name_of_file16();
-    let end = (name_of_file() as *const u8).add(name_length() as usize);
-    let mut s = name_of_file() as *const u8;
+/// `&mut EngineState` core of [`make_utf16_name`] (`01b` §3). Touches only the
+/// `input` cluster (name buffers); no cold path. Safe to call under a live
+/// borrow.
+pub(crate) unsafe fn make_utf16_name_in(st: &mut crate::state::EngineState) {
+    let name_len = st.input.name_length as usize;
+    let needed = name_len + 10;
+    if st.input.name_of_file16.len() < needed {
+        st.input.name_of_file16.resize(needed, 0);
+    }
+    let base = st.input.name_of_file.as_ptr();
+    let mut t = st.input.name_of_file16.as_mut_ptr();
+    let t0 = t as *const u16;
+    let end = (base as *const u8).add(name_len);
+    let mut s = base as *const u8;
 
     while s < end {
         let mut rval = *s as u32;
@@ -693,7 +695,12 @@ pub unsafe fn make_utf16_name() {
             t = t.add(1);
         }
     }
-    set_name_length16(t.offset_from(name_of_file16()) as i32);
+    st.input.name_length16 = t.offset_from(t0) as i32;
+}
+
+/// Bridge-down wrapper for legacy `make_utf16_name` callers (`01b` §3).
+pub unsafe fn make_utf16_name() {
+    crate::state::with_state_mut(|st| make_utf16_name_in(st));
 }
 
 // ---------------------------------------------------------------------------
@@ -876,161 +883,223 @@ pub unsafe fn open_or_close_in() {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 /// translated from xetex-xetex0.c:7827 (begin_name)
-pub fn begin_name() {
-    use crate::globals::{
-        set_area_delimiter, set_ext_delimiter, set_file_name_quote_char, set_quoted_filename,
-    };
-    set_area_delimiter(0);
-    set_ext_delimiter(0);
-    set_quoted_filename(false);
-    set_file_name_quote_char(0);
+/// `&mut EngineState` core of [`begin_name`] (`01b` §3). Touches `scanner` only.
+pub(crate) fn begin_name_in(st: &mut crate::state::EngineState) {
+    st.scanner.area_delimiter = 0;
+    st.scanner.ext_delimiter = 0;
+    st.scanner.quoted_filename = false;
+    st.scanner.file_name_quote_char = 0;
 }
-/// translated from xetex-xetex0.c:7837 (more_name)
-pub unsafe fn more_name(c: u16) -> bool {
-    use crate::globals::{
-        file_name_quote_char, set_area_delimiter, set_ext_delimiter, set_file_name_quote_char,
-        set_quoted_filename, stop_at_space,
-    };
 
-    if stop_at_space() && file_name_quote_char() == 0 && c == b' ' as u16 {
-        return false;
+/// Bridge-down wrapper for legacy `begin_name` callers (`01b` §3).
+pub fn begin_name() {
+    crate::state::with_state_mut(|st| begin_name_in(st));
+}
+/// Cold abort reasons threaded out of the file-name machinery
+/// ([`more_name_in`]/[`end_name_in`]/[`make_name_string_in`]) so the bridge
+/// wrappers run the `overflow` longjmp after the state borrow drops (`01b` §5).
+pub(crate) enum NameAbort {
+    /// `pool_ptr + 1 > pool_size`: `overflow("pool size", …)`.
+    PoolSize,
+    /// `str_ptr + 3 > max_strings` (or `make_string`): `overflow("number of strings", …)`.
+    NumberOfStrings,
+}
+
+/// `&mut EngineState` core of [`more_name`] (`01b` §3). Touches `scanner` +
+/// `strings`; the cold pool-size `overflow` defers via [`NameAbort`].
+pub(crate) fn more_name_in(st: &mut crate::state::EngineState, c: u16) -> Result<bool, NameAbort> {
+    let stop = st.scanner.stop_at_space;
+    let q = st.scanner.file_name_quote_char;
+    if stop && q == 0 && c == b' ' as u16 {
+        return Ok(false);
     }
-    if stop_at_space() && file_name_quote_char() != 0 && c == file_name_quote_char() {
-        set_file_name_quote_char(0);
-        return true;
+    if stop && q != 0 && c == q {
+        st.scanner.file_name_quote_char = 0;
+        return Ok(true);
     }
-    if stop_at_space() && file_name_quote_char() == 0 && (c == b'"' as u16 || c == b'\'' as u16) {
-        set_file_name_quote_char(c);
-        set_quoted_filename(true);
-        return true;
+    if stop && q == 0 && (c == b'"' as u16 || c == b'\'' as u16) {
+        st.scanner.file_name_quote_char = c;
+        st.scanner.quoted_filename = true;
+        return Ok(true);
     }
-    if pool_ptr() + 1 > pool_size() {
-        crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+    if st.strings.pool_ptr + 1 > st.strings.pool_size {
+        return Err(NameAbort::PoolSize);
     }
-    set_str_pool(pool_ptr(), c);
-    set_pool_ptr(pool_ptr() + 1);
+    st.strings.str_pool[st.strings.pool_ptr as usize] = c;
+    st.strings.pool_ptr += 1;
     // cur_length = pool_ptr - str_start[str_ptr - TOO_BIG_CHAR]
-    let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
+    let cur_len =
+        st.strings.pool_ptr - st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
     if c == b'/' as u16 {
         // IS_DIR_SEP
-        set_area_delimiter(cur_len);
-        set_ext_delimiter(0);
+        st.scanner.area_delimiter = cur_len;
+        st.scanner.ext_delimiter = 0;
     } else if c == b'.' as u16 {
-        set_ext_delimiter(cur_len);
+        st.scanner.ext_delimiter = cur_len;
     }
-    true
+    Ok(true)
 }
-/// translated from xetex-xetex0.c:7870 (end_name)
-pub unsafe fn end_name() {
-    use crate::globals::{
-        area_delimiter, cur_area, cur_name, ext_delimiter, init_str_ptr, max_strings, set_cur_area,
-        set_cur_ext, set_cur_name, set_pool_ptr, set_str_ptr,
-    };
 
-    if str_ptr() + 3 > max_strings() {
-        crate::errors::overflow(
+/// Bridge-down wrapper for legacy `more_name` callers (`01b` §3, §5).
+/// translated from xetex-xetex0.c:7837 (more_name)
+pub unsafe fn more_name(c: u16) -> bool {
+    match crate::state::with_state_mut(|st| more_name_in(st, c)) {
+        Ok(v) => v,
+        Err(e) => fire_name_overflow(e),
+    }
+}
+
+/// Run a deferred file-name [`NameAbort`] overflow after the borrow drops.
+/// Never returns.
+pub(crate) unsafe fn fire_name_overflow(e: NameAbort) -> ! {
+    match e {
+        NameAbort::PoolSize => {
+            crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr())
+        }
+        NameAbort::NumberOfStrings => crate::errors::overflow(
             c"number of strings".as_ptr(),
-            max_strings() - init_str_ptr(),
-        );
+            crate::globals::max_strings() - crate::globals::init_str_ptr(),
+        ),
+    }
+}
+/// `&mut EngineState` core of [`end_name`] (`01b` §3). Touches `strings` +
+/// `scanner`; the cold `overflow("number of strings")` (direct or via
+/// `make_string`/`slow_make_string`) defers via [`NameAbort`].
+pub(crate) fn end_name_in(st: &mut crate::state::EngineState) -> Result<(), NameAbort> {
+    use crate::string_pool::{make_string, search_string, slow_make_string};
+
+    if st.strings.str_ptr + 3 > st.strings.max_strings {
+        return Err(NameAbort::NumberOfStrings);
     }
 
-    if area_delimiter() == 0 {
-        set_cur_area(EMPTY_STRING);
+    if st.scanner.area_delimiter == 0 {
+        st.scanner.cur_area = EMPTY_STRING;
     } else {
-        set_cur_area(str_ptr());
+        st.scanner.cur_area = st.strings.str_ptr;
         // str_start[str_ptr + 1 - TOO_BIG_CHAR] = str_start[str_ptr - TOO_BIG_CHAR] + area_delimiter
-        let new_start = str_start(str_ptr() - TOO_BIG_CHAR) + area_delimiter();
-        crate::globals::set_str_start(str_ptr() + 1 - TOO_BIG_CHAR, new_start);
-        set_str_ptr(str_ptr() + 1);
-        let temp_str = crate::string_pool::search_string_global(cur_area());
+        let new_start = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize]
+            + st.scanner.area_delimiter;
+        st.strings.str_start[(st.strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = new_start;
+        st.strings.str_ptr += 1;
+        let temp_str = search_string(&st.strings, st.scanner.cur_area);
         if temp_str > 0 {
-            set_cur_area(temp_str);
-            set_str_ptr(str_ptr() - 1);
+            st.scanner.cur_area = temp_str;
+            st.strings.str_ptr -= 1;
             // shift pool: str_pool[j - area_delimiter] = str_pool[j] for j in start..pool_ptr
-            let base = str_start(str_ptr() + 1 - TOO_BIG_CHAR);
-            let ad = area_delimiter();
-            let pp = pool_ptr();
+            let base = st.strings.str_start[(st.strings.str_ptr + 1 - TOO_BIG_CHAR) as usize];
+            let ad = st.scanner.area_delimiter;
+            let pp = st.strings.pool_ptr;
             for j in base..pp {
-                let v = str_pool_entry(j);
-                set_str_pool(j - ad, v);
+                let v = st.strings.str_pool[j as usize];
+                st.strings.str_pool[(j - ad) as usize] = v;
             }
-            set_pool_ptr(pp - ad);
+            st.strings.pool_ptr = pp - ad;
         }
     }
 
-    if ext_delimiter() == 0 {
-        set_cur_ext(EMPTY_STRING);
-        set_cur_name(crate::string_pool::slow_make_string_global());
+    if st.scanner.ext_delimiter == 0 {
+        st.scanner.cur_ext = EMPTY_STRING;
+        st.scanner.cur_name =
+            slow_make_string(&mut st.strings).map_err(|_| NameAbort::NumberOfStrings)?;
     } else {
-        set_cur_name(str_ptr());
+        st.scanner.cur_name = st.strings.str_ptr;
         // str_start[str_ptr+1 - TOO_BIG_CHAR] = str_start[str_ptr - TOO_BIG_CHAR]
         //   + ext_delimiter - area_delimiter - 1
-        let new_start =
-            str_start(str_ptr() - TOO_BIG_CHAR) + ext_delimiter() - area_delimiter() - 1;
-        crate::globals::set_str_start(str_ptr() + 1 - TOO_BIG_CHAR, new_start);
-        set_str_ptr(str_ptr() + 1);
+        let new_start = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize]
+            + st.scanner.ext_delimiter
+            - st.scanner.area_delimiter
+            - 1;
+        st.strings.str_start[(st.strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = new_start;
+        st.strings.str_ptr += 1;
 
-        set_cur_ext(crate::string_pool::make_string_global());
-        set_str_ptr(str_ptr() - 1);
-        let temp_str = crate::string_pool::search_string_global(cur_name());
+        st.scanner.cur_ext =
+            make_string(&mut st.strings).map_err(|_| NameAbort::NumberOfStrings)?;
+        st.strings.str_ptr -= 1;
+        let temp_str = search_string(&st.strings, st.scanner.cur_name);
         if temp_str > 0 {
-            set_cur_name(temp_str);
-            set_str_ptr(str_ptr() - 1);
+            st.scanner.cur_name = temp_str;
+            st.strings.str_ptr -= 1;
             // shift pool: str_pool[j - ext_delimiter + area_delimiter + 1] = str_pool[j]
-            let base = str_start(str_ptr() + 1 - TOO_BIG_CHAR);
-            let ed = ext_delimiter();
-            let ad = area_delimiter();
-            let pp = pool_ptr();
+            let base = st.strings.str_start[(st.strings.str_ptr + 1 - TOO_BIG_CHAR) as usize];
+            let ed = st.scanner.ext_delimiter;
+            let ad = st.scanner.area_delimiter;
+            let pp = st.strings.pool_ptr;
             let shift = ed - ad - 1;
             for j in base..pp {
-                let v = str_pool_entry(j);
-                set_str_pool(j - shift, v);
+                let v = st.strings.str_pool[j as usize];
+                st.strings.str_pool[(j - shift) as usize] = v;
             }
-            set_pool_ptr(pp - shift);
+            st.strings.pool_ptr = pp - shift;
         }
-        set_cur_ext(crate::string_pool::slow_make_string_global());
+        st.scanner.cur_ext =
+            slow_make_string(&mut st.strings).map_err(|_| NameAbort::NumberOfStrings)?;
+    }
+    Ok(())
+}
+
+/// Bridge-down wrapper for legacy `end_name` callers (`01b` §3, §5).
+/// translated from xetex-xetex0.c:7870 (end_name)
+pub unsafe fn end_name() {
+    if let Err(e) = crate::state::with_state_mut(|st| end_name_in(st)) {
+        fire_name_overflow(e);
     }
 }
-/// translated from xetex-xetex0.c:7928 (make_name_string)
-pub unsafe fn make_name_string() -> i32 {
-    use crate::globals::{
-        area_delimiter, ext_delimiter, max_strings, name_in_progress, name_length, name_length16,
-        name_of_file16_entry, set_area_delimiter, set_ext_delimiter,
-    };
-
-    let cur_length = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
-    if pool_ptr() + name_length() > pool_size() || str_ptr() == max_strings() || cur_length > 0 {
-        return b'?' as i32;
+/// `&mut EngineState` core of [`make_name_string`] (`01b` §3). Touches
+/// `strings`/`scanner`/`input`; cold `overflow` defers via [`NameAbort`].
+pub(crate) unsafe fn make_name_string_in(
+    st: &mut crate::state::EngineState,
+) -> Result<i32, NameAbort> {
+    let cur_length =
+        st.strings.pool_ptr - st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    if st.strings.pool_ptr + st.input.name_length > st.strings.pool_size
+        || st.strings.str_ptr == st.strings.max_strings
+        || cur_length > 0
+    {
+        return Ok(b'?' as i32);
     }
 
-    crate::io::make_utf16_name();
+    make_utf16_name_in(st);
 
-    for k in 0..name_length16() {
-        set_str_pool(pool_ptr(), name_of_file16_entry(k));
-        set_pool_ptr(pool_ptr() + 1);
+    for k in 0..st.input.name_length16 {
+        st.strings.str_pool[st.strings.pool_ptr as usize] = st.input.name_of_file16[k as usize];
+        st.strings.pool_ptr += 1;
     }
 
-    let result = crate::string_pool::make_string_global();
-    let save_area_delimiter = area_delimiter();
-    let save_ext_delimiter = ext_delimiter();
-    let save_name_in_progress = name_in_progress();
-    let save_stop_at_space = stop_at_space();
+    let result =
+        crate::string_pool::make_string(&mut st.strings).map_err(|_| NameAbort::NumberOfStrings)?;
+    let save_area_delimiter = st.scanner.area_delimiter;
+    let save_ext_delimiter = st.scanner.ext_delimiter;
+    let save_name_in_progress = st.scanner.name_in_progress;
+    let save_stop_at_space = st.scanner.stop_at_space;
 
-    set_name_in_progress(true);
-    begin_name();
-    set_stop_at_space(false);
+    st.scanner.name_in_progress = true;
+    begin_name_in(st);
+    st.scanner.stop_at_space = false;
 
     let mut k = 0;
-    while k < name_length16() && more_name(name_of_file16_entry(k)) {
+    while k < st.input.name_length16 {
+        let c = st.input.name_of_file16[k as usize];
+        if !more_name_in(st, c)? {
+            break;
+        }
         k += 1;
     }
 
-    set_stop_at_space(save_stop_at_space);
-    end_name();
-    set_name_in_progress(save_name_in_progress);
-    set_area_delimiter(save_area_delimiter);
-    set_ext_delimiter(save_ext_delimiter);
-    result
+    st.scanner.stop_at_space = save_stop_at_space;
+    end_name_in(st)?;
+    st.scanner.name_in_progress = save_name_in_progress;
+    st.scanner.area_delimiter = save_area_delimiter;
+    st.scanner.ext_delimiter = save_ext_delimiter;
+    Ok(result)
+}
+
+/// Bridge-down wrapper for legacy `make_name_string` callers (`01b` §3, §5).
+/// translated from xetex-xetex0.c:7928 (make_name_string)
+pub unsafe fn make_name_string() -> i32 {
+    match crate::state::with_state_mut(|st| make_name_string_in(st)) {
+        Ok(v) => v,
+        Err(e) => fire_name_overflow(e),
+    }
 }
 /// translated from xetex-xetex0.c:13424 (scan_and_pack_name)
 pub unsafe fn scan_and_pack_name() {

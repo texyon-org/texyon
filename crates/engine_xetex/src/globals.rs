@@ -690,28 +690,10 @@ pub(crate) fn set_name_length(v: i32) {
         s.input.name_length = v;
     });
 }
-/// Returns `name_of_file16` (UTF-16 name buffer).
-#[inline]
-pub(crate) fn name_of_file16() -> *mut u16 {
-    crate::state::with_state(|s| {
-        if s.input.name_of_file16.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            s.input.name_of_file16.as_ptr() as *mut u16
-        }
-    })
-}
 /// Returns `name_length16`.
 #[inline]
 pub(crate) fn name_length16() -> i32 {
     crate::state::with_state(|s| s.input.name_length16)
-}
-/// Write `name_length16 = v`.
-#[inline]
-pub(crate) fn set_name_length16(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.name_length16 = v;
-    });
 }
 /// Returns `name_length`.
 #[inline]
@@ -1411,19 +1393,10 @@ pub(crate) fn set_cur_ext(v: i32) {
 
 /// Returns `area_delimiter` (pool offset of last dir-sep in current filename).
 #[inline]
-pub(crate) fn area_delimiter() -> i32 {
-    crate::state::with_state(|state| state.scanner.area_delimiter)
-}
-#[inline]
 pub(crate) fn set_area_delimiter(v: i32) {
     crate::state::with_state_mut(|state| {
         state.scanner.area_delimiter = v;
     });
-}
-/// Returns `ext_delimiter` (pool offset of last '.' in current filename).
-#[inline]
-pub(crate) fn ext_delimiter() -> i32 {
-    crate::state::with_state(|state| state.scanner.ext_delimiter)
 }
 #[inline]
 pub(crate) fn set_ext_delimiter(v: i32) {
@@ -1436,20 +1409,8 @@ pub(crate) fn quoted_filename() -> bool {
     crate::state::with_state(|state| state.scanner.quoted_filename)
 }
 #[inline]
-pub(crate) fn set_quoted_filename(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.quoted_filename = v;
-    });
-}
-#[inline]
 pub(crate) fn file_name_quote_char() -> u16 {
     crate::state::with_state(|state| state.scanner.file_name_quote_char)
-}
-#[inline]
-pub(crate) fn set_file_name_quote_char(v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.file_name_quote_char = v;
-    });
 }
 
 // ---------------------------------------------------------------------------
