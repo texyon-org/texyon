@@ -2686,11 +2686,6 @@ pub(crate) fn set_if_line(v: i32) {
         s.scanner.if_line = v;
     });
 }
-/// Returns `skip_line` (source line where the current \if-skip started).
-#[inline]
-pub(crate) fn skip_line() -> i32 {
-    crate::state::with_state(|s| s.scanner.skip_line)
-}
 /// Sets `skip_line = v`.
 #[inline]
 pub(crate) fn set_skip_line(v: i32) {

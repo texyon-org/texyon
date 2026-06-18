@@ -4148,139 +4148,150 @@ const TOKEN_LIST_COV: u16 = 0;
 
 /// translated from xetex-xetex0.c:3036 (check_outer_validity)
 pub unsafe fn check_outer_validity() {
-    use crate::globals::{
-        cur_cs, cur_if, cur_input, par_token, scanner_status, set_align_state, set_cur_chr,
-        set_cur_cmd, set_cur_cs, set_cur_tok, set_deletions_allowed, set_help_line, set_help_ptr,
-        set_long_state, set_mem_b32s0, set_mem_b32s1, skip_line, warning_index,
-    };
-    if scanner_status() == NORMAL_COV {
-        return;
+    match crate::state::with_state_mut(check_outer_validity_in) {
+        Ok(oc) => oc.finish(),
+        Err(a) => a.fire(),
     }
-    set_deletions_allowed(false);
+}
+
+/// `&mut EngineState` core of [`check_outer_validity`] (`01b` §3). The whole
+/// cold runaway/forbidden-cs/incomplete-`\if` recovery now runs under one
+/// borrow: scanner/error/input state is touched directly; `cur_cs`/`cur_input`/
+/// `set_cur_*` are raw `mod raw` globals; the token-list pushes go through
+/// `begin_token_list_in`, the diagnostics through `runaway_in`/the threaded
+/// `print_*_in`/`error_here_with_diagnostic_in` cores, and the recovery error
+/// through `error_in`/`ins_error_in`. The final `error`/`ins_error`
+/// [`ErrorOutcome`](crate::errors::ErrorOutcome) is returned for the wrapper to
+/// `finish` after the borrow drops; arena exhaustion and `begin_token_list`
+/// overflow ride [`InputAbort`](crate::input::InputAbort). Normal (`NORMAL`)
+/// status returns `ErrorOutcome::Continue`.
+pub(crate) fn check_outer_validity_in(
+    st: &mut crate::state::EngineState,
+) -> Result<crate::errors::ErrorOutcome, crate::input::InputAbort> {
+    use crate::errors::ErrorOutcome;
+    use crate::globals::{cur_cs, cur_input, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_tok};
+    use crate::input::InputAbort;
+
+    if st.scanner.scanner_status == NORMAL_COV {
+        return Ok(ErrorOutcome::Continue);
+    }
+    st.errors.deletions_allowed = false;
 
     // If cur_cs is a control sequence, push it back as a backed-up token.
     if cur_cs() != 0 {
         let ci = cur_input();
         if ci.state == TOKEN_LIST_COV || ci.name < 1 || ci.name > 17 {
-            let p = crate::mem::get_avail_global();
-            set_mem_b32s0(p, CS_TOKEN_FLAG + cur_cs());
-            crate::input::begin_token_list(p, 3 /* BACKED_UP */);
+            let p = crate::mem::get_avail(&mut st.mem);
+            if p == crate::mem::ALLOC_FAILED {
+                return Err(InputAbort::MainMemory);
+            }
+            st.mem.set_b32s0(p, CS_TOKEN_FLAG + cur_cs());
+            crate::input::begin_token_list_in(st, p, 3 /* BACKED_UP */)?;
         }
         set_cur_cmd(SPACER);
         set_cur_chr(' ' as i32);
     }
 
-    if scanner_status() > SKIPPING_COV {
+    let oc = if st.scanner.scanner_status > SKIPPING_COV {
         // scanner_status > SKIPPING: runaway — we hit EOF or OUTER inside a definition/macro/preamble.
-        runaway();
+        crate::errors::runaway_in(st);
         if cur_cs() == 0 {
-            error_here_with_diagnostic(c"File ended".as_ptr());
+            crate::output::error_here_with_diagnostic_in(st, c"File ended".as_ptr());
         } else {
             set_cur_cs(0);
-            error_here_with_diagnostic(c"Forbidden control sequence found".as_ptr());
+            crate::output::error_here_with_diagnostic_in(
+                st,
+                c"Forbidden control sequence found".as_ptr(),
+            );
         }
 
-        let p = crate::mem::get_avail_global();
-        match scanner_status() {
+        let p = crate::mem::get_avail(&mut st.mem);
+        if p == crate::mem::ALLOC_FAILED {
+            return Err(InputAbort::MainMemory);
+        }
+        match st.scanner.scanner_status {
             DEFINING_COV => {
-                crate::output::print_cstr(c" while scanning definition".as_ptr());
-                set_mem_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+                crate::output::print_cstr_in(st, c" while scanning definition".as_ptr());
+                st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
             }
             MATCHING_COV => {
-                crate::output::print_cstr(c" while scanning use".as_ptr());
-                set_mem_b32s0(p, par_token());
-                set_long_state(OUTER_CALL_COV);
+                crate::output::print_cstr_in(st, c" while scanning use".as_ptr());
+                let par_token = st.input.par_token;
+                st.mem.set_b32s0(p, par_token);
+                st.scanner.long_state = OUTER_CALL_COV;
             }
             ALIGNING_COV => {
-                crate::output::print_cstr(c" while scanning preamble".as_ptr());
-                set_mem_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+                crate::output::print_cstr_in(st, c" while scanning preamble".as_ptr());
+                st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
                 let q = p;
-                let p2 = crate::mem::get_avail_global();
-                set_mem_b32s1(p2, q);
-                set_mem_b32s0(p2, CS_TOKEN_FLAG + FROZEN_CR_COV);
-                set_align_state(-1_000_000);
-                crate::input::begin_token_list(p2, 5 /* INSERTED */);
+                let p2 = crate::mem::get_avail(&mut st.mem);
+                if p2 == crate::mem::ALLOC_FAILED {
+                    return Err(InputAbort::MainMemory);
+                }
+                st.mem.set_b32s1(p2, q);
+                st.mem.set_b32s0(p2, CS_TOKEN_FLAG + FROZEN_CR_COV);
+                st.scanner.align_state = -1_000_000;
+                crate::input::begin_token_list_in(st, p2, 5 /* INSERTED */)?;
                 // For ALIGNING, we push p2 as the token list, not p.
                 // Then fall through to the help message.
-                crate::output::print_cstr(c" of ".as_ptr());
-                crate::output::sprint_cs(warning_index());
-                capture_to_diagnostic(std::ptr::null_mut());
-                set_help_ptr(4);
-                set_help_line(
-                    3,
-                    c"I suspect you have forgotten a `}', causing me".as_ptr(),
-                );
-                set_help_line(2, c"to read past where you wanted me to stop.".as_ptr());
-                set_help_line(
-                    1,
-                    c"I'll try to recover; but if the error is serious,".as_ptr(),
-                );
-                set_help_line(
-                    0,
-                    c"you'd better type `E' or `X' now and fix your file.".as_ptr(),
-                );
-                crate::errors::error();
-                set_deletions_allowed(true);
-                return;
+                crate::output::print_cstr_in(st, c" of ".as_ptr());
+                let warning_index = st.scanner.warning_index;
+                crate::output::sprint_cs_in(st, warning_index);
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                st.errors.help_ptr = 4;
+                st.errors.help_line[3] = c"I suspect you have forgotten a `}', causing me".as_ptr();
+                st.errors.help_line[2] = c"to read past where you wanted me to stop.".as_ptr();
+                st.errors.help_line[1] = c"I'll try to recover; but if the error is serious,".as_ptr();
+                st.errors.help_line[0] =
+                    c"you'd better type `E' or `X' now and fix your file.".as_ptr();
+                let oc = crate::errors::error_in(st);
+                st.errors.deletions_allowed = true;
+                return Ok(oc);
             }
             ABSORBING_COV => {
-                crate::output::print_cstr(c" while scanning text".as_ptr());
-                set_mem_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+                crate::output::print_cstr_in(st, c" while scanning text".as_ptr());
+                st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
             }
             _ => {}
         }
 
-        crate::input::begin_token_list(p, 5 /* INSERTED */);
-        crate::output::print_cstr(c" of ".as_ptr());
-        crate::output::sprint_cs(warning_index());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(4);
-        set_help_line(
-            3,
-            c"I suspect you have forgotten a `}', causing me".as_ptr(),
-        );
-        set_help_line(2, c"to read past where you wanted me to stop.".as_ptr());
-        set_help_line(
-            1,
-            c"I'll try to recover; but if the error is serious,".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"you'd better type `E' or `X' now and fix your file.".as_ptr(),
-        );
-        crate::errors::error();
+        crate::input::begin_token_list_in(st, p, 5 /* INSERTED */)?;
+        crate::output::print_cstr_in(st, c" of ".as_ptr());
+        let warning_index = st.scanner.warning_index;
+        crate::output::sprint_cs_in(st, warning_index);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 4;
+        st.errors.help_line[3] = c"I suspect you have forgotten a `}', causing me".as_ptr();
+        st.errors.help_line[2] = c"to read past where you wanted me to stop.".as_ptr();
+        st.errors.help_line[1] = c"I'll try to recover; but if the error is serious,".as_ptr();
+        st.errors.help_line[0] = c"you'd better type `E' or `X' now and fix your file.".as_ptr();
+        crate::errors::error_in(st)
     } else {
         // scanner_status == SKIPPING: inside \if...\fi skip.
-        error_here_with_diagnostic(c"Incomplete ".as_ptr());
-        print_cmd_chr(IF_TEST_COV, cur_if() as i32);
-        crate::output::print_cstr(c"; all text was ignored after line ".as_ptr());
-        crate::output::print_int(skip_line());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(3);
-        set_help_line(
-            2,
-            c"A forbidden control sequence occurred in skipped text.".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"This kind of error happens when you say `\\if...' and forget".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"the matching `\\fi'. I've inserted a `\\fi'; this might work.".as_ptr(),
-        );
+        crate::output::error_here_with_diagnostic_in(st, c"Incomplete ".as_ptr());
+        let cur_if = st.scanner.cur_if;
+        crate::output::print_cmd_chr_in(st, IF_TEST_COV, cur_if as i32);
+        crate::output::print_cstr_in(st, c"; all text was ignored after line ".as_ptr());
+        let skip_line = st.scanner.skip_line;
+        crate::output::print_int_in(st, skip_line);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 3;
+        st.errors.help_line[2] = c"A forbidden control sequence occurred in skipped text.".as_ptr();
+        st.errors.help_line[1] =
+            c"This kind of error happens when you say `\\if...' and forget".as_ptr();
+        st.errors.help_line[0] =
+            c"the matching `\\fi'. I've inserted a `\\fi'; this might work.".as_ptr();
         if cur_cs() != 0 {
             set_cur_cs(0);
         } else {
-            set_help_line(
-                2,
-                c"The file ended while I was skipping conditional text.".as_ptr(),
-            );
+            st.errors.help_line[2] =
+                c"The file ended while I was skipping conditional text.".as_ptr();
         }
         set_cur_tok(CS_TOKEN_FLAG + FROZEN_FI_COV);
-        crate::input::ins_error();
-    }
-    set_deletions_allowed(true);
+        crate::input::ins_error_in(st)?
+    };
+    st.errors.deletions_allowed = true;
+    Ok(oc)
 }
 
 // ---------------------------------------------------------------------------
