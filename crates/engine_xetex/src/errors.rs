@@ -485,7 +485,15 @@ pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
 }
 // translated from xetex-xetex0.c:107 (runaway)
 pub unsafe fn runaway() {
-    use crate::globals::{def_ref, error_line, mem_b32s1, scanner_status};
+    crate::state::with_state_mut(runaway_in);
+}
+
+/// `&mut EngineState` core of [`runaway`] (`01b` §3). Self-contained cold
+/// diagnostic: reads `scanner_status`/`def_ref` (`st.scanner`), `error_line`
+/// (`st.errors`), and the token-list head (`st.mem`), printing in-order through
+/// the threaded `print_*_in`/`show_token_list_in` cores (sessions 182–183). No
+/// allocation, no cold-abort path.
+pub(crate) fn runaway_in(st: &mut crate::state::EngineState) {
     use crate::mem::TEX_NULL;
 
     const SKIPPING: u8 = 1;
@@ -496,28 +504,30 @@ pub unsafe fn runaway() {
     const TEMP_HEAD: i32 = 4_999_996; // MEM_TOP - 3
     const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
 
-    if scanner_status() > SKIPPING {
-        let p = match scanner_status() {
+    if st.scanner.scanner_status > SKIPPING {
+        let p = match st.scanner.scanner_status {
             DEFINING => {
-                crate::output::print_nl_cstr(c"Runaway definition".as_ptr());
-                def_ref()
+                crate::output::print_nl_cstr_in(st, c"Runaway definition".as_ptr());
+                st.scanner.def_ref
             }
             MATCHING => {
-                crate::output::print_nl_cstr(c"Runaway argument".as_ptr());
+                crate::output::print_nl_cstr_in(st, c"Runaway argument".as_ptr());
                 TEMP_HEAD
             }
             ALIGNING => {
-                crate::output::print_nl_cstr(c"Runaway preamble".as_ptr());
+                crate::output::print_nl_cstr_in(st, c"Runaway preamble".as_ptr());
                 HOLD_HEAD
             }
             ABSORBING => {
-                crate::output::print_nl_cstr(c"Runaway text".as_ptr());
-                def_ref()
+                crate::output::print_nl_cstr_in(st, c"Runaway text".as_ptr());
+                st.scanner.def_ref
             }
             _ => return,
         };
-        crate::output::print_char('?' as i32);
-        crate::output::print_ln();
-        crate::output::show_token_list(mem_b32s1(p), TEX_NULL, error_line() - 10);
+        crate::output::print_char_in(st, '?' as i32);
+        crate::output::print_ln_in(st);
+        let head = st.mem.b32s1(p);
+        let l = st.errors.error_line - 10;
+        crate::output::show_token_list_in(st, head, TEX_NULL, l);
     }
 }
