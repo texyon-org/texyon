@@ -175,8 +175,21 @@ pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), In
 
 /// translated from xetex-xetex0.c:3167 (back_error)
 pub unsafe fn back_error() {
-    back_input();
-    crate::errors::error();
+    match crate::state::with_state_mut(back_error_in) {
+        Ok(oc) => oc.finish(),
+        Err(a) => a.fire(),
+    }
+}
+
+/// `&mut EngineState` core of [`back_error`] (`01b` §3): [`back_input_in`] then
+/// [`error_in`]. The `error` cold tail rides the returned [`ErrorOutcome`]
+/// (`finish`ed by the wrapper after the borrow drops); the `back_input`
+/// overflow rides [`InputAbort`].
+pub(crate) fn back_error_in(
+    st: &mut crate::state::EngineState,
+) -> Result<crate::errors::ErrorOutcome, InputAbort> {
+    back_input_in(st)?;
+    Ok(crate::errors::error_in(st))
 }
 
 // ---------------------------------------------------------------------------
@@ -185,9 +198,21 @@ pub unsafe fn back_error() {
 
 /// translated from xetex-xetex0.c:3174 (ins_error)
 pub unsafe fn ins_error() {
-    back_input();
+    match crate::state::with_state_mut(ins_error_in) {
+        Ok(oc) => oc.finish(),
+        Err(a) => a.fire(),
+    }
+}
+
+/// `&mut EngineState` core of [`ins_error`] (`01b` §3): [`back_input_in`], stamp
+/// the backed-up token list as `INSERTED`, then [`error_in`]. Same dual-sentinel
+/// shape as [`back_error_in`].
+pub(crate) fn ins_error_in(
+    st: &mut crate::state::EngineState,
+) -> Result<crate::errors::ErrorOutcome, InputAbort> {
+    back_input_in(st)?;
     set_cur_input_index(INSERTED);
-    crate::errors::error();
+    Ok(crate::errors::error_in(st))
 }
 
 // ---------------------------------------------------------------------------
@@ -386,11 +411,22 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
 
 /// translated from xetex-xetex0.c:3998 (insert_relax)
 pub unsafe fn insert_relax() {
+    if let Err(a) = crate::state::with_state_mut(insert_relax_in) {
+        a.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`insert_relax`] (`01b` §3): back up the current
+/// control sequence followed by a frozen `\relax`, marking the stack `INSERTED`.
+/// `cur_cs`/`cur_tok` are raw `mod raw` globals; both `back_input`s ride
+/// [`InputAbort`].
+pub(crate) fn insert_relax_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
     set_cur_tok(CS_TOKEN_FLAG + cur_cs());
-    back_input();
+    back_input_in(st)?;
     set_cur_tok(CS_TOKEN_FLAG + FROZEN_RELAX);
-    back_input();
+    back_input_in(st)?;
     set_cur_input_index(INSERTED);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
