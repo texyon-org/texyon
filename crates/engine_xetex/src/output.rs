@@ -1260,20 +1260,25 @@ pub(crate) fn print_spec_in(st: &mut EngineState, p: i32, s: *const libc::c_char
     if p < 0 || p >= st.mem.lo_mem_max {
         print_char_in(st, '*' as i32);
     } else {
-        print_scaled_in(st, st.mem.b32s1(p + 1));
+        // `p` is in lo-mem range here, so it is a real glue_spec record.
+        let gs = crate::node::NodePtr::<crate::node::GlueSpecNode>::from_glue_ptr(
+            crate::units::MemPtr::from_raw(p),
+        )
+        .expect("non-null glue spec");
+        print_scaled_in(st, gs.width(&st.mem).0);
         if !s.is_null() {
             print_cstr_in(st, s);
         }
-        if st.mem.b32s1(p + 2) != 0 {
+        if gs.stretch(&st.mem).0 != 0 {
             print_cstr_in(st, c" plus ".as_ptr());
-            let d = st.mem.b32s1(p + 2);
-            let o = st.mem.b16s1(p) as i32;
+            let d = gs.stretch(&st.mem).0;
+            let o = gs.stretch_order(&st.mem) as i32;
             print_glue_in(st, d, o, s);
         }
-        if st.mem.b32s1(p + 3) != 0 {
+        if gs.shrink(&st.mem).0 != 0 {
             print_cstr_in(st, c" minus ".as_ptr());
-            let d = st.mem.b32s1(p + 3);
-            let o = st.mem.b16s0(p) as i32;
+            let d = gs.shrink(&st.mem).0;
+            let o = gs.shrink_order(&st.mem) as i32;
             print_glue_in(st, d, o, s);
         }
     }
