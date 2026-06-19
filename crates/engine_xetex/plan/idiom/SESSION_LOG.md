@@ -46,6 +46,25 @@ This completes the documented prereq list (`scanner-scc-plan.md` §"Still to thr
 `prepare_mag`, `tokens_to_string`/`round_decimals`, and the `start_input`
 file-name/log path are all threaded. The SCC's downward callee tail is now drained.
 
+**SCC big-pass recon (prototyped + reverted, manifest landed).** Per user direction
+("one big push"), prototyped the SCC conversion — added the `SccAbort` sentinel
+(mirrors `GetNextOutcome`'s non-`Done` arms; `fire()` + `From<GetNextOutcome>`) and
+converted the 9 trivial leaf/delegator members (`scan_char_num`/`scan_usv_num`/
+`scan_char_class_not_ignored`/`scan_math_fam_int`/`scan_register_num`/
+`scan_four_bit_int_or_18` + `scan_normal_glue`/`scan_mu_glue`/`scan_pdf_ext_toks`).
+**Then reverted the source WIP:** the SCC is one all-or-nothing compile+validate unit
+(~4000 lines incl. the `expand`/`macro_call`/`conditional`/`scan_something_internal`
+~900-line monsters) — genuinely multi-turn, and a half-done *wired* push leaves
+`todo!()` stubs in live wrappers (uncommittable, test-failing). Captured everything
+learned as a concrete **execution manifest** in `scanner-scc-plan.md` so the real pass
+is mechanical: the `SccAbort` code, the **nest-panic audit rule** (raw-safe `mod raw`
+set vs `with_state` accessors that must become `st.<cluster>.field` — landmines found:
+`max_reg_num`/`max_reg_help_line`/`set_help_*`/`selector`/`align_state`), the
+leaf-scanner exemplar, the not-an-SCC-member list (`scan_eight_bit_int` & kin),
+per-function return types, member-size budget, and the **incremental-compilation
+strategy** (stub all 35 → wire all 35 wrappers → fill bodies with `cargo check` per
+fn → validate by corpus only at the end).
+
 **Tests:** `cargo check` + `fmt`; dashboard **29/2/7/4** (TRIP green); release rebuild;
 full corpus **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1`/
 `1905.00148v1`, doc-count 639 == baseline, **no NOXDV/NOLOG** (the file-name/`\input`
@@ -53,15 +72,15 @@ hidden-regression check). Metrics: warnings **41** (held); `unsafe fn` **529**,
 `with_state(_mut)` sites **1014** — both up slightly from the new `_in`+wrapper pairs
 for the FFI/pool-heavy prereqs; they retire when the SCC threads and the wrappers drop.
 
-**Next:** the **SCC big pass** (`scanner-scc-plan.md` §"Execution order" step 2). The
-prereq tail is drained, so all 35 members (`expand`/`conv_toks`/`conditional`/
-`macro_call`/`get_x_token`/`the_toks`/`scan_toks`/the `scan_*` chain/`start_input`/…)
-can now convert to `_in(&mut EngineState)` in one working-tree change — the SCC has no
-safe smaller bisect unit (user-approved session 202). Bodies use direct `st.<cluster>`
-+ the ready cores; sibling calls become `*_in(st)`; cold tails ride sentinels (`expand`
-needs a new `ExpandOutcome` for its `\end`-less/fatal tails, mirroring `GetNextOutcome`).
-Validate by full corpus (confirm 637/2/0, doc-count == baseline, no NOXDV/NOLOG), then
-the scanner-gated shipout hub (`ship_out`/`hlist_out`/`vlist_out`) opens up.
+**Next:** the **SCC big pass** — now fully specced in `scanner-scc-plan.md`
+§"Execution manifest (session 203 recon)". Follow the incremental-compilation
+strategy there (stub all 35 → wire all 35 wrappers → fill bodies, `cargo check` per fn
+→ validate by full corpus only at the end: 637/2/0, doc-count == baseline, **no
+NOXDV/NOLOG**). The `SccAbort` design + the per-accessor nest-panic audit rule + the
+leaf-scanner exemplar are all in the manifest. Budget it as a multi-turn push (the 9
+trivial members are mechanical; `scan_something_internal`/`expand`/`macro_call`/
+`conditional`/`scan_dimen`/`scan_expr` are the real work). Threading the scanner unlocks
+the scanner-gated shipout hub (`ship_out`/`hlist_out`/`vlist_out` via `out_what`→`write_out`).
 
 ---
 
