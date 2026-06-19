@@ -8,6 +8,63 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 203 — 2026-06-19 — Execution: drain the scanner-SCC prerequisite tail
+
+**Type:** execution (workstream 01). Bigger-than-usual mechanical session per user
+request. Continues the **scanner-SCC** plan (`scanner-scc-plan.md`): thread every
+below-SCC `with_state`-bearing helper the 35-function `expand` SCC calls, so the
+SCC can later convert under a single borrow without nest-panicking (`01b` §4).
+
+**Inherited (session 202, committed but unlogged):** the `scanner-scc-plan.md`
+analysis (Tarjan SCC + hazard audit) + two prereq commits — `str_toks_cat` →
+`str_toks_cat_in` (`StrToksAbort`), and the io.rs file-name machinery
+(`make_utf16_name`/`begin_name`/`more_name`/`end_name`/`make_name_string`) → `_in`
+cores (`NameAbort`). Verified green and folded into this session's baseline.
+
+**Code (3 commits this session):**
+1. **`round_decimals` + `tokens_to_string`** → `_in` cores. `round_decimals(&ErrorState,k)`
+   reads `dig` directly (its only caller `xetex_scan_dimen` is still raw → bridge-down
+   `with_state` wrap). `tokens_to_string_in(&mut EngineState,p)` renders the token list
+   via threaded `show_token_list_in`; the `new_string`-reentrancy guard + string-pool
+   overflow ride a new `TokensToStringAbort` (`01b` §5). Deleted dead `dig_entry`.
+2. **`prepare_mag`** → `prepare_mag_in(&mut EngineState) -> ErrorOutcome`. Validates
+   `\mag` under one borrow via `error_here_with_diagnostic_in`/`int_error_in`/print
+   cores + threaded `geq_word_define`; both recoverable `int_error` sites propagate a
+   non-`Continue` outcome to the wrapper's `finish()` (the original longjmps before the
+   `geq_word_define`, so the early return matches). Deleted dead `mag_set` getter.
+3. **`pack_file_name`/`pack_job_name`/`open_log_file`/`maketexstring`** → `_in` cores —
+   the whole `\input`/log-open file-name path (the session-187 hidden-regression risk).
+   `maketexstring_in(&mut StringsState,…)` does the UTF-8→pool write directly (new
+   `MakeTexStringAbort` + `fire_make_tex_string`); `pack_file_name_in`/`pack_job_name_in`
+   build `name_of_file` via `string_pool::length`/`gettexstring_in`; `open_log_file_in`
+   opens + writes the banner under one borrow via `make_name_string_in` + print cores,
+   with a new `OpenLogAbort` sentinel (MakeString/Name/CannotOpen). All four keep thin
+   `with_state` wrappers for their many non-SCC callers (pic/fonts/shipout/engine/…).
+   Deleted dead `set_log_file`/`set_texmf_log_name` accessors.
+
+This completes the documented prereq list (`scanner-scc-plan.md` §"Still to thread"):
+`prepare_mag`, `tokens_to_string`/`round_decimals`, and the `start_input`
+file-name/log path are all threaded. The SCC's downward callee tail is now drained.
+
+**Tests:** `cargo check` + `fmt`; dashboard **29/2/7/4** (TRIP green); release rebuild;
+full corpus **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1`/
+`1905.00148v1`, doc-count 639 == baseline, **no NOXDV/NOLOG** (the file-name/`\input`
+hidden-regression check). Metrics: warnings **41** (held); `unsafe fn` **529**,
+`with_state(_mut)` sites **1014** — both up slightly from the new `_in`+wrapper pairs
+for the FFI/pool-heavy prereqs; they retire when the SCC threads and the wrappers drop.
+
+**Next:** the **SCC big pass** (`scanner-scc-plan.md` §"Execution order" step 2). The
+prereq tail is drained, so all 35 members (`expand`/`conv_toks`/`conditional`/
+`macro_call`/`get_x_token`/`the_toks`/`scan_toks`/the `scan_*` chain/`start_input`/…)
+can now convert to `_in(&mut EngineState)` in one working-tree change — the SCC has no
+safe smaller bisect unit (user-approved session 202). Bodies use direct `st.<cluster>`
++ the ready cores; sibling calls become `*_in(st)`; cold tails ride sentinels (`expand`
+needs a new `ExpandOutcome` for its `\end`-less/fatal tails, mirroring `GetNextOutcome`).
+Validate by full corpus (confirm 637/2/0, doc-count == baseline, no NOXDV/NOLOG), then
+the scanner-gated shipout hub (`ship_out`/`hlist_out`/`vlist_out`) opens up.
+
+---
+
 ## Idiom session 201 — 2026-06-18 — Execution: thread `get_next` (the central tokenizer)
 
 **Type:** execution (workstream 01). Took the session-200 "Next": thread the
