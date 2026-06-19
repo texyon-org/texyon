@@ -2,7 +2,7 @@
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{
-    buf_size, buffer_entry, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1, first, last,
+    buf_size, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1, first, last,
     name_length16, name_of_file, name_of_file16_entry, read_file_entry, read_file_ptr,
     read_open_entry, set_buffer_entry, set_input_file, set_last, set_name_in_progress,
     set_name_length, set_read_open_entry, set_stop_at_space,
@@ -1189,57 +1189,103 @@ pub unsafe fn scan_file_name() {
 }
 /// translated from xetex-xetex0.c:7970 (pack_job_name)
 pub unsafe fn pack_job_name(s: *const libc::c_char) {
-    use crate::globals::{job_name, set_cur_area, set_cur_ext, set_cur_name};
-
-    set_cur_area(EMPTY_STRING);
-    set_cur_ext(crate::texmfmp::maketexstring(s));
-    set_cur_name(job_name());
-    pack_file_name(
-        crate::globals::cur_name(),
-        crate::globals::cur_area(),
-        crate::globals::cur_ext(),
-    );
+    if let Err(e) = crate::state::with_state_mut(|st| pack_job_name_in(st, s)) {
+        crate::texmfmp::fire_make_tex_string(e);
+    }
 }
+
+/// `&mut EngineState` core of [`pack_job_name`] (scanner-SCC prereq). The string
+/// build's overflow rides [`crate::texmfmp::MakeTexStringAbort`] (`01b` §5).
+pub(crate) unsafe fn pack_job_name_in(
+    st: &mut crate::state::EngineState,
+    s: *const libc::c_char,
+) -> Result<(), crate::texmfmp::MakeTexStringAbort> {
+    st.scanner.cur_area = EMPTY_STRING;
+    st.scanner.cur_ext = crate::texmfmp::maketexstring_in(&mut st.strings, s)?;
+    st.scanner.cur_name = st.strings.job_name;
+    let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
+    pack_file_name_in(st, n, a, e);
+    Ok(())
+}
+/// Cold-abort sentinel for [`open_log_file_in`] (`01b` §5).
+pub(crate) enum OpenLogAbort {
+    /// A `maketexstring`/`pack_job_name` overflow.
+    MakeString(crate::texmfmp::MakeTexStringAbort),
+    /// A `make_name_string` overflow.
+    Name(NameAbort),
+    /// `_tt_abort("cannot open log file output")` — the host refused the file.
+    CannotOpen,
+}
+
+impl OpenLogAbort {
+    /// Raise the deferred abort after the state borrow drops (all arms `longjmp`).
+    pub(crate) unsafe fn fire(self) -> ! {
+        match self {
+            OpenLogAbort::MakeString(e) => crate::texmfmp::fire_make_tex_string(e),
+            OpenLogAbort::Name(e) => fire_name_overflow(e),
+            OpenLogAbort::CannotOpen => _tt_abort(c"cannot open log file output".as_ptr()),
+        }
+    }
+}
+
 /// translated from xetex-xetex0.c:7937 (open_log_file)
 pub unsafe fn open_log_file() {
-    use crate::globals::{
-        input_ptr, input_stack, job_name, name_of_file, set_input_stack, set_job_name,
-        set_log_file, set_log_opened, set_texmf_log_name,
+    if let Err(e) = crate::state::with_state_mut(|st| open_log_file_in(st)) {
+        e.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`open_log_file`] (scanner-SCC prereq).
+///
+/// Opens and writes the transcript banner under one borrow via the threaded
+/// `maketexstring_in`/`pack_job_name_in`/`make_name_string_in` and print cores;
+/// the three cold paths ride [`OpenLogAbort`] (`01b` §5).
+pub(crate) unsafe fn open_log_file_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), OpenLogAbort> {
+    let old_setting = st.shipout.selector;
+    if st.strings.job_name == 0 {
+        st.strings.job_name = crate::texmfmp::maketexstring_in(&mut st.strings, c"texput".as_ptr())
+            .map_err(OpenLogAbort::MakeString)?;
+    }
+
+    pack_job_name_in(st, c".log".as_ptr()).map_err(OpenLogAbort::MakeString)?;
+
+    let name = if st.input.name_of_file.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        st.input.name_of_file.as_ptr() as *mut libc::c_char
     };
-
-    let old_setting = selector();
-    if job_name() == 0 {
-        set_job_name(crate::texmfmp::maketexstring(c"texput".as_ptr()));
-    }
-
-    pack_job_name(c".log".as_ptr());
-
-    let handle = ttstub_output_open(name_of_file(), 0);
+    let handle = ttstub_output_open(name, 0);
     if handle == INVALID_HANDLE {
-        _tt_abort(c"cannot open log file output".as_ptr());
+        return Err(OpenLogAbort::CannotOpen);
     }
-    set_log_file(handle);
+    st.shipout.log_file = handle;
 
-    set_texmf_log_name(make_name_string());
-    set_selector(SELECTOR_LOG_ONLY);
-    set_log_opened(true);
+    st.strings.texmf_log_name = make_name_string_in(st).map_err(OpenLogAbort::Name)?;
+    st.shipout.selector = SELECTOR_LOG_ONLY;
+    st.errors.log_opened = true;
 
-    set_input_stack(input_ptr(), cur_input());
+    // `cur_input()` reads the raw `cur_input` global (safe under the borrow).
+    let ptr = st.input.input_ptr;
+    st.input.input_stack[ptr as usize] = cur_input();
 
-    crate::output::print_nl_cstr(c"**".as_ptr());
-    let mut l = input_stack(0).limit;
-    if buffer_entry(l) == eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR) {
+    crate::output::print_nl_cstr_in(st, c"**".as_ptr());
+    let mut l = st.input.input_stack[0].limit;
+    if st.input.buffer[l as usize] == st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR) {
         l -= 1;
     }
 
     let mut k = 1;
     while k <= l {
-        crate::output::print(buffer_entry(k));
+        let ch = st.input.buffer[k as usize];
+        crate::output::print_in(st, ch);
         k += 1;
     }
 
-    crate::output::print_ln();
-    set_selector(old_setting + 2);
+    crate::output::print_ln_in(st);
+    st.shipout.selector = old_setting + 2;
+    Ok(())
 }
 /// translated from xetex-xetex0.c:6431 (start_input)
 pub unsafe fn start_input(primary_input_name: *const libc::c_char) {
@@ -1431,33 +1477,44 @@ pub unsafe fn start_input(primary_input_name: *const libc::c_char) {
 }
 // translated from xetex-xetex0.c:6381 (pack_file_name)
 pub unsafe fn pack_file_name(n: i32, a: i32, e: i32) {
+    crate::state::with_state_mut(|st| pack_file_name_in(st, n, a, e));
+}
+
+/// `&mut EngineState` core of [`pack_file_name`] (scanner-SCC prereq).
+///
+/// Builds `name_of_file`/`name_length` from the three string-pool components
+/// under one borrow via the threaded `string_pool::length`/`gettexstring_in`.
+pub(crate) unsafe fn pack_file_name_in(st: &mut crate::state::EngineState, n: i32, a: i32, e: i32) {
     extern "C" {
         fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     }
 
-    let len_a = crate::string_pool::length_global(a) as usize;
-    let len_n = crate::string_pool::length_global(n) as usize;
-    let len_e = crate::string_pool::length_global(e) as usize;
+    let len_a = crate::string_pool::length(&st.strings, a) as usize;
+    let len_n = crate::string_pool::length(&st.strings, n) as usize;
+    let len_e = crate::string_pool::length(&st.strings, e) as usize;
     // Each TeX character is at most 3 UTF-8 bytes; +2 for NUL terminators.
     let work_size = (len_a + len_n + len_e) * 3 + 2;
     let work_buffer = xmalloc(work_size as libc::size_t) as *mut libc::c_char;
     *work_buffer = 0;
 
-    let a_utf8 = crate::texmfmp::gettexstring(a);
+    let a_utf8 = crate::texmfmp::gettexstring_in(&st.strings, a);
     libc::strcat(work_buffer, a_utf8);
     libc::free(a_utf8 as *mut libc::c_void);
 
-    let n_utf8 = crate::texmfmp::gettexstring(n);
+    let n_utf8 = crate::texmfmp::gettexstring_in(&st.strings, n);
     libc::strcat(work_buffer, n_utf8);
     libc::free(n_utf8 as *mut libc::c_void);
 
-    let e_utf8 = crate::texmfmp::gettexstring(e);
+    let e_utf8 = crate::texmfmp::gettexstring_in(&st.strings, e);
     libc::strcat(work_buffer, e_utf8);
     libc::free(e_utf8 as *mut libc::c_void);
 
     let nl = libc::strlen(work_buffer) as i32;
-    crate::globals::set_name_length(nl);
-    crate::globals::set_name_of_file(work_buffer);
+    st.input.name_length = nl;
+    // `work_buffer` is never null here; mirror `set_name_of_file`'s non-null arm.
+    let len = libc::strlen(work_buffer);
+    st.input.name_of_file.resize(len + 1, 0);
+    libc::strcpy(st.input.name_of_file.as_mut_ptr(), work_buffer);
     libc::free(work_buffer as *mut libc::c_void);
 }
 /// translated from xetex-xetex0.c:9722 (close_files_and_terminate)

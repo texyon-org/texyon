@@ -964,13 +964,6 @@ pub(crate) fn set_rust_stdout(v: usize) {
 pub(crate) fn log_file() -> usize {
     crate::state::with_state(|s| s.shipout.log_file)
 }
-/// Sets the `log_file` output handle.
-#[inline]
-pub(crate) fn set_log_file(v: usize) {
-    crate::state::with_state_mut(|s| {
-        s.shipout.log_file = v;
-    });
-}
 
 /// Returns `write_file[i]`, the output handle for write-stream `i` (0–15).
 #[inline]
@@ -1226,12 +1219,6 @@ pub(crate) fn set_job_name(v: i32) {
 #[inline]
 pub(crate) fn texmf_log_name() -> i32 {
     crate::state::with_state(|state| state.strings.texmf_log_name)
-}
-#[inline]
-pub(crate) fn set_texmf_log_name(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.strings.texmf_log_name = v;
-    });
 }
 #[inline]
 pub(crate) fn set_halt_on_error_p(v: i32) {

@@ -212,18 +212,55 @@ unsafe fn check_pool_pointer(pp: i32, len: usize) {
 /// Convert a NUL-terminated C UTF-8 string to a TeX string-pool entry and
 /// return its str_number.
 ///
+/// Cold-abort sentinel for [`maketexstring_in`] (`01b` §5).
+pub(crate) enum MakeTexStringAbort {
+    /// `_tt_abort("string pool overflow")` — the pool can't hold the string.
+    PoolOverflow,
+    /// `overflow("number of strings", …)` — `str_ptr` exhausted in `make_string`.
+    StringOverflow,
+}
+
+/// Raise a deferred [`MakeTexStringAbort`] after the state borrow has dropped
+/// (both arms `longjmp`; a real caller never observes the sentinel).
+pub(crate) unsafe fn fire_make_tex_string(e: MakeTexStringAbort) -> ! {
+    match e {
+        MakeTexStringAbort::PoolOverflow => _tt_abort(c"string pool overflow".as_ptr()),
+        MakeTexStringAbort::StringOverflow => crate::errors::overflow(
+            c"number of strings".as_ptr(),
+            crate::globals::max_strings() - crate::globals::init_str_ptr(),
+        ),
+    }
+}
+
 /// translated from xetex-texmfmp.c:245 (maketexstring)
 pub unsafe fn maketexstring(s: *const libc::c_char) -> i32 {
+    match crate::state::with_state_mut(|st| maketexstring_in(&mut st.strings, s)) {
+        Ok(v) => v,
+        Err(e) => fire_make_tex_string(e),
+    }
+}
+
+/// `&mut StringsState` core of [`maketexstring`] (scanner-SCC prereq).
+///
+/// Writes the UTF-8 → pool UTF-16 conversion directly into the string pool under
+/// one borrow; the pool-overflow and string-overflow cold paths ride
+/// [`MakeTexStringAbort`] (`01b` §5).
+pub(crate) unsafe fn maketexstring_in(
+    strings: &mut crate::state::StringsState,
+    s: *const libc::c_char,
+) -> Result<i32, MakeTexStringAbort> {
     // EMPTY_STRING = TOO_BIG_CHAR + 1 (xetex-stringpool.h:12)
     const EMPTY_STRING: i32 = 65537;
 
     if s.is_null() || *s == 0 {
-        return EMPTY_STRING;
+        return Ok(EMPTY_STRING);
     }
 
     let len = libc::strlen(s);
     // comment from C: "in the XeTeX case, this may be more than enough"
-    check_pool_pointer(pool_ptr(), len);
+    if (strings.pool_ptr as usize) + len >= strings.pool_size as usize {
+        return Err(MakeTexStringAbort::PoolOverflow);
+    }
 
     let mut cp = s as *const u8;
     loop {
@@ -248,17 +285,17 @@ pub unsafe fn maketexstring(s: *const libc::c_char) -> i32 {
 
         if rval > 0xffff {
             rval -= 0x10000;
-            set_str_pool(pool_ptr(), (0xd800 + rval / 0x0400) as u16);
-            set_pool_ptr(pool_ptr() + 1);
-            set_str_pool(pool_ptr(), (0xdc00 + rval % 0x0400) as u16);
-            set_pool_ptr(pool_ptr() + 1);
+            strings.str_pool[strings.pool_ptr as usize] = (0xd800 + rval / 0x0400) as u16;
+            strings.pool_ptr += 1;
+            strings.str_pool[strings.pool_ptr as usize] = (0xdc00 + rval % 0x0400) as u16;
+            strings.pool_ptr += 1;
         } else {
-            set_str_pool(pool_ptr(), rval as u16);
-            set_pool_ptr(pool_ptr() + 1);
+            strings.str_pool[strings.pool_ptr as usize] = rval as u16;
+            strings.pool_ptr += 1;
         }
     }
 
-    crate::string_pool::make_string_global()
+    crate::string_pool::make_string(strings).map_err(|_| MakeTexStringAbort::StringOverflow)
 }
 
 // ---------------------------------------------------------------------------
