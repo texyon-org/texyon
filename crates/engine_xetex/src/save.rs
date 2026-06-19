@@ -2,21 +2,16 @@
 //!
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
-use crate::output::capture_to_diagnostic;
-use crate::output::error_here_with_diagnostic;
-use crate::output::print_cstr;
-use crate::output::print_int;
-use crate::output::print_nl_cstr;
 use crate::packaging::flush_node_list_global;
 use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
-    align_state, cur_boundary, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0, eqtb_b32s1,
-    eqtb_word, grp_stack, in_open, line, mag_set, save_ptr, save_size, save_stack_b16s0,
-    save_stack_b16s1, save_stack_b32s1, save_stack_word, set_align_state, set_cur_boundary,
-    set_cur_group, set_cur_input_loc, set_cur_input_start, set_cur_level, set_cur_ptr, set_cur_tok,
-    set_eqtb_word, set_mag_set, set_mem_b32s0, set_mem_b32s1, set_sa_chain, set_sa_level,
-    set_save_ptr, set_save_stack_word, set_xeq_level, xeq_level,
+    align_state, cur_boundary, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0, eqtb_word,
+    grp_stack, in_open, line, save_ptr, save_size, save_stack_b16s0, save_stack_b16s1,
+    save_stack_b32s1, save_stack_word, set_align_state, set_cur_boundary, set_cur_group,
+    set_cur_input_loc, set_cur_input_start, set_cur_level, set_cur_ptr, set_cur_tok, set_eqtb_word,
+    set_mem_b32s0, set_mem_b32s1, set_sa_chain, set_sa_level, set_save_ptr, set_save_stack_word,
+    set_xeq_level, xeq_level,
 };
 use crate::mem_types::MemoryWord;
 
@@ -255,41 +250,59 @@ const INT_PAR_MAG: i32 = 17;
 ///
 /// translated from xetex-xetex0.c:3997 (prepare_mag)
 pub unsafe fn prepare_mag() {
-    let mag = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
-    if mag_set() > 0 && mag != mag_set() {
-        let errmsg = error_here_with_diagnostic(c"Incompatible magnification (".as_ptr());
-        print_int(mag);
-        print_cstr(c");".as_ptr());
-        print_nl_cstr(c" the previous value will be retained".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag_set());
-        capture_to_diagnostic(std::ptr::null_mut());
-        crate::globals::set_help_ptr(2);
-        crate::globals::set_help_line(
-            1,
-            c"I can handle only one magnification ratio per job. So I've".as_ptr(),
+    crate::state::with_state_mut(prepare_mag_in).finish();
+}
+
+/// `&mut EngineState` core of [`prepare_mag`] (scanner-SCC prereq).
+///
+/// Validates `\mag` under one borrow via the threaded diagnostic/error cores.
+/// Both recoverable `int_error` sites return an [`ErrorOutcome`]; a non-`Continue`
+/// outcome is propagated to the wrapper's `finish()` (the original would have
+/// longjmp'd before reaching the `geq_word_define`, so the early return matches).
+pub(crate) fn prepare_mag_in(st: &mut crate::state::EngineState) -> crate::errors::ErrorOutcome {
+    use crate::errors::ErrorOutcome;
+
+    let mag = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
+    if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
+        let mag_set = st.scanner.mag_set;
+        let errmsg = crate::output::error_here_with_diagnostic_in(
+            st,
+            c"Incompatible magnification (".as_ptr(),
         );
-        crate::globals::set_help_line(
-            0,
-            c"reverted to the magnification you used earlier on this run.".as_ptr(),
-        );
-        crate::errors::int_error(mag_set());
-        geq_word_define_global(INT_BASE + INT_PAR_MAG, mag_set());
+        crate::output::print_int_in(st, mag);
+        crate::output::print_cstr_in(st, c");".as_ptr());
+        crate::output::print_nl_cstr_in(st, c" the previous value will be retained".as_ptr());
+        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag_set) };
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 2;
+        st.errors.help_line[1] =
+            c"I can handle only one magnification ratio per job. So I've".as_ptr();
+        st.errors.help_line[0] =
+            c"reverted to the magnification you used earlier on this run.".as_ptr();
+        let outcome = crate::errors::int_error_in(st, mag_set);
+        if !matches!(outcome, ErrorOutcome::Continue) {
+            return outcome;
+        }
+        geq_word_define(&mut st.eqtb, INT_BASE + INT_PAR_MAG, mag_set);
     }
-    let mag2 = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
+    let mag2 = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
     if mag2 <= 0 || mag2 > 32768 {
-        let errmsg =
-            error_here_with_diagnostic(c"Illegal magnification has been changed to 1000".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag2);
-        capture_to_diagnostic(std::ptr::null_mut());
-        crate::globals::set_help_ptr(1);
-        crate::globals::set_help_line(
-            0,
-            c"The magnification ratio must be between 1 and 32768.".as_ptr(),
+        let errmsg = crate::output::error_here_with_diagnostic_in(
+            st,
+            c"Illegal magnification has been changed to 1000".as_ptr(),
         );
-        crate::errors::int_error(mag2);
-        geq_word_define_global(INT_BASE + INT_PAR_MAG, 1000);
+        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag2) };
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 1;
+        st.errors.help_line[0] = c"The magnification ratio must be between 1 and 32768.".as_ptr();
+        let outcome = crate::errors::int_error_in(st, mag2);
+        if !matches!(outcome, ErrorOutcome::Continue) {
+            return outcome;
+        }
+        geq_word_define(&mut st.eqtb, INT_BASE + INT_PAR_MAG, 1000);
     }
-    set_mag_set(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
+    st.scanner.mag_set = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
+    ErrorOutcome::Continue
 }
 
 // ---------------------------------------------------------------------------

@@ -2226,10 +2226,6 @@ pub(crate) fn set_microseconds(v: i32) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn mag_set() -> i32 {
-    crate::state::with_state(|s| s.scanner.mag_set)
-}
-#[inline]
 pub(crate) fn set_mag_set(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.mag_set = v;
