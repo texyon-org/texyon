@@ -890,12 +890,6 @@ pub(crate) fn set_temp_ptr(v: i32) {
 // dig
 // ---------------------------------------------------------------------------
 
-/// Read `dig[k]`, the k-th digit scratch byte (xetex-xetexd.h:432).
-#[inline]
-pub(crate) fn dig_entry(k: usize) -> u8 {
-    crate::state::with_state(|state| state.errors.dig[k])
-}
-
 /// Write `v` into `dig[k]`.
 #[inline]
 pub(crate) fn set_dig_entry(k: usize, v: u8) {

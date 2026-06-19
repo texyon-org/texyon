@@ -46,17 +46,17 @@ use crate::globals::{
     cur_val, cur_val_level, def_ref, eqtb_b32s1, expand_depth, expand_depth_count, file_offset,
     first, fmem_ptr, font_glue, font_mem_size, font_params, font_ptr, hash_s1, init_pool_ptr, last,
     max_print_line, max_reg_help_line, max_reg_num, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1,
-    old_setting, open_parens, param_base, pool_ptr, pool_size, pseudo_files, read_file_entry,
-    read_open_entry, rust_stdout, save_ptr, save_stack_b32s1, scanner_status, selector,
-    set_align_state, set_arith_error, set_avail, set_buffer_entry, set_cur_chr, set_cur_cmd,
-    set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
+    open_parens, param_base, pool_ptr, pool_size, pseudo_files, read_file_entry, read_open_entry,
+    rust_stdout, save_ptr, save_stack_b32s1, scanner_status, selector, set_align_state,
+    set_arith_error, set_avail, set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs,
+    set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
     set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_cur_val_level, set_def_ref,
     set_expand_depth_count, set_first, set_fmem_ptr, set_font_glue, set_font_info_b32s1,
     set_font_params, set_help_line, set_help_ptr, set_line, set_mem_b16s0, set_mem_b16s1,
     set_mem_b16s2, set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence,
-    set_old_setting, set_open_parens, set_pool_ptr, set_pseudo_files, set_read_open_entry,
-    set_save_ptr, set_save_stack_b32s1, set_scanner_status, set_selector, set_str_pool,
-    set_str_ptr, set_warning_index, str_pool_entry, str_ptr, str_start, term_offset, warning_index,
+    set_open_parens, set_pool_ptr, set_pseudo_files, set_read_open_entry, set_save_ptr,
+    set_save_stack_b32s1, set_scanner_status, set_selector, set_str_pool, set_str_ptr,
+    set_warning_index, str_pool_entry, str_ptr, str_start, term_offset, warning_index,
 };
 use crate::mem::new_rule_global;
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
@@ -1199,13 +1199,15 @@ pub unsafe fn scan_spec(c: u8, three_codes: bool) {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:4392 (round_decimals, was static)
-fn round_decimals(k: i32) -> i32 {
-    use crate::globals::dig_entry;
+//
+// Phase-C (scanner-SCC prereq): reads `dig` directly from `&ErrorState` so a
+// threaded caller holding `&mut EngineState` can call it under the borrow.
+fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
     let mut a: i32 = 0;
     let mut k = k;
     while k > 0 {
         k -= 1;
-        a = (a + dig_entry(k as usize) as i32 * 0x2_0000) / 10;
+        a = (a + errors.dig[k as usize] as i32 * 0x2_0000) / 10;
     }
     (a + 1) / 2
 }
@@ -1310,7 +1312,7 @@ pub unsafe fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_uni
                         set_avail(old_p);
                         kk -= 1;
                     }
-                    f = round_decimals(k);
+                    f = crate::state::with_state(|st| round_decimals(&st.errors, k));
                     if cur_cmd() != SPACER {
                         back_input();
                     }
@@ -3688,18 +3690,48 @@ pub fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B16x4 {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:13060 (tokens_to_string)
+/// Cold-abort sentinel for [`tokens_to_string_in`] (`01b` §5).
+pub(crate) enum TokensToStringAbort {
+    /// Called with `selector` already `new_string` (a programmer error).
+    SelectorNewString,
+    /// The string pool's `str_ptr` is exhausted.
+    StringOverflow,
+}
+
 pub unsafe fn tokens_to_string(p: i32) -> i32 {
-    if selector() == SELECTOR_NEW_STRING {
-        crate::errors::pdf_error(
+    match crate::state::with_state_mut(|st| tokens_to_string_in(st, p)) {
+        Ok(v) => v,
+        Err(TokensToStringAbort::SelectorNewString) => crate::errors::pdf_error(
             c"tokens".as_ptr(),
             c"tokens_to_string() called while selector = new_string".as_ptr(),
-        );
+        ),
+        Err(TokensToStringAbort::StringOverflow) => crate::errors::overflow(
+            c"number of strings".as_ptr(),
+            crate::globals::max_strings() - crate::globals::init_str_ptr(),
+        ),
     }
-    set_old_setting(selector() as u8);
-    set_selector(SELECTOR_NEW_STRING);
-    crate::output::show_token_list(mem_b32s1(p), crate::mem::TEX_NULL, pool_size() - pool_ptr());
-    set_selector(old_setting() as i32);
-    crate::string_pool::make_string_global()
+}
+
+/// `&mut EngineState` core of [`tokens_to_string`] (scanner-SCC prereq).
+///
+/// Renders token list `p` into the string pool under one borrow via the
+/// threaded `show_token_list_in`; the `new_string`-reentrancy guard and the
+/// string-pool overflow ride [`TokensToStringAbort`] (`01b` §5).
+pub(crate) fn tokens_to_string_in(
+    st: &mut crate::state::EngineState,
+    p: i32,
+) -> Result<i32, TokensToStringAbort> {
+    if st.shipout.selector == SELECTOR_NEW_STRING {
+        return Err(TokensToStringAbort::SelectorNewString);
+    }
+    st.shipout.old_setting = st.shipout.selector as u8;
+    st.shipout.selector = SELECTOR_NEW_STRING;
+    let arg = st.mem.b32s1(p);
+    let l = st.strings.pool_size - st.strings.pool_ptr;
+    crate::output::show_token_list_in(st, arg, crate::mem::TEX_NULL, l);
+    st.shipout.selector = st.shipout.old_setting as i32;
+    crate::string_pool::make_string(&mut st.strings)
+        .map_err(|_| TokensToStringAbort::StringOverflow)
 }
 
 // ---------------------------------------------------------------------------
