@@ -8,6 +8,64 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 207 — 2026-06-20 — Execution: thread the OT-math-FFI re-entry wall, then recover the reverted math substrate
+
+**Type:** execution (workstream 01). Took the session-206 "Next": thread the
+OT-math-FFI wall so the `mlist_to_hlist` SCC becomes threadable. Three commits.
+
+**Code:**
+1. **The wall (keystone).** The OpenType-math C++ FFI (`xetex-XeTeXOTMath.cpp`)
+   reads `font_size`/`font_area`/`font_layout_engine` back via the three
+   `tt_get_font_{size,area,layout_engine}_entry` callbacks, which took the
+   `ENGINE_STATE` borrow (`with_state`) — so any threaded `_in` core holding
+   `with_state_mut` across an OT-math call nest-panicked (session-206 wall). Gave
+   the three callbacks a **borrow-free** read path: raw mirror pointers
+   (`globals::font_ffi_mirror`, `mod raw`-style like `line()`/`cur_input`)
+   refreshed by `refresh_font_ffi_mirrors(&FontState)` at the **only 3
+   reallocation sites** of those Vecs (engine init `engine.rs`, format undump
+   `format_io.rs`, cleanup `engine.rs`). The Vecs are sized to `font_max + 1` and
+   never grow mid-run (`font_ptr` is bounded by `font_max` — verified: no
+   push/resize/take/replace anywhere), so in-place `set_font_*_entry` writes keep
+   the mirrors observing live values. The other ~175 read/write sites of the
+   three arrays are untouched (they stay on `FontState`); only the FFI callbacks
+   use the mirror.
+2. **+3. Recovered the reverted substrate.** Session 206 had *written* the
+   substrate threading (`char_box`/`stack_glyph_into_box`/`native_glyph_vbox`/
+   `stack_glue_into_box`/`build_opentype_assembly` → `_in` cores +
+   `MathBuildAbort`; then `var_delimiter`/`rebox` → `_in`) and reverted both
+   **only** because they crossed the now-fixed wall (`var_delimiter_in` put
+   `axis_height` inside the borrow; `build_opentype_assembly_in` held the borrow
+   across `ot_part_*(f,…)`). With the wall down these are correct, so recovered
+   them by `git cherry-pick -x c6febe37 3e8dca78` (both touch only `math.rs`,
+   disjoint from the keystone) — clean apply, no conflicts.
+
+**Validation (the keystone's regression is corpus-only — no OT-math font in the
+dashboard, the session-187/206 doc-count rule):** dashboard **29/2/7/4** after
+the keystone and again after the substrate; release rebuild; full corpus
+**637 passed / 2 diverged / 0 missing-golden**, only the known
+`1905.00073v1`/`1905.00148v1` FP-math divergences — doc-count 639 == baseline,
+**`unicode_math` passed** (it exercises the OT-math FFI through the mirror).
+Metrics: warnings **42** (held); `unsafe fn` **496** (−; the recovered substrate
+deleted dead `_global` wrappers); `math.rs` `with_state` sites **183 → 168**.
+
+**Next:** the wall is gone and the delimiter/native-glyph substrate is threaded —
+the `mlist_to_hlist` **SCC** is now unblocked and is the prize. It is the
+mutual-recursion knot `mlist_to_hlist ↔ clean_box ↔ make_*` (no smaller safe
+slice: `clean_box` calls `mlist_to_hlist`, `mlist_to_hlist` calls the `make_*`
+which call `clean_box`), so it threads as **one** big commit — ~2000+ lines:
+`mlist_to_hlist` (427), `clean_box` (~75), and the `make_*` family
+(`make_over`/`make_under`/`make_vcenter`/`make_radical`/`make_fraction`/`make_op`
+(~350)/`make_ord`/`make_math_accent`/`make_left_right`/`make_scripts`); `fetch`
+already has `fetch_in`, and the delimiter/box substrate (`var_delimiter_in`/
+`rebox_in`/`char_box_in`/`build_opentype_assembly_in`/…) is now in place to call
+under the borrow. Budget it as a focused multi-turn push (the session-204 scanner
+SCC is the precedent); validate by the **full corpus** (`unicode_math` must stay
+passed), not just the dashboard. The OT readers are now safe under a held borrow,
+so the session-193/206 "compute `axis_height`/OT params outside the borrow"
+workaround is no longer required.
+
+---
+
 ## Idiom session 206 — 2026-06-20 — Recon (failed attempt + revert): the `mlist_to_hlist` SCC is blocked by an OT-math-FFI re-entry wall
 
 **Type:** execution attempt → **reverted**, no net code change. Took the session-205
