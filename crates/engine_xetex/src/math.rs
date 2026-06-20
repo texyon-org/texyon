@@ -13,7 +13,7 @@ use crate::globals::{
     cur_list_prev_graf, cur_list_tail, cur_mu, cur_size, cur_style, cur_val, cur_val1, eqtb_b32s1,
     file_line_error_style_p, font_area_entry, font_info_b16, font_info_b32s1,
     font_layout_engine_ptr, hi_mem_min, insert_src_special_every_math, italic_base_entry, just_box,
-    lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s2, mem_b16s3, mem_b32s0, mem_b32s1, mem_gr,
+    lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, mem_gr,
     mem_node_addr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
     semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_lang,
     set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode,
@@ -3613,13 +3613,6 @@ fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<i32, Nod
     Ok(b.idx().0)
 }
 
-unsafe fn native_glyph_vbox_global(f: i32, g: u16) -> i32 {
-    match crate::state::with_state_mut(|st| native_glyph_vbox_in(st, f, g)) {
-        Ok(b) => b,
-        Err(e) => node_recycle_abort(e),
-    }
-}
-
 /// translated from xetex-math.c:1517 (stack_glue_into_box)
 ///
 /// Phase-C: threaded to `&mut MemState`; bottoms out on the threaded
@@ -5190,21 +5183,26 @@ fn rebox(
     }
 }
 
-pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
-    let mut b = b;
-    if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL && mem_b16s1(b) == VLIST_NODE {
-        b = crate::packaging::hpack(b, 0, ADDITIONAL);
+/// Threaded core (`01b` §3a): repack box `b` to width `w` under one borrow. The
+/// re-pack and final pack go through [`crate::packaging::hpack_emit_in`] (which
+/// prints any over/underfull diagnostic in-order under the borrow, session 186).
+fn rebox_in(st: &mut EngineState, mut b: i32, w: i32) -> Result<i32, NodeRecycleAbort> {
+    if st.mem.b32s1(b + 1) != w && st.mem.b32s1(b + 5) != TEX_NULL && st.mem.b16s1(b) == VLIST_NODE
+    {
+        b = crate::packaging::hpack_emit_in(st, b, 0, ADDITIONAL)?;
     }
 
-    let char_kern_width = if mem_b32s1(b + 1) != w && mem_b32s1(b + 5) != TEX_NULL {
-        let p = mem_b32s1(b + 5);
-        if is_char_node_global(p) && mem_b32s1(p) == TEX_NULL {
-            let f = mem_b16s1(p) as i32;
-            let c_raw = mem_b16s0(p);
-            let q = font_info_b16(
-                char_base_entry(f) + crate::scan::effective_char_global(true, f, c_raw),
-            );
-            Some(font_info_b32s1(width_base_entry(f) + q.s3 as i32))
+    let char_kern_width = if st.mem.b32s1(b + 1) != w && st.mem.b32s1(b + 5) != TEX_NULL {
+        let p = st.mem.b32s1(b + 5);
+        if crate::mem::is_char_node(&st.mem, p) && st.mem.b32s1(p) == TEX_NULL {
+            let f = st.mem.b16s1(p) as i32;
+            let c_raw = st.mem.b16s0(p);
+            let c_eff = crate::fonts::effective_char(&mut st.fonts, true, f, c_raw);
+            let q = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c_eff);
+            Some(
+                st.fonts
+                    .font_info_b32s1(st.fonts.width_base_entry(f) + q.s3 as i32),
+            )
         } else {
             None
         }
@@ -5212,9 +5210,16 @@ pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
         None
     };
 
-    match crate::state::with_state_mut(|st| rebox(&mut st.mem, b, w, char_kern_width)) {
-        Ok(ReboxResult::Done(b)) => b,
-        Ok(ReboxResult::Hpack(b)) => crate::packaging::hpack(b, w, EXACTLY),
+    match rebox(&mut st.mem, b, w, char_kern_width)? {
+        ReboxResult::Done(b) => Ok(b),
+        ReboxResult::Hpack(b) => crate::packaging::hpack_emit_in(st, b, w, EXACTLY),
+    }
+}
+
+/// translated from xetex-math.c:889 (rebox) — bridge-down wrapper (`01b` §3, §5).
+pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
+    match crate::state::with_state_mut(|st| rebox_in(st, b, w)) {
+        Ok(b) => b,
         Err(e) => node_recycle_abort(e),
     }
 }
@@ -5445,7 +5450,17 @@ fn build_ext_delimiter_box(
 }
 
 /// translated from xetex-math.c:1017 (var_delimiter)
-pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
+/// Threaded core (`01b` §3a): pick and build the variable-size delimiter under
+/// one `&mut EngineState` borrow. The font scan reads `eqtb`/`fonts` directly;
+/// the OT readers (`usingOpenType`/`get_ot_*`/`free_ot_assembly`) and
+/// `map_char_to_glyph` are raw `extern "C"` / `&FontState` (no `with_state`
+/// re-entry), and the delimiter builders are the `_in` cores threaded above.
+unsafe fn var_delimiter_in(
+    st: &mut EngineState,
+    d: i32,
+    s: i32,
+    v: i32,
+) -> Result<i32, MathBuildAbort> {
     let mut f: i32 = FONT_BASE;
     let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
     let mut c: u16 = 0;
@@ -5457,9 +5472,9 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
         s0: 0,
     };
     let mut large_attempt = false;
-    let d_s3 = mem_b16s3(d) as i32;
+    let d_s3 = st.mem.b16s3(d) as i32;
     let mut z = d_s3 % 256;
-    let mut x = mem_b16s2(d) as i32 + (d_s3 / 256) * 65536;
+    let mut x = st.mem.b16s2(d) as i32 + (d_s3 / 256) * 65536;
     // Outer loop: try small delimiter family first, then large.
     // All exits break to 'found.
     'found: {
@@ -5469,18 +5484,14 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
                 // Scan font sizes from s down to SCRIPT_SCRIPT_SIZE.
                 loop {
                     z -= 256;
-                    let g = crate::state::with_state(|st| math_font(&st.eqtb, z));
+                    let g = math_font(&st.eqtb, z);
                     if g != FONT_BASE {
-                        let (font_area, layout_engine) = crate::state::with_state(|st| {
-                            (
-                                st.fonts.font_area_entry(g),
-                                st.fonts.font_layout_engine_ptr(g),
-                            )
-                        });
+                        let font_area = st.fonts.font_area_entry(g);
+                        let layout_engine = st.fonts.font_layout_engine_ptr(g);
                         if font_area == AAT_FONT_FLAG
                             || (font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine))
                         {
-                            x = crate::ext::map_char_to_glyph_global(g, x) as i32;
+                            x = crate::ext::map_char_to_glyph(&st.fonts, g, x);
                             f = g;
                             c = x as u16;
                             w = 0;
@@ -5507,10 +5518,10 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
                             }
                         } else {
                             let mut y = x as u16;
-                            let scan = crate::state::with_state(|st| {
+                            let scan: Option<(i32, u16, i32, crate::mem_types::B16x4, bool)> = 'scan: {
                                 let fonts = &st.fonts;
                                 if y < fonts.font_bc_entry(g) || y > fonts.font_ec_entry(g) {
-                                    return None;
+                                    break 'scan None;
                                 }
                                 // Follow character list chain, looking for tallest glyph.
                                 loop {
@@ -5519,7 +5530,7 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
                                     q = q_tmp;
                                     if q.s3 > 0 {
                                         if q.s1 % 4 == EXT_TAG {
-                                            return Some((g, y, w, q, true));
+                                            break 'scan Some((g, y, w, q, true));
                                         }
                                         let u = fonts.font_info_b32s1(
                                             fonts.height_base_entry(g) + q.s2 as i32 / 16,
@@ -5528,7 +5539,7 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
                                         );
                                         if u > w {
                                             if u >= v {
-                                                return Some((g, y, u, q, true));
+                                                break 'scan Some((g, y, u, q, true));
                                             }
                                             f = g;
                                             c = y;
@@ -5542,7 +5553,7 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
                                     break; // exit character-list loop
                                 }
                                 None
-                            });
+                            };
                             if let Some((found_f, found_c, found_w, found_q, stop)) = scan {
                                 f = found_f;
                                 c = found_c;
@@ -5563,63 +5574,48 @@ pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
                 break 'found;
             }
             large_attempt = true;
-            (z, x) = crate::state::with_state(|st| {
-                (
-                    st.mem.b16s1(d) as i32 % 256,
-                    st.mem.b16s0(d) as i32 + (st.mem.b16s1(d) as i32 / 256) * 65536,
-                )
-            });
+            z = st.mem.b16s1(d) as i32 % 256;
+            x = st.mem.b16s0(d) as i32 + (st.mem.b16s1(d) as i32 / 256) * 65536;
         }
     }
     // found:
     let b;
     if f != FONT_BASE {
-        let (font_area, layout_engine) = crate::state::with_state(|st| {
-            (
-                st.fonts.font_area_entry(f),
-                st.fonts.font_layout_engine_ptr(f),
-            )
-        });
+        let font_area = st.fonts.font_area_entry(f);
+        let layout_engine = st.fonts.font_layout_engine_ptr(f);
         if !(font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine)) {
             if q.s1 % 4 == EXT_TAG {
-                b = match crate::state::with_state_mut(|st| {
-                    build_ext_delimiter_box(&mut st.mem, &mut st.fonts, f, q, v)
-                }) {
-                    Ok(b) => b,
-                    Err(e) => node_recycle_abort(e),
-                };
+                b = build_ext_delimiter_box(&mut st.mem, &mut st.fonts, f, q, v)?;
             } else {
-                b = char_box_global(f, c as i32);
+                b = char_box_in(st, f, c as i32)?;
             }
         } else if !ot_assembly_ptr.is_null() {
-            b = build_opentype_assembly(f, ot_assembly_ptr, v, false);
+            b = build_opentype_assembly_in(st, f, ot_assembly_ptr, v, false)?;
         } else {
-            b = native_glyph_vbox_global(f, c);
+            b = native_glyph_vbox_in(st, f, c)?;
         }
     } else {
-        // Null delimiter: an empty box of \nulldelimiterspace width. One borrow
-        // island over disjoint `mem` (alloc) + `eqtb` (the dimen read).
-        b = match crate::state::with_state_mut(|st| {
-            let st = &mut *st;
-            let bb = crate::mem::new_null_box(&mut st.mem);
-            if bb == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow);
-            }
-            let width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE);
-            st.mem.set_b32s1(bb + 1, width);
-            Ok(bb)
-        }) {
-            Ok(bb) => bb,
-            Err(e) => node_recycle_abort(e),
-        };
+        // Null delimiter: an empty box of \nulldelimiterspace width.
+        let bb = crate::mem::new_null_box(&mut st.mem);
+        if bb == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow.into());
+        }
+        let width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE);
+        st.mem.set_b32s1(bb + 1, width);
+        b = bb;
     }
-    let axis = axis_height_global(s);
-    crate::state::with_state_mut(|st| {
-        let state = &mut *st;
-        let shift =
-            crate::scaled_math::half(state.mem.b32s1(b + 3) - state.mem.b32s1(b + 2)) - axis;
-        state.mem.set_b32s1(b + 4, shift);
-    });
+    let axis = axis_height(&st.fonts, &st.eqtb, s);
+    let shift = crate::scaled_math::half(st.mem.b32s1(b + 3) - st.mem.b32s1(b + 2)) - axis;
+    st.mem.set_b32s1(b + 4, shift);
     free_ot_assembly(ot_assembly_ptr);
-    b
+    Ok(b)
+}
+
+/// translated from xetex-math.c:1017 (var_delimiter) — bridge-down wrapper
+/// (`01b` §3, §5).
+pub unsafe fn var_delimiter_global(d: i32, s: i32, v: i32) -> i32 {
+    match crate::state::with_state_mut(|st| var_delimiter_in(st, d, s, v)) {
+        Ok(b) => b,
+        Err(e) => e.finish(),
+    }
 }
