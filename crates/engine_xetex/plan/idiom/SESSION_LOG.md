@@ -8,6 +8,75 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 206 — 2026-06-20 — Recon (failed attempt + revert): the `mlist_to_hlist` SCC is blocked by an OT-math-FFI re-entry wall
+
+**Type:** execution attempt → **reverted**, no net code change. Took the session-205
+"Next" (thread the `mlist_to_hlist` SCC). The SCC is the mutual recursion
+`mlist_to_hlist → make_* → clean_box → mlist_to_hlist`, so (like the scanner SCC)
+it can only become single-borrow `_in` cores if all its substrate is threaded
+first. Threaded the substrate in two commits — the native-glyph/OT delimiter
+builders (`char_box_in`/`stack_glyph_into_box_in`/`native_glyph_vbox_in`/
+`stack_glue_into_box_in`/`build_opentype_assembly_in`) and `var_delimiter_in`/
+`rebox_in` — dashboard 29/2/7/4 on both.
+
+**Why reverted (the wall):** the full corpus caught **`NOXDV unicode_math`**
+(636 passed vs. baseline 637 — the session-187 doc-count check). Root cause: the
+OpenType-math FFI in `xetex/xetex-XeTeXOTMath.cpp` (`get_native_mathsy_param`,
+`get_native_mathex_param`, `get_ot_math_constant`, `get_ot_math_variant`,
+`get_ot_assembly_ptr`, `ot_min_connector_overlap`, `ot_part_{start,end}_connector`,
+`ot_part_full_advance` — every wrapper passed a **font id** `f`) calls back into
+Rust via `tt_get_font_size_entry` / `tt_get_font_area_entry` /
+`tt_get_font_layout_engine_entry`, and **all three callbacks are `with_state`
+accessors** (`globals.rs` → `state.fonts.font_{size,area,layout_engine}[f]`). So a
+threaded `_in` core that holds `with_state_mut` and calls any of these
+**nest-panics** (`RefCell already borrowed`), producing no `.xdv`. This is exactly
+why the pre-existing island code computes `axis_height` and the OT readers
+*outside* every `with_state` island (e.g. the session-193 `make_vcenter` note);
+`var_delimiter_in` moved `axis_height(s)` inside the borrow and
+`build_opentype_assembly_in` held the borrow across `ot_part_*(f,…)`.
+
+**This is a hard wall, the math analog of the session-187 native-measurer wall.**
+Crucially it blocks the **whole** SCC, not just the delimiter builders: every
+`make_*` arm that touches OT math (`make_radical`/`make_op`/`make_fraction`/
+`make_left_right`/`make_math_accent`/`make_vcenter` via `var_delimiter` /
+`get_ot_math_*` / `axis_height` / `math_*_param`) re-enters, so `mlist_to_hlist_in`
+holding one borrow and dispatching to any of them panics. No partial SCC threading
+is possible. ~150 of math.rs's 183 `with_state` sites are gated on this.
+
+**What IS safe (re-confirmed):** the native-glyph path is fine —
+`new_native_character_in` is `&mut EngineState` and `measure_native_glyph` is
+`&FontState`, both re-entry-free (session 187). Only the **OT-math** FFI (the
+`xetex-XeTeXOTMath.cpp` family above) re-enters. So `char_box_in` itself was
+correct; it was bundled with the OT-crossing functions and reverted with them.
+
+**The prerequisite (next session's real target):** make the three
+`tt_get_font_{size,area,layout_engine}_entry` callbacks **re-entry-free** so the
+OT-math FFI is callable under a held borrow (then the SCC threads mechanically,
+exactly as session 187 unblocked `line_break`/`mlist`). The arrays are
+`Vec<…>` fields on `FontState` inside the `ENGINE_STATE` `RefCell`. Design options:
+(a) raw mirror pointers (`mod raw`-style, like `line()`/`cur_input`) for the three
+arrays, refreshed after every font-table growth (find **all** push sites in
+`fonts.rs`/`ini.rs` — a missed resync is silent UB, so this needs the full corpus
++ a deliberate font-definition-during-math test); (b) move just those three arrays
+out of the `RefCell` into a separate callback-readable home. Validate with the
+**full corpus doc-count** (`unicode_math` must stay passed), not just the dashboard
+— the dashboard has no OpenType-math font and never exercises the wall.
+
+**Tests:** dashboard 29/2/7/4 held throughout; the regression was corpus-only
+(`NOXDV unicode_math`), caught by the doc-count check. After revert: `cargo check`
+clean, `src/math.rs` byte-identical to baseline `5f526487`. History carries the two
+threading commits + their two reverts (net-zero src; `git reset` unavailable).
+
+**Next:** thread the OT-math-FFI re-entry wall (the three `tt_get_font_*`
+callbacks) per the prerequisite above; **then** the `mlist_to_hlist` SCC
+(`mlist_to_hlist`/`clean_box`/`make_*`/`var_delimiter`/`build_opentype_assembly`)
+threads as one commit over the now-safe substrate. Until then, do **not** retry the
+SCC. A safer interim target with no OT-math coupling: `pagebuilder.rs`/`output.rs`
+tails (the scanner is now threaded, session 204, so `output.rs`
+`show_whatever`/`issue_message` may be unblocked).
+
+---
+
 ## Idiom session 205 — 2026-06-20 — Execution: finish the scanner-gated shipout hub
 
 **Type:** execution (workstream 01). Continued the interrupted `src/shipout.rs`
