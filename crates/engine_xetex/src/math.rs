@@ -3413,29 +3413,60 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleA
     Ok(b)
 }
 
-/// Transitional bridge-down wrapper for legacy `char_box` callers (`01b` §3,
-/// §5). Performs the `with_state`-bearing native-character allocation / TFM
-/// font-table reads, then builds the box under a single `mem` borrow.
-pub unsafe fn char_box_global(f: i32, c: i32) -> i32 {
-    if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        // Native fonts: `new_native_character` re-enters via `with_state`, so it
-        // must run *before* the box-building borrow (`01b` §4).
-        let input = CharBoxInput::Native {
-            p: crate::fonts::new_native_character(f, c as u32),
-        };
-        match crate::state::with_state_mut(|st| char_box(&mut st.mem, input)) {
-            Ok(b) => b,
-            Err(e) => node_recycle_abort(e),
+/// Unified cold-abort sentinel for the threaded math builders (`01b` §5): a
+/// fused-borrow `_in` core may hit either an arena-recycle overflow
+/// ([`NodeRecycleAbort`]) or the native-character build path
+/// ([`NativeCharAbort`]). The wrapper fires the appropriate divergent tail
+/// after the state borrow drops.
+pub(crate) enum MathBuildAbort {
+    Recycle(NodeRecycleAbort),
+    NativeChar(crate::fonts::NativeCharAbort),
+}
+
+impl From<NodeRecycleAbort> for MathBuildAbort {
+    fn from(e: NodeRecycleAbort) -> Self {
+        MathBuildAbort::Recycle(e)
+    }
+}
+
+impl From<crate::fonts::NativeCharAbort> for MathBuildAbort {
+    fn from(a: crate::fonts::NativeCharAbort) -> Self {
+        MathBuildAbort::NativeChar(a)
+    }
+}
+
+impl MathBuildAbort {
+    /// Run the divergent cold tail after the producing borrow has dropped (§5).
+    pub(crate) unsafe fn finish(self) -> ! {
+        match self {
+            MathBuildAbort::Recycle(e) => node_recycle_abort(e),
+            MathBuildAbort::NativeChar(a) => a.finish(),
         }
+    }
+}
+
+/// Threaded core (`01b` §3a): build the char box for `f`/`c` under one borrow.
+/// The native path's `new_native_character_in` and the TFM metric reads are all
+/// `_in`/`&FontState` (no `with_state` re-entry), so the whole build holds the
+/// caller's `&mut EngineState`.
+fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<i32, MathBuildAbort> {
+    let area = st.fonts.font_area_entry(f);
+    if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
+        let p = crate::fonts::new_native_character_in(st, f, c as u32)?;
+        let input = CharBoxInput::Native { p };
+        Ok(char_box(&mut st.mem, input)?)
     } else {
-        // TFM fonts: the metric reads are pure `FontState` lookups (no FFI
-        // re-entry), so the whole box build runs under one `mem`+`fonts` borrow.
-        match crate::state::with_state_mut(|st| {
-            char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)
-        }) {
-            Ok(b) => b,
-            Err(e) => node_recycle_abort(e),
-        }
+        Ok(char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)?)
+    }
+}
+
+/// Bridge-down wrapper for legacy `char_box` callers (`01b` §3, §5): runs the
+/// threaded [`char_box_in`] under one borrow, firing the deferred cold abort
+/// after it drops.
+pub unsafe fn char_box_global(f: i32, c: i32) -> i32 {
+    match crate::state::with_state_mut(|st| char_box_in(st, f, c)) {
+        Ok(b) => b,
+        Err(e) => e.finish(),
     }
 }
 
@@ -3531,19 +3562,23 @@ pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: i32) {
     }
 }
 
-/// Transitional bridge-down wrapper for legacy `stack_glyph_into_box` callers.
-/// The native-glyph measurement path reads font state via bridge accessors, so
-/// it must run between the allocation and linking borrows.
-pub unsafe fn stack_glyph_into_box_global(b: i32, f: i32, g: i32) {
-    let p = match crate::state::with_state_mut(|st| new_stack_glyph(&mut st.mem, f, g)) {
-        Ok(p) => p,
-        Err(e) => node_recycle_abort(e),
-    };
-    crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
-    crate::state::with_state_mut(|st| {
-        let b_box = classify_box_or_panic(&st.mem, b);
-        stack_glyph_into_box(&mut st.mem, b_box, p);
-    });
+/// Threaded core (`01b` §3a): allocate the glyph node, measure it via the
+/// re-entry-free `measure_native_glyph` (`&FontState`, session 187), and splice
+/// it — all under the caller's `&mut EngineState`.
+fn stack_glyph_into_box_in(
+    st: &mut EngineState,
+    b: i32,
+    f: i32,
+    g: i32,
+) -> Result<(), NodeRecycleAbort> {
+    let p = new_stack_glyph(&mut st.mem, f, g)?;
+    let addr = st.mem.data.as_mut_ptr().wrapping_add(p as usize) as *mut std::ffi::c_void;
+    // SAFETY: `measure_native_glyph` reads only `&FontState` and writes the
+    // freshly-allocated node `p` through `addr`; no `with_state` re-entry.
+    unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) };
+    let b_box = classify_box_or_panic(&st.mem, b);
+    stack_glyph_into_box(&mut st.mem, b_box, p);
+    Ok(())
 }
 
 fn native_glyph_vbox_start(
@@ -3568,15 +3603,21 @@ fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: i32) {
     b_box.set_depth(mem, Scaled(mem.b32s1(p + 2)));
 }
 
+/// Threaded core (`01b` §3a): build the single-glyph vbox under one borrow.
+fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<i32, NodeRecycleAbort> {
+    let (b, p) = native_glyph_vbox_start(&mut st.mem, f, g)?;
+    let addr = st.mem.data.as_mut_ptr().wrapping_add(p as usize) as *mut std::ffi::c_void;
+    // SAFETY: see `stack_glyph_into_box_in` — re-entry-free `&FontState` measure.
+    unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) };
+    native_glyph_vbox_finish(&mut st.mem, b, p);
+    Ok(b.idx().0)
+}
+
 unsafe fn native_glyph_vbox_global(f: i32, g: u16) -> i32 {
-    let (b, p) = match crate::state::with_state_mut(|st| native_glyph_vbox_start(&mut st.mem, f, g))
-    {
-        Ok(nodes) => nodes,
+    match crate::state::with_state_mut(|st| native_glyph_vbox_in(st, f, g)) {
+        Ok(b) => b,
         Err(e) => node_recycle_abort(e),
-    };
-    crate::ext::measure_native_glyph_global(mem_node_addr(p), 1);
-    crate::state::with_state_mut(|st| native_glyph_vbox_finish(&mut st.mem, b, p));
-    b.idx().0
+    }
 }
 
 /// translated from xetex-math.c:1517 (stack_glue_into_box)
@@ -3625,15 +3666,16 @@ fn stack_glue_into_box(
     Ok(())
 }
 
-/// Transitional bridge-down wrapper for legacy `stack_glue_into_box` callers
-/// (`01b` §3, §5).
-pub unsafe fn stack_glue_into_box_global(b: i32, min: i32, max: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| {
-        let b_box = classify_box_or_panic(&st.mem, b);
-        stack_glue_into_box(&mut st.mem, b_box, min, max)
-    }) {
-        node_recycle_abort(e);
-    }
+/// Threaded core (`01b` §3a): classify `b` and splice the glue under the
+/// caller's `&mut EngineState`.
+fn stack_glue_into_box_in(
+    st: &mut EngineState,
+    b: i32,
+    min: i32,
+    max: i32,
+) -> Result<(), NodeRecycleAbort> {
+    let b_box = classify_box_or_panic(&st.mem, b);
+    stack_glue_into_box(&mut st.mem, b_box, min, max)
 }
 
 enum OtMathAccentPosStep {
@@ -5179,20 +5221,26 @@ pub unsafe fn rebox_global(b: i32, w: i32) -> i32 {
 
 /// translated from xetex-math.c:1206 (build_opentype_assembly)
 ///
-/// Phase-C: de-exported and converted from per-access bridge accessors to
-/// **scoped `with_state` islands**. The C++ OpenType readers (`ot_min_*`,
-/// `ot_part_*`) and the part-stacking helpers (`stack_glue_into_box_global` /
-/// `stack_glyph_into_box_global`, which themselves measure native glyphs via
-/// C++) re-enter Rust through `with_state`, so this function must **never** hold
-/// a state borrow across them (the session-135 nest-panic lesson, `01b` §4).
-/// Only the borrow-free regions take a `mem` borrow: the box-type set, and the
-/// final natural-size measurement + dimension write (neither calls any FFI).
-pub unsafe fn build_opentype_assembly(f: i32, a: *mut libc::c_void, s: i32, horiz: bool) -> i32 {
-    let b = crate::mem::new_null_box_global();
-    crate::state::with_state_mut(|st| {
-        st.mem
-            .set_b16s1(b, if horiz { HLIST_NODE } else { VLIST_NODE });
-    });
+/// Phase-C (`01b` §3a): threaded to a single `&mut EngineState` borrow. The C++
+/// OpenType readers (`ot_min_*`, `ot_part_*`) are raw `extern "C"` calls with no
+/// `with_state` re-entry, and the part-stacking helpers now have `_in` cores
+/// (`stack_glue_into_box_in` / `stack_glyph_into_box_in`, whose native-glyph
+/// measurement is the re-entry-free `&FontState` `measure_native_glyph`, session
+/// 187), so the whole build — box-type set, node-list construction, and the
+/// natural-size measurement + dimension write — runs under one borrow.
+unsafe fn build_opentype_assembly_in(
+    st: &mut EngineState,
+    f: i32,
+    a: *mut libc::c_void,
+    s: i32,
+    horiz: bool,
+) -> Result<i32, NodeRecycleAbort> {
+    let b = crate::mem::new_null_box(&mut st.mem);
+    if b == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    st.mem
+        .set_b16s1(b, if horiz { HLIST_NODE } else { VLIST_NODE });
     let mut n: i32 = -1;
     let mut no_extenders = true;
     let min_o = ot_min_connector_overlap(f);
@@ -5245,9 +5293,9 @@ pub unsafe fn build_opentype_assembly(f: i32, a: *mut libc::c_void, s: i32, hori
                     o = min_o;
                 }
                 if oo > 0 {
-                    stack_glue_into_box_global(b, -oo, -o);
+                    stack_glue_into_box_in(st, b, -oo, -o)?;
                 }
-                stack_glyph_into_box_global(b, f, ot_part_glyph(a, i));
+                stack_glyph_into_box_in(st, b, f, ot_part_glyph(a, i))?;
                 prev_o = ot_part_end_connector(f, a, i);
             }
         } else {
@@ -5260,56 +5308,60 @@ pub unsafe fn build_opentype_assembly(f: i32, a: *mut libc::c_void, s: i32, hori
                 o = min_o;
             }
             if oo > 0 {
-                stack_glue_into_box_global(b, -oo, -o);
+                stack_glue_into_box_in(st, b, -oo, -o)?;
             }
-            stack_glyph_into_box_global(b, f, ot_part_glyph(a, i));
+            stack_glyph_into_box_in(st, b, f, ot_part_glyph(a, i))?;
             prev_o = ot_part_end_connector(f, a, i);
         }
     }
-    // Measure natural size and total stretch — pure `mem` reads, one borrow.
-    let (nat, str) = crate::state::with_state(|st| {
-        let mut p = st.mem.b32s1(b + 5);
-        let mut nat: i32 = 0;
-        let mut str: i32 = 0;
-        while p != TEX_NULL {
-            if st.mem.b16s1(p) == WHATSIT_NODE {
-                if horiz {
-                    nat += st.mem.b32s1(p + 1);
-                } else {
-                    nat += st.mem.b32s1(p + 3) + st.mem.b32s1(p + 2);
-                }
-            } else if st.mem.b16s1(p) == GLUE_NODE {
-                let gptr = st.mem.b32s0(p + 1);
-                nat += st.mem.b32s1(gptr + 1);
-                str += st.mem.b32s1(gptr + 2);
-            }
-            p = st.mem.b32s1(p);
-        }
-        (nat, str)
-    });
-    // Write the resolved dimensions — pure `mem` writes, one borrow.
-    crate::state::with_state_mut(|st| {
-        if s > nat && str > 0 {
-            let o = if s - nat > str { str } else { s - nat };
-            st.mem.set_b16s0(b + 5, NORMAL);
-            st.mem.set_b16s1(b + 5, STRETCHING);
-            // The C reads MEM[b+6].gr back after storing it; an f64 round-trips
-            // exactly, so the stored `ratio` is byte-identical to the re-read.
-            let ratio = o as f64 / str as f64;
-            st.mem.set_gr(b + 6, ratio);
-            let set_dim = nat + crate::scaled_math::tex_round(str as f64 * ratio);
+    // Measure natural size and total stretch — pure `mem` reads.
+    let mut p = st.mem.b32s1(b + 5);
+    let mut nat: i32 = 0;
+    let mut str: i32 = 0;
+    while p != TEX_NULL {
+        if st.mem.b16s1(p) == WHATSIT_NODE {
             if horiz {
-                st.mem.set_b32s1(b + 1, set_dim);
+                nat += st.mem.b32s1(p + 1);
             } else {
-                st.mem.set_b32s1(b + 3, set_dim);
+                nat += st.mem.b32s1(p + 3) + st.mem.b32s1(p + 2);
             }
-        } else if horiz {
-            st.mem.set_b32s1(b + 1, nat);
-        } else {
-            st.mem.set_b32s1(b + 3, nat);
+        } else if st.mem.b16s1(p) == GLUE_NODE {
+            let gptr = st.mem.b32s0(p + 1);
+            nat += st.mem.b32s1(gptr + 1);
+            str += st.mem.b32s1(gptr + 2);
         }
-    });
-    b
+        p = st.mem.b32s1(p);
+    }
+    // Write the resolved dimensions — pure `mem` writes.
+    if s > nat && str > 0 {
+        let o = if s - nat > str { str } else { s - nat };
+        st.mem.set_b16s0(b + 5, NORMAL);
+        st.mem.set_b16s1(b + 5, STRETCHING);
+        // The C reads MEM[b+6].gr back after storing it; an f64 round-trips
+        // exactly, so the stored `ratio` is byte-identical to the re-read.
+        let ratio = o as f64 / str as f64;
+        st.mem.set_gr(b + 6, ratio);
+        let set_dim = nat + crate::scaled_math::tex_round(str as f64 * ratio);
+        if horiz {
+            st.mem.set_b32s1(b + 1, set_dim);
+        } else {
+            st.mem.set_b32s1(b + 3, set_dim);
+        }
+    } else if horiz {
+        st.mem.set_b32s1(b + 1, nat);
+    } else {
+        st.mem.set_b32s1(b + 3, nat);
+    }
+    Ok(b)
+}
+
+/// translated from xetex-math.c:1206 (build_opentype_assembly) — bridge-down
+/// wrapper for legacy callers (`01b` §3, §5).
+pub unsafe fn build_opentype_assembly(f: i32, a: *mut libc::c_void, s: i32, horiz: bool) -> i32 {
+    match crate::state::with_state_mut(|st| build_opentype_assembly_in(st, f, a, s, horiz)) {
+        Ok(b) => b,
+        Err(e) => node_recycle_abort(e),
+    }
 }
 
 /// Build the extensible (`EXT_TAG`) delimiter box for [`var_delimiter_global`].
