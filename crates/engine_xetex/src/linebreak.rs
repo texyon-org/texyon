@@ -3105,14 +3105,16 @@ unsafe fn try_break(
 
                     if g > 0 {
                         errors.arith_error = false;
-                        g = crate::scaled_math::fract(
+                        g = crate::scaled_math::fract_in(
+                            errors,
                             g,
                             r_active.shortfall(mem).0,
                             r_active.glue(mem).0,
                             MAX_HALFWORD,
                         );
                         if eqtb.b32s1(INT_BASE + INT_PAR_LAST_LINE_FIT) < 1000 {
-                            g = crate::scaled_math::fract(
+                            g = crate::scaled_math::fract_in(
+                                errors,
                                 g,
                                 eqtb.b32s1(INT_BASE + INT_PAR_LAST_LINE_FIT),
                                 1000,

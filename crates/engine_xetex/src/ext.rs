@@ -1367,8 +1367,15 @@ pub unsafe fn ot_font_get_3(
     }
 }
 
-// translated from xetex-ext.c:651 (gr_print_font_name)
-pub unsafe fn gr_print_font_name(what: i32, p_engine: *mut c_void, param1: i32, param2: i32) {
+/// `&mut EngineState` core of [`gr_print_font_name`] so a threaded caller
+/// (`conv_toks_in`) can print under the borrow.
+pub(crate) unsafe fn gr_print_font_name_in(
+    st: &mut crate::state::EngineState,
+    what: i32,
+    p_engine: *mut c_void,
+    param1: i32,
+    param2: i32,
+) {
     let engine = p_engine as XeTeXLayoutEngine;
     let name = match what {
         XETEX_FEATURE_NAME_CODE => getGraphiteFeatureLabel(engine, param1 as u32),
@@ -1379,7 +1386,7 @@ pub unsafe fn gr_print_font_name(what: i32, p_engine: *mut c_void, param1: i32, 
     };
 
     if !name.is_null() {
-        crate::output::print_cstr(name);
+        crate::output::print_cstr_in(st, name);
         gr_label_destroy(name as *mut c_void);
     }
 }
@@ -2305,27 +2312,21 @@ pub fn aat_font_get_named_1(_what: c_int, _attributes: *mut c_void, _param: c_in
 pub fn aat_print_font_name(_what: c_int, _attributes: *mut c_void, _param1: c_int, _param2: c_int) {
 }
 
-// translated from xetex-ext.c:1538 (print_glyph_name)
-pub unsafe fn print_glyph_name(font: i32, gid: i32) {
+/// `&mut EngineState` core of [`print_glyph_name`] so a threaded caller
+/// (`conv_toks_in`) can print under the borrow. Reads the font engine from
+/// `st.fonts` directly instead of via `with_state`.
+pub(crate) unsafe fn print_glyph_name_in(st: &mut crate::state::EngineState, font: i32, gid: i32) {
     let mut len: c_int = 0;
-
-    // Read the font engine under a short borrow and drop it before the
-    // with_state-bearing `print_char` loop below (§4a borrow-dropping shape).
-    let engine = crate::state::with_state(|s| {
-        if s.fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
-            Some(s.fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine)
-        } else {
-            None
-        }
-    });
-    let s = match engine {
-        Some(engine) => getGlyphName(getFont(engine), gid as u16, &mut len),
-        None => _tt_abort(c"bad native font flag in `print_glyph_name`".as_ptr()),
+    let engine = if st.fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
+        st.fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine
+    } else {
+        _tt_abort(c"bad native font flag in `print_glyph_name`".as_ptr())
     };
+    let s = getGlyphName(getFont(engine), gid as u16, &mut len);
 
     let mut p = s;
     while len > 0 {
-        print_char(*p as i32);
+        crate::output::print_char_in(st, *p as i32);
         p = p.add(1);
         len -= 1;
     }
@@ -2343,11 +2344,6 @@ pub unsafe fn measure_native_glyph_global(p_node: *mut c_void, use_glyph_metrics
 }
 pub unsafe fn linebreak_next_global(f: c_int) -> c_int {
     crate::state::with_state(|s| linebreak_next(&s.fonts, f))
-}
-pub unsafe fn map_glyph_to_index_global(font: i32) -> i32 {
-    // `name_of_file()` is with_state-bearing, so read it before the borrow (§4a).
-    let name = crate::globals::name_of_file();
-    crate::state::with_state(|s| map_glyph_to_index(&s.fonts, font, name))
 }
 pub unsafe fn make_font_def_global(f: i32) -> c_int {
     crate::state::with_state_mut(|s| make_font_def(&mut s.fonts, f))
@@ -2376,12 +2372,6 @@ pub unsafe fn get_native_char_height_depth_global(
 ) {
     crate::state::with_state(|s| get_native_char_height_depth(&s.fonts, font, ch, height, depth))
 }
-pub unsafe fn getnativecharht_global(f: i32, c: i32) -> i32 {
-    crate::state::with_state(|s| getnativecharht(&s.fonts, f, c))
-}
-pub unsafe fn getnativechardp_global(f: i32, c: i32) -> i32 {
-    crate::state::with_state(|s| getnativechardp(&s.fonts, f, c))
-}
 pub unsafe fn get_native_char_sidebearings_global(
     font: i32,
     ch: i32,
@@ -2390,20 +2380,8 @@ pub unsafe fn get_native_char_sidebearings_global(
 ) {
     crate::state::with_state(|s| get_native_char_sidebearings(&s.fonts, font, ch, lsb, rsb))
 }
-pub unsafe fn get_glyph_bounds_global(font: i32, edge: i32, gid: i32) -> i32 {
-    crate::state::with_state(|s| get_glyph_bounds(&s.fonts, font, edge, gid))
-}
-pub unsafe fn getnativecharic_global(f: i32, c: i32) -> i32 {
-    crate::state::with_state(|s| getnativecharic(&s.fonts, f, c))
-}
-pub unsafe fn getnativecharwd_global(f: i32, c: i32) -> i32 {
-    crate::state::with_state(|s| getnativecharwd(&s.fonts, f, c))
-}
 pub unsafe fn map_char_to_glyph_global(font: i32, ch: i32) -> i32 {
     crate::state::with_state(|s| map_char_to_glyph(&s.fonts, font, ch))
-}
-pub unsafe fn get_font_char_range_global(font: i32, first: i32) -> i32 {
-    crate::state::with_state(|s| get_font_char_range(&s.fonts, font, first))
 }
 
 #[cfg(test)]

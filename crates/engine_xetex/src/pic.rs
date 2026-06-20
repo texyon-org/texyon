@@ -705,13 +705,15 @@ pub unsafe fn load_picture(is_pdf: bool) {
     }
 }
 
-// translated from xetex-pic.c:76 (count_pdf_file_pages)
-pub unsafe fn count_pdf_file_pages() -> c_int {
-    let handle = ttstub_input_open(crate::globals::name_of_file(), TTBC_FILE_FORMAT_PICT, 0);
+/// `name`-passing core of [`count_pdf_file_pages`] so a threaded caller holding
+/// `&mut EngineState` can supply the file name read directly from `st.input`
+/// instead of re-entering `with_state` via `name_of_file()`.
+pub(crate) unsafe fn count_pdf_file_pages_named(name: *const libc::c_char) -> c_int {
+    let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_PICT, 0);
     if handle == INVALID_HANDLE {
         return 0;
     }
-    let pf = pdf_open(crate::globals::name_of_file(), handle);
+    let pf = pdf_open(name, handle);
     if pf.is_null() {
         ttstub_input_close(handle);
         return 0;

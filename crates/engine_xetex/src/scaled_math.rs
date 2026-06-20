@@ -16,7 +16,7 @@ use crate::output::print_scaled;
 
 use crate::globals::{
     j_random, random_entry, set_arith_error, set_help_line, set_help_ptr, set_j_random,
-    set_random_entry, set_tex_remainder, spec_log, two_to_the,
+    set_random_entry, spec_log, two_to_the,
 };
 
 extern "C" {}
@@ -83,7 +83,13 @@ pub fn half(x: i32) -> i32 {
 /// exceed `max_answer` in magnitude.
 ///
 /// translated from xetex-scaledmath.c:60 (mult_and_add)
-pub fn mult_and_add(
+pub fn mult_and_add(n: i32, x: i32, y: i32, max_answer: i32) -> i32 {
+    crate::state::with_state_mut(|st| mult_and_add_in(&mut st.errors, n, x, y, max_answer))
+}
+
+/// `&mut ErrorState` core of [`mult_and_add`] (callable under a held borrow).
+pub(crate) fn mult_and_add_in(
+    errors: &mut crate::state::ErrorState,
     mut n: i32,
     mut x: i32,      // scaled_t
     y: i32,          // scaled_t
@@ -117,7 +123,7 @@ pub fn mult_and_add(
         // diverges from the C engine's observed behaviour.
         n.wrapping_mul(x).wrapping_add(y)
     } else {
-        set_arith_error(true);
+        errors.arith_error = true;
         0
     }
 }
@@ -186,11 +192,16 @@ pub fn x_over_n_in(errors: &mut crate::state::ErrorState, mut x: i32, mut n: i32
 ///
 /// translated from xetex-scaledmath.c:105 (xn_over_d)
 pub fn xn_over_d(x: i32, n: i32, d: i32) -> i32 {
+    crate::state::with_state_mut(|st| xn_over_d_in(&mut st.errors, x, n, d))
+}
+
+/// `&mut ErrorState` core of [`xn_over_d`] (callable under a held borrow).
+pub(crate) fn xn_over_d_in(errors: &mut crate::state::ErrorState, x: i32, n: i32, d: i32) -> i32 {
     let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
     if overflowed {
-        set_arith_error(true);
+        errors.arith_error = true;
     }
-    set_tex_remainder(remainder);
+    errors.tex_remainder = remainder;
     quotient
 }
 
@@ -865,32 +876,34 @@ mod tests {
 // add_or_sub / quotient / fract
 // ---------------------------------------------------------------------------
 
-/// Add or subtract two scaled values, setting arith_error on overflow.
-///
-/// translated from xetex-xetex0.c:6281 (add_or_sub)
-pub fn add_or_sub(x: i32, y: i32, max_answer: i32, negative: bool) -> i32 {
+/// `&mut ErrorState` core of [`add_or_sub`] (callable under a held borrow).
+pub(crate) fn add_or_sub_in(
+    errors: &mut crate::state::ErrorState,
+    x: i32,
+    y: i32,
+    max_answer: i32,
+    negative: bool,
+) -> i32 {
     let y = if negative { -y } else { y };
     if x >= 0 {
         if y <= max_answer - x {
             x + y
         } else {
-            set_arith_error(true);
+            errors.arith_error = true;
             0
         }
     } else if y >= -max_answer - x {
         x + y
     } else {
-        set_arith_error(true);
+        errors.arith_error = true;
         0
     }
 }
 
-/// Rounded integer quotient n/d, setting arith_error on divide-by-zero.
-///
-/// translated from xetex-xetex0.c:6305 (quotient)
-pub fn quotient(mut n: i32, mut d: i32) -> i32 {
+/// `&mut ErrorState` core of [`quotient`] (callable under a held borrow).
+pub(crate) fn quotient_in(errors: &mut crate::state::ErrorState, mut n: i32, mut d: i32) -> i32 {
     if d == 0 {
-        set_arith_error(true);
+        errors.arith_error = true;
         return 0;
     }
     let mut negative = if d > 0 {
@@ -916,12 +929,16 @@ pub fn quotient(mut n: i32, mut d: i32) -> i32 {
     }
 }
 
-/// Compute x * n / d clamped to max_answer, setting arith_error on overflow.
-///
-/// translated from xetex-xetex0.c:6336 (fract)
-pub fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
+/// `&mut ErrorState` core of [`fract`] (callable under a held borrow).
+pub(crate) fn fract_in(
+    errors: &mut crate::state::ErrorState,
+    mut x: i32,
+    mut n: i32,
+    mut d: i32,
+    max_answer: i32,
+) -> i32 {
     if d == 0 {
-        set_arith_error(true);
+        errors.arith_error = true;
         return 0;
     }
     let mut negative = if d > 0 {
@@ -942,7 +959,7 @@ pub fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
     }
     let t = n / d;
     if t > max_answer / x {
-        set_arith_error(true);
+        errors.arith_error = true;
         return 0;
     }
     let mut a = t * x;
@@ -951,7 +968,7 @@ pub fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
     let a = if n != 0 {
         let t2 = x / d;
         if t2 > (max_answer - a) / n {
-            set_arith_error(true);
+            errors.arith_error = true;
             return 0;
         }
         a += t2 * n;
@@ -993,7 +1010,7 @@ pub fn fract(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
             }
             // found1:
             if f > max_answer - a {
-                set_arith_error(true);
+                errors.arith_error = true;
                 return 0;
             }
             a + f

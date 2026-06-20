@@ -406,13 +406,6 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
 // insert_relax
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-xetex0.c:3998 (insert_relax)
-pub unsafe fn insert_relax() {
-    if let Err(a) = crate::state::with_state_mut(insert_relax_in) {
-        a.fire();
-    }
-}
-
 /// `&mut EngineState` core of [`insert_relax`] (`01b` §3): back up the current
 /// control sequence followed by a frozen `\relax`, marking the stack `INSERTED`.
 /// `cur_cs`/`cur_tok` are raw `mod raw` globals; both `back_input`s ride

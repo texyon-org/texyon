@@ -1,10 +1,12 @@
 # Scanner / `expand` SCC — landing plan (the hard core)
 
-> Status: **analysis done (session 202), execution in progress.** This is
-> the concrete plan for the last big threading frontier: the
-> mutually-recursive scanner cluster headed by `expand`. Read with `01b`
-> (the Phase-C recipe) — this doc is the per-cluster recon `01b` §9 calls
-> for, specialized to the SCC.
+> Status: **DONE (session 204).** The big pass landed: all 37 SCC members
+> are threaded into `_in(&mut EngineState) -> Result<T, SccAbort>` cores,
+> each global is a thin `with_state_mut` wrapper, and the corpus is green
+> (no NOXDV/NOLOG). See `SESSION_LOG.md` session 204. The manifest below is
+> retained as the executed design of record. This was the last big
+> threading frontier: the mutually-recursive scanner cluster headed by
+> `expand`. Read with `01b` (the Phase-C recipe).
 
 ## The finding (session 202)
 

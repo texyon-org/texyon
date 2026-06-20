@@ -8,13 +8,9 @@ use crate::globals::{
     set_name_length, set_read_open_entry, set_stop_at_space,
 };
 use crate::globals::{
-    cur_cmd, cur_cs, cur_input, def_ref, file_offset, init_pool_ptr, max_print_line, mem_b32s1,
-    old_setting, open_parens, pool_ptr, pool_size, rust_stdout, scanner_status, selector,
-    set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
-    set_def_ref, set_eqtb_b32s1, set_first, set_line, set_old_setting, set_open_parens,
-    set_pool_ptr, set_scanner_status, set_selector, set_str_pool, set_str_ptr, set_warning_index,
-    stop_at_space, str_pool_entry, str_ptr, str_start, term_offset, texmf_log_name, warning_index,
-    write_open,
+    cur_cmd, cur_cs, cur_input, init_pool_ptr, pool_size, selector, set_cur_cs,
+    set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
+    set_eqtb_b32s1, set_first, set_line, set_selector, texmf_log_name, write_open,
 };
 use crate::input::InputAbort;
 
@@ -33,10 +29,8 @@ use crate::output::print_cstr;
 use crate::output::print_int;
 use crate::output::print_nl;
 use crate::output::print_nl_cstr;
-use crate::scan::get_x_token;
 use crate::scan::scan_four_bit_int;
 use crate::scan::scan_optional_equals;
-use crate::scan::scan_toks;
 use crate::shipout::finalize_dvi_file;
 use crate::texmfmp::gettexstring;
 
@@ -305,6 +299,104 @@ pub unsafe fn u_open_in(
 /// Wrapper so scan.rs can call `set_input_file_encoding` without re-declaring it.
 pub(crate) unsafe fn call_set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32) {
     set_input_file_encoding(f, mode, encoding_data);
+}
+
+/// `&mut EngineState` core of [`tt_xetex_open_input`] so a threaded caller
+/// (`start_input_in`) can open under the borrow without re-entering `with_state`.
+pub(crate) unsafe fn tt_xetex_open_input_in(
+    st: &mut crate::state::EngineState,
+    filefmt: libc::c_int,
+) -> usize {
+    let nof = || {
+        if st.input.name_of_file.is_empty() {
+            std::ptr::null_mut::<libc::c_char>()
+        } else {
+            st.input.name_of_file.as_ptr() as *mut libc::c_char
+        }
+    };
+    let handle = if filefmt == TTBC_FILE_FORMAT_TECTONIC_PRIMARY {
+        ttstub_input_open_primary()
+    } else if *nof() == b'|' as libc::c_char {
+        crate::output::print_nl_cstr_in(st, c"Warning: ".as_ptr());
+        crate::output::diagnostic_begin_capture_warning_here_in(st);
+        crate::output::print_cstr_in(
+            st,
+            c"piped inputs from external commands are not implemented in Tectonic".as_ptr(),
+        );
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        return INVALID_HANDLE;
+    } else {
+        ttstub_input_open(nof(), filefmt, 0)
+    };
+
+    if handle == INVALID_HANDLE {
+        return INVALID_HANDLE;
+    }
+
+    if ttstub_get_last_input_abspath(
+        st.input.abspath_of_input_file.0.as_mut_ptr(),
+        st.input.abspath_of_input_file.0.len(),
+    ) < 1
+    {
+        st.input.abspath_of_input_file.0[0] = 0;
+    }
+
+    let nof_ptr = nof();
+    st.input.name_length = libc::strlen(nof_ptr) as i32;
+    libc::free(st.input.name_of_input_file as *mut libc::c_void);
+    st.input.name_of_input_file = xstrdup(nof_ptr);
+    handle
+}
+
+/// `&mut EngineState` core of [`u_open_in`] (the rest is FFI / `set_input_file_encoding`).
+pub(crate) unsafe fn u_open_in_in(
+    st: &mut crate::state::EngineState,
+    f: *mut *mut UFile,
+    filefmt: i32,
+    mut mode: i32,
+    encoding_data: i32,
+) -> libc::c_int {
+    let handle = tt_xetex_open_input_in(st, filefmt);
+    if handle == INVALID_HANDLE {
+        return 0;
+    }
+
+    *f = xmalloc(std::mem::size_of::<UFile>()) as *mut UFile;
+    (**f).encoding_mode = 0;
+    (**f).conversion_data = std::ptr::null_mut();
+    (**f).saved_char = -1;
+    (**f).skip_next_lf = 0;
+    (**f).handle = handle;
+
+    if mode == AUTO {
+        let b1 = ttstub_input_getc((**f).handle);
+        let b2 = ttstub_input_getc((**f).handle);
+
+        if b1 == 0xfe && b2 == 0xff {
+            mode = UTF16BE;
+        } else if b2 == 0xfe && b1 == 0xff {
+            mode = UTF16LE;
+        } else if b1 == 0 && b2 != 0 {
+            mode = UTF16BE;
+            ttstub_input_seek((**f).handle, 0, libc::SEEK_SET);
+        } else if b2 == 0 && b1 != 0 {
+            mode = UTF16LE;
+            ttstub_input_seek((**f).handle, 0, libc::SEEK_SET);
+        } else if b1 == 0xEF && b2 == 0xBB {
+            let b3 = ttstub_input_getc((**f).handle);
+            if b3 == 0xBF {
+                mode = UTF8;
+            }
+        }
+
+        if mode == AUTO {
+            ttstub_input_seek((**f).handle, 0, libc::SEEK_SET);
+            mode = UTF8;
+        }
+    }
+
+    set_input_file_encoding(*f, mode, encoding_data);
+    1
 }
 
 // ---------------------------------------------------------------------------
@@ -1103,89 +1195,20 @@ pub unsafe fn make_name_string() -> i32 {
 }
 /// translated from xetex-xetex0.c:13424 (scan_and_pack_name)
 pub unsafe fn scan_and_pack_name() {
-    scan_file_name();
-    pack_file_name(
-        crate::globals::cur_name(),
-        crate::globals::cur_area(),
-        crate::globals::cur_ext(),
-    );
+    if let Err(e) = crate::state::with_state_mut(|st| scan_and_pack_name_in(st)) {
+        unsafe { e.fire() }
+    }
 }
 unsafe fn scan_file_name_braced() {
-    let save_scanner_status = scanner_status();
-    let save_def_ref = def_ref();
-    let save_cur_cs = cur_cs();
-    let save_stop_at_space = stop_at_space();
-
-    set_cur_cs(warning_index());
-    scan_toks(false, true);
-
-    set_old_setting(selector() as u8);
-    set_selector(SELECTOR_NEW_STRING);
-    crate::output::show_token_list(
-        mem_b32s1(def_ref()),
-        crate::mem::TEX_NULL,
-        pool_size() - pool_ptr(),
-    );
-    set_selector(old_setting() as i32);
-
-    let s = crate::string_pool::make_string_global();
-    crate::mem::delete_token_ref_global(def_ref());
-    set_def_ref(save_def_ref);
-    set_cur_cs(save_cur_cs);
-    set_scanner_status(save_scanner_status);
-
-    begin_name();
-    let start = str_start(s - TOO_BIG_CHAR);
-    let end = str_start(s + 1 - TOO_BIG_CHAR);
-    for i in start..end {
-        more_name(str_pool_entry(i));
+    if let Err(e) = crate::state::with_state_mut(|st| scan_file_name_braced_in(st)) {
+        unsafe { e.fire() }
     }
-    set_stop_at_space(save_stop_at_space);
 }
 /// translated from xetex-xetex0.c:8003 (scan_file_name)
 pub unsafe fn scan_file_name() {
-    let save_warning_index = warning_index();
-    set_warning_index(cur_cs());
-
-    loop {
-        get_x_token();
-        if cur_cmd() != SPACER && cur_cmd() != RELAX {
-            break;
-        }
+    if let Err(e) = crate::state::with_state_mut(|st| scan_file_name_in(st)) {
+        unsafe { e.fire() }
     }
-
-    crate::input::back_input();
-
-    if cur_cmd() == LEFT_BRACE {
-        scan_file_name_braced();
-    } else {
-        set_name_in_progress(true);
-        begin_name();
-
-        loop {
-            get_x_token();
-            if cur_cmd() != SPACER {
-                break;
-            }
-        }
-
-        loop {
-            if cur_cmd() > OTHER_CHAR || cur_chr() > BIGGEST_CHAR {
-                crate::input::back_input();
-                break;
-            }
-
-            if !more_name(cur_chr() as u16) {
-                break;
-            }
-
-            get_x_token();
-        }
-    }
-
-    end_name();
-    set_name_in_progress(false);
-    set_warning_index(save_warning_index);
 }
 /// translated from xetex-xetex0.c:7970 (pack_job_name)
 pub unsafe fn pack_job_name(s: *const libc::c_char) {
@@ -1289,191 +1312,11 @@ pub(crate) unsafe fn open_log_file_in(
 }
 /// translated from xetex-xetex0.c:6431 (start_input)
 pub unsafe fn start_input(primary_input_name: *const libc::c_char) {
-    use crate::globals::{
-        cur_area, cur_ext, cur_name, full_source_filename_stack, in_open, input_file,
-        input_file_ptr, input_ptr, job_name, name_length16, name_of_file16_entry,
-        set_area_delimiter, set_ext_delimiter, set_full_source_filename_stack, set_job_name,
-        set_source_filename_stack,
-    };
-
-    let format = if !primary_input_name.is_null() {
-        TTBC_FILE_FORMAT_TECTONIC_PRIMARY_SI
-    } else {
-        TTBC_FILE_FORMAT_TEX_SI
-    };
-
-    if !primary_input_name.is_null() {
-        set_name_in_progress(true);
-        begin_name();
-        set_stop_at_space(false);
-
-        let mut cp = primary_input_name as *const u8;
-        if pool_ptr() + libc::strlen(primary_input_name) as i32 * 2 >= pool_size() {
-            _tt_abort(c"string pool overflow".as_ptr());
-        }
-
-        loop {
-            let first_byte = *cp;
-            cp = cp.add(1);
-            if first_byte == 0 {
-                break;
-            }
-            let mut rval = first_byte as u32;
-            let extra_bytes = raw_utf8::bytesFromUTF8[rval as usize] as usize;
-            for _ in 0..extra_bytes {
-                if *cp != 0 {
-                    rval = (rval << 6) + *cp as u32;
-                    cp = cp.add(1);
-                } else {
-                    rval <<= 6;
-                }
-            }
-            rval -= raw_utf8::offsetsFromUTF8[extra_bytes];
-
-            if rval > 0xffff {
-                rval -= 0x10000;
-                let pp = pool_ptr();
-                set_str_pool(pp, (0xd800 + rval / 0x0400) as u16);
-                set_pool_ptr(pp + 1);
-                let pp = pool_ptr();
-                set_str_pool(pp, (0xdc00 + rval % 0x0400) as u16);
-                set_pool_ptr(pp + 1);
-            } else {
-                let pp = pool_ptr();
-                set_str_pool(pp, rval as u16);
-                set_pool_ptr(pp + 1);
-            }
-
-            let cur_len = pool_ptr() - str_start(str_ptr() - TOO_BIG_CHAR);
-            if rval == b'/' as u32 {
-                // IS_DIR_SEP
-                set_area_delimiter(cur_len);
-                set_ext_delimiter(0);
-            } else if rval == b'.' as u32 {
-                set_ext_delimiter(cur_len);
-            }
-        }
-
-        set_stop_at_space(true);
-        end_name();
-        set_name_in_progress(false);
-    } else {
-        scan_file_name();
-    }
-
-    pack_file_name(cur_name(), cur_area(), cur_ext());
-    crate::input::begin_file_reading();
-
-    let idx = cur_input().index as i32;
-    if crate::io::u_open_in(
-        input_file_ptr(idx),
-        format,
-        c"rb".as_ptr(),
-        eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE),
-        eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING),
-    ) == 0
+    if let Err(e) =
+        crate::state::with_state_mut(|st| unsafe { start_input_in(st, primary_input_name) })
     {
-        // Format "failed to open input file "<name>" into a stack buffer;
-        // matches the C: _tt_abort("failed to open input file \"%s\"", name_of_file)
-        let mut buf = [0u8; 512];
-        libc::snprintf(
-            buf.as_mut_ptr() as *mut libc::c_char,
-            buf.len(),
-            c"failed to open input file \"%s\"".as_ptr(),
-            crate::globals::name_of_file(),
-        );
-        _tt_abort(buf.as_ptr() as *const libc::c_char);
+        unsafe { e.fire() }
     }
-
-    crate::io::make_utf16_name();
-    set_name_in_progress(true);
-    begin_name();
-    set_stop_at_space(false);
-    let mut k = 0i32;
-    while k < name_length16() && more_name(name_of_file16_entry(k)) {
-        k += 1;
-    }
-    set_stop_at_space(true);
-    end_name();
-    set_name_in_progress(false);
-
-    let name = make_name_string();
-    set_cur_input_name(name);
-    set_source_filename_stack(in_open(), cur_input().name);
-    set_full_source_filename_stack(
-        in_open(),
-        crate::texmfmp::maketexstring(crate::state::with_state(|state| {
-            state.input.name_of_input_file
-        })),
-    );
-
-    if cur_input().name == str_ptr() - 1 {
-        let temp_str = crate::string_pool::search_string_global(cur_input().name);
-        if temp_str > 0 {
-            set_cur_input_name(temp_str);
-            set_str_ptr(str_ptr() - 1);
-            set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
-        }
-    }
-
-    if job_name() == 0 {
-        set_job_name(cur_name());
-        open_log_file();
-    }
-
-    let fss = full_source_filename_stack(in_open());
-    if term_offset() + crate::string_pool::length_global(fss) > max_print_line() - 2 {
-        crate::output::print_ln();
-    } else if term_offset() > 0 || file_offset() > 0 {
-        crate::output::print_char(b' ' as i32);
-    }
-    crate::output::print_char(b'(' as i32);
-    set_open_parens(open_parens() + 1);
-    crate::output::print(fss);
-    ttstub_output_flush(rust_stdout());
-
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS) > 0 {
-        crate::output::begin_diagnostic();
-        crate::output::diagnostic_begin_capture_warning_here();
-        crate::output::print_ln();
-        crate::output::print_char(b'~' as i32);
-        let mut v = input_ptr() - 1;
-        if v < eqtb_b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS) {
-            while v > 0 {
-                crate::output::print_char(b'.' as i32);
-                v -= 1;
-            }
-        } else {
-            crate::output::print_char(b'~' as i32);
-        }
-        crate::output::print_cstr(c"INPUT ".as_ptr());
-        crate::output::print(cur_name());
-        crate::output::print(cur_ext());
-        crate::output::print_ln();
-        capture_to_diagnostic(std::ptr::null_mut());
-        crate::output::end_diagnostic(false);
-    }
-
-    set_cur_input_state(NEW_LINE);
-    let synctex_job_name = job_name();
-    let synctex_tmp = crate::texmfmp::gettexstring(synctex_job_name);
-    crate::state::with_state_mut(|st| crate::synctex::synctex_start_input(st, synctex_tmp));
-    set_line(1);
-    input_line(input_file(idx));
-    set_cur_input_limit(last());
-
-    if eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR) < 0
-        || eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR) > 255
-    {
-        set_cur_input_limit(cur_input().limit - 1);
-    } else {
-        set_buffer_entry(
-            cur_input().limit,
-            eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR),
-        );
-    }
-    set_first(cur_input().limit + 1);
-    set_cur_input_loc(cur_input().start);
 }
 // translated from xetex-xetex0.c:6381 (pack_file_name)
 pub unsafe fn pack_file_name(n: i32, a: i32, e: i32) {
@@ -1570,4 +1413,307 @@ pub unsafe fn init_io() {
     set_cur_input_loc(first());
     set_cur_input_limit(last());
     set_first(last() + 1);
+}
+
+// scanner / `expand` SCC — threaded `_in` cores (session 204 big pass).
+// Stubs first (manifest §d step 1); bodies translated from the global versions.
+// ---------------------------------------------------------------------------
+
+use crate::scan::SccAbort;
+
+/// Lift a file-name [`NameAbort`] overflow into [`SccAbort`] (via the
+/// input-stack overflow sentinel), computing `n` from the live pool/string
+/// scalars before the borrow drops.
+fn name_abort_scc(st: &crate::state::EngineState, e: NameAbort) -> SccAbort {
+    let (what, n) = match e {
+        NameAbort::PoolSize => (
+            c"pool size".as_ptr(),
+            st.strings.pool_size - st.strings.init_pool_ptr,
+        ),
+        NameAbort::NumberOfStrings => (
+            c"number of strings".as_ptr(),
+            st.strings.max_strings - st.strings.init_str_ptr,
+        ),
+    };
+    SccAbort::Input(crate::input::InputAbort::Overflow { what, n })
+}
+
+pub(crate) fn scan_and_pack_name_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+    scan_file_name_in(st)?;
+    let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
+    unsafe { pack_file_name_in(st, n, a, e) };
+    Ok(())
+}
+pub(crate) fn scan_file_name_braced_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+    let save_scanner_status = st.scanner.scanner_status;
+    let save_def_ref = st.scanner.def_ref;
+    let save_cur_cs = cur_cs();
+    let save_stop_at_space = st.scanner.stop_at_space;
+
+    set_cur_cs(st.scanner.warning_index);
+    crate::scan::scan_toks_in(st, false, true)?;
+
+    st.shipout.old_setting = st.shipout.selector as u8;
+    st.shipout.selector = SELECTOR_NEW_STRING;
+    let arg = st.mem.b32s1(st.scanner.def_ref);
+    let l = st.strings.pool_size - st.strings.pool_ptr;
+    crate::output::show_token_list_in(st, arg, crate::mem::TEX_NULL, l);
+    st.shipout.selector = st.shipout.old_setting as i32;
+
+    let s = crate::string_pool::make_string(&mut st.strings)
+        .map_err(|_| name_abort_scc(st, NameAbort::NumberOfStrings))?;
+    let dr = st.scanner.def_ref;
+    crate::mem::delete_token_ref(&mut st.mem, dr);
+    st.scanner.def_ref = save_def_ref;
+    set_cur_cs(save_cur_cs);
+    st.scanner.scanner_status = save_scanner_status;
+
+    begin_name_in(st);
+    let start = st.strings.str_start[(s - TOO_BIG_CHAR) as usize];
+    let end = st.strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize];
+    for i in start..end {
+        let c = st.strings.str_pool[i as usize];
+        more_name_in(st, c).map_err(|e| name_abort_scc(st, e))?;
+    }
+    st.scanner.stop_at_space = save_stop_at_space;
+    Ok(())
+}
+pub(crate) fn scan_file_name_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+    let save_warning_index = st.scanner.warning_index;
+    st.scanner.warning_index = cur_cs();
+
+    loop {
+        crate::scan::get_x_token_in(st)?;
+        if cur_cmd() != SPACER && cur_cmd() != RELAX {
+            break;
+        }
+    }
+
+    crate::input::back_input_in(st)?;
+
+    if cur_cmd() == LEFT_BRACE {
+        scan_file_name_braced_in(st)?;
+    } else {
+        st.scanner.name_in_progress = true;
+        begin_name_in(st);
+
+        loop {
+            crate::scan::get_x_token_in(st)?;
+            if cur_cmd() != SPACER {
+                break;
+            }
+        }
+
+        loop {
+            if cur_cmd() > OTHER_CHAR || cur_chr() > BIGGEST_CHAR {
+                crate::input::back_input_in(st)?;
+                break;
+            }
+
+            if !more_name_in(st, cur_chr() as u16).map_err(|e| name_abort_scc(st, e))? {
+                break;
+            }
+
+            crate::scan::get_x_token_in(st)?;
+        }
+    }
+
+    end_name_in(st).map_err(|e| name_abort_scc(st, e))?;
+    st.scanner.name_in_progress = false;
+    st.scanner.warning_index = save_warning_index;
+    Ok(())
+}
+pub(crate) unsafe fn start_input_in(
+    st: &mut crate::state::EngineState,
+    primary_input_name: *const libc::c_char,
+) -> Result<(), SccAbort> {
+    use crate::input::InputAbort;
+
+    let format = if !primary_input_name.is_null() {
+        TTBC_FILE_FORMAT_TECTONIC_PRIMARY_SI
+    } else {
+        TTBC_FILE_FORMAT_TEX_SI
+    };
+
+    if !primary_input_name.is_null() {
+        st.scanner.name_in_progress = true;
+        begin_name_in(st);
+        st.scanner.stop_at_space = false;
+
+        let mut cp = primary_input_name as *const u8;
+        if st.strings.pool_ptr + libc::strlen(primary_input_name) as i32 * 2 >= st.strings.pool_size
+        {
+            return Err(SccAbort::Input(InputAbort::TtAbort(
+                c"string pool overflow".as_ptr(),
+            )));
+        }
+
+        loop {
+            let first_byte = *cp;
+            cp = cp.add(1);
+            if first_byte == 0 {
+                break;
+            }
+            let mut rval = first_byte as u32;
+            let extra_bytes = raw_utf8::bytesFromUTF8[rval as usize] as usize;
+            for _ in 0..extra_bytes {
+                if *cp != 0 {
+                    rval = (rval << 6) + *cp as u32;
+                    cp = cp.add(1);
+                } else {
+                    rval <<= 6;
+                }
+            }
+            rval -= raw_utf8::offsetsFromUTF8[extra_bytes];
+
+            if rval > 0xffff {
+                rval -= 0x10000;
+                let pp = st.strings.pool_ptr;
+                st.strings.str_pool[pp as usize] = (0xd800 + rval / 0x0400) as u16;
+                st.strings.pool_ptr = pp + 1;
+                let pp = st.strings.pool_ptr;
+                st.strings.str_pool[pp as usize] = (0xdc00 + rval % 0x0400) as u16;
+                st.strings.pool_ptr = pp + 1;
+            } else {
+                let pp = st.strings.pool_ptr;
+                st.strings.str_pool[pp as usize] = rval as u16;
+                st.strings.pool_ptr = pp + 1;
+            }
+
+            let cur_len = st.strings.pool_ptr
+                - st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+            if rval == b'/' as u32 {
+                // IS_DIR_SEP
+                st.scanner.area_delimiter = cur_len;
+                st.scanner.ext_delimiter = 0;
+            } else if rval == b'.' as u32 {
+                st.scanner.ext_delimiter = cur_len;
+            }
+        }
+
+        st.scanner.stop_at_space = true;
+        end_name_in(st).map_err(|e| name_abort_scc(st, e))?;
+        st.scanner.name_in_progress = false;
+    } else {
+        scan_file_name_in(st)?;
+    }
+
+    let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
+    pack_file_name_in(st, n, a, e);
+    crate::input::begin_file_reading_in(st)?;
+
+    let idx = cur_input().index as i32;
+    let fptr = st.input.input_file.as_mut_ptr().add(idx as usize);
+    let mode = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE);
+    let enc = st
+        .eqtb
+        .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
+    if u_open_in_in(st, fptr, format, mode, enc) == 0 {
+        // Build "failed to open input file "<name>"" into a leaked buffer for
+        // the deferred _tt_abort (the C reads name_of_file via snprintf).
+        let name = if st.input.name_of_file.is_empty() {
+            std::ptr::null()
+        } else {
+            st.input.name_of_file.as_ptr()
+        };
+        let buf = libc::malloc(512) as *mut libc::c_char;
+        libc::snprintf(buf, 512, c"failed to open input file \"%s\"".as_ptr(), name);
+        return Err(SccAbort::Input(InputAbort::TtAbort(buf)));
+    }
+
+    make_utf16_name_in(st);
+    st.scanner.name_in_progress = true;
+    begin_name_in(st);
+    st.scanner.stop_at_space = false;
+    let mut k = 0i32;
+    while k < st.input.name_length16 {
+        let ch = st.input.name_of_file16[k as usize];
+        if !more_name_in(st, ch).map_err(|e| name_abort_scc(st, e))? {
+            break;
+        }
+        k += 1;
+    }
+    st.scanner.stop_at_space = true;
+    end_name_in(st).map_err(|e| name_abort_scc(st, e))?;
+    st.scanner.name_in_progress = false;
+
+    let name = make_name_string_in(st).map_err(|e| name_abort_scc(st, e))?;
+    set_cur_input_name(name);
+    let io = st.input.in_open;
+    st.input.source_filename_stack[io as usize] = cur_input().name;
+    let nif = st.input.name_of_input_file;
+    let fss_str =
+        crate::texmfmp::maketexstring_in(&mut st.strings, nif).map_err(SccAbort::MakeTexString)?;
+    st.input.full_source_filename_stack[io as usize] = fss_str;
+
+    if cur_input().name == st.strings.str_ptr - 1 {
+        let temp_str = crate::string_pool::search_string(&st.strings, cur_input().name);
+        if temp_str > 0 {
+            set_cur_input_name(temp_str);
+            st.strings.str_ptr -= 1;
+            st.strings.pool_ptr =
+                st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+        }
+    }
+
+    if st.strings.job_name == 0 {
+        st.strings.job_name = st.scanner.cur_name;
+        crate::io::open_log_file_in(st).map_err(SccAbort::OpenLog)?;
+    }
+
+    let fss = st.input.full_source_filename_stack[st.input.in_open as usize];
+    if st.shipout.term_offset + crate::string_pool::length(&st.strings, fss)
+        > st.config.max_print_line - 2
+    {
+        crate::output::print_ln_in(st);
+    } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
+        crate::output::print_char_in(st, b' ' as i32);
+    }
+    crate::output::print_char_in(st, b'(' as i32);
+    st.input.open_parens += 1;
+    crate::output::print_in(st, fss);
+    ttstub_output_flush(st.shipout.rust_stdout);
+
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS) > 0 {
+        crate::output::begin_diagnostic_in(st);
+        crate::output::diagnostic_begin_capture_warning_here_in(st);
+        crate::output::print_ln_in(st);
+        crate::output::print_char_in(st, b'~' as i32);
+        let mut v = st.input.input_ptr - 1;
+        if v < st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS) {
+            while v > 0 {
+                crate::output::print_char_in(st, b'.' as i32);
+                v -= 1;
+            }
+        } else {
+            crate::output::print_char_in(st, b'~' as i32);
+        }
+        crate::output::print_cstr_in(st, c"INPUT ".as_ptr());
+        let cn = st.scanner.cur_name;
+        crate::output::print_in(st, cn);
+        let ce = st.scanner.cur_ext;
+        crate::output::print_in(st, ce);
+        crate::output::print_ln_in(st);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::end_diagnostic_in(st, false);
+    }
+
+    set_cur_input_state(NEW_LINE);
+    let synctex_job_name = st.strings.job_name;
+    let synctex_tmp = crate::texmfmp::gettexstring_in(&st.strings, synctex_job_name);
+    crate::synctex::synctex_start_input(st, synctex_tmp);
+    set_line(1);
+    let f = st.input.input_file[idx as usize];
+    input_line_in(st, f)?;
+    set_cur_input_limit(st.input.last);
+
+    let elc = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
+    if elc < 0 || elc > 255 {
+        set_cur_input_limit(cur_input().limit - 1);
+    } else {
+        st.input.buffer[cur_input().limit as usize] = elc;
+    }
+    set_first(cur_input().limit + 1);
+    set_cur_input_loc(cur_input().start);
+    Ok(())
 }

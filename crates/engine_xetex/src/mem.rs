@@ -5,10 +5,7 @@
 //! `flush_list`, `get_node`, `free_node`, `new_*`). During Phase A of
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
-use crate::consts::{
-    GLUE_BASE, GLUE_SPEC_SIZE, MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MAX_HALFWORD,
-    MEDIUM_NODE_SIZE,
-};
+use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE};
 use crate::errors::overflow;
 use crate::errors::runaway;
 use crate::node::{
@@ -861,10 +858,6 @@ pub fn prev_rightmost(mem: &MemState, s: i32, e: i32) -> i32 {
         }
     }
     p
-}
-
-pub fn prev_rightmost_global(s: i32, e: i32) -> i32 {
-    crate::state::with_state(|st| prev_rightmost(&st.mem, s, e))
 }
 
 // ---------------------------------------------------------------------------

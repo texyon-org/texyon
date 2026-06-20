@@ -311,13 +311,6 @@ pub(crate) fn print_esc_in(st: &mut EngineState, s: i32) {
 // print_roman_int
 // ---------------------------------------------------------------------------
 
-/// Print `n` as a Roman numeral (lowercase).
-///
-/// translated from xetex-output.c:563 (print_roman_int)
-pub unsafe fn print_roman_int(n: i32) {
-    crate::state::with_state_mut(|st| print_roman_int_in(st, n));
-}
-
 /// `&mut EngineState` core of [`print_roman_int`].
 pub(crate) fn print_roman_int_in(st: &mut EngineState, mut n: i32) {
     // "m2d5c2l5x2v5i": alternating letter/divisor pairs encoding the
@@ -922,13 +915,6 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
 // print_cs
 // ---------------------------------------------------------------------------
 
-/// Print a control-sequence name for control-sequence pointer `p`.
-///
-/// translated from xetex-output.c:76 (print_cs)
-pub unsafe fn print_cs(p: i32) {
-    crate::state::with_state_mut(|st| print_cs_in(st, p));
-}
-
 /// `&mut EngineState` core of [`print_cs`].
 pub(crate) fn print_cs_in(st: &mut EngineState, p: i32) {
     if p < HASH_BASE {
@@ -1247,13 +1233,6 @@ pub(crate) fn token_show_in(st: &mut EngineState, p: i32) {
 // ---------------------------------------------------------------------------
 // print_spec
 // ---------------------------------------------------------------------------
-
-/// Print a glue spec node as "width plus stretch minus shrink".
-///
-/// translated from xetex-xetex0.c:274 (print_spec)
-pub unsafe fn print_spec(p: i32, s: *const libc::c_char) {
-    crate::state::with_state_mut(|st| print_spec_in(st, p, s));
-}
 
 /// `&mut EngineState` core of [`print_spec`].
 pub(crate) fn print_spec_in(st: &mut EngineState, p: i32, s: *const libc::c_char) {
@@ -2894,13 +2873,6 @@ pub(crate) fn group_warning_in(st: &mut EngineState) {
 // if_warning
 // ---------------------------------------------------------------------------
 
-/// Warn if an \if spans file boundaries.
-///
-/// translated from xetex-xetex0.c:2998 (if_warning)
-pub unsafe fn if_warning() {
-    crate::state::with_state_mut(|st| if_warning_in(st));
-}
-
 /// `&mut EngineState` core of [`if_warning`].
 pub(crate) fn if_warning_in(st: &mut EngineState) {
     st.input.base_ptr = st.input.input_ptr;
@@ -3066,13 +3038,6 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
 // change_if_limit
 // ---------------------------------------------------------------------------
 
-/// Update the if-limit for a specific conditional pointer.
-///
-/// translated from xetex-xetex0.c:7889 (change_if_limit)
-pub unsafe fn change_if_limit(l: i16, p: i32) {
-    crate::state::with_state_mut(|st| change_if_limit_in(st, l, p)).finish();
-}
-
 /// `&mut EngineState` core of [`change_if_limit`]. Returns the cold
 /// `confusion("if")` path as a §5 sentinel.
 pub(crate) fn change_if_limit_in(st: &mut EngineState, l: i16, p: i32) -> ErrorOutcome {
@@ -3231,11 +3196,6 @@ const LETTER_STL: i32 = 11;
 const OTHER_CHAR_STL: i32 = 12;
 const MATCH_STL: i32 = 13;
 const END_MATCH_STL: i32 = 14;
-
-/// translated from xetex-xetex0.c:20 (show_token_list)
-pub unsafe fn show_token_list(p: i32, q: i32, l: i32) {
-    crate::state::with_state_mut(|st| show_token_list_in(st, p, q, l));
-}
 
 /// `&mut EngineState` core of [`show_token_list`].
 pub(crate) fn show_token_list_in(st: &mut EngineState, mut p: i32, q: i32, l: i32) {

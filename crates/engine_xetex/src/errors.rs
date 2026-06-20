@@ -271,7 +271,7 @@ pub(crate) fn int_error_in(st: &mut EngineState, n: i32) -> ErrorOutcome {
 // not_*_font_error cluster
 // ---------------------------------------------------------------------------
 
-fn not_font_error_common_in(
+pub(crate) fn not_font_error_common_in(
     st: &mut EngineState,
     cmd: u16,
     c: i32,
@@ -285,42 +285,6 @@ fn not_font_error_common_in(
     print_cstr_in(st, suffix);
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     error_in(st)
-}
-
-/// translated from xetex-xetex0.c:2727 (not_aat_font_error)
-pub unsafe fn not_aat_font_error(cmd: i32, c: i32, f: i32) {
-    crate::state::with_state_mut(|st| {
-        not_font_error_common_in(st, cmd as u16, c, f, c"; not an AAT font".as_ptr())
-    })
-    .finish();
-}
-
-/// translated from xetex-xetex0.c:2739 (not_aat_gr_font_error)
-pub unsafe fn not_aat_gr_font_error(cmd: i32, c: i32, f: i32) {
-    crate::state::with_state_mut(|st| {
-        not_font_error_common_in(
-            st,
-            cmd as u16,
-            c,
-            f,
-            c"; not an AAT or Graphite font".as_ptr(),
-        )
-    })
-    .finish();
-}
-
-/// translated from xetex-xetex0.c:2751 (not_ot_font_error)
-pub unsafe fn not_ot_font_error(cmd: i32, c: i32, f: i32) {
-    crate::state::with_state_mut(|st| {
-        not_font_error_common_in(
-            st,
-            cmd as u16,
-            c,
-            f,
-            c"; not an OpenType Layout font".as_ptr(),
-        )
-    })
-    .finish();
 }
 
 /// translated from xetex-xetex0.c:2763 (not_native_font_error)
@@ -362,11 +326,6 @@ pub(crate) fn give_err_help_in(st: &mut EngineState) {
 }
 
 // ---- moved verbatim from scan.rs (workstream 02) ----
-
-// translated from xetex-xetex0.c:5050 (mu_error)
-pub unsafe fn mu_error() {
-    crate::state::with_state_mut(|st| mu_error_in(st)).finish();
-}
 
 /// `&mut EngineState` core of [`mu_error`].
 pub(crate) fn mu_error_in(st: &mut EngineState) -> ErrorOutcome {

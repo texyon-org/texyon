@@ -8,6 +8,69 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 204 — 2026-06-20 — Execution: the scanner-SCC big pass
+
+**Type:** execution (workstream 01). Executed the **scanner / `expand` SCC big
+pass** per `scanner-scc-plan.md` §"Execution manifest (session 203 recon)":
+threaded the 37-function mutually-recursive cluster headed by `expand` into
+`_in(&mut EngineState) -> Result<T, SccAbort>` cores, all converting together so
+the SCC holds **one** borrow per entry (`01b` §4).
+
+**Code (single large commit — the SCC has no safe smaller bisect unit, user-approved):**
+- **`SccAbort` sentinel** (scan.rs, near `GetNextOutcome`): arms `Error`/`Input`/
+  `NoLegalEnd`/`TokensToString`/`PdfError`/`OpenLog`/`MakeTexString`; `fire()` +
+  `From<GetNextOutcome>`/`From<InputAbort>`. Helpers `scc_err`/`get_next_scc`/
+  `str_toks_scc`/`get_node_scc`/`get_avail_scc`/`new_spec_scc`/`main_mem_overflow_scc`.
+- **37 `_in` cores** filled (translated from the global versions): the 9 trivial
+  range-check/delegator leaves; `x_token`/`get_x_token`/`get_token`(new helper)/
+  `scan_left_brace`/`scan_keyword`/`scan_general_text`/`scan_glyph_number`/
+  `scan_font_ident`/`find_font_dimen`/`compare_strings`/`pass_text`/`pseudo_start`/
+  `the_toks`/`ins_the_toks`/`scan_and_pack_name`/`scan_file_name`/
+  `scan_file_name_braced`; the large `scan_int`/`xetex_scan_dimen`/`scan_glue`/
+  `scan_expr`/`scan_toks`/`conditional`/`expand`/`macro_call`/
+  `scan_something_internal`(~900 lines)/`conv_toks`(~600 lines)/`start_input`.
+  Each global is now a thin `with_state_mut(|st| f_in(st,…))` wrapper for its
+  external (non-SCC) callers.
+- **Below-SCC re-entry hazards threaded** (manifest §b nest-panic audit, caught
+  by the dashboard/corpus at runtime): `tt_xetex_open_input`/`u_open_in` →
+  `_in` cores (io.rs); the texmfmp date/file pool writers
+  `getcreationdate`/`getfilemoddate`/`getfilesize`/`getmd5sum`/`getfiledump` →
+  `_in(&mut StringsState)` cores; `count_pdf_file_pages` → `count_pdf_file_pages_named`;
+  `gr_print_font_name`/`print_glyph_name` → `_in` cores (ext.rs);
+  `not_font_error_common_in` made `pub(crate)`. The scaled-math side-effecting
+  helpers `mult_and_add`/`add_or_sub`/`quotient`/`fract` (+ `xn_over_d`) gained
+  `_in(&mut ErrorState)` cores so the SCC (and `linebreak::try_break`) can call
+  them under a borrow instead of via the `set_arith_error`/`set_tex_remainder`
+  `with_state` path; their globals stay thin wrappers.
+- **Cleanup (manifest step 6):** deleted **76** now-dead functions the conversion
+  orphaned (35 `globals.rs` accessors — `max_reg_num`/`max_reg_help_line`/
+  `cur_order`/`radix`/`scanner_status`/… ; the 14 dead SCC global wrappers; dead
+  `not_*_font_error`/`mu_error`/`change_if_limit`/`print_cs`/`print_spec`/
+  `show_token_list`/`prev_rightmost_global`/`*_global` font getters/…).
+
+**Recovery note (for future sessions):** the first wiring attempt used a naive
+brace-counter that desynced on `{`/`}` inside C-string literals (help-lines like
+`\def\a1{...}`), corrupting several globals (e.g. it ate `check_outer_validity_in`).
+Recovered by reconstructing scan.rs/expand.rs/io.rs from the git baseline with a
+**literal/comment-aware** brace matcher for the wiring, then grafting the intact
+`_in`-core blocks back. Lesson: any scripted Rust body-replacement MUST skip
+string/char/comment spans when matching braces.
+
+**Tests:** `cargo check`+`fmt`; dashboard **29/2/7/4** (TRIP+eTRIP green); release
+rebuild; full corpus exit 0, only the known `1905.00073v1`/`1905.00148v1`
+divergences, **no NOXDV/NOLOG/NEW/MISS** (the session-187 file-name/`\input`
+hidden-regression check — start_input/conv_toks/scan_file_name were all on the
+hot path here). Metrics: warnings **41 → 39**; `unsafe fn` **529 → 506**;
+`with_state(_mut)` sites **1014 → 984**.
+
+**Next:** the scanner is threaded. `get_x_token`/`scan_toks`/`the_toks` now have
+`_in` cores, unlocking the **scanner-gated shipout hub** (`ship_out`/`hlist_out`/
+`vlist_out` via `out_what`→`write_out`→`scan_toks`/`get_token`) — the
+session-191 DVI-emit layer is the reusable substrate. Residual cleanup: 8 cosmetic
+`unnecessary unsafe` warnings in `scan_something_internal_in`'s FFI-getter arms.
+
+---
+
 ## Idiom session 203 — 2026-06-19 — Execution: drain the scanner-SCC prerequisite tail
 
 **Type:** execution (workstream 01). Bigger-than-usual mechanical session per user

@@ -322,10 +322,15 @@ fn convert_string_to_hex(input: &[u8; DIGEST_SIZE], out: &mut [u8; 2 * DIGEST_SI
 ///
 /// translated from xetex-texmfmp.c:413 (getmd5sum)
 pub unsafe fn getmd5sum(s: i32, file: bool) {
+    crate::state::with_state_mut(|st| getmd5sum_in(&mut st.strings, s, file));
+}
+
+/// `&mut StringsState` core of [`getmd5sum`] (scanner-SCC `conv_toks`).
+pub(crate) unsafe fn getmd5sum_in(strings: &mut crate::state::StringsState, s: i32, file: bool) {
     let mut digest = [0u8; DIGEST_SIZE];
     let mut outbuf = [0u8; 2 * DIGEST_SIZE + 1];
 
-    let xname = gettexstring(s);
+    let xname = gettexstring_in(strings, s);
 
     let ret = if file {
         ttstub_get_file_md5(xname, digest.as_mut_ptr())
@@ -340,14 +345,14 @@ pub unsafe fn getmd5sum(s: i32, file: bool) {
         return;
     }
 
-    if pool_ptr() + 2 * DIGEST_SIZE as i32 >= pool_size() {
+    if strings.pool_ptr + 2 * DIGEST_SIZE as i32 >= strings.pool_size {
         return;
     }
 
     convert_string_to_hex(&digest, &mut outbuf);
     for i in 0..(2 * DIGEST_SIZE) {
-        set_str_pool(pool_ptr(), outbuf[i] as u16);
-        set_pool_ptr(pool_ptr() + 1);
+        strings.str_pool[strings.pool_ptr as usize] = outbuf[i] as u16;
+        strings.pool_ptr += 1;
     }
 }
 
@@ -390,7 +395,12 @@ pub unsafe fn make_src_special(srcfilename: i32, lineno: i32) -> i32 {
 
 /// translated from xetex-texmfmp.c:155 (getfilesize)
 pub unsafe fn getfilesize(s: i32) {
-    let name = gettexstring(s);
+    crate::state::with_state_mut(|st| getfilesize_in(&mut st.strings, s));
+}
+
+/// `&mut StringsState` core of [`getfilesize`] (scanner-SCC `conv_toks`).
+pub(crate) unsafe fn getfilesize_in(strings: &mut crate::state::StringsState, s: i32) {
+    let name = gettexstring_in(strings, s);
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
     libc::free(name as *mut libc::c_void);
 
@@ -406,12 +416,12 @@ pub unsafe fn getfilesize(s: i32) {
     let text_bytes = text.as_bytes();
     let text_len = text_bytes.len();
 
-    if (pool_ptr() as usize + text_len) >= pool_size() as usize {
-        set_pool_ptr(pool_size());
+    if (strings.pool_ptr as usize + text_len) >= strings.pool_size as usize {
+        strings.pool_ptr = strings.pool_size;
     } else {
         for &b in text_bytes {
-            set_str_pool(pool_ptr(), b as u16);
-            set_pool_ptr(pool_ptr() + 1);
+            strings.str_pool[strings.pool_ptr as usize] = b as u16;
+            strings.pool_ptr += 1;
         }
     }
 }
@@ -422,22 +432,32 @@ pub unsafe fn getfilesize(s: i32) {
 
 /// translated from xetex-texmfmp.c:189 (getfiledump)
 pub unsafe fn getfiledump(s: i32, offset: libc::c_int, length: libc::c_int) {
+    crate::state::with_state_mut(|st| getfiledump_in(&mut st.strings, s, offset, length));
+}
+
+/// `&mut StringsState` core of [`getfiledump`] (scanner-SCC `conv_toks`).
+pub(crate) unsafe fn getfiledump_in(
+    strings: &mut crate::state::StringsState,
+    s: i32,
+    offset: libc::c_int,
+    length: libc::c_int,
+) {
     if length == 0 {
         return;
     }
 
-    if pool_ptr() + 2 * length + 1 >= pool_size() {
-        set_pool_ptr(pool_size());
+    if strings.pool_ptr + 2 * length + 1 >= strings.pool_size {
+        strings.pool_ptr = strings.pool_size;
         return;
     }
 
     let buffer = xmalloc((length + 1) as libc::size_t) as *mut u8;
     if buffer.is_null() {
-        set_pool_ptr(pool_size());
+        strings.pool_ptr = strings.pool_size;
         return;
     }
 
-    let name = gettexstring(s);
+    let name = gettexstring_in(strings, s);
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
     libc::free(name as *mut libc::c_void);
 
@@ -455,8 +475,8 @@ pub unsafe fn getfiledump(s: i32, offset: libc::c_int, length: libc::c_int) {
         let byte = *buffer.add(j);
         let hex = format!("{:02X}", byte);
         for &c in hex.as_bytes() {
-            set_str_pool(pool_ptr(), c as u16);
-            set_pool_ptr(pool_ptr() + 1);
+            strings.str_pool[strings.pool_ptr as usize] = c as u16;
+            strings.pool_ptr += 1;
         }
     }
 
@@ -603,15 +623,27 @@ pub unsafe fn init_start_time(source_date_epoch: libc::time_t) {
 ///
 /// translated from xetex-texmfmp.c:91 (getcreationdate)
 pub unsafe fn getcreationdate() {
-    let start = crate::state::with_state(|s| s.texmf.start_time_str);
+    crate::state::with_state_mut(|s| {
+        let s = &mut *s;
+        getcreationdate_in(&s.texmf, &mut s.strings)
+    });
+}
+
+/// `&mut StringsState` core of [`getcreationdate`] so a threaded caller holding
+/// `&mut EngineState` can call it under the borrow (scanner-SCC `conv_toks`).
+pub(crate) unsafe fn getcreationdate_in(
+    texmf: &crate::state::TexmfState,
+    strings: &mut crate::state::StringsState,
+) {
+    let start = texmf.start_time_str;
     let len = libc::strlen(start.as_ptr() as *const libc::c_char);
-    if (pool_ptr() as usize) + len >= pool_size() as usize {
-        set_pool_ptr(pool_size());
+    if (strings.pool_ptr as usize) + len >= strings.pool_size as usize {
+        strings.pool_ptr = strings.pool_size;
         return;
     }
     for i in 0..len {
-        set_str_pool(pool_ptr(), start[i] as u16);
-        set_pool_ptr(pool_ptr() + 1);
+        strings.str_pool[strings.pool_ptr as usize] = start[i] as u16;
+        strings.pool_ptr += 1;
     }
 }
 
@@ -620,7 +652,12 @@ pub unsafe fn getcreationdate() {
 ///
 /// translated from xetex-texmfmp.c:120 (getfilemoddate)
 pub unsafe fn getfilemoddate(s: i32) {
-    let name = gettexstring(s);
+    crate::state::with_state_mut(|st| getfilemoddate_in(&mut st.strings, s));
+}
+
+/// `&mut StringsState` core of [`getfilemoddate`] (scanner-SCC `conv_toks`).
+pub(crate) unsafe fn getfilemoddate_in(strings: &mut crate::state::StringsState, s: i32) {
+    let name = gettexstring_in(strings, s);
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
     libc::free(name as *mut libc::c_void);
 
@@ -637,12 +674,12 @@ pub unsafe fn getfilemoddate(s: i32) {
     makepdftime(mtime, &mut buf, true);
     let text_len = libc::strlen(buf.as_ptr() as *const libc::c_char);
 
-    if (pool_ptr() as usize) + text_len >= pool_size() as usize {
-        set_pool_ptr(pool_size());
+    if (strings.pool_ptr as usize) + text_len >= strings.pool_size as usize {
+        strings.pool_ptr = strings.pool_size;
     } else {
         for i in 0..text_len {
-            set_str_pool(pool_ptr(), buf[i] as u16);
-            set_pool_ptr(pool_ptr() + 1);
+            strings.str_pool[strings.pool_ptr as usize] = buf[i] as u16;
+            strings.pool_ptr += 1;
         }
     }
 }

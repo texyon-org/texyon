@@ -747,13 +747,6 @@ pub(crate) fn set_pseudo_files(v: i32) {
     });
 }
 
-/// Returns `full_source_filename_stack[k]` (the str_number of the source file
-/// at nesting level k).
-#[inline]
-pub(crate) fn full_source_filename_stack(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.full_source_filename_stack[k as usize])
-}
-
 /// Returns non-zero when file:line-style error messages are active.
 #[inline]
 pub(crate) fn file_line_error_style_p() -> i32 {
@@ -889,14 +882,6 @@ pub(crate) fn set_temp_ptr(v: i32) {
 // ---------------------------------------------------------------------------
 // dig
 // ---------------------------------------------------------------------------
-
-/// Write `v` into `dig[k]`.
-#[inline]
-pub(crate) fn set_dig_entry(k: usize, v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.errors.dig[k] = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // selector / term_offset / file_offset
@@ -1272,17 +1257,6 @@ pub(crate) fn set_shell_escape_enabled(v: bool) {
 // old_setting
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn old_setting() -> u8 {
-    crate::state::with_state(|state| state.shipout.old_setting)
-}
-#[inline]
-pub(crate) fn set_old_setting(v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.old_setting = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // cur_chr / cur_val / cur_name / cur_area / cur_ext
 // ---------------------------------------------------------------------------
@@ -1372,19 +1346,6 @@ pub(crate) fn set_cur_ext(v: i32) {
     });
 }
 
-/// Returns `area_delimiter` (pool offset of last dir-sep in current filename).
-#[inline]
-pub(crate) fn set_area_delimiter(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.area_delimiter = v;
-    });
-}
-#[inline]
-pub(crate) fn set_ext_delimiter(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.ext_delimiter = v;
-    });
-}
 #[inline]
 pub(crate) fn quoted_filename() -> bool {
     crate::state::with_state(|state| state.scanner.quoted_filename)
@@ -1399,18 +1360,10 @@ pub(crate) fn file_name_quote_char() -> u16 {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn name_in_progress() -> bool {
-    crate::state::with_state(|state| state.scanner.name_in_progress)
-}
-#[inline]
 pub(crate) fn set_name_in_progress(v: bool) {
     crate::state::with_state_mut(|state| {
         state.scanner.name_in_progress = v;
     });
-}
-#[inline]
-pub(crate) fn stop_at_space() -> bool {
-    crate::state::with_state(|state| state.scanner.stop_at_space)
 }
 #[inline]
 pub(crate) fn set_stop_at_space(v: bool) {
@@ -1626,12 +1579,6 @@ pub(crate) fn set_font_mem_size(v: i32) {
     crate::state::with_state_mut(|state| {
         state.fonts.font_mem_size = v;
     });
-}
-
-/// Returns `font_params[f]`.
-#[inline]
-pub(crate) fn font_params(f: i32) -> i32 {
-    crate::state::with_state(|state| state.fonts.font_params[f as usize])
 }
 
 /// Sets `font_params[f] = v`.
@@ -1886,11 +1833,6 @@ pub(crate) fn set_hyphen_char_entry(f: i32, v: i32) {
         s.fonts.hyphen_char[f as usize] = v;
     })
 }
-/// Returns `skew_char[f]`.
-#[inline]
-pub(crate) fn skew_char_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.skew_char[f as usize])
-}
 /// Writes `skew_char[f] = v`.
 #[inline]
 pub(crate) fn set_skew_char_entry(f: i32, v: i32) {
@@ -1933,11 +1875,6 @@ pub(crate) fn set_height_base_entry(f: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.fonts.height_base[f as usize] = v;
     });
-}
-/// Returns `depth_base[f]`.
-#[inline]
-pub(crate) fn depth_base_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.depth_base[f as usize])
 }
 /// Writes `depth_base[f] = v`.
 #[inline]
@@ -2003,13 +1940,6 @@ pub(crate) fn set_native_font_type_flag(v: i32) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// is_in_csname
-// ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn is_in_csname() -> bool {
-    crate::state::with_state(|s| s.scanner.is_in_csname)
-}
 #[inline]
 pub(crate) fn set_is_in_csname(v: bool) {
     crate::state::with_state_mut(|s| {
@@ -2031,10 +1961,6 @@ pub(crate) fn set_cur_val1(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn radix() -> u8 {
-    crate::state::with_state(|s| s.scanner.radix)
-}
-#[inline]
 pub(crate) fn set_radix(v: u8) {
     crate::state::with_state_mut(|s| {
         s.scanner.radix = v;
@@ -2053,10 +1979,6 @@ pub(crate) fn set_dead_cycles(v: i32) {
     crate::state::with_state_mut(|state| {
         state.shipout.dead_cycles = v;
     });
-}
-#[inline]
-pub(crate) fn last_badness() -> i32 {
-    crate::state::with_state(|state| state.shipout.last_badness)
 }
 #[inline]
 pub(crate) fn set_last_badness(v: i32) {
@@ -2115,28 +2037,16 @@ pub(crate) fn set_disc_ptr(k: usize, v: i32) {
     });
 }
 #[inline]
-pub(crate) fn last_penalty() -> i32 {
-    crate::state::with_state(|state| state.shipout.last_penalty)
-}
-#[inline]
 pub(crate) fn set_last_penalty(v: i32) {
     crate::state::with_state_mut(|state| {
         state.shipout.last_penalty = v;
     });
 }
 #[inline]
-pub(crate) fn last_kern() -> i32 {
-    crate::state::with_state(|state| state.shipout.last_kern)
-}
-#[inline]
 pub(crate) fn set_last_kern(v: i32) {
     crate::state::with_state_mut(|state| {
         state.shipout.last_kern = v;
     });
-}
-#[inline]
-pub(crate) fn last_node_type() -> i32 {
-    crate::state::with_state(|state| state.shipout.last_node_type)
 }
 #[inline]
 pub(crate) fn set_last_node_type(v: i32) {
@@ -2173,14 +2083,6 @@ pub(crate) fn set_random_seed(v: i32) {
     crate::state::with_state_mut(|state| {
         state.errors.random_seed = v;
     });
-}
-#[inline]
-pub(crate) fn pdf_last_x_pos() -> i32 {
-    crate::state::with_state(|state| state.shipout.pdf_last_x_pos)
-}
-#[inline]
-pub(crate) fn pdf_last_y_pos() -> i32 {
-    crate::state::with_state(|state| state.shipout.pdf_last_y_pos)
 }
 
 // ---------------------------------------------------------------------------
@@ -2354,11 +2256,6 @@ pub(crate) fn set_nest_tail(k: i32, v: i32) {
 #[inline]
 pub(crate) fn nest_aux_b32s1(k: i32) -> i32 {
     crate::state::with_state(|s| unsafe { s.input.nest[k as usize].aux.b32.s1 })
-}
-/// Returns `nest[k].prev_graf`.
-#[inline]
-pub(crate) fn nest_prev_graf(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.nest[k as usize].prev_graf)
 }
 #[inline]
 pub(crate) fn set_nest_prev_graf(k: i32, v: i32) {
@@ -2546,12 +2443,6 @@ pub(crate) fn set_grp_stack(k: i32, v: i32) {
     });
 }
 
-/// Returns `if_stack[k]` — the `cond_ptr` saved at input level k
-/// (xetex-xetexd.h:706).
-#[inline]
-pub(crate) fn if_stack(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.if_stack[k as usize])
-}
 /// Sets `if_stack[k]`.
 #[inline]
 pub(crate) fn set_if_stack(k: i32, v: i32) {
@@ -2618,13 +2509,6 @@ pub(crate) fn set_if_line(v: i32) {
         s.scanner.if_line = v;
     });
 }
-/// Sets `skip_line = v`.
-#[inline]
-pub(crate) fn set_skip_line(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.skip_line = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // sa_root / sa_chain / sa_level
@@ -2688,10 +2572,6 @@ pub(crate) fn set_shown_mode(v: i16) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn max_reg_num() -> i32 {
-    crate::state::with_state(|s| s.scanner.max_reg_num)
-}
-#[inline]
 pub(crate) fn set_max_reg_num(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.max_reg_num = v;
@@ -2733,38 +2613,17 @@ pub(crate) fn set_cs_count(v: i32) {
         state.eqtb.cs_count = v;
     });
 }
-#[inline]
-pub(crate) fn max_reg_help_line() -> *const libc::c_char {
-    crate::state::with_state(|s| s.scanner.max_reg_help_line)
-}
 
 // ---------------------------------------------------------------------------
 // param_stack / param_ptr / max_param_stack
 // ---------------------------------------------------------------------------
 
-/// Writes `param_stack[k] = v`.
-#[inline]
-pub(crate) fn set_param_stack(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.param_stack[k as usize] = v;
-    });
-}
-/// Returns `param_ptr` — next free slot in param_stack (xetex-xetexd.h:518).
-#[inline]
-pub(crate) fn param_ptr() -> i32 {
-    crate::state::with_state(|s| s.input.param_ptr)
-}
 /// Sets `param_ptr`.
 #[inline]
 pub(crate) fn set_param_ptr(v: i32) {
     crate::state::with_state_mut(|s| {
         s.input.param_ptr = v;
     });
-}
-/// Returns `max_param_stack` (xetex-xetexd.h:519).
-#[inline]
-pub(crate) fn max_param_stack() -> i32 {
-    crate::state::with_state(|s| s.input.max_param_stack)
 }
 /// Sets `max_param_stack`.
 #[inline]
@@ -2867,14 +2726,6 @@ pub(crate) fn input_file(k: i32) -> *mut crate::io::UFile {
 pub(crate) fn set_input_file(k: i32, v: *mut crate::io::UFile) {
     crate::state::with_state_mut(|s| s.input.input_file[k as usize] = v);
 }
-/// Returns a pointer to `input_file[k]` (i.e. `&input_file[k]`), for passing to
-/// `u_open_in`. The stack is a Rust-owned `Vec` held by the `'static`
-/// thread-local and never reallocated during a run, so the pointer stays valid
-/// past the borrow.
-#[inline]
-pub(crate) fn input_file_ptr(k: i32) -> *mut *mut crate::io::UFile {
-    crate::state::with_state_mut(|s| unsafe { s.input.input_file.as_mut_ptr().add(k as usize) })
-}
 
 // ---------------------------------------------------------------------------
 // last / max_buf_stack / set_buffer_entry / cur_input_limit
@@ -2891,11 +2742,6 @@ pub(crate) fn set_last(v: i32) {
     crate::state::with_state_mut(|s| {
         s.input.last = v;
     });
-}
-/// Returns `max_buf_stack` — highest value `last` has ever reached.
-#[inline]
-pub(crate) fn max_buf_stack() -> i32 {
-    crate::state::with_state(|s| s.input.max_buf_stack)
 }
 /// Sets `max_buf_stack`.
 #[inline]
@@ -2926,18 +2772,10 @@ pub(crate) fn expand_depth() -> i32 {
     unsafe { raw::expand_depth }
 }
 #[inline]
-pub(crate) fn expand_depth_count() -> i32 {
-    crate::state::with_state(|s| s.scanner.expand_depth_count)
-}
-#[inline]
 pub(crate) fn set_expand_depth_count(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.expand_depth_count = v;
     });
-}
-#[inline]
-pub(crate) fn cur_val_level() -> u8 {
-    crate::state::with_state(|s| s.scanner.cur_val_level)
 }
 #[inline]
 pub(crate) fn set_cur_val_level(v: u8) {
@@ -2961,10 +2799,6 @@ pub(crate) fn set_scanner_status(v: u8) {
     });
 }
 #[inline]
-pub(crate) fn warning_index() -> i32 {
-    crate::state::with_state(|s| s.scanner.warning_index)
-}
-#[inline]
 pub(crate) fn set_warning_index(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.warning_index = v;
@@ -2985,16 +2819,6 @@ pub(crate) fn set_def_ref(v: i32) {
 pub(crate) fn set_deletions_allowed(v: bool) {
     crate::state::with_state_mut(|state| {
         state.errors.deletions_allowed = v;
-    });
-}
-#[inline]
-pub(crate) fn long_state() -> u8 {
-    crate::state::with_state(|s| s.scanner.long_state)
-}
-#[inline]
-pub(crate) fn set_long_state(v: u8) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.long_state = v;
     });
 }
 
@@ -3499,10 +3323,6 @@ pub(crate) fn set_cur_box(v: i32) {
 // cur_order
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn cur_order() -> u8 {
-    crate::state::with_state(|s| s.scanner.cur_order)
-}
 #[inline]
 pub(crate) fn set_cur_order(v: u8) {
     crate::state::with_state_mut(|s| {
