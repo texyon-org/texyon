@@ -3235,10 +3235,6 @@ pub(crate) fn set_cur_lang(v: u8) {
     });
 }
 #[inline]
-pub(crate) fn insert_src_special_every_par() -> bool {
-    crate::state::with_state(|state| state.shipout.insert_src_special_every_par)
-}
-#[inline]
 pub(crate) fn insert_src_special_every_math() -> bool {
     crate::state::with_state(|state| state.shipout.insert_src_special_every_math)
 }
@@ -3248,16 +3244,6 @@ pub(crate) fn insert_src_special_every_vbox() -> bool {
 }
 
 // ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn cur_box() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_box)
-}
-#[inline]
-pub(crate) fn set_cur_box(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_box = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // cur_order

@@ -1914,58 +1914,86 @@ pub(crate) fn scan_box_in(
 }
 // translated from xetex-xetex0.c:9509 (package)
 pub unsafe fn package(c: i16) {
-    use crate::globals::{
-        cur_box, cur_list_head, cur_list_mode, save_ptr, save_stack_b32s1, set_cur_box,
-        set_save_ptr,
-    };
+    if let Err(e) = crate::state::with_state_mut(|st| package_in(st, c)) {
+        e.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`package`]: closes a box group, packs the inner
+/// list, and dispatches via [`box_end_in`] — all under one borrow. `cur_list_*`
+/// stay raw `mod raw`; `cur_box` is `st.scanner.cur_box`. Cold aborts ride
+/// [`MainControlAbort`].
+///
+/// translated from xetex-xetex0.c:9509 (package)
+pub(crate) fn package_in(
+    st: &mut crate::state::EngineState,
+    c: i16,
+) -> Result<(), MainControlAbort> {
+    use crate::globals::{cur_list_head, cur_list_mode};
+    use crate::mem::TEX_NULL;
     const DIMEN_PAR_BOX_MAX_DEPTH: i32 = 7; // xetex_format.h:129
     const INT_PAR_XETEX_UPWARDS: i32 = 71; // xetex_format.h:106
     const VTOP_CODE: i16 = 4; // xetex_format.h:484
     const INNER_HMODE: i16 = -104; // xetex_format.h:369 negated
 
-    let d = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_BOX_MAX_DEPTH);
-    let u = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS);
-    crate::save::unsave();
-    set_save_ptr(save_ptr() - 3);
-    let v = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS);
-    crate::globals::set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS, u);
+    let d = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_BOX_MAX_DEPTH);
+    let u = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS);
+    crate::save::unsave_in(st)?;
+    st.save_stack.save_ptr -= 3;
+    let v = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS);
+    st.eqtb.set_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS, u);
     if cur_list_mode() == INNER_HMODE {
-        set_cur_box(hpack(
-            mem_b32s1(cur_list_head()),
-            save_stack_b32s1(save_ptr() + 2),
-            save_stack_b32s1(save_ptr() + 1) as i16,
-        ));
+        let sp = st.save_stack.save_ptr;
+        let list = st.mem.b32s1(cur_list_head());
+        let w = st.save_stack.b32s1(sp + 2);
+        let m = st.save_stack.b32s1(sp + 1) as i16;
+        st.scanner.cur_box = crate::packaging::hpack_emit_in(st, list, w, m)?;
     } else {
-        set_cur_box(vpackage(
-            mem_b32s1(cur_list_head()),
-            save_stack_b32s1(save_ptr() + 2),
-            save_stack_b32s1(save_ptr() + 1) as i16,
-            d,
-        ));
+        let sp = st.save_stack.save_ptr;
+        let list = st.mem.b32s1(cur_list_head());
+        let h = st.save_stack.b32s1(sp + 2);
+        let m = st.save_stack.b32s1(sp + 1) as i16;
+        st.scanner.cur_box = crate::packaging::vpackage_emit_in(st, list, h, m, d)?;
         if c == VTOP_CODE {
-            let mut h = 0i32;
-            let p = mem_b32s1(cur_box() + 5);
-            if p != crate::mem::TEX_NULL && mem_b16s1(p) <= 2 {
-                h = mem_b32s1(p + 3);
+            let cb = st.scanner.cur_box;
+            let mut hh = 0i32;
+            let p = st.mem.b32s1(cb + 5);
+            if p != TEX_NULL && st.mem.b16s1(p) <= 2 {
+                hh = st.mem.b32s1(p + 3);
             }
-            crate::globals::set_mem_b32s1(
-                cur_box() + 2,
-                mem_b32s1(cur_box() + 2) - h + mem_b32s1(cur_box() + 3),
-            );
-            crate::globals::set_mem_b32s1(cur_box() + 3, h);
+            st.mem
+                .set_b32s1(cb + 2, st.mem.b32s1(cb + 2) - hh + st.mem.b32s1(cb + 3));
+            st.mem.set_b32s1(cb + 3, hh);
         }
     }
-    crate::globals::set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS, v);
-    crate::mem::pop_nest();
-    box_end(save_stack_b32s1(save_ptr()));
+    st.eqtb.set_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS, v);
+    crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+    let ctx = st.save_stack.b32s1(st.save_stack.save_ptr);
+    box_end_in(st, ctx)?;
+    Ok(())
 }
 // translated from xetex-xetex0.c:9549 (new_graf)
 pub unsafe fn new_graf(indented: bool) {
+    if let Err(e) = crate::state::with_state_mut(|st| new_graf_in(st, indented)) {
+        e.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`new_graf`]: starts a new paragraph (par-skip
+/// glue, nest push, hyphenation/language setup, optional indent box +
+/// src-special, `\everypar`, page build) under one borrow. `cur_list_*` stay
+/// raw `mod raw`. Cold aborts ride [`MainControlAbort`].
+///
+/// translated from xetex-xetex0.c:9549 (new_graf)
+pub(crate) fn new_graf_in(
+    st: &mut crate::state::EngineState,
+    indented: bool,
+) -> Result<(), MainControlAbort> {
     use crate::globals::{
-        cur_list_head, cur_list_mode, cur_list_tail, insert_src_special_every_par, nest_ptr,
-        set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_mode,
-        set_cur_list_prev_graf, set_cur_list_tail, set_mem_b32s1,
+        cur_list_head, cur_list_mode, cur_list_tail, set_cur_list_aux_b32s0,
+        set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
     };
+    use crate::mem::TEX_NULL;
     const GLUE_PAR_PAR_SKIP: i16 = 2; // xetex_format.h:151
     const VMODE_I16: i16 = 1; // xetex_format.h:369
     const HMODE_I16: i16 = 104; // xetex_format.h:369
@@ -1976,45 +2004,53 @@ pub unsafe fn new_graf(indented: bool) {
     set_cur_list_prev_graf(0);
 
     if cur_list_mode() == VMODE_I16 || cur_list_head() != cur_list_tail() {
-        let pg = crate::mem::new_param_glue_global(GLUE_PAR_PAR_SKIP);
-        set_mem_b32s1(cur_list_tail(), pg);
-        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        let pg = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_PAR_SKIP);
+        if pg == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+        }
+        st.mem.set_b32s1(cur_list_tail(), pg);
+        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
     }
 
-    crate::mem::push_nest();
+    crate::mem::push_nest_in(st)?;
     set_cur_list_mode(HMODE_I16);
     set_cur_list_aux_b32s0(1000);
 
-    let lang_val = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
+    let lang_val = st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE);
     let l: u8 = if lang_val <= 0 || lang_val > BIGGEST_LANG {
         0
     } else {
         lang_val as u8
     };
-    set_cur_lang(l);
+    st.hyph.cur_lang = l;
     set_cur_list_aux_b32s1(l as i32);
-    let lhm = crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as i32;
-    let rhm = crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
+    let lhm = crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as i32;
+    let rhm = crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
     set_cur_list_prev_graf((lhm * 64 + rhm) * 65536 + l as i32);
 
     if indented {
-        let nb = crate::mem::new_null_box_global();
+        let nb = crate::mem::new_null_box(&mut st.mem);
+        if nb == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+        }
         set_cur_list_tail(nb);
-        set_mem_b32s1(cur_list_head(), nb);
-        set_mem_b32s1(nb + 1, eqtb_b32s1(DIMEN_BASE));
-        if insert_src_special_every_par() {
-            insert_src_special();
+        st.mem.set_b32s1(cur_list_head(), nb);
+        st.mem.set_b32s1(nb + 1, st.eqtb.b32s1(DIMEN_BASE));
+        if st.shipout.insert_src_special_every_par {
+            // SAFETY: FFI-bearing src-special builder; safe under the held borrow.
+            unsafe { crate::ext::insert_src_special_in(st) }?;
         }
     }
 
-    let every_par = eqtb_b32s1(LOCAL_BASE + LOCAL__EVERY_PAR);
-    if every_par != crate::mem::TEX_NULL {
-        begin_token_list(every_par, EVERY_PAR_TEXT);
+    let every_par = st.eqtb.b32s1(LOCAL_BASE + LOCAL__EVERY_PAR);
+    if every_par != TEX_NULL {
+        crate::input::begin_token_list_in(st, every_par, EVERY_PAR_TEXT)?;
     }
 
-    if nest_ptr() == 1 {
-        build_page();
+    if st.input.nest_ptr == 1 {
+        crate::pagebuilder::build_page_in(st)?;
     }
+    Ok(())
 }
 pub(crate) enum NewCharacterAbort {
     Native(crate::fonts::NativeCharAbort),
@@ -2051,6 +2087,8 @@ pub(crate) enum MainControlAbort {
     Shipout(crate::shipout::ShipoutAbort),
     Save(crate::save::SaveAbort),
     SaMutation(crate::save::SaMutationAbort),
+    Unsave(crate::save::UnsaveAbort),
+    InsertSrc(crate::ext::InsertSrcAbort),
     Error(crate::errors::ErrorOutcome),
     Confusion(&'static std::ffi::CStr),
 }
@@ -2103,6 +2141,18 @@ impl From<crate::save::SaMutationAbort> for MainControlAbort {
     }
 }
 
+impl From<crate::save::UnsaveAbort> for MainControlAbort {
+    fn from(e: crate::save::UnsaveAbort) -> Self {
+        MainControlAbort::Unsave(e)
+    }
+}
+
+impl From<crate::ext::InsertSrcAbort> for MainControlAbort {
+    fn from(e: crate::ext::InsertSrcAbort) -> Self {
+        MainControlAbort::InsertSrc(e)
+    }
+}
+
 impl MainControlAbort {
     pub(crate) unsafe fn fire(self) -> ! {
         match self {
@@ -2128,6 +2178,8 @@ impl MainControlAbort {
                 unreachable!("save abort should be divergent")
             }
             MainControlAbort::SaMutation(a) => a.fire(),
+            MainControlAbort::Unsave(a) => a.fire(),
+            MainControlAbort::InsertSrc(a) => a.fire(),
             MainControlAbort::Error(o) => {
                 o.finish();
                 unreachable!("error outcome reaching MainControlAbort::fire is divergent")
@@ -2179,12 +2231,6 @@ pub unsafe fn new_character(f: i32, c: u16) -> i32 {
     }
 }
 // translated from xetex-xetex0.c:7797 (box_end)
-pub unsafe fn box_end(box_context: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| box_end_in(st, box_context)) {
-        e.fire();
-    }
-}
-
 pub(crate) fn box_end_in(
     st: &mut crate::state::EngineState,
     box_context: i32,

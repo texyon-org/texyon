@@ -2528,30 +2528,94 @@ pub unsafe fn new_write_whatsit(w: i16) {
     set_mem_b32s0(crate::globals::cur_list_tail() + 1, cur_val());
 }
 // translated from xetex-xetex0.c:9978 (insert_src_special)
+/// Cold-path abort raised by [`insert_src_special_in`] (`01b` §5). Surfaces the
+/// `make_src_special`/`str_toks` pool overflow, the `get_avail` main-memory
+/// overflow, and the `begin_token_list` input abort. No passing test reaches it.
+pub(crate) enum InsertSrcAbort {
+    MakeSrcPool,
+    StrToksPool,
+    MainMemory,
+    Input(crate::input::InputAbort),
+}
+
+impl InsertSrcAbort {
+    pub(crate) unsafe fn fire(self) -> ! {
+        match self {
+            InsertSrcAbort::MakeSrcPool => crate::texmfmp::fire_make_src_pool_overflow(),
+            InsertSrcAbort::StrToksPool => crate::errors::overflow(
+                c"pool size".as_ptr(),
+                crate::globals::pool_size() - crate::globals::init_pool_ptr(),
+            ),
+            InsertSrcAbort::MainMemory => crate::mem::fire_main_memory_overflow(),
+            InsertSrcAbort::Input(e) => e.fire(),
+        }
+    }
+}
+
+impl From<crate::input::InputAbort> for InsertSrcAbort {
+    fn from(e: crate::input::InputAbort) -> Self {
+        InsertSrcAbort::Input(e)
+    }
+}
+
 pub unsafe fn insert_src_special() {
-    use crate::globals::{
-        in_open, line, mem_b32s1, set_mem_b32s0, set_mem_b32s1, source_filename_stack,
-    };
+    if let Err(a) = crate::state::with_state_mut(|st| insert_src_special_in(st)) {
+        a.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`insert_src_special`]: builds the
+/// `\special{src:<line> <file>}` token list under one borrow and inserts it.
+/// `line()` stays raw `mod raw`; the texmfmp/`str_toks`/`begin_token_list`
+/// callees run threaded under the borrow. Cold aborts ride [`InsertSrcAbort`].
+///
+/// translated from xetex-xetex0.c:9966 (insert_src_special)
+pub(crate) unsafe fn insert_src_special_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), InsertSrcAbort> {
+    use crate::globals::line;
     const FROZEN_SPECIAL: i32 = 2_243_226 + 10; // FROZEN_CONTROL_SEQUENCE + 10
     const RIGHT_BRACE_TOKEN: i32 = 0x400000; // xetex-constants.h:351
 
-    let sfn = source_filename_stack(in_open());
-    if sfn > 0 && crate::texmfmp::is_new_source(sfn, line()) {
-        let toklist = crate::mem::get_avail_global();
+    let sfn = st.input.source_filename_stack[st.input.in_open as usize];
+    if sfn > 0 && crate::texmfmp::is_new_source_in(st, sfn, line()) {
+        let toklist = crate::mem::get_avail(&mut st.mem);
+        if toklist == crate::mem::ALLOC_FAILED {
+            return Err(InsertSrcAbort::MainMemory);
+        }
         let mut p = toklist;
-        set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-        set_mem_b32s1(p, crate::mem::get_avail_global());
-        p = mem_b32s1(p);
-        set_mem_b32s0(p, LEFT_BRACE_TOKEN + b'{' as i32);
-        let q = str_toks(crate::texmfmp::make_src_special(sfn, line()));
-        set_mem_b32s1(p, mem_b32s1(TEMP_HEAD));
+        st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_SPECIAL);
+        let nxt = crate::mem::get_avail(&mut st.mem);
+        if nxt == crate::mem::ALLOC_FAILED {
+            return Err(InsertSrcAbort::MainMemory);
+        }
+        st.mem.set_b32s1(p, nxt);
+        p = st.mem.b32s1(p);
+        st.mem.set_b32s0(p, LEFT_BRACE_TOKEN + b'{' as i32);
+        let b = crate::texmfmp::make_src_special_in(st, sfn, line())
+            .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
+        let q = match crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0) {
+            Ok(q) => q,
+            Err(crate::scan::StrToksAbort::PoolOverflow) => {
+                return Err(InsertSrcAbort::StrToksPool)
+            }
+            Err(crate::scan::StrToksAbort::MainMemoryOverflow) => {
+                return Err(InsertSrcAbort::MainMemory)
+            }
+        };
+        st.mem.set_b32s1(p, st.mem.b32s1(TEMP_HEAD));
         p = q;
-        set_mem_b32s1(p, crate::mem::get_avail_global());
-        p = mem_b32s1(p);
-        set_mem_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
-        begin_token_list(toklist, INSERTED);
-        crate::texmfmp::remember_source_info(sfn, line());
+        let nxt = crate::mem::get_avail(&mut st.mem);
+        if nxt == crate::mem::ALLOC_FAILED {
+            return Err(InsertSrcAbort::MainMemory);
+        }
+        st.mem.set_b32s1(p, nxt);
+        p = st.mem.b32s1(p);
+        st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
+        crate::input::begin_token_list_in(st, toklist, INSERTED)?;
+        crate::texmfmp::remember_source_info_in(st, sfn, line());
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:9984 (tt_insert_special)
 pub unsafe fn tt_insert_special(ascii_text: *const libc::c_char) {

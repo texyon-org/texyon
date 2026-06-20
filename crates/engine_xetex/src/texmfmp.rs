@@ -3,7 +3,7 @@
 //! Functions involving `makepdftime` / the C-static state (`last_source_name`,
 //! `start_time_str`) or complex bridge calls remain in C for now.
 
-use crate::globals::{pool_ptr, pool_size, set_pool_ptr, set_str_pool};
+use crate::globals::pool_size;
 
 // ---------------------------------------------------------------------------
 // C externs needed by this module
@@ -362,31 +362,50 @@ pub(crate) unsafe fn getmd5sum_in(strings: &mut crate::state::StringsState, s: i
 
 /// translated from xetex-texmfmp.c:274 (make_src_special)
 pub unsafe fn make_src_special(srcfilename: i32, lineno: i32) -> i32 {
-    let old_pool_ptr = pool_ptr();
-    let filename = gettexstring(srcfilename);
+    match crate::state::with_state_mut(|st| make_src_special_in(st, srcfilename, lineno)) {
+        Ok(b) => b,
+        Err(()) => fire_make_src_pool_overflow(),
+    }
+}
+
+/// Fire the deferred `make_src_special` string-pool overflow after the state
+/// borrow drops (`01b` §5).
+pub(crate) unsafe fn fire_make_src_pool_overflow() -> ! {
+    _tt_abort(c"string pool overflow".as_ptr())
+}
+
+/// `&mut EngineState` core of [`make_src_special`]. Returns the cold pool
+/// overflow as `Err(())` for the caller to defer (`01b` §5).
+pub(crate) unsafe fn make_src_special_in(
+    st: &mut crate::state::EngineState,
+    srcfilename: i32,
+    lineno: i32,
+) -> Result<i32, ()> {
+    let old_pool_ptr = st.strings.pool_ptr;
+    let filename = gettexstring_in(&st.strings, srcfilename);
 
     // C used `sprintf(buf, "src:%d ", lineno)` into a 40-byte local buffer.
     let prefix = format!("src:{} ", lineno);
     let fname_len = libc::strlen(filename);
 
-    if (pool_ptr() as usize) + prefix.len() + fname_len >= pool_size() as usize {
-        _tt_abort(c"string pool overflow".as_ptr());
+    if (st.strings.pool_ptr as usize) + prefix.len() + fname_len >= st.strings.pool_size as usize {
+        return Err(());
     }
 
     for &b in prefix.as_bytes() {
-        set_str_pool(pool_ptr(), b as u16);
-        set_pool_ptr(pool_ptr() + 1);
+        st.strings.str_pool[st.strings.pool_ptr as usize] = b as u16;
+        st.strings.pool_ptr += 1;
     }
 
     let mut s = filename as *const u8;
     while *s != 0 {
-        set_str_pool(pool_ptr(), *s as u16);
-        set_pool_ptr(pool_ptr() + 1);
+        st.strings.str_pool[st.strings.pool_ptr as usize] = *s as u16;
+        st.strings.pool_ptr += 1;
         s = s.add(1);
     }
 
     libc::free(filename as *mut libc::c_void);
-    old_pool_ptr
+    Ok(old_pool_ptr)
 }
 
 // ---------------------------------------------------------------------------
@@ -523,10 +542,18 @@ unsafe fn compare_paths(p1: *const libc::c_char, p2: *const libc::c_char) -> i32
 ///
 /// translated from xetex-texmfmp.c:257 (is_new_source)
 pub unsafe fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
-    let name = gettexstring(srcfilename);
-    let (last_name, last_lineno) =
-        crate::state::with_state(|s| (s.texmf.last_source_name, s.texmf.last_lineno));
-    let changed = compare_paths(name, last_name) != 0 || lineno != last_lineno;
+    crate::state::with_state(|st| is_new_source_in(st, srcfilename, lineno))
+}
+
+/// `&EngineState` core of [`is_new_source`].
+pub(crate) unsafe fn is_new_source_in(
+    st: &crate::state::EngineState,
+    srcfilename: i32,
+    lineno: i32,
+) -> bool {
+    let name = gettexstring_in(&st.strings, srcfilename);
+    let changed =
+        compare_paths(name, st.texmf.last_source_name) != 0 || lineno != st.texmf.last_lineno;
     libc::free(name as *mut libc::c_void);
     changed
 }
@@ -536,13 +563,20 @@ pub unsafe fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
 ///
 /// translated from xetex-texmfmp.c:264 (remember_source_info)
 pub unsafe fn remember_source_info(srcfilename: i32, lineno: i32) {
-    let old = crate::state::with_state(|s| s.texmf.last_source_name);
+    crate::state::with_state_mut(|st| remember_source_info_in(st, srcfilename, lineno));
+}
+
+/// `&mut EngineState` core of [`remember_source_info`].
+pub(crate) unsafe fn remember_source_info_in(
+    st: &mut crate::state::EngineState,
+    srcfilename: i32,
+    lineno: i32,
+) {
+    let old = st.texmf.last_source_name;
     libc::free(old as *mut libc::c_void);
-    let new_name = gettexstring(srcfilename);
-    crate::state::with_state_mut(|s| {
-        s.texmf.last_source_name = new_name;
-        s.texmf.last_lineno = lineno;
-    });
+    let new_name = gettexstring_in(&st.strings, srcfilename);
+    st.texmf.last_source_name = new_name;
+    st.texmf.last_lineno = lineno;
 }
 
 // ---------------------------------------------------------------------------
