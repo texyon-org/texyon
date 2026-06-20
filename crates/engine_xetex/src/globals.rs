@@ -1372,30 +1372,6 @@ pub(crate) fn set_save_stack_b32s1(k: i32, v: i32) {
         s.save_stack.data[k as usize].b32.s1 = v;
     });
 }
-/// Read `save_stack[k].b16.s1`.
-#[inline]
-pub(crate) fn save_stack_b16s1(k: i32) -> u16 {
-    // SAFETY: union projection; the entry was last written via the b16 view.
-    crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b16.s1 })
-}
-/// Read `save_stack[k].b16.s0`.
-#[inline]
-pub(crate) fn save_stack_b16s0(k: i32) -> u16 {
-    // SAFETY: union projection; the entry was last written via the b16 view.
-    crate::state::with_state(|s| unsafe { s.save_stack.data[k as usize].b16.s0 })
-}
-/// Copy the full MemoryWord at `save_stack[k]`.
-#[inline]
-pub(crate) fn save_stack_word(k: i32) -> crate::mem_types::MemoryWord {
-    crate::state::with_state(|s| s.save_stack.data[k as usize])
-}
-/// Copy a full MemoryWord to `save_stack[k]`.
-#[inline]
-pub(crate) fn set_save_stack_word(k: i32, w: crate::mem_types::MemoryWord) {
-    crate::state::with_state_mut(|s| {
-        s.save_stack.data[k as usize] = w;
-    });
-}
 #[inline]
 pub(crate) fn cur_level() -> u16 {
     crate::state::with_state(|state| state.save_stack.cur_level)
@@ -1417,19 +1393,10 @@ pub(crate) fn set_cur_group(v: u8) {
     });
 }
 #[inline]
-pub(crate) fn cur_boundary() -> i32 {
-    crate::state::with_state(|state| state.save_stack.cur_boundary)
-}
-#[inline]
 pub(crate) fn set_cur_boundary(v: i32) {
     crate::state::with_state_mut(|state| {
         state.save_stack.cur_boundary = v;
     });
-}
-/// Read `XEQ_LEVEL(p)` = `_xeq_level_array[p - INT_BASE]`.
-#[inline]
-pub(crate) fn xeq_level(p: i32) -> u16 {
-    crate::state::with_state(|s| s.eqtb.xeq_level[(p - 7_826_729) as usize])
 }
 /// Write `XEQ_LEVEL(p) = v`.
 #[inline]
@@ -2408,12 +2375,6 @@ pub(crate) fn set_par_token(v: i32) {
 // grp_stack / if_stack
 // ---------------------------------------------------------------------------
 
-/// Returns `grp_stack[k]` — the save-stack boundary saved at input level k
-/// (xetex-xetexd.h:705; save_pointer = i32).
-#[inline]
-pub(crate) fn grp_stack(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.grp_stack[k as usize])
-}
 /// Sets `grp_stack[k]`.
 #[inline]
 pub(crate) fn set_grp_stack(k: i32, v: i32) {

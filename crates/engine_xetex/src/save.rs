@@ -6,12 +6,8 @@ use crate::packaging::flush_node_list_global;
 use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
-    align_state, cur_boundary, cur_input, cur_level, cur_ptr, cur_tok, eqtb_b16s0, eqtb_word,
-    grp_stack, in_open, line, save_ptr, save_size, save_stack_b16s0, save_stack_b16s1,
-    save_stack_b32s1, save_stack_word, set_align_state, set_cur_boundary, set_cur_group,
-    set_cur_input_loc, set_cur_input_start, set_cur_level, set_cur_ptr, set_cur_tok, set_eqtb_word,
-    set_mem_b32s0, set_mem_b32s1, set_sa_chain, set_sa_level, set_save_ptr, set_save_stack_word,
-    set_xeq_level, xeq_level,
+    cur_input, cur_ptr, cur_tok, line, save_size, set_cur_input_loc, set_cur_input_start,
+    set_cur_ptr, set_cur_tok,
 };
 use crate::mem_types::MemoryWord;
 
@@ -340,15 +336,6 @@ pub(crate) fn eq_destroy(
         _ => {}
     }
     None
-}
-
-/// Transitional bridge-down wrapper for legacy `eq_destroy` callers.
-pub unsafe fn eq_destroy_global(w: MemoryWord) {
-    let abort = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        eq_destroy(&mut s.mem, &mut s.scanner, w)
-    });
-    raise_save_abort(abort);
 }
 
 /// Assign `eqtb[p] = (level=cur_level, type=t, value=e)`, saving if needed.
@@ -799,99 +786,165 @@ fn sa_restore_prepare(mem: &mut MemState, scanner: &mut ScannerState) -> SaResto
     }
 }
 
-pub unsafe fn sa_restore_global() {
-    loop {
-        let step =
-            crate::state::with_state_mut(|st| sa_restore_prepare(&mut st.mem, &mut st.scanner));
-        if let Some(list) = step.flush_list {
-            flush_node_list_global(list);
-        }
-        let done = crate::state::with_state_mut(|st| {
-            delete_sa_ref(&mut st.mem, &mut st.scanner, step.p);
-            st.scanner.sa_chain = st.mem.b32s1(step.chain);
-            if st.mem.b16s1(step.chain) < DIMEN_VAL_LIMIT {
-                crate::mem::free_node(&mut st.mem, step.chain, WORD_NODE_SIZE);
-            } else {
-                crate::mem::free_node(&mut st.mem, step.chain, POINTER_NODE_SIZE);
-            }
-            st.scanner.sa_chain == TEX_NULL
-        });
-        if done {
-            break;
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // unsave
 // ---------------------------------------------------------------------------
 
-// translated from xetex-xetex0.c:2814 (unsave)
-pub unsafe fn unsave() {
-    if cur_level() > LEVEL_ONE {
-        set_cur_level(cur_level() - 1);
+/// Cold-path abort raised by [`unsave_in`]. Surfaces the deferred
+/// `eq_destroy`/`flush_node_list` `confusion`, the `back_input` input abort, and
+/// the `get_avail` main-memory overflow (`01b` §5). Both legacy and threaded
+/// callers `longjmp` on it; no passing test reaches any arm.
+pub(crate) enum UnsaveAbort {
+    Save(SaveAbort),
+    Input(crate::input::InputAbort),
+    MainMemory,
+}
+
+impl UnsaveAbort {
+    pub(crate) unsafe fn fire(self) -> ! {
+        match self {
+            UnsaveAbort::Save(a) => {
+                raise_save_abort(Some(a));
+                unreachable!("save abort should be divergent")
+            }
+            UnsaveAbort::Input(e) => e.fire(),
+            UnsaveAbort::MainMemory => crate::mem::fire_main_memory_overflow(),
+        }
+    }
+}
+
+impl From<crate::input::InputAbort> for UnsaveAbort {
+    fn from(e: crate::input::InputAbort) -> Self {
+        UnsaveAbort::Input(e)
+    }
+}
+
+/// Threaded (Phase C) form of `sa_restore`: restore the sparse-array chain under
+/// a held borrow, returning the cold `flush_node_list` confusion instead of
+/// `longjmp`ing in place (`01b` §5). Mirrors [`sa_restore_global`].
+fn sa_restore_in(st: &mut crate::state::EngineState) -> Result<(), &'static std::ffi::CStr> {
+    loop {
+        let step = {
+            let s = &mut *st;
+            sa_restore_prepare(&mut s.mem, &mut s.scanner)
+        };
+        if let Some(list) = step.flush_list {
+            crate::packaging::flush_node_list(&mut st.mem, list)?;
+        }
+        delete_sa_ref(&mut st.mem, &mut st.scanner, step.p);
+        st.scanner.sa_chain = st.mem.b32s1(step.chain);
+        if st.mem.b16s1(step.chain) < DIMEN_VAL_LIMIT {
+            crate::mem::free_node(&mut st.mem, step.chain, WORD_NODE_SIZE);
+        } else {
+            crate::mem::free_node(&mut st.mem, step.chain, POINTER_NODE_SIZE);
+        }
+        if st.scanner.sa_chain == TEX_NULL {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Threaded (Phase C) core of [`unsave`]: pops one grouping level under a single
+/// `&mut EngineState` borrow. `cur_tok`/`cur_input` stay raw `mod raw`; the
+/// `eq_destroy`/`group_warning`/`back_input` callees run threaded under the
+/// borrow. Cold aborts ride [`UnsaveAbort`] (`01b` §5).
+///
+/// translated from xetex-xetex0.c:2814 (unsave)
+pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), UnsaveAbort> {
+    if st.save_stack.cur_level > LEVEL_ONE {
+        st.save_stack.cur_level -= 1;
         let mut l: u16 = 0;
         let mut a = false;
         loop {
-            set_save_ptr(save_ptr() - 1);
-            if save_stack_b16s1(save_ptr()) == LEVEL_BOUNDARY {
+            st.save_stack.save_ptr -= 1;
+            let sp = st.save_stack.save_ptr;
+            if st.save_stack.b16s1(sp) == LEVEL_BOUNDARY {
                 break; // goto done
             }
-            let p = save_stack_b32s1(save_ptr());
-            if save_stack_b16s1(save_ptr()) == INSERT_TOKEN {
+            let p = st.save_stack.b32s1(sp);
+            if st.save_stack.b16s1(sp) == INSERT_TOKEN {
                 let t = cur_tok();
                 set_cur_tok(p);
                 if a {
-                    let pn = crate::mem::get_avail_global();
-                    set_mem_b32s0(pn, cur_tok());
-                    set_mem_b32s1(pn, cur_input().loc);
+                    let pn = crate::mem::get_avail(&mut st.mem);
+                    if pn == crate::mem::ALLOC_FAILED {
+                        return Err(UnsaveAbort::MainMemory);
+                    }
+                    st.mem.set_b32s0(pn, cur_tok());
+                    st.mem.set_b32s1(pn, cur_input().loc);
                     set_cur_input_loc(pn);
                     set_cur_input_start(pn);
                     if cur_tok() < RIGHT_BRACE_LIMIT {
                         if cur_tok() < LEFT_BRACE_LIMIT {
-                            set_align_state(align_state() - 1);
+                            st.scanner.align_state -= 1;
                         } else {
-                            set_align_state(align_state() + 1);
+                            st.scanner.align_state += 1;
                         }
                     }
                 } else {
-                    crate::input::back_input();
+                    crate::input::back_input_in(st)?;
                     a = true;
                 }
                 set_cur_tok(t);
-            } else if save_stack_b16s1(save_ptr()) == RESTORE_SA {
-                sa_restore_global();
-                set_sa_chain(p);
-                set_sa_level(save_stack_b16s0(save_ptr()));
+            } else if st.save_stack.b16s1(sp) == RESTORE_SA {
+                sa_restore_in(st).map_err(|m| UnsaveAbort::Save(SaveAbort::Confusion(m)))?;
+                st.scanner.sa_chain = p;
+                st.scanner.sa_level = st.save_stack.b16s0(st.save_stack.save_ptr);
             } else {
-                if save_stack_b16s1(save_ptr()) == RESTORE_OLD_VALUE {
-                    l = save_stack_b16s0(save_ptr());
-                    set_save_ptr(save_ptr() - 1);
+                if st.save_stack.b16s1(sp) == RESTORE_OLD_VALUE {
+                    l = st.save_stack.b16s0(sp);
+                    st.save_stack.save_ptr -= 1;
                 } else {
-                    set_save_stack_word(save_ptr(), eqtb_word(UNDEFINED_CONTROL_SEQUENCE));
+                    let w = st.eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
+                    st.save_stack.set_word(st.save_stack.save_ptr, w);
                 }
+                let sp = st.save_stack.save_ptr;
                 if !(INT_BASE..=EQTB_SIZE).contains(&p) {
-                    if eqtb_b16s0(p) == LEVEL_ONE {
-                        eq_destroy_global(save_stack_word(save_ptr()));
+                    if st.eqtb.b16s0(p) == LEVEL_ONE {
+                        let w = st.save_stack.word(sp);
+                        if let Some(ab) = {
+                            let s = &mut *st;
+                            eq_destroy(&mut s.mem, &mut s.scanner, w)
+                        } {
+                            return Err(UnsaveAbort::Save(ab));
+                        }
                     } else {
-                        eq_destroy_global(eqtb_word(p));
-                        set_eqtb_word(p, save_stack_word(save_ptr()));
+                        let w = st.eqtb.word(p);
+                        if let Some(ab) = {
+                            let s = &mut *st;
+                            eq_destroy(&mut s.mem, &mut s.scanner, w)
+                        } {
+                            return Err(UnsaveAbort::Save(ab));
+                        }
+                        let w = st.save_stack.word(sp);
+                        st.eqtb.data[p as usize] = w;
                     }
-                } else if xeq_level(p) != LEVEL_ONE {
-                    set_eqtb_word(p, save_stack_word(save_ptr()));
-                    set_xeq_level(p, l);
+                } else if st.eqtb.xeq_level_at(p) != LEVEL_ONE {
+                    let w = st.save_stack.word(sp);
+                    st.eqtb.data[p as usize] = w;
+                    st.eqtb.set_xeq_level_at(p, l);
                 }
             }
         }
         // done:
-        if grp_stack(in_open()) == cur_boundary() {
-            crate::output::group_warning();
+        if st.input.grp_stack[st.input.in_open as usize] == st.save_stack.cur_boundary {
+            crate::output::group_warning_in(st);
         }
-        set_cur_group(save_stack_b16s0(save_ptr()) as u8);
-        set_cur_boundary(save_stack_b32s1(save_ptr()));
-        set_save_ptr(save_ptr() - 1);
+        let sp = st.save_stack.save_ptr;
+        st.save_stack.cur_group = st.save_stack.b16s0(sp) as u8;
+        st.save_stack.cur_boundary = st.save_stack.b32s1(sp);
+        st.save_stack.save_ptr -= 1;
+        Ok(())
     } else {
-        crate::errors::confusion(c"curlevel".as_ptr());
+        Err(UnsaveAbort::Save(SaveAbort::Confusion(c"curlevel")))
+    }
+}
+
+// translated from xetex-xetex0.c:2814 (unsave)
+pub unsafe fn unsave() {
+    if let Err(a) = crate::state::with_state_mut(|st| unsave_in(st)) {
+        a.fire();
     }
 }
 

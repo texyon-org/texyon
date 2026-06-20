@@ -600,6 +600,26 @@ impl SaveStackState {
     pub(crate) fn set_word(&mut self, k: i32, w: crate::mem_types::MemoryWord) {
         self.data[k as usize] = w;
     }
+
+    /// Read `save_stack[k].b16.s1`. Mirrors `globals::save_stack_b16s1`.
+    #[inline]
+    pub(crate) fn b16s1(&self, k: i32) -> u16 {
+        // SAFETY: union projection; the entry was last written via the b16 view.
+        unsafe { self.data[k as usize].b16.s1 }
+    }
+
+    /// Read `save_stack[k].b16.s0`. Mirrors `globals::save_stack_b16s0`.
+    #[inline]
+    pub(crate) fn b16s0(&self, k: i32) -> u16 {
+        // SAFETY: union projection; the entry was last written via the b16 view.
+        unsafe { self.data[k as usize].b16.s0 }
+    }
+
+    /// Read a full `MemoryWord` from `save_stack[k]`. Mirrors `globals::save_stack_word`.
+    #[inline]
+    pub(crate) fn word(&self, k: i32) -> crate::mem_types::MemoryWord {
+        self.data[k as usize]
+    }
 }
 
 #[derive(Default)]

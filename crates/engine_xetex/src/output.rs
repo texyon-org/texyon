@@ -2819,11 +2819,6 @@ pub(crate) fn print_meaning_in(st: &mut EngineState) {
 /// Warn if a group spans file boundaries (\tracingcommands > 0).
 ///
 /// translated from xetex-xetex0.c:2961 (group_warning)
-pub unsafe fn group_warning() {
-    crate::state::with_state_mut(|st| group_warning_in(st));
-}
-
-/// `&mut EngineState` core of [`group_warning`].
 pub(crate) fn group_warning_in(st: &mut EngineState) {
     st.input.base_ptr = st.input.input_ptr;
     st.input.input_stack[st.input.base_ptr as usize] = cur_input();
