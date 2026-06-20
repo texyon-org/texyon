@@ -8,6 +8,30 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 210 — 2026-06-20 — Execution: thread main-control append leaves and DVI finalizer
+
+**Type:** execution (workstream 01). Low-docs mechanical continuation on top of the already-tested session-209 pagebuilder WIP.
+
+**Code:** Added `MainControlAbort` and threaded the append leaf verbs `append_penalty`/`append_glue`/`append_kern` into `_in(&mut EngineState)` cores using scanner `_in` callees and `build_page_in` where vertical penalties trigger page building. Made `pagebuilder::{PageBuildAbort, build_page_in, fire_page_build_abort}` crate-visible for threaded callers. Threaded `shipout::finalize_dvi_file` into a single-borrow `finalize_dvi_file_in`, using direct `ShipoutState`/`FontState` access plus `emit_dvi_*`, `dvi_font_def_in`, `write_to_dvi`, and output `_in` diagnostics. Removed the now-dead DVI finalizer bridge wrappers/accessors (`dvi_*_global`, shipout read accessors, `make_font_def_global`, `prepare_mag`, and retired shipout/font getters in `globals.rs`).
+
+**Validation:** `cargo check -p tectonic_engine_xetex`; dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full corpus `crates/engine_xetex/plan/scripts/corpus.sh check all` returned **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1` (script exit 1 due to expected divergences). Metrics: warnings **41**; `unsafe fn` **481**; `with_state` sites **807**.
+
+**Next:** continue the `main_control_box_list_cases` page/list SCC (`new_graf`/`end_graf`/`scan_box`/`begin_box`/`box_end`/`package`/`handle_right_brace`). `build_page_in` is now callable; remaining blockers include `line_break_in` visibility/abort plumbing and `insert_src_special` threading.
+
+---
+
+## Idiom session 209 — 2026-06-20 — Execution: thread the pagebuilder hub
+
+**Type:** execution (workstream 01). Large low-docs mechanical threading pass.
+
+**Code:** Threaded `pagebuilder.rs`'s `build_page`/`fire_up` hub into `build_page_in(&mut EngineState) -> Result<(), PageBuildAbort>` and `fire_up_in(&mut EngineState, ...)`, leaving `build_page()` as a thin abort-firing wrapper. Added `PageBuildAbort` plumbing for input/save/SCC/shipout/node-recycle/vert-break/main-memory/confusion exits, threaded the local pagebuilder helpers, and replaced the hot global bridge calls with direct `st.*` access plus existing `_in` callees. Added `packaging::vert_break_in` and made `shipout::ship_out_in`/`fire_shipout_abort` callable from pagebuilder. Removed now-dead pagebuilder/globals bridge accessors and obsolete `vert_break`/`prune_page_top_global` wrappers.
+
+**Validation:** `cargo check -p tectonic_engine_xetex`; dashboard **29/2/7/4** (`tex-outputs`, TRIP+eTRIP, `engine_rust`, `latex_goldens`); `cargo build --release -p tectonic`; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`. Fixed the only runtime nest-panic found during validation by using `scaled_math::x_over_n_in` inside the held pagebuilder borrow. Metrics: warnings **41**; `unsafe fn` **486**; `pagebuilder.rs` now has one real `with_state_mut` wrapper around `build_page_in` (other `with_state` hits are comments).
+
+**Next:** continue with another large hub now unlocked by scanner/pagebuilder threading, most likely `main_control.rs`'s main loop or adjacent page/output consumers.
+
+---
+
 ## Idiom session 208 — 2026-06-20 — Execution: thread the mlist_to_hlist SCC
 
 **Type:** execution (workstream 01). Threaded the math SCC now that it is unblocked by the OT-math FFI mirror solution. One large commit.

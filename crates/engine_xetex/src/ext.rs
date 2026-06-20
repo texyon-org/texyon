@@ -2345,9 +2345,6 @@ pub unsafe fn measure_native_glyph_global(p_node: *mut c_void, use_glyph_metrics
 pub unsafe fn linebreak_next_global(f: c_int) -> c_int {
     crate::state::with_state(|s| linebreak_next(&s.fonts, f))
 }
-pub unsafe fn make_font_def_global(f: i32) -> c_int {
-    crate::state::with_state_mut(|s| make_font_def(&mut s.fonts, f))
-}
 pub unsafe fn get_encoding_mode_and_info_global(info: *mut i32) -> c_int {
     // `name_of_file()` is with_state-bearing, so read it before the call (§4a).
     let name = crate::globals::name_of_file();

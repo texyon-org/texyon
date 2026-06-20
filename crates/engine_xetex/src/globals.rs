@@ -1997,19 +1997,10 @@ pub(crate) fn set_page_tail(v: i32) {
         state.shipout.page_tail = v;
     });
 }
-#[inline]
-pub(crate) fn page_contents() -> u8 {
-    crate::state::with_state(|state| state.shipout.page_contents)
-}
-#[inline]
 pub(crate) fn set_page_contents(v: u8) {
     crate::state::with_state_mut(|state| {
         state.shipout.page_contents = v;
     });
-}
-#[inline]
-pub(crate) fn page_so_far(k: usize) -> i32 {
-    crate::state::with_state(|state| state.shipout.page_so_far[k])
 }
 #[inline]
 pub(crate) fn set_page_so_far(k: usize, v: i32) {
@@ -2055,19 +2046,10 @@ pub(crate) fn set_last_node_type(v: i32) {
         state.shipout.last_node_type = v;
     });
 }
-#[inline]
-pub(crate) fn insert_penalties() -> i32 {
-    crate::state::with_state(|state| state.shipout.insert_penalties)
-}
-#[inline]
 pub(crate) fn set_insert_penalties(v: i32) {
     crate::state::with_state_mut(|state| {
         state.shipout.insert_penalties = v;
     });
-}
-#[inline]
-pub(crate) fn output_active() -> bool {
-    crate::state::with_state(|state| state.shipout.output_active)
 }
 #[inline]
 pub(crate) fn set_output_active(v: bool) {
@@ -3485,20 +3467,6 @@ pub(crate) fn cur_list_mode_line() -> i32 {
 // active_width / best_height_plus_depth
 // ---------------------------------------------------------------------------
 
-/// Read `best_height_plus_depth`.
-#[inline]
-pub(crate) fn best_height_plus_depth() -> i32 {
-    crate::state::with_state(|s| s.scanner.best_height_plus_depth)
-}
-
-/// Write `best_height_plus_depth`.
-#[inline]
-pub(crate) fn set_best_height_plus_depth(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.best_height_plus_depth = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // LR_ptr / LR_problems / cur_dir
 // ---------------------------------------------------------------------------
@@ -3563,40 +3531,20 @@ pub(crate) fn set_null_character(v: crate::mem_types::B16x4) {
     });
 }
 #[inline]
-pub(crate) fn total_pages() -> i32 {
-    crate::state::with_state(|s| s.shipout.total_pages)
-}
-#[inline]
 pub(crate) fn set_total_pages(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.total_pages = v);
-}
-#[inline]
-pub(crate) fn max_v() -> i32 {
-    crate::state::with_state(|s| s.shipout.max_v)
 }
 #[inline]
 pub(crate) fn set_max_v(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.max_v = v);
 }
 #[inline]
-pub(crate) fn max_h() -> i32 {
-    crate::state::with_state(|s| s.shipout.max_h)
-}
-#[inline]
 pub(crate) fn set_max_h(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.max_h = v);
 }
 #[inline]
-pub(crate) fn max_push() -> i32 {
-    crate::state::with_state(|s| s.shipout.max_push)
-}
-#[inline]
 pub(crate) fn set_max_push(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.max_push = v);
-}
-#[inline]
-pub(crate) fn last_bop() -> i32 {
-    crate::state::with_state(|s| s.shipout.last_bop)
 }
 #[inline]
 pub(crate) fn set_last_bop(v: i32) {
@@ -3620,13 +3568,6 @@ pub(crate) fn set_write_loc(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.write_loc = v);
 }
 
-// ---------------------------------------------------------------------------
-// Missing font entry getters (raw already declared)
-// ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn font_used_entry(f: i32) -> bool {
-    crate::state::with_state(|state| state.fonts.font_used[f as usize])
-}
 // ---------------------------------------------------------------------------
 // Missing setter for doing_special (raw already declared)
 // ---------------------------------------------------------------------------

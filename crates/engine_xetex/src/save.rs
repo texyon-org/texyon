@@ -246,13 +246,6 @@ pub unsafe fn save_for_after_global(t: i32) {
 // INT_PAR__mag = 17 (xetex_format.h:52).
 const INT_PAR_MAG: i32 = 17;
 
-/// Validate and lock in the current \mag parameter.
-///
-/// translated from xetex-xetex0.c:3997 (prepare_mag)
-pub unsafe fn prepare_mag() {
-    crate::state::with_state_mut(prepare_mag_in).finish();
-}
-
 /// `&mut EngineState` core of [`prepare_mag`] (scanner-SCC prereq).
 ///
 /// Validates `\mag` under one borrow via the threaded diagnostic/error cores.

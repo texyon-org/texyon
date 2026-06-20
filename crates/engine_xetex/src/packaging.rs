@@ -12,7 +12,7 @@ use crate::consts::{
     BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, GLUE_SPEC_SIZE, INT_BASE, KERN_NODE, MATH_NODE,
     MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
-use crate::errors::error;
+use crate::errors::{error, ErrorOutcome};
 use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
 use crate::globals::{cur_val, set_cur_val, set_help_line, set_help_ptr, temp_ptr};
@@ -1342,28 +1342,28 @@ fn vert_break_resume(
 }
 
 fn print_vert_break_infinite_shrinkage_error() {
+    let outcome = crate::state::with_state_mut(print_vert_break_infinite_shrinkage_error_in);
     unsafe {
-        error_here_with_diagnostic(c"Infinite glue shrinkage found in box being split".as_ptr());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(4);
-        set_help_line(
-            3,
-            c"The box you are \\vsplitting contains some infinitely".as_ptr(),
-        );
-        set_help_line(
-            2,
-            c"shrinkable glue, e.g., `\\vss' or `\\vskip 0pt minus 1fil'.".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"Such glue doesn't belong there; but you can safely proceed,".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"since the offensive shrinkability has been made finite.".as_ptr(),
-        );
-        error();
+        outcome.finish();
     }
+}
+
+fn print_vert_break_infinite_shrinkage_error_in(
+    st: &mut crate::state::EngineState,
+) -> ErrorOutcome {
+    crate::output::error_here_with_diagnostic_in(
+        st,
+        c"Infinite glue shrinkage found in box being split".as_ptr(),
+    );
+    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    st.errors.help_ptr = 4;
+    st.errors.help_line[3] = c"The box you are \\vsplitting contains some infinitely".as_ptr();
+    st.errors.help_line[2] =
+        c"shrinkable glue, e.g., `\\vss' or `\\vskip 0pt minus 1fil'.".as_ptr();
+    st.errors.help_line[1] =
+        c"Such glue doesn't belong there; but you can safely proceed,".as_ptr();
+    st.errors.help_line[0] = c"since the offensive shrinkability has been made finite.".as_ptr();
+    crate::errors::error_in(st)
 }
 
 fn repair_vert_break_infinite_shrinkage(
@@ -1385,26 +1385,43 @@ fn repair_vert_break_infinite_shrinkage(
     Ok(())
 }
 
-pub unsafe fn vert_break(p: i32, h: i32, d: i32) -> i32 {
-    let mut cursor =
-        crate::state::with_state_mut(|st| start_vert_break(&mut st.scanner, MemPtr::from_raw(p)));
+pub(crate) enum VertBreakAbort {
+    NodeRecycle(NodeRecycleAbort),
+    Error(ErrorOutcome),
+}
+
+impl From<NodeRecycleAbort> for VertBreakAbort {
+    fn from(e: NodeRecycleAbort) -> Self {
+        VertBreakAbort::NodeRecycle(e)
+    }
+}
+
+/// `&mut EngineState` form of [`vert_break`]: runs the vertical-break state
+/// machine, emits the infinite-shrinkage diagnostic, and repairs the offending
+/// glue without dropping the caller's state borrow. The cold abort sentinel is
+/// wider than [`NodeRecycleAbort`] only because `error_in` can become terminal
+/// and must finish after the state borrow drops.
+pub(crate) fn vert_break_in(
+    st: &mut crate::state::EngineState,
+    p: i32,
+    h: i32,
+    d: i32,
+) -> Result<i32, VertBreakAbort> {
+    let mut cursor = start_vert_break(&mut st.scanner, MemPtr::from_raw(p));
     loop {
-        match crate::state::with_state_mut(|st| {
-            vert_break_resume(&mut st.mem, &mut st.scanner, &mut cursor, h, d)
-        }) {
-            Ok(VertBreakStep::Done(best_place)) => return best_place,
-            Ok(VertBreakStep::InfiniteShrinkage { glue, spec }) => {
-                print_vert_break_infinite_shrinkage_error();
-                if let Err(e) = crate::state::with_state_mut(|st| {
-                    repair_vert_break_infinite_shrinkage(&mut st.mem, glue, spec)
-                }) {
-                    node_recycle_abort(e);
+        match vert_break_resume(&mut st.mem, &mut st.scanner, &mut cursor, h, d)? {
+            VertBreakStep::Done(best_place) => return Ok(best_place),
+            VertBreakStep::InfiniteShrinkage { glue, spec } => {
+                let outcome = print_vert_break_infinite_shrinkage_error_in(st);
+                if !matches!(outcome, ErrorOutcome::Continue) {
+                    return Err(VertBreakAbort::Error(outcome));
                 }
+                repair_vert_break_infinite_shrinkage(&mut st.mem, glue, spec)?;
             }
-            Err(e) => node_recycle_abort(e),
         }
     }
 }
+
 // translated from xetex-xetex0.c:7727 (vsplit)
 const DIMEN_PAR_SPLIT_MAX_DEPTH_VS: i32 = 6; // xetex_format.h:128
 const INT_PAR_SAVING_VDISCARDS_VS: i32 = 63; // xetex_format.h:98
@@ -1946,16 +1963,6 @@ pub fn prune_page_top(
     }
 
     Ok(mem.b32s1(TEMP_HEAD))
-}
-/// Transitional bridge-down wrapper for legacy `prune_page_top` callers.
-pub unsafe fn prune_page_top_global(p: i32, s: bool) -> i32 {
-    match crate::state::with_state_mut(|st| {
-        let st = &mut *st;
-        prune_page_top(&mut st.mem, &mut st.scanner, &st.eqtb, p, s)
-    }) {
-        Ok(r) => r,
-        Err(e) => node_recycle_abort(e),
-    }
 }
 /// translated from xetex-xetex0.c:9817 (do_marks)
 ///

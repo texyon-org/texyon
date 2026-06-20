@@ -6,13 +6,10 @@ use crate::consts::{
     TOO_BIG_CHAR,
 };
 use crate::ext::apply_tfm_font_mapping;
-use crate::ext::make_font_def_global;
 
 use crate::globals::{
-    cur_list_mode, cur_tok, eqtb_b32s1, font_area_entry, font_ptr, font_used_entry, init_pool_ptr,
-    last_bop, max_h, max_push, max_v, name_of_file, pool_size, semantic_pagination_enabled,
-    set_cur_cs, set_cur_list_mode, set_font_ptr, set_last_bop, set_temp_ptr, set_total_pages,
-    temp_ptr, total_pages,
+    cur_list_mode, cur_tok, init_pool_ptr, name_of_file, pool_size, set_cur_cs, set_cur_list_mode,
+    set_temp_ptr, temp_ptr,
 };
 use crate::node::{EdgeNode, MovementNode, NodePtr};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
@@ -33,35 +30,18 @@ extern "C" {
     static output_file_extension: *const libc::c_char;
 }
 
-// DVI output file state — positioning and output variables bridged to ShipoutState.
-fn dvi_file() -> usize {
-    crate::state::with_state(|s| s.shipout.dvi_file)
-}
-
-fn output_file_name() -> i32 {
-    crate::state::with_state(|s| s.shipout.output_file_name)
-}
 fn set_output_file_name(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.output_file_name = v);
 }
 
-fn dvi_limit() -> i32 {
-    crate::state::with_state(|s| s.shipout.dvi_limit)
-}
 fn set_dvi_limit(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.dvi_limit = v);
 }
 
-fn dvi_ptr() -> i32 {
-    crate::state::with_state(|s| s.shipout.dvi_ptr)
-}
 fn set_dvi_ptr(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.dvi_ptr = v);
 }
 
-fn dvi_offset() -> i32 {
-    crate::state::with_state(|s| s.shipout.dvi_offset)
-}
 fn set_dvi_offset(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.dvi_offset = v);
 }
@@ -70,9 +50,6 @@ fn set_dvi_gone(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.dvi_gone = v);
 }
 
-fn cur_s() -> i32 {
-    crate::state::with_state(|s| s.shipout.cur_s)
-}
 fn set_cur_s(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.cur_s = v);
 }
@@ -285,7 +262,7 @@ fn get_node_ship(mem: &mut MemState, s: i32) -> Result<i32, ShipoutAbort> {
 }
 
 /// Fire a deferred shipout cold abort after the state borrow has dropped (§5).
-unsafe fn fire_shipout_abort(a: ShipoutAbort) -> ! {
+pub(crate) unsafe fn fire_shipout_abort(a: ShipoutAbort) -> ! {
     match a {
         ShipoutAbort::ConfusionLr2 => crate::errors::confusion(c"LR2".as_ptr()),
         ShipoutAbort::PoolSizeOverflow => {
@@ -428,21 +405,6 @@ fn dvi_four(shipout: &mut ShipoutState, x: i32, start: usize) -> DviEmit {
     emit_dvi_bytes(shipout, &bytes, start)
 }
 
-unsafe fn dvi_four_global(x: i32) {
-    let mut start = 0;
-    while start < 4 {
-        let result = crate::state::with_state_mut(|s| dvi_four(&mut s.shipout, x, start));
-        start = result.next;
-        match result.flush {
-            None => {}
-            Some(DviFlush::Write(a, b)) => write_to_dvi_global(a, b),
-            Some(DviFlush::Fatal) => {
-                crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
-            }
-        }
-    }
-}
-
 /// translated from xetex-shipout.c:2423 (dvi_two)
 fn dvi_two(shipout: &mut ShipoutState, s: u16, start: usize) -> DviEmit {
     emit_dvi_bytes(shipout, &[(s / 0x100) as u8, (s % 0x100) as u8], start)
@@ -474,44 +436,6 @@ fn dvi_native_font_def(fonts: &FontState, f: i32, font_def_length: i32) -> Vec<u
         bytes.push(fonts.xdv_buffer[i as usize]);
     }
     bytes
-}
-
-/// translated from xetex-shipout.c:1798 (dvi_font_def)
-fn dvi_font_def(shipout: &mut ShipoutState, bytes: &[u8], start: usize) -> DviEmit {
-    emit_dvi_bytes(shipout, bytes, start)
-}
-
-unsafe fn dvi_font_def_global(f: i32) {
-    let bytes = if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-        let font_def_length = make_font_def_global(f);
-        crate::state::with_state(|s| dvi_native_font_def(&s.fonts, f, font_def_length))
-    } else {
-        crate::state::with_state(|s| {
-            let font_area = s.fonts.font_area_entry(f);
-            let font_name = s.fonts.font_name[f as usize];
-            dvi_font_def_bytes(
-                &s.fonts,
-                &s.strings,
-                f,
-                font_area,
-                strings_length(&s.strings, font_area),
-                font_name,
-                strings_length(&s.strings, font_name),
-            )
-        })
-    };
-    let mut start = 0;
-    while start < bytes.len() {
-        let result = crate::state::with_state_mut(|s| dvi_font_def(&mut s.shipout, &bytes, start));
-        start = result.next;
-        match result.flush {
-            None => {}
-            Some(DviFlush::Write(a, b)) => write_to_dvi_global(a, b),
-            Some(DviFlush::Fatal) => {
-                crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
-            }
-        }
-    }
 }
 
 fn dvi_font_def_bytes(
@@ -608,29 +532,6 @@ pub fn deinitialize_shipout_variables() {
     });
 }
 
-// translated from xetex-shipout.c:2296 (write_to_dvi)
-//
-// Borrow-dropping byte-range flush. The FFI write / `_tt_abort` must not run
-// while the thread-local is borrowed (the abort longjmp would leak the
-// `RefCell` guard), so it grabs (file, ptr) under a short `with_state` borrow
-// and writes outside it — matching the pre-thread structure. Threads to a
-// direct `&ShipoutState` helper once its callers (`finalize_dvi_file`,
-// `dvi_swap`) are threaded.
-pub unsafe fn write_to_dvi_global(a: i32, b: i32) {
-    let n = (b - a + 1) as libc::size_t;
-    let (file, ptr) = crate::state::with_state(|s| {
-        // The buffer Vec never reallocates, so this raw ptr stays valid past
-        // the borrow (same escaping-pointer idiom as `buffer_ptr`).
-        (
-            s.shipout.dvi_file,
-            s.shipout.dvi_buf.as_ptr().add(a as usize),
-        )
-    });
-    if ttstub_output_write(file, ptr as *const libc::c_char, n) != n {
-        _tt_abort(c"failed to write data to XDV file".as_ptr());
-    }
-}
-
 // translated from xetex-shipout.c:2306 (dvi_swap)
 //
 // Direct `&mut ShipoutState` buffer-swap bookkeeping. The byte flush and the
@@ -671,19 +572,11 @@ fn dvi_out(shipout: &mut ShipoutState, c: u8) -> Option<DviFlush> {
     }
 }
 
-pub unsafe fn dvi_out_global(c: u8) {
-    let flush = crate::state::with_state_mut(|s| dvi_out(&mut s.shipout, c));
-    match flush {
-        None => {}
-        Some(DviFlush::Write(a, b)) => write_to_dvi_global(a, b),
-        Some(DviFlush::Fatal) => {
-            crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
-        }
-    }
-}
-
 // translated from xetex-shipout.c:56 (ship_out)
-unsafe fn ship_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+pub(crate) unsafe fn ship_out_in(
+    st: &mut crate::state::EngineState,
+    p: i32,
+) -> Result<(), ShipoutAbort> {
     let mag = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
     let synctex_job_name = st.strings.job_name;
     let synctex_tmp = crate::texmfmp::gettexstring_in(&st.strings, synctex_job_name);
@@ -2191,114 +2084,126 @@ pub fn prune_movements(mem: &mut MemState, shipout: &mut ShipoutState, l: i32) {
     }
 }
 
-// print_c_string: local equivalent of xetex-xetexd.h static inline print_c_string.
-unsafe fn print_c_string_here(s: *const libc::c_char) {
+unsafe fn print_c_string_here_in(st: &mut crate::state::EngineState, s: *const libc::c_char) {
     let mut p = s;
     while *p != 0 {
-        crate::output::print_char(*p as i32);
+        crate::output::print_char_in(st, *p as i32);
         p = p.add(1);
     }
 }
 
 // translated from xetex-shipout.c:2173 (finalize_dvi_file)
 pub unsafe fn finalize_dvi_file() {
-    while cur_s() > -1 {
-        if cur_s() > 0 {
-            dvi_out_global(POP);
+    if let Err(e) = crate::state::with_state_mut(finalize_dvi_file_in) {
+        fire_shipout_abort(e);
+    }
+}
+
+fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
+    while st.shipout.cur_s > -1 {
+        if st.shipout.cur_s > 0 {
+            emit_dvi_out(&mut st.shipout, POP)?;
         } else {
-            dvi_out_global(EOP);
-            set_total_pages(total_pages() + 1);
+            emit_dvi_out(&mut st.shipout, EOP)?;
+            st.shipout.total_pages += 1;
         }
-        set_cur_s(cur_s() - 1);
+        st.shipout.cur_s -= 1;
     }
 
-    if total_pages() == 0 {
-        crate::output::print_nl_cstr(c"No pages of output.".as_ptr());
-        return;
+    if st.shipout.total_pages == 0 {
+        crate::output::print_nl_cstr_in(st, c"No pages of output.".as_ptr());
+        return Ok(());
     }
 
-    if cur_s() == -2 {
+    if st.shipout.cur_s == -2 {
         // DVI got too big; message already printed
-        return;
+        return Ok(());
     }
 
-    dvi_out_global(POST);
-    dvi_four_global(last_bop());
-    set_last_bop(dvi_offset() + dvi_ptr() - 5);
-    dvi_four_global(25_400_000); // magic: conversion ratio for sp
-    dvi_four_global(473_628_672); // magic: conversion ratio for sp
-    crate::save::prepare_mag();
-    dvi_four_global(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
-    dvi_four_global(max_v());
-    dvi_four_global(max_h());
-    dvi_out_global((max_push() / 256) as u8);
-    dvi_out_global((max_push() % 256) as u8);
-    dvi_out_global(((total_pages() / 256) % 256) as u8);
-    dvi_out_global((total_pages() % 256) as u8);
+    emit_dvi_out(&mut st.shipout, POST)?;
+    let last_bop = st.shipout.last_bop;
+    emit_dvi_four(&mut st.shipout, last_bop)?;
+    st.shipout.last_bop = st.shipout.dvi_offset + st.shipout.dvi_ptr - 5;
+    emit_dvi_four(&mut st.shipout, 25_400_000)?; // magic: conversion ratio for sp
+    emit_dvi_four(&mut st.shipout, 473_628_672)?; // magic: conversion ratio for sp
+    ship_err(crate::save::prepare_mag_in(st))?;
+    emit_dvi_four(&mut st.shipout, st.eqtb.b32s1(INT_BASE + INT_PAR_MAG))?;
+    let max_v = st.shipout.max_v;
+    let max_h = st.shipout.max_h;
+    let max_push = st.shipout.max_push;
+    let total_pages = st.shipout.total_pages;
+    emit_dvi_four(&mut st.shipout, max_v)?;
+    emit_dvi_four(&mut st.shipout, max_h)?;
+    emit_dvi_out(&mut st.shipout, (max_push / 256) as u8)?;
+    emit_dvi_out(&mut st.shipout, (max_push % 256) as u8)?;
+    emit_dvi_out(&mut st.shipout, ((total_pages / 256) % 256) as u8)?;
+    emit_dvi_out(&mut st.shipout, (total_pages % 256) as u8)?;
 
-    let mut fp = font_ptr();
+    let mut fp = st.fonts.font_ptr;
     while fp > FONT_BASE {
-        if font_used_entry(fp) {
-            dvi_font_def_global(fp);
+        if st.fonts.font_used[fp as usize] {
+            dvi_font_def_in(st, fp)?;
         }
         fp -= 1;
     }
-    set_font_ptr(fp);
+    st.fonts.font_ptr = fp;
 
-    dvi_out_global(POST_POST);
-    dvi_four_global(last_bop());
+    emit_dvi_out(&mut st.shipout, POST_POST)?;
+    let last_bop = st.shipout.last_bop;
+    emit_dvi_four(&mut st.shipout, last_bop)?;
 
-    if semantic_pagination_enabled() {
-        dvi_out_global(SPX_ID_BYTE);
+    if st.config.semantic_pagination_enabled {
+        emit_dvi_out(&mut st.shipout, SPX_ID_BYTE)?;
     } else {
-        dvi_out_global(XDV_ID_BYTE);
+        emit_dvi_out(&mut st.shipout, XDV_ID_BYTE)?;
     }
 
-    let mut k = (4 + (DVI_BUF_SIZE - dvi_ptr()) % 4) as u8;
+    let mut k = (4 + (DVI_BUF_SIZE - st.shipout.dvi_ptr) % 4) as u8;
     while k > 0 {
-        dvi_out_global(223);
+        emit_dvi_out(&mut st.shipout, 223)?;
         k -= 1;
     }
 
-    if dvi_limit() == HALF_BUF {
-        write_to_dvi_global(HALF_BUF, DVI_BUF_SIZE - 1);
+    if st.shipout.dvi_limit == HALF_BUF {
+        write_to_dvi(&st.shipout, HALF_BUF, DVI_BUF_SIZE - 1)?;
     }
 
-    if dvi_ptr() > TEX_INFINITY - dvi_offset() {
-        set_cur_s(-2);
-        crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
+    if st.shipout.dvi_ptr > TEX_INFINITY - st.shipout.dvi_offset {
+        st.shipout.cur_s = -2;
+        return Err(ShipoutAbort::DviLengthOverflow);
     }
 
-    if dvi_ptr() > 0 {
-        write_to_dvi_global(0, dvi_ptr() - 1);
+    if st.shipout.dvi_ptr > 0 {
+        write_to_dvi(&st.shipout, 0, st.shipout.dvi_ptr - 1)?;
     }
 
-    let k = ttstub_output_close(dvi_file()) as u8;
+    let k = unsafe { ttstub_output_close(st.shipout.dvi_file) as u8 };
 
     if k == 0 {
-        crate::output::print_nl_cstr(c"Output written on ".as_ptr());
-        crate::output::print(output_file_name());
-        crate::output::print_cstr(c" (".as_ptr());
-        crate::output::print_int(total_pages());
-        if total_pages() != 1 {
-            crate::output::print_cstr(c" pages".as_ptr());
+        crate::output::print_nl_cstr_in(st, c"Output written on ".as_ptr());
+        crate::output::print_in(st, st.shipout.output_file_name);
+        crate::output::print_cstr_in(st, c" (".as_ptr());
+        crate::output::print_int_in(st, st.shipout.total_pages);
+        if st.shipout.total_pages != 1 {
+            crate::output::print_cstr_in(st, c" pages".as_ptr());
         } else {
-            crate::output::print_cstr(c" page".as_ptr());
+            crate::output::print_cstr_in(st, c" page".as_ptr());
         }
-        crate::output::print_cstr(c", ".as_ptr());
-        crate::output::print_int(dvi_offset() + dvi_ptr());
-        crate::output::print_cstr(c" bytes).".as_ptr());
+        crate::output::print_cstr_in(st, c", ".as_ptr());
+        crate::output::print_int_in(st, st.shipout.dvi_offset + st.shipout.dvi_ptr);
+        crate::output::print_cstr_in(st, c" bytes).".as_ptr());
     } else {
-        crate::output::print_nl_cstr(c"Error ".as_ptr());
-        crate::output::print_int(k as i32);
-        crate::output::print_cstr(c" (".as_ptr());
-        print_c_string_here(libc::strerror(k as libc::c_int));
-        crate::output::print_cstr(c") generating output;".as_ptr());
-        crate::output::print_nl_cstr(c"file ".as_ptr());
-        crate::output::print(output_file_name());
-        crate::output::print_cstr(c" may not be valid.".as_ptr());
+        crate::output::print_nl_cstr_in(st, c"Error ".as_ptr());
+        crate::output::print_int_in(st, k as i32);
+        crate::output::print_cstr_in(st, c" (".as_ptr());
+        unsafe { print_c_string_here_in(st, libc::strerror(k as libc::c_int)) };
+        crate::output::print_cstr_in(st, c") generating output;".as_ptr());
+        crate::output::print_nl_cstr_in(st, c"file ".as_ptr());
+        crate::output::print_in(st, st.shipout.output_file_name);
+        crate::output::print_cstr_in(st, c" may not be valid.".as_ptr());
         // XeTeX adds history = OUTPUT_FAILURE = 4 here; not implemented.
     }
+    Ok(())
 }
 
 #[inline]

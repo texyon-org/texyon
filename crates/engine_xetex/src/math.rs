@@ -19,8 +19,8 @@ use crate::globals::{
     set_cur_mlist, set_cur_style, set_cur_val, set_cur_val1, set_help_line, set_help_ptr,
     set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3,
     set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties,
-    set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present,
-    temp_ptr, total_shrink, width_base_entry,
+    set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
+    set_xtx_ligature_present, temp_ptr, total_shrink, width_base_entry,
 };
 use crate::mem::{
     free_node, get_avail, get_node, new_choice, new_glue, new_kern, new_noad, new_null_box,

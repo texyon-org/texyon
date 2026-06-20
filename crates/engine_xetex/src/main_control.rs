@@ -1320,16 +1320,25 @@ fn append_penalty_node(mem: &mut crate::state::MemState, tail: i32, penalty: i32
 }
 
 pub unsafe fn append_penalty() {
-    scan_int();
+    if let Err(e) = crate::state::with_state_mut(append_penalty_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn append_penalty_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
+    crate::scan::scan_int_in(st)?;
     let tail = crate::globals::cur_list_tail();
-    let p = crate::state::with_state_mut(|st| append_penalty_node(&mut st.mem, tail, cur_val()));
+    let p = append_penalty_node(&mut st.mem, tail, cur_val());
     if p == crate::mem::ALLOC_FAILED {
-        crate::scan::node_recycle_abort(crate::scan::NodeRecycleAbort::Overflow);
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
     crate::globals::set_cur_list_tail(p);
     if cur_list_mode() == VMODE {
-        build_page();
+        crate::pagebuilder::build_page_in(st)?;
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:9496 (normal_paragraph)
 ///
@@ -2001,6 +2010,40 @@ impl NewCharacterAbort {
                 crate::errors::runaway();
                 crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
             },
+        }
+    }
+}
+
+pub(crate) enum MainControlAbort {
+    Scanner(crate::scan::SccAbort),
+    NodeRecycle(crate::scan::NodeRecycleAbort),
+    PageBuild(crate::pagebuilder::PageBuildAbort),
+}
+
+impl From<crate::scan::SccAbort> for MainControlAbort {
+    fn from(e: crate::scan::SccAbort) -> Self {
+        MainControlAbort::Scanner(e)
+    }
+}
+
+impl From<crate::scan::NodeRecycleAbort> for MainControlAbort {
+    fn from(e: crate::scan::NodeRecycleAbort) -> Self {
+        MainControlAbort::NodeRecycle(e)
+    }
+}
+
+impl From<crate::pagebuilder::PageBuildAbort> for MainControlAbort {
+    fn from(e: crate::pagebuilder::PageBuildAbort) -> Self {
+        MainControlAbort::PageBuild(e)
+    }
+}
+
+impl MainControlAbort {
+    pub(crate) unsafe fn fire(self) -> ! {
+        match self {
+            MainControlAbort::Scanner(e) => e.fire(),
+            MainControlAbort::NodeRecycle(e) => crate::scan::node_recycle_abort(e),
+            MainControlAbort::PageBuild(e) => crate::pagebuilder::fire_page_build_abort(e),
         }
     }
 }
@@ -2702,25 +2745,30 @@ fn append_glue_node(
 }
 
 pub unsafe fn append_glue() {
+    if let Err(e) = crate::state::with_state_mut(append_glue_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn append_glue_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let s = cur_chr() as i16;
     match s {
         0 => set_cur_val(4),
         1 => set_cur_val(8),
         2 => set_cur_val(12),
         3 => set_cur_val(16),
-        4 => scan_glue(GLUE_VAL),    // SKIP_CODE
-        5 => scan_glue(MU_VAL_SCAN), // MSKIP_CODE
+        4 => crate::scan::scan_glue_in(st, GLUE_VAL)?, // SKIP_CODE
+        5 => crate::scan::scan_glue_in(st, MU_VAL_SCAN)?, // MSKIP_CODE
         _ => {}
     }
     let subtype = if s > SKIP_CODE { MU_GLUE } else { 0 };
     let tail = crate::globals::cur_list_tail();
-    let p = crate::state::with_state_mut(|st| {
-        append_glue_node(&mut st.mem, tail, cur_val(), subtype, s >= SKIP_CODE)
-    });
+    let p = append_glue_node(&mut st.mem, tail, cur_val(), subtype, s >= SKIP_CODE);
     if p == crate::mem::ALLOC_FAILED {
-        crate::scan::node_recycle_abort(crate::scan::NodeRecycleAbort::Overflow);
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
     crate::globals::set_cur_list_tail(p);
+    Ok(())
 }
 // translated from xetex-xetex0.c:9395 (append_kern)
 fn append_kern_node(mem: &mut crate::state::MemState, tail: i32, width: i32, subtype: u16) -> i32 {
@@ -2738,14 +2786,21 @@ fn append_kern_node(mem: &mut crate::state::MemState, tail: i32, width: i32, sub
 }
 
 pub unsafe fn append_kern() {
+    if let Err(e) = crate::state::with_state_mut(append_kern_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn append_kern_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let s = cur_chr() as u16;
-    scan_dimen(s == MU_GLUE, false, false);
+    crate::scan::scan_dimen_in(st, s == MU_GLUE, false, false)?;
     let tail = crate::globals::cur_list_tail();
-    let p = crate::state::with_state_mut(|st| append_kern_node(&mut st.mem, tail, cur_val(), s));
+    let p = append_kern_node(&mut st.mem, tail, cur_val(), s);
     if p == crate::mem::ALLOC_FAILED {
-        crate::scan::node_recycle_abort(crate::scan::NodeRecycleAbort::Overflow);
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
     crate::globals::set_cur_list_tail(p);
+    Ok(())
 }
 // translated from xetex-xetex0.c:9896 (make_mark)
 pub unsafe fn make_mark() {
