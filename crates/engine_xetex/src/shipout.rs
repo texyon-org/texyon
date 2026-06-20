@@ -6,26 +6,14 @@ use crate::consts::{
     TOO_BIG_CHAR,
 };
 use crate::ext::apply_tfm_font_mapping;
-use crate::ext::makeXDVGlyphArrayData;
 use crate::ext::make_font_def_global;
 
 use crate::globals::{
-    avail, char_base_entry, cur_dir, cur_h, cur_list_mode, cur_page_height, cur_tok, cur_v,
-    doing_leaders, eqtb_b32s1, file_offset, font_area_entry, font_bc_entry, font_ec_entry,
-    font_info_b16, font_mapping_ptr, font_ptr, font_used_entry, init_pool_ptr, job_name, last_bop,
-    lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v, mem_as_u16_ptr, mem_b16s0,
-    mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1, mem_gr, mem_node_addr, mem_ptr, mem_word,
-    name_of_file, pool_ptr, pool_size, rule_ht, rule_wd, rust_stdout, selector,
-    semantic_pagination_enabled, set_avail, set_cur_cs, set_cur_dir, set_cur_h, set_cur_h_offset,
-    set_cur_list_mode, set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset,
-    set_dead_cycles, set_doing_leaders, set_font_ptr, set_font_used_entry, set_help_line,
-    set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_push, set_max_v,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pdf_last_x_pos,
-    set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht, set_rule_wd, set_selector,
-    set_temp_ptr, set_total_pages, set_xtx_ligature_present, str_pool_entry, str_ptr, str_start,
-    temp_ptr, term_offset, total_pages, xdv_buffer_entry,
+    cur_list_mode, cur_tok, eqtb_b32s1, font_area_entry, font_ptr, font_used_entry, init_pool_ptr,
+    last_bop, max_h, max_push, max_v, name_of_file, pool_size, semantic_pagination_enabled,
+    set_cur_cs, set_cur_list_mode, set_font_ptr, set_last_bop, set_temp_ptr, set_total_pages,
+    temp_ptr, total_pages,
 };
-use crate::mem::{free_node_global, get_avail_global, get_node_global, new_kern_global};
 use crate::node::{EdgeNode, MovementNode, NodePtr};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{MemIdx, MemPtr, Scaled};
@@ -48,9 +36,6 @@ extern "C" {
 // DVI output file state — positioning and output variables bridged to ShipoutState.
 fn dvi_file() -> usize {
     crate::state::with_state(|s| s.shipout.dvi_file)
-}
-fn set_dvi_file(v: usize) {
-    crate::state::with_state_mut(|s| s.shipout.dvi_file = v);
 }
 
 fn output_file_name() -> i32 {
@@ -90,27 +75,6 @@ fn cur_s() -> i32 {
 }
 fn set_cur_s(v: i32) {
     crate::state::with_state_mut(|s| s.shipout.cur_s = v);
-}
-
-fn dvi_h() -> i32 {
-    crate::state::with_state(|s| s.shipout.dvi_h)
-}
-fn set_dvi_h(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.dvi_h = v);
-}
-
-fn dvi_v() -> i32 {
-    crate::state::with_state(|s| s.shipout.dvi_v)
-}
-fn set_dvi_v(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.dvi_v = v);
-}
-
-fn dvi_f() -> i32 {
-    crate::state::with_state(|s| s.shipout.dvi_f)
-}
-fn set_dvi_f(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.dvi_f = v);
 }
 
 // xetex-shipout.c:11–12
@@ -226,14 +190,6 @@ pub fn new_edge(mem: &mut MemState, s: i16, w: i32) -> i32 {
     p.idx().0
 }
 
-pub unsafe fn new_edge_global(s: i16, w: i32) -> i32 {
-    let p = crate::state::with_state_mut(|st| new_edge(&mut st.mem, s, w));
-    if p == crate::mem::ALLOC_FAILED {
-        crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
-}
-
 /// What a threaded DVI byte write needs its bridge-down wrapper to do
 /// *after* the `with_state_mut` borrow drops: file I/O and the cold overflow
 /// abort must not run while the thread-local is borrowed (§5 sentinel rule).
@@ -268,6 +224,8 @@ pub(crate) enum ShipoutAbort {
     /// `_tt_abort("cannot open output file …")` — deferred so the message is
     /// rebuilt from `name_of_file()` after the borrow drops.
     CannotOpenOutput,
+    /// A file-name pool overflow bubbled up from `make_name_string_in`.
+    Name(crate::io::NameAbort),
 }
 
 impl From<crate::scan::SccAbort> for ShipoutAbort {
@@ -282,6 +240,24 @@ impl From<crate::input::InputAbort> for ShipoutAbort {
     }
 }
 
+impl From<crate::io::NameAbort> for ShipoutAbort {
+    fn from(a: crate::io::NameAbort) -> Self {
+        ShipoutAbort::Name(a)
+    }
+}
+
+impl From<crate::io::OpenLogAbort> for ShipoutAbort {
+    fn from(a: crate::io::OpenLogAbort) -> Self {
+        ShipoutAbort::Scc(crate::scan::SccAbort::OpenLog(a))
+    }
+}
+
+impl From<crate::texmfmp::MakeTexStringAbort> for ShipoutAbort {
+    fn from(a: crate::texmfmp::MakeTexStringAbort) -> Self {
+        ShipoutAbort::Scc(crate::scan::SccAbort::MakeTexString(a))
+    }
+}
+
 /// Propagate a recoverable-error outcome as a [`ShipoutAbort`]: `Continue`
 /// keeps going, anything else became terminal under the borrow.
 fn ship_err(o: crate::errors::ErrorOutcome) -> Result<(), ShipoutAbort> {
@@ -292,6 +268,16 @@ fn ship_err(o: crate::errors::ErrorOutcome) -> Result<(), ShipoutAbort> {
 /// movement/main-memory overflow tail.
 fn get_avail_ship(mem: &mut MemState) -> Result<i32, ShipoutAbort> {
     let p = crate::mem::get_avail(mem);
+    if p == crate::mem::ALLOC_FAILED {
+        return Err(ShipoutAbort::MainMemoryOverflow);
+    }
+    Ok(p)
+}
+
+/// `get_node` under the borrow with its `ALLOC_FAILED` lifted into the
+/// main-memory overflow tail.
+fn get_node_ship(mem: &mut MemState, s: i32) -> Result<i32, ShipoutAbort> {
+    let p = crate::mem::get_node(mem, s);
     if p == crate::mem::ALLOC_FAILED {
         return Err(ShipoutAbort::MainMemoryOverflow);
     }
@@ -326,6 +312,7 @@ unsafe fn fire_shipout_abort(a: ShipoutAbort) -> ! {
             );
             _tt_abort(buf.as_ptr() as *const libc::c_char)
         }
+        ShipoutAbort::Name(e) => crate::io::fire_name_overflow(e),
     }
 }
 
@@ -364,6 +351,17 @@ fn emit_dvi_four(shipout: &mut ShipoutState, x: i32) -> Result<(), ShipoutAbort>
     let mut start = 0;
     while start < 4 {
         let result = dvi_four(shipout, x, start);
+        start = result.next;
+        handle_dvi_flush(shipout, result.flush)?;
+    }
+    Ok(())
+}
+
+/// Threaded analog of `dvi_two_global`.
+fn emit_dvi_two(shipout: &mut ShipoutState, s: u16) -> Result<(), ShipoutAbort> {
+    let mut start = 0;
+    while start < 2 {
+        let result = dvi_two(shipout, s, start);
         start = result.next;
         handle_dvi_flush(shipout, result.flush)?;
     }
@@ -448,21 +446,6 @@ unsafe fn dvi_four_global(x: i32) {
 /// translated from xetex-shipout.c:2423 (dvi_two)
 fn dvi_two(shipout: &mut ShipoutState, s: u16, start: usize) -> DviEmit {
     emit_dvi_bytes(shipout, &[(s / 0x100) as u8, (s % 0x100) as u8], start)
-}
-
-unsafe fn dvi_two_global(s: u16) {
-    let mut start = 0;
-    while start < 2 {
-        let result = crate::state::with_state_mut(|st| dvi_two(&mut st.shipout, s, start));
-        start = result.next;
-        match result.flush {
-            None => {}
-            Some(DviFlush::Write(a, b)) => write_to_dvi_global(a, b),
-            Some(DviFlush::Fatal) => {
-                crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
-            }
-        }
-    }
 }
 
 fn strings_length(strings: &StringsState, s: i32) -> i32 {
@@ -700,226 +683,243 @@ pub unsafe fn dvi_out_global(c: u8) {
 }
 
 // translated from xetex-shipout.c:56 (ship_out)
-pub unsafe fn ship_out(p: i32) {
-    let mag = eqtb_b32s1(INT_BASE + INT_PAR_MAG);
-    let synctex_job_name = job_name();
-    let synctex_tmp = crate::texmfmp::gettexstring(synctex_job_name);
-    crate::state::with_state_mut(|st| crate::synctex::synctex_sheet(st, mag, synctex_tmp));
+unsafe fn ship_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+    let mag = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
+    let synctex_job_name = st.strings.job_name;
+    let synctex_tmp = crate::texmfmp::gettexstring_in(&st.strings, synctex_job_name);
+    crate::synctex::synctex_sheet(st, mag, synctex_tmp);
 
-    if job_name() == 0 {
-        crate::io::open_log_file();
+    if st.strings.job_name == 0 {
+        crate::io::open_log_file_in(st)?;
     }
 
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) > 0 {
-        crate::output::print_nl_cstr(c"".as_ptr());
-        crate::output::print_ln();
-        crate::output::print_cstr(c"Completed box being shipped out".as_ptr());
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) > 0 {
+        crate::output::print_nl_cstr_in(st, c"".as_ptr());
+        crate::output::print_ln_in(st);
+        crate::output::print_cstr_in(st, c"Completed box being shipped out".as_ptr());
     }
 
-    if term_offset() > max_print_line() - 9 {
-        crate::output::print_ln();
-    } else if term_offset() > 0 || file_offset() > 0 {
-        crate::output::print_char(b' ' as i32);
+    if st.shipout.term_offset > st.config.max_print_line - 9 {
+        crate::output::print_ln_in(st);
+    } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
+        crate::output::print_char_in(st, b' ' as i32);
     }
 
-    crate::output::print_char(b'[' as i32);
+    crate::output::print_char_in(st, b'[' as i32);
     let mut j: u8 = 9;
-    while j > 0 && eqtb_b32s1(COUNT_BASE + j as i32) == 0 {
+    while j > 0 && st.eqtb.b32s1(COUNT_BASE + j as i32) == 0 {
         j -= 1;
     }
 
     for k in 0..=j {
-        crate::output::print_int(eqtb_b32s1(COUNT_BASE + k as i32));
+        crate::output::print_int_in(st, st.eqtb.b32s1(COUNT_BASE + k as i32));
         if k < j {
-            crate::output::print_char(b'.' as i32);
+            crate::output::print_char_in(st, b'.' as i32);
         }
     }
 
-    ttstub_output_flush(rust_stdout());
+    ttstub_output_flush(st.shipout.rust_stdout);
 
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) > 0 {
-        crate::output::print_char(b']' as i32);
-        crate::output::begin_diagnostic();
-        crate::output::show_box(p);
-        crate::output::end_diagnostic(true);
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) > 0 {
+        crate::output::print_char_in(st, b']' as i32);
+        crate::output::begin_diagnostic_in(st);
+        crate::output::show_box_in(st, p);
+        crate::output::end_diagnostic_in(st, true);
     }
 
-    if mem_b32s1(p + 3) > MAX_HALFWORD
-        || mem_b32s1(p + 2) > MAX_HALFWORD
-        || mem_b32s1(p + 3) + mem_b32s1(p + 2) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET)
+    if st.mem.b32s1(p + 3) > MAX_HALFWORD
+        || st.mem.b32s1(p + 2) > MAX_HALFWORD
+        || st.mem.b32s1(p + 3)
+            + st.mem.b32s1(p + 2)
+            + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET)
             > MAX_HALFWORD
-        || mem_b32s1(p + 1) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) > MAX_HALFWORD
+        || st.mem.b32s1(p + 1) + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) > MAX_HALFWORD
     {
-        crate::output::error_here_with_diagnostic(c"Huge page cannot be shipped out".as_ptr());
-        crate::output::capture_to_diagnostic(core::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
-            c"The page just created is more than 18 feet tall or".as_ptr(),
+        crate::output::error_here_with_diagnostic_in(
+            st,
+            c"Huge page cannot be shipped out".as_ptr(),
         );
-        set_help_line(
-            0,
-            c"more than 18 feet wide, so I suspect something went wrong.".as_ptr(),
-        );
-        crate::errors::error();
+        crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
+        st.errors.help_ptr = 2;
+        st.errors.help_line[1] = c"The page just created is more than 18 feet tall or".as_ptr();
+        st.errors.help_line[0] =
+            c"more than 18 feet wide, so I suspect something went wrong.".as_ptr();
+        ship_err(crate::errors::error_in(st))?;
 
-        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) <= 0 {
-            crate::output::begin_diagnostic();
-            crate::output::print_nl_cstr(c"The following box has been deleted:".as_ptr());
-            crate::output::show_box(p);
-            crate::output::end_diagnostic(true);
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) <= 0 {
+            crate::output::begin_diagnostic_in(st);
+            crate::output::print_nl_cstr_in(st, c"The following box has been deleted:".as_ptr());
+            crate::output::show_box_in(st, p);
+            crate::output::end_diagnostic_in(st, true);
         }
     } else {
-        let page_height =
-            mem_b32s1(p + 3) + mem_b32s1(p + 2) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET);
-        if page_height > max_v() {
-            set_max_v(page_height);
+        let page_height = st.mem.b32s1(p + 3)
+            + st.mem.b32s1(p + 2)
+            + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET);
+        if page_height > st.shipout.max_v {
+            st.shipout.max_v = page_height;
         }
 
-        let page_width = mem_b32s1(p + 1) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET);
-        if page_width > max_h() {
-            set_max_h(page_width);
+        let page_width = st.mem.b32s1(p + 1) + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET);
+        if page_width > st.shipout.max_h {
+            st.shipout.max_h = page_width;
         }
 
-        set_dvi_h(0);
-        set_dvi_v(0);
-        set_cur_h(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET));
-        set_dvi_f(FONT_BASE);
+        st.shipout.dvi_h = 0;
+        st.shipout.dvi_v = 0;
+        st.shipout.cur_h = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET);
+        st.shipout.dvi_f = FONT_BASE;
 
-        set_cur_h_offset(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) + ONE_INCH);
-        set_cur_v_offset(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET) + ONE_INCH);
+        st.shipout.cur_h_offset = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) + ONE_INCH;
+        st.shipout.cur_v_offset = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET) + ONE_INCH;
 
-        if eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH) != 0 {
-            set_cur_page_width(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH));
+        if st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH) != 0 {
+            st.shipout.cur_page_width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH);
         } else {
-            set_cur_page_width(
-                mem_b32s1(p + 1) + 2 * (eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) + ONE_INCH),
-            );
+            st.shipout.cur_page_width = st.mem.b32s1(p + 1)
+                + 2 * (st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) + ONE_INCH);
         }
 
-        if eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT) != 0 {
-            set_cur_page_height(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT));
+        if st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT) != 0 {
+            st.shipout.cur_page_height = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT);
         } else {
-            set_cur_page_height(
-                mem_b32s1(p + 3)
-                    + mem_b32s1(p + 2)
-                    + 2 * (eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET) + ONE_INCH),
-            );
+            st.shipout.cur_page_height = st.mem.b32s1(p + 3)
+                + st.mem.b32s1(p + 2)
+                + 2 * (st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET) + ONE_INCH);
         }
 
-        if output_file_name() == 0 {
-            if job_name() == 0 {
-                crate::io::open_log_file();
+        if st.shipout.output_file_name == 0 {
+            if st.strings.job_name == 0 {
+                crate::io::open_log_file_in(st)?;
             }
-            crate::io::pack_job_name(output_file_extension);
-            set_dvi_file(ttstub_output_open(name_of_file(), 0));
-            if dvi_file() == INVALID_HANDLE {
+            crate::io::pack_job_name_in(st, output_file_extension)?;
+            st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
+            if st.shipout.dvi_file == INVALID_HANDLE {
                 let mut buf = [0u8; 512];
                 libc::snprintf(
                     buf.as_mut_ptr() as *mut libc::c_char,
                     buf.len(),
                     c"cannot open output file \"%s\"".as_ptr(),
-                    name_of_file(),
+                    st.input.name_of_file.as_ptr(),
                 );
                 _tt_abort(buf.as_ptr() as *const libc::c_char);
             }
-            set_output_file_name(crate::io::make_name_string());
+            st.shipout.output_file_name = crate::io::make_name_string_in(st)?;
         }
 
-        if total_pages() == 0 {
-            dvi_out_global(PRE);
-            if semantic_pagination_enabled() {
-                dvi_out_global(SPX_ID_BYTE);
+        if st.shipout.total_pages == 0 {
+            emit_dvi_out(&mut st.shipout, PRE)?;
+            if st.config.semantic_pagination_enabled {
+                emit_dvi_out(&mut st.shipout, SPX_ID_BYTE)?;
             } else {
-                dvi_out_global(XDV_ID_BYTE);
+                emit_dvi_out(&mut st.shipout, XDV_ID_BYTE)?;
             }
-            dvi_four_global(25_400_000);
-            dvi_four_global(473_628_672);
-            crate::save::prepare_mag();
-            dvi_four_global(eqtb_b32s1(INT_BASE + INT_PAR_MAG));
+            emit_dvi_four(&mut st.shipout, 25_400_000)?;
+            emit_dvi_four(&mut st.shipout, 473_628_672)?;
+            ship_err(crate::save::prepare_mag_in(st))?;
+            emit_dvi_four(&mut st.shipout, st.eqtb.b32s1(INT_BASE + INT_PAR_MAG))?;
 
             let output_comment = c"tectonic";
             let l = output_comment.to_bytes().len() as u8;
-            dvi_out_global(l);
+            emit_dvi_out(&mut st.shipout, l)?;
             for s in 0..l {
-                dvi_out_global(*output_comment.as_ptr().add(s as usize) as u8);
+                emit_dvi_out(
+                    &mut st.shipout,
+                    *output_comment.as_ptr().add(s as usize) as u8,
+                )?;
             }
         }
 
-        let page_loc = dvi_offset() + dvi_ptr();
-        dvi_out_global(BOP);
+        let page_loc = st.shipout.dvi_offset + st.shipout.dvi_ptr;
+        emit_dvi_out(&mut st.shipout, BOP)?;
         for k in 0..10 {
-            dvi_four_global(eqtb_b32s1(COUNT_BASE + k));
+            emit_dvi_four(&mut st.shipout, st.eqtb.b32s1(COUNT_BASE + k))?;
         }
-        dvi_four_global(last_bop());
-        set_last_bop(page_loc);
+        let last_bop = st.shipout.last_bop;
+        emit_dvi_four(&mut st.shipout, last_bop)?;
+        st.shipout.last_bop = page_loc;
 
-        let old_setting = selector();
-        set_selector(SELECTOR_NEW_STRING);
-        crate::output::print_cstr(c"pdf:pagesize ".as_ptr());
-        if eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH) <= 0
-            || eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT) <= 0
+        let old_setting = st.shipout.selector;
+        st.shipout.selector = SELECTOR_NEW_STRING;
+        crate::output::print_cstr_in(st, c"pdf:pagesize ".as_ptr());
+        if st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH) <= 0
+            || st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT) <= 0
         {
-            crate::output::print_cstr(c"default".as_ptr());
+            crate::output::print_cstr_in(st, c"default".as_ptr());
         } else {
-            crate::output::print_cstr(c"width".as_ptr());
-            crate::output::print(b' ' as i32);
-            crate::output::print_scaled(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH));
-            crate::output::print_cstr(c"pt".as_ptr());
-            crate::output::print(b' ' as i32);
-            crate::output::print_cstr(c"height".as_ptr());
-            crate::output::print(b' ' as i32);
-            crate::output::print_scaled(eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT));
-            crate::output::print_cstr(c"pt".as_ptr());
+            crate::output::print_cstr_in(st, c"width".as_ptr());
+            crate::output::print_in(st, b' ' as i32);
+            crate::output::print_scaled_in(
+                st,
+                st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH),
+            );
+            crate::output::print_cstr_in(st, c"pt".as_ptr());
+            crate::output::print_in(st, b' ' as i32);
+            crate::output::print_cstr_in(st, c"height".as_ptr());
+            crate::output::print_in(st, b' ' as i32);
+            crate::output::print_scaled_in(
+                st,
+                st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT),
+            );
+            crate::output::print_cstr_in(st, c"pt".as_ptr());
         }
-        set_selector(old_setting);
+        st.shipout.selector = old_setting;
 
-        dvi_out_global(XXX1);
-        dvi_out_global(crate::hash::cur_length_global() as u8);
-        let start = str_start(str_ptr() - TOO_BIG_CHAR);
-        let end = pool_ptr();
+        emit_dvi_out(&mut st.shipout, XXX1)?;
+        emit_dvi_out(&mut st.shipout, crate::hash::cur_length(&st.strings) as u8)?;
+        let start = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+        let end = st.strings.pool_ptr;
         for s in start..end {
-            dvi_out_global(str_pool_entry(s) as u8);
+            emit_dvi_out(&mut st.shipout, st.strings.str_pool[s as usize] as u8)?;
         }
-        set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+        st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
 
-        set_cur_v(mem_b32s1(p + 3) + eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET));
+        st.shipout.cur_v = st.mem.b32s1(p + 3) + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET);
         set_temp_ptr(p);
-        if mem_b16s1(p) == VLIST_NODE {
-            vlist_out();
+        if st.mem.b16s1(p) == VLIST_NODE {
+            vlist_out_in(st)?;
         } else {
-            hlist_out();
+            hlist_out_in(st)?;
         }
 
-        dvi_out_global(EOP);
-        set_total_pages(total_pages() + 1);
-        set_cur_s(-1);
+        emit_dvi_out(&mut st.shipout, EOP)?;
+        st.shipout.total_pages = st.shipout.total_pages + 1;
+        st.shipout.cur_s = -1;
     }
 
-    if lr_problems() > 0 {
-        crate::output::print_ln();
-        crate::output::print_nl_cstr(c"\\endL or \\endR problem (".as_ptr());
-        crate::output::print_int(lr_problems() / 10000);
-        crate::output::print_cstr(c" missing, ".as_ptr());
-        crate::output::print_int(lr_problems() % 10000);
-        crate::output::print_cstr(c" extra".as_ptr());
-        set_lr_problems(0);
-        crate::output::print_char(b')' as i32);
-        crate::output::print_ln();
+    if st.scanner.LR_problems > 0 {
+        crate::output::print_ln_in(st);
+        crate::output::print_nl_cstr_in(st, c"\\endL or \\endR problem (".as_ptr());
+        crate::output::print_int_in(st, st.scanner.LR_problems / 10000);
+        crate::output::print_cstr_in(st, c" missing, ".as_ptr());
+        crate::output::print_int_in(st, st.scanner.LR_problems % 10000);
+        crate::output::print_cstr_in(st, c" extra".as_ptr());
+        st.scanner.LR_problems = 0;
+        crate::output::print_char_in(st, b')' as i32);
+        crate::output::print_ln_in(st);
     }
 
-    if lr_ptr() != TEX_NULL || cur_dir() != LEFT_TO_RIGHT {
-        crate::errors::confusion(c"LR3".as_ptr());
+    if st.scanner.LR_ptr != TEX_NULL || st.scanner.cur_dir != LEFT_TO_RIGHT {
+        return Err(ShipoutAbort::Confusion(c"LR3"));
     }
 
-    if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) <= 0 {
-        crate::output::print_char(b']' as i32);
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_OUTPUT) <= 0 {
+        crate::output::print_char_in(st, b']' as i32);
     }
 
-    set_dead_cycles(0);
-    ttstub_output_flush(rust_stdout());
-    crate::packaging::flush_node_list_global(p);
-    crate::state::with_state_mut(|st| crate::synctex::synctex_teehs(st));
+    st.shipout.dead_cycles = 0;
+    ttstub_output_flush(st.shipout.rust_stdout);
+    crate::packaging::flush_node_list(&mut st.mem, p).map_err(ShipoutAbort::Confusion)?;
+    crate::synctex::synctex_teehs(st);
+
+    Ok(())
+}
+
+pub unsafe fn ship_out(p: i32) {
+    let outcome = crate::state::with_state_mut(|st| ship_out_in(st, p));
+    if let Err(a) = outcome {
+        fire_shipout_abort(a);
+    }
 }
 
 // translated from xetex-shipout.c:2332 (dvi_pop)
@@ -932,44 +932,49 @@ pub fn dvi_pop(shipout: &mut ShipoutState, l: i32) -> bool {
     }
 }
 
-pub unsafe fn dvi_pop_global(l: i32) {
-    let emit_pop = crate::state::with_state_mut(|st| dvi_pop(&mut st.shipout, l));
-    if emit_pop {
-        dvi_out_global(POP);
+/// Threaded analog of `dvi_font_def_global`: emit the font definition under the
+/// held borrow.
+fn dvi_font_def_in(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
+    let bytes = if st.fonts.font_area_entry(f) == AAT_FONT_FLAG
+        || st.fonts.font_area_entry(f) == OTGR_FONT_FLAG
+    {
+        // SAFETY: FFI; fills st.fonts.xdv_buffer and returns the def length.
+        let font_def_length = unsafe { crate::ext::make_font_def(&mut st.fonts, f) };
+        dvi_native_font_def(&st.fonts, f, font_def_length)
+    } else {
+        let font_area = st.fonts.font_area_entry(f);
+        let font_name = st.fonts.font_name[f as usize];
+        dvi_font_def_bytes(
+            &st.fonts,
+            &st.strings,
+            f,
+            font_area,
+            strings_length(&st.strings, font_area),
+            font_name,
+            strings_length(&st.strings, font_name),
+        )
+    };
+    for byte in bytes {
+        emit_dvi_out(&mut st.shipout, byte)?;
     }
+    Ok(())
 }
 
-fn ensure_dvi_font(shipout: &mut ShipoutState, bytes: &[u8], start: usize) -> DviEmit {
-    emit_dvi_bytes(shipout, bytes, start)
-}
-
-unsafe fn ensure_dvi_font_global(f: i32) {
-    if f == dvi_f() {
-        return;
+/// Threaded analog of `ensure_dvi_font_global`: select (defining if needed)
+/// the DVI font under the held borrow.
+fn ensure_dvi_font_in(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
+    if f == st.shipout.dvi_f {
+        return Ok(());
     }
-
-    if !font_used_entry(f) {
-        dvi_font_def_global(f);
-        set_font_used_entry(f, true);
+    if !st.fonts.font_used[f as usize] {
+        dvi_font_def_in(st, f)?;
+        st.fonts.font_used[f as usize] = true;
     }
-
-    let bytes = dvi_font_select_bytes(f);
-    let mut start = 0;
-    while start < bytes.len() {
-        let result =
-            crate::state::with_state_mut(|s| ensure_dvi_font(&mut s.shipout, &bytes, start));
-        start = result.next;
-        match result.flush {
-            None => {}
-            Some(DviFlush::Write(a, b)) => write_to_dvi_global(a, b),
-            Some(DviFlush::Fatal) => {
-                crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
-            }
-        }
+    for byte in dvi_font_select_bytes(f) {
+        emit_dvi_out(&mut st.shipout, byte)?;
     }
-    crate::state::with_state_mut(|s| {
-        s.shipout.dvi_f = f;
-    });
+    st.shipout.dvi_f = f;
+    Ok(())
 }
 
 #[inline]
@@ -1168,25 +1173,6 @@ fn merge_justifiable_native_words(
     Ok(())
 }
 
-// Bridge-down wrapper; retires when `hlist_out` is threaded.
-unsafe fn merge_justifiable_native_words_global(this_box: i32, g_order: u16, g_sign: u16) {
-    let outcome = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        merge_justifiable_native_words(
-            &mut s.mem,
-            &mut s.strings,
-            &s.fonts,
-            &s.eqtb,
-            this_box,
-            g_order,
-            g_sign,
-        )
-    });
-    if let Err(a) = outcome {
-        fire_shipout_abort(a);
-    }
-}
-
 struct HListRuleAction {
     emit: bool,
     h_move: Option<i32>,
@@ -1250,27 +1236,34 @@ fn finish_hlist_rule(
     }
 }
 
-pub unsafe fn finish_hlist_rule_global(this_box: i32, base_line: i32, p: i32) {
-    let action = crate::state::with_state_mut(|st| {
-        finish_hlist_rule(&st.mem, &mut st.shipout, this_box, base_line, p)
-    });
+/// Threaded analog of `finish_hlist_rule_global` (under the held borrow).
+fn finish_hlist_rule_in(
+    st: &mut crate::state::EngineState,
+    this_box: i32,
+    base_line: i32,
+    p: i32,
+) -> Result<(), ShipoutAbort> {
+    let action = finish_hlist_rule(&st.mem, &mut st.shipout, this_box, base_line, p);
     if action.emit {
         if let Some(h_move) = action.h_move {
-            movement_global(h_move, RIGHT1);
+            emit_movement(&mut st.mem, &mut st.shipout, h_move, RIGHT1)?;
         }
         if let Some(v_move) = action.v_move {
-            movement_global(v_move, DOWN1);
+            emit_movement(&mut st.mem, &mut st.shipout, v_move, DOWN1)?;
         }
-        dvi_out_global(SET_RULE);
-        dvi_four_global(action.rule_ht);
-        dvi_four_global(action.rule_wd);
+        emit_dvi_out(&mut st.shipout, SET_RULE)?;
+        emit_dvi_four(&mut st.shipout, action.rule_ht)?;
+        emit_dvi_four(&mut st.shipout, action.rule_wd)?;
     }
-    crate::state::with_state_mut(|st| {
-        crate::synctex::synctex_horizontal_rule_or_glue(st, action.synctex_p, action.synctex_box)
-    });
+    // SAFETY: synctex bookkeeping over the shared engine state.
+    unsafe {
+        crate::synctex::synctex_horizontal_rule_or_glue(st, action.synctex_p, action.synctex_box);
+    }
+    Ok(())
 }
 
-unsafe fn output_hlist_glue(
+unsafe fn output_hlist_glue_in(
+    st: &mut crate::state::EngineState,
     this_box: i32,
     base_line: i32,
     left_edge: i32,
@@ -1279,336 +1272,372 @@ unsafe fn output_hlist_glue(
     g_sign: u16,
     cur_g: &mut i32,
     cur_glue: &mut f64,
-) {
-    let mut g = mem_b32s0(p + 1);
-    set_rule_wd(mem_b32s1(g + 1) - *cur_g);
+) -> Result<(), ShipoutAbort> {
+    let mut g = st.mem.b32s0(p + 1);
+    st.shipout.rule_wd = st.mem.b32s1(g + 1) - *cur_g;
 
     if g_sign != NORMAL {
         if g_sign == STRETCHING {
-            if mem_b16s1(g) == g_order {
-                *cur_glue += mem_b32s1(g + 2) as f64;
+            if st.mem.b16s1(g) == g_order {
+                *cur_glue += st.mem.b32s1(g + 2) as f64;
                 *cur_g = crate::scaled_math::tex_round(
-                    (mem_gr(this_box + 6) * *cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0),
+                    (st.mem.gr(this_box + 6) * *cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0),
                 );
             }
-        } else if mem_b16s0(g) == g_order {
-            *cur_glue -= mem_b32s1(g + 3) as f64;
+        } else if st.mem.b16s0(g) == g_order {
+            *cur_glue -= st.mem.b32s1(g + 3) as f64;
             *cur_g = crate::scaled_math::tex_round(
-                (mem_gr(this_box + 6) * *cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0),
+                (st.mem.gr(this_box + 6) * *cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0),
             );
         }
     }
 
-    set_rule_wd(rule_wd() + *cur_g);
+    st.shipout.rule_wd += *cur_g;
 
-    if (g_sign == STRETCHING && mem_b16s1(g) == g_order)
-        || (g_sign == SHRINKING && mem_b16s0(g) == g_order)
+    if (g_sign == STRETCHING && st.mem.b16s1(g) == g_order)
+        || (g_sign == SHRINKING && st.mem.b16s0(g) == g_order)
     {
-        if mem_b32s1(g) == TEX_NULL {
-            free_node_global(g, GLUE_SPEC_SIZE);
+        if st.mem.b32s1(g) == TEX_NULL {
+            crate::mem::free_node(&mut st.mem, g, GLUE_SPEC_SIZE);
         } else {
-            set_mem_b32s1(g, mem_b32s1(g) - 1);
+            st.mem.set_b32s1(g, st.mem.b32s1(g) - 1);
         }
 
-        if mem_b16s0(p) < A_LEADERS {
-            set_mem_b16s1(p, KERN_NODE);
-            set_mem_b32s1(p + 1, rule_wd());
+        if st.mem.b16s0(p) < A_LEADERS {
+            st.mem.set_b16s1(p, KERN_NODE);
+            st.mem.set_b32s1(p + 1, st.shipout.rule_wd);
         } else {
-            g = get_node_global(GLUE_SPEC_SIZE);
-            set_mem_b16s1(g, FILLL + 1);
-            set_mem_b16s0(g, FILLL + 1);
-            set_mem_b32s1(g + 1, rule_wd());
-            set_mem_b32s1(g + 2, 0);
-            set_mem_b32s1(g + 3, 0);
-            set_mem_b32s0(p + 1, g);
+            g = get_node_ship(&mut st.mem, GLUE_SPEC_SIZE)?;
+            st.mem.set_b16s1(g, FILLL + 1);
+            st.mem.set_b16s0(g, FILLL + 1);
+            st.mem.set_b32s1(g + 1, st.shipout.rule_wd);
+            st.mem.set_b32s1(g + 2, 0);
+            st.mem.set_b32s1(g + 3, 0);
+            st.mem.set_b32s0(p + 1, g);
         }
     }
 
-    if mem_b16s0(p) >= A_LEADERS {
-        let leader_box = mem_b32s1(p + 1);
-        if mem_b16s1(leader_box) == RULE_NODE {
-            set_rule_ht(mem_b32s1(leader_box + 3));
-            set_rule_dp(mem_b32s1(leader_box + 2));
-            finish_hlist_rule_global(this_box, base_line, p);
-            return;
+    if st.mem.b16s0(p) >= A_LEADERS {
+        let leader_box = st.mem.b32s1(p + 1);
+        if st.mem.b16s1(leader_box) == RULE_NODE {
+            st.shipout.rule_ht = st.mem.b32s1(leader_box + 3);
+            st.shipout.rule_dp = st.mem.b32s1(leader_box + 2);
+            finish_hlist_rule_in(st, this_box, base_line, p)?;
+            return Ok(());
         }
 
-        let leader_wd = mem_b32s1(leader_box + 1);
-        if leader_wd > 0 && rule_wd() > 0 {
-            set_rule_wd(rule_wd() + 10);
-            if cur_dir() == RIGHT_TO_LEFT {
-                set_cur_h(cur_h() - 10);
+        let leader_wd = st.mem.b32s1(leader_box + 1);
+        if leader_wd > 0 && st.shipout.rule_wd > 0 {
+            st.shipout.rule_wd += 10;
+            if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                st.shipout.cur_h -= 10;
             }
-            let edge = cur_h() + rule_wd();
+            let edge = st.shipout.cur_h + st.shipout.rule_wd;
             let mut lx = 0;
 
-            if mem_b16s0(p) == A_LEADERS {
-                let save_h = cur_h();
-                set_cur_h(left_edge + leader_wd * ((cur_h() - left_edge) / leader_wd));
-                if cur_h() < save_h {
-                    set_cur_h(cur_h() + leader_wd);
+            if st.mem.b16s0(p) == A_LEADERS {
+                let save_h = st.shipout.cur_h;
+                st.shipout.cur_h =
+                    left_edge + leader_wd * ((st.shipout.cur_h - left_edge) / leader_wd);
+                if st.shipout.cur_h < save_h {
+                    st.shipout.cur_h += leader_wd;
                 }
             } else {
-                let lq = rule_wd() / leader_wd;
-                let lr = rule_wd() % leader_wd;
-                if mem_b16s0(p) == C_LEADERS {
-                    set_cur_h(cur_h() + (lr / 2));
+                let lq = st.shipout.rule_wd / leader_wd;
+                let lr = st.shipout.rule_wd % leader_wd;
+                if st.mem.b16s0(p) == C_LEADERS {
+                    st.shipout.cur_h += lr / 2;
                 } else {
                     lx = lr / (lq + 1);
-                    set_cur_h(cur_h() + ((lr - (lq - 1) * lx) / 2));
+                    st.shipout.cur_h += (lr - (lq - 1) * lx) / 2;
                 }
             }
 
-            while cur_h() + leader_wd <= edge {
-                set_cur_v(base_line + mem_b32s1(leader_box + 4));
-                if cur_v() != dvi_v() {
-                    movement_global(cur_v() - dvi_v(), DOWN1);
-                    set_dvi_v(cur_v());
+            while st.shipout.cur_h + leader_wd <= edge {
+                st.shipout.cur_v = base_line + st.mem.b32s1(leader_box + 4);
+                if st.shipout.cur_v != st.shipout.dvi_v {
+                    let delta = st.shipout.cur_v - st.shipout.dvi_v;
+                    emit_movement(&mut st.mem, &mut st.shipout, delta, DOWN1)?;
+                    st.shipout.dvi_v = st.shipout.cur_v;
                 }
-                let save_v = dvi_v();
+                let save_v = st.shipout.dvi_v;
 
-                if cur_h() != dvi_h() {
-                    movement_global(cur_h() - dvi_h(), RIGHT1);
-                    set_dvi_h(cur_h());
+                if st.shipout.cur_h != st.shipout.dvi_h {
+                    let delta = st.shipout.cur_h - st.shipout.dvi_h;
+                    emit_movement(&mut st.mem, &mut st.shipout, delta, RIGHT1)?;
+                    st.shipout.dvi_h = st.shipout.cur_h;
                 }
-                let save_h = dvi_h();
+                let save_h = st.shipout.dvi_h;
 
                 set_temp_ptr(leader_box);
-                if cur_dir() == RIGHT_TO_LEFT {
-                    set_cur_h(cur_h() + leader_wd);
+                if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                    st.shipout.cur_h += leader_wd;
                 }
 
-                let outer_doing_leaders = doing_leaders();
-                set_doing_leaders(true);
-                if mem_b16s1(leader_box) == VLIST_NODE {
-                    vlist_out();
+                let outer_doing_leaders = st.shipout.doing_leaders;
+                st.shipout.doing_leaders = true;
+                if st.mem.b16s1(leader_box) == VLIST_NODE {
+                    vlist_out_in(st)?;
                 } else {
-                    hlist_out();
+                    hlist_out_in(st)?;
                 }
-                set_doing_leaders(outer_doing_leaders);
+                st.shipout.doing_leaders = outer_doing_leaders;
 
-                set_dvi_v(save_v);
-                set_dvi_h(save_h);
-                set_cur_v(base_line);
-                set_cur_h(save_h + leader_wd + lx);
+                st.shipout.dvi_v = save_v;
+                st.shipout.dvi_h = save_h;
+                st.shipout.cur_v = base_line;
+                st.shipout.cur_h = save_h + leader_wd + lx;
             }
 
-            if cur_dir() == RIGHT_TO_LEFT {
-                set_cur_h(edge);
+            if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                st.shipout.cur_h = edge;
             } else {
-                set_cur_h(edge - 10);
+                st.shipout.cur_h = edge - 10;
             }
-            return;
+            return Ok(());
         }
     }
 
-    set_cur_h(cur_h() + rule_wd());
-    crate::state::with_state_mut(|st| {
-        crate::synctex::synctex_horizontal_rule_or_glue(st, p, this_box)
-    });
+    st.shipout.cur_h += st.shipout.rule_wd;
+    crate::synctex::synctex_horizontal_rule_or_glue(st, p, this_box);
+    Ok(())
 }
 
 // translated from xetex-shipout.c:63 (hlist_out)
-pub unsafe fn hlist_out() {
+unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     let mut cur_g = 0;
     let mut cur_glue = 0.0;
     let this_box = temp_ptr();
-    let g_order = mem_b16s0(this_box + 5);
-    let g_sign = mem_b16s1(this_box + 5);
+    let g_order = st.mem.b16s0(this_box + 5);
+    let g_sign = st.mem.b16s1(this_box + 5);
 
-    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 1 {
-        merge_justifiable_native_words_global(this_box, g_order, g_sign);
+    if st
+        .eqtb
+        .b32s1(INT_BASE + INT_PAR_XETEX_INTERWORD_SPACE_SHAPING)
+        > 1
+    {
+        merge_justifiable_native_words(
+            &mut st.mem,
+            &mut st.strings,
+            &st.fonts,
+            &st.eqtb,
+            this_box,
+            g_order,
+            g_sign,
+        )?;
     }
 
-    let mut p = mem_b32s1(this_box + 5);
-    set_cur_s(cur_s() + 1);
-    if cur_s() > 0 {
-        dvi_out_global(PUSH);
+    let mut p = st.mem.b32s1(this_box + 5);
+    st.shipout.cur_s += 1;
+    if st.shipout.cur_s > 0 {
+        emit_dvi_out(&mut st.shipout, PUSH)?;
     }
-    if cur_s() > max_push() {
-        set_max_push(cur_s());
+    if st.shipout.cur_s > st.shipout.max_push {
+        st.shipout.max_push = st.shipout.cur_s;
     }
 
-    let save_loc = dvi_offset() + dvi_ptr();
-    let base_line = cur_v();
+    let save_loc = st.shipout.dvi_offset + st.shipout.dvi_ptr;
+    let base_line = st.shipout.cur_v;
     let mut prev_p = this_box + 5;
 
-    set_temp_ptr(get_avail_global());
-    set_mem_b32s0(temp_ptr(), BEFORE);
-    set_mem_b32s1(temp_ptr(), lr_ptr());
-    set_lr_ptr(temp_ptr());
+    let lr_node = get_avail_ship(&mut st.mem)?;
+    set_temp_ptr(lr_node);
+    st.mem.set_b32s0(lr_node, BEFORE);
+    st.mem.set_b32s1(lr_node, st.scanner.LR_ptr);
+    st.scanner.LR_ptr = lr_node;
 
-    if mem_b16s0(this_box) == DLIST {
-        if cur_dir() == RIGHT_TO_LEFT {
-            set_cur_dir(LEFT_TO_RIGHT);
-            set_cur_h(cur_h() - mem_b32s1(this_box + 1));
+    if st.mem.b16s0(this_box) == DLIST {
+        if st.scanner.cur_dir == RIGHT_TO_LEFT {
+            st.scanner.cur_dir = LEFT_TO_RIGHT;
+            st.shipout.cur_h -= st.mem.b32s1(this_box + 1);
         } else {
-            set_mem_b16s0(this_box, 0);
+            st.mem.set_b16s0(this_box, 0);
         }
     }
 
-    if cur_dir() == RIGHT_TO_LEFT && mem_b16s0(this_box) != REVERSED {
-        let save_h = cur_h();
+    if st.scanner.cur_dir == RIGHT_TO_LEFT && st.mem.b16s0(this_box) != REVERSED {
+        let save_h = st.shipout.cur_h;
         set_temp_ptr(p);
-        p = new_kern_global(0);
-        set_mem_b32s0(p + 2, 0);
-        set_mem_b32s1(prev_p, p);
-        set_cur_h(0);
-        set_mem_b32s1(
-            p,
-            reverse_global(this_box, TEX_NULL, &mut cur_g, &mut cur_glue),
-        );
-        set_mem_b32s1(p + 1, -cur_h());
-        set_cur_h(save_h);
-        set_mem_b16s0(this_box, REVERSED);
+        p = crate::mem::new_kern(&mut st.mem, 0);
+        if p == crate::mem::ALLOC_FAILED {
+            return Err(ShipoutAbort::MainMemoryOverflow);
+        }
+        st.mem.set_b32s0(p + 2, 0);
+        st.mem.set_b32s1(prev_p, p);
+        st.shipout.cur_h = 0;
+        let reversed = reverse(
+            &mut st.mem,
+            &mut st.shipout,
+            &mut st.scanner,
+            &mut st.fonts,
+            this_box,
+            TEX_NULL,
+            &mut cur_g,
+            &mut cur_glue,
+        )?;
+        st.mem.set_b32s1(p, reversed);
+        st.mem.set_b32s1(p + 1, -st.shipout.cur_h);
+        st.shipout.cur_h = save_h;
+        st.mem.set_b16s0(this_box, REVERSED);
     }
 
-    let mut left_edge = cur_h();
-    crate::state::with_state_mut(|st| crate::synctex::synctex_hlist(st, this_box));
+    let mut left_edge = st.shipout.cur_h;
+    crate::synctex::synctex_hlist(st, this_box);
 
     while p != TEX_NULL {
         'reswitch: loop {
-            if is_char_node_global(p) {
-                if cur_h() != dvi_h() {
-                    movement_global(cur_h() - dvi_h(), RIGHT1);
-                    set_dvi_h(cur_h());
+            if crate::mem::is_char_node(&st.mem, p) {
+                if st.shipout.cur_h != st.shipout.dvi_h {
+                    let delta = st.shipout.cur_h - st.shipout.dvi_h;
+                    emit_movement(&mut st.mem, &mut st.shipout, delta, RIGHT1)?;
+                    st.shipout.dvi_h = st.shipout.cur_h;
                 }
-                if cur_v() != dvi_v() {
-                    movement_global(cur_v() - dvi_v(), DOWN1);
-                    set_dvi_v(cur_v());
+                if st.shipout.cur_v != st.shipout.dvi_v {
+                    let delta = st.shipout.cur_v - st.shipout.dvi_v;
+                    emit_movement(&mut st.mem, &mut st.shipout, delta, DOWN1)?;
+                    st.shipout.dvi_v = st.shipout.cur_v;
                 }
 
-                while is_char_node_global(p) {
-                    let f = mem_b16s1(p) as i32;
-                    let mut c = mem_b16s0(p);
-                    if p != LIG_TRICK && !font_mapping_ptr(f).is_null() {
-                        c = apply_tfm_font_mapping(font_mapping_ptr(f), c as libc::c_int) as u16;
+                while crate::mem::is_char_node(&st.mem, p) {
+                    let f = st.mem.b16s1(p) as i32;
+                    let mut c = st.mem.b16s0(p);
+                    let mapping = st.fonts.font_mapping_ptr(f);
+                    if p != LIG_TRICK && !mapping.is_null() {
+                        c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
                     }
 
-                    ensure_dvi_font_global(f);
-                    if font_ec_entry(f) >= c && font_bc_entry(f) <= c {
-                        let info = font_info_b16(char_base_entry(f) + c as i32);
+                    ensure_dvi_font_in(st, f)?;
+                    if st.fonts.font_ec_entry(f) >= c && st.fonts.font_bc_entry(f) <= c {
+                        let info = st
+                            .fonts
+                            .font_info_b16(st.fonts.char_base_entry(f) + c as i32);
                         if info.s3 > 0 {
                             if c >= 128 {
-                                dvi_out_global(SET1);
+                                emit_dvi_out(&mut st.shipout, SET1)?;
                             }
-                            dvi_out_global(c as u8);
-                            set_cur_h(cur_h() + font_character_width_global(f, c as i32));
+                            emit_dvi_out(&mut st.shipout, c as u8)?;
+                            st.shipout.cur_h += font_character_width(&st.fonts, f, c as i32);
                         }
                     }
 
-                    prev_p = mem_b32s1(prev_p);
-                    p = mem_b32s1(p);
+                    prev_p = st.mem.b32s1(prev_p);
+                    p = st.mem.b32s1(p);
                 }
 
-                crate::state::with_state_mut(|st| crate::synctex::synctex_current(st));
-                set_dvi_h(cur_h());
+                crate::synctex::synctex_current(st);
+                st.shipout.dvi_h = st.shipout.cur_h;
             } else {
-                match mem_b16s1(p) {
+                match st.mem.b16s1(p) {
                     HLIST_NODE | VLIST_NODE => {
-                        if mem_b32s1(p + 5) == TEX_NULL {
-                            if mem_b16s1(p) == VLIST_NODE {
-                                crate::state::with_state_mut(|st| {
-                                    crate::synctex::synctex_void_vlist(st, p, this_box)
-                                });
+                        if st.mem.b32s1(p + 5) == TEX_NULL {
+                            if st.mem.b16s1(p) == VLIST_NODE {
+                                crate::synctex::synctex_void_vlist(st, p, this_box);
                             } else {
-                                crate::state::with_state_mut(|st| {
-                                    crate::synctex::synctex_void_hlist(st, p, this_box)
-                                });
+                                crate::synctex::synctex_void_hlist(st, p, this_box);
                             }
-                            set_cur_h(cur_h() + mem_b32s1(p + 1));
+                            st.shipout.cur_h += st.mem.b32s1(p + 1);
                         } else {
-                            let save_h = dvi_h();
-                            let save_v = dvi_v();
-                            set_cur_v(base_line + mem_b32s1(p + 4));
+                            let save_h = st.shipout.dvi_h;
+                            let save_v = st.shipout.dvi_v;
+                            st.shipout.cur_v = base_line + st.mem.b32s1(p + 4);
                             set_temp_ptr(p);
-                            let edge = cur_h() + mem_b32s1(p + 1);
-                            if cur_dir() == RIGHT_TO_LEFT {
-                                set_cur_h(edge);
+                            let edge = st.shipout.cur_h + st.mem.b32s1(p + 1);
+                            if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                                st.shipout.cur_h = edge;
                             }
-                            if mem_b16s1(p) == VLIST_NODE {
-                                vlist_out();
+                            if st.mem.b16s1(p) == VLIST_NODE {
+                                vlist_out_in(st)?;
                             } else {
-                                hlist_out();
+                                hlist_out_in(st)?;
                             }
-                            set_dvi_h(save_h);
-                            set_dvi_v(save_v);
-                            set_cur_h(edge);
-                            set_cur_v(base_line);
+                            st.shipout.dvi_h = save_h;
+                            st.shipout.dvi_v = save_v;
+                            st.shipout.cur_h = edge;
+                            st.shipout.cur_v = base_line;
                         }
                     }
                     RULE_NODE => {
-                        set_rule_ht(mem_b32s1(p + 3));
-                        set_rule_dp(mem_b32s1(p + 2));
-                        set_rule_wd(mem_b32s1(p + 1));
-                        finish_hlist_rule_global(this_box, base_line, p);
+                        st.shipout.rule_ht = st.mem.b32s1(p + 3);
+                        st.shipout.rule_dp = st.mem.b32s1(p + 2);
+                        st.shipout.rule_wd = st.mem.b32s1(p + 1);
+                        finish_hlist_rule_in(st, this_box, base_line, p)?;
                     }
-                    WHATSIT_NODE => match mem_b16s0(p) {
+                    WHATSIT_NODE => match st.mem.b16s0(p) {
                         NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
-                            if cur_h() != dvi_h() {
-                                movement_global(cur_h() - dvi_h(), RIGHT1);
-                                set_dvi_h(cur_h());
+                            if st.shipout.cur_h != st.shipout.dvi_h {
+                                let delta = st.shipout.cur_h - st.shipout.dvi_h;
+                                emit_movement(&mut st.mem, &mut st.shipout, delta, RIGHT1)?;
+                                st.shipout.dvi_h = st.shipout.cur_h;
                             }
-                            if cur_v() != dvi_v() {
-                                movement_global(cur_v() - dvi_v(), DOWN1);
-                                set_dvi_v(cur_v());
+                            if st.shipout.cur_v != st.shipout.dvi_v {
+                                let delta = st.shipout.cur_v - st.shipout.dvi_v;
+                                emit_movement(&mut st.mem, &mut st.shipout, delta, DOWN1)?;
+                                st.shipout.dvi_v = st.shipout.cur_v;
                             }
-                            let f = mem_b16s2(p + 4) as i32;
-                            ensure_dvi_font_global(f);
+                            let f = st.mem.b16s2(p + 4) as i32;
+                            ensure_dvi_font_in(st, f)?;
 
-                            if mem_b16s0(p) == GLYPH_NODE {
-                                dvi_out_global(SET_GLYPHS);
-                                dvi_four_global(mem_b32s1(p + 1));
-                                dvi_two_global(1);
-                                dvi_four_global(0);
-                                dvi_four_global(0);
-                                dvi_two_global(mem_b16s1(p + 4));
-                                set_cur_h(cur_h() + mem_b32s1(p + 1));
+                            if st.mem.b16s0(p) == GLYPH_NODE {
+                                emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
+                                emit_dvi_four(&mut st.shipout, st.mem.b32s1(p + 1))?;
+                                emit_dvi_two(&mut st.shipout, 1)?;
+                                emit_dvi_four(&mut st.shipout, 0)?;
+                                emit_dvi_four(&mut st.shipout, 0)?;
+                                emit_dvi_two(&mut st.shipout, st.mem.b16s1(p + 4))?;
+                                st.shipout.cur_h += st.mem.b32s1(p + 1);
                             } else {
-                                if mem_b16s0(p) == NATIVE_WORD_NODE_AT {
-                                    if mem_b16s1(p + 4) > 0 || !mem_ptr(p + 5).is_null() {
-                                        dvi_out_global(SET_TEXT_AND_GLYPHS);
-                                        let len = mem_b16s1(p + 4) as i32;
-                                        dvi_two_global(len as u16);
-                                        let text = mem_as_u16_ptr(p + 6);
+                                if st.mem.b16s0(p) == NATIVE_WORD_NODE_AT {
+                                    if st.mem.b16s1(p + 4) > 0 || !st.mem.ptr(p + 5).is_null() {
+                                        emit_dvi_out(&mut st.shipout, SET_TEXT_AND_GLYPHS)?;
+                                        let len = st.mem.b16s1(p + 4) as i32;
+                                        emit_dvi_two(&mut st.shipout, len as u16)?;
+                                        let text = st.mem.as_u16_ptr(p + 6);
                                         for k in 0..len {
-                                            dvi_two_global(*text.add(k as usize));
+                                            emit_dvi_two(&mut st.shipout, *text.add(k as usize))?;
                                         }
-                                        let len = makeXDVGlyphArrayData(mem_node_addr(p));
+                                        let len = make_xdv_glyph_array_data_in(st, p);
                                         for k in 0..len {
-                                            dvi_out_global(xdv_buffer_entry(k));
+                                            emit_dvi_out(
+                                                &mut st.shipout,
+                                                st.fonts.xdv_buffer[k as usize],
+                                            )?;
                                         }
                                     }
-                                } else if !mem_ptr(p + 5).is_null() {
-                                    dvi_out_global(SET_GLYPHS);
-                                    let len = makeXDVGlyphArrayData(mem_node_addr(p));
+                                } else if !st.mem.ptr(p + 5).is_null() {
+                                    emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
+                                    let len = make_xdv_glyph_array_data_in(st, p);
                                     for k in 0..len {
-                                        dvi_out_global(xdv_buffer_entry(k));
+                                        emit_dvi_out(
+                                            &mut st.shipout,
+                                            st.fonts.xdv_buffer[k as usize],
+                                        )?;
                                     }
                                 }
-                                set_cur_h(cur_h() + mem_b32s1(p + 1));
+                                st.shipout.cur_h += st.mem.b32s1(p + 1);
                             }
-                            set_dvi_h(cur_h());
+                            st.shipout.dvi_h = st.shipout.cur_h;
                         }
                         PIC_NODE | PDF_NODE => {
-                            let save_h = dvi_h();
-                            let save_v = dvi_v();
-                            set_cur_v(base_line);
-                            let edge = cur_h() + mem_b32s1(p + 1);
-                            pic_out(p);
-                            set_dvi_h(save_h);
-                            set_dvi_v(save_v);
-                            set_cur_h(edge);
-                            set_cur_v(base_line);
+                            let save_h = st.shipout.dvi_h;
+                            let save_v = st.shipout.dvi_v;
+                            st.shipout.cur_v = base_line;
+                            let edge = st.shipout.cur_h + st.mem.b32s1(p + 1);
+                            pic_out_in(st, p)?;
+                            st.shipout.dvi_h = save_h;
+                            st.shipout.dvi_v = save_v;
+                            st.shipout.cur_h = edge;
+                            st.shipout.cur_v = base_line;
                         }
                         PDF_SAVE_POS_NODE => {
-                            set_pdf_last_x_pos(cur_h() + ONE_INCH_LESS_ONE);
-                            set_pdf_last_y_pos(cur_page_height() - cur_v() - ONE_INCH_LESS_ONE);
+                            st.shipout.pdf_last_x_pos = st.shipout.cur_h + ONE_INCH_LESS_ONE;
+                            st.shipout.pdf_last_y_pos =
+                                st.shipout.cur_page_height - st.shipout.cur_v - ONE_INCH_LESS_ONE;
                         }
-                        _ => out_what(p),
+                        _ => out_what_in(st, p)?,
                     },
                     GLUE_NODE => {
-                        output_hlist_glue(
+                        output_hlist_glue_in(
+                            st,
                             this_box,
                             base_line,
                             left_edge,
@@ -1617,389 +1646,407 @@ pub unsafe fn hlist_out() {
                             g_sign,
                             &mut cur_g,
                             &mut cur_glue,
-                        );
+                        )?;
                     }
-                    MARGIN_KERN_NODE => set_cur_h(cur_h() + mem_b32s1(p + 1)),
+                    MARGIN_KERN_NODE => st.shipout.cur_h += st.mem.b32s1(p + 1),
                     KERN_NODE => {
-                        crate::state::with_state_mut(|st| {
-                            crate::synctex::synctex_kern(st, p, this_box)
-                        });
-                        set_cur_h(cur_h() + mem_b32s1(p + 1));
+                        crate::synctex::synctex_kern(st, p, this_box);
+                        st.shipout.cur_h += st.mem.b32s1(p + 1);
                     }
                     MATH_NODE => {
-                        crate::state::with_state_mut(|st| {
-                            crate::synctex::synctex_math(st, p, this_box)
-                        });
-                        if !mem_b16s0(p).is_multiple_of(2) {
-                            if mem_b32s0(lr_ptr()) as u16 == math_node_end_lr_type_global(p) {
-                                set_temp_ptr(lr_ptr());
-                                set_lr_ptr(mem_b32s1(temp_ptr()));
-                                set_mem_b32s1(temp_ptr(), avail());
-                                set_avail(temp_ptr());
-                            } else if mem_b16s0(p) > L_CODE {
-                                set_lr_problems(lr_problems() + 1);
+                        crate::synctex::synctex_math(st, p, this_box);
+                        if !st.mem.b16s0(p).is_multiple_of(2) {
+                            if st.mem.b32s0(st.scanner.LR_ptr) as u16
+                                == math_node_end_lr_type(&st.mem, p)
+                            {
+                                set_temp_ptr(st.scanner.LR_ptr);
+                                st.scanner.LR_ptr = st.mem.b32s1(temp_ptr());
+                                st.mem.set_b32s1(temp_ptr(), st.mem.avail);
+                                st.mem.avail = temp_ptr();
+                            } else if st.mem.b16s0(p) > L_CODE {
+                                st.scanner.LR_problems += 1;
                             }
                         } else {
-                            set_temp_ptr(get_avail_global());
-                            set_mem_b32s0(temp_ptr(), math_node_end_lr_type_global(p) as i32);
-                            set_mem_b32s1(temp_ptr(), lr_ptr());
-                            set_lr_ptr(temp_ptr());
+                            let lr_node = get_avail_ship(&mut st.mem)?;
+                            set_temp_ptr(lr_node);
+                            st.mem
+                                .set_b32s0(lr_node, math_node_end_lr_type(&st.mem, p) as i32);
+                            st.mem.set_b32s1(lr_node, st.scanner.LR_ptr);
+                            st.scanner.LR_ptr = lr_node;
 
-                            if math_node_lr_dir_global(p) as i16 != cur_dir() {
-                                let save_h = cur_h();
-                                set_temp_ptr(mem_b32s1(p));
-                                set_rule_wd(mem_b32s1(p + 1));
-                                free_node_global(p, MEDIUM_NODE_SIZE);
-                                set_cur_dir(1 - cur_dir());
-                                p = new_edge_global(cur_dir(), rule_wd());
-                                set_mem_b32s1(prev_p, p);
-                                set_cur_h(cur_h() - left_edge + rule_wd());
-                                set_mem_b32s1(
-                                    p,
-                                    reverse_global(
-                                        this_box,
-                                        new_edge_global(1 - cur_dir(), 0),
-                                        &mut cur_g,
-                                        &mut cur_glue,
-                                    ),
-                                );
-                                set_mem_b32s1(p + 2, cur_h());
-                                set_cur_dir(1 - cur_dir());
-                                set_cur_h(save_h);
+                            if math_node_lr_dir(&st.mem, p) as i16 != st.scanner.cur_dir {
+                                let save_h = st.shipout.cur_h;
+                                set_temp_ptr(st.mem.b32s1(p));
+                                st.shipout.rule_wd = st.mem.b32s1(p + 1);
+                                crate::mem::free_node(&mut st.mem, p, MEDIUM_NODE_SIZE);
+                                st.scanner.cur_dir = 1 - st.scanner.cur_dir;
+                                p = new_edge(&mut st.mem, st.scanner.cur_dir, st.shipout.rule_wd);
+                                if p == crate::mem::ALLOC_FAILED {
+                                    return Err(ShipoutAbort::MainMemoryOverflow);
+                                }
+                                st.mem.set_b32s1(prev_p, p);
+                                st.shipout.cur_h =
+                                    st.shipout.cur_h - left_edge + st.shipout.rule_wd;
+                                let edge = new_edge(&mut st.mem, 1 - st.scanner.cur_dir, 0);
+                                if edge == crate::mem::ALLOC_FAILED {
+                                    return Err(ShipoutAbort::MainMemoryOverflow);
+                                }
+                                let reversed = reverse(
+                                    &mut st.mem,
+                                    &mut st.shipout,
+                                    &mut st.scanner,
+                                    &mut st.fonts,
+                                    this_box,
+                                    edge,
+                                    &mut cur_g,
+                                    &mut cur_glue,
+                                )?;
+                                st.mem.set_b32s1(p, reversed);
+                                st.mem.set_b32s1(p + 2, st.shipout.cur_h);
+                                st.scanner.cur_dir = 1 - st.scanner.cur_dir;
+                                st.shipout.cur_h = save_h;
                                 continue 'reswitch;
                             }
                         }
-                        set_mem_b16s1(p, KERN_NODE);
-                        set_cur_h(cur_h() + mem_b32s1(p + 1));
+                        st.mem.set_b16s1(p, KERN_NODE);
+                        st.shipout.cur_h += st.mem.b32s1(p + 1);
                     }
                     LIGATURE_NODE => {
-                        set_mem_word(LIG_TRICK, mem_word(p + 1));
-                        set_mem_b32s1(LIG_TRICK, mem_b32s1(p));
+                        st.mem.set_word(LIG_TRICK, st.mem.word(p + 1));
+                        st.mem.set_b32s1(LIG_TRICK, st.mem.b32s1(p));
                         p = LIG_TRICK;
-                        set_xtx_ligature_present(true);
+                        st.fonts.set_xtx_ligature_present(true);
                         continue 'reswitch;
                     }
                     EDGE_NODE => {
-                        set_cur_h(cur_h() + mem_b32s1(p + 1));
-                        left_edge = cur_h() + mem_b32s1(p + 2);
-                        set_cur_dir(mem_b16s0(p) as i16);
+                        st.shipout.cur_h += st.mem.b32s1(p + 1);
+                        left_edge = st.shipout.cur_h + st.mem.b32s1(p + 2);
+                        st.scanner.cur_dir = st.mem.b16s0(p) as i16;
                     }
                     _ => {}
                 }
 
                 prev_p = p;
-                p = mem_b32s1(p);
+                p = st.mem.b32s1(p);
             }
             break;
         }
     }
 
-    crate::state::with_state_mut(|st| crate::synctex::synctex_tsilh(st, this_box));
+    crate::synctex::synctex_tsilh(st, this_box);
 
-    while mem_b32s0(lr_ptr()) != BEFORE {
-        if mem_b32s0(lr_ptr()) as u16 > L_CODE {
-            set_lr_problems(lr_problems() + 10000);
+    while st.mem.b32s0(st.scanner.LR_ptr) != BEFORE {
+        if st.mem.b32s0(st.scanner.LR_ptr) as u16 > L_CODE {
+            st.scanner.LR_problems += 10000;
         }
-        set_temp_ptr(lr_ptr());
-        set_lr_ptr(mem_b32s1(temp_ptr()));
-        set_mem_b32s1(temp_ptr(), avail());
-        set_avail(temp_ptr());
+        set_temp_ptr(st.scanner.LR_ptr);
+        st.scanner.LR_ptr = st.mem.b32s1(temp_ptr());
+        st.mem.set_b32s1(temp_ptr(), st.mem.avail);
+        st.mem.avail = temp_ptr();
     }
 
-    set_temp_ptr(lr_ptr());
-    set_lr_ptr(mem_b32s1(temp_ptr()));
-    set_mem_b32s1(temp_ptr(), avail());
-    set_avail(temp_ptr());
+    set_temp_ptr(st.scanner.LR_ptr);
+    st.scanner.LR_ptr = st.mem.b32s1(temp_ptr());
+    st.mem.set_b32s1(temp_ptr(), st.mem.avail);
+    st.mem.avail = temp_ptr();
 
-    if mem_b16s0(this_box) == DLIST {
-        set_cur_dir(RIGHT_TO_LEFT);
+    if st.mem.b16s0(this_box) == DLIST {
+        st.scanner.cur_dir = RIGHT_TO_LEFT;
     }
 
-    prune_movements_global(save_loc);
-    if cur_s() > 0 {
-        dvi_pop_global(save_loc);
+    prune_movements(&mut st.mem, &mut st.shipout, save_loc);
+    if st.shipout.cur_s > 0 && dvi_pop(&mut st.shipout, save_loc) {
+        emit_dvi_out(&mut st.shipout, POP)?;
     }
-    set_cur_s(cur_s() - 1);
+    st.shipout.cur_s -= 1;
+    Ok(())
 }
 
 // translated from xetex-shipout.c:866 (vlist_out)
-pub unsafe fn vlist_out() {
+unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     let mut cur_g = 0;
     let mut cur_glue = 0.0;
     let this_box = temp_ptr();
-    let g_order = mem_b16s0(this_box + 5);
-    let g_sign = mem_b16s1(this_box + 5);
-    let mut p = mem_b32s1(this_box + 5);
-    let upwards = mem_b16s0(this_box) == 1;
+    let g_order = st.mem.b16s0(this_box + 5);
+    let g_sign = st.mem.b16s1(this_box + 5);
+    let mut p = st.mem.b32s1(this_box + 5);
+    let upwards = st.mem.b16s0(this_box) == 1;
 
-    set_cur_s(cur_s() + 1);
-    if cur_s() > 0 {
-        dvi_out_global(PUSH);
+    st.shipout.cur_s = st.shipout.cur_s + 1;
+    if st.shipout.cur_s > 0 {
+        emit_dvi_out(&mut st.shipout, PUSH)?;
     }
 
-    if cur_s() > max_push() {
-        set_max_push(cur_s());
+    if st.shipout.cur_s > st.shipout.max_push {
+        st.shipout.max_push = st.shipout.cur_s;
     }
 
-    let save_loc = dvi_offset() + dvi_ptr();
-    let left_edge = cur_h();
-    crate::state::with_state_mut(|st| crate::synctex::synctex_vlist(st, this_box));
+    let save_loc = st.shipout.dvi_offset + st.shipout.dvi_ptr;
+    let left_edge = st.shipout.cur_h;
+    crate::synctex::synctex_vlist(st, this_box);
 
     if upwards {
-        set_cur_v(cur_v() + mem_b32s1(this_box + 2));
+        st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(this_box + 2);
     } else {
-        set_cur_v(cur_v() - mem_b32s1(this_box + 3));
+        st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(this_box + 3);
     }
 
-    let top_edge = cur_v();
+    let top_edge = st.shipout.cur_v;
 
     while p != TEX_NULL {
-        if is_char_node_global(p) {
-            crate::errors::confusion(c"vlistout".as_ptr());
+        if crate::mem::is_char_node(&st.mem, p) {
+            return Err(ShipoutAbort::Confusion(c"vlistout"));
         }
 
         let mut go_next = true;
-        match mem_b16s1(p) {
+        match st.mem.b16s1(p) {
             HLIST_NODE | VLIST_NODE => {
-                if mem_b32s1(p + 5) == TEX_NULL {
+                if st.mem.b32s1(p + 5) == TEX_NULL {
                     if upwards {
-                        set_cur_v(cur_v() - mem_b32s1(p + 2));
+                        st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(p + 2);
                     } else {
-                        set_cur_v(cur_v() + mem_b32s1(p + 3));
+                        st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 3);
                     }
 
-                    if mem_b16s1(p) == VLIST_NODE {
-                        crate::state::with_state_mut(|st| {
-                            crate::synctex::synctex_void_vlist(st, p, this_box)
-                        });
+                    if st.mem.b16s1(p) == VLIST_NODE {
+                        crate::synctex::synctex_void_vlist(st, p, this_box);
                     } else {
-                        crate::state::with_state_mut(|st| {
-                            crate::synctex::synctex_void_hlist(st, p, this_box)
-                        });
+                        crate::synctex::synctex_void_hlist(st, p, this_box);
                     }
 
                     if upwards {
-                        set_cur_v(cur_v() - mem_b32s1(p + 3));
+                        st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(p + 3);
                     } else {
-                        set_cur_v(cur_v() + mem_b32s1(p + 2));
+                        st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 2);
                     }
                 } else {
                     if upwards {
-                        set_cur_v(cur_v() - mem_b32s1(p + 2));
+                        st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(p + 2);
                     } else {
-                        set_cur_v(cur_v() + mem_b32s1(p + 3));
+                        st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 3);
                     }
 
-                    if cur_v() != dvi_v() {
-                        movement_global(cur_v() - dvi_v(), DOWN1);
-                        set_dvi_v(cur_v());
+                    if st.shipout.cur_v != st.shipout.dvi_v {
+                        let d = st.shipout.cur_v - st.shipout.dvi_v;
+                        emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
+                        st.shipout.dvi_v = st.shipout.cur_v;
                     }
 
-                    let save_h = dvi_h();
-                    let save_v = dvi_v();
+                    let save_h = st.shipout.dvi_h;
+                    let save_v = st.shipout.dvi_v;
 
-                    if cur_dir() == RIGHT_TO_LEFT {
-                        set_cur_h(left_edge - mem_b32s1(p + 4));
+                    if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                        st.shipout.cur_h = left_edge - st.mem.b32s1(p + 4);
                     } else {
-                        set_cur_h(left_edge + mem_b32s1(p + 4));
+                        st.shipout.cur_h = left_edge + st.mem.b32s1(p + 4);
                     }
 
                     set_temp_ptr(p);
-                    if mem_b16s1(p) == VLIST_NODE {
-                        vlist_out();
+                    if st.mem.b16s1(p) == VLIST_NODE {
+                        vlist_out_in(st)?;
                     } else {
-                        hlist_out();
+                        hlist_out_in(st)?;
                     }
 
-                    set_dvi_h(save_h);
-                    set_dvi_v(save_v);
+                    st.shipout.dvi_h = save_h;
+                    st.shipout.dvi_v = save_v;
 
                     if upwards {
-                        set_cur_v(save_v - mem_b32s1(p + 3));
+                        st.shipout.cur_v = save_v - st.mem.b32s1(p + 3);
                     } else {
-                        set_cur_v(save_v + mem_b32s1(p + 2));
+                        st.shipout.cur_v = save_v + st.mem.b32s1(p + 2);
                     }
 
-                    set_cur_h(left_edge);
+                    st.shipout.cur_h = left_edge;
                 }
             }
             RULE_NODE => {
-                set_rule_ht(mem_b32s1(p + 3));
-                set_rule_dp(mem_b32s1(p + 2));
-                set_rule_wd(mem_b32s1(p + 1));
-                finish_vlist_rule_global(this_box, left_edge, upwards);
+                st.shipout.rule_ht = st.mem.b32s1(p + 3);
+                st.shipout.rule_dp = st.mem.b32s1(p + 2);
+                st.shipout.rule_wd = st.mem.b32s1(p + 1);
+                finish_vlist_rule_in(st, this_box, left_edge, upwards)?;
             }
-            WHATSIT_NODE => match mem_b16s0(p) {
+            WHATSIT_NODE => match st.mem.b16s0(p) {
                 GLYPH_NODE => {
-                    set_cur_v(cur_v() + mem_b32s1(p + 3));
-                    set_cur_h(left_edge);
+                    st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 3);
+                    st.shipout.cur_h = left_edge;
 
-                    if cur_h() != dvi_h() {
-                        movement_global(cur_h() - dvi_h(), RIGHT1);
-                        set_dvi_h(cur_h());
+                    if st.shipout.cur_h != st.shipout.dvi_h {
+                        let d = st.shipout.cur_h - st.shipout.dvi_h;
+                        emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
+                        st.shipout.dvi_h = st.shipout.cur_h;
                     }
 
-                    if cur_v() != dvi_v() {
-                        movement_global(cur_v() - dvi_v(), DOWN1);
-                        set_dvi_v(cur_v());
+                    if st.shipout.cur_v != st.shipout.dvi_v {
+                        let d = st.shipout.cur_v - st.shipout.dvi_v;
+                        emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
+                        st.shipout.dvi_v = st.shipout.cur_v;
                     }
 
-                    let f = mem_b16s2(p + 4) as i32;
-                    ensure_dvi_font_global(f);
+                    let f = st.mem.b16s2(p + 4) as i32;
+                    ensure_dvi_font_in(st, f)?;
 
-                    dvi_out_global(SET_GLYPHS);
-                    dvi_four_global(0);
-                    dvi_two_global(1);
-                    dvi_four_global(0);
-                    dvi_four_global(0);
-                    dvi_two_global(mem_b16s1(p + 4));
+                    emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
+                    emit_dvi_four(&mut st.shipout, 0)?;
+                    emit_dvi_two(&mut st.shipout, 1)?;
+                    emit_dvi_four(&mut st.shipout, 0)?;
+                    emit_dvi_four(&mut st.shipout, 0)?;
+                    emit_dvi_two(&mut st.shipout, st.mem.b16s1(p + 4))?;
 
-                    set_cur_v(cur_v() + mem_b32s1(p + 2));
-                    set_cur_h(left_edge);
+                    st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 2);
+                    st.shipout.cur_h = left_edge;
                 }
                 PIC_NODE | PDF_NODE => {
-                    let save_h = dvi_h();
-                    let save_v = dvi_v();
-                    set_cur_v(cur_v() + mem_b32s1(p + 3));
-                    pic_out(p);
-                    set_dvi_h(save_h);
-                    set_dvi_v(save_v);
-                    set_cur_v(save_v + mem_b32s1(p + 2));
-                    set_cur_h(left_edge);
+                    let save_h = st.shipout.dvi_h;
+                    let save_v = st.shipout.dvi_v;
+                    st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 3);
+                    pic_out_in(st, p)?;
+                    st.shipout.dvi_h = save_h;
+                    st.shipout.dvi_v = save_v;
+                    st.shipout.cur_v = save_v + st.mem.b32s1(p + 2);
+                    st.shipout.cur_h = left_edge;
                 }
                 PDF_SAVE_POS_NODE => {
-                    set_pdf_last_x_pos(cur_h() + ONE_INCH_LESS_ONE);
-                    set_pdf_last_y_pos(cur_page_height() - cur_v() - ONE_INCH_LESS_ONE);
+                    st.shipout.pdf_last_x_pos = st.shipout.cur_h + ONE_INCH_LESS_ONE;
+                    st.shipout.pdf_last_y_pos =
+                        st.shipout.cur_page_height - st.shipout.cur_v - ONE_INCH_LESS_ONE;
                 }
-                _ => out_what(p),
+                _ => out_what_in(st, p)?,
             },
             GLUE_NODE => {
-                let g = mem_b32s0(p + 1);
-                set_rule_ht(mem_b32s1(g + 1) - cur_g);
+                let g = st.mem.b32s0(p + 1);
+                st.shipout.rule_ht = st.mem.b32s1(g + 1) - cur_g;
 
                 if g_sign != NORMAL {
                     if g_sign == STRETCHING {
-                        if mem_b16s1(g) == g_order {
-                            cur_glue += mem_b32s1(g + 2) as f64;
-                            let glue_temp = (mem_gr(this_box + 6) * cur_glue)
+                        if st.mem.b16s1(g) == g_order {
+                            cur_glue += st.mem.b32s1(g + 2) as f64;
+                            let glue_temp = (st.mem.gr(this_box + 6) * cur_glue)
                                 .clamp(-1_000_000_000.0, 1_000_000_000.0);
                             cur_g = crate::scaled_math::tex_round(glue_temp);
                         }
-                    } else if mem_b16s0(g) == g_order {
-                        cur_glue -= mem_b32s1(g + 3) as f64;
-                        let glue_temp = (mem_gr(this_box + 6) * cur_glue)
+                    } else if st.mem.b16s0(g) == g_order {
+                        cur_glue -= st.mem.b32s1(g + 3) as f64;
+                        let glue_temp = (st.mem.gr(this_box + 6) * cur_glue)
                             .clamp(-1_000_000_000.0, 1_000_000_000.0);
                         cur_g = crate::scaled_math::tex_round(glue_temp);
                     }
                 }
 
-                set_rule_ht(rule_ht() + cur_g);
+                st.shipout.rule_ht = st.shipout.rule_ht + cur_g;
 
-                if mem_b16s0(p) >= A_LEADERS {
-                    let leader_box = mem_b32s1(p + 1);
+                if st.mem.b16s0(p) >= A_LEADERS {
+                    let leader_box = st.mem.b32s1(p + 1);
 
-                    if mem_b16s1(leader_box) == RULE_NODE {
-                        set_rule_wd(mem_b32s1(leader_box + 1));
-                        set_rule_dp(0);
-                        finish_vlist_rule_global(this_box, left_edge, upwards);
+                    if st.mem.b16s1(leader_box) == RULE_NODE {
+                        st.shipout.rule_wd = st.mem.b32s1(leader_box + 1);
+                        st.shipout.rule_dp = 0;
+                        finish_vlist_rule_in(st, this_box, left_edge, upwards)?;
                     } else {
-                        let leader_ht = mem_b32s1(leader_box + 3) + mem_b32s1(leader_box + 2);
+                        let leader_ht = st.mem.b32s1(leader_box + 3) + st.mem.b32s1(leader_box + 2);
 
-                        if leader_ht > 0 && rule_ht() > 0 {
-                            set_rule_ht(rule_ht() + 10);
-                            let edge = cur_v() + rule_ht();
+                        if leader_ht > 0 && st.shipout.rule_ht > 0 {
+                            st.shipout.rule_ht = st.shipout.rule_ht + 10;
+                            let edge = st.shipout.cur_v + st.shipout.rule_ht;
                             let mut lx = 0;
 
-                            if mem_b16s0(p) == A_LEADERS {
-                                let save_v = cur_v();
-                                set_cur_v(
-                                    top_edge + leader_ht * ((cur_v() - top_edge) / leader_ht),
-                                );
-                                if cur_v() < save_v {
-                                    set_cur_v(cur_v() + leader_ht);
+                            if st.mem.b16s0(p) == A_LEADERS {
+                                let save_v = st.shipout.cur_v;
+                                st.shipout.cur_v = top_edge
+                                    + leader_ht * ((st.shipout.cur_v - top_edge) / leader_ht);
+                                if st.shipout.cur_v < save_v {
+                                    st.shipout.cur_v = st.shipout.cur_v + leader_ht;
                                 }
                             } else {
-                                let lq = rule_ht() / leader_ht;
-                                let lr = rule_ht() % leader_ht;
+                                let lq = st.shipout.rule_ht / leader_ht;
+                                let lr = st.shipout.rule_ht % leader_ht;
 
-                                if mem_b16s0(p) == C_LEADERS {
-                                    set_cur_v(cur_v() + (lr / 2));
+                                if st.mem.b16s0(p) == C_LEADERS {
+                                    st.shipout.cur_v = st.shipout.cur_v + (lr / 2);
                                 } else {
                                     lx = lr / (lq + 1);
-                                    set_cur_v(cur_v() + ((lr - (lq - 1) * lx) / 2));
+                                    st.shipout.cur_v =
+                                        st.shipout.cur_v + ((lr - (lq - 1) * lx) / 2);
                                 }
                             }
 
-                            while cur_v() + leader_ht <= edge {
-                                if cur_dir() == RIGHT_TO_LEFT {
-                                    set_cur_h(left_edge - mem_b32s1(leader_box + 4));
+                            while st.shipout.cur_v + leader_ht <= edge {
+                                if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                                    st.shipout.cur_h = left_edge - st.mem.b32s1(leader_box + 4);
                                 } else {
-                                    set_cur_h(left_edge + mem_b32s1(leader_box + 4));
+                                    st.shipout.cur_h = left_edge + st.mem.b32s1(leader_box + 4);
                                 }
 
-                                if cur_h() != dvi_h() {
-                                    movement_global(cur_h() - dvi_h(), RIGHT1);
-                                    set_dvi_h(cur_h());
+                                if st.shipout.cur_h != st.shipout.dvi_h {
+                                    let d = st.shipout.cur_h - st.shipout.dvi_h;
+                                    emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
+                                    st.shipout.dvi_h = st.shipout.cur_h;
                                 }
 
-                                let save_h = dvi_h();
-                                set_cur_v(cur_v() + mem_b32s1(leader_box + 3));
+                                let save_h = st.shipout.dvi_h;
+                                st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(leader_box + 3);
 
-                                if cur_v() != dvi_v() {
-                                    movement_global(cur_v() - dvi_v(), DOWN1);
-                                    set_dvi_v(cur_v());
+                                if st.shipout.cur_v != st.shipout.dvi_v {
+                                    let d = st.shipout.cur_v - st.shipout.dvi_v;
+                                    emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
+                                    st.shipout.dvi_v = st.shipout.cur_v;
                                 }
 
-                                let save_v = dvi_v();
+                                let save_v = st.shipout.dvi_v;
                                 set_temp_ptr(leader_box);
-                                let outer_doing_leaders = doing_leaders();
-                                set_doing_leaders(true);
+                                let outer_doing_leaders = st.shipout.doing_leaders;
+                                st.shipout.doing_leaders = true;
 
-                                if mem_b16s1(leader_box) == VLIST_NODE {
-                                    vlist_out();
+                                if st.mem.b16s1(leader_box) == VLIST_NODE {
+                                    vlist_out_in(st)?;
                                 } else {
-                                    hlist_out();
+                                    hlist_out_in(st)?;
                                 }
 
-                                set_doing_leaders(outer_doing_leaders);
-                                set_dvi_v(save_v);
-                                set_dvi_h(save_h);
-                                set_cur_h(left_edge);
-                                set_cur_v(save_v - mem_b32s1(leader_box + 3) + leader_ht + lx);
+                                st.shipout.doing_leaders = outer_doing_leaders;
+                                st.shipout.dvi_v = save_v;
+                                st.shipout.dvi_h = save_h;
+                                st.shipout.cur_h = left_edge;
+                                st.shipout.cur_v =
+                                    save_v - st.mem.b32s1(leader_box + 3) + leader_ht + lx;
                             }
 
-                            set_cur_v(edge - 10);
+                            st.shipout.cur_v = edge - 10;
                             go_next = true;
                         } else {
-                            move_past_vlist_rule_global(upwards);
+                            move_past_vlist_rule(&mut st.shipout, upwards);
                         }
                     }
                 } else {
-                    move_past_vlist_rule_global(upwards);
+                    move_past_vlist_rule(&mut st.shipout, upwards);
                 }
             }
             KERN_NODE => {
                 if upwards {
-                    set_cur_v(cur_v() - mem_b32s1(p + 1));
+                    st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(p + 1);
                 } else {
-                    set_cur_v(cur_v() + mem_b32s1(p + 1));
+                    st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 1);
                 }
             }
             _ => {}
         }
 
         if go_next {
-            p = mem_b32s1(p);
+            p = st.mem.b32s1(p);
         }
     }
 
-    crate::state::with_state_mut(|st| crate::synctex::synctex_tsilv(st, this_box));
-    prune_movements_global(save_loc);
+    crate::synctex::synctex_tsilv(st, this_box);
+    prune_movements(&mut st.mem, &mut st.shipout, save_loc);
 
-    if cur_s() > 0 {
-        dvi_pop_global(save_loc);
+    if st.shipout.cur_s > 0 {
+        if dvi_pop(&mut st.shipout, save_loc) {
+            emit_dvi_out(&mut st.shipout, POP)?;
+        }
     }
-    set_cur_s(cur_s() - 1);
+    st.shipout.cur_s = st.shipout.cur_s - 1;
+
+    Ok(())
 }
 
 struct VListRuleAction {
@@ -2066,29 +2113,34 @@ fn finish_vlist_rule(
     }
 }
 
-pub unsafe fn finish_vlist_rule_global(this_box: i32, left_edge: i32, upwards: bool) {
-    let cur_dir_val = cur_dir();
-    let action = crate::state::with_state_mut(|st| {
-        finish_vlist_rule(
-            &st.mem,
-            &mut st.shipout,
-            this_box,
-            left_edge,
-            upwards,
-            cur_dir_val,
-        )
-    });
+/// Threaded analog of `finish_vlist_rule_global` (under the held borrow).
+fn finish_vlist_rule_in(
+    st: &mut crate::state::EngineState,
+    this_box: i32,
+    left_edge: i32,
+    upwards: bool,
+) -> Result<(), ShipoutAbort> {
+    let cur_dir_val = st.scanner.cur_dir;
+    let action = finish_vlist_rule(
+        &st.mem,
+        &mut st.shipout,
+        this_box,
+        left_edge,
+        upwards,
+        cur_dir_val,
+    );
     if action.emit {
         if let Some(h_move) = action.h_move {
-            movement_global(h_move, RIGHT1);
+            emit_movement(&mut st.mem, &mut st.shipout, h_move, RIGHT1)?;
         }
         if let Some(v_move) = action.v_move {
-            movement_global(v_move, DOWN1);
+            emit_movement(&mut st.mem, &mut st.shipout, v_move, DOWN1)?;
         }
-        dvi_out_global(PUT_RULE);
-        dvi_four_global(action.rule_ht);
-        dvi_four_global(action.rule_wd);
+        emit_dvi_out(&mut st.shipout, PUT_RULE)?;
+        emit_dvi_four(&mut st.shipout, action.rule_ht)?;
+        emit_dvi_four(&mut st.shipout, action.rule_wd)?;
     }
+    Ok(())
 }
 
 fn move_past_vlist_rule(shipout: &mut ShipoutState, upwards: bool) {
@@ -2097,10 +2149,6 @@ fn move_past_vlist_rule(shipout: &mut ShipoutState, upwards: bool) {
     } else {
         shipout.cur_v += shipout.rule_ht;
     }
-}
-
-fn move_past_vlist_rule_global(upwards: bool) {
-    crate::state::with_state_mut(|st| move_past_vlist_rule(&mut st.shipout, upwards));
 }
 
 // xetex-constants.h:238,240,248,249,226,227
@@ -2141,10 +2189,6 @@ pub fn prune_movements(mem: &mut MemState, shipout: &mut ShipoutState, l: i32) {
         shipout.right_ptr = p.link(mem).0;
         p.free(mem);
     }
-}
-
-pub fn prune_movements_global(l: i32) {
-    crate::state::with_state_mut(|st| prune_movements(&mut st.mem, &mut st.shipout, l));
 }
 
 // print_c_string: local equivalent of xetex-xetexd.h static inline print_c_string.
@@ -2258,18 +2302,8 @@ pub unsafe fn finalize_dvi_file() {
 }
 
 #[inline]
-fn is_char_node_global(p: i32) -> bool {
-    crate::state::with_state(|st| crate::mem::is_char_node(&st.mem, p))
-}
-
-#[inline]
 fn math_node_lr_dir(mem: &MemState, p: i32) -> u16 {
     mem.b16s0(p) / R_CODE
-}
-
-#[inline]
-fn math_node_lr_dir_global(p: i32) -> u16 {
-    crate::state::with_state(|st| math_node_lr_dir(&st.mem, p))
 }
 
 #[inline]
@@ -2278,19 +2312,78 @@ fn math_node_end_lr_type(mem: &MemState, p: i32) -> u16 {
 }
 
 #[inline]
-fn math_node_end_lr_type_global(p: i32) -> u16 {
-    crate::state::with_state(|st| math_node_end_lr_type(&st.mem, p))
-}
-
-#[inline]
 fn font_character_width(fonts: &FontState, f: i32, c: i32) -> i32 {
     let info = fonts.font_info_b16(fonts.char_base_entry(f) + c);
     fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32)
 }
 
-#[inline]
-fn font_character_width_global(f: i32, c: i32) -> i32 {
-    crate::state::with_state(|st| font_character_width(&st.fonts, f, c))
+const NATIVE_GLYPH_INFO_SIZE: usize = 10;
+
+#[repr(C)]
+struct FixedPoint {
+    x: i32,
+    y: i32,
+}
+
+unsafe fn make_xdv_glyph_array_data_in(st: &mut crate::state::EngineState, p: i32) -> i32 {
+    let glyph_count = st.mem.b16s0(p + 4) as usize;
+    let needed = glyph_count * NATIVE_GLYPH_INFO_SIZE + 8;
+    if st.fonts.xdv_buffer.len() < needed {
+        st.fonts.xdv_buffer.resize(needed, 0);
+    }
+
+    let glyph_info = st.mem.ptr(p + 5) as *const u8;
+    let locations = glyph_info as *const FixedPoint;
+    let glyph_ids = glyph_info.add(glyph_count * 8) as *const u16;
+
+    let xdv_ptr = st.fonts.xdv_buffer.as_mut_ptr();
+    let mut cp = xdv_ptr;
+    let width = st.mem.b32s1(p + 1) as u32;
+
+    *cp = (width >> 24) as u8;
+    cp = cp.add(1);
+    *cp = (width >> 16) as u8;
+    cp = cp.add(1);
+    *cp = (width >> 8) as u8;
+    cp = cp.add(1);
+    *cp = width as u8;
+    cp = cp.add(1);
+
+    *cp = (glyph_count >> 8) as u8;
+    cp = cp.add(1);
+    *cp = glyph_count as u8;
+    cp = cp.add(1);
+
+    for i in 0..glyph_count {
+        let x = (*locations.add(i)).x as u32;
+        let y = (*locations.add(i)).y as u32;
+        *cp = (x >> 24) as u8;
+        cp = cp.add(1);
+        *cp = (x >> 16) as u8;
+        cp = cp.add(1);
+        *cp = (x >> 8) as u8;
+        cp = cp.add(1);
+        *cp = x as u8;
+        cp = cp.add(1);
+        *cp = (y >> 24) as u8;
+        cp = cp.add(1);
+        *cp = (y >> 16) as u8;
+        cp = cp.add(1);
+        *cp = (y >> 8) as u8;
+        cp = cp.add(1);
+        *cp = y as u8;
+        cp = cp.add(1);
+    }
+
+    for i in 0..glyph_count {
+        let g = *glyph_ids.add(i);
+        *cp = (g >> 8) as u8;
+        cp = cp.add(1);
+        *cp = g as u8;
+        cp = cp.add(1);
+    }
+
+    cp.offset_from(xdv_ptr) as i32
 }
 
 // translated from xetex-shipout.c:1470 (reverse)
@@ -2479,28 +2572,6 @@ pub fn reverse(
     }
 }
 
-// Bridge-down wrapper: borrows the anchor once and fires the cold abort after
-// the borrow drops (§5). Retires when both callers (`hlist_out`/`vlist_out`)
-// are threaded.
-pub unsafe fn reverse_global(this_box: i32, t: i32, cur_g: *mut i32, cur_glue: *mut f64) -> i32 {
-    let outcome = crate::state::with_state_mut(|st| {
-        reverse(
-            &mut st.mem,
-            &mut st.shipout,
-            &mut st.scanner,
-            &mut st.fonts,
-            this_box,
-            t,
-            &mut *cur_g,
-            &mut *cur_glue,
-        )
-    });
-    match outcome {
-        Ok(l) => l,
-        Err(a) => fire_shipout_abort(a),
-    }
-}
-
 fn movement_bytes(mut w: i32, o: u8) -> Vec<u8> {
     let mut out = Vec::with_capacity(5);
     if w.abs() >= 0x800000 {
@@ -2645,16 +2716,6 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
                 out
             }
         }
-    }
-}
-
-pub unsafe fn movement_global(w: i32, o: u8) {
-    let bytes = crate::state::with_state_mut(|st| movement(&mut st.mem, &mut st.shipout, w, o));
-    if bytes.is_empty() {
-        crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    for byte in bytes {
-        dvi_out_global(byte);
     }
 }
 
@@ -2878,14 +2939,6 @@ pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(
     }
     st.strings.pool_ptr = base;
     Ok(())
-}
-
-// Bridge-down wrapper; retires when `hlist_out` is threaded.
-pub unsafe fn pic_out(p: i32) {
-    let outcome = crate::state::with_state_mut(|st| pic_out_in(st, p));
-    if let Err(a) = outcome {
-        fire_shipout_abort(a);
-    }
 }
 
 // translated from xetex-shipout.c:1682 (out_what)

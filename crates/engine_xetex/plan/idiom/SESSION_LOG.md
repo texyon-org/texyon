@@ -8,6 +8,31 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 205 — 2026-06-20 — Execution: finish the scanner-gated shipout hub
+
+**Type:** execution (workstream 01). Continued the interrupted `src/shipout.rs`
+session and finished the hub unlocked by session 204's scanner SCC.
+
+**Code:** `ship_out`, `hlist_out`, and `vlist_out` are now thin wrappers over
+`_in(&mut EngineState) -> Result<(), ShipoutAbort>` cores. The core path keeps
+recursive hlist/vlist traversal, rules, leaders, native glyph/font DVI emission,
+`pic_out`, `out_what`/`write_out`, SyncTeX, page setup, log/open-name handling,
+and DVI movement/output under the held borrow. Fixed `tex-outputs` nest-panics
+from leftover global accessors (`gettexstring`, `is_char_node_global`,
+`doing_leaders()`, `dvi_offset()`/`dvi_ptr()`) by using threaded/direct state
+access. Removed obsolete shipout bridge wrappers and imports made dead by the
+hub conversion.
+
+**Tests:** `cargo check -p tectonic_engine_xetex`; `tex-outputs` **29/29**;
+`trip` **2/2**; `engine_rust` **7/7**; `latex_goldens` **4/4**; release rebuild;
+full corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1` and `1905.00148v1`.
+
+**Next:** take another large now-unblocked hub, probably `mlist_to_hlist` or an
+output/pagebuilder slice with remaining raw/global bridge access.
+
+---
+
 ## Idiom session 204 — 2026-06-20 — Execution: the scanner-SCC big pass
 
 **Type:** execution (workstream 01). Executed the **scanner / `expand` SCC big
