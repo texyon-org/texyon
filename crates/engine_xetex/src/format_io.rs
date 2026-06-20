@@ -1116,6 +1116,7 @@ unsafe fn load_fmt_file_in(
     st.fonts.font_bchar = vec![0i32; font_check_len];
     st.fonts.font_false_bchar = vec![0i32; font_check_len];
     st.fonts.font_glue = vec![0i32; font_check_len];
+    crate::globals::refresh_font_ffi_mirrors(&st.fonts);
 
     let base_arr_len = (st.fonts.font_max as usize) + 1;
     st.fonts.hyphen_char = vec![0i32; base_arr_len];

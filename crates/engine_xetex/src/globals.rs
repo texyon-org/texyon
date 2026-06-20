@@ -1587,6 +1587,43 @@ pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
     crate::state::with_state(|s| unsafe { s.fonts.font_info[k as usize].b16 })
 }
 
+/// Raw borrow-free mirrors of the three `FontState` arrays the OpenType-math
+/// C++ FFI (`xetex-XeTeXOTMath.cpp`) reads back via the `tt_get_font_*_entry`
+/// callbacks below. Those callbacks run *inside* the C++ OT-math helpers, which
+/// are themselves called from a threaded `_in` core holding `with_state_mut`
+/// (the `mlist_to_hlist` SCC). A callback that took the `ENGINE_STATE` borrow
+/// would nest-panic (`RefCell already borrowed`) — the session-206 wall — so it
+/// must read through these raw pointers instead, like the `mod raw` deferred
+/// set (`line`/`cur_input`).
+///
+/// INVARIANT: `refresh_font_ffi_mirrors` must run after **every** reallocation
+/// of `fonts.{font_size,font_area,font_layout_engine}`. Those Vecs are sized to
+/// `font_max + 1` and never grow mid-run (`font_ptr` is bounded by `font_max`),
+/// so the data pointers stay stable except at the three reallocation sites:
+/// engine init, format undump (`format_io`), and cleanup. In-place writes via
+/// the `set_font_*_entry` accessors do not reallocate, so the mirrors keep
+/// observing live values. A missed refresh after a new reallocation would be
+/// silent UB — validated by the full corpus (`unicode_math`), not the dashboard.
+mod font_ffi_mirror {
+    use libc::c_void;
+    pub(super) static mut FONT_SIZE: *const i32 = std::ptr::null();
+    pub(super) static mut FONT_AREA: *const i32 = std::ptr::null();
+    pub(super) static mut FONT_LAYOUT_ENGINE: *const *mut c_void = std::ptr::null();
+}
+
+/// Refresh the OT-math FFI mirror pointers from the current `FontState` Vec
+/// buffers. Call this at every reallocation of the three mirrored arrays
+/// (see `font_ffi_mirror`).
+pub(crate) fn refresh_font_ffi_mirrors(fonts: &crate::state::FontState) {
+    // SAFETY: single-threaded engine; the mirrors are only read by the
+    // `tt_get_font_*_entry` callbacks, never concurrently with this write.
+    unsafe {
+        font_ffi_mirror::FONT_SIZE = fonts.font_size.as_ptr();
+        font_ffi_mirror::FONT_AREA = fonts.font_area.as_ptr();
+        font_ffi_mirror::FONT_LAYOUT_ENGINE = fonts.font_layout_engine.as_ptr();
+    }
+}
+
 /// Returns `font_area[f]` — the str_number encoding the font's area.
 #[inline]
 pub(crate) fn font_area_entry(f: i32) -> i32 {
@@ -1599,20 +1636,25 @@ pub(crate) fn set_font_area_entry(f: i32, v: i32) {
         state.fonts.font_area[f as usize] = v;
     });
 }
-/// C++ bridge for OpenType math helpers that still need font_area.
+/// C++ bridge for OpenType math helpers that still need font_area. Reads the
+/// borrow-free mirror so it is safe to call under a held `EngineState` borrow
+/// (see `font_ffi_mirror`).
 #[no_mangle]
 pub extern "C" fn tt_get_font_area_entry(f: i32) -> i32 {
-    font_area_entry(f)
+    // SAFETY: mirror kept in sync with fonts.font_area by refresh_font_ffi_mirrors.
+    unsafe { *font_ffi_mirror::FONT_AREA.add(f as usize) }
 }
 /// Returns `font_size[f]` — the current at-size (scaled_t) for font f.
 #[inline]
 pub(crate) fn font_size_entry(f: i32) -> i32 {
     crate::state::with_state(|state| state.fonts.font_size[f as usize])
 }
-/// C++ bridge for the remaining OpenType math helper.
+/// C++ bridge for the remaining OpenType math helper. Reads the borrow-free
+/// mirror (see `font_ffi_mirror`).
 #[no_mangle]
 pub extern "C" fn tt_get_font_size_entry(f: i32) -> i32 {
-    font_size_entry(f)
+    // SAFETY: mirror kept in sync with fonts.font_size by refresh_font_ffi_mirrors.
+    unsafe { *font_ffi_mirror::FONT_SIZE.add(f as usize) }
 }
 /// Writes `font_size[f] = v`.
 #[inline]
@@ -1706,9 +1748,11 @@ pub(crate) fn set_font_layout_engine_ptr(f: i32, v: *mut libc::c_void) {
     });
 }
 /// C++ bridge: returns `font_layout_engine[f]` for use in OpenType math helpers.
+/// Reads the borrow-free mirror (see `font_ffi_mirror`).
 #[no_mangle]
 pub extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
-    font_layout_engine_ptr(f)
+    // SAFETY: mirror kept in sync with fonts.font_layout_engine by refresh_font_ffi_mirrors.
+    unsafe { *font_ffi_mirror::FONT_LAYOUT_ENGINE.add(f as usize) }
 }
 /// Returns `font_mapping[f]`.
 #[inline]

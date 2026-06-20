@@ -1334,6 +1334,7 @@ pub unsafe extern "C" fn tt_run_engine(
             state.fonts.kern_base = vec![0i32; base_fmt_len];
             state.fonts.exten_base = vec![0i32; base_fmt_len];
             state.fonts.param_base = vec![0i32; base_fmt_len];
+            crate::globals::refresh_font_ffi_mirrors(&state.fonts);
         });
 
         crate::globals::set_font_ptr(FONT_BASE);
@@ -1514,6 +1515,7 @@ pub unsafe fn tt_cleanup() {
         state.fonts.param_base = Vec::new();
         state.fonts.xdv_buffer = Vec::new();
         state.fonts.mapped_text = Vec::new();
+        crate::globals::refresh_font_ffi_mirrors(&state.fonts);
     });
 
     // Release Rust-owned hyphenation trie arrays (were C `malloc`'d arrays).
