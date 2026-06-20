@@ -3033,3 +3033,29 @@ pub unsafe fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
     }
     outcome.r
 }
+
+/// Threaded equivalent of [`vpackage`] (`01b` §3): runs [`vpackage_in`] and emits
+/// any over/underfull diagnostic under the held `&mut EngineState` borrow, so a
+/// threaded caller (the `mlist_to_hlist` SCC) can package under one borrow.
+pub(crate) fn vpackage_emit_in(
+    st: &mut crate::state::EngineState,
+    p: i32,
+    h: i32,
+    m: i16,
+    l: i32,
+) -> Result<i32, NodeRecycleAbort> {
+    let outcome = vpackage_in(
+        &mut st.mem,
+        &st.eqtb,
+        &mut st.scanner,
+        &mut st.shipout,
+        p,
+        h,
+        m,
+        l,
+    )?;
+    for diag in outcome.diags.into_iter().flatten() {
+        print_vpack_diag_in(st, outcome.r, diag);
+    }
+    Ok(outcome.r)
+}

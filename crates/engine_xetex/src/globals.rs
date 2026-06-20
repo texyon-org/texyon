@@ -3453,22 +3453,10 @@ pub(crate) fn just_box() -> i32 {
     crate::state::with_state(|s| s.scanner.just_box)
 }
 #[inline]
-pub(crate) fn cur_f() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_f)
-}
-#[inline]
 pub(crate) fn set_cur_f(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.cur_f = v;
     });
-}
-#[inline]
-pub(crate) fn cur_c() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_c)
-}
-#[inline]
-pub(crate) fn cur_i() -> crate::mem_types::B16x4 {
-    crate::state::with_state(|s| s.scanner.cur_i)
 }
 #[inline]
 pub(crate) fn set_pack_begin_line(v: i32) {
@@ -3649,44 +3637,13 @@ pub(crate) fn set_doing_special(v: bool) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// xetex-math.c module-level state (cur_mlist / cur_style / cur_size / cur_mu / mlist_penalties)
-// ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn cur_mlist() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_mlist)
-}
 #[inline]
 pub(crate) fn set_cur_mlist(v: i32) {
     crate::state::with_state_mut(|s| s.scanner.cur_mlist = v);
 }
 #[inline]
-pub(crate) fn cur_style() -> i16 {
-    crate::state::with_state(|s| s.scanner.cur_style)
-}
-#[inline]
 pub(crate) fn set_cur_style(v: i16) {
     crate::state::with_state_mut(|s| s.scanner.cur_style = v);
-}
-#[inline]
-pub(crate) fn cur_size() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_size)
-}
-#[inline]
-pub(crate) fn set_cur_size(v: i32) {
-    crate::state::with_state_mut(|s| s.scanner.cur_size = v);
-}
-#[inline]
-pub(crate) fn cur_mu() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_mu)
-}
-#[inline]
-pub(crate) fn set_cur_mu(v: i32) {
-    crate::state::with_state_mut(|s| s.scanner.cur_mu = v);
-}
-#[inline]
-pub(crate) fn mlist_penalties() -> bool {
-    crate::state::with_state(|s| s.scanner.mlist_penalties)
 }
 #[inline]
 pub(crate) fn set_mlist_penalties(v: bool) {

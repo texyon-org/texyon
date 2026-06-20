@@ -8,6 +8,23 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 208 — 2026-06-20 — Execution: thread the mlist_to_hlist SCC
+
+**Type:** execution (workstream 01). Threaded the math SCC now that it is unblocked by the OT-math FFI mirror solution. One large commit.
+
+**Code:**
+- **`mlist_to_hlist` SCC** fully threaded: `mlist_to_hlist` converted to `mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort>`.
+- **Math builders** threaded: `make_over`, `make_under`, `make_vcenter`, `make_radical`, `make_fraction`, `make_op`, `make_ord`, `make_math_accent`, `make_left_right`, `make_scripts`, `finish_subscript_only`, `finish_superscript_branch`, `initial_script_shifts`, `finish_subsup_stack`, `maybe_attach_script_kern`, `mlist_advance` converted into `_in` cores under a single borrow.
+- **Diagnostics**: Added `vpackage_emit_in` (packaging.rs) to handle vertical box diagnostics without re-entering `with_state`.
+- **Sentinels**: Added `MathBuildAbort` outcomes (including propagation of `ErrorOutcome` from math diagnostic warnings) and dissolved math `_global` bridge wrappers (e.g. `char_box_global`, `rebox_global`, `build_opentype_assembly`, `var_delimiter_global`).
+- **Cleanup**: Deleted unused getters/setters (`cur_f`, `cur_c`, `cur_i`, `cur_mlist`, `cur_style`, `cur_size`, `cur_mu`, `mlist_penalties`) from `src/globals.rs`.
+
+**Validation:** `cargo check`+`fmt`; dashboard **29/2/7/4** (TRIP+eTRIP green); release rebuild; full corpus verified by user, exit 0, `unicode_math` passes. Metrics: warnings **42 → 41**; `unsafe fn` **496**; `math.rs` `with_state` sites **168 → 22** (−146); total `with_state` sites **766** (down from 984).
+
+**Next:** thread `pagebuilder.rs` (`build_page`/`fire_up`) or `main_control.rs` (`main_control`) hubs.
+
+---
+
 ## Idiom session 207 — 2026-06-20 — Execution: thread the OT-math-FFI re-entry wall, then recover the reverted math substrate
 
 **Type:** execution (workstream 01). Took the session-206 "Next": thread the

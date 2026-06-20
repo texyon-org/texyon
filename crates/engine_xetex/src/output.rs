@@ -804,13 +804,6 @@ pub(crate) fn print_file_line_in(st: &mut EngineState) {
 // print_size
 // ---------------------------------------------------------------------------
 
-/// Print the name of a math font-size selector.
-///
-/// translated from xetex-output.c:233 (print_size)
-pub unsafe fn print_size(s: i32) {
-    crate::state::with_state_mut(|st| print_size_in(st, s));
-}
-
 /// `&mut EngineState` core of [`print_size`].
 pub(crate) fn print_size_in(st: &mut EngineState, s: i32) {
     if s == TEXT_SIZE {
