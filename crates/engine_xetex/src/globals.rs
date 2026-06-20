@@ -719,12 +719,6 @@ pub(crate) fn str_pool_entry(k: i32) -> u16 {
     crate::state::with_state(|state| state.strings.str_pool[k as usize])
 }
 
-/// Returns a pointer to `str_pool[k]` (for passing to C bridge functions).
-#[inline]
-pub(crate) fn str_pool_ptr(k: i32) -> *const u16 {
-    crate::state::with_state(|state| unsafe { state.strings.str_pool.as_ptr().add(k as usize) })
-}
-
 // ---------------------------------------------------------------------------
 // in_open / full_source_filename_stack / line_stack / file_line_error_style_p
 // ---------------------------------------------------------------------------
@@ -967,14 +961,6 @@ pub(crate) fn write_open(i: usize) -> bool {
 pub(crate) fn set_write_open(i: usize, v: bool) {
     crate::state::with_state_mut(|s| {
         s.shipout.write_open[i] = v;
-    });
-}
-
-/// Sets `write_file[i]` to `v`.
-#[inline]
-pub(crate) fn set_write_file(i: usize, v: usize) {
-    crate::state::with_state_mut(|s| {
-        s.shipout.write_file[i] = v;
     });
 }
 
@@ -1243,10 +1229,6 @@ pub(crate) fn set_semantic_pagination_enabled(v: bool) {
     });
 }
 #[inline]
-pub(crate) fn shell_escape_enabled() -> bool {
-    crate::state::with_state(|state| state.config.shell_escape_enabled)
-}
-#[inline]
 pub(crate) fn set_shell_escape_enabled(v: bool) {
     crate::state::with_state_mut(|state| {
         state.config.shell_escape_enabled = v;
@@ -1320,30 +1302,12 @@ pub(crate) fn cur_name() -> i32 {
     crate::state::with_state(|state| state.scanner.cur_name)
 }
 #[inline]
-pub(crate) fn set_cur_name(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.cur_name = v;
-    });
-}
-#[inline]
 pub(crate) fn cur_area() -> i32 {
     crate::state::with_state(|state| state.scanner.cur_area)
 }
 #[inline]
-pub(crate) fn set_cur_area(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.cur_area = v;
-    });
-}
-#[inline]
 pub(crate) fn cur_ext() -> i32 {
     crate::state::with_state(|state| state.scanner.cur_ext)
-}
-#[inline]
-pub(crate) fn set_cur_ext(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.cur_ext = v;
-    });
 }
 
 #[inline]

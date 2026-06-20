@@ -10,22 +10,20 @@ use crate::ext::makeXDVGlyphArrayData;
 use crate::ext::make_font_def_global;
 
 use crate::globals::{
-    avail, char_base_entry, cur_area, cur_dir, cur_ext, cur_h, cur_list_mode, cur_name,
-    cur_page_height, cur_tok, cur_v, def_ref, doing_leaders, eqtb_b32s1, file_offset,
-    font_area_entry, font_bc_entry, font_ec_entry, font_info_b16, font_mapping_ptr, font_ptr,
-    font_used_entry, init_pool_ptr, job_name, last_bop, log_opened, lr_problems, lr_ptr, max_h,
-    max_print_line, max_push, max_v, mem_as_u16_ptr, mem_b16s0, mem_b16s1, mem_b16s2, mem_b32s0,
-    mem_b32s1, mem_gr, mem_node_addr, mem_ptr, mem_word, name_of_file, pool_ptr, pool_size,
-    rule_ht, rule_wd, rust_stdout, selector, semantic_pagination_enabled, set_avail, set_cur_area,
-    set_cur_cs, set_cur_dir, set_cur_ext, set_cur_h, set_cur_h_offset, set_cur_list_mode,
-    set_cur_name, set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset,
+    avail, char_base_entry, cur_dir, cur_h, cur_list_mode, cur_page_height, cur_tok, cur_v,
+    doing_leaders, eqtb_b32s1, file_offset, font_area_entry, font_bc_entry, font_ec_entry,
+    font_info_b16, font_mapping_ptr, font_ptr, font_used_entry, init_pool_ptr, job_name, last_bop,
+    lr_problems, lr_ptr, max_h, max_print_line, max_push, max_v, mem_as_u16_ptr, mem_b16s0,
+    mem_b16s1, mem_b16s2, mem_b32s0, mem_b32s1, mem_gr, mem_node_addr, mem_ptr, mem_word,
+    name_of_file, pool_ptr, pool_size, rule_ht, rule_wd, rust_stdout, selector,
+    semantic_pagination_enabled, set_avail, set_cur_cs, set_cur_dir, set_cur_h, set_cur_h_offset,
+    set_cur_list_mode, set_cur_page_height, set_cur_page_width, set_cur_v, set_cur_v_offset,
     set_dead_cycles, set_doing_leaders, set_font_ptr, set_font_used_entry, set_help_line,
     set_help_ptr, set_last_bop, set_lr_problems, set_lr_ptr, set_max_h, set_max_push, set_max_v,
     set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_word, set_pdf_last_x_pos,
     set_pdf_last_y_pos, set_pool_ptr, set_rule_dp, set_rule_ht, set_rule_wd, set_selector,
-    set_temp_ptr, set_total_pages, set_write_file, set_write_open, set_xtx_ligature_present,
-    shell_escape_enabled, str_pool_entry, str_pool_ptr, str_ptr, str_start, temp_ptr, term_offset,
-    total_pages, write_file, write_loc, write_open, xdv_buffer_entry,
+    set_temp_ptr, set_total_pages, set_xtx_ligature_present, str_pool_entry, str_ptr, str_start,
+    temp_ptr, term_offset, total_pages, xdv_buffer_entry,
 };
 use crate::mem::{free_node_global, get_avail_global, get_node_global, new_kern_global};
 use crate::node::{EdgeNode, MovementNode, NodePtr};
@@ -264,6 +262,40 @@ pub(crate) enum ShipoutAbort {
     DviLengthOverflow,
     /// `overflow("main memory size", …)` — movement-node allocation failure.
     MainMemoryOverflow,
+    /// A scanner/tokenizer cold tail bubbled up from a threaded SCC core
+    /// (`scan_toks_in`/`get_token_in`/…) called from `write_out`.
+    Scc(crate::scan::SccAbort),
+    /// `_tt_abort("cannot open output file …")` — deferred so the message is
+    /// rebuilt from `name_of_file()` after the borrow drops.
+    CannotOpenOutput,
+}
+
+impl From<crate::scan::SccAbort> for ShipoutAbort {
+    fn from(a: crate::scan::SccAbort) -> Self {
+        ShipoutAbort::Scc(a)
+    }
+}
+
+impl From<crate::input::InputAbort> for ShipoutAbort {
+    fn from(a: crate::input::InputAbort) -> Self {
+        ShipoutAbort::Scc(crate::scan::SccAbort::Input(a))
+    }
+}
+
+/// Propagate a recoverable-error outcome as a [`ShipoutAbort`]: `Continue`
+/// keeps going, anything else became terminal under the borrow.
+fn ship_err(o: crate::errors::ErrorOutcome) -> Result<(), ShipoutAbort> {
+    crate::scan::scc_err(o).map_err(ShipoutAbort::Scc)
+}
+
+/// `get_avail` under the borrow with its `ALLOC_FAILED` lifted into the
+/// movement/main-memory overflow tail.
+fn get_avail_ship(mem: &mut MemState) -> Result<i32, ShipoutAbort> {
+    let p = crate::mem::get_avail(mem);
+    if p == crate::mem::ALLOC_FAILED {
+        return Err(ShipoutAbort::MainMemoryOverflow);
+    }
+    Ok(p)
 }
 
 /// Fire a deferred shipout cold abort after the state borrow has dropped (§5).
@@ -282,6 +314,17 @@ unsafe fn fire_shipout_abort(a: ShipoutAbort) -> ! {
         }
         ShipoutAbort::MainMemoryOverflow => {
             crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
+        }
+        ShipoutAbort::Scc(e) => e.fire(),
+        ShipoutAbort::CannotOpenOutput => {
+            let mut buf = [0u8; 512];
+            libc::snprintf(
+                buf.as_mut_ptr() as *mut libc::c_char,
+                buf.len(),
+                c"cannot open output file \"%s\"".as_ptr(),
+                name_of_file(),
+            );
+            _tt_abort(buf.as_ptr() as *const libc::c_char)
         }
     }
 }
@@ -2662,46 +2705,37 @@ fn special_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Ship
     Ok(())
 }
 
-// Bridge-down wrapper; retires when `out_what` is threaded.
-unsafe fn special_out(p: i32) {
-    let outcome = crate::state::with_state_mut(|st| special_out_in(st, p));
-    if let Err(a) = outcome {
-        fire_shipout_abort(a);
-    }
-}
-
 // translated from xetex-shipout.c:1976 (write_out)
 // Only called from out_what (Rust) → private.
-unsafe fn write_out(p: i32) {
-    let q = crate::mem::get_avail_global();
-    set_mem_b32s0(q, RIGHT_BRACE_TOKEN + b'}' as i32);
-    let r = crate::mem::get_avail_global();
-    set_mem_b32s1(q, r);
-    set_mem_b32s0(r, CS_TOKEN_FLAG + END_WRITE);
-    crate::input::begin_token_list(q, INSERTED);
-    crate::input::begin_token_list(mem_b32s1(p + 1), WRITE_TEXT);
-    let q2 = crate::mem::get_avail_global();
-    set_mem_b32s0(q2, LEFT_BRACE_TOKEN + b'{' as i32);
-    crate::input::begin_token_list(q2, INSERTED);
+fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+    let q = get_avail_ship(&mut st.mem)?;
+    st.mem.set_b32s0(q, RIGHT_BRACE_TOKEN + b'}' as i32);
+    let r = get_avail_ship(&mut st.mem)?;
+    st.mem.set_b32s1(q, r);
+    st.mem.set_b32s0(r, CS_TOKEN_FLAG + END_WRITE);
+    crate::input::begin_token_list_in(st, q, INSERTED)?;
+    let write_text_ptr = st.mem.b32s1(p + 1);
+    crate::input::begin_token_list_in(st, write_text_ptr, WRITE_TEXT)?;
+    let q2 = get_avail_ship(&mut st.mem)?;
+    st.mem.set_b32s0(q2, LEFT_BRACE_TOKEN + b'{' as i32);
+    crate::input::begin_token_list_in(st, q2, INSERTED)?;
 
     let old_mode = cur_list_mode();
     set_cur_list_mode(0);
-    set_cur_cs(write_loc());
-    crate::scan::scan_toks(false, true);
-    crate::scan::get_token();
+    set_cur_cs(st.shipout.write_loc);
+    crate::scan::scan_toks_in(st, false, true)?;
+    crate::scan::get_token_in(st)?;
 
     if cur_tok() != CS_TOKEN_FLAG + END_WRITE {
-        crate::output::error_here_with_diagnostic(c"Unbalanced write command".as_ptr());
-        crate::output::capture_to_diagnostic(core::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
-            c"On this page there's a \\write with fewer real {'s than }'s.".as_ptr(),
-        );
-        set_help_line(0, c"I can't handle that very well; good luck.".as_ptr());
-        crate::errors::error();
+        crate::output::error_here_with_diagnostic_in(st, c"Unbalanced write command".as_ptr());
+        crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
+        st.errors.help_ptr = 2;
+        st.errors.help_line[1] =
+            c"On this page there's a \\write with fewer real {'s than }'s.".as_ptr();
+        st.errors.help_line[0] = c"I can't handle that very well; good luck.".as_ptr();
+        ship_err(crate::errors::error_in(st))?;
         loop {
-            crate::scan::get_token();
+            crate::scan::get_token_in(st)?;
             if cur_tok() == CS_TOKEN_FLAG + END_WRITE {
                 break;
             }
@@ -2709,61 +2743,66 @@ unsafe fn write_out(p: i32) {
     }
 
     set_cur_list_mode(old_mode);
-    crate::input::end_token_list();
-    let old_setting = selector();
-    let j = mem_b32s0(p + 1);
+    crate::input::end_token_list_in(st)?;
+    let old_setting = st.shipout.selector;
+    let j = st.mem.b32s0(p + 1);
 
     if j == 18 {
-        set_selector(SELECTOR_NEW_STRING);
-    } else if write_open(j as usize) {
-        set_selector(j);
+        st.shipout.selector = SELECTOR_NEW_STRING;
+    } else if st.shipout.write_open[j as usize] {
+        st.shipout.selector = j;
     } else {
-        if j == 17 && selector() == SELECTOR_TERM_AND_LOG {
-            set_selector(SELECTOR_LOG_ONLY);
+        if j == 17 && st.shipout.selector == SELECTOR_TERM_AND_LOG {
+            st.shipout.selector = SELECTOR_LOG_ONLY;
         }
-        crate::output::print_nl_cstr(c"".as_ptr());
+        crate::output::print_nl_cstr_in(st, c"".as_ptr());
     }
 
-    crate::output::token_show(def_ref());
-    crate::output::print_ln();
-    crate::mem::flush_list_global(def_ref());
+    let def_ref = st.scanner.def_ref;
+    crate::output::token_show_in(st, def_ref);
+    crate::output::print_ln_in(st);
+    crate::mem::flush_list(&mut st.mem, def_ref);
 
     if j == 18 {
-        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {
-            set_selector(SELECTOR_LOG_ONLY);
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {
+            st.shipout.selector = SELECTOR_LOG_ONLY;
         } else {
-            set_selector(SELECTOR_TERM_AND_LOG);
+            st.shipout.selector = SELECTOR_TERM_AND_LOG;
         }
-        if !log_opened() {
-            set_selector(SELECTOR_TERM_ONLY);
+        if !st.errors.log_opened {
+            st.shipout.selector = SELECTOR_TERM_ONLY;
         }
 
         // Tectonic: don't emit warnings for shell-escape when enabled;
         // the driver provides a better UX.
-        if !shell_escape_enabled() {
-            crate::output::diagnostic_begin_capture_warning_here();
-            crate::output::print_nl_cstr(c"runsystem(".as_ptr());
-            let base = str_start(str_ptr() - TOO_BIG_CHAR);
-            let cur_len = pool_ptr() - base;
+        if !st.config.shell_escape_enabled {
+            crate::output::diagnostic_begin_capture_warning_here_in(st);
+            crate::output::print_nl_cstr_in(st, c"runsystem(".as_ptr());
+            let base = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+            let cur_len = st.strings.pool_ptr - base;
             for d in 0..cur_len {
-                crate::output::print(str_pool_entry(base + d) as i32);
+                crate::output::print_in(st, st.strings.str_pool[(base + d) as usize] as i32);
             }
-            crate::output::print_cstr(c")...".as_ptr());
-            crate::output::print_cstr(c"disabled".as_ptr());
-            crate::output::print_char(b'.' as i32);
-            crate::output::capture_to_diagnostic(core::ptr::null_mut());
-            crate::output::print_nl_cstr(c"".as_ptr());
-            crate::output::print_ln();
+            crate::output::print_cstr_in(st, c")...".as_ptr());
+            crate::output::print_cstr_in(st, c"disabled".as_ptr());
+            crate::output::print_char_in(st, b'.' as i32);
+            crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
+            crate::output::print_nl_cstr_in(st, c"".as_ptr());
+            crate::output::print_ln_in(st);
         } else {
-            let base = str_start(str_ptr() - TOO_BIG_CHAR);
-            let cur_len = pool_ptr() - base;
-            ttstub_shell_escape(str_pool_ptr(base), cur_len as libc::size_t);
+            let base = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+            let cur_len = st.strings.pool_ptr - base;
+            // SAFETY: FFI; the str_pool Vec never reallocates across this call.
+            let ptr = unsafe { st.strings.str_pool.as_ptr().add(base as usize) };
+            // SAFETY: hands `cur_len` UTF-16 units to the shell-escape driver.
+            unsafe { ttstub_shell_escape(ptr, cur_len as libc::size_t) };
         }
 
-        set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+        st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
     }
 
-    set_selector(old_setting);
+    st.shipout.selector = old_setting;
+    Ok(())
 }
 
 // translated from xetex-shipout.c:2071 (pic_out)
@@ -2851,65 +2890,77 @@ pub unsafe fn pic_out(p: i32) {
 
 // translated from xetex-shipout.c:1682 (out_what)
 // Only a dead prototype remains in xetex-xetexd.h; internal Rust fn.
-pub unsafe fn out_what(p: i32) {
-    match mem_b16s0(p) {
+pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+    match st.mem.b16s0(p) {
         OPEN_NODE | WRITE_NODE | CLOSE_NODE => {
-            if !doing_leaders() {
-                let j = mem_b32s0(p + 1);
-                if mem_b16s0(p) == WRITE_NODE {
-                    write_out(p);
-                    return;
+            if !st.shipout.doing_leaders {
+                let j = st.mem.b32s0(p + 1);
+                if st.mem.b16s0(p) == WRITE_NODE {
+                    write_out_in(st, p)?;
+                    return Ok(());
                 }
-                if write_open(j as usize) {
-                    ttstub_output_close(write_file(j as usize));
+                if st.shipout.write_open[j as usize] {
+                    // SAFETY: FFI close of the write-stream output handle.
+                    unsafe { ttstub_output_close(st.shipout.write_file[j as usize]) };
                 }
-                if mem_b16s0(p) == CLOSE_NODE {
-                    set_write_open(j as usize, false);
-                    return;
+                if st.mem.b16s0(p) == CLOSE_NODE {
+                    st.shipout.write_open[j as usize] = false;
+                    return Ok(());
                 }
                 // OPEN_NODE
                 if j < 16 {
-                    set_cur_name(mem_b32s1(p + 1));
-                    set_cur_area(mem_b32s0(p + 2));
-                    set_cur_ext(mem_b32s1(p + 2));
-                    if crate::string_pool::length_global(cur_ext()) == 0 {
-                        set_cur_ext(crate::texmfmp::maketexstring(c".tex".as_ptr()));
-                    }
-                    crate::io::pack_file_name(cur_name(), cur_area(), cur_ext());
-                    let handle = ttstub_output_open(name_of_file(), 0);
-                    if handle == INVALID_HANDLE {
-                        let mut buf = [0u8; 512];
-                        libc::snprintf(
-                            buf.as_mut_ptr() as *mut libc::c_char,
-                            buf.len(),
-                            c"cannot open output file \"%s\"".as_ptr(),
-                            name_of_file(),
-                        );
-                        _tt_abort(buf.as_ptr() as *const libc::c_char);
-                    }
-                    set_write_file(j as usize, handle);
-                    set_write_open(j as usize, true);
-                    if log_opened() {
-                        let old_setting = selector();
-                        if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {
-                            set_selector(SELECTOR_LOG_ONLY);
-                        } else {
-                            set_selector(SELECTOR_TERM_AND_LOG);
+                    st.scanner.cur_name = st.mem.b32s1(p + 1);
+                    st.scanner.cur_area = st.mem.b32s0(p + 2);
+                    st.scanner.cur_ext = st.mem.b32s1(p + 2);
+                    if crate::string_pool::length(&st.strings, st.scanner.cur_ext) == 0 {
+                        // SAFETY: FFI string interning; deferred overflow tail.
+                        st.scanner.cur_ext = unsafe {
+                            crate::texmfmp::maketexstring_in(&mut st.strings, c".tex".as_ptr())
                         }
-                        crate::output::print_nl_cstr(c"\\openout".as_ptr());
-                        crate::output::print_int(j);
-                        crate::output::print_cstr(c" = `".as_ptr());
-                        crate::output::print_file_name(cur_name(), cur_area(), cur_ext());
-                        crate::output::print_cstr(c"'.".as_ptr());
-                        crate::output::print_nl_cstr(c"".as_ptr());
-                        crate::output::print_ln();
-                        set_selector(old_setting);
+                        .map_err(|e| ShipoutAbort::Scc(crate::scan::SccAbort::MakeTexString(e)))?;
+                    }
+                    let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
+                    // SAFETY: packs the file name into the shared name buffer.
+                    unsafe { crate::io::pack_file_name_in(st, n, a, e) };
+                    // SAFETY: FFI open with the packed name buffer.
+                    let handle = unsafe { ttstub_output_open(st.input.name_of_file.as_ptr(), 0) };
+                    if handle == INVALID_HANDLE {
+                        return Err(ShipoutAbort::CannotOpenOutput);
+                    }
+                    st.shipout.write_file[j as usize] = handle;
+                    st.shipout.write_open[j as usize] = true;
+                    if st.errors.log_opened {
+                        let old_setting = st.shipout.selector;
+                        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {
+                            st.shipout.selector = SELECTOR_LOG_ONLY;
+                        } else {
+                            st.shipout.selector = SELECTOR_TERM_AND_LOG;
+                        }
+                        crate::output::print_nl_cstr_in(st, c"\\openout".as_ptr());
+                        crate::output::print_int_in(st, j);
+                        crate::output::print_cstr_in(st, c" = `".as_ptr());
+                        let (n, a, e) =
+                            (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
+                        crate::output::print_file_name_in(st, n, a, e);
+                        crate::output::print_cstr_in(st, c"'.".as_ptr());
+                        crate::output::print_nl_cstr_in(st, c"".as_ptr());
+                        crate::output::print_ln_in(st);
+                        st.shipout.selector = old_setting;
                     }
                 }
             }
         }
-        SPECIAL_NODE => special_out(p),
+        SPECIAL_NODE => special_out_in(st, p)?,
         LANGUAGE_NODE => {}
-        _ => crate::errors::confusion(c"ext4".as_ptr()),
+        _ => return Err(ShipoutAbort::Confusion(c"ext4")),
+    }
+    Ok(())
+}
+
+// Bridge-down wrapper; retires when `hlist_out`/`vlist_out` are threaded.
+pub unsafe fn out_what(p: i32) {
+    let outcome = crate::state::with_state_mut(|st| out_what_in(st, p));
+    if let Err(a) = outcome {
+        fire_shipout_abort(a);
     }
 }
