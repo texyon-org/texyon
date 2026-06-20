@@ -16,10 +16,9 @@ use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemIdx, MemPtr, Scaled};
 
 use crate::globals::{
-    avail, cur_input_synctex_tag, cur_list_head, line, max_nest_stack, nest_ptr, nest_size,
-    restore_cur_list_from_nest, save_cur_list_to_nest, set_avail, set_cur_list_e_tex_aux,
-    set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
-    set_max_nest_stack, set_mem_b32s1, set_nest_ptr,
+    avail, cur_input_synctex_tag, cur_list_head, line, nest_ptr, nest_size,
+    restore_cur_list_from_nest, set_avail, set_cur_list_e_tex_aux, set_cur_list_head,
+    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_mem_b32s1, set_nest_ptr,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
@@ -332,7 +331,7 @@ pub unsafe fn new_null_box_global() -> i32 {
 ///
 /// translated from xetex-xetex0.c:162 (new_rule)
 ///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_rule_global`].
+/// Phase-C: threaded to `&mut MemState` (callers use [`new_rule`] directly).
 pub fn new_rule(mem: &mut MemState) -> i32 {
     let Some(p) = NodePtr::<RuleNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -342,15 +341,6 @@ pub fn new_rule(mem: &mut MemState) -> i32 {
     p.set_depth(mem, RuleDimen::Running);
     p.set_height(mem, RuleDimen::Running);
     p.idx().0
-}
-
-/// Transitional bridge-down wrapper for legacy `new_rule` callers (`01b` §3, §5).
-pub unsafe fn new_rule_global() -> i32 {
-    let p = crate::state::with_state_mut(|st| new_rule(&mut st.mem));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
 }
 
 // ---------------------------------------------------------------------------
@@ -797,24 +787,56 @@ pub fn delete_glue_ref_global(p: i32) {
 // push_nest / pop_nest
 // ---------------------------------------------------------------------------
 
-/// Push the current list state onto the nest stack and start a new list.
-///
-/// translated from xetex-xetex0.c:1323 (push_nest)
-pub unsafe fn push_nest() {
-    if nest_ptr() > max_nest_stack() {
-        set_max_nest_stack(nest_ptr());
-        if nest_ptr() == nest_size() {
-            crate::errors::overflow(c"semantic nest size".as_ptr(), nest_size());
+/// Cold abort sentinel for [`push_nest_in`] (`01b` §5): either the semantic
+/// nest stack is full or the avail list is exhausted. Both `-> !` after the
+/// borrow drops.
+pub(crate) enum PushNestAbort {
+    SemanticNest,
+    MainMemory,
+}
+
+impl PushNestAbort {
+    pub(crate) unsafe fn fire(self) -> ! {
+        match self {
+            PushNestAbort::SemanticNest => {
+                let n = nest_size();
+                crate::errors::overflow(c"semantic nest size".as_ptr(), n)
+            }
+            PushNestAbort::MainMemory => fire_main_memory_overflow(),
         }
     }
-    save_cur_list_to_nest(nest_ptr());
-    set_nest_ptr(nest_ptr() + 1);
-    let h = get_avail_global();
+}
+
+/// Threaded (Phase C) core of [`push_nest`]: the nest stack lives in
+/// `st.input`; `cur_list` is the raw `mod raw` record (safe under the borrow).
+///
+/// translated from xetex-xetex0.c:1323 (push_nest)
+pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), PushNestAbort> {
+    let np = st.input.nest_ptr;
+    if np > st.input.max_nest_stack {
+        st.input.max_nest_stack = np;
+        if np == crate::globals::nest_size() {
+            return Err(PushNestAbort::SemanticNest);
+        }
+    }
+    st.input.nest[np as usize] = crate::globals::cur_list();
+    st.input.nest_ptr = np + 1;
+    let h = get_avail(&mut st.mem);
+    if h == ALLOC_FAILED {
+        return Err(PushNestAbort::MainMemory);
+    }
     set_cur_list_head(h);
     set_cur_list_tail(h);
     set_cur_list_prev_graf(0);
     set_cur_list_mode_line(line());
     set_cur_list_e_tex_aux(TEX_NULL);
+    Ok(())
+}
+
+pub unsafe fn push_nest() {
+    if let Err(e) = crate::state::with_state_mut(push_nest_in) {
+        e.fire();
+    }
 }
 
 /// Pop the top nest entry back into cur_list, freeing the old head token.

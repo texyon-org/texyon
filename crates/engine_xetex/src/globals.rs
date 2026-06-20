@@ -2119,10 +2119,6 @@ pub(crate) fn set_nest_ptr(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn max_nest_stack() -> i32 {
-    crate::state::with_state(|s| s.input.max_nest_stack)
-}
-#[inline]
 pub(crate) fn set_max_nest_stack(v: i32) {
     crate::state::with_state_mut(|s| {
         s.input.max_nest_stack = v;

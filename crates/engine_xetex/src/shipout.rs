@@ -808,13 +808,6 @@ pub(crate) unsafe fn ship_out_in(
     Ok(())
 }
 
-pub unsafe fn ship_out(p: i32) {
-    let outcome = crate::state::with_state_mut(|st| ship_out_in(st, p));
-    if let Err(a) = outcome {
-        fire_shipout_abort(a);
-    }
-}
-
 // translated from xetex-shipout.c:2332 (dvi_pop)
 pub fn dvi_pop(shipout: &mut ShipoutState, l: i32) -> bool {
     if l == shipout.dvi_offset + shipout.dvi_ptr && shipout.dvi_ptr > 0 {

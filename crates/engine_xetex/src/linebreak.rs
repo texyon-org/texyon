@@ -1272,7 +1272,7 @@ fn finish_last_line_fit(
 /// node-recycle confusion, a `try_break`/hyphenation/trie failure, or the
 /// post-line-break sentinel — so the thin [`line_break`] wrapper can dispatch
 /// it after the borrow has dropped.
-enum LineBreakOutcome {
+pub(crate) enum LineBreakOutcome {
     Done,
     Overflow,
     Node(NodeRecycleAbort),
@@ -1288,12 +1288,12 @@ enum LineBreakOutcome {
     Error(crate::errors::ErrorOutcome),
 }
 
-/// Thin bridge-down wrapper for [`line_break_in`]. Borrows the thread-local
-/// state once, runs the threaded core, then dispatches any deferred cold abort
-/// after the borrow has dropped (`01b` §5).
-pub unsafe fn line_break(d: bool) {
+/// Dispatch a deferred [`LineBreakOutcome`] cold abort after the state borrow
+/// has dropped (`01b` §5). Shared by the [`line_break`] wrapper and threaded
+/// callers (e.g. `end_graf_in`). `Done` is a no-op.
+pub(crate) unsafe fn fire_line_break_outcome(o: LineBreakOutcome) {
     const MEM_TOP: i32 = 4_999_999;
-    match crate::state::with_state_mut(|st| line_break_in(st, d)) {
+    match o {
         LineBreakOutcome::Done => {}
         LineBreakOutcome::Overflow => {
             crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
@@ -1316,6 +1316,14 @@ pub unsafe fn line_break(d: bool) {
         LineBreakOutcome::Confusion(message) => crate::errors::confusion(message.as_ptr()),
         LineBreakOutcome::Error(o) => o.finish(),
     }
+}
+
+/// Thin bridge-down wrapper for [`line_break_in`]. Borrows the thread-local
+/// state once, runs the threaded core, then dispatches any deferred cold abort
+/// after the borrow has dropped (`01b` §5).
+pub unsafe fn line_break(d: bool) {
+    let outcome = crate::state::with_state_mut(|st| line_break_in(st, d));
+    fire_line_break_outcome(outcome);
 }
 
 /// Threaded (Phase C) translation of `finite_shrink_global`: when this is the
@@ -1428,7 +1436,7 @@ fn add_node_width_to_active(
 /// `fonts`); the `cur_list` reads/writes are the deferred `mod raw` static and
 /// so don't re-enter `with_state`. Cold aborts ride the [`LineBreakOutcome`]
 /// sentinel (`01b` §5).
-fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
+pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
     use crate::scan::max_hyphenatable_length_in;
 
     macro_rules! aw {
@@ -2591,7 +2599,7 @@ fn post_line_break_suffix(
 /// with_state-bearing abort/print-and-die paths it would hit cannot run inline
 /// — they are returned and fired by the [`post_line_break`] wrapper after the
 /// borrow drops. On a passing run the outcome is always `Done`.
-enum PostLineBreakOutcome {
+pub(crate) enum PostLineBreakOutcome {
     Done,
     Node(NodeRecycleAbort),
     PdfError {
@@ -2679,7 +2687,7 @@ fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBr
     PostLineBreakOutcome::Done
 }
 
-enum TryBreakAbort {
+pub(crate) enum TryBreakAbort {
     Node(NodeRecycleAbort),
     HlistStackFailure,
 }
@@ -3377,13 +3385,13 @@ unsafe fn try_break(
 /// Cold-abort sentinel (§5) for the threaded native-word hyphenation island in
 /// [`hyphenate`]'s `goto_found`: the island returns this and the orchestrator
 /// runs the divergent tail after the state borrow drops.
-enum HyphNativeAbort {
+pub(crate) enum HyphNativeAbort {
     Recycle(NodeRecycleAbort),
     NativeChar(crate::fonts::NativeCharAbort),
     Confusion(&'static std::ffi::CStr),
 }
 
-enum HyphenateAbort {
+pub(crate) enum HyphenateAbort {
     MainMemoryOverflow,
     Native(HyphNativeAbort),
     NewCharacter(crate::main_control::NewCharacterAbort),

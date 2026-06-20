@@ -29,14 +29,12 @@ use crate::output::error_here_with_diagnostic;
 use crate::globals::{
     align_state, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, eqtb_b32s1,
     expand_depth, first, init_pool_ptr, last, mem_b32s0, mem_b32s1, pool_size, read_file_entry,
-    read_open_entry, save_ptr, save_stack_b32s1, set_align_state, set_buffer_entry, set_cur_chr,
-    set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_def_ref,
-    set_first, set_help_line, set_help_ptr, set_line, set_mem_b32s0, set_mem_b32s1,
-    set_no_new_control_sequence, set_read_open_entry, set_save_ptr, set_save_stack_b32s1,
-    set_scanner_status, set_warning_index,
+    read_open_entry, save_ptr, set_align_state, set_buffer_entry, set_cur_chr, set_cur_cmd,
+    set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
+    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_def_ref, set_first, set_help_line,
+    set_help_ptr, set_line, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence,
+    set_read_open_entry, set_scanner_status, set_warning_index,
 };
-use crate::mem::new_rule_global;
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
 use crate::errors::int_error_in;
@@ -621,32 +619,60 @@ const ADDITIONAL: u8 = 1;
 
 /// translated from xetex-xetex0.c:9215 (scan_spec)
 pub unsafe fn scan_spec(c: u8, three_codes: bool) {
+    if let Err(e) = crate::state::with_state_mut(|st| scan_spec_in(st, c, three_codes)) {
+        e.fire();
+    }
+}
+
+/// Threaded (Phase C) core of [`scan_spec`]. The save stack lives in
+/// `st.save_stack`; the only cold abort is `new_save_level`'s save-stack
+/// overflow, surfaced through [`SccAbort`].
+pub(crate) fn scan_spec_in(
+    st: &mut crate::state::EngineState,
+    c: u8,
+    three_codes: bool,
+) -> Result<(), SccAbort> {
     let s = if three_codes {
-        save_stack_b32s1(save_ptr())
+        st.save_stack.b32s1(st.save_stack.save_ptr)
     } else {
         0
     };
     let spec_code;
-    if scan_keyword(c"to".as_ptr()) {
+    if scan_keyword_in(st, c"to".as_ptr())? {
         spec_code = EXACTLY;
-        scan_dimen(false, false, false);
-    } else if scan_keyword(c"spread".as_ptr()) {
+        scan_dimen_in(st, false, false, false)?;
+    } else if scan_keyword_in(st, c"spread".as_ptr())? {
         spec_code = ADDITIONAL;
-        scan_dimen(false, false, false);
+        scan_dimen_in(st, false, false, false)?;
     } else {
         spec_code = ADDITIONAL;
         set_cur_val(0);
     }
     // found:
     if three_codes {
-        set_save_stack_b32s1(save_ptr(), s);
-        set_save_ptr(save_ptr() + 1);
+        let sp = st.save_stack.save_ptr;
+        st.save_stack.set_b32s1(sp, s);
+        st.save_stack.save_ptr = sp + 1;
     }
-    set_save_stack_b32s1(save_ptr(), spec_code as i32);
-    set_save_stack_b32s1(save_ptr() + 1, cur_val());
-    set_save_ptr(save_ptr() + 2);
-    crate::save::new_save_level_global(c);
-    scan_left_brace();
+    let sp = st.save_stack.save_ptr;
+    st.save_stack.set_b32s1(sp, spec_code as i32);
+    st.save_stack.set_b32s1(sp + 1, cur_val());
+    st.save_stack.save_ptr = sp + 2;
+    if let Some(abort) = crate::save::new_save_level(&mut st.save_stack, c) {
+        return Err(match abort {
+            crate::save::SaveAbort::Overflow(what, n) => {
+                SccAbort::Input(crate::input::InputAbort::Overflow {
+                    what: what.as_ptr(),
+                    n,
+                })
+            }
+            crate::save::SaveAbort::Confusion(what) => {
+                SccAbort::Input(crate::input::InputAbort::Fatal(what.as_ptr()))
+            }
+        });
+    }
+    scan_left_brace_in(st)?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -709,28 +735,39 @@ const DEFAULT_RULE: i32 = 26214;
 
 /// translated from xetex-xetex0.c:6267 (scan_rule_spec)
 pub unsafe fn scan_rule_spec() -> i32 {
-    let q = new_rule_global();
+    match crate::state::with_state_mut(scan_rule_spec_in) {
+        Ok(q) => q,
+        Err(e) => e.fire(),
+    }
+}
+
+/// Threaded (Phase C) core of [`scan_rule_spec`].
+pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i32, SccAbort> {
+    let q = crate::mem::new_rule(&mut st.mem);
+    if q == crate::mem::ALLOC_FAILED {
+        return Err(main_mem_overflow_scc());
+    }
     if cur_cmd() == VRULE {
-        set_mem_b32s1(q + 1, DEFAULT_RULE);
+        st.mem.set_b32s1(q + 1, DEFAULT_RULE);
     } else {
-        set_mem_b32s1(q + 3, DEFAULT_RULE);
-        set_mem_b32s1(q + 2, 0);
+        st.mem.set_b32s1(q + 3, DEFAULT_RULE);
+        st.mem.set_b32s1(q + 2, 0);
     }
     loop {
-        if scan_keyword(c"width".as_ptr()) {
-            xetex_scan_dimen(false, false, false, true);
-            set_mem_b32s1(q + 1, cur_val());
-        } else if scan_keyword(c"height".as_ptr()) {
-            xetex_scan_dimen(false, false, false, true);
-            set_mem_b32s1(q + 3, cur_val());
-        } else if scan_keyword(c"depth".as_ptr()) {
-            xetex_scan_dimen(false, false, false, true);
-            set_mem_b32s1(q + 2, cur_val());
+        if scan_keyword_in(st, c"width".as_ptr())? {
+            xetex_scan_dimen_in(st, false, false, false, true)?;
+            st.mem.set_b32s1(q + 1, cur_val());
+        } else if scan_keyword_in(st, c"height".as_ptr())? {
+            xetex_scan_dimen_in(st, false, false, false, true)?;
+            st.mem.set_b32s1(q + 3, cur_val());
+        } else if scan_keyword_in(st, c"depth".as_ptr())? {
+            xetex_scan_dimen_in(st, false, false, false, true)?;
+            st.mem.set_b32s1(q + 2, cur_val());
         } else {
             break;
         }
     }
-    q
+    Ok(q)
 }
 
 #[inline]

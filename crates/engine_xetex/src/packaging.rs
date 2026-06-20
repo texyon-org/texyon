@@ -12,15 +12,14 @@ use crate::consts::{
     BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, GLUE_SPEC_SIZE, INT_BASE, KERN_NODE, MATH_NODE,
     MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, RULE_NODE_SIZE, SMALL_NODE_SIZE,
 };
-use crate::errors::{error, ErrorOutcome};
+use crate::errors::ErrorOutcome;
 use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
-use crate::globals::{cur_val, set_cur_val, set_help_line, set_help_ptr, temp_ptr};
+use crate::globals::{cur_val, set_cur_val, temp_ptr};
 use crate::node::{
     AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, MarkNode, NodePtr,
     RuleDimen, SaNode, VListNode, WhatsitNode,
 };
-use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::units::NodeType;
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
@@ -1341,13 +1340,6 @@ fn vert_break_resume(
     }
 }
 
-fn print_vert_break_infinite_shrinkage_error() {
-    let outcome = crate::state::with_state_mut(print_vert_break_infinite_shrinkage_error_in);
-    unsafe {
-        outcome.finish();
-    }
-}
-
 fn print_vert_break_infinite_shrinkage_error_in(
     st: &mut crate::state::EngineState,
 ) -> ErrorOutcome {
@@ -1728,70 +1720,83 @@ fn vsplit_resume(
     }
 }
 
-fn print_vsplit_needs_vbox_error() {
-    unsafe {
-        error_here_with_diagnostic(c"".as_ptr());
-        crate::output::print_esc_cstr(c"vsplit".as_ptr());
-        crate::output::print_cstr(c" needs a ".as_ptr());
-        crate::output::print_esc_cstr(c"vbox".as_ptr());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(1, c"The box you are trying to split is an \\hbox.".as_ptr());
-        set_help_line(
-            0,
-            c"I can't split such a box, so I'll leave it alone.".as_ptr(),
-        );
-        error();
-    }
+fn print_vsplit_needs_vbox_error_in(st: &mut crate::state::EngineState) -> ErrorOutcome {
+    crate::output::error_here_with_diagnostic_in(st, c"".as_ptr());
+    crate::output::print_esc_cstr_in(st, c"vsplit".as_ptr());
+    crate::output::print_cstr_in(st, c" needs a ".as_ptr());
+    crate::output::print_esc_cstr_in(st, c"vbox".as_ptr());
+    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    st.errors.help_ptr = 2;
+    st.errors.help_line[1] = c"The box you are trying to split is an \\hbox.".as_ptr();
+    st.errors.help_line[0] = c"I can't split such a box, so I'll leave it alone.".as_ptr();
+    crate::errors::error_in(st)
 }
 
-fn print_vsplit_packages(outcome: VsplitOutcome) {
+fn print_vsplit_packages_in(st: &mut crate::state::EngineState, outcome: VsplitOutcome) {
     for package in outcome.packages.into_iter().flatten() {
         for diag in package.diags.into_iter().flatten() {
-            print_vpack_diag(package.r, diag);
+            print_vpack_diag_in(st, package.r, diag);
         }
     }
 }
 
-pub unsafe fn vsplit(n: i32, h: i32) -> i32 {
-    let mut state = match crate::state::with_state_mut(|st| {
-        start_vsplit(&mut st.mem, &st.eqtb, &mut st.scanner, n, h)
-    }) {
-        Ok(VsplitStart::Done(outcome)) => {
-            print_vsplit_packages(outcome);
-            return outcome.result;
+/// Cold abort sentinel for [`vsplit_in`] (`01b` §5).
+pub(crate) enum VsplitAbort {
+    Node(NodeRecycleAbort),
+    Error(ErrorOutcome),
+}
+
+impl From<NodeRecycleAbort> for VsplitAbort {
+    fn from(e: NodeRecycleAbort) -> Self {
+        VsplitAbort::Node(e)
+    }
+}
+
+/// Threaded (Phase C) core (callers use [`vsplit_in`] directly): one borrow
+/// across start/resume; the
+/// over/underfull-vbox and infinite-shrinkage diagnostics print through their
+/// `_in` cores and defer only a terminal `error()` outcome (`01b` §5).
+pub(crate) fn vsplit_in(
+    st: &mut crate::state::EngineState,
+    n: i32,
+    h: i32,
+) -> Result<i32, VsplitAbort> {
+    let mut state = match start_vsplit(&mut st.mem, &st.eqtb, &mut st.scanner, n, h)? {
+        VsplitStart::Done(outcome) => {
+            let result = outcome.result;
+            print_vsplit_packages_in(st, outcome);
+            return Ok(result);
         }
-        Ok(VsplitStart::NeedsVboxDiagnostic) => {
-            print_vsplit_needs_vbox_error();
-            return crate::mem::TEX_NULL;
+        VsplitStart::NeedsVboxDiagnostic => {
+            let outcome = print_vsplit_needs_vbox_error_in(st);
+            if !matches!(outcome, ErrorOutcome::Continue) {
+                return Err(VsplitAbort::Error(outcome));
+            }
+            return Ok(crate::mem::TEX_NULL);
         }
-        Ok(VsplitStart::Ready(state)) => state,
-        Err(e) => node_recycle_abort(e),
+        VsplitStart::Ready(state) => state,
     };
 
     loop {
-        match crate::state::with_state_mut(|st| {
-            vsplit_resume(
-                &mut st.mem,
-                &mut st.eqtb,
-                &mut st.scanner,
-                &mut st.shipout,
-                &mut state,
-            )
-        }) {
-            Ok(VsplitStep::Done(outcome)) => {
-                print_vsplit_packages(outcome);
-                return outcome.result;
+        match vsplit_resume(
+            &mut st.mem,
+            &mut st.eqtb,
+            &mut st.scanner,
+            &mut st.shipout,
+            &mut state,
+        )? {
+            VsplitStep::Done(outcome) => {
+                let result = outcome.result;
+                print_vsplit_packages_in(st, outcome);
+                return Ok(result);
             }
-            Ok(VsplitStep::InfiniteShrinkage { glue, spec }) => {
-                print_vert_break_infinite_shrinkage_error();
-                if let Err(e) = crate::state::with_state_mut(|st| {
-                    repair_vert_break_infinite_shrinkage(&mut st.mem, glue, spec)
-                }) {
-                    node_recycle_abort(e);
+            VsplitStep::InfiniteShrinkage { glue, spec } => {
+                let outcome = print_vert_break_infinite_shrinkage_error_in(st);
+                if !matches!(outcome, ErrorOutcome::Continue) {
+                    return Err(VsplitAbort::Error(outcome));
                 }
+                repair_vert_break_infinite_shrinkage(&mut st.mem, glue, spec)?;
             }
-            Err(e) => node_recycle_abort(e),
         }
     }
 }

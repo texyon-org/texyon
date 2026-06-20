@@ -722,6 +722,48 @@ unsafe fn finish_sa_mutation(p: i32, result: SaMutationResult) {
     delete_sa_ref_global(p);
 }
 
+/// Cold abort sentinel for [`finish_sa_mutation_in`] (`01b` §5).
+pub(crate) enum SaMutationAbort {
+    MainMemory,
+    SaveOverflow,
+    Confusion(&'static std::ffi::CStr),
+}
+
+impl SaMutationAbort {
+    pub(crate) unsafe fn fire(self) -> ! {
+        match self {
+            SaMutationAbort::MainMemory => {
+                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
+            }
+            SaMutationAbort::SaveOverflow => {
+                crate::errors::overflow(c"save size".as_ptr(), save_size())
+            }
+            SaMutationAbort::Confusion(m) => crate::errors::confusion(m.as_ptr()),
+        }
+    }
+}
+
+/// Threaded (Phase C) core of [`finish_sa_mutation`]: applies the deferred
+/// flush + ref-decrement of an `sa_def`/`gsa_def` result under a held borrow,
+/// returning the cold abort instead of `longjmp`ing in place (`01b` §5).
+pub(crate) fn finish_sa_mutation_in(
+    st: &mut crate::state::EngineState,
+    p: i32,
+    result: SaMutationResult,
+) -> Result<(), SaMutationAbort> {
+    if result.status == crate::mem::ALLOC_FAILED {
+        return Err(SaMutationAbort::MainMemory);
+    }
+    if result.status == SAVE_OVERFLOW {
+        return Err(SaMutationAbort::SaveOverflow);
+    }
+    if let Some(list) = result.flush_list {
+        crate::packaging::flush_node_list(&mut st.mem, list).map_err(SaMutationAbort::Confusion)?;
+    }
+    delete_sa_ref(&mut st.mem, &mut st.scanner, p);
+    Ok(())
+}
+
 struct SaRestoreStep {
     p: i32,
     chain: i32,

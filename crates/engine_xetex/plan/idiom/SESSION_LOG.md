@@ -8,6 +8,47 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 211 — 2026-06-21 — Execution: thread the box/list verb DAG (`box_end`/`begin_box`/`scan_box`/`end_graf`)
+
+**Type:** execution (workstream 01). Large mechanical session: the
+`main_control_box_list_cases` set is a **DAG**, not a tight SCC, so it threads
+bottom-up. Threaded the substrate + the box-creation/box-disposal verbs.
+
+**Code:**
+- **Substrate cores:** `mem::push_nest_in` (+ `PushNestAbort`), `scan::scan_rule_spec_in`,
+  `scan::scan_spec_in` (save-stack overflow → `SccAbort`), `packaging::vsplit_in`
+  (+ `VsplitAbort`; threaded `print_vsplit_packages_in`/`print_vsplit_needs_vbox_error_in`
+  on the existing `print_vpack_diag_in`/`print_vert_break_infinite_shrinkage_error_in`).
+- **`line_break_in` plumbing:** made `line_break_in` + `LineBreakOutcome` (and the
+  nested `TryBreakAbort`/`HyphenateAbort`/`HyphNativeAbort`/`PostLineBreakOutcome`)
+  `pub(crate)`; extracted `fire_line_break_outcome` so threaded callers can defer
+  the cold abort.
+- **`save::finish_sa_mutation_in`** (+ `SaMutationAbort`): threaded form of the
+  `sa_def`/`gsa_def` finish (overflow/flush/`delete_sa_ref`) for `box_end`.
+- **`MainControlAbort`** extended with `LineBreak`/`PushNest`/`Vsplit`/`Input`/
+  `Shipout`/`Save`/`SaMutation`/`Error`/`Confusion` arms (+ `From` impls + `fire`).
+- **Verbs → `_in(&mut EngineState) -> Result<(), MainControlAbort>`:** `end_graf_in`,
+  `box_end_in`, `begin_box_in`, `scan_box_in`. Each holds one borrow, calling the
+  threaded scanner/input/pagebuilder/shipout/save/packaging `_in` cores under it;
+  `cur_box`/`adjust_tail`/`pre_adjust_tail` are `st.scanner` fields, `cur_list*`/
+  `cur_ptr`/`cur_val` stay raw `mod raw`. Deleted the now-dead `ship_out`,
+  `vsplit`, `new_rule_global` global wrappers + the dead `max_nest_stack` getter.
+
+**Validation:** `cargo check`+`fmt`; dashboard **29/2/7/4** per wave; release
+rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1`/`1905.00148v1`, **no NOXDV/NOLOG/NEW/MISS** (box verbs are on the
+hot path). Metrics: warnings **42** (rust-only, == baseline); `unsafe fn`
+**481 → 480**; `with_state` sites **807 → 734**.
+
+**Next:** the rest of the DAG — `new_graf_in` (needs `insert_src_special` threaded,
+which pulls in texmfmp `make_src_special`/`is_new_source`/`remember_source_info`
+`_in` cores + `str_toks_cat_in`), `package_in` (needs `unsave_in`, which needs
+`sa_restore`/`eq_destroy`/`group_warning_in`), then `handle_right_brace_in`
+(needs `unsave`/`build_discretionary`/`align_peek`/`build_choices`/`fin_mlist`/
+`box_error` threaded) and finally the `main_control_box_list_cases` dispatcher.
+
+---
+
 ## Idiom session 210 — 2026-06-20 — Execution: thread main-control append leaves and DVI finalizer
 
 **Type:** execution (workstream 01). Low-docs mechanical continuation on top of the already-tested session-209 pagebuilder WIP.
