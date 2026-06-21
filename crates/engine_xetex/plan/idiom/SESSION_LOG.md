@@ -8,6 +8,61 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 215 — 2026-06-21 — Execution: thread fin_col + resume_after_display
+
+**Type:** execution (workstream 01). Continued the alignment SCC. Two commits.
+
+**Code:**
+- **`fin_col` → `fin_col_in(&mut EngineState) -> Result<bool, MainControlAbort>`**
+  (main_control.rs): the column-finisher under one borrow — mem/scanner/save
+  direct (`cur_align`/`cur_loop`/`cur_span`/`align_state`/`total_stretch`/
+  `total_shrink`/`adjust_tail`/`cur_tail` are `st.scanner.*`), packing via
+  `hpack_emit_in`/`vpackage_emit_in`, `unsave_in`, `new_save_level`,
+  `init_span_in`/`init_col_in`, `get_x_or_protected_in`, `pop_nest_in`. Cold
+  tails ride `MainControlAbort`: `endv`/`too many spans` (`Confusion`),
+  interwoven-alignment fatal (`Input(InputAbort::Fatal)`), arena exhaustion
+  (`NodeRecycle::Overflow`), and the recoverable Extra-alignment-tab error
+  printed in order then deferred via `mc_propagate_error`. Deleted dead
+  `init_span` global wrapper + dead `cur_span`/`total_stretch` getters.
+- **`resume_after_display` → `resume_after_display_in`** (math.rs, only caller
+  is `fin_align`): one borrow over `unsave_in`/`push_nest_in`/`get_x_token_in`/
+  `back_input_in`/`build_page_in`; `cur_group`=`st.save_stack`, `cur_lang`=
+  `st.hyph`, `nest_ptr`=`st.input`, eqtb direct, cur_list scalars raw;
+  `MATH_SHIFT_GROUP` guard → `Confusion`. Removed unused `cur_lang`/
+  `set_cur_lang` imports.
+
+**Validation:** `cargo check`+`fmt`; dashboard **29/2/7/4**; release rebuild
+(warnings **41**, held); full corpus **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1`, doc-count 639 ==
+baseline, no NOXDV/NOLOG.
+
+**Key structural finding (the cycle is gated on `prefixed_command`):** `fin_col`
+is the ONLY alignment verb outside the `fin_align` mutual-recursion cycle
+(`align_peek`→`fin_align`; `init_align`/`fin_row`→`align_peek`). So `align_peek_in`/
+`init_align_in`/`fin_row_in` cannot single-borrow thread until `fin_align_in`
+exists, and `fin_align` calls `do_assignments` (→ the ~1000-line
+`prefixed_command` dispatcher) and `resume_after_display` (now threaded). The
+agent claim that `align_peek` threads "first, trivially" is wrong — it needs
+`fin_align_in`. **Next:** thread `prefixed_command` → `do_assignments_in`, then
+the cycle `fin_align_in`+`align_peek_in`+`init_align_in`+`fin_row_in` lands as
+one mutually-recursive commit; then `align_peek_in` → `handle_right_brace_in` →
+the dispatcher.
+
+**Raw-state note (answers "migrate remaining `raw::` state"):** the `mod raw`
+block (globals.rs:52) now holds ONLY the deliberately-deferred hot-path scalars
+(`cur_input`/`cur_list`/`cur_chr`/`cur_cmd`/`cur_cs`/`cur_tok`/`cur_val`/
+`cur_ptr`/`temp_ptr`/`line`/`first`, the `main_*`/ligature scalars, the
+`cancel_boundary`/`ins_disc`/`space_class`/`prev_class`/`bchar`/`false_bchar`
+flags) + a few capacity constants (`buf_size`/`nest_size`/`save_size`/
+`param_size`/`stack_size`/`max_in_open`/`expand_depth`). These are accessed via
+free `cur_cmd()`-style fns that read the raw static WITHOUT a borrow precisely
+so threaded `_in` cores holding `with_state_mut` can touch them without nest-
+panicking. They are NOT migration debt — moving them into `EngineState` would
+break the threading bridge; they retire only when ALL callers are threaded
+(project end). Everything else is already in `EngineState`.
+
+---
+
 ## Idiom session 214 — 2026-06-21 — Execution: thread main-control alignment/enabler substrate
 
 **Type:** execution (workstream 01). Large mechanical continuation of session
