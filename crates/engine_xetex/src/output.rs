@@ -3091,17 +3091,6 @@ pub(crate) fn font_feature_warning_in(
     end_diagnostic_in(st, false);
 }
 
-/// translated from xetex-xetex0.c:8732 (font_mapping_warning)
-pub unsafe fn font_mapping_warning(
-    mapping_name_p: *const libc::c_void,
-    mapping_name_len: i32,
-    warning_type: i32,
-) {
-    crate::state::with_state_mut(|st| {
-        font_mapping_warning_in(st, mapping_name_p, mapping_name_len, warning_type)
-    });
-}
-
 /// `&mut EngineState` core of [`font_mapping_warning`].
 pub(crate) fn font_mapping_warning_in(
     st: &mut EngineState,

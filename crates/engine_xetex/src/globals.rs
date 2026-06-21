@@ -545,12 +545,6 @@ pub(crate) fn set_mem_gr(p: i32, v: f64) {
     });
 }
 
-/// Read the `ptr` (void*) field of `mem[p]`.
-#[inline]
-pub(crate) fn mem_ptr(p: i32) -> *mut std::ffi::c_void {
-    // SAFETY: union projection; the `Vec` index is bounds-checked.
-    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].ptr })
-}
 /// Returns `&mem[p]` as a raw pointer — for C functions that expect a
 /// `memory_word*` node pointer (e.g. `real_get_native_italic_correction`).
 /// Equivalent to the C macro `get_native_italic_correction(p)` = `&mem[p]`.
@@ -561,21 +555,6 @@ pub(crate) fn mem_node_addr(p: i32) -> *mut std::ffi::c_void {
         s.mem.data.as_mut_ptr().add(p as usize) as *mut std::ffi::c_void
     })
 }
-/// Write the `ptr` (void*) field of `mem[p]`.
-#[inline]
-pub(crate) fn set_mem_ptr(p: i32, v: *mut std::ffi::c_void) {
-    crate::state::with_state_mut(|s| {
-        s.mem.data[p as usize].ptr = v;
-    });
-}
-
-/// Return a `*const u16` pointing to `mem[p]` — used for NATIVE_NODE_text.
-/// Valid past the borrow because the thread-local arena owner never reallocates.
-#[inline]
-pub(crate) fn mem_as_u16_ptr(p: i32) -> *const u16 {
-    crate::state::with_state(|s| s.mem.data.as_ptr().wrapping_add(p as usize) as *const u16)
-}
-
 /// Return a `*mut u16` pointing to `mem[p]` — for writing NATIVE_NODE_text.
 /// Valid past the borrow because the thread-local arena owner never reallocates.
 #[inline]
@@ -1299,15 +1278,6 @@ pub(crate) fn cur_ext() -> i32 {
     crate::state::with_state(|state| state.scanner.cur_ext)
 }
 
-#[inline]
-pub(crate) fn quoted_filename() -> bool {
-    crate::state::with_state(|state| state.scanner.quoted_filename)
-}
-#[inline]
-pub(crate) fn file_name_quote_char() -> u16 {
-    crate::state::with_state(|state| state.scanner.file_name_quote_char)
-}
-
 // ---------------------------------------------------------------------------
 // name_in_progress / stop_at_space
 // ---------------------------------------------------------------------------
@@ -1722,49 +1692,6 @@ pub(crate) fn set_font_mapping_ptr(f: i32, v: *mut libc::c_void) {
         s.fonts.font_mapping[f as usize] = v;
     });
 }
-/// Returns `loaded_font_mapping`.
-#[inline]
-pub(crate) fn loaded_font_mapping() -> *mut libc::c_void {
-    crate::state::with_state(|state| state.fonts.loaded_font_mapping)
-}
-/// Writes `loaded_font_mapping = v`.
-#[inline]
-pub(crate) fn set_loaded_font_mapping(v: *mut libc::c_void) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.loaded_font_mapping = v;
-    });
-}
-/// Returns `loaded_font_flags`.
-#[inline]
-pub(crate) fn loaded_font_flags() -> i32 {
-    crate::state::with_state(|state| state.fonts.loaded_font_flags as i32)
-}
-/// Writes `loaded_font_flags = v`.
-#[inline]
-pub(crate) fn set_loaded_font_flags(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.loaded_font_flags = v as libc::c_char;
-    });
-}
-/// Returns `loaded_font_letter_space`.
-#[inline]
-pub(crate) fn loaded_font_letter_space() -> i32 {
-    crate::state::with_state(|state| state.fonts.loaded_font_letter_space)
-}
-/// Writes `loaded_font_letter_space = v`.
-#[inline]
-pub(crate) fn set_loaded_font_letter_space(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.loaded_font_letter_space = v;
-    });
-}
-/// Writes `font_flags[f] = v`.
-#[inline]
-pub(crate) fn set_font_flags_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.font_flags[f as usize] = v as i8;
-    });
-}
 /// Returns `mapped_text[i]`, the UTF-16 output buffer from `apply_mapping`.
 #[inline]
 pub(crate) fn mapped_text_entry(i: i32) -> u16 {
@@ -1876,19 +1803,6 @@ pub(crate) fn set_kern_base_entry(f: i32, v: i32) {
 pub(crate) fn set_exten_base_entry(f: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.fonts.exten_base[f as usize] = v;
-    });
-}
-
-/// Returns `native_font_type_flag`.
-#[inline]
-pub(crate) fn native_font_type_flag() -> i32 {
-    crate::state::with_state(|state| state.fonts.native_font_type_flag)
-}
-/// Writes `native_font_type_flag = v`.
-#[inline]
-pub(crate) fn set_native_font_type_flag(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.native_font_type_flag = v;
     });
 }
 

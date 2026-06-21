@@ -8,6 +8,36 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 218 — 2026-06-21 — Execution: thread the font-loader hub through `read_font_info`
+
+**Type:** execution (workstream 01). Larger mechanical font-loader batch.
+
+**Code:** threaded the native-font lower path and the font-loader hub:
+`ext::load_mapping_file_in` / `read_common_features_in` / `load_ot_font(...)`
+/ `find_native_font_in(&mut EngineState, ...)`; `ext::load_tfm_font_mapping_in`;
+`fonts::load_native_font_in(&mut EngineState, ...)`; and
+`fonts::read_font_info_in(&mut EngineState, ...)`. Removed the newly-dead
+bridge wrappers/accessors (`find_native_font`, `new_native_character`,
+`load_native_font`, TFM mapping wrappers, native scratch globals, `mem_ptr`/
+`set_mem_ptr`, `push_font_info_b32s1`, `quoted_filename`/
+`file_name_quote_char`, etc.). `read_font_info_tfm` stays the existing threaded
+TFM parser; `read_font_info_in` now calls it and the native loader under the
+same borrow.
+
+**Validation:** `cargo fmt -p tectonic_engine_xetex`; `cargo check -p
+tectonic_engine_xetex` (warnings **40**); dashboard **29/2/7/4**; release
+rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1` and `1905.00148v1`. Metrics: `unsafe fn` **471**;
+`with_state(_mut)` call sites **715**.
+
+**Next:** thread `new_font_in` in `main_control.rs`. It is now unblocked by the
+font loader, but it needs a small `MainControlAbort` expansion for
+`OpenLogAbort`, `MakeTexStringAbort`, `ReadFontInfoAbort`, plus direct string
+pool save/restore and `eq_define`/`geq_define` calls. After `new_font_in`,
+`prefixed_command_in` is again the prize.
+
+---
+
 ## Idiom session 217 — 2026-06-21 — Execution: font-loader recon + first mapping helper
 
 **Type:** execution (workstream 01). Small code slice after a larger attempted

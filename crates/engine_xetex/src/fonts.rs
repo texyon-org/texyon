@@ -3,18 +3,17 @@
 //! font-loading group) by workstream 02 (module decomposition).
 
 use crate::consts::{INT_BASE, TOO_BIG_CHAR};
-use crate::errors::{error, ErrorOutcome};
+use crate::errors::ErrorOutcome;
 use crate::ext::{
-    aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping_global,
-    find_native_font, load_tfm_font_mapping, map_char_to_glyph, measure_native_node,
+    aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping_in,
+    find_native_font_in, load_tfm_font_mapping_in, map_char_to_glyph, measure_native_node,
     ot_get_font_metrics, release_font_engine,
 };
-use crate::globals::eqtb_b32s1;
-use crate::io::{pack_file_name, tt_xetex_open_input};
-use crate::output::{capture_to_diagnostic, char_warning_in, error_here_with_diagnostic};
+use crate::io::{pack_file_name_in, tt_xetex_open_input_in};
+use crate::output::char_warning_in;
 use crate::scan::cnl_get_node;
-use crate::scan::{node_recycle_abort, push_font_info_b32s1, NodeRecycleAbort};
-use crate::state::FontState;
+use crate::scan::{node_recycle_abort, NodeRecycleAbort};
+use crate::state::{EngineState, FontState};
 
 extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
@@ -270,19 +269,6 @@ pub(crate) fn new_native_character_in(
     Ok(p)
 }
 
-/// Allocate a native text node for one Unicode scalar, applying font mappings.
-///
-/// translated from xetex-xetex0.c:6276 (new_native_character)
-///
-/// Phase-C: threaded into [`new_native_character_in`]; this thin wrapper takes
-/// the single `with_state_mut` borrow for the still-legacy callers and runs the
-/// §5 cold abort tail after it drops.
-pub unsafe fn new_native_character(f: i32, c: u32) -> i32 {
-    match crate::state::with_state_mut(|st| new_native_character_in(st, f, c)) {
-        Ok(p) => p,
-        Err(a) => a.finish(),
-    }
-}
 unsafe fn tfm_getc(handle: usize) -> i32 {
     ttstub_input_getc(handle) as i32
 }
@@ -338,29 +324,72 @@ unsafe fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Opti
 ///
 /// translated from xetex-xetex0.c:6350 (read_font_info)
 pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
+    match crate::state::with_state_mut(|st| read_font_info_in(st, u, nom, aire, s)) {
+        Ok(f) => f,
+        Err(e) => e.finish(),
+    }
+}
+
+pub(crate) enum ReadFontInfoAbort {
+    TfmOutOfMemory,
+    Native(LoadNativeFontAbort),
+    Error(ErrorOutcome),
+}
+
+impl ReadFontInfoAbort {
+    pub(crate) fn finish(self) -> ! {
+        match self {
+            ReadFontInfoAbort::TfmOutOfMemory => unsafe {
+                _tt_abort(c"not enough memory to load another font".as_ptr())
+            },
+            ReadFontInfoAbort::Native(e) => e.finish(),
+            ReadFontInfoAbort::Error(outcome) => {
+                unsafe { outcome.finish() };
+                unreachable!("read_font_info error outcome is divergent here")
+            }
+        }
+    }
+}
+
+fn name_of_file_ptr(st: &mut EngineState) -> *mut libc::c_char {
+    if st.input.name_of_file.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        st.input.name_of_file.as_mut_ptr()
+    }
+}
+
+pub(crate) unsafe fn read_font_info_in(
+    st: &mut EngineState,
+    u: i32,
+    nom: i32,
+    aire: i32,
+    s: i32,
+) -> Result<i32, ReadFontInfoAbort> {
     let mut name_too_long = false;
     let mut file_opened = false;
     let mut g = FONT_BASE;
     let mut tfm_file = INVALID_HANDLE;
 
-    pack_file_name(nom, aire, crate::globals::cur_ext());
+    pack_file_name_in(st, nom, aire, st.scanner.cur_ext);
 
-    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
-        crate::output::begin_diagnostic();
-        crate::output::diagnostic_begin_capture_warning_here();
-        crate::output::print_nl_cstr(c"Requested font \"".as_ptr());
-        crate::output::print_cstr(crate::globals::name_of_file());
-        crate::output::print_char(b'"' as i32);
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
+        crate::output::begin_diagnostic_in(st);
+        crate::output::diagnostic_begin_capture_warning_here_in(st);
+        crate::output::print_nl_cstr_in(st, c"Requested font \"".as_ptr());
+        let name = name_of_file_ptr(st);
+        crate::output::print_cstr_in(st, name);
+        crate::output::print_char_in(st, b'"' as i32);
         if s < 0 {
-            crate::output::print_cstr(c" scaled ".as_ptr());
-            crate::output::print_int(-s);
+            crate::output::print_cstr_in(st, c" scaled ".as_ptr());
+            crate::output::print_int_in(st, -s);
         } else {
-            crate::output::print_cstr(c" at ".as_ptr());
-            crate::output::print_scaled(s);
-            crate::output::print_cstr(c"pt".as_ptr());
+            crate::output::print_cstr_in(st, c" at ".as_ptr());
+            crate::output::print_scaled_in(st, s);
+            crate::output::print_cstr_in(st, c"pt".as_ptr());
         }
-        capture_to_diagnostic(std::ptr::null_mut());
-        crate::output::end_diagnostic(false);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::end_diagnostic_in(st, false);
     }
 
     let mut bad_tfm = false;
@@ -373,26 +402,26 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
             }};
         }
 
-        if crate::globals::quoted_filename() {
-            g = load_native_font(u, nom, aire, s);
+        if st.scanner.quoted_filename {
+            g = load_native_font_in(st, u, nom, aire, s).map_err(ReadFontInfoAbort::Native)?;
             if g != FONT_BASE {
                 break 'read;
             }
         }
 
-        name_too_long = crate::string_pool::length_global(nom) > 255
-            || crate::string_pool::length_global(aire) > 255;
+        name_too_long = crate::string_pool::length(&st.strings, nom) > 255
+            || crate::string_pool::length(&st.strings, aire) > 255;
         if name_too_long {
             bad!();
         }
 
-        pack_file_name(nom, aire, EMPTY_STRING);
-        check_for_tfm_font_mapping_global();
+        pack_file_name_in(st, nom, aire, EMPTY_STRING);
+        check_for_tfm_font_mapping_in(name_of_file_ptr(st));
 
-        tfm_file = tt_xetex_open_input(TTBC_FILE_FORMAT_TFM);
+        tfm_file = tt_xetex_open_input_in(st, TTBC_FILE_FORMAT_TFM);
         if tfm_file == INVALID_HANDLE {
-            if !crate::globals::quoted_filename() {
-                g = load_native_font(u, nom, aire, s);
+            if !st.scanner.quoted_filename {
+                g = load_native_font_in(st, u, nom, aire, s).map_err(ReadFontInfoAbort::Native)?;
                 if g != FONT_BASE {
                     break 'read;
                 }
@@ -407,106 +436,106 @@ pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
         // for the two default-char int-params). The cold `_tt_abort` overflow
         // path and the with_state-bearing `load_tfm_font_mapping` are kept
         // OUTSIDE the borrow (01b §4a/§5 borrow-dropping).
-        let (parse, scale_side_effect) = crate::state::with_state_mut(|st| {
-            let st = &mut *st;
-            // SAFETY: `read_font_info_tfm` only wraps the unsafe TFM byte
-            // readers; it touches no thread-local state beyond the borrows.
-            unsafe { read_font_info_tfm(&mut st.fonts, &st.eqtb, tfm_file, nom, aire, s) }
-        });
+        let (parse, scale_side_effect) =
+            read_font_info_tfm(&mut st.fonts, &st.eqtb, tfm_file, nom, aire, s);
         // Apply the borrow-free `xn_over_d` side effects (01b §4a). Timing is
         // observably identical to the original: nothing between the scaling
         // point and here reads `tex_remainder`/`arith_error`.
         if let Some((remainder, overflowed)) = scale_side_effect {
-            crate::globals::set_tex_remainder(remainder);
+            st.errors.tex_remainder = remainder;
             if overflowed {
-                crate::globals::set_arith_error(true);
+                st.errors.arith_error = true;
             }
         }
         match parse {
             TfmParse::OutOfMemory => {
-                _tt_abort(c"not enough memory to load another font".as_ptr());
+                return Err(ReadFontInfoAbort::TfmOutOfMemory);
             }
             TfmParse::Bad => bad!(),
             TfmParse::Loaded(f) => {
                 g = f;
-                crate::globals::set_font_mapping_ptr(f, load_tfm_font_mapping());
+                let mapping = load_tfm_font_mapping_in(st);
+                st.fonts.set_font_mapping_ptr(f, mapping);
             }
         }
     }
 
-    if bad_tfm && eqtb_b32s1(INT_BASE + INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR_RFI) == 0 {
-        error_here_with_diagnostic(c"Font ".as_ptr());
-        crate::output::sprint_cs(u);
-        crate::output::print_char(b'=' as i32);
-        if crate::globals::file_name_quote_char() != 0 {
-            crate::output::print_char(crate::globals::file_name_quote_char() as i32);
+    if bad_tfm
+        && st
+            .eqtb
+            .b32s1(INT_BASE + INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR_RFI)
+            == 0
+    {
+        crate::output::error_here_with_diagnostic_in(st, c"Font ".as_ptr());
+        crate::output::sprint_cs_in(st, u);
+        crate::output::print_char_in(st, b'=' as i32);
+        if st.scanner.file_name_quote_char != 0 {
+            crate::output::print_char_in(st, st.scanner.file_name_quote_char as i32);
         }
-        crate::output::print_file_name(nom, aire, crate::globals::cur_ext());
-        if crate::globals::file_name_quote_char() != 0 {
-            crate::output::print_char(crate::globals::file_name_quote_char() as i32);
+        crate::output::print_file_name_in(st, nom, aire, st.scanner.cur_ext);
+        if st.scanner.file_name_quote_char != 0 {
+            crate::output::print_char_in(st, st.scanner.file_name_quote_char as i32);
         }
         if s >= 0 {
-            crate::output::print_cstr(c" at ".as_ptr());
-            crate::output::print_scaled(s);
-            crate::output::print_cstr(c"pt".as_ptr());
+            crate::output::print_cstr_in(st, c" at ".as_ptr());
+            crate::output::print_scaled_in(st, s);
+            crate::output::print_cstr_in(st, c"pt".as_ptr());
         } else if s != -1000 {
-            crate::output::print_cstr(c" scaled ".as_ptr());
-            crate::output::print_int(-s);
+            crate::output::print_cstr_in(st, c" scaled ".as_ptr());
+            crate::output::print_int_in(st, -s);
         }
 
         if file_opened {
-            crate::output::print_cstr(c" not loadable: Bad metric (TFM) file".as_ptr());
+            crate::output::print_cstr_in(st, c" not loadable: Bad metric (TFM) file".as_ptr());
         } else if name_too_long {
-            crate::output::print_cstr(c" not loadable: Metric (TFM) file name too long".as_ptr());
+            crate::output::print_cstr_in(
+                st,
+                c" not loadable: Metric (TFM) file name too long".as_ptr(),
+            );
         } else {
-            crate::output::print_cstr(
+            crate::output::print_cstr_in(
+                st,
                 c" not loadable: Metric (TFM) file or installed font not found".as_ptr(),
             );
         }
-        capture_to_diagnostic(std::ptr::null_mut());
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
 
-        crate::globals::set_help_ptr(5);
-        crate::globals::set_help_line(
-            4,
-            c"I wasn't able to read the size data for this font,".as_ptr(),
-        );
-        crate::globals::set_help_line(3, c"so I will ignore the font specification.".as_ptr());
-        crate::globals::set_help_line(
-            2,
-            c"[Wizards can fix TFM files using TFtoPL/PLtoTF.]".as_ptr(),
-        );
-        crate::globals::set_help_line(
-            1,
-            c"You might try inserting a different font spec;".as_ptr(),
-        );
-        crate::globals::set_help_line(
-            0,
-            c"e.g., type `I\\font<same font id>=<substitute font name>'.".as_ptr(),
-        );
+        st.errors.help_ptr = 5;
+        st.errors.help_line[4] = c"I wasn't able to read the size data for this font,".as_ptr();
+        st.errors.help_line[3] = c"so I will ignore the font specification.".as_ptr();
+        st.errors.help_line[2] = c"[Wizards can fix TFM files using TFtoPL/PLtoTF.]".as_ptr();
+        st.errors.help_line[1] = c"You might try inserting a different font spec;".as_ptr();
+        st.errors.help_line[0] =
+            c"e.g., type `I\\font<same font id>=<substitute font name>'.".as_ptr();
 
-        error();
+        let outcome = crate::errors::error_in(st);
+        if !matches!(outcome, ErrorOutcome::Continue) {
+            return Err(ReadFontInfoAbort::Error(outcome));
+        }
     }
 
     if file_opened {
         ttstub_input_close(tfm_file);
     }
 
-    if eqtb_b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 && (g == FONT_BASE || file_opened) {
-        crate::output::begin_diagnostic();
-        crate::output::diagnostic_begin_capture_warning_here();
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 && (g == FONT_BASE || file_opened)
+    {
+        crate::output::begin_diagnostic_in(st);
+        crate::output::diagnostic_begin_capture_warning_here_in(st);
 
-        crate::output::print_nl_cstr(c" -> ".as_ptr());
+        crate::output::print_nl_cstr_in(st, c" -> ".as_ptr());
         if g == FONT_BASE {
-            crate::output::print_cstr(c"font not found, using \"nullfont\"".as_ptr());
+            crate::output::print_cstr_in(st, c"font not found, using \"nullfont\"".as_ptr());
         } else {
-            crate::output::print_cstr(crate::globals::name_of_file());
+            let name = name_of_file_ptr(st);
+            crate::output::print_cstr_in(st, name);
         }
 
-        capture_to_diagnostic(std::ptr::null_mut());
-        crate::output::end_diagnostic(false);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::end_diagnostic_in(st, false);
     }
 
-    g
+    Ok(g)
 }
 
 /// Outcome of the threaded TFM-parse core ([`read_font_info_tfm`]).
@@ -993,158 +1022,183 @@ unsafe fn init_native_font_tables(
     (font_ptr, x_ht, cap_ht, font_slant)
 }
 
+pub(crate) enum LoadNativeFontAbort {
+    PoolOverflow,
+    StringOverflow(NodeRecycleAbort),
+    NativeChar(NativeCharAbort),
+    Error(ErrorOutcome),
+}
+
+impl LoadNativeFontAbort {
+    pub(crate) fn finish(self) -> ! {
+        match self {
+            LoadNativeFontAbort::PoolOverflow => {
+                let (pool_size, init_pool_ptr) =
+                    crate::state::with_state(|st| (st.strings.pool_size, st.strings.init_pool_ptr));
+                unsafe { crate::errors::overflow(c"pool size".as_ptr(), pool_size - init_pool_ptr) }
+            }
+            LoadNativeFontAbort::StringOverflow(e) => unsafe { node_recycle_abort(e) },
+            LoadNativeFontAbort::NativeChar(e) => e.finish(),
+            LoadNativeFontAbort::Error(outcome) => {
+                unsafe { outcome.finish() };
+                unreachable!("load_native_font error outcome is divergent here")
+            }
+        }
+    }
+}
+
+fn push_font_info_b32s1_in(st: &mut EngineState, v: i32) {
+    let k = st.fonts.fmem_ptr;
+    st.fonts.set_font_info_b32s1(k, v);
+    st.fonts.fmem_ptr = k + 1;
+}
+
 /// Load a native AAT/OpenType/Graphite font and initialize TeX font tables.
 ///
 /// translated from xetex-xetex0.c:6284 (load_native_font)
-pub unsafe fn load_native_font(u: i32, nom: i32, aire: i32, mut s: i32) -> i32 {
-    let font_engine = find_native_font(crate::globals::name_of_file(), s);
+pub(crate) unsafe fn load_native_font_in(
+    st: &mut EngineState,
+    u: i32,
+    nom: i32,
+    aire: i32,
+    mut s: i32,
+) -> Result<i32, LoadNativeFontAbort> {
+    let name_of_file = if st.input.name_of_file.is_empty() {
+        std::ptr::null_mut()
+    } else {
+        st.input.name_of_file.as_mut_ptr()
+    };
+    let font_engine = find_native_font_in(st, name_of_file, s);
     if font_engine.is_null() {
-        return FONT_BASE;
+        return Ok(FONT_BASE);
     }
 
     let actual_size = if s >= 0 {
         s
     } else if s != -1000 {
-        crate::scaled_math::xn_over_d(get_loaded_font_design_size(), -s, 1000)
+        crate::scaled_math::xn_over_d_in(&mut st.errors, get_loaded_font_design_size(), -s, 1000)
     } else {
         get_loaded_font_design_size()
     };
 
-    if crate::globals::pool_ptr() + crate::globals::name_length() > crate::globals::pool_size() {
-        crate::errors::overflow(
-            c"pool size".as_ptr(),
-            crate::globals::pool_size() - crate::globals::init_pool_ptr(),
-        );
+    if st.strings.pool_ptr + st.input.name_length > st.strings.pool_size {
+        return Err(LoadNativeFontAbort::PoolOverflow);
     }
 
-    for k in 0..crate::globals::name_length() {
-        crate::globals::set_str_pool(
-            crate::globals::pool_ptr(),
-            *crate::globals::name_of_file().add(k as usize) as u8 as u16,
-        );
-        crate::globals::set_pool_ptr(crate::globals::pool_ptr() + 1);
+    for k in 0..st.input.name_length {
+        st.strings.str_pool[st.strings.pool_ptr as usize] =
+            st.input.name_of_file[k as usize] as u8 as u16;
+        st.strings.pool_ptr += 1;
     }
 
-    let full_name = crate::string_pool::make_string_global();
+    let full_name = crate::string_pool::make_string(&mut st.strings)
+        .map_err(LoadNativeFontAbort::StringOverflow)?;
 
     let mut f = FONT_BASE + 1;
-    while f <= crate::globals::font_ptr() {
-        if crate::globals::font_area_entry(f) == crate::globals::native_font_type_flag()
-            && crate::string_pool::str_eq_str_global(crate::globals::font_name_entry(f), full_name)
-            && crate::globals::font_size_entry(f) == actual_size
+    while f <= st.fonts.font_ptr {
+        if st.fonts.font_area[f as usize] == st.fonts.native_font_type_flag
+            && crate::string_pool::str_eq_str(
+                &st.strings,
+                st.fonts.font_name[f as usize],
+                full_name,
+            )
+            && st.fonts.font_size[f as usize] == actual_size
         {
-            release_font_engine(font_engine, crate::globals::native_font_type_flag());
-            crate::globals::set_str_ptr(crate::globals::str_ptr() - 1);
-            crate::globals::set_pool_ptr(crate::globals::str_start(
-                crate::globals::str_ptr() - TOO_BIG_CHAR,
-            ));
-            return f;
+            release_font_engine(font_engine, st.fonts.native_font_type_flag);
+            st.strings.str_ptr -= 1;
+            st.strings.pool_ptr =
+                st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+            return Ok(f);
         }
         f += 1;
     }
 
-    let num_font_dimens = if crate::globals::native_font_type_flag() == OTGR_FONT_FLAG
-        && isOpenTypeMathFont(font_engine)
-    {
-        65
-    } else {
-        8
-    };
+    let num_font_dimens =
+        if st.fonts.native_font_type_flag == OTGR_FONT_FLAG && isOpenTypeMathFont(font_engine) {
+            65
+        } else {
+            8
+        };
 
-    if crate::globals::font_ptr() == crate::globals::font_max()
-        || crate::globals::fmem_ptr() + num_font_dimens > crate::globals::font_mem_size()
+    if st.fonts.font_ptr == st.fonts.font_max
+        || st.fonts.fmem_ptr + num_font_dimens > st.fonts.font_mem_size
     {
-        error_here_with_diagnostic(c"Font ".as_ptr());
-        crate::output::sprint_cs(u);
-        crate::output::print_char(b'=' as i32);
-        if crate::globals::file_name_quote_char() != 0 {
-            crate::output::print_char(crate::globals::file_name_quote_char() as i32);
+        crate::output::error_here_with_diagnostic_in(st, c"Font ".as_ptr());
+        crate::output::sprint_cs_in(st, u);
+        crate::output::print_char_in(st, b'=' as i32);
+        if st.scanner.file_name_quote_char != 0 {
+            crate::output::print_char_in(st, st.scanner.file_name_quote_char as i32);
         }
-        crate::output::print_file_name(nom, aire, crate::globals::cur_ext());
-        if crate::globals::file_name_quote_char() != 0 {
-            crate::output::print_char(crate::globals::file_name_quote_char() as i32);
+        crate::output::print_file_name_in(st, nom, aire, st.scanner.cur_ext);
+        if st.scanner.file_name_quote_char != 0 {
+            crate::output::print_char_in(st, st.scanner.file_name_quote_char as i32);
         }
         if s >= 0 {
-            crate::output::print_cstr(c" at ".as_ptr());
-            crate::output::print_scaled(s);
-            crate::output::print_cstr(c"pt".as_ptr());
+            crate::output::print_cstr_in(st, c" at ".as_ptr());
+            crate::output::print_scaled_in(st, s);
+            crate::output::print_cstr_in(st, c"pt".as_ptr());
         } else if s != -1000 {
-            crate::output::print_cstr(c" scaled ".as_ptr());
-            crate::output::print_int(-s);
+            crate::output::print_cstr_in(st, c" scaled ".as_ptr());
+            crate::output::print_int_in(st, -s);
         }
-        crate::output::print_cstr(c" not loaded: Not enough room left".as_ptr());
-        capture_to_diagnostic(std::ptr::null_mut());
+        crate::output::print_cstr_in(st, c" not loaded: Not enough room left".as_ptr());
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
 
-        crate::globals::set_help_ptr(4);
-        crate::globals::set_help_line(
-            3,
-            c"I'm afraid I won't be able to make use of this font,".as_ptr(),
-        );
-        crate::globals::set_help_line(
-            2,
-            c"because my memory for character-size data is too small.".as_ptr(),
-        );
-        crate::globals::set_help_line(
-            1,
-            c"If you're really stuck, ask a wizard to enlarge me.".as_ptr(),
-        );
-        crate::globals::set_help_line(
-            0,
-            c"Or maybe try `I\\font<same font id>=<name of loaded font>'.".as_ptr(),
-        );
+        st.errors.help_ptr = 4;
+        st.errors.help_line[3] = c"I'm afraid I won't be able to make use of this font,".as_ptr();
+        st.errors.help_line[2] =
+            c"because my memory for character-size data is too small.".as_ptr();
+        st.errors.help_line[1] = c"If you're really stuck, ask a wizard to enlarge me.".as_ptr();
+        st.errors.help_line[0] =
+            c"Or maybe try `I\\font<same font id>=<name of loaded font>'.".as_ptr();
 
-        error();
-        return FONT_BASE;
+        let outcome = crate::errors::error_in(st);
+        if !matches!(outcome, ErrorOutcome::Continue) {
+            return Err(LoadNativeFontAbort::Error(outcome));
+        }
+        return Ok(FONT_BASE);
     }
 
-    // Phase-C (session 129): the contiguous font-table-init block runs under
-    // one `&mut FontState` borrow (+ disjoint `&EqtbState` for the two
-    // default-char int-params). The extern-C metric extractors are borrow-safe;
-    // the with_state-bearing `new_native_character`/`free_node`/`push_font_info`
-    // calls all come *after* this block, so they stay outside the borrow.
-    let (font_ptr, x_ht, cap_ht, font_slant) = crate::state::with_state_mut(|st| {
-        let st = &mut *st;
-        // SAFETY: only the extern-C font-metric extractors are unsafe here.
-        unsafe {
-            init_native_font_tables(
-                &mut st.fonts,
-                &st.eqtb,
-                font_engine,
-                full_name,
-                actual_size,
-                num_font_dimens,
-            )
-        }
-    });
+    let (font_ptr, x_ht, cap_ht, font_slant) = init_native_font_tables(
+        &mut st.fonts,
+        &st.eqtb,
+        font_engine,
+        full_name,
+        actual_size,
+        num_font_dimens,
+    );
 
-    let p = new_native_character(font_ptr, b' ' as u32);
-    s = crate::globals::mem_b32s1(p + 1) + crate::globals::loaded_font_letter_space();
-    let glyph_info = crate::globals::mem_ptr(p + 5);
+    let p = new_native_character_in(st, font_ptr, b' ' as u32)
+        .map_err(LoadNativeFontAbort::NativeChar)?;
+    s = st.mem.b32s1(p + 1) + st.fonts.loaded_font_letter_space;
+    let glyph_info = st.mem.ptr(p + 5);
     if !glyph_info.is_null() {
         libc::free(glyph_info);
-        crate::globals::set_mem_ptr(p + 5, std::ptr::null_mut());
+        st.mem.set_ptr(p + 5, std::ptr::null_mut());
     }
-    crate::mem::free_node_global(p, crate::globals::mem_b16s3(p + 4) as i32);
+    let node_size = st.mem.b16s3(p + 4) as i32;
+    crate::mem::free_node(&mut st.mem, p, node_size);
 
-    push_font_info_b32s1(font_slant);
-    push_font_info_b32s1(s);
-    push_font_info_b32s1(s / 2);
-    push_font_info_b32s1(s / 3);
-    push_font_info_b32s1(x_ht);
-    push_font_info_b32s1(crate::globals::font_size_entry(font_ptr));
-    push_font_info_b32s1(s / 3);
-    push_font_info_b32s1(cap_ht);
+    push_font_info_b32s1_in(st, font_slant);
+    push_font_info_b32s1_in(st, s);
+    push_font_info_b32s1_in(st, s / 2);
+    push_font_info_b32s1_in(st, s / 3);
+    push_font_info_b32s1_in(st, x_ht);
+    push_font_info_b32s1_in(st, st.fonts.font_size[font_ptr as usize]);
+    push_font_info_b32s1_in(st, s / 3);
+    push_font_info_b32s1_in(st, cap_ht);
 
     if num_font_dimens == 65 {
-        push_font_info_b32s1(num_font_dimens);
+        push_font_info_b32s1_in(st, num_font_dimens);
         for k in 0..=55 {
-            push_font_info_b32s1(get_ot_math_constant(font_ptr, k));
+            push_font_info_b32s1_in(st, get_ot_math_constant(font_ptr, k));
         }
     }
 
-    crate::globals::set_font_mapping_ptr(font_ptr, crate::globals::loaded_font_mapping());
-    crate::globals::set_font_flags_entry(font_ptr, crate::globals::loaded_font_flags());
-    font_ptr
+    st.fonts
+        .set_font_mapping_ptr(font_ptr, st.fonts.loaded_font_mapping);
+    st.fonts.font_flags[font_ptr as usize] = st.fonts.loaded_font_flags as i8;
+    Ok(font_ptr)
 }
 
 // ---- consts + NativeCharSrc moved/duplicated from scan.rs (workstream 02) ----

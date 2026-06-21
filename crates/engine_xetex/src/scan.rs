@@ -75,7 +75,6 @@ const MU_VAL_SCAN: i16 = 3;
 // INT_BASE + INT_PAR__xetex_hyphenatable_length offset for max_hyphenatable_length
 // (xetex_format.h:568, xetex_format.h:115; xetex_format.h:7826729 = INT_BASE).
 const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80; // xetex_format.h:115
-const INT_PAR_XETEX_TRACING_FONTS: i32 = 77; // xetex_format.h:112
 const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095; // xetex-constants.h:334
 
 // xetex-constants.h:26
@@ -433,17 +432,6 @@ pub fn max_hyphenatable_length_in(eqtb: &crate::state::EqtbState) -> i32 {
 // ---------------------------------------------------------------------------
 // scan_normal_glue / scan_mu_glue
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// get_tracing_fonts_state / scan_pdf_ext_toks
-// ---------------------------------------------------------------------------
-
-/// Returns INTPAR(xetex_tracing_fonts).
-///
-/// translated from xetex-xetex0.c:9082 (get_tracing_fonts_state)
-pub fn get_tracing_fonts_state() -> i32 {
-    eqtb_b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS)
-}
 
 // ---------------------------------------------------------------------------
 // x_token / scan_optional_equals
@@ -2547,16 +2535,6 @@ pub unsafe fn new_native_word_node_global(f: i32, n: i32) -> i32 {
         Ok(q) => q,
         Err(e) => node_recycle_abort(e),
     }
-}
-
-// ---------------------------------------------------------------------------
-// load_native_font
-// ---------------------------------------------------------------------------
-
-pub(crate) fn push_font_info_b32s1(v: i32) {
-    let k = crate::globals::fmem_ptr();
-    crate::globals::set_font_info_b32s1(k, v);
-    crate::globals::set_fmem_ptr(k + 1);
 }
 
 // ---------------------------------------------------------------------------

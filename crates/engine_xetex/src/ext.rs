@@ -1,11 +1,10 @@
 // translated from xetex-ext.c
 use crate::output::begin_diagnostic;
 use crate::output::end_diagnostic;
-use crate::output::font_mapping_warning;
 use crate::output::print_char;
 use crate::output::print_int;
 use crate::output::print_nl;
-use crate::scan::get_tracing_fonts_state;
+use crate::state::EngineState;
 use crate::texmfmp::gettexstring;
 use crate::texmfmp::maketexstring;
 
@@ -73,6 +72,7 @@ const UTF16_NATIVE: u16 = 3;
 #[cfg(target_endian = "little")]
 const UTF16_NATIVE: u16 = 4;
 const FONT_FLAGS_COLORED: i32 = 0x01;
+const INT_PAR_XETEX_TRACING_FONTS: i32 = 77; // xetex_format.h:112
 
 static mut SAVED_MAPPING_NAME: *mut c_char = ptr::null_mut();
 
@@ -323,6 +323,14 @@ unsafe fn print_c_string(s: *const c_char) {
     let mut p = s;
     while *p != 0 {
         print_char(*p as i32);
+        p = p.add(1);
+    }
+}
+
+unsafe fn print_c_string_in(st: &mut EngineState, s: *const c_char) {
+    let mut p = s;
+    while *p != 0 {
+        crate::output::print_raw_char_in(st, *p as u8 as u16, true);
         p = p.add(1);
     }
 }
@@ -600,7 +608,8 @@ pub(crate) fn print_utf8_str_in(
 }
 
 // translated from xetex-ext.c:187 (load_mapping_file)
-unsafe fn load_mapping_file(
+unsafe fn load_mapping_file_in(
+    st: &mut EngineState,
     s: *const c_char,
     e: *const c_char,
     byte_mapping: c_char,
@@ -644,14 +653,29 @@ unsafe fn load_mapping_file(
         }
 
         if cnv.is_null() {
-            font_mapping_warning(buffer as *const c_void, libc::strlen(buffer) as i32, 2);
-        } else if get_tracing_fonts_state() > 1 {
-            font_mapping_warning(buffer as *const c_void, libc::strlen(buffer) as i32, 0);
+            crate::output::font_mapping_warning_in(
+                st,
+                buffer as *const c_void,
+                libc::strlen(buffer) as i32,
+                2,
+            );
+        } else if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 1 {
+            crate::output::font_mapping_warning_in(
+                st,
+                buffer as *const c_void,
+                libc::strlen(buffer) as i32,
+                0,
+            );
         }
 
         libc::free(mapping as *mut c_void);
     } else {
-        font_mapping_warning(buffer as *const c_void, libc::strlen(buffer) as i32, 1);
+        crate::output::font_mapping_warning_in(
+            st,
+            buffer as *const c_void,
+            libc::strlen(buffer) as i32,
+            1,
+        );
     }
 
     libc::free(buffer as *mut c_void);
@@ -677,15 +701,12 @@ pub(crate) unsafe fn check_for_tfm_font_mapping_in(name_of_file: *mut c_char) {
     }
 }
 
-pub unsafe fn check_for_tfm_font_mapping(name_of_file: *mut c_char) {
-    check_for_tfm_font_mapping_in(name_of_file);
-}
-
 // translated from xetex-ext.c:251 (load_tfm_font_mapping)
-pub unsafe fn load_tfm_font_mapping() -> *mut c_void {
+pub(crate) unsafe fn load_tfm_font_mapping_in(st: &mut EngineState) -> *mut c_void {
     let mut rval = ptr::null_mut();
     if !SAVED_MAPPING_NAME.is_null() {
-        rval = load_mapping_file(
+        rval = load_mapping_file_in(
+            st,
             SAVED_MAPPING_NAME,
             SAVED_MAPPING_NAME.add(libc::strlen(SAVED_MAPPING_NAME)),
             1,
@@ -732,12 +753,36 @@ pub unsafe extern "C" fn readCommonFeatures(
     letterspace: *mut f32,
     rgb_value: *mut u32,
 ) -> c_int {
+    crate::state::with_state_mut(|st| {
+        read_common_features_in(
+            st,
+            feat,
+            end,
+            extend,
+            slant,
+            embolden,
+            letterspace,
+            rgb_value,
+        )
+    })
+}
+
+unsafe fn read_common_features_in(
+    st: &mut EngineState,
+    feat: *const c_char,
+    end: *const c_char,
+    extend: *mut f32,
+    slant: *mut f32,
+    embolden: *mut f32,
+    letterspace: *mut f32,
+    rgb_value: *mut u32,
+) -> c_int {
     let mut sep = str_starts_with(feat, b"mapping");
     if !sep.is_null() {
         if peek(sep) != b'=' {
             return -1;
         }
-        crate::globals::set_loaded_font_mapping(load_mapping_file(sep.add(1), end, 0));
+        st.fonts.loaded_font_mapping = load_mapping_file_in(st, sep.add(1), end, 0);
         return 1;
     }
 
@@ -791,9 +836,8 @@ pub unsafe extern "C" fn readCommonFeatures(
         *rgb_value = read_rgb_a(&mut sep);
         let consumed = sep.offset_from(start);
         if consumed == 6 || consumed == 8 {
-            crate::globals::set_loaded_font_flags(
-                crate::globals::loaded_font_flags() | FONT_FLAGS_COLORED,
-            );
+            st.fonts.loaded_font_flags =
+                (st.fonts.loaded_font_flags as i32 | FONT_FLAGS_COLORED) as c_char;
         } else {
             return -1;
         }
@@ -805,6 +849,7 @@ pub unsafe extern "C" fn readCommonFeatures(
 
 // translated from xetex-ext.c:72 (loadOTfont) — private helper
 unsafe fn load_ot_font(
+    st: &mut EngineState,
     _font_ref: RawPlatformFontRef,
     font: XeTeXFont,
     scaled_size: i32,
@@ -924,7 +969,8 @@ unsafe fn load_ot_font(
             }
 
             if !handled && !bad_option {
-                let i = readCommonFeatures(
+                let i = read_common_features_in(
+                    st,
                     cp1,
                     cp2,
                     &mut extend,
@@ -980,15 +1026,15 @@ unsafe fn load_ot_font(
                     cp3 = cp3.add(1);
                 }
                 if cp3 == cp1.add(8) {
-                    crate::globals::set_loaded_font_flags(
-                        crate::globals::loaded_font_flags() | FONT_FLAGS_VERTICAL,
-                    );
+                    st.fonts.loaded_font_flags =
+                        (st.fonts.loaded_font_flags as i32 | FONT_FLAGS_VERTICAL) as c_char;
                     handled = true;
                 }
             }
 
             if !handled || bad_option {
-                crate::output::font_feature_warning(
+                crate::output::font_feature_warning_in(
+                    st,
                     cp1 as *const c_void,
                     cp2.offset_from(cp1) as i32,
                     ptr::null(),
@@ -1016,16 +1062,15 @@ unsafe fn load_ot_font(
     }
 
     if letterspace != 0.0 {
-        crate::globals::set_loaded_font_letter_space(
-            (letterspace as c_double / 100.0 * scaled_size as c_double) as i32,
-        );
+        st.fonts.loaded_font_letter_space =
+            (letterspace as c_double / 100.0 * scaled_size as c_double) as i32;
     }
 
-    if (crate::globals::loaded_font_flags() & FONT_FLAGS_COLORED) == 0 {
+    if (st.fonts.loaded_font_flags as i32 & FONT_FLAGS_COLORED) == 0 {
         rgb_value = 0x000000FF;
     }
 
-    if (crate::globals::loaded_font_flags() & FONT_FLAGS_VERTICAL) != 0 {
+    if (st.fonts.loaded_font_flags as i32 & FONT_FLAGS_VERTICAL) != 0 {
         setFontLayoutDir(font, 1);
     }
 
@@ -1043,14 +1088,26 @@ unsafe fn load_ot_font(
         libc::free(language as *mut c_void);
     }
     if !engine.is_null() {
-        crate::globals::set_native_font_type_flag(OTGR_FONT_FLAG as i32);
+        st.fonts.native_font_type_flag = OTGR_FONT_FLAG as i32;
     }
 
     engine
 }
 
+fn name_of_file_mut_ptr(st: &mut EngineState) -> *mut c_char {
+    if st.input.name_of_file.is_empty() {
+        ptr::null_mut()
+    } else {
+        st.input.name_of_file.as_mut_ptr()
+    }
+}
+
 // translated from xetex-ext.c:283 (find_native_font)
-pub unsafe fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut c_void {
+pub(crate) unsafe fn find_native_font_in(
+    st: &mut EngineState,
+    uname: *mut c_char,
+    mut scaled_size: i32,
+) -> *mut c_void {
     let mut rval: *mut c_void = ptr::null_mut();
     let name = uname;
     let mut var: *mut c_char = ptr::null_mut();
@@ -1061,9 +1118,9 @@ pub unsafe fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut
     let mut font: XeTeXFont = ptr::null_mut();
     let mut index = 0;
 
-    crate::globals::set_loaded_font_mapping(ptr::null_mut());
-    crate::globals::set_loaded_font_flags(0);
-    crate::globals::set_loaded_font_letter_space(0);
+    st.fonts.loaded_font_mapping = ptr::null_mut();
+    st.fonts.loaded_font_flags = 0;
+    st.fonts.loaded_font_letter_space = 0;
 
     splitFontName(name, &mut var, &mut feat, &mut end, &mut index);
     let name_string = xmalloc((var.offset_from(name) + 1) as libc::size_t) as *mut c_char;
@@ -1085,7 +1142,8 @@ pub unsafe fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut
                 if scaled_size == -1000 {
                     scaled_size = dsize;
                 } else {
-                    scaled_size = crate::scaled_math::xn_over_d(dsize, -scaled_size, 1000);
+                    scaled_size =
+                        crate::scaled_math::xn_over_d_in(&mut st.errors, dsize, -scaled_size, 1000);
                 }
                 deleteFont(font);
             }
@@ -1107,27 +1165,27 @@ pub unsafe fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut
                 }
             }
 
-            rval = load_ot_font(ptr::null_mut(), font, scaled_size, feat_string);
+            rval = load_ot_font(st, ptr::null_mut(), font, scaled_size, feat_string);
             if rval.is_null() {
                 deleteFont(font);
             }
-            if !rval.is_null() && get_tracing_fonts_state() > 0 {
-                begin_diagnostic();
-                print_nl(b' ' as i32);
-                print_c_string(c"-> ".as_ptr());
-                print_c_string(name_string.add(1));
-                end_diagnostic(false);
+            if !rval.is_null() && st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
+                crate::output::begin_diagnostic_in(st);
+                crate::output::print_nl_in(st, b' ' as i32);
+                print_c_string_in(st, c"-> ".as_ptr());
+                print_c_string_in(st, name_string.add(1));
+                crate::output::end_diagnostic_in(st, false);
             }
         }
     } else {
         let font_ref = findFontByName(name_string, var_string, Fix2D(scaled_size));
 
-        if get_tracing_fonts_state() > 0 {
-            begin_diagnostic();
-            print_nl(b' ' as i32);
-            print_c_string(c"-> ".as_ptr());
-            print_c_string(ttxl_platfont_get_desc(font_ref));
-            end_diagnostic(false);
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
+            crate::output::begin_diagnostic_in(st);
+            crate::output::print_nl_in(st, b' ' as i32);
+            print_c_string_in(st, c"-> ".as_ptr());
+            print_c_string_in(st, ttxl_platfont_get_desc(font_ref));
+            crate::output::end_diagnostic_in(st, false);
         }
 
         if !font_ref.is_null() {
@@ -1139,11 +1197,8 @@ pub unsafe fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut
             if !var_string.is_null() {
                 name_length += libc::strlen(var_string) as i32 + 1;
             }
-            libc::free(crate::globals::name_of_file() as *mut c_void);
-            crate::globals::set_name_of_file(
-                xmalloc((name_length + 1) as libc::size_t) as *mut c_char
-            );
-            libc::strcpy(crate::globals::name_of_file(), full_name);
+            st.input.name_of_file.resize((name_length + 1) as usize, 0);
+            libc::strcpy(name_of_file_mut_ptr(st), full_name);
 
             if scaled_size < 0 {
                 font = createFont(font_ref, scaled_size);
@@ -1152,7 +1207,12 @@ pub unsafe fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut
                     if scaled_size == -1000 {
                         scaled_size = dsize;
                     } else {
-                        scaled_size = crate::scaled_math::xn_over_d(dsize, -scaled_size, 1000);
+                        scaled_size = crate::scaled_math::xn_over_d_in(
+                            &mut st.errors,
+                            dsize,
+                            -scaled_size,
+                            1000,
+                        );
                     }
                     deleteFont(font);
                 }
@@ -1166,7 +1226,7 @@ pub unsafe fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
-                    rval = load_ot_font(font_ref, font, scaled_size, feat_string);
+                    rval = load_ot_font(st, font_ref, font, scaled_size, feat_string);
                     if rval.is_null() {
                         deleteFont(font);
                     }
@@ -1174,14 +1234,14 @@ pub unsafe fn find_native_font(uname: *mut c_char, mut scaled_size: i32) -> *mut
             }
 
             if !var_string.is_null() && *var_string != 0 {
-                libc::strcat(crate::globals::name_of_file(), c"/".as_ptr());
-                libc::strcat(crate::globals::name_of_file(), var_string);
+                libc::strcat(name_of_file_mut_ptr(st), c"/".as_ptr());
+                libc::strcat(name_of_file_mut_ptr(st), var_string);
             }
             if !feat_string.is_null() && *feat_string != 0 {
-                libc::strcat(crate::globals::name_of_file(), c":".as_ptr());
-                libc::strcat(crate::globals::name_of_file(), feat_string);
+                libc::strcat(name_of_file_mut_ptr(st), c":".as_ptr());
+                libc::strcat(name_of_file_mut_ptr(st), feat_string);
             }
-            crate::globals::set_name_length(libc::strlen(crate::globals::name_of_file()) as i32);
+            st.input.name_length = libc::strlen(name_of_file_mut_ptr(st)) as i32;
         }
     }
 
@@ -2353,11 +2413,6 @@ pub unsafe fn get_encoding_mode_and_info_global(info: *mut i32) -> c_int {
     // `name_of_file()` is with_state-bearing, so read it before the call (§4a).
     let name = crate::globals::name_of_file();
     get_encoding_mode_and_info(name, info)
-}
-pub unsafe fn check_for_tfm_font_mapping_global() {
-    // `name_of_file()` is with_state-bearing, so read it before the call (§4a).
-    let name = crate::globals::name_of_file();
-    check_for_tfm_font_mapping(name)
 }
 pub unsafe fn get_native_char_height_depth_global(
     font: i32,
