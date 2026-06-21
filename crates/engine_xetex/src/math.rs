@@ -523,8 +523,7 @@ fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scal
 /// `&mut MemState` and recycles the two current-list chains via the threaded
 /// [`crate::packaging::flush_node_list`]. The `cur_list` reads/writes go through the
 /// raw `cur_list` global (the deferred Phase-C set — safe under a live borrow).
-/// The two impossible corrupt-node `confusion` arms propagate out as `Err`, fired
-/// by [`flush_math_global`] after the borrow drops.
+/// The two impossible corrupt-node `confusion` arms propagate out as `Err`.
 pub fn flush_math(mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
     let head = cur_list_head();
     let p1 = mem.b32s1(head);
@@ -535,15 +534,6 @@ pub fn flush_math(mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
     set_cur_list_tail(head);
     set_cur_list_aux_b32s1(TEX_NULL);
     Ok(())
-}
-
-/// Bridge-down wrapper for legacy callers (`01b` §3): borrows the anchor, runs
-/// the threaded [`flush_math`], then fires the cold `confusion` after the borrow
-/// drops if a corrupt node was hit.
-pub unsafe fn flush_math_global() {
-    if let Err(msg) = crate::state::with_state_mut(|st| flush_math(&mut st.mem)) {
-        crate::errors::confusion(msg.as_ptr());
-    }
 }
 
 /// translated from xetex-math.c:91 (clean_box). Threaded SCC core: builds the
@@ -3651,13 +3641,6 @@ pub(crate) fn scan_delimiter_in(
     Ok(())
 }
 
-/// translated from xetex-math.c:354 (start_eq_no)
-pub unsafe fn start_eq_no() {
-    if let Err(e) = crate::state::with_state_mut(|st| start_eq_no_in(st)) {
-        e.fire();
-    }
-}
-
 pub(crate) fn start_eq_no_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -3697,12 +3680,6 @@ fn apply_math_limit_switch(mem: &mut MemState, limit: u16) -> bool {
     }
 }
 
-pub unsafe fn math_limit_switch_global() {
-    if let Err(e) = crate::state::with_state_mut(|st| math_limit_switch_in(st)) {
-        e.fire();
-    }
-}
-
 pub(crate) fn math_limit_switch_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -3737,12 +3714,6 @@ fn append_radical_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleA
     Ok(node)
 }
 
-pub unsafe fn math_radical_global() {
-    if let Err(e) = crate::state::with_state_mut(|st| math_radical_in(st)) {
-        e.fire();
-    }
-}
-
 pub(crate) fn math_radical_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -3765,12 +3736,6 @@ fn append_choices_core(
     save_stack.save_ptr += 1;
     save_stack.set_b32s1(save_stack.save_ptr - 1, 0);
     Ok(())
-}
-
-pub unsafe fn append_choices_global() {
-    if let Err(e) = crate::state::with_state_mut(|st| append_choices_in(st)) {
-        e.fire();
-    }
 }
 
 pub(crate) fn append_choices_in(
@@ -3930,12 +3895,6 @@ fn prepare_sub_sup(
     Ok((p, duplicate))
 }
 
-pub unsafe fn sub_sup_global() {
-    if let Err(e) = crate::state::with_state_mut(|st| sub_sup_in(st)) {
-        e.fire();
-    }
-}
-
 pub(crate) fn sub_sup_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -3998,12 +3957,6 @@ fn finish_fraction_rule(mem: &mut MemState, c: i32, rule_thickness: i32) {
                 _ => {}
             }
         }
-    }
-}
-
-pub unsafe fn math_fraction_global() {
-    if let Err(e) = crate::state::with_state_mut(|st| math_fraction_in(st)) {
-        e.fire();
     }
 }
 
@@ -4142,12 +4095,6 @@ fn append_inner_noad_for_right(mem: &mut MemState, q: i32) -> Result<(), NodeRec
     Ok(())
 }
 
-pub unsafe fn math_left_right_global() {
-    if let Err(e) = crate::state::with_state_mut(|st| math_left_right_in(st)) {
-        e.fire();
-    }
-}
-
 pub(crate) fn math_left_right_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -4215,13 +4162,6 @@ fn set_class_bits(x: i32) -> i32 {
 #[inline]
 fn set_family_bits(x: i32) -> i32 {
     (((x as u32) & 0xFF) << 24) as i32
-}
-
-/// translated from xetex-math.c:355 (math_ac)
-pub unsafe fn math_ac_global() {
-    if let Err(e) = crate::state::with_state_mut(|st| math_ac_in(st)) {
-        e.fire();
-    }
 }
 
 pub(crate) fn math_ac_in(
@@ -4324,65 +4264,61 @@ fn sym_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
 }
 
 #[inline]
-fn sym_font_ok_global(size: i32) -> bool {
-    crate::state::with_state(|st| sym_font_ok(&st.fonts, &st.eqtb, size))
-}
-
-#[inline]
 fn ext_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
     let f = eqtb.b32s1(MATH_FONT_BASE + 3 + size);
     fonts.font_params(f) >= TOTAL_MATHEX_PARAMS || font_is_ot_math(fonts, f)
 }
 
-#[inline]
-fn ext_font_ok_global(size: i32) -> bool {
-    crate::state::with_state(|st| ext_font_ok(&st.fonts, &st.eqtb, size))
-}
-
-/// translated from xetex-math.c:82 (app_display) — private helper
-unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
+/// translated from xetex-math.c:82 (app_display) — private helper, threaded core.
+fn app_display_in(
+    st: &mut EngineState,
+    j: i32,
+    b_in: i32,
+    d_in: i32,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    use crate::main_control::MainControlAbort;
     let mut b = b_in;
     let mut d = d_in;
-    let s = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
-    let x = eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION);
+    let s = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
+    let x = st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION);
 
     if x == 0 {
-        set_mem_b32s1(b + 4, s + d);
+        st.mem.set_b32s1(b + 4, s + d);
     } else {
-        let z = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
+        let z = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
         let p_orig = b;
         let mut e;
         if x > 0 {
-            e = z - d - mem_b32s1(p_orig + 1);
+            e = z - d - st.mem.b32s1(p_orig + 1);
         } else {
             e = d;
-            d = z - e - mem_b32s1(p_orig + 1);
+            d = z - e - st.mem.b32s1(p_orig + 1);
         }
         if j != TEX_NULL {
-            b = crate::packaging::copy_node_list_global(j);
-            set_mem_b32s1(b + 3, mem_b32s1(p_orig + 3));
-            set_mem_b32s1(b + 2, mem_b32s1(p_orig + 2));
-            let b4 = mem_b32s1(b + 4);
+            b = crate::packaging::copy_node_list(&mut st.mem, j)?;
+            st.mem.set_b32s1(b + 3, st.mem.b32s1(p_orig + 3));
+            st.mem.set_b32s1(b + 2, st.mem.b32s1(p_orig + 2));
+            let b4 = st.mem.b32s1(b + 4);
             let s2 = s - b4;
             d += s2;
-            e = e + mem_b32s1(b + 1) - z - s2;
+            e = e + st.mem.b32s1(b + 1) - z - s2;
         }
         let (mut p, mut q);
-        if mem_b16s0(p_orig) == DLIST {
+        if st.mem.b16s0(p_orig) == DLIST {
             q = p_orig;
             p = p_orig;
         } else {
-            let r0 = mem_b32s1(p_orig + 5);
-            crate::mem::free_node_global(p_orig, BOX_NODE_SIZE);
+            let r0 = st.mem.b32s1(p_orig + 5);
+            crate::mem::free_node(&mut st.mem, p_orig, BOX_NODE_SIZE);
             if r0 == TEX_NULL {
-                crate::errors::confusion(c"LR4".as_ptr());
+                return Err(MainControlAbort::Confusion(c"LR4"));
             }
             let mut r = r0;
             if x > 0 {
                 p = r;
                 loop {
                     q = r;
-                    r = mem_b32s1(r);
+                    r = st.mem.b32s1(r);
                     if r == TEX_NULL {
                         break;
                     }
@@ -4391,8 +4327,8 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
                 p = TEX_NULL;
                 q = r;
                 loop {
-                    let t = mem_b32s1(r);
-                    set_mem_b32s1(r, p);
+                    let t = st.mem.b32s1(r);
+                    st.mem.set_b32s1(r, p);
                     p = r;
                     r = t;
                     if r == TEX_NULL {
@@ -4403,106 +4339,130 @@ unsafe fn app_display(j: i32, b_in: i32, d_in: i32) {
         }
         let (r, t);
         if j == TEX_NULL {
-            r = crate::mem::new_kern_global(0);
-            t = crate::mem::new_kern_global(0);
+            r = crate::mem::new_kern(&mut st.mem, 0);
+            if r == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            t = crate::mem::new_kern(&mut st.mem, 0);
+            if t == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
         } else {
-            r = mem_b32s1(b + 5);
-            t = mem_b32s1(r);
+            r = st.mem.b32s1(b + 5);
+            t = st.mem.b32s1(r);
         }
-        let u = crate::mem::new_math_global(0, END_M_CODE);
-        if mem_b16s1(t) == GLUE_NODE {
-            let jj = crate::mem::new_skip_param_global(GLUE_PAR_RIGHT_SKIP as i16);
-            set_mem_b32s1(q, jj);
-            set_mem_b32s1(jj, u);
-            let jspec = mem_b32s0(t + 1);
-            set_mem_b16s1(temp_ptr(), mem_b16s1(jspec));
-            set_mem_b16s0(temp_ptr(), mem_b16s0(jspec));
-            set_mem_b32s1(temp_ptr() + 1, e - mem_b32s1(jspec + 1));
-            set_mem_b32s1(temp_ptr() + 2, -mem_b32s1(jspec + 2));
-            set_mem_b32s1(temp_ptr() + 3, -mem_b32s1(jspec + 3));
-            set_mem_b32s1(u, t);
-        } else {
-            set_mem_b32s1(t + 1, e);
-            set_mem_b32s1(t, u);
-            set_mem_b32s1(q, t);
+        let u = crate::mem::new_math(&mut st.mem, 0, END_M_CODE);
+        if u == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow.into());
         }
-        let u2 = crate::mem::new_math_global(0, BEGIN_M_CODE);
-        if mem_b16s1(r) == GLUE_NODE {
-            let jj = crate::mem::new_skip_param_global(GLUE_PAR_LEFT_SKIP as i16);
-            set_mem_b32s1(u2, jj);
-            set_mem_b32s1(jj, p);
-            let jspec = mem_b32s0(r + 1);
-            set_mem_b16s1(temp_ptr(), mem_b16s1(jspec));
-            set_mem_b16s0(temp_ptr(), mem_b16s0(jspec));
-            set_mem_b32s1(temp_ptr() + 1, d - mem_b32s1(jspec + 1));
-            set_mem_b32s1(temp_ptr() + 2, -mem_b32s1(jspec + 2));
-            set_mem_b32s1(temp_ptr() + 3, -mem_b32s1(jspec + 3));
-            set_mem_b32s1(r, u2);
+        if st.mem.b16s1(t) == GLUE_NODE {
+            let jj = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16);
+            if jj == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(q, jj);
+            st.mem.set_b32s1(jj, u);
+            let jspec = st.mem.b32s0(t + 1);
+            st.mem.set_b16s1(temp_ptr(), st.mem.b16s1(jspec));
+            st.mem.set_b16s0(temp_ptr(), st.mem.b16s0(jspec));
+            st.mem
+                .set_b32s1(temp_ptr() + 1, e - st.mem.b32s1(jspec + 1));
+            st.mem.set_b32s1(temp_ptr() + 2, -st.mem.b32s1(jspec + 2));
+            st.mem.set_b32s1(temp_ptr() + 3, -st.mem.b32s1(jspec + 3));
+            st.mem.set_b32s1(u, t);
         } else {
-            set_mem_b32s1(r + 1, d);
-            set_mem_b32s1(r, p);
-            set_mem_b32s1(u2, r);
+            st.mem.set_b32s1(t + 1, e);
+            st.mem.set_b32s1(t, u);
+            st.mem.set_b32s1(q, t);
+        }
+        let u2 = crate::mem::new_math(&mut st.mem, 0, BEGIN_M_CODE);
+        if u2 == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow.into());
+        }
+        if st.mem.b16s1(r) == GLUE_NODE {
+            let jj = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP as i16);
+            if jj == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(u2, jj);
+            st.mem.set_b32s1(jj, p);
+            let jspec = st.mem.b32s0(r + 1);
+            st.mem.set_b16s1(temp_ptr(), st.mem.b16s1(jspec));
+            st.mem.set_b16s0(temp_ptr(), st.mem.b16s0(jspec));
+            st.mem
+                .set_b32s1(temp_ptr() + 1, d - st.mem.b32s1(jspec + 1));
+            st.mem.set_b32s1(temp_ptr() + 2, -st.mem.b32s1(jspec + 2));
+            st.mem.set_b32s1(temp_ptr() + 3, -st.mem.b32s1(jspec + 3));
+            st.mem.set_b32s1(r, u2);
+        } else {
+            st.mem.set_b32s1(r + 1, d);
+            st.mem.set_b32s1(r, p);
+            st.mem.set_b32s1(u2, r);
             if j == TEX_NULL {
-                b = crate::packaging::hpack(u2, 0, ADDITIONAL);
-                set_mem_b32s1(b + 4, s);
+                b = crate::packaging::hpack_emit_in(st, u2, 0, ADDITIONAL)?;
+                st.mem.set_b32s1(b + 4, s);
             } else {
-                set_mem_b32s1(b + 5, u2);
+                st.mem.set_b32s1(b + 5, u2);
             }
         }
     }
-    crate::packaging::append_to_vlist_global(b);
+    crate::packaging::append_to_vlist_emit_in(st, b)?;
+    Ok(())
+}
+
+unsafe fn app_display(j: i32, b: i32, d: i32) {
+    if let Err(e) = crate::state::with_state_mut(|st| app_display_in(st, j, b, d)) {
+        e.fire();
+    }
 }
 
 /// Emit error for insufficient math fonts, flush the math list, set danger.
-unsafe fn check_math_font_params(danger: &mut bool) {
-    if !sym_font_ok_global(TEXT_SIZE)
-        || !sym_font_ok_global(SCRIPT_SIZE)
-        || !sym_font_ok_global(SCRIPT_SCRIPT_SIZE)
+/// Threaded core (`01b` §3): font-param checks + recoverable error under one
+/// borrow; the recoverable `error` is deferred via `mc_propagate_error`.
+fn check_math_font_params_in(
+    st: &mut EngineState,
+    danger: &mut bool,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    use crate::main_control::MainControlAbort;
+    if !sym_font_ok(&st.fonts, &st.eqtb, TEXT_SIZE)
+        || !sym_font_ok(&st.fonts, &st.eqtb, SCRIPT_SIZE)
+        || !sym_font_ok(&st.fonts, &st.eqtb, SCRIPT_SCRIPT_SIZE)
     {
-        crate::output::error_here_with_diagnostic(
+        crate::output::error_here_with_diagnostic_in(
+            st,
             c"Math formula deleted: Insufficient symbol fonts".as_ptr(),
         );
-        crate::output::capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(3);
-        set_help_line(
-            2,
-            c"Sorry, but I can't typeset math unless \\textfont 2".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"and \\scriptfont 2 and \\scriptscriptfont 2 have all".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"the \\fontdimen values needed in math symbol fonts.".as_ptr(),
-        );
-        crate::errors::error();
-        flush_math_global();
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 3;
+        st.errors.help_line[2] = c"Sorry, but I can't typeset math unless \\textfont 2".as_ptr();
+        st.errors.help_line[1] = c"and \\scriptfont 2 and \\scriptscriptfont 2 have all".as_ptr();
+        st.errors.help_line[0] = c"the \\fontdimen values needed in math symbol fonts.".as_ptr();
+        crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
+        flush_math(&mut st.mem).map_err(MainControlAbort::Confusion)?;
         *danger = true;
-    } else if !ext_font_ok_global(TEXT_SIZE)
-        || !ext_font_ok_global(SCRIPT_SIZE)
-        || !ext_font_ok_global(SCRIPT_SCRIPT_SIZE)
+    } else if !ext_font_ok(&st.fonts, &st.eqtb, TEXT_SIZE)
+        || !ext_font_ok(&st.fonts, &st.eqtb, SCRIPT_SIZE)
+        || !ext_font_ok(&st.fonts, &st.eqtb, SCRIPT_SCRIPT_SIZE)
     {
-        crate::output::error_here_with_diagnostic(
+        crate::output::error_here_with_diagnostic_in(
+            st,
             c"Math formula deleted: Insufficient extension fonts".as_ptr(),
         );
-        crate::output::capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(3);
-        set_help_line(
-            2,
-            c"Sorry, but I can't typeset math unless \\textfont 3".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"and \\scriptfont 3 and \\scriptscriptfont 3 have all".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"the \\fontdimen values needed in math extension fonts.".as_ptr(),
-        );
-        crate::errors::error();
-        flush_math_global();
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 3;
+        st.errors.help_line[2] = c"Sorry, but I can't typeset math unless \\textfont 3".as_ptr();
+        st.errors.help_line[1] = c"and \\scriptfont 3 and \\scriptscriptfont 3 have all".as_ptr();
+        st.errors.help_line[0] = c"the \\fontdimen values needed in math extension fonts.".as_ptr();
+        crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
+        flush_math(&mut st.mem).map_err(MainControlAbort::Confusion)?;
         *danger = true;
+    }
+    Ok(())
+}
+
+unsafe fn check_math_font_params(danger: &mut bool) {
+    if let Err(e) = crate::state::with_state_mut(|st| check_math_font_params_in(st, danger)) {
+        e.fire();
     }
 }
 

@@ -967,14 +967,6 @@ pub fn copy_node_list(
     mem.avail = h;
     Ok(result)
 }
-/// Transitional bridge-down wrapper for legacy `copy_node_list` callers.
-pub unsafe fn copy_node_list_global(p: i32) -> i32 {
-    match crate::state::with_state_mut(|st| copy_node_list(&mut st.mem, p)) {
-        Ok(r) => r,
-        Err(e) => node_recycle_abort(e),
-    }
-}
-
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:8020 (append_to_vlist)
@@ -984,8 +976,8 @@ pub unsafe fn copy_node_list_global(p: i32) -> i32 {
 // aux/tail scalars and `temp_ptr` stay raw global accessors (safe under the
 // borrow per `01b` §4). The two glue constructors `new_param_glue`/
 // `new_skip_param` are threaded; arena exhaustion propagates the `01b` §5
-// [`NodeRecycleAbort::Overflow`] sentinel, run by [`append_to_vlist_global`]
-// after the borrow drops. FFI-free (no measurer / print / scanner re-entry).
+// [`NodeRecycleAbort::Overflow`] sentinel. FFI-free (no measurer / print /
+// scanner re-entry).
 pub fn append_to_vlist(
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
@@ -1034,21 +1026,18 @@ pub fn append_to_vlist(
     Ok(())
 }
 
-/// Transitional bridge-down wrapper for legacy `append_to_vlist` callers (`01b`
-/// §3, §5). Runs the threaded append under one `mem`+`eqtb` borrow, then runs
-/// the deferred arena-exhaustion `overflow` after the borrow drops.
-pub unsafe fn append_to_vlist_global(b: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        let b = s
-            .mem
-            .classify_box(MemIdx::new(b))
-            .expect("valid node type for append_to_vlist")
-            .expect("append_to_vlist receives an hlist or vlist node");
-        append_to_vlist(&mut s.mem, &s.eqtb, b)
-    }) {
-        node_recycle_abort(e);
-    }
+/// `&mut EngineState` core of `append_to_vlist` (`01b` §3): classifies
+/// the raw box halfword then appends it, all under the caller's borrow.
+pub(crate) fn append_to_vlist_emit_in(
+    st: &mut crate::state::EngineState,
+    b: i32,
+) -> Result<(), NodeRecycleAbort> {
+    let bx = st
+        .mem
+        .classify_box(MemIdx::new(b))
+        .expect("valid node type for append_to_vlist")
+        .expect("append_to_vlist receives an hlist or vlist node");
+    append_to_vlist(&mut st.mem, &st.eqtb, bx)
 }
 // translated from xetex-xetex0.c:7725 (vert_break)
 struct VertBreakCursor {

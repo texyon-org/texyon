@@ -581,18 +581,6 @@ pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
     p
 }
 
-/// Transitional bridge-down wrapper for legacy `new_skip_param` callers (`01b` §3, §5).
-pub unsafe fn new_skip_param_global(n: i16) -> i32 {
-    let p = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        new_skip_param(&mut s.mem, &s.eqtb, n)
-    });
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
-}
-
 // ---------------------------------------------------------------------------
 // new_kern
 // ---------------------------------------------------------------------------
@@ -821,12 +809,6 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
     Ok(())
 }
 
-pub unsafe fn push_nest() {
-    if let Err(e) = crate::state::with_state_mut(push_nest_in) {
-        e.fire();
-    }
-}
-
 /// Pop the top nest entry back into cur_list, freeing the old head token.
 ///
 /// translated from xetex-xetex0.c:1339 (pop_nest)
@@ -906,15 +888,6 @@ pub fn new_noad(mem: &mut MemState) -> i32 {
     p.idx().0
 }
 
-/// Transitional bridge-down wrapper for legacy `new_noad` callers (`01b` §3, §5).
-pub unsafe fn new_noad_global() -> i32 {
-    let p = crate::state::with_state_mut(|st| new_noad(&mut st.mem));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
-}
-
 /// Allocate a style node (STYLE_NODE_SIZE = 3 words).
 ///
 /// translated from xetex-xetex0.c:10554 (new_style)
@@ -927,15 +900,6 @@ pub fn new_style(mem: &mut MemState, s: i16) -> i32 {
     p.set_subtype(mem, s as u16);
     p.clear_payload(mem);
     p.idx().0
-}
-
-/// Transitional bridge-down wrapper for legacy `new_style` callers (`01b` §3, §5).
-pub unsafe fn new_style_global(s: i16) -> i32 {
-    let p = crate::state::with_state_mut(|st| new_style(&mut st.mem, s));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
 }
 
 /// Allocate a choice node (STYLE_NODE_SIZE = 3 words).

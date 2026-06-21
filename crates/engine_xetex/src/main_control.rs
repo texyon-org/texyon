@@ -15,11 +15,10 @@ use crate::consts::{
     MAX_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_ONLY,
     SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
-use crate::errors::{error, privileged, report_illegal_case};
+use crate::errors::{error, report_illegal_case};
 use crate::ext::{
     append_src_special, apply_mapping, do_extension, get_native_char_height_depth_global,
-    get_native_char_sidebearings_global, insert_src_special, map_char_to_glyph_global,
-    measure_native_node_global,
+    get_native_char_sidebearings_global, map_char_to_glyph_global, measure_native_node_global,
 };
 use crate::fonts::read_font_info_in;
 use crate::globals::{
@@ -31,11 +30,7 @@ use crate::globals::{
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::input::begin_token_list;
 use crate::linebreak::do_locale_linebreaks;
-use crate::math::{
-    after_math, append_choices_global, init_math, math_ac_global, math_fraction_global,
-    math_left_right_global, math_limit_switch_global, math_radical_global, start_eq_no,
-    sub_sup_global,
-};
+use crate::math::{after_math, init_math};
 use crate::output::{
     capture_to_diagnostic, char_warning, error_here_with_diagnostic, issue_message, print_cmd_chr,
     show_whatever,
@@ -44,10 +39,8 @@ use crate::packaging::{flush_node_list_global, hpack};
 use crate::pagebuilder::build_page;
 use crate::scan::{
     back_input, effective_char_global, effective_char_info_global, get_next, get_token,
-    get_x_token, insert_dollar_sign, new_native_word_node_global, scan_char_num,
-    scan_delimiter_int, scan_dimen, scan_fifteen_bit_int, scan_math, scan_math_class_int,
-    scan_math_fam_int, scan_rule_spec, scan_spec, scan_usv_num, scan_xetex_math_char_int,
-    set_class_fn, set_family_fn, set_math_char, x_token,
+    get_x_token, insert_dollar_sign, new_native_word_node_global, scan_char_num, scan_dimen,
+    scan_rule_spec, scan_usv_num, set_class_fn, set_family_fn, x_token,
 };
 use crate::units::MemIdx;
 
@@ -4866,6 +4859,23 @@ pub(crate) fn main_control_alignment_cases_in(
 }
 // translated from xetex-xetex0.c:7006 (main_control math entry/exit cases)
 pub unsafe fn main_control_math_cases() {
+    match crate::state::with_state_mut(main_control_math_cases_in) {
+        Ok(MathCaseAction::None) => {}
+        Ok(MathCaseAction::InitMath) => init_math(),
+        Ok(MathCaseAction::AfterMath) => after_math(),
+        Err(e) => e.fire(),
+    }
+}
+
+pub(crate) enum MathCaseAction {
+    None,
+    InitMath,
+    AfterMath,
+}
+
+pub(crate) fn main_control_math_cases_in(
+    st: &mut crate::state::EngineState,
+) -> Result<MathCaseAction, MainControlAbort> {
     extern "C" {}
 
     const HMODE_MC: u16 = 104; // xetex_format.h:369
@@ -4896,152 +4906,179 @@ pub unsafe fn main_control_math_cases() {
     const XETEX_MATH_GIVEN_MC: u8 = 70; // xetex_format.h:309
 
     const MATH_SHIFT_GROUP_MC: u8 = 15; // xetex-constants.h:167
-    const VCENTER_GROUP_MC: u8 = 12; // xetex-constants.h:164
     const COND_MATH_GLUE_MC: u16 = 98; // xetex-constants.h:324
+    const VCENTER_GROUP_MC: u8 = 12; // xetex-constants.h:164
     const IGNORE_DEPTH_MC: i32 = -65_536_000; // xetex_format.h:388
     const EVERY_VBOX_TEXT_MC: u16 = 12; // xetex-constants.h:211
     const LOCAL_EVERY_VBOX_MC: i32 = 6; // xetex_format.h:178
 
     use crate::globals::{
-        cur_chr, cur_cmd, cur_group, cur_list_mode, cur_list_tail, eqtb_b32s1, mem_b32s1,
-        set_cur_chr, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_tail, set_mem_b16s0,
-        set_mem_b16s1, set_mem_b32s1,
+        cur_chr, cur_cmd, cur_list_mode, cur_list_tail, set_cur_chr, set_cur_list_tail,
     };
-    use crate::mem::TEX_NULL;
 
     match (cur_list_mode().unsigned_abs(), cur_cmd()) {
-        (HMODE_MC, MATH_SHIFT_MC) => init_math(),
+        (HMODE_MC, MATH_SHIFT_MC) => return Ok(MathCaseAction::InitMath),
 
         (MMODE_MC, EQ_NO_MC) => {
-            if privileged() {
-                if cur_group() == MATH_SHIFT_GROUP_MC {
-                    start_eq_no();
+            if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
+                if st.save_stack.cur_group == MATH_SHIFT_GROUP_MC {
+                    crate::math::start_eq_no_in(st)?;
                 } else {
-                    off_save();
+                    off_save_in(st)?;
                 }
             }
         }
 
         (MMODE_MC, LEFT_BRACE_MC) => {
-            let n = crate::mem::new_noad_global();
-            set_mem_b32s1(cur_list_tail(), n);
-            set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail) = n
-            crate::input::back_input();
-            scan_math(cur_list_tail() + 1);
+            let n = crate::mem::new_noad(&mut st.mem);
+            if n == crate::mem::ALLOC_FAILED {
+                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(cur_list_tail(), n);
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+            crate::input::back_input_in(st)?;
+            crate::scan::scan_math_in(st, cur_list_tail() + 1)?;
         }
 
         (MMODE_MC, LETTER_MC) | (MMODE_MC, OTHER_CHAR_MC) | (MMODE_MC, CHAR_GIVEN_MC) => {
-            set_math_char(eqtb_b32s1(MATH_CODE_BASE + cur_chr()));
+            crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + cur_chr()))?;
         }
 
         (MMODE_MC, CHAR_NUM_MC) => {
-            scan_char_num();
+            crate::scan::scan_char_num_in(st)?;
             set_cur_chr(cur_val());
-            set_math_char(eqtb_b32s1(MATH_CODE_BASE + cur_chr()));
+            crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + cur_chr()))?;
         }
 
         (MMODE_MC, MATH_CHAR_NUM_MC) => {
             if cur_chr() == 2 {
                 // \Umathchar
-                scan_math_class_int();
+                crate::scan::scan_math_class_int_in(st)?;
                 let mut t = set_class_fn(cur_val());
-                scan_math_fam_int();
+                crate::scan::scan_math_fam_int_in(st)?;
                 t += set_family_fn(cur_val());
-                scan_usv_num();
+                crate::scan::scan_usv_num_in(st)?;
                 t += cur_val();
-                set_math_char(t);
+                crate::scan::set_math_char_in(st, t)?;
             } else if cur_chr() == 1 {
                 // \Umathcharnum
-                scan_xetex_math_char_int();
-                set_math_char(cur_val());
+                crate::scan::scan_xetex_math_char_int_in(st)?;
+                crate::scan::set_math_char_in(st, cur_val())?;
             } else {
-                scan_fifteen_bit_int();
+                crate::scan::scan_fifteen_bit_int_in(st)?;
                 let v = cur_val();
-                set_math_char(set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256));
+                crate::scan::set_math_char_in(
+                    st,
+                    set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256),
+                )?;
             }
         }
 
         (MMODE_MC, MATH_GIVEN_MC) => {
             let c = cur_chr();
-            set_math_char(set_class_fn(c / 4096) + set_family_fn((c % 4096) / 256) + (c % 256));
+            crate::scan::set_math_char_in(
+                st,
+                set_class_fn(c / 4096) + set_family_fn((c % 4096) / 256) + (c % 256),
+            )?;
         }
 
         (MMODE_MC, XETEX_MATH_GIVEN_MC) => {
-            set_math_char(cur_chr());
+            crate::scan::set_math_char_in(st, cur_chr())?;
         }
 
         (MMODE_MC, DELIM_NUM_MC) => {
             if cur_chr() == 1 {
                 // \Udelimiter
-                scan_math_class_int();
+                crate::scan::scan_math_class_int_in(st)?;
                 let mut t = set_class_fn(cur_val());
-                scan_math_fam_int();
+                crate::scan::scan_math_fam_int_in(st)?;
                 t += set_family_fn(cur_val());
-                scan_usv_num();
+                crate::scan::scan_usv_num_in(st)?;
                 t += cur_val();
-                set_math_char(t);
+                crate::scan::set_math_char_in(st, t)?;
             } else {
-                scan_delimiter_int();
+                crate::scan::scan_delimiter_int_in(st)?;
                 let v = cur_val() / 4096;
-                set_math_char(set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256));
+                crate::scan::set_math_char_in(
+                    st,
+                    set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256),
+                )?;
             }
         }
 
         (MMODE_MC, MATH_COMP_MC) => {
-            let n = crate::mem::new_noad_global();
-            set_mem_b32s1(cur_list_tail(), n);
-            set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail)
-            set_mem_b16s1(cur_list_tail(), cur_chr() as u16);
-            scan_math(cur_list_tail() + 1);
+            let n = crate::mem::new_noad(&mut st.mem);
+            if n == crate::mem::ALLOC_FAILED {
+                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(cur_list_tail(), n);
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+            st.mem.set_b16s1(cur_list_tail(), cur_chr() as u16);
+            crate::scan::scan_math_in(st, cur_list_tail() + 1)?;
         }
 
-        (MMODE_MC, LIMIT_SWITCH_MC) => math_limit_switch_global(),
-        (MMODE_MC, RADICAL_MC) => math_radical_global(),
-        (MMODE_MC, ACCENT_MC) | (MMODE_MC, MATH_ACCENT_MC) => math_ac_global(),
+        (MMODE_MC, LIMIT_SWITCH_MC) => crate::math::math_limit_switch_in(st)?,
+        (MMODE_MC, RADICAL_MC) => crate::math::math_radical_in(st)?,
+        (MMODE_MC, ACCENT_MC) | (MMODE_MC, MATH_ACCENT_MC) => crate::math::math_ac_in(st)?,
 
         (MMODE_MC, VCENTER_MC) => {
-            scan_spec(VCENTER_GROUP_MC, false);
-            normal_paragraph_global();
-            crate::mem::push_nest();
-            set_cur_list_mode(-1);
-            set_cur_list_aux_b32s1(IGNORE_DEPTH_MC);
-            if crate::globals::insert_src_special_every_vbox() {
-                insert_src_special();
+            crate::scan::scan_spec_in(st, VCENTER_GROUP_MC, false)?;
+            let save_abort = normal_paragraph(
+                &mut st.eqtb,
+                &mut st.save_stack,
+                &mut st.mem,
+                &mut st.scanner,
+            );
+            if let Some(a) = save_abort {
+                return Err(MainControlAbort::Save(a));
             }
-            let every_vbox = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_VBOX_MC);
+            crate::mem::push_nest_in(st)?;
+            crate::globals::set_cur_list_mode(-1);
+            crate::globals::set_cur_list_aux_b32s1(IGNORE_DEPTH_MC);
+            if st.shipout.insert_src_special_every_vbox {
+                crate::ext::insert_src_special_in(st)?;
+            }
+            let every_vbox = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_VBOX_MC);
             if every_vbox != TEX_NULL {
-                crate::input::begin_token_list(every_vbox, EVERY_VBOX_TEXT_MC);
+                crate::input::begin_token_list_in(st, every_vbox, EVERY_VBOX_TEXT_MC)?;
             }
         }
 
         (MMODE_MC, MATH_STYLE_MC) => {
-            let s = crate::mem::new_style_global(cur_chr() as i16);
-            set_mem_b32s1(cur_list_tail(), s);
-            set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail)
+            let s = crate::mem::new_style(&mut st.mem, cur_chr() as i16);
+            if s == crate::mem::ALLOC_FAILED {
+                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(cur_list_tail(), s);
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
         }
 
         (MMODE_MC, NON_SCRIPT_MC) => {
-            let g = crate::mem::new_glue_global(0);
-            set_mem_b32s1(cur_list_tail(), g);
-            set_cur_list_tail(mem_b32s1(cur_list_tail())); // LLIST_link(tail)
-            set_mem_b16s0(cur_list_tail(), COND_MATH_GLUE_MC);
+            let g = crate::mem::new_glue(&mut st.mem, 0);
+            if g == crate::mem::ALLOC_FAILED {
+                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(cur_list_tail(), g);
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+            st.mem.set_b16s0(cur_list_tail(), COND_MATH_GLUE_MC);
         }
 
-        (MMODE_MC, MATH_CHOICE_MC) => append_choices_global(),
-        (MMODE_MC, SUB_MARK_MC) | (MMODE_MC, SUP_MARK_MC) => sub_sup_global(),
-        (MMODE_MC, ABOVE_MC) => math_fraction_global(),
-        (MMODE_MC, LEFT_RIGHT_MC) => math_left_right_global(),
+        (MMODE_MC, MATH_CHOICE_MC) => crate::math::append_choices_in(st)?,
+        (MMODE_MC, SUB_MARK_MC) | (MMODE_MC, SUP_MARK_MC) => crate::math::sub_sup_in(st)?,
+        (MMODE_MC, ABOVE_MC) => crate::math::math_fraction_in(st)?,
+        (MMODE_MC, LEFT_RIGHT_MC) => crate::math::math_left_right_in(st)?,
 
         (MMODE_MC, MATH_SHIFT_MC) => {
-            if cur_group() == MATH_SHIFT_GROUP_MC {
-                after_math();
+            if st.save_stack.cur_group == MATH_SHIFT_GROUP_MC {
+                return Ok(MathCaseAction::AfterMath);
             } else {
-                off_save();
+                off_save_in(st)?;
             }
         }
 
         _ => {}
     }
+    Ok(MathCaseAction::None)
 }
 // translated from xetex-xetex0.c:6857 (main_control IGNORE_SPACES body; caller does goto reswitch)
 pub unsafe fn main_control_ignore_spaces() {

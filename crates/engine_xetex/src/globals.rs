@@ -2988,10 +2988,6 @@ pub(crate) fn set_hyph_next(v: i32) {
 pub(crate) fn insert_src_special_every_math() -> bool {
     crate::state::with_state(|state| state.shipout.insert_src_special_every_math)
 }
-#[inline]
-pub(crate) fn insert_src_special_every_vbox() -> bool {
-    crate::state::with_state(|state| state.shipout.insert_src_special_every_vbox)
-}
 
 // ---------------------------------------------------------------------------
 

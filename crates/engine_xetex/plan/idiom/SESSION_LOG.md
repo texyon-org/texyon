@@ -3002,3 +3002,23 @@ tracks:
    compare; unit-test both running and set cases. Verify offsets against the
    `RULE_NODE_*` macros + `new_rule`. After rule: disc → ligature → math →
    native.
+
+## Idiom session 222 — 2026-06-22 — Execution: thread most of `main_control_math_cases`
+
+**Type:** execution (workstream 01 / Phase-C threading), intentionally light docs. Continued the inherited math WIP and finished a large mechanical slice of the math dispatcher.
+
+### Change
+
+- Kept the in-progress `app_display_in(&mut EngineState, ...)` and `check_math_font_params_in(&mut EngineState, ...)` cores usable from legacy `after_math`.
+- Added `main_control_math_cases_in(&mut EngineState) -> Result<MathCaseAction, MainControlAbort>` and rewired all small/already-threaded arms to direct `_in` calls: scanner math readers/setters, `scan_math_in`, `start_eq_no_in`, `math_limit_switch_in`, `math_radical_in`, `math_ac_in`, `append_choices_in`, `sub_sup_in`, `math_fraction_in`, `math_left_right_in`, `off_save_in`, and the `VCENTER` arm.
+- Deleted now-dead bridge wrappers/accessors exposed by the dispatcher threading across `errors.rs`, `globals.rs`, `math.rs`, `mem.rs`, `packaging.rs`, and `scan.rs`.
+
+### Validation
+
+- `cargo fmt -p tectonic_engine_xetex`
+- `cargo check -p tectonic_engine_xetex` — warnings **41**
+- Dashboard: `tex-outputs` **29/29**, `trip` **2/2**, `engine_rust` **7/7**, `latex_goldens` **4/4**
+- Release rebuild: `cargo build --release -p tectonic`
+- Full corpus: **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`
+
+**Handoff / Next:** remaining math dispatcher fallbacks are `init_math` and `after_math`. Thread those next, then collapse `MathCaseAction` away and make `main_control_math_cases_in` return plain `Result<(), MainControlAbort>`.

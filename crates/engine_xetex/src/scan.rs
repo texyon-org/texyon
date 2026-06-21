@@ -278,19 +278,7 @@ pub(crate) fn scan_math_class_int_in(st: &mut crate::state::EngineState) -> Resu
     Ok(())
 }
 
-pub unsafe fn scan_math_class_int() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_math_class_int_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
 // translated from xetex-xetex0.c:5348 (scan_math_fam_int)
-pub unsafe fn scan_math_fam_int() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_math_fam_int_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
 // translated from xetex-xetex0.c:5366 (scan_four_bit_int)
 pub(crate) fn scan_four_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
@@ -321,12 +309,6 @@ pub(crate) fn scan_fifteen_bit_int_in(st: &mut crate::state::EngineState) -> Res
         )?;
     }
     Ok(())
-}
-
-pub unsafe fn scan_fifteen_bit_int() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_fifteen_bit_int_in(st)) {
-        unsafe { e.fire() }
-    }
 }
 
 // translated from xetex-xetex0.c:5168 (scan_xetex_math_char_int)
@@ -362,22 +344,9 @@ pub(crate) fn scan_xetex_math_char_int_in(
     Ok(())
 }
 
-pub unsafe fn scan_xetex_math_char_int() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_xetex_math_char_int_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
 // translated from xetex-xetex0.c:5245 (scan_register_num)
 pub unsafe fn scan_register_num() {
     if let Err(e) = crate::state::with_state_mut(|st| scan_register_num_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
-// translated from xetex-xetex0.c:5403 (scan_delimiter_int)
-pub unsafe fn scan_delimiter_int() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_delimiter_int_in(st)) {
         unsafe { e.fire() }
     }
 }
@@ -588,14 +557,7 @@ const TEMP_HEAD: i32 = 4_999_999 - 3;
 const EXACTLY: u8 = 0;
 const ADDITIONAL: u8 = 1;
 
-/// translated from xetex-xetex0.c:9215 (scan_spec)
-pub unsafe fn scan_spec(c: u8, three_codes: bool) {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_spec_in(st, c, three_codes)) {
-        e.fire();
-    }
-}
-
-/// Threaded (Phase C) core of [`scan_spec`]. The save stack lives in
+/// Threaded (Phase C) core of `scan_spec`. The save stack lives in
 /// `st.save_stack`; the only cold abort is `new_save_level`'s save-stack
 /// overflow, surfaced through [`SccAbort`].
 pub(crate) fn scan_spec_in(
@@ -1305,13 +1267,6 @@ pub(crate) fn get_r_token_in(st: &mut crate::state::EngineState) -> Result<(), S
 // delete_last
 // ---------------------------------------------------------------------------
 
-// translated from xetex-xetex0.c:4313 (scan_math)
-pub unsafe fn scan_math(p: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_math_in(st, p)) {
-        e.fire();
-    }
-}
-
 /// `&mut EngineState` core of [`scan_math`] (`01b` §3): scans one math field
 /// under one borrow over the threaded scanner/input cores; the `{`...`}`
 /// sub-formula arm pushes a `MATH_GROUP` and returns.
@@ -1422,13 +1377,6 @@ pub(crate) fn scan_math_in(
     st.mem
         .set_b16s1(p, fam + (math_char_fn(c) / 65536) as u16 * 256);
     Ok(())
-}
-
-// translated from xetex-xetex0.c:4315 (set_math_char)
-pub unsafe fn set_math_char(c: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| set_math_char_in(st, c)) {
-        e.fire();
-    }
 }
 
 /// `&mut EngineState` core of [`set_math_char`] (`01b` §3): appends a math-char

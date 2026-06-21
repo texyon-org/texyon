@@ -382,21 +382,6 @@ pub(crate) fn report_illegal_case_in(st: &mut EngineState) -> ErrorOutcome {
         c"return to the right one by typing `I}' or `I$' or `I\\par'.".as_ptr();
     error_in(st)
 }
-// translated from xetex-xetex0.c:9347 (privileged)
-pub unsafe fn privileged() -> bool {
-    if cur_list_mode() > 0 {
-        true
-    } else {
-        match crate::state::with_state_mut(privileged_in) {
-            Ok(v) => v,
-            Err(o) => {
-                o.finish();
-                unreachable!("privileged error outcome should be divergent")
-            }
-        }
-    }
-}
-
 pub(crate) fn privileged_in(st: &mut EngineState) -> Result<bool, ErrorOutcome> {
     if cur_list_mode() > 0 {
         Ok(true)
