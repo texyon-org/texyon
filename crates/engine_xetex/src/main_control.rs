@@ -2223,6 +2223,13 @@ pub(crate) enum MainControlAbort {
     Error(crate::errors::ErrorOutcome),
     Confusion(&'static std::ffi::CStr),
     NewCharacter(NewCharacterAbort),
+    Trie(crate::hyphenation::TrieAbort),
+}
+
+impl From<crate::hyphenation::TrieAbort> for MainControlAbort {
+    fn from(e: crate::hyphenation::TrieAbort) -> Self {
+        MainControlAbort::Trie(e)
+    }
 }
 
 impl From<NewCharacterAbort> for MainControlAbort {
@@ -2324,6 +2331,7 @@ impl MainControlAbort {
             }
             MainControlAbort::Confusion(m) => crate::errors::confusion(m.as_ptr()),
             MainControlAbort::NewCharacter(a) => a.finish(),
+            MainControlAbort::Trie(e) => crate::hyphenation::trie_abort(e),
         }
     }
 }
@@ -2332,7 +2340,7 @@ impl MainControlAbort {
 /// main-control verb: `Continue` returns `Ok(())`, any cold tail rides
 /// [`MainControlAbort::Error`] to be `finish()`ed after the borrow drops.
 #[inline]
-fn mc_propagate_error(o: crate::errors::ErrorOutcome) -> Result<(), MainControlAbort> {
+pub(crate) fn mc_propagate_error(o: crate::errors::ErrorOutcome) -> Result<(), MainControlAbort> {
     if matches!(o, crate::errors::ErrorOutcome::Continue) {
         Ok(())
     } else {

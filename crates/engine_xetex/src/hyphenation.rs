@@ -10,15 +10,7 @@ const MIN_TRIE_OP: i32 = 0;
 pub(crate) const BIGGEST_LANG: i32 = 255;
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, TOO_BIG_CHAR};
-use crate::globals::{
-    cur_chr, cur_cmd, cur_lang, cur_val, eqtb_b32s1, hc_entry, hyph_count, hyph_index,
-    hyph_link_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, init_pool_ptr,
-    max_hyph_char, pool_ptr, pool_size, set_cur_chr, set_cur_cmd, set_cur_lang, set_hc_entry,
-    set_help_line, set_help_ptr, set_hyf_entry, set_hyph_count, set_hyph_index,
-    set_hyph_link_entry, set_hyph_list_entry, set_hyph_next, set_hyph_word_entry,
-    set_max_hyph_char, set_pool_ptr, set_str_pool, set_str_ptr, str_pool_entry, str_ptr, str_start,
-    trie_not_ready, trie_trc_entry, trie_trl_entry, trie_tro_entry,
-};
+use crate::globals::{cur_chr, cur_cmd, cur_val, set_cur_chr, set_cur_cmd};
 use crate::state::HyphState;
 
 // ---- moved verbatim from ini.rs (workstream 02) ----
@@ -539,7 +531,10 @@ fn save_hyph_codes_in(hyph: &mut HyphState, lc_codes: &[i32; 256]) -> Result<(),
 }
 
 // translated from xetex-ini.c:643 (new_patterns)
-pub unsafe fn new_patterns() {
+pub(crate) fn new_patterns_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    use crate::main_control::mc_propagate_error;
     const INT_PAR_LANGUAGE: i32 = 50;
     const INT_PAR_SAVING_HYPH_CODES: i32 = 64;
     const LETTER: u8 = 11;
@@ -547,77 +542,77 @@ pub unsafe fn new_patterns() {
     const SPACER: u8 = 10;
     const RIGHT_BRACE_CMD: u8 = 2;
 
-    if trie_not_ready() {
-        let lang = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
+    if st.hyph.trie_not_ready {
+        let lang = unsafe { st.eqtb.data[(INT_BASE + INT_PAR_LANGUAGE) as usize].b32.s1 };
         if lang <= 0 || lang > BIGGEST_LANG {
-            set_cur_lang(0);
+            st.hyph.cur_lang = 0;
         } else {
-            set_cur_lang(lang as u8);
+            st.hyph.cur_lang = lang as u8;
         }
 
-        crate::scan::scan_left_brace();
+        crate::scan::scan_left_brace_in(st)?;
         let mut k: i16 = 0;
-        set_hyf_entry(0, 0);
+        st.hyph.hyf[0] = 0;
         let mut digit_sensed = false;
 
         'done: {
             loop {
-                crate::scan::get_x_token();
+                crate::scan::get_x_token_in(st)?;
                 match cur_cmd() {
                     LETTER | OTHER_CHAR => {
                         if digit_sensed || cur_chr() < b'0' as i32 || cur_chr() > b'9' as i32 {
                             if cur_chr() == b'.' as i32 {
                                 set_cur_chr(0);
                             } else {
-                                set_cur_chr(eqtb_b32s1(LC_CODE_BASE + cur_chr()));
+                                set_cur_chr(unsafe {
+                                    st.eqtb.data[(LC_CODE_BASE + cur_chr()) as usize].b32.s1
+                                });
                                 if cur_chr() == 0 {
-                                    crate::output::error_here_with_diagnostic(
+                                    crate::output::error_here_with_diagnostic_in(
+                                        st,
                                         c"Nonletter".as_ptr(),
                                     );
-                                    crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                                    set_help_ptr(1);
-                                    set_help_line(0, c"(See Appendix H.)".as_ptr());
-                                    crate::errors::error();
+                                    crate::output::capture_to_diagnostic_in(
+                                        st,
+                                        std::ptr::null_mut(),
+                                    );
+                                    st.errors.help_ptr = 1;
+                                    st.errors.help_line[0] = c"(See Appendix H.)".as_ptr();
+                                    mc_propagate_error(crate::errors::error_in(st))?;
                                 }
                             }
 
-                            if cur_chr() > max_hyph_char() {
-                                set_max_hyph_char(cur_chr());
+                            if cur_chr() > st.hyph.max_hyph_char {
+                                st.hyph.max_hyph_char = cur_chr();
                             }
 
-                            if k < crate::scan::max_hyphenatable_length() as i16 {
+                            if k < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
                                 k += 1;
-                                set_hc_entry(k as usize, cur_chr());
-                                set_hyf_entry(k as usize, 0);
+                                st.hyph.hc[k as usize] = cur_chr();
+                                st.hyph.hyf[k as usize] = 0;
                                 digit_sensed = false;
                             }
-                        } else if k < crate::scan::max_hyphenatable_length() as i16 {
-                            set_hyf_entry(k as usize, (cur_chr() - b'0' as i32) as u8);
+                        } else if k < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
+                            st.hyph.hyf[k as usize] = (cur_chr() - b'0' as i32) as u8;
                             digit_sensed = true;
                         }
                     }
                     SPACER | RIGHT_BRACE_CMD => {
                         if k > 0 {
-                            let insert = match crate::state::with_state_mut(|state| {
-                                insert_pattern_word_in(&mut state.hyph, k)
-                            }) {
-                                Ok(insert) => insert,
-                                Err(e) => trie_abort(e),
-                            };
+                            let insert = insert_pattern_word_in(&mut st.hyph, k)?;
 
                             if insert.duplicate {
-                                crate::output::error_here_with_diagnostic(
+                                crate::output::error_here_with_diagnostic_in(
+                                    st,
                                     c"Duplicate pattern".as_ptr(),
                                 );
-                                crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                                set_help_ptr(1);
-                                set_help_line(0, c"(See Appendix H.)".as_ptr());
-                                crate::errors::error();
+                                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                                st.errors.help_ptr = 1;
+                                st.errors.help_line[0] = c"(See Appendix H.)".as_ptr();
+                                mc_propagate_error(crate::errors::error_in(st))?;
                             }
 
-                            crate::state::with_state_mut(|state| {
-                                set_pattern_word_op_in(&mut state.hyph, insert);
-                            });
+                            set_pattern_word_op_in(&mut st.hyph, insert);
                         }
 
                         if cur_cmd() == RIGHT_BRACE_CMD {
@@ -625,50 +620,55 @@ pub unsafe fn new_patterns() {
                         }
 
                         k = 0;
-                        set_hyf_entry(0, 0);
+                        st.hyph.hyf[0] = 0;
                         digit_sensed = false;
                     }
                     _ => {
-                        crate::output::error_here_with_diagnostic(c"Bad ".as_ptr());
-                        crate::output::print_esc_cstr(c"patterns".as_ptr());
-                        crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                        set_help_ptr(1);
-                        set_help_line(0, c"(See Appendix H.)".as_ptr());
-                        crate::errors::error();
+                        crate::output::error_here_with_diagnostic_in(st, c"Bad ".as_ptr());
+                        crate::output::print_esc_cstr_in(st, c"patterns".as_ptr());
+                        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                        st.errors.help_ptr = 1;
+                        st.errors.help_line[0] = c"(See Appendix H.)".as_ptr();
+                        mc_propagate_error(crate::errors::error_in(st))?;
                     }
                 }
             }
         } // 'done
 
         // saving_hyph_codes: record lc_code table alongside the patterns
-        if eqtb_b32s1(INT_BASE + INT_PAR_SAVING_HYPH_CODES) > 0 {
+        if unsafe { st.eqtb.data[(INT_BASE + INT_PAR_SAVING_HYPH_CODES) as usize].b32.s1 } > 0 {
             let mut lc_codes = [0; 256];
             for ci in 0u16..=255u16 {
-                lc_codes[ci as usize] = eqtb_b32s1(LC_CODE_BASE + ci as i32);
+                lc_codes[ci as usize] =
+                    unsafe { st.eqtb.data[(LC_CODE_BASE + ci as i32) as usize].b32.s1 };
             }
-            if let Err(e) =
-                crate::state::with_state_mut(|state| save_hyph_codes_in(&mut state.hyph, &lc_codes))
-            {
-                trie_abort(e);
-            }
+            save_hyph_codes_in(&mut st.hyph, &lc_codes)?;
         }
     } else {
-        crate::output::error_here_with_diagnostic(c"Too late for ".as_ptr());
-        crate::output::print_esc_cstr(c"patterns".as_ptr());
-        crate::output::capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(1);
-        set_help_line(
-            0,
-            c"All patterns must be given before typesetting begins.".as_ptr(),
-        );
-        crate::errors::error();
+        crate::output::error_here_with_diagnostic_in(st, c"Too late for ".as_ptr());
+        crate::output::print_esc_cstr_in(st, c"patterns".as_ptr());
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 1;
+        st.errors.help_line[0] =
+            c"All patterns must be given before typesetting begins.".as_ptr();
+        mc_propagate_error(crate::errors::error_in(st))?;
 
-        let _ = crate::scan::scan_toks(false, false);
-        crate::mem::flush_list_global(crate::globals::def_ref());
+        let _ = crate::scan::scan_toks_in(st, false, false)?;
+        crate::mem::flush_list(&mut st.mem, st.scanner.def_ref);
+    }
+    Ok(())
+}
+
+pub unsafe fn new_patterns() {
+    if let Err(e) = crate::state::with_state_mut(new_patterns_in) {
+        unsafe { e.fire() }
     }
 }
 // translated from xetex-ini.c:863 (new_hyph_exceptions)
-pub unsafe fn new_hyph_exceptions() {
+pub(crate) fn new_hyph_exceptions_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    use crate::main_control::{mc_propagate_error, MainControlAbort};
     const LETTER: u8 = 11;
     const OTHER_CHAR: u8 = 12;
     const CHAR_GIVEN: u8 = 68;
@@ -678,21 +678,24 @@ pub unsafe fn new_hyph_exceptions() {
     const INT_PAR_LANGUAGE: i32 = 50;
     const HYPH_PRIME: i32 = 607;
 
-    crate::scan::scan_left_brace();
+    crate::scan::scan_left_brace_in(st)?;
 
-    let lang = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
+    let lang = unsafe { st.eqtb.data[(INT_BASE + INT_PAR_LANGUAGE) as usize].b32.s1 };
     if lang <= 0 || lang > BIGGEST_LANG {
-        set_cur_lang(0);
+        st.hyph.cur_lang = 0;
     } else {
-        set_cur_lang(lang as u8);
+        st.hyph.cur_lang = lang as u8;
     }
 
-    if trie_not_ready() {
-        set_hyph_index(0);
-    } else if trie_trc_entry(hyph_start() + cur_lang() as i32) != cur_lang() as u16 {
-        set_hyph_index(0);
+    if st.hyph.trie_not_ready {
+        st.hyph.hyph_index = 0;
+    } else if st.hyph.trie_trc[(st.hyph.hyph_start + st.hyph.cur_lang as i32) as usize]
+        != st.hyph.cur_lang as u16
+    {
+        st.hyph.hyph_index = 0;
     } else {
-        set_hyph_index(trie_trl_entry(hyph_start() + cur_lang() as i32));
+        st.hyph.hyph_index =
+            st.hyph.trie_trl[(st.hyph.hyph_start + st.hyph.cur_lang as i32) as usize];
     }
 
     // not_found1:
@@ -700,57 +703,58 @@ pub unsafe fn new_hyph_exceptions() {
     let mut p: i32 = crate::mem::TEX_NULL;
 
     loop {
-        crate::scan::get_x_token();
+        crate::scan::get_x_token_in(st)?;
 
         // reswitch: re-evaluate after CHAR_NUM changes cur_cmd
         loop {
             match cur_cmd() {
                 LETTER | OTHER_CHAR | CHAR_GIVEN => {
                     if cur_chr() == b'-' as i32 {
-                        if n < crate::scan::max_hyphenatable_length() as i16 {
-                            let q = crate::mem::get_avail_global();
-                            crate::globals::set_mem_b32s1(q, p);
-                            crate::globals::set_mem_b32s0(q, n as i32);
+                        if n < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
+                            let q = crate::scan::get_avail_scc(st)?;
+                            st.mem.set_b32s1(q, p);
+                            st.mem.set_b32s0(q, n as i32);
                             p = q;
                         }
                     } else {
-                        let hc0 = if hyph_index() == 0 || cur_chr() > 255 {
-                            eqtb_b32s1(LC_CODE_BASE + cur_chr())
-                        } else if trie_trc_entry(hyph_index() + cur_chr()) != cur_chr() as u16 {
+                        let hc0 = if st.hyph.hyph_index == 0 || cur_chr() > 255 {
+                            unsafe { st.eqtb.data[(LC_CODE_BASE + cur_chr()) as usize].b32.s1 }
+                        } else if st.hyph.trie_trc[(st.hyph.hyph_index + cur_chr()) as usize]
+                            != cur_chr() as u16
+                        {
                             0
                         } else {
-                            trie_tro_entry(hyph_index() + cur_chr())
+                            st.hyph.trie_tro[(st.hyph.hyph_index + cur_chr()) as usize]
                         };
-                        set_hc_entry(0, hc0);
+                        st.hyph.hc[0] = hc0;
 
-                        if hc_entry(0) == 0 {
-                            crate::output::error_here_with_diagnostic(c"Not a letter".as_ptr());
-                            crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                            set_help_ptr(2);
-                            set_help_line(
-                                1,
-                                c"Letters in \\hyphenation words must have \\lccode>0.".as_ptr(),
+                        if st.hyph.hc[0] == 0 {
+                            crate::output::error_here_with_diagnostic_in(
+                                st,
+                                c"Not a letter".as_ptr(),
                             );
-                            set_help_line(
-                                0,
-                                c"Proceed; I'll ignore the character I just read.".as_ptr(),
-                            );
-                            crate::errors::error();
-                        } else if n < crate::scan::max_hyphenatable_length() as i16 {
+                            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                            st.errors.help_ptr = 2;
+                            st.errors.help_line[1] =
+                                c"Letters in \\hyphenation words must have \\lccode>0.".as_ptr();
+                            st.errors.help_line[0] =
+                                c"Proceed; I'll ignore the character I just read.".as_ptr();
+                            mc_propagate_error(crate::errors::error_in(st))?;
+                        } else if n < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
                             n += 1;
-                            if hc_entry(0) < 65536 {
-                                set_hc_entry(n as usize, hc_entry(0));
+                            if st.hyph.hc[0] < 65536 {
+                                st.hyph.hc[n as usize] = st.hyph.hc[0];
                             } else {
-                                set_hc_entry(n as usize, (hc_entry(0) - 65536) / 1024 + 55296);
+                                st.hyph.hc[n as usize] = (st.hyph.hc[0] - 65536) / 1024 + 55296;
                                 n += 1;
-                                set_hc_entry(n as usize, hc_entry(0) % 1024 + 56320);
+                                st.hyph.hc[n as usize] = st.hyph.hc[0] % 1024 + 56320;
                             }
                         }
                     }
                     break;
                 }
                 CHAR_NUM => {
-                    crate::scan::scan_char_num();
+                    crate::scan::scan_char_num_in(st)?;
                     set_cur_chr(cur_val());
                     set_cur_cmd(CHAR_GIVEN);
                     // continue inner loop → re-run match with new cur_cmd
@@ -758,54 +762,66 @@ pub unsafe fn new_hyph_exceptions() {
                 SPACER | RIGHT_BRACE_CMD => {
                     if n > 1 {
                         n += 1;
-                        set_hc_entry(n as usize, cur_lang() as i32);
-                        if pool_ptr() + n as i32 > pool_size() {
-                            crate::errors::overflow(
-                                c"pool size".as_ptr(),
-                                pool_size() - init_pool_ptr(),
-                            );
+                        st.hyph.hc[n as usize] = st.hyph.cur_lang as i32;
+                        if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
+                            return Err(MainControlAbort::Input(
+                                crate::input::InputAbort::Overflow {
+                                    what: c"pool size".as_ptr(),
+                                    n: st.strings.pool_size - st.strings.init_pool_ptr,
+                                },
+                            ));
                         }
 
                         let mut h: i32 = 0;
                         for j in 1i16..=n {
-                            h = (h + h + hc_entry(j as usize)) % HYPH_PRIME;
-                            set_str_pool(pool_ptr(), hc_entry(j as usize) as u16);
-                            set_pool_ptr(pool_ptr() + 1);
+                            h = (h + h + st.hyph.hc[j as usize]) % HYPH_PRIME;
+                            st.strings.str_pool[st.strings.pool_ptr as usize] =
+                                st.hyph.hc[j as usize] as u16;
+                            st.strings.pool_ptr += 1;
                         }
 
-                        let mut s = crate::string_pool::make_string_global();
+                        let mut s = crate::string_pool::make_string(&mut st.strings)?;
 
-                        if hyph_next() <= HYPH_PRIME {
-                            while hyph_next() > 0 && hyph_word_entry(hyph_next() - 1) > 0 {
-                                set_hyph_next(hyph_next() - 1);
+                        if st.hyph.hyph_next <= HYPH_PRIME {
+                            while st.hyph.hyph_next > 0
+                                && st.hyph.hyph_word[(st.hyph.hyph_next - 1) as usize] > 0
+                            {
+                                st.hyph.hyph_next -= 1;
                             }
                         }
 
-                        if hyph_count() == hyph_size() || hyph_next() == 0 {
-                            crate::errors::overflow(c"exception dictionary".as_ptr(), hyph_size());
+                        if st.hyph.hyph_count == st.hyph.hyph_size || st.hyph.hyph_next == 0 {
+                            return Err(MainControlAbort::Input(
+                                crate::input::InputAbort::Overflow {
+                                    what: c"exception dictionary".as_ptr(),
+                                    n: st.hyph.hyph_size,
+                                },
+                            ));
                         }
 
-                        set_hyph_count(hyph_count() + 1);
+                        st.hyph.hyph_count += 1;
 
                         // Hash lookup / insert into exception table
                         loop {
-                            if hyph_word_entry(h) == 0 {
+                            if st.hyph.hyph_word[h as usize] == 0 {
                                 break;
                             }
-                            let k = hyph_word_entry(h);
+                            let k = st.hyph.hyph_word[h as usize];
 
                             // Check if this slot holds the same word
-                            let matched = if crate::string_pool::length_global(k)
-                                != crate::string_pool::length_global(s)
+                            let matched = if crate::string_pool::length(&st.strings, k)
+                                != crate::string_pool::length(&st.strings, s)
                             {
                                 false
                             } else {
-                                let mut u = str_start(k - TOO_BIG_CHAR);
-                                let mut v = str_start(s - TOO_BIG_CHAR);
-                                let end = str_start(k + 1 - TOO_BIG_CHAR);
+                                let mut u = st.strings.str_start[(k - TOO_BIG_CHAR) as usize];
+                                let mut v = st.strings.str_start[(s - TOO_BIG_CHAR) as usize];
+                                let end = st.strings.str_start[(k + 1 - TOO_BIG_CHAR) as usize];
                                 let mut ok = true;
                                 while u != end {
-                                    if str_pool_entry(u) != str_pool_entry(v) {
+                                    if st.strings.str_pool[u as usize]
+                                        != st.strings.str_pool[v as usize]
+                                    {
                                         ok = false;
                                         break;
                                     }
@@ -817,32 +833,33 @@ pub unsafe fn new_hyph_exceptions() {
 
                             if matched {
                                 // found: merge into existing slot
-                                set_str_ptr(str_ptr() - 1);
-                                set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
-                                s = hyph_word_entry(h);
-                                set_hyph_count(hyph_count() - 1);
+                                st.strings.str_ptr -= 1;
+                                st.strings.pool_ptr =
+                                    st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+                                s = st.hyph.hyph_word[h as usize];
+                                st.hyph.hyph_count -= 1;
                                 break;
                             }
 
                             // not_found: collision resolution
-                            if hyph_link_entry(h) == 0 {
-                                set_hyph_link_entry(h, hyph_next() as u16);
-                                if hyph_next() >= hyph_size() {
-                                    set_hyph_next(HYPH_PRIME);
+                            if st.hyph.hyph_link[h as usize] == 0 {
+                                st.hyph.hyph_link[h as usize] = st.hyph.hyph_next as u16;
+                                if st.hyph.hyph_next >= st.hyph.hyph_size {
+                                    st.hyph.hyph_next = HYPH_PRIME;
                                 }
-                                if hyph_next() > HYPH_PRIME {
-                                    set_hyph_next(hyph_next() + 1);
+                                if st.hyph.hyph_next > HYPH_PRIME {
+                                    st.hyph.hyph_next += 1;
                                 }
                             }
-                            h = hyph_link_entry(h) as i32 - 1;
+                            h = st.hyph.hyph_link[h as usize] as i32 - 1;
                         }
 
-                        set_hyph_word_entry(h, s);
-                        set_hyph_list_entry(h, p);
+                        st.hyph.hyph_word[h as usize] = s;
+                        st.hyph.hyph_list[h as usize] = p;
                     }
 
                     if cur_cmd() == RIGHT_BRACE_CMD {
-                        return;
+                        return Ok(());
                     }
 
                     n = 0;
@@ -850,25 +867,27 @@ pub unsafe fn new_hyph_exceptions() {
                     break;
                 }
                 _ => {
-                    crate::output::error_here_with_diagnostic(c"Improper ".as_ptr());
-                    crate::output::print_esc_cstr(c"hyphenation".as_ptr());
-                    crate::output::print_cstr(c" will be flushed".as_ptr());
-                    crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                    set_help_ptr(2);
-                    set_help_line(
-                        1,
-                        c"Hyphenation exceptions must contain only letters".as_ptr(),
-                    );
-                    set_help_line(
-                        0,
-                        c"and hyphens. But continue; I'll forgive and forget.".as_ptr(),
-                    );
-                    crate::errors::error();
+                    crate::output::error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
+                    crate::output::print_esc_cstr_in(st, c"hyphenation".as_ptr());
+                    crate::output::print_cstr_in(st, c" will be flushed".as_ptr());
+                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                    st.errors.help_ptr = 2;
+                    st.errors.help_line[1] =
+                        c"Hyphenation exceptions must contain only letters".as_ptr();
+                    st.errors.help_line[0] =
+                        c"and hyphens. But continue; I'll forgive and forget.".as_ptr();
+                    mc_propagate_error(crate::errors::error_in(st))?;
                     break;
                 }
             }
         }
 
         let _ = &p; // suppress unused-variable warning on 'outer
+    }
+}
+
+pub unsafe fn new_hyph_exceptions() {
+    if let Err(e) = crate::state::with_state_mut(new_hyph_exceptions_in) {
+        unsafe { e.fire() }
     }
 }

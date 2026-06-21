@@ -713,12 +713,6 @@ pub(crate) fn str_start(k: i32) -> i32 {
     crate::state::with_state(|state| state.strings.str_start[k as usize])
 }
 
-/// Read `str_pool[k]` (a packed UTF-16 code unit).
-#[inline]
-pub(crate) fn str_pool_entry(k: i32) -> u16 {
-    crate::state::with_state(|state| state.strings.str_pool[k as usize])
-}
-
 // ---------------------------------------------------------------------------
 // in_open / full_source_filename_stack / line_stack / file_line_error_style_p
 // ---------------------------------------------------------------------------
@@ -3016,16 +3010,6 @@ pub(crate) fn set_prev_class(v: i32) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn hc_entry(k: usize) -> i32 {
-    crate::state::with_state(|state| state.hyph.hc[k])
-}
-#[inline]
-pub(crate) fn set_hc_entry(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hc[k] = v;
-    });
-}
-#[inline]
 pub(crate) fn max_hyph_char() -> i32 {
     crate::state::with_state(|state| state.hyph.max_hyph_char)
 }
@@ -3034,24 +3018,6 @@ pub(crate) fn set_max_hyph_char(v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.max_hyph_char = v;
     });
-}
-#[inline]
-pub(crate) fn set_hyf_entry(k: usize, v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyf[k] = v;
-    });
-}
-#[inline]
-pub(crate) fn trie_trl_entry(k: i32) -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_trl[k as usize])
-}
-#[inline]
-pub(crate) fn trie_tro_entry(k: i32) -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_tro[k as usize])
-}
-#[inline]
-pub(crate) fn trie_trc_entry(k: i32) -> u16 {
-    crate::state::with_state(|state| state.hyph.trie_trc[k as usize])
 }
 #[inline]
 pub(crate) fn set_trie_c_entry(k: i32, v: u16) {
@@ -3099,16 +3065,6 @@ pub(crate) fn hyph_start() -> i32 {
 pub(crate) fn set_hyph_start(v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.hyph_start = v;
-    });
-}
-#[inline]
-pub(crate) fn hyph_index() -> i32 {
-    crate::state::with_state(|state| state.hyph.hyph_index)
-}
-#[inline]
-pub(crate) fn set_hyph_index(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyph_index = v;
     });
 }
 #[inline]
@@ -3191,16 +3147,6 @@ pub(crate) fn set_hyph_next(v: i32) {
     });
 }
 
-#[inline]
-pub(crate) fn cur_lang() -> u8 {
-    crate::state::with_state(|state| state.hyph.cur_lang)
-}
-#[inline]
-pub(crate) fn set_cur_lang(v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.cur_lang = v;
-    });
-}
 #[inline]
 pub(crate) fn insert_src_special_every_math() -> bool {
     crate::state::with_state(|state| state.shipout.insert_src_special_every_math)

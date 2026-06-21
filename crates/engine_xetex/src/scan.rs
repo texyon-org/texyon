@@ -420,14 +420,7 @@ pub unsafe fn scan_delimiter_int() {
 // max_hyphenatable_length
 // ---------------------------------------------------------------------------
 
-/// Returns the maximum hyphenatable word length, clamped to HYPHENATABLE_LENGTH_LIMIT.
-///
-/// translated from xetex-xetex0.c:11330 (max_hyphenatable_length)
-pub fn max_hyphenatable_length() -> i32 {
-    crate::state::with_state(|st| max_hyphenatable_length_in(&st.eqtb))
-}
-
-/// Threaded (Phase C) core of [`max_hyphenatable_length`]: reads the
+/// Threaded (Phase C) core of `max_hyphenatable_length`: reads the
 /// `\XeTeXhyphenatablelength` integer parameter directly from the borrowed
 /// `eqtb`, so it is safe to call under a live `&mut EngineState` borrow.
 pub fn max_hyphenatable_length_in(eqtb: &crate::state::EqtbState) -> i32 {
