@@ -1851,11 +1851,6 @@ pub(crate) fn set_depth_base_entry(f: i32, v: i32) {
         s.fonts.depth_base[f as usize] = v;
     });
 }
-/// Returns `italic_base[f]`.
-#[inline]
-pub(crate) fn italic_base_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.italic_base[f as usize])
-}
 /// Writes `italic_base[f] = v`.
 #[inline]
 pub(crate) fn set_italic_base_entry(f: i32, v: i32) {

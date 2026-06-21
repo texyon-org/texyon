@@ -23,8 +23,7 @@ use crate::expand::expand;
 use crate::ext::{
     append_src_special, apply_mapping, do_extension, get_native_char_height_depth_global,
     get_native_char_sidebearings_global, insert_src_special, map_char_to_glyph_global,
-    measure_native_node_global, real_get_native_glyph_italic_correction_global,
-    real_get_native_italic_correction_global,
+    measure_native_node_global,
 };
 use crate::fonts::read_font_info;
 use crate::globals::{
@@ -59,8 +58,8 @@ use crate::scan::{
     new_native_word_node_global, scan_char_num, scan_delimiter_int, scan_dimen,
     scan_fifteen_bit_int, scan_glue, scan_int, scan_keyword, scan_left_brace, scan_math,
     scan_math_class_int, scan_math_fam_int, scan_optional_equals, scan_register_num,
-    scan_rule_spec, scan_spec, scan_toks, scan_usv_num, scan_xetex_math_char_int, set_class_fn,
-    set_family_fn, set_math_char, x_token,
+    scan_rule_spec, scan_spec, scan_usv_num, scan_xetex_math_char_int, set_class_fn, set_family_fn,
+    set_math_char, x_token,
 };
 use crate::units::MemIdx;
 
@@ -3426,22 +3425,30 @@ pub(crate) fn append_discretionary_in(
 }
 // translated from xetex-xetex0.c:10765 (shift_case)
 pub unsafe fn shift_case() {
+    if let Err(e) = crate::state::with_state_mut(shift_case_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn shift_case_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let b = cur_chr();
-    scan_toks(false, false);
-    let mut p = mem_b32s1(def_ref());
+    crate::scan::scan_toks_in(st, false, false)?;
+    let mut p = st.mem.b32s1(st.scanner.def_ref);
     while p != crate::mem::TEX_NULL {
-        let t = mem_b32s0(p);
+        let t = st.mem.b32s0(p);
         if t < CS_TOKEN_FLAG + SINGLE_BASE {
             let c = t % MAX_CHAR_VAL;
-            if eqtb_b32s1(b + c) != 0 {
-                set_mem_b32s0(p, t - c + eqtb_b32s1(b + c));
+            if st.eqtb.b32s1(b + c) != 0 {
+                st.mem.set_b32s0(p, t - c + st.eqtb.b32s1(b + c));
             }
         }
-        p = mem_b32s1(p);
+        p = st.mem.b32s1(p);
     }
-    begin_token_list(mem_b32s1(def_ref()), BACKED_UP);
-    set_mem_b32s1(def_ref(), avail());
-    set_avail(def_ref());
+    let def_ref = st.scanner.def_ref;
+    crate::input::begin_token_list_in(st, st.mem.b32s1(def_ref), BACKED_UP)?;
+    st.mem.set_b32s1(def_ref, st.mem.avail);
+    st.mem.avail = def_ref;
+    Ok(())
 }
 // translated from xetex-xetex0.c:9958 (build_discretionary)
 pub unsafe fn build_discretionary() {
@@ -3591,59 +3598,78 @@ pub(crate) fn build_discretionary_in(
 }
 // translated from xetex-xetex0.c:9868 (append_italic_correction)
 pub unsafe fn append_italic_correction() {
-    extern "C" {
-        // Note: in C these are macros: get_native_italic_correction(p) = real_get_native_italic_correction_global(&mem[p])
-
+    if let Err(e) = crate::state::with_state_mut(append_italic_correction_in) {
+        e.fire();
     }
+}
+
+pub(crate) fn append_italic_correction_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const EXPLICIT: u16 = 1; // xetex_format.h:428
     const GLYPH_NODE: u16 = 42; // xetex_format.h:465
 
-    let tail = crate::globals::cur_list_tail();
-    if tail == crate::globals::cur_list_head() {
-        return;
-    }
-
-    let p = if tail >= crate::globals::hi_mem_min() {
-        // is_char_node
-        tail
-    } else if mem_b16s1(tail) == LIGATURE_NODE {
-        tail + 1
-    } else if mem_b16s1(tail) == WHATSIT_NODE {
-        let sub = mem_b16s0(tail);
-        if sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT {
-            let kern = crate::mem::new_kern_global(real_get_native_italic_correction_global(
-                crate::globals::mem_node_addr(tail),
-            ));
-            set_mem_b32s1(tail, kern);
-            let new_tail = mem_b32s1(tail);
-            crate::globals::set_cur_list_tail(new_tail);
-            set_mem_b16s0(new_tail, EXPLICIT);
-        } else if sub == GLYPH_NODE {
-            let kern = crate::mem::new_kern_global(real_get_native_glyph_italic_correction_global(
-                crate::globals::mem_node_addr(tail),
-            ));
-            set_mem_b32s1(tail, kern);
-            let new_tail = mem_b32s1(tail);
-            crate::globals::set_cur_list_tail(new_tail);
-            set_mem_b16s0(new_tail, EXPLICIT);
+    // get_native_italic_correction(p) = real_get_native_italic_correction(&mem[p])
+    let native_kern = |st: &mut crate::state::EngineState,
+                       tail: i32,
+                       glyph: bool|
+     -> Result<(), MainControlAbort> {
+        let node_addr =
+            unsafe { st.mem.data.as_mut_ptr().add(tail as usize) as *mut std::ffi::c_void };
+        let ic = unsafe {
+            if glyph {
+                crate::ext::real_get_native_glyph_italic_correction(&st.fonts, node_addr)
+            } else {
+                crate::ext::real_get_native_italic_correction(&st.fonts, node_addr)
+            }
+        };
+        let kern = crate::mem::new_kern(&mut st.mem, ic);
+        if kern == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
         }
-        return;
-    } else {
-        return;
+        st.mem.set_b32s1(tail, kern);
+        crate::globals::set_cur_list_tail(kern);
+        st.mem.set_b16s0(kern, EXPLICIT);
+        Ok(())
     };
 
-    let f = mem_b16s1(p) as i32; // CHAR_NODE_font(p)
-    let c = effective_char_global(true, f, mem_b16s0(p));
-    let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
-    let italic = crate::globals::font_info_b32s1(
-        crate::globals::italic_base_entry(f) + (info.s1 / 4) as i32,
-    );
-    let kern = crate::mem::new_kern_global(italic);
+    let tail = crate::globals::cur_list_tail();
+    if tail == crate::globals::cur_list_head() {
+        return Ok(());
+    }
+
+    let p = if tail >= st.mem.hi_mem_min {
+        // is_char_node
+        tail
+    } else if st.mem.b16s1(tail) == LIGATURE_NODE {
+        tail + 1
+    } else if st.mem.b16s1(tail) == WHATSIT_NODE {
+        let sub = st.mem.b16s0(tail);
+        if sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT {
+            native_kern(st, tail, false)?;
+        } else if sub == GLYPH_NODE {
+            native_kern(st, tail, true)?;
+        }
+        return Ok(());
+    } else {
+        return Ok(());
+    };
+
+    let f = st.mem.b16s1(p) as i32; // CHAR_NODE_font(p)
+    let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
+    let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
+    let italic = st
+        .fonts
+        .font_info_b32s1(st.fonts.italic_base_entry(f) + (info.s1 / 4) as i32);
+    let kern = crate::mem::new_kern(&mut st.mem, italic);
+    if kern == crate::mem::ALLOC_FAILED {
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+    }
     let tail2 = crate::globals::cur_list_tail();
-    set_mem_b32s1(tail2, kern);
-    let new_tail = mem_b32s1(tail2);
-    crate::globals::set_cur_list_tail(new_tail);
-    set_mem_b16s0(new_tail, EXPLICIT);
+    st.mem.set_b32s1(tail2, kern);
+    crate::globals::set_cur_list_tail(kern);
+    st.mem.set_b16s0(kern, EXPLICIT);
+    Ok(())
 }
 // translated from xetex-xetex0.c:9910 (make_accent)
 pub unsafe fn make_accent() {

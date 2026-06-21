@@ -2355,12 +2355,6 @@ pub unsafe fn check_for_tfm_font_mapping_global() {
     let name = crate::globals::name_of_file();
     check_for_tfm_font_mapping(name)
 }
-pub unsafe fn real_get_native_italic_correction_global(p_node: *mut c_void) -> i32 {
-    crate::state::with_state(|s| real_get_native_italic_correction(&s.fonts, p_node))
-}
-pub unsafe fn real_get_native_glyph_italic_correction_global(p_node: *mut c_void) -> i32 {
-    crate::state::with_state(|s| real_get_native_glyph_italic_correction(&s.fonts, p_node))
-}
 pub unsafe fn get_native_char_height_depth_global(
     font: i32,
     ch: i32,
