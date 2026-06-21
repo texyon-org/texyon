@@ -364,12 +364,7 @@ pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
     }
     outcome
 }
-// translated from xetex-xetex0.c:9326 (you_cant)
-pub unsafe fn you_cant() {
-    crate::state::with_state_mut(|st| you_cant_in(st));
-}
-
-/// `&mut EngineState` core of [`you_cant`].
+/// `&mut EngineState` core of the `you_cant` diagnostic.
 pub(crate) fn you_cant_in(st: &mut EngineState) {
     error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
     print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());

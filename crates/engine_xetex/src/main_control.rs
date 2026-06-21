@@ -18,7 +18,6 @@ use crate::consts::{
 use crate::engine::intpar;
 use crate::errors::{
     box_error, cs_error, error, extra_right_brace, int_error, privileged, report_illegal_case,
-    you_cant,
 };
 use crate::expand::expand;
 use crate::ext::{
@@ -52,9 +51,7 @@ use crate::output::{
     capture_to_diagnostic, char_warning, error_here_with_diagnostic, issue_message, print_cmd_chr,
     show_whatever,
 };
-use crate::packaging::{
-    append_to_vlist_global, copy_node_list_global, flush_node_list_global, hpack, vpackage,
-};
+use crate::packaging::{append_to_vlist_global, flush_node_list_global, hpack, vpackage};
 use crate::pagebuilder::build_page;
 use crate::scan::{
     back_input, eTeX_enabled, effective_char_global, effective_char_info_global, get_next,
@@ -1606,6 +1603,12 @@ pub unsafe fn do_endv() {
 }
 // translated from xetex-xetex0.c:9799 (unpackage)
 pub unsafe fn unpackage() {
+    if let Err(e) = crate::state::with_state_mut(unpackage_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const COPY_CODE: i32 = 1; // xetex_format.h:481
     const VLIST_NODE: u16 = 1; // xetex_format.h:381
     const MARGIN_KERN_NODE: u16 = 40; // xetex_format.h:396
@@ -1614,122 +1617,122 @@ pub unsafe fn unpackage() {
     const MMODE: i16 = 207; // xetex_format.h:370
 
     if cur_chr() > COPY_CODE {
-        set_mem_b32s1(
-            crate::globals::cur_list_tail(),
-            crate::globals::disc_ptr(cur_chr() as usize),
-        );
-        crate::globals::set_disc_ptr(cur_chr() as usize, crate::mem::TEX_NULL);
+        let tail = crate::globals::cur_list_tail();
+        st.mem
+            .set_b32s1(tail, st.scanner.disc_ptr[cur_chr() as usize]);
+        st.scanner.disc_ptr[cur_chr() as usize] = crate::mem::TEX_NULL;
         // goto done — jump to tail-walk loop
     } else {
         let c = cur_chr();
-        scan_register_num();
+        crate::scan::scan_register_num_in(st)?;
         let p = if cur_val() < 256 {
-            eqtb_b32s1(BOX_BASE + cur_val())
+            st.eqtb.b32s1(BOX_BASE + cur_val())
         } else {
-            crate::save::find_sa_element_global(4, cur_val(), false);
+            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
             if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
                 crate::mem::TEX_NULL
             } else {
-                mem_b32s1(crate::globals::cur_ptr() + 1)
+                st.mem.b32s1(crate::globals::cur_ptr() + 1)
             }
         };
 
         if p == crate::mem::TEX_NULL {
-            return;
+            return Ok(());
         }
 
         let mode = cur_list_mode().abs();
-        let ntype = mem_b16s1(p);
+        let ntype = st.mem.b16s1(p);
         if mode == MMODE
             || (mode == VMODE && ntype != VLIST_NODE)
             || (mode == HMODE && ntype != HLIST_NODE)
         {
-            error_here_with_diagnostic(c"Incompatible list can't be unboxed".as_ptr());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(3);
-            set_help_line(2, c"Sorry, Pandora. (You sneaky devil.)".as_ptr());
-            set_help_line(
-                1,
-                c"I refuse to unbox an \\hbox in vertical mode or vice versa.".as_ptr(),
+            crate::output::error_here_with_diagnostic_in(
+                st,
+                c"Incompatible list can't be unboxed".as_ptr(),
             );
-            set_help_line(0, c"And I can't open any boxes in math mode.".as_ptr());
-            error();
-            return;
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 3;
+            st.errors.help_line[2] = c"Sorry, Pandora. (You sneaky devil.)".as_ptr();
+            st.errors.help_line[1] =
+                c"I refuse to unbox an \\hbox in vertical mode or vice versa.".as_ptr();
+            st.errors.help_line[0] = c"And I can't open any boxes in math mode.".as_ptr();
+            return mc_propagate_error(crate::errors::error_in(st));
         }
 
-        let list_head = mem_b32s1(p + 5);
+        let list_head = st.mem.b32s1(p + 5);
+        let tail = crate::globals::cur_list_tail();
         if c == COPY_CODE {
-            set_mem_b32s1(
-                crate::globals::cur_list_tail(),
-                copy_node_list_global(list_head),
-            );
+            let copy = crate::packaging::copy_node_list(&mut st.mem, list_head)?;
+            st.mem.set_b32s1(tail, copy);
         } else {
-            set_mem_b32s1(crate::globals::cur_list_tail(), list_head);
+            st.mem.set_b32s1(tail, list_head);
             if cur_val() < 256 {
-                crate::globals::set_eqtb_b32s1(BOX_BASE + cur_val(), crate::mem::TEX_NULL);
+                st.eqtb
+                    .set_b32s1(BOX_BASE + cur_val(), crate::mem::TEX_NULL);
             } else {
-                crate::save::find_sa_element_global(4, cur_val(), false);
-                if crate::globals::cur_ptr() != crate::mem::TEX_NULL {
-                    set_mem_b32s1(crate::globals::cur_ptr() + 1, crate::mem::TEX_NULL);
-                    let rc = mem_b32s0(crate::globals::cur_ptr() + 1) + 1;
-                    set_mem_b32s0(crate::globals::cur_ptr() + 1, rc);
-                    crate::save::delete_sa_ref_global(crate::globals::cur_ptr());
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
+                let cp = crate::globals::cur_ptr();
+                if cp != crate::mem::TEX_NULL {
+                    st.mem.set_b32s1(cp + 1, crate::mem::TEX_NULL);
+                    let rc = st.mem.b32s0(cp + 1) + 1;
+                    st.mem.set_b32s0(cp + 1, rc);
+                    crate::save::delete_sa_ref(&mut st.mem, &mut st.scanner, cp);
                 }
             }
-            crate::mem::free_node_global(p, BOX_NODE_SIZE);
+            crate::mem::free_node(&mut st.mem, p, BOX_NODE_SIZE);
         }
     }
 
     // done: advance cur_list.tail past any MARGIN_KERN_NODEs
-    while mem_b32s1(crate::globals::cur_list_tail()) != crate::mem::TEX_NULL {
-        let r = mem_b32s1(crate::globals::cur_list_tail());
-        if r < crate::globals::hi_mem_min() && mem_b16s1(r) == MARGIN_KERN_NODE {
-            set_mem_b32s1(crate::globals::cur_list_tail(), mem_b32s1(r));
-            crate::mem::free_node_global(r, MARGIN_KERN_NODE_SIZE);
+    while st.mem.b32s1(crate::globals::cur_list_tail()) != crate::mem::TEX_NULL {
+        let r = st.mem.b32s1(crate::globals::cur_list_tail());
+        if r < st.mem.hi_mem_min && st.mem.b16s1(r) == MARGIN_KERN_NODE {
+            let tail = crate::globals::cur_list_tail();
+            st.mem.set_b32s1(tail, st.mem.b32s1(r));
+            crate::mem::free_node(&mut st.mem, r, MARGIN_KERN_NODE_SIZE);
         } else {
-            crate::globals::set_cur_list_tail(mem_b32s1(crate::globals::cur_list_tail()));
+            crate::globals::set_cur_list_tail(st.mem.b32s1(crate::globals::cur_list_tail()));
         }
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:9716 (delete_last)
 pub unsafe fn delete_last() {
+    if let Err(e) = crate::state::with_state_mut(delete_last_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn delete_last_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const BEGIN_M_CODE: u16 = 2; // xetex_format.h:436
 
     if cur_list_mode() == VMODE
         && crate::globals::cur_list_tail() == crate::globals::cur_list_head()
     {
         // On page: only allowed for \lastskip when last_glue != MAX_HALFWORD
-        if cur_chr() as u16 != GLUE_NODE || crate::globals::last_glue() != MAX_HALFWORD {
-            you_cant();
-            set_help_ptr(2);
-            set_help_line(
-                1,
-                c"Sorry...I usually can't take things from the current page.".as_ptr(),
-            );
-            set_help_line(0, c"Try `I\\vskip-\\lastskip' instead.".as_ptr());
+        if cur_chr() as u16 != GLUE_NODE || st.shipout.last_glue != MAX_HALFWORD {
+            crate::errors::you_cant_in(st);
+            st.errors.help_ptr = 2;
+            st.errors.help_line[1] =
+                c"Sorry...I usually can't take things from the current page.".as_ptr();
+            st.errors.help_line[0] = c"Try `I\\vskip-\\lastskip' instead.".as_ptr();
             if cur_chr() as u16 == KERN_NODE {
-                set_help_line(0, c"Try `I\\kern-\\lastkern' instead.".as_ptr());
+                st.errors.help_line[0] = c"Try `I\\kern-\\lastkern' instead.".as_ptr();
             } else if cur_chr() as u16 != GLUE_NODE {
-                set_help_line(
-                    0,
-                    c"Perhaps you can make the output routine do it.".as_ptr(),
-                );
+                st.errors.help_line[0] = c"Perhaps you can make the output routine do it.".as_ptr();
             }
-            error();
+            return mc_propagate_error(crate::errors::error_in(st));
         }
-        return;
+        return Ok(());
     }
 
     let mut tx = crate::globals::cur_list_tail();
 
     // If tail is MATH END, back up one to find the actual last "deletable" node
-    if tx < crate::globals::hi_mem_min()
-        && mem_b16s1(tx) == MATH_NODE
-        && mem_b16s0(tx) == END_M_CODE
-    {
+    if tx < st.mem.hi_mem_min && st.mem.b16s1(tx) == MATH_NODE && st.mem.b16s0(tx) == END_M_CODE {
         let mut r = crate::globals::cur_list_head();
         loop {
-            let next_r = mem_b32s1(r);
+            let next_r = st.mem.b32s1(r);
             if next_r == tx {
                 tx = r;
                 break;
@@ -1738,8 +1741,8 @@ pub unsafe fn delete_last() {
         }
     }
 
-    if tx >= crate::globals::hi_mem_min() || mem_b16s1(tx) as i32 != cur_chr() {
-        return;
+    if tx >= st.mem.hi_mem_min || st.mem.b16s1(tx) as i32 != cur_chr() {
+        return Ok(());
     }
 
     // Walk the list to find the node before tx
@@ -1751,41 +1754,42 @@ pub unsafe fn delete_last() {
         r_save = p;
         p = q;
         fm = false;
-        if q < crate::globals::hi_mem_min() {
-            if mem_b16s1(q) == DISC_NODE {
-                let count = mem_b16s0(q);
+        if q < st.mem.hi_mem_min {
+            if st.mem.b16s1(q) == DISC_NODE {
+                let count = st.mem.b16s0(q);
                 for _ in 0..count {
-                    p = mem_b32s1(p);
+                    p = st.mem.b32s1(p);
                 }
                 if p == tx {
-                    return;
+                    return Ok(());
                 }
-            } else if mem_b16s1(q) == MATH_NODE && mem_b16s0(q) == BEGIN_M_CODE {
+            } else if st.mem.b16s1(q) == MATH_NODE && st.mem.b16s0(q) == BEGIN_M_CODE {
                 fm = true;
             }
         }
-        q = mem_b32s1(p);
+        q = st.mem.b32s1(p);
         if q == tx {
             break;
         }
     }
 
     // q == tx; p is the node just before tx; r_save is the one before p
-    let q_next = mem_b32s1(tx);
-    set_mem_b32s1(p, q_next);
-    set_mem_b32s1(tx, crate::mem::TEX_NULL);
+    let q_next = st.mem.b32s1(tx);
+    st.mem.set_b32s1(p, q_next);
+    st.mem.set_b32s1(tx, crate::mem::TEX_NULL);
     if q_next == crate::mem::TEX_NULL {
         if fm {
-            crate::errors::confusion(c"tail1".as_ptr());
+            return Err(MainControlAbort::Confusion(c"tail1"));
         } else {
             crate::globals::set_cur_list_tail(p);
         }
     } else if fm {
         crate::globals::set_cur_list_tail(r_save);
-        set_mem_b32s1(r_save, crate::mem::TEX_NULL);
-        flush_node_list_global(p);
+        st.mem.set_b32s1(r_save, crate::mem::TEX_NULL);
+        crate::packaging::flush_node_list(&mut st.mem, p).map_err(MainControlAbort::Confusion)?;
     }
-    flush_node_list_global(tx);
+    crate::packaging::flush_node_list(&mut st.mem, tx).map_err(MainControlAbort::Confusion)?;
+    Ok(())
 }
 // translated from xetex-xetex0.c:9223 (app_space)
 // Phase-C: threaded to `&mut MemState`/`&EqtbState`/`&mut FontState`; legacy
