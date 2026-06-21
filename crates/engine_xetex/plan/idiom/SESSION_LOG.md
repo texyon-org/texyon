@@ -8,6 +8,23 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 216 — 2026-06-21 — Execution: thread small scanner leaves, read_toks, hyphenation patterns, and register commands
+
+**Type:** execution (workstream 01). Threaded scanner leaves, token reading, hyphenation parameters, and register assignment operations. Five commits.
+
+**Code:**
+- **Small scanner leaves**: Threaded `scan_char_class`, `scan_math_class_int`, `scan_four_bit_int`, `scan_fifteen_bit_int`, and `scan_xetex_math_char_int` into `_in(&mut EngineState)` cores in `scan.rs`, using `leaf_int_range_error` and inlining `get_r_token`.
+- **`read_toks`**: Threaded into `read_toks_in(&mut EngineState) -> Result<i32, SccAbort>` under a single borrow over `st.scanner`/`st.input`/`st.mem` direct + `get_avail_scc`/`get_token_in`/`begin_file_reading_in`/`input_line_in`/`end_file_reading_in`/`runaway_in`. Deleted dead `begin_file_reading` and `buffer_entry` wrappers.
+- **Hyphenation patterns**: Threaded `new_patterns` and `new_hyph_exceptions` into `_in` cores in `hyphenation.rs` under a single borrow over `st.hyph`/`st.strings`/`st.eqtb` direct. Added `MainControlAbort::Trie(TrieAbort)` arm. Deleted dead `hc_entry`, `set_hc_entry`, `set_hyf_entry`, `trie_tr[lroc]_entry`, `hyph_index`, `set_hyph_index`, `cur_lang`, `set_cur_lang`, `str_pool_entry` accessors + non-`_in` `max_hyphenatable_length`.
+- **Register commands**: Threaded `do_register_command` into `do_register_command_in(&mut EngineState) -> Result<(), MainControlAbort>` executing `\advance`/`\multiply`/`\divide` under a single borrow over `st.mem`/`st.eqtb`/`st.errors` direct. Recoverable errors use `mc_propagate_error`. Deleted `sa_w_def_global` and `gsa_w_def_global`.
+- **Formatting**: Ran `rustfmt` on all modified slices.
+
+**Validation:** `cargo check -p tectonic_engine_xetex`; dashboard **29/2/7/4** (`tex-outputs`, TRIP+eTRIP, `engine_rust`, `latex_goldens`); release rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1`/`1905.00148v1`. Metrics: warnings **41** (held); `unsafe fn` **486 → 470**; `with_state` sites **803**.
+
+**Next:** thread `prefixed_command` (dispatcher and assignments) and the remaining alignment SCC.
+
+---
+
 ## Idiom session 215 — 2026-06-21 — Execution: thread fin_col + resume_after_display
 
 **Type:** execution (workstream 01). Continued the alignment SCC. Two commits.
