@@ -21,11 +21,10 @@ use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, eqtb_b32s1, expand_depth, first,
-    init_pool_ptr, pool_size, save_ptr, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit,
-    set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_cur_input_synctex_tag,
-    set_cur_tok, set_cur_val, set_first, set_help_line, set_help_ptr, set_line, set_mem_b32s1,
-    set_no_new_control_sequence,
+    cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, expand_depth, first, init_pool_ptr,
+    pool_size, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc,
+    set_cur_input_name, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_cur_val,
+    set_first, set_line, set_no_new_control_sequence,
 };
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
@@ -43,7 +42,6 @@ use crate::output::print_esc_cstr_in;
 use crate::output::print_int_in;
 use crate::output::print_nl_cstr_in;
 // Relocated to main_control.rs (workstream 02); still called from scan.rs.
-use crate::main_control::push_math;
 
 use crate::fonts::{effective_char, effective_char_info, new_native_word_node};
 use crate::io::open_log_file;
@@ -465,20 +463,23 @@ const MATH_SHIFT_TOKEN: i32 = 0x600000;
 
 /// translated from xetex-xetex0.c:11444 (insert_dollar_sign)
 pub unsafe fn insert_dollar_sign() {
-    crate::input::back_input();
+    if let Err(e) = crate::state::with_state_mut(|st| insert_dollar_sign_in(st)) {
+        e.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`insert_dollar_sign`] (`01b` §3).
+pub(crate) fn insert_dollar_sign_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    crate::input::back_input_in(st)?;
     set_cur_tok(MATH_SHIFT_TOKEN + '$' as i32);
-    crate::output::error_here_with_diagnostic(c"Missing $ inserted".as_ptr());
-    crate::output::capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(2);
-    set_help_line(
-        1,
-        c"I've inserted a begin-math/end-math symbol since I think".as_ptr(),
-    );
-    set_help_line(
-        0,
-        c"you left one out. Proceed, with fingers crossed.".as_ptr(),
-    );
-    crate::input::ins_error();
+    crate::output::error_here_with_diagnostic_in(st, c"Missing $ inserted".as_ptr());
+    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    st.errors.help_ptr = 2;
+    st.errors.help_line[1] = c"I've inserted a begin-math/end-math symbol since I think".as_ptr();
+    st.errors.help_line[0] = c"you left one out. Proceed, with fingers crossed.".as_ptr();
+    crate::main_control::mc_propagate_error(crate::input::ins_error_in(st)?)
 }
 
 /// translated from xetex-xetex0.c:4355 (scan_optional_equals)
@@ -1313,9 +1314,19 @@ pub(crate) fn get_r_token_in(st: &mut crate::state::EngineState) -> Result<(), S
 
 // translated from xetex-xetex0.c:4313 (scan_math)
 pub unsafe fn scan_math(p: i32) {
-    use crate::globals::{
-        cur_chr, cur_cmd, cur_cs, eqtb_b16s1, set_cur_chr, set_cur_cmd, set_cur_cs,
-    };
+    if let Err(e) = crate::state::with_state_mut(|st| scan_math_in(st, p)) {
+        e.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`scan_math`] (`01b` §3): scans one math field
+/// under one borrow over the threaded scanner/input cores; the `{`...`}`
+/// sub-formula arm pushes a `MATH_GROUP` and returns.
+pub(crate) fn scan_math_in(
+    st: &mut crate::state::EngineState,
+    p: i32,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    use crate::globals::{cur_chr, cur_cmd, set_cur_chr, set_cur_cmd, set_cur_cs};
     const LETTER: u8 = 11; // xetex_format.h:243
     const OTHER_CHAR_CMD: u8 = 12; // xetex_format.h:244
     const DELIM_NUM: u8 = 15; // xetex_format.h:251
@@ -1333,7 +1344,7 @@ pub unsafe fn scan_math(p: i32) {
     let c: i32;
     'main: loop {
         loop {
-            get_x_token();
+            get_x_token_in(st)?;
             if cur_cmd() != SPACER && cur_cmd() != RELAX {
                 break;
             }
@@ -1341,36 +1352,36 @@ pub unsafe fn scan_math(p: i32) {
         c = loop {
             break match cur_cmd() {
                 LETTER | OTHER_CHAR_CMD | CHAR_GIVEN_CMD => {
-                    let mc = eqtb_b32s1(MATH_CODE_BASE + cur_chr());
+                    let mc = st.eqtb.b32s1(MATH_CODE_BASE + cur_chr());
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
                         set_cur_cs(cur_chr() + 1);
-                        set_cur_cmd(eqtb_b16s1(cur_cs()) as u8);
-                        set_cur_chr(eqtb_b32s1(cur_cs()));
-                        x_token();
-                        crate::input::back_input();
+                        set_cur_cmd(st.eqtb.b16s1(cur_cs()) as u8);
+                        set_cur_chr(st.eqtb.b32s1(cur_cs()));
+                        x_token_in(st)?;
+                        crate::input::back_input_in(st)?;
                         continue 'main;
                     }
                     mc
                 }
                 CHAR_NUM_CMD => {
-                    scan_char_num();
+                    scan_char_num_in(st)?;
                     set_cur_chr(cur_val());
                     set_cur_cmd(CHAR_GIVEN_CMD);
                     continue; // goto reswitch
                 }
                 MATH_CHAR_NUM => {
                     if cur_chr() == 2 {
-                        scan_math_class_int();
+                        scan_math_class_int_in(st)?;
                         let mut cv = set_class_fn(cur_val());
-                        scan_math_fam_int();
+                        scan_math_fam_int_in(st)?;
                         cv += set_family_fn(cur_val());
-                        scan_usv_num();
+                        scan_usv_num_in(st)?;
                         cv + cur_val()
                     } else if cur_chr() == 1 {
-                        scan_xetex_math_char_int();
+                        scan_xetex_math_char_int_in(st)?;
                         cur_val()
                     } else {
-                        scan_fifteen_bit_int();
+                        scan_fifteen_bit_int_in(st)?;
                         let v = cur_val();
                         set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
                     }
@@ -1382,48 +1393,58 @@ pub unsafe fn scan_math(p: i32) {
                 XETEX_MATH_GIVEN => cur_chr(),
                 DELIM_NUM => {
                     if cur_chr() == 1 {
-                        scan_math_class_int();
+                        scan_math_class_int_in(st)?;
                         let mut cv = set_class_fn(cur_val());
-                        scan_math_fam_int();
+                        scan_math_fam_int_in(st)?;
                         cv += set_family_fn(cur_val());
-                        scan_usv_num();
+                        scan_usv_num_in(st)?;
                         cv + cur_val()
                     } else {
-                        scan_delimiter_int();
+                        scan_delimiter_int_in(st)?;
                         let v = cur_val() / 4096;
                         set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
                     }
                 }
                 _ => {
-                    crate::input::back_input();
-                    scan_left_brace();
-                    crate::globals::set_save_stack_b32s1(save_ptr(), p);
-                    crate::globals::set_save_ptr(save_ptr() + 1);
-                    push_math(MATH_GROUP_TYPE);
-                    return;
+                    crate::input::back_input_in(st)?;
+                    scan_left_brace_in(st)?;
+                    st.save_stack.set_b32s1(st.save_stack.save_ptr, p);
+                    st.save_stack.save_ptr += 1;
+                    crate::main_control::push_math_in(st, MATH_GROUP_TYPE)?;
+                    return Ok(());
                 }
             };
         };
         break;
     }
-    set_mem_b32s1(p, MATH_CHAR_NODE);
-    crate::globals::set_mem_b16s0(p, (c % 65536) as u16);
-    let cur_fam_val = eqtb_b32s1(INT_BASE + INT_PAR_CUR_FAM);
+    st.mem.set_b32s1(p, MATH_CHAR_NODE);
+    st.mem.set_b16s0(p, (c % 65536) as u16);
+    let cur_fam_val = st.eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM);
     let fam: u16 = if math_class_fn(c) == 7 && (0..NUMBER_MATH_FAMILIES_VAL).contains(&cur_fam_val)
     {
         cur_fam_val as u16
     } else {
         math_fam_fn(c) as u16
     };
-    crate::globals::set_mem_b16s1(p, fam + (math_char_fn(c) / 65536) as u16 * 256);
+    st.mem
+        .set_b16s1(p, fam + (math_char_fn(c) / 65536) as u16 * 256);
+    Ok(())
 }
 
 // translated from xetex-xetex0.c:4315 (set_math_char)
 pub unsafe fn set_math_char(c: i32) {
-    use crate::globals::{
-        cur_chr, cur_cs, set_cur_chr, set_cur_cmd, set_cur_cs, set_mem_b16s0, set_mem_b16s1,
-        set_mem_b32s1,
-    };
+    if let Err(e) = crate::state::with_state_mut(|st| set_math_char_in(st, c)) {
+        e.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`set_math_char`] (`01b` §3): appends a math-char
+/// noad (or expands the active-math-char) under one borrow.
+pub(crate) fn set_math_char_in(
+    st: &mut crate::state::EngineState,
+    c: i32,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    use crate::globals::{cur_chr, cur_cs, set_cur_chr, set_cur_cmd, set_cur_cs};
     const ACTIVE_MATH_CHAR_SM: i32 = 0x1FFFFF;
     const MATH_CHAR_NODE_SM: i32 = 1; // xetex-constants.h:269
     const ORD_NOAD: u16 = 16; // xetex_format.h:401
@@ -1432,32 +1453,31 @@ pub unsafe fn set_math_char(c: i32) {
 
     if math_char_fn(c) == ACTIVE_MATH_CHAR_SM {
         set_cur_cs(cur_chr() + 1);
-        set_cur_cmd(crate::globals::eqtb_b16s1(cur_cs()) as u8);
-        set_cur_chr(eqtb_b32s1(cur_cs()));
-        x_token();
-        crate::input::back_input();
+        set_cur_cmd(st.eqtb.b16s1(cur_cs()) as u8);
+        set_cur_chr(st.eqtb.b32s1(cur_cs()));
+        x_token_in(st)?;
+        crate::input::back_input_in(st)?;
     } else {
-        let p = crate::mem::new_noad_global();
-        set_mem_b32s1(p + 1, MATH_CHAR_NODE_SM);
+        let p = crate::mem::new_noad(&mut st.mem);
+        st.mem.set_b32s1(p + 1, MATH_CHAR_NODE_SM);
         let ch = math_char_fn(c);
-        set_mem_b16s0(p + 1, (ch % 65536) as u16);
-        set_mem_b16s1(p + 1, math_fam_fn(c) as u16);
+        st.mem.set_b16s0(p + 1, (ch % 65536) as u16);
+        st.mem.set_b16s1(p + 1, math_fam_fn(c) as u16);
         if math_class_fn(c) == 7 {
-            let cf = eqtb_b32s1(INT_BASE + INT_PAR_CUR_FAM_SM);
+            let cf = st.eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM_SM);
             if (0..NUMBER_MATH_FAM_SM).contains(&cf) {
-                set_mem_b16s1(p + 1, cf as u16);
+                st.mem.set_b16s1(p + 1, cf as u16);
             }
-            crate::globals::set_mem_b16s1(p, ORD_NOAD);
+            st.mem.set_b16s1(p, ORD_NOAD);
         } else {
-            crate::globals::set_mem_b16s1(p, ORD_NOAD + math_class_fn(c) as u16);
+            st.mem.set_b16s1(p, ORD_NOAD + math_class_fn(c) as u16);
         }
-        set_mem_b16s1(
-            p + 1,
-            crate::globals::mem_b16s1(p + 1) + (ch / 65536) as u16 * 256,
-        );
-        set_mem_b32s1(crate::globals::cur_list_tail(), p);
+        st.mem
+            .set_b16s1(p + 1, st.mem.b16s1(p + 1) + (ch / 65536) as u16 * 256);
+        st.mem.set_b32s1(crate::globals::cur_list_tail(), p);
         crate::globals::set_cur_list_tail(p);
     }
+    Ok(())
 }
 
 #[inline]
