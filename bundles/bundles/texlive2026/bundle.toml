@@ -1,0 +1,89 @@
+[bundle]
+name = "texlive2026"
+expected_hash = ""
+
+search_order = ["/", { input = "include" }, { input = "texlive" }]
+
+# Note the triple-quoted multiline strings:
+# this is the best way to get raw strings in TOML.
+ignore = [
+    # Files and extensions we usually want to ignore.
+    '''.*/00readme\.txt''',
+    '''.*/LICENSE\.md''',
+    '''.*/Makefile''',
+    '''.*/README''',
+    '''.*/README.md''',
+    '''.*/readme\.txt''',
+    '''.*/ls-R''',
+    '''.*\.fmt''',
+    '''.*\.log''',
+    '''.*\.lua''',
+    '''.*\.mf''',
+    '''.*\.pl''',
+    '''.*\.ps''',
+]
+
+
+[inputs."include"]
+source.dir.path = "include"
+
+
+# Requires texlive-20240312-texmf, which is available at
+# https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/2024/texlive-20240312-texmf.tar.xz
+# download and extract this file as a .tar in this directory.
+[inputs."texlive"]
+source.tarball.path = "texlive-2026.tar"
+source.tarball.hash = "e0761fe419563cb4543d3a4c9f4ac1e7b3b27928b4bb3b277817b54fe03b8f0e"
+source.tarball.root_dir = "texlive-20260301-texmf/texmf-dist"
+patch_dir = "patches/texlive"
+
+ignore = [
+    # I don't think tectonic has xindy support, ignore for now
+    '''xindy/.*''',
+
+    # We may need this, but exclude for now.
+    '''tex4ht/.*''',
+
+    # These require pLaTeX2e, tectonic uses XeTeX
+    '''tex/uplatex/.*''',
+    '''tex/uptex/.*''',
+
+    # Other odd tex formats & unnecessary files
+    '''tex/cslatex/.*''',
+    '''tex/csplain/.*''',
+    '''tex/ptex/.*''',
+    '''tex/platex/.*''',
+    '''tex/lollipop/.*''',
+    '''tex/context/.*''',
+    '''context/.*''',
+    '''texdoc/.*''',
+    '''texdoctk/.*''',
+    '''texconfig/.*''',
+    '''scripts/.*''',
+    '''dvips/.*''',
+    '''asymptote/.*''',
+    '''makeindex/.*''',
+    '''luatex-cache/.*''',
+    '''hb2gf/.*''',
+    '''chktex/.*''',
+    '''source/.*''',
+    '''doc/.*''',
+    '''tex/luatex/.*''',
+    '''tex/lualatex/.*''',
+    '''tex/lambda/.*''',
+    '''omega/.*''',
+]
+
+search_order = [
+    "tex/{xelatex,latex,xetex,plain,generic}//",
+    "bibtex/{bib,bst,csf}//",
+    "web2c//",
+    "fonts//",
+    "biber//",
+    "mft//",
+    "dvips//",
+    "makeindex//",
+    "{web,cweb}//",
+    "ttf2pk//",
+    "dvipdfmx/",
+]
