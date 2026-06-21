@@ -320,16 +320,6 @@ unsafe fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Opti
         None
     }
 }
-/// Read TFM metrics, with native-font fallback, and initialize a font entry.
-///
-/// translated from xetex-xetex0.c:6350 (read_font_info)
-pub unsafe fn read_font_info(u: i32, nom: i32, aire: i32, s: i32) -> i32 {
-    match crate::state::with_state_mut(|st| read_font_info_in(st, u, nom, aire, s)) {
-        Ok(f) => f,
-        Err(e) => e.finish(),
-    }
-}
-
 pub(crate) enum ReadFontInfoAbort {
     TfmOutOfMemory,
     Native(LoadNativeFontAbort),

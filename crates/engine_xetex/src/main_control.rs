@@ -17,26 +17,25 @@ use crate::consts::{
 };
 use crate::engine::intpar;
 use crate::errors::{
-    box_error, cs_error, error, extra_right_brace, int_error, privileged, report_illegal_case,
+    box_error, cs_error, error, extra_right_brace, privileged, report_illegal_case,
 };
 use crate::ext::{
     append_src_special, apply_mapping, do_extension, get_native_char_height_depth_global,
     get_native_char_sidebearings_global, insert_src_special, map_char_to_glyph_global,
     measure_native_node_global,
 };
-use crate::fonts::read_font_info;
+use crate::fonts::read_font_info_in;
 use crate::globals::{
     after_token, align_state, avail, cur_chr, cur_cmd, cur_cs, cur_group, cur_list_mode, cur_ptr,
-    cur_tok, cur_val, def_ref, eqtb_b32s1, font_area_entry, font_glue, hash_s1, in_initex_mode,
-    mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, param_base, pool_ptr, set_after_token,
-    set_align_state, set_avail, set_box_allowed, set_cur_chr, set_cur_cmd, set_cur_cs,
-    set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val, set_font_glue, set_font_info_b32s1,
-    set_help_line, set_help_ptr, set_hyphen_char_entry, set_mem_b16s0, set_mem_b32s0,
-    set_mem_b32s1, set_pool_ptr, set_skew_char_entry, set_str_ptr, str_ptr, str_start,
+    cur_tok, cur_val, def_ref, eqtb_b32s1, font_area_entry, font_glue, in_initex_mode, mem_b16s0,
+    mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, param_base, set_after_token, set_align_state,
+    set_avail, set_box_allowed, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index,
+    set_cur_ptr, set_cur_tok, set_cur_val, set_font_glue, set_font_info_b32s1, set_help_line,
+    set_help_ptr, set_hyphen_char_entry, set_mem_b16s0, set_mem_b32s0, set_mem_b32s1,
+    set_skew_char_entry,
 };
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::input::begin_token_list;
-use crate::io::{open_log_file, scan_file_name};
 use crate::linebreak::do_locale_linebreaks;
 use crate::math::{
     after_math, append_choices_global, build_choices_global, fin_mlist_global, flush_math_global,
@@ -52,10 +51,9 @@ use crate::packaging::{append_to_vlist_global, flush_node_list_global, hpack, vp
 use crate::pagebuilder::build_page;
 use crate::scan::{
     back_input, eTeX_enabled, effective_char_global, effective_char_info_global, get_next,
-    get_r_token, get_token, get_x_or_protected, get_x_token, insert_dollar_sign,
-    new_native_word_node_global, scan_char_num, scan_delimiter_int, scan_dimen,
-    scan_fifteen_bit_int, scan_int, scan_keyword, scan_left_brace, scan_math, scan_math_class_int,
-    scan_math_fam_int, scan_optional_equals, scan_rule_spec, scan_spec, scan_usv_num,
+    get_token, get_x_or_protected, get_x_token, insert_dollar_sign, new_native_word_node_global,
+    scan_char_num, scan_delimiter_int, scan_dimen, scan_fifteen_bit_int, scan_left_brace,
+    scan_math, scan_math_class_int, scan_math_fam_int, scan_rule_spec, scan_spec, scan_usv_num,
     scan_xetex_math_char_int, set_class_fn, set_family_fn, set_math_char, x_token,
 };
 use crate::units::MemIdx;
@@ -2218,6 +2216,9 @@ pub(crate) enum MainControlAbort {
     SaMutation(crate::save::SaMutationAbort),
     Unsave(crate::save::UnsaveAbort),
     InsertSrc(crate::ext::InsertSrcAbort),
+    OpenLog(crate::io::OpenLogAbort),
+    MakeTexString(crate::texmfmp::MakeTexStringAbort),
+    ReadFontInfo(crate::fonts::ReadFontInfoAbort),
     Error(crate::errors::ErrorOutcome),
     Confusion(&'static std::ffi::CStr),
     NewCharacter(NewCharacterAbort),
@@ -2296,6 +2297,24 @@ impl From<crate::ext::InsertSrcAbort> for MainControlAbort {
     }
 }
 
+impl From<crate::io::OpenLogAbort> for MainControlAbort {
+    fn from(e: crate::io::OpenLogAbort) -> Self {
+        MainControlAbort::OpenLog(e)
+    }
+}
+
+impl From<crate::texmfmp::MakeTexStringAbort> for MainControlAbort {
+    fn from(e: crate::texmfmp::MakeTexStringAbort) -> Self {
+        MainControlAbort::MakeTexString(e)
+    }
+}
+
+impl From<crate::fonts::ReadFontInfoAbort> for MainControlAbort {
+    fn from(e: crate::fonts::ReadFontInfoAbort) -> Self {
+        MainControlAbort::ReadFontInfo(e)
+    }
+}
+
 impl MainControlAbort {
     pub(crate) unsafe fn fire(self) -> ! {
         match self {
@@ -2323,6 +2342,9 @@ impl MainControlAbort {
             MainControlAbort::SaMutation(a) => a.fire(),
             MainControlAbort::Unsave(a) => a.fire(),
             MainControlAbort::InsertSrc(a) => a.fire(),
+            MainControlAbort::OpenLog(a) => a.fire(),
+            MainControlAbort::MakeTexString(a) => crate::texmfmp::fire_make_tex_string(a),
+            MainControlAbort::ReadFontInfo(a) => a.finish(),
             MainControlAbort::Error(o) => {
                 o.finish();
                 unreachable!("error outcome reaching MainControlAbort::fire is divergent")
@@ -3877,83 +3899,116 @@ pub unsafe fn make_accent() {
 }
 // translated from xetex-xetex0.c:10233 (new_font)
 pub unsafe fn new_font(a: i16) {
-    extern "C" {}
+    if let Err(e) = crate::state::with_state_mut(|st| new_font_in(st, a)) {
+        e.fire();
+    }
+}
 
-    if crate::globals::job_name() == 0 {
-        open_log_file();
+pub(crate) unsafe fn new_font_in(
+    st: &mut crate::state::EngineState,
+    a: i16,
+) -> Result<(), MainControlAbort> {
+    if st.strings.job_name == 0 {
+        crate::io::open_log_file_in(st)?;
     }
 
-    get_r_token();
+    crate::scan::get_r_token_in(st)?;
     let u = cur_cs();
     let t = if u >= HASH_BASE {
-        hash_s1(u)
+        st.eqtb.hash_s1(u)
     } else if u >= SINGLE_BASE {
         if u == NULL_CS {
-            crate::texmfmp::maketexstring(c"FONT".as_ptr())
+            crate::texmfmp::maketexstring_in(&mut st.strings, c"FONT".as_ptr())?
         } else {
             u - SINGLE_BASE
         }
     } else {
-        let old_setting = crate::globals::selector();
-        crate::globals::set_selector(SELECTOR_NEW_STRING);
-        crate::output::print_cstr(c"FONT".as_ptr());
-        crate::output::print(u - 1);
-        crate::globals::set_selector(old_setting);
-        if pool_ptr() + 1 > crate::globals::pool_size() {
-            crate::errors::overflow(
-                c"pool size".as_ptr(),
-                crate::globals::pool_size() - crate::globals::init_pool_ptr(),
-            );
+        let old_setting = st.shipout.selector;
+        st.shipout.selector = SELECTOR_NEW_STRING;
+        crate::output::print_cstr_in(st, c"FONT".as_ptr());
+        crate::output::print_in(st, u - 1);
+        st.shipout.selector = old_setting;
+        if st.strings.pool_ptr + 1 > st.strings.pool_size {
+            return Err(MainControlAbort::Input(
+                crate::input::InputAbort::Overflow {
+                    what: c"pool size".as_ptr(),
+                    n: st.strings.pool_size - st.strings.init_pool_ptr,
+                },
+            ));
         }
-        crate::string_pool::make_string_global()
+        match crate::string_pool::make_string(&mut st.strings) {
+            Ok(s) => s,
+            Err(crate::scan::NodeRecycleAbort::Overflow) => {
+                return Err(MainControlAbort::Input(
+                    crate::input::InputAbort::Overflow {
+                        what: c"number of strings".as_ptr(),
+                        n: st.strings.max_strings - st.strings.init_str_ptr,
+                    },
+                ));
+            }
+            Err(e) => return Err(MainControlAbort::NodeRecycle(e)),
+        }
     };
 
     if a >= 4 {
-        crate::save::geq_define_global(u, SET_FONT as u16, FONT_BASE);
+        if let Some(ab) = crate::save::geq_define(
+            &mut st.eqtb,
+            &mut st.mem,
+            &mut st.scanner,
+            u,
+            SET_FONT as u16,
+            FONT_BASE,
+        ) {
+            return Err(MainControlAbort::Save(ab));
+        }
     } else {
-        crate::save::eq_define_global(u, SET_FONT as u16, FONT_BASE);
+        if let Some(ab) = crate::save::eq_define(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            &mut st.mem,
+            &mut st.scanner,
+            u,
+            SET_FONT as u16,
+            FONT_BASE,
+        ) {
+            return Err(MainControlAbort::Save(ab));
+        }
     }
-    scan_optional_equals();
-    scan_file_name();
-    crate::globals::set_name_in_progress(true);
+    crate::scan::scan_optional_equals_in(st)?;
+    crate::io::scan_file_name_in(st)?;
+    st.scanner.name_in_progress = true;
 
-    let s = if scan_keyword(c"at".as_ptr()) {
-        scan_dimen(false, false, false);
+    let s = if crate::scan::scan_keyword_in(st, c"at".as_ptr())? {
+        crate::scan::scan_dimen_in(st, false, false, false)?;
         let sv = cur_val();
         if sv <= 0 || sv >= 0x800_0000 {
-            error_here_with_diagnostic(c"Improper `at' size (".as_ptr());
-            crate::output::print_scaled(sv);
-            crate::output::print_cstr(c"pt), replaced by 10pt".as_ptr());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(2);
-            set_help_line(
-                1,
-                c"I can only handle fonts at positive sizes that are".as_ptr(),
-            );
-            set_help_line(
-                0,
-                c"less than 2048pt, so I've changed what you said to 10pt.".as_ptr(),
-            );
-            error();
+            crate::output::error_here_with_diagnostic_in(st, c"Improper `at' size (".as_ptr());
+            crate::output::print_scaled_in(st, sv);
+            crate::output::print_cstr_in(st, c"pt), replaced by 10pt".as_ptr());
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 2;
+            st.errors.help_line[1] = c"I can only handle fonts at positive sizes that are".as_ptr();
+            st.errors.help_line[0] =
+                c"less than 2048pt, so I've changed what you said to 10pt.".as_ptr();
+            mc_propagate_error(crate::errors::error_in(st))?;
             10 * 65536_i32
         } else {
             sv
         }
-    } else if scan_keyword(c"scaled".as_ptr()) {
-        scan_int();
+    } else if crate::scan::scan_keyword_in(st, c"scaled".as_ptr())? {
+        crate::scan::scan_int_in(st)?;
         let sv = cur_val();
         if sv <= 0 || sv > 32768 {
-            let errmsg = error_here_with_diagnostic(
+            let errmsg = crate::output::error_here_with_diagnostic_in(
+                st,
                 c"Illegal magnification has been changed to 1000".as_ptr(),
             );
             ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), sv);
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(1);
-            set_help_line(
-                0,
-                c"The magnification ratio must be between 1 and 32768.".as_ptr(),
-            );
-            int_error(sv);
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 1;
+            st.errors.help_line[0] =
+                c"The magnification ratio must be between 1 and 32768.".as_ptr();
+            mc_propagate_error(crate::errors::int_error_in(st, sv))?;
             -1000_i32
         } else {
             -sv
@@ -3962,49 +4017,99 @@ pub unsafe fn new_font(a: i16) {
         -1000_i32
     };
 
-    crate::globals::set_name_in_progress(false);
+    st.scanner.name_in_progress = false;
 
     let f = 'search: {
         let mut fi = FONT_BASE + 1;
-        while fi <= crate::globals::font_ptr() {
-            if crate::string_pool::str_eq_str_global(
-                crate::globals::font_name_entry(fi),
-                crate::globals::cur_name(),
-            ) && ((crate::string_pool::length_global(crate::globals::cur_area()) == 0
-                && (crate::globals::font_area_entry(fi) == AAT_FONT_FLAG
-                    || crate::globals::font_area_entry(fi) == OTGR_FONT_FLAG))
-                || crate::string_pool::str_eq_str_global(
-                    crate::globals::font_area_entry(fi),
-                    crate::globals::cur_area(),
+        while fi <= st.fonts.font_ptr {
+            if crate::string_pool::str_eq_str(
+                &st.strings,
+                st.fonts.font_name[fi as usize],
+                st.scanner.cur_name,
+            ) && ((crate::string_pool::length(&st.strings, st.scanner.cur_area) == 0
+                && (st.fonts.font_area[fi as usize] == AAT_FONT_FLAG
+                    || st.fonts.font_area[fi as usize] == OTGR_FONT_FLAG))
+                || crate::string_pool::str_eq_str(
+                    &st.strings,
+                    st.fonts.font_area[fi as usize],
+                    st.scanner.cur_area,
                 ))
             {
                 if s > 0 {
-                    if s == crate::globals::font_size_entry(fi) {
+                    if s == st.fonts.font_size[fi as usize] {
                         break 'search fi;
                     }
-                } else if crate::globals::font_size_entry(fi)
-                    == crate::scaled_math::xn_over_d(crate::globals::font_dsize_entry(fi), -s, 1000)
+                } else if st.fonts.font_size[fi as usize]
+                    == crate::scaled_math::xn_over_d_in(
+                        &mut st.errors,
+                        st.fonts.font_dsize[fi as usize],
+                        -s,
+                        1000,
+                    )
                 {
                     break 'search fi;
                 }
             }
-            crate::string_pool::append_str_global(crate::globals::cur_area());
-            crate::string_pool::append_str_global(crate::globals::cur_name());
-            crate::string_pool::append_str_global(crate::globals::cur_ext());
-            let ms = crate::string_pool::make_string_global();
-            if crate::string_pool::str_eq_str_global(crate::globals::font_name_entry(fi), ms) {
-                set_str_ptr(str_ptr() - 1);
-                set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
-                if crate::globals::font_area_entry(fi) == AAT_FONT_FLAG
-                    || crate::globals::font_area_entry(fi) == OTGR_FONT_FLAG
+            crate::string_pool::append_str(&mut st.strings, st.scanner.cur_area).map_err(|e| {
+                match e {
+                    crate::scan::NodeRecycleAbort::Overflow => {
+                        MainControlAbort::Input(crate::input::InputAbort::Overflow {
+                            what: c"pool size".as_ptr(),
+                            n: st.strings.pool_size - st.strings.init_pool_ptr,
+                        })
+                    }
+                    e => MainControlAbort::NodeRecycle(e),
+                }
+            })?;
+            crate::string_pool::append_str(&mut st.strings, st.scanner.cur_name).map_err(|e| {
+                match e {
+                    crate::scan::NodeRecycleAbort::Overflow => {
+                        MainControlAbort::Input(crate::input::InputAbort::Overflow {
+                            what: c"pool size".as_ptr(),
+                            n: st.strings.pool_size - st.strings.init_pool_ptr,
+                        })
+                    }
+                    e => MainControlAbort::NodeRecycle(e),
+                }
+            })?;
+            crate::string_pool::append_str(&mut st.strings, st.scanner.cur_ext).map_err(
+                |e| match e {
+                    crate::scan::NodeRecycleAbort::Overflow => {
+                        MainControlAbort::Input(crate::input::InputAbort::Overflow {
+                            what: c"pool size".as_ptr(),
+                            n: st.strings.pool_size - st.strings.init_pool_ptr,
+                        })
+                    }
+                    e => MainControlAbort::NodeRecycle(e),
+                },
+            )?;
+            let ms = match crate::string_pool::make_string(&mut st.strings) {
+                Ok(ms) => ms,
+                Err(crate::scan::NodeRecycleAbort::Overflow) => {
+                    return Err(MainControlAbort::Input(
+                        crate::input::InputAbort::Overflow {
+                            what: c"number of strings".as_ptr(),
+                            n: st.strings.max_strings - st.strings.init_str_ptr,
+                        },
+                    ));
+                }
+                Err(e) => return Err(MainControlAbort::NodeRecycle(e)),
+            };
+            if crate::string_pool::str_eq_str(&st.strings, st.fonts.font_name[fi as usize], ms) {
+                st.strings.str_ptr -= 1;
+                st.strings.pool_ptr =
+                    st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+                if st.fonts.font_area[fi as usize] == AAT_FONT_FLAG
+                    || st.fonts.font_area[fi as usize] == OTGR_FONT_FLAG
                 {
                     if s > 0 {
-                        if s == crate::globals::font_size_entry(fi) {
+                        if s == st.fonts.font_size[fi as usize] {
                             break 'search fi;
                         }
-                    } else if crate::globals::font_size_entry(fi)
-                        == crate::scaled_math::xn_over_d(
-                            crate::globals::font_dsize_entry(fi),
+                    } else if st.fonts.font_size[fi as usize]
+                        == crate::scaled_math::xn_over_d_in(
+                            &mut st.errors,
+                            st.fonts.font_dsize[fi as usize],
                             -s,
                             1000,
                         )
@@ -4013,22 +4118,43 @@ pub unsafe fn new_font(a: i16) {
                     }
                 }
             } else {
-                set_str_ptr(str_ptr() - 1);
-                set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
+                st.strings.str_ptr -= 1;
+                st.strings.pool_ptr =
+                    st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
             }
             fi += 1;
         }
-        read_font_info(u, crate::globals::cur_name(), crate::globals::cur_area(), s)
+        read_font_info_in(st, u, st.scanner.cur_name, st.scanner.cur_area, s)?
     };
 
     // common_ending:
     if a >= 4 {
-        crate::save::geq_define_global(u, SET_FONT as u16, f);
+        if let Some(ab) = crate::save::geq_define(
+            &mut st.eqtb,
+            &mut st.mem,
+            &mut st.scanner,
+            u,
+            SET_FONT as u16,
+            f,
+        ) {
+            return Err(MainControlAbort::Save(ab));
+        }
     } else {
-        crate::save::eq_define_global(u, SET_FONT as u16, f);
+        if let Some(ab) = crate::save::eq_define(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            &mut st.mem,
+            &mut st.scanner,
+            u,
+            SET_FONT as u16,
+            f,
+        ) {
+            return Err(MainControlAbort::Save(ab));
+        }
     }
-    crate::globals::set_eqtb_word(FONT_ID_BASE + f, crate::globals::eqtb_word(u));
-    crate::globals::set_hash_s1(FONT_ID_BASE + f, t);
+    st.eqtb.data[(FONT_ID_BASE + f) as usize] = st.eqtb.word(u);
+    st.eqtb.set_hash_s1(FONT_ID_BASE + f, t);
+    Ok(())
 }
 // translated from xetex-xetex0.c:10220 (do_register_command)
 pub(crate) fn do_register_command_in(
