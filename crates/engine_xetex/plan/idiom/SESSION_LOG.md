@@ -8,6 +8,63 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 213 — 2026-06-21 — Execution: thread the standalone main-control dispatcher verbs
+
+**Type:** execution (workstream 01). Large, deliberately mechanical session per
+user request (bigger than prior, minimal docs). The `main_control_box_list_cases`
+keystone (`handle_right_brace`/the dispatcher) is blocked on the un-threaded
+alignment subsystem, so this session drained the **standalone** dispatcher verbs
+that the dispatcher calls — each threaded to an `_in(&mut EngineState) ->
+Result<(), MainControlAbort>` core with a thin `with_state_mut` wrapper, no
+dispatcher change required. **Four commits, 12 verbs + 2 scanner cores.**
+
+**Code:**
+- **Scanner prerequisites** (scan.rs): `scan_optional_equals_in` + `scan_eight_bit_int_in`
+  (the latter reuses the `leaf_int_range_error` helper). Added a `mc_propagate_error`
+  helper (main_control) that maps a recoverable `ErrorOutcome` to `Ok(())` on
+  `Continue` / `MainControlAbort::Error` otherwise — `?`-friendly for both the
+  "error-then-return" and "error-then-continue" original control flows.
+- **Commit 1** — `alter_aux`/`alter_prev_graf`/`alter_page_so_far`/`alter_integer`/
+  `alter_box_dimen`, `make_mark`, `new_interaction`. `nest`/`page_so_far`/
+  `dead_cycles`/`insert_penalties`/`selector`/`interaction`/`def_ref` accessed
+  directly via `st.input`/`st.shipout`/`st.errors`/`st.scanner`; `cur_list`
+  save/restore via raw `cur_list()`/`set_cur_list_record`. Deleted dead
+  `save_cur_list_to_nest`/`set_nest_prev_graf`.
+- **Commit 2** — `unpackage`, `delete_last` over threaded `find_sa_element`/
+  `copy_node_list`/`free_node`/`delete_sa_ref`/`flush_node_list`/`you_cant_in`;
+  deleted the dead `you_cant` global wrapper.
+- **Commit 3** — `begin_insert_or_adjust`, `append_discretionary` over
+  `scan_keyword_in`/`new_save_level`/`normal_paragraph`/`push_nest_in`/`new_disc`/
+  `new_character_in`. Added `MainControlAbort::NewCharacter` (+`From`) for
+  `new_character_in` aborts; deleted the dead `scan_eight_bit_int` global wrapper.
+- **Commit 4** — `shift_case`, `append_italic_correction`. The latter calls the
+  re-entry-free native measurer `real_get_native_*_italic_correction(&FontState,
+  ptr)` directly under the borrow (node addr from `st.mem.data`); deleted the dead
+  `real_get_native_*_italic_correction_global` wrappers + `italic_base_entry` getter.
+
+**Still blocked (un-threaded callees, not this session):** `make_accent`
+(`do_assignments`→`prefixed_command`), `head_for_vmode`/`do_endv` (`off_save` +
+alignment), `its_all_over` (`privileged`), `handle_right_brace` + the dispatcher
+(alignment subsystem).
+
+**Validation:** `cargo check`+`fmt`; dashboard **29/2/7/4** per commit (TRIP gates
+the recoverable-error/help-line threading); release rebuild (warnings **41**, ==
+baseline); full corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1`/`1905.00148v1`, no NOXDV/NOLOG. Metrics: `unsafe fn` **479 → 475**;
+`with_state` sites **725 → 733** (+8 transient bridge-down wrappers for the 12 new
+`_in` cores — retire when the dispatcher threads and calls them directly).
+
+**Next:** the standalone-verb vein is now drained; the remaining dispatcher verbs
+and `handle_right_brace_in` are all gated on the **alignment subsystem**
+(`align_peek`/`fin_align`/`init_row`/`init_col`/`fin_col`/`fin_row`/`init_align`/
+`get_preamble_token` — a tight mutually-recursive SCC also needing `do_assignments`/
+`resume_after_display`/`append_to_vlist`/`get_x_or_protected` threaded) or on
+`prefixed_command` (the assignment dispatcher). Thread one of those keystones next,
+or the smaller `off_save`/`privileged`/`do_assignments` enablers to unblock
+`head_for_vmode`/`its_all_over`/`make_accent`.
+
+---
+
 ## Idiom session 212 — 2026-06-21 — Execution: thread more box/list-DAG verbs (`unsave`/`insert_src_special`/`package`/`new_graf`/`build_discretionary`/`build_choices`/`push_math`)
 
 **Type:** execution (workstream 01). Large mechanical continuation of the
