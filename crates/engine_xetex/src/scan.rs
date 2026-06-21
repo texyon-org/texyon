@@ -238,17 +238,21 @@ const ALPHA_TOKEN: i32 = OTHER_TOKEN + b'`' as i32;
 const FROZEN_PRIM_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_PRIMITIVE;
 
 // translated from xetex-xetex0.c:5078 (scan_char_class)
-pub unsafe fn scan_char_class() {
-    scan_int();
+pub(crate) fn scan_char_class_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+    scan_int_in(st)?;
     if cur_val() < 0 || cur_val() > CHAR_CLASS_LIMIT {
-        let errmsg = error_here_with_diagnostic(c"Bad character class".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(1, c"A character class must be between 0 and 4096.".as_ptr());
-        set_help_line(0, c"I changed this one to zero.".as_ptr());
-        int_error(cur_val());
-        set_cur_val(0);
+        leaf_int_range_error(
+            st,
+            c"Bad character class".as_ptr(),
+            c"A character class must be between 0 and 4096.".as_ptr(),
+        )?;
+    }
+    Ok(())
+}
+
+pub unsafe fn scan_char_class() {
+    if let Err(e) = crate::state::with_state_mut(|st| scan_char_class_in(st)) {
+        unsafe { e.fire() }
     }
 }
 
@@ -287,20 +291,21 @@ pub unsafe fn scan_char_num() {
 }
 
 // translated from xetex-xetex0.c:5330 (scan_math_class_int)
-pub unsafe fn scan_math_class_int() {
-    scan_int();
+pub(crate) fn scan_math_class_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+    scan_int_in(st)?;
     if cur_val() < 0 || cur_val() > 7 {
-        let errmsg = error_here_with_diagnostic(c"Bad math class".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
+        leaf_int_range_error(
+            st,
+            c"Bad math class".as_ptr(),
             c"Since I expected to read a number between 0 and 7,".as_ptr(),
-        );
-        set_help_line(0, c"I changed this one to zero.".as_ptr());
-        int_error(cur_val());
-        set_cur_val(0);
+        )?;
+    }
+    Ok(())
+}
+
+pub unsafe fn scan_math_class_int() {
+    if let Err(e) = crate::state::with_state_mut(|st| scan_math_class_int_in(st)) {
+        unsafe { e.fire() }
     }
 }
 
@@ -312,72 +317,81 @@ pub unsafe fn scan_math_fam_int() {
 }
 
 // translated from xetex-xetex0.c:5366 (scan_four_bit_int)
-pub unsafe fn scan_four_bit_int() {
-    scan_int();
+pub(crate) fn scan_four_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+    scan_int_in(st)?;
     if cur_val() < 0 || cur_val() > 15 {
-        let errmsg = error_here_with_diagnostic(c"Bad number".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
+        leaf_int_range_error(
+            st,
+            c"Bad number".as_ptr(),
             c"Since I expected to read a number between 0 and 15,".as_ptr(),
-        );
-        set_help_line(0, c"I changed this one to zero.".as_ptr());
-        int_error(cur_val());
-        set_cur_val(0);
+        )?;
+    }
+    Ok(())
+}
+
+pub unsafe fn scan_four_bit_int() {
+    if let Err(e) = crate::state::with_state_mut(|st| scan_four_bit_int_in(st)) {
+        unsafe { e.fire() }
     }
 }
 
 // translated from xetex-xetex0.c:5384 (scan_fifteen_bit_int)
-pub unsafe fn scan_fifteen_bit_int() {
-    scan_int();
+pub(crate) fn scan_fifteen_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+    scan_int_in(st)?;
     if cur_val() < 0 || cur_val() > 32767 {
-        let errmsg = error_here_with_diagnostic(c"Bad mathchar".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
+        leaf_int_range_error(
+            st,
+            c"Bad mathchar".as_ptr(),
             c"A mathchar number must be between 0 and 32767.".as_ptr(),
-        );
-        set_help_line(0, c"I changed this one to zero.".as_ptr());
-        int_error(cur_val());
-        set_cur_val(0);
+        )?;
+    }
+    Ok(())
+}
+
+pub unsafe fn scan_fifteen_bit_int() {
+    if let Err(e) = crate::state::with_state_mut(|st| scan_fifteen_bit_int_in(st)) {
+        unsafe { e.fire() }
     }
 }
 
 // translated from xetex-xetex0.c:5168 (scan_xetex_math_char_int)
 // math_char(x) = (x as u32) & 0x1FFFFF (xetex-xetexd.h:1205)
-pub unsafe fn scan_xetex_math_char_int() {
-    scan_int();
+pub(crate) fn scan_xetex_math_char_int_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), SccAbort> {
+    scan_int_in(st)?;
     let mc = (cur_val() as u32) & 0x1F_FFFF;
     if mc == ACTIVE_MATH_CHAR as u32 {
         if cur_val() != ACTIVE_MATH_CHAR {
-            let errmsg = error_here_with_diagnostic(c"Bad active XeTeX math code".as_ptr());
-            ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(2);
-            set_help_line(
-                1,
-                c"Since I ignore class and family for active math chars,".as_ptr(),
-            );
-            set_help_line(0, c"I changed this one to \"1FFFFF.".as_ptr());
-            int_error(cur_val());
+            let errmsg =
+                error_here_with_diagnostic_in(st, c"Bad active XeTeX math code".as_ptr());
+            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+            capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 2;
+            st.errors.help_line[1] =
+                c"Since I ignore class and family for active math chars,".as_ptr();
+            st.errors.help_line[0] = c"I changed this one to \"1FFFFF.".as_ptr();
+            scc_err(int_error_in(st, cur_val()))?;
             set_cur_val(ACTIVE_MATH_CHAR);
         }
     } else if mc > BIGGEST_USV as u32 {
-        let errmsg = error_here_with_diagnostic(c"Bad XeTeX math character code".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
-            c"Since I expected a character number between 0 and \"10FFFF,".as_ptr(),
-        );
-        set_help_line(0, c"I changed this one to zero.".as_ptr());
-        int_error(cur_val());
+        let errmsg =
+            error_here_with_diagnostic_in(st, c"Bad XeTeX math character code".as_ptr());
+        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 2;
+        st.errors.help_line[1] =
+            c"Since I expected a character number between 0 and \"10FFFF,".as_ptr();
+        st.errors.help_line[0] = c"I changed this one to zero.".as_ptr();
+        scc_err(int_error_in(st, cur_val()))?;
         set_cur_val(0);
+    }
+    Ok(())
+}
+
+pub unsafe fn scan_xetex_math_char_int() {
+    if let Err(e) = crate::state::with_state_mut(|st| scan_xetex_math_char_int_in(st)) {
+        unsafe { e.fire() }
     }
 }
 
@@ -1259,47 +1273,46 @@ const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226; // xetex_format.h:201
 const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE; // xetex-constants.h:55
 
 // translated from xetex-xetex0.c:10407 (get_r_token)
-pub unsafe fn get_r_token() {
+pub(crate) fn get_r_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     loop {
         loop {
-            get_token();
+            get_token_in(st)?;
             if cur_tok() != SPACE_TOKEN {
                 break;
             }
         }
         if cur_cs() == 0
-            || cur_cs() > crate::globals::eqtb_top()
+            || cur_cs() > st.eqtb.eqtb_top
             || (cur_cs() > FROZEN_CONTROL_SEQUENCE && cur_cs() <= EQTB_SIZE)
         {
-            error_here_with_diagnostic(c"Missing control sequence inserted".as_ptr());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(5);
-            set_help_line(
-                4,
-                c"Please don't say `\\def cs{...}', say `\\def\\cs{...}'.".as_ptr(),
-            );
-            set_help_line(
-                3,
-                c"I've inserted an inaccessible control sequence so that your".as_ptr(),
-            );
-            set_help_line(
-                2,
-                c"definition will be completed without mixing me up too badly.".as_ptr(),
-            );
-            set_help_line(
-                1,
-                c"You can recover graciously from this error, if you're".as_ptr(),
-            );
-            set_help_line(0, c"careful; see exercise 27.2 in The TeXbook.".as_ptr());
+            error_here_with_diagnostic_in(st, c"Missing control sequence inserted".as_ptr());
+            capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 5;
+            st.errors.help_line[4] =
+                c"Please don't say `\\def cs{...}', say `\\def\\cs{...}'.".as_ptr();
+            st.errors.help_line[3] =
+                c"I've inserted an inaccessible control sequence so that your".as_ptr();
+            st.errors.help_line[2] =
+                c"definition will be completed without mixing me up too badly.".as_ptr();
+            st.errors.help_line[1] =
+                c"You can recover graciously from this error, if you're".as_ptr();
+            st.errors.help_line[0] = c"careful; see exercise 27.2 in The TeXbook.".as_ptr();
             if cur_cs() == 0 {
-                crate::input::back_input();
+                crate::input::back_input_in(st)?;
             }
             set_cur_tok(CS_TOKEN_FLAG + FROZEN_PROTECTION);
-            crate::input::ins_error();
+            scc_err(crate::input::ins_error_in(st)?)?;
             // goto restart
         } else {
             break;
         }
+    }
+    Ok(())
+}
+
+pub unsafe fn get_r_token() {
+    if let Err(e) = crate::state::with_state_mut(|st| get_r_token_in(st)) {
+        unsafe { e.fire() }
     }
 }
 
