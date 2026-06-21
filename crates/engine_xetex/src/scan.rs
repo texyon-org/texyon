@@ -507,13 +507,6 @@ const RELAX: u8 = 0;
 const LEFT_BRACE: u8 = 1;
 const LEFT_BRACE_TOKEN: i32 = 0x200000;
 
-/// translated from xetex-xetex0.c:4319 (scan_left_brace)
-pub unsafe fn scan_left_brace() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_left_brace_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // get_x_token / get_x_or_protected
 // ---------------------------------------------------------------------------

@@ -8,18 +8,17 @@ use crate::ext::real_get_native_glyph;
 use crate::input::begin_token_list;
 
 use crate::globals::{
-    adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_list_aux_b32s1,
+    adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_list_aux_b32s1,
     cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf, cur_list_tail, cur_val,
-    eqtb_b32s1, file_line_error_style_p, font_info_b16, font_info_b32s1, hi_mem_min,
-    insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b32s0,
-    mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
-    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_list_aux_b32s0,
-    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf,
-    set_cur_list_tail, set_cur_mlist, set_cur_style, set_cur_val, set_help_line, set_help_ptr,
-    set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-    set_mem_gr, set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr,
-    set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr, total_shrink,
-    width_base_entry,
+    eqtb_b32s1, font_info_b16, font_info_b32s1, hi_mem_min, insert_src_special_every_math,
+    just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, mem_gr, mem_word,
+    nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
+    set_adjust_tail, set_avail, set_cur_dir, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
+    set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
+    set_cur_mlist, set_cur_style, set_cur_val, set_help_line, set_help_ptr, set_lr_problems,
+    set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_gr,
+    set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_temp_ptr,
+    set_xtx_ligature_present, temp_ptr, total_shrink, width_base_entry,
 };
 use crate::mem::{
     free_node, get_avail, get_node, new_choice, new_glue, new_kern, new_noad, new_null_box,
@@ -3568,13 +3567,7 @@ unsafe fn compute_ot_math_accent_pos_in(
 }
 
 /// translated from xetex-math.c:388 (scan_delimiter)
-pub unsafe fn scan_delimiter(p: i32, r: bool) {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_delimiter_in(st, p, r)) {
-        e.fire();
-    }
-}
-
-/// `&mut EngineState` core of [`scan_delimiter`] (`01b` §3): the whole delimiter
+/// The whole delimiter
 /// scan under one borrow over the threaded scanner cores; the recoverable
 /// "Missing delimiter" `back_error` is printed in order then deferred via
 /// [`mc_propagate_error`](crate::main_control::mc_propagate_error).
@@ -3660,18 +3653,35 @@ pub(crate) fn scan_delimiter_in(
 
 /// translated from xetex-math.c:354 (start_eq_no)
 pub unsafe fn start_eq_no() {
-    set_save_stack_b32s1(save_ptr(), cur_chr());
-    set_save_ptr(save_ptr() + 1);
+    if let Err(e) = crate::state::with_state_mut(|st| start_eq_no_in(st)) {
+        e.fire();
+    }
+}
 
-    crate::main_control::push_math(MATH_SHIFT_GROUP);
-    crate::save::eq_word_define_global(INT_BASE + INT_PAR_CUR_FAM, -1);
-    if insert_src_special_every_math() {
-        crate::ext::insert_src_special();
+pub(crate) fn start_eq_no_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    use crate::main_control::MainControlAbort;
+    st.save_stack.set_b32s1(st.save_stack.save_ptr, cur_chr());
+    st.save_stack.save_ptr += 1;
+
+    crate::main_control::push_math_in(st, MATH_SHIFT_GROUP)?;
+    if let Some(a) = crate::save::eq_word_define(
+        &mut st.eqtb,
+        &mut st.save_stack,
+        INT_BASE + INT_PAR_CUR_FAM,
+        -1,
+    ) {
+        return Err(MainControlAbort::Save(a));
     }
-    let every_math = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_MATH);
+    if st.shipout.insert_src_special_every_math {
+        crate::ext::insert_src_special_in(st)?;
+    }
+    let every_math = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_MATH);
     if every_math != TEX_NULL {
-        begin_token_list(every_math, EVERY_MATH_TEXT);
+        crate::input::begin_token_list_in(st, every_math, EVERY_MATH_TEXT)?;
     }
+    Ok(())
 }
 
 /// translated from xetex-math.c:368 (math_limit_switch)
@@ -3688,21 +3698,26 @@ fn apply_math_limit_switch(mem: &mut MemState, limit: u16) -> bool {
 }
 
 pub unsafe fn math_limit_switch_global() {
-    let applied =
-        crate::state::with_state_mut(|st| apply_math_limit_switch(&mut st.mem, cur_chr() as u16));
-    if applied {
-        return;
+    if let Err(e) = crate::state::with_state_mut(|st| math_limit_switch_in(st)) {
+        e.fire();
     }
-    crate::output::error_here_with_diagnostic(
+}
+
+pub(crate) fn math_limit_switch_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    if apply_math_limit_switch(&mut st.mem, cur_chr() as u16) {
+        return Ok(());
+    }
+    crate::output::error_here_with_diagnostic_in(
+        st,
         c"Limit controls must follow a math operator".as_ptr(),
     );
-    crate::output::capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(1);
-    set_help_line(
-        0,
-        c"I'm ignoring this misplaced \\limits or \\nolimits command.".as_ptr(),
-    );
-    crate::errors::error();
+    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    st.errors.help_ptr = 1;
+    st.errors.help_line[0] =
+        c"I'm ignoring this misplaced \\limits or \\nolimits command.".as_ptr();
+    crate::main_control::mc_propagate_error(crate::errors::error_in(st))
 }
 
 /// translated from xetex-math.c:461 (math_radical)
@@ -3723,12 +3738,17 @@ fn append_radical_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleA
 }
 
 pub unsafe fn math_radical_global() {
-    let tail = match crate::state::with_state_mut(|st| append_radical_noad(&mut st.mem)) {
-        Ok(tail) => tail,
-        Err(abort) => node_recycle_abort(abort),
-    };
-    scan_delimiter(tail.delimiter_addr(), true);
-    crate::scan::scan_math(tail.idx().0 + 1);
+    if let Err(e) = crate::state::with_state_mut(|st| math_radical_in(st)) {
+        e.fire();
+    }
+}
+
+pub(crate) fn math_radical_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    let tail = append_radical_noad(&mut st.mem)?;
+    scan_delimiter_in(st, tail.delimiter_addr(), true)?;
+    crate::scan::scan_math_in(st, tail.idx().0 + 1)
 }
 
 /// translated from xetex-math.c:533 (append_choices)
@@ -3748,13 +3768,18 @@ fn append_choices_core(
 }
 
 pub unsafe fn append_choices_global() {
-    if let Err(abort) =
-        crate::state::with_state_mut(|st| append_choices_core(&mut st.mem, &mut st.save_stack))
-    {
-        node_recycle_abort(abort);
+    if let Err(e) = crate::state::with_state_mut(|st| append_choices_in(st)) {
+        e.fire();
     }
-    crate::main_control::push_math(MATH_CHOICE_GROUP);
-    crate::scan::scan_left_brace();
+}
+
+pub(crate) fn append_choices_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    append_choices_core(&mut st.mem, &mut st.save_stack)?;
+    crate::main_control::push_math_in(st, MATH_CHOICE_GROUP)?;
+    crate::scan::scan_left_brace_in(st)?;
+    Ok(())
 }
 
 /// translated from xetex-math.c:545 (fin_mlist)
@@ -3906,28 +3931,32 @@ fn prepare_sub_sup(
 }
 
 pub unsafe fn sub_sup_global() {
+    if let Err(e) = crate::state::with_state_mut(|st| sub_sup_in(st)) {
+        e.fire();
+    }
+}
+
+pub(crate) fn sub_sup_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
     let cmd = cur_cmd();
-    let (p, duplicate) = match crate::state::with_state_mut(|st| prepare_sub_sup(&mut st.mem, cmd))
-    {
-        Ok(result) => result,
-        Err(abort) => node_recycle_abort(abort),
-    };
+    let (p, duplicate) = prepare_sub_sup(&mut st.mem, cmd)?;
     if let Some(duplicate) = duplicate {
         match duplicate {
             ScriptDuplication::Superscript => {
-                crate::output::error_here_with_diagnostic(c"Double superscript".as_ptr());
-                set_help_line(0, c"I treat `x^1^2' essentially like `x^1{}^2'.".as_ptr());
+                crate::output::error_here_with_diagnostic_in(st, c"Double superscript".as_ptr());
+                st.errors.help_line[0] = c"I treat `x^1^2' essentially like `x^1{}^2'.".as_ptr();
             }
             ScriptDuplication::Subscript => {
-                crate::output::error_here_with_diagnostic(c"Double subscript".as_ptr());
-                set_help_line(0, c"I treat `x_1_2' essentially like `x_1{}_2'.".as_ptr());
+                crate::output::error_here_with_diagnostic_in(st, c"Double subscript".as_ptr());
+                st.errors.help_line[0] = c"I treat `x_1_2' essentially like `x_1{}_2'.".as_ptr();
             }
         }
-        crate::output::capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(1);
-        crate::errors::error();
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 1;
+        crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     }
-    crate::scan::scan_math(p);
+    crate::scan::scan_math_in(st, p)
 }
 
 /// translated from xetex-math.c:644 (math_fraction)
@@ -3973,57 +4002,56 @@ fn finish_fraction_rule(mem: &mut MemState, c: i32, rule_thickness: i32) {
 }
 
 pub unsafe fn math_fraction_global() {
+    if let Err(e) = crate::state::with_state_mut(|st| math_fraction_in(st)) {
+        e.fire();
+    }
+}
+
+pub(crate) fn math_fraction_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
     let c = cur_chr();
 
     if cur_list_aux_b32s1() != TEX_NULL {
         if c >= DELIMITED_CODE {
-            scan_delimiter(GARBAGE, false);
-            scan_delimiter(GARBAGE, false);
+            scan_delimiter_in(st, GARBAGE, false)?;
+            scan_delimiter_in(st, GARBAGE, false)?;
         }
 
         if c % DELIMITED_CODE == ABOVE_CODE {
-            crate::scan::scan_dimen(false, false, false);
+            crate::scan::scan_dimen_in(st, false, false, false)?;
         }
 
-        if file_line_error_style_p() != 0 {
-            crate::output::print_file_line();
+        if st.config.file_line_error_style_p != 0 {
+            crate::output::print_file_line_in(st);
         } else {
-            crate::output::print_nl_cstr(c"! ".as_ptr());
+            crate::output::print_nl_cstr_in(st, c"! ".as_ptr());
         }
-        crate::output::print_cstr(c"Ambiguous; you need another { and }".as_ptr());
-        set_help_ptr(3);
-        set_help_line(
-            2,
-            c"I'm ignoring this fraction specification, since I don't".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"know whether a construction like `x \\over y \\over z'".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"means `{x \\over y} \\over z' or `x \\over {y \\over z}'.".as_ptr(),
-        );
-        crate::errors::error();
+        crate::output::print_cstr_in(st, c"Ambiguous; you need another { and }".as_ptr());
+        st.errors.help_ptr = 3;
+        st.errors.help_line[2] =
+            c"I'm ignoring this fraction specification, since I don't".as_ptr();
+        st.errors.help_line[1] = c"know whether a construction like `x \\over y \\over z'".as_ptr();
+        st.errors.help_line[0] =
+            c"means `{x \\over y} \\over z' or `x \\over {y \\over z}'.".as_ptr();
+        crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     } else {
-        let aux = match crate::state::with_state_mut(|st| start_fraction_noad(&mut st.mem)) {
-            Ok(aux) => aux,
-            Err(abort) => node_recycle_abort(abort),
-        };
+        let aux = start_fraction_noad(&mut st.mem)?;
 
         if c >= DELIMITED_CODE {
-            scan_delimiter(aux.fraction_left_delimiter_addr(), false);
-            scan_delimiter(aux.fraction_right_delimiter_addr(), false);
+            scan_delimiter_in(st, aux.fraction_left_delimiter_addr(), false)?;
+            scan_delimiter_in(st, aux.fraction_right_delimiter_addr(), false)?;
         }
 
         let rule_thickness = if c % DELIMITED_CODE == ABOVE_CODE {
-            crate::scan::scan_dimen(false, false, false);
+            crate::scan::scan_dimen_in(st, false, false, false)?;
             cur_val()
         } else {
             0
         };
-        crate::state::with_state_mut(|st| finish_fraction_rule(&mut st.mem, c, rule_thickness));
+        finish_fraction_rule(&mut st.mem, c, rule_thickness);
     }
+    Ok(())
 }
 
 fn append_accent_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
@@ -4115,56 +4143,56 @@ fn append_inner_noad_for_right(mem: &mut MemState, q: i32) -> Result<(), NodeRec
 }
 
 pub unsafe fn math_left_right_global() {
+    if let Err(e) = crate::state::with_state_mut(|st| math_left_right_in(st)) {
+        e.fire();
+    }
+}
+
+pub(crate) fn math_left_right_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
     let t = cur_chr() as u16;
-    if t != LEFT_NOAD && cur_group() != MATH_LEFT_GROUP {
-        if cur_group() == MATH_SHIFT_GROUP {
-            scan_delimiter(GARBAGE, false);
-            crate::output::error_here_with_diagnostic(c"Extra ".as_ptr());
+    if t != LEFT_NOAD && st.save_stack.cur_group != MATH_LEFT_GROUP {
+        if st.save_stack.cur_group == MATH_SHIFT_GROUP {
+            scan_delimiter_in(st, GARBAGE, false)?;
+            crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
             if t == 1 {
-                crate::output::print_esc_cstr(c"middle".as_ptr());
-                set_help_ptr(1);
-                set_help_line(
-                    0,
-                    c"I'm ignoring a \\middle that had no matching \\left.".as_ptr(),
-                );
+                crate::output::print_esc_cstr_in(st, c"middle".as_ptr());
+                st.errors.help_ptr = 1;
+                st.errors.help_line[0] =
+                    c"I'm ignoring a \\middle that had no matching \\left.".as_ptr();
             } else {
-                crate::output::print_esc_cstr(c"right".as_ptr());
-                set_help_ptr(1);
-                set_help_line(
-                    0,
-                    c"I'm ignoring a \\right that had no matching \\left.".as_ptr(),
-                );
+                crate::output::print_esc_cstr_in(st, c"right".as_ptr());
+                st.errors.help_ptr = 1;
+                st.errors.help_line[0] =
+                    c"I'm ignoring a \\right that had no matching \\left.".as_ptr();
             }
-            crate::output::capture_to_diagnostic(std::ptr::null_mut());
-            crate::errors::error();
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
         } else {
-            crate::main_control::off_save();
+            crate::main_control::off_save_in(st)?;
         }
     } else {
-        let p = match crate::state::with_state_mut(|st| append_left_right_noad(&mut st.mem, t)) {
-            Ok(p) => p,
-            Err(abort) => node_recycle_abort(abort),
-        };
-        scan_delimiter(p.left_right_delimiter_addr(), false);
+        let p = append_left_right_noad(&mut st.mem, t)?;
+        scan_delimiter_in(st, p.left_right_delimiter_addr(), false)?;
         if t == 1 {
-            crate::state::with_state_mut(|st| mark_middle_noad(&mut st.mem, p));
+            mark_middle_noad(&mut st.mem, p);
         }
         let q = if t == LEFT_NOAD {
             p.idx().0
         } else {
-            let q = fin_mlist_global(p.idx().0);
-            crate::save::unsave();
+            let q = fin_mlist_in(st, p.idx().0)?;
+            crate::save::unsave_in(st)?;
             q
         };
         if t != RIGHT_NOAD {
-            crate::main_control::push_math(MATH_LEFT_GROUP);
-            crate::state::with_state_mut(|st| finish_left_right_group(&mut st.mem, q, p.idx().0));
-        } else if let Err(abort) =
-            crate::state::with_state_mut(|st| append_inner_noad_for_right(&mut st.mem, q))
-        {
-            node_recycle_abort(abort);
+            crate::main_control::push_math_in(st, MATH_LEFT_GROUP)?;
+            finish_left_right_group(&mut st.mem, q, p.idx().0);
+        } else {
+            append_inner_noad_for_right(&mut st.mem, q)?;
         }
     }
+    Ok(())
 }
 
 // Inline helpers for the C bitfield macros in xetex-xetexd.h.
@@ -4191,48 +4219,47 @@ fn set_family_bits(x: i32) -> i32 {
 
 /// translated from xetex-math.c:355 (math_ac)
 pub unsafe fn math_ac_global() {
+    if let Err(e) = crate::state::with_state_mut(|st| math_ac_in(st)) {
+        e.fire();
+    }
+}
+
+pub(crate) fn math_ac_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
     if cur_cmd() == ACCENT {
-        crate::output::error_here_with_diagnostic(c"Please use ".as_ptr());
-        crate::output::print_esc_cstr(c"mathaccent".as_ptr());
-        crate::output::print_cstr(c" for accents in math mode".as_ptr());
-        crate::output::capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
-            c"I'm changing \\accent to \\mathaccent here; wish me luck.".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"(Accents are not the same in formulas as they are in text.)".as_ptr(),
-        );
-        crate::errors::error();
+        crate::output::error_here_with_diagnostic_in(st, c"Please use ".as_ptr());
+        crate::output::print_esc_cstr_in(st, c"mathaccent".as_ptr());
+        crate::output::print_cstr_in(st, c" for accents in math mode".as_ptr());
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 2;
+        st.errors.help_line[1] =
+            c"I'm changing \\accent to \\mathaccent here; wish me luck.".as_ptr();
+        st.errors.help_line[0] =
+            c"(Accents are not the same in formulas as they are in text.)".as_ptr();
+        crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     }
 
-    let tail = match crate::state::with_state_mut(|st| append_accent_noad(&mut st.mem)) {
-        Ok(tail) => tail,
-        Err(abort) => node_recycle_abort(abort),
-    };
+    let tail = append_accent_noad(&mut st.mem)?;
 
     if cur_chr() == 1 {
-        if crate::scan::scan_keyword(c"fixed".as_ptr()) {
-            crate::state::with_state_mut(|st| set_accent_kind(&mut st.mem, tail, FIXED_ACC));
-        } else if crate::scan::scan_keyword(c"bottom".as_ptr()) {
-            if crate::scan::scan_keyword(c"fixed".as_ptr()) {
-                crate::state::with_state_mut(|st| {
-                    set_accent_kind(&mut st.mem, tail, BOTTOM_ACC + 1)
-                });
+        if crate::scan::scan_keyword_in(st, c"fixed".as_ptr())? {
+            set_accent_kind(&mut st.mem, tail, FIXED_ACC);
+        } else if crate::scan::scan_keyword_in(st, c"bottom".as_ptr())? {
+            if crate::scan::scan_keyword_in(st, c"fixed".as_ptr())? {
+                set_accent_kind(&mut st.mem, tail, BOTTOM_ACC + 1);
             } else {
-                crate::state::with_state_mut(|st| set_accent_kind(&mut st.mem, tail, BOTTOM_ACC));
+                set_accent_kind(&mut st.mem, tail, BOTTOM_ACC);
             }
         }
-        crate::scan::scan_math_class_int();
+        crate::scan::scan_math_class_int_in(st)?;
         let mut c = set_class_bits(cur_val());
-        crate::scan::scan_math_fam_int();
+        crate::scan::scan_math_fam_int_in(st)?;
         c += set_family_bits(cur_val());
-        crate::scan::scan_usv_num();
+        crate::scan::scan_usv_num_in(st)?;
         set_cur_val(cur_val() + c);
     } else {
-        crate::scan::scan_fifteen_bit_int();
+        crate::scan::scan_fifteen_bit_int_in(st)?;
         set_cur_val(
             set_class_bits(cur_val() / 4096)
                 + set_family_bits((cur_val() % 4096) / 256)
@@ -4241,10 +4268,8 @@ pub unsafe fn math_ac_global() {
     }
 
     let value = cur_val();
-    crate::state::with_state_mut(|st| {
-        finish_accent_math_field(&mut st.mem, &st.eqtb, tail, value);
-    });
-    crate::scan::scan_math(tail.idx().0 + 1);
+    finish_accent_math_field(&mut st.mem, &st.eqtb, tail, value);
+    crate::scan::scan_math_in(st, tail.idx().0 + 1)
 }
 
 /// translated from xetex-math.c:786 (resume_after_display)

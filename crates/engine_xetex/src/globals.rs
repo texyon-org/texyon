@@ -1313,13 +1313,6 @@ pub(crate) fn save_size() -> i32 {
 pub(crate) fn save_stack_b32s1(k: i32) -> i32 {
     crate::state::with_state(|s| s.save_stack.b32s1(k))
 }
-/// Write `save_stack[k].b32.s1 = v`.
-#[inline]
-pub(crate) fn set_save_stack_b32s1(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.save_stack.data[k as usize].b32.s1 = v;
-    });
-}
 #[inline]
 pub(crate) fn cur_level() -> u16 {
     crate::state::with_state(|state| state.save_stack.cur_level)
