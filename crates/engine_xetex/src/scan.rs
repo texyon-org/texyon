@@ -260,12 +260,6 @@ pub unsafe fn scan_char_class_not_ignored() {
 }
 
 // translated from xetex-xetex0.c:5114 (scan_eight_bit_int)
-pub unsafe fn scan_eight_bit_int() {
-    if let Err(e) = crate::state::with_state_mut(scan_eight_bit_int_in) {
-        unsafe { e.fire() }
-    }
-}
-
 pub(crate) fn scan_eight_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if cur_val() < 0 || cur_val() > 255 {

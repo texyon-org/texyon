@@ -30,12 +30,12 @@ use crate::fonts::read_font_info;
 use crate::globals::{
     after_token, align_state, avail, cur_chr, cur_cmd, cur_cs, cur_group, cur_list_mode, cur_ptr,
     cur_tok, cur_val, def_ref, eqtb_b32s1, font_area_entry, font_glue, hash_s1, in_initex_mode,
-    mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, param_base, pool_ptr, save_ptr,
-    set_after_token, set_align_state, set_avail, set_box_allowed, set_cur_chr, set_cur_cmd,
-    set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val, set_font_glue,
-    set_font_info_b32s1, set_help_line, set_help_ptr, set_hyphen_char_entry, set_mem_b16s0,
-    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_pool_ptr, set_save_ptr, set_save_stack_b32s1,
-    set_skew_char_entry, set_str_ptr, str_ptr, str_start,
+    mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, param_base, pool_ptr, set_after_token,
+    set_align_state, set_avail, set_box_allowed, set_cur_chr, set_cur_cmd, set_cur_cs,
+    set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val, set_font_glue, set_font_info_b32s1,
+    set_help_line, set_help_ptr, set_hyphen_char_entry, set_mem_b16s0, set_mem_b16s1,
+    set_mem_b32s0, set_mem_b32s1, set_pool_ptr, set_skew_char_entry, set_str_ptr, str_ptr,
+    str_start,
 };
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::input::begin_token_list;
@@ -56,7 +56,7 @@ use crate::pagebuilder::build_page;
 use crate::scan::{
     back_input, eTeX_enabled, effective_char_global, effective_char_info_global, get_next,
     get_r_token, get_token, get_x_or_protected, get_x_token, insert_dollar_sign,
-    new_native_word_node_global, scan_char_num, scan_delimiter_int, scan_dimen, scan_eight_bit_int,
+    new_native_word_node_global, scan_char_num, scan_delimiter_int, scan_dimen,
     scan_fifteen_bit_int, scan_glue, scan_int, scan_keyword, scan_left_brace, scan_math,
     scan_math_class_int, scan_math_fam_int, scan_optional_equals, scan_register_num,
     scan_rule_spec, scan_spec, scan_toks, scan_usv_num, scan_xetex_math_char_int, set_class_fn,
@@ -1540,37 +1540,53 @@ pub unsafe fn head_for_vmode() {
 }
 // translated from xetex-xetex0.c:9760 (begin_insert_or_adjust)
 pub unsafe fn begin_insert_or_adjust() {
+    if let Err(e) = crate::state::with_state_mut(begin_insert_or_adjust_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn begin_insert_or_adjust_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     if cur_cmd() == VADJUST {
         set_cur_val(255);
     } else {
-        scan_eight_bit_int();
+        crate::scan::scan_eight_bit_int_in(st)?;
         if cur_val() == 255 {
-            error_here_with_diagnostic(c"You can't ".as_ptr());
-            crate::output::print_esc_cstr(c"insert".as_ptr());
-            crate::output::print_int(cur_val());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(1);
-            set_help_line(
-                0,
-                c"I'm changing to \\insert0; box 255 is special.".as_ptr(),
-            );
-            error();
+            crate::output::error_here_with_diagnostic_in(st, c"You can't ".as_ptr());
+            crate::output::print_esc_cstr_in(st, c"insert".as_ptr());
+            crate::output::print_int_in(st, cur_val());
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 1;
+            st.errors.help_line[0] = c"I'm changing to \\insert0; box 255 is special.".as_ptr();
+            mc_propagate_error(crate::errors::error_in(st))?;
             set_cur_val(0);
         }
     }
-    set_save_stack_b32s1(save_ptr(), cur_val());
-    if cur_cmd() == VADJUST && scan_keyword(c"pre".as_ptr()) {
-        set_save_stack_b32s1(save_ptr() + 1, 1);
+    let sp = st.save_stack.save_ptr;
+    st.save_stack.set_b32s1(sp, cur_val());
+    if cur_cmd() == VADJUST && crate::scan::scan_keyword_in(st, c"pre".as_ptr())? {
+        st.save_stack.set_b32s1(sp + 1, 1);
     } else {
-        set_save_stack_b32s1(save_ptr() + 1, 0);
+        st.save_stack.set_b32s1(sp + 1, 0);
     }
-    set_save_ptr(save_ptr() + 2);
-    crate::save::new_save_level_global(INSERT_GROUP);
-    scan_left_brace();
-    normal_paragraph_global();
-    crate::mem::push_nest();
+    st.save_stack.save_ptr = sp + 2;
+    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, INSERT_GROUP) {
+        return Err(MainControlAbort::Save(a));
+    }
+    crate::scan::scan_left_brace_in(st)?;
+    if let Some(a) = normal_paragraph(
+        &mut st.eqtb,
+        &mut st.save_stack,
+        &mut st.mem,
+        &mut st.scanner,
+    ) {
+        return Err(MainControlAbort::Save(a));
+    }
+    crate::mem::push_nest_in(st)?;
     crate::globals::set_cur_list_mode(-1); // -VMODE
     crate::globals::set_cur_list_aux_b32s1(IGNORE_DEPTH);
+    Ok(())
 }
 // translated from xetex-xetex0.c:10161 (do_endv)
 pub unsafe fn do_endv() {
@@ -2106,6 +2122,13 @@ pub(crate) enum MainControlAbort {
     InsertSrc(crate::ext::InsertSrcAbort),
     Error(crate::errors::ErrorOutcome),
     Confusion(&'static std::ffi::CStr),
+    NewCharacter(NewCharacterAbort),
+}
+
+impl From<NewCharacterAbort> for MainControlAbort {
+    fn from(e: NewCharacterAbort) -> Self {
+        MainControlAbort::NewCharacter(e)
+    }
 }
 
 impl From<crate::scan::SccAbort> for MainControlAbort {
@@ -2200,6 +2223,7 @@ impl MainControlAbort {
                 unreachable!("error outcome reaching MainControlAbort::fire is divergent")
             }
             MainControlAbort::Confusion(m) => crate::errors::confusion(m.as_ptr()),
+            MainControlAbort::NewCharacter(a) => a.finish(),
         }
     }
 }
@@ -3362,28 +3386,43 @@ pub unsafe fn off_save() {
 }
 // translated from xetex-xetex0.c:9956 (append_discretionary)
 pub unsafe fn append_discretionary() {
-    extern "C" {}
+    if let Err(e) = crate::state::with_state_mut(append_discretionary_in) {
+        e.fire();
+    }
+}
 
+pub(crate) fn append_discretionary_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     let tail = crate::globals::cur_list_tail();
-    set_mem_b32s1(tail, crate::mem::new_disc_global());
-    crate::globals::set_cur_list_tail(mem_b32s1(tail));
+    let d = crate::mem::new_disc(&mut st.mem);
+    if d == crate::mem::ALLOC_FAILED {
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+    }
+    st.mem.set_b32s1(tail, d);
+    crate::globals::set_cur_list_tail(st.mem.b32s1(tail));
 
     if cur_chr() == 1 {
-        let f = eqtb_b32s1(CUR_FONT_LOC);
-        let c = crate::globals::hyphen_char_entry(f);
+        let f = st.eqtb.b32s1(CUR_FONT_LOC);
+        let c = st.fonts.hyphen_char[f as usize];
         if (0..=BIGGEST_CHAR).contains(&c) {
+            let ch = new_character_in(st, f, c as u16)?;
             let tail2 = crate::globals::cur_list_tail();
-            set_mem_b32s0(tail2 + 1, new_character(f, c as u16));
+            st.mem.set_b32s0(tail2 + 1, ch);
         }
     } else {
-        set_save_stack_b32s1(save_ptr(), 0);
-        set_save_ptr(save_ptr() + 1);
-        crate::save::new_save_level_global(DISC_GROUP);
-        scan_left_brace();
-        crate::mem::push_nest();
+        let sp = st.save_stack.save_ptr;
+        st.save_stack.set_b32s1(sp, 0);
+        st.save_stack.save_ptr = sp + 1;
+        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, DISC_GROUP) {
+            return Err(MainControlAbort::Save(a));
+        }
+        crate::scan::scan_left_brace_in(st)?;
+        crate::mem::push_nest_in(st)?;
         crate::globals::set_cur_list_mode(-104); // -HMODE
         crate::globals::set_cur_list_aux_b32s0(1000);
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:10765 (shift_case)
 pub unsafe fn shift_case() {
