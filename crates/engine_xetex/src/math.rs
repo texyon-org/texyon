@@ -8,17 +8,16 @@ use crate::ext::real_get_native_glyph;
 use crate::input::begin_token_list;
 
 use crate::globals::{
-    adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_lang,
-    cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf,
-    cur_list_tail, cur_val, cur_val1, eqtb_b32s1, file_line_error_style_p, font_info_b16,
-    font_info_b32s1, hi_mem_min, insert_src_special_every_math, just_box, lr_problems, lr_ptr,
-    mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, mem_gr, mem_word, nest_ptr, param_base,
-    pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled, set_adjust_tail,
-    set_avail, set_cur_dir, set_cur_lang, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
-    set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
-    set_cur_mlist, set_cur_style, set_cur_val, set_cur_val1, set_help_line, set_help_ptr,
-    set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2, set_mem_b16s3,
-    set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties,
+    adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_list_aux_b32s1,
+    cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf, cur_list_tail, cur_val,
+    cur_val1, eqtb_b32s1, file_line_error_style_p, font_info_b16, font_info_b32s1, hi_mem_min,
+    insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b32s0,
+    mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
+    semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_list_aux_b32s0,
+    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf,
+    set_cur_list_tail, set_cur_mlist, set_cur_style, set_cur_val, set_cur_val1, set_help_line,
+    set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2,
+    set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties,
     set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
     set_xtx_ligature_present, temp_ptr, total_shrink, width_base_entry,
 };
@@ -4243,35 +4242,47 @@ pub unsafe fn math_ac_global() {
 
 /// translated from xetex-math.c:786 (resume_after_display)
 pub unsafe fn resume_after_display() {
-    if cur_group() != MATH_SHIFT_GROUP {
-        crate::errors::confusion(c"display".as_ptr());
+    if let Err(e) = crate::state::with_state_mut(resume_after_display_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn resume_after_display_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    use crate::main_control::MainControlAbort;
+
+    if st.save_stack.cur_group != MATH_SHIFT_GROUP {
+        return Err(MainControlAbort::Confusion(c"display"));
     }
 
-    crate::save::unsave();
+    crate::save::unsave_in(st)?;
     set_cur_list_prev_graf(cur_list_prev_graf() + 3);
-    crate::mem::push_nest();
+    crate::mem::push_nest_in(st)?;
     set_cur_list_mode(HMODE);
     set_cur_list_aux_b32s0(1000);
 
-    let lang = eqtb_b32s1(INT_BASE + INT_PAR_LANGUAGE);
-    if lang <= 0 || lang > BIGGEST_LANG {
-        set_cur_lang(0);
+    let lang = st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE);
+    let cl: u8 = if lang <= 0 || lang > BIGGEST_LANG {
+        0
     } else {
-        set_cur_lang(lang as u8);
-    }
-    set_cur_list_aux_b32s1(cur_lang() as i32);
+        lang as u8
+    };
+    st.hyph.cur_lang = cl;
+    set_cur_list_aux_b32s1(cl as i32);
 
-    let lhm = crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as i32;
-    let rhm = crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
-    set_cur_list_prev_graf((lhm * 64 + rhm) * 65536 + cur_lang() as i32);
+    let lhm = crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as i32;
+    let rhm = crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
+    set_cur_list_prev_graf((lhm * 64 + rhm) * 65536 + cl as i32);
 
-    crate::scan::get_x_token();
+    crate::scan::get_x_token_in(st)?;
     if cur_cmd() != SPACER {
-        crate::input::back_input();
+        crate::input::back_input_in(st)?;
     }
-    if nest_ptr() == 1 {
-        crate::pagebuilder::build_page();
+    if st.input.nest_ptr == 1 {
+        crate::pagebuilder::build_page_in(st)?;
     }
+    Ok(())
 }
 
 #[inline]
