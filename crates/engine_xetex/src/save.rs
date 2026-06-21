@@ -2,7 +2,6 @@
 //!
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
-use crate::packaging::flush_node_list_global;
 use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
@@ -198,11 +197,6 @@ pub(crate) fn geq_word_define(eqtb: &mut EqtbState, p: i32, w: i32) {
     eqtb.set_xeq_level_at(p, LEVEL_ONE);
 }
 
-/// Transitional bridge-down wrapper for legacy `geq_word_define` callers.
-pub fn geq_word_define_global(p: i32, w: i32) {
-    crate::state::with_state_mut(|st| geq_word_define(&mut st.eqtb, p, w));
-}
-
 // ---------------------------------------------------------------------------
 // save_for_after
 // ---------------------------------------------------------------------------
@@ -377,23 +371,6 @@ pub(crate) fn eq_define(
     None
 }
 
-/// Transitional bridge-down wrapper for legacy `eq_define` callers.
-pub unsafe fn eq_define_global(p: i32, t: u16, e: i32) {
-    let abort = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        eq_define(
-            &mut s.eqtb,
-            &mut s.save_stack,
-            &mut s.mem,
-            &mut s.scanner,
-            p,
-            t,
-            e,
-        )
-    });
-    raise_save_abort(abort);
-}
-
 /// Globally assign `eqtb[p] = (level=LEVEL_ONE, type=t, value=e)`.
 ///
 /// Phase-C: threaded to `&mut EqtbState` + `&mut MemState` + `&mut ScannerState`;
@@ -418,15 +395,6 @@ pub(crate) fn geq_define(
     eqtb.set_b16s1(p, t);
     eqtb.set_b32s1(p, e);
     None
-}
-
-/// Transitional bridge-down wrapper for legacy `geq_define` callers.
-pub unsafe fn geq_define_global(p: i32, t: u16, e: i32) {
-    let abort = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        geq_define(&mut s.eqtb, &mut s.mem, &mut s.scanner, p, t, e)
-    });
-    raise_save_abort(abort);
 }
 
 // ---------------------------------------------------------------------------
@@ -517,10 +485,6 @@ pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: i32) {
             break;
         }
     }
-}
-
-pub fn delete_sa_ref_global(q: i32) {
-    crate::state::with_state_mut(|st| delete_sa_ref(&mut st.mem, &mut st.scanner, q));
 }
 
 // translated from xetex-xetex0.c:2837 (sa_save)
@@ -628,13 +592,6 @@ pub(crate) fn sa_def(
     result
 }
 
-pub unsafe fn sa_def_global(p: i32, e: i32) {
-    let result = crate::state::with_state_mut(|st| {
-        sa_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, e)
-    });
-    finish_sa_mutation(p, result);
-}
-
 // translated from xetex-xetex0.c:2908 (sa_w_def)
 pub(crate) fn sa_w_def(
     mem: &mut MemState,
@@ -671,30 +628,12 @@ pub(crate) fn gsa_def(mem: &mut MemState, p: i32, e: i32) -> SaMutationResult {
     }
 }
 
-pub unsafe fn gsa_def_global(p: i32, e: i32) {
-    let result = crate::state::with_state_mut(|st| gsa_def(&mut st.mem, p, e));
-    finish_sa_mutation(p, result);
-}
-
 // translated from xetex-xetex0.c:2933 (gsa_w_def)
 pub(crate) fn gsa_w_def(mem: &mut MemState, p: i32, w: i32) -> SaMutationResult {
     mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
     mem.set_b16s0(p, LEVEL_ONE);
     mem.set_b32s1(p + 2, w);
     SaMutationResult::default()
-}
-
-unsafe fn finish_sa_mutation(p: i32, result: SaMutationResult) {
-    if result.status == crate::mem::ALLOC_FAILED {
-        crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    if result.status == SAVE_OVERFLOW {
-        crate::errors::overflow(c"save size".as_ptr(), save_size());
-    }
-    if let Some(list) = result.flush_list {
-        flush_node_list_global(list);
-    }
-    delete_sa_ref_global(p);
 }
 
 /// Cold abort sentinel for [`finish_sa_mutation_in`] (`01b` §5).

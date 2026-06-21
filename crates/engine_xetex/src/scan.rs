@@ -245,20 +245,7 @@ pub(crate) fn scan_char_class_in(st: &mut crate::state::EngineState) -> Result<(
     Ok(())
 }
 
-pub unsafe fn scan_char_class() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_char_class_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
 // translated from xetex-xetex0.c:5096 (scan_char_class_not_ignored)
-pub unsafe fn scan_char_class_not_ignored() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_char_class_not_ignored_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
-// translated from xetex-xetex0.c:5114 (scan_eight_bit_int)
 pub(crate) fn scan_eight_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if cur_val() < 0 || cur_val() > 255 {
@@ -699,13 +686,6 @@ pub unsafe fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_uni
     }
 }
 
-/// translated from xetex-xetex0.c:4302 (scan_glyph_number)
-pub unsafe fn scan_glyph_number(f: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_glyph_number_in(st, f)) {
-        unsafe { e.fire() }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // scan_dimen / scan_decimal
 // ---------------------------------------------------------------------------
@@ -1091,13 +1071,6 @@ pub(crate) fn read_toks_in(
     Ok(())
 }
 
-/// translated from xetex-xetex0.c:7268 (read_toks)
-pub unsafe fn read_toks(n: i32, r: i32, j: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| read_toks_in(st, n, r, j)) {
-        unsafe { e.fire() }
-    }
-}
-
 // xetex-stringpool.h:12  (TOO_BIG_CHAR + 1)
 
 // ---------------------------------------------------------------------------
@@ -1113,20 +1086,6 @@ pub unsafe fn read_toks(n: i32, r: i32, j: i32) {
 const FONT_BASE: i32 = 0;
 const SPACE_CODE: i32 = 2;
 const SPACE_SHRINK_CODE: i32 = 4;
-
-/// translated from xetex-xetex0.c:4467 (scan_font_ident)
-pub unsafe fn scan_font_ident() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_font_ident_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
-/// translated from xetex-xetex0.c:4501 (find_font_dimen)
-pub unsafe fn find_font_dimen(writing: bool) {
-    if let Err(e) = crate::state::with_state_mut(|st| find_font_dimen_in(st, writing)) {
-        unsafe { e.fire() }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // scan_something_internal
@@ -1304,12 +1263,6 @@ pub(crate) fn get_r_token_in(st: &mut crate::state::EngineState) -> Result<(), S
         }
     }
     Ok(())
-}
-
-pub unsafe fn get_r_token() {
-    if let Err(e) = crate::state::with_state_mut(|st| get_r_token_in(st)) {
-        unsafe { e.fire() }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1528,13 +1481,6 @@ pub(crate) fn set_class_fn(x: i32) -> i32 {
 #[inline]
 pub(crate) fn set_family_fn(x: i32) -> i32 {
     (((x as u32) & 0xFF) << 24) as i32
-}
-
-// translated from xetex-xetex0.c:4678 (scan_glue)
-pub unsafe fn scan_glue(level: i16) {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_glue_in(st, level)) {
-        unsafe { e.fire() }
-    }
 }
 
 /// Cold abort reasons threaded out of the node-recycling functions

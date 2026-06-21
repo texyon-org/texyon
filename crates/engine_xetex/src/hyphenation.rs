@@ -663,11 +663,6 @@ pub(crate) fn new_patterns_in(
     Ok(())
 }
 
-pub unsafe fn new_patterns() {
-    if let Err(e) = crate::state::with_state_mut(new_patterns_in) {
-        unsafe { e.fire() }
-    }
-}
 // translated from xetex-ini.c:863 (new_hyph_exceptions)
 pub(crate) fn new_hyph_exceptions_in(
     st: &mut crate::state::EngineState,
@@ -887,11 +882,5 @@ pub(crate) fn new_hyph_exceptions_in(
         }
 
         let _ = &p; // suppress unused-variable warning on 'outer
-    }
-}
-
-pub unsafe fn new_hyph_exceptions() {
-    if let Err(e) = crate::state::with_state_mut(new_hyph_exceptions_in) {
-        unsafe { e.fire() }
     }
 }

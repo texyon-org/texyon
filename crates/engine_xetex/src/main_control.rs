@@ -15,7 +15,6 @@ use crate::consts::{
     MAX_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_ONLY,
     SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
-use crate::engine::intpar;
 use crate::errors::{
     box_error, cs_error, error, extra_right_brace, privileged, report_illegal_case,
 };
@@ -26,15 +25,13 @@ use crate::ext::{
 };
 use crate::fonts::read_font_info_in;
 use crate::globals::{
-    after_token, align_state, avail, cur_chr, cur_cmd, cur_cs, cur_group, cur_list_mode, cur_ptr,
-    cur_tok, cur_val, def_ref, eqtb_b32s1, font_area_entry, font_glue, in_initex_mode, mem_b16s0,
-    mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, param_base, set_after_token, set_align_state,
-    set_avail, set_box_allowed, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index,
-    set_cur_ptr, set_cur_tok, set_cur_val, set_font_glue, set_font_info_b32s1, set_help_line,
-    set_help_ptr, set_hyphen_char_entry, set_mem_b16s0, set_mem_b32s0, set_mem_b32s1,
-    set_skew_char_entry,
+    align_state, cur_chr, cur_cmd, cur_cs, cur_group, cur_list_mode, cur_ptr, cur_tok, cur_val,
+    eqtb_b32s1, font_glue, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, param_base,
+    set_align_state, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr,
+    set_cur_tok, set_cur_val, set_font_glue, set_help_line, set_help_ptr, set_mem_b16s0,
+    set_mem_b32s0, set_mem_b32s1,
 };
-use crate::hyphenation::{new_hyph_exceptions, new_patterns};
+use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::input::begin_token_list;
 use crate::linebreak::do_locale_linebreaks;
 use crate::math::{
@@ -3232,11 +3229,6 @@ pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     crate::globals::set_cur_list_tail(p);
     Ok(())
 }
-// translated from xetex-xetex0.c:11040 (new_interaction)
-pub unsafe fn new_interaction() {
-    crate::state::with_state_mut(new_interaction_in);
-}
-
 pub(crate) fn new_interaction_in(st: &mut crate::state::EngineState) {
     crate::output::print_ln_in(st);
     st.errors.interaction = cur_chr() as u8;
@@ -3249,13 +3241,6 @@ pub(crate) fn new_interaction_in(st: &mut crate::state::EngineState) {
         st.shipout.selector += 2;
     }
 }
-// translated from xetex-xetex0.c:10774 (alter_aux)
-pub unsafe fn alter_aux() {
-    if let Err(e) = crate::state::with_state_mut(alter_aux_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn alter_aux_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     if cur_chr() != cur_list_mode().unsigned_abs() as i32 {
         return mc_propagate_error(crate::errors::report_illegal_case_in(st));
@@ -3280,13 +3265,6 @@ pub(crate) fn alter_aux_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:10805 (alter_prev_graf)
-pub unsafe fn alter_prev_graf() {
-    if let Err(e) = crate::state::with_state_mut(alter_prev_graf_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn alter_prev_graf_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
@@ -3311,13 +3289,6 @@ pub(crate) fn alter_prev_graf_in(
     crate::globals::set_cur_list_record(st.input.nest[np as usize]);
     Ok(())
 }
-// translated from xetex-xetex0.c:10837 (alter_page_so_far)
-pub unsafe fn alter_page_so_far() {
-    if let Err(e) = crate::state::with_state_mut(alter_page_so_far_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn alter_page_so_far_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
@@ -3327,13 +3298,6 @@ pub(crate) fn alter_page_so_far_in(
     st.shipout.page_so_far[c] = cur_val();
     Ok(())
 }
-// translated from xetex-xetex0.c:10846 (alter_integer)
-pub unsafe fn alter_integer() {
-    if let Err(e) = crate::state::with_state_mut(alter_integer_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn alter_integer_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let c = cur_chr() as u8;
     crate::scan::scan_optional_equals_in(st)?;
@@ -3358,13 +3322,6 @@ pub(crate) fn alter_integer_in(st: &mut crate::state::EngineState) -> Result<(),
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:10874 (alter_box_dimen)
-pub unsafe fn alter_box_dimen() {
-    if let Err(e) = crate::state::with_state_mut(alter_box_dimen_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn alter_box_dimen_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
@@ -3403,10 +3360,6 @@ pub(crate) fn trap_zero_glue(mem: &mut crate::state::MemState) {
     }
 }
 
-/// Transitional bridge-down wrapper for legacy `trap_zero_glue` callers.
-pub fn trap_zero_glue_global() {
-    crate::state::with_state_mut(|st| trap_zero_glue(&mut st.mem));
-}
 // translated from xetex-xetex0.c:11357 (fix_language)
 ///
 /// Phase-C: threaded to `&mut MemState` + `&EqtbState` (`01b` §3). The cold
@@ -3897,13 +3850,6 @@ pub unsafe fn make_accent() {
     crate::globals::set_cur_list_tail(p_final);
     crate::globals::set_cur_list_aux_b32s0(1000);
 }
-// translated from xetex-xetex0.c:10233 (new_font)
-pub unsafe fn new_font(a: i16) {
-    if let Err(e) = crate::state::with_state_mut(|st| new_font_in(st, a)) {
-        e.fire();
-    }
-}
-
 pub(crate) unsafe fn new_font_in(
     st: &mut crate::state::EngineState,
     a: i16,
@@ -4430,31 +4376,32 @@ pub(crate) fn do_register_command_in(
     Ok(())
 }
 
-pub unsafe fn do_register_command(a: i16) {
-    if let Err(e) = crate::state::with_state_mut(|st| do_register_command_in(st, a)) {
+// translated from xetex-xetex0.c:10745 (do_assignments)
+pub unsafe fn do_assignments() {
+    if let Err(e) = crate::state::with_state_mut(do_assignments_in) {
         unsafe { e.fire() }
     }
 }
-// translated from xetex-xetex0.c:10745 (do_assignments)
-pub unsafe fn do_assignments() {
-    extern "C" {}
 
+pub(crate) fn do_assignments_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const MAX_NON_PREFIXED_COMMAND: u8 = 71; // xetex_format.h:312
     const RELAX: u8 = 0; // xetex_format.h:229
 
     loop {
         loop {
-            get_x_token();
+            crate::scan::get_x_token_in(st)?;
             if cur_cmd() != SPACER && cur_cmd() != RELAX {
                 break;
             }
         }
         if cur_cmd() <= MAX_NON_PREFIXED_COMMAND {
-            return;
+            return Ok(());
         }
-        crate::globals::set_set_box_allowed(false);
-        prefixed_command();
-        crate::globals::set_set_box_allowed(true);
+        st.scanner.set_box_allowed = false;
+        prefixed_command_in(st)?;
+        st.scanner.set_box_allowed = true;
     }
 }
 
@@ -6729,7 +6676,73 @@ pub unsafe fn main_control() {
 // ---- moved verbatim from ini.rs (workstream 02) ----
 
 // translated from xetex-ini.c:583 (prefixed_command)
+#[inline]
+fn pc_define(
+    st: &mut crate::state::EngineState,
+    global: bool,
+    p: i32,
+    t: u16,
+    e: i32,
+) -> Result<(), MainControlAbort> {
+    let abort = if global {
+        crate::save::geq_define(&mut st.eqtb, &mut st.mem, &mut st.scanner, p, t, e)
+    } else {
+        crate::save::eq_define(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            &mut st.mem,
+            &mut st.scanner,
+            p,
+            t,
+            e,
+        )
+    };
+    if let Some(a) = abort {
+        return Err(MainControlAbort::Save(a));
+    }
+    Ok(())
+}
+
+#[inline]
+fn pc_word_define(
+    st: &mut crate::state::EngineState,
+    global: bool,
+    p: i32,
+    w: i32,
+) -> Result<(), MainControlAbort> {
+    if global {
+        crate::save::geq_word_define(&mut st.eqtb, p, w);
+    } else if let Some(a) = crate::save::eq_word_define(&mut st.eqtb, &mut st.save_stack, p, w) {
+        return Err(MainControlAbort::Save(a));
+    }
+    Ok(())
+}
+
+#[inline]
+fn pc_sa_def(
+    st: &mut crate::state::EngineState,
+    global: bool,
+    p: i32,
+    e: i32,
+) -> Result<(), MainControlAbort> {
+    let result = if global {
+        crate::save::gsa_def(&mut st.mem, p, e)
+    } else {
+        crate::save::sa_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, e)
+    };
+    crate::save::finish_sa_mutation_in(st, p, result)?;
+    Ok(())
+}
+
 pub unsafe fn prefixed_command() {
+    if let Err(e) = crate::state::with_state_mut(prefixed_command_in) {
+        unsafe { e.fire() }
+    }
+}
+
+pub(crate) fn prefixed_command_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     fn set_class(x: i32) -> i32 {
         (((x as u32) & 0x07) << 21) as i32
     }
@@ -6845,29 +6858,31 @@ pub unsafe fn prefixed_command() {
         }
 
         loop {
-            crate::scan::get_x_token();
+            crate::scan::get_x_token_in(st)?;
             if !(cur_cmd() as i32 == SPACER || cur_cmd() as i32 == RELAX_CMD) {
                 break;
             }
         }
 
         if (cur_cmd() as i32) <= MAX_NON_PREFIXED_COMMAND {
-            crate::output::error_here_with_diagnostic(c"You can't use a prefix with `".as_ptr());
-            crate::output::print_cmd_chr(cur_cmd() as u16, cur_chr());
-            crate::output::print_char('\'' as i32);
-            crate::output::capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(1);
-            set_help_line(
-                0,
-                c"I'll pretend you didn't say \\long or \\outer or \\global or \\protected."
-                    .as_ptr(),
+            crate::output::error_here_with_diagnostic_in(
+                st,
+                c"You can't use a prefix with `".as_ptr(),
             );
-            crate::input::back_error();
-            return;
+            crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+            crate::output::print_char_in(st, '\'' as i32);
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 1;
+            st.errors.help_line[0] =
+                c"I'll pretend you didn't say \\long or \\outer or \\global or \\protected."
+                    .as_ptr();
+            let outcome = crate::input::back_error_in(st)?;
+            mc_propagate_error(outcome)?;
+            return Ok(());
         }
 
-        if intpar(INT_PAR__TRACING_COMMANDS) > 2 {
-            crate::output::show_cur_cmd_chr();
+        if st.eqtb.b32s1(INT_BASE + INT_PAR__TRACING_COMMANDS) > 2 {
+            crate::output::show_cur_cmd_chr_in(st);
         }
     }
 
@@ -6879,26 +6894,24 @@ pub unsafe fn prefixed_command() {
     }
 
     if cur_cmd() as i32 != DEF && (a % 4 != 0 || j != 0) {
-        crate::output::error_here_with_diagnostic(c"You can't use `".as_ptr());
-        crate::output::print_esc_cstr(c"long".as_ptr());
-        crate::output::print_cstr(c"' or `".as_ptr());
-        crate::output::print_esc_cstr(c"outer".as_ptr());
-        crate::output::print_cstr(c"' or `".as_ptr());
-        crate::output::print_esc_cstr(c"protected".as_ptr());
-        crate::output::print_cstr(c"' with `".as_ptr());
-        crate::output::print_cmd_chr(cur_cmd() as u16, cur_chr());
-        crate::output::print_char('\'' as i32);
-        crate::output::capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(1);
-        set_help_line(
-            0,
-            c"I'll pretend you didn't say \\long or \\outer or \\protected here.".as_ptr(),
-        );
-        crate::errors::error();
+        crate::output::error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
+        crate::output::print_esc_cstr_in(st, c"long".as_ptr());
+        crate::output::print_cstr_in(st, c"' or `".as_ptr());
+        crate::output::print_esc_cstr_in(st, c"outer".as_ptr());
+        crate::output::print_cstr_in(st, c"' or `".as_ptr());
+        crate::output::print_esc_cstr_in(st, c"protected".as_ptr());
+        crate::output::print_cstr_in(st, c"' with `".as_ptr());
+        crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+        crate::output::print_char_in(st, '\'' as i32);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 1;
+        st.errors.help_line[0] =
+            c"I'll pretend you didn't say \\long or \\outer or \\protected here.".as_ptr();
+        mc_propagate_error(crate::errors::error_in(st))?;
     }
 
-    if intpar(INT_PAR__GLOBAL_DEFS) != 0 {
-        if intpar(INT_PAR__GLOBAL_DEFS) < 0 {
+    if st.eqtb.b32s1(INT_BASE + INT_PAR__GLOBAL_DEFS) != 0 {
+        if st.eqtb.b32s1(INT_BASE + INT_PAR__GLOBAL_DEFS) < 0 {
             if a >= 4 {
                 a -= 4;
             }
@@ -6910,154 +6923,120 @@ pub unsafe fn prefixed_command() {
     'sw: {
         match cur_cmd() as i32 {
             SET_FONT => {
-                if a >= 4 {
-                    crate::save::geq_define_global(CUR_FONT_LOC, DATA as u16, cur_chr());
-                } else {
-                    crate::save::eq_define_global(CUR_FONT_LOC, DATA as u16, cur_chr());
-                }
+                pc_define(st, a >= 4, CUR_FONT_LOC, DATA as u16, cur_chr())?;
             }
 
             DEF => {
-                if cur_chr() & 1 != 0 && a < 4 && intpar(INT_PAR__GLOBAL_DEFS) >= 0 {
+                if cur_chr() & 1 != 0
+                    && a < 4
+                    && st.eqtb.b32s1(INT_BASE + INT_PAR__GLOBAL_DEFS) >= 0
+                {
                     a += 4;
                 }
 
                 e = cur_chr() >= 2;
-                crate::scan::get_r_token();
+                crate::scan::get_r_token_in(st)?;
                 p = cur_cs();
-                q = crate::scan::scan_toks(true, e);
+                q = crate::scan::scan_toks_in(st, true, e)?;
 
                 if j != 0 {
-                    q = crate::mem::get_avail_global();
-                    set_mem_b32s0(q, j);
-                    set_mem_b32s1(q, mem_b32s1(def_ref()));
-                    set_mem_b32s1(def_ref(), q);
+                    q = crate::mem::get_avail(&mut st.mem);
+                    if q == crate::mem::ALLOC_FAILED {
+                        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                    }
+                    st.mem.set_b32s0(q, j);
+                    st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref));
+                    st.mem.set_b32s1(st.scanner.def_ref, q);
                 }
 
-                if a >= 4 {
-                    crate::save::geq_define_global(p, (CALL + (a % 4)) as u16, def_ref());
-                } else {
-                    crate::save::eq_define_global(p, (CALL + (a % 4)) as u16, def_ref());
-                }
+                pc_define(st, a >= 4, p, (CALL + (a % 4)) as u16, st.scanner.def_ref)?;
             }
 
             LET => {
                 n = cur_chr();
-                crate::scan::get_r_token();
+                crate::scan::get_r_token_in(st)?;
                 p = cur_cs();
 
                 if n == NORMAL {
                     loop {
-                        crate::scan::get_token();
+                        crate::scan::get_token_in(st)?;
                         if cur_cmd() as i32 != SPACER {
                             break;
                         }
                     }
 
                     if cur_tok() == OTHER_TOKEN + '=' as i32 {
-                        crate::scan::get_token();
+                        crate::scan::get_token_in(st)?;
                         if cur_cmd() as i32 == SPACER {
-                            crate::scan::get_token();
+                            crate::scan::get_token_in(st)?;
                         }
                     }
                 } else {
-                    crate::scan::get_token();
+                    crate::scan::get_token_in(st)?;
                     q = cur_tok();
-                    crate::scan::get_token();
-                    crate::input::back_input();
+                    crate::scan::get_token_in(st)?;
+                    crate::input::back_input_in(st)?;
                     set_cur_tok(q);
-                    crate::input::back_input();
+                    crate::input::back_input_in(st)?;
                 }
 
                 if cur_cmd() as i32 >= CALL {
-                    set_mem_b32s0(cur_chr(), mem_b32s0(cur_chr()) + 1);
+                    st.mem.set_b32s0(cur_chr(), st.mem.b32s0(cur_chr()) + 1);
                 } else if (cur_cmd() as i32 == REGISTER || cur_cmd() as i32 == TOKS_REGISTER)
                     && (cur_chr() < 0 || cur_chr() > 19)
                 {
-                    set_mem_b32s0(cur_chr() + 1, mem_b32s0(cur_chr() + 1) + 1);
+                    st.mem
+                        .set_b32s0(cur_chr() + 1, st.mem.b32s0(cur_chr() + 1) + 1);
                 }
 
-                if a >= 4 {
-                    crate::save::geq_define_global(p, cur_cmd() as u16, cur_chr());
-                } else {
-                    crate::save::eq_define_global(p, cur_cmd() as u16, cur_chr());
-                }
+                pc_define(st, a >= 4, p, cur_cmd() as u16, cur_chr())?;
             }
 
             SHORTHAND_DEF => {
                 if cur_chr() == CHAR_SUB_DEF_CODE {
-                    crate::output::error_here_with_diagnostic(
+                    crate::output::error_here_with_diagnostic_in(
+                        st,
                         c"vestigial MLTeX shorthand encountered??".as_ptr(),
                     );
-                    crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                    set_help_ptr(1);
-                    set_help_line(
-                        0,
+                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                    st.errors.help_ptr = 1;
+                    st.errors.help_line[0] =
                         c"This should never happen in Tectonic, where MLTeX has been excised."
-                            .as_ptr(),
-                    );
-                    crate::errors::error();
+                            .as_ptr();
+                    mc_propagate_error(crate::errors::error_in(st))?;
                 } else {
                     n = cur_chr();
-                    crate::scan::get_r_token();
+                    crate::scan::get_r_token_in(st)?;
                     p = cur_cs();
 
-                    if a >= 4 {
-                        crate::save::geq_define_global(p, RELAX_CMD as u16, TOO_BIG_USV);
-                    } else {
-                        crate::save::eq_define_global(p, RELAX_CMD as u16, TOO_BIG_USV);
-                    }
+                    pc_define(st, a >= 4, p, RELAX_CMD as u16, TOO_BIG_USV)?;
 
-                    crate::scan::scan_optional_equals();
+                    crate::scan::scan_optional_equals_in(st)?;
 
                     match n {
                         CHAR_DEF_CODE => {
-                            crate::scan::scan_usv_num();
-                            if a >= 4 {
-                                crate::save::geq_define_global(p, CHAR_GIVEN as u16, cur_val());
-                            } else {
-                                crate::save::eq_define_global(p, CHAR_GIVEN as u16, cur_val());
-                            }
+                            crate::scan::scan_usv_num_in(st)?;
+                            pc_define(st, a >= 4, p, CHAR_GIVEN as u16, cur_val())?;
                         }
                         MATH_CHAR_DEF_CODE => {
-                            crate::scan::scan_fifteen_bit_int();
-                            if a >= 4 {
-                                crate::save::geq_define_global(p, MATH_GIVEN as u16, cur_val());
-                            } else {
-                                crate::save::eq_define_global(p, MATH_GIVEN as u16, cur_val());
-                            }
+                            crate::scan::scan_fifteen_bit_int_in(st)?;
+                            pc_define(st, a >= 4, p, MATH_GIVEN as u16, cur_val())?;
                         }
                         XETEX_MATH_CHAR_NUM_DEF_CODE => {
-                            crate::scan::scan_xetex_math_char_int();
-                            if a >= 4 {
-                                crate::save::geq_define_global(
-                                    p,
-                                    XETEX_MATH_GIVEN as u16,
-                                    cur_val(),
-                                );
-                            } else {
-                                crate::save::eq_define_global(
-                                    p,
-                                    XETEX_MATH_GIVEN as u16,
-                                    cur_val(),
-                                );
-                            }
+                            crate::scan::scan_xetex_math_char_int_in(st)?;
+                            pc_define(st, a >= 4, p, XETEX_MATH_GIVEN as u16, cur_val())?;
                         }
                         XETEX_MATH_CHAR_DEF_CODE => {
-                            crate::scan::scan_math_class_int();
+                            crate::scan::scan_math_class_int_in(st)?;
                             n = set_class(cur_val());
-                            crate::scan::scan_math_fam_int();
+                            crate::scan::scan_math_fam_int_in(st)?;
                             n = n.wrapping_add(set_family(cur_val()));
-                            crate::scan::scan_usv_num();
+                            crate::scan::scan_usv_num_in(st)?;
                             n = n.wrapping_add(cur_val());
-                            if a >= 4 {
-                                crate::save::geq_define_global(p, XETEX_MATH_GIVEN as u16, n);
-                            } else {
-                                crate::save::eq_define_global(p, XETEX_MATH_GIVEN as u16, n);
-                            }
+                            pc_define(st, a >= 4, p, XETEX_MATH_GIVEN as u16, n)?;
                         }
                         _ => {
-                            crate::scan::scan_register_num();
+                            crate::scan::scan_register_num_in(st)?;
 
                             if cur_val() > 255 {
                                 j = n - 2;
@@ -7066,8 +7045,18 @@ pub unsafe fn prefixed_command() {
                                     j = TOK_VAL;
                                 }
 
-                                crate::save::find_sa_element_global(j as u16, cur_val(), true);
-                                set_mem_b32s0(cur_ptr() + 1, mem_b32s0(cur_ptr() + 1) + 1);
+                                let found = crate::save::find_sa_element(
+                                    &mut st.mem,
+                                    &mut st.scanner,
+                                    j as u16,
+                                    cur_val(),
+                                    true,
+                                );
+                                if found == crate::mem::ALLOC_FAILED {
+                                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                                }
+                                st.mem
+                                    .set_b32s0(cur_ptr() + 1, st.mem.b32s0(cur_ptr() + 1) + 1);
 
                                 if j == TOK_VAL {
                                     j = TOKS_REGISTER;
@@ -7075,87 +7064,53 @@ pub unsafe fn prefixed_command() {
                                     j = REGISTER;
                                 }
 
-                                if a >= 4 {
-                                    crate::save::geq_define_global(p, j as u16, cur_ptr());
-                                } else {
-                                    crate::save::eq_define_global(p, j as u16, cur_ptr());
-                                }
+                                pc_define(st, a >= 4, p, j as u16, cur_ptr())?;
                             } else {
                                 match n {
                                     COUNT_DEF_CODE => {
-                                        if a >= 4 {
-                                            crate::save::geq_define_global(
-                                                p,
-                                                ASSIGN_INT as u16,
-                                                COUNT_BASE + cur_val(),
-                                            );
-                                        } else {
-                                            crate::save::eq_define_global(
-                                                p,
-                                                ASSIGN_INT as u16,
-                                                COUNT_BASE + cur_val(),
-                                            );
-                                        }
+                                        pc_define(
+                                            st,
+                                            a >= 4,
+                                            p,
+                                            ASSIGN_INT as u16,
+                                            COUNT_BASE + cur_val(),
+                                        )?;
                                     }
                                     DIMEN_DEF_CODE => {
-                                        if a >= 4 {
-                                            crate::save::geq_define_global(
-                                                p,
-                                                ASSIGN_DIMEN as u16,
-                                                SCALED_BASE + cur_val(),
-                                            );
-                                        } else {
-                                            crate::save::eq_define_global(
-                                                p,
-                                                ASSIGN_DIMEN as u16,
-                                                SCALED_BASE + cur_val(),
-                                            );
-                                        }
+                                        pc_define(
+                                            st,
+                                            a >= 4,
+                                            p,
+                                            ASSIGN_DIMEN as u16,
+                                            SCALED_BASE + cur_val(),
+                                        )?;
                                     }
                                     SKIP_DEF_CODE => {
-                                        if a >= 4 {
-                                            crate::save::geq_define_global(
-                                                p,
-                                                ASSIGN_GLUE as u16,
-                                                SKIP_BASE + cur_val(),
-                                            );
-                                        } else {
-                                            crate::save::eq_define_global(
-                                                p,
-                                                ASSIGN_GLUE as u16,
-                                                SKIP_BASE + cur_val(),
-                                            );
-                                        }
+                                        pc_define(
+                                            st,
+                                            a >= 4,
+                                            p,
+                                            ASSIGN_GLUE as u16,
+                                            SKIP_BASE + cur_val(),
+                                        )?;
                                     }
                                     MU_SKIP_DEF_CODE => {
-                                        if a >= 4 {
-                                            crate::save::geq_define_global(
-                                                p,
-                                                ASSIGN_MU_GLUE as u16,
-                                                MU_SKIP_BASE + cur_val(),
-                                            );
-                                        } else {
-                                            crate::save::eq_define_global(
-                                                p,
-                                                ASSIGN_MU_GLUE as u16,
-                                                MU_SKIP_BASE + cur_val(),
-                                            );
-                                        }
+                                        pc_define(
+                                            st,
+                                            a >= 4,
+                                            p,
+                                            ASSIGN_MU_GLUE as u16,
+                                            MU_SKIP_BASE + cur_val(),
+                                        )?;
                                     }
                                     TOKS_DEF_CODE => {
-                                        if a >= 4 {
-                                            crate::save::geq_define_global(
-                                                p,
-                                                ASSIGN_TOKS as u16,
-                                                TOKS_BASE + cur_val(),
-                                            );
-                                        } else {
-                                            crate::save::eq_define_global(
-                                                p,
-                                                ASSIGN_TOKS as u16,
-                                                TOKS_BASE + cur_val(),
-                                            );
-                                        }
+                                        pc_define(
+                                            st,
+                                            a >= 4,
+                                            p,
+                                            ASSIGN_TOKS as u16,
+                                            TOKS_BASE + cur_val(),
+                                        )?;
                                     }
                                     _ => {}
                                 }
@@ -7167,29 +7122,26 @@ pub unsafe fn prefixed_command() {
 
             READ_TO_CS => {
                 j = cur_chr();
-                crate::scan::scan_int();
+                crate::scan::scan_int_in(st)?;
                 n = cur_val();
-                if !crate::scan::scan_keyword(c"to".as_ptr()) {
-                    crate::output::error_here_with_diagnostic(c"Missing `to' inserted".as_ptr());
-                    crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                    set_help_ptr(2);
-                    set_help_line(
-                        1,
-                        c"You should have said `\\read<number> to \\cs'.".as_ptr(),
+                if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
+                    crate::output::error_here_with_diagnostic_in(
+                        st,
+                        c"Missing `to' inserted".as_ptr(),
                     );
-                    set_help_line(0, c"I'm going to look for the \\cs now.".as_ptr());
-                    crate::errors::error();
+                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                    st.errors.help_ptr = 2;
+                    st.errors.help_line[1] =
+                        c"You should have said `\\read<number> to \\cs'.".as_ptr();
+                    st.errors.help_line[0] = c"I'm going to look for the \\cs now.".as_ptr();
+                    mc_propagate_error(crate::errors::error_in(st))?;
                 }
 
-                crate::scan::get_r_token();
+                crate::scan::get_r_token_in(st)?;
                 p = cur_cs();
-                crate::scan::read_toks(n, p, j);
+                crate::scan::read_toks_in(st, n, p, j)?;
 
-                if a >= 4 {
-                    crate::save::geq_define_global(p, CALL as u16, cur_val());
-                } else {
-                    crate::save::eq_define_global(p, CALL as u16, cur_val());
-                }
+                pc_define(st, a >= 4, p, CALL as u16, cur_val())?;
             }
 
             TOKS_REGISTER | ASSIGN_TOKS => {
@@ -7198,9 +7150,18 @@ pub unsafe fn prefixed_command() {
 
                 if cur_cmd() as i32 == TOKS_REGISTER {
                     if cur_chr() == 0 {
-                        crate::scan::scan_register_num();
+                        crate::scan::scan_register_num_in(st)?;
                         if cur_val() > 255 {
-                            crate::save::find_sa_element_global(TOK_VAL as u16, cur_val(), true);
+                            let found = crate::save::find_sa_element(
+                                &mut st.mem,
+                                &mut st.scanner,
+                                TOK_VAL as u16,
+                                cur_val(),
+                                true,
+                            );
+                            if found == crate::mem::ALLOC_FAILED {
+                                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                            }
                             set_cur_chr(cur_ptr());
                             e = true;
                         } else {
@@ -7210,23 +7171,28 @@ pub unsafe fn prefixed_command() {
                         e = true;
                     }
                 } else if cur_chr() == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
-                    crate::scan::scan_char_class_not_ignored();
+                    crate::scan::scan_char_class_not_ignored_in(st)?;
                     set_cur_ptr(cur_val());
-                    crate::scan::scan_char_class_not_ignored();
-                    crate::save::find_sa_element_global(
+                    crate::scan::scan_char_class_not_ignored_in(st)?;
+                    let found = crate::save::find_sa_element(
+                        &mut st.mem,
+                        &mut st.scanner,
                         INTER_CHAR_VAL as u16,
                         cur_ptr() * CHAR_CLASS_LIMIT + cur_val(),
                         true,
                     );
+                    if found == crate::mem::ALLOC_FAILED {
+                        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                    }
                     set_cur_chr(cur_ptr());
                     e = true;
                 }
 
                 p = cur_chr();
-                crate::scan::scan_optional_equals();
+                crate::scan::scan_optional_equals_in(st)?;
 
                 loop {
-                    crate::scan::get_x_token();
+                    crate::scan::get_x_token_in(st)?;
                     if !(cur_cmd() as i32 == SPACER || cur_cmd() as i32 == RELAX_CMD) {
                         break;
                     }
@@ -7237,11 +7203,13 @@ pub unsafe fn prefixed_command() {
                 {
                     if cur_cmd() as i32 == TOKS_REGISTER {
                         if cur_chr() == 0 {
-                            crate::scan::scan_register_num();
+                            crate::scan::scan_register_num_in(st)?;
                             if cur_val() < 256 {
-                                q = eqtb_b32s1(TOKS_BASE + cur_val());
+                                q = st.eqtb.b32s1(TOKS_BASE + cur_val());
                             } else {
-                                crate::save::find_sa_element_global(
+                                crate::save::find_sa_element(
+                                    &mut st.mem,
+                                    &mut st.scanner,
                                     TOK_VAL as u16,
                                     cur_val(),
                                     false,
@@ -7249,17 +7217,19 @@ pub unsafe fn prefixed_command() {
                                 if cur_ptr() == TEX_NULL {
                                     q = TEX_NULL;
                                 } else {
-                                    q = mem_b32s1(cur_ptr() + 1);
+                                    q = st.mem.b32s1(cur_ptr() + 1);
                                 }
                             }
                         } else {
-                            q = mem_b32s1(cur_chr() + 1);
+                            q = st.mem.b32s1(cur_chr() + 1);
                         }
                     } else if cur_chr() == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
-                        crate::scan::scan_char_class_not_ignored();
+                        crate::scan::scan_char_class_not_ignored_in(st)?;
                         set_cur_ptr(cur_val());
-                        crate::scan::scan_char_class_not_ignored();
-                        crate::save::find_sa_element_global(
+                        crate::scan::scan_char_class_not_ignored_in(st)?;
+                        crate::save::find_sa_element(
+                            &mut st.mem,
+                            &mut st.scanner,
                             INTER_CHAR_VAL as u16,
                             cur_ptr() * CHAR_CLASS_LIMIT + cur_val(),
                             false,
@@ -7267,192 +7237,151 @@ pub unsafe fn prefixed_command() {
                         if cur_ptr() == TEX_NULL {
                             q = TEX_NULL;
                         } else {
-                            q = mem_b32s1(cur_ptr() + 1);
+                            q = st.mem.b32s1(cur_ptr() + 1);
                         }
                     } else {
-                        q = eqtb_b32s1(cur_chr());
+                        q = st.eqtb.b32s1(cur_chr());
                     }
 
                     if q == TEX_NULL {
                         if e {
-                            if a >= 4 {
-                                crate::save::gsa_def_global(p, TEX_NULL);
-                            } else {
-                                crate::save::sa_def_global(p, TEX_NULL);
-                            }
+                            pc_sa_def(st, a >= 4, p, TEX_NULL)?;
                         } else if a >= 4 {
-                            crate::save::geq_define_global(p, UNDEFINED_CS as u16, TEX_NULL);
+                            pc_define(st, true, p, UNDEFINED_CS as u16, TEX_NULL)?;
                         } else {
-                            crate::save::eq_define_global(p, UNDEFINED_CS as u16, TEX_NULL);
+                            pc_define(st, false, p, UNDEFINED_CS as u16, TEX_NULL)?;
                         }
                     } else {
-                        set_mem_b32s0(q, mem_b32s0(q) + 1);
+                        st.mem.set_b32s0(q, st.mem.b32s0(q) + 1);
                         if e {
-                            if a >= 4 {
-                                crate::save::gsa_def_global(p, q);
-                            } else {
-                                crate::save::sa_def_global(p, q);
-                            }
+                            pc_sa_def(st, a >= 4, p, q)?;
                         } else if a >= 4 {
-                            crate::save::geq_define_global(p, CALL as u16, q);
+                            pc_define(st, true, p, CALL as u16, q)?;
                         } else {
-                            crate::save::eq_define_global(p, CALL as u16, q);
+                            pc_define(st, false, p, CALL as u16, q)?;
                         }
                     }
 
                     break 'sw;
                 }
 
-                crate::input::back_input();
+                crate::input::back_input_in(st)?;
                 set_cur_cs(q);
-                q = crate::scan::scan_toks(false, false);
+                q = crate::scan::scan_toks_in(st, false, false)?;
 
-                if mem_b32s1(def_ref()) == TEX_NULL {
+                if st.mem.b32s1(st.scanner.def_ref) == TEX_NULL {
                     if e {
-                        if a >= 4 {
-                            crate::save::gsa_def_global(p, TEX_NULL);
-                        } else {
-                            crate::save::sa_def_global(p, TEX_NULL);
-                        }
+                        pc_sa_def(st, a >= 4, p, TEX_NULL)?;
                     } else if a >= 4 {
-                        crate::save::geq_define_global(p, UNDEFINED_CS as u16, TEX_NULL);
+                        pc_define(st, true, p, UNDEFINED_CS as u16, TEX_NULL)?;
                     } else {
-                        crate::save::eq_define_global(p, UNDEFINED_CS as u16, TEX_NULL);
+                        pc_define(st, false, p, UNDEFINED_CS as u16, TEX_NULL)?;
                     }
 
-                    set_mem_b32s1(def_ref(), avail());
-                    set_avail(def_ref());
+                    st.mem.set_b32s1(st.scanner.def_ref, st.mem.avail);
+                    st.mem.avail = st.scanner.def_ref;
                 } else {
                     if p == PC_LOCAL_BASE + LOCAL__OUTPUT_ROUTINE && !e {
-                        set_mem_b32s1(q, crate::mem::get_avail_global());
-                        q = mem_b32s1(q);
-                        set_mem_b32s0(q, RIGHT_BRACE_TOKEN + 125);
-                        q = crate::mem::get_avail_global();
-                        set_mem_b32s0(q, LEFT_BRACE_TOKEN + 123);
-                        set_mem_b32s1(q, mem_b32s1(def_ref()));
-                        set_mem_b32s1(def_ref(), q);
+                        let new_avail = crate::mem::get_avail(&mut st.mem);
+                        if new_avail == crate::mem::ALLOC_FAILED {
+                            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                        }
+                        st.mem.set_b32s1(q, new_avail);
+                        q = st.mem.b32s1(q);
+                        st.mem.set_b32s0(q, RIGHT_BRACE_TOKEN + 125);
+                        q = crate::mem::get_avail(&mut st.mem);
+                        if q == crate::mem::ALLOC_FAILED {
+                            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                        }
+                        st.mem.set_b32s0(q, LEFT_BRACE_TOKEN + 123);
+                        st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref));
+                        st.mem.set_b32s1(st.scanner.def_ref, q);
                     }
 
                     if e {
-                        if a >= 4 {
-                            crate::save::gsa_def_global(p, def_ref());
-                        } else {
-                            crate::save::sa_def_global(p, def_ref());
-                        }
+                        pc_sa_def(st, a >= 4, p, st.scanner.def_ref)?;
                     } else if a >= 4 {
-                        crate::save::geq_define_global(p, CALL as u16, def_ref());
+                        pc_define(st, true, p, CALL as u16, st.scanner.def_ref)?;
                     } else {
-                        crate::save::eq_define_global(p, CALL as u16, def_ref());
+                        pc_define(st, false, p, CALL as u16, st.scanner.def_ref)?;
                     }
                 }
             }
 
             ASSIGN_INT => {
                 p = cur_chr();
-                crate::scan::scan_optional_equals();
-                crate::scan::scan_int();
-                if a >= 4 {
-                    crate::save::geq_word_define_global(p, cur_val());
-                } else {
-                    crate::save::eq_word_define_global(p, cur_val());
-                }
+                crate::scan::scan_optional_equals_in(st)?;
+                crate::scan::scan_int_in(st)?;
+                pc_word_define(st, a >= 4, p, cur_val())?;
             }
 
             ASSIGN_DIMEN => {
                 p = cur_chr();
-                crate::scan::scan_optional_equals();
-                crate::scan::scan_dimen(false, false, false);
-                if a >= 4 {
-                    crate::save::geq_word_define_global(p, cur_val());
-                } else {
-                    crate::save::eq_word_define_global(p, cur_val());
-                }
+                crate::scan::scan_optional_equals_in(st)?;
+                crate::scan::scan_dimen_in(st, false, false, false)?;
+                pc_word_define(st, a >= 4, p, cur_val())?;
             }
 
             ASSIGN_GLUE | ASSIGN_MU_GLUE => {
                 p = cur_chr();
                 n = cur_cmd() as i32;
-                crate::scan::scan_optional_equals();
+                crate::scan::scan_optional_equals_in(st)?;
                 if n == ASSIGN_MU_GLUE {
-                    crate::scan::scan_glue(MU_VAL as i16);
+                    crate::scan::scan_glue_in(st, MU_VAL as i16)?;
                 } else {
-                    crate::scan::scan_glue(GLUE_VAL as i16);
+                    crate::scan::scan_glue_in(st, GLUE_VAL as i16)?;
                 }
-                crate::main_control::trap_zero_glue_global();
-                if a >= 4 {
-                    crate::save::geq_define_global(p, GLUE_REF as u16, cur_val());
-                } else {
-                    crate::save::eq_define_global(p, GLUE_REF as u16, cur_val());
-                }
+                crate::main_control::trap_zero_glue(&mut st.mem);
+                pc_define(st, a >= 4, p, GLUE_REF as u16, cur_val())?;
             }
 
             XETEX_DEF_CODE => {
                 if cur_chr() == SF_CODE_BASE {
                     p = cur_chr();
-                    crate::scan::scan_usv_num();
+                    crate::scan::scan_usv_num_in(st)?;
                     p += cur_val();
-                    n = eqtb_b32s1(SF_CODE_BASE + cur_val()) % 65536;
-                    crate::scan::scan_optional_equals();
-                    crate::scan::scan_char_class();
+                    n = st.eqtb.b32s1(SF_CODE_BASE + cur_val()) % 65536;
+                    crate::scan::scan_optional_equals_in(st)?;
+                    crate::scan::scan_char_class_in(st)?;
                     let v = cur_val().wrapping_mul(65536).wrapping_add(n);
-                    if a >= 4 {
-                        crate::save::geq_define_global(p, DATA as u16, v);
-                    } else {
-                        crate::save::eq_define_global(p, DATA as u16, v);
-                    }
+                    pc_define(st, a >= 4, p, DATA as u16, v)?;
                 } else if cur_chr() == MATH_CODE_BASE {
                     p = cur_chr();
-                    crate::scan::scan_usv_num();
+                    crate::scan::scan_usv_num_in(st)?;
                     p += cur_val();
-                    crate::scan::scan_optional_equals();
-                    crate::scan::scan_xetex_math_char_int();
-                    if a >= 4 {
-                        crate::save::geq_define_global(p, DATA as u16, cur_val());
-                    } else {
-                        crate::save::eq_define_global(p, DATA as u16, cur_val());
-                    }
+                    crate::scan::scan_optional_equals_in(st)?;
+                    crate::scan::scan_xetex_math_char_int_in(st)?;
+                    pc_define(st, a >= 4, p, DATA as u16, cur_val())?;
                 } else if cur_chr() == MATH_CODE_BASE + 1 {
                     p = cur_chr() - 1;
-                    crate::scan::scan_usv_num();
+                    crate::scan::scan_usv_num_in(st)?;
                     p += cur_val();
-                    crate::scan::scan_optional_equals();
-                    crate::scan::scan_math_class_int();
+                    crate::scan::scan_optional_equals_in(st)?;
+                    crate::scan::scan_math_class_int_in(st)?;
                     n = set_class(cur_val());
-                    crate::scan::scan_math_fam_int();
+                    crate::scan::scan_math_fam_int_in(st)?;
                     n = n.wrapping_add(set_family(cur_val()));
-                    crate::scan::scan_usv_num();
+                    crate::scan::scan_usv_num_in(st)?;
                     n = n.wrapping_add(cur_val());
-                    if a >= 4 {
-                        crate::save::geq_define_global(p, DATA as u16, n);
-                    } else {
-                        crate::save::eq_define_global(p, DATA as u16, n);
-                    }
+                    pc_define(st, a >= 4, p, DATA as u16, n)?;
                 } else if cur_chr() == DEL_CODE_BASE {
                     p = cur_chr();
-                    crate::scan::scan_usv_num();
+                    crate::scan::scan_usv_num_in(st)?;
                     p += cur_val();
-                    crate::scan::scan_optional_equals();
-                    crate::scan::scan_int();
-                    if a >= 4 {
-                        crate::save::geq_word_define_global(p, cur_val());
-                    } else {
-                        crate::save::eq_word_define_global(p, cur_val());
-                    }
+                    crate::scan::scan_optional_equals_in(st)?;
+                    crate::scan::scan_int_in(st)?;
+                    pc_word_define(st, a >= 4, p, cur_val())?;
                 } else {
                     p = cur_chr() - 1;
-                    crate::scan::scan_usv_num();
+                    crate::scan::scan_usv_num_in(st)?;
                     p += cur_val();
-                    crate::scan::scan_optional_equals();
+                    crate::scan::scan_optional_equals_in(st)?;
                     n = 0x4000_0000; // "extended delimiter code flag"
-                    crate::scan::scan_math_fam_int();
+                    crate::scan::scan_math_fam_int_in(st)?;
                     n = n.wrapping_add(cur_val().wrapping_mul(0x20_0000)); // extended delimiter family
-                    crate::scan::scan_usv_num();
+                    crate::scan::scan_usv_num_in(st)?;
                     n = n.wrapping_add(cur_val());
-                    if a >= 4 {
-                        crate::save::geq_word_define_global(p, n);
-                    } else {
-                        crate::save::eq_word_define_global(p, n);
-                    }
+                    pc_word_define(st, a >= 4, p, n)?;
                 }
             }
 
@@ -7470,43 +7399,35 @@ pub unsafe fn prefixed_command() {
                 }
 
                 p = cur_chr();
-                crate::scan::scan_usv_num();
+                crate::scan::scan_usv_num_in(st)?;
                 p += cur_val();
-                crate::scan::scan_optional_equals();
-                crate::scan::scan_int();
+                crate::scan::scan_optional_equals_in(st)?;
+                crate::scan::scan_int_in(st)?;
 
                 if (cur_val() < 0 && p < DEL_CODE_BASE) || cur_val() > n {
-                    crate::output::error_here_with_diagnostic(c"Invalid code (".as_ptr());
-                    crate::output::print_int(cur_val());
+                    crate::output::error_here_with_diagnostic_in(st, c"Invalid code (".as_ptr());
+                    crate::output::print_int_in(st, cur_val());
                     if p < DEL_CODE_BASE {
-                        crate::output::print_cstr(c"), should be in the range 0..".as_ptr());
+                        crate::output::print_cstr_in(st, c"), should be in the range 0..".as_ptr());
                     } else {
-                        crate::output::print_cstr(c"), should be at most ".as_ptr());
+                        crate::output::print_cstr_in(st, c"), should be at most ".as_ptr());
                     }
-                    crate::output::print_int(n);
-                    crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                    set_help_ptr(1);
-                    set_help_line(
-                        0,
-                        c"I'm going to use 0 instead of that illegal code value.".as_ptr(),
-                    );
-                    crate::errors::error();
+                    crate::output::print_int_in(st, n);
+                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                    st.errors.help_ptr = 1;
+                    st.errors.help_line[0] =
+                        c"I'm going to use 0 instead of that illegal code value.".as_ptr();
+                    mc_propagate_error(crate::errors::error_in(st))?;
                     set_cur_val(0);
                 }
 
                 if p < MATH_CODE_BASE {
                     if p >= SF_CODE_BASE {
-                        n = eqtb_b32s1(p) / 65536;
+                        n = st.eqtb.b32s1(p) / 65536;
                         let v = n.wrapping_mul(65536).wrapping_add(cur_val());
-                        if a >= 4 {
-                            crate::save::geq_define_global(p, DATA as u16, v);
-                        } else {
-                            crate::save::eq_define_global(p, DATA as u16, v);
-                        }
-                    } else if a >= 4 {
-                        crate::save::geq_define_global(p, DATA as u16, cur_val());
+                        pc_define(st, a >= 4, p, DATA as u16, v)?;
                     } else {
-                        crate::save::eq_define_global(p, DATA as u16, cur_val());
+                        pc_define(st, a >= 4, p, DATA as u16, cur_val())?;
                     }
                 } else if p < DEL_CODE_BASE {
                     if cur_val() == 32768 {
@@ -7518,215 +7439,211 @@ pub unsafe fn prefixed_command() {
                         set_cur_val(v);
                     }
 
-                    if a >= 4 {
-                        crate::save::geq_define_global(p, DATA as u16, cur_val());
-                    } else {
-                        crate::save::eq_define_global(p, DATA as u16, cur_val());
-                    }
-                } else if a >= 4 {
-                    crate::save::geq_word_define_global(p, cur_val());
+                    pc_define(st, a >= 4, p, DATA as u16, cur_val())?;
                 } else {
-                    crate::save::eq_word_define_global(p, cur_val());
+                    pc_word_define(st, a >= 4, p, cur_val())?;
                 }
             }
 
             DEF_FAMILY => {
                 p = cur_chr();
-                crate::scan::scan_math_fam_int();
+                crate::scan::scan_math_fam_int_in(st)?;
                 p += cur_val();
-                crate::scan::scan_optional_equals();
-                crate::scan::scan_font_ident();
-                if a >= 4 {
-                    crate::save::geq_define_global(p, DATA as u16, cur_val());
-                } else {
-                    crate::save::eq_define_global(p, DATA as u16, cur_val());
-                }
+                crate::scan::scan_optional_equals_in(st)?;
+                crate::scan::scan_font_ident_in(st)?;
+                pc_define(st, a >= 4, p, DATA as u16, cur_val())?;
             }
 
             REGISTER | ADVANCE | MULTIPLY | DIVIDE => {
-                crate::main_control::do_register_command(a as i16);
+                crate::main_control::do_register_command_in(st, a as i16)?;
             }
 
             SET_BOX => {
-                crate::scan::scan_register_num();
+                crate::scan::scan_register_num_in(st)?;
                 if a >= 4 {
                     n = GLOBAL_BOX_FLAG + cur_val();
                 } else {
                     n = BOX_FLAG + cur_val();
                 }
 
-                crate::scan::scan_optional_equals();
+                crate::scan::scan_optional_equals_in(st)?;
 
-                if set_box_allowed() {
-                    crate::main_control::scan_box(n);
+                if st.scanner.set_box_allowed {
+                    crate::main_control::scan_box_in(st, n)?;
                 } else {
-                    crate::output::error_here_with_diagnostic(c"Improper ".as_ptr());
-                    crate::output::print_esc_cstr(c"setbox".as_ptr());
-                    crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                    set_help_ptr(2);
-                    set_help_line(
-                        1,
-                        c"Sorry, \\setbox is not allowed after \\halign in a display,".as_ptr(),
-                    );
-                    set_help_line(
-                        0,
-                        c"or between \\accent and an accented character.".as_ptr(),
-                    );
-                    crate::errors::error();
+                    crate::output::error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
+                    crate::output::print_esc_cstr_in(st, c"setbox".as_ptr());
+                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                    st.errors.help_ptr = 2;
+                    st.errors.help_line[1] =
+                        c"Sorry, \\setbox is not allowed after \\halign in a display,".as_ptr();
+                    st.errors.help_line[0] =
+                        c"or between \\accent and an accented character.".as_ptr();
+                    mc_propagate_error(crate::errors::error_in(st))?;
                 }
             }
 
             SET_AUX => {
-                crate::main_control::alter_aux();
+                crate::main_control::alter_aux_in(st)?;
             }
 
             SET_PREV_GRAF => {
-                crate::main_control::alter_prev_graf();
+                crate::main_control::alter_prev_graf_in(st)?;
             }
 
             SET_PAGE_DIMEN => {
-                crate::main_control::alter_page_so_far();
+                crate::main_control::alter_page_so_far_in(st)?;
             }
 
             SET_PAGE_INT => {
-                crate::main_control::alter_integer();
+                crate::main_control::alter_integer_in(st)?;
             }
 
             SET_BOX_DIMEN => {
-                crate::main_control::alter_box_dimen();
+                crate::main_control::alter_box_dimen_in(st)?;
             }
 
             SET_SHAPE => {
                 q = cur_chr();
-                crate::scan::scan_optional_equals();
-                crate::scan::scan_int();
+                crate::scan::scan_optional_equals_in(st)?;
+                crate::scan::scan_int_in(st)?;
                 n = cur_val();
 
                 if n <= 0 {
                     p = TEX_NULL;
                 } else if q > PC_LOCAL_BASE + LOCAL__PAR_SHAPE {
                     n = (cur_val() / 2) + 1;
-                    p = crate::mem::get_node_global(2 * n + 1);
-                    set_mem_b32s0(p, n);
+                    p = crate::mem::get_node(&mut st.mem, 2 * n + 1);
+                    if p == crate::mem::ALLOC_FAILED {
+                        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                    }
+                    st.mem.set_b32s0(p, n);
                     n = cur_val();
-                    set_mem_b32s1(p + 1, n);
+                    st.mem.set_b32s1(p + 1, n);
 
                     j = p + 2;
                     while j <= p + n + 1 {
-                        crate::scan::scan_int();
-                        set_mem_b32s1(j, cur_val());
+                        crate::scan::scan_int_in(st)?;
+                        st.mem.set_b32s1(j, cur_val());
                         j += 1;
                     }
 
                     if n & 1 == 0 {
-                        set_mem_b32s1(p + n + 2, 0);
+                        st.mem.set_b32s1(p + n + 2, 0);
                     }
                 } else {
-                    p = crate::mem::get_node_global(2 * n + 1);
-                    set_mem_b32s0(p, n);
+                    p = crate::mem::get_node(&mut st.mem, 2 * n + 1);
+                    if p == crate::mem::ALLOC_FAILED {
+                        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                    }
+                    st.mem.set_b32s0(p, n);
 
                     j = 1;
                     while j <= n {
-                        crate::scan::scan_dimen(false, false, false);
-                        set_mem_b32s1(p + 2 * j - 1, cur_val());
-                        crate::scan::scan_dimen(false, false, false);
-                        set_mem_b32s1(p + 2 * j, cur_val());
+                        crate::scan::scan_dimen_in(st, false, false, false)?;
+                        st.mem.set_b32s1(p + 2 * j - 1, cur_val());
+                        crate::scan::scan_dimen_in(st, false, false, false)?;
+                        st.mem.set_b32s1(p + 2 * j, cur_val());
                         j += 1;
                     }
                 }
 
-                if a >= 4 {
-                    crate::save::geq_define_global(q, SHAPE_REF as u16, p);
-                } else {
-                    crate::save::eq_define_global(q, SHAPE_REF as u16, p);
-                }
+                pc_define(st, a >= 4, q, SHAPE_REF as u16, p)?;
             }
 
             HYPH_DATA => {
                 if cur_chr() == 1 {
-                    if in_initex_mode() {
-                        new_patterns();
+                    if st.config.in_initex_mode {
+                        new_patterns_in(st)?;
                         break 'sw;
                     }
 
-                    crate::output::error_here_with_diagnostic(
+                    crate::output::error_here_with_diagnostic_in(
+                        st,
                         c"Patterns can be loaded only by INITEX".as_ptr(),
                     );
-                    crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                    set_help_ptr(0);
-                    crate::errors::error();
+                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                    st.errors.help_ptr = 0;
+                    mc_propagate_error(crate::errors::error_in(st))?;
 
                     loop {
-                        crate::scan::get_token();
+                        crate::scan::get_token_in(st)?;
                         if cur_cmd() as i32 == RIGHT_BRACE {
                             break;
                         }
                     }
 
-                    return;
+                    return Ok(());
                 } else {
-                    new_hyph_exceptions();
+                    new_hyph_exceptions_in(st)?;
                     break 'sw;
                 }
             }
 
             ASSIGN_FONT_DIMEN => {
-                crate::scan::find_font_dimen(true);
+                crate::scan::find_font_dimen_in(st, true)?;
                 k = cur_val();
-                crate::scan::scan_optional_equals();
-                crate::scan::scan_dimen(false, false, false);
-                set_font_info_b32s1(k, cur_val());
+                crate::scan::scan_optional_equals_in(st)?;
+                crate::scan::scan_dimen_in(st, false, false, false)?;
+                st.fonts.set_font_info_b32s1(k, cur_val());
             }
 
             ASSIGN_FONT_INT => {
                 n = cur_chr();
-                crate::scan::scan_font_ident();
+                crate::scan::scan_font_ident_in(st)?;
                 f = cur_val();
 
                 if n < 2 {
-                    crate::scan::scan_optional_equals();
-                    crate::scan::scan_int();
+                    crate::scan::scan_optional_equals_in(st)?;
+                    crate::scan::scan_int_in(st)?;
                     if n == 0 {
-                        set_hyphen_char_entry(f, cur_val());
+                        st.fonts.set_hyphen_char_entry(f, cur_val());
                     } else {
-                        set_skew_char_entry(f, cur_val());
+                        st.fonts.set_skew_char_entry(f, cur_val());
                     }
                 } else {
-                    if font_area_entry(f) == AAT_FONT_FLAG || font_area_entry(f) == OTGR_FONT_FLAG {
-                        crate::scan::scan_glyph_number(f);
+                    if st.fonts.font_area_entry(f) == AAT_FONT_FLAG
+                        || st.fonts.font_area_entry(f) == OTGR_FONT_FLAG
+                    {
+                        crate::scan::scan_glyph_number_in(st, f)?;
                     } else {
-                        crate::scan::scan_char_num();
+                        crate::scan::scan_char_num_in(st)?;
                     }
 
                     p = cur_val();
-                    crate::scan::scan_optional_equals();
-                    crate::scan::scan_int();
+                    crate::scan::scan_optional_equals_in(st)?;
+                    crate::scan::scan_int_in(st)?;
                     match n {
-                        LP_CODE_BASE => set_cp_code(f, p as u32, PC_LEFT_SIDE, cur_val()),
-                        RP_CODE_BASE => set_cp_code(f, p as u32, PC_RIGHT_SIDE, cur_val()),
+                        LP_CODE_BASE => unsafe {
+                            set_cp_code(f, p as u32, PC_LEFT_SIDE, cur_val())
+                        },
+                        RP_CODE_BASE => unsafe {
+                            set_cp_code(f, p as u32, PC_RIGHT_SIDE, cur_val())
+                        },
                         _ => {}
                     }
                 }
             }
 
             DEF_FONT => {
-                crate::main_control::new_font(a as i16);
+                unsafe { crate::main_control::new_font_in(st, a as i16)? };
             }
 
             SET_INTERACTION => {
-                crate::main_control::new_interaction();
+                crate::main_control::new_interaction_in(st);
             }
 
             _ => {
-                crate::errors::confusion(c"prefix".as_ptr());
+                return Err(MainControlAbort::Confusion(c"prefix"));
             }
         }
     }
 
     // done:
-    if after_token() != 0 {
-        set_cur_tok(after_token());
-        crate::input::back_input();
-        set_after_token(0);
+    if st.scanner.after_token != 0 {
+        set_cur_tok(st.scanner.after_token);
+        crate::input::back_input_in(st)?;
+        st.scanner.after_token = 0;
     }
+    Ok(())
 }

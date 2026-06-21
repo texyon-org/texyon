@@ -1238,10 +1238,6 @@ pub(crate) fn set_after_token(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn after_token() -> i32 {
-    crate::state::with_state(|s| s.scanner.after_token)
-}
-#[inline]
 pub(crate) fn align_state() -> i32 {
     crate::state::with_state(|s| s.scanner.align_state)
 }
@@ -3203,10 +3199,6 @@ pub(crate) fn set_pack_begin_line(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.pack_begin_line = v;
     });
-}
-#[inline]
-pub(crate) fn set_box_allowed() -> bool {
-    crate::state::with_state(|s| s.scanner.set_box_allowed)
 }
 #[inline]
 pub(crate) fn set_set_box_allowed(v: bool) {

@@ -8,6 +8,32 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 220 — 2026-06-21 — Execution: thread `prefixed_command` + `do_assignments`
+
+**Type:** execution (workstream 01). Large mechanical dispatcher slice with
+minimal docs.
+
+**Code:** added `do_assignments_in(&mut EngineState)` and
+`prefixed_command_in(&mut EngineState) -> Result<(), MainControlAbort>`.
+The dispatcher now uses threaded scanner/output/input/hyphenation/font helpers,
+direct `st.mem`/`st.eqtb`/`st.fonts`/`st.scanner` access, and local save
+helpers for `eq_define`/`geq_define`/SA assignment paths. Removed the now-dead
+bridge wrappers/accessors exposed by the dispatcher threading (`new_font`,
+`do_register_command`, assignment verb wrappers, hyphenation/scanner/save
+bridges, `after_token`, `set_box_allowed`).
+
+**Validation:** `cargo fmt -p tectonic_engine_xetex`; `cargo check -p
+tectonic_engine_xetex` (warnings **41**); dashboard **29/2/7/4**; release
+rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1` and `1905.00148v1` (script exits 1 for those known diffs).
+Metrics: `unsafe fn` **448**; `with_state(_mut)` call sites **690**.
+
+**Next:** the dispatcher blocker is gone. Thread the alignment SCC in one
+batch: `fin_align_in` + `align_peek_in` + `init_align_in` + `fin_row_in`;
+then `handle_right_brace_in` and the main-control dispatchers.
+
+---
+
 ## Idiom session 219 — 2026-06-21 — Execution: thread `new_font`
 
 **Type:** execution (workstream 01). One focused commit after the font-loader
