@@ -659,13 +659,6 @@ pub(crate) fn sa_w_def(
     result
 }
 
-pub unsafe fn sa_w_def_global(p: i32, w: i32) {
-    let result = crate::state::with_state_mut(|st| {
-        sa_w_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, w)
-    });
-    finish_sa_mutation(p, result);
-}
-
 // translated from xetex-xetex0.c:2923 (gsa_def)
 pub(crate) fn gsa_def(mem: &mut MemState, p: i32, e: i32) -> SaMutationResult {
     mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
@@ -689,11 +682,6 @@ pub(crate) fn gsa_w_def(mem: &mut MemState, p: i32, w: i32) -> SaMutationResult 
     mem.set_b16s0(p, LEVEL_ONE);
     mem.set_b32s1(p + 2, w);
     SaMutationResult::default()
-}
-
-pub unsafe fn gsa_w_def_global(p: i32, w: i32) {
-    let result = crate::state::with_state_mut(|st| gsa_w_def(&mut st.mem, p, w));
-    finish_sa_mutation(p, result);
 }
 
 unsafe fn finish_sa_mutation(p: i32, result: SaMutationResult) {

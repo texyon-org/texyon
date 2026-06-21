@@ -83,11 +83,12 @@ pub fn half(x: i32) -> i32 {
 /// exceed `max_answer` in magnitude.
 ///
 /// translated from xetex-scaledmath.c:60 (mult_and_add)
+#[cfg(test)]
 pub fn mult_and_add(n: i32, x: i32, y: i32, max_answer: i32) -> i32 {
     crate::state::with_state_mut(|st| mult_and_add_in(&mut st.errors, n, x, y, max_answer))
 }
 
-/// `&mut ErrorState` core of [`mult_and_add`] (callable under a held borrow).
+/// `&mut ErrorState` core of `mult_and_add` (callable under a held borrow).
 pub(crate) fn mult_and_add_in(
     errors: &mut crate::state::ErrorState,
     mut n: i32,
@@ -137,6 +138,7 @@ pub(crate) fn mult_and_add_in(
 /// 0, with `tex_remainder = x`) on division by zero.
 ///
 /// translated from xetex-scaledmath.c:79 (x_over_n)
+#[cfg(test)]
 pub fn x_over_n(x: i32, n: i32) -> i32 {
     crate::state::with_state_mut(|st| x_over_n_in(&mut st.errors, x, n))
 }
