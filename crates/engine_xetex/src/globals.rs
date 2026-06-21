@@ -1845,10 +1845,6 @@ pub(crate) fn set_last_badness(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn page_tail() -> i32 {
-    crate::state::with_state(|state| state.shipout.page_tail)
-}
-#[inline]
 pub(crate) fn set_page_tail(v: i32) {
     crate::state::with_state_mut(|state| {
         state.shipout.page_tail = v;
@@ -2066,13 +2062,6 @@ pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
     unsafe {
         raw::cur_list.aux.b32.s1 = v;
     }
-}
-/// Sets `nest[k].tail = v`.
-#[inline]
-pub(crate) fn set_nest_tail(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.nest[k as usize].tail = v;
-    });
 }
 #[inline]
 pub(crate) fn set_cur_list_prev_graf(v: i32) {

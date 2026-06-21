@@ -3810,6 +3810,18 @@ pub unsafe fn fin_mlist_global(p: i32) -> i32 {
     q
 }
 
+/// `&mut EngineState` core of [`fin_mlist_global`]: runs the threaded
+/// [`fin_mlist`] then `pop_nest_in` under one borrow, deferring the cold
+/// corrupt-node `confusion` via [`MainControlAbort::Confusion`].
+pub(crate) fn fin_mlist_in(
+    st: &mut crate::state::EngineState,
+    p: i32,
+) -> Result<i32, crate::main_control::MainControlAbort> {
+    let q = fin_mlist(&mut st.mem, p).map_err(crate::main_control::MainControlAbort::Confusion)?;
+    crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+    Ok(q)
+}
+
 /// translated from xetex-math.c:571 (build_choices)
 fn build_choices_finish(mem: &mut MemState, save_stack: &mut SaveStackState, p: i32) -> bool {
     let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cur_list_tail())) };
@@ -3828,12 +3840,6 @@ fn build_choices_finish(mem: &mut MemState, save_stack: &mut SaveStackState, p: 
     let choice_state = save_stack.b32s1(save_stack.save_ptr - 1);
     save_stack.set_b32s1(save_stack.save_ptr - 1, choice_state + 1);
     false
-}
-
-pub unsafe fn build_choices_global() {
-    if let Err(e) = crate::state::with_state_mut(build_choices_in) {
-        e.fire();
-    }
 }
 
 /// `&mut EngineState` core of [`build_choices_global`]: closes one math-choice

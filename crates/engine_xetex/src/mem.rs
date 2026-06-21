@@ -268,18 +268,6 @@ pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
     r
 }
 
-/// Transitional bridge-down wrapper for legacy `get_node` callers (`01b` §3,
-/// §5). Runs the threaded allocator under a single borrow, then — after the
-/// borrow drops — performs the cold `overflow()` abort if the arena was
-/// exhausted. Removed when the last legacy caller is itself threaded.
-pub unsafe fn get_node_global(s: i32) -> i32 {
-    let r = crate::state::with_state_mut(|st| get_node(&mut st.mem, s));
-    if r == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    r
-}
-
 // ---------------------------------------------------------------------------
 // free_node
 // ---------------------------------------------------------------------------

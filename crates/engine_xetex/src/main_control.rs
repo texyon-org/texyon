@@ -15,9 +15,7 @@ use crate::consts::{
     MAX_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_ONLY,
     SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
-use crate::errors::{
-    box_error, cs_error, error, extra_right_brace, privileged, report_illegal_case,
-};
+use crate::errors::{cs_error, error, privileged, report_illegal_case};
 use crate::ext::{
     append_src_special, apply_mapping, do_extension, get_native_char_height_depth_global,
     get_native_char_sidebearings_global, insert_src_special, map_char_to_glyph_global,
@@ -26,24 +24,23 @@ use crate::ext::{
 use crate::fonts::read_font_info_in;
 use crate::globals::{
     align_state, cur_chr, cur_cmd, cur_cs, cur_group, cur_list_mode, cur_ptr, cur_tok, cur_val,
-    eqtb_b32s1, font_glue, mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, param_base,
-    set_align_state, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr,
-    set_cur_tok, set_cur_val, set_font_glue, set_help_line, set_help_ptr, set_mem_b16s0,
-    set_mem_b32s0, set_mem_b32s1,
+    eqtb_b32s1, font_glue, mem_b16s0, mem_b16s3, mem_b32s1, param_base, set_align_state,
+    set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok,
+    set_cur_val, set_font_glue, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b32s1,
 };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::input::begin_token_list;
 use crate::linebreak::do_locale_linebreaks;
 use crate::math::{
-    after_math, append_choices_global, build_choices_global, fin_mlist_global, init_math,
-    math_ac_global, math_fraction_global, math_left_right_global, math_limit_switch_global,
-    math_radical_global, start_eq_no, sub_sup_global,
+    after_math, append_choices_global, init_math, math_ac_global, math_fraction_global,
+    math_left_right_global, math_limit_switch_global, math_radical_global, start_eq_no,
+    sub_sup_global,
 };
 use crate::output::{
     capture_to_diagnostic, char_warning, error_here_with_diagnostic, issue_message, print_cmd_chr,
     show_whatever,
 };
-use crate::packaging::{flush_node_list_global, hpack, vpackage};
+use crate::packaging::{flush_node_list_global, hpack};
 use crate::pagebuilder::build_page;
 use crate::scan::{
     back_input, eTeX_enabled, effective_char_global, effective_char_info_global, get_next,
@@ -692,12 +689,6 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     Ok(())
 }
 // translated from xetex-xetex0.c:8785 (align_peek)
-pub unsafe fn align_peek() {
-    if let Err(e) = crate::state::with_state_mut(align_peek_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn align_peek_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const NO_ALIGN: u8 = 34; // xetex_format.h:272
     const NO_ALIGN_GROUP: u8 = 7; // xetex-constants.h:159
@@ -2066,12 +2057,6 @@ pub(crate) fn scan_box_in(
     Ok(())
 }
 // translated from xetex-xetex0.c:9509 (package)
-pub unsafe fn package(c: i16) {
-    if let Err(e) = crate::state::with_state_mut(|st| package_in(st, c)) {
-        e.fire();
-    }
-}
-
 /// `&mut EngineState` core of [`package`]: closes a box group, packs the inner
 /// list, and dispatches via [`box_end_in`] — all under one borrow. `cur_list_*`
 /// stay raw `mod raw`; `cur_box` is `st.scanner.cur_box`. Cold aborts ride
@@ -2866,13 +2851,21 @@ pub(crate) fn begin_box_in(
 }
 // translated from xetex-xetex0.c:8265 (handle_right_brace)
 pub unsafe fn handle_right_brace() {
-    use crate::globals::{
-        cur_group, cur_input, cur_list_head, cur_list_tail, disc_ptr, nest_ptr, page_tail,
-        save_ptr, save_stack_b32s1, set_adjust_tail, set_cur_list_tail, set_cur_tok, set_disc_ptr,
-        set_insert_penalties, set_mem_b16s0, set_mem_b16s1, set_nest_tail, set_output_active,
-        set_page_tail, set_pre_adjust_tail, set_save_ptr,
+    if let Err(e) = crate::state::with_state_mut(handle_right_brace_in) {
+        e.fire();
+    }
+}
+
+// translated from xetex-xetex0.c:8995 (handle_right_brace)
+pub(crate) fn handle_right_brace_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
+    use crate::globals::{cur_input, cur_list_head, cur_list_tail, set_cur_list_tail, set_cur_tok};
+    use crate::mem::{
+        delete_glue_ref, free_node, get_node, new_noad, pop_nest_in, ALLOC_FAILED, TEX_NULL,
     };
-    use crate::mem::TEX_NULL;
+    use crate::packaging::flush_node_list;
+    use crate::scan::NodeRecycleAbort;
 
     const BOTTOM_LEVEL: u8 = 0; // xetex-constants.h:152
     const SIMPLE_GROUP: u8 = 1;
@@ -2916,84 +2909,94 @@ pub unsafe fn handle_right_brace() {
     const EMPTY: i32 = 0; // xetex-constants.h:230
     const FROZEN_CR: i32 = 2_243_226 + 1; // FROZEN_CONTROL_SEQUENCE + 1
 
-    match cur_group() {
+    match st.save_stack.cur_group {
         SIMPLE_GROUP => {
-            crate::save::unsave();
+            crate::save::unsave_in(st)?;
         }
 
         BOTTOM_LEVEL => {
-            error_here_with_diagnostic(c"Too many }'s".as_ptr());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(2);
-            set_help_line(1, c"You've closed more groups than you opened.".as_ptr());
-            set_help_line(
-                0,
-                c"Such booboos are generally harmless, so keep going.".as_ptr(),
-            );
-            error();
+            crate::output::error_here_with_diagnostic_in(st, c"Too many }'s".as_ptr());
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 2;
+            st.errors.help_line[1] = c"You've closed more groups than you opened.".as_ptr();
+            st.errors.help_line[0] =
+                c"Such booboos are generally harmless, so keep going.".as_ptr();
+            mc_propagate_error(crate::errors::error_in(st))?;
         }
 
         SEMI_SIMPLE_GROUP | MATH_SHIFT_GROUP | MATH_LEFT_GROUP => {
-            extra_right_brace();
+            mc_propagate_error(crate::errors::extra_right_brace_in(st))?;
         }
 
         HBOX_GROUP => {
-            package(0);
+            package_in(st, 0)?;
         }
 
         ADJUSTED_HBOX_GROUP => {
-            set_adjust_tail(ADJUST_HEAD);
-            set_pre_adjust_tail(PRE_ADJUST_HEAD);
-            package(0);
+            st.scanner.adjust_tail = ADJUST_HEAD;
+            st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
+            package_in(st, 0)?;
         }
 
         VBOX_GROUP => {
-            end_graf();
-            package(0);
+            end_graf_in(st)?;
+            package_in(st, 0)?;
         }
 
         VTOP_GROUP => {
-            end_graf();
-            package(VTOP_CODE);
+            end_graf_in(st)?;
+            package_in(st, VTOP_CODE)?;
         }
 
         INSERT_GROUP => {
-            end_graf();
+            end_graf_in(st)?;
             // GLUEPAR(split_top_skip)
-            let q = eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP);
+            let q = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP);
             // GLUE_SPEC_ref_count(q)++
-            set_mem_b32s1(q, mem_b32s1(q) + 1);
-            let d = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_SPLIT_MAX_DEPTH);
-            let f = eqtb_b32s1(INT_BASE + INT_PAR_FLOATING_PENALTY);
-            crate::save::unsave();
-            set_save_ptr(save_ptr() - 2);
-            let p = vpackage(mem_b32s1(cur_list_head()), 0, ADDITIONAL, MAX_HALFWORD);
-            crate::mem::pop_nest();
+            st.mem.set_b32s1(q, st.mem.b32s1(q) + 1);
+            let d = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_SPLIT_MAX_DEPTH);
+            let f = st.eqtb.b32s1(INT_BASE + INT_PAR_FLOATING_PENALTY);
+            crate::save::unsave_in(st)?;
+            st.save_stack.save_ptr -= 2;
+            let head = st.mem.b32s1(cur_list_head());
+            let p = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
+            pop_nest_in(&mut st.mem, &mut st.input);
 
-            if save_stack_b32s1(save_ptr()) < 255 {
-                let new_node = crate::mem::get_node_global(INS_NODE_SIZE);
-                set_mem_b32s1(cur_list_tail(), new_node);
-                set_cur_list_tail(mem_b32s1(cur_list_tail()));
-                set_mem_b16s1(cur_list_tail(), INS_NODE);
-                set_mem_b16s0(cur_list_tail(), save_stack_b32s1(save_ptr()) as u16);
-                set_mem_b32s1(cur_list_tail() + 3, mem_b32s1(p + 3) + mem_b32s1(p + 2));
-                set_mem_b32s0(cur_list_tail() + 4, mem_b32s1(p + 5)); // ins list ptr
-                set_mem_b32s1(cur_list_tail() + 4, q);
-                set_mem_b32s1(cur_list_tail() + 2, d);
-                set_mem_b32s1(cur_list_tail() + 1, f);
+            if st.save_stack.b32s1(st.save_stack.save_ptr) < 255 {
+                let new_node = get_node(&mut st.mem, INS_NODE_SIZE);
+                if new_node == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow.into());
+                }
+                st.mem.set_b32s1(cur_list_tail(), new_node);
+                set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+                st.mem.set_b16s1(cur_list_tail(), INS_NODE);
+                let sp = st.save_stack.b32s1(st.save_stack.save_ptr) as u16;
+                st.mem.set_b16s0(cur_list_tail(), sp);
+                st.mem.set_b32s1(
+                    cur_list_tail() + 3,
+                    st.mem.b32s1(p + 3) + st.mem.b32s1(p + 2),
+                );
+                st.mem.set_b32s0(cur_list_tail() + 4, st.mem.b32s1(p + 5)); // ins list ptr
+                st.mem.set_b32s1(cur_list_tail() + 4, q);
+                st.mem.set_b32s1(cur_list_tail() + 2, d);
+                st.mem.set_b32s1(cur_list_tail() + 1, f);
             } else {
-                let new_node = crate::mem::get_node_global(SMALL_NODE_SIZE);
-                set_mem_b32s1(cur_list_tail(), new_node);
-                set_cur_list_tail(mem_b32s1(cur_list_tail()));
-                set_mem_b16s1(cur_list_tail(), ADJUST_NODE);
-                set_mem_b16s0(cur_list_tail(), save_stack_b32s1(save_ptr() + 1) as u16);
-                set_mem_b32s1(cur_list_tail() + 1, mem_b32s1(p + 5));
-                crate::mem::delete_glue_ref_global(q);
+                let new_node = get_node(&mut st.mem, SMALL_NODE_SIZE);
+                if new_node == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow.into());
+                }
+                st.mem.set_b32s1(cur_list_tail(), new_node);
+                set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+                st.mem.set_b16s1(cur_list_tail(), ADJUST_NODE);
+                let sp = st.save_stack.b32s1(st.save_stack.save_ptr + 1) as u16;
+                st.mem.set_b16s0(cur_list_tail(), sp);
+                st.mem.set_b32s1(cur_list_tail() + 1, st.mem.b32s1(p + 5));
+                delete_glue_ref(&mut st.mem, q);
             }
 
-            crate::mem::free_node_global(p, BOX_NODE_SIZE);
-            if nest_ptr() == 0 {
-                build_page();
+            free_node(&mut st.mem, p, BOX_NODE_SIZE);
+            if st.input.nest_ptr == 0 {
+                crate::pagebuilder::build_page_in(st)?;
             }
         }
 
@@ -3001,147 +3004,154 @@ pub unsafe fn handle_right_brace() {
             if cur_input().loc != TEX_NULL
                 || (cur_input().index != OUTPUT_TEXT && cur_input().index != BACKED_UP)
             {
-                error_here_with_diagnostic(c"Unbalanced output routine".as_ptr());
-                capture_to_diagnostic(std::ptr::null_mut());
-                set_help_ptr(2);
-                set_help_line(
-                    1,
-                    c"Your sneaky output routine has problematic {'s and/or }'s.".as_ptr(),
+                crate::output::error_here_with_diagnostic_in(
+                    st,
+                    c"Unbalanced output routine".as_ptr(),
                 );
-                set_help_line(0, c"I can't handle that very well; good luck.".as_ptr());
-                error();
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                st.errors.help_ptr = 2;
+                st.errors.help_line[1] =
+                    c"Your sneaky output routine has problematic {'s and/or }'s.".as_ptr();
+                st.errors.help_line[0] = c"I can't handle that very well; good luck.".as_ptr();
+                mc_propagate_error(crate::errors::error_in(st))?;
                 loop {
-                    get_token();
+                    crate::scan::get_token_in(st)?;
                     if cur_input().loc == TEX_NULL {
                         break;
                     }
                 }
             }
 
-            crate::input::end_token_list();
-            end_graf();
-            crate::save::unsave();
-            set_output_active(false);
-            set_insert_penalties(0);
+            crate::input::end_token_list_in(st)?;
+            end_graf_in(st)?;
+            crate::save::unsave_in(st)?;
+            st.shipout.output_active = false;
+            st.shipout.insert_penalties = 0;
 
-            if eqtb_b32s1(BOX_BASE + 255) != TEX_NULL {
-                error_here_with_diagnostic(c"Output routine didn't use all of ".as_ptr());
-                crate::output::print_esc_cstr(c"box".as_ptr());
-                crate::output::print_int(255);
-                capture_to_diagnostic(std::ptr::null_mut());
-                set_help_ptr(3);
-                set_help_line(2, c"Your \\output commands should empty \\box255,".as_ptr());
-                set_help_line(1, c"e.g., by saying `\\shipout\\box255'.".as_ptr());
-                set_help_line(0, c"Proceed; I'll discard its present contents.".as_ptr());
-                box_error(255);
+            if st.eqtb.b32s1(BOX_BASE + 255) != TEX_NULL {
+                crate::output::error_here_with_diagnostic_in(
+                    st,
+                    c"Output routine didn't use all of ".as_ptr(),
+                );
+                crate::output::print_esc_cstr_in(st, c"box".as_ptr());
+                crate::output::print_int_in(st, 255);
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                st.errors.help_ptr = 3;
+                st.errors.help_line[2] = c"Your \\output commands should empty \\box255,".as_ptr();
+                st.errors.help_line[1] = c"e.g., by saying `\\shipout\\box255'.".as_ptr();
+                st.errors.help_line[0] = c"Proceed; I'll discard its present contents.".as_ptr();
+                mc_propagate_error(crate::errors::box_error_in(st, 255))?;
             }
 
             if cur_list_tail() != cur_list_head() {
-                set_mem_b32s1(page_tail(), mem_b32s1(cur_list_head()));
-                set_page_tail(cur_list_tail());
+                let head_link = st.mem.b32s1(cur_list_head());
+                st.mem.set_b32s1(st.shipout.page_tail, head_link);
+                st.shipout.page_tail = cur_list_tail();
             }
 
-            if mem_b32s1(PAGE_HEAD) != TEX_NULL {
-                if mem_b32s1(CONTRIB_HEAD) == TEX_NULL {
-                    set_nest_tail(0, page_tail());
+            if st.mem.b32s1(PAGE_HEAD) != TEX_NULL {
+                if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
+                    st.input.nest[0].tail = st.shipout.page_tail;
                 }
-                set_mem_b32s1(page_tail(), mem_b32s1(CONTRIB_HEAD));
-                set_mem_b32s1(CONTRIB_HEAD, mem_b32s1(PAGE_HEAD));
-                set_mem_b32s1(PAGE_HEAD, TEX_NULL);
-                set_page_tail(PAGE_HEAD);
+                let contrib = st.mem.b32s1(CONTRIB_HEAD);
+                st.mem.set_b32s1(st.shipout.page_tail, contrib);
+                st.mem.set_b32s1(CONTRIB_HEAD, st.mem.b32s1(PAGE_HEAD));
+                st.mem.set_b32s1(PAGE_HEAD, TEX_NULL);
+                st.shipout.page_tail = PAGE_HEAD;
             }
 
-            flush_node_list_global(disc_ptr(LAST_BOX_CODE));
-            set_disc_ptr(LAST_BOX_CODE, TEX_NULL);
-            crate::mem::pop_nest();
-            build_page();
+            let dp = st.scanner.disc_ptr[LAST_BOX_CODE];
+            flush_node_list(&mut st.mem, dp).map_err(MainControlAbort::Confusion)?;
+            st.scanner.disc_ptr[LAST_BOX_CODE] = TEX_NULL;
+            pop_nest_in(&mut st.mem, &mut st.input);
+            crate::pagebuilder::build_page_in(st)?;
         }
 
         DISC_GROUP => {
-            build_discretionary();
+            build_discretionary_in(st)?;
         }
 
         ALIGN_GROUP => {
-            crate::input::back_input();
+            crate::input::back_input_in(st)?;
             set_cur_tok(CS_TOKEN_FLAG + FROZEN_CR);
-            error_here_with_diagnostic(c"Missing ".as_ptr());
-            crate::output::print_esc_cstr(c"cr".as_ptr());
-            crate::output::print_cstr(c" inserted".as_ptr());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(1);
-            set_help_line(
-                0,
-                c"I'm guessing that you meant to end an alignment here.".as_ptr(),
-            );
-            crate::input::ins_error();
+            crate::output::error_here_with_diagnostic_in(st, c"Missing ".as_ptr());
+            crate::output::print_esc_cstr_in(st, c"cr".as_ptr());
+            crate::output::print_cstr_in(st, c" inserted".as_ptr());
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 1;
+            st.errors.help_line[0] =
+                c"I'm guessing that you meant to end an alignment here.".as_ptr();
+            mc_propagate_error(crate::input::ins_error_in(st)?)?;
         }
 
         NO_ALIGN_GROUP => {
-            end_graf();
-            crate::save::unsave();
-            align_peek();
+            end_graf_in(st)?;
+            crate::save::unsave_in(st)?;
+            align_peek_in(st)?;
         }
 
         VCENTER_GROUP => {
-            end_graf();
-            crate::save::unsave();
-            set_save_ptr(save_ptr() - 2);
-            let p = vpackage(
-                mem_b32s1(cur_list_head()),
-                save_stack_b32s1(save_ptr() + 1),
-                save_stack_b32s1(save_ptr()) as i16,
-                MAX_HALFWORD,
-            );
-            crate::mem::pop_nest();
-            let new_noad_global = crate::mem::new_noad_global();
-            set_mem_b32s1(cur_list_tail(), new_noad_global);
-            set_cur_list_tail(mem_b32s1(cur_list_tail()));
-            set_mem_b16s1(cur_list_tail(), VCENTER_NOAD);
-            set_mem_b32s1(cur_list_tail() + 1, SUB_BOX);
-            set_mem_b32s0(cur_list_tail() + 1, p);
+            end_graf_in(st)?;
+            crate::save::unsave_in(st)?;
+            st.save_stack.save_ptr -= 2;
+            let head = st.mem.b32s1(cur_list_head());
+            let w = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
+            let m = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
+            let p = crate::packaging::vpackage_emit_in(st, head, w, m, MAX_HALFWORD)?;
+            pop_nest_in(&mut st.mem, &mut st.input);
+            let noad = new_noad(&mut st.mem);
+            if noad == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(cur_list_tail(), noad);
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+            st.mem.set_b16s1(cur_list_tail(), VCENTER_NOAD);
+            st.mem.set_b32s1(cur_list_tail() + 1, SUB_BOX);
+            st.mem.set_b32s0(cur_list_tail() + 1, p);
         }
 
         MATH_CHOICE_GROUP => {
-            build_choices_global();
+            crate::math::build_choices_in(st)?;
         }
 
         MATH_GROUP => {
-            crate::save::unsave();
-            set_save_ptr(save_ptr() - 1);
-            let save_loc = save_stack_b32s1(save_ptr());
-            set_mem_b32s1(save_loc, SUB_MLIST);
-            let p = fin_mlist_global(TEX_NULL);
-            set_mem_b32s0(save_loc, p);
+            crate::save::unsave_in(st)?;
+            st.save_stack.save_ptr -= 1;
+            let save_loc = st.save_stack.b32s1(st.save_stack.save_ptr);
+            st.mem.set_b32s1(save_loc, SUB_MLIST);
+            let p = crate::math::fin_mlist_in(st, TEX_NULL)?;
+            st.mem.set_b32s0(save_loc, p);
 
-            if p != TEX_NULL && mem_b32s1(p) == TEX_NULL {
-                if mem_b16s1(p) == ORD_NOAD
-                    && mem_b32s1(p + 3) == EMPTY
-                    && mem_b32s1(p + 2) == EMPTY
+            if p != TEX_NULL && st.mem.b32s1(p) == TEX_NULL {
+                if st.mem.b16s1(p) == ORD_NOAD
+                    && st.mem.b32s1(p + 3) == EMPTY
+                    && st.mem.b32s1(p + 2) == EMPTY
                 {
                     // collapse to inline field
-                    set_mem_b32s0(save_loc, mem_b32s0(p + 1));
-                    set_mem_b32s1(save_loc, mem_b32s1(p + 1));
-                    crate::mem::free_node_global(p, NOAD_SIZE);
-                } else if mem_b16s1(p) == ACCENT_NOAD
+                    st.mem.set_b32s0(save_loc, st.mem.b32s0(p + 1));
+                    st.mem.set_b32s1(save_loc, st.mem.b32s1(p + 1));
+                    free_node(&mut st.mem, p, NOAD_SIZE);
+                } else if st.mem.b16s1(p) == ACCENT_NOAD
                     && save_loc == cur_list_tail() + 1
-                    && mem_b16s1(cur_list_tail()) == ORD_NOAD
+                    && st.mem.b16s1(cur_list_tail()) == ORD_NOAD
                 {
                     // merge accent noad into ord
                     let mut q = cur_list_head();
-                    while mem_b32s1(q) != cur_list_tail() {
-                        q = mem_b32s1(q);
+                    while st.mem.b32s1(q) != cur_list_tail() {
+                        q = st.mem.b32s1(q);
                     }
-                    set_mem_b32s1(q, p);
-                    crate::mem::free_node_global(cur_list_tail(), NOAD_SIZE);
+                    st.mem.set_b32s1(q, p);
+                    free_node(&mut st.mem, cur_list_tail(), NOAD_SIZE);
                     set_cur_list_tail(p);
                 }
             }
         }
 
         _ => {
-            crate::errors::confusion(c"rightbrace".as_ptr());
+            return Err(MainControlAbort::Confusion(c"rightbrace"));
         }
     }
+    Ok(())
 }
 
 // ---- moved verbatim from scan.rs (workstream 02) ----
@@ -3556,12 +3566,6 @@ pub(crate) fn shift_case_in(st: &mut crate::state::EngineState) -> Result<(), Ma
     Ok(())
 }
 // translated from xetex-xetex0.c:9958 (build_discretionary)
-pub unsafe fn build_discretionary() {
-    if let Err(e) = crate::state::with_state_mut(build_discretionary_in) {
-        e.fire();
-    }
-}
-
 /// `&mut EngineState` core of [`build_discretionary`]: validates and stitches the
 /// three discretionary sublists under one borrow. `cur_list_*` stay raw `mod
 /// raw`; the diagnostics/error/scan callees run threaded. Cold aborts ride

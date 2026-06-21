@@ -335,11 +335,6 @@ pub(crate) fn mu_error_in(st: &mut EngineState) -> ErrorOutcome {
     st.errors.help_line[0] = c"I'm going to assume that 1mu=1pt when they're mixed.".as_ptr();
     error_in(st)
 }
-/// translated from xetex-xetex0.c:7411 (extra_right_brace)
-pub unsafe fn extra_right_brace() {
-    crate::state::with_state_mut(|st| extra_right_brace_in(st)).finish();
-}
-
 /// `&mut EngineState` core of [`extra_right_brace`].
 pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
     error_here_with_diagnostic_in(st, c"Extra }, or forgotten ".as_ptr());
@@ -429,10 +424,6 @@ pub(crate) fn cs_error_in(st: &mut EngineState) -> ErrorOutcome {
     error_in(st)
 }
 // translated from xetex-xetex0.c:9270 (box_error)
-pub unsafe fn box_error(n: u8) {
-    crate::state::with_state_mut(|st| box_error_in(st, n)).finish();
-}
-
 /// `&mut EngineState` core of [`box_error`].
 pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
     let box_val = st.eqtb.b32s1(BOX_BASE + n as i32);

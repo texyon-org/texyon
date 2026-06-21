@@ -2948,10 +2948,6 @@ fn vpackage_in(
     })
 }
 
-fn print_vpack_diag(box_ptr: i32, diag: PackDiag) {
-    crate::state::with_state_mut(|st| print_vpack_diag_in(st, box_ptr, diag));
-}
-
 /// Threaded core (Phase C): emit the over/underfull-`\vbox` diagnostic under a
 /// live `&mut EngineState` borrow. Byte-identical to [`print_vpack_diag`].
 pub(crate) fn print_vpack_diag_in(
@@ -3021,29 +3017,6 @@ fn print_vpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: i32
     begin_diagnostic_in(st);
     show_box_in(st, box_ptr);
     end_diagnostic_in(st, true);
-}
-
-/// translated from xetex-xetex0.c:7424 (vpackage)
-pub unsafe fn vpackage(p: i32, h: i32, m: i16, l: i32) -> i32 {
-    let outcome = match crate::state::with_state_mut(|st| {
-        vpackage_in(
-            &mut st.mem,
-            &st.eqtb,
-            &mut st.scanner,
-            &mut st.shipout,
-            p,
-            h,
-            m,
-            l,
-        )
-    }) {
-        Ok(outcome) => outcome,
-        Err(e) => node_recycle_abort(e),
-    };
-    for diag in outcome.diags.into_iter().flatten() {
-        print_vpack_diag(outcome.r, diag);
-    }
-    outcome.r
 }
 
 /// Threaded equivalent of [`vpackage`] (`01b` §3): runs [`vpackage_in`] and emits
