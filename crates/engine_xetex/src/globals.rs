@@ -2067,23 +2067,12 @@ pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
         raw::cur_list.aux.b32.s1 = v;
     }
 }
-/// Returns `nest[k].mode`.
-#[inline]
-pub(crate) fn nest_mode(k: i32) -> i16 {
-    crate::state::with_state(|s| s.input.nest[k as usize].mode)
-}
-
 /// Sets `nest[k].tail = v`.
 #[inline]
 pub(crate) fn set_nest_tail(k: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.input.nest[k as usize].tail = v;
     });
-}
-/// Returns `nest[k].aux.b32.s1` (prevdepth half of the aux word).
-#[inline]
-pub(crate) fn nest_aux_b32s1(k: i32) -> i32 {
-    crate::state::with_state(|s| unsafe { s.input.nest[k as usize].aux.b32.s1 })
 }
 #[inline]
 pub(crate) fn set_cur_list_prev_graf(v: i32) {
@@ -3084,10 +3073,6 @@ pub(crate) fn set_cur_order(v: u8) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn cur_align() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_align)
-}
-#[inline]
 pub(crate) fn set_cur_align(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.cur_align = v;
@@ -3098,10 +3083,6 @@ pub(crate) fn set_cur_span(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.cur_span = v;
     });
-}
-#[inline]
-pub(crate) fn cur_loop() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_loop)
 }
 #[inline]
 pub(crate) fn set_cur_loop(v: i32) {
@@ -3116,18 +3097,10 @@ pub(crate) fn set_align_ptr(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn cur_head() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_head)
-}
-#[inline]
 pub(crate) fn set_cur_head(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.cur_head = v;
     });
-}
-#[inline]
-pub(crate) fn cur_tail_a() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_tail)
 }
 #[inline]
 pub(crate) fn set_cur_tail_a(v: i32) {
@@ -3136,18 +3109,10 @@ pub(crate) fn set_cur_tail_a(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn cur_pre_head() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_pre_head)
-}
-#[inline]
 pub(crate) fn set_cur_pre_head(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.cur_pre_head = v;
     });
-}
-#[inline]
-pub(crate) fn cur_pre_tail() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_pre_tail)
 }
 #[inline]
 pub(crate) fn set_cur_pre_tail(v: i32) {
