@@ -3243,10 +3243,6 @@ pub(crate) fn set_cur_align(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn cur_span() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_span)
-}
-#[inline]
 pub(crate) fn set_cur_span(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.cur_span = v;
@@ -3332,10 +3328,6 @@ pub(crate) fn set_pre_adjust_tail(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.pre_adjust_tail = v;
     });
-}
-#[inline]
-pub(crate) fn total_stretch(o: usize) -> i32 {
-    crate::state::with_state(|s| s.scanner.total_stretch[o])
 }
 #[inline]
 pub(crate) fn total_shrink(o: usize) -> i32 {

@@ -783,13 +783,6 @@ pub(crate) fn get_preamble_token_in(
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:7880 (init_span)
-pub unsafe fn init_span(p: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| init_span_in(st, p)) {
-        e.fire();
-    }
-}
-
 pub(crate) fn init_span_in(
     st: &mut crate::state::EngineState,
     p: i32,
@@ -928,14 +921,15 @@ pub(crate) fn pop_alignment_in(st: &mut crate::state::EngineState) {
 }
 // translated from xetex-xetex0.c:7859 (fin_col)
 pub unsafe fn fin_col() -> bool {
-    use crate::globals::{
-        adjust_tail, cur_align, cur_list_head, cur_list_mode, cur_list_tail, cur_loop,
-        cur_pre_tail, cur_span, cur_tail_a, mem_b32s0, mem_b32s1, pre_adjust_tail, set_adjust_tail,
-        set_cur_align, set_cur_list_tail, set_cur_loop, set_cur_pre_tail, set_cur_tail_a,
-        set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_pre_adjust_tail,
-        total_shrink, total_stretch,
-    };
-    use crate::mem::TEX_NULL;
+    match crate::state::with_state_mut(fin_col_in) {
+        Ok(b) => b,
+        Err(e) => e.fire(),
+    }
+}
+
+pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, MainControlAbort> {
+    use crate::globals::{cur_list_head, cur_list_mode, cur_list_tail, set_cur_list_tail};
+    use crate::mem::{get_avail, new_glue, new_null_box, ALLOC_FAILED, TEX_NULL};
 
     const ADDITIONAL: i16 = 1;
     const SPAN_CODE: i32 = 1_114_113; // xetex_format.h:679
@@ -951,167 +945,193 @@ pub unsafe fn fin_col() -> bool {
     const FILLL: usize = 3;
     const UNSET_NODE: u16 = 13; // xetex_format.h
 
-    if cur_align() == TEX_NULL {
-        crate::errors::confusion(c"endv".as_ptr());
+    if st.scanner.cur_align == TEX_NULL {
+        return Err(MainControlAbort::Confusion(c"endv"));
     }
-    let q = mem_b32s1(cur_align());
+    let q = st.mem.b32s1(st.scanner.cur_align);
     if q == TEX_NULL {
-        crate::errors::confusion(c"endv".as_ptr());
+        return Err(MainControlAbort::Confusion(c"endv"));
     }
-    if align_state() < 500_000 {
-        crate::errors::fatal_error(c"(interwoven alignment preambles are not allowed)".as_ptr());
+    if st.scanner.align_state < 500_000 {
+        return Err(MainControlAbort::Input(crate::input::InputAbort::Fatal(
+            c"(interwoven alignment preambles are not allowed)".as_ptr(),
+        )));
     }
-    let mut p = mem_b32s1(q);
-    if p == TEX_NULL && mem_b32s0(cur_align() + 5) < CR_CODE {
-        if cur_loop() != TEX_NULL {
+    let mut p = st.mem.b32s1(q);
+    if p == TEX_NULL && st.mem.b32s0(st.scanner.cur_align + 5) < CR_CODE {
+        if st.scanner.cur_loop != TEX_NULL {
             // §822: extend preamble by duplicating the loop template
-            set_mem_b32s1(q, crate::mem::new_null_box_global());
-            p = mem_b32s1(q);
-            set_mem_b32s0(p, END_SPAN);
-            set_mem_b32s1(p + 1, NULL_FLAG);
-            set_cur_loop(mem_b32s1(cur_loop()));
+            let nb = new_null_box(&mut st.mem);
+            if nb == ALLOC_FAILED {
+                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(q, nb);
+            p = st.mem.b32s1(q);
+            st.mem.set_b32s0(p, END_SPAN);
+            st.mem.set_b32s1(p + 1, NULL_FLAG);
+            st.scanner.cur_loop = st.mem.b32s1(st.scanner.cur_loop);
             // copy u-template from cur_loop+3 into HOLD_HEAD list → p+3
             let mut wq = HOLD_HEAD;
-            let mut r = mem_b32s1(cur_loop() + 3);
+            let mut r = st.mem.b32s1(st.scanner.cur_loop + 3);
             while r != TEX_NULL {
-                set_mem_b32s1(wq, crate::mem::get_avail_global());
-                wq = mem_b32s1(wq);
-                set_mem_b32s0(wq, mem_b32s0(r));
-                r = mem_b32s1(r);
+                let av = get_avail(&mut st.mem);
+                if av == ALLOC_FAILED {
+                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                }
+                st.mem.set_b32s1(wq, av);
+                wq = st.mem.b32s1(wq);
+                st.mem.set_b32s0(wq, st.mem.b32s0(r));
+                r = st.mem.b32s1(r);
             }
-            set_mem_b32s1(wq, TEX_NULL);
-            set_mem_b32s1(p + 3, mem_b32s1(HOLD_HEAD));
+            st.mem.set_b32s1(wq, TEX_NULL);
+            st.mem.set_b32s1(p + 3, st.mem.b32s1(HOLD_HEAD));
             // copy v-template from cur_loop+2 into HOLD_HEAD list → p+2
             wq = HOLD_HEAD;
-            r = mem_b32s1(cur_loop() + 2);
+            r = st.mem.b32s1(st.scanner.cur_loop + 2);
             while r != TEX_NULL {
-                set_mem_b32s1(wq, crate::mem::get_avail_global());
-                wq = mem_b32s1(wq);
-                set_mem_b32s0(wq, mem_b32s0(r));
-                r = mem_b32s1(r);
+                let av = get_avail(&mut st.mem);
+                if av == ALLOC_FAILED {
+                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                }
+                st.mem.set_b32s1(wq, av);
+                wq = st.mem.b32s1(wq);
+                st.mem.set_b32s0(wq, st.mem.b32s0(r));
+                r = st.mem.b32s1(r);
             }
-            set_mem_b32s1(wq, TEX_NULL);
-            set_mem_b32s1(p + 2, mem_b32s1(HOLD_HEAD));
-            set_cur_loop(mem_b32s1(cur_loop()));
-            set_mem_b32s1(p, crate::mem::new_glue_global(mem_b32s0(cur_loop() + 1)));
-            set_mem_b16s0(mem_b32s1(p), GLUE_PAR_TAB_SKIP);
+            st.mem.set_b32s1(wq, TEX_NULL);
+            st.mem.set_b32s1(p + 2, st.mem.b32s1(HOLD_HEAD));
+            st.scanner.cur_loop = st.mem.b32s1(st.scanner.cur_loop);
+            let gv = st.mem.b32s0(st.scanner.cur_loop + 1);
+            let g = new_glue(&mut st.mem, gv);
+            if g == ALLOC_FAILED {
+                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(p, g);
+            let pp = st.mem.b32s1(p);
+            st.mem.set_b16s0(pp, GLUE_PAR_TAB_SKIP);
         } else {
-            error_here_with_diagnostic(c"Extra alignment tab has been changed to ".as_ptr());
-            crate::output::print_esc_cstr(c"cr".as_ptr());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(3);
-            set_help_line(
-                2,
-                c"You have given more \\span or & marks than there were".as_ptr(),
+            crate::output::error_here_with_diagnostic_in(
+                st,
+                c"Extra alignment tab has been changed to ".as_ptr(),
             );
-            set_help_line(
-                1,
-                c"in the preamble to the \\halign or \\valign now in progress.".as_ptr(),
-            );
-            set_help_line(
-                0,
-                c"So I'll assume that you meant to type \\cr instead.".as_ptr(),
-            );
-            set_mem_b32s0(cur_align() + 5, CR_CODE);
-            error();
+            crate::output::print_esc_cstr_in(st, c"cr".as_ptr());
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 3;
+            st.errors.help_line[2] =
+                c"You have given more \\span or & marks than there were".as_ptr();
+            st.errors.help_line[1] =
+                c"in the preamble to the \\halign or \\valign now in progress.".as_ptr();
+            st.errors.help_line[0] =
+                c"So I'll assume that you meant to type \\cr instead.".as_ptr();
+            st.mem.set_b32s0(st.scanner.cur_align + 5, CR_CODE);
+            mc_propagate_error(crate::errors::error_in(st))?;
         }
     }
-    if mem_b32s0(cur_align() + 5) != SPAN_CODE {
-        crate::save::unsave();
-        crate::save::new_save_level_global(ALIGN_GROUP);
+    if st.mem.b32s0(st.scanner.cur_align + 5) != SPAN_CODE {
+        crate::save::unsave_in(st)?;
+        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, ALIGN_GROUP) {
+            return Err(MainControlAbort::Save(a));
+        }
         let (u, w) = if cur_list_mode() == INNER_HMODE {
-            set_adjust_tail(cur_tail_a());
-            set_pre_adjust_tail(cur_pre_tail());
-            let u = hpack(mem_b32s1(cur_list_head()), 0, ADDITIONAL);
-            let w = mem_b32s1(u + 1);
-            set_cur_tail_a(adjust_tail());
-            set_adjust_tail(TEX_NULL);
-            set_cur_pre_tail(pre_adjust_tail());
-            set_pre_adjust_tail(TEX_NULL);
+            st.scanner.adjust_tail = st.scanner.cur_tail;
+            st.scanner.pre_adjust_tail = st.scanner.cur_pre_tail;
+            let head = st.mem.b32s1(cur_list_head());
+            let u = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?;
+            let w = st.mem.b32s1(u + 1);
+            st.scanner.cur_tail = st.scanner.adjust_tail;
+            st.scanner.adjust_tail = TEX_NULL;
+            st.scanner.cur_pre_tail = st.scanner.pre_adjust_tail;
+            st.scanner.pre_adjust_tail = TEX_NULL;
             (u, w)
         } else {
-            let u = vpackage(mem_b32s1(cur_list_head()), 0, ADDITIONAL, 0);
-            let w = mem_b32s1(u + 3);
+            let head = st.mem.b32s1(cur_list_head());
+            let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, 0)?;
+            let w = st.mem.b32s1(u + 3);
             (u, w)
         };
         let mut n: i32 = 0;
-        if cur_span() != cur_align() {
+        if st.scanner.cur_span != st.scanner.cur_align {
             // §827: compare accumulated span width with recorded widths
-            let mut sq = cur_span();
+            let mut sq = st.scanner.cur_span;
             loop {
                 n += 1;
-                sq = mem_b32s1(mem_b32s1(sq));
-                if sq == cur_align() {
+                sq = st.mem.b32s1(st.mem.b32s1(sq));
+                if sq == st.scanner.cur_align {
                     break;
                 }
             }
             if n > u16::MAX as i32 {
-                crate::errors::confusion(c"too many spans".as_ptr());
+                return Err(MainControlAbort::Confusion(c"too many spans"));
             }
-            sq = cur_span();
-            while mem_b32s1(mem_b32s0(sq)) < n {
-                sq = mem_b32s0(sq);
+            sq = st.scanner.cur_span;
+            while st.mem.b32s1(st.mem.b32s0(sq)) < n {
+                sq = st.mem.b32s0(sq);
             }
-            if mem_b32s1(mem_b32s0(sq)) > n {
-                let s = crate::mem::get_node_global(SPAN_NODE_SIZE);
-                set_mem_b32s0(s, mem_b32s0(sq));
-                set_mem_b32s1(s, n);
-                set_mem_b32s0(sq, s);
-                set_mem_b32s1(s + 1, w);
-            } else if mem_b32s1(mem_b32s0(sq) + 1) < w {
-                set_mem_b32s1(mem_b32s0(sq) + 1, w);
+            if st.mem.b32s1(st.mem.b32s0(sq)) > n {
+                let s = crate::mem::get_node(&mut st.mem, SPAN_NODE_SIZE);
+                if s == ALLOC_FAILED {
+                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                }
+                st.mem.set_b32s0(s, st.mem.b32s0(sq));
+                st.mem.set_b32s1(s, n);
+                st.mem.set_b32s0(sq, s);
+                st.mem.set_b32s1(s + 1, w);
+            } else if st.mem.b32s1(st.mem.b32s0(sq) + 1) < w {
+                st.mem.set_b32s1(st.mem.b32s0(sq) + 1, w);
             }
-        } else if w > mem_b32s1(cur_align() + 1) {
-            set_mem_b32s1(cur_align() + 1, w);
+        } else if w > st.mem.b32s1(st.scanner.cur_align + 1) {
+            st.mem.set_b32s1(st.scanner.cur_align + 1, w);
         }
-        set_mem_b16s1(u, UNSET_NODE);
-        set_mem_b16s0(u, n as u16);
-        let o_str: usize = if total_stretch(FILLL) != 0 {
+        st.mem.set_b16s1(u, UNSET_NODE);
+        st.mem.set_b16s0(u, n as u16);
+        let o_str: usize = if st.scanner.total_stretch[FILLL] != 0 {
             FILLL
-        } else if total_stretch(FILL) != 0 {
+        } else if st.scanner.total_stretch[FILL] != 0 {
             FILL
-        } else if total_stretch(FIL) != 0 {
+        } else if st.scanner.total_stretch[FIL] != 0 {
             FIL
         } else {
             0
         };
-        set_mem_b16s0(u + 5, o_str as u16);
-        set_mem_b32s1(u + 6, total_stretch(o_str));
-        let o_shr: usize = if total_shrink(FILLL) != 0 {
+        st.mem.set_b16s0(u + 5, o_str as u16);
+        st.mem.set_b32s1(u + 6, st.scanner.total_stretch[o_str]);
+        let o_shr: usize = if st.scanner.total_shrink[FILLL] != 0 {
             FILLL
-        } else if total_shrink(FILL) != 0 {
+        } else if st.scanner.total_shrink[FILL] != 0 {
             FILL
-        } else if total_shrink(FIL) != 0 {
+        } else if st.scanner.total_shrink[FIL] != 0 {
             FIL
         } else {
             0
         };
-        set_mem_b16s1(u + 5, o_shr as u16);
-        set_mem_b32s1(u + 4, total_shrink(o_shr));
-        crate::mem::pop_nest();
-        set_mem_b32s1(cur_list_tail(), u);
+        st.mem.set_b16s1(u + 5, o_shr as u16);
+        st.mem.set_b32s1(u + 4, st.scanner.total_shrink[o_shr]);
+        crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+        st.mem.set_b32s1(cur_list_tail(), u);
         set_cur_list_tail(u);
-        set_mem_b32s1(
-            cur_list_tail(),
-            crate::mem::new_glue_global(mem_b32s0(mem_b32s1(cur_align()) + 1)),
-        );
-        set_cur_list_tail(mem_b32s1(cur_list_tail()));
-        set_mem_b16s0(cur_list_tail(), GLUE_PAR_TAB_SKIP);
-        if mem_b32s0(cur_align() + 5) >= CR_CODE {
-            return true;
+        let gv = st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align) + 1);
+        let g = new_glue(&mut st.mem, gv);
+        if g == ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
         }
-        init_span(p);
+        st.mem.set_b32s1(cur_list_tail(), g);
+        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+        st.mem.set_b16s0(cur_list_tail(), GLUE_PAR_TAB_SKIP);
+        if st.mem.b32s0(st.scanner.cur_align + 5) >= CR_CODE {
+            return Ok(true);
+        }
+        init_span_in(st, p)?;
     }
-    set_align_state(1_000_000);
+    st.scanner.align_state = 1_000_000;
     loop {
-        get_x_or_protected();
+        crate::scan::get_x_or_protected_in(st)?;
         if cur_cmd() != SPACER {
             break;
         }
     }
-    set_cur_align(p);
-    init_col();
-    false
+    st.scanner.cur_align = p;
+    init_col_in(st)?;
+    Ok(false)
 }
 // translated from xetex-xetex0.c:8009 (fin_row)
 pub unsafe fn fin_row() {
