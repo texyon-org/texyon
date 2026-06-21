@@ -8,6 +8,67 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 221 — 2026-06-21 — Execution: thread the alignment SCC, `handle_right_brace`, and the alignment dispatcher
+
+**Type:** execution (workstream 01). Large mechanical session, minimal docs, three commits.
+
+**Code:**
+- **Commit 1 — the alignment SCC.** Threaded the mutually-recursive cluster
+  `fin_align`/`align_peek`/`init_align`/`fin_row` into `_in(&mut EngineState) ->
+  Result<(), MainControlAbort>` cores under one borrow each. The substrate
+  (init_row/init_col/init_span/get_preamble_token/fin_col/push_alignment/
+  pop_alignment/resume_after_display/do_assignments) was already threaded
+  (sessions 214–220). Mechanical accessor sweep (`mem_b32s1`→`st.mem.b32s1`,
+  `eqtb_b32s1`→`st.eqtb.b32s1`, nest/save/scanner globals→direct `st.input`/
+  `st.save_stack`/`st.scanner`); `hpack`/`vpackage`→`hpack_emit_in`/
+  `vpackage_emit_in`; `flush_math`/`flush_node_list` corrupt-node →
+  `MainControlAbort::Confusion`; recoverable diagnostics print in order then
+  defer via `mc_propagate_error`; arena exhaustion rides
+  `NodeRecycleAbort::Overflow`. Deleted dead legacy wrappers
+  (fin_align/get_preamble_token/init_row/init_col/push_alignment/pop_alignment)
+  + globals accessors (nest_mode/nest_aux_b32s1/cur_align/cur_loop/cur_head/
+  cur_tail_a/cur_pre_head/cur_pre_tail) + `scan::get_x_or_protected`.
+- **Commit 2 — `handle_right_brace` + `fin_mlist`.** Added `math::fin_mlist_in`
+  (fin_mlist + pop_nest_in under one borrow, corrupt-node → Confusion). Threaded
+  `handle_right_brace` → `handle_right_brace_in`: all 15 match arms over direct
+  `st.*` and the threaded callees (unsave_in/package_in/end_graf_in/
+  vpackage_emit_in/align_peek_in/build_discretionary_in/build_choices_in/
+  fin_mlist_in; get_token_in/end_token_list_in/back_input_in/ins_error_in;
+  error/box_error/extra_right_brace via mc_propagate_error). The NO_ALIGN_GROUP/
+  MATH_GROUP arms were the SCC- and fin_mlist-gated blockers, now cleared.
+  Deleted the orphaned wrappers align_peek/package/build_discretionary
+  (main_control), extra_right_brace/box_error (errors), build_choices_global
+  (math), get_node_global (mem), vpackage/print_vpack_diag (packaging),
+  page_tail/set_nest_tail (globals).
+- **Commit 3 — `do_endv` + the alignment dispatcher.** Threaded `do_endv` →
+  `do_endv_in` (input-stack walk via `st.input.*`, interwoven-preamble fatal via
+  `InputAbort::Fatal`), the error stubs `no_align_error`/`omit_error` → `_in`,
+  and added `scan::eTeX_enabled_in`. With these the whole
+  `main_control_alignment_cases` dispatcher slice threads into
+  `main_control_alignment_cases_in` (every arm under one borrow over
+  init_align_in/eTeX_enabled_in/new_math/privileged_in/off_save_in/do_endv_in/
+  cs_error_in). Deleted dead cs_error (errors), input_stack/set_input_stack/
+  base_ptr/set_base_ptr (globals), no_align_error/omit_error/fin_col/fin_row/
+  init_align/do_endv (main_control), eTeX_enabled (scan).
+
+**Validation:** `cargo fmt`; `cargo check` (warnings **41**, held) per commit;
+dashboard **29/2/7/4** per commit; release rebuild; full corpus **637 passed /
+2 diverged / 0 missing-golden**, only known `1905.00073v1`/`1905.00148v1`,
+doc-count == baseline, no NOXDV/NOLOG. Metrics (consistent git-grep count):
+`with_state(_mut)` **760 → 732**; `unsafe fn` **→ 426**.
+
+**Next:** the alignment subsystem is fully threaded. Remaining dispatcher
+blocker is the **math cluster** (`init_math`/`after_math`/`start_eq_no`/
+`scan_math`/`set_math_char`/`math_limit_switch`/`math_radical`/`math_ac`/
+`append_choices`/`sub_sup`/`math_fraction`/`math_left_right`) — a coupled
+multi-commit slice that gates `main_control_math_cases`. Other standalone
+dispatcher verbs: `make_accent`, `insert_dollar_sign`, `align_error`, and the
+mode-independent singletons `issue_message`/`show_whatever`/`do_extension`/
+`open_or_close_in`. Then the remaining `main_control_*` dispatcher slices and
+finally `main_control` itself.
+
+---
+
 ## Idiom session 220 — 2026-06-21 — Execution: thread `prefixed_command` + `do_assignments`
 
 **Type:** execution (workstream 01). Large mechanical dispatcher slice with
