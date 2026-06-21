@@ -32,11 +32,11 @@ use crate::globals::{
     after_token, align_state, avail, cur_chr, cur_cmd, cur_cs, cur_group, cur_list_mode, cur_ptr,
     cur_tok, cur_val, def_ref, eqtb_b32s1, font_area_entry, font_glue, hash_s1, in_initex_mode,
     mem_b16s0, mem_b16s1, mem_b16s3, mem_b32s0, mem_b32s1, param_base, pool_ptr, save_ptr,
-    selector, set_after_token, set_align_state, set_avail, set_box_allowed, set_cur_chr,
-    set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val,
-    set_font_glue, set_font_info_b32s1, set_help_line, set_help_ptr, set_hyphen_char_entry,
-    set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_pool_ptr, set_save_ptr,
-    set_save_stack_b32s1, set_selector, set_skew_char_entry, set_str_ptr, str_ptr, str_start,
+    set_after_token, set_align_state, set_avail, set_box_allowed, set_cur_chr, set_cur_cmd,
+    set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val, set_font_glue,
+    set_font_info_b32s1, set_help_line, set_help_ptr, set_hyphen_char_entry, set_mem_b16s0,
+    set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_pool_ptr, set_save_ptr, set_save_stack_b32s1,
+    set_skew_char_entry, set_str_ptr, str_ptr, str_start,
 };
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::input::begin_token_list;
@@ -2200,6 +2200,18 @@ impl MainControlAbort {
     }
 }
 
+/// Propagate a recoverable [`crate::errors::ErrorOutcome`] from a threaded
+/// main-control verb: `Continue` returns `Ok(())`, any cold tail rides
+/// [`MainControlAbort::Error`] to be `finish()`ed after the borrow drops.
+#[inline]
+fn mc_propagate_error(o: crate::errors::ErrorOutcome) -> Result<(), MainControlAbort> {
+    if matches!(o, crate::errors::ErrorOutcome::Continue) {
+        Ok(())
+    } else {
+        Err(MainControlAbort::Error(o))
+    }
+}
+
 // translated from xetex-xetex0.c:7048 (new_character)
 pub(crate) fn new_character_in(
     st: &mut crate::state::EngineState,
@@ -3038,137 +3050,186 @@ pub(crate) fn append_kern_in(st: &mut crate::state::EngineState) -> Result<(), M
 }
 // translated from xetex-xetex0.c:9896 (make_mark)
 pub unsafe fn make_mark() {
+    if let Err(e) = crate::state::with_state_mut(make_mark_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let c = if cur_chr() == 0 {
         0
     } else {
-        scan_register_num();
+        crate::scan::scan_register_num_in(st)?;
         cur_val()
     };
-    scan_toks(false, true); // side effect: sets def_ref; return value discarded
-    let p = crate::mem::get_node_global(SMALL_NODE_SIZE);
-    set_mem_b32s0(p + 1, c);
-    set_mem_b16s1(p, MARK_NODE); // NODE_type(p)
-    set_mem_b16s0(p, 0);
-    set_mem_b32s1(p + 1, def_ref());
-    set_mem_b32s1(crate::globals::cur_list_tail(), p);
+    crate::scan::scan_toks_in(st, false, true)?; // side effect: sets def_ref; return value discarded
+    let p = crate::mem::get_node(&mut st.mem, SMALL_NODE_SIZE);
+    if p == crate::mem::ALLOC_FAILED {
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+    }
+    st.mem.set_b32s0(p + 1, c);
+    st.mem.set_b16s1(p, MARK_NODE); // NODE_type(p)
+    st.mem.set_b16s0(p, 0);
+    st.mem.set_b32s1(p + 1, st.scanner.def_ref);
+    let tail = crate::globals::cur_list_tail();
+    st.mem.set_b32s1(tail, p);
     crate::globals::set_cur_list_tail(p);
+    Ok(())
 }
 // translated from xetex-xetex0.c:11040 (new_interaction)
 pub unsafe fn new_interaction() {
-    crate::output::print_ln();
-    crate::globals::set_interaction(cur_chr() as u8);
-    if crate::globals::interaction() == BATCH_MODE {
-        set_selector(SELECTOR_NO_PRINT);
+    crate::state::with_state_mut(new_interaction_in);
+}
+
+pub(crate) fn new_interaction_in(st: &mut crate::state::EngineState) {
+    crate::output::print_ln_in(st);
+    st.errors.interaction = cur_chr() as u8;
+    if st.errors.interaction == BATCH_MODE {
+        st.shipout.selector = SELECTOR_NO_PRINT;
     } else {
-        set_selector(SELECTOR_TERM_ONLY);
+        st.shipout.selector = SELECTOR_TERM_ONLY;
     }
-    if crate::globals::log_opened() {
-        set_selector(selector() + 2);
+    if st.errors.log_opened {
+        st.shipout.selector += 2;
     }
 }
 // translated from xetex-xetex0.c:10774 (alter_aux)
 pub unsafe fn alter_aux() {
-    if cur_chr() != cur_list_mode().unsigned_abs() as i32 {
-        report_illegal_case();
-    } else {
-        let c = cur_chr();
-        scan_optional_equals();
-        if c == VMODE as i32 {
-            scan_dimen(false, false, false);
-            crate::globals::set_cur_list_aux_b32s1(cur_val());
-        } else {
-            scan_int();
-            if cur_val() <= 0 || cur_val() > 32767 {
-                let errmsg = error_here_with_diagnostic(c"Bad space factor".as_ptr());
-                ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-                capture_to_diagnostic(std::ptr::null_mut());
-                set_help_ptr(1);
-                set_help_line(
-                    0,
-                    c"I allow only values in the range 1..32767 here.".as_ptr(),
-                );
-                int_error(cur_val());
-            } else {
-                crate::globals::set_cur_list_aux_b32s0(cur_val());
-            }
-        }
+    if let Err(e) = crate::state::with_state_mut(alter_aux_in) {
+        e.fire();
     }
+}
+
+pub(crate) fn alter_aux_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
+    if cur_chr() != cur_list_mode().unsigned_abs() as i32 {
+        return mc_propagate_error(crate::errors::report_illegal_case_in(st));
+    }
+    let c = cur_chr();
+    crate::scan::scan_optional_equals_in(st)?;
+    if c == VMODE as i32 {
+        crate::scan::scan_dimen_in(st, false, false, false)?;
+        crate::globals::set_cur_list_aux_b32s1(cur_val());
+    } else {
+        crate::scan::scan_int_in(st)?;
+        if cur_val() <= 0 || cur_val() > 32767 {
+            let errmsg =
+                crate::output::error_here_with_diagnostic_in(st, c"Bad space factor".as_ptr());
+            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 1;
+            st.errors.help_line[0] = c"I allow only values in the range 1..32767 here.".as_ptr();
+            return mc_propagate_error(crate::errors::int_error_in(st, cur_val()));
+        }
+        crate::globals::set_cur_list_aux_b32s0(cur_val());
+    }
+    Ok(())
 }
 // translated from xetex-xetex0.c:10805 (alter_prev_graf)
 pub unsafe fn alter_prev_graf() {
-    crate::globals::save_cur_list_to_nest(crate::globals::nest_ptr());
-    let mut p = crate::globals::nest_ptr();
-    while crate::globals::nest_mode(p).unsigned_abs() != VMODE as u16 {
+    if let Err(e) = crate::state::with_state_mut(alter_prev_graf_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn alter_prev_graf_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
+    let np = st.input.nest_ptr;
+    st.input.nest[np as usize] = crate::globals::cur_list();
+    let mut p = np;
+    while st.input.nest[p as usize].mode.unsigned_abs() != VMODE as u16 {
         p -= 1;
     }
-    scan_optional_equals();
-    scan_int();
+    crate::scan::scan_optional_equals_in(st)?;
+    crate::scan::scan_int_in(st)?;
     if cur_val() < 0 {
-        let errmsg = error_here_with_diagnostic(c"Bad ".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-        crate::output::print_esc_cstr(c"prevgraf".as_ptr());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(1);
-        set_help_line(0, c"I allow only nonnegative values here.".as_ptr());
-        int_error(cur_val());
-    } else {
-        crate::globals::set_nest_prev_graf(p, cur_val());
-        crate::globals::restore_cur_list_from_nest(crate::globals::nest_ptr());
+        let errmsg = crate::output::error_here_with_diagnostic_in(st, c"Bad ".as_ptr());
+        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+        crate::output::print_esc_cstr_in(st, c"prevgraf".as_ptr());
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 1;
+        st.errors.help_line[0] = c"I allow only nonnegative values here.".as_ptr();
+        return mc_propagate_error(crate::errors::int_error_in(st, cur_val()));
     }
+    st.input.nest[p as usize].prev_graf = cur_val();
+    crate::globals::set_cur_list_record(st.input.nest[np as usize]);
+    Ok(())
 }
 // translated from xetex-xetex0.c:10837 (alter_page_so_far)
 pub unsafe fn alter_page_so_far() {
+    if let Err(e) = crate::state::with_state_mut(alter_page_so_far_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn alter_page_so_far_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     let c = cur_chr() as usize;
-    scan_optional_equals();
-    scan_dimen(false, false, false);
-    crate::globals::set_page_so_far(c, cur_val());
+    crate::scan::scan_optional_equals_in(st)?;
+    crate::scan::scan_dimen_in(st, false, false, false)?;
+    st.shipout.page_so_far[c] = cur_val();
+    Ok(())
 }
 // translated from xetex-xetex0.c:10846 (alter_integer)
 pub unsafe fn alter_integer() {
+    if let Err(e) = crate::state::with_state_mut(alter_integer_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn alter_integer_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let c = cur_chr() as u8;
-    scan_optional_equals();
-    scan_int();
+    crate::scan::scan_optional_equals_in(st)?;
+    crate::scan::scan_int_in(st)?;
     if c == 0 {
-        crate::globals::set_dead_cycles(cur_val());
+        st.shipout.dead_cycles = cur_val();
     } else if c == 2 {
         if cur_val() < BATCH_MODE as i32 || cur_val() > ERROR_STOP_MODE as i32 {
-            let errmsg = error_here_with_diagnostic(c"Bad interaction mode".as_ptr());
-            ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(2);
-            set_help_line(1, c"Modes are 0=batch, 1=nonstop, 2=scroll, and".as_ptr());
-            set_help_line(
-                0,
-                c"3=errorstop. Proceed, and I'll ignore this case.".as_ptr(),
-            );
-            int_error(cur_val());
-        } else {
-            set_cur_chr(cur_val());
-            new_interaction();
+            let errmsg =
+                crate::output::error_here_with_diagnostic_in(st, c"Bad interaction mode".as_ptr());
+            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 2;
+            st.errors.help_line[1] = c"Modes are 0=batch, 1=nonstop, 2=scroll, and".as_ptr();
+            st.errors.help_line[0] = c"3=errorstop. Proceed, and I'll ignore this case.".as_ptr();
+            return mc_propagate_error(crate::errors::int_error_in(st, cur_val()));
         }
+        set_cur_chr(cur_val());
+        new_interaction_in(st);
     } else {
-        crate::globals::set_insert_penalties(cur_val());
+        st.shipout.insert_penalties = cur_val();
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:10874 (alter_box_dimen)
 pub unsafe fn alter_box_dimen() {
+    if let Err(e) = crate::state::with_state_mut(alter_box_dimen_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn alter_box_dimen_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     let c = cur_chr();
-    scan_register_num();
+    crate::scan::scan_register_num_in(st)?;
     let b = if cur_val() < 256 {
-        eqtb_b32s1(BOX_BASE + cur_val())
+        st.eqtb.b32s1(BOX_BASE + cur_val())
     } else {
-        crate::save::find_sa_element_global(4, cur_val(), false);
+        crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
         if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
             crate::mem::TEX_NULL
         } else {
-            mem_b32s1(crate::globals::cur_ptr() + 1)
+            st.mem.b32s1(crate::globals::cur_ptr() + 1)
         }
     };
-    scan_optional_equals();
-    scan_dimen(false, false, false);
+    crate::scan::scan_optional_equals_in(st)?;
+    crate::scan::scan_dimen_in(st, false, false, false)?;
     if b != crate::mem::TEX_NULL {
-        set_mem_b32s1(b + c, cur_val());
+        st.mem.set_b32s1(b + c, cur_val());
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:10570 (trap_zero_glue)
 ///

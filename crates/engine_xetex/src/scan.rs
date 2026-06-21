@@ -261,20 +261,21 @@ pub unsafe fn scan_char_class_not_ignored() {
 
 // translated from xetex-xetex0.c:5114 (scan_eight_bit_int)
 pub unsafe fn scan_eight_bit_int() {
-    scan_int();
-    if cur_val() < 0 || cur_val() > 255 {
-        let errmsg = error_here_with_diagnostic(c"Bad register code".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
-            c"A register code or char class must be between 0 and 255.".as_ptr(),
-        );
-        set_help_line(0, c"I changed this one to zero.".as_ptr());
-        int_error(cur_val());
-        set_cur_val(0);
+    if let Err(e) = crate::state::with_state_mut(scan_eight_bit_int_in) {
+        unsafe { e.fire() }
     }
+}
+
+pub(crate) fn scan_eight_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+    scan_int_in(st)?;
+    if cur_val() < 0 || cur_val() > 255 {
+        leaf_int_range_error(
+            st,
+            c"Bad register code".as_ptr(),
+            c"A register code or char class must be between 0 and 255.".as_ptr(),
+        )?;
+    }
+    Ok(())
 }
 
 // translated from xetex-xetex0.c:5132 (scan_usv_num)
@@ -512,15 +513,22 @@ pub unsafe fn insert_dollar_sign() {
 
 /// translated from xetex-xetex0.c:4355 (scan_optional_equals)
 pub unsafe fn scan_optional_equals() {
+    if let Err(e) = crate::state::with_state_mut(scan_optional_equals_in) {
+        unsafe { e.fire() }
+    }
+}
+
+pub(crate) fn scan_optional_equals_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     loop {
-        get_x_token();
+        get_x_token_in(st)?;
         if cur_cmd() != SPACER {
             break;
         }
     }
     if cur_tok() != OTHER_TOKEN + '=' as i32 {
-        crate::input::back_input();
+        crate::input::back_input_in(st)?;
     }
+    Ok(())
 }
 
 // Command-code values for scan_left_brace (xetex_format.h).

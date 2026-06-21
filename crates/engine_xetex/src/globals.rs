@@ -2118,14 +2118,6 @@ pub(crate) fn set_cur_list_record(v: crate::mem_types::ListStateRecord) {
     }
 }
 
-/// Copy `cur_list` to `nest[k]` (full struct assignment).
-#[inline]
-pub(crate) fn save_cur_list_to_nest(k: i32) {
-    let v = unsafe { raw::cur_list };
-    crate::state::with_state_mut(|s| {
-        s.input.nest[k as usize] = v;
-    });
-}
 // cur_list field accessors
 #[inline]
 pub(crate) fn cur_list_mode() -> i16 {
@@ -2202,12 +2194,6 @@ pub(crate) fn set_nest_tail(k: i32, v: i32) {
 #[inline]
 pub(crate) fn nest_aux_b32s1(k: i32) -> i32 {
     crate::state::with_state(|s| unsafe { s.input.nest[k as usize].aux.b32.s1 })
-}
-#[inline]
-pub(crate) fn set_nest_prev_graf(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.nest[k as usize].prev_graf = v;
-    });
 }
 #[inline]
 pub(crate) fn set_cur_list_prev_graf(v: i32) {
