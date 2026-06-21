@@ -3832,15 +3832,30 @@ fn build_choices_finish(mem: &mut MemState, save_stack: &mut SaveStackState, p: 
 }
 
 pub unsafe fn build_choices_global() {
-    crate::save::unsave();
-    let p = fin_mlist_global(TEX_NULL);
-    let complete =
-        crate::state::with_state_mut(|st| build_choices_finish(&mut st.mem, &mut st.save_stack, p));
-    if complete {
-        return;
+    if let Err(e) = crate::state::with_state_mut(build_choices_in) {
+        e.fire();
     }
-    crate::main_control::push_math(MATH_CHOICE_GROUP);
-    crate::scan::scan_left_brace();
+}
+
+/// `&mut EngineState` core of [`build_choices_global`]: closes one math-choice
+/// sublist (`\mathchoice`) under one borrow. Mirrors `fin_mlist_global`'s
+/// fin_mlist+pop_nest, then either completes or pushes the next choice group.
+///
+/// translated from xetex-math.c:571 (build_choices)
+pub(crate) fn build_choices_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    crate::save::unsave_in(st)?;
+    let p = fin_mlist(&mut st.mem, TEX_NULL)
+        .map_err(crate::main_control::MainControlAbort::Confusion)?;
+    crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+    let complete = build_choices_finish(&mut st.mem, &mut st.save_stack, p);
+    if complete {
+        return Ok(());
+    }
+    crate::main_control::push_math_in(st, MATH_CHOICE_GROUP)?;
+    crate::scan::scan_left_brace_in(st)?;
+    Ok(())
 }
 
 /// translated from xetex-math.c:599 (sub_sup)
