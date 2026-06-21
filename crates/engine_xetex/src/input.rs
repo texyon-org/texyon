@@ -262,14 +262,7 @@ pub fn pseudo_close_global() {
 // begin_file_reading
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-xetex0.c:3097 (begin_file_reading)
-pub unsafe fn begin_file_reading() {
-    if let Err(a) = crate::state::with_state_mut(begin_file_reading_in) {
-        a.fire();
-    }
-}
-
-/// `&mut EngineState` core of [`begin_file_reading`] (`01b` §3). Input-stack
+/// `&mut EngineState` core of `begin_file_reading` (`01b` §3). Input-stack
 /// fields are `st.input`; `cur_boundary`/`cond_ptr` read `st.save_stack`/
 /// `st.scanner`; `cur_input`/`first`/`line`/`max_in_open`/`buf_size`/
 /// `stack_size` are raw `mod raw` globals (safe under the borrow). Cold

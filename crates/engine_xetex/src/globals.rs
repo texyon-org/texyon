@@ -1063,11 +1063,6 @@ pub(crate) fn init_str_ptr() -> i32 {
 pub(crate) fn init_pool_ptr() -> i32 {
     crate::state::with_state(|state| state.strings.init_pool_ptr)
 }
-/// Read `buffer[k]` (UnicodeScalar = i32).
-#[inline]
-pub(crate) fn buffer_entry(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.buffer[k as usize])
-}
 
 // ---------------------------------------------------------------------------
 // help_ptr / help_line

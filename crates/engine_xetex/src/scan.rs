@@ -21,19 +21,15 @@ use crate::ext::ot_font_get;
 use crate::ext::ot_font_get_1;
 use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
-use crate::io::input_line;
-use crate::io::u_close;
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
 
 use crate::globals::{
-    align_state, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, eqtb_b32s1,
-    expand_depth, first, init_pool_ptr, last, pool_size, read_file_entry, read_open_entry,
-    save_ptr, set_align_state, set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs,
-    set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
-    set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_def_ref, set_first, set_help_line,
-    set_help_ptr, set_line, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence,
-    set_read_open_entry, set_scanner_status, set_warning_index,
+    cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, eqtb_b32s1, expand_depth, first,
+    init_pool_ptr, pool_size, save_ptr, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit,
+    set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_cur_input_synctex_tag,
+    set_cur_tok, set_cur_val, set_first, set_help_line, set_help_ptr, set_line, set_mem_b32s1,
+    set_no_new_control_sequence,
 };
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
@@ -978,19 +974,24 @@ const NEW_LINE: u16 = 33;
 const INT_PAR_END_LINE_CHAR: i32 = 48;
 
 /// translated from xetex-xetex0.c:7268 (read_toks)
-pub unsafe fn read_toks(n: i32, r: i32, j: i32) {
+pub(crate) fn read_toks_in(
+    st: &mut crate::state::EngineState,
+    n: i32,
+    r: i32,
+    j: i32,
+) -> Result<(), SccAbort> {
     use crate::mem::TEX_NULL;
 
-    set_scanner_status(DEFINING);
-    set_warning_index(r);
-    let new_def = crate::mem::get_avail_global();
-    set_def_ref(new_def);
-    set_mem_b32s0(new_def, TEX_NULL);
+    st.scanner.scanner_status = DEFINING;
+    st.scanner.warning_index = r;
+    let new_def = get_avail_scc(st)?;
+    st.scanner.def_ref = new_def;
+    st.mem.set_b32s0(new_def, TEX_NULL);
     let mut p = new_def;
 
-    let q = crate::mem::get_avail_global();
-    set_mem_b32s1(p, q);
-    set_mem_b32s0(q, END_MATCH_TOKEN);
+    let q = get_avail_scc(st)?;
+    st.mem.set_b32s1(p, q);
+    st.mem.set_b32s0(q, END_MATCH_TOKEN);
     p = q;
 
     let m: usize = if !(0..=15).contains(&n) {
@@ -999,50 +1000,54 @@ pub unsafe fn read_toks(n: i32, r: i32, j: i32) {
         n as usize
     };
 
-    let s = align_state();
-    set_align_state(1_000_000);
+    let s = st.scanner.align_state;
+    st.scanner.align_state = 1_000_000;
 
     loop {
         // do…while(align_state != 1_000_000) — §502
-        crate::input::begin_file_reading();
+        crate::input::begin_file_reading_in(st)?;
         set_cur_input_name((m + 1) as i32);
 
-        if read_open_entry(m) == CLOSED {
-            _tt_abort(c"terminal input forbidden".as_ptr());
-        } else if read_open_entry(m) == JUST_OPEN {
+        if st.input.read_open[m] == CLOSED {
+            return Err(SccAbort::Input(crate::input::InputAbort::TtAbort(
+                c"terminal input forbidden".as_ptr(),
+            )));
+        } else if st.input.read_open[m] == JUST_OPEN {
             // §504
-            if input_line(read_file_entry(m)) != 0 {
-                set_read_open_entry(m, NORMAL_SCANNER); // NORMAL = 0
+            let rf = st.input.read_file[m];
+            if unsafe { crate::io::input_line_in(st, rf)? } != 0 {
+                st.input.read_open[m] = NORMAL_SCANNER; // NORMAL = 0
             } else {
-                u_close(read_file_entry(m));
-                set_read_open_entry(m, CLOSED);
+                unsafe { crate::io::u_close(st.input.read_file[m]) };
+                st.input.read_open[m] = CLOSED;
             }
         } else {
             // §505
-            if input_line(read_file_entry(m)) == 0 {
-                u_close(read_file_entry(m));
-                set_read_open_entry(m, CLOSED);
-                if align_state() != 1_000_000 {
-                    runaway();
-                    error_here_with_diagnostic(c"File ended within ".as_ptr());
-                    crate::output::print_esc_cstr(c"read".as_ptr());
-                    capture_to_diagnostic(std::ptr::null_mut());
-                    set_help_ptr(1);
-                    set_help_line(0, c"This \\read has unbalanced braces.".as_ptr());
-                    set_align_state(1_000_000);
+            let rf = st.input.read_file[m];
+            if unsafe { crate::io::input_line_in(st, rf)? } == 0 {
+                unsafe { crate::io::u_close(st.input.read_file[m]) };
+                st.input.read_open[m] = CLOSED;
+                if st.scanner.align_state != 1_000_000 {
+                    crate::errors::runaway_in(st);
+                    error_here_with_diagnostic_in(st, c"File ended within ".as_ptr());
+                    crate::output::print_esc_cstr_in(st, c"read".as_ptr());
+                    capture_to_diagnostic_in(st, std::ptr::null_mut());
+                    st.errors.help_ptr = 1;
+                    st.errors.help_line[0] = c"This \\read has unbalanced braces.".as_ptr();
+                    st.scanner.align_state = 1_000_000;
                     set_cur_input_limit(0);
-                    error();
+                    scc_err(crate::errors::error_in(st))?;
                 }
             }
         }
 
-        let lim = last();
+        let lim = st.input.last;
         set_cur_input_limit(lim);
-        let end_char = eqtb_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
+        let end_char = unsafe { st.eqtb.data[(INT_BASE + INT_PAR_END_LINE_CHAR) as usize].b32.s1 };
         if !(0..=255).contains(&end_char) {
             set_cur_input_limit(lim - 1);
         } else {
-            set_buffer_entry(lim, end_char);
+            st.input.buffer[lim as usize] = end_char;
         }
         set_first(cur_input().limit + 1);
         set_cur_input_loc(cur_input().start);
@@ -1052,7 +1057,7 @@ pub unsafe fn read_toks(n: i32, r: i32, j: i32) {
             // §: direct token scan (no expansion)
             let mut loc = cur_input().loc;
             while loc <= cur_input().limit {
-                let c = buffer_entry(loc);
+                let c = st.input.buffer[loc as usize];
                 loc += 1;
                 let tok = if c == b' ' as i32 {
                     SPACE_TOKEN
@@ -1061,45 +1066,53 @@ pub unsafe fn read_toks(n: i32, r: i32, j: i32) {
                 };
                 set_cur_chr(c);
                 set_cur_tok(tok);
-                let q2 = crate::mem::get_avail_global();
-                set_mem_b32s1(p, q2);
-                set_mem_b32s0(q2, tok);
+                let q2 = get_avail_scc(st)?;
+                st.mem.set_b32s1(p, q2);
+                st.mem.set_b32s0(q2, tok);
                 p = q2;
             }
             // goto done → end_file_reading then check while condition
         } else {
             loop {
-                get_token();
+                get_token_in(st)?;
                 if cur_tok() == 0 {
                     break; // goto done
                 }
-                if align_state() < 1_000_000 {
+                if st.scanner.align_state < 1_000_000 {
                     loop {
-                        get_token();
+                        get_token_in(st)?;
                         if cur_tok() == 0 {
                             break;
                         }
                     }
-                    set_align_state(1_000_000);
+                    st.scanner.align_state = 1_000_000;
                     break; // goto done
                 }
-                let q2 = crate::mem::get_avail_global();
-                set_mem_b32s1(p, q2);
-                set_mem_b32s0(q2, cur_tok());
+                let q2 = get_avail_scc(st)?;
+                st.mem.set_b32s1(p, q2);
+                st.mem.set_b32s0(q2, cur_tok());
                 p = q2;
             }
         }
         // done:
-        crate::input::end_file_reading();
+        crate::input::end_file_reading_in(st);
 
-        if align_state() == 1_000_000 {
+        if st.scanner.align_state == 1_000_000 {
             break;
         }
     }
 
     set_cur_val(new_def);
-    set_scanner_status(NORMAL_SCANNER);
-    set_align_state(s);
+    st.scanner.scanner_status = NORMAL_SCANNER;
+    st.scanner.align_state = s;
+    Ok(())
+}
+
+/// translated from xetex-xetex0.c:7268 (read_toks)
+pub unsafe fn read_toks(n: i32, r: i32, j: i32) {
+    if let Err(e) = crate::state::with_state_mut(|st| read_toks_in(st, n, r, j)) {
+        unsafe { e.fire() }
+    }
 }
 
 // xetex-stringpool.h:12  (TOO_BIG_CHAR + 1)
