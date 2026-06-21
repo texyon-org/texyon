@@ -662,7 +662,7 @@ unsafe fn load_mapping_file(
 // `name_of_file` is read (and the `:mapping=` separator nulled out) through the
 // pointer passed by the `_global` wrapper, which reads `name_of_file()` (itself
 // with_state-bearing) before the call.
-pub unsafe fn check_for_tfm_font_mapping(name_of_file: *mut c_char) {
+pub(crate) unsafe fn check_for_tfm_font_mapping_in(name_of_file: *mut c_char) {
     let cp = libc::strstr(name_of_file, c":mapping=".as_ptr());
     SAVED_MAPPING_NAME = mfree_ptr(SAVED_MAPPING_NAME);
     if !cp.is_null() {
@@ -675,6 +675,10 @@ pub unsafe fn check_for_tfm_font_mapping(name_of_file: *mut c_char) {
             SAVED_MAPPING_NAME = xstrdup(cp);
         }
     }
+}
+
+pub unsafe fn check_for_tfm_font_mapping(name_of_file: *mut c_char) {
+    check_for_tfm_font_mapping_in(name_of_file);
 }
 
 // translated from xetex-ext.c:251 (load_tfm_font_mapping)

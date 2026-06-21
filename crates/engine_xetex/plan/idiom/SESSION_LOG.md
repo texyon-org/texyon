@@ -8,6 +8,29 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 217 — 2026-06-21 — Execution: font-loader recon + first mapping helper
+
+**Type:** execution (workstream 01). Small code slice after a larger attempted
+font-loader thread found a lower blocker.
+
+**Code:** split `ext::check_for_tfm_font_mapping` into a `check_for_tfm_font_mapping_in`
+core plus the legacy wrapper. This is the safe bottom-most TFM mapping helper:
+it only mutates the passed `name_of_file` buffer and `SAVED_MAPPING_NAME`.
+
+**Finding:** do **not** thread `load_native_font` before `find_native_font` /
+feature parsing. `find_native_font` still uses `loaded_font_*` globals and
+warning paths, so calling it under a live `with_state_mut` borrow would
+nest-panic. Next useful slice is lower in `ext.rs`: thread `load_mapping_file`
+warning/tracing and native-font feature parsing state, then return to
+`load_native_font_in` / `read_font_info_in`.
+
+**Validation:** `cargo fmt -p tectonic_engine_xetex`; `cargo check -p
+tectonic_engine_xetex` (warnings **41**, held); dashboard **29/2/7/4**; release
+rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1` and `1905.00148v1`.
+
+---
+
 ## Idiom session 216 — 2026-06-21 — Execution: thread the prefixed_command prerequisite helpers (blocked on the font loader)
 
 **Type:** execution (workstream 01). Large mechanical session toward
