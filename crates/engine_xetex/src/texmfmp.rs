@@ -376,35 +376,41 @@ pub(crate) unsafe fn fire_make_src_pool_overflow() -> ! {
 
 /// `&mut EngineState` core of [`make_src_special`]. Returns the cold pool
 /// overflow as `Err(())` for the caller to defer (`01b` §5).
-pub(crate) unsafe fn make_src_special_in(
+pub(crate) fn make_src_special_in(
     st: &mut crate::state::EngineState,
     srcfilename: i32,
     lineno: i32,
 ) -> Result<i32, ()> {
     let old_pool_ptr = st.strings.pool_ptr;
-    let filename = gettexstring_in(&st.strings, srcfilename);
+    // SAFETY: `gettexstring_in` returns a freshly-allocated NUL-terminated C
+    // string; we walk it to NUL and `free` it. Pool writes are safe Vec indexing.
+    unsafe {
+        let filename = gettexstring_in(&st.strings, srcfilename);
 
-    // C used `sprintf(buf, "src:%d ", lineno)` into a 40-byte local buffer.
-    let prefix = format!("src:{} ", lineno);
-    let fname_len = libc::strlen(filename);
+        // C used `sprintf(buf, "src:%d ", lineno)` into a 40-byte local buffer.
+        let prefix = format!("src:{} ", lineno);
+        let fname_len = libc::strlen(filename);
 
-    if (st.strings.pool_ptr as usize) + prefix.len() + fname_len >= st.strings.pool_size as usize {
-        return Err(());
+        if (st.strings.pool_ptr as usize) + prefix.len() + fname_len
+            >= st.strings.pool_size as usize
+        {
+            return Err(());
+        }
+
+        for &b in prefix.as_bytes() {
+            st.strings.str_pool[st.strings.pool_ptr as usize] = b as u16;
+            st.strings.pool_ptr += 1;
+        }
+
+        let mut s = filename as *const u8;
+        while *s != 0 {
+            st.strings.str_pool[st.strings.pool_ptr as usize] = *s as u16;
+            st.strings.pool_ptr += 1;
+            s = s.add(1);
+        }
+
+        libc::free(filename as *mut libc::c_void);
     }
-
-    for &b in prefix.as_bytes() {
-        st.strings.str_pool[st.strings.pool_ptr as usize] = b as u16;
-        st.strings.pool_ptr += 1;
-    }
-
-    let mut s = filename as *const u8;
-    while *s != 0 {
-        st.strings.str_pool[st.strings.pool_ptr as usize] = *s as u16;
-        st.strings.pool_ptr += 1;
-        s = s.add(1);
-    }
-
-    libc::free(filename as *mut libc::c_void);
     Ok(old_pool_ptr)
 }
 
@@ -546,16 +552,19 @@ pub unsafe fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
 }
 
 /// `&EngineState` core of [`is_new_source`].
-pub(crate) unsafe fn is_new_source_in(
+pub(crate) fn is_new_source_in(
     st: &crate::state::EngineState,
     srcfilename: i32,
     lineno: i32,
 ) -> bool {
-    let name = gettexstring_in(&st.strings, srcfilename);
-    let changed =
-        compare_paths(name, st.texmf.last_source_name) != 0 || lineno != st.texmf.last_lineno;
-    libc::free(name as *mut libc::c_void);
-    changed
+    // SAFETY: `gettexstring_in` returns an owned C string compared by FFI then freed.
+    unsafe {
+        let name = gettexstring_in(&st.strings, srcfilename);
+        let changed =
+            compare_paths(name, st.texmf.last_source_name) != 0 || lineno != st.texmf.last_lineno;
+        libc::free(name as *mut libc::c_void);
+        changed
+    }
 }
 
 /// Record the current source file and line number for later comparison by
@@ -567,15 +576,18 @@ pub unsafe fn remember_source_info(srcfilename: i32, lineno: i32) {
 }
 
 /// `&mut EngineState` core of [`remember_source_info`].
-pub(crate) unsafe fn remember_source_info_in(
+pub(crate) fn remember_source_info_in(
     st: &mut crate::state::EngineState,
     srcfilename: i32,
     lineno: i32,
 ) {
-    let old = st.texmf.last_source_name;
-    libc::free(old as *mut libc::c_void);
-    let new_name = gettexstring_in(&st.strings, srcfilename);
-    st.texmf.last_source_name = new_name;
+    // SAFETY: frees the previously-owned name and stores a fresh owned C string.
+    unsafe {
+        let old = st.texmf.last_source_name;
+        libc::free(old as *mut libc::c_void);
+        let new_name = gettexstring_in(&st.strings, srcfilename);
+        st.texmf.last_source_name = new_name;
+    }
     st.texmf.last_lineno = lineno;
 }
 

@@ -2049,8 +2049,7 @@ pub(crate) fn new_graf_in(
         st.mem.set_b32s1(cur_list_head(), nb);
         st.mem.set_b32s1(nb + 1, st.eqtb.b32s1(DIMEN_BASE));
         if st.shipout.insert_src_special_every_par {
-            // SAFETY: FFI-bearing src-special builder; safe under the held borrow.
-            unsafe { crate::ext::insert_src_special_in(st) }?;
+            crate::ext::insert_src_special_in(st)?;
         }
     }
 

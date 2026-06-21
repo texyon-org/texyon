@@ -2570,7 +2570,7 @@ pub unsafe fn insert_src_special() {
 /// callees run threaded under the borrow. Cold aborts ride [`InsertSrcAbort`].
 ///
 /// translated from xetex-xetex0.c:9966 (insert_src_special)
-pub(crate) unsafe fn insert_src_special_in(
+pub(crate) fn insert_src_special_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), InsertSrcAbort> {
     use crate::globals::line;
