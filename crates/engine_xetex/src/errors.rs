@@ -410,10 +410,6 @@ pub(crate) fn privileged_in(st: &mut EngineState) -> Result<bool, ErrorOutcome> 
     }
 }
 // translated from xetex-xetex0.c:10489 (cs_error)
-pub unsafe fn cs_error() {
-    crate::state::with_state_mut(|st| cs_error_in(st)).finish();
-}
-
 /// `&mut EngineState` core of [`cs_error`].
 pub(crate) fn cs_error_in(st: &mut EngineState) -> ErrorOutcome {
     error_here_with_diagnostic_in(st, c"Extra ".as_ptr());

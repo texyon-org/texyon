@@ -6,7 +6,6 @@ use crate::consts::{
     EQTB_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD,
     PENALTY_NODE, PRIM_EQTB_BASE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
-use crate::errors::error;
 use crate::errors::int_error;
 // Relocated to errors.rs (workstream 02); still called from scan.rs.
 use crate::errors::runaway;
@@ -51,7 +50,6 @@ use crate::main_control::push_math;
 
 use crate::fonts::{effective_char, effective_char_info, new_native_word_node};
 use crate::io::open_log_file;
-use crate::output::print_cmd_chr;
 
 extern "C" {
 
@@ -1100,20 +1098,25 @@ pub unsafe fn scan_int() {
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:8811 (eTeX_enabled)
+/// `&mut EngineState` core of [`eTeX_enabled`]: the recoverable "disabled
+/// feature" diagnostic prints in order then defers a non-`Continue` outcome via
+/// [`crate::main_control::MainControlAbort`].
 #[allow(non_snake_case)]
-pub unsafe fn eTeX_enabled(b: bool, j: u16, k: i32) -> bool {
+pub(crate) fn eTeX_enabled_in(
+    st: &mut crate::state::EngineState,
+    b: bool,
+    j: u16,
+    k: i32,
+) -> Result<bool, crate::main_control::MainControlAbort> {
     if !b {
-        error_here_with_diagnostic(c"Improper ".as_ptr());
-        print_cmd_chr(j, k);
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(1);
-        set_help_line(
-            0,
-            c"Sorry, this optional e-TeX feature has been disabled.".as_ptr(),
-        );
-        error();
+        crate::output::error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
+        crate::output::print_cmd_chr_in(st, j, k);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 1;
+        st.errors.help_line[0] = c"Sorry, this optional e-TeX feature has been disabled.".as_ptr();
+        crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     }
-    b
+    Ok(b)
 }
 
 // ---------------------------------------------------------------------------

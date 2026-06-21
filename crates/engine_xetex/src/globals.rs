@@ -2148,19 +2148,6 @@ pub(crate) fn set_cur_mark(k: usize, v: i32) {
 // input_stack / input_ptr / base_ptr
 // ---------------------------------------------------------------------------
 
-/// Copy `input_stack[k]` (full struct copy; xetex-xetexd.h:503).
-#[inline]
-pub(crate) fn input_stack(k: i32) -> InputState {
-    crate::state::with_state(|s| s.input.input_stack[k as usize])
-}
-/// Write `input_stack[k] = v` (full struct assign).
-#[inline]
-pub(crate) fn set_input_stack(k: i32, v: InputState) {
-    crate::state::with_state_mut(|s| {
-        s.input.input_stack[k as usize] = v;
-    });
-}
-
 /// Returns `input_ptr` — current top of the input-stack (xetex-xetexd.h:504).
 #[inline]
 pub(crate) fn input_ptr() -> i32 {
@@ -2184,20 +2171,6 @@ pub(crate) fn set_max_in_stack(v: i32) {
 #[inline]
 pub(crate) fn stack_size() -> i32 {
     unsafe { raw::stack_size }
-}
-
-/// Returns `base_ptr` — search base in the input stack
-/// (xetex-xetexd.h:521).
-#[inline]
-pub(crate) fn base_ptr() -> i32 {
-    crate::state::with_state(|s| s.input.base_ptr)
-}
-/// Sets `base_ptr`.
-#[inline]
-pub(crate) fn set_base_ptr(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.base_ptr = v;
-    });
 }
 
 /// Returns `par_loc` — hash-table location of \par (xetex-xetexd.h:522).

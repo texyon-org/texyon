@@ -15,7 +15,7 @@ use crate::consts::{
     MAX_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_ONLY,
     SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
-use crate::errors::{cs_error, error, privileged, report_illegal_case};
+use crate::errors::{error, privileged, report_illegal_case};
 use crate::ext::{
     append_src_special, apply_mapping, do_extension, get_native_char_height_depth_global,
     get_native_char_sidebearings_global, insert_src_special, map_char_to_glyph_global,
@@ -23,10 +23,10 @@ use crate::ext::{
 };
 use crate::fonts::read_font_info_in;
 use crate::globals::{
-    align_state, cur_chr, cur_cmd, cur_cs, cur_group, cur_list_mode, cur_ptr, cur_tok, cur_val,
-    eqtb_b32s1, font_glue, mem_b16s0, mem_b16s3, mem_b32s1, param_base, set_align_state,
-    set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok,
-    set_cur_val, set_font_glue, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b32s1,
+    align_state, cur_chr, cur_cmd, cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, eqtb_b32s1,
+    font_glue, mem_b16s0, mem_b16s3, mem_b32s1, param_base, set_align_state, set_cur_chr,
+    set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val,
+    set_font_glue, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b32s1,
 };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::input::begin_token_list;
@@ -43,8 +43,8 @@ use crate::output::{
 use crate::packaging::{flush_node_list_global, hpack};
 use crate::pagebuilder::build_page;
 use crate::scan::{
-    back_input, eTeX_enabled, effective_char_global, effective_char_info_global, get_next,
-    get_token, get_x_token, insert_dollar_sign, new_native_word_node_global, scan_char_num,
+    back_input, effective_char_global, effective_char_info_global, get_next, get_token,
+    get_x_token, insert_dollar_sign, new_native_word_node_global, scan_char_num,
     scan_delimiter_int, scan_dimen, scan_fifteen_bit_int, scan_math, scan_math_class_int,
     scan_math_fam_int, scan_rule_spec, scan_spec, scan_usv_num, scan_xetex_math_char_int,
     set_class_fn, set_family_fn, set_math_char, x_token,
@@ -218,36 +218,26 @@ pub unsafe fn align_error() {
     }
 }
 // translated from xetex-xetex0.c:10443 (no_align_error)
-pub unsafe fn no_align_error() {
-    error_here_with_diagnostic(c"Misplaced ".as_ptr());
-    crate::output::print_esc_cstr(c"noalign".as_ptr());
-    capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(2);
-    set_help_line(
-        1,
-        c"I expect to see \\noalign only after the \\cr of".as_ptr(),
-    );
-    set_help_line(
-        0,
-        c"an alignment. Proceed, and I'll ignore this case.".as_ptr(),
-    );
-    error();
+pub(crate) fn no_align_error_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
+    crate::output::error_here_with_diagnostic_in(st, c"Misplaced ".as_ptr());
+    crate::output::print_esc_cstr_in(st, c"noalign".as_ptr());
+    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    st.errors.help_ptr = 2;
+    st.errors.help_line[1] = c"I expect to see \\noalign only after the \\cr of".as_ptr();
+    st.errors.help_line[0] = c"an alignment. Proceed, and I'll ignore this case.".as_ptr();
+    mc_propagate_error(crate::errors::error_in(st))
 }
 // translated from xetex-xetex0.c:10457 (omit_error)
-pub unsafe fn omit_error() {
-    error_here_with_diagnostic(c"Misplaced ".as_ptr());
-    crate::output::print_esc_cstr(c"omit".as_ptr());
-    capture_to_diagnostic(std::ptr::null_mut());
-    set_help_ptr(2);
-    set_help_line(
-        1,
-        c"I expect to see \\omit only after tab marks or the \\cr of".as_ptr(),
-    );
-    set_help_line(
-        0,
-        c"an alignment. Proceed, and I'll ignore this case.".as_ptr(),
-    );
-    error();
+pub(crate) fn omit_error_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
+    crate::output::error_here_with_diagnostic_in(st, c"Misplaced ".as_ptr());
+    crate::output::print_esc_cstr_in(st, c"omit".as_ptr());
+    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    st.errors.help_ptr = 2;
+    st.errors.help_line[1] = c"I expect to see \\omit only after tab marks or the \\cr of".as_ptr();
+    st.errors.help_line[0] = c"an alignment. Proceed, and I'll ignore this case.".as_ptr();
+    mc_propagate_error(crate::errors::error_in(st))
 }
 // translated from xetex-xetex0.c:8074 (fin_align)
 pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
@@ -900,13 +890,6 @@ pub(crate) fn pop_alignment_in(st: &mut crate::state::EngineState) {
     crate::mem::free_node(&mut st.mem, p, ALIGN_STACK_NODE_SIZE);
 }
 // translated from xetex-xetex0.c:7859 (fin_col)
-pub unsafe fn fin_col() -> bool {
-    match crate::state::with_state_mut(fin_col_in) {
-        Ok(b) => b,
-        Err(e) => e.fire(),
-    }
-}
-
 pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, MainControlAbort> {
     use crate::globals::{cur_list_head, cur_list_mode, cur_list_tail, set_cur_list_tail};
     use crate::mem::{get_avail, new_glue, new_null_box, ALLOC_FAILED, TEX_NULL};
@@ -1114,12 +1097,6 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
     Ok(false)
 }
 // translated from xetex-xetex0.c:8009 (fin_row)
-pub unsafe fn fin_row() {
-    if let Err(e) = crate::state::with_state_mut(fin_row_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     use crate::globals::{
         cur_list_head, cur_list_mode, cur_list_tail, set_cur_list_aux_b32s0, set_cur_list_tail,
@@ -1172,12 +1149,6 @@ pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainC
     Ok(())
 }
 // translated from xetex-xetex0.c:7732 (init_align)
-pub unsafe fn init_align() {
-    if let Err(e) = crate::state::with_state_mut(init_align_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     use crate::globals::{
         cur_cs, cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
@@ -1701,33 +1672,36 @@ pub(crate) fn begin_insert_or_adjust_in(
     Ok(())
 }
 // translated from xetex-xetex0.c:10161 (do_endv)
-pub unsafe fn do_endv() {
+pub(crate) fn do_endv_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const V_TEMPLATE: u16 = 2; // xetex-constants.h:201
     const TOKEN_LIST: u16 = 0; // xetex-constants.h:261
     const ALIGN_GROUP: u8 = 6; // xetex-constants.h:158
 
-    crate::globals::set_base_ptr(crate::globals::input_ptr());
-    crate::globals::set_input_stack(crate::globals::base_ptr(), crate::globals::cur_input());
-    while crate::globals::input_stack(crate::globals::base_ptr()).index != V_TEMPLATE
-        && crate::globals::input_stack(crate::globals::base_ptr()).loc == crate::mem::TEX_NULL
-        && crate::globals::input_stack(crate::globals::base_ptr()).state == TOKEN_LIST
+    st.input.base_ptr = st.input.input_ptr;
+    st.input.input_stack[st.input.base_ptr as usize] = crate::globals::cur_input();
+    while st.input.input_stack[st.input.base_ptr as usize].index != V_TEMPLATE
+        && st.input.input_stack[st.input.base_ptr as usize].loc == crate::mem::TEX_NULL
+        && st.input.input_stack[st.input.base_ptr as usize].state == TOKEN_LIST
     {
-        crate::globals::set_base_ptr(crate::globals::base_ptr() - 1);
+        st.input.base_ptr -= 1;
     }
-    if crate::globals::input_stack(crate::globals::base_ptr()).index != V_TEMPLATE
-        || crate::globals::input_stack(crate::globals::base_ptr()).loc != crate::mem::TEX_NULL
-        || crate::globals::input_stack(crate::globals::base_ptr()).state != TOKEN_LIST
+    if st.input.input_stack[st.input.base_ptr as usize].index != V_TEMPLATE
+        || st.input.input_stack[st.input.base_ptr as usize].loc != crate::mem::TEX_NULL
+        || st.input.input_stack[st.input.base_ptr as usize].state != TOKEN_LIST
     {
-        crate::errors::fatal_error(c"(interwoven alignment preambles are not allowed)".as_ptr());
+        return Err(MainControlAbort::Input(crate::input::InputAbort::Fatal(
+            c"(interwoven alignment preambles are not allowed)".as_ptr(),
+        )));
     }
-    if cur_group() == ALIGN_GROUP {
-        end_graf();
-        if fin_col() {
-            fin_row();
+    if st.save_stack.cur_group == ALIGN_GROUP {
+        end_graf_in(st)?;
+        if fin_col_in(st)? {
+            fin_row_in(st)?;
         }
     } else {
-        off_save();
+        off_save_in(st)?;
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:9799 (unpackage)
 pub unsafe fn unpackage() {
@@ -4827,6 +4801,14 @@ pub unsafe fn main_control_box_list_cases() {
 }
 // translated from xetex-xetex0.c:6993 (main_control alignment/endcsname cases)
 pub unsafe fn main_control_alignment_cases() {
+    if let Err(e) = crate::state::with_state_mut(main_control_alignment_cases_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn main_control_alignment_cases_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const VMODE_MC: u16 = 1;
     const HMODE_MC: u16 = 104;
     const MMODE_MC: u16 = 207;
@@ -4841,40 +4823,46 @@ pub unsafe fn main_control_alignment_cases() {
 
     match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
         (VMODE_MC, NO_ALIGN_MC) | (HMODE_MC, NO_ALIGN_MC) | (MMODE_MC, NO_ALIGN_MC) => {
-            no_align_error()
+            no_align_error_in(st)?
         }
-        (VMODE_MC, OMIT_MC) | (HMODE_MC, OMIT_MC) | (MMODE_MC, OMIT_MC) => omit_error(),
-        (VMODE_MC, HALIGN_MC) => init_align(),
+        (VMODE_MC, OMIT_MC) | (HMODE_MC, OMIT_MC) | (MMODE_MC, OMIT_MC) => omit_error_in(st)?,
+        (VMODE_MC, HALIGN_MC) => init_align_in(st)?,
         (HMODE_MC, VALIGN_MC) => {
             if cur_chr() > 0 {
-                if eTeX_enabled(
-                    crate::globals::eqtb_b32s1(INT_BASE + INT_PAR_TEXXET_MC) > 0,
+                let enabled = crate::scan::eTeX_enabled_in(
+                    st,
+                    st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_MC) > 0,
                     cur_cmd() as u16,
                     cur_chr(),
-                ) {
-                    let p = crate::mem::new_math_global(0, cur_chr() as i16);
-                    crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), p);
+                )?;
+                if enabled {
+                    let p = crate::mem::new_math(&mut st.mem, 0, cur_chr() as i16);
+                    if p == crate::mem::ALLOC_FAILED {
+                        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+                    }
+                    st.mem.set_b32s1(crate::globals::cur_list_tail(), p);
                     crate::globals::set_cur_list_tail(p);
                 }
             } else {
-                init_align();
+                init_align_in(st)?;
             }
         }
         (MMODE_MC, HALIGN_MC) => {
-            if privileged() {
-                if crate::globals::cur_group() == MATH_SHIFT_GROUP_MC {
-                    init_align();
+            if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
+                if st.save_stack.cur_group == MATH_SHIFT_GROUP_MC {
+                    init_align_in(st)?;
                 } else {
-                    off_save();
+                    off_save_in(st)?;
                 }
             }
         }
-        (VMODE_MC, ENDV_MC) | (HMODE_MC, ENDV_MC) => do_endv(),
+        (VMODE_MC, ENDV_MC) | (HMODE_MC, ENDV_MC) => do_endv_in(st)?,
         (VMODE_MC, END_CS_NAME_MC) | (HMODE_MC, END_CS_NAME_MC) | (MMODE_MC, END_CS_NAME_MC) => {
-            cs_error()
+            mc_propagate_error(crate::errors::cs_error_in(st))?
         }
         _ => {}
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:7006 (main_control math entry/exit cases)
 pub unsafe fn main_control_math_cases() {
