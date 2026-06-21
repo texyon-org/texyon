@@ -8,6 +8,57 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 212 — 2026-06-21 — Execution: thread more box/list-DAG verbs (`unsave`/`insert_src_special`/`package`/`new_graf`/`build_discretionary`/`build_choices`/`push_math`)
+
+**Type:** execution (workstream 01). Large mechanical continuation of the
+session-211 box/list DAG. Five commits.
+
+**Code:**
+- **`unsave` → `unsave_in(&mut EngineState) -> Result<(), UnsaveAbort>`** (save.rs):
+  one borrow over the level pop, inlining a threaded `sa_restore_in` loop and
+  calling the threaded `eq_destroy`/`group_warning_in`/`back_input_in` under it;
+  `cur_tok`/`cur_input` stay raw `mod raw`. New `UnsaveAbort` (Save/Input/
+  MainMemory) fired by the thin wrapper. Added `SaveStackState` `b16s1`/`b16s0`/
+  `word` readers. Deleted dead `sa_restore_global`/`eq_destroy_global`/
+  `group_warning` + dead globals accessors (`save_stack_b16s0`/`b16s1`/`word`,
+  `set_save_stack_word`, `cur_boundary`, `grp_stack`, `xeq_level`).
+- **texmfmp src-special helpers** `is_new_source`/`make_src_special`/
+  `remember_source_info` → safe `_in` cores (narrow unsafe around the FFI), then
+  **`insert_src_special` → `insert_src_special_in`** over `str_toks_cat_in`/
+  `get_avail`/`begin_token_list_in` with the `InsertSrcAbort` sentinel.
+- **`package` → `package_in`** and **`new_graf` → `new_graf_in`**: each one borrow
+  over `unsave_in`/`hpack_emit_in`/`vpackage_emit_in`/`pop_nest_in`/`box_end_in`
+  and `push_nest_in`/`new_param_glue`/`new_null_box`/`insert_src_special_in`/
+  `build_page_in`. Extended `MainControlAbort` with `Unsave`/`InsertSrc` arms.
+  Deleted dead `box_end`/`cur_box`/`set_cur_box`/`insert_src_special_every_par`.
+- **`push_math` → `push_math_in`**, **`build_choices` → `build_choices_in`**
+  (math.rs), **`build_discretionary` → `build_discretionary_in`**: each one borrow
+  over the threaded `unsave_in`/`fin_mlist`/`pop_nest_in`/`new_save_level`/
+  `scan_left_brace_in`/`push_nest_in` and the output/error `_in` diagnostics;
+  recoverable `error()` sites propagate via `MainControlAbort::Error`.
+
+**Validation:** `cargo check`+`fmt`; dashboard **29/2/7/4** per commit; release
+rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1`/`1905.00148v1`, no NOXDV/NOLOG (new_graf/package are hot-path).
+Metrics: warnings **41** (held); `unsafe fn` **480 → 479**; `with_state` sites
+**734 → ~725**.
+
+**Next (handle_right_brace_in + the dispatcher are blocked on the alignment
+subsystem):** `handle_right_brace_in`'s `NO_ALIGN_GROUP`/`ALIGN_GROUP` arms call
+`align_peek`, which pulls in the **un-threaded alignment subsystem**
+(`fin_align`/`init_row`/`init_col`/`get_x_or_protected`/`normal_paragraph`) — a
+separate multi-session slice. Likewise `main_control_box_list_cases` dispatches
+~20 verbs, many alignment-dependent (`head_for_vmode`/`begin_insert_or_adjust`/
+`make_mark`/`delete_last`/`unpackage`/`append_discretionary`/`make_accent`/
+`align_error`/`off_save`/`indent_in_hmode`/`normal_paragraph`/`scan_dimen`).
+**Thread the alignment subsystem next** (then `align_peek_in` → `handle_right_brace_in`),
+or pick off the remaining standalone dispatcher verbs (`make_mark`/`delete_last`/
+`unpackage`/`append_discretionary`/`make_accent`) one at a time. The
+`build_discretionary_in`/`build_choices_in` cores already exist for the future
+`handle_right_brace_in` DISC/MATH_CHOICE arms.
+
+---
+
 ## Idiom session 211 — 2026-06-21 — Execution: thread the box/list verb DAG (`box_end`/`begin_box`/`scan_box`/`end_graf`)
 
 **Type:** execution (workstream 01). Large mechanical session: the
