@@ -8,20 +8,72 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
-## Idiom session 216 — 2026-06-21 — Execution: thread small scanner leaves, read_toks, hyphenation patterns, and register commands
+## Idiom session 216 — 2026-06-21 — Execution: thread the prefixed_command prerequisite helpers (blocked on the font loader)
 
-**Type:** execution (workstream 01). Threaded scanner leaves, token reading, hyphenation parameters, and register assignment operations. Five commits.
+**Type:** execution (workstream 01). Large mechanical session toward
+`prefixed_command_in` (the session-215 "Next"). Five commits (4 threading + 1
+rustfmt). Threaded every `prefixed_command` callee that lacked an `_in` core
+**except** `new_font`, which a recon found is blocked on the un-threaded
+font-loading subsystem.
 
 **Code:**
-- **Small scanner leaves**: Threaded `scan_char_class`, `scan_math_class_int`, `scan_four_bit_int`, `scan_fifteen_bit_int`, and `scan_xetex_math_char_int` into `_in(&mut EngineState)` cores in `scan.rs`, using `leaf_int_range_error` and inlining `get_r_token`.
-- **`read_toks`**: Threaded into `read_toks_in(&mut EngineState) -> Result<i32, SccAbort>` under a single borrow over `st.scanner`/`st.input`/`st.mem` direct + `get_avail_scc`/`get_token_in`/`begin_file_reading_in`/`input_line_in`/`end_file_reading_in`/`runaway_in`. Deleted dead `begin_file_reading` and `buffer_entry` wrappers.
-- **Hyphenation patterns**: Threaded `new_patterns` and `new_hyph_exceptions` into `_in` cores in `hyphenation.rs` under a single borrow over `st.hyph`/`st.strings`/`st.eqtb` direct. Added `MainControlAbort::Trie(TrieAbort)` arm. Deleted dead `hc_entry`, `set_hc_entry`, `set_hyf_entry`, `trie_tr[lroc]_entry`, `hyph_index`, `set_hyph_index`, `cur_lang`, `set_cur_lang`, `str_pool_entry` accessors + non-`_in` `max_hyphenatable_length`.
-- **Register commands**: Threaded `do_register_command` into `do_register_command_in(&mut EngineState) -> Result<(), MainControlAbort>` executing `\advance`/`\multiply`/`\divide` under a single borrow over `st.mem`/`st.eqtb`/`st.errors` direct. Recoverable errors use `mc_propagate_error`. Deleted `sa_w_def_global` and `gsa_w_def_global`.
-- **Formatting**: Ran `rustfmt` on all modified slices.
+- **Commit 1 — small scanner leaves** (scan.rs): `scan_char_class`/
+  `scan_math_class_int`/`scan_four_bit_int`/`scan_fifteen_bit_int` → `_in` via
+  `leaf_int_range_error`; `scan_xetex_math_char_int` + `get_r_token` inline
+  (`get_token_in`/`back_input_in`/`ins_error_in` under the borrow). All keep thin
+  `with_state_mut` wrappers (`Result<(), SccAbort>`).
+- **Commit 2 — `read_toks` → `read_toks_in`** (scan.rs): one borrow over the
+  `\read` scanner (`st.scanner`/`st.input`/`st.mem` direct, `get_avail_scc`/
+  `get_token_in`/`begin_file_reading_in`/`input_line_in`/`end_file_reading_in`/
+  `runaway_in`); `_tt_abort` + arena exhaustion ride `SccAbort::Input`. Deleted
+  dead `begin_file_reading` + `buffer_entry` wrappers.
+- **Commit 3 — `new_patterns_in` + `new_hyph_exceptions_in`** (hyphenation.rs):
+  single-borrow `\patterns`/`\hyphenation` over `st.hyph`/`st.strings`/`st.eqtb`
+  direct + `scan_left_brace_in`/`get_x_token_in`/`scan_toks_in`/`scan_char_num_in`/
+  `get_avail_scc`/`make_string`/`flush_list`. Recoverable errors via
+  `mc_propagate_error` (now `pub(crate)`); pool/dictionary overflow rides
+  `InputAbort::Overflow`; trie overflow via a **new `MainControlAbort::Trie(TrieAbort)`**
+  arm. Deleted dead hyph/strings globals accessors (`hc_entry`/`set_hc_entry`/
+  `set_hyf_entry`/`trie_tr[lroc]_entry`/`hyph_index`/`set_hyph_index`/`cur_lang`/
+  `set_cur_lang`/`str_pool_entry`) + the non-`_in` `max_hyphenatable_length`.
+- **Commit 4 — `do_register_command_in`** (main_control.rs): single-borrow
+  `\advance`/`\multiply`/`\divide` over `st.mem`/`st.eqtb`/`st.errors` direct +
+  the scanner `_in` cores, `find_sa_element`/`new_spec`/`delete_glue_ref`/
+  `mult_and_add_in`/`x_over_n_in`, and the save defines (`eq[_word]_define`/
+  `geq[_word]_define`/`sa[_w]_def`/`gsa[_w]_def` + `finish_sa_mutation_in`).
+  Arena exhaustion via `NodeRecycleAbort::Overflow`. Deleted dead
+  `sa_w_def_global`/`gsa_w_def_global`; gated the test-only `mult_and_add`/
+  `x_over_n` wrappers on `cfg(test)`.
+- **Commit 5 — rustfmt** the slices.
 
-**Validation:** `cargo check -p tectonic_engine_xetex`; dashboard **29/2/7/4** (`tex-outputs`, TRIP+eTRIP, `engine_rust`, `latex_goldens`); release rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1`/`1905.00148v1`. Metrics: warnings **41** (held); `unsafe fn` **486 → 470**; `with_state` sites **803**.
+**Key blocker finding (`prefixed_command` is gated on the font loader, not the
+alignment SCC):** an exhaustive audit of `prefixed_command`'s callees shows the
+**only** function-level blocker left is `new_font` (the `DEF_FONT` arm); every
+other callee now has an `_in` core or is a trivial `with_state` field accessor
+(`eqtb_b32s1`/`mem_b32s*`/`def_ref`/`avail`/`font_area_entry`/`set_help_*`/…,
+rewritten inline when `prefixed_command` threads). `new_font` calls
+`read_font_info` (fonts.rs, 170 lines) → `read_font_info_tfm` (381) /
+`load_native_font` (149) / `load_tfm_font_mapping`/`check_for_tfm_font_mapping`
+(ext.rs) — **the entire font-loading subsystem is un-threaded** and
+`with_state`-heavy, so `new_font_in` can't hold one borrow across it. Recon
+shows the font loaders use **localized `with_state` islands** (fonts.rs:413,
+1108), **not** an OT-math-style re-entrant FFI wall (no `tt_get_font_*`
+callbacks), so they thread cleanly bottom-up — but it is a multi-commit
+subsystem in its own right. **`do_assignments_in` and the alignment cycle are
+therefore downstream of the font loader**, correcting the session-215 "Next".
 
-**Next:** thread `prefixed_command` (dispatcher and assignments) and the remaining alignment SCC.
+**Validation:** `cargo check`+`fmt`; dashboard **29/2/7/4** per commit; release
+rebuild (warnings **41**, held); full corpus **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1`, doc-count 639 ==
+baseline, no NOXDV/NOLOG. Metrics: `unsafe fn` **475 → 470**; `with_state` sites
+**740 → 730**.
+
+**Next:** thread the **font-loading subsystem** bottom-up — `read_font_info_tfm`
+/ `load_native_font` (+ `load_tfm_font_mapping`/`check_for_tfm_font_mapping` in
+ext.rs) → `read_font_info` → `new_font_in`. Then `prefixed_command_in` is a
+mechanical single-borrow pass (all other callees ready) → `do_assignments_in`
+(trivial) → the `fin_align`/`align_peek`/`init_align`/`fin_row` cycle →
+`handle_right_brace_in` → the dispatcher.
 
 ---
 
