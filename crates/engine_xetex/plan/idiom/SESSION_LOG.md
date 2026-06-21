@@ -8,6 +8,32 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 219 — 2026-06-21 — Execution: thread `new_font`
+
+**Type:** execution (workstream 01). One focused commit after the font-loader
+hub.
+
+**Code:** commit `6dcc9a6c` adds
+`main_control::new_font_in(&mut EngineState, a) -> Result<(), MainControlAbort>`
+and makes legacy `new_font` a thin wrapper. The threaded core uses
+`open_log_file_in`, scanner `_in` calls, direct `st.strings`/`st.scanner`/
+`st.fonts`/`st.eqtb` access, `string_pool::{make_string,append_str,str_eq_str}`,
+`save::{eq_define,geq_define}`, and `read_font_info_in`. Added
+`MainControlAbort::{OpenLog,MakeTexString,ReadFontInfo}` and deleted the now-dead
+`fonts::read_font_info` bridge.
+
+**Validation:** `cargo fmt -p tectonic_engine_xetex`; `cargo check -p
+tectonic_engine_xetex` (warnings **41**); dashboard **29/2/7/4**; release
+rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1` and `1905.00148v1`.
+
+**Next:** `prefixed_command_in` + `do_assignments_in`. Subagent recon suggests a
+full mechanical `prefixed_command_in` copy, first switching the low-risk branches
+(`DEF_FONT`, register ops, `SET_AUX`/`SET_PREV_GRAF`/`SET_PAGE_*`/
+`SET_BOX_DIMEN`, `SET_INTERACTION`) before the allocation/token-heavy branches.
+
+---
+
 ## Idiom session 218 — 2026-06-21 — Execution: thread the font-loader hub through `read_font_info`
 
 **Type:** execution (workstream 01). Larger mechanical font-loader batch.
