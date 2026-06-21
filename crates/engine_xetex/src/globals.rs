@@ -1934,10 +1934,6 @@ pub(crate) fn set_radix(v: u8) {
 // page builder / last-node / output_active / random_seed / pdf positions
 // ---------------------------------------------------------------------------
 #[inline]
-pub(crate) fn dead_cycles() -> i32 {
-    crate::state::with_state(|state| state.shipout.dead_cycles)
-}
-#[inline]
 pub(crate) fn set_dead_cycles(v: i32) {
     crate::state::with_state_mut(|state| {
         state.shipout.dead_cycles = v;
@@ -2338,11 +2334,6 @@ pub(crate) fn set_par_loc(v: i32) {
     crate::state::with_state_mut(|s| {
         s.input.par_loc = v;
     });
-}
-/// Returns `par_token` — CS_TOKEN_FLAG + par_loc (xetex-xetexd.h:523).
-#[inline]
-pub(crate) fn par_token() -> i32 {
-    crate::state::with_state(|s| s.input.par_token)
 }
 /// Sets `par_token`.
 #[inline]
@@ -3270,10 +3261,6 @@ pub(crate) fn set_cur_loop(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.cur_loop = v;
     });
-}
-#[inline]
-pub(crate) fn align_ptr() -> i32 {
-    crate::state::with_state(|s| s.scanner.align_ptr)
 }
 #[inline]
 pub(crate) fn set_align_ptr(v: i32) {

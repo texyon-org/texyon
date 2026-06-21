@@ -93,13 +93,6 @@ extern "C" {
 
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
-// translated from xetex-xetex0.c:4003 (expand)
-pub unsafe fn expand() {
-    if let Err(e) = crate::state::with_state_mut(|st| expand_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
 // scanner / `expand` SCC — threaded `_in` cores (session 204 big pass).
 // Stubs first (manifest §d step 1); bodies translated from the global versions.
 // ---------------------------------------------------------------------------

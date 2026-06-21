@@ -19,7 +19,6 @@ use crate::engine::intpar;
 use crate::errors::{
     box_error, cs_error, error, extra_right_brace, int_error, privileged, report_illegal_case,
 };
-use crate::expand::expand;
 use crate::ext::{
     append_src_special, apply_mapping, do_extension, get_native_char_height_depth_global,
     get_native_char_sidebearings_global, insert_src_special, map_char_to_glyph_global,
@@ -721,7 +720,14 @@ pub unsafe fn align_peek() {
 }
 // translated from xetex-xetex0.c:7728 (get_preamble_token)
 pub unsafe fn get_preamble_token() {
-    use crate::globals::{cur_chr, cur_cmd};
+    if let Err(e) = crate::state::with_state_mut(get_preamble_token_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn get_preamble_token_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const TAB_MARK: u8 = 4; // xetex_format.h:234
     const SPAN_CODE_GPT: i32 = 1_114_113; // xetex_format.h:679
     const GLUE_REF_GPT: u16 = 119; // xetex_format.h:361
@@ -729,144 +735,196 @@ pub unsafe fn get_preamble_token() {
     const GLUE_BASE_TAB_SKIP: i32 = GLUE_BASE + 11;
 
     'restart: loop {
-        get_token();
+        crate::scan::get_token_in(st)?;
         while cur_chr() == SPAN_CODE_GPT && cur_cmd() == TAB_MARK {
-            get_token();
+            crate::scan::get_token_in(st)?;
             if cur_cmd() > MAX_COMMAND {
-                expand();
-                get_token();
+                crate::expand::expand_in(st)?;
+                crate::scan::get_token_in(st)?;
             }
         }
         if cur_cmd() == ENDV {
-            crate::errors::fatal_error(
-                c"(interwoven alignment preambles are not allowed)".as_ptr(),
-            );
+            unsafe {
+                crate::errors::fatal_error(
+                    c"(interwoven alignment preambles are not allowed)".as_ptr(),
+                );
+            }
         }
         if cur_cmd() == ASSIGN_GLUE && cur_chr() == GLUE_BASE_TAB_SKIP {
-            scan_optional_equals();
-            scan_glue(GLUE_VAL);
-            if eqtb_b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) > 0 {
-                crate::save::geq_define_global(GLUE_BASE_TAB_SKIP, GLUE_REF_GPT, cur_val());
+            crate::scan::scan_optional_equals_in(st)?;
+            crate::scan::scan_glue_in(st, GLUE_VAL)?;
+            if st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) > 0 {
+                if let Some(a) = crate::save::geq_define(
+                    &mut st.eqtb,
+                    &mut st.mem,
+                    &mut st.scanner,
+                    GLUE_BASE_TAB_SKIP,
+                    GLUE_REF_GPT,
+                    cur_val(),
+                ) {
+                    return Err(MainControlAbort::Save(a));
+                }
             } else {
-                crate::save::eq_define_global(GLUE_BASE_TAB_SKIP, GLUE_REF_GPT, cur_val());
+                if let Some(a) = crate::save::eq_define(
+                    &mut st.eqtb,
+                    &mut st.save_stack,
+                    &mut st.mem,
+                    &mut st.scanner,
+                    GLUE_BASE_TAB_SKIP,
+                    GLUE_REF_GPT,
+                    cur_val(),
+                ) {
+                    return Err(MainControlAbort::Save(a));
+                }
             }
             continue 'restart;
         }
         break;
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:7880 (init_span)
 pub unsafe fn init_span(p: i32) {
-    use crate::globals::{
-        cur_list_mode, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_span,
-    };
+    if let Err(e) = crate::state::with_state_mut(|st| init_span_in(st, p)) {
+        e.fire();
+    }
+}
+
+pub(crate) fn init_span_in(
+    st: &mut crate::state::EngineState,
+    p: i32,
+) -> Result<(), MainControlAbort> {
     const INNER_HMODE: i16 = -104;
 
-    crate::mem::push_nest();
+    crate::mem::push_nest_in(st)?;
     if cur_list_mode() == INNER_HMODE {
-        set_cur_list_aux_b32s0(1000);
+        crate::globals::set_cur_list_aux_b32s0(1000);
     } else {
-        set_cur_list_aux_b32s1(IGNORE_DEPTH);
-        normal_paragraph_global();
+        crate::globals::set_cur_list_aux_b32s1(IGNORE_DEPTH);
+        if let Some(a) = normal_paragraph(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            &mut st.mem,
+            &mut st.scanner,
+        ) {
+            return Err(MainControlAbort::Save(a));
+        }
     }
-    set_cur_span(p);
+    st.scanner.cur_span = p;
+    Ok(())
 }
 // translated from xetex-xetex0.c:7893 (init_row)
 pub unsafe fn init_row() {
-    use crate::globals::{
-        cur_head, cur_list_mode, cur_list_tail, cur_pre_head, set_cur_align,
-        set_cur_list_aux_b32s0, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_tail,
-        set_cur_pre_tail, set_cur_tail_a, set_mem_b16s0, set_mem_b32s1,
-    };
+    if let Err(e) = crate::state::with_state_mut(init_row_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn init_row_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const ALIGN_HEAD_IR: i32 = 4_999_991;
     const GLUE_PAR_TAB_SKIP: u16 = 11 + 1; // GLUE_PAR__tab_skip + 1
 
-    crate::mem::push_nest();
+    crate::mem::push_nest_in(st)?;
     let new_mode = -105 - cur_list_mode() as i32;
-    set_cur_list_mode(new_mode as i16);
+    crate::globals::set_cur_list_mode(new_mode as i16);
     if new_mode == -104 {
-        set_cur_list_aux_b32s0(0);
+        crate::globals::set_cur_list_aux_b32s0(0);
     } else {
-        set_cur_list_aux_b32s1(0);
+        crate::globals::set_cur_list_aux_b32s1(0);
     }
-    let align_head_link = mem_b32s1(ALIGN_HEAD_IR);
-    let glue_node = crate::mem::new_glue_global(mem_b32s0(align_head_link + 1));
-    set_mem_b32s1(cur_list_tail(), glue_node);
-    set_cur_list_tail(mem_b32s1(cur_list_tail()));
-    set_mem_b16s0(cur_list_tail(), GLUE_PAR_TAB_SKIP);
-    set_cur_align(mem_b32s1(align_head_link));
-    set_cur_tail_a(cur_head());
-    set_cur_pre_tail(cur_pre_head());
-    init_span(crate::globals::cur_align());
+    let align_head_link = st.mem.b32s1(ALIGN_HEAD_IR);
+    let glue_spec = st.mem.b32s0(align_head_link + 1);
+    let glue_node = crate::mem::new_glue(&mut st.mem, glue_spec);
+    if glue_node == crate::mem::ALLOC_FAILED {
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+    }
+    st.mem.set_b32s1(crate::globals::cur_list_tail(), glue_node);
+    crate::globals::set_cur_list_tail(st.mem.b32s1(crate::globals::cur_list_tail()));
+    st.mem
+        .set_b16s0(crate::globals::cur_list_tail(), GLUE_PAR_TAB_SKIP);
+    st.scanner.cur_align = st.mem.b32s1(align_head_link);
+    st.scanner.cur_tail = st.scanner.cur_head;
+    st.scanner.cur_pre_tail = st.scanner.cur_pre_head;
+    init_span_in(st, st.scanner.cur_align)?;
+    Ok(())
 }
 // translated from xetex-xetex0.c:7912 (init_col)
 pub unsafe fn init_col() {
-    use crate::globals::{cur_align, cur_cmd, set_align_state, set_mem_b32s0};
+    if let Err(e) = crate::state::with_state_mut(init_col_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn init_col_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const OMIT_CMD: u8 = 63; // xetex_format.h:301
     const U_TEMPLATE: u16 = 1; // xetex-constants.h:200
 
-    set_mem_b32s0(cur_align() + 5, cur_cmd() as i32);
+    st.mem.set_b32s0(st.scanner.cur_align + 5, cur_cmd() as i32);
     if cur_cmd() == OMIT_CMD {
-        set_align_state(0);
+        st.scanner.align_state = 0;
     } else {
-        crate::input::back_input();
-        begin_token_list(mem_b32s1(cur_align() + 3), U_TEMPLATE);
+        crate::input::back_input_in(st)?;
+        crate::input::begin_token_list_in(st, st.mem.b32s1(st.scanner.cur_align + 3), U_TEMPLATE)?;
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:7724 (push_alignment)
 pub unsafe fn push_alignment() {
-    use crate::globals::{
-        align_ptr, align_state, cur_align, cur_head, cur_loop, cur_pre_head, cur_pre_tail,
-        cur_span, cur_tail_a, set_align_ptr, set_cur_head, set_cur_pre_head, set_mem_b32s0,
-        set_mem_b32s1,
-    };
+    if let Err(e) = crate::state::with_state_mut(push_alignment_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn push_alignment_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const ALIGN_HEAD: i32 = 4_999_991; // MEM_TOP - 8
     const ALIGN_STACK_NODE_SIZE: i32 = 6; // xetex-constants.h:129
 
-    let p = crate::mem::get_node_global(ALIGN_STACK_NODE_SIZE);
-    set_mem_b32s1(p, align_ptr());
-    set_mem_b32s0(p, cur_align());
-    set_mem_b32s0(p + 1, mem_b32s1(ALIGN_HEAD));
-    set_mem_b32s1(p + 1, cur_span());
-    set_mem_b32s1(p + 2, cur_loop());
-    set_mem_b32s1(p + 3, align_state());
-    set_mem_b32s0(p + 4, cur_head());
-    set_mem_b32s1(p + 4, cur_tail_a());
-    set_mem_b32s0(p + 5, cur_pre_head());
-    set_mem_b32s1(p + 5, cur_pre_tail());
-    set_align_ptr(p);
-    set_cur_head(crate::mem::get_avail_global());
-    set_cur_pre_head(crate::mem::get_avail_global());
+    let p = crate::scan::get_node_scc(st, ALIGN_STACK_NODE_SIZE)?;
+    st.mem.set_b32s1(p, st.scanner.align_ptr);
+    st.mem.set_b32s0(p, st.scanner.cur_align);
+    st.mem.set_b32s0(p + 1, st.mem.b32s1(ALIGN_HEAD));
+    st.mem.set_b32s1(p + 1, st.scanner.cur_span);
+    st.mem.set_b32s1(p + 2, st.scanner.cur_loop);
+    st.mem.set_b32s1(p + 3, st.scanner.align_state);
+    st.mem.set_b32s0(p + 4, st.scanner.cur_head);
+    st.mem.set_b32s1(p + 4, st.scanner.cur_tail);
+    st.mem.set_b32s0(p + 5, st.scanner.cur_pre_head);
+    st.mem.set_b32s1(p + 5, st.scanner.cur_pre_tail);
+    st.scanner.align_ptr = p;
+    st.scanner.cur_head = crate::scan::get_avail_scc(st)?;
+    st.scanner.cur_pre_head = crate::scan::get_avail_scc(st)?;
+    Ok(())
 }
 // translated from xetex-xetex0.c:7743 (pop_alignment)
 pub fn pop_alignment() {
-    use crate::globals::{
-        align_ptr, avail, cur_head, cur_pre_head, mem_b32s0, set_align_ptr, set_align_state,
-        set_cur_align, set_cur_head, set_cur_loop, set_cur_pre_head, set_cur_pre_tail,
-        set_cur_span, set_cur_tail_a, set_mem_b32s1,
-    };
+    crate::state::with_state_mut(pop_alignment_in);
+}
+
+pub(crate) fn pop_alignment_in(st: &mut crate::state::EngineState) {
     const ALIGN_HEAD: i32 = 4_999_991;
     const ALIGN_STACK_NODE_SIZE: i32 = 6;
 
     // free_avail(cur_head): mem[cur_head].b32.s1 = avail; avail = cur_head
-    crate::globals::set_mem_b32s1(cur_head(), avail());
-    crate::globals::set_avail(cur_head());
+    st.mem.set_b32s1(st.scanner.cur_head, st.mem.avail);
+    st.mem.avail = st.scanner.cur_head;
     // free_avail(cur_pre_head)
-    crate::globals::set_mem_b32s1(cur_pre_head(), avail());
-    crate::globals::set_avail(cur_pre_head());
+    st.mem.set_b32s1(st.scanner.cur_pre_head, st.mem.avail);
+    st.mem.avail = st.scanner.cur_pre_head;
 
-    let p = align_ptr();
-    set_cur_tail_a(mem_b32s1(p + 4));
-    set_cur_head(mem_b32s0(p + 4));
-    set_cur_pre_tail(mem_b32s1(p + 5));
-    set_cur_pre_head(mem_b32s0(p + 5));
-    set_align_state(mem_b32s1(p + 3));
-    set_cur_loop(mem_b32s1(p + 2));
-    set_cur_span(mem_b32s1(p + 1));
-    set_mem_b32s1(ALIGN_HEAD, mem_b32s0(p + 1));
-    set_cur_align(mem_b32s0(p));
-    set_align_ptr(mem_b32s1(p));
-    crate::mem::free_node_global(p, ALIGN_STACK_NODE_SIZE);
+    let p = st.scanner.align_ptr;
+    st.scanner.cur_tail = st.mem.b32s1(p + 4);
+    st.scanner.cur_head = st.mem.b32s0(p + 4);
+    st.scanner.cur_pre_tail = st.mem.b32s1(p + 5);
+    st.scanner.cur_pre_head = st.mem.b32s0(p + 5);
+    st.scanner.align_state = st.mem.b32s1(p + 3);
+    st.scanner.cur_loop = st.mem.b32s1(p + 2);
+    st.scanner.cur_span = st.mem.b32s1(p + 1);
+    st.mem.set_b32s1(ALIGN_HEAD, st.mem.b32s0(p + 1));
+    st.scanner.cur_align = st.mem.b32s0(p);
+    st.scanner.align_ptr = st.mem.b32s1(p);
+    crate::mem::free_node(&mut st.mem, p, ALIGN_STACK_NODE_SIZE);
 }
 // translated from xetex-xetex0.c:7859 (fin_col)
 pub unsafe fn fin_col() -> bool {
@@ -1439,30 +1497,48 @@ pub unsafe fn normal_paragraph_global() {
 }
 // translated from xetex-xetex0.c:9332 (its_all_over)
 pub unsafe fn its_all_over() -> bool {
-    if privileged() {
-        if crate::globals::page_tail() == PAGE_HEAD
-            && crate::globals::cur_list_head() == crate::globals::cur_list_tail()
-            && crate::globals::dead_cycles() == 0
-        {
-            return true;
-        }
-        crate::input::back_input();
-        let nb = crate::mem::new_null_box_global();
-        set_mem_b32s1(crate::globals::cur_list_tail(), nb);
-        crate::globals::set_cur_list_tail(nb);
-        set_mem_b32s1(
-            crate::globals::cur_list_tail() + 1,
-            eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE),
-        );
-        let ng = crate::mem::new_glue_global(8);
-        set_mem_b32s1(crate::globals::cur_list_tail(), ng);
-        crate::globals::set_cur_list_tail(ng);
-        let np = crate::mem::new_penalty_global(NULL_FLAG);
-        set_mem_b32s1(crate::globals::cur_list_tail(), np);
-        crate::globals::set_cur_list_tail(np);
-        build_page();
+    match crate::state::with_state_mut(its_all_over_in) {
+        Ok(v) => v,
+        Err(e) => e.fire(),
     }
-    false
+}
+
+pub(crate) fn its_all_over_in(
+    st: &mut crate::state::EngineState,
+) -> Result<bool, MainControlAbort> {
+    if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
+        if st.shipout.page_tail == PAGE_HEAD
+            && crate::globals::cur_list_head() == crate::globals::cur_list_tail()
+            && st.shipout.dead_cycles == 0
+        {
+            return Ok(true);
+        }
+        crate::input::back_input_in(st)?;
+        let nb = crate::mem::new_null_box(&mut st.mem);
+        if nb == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+        }
+        st.mem.set_b32s1(crate::globals::cur_list_tail(), nb);
+        crate::globals::set_cur_list_tail(nb);
+        st.mem.set_b32s1(
+            crate::globals::cur_list_tail() + 1,
+            st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE),
+        );
+        let ng = crate::mem::new_glue(&mut st.mem, 8);
+        if ng == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+        }
+        st.mem.set_b32s1(crate::globals::cur_list_tail(), ng);
+        crate::globals::set_cur_list_tail(ng);
+        let np = crate::mem::new_penalty(&mut st.mem, NULL_FLAG);
+        if np == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+        }
+        st.mem.set_b32s1(crate::globals::cur_list_tail(), np);
+        crate::globals::set_cur_list_tail(np);
+        crate::pagebuilder::build_page_in(st)?;
+    }
+    Ok(false)
 }
 // translated from xetex-xetex0.c:9808 (indent_in_hmode)
 ///
@@ -1511,31 +1587,36 @@ pub unsafe fn indent_in_hmode_global() {
 }
 // translated from xetex-xetex0.c:9831 (head_for_vmode)
 pub unsafe fn head_for_vmode() {
+    if let Err(e) = crate::state::with_state_mut(head_for_vmode_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn head_for_vmode_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     if cur_list_mode() < 0 {
         if cur_cmd() != HRULE {
-            off_save();
+            off_save_in(st)?;
         } else {
-            error_here_with_diagnostic(c"You can't use `".as_ptr());
-            crate::output::print_esc_cstr(c"hrule".as_ptr());
-            crate::output::print_cstr(c"' here except with leaders".as_ptr());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(2);
-            set_help_line(
-                1,
-                c"To put a horizontal rule in an hbox or an alignment,".as_ptr(),
-            );
-            set_help_line(
-                0,
-                c"you should use \\leaders or \\hrulefill (see The TeXbook).".as_ptr(),
-            );
-            error();
+            crate::output::error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
+            crate::output::print_esc_cstr_in(st, c"hrule".as_ptr());
+            crate::output::print_cstr_in(st, c"' here except with leaders".as_ptr());
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 2;
+            st.errors.help_line[1] =
+                c"To put a horizontal rule in an hbox or an alignment,".as_ptr();
+            st.errors.help_line[0] =
+                c"you should use \\leaders or \\hrulefill (see The TeXbook).".as_ptr();
+            mc_propagate_error(crate::errors::error_in(st))?;
         }
     } else {
-        crate::input::back_input();
-        set_cur_tok(crate::globals::par_token());
-        crate::input::back_input();
+        crate::input::back_input_in(st)?;
+        set_cur_tok(st.input.par_token);
+        crate::input::back_input_in(st)?;
         set_cur_input_index(INSERTED);
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:9760 (begin_insert_or_adjust)
 pub unsafe fn begin_insert_or_adjust() {
@@ -3322,66 +3403,61 @@ pub unsafe fn fix_language_global() {
 }
 // translated from xetex-xetex0.c:9325 (off_save)
 pub unsafe fn off_save() {
-    if cur_group() == BOTTOM_LEVEL {
-        error_here_with_diagnostic(c"Extra ".as_ptr());
-        print_cmd_chr(cur_cmd() as u16, cur_chr());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(1);
-        set_help_line(
-            0,
-            c"Things are pretty mixed up, but I think the worst is over.".as_ptr(),
-        );
-        error();
+    if let Err(e) = crate::state::with_state_mut(off_save_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn off_save_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
+    if st.save_stack.cur_group == BOTTOM_LEVEL {
+        crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
+        crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 1;
+        st.errors.help_line[0] =
+            c"Things are pretty mixed up, but I think the worst is over.".as_ptr();
+        mc_propagate_error(crate::errors::error_in(st))?;
     } else {
-        crate::input::back_input();
-        let p = crate::mem::get_avail_global();
-        set_mem_b32s1(TEMP_HEAD, p);
-        error_here_with_diagnostic(c"Missing ".as_ptr());
-        match cur_group() {
+        crate::input::back_input_in(st)?;
+        let p = crate::scan::get_avail_scc(st)?;
+        st.mem.set_b32s1(TEMP_HEAD, p);
+        crate::output::error_here_with_diagnostic_in(st, c"Missing ".as_ptr());
+        match st.save_stack.cur_group {
             SEMI_SIMPLE_GROUP => {
-                set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_END_GROUP);
-                crate::output::print_esc_cstr(c"endgroup".as_ptr());
+                st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_END_GROUP);
+                crate::output::print_esc_cstr_in(st, c"endgroup".as_ptr());
             }
             MATH_SHIFT_GROUP => {
-                set_mem_b32s0(p, MATH_SHIFT_TOKEN + b'$' as i32);
-                crate::output::print_char(b'$' as i32);
+                st.mem.set_b32s0(p, MATH_SHIFT_TOKEN + b'$' as i32);
+                crate::output::print_char_in(st, b'$' as i32);
             }
             MATH_LEFT_GROUP => {
-                set_mem_b32s0(p, CS_TOKEN_FLAG + FROZEN_RIGHT);
-                let q = crate::mem::get_avail_global();
-                set_mem_b32s1(p, q);
-                let p2 = mem_b32s1(p); // = LLIST_link(p)
-                set_mem_b32s0(p2, OTHER_TOKEN + b'.' as i32);
-                crate::output::print_esc_cstr(c"right.".as_ptr());
+                st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_RIGHT);
+                let q = crate::scan::get_avail_scc(st)?;
+                st.mem.set_b32s1(p, q);
+                let p2 = st.mem.b32s1(p); // = LLIST_link(p)
+                st.mem.set_b32s0(p2, OTHER_TOKEN + b'.' as i32);
+                crate::output::print_esc_cstr_in(st, c"right.".as_ptr());
             }
             _ => {
-                set_mem_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
-                crate::output::print_char(b'}' as i32);
+                st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
+                crate::output::print_char_in(st, b'}' as i32);
             }
         }
-        crate::output::print_cstr(c" inserted".as_ptr());
-        begin_token_list(mem_b32s1(TEMP_HEAD), INSERTED);
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(5);
-        set_help_line(
-            4,
-            c"I've inserted something that you may have forgotten.".as_ptr(),
-        );
-        set_help_line(3, c"(See the <inserted text> above.)".as_ptr());
-        set_help_line(
-            2,
-            c"With luck, this will get me unwedged. But if you".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"really didn't forget anything, try typing `2' now; then".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"my insertion and my current dilemma will both disappear.".as_ptr(),
-        );
-        error();
+        crate::output::print_cstr_in(st, c" inserted".as_ptr());
+        crate::input::begin_token_list_in(st, st.mem.b32s1(TEMP_HEAD), INSERTED)?;
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 5;
+        st.errors.help_line[4] = c"I've inserted something that you may have forgotten.".as_ptr();
+        st.errors.help_line[3] = c"(See the <inserted text> above.)".as_ptr();
+        st.errors.help_line[2] = c"With luck, this will get me unwedged. But if you".as_ptr();
+        st.errors.help_line[1] =
+            c"really didn't forget anything, try typing `2' now; then".as_ptr();
+        st.errors.help_line[0] =
+            c"my insertion and my current dilemma will both disappear.".as_ptr();
+        mc_propagate_error(crate::errors::error_in(st))?;
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:9956 (append_discretionary)
 pub unsafe fn append_discretionary() {

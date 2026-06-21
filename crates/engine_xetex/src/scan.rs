@@ -28,9 +28,9 @@ use crate::output::error_here_with_diagnostic;
 
 use crate::globals::{
     align_state, buffer_entry, cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, eqtb_b32s1,
-    expand_depth, first, init_pool_ptr, last, mem_b32s0, mem_b32s1, pool_size, read_file_entry,
-    read_open_entry, save_ptr, set_align_state, set_buffer_entry, set_cur_chr, set_cur_cmd,
-    set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
+    expand_depth, first, init_pool_ptr, last, pool_size, read_file_entry, read_open_entry,
+    save_ptr, set_align_state, set_buffer_entry, set_cur_chr, set_cur_cmd, set_cur_cs,
+    set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
     set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_def_ref, set_first, set_help_line,
     set_help_ptr, set_line, set_mem_b32s0, set_mem_b32s1, set_no_new_control_sequence,
     set_read_open_entry, set_scanner_status, set_warning_index,
@@ -38,7 +38,7 @@ use crate::globals::{
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
 use crate::errors::int_error_in;
-use crate::expand::{expand, expand_in, macro_call_in};
+use crate::expand::{expand_in, macro_call_in};
 use crate::globals::{
     cur_list, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
     cur_ptr, set_cur_ptr,
@@ -550,18 +550,24 @@ pub unsafe fn get_x_token() {
 
 /// translated from xetex-xetex0.c:4533 (get_x_or_protected)
 pub unsafe fn get_x_or_protected() {
+    if let Err(e) = crate::state::with_state_mut(|st| get_x_or_protected_in(st)) {
+        unsafe { e.fire() }
+    }
+}
+
+pub(crate) fn get_x_or_protected_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     loop {
-        get_token();
+        get_token_in(st)?;
         if cur_cmd() <= MAX_COMMAND {
-            return;
+            return Ok(());
         }
         if cur_cmd() >= CALL
             && cur_cmd() < END_TEMPLATE
-            && mem_b32s0(mem_b32s1(cur_chr())) == PROTECTED_TOKEN
+            && st.mem.b32s0(st.mem.b32s1(cur_chr())) == PROTECTED_TOKEN
         {
-            return;
+            return Ok(());
         }
-        expand();
+        expand_in(st)?;
     }
 }
 

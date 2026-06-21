@@ -392,8 +392,26 @@ pub unsafe fn privileged() -> bool {
     if cur_list_mode() > 0 {
         true
     } else {
-        report_illegal_case();
-        false
+        match crate::state::with_state_mut(privileged_in) {
+            Ok(v) => v,
+            Err(o) => {
+                o.finish();
+                unreachable!("privileged error outcome should be divergent")
+            }
+        }
+    }
+}
+
+pub(crate) fn privileged_in(st: &mut EngineState) -> Result<bool, ErrorOutcome> {
+    if cur_list_mode() > 0 {
+        Ok(true)
+    } else {
+        let o = report_illegal_case_in(st);
+        if matches!(o, ErrorOutcome::Continue) {
+            Ok(false)
+        } else {
+            Err(o)
+        }
     }
 }
 // translated from xetex-xetex0.c:10489 (cs_error)

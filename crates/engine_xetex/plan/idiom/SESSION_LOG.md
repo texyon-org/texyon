@@ -8,6 +8,35 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 214 — 2026-06-21 — Execution: thread main-control alignment/enabler substrate
+
+**Type:** execution (workstream 01). Large mechanical continuation of session
+213, using subagents only for recon. Targeted the bottom of the alignment SCC
+and the small blockers called out in the previous handoff.
+
+**Code:** added `_in(&mut EngineState)` cores for `scan::get_x_or_protected_in`,
+`main_control::get_preamble_token_in`, `init_span_in`, `init_row_in`,
+`init_col_in`, `push_alignment_in`, `pop_alignment_in`, `off_save_in`,
+`head_for_vmode_in`, and `its_all_over_in`; added `errors::privileged_in`.
+Deleted the dead legacy `expand::expand` wrapper and dead globals getters
+`align_ptr`, `dead_cycles`, and `par_token`. The `head_for_vmode_in` par-token
+case must read `st.input.par_token` directly under the borrow; the focused eTRIP
+run caught the first re-entry attempt.
+
+**Validation:** `cargo fmt -p tectonic_engine_xetex`; `cargo check -p
+tectonic_engine_xetex` (warnings **41**, held); dashboard **29/2/7/4**; release
+rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1` and `1905.00148v1`. Metrics: `unsafe fn` **475**; `with_state`
+sites **740** (temporary wrappers remain until callers are threaded).
+
+**Next:** finish the alignment SCC: `fin_col_in`/`fin_row_in`/`init_align_in`/
+`fin_align_in`/`align_peek_in`. Remaining blockers are `do_assignments_in`
+(`prefixed_command_in`) and `resume_after_display_in`; `fin_col_in` also needs
+careful packaging over `hpack_emit_in`/`vpackage_emit_in` or an extracted
+non-emitting packer core.
+
+---
+
 ## Idiom session 213 — 2026-06-21 — Execution: thread the standalone main-control dispatcher verbs
 
 **Type:** execution (workstream 01). Large, deliberately mechanical session per
