@@ -6,7 +6,6 @@ use crate::consts::{
     EQTB_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD,
     PENALTY_NODE, PRIM_EQTB_BASE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
-use crate::errors::int_error;
 // Relocated to errors.rs (workstream 02); still called from scan.rs.
 use crate::errors::runaway;
 use crate::ext::aat_font_get;
@@ -20,8 +19,6 @@ use crate::ext::ot_font_get;
 use crate::ext::ot_font_get_1;
 use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
-use crate::output::capture_to_diagnostic;
-use crate::output::error_here_with_diagnostic;
 
 use crate::globals::{
     cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, eqtb_b32s1, expand_depth, first,
@@ -382,20 +379,25 @@ pub unsafe fn scan_register_num() {
 
 // translated from xetex-xetex0.c:5403 (scan_delimiter_int)
 pub unsafe fn scan_delimiter_int() {
-    scan_int();
+    if let Err(e) = crate::state::with_state_mut(|st| scan_delimiter_int_in(st)) {
+        unsafe { e.fire() }
+    }
+}
+
+pub(crate) fn scan_delimiter_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+    scan_int_in(st)?;
     if cur_val() < 0 || cur_val() > 0x7FF_FFFF {
-        let errmsg = error_here_with_diagnostic(c"Bad delimiter code".as_ptr());
-        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
-            c"A numeric delimiter code must be between 0 and 2^{27}-1.".as_ptr(),
-        );
-        set_help_line(0, c"I changed this one to zero.".as_ptr());
-        int_error(cur_val());
+        let errmsg = error_here_with_diagnostic_in(st, c"Bad delimiter code".as_ptr());
+        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 2;
+        st.errors.help_line[1] =
+            c"A numeric delimiter code must be between 0 and 2^{27}-1.".as_ptr();
+        st.errors.help_line[0] = c"I changed this one to zero.".as_ptr();
+        scc_err(int_error_in(st, cur_val()))?;
         set_cur_val(0);
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

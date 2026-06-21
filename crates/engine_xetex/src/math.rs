@@ -10,16 +10,16 @@ use crate::input::begin_token_list;
 use crate::globals::{
     adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_group, cur_list_aux_b32s1,
     cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf, cur_list_tail, cur_val,
-    cur_val1, eqtb_b32s1, file_line_error_style_p, font_info_b16, font_info_b32s1, hi_mem_min,
+    eqtb_b32s1, file_line_error_style_p, font_info_b16, font_info_b32s1, hi_mem_min,
     insert_src_special_every_math, just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b32s0,
     mem_b32s1, mem_gr, mem_word, nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1,
     semantic_pagination_enabled, set_adjust_tail, set_avail, set_cur_dir, set_cur_list_aux_b32s0,
     set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf,
-    set_cur_list_tail, set_cur_mlist, set_cur_style, set_cur_val, set_cur_val1, set_help_line,
-    set_help_ptr, set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2,
-    set_mem_b16s3, set_mem_b32s0, set_mem_b32s1, set_mem_gr, set_mem_word, set_mlist_penalties,
-    set_pre_adjust_tail, set_save_ptr, set_save_stack_b32s1, set_temp_ptr,
-    set_xtx_ligature_present, temp_ptr, total_shrink, width_base_entry,
+    set_cur_list_tail, set_cur_mlist, set_cur_style, set_cur_val, set_help_line, set_help_ptr,
+    set_lr_problems, set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
+    set_mem_gr, set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr,
+    set_save_stack_b32s1, set_temp_ptr, set_xtx_ligature_present, temp_ptr, total_shrink,
+    width_base_entry,
 };
 use crate::mem::{
     free_node, get_avail, get_node, new_choice, new_glue, new_kern, new_noad, new_null_box,
@@ -3569,36 +3569,50 @@ unsafe fn compute_ot_math_accent_pos_in(
 
 /// translated from xetex-math.c:388 (scan_delimiter)
 pub unsafe fn scan_delimiter(p: i32, r: bool) {
+    if let Err(e) = crate::state::with_state_mut(|st| scan_delimiter_in(st, p, r)) {
+        e.fire();
+    }
+}
+
+/// `&mut EngineState` core of [`scan_delimiter`] (`01b` §3): the whole delimiter
+/// scan under one borrow over the threaded scanner cores; the recoverable
+/// "Missing delimiter" `back_error` is printed in order then deferred via
+/// [`mc_propagate_error`](crate::main_control::mc_propagate_error).
+pub(crate) fn scan_delimiter_in(
+    st: &mut EngineState,
+    p: i32,
+    r: bool,
+) -> Result<(), crate::main_control::MainControlAbort> {
     if r {
         if cur_chr() == 1 {
-            set_cur_val1(0x4000_0000);
-            crate::scan::scan_math_fam_int();
-            set_cur_val1(cur_val1() + cur_val() * 0x20_0000);
-            crate::scan::scan_usv_num();
-            set_cur_val(cur_val() + cur_val1());
+            st.scanner.cur_val1 = 0x4000_0000;
+            crate::scan::scan_math_fam_int_in(st)?;
+            st.scanner.cur_val1 += cur_val() * 0x20_0000;
+            crate::scan::scan_usv_num_in(st)?;
+            set_cur_val(cur_val() + st.scanner.cur_val1);
         } else {
-            crate::scan::scan_delimiter_int();
+            crate::scan::scan_delimiter_int_in(st)?;
         }
     } else {
         loop {
-            crate::scan::get_x_token();
+            crate::scan::get_x_token_in(st)?;
             if cur_cmd() != SPACER && cur_cmd() != RELAX {
                 break;
             }
         }
 
         match cur_cmd() {
-            LETTER | OTHER_CHAR => set_cur_val(eqtb_b32s1(DEL_CODE_BASE + cur_chr())),
+            LETTER | OTHER_CHAR => set_cur_val(st.eqtb.b32s1(DEL_CODE_BASE + cur_chr())),
             DELIM_NUM => {
                 if cur_chr() == 1 {
-                    set_cur_val1(0x4000_0000);
-                    crate::scan::scan_math_class_int();
-                    crate::scan::scan_math_fam_int();
-                    set_cur_val1(cur_val1() + cur_val() * 0x2_0000);
-                    crate::scan::scan_usv_num();
-                    set_cur_val(cur_val() + cur_val1());
+                    st.scanner.cur_val1 = 0x4000_0000;
+                    crate::scan::scan_math_class_int_in(st)?;
+                    crate::scan::scan_math_fam_int_in(st)?;
+                    st.scanner.cur_val1 += cur_val() * 0x2_0000;
+                    crate::scan::scan_usv_num_in(st)?;
+                    set_cur_val(cur_val() + st.scanner.cur_val1);
                 } else {
-                    crate::scan::scan_delimiter_int();
+                    crate::scan::scan_delimiter_int_in(st)?;
                 }
             }
             _ => set_cur_val(-1),
@@ -3606,55 +3620,42 @@ pub unsafe fn scan_delimiter(p: i32, r: bool) {
     }
 
     if cur_val() < 0 {
-        if file_line_error_style_p() != 0 {
-            crate::output::print_file_line();
+        if st.config.file_line_error_style_p != 0 {
+            crate::output::print_file_line_in(st);
         } else {
-            crate::output::print_nl_cstr(c"! ".as_ptr());
+            crate::output::print_nl_cstr_in(st, c"! ".as_ptr());
         }
-        crate::output::print_cstr(c"Missing delimiter (. inserted)".as_ptr());
-        set_help_ptr(6);
-        set_help_line(
-            5,
-            c"I was expecting to see something like `(' or `\\{' or".as_ptr(),
-        );
-        set_help_line(
-            4,
-            c"`\\}' here. If you typed, e.g., `{' instead of `\\{', you".as_ptr(),
-        );
-        set_help_line(
-            3,
-            c"should probably delete the `{' by typing `1' now, so that".as_ptr(),
-        );
-        set_help_line(
-            2,
-            c"braces don't get unbalanced. Otherwise just proceed.".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"Acceptable delimiters are characters whose \\delcode is".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"nonnegative, or you can use `\\delimiter <delimiter code>'.".as_ptr(),
-        );
-        crate::input::back_error();
+        crate::output::print_cstr_in(st, c"Missing delimiter (. inserted)".as_ptr());
+        st.errors.help_ptr = 6;
+        st.errors.help_line[5] = c"I was expecting to see something like `(' or `\\{' or".as_ptr();
+        st.errors.help_line[4] =
+            c"`\\}' here. If you typed, e.g., `{' instead of `\\{', you".as_ptr();
+        st.errors.help_line[3] =
+            c"should probably delete the `{' by typing `1' now, so that".as_ptr();
+        st.errors.help_line[2] = c"braces don't get unbalanced. Otherwise just proceed.".as_ptr();
+        st.errors.help_line[1] =
+            c"Acceptable delimiters are characters whose \\delcode is".as_ptr();
+        st.errors.help_line[0] =
+            c"nonnegative, or you can use `\\delimiter <delimiter code>'.".as_ptr();
+        crate::main_control::mc_propagate_error(crate::input::back_error_in(st)?)?;
         set_cur_val(0);
     }
 
     if cur_val() >= 0x4000_0000 {
-        set_mem_b16s3(
+        st.mem.set_b16s3(
             p,
             (((cur_val() % 0x20_0000) / 0x1_0000) * 0x100 + (cur_val() / 0x20_0000) % 0x100) as u16,
         );
-        set_mem_b16s2(p, (cur_val() % 0x1_0000) as u16);
-        set_mem_b16s1(p, 0);
-        set_mem_b16s0(p, 0);
+        st.mem.set_b16s2(p, (cur_val() % 0x1_0000) as u16);
+        st.mem.set_b16s1(p, 0);
+        st.mem.set_b16s0(p, 0);
     } else {
-        set_mem_b16s3(p, ((cur_val() / 0x10_0000) % 16) as u16);
-        set_mem_b16s2(p, ((cur_val() / 0x1000) % 0x100) as u16);
-        set_mem_b16s1(p, ((cur_val() / 0x100) % 16) as u16);
-        set_mem_b16s0(p, (cur_val() % 0x100) as u16);
+        st.mem.set_b16s3(p, ((cur_val() / 0x10_0000) % 16) as u16);
+        st.mem.set_b16s2(p, ((cur_val() / 0x1000) % 0x100) as u16);
+        st.mem.set_b16s1(p, ((cur_val() / 0x100) % 16) as u16);
+        st.mem.set_b16s0(p, (cur_val() % 0x100) as u16);
     }
+    Ok(())
 }
 
 /// translated from xetex-math.c:354 (start_eq_no)

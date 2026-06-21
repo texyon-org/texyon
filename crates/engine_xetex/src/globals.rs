@@ -522,13 +522,6 @@ pub(crate) fn set_mem_b16s2(p: i32, v: u16) {
         s.mem.data[p as usize].b16.s2 = v;
     });
 }
-/// Write `v` into `mem[p].b16.s3`.
-#[inline]
-pub(crate) fn set_mem_b16s3(p: i32, v: u16) {
-    crate::state::with_state_mut(|s| {
-        s.mem.data[p as usize].b16.s3 = v;
-    });
-}
 
 /// Read the `gr` (f64) field of `mem[p]`.
 #[inline]
@@ -1812,16 +1805,6 @@ pub(crate) fn set_is_in_csname(v: bool) {
 // ---------------------------------------------------------------------------
 // cur_val1 / radix
 // ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn cur_val1() -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_val1)
-}
-#[inline]
-pub(crate) fn set_cur_val1(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_val1 = v;
-    });
-}
 #[inline]
 pub(crate) fn set_radix(v: u8) {
     crate::state::with_state_mut(|s| {
