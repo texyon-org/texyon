@@ -636,7 +636,12 @@ pub(crate) fn new_patterns_in(
         } // 'done
 
         // saving_hyph_codes: record lc_code table alongside the patterns
-        if unsafe { st.eqtb.data[(INT_BASE + INT_PAR_SAVING_HYPH_CODES) as usize].b32.s1 } > 0 {
+        if unsafe {
+            st.eqtb.data[(INT_BASE + INT_PAR_SAVING_HYPH_CODES) as usize]
+                .b32
+                .s1
+        } > 0
+        {
             let mut lc_codes = [0; 256];
             for ci in 0u16..=255u16 {
                 lc_codes[ci as usize] =
@@ -649,8 +654,7 @@ pub(crate) fn new_patterns_in(
         crate::output::print_esc_cstr_in(st, c"patterns".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 1;
-        st.errors.help_line[0] =
-            c"All patterns must be given before typesetting begins.".as_ptr();
+        st.errors.help_line[0] = c"All patterns must be given before typesetting begins.".as_ptr();
         mc_propagate_error(crate::errors::error_in(st))?;
 
         let _ = crate::scan::scan_toks_in(st, false, false)?;
@@ -834,8 +838,8 @@ pub(crate) fn new_hyph_exceptions_in(
                             if matched {
                                 // found: merge into existing slot
                                 st.strings.str_ptr -= 1;
-                                st.strings.pool_ptr =
-                                    st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+                                st.strings.pool_ptr = st.strings.str_start
+                                    [(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
                                 s = st.hyph.hyph_word[h as usize];
                                 st.hyph.hyph_count -= 1;
                                 break;

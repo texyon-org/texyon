@@ -359,8 +359,7 @@ pub(crate) fn scan_xetex_math_char_int_in(
     let mc = (cur_val() as u32) & 0x1F_FFFF;
     if mc == ACTIVE_MATH_CHAR as u32 {
         if cur_val() != ACTIVE_MATH_CHAR {
-            let errmsg =
-                error_here_with_diagnostic_in(st, c"Bad active XeTeX math code".as_ptr());
+            let errmsg = error_here_with_diagnostic_in(st, c"Bad active XeTeX math code".as_ptr());
             unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
             capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 2;
@@ -371,8 +370,7 @@ pub(crate) fn scan_xetex_math_char_int_in(
             set_cur_val(ACTIVE_MATH_CHAR);
         }
     } else if mc > BIGGEST_USV as u32 {
-        let errmsg =
-            error_here_with_diagnostic_in(st, c"Bad XeTeX math character code".as_ptr());
+        let errmsg = error_here_with_diagnostic_in(st, c"Bad XeTeX math character code".as_ptr());
         unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
         capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 2;
@@ -1036,7 +1034,11 @@ pub(crate) fn read_toks_in(
 
         let lim = st.input.last;
         set_cur_input_limit(lim);
-        let end_char = unsafe { st.eqtb.data[(INT_BASE + INT_PAR_END_LINE_CHAR) as usize].b32.s1 };
+        let end_char = unsafe {
+            st.eqtb.data[(INT_BASE + INT_PAR_END_LINE_CHAR) as usize]
+                .b32
+                .s1
+        };
         if !(0..=255).contains(&end_char) {
             set_cur_input_limit(lim - 1);
         } else {

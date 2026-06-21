@@ -54,10 +54,9 @@ use crate::scan::{
     back_input, eTeX_enabled, effective_char_global, effective_char_info_global, get_next,
     get_r_token, get_token, get_x_or_protected, get_x_token, insert_dollar_sign,
     new_native_word_node_global, scan_char_num, scan_delimiter_int, scan_dimen,
-    scan_fifteen_bit_int, scan_int, scan_keyword, scan_left_brace, scan_math,
-    scan_math_class_int, scan_math_fam_int, scan_optional_equals, scan_rule_spec, scan_spec,
-    scan_usv_num, scan_xetex_math_char_int, set_class_fn, set_family_fn,
-    set_math_char, x_token,
+    scan_fifteen_bit_int, scan_int, scan_keyword, scan_left_brace, scan_math, scan_math_class_int,
+    scan_math_fam_int, scan_optional_equals, scan_rule_spec, scan_spec, scan_usv_num,
+    scan_xetex_math_char_int, set_class_fn, set_family_fn, set_math_char, x_token,
 };
 use crate::units::MemIdx;
 
@@ -4072,7 +4071,13 @@ pub(crate) fn do_register_command_in(
             let p = cur_chr() as i16;
             crate::scan::scan_register_num_in(st)?;
             if cur_val() > 255 {
-                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, p as u16, cur_val(), true);
+                crate::save::find_sa_element(
+                    &mut st.mem,
+                    &mut st.scanner,
+                    p as u16,
+                    cur_val(),
+                    true,
+                );
                 (cur_ptr(), p, true)
             } else {
                 let l = match p {
@@ -4174,7 +4179,11 @@ pub(crate) fn do_register_command_in(
                     ));
                 }
             } else {
-                set_cur_val(crate::scaled_math::x_over_n_in(&mut st.errors, w, cur_val()));
+                set_cur_val(crate::scaled_math::x_over_n_in(
+                    &mut st.errors,
+                    w,
+                    cur_val(),
+                ));
             }
         } else {
             let r = crate::mem::new_spec(&mut st.mem, s);
@@ -4207,11 +4216,14 @@ pub(crate) fn do_register_command_in(
                 );
                 st.mem.set_b32s1(r + 3, v);
             } else {
-                let v = crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(s + 1), cur_val());
+                let v =
+                    crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(s + 1), cur_val());
                 st.mem.set_b32s1(r + 1, v);
-                let v = crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(s + 2), cur_val());
+                let v =
+                    crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(s + 2), cur_val());
                 st.mem.set_b32s1(r + 2, v);
-                let v = crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(s + 3), cur_val());
+                let v =
+                    crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(s + 3), cur_val());
                 st.mem.set_b32s1(r + 3, v);
             }
             set_cur_val(r);
@@ -4235,7 +4247,13 @@ pub(crate) fn do_register_command_in(
             let result = if a >= 4 {
                 crate::save::gsa_w_def(&mut st.mem, l, cur_val())
             } else {
-                crate::save::sa_w_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, l, cur_val())
+                crate::save::sa_w_def(
+                    &mut st.mem,
+                    &mut st.scanner,
+                    &mut st.save_stack,
+                    l,
+                    cur_val(),
+                )
             };
             crate::save::finish_sa_mutation_in(st, l, result)?;
         } else if a >= 4 {
@@ -4251,13 +4269,24 @@ pub(crate) fn do_register_command_in(
             let result = if a >= 4 {
                 crate::save::gsa_def(&mut st.mem, l, cur_val())
             } else {
-                crate::save::sa_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, l, cur_val())
+                crate::save::sa_def(
+                    &mut st.mem,
+                    &mut st.scanner,
+                    &mut st.save_stack,
+                    l,
+                    cur_val(),
+                )
             };
             crate::save::finish_sa_mutation_in(st, l, result)?;
         } else if a >= 4 {
-            if let Some(ab) =
-                crate::save::geq_define(&mut st.eqtb, &mut st.mem, &mut st.scanner, l, GLUE_REF, cur_val())
-            {
+            if let Some(ab) = crate::save::geq_define(
+                &mut st.eqtb,
+                &mut st.mem,
+                &mut st.scanner,
+                l,
+                GLUE_REF,
+                cur_val(),
+            ) {
                 return Err(MainControlAbort::Save(ab));
             }
         } else if let Some(ab) = crate::save::eq_define(
