@@ -16,9 +16,8 @@ use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemIdx, MemPtr, Scaled};
 
 use crate::globals::{
-    avail, cur_input_synctex_tag, cur_list_head, line, nest_ptr, nest_size,
-    restore_cur_list_from_nest, set_avail, set_cur_list_e_tex_aux, set_cur_list_head,
-    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_mem_b32s1, set_nest_ptr,
+    cur_input_synctex_tag, cur_list_head, line, nest_size, set_cur_list_e_tex_aux,
+    set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
 };
 
 // TeX constants (xetex-constants.h / xetex_format.h)
@@ -281,8 +280,7 @@ pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
 /// translated from xetex-xetex0.c:147 (new_null_box)
 ///
 /// Phase-C: threaded to `&mut MemState`. Calls the threaded [`get_node`]
-/// directly and propagates its [`ALLOC_FAILED`] sentinel (`01b` §5); the
-/// [`new_null_box_global`] wrapper performs the cold `overflow()` abort.
+/// directly and propagates its [`ALLOC_FAILED`] sentinel (`01b` §5).
 pub fn new_null_box(mem: &mut MemState) -> i32 {
     let Some(p) = NodePtr::<HListNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -297,18 +295,6 @@ pub fn new_null_box(mem: &mut MemState) -> i32 {
     p.set_glue_order(mem, NORMAL);
     p.set_glue_set(mem, 0.0);
     p.idx().0
-}
-
-/// Transitional bridge-down wrapper for legacy `new_null_box` callers (`01b`
-/// §3, §5). Runs the threaded constructor under a single borrow, then performs
-/// the cold `overflow()` abort after the borrow drops if the arena was
-/// exhausted. Removed when the last legacy caller is itself threaded.
-pub unsafe fn new_null_box_global() -> i32 {
-    let p = crate::state::with_state_mut(|st| new_null_box(&mut st.mem));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
 }
 
 // ---------------------------------------------------------------------------
@@ -427,7 +413,7 @@ pub unsafe fn new_disc_global() -> i32 {
 ///
 /// translated from xetex-xetex0.c:221 (new_math)
 ///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_math_global`].
+/// Phase-C: threaded to `&mut MemState`.
 pub fn new_math(mem: &mut MemState, w: i32, s: i16) -> i32 {
     let Some(p) = NodePtr::<MathNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -435,15 +421,6 @@ pub fn new_math(mem: &mut MemState, w: i32, s: i16) -> i32 {
     p.set_subtype(mem, s as u16);
     p.set_width(mem, Scaled(w));
     p.idx().0
-}
-
-/// Transitional bridge-down wrapper for legacy `new_math` callers (`01b` §3, §5).
-pub unsafe fn new_math_global(w: i32, s: i16) -> i32 {
-    let p = crate::state::with_state_mut(|st| new_math(&mut st.mem, w, s));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
 }
 
 // ---------------------------------------------------------------------------
@@ -807,17 +784,6 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
     set_cur_list_mode_line(line());
     set_cur_list_e_tex_aux(TEX_NULL);
     Ok(())
-}
-
-/// Pop the top nest entry back into cur_list, freeing the old head token.
-///
-/// translated from xetex-xetex0.c:1339 (pop_nest)
-pub fn pop_nest() {
-    // Recycle old cur_list.head into avail.
-    set_mem_b32s1(cur_list_head(), avail());
-    set_avail(cur_list_head());
-    set_nest_ptr(nest_ptr() - 1);
-    restore_cur_list_from_nest(nest_ptr());
 }
 
 /// Threaded (Phase C) core of [`pop_nest`]: touches the `mem` arena and the

@@ -398,15 +398,6 @@ pub fn just_copy(
     Ok(())
 }
 
-/// Transitional bridge-down wrapper for legacy `just_copy` callers (`01b` §3,
-/// §5). Runs the threaded copy under a single `mem` borrow, then performs the
-/// deferred cold abort (impossible corrupt-node `confusion`, or arena
-/// exhaustion `overflow`/`runaway`) after the borrow drops.
-pub unsafe fn just_copy_global(p: i32, h: i32, t: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| just_copy(&mut st.mem, p, h, t)) {
-        node_recycle_abort(e);
-    }
-}
 // translated from xetex-xetex0.c:8155 (just_reverse)
 //
 // Phase-C: threaded to `&mut MemState` + `&mut ScannerState`. The mem arena is
@@ -415,8 +406,8 @@ pub unsafe fn just_copy_global(p: i32, h: i32, t: i32) {
 // (safe under the borrow per `01b` §4). Calls the threaded `just_copy`,
 // `flush_node_list`, `new_edge`, `get_avail`, and `free_node`; arena exhaustion
 // and the corrupt-node `confusion` propagate the `01b` §5 [`NodeRecycleAbort`]
-// sentinel, run by [`just_reverse_global`] after the borrow drops. FFI-free
-// (no C++ measurer / `new_native_character` / print / scanner re-entry).
+// sentinel. FFI-free (no C++ measurer / `new_native_character` / print /
+// scanner re-entry).
 pub fn just_reverse(
     mem: &mut crate::state::MemState,
     scanner: &mut crate::state::ScannerState,
@@ -529,15 +520,6 @@ pub fn just_reverse(
     Ok(())
 }
 
-/// Transitional bridge-down wrapper for legacy `just_reverse` callers (`01b`
-/// §3, §5). Runs the threaded reversal under one `mem`+`scanner` borrow, then
-/// performs the deferred cold abort after the borrow drops.
-pub unsafe fn just_reverse_global(p: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| just_reverse(&mut st.mem, &mut st.scanner, p))
-    {
-        node_recycle_abort(e);
-    }
-}
 /// translated from xetex-xetex0.c:765 (flush_node_list)
 ///
 /// Phase-C: threaded to `&mut MemState`. Touches the `mem` arena directly,

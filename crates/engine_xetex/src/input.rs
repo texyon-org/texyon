@@ -176,14 +176,6 @@ pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), In
 // back_error
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-xetex0.c:3167 (back_error)
-pub unsafe fn back_error() {
-    match crate::state::with_state_mut(back_error_in) {
-        Ok(oc) => oc.finish(),
-        Err(a) => a.fire(),
-    }
-}
-
 /// `&mut EngineState` core of [`back_error`] (`01b` §3): [`back_input_in`] then
 /// [`error_in`]. The `error` cold tail rides the returned [`ErrorOutcome`]
 /// (`finish`ed by the wrapper after the borrow drops); the `back_input`

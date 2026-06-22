@@ -148,8 +148,7 @@ pub(crate) fn eq_save(
 /// Assign `eqtb[p].b32.s1 = w`, saving the old value if necessary.
 ///
 /// Phase-C: threaded to `&mut EqtbState` + `&mut SaveStackState`; propagates the
-/// cold [`SaveAbort`] from [`eq_save`]. Legacy callers use
-/// [`eq_word_define_global`].
+/// cold [`SaveAbort`] from [`eq_save`].
 ///
 /// translated from xetex-xetex0.c:3954 (eq_word_define)
 pub(crate) fn eq_word_define(
@@ -171,15 +170,6 @@ pub(crate) fn eq_word_define(
     }
     eqtb.set_b32s1(p, w);
     None
-}
-
-/// Transitional bridge-down wrapper for legacy `eq_word_define` callers.
-pub unsafe fn eq_word_define_global(p: i32, w: i32) {
-    let abort = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        eq_word_define(&mut s.eqtb, &mut s.save_stack, p, w)
-    });
-    raise_save_abort(abort);
 }
 
 // ---------------------------------------------------------------------------

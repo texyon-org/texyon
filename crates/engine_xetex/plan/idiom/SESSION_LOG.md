@@ -8,6 +8,39 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 223 — 2026-06-22 — Execution: finish the main-control math dispatcher
+
+**Type:** execution (workstream 01). Large mechanical session, intentionally
+light docs.
+
+**Code:** added `math::init_math_in` and `math::after_math_in`, then rewired
+`main_control_math_cases_in` to call them directly and return
+`Result<(), MainControlAbort>` (deleted the `MathCaseAction` trampoline).
+Threaded the display/inline math entry and exit paths over direct
+`st.mem`/`st.eqtb`/`st.input`/`st.scanner`/`st.shipout`/`st.config` access,
+using the existing threaded scanner, save, packaging, pagebuilder, and math-list
+builders. Added `ext::tt_insert_special_in` for semantic-pagination specials.
+Deleted the now-dead bridge wrappers/accessors exposed by this slice
+(`init_math`, `after_math`, `mlist_to_hlist`, `fin_mlist_global`,
+`app_display`, `check_math_font_params`, `resume_after_display`,
+`tt_insert_special`, `insert_src_special`, `back_error`, `line_break`,
+`pop_nest`, `new_null_box_global`, `new_math_global`, `just_*_global`,
+`eq_word_define_global`, and related globals).
+
+**Validation:** `cargo fmt`; `cargo check -p tectonic_engine_xetex` warnings
+**41**; dashboard **29/2/7/4** (`trip`, `tex-outputs`, `engine_rust`,
+`latex_goldens`); release rebuild; full corpus **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1`. `trip` initially
+caught a nested `nest_ptr()` re-entry in `init_math_in`; fixed by using
+`st.input.nest_ptr` directly. Metrics: `with_state` matches **666**; `unsafe
+fn` matches **383**.
+
+**Next:** the math dispatcher is fully threaded. Good mechanical follow-up:
+`io::open_or_close_in`; defer `main_control` itself until the remaining
+dispatchers/singletons are drained.
+
+---
+
 ## Idiom session 221 — 2026-06-21 — Execution: thread the alignment SCC, `handle_right_brace`, and the alignment dispatcher
 
 **Type:** execution (workstream 01). Large mechanical session, minimal docs, three commits.

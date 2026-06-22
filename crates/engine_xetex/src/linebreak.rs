@@ -1318,14 +1318,6 @@ pub(crate) unsafe fn fire_line_break_outcome(o: LineBreakOutcome) {
     }
 }
 
-/// Thin bridge-down wrapper for [`line_break_in`]. Borrows the thread-local
-/// state once, runs the threaded core, then dispatches any deferred cold abort
-/// after the borrow has dropped (`01b` §5).
-pub unsafe fn line_break(d: bool) {
-    let outcome = crate::state::with_state_mut(|st| line_break_in(st, d));
-    fire_line_break_outcome(outcome);
-}
-
 /// Threaded (Phase C) translation of `finite_shrink_global`: when this is the
 /// first infinite-shrinkage hit of the paragraph (`no_shrink_error_yet`), emit
 /// the recoverable diagnostic through the threaded `error_*_in` path under the

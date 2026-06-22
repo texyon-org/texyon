@@ -11,11 +11,10 @@ use crate::texmfmp::maketexstring;
 use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
 use crate::errors::{error, int_error, not_native_font_error, report_illegal_case};
 use crate::globals::{
-    cur_chr, cur_cmd, cur_val, def_ref, eqtb_b32s1, mem_b32s1, pool_ptr, set_cur_val, set_def_ref,
+    cur_chr, cur_cmd, cur_val, def_ref, eqtb_b32s1, mem_b32s1, set_cur_val, set_def_ref,
     set_eqtb_b32s1, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2,
-    set_mem_b32s0, set_mem_b32s1, set_pool_ptr, set_str_pool,
+    set_mem_b32s0, set_mem_b32s1,
 };
-use crate::input::begin_token_list;
 use crate::io::scan_and_pack_name;
 use crate::main_control::new_graf;
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
@@ -2611,12 +2610,6 @@ impl From<crate::input::InputAbort> for InsertSrcAbort {
     }
 }
 
-pub unsafe fn insert_src_special() {
-    if let Err(a) = crate::state::with_state_mut(|st| insert_src_special_in(st)) {
-        a.fire();
-    }
-}
-
 /// `&mut EngineState` core of [`insert_src_special`]: builds the
 /// `\special{src:<line> <file>}` token list under one borrow and inserts it.
 /// `line()` stays raw `mod raw`; the texmfmp/`str_toks`/`begin_token_list`
@@ -2670,33 +2663,49 @@ pub(crate) fn insert_src_special_in(
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:9984 (tt_insert_special)
-pub unsafe fn tt_insert_special(ascii_text: *const libc::c_char) {
+pub(crate) unsafe fn tt_insert_special_in(
+    st: &mut crate::state::EngineState,
+    ascii_text: *const libc::c_char,
+) -> Result<(), crate::main_control::MainControlAbort> {
     const FROZEN_SPECIAL: i32 = 2_243_226 + 10; // FROZEN_CONTROL_SEQUENCE + 10
     const RIGHT_BRACE_TOKEN: i32 = 0x400000; // xetex-constants.h:351
 
-    let start_pool = pool_ptr();
-    // Copy ASCII text into str_pool
+    let start_pool = st.strings.pool_ptr;
     let text = std::ffi::CStr::from_ptr(ascii_text).to_bytes();
-    if pool_ptr() + text.len() as i32 >= crate::globals::pool_size() {
-        crate::errors::overflow(c"string pool overflow".as_ptr(), 0);
+    if st.strings.pool_ptr + text.len() as i32 >= st.strings.pool_size {
+        return Err(crate::input::InputAbort::Overflow {
+            what: c"string pool overflow".as_ptr(),
+            n: 0,
+        }
+        .into());
     }
     for &b in text {
-        set_str_pool(pool_ptr(), b as u16);
-        set_pool_ptr(pool_ptr() + 1);
+        st.strings.str_pool[st.strings.pool_ptr as usize] = b as u16;
+        st.strings.pool_ptr += 1;
     }
-    // Build token list: \special { <tokens> }
-    let toklist_start = crate::mem::get_avail_global();
-    set_mem_b32s0(toklist_start, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-    let q = crate::mem::get_avail_global();
-    set_mem_b32s0(q, LEFT_BRACE_TOKEN + b'{' as i32);
-    set_mem_b32s1(toklist_start, q);
-    let p = str_toks(start_pool);
-    set_mem_b32s1(q, mem_b32s1(TEMP_HEAD));
-    let q2 = crate::mem::get_avail_global();
-    set_mem_b32s0(q2, RIGHT_BRACE_TOKEN + b'}' as i32);
-    set_mem_b32s1(p, q2);
-    begin_token_list(toklist_start, INSERTED);
+
+    let toklist_start = crate::mem::get_avail(&mut st.mem);
+    if toklist_start == crate::mem::ALLOC_FAILED {
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+    }
+    st.mem
+        .set_b32s0(toklist_start, CS_TOKEN_FLAG + FROZEN_SPECIAL);
+    let q = crate::mem::get_avail(&mut st.mem);
+    if q == crate::mem::ALLOC_FAILED {
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+    }
+    st.mem.set_b32s0(q, RIGHT_BRACE_TOKEN + b'{' as i32);
+    st.mem.set_b32s1(toklist_start, q);
+    let p = crate::scan::str_toks_scc(st, start_pool, 0)?;
+    st.mem.set_b32s1(q, st.mem.b32s1(TEMP_HEAD));
+    let q2 = crate::mem::get_avail(&mut st.mem);
+    if q2 == crate::mem::ALLOC_FAILED {
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+    }
+    st.mem.set_b32s0(q2, RIGHT_BRACE_TOKEN + b'}' as i32);
+    st.mem.set_b32s1(p, q2);
+    crate::input::begin_token_list_in(st, toklist_start, INSERTED)?;
+    Ok(())
 }
 /// translated from xetex-xetex0.c:8024 (do_extension)
 pub unsafe fn do_extension() {

@@ -530,13 +530,6 @@ pub(crate) fn mem_gr(p: i32) -> f64 {
     // SAFETY: union projection; the `Vec` index is bounds-checked.
     crate::state::with_state(|s| unsafe { s.mem.data[p as usize].gr })
 }
-/// Write the `gr` (f64) field of `mem[p]`.
-#[inline]
-pub(crate) fn set_mem_gr(p: i32, v: f64) {
-    crate::state::with_state_mut(|s| {
-        s.mem.data[p as usize].gr = v;
-    });
-}
 
 /// Returns `&mem[p]` as a raw pointer — for C functions that expect a
 /// `memory_word*` node pointer (e.g. `real_get_native_italic_correction`).
@@ -991,14 +984,6 @@ pub(crate) fn set_pool_ptr(v: i32) {
         state.strings.pool_ptr = v;
     });
 }
-/// Write `str_pool[k] = v`.
-#[inline]
-pub(crate) fn set_str_pool(k: i32, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.strings.str_pool[k as usize] = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // str_start write / str_ptr write / string pool limits
 // ---------------------------------------------------------------------------
@@ -1307,11 +1292,6 @@ pub(crate) fn set_max_save_stack(v: i32) {
 #[inline]
 pub(crate) fn save_size() -> i32 {
     unsafe { raw::save_size }
-}
-/// Read `save_stack[k].b32.s1`.
-#[inline]
-pub(crate) fn save_stack_b32s1(k: i32) -> i32 {
-    crate::state::with_state(|s| s.save_stack.b32s1(k))
 }
 #[inline]
 pub(crate) fn cur_level() -> u16 {
@@ -1680,13 +1660,6 @@ pub(crate) fn mapped_text_entry(i: i32) -> u16 {
     crate::state::with_state(|state| state.fonts.mapped_text[i as usize])
 }
 
-/// Sets `xtx_ligature_present = v`.
-#[inline]
-pub(crate) fn set_xtx_ligature_present(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.xtx_ligature_present = v;
-    });
-}
 /// Returns `hyphen_char[f]`.
 #[inline]
 pub(crate) fn hyphen_char_entry(f: i32) -> i32 {
@@ -1938,10 +1911,6 @@ pub(crate) fn set_mag_set(v: i32) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn nest_ptr() -> i32 {
-    crate::state::with_state(|s| s.input.nest_ptr)
-}
-#[inline]
 pub(crate) fn set_nest_ptr(v: i32) {
     crate::state::with_state_mut(|s| {
         s.input.nest_ptr = v;
@@ -1956,14 +1925,6 @@ pub(crate) fn set_max_nest_stack(v: i32) {
 #[inline]
 pub(crate) fn nest_size() -> i32 {
     unsafe { raw::nest_size }
-}
-/// Copy `nest[k]` to `cur_list` (full struct assignment).
-#[inline]
-pub(crate) fn restore_cur_list_from_nest(k: i32) {
-    let v = crate::state::with_state(|s| s.input.nest[k as usize]);
-    unsafe {
-        raw::cur_list = v;
-    }
 }
 /// Read `cur_list` (the raw current-list record) by value.
 #[inline]
@@ -2984,11 +2945,6 @@ pub(crate) fn set_hyph_next(v: i32) {
     });
 }
 
-#[inline]
-pub(crate) fn insert_src_special_every_math() -> bool {
-    crate::state::with_state(|state| state.shipout.insert_src_special_every_math)
-}
-
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -3060,32 +3016,16 @@ pub(crate) fn set_cur_pre_tail(v: i32) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn adjust_tail() -> i32 {
-    crate::state::with_state(|s| s.scanner.adjust_tail)
-}
-#[inline]
 pub(crate) fn set_adjust_tail(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.adjust_tail = v;
     });
 }
 #[inline]
-pub(crate) fn pre_adjust_tail() -> i32 {
-    crate::state::with_state(|s| s.scanner.pre_adjust_tail)
-}
-#[inline]
 pub(crate) fn set_pre_adjust_tail(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.pre_adjust_tail = v;
     });
-}
-#[inline]
-pub(crate) fn total_shrink(o: usize) -> i32 {
-    crate::state::with_state(|s| s.scanner.total_shrink[o])
-}
-#[inline]
-pub(crate) fn just_box() -> i32 {
-    crate::state::with_state(|s| s.scanner.just_box)
 }
 #[inline]
 pub(crate) fn set_cur_f(v: i32) {
@@ -3121,28 +3061,16 @@ pub(crate) fn cur_list_mode_line() -> i32 {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn lr_ptr() -> i32 {
-    crate::state::with_state(|s| s.scanner.LR_ptr)
-}
-#[inline]
 pub(crate) fn set_lr_ptr(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.LR_ptr = v;
     });
 }
 #[inline]
-pub(crate) fn lr_problems() -> i32 {
-    crate::state::with_state(|s| s.scanner.LR_problems)
-}
-#[inline]
 pub(crate) fn set_lr_problems(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.LR_problems = v;
     });
-}
-#[inline]
-pub(crate) fn cur_dir() -> i16 {
-    crate::state::with_state(|s| s.scanner.cur_dir)
 }
 #[inline]
 pub(crate) fn set_cur_dir(v: i16) {
@@ -3225,19 +3153,6 @@ pub(crate) fn set_doing_special(v: bool) {
     crate::state::with_state_mut(|state| {
         state.shipout.doing_special = v;
     });
-}
-
-#[inline]
-pub(crate) fn set_cur_mlist(v: i32) {
-    crate::state::with_state_mut(|s| s.scanner.cur_mlist = v);
-}
-#[inline]
-pub(crate) fn set_cur_style(v: i16) {
-    crate::state::with_state_mut(|s| s.scanner.cur_style = v);
-}
-#[inline]
-pub(crate) fn set_mlist_penalties(v: bool) {
-    crate::state::with_state_mut(|s| s.scanner.mlist_penalties = v);
 }
 
 // ---------------------------------------------------------------------------

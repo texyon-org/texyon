@@ -30,7 +30,7 @@ use crate::globals::{
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::input::begin_token_list;
 use crate::linebreak::do_locale_linebreaks;
-use crate::math::{after_math, init_math};
+use crate::math::{after_math_in, init_math_in};
 use crate::output::{
     capture_to_diagnostic, char_warning, error_here_with_diagnostic, issue_message, print_cmd_chr,
     show_whatever,
@@ -1332,14 +1332,6 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
 }
 
 // ---- moved verbatim from scan.rs (workstream 02) ----
-
-// translated from xetex-xetex0.c:10416 (push_math)
-// group_code = unsigned char = u8 (xetex-xetexd.h:325)
-pub unsafe fn push_math(c: u8) {
-    if let Err(e) = crate::state::with_state_mut(|st| push_math_in(st, c)) {
-        e.fire();
-    }
-}
 
 /// `&mut EngineState` core of [`push_math`]: enters math mode under one borrow.
 pub(crate) fn push_math_in(
@@ -4859,23 +4851,14 @@ pub(crate) fn main_control_alignment_cases_in(
 }
 // translated from xetex-xetex0.c:7006 (main_control math entry/exit cases)
 pub unsafe fn main_control_math_cases() {
-    match crate::state::with_state_mut(main_control_math_cases_in) {
-        Ok(MathCaseAction::None) => {}
-        Ok(MathCaseAction::InitMath) => init_math(),
-        Ok(MathCaseAction::AfterMath) => after_math(),
-        Err(e) => e.fire(),
+    if let Err(e) = crate::state::with_state_mut(main_control_math_cases_in) {
+        e.fire();
     }
-}
-
-pub(crate) enum MathCaseAction {
-    None,
-    InitMath,
-    AfterMath,
 }
 
 pub(crate) fn main_control_math_cases_in(
     st: &mut crate::state::EngineState,
-) -> Result<MathCaseAction, MainControlAbort> {
+) -> Result<(), MainControlAbort> {
     extern "C" {}
 
     const HMODE_MC: u16 = 104; // xetex_format.h:369
@@ -4917,7 +4900,7 @@ pub(crate) fn main_control_math_cases_in(
     };
 
     match (cur_list_mode().unsigned_abs(), cur_cmd()) {
-        (HMODE_MC, MATH_SHIFT_MC) => return Ok(MathCaseAction::InitMath),
+        (HMODE_MC, MATH_SHIFT_MC) => init_math_in(st)?,
 
         (MMODE_MC, EQ_NO_MC) => {
             if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
@@ -5070,7 +5053,7 @@ pub(crate) fn main_control_math_cases_in(
 
         (MMODE_MC, MATH_SHIFT_MC) => {
             if st.save_stack.cur_group == MATH_SHIFT_GROUP_MC {
-                return Ok(MathCaseAction::AfterMath);
+                after_math_in(st)?;
             } else {
                 off_save_in(st)?;
             }
@@ -5078,7 +5061,7 @@ pub(crate) fn main_control_math_cases_in(
 
         _ => {}
     }
-    Ok(MathCaseAction::None)
+    Ok(())
 }
 // translated from xetex-xetex0.c:6857 (main_control IGNORE_SPACES body; caller does goto reswitch)
 pub unsafe fn main_control_ignore_spaces() {

@@ -5,20 +5,11 @@ use crate::consts::{
     PENALTY_NODE, RULE_NODE,
 };
 use crate::ext::real_get_native_glyph;
-use crate::input::begin_token_list;
-
 use crate::globals::{
-    adjust_tail, avail, char_base_entry, cur_chr, cur_cmd, cur_dir, cur_list_aux_b32s1,
-    cur_list_e_tex_aux, cur_list_head, cur_list_mode, cur_list_prev_graf, cur_list_tail, cur_val,
-    eqtb_b32s1, font_info_b16, font_info_b32s1, hi_mem_min, insert_src_special_every_math,
-    just_box, lr_problems, lr_ptr, mem_b16s0, mem_b16s1, mem_b32s0, mem_b32s1, mem_gr, mem_word,
-    nest_ptr, param_base, pre_adjust_tail, save_ptr, save_stack_b32s1, semantic_pagination_enabled,
-    set_adjust_tail, set_avail, set_cur_dir, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
+    cur_chr, cur_cmd, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
+    cur_list_prev_graf, cur_list_tail, cur_val, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
     set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
-    set_cur_mlist, set_cur_style, set_cur_val, set_help_line, set_help_ptr, set_lr_problems,
-    set_lr_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b32s0, set_mem_b32s1, set_mem_gr,
-    set_mem_word, set_mlist_penalties, set_pre_adjust_tail, set_save_ptr, set_temp_ptr,
-    set_xtx_ligature_present, temp_ptr, total_shrink, width_base_entry,
+    set_cur_val, set_temp_ptr, temp_ptr,
 };
 use crate::mem::{
     free_node, get_avail, get_node, new_choice, new_glue, new_kern, new_noad, new_null_box,
@@ -28,7 +19,7 @@ use crate::node::{
     AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen,
     RuleNode, VListNode,
 };
-use crate::scan::{node_recycle_abort, NodeRecycleAbort};
+use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, EqtbState, FontState, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
@@ -268,10 +259,6 @@ pub fn math_x_height(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32
 /// translated from xetex-math.c:101 (math_quad)
 pub fn math_quad(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 6)
-}
-
-pub fn math_quad_global(size_code: i32) -> i32 {
-    crate::state::with_state(|st| math_quad(&st.fonts, &st.eqtb, size_code))
 }
 
 /// translated from xetex-math.c:115 (num1)
@@ -2731,13 +2718,6 @@ fn mlist_advance_in(st: &mut EngineState, q: i32, style: i16) -> (i32, u16, i32)
 /// translated from xetex-math.c:84 (mlist_to_hlist)
 /// translated from xetex-math.c:84 (mlist_to_hlist). Thin wrapper for the
 /// non-SCC callers (`after_math`/`init_math`/`app_display`): runs the threaded
-/// core under one borrow, firing its cold abort after the borrow drops.
-pub unsafe fn mlist_to_hlist() {
-    if let Err(e) = crate::state::with_state_mut(|st| mlist_to_hlist_in(st)) {
-        e.finish();
-    }
-}
-
 /// Threaded SCC core: converts `cur_mlist` to an hlist on `TEMP_HEAD` under a
 /// single `&mut EngineState` borrow, recursing through `clean_box_in`/`make_*_in`
 /// (the OT-math FFI is borrow-safe, session 207).
@@ -3275,17 +3255,13 @@ impl From<crate::main_control::NewCharacterAbort> for MathBuildAbort {
     }
 }
 
-impl MathBuildAbort {
-    /// Run the divergent cold tail after the producing borrow has dropped (§5).
-    pub(crate) unsafe fn finish(self) -> ! {
-        match self {
-            MathBuildAbort::Recycle(e) => node_recycle_abort(e),
-            MathBuildAbort::NativeChar(a) => a.finish(),
-            MathBuildAbort::Error(o) => {
-                o.finish();
-                unreachable!("ErrorOutcome::finish returned for a non-Continue outcome")
-            }
-        }
+fn math_build_abort_main(a: MathBuildAbort) -> crate::main_control::MainControlAbort {
+    match a {
+        MathBuildAbort::Recycle(e) => crate::main_control::MainControlAbort::NodeRecycle(e),
+        MathBuildAbort::NativeChar(e) => crate::main_control::MainControlAbort::NewCharacter(
+            crate::main_control::NewCharacterAbort::Native(e),
+        ),
+        MathBuildAbort::Error(o) => crate::main_control::MainControlAbort::Error(o),
     }
 }
 
@@ -3750,12 +3726,9 @@ pub(crate) fn append_choices_in(
 /// translated from xetex-math.c:545 (fin_mlist)
 ///
 /// Phase C (`01b` §4a bucket C): the mem work + raw `cur_list` reads run under a
-/// single `&mut MemState` borrow; the impossible corrupt-node `confusion`
-/// (`q` not a `LEFT_NOAD`) propagates out as `Err` and the final `pop_nest` (which
-/// is `with_state`-bearing through the `nest` array) is deferred to
-/// [`fin_mlist_global`], both fired after the borrow drops. `pop_nest` only
-/// recycles `cur_list.head`, which the core never modifies, so the original
-/// ordering (`pop_nest` last) is preserved.
+/// single `&mut MemState` borrow. The impossible corrupt-node `confusion`
+/// (`q` not a `LEFT_NOAD`) propagates out as `Err`; the threaded caller then
+/// runs `pop_nest_in` under the same `EngineState` borrow.
 fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr> {
     let q;
     let aux = cur_list_aux_b32s1();
@@ -3788,22 +3761,9 @@ fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr>
     Ok(q)
 }
 
-/// Bridge-down wrapper for legacy callers (`01b` §3): runs the threaded
-/// [`fin_mlist`] under one borrow, fires the cold `confusion` if it hit the
-/// corrupt-node arm, then runs the `with_state`-bearing `pop_nest` after the
-/// borrow drops.
-pub unsafe fn fin_mlist_global(p: i32) -> i32 {
-    let q = match crate::state::with_state_mut(|st| fin_mlist(&mut st.mem, p)) {
-        Ok(q) => q,
-        Err(msg) => crate::errors::confusion(msg.as_ptr()),
-    };
-    crate::mem::pop_nest();
-    q
-}
-
-/// `&mut EngineState` core of [`fin_mlist_global`]: runs the threaded
-/// [`fin_mlist`] then `pop_nest_in` under one borrow, deferring the cold
-/// corrupt-node `confusion` via [`MainControlAbort::Confusion`].
+/// `&mut EngineState` core: runs [`fin_mlist`] then `pop_nest_in` under one
+/// borrow, deferring the cold corrupt-node `confusion` via
+/// [`MainControlAbort::Confusion`].
 pub(crate) fn fin_mlist_in(
     st: &mut crate::state::EngineState,
     p: i32,
@@ -3833,9 +3793,9 @@ fn build_choices_finish(mem: &mut MemState, save_stack: &mut SaveStackState, p: 
     false
 }
 
-/// `&mut EngineState` core of [`build_choices_global`]: closes one math-choice
-/// sublist (`\mathchoice`) under one borrow. Mirrors `fin_mlist_global`'s
-/// fin_mlist+pop_nest, then either completes or pushes the next choice group.
+/// `&mut EngineState` core: closes one math-choice sublist (`\mathchoice`)
+/// under one borrow. Mirrors `fin_mlist_in`'s fin_mlist+pop_nest, then either
+/// completes or pushes the next choice group.
 ///
 /// translated from xetex-math.c:571 (build_choices)
 pub(crate) fn build_choices_in(
@@ -4212,13 +4172,6 @@ pub(crate) fn math_ac_in(
     crate::scan::scan_math_in(st, tail.idx().0 + 1)
 }
 
-/// translated from xetex-math.c:786 (resume_after_display)
-pub unsafe fn resume_after_display() {
-    if let Err(e) = crate::state::with_state_mut(resume_after_display_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn resume_after_display_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -4410,12 +4363,6 @@ fn app_display_in(
     Ok(())
 }
 
-unsafe fn app_display(j: i32, b: i32, d: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| app_display_in(st, j, b, d)) {
-        e.fire();
-    }
-}
-
 /// Emit error for insufficient math fonts, flush the math list, set danger.
 /// Threaded core (`01b` §3): font-param checks + recoverable error under one
 /// borrow; the recoverable `error` is deferred via `mc_propagate_error`.
@@ -4460,14 +4407,12 @@ fn check_math_font_params_in(
     Ok(())
 }
 
-unsafe fn check_math_font_params(danger: &mut bool) {
-    if let Err(e) = crate::state::with_state_mut(|st| check_math_font_params_in(st, danger)) {
-        e.fire();
-    }
-}
-
 /// translated from xetex-math.c:194 (after_math)
-pub unsafe fn after_math() {
+pub(crate) fn after_math_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    use crate::main_control::{mc_propagate_error, MainControlAbort};
+
     let mut danger = false;
 
     let mut j = if cur_list_mode() == MMODE {
@@ -4476,39 +4421,37 @@ pub unsafe fn after_math() {
         TEX_NULL
     };
 
-    check_math_font_params(&mut danger);
+    check_math_font_params_in(st, &mut danger)?;
 
     let mut m = cur_list_mode() as i32;
     let mut l = false;
-    let mut p = fin_mlist_global(TEX_NULL);
+    let mut p = fin_mlist_in(st, TEX_NULL)?;
 
     let a;
     if cur_list_mode() as i32 == -m {
         // eTeX display math: second `$$` ends an inner display
-        crate::scan::get_x_token();
+        crate::scan::get_x_token_in(st)?;
         if cur_cmd() != MATH_SHIFT {
-            crate::output::error_here_with_diagnostic(c"Display math should end with $$".as_ptr());
-            crate::output::capture_to_diagnostic(std::ptr::null_mut());
-            set_help_ptr(2);
-            set_help_line(
-                1,
-                c"The `$' that I just saw supposedly matches a previous `$$'.".as_ptr(),
+            crate::output::error_here_with_diagnostic_in(
+                st,
+                c"Display math should end with $$".as_ptr(),
             );
-            set_help_line(
-                0,
-                c"So I shall assume that you typed `$$' both times.".as_ptr(),
-            );
-            crate::input::back_error();
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.errors.help_ptr = 2;
+            st.errors.help_line[1] =
+                c"The `$' that I just saw supposedly matches a previous `$$'.".as_ptr();
+            st.errors.help_line[0] = c"So I shall assume that you typed `$$' both times.".as_ptr();
+            mc_propagate_error(crate::input::back_error_in(st)?)?;
         }
-        set_cur_mlist(p);
-        set_cur_style(TEXT_STYLE);
-        set_mlist_penalties(false);
-        mlist_to_hlist();
-        a = crate::packaging::hpack(mem_b32s1(TEMP_HEAD), 0, ADDITIONAL);
-        set_mem_b16s0(a, DLIST);
-        crate::save::unsave();
-        set_save_ptr(save_ptr() - 1);
-        if save_stack_b32s1(save_ptr()) == 1 {
+        st.scanner.cur_mlist = p;
+        st.scanner.cur_style = TEXT_STYLE;
+        st.scanner.mlist_penalties = false;
+        unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
+        a = crate::packaging::hpack_emit_in(st, st.mem.b32s1(TEMP_HEAD), 0, ADDITIONAL)?;
+        st.mem.set_b16s0(a, DLIST);
+        crate::save::unsave_in(st)?;
+        st.save_stack.save_ptr -= 1;
+        if st.save_stack.b32s1(st.save_stack.save_ptr) == 1 {
             l = true;
         }
         danger = false;
@@ -4519,76 +4462,79 @@ pub unsafe fn after_math() {
             TEX_NULL
         };
 
-        check_math_font_params(&mut danger);
+        check_math_font_params_in(st, &mut danger)?;
 
         m = cur_list_mode() as i32;
-        p = fin_mlist_global(TEX_NULL);
+        p = fin_mlist_in(st, TEX_NULL)?;
     } else {
         a = TEX_NULL;
     }
 
     if m < 0 {
         // inline math (or inner/restricted hmode)
-        let math_surround = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_MATH_SURROUND);
-        let node = crate::mem::new_math_global(math_surround, BEFORE as i16);
-        set_mem_b32s1(cur_list_tail(), node);
-        set_cur_list_tail(mem_b32s1(cur_list_tail()));
-        set_cur_mlist(p);
-        set_cur_style(TEXT_STYLE);
-        set_mlist_penalties(cur_list_mode() > 0);
-        mlist_to_hlist();
-        set_mem_b32s1(cur_list_tail(), mem_b32s1(TEMP_HEAD));
-        while mem_b32s1(cur_list_tail()) != TEX_NULL {
-            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        let math_surround = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_MATH_SURROUND);
+        let node = crate::mem::new_math(&mut st.mem, math_surround, BEFORE as i16);
+        if node == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow.into());
         }
-        let node2 = crate::mem::new_math_global(math_surround, AFTER);
-        set_mem_b32s1(cur_list_tail(), node2);
-        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        st.mem.set_b32s1(cur_list_tail(), node);
+        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+        st.scanner.cur_mlist = p;
+        st.scanner.cur_style = TEXT_STYLE;
+        st.scanner.mlist_penalties = cur_list_mode() > 0;
+        unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
+        st.mem.set_b32s1(cur_list_tail(), st.mem.b32s1(TEMP_HEAD));
+        while st.mem.b32s1(cur_list_tail()) != TEX_NULL {
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+        }
+        let node2 = crate::mem::new_math(&mut st.mem, math_surround, AFTER);
+        if node2 == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow.into());
+        }
+        st.mem.set_b32s1(cur_list_tail(), node2);
+        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
         set_cur_list_aux_b32s0(1000);
 
-        if semantic_pagination_enabled() {
-            crate::ext::tt_insert_special(c"tdux:ce math".as_ptr());
+        if st.config.semantic_pagination_enabled {
+            unsafe { crate::ext::tt_insert_special_in(st, c"tdux:ce math".as_ptr()) }?;
         }
 
-        crate::save::unsave();
+        crate::save::unsave_in(st)?;
     } else {
         // display math
         if a == TEX_NULL {
-            crate::scan::get_x_token();
+            crate::scan::get_x_token_in(st)?;
             if cur_cmd() != MATH_SHIFT {
-                crate::output::error_here_with_diagnostic(
+                crate::output::error_here_with_diagnostic_in(
+                    st,
                     c"Display math should end with $$".as_ptr(),
                 );
-                crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                set_help_ptr(2);
-                set_help_line(
-                    1,
-                    c"The `$' that I just saw supposedly matches a previous `$$'.".as_ptr(),
-                );
-                set_help_line(
-                    0,
-                    c"So I shall assume that you typed `$$' both times.".as_ptr(),
-                );
-                crate::input::back_error();
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                st.errors.help_ptr = 2;
+                st.errors.help_line[1] =
+                    c"The `$' that I just saw supposedly matches a previous `$$'.".as_ptr();
+                st.errors.help_line[0] =
+                    c"So I shall assume that you typed `$$' both times.".as_ptr();
+                mc_propagate_error(crate::input::back_error_in(st)?)?;
             }
         }
-        set_cur_mlist(p);
-        set_cur_style(DISPLAY_STYLE);
-        set_mlist_penalties(false);
-        mlist_to_hlist();
-        p = mem_b32s1(TEMP_HEAD);
-        set_adjust_tail(ADJUST_HEAD);
-        set_pre_adjust_tail(PRE_ADJUST_HEAD);
-        let mut b = crate::packaging::hpack(p, 0, ADDITIONAL);
-        p = mem_b32s1(b + 5);
-        let t = adjust_tail();
-        set_adjust_tail(TEX_NULL);
-        let pre_t = pre_adjust_tail();
-        set_pre_adjust_tail(TEX_NULL);
-        let mut w = mem_b32s1(b + 1);
-        let z = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
-        let mut s = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
-        if eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION) < 0 {
+        st.scanner.cur_mlist = p;
+        st.scanner.cur_style = DISPLAY_STYLE;
+        st.scanner.mlist_penalties = false;
+        unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
+        p = st.mem.b32s1(TEMP_HEAD);
+        st.scanner.adjust_tail = ADJUST_HEAD;
+        st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
+        let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
+        p = st.mem.b32s1(b + 5);
+        let t = st.scanner.adjust_tail;
+        st.scanner.adjust_tail = TEX_NULL;
+        let pre_t = st.scanner.pre_adjust_tail;
+        st.scanner.pre_adjust_tail = TEX_NULL;
+        let mut w = st.mem.b32s1(b + 1);
+        let z = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
+        let mut s = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION) < 0 {
             s = -s - z;
         }
         let (mut e, q);
@@ -4596,42 +4542,47 @@ pub unsafe fn after_math() {
             e = 0;
             q = 0;
         } else {
-            e = mem_b32s1(a + 1);
-            q = e + math_quad_global(TEXT_SIZE);
+            e = st.mem.b32s1(a + 1);
+            q = e + math_quad(&st.fonts, &st.eqtb, TEXT_SIZE);
         }
         if w + q > z {
             if e != 0
-                && (w - total_shrink(0) + q <= z
-                    || total_shrink(FIL) != 0
-                    || total_shrink(FILL) != 0
-                    || total_shrink(FILLL) != 0)
+                && (w - st.scanner.total_shrink[0] + q <= z
+                    || st.scanner.total_shrink[FIL] != 0
+                    || st.scanner.total_shrink[FILL] != 0
+                    || st.scanner.total_shrink[FILLL] != 0)
             {
-                crate::mem::free_node_global(b, BOX_NODE_SIZE);
-                b = crate::packaging::hpack(p, z - q, EXACTLY);
+                crate::mem::free_node(&mut st.mem, b, BOX_NODE_SIZE);
+                b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?;
             } else {
                 e = 0;
                 if w > z {
-                    crate::mem::free_node_global(b, BOX_NODE_SIZE);
-                    b = crate::packaging::hpack(p, z, EXACTLY);
+                    crate::mem::free_node(&mut st.mem, b, BOX_NODE_SIZE);
+                    b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?;
                 }
             }
-            w = mem_b32s1(b + 1);
+            w = st.mem.b32s1(b + 1);
         }
-        set_mem_b16s0(b, DLIST);
+        st.mem.set_b16s0(b, DLIST);
         let mut d = crate::scaled_math::half(z - w);
         if e > 0 && d < 2 * e {
             d = crate::scaled_math::half(z - w - e);
-            if p != TEX_NULL && p < crate::globals::hi_mem_min() && mem_b16s1(p) == GLUE_NODE {
+            if p != TEX_NULL && p < st.mem.hi_mem_min && st.mem.b16s1(p) == GLUE_NODE {
                 d = 0;
             }
         }
 
-        let penalty_node =
-            crate::mem::new_penalty_global(eqtb_b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY));
-        set_mem_b32s1(cur_list_tail(), penalty_node);
-        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        let penalty_node = crate::mem::new_penalty(
+            &mut st.mem,
+            st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY),
+        );
+        if penalty_node == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow.into());
+        }
+        st.mem.set_b32s1(cur_list_tail(), penalty_node);
+        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
 
-        let pre_display_size = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
+        let pre_display_size = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
         let (g1, mut g2);
         if d + s <= pre_display_size || l {
             g1 = GLUE_PAR_ABOVE_DISPLAY_SKIP;
@@ -4642,73 +4593,97 @@ pub unsafe fn after_math() {
         }
 
         if l && e == 0 {
-            app_display(j, a, 0);
-            let inf_node = crate::mem::new_penalty_global(INF_PENALTY);
-            set_mem_b32s1(cur_list_tail(), inf_node);
-            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+            app_display_in(st, j, a, 0)?;
+            let inf_node = crate::mem::new_penalty(&mut st.mem, INF_PENALTY);
+            if inf_node == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(cur_list_tail(), inf_node);
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
         } else {
-            let g1_node = crate::mem::new_param_glue_global(g1);
-            set_mem_b32s1(cur_list_tail(), g1_node);
-            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+            let g1_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g1);
+            if g1_node == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(cur_list_tail(), g1_node);
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
         }
 
         if e != 0 {
-            let r = crate::mem::new_kern_global(z - w - e - d);
+            let r = crate::mem::new_kern(&mut st.mem, z - w - e - d);
+            if r == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
             if l {
-                set_mem_b32s1(a, r);
-                set_mem_b32s1(r, b);
+                st.mem.set_b32s1(a, r);
+                st.mem.set_b32s1(r, b);
                 b = a;
                 d = 0;
             } else {
-                set_mem_b32s1(b, r);
-                set_mem_b32s1(r, a);
+                st.mem.set_b32s1(b, r);
+                st.mem.set_b32s1(r, a);
             }
-            b = crate::packaging::hpack(b, 0, ADDITIONAL);
+            b = crate::packaging::hpack_emit_in(st, b, 0, ADDITIONAL)?;
         }
 
-        app_display(j, b, d);
+        app_display_in(st, j, b, d)?;
 
         if a != TEX_NULL && e == 0 && !l {
-            let inf_node2 = crate::mem::new_penalty_global(INF_PENALTY);
-            set_mem_b32s1(cur_list_tail(), inf_node2);
-            set_cur_list_tail(mem_b32s1(cur_list_tail()));
-            app_display(j, a, z - mem_b32s1(a + 1));
+            let inf_node2 = crate::mem::new_penalty(&mut st.mem, INF_PENALTY);
+            if inf_node2 == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(cur_list_tail(), inf_node2);
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+            app_display_in(st, j, a, z - st.mem.b32s1(a + 1))?;
             g2 = 0;
         }
 
         if t != ADJUST_HEAD {
-            set_mem_b32s1(cur_list_tail(), mem_b32s1(ADJUST_HEAD));
+            st.mem.set_b32s1(cur_list_tail(), st.mem.b32s1(ADJUST_HEAD));
             set_cur_list_tail(t);
         }
         if pre_t != PRE_ADJUST_HEAD {
-            set_mem_b32s1(cur_list_tail(), mem_b32s1(PRE_ADJUST_HEAD));
+            st.mem
+                .set_b32s1(cur_list_tail(), st.mem.b32s1(PRE_ADJUST_HEAD));
             set_cur_list_tail(pre_t);
         }
 
-        let post_pen =
-            crate::mem::new_penalty_global(eqtb_b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY));
-        set_mem_b32s1(cur_list_tail(), post_pen);
-        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+        let post_pen = crate::mem::new_penalty(
+            &mut st.mem,
+            st.eqtb.b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY),
+        );
+        if post_pen == ALLOC_FAILED {
+            return Err(NodeRecycleAbort::Overflow.into());
+        }
+        st.mem.set_b32s1(cur_list_tail(), post_pen);
+        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
 
         if g2 > 0 {
-            let g2_node = crate::mem::new_param_glue_global(g2);
-            set_mem_b32s1(cur_list_tail(), g2_node);
-            set_cur_list_tail(mem_b32s1(cur_list_tail()));
+            let g2_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g2);
+            if g2_node == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(cur_list_tail(), g2_node);
+            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
         }
 
-        crate::packaging::flush_node_list_global(j);
+        crate::packaging::flush_node_list(&mut st.mem, j).map_err(MainControlAbort::Confusion)?;
 
-        if semantic_pagination_enabled() {
-            crate::ext::tt_insert_special(c"tdux:ce dmath".as_ptr());
+        if st.config.semantic_pagination_enabled {
+            unsafe { crate::ext::tt_insert_special_in(st, c"tdux:ce dmath".as_ptr()) }?;
         }
 
-        resume_after_display();
+        resume_after_display_in(st)?;
     }
+    Ok(())
 }
 
 /// translated from xetex-math.c:81 (init_math)
-pub unsafe fn init_math() {
-    crate::scan::get_token();
+pub(crate) fn init_math_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    crate::scan::get_token_in(st)?;
 
     if cur_cmd() == MATH_SHIFT && cur_list_mode() > 0 {
         let mut j = TEX_NULL;
@@ -4716,42 +4691,55 @@ pub unsafe fn init_math() {
         let x;
 
         if cur_list_head() == cur_list_tail() {
-            crate::mem::pop_nest();
+            crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
             x = if cur_list_e_tex_aux() == TEX_NULL {
                 0
-            } else if mem_b32s0(cur_list_e_tex_aux()) >= R_CODE {
+            } else if st.mem.b32s0(cur_list_e_tex_aux()) >= R_CODE {
                 -1
             } else {
                 1
             };
         } else {
-            crate::linebreak::line_break(true);
+            match crate::linebreak::line_break_in(st, true) {
+                crate::linebreak::LineBreakOutcome::Done => {}
+                o => return Err(crate::main_control::MainControlAbort::LineBreak(o)),
+            }
 
-            j = if eqtb_b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP) == 0 {
-                crate::mem::new_kern_global(0)
+            j = if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP) == 0 {
+                crate::mem::new_kern(&mut st.mem, 0)
             } else {
-                crate::mem::new_param_glue_global(GLUE_PAR_RIGHT_SKIP as i16)
+                crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16)
             };
+            if j == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
 
-            let p_glue = if eqtb_b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP) == 0 {
-                crate::mem::new_kern_global(0)
+            let p_glue = if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP) == 0 {
+                crate::mem::new_kern(&mut st.mem, 0)
             } else {
-                crate::mem::new_param_glue_global(GLUE_PAR_LEFT_SKIP as i16)
+                crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP as i16)
             };
-            set_mem_b32s1(p_glue, j);
+            if p_glue == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(p_glue, j);
 
-            j = crate::mem::new_null_box_global();
-            set_mem_b32s1(j + 1, mem_b32s1(just_box() + 1));
-            set_mem_b32s1(j + 4, mem_b32s1(just_box() + 4));
-            set_mem_b32s1(j + 5, p_glue);
-            set_mem_b16s0(j + 5, mem_b16s0(just_box() + 5));
-            set_mem_b16s1(j + 5, mem_b16s1(just_box() + 5));
-            set_mem_gr(j + 6, mem_gr(just_box() + 6));
+            j = crate::mem::new_null_box(&mut st.mem);
+            if j == ALLOC_FAILED {
+                return Err(NodeRecycleAbort::Overflow.into());
+            }
+            let just_box = st.scanner.just_box;
+            st.mem.set_b32s1(j + 1, st.mem.b32s1(just_box + 1));
+            st.mem.set_b32s1(j + 4, st.mem.b32s1(just_box + 4));
+            st.mem.set_b32s1(j + 5, p_glue);
+            st.mem.set_b16s0(j + 5, st.mem.b16s0(just_box + 5));
+            st.mem.set_b16s1(j + 5, st.mem.b16s1(just_box + 5));
+            st.mem.set_gr(j + 6, st.mem.gr(just_box + 6));
 
-            let mut v = mem_b32s1(just_box() + 4);
+            let mut v = st.mem.b32s1(just_box + 4);
             x = if cur_list_e_tex_aux() == TEX_NULL {
                 0
-            } else if mem_b32s0(cur_list_e_tex_aux()) >= R_CODE {
+            } else if st.mem.b32s0(cur_list_e_tex_aux()) >= R_CODE {
                 -1
             } else {
                 1
@@ -4759,27 +4747,38 @@ pub unsafe fn init_math() {
 
             let mut p;
             if x >= 0 {
-                p = mem_b32s1(just_box() + 5);
-                set_mem_b32s1(TEMP_HEAD, TEX_NULL);
+                p = st.mem.b32s1(just_box + 5);
+                st.mem.set_b32s1(TEMP_HEAD, TEX_NULL);
             } else {
-                v = -v - mem_b32s1(just_box() + 1);
-                p = crate::mem::new_math_global(0, BEGIN_L_CODE);
-                set_mem_b32s1(TEMP_HEAD, p);
-                crate::packaging::just_copy_global(
-                    mem_b32s1(just_box() + 5),
-                    p,
-                    crate::mem::new_math_global(0, END_L_CODE),
-                );
-                set_cur_dir(RIGHT_TO_LEFT);
+                v = -v - st.mem.b32s1(just_box + 1);
+                p = crate::mem::new_math(&mut st.mem, 0, BEGIN_L_CODE);
+                if p == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow.into());
+                }
+                st.mem.set_b32s1(TEMP_HEAD, p);
+                let end = crate::mem::new_math(&mut st.mem, 0, END_L_CODE);
+                if end == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow.into());
+                }
+                let list = st.mem.b32s1(just_box + 5);
+                crate::packaging::just_copy(&mut st.mem, list, p, end)?;
+                st.scanner.cur_dir = RIGHT_TO_LEFT;
             }
 
-            v += 2 * font_info_b32s1(QUAD_CODE + param_base(eqtb_b32s1(CUR_FONT_LOC)));
+            let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
+            v += 2 * st
+                .fonts
+                .font_info_b32s1(QUAD_CODE + st.fonts.param_base(cur_font));
 
-            if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                set_temp_ptr(crate::mem::get_avail_global());
-                set_mem_b32s0(temp_ptr(), BEFORE);
-                set_mem_b32s1(temp_ptr(), lr_ptr());
-                set_lr_ptr(temp_ptr());
+            if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
+                let tp = crate::mem::get_avail(&mut st.mem);
+                if tp == ALLOC_FAILED {
+                    return Err(NodeRecycleAbort::Overflow.into());
+                }
+                set_temp_ptr(tp);
+                st.mem.set_b32s0(temp_ptr(), BEFORE);
+                st.mem.set_b32s1(temp_ptr(), st.scanner.LR_ptr);
+                st.scanner.LR_ptr = temp_ptr();
             }
 
             'outer: loop {
@@ -4791,62 +4790,73 @@ pub unsafe fn init_math() {
                 let d: i32;
 
                 'reswitch: loop {
-                    if p >= hi_mem_min() {
-                        let f = mem_b16s1(p) as i32;
-                        let c = crate::scan::effective_char_global(true, f, mem_b16s0(p));
-                        d = font_info_b32s1(
-                            width_base_entry(f) + font_info_b16(char_base_entry(f) + c).s3 as i32,
+                    if p >= st.mem.hi_mem_min {
+                        let f = st.mem.b16s1(p) as i32;
+                        let c =
+                            crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
+                        d = st.fonts.font_info_b32s1(
+                            st.fonts.width_base_entry(f)
+                                + st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c).s3 as i32,
                         );
                         is_found = true;
                         break 'reswitch;
                     }
-                    match mem_b16s1(p) {
+                    match st.mem.b16s1(p) {
                         0..=2 => {
-                            d = mem_b32s1(p + 1);
+                            d = st.mem.b32s1(p + 1);
                             is_found = true;
                             break 'reswitch;
                         }
                         6 => {
-                            set_mem_word(GARBAGE, mem_word(p + 1));
-                            set_mem_b32s1(GARBAGE, mem_b32s1(p));
+                            st.mem.set_word(GARBAGE, st.mem.word(p + 1));
+                            st.mem.set_b32s1(GARBAGE, st.mem.b32s1(p));
                             p = GARBAGE;
-                            set_xtx_ligature_present(true);
+                            st.fonts.xtx_ligature_present = true;
                             continue 'reswitch;
                         }
                         11 | 40 => {
-                            d = mem_b32s1(p + 1);
+                            d = st.mem.b32s1(p + 1);
                             is_found = false;
                             break 'reswitch;
                         }
                         9 => {
-                            d = mem_b32s1(p + 1);
-                            if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                                if mem_b16s0(p) & 1 != 0 {
-                                    if mem_b32s0(lr_ptr())
-                                        == L_CODE * (mem_b16s0(p) as i32 / L_CODE) + 3
+                            d = st.mem.b32s1(p + 1);
+                            if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
+                                if st.mem.b16s0(p) & 1 != 0 {
+                                    if st.mem.b32s0(st.scanner.LR_ptr)
+                                        == L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3
                                     {
-                                        set_temp_ptr(lr_ptr());
-                                        set_lr_ptr(mem_b32s1(temp_ptr()));
-                                        set_mem_b32s1(temp_ptr(), avail());
-                                        set_avail(temp_ptr());
-                                    } else if mem_b16s0(p) as i32 > L_CODE {
+                                        set_temp_ptr(st.scanner.LR_ptr);
+                                        st.scanner.LR_ptr = st.mem.b32s1(temp_ptr());
+                                        st.mem.set_b32s1(temp_ptr(), st.mem.avail);
+                                        st.mem.avail = temp_ptr();
+                                    } else if st.mem.b16s0(p) as i32 > L_CODE {
                                         w = MAX_HALFWORD;
                                         break 'outer;
                                     }
                                 } else {
-                                    set_temp_ptr(crate::mem::get_avail_global());
-                                    set_mem_b32s0(
+                                    let tp = crate::mem::get_avail(&mut st.mem);
+                                    if tp == ALLOC_FAILED {
+                                        return Err(NodeRecycleAbort::Overflow.into());
+                                    }
+                                    set_temp_ptr(tp);
+                                    st.mem.set_b32s0(
                                         temp_ptr(),
-                                        L_CODE * (mem_b16s0(p) as i32 / L_CODE) + 3,
+                                        L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3,
                                     );
-                                    set_mem_b32s1(temp_ptr(), lr_ptr());
-                                    set_lr_ptr(temp_ptr());
-                                    if mem_b16s0(p) as i32 / R_CODE != cur_dir() as i32 {
-                                        crate::packaging::just_reverse_global(p);
+                                    st.mem.set_b32s1(temp_ptr(), st.scanner.LR_ptr);
+                                    st.scanner.LR_ptr = temp_ptr();
+                                    if st.mem.b16s0(p) as i32 / R_CODE != st.scanner.cur_dir as i32
+                                    {
+                                        crate::packaging::just_reverse(
+                                            &mut st.mem,
+                                            &mut st.scanner,
+                                            p,
+                                        )?;
                                         p = TEMP_HEAD;
                                     }
                                 }
-                            } else if mem_b16s0(p) as i32 >= L_CODE {
+                            } else if st.mem.b16s0(p) as i32 >= L_CODE {
                                 w = MAX_HALFWORD;
                                 break 'outer;
                             }
@@ -4854,27 +4864,27 @@ pub unsafe fn init_math() {
                             break 'reswitch;
                         }
                         14 => {
-                            d = mem_b32s1(p + 1);
-                            set_cur_dir(mem_b16s0(p) as i16);
+                            d = st.mem.b32s1(p + 1);
+                            st.scanner.cur_dir = st.mem.b16s0(p) as i16;
                             is_found = false;
                             break 'reswitch;
                         }
                         10 => {
-                            let q = mem_b32s0(p + 1);
-                            d = mem_b32s1(q + 1);
-                            if mem_b16s1(just_box() + 5) == STRETCHING {
-                                if mem_b16s0(just_box() + 5) == mem_b16s1(q)
-                                    && mem_b32s1(q + 2) != 0
+                            let q = st.mem.b32s0(p + 1);
+                            d = st.mem.b32s1(q + 1);
+                            if st.mem.b16s1(just_box + 5) == STRETCHING {
+                                if st.mem.b16s0(just_box + 5) == st.mem.b16s1(q)
+                                    && st.mem.b32s1(q + 2) != 0
                                 {
                                     v = MAX_HALFWORD;
                                 }
-                            } else if mem_b16s1(just_box() + 5) == SHRINKING
-                                && mem_b16s0(just_box() + 5) == mem_b16s0(q)
-                                && mem_b32s1(q + 3) != 0
+                            } else if st.mem.b16s1(just_box + 5) == SHRINKING
+                                && st.mem.b16s0(just_box + 5) == st.mem.b16s0(q)
+                                && st.mem.b32s1(q + 3) != 0
                             {
                                 v = MAX_HALFWORD;
                             }
-                            if mem_b16s0(p) >= A_LEADERS {
+                            if st.mem.b16s0(p) >= A_LEADERS {
                                 is_found = true;
                                 break 'reswitch;
                             }
@@ -4882,14 +4892,14 @@ pub unsafe fn init_math() {
                             break 'reswitch;
                         }
                         8 => {
-                            let st = mem_b16s0(p);
-                            if st == NATIVE_WORD_NODE
-                                || st == NATIVE_WORD_NODE_AT
-                                || st == GLYPH_NODE
-                                || st == PIC_NODE
-                                || st == PDF_NODE
+                            let subtype = st.mem.b16s0(p);
+                            if subtype == NATIVE_WORD_NODE
+                                || subtype == NATIVE_WORD_NODE_AT
+                                || subtype == GLYPH_NODE
+                                || subtype == PIC_NODE
+                                || subtype == PDF_NODE
                             {
-                                d = mem_b32s1(p + 1);
+                                d = st.mem.b32s1(p + 1);
                                 is_found = true;
                             } else {
                                 d = 0;
@@ -4917,88 +4927,133 @@ pub unsafe fn init_math() {
                     v += d;
                 }
 
-                p = mem_b32s1(p);
+                p = st.mem.b32s1(p);
             }
 
-            if eqtb_b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                while lr_ptr() != TEX_NULL {
-                    set_temp_ptr(lr_ptr());
-                    set_lr_ptr(mem_b32s1(temp_ptr()));
-                    set_mem_b32s1(temp_ptr(), avail());
-                    set_avail(temp_ptr());
+            if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
+                while st.scanner.LR_ptr != TEX_NULL {
+                    set_temp_ptr(st.scanner.LR_ptr);
+                    st.scanner.LR_ptr = st.mem.b32s1(temp_ptr());
+                    st.mem.set_b32s1(temp_ptr(), st.mem.avail);
+                    st.mem.avail = temp_ptr();
                 }
-                if lr_problems() != 0 {
+                if st.scanner.LR_problems != 0 {
                     w = MAX_HALFWORD;
-                    set_lr_problems(0);
+                    st.scanner.LR_problems = 0;
                 }
             }
 
-            set_cur_dir(LEFT_TO_RIGHT);
-            crate::packaging::flush_node_list_global(mem_b32s1(TEMP_HEAD));
+            st.scanner.cur_dir = LEFT_TO_RIGHT;
+            let temp_head = st.mem.b32s1(TEMP_HEAD);
+            crate::packaging::flush_node_list(&mut st.mem, temp_head)
+                .map_err(crate::main_control::MainControlAbort::Confusion)?;
         }
 
         let l;
         let s;
-        let par_shape = eqtb_b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+        let par_shape = st.eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
         if par_shape == TEX_NULL {
-            let hang = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HANG_INDENT);
-            let hang_after = eqtb_b32s1(INT_BASE + INT_PAR_HANG_AFTER);
+            let hang = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HANG_INDENT);
+            let hang_after = st.eqtb.b32s1(INT_BASE + INT_PAR_HANG_AFTER);
             let prev_graf = cur_list_prev_graf();
             if hang != 0
                 && ((hang_after >= 0 && prev_graf + 2 > hang_after) || prev_graf + 1 < -hang_after)
             {
-                l = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE) - hang.abs();
+                l = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE) - hang.abs();
                 s = if hang > 0 { hang } else { 0 };
             } else {
-                l = eqtb_b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE);
+                l = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE);
                 s = 0;
             }
         } else {
-            let n = mem_b32s0(par_shape);
+            let n = st.mem.b32s0(par_shape);
             let p = if cur_list_prev_graf() + 2 >= n {
                 par_shape + 2 * n
             } else {
                 par_shape + 2 * (cur_list_prev_graf() + 2)
             };
-            s = mem_b32s1(p - 1);
-            l = mem_b32s1(p);
+            s = st.mem.b32s1(p - 1);
+            l = st.mem.b32s1(p);
         }
 
-        crate::main_control::push_math(MATH_SHIFT_GROUP);
+        crate::main_control::push_math_in(st, MATH_SHIFT_GROUP)?;
         set_cur_list_mode(MMODE);
-        crate::save::eq_word_define_global(INT_BASE + INT_PAR_CUR_FAM, -1);
-        crate::save::eq_word_define_global(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w);
+        if let Some(a) = crate::save::eq_word_define(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            INT_BASE + INT_PAR_CUR_FAM,
+            -1,
+        ) {
+            return Err(crate::main_control::MainControlAbort::Save(a));
+        }
+        if let Some(a) = crate::save::eq_word_define(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE,
+            w,
+        ) {
+            return Err(crate::main_control::MainControlAbort::Save(a));
+        }
         set_cur_list_e_tex_aux(j);
-        crate::save::eq_word_define_global(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION, x);
-        crate::save::eq_word_define_global(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH, l);
-        crate::save::eq_word_define_global(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s);
-
-        if semantic_pagination_enabled() {
-            crate::ext::tt_insert_special(c"tdux:cs dmath".as_ptr());
+        if let Some(a) = crate::save::eq_word_define(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION,
+            x,
+        ) {
+            return Err(crate::main_control::MainControlAbort::Save(a));
+        }
+        if let Some(a) = crate::save::eq_word_define(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH,
+            l,
+        ) {
+            return Err(crate::main_control::MainControlAbort::Save(a));
+        }
+        if let Some(a) = crate::save::eq_word_define(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT,
+            s,
+        ) {
+            return Err(crate::main_control::MainControlAbort::Save(a));
         }
 
-        let every_display = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_DISPLAY);
+        if st.config.semantic_pagination_enabled {
+            unsafe { crate::ext::tt_insert_special_in(st, c"tdux:cs dmath".as_ptr()) }?;
+        }
+
+        let every_display = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_DISPLAY);
         if every_display != TEX_NULL {
-            begin_token_list(every_display, EVERY_DISPLAY_TEXT);
+            crate::input::begin_token_list_in(st, every_display, EVERY_DISPLAY_TEXT)?;
         }
-        if nest_ptr() == 1 {
-            crate::pagebuilder::build_page();
+        if st.input.nest_ptr == 1 {
+            crate::pagebuilder::build_page_in(st)?;
         }
     } else {
-        crate::input::back_input();
-        crate::main_control::push_math(MATH_SHIFT_GROUP);
-        crate::save::eq_word_define_global(INT_BASE + INT_PAR_CUR_FAM, -1);
-        if insert_src_special_every_math() {
-            crate::ext::insert_src_special();
+        crate::input::back_input_in(st)?;
+        crate::main_control::push_math_in(st, MATH_SHIFT_GROUP)?;
+        if let Some(a) = crate::save::eq_word_define(
+            &mut st.eqtb,
+            &mut st.save_stack,
+            INT_BASE + INT_PAR_CUR_FAM,
+            -1,
+        ) {
+            return Err(crate::main_control::MainControlAbort::Save(a));
         }
-        if semantic_pagination_enabled() {
-            crate::ext::tt_insert_special(c"tdux:cs math".as_ptr());
+        if st.shipout.insert_src_special_every_math {
+            crate::ext::insert_src_special_in(st)?;
         }
-        let every_math = eqtb_b32s1(LOCAL_BASE + LOCAL_EVERY_MATH);
+        if st.config.semantic_pagination_enabled {
+            unsafe { crate::ext::tt_insert_special_in(st, c"tdux:cs math".as_ptr()) }?;
+        }
+        let every_math = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_MATH);
         if every_math != TEX_NULL {
-            begin_token_list(every_math, EVERY_MATH_TEXT);
+            crate::input::begin_token_list_in(st, every_math, EVERY_MATH_TEXT)?;
         }
     }
+    Ok(())
 }
 
 /// translated from xetex-math.c:71 (initialize_math_variables)
