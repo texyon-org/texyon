@@ -3055,3 +3055,23 @@ tracks:
 - Full corpus: **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`
 
 **Handoff / Next:** remaining math dispatcher fallbacks are `init_math` and `after_math`. Thread those next, then collapse `MathCaseAction` away and make `main_control_math_cases_in` return plain `Result<(), MainControlAbort>`.
+
+## Idiom session 224 — 2026-06-22 — Execution: thread `open_or_close` and `issue_message`
+
+**Type:** execution (workstream 01 / Phase-C threading), intentionally light docs. Used one explorer subagent for the `open_or_close` dependency audit; the actual edits stayed local.
+
+### Change
+
+- `io::open_or_close` now has a real `open_or_close_in(&mut EngineState) -> Result<(), OpenOrCloseAbort>` core. It uses threaded scanner/file-name/open helpers and direct `st.input`/`st.eqtb` access; the no-arg function is now only the bridge wrapper.
+- `output::issue_message` now has `issue_message_in(&mut EngineState) -> Result<(), IssueMessageAbort>`, using threaded token scanning, output, string-pool, and error paths under one borrow.
+- Deleted dead bridge readers exposed by those slices: read-stream readers, UTF-16 filename readers, and the old `term_offset`/`file_offset`/`long_help_seen` readers.
+
+### Validation
+
+- `cargo fmt -p tectonic_engine_xetex`
+- `cargo check -p tectonic_engine_xetex` — warnings **41**
+- Dashboard: `tex-outputs` **29/29**, `trip` **2/2**, `engine_rust` **7/7**, `latex_goldens` **4/4**
+- Release rebuild: `cargo build --release -p tectonic`
+- Full corpus: **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`
+
+**Handoff / Next:** continue the mode-independent frontier with `show_whatever` and `do_extension`. Do not single-borrow `main_control_mode_independent` until those legacy arms are threaded; otherwise it will re-enter `with_state`.

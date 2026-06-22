@@ -2,10 +2,8 @@
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{
-    buf_size, cur_area, cur_chr, cur_ext, cur_name, cur_val, eqtb_b32s1, first, last,
-    name_length16, name_of_file, name_of_file16_entry, read_file_entry, read_file_ptr,
-    read_open_entry, set_buffer_entry, set_input_file, set_last, set_name_in_progress,
-    set_name_length, set_read_open_entry, set_stop_at_space,
+    buf_size, cur_chr, cur_val, first, last, name_of_file, set_buffer_entry, set_input_file,
+    set_last, set_name_length,
 };
 use crate::globals::{
     cur_cmd, cur_cs, cur_input, init_pool_ptr, pool_size, selector, set_cur_cs,
@@ -29,8 +27,6 @@ use crate::output::print_cstr;
 use crate::output::print_int;
 use crate::output::print_nl;
 use crate::output::print_nl_cstr;
-use crate::scan::scan_four_bit_int;
-use crate::scan::scan_optional_equals;
 use crate::shipout::finalize_dvi_file;
 use crate::texmfmp::gettexstring;
 
@@ -933,43 +929,74 @@ pub unsafe fn u_close(f: *mut UFile) {
 /// Open or close a \read stream.
 ///
 /// translated from xetex-io.c:294 (open_or_close_in)
-pub unsafe fn open_or_close_in() {
+pub(crate) enum OpenOrCloseAbort {
+    Scanner(SccAbort),
+    Name(NameAbort),
+}
+
+impl OpenOrCloseAbort {
+    pub(crate) unsafe fn fire(self) -> ! {
+        match self {
+            OpenOrCloseAbort::Scanner(e) => e.fire(),
+            OpenOrCloseAbort::Name(e) => fire_name_overflow(e),
+        }
+    }
+}
+
+/// Bridge-down wrapper for legacy callers (`01b` §3, §5).
+pub unsafe fn open_or_close() {
+    if let Err(e) = crate::state::with_state_mut(|st| open_or_close_in(st)) {
+        e.fire();
+    }
+}
+
+pub(crate) unsafe fn open_or_close_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), OpenOrCloseAbort> {
     let c = cur_chr() as u8;
-    scan_four_bit_int();
+    crate::scan::scan_four_bit_int_in(st).map_err(OpenOrCloseAbort::Scanner)?;
     let n = cur_val() as u8 as usize;
 
-    if read_open_entry(n) != CLOSED {
-        u_close(read_file_entry(n));
-        set_read_open_entry(n, CLOSED);
+    if st.input.read_open[n] != CLOSED {
+        u_close(st.input.read_file[n]);
+        st.input.read_open[n] = CLOSED;
     }
 
     if c != 0 {
-        scan_optional_equals();
-        scan_file_name();
-        pack_file_name(cur_name(), cur_area(), cur_ext());
+        crate::scan::scan_optional_equals_in(st).map_err(OpenOrCloseAbort::Scanner)?;
+        scan_file_name_in(st).map_err(OpenOrCloseAbort::Scanner)?;
+        let (name, area, ext) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
+        pack_file_name_in(st, name, area, ext);
 
-        if u_open_in(
-            read_file_ptr(n),
+        let read_file = st.input.read_file.as_mut_ptr().add(n);
+        if u_open_in_in(
+            st,
+            read_file,
             TTBC_FILE_FORMAT_TEX,
-            c"rb".as_ptr(),
-            eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE),
-            eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING),
+            st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE),
+            st.eqtb
+                .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING),
         ) != 0
         {
-            make_utf16_name();
-            set_name_in_progress(true);
-            begin_name();
-            set_stop_at_space(false);
+            make_utf16_name_in(st);
+            st.scanner.name_in_progress = true;
+            begin_name_in(st);
+            st.scanner.stop_at_space = false;
             let mut k = 0i32;
-            while k < name_length16() && more_name(name_of_file16_entry(k)) {
+            while k < st.input.name_length16
+                && more_name_in(st, st.input.name_of_file16[k as usize])
+                    .map_err(OpenOrCloseAbort::Name)?
+            {
                 k += 1;
             }
-            set_stop_at_space(true);
-            end_name();
-            set_name_in_progress(false);
-            set_read_open_entry(n, JUST_OPEN);
+            st.scanner.stop_at_space = true;
+            end_name_in(st).map_err(OpenOrCloseAbort::Name)?;
+            st.scanner.name_in_progress = false;
+            st.input.read_open[n] = JUST_OPEN;
         }
     }
+
+    Ok(())
 }
 
 // ---- moved verbatim from scan.rs (workstream 02) ----

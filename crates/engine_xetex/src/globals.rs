@@ -655,11 +655,6 @@ pub(crate) fn set_name_length(v: i32) {
         s.input.name_length = v;
     });
 }
-/// Returns `name_length16`.
-#[inline]
-pub(crate) fn name_length16() -> i32 {
-    crate::state::with_state(|s| s.input.name_length16)
-}
 /// Returns `name_length`.
 #[inline]
 pub(crate) fn name_length() -> i32 {
@@ -853,11 +848,6 @@ pub(crate) fn set_selector(v: i32) {
     });
 }
 
-/// Returns `term_offset` (columns written to terminal since last newline).
-#[inline]
-pub(crate) fn term_offset() -> i32 {
-    crate::state::with_state(|state| state.shipout.term_offset)
-}
 /// Sets `term_offset`.
 #[inline]
 pub(crate) fn set_term_offset(v: i32) {
@@ -866,11 +856,6 @@ pub(crate) fn set_term_offset(v: i32) {
     });
 }
 
-/// Returns `file_offset` (columns written to log file since last newline).
-#[inline]
-pub(crate) fn file_offset() -> i32 {
-    crate::state::with_state(|state| state.shipout.file_offset)
-}
 /// Sets `file_offset`.
 #[inline]
 pub(crate) fn set_file_offset(v: i32) {
@@ -1104,10 +1089,6 @@ pub(crate) fn set_use_err_help(v: bool) {
     });
 }
 #[inline]
-pub(crate) fn long_help_seen() -> bool {
-    crate::state::with_state(|state| state.errors.long_help_seen)
-}
-#[inline]
 pub(crate) fn set_long_help_seen(v: bool) {
     crate::state::with_state_mut(|state| {
         state.errors.long_help_seen = v;
@@ -1330,33 +1311,10 @@ pub(crate) fn set_xeq_level(p: i32, v: u16) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn read_open_entry(n: usize) -> u8 {
-    crate::state::with_state(|s| s.input.read_open[n])
-}
-#[inline]
 pub(crate) fn set_read_open_entry(n: usize, v: u8) {
     crate::state::with_state_mut(|s| {
         s.input.read_open[n] = v;
     });
-}
-pub(crate) fn read_file_entry(n: usize) -> *mut crate::io::UFile {
-    crate::state::with_state(|s| s.input.read_file[n])
-}
-/// Returns a pointer to `read_file[n]`, for passing to `u_open_in`.
-/// Valid past the borrow: the array lives in the `'static` thread-local and is never moved.
-#[inline]
-pub(crate) fn read_file_ptr(n: usize) -> *mut *mut crate::io::UFile {
-    crate::state::with_state_mut(|s| unsafe { s.input.read_file.as_mut_ptr().add(n) })
-}
-
-// ---------------------------------------------------------------------------
-// name_of_file16_entry — indexed read of the UTF-16 name buffer
-// ---------------------------------------------------------------------------
-
-/// Returns `name_of_file16[k]`.
-#[inline]
-pub(crate) fn name_of_file16_entry(k: i32) -> u16 {
-    crate::state::with_state(|s| s.input.name_of_file16[k as usize])
 }
 
 // ---------------------------------------------------------------------------

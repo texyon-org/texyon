@@ -2186,6 +2186,7 @@ pub(crate) enum MainControlAbort {
     Unsave(crate::save::UnsaveAbort),
     InsertSrc(crate::ext::InsertSrcAbort),
     OpenLog(crate::io::OpenLogAbort),
+    OpenOrClose(crate::io::OpenOrCloseAbort),
     MakeTexString(crate::texmfmp::MakeTexStringAbort),
     ReadFontInfo(crate::fonts::ReadFontInfoAbort),
     Error(crate::errors::ErrorOutcome),
@@ -2272,6 +2273,12 @@ impl From<crate::io::OpenLogAbort> for MainControlAbort {
     }
 }
 
+impl From<crate::io::OpenOrCloseAbort> for MainControlAbort {
+    fn from(e: crate::io::OpenOrCloseAbort) -> Self {
+        MainControlAbort::OpenOrClose(e)
+    }
+}
+
 impl From<crate::texmfmp::MakeTexStringAbort> for MainControlAbort {
     fn from(e: crate::texmfmp::MakeTexStringAbort) -> Self {
         MainControlAbort::MakeTexString(e)
@@ -2312,6 +2319,7 @@ impl MainControlAbort {
             MainControlAbort::Unsave(a) => a.fire(),
             MainControlAbort::InsertSrc(a) => a.fire(),
             MainControlAbort::OpenLog(a) => a.fire(),
+            MainControlAbort::OpenOrClose(a) => a.fire(),
             MainControlAbort::MakeTexString(a) => crate::texmfmp::fire_make_tex_string(a),
             MainControlAbort::ReadFontInfo(a) => a.finish(),
             MainControlAbort::Error(o) => {
@@ -4496,7 +4504,7 @@ pub unsafe fn main_control_mode_independent() {
             get_token();
             crate::save::save_for_after_global(cur_tok());
         }
-        IN_STREAM_MC => crate::io::open_or_close_in(),
+        IN_STREAM_MC => crate::io::open_or_close(),
         MESSAGE_MC => issue_message(),
         CASE_SHIFT_MC => shift_case(),
         XRAY_MC => show_whatever(),
