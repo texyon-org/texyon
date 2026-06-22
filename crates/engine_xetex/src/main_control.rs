@@ -17,7 +17,7 @@ use crate::consts::{
 };
 use crate::errors::{error, report_illegal_case};
 use crate::ext::{
-    append_src_special, apply_mapping, do_extension, get_native_char_height_depth_global,
+    append_src_special, apply_mapping, do_extension_in, get_native_char_height_depth_global,
     get_native_char_sidebearings_global, map_char_to_glyph_global, measure_native_node_global,
 };
 use crate::fonts::read_font_info_in;
@@ -32,15 +32,14 @@ use crate::input::begin_token_list;
 use crate::linebreak::do_locale_linebreaks;
 use crate::math::{after_math_in, init_math_in};
 use crate::output::{
-    capture_to_diagnostic, char_warning, error_here_with_diagnostic, issue_message, print_cmd_chr,
-    show_whatever,
+    capture_to_diagnostic, char_warning, error_here_with_diagnostic, print_cmd_chr,
 };
 use crate::packaging::{flush_node_list_global, hpack};
 use crate::pagebuilder::build_page;
 use crate::scan::{
-    back_input, effective_char_global, effective_char_info_global, get_next, get_token,
-    get_x_token, insert_dollar_sign, new_native_word_node_global, scan_char_num, scan_dimen,
-    scan_rule_spec, scan_usv_num, set_class_fn, set_family_fn, x_token,
+    back_input, effective_char_global, effective_char_info_global, get_next, get_x_token,
+    insert_dollar_sign, new_native_word_node_global, scan_char_num, scan_dimen, scan_rule_spec,
+    scan_usv_num, set_class_fn, set_family_fn, x_token,
 };
 use crate::units::MemIdx;
 
@@ -2185,6 +2184,7 @@ pub(crate) enum MainControlAbort {
     SaMutation(crate::save::SaMutationAbort),
     Unsave(crate::save::UnsaveAbort),
     InsertSrc(crate::ext::InsertSrcAbort),
+    IssueMessage(crate::output::IssueMessageAbort),
     ShowWhatever(crate::output::ShowWhateverAbort),
     OpenLog(crate::io::OpenLogAbort),
     OpenOrClose(crate::io::OpenOrCloseAbort),
@@ -2268,6 +2268,12 @@ impl From<crate::ext::InsertSrcAbort> for MainControlAbort {
     }
 }
 
+impl From<crate::output::IssueMessageAbort> for MainControlAbort {
+    fn from(e: crate::output::IssueMessageAbort) -> Self {
+        MainControlAbort::IssueMessage(e)
+    }
+}
+
 impl From<crate::output::ShowWhateverAbort> for MainControlAbort {
     fn from(e: crate::output::ShowWhateverAbort) -> Self {
         MainControlAbort::ShowWhatever(e)
@@ -2325,6 +2331,7 @@ impl MainControlAbort {
             MainControlAbort::SaMutation(a) => a.fire(),
             MainControlAbort::Unsave(a) => a.fire(),
             MainControlAbort::InsertSrc(a) => a.fire(),
+            MainControlAbort::IssueMessage(a) => a.fire(),
             MainControlAbort::ShowWhatever(a) => a.fire(),
             MainControlAbort::OpenLog(a) => a.fire(),
             MainControlAbort::OpenOrClose(a) => a.fire(),
@@ -3514,12 +3521,6 @@ pub(crate) fn append_discretionary_in(
     Ok(())
 }
 // translated from xetex-xetex0.c:10765 (shift_case)
-pub unsafe fn shift_case() {
-    if let Err(e) = crate::state::with_state_mut(shift_case_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn shift_case_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let b = cur_chr();
     crate::scan::scan_toks_in(st, false, false)?;
@@ -4455,8 +4456,14 @@ pub unsafe fn main_control_append_normal_space() {
 }
 // translated from xetex-xetex0.c:7277 (main_control mode-independent cases)
 pub unsafe fn main_control_mode_independent() {
-    extern "C" {}
+    if let Err(e) = crate::state::with_state_mut(main_control_mode_independent_in) {
+        e.fire();
+    }
+}
 
+pub(crate) fn main_control_mode_independent_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const AFTER_ASSIGNMENT_MC: u8 = 40;
     const AFTER_GROUP_MC: u8 = 41;
     const XRAY_MC: u8 = 19;
@@ -4503,22 +4510,25 @@ pub unsafe fn main_control_mode_independent() {
         | SET_SHAPE_MC | DEF_CODE_MC | XETEX_DEF_CODE_MC | DEF_FAMILY_MC | SET_FONT_MC
         | DEF_FONT_MC | REGISTER_MC | ADVANCE_MC | MULTIPLY_MC | DIVIDE_MC | PREFIX_MC | LET_MC
         | SHORTHAND_DEF_MC | READ_TO_CS_MC | DEF_MC | SET_BOX_MC | HYPH_DATA_MC
-        | SET_INTERACTION_MC => prefixed_command(),
+        | SET_INTERACTION_MC => prefixed_command_in(st)?,
         AFTER_ASSIGNMENT_MC => {
-            get_token();
-            crate::globals::set_after_token(cur_tok());
+            crate::scan::get_token_in(st)?;
+            st.scanner.after_token = cur_tok();
         }
         AFTER_GROUP_MC => {
-            get_token();
-            crate::save::save_for_after_global(cur_tok());
+            crate::scan::get_token_in(st)?;
+            if let Some(a) = crate::save::save_for_after(&mut st.save_stack, cur_tok()) {
+                return Err(MainControlAbort::Save(a));
+            }
         }
-        IN_STREAM_MC => crate::io::open_or_close(),
-        MESSAGE_MC => issue_message(),
-        CASE_SHIFT_MC => shift_case(),
-        XRAY_MC => show_whatever(),
-        EXTENSION_MC => do_extension(),
+        IN_STREAM_MC => unsafe { crate::io::open_or_close_in(st)? },
+        MESSAGE_MC => crate::output::issue_message_in(st)?,
+        CASE_SHIFT_MC => shift_case_in(st)?,
+        XRAY_MC => crate::output::show_whatever_in(st)?,
+        EXTENSION_MC => do_extension_in(st)?,
         _ => {}
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:6900 (main_control forbidden/math-mode mismatch cases)
 pub unsafe fn main_control_mode_error_cases() {
@@ -6788,12 +6798,6 @@ fn pc_sa_def(
     };
     crate::save::finish_sa_mutation_in(st, p, result)?;
     Ok(())
-}
-
-pub unsafe fn prefixed_command() {
-    if let Err(e) = crate::state::with_state_mut(prefixed_command_in) {
-        unsafe { e.fire() }
-    }
 }
 
 pub(crate) fn prefixed_command_in(

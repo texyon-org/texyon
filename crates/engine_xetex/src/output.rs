@@ -3254,12 +3254,6 @@ pub(crate) fn show_info_in(st: &mut EngineState) {
     show_node_list_in(st, p);
 }
 // translated from xetex-xetex0.c:10708 (issue_message)
-pub unsafe fn issue_message() {
-    if let Err(e) = crate::state::with_state_mut(issue_message_in) {
-        e.fire();
-    }
-}
-
 pub(crate) enum IssueMessageAbort {
     Scanner(crate::scan::SccAbort),
     NodeRecycle(crate::scan::NodeRecycleAbort),
@@ -3613,12 +3607,6 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
     st.save_stack.cur_group = c;
 }
 // translated from xetex-xetex0.c:10561 (show_whatever)
-pub unsafe fn show_whatever() {
-    if let Err(e) = crate::state::with_state_mut(show_whatever_in) {
-        e.fire();
-    }
-}
-
 pub(crate) enum ShowWhateverAbort {
     Scanner(crate::scan::SccAbort),
     Error(crate::errors::ErrorOutcome),

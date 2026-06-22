@@ -9,19 +9,14 @@ use crate::texmfmp::gettexstring;
 use crate::texmfmp::maketexstring;
 
 use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
-use crate::errors::{error, int_error, not_native_font_error, report_illegal_case};
 use crate::globals::{
-    cur_chr, cur_cmd, cur_val, def_ref, eqtb_b32s1, mem_b32s1, set_cur_val, set_def_ref,
-    set_eqtb_b32s1, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b16s1, set_mem_b16s2,
+    cur_chr, cur_cmd, cur_cs, cur_val, mem_b32s1, set_cur_cs, set_cur_val, set_def_ref,
     set_mem_b32s0, set_mem_b32s1,
 };
-use crate::io::scan_and_pack_name;
-use crate::main_control::new_graf;
-use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
-use crate::packaging::flush_node_list_global;
-use crate::pic::load_picture;
-use crate::scan::{get_x_token, scan_int, scan_optional_equals, scan_toks, str_toks};
-use crate::shipout::out_what;
+use crate::main_control::{mc_propagate_error, new_graf_in};
+use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
+use crate::pic::load_picture_in;
+use crate::scan::{get_x_token_in, scan_int_in, str_toks};
 
 use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
 use std::ptr;
@@ -2400,16 +2395,8 @@ pub(crate) unsafe fn print_glyph_name_in(st: &mut crate::state::EngineState, fon
 pub unsafe fn measure_native_node_global(p_node: *mut c_void, use_glyph_metrics: c_int) {
     crate::state::with_state(|s| measure_native_node(&s.fonts, p_node, use_glyph_metrics))
 }
-pub unsafe fn measure_native_glyph_global(p_node: *mut c_void, use_glyph_metrics: c_int) {
-    crate::state::with_state(|s| measure_native_glyph(&s.fonts, p_node, use_glyph_metrics))
-}
 pub unsafe fn linebreak_next_global(f: c_int) -> c_int {
     crate::state::with_state(|s| linebreak_next(&s.fonts, f))
-}
-pub unsafe fn get_encoding_mode_and_info_global(info: *mut i32) -> c_int {
-    // `name_of_file()` is with_state-bearing, so read it before the call (§4a).
-    let name = crate::globals::name_of_file();
-    get_encoding_mode_and_info(name, info)
 }
 pub unsafe fn get_native_char_height_depth_global(
     font: i32,
@@ -2563,27 +2550,9 @@ pub unsafe fn append_src_special() {
     }
 }
 // translated from xetex-xetex0.c:11045 (new_write_whatsit)
-pub unsafe fn new_write_whatsit(w: i16) {
-    if let Err(e) = crate::state::with_state_mut(|st| new_write_whatsit_in(st, w)) {
-        e.fire();
-    }
-}
-
 pub(crate) enum NewWriteWhatsitAbort {
     Scanner(crate::scan::SccAbort),
     MainMemory,
-}
-
-impl NewWriteWhatsitAbort {
-    pub(crate) unsafe fn fire(self) -> ! {
-        match self {
-            NewWriteWhatsitAbort::Scanner(e) => e.fire(),
-            NewWriteWhatsitAbort::MainMemory => {
-                const MEM_TOP: i32 = 4_999_999;
-                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
-            }
-        }
-    }
 }
 
 impl From<crate::scan::SccAbort> for NewWriteWhatsitAbort {
@@ -2743,204 +2712,254 @@ pub(crate) unsafe fn tt_insert_special_in(
     Ok(())
 }
 /// translated from xetex-xetex0.c:8024 (do_extension)
-pub unsafe fn do_extension() {
-    use crate::globals::{
-        cur_area, cur_cs, cur_ext, cur_list_aux_b32s1, cur_list_mode, cur_list_tail, cur_name,
-        epochseconds, font_area_entry, in_open, input_file, microseconds, random_seed, set_cur_cs,
-        set_cur_list_aux_b32s1, set_cur_list_tail, set_epochseconds, set_microseconds,
-        set_random_seed,
-    };
+pub(crate) fn do_extension_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
     use crate::mem::TEX_NULL;
 
     match cur_chr() {
         OPEN_NODE_DE => {
-            crate::ext::new_write_whatsit(OPEN_NODE_SIZE_DE);
-            scan_optional_equals();
-            crate::io::scan_file_name();
-            set_mem_b32s1(cur_list_tail() + 1, cur_name());
-            set_mem_b32s0(cur_list_tail() + 2, cur_area());
-            set_mem_b32s1(cur_list_tail() + 2, cur_ext());
+            do_new_write_whatsit_in(st, OPEN_NODE_SIZE_DE)?;
+            crate::scan::scan_optional_equals_in(st)?;
+            crate::io::scan_file_name_in(st)?;
+            st.mem
+                .set_b32s1(crate::globals::cur_list_tail() + 1, st.scanner.cur_name);
+            st.mem
+                .set_b32s0(crate::globals::cur_list_tail() + 2, st.scanner.cur_area);
+            st.mem
+                .set_b32s1(crate::globals::cur_list_tail() + 2, st.scanner.cur_ext);
         }
 
         WRITE_NODE_DE => {
             let k = cur_cs();
-            crate::ext::new_write_whatsit(WRITE_NODE_SIZE_DE);
+            do_new_write_whatsit_in(st, WRITE_NODE_SIZE_DE)?;
             set_cur_cs(k);
-            scan_toks(false, false);
-            set_mem_b32s1(cur_list_tail() + 1, def_ref());
+            crate::scan::scan_toks_in(st, false, false)?;
+            st.mem
+                .set_b32s1(crate::globals::cur_list_tail() + 1, st.scanner.def_ref);
         }
 
         CLOSE_NODE_DE => {
-            crate::ext::new_write_whatsit(WRITE_NODE_SIZE_DE);
-            set_mem_b32s1(cur_list_tail() + 1, TEX_NULL);
+            do_new_write_whatsit_in(st, WRITE_NODE_SIZE_DE)?;
+            st.mem
+                .set_b32s1(crate::globals::cur_list_tail() + 1, TEX_NULL);
         }
 
         SPECIAL_NODE_DE => {
-            crate::mem::new_whatsit_global(SPECIAL_NODE_DE as i16, WRITE_NODE_SIZE_DE);
-            set_mem_b32s0(cur_list_tail() + 1, TEX_NULL);
-            scan_toks(false, true);
-            set_mem_b32s1(cur_list_tail() + 1, def_ref());
+            do_new_whatsit_in(st, SPECIAL_NODE_DE as i16, WRITE_NODE_SIZE_DE)?;
+            st.mem
+                .set_b32s0(crate::globals::cur_list_tail() + 1, TEX_NULL);
+            crate::scan::scan_toks_in(st, false, true)?;
+            st.mem
+                .set_b32s1(crate::globals::cur_list_tail() + 1, st.scanner.def_ref);
         }
 
         IMMEDIATE_CODE_DE => {
-            get_x_token();
+            get_x_token_in(st)?;
             if cur_cmd() == EXTENSION_DE && cur_chr() <= CLOSE_NODE_DE {
-                let p = cur_list_tail();
-                do_extension();
-                out_what(cur_list_tail());
-                flush_node_list_global(cur_list_tail());
-                set_cur_list_tail(p);
-                set_mem_b32s1(p, TEX_NULL);
+                let p = crate::globals::cur_list_tail();
+                do_extension_in(st)?;
+                crate::shipout::out_what_in(st, crate::globals::cur_list_tail())?;
+                crate::packaging::flush_node_list(&mut st.mem, crate::globals::cur_list_tail())
+                    .map_err(crate::main_control::MainControlAbort::Confusion)?;
+                crate::globals::set_cur_list_tail(p);
+                st.mem.set_b32s1(p, TEX_NULL);
             } else {
-                crate::input::back_input();
+                crate::input::back_input_in(st)?;
             }
         }
 
         SET_LANGUAGE_CODE_DE => {
-            if (cur_list_mode() as i32).abs() != HMODE_DE as i32 {
-                report_illegal_case();
+            if (crate::globals::cur_list_mode() as i32).abs() != HMODE_DE as i32 {
+                mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
             } else {
-                crate::mem::new_whatsit_global(LANGUAGE_NODE_DE_W, SMALL_NODE_SIZE_DE);
-                scan_int();
+                do_new_whatsit_in(st, LANGUAGE_NODE_DE_W, SMALL_NODE_SIZE_DE)?;
+                scan_int_in(st)?;
                 let lang = if cur_val() <= 0 || cur_val() > 255 {
                     0
                 } else {
                     cur_val()
                 };
-                set_cur_list_aux_b32s1(lang);
-                set_mem_b32s1(cur_list_tail() + 1, cur_list_aux_b32s1());
-                set_mem_b16s1(
-                    cur_list_tail() + 1,
-                    crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN_DE))
+                crate::globals::set_cur_list_aux_b32s1(lang);
+                st.mem.set_b32s1(crate::globals::cur_list_tail() + 1, lang);
+                st.mem.set_b16s1(
+                    crate::globals::cur_list_tail() + 1,
+                    crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN_DE))
                         as u16,
                 );
-                set_mem_b16s0(
-                    cur_list_tail() + 1,
-                    crate::helpers::norm_min(eqtb_b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN_DE))
+                st.mem.set_b16s0(
+                    crate::globals::cur_list_tail() + 1,
+                    crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN_DE))
                         as u16,
                 );
             }
         }
 
         PDF_SAVE_POS_NODE_DE => {
-            crate::mem::new_whatsit_global(PDF_SAVE_POS_NODE_DE_W, SMALL_NODE_SIZE_DE);
+            do_new_whatsit_in(st, PDF_SAVE_POS_NODE_DE_W, SMALL_NODE_SIZE_DE)?;
         }
 
         RESET_TIMER_CODE_DE => {
-            let mut s = epochseconds();
-            let mut m = microseconds();
-            crate::texmfmp::get_seconds_and_micros(&mut s, &mut m);
-            set_epochseconds(s);
-            set_microseconds(m);
+            let mut s = st.shipout.epochseconds;
+            let mut m = st.shipout.microseconds;
+            unsafe { crate::texmfmp::get_seconds_and_micros(&mut s, &mut m) };
+            st.shipout.epochseconds = s;
+            st.shipout.microseconds = m;
         }
 
         SET_RANDOM_SEED_CODE_DE => {
-            scan_int();
+            scan_int_in(st)?;
             if cur_val() < 0 {
                 set_cur_val(-cur_val());
             }
-            set_random_seed(cur_val());
-            crate::scaled_math::init_randoms(random_seed());
+            st.errors.random_seed = cur_val();
+            crate::scaled_math::init_randoms(st.errors.random_seed);
         }
 
         PIC_FILE_CODE_DE => {
-            if (cur_list_mode() as i32).abs() == MMODE_DE as i32 {
-                report_illegal_case();
+            if (crate::globals::cur_list_mode() as i32).abs() == MMODE_DE as i32 {
+                mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
             } else {
-                load_picture(false);
+                load_picture_in(st, false)?;
             }
         }
 
         PDF_FILE_CODE_DE => {
-            if (cur_list_mode() as i32).abs() == MMODE_DE as i32 {
-                report_illegal_case();
+            if (crate::globals::cur_list_mode() as i32).abs() == MMODE_DE as i32 {
+                mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
             } else {
-                load_picture(true);
+                load_picture_in(st, true)?;
             }
         }
 
         GLYPH_CODE_DE => {
-            if (cur_list_mode() as i32).abs() == VMODE_DE as i32 {
-                crate::input::back_input();
-                new_graf(true);
-            } else if (cur_list_mode() as i32).abs() == MMODE_DE as i32 {
-                report_illegal_case();
+            if (crate::globals::cur_list_mode() as i32).abs() == VMODE_DE as i32 {
+                crate::input::back_input_in(st)?;
+                new_graf_in(st, true)?;
+            } else if (crate::globals::cur_list_mode() as i32).abs() == MMODE_DE as i32 {
+                mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
             } else {
-                let cur_font = eqtb_b32s1(CUR_FONT_LOC);
-                let fa = font_area_entry(cur_font);
+                let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
+                let fa = st.fonts.font_area_entry(cur_font);
                 if fa == AAT_FONT_FLAG_DE || fa == OTGR_FONT_FLAG_DE {
-                    crate::mem::new_whatsit_global(GLYPH_NODE_TYPE_DE_W, GLYPH_NODE_SIZE_DE);
-                    scan_int();
+                    do_new_whatsit_in(st, GLYPH_NODE_TYPE_DE_W, GLYPH_NODE_SIZE_DE)?;
+                    scan_int_in(st)?;
                     if cur_val() < 0 || cur_val() > 65535 {
-                        let errmsg = error_here_with_diagnostic(c"Bad glyph number".as_ptr());
-                        ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val());
-                        capture_to_diagnostic(std::ptr::null_mut());
-                        set_help_ptr(2);
-                        set_help_line(1, c"A glyph number must be between 0 and 65535.".as_ptr());
-                        set_help_line(0, c"I changed this one to zero.".as_ptr());
-                        int_error(cur_val());
+                        let errmsg =
+                            error_here_with_diagnostic_in(st, c"Bad glyph number".as_ptr());
+                        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+                        capture_to_diagnostic_in(st, std::ptr::null_mut());
+                        st.errors.help_ptr = 2;
+                        st.errors.help_line[1] =
+                            c"A glyph number must be between 0 and 65535.".as_ptr();
+                        st.errors.help_line[0] = c"I changed this one to zero.".as_ptr();
+                        mc_propagate_error(crate::errors::int_error_in(st, cur_val()))?;
                         set_cur_val(0);
                     }
-                    set_mem_b16s2(cur_list_tail() + 4, cur_font as u16);
-                    set_mem_b16s1(cur_list_tail() + 4, cur_val() as u16);
+                    st.mem
+                        .set_b16s2(crate::globals::cur_list_tail() + 4, cur_font as u16);
+                    st.mem
+                        .set_b16s1(crate::globals::cur_list_tail() + 4, cur_val() as u16);
                     // set_native_glyph_metrics(cur_list.tail, ...) expands to
                     // measure_native_glyph(&mem[cur_list.tail], use_glyph_metrics)
                     let use_glyph_metrics =
-                        eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_DE) > 0;
-                    let node_ptr = crate::globals::mem_node_addr(cur_list_tail());
-                    measure_native_glyph_global(node_ptr, use_glyph_metrics as i32);
+                        st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_DE) > 0;
+                    let node_ptr = st.mem.node_addr(crate::globals::cur_list_tail());
+                    unsafe {
+                        measure_native_glyph(&st.fonts, node_ptr, use_glyph_metrics as i32);
+                    }
                 } else {
-                    not_native_font_error(EXTENSION_DE as i32, GLYPH_CODE_DE, cur_font);
+                    mc_propagate_error(crate::errors::not_font_error_common_in(
+                        st,
+                        EXTENSION_DE as u16,
+                        GLYPH_CODE_DE,
+                        cur_font,
+                        c"; not a native platform font".as_ptr(),
+                    ))?;
                 }
             }
         }
 
         XETEX_INPUT_ENCODING_EXTENSION_CODE_DE => {
-            scan_and_pack_name();
+            crate::io::scan_and_pack_name_in(st)?;
             let mut j: i32 = 0;
-            let i = get_encoding_mode_and_info_global(&mut j);
+            let i =
+                unsafe { get_encoding_mode_and_info(st.input.name_of_file.as_mut_ptr(), &mut j) };
             if i == XETEX_INPUT_MODE_AUTO_DE {
-                error_here_with_diagnostic(
+                error_here_with_diagnostic_in(
+                    st,
                     c"Encoding mode `auto' is not valid for \\XeTeXinputencoding".as_ptr(),
                 );
-                capture_to_diagnostic(std::ptr::null_mut());
-                set_help_ptr(2);
-                set_help_line(
-                    1,
+                capture_to_diagnostic_in(st, std::ptr::null_mut());
+                st.errors.help_ptr = 2;
+                st.errors.help_line[1] =
                     c"You can't use `auto' encoding here, only for \\XeTeXdefaultencoding."
-                        .as_ptr(),
-                );
-                set_help_line(
-                    0,
-                    c"I'll ignore this and leave the current encoding unchanged.".as_ptr(),
-                );
-                error();
+                        .as_ptr();
+                st.errors.help_line[0] =
+                    c"I'll ignore this and leave the current encoding unchanged.".as_ptr();
+                mc_propagate_error(crate::errors::error_in(st))?;
             } else {
-                crate::io::call_set_input_file_encoding(input_file(in_open()), i, j);
+                unsafe {
+                    crate::io::call_set_input_file_encoding(
+                        st.input.input_file[st.input.in_open as usize],
+                        i,
+                        j,
+                    );
+                }
             }
         }
 
         XETEX_DEFAULT_ENCODING_EXTENSION_CODE_DE => {
-            scan_and_pack_name();
+            crate::io::scan_and_pack_name_in(st)?;
             let mut j: i32 = 0;
-            let i = get_encoding_mode_and_info_global(&mut j);
-            set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE_DE, i);
-            set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING_DE, j);
+            let i =
+                unsafe { get_encoding_mode_and_info(st.input.name_of_file.as_mut_ptr(), &mut j) };
+            st.eqtb
+                .set_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE_DE, i);
+            st.eqtb
+                .set_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING_DE, j);
         }
 
         XETEX_LINEBREAK_LOCALE_EXTENSION_CODE_DE => {
-            crate::io::scan_file_name();
-            if crate::string_pool::length_global(cur_name()) == 0 {
-                set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE_DE, 0);
+            crate::io::scan_file_name_in(st)?;
+            if crate::string_pool::length(&st.strings, st.scanner.cur_name) == 0 {
+                st.eqtb
+                    .set_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE_DE, 0);
             } else {
-                set_eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE_DE, cur_name());
+                st.eqtb.set_b32s1(
+                    INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE_DE,
+                    st.scanner.cur_name,
+                );
             }
         }
 
         _ => {
-            crate::errors::confusion(c"ext1".as_ptr());
+            return Err(crate::main_control::MainControlAbort::Confusion(c"ext1"));
         }
     }
+    Ok(())
+}
+
+fn do_new_whatsit_in(
+    st: &mut EngineState,
+    s: i16,
+    w: i16,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    let p = crate::mem::new_whatsit(&mut st.mem, s, w);
+    if p == crate::mem::ALLOC_FAILED {
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+    }
+    Ok(())
+}
+
+fn do_new_write_whatsit_in(
+    st: &mut EngineState,
+    w: i16,
+) -> Result<(), crate::main_control::MainControlAbort> {
+    new_write_whatsit_in(st, w).map_err(|e| match e {
+        NewWriteWhatsitAbort::Scanner(e) => e.into(),
+        NewWriteWhatsitAbort::MainMemory => crate::scan::NodeRecycleAbort::Overflow.into(),
+    })
 }
 
 // ---- do_extension consts moved verbatim from scan.rs (workstream 02) ----

@@ -255,11 +255,6 @@ pub unsafe fn confusion(s: *const libc::c_char) -> ! {
 /// Append "(N)" to the current error message and call error().
 ///
 /// translated from xetex-xetex0.c:15 (int_error, was static)
-pub unsafe fn int_error(n: i32) {
-    crate::state::with_state_mut(|st| int_error_in(st, n)).finish();
-}
-
-/// `&mut EngineState` core of [`int_error`].
 pub(crate) fn int_error_in(st: &mut EngineState, n: i32) -> ErrorOutcome {
     print_cstr_in(st, c" (".as_ptr());
     print_int_in(st, n);
@@ -287,21 +282,6 @@ pub(crate) fn not_font_error_common_in(
     error_in(st)
 }
 
-/// translated from xetex-xetex0.c:2763 (not_native_font_error)
-pub unsafe fn not_native_font_error(cmd: i32, c: i32, f: i32) {
-    crate::state::with_state_mut(|st| {
-        not_font_error_common_in(
-            st,
-            cmd as u16,
-            c,
-            f,
-            c"; not a native platform font".as_ptr(),
-        )
-    })
-    .finish();
-}
-
-///
 /// translated from xetex-errors.c:157 (pdf_error)
 pub unsafe fn pdf_error(t: *const libc::c_char, p: *const libc::c_char) -> ! {
     pre_error_message();

@@ -515,14 +515,6 @@ pub(crate) fn mem_b16s3(p: i32) -> u16 {
     // SAFETY: union projection; the `Vec` index is bounds-checked.
     crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s3 })
 }
-/// Write `v` into `mem[p].b16.s2`.
-#[inline]
-pub(crate) fn set_mem_b16s2(p: i32, v: u16) {
-    crate::state::with_state_mut(|s| {
-        s.mem.data[p as usize].b16.s2 = v;
-    });
-}
-
 /// Read the `gr` (f64) field of `mem[p]`.
 #[inline]
 #[allow(dead_code)]
@@ -1216,19 +1208,6 @@ pub(crate) fn set_cur_val(v: i32) {
         raw::cur_val = v;
     }
 }
-#[inline]
-pub(crate) fn cur_name() -> i32 {
-    crate::state::with_state(|state| state.scanner.cur_name)
-}
-#[inline]
-pub(crate) fn cur_area() -> i32 {
-    crate::state::with_state(|state| state.scanner.cur_area)
-}
-#[inline]
-pub(crate) fn cur_ext() -> i32 {
-    crate::state::with_state(|state| state.scanner.cur_ext)
-}
-
 // ---------------------------------------------------------------------------
 // name_in_progress / stop_at_space
 // ---------------------------------------------------------------------------
@@ -2451,11 +2430,6 @@ pub(crate) fn set_warning_index(v: i32) {
         s.scanner.warning_index = v;
     });
 }
-#[inline]
-pub(crate) fn def_ref() -> i32 {
-    crate::state::with_state(|s| s.scanner.def_ref)
-}
-#[inline]
 pub(crate) fn set_def_ref(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.def_ref = v;

@@ -17,6 +17,9 @@ pub struct PdfFile {
 // dpx layout types — must match C struct layout exactly (dpx-pdfdev.h)
 use crate::ext::D2Fix;
 use crate::ext::Fix2D;
+use crate::globals::cur_val;
+use crate::main_control::{mc_propagate_error, MainControlAbort};
+use crate::state::EngineState;
 
 #[repr(C)]
 struct PdfTMatrix {
@@ -276,12 +279,13 @@ unsafe fn get_image_size_in_inches(handle: usize, width: &mut f64, height: &mut 
 
 // translated from xetex-pic.c:224 (find_pic_file)
 unsafe fn find_pic_file(
+    name_of_file: *const c_char,
     path: &mut *mut c_char,
     bounds: &mut RealRect,
     pdf_box_type: c_int,
     page: c_int,
 ) -> c_int {
-    let handle = ttstub_input_open(crate::globals::name_of_file(), TTBC_FILE_FORMAT_PICT, 0);
+    let handle = ttstub_input_open(name_of_file, TTBC_FILE_FORMAT_PICT, 0);
     bounds.x = 0.0;
     bounds.y = 0.0;
     bounds.wd = 0.0;
@@ -292,13 +296,7 @@ unsafe fn find_pic_file(
     }
 
     let err = if pdf_box_type != 0 {
-        pdf_get_rect(
-            crate::globals::name_of_file(),
-            handle,
-            page,
-            pdf_box_type,
-            bounds,
-        )
+        pdf_get_rect(name_of_file, handle, page, pdf_box_type, bounds)
     } else {
         let mut wd: f64 = 0.0;
         let mut ht: f64 = 0.0;
@@ -309,7 +307,7 @@ unsafe fn find_pic_file(
     };
 
     if err == 0 {
-        *path = xstrdup(crate::globals::name_of_file());
+        *path = xstrdup(name_of_file);
     }
     ttstub_input_close(handle);
     err
@@ -398,39 +396,35 @@ fn corners_bbox(corners: &[RealPoint; 4]) -> (f64, f64, f64, f64) {
     (xmin, xmax, ymin, ymax)
 }
 
-// translated from xetex-pic.c:336 (load_picture)
-pub unsafe fn load_picture(is_pdf: bool) {
-    use crate::errors::error;
-    use crate::globals::{
-        cur_area, cur_ext, cur_list_tail, cur_name, cur_val, mem_node_addr, set_mem_b16s0,
-        set_mem_b16s1, set_mem_b32s0, set_mem_b32s1,
-    };
-    use crate::io::{pack_file_name, scan_file_name};
-    use crate::mem::new_whatsit_global;
-    use crate::output::{print_cstr, print_file_name, print_scaled};
-    use crate::scan::{scan_decimal, scan_dimen, scan_int, scan_keyword};
-
-    scan_file_name();
-    pack_file_name(cur_name(), cur_area(), cur_ext());
+pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), MainControlAbort> {
+    crate::io::scan_file_name_in(st)?;
+    unsafe {
+        crate::io::pack_file_name_in(
+            st,
+            st.scanner.cur_name,
+            st.scanner.cur_area,
+            st.scanner.cur_ext,
+        );
+    }
 
     let mut pdf_box_type: c_int = 0;
     let mut page: i32 = 0;
 
     if is_pdf {
-        if scan_keyword(c"page".as_ptr()) {
-            scan_int();
+        if crate::scan::scan_keyword_in(st, c"page".as_ptr())? {
+            crate::scan::scan_int_in(st)?;
             page = cur_val();
         }
         pdf_box_type = PDFBOX_NONE;
-        if scan_keyword(c"crop".as_ptr()) {
+        if crate::scan::scan_keyword_in(st, c"crop".as_ptr())? {
             pdf_box_type = PDFBOX_CROP;
-        } else if scan_keyword(c"media".as_ptr()) {
+        } else if crate::scan::scan_keyword_in(st, c"media".as_ptr())? {
             pdf_box_type = PDFBOX_MEDIA;
-        } else if scan_keyword(c"bleed".as_ptr()) {
+        } else if crate::scan::scan_keyword_in(st, c"bleed".as_ptr())? {
             pdf_box_type = PDFBOX_BLEED;
-        } else if scan_keyword(c"trim".as_ptr()) {
+        } else if crate::scan::scan_keyword_in(st, c"trim".as_ptr())? {
             pdf_box_type = PDFBOX_TRIM;
-        } else if scan_keyword(c"art".as_ptr()) {
+        } else if crate::scan::scan_keyword_in(st, c"art".as_ptr())? {
             pdf_box_type = PDFBOX_ART;
         }
     }
@@ -442,10 +436,13 @@ pub unsafe fn load_picture(is_pdf: bool) {
         ht: 0.0,
     };
     let mut pic_path: *mut c_char = std::ptr::null_mut();
-    let result = if pdf_box_type == PDFBOX_NONE {
-        find_pic_file(&mut pic_path, &mut bounds, PDFBOX_CROP, page)
-    } else {
-        find_pic_file(&mut pic_path, &mut bounds, pdf_box_type, page)
+    let name_of_file = st.input.name_of_file.as_mut_ptr();
+    let result = unsafe {
+        if pdf_box_type == PDFBOX_NONE {
+            find_pic_file(name_of_file, &mut pic_path, &mut bounds, PDFBOX_CROP, page)
+        } else {
+            find_pic_file(name_of_file, &mut pic_path, &mut bounds, pdf_box_type, page)
+        }
     };
 
     let mut corners: [RealPoint; 4] = [
@@ -489,8 +486,8 @@ pub unsafe fn load_picture(is_pdf: bool) {
             x: 0.0,
             y: 0.0,
         };
-        if scan_keyword(c"scaled".as_ptr()) {
-            scan_int();
+        if crate::scan::scan_keyword_in(st, c"scaled".as_ptr())? {
+            crate::scan::scan_int_in(st)?;
             if x_size_req == 0.0 && y_size_req == 0.0 {
                 let s = cur_val() as f64 / 1000.0;
                 make_scale(&mut t2, s, s);
@@ -499,8 +496,8 @@ pub unsafe fn load_picture(is_pdf: bool) {
                 }
                 transform_concat(&mut t, &t2);
             }
-        } else if scan_keyword(c"xscaled".as_ptr()) {
-            scan_int();
+        } else if crate::scan::scan_keyword_in(st, c"xscaled".as_ptr())? {
+            crate::scan::scan_int_in(st)?;
             if x_size_req == 0.0 && y_size_req == 0.0 {
                 make_scale(&mut t2, cur_val() as f64 / 1000.0, 1.0);
                 for c in corners.iter_mut() {
@@ -508,8 +505,8 @@ pub unsafe fn load_picture(is_pdf: bool) {
                 }
                 transform_concat(&mut t, &t2);
             }
-        } else if scan_keyword(c"yscaled".as_ptr()) {
-            scan_int();
+        } else if crate::scan::scan_keyword_in(st, c"yscaled".as_ptr())? {
+            crate::scan::scan_int_in(st)?;
             if x_size_req == 0.0 && y_size_req == 0.0 {
                 make_scale(&mut t2, 1.0, cur_val() as f64 / 1000.0);
                 for c in corners.iter_mut() {
@@ -517,44 +514,40 @@ pub unsafe fn load_picture(is_pdf: bool) {
                 }
                 transform_concat(&mut t, &t2);
             }
-        } else if scan_keyword(c"width".as_ptr()) {
-            scan_dimen(false, false, false);
+        } else if crate::scan::scan_keyword_in(st, c"width".as_ptr())? {
+            crate::scan::scan_dimen_in(st, false, false, false)?;
             if cur_val() <= 0 {
-                crate::output::error_here_with_diagnostic(c"Improper image ".as_ptr());
-                print_cstr(c"size (".as_ptr());
-                print_scaled(cur_val());
-                print_cstr(c"pt) will be ignored".as_ptr());
-                crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                crate::globals::set_help_ptr(2);
-                crate::globals::set_help_line(
-                    1,
-                    c"I can't scale images to zero or negative sizes,".as_ptr(),
-                );
-                crate::globals::set_help_line(0, c"so I'm ignoring this.".as_ptr());
-                error();
+                crate::output::error_here_with_diagnostic_in(st, c"Improper image ".as_ptr());
+                crate::output::print_cstr_in(st, c"size (".as_ptr());
+                crate::output::print_scaled_in(st, cur_val());
+                crate::output::print_cstr_in(st, c"pt) will be ignored".as_ptr());
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                st.errors.help_ptr = 2;
+                st.errors.help_line[1] =
+                    c"I can't scale images to zero or negative sizes,".as_ptr();
+                st.errors.help_line[0] = c"so I'm ignoring this.".as_ptr();
+                mc_propagate_error(crate::errors::error_in(st))?;
             } else {
                 x_size_req = Fix2D(cur_val());
             }
-        } else if scan_keyword(c"height".as_ptr()) {
-            scan_dimen(false, false, false);
+        } else if crate::scan::scan_keyword_in(st, c"height".as_ptr())? {
+            crate::scan::scan_dimen_in(st, false, false, false)?;
             if cur_val() <= 0 {
-                crate::output::error_here_with_diagnostic(c"Improper image ".as_ptr());
-                print_cstr(c"size (".as_ptr());
-                print_scaled(cur_val());
-                print_cstr(c"pt) will be ignored".as_ptr());
-                crate::output::capture_to_diagnostic(std::ptr::null_mut());
-                crate::globals::set_help_ptr(2);
-                crate::globals::set_help_line(
-                    1,
-                    c"I can't scale images to zero or negative sizes,".as_ptr(),
-                );
-                crate::globals::set_help_line(0, c"so I'm ignoring this.".as_ptr());
-                error();
+                crate::output::error_here_with_diagnostic_in(st, c"Improper image ".as_ptr());
+                crate::output::print_cstr_in(st, c"size (".as_ptr());
+                crate::output::print_scaled_in(st, cur_val());
+                crate::output::print_cstr_in(st, c"pt) will be ignored".as_ptr());
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                st.errors.help_ptr = 2;
+                st.errors.help_line[1] =
+                    c"I can't scale images to zero or negative sizes,".as_ptr();
+                st.errors.help_line[0] = c"so I'm ignoring this.".as_ptr();
+                mc_propagate_error(crate::errors::error_in(st))?;
             } else {
                 y_size_req = Fix2D(cur_val());
             }
-        } else if scan_keyword(c"rotated".as_ptr()) {
-            scan_decimal();
+        } else if crate::scan::scan_keyword_in(st, c"rotated".as_ptr())? {
+            crate::scan::xetex_scan_dimen_in(st, false, false, false, false)?;
             if x_size_req != 0.0 || y_size_req != 0.0 {
                 let (xmin, xmax, ymin, ymax) = corners_bbox(&corners);
                 let (sx, sy) = if x_size_req == 0.0 {
@@ -649,60 +642,69 @@ pub unsafe fn load_picture(is_pdf: bool) {
     transform_concat(&mut t, &t2);
 
     if result == 0 {
-        let path_len = libc::strlen(pic_path);
+        let path_len = unsafe { libc::strlen(pic_path) };
         let mem_word_bytes = std::mem::size_of::<crate::mem_types::MemoryWord>() as i32;
         let extra_words = (path_len as i32 + mem_word_bytes - 1) / mem_word_bytes;
-        new_whatsit_global(PIC_NODE, (PIC_NODE_SIZE + extra_words) as i16);
+        let p =
+            crate::mem::new_whatsit(&mut st.mem, PIC_NODE, (PIC_NODE_SIZE + extra_words) as i16);
+        if p == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+        }
 
-        let tail = cur_list_tail();
+        let tail = crate::globals::cur_list_tail();
         if is_pdf {
-            set_mem_b16s0(tail, PDF_NODE);
+            st.mem.set_b16s0(tail, PDF_NODE);
         }
         // PIC_NODE_path_len: mem[p+4].b16.s1
-        set_mem_b16s1(tail + 4, path_len as u16);
+        st.mem.set_b16s1(tail + 4, path_len as u16);
         // page: mem[p+4].b16.s0
-        set_mem_b16s0(tail + 4, page as u16);
+        st.mem.set_b16s0(tail + 4, page as u16);
         // pdf_box_type: mem[p+8].b16.s1
-        set_mem_b16s1(tail + 8, pdf_box_type as u16);
+        st.mem.set_b16s1(tail + 8, pdf_box_type as u16);
         // width: mem[p+1].b32.s1
-        set_mem_b32s1(tail + 1, D2Fix(xmax - xmin));
+        st.mem.set_b32s1(tail + 1, D2Fix(xmax - xmin));
         // height: mem[p+3].b32.s1
-        set_mem_b32s1(tail + 3, D2Fix(ymax - ymin));
+        st.mem.set_b32s1(tail + 3, D2Fix(ymax - ymin));
         // depth: mem[p+2].b32.s1
-        set_mem_b32s1(tail + 2, 0);
+        st.mem.set_b32s1(tail + 2, 0);
         // transform: mem[p+5..7]
-        set_mem_b32s0(tail + 5, D2Fix(t.a));
-        set_mem_b32s1(tail + 5, D2Fix(t.b));
-        set_mem_b32s0(tail + 6, D2Fix(t.c));
-        set_mem_b32s1(tail + 6, D2Fix(t.d));
-        set_mem_b32s0(tail + 7, D2Fix(t.x));
-        set_mem_b32s1(tail + 7, D2Fix(t.y));
+        st.mem.set_b32s0(tail + 5, D2Fix(t.a));
+        st.mem.set_b32s1(tail + 5, D2Fix(t.b));
+        st.mem.set_b32s0(tail + 6, D2Fix(t.c));
+        st.mem.set_b32s1(tail + 6, D2Fix(t.d));
+        st.mem.set_b32s0(tail + 7, D2Fix(t.x));
+        st.mem.set_b32s1(tail + 7, D2Fix(t.y));
         // path bytes: mem[p + PIC_NODE_SIZE]
-        let dst = mem_node_addr(tail + PIC_NODE_SIZE) as *mut u8;
-        std::ptr::copy_nonoverlapping(pic_path as *const u8, dst, path_len);
-        libc::free(pic_path as *mut c_void);
-    } else {
-        crate::output::error_here_with_diagnostic(c"Unable to load picture or PDF file '".as_ptr());
-        print_file_name(cur_name(), cur_area(), cur_ext());
-        crate::output::print('\'' as i32);
-        crate::output::capture_to_diagnostic(std::ptr::null_mut());
-        if result == -43 {
-            crate::globals::set_help_ptr(2);
-            crate::globals::set_help_line(
-                1,
-                c"The requested image couldn't be read because".as_ptr(),
-            );
-            crate::globals::set_help_line(0, c"the file was not found.".as_ptr());
-        } else {
-            crate::globals::set_help_ptr(2);
-            crate::globals::set_help_line(
-                1,
-                c"The requested image couldn't be read because".as_ptr(),
-            );
-            crate::globals::set_help_line(0, c"it was not a recognized image format.".as_ptr());
+        let dst = st.mem.node_addr(tail + PIC_NODE_SIZE) as *mut u8;
+        unsafe {
+            std::ptr::copy_nonoverlapping(pic_path as *const u8, dst, path_len);
+            libc::free(pic_path as *mut c_void);
         }
-        error();
+    } else {
+        crate::output::error_here_with_diagnostic_in(
+            st,
+            c"Unable to load picture or PDF file '".as_ptr(),
+        );
+        crate::output::print_file_name_in(
+            st,
+            st.scanner.cur_name,
+            st.scanner.cur_area,
+            st.scanner.cur_ext,
+        );
+        crate::output::print_in(st, '\'' as i32);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        if result == -43 {
+            st.errors.help_ptr = 2;
+            st.errors.help_line[1] = c"The requested image couldn't be read because".as_ptr();
+            st.errors.help_line[0] = c"the file was not found.".as_ptr();
+        } else {
+            st.errors.help_ptr = 2;
+            st.errors.help_line[1] = c"The requested image couldn't be read because".as_ptr();
+            st.errors.help_line[0] = c"it was not a recognized image format.".as_ptr();
+        }
+        mc_propagate_error(crate::errors::error_in(st))?;
     }
+    Ok(())
 }
 
 /// `name`-passing core of [`count_pdf_file_pages`] so a threaded caller holding

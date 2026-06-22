@@ -24,7 +24,7 @@ use crate::globals::{
     cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, expand_depth, first, init_pool_ptr,
     pool_size, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc,
     set_cur_input_name, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_cur_val,
-    set_first, set_line, set_no_new_control_sequence,
+    set_first, set_line,
 };
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
@@ -378,22 +378,6 @@ pub fn max_hyphenatable_length_in(eqtb: &crate::state::EqtbState) -> i32 {
 // x_token / scan_optional_equals
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// get_token
-// ---------------------------------------------------------------------------
-
-/// translated from xetex-xetex0.c:3653 (get_token)
-pub unsafe fn get_token() {
-    set_no_new_control_sequence(false);
-    get_next();
-    set_no_new_control_sequence(true);
-    if cur_cs() == 0 {
-        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
-    } else {
-        set_cur_tok(CS_TOKEN_FLAG + cur_cs());
-    }
-}
-
 // Command-code constants (xetex_format.h / xetex-constants.h).
 const MAX_COMMAND: u8 = 102;
 const MAX_CHAR_VAL: i32 = 0x200000; // 1 << 21
@@ -436,13 +420,6 @@ pub(crate) fn insert_dollar_sign_in(
     st.errors.help_line[1] = c"I've inserted a begin-math/end-math symbol since I think".as_ptr();
     st.errors.help_line[0] = c"you left one out. Proceed, with fingers crossed.".as_ptr();
     crate::main_control::mc_propagate_error(crate::input::ins_error_in(st)?)
-}
-
-/// translated from xetex-xetex0.c:4355 (scan_optional_equals)
-pub unsafe fn scan_optional_equals() {
-    if let Err(e) = crate::state::with_state_mut(scan_optional_equals_in) {
-        unsafe { e.fire() }
-    }
 }
 
 pub(crate) fn scan_optional_equals_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
@@ -498,14 +475,6 @@ pub(crate) fn get_x_or_protected_in(st: &mut crate::state::EngineState) -> Resul
 const BACKUP_HEAD: i32 = 4_999_999 - 13;
 // xetex-constants.h:202
 const BACKED_UP: u16 = 3;
-
-/// translated from xetex-xetex0.c:4284 (scan_keyword)
-pub unsafe fn scan_keyword(s: *const libc::c_char) -> bool {
-    match crate::state::with_state_mut(|st| scan_keyword_in(st, s)) {
-        Ok(v) => v,
-        Err(e) => unsafe { e.fire() },
-    }
-}
 
 // ---------------------------------------------------------------------------
 // scan_expr
@@ -613,15 +582,6 @@ fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
     (a + 1) / 2
 }
 
-/// translated from xetex-xetex0.c:4406 (xetex_scan_dimen)
-pub unsafe fn xetex_scan_dimen(mu: bool, inf: bool, shortcut: bool, requires_units: bool) {
-    if let Err(e) = crate::state::with_state_mut(|st| {
-        xetex_scan_dimen_in(st, mu, inf, shortcut, requires_units)
-    }) {
-        unsafe { e.fire() }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // scan_dimen / scan_decimal
 // ---------------------------------------------------------------------------
@@ -631,11 +591,6 @@ pub unsafe fn scan_dimen(mu: bool, inf: bool, shortcut: bool) {
     if let Err(e) = crate::state::with_state_mut(|st| scan_dimen_in(st, mu, inf, shortcut)) {
         unsafe { e.fire() }
     }
-}
-
-/// translated from xetex-xetex0.c:5961 (scan_decimal)
-pub unsafe fn scan_decimal() {
-    xetex_scan_dimen(false, false, false, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -841,14 +796,6 @@ const END_MATCH_TOKEN: i32 = 0x1C00000;
 // ZERO_TOKEN = OTHER_TOKEN + '0' = 0x1800000 + 48 = 0x1800030
 const ZERO_TOKEN: i32 = OTHER_TOKEN + b'0' as i32;
 
-/// translated from xetex-xetex0.c:7081 (scan_toks)
-pub unsafe fn scan_toks(macro_def: bool, xpand: bool) -> i32 {
-    match crate::state::with_state_mut(|st| scan_toks_in(st, macro_def, xpand)) {
-        Ok(v) => v,
-        Err(e) => unsafe { e.fire() },
-    }
-}
-
 // ---------------------------------------------------------------------------
 // read_toks
 // ---------------------------------------------------------------------------
@@ -1022,13 +969,6 @@ const SPACE_SHRINK_CODE: i32 = 4;
 // ---------------------------------------------------------------------------
 // scan_int
 // ---------------------------------------------------------------------------
-
-/// translated from xetex-xetex0.c:5465 (scan_int)
-pub unsafe fn scan_int() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_int_in(st)) {
-        unsafe { e.fire() }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // eTeX_enabled

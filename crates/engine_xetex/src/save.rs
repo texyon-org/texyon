@@ -213,12 +213,6 @@ pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Option<
     None
 }
 
-/// Transitional bridge-down wrapper for legacy `save_for_after` callers.
-pub unsafe fn save_for_after_global(t: i32) {
-    let abort = crate::state::with_state_mut(|st| save_for_after(&mut st.save_stack, t));
-    raise_save_abort(abort);
-}
-
 // ---------------------------------------------------------------------------
 // prepare_mag
 // ---------------------------------------------------------------------------

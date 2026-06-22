@@ -2907,11 +2907,3 @@ pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<
     }
     Ok(())
 }
-
-// Bridge-down wrapper; retires when `hlist_out`/`vlist_out` are threaded.
-pub unsafe fn out_what(p: i32) {
-    let outcome = crate::state::with_state_mut(|st| out_what_in(st, p));
-    if let Err(a) = outcome {
-        fire_shipout_abort(a);
-    }
-}

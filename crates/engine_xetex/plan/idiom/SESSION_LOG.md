@@ -3095,3 +3095,25 @@ tracks:
 - Full corpus: **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`
 
 **Handoff / Next:** `do_extension` remains the next mode-independent frontier, but full threading needs the picture/native/encoding blockers handled first (`load_picture`, `measure_native_glyph_global`, encoding helpers). Avoid single-borrowing `main_control_mode_independent` until `do_extension` is bridge-free.
+
+## Idiom session 226 — 2026-06-22 — Execution: thread `do_extension` and picture loading
+
+**Type:** execution (workstream 01 / Phase-C threading), intentionally light docs. Used one explorer subagent for the `do_extension` dependency audit; edits stayed local.
+
+### Change
+
+- Added `ext::do_extension_in(&mut EngineState) -> Result<(), MainControlAbort>` and rewired the write/special/immediate/language/timer/random/glyph/encoding arms to threaded scanner/input/output/shipout helpers plus direct `st.mem`/`st.eqtb`/`st.scanner` access.
+- Added `pic::load_picture_in(&mut EngineState, ...) -> Result<(), MainControlAbort>`, including a borrow-safe `find_pic_file` path that takes the packed filename pointer instead of reading `name_of_file()` under a live borrow.
+- Added `main_control_mode_independent_in(&mut EngineState)` over the now-threaded arms. The top `main_control` loop still calls the legacy wrapper because that loop itself is not yet threaded.
+- Deleted dead bridge wrappers/accessors exposed by the slice across `scan`, `output`, `ext`, `pic`, `shipout`, `save`, `errors`, and `globals`.
+
+### Validation
+
+- `cargo fmt -p tectonic_engine_xetex`
+- `cargo check -p tectonic_engine_xetex` — warnings **41**
+- Dashboard: `tex-outputs` **29/29**, `trip` **2/2**, `engine_rust` **7/7**, `latex_goldens` **4/4**
+- Release rebuild: `cargo build --release -p tectonic`
+- Full corpus: **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`
+- Metrics: `with_state` matches **629**; `unsafe fn` matches **357**
+
+**Handoff / Next:** continue upward into the remaining legacy `main_control` loop call sites. `main_control_mode_independent_in` is ready for a threaded caller; the top loop is still the boundary.
