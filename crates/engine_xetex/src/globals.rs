@@ -1377,10 +1377,6 @@ pub(crate) fn set_font_glue(f: i32, v: i32) {
 }
 
 /// Returns `param_base[f]`.
-#[inline]
-pub(crate) fn param_base(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.param_base[f as usize])
-}
 
 /// Sets `param_base[f] = v`.
 #[inline]
@@ -1613,21 +1609,12 @@ pub(crate) fn set_char_base_entry(f: i32, v: i32) {
     });
 }
 /// Returns `width_base[f]`.
-#[inline]
-pub(crate) fn width_base_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.width_base[f as usize])
-}
 /// Writes `width_base[f] = v`.
 #[inline]
 pub(crate) fn set_width_base_entry(f: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.fonts.width_base[f as usize] = v;
     });
-}
-/// Returns `height_base[f]`.
-#[inline]
-pub(crate) fn height_base_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.height_base[f as usize])
 }
 /// Writes `height_base[f] = v`.
 #[inline]

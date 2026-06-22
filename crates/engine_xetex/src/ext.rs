@@ -2398,22 +2398,6 @@ pub unsafe fn measure_native_node_global(p_node: *mut c_void, use_glyph_metrics:
 pub unsafe fn linebreak_next_global(f: c_int) -> c_int {
     crate::state::with_state(|s| linebreak_next(&s.fonts, f))
 }
-pub unsafe fn get_native_char_height_depth_global(
-    font: i32,
-    ch: i32,
-    height: *mut i32,
-    depth: *mut i32,
-) {
-    crate::state::with_state(|s| get_native_char_height_depth(&s.fonts, font, ch, height, depth))
-}
-pub unsafe fn get_native_char_sidebearings_global(
-    font: i32,
-    ch: i32,
-    lsb: *mut i32,
-    rsb: *mut i32,
-) {
-    crate::state::with_state(|s| get_native_char_sidebearings(&s.fonts, font, ch, lsb, rsb))
-}
 pub unsafe fn map_char_to_glyph_global(font: i32, ch: i32) -> i32 {
     crate::state::with_state(|s| map_char_to_glyph(&s.fonts, font, ch))
 }

@@ -16,21 +16,20 @@ use crate::consts::{
     SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
 use crate::ext::{
-    append_src_special, apply_mapping, do_extension_in, get_native_char_height_depth_global,
-    get_native_char_sidebearings_global, map_char_to_glyph_global, measure_native_node_global,
+    append_src_special, apply_mapping, do_extension_in, map_char_to_glyph_global,
+    measure_native_node_global,
 };
 use crate::fonts::read_font_info_in;
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, eqtb_b32s1, mem_b16s0,
-    mem_b16s3, mem_b32s1, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr,
-    set_cur_tok, set_cur_val, set_mem_b16s0, set_mem_b32s1,
+    cur_chr, cur_cmd, cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, mem_b16s3, set_cur_chr,
+    set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val,
 };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::input::begin_token_list;
 use crate::linebreak::do_locale_linebreaks;
 use crate::math::{after_math_in, init_math_in};
 use crate::output::char_warning;
-use crate::packaging::{flush_node_list_global, hpack};
+use crate::packaging::flush_node_list_global;
 use crate::scan::{
     back_input, effective_char_global, effective_char_info_global, get_next, get_x_token,
     new_native_word_node_global, scan_char_num, scan_usv_num, set_class_fn, set_family_fn, x_token,
@@ -2283,14 +2282,6 @@ pub(crate) fn new_character_in(
     Ok(crate::mem::TEX_NULL)
 }
 
-// Legacy wrapper for callers that still use the global engine state. It runs
-// cold abort tails only after the `with_state_mut` borrow has dropped.
-pub unsafe fn new_character(f: i32, c: u16) -> i32 {
-    match crate::state::with_state_mut(|st| new_character_in(st, f, c)) {
-        Ok(p) => p,
-        Err(a) => a.finish(),
-    }
-}
 // translated from xetex-xetex0.c:7797 (box_end)
 pub(crate) fn box_end_in(
     st: &mut crate::state::EngineState,
@@ -3593,8 +3584,7 @@ pub(crate) fn append_italic_correction_in(
     Ok(())
 }
 // translated from xetex-xetex0.c:9910 (make_accent)
-pub unsafe fn make_accent() {
-    extern "C" {}
+pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const SLANT_CODE: i32 = 1; // xetex-constants.h:273
     const X_HEIGHT_CODE: i32 = 5; // xetex-constants.h:294
     const ACC_KERN: u16 = 2; // xetex_format.h:429
@@ -3602,97 +3592,122 @@ pub unsafe fn make_accent() {
     const LETTER: u8 = 11; // xetex_format.h:243
     const CHAR_NUM: u8 = 16; // xetex_format.h:253
 
-    let is_native = |fnt: i32| -> bool {
-        crate::globals::font_area_entry(fnt) == AAT_FONT_FLAG
-            || crate::globals::font_area_entry(fnt) == OTGR_FONT_FLAG
-    };
-
-    scan_char_num();
-    let mut f = eqtb_b32s1(CUR_FONT_LOC);
-    let p = new_character(f, cur_val() as u16);
-
-    if p == crate::mem::TEX_NULL {
-        return;
+    fn is_native(fonts: &crate::state::FontState, fnt: i32) -> bool {
+        fonts.font_area_entry(fnt) == AAT_FONT_FLAG || fonts.font_area_entry(fnt) == OTGR_FONT_FLAG
     }
 
-    let x = crate::globals::font_info_b32s1(X_HEIGHT_CODE + crate::globals::param_base(f));
-    let s = crate::globals::font_info_b32s1(SLANT_CODE + crate::globals::param_base(f)) as f64
+    crate::scan::scan_char_num_in(st)?;
+    let mut f = st.eqtb.b32s1(CUR_FONT_LOC);
+    let p = new_character_in(st, f, cur_val() as u16)?;
+
+    if p == crate::mem::TEX_NULL {
+        return Ok(());
+    }
+
+    let x = st
+        .fonts
+        .font_info_b32s1(X_HEIGHT_CODE + st.fonts.param_base(f));
+    let s = st
+        .fonts
+        .font_info_b32s1(SLANT_CODE + st.fonts.param_base(f)) as f64
         / 65536.0;
     let mut lsb: i32 = 0;
     let mut rsb: i32 = 0;
-    let a = if is_native(f) {
-        let av = mem_b32s1(p + 1);
+    let a = if is_native(&st.fonts, f) {
+        let av = st.mem.b32s1(p + 1);
         if av == 0 {
-            get_native_char_sidebearings_global(f, cur_val(), &mut lsb, &mut rsb);
+            unsafe {
+                crate::ext::get_native_char_sidebearings(
+                    &st.fonts,
+                    f,
+                    cur_val(),
+                    &mut lsb,
+                    &mut rsb,
+                );
+            }
         }
         av
     } else {
-        let c = effective_char_global(true, f, mem_b16s0(p));
-        let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
-        crate::globals::font_info_b32s1(crate::globals::width_base_entry(f) + info.s3 as i32)
+        let ch = st.mem.b16s0(p);
+        let c = crate::fonts::effective_char(&mut st.fonts, true, f, ch);
+        let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
+        st.fonts
+            .font_info_b32s1(st.fonts.width_base_entry(f) + info.s3 as i32)
     };
 
-    do_assignments();
+    do_assignments_in(st)?;
     let mut q = crate::mem::TEX_NULL;
-    f = eqtb_b32s1(CUR_FONT_LOC);
+    f = st.eqtb.b32s1(CUR_FONT_LOC);
     if cur_cmd() == LETTER || cur_cmd() == OTHER_CHAR || cur_cmd() == CHAR_GIVEN {
-        q = new_character(f, cur_chr() as u16);
+        q = new_character_in(st, f, cur_chr() as u16)?;
         set_cur_val(cur_chr());
     } else if cur_cmd() == CHAR_NUM {
-        scan_char_num();
-        q = new_character(f, cur_val() as u16);
+        crate::scan::scan_char_num_in(st)?;
+        q = new_character_in(st, f, cur_val() as u16)?;
     } else {
-        crate::input::back_input();
+        crate::input::back_input_in(st)?;
     }
 
     if q != crate::mem::TEX_NULL {
-        let t = crate::globals::font_info_b32s1(SLANT_CODE + crate::globals::param_base(f)) as f64
+        let t = st
+            .fonts
+            .font_info_b32s1(SLANT_CODE + st.fonts.param_base(f)) as f64
             / 65536.0;
-        let (w, h) = if is_native(f) {
-            let wv = mem_b32s1(q + 1);
+        let (w, h) = if is_native(&st.fonts, f) {
+            let wv = st.mem.b32s1(q + 1);
             let mut hv: i32 = 0;
             let mut dv: i32 = 0;
-            get_native_char_height_depth_global(f, cur_val(), &mut hv, &mut dv);
+            unsafe {
+                crate::ext::get_native_char_height_depth(&st.fonts, f, cur_val(), &mut hv, &mut dv);
+            }
             (wv, hv)
         } else {
-            let c = effective_char_global(true, f, mem_b16s0(q));
-            let info = crate::globals::font_info_b16(crate::globals::char_base_entry(f) + c);
-            let wv = crate::globals::font_info_b32s1(
-                crate::globals::width_base_entry(f) + info.s3 as i32,
-            );
-            let hv = crate::globals::font_info_b32s1(
-                crate::globals::height_base_entry(f) + (info.s2 / 16) as i32,
-            );
+            let ch = st.mem.b16s0(q);
+            let c = crate::fonts::effective_char(&mut st.fonts, true, f, ch);
+            let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
+            let wv = st
+                .fonts
+                .font_info_b32s1(st.fonts.width_base_entry(f) + info.s3 as i32);
+            let hv = st
+                .fonts
+                .font_info_b32s1(st.fonts.height_base_entry(f) + (info.s2 / 16) as i32);
             (wv, hv)
         };
         let mut pa = p;
         if h != x {
-            pa = hpack(p, 0, ADDITIONAL);
-            set_mem_b32s1(pa + 4, x - h);
+            pa = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
+            st.mem.set_b32s1(pa + 4, x - h);
         }
-        let delta = if is_native(f) && a == 0 {
+        let delta = if is_native(&st.fonts, f) && a == 0 {
             crate::scaled_math::tex_round(
                 (w - lsb + rsb) as f64 / 2.0 + h as f64 * t - x as f64 * s,
             )
         } else {
             crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
         };
-        let r = crate::mem::new_kern_global(delta);
-        set_mem_b16s0(r, ACC_KERN);
-        set_mem_b32s1(crate::globals::cur_list_tail(), r);
-        set_mem_b32s1(r, pa);
-        let new_tail = crate::mem::new_kern_global(-a - delta);
+        let r = crate::mem::new_kern(&mut st.mem, delta);
+        if r == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+        }
+        st.mem.set_b16s0(r, ACC_KERN);
+        st.mem.set_b32s1(crate::globals::cur_list_tail(), r);
+        st.mem.set_b32s1(r, pa);
+        let new_tail = crate::mem::new_kern(&mut st.mem, -a - delta);
+        if new_tail == crate::mem::ALLOC_FAILED {
+            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+        }
         crate::globals::set_cur_list_tail(new_tail);
-        set_mem_b16s0(new_tail, ACC_KERN);
-        set_mem_b32s1(pa, new_tail);
+        st.mem.set_b16s0(new_tail, ACC_KERN);
+        st.mem.set_b32s1(pa, new_tail);
         // p = q (in C); we use q directly below
     }
 
     // Append p (q if base was found, else accent) to hlist.
     let p_final = if q != crate::mem::TEX_NULL { q } else { p };
-    set_mem_b32s1(crate::globals::cur_list_tail(), p_final);
+    st.mem.set_b32s1(crate::globals::cur_list_tail(), p_final);
     crate::globals::set_cur_list_tail(p_final);
     crate::globals::set_cur_list_aux_b32s0(1000);
+    Ok(())
 }
 pub(crate) unsafe fn new_font_in(
     st: &mut crate::state::EngineState,
@@ -4221,12 +4236,6 @@ pub(crate) fn do_register_command_in(
 }
 
 // translated from xetex-xetex0.c:10745 (do_assignments)
-pub unsafe fn do_assignments() {
-    if let Err(e) = crate::state::with_state_mut(do_assignments_in) {
-        unsafe { e.fire() }
-    }
-}
-
 pub(crate) fn do_assignments_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
@@ -4555,25 +4564,15 @@ pub(crate) fn main_control_simple_list_group_cases_in(
     Ok(())
 }
 // translated from xetex-xetex0.c:6964 (main_control box/list construction cases)
-enum MainControlBoxListAction {
-    None,
-    MakeAccent,
-}
-
 pub unsafe fn main_control_box_list_cases() {
-    let action = match crate::state::with_state_mut(main_control_box_list_cases_in) {
-        Ok(action) => action,
-        Err(e) => e.fire(),
-    };
-    match action {
-        MainControlBoxListAction::None => {}
-        MainControlBoxListAction::MakeAccent => make_accent(),
+    if let Err(e) = crate::state::with_state_mut(main_control_box_list_cases_in) {
+        e.fire();
     }
 }
 
 fn main_control_box_list_cases_in(
     st: &mut crate::state::EngineState,
-) -> Result<MainControlBoxListAction, MainControlAbort> {
+) -> Result<(), MainControlAbort> {
     const VMODE_MC: u16 = 1;
     const HMODE_MC: u16 = 104;
     const MMODE_MC: u16 = 207;
@@ -4704,7 +4703,7 @@ fn main_control_box_list_cases_in(
             crate::globals::set_cur_list_tail(p);
         }
         (HMODE_MC, DISCRETIONARY_MC) | (MMODE_MC, DISCRETIONARY_MC) => append_discretionary_in(st)?,
-        (HMODE_MC, ACCENT_MC) => return Ok(MainControlBoxListAction::MakeAccent),
+        (HMODE_MC, ACCENT_MC) => make_accent_in(st)?,
         (VMODE_MC, CAR_RET_MC)
         | (HMODE_MC, CAR_RET_MC)
         | (MMODE_MC, CAR_RET_MC)
@@ -4713,7 +4712,7 @@ fn main_control_box_list_cases_in(
         | (MMODE_MC, TAB_MARK_MC) => align_error_in(st)?,
         _ => {}
     }
-    Ok(MainControlBoxListAction::None)
+    Ok(())
 }
 // translated from xetex-xetex0.c:6993 (main_control alignment/endcsname cases)
 pub unsafe fn main_control_alignment_cases() {

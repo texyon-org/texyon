@@ -24,7 +24,7 @@ use crate::units::NodeType;
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
 // prune_page_top and the relocated font-loading group); import it here.
-use crate::scan::{cnl_get_avail, cnl_get_node, node_recycle_abort, NodeRecycleAbort};
+use crate::scan::{cnl_get_avail, cnl_get_node, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -2565,10 +2565,6 @@ fn hpack_in(
     Ok(PackOutcome { r, diags })
 }
 
-fn print_hpack_diag(box_ptr: i32, diag: PackDiag) {
-    crate::state::with_state_mut(|st| print_hpack_diag_in(st, box_ptr, diag));
-}
-
 /// Threaded core (Phase C): emit the over/underfull-`\hbox` diagnostic under a
 /// live `&mut EngineState` borrow, so a threaded caller (e.g. the line breaker)
 /// can print it in-order between its per-line islands without dropping the
@@ -2656,30 +2652,7 @@ fn print_hpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: i32
     end_diagnostic_in(st, true);
 }
 
-/// translated from xetex-xetex0.c:6972 (hpack)
-pub unsafe fn hpack(p: i32, w: i32, m: i16) -> i32 {
-    let outcome = match crate::state::with_state_mut(|st| {
-        hpack_in(
-            &mut st.mem,
-            &st.eqtb,
-            &mut st.fonts,
-            &mut st.scanner,
-            &mut st.shipout,
-            p,
-            w,
-            m,
-        )
-    }) {
-        Ok(outcome) => outcome,
-        Err(e) => node_recycle_abort(e),
-    };
-    for diag in outcome.diags.into_iter().flatten() {
-        print_hpack_diag(outcome.r, diag);
-    }
-    outcome.r
-}
-
-/// `&mut EngineState` form of [`hpack`] for threaded callers (the line breaker):
+/// `&mut EngineState` form of `hpack` for threaded callers (the line breaker):
 /// runs the [`hpack_in`] core and prints any over/underfull-`\hbox` diagnostic
 /// *under the live borrow* (via [`print_hpack_diag_in`]) so log order is
 /// preserved. The cold arena-exhaustion abort is returned, not fired, so the
