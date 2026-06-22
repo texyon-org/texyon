@@ -148,11 +148,6 @@ pub fn flush_list(mem: &mut MemState, p: i32) {
     mem.avail = p;
 }
 
-/// Transitional bridge-down wrapper for legacy `flush_list` callers (`01b` §3).
-pub fn flush_list_global(p: i32) {
-    crate::state::with_state_mut(|st| flush_list(&mut st.mem, p));
-}
-
 // ---------------------------------------------------------------------------
 // free_node
 // ---------------------------------------------------------------------------

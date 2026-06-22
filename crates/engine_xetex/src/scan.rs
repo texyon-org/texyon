@@ -292,12 +292,6 @@ pub(crate) fn scan_four_bit_int_in(st: &mut crate::state::EngineState) -> Result
     Ok(())
 }
 
-pub unsafe fn scan_four_bit_int() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_four_bit_int_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
 // translated from xetex-xetex0.c:5384 (scan_fifteen_bit_int)
 pub(crate) fn scan_fifteen_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
@@ -342,13 +336,6 @@ pub(crate) fn scan_xetex_math_char_int_in(
         set_cur_val(0);
     }
     Ok(())
-}
-
-// translated from xetex-xetex0.c:5245 (scan_register_num)
-pub unsafe fn scan_register_num() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_register_num_in(st)) {
-        unsafe { e.fire() }
-    }
 }
 
 pub(crate) fn scan_delimiter_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
@@ -821,14 +808,6 @@ pub unsafe fn str_toks(b: i32) -> i32 {
 // ---------------------------------------------------------------------------
 // the_toks
 // ---------------------------------------------------------------------------
-
-/// translated from xetex-xetex0.c:6427 (the_toks)
-pub unsafe fn the_toks() -> i32 {
-    match crate::state::with_state_mut(|st| the_toks_in(st)) {
-        Ok(v) => v,
-        Err(e) => unsafe { e.fire() },
-    }
-}
 
 // ---------------------------------------------------------------------------
 // pass_text

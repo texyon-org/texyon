@@ -3075,3 +3075,23 @@ tracks:
 - Full corpus: **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`
 
 **Handoff / Next:** continue the mode-independent frontier with `show_whatever` and `do_extension`. Do not single-borrow `main_control_mode_independent` until those legacy arms are threaded; otherwise it will re-enter `with_state`.
+
+## Idiom session 225 — 2026-06-22 — Execution: thread `show_whatever`, prep `new_write_whatsit`
+
+**Type:** execution (workstream 01 / Phase-C threading), intentionally light docs. Used one explorer subagent for the `show_whatever` / `do_extension` audit; edits stayed local.
+
+### Change
+
+- `output::show_whatever` now has `show_whatever_in(&mut EngineState) -> Result<(), ShowWhateverAbort>`, using threaded scanner/output/error helpers and direct `st.mem`/`st.eqtb`/`st.scanner` access under one borrow.
+- `ext::new_write_whatsit` now has `new_write_whatsit_in(&mut EngineState, ...) -> Result<(), NewWriteWhatsitAbort>`, giving future `do_extension_in` a ready building block.
+- Deleted dead bridge wrappers/accessors exposed by the slice: `scan_four_bit_int`, `scan_register_num`, `the_toks`, `flush_list_global`, `find_sa_element_global`, several output show/print wrappers, and old `error_count`/`if_limit` readers.
+
+### Validation
+
+- `cargo fmt -p tectonic_engine_xetex`
+- `cargo check -p tectonic_engine_xetex` — warnings **41**
+- Dashboard: `tex-outputs` **29/29**, `trip` **2/2**, `engine_rust` **7/7**, `latex_goldens` **4/4**
+- Release rebuild: `cargo build --release -p tectonic`
+- Full corpus: **637 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`
+
+**Handoff / Next:** `do_extension` remains the next mode-independent frontier, but full threading needs the picture/native/encoding blockers handled first (`load_picture`, `measure_native_glyph_global`, encoding helpers). Avoid single-borrowing `main_control_mode_independent` until `do_extension` is bridge-free.

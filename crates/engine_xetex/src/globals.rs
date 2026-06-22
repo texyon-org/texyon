@@ -1073,10 +1073,6 @@ pub(crate) fn set_history(v: i32) {
     });
 }
 #[inline]
-pub(crate) fn error_count() -> i8 {
-    crate::state::with_state(|state| state.errors.error_count)
-}
-#[inline]
 pub(crate) fn set_error_count(v: i8) {
     crate::state::with_state_mut(|state| {
         state.errors.error_count = v;
@@ -2126,12 +2122,6 @@ pub(crate) fn set_cond_ptr(v: i32) {
     });
 }
 
-/// Returns `if_limit` — current \if nesting limit code
-/// (xetex-xetexd.h:538; unsigned char).
-#[inline]
-pub(crate) fn if_limit() -> u8 {
-    crate::state::with_state(|s| s.scanner.if_limit)
-}
 /// Sets `if_limit`.
 #[inline]
 pub(crate) fn set_if_limit(v: u8) {

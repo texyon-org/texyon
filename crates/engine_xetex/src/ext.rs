@@ -20,9 +20,7 @@ use crate::main_control::new_graf;
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::packaging::flush_node_list_global;
 use crate::pic::load_picture;
-use crate::scan::{
-    get_x_token, scan_four_bit_int, scan_int, scan_optional_equals, scan_toks, str_toks,
-};
+use crate::scan::{get_x_token, scan_int, scan_optional_equals, scan_toks, str_toks};
 use crate::shipout::out_what;
 
 use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
@@ -2566,18 +2564,55 @@ pub unsafe fn append_src_special() {
 }
 // translated from xetex-xetex0.c:11045 (new_write_whatsit)
 pub unsafe fn new_write_whatsit(w: i16) {
-    crate::mem::new_whatsit_global(cur_chr() as i16, w);
+    if let Err(e) = crate::state::with_state_mut(|st| new_write_whatsit_in(st, w)) {
+        e.fire();
+    }
+}
+
+pub(crate) enum NewWriteWhatsitAbort {
+    Scanner(crate::scan::SccAbort),
+    MainMemory,
+}
+
+impl NewWriteWhatsitAbort {
+    pub(crate) unsafe fn fire(self) -> ! {
+        match self {
+            NewWriteWhatsitAbort::Scanner(e) => e.fire(),
+            NewWriteWhatsitAbort::MainMemory => {
+                const MEM_TOP: i32 = 4_999_999;
+                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
+            }
+        }
+    }
+}
+
+impl From<crate::scan::SccAbort> for NewWriteWhatsitAbort {
+    fn from(e: crate::scan::SccAbort) -> Self {
+        NewWriteWhatsitAbort::Scanner(e)
+    }
+}
+
+pub(crate) fn new_write_whatsit_in(
+    st: &mut EngineState,
+    w: i16,
+) -> Result<(), NewWriteWhatsitAbort> {
+    let p = crate::mem::new_whatsit(&mut st.mem, cur_chr() as i16, w);
+    if p == crate::mem::ALLOC_FAILED {
+        return Err(NewWriteWhatsitAbort::MainMemory);
+    }
     if w != WRITE_NODE_SIZE {
-        scan_four_bit_int();
+        crate::scan::scan_four_bit_int_in(st)?;
     } else {
-        scan_int();
+        crate::scan::scan_int_in(st)?;
         if cur_val() < 0 {
             set_cur_val(17);
         } else if cur_val() > 15 && cur_val() != 18 {
             set_cur_val(16);
         }
     }
-    set_mem_b32s0(crate::globals::cur_list_tail() + 1, cur_val());
+    st.mem
+        .set_b32s0(crate::globals::cur_list_tail() + 1, cur_val());
+    Ok(())
 }
 // translated from xetex-xetex0.c:9978 (insert_src_special)
 /// Cold-path abort raised by [`insert_src_special_in`] (`01b` §5). Surfaces the

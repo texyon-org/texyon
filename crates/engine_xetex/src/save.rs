@@ -1030,11 +1030,3 @@ pub fn find_sa_element(
     }
     0
 }
-
-pub unsafe fn find_sa_element_global(t: u16, n: i32, w: bool) {
-    let r =
-        crate::state::with_state_mut(|st| find_sa_element(&mut st.mem, &mut st.scanner, t, n, w));
-    if r == crate::mem::ALLOC_FAILED {
-        crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-}

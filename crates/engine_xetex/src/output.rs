@@ -5,14 +5,11 @@ use crate::consts::{
     MATH_NODE, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_AND_LOG,
     SELECTOR_TERM_ONLY, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
 };
-use crate::errors::error;
 use crate::errors::{error_in, ErrorOutcome};
-use crate::scan::{get_token, scan_register_num, the_toks};
 use crate::state::EngineState;
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, eqtb_b32s1, init_pool_ptr, line,
-    mem_b16s0, mem_b16s1, mem_b32s1, pool_size, set_help_line, set_help_ptr,
+    cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, init_pool_ptr, line, pool_size,
 };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
@@ -773,11 +770,6 @@ pub(crate) fn error_here_with_diagnostic_in(
 /// Emit the current file/line prefix to the TeX output stream.
 ///
 /// translated from xetex-output.c:304 (print_file_line)
-pub unsafe fn print_file_line() {
-    crate::state::with_state_mut(|st| print_file_line_in(st));
-}
-
-/// `&mut EngineState` core of [`print_file_line`].
 pub(crate) fn print_file_line_in(st: &mut EngineState) {
     let mut level = st.input.in_open;
     while level > 0 && st.input.full_source_filename_stack[(level) as usize] == 0 {
@@ -948,11 +940,6 @@ pub(crate) fn print_cs_in(st: &mut EngineState, p: i32) {
 /// Print a control-sequence name without trailing space (used in error msgs).
 ///
 /// translated from xetex-output.c:108 (sprint_cs)
-pub unsafe fn sprint_cs(p: i32) {
-    crate::state::with_state_mut(|st| sprint_cs_in(st, p));
-}
-
-/// `&mut EngineState` core of [`sprint_cs`].
 pub(crate) fn sprint_cs_in(st: &mut EngineState, p: i32) {
     if p < HASH_BASE {
         if p < SINGLE_BASE {
@@ -1209,11 +1196,6 @@ pub(crate) fn print_in_mode_in(st: &mut EngineState, m: i32) {
 /// Display a token list headed at p.
 ///
 /// translated from xetex-xetex0.c:3893 (token_show)
-pub unsafe fn token_show(p: i32) {
-    crate::state::with_state_mut(|st| token_show_in(st, p));
-}
-
-/// `&mut EngineState` core of [`token_show`].
 pub(crate) fn token_show_in(st: &mut EngineState, p: i32) {
     if p != TEX_NULL {
         let head = st.mem.b32s1(p);
@@ -2792,11 +2774,6 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
 /// Print the meaning of the current token (`cur_cmd`/`cur_chr`).
 ///
 /// translated from xetex-xetex0.c:3383 (print_meaning)
-pub unsafe fn print_meaning() {
-    crate::state::with_state_mut(|st| print_meaning_in(st));
-}
-
-/// `&mut EngineState` core of [`print_meaning`].
 pub(crate) fn print_meaning_in(st: &mut EngineState) {
     print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
     if cur_cmd() as u16 >= CALL {
@@ -3637,94 +3614,132 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
 }
 // translated from xetex-xetex0.c:10561 (show_whatever)
 pub unsafe fn show_whatever() {
+    if let Err(e) = crate::state::with_state_mut(show_whatever_in) {
+        e.fire();
+    }
+}
+
+pub(crate) enum ShowWhateverAbort {
+    Scanner(crate::scan::SccAbort),
+    Error(crate::errors::ErrorOutcome),
+    MainMemoryOverflow,
+}
+
+impl ShowWhateverAbort {
+    pub(crate) unsafe fn fire(self) -> ! {
+        match self {
+            ShowWhateverAbort::Scanner(e) => e.fire(),
+            ShowWhateverAbort::Error(o) => {
+                o.finish();
+                unreachable!("show_whatever error outcome should be divergent")
+            }
+            ShowWhateverAbort::MainMemoryOverflow => {
+                const MEM_TOP: i32 = 4_999_999;
+                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
+            }
+        }
+    }
+}
+
+impl From<crate::scan::SccAbort> for ShowWhateverAbort {
+    fn from(e: crate::scan::SccAbort) -> Self {
+        ShowWhateverAbort::Scanner(e)
+    }
+}
+
+pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverAbort> {
     const INT_PAR_TRACING_ONLINE: i32 = 29; // xetex_format.h:33
     const IF_TEST: u16 = 107; // xetex_format.h:349
     const FI_CODE: u8 = 2; // xetex_format.h:537
 
-    crate::output::diagnostic_begin_capture_warning_here();
+    crate::output::diagnostic_begin_capture_warning_here_in(st);
 
     let goto_common_ending = match cur_chr() {
         3 => {
-            crate::output::begin_diagnostic();
-            show_activities();
+            crate::output::begin_diagnostic_in(st);
+            show_activities_in(st);
             false
         }
         1 => {
-            scan_register_num();
+            crate::scan::scan_register_num_in(st)?;
             let p = if cur_val() < 256 {
-                eqtb_b32s1(BOX_BASE + cur_val())
+                st.eqtb.b32s1(BOX_BASE + cur_val())
             } else {
-                crate::save::find_sa_element_global(4, cur_val(), false);
+                let r =
+                    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
+                if r == crate::mem::ALLOC_FAILED {
+                    return Err(ShowWhateverAbort::MainMemoryOverflow);
+                }
                 if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
                     crate::mem::TEX_NULL
                 } else {
-                    mem_b32s1(crate::globals::cur_ptr() + 1)
+                    st.mem.b32s1(crate::globals::cur_ptr() + 1)
                 }
             };
-            crate::output::begin_diagnostic();
-            crate::output::print_nl_cstr(c"> \\box".as_ptr());
-            crate::output::print_int(cur_val());
-            crate::output::print_char('=' as i32);
+            crate::output::begin_diagnostic_in(st);
+            crate::output::print_nl_cstr_in(st, c"> \\box".as_ptr());
+            crate::output::print_int_in(st, cur_val());
+            crate::output::print_char_in(st, '=' as i32);
             if p == crate::mem::TEX_NULL {
-                crate::output::print_cstr(c"void".as_ptr());
+                crate::output::print_cstr_in(st, c"void".as_ptr());
             } else {
-                show_box(p);
+                show_box_in(st, p);
             }
             false
         }
         0 => {
-            get_token();
-            crate::output::print_nl_cstr(c"> ".as_ptr());
+            crate::scan::get_token_in(st)?;
+            crate::output::print_nl_cstr_in(st, c"> ".as_ptr());
             if cur_cs() != 0 {
-                crate::output::sprint_cs(cur_cs());
-                crate::output::print_char('=' as i32);
+                crate::output::sprint_cs_in(st, cur_cs());
+                crate::output::print_char_in(st, '=' as i32);
             }
-            crate::output::print_meaning();
+            crate::output::print_meaning_in(st);
             true
         }
         4 => {
-            crate::output::begin_diagnostic();
-            show_save_groups();
+            crate::output::begin_diagnostic_in(st);
+            show_save_groups_in(st);
             false
         }
         6 => {
-            crate::output::begin_diagnostic();
-            crate::output::print_nl_cstr(c"".as_ptr());
-            crate::output::print_ln();
-            if crate::globals::cond_ptr() == crate::mem::TEX_NULL {
-                crate::output::print_nl_cstr(c"### ".as_ptr());
-                crate::output::print_cstr(c"no active conditionals".as_ptr());
+            crate::output::begin_diagnostic_in(st);
+            crate::output::print_nl_cstr_in(st, c"".as_ptr());
+            crate::output::print_ln_in(st);
+            if st.scanner.cond_ptr == crate::mem::TEX_NULL {
+                crate::output::print_nl_cstr_in(st, c"### ".as_ptr());
+                crate::output::print_cstr_in(st, c"no active conditionals".as_ptr());
             } else {
-                let mut p = crate::globals::cond_ptr();
+                let mut p = st.scanner.cond_ptr;
                 let mut n: i32 = 0;
                 loop {
                     n += 1;
-                    p = mem_b32s1(p);
+                    p = st.mem.b32s1(p);
                     if p == crate::mem::TEX_NULL {
                         break;
                     }
                 }
-                p = crate::globals::cond_ptr();
-                let mut t = crate::globals::cur_if();
-                let mut l = crate::globals::if_line();
-                let mut m = crate::globals::if_limit();
+                p = st.scanner.cond_ptr;
+                let mut t = st.scanner.cur_if;
+                let mut l = st.scanner.if_line;
+                let mut m = st.scanner.if_limit;
                 loop {
-                    crate::output::print_nl_cstr(c"### level ".as_ptr());
-                    crate::output::print_int(n);
-                    crate::output::print_cstr(c": ".as_ptr());
-                    print_cmd_chr(IF_TEST, t as i32);
+                    crate::output::print_nl_cstr_in(st, c"### level ".as_ptr());
+                    crate::output::print_int_in(st, n);
+                    crate::output::print_cstr_in(st, c": ".as_ptr());
+                    print_cmd_chr_in(st, IF_TEST, t as i32);
                     if m == FI_CODE {
-                        crate::output::print_esc_cstr(c"else".as_ptr());
+                        crate::output::print_esc_cstr_in(st, c"else".as_ptr());
                     }
                     if l != 0 {
-                        crate::output::print_cstr(c" entered on line ".as_ptr());
-                        crate::output::print_int(l);
+                        crate::output::print_cstr_in(st, c" entered on line ".as_ptr());
+                        crate::output::print_int_in(st, l);
                     }
                     n -= 1;
-                    t = mem_b16s0(p) as i16;
-                    l = mem_b32s1(p + 1);
-                    m = mem_b16s1(p) as u8;
-                    p = mem_b32s1(p);
+                    t = st.mem.b16s0(p) as i16;
+                    l = st.mem.b32s1(p + 1);
+                    m = st.mem.b16s1(p) as u8;
+                    p = st.mem.b32s1(p);
                     if p == crate::mem::TEX_NULL {
                         break;
                     }
@@ -3733,75 +3748,61 @@ pub unsafe fn show_whatever() {
             false
         }
         _ => {
-            the_toks(); // the_toks populates TEMP_HEAD
-            crate::output::print_nl_cstr(c"> ".as_ptr());
-            crate::output::token_show(TEMP_HEAD);
-            crate::mem::flush_list_global(mem_b32s1(TEMP_HEAD));
+            crate::scan::the_toks_in(st)?; // the_toks populates TEMP_HEAD
+            crate::output::print_nl_cstr_in(st, c"> ".as_ptr());
+            crate::output::token_show_in(st, TEMP_HEAD);
+            let temp_head_link = st.mem.b32s1(TEMP_HEAD);
+            crate::mem::flush_list(&mut st.mem, temp_head_link);
             true
         }
     };
 
     if !goto_common_ending {
-        capture_to_diagnostic(std::ptr::null_mut());
-        crate::output::end_diagnostic(true);
-        if crate::globals::file_line_error_style_p() != 0 {
-            crate::output::print_file_line();
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::end_diagnostic_in(st, true);
+        if st.config.file_line_error_style_p != 0 {
+            crate::output::print_file_line_in(st);
         } else {
-            crate::output::print_nl_cstr(c"! ".as_ptr());
+            crate::output::print_nl_cstr_in(st, c"! ".as_ptr());
         }
-        crate::output::print_cstr(c"OK".as_ptr());
-        if crate::globals::selector() == SELECTOR_TERM_AND_LOG
-            && eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0
+        crate::output::print_cstr_in(st, c"OK".as_ptr());
+        if st.shipout.selector == SELECTOR_TERM_AND_LOG
+            && st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0
         {
-            crate::globals::set_selector(SELECTOR_TERM_ONLY);
-            crate::output::print_cstr(c" (see the transcript file)".as_ptr());
-            crate::globals::set_selector(SELECTOR_TERM_AND_LOG);
+            st.shipout.selector = SELECTOR_TERM_ONLY;
+            crate::output::print_cstr_in(st, c" (see the transcript file)".as_ptr());
+            st.shipout.selector = SELECTOR_TERM_AND_LOG;
         }
     }
 
     // common_ending:
-    capture_to_diagnostic(std::ptr::null_mut());
-    if crate::globals::interaction() < ERROR_STOP_MODE {
-        set_help_ptr(0);
-        crate::globals::set_error_count(crate::globals::error_count() - 1);
-    } else if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) > 0 {
-        set_help_ptr(3);
-        set_help_line(
-            2,
-            c"This isn't an error message; I'm just \\showing something.".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"Type `I\\show...' to show more (e.g., \\show\\cs,".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"\\showthe\\count10, \\showbox255, \\showlists).".as_ptr(),
-        );
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    if st.errors.interaction < ERROR_STOP_MODE {
+        st.errors.help_ptr = 0;
+        st.errors.error_count -= 1;
+    } else if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) > 0 {
+        st.errors.help_ptr = 3;
+        st.errors.help_line[2] =
+            c"This isn't an error message; I'm just \\showing something.".as_ptr();
+        st.errors.help_line[1] = c"Type `I\\show...' to show more (e.g., \\show\\cs,".as_ptr();
+        st.errors.help_line[0] = c"\\showthe\\count10, \\showbox255, \\showlists).".as_ptr();
     } else {
-        set_help_ptr(5);
-        set_help_line(
-            4,
-            c"This isn't an error message; I'm just \\showing something.".as_ptr(),
-        );
-        set_help_line(
-            3,
-            c"Type `I\\show...' to show more (e.g., \\show\\cs,".as_ptr(),
-        );
-        set_help_line(
-            2,
-            c"\\showthe\\count10, \\showbox255, \\showlists).".as_ptr(),
-        );
-        set_help_line(
-            1,
-            c"And type `I\\tracingonline=1\\show...' to show boxes and".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"lists on your terminal as well as in the transcript file.".as_ptr(),
-        );
+        st.errors.help_ptr = 5;
+        st.errors.help_line[4] =
+            c"This isn't an error message; I'm just \\showing something.".as_ptr();
+        st.errors.help_line[3] = c"Type `I\\show...' to show more (e.g., \\show\\cs,".as_ptr();
+        st.errors.help_line[2] = c"\\showthe\\count10, \\showbox255, \\showlists).".as_ptr();
+        st.errors.help_line[1] =
+            c"And type `I\\tracingonline=1\\show...' to show boxes and".as_ptr();
+        st.errors.help_line[0] =
+            c"lists on your terminal as well as in the transcript file.".as_ptr();
     }
-    error();
+    let outcome = crate::errors::error_in(st);
+    if matches!(outcome, crate::errors::ErrorOutcome::Continue) {
+        Ok(())
+    } else {
+        Err(ShowWhateverAbort::Error(outcome))
+    }
 }
 // translated from xetex-xetex0.c:6428 (char_warning)
 pub unsafe fn char_warning(f: i32, c: i32) {
@@ -3913,11 +3914,6 @@ pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutc
     ErrorOutcome::Continue
 }
 /// translated from xetex-xetex0.c:735 (show_box)
-pub unsafe fn show_box(p: i32) {
-    crate::state::with_state_mut(|st| show_box_in(st, p));
-}
-
-/// `&mut EngineState` core of [`show_box`].
 pub(crate) fn show_box_in(st: &mut EngineState, p: i32) {
     st.errors.depth_threshold = st.eqtb.b32s1(INT_BASE + INT_PAR_SHOW_BOX_DEPTH);
     st.errors.breadth_max = st.eqtb.b32s1(INT_BASE + INT_PAR_SHOW_BOX_BREADTH);
@@ -4010,11 +4006,6 @@ pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
     }
 }
 /// translated from xetex-xetex0.c:1123 (show_activities)
-pub unsafe fn show_activities() {
-    crate::state::with_state_mut(|st| show_activities_in(st));
-}
-
-/// `&mut EngineState` core of [`show_activities`].
 pub(crate) fn show_activities_in(st: &mut EngineState) {
     st.input.nest[(st.input.nest_ptr) as usize] = crate::globals::cur_list();
     crate::output::print_nl_cstr_in(st, c"".as_ptr());

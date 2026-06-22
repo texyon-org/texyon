@@ -2185,6 +2185,7 @@ pub(crate) enum MainControlAbort {
     SaMutation(crate::save::SaMutationAbort),
     Unsave(crate::save::UnsaveAbort),
     InsertSrc(crate::ext::InsertSrcAbort),
+    ShowWhatever(crate::output::ShowWhateverAbort),
     OpenLog(crate::io::OpenLogAbort),
     OpenOrClose(crate::io::OpenOrCloseAbort),
     MakeTexString(crate::texmfmp::MakeTexStringAbort),
@@ -2267,6 +2268,12 @@ impl From<crate::ext::InsertSrcAbort> for MainControlAbort {
     }
 }
 
+impl From<crate::output::ShowWhateverAbort> for MainControlAbort {
+    fn from(e: crate::output::ShowWhateverAbort) -> Self {
+        MainControlAbort::ShowWhatever(e)
+    }
+}
+
 impl From<crate::io::OpenLogAbort> for MainControlAbort {
     fn from(e: crate::io::OpenLogAbort) -> Self {
         MainControlAbort::OpenLog(e)
@@ -2318,6 +2325,7 @@ impl MainControlAbort {
             MainControlAbort::SaMutation(a) => a.fire(),
             MainControlAbort::Unsave(a) => a.fire(),
             MainControlAbort::InsertSrc(a) => a.fire(),
+            MainControlAbort::ShowWhatever(a) => a.fire(),
             MainControlAbort::OpenLog(a) => a.fire(),
             MainControlAbort::OpenOrClose(a) => a.fire(),
             MainControlAbort::MakeTexString(a) => crate::texmfmp::fire_make_tex_string(a),
