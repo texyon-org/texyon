@@ -99,12 +99,6 @@ pub(crate) fn new_save_level(save_stack: &mut SaveStackState, c: u8) -> Option<S
     None
 }
 
-/// Transitional bridge-down wrapper for legacy `new_save_level` callers.
-pub unsafe fn new_save_level_global(c: u8) {
-    let abort = crate::state::with_state_mut(|st| new_save_level(&mut st.save_stack, c));
-    raise_save_abort(abort);
-}
-
 // ---------------------------------------------------------------------------
 // eq_save
 // ---------------------------------------------------------------------------
@@ -849,13 +843,6 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
         Ok(())
     } else {
         Err(UnsaveAbort::Save(SaveAbort::Confusion(c"curlevel")))
-    }
-}
-
-// translated from xetex-xetex0.c:2814 (unsave)
-pub unsafe fn unsave() {
-    if let Err(a) = crate::state::with_state_mut(|st| unsave_in(st)) {
-        a.fire();
     }
 }
 

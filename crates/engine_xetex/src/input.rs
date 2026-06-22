@@ -191,14 +191,6 @@ pub(crate) fn back_error_in(
 // ins_error
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-xetex0.c:3174 (ins_error)
-pub unsafe fn ins_error() {
-    match crate::state::with_state_mut(ins_error_in) {
-        Ok(oc) => oc.finish(),
-        Err(a) => a.fire(),
-    }
-}
-
 /// `&mut EngineState` core of [`ins_error`] (`01b` §3): [`back_input_in`], stamp
 /// the backed-up token list as `INSERTED`, then [`error_in`]. Same dual-sentinel
 /// shape as [`back_error_in`].

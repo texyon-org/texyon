@@ -1070,10 +1070,3 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
     }
     Ok(())
 }
-
-pub unsafe fn build_page() {
-    let outcome = crate::state::with_state_mut(build_page_in);
-    if let Err(a) = outcome {
-        fire_page_build_abort(a);
-    }
-}

@@ -234,14 +234,6 @@ pub(crate) fn tex_remainder() -> i32 {
     crate::state::with_state(|state| state.errors.tex_remainder)
 }
 
-/// Stores a value into the `tex_remainder` register.
-#[inline]
-pub(crate) fn set_tex_remainder(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.tex_remainder = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // randoms / j_random
 // ---------------------------------------------------------------------------
@@ -1183,10 +1175,6 @@ pub(crate) fn set_after_token(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.after_token = v;
     });
-}
-#[inline]
-pub(crate) fn align_state() -> i32 {
-    crate::state::with_state(|s| s.scanner.align_state)
 }
 #[inline]
 pub(crate) fn set_align_state(v: i32) {
@@ -2414,10 +2402,6 @@ pub(crate) fn set_cur_val_level(v: u8) {
 // scanner_status / warning_index / def_ref
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn scanner_status() -> u8 {
-    crate::state::with_state(|s| s.scanner.scanner_status)
-}
 #[inline]
 pub(crate) fn set_scanner_status(v: u8) {
     crate::state::with_state_mut(|s| {

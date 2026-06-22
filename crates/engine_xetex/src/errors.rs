@@ -346,11 +346,6 @@ pub(crate) fn you_cant_in(st: &mut EngineState) {
     print_in_mode_in(st, cur_list_mode() as i32);
     capture_to_diagnostic_in(st, std::ptr::null_mut());
 }
-// translated from xetex-xetex0.c:9334 (report_illegal_case)
-pub unsafe fn report_illegal_case() {
-    crate::state::with_state_mut(|st| report_illegal_case_in(st)).finish();
-}
-
 /// `&mut EngineState` core of [`report_illegal_case`].
 pub(crate) fn report_illegal_case_in(st: &mut EngineState) -> ErrorOutcome {
     you_cant_in(st);

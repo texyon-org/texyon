@@ -15,31 +15,25 @@ use crate::consts::{
     MAX_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_ONLY,
     SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
-use crate::errors::{error, report_illegal_case};
 use crate::ext::{
     append_src_special, apply_mapping, do_extension_in, get_native_char_height_depth_global,
     get_native_char_sidebearings_global, map_char_to_glyph_global, measure_native_node_global,
 };
 use crate::fonts::read_font_info_in;
 use crate::globals::{
-    align_state, cur_chr, cur_cmd, cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, eqtb_b32s1,
-    font_glue, mem_b16s0, mem_b16s3, mem_b32s1, param_base, set_align_state, set_cur_chr,
-    set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val,
-    set_font_glue, set_help_line, set_help_ptr, set_mem_b16s0, set_mem_b32s1,
+    cur_chr, cur_cmd, cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, eqtb_b32s1, mem_b16s0,
+    mem_b16s3, mem_b32s1, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_index, set_cur_ptr,
+    set_cur_tok, set_cur_val, set_mem_b16s0, set_mem_b32s1,
 };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::input::begin_token_list;
 use crate::linebreak::do_locale_linebreaks;
 use crate::math::{after_math_in, init_math_in};
-use crate::output::{
-    capture_to_diagnostic, char_warning, error_here_with_diagnostic, print_cmd_chr,
-};
+use crate::output::char_warning;
 use crate::packaging::{flush_node_list_global, hpack};
-use crate::pagebuilder::build_page;
 use crate::scan::{
     back_input, effective_char_global, effective_char_info_global, get_next, get_x_token,
-    insert_dollar_sign, new_native_word_node_global, scan_char_num, scan_dimen, scan_rule_spec,
-    scan_usv_num, set_class_fn, set_family_fn, x_token,
+    new_native_word_node_global, scan_char_num, scan_usv_num, set_class_fn, set_family_fn, x_token,
 };
 use crate::units::MemIdx;
 
@@ -134,80 +128,58 @@ const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73; // xetex_format.h:108
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:10390 (align_error)
-pub unsafe fn align_error() {
-    if align_state().abs() > 2 {
-        error_here_with_diagnostic(c"Misplaced ".as_ptr());
-        print_cmd_chr(cur_cmd() as u16, cur_chr());
-        capture_to_diagnostic(std::ptr::null_mut());
+pub(crate) fn align_error_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
+    if st.scanner.align_state.abs() > 2 {
+        crate::output::error_here_with_diagnostic_in(st, c"Misplaced ".as_ptr());
+        crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         if cur_tok() == TAB_TOKEN + 38 {
-            set_help_ptr(6);
-            set_help_line(
-                5,
-                c"I can't figure out why you would want to use a tab mark".as_ptr(),
-            );
-            set_help_line(
-                4,
-                c"here. If you just want an ampersand, the remedy is".as_ptr(),
-            );
-            set_help_line(
-                3,
-                c"simple: Just type `I\\&' now. But if some right brace".as_ptr(),
-            );
-            set_help_line(
-                2,
-                c"up above has ended a previous alignment prematurely,".as_ptr(),
-            );
-            set_help_line(
-                1,
-                c"you're probably due for more error messages, and you".as_ptr(),
-            );
-            set_help_line(
-                0,
-                c"might try typing `S' now just to see what is salvageable.".as_ptr(),
-            );
+            st.errors.help_ptr = 6;
+            st.errors.help_line[5] =
+                c"I can't figure out why you would want to use a tab mark".as_ptr();
+            st.errors.help_line[4] = c"here. If you just want an ampersand, the remedy is".as_ptr();
+            st.errors.help_line[3] =
+                c"simple: Just type `I\\&' now. But if some right brace".as_ptr();
+            st.errors.help_line[2] =
+                c"up above has ended a previous alignment prematurely,".as_ptr();
+            st.errors.help_line[1] =
+                c"you're probably due for more error messages, and you".as_ptr();
+            st.errors.help_line[0] =
+                c"might try typing `S' now just to see what is salvageable.".as_ptr();
         } else {
-            set_help_ptr(5);
-            set_help_line(
-                4,
-                c"I can't figure out why you would want to use a tab mark".as_ptr(),
-            );
-            set_help_line(
-                3,
-                c"or \\cr or \\span just now. If something like a right brace".as_ptr(),
-            );
-            set_help_line(
-                2,
-                c"up above has ended a previous alignment prematurely,".as_ptr(),
-            );
-            set_help_line(
-                1,
-                c"you're probably due for more error messages, and you".as_ptr(),
-            );
-            set_help_line(
-                0,
-                c"might try typing `S' now just to see what is salvageable.".as_ptr(),
-            );
+            st.errors.help_ptr = 5;
+            st.errors.help_line[4] =
+                c"I can't figure out why you would want to use a tab mark".as_ptr();
+            st.errors.help_line[3] =
+                c"or \\cr or \\span just now. If something like a right brace".as_ptr();
+            st.errors.help_line[2] =
+                c"up above has ended a previous alignment prematurely,".as_ptr();
+            st.errors.help_line[1] =
+                c"you're probably due for more error messages, and you".as_ptr();
+            st.errors.help_line[0] =
+                c"might try typing `S' now just to see what is salvageable.".as_ptr();
         }
-        error();
+        mc_propagate_error(crate::errors::error_in(st))?;
     } else {
-        crate::input::back_input();
-        if align_state() < 0 {
-            error_here_with_diagnostic(c"Missing { inserted".as_ptr());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_align_state(align_state() + 1);
+        crate::input::back_input_in(st)?;
+        if st.scanner.align_state < 0 {
+            crate::output::error_here_with_diagnostic_in(st, c"Missing { inserted".as_ptr());
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.scanner.align_state += 1;
             set_cur_tok(LEFT_BRACE_TOKEN + 123);
         } else {
-            error_here_with_diagnostic(c"Missing } inserted".as_ptr());
-            capture_to_diagnostic(std::ptr::null_mut());
-            set_align_state(align_state() - 1);
+            crate::output::error_here_with_diagnostic_in(st, c"Missing } inserted".as_ptr());
+            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            st.scanner.align_state -= 1;
             set_cur_tok(RIGHT_BRACE_TOKEN + 125);
         }
-        set_help_ptr(3);
-        set_help_line(2, c"I've put in what seems to be necessary to fix".as_ptr());
-        set_help_line(1, c"the current column of the current alignment.".as_ptr());
-        set_help_line(0, c"Try to go on, since this might almost work.".as_ptr());
-        crate::input::ins_error();
+        st.errors.help_ptr = 3;
+        st.errors.help_line[2] = c"I've put in what seems to be necessary to fix".as_ptr();
+        st.errors.help_line[1] = c"the current column of the current alignment.".as_ptr();
+        st.errors.help_line[0] = c"Try to go on, since this might almost work.".as_ptr();
+        mc_propagate_error(crate::input::ins_error_in(st)?)?;
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:10443 (no_align_error)
 pub(crate) fn no_align_error_in(
@@ -1345,13 +1317,6 @@ pub(crate) fn push_math_in(
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:9942 (end_graf)
-pub unsafe fn end_graf() {
-    if let Err(e) = crate::state::with_state_mut(end_graf_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn end_graf_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     if cur_list_mode() == HMODE {
         if crate::globals::cur_list_head() == crate::globals::cur_list_tail() {
@@ -1387,12 +1352,6 @@ fn append_penalty_node(mem: &mut crate::state::MemState, tail: i32, penalty: i32
     }
     mem.set_b32s1(tail, p);
     p
-}
-
-pub unsafe fn append_penalty() {
-    if let Err(e) = crate::state::with_state_mut(append_penalty_in) {
-        e.fire();
-    }
 }
 
 pub(crate) fn append_penalty_in(
@@ -1473,15 +1432,6 @@ pub(crate) fn normal_paragraph(
     None
 }
 
-/// Transitional bridge-down wrapper for legacy `normal_paragraph` callers
-/// (`01b` §3, §5).
-pub unsafe fn normal_paragraph_global() {
-    let abort = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        normal_paragraph(&mut s.eqtb, &mut s.save_stack, &mut s.mem, &mut s.scanner)
-    });
-    crate::save::raise_save_abort(abort);
-}
 // translated from xetex-xetex0.c:9332 (its_all_over)
 pub unsafe fn its_all_over() -> bool {
     match crate::state::with_state_mut(its_all_over_in) {
@@ -1562,23 +1512,7 @@ pub(crate) fn indent_in_hmode(
     Ok(())
 }
 
-/// Transitional bridge-down wrapper for legacy `indent_in_hmode` callers (`01b`
-/// §3, §5).
-pub unsafe fn indent_in_hmode_global() {
-    if let Err(e) = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        indent_in_hmode(&mut s.mem, &s.eqtb)
-    }) {
-        crate::scan::node_recycle_abort(e);
-    }
-}
 // translated from xetex-xetex0.c:9831 (head_for_vmode)
-pub unsafe fn head_for_vmode() {
-    if let Err(e) = crate::state::with_state_mut(head_for_vmode_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn head_for_vmode_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
@@ -1605,13 +1539,6 @@ pub(crate) fn head_for_vmode_in(
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:9760 (begin_insert_or_adjust)
-pub unsafe fn begin_insert_or_adjust() {
-    if let Err(e) = crate::state::with_state_mut(begin_insert_or_adjust_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn begin_insert_or_adjust_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
@@ -1687,13 +1614,6 @@ pub(crate) fn do_endv_in(st: &mut crate::state::EngineState) -> Result<(), MainC
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:9799 (unpackage)
-pub unsafe fn unpackage() {
-    if let Err(e) = crate::state::with_state_mut(unpackage_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const COPY_CODE: i32 = 1; // xetex_format.h:481
     const VLIST_NODE: u16 = 1; // xetex_format.h:381
@@ -1782,13 +1702,6 @@ pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:9716 (delete_last)
-pub unsafe fn delete_last() {
-    if let Err(e) = crate::state::with_state_mut(delete_last_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn delete_last_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const BEGIN_M_CODE: u16 = 2; // xetex_format.h:436
 
@@ -1879,10 +1792,9 @@ pub(crate) fn delete_last_in(st: &mut crate::state::EngineState) -> Result<(), M
 }
 // translated from xetex-xetex0.c:9223 (app_space)
 // Phase-C: threaded to `&mut MemState`/`&EqtbState`/`&mut FontState`; legacy
-// callers use [`app_space_global`]. Returns the deferred `xn_over_d` side
-// effects (`tex_remainder`, plus `arith_error` on overflow) for the wrapper to
-// apply after the state borrow drops (§129); `None` when the spacing branch
-// taken did no scaling arithmetic.
+// entry points use [`app_space_in`]. Returns the deferred `xn_over_d` side
+// effects (`tex_remainder`, plus `arith_error` on overflow); `None` when the
+// spacing branch taken did no scaling arithmetic.
 pub(crate) fn app_space(
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
@@ -1951,30 +1863,15 @@ pub(crate) fn app_space(
     Ok(side_effects)
 }
 
-/// Transitional bridge-down wrapper for legacy `app_space` callers (`01b` §3,
-/// §5, §129).
-pub unsafe fn app_space_global() {
-    match crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        app_space(&mut s.mem, &s.eqtb, &mut s.fonts)
-    }) {
-        Ok(Some((remainder, overflowed))) => {
-            if overflowed {
-                crate::globals::set_arith_error(true);
-            }
-            crate::globals::set_tex_remainder(remainder);
+pub(crate) fn app_space_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
+    if let Some((remainder, overflowed)) = app_space(&mut st.mem, &st.eqtb, &mut st.fonts)? {
+        if overflowed {
+            st.errors.arith_error = true;
         }
-        Ok(None) => {}
-        Err(e) => crate::scan::node_recycle_abort(e),
+        st.errors.tex_remainder = remainder;
     }
+    Ok(())
 }
-// translated from xetex-xetex0.c:9485 (scan_box)
-pub unsafe fn scan_box(box_context: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_box_in(st, box_context)) {
-        e.fire();
-    }
-}
-
 pub(crate) fn scan_box_in(
     st: &mut crate::state::EngineState,
     box_context: i32,
@@ -2068,13 +1965,6 @@ pub(crate) fn package_in(
     box_end_in(st, ctx)?;
     Ok(())
 }
-// translated from xetex-xetex0.c:9549 (new_graf)
-pub unsafe fn new_graf(indented: bool) {
-    if let Err(e) = crate::state::with_state_mut(|st| new_graf_in(st, indented)) {
-        e.fire();
-    }
-}
-
 /// `&mut EngineState` core of [`new_graf`]: starts a new paragraph (par-skip
 /// glue, nest push, hyphenation/language setup, optional indent box +
 /// src-special, `\everypar`, page build) under one borrow. `cur_list_*` stay
@@ -2575,13 +2465,6 @@ pub(crate) fn box_end_in(
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:7794 (begin_box)
-pub unsafe fn begin_box(box_context: i32) {
-    if let Err(e) = crate::state::with_state_mut(|st| begin_box_in(st, box_context)) {
-        e.fire();
-    }
-}
-
 pub(crate) fn begin_box_in(
     st: &mut crate::state::EngineState,
     box_context: i32,
@@ -2831,13 +2714,6 @@ pub(crate) fn begin_box_in(
 
     box_end_in(st, box_context)
 }
-// translated from xetex-xetex0.c:8265 (handle_right_brace)
-pub unsafe fn handle_right_brace() {
-    if let Err(e) = crate::state::with_state_mut(handle_right_brace_in) {
-        e.fire();
-    }
-}
-
 // translated from xetex-xetex0.c:8995 (handle_right_brace)
 pub(crate) fn handle_right_brace_in(
     st: &mut crate::state::EngineState,
@@ -3163,12 +3039,6 @@ fn append_glue_node(
     p.idx().0
 }
 
-pub unsafe fn append_glue() {
-    if let Err(e) = crate::state::with_state_mut(append_glue_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn append_glue_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let s = cur_chr() as i16;
     match s {
@@ -3204,12 +3074,6 @@ fn append_kern_node(mem: &mut crate::state::MemState, tail: i32, width: i32, sub
     p.idx().0
 }
 
-pub unsafe fn append_kern() {
-    if let Err(e) = crate::state::with_state_mut(append_kern_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn append_kern_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let s = cur_chr() as u16;
     crate::scan::scan_dimen_in(st, s == MU_GLUE, false, false)?;
@@ -3221,13 +3085,6 @@ pub(crate) fn append_kern_in(st: &mut crate::state::EngineState) -> Result<(), M
     crate::globals::set_cur_list_tail(p);
     Ok(())
 }
-// translated from xetex-xetex0.c:9896 (make_mark)
-pub unsafe fn make_mark() {
-    if let Err(e) = crate::state::with_state_mut(make_mark_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let c = if cur_chr() == 0 {
         0
@@ -3422,13 +3279,6 @@ pub unsafe fn fix_language_global() {
         crate::scan::node_recycle_abort(e);
     }
 }
-// translated from xetex-xetex0.c:9325 (off_save)
-pub unsafe fn off_save() {
-    if let Err(e) = crate::state::with_state_mut(off_save_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn off_save_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     if st.save_stack.cur_group == BOTTOM_LEVEL {
         crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
@@ -3480,13 +3330,6 @@ pub(crate) fn off_save_in(st: &mut crate::state::EngineState) -> Result<(), Main
     }
     Ok(())
 }
-// translated from xetex-xetex0.c:9956 (append_discretionary)
-pub unsafe fn append_discretionary() {
-    if let Err(e) = crate::state::with_state_mut(append_discretionary_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn append_discretionary_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
@@ -3681,13 +3524,6 @@ pub(crate) fn build_discretionary_in(
     set_cur_list_aux_b32s0(1000);
     Ok(())
 }
-// translated from xetex-xetex0.c:9868 (append_italic_correction)
-pub unsafe fn append_italic_correction() {
-    if let Err(e) = crate::state::with_state_mut(append_italic_correction_in) {
-        e.fire();
-    }
-}
-
 pub(crate) fn append_italic_correction_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
@@ -4416,43 +4252,55 @@ pub(crate) fn do_assignments_in(
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:8221 (main_control append_normal_space label)
-pub unsafe fn main_control_append_normal_space() {
+pub(crate) fn main_control_append_normal_space_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const GLUE_PAR_SPACE_SKIP_MC: i16 = 12; // xetex_format.h:161
     const CHAR_NUM_MC: u8 = 16; // xetex_format.h:253
 
-    if crate::state::with_state_mut(|st| inter_char_boundary_after_space_action(st, CHAR_NUM_MC))
-        .execute()
-    {
-        return;
+    if inter_char_boundary_after_space_action(st, CHAR_NUM_MC).execute_in(st)? {
+        return Ok(());
     }
 
-    let cur_font = eqtb_b32s1(CUR_FONT_LOC);
-    if eqtb_b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP_MC as i32) == 0 {
-        crate::globals::set_main_p(font_glue(cur_font));
+    let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
+    if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP_MC as i32) == 0 {
+        crate::globals::set_main_p(st.fonts.font_glue(cur_font));
         if crate::globals::main_p() == crate::mem::TEX_NULL {
-            crate::globals::set_main_p(crate::mem::new_spec_global(0));
-            crate::globals::set_main_k(param_base(cur_font) + 2);
-            set_mem_b32s1(
+            crate::globals::set_main_p(crate::mem::new_spec(&mut st.mem, 0));
+            if crate::globals::main_p() == crate::mem::ALLOC_FAILED {
+                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+            }
+            crate::globals::set_main_k(st.fonts.param_base(cur_font) + 2);
+            st.mem.set_b32s1(
                 crate::globals::main_p() + 1,
-                crate::globals::font_info_b32s1(crate::globals::main_k()),
+                st.fonts.font_info_b32s1(crate::globals::main_k()),
             );
-            set_mem_b32s1(
+            st.mem.set_b32s1(
                 crate::globals::main_p() + 2,
-                crate::globals::font_info_b32s1(crate::globals::main_k() + 1),
+                st.fonts.font_info_b32s1(crate::globals::main_k() + 1),
             );
-            set_mem_b32s1(
+            st.mem.set_b32s1(
                 crate::globals::main_p() + 3,
-                crate::globals::font_info_b32s1(crate::globals::main_k() + 2),
+                st.fonts.font_info_b32s1(crate::globals::main_k() + 2),
             );
-            set_font_glue(cur_font, crate::globals::main_p());
+            st.fonts.set_font_glue(cur_font, crate::globals::main_p());
         }
-        crate::globals::set_temp_ptr(crate::mem::new_glue_global(crate::globals::main_p()));
+        crate::globals::set_temp_ptr(crate::mem::new_glue(&mut st.mem, crate::globals::main_p()));
     } else {
-        crate::globals::set_temp_ptr(crate::mem::new_param_glue_global(GLUE_PAR_SPACE_SKIP_MC));
+        crate::globals::set_temp_ptr(crate::mem::new_param_glue(
+            &mut st.mem,
+            &st.eqtb,
+            GLUE_PAR_SPACE_SKIP_MC,
+        ));
+    }
+    if crate::globals::temp_ptr() == crate::mem::ALLOC_FAILED {
+        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
 
-    set_mem_b32s1(crate::globals::cur_list_tail(), crate::globals::temp_ptr());
+    st.mem
+        .set_b32s1(crate::globals::cur_list_tail(), crate::globals::temp_ptr());
     crate::globals::set_cur_list_tail(crate::globals::temp_ptr());
+    Ok(())
 }
 // translated from xetex-xetex0.c:7277 (main_control mode-independent cases)
 pub unsafe fn main_control_mode_independent() {
@@ -4532,6 +4380,14 @@ pub(crate) fn main_control_mode_independent_in(
 }
 // translated from xetex-xetex0.c:6900 (main_control forbidden/math-mode mismatch cases)
 pub unsafe fn main_control_mode_error_cases() {
+    if let Err(e) = crate::state::with_state_mut(main_control_mode_error_cases_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn main_control_mode_error_cases_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const VMODE_MC: u16 = 1;
     const HMODE_MC: u16 = 104;
     const MMODE_MC: u16 = 207;
@@ -4582,7 +4438,7 @@ pub unsafe fn main_control_mode_error_cases() {
         | (VMODE_MC, MAC_PARAM_MC)
         | (HMODE_MC, MAC_PARAM_MC)
         | (MMODE_MC, MAC_PARAM_MC) => {
-            report_illegal_case();
+            mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
         }
         (VMODE_MC, SUP_MARK_MC)
         | (HMODE_MC, SUP_MARK_MC)
@@ -4626,12 +4482,21 @@ pub unsafe fn main_control_mode_error_cases() {
         | (MMODE_MC, VSKIP_MC)
         | (MMODE_MC, UN_VBOX_MC)
         | (MMODE_MC, VALIGN_MC)
-        | (MMODE_MC, HRULE_MC) => insert_dollar_sign(),
+        | (MMODE_MC, HRULE_MC) => crate::scan::insert_dollar_sign_in(st)?,
         _ => {}
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:6932 (main_control simple list/group cases)
 pub unsafe fn main_control_simple_list_group_cases() {
+    if let Err(e) = crate::state::with_state_mut(main_control_simple_list_group_cases_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn main_control_simple_list_group_cases_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const VMODE_MC: u16 = 1;
     const HMODE_MC: u16 = 104;
     const MMODE_MC: u16 = 207;
@@ -4652,8 +4517,8 @@ pub unsafe fn main_control_simple_list_group_cases() {
     let mode = crate::globals::cur_list_mode().unsigned_abs();
     match (mode, cur_cmd()) {
         (VMODE_MC, HRULE_MC) | (HMODE_MC, VRULE_MC) | (MMODE_MC, VRULE_MC) => {
-            let p = scan_rule_spec();
-            crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), p);
+            let p = crate::scan::scan_rule_spec_in(st)?;
+            st.mem.set_b32s1(crate::globals::cur_list_tail(), p);
             crate::globals::set_cur_list_tail(p);
             if mode == VMODE_MC {
                 crate::globals::set_cur_list_aux_b32s1(IGNORE_DEPTH_MC);
@@ -4664,28 +4529,51 @@ pub unsafe fn main_control_simple_list_group_cases() {
         (VMODE_MC, VSKIP_MC)
         | (HMODE_MC, HSKIP_MC)
         | (MMODE_MC, HSKIP_MC)
-        | (MMODE_MC, MSKIP_MC) => append_glue(),
+        | (MMODE_MC, MSKIP_MC) => append_glue_in(st)?,
         (VMODE_MC, KERN_MC) | (HMODE_MC, KERN_MC) | (MMODE_MC, KERN_MC) | (MMODE_MC, MKERN_MC) => {
-            append_kern()
+            append_kern_in(st)?
         }
         (VMODE_MC, LEFT_BRACE_MC) | (HMODE_MC, LEFT_BRACE_MC) => {
-            crate::save::new_save_level_global(SIMPLE_GROUP_MC);
+            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, SIMPLE_GROUP_MC) {
+                return Err(MainControlAbort::Save(a));
+            }
         }
         (VMODE_MC, BEGIN_GROUP_MC) | (HMODE_MC, BEGIN_GROUP_MC) | (MMODE_MC, BEGIN_GROUP_MC) => {
-            crate::save::new_save_level_global(SEMI_SIMPLE_GROUP_MC);
+            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, SEMI_SIMPLE_GROUP_MC) {
+                return Err(MainControlAbort::Save(a));
+            }
         }
         (VMODE_MC, END_GROUP_MC) | (HMODE_MC, END_GROUP_MC) | (MMODE_MC, END_GROUP_MC) => {
-            if crate::globals::cur_group() == SEMI_SIMPLE_GROUP_MC {
-                crate::save::unsave();
+            if st.save_stack.cur_group == SEMI_SIMPLE_GROUP_MC {
+                crate::save::unsave_in(st)?;
             } else {
-                off_save();
+                off_save_in(st)?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:6964 (main_control box/list construction cases)
+enum MainControlBoxListAction {
+    None,
+    MakeAccent,
+}
+
 pub unsafe fn main_control_box_list_cases() {
+    let action = match crate::state::with_state_mut(main_control_box_list_cases_in) {
+        Ok(action) => action,
+        Err(e) => e.fire(),
+    };
+    match action {
+        MainControlBoxListAction::None => {}
+        MainControlBoxListAction::MakeAccent => make_accent(),
+    }
+}
+
+fn main_control_box_list_cases_in(
+    st: &mut crate::state::EngineState,
+) -> Result<MainControlBoxListAction, MainControlAbort> {
     const VMODE_MC: u16 = 1;
     const HMODE_MC: u16 = 104;
     const MMODE_MC: u16 = 207;
@@ -4727,22 +4615,24 @@ pub unsafe fn main_control_box_list_cases() {
 
     match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
         (VMODE_MC, RIGHT_BRACE_MC) | (HMODE_MC, RIGHT_BRACE_MC) | (MMODE_MC, RIGHT_BRACE_MC) => {
-            handle_right_brace()
+            handle_right_brace_in(st)?
         }
         (VMODE_MC, HMOVE_MC) | (HMODE_MC, VMOVE_MC) | (MMODE_MC, VMOVE_MC) => {
             let t = cur_chr();
-            scan_dimen(false, false, false);
+            crate::scan::scan_dimen_in(st, false, false, false)?;
             if t == 0 {
-                scan_box(cur_val());
+                scan_box_in(st, cur_val())?;
             } else {
-                scan_box(-cur_val());
+                scan_box_in(st, -cur_val())?;
             }
         }
         (VMODE_MC, LEADER_SHIP_MC) | (HMODE_MC, LEADER_SHIP_MC) | (MMODE_MC, LEADER_SHIP_MC) => {
-            scan_box(LEADER_FLAG_MC - A_LEADERS_MC + cur_chr());
+            scan_box_in(st, LEADER_FLAG_MC - A_LEADERS_MC + cur_chr())?;
         }
-        (VMODE_MC, MAKE_BOX_MC) | (HMODE_MC, MAKE_BOX_MC) | (MMODE_MC, MAKE_BOX_MC) => begin_box(0),
-        (VMODE_MC, START_PAR_MC) => new_graf(cur_chr() > 0),
+        (VMODE_MC, MAKE_BOX_MC) | (HMODE_MC, MAKE_BOX_MC) | (MMODE_MC, MAKE_BOX_MC) => {
+            begin_box_in(st, 0)?
+        }
+        (VMODE_MC, START_PAR_MC) => new_graf_in(st, cur_chr() > 0)?,
         (VMODE_MC, LETTER_MC)
         | (VMODE_MC, OTHER_CHAR_MC)
         | (VMODE_MC, CHAR_NUM_MC)
@@ -4756,59 +4646,74 @@ pub unsafe fn main_control_box_list_cases() {
         | (VMODE_MC, VALIGN_MC)
         | (VMODE_MC, EX_SPACE_MC)
         | (VMODE_MC, NO_BOUNDARY_MC) => {
-            crate::input::back_input();
-            new_graf(true);
+            crate::input::back_input_in(st)?;
+            new_graf_in(st, true)?;
         }
-        (HMODE_MC, START_PAR_MC) | (MMODE_MC, START_PAR_MC) => indent_in_hmode_global(),
+        (HMODE_MC, START_PAR_MC) | (MMODE_MC, START_PAR_MC) => {
+            indent_in_hmode(&mut st.mem, &st.eqtb)?;
+        }
         (VMODE_MC, PAR_END_MC) => {
-            normal_paragraph_global();
+            if let Some(a) = normal_paragraph(
+                &mut st.eqtb,
+                &mut st.save_stack,
+                &mut st.mem,
+                &mut st.scanner,
+            ) {
+                return Err(MainControlAbort::Save(a));
+            }
             if crate::globals::cur_list_mode() > 0 {
-                build_page();
+                crate::pagebuilder::build_page_in(st)?;
             }
         }
         (HMODE_MC, PAR_END_MC) => {
-            if crate::globals::align_state() < 0 {
-                off_save();
+            if st.scanner.align_state < 0 {
+                off_save_in(st)?;
             }
-            end_graf();
+            end_graf_in(st)?;
             if crate::globals::cur_list_mode() == VMODE_MC as i16 {
-                build_page();
+                crate::pagebuilder::build_page_in(st)?;
             }
         }
         (HMODE_MC, STOP_MC)
         | (HMODE_MC, VSKIP_MC)
         | (HMODE_MC, HRULE_MC)
         | (HMODE_MC, UN_VBOX_MC)
-        | (HMODE_MC, HALIGN_MC) => head_for_vmode(),
+        | (HMODE_MC, HALIGN_MC) => head_for_vmode_in(st)?,
         (VMODE_MC, INSERT_MC)
         | (HMODE_MC, INSERT_MC)
         | (MMODE_MC, INSERT_MC)
         | (HMODE_MC, VADJUST_MC)
-        | (MMODE_MC, VADJUST_MC) => begin_insert_or_adjust(),
-        (VMODE_MC, MARK_MC) | (HMODE_MC, MARK_MC) | (MMODE_MC, MARK_MC) => make_mark(),
+        | (MMODE_MC, VADJUST_MC) => begin_insert_or_adjust_in(st)?,
+        (VMODE_MC, MARK_MC) | (HMODE_MC, MARK_MC) | (MMODE_MC, MARK_MC) => make_mark_in(st)?,
         (VMODE_MC, BREAK_PENALTY_MC)
         | (HMODE_MC, BREAK_PENALTY_MC)
-        | (MMODE_MC, BREAK_PENALTY_MC) => append_penalty(),
+        | (MMODE_MC, BREAK_PENALTY_MC) => append_penalty_in(st)?,
         (VMODE_MC, REMOVE_ITEM_MC) | (HMODE_MC, REMOVE_ITEM_MC) | (MMODE_MC, REMOVE_ITEM_MC) => {
-            delete_last()
+            delete_last_in(st)?
         }
-        (VMODE_MC, UN_VBOX_MC) | (HMODE_MC, UN_HBOX_MC) | (MMODE_MC, UN_HBOX_MC) => unpackage(),
-        (HMODE_MC, ITAL_CORR_MC) => append_italic_correction(),
+        (VMODE_MC, UN_VBOX_MC) | (HMODE_MC, UN_HBOX_MC) | (MMODE_MC, UN_HBOX_MC) => {
+            unpackage_in(st)?
+        }
+        (HMODE_MC, ITAL_CORR_MC) => append_italic_correction_in(st)?,
         (MMODE_MC, ITAL_CORR_MC) => {
-            let p = crate::mem::new_kern_global(0);
-            crate::globals::set_mem_b32s1(crate::globals::cur_list_tail(), p);
+            let p = crate::mem::new_kern(&mut st.mem, 0);
+            if p == crate::mem::ALLOC_FAILED {
+                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+            }
+            st.mem.set_b32s1(crate::globals::cur_list_tail(), p);
             crate::globals::set_cur_list_tail(p);
         }
-        (HMODE_MC, DISCRETIONARY_MC) | (MMODE_MC, DISCRETIONARY_MC) => append_discretionary(),
-        (HMODE_MC, ACCENT_MC) => make_accent(),
+        (HMODE_MC, DISCRETIONARY_MC) | (MMODE_MC, DISCRETIONARY_MC) => append_discretionary_in(st)?,
+        (HMODE_MC, ACCENT_MC) => return Ok(MainControlBoxListAction::MakeAccent),
         (VMODE_MC, CAR_RET_MC)
         | (HMODE_MC, CAR_RET_MC)
         | (MMODE_MC, CAR_RET_MC)
         | (VMODE_MC, TAB_MARK_MC)
         | (HMODE_MC, TAB_MARK_MC)
-        | (MMODE_MC, TAB_MARK_MC) => align_error(),
+        | (MMODE_MC, TAB_MARK_MC) => align_error_in(st)?,
         _ => {}
     }
+    Ok(MainControlBoxListAction::None)
 }
 // translated from xetex-xetex0.c:6993 (main_control alignment/endcsname cases)
 pub unsafe fn main_control_alignment_cases() {
@@ -5091,40 +4996,51 @@ pub(crate) fn main_control_math_cases_in(
 }
 // translated from xetex-xetex0.c:6857 (main_control IGNORE_SPACES body; caller does goto reswitch)
 pub unsafe fn main_control_ignore_spaces() {
+    if let Err(e) = crate::state::with_state_mut(main_control_ignore_spaces_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn main_control_ignore_spaces_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const SPACER_MC: u8 = 10;
     const NORMAL_SCANNER_MC: u8 = 0;
 
-    use crate::globals::{
-        cur_chr, cur_cmd, cur_cs, eqtb_b16s1, eqtb_b32s1, hash_s1, scanner_status, set_cur_chr,
-        set_cur_cmd, set_cur_cs, set_cur_tok, set_scanner_status,
-    };
-
     if cur_chr() == 0 {
         loop {
-            get_x_token();
+            crate::scan::get_x_token_in(st)?;
             if cur_cmd() != SPACER_MC {
                 break;
             }
         }
     } else {
-        let saved = scanner_status();
-        set_scanner_status(NORMAL_SCANNER_MC);
-        get_next();
-        set_scanner_status(saved);
+        let saved = st.scanner.scanner_status;
+        st.scanner.scanner_status = NORMAL_SCANNER_MC;
+        let get_next_outcome = crate::scan::get_next_in(st);
+        st.scanner.scanner_status = saved;
+        let get_next_result: Result<(), crate::scan::SccAbort> = get_next_outcome.into();
+        get_next_result?;
 
         if cur_cs() < HASH_BASE {
-            set_cur_cs(crate::hash::prim_lookup_global(cur_cs() - SINGLE_BASE));
+            let v = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, cur_cs() - SINGLE_BASE)
+                .map_err(crate::scan::hash_err_abort)?;
+            set_cur_cs(v);
         } else {
-            set_cur_cs(crate::hash::prim_lookup_global(hash_s1(cur_cs())));
+            let s = st.eqtb.hash_s1(cur_cs());
+            let v = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)
+                .map_err(crate::scan::hash_err_abort)?;
+            set_cur_cs(v);
         }
 
         if cur_cs() != UNDEFINED_PRIMITIVE {
-            set_cur_cmd(eqtb_b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
-            set_cur_chr(eqtb_b32s1(PRIM_EQTB_BASE + cur_cs()));
+            set_cur_cmd(st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
+            set_cur_chr(st.eqtb.b32s1(PRIM_EQTB_BASE + cur_cs()));
             set_cur_tok(CS_TOKEN_FLAG + PRIM_EQTB_BASE + cur_cs());
         }
     }
     // Caller must do: goto reswitch
+    Ok(())
 }
 
 enum InterCharInputAction {
@@ -5154,6 +5070,24 @@ impl InterCharInputAction {
                     begin_token_list(token_list, INTER_CHAR_TEXT);
                 }
                 true
+            }
+        }
+    }
+
+    #[inline]
+    fn execute_in(self, st: &mut crate::state::EngineState) -> Result<bool, MainControlAbort> {
+        match self {
+            InterCharInputAction::None => Ok(false),
+            InterCharInputAction::BackInputThenBeginTokenList {
+                token_list,
+                force_cur_input_index,
+            } => {
+                crate::input::back_input_in(st)?;
+                if let Some(index) = force_cur_input_index {
+                    set_cur_input_index(index);
+                }
+                crate::input::begin_token_list_in(st, token_list, INTER_CHAR_TEXT)?;
+                Ok(true)
             }
         }
     }
@@ -5277,6 +5211,14 @@ pub unsafe fn main_control_hmode_inter_char_check() -> bool {
 }
 // translated from xetex-xetex0.c:6833 (main_control spacer/ex_space cases)
 pub unsafe fn main_control_spacer_cases() {
+    if let Err(e) = crate::state::with_state_mut(main_control_spacer_cases_in) {
+        e.fire();
+    }
+}
+
+pub(crate) fn main_control_spacer_cases_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     const HMODE_MC: u16 = 104; // xetex_format.h:369
     const MMODE_MC: u16 = 207; // xetex_format.h:370
     const SPACER_MC: u8 = 10; // xetex_format.h:242
@@ -5285,16 +5227,17 @@ pub unsafe fn main_control_spacer_cases() {
     match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
         (HMODE_MC, SPACER_MC) => {
             if crate::globals::cur_list_aux_b32s0() == 1000 {
-                main_control_append_normal_space();
+                main_control_append_normal_space_in(st)?;
             } else {
-                app_space_global();
+                app_space_in(st)?;
             }
         }
         (HMODE_MC, EX_SPACE_MC) | (MMODE_MC, EX_SPACE_MC) => {
-            main_control_append_normal_space();
+            main_control_append_normal_space_in(st)?;
         }
         _ => {}
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:7030 (main_loop through main_loop_move_lig)
 // Returns true → caller must goto big_switch; false → caller must goto reswitch.

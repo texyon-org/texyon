@@ -443,15 +443,6 @@ pub fn new_spec(mem: &mut MemState, p: i32) -> i32 {
     q.idx().0
 }
 
-/// Transitional bridge-down wrapper for legacy `new_spec` callers (`01b` §3, §5).
-pub unsafe fn new_spec_global(p: i32) -> i32 {
-    let q = crate::state::with_state_mut(|st| new_spec(&mut st.mem, p));
-    if q == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    q
-}
-
 // ---------------------------------------------------------------------------
 // new_param_glue
 // ---------------------------------------------------------------------------
@@ -513,15 +504,6 @@ pub fn new_glue(mem: &mut MemState, q: i32) -> i32 {
         NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q)).expect("non-null glue spec");
     spec.set_ref_count(mem, spec.ref_count(mem) + 1);
     p.idx().0
-}
-
-/// Transitional bridge-down wrapper for legacy `new_glue` callers (`01b` §3, §5).
-pub unsafe fn new_glue_global(q: i32) -> i32 {
-    let p = crate::state::with_state_mut(|st| new_glue(&mut st.mem, q));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
 }
 
 // ---------------------------------------------------------------------------

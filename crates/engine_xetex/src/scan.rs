@@ -401,13 +401,6 @@ pub unsafe fn x_token() {
 // Token-encoding constants (xetex-constants.h:353).
 const MATH_SHIFT_TOKEN: i32 = 0x600000;
 
-/// translated from xetex-xetex0.c:11444 (insert_dollar_sign)
-pub unsafe fn insert_dollar_sign() {
-    if let Err(e) = crate::state::with_state_mut(|st| insert_dollar_sign_in(st)) {
-        e.fire();
-    }
-}
-
 /// `&mut EngineState` core of [`insert_dollar_sign`] (`01b` §3).
 pub(crate) fn insert_dollar_sign_in(
     st: &mut crate::state::EngineState,
@@ -586,13 +579,6 @@ fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
 // scan_dimen / scan_decimal
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-xetex0.c:5956 (scan_dimen)
-pub unsafe fn scan_dimen(mu: bool, inf: bool, shortcut: bool) {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_dimen_in(st, mu, inf, shortcut)) {
-        unsafe { e.fire() }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // scan_rule_spec
 // ---------------------------------------------------------------------------
@@ -600,14 +586,6 @@ pub unsafe fn scan_dimen(mu: bool, inf: bool, shortcut: bool) {
 // xetex_format.h:273 / xetex-constants.h:316,339
 const VRULE: u8 = 35;
 const DEFAULT_RULE: i32 = 26214;
-
-/// translated from xetex-xetex0.c:6267 (scan_rule_spec)
-pub unsafe fn scan_rule_spec() -> i32 {
-    match crate::state::with_state_mut(scan_rule_spec_in) {
-        Ok(q) => q,
-        Err(e) => e.fire(),
-    }
-}
 
 /// Threaded (Phase C) core of [`scan_rule_spec`].
 pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i32, SccAbort> {

@@ -3117,3 +3117,24 @@ tracks:
 - Metrics: `with_state` matches **629**; `unsafe fn` matches **357**
 
 **Handoff / Next:** continue upward into the remaining legacy `main_control` loop call sites. `main_control_mode_independent_in` is ready for a threaded caller; the top loop is still the boundary.
+
+## Idiom session 227 — 2026-06-22 — Execution: thread main-control box/list dispatchers
+
+**Type:** execution (workstream 01 / Phase-C threading), intentionally light docs. Used two explorer subagents for target scouting; edits stayed local.
+
+### Change
+
+- Added `_in(&mut EngineState)` cores for mode-error cases, simple-list group cases, spacer/ignore-spaces, normal-space append, inter-char input execution, and the large `main_control_box_list_cases` dispatcher.
+- Rewired the dispatcher to threaded alignment/box/pagebuilder/list helpers and direct `st.*` access; `make_accent` remains a deferred action so the wrapper can drop the borrow first.
+- Deleted exposed dead bridge wrappers/accessors across `main_control`, `errors`, `input`, `pagebuilder`, `save`, `scan`, `mem`, and `globals`.
+
+### Validation
+
+- `cargo fmt -p tectonic_engine_xetex`
+- `cargo check -p tectonic_engine_xetex` — warnings **42**
+- Dashboard: `tex-outputs` **29/29**, `trip` **2/2**, `engine_rust` **7/7**, `latex_goldens` **4/4**
+- Release rebuild: `cargo build --release -p tectonic`
+- Corpus: document scope **36 passed / 2 diverged / 0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`; LVT scope **601 passed / 0 diverged / 0 missing-golden / 0 timed-out** via a temporary progress runner after uninstrumented `check all` stayed silent in the LVT tail. Combined baseline unchanged: **637 passed / 2 diverged / 0 missing-golden**.
+- Metrics: `with_state` matches **534**; `unsafe fn` matches **326**.
+
+**Handoff / Next:** thread `make_accent` or the top `main_control` loop boundary. The box/list, mode-independent, alignment, and math dispatchers are now ready for a threaded caller.
