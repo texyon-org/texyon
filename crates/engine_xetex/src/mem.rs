@@ -94,18 +94,6 @@ pub fn get_avail(mem: &mut MemState) -> i32 {
     p
 }
 
-/// Transitional bridge-down wrapper for legacy `get_avail` callers (`01b` §3,
-/// §5). Evaluates the threaded allocator under a single borrow, then — after
-/// the borrow drops — runs the cold `runaway()`+`overflow()` abort if the arena
-/// was exhausted. Removed when the last legacy caller is itself threaded.
-pub unsafe fn get_avail_global() -> i32 {
-    let p = crate::state::with_state_mut(|st| get_avail(&mut st.mem));
-    if p == ALLOC_FAILED {
-        fire_main_memory_overflow();
-    }
-    p
-}
-
 /// Fire the cold `runaway()` + `overflow("main memory size")` abort that an
 /// arena-exhausted [`get_avail`] / [`get_node`] defers to its caller via the
 /// `ALLOC_FAILED` sentinel (`01b` §5). Must be called only **after** any live
@@ -336,15 +324,6 @@ pub fn new_ligature(mem: &mut MemState, f: i32, c: u16, q: i32) -> i32 {
     p.idx().0
 }
 
-/// Transitional bridge-down wrapper for legacy `new_ligature` callers (`01b` §3, §5).
-pub unsafe fn new_ligature_global(f: i32, c: u16, q: i32) -> i32 {
-    let p = crate::state::with_state_mut(|st| new_ligature(&mut st.mem, f, c, q));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
-}
-
 // ---------------------------------------------------------------------------
 // new_lig_item
 // ---------------------------------------------------------------------------
@@ -361,15 +340,6 @@ pub fn new_lig_item(mem: &mut MemState, c: u16) -> i32 {
     p.set_character(mem, c);
     p.set_component(mem, MemPtr::from_raw(TEX_NULL));
     p.idx().0
-}
-
-/// Transitional bridge-down wrapper for legacy `new_lig_item` callers (`01b` §3, §5).
-pub unsafe fn new_lig_item_global(c: u16) -> i32 {
-    let p = crate::state::with_state_mut(|st| new_lig_item(&mut st.mem, c));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
 }
 
 // ---------------------------------------------------------------------------
@@ -389,15 +359,6 @@ pub fn new_disc(mem: &mut MemState) -> i32 {
     p.set_pre_break(mem, MemPtr::NULL);
     p.set_post_break(mem, MemPtr::NULL);
     p.idx().0
-}
-
-/// Transitional bridge-down wrapper for legacy `new_disc` callers (`01b` §3, §5).
-pub unsafe fn new_disc_global() -> i32 {
-    let p = crate::state::with_state_mut(|st| new_disc(&mut st.mem));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
 }
 
 // ---------------------------------------------------------------------------
@@ -467,18 +428,6 @@ pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
         NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q)).expect("non-null glue spec");
     spec.set_ref_count(mem, spec.ref_count(mem) + 1);
     p.idx().0
-}
-
-/// Transitional bridge-down wrapper for legacy `new_param_glue` callers (`01b` §3, §5).
-pub unsafe fn new_param_glue_global(n: i16) -> i32 {
-    let p = crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        new_param_glue(&mut s.mem, &s.eqtb, n)
-    });
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
 }
 
 // ---------------------------------------------------------------------------
@@ -557,15 +506,6 @@ pub fn new_kern(mem: &mut MemState, w: i32) -> i32 {
     p.idx().0
 }
 
-/// Transitional bridge-down wrapper for legacy `new_kern` callers (`01b` §3, §5).
-pub unsafe fn new_kern_global(w: i32) -> i32 {
-    let p = crate::state::with_state_mut(|st| new_kern(&mut st.mem, w));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
-}
-
 // ---------------------------------------------------------------------------
 // new_penalty
 // ---------------------------------------------------------------------------
@@ -586,15 +526,6 @@ pub fn new_penalty(mem: &mut MemState, m: i32) -> i32 {
     p.set_subtype(mem, 0);
     p.set_penalty(mem, m);
     p.idx().0
-}
-
-/// Transitional bridge-down wrapper for legacy `new_penalty` callers (`01b` §3, §5).
-pub unsafe fn new_penalty_global(m: i32) -> i32 {
-    let p = crate::state::with_state_mut(|st| new_penalty(&mut st.mem, m));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
-    p
 }
 
 // ---------------------------------------------------------------------------
@@ -889,12 +820,4 @@ pub fn new_whatsit(mem: &mut MemState, s: i16, w: i16) -> i32 {
     mem.set_b32s1(crate::globals::cur_list_tail(), p);
     crate::globals::set_cur_list_tail(p);
     p
-}
-
-/// Transitional bridge-down wrapper for legacy `new_whatsit` callers (`01b` §3, §5).
-pub unsafe fn new_whatsit_global(s: i16, w: i16) {
-    let p = crate::state::with_state_mut(|st| new_whatsit(&mut st.mem, s, w));
-    if p == ALLOC_FAILED {
-        overflow(c"main memory size".as_ptr(), MEM_TOP + 1);
-    }
 }

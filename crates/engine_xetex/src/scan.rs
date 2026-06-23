@@ -21,10 +21,9 @@ use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, expand_depth, first, init_pool_ptr,
-    pool_size, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc,
-    set_cur_input_name, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_cur_val,
-    set_first, set_line,
+    cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, expand_depth, first, set_cur_chr,
+    set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
+    set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_first, set_line,
 };
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
@@ -43,7 +42,6 @@ use crate::output::print_int_in;
 use crate::output::print_nl_cstr_in;
 // Relocated to main_control.rs (workstream 02); still called from scan.rs.
 
-use crate::fonts::{effective_char, effective_char_info, new_native_word_node};
 use crate::io::open_log_file;
 
 extern "C" {
@@ -251,20 +249,6 @@ pub(crate) fn scan_eight_bit_int_in(st: &mut crate::state::EngineState) -> Resul
     Ok(())
 }
 
-// translated from xetex-xetex0.c:5132 (scan_usv_num)
-pub unsafe fn scan_usv_num() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_usv_num_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
-// translated from xetex-xetex0.c:5150 (scan_char_num)
-pub unsafe fn scan_char_num() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_char_num_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
 // translated from xetex-xetex0.c:5330 (scan_math_class_int)
 pub(crate) fn scan_math_class_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
@@ -391,13 +375,6 @@ const FROZEN_ENDV: i32 = 2_243_226 + 6;
 // END_MATCH_TOKEN + 1 (xetex-constants.h:360–361)
 const PROTECTED_TOKEN: i32 = 0x1C00001;
 
-/// translated from xetex-xetex0.c:4316 (x_token)
-pub unsafe fn x_token() {
-    if let Err(e) = crate::state::with_state_mut(|st| x_token_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
 // Token-encoding constants (xetex-constants.h:353).
 const MATH_SHIFT_TOKEN: i32 = 0x600000;
 
@@ -436,13 +413,6 @@ const LEFT_BRACE_TOKEN: i32 = 0x200000;
 // ---------------------------------------------------------------------------
 // get_x_token / get_x_or_protected
 // ---------------------------------------------------------------------------
-
-/// translated from xetex-xetex0.c:4272 (get_x_token)
-pub unsafe fn get_x_token() {
-    if let Err(e) = crate::state::with_state_mut(|st| get_x_token_in(st)) {
-        unsafe { e.fire() }
-    }
-}
 
 pub(crate) fn get_x_or_protected_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     loop {
@@ -616,11 +586,6 @@ pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i3
     Ok(q)
 }
 
-#[inline]
-pub(crate) unsafe fn back_input() {
-    crate::input::back_input();
-}
-
 // xetex-constants.h:204
 
 // ---------------------------------------------------------------------------
@@ -719,23 +684,6 @@ pub(crate) fn str_toks_cat_in(
 
     strings.pool_ptr = b;
     Ok(p)
-}
-
-/// Bridge-down wrapper for legacy `str_toks_cat` callers (`01b` §3, §5). Runs
-/// the deferred cold overflow after the state borrow drops.
-pub unsafe fn str_toks_cat(b: i32, cat: i16) -> i32 {
-    match crate::state::with_state_mut(|st| str_toks_cat_in(&mut st.mem, &mut st.strings, b, cat)) {
-        Ok(p) => p,
-        Err(StrToksAbort::PoolOverflow) => {
-            crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr())
-        }
-        Err(StrToksAbort::MainMemoryOverflow) => crate::mem::fire_main_memory_overflow(),
-    }
-}
-
-/// translated from xetex-xetex0.c:6417 (str_toks)
-pub unsafe fn str_toks(b: i32) -> i32 {
-    str_toks_cat(b, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -977,16 +925,6 @@ pub(crate) fn eTeX_enabled_in(
 // ---------------------------------------------------------------------------
 // effective_char / effective_char_info
 // ---------------------------------------------------------------------------
-
-/// Transitional bridge-down wrapper for legacy `effective_char` callers.
-pub fn effective_char_global(err_p: bool, f: i32, c: u16) -> i32 {
-    crate::state::with_state_mut(|st| effective_char(&mut st.fonts, err_p, f, c))
-}
-
-/// Transitional bridge-down wrapper for legacy `effective_char_info` callers.
-pub fn effective_char_info_global(f: i32, c: u16) -> crate::mem_types::B16x4 {
-    crate::state::with_state_mut(|st| effective_char_info(&mut st.fonts, f, c))
-}
 
 // ---------------------------------------------------------------------------
 // you_cant / report_illegal_case / privileged
@@ -1563,21 +1501,6 @@ pub(crate) fn check_outer_validity_in(
 // ---------------------------------------------------------------------------
 // expand
 // ---------------------------------------------------------------------------
-
-// translated from xetex-xetex0.c:3167 (get_next)
-pub unsafe fn get_next() {
-    match crate::state::with_state_mut(get_next_in) {
-        GetNextOutcome::Done => {}
-        GetNextOutcome::Error(oc) => oc.finish(),
-        GetNextOutcome::Abort(a) => a.fire(),
-        GetNextOutcome::NoLegalEnd { open_log } => {
-            if open_log {
-                open_log_file();
-            }
-            crate::errors::fatal_error(c"*** (job aborted, no legal \\end found)".as_ptr());
-        }
-    }
-}
 
 /// Deferred cold outcomes of [`get_next_in`] (`01b` §5): each re-enters
 /// `with_state` (print / error / log), so it runs in the thin wrapper after the
@@ -2326,18 +2249,6 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
 // Node type/subtype constants (xetex_format.h)
 // INT_PAR offset for xetex_generate_actual_text (xetex_format.h:114)
-
-/// Transitional bridge-down wrapper for legacy `new_native_word_node` callers
-/// (`01b` §3, §5). Removed when its last legacy caller is itself threaded.
-pub unsafe fn new_native_word_node_global(f: i32, n: i32) -> i32 {
-    match crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        new_native_word_node(&mut s.mem, &s.eqtb, f, n)
-    }) {
-        Ok(q) => q,
-        Err(e) => node_recycle_abort(e),
-    }
-}
 
 // ---------------------------------------------------------------------------
 // main_control_main_loop
@@ -5477,3 +5388,17 @@ pub(crate) fn compare_strings_in(st: &mut crate::state::EngineState) -> Result<(
 // ---------------------------------------------------------------------------
 // main_control
 // ---------------------------------------------------------------------------
+
+/// translated from xetex-xetex0.c:4272 (get_x_token)
+pub unsafe fn get_x_token() {
+    if let Err(e) = crate::state::with_state_mut(|st| get_x_token_in(st)) {
+        unsafe { e.fire() }
+    }
+}
+
+// translated from xetex-xetex0.c:5132 (scan_usv_num)
+pub unsafe fn scan_usv_num() {
+    if let Err(e) = crate::state::with_state_mut(|st| scan_usv_num_in(st)) {
+        unsafe { e.fire() }
+    }
+}

@@ -482,12 +482,6 @@ pub(crate) fn set_mem_b16s0(p: i32, v: u16) {
     });
 }
 
-/// Read `mem[p].b16.s1` (high 16 bits of the first 32-bit half-word).
-#[inline]
-pub(crate) fn mem_b16s1(p: i32) -> u16 {
-    // SAFETY: union projection; the `Vec` index is bounds-checked.
-    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s1 })
-}
 /// Write `v` into `mem[p].b16.s1`.
 #[inline]
 pub(crate) fn set_mem_b16s1(p: i32, v: u16) {
@@ -495,41 +489,12 @@ pub(crate) fn set_mem_b16s1(p: i32, v: u16) {
         s.mem.data[p as usize].b16.s1 = v;
     });
 }
-/// Read `mem[p].b16.s2` (low 16 bits of the second 32-bit half-word).
-#[inline]
-pub(crate) fn mem_b16s2(p: i32) -> u16 {
-    // SAFETY: union projection; the `Vec` index is bounds-checked.
-    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s2 })
-}
-/// Read `mem[p].b16.s3` (high 16 bits of the second 32-bit half-word).
-#[inline]
-pub(crate) fn mem_b16s3(p: i32) -> u16 {
-    // SAFETY: union projection; the `Vec` index is bounds-checked.
-    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s3 })
-}
 /// Read the `gr` (f64) field of `mem[p]`.
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn mem_gr(p: i32) -> f64 {
     // SAFETY: union projection; the `Vec` index is bounds-checked.
     crate::state::with_state(|s| unsafe { s.mem.data[p as usize].gr })
-}
-
-/// Returns `&mem[p]` as a raw pointer — for C functions that expect a
-/// `memory_word*` node pointer (e.g. `real_get_native_italic_correction`).
-/// Equivalent to the C macro `get_native_italic_correction(p)` = `&mem[p]`.
-/// Valid past the borrow because the thread-local arena owner never reallocates.
-#[inline]
-pub(crate) fn mem_node_addr(p: i32) -> *mut std::ffi::c_void {
-    crate::state::with_state_mut(|s| unsafe {
-        s.mem.data.as_mut_ptr().add(p as usize) as *mut std::ffi::c_void
-    })
-}
-/// Return a `*mut u16` pointing to `mem[p]` — for writing NATIVE_NODE_text.
-/// Valid past the borrow because the thread-local arena owner never reallocates.
-#[inline]
-pub(crate) fn mem_as_u16_ptr_mut(p: i32) -> *mut u16 {
-    crate::state::with_state_mut(|s| s.mem.data.as_mut_ptr().wrapping_add(p as usize) as *mut u16)
 }
 
 /// Copy the full MemoryWord at `mem[p]`.
@@ -1298,12 +1263,6 @@ pub(crate) fn set_font_name_entry(f: i32, v: i32) {
     });
 }
 
-/// Returns `font_info[k].b32.s1`.
-#[inline]
-pub(crate) fn font_info_b32s1(k: i32) -> i32 {
-    crate::state::with_state(|s| unsafe { s.fonts.font_info[k as usize].b32.s1 })
-}
-
 /// Writes `font_info[k].b32.s1 = v`.
 #[inline]
 pub(crate) fn set_font_info_b32s1(k: i32, v: i32) {
@@ -1362,12 +1321,6 @@ pub(crate) fn set_font_params(f: i32, v: i32) {
     });
 }
 
-/// Returns `font_glue[f]`.
-#[inline]
-pub(crate) fn font_glue(f: i32) -> i32 {
-    crate::state::with_state(|state| state.fonts.font_glue[f as usize])
-}
-
 /// Sets `font_glue[f] = v`.
 #[inline]
 pub(crate) fn set_font_glue(f: i32, v: i32) {
@@ -1384,12 +1337,6 @@ pub(crate) fn set_param_base(f: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.fonts.param_base[f as usize] = v;
     });
-}
-
-/// Returns `font_info[k].b16` (the B16x4 view of font_info word k).
-#[inline]
-pub(crate) fn font_info_b16(k: i32) -> crate::mem_types::B16x4 {
-    crate::state::with_state(|s| unsafe { s.fonts.font_info[k as usize].b16 })
 }
 
 /// Raw borrow-free mirrors of the three `FontState` arrays the OpenType-math
@@ -1480,22 +1427,12 @@ pub(crate) fn set_font_dsize_entry(f: i32, v: i32) {
         state.fonts.font_dsize[f as usize] = v;
     });
 }
-/// Returns `font_bc[f]` — first valid char code.
-#[inline]
-pub(crate) fn font_bc_entry(f: i32) -> u16 {
-    crate::state::with_state(|state| state.fonts.font_bc[f as usize])
-}
 /// Writes `font_bc[f] = v`.
 #[inline]
 pub(crate) fn set_font_bc_entry(f: i32, v: u16) {
     crate::state::with_state_mut(|state| {
         state.fonts.font_bc[f as usize] = v;
     });
-}
-/// Returns `font_ec[f]` — last valid char code.
-#[inline]
-pub(crate) fn font_ec_entry(f: i32) -> u16 {
-    crate::state::with_state(|state| state.fonts.font_ec[f as usize])
 }
 /// Writes `font_ec[f] = v`.
 #[inline]
@@ -1524,21 +1461,6 @@ pub(crate) fn set_font_false_bchar_entry(f: i32, v: i32) {
     crate::state::with_state_mut(|state| {
         state.fonts.font_false_bchar[f as usize] = v;
     });
-}
-/// Returns `bchar_label[f]`.
-#[inline]
-pub(crate) fn bchar_label_entry(f: i32) -> i32 {
-    crate::state::with_state(|state| state.fonts.bchar_label[f as usize])
-}
-/// Returns `font_bchar[f]`.
-#[inline]
-pub(crate) fn font_bchar_entry(f: i32) -> i32 {
-    crate::state::with_state(|state| state.fonts.font_bchar[f as usize])
-}
-/// Returns `font_false_bchar[f]`.
-#[inline]
-pub(crate) fn font_false_bchar_entry(f: i32) -> i32 {
-    crate::state::with_state(|state| state.fonts.font_false_bchar[f as usize])
 }
 /// Returns `font_layout_engine[f]`.
 #[inline]
@@ -1571,17 +1493,7 @@ pub(crate) fn set_font_mapping_ptr(f: i32, v: *mut libc::c_void) {
         s.fonts.font_mapping[f as usize] = v;
     });
 }
-/// Returns `mapped_text[i]`, the UTF-16 output buffer from `apply_mapping`.
-#[inline]
-pub(crate) fn mapped_text_entry(i: i32) -> u16 {
-    crate::state::with_state(|state| state.fonts.mapped_text[i as usize])
-}
 
-/// Returns `hyphen_char[f]`.
-#[inline]
-pub(crate) fn hyphen_char_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.hyphen_char[f as usize])
-}
 /// Writes `hyphen_char[f] = v`.
 #[inline]
 pub(crate) fn set_hyphen_char_entry(f: i32, v: i32) {
@@ -1595,11 +1507,6 @@ pub(crate) fn set_skew_char_entry(f: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.fonts.skew_char[f as usize] = v;
     })
-}
-/// Returns `char_base[f]`.
-#[inline]
-pub(crate) fn char_base_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.char_base[f as usize])
 }
 /// Writes `char_base[f] = v`.
 #[inline]
@@ -1637,22 +1544,12 @@ pub(crate) fn set_italic_base_entry(f: i32, v: i32) {
         s.fonts.italic_base[f as usize] = v;
     });
 }
-/// Returns `lig_kern_base[f]`.
-#[inline]
-pub(crate) fn lig_kern_base_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.lig_kern_base[f as usize])
-}
 /// Writes `lig_kern_base[f] = v`.
 #[inline]
 pub(crate) fn set_lig_kern_base_entry(f: i32, v: i32) {
     crate::state::with_state_mut(|s| {
         s.fonts.lig_kern_base[f as usize] = v;
     });
-}
-/// Returns `kern_base[f]`.
-#[inline]
-pub(crate) fn kern_base_entry(f: i32) -> i32 {
-    crate::state::with_state(|s| s.fonts.kern_base[f as usize])
 }
 /// Writes `kern_base[f] = v`.
 #[inline]
@@ -2282,11 +2179,6 @@ pub(crate) fn set_in_open(v: i32) {
 // source_filename_stack / full_source_filename_stack / line_stack
 // ---------------------------------------------------------------------------
 
-/// Returns `source_filename_stack[k]` (str_number; xetex-xetexd.h:512).
-#[inline]
-pub(crate) fn source_filename_stack(k: i32) -> i32 {
-    crate::state::with_state(|s| s.input.source_filename_stack[k as usize])
-}
 /// Sets `source_filename_stack[k]`.
 #[inline]
 pub(crate) fn set_source_filename_stack(k: i32, v: i32) {
@@ -2399,11 +2291,6 @@ pub(crate) fn set_scanner_status(v: u8) {
 pub(crate) fn set_warning_index(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.warning_index = v;
-    });
-}
-pub(crate) fn set_def_ref(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.def_ref = v;
     });
 }
 
@@ -2567,16 +2454,6 @@ pub(crate) fn set_rt_hit(v: bool) {
     }
 }
 #[inline]
-pub(crate) fn native_text() -> *mut u16 {
-    crate::state::with_state(|s| {
-        if s.scanner.native_text.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            s.scanner.native_text.as_ptr() as *mut u16
-        }
-    })
-}
-#[inline]
 pub(crate) fn set_native_text(v: *mut u16) {
     crate::state::with_state_mut(|s| {
         if v.is_null() {
@@ -2591,43 +2468,9 @@ pub(crate) fn set_native_text(v: *mut u16) {
     });
 }
 #[inline]
-pub(crate) fn native_text_size() -> i32 {
-    crate::state::with_state(|s| s.scanner.native_text_size)
-}
-#[inline]
 pub(crate) fn set_native_text_size(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.native_text_size = v;
-    });
-}
-#[inline]
-pub(crate) fn native_len() -> i32 {
-    crate::state::with_state(|s| s.scanner.native_len)
-}
-#[inline]
-pub(crate) fn set_native_len(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.native_len = v;
-    });
-}
-#[inline]
-pub(crate) fn save_native_len() -> i32 {
-    crate::state::with_state(|s| s.scanner.save_native_len)
-}
-#[inline]
-pub(crate) fn set_save_native_len(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.save_native_len = v;
-    });
-}
-#[inline]
-pub(crate) fn is_hyph() -> bool {
-    crate::state::with_state(|state| state.hyph.is_hyph)
-}
-#[inline]
-pub(crate) fn set_is_hyph(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.is_hyph = v;
     });
 }
 #[inline]
@@ -2669,10 +2512,6 @@ pub(crate) fn set_ins_disc(v: bool) {
     unsafe {
         raw::ins_disc = v;
     }
-}
-#[inline]
-pub(crate) fn insert_src_special_auto() -> bool {
-    crate::state::with_state(|state| state.shipout.insert_src_special_auto)
 }
 
 #[inline]

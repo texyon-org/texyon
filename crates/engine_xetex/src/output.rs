@@ -2951,11 +2951,6 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
 // show_cur_cmd_chr
 // ---------------------------------------------------------------------------
 
-// translated from xetex-xetex0.c:2824 (show_cur_cmd_chr)
-pub unsafe fn show_cur_cmd_chr() {
-    crate::state::with_state_mut(|st| show_cur_cmd_chr_in(st));
-}
-
 /// `&mut EngineState` core of [`show_cur_cmd_chr`].
 pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
     begin_diagnostic_in(st);
@@ -3791,10 +3786,6 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
     } else {
         Err(ShowWhateverAbort::Error(outcome))
     }
-}
-// translated from xetex-xetex0.c:6428 (char_warning)
-pub unsafe fn char_warning(f: i32, c: i32) {
-    crate::state::with_state_mut(|st| char_warning_in(st, f, c)).finish();
 }
 
 /// `&mut EngineState` core of [`char_warning`]. Returns the cold-abort sentinel
@@ -4971,3 +4962,8 @@ const DEFAULT_CODE_SNL: i32 = 0x4000_0000; // xetex-constants.h:17
 const PIC_NODE_SIZE_SNL: i32 = 9; // xetex-constants.h
                                   // FONT_ID_BASE = FROZEN_NULL_FONT = 2245338
 const FONT_ID_BASE_SNL: i32 = 2_245_338;
+
+// translated from xetex-xetex0.c:2824 (show_cur_cmd_chr)
+pub unsafe fn show_cur_cmd_chr() {
+    crate::state::with_state_mut(|st| show_cur_cmd_chr_in(st));
+}

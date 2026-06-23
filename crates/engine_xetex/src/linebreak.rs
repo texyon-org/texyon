@@ -2,16 +2,12 @@ use crate::consts::{
     DIMEN_BASE, ETEX_PEN_BASE, GLUE_BASE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MAX_HALFWORD,
     SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR,
 };
-use crate::ext::{
-    linebreak_next_global, linebreak_start, measure_native_node, measure_native_node_global,
-    real_get_native_word_cp,
-};
-use crate::globals::eqtb_b32s1;
+use crate::ext::{linebreak_next, linebreak_start, measure_native_node, real_get_native_word_cp};
 use crate::node::{
     ActiveNode, AnyBox, DeltaNode, DiscNode, GlueNode, GlueSpecNode, KernNode, LigatureNode,
     MathNode, NodePtr, PassiveNode, PenaltyNode, RuleNode,
 };
-use crate::scan::{new_native_word_node_global, node_recycle_abort, NodeRecycleAbort};
+use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, HyphState, LinebreakState,
     MemState, ScannerState,
@@ -3941,65 +3937,80 @@ pub fn char_pw_in(
 /// Insert locale-aware linebreaking nodes for `len` glyphs starting at `native_text[s]`.
 ///
 /// translated from xetex-xetex0.c:6493 (do_locale_linebreaks)
-pub unsafe fn do_locale_linebreaks(s: i32, len: i32) {
-    use crate::globals::{
-        cur_list_tail, mem_as_u16_ptr_mut, mem_b32s1, set_cur_list_tail, set_mem_b32s1,
-    };
-    let native_text = crate::globals::native_text();
+pub(crate) unsafe fn do_locale_linebreaks_in(
+    st: &mut crate::state::EngineState,
+    s: i32,
+    len: i32,
+) -> Result<(), NodeRecycleAbort> {
+    use crate::globals::{cur_list_tail, set_cur_list_tail};
+    // native_text is a scanner Vec that is not resized during this routine, so a
+    // raw pointer captured once stays valid across the mem allocations below.
+    let native_text = st.scanner.native_text.as_mut_ptr();
 
-    let locale = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE);
-    let use_glyph = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
+    let locale = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE);
+    let use_glyph = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
 
     if locale == 0 || len == 1 {
-        let node = new_native_word_node_global(main_f, len);
-        set_mem_b32s1(cur_list_tail(), node);
-        set_cur_list_tail(mem_b32s1(cur_list_tail()));
-        let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
+        let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, main_f, len)?;
+        st.mem.set_b32s1(cur_list_tail(), node);
+        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+        let text = st.mem.as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
         for i in 0..len {
             *text.add(i as usize) = *native_text.add((s + i) as usize);
         }
-        measure_native_node_global(
-            crate::globals::mem_node_addr(cur_list_tail()),
-            use_glyph as libc::c_int,
-        );
+        let addr = st.mem.node_addr(cur_list_tail());
+        measure_native_node(&st.fonts, addr, use_glyph as libc::c_int);
     } else {
-        let use_skip = eqtb_b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
-        let penalty_val = eqtb_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_PENALTY);
+        let use_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
+        let penalty_val = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_PENALTY);
         let use_penalty = penalty_val != 0 || !use_skip;
         linebreak_start(main_f, locale, native_text.add(s as usize), len);
         let mut offs: i32 = 0;
         loop {
             let prev_offs = offs;
-            offs = linebreak_next_global(main_f);
+            offs = linebreak_next(&st.fonts, main_f);
             if offs > 0 {
                 if prev_offs != 0 {
                     if use_penalty {
-                        let node = crate::mem::new_penalty_global(penalty_val);
-                        set_mem_b32s1(cur_list_tail(), node);
-                        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                        let node = crate::mem::new_penalty(&mut st.mem, penalty_val);
+                        if node == crate::mem::ALLOC_FAILED {
+                            return Err(NodeRecycleAbort::Overflow);
+                        }
+                        st.mem.set_b32s1(cur_list_tail(), node);
+                        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
                     }
                     if use_skip {
-                        let node =
-                            crate::mem::new_param_glue_global(GLUE_PAR_XETEX_LINEBREAK_SKIP as i16);
-                        set_mem_b32s1(cur_list_tail(), node);
-                        set_cur_list_tail(mem_b32s1(cur_list_tail()));
+                        let node = crate::mem::new_param_glue(
+                            &mut st.mem,
+                            &st.eqtb,
+                            GLUE_PAR_XETEX_LINEBREAK_SKIP as i16,
+                        );
+                        if node == crate::mem::ALLOC_FAILED {
+                            return Err(NodeRecycleAbort::Overflow);
+                        }
+                        st.mem.set_b32s1(cur_list_tail(), node);
+                        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
                     }
                 }
-                let node = new_native_word_node_global(main_f, offs - prev_offs);
-                set_mem_b32s1(cur_list_tail(), node);
-                set_cur_list_tail(mem_b32s1(cur_list_tail()));
-                let text = mem_as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
+                let node = crate::fonts::new_native_word_node(
+                    &mut st.mem,
+                    &st.eqtb,
+                    main_f,
+                    offs - prev_offs,
+                )?;
+                st.mem.set_b32s1(cur_list_tail(), node);
+                set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+                let text = st.mem.as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
                 for i in prev_offs..offs {
                     *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
                 }
-                measure_native_node_global(
-                    crate::globals::mem_node_addr(cur_list_tail()),
-                    use_glyph as libc::c_int,
-                );
+                let addr = st.mem.node_addr(cur_list_tail());
+                measure_native_node(&st.fonts, addr, use_glyph as libc::c_int);
             }
             if offs < 0 {
                 break;
             }
         }
     }
+    Ok(())
 }

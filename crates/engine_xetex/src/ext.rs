@@ -9,14 +9,11 @@ use crate::texmfmp::gettexstring;
 use crate::texmfmp::maketexstring;
 
 use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
-use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_val, mem_b32s1, set_cur_cs, set_cur_val, set_def_ref,
-    set_mem_b32s0, set_mem_b32s1,
-};
+use crate::globals::{cur_chr, cur_cmd, cur_cs, cur_val, set_cur_cs, set_cur_val};
 use crate::main_control::{mc_propagate_error, new_graf_in};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::pic::load_picture_in;
-use crate::scan::{get_x_token_in, scan_int_in, str_toks};
+use crate::scan::{get_x_token_in, scan_int_in};
 
 use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
 use std::ptr;
@@ -2391,17 +2388,6 @@ pub(crate) unsafe fn print_glyph_name_in(st: &mut crate::state::EngineState, fon
     }
 }
 
-// ---- Phase-C bridge-down wrappers (native font metric readers) ----
-pub unsafe fn measure_native_node_global(p_node: *mut c_void, use_glyph_metrics: c_int) {
-    crate::state::with_state(|s| measure_native_node(&s.fonts, p_node, use_glyph_metrics))
-}
-pub unsafe fn linebreak_next_global(f: c_int) -> c_int {
-    crate::state::with_state(|s| linebreak_next(&s.fonts, f))
-}
-pub unsafe fn map_char_to_glyph_global(font: i32, ch: i32) -> i32 {
-    crate::state::with_state(|s| map_char_to_glyph(&s.fonts, font, ch))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2516,22 +2502,39 @@ mod tests {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:11376 (append_src_special)
-pub unsafe fn append_src_special() {
-    let fname = crate::globals::source_filename_stack(crate::globals::in_open());
-    if fname > 0 && crate::texmfmp::is_new_source(fname, crate::globals::line()) {
-        crate::mem::new_whatsit_global(SPECIAL_NODE, WRITE_NODE_SIZE);
-        set_mem_b32s0(crate::globals::cur_list_tail() + 1, 0);
-        let d = crate::mem::get_avail_global();
-        set_def_ref(d);
-        set_mem_b32s0(d, crate::mem::TEX_NULL);
-        str_toks(crate::texmfmp::make_src_special(
-            fname,
-            crate::globals::line(),
-        ));
-        set_mem_b32s1(d, mem_b32s1(TEMP_HEAD));
-        set_mem_b32s1(crate::globals::cur_list_tail() + 1, d);
-        crate::texmfmp::remember_source_info(fname, crate::globals::line());
+pub(crate) fn append_src_special_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), InsertSrcAbort> {
+    use crate::globals::{cur_list_tail, line};
+    let fname = st.input.source_filename_stack[st.input.in_open as usize];
+    if fname > 0 && crate::texmfmp::is_new_source_in(st, fname, line()) {
+        let p = crate::mem::new_whatsit(&mut st.mem, SPECIAL_NODE, WRITE_NODE_SIZE);
+        if p == crate::mem::ALLOC_FAILED {
+            return Err(InsertSrcAbort::MainMemory);
+        }
+        st.mem.set_b32s0(cur_list_tail() + 1, 0);
+        let d = crate::mem::get_avail(&mut st.mem);
+        if d == crate::mem::ALLOC_FAILED {
+            return Err(InsertSrcAbort::MainMemory);
+        }
+        st.scanner.def_ref = d;
+        st.mem.set_b32s0(d, crate::mem::TEX_NULL);
+        let b = crate::texmfmp::make_src_special_in(st, fname, line())
+            .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
+        match crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0) {
+            Ok(_) => {}
+            Err(crate::scan::StrToksAbort::PoolOverflow) => {
+                return Err(InsertSrcAbort::StrToksPool)
+            }
+            Err(crate::scan::StrToksAbort::MainMemoryOverflow) => {
+                return Err(InsertSrcAbort::MainMemory)
+            }
+        };
+        st.mem.set_b32s1(d, st.mem.b32s1(TEMP_HEAD));
+        st.mem.set_b32s1(cur_list_tail() + 1, d);
+        crate::texmfmp::remember_source_info_in(st, fname, line());
     }
+    Ok(())
 }
 // translated from xetex-xetex0.c:11045 (new_write_whatsit)
 pub(crate) enum NewWriteWhatsitAbort {

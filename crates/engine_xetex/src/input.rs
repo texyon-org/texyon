@@ -122,13 +122,6 @@ pub(crate) fn end_token_list_in(st: &mut crate::state::EngineState) -> Result<()
 // back_input
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-xetex0.c:3136 (back_input)
-pub unsafe fn back_input() {
-    if let Err(a) = crate::state::with_state_mut(back_input_in) {
-        a.fire();
-    }
-}
-
 /// `&mut EngineState` core of [`back_input`] (`01b` §3). Touches the input stack
 /// (`st.input`) and `align_state` (`st.scanner`) directly; `cur_input`/`cur_tok`
 /// are raw `mod raw` globals (safe under the borrow); the avail-list pop goes
@@ -405,13 +398,6 @@ const INT_PAR_TRACING_MACROS: i32 = 30; // xetex_format.h:65
 const LOCAL__OUTPUT_ROUTINE_BTL: i32 = 1; // xetex_format.h:173
 const ASSIGN_TOKS_BTL: u16 = 73; // xetex_format.h:313
 
-/// translated from xetex-xetex0.c:2970 (begin_token_list)
-pub unsafe fn begin_token_list(p: i32, t: u16) {
-    if let Err(a) = crate::state::with_state_mut(|st| begin_token_list_in(st, p, t)) {
-        a.fire();
-    }
-}
-
 /// `&mut EngineState` core of [`begin_token_list`] (`01b` §3). Touches the input
 /// stack (`st.input`) directly; `cur_input`/`stack_size` are raw `mod raw`
 /// globals (safe under the borrow); the `\tracingmacros` diagnostic prints
@@ -466,4 +452,11 @@ pub(crate) fn begin_token_list_in(
         set_cur_input_loc(p);
     }
     Ok(())
+}
+
+/// translated from xetex-xetex0.c:2970 (begin_token_list)
+pub unsafe fn begin_token_list(p: i32, t: u16) {
+    if let Err(a) = crate::state::with_state_mut(|st| begin_token_list_in(st, p, t)) {
+        a.fire();
+    }
 }

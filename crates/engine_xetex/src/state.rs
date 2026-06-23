@@ -1145,6 +1145,14 @@ impl FontState {
         self.font_glue[f as usize]
     }
     #[inline]
+    pub(crate) fn hyphen_char_entry(&self, f: i32) -> i32 {
+        self.hyphen_char[f as usize]
+    }
+    #[inline]
+    pub(crate) fn font_false_bchar_entry(&self, f: i32) -> i32 {
+        self.font_false_bchar[f as usize]
+    }
+    #[inline]
     pub(crate) fn set_font_glue(&mut self, f: i32, v: i32) {
         self.font_glue[f as usize] = v;
     }
@@ -1567,5 +1575,67 @@ impl InputClusterState {
     pub(crate) fn get_current_name(&self) -> &std::ffi::CStr {
         // SAFETY: self.abspath_of_input_file.0 is a NUL-terminated buffer of length 1024.
         unsafe { std::ffi::CStr::from_ptr(self.abspath_of_input_file.0.as_ptr()) }
+    }
+}
+
+// Phase-C threaded-accessor surface for the main-control native/lig loop
+// (mirrors the `globals.rs` `with_state` accessors so `_in` cores reach the
+// same fields under one borrow).
+impl MemState {
+    #[inline]
+    pub(crate) fn avail(&self) -> i32 {
+        self.avail
+    }
+    #[inline]
+    pub(crate) fn set_avail(&mut self, v: i32) {
+        self.avail = v;
+    }
+}
+
+impl ScannerState {
+    #[inline]
+    pub(crate) fn native_len(&self) -> i32 {
+        self.native_len
+    }
+    #[inline]
+    pub(crate) fn set_native_len(&mut self, v: i32) {
+        self.native_len = v;
+    }
+    #[inline]
+    pub(crate) fn native_text_size(&self) -> i32 {
+        self.native_text_size
+    }
+    #[inline]
+    pub(crate) fn save_native_len(&self) -> i32 {
+        self.save_native_len
+    }
+    #[inline]
+    pub(crate) fn set_save_native_len(&mut self, v: i32) {
+        self.save_native_len = v;
+    }
+}
+
+impl FontState {
+    #[inline]
+    pub(crate) fn mapped_text_entry(&self, i: i32) -> u16 {
+        self.mapped_text[i as usize]
+    }
+}
+
+impl ShipoutState {
+    #[inline]
+    pub(crate) fn insert_src_special_auto(&self) -> bool {
+        self.insert_src_special_auto
+    }
+}
+
+impl HyphState {
+    #[inline]
+    pub(crate) fn is_hyph(&self) -> bool {
+        self.is_hyph
+    }
+    #[inline]
+    pub(crate) fn set_is_hyph(&mut self, v: bool) {
+        self.is_hyph = v;
     }
 }
