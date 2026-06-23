@@ -8,6 +8,67 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 228 — 2026-06-23 — Execution: thread `make_accent` + the main-control native/ligature main loop
+
+**Type:** execution (workstream 01). Large mechanical session, two commits.
+
+**Commit 1 — `make_accent`.** `make_accent` → `make_accent_in(&mut
+EngineState) -> Result<(), MainControlAbort>` over `scan_char_num_in`/
+`new_character_in`/`do_assignments_in`/`hpack_emit_in`/`back_input_in`, the
+re-entry-free native measurers (`get_native_char_{sidebearings,height_depth}(&
+FontState)`), `effective_char`, and `mem::new_kern`. Folded directly into
+`main_control_box_list_cases_in` (now returns `Result<(), MainControlAbort>`),
+removing the `MainControlBoxListAction` trampoline. Deleted the dead
+`make_accent`/`new_character`/`do_assignments`/`hpack`/`print_hpack_diag`
+wrappers, the two native `_global` bridges, and `param_base`/`width_base_entry`/
+`height_base_entry` globals accessors.
+
+**Commit 2 — the native/ligature main loop.** Threaded the whole
+`main_control_main_loop` subsystem into `_in` cores under one borrow each:
+`main_control_main_loop_in` (AAT/OTGR native-text collection + the classic TFM
+lig/kern loop), `lig_inner_loop`, `do_lookahead`,
+`main_control_hmode_inter_char_check_in`, plus prerequisites
+`linebreak::do_locale_linebreaks_in` and `ext::append_src_special_in`. Bulk
+accessor rewrite via scripted pure-token substitution (`st.mem`/`st.eqtb`/
+`st.fonts`/`st.scanner` methods; native-text now indexes
+`st.scanner.native_text`), then hand-fixed the borrow-split sites
+(`effective_char(&mut FontState)`), the `mc_*` alloc helpers (cold
+`ALLOC_FAILED` → `MainControlAbort`), the scanner `_in` calls, the
+`with_state_mut` islands (resize/inter-char/`apply_mapping`), and the
+`char_warning_in`/`fix_language`/`measure_native_node`/`map_char_to_glyph`
+threading. Added the matching `MemState`/`ScannerState`/`HyphState`/`FontState`/
+`ShipoutState` accessor methods. Deleted ~65 now-dead bridge wrappers across
+globals/scan/mem/ext/output/input/linebreak.
+
+**KEY FINDING — `main_control` itself is NOT single-borrow threadable yet.**
+First built `main_control_in(&mut EngineState)` holding ONE borrow across the
+whole `big_switch`/`reswitch` loop; the dashboard caught an immediate
+`with_state` nest-panic (`state.rs:1461`, align tests) because
+`with_state`-bearing leaves still exist below `main_control` (Phase C is not
+complete). Reverted to the **global** `main_control` loop that calls each step
+(`get_x_token`/`show_cur_cmd_chr`/`main_control_main_loop`/the dispatchers/
+`its_all_over`) under its **own short-lived** `with_state_mut` wrapper — exactly
+the design the per-dispatch wrappers were built for. **The single continuous
+borrow over `main_control` can only land at the very end of Phase C, once
+nothing it reaches uses `with_state`.** Restored the thin dispatcher/scanner/
+output/input wrappers that the global loop needs. Lesson also: `hi_mem_min` is
+`with_state` and can shrink on get_avail's hi-mem path, so `is_char_node` must
+read it fresh under the borrow (`mc_is_char_node(&EngineState)`), not capture it.
+
+**Validation:** `cargo fmt`; `cargo check` warnings **42**; dashboard
+**29/2/7/4**; release rebuild; full corpus **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1`, doc-count ==
+baseline, no NOXDV/NOLOG (the session-187 native-font check — this slice is the
+native/TFM hot path). Metrics: `with_state(_mut)` **525 → 467**; `unsafe fn`
+**325 → 298**.
+
+**Next:** the main loop is threaded; the remaining `main_control` cluster is the
+*global loop body itself*, which is gated on draining the last `with_state`
+leaves it reaches (then `main_control_in` becomes a single-borrow pass calling
+the existing `_in` cores). Scout those leaves (the dispatcher `_in` cores are
+already borrow-safe; the gap is any deeper helper still on `with_state`). Until
+then, keep threading individual leaves to shrink the 467 `with_state` sites.
+
 ## Idiom session 223 — 2026-06-22 — Execution: finish the main-control math dispatcher
 
 **Type:** execution (workstream 01). Large mechanical session, intentionally
