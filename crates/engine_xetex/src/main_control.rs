@@ -1335,12 +1335,16 @@ pub(crate) fn end_graf_in(st: &mut crate::state::EngineState) -> Result<(), Main
 }
 // translated from xetex-xetex0.c:10016 (append_penalty)
 fn append_penalty_node(mem: &mut crate::state::MemState, tail: i32, penalty: i32) -> i32 {
-    let p = crate::mem::new_penalty(mem, penalty);
-    if p == crate::mem::ALLOC_FAILED {
-        return p;
+    let p_raw = crate::mem::new_penalty(mem, penalty);
+    if p_raw == crate::mem::ALLOC_FAILED {
+        return p_raw;
     }
-    mem.set_b32s1(tail, p);
-    p
+    let p = mem
+        .classify_penalty(MemIdx::new(p_raw))
+        .expect("new_penalty stamped a valid node")
+        .expect("new_penalty returned a penalty node");
+    mem.set_b32s1(tail, p.idx().0);
+    p.idx().0
 }
 
 pub(crate) fn append_penalty_in(

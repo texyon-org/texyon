@@ -1020,11 +1020,6 @@ pub(crate) fn print_sa_num_in(st: &mut EngineState, q: i32) {
 /// Save selector and switch to log-only mode for diagnostic output.
 ///
 /// translated from xetex-xetex0.c:1785 (begin_diagnostic)
-pub fn begin_diagnostic() {
-    crate::state::with_state_mut(|st| begin_diagnostic_in(st));
-}
-
-/// `&mut EngineState` core of [`begin_diagnostic`].
 pub(crate) fn begin_diagnostic_in(st: &mut EngineState) {
     st.shipout.old_setting = st.shipout.selector as u8;
     if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0
@@ -1040,11 +1035,6 @@ pub(crate) fn begin_diagnostic_in(st: &mut EngineState) {
 /// Restore selector saved by begin_diagnostic.
 ///
 /// translated from xetex-xetex0.c:1797 (end_diagnostic)
-pub unsafe fn end_diagnostic(blank_line: bool) {
-    crate::state::with_state_mut(|st| end_diagnostic_in(st, blank_line));
-}
-
-/// `&mut EngineState` core of [`end_diagnostic`].
 pub(crate) fn end_diagnostic_in(st: &mut EngineState, blank_line: bool) {
     print_nl_cstr_in(st, c"".as_ptr());
     if blank_line {

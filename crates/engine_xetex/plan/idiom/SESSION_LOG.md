@@ -8,6 +8,42 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 230 — 2026-06-26 — Execution: thread input encoding + small typed-node cleanups
+
+**Type:** execution (workstream 01 / fused threading+typing). Larger
+mechanical session, minimal docs; used two explorer subagents for target
+scouting, edits stayed local.
+
+**Code:** threaded the input-encoding path reached from `do_extension_in` and
+`u_open_in_in`: `ext::get_encoding_mode_and_info_in(&mut EngineState, ...)`
+now prints diagnostics through `_in` output cores and creates ICU mapping
+strings through `maketexstring_in`; `io::set_input_file_encoding_in(&mut
+EngineState, ...)` now uses `gettexstring_in` and threaded diagnostics. The
+legacy `set_input_file_encoding` remains as a thin wrapper, while the dead
+`call_set_input_file_encoding`, `get_encoding_mode_and_info`, old
+`makeXDVGlyphArrayData`, and dead global `begin_diagnostic`/`end_diagnostic`
+wrappers were deleted.
+
+Typed cleanup: in `linebreak.rs`, language/native whatsit readers now classify
+to `NodePtr<WhatsitNode>`, and `typed_list_width_in` uses `mem.classify(...)`
+instead of a raw node-type switch. In `main_control.rs`,
+`append_penalty_node` now classifies the freshly allocated penalty node, matching
+the existing `append_kern_node` pattern.
+
+**Validation:** `cargo fmt -p tectonic_engine_xetex`; `cargo check -p
+tectonic_engine_xetex` warnings **40**; dashboard **29/2/7/4**; `cargo build
+--release -p tectonic`; full corpus
+`CANDIDATE_BIN=target/release/tectonic plan/scripts/corpus.sh check all` =
+**637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1`/`1905.00148v1` (script exit 1 because of expected diffs).
+Metrics: `with_state` text matches **518**, `unsafe fn` **281**.
+
+**Next:** continue draining reachable `with_state` leaves before another
+`main_control_in` attempt. Good small next targets from scouting: private
+shipout initializer setters, `shipout::make_xdv_glyph_array_data_in` typing to
+`NodePtr<WhatsitNode>`, or more linebreak/shipout typed helper cleanup. Do not
+retry a single-borrow top `main_control` until deeper wrappers are gone.
+
 ## Idiom session 229 — 2026-06-26 — Execution: collapse main-control bridge island + thread `linebreak_start`
 
 **Type:** execution (workstream 01). Large mechanical session, intentionally

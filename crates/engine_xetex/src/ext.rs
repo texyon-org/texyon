@@ -1,6 +1,5 @@
 // translated from xetex-ext.c
 use crate::state::EngineState;
-use crate::texmfmp::maketexstring;
 
 use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
 use crate::globals::{cur_chr, cur_cmd, cur_cs, cur_val, set_cur_cs, set_cur_val};
@@ -454,45 +453,46 @@ pub unsafe fn read_rgb_a(cp: *mut *const c_char) -> c_uint {
 }
 
 // translated from xetex-ext.c:127 (get_encoding_mode_and_info)
-// `name_of_file` (the encoding name to parse) is read by the `_global` wrapper
-// from `name_of_file()` before the call (it is with_state-bearing); the core
-// only reads the passed pointer, leaving its diagnostic path borrow-free (§4a).
-pub unsafe fn get_encoding_mode_and_info(name_of_file: *const c_char, info: *mut i32) -> c_int {
+pub(crate) unsafe fn get_encoding_mode_and_info_in(
+    st: &mut EngineState,
+    name_of_file: *const c_char,
+    info: *mut i32,
+) -> Result<c_int, crate::texmfmp::MakeTexStringAbort> {
     *info = 0;
 
     if libc::strcasecmp(name_of_file, c"auto".as_ptr()) == 0 {
-        return AUTO;
+        return Ok(AUTO);
     }
     if libc::strcasecmp(name_of_file, c"utf8".as_ptr()) == 0 {
-        return UTF8;
+        return Ok(UTF8);
     }
     if libc::strcasecmp(name_of_file, c"utf16".as_ptr()) == 0 {
-        return US_NATIVE_UTF16;
+        return Ok(US_NATIVE_UTF16);
     }
     if libc::strcasecmp(name_of_file, c"utf16be".as_ptr()) == 0 {
-        return UTF16BE;
+        return Ok(UTF16BE);
     }
     if libc::strcasecmp(name_of_file, c"utf16le".as_ptr()) == 0 {
-        return UTF16LE;
+        return Ok(UTF16LE);
     }
     if libc::strcasecmp(name_of_file, c"bytes".as_ptr()) == 0 {
-        return RAW;
+        return Ok(RAW);
     }
 
     let mut err = 0;
     let cnv = xetex_ucnv_open(name_of_file, &mut err);
     if cnv.is_null() {
-        crate::output::begin_diagnostic();
-        crate::output::print_nl(b'U' as i32);
-        crate::output::print_cstr(c"nknown encoding `".as_ptr());
-        crate::output::print_cstr(name_of_file);
-        crate::output::print_cstr(c"'; reading as raw bytes".as_ptr());
-        crate::output::end_diagnostic(true);
-        RAW
+        crate::output::begin_diagnostic_in(st);
+        crate::output::print_nl_in(st, b'U' as i32);
+        crate::output::print_cstr_in(st, c"nknown encoding `".as_ptr());
+        crate::output::print_cstr_in(st, name_of_file);
+        crate::output::print_cstr_in(st, c"'; reading as raw bytes".as_ptr());
+        crate::output::end_diagnostic_in(st, true);
+        Ok(RAW)
     } else {
         xetex_ucnv_close(cnv);
-        *info = maketexstring(name_of_file);
-        ICUMAPPING
+        *info = crate::texmfmp::maketexstring_in(&mut st.strings, name_of_file)?;
+        Ok(ICUMAPPING)
     }
 }
 
@@ -2042,75 +2042,7 @@ pub unsafe fn linebreak_next(fonts: &crate::state::FontState, f: c_int) -> c_int
     }
 }
 
-// translated from xetex-ext.c:529 (makeXDVGlyphArrayData)
-// xdvBufSize was a C file-static; promoted to module-level static XDV_BUF_SIZE
-pub unsafe fn makeXDVGlyphArrayData(p_node: *mut c_void) -> c_int {
-    let node = p_node as *mut crate::mem_types::MemoryWord;
-    let glyph_count = (*node.add(4)).b16.s0 as usize;
-
-    let needed = glyph_count * NATIVE_GLYPH_INFO_SIZE + 8;
-    crate::state::with_state_mut(|state| {
-        if state.fonts.xdv_buffer.len() < needed {
-            state.fonts.xdv_buffer.resize(needed, 0);
-        }
-    });
-
-    let glyph_info = (*node.add(5)).ptr as *const u8;
-    let locations = glyph_info as *const FixedPoint;
-    let glyph_ids = glyph_info.add(glyph_count * 8) as *const u16;
-
-    let xdv_ptr = crate::state::with_state(|state| state.fonts.xdv_buffer.as_ptr() as *mut u8);
-    let mut cp = xdv_ptr;
-    let width = (*node.add(1)).b32.s1 as u32;
-
-    *cp = (width >> 24) as u8;
-    cp = cp.add(1);
-    *cp = (width >> 16) as u8;
-    cp = cp.add(1);
-    *cp = (width >> 8) as u8;
-    cp = cp.add(1);
-    *cp = width as u8;
-    cp = cp.add(1);
-
-    *cp = (glyph_count >> 8) as u8;
-    cp = cp.add(1);
-    *cp = glyph_count as u8;
-    cp = cp.add(1);
-
-    for i in 0..glyph_count {
-        let x = (*locations.add(i)).x as u32;
-        let y = (*locations.add(i)).y as u32;
-        *cp = (x >> 24) as u8;
-        cp = cp.add(1);
-        *cp = (x >> 16) as u8;
-        cp = cp.add(1);
-        *cp = (x >> 8) as u8;
-        cp = cp.add(1);
-        *cp = x as u8;
-        cp = cp.add(1);
-        *cp = (y >> 24) as u8;
-        cp = cp.add(1);
-        *cp = (y >> 16) as u8;
-        cp = cp.add(1);
-        *cp = (y >> 8) as u8;
-        cp = cp.add(1);
-        *cp = y as u8;
-        cp = cp.add(1);
-    }
-
-    for i in 0..glyph_count {
-        let g = *glyph_ids.add(i);
-        *cp = (g >> 8) as u8;
-        cp = cp.add(1);
-        *cp = g as u8;
-        cp = cp.add(1);
-    }
-
-    cp.offset_from(xdv_ptr) as c_int
-}
-
 // translated from xetex-ext.c:584 (make_font_def)
-// xdvBufSize was a C file-static; shared with makeXDVGlyphArrayData via XDV_BUF_SIZE
 pub unsafe fn make_font_def(fonts: &mut crate::state::FontState, f: i32) -> c_int {
     let mut flags: u16 = 0;
     let rgba: u32;
@@ -2857,8 +2789,8 @@ pub(crate) fn do_extension_in(
         XETEX_INPUT_ENCODING_EXTENSION_CODE_DE => {
             crate::io::scan_and_pack_name_in(st)?;
             let mut j: i32 = 0;
-            let i =
-                unsafe { get_encoding_mode_and_info(st.input.name_of_file.as_mut_ptr(), &mut j) };
+            let name = st.input.name_of_file.as_mut_ptr();
+            let i = unsafe { get_encoding_mode_and_info_in(st, name, &mut j)? };
             if i == XETEX_INPUT_MODE_AUTO_DE {
                 error_here_with_diagnostic_in(
                     st,
@@ -2874,11 +2806,12 @@ pub(crate) fn do_extension_in(
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else {
                 unsafe {
-                    crate::io::call_set_input_file_encoding(
+                    crate::io::set_input_file_encoding_in(
+                        st,
                         st.input.input_file[st.input.in_open as usize],
                         i,
                         j,
-                    );
+                    )?;
                 }
             }
         }
@@ -2886,8 +2819,8 @@ pub(crate) fn do_extension_in(
         XETEX_DEFAULT_ENCODING_EXTENSION_CODE_DE => {
             crate::io::scan_and_pack_name_in(st)?;
             let mut j: i32 = 0;
-            let i =
-                unsafe { get_encoding_mode_and_info(st.input.name_of_file.as_mut_ptr(), &mut j) };
+            let name = st.input.name_of_file.as_mut_ptr();
+            let i = unsafe { get_encoding_mode_and_info_in(st, name, &mut j)? };
             st.eqtb
                 .set_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE_DE, i);
             st.eqtb

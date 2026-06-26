@@ -11,6 +11,9 @@ use crate::globals::{
     set_eqtb_b32s1, set_first, set_line, set_selector, texmf_log_name, write_open,
 };
 use crate::input::InputAbort;
+use crate::output::capture_to_diagnostic;
+use crate::output::diagnostic_begin_capture_warning_here;
+use crate::output::print_cstr;
 
 // ---------------------------------------------------------------------------
 // UFILE — Rust mirror of the C `UFILE` struct (xetex-io.h:12–18)
@@ -19,16 +22,8 @@ use crate::input::InputAbort;
 /// Rust mirror of `UFILE` (xetex-io.h:12–18). Must stay layout-compatible.
 ///
 /// On Linux x86_64 the C layout is:
-use crate::output::begin_diagnostic;
-use crate::output::capture_to_diagnostic;
-use crate::output::diagnostic_begin_capture_warning_here;
-use crate::output::end_diagnostic;
-use crate::output::print_cstr;
-use crate::output::print_int;
-use crate::output::print_nl;
 use crate::output::print_nl_cstr;
 use crate::shipout::finalize_dvi_file;
-use crate::texmfmp::gettexstring;
 
 // Consts used by the file-naming / start_input / close_files group, moved with
 // it from scan.rs (workstream 02).
@@ -292,11 +287,6 @@ pub unsafe fn u_open_in(
     1
 }
 
-/// Wrapper so scan.rs can call `set_input_file_encoding` without re-declaring it.
-pub(crate) unsafe fn call_set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32) {
-    set_input_file_encoding(f, mode, encoding_data);
-}
-
 /// `&mut EngineState` core of [`tt_xetex_open_input`] so a threaded caller
 /// (`start_input_in`) can open under the borrow without re-entering `with_state`.
 pub(crate) unsafe fn tt_xetex_open_input_in(
@@ -344,17 +334,18 @@ pub(crate) unsafe fn tt_xetex_open_input_in(
     handle
 }
 
-/// `&mut EngineState` core of [`u_open_in`] (the rest is FFI / `set_input_file_encoding`).
+/// `&mut EngineState` core of [`u_open_in`] so threaded callers can open and
+/// configure the input file without re-entering the global state borrow.
 pub(crate) unsafe fn u_open_in_in(
     st: &mut crate::state::EngineState,
     f: *mut *mut UFile,
     filefmt: i32,
     mut mode: i32,
     encoding_data: i32,
-) -> libc::c_int {
+) -> Result<libc::c_int, crate::texmfmp::MakeTexStringAbort> {
     let handle = tt_xetex_open_input_in(st, filefmt);
     if handle == INVALID_HANDLE {
-        return 0;
+        return Ok(0);
     }
 
     *f = xmalloc(std::mem::size_of::<UFile>()) as *mut UFile;
@@ -391,8 +382,8 @@ pub(crate) unsafe fn u_open_in_in(
         }
     }
 
-    set_input_file_encoding(*f, mode, encoding_data);
-    1
+    set_input_file_encoding_in(st, *f, mode, encoding_data)?;
+    Ok(1)
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +394,19 @@ pub(crate) unsafe fn u_open_in_in(
 ///
 /// translated from xetex-io.c:47 (set_input_file_encoding)
 pub unsafe fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32) {
+    if let Err(e) =
+        crate::state::with_state_mut(|st| set_input_file_encoding_in(st, f, mode, encoding_data))
+    {
+        crate::texmfmp::fire_make_tex_string(e);
+    }
+}
+
+pub(crate) unsafe fn set_input_file_encoding_in(
+    st: &mut crate::state::EngineState,
+    f: *mut UFile,
+    mode: i32,
+    encoding_data: i32,
+) -> Result<(), crate::texmfmp::MakeTexStringAbort> {
     if (*f).encoding_mode == ICUMAPPING as i16 && !(*f).conversion_data.is_null() {
         xetex_ucnv_close((*f).conversion_data);
     }
@@ -413,18 +417,18 @@ pub unsafe fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i
             (*f).encoding_mode = mode as i16;
         }
         _ if mode == ICUMAPPING => {
-            let name = gettexstring(encoding_data);
+            let name = crate::texmfmp::gettexstring_in(&st.strings, encoding_data);
             let mut err: libc::c_int = 0;
             let cnv = xetex_ucnv_open(name, &mut err);
             if cnv.is_null() {
-                begin_diagnostic();
-                print_nl(b'E' as i32);
-                print_cstr(c"rror ".as_ptr());
-                print_int(err);
-                print_cstr(c" creating Unicode converter for `".as_ptr());
-                print_cstr(name);
-                print_cstr(c"'; reading as raw bytes".as_ptr());
-                end_diagnostic(true);
+                crate::output::begin_diagnostic_in(st);
+                crate::output::print_nl_in(st, b'E' as i32);
+                crate::output::print_cstr_in(st, c"rror ".as_ptr());
+                crate::output::print_int_in(st, err);
+                crate::output::print_cstr_in(st, c" creating Unicode converter for `".as_ptr());
+                crate::output::print_cstr_in(st, name);
+                crate::output::print_cstr_in(st, c"'; reading as raw bytes".as_ptr());
+                crate::output::end_diagnostic_in(st, true);
                 (*f).encoding_mode = RAW as i16;
             } else {
                 (*f).encoding_mode = ICUMAPPING as i16;
@@ -434,6 +438,7 @@ pub unsafe fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i
         }
         _ => {}
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -932,6 +937,7 @@ pub unsafe fn u_close(f: *mut UFile) {
 pub(crate) enum OpenOrCloseAbort {
     Scanner(SccAbort),
     Name(NameAbort),
+    MakeString(crate::texmfmp::MakeTexStringAbort),
 }
 
 impl OpenOrCloseAbort {
@@ -939,6 +945,7 @@ impl OpenOrCloseAbort {
         match self {
             OpenOrCloseAbort::Scanner(e) => e.fire(),
             OpenOrCloseAbort::Name(e) => fire_name_overflow(e),
+            OpenOrCloseAbort::MakeString(e) => crate::texmfmp::fire_make_tex_string(e),
         }
     }
 }
@@ -976,7 +983,9 @@ pub(crate) unsafe fn open_or_close_in(
             st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE),
             st.eqtb
                 .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING),
-        ) != 0
+        )
+        .map_err(OpenOrCloseAbort::MakeString)?
+            != 0
         {
             make_utf16_name_in(st);
             st.scanner.name_in_progress = true;
@@ -1635,7 +1644,7 @@ pub(crate) unsafe fn start_input_in(
     let enc = st
         .eqtb
         .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
-    if u_open_in_in(st, fptr, format, mode, enc) == 0 {
+    if u_open_in_in(st, fptr, format, mode, enc).map_err(SccAbort::MakeTexString)? == 0 {
         // Build "failed to open input file "<name>"" into a leaked buffer for
         // the deferred _tt_abort (the C reads name_of_file via snprintf).
         let name = if st.input.name_of_file.is_empty() {

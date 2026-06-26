@@ -6,8 +6,8 @@ use crate::ext::{
     linebreak_next, linebreak_start_in, measure_native_node, real_get_native_word_cp,
 };
 use crate::node::{
-    ActiveNode, AnyBox, DeltaNode, DiscNode, GlueNode, GlueSpecNode, KernNode, LigatureNode,
-    MathNode, NodePtr, PassiveNode, PenaltyNode, RuleNode,
+    ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, KernNode,
+    LigatureNode, MathNode, NodePtr, PassiveNode, PenaltyNode, WhatsitNode,
 };
 use crate::scan::{node_recycle_abort, NodeRecycleAbort};
 use crate::state::{
@@ -202,12 +202,6 @@ fn penalty_node(node: i32) -> NodePtr<PenaltyNode> {
 }
 
 #[inline]
-fn rule_node(node: i32) -> NodePtr<RuleNode> {
-    // SAFETY: callers enter through a `RULE_NODE` branch.
-    unsafe { NodePtr::<RuleNode>::from_idx_unchecked(MemIdx::new(node)) }
-}
-
-#[inline]
 fn box_node(mem: &MemState, node: i32) -> AnyBox {
     mem.classify_box(MemIdx::new(node))
         .expect("valid box node type")
@@ -268,11 +262,15 @@ fn box_width_in(mem: &MemState, p: i32) -> i32 {
 
 #[inline]
 fn typed_list_width_in(mem: &MemState, node: i32) -> i32 {
-    match node_type_in(mem, node) {
-        HLIST_NODE | VLIST_NODE => box_node(mem, node).width(mem).0,
-        RULE_NODE => rule_node(node).width(mem).raw(),
-        KERN_NODE => kern_node(node).width(mem).0,
-        MATH_NODE => math_node(node).width(mem).0,
+    match mem
+        .classify(MemIdx::new(node))
+        .expect("expected valid width-bearing node")
+    {
+        AnyNode::HList(p) => p.width(mem).0,
+        AnyNode::VList(p) => p.width(mem).0,
+        AnyNode::Rule(p) => p.width(mem).raw(),
+        AnyNode::Kern(p) => p.width(mem).0,
+        AnyNode::Math(p) => p.width(mem).0,
         _ => unreachable!("typed width for non-width node"),
     }
 }
@@ -323,18 +321,26 @@ fn set_penalty_node_penalty_in(mem: &mut MemState, p: i32, v: i32) {
 }
 
 #[inline]
+fn whatsit_node_in(mem: &MemState, p: i32) -> NodePtr<WhatsitNode> {
+    mem.classify_whatsit(MemIdx::new(p))
+        .ok()
+        .flatten()
+        .expect("expected whatsit node")
+}
+
+#[inline]
 fn language_node_what_lang_in(mem: &MemState, p: i32) -> u8 {
-    mem.b32s1(p + 1) as u8
+    whatsit_node_in(mem, p).what_lang(mem) as u8
 }
 
 #[inline]
 fn language_node_what_lhm_in(mem: &MemState, p: i32) -> i32 {
-    mem.b16s1(p + 1) as i32
+    whatsit_node_in(mem, p).what_lhm(mem) as i32
 }
 
 #[inline]
 fn language_node_what_rhm_in(mem: &MemState, p: i32) -> i32 {
-    mem.b16s0(p + 1) as i32
+    whatsit_node_in(mem, p).what_rhm(mem) as i32
 }
 
 #[inline]
@@ -364,7 +370,7 @@ fn disc_replace_count_in(mem: &MemState, p: i32) -> i32 {
 
 #[inline]
 fn native_node_len_in(mem: &MemState, p: i32) -> i32 {
-    mem.b16s1(p + 4) as i32
+    whatsit_node_in(mem, p).native_length(mem) as i32
 }
 
 #[inline]
@@ -374,7 +380,7 @@ fn set_native_node_len_in(mem: &mut MemState, p: i32, v: i32) {
 
 #[inline]
 fn native_node_font_in(mem: &MemState, p: i32) -> i32 {
-    mem.b16s2(p + 4) as i32
+    whatsit_node_in(mem, p).native_font(mem).0
 }
 
 #[inline]
