@@ -453,10 +453,3 @@ pub(crate) fn begin_token_list_in(
     }
     Ok(())
 }
-
-/// translated from xetex-xetex0.c:2970 (begin_token_list)
-pub unsafe fn begin_token_list(p: i32, t: u16) {
-    if let Err(a) = crate::state::with_state_mut(|st| begin_token_list_in(st, p, t)) {
-        a.fire();
-    }
-}

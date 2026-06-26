@@ -5388,17 +5388,3 @@ pub(crate) fn compare_strings_in(st: &mut crate::state::EngineState) -> Result<(
 // ---------------------------------------------------------------------------
 // main_control
 // ---------------------------------------------------------------------------
-
-/// translated from xetex-xetex0.c:4272 (get_x_token)
-pub unsafe fn get_x_token() {
-    if let Err(e) = crate::state::with_state_mut(|st| get_x_token_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-
-// translated from xetex-xetex0.c:5132 (scan_usv_num)
-pub unsafe fn scan_usv_num() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_usv_num_in(st)) {
-        unsafe { e.fire() }
-    }
-}

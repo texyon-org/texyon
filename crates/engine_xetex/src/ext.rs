@@ -1,11 +1,5 @@
 // translated from xetex-ext.c
-use crate::output::begin_diagnostic;
-use crate::output::end_diagnostic;
-use crate::output::print_char;
-use crate::output::print_int;
-use crate::output::print_nl;
 use crate::state::EngineState;
-use crate::texmfmp::gettexstring;
 use crate::texmfmp::maketexstring;
 
 use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
@@ -306,14 +300,6 @@ struct HbFeature {
     value: u32,
     start: u32,
     end: u32,
-}
-
-unsafe fn print_c_string(s: *const c_char) {
-    let mut p = s;
-    while *p != 0 {
-        print_char(*p as i32);
-        p = p.add(1);
-    }
 }
 
 unsafe fn print_c_string_in(st: &mut EngineState, s: *const c_char) {
@@ -1990,20 +1976,21 @@ pub unsafe fn get_font_char_range(fonts: &crate::state::FontState, font: i32, fi
     }
 }
 
-// translated from xetex-ext.c:72 (linebreak_start)
-pub unsafe fn linebreak_start(f: c_int, locale_str_num: i32, text: *mut u16, text_length: i32) {
+pub(crate) unsafe fn linebreak_start_in(
+    st: &mut EngineState,
+    f: c_int,
+    locale_str_num: i32,
+    text: *mut u16,
+    text_length: i32,
+) {
     let mut status: i32 = 0; // U_ZERO_ERROR
-    let locale = gettexstring(locale_str_num);
+    let locale = crate::texmfmp::gettexstring_in(&st.strings, locale_str_num);
 
-    // Read the (Graphite) font engine under a short borrow and drop it before the
-    // with_state-bearing diagnostic path below (§4a borrow-dropping shape).
-    let graphite_engine = crate::state::with_state(|s| {
-        if s.fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
-            Some(s.fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine)
-        } else {
-            None
-        }
-    });
+    let graphite_engine = if st.fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
+        Some(st.fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine)
+    } else {
+        None
+    };
     if let Some(engine) = graphite_engine {
         if libc::strcmp(locale, c"G".as_ptr()) == 0
             && initGraphiteBreaking(engine, text as *const u16, text_length as u32)
@@ -2020,14 +2007,14 @@ pub unsafe fn linebreak_start(f: c_int, locale_str_num: i32, text: *mut u16, tex
     if BRK_ITER.is_null() {
         BRK_ITER = ubrk_open(UBRK_LINE, locale, ptr::null(), 0, &mut status);
         if status > 0 {
-            begin_diagnostic();
-            print_nl(b'E' as i32);
-            print_c_string(c"rror ".as_ptr());
-            print_int(status);
-            print_c_string(c" creating linebreak iterator for locale `".as_ptr());
-            print_c_string(locale);
-            print_c_string(c"'; trying default locale `en_us'.".as_ptr());
-            end_diagnostic(true);
+            crate::output::begin_diagnostic_in(st);
+            crate::output::print_nl_in(st, b'E' as i32);
+            crate::output::print_cstr_in(st, c"rror ".as_ptr());
+            crate::output::print_int_in(st, status);
+            crate::output::print_cstr_in(st, c" creating linebreak iterator for locale `".as_ptr());
+            crate::output::print_cstr_in(st, locale);
+            crate::output::print_cstr_in(st, c"'; trying default locale `en_us'.".as_ptr());
+            crate::output::end_diagnostic_in(st, true);
             if !BRK_ITER.is_null() {
                 ubrk_close(BRK_ITER);
             }

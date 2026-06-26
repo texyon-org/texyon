@@ -4962,8 +4962,3 @@ const DEFAULT_CODE_SNL: i32 = 0x4000_0000; // xetex-constants.h:17
 const PIC_NODE_SIZE_SNL: i32 = 9; // xetex-constants.h
                                   // FONT_ID_BASE = FROZEN_NULL_FONT = 2245338
 const FONT_ID_BASE_SNL: i32 = 2_245_338;
-
-// translated from xetex-xetex0.c:2824 (show_cur_cmd_chr)
-pub unsafe fn show_cur_cmd_chr() {
-    crate::state::with_state_mut(|st| show_cur_cmd_chr_in(st));
-}

@@ -8,6 +8,33 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 229 — 2026-06-26 — Execution: collapse main-control bridge island + thread `linebreak_start`
+
+**Type:** execution (workstream 01). Large mechanical session, intentionally
+light docs.
+
+**Code:** kept the session-228 short-borrow `main_control` shape, but removed
+the extra trampoline layer: the global loop now calls existing `_in` cores
+through local `mc_*` helpers (`get_x_token_in`, `scan_usv_num_in`,
+`begin_token_list_in`, `show_cur_cmd_chr_in`, `main_control_*_in`,
+`its_all_over_in`) and the now-dead wrappers in `main_control.rs`, `scan.rs`,
+`input.rs`, and `output.rs` were deleted. Also threaded `ext::linebreak_start`
+to `linebreak_start_in(&mut EngineState, ...)` and repointed
+`do_locale_linebreaks_in` to it, replacing the hidden `gettexstring`/
+font-state/diagnostic re-entries with direct `st.*` and output `_in` calls;
+deleted the dead legacy wrapper and private global print helper.
+
+**Validation:** `cargo fmt`; `cargo check -p tectonic_engine_xetex` warnings
+**42**; dashboard **29/2/7/4**; release rebuild; full corpus
+`bench_phase_c.py --scope all --warmups 0 --iterations 1` over **639** cases
+found only the known `1905.00073v1` / `1905.00148v1` parity failures. Metrics:
+`with_state` text matches **522** with the current grep, `unsafe fn` **283**.
+
+**Next:** continue draining reachable `with_state` leaves before attempting
+`main_control_in` again. Good next targets from this session's scouting:
+`io::set_input_file_encoding` / `ext::get_encoding_mode_and_info` under existing
+`_in` callers, or the private shipout initializer setters.
+
 ## Idiom session 228 — 2026-06-23 — Execution: thread `make_accent` + the main-control native/ligature main loop
 
 **Type:** execution (workstream 01). Large mechanical session, two commits.

@@ -2,7 +2,9 @@ use crate::consts::{
     DIMEN_BASE, ETEX_PEN_BASE, GLUE_BASE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MAX_HALFWORD,
     SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR,
 };
-use crate::ext::{linebreak_next, linebreak_start, measure_native_node, real_get_native_word_cp};
+use crate::ext::{
+    linebreak_next, linebreak_start_in, measure_native_node, real_get_native_word_cp,
+};
 use crate::node::{
     ActiveNode, AnyBox, DeltaNode, DiscNode, GlueNode, GlueSpecNode, KernNode, LigatureNode,
     MathNode, NodePtr, PassiveNode, PenaltyNode, RuleNode,
@@ -3964,7 +3966,7 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
         let use_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
         let penalty_val = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_PENALTY);
         let use_penalty = penalty_val != 0 || !use_skip;
-        linebreak_start(main_f, locale, native_text.add(s as usize), len);
+        linebreak_start_in(st, main_f, locale, native_text.add(s as usize), len);
         let mut offs: i32 = 0;
         loop {
             let prev_offs = offs;
