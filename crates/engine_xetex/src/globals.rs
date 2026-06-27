@@ -279,14 +279,6 @@ pub(crate) fn mem_b32s0(p: i32) -> i32 {
     crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b32.s0 })
 }
 
-/// Write `v` into `mem[p].b32.s0`.
-#[inline]
-pub(crate) fn set_mem_b32s0(p: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.mem.data[p as usize].b32.s0 = v;
-    });
-}
-
 /// Read `mem[p].b32.s1` (the `LLIST_link` / successor-pointer field).
 ///
 /// # Safety
@@ -296,14 +288,6 @@ pub(crate) fn set_mem_b32s0(p: i32, v: i32) {
 pub(crate) fn mem_b32s1(p: i32) -> i32 {
     // SAFETY: union projection; the `Vec` index is bounds-checked.
     crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b32.s1 })
-}
-
-/// Write `v` into `mem[p].b32.s1`.
-#[inline]
-pub(crate) fn set_mem_b32s1(p: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.mem.data[p as usize].b32.s1 = v;
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -329,22 +313,8 @@ pub(crate) fn hi_mem_min() -> i32 {
 }
 
 #[inline]
-pub(crate) fn set_hi_mem_min(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.mem.hi_mem_min = v;
-    });
-}
-
-#[inline]
 pub(crate) fn avail() -> i32 {
     crate::state::with_state(|s| s.mem.avail)
-}
-
-#[inline]
-pub(crate) fn set_avail(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.mem.avail = v;
-    });
 }
 
 #[inline]
@@ -353,22 +323,8 @@ pub(crate) fn mem_end() -> i32 {
 }
 
 #[inline]
-pub(crate) fn set_mem_end(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.mem.mem_end = v;
-    });
-}
-
-#[inline]
 pub(crate) fn rover() -> i32 {
     crate::state::with_state(|s| s.mem.rover)
-}
-
-#[inline]
-pub(crate) fn set_rover(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.mem.rover = v;
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -474,40 +430,13 @@ pub(crate) fn mem_b16s0(p: i32) -> u16 {
     // SAFETY: union projection; the `Vec` index is bounds-checked.
     crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s0 })
 }
-/// Write `v` into `mem[p].b16.s0`.
-#[inline]
-pub(crate) fn set_mem_b16s0(p: i32, v: u16) {
-    crate::state::with_state_mut(|s| {
-        s.mem.data[p as usize].b16.s0 = v;
-    });
-}
 
-/// Write `v` into `mem[p].b16.s1`.
-#[inline]
-pub(crate) fn set_mem_b16s1(p: i32, v: u16) {
-    crate::state::with_state_mut(|s| {
-        s.mem.data[p as usize].b16.s1 = v;
-    });
-}
 /// Read the `gr` (f64) field of `mem[p]`.
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn mem_gr(p: i32) -> f64 {
     // SAFETY: union projection; the `Vec` index is bounds-checked.
     crate::state::with_state(|s| unsafe { s.mem.data[p as usize].gr })
-}
-
-/// Copy the full MemoryWord at `mem[p]`.
-#[inline]
-pub(crate) fn mem_word(p: i32) -> crate::mem_types::MemoryWord {
-    crate::state::with_state(|s| s.mem.data[p as usize])
-}
-/// Write a full MemoryWord to `mem[p]`.
-#[inline]
-pub(crate) fn set_mem_word(p: i32, w: crate::mem_types::MemoryWord) {
-    crate::state::with_state_mut(|s| {
-        s.mem.data[p as usize] = w;
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -636,13 +565,6 @@ pub(crate) fn in_open() -> i32 {
 pub(crate) fn pseudo_files() -> i32 {
     crate::state::with_state(|s| s.input.pseudo_files)
 }
-/// Sets `pseudo_files`.
-#[inline]
-pub(crate) fn set_pseudo_files(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.pseudo_files = v;
-    });
-}
 
 /// Returns non-zero when file:line-style error messages are active.
 #[inline]
@@ -691,20 +613,10 @@ pub(crate) fn set_hash_s1(p: i32, v: i32) {
 pub(crate) fn prim_s0(p: i32) -> i32 {
     crate::state::with_state(|s| s.eqtb.prim[p as usize].s0)
 }
-/// Write `prim[p].s0 = v`.
-#[inline]
-pub(crate) fn set_prim_s0(p: i32, v: i32) {
-    crate::state::with_state_mut(|s| s.eqtb.prim[p as usize].s0 = v);
-}
 /// Read `prim[p].s1` (the "text" half of a primitive-table entry).
 #[inline]
 pub(crate) fn prim_s1(p: i32) -> i32 {
     crate::state::with_state(|s| s.eqtb.prim[p as usize].s1)
-}
-/// Write `prim[p].s1 = v`.
-#[inline]
-pub(crate) fn set_prim_s1(p: i32, v: i32) {
-    crate::state::with_state_mut(|s| s.eqtb.prim[p as usize].s1 = v);
 }
 
 /// Returns `eqtb_top`.
@@ -741,21 +653,9 @@ pub(crate) fn hash_high() -> i32 {
     crate::state::with_state(|state| state.eqtb.hash_high)
 }
 #[inline]
-pub(crate) fn set_hash_high(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.eqtb.hash_high = v;
-    });
-}
-#[inline]
 pub(crate) fn set_no_new_control_sequence(v: bool) {
     crate::state::with_state_mut(|state| {
         state.eqtb.no_new_control_sequence = v;
-    });
-}
-#[inline]
-pub(crate) fn set_prim_used(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.eqtb.prim_used = v;
     });
 }
 
@@ -847,14 +747,6 @@ pub(crate) fn write_file(i: usize) -> usize {
 #[inline]
 pub(crate) fn write_open(i: usize) -> bool {
     crate::state::with_state(|s| s.shipout.write_open[i])
-}
-
-/// Sets `write_open[i]` to `v`.
-#[inline]
-pub(crate) fn set_write_open(i: usize, v: bool) {
-    crate::state::with_state_mut(|s| {
-        s.shipout.write_open[i] = v;
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -981,20 +873,8 @@ pub(crate) fn two_to_the(k: usize) -> i32 {
     crate::state::with_state(|state| state.errors.two_to_the[k])
 }
 #[inline]
-pub(crate) fn set_two_to_the(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.two_to_the[k] = v;
-    });
-}
-#[inline]
 pub(crate) fn spec_log(k: usize) -> i32 {
     crate::state::with_state(|state| state.errors.spec_log[k])
-}
-#[inline]
-pub(crate) fn set_spec_log(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.spec_log[k] = v;
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1019,24 +899,6 @@ pub(crate) fn history() -> i32 {
 pub(crate) fn set_history(v: i32) {
     crate::state::with_state_mut(|state| {
         state.errors.history = v;
-    });
-}
-#[inline]
-pub(crate) fn set_error_count(v: i8) {
-    crate::state::with_state_mut(|state| {
-        state.errors.error_count = v;
-    });
-}
-#[inline]
-pub(crate) fn set_use_err_help(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.errors.use_err_help = v;
-    });
-}
-#[inline]
-pub(crate) fn set_long_help_seen(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.errors.long_help_seen = v;
     });
 }
 #[inline]
@@ -1136,12 +998,6 @@ pub(crate) fn set_cur_tok(v: i32) {
     }
 }
 #[inline]
-pub(crate) fn set_after_token(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.after_token = v;
-    });
-}
-#[inline]
 pub(crate) fn set_align_state(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.align_state = v;
@@ -1171,12 +1027,6 @@ pub(crate) fn set_name_in_progress(v: bool) {
         state.scanner.name_in_progress = v;
     });
 }
-#[inline]
-pub(crate) fn set_stop_at_space(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.stop_at_space = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // save_stack / save_ptr / cur_level / cur_group
@@ -1187,18 +1037,6 @@ pub(crate) fn save_ptr() -> i32 {
     crate::state::with_state(|state| state.save_stack.save_ptr)
 }
 #[inline]
-pub(crate) fn set_save_ptr(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.save_stack.save_ptr = v;
-    });
-}
-#[inline]
-pub(crate) fn set_max_save_stack(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.save_stack.max_save_stack = v;
-    });
-}
-#[inline]
 pub(crate) fn save_size() -> i32 {
     unsafe { raw::save_size }
 }
@@ -1206,44 +1044,10 @@ pub(crate) fn save_size() -> i32 {
 pub(crate) fn cur_level() -> u16 {
     crate::state::with_state(|state| state.save_stack.cur_level)
 }
-#[inline]
-pub(crate) fn set_cur_level(v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.save_stack.cur_level = v;
-    });
-}
-#[inline]
-pub(crate) fn cur_group() -> u8 {
-    crate::state::with_state(|state| state.save_stack.cur_group)
-}
-#[inline]
-pub(crate) fn set_cur_group(v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.save_stack.cur_group = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_boundary(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.save_stack.cur_boundary = v;
-    });
-}
-/// Write `XEQ_LEVEL(p) = v`.
-#[inline]
-pub(crate) fn set_xeq_level(p: i32, v: u16) {
-    crate::state::with_state_mut(|s| s.eqtb.xeq_level[(p - 7_826_729) as usize] = v);
-}
 
 // ---------------------------------------------------------------------------
 // read_open / read_file (for \read stream management)
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn set_read_open_entry(n: usize, v: u8) {
-    crate::state::with_state_mut(|s| {
-        s.input.read_open[n] = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // font_name
@@ -1567,102 +1371,12 @@ pub(crate) fn set_exten_base_entry(f: i32, v: i32) {
 }
 
 #[inline]
-pub(crate) fn set_is_in_csname(v: bool) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.is_in_csname = v;
-    });
-}
-
-// ---------------------------------------------------------------------------
-// cur_val1 / radix
-// ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn set_radix(v: u8) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.radix = v;
-    });
-}
-
-// ---------------------------------------------------------------------------
-// page builder / last-node / output_active / random_seed / pdf positions
-// ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn set_dead_cycles(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.dead_cycles = v;
-    });
-}
-#[inline]
-pub(crate) fn set_last_badness(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.last_badness = v;
-    });
-}
-#[inline]
-pub(crate) fn set_page_tail(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.page_tail = v;
-    });
-}
-pub(crate) fn set_page_contents(v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.page_contents = v;
-    });
-}
-#[inline]
-pub(crate) fn set_page_so_far(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.page_so_far[k] = v;
-    });
-}
-#[inline]
 pub(crate) fn last_glue() -> i32 {
     crate::state::with_state(|state| state.shipout.last_glue)
 }
 #[inline]
-pub(crate) fn set_last_glue(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.last_glue = v;
-    });
-}
-#[inline]
 pub(crate) fn disc_ptr(k: usize) -> i32 {
     crate::state::with_state(|s| s.scanner.disc_ptr[k])
-}
-#[inline]
-pub(crate) fn set_disc_ptr(k: usize, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.disc_ptr[k] = v;
-    });
-}
-#[inline]
-pub(crate) fn set_last_penalty(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.last_penalty = v;
-    });
-}
-#[inline]
-pub(crate) fn set_last_kern(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.last_kern = v;
-    });
-}
-#[inline]
-pub(crate) fn set_last_node_type(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.last_node_type = v;
-    });
-}
-pub(crate) fn set_insert_penalties(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.insert_penalties = v;
-    });
-}
-#[inline]
-pub(crate) fn set_output_active(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.output_active = v;
-    });
 }
 #[inline]
 pub(crate) fn random_seed() -> i32 {
@@ -1704,29 +1418,10 @@ pub(crate) fn set_microseconds(v: i32) {
 // mag_set
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_mag_set(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.mag_set = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // semantic nest (nest / nest_ptr / max_nest_stack / nest_size / cur_list)
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_nest_ptr(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.nest_ptr = v;
-    });
-}
-#[inline]
-pub(crate) fn set_max_nest_stack(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.max_nest_stack = v;
-    });
-}
 #[inline]
 pub(crate) fn nest_size() -> i32 {
     unsafe { raw::nest_size }
@@ -1878,14 +1573,6 @@ pub(crate) fn cur_mark(k: usize) -> i32 {
     crate::state::with_state(|s| s.scanner.cur_mark[k])
 }
 
-/// Sets `cur_mark[k]`.
-#[inline]
-pub(crate) fn set_cur_mark(k: usize, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_mark[k] = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // input_stack / input_ptr / base_ptr
 // ---------------------------------------------------------------------------
@@ -1973,14 +1660,6 @@ pub(crate) fn set_cond_ptr(v: i32) {
     });
 }
 
-/// Sets `if_limit`.
-#[inline]
-pub(crate) fn set_if_limit(v: u8) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.if_limit = v;
-    });
-}
-
 /// Returns `cur_if` — current \if type (xetex-xetexd.h:539; small_number = i16).
 #[inline]
 pub(crate) fn cur_if() -> i16 {
@@ -2025,19 +1704,6 @@ pub(crate) fn set_sa_root(i: usize, v: i32) {
     });
 }
 
-#[inline]
-pub(crate) fn set_sa_chain(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.sa_chain = v;
-    });
-}
-#[inline]
-pub(crate) fn set_sa_level(v: u16) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.sa_level = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // cur_ptr / sa_null
 // ---------------------------------------------------------------------------
@@ -2057,13 +1723,6 @@ pub(crate) fn set_cur_ptr(v: i32) {
 // ---------------------------------------------------------------------------
 // shown_mode
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn set_shown_mode(v: i16) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.shown_mode = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // max_reg_num / max_reg_help_line
@@ -2264,18 +1923,6 @@ pub(crate) fn set_cur_input_limit(v: i32) {
 pub(crate) fn expand_depth() -> i32 {
     unsafe { raw::expand_depth }
 }
-#[inline]
-pub(crate) fn set_expand_depth_count(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.expand_depth_count = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_val_level(v: u8) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_val_level = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // scanner_status / warning_index / def_ref
@@ -2291,13 +1938,6 @@ pub(crate) fn set_scanner_status(v: u8) {
 pub(crate) fn set_warning_index(v: i32) {
     crate::state::with_state_mut(|s| {
         s.scanner.warning_index = v;
-    });
-}
-
-#[inline]
-pub(crate) fn set_deletions_allowed(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.errors.deletions_allowed = v;
     });
 }
 
@@ -2454,26 +2094,6 @@ pub(crate) fn set_rt_hit(v: bool) {
     }
 }
 #[inline]
-pub(crate) fn set_native_text(v: *mut u16) {
-    crate::state::with_state_mut(|s| {
-        if v.is_null() {
-            s.scanner.native_text.clear();
-        } else {
-            let len = s.scanner.native_text_size as usize;
-            s.scanner.native_text.resize(len, 0);
-            unsafe {
-                std::ptr::copy_nonoverlapping(v, s.scanner.native_text.as_mut_ptr(), len);
-            }
-        }
-    });
-}
-#[inline]
-pub(crate) fn set_native_text_size(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.native_text_size = v;
-    });
-}
-#[inline]
 pub(crate) fn bchar() -> i32 {
     unsafe { raw::bchar }
 }
@@ -2544,12 +2164,6 @@ pub(crate) fn max_hyph_char() -> i32 {
     crate::state::with_state(|state| state.hyph.max_hyph_char)
 }
 #[inline]
-pub(crate) fn set_max_hyph_char(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.max_hyph_char = v;
-    });
-}
-#[inline]
 pub(crate) fn set_trie_c_entry(k: i32, v: u16) {
     crate::state::with_state_mut(|state| {
         state.hyph.trie_c[k as usize] = v;
@@ -2582,12 +2196,6 @@ pub(crate) fn trie_not_ready() -> bool {
     crate::state::with_state(|state| state.hyph.trie_not_ready)
 }
 #[inline]
-pub(crate) fn set_trie_not_ready(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_not_ready = v;
-    });
-}
-#[inline]
 pub(crate) fn hyph_start() -> i32 {
     crate::state::with_state(|state| state.hyph.hyph_start)
 }
@@ -2602,25 +2210,8 @@ pub(crate) fn trie_used_entry(k: usize) -> u16 {
     crate::state::with_state(|state| state.hyph.trie_used[k])
 }
 #[inline]
-pub(crate) fn set_trie_used_entry(k: usize, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_used[k] = v;
-    });
-}
-#[inline]
 pub(crate) fn trie_op_ptr() -> i32 {
     crate::state::with_state(|state| state.hyph.trie_op_ptr)
-}
-#[inline]
-pub(crate) fn set_trie_op_ptr(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_op_ptr = v;
-    });
-}
-pub(crate) fn set_max_op_used(v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.max_op_used = v;
-    });
 }
 #[inline]
 pub(crate) fn hyph_word_entry(k: i32) -> i32 {
@@ -2635,32 +2226,8 @@ pub(crate) fn hyph_link_entry(k: i32) -> u16 {
     crate::state::with_state(|state| state.hyph.hyph_link[k as usize])
 }
 #[inline]
-pub(crate) fn set_hyph_word_entry(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyph_word[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn set_hyph_list_entry(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyph_list[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn set_hyph_link_entry(k: i32, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyph_link[k as usize] = v;
-    });
-}
-#[inline]
 pub(crate) fn hyph_count() -> i32 {
     crate::state::with_state(|state| state.hyph.hyph_count)
-}
-#[inline]
-pub(crate) fn set_hyph_count(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyph_count = v;
-    });
 }
 #[inline]
 pub(crate) fn hyph_size() -> i32 {
@@ -2683,100 +2250,13 @@ pub(crate) fn set_hyph_next(v: i32) {
 // cur_order
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_cur_order(v: u8) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_order = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // alignment state
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_cur_align(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_align = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_span(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_span = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_loop(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_loop = v;
-    });
-}
-#[inline]
-pub(crate) fn set_align_ptr(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.align_ptr = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_head(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_head = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_tail_a(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_tail = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_pre_head(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_pre_head = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_pre_tail(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_pre_tail = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // hpack adjust-tail / total_stretch / total_shrink
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn set_adjust_tail(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.adjust_tail = v;
-    });
-}
-#[inline]
-pub(crate) fn set_pre_adjust_tail(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.pre_adjust_tail = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_f(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_f = v;
-    });
-}
-#[inline]
-pub(crate) fn set_pack_begin_line(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.pack_begin_line = v;
-    });
-}
-#[inline]
-pub(crate) fn set_set_box_allowed(v: bool) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.set_box_allowed = v;
-    });
-}
 
 /// Returns `cur_list.mode_line` (the source line where the current mode started).
 #[inline]
@@ -2792,24 +2272,6 @@ pub(crate) fn cur_list_mode_line() -> i32 {
 // LR_ptr / LR_problems / cur_dir
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_lr_ptr(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.LR_ptr = v;
-    });
-}
-#[inline]
-pub(crate) fn set_lr_problems(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.LR_problems = v;
-    });
-}
-#[inline]
-pub(crate) fn set_cur_dir(v: i16) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_dir = v;
-    });
-}
 // ---------------------------------------------------------------------------
 // force_eof (xetex-ini.c:159 / xetex-xetexd.h:524)
 // ---------------------------------------------------------------------------
@@ -2830,39 +2292,6 @@ pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// Shipout / DVI output globals (xetex-xetexd.h:592–600, 694–697, 693)
-// ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn set_null_character(v: crate::mem_types::B16x4) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.null_character = v;
-    });
-}
-#[inline]
-pub(crate) fn set_total_pages(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.total_pages = v);
-}
-#[inline]
-pub(crate) fn set_max_v(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.max_v = v);
-}
-#[inline]
-pub(crate) fn set_max_h(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.max_h = v);
-}
-#[inline]
-pub(crate) fn set_max_push(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.max_push = v);
-}
-#[inline]
-pub(crate) fn set_last_bop(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.last_bop = v);
-}
-#[inline]
-pub(crate) fn set_doing_leaders(v: bool) {
-    crate::state::with_state_mut(|s| s.shipout.doing_leaders = v);
-}
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn rule_dp() -> i32 {
@@ -2878,16 +2307,6 @@ pub(crate) fn set_write_loc(v: i32) {
 }
 
 // ---------------------------------------------------------------------------
-// Missing setter for doing_special (raw already declared)
-// ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn set_doing_special(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.doing_special = v;
-    });
-}
-
-// ---------------------------------------------------------------------------
 // format_ident / edit_name_start / empty / sa_null per-field setters
 // ---------------------------------------------------------------------------
 
@@ -2899,36 +2318,5 @@ pub(crate) fn format_ident() -> i32 {
 pub(crate) fn set_format_ident(v: i32) {
     crate::state::with_state_mut(|state| {
         state.strings.format_ident = v;
-    });
-}
-
-#[inline]
-pub(crate) fn set_edit_name_start(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.strings.edit_name_start = v;
-    });
-}
-#[inline]
-pub(crate) fn set_empty_b32s0(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.empty.s0 = v;
-    });
-}
-#[inline]
-pub(crate) fn set_empty_b32s1(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.empty.s1 = v;
-    });
-}
-#[inline]
-pub(crate) fn set_sa_null_b32s0(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.sa_null.b32.s0 = v;
-    });
-}
-#[inline]
-pub(crate) fn set_sa_null_b32s1(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.sa_null.b32.s1 = v;
     });
 }

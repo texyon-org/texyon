@@ -11,7 +11,7 @@ use crate::globals::{
     cur_list_mode, cur_tok, init_pool_ptr, name_of_file, pool_size, set_cur_cs, set_cur_list_mode,
     set_temp_ptr, temp_ptr,
 };
-use crate::node::{EdgeNode, MovementNode, NodePtr};
+use crate::node::{EdgeNode, MovementNode, NodePtr, WhatsitNode};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -28,30 +28,6 @@ extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
 
     static output_file_extension: *const libc::c_char;
-}
-
-fn set_output_file_name(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.output_file_name = v);
-}
-
-fn set_dvi_limit(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.dvi_limit = v);
-}
-
-fn set_dvi_ptr(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.dvi_ptr = v);
-}
-
-fn set_dvi_offset(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.dvi_offset = v);
-}
-
-fn set_dvi_gone(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.dvi_gone = v);
-}
-
-fn set_cur_s(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.cur_s = v);
 }
 
 // xetex-shipout.c:11–12
@@ -510,26 +486,22 @@ fn dvi_font_select_bytes(f: i32) -> Vec<u8> {
 
 // translated from xetex-shipout.c:48 (initialize_shipout_variables)
 pub fn initialize_shipout_variables() {
-    set_output_file_name(0);
     crate::state::with_state_mut(|s| {
+        s.shipout.output_file_name = 0;
         s.shipout.dvi_buf = vec![0u8; (DVI_BUF_SIZE + 1) as usize];
-    });
-    set_dvi_limit(DVI_BUF_SIZE);
-    set_dvi_ptr(0);
-    set_dvi_offset(0);
-    set_dvi_gone(0);
-    crate::state::with_state_mut(|s| {
+        s.shipout.dvi_limit = DVI_BUF_SIZE;
+        s.shipout.dvi_ptr = 0;
+        s.shipout.dvi_offset = 0;
+        s.shipout.dvi_gone = 0;
         s.shipout.down_ptr = TEX_NULL;
         s.shipout.right_ptr = TEX_NULL;
+        s.shipout.cur_s = -1;
     });
-    set_cur_s(-1);
 }
 
 // translated from xetex-shipout.c:63 (deinitialize_shipout_variables)
 pub fn deinitialize_shipout_variables() {
-    crate::state::with_state_mut(|s| {
-        s.shipout.dvi_buf = Vec::new();
-    });
+    crate::state::with_state_mut(|s| s.shipout.dvi_buf = Vec::new());
 }
 
 // translated from xetex-shipout.c:2306 (dvi_swap)
@@ -1448,40 +1420,63 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                         st.shipout.rule_wd = st.mem.b32s1(p + 1);
                         finish_hlist_rule_in(st, this_box, base_line, p)?;
                     }
-                    WHATSIT_NODE => match st.mem.b16s0(p) {
-                        NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
-                            if st.shipout.cur_h != st.shipout.dvi_h {
-                                let delta = st.shipout.cur_h - st.shipout.dvi_h;
-                                emit_movement(&mut st.mem, &mut st.shipout, delta, RIGHT1)?;
-                                st.shipout.dvi_h = st.shipout.cur_h;
-                            }
-                            if st.shipout.cur_v != st.shipout.dvi_v {
-                                let delta = st.shipout.cur_v - st.shipout.dvi_v;
-                                emit_movement(&mut st.mem, &mut st.shipout, delta, DOWN1)?;
-                                st.shipout.dvi_v = st.shipout.cur_v;
-                            }
-                            let f = st.mem.b16s2(p + 4) as i32;
-                            ensure_dvi_font_in(st, f)?;
+                    WHATSIT_NODE => {
+                        let whatsit = st
+                            .mem
+                            .classify_whatsit(MemIdx::new(p))
+                            .ok()
+                            .flatten()
+                            .expect("expected whatsit node");
+                        let subtype = whatsit.subtype(&st.mem);
+                        match subtype {
+                            NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
+                                if st.shipout.cur_h != st.shipout.dvi_h {
+                                    let delta = st.shipout.cur_h - st.shipout.dvi_h;
+                                    emit_movement(&mut st.mem, &mut st.shipout, delta, RIGHT1)?;
+                                    st.shipout.dvi_h = st.shipout.cur_h;
+                                }
+                                if st.shipout.cur_v != st.shipout.dvi_v {
+                                    let delta = st.shipout.cur_v - st.shipout.dvi_v;
+                                    emit_movement(&mut st.mem, &mut st.shipout, delta, DOWN1)?;
+                                    st.shipout.dvi_v = st.shipout.cur_v;
+                                }
+                                let f = whatsit.native_font(&st.mem).0;
+                                ensure_dvi_font_in(st, f)?;
 
-                            if st.mem.b16s0(p) == GLYPH_NODE {
-                                emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
-                                emit_dvi_four(&mut st.shipout, st.mem.b32s1(p + 1))?;
-                                emit_dvi_two(&mut st.shipout, 1)?;
-                                emit_dvi_four(&mut st.shipout, 0)?;
-                                emit_dvi_four(&mut st.shipout, 0)?;
-                                emit_dvi_two(&mut st.shipout, st.mem.b16s1(p + 4))?;
-                                st.shipout.cur_h += st.mem.b32s1(p + 1);
-                            } else {
-                                if st.mem.b16s0(p) == NATIVE_WORD_NODE_AT {
-                                    if st.mem.b16s1(p + 4) > 0 || !st.mem.ptr(p + 5).is_null() {
-                                        emit_dvi_out(&mut st.shipout, SET_TEXT_AND_GLYPHS)?;
-                                        let len = st.mem.b16s1(p + 4) as i32;
-                                        emit_dvi_two(&mut st.shipout, len as u16)?;
-                                        let text = st.mem.as_u16_ptr(p + 6);
-                                        for k in 0..len {
-                                            emit_dvi_two(&mut st.shipout, *text.add(k as usize))?;
+                                if subtype == GLYPH_NODE {
+                                    emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
+                                    emit_dvi_four(&mut st.shipout, whatsit.width(&st.mem).0)?;
+                                    emit_dvi_two(&mut st.shipout, 1)?;
+                                    emit_dvi_four(&mut st.shipout, 0)?;
+                                    emit_dvi_four(&mut st.shipout, 0)?;
+                                    emit_dvi_two(&mut st.shipout, whatsit.native_glyph(&st.mem))?;
+                                    st.shipout.cur_h += whatsit.width(&st.mem).0;
+                                } else {
+                                    if subtype == NATIVE_WORD_NODE_AT {
+                                        if whatsit.native_length(&st.mem) > 0
+                                            || !whatsit.native_glyph_info_ptr(&st.mem).is_null()
+                                        {
+                                            emit_dvi_out(&mut st.shipout, SET_TEXT_AND_GLYPHS)?;
+                                            let len = whatsit.native_length(&st.mem) as i32;
+                                            emit_dvi_two(&mut st.shipout, len as u16)?;
+                                            let text = whatsit.native_text_ptr(&st.mem);
+                                            for k in 0..len {
+                                                emit_dvi_two(
+                                                    &mut st.shipout,
+                                                    *text.add(k as usize),
+                                                )?;
+                                            }
+                                            let len = make_xdv_glyph_array_data_in(st, whatsit);
+                                            for k in 0..len {
+                                                emit_dvi_out(
+                                                    &mut st.shipout,
+                                                    st.fonts.xdv_buffer[k as usize],
+                                                )?;
+                                            }
                                         }
-                                        let len = make_xdv_glyph_array_data_in(st, p);
+                                    } else if !whatsit.native_glyph_info_ptr(&st.mem).is_null() {
+                                        emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
+                                        let len = make_xdv_glyph_array_data_in(st, whatsit);
                                         for k in 0..len {
                                             emit_dvi_out(
                                                 &mut st.shipout,
@@ -1489,38 +1484,30 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                             )?;
                                         }
                                     }
-                                } else if !st.mem.ptr(p + 5).is_null() {
-                                    emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
-                                    let len = make_xdv_glyph_array_data_in(st, p);
-                                    for k in 0..len {
-                                        emit_dvi_out(
-                                            &mut st.shipout,
-                                            st.fonts.xdv_buffer[k as usize],
-                                        )?;
-                                    }
+                                    st.shipout.cur_h += whatsit.width(&st.mem).0;
                                 }
-                                st.shipout.cur_h += st.mem.b32s1(p + 1);
+                                st.shipout.dvi_h = st.shipout.cur_h;
                             }
-                            st.shipout.dvi_h = st.shipout.cur_h;
+                            PIC_NODE | PDF_NODE => {
+                                let save_h = st.shipout.dvi_h;
+                                let save_v = st.shipout.dvi_v;
+                                st.shipout.cur_v = base_line;
+                                let edge = st.shipout.cur_h + whatsit.width(&st.mem).0;
+                                pic_out_in(st, p)?;
+                                st.shipout.dvi_h = save_h;
+                                st.shipout.dvi_v = save_v;
+                                st.shipout.cur_h = edge;
+                                st.shipout.cur_v = base_line;
+                            }
+                            PDF_SAVE_POS_NODE => {
+                                st.shipout.pdf_last_x_pos = st.shipout.cur_h + ONE_INCH_LESS_ONE;
+                                st.shipout.pdf_last_y_pos = st.shipout.cur_page_height
+                                    - st.shipout.cur_v
+                                    - ONE_INCH_LESS_ONE;
+                            }
+                            _ => out_what_in(st, p)?,
                         }
-                        PIC_NODE | PDF_NODE => {
-                            let save_h = st.shipout.dvi_h;
-                            let save_v = st.shipout.dvi_v;
-                            st.shipout.cur_v = base_line;
-                            let edge = st.shipout.cur_h + st.mem.b32s1(p + 1);
-                            pic_out_in(st, p)?;
-                            st.shipout.dvi_h = save_h;
-                            st.shipout.dvi_v = save_v;
-                            st.shipout.cur_h = edge;
-                            st.shipout.cur_v = base_line;
-                        }
-                        PDF_SAVE_POS_NODE => {
-                            st.shipout.pdf_last_x_pos = st.shipout.cur_h + ONE_INCH_LESS_ONE;
-                            st.shipout.pdf_last_y_pos =
-                                st.shipout.cur_page_height - st.shipout.cur_v - ONE_INCH_LESS_ONE;
-                        }
-                        _ => out_what_in(st, p)?,
-                    },
+                    }
                     GLUE_NODE => {
                         output_hlist_glue_in(
                             st,
@@ -2223,20 +2210,23 @@ struct FixedPoint {
     y: i32,
 }
 
-unsafe fn make_xdv_glyph_array_data_in(st: &mut crate::state::EngineState, p: i32) -> i32 {
-    let glyph_count = st.mem.b16s0(p + 4) as usize;
+unsafe fn make_xdv_glyph_array_data_in(
+    st: &mut crate::state::EngineState,
+    p: NodePtr<WhatsitNode>,
+) -> i32 {
+    let glyph_count = p.native_glyph_count(&st.mem) as usize;
     let needed = glyph_count * NATIVE_GLYPH_INFO_SIZE + 8;
     if st.fonts.xdv_buffer.len() < needed {
         st.fonts.xdv_buffer.resize(needed, 0);
     }
 
-    let glyph_info = st.mem.ptr(p + 5) as *const u8;
+    let glyph_info = p.native_glyph_info_ptr(&st.mem) as *const u8;
     let locations = glyph_info as *const FixedPoint;
     let glyph_ids = glyph_info.add(glyph_count * 8) as *const u16;
 
     let xdv_ptr = st.fonts.xdv_buffer.as_mut_ptr();
     let mut cp = xdv_ptr;
-    let width = st.mem.b32s1(p + 1) as u32;
+    let width = p.width(&st.mem).0 as u32;
 
     *cp = (width >> 24) as u8;
     cp = cp.add(1);

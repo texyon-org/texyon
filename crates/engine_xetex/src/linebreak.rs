@@ -3636,16 +3636,21 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
             (s, 0)
         }
     } else if st.mem.b16s1(st.linebreak.ha) as i32 == LIGATURE_NODE {
-        if st.mem.b16s1(st.linebreak.ha + 1) as i32 != st.hyph.hf {
+        let ha_lig = st
+            .mem
+            .classify_ligature(MemIdx::new(st.linebreak.ha))
+            .expect("valid ligature node type")
+            .expect("ligature branch");
+        if ha_lig.font(&st.mem).0 != st.hyph.hf {
             st.hyph.hu[0] = st.hyph.max_hyph_char;
             st.hyph.init_lig = false;
             st.hyph.init_list = TEX_NULL;
             (st.linebreak.ha, 0)
         } else {
-            st.hyph.init_list = st.mem.b32s1(st.linebreak.ha + 1);
+            st.hyph.init_list = ha_lig.lig_ptr(&st.mem).0;
             st.hyph.init_lig = true;
-            st.hyph.init_lft = st.mem.b16s0(st.linebreak.ha) > 1;
-            st.hyph.hu[0] = st.mem.b16s0(st.linebreak.ha + 1) as i32;
+            st.hyph.init_lft = ha_lig.subtype(&st.mem) > 1;
+            st.hyph.hu[0] = ha_lig.character(&st.mem) as i32;
             if st.hyph.init_list == TEX_NULL && st.hyph.init_lft {
                 st.hyph.hu[0] = st.hyph.max_hyph_char;
                 st.hyph.init_lig = false;
@@ -3659,7 +3664,13 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
         }
     } else if !crate::mem::is_char_node(&st.mem, r)
         && st.mem.b16s1(r) as i32 == LIGATURE_NODE
-        && st.mem.b16s0(r) > 1
+        && st
+            .mem
+            .classify_ligature(MemIdx::new(r))
+            .expect("valid ligature node type")
+            .expect("ligature branch")
+            .subtype(&st.mem)
+            > 1
     {
         st.hyph.hu[0] = st.hyph.max_hyph_char;
         st.hyph.init_lig = false;
@@ -3700,12 +3711,11 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
 
         if st.hyph.hyphen_passed > 0 {
             loop {
-                let r = crate::mem::get_node(&mut st.mem, SMALL_NODE_SIZE);
-                if r == crate::mem::ALLOC_FAILED {
-                    return Err(HyphenateAbort::MainMemoryOverflow);
-                }
-                st.mem.set_b32s1(r, st.mem.b32s1(HOLD_HEAD));
-                st.mem.set_b16s1(r, DISC_NODE as u16);
+                let r_node = NodePtr::<DiscNode>::alloc(&mut st.mem)
+                    .ok_or(HyphenateAbort::MainMemoryOverflow)?;
+                let r = r_node.idx().0;
+                let hold = st.mem.b32s1(HOLD_HEAD);
+                r_node.set_link(&mut st.mem, MemPtr::from_raw(hold));
                 let mut major_tail = r;
                 let mut r_count = 0;
                 while st.mem.b32s1(major_tail) > TEX_NULL {
@@ -3716,7 +3726,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                 let mut i = st.hyph.hyphen_passed;
                 st.hyph.hyf[i as usize] = 0;
                 let mut minor_tail = TEX_NULL;
-                st.mem.set_b32s0(r + 1, TEX_NULL);
+                r_node.set_pre_break(&mut st.mem, MemPtr::from_raw(TEX_NULL));
                 let hyf_node =
                     crate::main_control::new_character_in(st, st.hyph.hf, st.hyph.hyf_char as u16)
                         .map_err(HyphenateAbort::NewCharacter)?;
@@ -3744,7 +3754,8 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                         + 1;
                     if st.mem.b32s1(HOLD_HEAD) > TEX_NULL {
                         if minor_tail == TEX_NULL {
-                            st.mem.set_b32s0(r + 1, st.mem.b32s1(HOLD_HEAD));
+                            let hold = st.mem.b32s1(HOLD_HEAD);
+                            r_node.set_pre_break(&mut st.mem, MemPtr::from_raw(hold));
                         } else {
                             st.mem.set_b32s1(minor_tail, st.mem.b32s1(HOLD_HEAD));
                         }
@@ -3762,7 +3773,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                 }
 
                 minor_tail = TEX_NULL;
-                st.mem.set_b32s1(r + 1, TEX_NULL);
+                r_node.set_post_break(&mut st.mem, MemPtr::from_raw(TEX_NULL));
                 let mut c_loc = 0;
                 let mut c = 0;
                 if st.fonts.bchar_label_entry(st.hyph.hf) != NON_ADDRESS {
@@ -3791,7 +3802,8 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                         }
                         if st.mem.b32s1(HOLD_HEAD) > TEX_NULL {
                             if minor_tail == TEX_NULL {
-                                st.mem.set_b32s1(r + 1, st.mem.b32s1(HOLD_HEAD));
+                                let hold = st.mem.b32s1(HOLD_HEAD);
+                                r_node.set_post_break(&mut st.mem, MemPtr::from_raw(hold));
                             } else {
                                 st.mem.set_b32s1(minor_tail, st.mem.b32s1(HOLD_HEAD));
                             }
@@ -3826,13 +3838,14 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                 }
 
                 if r_count > 127 {
-                    st.mem.set_b32s1(s, st.mem.b32s1(r));
-                    st.mem.set_b32s1(r, TEX_NULL);
+                    let replacement = r_node.link(&st.mem);
+                    st.mem.set_b32s1(s, replacement.0);
+                    r_node.set_link(&mut st.mem, MemPtr::from_raw(TEX_NULL));
                     crate::packaging::flush_node_list(&mut st.mem, r)
                         .map_err(HyphenateAbort::Confusion)?;
                 } else {
                     st.mem.set_b32s1(s, r);
-                    st.mem.set_b16s0(r, r_count as u16);
+                    r_node.set_subtype(&mut st.mem, r_count as u16);
                 }
                 s = major_tail;
                 st.hyph.hyphen_passed = j - 1;

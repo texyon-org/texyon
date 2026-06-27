@@ -16,13 +16,6 @@ use crate::state::HyphState;
 // ---- moved verbatim from ini.rs (workstream 02) ----
 
 #[inline]
-pub(crate) unsafe fn set_trie_op_hash(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
-    })
-}
-
-#[inline]
 fn trie_op_hash_in(hyph: &HyphState, k: i32) -> i32 {
     hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize]
 }
