@@ -8,6 +8,32 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 231 — 2026-06-27 — Execution: initializer threading + typed node leaves
+
+**Type:** execution (workstream 01 / fused threading+typing). Large mechanical
+session with one consolidated documentation update; three subagents handled
+independent recon/implementation slices.
+
+**Code:** `initialize_more_variables_in` and
+`initialize_more_initex_variables_in` now initialize Rust-owned state directly
+under one borrow apiece; 100+ dead global setters/readers were removed.
+Shipout initialization now uses one borrow, and the native XDV whatsit branch
+classifies once to `NodePtr<WhatsitNode>` through
+`make_xdv_glyph_array_data_in`. Linebreak `goto_found` now carries typed
+ligature handles and allocates/updates discretionary nodes through
+`NodePtr<DiscNode>`.
+
+**Validation:** commit `db17878e`; `cargo fmt`; `cargo check` warnings **39**;
+dashboard **29/2/7/4** before and after commit; release rebuild; full corpus
+**637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1`/`1905.00148v1`. Metrics: `with_state` **518 → 415**;
+`unsafe fn` **281 → 278**.
+
+**Next:** continue draining bridge leaves before another `main_control_in`
+attempt. The remaining `tt_run_engine` initialization/cleanup islands are a
+large mechanical batch; string/hash/output wrappers and reachable
+main-control leaves are the other main veins.
+
 ## Idiom session 230 — 2026-06-26 — Execution: thread input encoding + small typed-node cleanups
 
 **Type:** execution (workstream 01 / fused threading+typing). Larger
