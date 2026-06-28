@@ -38,11 +38,6 @@ pub(crate) fn cur_length(strings: &StringsState) -> i32 {
     strings.pool_ptr - strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize]
 }
 
-#[inline]
-pub(crate) fn cur_length_global() -> i32 {
-    crate::state::with_state(|st| cur_length(&st.strings))
-}
-
 // translated from xetex-xetex0.c:2713 (id_lookup)
 pub fn id_lookup(
     eqtb: &mut EqtbState,

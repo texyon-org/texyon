@@ -934,6 +934,20 @@ pub unsafe extern "C" fn tt_run_engine(
     set_max_print_line(79);
     tre_expand_depth = 10_000;
 
+    // Allocate every Rust-owned per-run arena under a single borrow. All sizes
+    // (`*_size + 1`, matching the former `xmalloc_array` shapes) are precomputed
+    // from the `tre_*` locals so the borrow holds no `with_state`-bearing call.
+    // Allocated fresh each run; released by `tt_cleanup`; never reallocated
+    // during a run (overflow errors instead of growing). Zero-init replaces the
+    // former explicit `write_bytes(.., 0, ..)`.
+    let buf_words = (tre_buf_size as usize) + 1;
+    let nest_words = (tre_nest_size as usize) + 1;
+    let save_words = (tre_save_size as usize) + 1;
+    let input_file_words = (tre_max_in_open as usize) + 1;
+    let stack_words = (tre_stack_size as usize) + 1;
+    let in_open_words = (tre_max_in_open as usize) + 1;
+    let param_words = (tre_param_size as usize) + 1;
+    let hyph_words = (TRE_HYPH_SIZE as usize) + 1;
     crate::state::with_state_mut(|state| {
         state.eqtb.hash_extra = 600_000;
         state.strings.pool_size = TRE_POOL_SIZE;
@@ -941,119 +955,52 @@ pub unsafe extern "C" fn tt_run_engine(
         state.strings.max_strings = TRE_MAX_STRINGS;
         state.hyph.trie_size = TRE_TRIE_SIZE;
         state.hyph.hyph_size = TRE_HYPH_SIZE;
-    });
 
-    {
-        // Rust-owned input buffer (`buf_size + 1` words, matching the former
-        // `xmalloc_array` shape). Allocated fresh each run; released by
-        // `tt_cleanup`. Never reallocated during a run (overflow errors
-        // instead of growing). Zero-init replaces the former explicit
-        // `write_bytes(buffer, 0, buf_size)`.
-        let n = (tre_buf_size as usize) + 1;
-        crate::state::with_state_mut(|s| {
-            s.input.buffer = vec![0i32; n];
-        });
-    }
-    {
-        // Rust-owned semantic-nest stack (`nest_size + 1` records, matching the
-        // former `xmalloc_array` shape). Allocated fresh each run; released by
-        // `tt_cleanup`. Never reallocated during a run.
-        let n = (tre_nest_size as usize) + 1;
-        crate::state::with_state_mut(|s| {
-            s.input.nest = vec![
-                crate::mem_types::ListStateRecord {
-                    mode: 0,
-                    head: 0,
-                    tail: 0,
-                    e_tex_aux: 0,
-                    prev_graf: 0,
-                    mode_line: 0,
-                    aux: crate::mem_types::MemoryWord {
-                        b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
-                    },
-                };
-                n
-            ];
-        });
-    }
-    {
-        // Rust-owned save-stack arena (`save_size + 1` words, matching the
-        // former `xmalloc_array` shape). Allocated fresh each run; released by
-        // `tt_cleanup`. Never reallocated during a run.
-        let n = (tre_save_size as usize) + 1;
-        crate::state::with_state_mut(|s| {
-            s.save_stack.data = vec![
-                crate::mem_types::MemoryWord {
+        state.input.buffer = vec![0i32; buf_words];
+        state.input.nest = vec![
+            crate::mem_types::ListStateRecord {
+                mode: 0,
+                head: 0,
+                tail: 0,
+                e_tex_aux: 0,
+                prev_graf: 0,
+                mode_line: 0,
+                aux: crate::mem_types::MemoryWord {
                     b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
-                };
-                n
-            ];
-        });
-    }
-    {
-        // Rust-owned main input-file stack (`max_in_open + 1` handles, matching
-        // the former `xmalloc_array` shape). Allocated fresh each run; released
-        // by `tt_cleanup`. Never reallocated during a run.
-        let n = (tre_max_in_open as usize) + 1;
-        crate::state::with_state_mut(|s| {
-            s.input.input_file = vec![std::ptr::null_mut(); n];
-        });
-    }
-    {
-        // Rust-owned input stack (`stack_size + 1` records, matching the former
-        // `xmalloc_array` shape). Allocated fresh each run; released by
-        // `tt_cleanup`. Never reallocated during a run.
-        let n = (tre_stack_size as usize) + 1;
-        crate::state::with_state_mut(|s| {
-            s.input.input_stack = vec![
-                crate::globals::InputState {
-                    state: 0,
-                    index: 0,
-                    start: 0,
-                    loc: 0,
-                    limit: 0,
-                    name: 0,
-                    synctex_tag: 0,
-                };
-                n
-            ];
-        });
-    }
-    {
-        // Rust-owned input line/group stacks, each `max_in_open + 1` words
-        // (matching the former `xmalloc_array` shape). Allocated fresh each
-        // run; released by `tt_cleanup`. Never reallocated during a run.
-        let n = (tre_max_in_open as usize) + 1;
-        crate::state::with_state_mut(|s| {
-            s.input.line_stack = vec![0i32; n];
-            s.input.grp_stack = vec![0i32; n];
-            s.input.if_stack = vec![0i32; n];
-            s.input.source_filename_stack = vec![0i32; n];
-            s.input.full_source_filename_stack = vec![0i32; n];
-            s.input.eof_seen = vec![false; n];
-        });
-    }
-    {
-        // Rust-owned macro-parameter stack (`param_size + 1` words, matching
-        // the former `xmalloc_array` shape). Allocated fresh each run; released
-        // by `tt_cleanup`. Never reallocated during a run.
-        let n = (tre_param_size as usize) + 1;
-        crate::state::with_state_mut(|s| {
-            s.input.param_stack = vec![0i32; n];
-        });
-    }
-    {
-        // Rust-owned hyphenation-exception table (`hyph_size + 1` words,
-        // matching the former `xmalloc_array` shape). Allocated fresh each
-        // run; released by `tt_cleanup`. Serialized in format dump/undump
-        // through the normal accessors.
-        let n = (TRE_HYPH_SIZE as usize) + 1;
-        crate::state::with_state_mut(|s| {
-            s.hyph.hyph_word = vec![0i32; n];
-            s.hyph.hyph_list = vec![0i32; n];
-            s.hyph.hyph_link = vec![0u16; n];
-        });
-    }
+                },
+            };
+            nest_words
+        ];
+        state.save_stack.data = vec![
+            crate::mem_types::MemoryWord {
+                b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
+            };
+            save_words
+        ];
+        state.input.input_file = vec![std::ptr::null_mut(); input_file_words];
+        state.input.input_stack = vec![
+            crate::globals::InputState {
+                state: 0,
+                index: 0,
+                start: 0,
+                loc: 0,
+                limit: 0,
+                name: 0,
+                synctex_tag: 0,
+            };
+            stack_words
+        ];
+        state.input.line_stack = vec![0i32; in_open_words];
+        state.input.grp_stack = vec![0i32; in_open_words];
+        state.input.if_stack = vec![0i32; in_open_words];
+        state.input.source_filename_stack = vec![0i32; in_open_words];
+        state.input.full_source_filename_stack = vec![0i32; in_open_words];
+        state.input.eof_seen = vec![false; in_open_words];
+        state.input.param_stack = vec![0i32; param_words];
+        state.hyph.hyph_word = vec![0i32; hyph_words];
+        state.hyph.hyph_list = vec![0i32; hyph_words];
+        state.hyph.hyph_link = vec![0u16; hyph_words];
+    });
 
     if in_initex_mode() {
         // `xmalloc_array(MEM_TOP + 1)` allocated `MEM_TOP + 2` words; match it.
@@ -1065,8 +1012,7 @@ pub unsafe extern "C" fn tt_run_engine(
                 };
                 mem_words_init
             ];
-        });
-        crate::state::with_state_mut(|s| {
+
             s.eqtb.eqtb_top = EQTB_SIZE + s.eqtb.hash_extra;
             s.eqtb.hash_top = if s.eqtb.hash_extra == 0 {
                 HASH_TOP_UNDEFINED_CONTROL_SEQUENCE
@@ -1286,6 +1232,7 @@ pub unsafe extern "C" fn tt_run_engine(
         set_hyph_start(0);
 
         let font_check_len = (font_max() as usize) + 1;
+        let base_fmt_len = (font_max() as usize) + 1;
         crate::state::with_state_mut(|state| {
             state.fonts.font_layout_engine = vec![std::ptr::null_mut(); font_check_len];
             state.fonts.font_mapping = vec![std::ptr::null_mut(); font_check_len];
@@ -1311,9 +1258,7 @@ pub unsafe extern "C" fn tt_run_engine(
             state.fonts.font_bchar = vec![0i32; font_check_len];
             state.fonts.font_false_bchar = vec![0i32; font_check_len];
             state.fonts.font_glue = vec![0i32; font_check_len];
-        });
-        let base_fmt_len = (font_max() as usize) + 1;
-        crate::state::with_state_mut(|state| {
+
             state.fonts.hyphen_char = vec![0i32; base_fmt_len];
             state.fonts.skew_char = vec![0i32; base_fmt_len];
             state.fonts.char_base = vec![0i32; base_fmt_len];
@@ -1421,20 +1366,18 @@ pub unsafe fn tt_cleanup() {
         }
     }
 
-    // Release the Rust-owned save-stack arena (was a C `malloc`'d array).
+    // Release all Rust-owned arenas (were C `malloc`'d / format-loaded arrays)
+    // under a single borrow: the save-stack, the input nest/file/macro/buffer
+    // arrays, the hyph exception table, the scanner native_text scratch, the
+    // mem/eqtb/strings/fonts format arenas, and the hyphenation trie arrays.
     crate::state::with_state_mut(|s| {
         s.save_stack.data = Vec::new();
-    });
 
-    // Release the Rust-owned nest, input-file, input, macro-parameter, input
-    // line/group, and buffer arrays (were C `malloc`'d arrays).
-    crate::state::with_state_mut(|s| {
         if !s.input.name_of_input_file.is_null() {
             libc::free(s.input.name_of_input_file as *mut libc::c_void);
             s.input.name_of_input_file = std::ptr::null_mut();
         }
         s.input.abspath_of_input_file.0 = [0; 1024];
-
         s.input.nest = Vec::new();
         s.input.input_file = Vec::new();
         s.input.input_stack = Vec::new();
@@ -1448,77 +1391,64 @@ pub unsafe fn tt_cleanup() {
         s.input.buffer = Vec::new();
         s.input.name_of_file = Vec::new();
         s.input.name_of_file16 = Vec::new();
-    });
-    crate::state::with_state_mut(|s| {
+
         s.hyph.hyph_word = Vec::new();
         s.hyph.hyph_list = Vec::new();
         s.hyph.hyph_link = Vec::new();
-    });
 
-    // Clear scanner native_text state
-    crate::state::with_state_mut(|s| {
         s.scanner.native_text = Vec::new();
         s.scanner.native_text_size = 0;
         s.scanner.native_len = 0;
         s.scanner.save_native_len = 0;
-    });
 
-    // Free arrays allocated in load_fmt_file
-    crate::state::with_state_mut(|state| {
-        state.eqtb.data = Vec::new();
-        state.eqtb.hash = Vec::new();
-        state.mem.data = Vec::new();
-    });
-    crate::state::with_state_mut(|state| {
-        state.strings.str_start = Vec::new();
-        state.strings.str_pool = Vec::new();
-        state.fonts.font_check = Vec::new();
-        state.fonts.font_size = Vec::new();
-        state.fonts.font_dsize = Vec::new();
-        state.fonts.font_params = Vec::new();
-        state.fonts.font_name = Vec::new();
-        state.fonts.font_area = Vec::new();
-        state.fonts.font_bc = Vec::new();
-        state.fonts.font_ec = Vec::new();
-        state.fonts.bchar_label = Vec::new();
-        state.fonts.font_bchar = Vec::new();
-        state.fonts.font_false_bchar = Vec::new();
-        state.fonts.font_glue = Vec::new();
-        state.fonts.font_used = Vec::new();
-    });
+        s.eqtb.data = Vec::new();
+        s.eqtb.hash = Vec::new();
+        s.mem.data = Vec::new();
 
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_info = Vec::new();
-        state.fonts.font_layout_engine = Vec::new();
-        state.fonts.font_mapping = Vec::new();
-        state.fonts.font_flags = Vec::new();
-        state.fonts.font_letter_space = Vec::new();
-        state.fonts.hyphen_char = Vec::new();
-        state.fonts.skew_char = Vec::new();
-        state.fonts.char_base = Vec::new();
-        state.fonts.width_base = Vec::new();
-        state.fonts.height_base = Vec::new();
-        state.fonts.depth_base = Vec::new();
-        state.fonts.italic_base = Vec::new();
-        state.fonts.lig_kern_base = Vec::new();
-        state.fonts.kern_base = Vec::new();
-        state.fonts.exten_base = Vec::new();
-        state.fonts.param_base = Vec::new();
-        state.fonts.xdv_buffer = Vec::new();
-        state.fonts.mapped_text = Vec::new();
-        crate::globals::refresh_font_ffi_mirrors(&state.fonts);
-    });
+        s.strings.str_start = Vec::new();
+        s.strings.str_pool = Vec::new();
+        s.fonts.font_check = Vec::new();
+        s.fonts.font_size = Vec::new();
+        s.fonts.font_dsize = Vec::new();
+        s.fonts.font_params = Vec::new();
+        s.fonts.font_name = Vec::new();
+        s.fonts.font_area = Vec::new();
+        s.fonts.font_bc = Vec::new();
+        s.fonts.font_ec = Vec::new();
+        s.fonts.bchar_label = Vec::new();
+        s.fonts.font_bchar = Vec::new();
+        s.fonts.font_false_bchar = Vec::new();
+        s.fonts.font_glue = Vec::new();
+        s.fonts.font_used = Vec::new();
 
-    // Release Rust-owned hyphenation trie arrays (were C `malloc`'d arrays).
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_trl = Vec::new();
-        state.hyph.trie_tro = Vec::new();
-        state.hyph.trie_trc = Vec::new();
-        state.hyph.trie_c = Vec::new();
-        state.hyph.trie_o = Vec::new();
-        state.hyph.trie_l = Vec::new();
-        state.hyph.trie_r = Vec::new();
-        state.hyph.trie_hash = Vec::new();
-        state.hyph.trie_taken = Vec::new();
+        s.fonts.font_info = Vec::new();
+        s.fonts.font_layout_engine = Vec::new();
+        s.fonts.font_mapping = Vec::new();
+        s.fonts.font_flags = Vec::new();
+        s.fonts.font_letter_space = Vec::new();
+        s.fonts.hyphen_char = Vec::new();
+        s.fonts.skew_char = Vec::new();
+        s.fonts.char_base = Vec::new();
+        s.fonts.width_base = Vec::new();
+        s.fonts.height_base = Vec::new();
+        s.fonts.depth_base = Vec::new();
+        s.fonts.italic_base = Vec::new();
+        s.fonts.lig_kern_base = Vec::new();
+        s.fonts.kern_base = Vec::new();
+        s.fonts.exten_base = Vec::new();
+        s.fonts.param_base = Vec::new();
+        s.fonts.xdv_buffer = Vec::new();
+        s.fonts.mapped_text = Vec::new();
+        crate::globals::refresh_font_ffi_mirrors(&s.fonts);
+
+        s.hyph.trie_trl = Vec::new();
+        s.hyph.trie_tro = Vec::new();
+        s.hyph.trie_trc = Vec::new();
+        s.hyph.trie_c = Vec::new();
+        s.hyph.trie_o = Vec::new();
+        s.hyph.trie_l = Vec::new();
+        s.hyph.trie_r = Vec::new();
+        s.hyph.trie_hash = Vec::new();
+        s.hyph.trie_taken = Vec::new();
     });
 }

@@ -469,18 +469,18 @@ pub unsafe fn store_fmt_file() {
 
     let fmp = fmem_ptr();
     dump_int(fmt_out, fmp);
-    crate::state::with_state(|s| {
-        dump_slice(fmt_out, s.fonts.font_info.as_ptr(), fmp);
-    });
-    dump_int(fmt_out, font_ptr());
+    // Dump the entire font-table region under a single borrow (`01b` §3). The
+    // interleaved `dump_int`/`dump_slice` are plain file FFI and `font_ptr()`/
+    // `fmp` are raw accessors, so none re-enter `with_state`; the dump order is
+    // preserved byte-for-byte.
     crate::state::with_state(|state| {
+        dump_slice(fmt_out, state.fonts.font_info.as_ptr(), fmp);
+        dump_int(fmt_out, font_ptr());
         dump_slice(
             fmt_out,
             state.fonts.font_check.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.font_size.as_ptr().add(FONT_BASE as usize),
@@ -491,15 +491,11 @@ pub unsafe fn store_fmt_file() {
             state.fonts.font_dsize.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.font_params.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.hyphen_char.as_ptr().add(FONT_BASE as usize),
@@ -510,37 +506,27 @@ pub unsafe fn store_fmt_file() {
             state.fonts.skew_char.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.font_name.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.font_area.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.font_bc.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.font_ec.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    let font_dump_count = font_ptr() + 1;
-    crate::state::with_state(|state| {
+        let font_dump_count = font_ptr() + 1;
         dump_slice(
             fmt_out,
             state.fonts.char_base.as_ptr().add(FONT_BASE as usize),
@@ -586,29 +572,21 @@ pub unsafe fn store_fmt_file() {
             state.fonts.param_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.font_glue.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.bchar_label.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state.fonts.font_bchar.as_ptr().add(FONT_BASE as usize),
             font_ptr() + 1,
         );
-    });
-    crate::state::with_state(|state| {
         dump_slice(
             fmt_out,
             state
@@ -691,17 +669,25 @@ pub unsafe fn store_fmt_file() {
 
     dump_int(fmt_out, trie_max());
     dump_int(fmt_out, hyph_start());
-    let fmt_trie_trl = crate::state::with_state(|state| state.hyph.trie_trl.as_ptr());
-    let fmt_trie_tro = crate::state::with_state(|state| state.hyph.trie_tro.as_ptr());
-    let fmt_trie_trc = crate::state::with_state(|state| state.hyph.trie_trc.as_ptr());
+    // Snapshot all six trie array base pointers under one borrow (`01b` §3
+    // snapshot idiom): the arenas never reallocate during dump, so the pointers
+    // stay valid across the FFI `dump_slice`/`dump_int` calls below.
+    let (fmt_trie_trl, fmt_trie_tro, fmt_trie_trc, fmt_hyf_distance, fmt_hyf_num, fmt_hyf_next) =
+        crate::state::with_state(|state| {
+            (
+                state.hyph.trie_trl.as_ptr(),
+                state.hyph.trie_tro.as_ptr(),
+                state.hyph.trie_trc.as_ptr(),
+                state.hyph.hyf_distance.as_ptr(),
+                state.hyph.hyf_num.as_ptr(),
+                state.hyph.hyf_next.as_ptr(),
+            )
+        });
     dump_slice(fmt_out, fmt_trie_trl, trie_max() + 1);
     dump_slice(fmt_out, fmt_trie_tro, trie_max() + 1);
     dump_slice(fmt_out, fmt_trie_trc, trie_max() + 1);
     dump_int(fmt_out, max_hyph_char());
     dump_int(fmt_out, trie_op_ptr());
-    let fmt_hyf_distance = crate::state::with_state(|state| state.hyph.hyf_distance.as_ptr());
-    let fmt_hyf_num = crate::state::with_state(|state| state.hyph.hyf_num.as_ptr());
-    let fmt_hyf_next = crate::state::with_state(|state| state.hyph.hyf_next.as_ptr());
     dump_slice(fmt_out, fmt_hyf_distance.add(1), trie_op_ptr());
     dump_slice(fmt_out, fmt_hyf_num.add(1), trie_op_ptr());
     dump_slice(fmt_out, fmt_hyf_next.add(1), trie_op_ptr());

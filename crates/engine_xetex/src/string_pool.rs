@@ -35,10 +35,6 @@ pub fn length(strings: &StringsState, s: i32) -> i32 {
     8
 }
 
-pub fn length_global(s: i32) -> i32 {
-    crate::state::with_state(|st| length(&st.strings, s))
-}
-
 // ---------------------------------------------------------------------------
 // make_string
 // ---------------------------------------------------------------------------
@@ -93,20 +89,6 @@ pub fn append_str(strings: &mut StringsState, s: i32) -> Result<(), NodeRecycleA
     Ok(())
 }
 
-pub unsafe fn append_str_global(s: i32) {
-    let res = crate::state::with_state_mut(|st| append_str(&mut st.strings, s));
-    match res {
-        Ok(()) => {}
-        Err(NodeRecycleAbort::Overflow) => crate::errors::overflow(
-            c"pool size".as_ptr(),
-            crate::globals::pool_size() - crate::globals::init_pool_ptr(),
-        ),
-        Err(e) => {
-            crate::scan::node_recycle_abort(e);
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // str_eq_buf
 // ---------------------------------------------------------------------------
@@ -135,10 +117,6 @@ pub fn str_eq_buf(strings: &StringsState, buffer: &[i32], s: i32, mut k: i32) ->
         k += 1;
     }
     true
-}
-
-pub fn str_eq_buf_global(s: i32, k: i32) -> bool {
-    crate::state::with_state(|st| str_eq_buf(&st.strings, &st.input.buffer, s, k))
 }
 
 // ---------------------------------------------------------------------------
@@ -179,10 +157,6 @@ pub fn str_eq_str(strings: &StringsState, s: i32, t: i32) -> bool {
     true
 }
 
-pub fn str_eq_str_global(s: i32, t: i32) -> bool {
-    crate::state::with_state(|st| str_eq_str(&st.strings, s, t))
-}
-
 // ---------------------------------------------------------------------------
 // search_string
 // ---------------------------------------------------------------------------
@@ -205,10 +179,6 @@ pub fn search_string(strings: &StringsState, search: i32) -> i32 {
     0
 }
 
-pub fn search_string_global(search: i32) -> i32 {
-    crate::state::with_state(|st| search_string(&st.strings, search))
-}
-
 // ---------------------------------------------------------------------------
 // slow_make_string
 // ---------------------------------------------------------------------------
@@ -226,20 +196,6 @@ pub fn slow_make_string(strings: &mut StringsState) -> Result<i32, NodeRecycleAb
         return Ok(s);
     }
     Ok(t)
-}
-
-pub unsafe fn slow_make_string_global() -> i32 {
-    let res = crate::state::with_state_mut(|st| slow_make_string(&mut st.strings));
-    match res {
-        Ok(val) => val,
-        Err(NodeRecycleAbort::Overflow) => crate::errors::overflow(
-            c"number of strings".as_ptr(),
-            crate::globals::max_strings() - crate::globals::init_str_ptr(),
-        ),
-        Err(e) => {
-            crate::scan::node_recycle_abort(e);
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -301,8 +257,4 @@ pub fn flush_str(strings: &mut StringsState, s: i32) {
         strings.str_ptr -= 1;
         strings.pool_ptr = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
     }
-}
-
-pub fn flush_str_global(s: i32) {
-    crate::state::with_state_mut(|st| flush_str(&mut st.strings, s));
 }

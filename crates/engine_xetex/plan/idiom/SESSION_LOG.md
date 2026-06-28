@@ -8,6 +8,48 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 232 — 2026-06-28 — Execution: collapse init/cleanup + format-dump bridge islands; delete dead string wrappers
+
+**Type:** execution (workstream 01). Large mechanical session, one consolidated
+doc update, one commit. No new threading of reachable main-control leaves was
+needed — `main_control.rs` is effectively fully threaded (only the session-228
+`mc_*` dispatch wrappers remain), so this session drained the explicitly-flagged
+init/cleanup/format-IO bridge mass.
+
+**Code:**
+- **engine.rs anchors.** `tt_cleanup`'s 8 adjacent arena-release `with_state_mut`
+  islands collapsed into one borrow; `tt_run_engine`'s per-run allocation block
+  (9 islands) collapsed into one borrow with all `*_size + 1` sizes precomputed
+  from the `tre_*` locals; the initex mem+eqtb-sizing islands and the
+  `trie_not_ready` font-array islands each merged pairwise. These are top-level
+  setjmp anchors (can't take `&mut EngineState`, §2), so the legitimate move is
+  minimizing borrow count, not threading the signature.
+- **format_io.rs dump side.** The ~14-island font-table dump region folded into
+  a single `with_state` borrow (the interleaved `dump_int`/`dump_slice` are file
+  FFI and `font_ptr()`/`fmp` are raw, so none re-enter `with_state`; dump order
+  preserved byte-for-byte). The six trie/hyf base-pointer snapshots collapsed to
+  one tuple snapshot. The undump side (`load_fmt_file_in`) was already threaded.
+- **Dead bridge deletion.** Removed 8 zero-caller `_global` wrappers:
+  `length`/`append_str`/`str_eq_buf`/`str_eq_str`/`search_string`/
+  `slow_make_string`/`flush_str` (string_pool.rs) + `cur_length` (hash.rs). Their
+  threaded cores keep direct callers, so nothing was orphaned. The remaining 10
+  `_global` wrappers are all legitimately reached from the run-once anchors
+  (`final_cleanup`/`store_fmt_file`/init) and stay until the anchors are
+  restructured (out of scope).
+
+**Validation:** `cargo fmt`; `cargo check` warnings **38** (one dead-code warning
+gone with `cur_length_global`); dashboard **29/2/7/4** (TRIP exercises format
+dump/undump directly — the key guard); release rebuild; full corpus **637 passed
+/ 2 diverged / 0 missing-golden**, only known `1905.00073v1`/`1905.00148v1`.
+Metrics: `with_state` text matches **415 → 374**; `unsafe fn` **278 → 276**;
+`_global` wrappers **18 → 10**.
+
+**Next:** the clean island-collapse / dead-wrapper veins are now drained. Further
+`with_state` reduction requires threading the scattered legacy callers of the 10
+remaining anchor-reached `_global` wrappers (broad, lateral on the count) or
+restructuring the setjmp boundary itself. The output/io/texmfmp/string thin
+`_global` print/string wrappers drain only as their legacy callers thread.
+
 ## Idiom session 231 — 2026-06-27 — Execution: initializer threading + typed node leaves
 
 **Type:** execution (workstream 01 / fused threading+typing). Large mechanical
