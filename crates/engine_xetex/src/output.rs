@@ -1,9 +1,8 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, DISC_NODE, EQTB_SIZE,
-    ERROR_STOP_MODE, GLUE_NODE, HLIST_NODE, INT_BASE, LIGATURE_NODE, LOCAL_BASE, MATH_NODE,
-    NULL_FLAG, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SINGLE_BASE,
-    TEX_NULL, TOO_BIG_CHAR,
+    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, ERROR_STOP_MODE,
+    INT_BASE, LOCAL_BASE, NULL_FLAG, PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
+    SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::{error_in, ErrorOutcome};
 use crate::node::{AnyBox, AnyNode};
@@ -972,7 +971,13 @@ pub(crate) fn print_native_word_in(st: &mut EngineState, p: i32) {
     // NATIVE_NODE_text(p) = (unsigned short *) &mem[p + NATIVE_NODE_SIZE]
     // NATIVE_NODE_SIZE = 6 (xetex-constants.h:130)
     // mem[p+4].b16.s1 = character count
-    let for_end = st.mem.b16s1(p + 4) as i32 - 1;
+    let for_end = st
+        .mem
+        .classify_whatsit(MemIdx::new(p))
+        .expect("valid whatsit")
+        .expect("native word")
+        .native_length(&st.mem) as i32
+        - 1;
     let text_ptr = st.mem.data.as_ptr().wrapping_add((p + 6) as usize) as *const u16;
     let mut i: i32 = 0;
     while i <= for_end {
@@ -3921,14 +3926,20 @@ pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
                 print_in(st, st.mem.b16s0(p) as i32);
             }
         } else {
-            match st.mem.b16s1(p) {
-                HLIST_NODE | VLIST_NODE_SD | INS_NODE_SD | MARK_NODE_SD | ADJUST_NODE_SD
-                | UNSET_NODE_SD => {
+            // Classify the cursor once into a typed handle; each arm receives
+            // its `NodePtr<K>` directly instead of re-reading the raw type word.
+            match st.mem.classify(MemIdx::new(p)) {
+                Ok(AnyNode::HList(_))
+                | Ok(AnyNode::VList(_))
+                | Ok(AnyNode::Ins(_))
+                | Ok(AnyNode::Mark(_))
+                | Ok(AnyNode::Adjust(_))
+                | Ok(AnyNode::Unset(_)) => {
                     print_cstr_in(st, c"[]".as_ptr());
                 }
-                WHATSIT_NODE_SD => match st.mem.b16s0(p) {
+                Ok(AnyNode::Whatsit(w)) => match st.mem.b16s0(p) {
                     NATIVE_WORD_NODE_SD | NATIVE_WORD_NODE_AT_SD => {
-                        let fnt = st.mem.b16s2(p + 4) as i32;
+                        let fnt = w.native_font(&st.mem).0;
                         if fnt != st.errors.font_in_short_display {
                             let s = st.eqtb.hash_s1(FONT_ID_BASE_SD + fnt);
                             print_esc_in(st, s);
@@ -3941,27 +3952,30 @@ pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
                         print_cstr_in(st, c"[]".as_ptr());
                     }
                 },
-                RULE_NODE => {
+                Ok(AnyNode::Rule(_)) => {
                     print_char_in(st, '|' as i32);
                 }
-                GLUE_NODE => {
-                    if st.mem.b32s0(p + 1) != 0 {
+                Ok(AnyNode::Glue(g)) => {
+                    if g.glue_ptr(&st.mem).0 != 0 {
                         print_char_in(st, ' ' as i32);
                     }
                 }
-                MATH_NODE => {
+                Ok(AnyNode::Math(_)) => {
                     if st.mem.b16s0(p) >= L_CODE_SD {
                         print_cstr_in(st, c"[]".as_ptr());
                     } else {
                         print_char_in(st, '$' as i32);
                     }
                 }
-                LIGATURE_NODE => {
-                    short_display_in(st, st.mem.b32s1(p + 1));
+                Ok(AnyNode::Ligature(l)) => {
+                    let lp = l.lig_ptr(&st.mem).0;
+                    short_display_in(st, lp);
                 }
-                DISC_NODE => {
-                    short_display_in(st, st.mem.b32s0(p + 1));
-                    short_display_in(st, st.mem.b32s1(p + 1));
+                Ok(AnyNode::Disc(d)) => {
+                    let pre = d.pre_break(&st.mem).0;
+                    let post = d.post_break(&st.mem).0;
+                    short_display_in(st, pre);
+                    short_display_in(st, post);
                     let mut n = st.mem.b16s0(p) as i32;
                     while n > 0 {
                         if st.mem.b32s1(p) != crate::mem::TEX_NULL {
@@ -4887,12 +4901,6 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
 // ---- consts moved verbatim from scan.rs with the show_* group (workstream 02) ----
 
 // Node-type constants (xetex_format.h:380–390).
-const VLIST_NODE_SD: u16 = 1;
-const INS_NODE_SD: u16 = 3;
-const MARK_NODE_SD: u16 = 4;
-const ADJUST_NODE_SD: u16 = 5;
-const WHATSIT_NODE_SD: u16 = 8;
-const UNSET_NODE_SD: u16 = 13;
 const NATIVE_WORD_NODE_SD: u16 = 40;
 const NATIVE_WORD_NODE_AT_SD: u16 = 41;
 const L_CODE_SD: u16 = 4; // xetex-constants.h:142
