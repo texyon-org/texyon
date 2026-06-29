@@ -98,6 +98,7 @@ extern "C" {
 // ---------------------------------------------------------------------------
 
 use crate::scan::SccAbort;
+use crate::units::MemIdx;
 
 pub(crate) fn ins_the_toks_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let v = crate::scan::the_toks_in(st)?;
@@ -1059,7 +1060,14 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             crate::output::print_cstr_in(st, c".6".as_ptr());
         }
         LEFT_MARGIN_KERN_CODE_CT => {
-            p = st.mem.b32s1(p + 5);
+            // `p` is the guaranteed-HLIST box register (validated at the scan
+            // above); read its list head through the typed box handle.
+            let bx = st
+                .mem
+                .classify_box(MemIdx::new(p))
+                .expect("valid box")
+                .expect("hlist box register");
+            p = bx.list_ptr(&st.mem).0;
             while p != TEX_NULL {
                 let tp = st.mem.b16s1(p);
                 let is_low = p < st.mem.hi_mem_min;
@@ -1094,7 +1102,12 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 && st.mem.b16s1(p) == MARGIN_KERN_NODE_CT
                 && st.mem.b16s0(p) == 0
             {
-                let w = st.mem.b32s1(p + 1);
+                let mk = st
+                    .mem
+                    .classify_margin_kern(MemIdx::new(p))
+                    .expect("valid margin kern")
+                    .expect("margin kern");
+                let w = mk.width(&st.mem).0;
                 crate::output::print_scaled_in(st, w);
             } else {
                 crate::output::print_char_in(st, '0' as i32);
@@ -1102,7 +1115,12 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             crate::output::print_cstr_in(st, c"pt".as_ptr());
         }
         RIGHT_MARGIN_KERN_CODE_CT => {
-            let q = st.mem.b32s1(p + 5);
+            let bx = st
+                .mem
+                .classify_box(MemIdx::new(p))
+                .expect("valid box")
+                .expect("hlist box register");
+            let q = bx.list_ptr(&st.mem).0;
             p = crate::mem::prev_rightmost(&st.mem, q, TEX_NULL);
             while p != TEX_NULL {
                 let tp = st.mem.b16s1(p);
@@ -1138,7 +1156,12 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 && st.mem.b16s1(p) == MARGIN_KERN_NODE_CT
                 && st.mem.b16s0(p) == 1
             {
-                let w = st.mem.b32s1(p + 1);
+                let mk = st
+                    .mem
+                    .classify_margin_kern(MemIdx::new(p))
+                    .expect("valid margin kern")
+                    .expect("margin kern");
+                let w = mk.width(&st.mem).0;
                 crate::output::print_scaled_in(st, w);
             } else {
                 crate::output::print_char_in(st, '0' as i32);
