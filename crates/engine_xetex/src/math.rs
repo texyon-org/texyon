@@ -1877,7 +1877,8 @@ unsafe fn make_math_accent_in(
                         ot_assembly_ptr = assembly_ptr;
                         crate::mem::free_node(&mut st.mem, p, GLYPH_NODE_SIZE);
                         p = build_opentype_assembly_in(st, f, ot_assembly_ptr, w, true)?;
-                        st.mem.set_b32s1(y + 5, p);
+                        classify_box_or_panic(&st.mem, y)
+                            .set_list_ptr(&mut st.mem, MemPtr::from_raw(p));
                         break 'found;
                     }
                 } else {
@@ -1896,20 +1897,20 @@ unsafe fn make_math_accent_in(
         {
             let sa0 = get_ot_math_accent_pos(f, st.mem.b16s1(p + 4) as i32);
             let sa = if sa0 == TEX_INFINITY {
-                crate::scaled_math::half(st.mem.b32s1(y + 1))
+                crate::scaled_math::half(y_box.width(&st.mem).0)
             } else {
                 sa0
             };
             if bottom_accent || s == TEX_INFINITY {
                 s = crate::scaled_math::half(w);
             }
-            st.mem.set_b32s1(y + 4, s - sa);
+            y_box.set_shift_amount(&mut st.mem, Scaled(s - sa));
         } else {
-            let sa = crate::scaled_math::half(st.mem.b32s1(y + 1));
+            let sa = crate::scaled_math::half(y_box.width(&st.mem).0);
             if bottom_accent || s == TEX_INFINITY {
                 s = crate::scaled_math::half(w);
             }
-            st.mem.set_b32s1(y + 4, s - sa);
+            y_box.set_shift_amount(&mut st.mem, Scaled(s - sa));
         }
     } else {
         let y_box = classify_box_or_panic(&st.mem, y);
@@ -4555,12 +4556,12 @@ pub(crate) fn after_math_in(
         st.scanner.adjust_tail = ADJUST_HEAD;
         st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
         let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
-        p = st.mem.b32s1(b + 5);
+        p = classify_box_or_panic(&st.mem, b).list_ptr(&st.mem).0;
         let t = st.scanner.adjust_tail;
         st.scanner.adjust_tail = TEX_NULL;
         let pre_t = st.scanner.pre_adjust_tail;
         st.scanner.pre_adjust_tail = TEX_NULL;
-        let mut w = st.mem.b32s1(b + 1);
+        let mut w = classify_box_or_panic(&st.mem, b).width(&st.mem).0;
         let z = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
         let mut s = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
         if st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION) < 0 {
@@ -4571,7 +4572,7 @@ pub(crate) fn after_math_in(
             e = 0;
             q = 0;
         } else {
-            e = st.mem.b32s1(a + 1);
+            e = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
             q = e + math_quad(&st.fonts, &st.eqtb, TEXT_SIZE);
         }
         if w + q > z {
@@ -4590,7 +4591,7 @@ pub(crate) fn after_math_in(
                     b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?;
                 }
             }
-            w = st.mem.b32s1(b + 1);
+            w = classify_box_or_panic(&st.mem, b).width(&st.mem).0;
         }
         st.mem.set_b16s0(b, DLIST);
         let mut d = crate::scaled_math::half(z - w);
@@ -4664,7 +4665,8 @@ pub(crate) fn after_math_in(
             }
             st.mem.set_b32s1(cur_list_tail(), inf_node2);
             set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
-            app_display_in(st, j, a, z - st.mem.b32s1(a + 1))?;
+            let a_width = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
+            app_display_in(st, j, a, z - a_width)?;
             g2 = 0;
         }
 
@@ -5144,13 +5146,16 @@ fn rebox(
 /// re-pack and final pack go through [`crate::packaging::hpack_emit_in`] (which
 /// prints any over/underfull diagnostic in-order under the borrow, session 186).
 fn rebox_in(st: &mut EngineState, mut b: i32, w: i32) -> Result<i32, NodeRecycleAbort> {
-    if st.mem.b32s1(b + 1) != w && st.mem.b32s1(b + 5) != TEX_NULL && st.mem.b16s1(b) == VLIST_NODE
+    let bb = classify_box_or_panic(&st.mem, b);
+    if bb.width(&st.mem).0 != w && !bb.list_ptr(&st.mem).is_null() && matches!(bb, AnyBox::VList(_))
     {
         b = crate::packaging::hpack_emit_in(st, b, 0, ADDITIONAL)?;
     }
 
-    let char_kern_width = if st.mem.b32s1(b + 1) != w && st.mem.b32s1(b + 5) != TEX_NULL {
-        let p = st.mem.b32s1(b + 5);
+    // `b` may have been re-boxed above; re-classify the (possibly new) handle.
+    let bb = classify_box_or_panic(&st.mem, b);
+    let char_kern_width = if bb.width(&st.mem).0 != w && !bb.list_ptr(&st.mem).is_null() {
+        let p = bb.list_ptr(&st.mem).0;
         if crate::mem::is_char_node(&st.mem, p) && st.mem.b32s1(p) == TEX_NULL {
             let f = st.mem.b16s1(p) as i32;
             let c_raw = st.mem.b16s0(p);
@@ -5269,20 +5274,25 @@ unsafe fn build_opentype_assembly_in(
         }
     }
     // Measure natural size and total stretch — pure `mem` reads.
-    let mut p = st.mem.b32s1(b + 5);
+    let b_box = classify_box_or_panic(&st.mem, b);
+    let mut p = b_box.list_ptr(&st.mem).0;
     let mut nat: i32 = 0;
     let mut str: i32 = 0;
     while p != TEX_NULL {
-        if st.mem.b16s1(p) == WHATSIT_NODE {
-            if horiz {
-                nat += st.mem.b32s1(p + 1);
-            } else {
-                nat += st.mem.b32s1(p + 3) + st.mem.b32s1(p + 2);
+        match st.mem.classify(MemIdx::new(p)) {
+            Ok(AnyNode::Whatsit(pw)) => {
+                if horiz {
+                    nat += pw.width(&st.mem).0;
+                } else {
+                    nat += pw.height(&st.mem).0 + pw.depth(&st.mem).0;
+                }
             }
-        } else if st.mem.b16s1(p) == GLUE_NODE {
-            let gptr = st.mem.b32s0(p + 1);
-            nat += st.mem.b32s1(gptr + 1);
-            str += st.mem.b32s1(gptr + 2);
+            Ok(AnyNode::Glue(gn)) => {
+                let gs = gn.glue_spec(&st.mem).expect("glue spec");
+                nat += gs.width(&st.mem).0;
+                str += gs.stretch(&st.mem).0;
+            }
+            _ => {}
         }
         p = st.mem.b32s1(p);
     }
@@ -5541,12 +5551,13 @@ unsafe fn var_delimiter_in(
             return Err(NodeRecycleAbort::Overflow.into());
         }
         let width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE);
-        st.mem.set_b32s1(bb + 1, width);
+        classify_box_or_panic(&st.mem, bb).set_width(&mut st.mem, Scaled(width));
         b = bb;
     }
     let axis = axis_height(&st.fonts, &st.eqtb, s);
-    let shift = crate::scaled_math::half(st.mem.b32s1(b + 3) - st.mem.b32s1(b + 2)) - axis;
-    st.mem.set_b32s1(b + 4, shift);
+    let b_box = classify_box_or_panic(&st.mem, b);
+    let shift = crate::scaled_math::half(b_box.height(&st.mem).0 - b_box.depth(&st.mem).0) - axis;
+    b_box.set_shift_amount(&mut st.mem, Scaled(shift));
     free_ot_assembly(ot_assembly_ptr);
     Ok(b)
 }
