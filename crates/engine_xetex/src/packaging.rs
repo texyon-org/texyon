@@ -964,7 +964,10 @@ pub fn append_to_vlist(
     let b_idx = b.idx().0;
     if crate::globals::cur_list_aux_b32s1() > IGNORE_DEPTH {
         let baseline_spec = eqtb.b32s1(GLUE_BASE + GLUE_PAR_BASELINE_SKIP);
-        let d = mem.b32s1(baseline_spec + 1)
+        // \baselineskip is a glue parameter spec (never null).
+        let bsl =
+            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(baseline_spec)).expect("spec");
+        let d = bsl.width(mem).0
             - crate::globals::cur_list_aux_b32s1()
             - if upwards {
                 b.depth(mem).0
@@ -2630,7 +2633,12 @@ fn print_hpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: i32
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     print_ln_in(st);
     st.errors.font_in_short_display = 0;
-    let list = st.mem.b32s1(box_ptr + 5);
+    let bx = st
+        .mem
+        .classify_box(MemIdx::new(box_ptr))
+        .expect("valid box")
+        .expect("hpack diagnostic box");
+    let list = bx.list_ptr(&st.mem).0;
     short_display_in(st, list);
     print_ln_in(st);
     begin_diagnostic_in(st);
