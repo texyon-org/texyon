@@ -591,13 +591,18 @@ pub(crate) unsafe fn ship_out_in(
         crate::output::end_diagnostic_in(st, true);
     }
 
-    if st.mem.b32s1(p + 3) > MAX_HALFWORD
-        || st.mem.b32s1(p + 2) > MAX_HALFWORD
-        || st.mem.b32s1(p + 3)
-            + st.mem.b32s1(p + 2)
+    let p_box = st
+        .mem
+        .classify_box(MemIdx::new(p))
+        .expect("valid shipped box")
+        .expect("shipped box");
+    if p_box.height(&st.mem).0 > MAX_HALFWORD
+        || p_box.depth(&st.mem).0 > MAX_HALFWORD
+        || p_box.height(&st.mem).0
+            + p_box.depth(&st.mem).0
             + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET)
             > MAX_HALFWORD
-        || st.mem.b32s1(p + 1) + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) > MAX_HALFWORD
+        || p_box.width(&st.mem).0 + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) > MAX_HALFWORD
     {
         crate::output::error_here_with_diagnostic_in(
             st,
@@ -617,14 +622,14 @@ pub(crate) unsafe fn ship_out_in(
             crate::output::end_diagnostic_in(st, true);
         }
     } else {
-        let page_height = st.mem.b32s1(p + 3)
-            + st.mem.b32s1(p + 2)
+        let page_height = p_box.height(&st.mem).0
+            + p_box.depth(&st.mem).0
             + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET);
         if page_height > st.shipout.max_v {
             st.shipout.max_v = page_height;
         }
 
-        let page_width = st.mem.b32s1(p + 1) + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET);
+        let page_width = p_box.width(&st.mem).0 + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET);
         if page_width > st.shipout.max_h {
             st.shipout.max_h = page_width;
         }
@@ -640,15 +645,15 @@ pub(crate) unsafe fn ship_out_in(
         if st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH) != 0 {
             st.shipout.cur_page_width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_WIDTH);
         } else {
-            st.shipout.cur_page_width = st.mem.b32s1(p + 1)
+            st.shipout.cur_page_width = p_box.width(&st.mem).0
                 + 2 * (st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_H_OFFSET) + ONE_INCH);
         }
 
         if st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT) != 0 {
             st.shipout.cur_page_height = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PDF_PAGE_HEIGHT);
         } else {
-            st.shipout.cur_page_height = st.mem.b32s1(p + 3)
-                + st.mem.b32s1(p + 2)
+            st.shipout.cur_page_height = p_box.height(&st.mem).0
+                + p_box.depth(&st.mem).0
                 + 2 * (st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET) + ONE_INCH);
         }
 
@@ -738,9 +743,9 @@ pub(crate) unsafe fn ship_out_in(
         }
         st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
 
-        st.shipout.cur_v = st.mem.b32s1(p + 3) + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET);
+        st.shipout.cur_v = p_box.height(&st.mem).0 + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET);
         set_temp_ptr(p);
-        if st.mem.b16s1(p) == VLIST_NODE {
+        if matches!(p_box, AnyBox::VList(_)) {
             vlist_out_in(st)?;
         } else {
             hlist_out_in(st)?;
