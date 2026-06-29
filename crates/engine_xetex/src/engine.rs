@@ -11,23 +11,22 @@ use crate::consts::{
 };
 use crate::format_io::{load_fmt_file, store_fmt_file};
 use crate::globals::{
-    buf_size, cond_ptr, cur_chr, cur_if, cur_input, cur_level, cur_val, eqtb_b32s1, eqtb_word,
-    first, font_area_entry, font_layout_engine_ptr, font_mapping_ptr, font_max, font_mem_size,
-    history, if_line, in_initex_mode, in_open, input_file, interaction, job_name, mem_b16s0,
-    mem_b32s1, open_parens, par_loc, pool_size, selector, set_buffer_entry, set_cancel_boundary,
-    set_cond_ptr, set_cur_if, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head,
+    buf_size, cond_ptr, cur_chr, cur_if, cur_input, cur_level, cur_val, eqtb_b32s1, first,
+    font_area_entry, font_layout_engine_ptr, font_mapping_ptr, font_max, font_mem_size, history,
+    if_line, in_initex_mode, in_open, input_file, interaction, job_name, mem_b16s0, mem_b32s1,
+    open_parens, pool_size, selector, set_buffer_entry, set_cancel_boundary, set_cond_ptr,
+    set_cur_if, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head,
     set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
-    set_cur_val, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word, set_error_line,
-    set_file_line_error_style_p, set_first, set_font_info_b32s1, set_font_max, set_font_mem_size,
-    set_half_error_line, set_hash_s1, set_hyph_start, set_hyphen_char_entry, set_if_line,
-    set_ins_disc, set_lft_hit, set_ligature_present, set_max_print_line, set_max_reg_help_line,
-    set_max_reg_num, set_no_new_control_sequence, set_open_parens, set_par_loc, set_par_token,
-    set_pool_ptr, set_rt_hit, set_selector, set_skew_char_entry, set_str_ptr, set_str_start,
-    set_temp_ptr, set_trie_c_entry, set_trie_l_entry, set_trie_ptr, set_trie_r_entry,
-    set_write_loc, str_ptr, str_start, string_vacancies, temp_ptr, trie_not_ready,
+    set_cur_val, set_eqtb_b32s1, set_error_line, set_file_line_error_style_p, set_first,
+    set_font_info_b32s1, set_font_max, set_font_mem_size, set_half_error_line, set_hyph_start,
+    set_hyphen_char_entry, set_if_line, set_ins_disc, set_lft_hit, set_ligature_present,
+    set_max_print_line, set_max_reg_help_line, set_max_reg_num, set_open_parens, set_pool_ptr,
+    set_rt_hit, set_selector, set_skew_char_entry, set_str_ptr, set_str_start, set_temp_ptr,
+    set_trie_c_entry, set_trie_l_entry, set_trie_ptr, set_trie_r_entry, string_vacancies, temp_ptr,
+    trie_not_ready,
 };
 use crate::io::init_io;
-use crate::state::MemState;
+use crate::state::{EngineState, MemState};
 
 const LEVEL_ONE: u16 = 1;
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -203,40 +202,89 @@ pub(crate) fn sort_avail_in(mem: &mut MemState) {
     mem.set_b32s0(mem.rover + 1, p);
 }
 
+enum PrimitiveInitAbort {
+    MakeTexString(crate::texmfmp::MakeTexStringAbort),
+    HashLookup(crate::hash::HashLookupError),
+    BufferSize(i32),
+}
+
+impl From<crate::texmfmp::MakeTexStringAbort> for PrimitiveInitAbort {
+    fn from(value: crate::texmfmp::MakeTexStringAbort) -> Self {
+        Self::MakeTexString(value)
+    }
+}
+
+impl From<crate::hash::HashLookupError> for PrimitiveInitAbort {
+    fn from(value: crate::hash::HashLookupError) -> Self {
+        Self::HashLookup(value)
+    }
+}
+
+unsafe fn fire_primitive_init_abort(e: PrimitiveInitAbort) -> ! {
+    match e {
+        PrimitiveInitAbort::MakeTexString(e) => crate::texmfmp::fire_make_tex_string(e),
+        PrimitiveInitAbort::HashLookup(e) => {
+            use crate::hash::HashLookupError::*;
+            let (what, limit) = match e {
+                HashSizeOverflow(n) => (c"hash size".as_ptr(), n),
+                PoolSizeOverflow(n) => (c"pool size".as_ptr(), n),
+                StringNumberOverflow(n) => (c"number of strings".as_ptr(), n),
+                PrimitiveSizeOverflow(n) => (c"primitive size".as_ptr(), n),
+            };
+            crate::errors::overflow(what, limit)
+        }
+        PrimitiveInitAbort::BufferSize(limit) => {
+            crate::errors::overflow(c"buffer size".as_ptr(), limit)
+        }
+    }
+}
+
 // translated from xetex-ini.c:597 (primitive)
-pub unsafe fn primitive(ident: *const libc::c_char, c: u16, o: i32) {
+unsafe fn primitive(
+    st: &mut EngineState,
+    ident: *const libc::c_char,
+    c: u16,
+    o: i32,
+) -> Result<(), PrimitiveInitAbort> {
     let len = libc::strlen(ident) as i32;
     let prim_val: i32;
 
     if len > 1 {
-        let s = crate::texmfmp::maketexstring(ident);
+        let s = crate::texmfmp::maketexstring_in(&mut st.strings, ident)?;
 
         if first() + len > buf_size() + 1 {
-            crate::errors::overflow(c"buffer size".as_ptr(), buf_size());
+            return Err(PrimitiveInitAbort::BufferSize(buf_size()));
         }
 
         for i in 0..len {
             let b = *ident.offset(i as isize) as u8 as i32;
-            set_buffer_entry(first() + i, b);
+            st.input.buffer[(first() + i) as usize] = b;
         }
 
-        set_cur_val(crate::hash::id_lookup_global(first(), len));
-        set_str_ptr(str_ptr() - 1);
-        set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
-        set_hash_s1(cur_val(), s);
-        prim_val = crate::hash::prim_lookup_global(s);
+        set_cur_val(crate::hash::id_lookup(
+            &mut st.eqtb,
+            &mut st.strings,
+            &st.input.buffer,
+            first(),
+            len,
+        )?);
+        st.strings.str_ptr -= 1;
+        st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+        st.eqtb.set_hash_s1(cur_val(), s);
+        prim_val = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)?;
     } else {
         let ch = *ident as u8 as i32;
         set_cur_val(ch + SINGLE_BASE);
-        prim_val = crate::hash::prim_lookup_global(ch);
+        prim_val = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, ch)?;
     }
 
-    set_eqtb_b16s0(cur_val(), LEVEL_ONE);
-    set_eqtb_b16s1(cur_val(), c);
-    set_eqtb_b32s1(cur_val(), o);
-    set_eqtb_b16s0(PRIM_EQTB_BASE + prim_val, LEVEL_ONE);
-    set_eqtb_b16s1(PRIM_EQTB_BASE + prim_val, c);
-    set_eqtb_b32s1(PRIM_EQTB_BASE + prim_val, o);
+    st.eqtb.set_b16s0(cur_val(), LEVEL_ONE);
+    st.eqtb.set_b16s1(cur_val(), c);
+    st.eqtb.set_b32s1(cur_val(), o);
+    st.eqtb.set_b16s0(PRIM_EQTB_BASE + prim_val, LEVEL_ONE);
+    st.eqtb.set_b16s1(PRIM_EQTB_BASE + prim_val, c);
+    st.eqtb.set_b32s1(PRIM_EQTB_BASE + prim_val, o);
+    Ok(())
 }
 // translated from xetex-ini.c:2201 (final_cleanup)
 pub unsafe fn final_cleanup() {
@@ -822,7 +870,7 @@ fn initialize_more_initex_variables_in(st: &mut crate::state::EngineState, forma
         .set_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH, 63);
 }
 // translated from xetex-ini.c:2215 (initialize_primitives)
-pub unsafe fn initialize_primitives() {
+unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveInitAbort> {
     const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226;
     const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE;
     const FROZEN_END_TEMPLATE: i32 = FROZEN_CONTROL_SEQUENCE + 5;
@@ -844,7 +892,7 @@ pub unsafe fn initialize_primitives() {
     const XF_PRIM_INIT_PAR: i32 = 1;
     const XF_PRIM_INIT_WRITE: i32 = 2;
 
-    set_no_new_control_sequence(false);
+    st.eqtb.no_new_control_sequence = false;
     set_first(0);
 
     let table_ptr = &raw const xetex_primitives;
@@ -853,69 +901,73 @@ pub unsafe fn initialize_primitives() {
         let prim = table_ptr.add(i).read();
 
         if !prim.name.is_null() {
-            primitive(prim.name, prim.cmd as u16, prim.chr);
+            primitive(st, prim.name, prim.cmd as u16, prim.chr)?;
 
             match prim.extra_init {
                 XF_PRIM_INIT_NONE => {}
                 XF_PRIM_INIT_PAR => {
-                    set_par_loc(cur_val());
-                    set_par_token(CS_TOKEN_FLAG + par_loc());
+                    st.input.par_loc = cur_val();
+                    st.input.par_token = CS_TOKEN_FLAG + st.input.par_loc;
                 }
                 XF_PRIM_INIT_WRITE => {
-                    set_write_loc(cur_val());
+                    st.shipout.write_loc = cur_val();
                 }
                 frozen => {
-                    set_hash_s1(frozen, crate::texmfmp::maketexstring(prim.name));
-                    set_eqtb_word(frozen, eqtb_word(cur_val()));
+                    st.eqtb.set_hash_s1(
+                        frozen,
+                        crate::texmfmp::maketexstring_in(&mut st.strings, prim.name)?,
+                    );
+                    st.eqtb.data[frozen as usize] = st.eqtb.word(cur_val());
                 }
             }
         }
     }
 
-    set_hash_s1(
+    st.eqtb.set_hash_s1(
         FROZEN_END_TEMPLATE,
-        crate::texmfmp::maketexstring(c"endtemplate".as_ptr()),
+        crate::texmfmp::maketexstring_in(&mut st.strings, c"endtemplate".as_ptr())?,
     );
-    set_eqtb_b16s1(FROZEN_END_TEMPLATE, END_TEMPLATE);
-    set_eqtb_b32s1(FROZEN_END_TEMPLATE, NULL_LIST);
-    set_eqtb_b16s0(FROZEN_END_TEMPLATE, LEVEL_ONE);
+    st.eqtb.set_b16s1(FROZEN_END_TEMPLATE, END_TEMPLATE);
+    st.eqtb.set_b32s1(FROZEN_END_TEMPLATE, NULL_LIST);
+    st.eqtb.set_b16s0(FROZEN_END_TEMPLATE, LEVEL_ONE);
 
-    set_hash_s1(
+    st.eqtb.set_hash_s1(
         FROZEN_ENDV,
-        crate::texmfmp::maketexstring(c"endtemplate".as_ptr()),
+        crate::texmfmp::maketexstring_in(&mut st.strings, c"endtemplate".as_ptr())?,
     );
-    set_eqtb_b16s1(FROZEN_ENDV, ENDV);
-    set_eqtb_b32s1(FROZEN_ENDV, NULL_LIST);
-    set_eqtb_b16s0(FROZEN_ENDV, LEVEL_ONE);
+    st.eqtb.set_b16s1(FROZEN_ENDV, ENDV);
+    st.eqtb.set_b32s1(FROZEN_ENDV, NULL_LIST);
+    st.eqtb.set_b16s0(FROZEN_ENDV, LEVEL_ONE);
 
-    set_hash_s1(
+    st.eqtb.set_hash_s1(
         FROZEN_DONT_EXPAND,
-        crate::texmfmp::maketexstring(c"notexpanded:".as_ptr()),
+        crate::texmfmp::maketexstring_in(&mut st.strings, c"notexpanded:".as_ptr())?,
     );
-    set_eqtb_b16s1(FROZEN_DONT_EXPAND, DONT_EXPAND);
+    st.eqtb.set_b16s1(FROZEN_DONT_EXPAND, DONT_EXPAND);
 
-    set_hash_s1(
+    st.eqtb.set_hash_s1(
         FROZEN_PRIMITIVE,
-        crate::texmfmp::maketexstring(c"primitive".as_ptr()),
+        crate::texmfmp::maketexstring_in(&mut st.strings, c"primitive".as_ptr())?,
     );
-    set_eqtb_b16s1(FROZEN_PRIMITIVE, IGNORE_SPACES);
-    set_eqtb_b32s1(FROZEN_PRIMITIVE, 1);
-    set_eqtb_b16s0(FROZEN_PRIMITIVE, LEVEL_ONE);
+    st.eqtb.set_b16s1(FROZEN_PRIMITIVE, IGNORE_SPACES);
+    st.eqtb.set_b32s1(FROZEN_PRIMITIVE, 1);
+    st.eqtb.set_b16s0(FROZEN_PRIMITIVE, LEVEL_ONE);
 
-    set_hash_s1(
+    st.eqtb.set_hash_s1(
         FROZEN_PROTECTION,
-        crate::texmfmp::maketexstring(c"inaccessible".as_ptr()),
+        crate::texmfmp::maketexstring_in(&mut st.strings, c"inaccessible".as_ptr())?,
     );
 
-    set_hash_s1(
+    st.eqtb.set_hash_s1(
         END_WRITE,
-        crate::texmfmp::maketexstring(c"endwrite".as_ptr()),
+        crate::texmfmp::maketexstring_in(&mut st.strings, c"endwrite".as_ptr())?,
     );
-    set_eqtb_b16s0(END_WRITE, LEVEL_ONE);
-    set_eqtb_b16s1(END_WRITE, OUTER_CALL);
-    set_eqtb_b32s1(END_WRITE, crate::mem::TEX_NULL);
+    st.eqtb.set_b16s0(END_WRITE, LEVEL_ONE);
+    st.eqtb.set_b16s1(END_WRITE, OUTER_CALL);
+    st.eqtb.set_b32s1(END_WRITE, crate::mem::TEX_NULL);
 
-    set_no_new_control_sequence(true);
+    st.eqtb.no_new_control_sequence = true;
+    Ok(())
 }
 // translated from xetex-ini.c:1474 (tt_run_engine)
 #[no_mangle]
@@ -1136,7 +1188,10 @@ pub unsafe extern "C" fn tt_run_engine(
         get_strings_started();
         let format_ident = crate::texmfmp::maketexstring(c" (INITEX)".as_ptr());
         crate::state::with_state_mut(|st| initialize_more_initex_variables_in(st, format_ident));
-        initialize_primitives();
+        let result = crate::state::with_state_mut(|st| initialize_primitives(st));
+        if let Err(e) = result {
+            fire_primitive_init_abort(e);
+        }
         crate::state::with_state_mut(|state| {
             state.strings.init_str_ptr = state.strings.str_ptr;
             state.strings.init_pool_ptr = state.strings.pool_ptr;

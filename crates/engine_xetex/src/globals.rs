@@ -443,18 +443,6 @@ pub(crate) fn mem_gr(p: i32) -> f64 {
 // eqtb accessor
 // ---------------------------------------------------------------------------
 
-/// Copy the full MemoryWord at `eqtb[p]`.
-#[inline]
-pub(crate) fn eqtb_word(p: i32) -> crate::mem_types::MemoryWord {
-    crate::state::with_state(|s| s.eqtb.data[p as usize])
-}
-/// Write a full MemoryWord to `eqtb[p]`.
-#[inline]
-pub(crate) fn set_eqtb_word(p: i32, w: crate::mem_types::MemoryWord) {
-    crate::state::with_state_mut(|s| {
-        s.eqtb.data[p as usize] = w;
-    });
-}
 /// Read `eqtb[p].b32.s1` (the "value" half of an equivalents entry).
 #[inline]
 pub(crate) fn eqtb_b32s1(p: i32) -> i32 {
@@ -475,27 +463,12 @@ pub(crate) fn eqtb_b16s1(p: i32) -> u16 {
     // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
     crate::state::with_state(|s| unsafe { s.eqtb.data[p as usize].b16.s1 })
 }
-/// Write `v` into `eqtb[p].b16.s1`.
-#[inline]
-pub(crate) fn set_eqtb_b16s1(p: i32, v: u16) {
-    crate::state::with_state_mut(|s| {
-        s.eqtb.data[p as usize].b16.s1 = v;
-    });
-}
 /// Read `eqtb[p].b16.s0` (the "level" half of an equivalents entry).
 #[inline]
 pub(crate) fn eqtb_b16s0(p: i32) -> u16 {
     // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
     crate::state::with_state(|s| unsafe { s.eqtb.data[p as usize].b16.s0 })
 }
-/// Write `v` into `eqtb[p].b16.s0`.
-#[inline]
-pub(crate) fn set_eqtb_b16s0(p: i32, v: u16) {
-    crate::state::with_state_mut(|s| {
-        s.eqtb.data[p as usize].b16.s0 = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // str_ptr / str_start / str_pool (read accessor)
 // ---------------------------------------------------------------------------
@@ -1586,21 +1559,6 @@ pub(crate) fn stack_size() -> i32 {
 pub(crate) fn par_loc() -> i32 {
     crate::state::with_state(|s| s.input.par_loc)
 }
-/// Sets `par_loc`.
-#[inline]
-pub(crate) fn set_par_loc(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.par_loc = v;
-    });
-}
-/// Sets `par_token`.
-#[inline]
-pub(crate) fn set_par_token(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.par_token = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // grp_stack / if_stack
 // ---------------------------------------------------------------------------
@@ -2267,11 +2225,6 @@ pub(crate) fn rule_dp() -> i32 {
 pub(crate) fn write_loc() -> i32 {
     crate::state::with_state(|s| s.shipout.write_loc)
 }
-#[inline]
-pub(crate) fn set_write_loc(v: i32) {
-    crate::state::with_state_mut(|s| s.shipout.write_loc = v);
-}
-
 // ---------------------------------------------------------------------------
 // format_ident / edit_name_start / empty / sa_null per-field setters
 // ---------------------------------------------------------------------------
