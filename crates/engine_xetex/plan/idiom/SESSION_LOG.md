@@ -8,6 +8,33 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 234 — 2026-06-29 — Execution: primitive threading + typed shipout/page lifecycle
+
+**Type:** execution (workstream 01 / fused threading+typing). Large mechanical
+session with three parallel, file-disjoint implementation slices; documentation
+consolidated here.
+
+**Code:** threaded primitive registration/initialization through
+`&mut EngineState`, deferring string/hash/buffer aborts until the anchor borrow
+drops. Deleted the last two `_global` wrappers, their unused C exports/header
+prototypes, and seven dead globals accessors. Retyped both shipout list walkers
+and the pagebuilder build/fire lifecycle around one `AnyNode` classification per
+ordinary node, existing typed box/rule/whatsit/glue/kern/penalty/ins/mark
+surfaces, and exact `RuleDimen::raw()` handling. Raw char nodes, LR/PAGE_INS
+records, sentinels, token refcounts, and unsupported EDGE fields remain raw.
+Commits: `4b21f301`, `a0b3297e`, `d818d1b7`.
+
+**Validation:** `cargo fmt --all -- --check`; `cargo check` (warnings **37**);
+dashboard **29/2/7/4**; release rebuild; full corpus **637 passed / 2 diverged /
+0 missing-golden**, only known `1905.00073v1` and `1905.00148v1`. Metrics:
+`with_state` calls **293 → 285**; `unsafe fn` **274 → 273**; `_global` wrappers
+**2 → 0**; Rust C exports **13 → 11**; bare `p/q/r: i32` params **266 → 261**;
+raw mem-field calls shipout **285 → 224**, pagebuilder **152 → 101**.
+
+**Next:** continue typed list processing in `packaging.rs` or `linebreak.rs`.
+The remaining PAGE_INS and EDGE fields should wait for proper typed family
+surfaces rather than gaining local raw-to-raw wrappers.
+
 ## Idiom session 233 — 2026-06-29 — Execution: full main-control borrow + typed node display + bridge drain
 
 **Type:** execution (workstream 01 / fused threading+typing). Large mechanical

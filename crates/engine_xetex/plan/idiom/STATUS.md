@@ -4,6 +4,23 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-29 (last session = session 234, **execution — primitive
+threading plus typed shipout/page-list traversal**. Threaded primitive
+registration over direct `EngineState` access with deferred cold aborts; removed
+the last two `_global` wrappers, their C exports/prototypes, and seven dead
+global accessors. Converted `hlist_out_in`/`vlist_out_in` and the
+`build_page_in`/`fire_up_in` page lifecycle to classify ordinary nodes once and
+use the existing typed family surfaces, retaining raw sentinel/bookkeeping and
+unsupported edge fields. Validation: fmt/check, warnings **37**, dashboard
+**29/2/7/4**, release rebuild, corpus **637 passed / 2 diverged / 0
+missing-golden** (only the known FP pair). Metrics: `with_state` calls **293 →
+285**; `unsafe fn` **274 → 273**; `_global` wrappers **2 → 0**; Rust C exports
+**13 → 11**; bare `p/q/r: i32` params **266 → 261**; raw mem-field calls in
+shipout **285 → 224** and pagebuilder **152 → 101**. **Next:** continue typed
+list processing in `packaging.rs`/`linebreak.rs`; specialized PAGE_INS/EDGE
+records need a real typed family surface before their remaining raw fields can
+move.)
+
 Last updated: 2026-06-29 (last session = session 233, **execution — thread the
 full main-control loop, type `show_node_list`, retire eight bridge wrappers**.
 `main_control_in(&mut EngineState)` now holds one borrow across the complete
