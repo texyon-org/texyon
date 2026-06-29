@@ -11,19 +11,18 @@ use crate::consts::{
 };
 use crate::format_io::{load_fmt_file, store_fmt_file};
 use crate::globals::{
-    buf_size, cond_ptr, cur_chr, cur_if, cur_input, cur_level, cur_mark, cur_val, disc_ptr,
-    eqtb_b32s1, eqtb_word, first, font_area_entry, font_layout_engine_ptr, font_mapping_ptr,
-    font_max, font_mem_size, history, if_line, in_initex_mode, in_open, input_file, interaction,
-    job_name, last_glue, mem_b16s0, mem_b32s1, open_parens, par_loc, pool_size, sa_root, selector,
-    set_buffer_entry, set_cancel_boundary, set_cond_ptr, set_cur_if, set_cur_list_aux_b32s1,
-    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line,
-    set_cur_list_prev_graf, set_cur_list_tail, set_cur_val, set_eqtb_b16s0, set_eqtb_b16s1,
-    set_eqtb_b32s1, set_eqtb_word, set_error_line, set_file_line_error_style_p, set_first,
-    set_font_info_b32s1, set_font_max, set_font_mem_size, set_half_error_line, set_hash_s1,
-    set_hyph_start, set_hyphen_char_entry, set_if_line, set_ins_disc, set_lft_hit,
-    set_ligature_present, set_max_print_line, set_max_reg_help_line, set_max_reg_num,
-    set_no_new_control_sequence, set_open_parens, set_par_loc, set_par_token, set_pool_ptr,
-    set_rt_hit, set_sa_root, set_selector, set_skew_char_entry, set_str_ptr, set_str_start,
+    buf_size, cond_ptr, cur_chr, cur_if, cur_input, cur_level, cur_val, eqtb_b32s1, eqtb_word,
+    first, font_area_entry, font_layout_engine_ptr, font_mapping_ptr, font_max, font_mem_size,
+    history, if_line, in_initex_mode, in_open, input_file, interaction, job_name, mem_b16s0,
+    mem_b32s1, open_parens, par_loc, pool_size, selector, set_buffer_entry, set_cancel_boundary,
+    set_cond_ptr, set_cur_if, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head,
+    set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
+    set_cur_val, set_eqtb_b16s0, set_eqtb_b16s1, set_eqtb_b32s1, set_eqtb_word, set_error_line,
+    set_file_line_error_style_p, set_first, set_font_info_b32s1, set_font_max, set_font_mem_size,
+    set_half_error_line, set_hash_s1, set_hyph_start, set_hyphen_char_entry, set_if_line,
+    set_ins_disc, set_lft_hit, set_ligature_present, set_max_print_line, set_max_reg_help_line,
+    set_max_reg_num, set_no_new_control_sequence, set_open_parens, set_par_loc, set_par_token,
+    set_pool_ptr, set_rt_hit, set_selector, set_skew_char_entry, set_str_ptr, set_str_start,
     set_temp_ptr, set_trie_c_entry, set_trie_l_entry, set_trie_ptr, set_trie_r_entry,
     set_write_loc, str_ptr, str_start, string_vacancies, temp_ptr, trie_not_ready,
 };
@@ -156,7 +155,15 @@ pub unsafe fn get_strings_started() {
     set_str_start(0, 0);
     set_str_ptr(TOO_BIG_CHAR);
 
-    if crate::string_pool::load_pool_strings_global(pool_size() - string_vacancies()) == 0 {
+    let spare_size = pool_size() - string_vacancies();
+    let loaded = crate::state::with_state_mut(|st| {
+        crate::string_pool::load_pool_strings(&mut st.strings, spare_size)
+    });
+    let loaded = match loaded {
+        Ok(value) => value,
+        Err(e) => crate::scan::node_recycle_abort(e),
+    };
+    if loaded == 0 {
         _tt_abort(c"must increase pool_size".as_ptr());
     }
 }
@@ -291,7 +298,8 @@ pub unsafe fn final_cleanup() {
         set_cur_if(mem_b16s0(cond_ptr()) as i16);
         set_temp_ptr(cond_ptr());
         set_cond_ptr(mem_b32s1(cond_ptr()));
-        crate::mem::free_node_global(temp_ptr(), IF_NODE_SIZE);
+        let p = temp_ptr();
+        crate::state::with_state_mut(|st| crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE));
     }
 
     if history() != HISTORY_SPOTLESS
@@ -307,34 +315,45 @@ pub unsafe fn final_cleanup() {
 
     if c == 1 {
         if in_initex_mode() {
-            c = TOP_MARK_CODE as i32;
-            loop {
-                if cur_mark(c as usize) != crate::mem::TEX_NULL {
-                    crate::mem::delete_token_ref_global(cur_mark(c as usize));
+            let cleanup = crate::state::with_state_mut(|st| {
+                c = TOP_MARK_CODE as i32;
+                loop {
+                    let mark = st.scanner.cur_mark[c as usize];
+                    if mark != crate::mem::TEX_NULL {
+                        crate::mem::delete_token_ref(&mut st.mem, mark);
+                    }
+                    if c as usize >= SPLIT_BOT_MARK_CODE {
+                        break;
+                    }
+                    c += 1;
                 }
-                if c as usize >= SPLIT_BOT_MARK_CODE {
-                    break;
+
+                let marks = st.scanner.sa_root[MARK_VAL];
+                if marks != crate::mem::TEX_NULL
+                    && crate::packaging::do_marks(&mut st.mem, 3, 0, marks)
+                {
+                    st.scanner.sa_root[MARK_VAL] = crate::mem::TEX_NULL;
                 }
-                c += 1;
-            }
 
-            if sa_root(MARK_VAL) != crate::mem::TEX_NULL
-                && crate::packaging::do_marks_global(3, 0, sa_root(MARK_VAL))
-            {
-                set_sa_root(MARK_VAL, crate::mem::TEX_NULL);
-            }
-
-            c = LAST_BOX_CODE as i32;
-            loop {
-                crate::packaging::flush_node_list_global(disc_ptr(c as usize));
-                if c as usize >= VSPLIT_CODE {
-                    break;
+                c = LAST_BOX_CODE as i32;
+                loop {
+                    crate::packaging::flush_node_list(
+                        &mut st.mem,
+                        st.scanner.disc_ptr[c as usize],
+                    )?;
+                    if c as usize >= VSPLIT_CODE {
+                        break;
+                    }
+                    c += 1;
                 }
-                c += 1;
-            }
 
-            if last_glue() != MAX_HALFWORD {
-                crate::mem::delete_glue_ref_global(last_glue());
+                if st.shipout.last_glue != MAX_HALFWORD {
+                    crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
+                }
+                Ok::<(), &'static std::ffi::CStr>(())
+            });
+            if let Err(msg) = cleanup {
+                crate::errors::confusion(msg.as_ptr());
             }
             store_fmt_file();
             return;

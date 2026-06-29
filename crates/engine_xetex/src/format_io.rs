@@ -240,7 +240,17 @@ pub unsafe fn store_fmt_file() {
         crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
     }
 
-    set_format_ident(crate::string_pool::make_string_global());
+    let new_format_ident =
+        crate::state::with_state_mut(|st| crate::string_pool::make_string(&mut st.strings));
+    let new_format_ident = match new_format_ident {
+        Ok(value) => value,
+        Err(crate::scan::NodeRecycleAbort::Overflow) => crate::errors::overflow(
+            c"number of strings".as_ptr(),
+            crate::globals::max_strings() - crate::globals::init_str_ptr(),
+        ),
+        Err(e) => crate::scan::node_recycle_abort(e),
+    };
+    set_format_ident(new_format_ident);
     crate::io::pack_job_name(c".fmt".as_ptr());
 
     let fmt_out = ttstub_output_open(crate::globals::name_of_file(), 0);
@@ -261,9 +271,12 @@ pub unsafe fn store_fmt_file() {
     dump_int(fmt_out, FORMAT_SERIAL);
     dump_int(fmt_out, hash_high());
 
-    while crate::globals::pseudo_files() != crate::mem::TEX_NULL {
-        crate::input::pseudo_close_global();
-    }
+    crate::state::with_state_mut(|st| {
+        while st.input.pseudo_files != crate::mem::TEX_NULL {
+            let state = &mut *st;
+            crate::input::pseudo_close(&mut state.mem, &mut state.input);
+        }
+    });
 
     dump_int(fmt_out, MEM_TOP);
     dump_int(fmt_out, EQTB_SIZE);

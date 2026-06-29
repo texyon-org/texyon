@@ -539,8 +539,7 @@ pub fn new_penalty(mem: &mut MemState, m: i32) -> i32 {
 ///
 /// Phase-C: threaded to take `&mut MemState` directly (no thread-local
 /// bridge). Touches the `mem` arena only — zero `with_state`-bearing calls,
-/// so it is safe under any borrow (`01b` §4). Legacy (un-threaded) callers
-/// reach it through the transitional [`free_node_global`] bridge-down wrapper.
+/// so it is safe under any borrow (`01b` §4).
 pub fn free_node(mem: &mut MemState, p: i32, s: i32) {
     // Record node size and mark it as a free block (MAX_HALFWORD sentinel).
     mem.set_b32s0(p, s);
@@ -553,15 +552,6 @@ pub fn free_node(mem: &mut MemState, p: i32, s: i32) {
     mem.set_b32s1(p + 1, rover);
     mem.set_b32s0(rover + 1, p);
     mem.set_b32s1(q + 1, p);
-}
-
-/// Transitional bridge-down wrapper for legacy (un-threaded) `free_node`
-/// callers (`01b` §3). Its arguments are evaluated by the caller *before* the
-/// thread-local borrow is taken, so it is free of the argument nest-panic
-/// hazard an inline `with_state_mut(|s| …)` closure would have. Removed when
-/// the last legacy caller is itself threaded.
-pub fn free_node_global(p: i32, s: i32) {
-    crate::state::with_state_mut(|st| free_node(&mut st.mem, p, s));
 }
 
 // ---------------------------------------------------------------------------
@@ -607,8 +597,7 @@ pub fn copy_native_glyph_info(mem: &mut MemState, src: i32, dest: i32) {
 /// translated from xetex-xetex0.c:976 (delete_token_ref)
 ///
 /// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only and calls
-/// the threaded [`flush_list`] (no cold path, zero `with_state` calls). Legacy
-/// callers use [`delete_token_ref_global`].
+/// the threaded [`flush_list`] (no cold path, zero `with_state` calls).
 pub fn delete_token_ref(mem: &mut MemState, p: i32) {
     if mem.b32s0(p) == TEX_NULL {
         flush_list(mem, p);
@@ -617,18 +606,12 @@ pub fn delete_token_ref(mem: &mut MemState, p: i32) {
     }
 }
 
-/// Transitional bridge-down wrapper for legacy `delete_token_ref` callers.
-pub fn delete_token_ref_global(p: i32) {
-    crate::state::with_state_mut(|st| delete_token_ref(&mut st.mem, p));
-}
-
 /// Decrement the reference count of a glue spec; free if it reaches TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:984 (delete_glue_ref)
 ///
 /// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only and calls
-/// the threaded [`free_node`] (no cold path, zero `with_state` calls). Legacy
-/// callers use [`delete_glue_ref_global`].
+/// the threaded [`free_node`] (no cold path, zero `with_state` calls).
 pub fn delete_glue_ref(mem: &mut MemState, p: i32) {
     if let Some(spec) = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)) {
         if spec.ref_count(mem) == TEX_NULL {
@@ -637,11 +620,6 @@ pub fn delete_glue_ref(mem: &mut MemState, p: i32) {
             spec.set_ref_count(mem, spec.ref_count(mem) - 1);
         }
     }
-}
-
-/// Transitional bridge-down wrapper for legacy `delete_glue_ref` callers.
-pub fn delete_glue_ref_global(p: i32) {
-    crate::state::with_state_mut(|st| delete_glue_ref(&mut st.mem, p));
 }
 
 // ---------------------------------------------------------------------------

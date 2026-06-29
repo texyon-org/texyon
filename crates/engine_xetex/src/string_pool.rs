@@ -51,20 +51,6 @@ pub fn make_string(strings: &mut StringsState) -> Result<i32, NodeRecycleAbort> 
     Ok(strings.str_ptr - 1)
 }
 
-pub unsafe fn make_string_global() -> i32 {
-    let res = crate::state::with_state_mut(|st| make_string(&mut st.strings));
-    match res {
-        Ok(val) => val,
-        Err(NodeRecycleAbort::Overflow) => crate::errors::overflow(
-            c"number of strings".as_ptr(),
-            crate::globals::max_strings() - crate::globals::init_str_ptr(),
-        ),
-        Err(e) => {
-            crate::scan::node_recycle_abort(e);
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // append_str
 // ---------------------------------------------------------------------------
@@ -233,16 +219,6 @@ pub fn load_pool_strings(
     }
 
     Ok(g)
-}
-
-pub unsafe fn load_pool_strings_global(spare_size: i32) -> i32 {
-    let res = crate::state::with_state_mut(|st| load_pool_strings(&mut st.strings, spare_size));
-    match res {
-        Ok(val) => val,
-        Err(e) => {
-            crate::scan::node_recycle_abort(e);
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

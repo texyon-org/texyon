@@ -6270,7 +6270,10 @@ unsafe fn do_lookahead(
 }
 // translated from xetex-xetex0.c:6766 (main_control)
 // Top-level TeX command dispatcher: big_switch / reswitch loop.
-pub unsafe fn main_control() {
+//
+// The public wrapper is the thread-local anchor; the full command loop holds
+// one state borrow and threads it through every dispatcher below this point.
+unsafe fn main_control_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     // Mode constants (xetex_format.h)
     const VMODE: u16 = 1;
     const HMODE: u16 = 104;
@@ -6386,22 +6389,20 @@ pub unsafe fn main_control() {
     const EVERY_JOB_TEXT: u16 = 13; // xetex-constants.h:212
     const INT_PAR_TRACING_COMMANDS: i32 = 36; // xetex_format.h:71
 
-    use crate::globals::{
-        cur_cmd, cur_list_mode, cur_val, eqtb_b32s1, set_cancel_boundary, set_cur_chr,
-    };
+    use crate::globals::{cur_cmd, cur_list_mode, cur_val, set_cancel_boundary, set_cur_chr};
     use crate::mem::TEX_NULL;
 
-    let every_job = eqtb_b32s1(CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB);
+    let every_job = st.eqtb.b32s1(CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB);
     if every_job != TEX_NULL {
-        mc_input_unit(|st| crate::input::begin_token_list_in(st, every_job, EVERY_JOB_TEXT));
+        crate::input::begin_token_list_in(st, every_job, EVERY_JOB_TEXT)?;
     }
 
-    'big_switch: loop {
-        mc_scc_unit(crate::scan::get_x_token_in);
+    loop {
+        crate::scan::get_x_token_in(st)?;
 
         'reswitch: loop {
-            if eqtb_b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 0 {
-                crate::state::with_state_mut(crate::output::show_cur_cmd_chr_in);
+            if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 0 {
+                crate::output::show_cur_cmd_chr_in(st);
             }
 
             let mode = cur_list_mode().unsigned_abs();
@@ -6410,21 +6411,21 @@ pub unsafe fn main_control() {
             // Fast char path and boundary check (first switch in C, before inter-char check)
             match (mode, cmd) {
                 (HMODE, LETTER) | (HMODE, OTHER_CHAR) | (HMODE, CHAR_GIVEN) => {
-                    if mc_bool(|st| unsafe { main_control_main_loop_in(st) }) {
+                    if main_control_main_loop_in(st)? {
                         break 'reswitch;
                     }
                     continue 'reswitch;
                 }
                 (HMODE, CHAR_NUM) => {
-                    mc_scc_unit(crate::scan::scan_usv_num_in);
+                    crate::scan::scan_usv_num_in(st)?;
                     set_cur_chr(cur_val());
-                    if mc_bool(|st| unsafe { main_control_main_loop_in(st) }) {
+                    if main_control_main_loop_in(st)? {
                         break 'reswitch;
                     }
                     continue 'reswitch;
                 }
                 (HMODE, NO_BOUNDARY) => {
-                    mc_scc_unit(crate::scan::get_x_token_in);
+                    crate::scan::get_x_token_in(st)?;
                     if matches!(cur_cmd(), LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM) {
                         set_cancel_boundary(true);
                     }
@@ -6433,7 +6434,7 @@ pub unsafe fn main_control() {
                 _ => {}
             }
 
-            if mc_bool(main_control_hmode_inter_char_check_in) {
+            if main_control_hmode_inter_char_check_in(st)? {
                 break 'reswitch; // → big_switch
             }
 
@@ -6441,7 +6442,7 @@ pub unsafe fn main_control() {
             match (mode, cmd) {
                 // Spacer/ex_space → spacer_cases
                 (HMODE, SPACER) | (HMODE, EX_SPACE) | (MMODE, EX_SPACE) => {
-                    mc_unit(main_control_spacer_cases_in);
+                    main_control_spacer_cases_in(st)?;
                 }
                 // No-op: ANY_MODE(RELAX), VMODE+SPACER, MMODE+SPACER, MMODE+NO_BOUNDARY
                 (HMODE, RELAX)
@@ -6452,13 +6453,13 @@ pub unsafe fn main_control() {
                 | (MMODE, NO_BOUNDARY) => {}
                 // ANY_MODE(IGNORE_SPACES) → call helper then reswitch
                 (HMODE, IGNORE_SPACES) | (VMODE, IGNORE_SPACES) | (MMODE, IGNORE_SPACES) => {
-                    mc_unit(main_control_ignore_spaces_in);
+                    main_control_ignore_spaces_in(st)?;
                     continue 'reswitch;
                 }
                 // VMODE+STOP → "the only way out"
                 (VMODE, STOP) => {
-                    if mc_bool(its_all_over_in) {
-                        return;
+                    if its_all_over_in(st)? {
+                        return Ok(());
                     }
                 }
                 // Forbidden / math-mode-mismatch error cases
@@ -6518,7 +6519,7 @@ pub unsafe fn main_control() {
                 | (MMODE, UN_VBOX)
                 | (MMODE, VALIGN)
                 | (MMODE, HRULE) => {
-                    mc_unit(main_control_mode_error_cases_in);
+                    main_control_mode_error_cases_in(st)?;
                 }
                 // Rule/skip/kern/group cases
                 (VMODE, HRULE)
@@ -6540,7 +6541,7 @@ pub unsafe fn main_control() {
                 | (VMODE, END_GROUP)
                 | (HMODE, END_GROUP)
                 | (MMODE, END_GROUP) => {
-                    mc_unit(main_control_simple_list_group_cases_in);
+                    main_control_simple_list_group_cases_in(st)?;
                 }
                 // Box/list construction cases
                 (VMODE, RIGHT_BRACE)
@@ -6606,7 +6607,7 @@ pub unsafe fn main_control() {
                 | (VMODE, TAB_MARK)
                 | (HMODE, TAB_MARK)
                 | (MMODE, TAB_MARK) => {
-                    mc_unit(main_control_box_list_cases_in);
+                    main_control_box_list_cases_in(st)?;
                 }
                 // Alignment / endcsname cases
                 (VMODE, NO_ALIGN)
@@ -6623,7 +6624,7 @@ pub unsafe fn main_control() {
                 | (VMODE, END_CS_NAME)
                 | (HMODE, END_CS_NAME)
                 | (MMODE, END_CS_NAME) => {
-                    mc_unit(main_control_alignment_cases_in);
+                    main_control_alignment_cases_in(st)?;
                 }
                 // Math entry/exit cases
                 (HMODE, MATH_SHIFT)
@@ -6651,7 +6652,7 @@ pub unsafe fn main_control() {
                 | (MMODE, ABOVE)
                 | (MMODE, LEFT_RIGHT)
                 | (MMODE, MATH_SHIFT) => {
-                    mc_unit(main_control_math_cases_in);
+                    main_control_math_cases_in(st)?;
                 }
                 // Mode-independent cases (ANY_MODE): assignments, defs, etc.
                 _ if matches!(
@@ -6696,7 +6697,7 @@ pub unsafe fn main_control() {
                         | EXTENSION
                 ) =>
                 {
-                    mc_unit(main_control_mode_independent_in);
+                    main_control_mode_independent_in(st)?;
                 }
                 // Default: unrecognized / already handled → goto big_switch
                 _ => {}
@@ -6707,34 +6708,10 @@ pub unsafe fn main_control() {
     }
 }
 
-fn mc_bool(
-    f: impl FnOnce(&mut crate::state::EngineState) -> Result<bool, MainControlAbort>,
-) -> bool {
-    match crate::state::with_state_mut(f) {
-        Ok(v) => v,
-        Err(e) => unsafe { e.fire() },
-    }
-}
-
-fn mc_unit(f: impl FnOnce(&mut crate::state::EngineState) -> Result<(), MainControlAbort>) {
-    if let Err(e) = crate::state::with_state_mut(f) {
-        unsafe { e.fire() }
-    }
-}
-
-fn mc_scc_unit(
-    f: impl FnOnce(&mut crate::state::EngineState) -> Result<(), crate::scan::SccAbort>,
-) {
-    if let Err(e) = crate::state::with_state_mut(f) {
-        unsafe { e.fire() }
-    }
-}
-
-fn mc_input_unit(
-    f: impl FnOnce(&mut crate::state::EngineState) -> Result<(), crate::input::InputAbort>,
-) {
-    if let Err(e) = crate::state::with_state_mut(f) {
-        unsafe { e.fire() }
+pub unsafe fn main_control() {
+    match crate::state::with_state_mut(|st| main_control_in(st)) {
+        Ok(()) => {}
+        Err(e) => e.fire(),
     }
 }
 

@@ -8,6 +8,39 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 233 — 2026-06-29 — Execution: full main-control borrow + typed node display + bridge drain
+
+**Type:** execution (workstream 01 / fused threading+typing). Large mechanical
+session; three subagents performed read-only frontier audits and one implemented
+the independent typed display slice. Documentation consolidated here.
+
+**Code:**
+- Converted the complete top `main_control` `big_switch`/`reswitch` loop to
+  `main_control_in(&mut EngineState) -> Result<(), MainControlAbort>`. It now
+  calls the scanner, tracing, character loop, and all command dispatchers under
+  one borrow. The public anchor wrapper fires deferred aborts only after the
+  borrow drops; the four short-borrow `mc_*` trampolines are gone.
+- Converted `output::show_node_list_in` to classify each ordinary lo-mem node
+  once and use `AnyNode`/`AnyBox` plus existing per-family accessors. Unknown
+  type output, bounds checks, nullable recursive lists, and hi-mem character
+  handling remain unchanged; genuinely untyped specialized fields remain raw.
+- Drained eight `_global` wrappers from string-pool startup, format dumping,
+  pseudo-file cleanup, and final INITEX cleanup. The direct borrow islands keep
+  cold `overflow`/`confusion` firing outside the borrow. Removed the wrappers
+  and six now-dead globals accessors. Only the stale exported hash lookup shims
+  remain.
+
+**Validation:** `cargo fmt`; `cargo check -p tectonic_engine_xetex` (warnings
+**37**); dashboard **29/2/7/4**; `cargo build --release -p tectonic`; full
+corpus **637 passed / 2 diverged / 0 missing-golden**, only known
+`1905.00073v1` and `1905.00148v1`. Metrics: `with_state` text matches
+**374 → 293**; `unsafe fn` **276 → 274**; `_global` wrappers **10 → 2**.
+
+**Next:** thread `primitive`/`initialize_primitives` over direct
+strings/hash/eqtb/input state, then delete the zero-C-caller `id_lookup` and
+`prim_lookup` export shims plus stale header prototypes. The next large typed
+vein is shipout's `hlist_out_in`/`vlist_out_in` traversal.
+
 ## Idiom session 232 — 2026-06-28 — Execution: collapse init/cleanup + format-dump bridge islands; delete dead string wrappers
 
 **Type:** execution (workstream 01). Large mechanical session, one consolidated

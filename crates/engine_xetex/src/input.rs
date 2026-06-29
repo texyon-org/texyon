@@ -204,8 +204,7 @@ pub(crate) fn ins_error_in(
 /// translated from xetex-xetex0.c:2766 (pseudo_close)
 ///
 /// Phase-C: threaded to `&mut MemState` + `&mut InputState` (`01b` §3). Pure
-/// node recycling (no allocation), so no cold-path sentinel; legacy callers use
-/// [`pseudo_close_global`].
+/// node recycling (no allocation), so no cold-path sentinel.
 pub(crate) fn pseudo_close(
     mem: &mut crate::state::MemState,
     input: &mut crate::state::InputClusterState,
@@ -225,14 +224,6 @@ pub(crate) fn pseudo_close(
         crate::mem::free_node(mem, q, sz);
         q = next;
     }
-}
-
-/// Transitional bridge-down wrapper for legacy `pseudo_close` callers (`01b` §3).
-pub fn pseudo_close_global() {
-    crate::state::with_state_mut(|st| {
-        let s = &mut *st;
-        pseudo_close(&mut s.mem, &mut s.input)
-    });
 }
 
 // ---------------------------------------------------------------------------

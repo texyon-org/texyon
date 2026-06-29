@@ -527,8 +527,8 @@ pub fn just_reverse(
 /// [`crate::mem::delete_glue_ref`] / [`crate::mem::delete_token_ref`]. The two
 /// impossible corrupt-node arms cannot call the `with_state`-bearing
 /// `confusion()` under the borrow, so they return `Err(message)` (the `01b` §5
-/// sentinel) and [`flush_node_list_global`] performs the abort after the borrow
-/// drops. Recursive-call arguments are precomputed into locals so the immutable
+/// sentinel) so its caller can perform the abort after the borrow drops.
+/// Recursive-call arguments are precomputed into locals so the immutable
 /// arena read does not overlap the `&mut mem` reborrow.
 pub fn flush_node_list(
     mem: &mut crate::state::MemState,
@@ -721,16 +721,6 @@ pub fn flush_node_list(
         p = q;
     }
     Ok(())
-}
-/// Transitional bridge-down wrapper for legacy `flush_node_list` callers
-/// (`01b` §3, §5). Runs the threaded list disposal under a single borrow, then
-/// — after the borrow drops — fires the cold `confusion()` abort if a corrupt
-/// node was encountered. `confusion()` never returns, so the `Err` is only ever
-/// observed here, never by real callers.
-pub unsafe fn flush_node_list_global(p: i32) {
-    if let Err(msg) = crate::state::with_state_mut(|st| flush_node_list(&mut st.mem, p)) {
-        crate::errors::confusion(msg.as_ptr());
-    }
 }
 /// translated from xetex-xetex0.c:953 (copy_node_list)
 ///
@@ -1946,7 +1936,7 @@ pub fn prune_page_top(
 /// the threaded `free_node` / `delete_token_ref`; `cur_ptr` is a raw `mod raw`
 /// global (safe under the borrow). No cold abort path. Free-function calls that
 /// take a `mem`-derived argument precompute it into a local to avoid overlapping
-/// the `&mut mem` reborrow. Legacy callers use [`do_marks_global`].
+/// the `&mut mem` reborrow.
 pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> bool {
     use crate::globals::{cur_ptr, set_cur_ptr};
     use crate::mem::TEX_NULL;
@@ -2031,10 +2021,6 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
     }
 
     q == TEX_NULL
-}
-/// Transitional bridge-down wrapper for legacy `do_marks` callers.
-pub fn do_marks_global(a: i16, l: i16, q: i32) -> bool {
-    crate::state::with_state_mut(|st| do_marks(&mut st.mem, a, l, q))
 }
 fn hpack_in(
     mem: &mut MemState,

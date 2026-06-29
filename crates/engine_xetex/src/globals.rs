@@ -560,12 +560,6 @@ pub(crate) fn str_start(k: i32) -> i32 {
 pub(crate) fn in_open() -> i32 {
     crate::state::with_state(|s| s.input.in_open)
 }
-/// Returns `pseudo_files` — head of the pseudo-file linked list (xetex-xetexd.h:704).
-#[inline]
-pub(crate) fn pseudo_files() -> i32 {
-    crate::state::with_state(|s| s.input.pseudo_files)
-}
-
 /// Returns non-zero when file:line-style error messages are active.
 #[inline]
 pub(crate) fn file_line_error_style_p() -> i32 {
@@ -1371,14 +1365,6 @@ pub(crate) fn set_exten_base_entry(f: i32, v: i32) {
 }
 
 #[inline]
-pub(crate) fn last_glue() -> i32 {
-    crate::state::with_state(|state| state.shipout.last_glue)
-}
-#[inline]
-pub(crate) fn disc_ptr(k: usize) -> i32 {
-    crate::state::with_state(|s| s.scanner.disc_ptr[k])
-}
-#[inline]
 pub(crate) fn random_seed() -> i32 {
     crate::state::with_state(|state| state.errors.random_seed)
 }
@@ -1566,13 +1552,6 @@ pub(crate) fn set_cur_chr(v: i32) {
     }
 }
 
-/// Returns `cur_mark[k]` — the k-th mark register token list
-/// (xetex-xetexd.h:527; k must be 0..=4).
-#[inline]
-pub(crate) fn cur_mark(k: usize) -> i32 {
-    crate::state::with_state(|s| s.scanner.cur_mark[k])
-}
-
 // ---------------------------------------------------------------------------
 // input_stack / input_ptr / base_ptr
 // ---------------------------------------------------------------------------
@@ -1690,19 +1669,6 @@ pub(crate) fn set_if_line(v: i32) {
 // ---------------------------------------------------------------------------
 // sa_root / sa_chain / sa_level
 // ---------------------------------------------------------------------------
-
-/// Read `sa_root[i]` (the root of sparse-array trie for class i).
-#[inline]
-pub(crate) fn sa_root(i: usize) -> i32 {
-    crate::state::with_state(|s| s.scanner.sa_root[i])
-}
-/// Write `sa_root[i] = v`.
-#[inline]
-pub(crate) fn set_sa_root(i: usize, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.sa_root[i] = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // cur_ptr / sa_null

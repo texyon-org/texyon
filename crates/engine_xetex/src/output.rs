@@ -1,12 +1,14 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, DISC_NODE, EQTB_SIZE,
-    ERROR_STOP_MODE, GLUE_NODE, HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE, LOCAL_BASE,
-    MATH_NODE, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_AND_LOG,
-    SELECTOR_TERM_ONLY, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
+    ERROR_STOP_MODE, GLUE_NODE, HLIST_NODE, INT_BASE, LIGATURE_NODE, LOCAL_BASE, MATH_NODE,
+    NULL_FLAG, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SINGLE_BASE,
+    TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::{error_in, ErrorOutcome};
+use crate::node::{AnyBox, AnyNode};
 use crate::state::EngineState;
+use crate::units::{MemIdx, NodeType};
 
 use crate::globals::{
     cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, init_pool_ptr, line, pool_size,
@@ -4153,113 +4155,135 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
         if p >= st.mem.hi_mem_min {
             print_font_and_char_in(st, p);
         } else {
-            match st.mem.b16s1(p) {
-                HLIST_NODE | VLIST_NODE_SNL | UNSET_NODE_SNL => {
-                    let ntype = st.mem.b16s1(p);
-                    if ntype == HLIST_NODE {
+            match st.mem.classify(MemIdx::new(p)) {
+                Ok(node @ AnyNode::HList(_)) | Ok(node @ AnyNode::VList(_)) => {
+                    let (box_node, is_hlist) = match node {
+                        AnyNode::HList(b) => (AnyBox::HList(b), true),
+                        AnyNode::VList(b) => (AnyBox::VList(b), false),
+                        _ => unreachable!(),
+                    };
+                    if is_hlist {
                         print_esc_in(st, 'h' as i32);
-                    } else if ntype == VLIST_NODE_SNL {
-                        print_esc_in(st, 'v' as i32);
                     } else {
-                        print_esc_cstr_in(st, c"unset".as_ptr());
+                        print_esc_in(st, 'v' as i32);
                     }
                     print_cstr_in(st, c"box(".as_ptr());
-                    print_scaled_in(st, st.mem.b32s1(p + 3));
+                    print_scaled_in(st, box_node.height(&st.mem).0);
                     print_char_in(st, '+' as i32);
-                    print_scaled_in(st, st.mem.b32s1(p + 2));
+                    print_scaled_in(st, box_node.depth(&st.mem).0);
                     print_cstr_in(st, c")x".as_ptr());
-                    print_scaled_in(st, st.mem.b32s1(p + 1));
-                    if ntype == UNSET_NODE_SNL {
-                        if st.mem.b16s0(p) != 0 {
-                            print_cstr_in(st, c" (".as_ptr());
-                            print_int_in(st, st.mem.b16s0(p) as i32 + 1);
-                            print_cstr_in(st, c" columns)".as_ptr());
+                    print_scaled_in(st, box_node.width(&st.mem).0);
+                    let g = match box_node {
+                        AnyBox::HList(b) => b.glue_set(&st.mem),
+                        AnyBox::VList(b) => b.glue_set(&st.mem),
+                    };
+                    let glue_sign = match box_node {
+                        AnyBox::HList(b) => b.glue_sign(&st.mem),
+                        AnyBox::VList(b) => b.glue_sign(&st.mem),
+                    };
+                    let glue_order = match box_node {
+                        AnyBox::HList(b) => b.glue_order(&st.mem),
+                        AnyBox::VList(b) => b.glue_order(&st.mem),
+                    };
+                    if g != 0.0 && glue_sign != NORMAL_SNL {
+                        print_cstr_in(st, c", glue set ".as_ptr());
+                        if glue_sign == SHRINKING_SNL {
+                            print_cstr_in(st, c"- ".as_ptr());
                         }
-                        if st.mem.b32s1(p + 6) != 0 {
-                            print_cstr_in(st, c", stretch ".as_ptr());
-                            print_glue_in(
-                                st,
-                                st.mem.b32s1(p + 6),
-                                st.mem.b16s0(p + 5) as i32,
-                                std::ptr::null(),
-                            );
-                        }
-                        if st.mem.b32s1(p + 4) != 0 {
-                            print_cstr_in(st, c", shrink ".as_ptr());
-                            print_glue_in(
-                                st,
-                                st.mem.b32s1(p + 4),
-                                st.mem.b16s1(p + 5) as i32,
-                                std::ptr::null(),
-                            );
-                        }
-                    } else {
-                        let g = st.mem.gr(p + 6);
-                        if g != 0.0 && st.mem.b16s1(p + 5) != NORMAL_SNL {
-                            print_cstr_in(st, c", glue set ".as_ptr());
-                            if st.mem.b16s1(p + 5) == SHRINKING_SNL {
-                                print_cstr_in(st, c"- ".as_ptr());
-                            }
-                            if g.abs() > 20000.0 {
-                                if g > 0.0 {
-                                    print_char_in(st, '>' as i32);
-                                } else {
-                                    print_cstr_in(st, c"< -".as_ptr());
-                                }
-                                print_glue_in(
-                                    st,
-                                    20000 * 65536,
-                                    st.mem.b16s0(p + 5) as i32,
-                                    std::ptr::null(),
-                                );
+                        if g.abs() > 20000.0 {
+                            if g > 0.0 {
+                                print_char_in(st, '>' as i32);
                             } else {
-                                print_glue_in(
-                                    st,
-                                    crate::scaled_math::tex_round(65536.0 * g),
-                                    st.mem.b16s0(p + 5) as i32,
-                                    std::ptr::null(),
-                                );
+                                print_cstr_in(st, c"< -".as_ptr());
                             }
+                            print_glue_in(st, 20000 * 65536, glue_order as i32, std::ptr::null());
+                        } else {
+                            print_glue_in(
+                                st,
+                                crate::scaled_math::tex_round(65536.0 * g),
+                                glue_order as i32,
+                                std::ptr::null(),
+                            );
                         }
-                        if st.mem.b32s1(p + 4) != 0 {
-                            print_cstr_in(st, c", shifted ".as_ptr());
-                            print_scaled_in(st, st.mem.b32s1(p + 4));
-                        }
-                        if ntype == HLIST_NODE && st.mem.b16s0(p) == DLIST_SNL {
-                            print_cstr_in(st, c", display".as_ptr());
-                        }
+                    }
+                    if box_node.shift_amount(&st.mem).0 != 0 {
+                        print_cstr_in(st, c", shifted ".as_ptr());
+                        print_scaled_in(st, box_node.shift_amount(&st.mem).0);
+                    }
+                    let subtype = match box_node {
+                        AnyBox::HList(b) => b.subtype(&st.mem),
+                        AnyBox::VList(b) => b.subtype(&st.mem),
+                    };
+                    if is_hlist && subtype == DLIST_SNL {
+                        print_cstr_in(st, c", display".as_ptr());
                     }
                     st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
                     st.strings.pool_ptr += 1;
-                    show_node_list_in(st, st.mem.b32s1(p + 5));
+                    show_node_list_in(st, box_node.list_ptr(&st.mem).0);
                     st.strings.pool_ptr -= 1;
                 }
-                RULE_NODE => {
-                    print_esc_cstr_in(st, c"rule(".as_ptr());
-                    print_rule_dimen_in(st, st.mem.b32s1(p + 3));
+                Ok(AnyNode::Unset(node)) => {
+                    print_esc_cstr_in(st, c"unset".as_ptr());
+                    print_cstr_in(st, c"box(".as_ptr());
+                    print_scaled_in(st, node.height(&st.mem).0);
                     print_char_in(st, '+' as i32);
-                    print_rule_dimen_in(st, st.mem.b32s1(p + 2));
+                    print_scaled_in(st, node.depth(&st.mem).0);
                     print_cstr_in(st, c")x".as_ptr());
-                    print_rule_dimen_in(st, st.mem.b32s1(p + 1));
+                    print_scaled_in(st, node.width(&st.mem).0);
+                    if node.subtype(&st.mem) != 0 {
+                        print_cstr_in(st, c" (".as_ptr());
+                        print_int_in(st, node.subtype(&st.mem) as i32 + 1);
+                        print_cstr_in(st, c" columns)".as_ptr());
+                    }
+                    if st.mem.b32s1(p + 6) != 0 {
+                        print_cstr_in(st, c", stretch ".as_ptr());
+                        print_glue_in(
+                            st,
+                            st.mem.b32s1(p + 6),
+                            st.mem.b16s0(p + 5) as i32,
+                            std::ptr::null(),
+                        );
+                    }
+                    if st.mem.b32s1(p + 4) != 0 {
+                        print_cstr_in(st, c", shrink ".as_ptr());
+                        print_glue_in(
+                            st,
+                            st.mem.b32s1(p + 4),
+                            st.mem.b16s1(p + 5) as i32,
+                            std::ptr::null(),
+                        );
+                    }
+                    st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
+                    st.strings.pool_ptr += 1;
+                    show_node_list_in(st, node.list_ptr(&st.mem).0);
+                    st.strings.pool_ptr -= 1;
                 }
-                INS_NODE_SNL => {
+                Ok(AnyNode::Rule(node)) => {
+                    print_esc_cstr_in(st, c"rule(".as_ptr());
+                    print_rule_dimen_in(st, node.height(&st.mem).raw());
+                    print_char_in(st, '+' as i32);
+                    print_rule_dimen_in(st, node.depth(&st.mem).raw());
+                    print_cstr_in(st, c")x".as_ptr());
+                    print_rule_dimen_in(st, node.width(&st.mem).raw());
+                }
+                Ok(AnyNode::Ins(node)) => {
                     print_esc_cstr_in(st, c"insert".as_ptr());
-                    print_int_in(st, st.mem.b16s0(p) as i32);
+                    print_int_in(st, node.subtype(&st.mem) as i32);
                     print_cstr_in(st, c", natural size ".as_ptr());
                     print_scaled_in(st, st.mem.b32s1(p + 3));
                     print_cstr_in(st, c"; split(".as_ptr());
-                    print_spec_in(st, st.mem.b32s1(p + 4), std::ptr::null());
+                    print_spec_in(st, node.split_top_ptr(&st.mem).0, std::ptr::null());
                     print_char_in(st, ',' as i32);
                     print_scaled_in(st, st.mem.b32s1(p + 2));
                     print_cstr_in(st, c"); float cost ".as_ptr());
                     print_int_in(st, st.mem.b32s1(p + 1));
                     st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
                     st.strings.pool_ptr += 1;
-                    show_node_list_in(st, st.mem.b32s0(p + 4));
+                    show_node_list_in(st, node.ins_ptr(&st.mem).0);
                     st.strings.pool_ptr -= 1;
                 }
-                WHATSIT_NODE_SNL => {
-                    match st.mem.b16s0(p) {
+                Ok(AnyNode::Whatsit(node)) => {
+                    match node.subtype(&st.mem) {
                         OPEN_NODE_SNL => {
                             print_write_whatsit_in(st, c"openout".as_ptr(), p);
                             print_char_in(st, '=' as i32);
@@ -4272,22 +4296,22 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                         }
                         WRITE_NODE_SNL => {
                             print_write_whatsit_in(st, c"write".as_ptr(), p);
-                            print_mark_in(st, st.mem.b32s1(p + 1));
+                            print_mark_in(st, node.write_tokens(&st.mem).0);
                         }
                         CLOSE_NODE_SNL => {
                             print_write_whatsit_in(st, c"closeout".as_ptr(), p);
                         }
                         SPECIAL_NODE_SNL => {
                             print_esc_cstr_in(st, c"special".as_ptr());
-                            print_mark_in(st, st.mem.b32s1(p + 1));
+                            print_mark_in(st, node.write_tokens(&st.mem).0);
                         }
                         LANGUAGE_NODE_SNL => {
                             print_esc_cstr_in(st, c"setlanguage".as_ptr());
-                            print_int_in(st, st.mem.b32s1(p + 1));
+                            print_int_in(st, node.what_lang(&st.mem));
                             print_cstr_in(st, c" (hyphenmin ".as_ptr());
-                            print_int_in(st, st.mem.b16s1(p + 1) as i32);
+                            print_int_in(st, node.what_lhm(&st.mem) as i32);
                             print_char_in(st, ',' as i32);
-                            print_int_in(st, st.mem.b16s0(p + 1) as i32);
+                            print_int_in(st, node.what_rhm(&st.mem) as i32);
                             print_char_in(st, ')' as i32);
                         }
                         PDF_SAVE_POS_NODE_SNL => {
@@ -4298,7 +4322,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                             print_esc_in(
                                 st,
                                 st.eqtb
-                                    .hash_s1(FONT_ID_BASE_SNL + st.mem.b16s2(p + 4) as i32),
+                                    .hash_s1(FONT_ID_BASE_SNL + node.native_font(&st.mem).0),
                             );
                             print_char_in(st, ' ' as i32);
                             print_native_word_in(st, p);
@@ -4307,19 +4331,19 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                             print_esc_in(
                                 st,
                                 st.eqtb
-                                    .hash_s1(FONT_ID_BASE_SNL + st.mem.b16s2(p + 4) as i32),
+                                    .hash_s1(FONT_ID_BASE_SNL + node.native_font(&st.mem).0),
                             );
                             print_cstr_in(st, c" glyph#".as_ptr());
-                            print_int_in(st, st.mem.b16s1(p + 4) as i32);
+                            print_int_in(st, node.native_glyph(&st.mem) as i32);
                         }
                         PIC_NODE_SNL | PDF_NODE_SNL => {
-                            if st.mem.b16s0(p) == PIC_NODE_SNL {
+                            if node.subtype(&st.mem) == PIC_NODE_SNL {
                                 print_esc_cstr_in(st, c"XeTeXpicfile".as_ptr());
                             } else {
                                 print_esc_cstr_in(st, c"XeTeXpdffile".as_ptr());
                             }
                             print_cstr_in(st, c"( ".as_ptr());
-                            let path_len = st.mem.b16s1(p + 4) as i32;
+                            let path_len = node.pic_path_len(&st.mem) as i32;
                             let path_ptr = st.mem.node_addr(p + PIC_NODE_SIZE_SNL) as *const u8;
                             for i in 0..path_len {
                                 print_raw_char_in(
@@ -4335,8 +4359,8 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                         }
                     }
                 }
-                GLUE_NODE => {
-                    let sub = st.mem.b16s0(p);
+                Ok(AnyNode::Glue(node)) => {
+                    let sub = node.subtype(&st.mem);
                     if sub >= A_LEADERS_SNL {
                         print_esc_cstr_in(st, c"".as_ptr());
                         if sub == C_LEADERS_SNL {
@@ -4345,10 +4369,10 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                             print_char_in(st, 'x' as i32);
                         }
                         print_cstr_in(st, c"leaders ".as_ptr());
-                        print_spec_in(st, st.mem.b32s0(p + 1), std::ptr::null());
+                        print_spec_in(st, node.glue_ptr(&st.mem).0, std::ptr::null());
                         st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
                         st.strings.pool_ptr += 1;
-                        show_node_list_in(st, st.mem.b32s1(p + 1));
+                        show_node_list_in(st, node.leader_ptr(&st.mem).0);
                         st.strings.pool_ptr -= 1;
                     } else {
                         print_esc_cstr_in(st, c"glue".as_ptr());
@@ -4367,21 +4391,21 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                         if sub != COND_MATH_GLUE_SNL {
                             print_char_in(st, ' ' as i32);
                             if sub < COND_MATH_GLUE_SNL {
-                                print_spec_in(st, st.mem.b32s0(p + 1), std::ptr::null());
+                                print_spec_in(st, node.glue_ptr(&st.mem).0, std::ptr::null());
                             } else {
-                                print_spec_in(st, st.mem.b32s0(p + 1), c"mu".as_ptr());
+                                print_spec_in(st, node.glue_ptr(&st.mem).0, c"mu".as_ptr());
                             }
                         }
                     }
                 }
-                KERN_NODE => {
-                    if st.mem.b16s0(p) != MU_GLUE_SNL {
+                Ok(AnyNode::Kern(node)) => {
+                    if node.subtype(&st.mem) != MU_GLUE_SNL {
                         print_esc_cstr_in(st, c"kern".as_ptr());
-                        if st.mem.b16s0(p) != NORMAL_SNL {
+                        if node.subtype(&st.mem) != NORMAL_SNL {
                             print_char_in(st, ' ' as i32);
                         }
-                        print_scaled_in(st, st.mem.b32s1(p + 1));
-                        let sub = st.mem.b16s0(p);
+                        print_scaled_in(st, node.width(&st.mem).0);
+                        let sub = node.subtype(&st.mem);
                         if sub == ACC_KERN_SNL {
                             print_cstr_in(st, c" (for accent)".as_ptr());
                         } else if sub == SPACE_ADJUSTMENT_SNL {
@@ -4389,21 +4413,21 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                         }
                     } else {
                         print_esc_cstr_in(st, c"mkern".as_ptr());
-                        print_scaled_in(st, st.mem.b32s1(p + 1));
+                        print_scaled_in(st, node.width(&st.mem).0);
                         print_cstr_in(st, c"mu".as_ptr());
                     }
                 }
-                MARGIN_KERN_NODE_SNL => {
+                Ok(AnyNode::MarginKern(node)) => {
                     print_esc_cstr_in(st, c"kern".as_ptr());
-                    print_scaled_in(st, st.mem.b32s1(p + 1));
+                    print_scaled_in(st, node.width(&st.mem).0);
                     if st.mem.b16s0(p) == 0 {
                         print_cstr_in(st, c" (left margin)".as_ptr());
                     } else {
                         print_cstr_in(st, c" (right margin)".as_ptr());
                     }
                 }
-                MATH_NODE => {
-                    let sub = st.mem.b16s0(p);
+                Ok(AnyNode::Math(node)) => {
+                    let sub = node.subtype(&st.mem);
                     if sub > AFTER_SNL {
                         if sub % 2 == 1 {
                             print_esc_cstr_in(st, c"end".as_ptr());
@@ -4424,89 +4448,86 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                         } else {
                             print_cstr_in(st, c"off".as_ptr());
                         }
-                        if st.mem.b32s1(p + 1) != 0 {
+                        if node.width(&st.mem).0 != 0 {
                             print_cstr_in(st, c", surrounded ".as_ptr());
-                            print_scaled_in(st, st.mem.b32s1(p + 1));
+                            print_scaled_in(st, node.width(&st.mem).0);
                         }
                     }
                 }
-                LIGATURE_NODE => {
+                Ok(AnyNode::Ligature(node)) => {
                     print_font_and_char_in(st, p + 1);
                     print_cstr_in(st, c" (ligature ".as_ptr());
-                    if st.mem.b16s0(p) > 1 {
+                    if node.subtype(&st.mem) > 1 {
                         print_char_in(st, '|' as i32);
                     }
-                    st.errors.font_in_short_display = st.mem.b16s1(p + 1) as i32;
-                    short_display_in(st, st.mem.b32s1(p + 1));
-                    if st.mem.b16s0(p) % 2 == 1 {
+                    st.errors.font_in_short_display = node.font(&st.mem).0;
+                    short_display_in(st, node.lig_ptr(&st.mem).0);
+                    if node.subtype(&st.mem) % 2 == 1 {
                         print_char_in(st, '|' as i32);
                     }
                     print_char_in(st, ')' as i32);
                 }
-                PENALTY_NODE => {
+                Ok(AnyNode::Penalty(node)) => {
                     print_esc_cstr_in(st, c"penalty ".as_ptr());
-                    print_int_in(st, st.mem.b32s1(p + 1));
+                    print_int_in(st, node.penalty(&st.mem));
                 }
-                DISC_NODE => {
+                Ok(AnyNode::Disc(node)) => {
                     print_esc_cstr_in(st, c"discretionary".as_ptr());
-                    if st.mem.b16s0(p) > 0 {
+                    if node.subtype(&st.mem) > 0 {
                         print_cstr_in(st, c" replacing ".as_ptr());
-                        print_int_in(st, st.mem.b16s0(p) as i32);
+                        print_int_in(st, node.subtype(&st.mem) as i32);
                     }
                     st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
                     st.strings.pool_ptr += 1;
-                    show_node_list_in(st, st.mem.b32s0(p + 1));
+                    show_node_list_in(st, node.pre_break(&st.mem).0);
                     st.strings.pool_ptr -= 1;
                     st.strings.str_pool[st.strings.pool_ptr as usize] = '|' as u16;
                     st.strings.pool_ptr += 1;
-                    show_node_list_in(st, st.mem.b32s1(p + 1));
+                    show_node_list_in(st, node.post_break(&st.mem).0);
                     st.strings.pool_ptr -= 1;
                 }
-                MARK_NODE_SNL => {
+                Ok(AnyNode::Mark(node)) => {
                     print_esc_cstr_in(st, c"mark".as_ptr());
-                    if st.mem.b32s0(p + 1) != 0 {
+                    if node.mark_class(&st.mem) != 0 {
                         print_char_in(st, 's' as i32);
-                        print_int_in(st, st.mem.b32s0(p + 1));
+                        print_int_in(st, node.mark_class(&st.mem));
                     }
-                    print_mark_in(st, st.mem.b32s1(p + 1));
+                    print_mark_in(st, node.mark_ptr(&st.mem).0);
                 }
-                ADJUST_NODE_SNL => {
+                Ok(AnyNode::Adjust(node)) => {
                     print_esc_cstr_in(st, c"vadjust".as_ptr());
-                    if st.mem.b16s0(p) != 0 {
+                    if node.subtype(&st.mem) != 0 {
                         print_cstr_in(st, c" pre ".as_ptr());
                     }
                     st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
                     st.strings.pool_ptr += 1;
-                    show_node_list_in(st, st.mem.b32s1(p + 1));
+                    show_node_list_in(st, node.adjust_ptr(&st.mem).0);
                     st.strings.pool_ptr -= 1;
                 }
-                STYLE_NODE_SNL => {
-                    print_style_in(st, st.mem.b16s0(p) as i32);
+                Ok(AnyNode::Style(node)) => {
+                    print_style_in(st, node.subtype(&st.mem) as i32);
                 }
-                CHOICE_NODE_SNL => {
+                Ok(AnyNode::Choice(node)) => {
                     print_esc_cstr_in(st, c"mathchoice".as_ptr());
                     st.strings.str_pool[st.strings.pool_ptr as usize] = 'D' as u16;
                     st.strings.pool_ptr += 1;
-                    show_node_list_in(st, st.mem.b32s0(p + 1));
+                    show_node_list_in(st, node.display_mlist(&st.mem).0);
                     st.strings.pool_ptr -= 1;
                     st.strings.str_pool[st.strings.pool_ptr as usize] = 'T' as u16;
                     st.strings.pool_ptr += 1;
-                    show_node_list_in(st, st.mem.b32s1(p + 1));
+                    show_node_list_in(st, node.text_mlist(&st.mem).0);
                     st.strings.pool_ptr -= 1;
                     st.strings.str_pool[st.strings.pool_ptr as usize] = 'S' as u16;
                     st.strings.pool_ptr += 1;
-                    show_node_list_in(st, st.mem.b32s0(p + 2));
+                    show_node_list_in(st, node.script_mlist(&st.mem).0);
                     st.strings.pool_ptr -= 1;
                     st.strings.str_pool[st.strings.pool_ptr as usize] = 's' as u16;
                     st.strings.pool_ptr += 1;
-                    show_node_list_in(st, st.mem.b32s1(p + 2));
+                    show_node_list_in(st, node.script_script_mlist(&st.mem).0);
                     st.strings.pool_ptr -= 1;
                 }
-                ORD_NOAD_SNL | OP_NOAD_SNL | BIN_NOAD_SNL | REL_NOAD_SNL | OPEN_NOAD_SNL
-                | CLOSE_NOAD_SNL | PUNCT_NOAD_SNL | INNER_NOAD_SNL | RADICAL_NOAD_SNL
-                | OVER_NOAD_SNL | UNDER_NOAD_SNL | VCENTER_NOAD_SNL | ACCENT_NOAD_SNL
-                | LEFT_NOAD_SNL | RIGHT_NOAD_SNL => {
-                    let ntype = st.mem.b16s1(p);
+                Ok(AnyNode::Noad(node)) if node.noad_type(&st.mem) != NodeType::FractionNoad => {
+                    let ntype = node.noad_type(&st.mem).as_raw();
                     match ntype {
                         ORD_NOAD_SNL => {
                             print_esc_cstr_in(st, c"mathord".as_ptr());
@@ -4554,7 +4575,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                             print_delimiter_in(st, p + 1);
                         }
                         RIGHT_NOAD_SNL => {
-                            if st.mem.b16s0(p) == NORMAL_SNL {
+                            if node.subtype(&st.mem) == NORMAL_SNL {
                                 print_esc_cstr_in(st, c"right".as_ptr());
                             } else {
                                 print_esc_cstr_in(st, c"middle".as_ptr());
@@ -4564,8 +4585,8 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                         _ => {}
                     }
                     if ntype < LEFT_NOAD_SNL {
-                        if st.mem.b16s0(p) != NORMAL_SNL {
-                            if st.mem.b16s0(p) == LIMITS_SNL {
+                        if node.subtype(&st.mem) != NORMAL_SNL {
+                            if node.subtype(&st.mem) == LIMITS_SNL {
                                 print_esc_cstr_in(st, c"limits".as_ptr());
                             } else {
                                 print_esc_cstr_in(st, c"nolimits".as_ptr());
@@ -4576,12 +4597,12 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                     print_subsidiary_data_in(st, p + 2, '^' as u16);
                     print_subsidiary_data_in(st, p + 3, '_' as u16);
                 }
-                FRACTION_NOAD_SNL => {
+                Ok(AnyNode::Noad(node)) => {
                     print_esc_cstr_in(st, c"fraction, thickness ".as_ptr());
-                    if st.mem.b32s1(p + 1) == DEFAULT_CODE_SNL {
+                    if node.thickness(&st.mem) == DEFAULT_CODE_SNL {
                         print_cstr_in(st, c"= default".as_ptr());
                     } else {
-                        print_scaled_in(st, st.mem.b32s1(p + 1));
+                        print_scaled_in(st, node.thickness(&st.mem));
                     }
                     // left delimiter check
                     if !st.mem.b16s3(p + 4).is_multiple_of(256)
@@ -4608,7 +4629,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                     print_subsidiary_data_in(st, p + 2, '\\' as u16);
                     print_subsidiary_data_in(st, p + 3, '/' as u16);
                 }
-                _ => {
+                Err(_) => {
                     print_cstr_in(st, c"Unknown node type!".as_ptr());
                 }
             }
@@ -4907,13 +4928,6 @@ const ACC_KERN_SNL: u16 = 2; // xetex_format.h:429
 const SPACE_ADJUSTMENT_SNL: u16 = 3; // xetex_format.h:430
 const LIMITS_SNL: u16 = 1; // xetex_format.h:452
 const LEFT_NOAD_SNL: u16 = 30; // xetex_format.h:415
-const VLIST_NODE_SNL: u16 = 1;
-const INS_NODE_SNL: u16 = 3;
-const WHATSIT_NODE_SNL: u16 = 8;
-const MARGIN_KERN_NODE_SNL: u16 = 40;
-const UNSET_NODE_SNL: u16 = 13;
-const STYLE_NODE_SNL: u16 = 14;
-const CHOICE_NODE_SNL: u16 = 15;
 const ORD_NOAD_SNL: u16 = 16;
 const OP_NOAD_SNL: u16 = 17;
 const BIN_NOAD_SNL: u16 = 18;
@@ -4923,14 +4937,11 @@ const CLOSE_NOAD_SNL: u16 = 21;
 const PUNCT_NOAD_SNL: u16 = 22;
 const INNER_NOAD_SNL: u16 = 23;
 const RADICAL_NOAD_SNL: u16 = 24;
-const FRACTION_NOAD_SNL: u16 = 25;
 const UNDER_NOAD_SNL: u16 = 26;
 const OVER_NOAD_SNL: u16 = 27;
 const ACCENT_NOAD_SNL: u16 = 28;
 const VCENTER_NOAD_SNL: u16 = 29;
 const RIGHT_NOAD_SNL: u16 = 31;
-const MARK_NODE_SNL: u16 = 4;
-const ADJUST_NODE_SNL: u16 = 5;
 // Whatsit subtypes.
 const OPEN_NODE_SNL: u16 = 0;
 const WRITE_NODE_SNL: u16 = 1;
