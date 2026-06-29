@@ -13,21 +13,12 @@ use crate::globals::{
 // (session 46). Thin module-private accessors over the thread-local.
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
-use crate::node::{AnyBox, AnyNode};
+use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr};
 use crate::state::{EngineState, EqtbState, MemState, ShipoutState};
-use crate::units::MemIdx;
+use crate::units::{MemIdx, MemPtr};
 
 // Node types (xetex_format.h)
-const HLIST_NODE: i32 = crate::consts::HLIST_NODE as i32;
-const VLIST_NODE: i32 = 1;
-const RULE_NODE: i32 = crate::consts::RULE_NODE as i32;
-const INS_NODE: i32 = 3;
-const MARK_NODE: i32 = 4;
-const WHATSIT_NODE: i32 = 8;
 const MATH_NODE: i32 = crate::consts::MATH_NODE as i32;
-const GLUE_NODE: i32 = crate::consts::GLUE_NODE as i32;
-const KERN_NODE: i32 = crate::consts::KERN_NODE as i32;
-const PENALTY_NODE: i32 = crate::consts::PENALTY_NODE as i32;
 const PIC_NODE: i32 = 43;
 const PDF_NODE: i32 = 44;
 
@@ -271,14 +262,20 @@ pub(crate) unsafe fn fire_page_build_abort(a: PageBuildAbort) -> ! {
 
 fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     // 1048: Set output_penalty
-    if st.mem.b16s1(st.shipout.best_page_break) as i32 == PENALTY_NODE {
-        let best_page_break = st.shipout.best_page_break;
+    let best_penalty = (st.shipout.best_page_break != TEX_NULL)
+        .then(|| {
+            st.mem
+                .classify_penalty(MemIdx::new(st.shipout.best_page_break))
+                .expect("valid best page break")
+        })
+        .flatten();
+    if let Some(best_penalty) = best_penalty {
         crate::save::geq_word_define(
             &mut st.eqtb,
             INT_BASE + INT_PAR__output_penalty,
-            st.mem.b32s1(best_page_break + 1),
+            best_penalty.penalty(&st.mem),
         );
-        st.mem.set_b32s1(best_page_break + 1, INF_PENALTY);
+        best_penalty.set_penalty(&mut st.mem, INF_PENALTY);
     } else {
         crate::save::geq_word_define(
             &mut st.eqtb,
@@ -358,10 +355,11 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
 
     // Walk page list up to best_page_break, processing insertions and marks
     while p != st.shipout.best_page_break {
-        let reset_p = if st.mem.b16s1(p) as i32 == INS_NODE && process_inserts {
+        let node = st.mem.classify(MemIdx::new(p)).expect("valid page node");
+        let reset_p = if let (AnyNode::Ins(ins), true) = (node, process_inserts) {
             // 1055: Process insertion node
             let mut r = st.mem.b32s1(PAGE_INS_HEAD);
-            while st.mem.b16s0(r) != st.mem.b16s0(p) {
+            while st.mem.b16s0(r) != ins.subtype(&st.mem) {
                 // NODE_subtype(r) != NODE_subtype(p)
                 r = st.mem.b32s1(r);
             }
@@ -371,7 +369,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                 true
             } else {
                 let mut s = st.mem.b32s1(r + 2); // PAGE_INS_NODE_last_ins_ptr
-                st.mem.set_b32s1(s, st.mem.b32s0(p + 4)); // link(s) = INSERTION_NODE_ins_ptr(p)
+                st.mem.set_b32s1(s, ins.ins_ptr(&st.mem).0);
 
                 if st.mem.b32s0(r + 2) == p {
                     // 1056: best_ins_ptr == p — wrap up the box
@@ -387,7 +385,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                         st.mem.set_b32s1(s, TEX_NULL);
                         st.eqtb.set_b32s1(
                             GLUE_BASE + GLUE_PAR__split_top_skip,
-                            st.mem.b32s1(p + 4), // INSERTION_NODE_split_top_ptr
+                            ins.split_top_ptr(&st.mem).0,
                         );
                         let broken_ptr = st.mem.b32s1(r + 1);
                         let pruned = crate::packaging::prune_page_top(
@@ -397,18 +395,25 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                             broken_ptr,
                             false,
                         )?;
-                        st.mem.set_b32s0(p + 4, pruned); // broken_ptr
-                        if st.mem.b32s0(p + 4) != TEX_NULL {
+                        ins.set_ins_ptr(&mut st.mem, MemPtr::from_raw(pruned));
+                        if ins.ins_ptr(&st.mem) != MemPtr::NULL {
                             // INSERTION_NODE_ins_ptr != TEX_NULL
                             let tmp = crate::packaging::vpackage_emit_in(
                                 st,
-                                st.mem.b32s0(p + 4),
+                                ins.ins_ptr(&st.mem).0,
                                 0,
                                 ADDITIONAL,
                                 MAX_HALFWORD,
                             )?;
-                            st.mem
-                                .set_b32s1(p + 3, st.mem.b32s1(tmp + 3) + st.mem.b32s1(tmp + 2)); // BOX_height = BOX_height(tmp)+BOX_depth(tmp)
+                            let tmp_box = st
+                                .mem
+                                .classify_box(MemIdx::new(tmp))
+                                .expect("valid packed box")
+                                .expect("packed box");
+                            st.mem.set_b32s1(
+                                p + 3,
+                                tmp_box.height(&st.mem).0 + tmp_box.depth(&st.mem).0,
+                            );
                             crate::mem::free_node(&mut st.mem, tmp, BOX_NODE_SIZE);
                             inner_wait = true;
                         }
@@ -416,7 +421,13 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                     st.mem.set_b32s0(r + 2, TEX_NULL); // best_ins_ptr = TEX_NULL
                     let n2 = st.mem.b16s0(r) as u8;
                     let box_n = st.eqtb.b32s1(BOX_BASE + n2 as i32);
-                    let box_lp = st.mem.b32s1(box_n + 5); // BOX_list_ptr
+                    let box_lp = st
+                        .mem
+                        .classify_box(MemIdx::new(box_n))
+                        .expect("valid insertion box")
+                        .expect("insertion box")
+                        .list_ptr(&st.mem)
+                        .0;
                     crate::mem::free_node(&mut st.mem, box_n, BOX_NODE_SIZE);
                     let packed =
                         crate::packaging::vpackage_emit_in(st, box_lp, 0, ADDITIONAL, MAX_HALFWORD);
@@ -433,24 +444,24 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
             };
 
             // 1057: Append to hold list or delete node p
-            st.mem.set_b32s1(prev_p, st.mem.b32s1(p)); // unlink p
-            st.mem.set_b32s1(p, TEX_NULL);
+            st.mem.set_b32s1(prev_p, ins.link(&st.mem).0); // unlink p
+            ins.set_link(&mut st.mem, MemPtr::NULL);
             if wait {
                 st.mem.set_b32s1(hold_q, p);
                 hold_q = p;
                 st.shipout.insert_penalties += 1;
             } else {
-                let split_top_ptr = st.mem.b32s1(p + 4);
+                let split_top_ptr = ins.split_top_ptr(&st.mem).0;
                 crate::mem::delete_glue_ref(&mut st.mem, split_top_ptr); // INSERTION_NODE_split_top_ptr
                 crate::mem::free_node(&mut st.mem, p, INS_NODE_SIZE);
             }
             true // reset p to prev_p
         } else {
-            if st.mem.b16s1(p) as i32 == MARK_NODE {
-                if st.mem.b32s0(p + 1) != 0 {
+            if let AnyNode::Mark(mark_node) = node {
+                if mark_node.mark_class(&st.mem) != 0 {
                     // MARK_NODE_class != 0
                     // 1618: Update current marks (extended)
-                    let mark_class = st.mem.b32s0(p + 1);
+                    let mark_class = mark_node.mark_class(&st.mem);
                     let r = crate::save::find_sa_element(
                         &mut st.mem,
                         &mut st.scanner,
@@ -463,8 +474,9 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                     }
                     if st.mem.b32s1(cur_ptr() + 1) == TEX_NULL {
                         // ETEX_MARK_sa_first_mark == TEX_NULL
-                        st.mem.set_b32s1(cur_ptr() + 1, st.mem.b32s1(p + 1)); // = MARK_NODE_ptr
-                        let mark = st.mem.b32s1(p + 1);
+                        st.mem
+                            .set_b32s1(cur_ptr() + 1, mark_node.mark_ptr(&st.mem).0);
+                        let mark = mark_node.mark_ptr(&st.mem).0;
                         st.mem.set_b32s0(mark, st.mem.b32s0(mark) + 1);
                         // TOKEN_LIST_ref_count++
                     }
@@ -473,14 +485,15 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                         let old_bot = st.mem.b32s0(cur_ptr() + 2);
                         crate::mem::delete_token_ref(&mut st.mem, old_bot);
                     }
-                    st.mem.set_b32s0(cur_ptr() + 2, st.mem.b32s1(p + 1)); // sa_bot_mark = MARK_NODE_ptr
-                    let mark = st.mem.b32s1(p + 1);
+                    st.mem
+                        .set_b32s0(cur_ptr() + 2, mark_node.mark_ptr(&st.mem).0);
+                    let mark = mark_node.mark_ptr(&st.mem).0;
                     st.mem.set_b32s0(mark, st.mem.b32s0(mark) + 1);
                 // TOKEN_LIST_ref_count++
                 } else {
                     // 1051: Update first_mark and bot_mark (default)
                     if st.scanner.cur_mark[FIRST_MARK_CODE] == TEX_NULL {
-                        st.scanner.cur_mark[FIRST_MARK_CODE] = st.mem.b32s1(p + 1);
+                        st.scanner.cur_mark[FIRST_MARK_CODE] = mark_node.mark_ptr(&st.mem).0;
                         let first = st.scanner.cur_mark[FIRST_MARK_CODE];
                         st.mem.set_b32s0(first, st.mem.b32s0(first) + 1);
                     }
@@ -490,7 +503,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                             st.scanner.cur_mark[BOT_MARK_CODE],
                         );
                     }
-                    st.scanner.cur_mark[BOT_MARK_CODE] = st.mem.b32s1(p + 1);
+                    st.scanner.cur_mark[BOT_MARK_CODE] = mark_node.mark_ptr(&st.mem).0;
                     let bot = st.scanner.cur_mark[BOT_MARK_CODE];
                     st.mem.set_b32s0(bot, st.mem.b32s0(bot) + 1);
                 }
@@ -652,13 +665,12 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     Ok(())
 }
 
-fn update_last_node_info(st: &mut EngineState, p: i32) {
+fn update_last_node_info(st: &mut EngineState, node: AnyNode, nt: i32) {
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = 0;
-    let nt = st.mem.b16s1(p) as i32;
     st.shipout.last_node_type = nt + 1;
 
-    match st.mem.classify(MemIdx::new(p)).expect("valid page node") {
+    match node {
         AnyNode::Glue(glue) => {
             let spec = glue.glue_spec(&st.mem).expect("non-null glue spec");
             st.shipout.last_glue = spec.idx().0;
@@ -686,22 +698,31 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
 
     'outer: loop {
         let p = st.mem.b32s1(CONTRIB_HEAD);
+        let nt = st.mem.b16s1(p) as i32;
+        let node = st.mem.classify(MemIdx::new(p)).expect("valid page node");
 
         // 1031: Update last_glue, last_penalty, last_kern, last_node_type
         if st.shipout.last_glue != MAX_HALFWORD {
             crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
         }
-        update_last_node_info(st, p);
-        let nt = st.mem.b16s1(p) as i32;
+        update_last_node_info(st, node, nt);
 
         // 1032/1035: Dispatch on node type
         let mut pi: i32 = INF_PENALTY;
         let mut need_contribute = false;
         let mut need_update_heights = false;
         let mut need_done1 = false;
+        let mut page_glue = None;
+        let mut page_kern = None;
 
-        match nt {
-            HLIST_NODE | VLIST_NODE | RULE_NODE => {
+        match node {
+            AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) => {
+                let (height, depth) = match node {
+                    AnyNode::HList(node) => (node.height(&st.mem).0, node.depth(&st.mem).0),
+                    AnyNode::VList(node) => (node.height(&st.mem).0, node.depth(&st.mem).0),
+                    AnyNode::Rule(node) => (node.height(&st.mem).raw(), node.depth(&st.mem).raw()),
+                    _ => unreachable!(),
+                };
                 if st.shipout.page_contents < BOX_THERE {
                     // 1036: Initialize page, insert \topskip, continue loop
                     if st.shipout.page_contents == EMPTY {
@@ -710,17 +731,25 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                         st.shipout.page_contents = BOX_THERE;
                     }
                     let q = page_new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR__top_skip as i16)?;
-                    // temp_ptr = glue_ptr(q) after new_skip_param_global
-                    if st.mem.b32s1(temp_ptr() + 1) > st.mem.b32s1(p + 3) {
+                    let top_skip_spec =
+                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(temp_ptr()))
+                            .expect("non-null top skip spec");
+                    let top_skip_width = top_skip_spec.width(&st.mem).0;
+                    if top_skip_width > height {
                         // BOX_width(temp_ptr) > BOX_height(p)
-                        st.mem.set_b32s1(
-                            temp_ptr() + 1,
-                            st.mem.b32s1(temp_ptr() + 1) - st.mem.b32s1(p + 3),
-                        );
+                        top_skip_spec
+                            .set_width(&mut st.mem, crate::units::Scaled(top_skip_width - height));
                     } else {
-                        st.mem.set_b32s1(temp_ptr() + 1, 0);
+                        top_skip_spec.set_width(&mut st.mem, crate::units::Scaled(0));
                     }
-                    st.mem.set_b32s1(q, p); // LLIST_link(q) = p
+                    let AnyNode::Glue(top_skip_node) = st
+                        .mem
+                        .classify(MemIdx::new(q))
+                        .expect("valid top skip node")
+                    else {
+                        unreachable!("top skip is glue")
+                    };
+                    top_skip_node.set_link(&mut st.mem, MemPtr::from_raw(p));
                     st.mem.set_b32s1(CONTRIB_HEAD, q);
                     if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
                         break 'outer;
@@ -728,21 +757,23 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     continue 'outer;
                 } else {
                     // 1037: Move box/rule to current page
-                    st.shipout.page_so_far[1] += st.shipout.page_so_far[7] + st.mem.b32s1(p + 3);
-                    st.shipout.page_so_far[7] = st.mem.b32s1(p + 2); // BOX_depth
+                    st.shipout.page_so_far[1] += st.shipout.page_so_far[7] + height;
+                    st.shipout.page_so_far[7] = depth;
                     need_contribute = true;
                 }
             }
-            WHATSIT_NODE => {
+            AnyNode::Whatsit(whatsit) => {
                 // 1401
-                let sub = st.mem.b16s0(p) as i32;
+                let sub = whatsit.subtype(&st.mem) as i32;
                 if sub == PIC_NODE || sub == PDF_NODE {
-                    st.shipout.page_so_far[1] += st.shipout.page_so_far[7] + st.mem.b32s1(p + 3);
-                    st.shipout.page_so_far[7] = st.mem.b32s1(p + 2);
+                    st.shipout.page_so_far[1] +=
+                        st.shipout.page_so_far[7] + whatsit.height(&st.mem).0;
+                    st.shipout.page_so_far[7] = whatsit.depth(&st.mem).0;
                 }
                 need_contribute = true;
             }
-            GLUE_NODE => {
+            AnyNode::Glue(glue) => {
+                page_glue = Some(glue);
                 if st.shipout.page_contents < BOX_THERE {
                     need_done1 = true;
                 } else if (st.mem.b16s1(st.shipout.page_tail) as i32) < MATH_NODE {
@@ -752,34 +783,39 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     need_update_heights = true;
                 }
             }
-            KERN_NODE => {
+            AnyNode::Kern(kern) => {
+                page_kern = Some(kern);
                 if st.shipout.page_contents < BOX_THERE {
                     need_done1 = true;
-                } else if st.mem.b32s1(p) == TEX_NULL {
+                } else if kern.link(&st.mem) == MemPtr::NULL {
                     // LLIST_link(p) == TEX_NULL — kern at list end; wait
                     return Ok(());
-                } else if st.mem.b16s1(st.mem.b32s1(p)) as i32 == GLUE_NODE {
+                } else if matches!(
+                    st.mem
+                        .classify(kern.link(&st.mem).as_idx().expect("non-null kern link")),
+                    Ok(AnyNode::Glue(_))
+                ) {
                     pi = 0;
                 } else {
                     need_update_heights = true;
                 }
             }
-            PENALTY_NODE => {
+            AnyNode::Penalty(penalty) => {
                 if st.shipout.page_contents < BOX_THERE {
                     need_done1 = true;
                 } else {
-                    pi = st.mem.b32s1(p + 1); // PENALTY_NODE_penalty
+                    pi = penalty.penalty(&st.mem);
                 }
             }
-            MARK_NODE => {
+            AnyNode::Mark(_) => {
                 need_contribute = true;
             }
-            INS_NODE => {
+            AnyNode::Ins(ins) => {
                 // 1043: Append insertion to current page
                 if st.shipout.page_contents == EMPTY {
                     freeze_page_specs(&st.eqtb, &mut st.shipout, INSERTS_ONLY);
                 }
-                let n = st.mem.b16s0(p) as u8; // NODE_subtype(p)
+                let n = ins.subtype(&st.mem) as u8;
                 let mut r = PAGE_INS_HEAD;
                 while n as u16 >= st.mem.b16s0(st.mem.b32s1(r)) {
                     r = st.mem.b32s1(r);
@@ -798,22 +834,32 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                         st.mem.set_b32s1(r + 3, 0); // BOX_height(r) = 0
                     } else {
                         let br = st.eqtb.b32s1(BOX_BASE + n as i32);
-                        st.mem
-                            .set_b32s1(r + 3, st.mem.b32s1(br + 3) + st.mem.b32s1(br + 2));
+                        let box_node = st
+                            .mem
+                            .classify_box(MemIdx::new(br))
+                            .expect("valid insertion box")
+                            .expect("insertion box");
+                        st.mem.set_b32s1(
+                            r + 3,
+                            box_node.height(&st.mem).0 + box_node.depth(&st.mem).0,
+                        );
                     }
                     st.mem.set_b32s0(r + 2, TEX_NULL); // best_ins_ptr = TEX_NULL
-                    let q2 = st.eqtb.b32s1(SKIP_BASE + n as i32); // SKIP_REG(n)
+                    let q2 = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(
+                        st.eqtb.b32s1(SKIP_BASE + n as i32),
+                    ))
+                    .expect("non-null insertion skip spec");
                     let h = if st.eqtb.b32s1(COUNT_BASE + n as i32) == 1000 {
                         st.mem.b32s1(r + 3)
                     } else {
                         crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(r + 3), 1000)
                             * st.eqtb.b32s1(COUNT_BASE + n as i32)
                     };
-                    st.shipout.page_so_far[0] -= h + st.mem.b32s1(q2 + 1); // BOX_width
-                    let stretch_ord = st.mem.b16s1(q2) as usize; // GLUE_SPEC_stretch_order
-                    st.shipout.page_so_far[2 + stretch_ord] += st.mem.b32s1(q2 + 2);
-                    st.shipout.page_so_far[6] += st.mem.b32s1(q2 + 3); // GLUE_SPEC_shrink
-                    if st.mem.b16s0(q2) as i32 != NORMAL && st.mem.b32s1(q2 + 3) != 0 {
+                    st.shipout.page_so_far[0] -= h + q2.width(&st.mem).0;
+                    let stretch_ord = q2.stretch_order(&st.mem) as usize;
+                    st.shipout.page_so_far[2 + stretch_ord] += q2.stretch(&st.mem).0;
+                    st.shipout.page_so_far[6] += q2.shrink(&st.mem).0;
+                    if q2.shrink_order(&st.mem) as i32 != NORMAL && q2.shrink(&st.mem).0 != 0 {
                         crate::output::error_here_with_diagnostic_in(
                             st,
                             c"Infinite glue shrinkage inserted from ".as_ptr(),
@@ -873,7 +919,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                         let w = if w > max_h { max_h } else { w };
                         let q2 = crate::packaging::vert_break_in(
                             st,
-                            st.mem.b32s0(p + 4),
+                            ins.ins_ptr(&st.mem).0,
                             w,
                             st.mem.b32s1(p + 2),
                         )?;
@@ -895,8 +941,12 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                         st.mem.set_b32s0(r + 1, p); // broken_ins = p
                         if q2 == TEX_NULL {
                             st.shipout.insert_penalties += EJECT_PENALTY;
-                        } else if st.mem.b16s1(q2) as i32 == PENALTY_NODE {
-                            st.shipout.insert_penalties += st.mem.b32s1(q2 + 1);
+                        } else if let Some(penalty) = st
+                            .mem
+                            .classify_penalty(MemIdx::new(q2))
+                            .expect("valid insertion break node")
+                        {
+                            st.shipout.insert_penalties += penalty.penalty(&st.mem);
                         }
                     }
                 }
@@ -973,7 +1023,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
             }
 
             // After break check: decide contribute vs update_heights
-            if !(GLUE_NODE..=KERN_NODE).contains(&nt) {
+            if page_glue.is_none() && page_kern.is_none() {
                 need_contribute = true;
             } else {
                 need_update_heights = true;
@@ -982,14 +1032,15 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
 
         // 1039: update_heights — update page measurements for glue/kern
         if need_update_heights {
-            let q = if nt == KERN_NODE {
-                p
+            let width = if let Some(kern) = page_kern {
+                kern.width(&st.mem).0
             } else {
-                let gp = st.mem.b32s0(p + 1); // GLUE_NODE_glue_ptr
-                let stretch_ord = st.mem.b16s1(gp) as usize;
-                st.shipout.page_so_far[2 + stretch_ord] += st.mem.b32s1(gp + 2);
-                st.shipout.page_so_far[6] += st.mem.b32s1(gp + 3);
-                if st.mem.b16s0(gp) as i32 != NORMAL && st.mem.b32s1(gp + 3) != 0 {
+                let glue = page_glue.expect("height update is glue or kern");
+                let mut spec = glue.glue_spec(&st.mem).expect("non-null page glue spec");
+                let stretch_ord = spec.stretch_order(&st.mem) as usize;
+                st.shipout.page_so_far[2 + stretch_ord] += spec.stretch(&st.mem).0;
+                st.shipout.page_so_far[6] += spec.shrink(&st.mem).0;
+                if spec.shrink_order(&st.mem) as i32 != NORMAL && spec.shrink(&st.mem).0 != 0 {
                     crate::output::error_here_with_diagnostic_in(
                         st,
                         c"Infinite glue shrinkage found on current page".as_ptr(),
@@ -1005,16 +1056,17 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     st.errors.help_line[0] =
                         c"since the offensive shrinkability has been made finite.".as_ptr();
                     page_error(crate::errors::error_in(st))?;
-                    let rr = page_new_spec(&mut st.mem, gp)?;
-                    st.mem.set_b16s0(rr, NORMAL as u16); // GLUE_SPEC_shrink_order = NORMAL
-                    crate::mem::delete_glue_ref(&mut st.mem, gp);
-                    st.mem.set_b32s0(p + 1, rr); // GLUE_NODE_glue_ptr = rr
-                    rr
-                } else {
-                    gp
+                    let rr = page_new_spec(&mut st.mem, spec.idx().0)?;
+                    let rr = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(rr))
+                        .expect("non-null copied glue spec");
+                    rr.set_shrink_order(&mut st.mem, NORMAL as u16);
+                    crate::mem::delete_glue_ref(&mut st.mem, spec.idx().0);
+                    glue.set_glue_ptr(&mut st.mem, MemPtr::from_raw(rr.idx().0));
+                    spec = rr;
                 }
+                spec.width(&st.mem).0
             };
-            st.shipout.page_so_far[1] += st.shipout.page_so_far[7] + st.mem.b32s1(q + 1); // BOX_width
+            st.shipout.page_so_far[1] += st.shipout.page_so_far[7] + width;
             st.shipout.page_so_far[7] = 0;
             need_contribute = true;
         }
