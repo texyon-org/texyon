@@ -11,7 +11,7 @@ use crate::globals::{
     cur_list_mode, cur_tok, init_pool_ptr, name_of_file, pool_size, set_cur_cs, set_cur_list_mode,
     set_temp_ptr, temp_ptr,
 };
-use crate::node::{EdgeNode, MovementNode, NodePtr, WhatsitNode};
+use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -54,7 +54,6 @@ const MARK_NODE: u16 = 4;
 const ADJUST_NODE: u16 = 5;
 const WHATSIT_NODE: u16 = 8;
 const EDGE_NODE: u16 = 14;
-const MARGIN_KERN_NODE: u16 = 40;
 const MEM_TOP: i32 = 4_999_999;
 const AAT_FONT_FLAG: i32 = 65533;
 const OTGR_FONT_FLAG: i32 = 65534;
@@ -1385,87 +1384,105 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                 crate::synctex::synctex_current(st);
                 st.shipout.dvi_h = st.shipout.cur_h;
             } else {
-                match st.mem.b16s1(p) {
-                    HLIST_NODE | VLIST_NODE => {
-                        if st.mem.b32s1(p + 5) == TEX_NULL {
-                            if st.mem.b16s1(p) == VLIST_NODE {
-                                crate::synctex::synctex_void_vlist(st, p, this_box);
-                            } else {
-                                crate::synctex::synctex_void_hlist(st, p, this_box);
-                            }
-                            st.shipout.cur_h += st.mem.b32s1(p + 1);
-                        } else {
-                            let save_h = st.shipout.dvi_h;
-                            let save_v = st.shipout.dvi_v;
-                            st.shipout.cur_v = base_line + st.mem.b32s1(p + 4);
-                            set_temp_ptr(p);
-                            let edge = st.shipout.cur_h + st.mem.b32s1(p + 1);
-                            if st.scanner.cur_dir == RIGHT_TO_LEFT {
-                                st.shipout.cur_h = edge;
-                            }
-                            if st.mem.b16s1(p) == VLIST_NODE {
-                                vlist_out_in(st)?;
-                            } else {
-                                hlist_out_in(st)?;
-                            }
-                            st.shipout.dvi_h = save_h;
-                            st.shipout.dvi_v = save_v;
-                            st.shipout.cur_h = edge;
-                            st.shipout.cur_v = base_line;
-                        }
-                    }
-                    RULE_NODE => {
-                        st.shipout.rule_ht = st.mem.b32s1(p + 3);
-                        st.shipout.rule_dp = st.mem.b32s1(p + 2);
-                        st.shipout.rule_wd = st.mem.b32s1(p + 1);
-                        finish_hlist_rule_in(st, this_box, base_line, p)?;
-                    }
-                    WHATSIT_NODE => {
-                        let whatsit = st
-                            .mem
-                            .classify_whatsit(MemIdx::new(p))
-                            .ok()
-                            .flatten()
-                            .expect("expected whatsit node");
-                        let subtype = whatsit.subtype(&st.mem);
-                        match subtype {
-                            NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
-                                if st.shipout.cur_h != st.shipout.dvi_h {
-                                    let delta = st.shipout.cur_h - st.shipout.dvi_h;
-                                    emit_movement(&mut st.mem, &mut st.shipout, delta, RIGHT1)?;
-                                    st.shipout.dvi_h = st.shipout.cur_h;
-                                }
-                                if st.shipout.cur_v != st.shipout.dvi_v {
-                                    let delta = st.shipout.cur_v - st.shipout.dvi_v;
-                                    emit_movement(&mut st.mem, &mut st.shipout, delta, DOWN1)?;
-                                    st.shipout.dvi_v = st.shipout.cur_v;
-                                }
-                                let f = whatsit.native_font(&st.mem).0;
-                                ensure_dvi_font_in(st, f)?;
+                let node = st
+                    .mem
+                    .classify(MemIdx::new(p))
+                    .expect("valid node type in hlist_out");
+                let box_node = match node {
+                    AnyNode::HList(q) => Some((AnyBox::HList(q), false)),
+                    AnyNode::VList(q) => Some((AnyBox::VList(q), true)),
+                    _ => None,
+                };
 
-                                if subtype == GLYPH_NODE {
-                                    emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
-                                    emit_dvi_four(&mut st.shipout, whatsit.width(&st.mem).0)?;
-                                    emit_dvi_two(&mut st.shipout, 1)?;
-                                    emit_dvi_four(&mut st.shipout, 0)?;
-                                    emit_dvi_four(&mut st.shipout, 0)?;
-                                    emit_dvi_two(&mut st.shipout, whatsit.native_glyph(&st.mem))?;
-                                    st.shipout.cur_h += whatsit.width(&st.mem).0;
-                                } else {
-                                    if subtype == NATIVE_WORD_NODE_AT {
-                                        if whatsit.native_length(&st.mem) > 0
-                                            || !whatsit.native_glyph_info_ptr(&st.mem).is_null()
-                                        {
-                                            emit_dvi_out(&mut st.shipout, SET_TEXT_AND_GLYPHS)?;
-                                            let len = whatsit.native_length(&st.mem) as i32;
-                                            emit_dvi_two(&mut st.shipout, len as u16)?;
-                                            let text = whatsit.native_text_ptr(&st.mem);
-                                            for k in 0..len {
-                                                emit_dvi_two(
-                                                    &mut st.shipout,
-                                                    *text.add(k as usize),
-                                                )?;
+                if let Some((bb, is_vlist)) = box_node {
+                    if bb.list_ptr(&st.mem).is_null() {
+                        if is_vlist {
+                            crate::synctex::synctex_void_vlist(st, p, this_box);
+                        } else {
+                            crate::synctex::synctex_void_hlist(st, p, this_box);
+                        }
+                        st.shipout.cur_h += bb.width(&st.mem).0;
+                    } else {
+                        let save_h = st.shipout.dvi_h;
+                        let save_v = st.shipout.dvi_v;
+                        st.shipout.cur_v = base_line + bb.shift_amount(&st.mem).0;
+                        set_temp_ptr(p);
+                        let edge = st.shipout.cur_h + bb.width(&st.mem).0;
+                        if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                            st.shipout.cur_h = edge;
+                        }
+                        if is_vlist {
+                            vlist_out_in(st)?;
+                        } else {
+                            hlist_out_in(st)?;
+                        }
+                        st.shipout.dvi_h = save_h;
+                        st.shipout.dvi_v = save_v;
+                        st.shipout.cur_h = edge;
+                        st.shipout.cur_v = base_line;
+                    }
+                } else {
+                    match node {
+                        AnyNode::Rule(rule) => {
+                            st.shipout.rule_ht = rule.height(&st.mem).raw();
+                            st.shipout.rule_dp = rule.depth(&st.mem).raw();
+                            st.shipout.rule_wd = rule.width(&st.mem).raw();
+                            finish_hlist_rule_in(st, this_box, base_line, p)?;
+                        }
+                        AnyNode::Whatsit(whatsit) => {
+                            let subtype = whatsit.subtype(&st.mem);
+                            match subtype {
+                                NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
+                                    if st.shipout.cur_h != st.shipout.dvi_h {
+                                        let delta = st.shipout.cur_h - st.shipout.dvi_h;
+                                        emit_movement(&mut st.mem, &mut st.shipout, delta, RIGHT1)?;
+                                        st.shipout.dvi_h = st.shipout.cur_h;
+                                    }
+                                    if st.shipout.cur_v != st.shipout.dvi_v {
+                                        let delta = st.shipout.cur_v - st.shipout.dvi_v;
+                                        emit_movement(&mut st.mem, &mut st.shipout, delta, DOWN1)?;
+                                        st.shipout.dvi_v = st.shipout.cur_v;
+                                    }
+                                    let f = whatsit.native_font(&st.mem).0;
+                                    ensure_dvi_font_in(st, f)?;
+
+                                    if subtype == GLYPH_NODE {
+                                        emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
+                                        emit_dvi_four(&mut st.shipout, whatsit.width(&st.mem).0)?;
+                                        emit_dvi_two(&mut st.shipout, 1)?;
+                                        emit_dvi_four(&mut st.shipout, 0)?;
+                                        emit_dvi_four(&mut st.shipout, 0)?;
+                                        emit_dvi_two(
+                                            &mut st.shipout,
+                                            whatsit.native_glyph(&st.mem),
+                                        )?;
+                                        st.shipout.cur_h += whatsit.width(&st.mem).0;
+                                    } else {
+                                        if subtype == NATIVE_WORD_NODE_AT {
+                                            if whatsit.native_length(&st.mem) > 0
+                                                || !whatsit.native_glyph_info_ptr(&st.mem).is_null()
+                                            {
+                                                emit_dvi_out(&mut st.shipout, SET_TEXT_AND_GLYPHS)?;
+                                                let len = whatsit.native_length(&st.mem) as i32;
+                                                emit_dvi_two(&mut st.shipout, len as u16)?;
+                                                let text = whatsit.native_text_ptr(&st.mem);
+                                                for k in 0..len {
+                                                    emit_dvi_two(
+                                                        &mut st.shipout,
+                                                        *text.add(k as usize),
+                                                    )?;
+                                                }
+                                                let len = make_xdv_glyph_array_data_in(st, whatsit);
+                                                for k in 0..len {
+                                                    emit_dvi_out(
+                                                        &mut st.shipout,
+                                                        st.fonts.xdv_buffer[k as usize],
+                                                    )?;
+                                                }
                                             }
+                                        } else if !whatsit.native_glyph_info_ptr(&st.mem).is_null()
+                                        {
+                                            emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
                                             let len = make_xdv_glyph_array_data_in(st, whatsit);
                                             for k in 0..len {
                                                 emit_dvi_out(
@@ -1474,129 +1491,129 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                                 )?;
                                             }
                                         }
-                                    } else if !whatsit.native_glyph_info_ptr(&st.mem).is_null() {
-                                        emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
-                                        let len = make_xdv_glyph_array_data_in(st, whatsit);
-                                        for k in 0..len {
-                                            emit_dvi_out(
-                                                &mut st.shipout,
-                                                st.fonts.xdv_buffer[k as usize],
-                                            )?;
-                                        }
+                                        st.shipout.cur_h += whatsit.width(&st.mem).0;
                                     }
-                                    st.shipout.cur_h += whatsit.width(&st.mem).0;
+                                    st.shipout.dvi_h = st.shipout.cur_h;
                                 }
-                                st.shipout.dvi_h = st.shipout.cur_h;
+                                PIC_NODE | PDF_NODE => {
+                                    let save_h = st.shipout.dvi_h;
+                                    let save_v = st.shipout.dvi_v;
+                                    st.shipout.cur_v = base_line;
+                                    let edge = st.shipout.cur_h + whatsit.width(&st.mem).0;
+                                    pic_out_in(st, p)?;
+                                    st.shipout.dvi_h = save_h;
+                                    st.shipout.dvi_v = save_v;
+                                    st.shipout.cur_h = edge;
+                                    st.shipout.cur_v = base_line;
+                                }
+                                PDF_SAVE_POS_NODE => {
+                                    st.shipout.pdf_last_x_pos =
+                                        st.shipout.cur_h + ONE_INCH_LESS_ONE;
+                                    st.shipout.pdf_last_y_pos = st.shipout.cur_page_height
+                                        - st.shipout.cur_v
+                                        - ONE_INCH_LESS_ONE;
+                                }
+                                _ => out_what_in(st, p)?,
                             }
-                            PIC_NODE | PDF_NODE => {
-                                let save_h = st.shipout.dvi_h;
-                                let save_v = st.shipout.dvi_v;
-                                st.shipout.cur_v = base_line;
-                                let edge = st.shipout.cur_h + whatsit.width(&st.mem).0;
-                                pic_out_in(st, p)?;
-                                st.shipout.dvi_h = save_h;
-                                st.shipout.dvi_v = save_v;
-                                st.shipout.cur_h = edge;
-                                st.shipout.cur_v = base_line;
-                            }
-                            PDF_SAVE_POS_NODE => {
-                                st.shipout.pdf_last_x_pos = st.shipout.cur_h + ONE_INCH_LESS_ONE;
-                                st.shipout.pdf_last_y_pos = st.shipout.cur_page_height
-                                    - st.shipout.cur_v
-                                    - ONE_INCH_LESS_ONE;
-                            }
-                            _ => out_what_in(st, p)?,
                         }
-                    }
-                    GLUE_NODE => {
-                        output_hlist_glue_in(
-                            st,
-                            this_box,
-                            base_line,
-                            left_edge,
-                            p,
-                            g_order,
-                            g_sign,
-                            &mut cur_g,
-                            &mut cur_glue,
-                        )?;
-                    }
-                    MARGIN_KERN_NODE => st.shipout.cur_h += st.mem.b32s1(p + 1),
-                    KERN_NODE => {
-                        crate::synctex::synctex_kern(st, p, this_box);
-                        st.shipout.cur_h += st.mem.b32s1(p + 1);
-                    }
-                    MATH_NODE => {
-                        crate::synctex::synctex_math(st, p, this_box);
-                        if !st.mem.b16s0(p).is_multiple_of(2) {
-                            if st.mem.b32s0(st.scanner.LR_ptr) as u16
-                                == math_node_end_lr_type(&st.mem, p)
-                            {
-                                set_temp_ptr(st.scanner.LR_ptr);
-                                st.scanner.LR_ptr = st.mem.b32s1(temp_ptr());
-                                st.mem.set_b32s1(temp_ptr(), st.mem.avail);
-                                st.mem.avail = temp_ptr();
-                            } else if st.mem.b16s0(p) > L_CODE {
-                                st.scanner.LR_problems += 1;
-                            }
-                        } else {
-                            let lr_node = get_avail_ship(&mut st.mem)?;
-                            set_temp_ptr(lr_node);
-                            st.mem
-                                .set_b32s0(lr_node, math_node_end_lr_type(&st.mem, p) as i32);
-                            st.mem.set_b32s1(lr_node, st.scanner.LR_ptr);
-                            st.scanner.LR_ptr = lr_node;
+                        AnyNode::Glue(glue) => {
+                            output_hlist_glue_in(
+                                st,
+                                this_box,
+                                base_line,
+                                left_edge,
+                                glue.idx().0,
+                                g_order,
+                                g_sign,
+                                &mut cur_g,
+                                &mut cur_glue,
+                            )?;
+                        }
+                        AnyNode::MarginKern(kern) => st.shipout.cur_h += kern.width(&st.mem).0,
+                        AnyNode::Kern(kern) => {
+                            crate::synctex::synctex_kern(st, p, this_box);
+                            st.shipout.cur_h += kern.width(&st.mem).0;
+                        }
+                        AnyNode::Math(math) => {
+                            crate::synctex::synctex_math(st, p, this_box);
+                            let math_width = math.width(&st.mem).0;
+                            if !math.subtype(&st.mem).is_multiple_of(2) {
+                                if st.mem.b32s0(st.scanner.LR_ptr) as u16
+                                    == math_node_end_lr_type(&st.mem, p)
+                                {
+                                    set_temp_ptr(st.scanner.LR_ptr);
+                                    st.scanner.LR_ptr = st.mem.b32s1(temp_ptr());
+                                    st.mem.set_b32s1(temp_ptr(), st.mem.avail);
+                                    st.mem.avail = temp_ptr();
+                                } else if math.subtype(&st.mem) > L_CODE {
+                                    st.scanner.LR_problems += 1;
+                                }
+                            } else {
+                                let lr_node = get_avail_ship(&mut st.mem)?;
+                                set_temp_ptr(lr_node);
+                                st.mem
+                                    .set_b32s0(lr_node, math_node_end_lr_type(&st.mem, p) as i32);
+                                st.mem.set_b32s1(lr_node, st.scanner.LR_ptr);
+                                st.scanner.LR_ptr = lr_node;
 
-                            if math_node_lr_dir(&st.mem, p) as i16 != st.scanner.cur_dir {
-                                let save_h = st.shipout.cur_h;
-                                set_temp_ptr(st.mem.b32s1(p));
-                                st.shipout.rule_wd = st.mem.b32s1(p + 1);
-                                crate::mem::free_node(&mut st.mem, p, MEDIUM_NODE_SIZE);
-                                st.scanner.cur_dir = 1 - st.scanner.cur_dir;
-                                p = new_edge(&mut st.mem, st.scanner.cur_dir, st.shipout.rule_wd);
-                                if p == crate::mem::ALLOC_FAILED {
-                                    return Err(ShipoutAbort::MainMemoryOverflow);
+                                if math_node_lr_dir(&st.mem, p) as i16 != st.scanner.cur_dir {
+                                    let save_h = st.shipout.cur_h;
+                                    set_temp_ptr(math.link(&st.mem).0);
+                                    st.shipout.rule_wd = math_width;
+                                    crate::mem::free_node(&mut st.mem, p, MEDIUM_NODE_SIZE);
+                                    st.scanner.cur_dir = 1 - st.scanner.cur_dir;
+                                    p = new_edge(
+                                        &mut st.mem,
+                                        st.scanner.cur_dir,
+                                        st.shipout.rule_wd,
+                                    );
+                                    if p == crate::mem::ALLOC_FAILED {
+                                        return Err(ShipoutAbort::MainMemoryOverflow);
+                                    }
+                                    st.mem.set_b32s1(prev_p, p);
+                                    st.shipout.cur_h =
+                                        st.shipout.cur_h - left_edge + st.shipout.rule_wd;
+                                    let edge = new_edge(&mut st.mem, 1 - st.scanner.cur_dir, 0);
+                                    if edge == crate::mem::ALLOC_FAILED {
+                                        return Err(ShipoutAbort::MainMemoryOverflow);
+                                    }
+                                    let reversed = reverse(
+                                        &mut st.mem,
+                                        &mut st.shipout,
+                                        &mut st.scanner,
+                                        &mut st.fonts,
+                                        this_box,
+                                        edge,
+                                        &mut cur_g,
+                                        &mut cur_glue,
+                                    )?;
+                                    st.mem.set_b32s1(p, reversed);
+                                    st.mem.set_b32s1(p + 2, st.shipout.cur_h);
+                                    st.scanner.cur_dir = 1 - st.scanner.cur_dir;
+                                    st.shipout.cur_h = save_h;
+                                    continue 'reswitch;
                                 }
-                                st.mem.set_b32s1(prev_p, p);
-                                st.shipout.cur_h =
-                                    st.shipout.cur_h - left_edge + st.shipout.rule_wd;
-                                let edge = new_edge(&mut st.mem, 1 - st.scanner.cur_dir, 0);
-                                if edge == crate::mem::ALLOC_FAILED {
-                                    return Err(ShipoutAbort::MainMemoryOverflow);
-                                }
-                                let reversed = reverse(
-                                    &mut st.mem,
-                                    &mut st.shipout,
-                                    &mut st.scanner,
-                                    &mut st.fonts,
-                                    this_box,
-                                    edge,
-                                    &mut cur_g,
-                                    &mut cur_glue,
-                                )?;
-                                st.mem.set_b32s1(p, reversed);
-                                st.mem.set_b32s1(p + 2, st.shipout.cur_h);
-                                st.scanner.cur_dir = 1 - st.scanner.cur_dir;
-                                st.shipout.cur_h = save_h;
-                                continue 'reswitch;
                             }
+                            st.mem.set_b16s1(p, KERN_NODE);
+                            st.shipout.cur_h += math_width;
                         }
-                        st.mem.set_b16s1(p, KERN_NODE);
-                        st.shipout.cur_h += st.mem.b32s1(p + 1);
+                        AnyNode::Ligature(ligature) => {
+                            st.mem
+                                .set_word(LIG_TRICK, st.mem.word(ligature.idx().offset(1).0));
+                            st.mem.set_b32s1(LIG_TRICK, ligature.link(&st.mem).0);
+                            p = LIG_TRICK;
+                            st.fonts.set_xtx_ligature_present(true);
+                            continue 'reswitch;
+                        }
+                        AnyNode::Style(_) => {
+                            // NODE_type 14 is an edge in this context. Its typed
+                            // family currently exposes writes but not payload reads.
+                            st.shipout.cur_h += st.mem.b32s1(p + 1);
+                            left_edge = st.shipout.cur_h + st.mem.b32s1(p + 2);
+                            st.scanner.cur_dir = st.mem.b16s0(p) as i16;
+                        }
+                        _ => {}
                     }
-                    LIGATURE_NODE => {
-                        st.mem.set_word(LIG_TRICK, st.mem.word(p + 1));
-                        st.mem.set_b32s1(LIG_TRICK, st.mem.b32s1(p));
-                        p = LIG_TRICK;
-                        st.fonts.set_xtx_ligature_present(true);
-                        continue 'reswitch;
-                    }
-                    EDGE_NODE => {
-                        st.shipout.cur_h += st.mem.b32s1(p + 1);
-                        left_edge = st.shipout.cur_h + st.mem.b32s1(p + 2);
-                        st.scanner.cur_dir = st.mem.b16s0(p) as i16;
-                    }
-                    _ => {}
                 }
 
                 prev_p = p;
@@ -1672,236 +1689,261 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
         }
 
         let mut go_next = true;
-        match st.mem.b16s1(p) {
-            HLIST_NODE | VLIST_NODE => {
-                if st.mem.b32s1(p + 5) == TEX_NULL {
-                    if upwards {
-                        st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(p + 2);
-                    } else {
-                        st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 3);
-                    }
+        let node = st
+            .mem
+            .classify(MemIdx::new(p))
+            .expect("valid node type in vlist_out");
+        let box_node = match node {
+            AnyNode::HList(q) => Some((AnyBox::HList(q), false)),
+            AnyNode::VList(q) => Some((AnyBox::VList(q), true)),
+            _ => None,
+        };
 
-                    if st.mem.b16s1(p) == VLIST_NODE {
-                        crate::synctex::synctex_void_vlist(st, p, this_box);
-                    } else {
-                        crate::synctex::synctex_void_hlist(st, p, this_box);
-                    }
-
-                    if upwards {
-                        st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(p + 3);
-                    } else {
-                        st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 2);
-                    }
+        if let Some((bb, is_vlist)) = box_node {
+            if bb.list_ptr(&st.mem).is_null() {
+                if upwards {
+                    st.shipout.cur_v -= bb.depth(&st.mem).0;
                 } else {
-                    if upwards {
-                        st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(p + 2);
-                    } else {
-                        st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 3);
-                    }
-
-                    if st.shipout.cur_v != st.shipout.dvi_v {
-                        let d = st.shipout.cur_v - st.shipout.dvi_v;
-                        emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
-                        st.shipout.dvi_v = st.shipout.cur_v;
-                    }
-
-                    let save_h = st.shipout.dvi_h;
-                    let save_v = st.shipout.dvi_v;
-
-                    if st.scanner.cur_dir == RIGHT_TO_LEFT {
-                        st.shipout.cur_h = left_edge - st.mem.b32s1(p + 4);
-                    } else {
-                        st.shipout.cur_h = left_edge + st.mem.b32s1(p + 4);
-                    }
-
-                    set_temp_ptr(p);
-                    if st.mem.b16s1(p) == VLIST_NODE {
-                        vlist_out_in(st)?;
-                    } else {
-                        hlist_out_in(st)?;
-                    }
-
-                    st.shipout.dvi_h = save_h;
-                    st.shipout.dvi_v = save_v;
-
-                    if upwards {
-                        st.shipout.cur_v = save_v - st.mem.b32s1(p + 3);
-                    } else {
-                        st.shipout.cur_v = save_v + st.mem.b32s1(p + 2);
-                    }
-
-                    st.shipout.cur_h = left_edge;
+                    st.shipout.cur_v += bb.height(&st.mem).0;
                 }
+
+                if is_vlist {
+                    crate::synctex::synctex_void_vlist(st, p, this_box);
+                } else {
+                    crate::synctex::synctex_void_hlist(st, p, this_box);
+                }
+
+                if upwards {
+                    st.shipout.cur_v -= bb.height(&st.mem).0;
+                } else {
+                    st.shipout.cur_v += bb.depth(&st.mem).0;
+                }
+            } else {
+                if upwards {
+                    st.shipout.cur_v -= bb.depth(&st.mem).0;
+                } else {
+                    st.shipout.cur_v += bb.height(&st.mem).0;
+                }
+
+                if st.shipout.cur_v != st.shipout.dvi_v {
+                    let d = st.shipout.cur_v - st.shipout.dvi_v;
+                    emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
+                    st.shipout.dvi_v = st.shipout.cur_v;
+                }
+
+                let save_h = st.shipout.dvi_h;
+                let save_v = st.shipout.dvi_v;
+
+                if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                    st.shipout.cur_h = left_edge - bb.shift_amount(&st.mem).0;
+                } else {
+                    st.shipout.cur_h = left_edge + bb.shift_amount(&st.mem).0;
+                }
+
+                set_temp_ptr(p);
+                if is_vlist {
+                    vlist_out_in(st)?;
+                } else {
+                    hlist_out_in(st)?;
+                }
+
+                st.shipout.dvi_h = save_h;
+                st.shipout.dvi_v = save_v;
+
+                if upwards {
+                    st.shipout.cur_v = save_v - bb.height(&st.mem).0;
+                } else {
+                    st.shipout.cur_v = save_v + bb.depth(&st.mem).0;
+                }
+
+                st.shipout.cur_h = left_edge;
             }
-            RULE_NODE => {
-                st.shipout.rule_ht = st.mem.b32s1(p + 3);
-                st.shipout.rule_dp = st.mem.b32s1(p + 2);
-                st.shipout.rule_wd = st.mem.b32s1(p + 1);
-                finish_vlist_rule_in(st, this_box, left_edge, upwards)?;
-            }
-            WHATSIT_NODE => match st.mem.b16s0(p) {
-                GLYPH_NODE => {
-                    st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 3);
-                    st.shipout.cur_h = left_edge;
+        } else {
+            match node {
+                AnyNode::Rule(rule) => {
+                    st.shipout.rule_ht = rule.height(&st.mem).raw();
+                    st.shipout.rule_dp = rule.depth(&st.mem).raw();
+                    st.shipout.rule_wd = rule.width(&st.mem).raw();
+                    finish_vlist_rule_in(st, this_box, left_edge, upwards)?;
+                }
+                AnyNode::Whatsit(whatsit) => match whatsit.subtype(&st.mem) {
+                    GLYPH_NODE => {
+                        st.shipout.cur_v += whatsit.height(&st.mem).0;
+                        st.shipout.cur_h = left_edge;
 
-                    if st.shipout.cur_h != st.shipout.dvi_h {
-                        let d = st.shipout.cur_h - st.shipout.dvi_h;
-                        emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
-                        st.shipout.dvi_h = st.shipout.cur_h;
+                        if st.shipout.cur_h != st.shipout.dvi_h {
+                            let d = st.shipout.cur_h - st.shipout.dvi_h;
+                            emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
+                            st.shipout.dvi_h = st.shipout.cur_h;
+                        }
+
+                        if st.shipout.cur_v != st.shipout.dvi_v {
+                            let d = st.shipout.cur_v - st.shipout.dvi_v;
+                            emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
+                            st.shipout.dvi_v = st.shipout.cur_v;
+                        }
+
+                        let f = whatsit.native_font(&st.mem).0;
+                        ensure_dvi_font_in(st, f)?;
+
+                        emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
+                        emit_dvi_four(&mut st.shipout, 0)?;
+                        emit_dvi_two(&mut st.shipout, 1)?;
+                        emit_dvi_four(&mut st.shipout, 0)?;
+                        emit_dvi_four(&mut st.shipout, 0)?;
+                        emit_dvi_two(&mut st.shipout, whatsit.native_glyph(&st.mem))?;
+
+                        st.shipout.cur_v += whatsit.depth(&st.mem).0;
+                        st.shipout.cur_h = left_edge;
                     }
-
-                    if st.shipout.cur_v != st.shipout.dvi_v {
-                        let d = st.shipout.cur_v - st.shipout.dvi_v;
-                        emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
-                        st.shipout.dvi_v = st.shipout.cur_v;
+                    PIC_NODE | PDF_NODE => {
+                        let save_h = st.shipout.dvi_h;
+                        let save_v = st.shipout.dvi_v;
+                        st.shipout.cur_v += whatsit.height(&st.mem).0;
+                        pic_out_in(st, p)?;
+                        st.shipout.dvi_h = save_h;
+                        st.shipout.dvi_v = save_v;
+                        st.shipout.cur_v = save_v + whatsit.depth(&st.mem).0;
+                        st.shipout.cur_h = left_edge;
                     }
+                    PDF_SAVE_POS_NODE => {
+                        st.shipout.pdf_last_x_pos = st.shipout.cur_h + ONE_INCH_LESS_ONE;
+                        st.shipout.pdf_last_y_pos =
+                            st.shipout.cur_page_height - st.shipout.cur_v - ONE_INCH_LESS_ONE;
+                    }
+                    _ => out_what_in(st, p)?,
+                },
+                AnyNode::Glue(glue) => {
+                    let spec = glue
+                        .glue_spec(&st.mem)
+                        .expect("glue node in vlist_out has a glue spec");
+                    st.shipout.rule_ht = spec.width(&st.mem).0 - cur_g;
 
-                    let f = st.mem.b16s2(p + 4) as i32;
-                    ensure_dvi_font_in(st, f)?;
-
-                    emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
-                    emit_dvi_four(&mut st.shipout, 0)?;
-                    emit_dvi_two(&mut st.shipout, 1)?;
-                    emit_dvi_four(&mut st.shipout, 0)?;
-                    emit_dvi_four(&mut st.shipout, 0)?;
-                    emit_dvi_two(&mut st.shipout, st.mem.b16s1(p + 4))?;
-
-                    st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 2);
-                    st.shipout.cur_h = left_edge;
-                }
-                PIC_NODE | PDF_NODE => {
-                    let save_h = st.shipout.dvi_h;
-                    let save_v = st.shipout.dvi_v;
-                    st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 3);
-                    pic_out_in(st, p)?;
-                    st.shipout.dvi_h = save_h;
-                    st.shipout.dvi_v = save_v;
-                    st.shipout.cur_v = save_v + st.mem.b32s1(p + 2);
-                    st.shipout.cur_h = left_edge;
-                }
-                PDF_SAVE_POS_NODE => {
-                    st.shipout.pdf_last_x_pos = st.shipout.cur_h + ONE_INCH_LESS_ONE;
-                    st.shipout.pdf_last_y_pos =
-                        st.shipout.cur_page_height - st.shipout.cur_v - ONE_INCH_LESS_ONE;
-                }
-                _ => out_what_in(st, p)?,
-            },
-            GLUE_NODE => {
-                let g = st.mem.b32s0(p + 1);
-                st.shipout.rule_ht = st.mem.b32s1(g + 1) - cur_g;
-
-                if g_sign != NORMAL {
-                    if g_sign == STRETCHING {
-                        if st.mem.b16s1(g) == g_order {
-                            cur_glue += st.mem.b32s1(g + 2) as f64;
+                    if g_sign != NORMAL {
+                        if g_sign == STRETCHING {
+                            if spec.stretch_order(&st.mem) == g_order {
+                                cur_glue += spec.stretch(&st.mem).0 as f64;
+                                let glue_temp = (st.mem.gr(this_box + 6) * cur_glue)
+                                    .clamp(-1_000_000_000.0, 1_000_000_000.0);
+                                cur_g = crate::scaled_math::tex_round(glue_temp);
+                            }
+                        } else if spec.shrink_order(&st.mem) == g_order {
+                            cur_glue -= spec.shrink(&st.mem).0 as f64;
                             let glue_temp = (st.mem.gr(this_box + 6) * cur_glue)
                                 .clamp(-1_000_000_000.0, 1_000_000_000.0);
                             cur_g = crate::scaled_math::tex_round(glue_temp);
                         }
-                    } else if st.mem.b16s0(g) == g_order {
-                        cur_glue -= st.mem.b32s1(g + 3) as f64;
-                        let glue_temp = (st.mem.gr(this_box + 6) * cur_glue)
-                            .clamp(-1_000_000_000.0, 1_000_000_000.0);
-                        cur_g = crate::scaled_math::tex_round(glue_temp);
                     }
-                }
 
-                st.shipout.rule_ht = st.shipout.rule_ht + cur_g;
+                    st.shipout.rule_ht = st.shipout.rule_ht + cur_g;
 
-                if st.mem.b16s0(p) >= A_LEADERS {
-                    let leader_box = st.mem.b32s1(p + 1);
+                    if glue.subtype(&st.mem) >= A_LEADERS {
+                        let leader_box = glue.leader_ptr(&st.mem).0;
+                        let leader = st
+                            .mem
+                            .classify(MemIdx::new(leader_box))
+                            .expect("valid leader node type in vlist_out");
 
-                    if st.mem.b16s1(leader_box) == RULE_NODE {
-                        st.shipout.rule_wd = st.mem.b32s1(leader_box + 1);
-                        st.shipout.rule_dp = 0;
-                        finish_vlist_rule_in(st, this_box, left_edge, upwards)?;
-                    } else {
-                        let leader_ht = st.mem.b32s1(leader_box + 3) + st.mem.b32s1(leader_box + 2);
-
-                        if leader_ht > 0 && st.shipout.rule_ht > 0 {
-                            st.shipout.rule_ht = st.shipout.rule_ht + 10;
-                            let edge = st.shipout.cur_v + st.shipout.rule_ht;
-                            let mut lx = 0;
-
-                            if st.mem.b16s0(p) == A_LEADERS {
-                                let save_v = st.shipout.cur_v;
-                                st.shipout.cur_v = top_edge
-                                    + leader_ht * ((st.shipout.cur_v - top_edge) / leader_ht);
-                                if st.shipout.cur_v < save_v {
-                                    st.shipout.cur_v = st.shipout.cur_v + leader_ht;
-                                }
-                            } else {
-                                let lq = st.shipout.rule_ht / leader_ht;
-                                let lr = st.shipout.rule_ht % leader_ht;
-
-                                if st.mem.b16s0(p) == C_LEADERS {
-                                    st.shipout.cur_v = st.shipout.cur_v + (lr / 2);
-                                } else {
-                                    lx = lr / (lq + 1);
-                                    st.shipout.cur_v =
-                                        st.shipout.cur_v + ((lr - (lq - 1) * lx) / 2);
-                                }
-                            }
-
-                            while st.shipout.cur_v + leader_ht <= edge {
-                                if st.scanner.cur_dir == RIGHT_TO_LEFT {
-                                    st.shipout.cur_h = left_edge - st.mem.b32s1(leader_box + 4);
-                                } else {
-                                    st.shipout.cur_h = left_edge + st.mem.b32s1(leader_box + 4);
-                                }
-
-                                if st.shipout.cur_h != st.shipout.dvi_h {
-                                    let d = st.shipout.cur_h - st.shipout.dvi_h;
-                                    emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
-                                    st.shipout.dvi_h = st.shipout.cur_h;
-                                }
-
-                                let save_h = st.shipout.dvi_h;
-                                st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(leader_box + 3);
-
-                                if st.shipout.cur_v != st.shipout.dvi_v {
-                                    let d = st.shipout.cur_v - st.shipout.dvi_v;
-                                    emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
-                                    st.shipout.dvi_v = st.shipout.cur_v;
-                                }
-
-                                let save_v = st.shipout.dvi_v;
-                                set_temp_ptr(leader_box);
-                                let outer_doing_leaders = st.shipout.doing_leaders;
-                                st.shipout.doing_leaders = true;
-
-                                if st.mem.b16s1(leader_box) == VLIST_NODE {
-                                    vlist_out_in(st)?;
-                                } else {
-                                    hlist_out_in(st)?;
-                                }
-
-                                st.shipout.doing_leaders = outer_doing_leaders;
-                                st.shipout.dvi_v = save_v;
-                                st.shipout.dvi_h = save_h;
-                                st.shipout.cur_h = left_edge;
-                                st.shipout.cur_v =
-                                    save_v - st.mem.b32s1(leader_box + 3) + leader_ht + lx;
-                            }
-
-                            st.shipout.cur_v = edge - 10;
-                            go_next = true;
+                        if let AnyNode::Rule(rule) = leader {
+                            st.shipout.rule_wd = rule.width(&st.mem).raw();
+                            st.shipout.rule_dp = 0;
+                            finish_vlist_rule_in(st, this_box, left_edge, upwards)?;
                         } else {
-                            move_past_vlist_rule(&mut st.shipout, upwards);
+                            let (leader_bb, leader_is_vlist) = match leader {
+                                AnyNode::HList(q) => (AnyBox::HList(q), false),
+                                AnyNode::VList(q) => (AnyBox::VList(q), true),
+                                _ => panic!("non-box leader in vlist_out"),
+                            };
+                            let leader_ht =
+                                leader_bb.height(&st.mem).0 + leader_bb.depth(&st.mem).0;
+
+                            if leader_ht > 0 && st.shipout.rule_ht > 0 {
+                                st.shipout.rule_ht = st.shipout.rule_ht + 10;
+                                let edge = st.shipout.cur_v + st.shipout.rule_ht;
+                                let mut lx = 0;
+
+                                if glue.subtype(&st.mem) == A_LEADERS {
+                                    let save_v = st.shipout.cur_v;
+                                    st.shipout.cur_v = top_edge
+                                        + leader_ht * ((st.shipout.cur_v - top_edge) / leader_ht);
+                                    if st.shipout.cur_v < save_v {
+                                        st.shipout.cur_v = st.shipout.cur_v + leader_ht;
+                                    }
+                                } else {
+                                    let lq = st.shipout.rule_ht / leader_ht;
+                                    let lr = st.shipout.rule_ht % leader_ht;
+
+                                    if glue.subtype(&st.mem) == C_LEADERS {
+                                        st.shipout.cur_v = st.shipout.cur_v + (lr / 2);
+                                    } else {
+                                        lx = lr / (lq + 1);
+                                        st.shipout.cur_v =
+                                            st.shipout.cur_v + ((lr - (lq - 1) * lx) / 2);
+                                    }
+                                }
+
+                                while st.shipout.cur_v + leader_ht <= edge {
+                                    if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                                        st.shipout.cur_h =
+                                            left_edge - leader_bb.shift_amount(&st.mem).0;
+                                    } else {
+                                        st.shipout.cur_h =
+                                            left_edge + leader_bb.shift_amount(&st.mem).0;
+                                    }
+
+                                    if st.shipout.cur_h != st.shipout.dvi_h {
+                                        let d = st.shipout.cur_h - st.shipout.dvi_h;
+                                        emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
+                                        st.shipout.dvi_h = st.shipout.cur_h;
+                                    }
+
+                                    let save_h = st.shipout.dvi_h;
+                                    st.shipout.cur_v += leader_bb.height(&st.mem).0;
+
+                                    if st.shipout.cur_v != st.shipout.dvi_v {
+                                        let d = st.shipout.cur_v - st.shipout.dvi_v;
+                                        emit_movement(&mut st.mem, &mut st.shipout, d, DOWN1)?;
+                                        st.shipout.dvi_v = st.shipout.cur_v;
+                                    }
+
+                                    let save_v = st.shipout.dvi_v;
+                                    set_temp_ptr(leader_box);
+                                    let outer_doing_leaders = st.shipout.doing_leaders;
+                                    st.shipout.doing_leaders = true;
+
+                                    if leader_is_vlist {
+                                        vlist_out_in(st)?;
+                                    } else {
+                                        hlist_out_in(st)?;
+                                    }
+
+                                    st.shipout.doing_leaders = outer_doing_leaders;
+                                    st.shipout.dvi_v = save_v;
+                                    st.shipout.dvi_h = save_h;
+                                    st.shipout.cur_h = left_edge;
+                                    st.shipout.cur_v =
+                                        save_v - leader_bb.height(&st.mem).0 + leader_ht + lx;
+                                }
+
+                                st.shipout.cur_v = edge - 10;
+                                go_next = true;
+                            } else {
+                                move_past_vlist_rule(&mut st.shipout, upwards);
+                            }
                         }
+                    } else {
+                        move_past_vlist_rule(&mut st.shipout, upwards);
                     }
-                } else {
-                    move_past_vlist_rule(&mut st.shipout, upwards);
                 }
-            }
-            KERN_NODE => {
-                if upwards {
-                    st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(p + 1);
-                } else {
-                    st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(p + 1);
+                AnyNode::Kern(kern) => {
+                    if upwards {
+                        st.shipout.cur_v -= kern.width(&st.mem).0;
+                    } else {
+                        st.shipout.cur_v += kern.width(&st.mem).0;
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
 
         if go_next {
