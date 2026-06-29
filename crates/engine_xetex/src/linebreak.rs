@@ -2786,7 +2786,8 @@ unsafe fn try_break(
                                             || sub == PIC_NODE
                                             || sub == PDF_NODE
                                         {
-                                            linebreak.break_width[1] -= mem.b32s1(v + 1);
+                                            linebreak.break_width[1] -=
+                                                whatsit_node_in(mem, v).width(mem).0;
                                         } else {
                                             return Err(TryBreakAbort::Node(
                                                 NodeRecycleAbort::Confusion(c"disc1a"),
@@ -2827,7 +2828,8 @@ unsafe fn try_break(
                                             || sub == PIC_NODE
                                             || sub == PDF_NODE
                                         {
-                                            linebreak.break_width[1] += mem.b32s1(s + 1);
+                                            linebreak.break_width[1] +=
+                                                whatsit_node_in(mem, s).width(mem).0;
                                         } else {
                                             return Err(TryBreakAbort::Node(
                                                 NodeRecycleAbort::Confusion(c"disc2a"),
@@ -3458,14 +3460,14 @@ fn hyphenate_native_word_if_needed(
             let q = crate::mem::new_disc(&mut st.mem);
             let nc = crate::fonts::new_native_character_in(st, hf, hyf_char as u32)
                 .map_err(HyphNativeAbort::NativeChar)?;
-            st.mem.set_b32s0(q + 1, nc);
+            disc_node(q).set_pre_break(&mut st.mem, MemPtr::from_raw(nc));
             st.mem.set_b32s1(s, q);
             s = q;
             st.hyph.hyphen_passed = j;
         }
     }
 
-    let new_hn = st.mem.b16s1(ha + 4) as i16;
+    let new_hn = whatsit_node_in(&st.mem, ha).native_length(&st.mem) as i16;
     st.linebreak.hn = new_hn;
     let hp = st.hyph.hyphen_passed;
     let q = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, hf, (new_hn - hp) as i32)
@@ -3897,7 +3899,7 @@ pub fn char_pw_in(
     {
         if !mem.ptr(p + 5).is_null() {
             // NATIVE_NODE_glyph_info_ptr != NULL
-            let f = mem.b16s2(p + 4) as i32; // NATIVE_NODE_font
+            let f = whatsit_node_in(mem, p).native_font(mem).0; // NATIVE_NODE_font
             let cp = unsafe { real_get_native_word_cp(mem.node_addr(p), side as libc::c_int) };
             return crate::scaled_math::round_xn_over_d(
                 fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
@@ -3915,8 +3917,9 @@ pub fn char_pw_in(
         && mem.b16s1(p) == WHATSIT_NODE
         && mem.b16s0(p) == GLYPH_NODE
     {
-        let f = mem.b16s2(p + 4) as i32; // mem[p + 4].b16.s2
-        let code = mem.b16s1(p + 4) as u32; // mem[p + 4].b16.s1 (char code)
+        let w = whatsit_node_in(mem, p);
+        let f = w.native_font(mem).0; // mem[p + 4].b16.s2
+        let code = w.native_glyph(mem) as u32; // mem[p + 4].b16.s1 (char code)
         let cp = unsafe { get_cp_code(f, code, side as i32) };
         return crate::scaled_math::round_xn_over_d(
             fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
