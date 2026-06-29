@@ -2343,8 +2343,13 @@ pub fn reverse(
     cur_g: &mut i32,
     cur_glue: &mut f64,
 ) -> Result<i32, ShipoutAbort> {
-    let g_order = mem.b16s0(this_box + 5);
-    let g_sign = mem.b16s1(this_box + 5);
+    // `this_box` is the box being reversed (always an h/vlist).
+    let bb = mem
+        .classify_box(MemIdx::new(this_box))
+        .expect("valid box")
+        .expect("reverse box");
+    let g_order = bb.glue_order(mem);
+    let g_sign = bb.glue_sign(mem);
     let mut l = t;
     let mut p = temp_ptr();
     let mut m = MIN_HALFWORD;
@@ -2392,13 +2397,13 @@ pub fn reverse(
                             if g_sign == STRETCHING {
                                 if mem.b16s1(g) == g_order {
                                     *cur_glue += mem.b32s1(g + 2) as f64;
-                                    let mut glue_temp = mem.gr(this_box + 6) * *cur_glue;
+                                    let mut glue_temp = bb.glue_set(mem) * *cur_glue;
                                     glue_temp = glue_temp.clamp(-1_000_000_000.0, 1_000_000_000.0);
                                     *cur_g = crate::scaled_math::tex_round(glue_temp);
                                 }
                             } else if mem.b16s0(g) == g_order {
                                 *cur_glue -= mem.b32s1(g + 3) as f64;
-                                let mut glue_temp = mem.gr(this_box + 6) * *cur_glue;
+                                let mut glue_temp = bb.glue_set(mem) * *cur_glue;
                                 glue_temp = glue_temp.clamp(-1_000_000_000.0, 1_000_000_000.0);
                                 *cur_g = crate::scaled_math::tex_round(glue_temp);
                             }
@@ -2680,7 +2685,12 @@ fn special_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Ship
     st.shipout.doing_special = true;
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    let tok = st.mem.b32s1(st.mem.b32s1(p + 1));
+    let w = st
+        .mem
+        .classify_whatsit(MemIdx::new(p))
+        .expect("valid whatsit")
+        .expect("special node");
+    let tok = st.mem.b32s1(w.write_tokens(&st.mem).0);
     let avail = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list_in(st, tok, TEX_NULL, avail);
     st.shipout.selector = old_setting;
@@ -2720,7 +2730,13 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
     st.mem.set_b32s1(q, r);
     st.mem.set_b32s0(r, CS_TOKEN_FLAG + END_WRITE);
     crate::input::begin_token_list_in(st, q, INSERTED)?;
-    let write_text_ptr = st.mem.b32s1(p + 1);
+    let write_text_ptr = st
+        .mem
+        .classify_whatsit(MemIdx::new(p))
+        .expect("valid whatsit")
+        .expect("write node")
+        .write_tokens(&st.mem)
+        .0;
     crate::input::begin_token_list_in(st, write_text_ptr, WRITE_TEXT)?;
     let q2 = get_avail_ship(&mut st.mem)?;
     st.mem.set_b32s0(q2, LEFT_BRACE_TOKEN + b'{' as i32);
