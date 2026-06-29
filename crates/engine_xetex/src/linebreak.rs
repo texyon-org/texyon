@@ -2301,8 +2301,7 @@ fn post_line_break_prefix(
         while mem.b32s1(q) != TEX_NULL {
             q = mem.b32s1(q);
         }
-    } else if mem.b16s1(q) as i32 == GLUE_NODE {
-        let q_glue = glue_node(q);
+    } else if let AnyNode::Glue(q_glue) = mem.classify(MemIdx::new(q)).expect("valid break node") {
         let old_spec = q_glue.glue_ptr(mem);
         crate::mem::delete_glue_ref(mem, old_spec.0);
         let right_skip = eqtb.b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP as i32);
@@ -2311,8 +2310,7 @@ fn post_line_break_prefix(
         let right_skip_spec = glue_spec(right_skip);
         right_skip_spec.set_ref_count(mem, right_skip_spec.ref_count(mem) + 1);
         glue_break = true;
-    } else if mem.b16s1(q) as i32 == DISC_NODE {
-        let q_disc = disc_node(q);
+    } else if let AnyNode::Disc(q_disc) = mem.classify(MemIdx::new(q)).expect("valid break node") {
         let mut t = q_disc.subtype(mem);
         let mut r;
 
@@ -2356,10 +2354,9 @@ fn post_line_break_prefix(
 
         mem.set_b32s1(q, r);
         disc_break = true;
-    } else if mem.b16s1(q) as i32 == KERN_NODE {
-        kern_node(q).set_width(mem, Scaled(0));
-    } else if mem.b16s1(q) as i32 == MATH_NODE {
-        let q_math = math_node(q);
+    } else if let AnyNode::Kern(q_kern) = mem.classify(MemIdx::new(q)).expect("valid break node") {
+        q_kern.set_width(mem, Scaled(0));
+    } else if let AnyNode::Math(q_math) = mem.classify(MemIdx::new(q)).expect("valid break node") {
         q_math.set_width(mem, Scaled(0));
 
         if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
