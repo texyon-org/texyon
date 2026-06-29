@@ -2889,7 +2889,8 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
 
         match action {
             FirstPass::ProcessNucleus => {
-                let p = match st.mem.b32s1(q + 1) {
+                let qn = assume_noad(q);
+                let p = match qn.nucleus_type(&st.mem) {
                     MATH_CHAR | MATH_TEXT_CHAR => {
                         match fetch_in(st, q + 1) {
                             ErrorOutcome::Continue => {}
@@ -2915,12 +2916,12 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                             let zsize = st.mem.b16s3(z + 4) as i32;
                             crate::mem::free_node(&mut st.mem, z, zsize);
                             delta = get_ot_math_ital_corr(cur_f, st.mem.b16s1(p + 4) as i32);
-                            if st.mem.b32s1(q + 1) == MATH_TEXT_CHAR
+                            if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR
                                 && !font_is_ot_math(&st.fonts, cur_f)
                             {
                                 delta = 0;
                             }
-                            if st.mem.b32s1(q + 3) == EMPTY && delta != 0 {
+                            if qn.subscr_type(&st.mem) == EMPTY && delta != 0 {
                                 let k = new_kern(&mut st.mem, delta);
                                 if k == ALLOC_FAILED {
                                     return Err(NodeRecycleAbort::Overflow.into());
@@ -2934,7 +2935,7 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                             );
                             let cc = st.scanner.cur_c as u16;
                             p = crate::main_control::new_character_in(st, cur_f, cc)?;
-                            if st.mem.b32s1(q + 1) == MATH_TEXT_CHAR
+                            if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR
                                 && st
                                     .fonts
                                     .font_info_b32s1(SPACE_CODE + st.fonts.param_base(cur_f))
@@ -2942,7 +2943,7 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                             {
                                 delta = 0;
                             }
-                            if st.mem.b32s1(q + 3) == EMPTY && delta != 0 {
+                            if qn.subscr_type(&st.mem) == EMPTY && delta != 0 {
                                 let k = new_kern(&mut st.mem, delta);
                                 if k == ALLOC_FAILED {
                                     return Err(NodeRecycleAbort::Overflow.into());
@@ -2956,9 +2957,9 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                         p
                     }
                     EMPTY => TEX_NULL,
-                    SUB_BOX => st.mem.b32s0(q + 1),
+                    SUB_BOX => qn.nucleus_field(&st.mem),
                     SUB_MLIST => {
-                        st.scanner.cur_mlist = st.mem.b32s0(q + 1);
+                        st.scanner.cur_mlist = qn.nucleus_field(&st.mem);
                         let save_style = st.scanner.cur_style;
                         st.scanner.mlist_penalties = false;
                         mlist_to_hlist_in(st)?;
@@ -2970,7 +2971,8 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                     _ => return Err(NodeRecycleAbort::Confusion(c"mlist2").into()),
                 };
                 st.mem.set_b32s1(q + 1, p);
-                let need_scripts = st.mem.b32s1(q + 3) != EMPTY || st.mem.b32s1(q + 2) != EMPTY;
+                let need_scripts =
+                    qn.subscr_type(&st.mem) != EMPTY || qn.supscr_type(&st.mem) != EMPTY;
                 if need_scripts {
                     make_scripts_in(st, assume_noad(q), delta)?;
                 }
@@ -4760,14 +4762,22 @@ pub(crate) fn init_math_in(
                 return Err(NodeRecycleAbort::Overflow.into());
             }
             let just_box = st.scanner.just_box;
-            st.mem.set_b32s1(j + 1, st.mem.b32s1(just_box + 1));
-            st.mem.set_b32s1(j + 4, st.mem.b32s1(just_box + 4));
-            st.mem.set_b32s1(j + 5, p_glue);
-            st.mem.set_b16s0(j + 5, st.mem.b16s0(just_box + 5));
-            st.mem.set_b16s1(j + 5, st.mem.b16s1(just_box + 5));
-            st.mem.set_gr(j + 6, st.mem.gr(just_box + 6));
+            let jb = classify_box_or_panic(&st.mem, just_box);
+            let jbox = classify_box_or_panic(&st.mem, j);
+            let jb_w = jb.width(&st.mem);
+            let jb_sh = jb.shift_amount(&st.mem);
+            let jb_go = jb.glue_order(&st.mem);
+            let jb_gs = jb.glue_sign(&st.mem);
+            let jb_gset = jb.glue_set(&st.mem);
+            jbox.set_width(&mut st.mem, jb_w);
+            jbox.set_shift_amount(&mut st.mem, jb_sh);
+            jbox.set_list_ptr(&mut st.mem, MemPtr::from_raw(p_glue));
+            // glue_sign/order/set have no AnyBox setter yet; write raw, read typed.
+            st.mem.set_b16s0(j + 5, jb_go);
+            st.mem.set_b16s1(j + 5, jb_gs);
+            st.mem.set_gr(j + 6, jb_gset);
 
-            let mut v = st.mem.b32s1(just_box + 4);
+            let mut v = jb_sh.0;
             x = if cur_list_e_tex_aux() == TEX_NULL {
                 0
             } else if st.mem.b32s0(cur_list_e_tex_aux()) >= R_CODE {
@@ -4778,10 +4788,10 @@ pub(crate) fn init_math_in(
 
             let mut p;
             if x >= 0 {
-                p = st.mem.b32s1(just_box + 5);
+                p = jb.list_ptr(&st.mem).0;
                 st.mem.set_b32s1(TEMP_HEAD, TEX_NULL);
             } else {
-                v = -v - st.mem.b32s1(just_box + 1);
+                v = -v - jb.width(&st.mem).0;
                 p = crate::mem::new_math(&mut st.mem, 0, BEGIN_L_CODE);
                 if p == ALLOC_FAILED {
                     return Err(NodeRecycleAbort::Overflow.into());
@@ -4791,7 +4801,7 @@ pub(crate) fn init_math_in(
                 if end == ALLOC_FAILED {
                     return Err(NodeRecycleAbort::Overflow.into());
                 }
-                let list = st.mem.b32s1(just_box + 5);
+                let list = jb.list_ptr(&st.mem).0;
                 crate::packaging::just_copy(&mut st.mem, list, p, end)?;
                 st.scanner.cur_dir = RIGHT_TO_LEFT;
             }
@@ -4851,7 +4861,13 @@ pub(crate) fn init_math_in(
                             break 'reswitch;
                         }
                         9 => {
-                            d = st.mem.b32s1(p + 1);
+                            d = st
+                                .mem
+                                .classify_math(MemIdx::new(p))
+                                .expect("valid math node")
+                                .expect("math node")
+                                .width(&st.mem)
+                                .0;
                             if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
                                 if st.mem.b16s0(p) & 1 != 0 {
                                     if st.mem.b32s0(st.scanner.LR_ptr)
@@ -4901,17 +4917,22 @@ pub(crate) fn init_math_in(
                             break 'reswitch;
                         }
                         10 => {
-                            let q = st.mem.b32s0(p + 1);
-                            d = st.mem.b32s1(q + 1);
-                            if st.mem.b16s1(just_box + 5) == STRETCHING {
-                                if st.mem.b16s0(just_box + 5) == st.mem.b16s1(q)
-                                    && st.mem.b32s1(q + 2) != 0
+                            let gn = st
+                                .mem
+                                .classify_glue(MemIdx::new(p))
+                                .expect("valid glue")
+                                .expect("glue");
+                            let gs = gn.glue_spec(&st.mem).expect("glue spec");
+                            d = gs.width(&st.mem).0;
+                            if jb.glue_sign(&st.mem) == STRETCHING {
+                                if jb.glue_order(&st.mem) == gs.stretch_order(&st.mem)
+                                    && gs.stretch(&st.mem).0 != 0
                                 {
                                     v = MAX_HALFWORD;
                                 }
-                            } else if st.mem.b16s1(just_box + 5) == SHRINKING
-                                && st.mem.b16s0(just_box + 5) == st.mem.b16s0(q)
-                                && st.mem.b32s1(q + 3) != 0
+                            } else if jb.glue_sign(&st.mem) == SHRINKING
+                                && jb.glue_order(&st.mem) == gs.shrink_order(&st.mem)
+                                && gs.shrink(&st.mem).0 != 0
                             {
                                 v = MAX_HALFWORD;
                             }
@@ -4930,7 +4951,13 @@ pub(crate) fn init_math_in(
                                 || subtype == PIC_NODE
                                 || subtype == PDF_NODE
                             {
-                                d = st.mem.b32s1(p + 1);
+                                d = st
+                                    .mem
+                                    .classify_whatsit(MemIdx::new(p))
+                                    .expect("valid whatsit")
+                                    .expect("whatsit")
+                                    .width(&st.mem)
+                                    .0;
                                 is_found = true;
                             } else {
                                 d = 0;
