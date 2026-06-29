@@ -8,6 +8,54 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 235 — 2026-06-29 — Execution: typed dispatch + box-header reads (linebreak/shipout)
+
+**Type:** execution (workstream 01 / typing). Large mechanical session, four
+file-disjoint typed slices, one consolidated doc update. One Explore subagent did
+a read-only per-site family manifest for `linebreak.rs` (which `b16s1 as i32`
+sites are real type-tests vs. char-node font reads vs. delicate DELTA-walks);
+implementation stayed sequential + per-commit validated.
+
+**Code (4 commits):**
+- **`linebreak::extract_break_node`** — the post-line-break GLUE/DISC/KERN/MATH
+  `else if mem.b16s1(q) as i32 == …` chain became typed `AnyNode` classify
+  matches (`if let AnyNode::Glue(q_glue) = mem.classify(…)`), one classified
+  handle per arm; four raw discriminant reads + unchecked wrappers gone. Once
+  per line break (not a per-char hot loop).
+- **`shipout::ship_out`** — classify the shipped page box once at the huge-page
+  guard; width/height/depth and the vlist/hlist dispatch now read through
+  `AnyBox` (~12 raw `mem.b32s1(p + N)` reads + the `b16s1(p)` type test gone).
+- **`shipout::hlist_out_in`/`vlist_out_in`** — added `AnyBox`
+  `glue_sign`/`glue_order`/`glue_set`/`subtype`/`set_subtype` delegators, then
+  classified `this_box` once at the top of each; glue-set/order/sign, list_ptr,
+  width/height/depth, and the LR-direction subtype (DLIST/REVERSED/upwards)
+  reads+writes now go through the typed box handle (~20 raw `this_box + N`
+  accesses gone from the DVI output core).
+
+**Deliberately left raw (bucket D, prior-session deferrals confirmed):** the
+`output_hlist_glue_in`/`output_vlist_glue_in` glue-spec paths (the spec `g` is
+reallocated + node `p` retyped mid-function), the polymorphic leader_box
+(rule-or-box), the native-word ligature/kern reconstruction loop, math noads,
+and the linebreak `try_break` inner-loop dispatch + active-list DELTA-walks
+(hot path; already in acceptable typed-dispatch form). packaging.rs residue
+(EDGE/SYNCTEX/PAGE_INS) still waits for proper typed surfaces (session 234 Next).
+
+**Validation:** `cargo fmt`; `cargo check` warnings **37** (held); dashboard
+**29/2/7/4** per commit; release rebuild; full corpus **637 passed / 2 diverged /
+0 missing-golden**, only known `1905.00073v1`/`1905.00148v1`, doc-count ==
+baseline, **no NOXDV/NOLOG** (the box-classify `.expect()` would panic→NOXDV on
+any misclassification — the session-187 guard is the key check here). Metrics:
+`with_state` **285** (unchanged — pure typing); `unsafe fn` **273 → 272**;
+shipout raw `+N` field reads **80 → 59** (total `bXXsY` **275 → 247**); linebreak
+untyped `b16s1 as i32` type-tests **42 → 38**.
+
+**Next:** the clean box/dispatch-typing veins in shipout/linebreak are drained.
+Remaining typing is bucket-D residue (glue-spec realloc paths, polymorphic
+leader_box, native-word loops, noads) or hot-loop dispatch best left in its
+current typed-dispatch form. math.rs (128 raw `+N`) is the largest pool but is
+noad-packed-record heavy (rank 8) — type its box/glue/kern sub-reads
+opportunistically, leave noads on the worklist.
+
 ## Idiom session 234 — 2026-06-29 — Execution: primitive threading + typed shipout/page lifecycle
 
 **Type:** execution (workstream 01 / fused threading+typing). Large mechanical

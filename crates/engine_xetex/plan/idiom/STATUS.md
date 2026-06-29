@@ -4,6 +4,26 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-29 (last session = session 235, **execution — typed
+dispatch + box-header reads (linebreak/shipout)**. Four file-disjoint typing
+slices, one Explore subagent for the `linebreak.rs` per-site family manifest.
+(1) `linebreak::extract_break_node`'s post-line-break GLUE/DISC/KERN/MATH chain →
+typed `AnyNode` classify matches. (2) `shipout::ship_out` page box classified
+once → `AnyBox` width/height/depth + vlist/hlist dispatch. (3) added `AnyBox`
+glue_sign/glue_order/glue_set/subtype/set_subtype delegators and classified
+`this_box` once at the top of `hlist_out_in`/`vlist_out_in` (glue-set/order/sign,
+list_ptr, dims, LR-direction subtype now typed in the DVI core). Left raw
+(bucket D): the glue-spec realloc paths, polymorphic leader_box, native-word
+loops, noads, and the `try_break` hot-loop dispatch/DELTA-walks. Validation:
+fmt/check warnings **37**, dashboard **29/2/7/4** per commit, release rebuild,
+corpus **637 passed / 2 diverged / 0 missing-golden**, doc-count == baseline, no
+NOXDV/NOLOG (box-classify `.expect()` would panic→NOXDV — the session-187 guard).
+Metrics: `with_state` **285** (unchanged, pure typing); `unsafe fn` **273 →
+272**; shipout raw `+N` field reads **80 → 59**; linebreak untyped `b16s1 as i32`
+**42 → 38**. **Next:** clean box/dispatch veins drained; remaining typing is
+bucket-D residue or `math.rs` noad-heavy reads (type its box/glue/kern sub-reads
+opportunistically, leave noads on the worklist).)
+
 Last updated: 2026-06-29 (last session = session 234, **execution — primitive
 threading plus typed shipout/page-list traversal**. Threaded primitive
 registration over direct `EngineState` access with deferred cold aborts; removed
