@@ -43,6 +43,8 @@ use crate::output::print_nl_cstr_in;
 // Relocated to main_control.rs (workstream 02); still called from scan.rs.
 
 use crate::io::open_log_file;
+use crate::node::{GlueSpecNode, NodePtr, RuleDimen};
+use crate::units::{MemIdx, MemPtr, Scaled};
 
 extern "C" {
 
@@ -563,22 +565,28 @@ pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i3
     if q == crate::mem::ALLOC_FAILED {
         return Err(main_mem_overflow_scc());
     }
+    // `new_rule` stamps `RULE_NODE`, so classify is total here.
+    let r = st
+        .mem
+        .classify_rule(MemIdx::new(q))
+        .expect("valid new rule")
+        .expect("new rule");
     if cur_cmd() == VRULE {
-        st.mem.set_b32s1(q + 1, DEFAULT_RULE);
+        r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
     } else {
-        st.mem.set_b32s1(q + 3, DEFAULT_RULE);
-        st.mem.set_b32s1(q + 2, 0);
+        r.set_height(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
+        r.set_depth(&mut st.mem, RuleDimen::Set(Scaled(0)));
     }
     loop {
         if scan_keyword_in(st, c"width".as_ptr())? {
             xetex_scan_dimen_in(st, false, false, false, true)?;
-            st.mem.set_b32s1(q + 1, cur_val());
+            r.set_width(&mut st.mem, RuleDimen::from_raw(cur_val()));
         } else if scan_keyword_in(st, c"height".as_ptr())? {
             xetex_scan_dimen_in(st, false, false, false, true)?;
-            st.mem.set_b32s1(q + 3, cur_val());
+            r.set_height(&mut st.mem, RuleDimen::from_raw(cur_val()));
         } else if scan_keyword_in(st, c"depth".as_ptr())? {
             xetex_scan_dimen_in(st, false, false, false, true)?;
-            st.mem.set_b32s1(q + 2, cur_val());
+            r.set_depth(&mut st.mem, RuleDimen::from_raw(cur_val()));
         } else {
             break;
         }
@@ -1235,21 +1243,28 @@ pub(crate) fn set_math_char_in(
         crate::input::back_input_in(st)?;
     } else {
         let p = crate::mem::new_noad(&mut st.mem);
-        st.mem.set_b32s1(p + 1, MATH_CHAR_NODE_SM);
+        // `new_noad` stamps an `OrdNoad` type, so classify is total here. The
+        // +1 word is the noad nucleus sub-record (type/char/fam).
+        let nd = st
+            .mem
+            .classify_noad(MemIdx::new(p))
+            .expect("valid new noad")
+            .expect("new noad");
+        nd.set_nucleus_type(&mut st.mem, MATH_CHAR_NODE_SM);
         let ch = math_char_fn(c);
-        st.mem.set_b16s0(p + 1, (ch % 65536) as u16);
-        st.mem.set_b16s1(p + 1, math_fam_fn(c) as u16);
+        nd.set_nucleus_char(&mut st.mem, (ch % 65536) as u16);
+        nd.set_nucleus_fam(&mut st.mem, math_fam_fn(c) as u16);
         if math_class_fn(c) == 7 {
             let cf = st.eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM_SM);
             if (0..NUMBER_MATH_FAM_SM).contains(&cf) {
-                st.mem.set_b16s1(p + 1, cf as u16);
+                nd.set_nucleus_fam(&mut st.mem, cf as u16);
             }
             st.mem.set_b16s1(p, ORD_NOAD);
         } else {
             st.mem.set_b16s1(p, ORD_NOAD + math_class_fn(c) as u16);
         }
-        st.mem
-            .set_b16s1(p + 1, st.mem.b16s1(p + 1) + (ch / 65536) as u16 * 256);
+        let fam = nd.nucleus_fam(&st.mem) + (ch / 65536) as u16 * 256;
+        nd.set_nucleus_fam(&mut st.mem, fam);
         st.mem.set_b32s1(crate::globals::cur_list_tail(), p);
         crate::globals::set_cur_list_tail(p);
     }
@@ -3444,17 +3459,19 @@ pub(crate) fn scan_glue_in(st: &mut crate::state::EngineState, level: i16) -> Re
     }
 
     let q = new_spec_scc(st, 0)?;
-    st.mem.set_b32s1(q + 1, cur_val());
+    // A fresh glue_spec carries no NODE_type; reach it via `from_glue_ptr`.
+    let gs = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q)).expect("new glue spec");
+    gs.set_width(&mut st.mem, Scaled(cur_val()));
 
     if scan_keyword_in(st, c"plus".as_ptr())? {
         scan_dimen_in(st, mu, true, false)?;
-        st.mem.set_b32s1(q + 2, cur_val());
-        st.mem.set_b16s1(q, st.scanner.cur_order as u16);
+        gs.set_stretch(&mut st.mem, Scaled(cur_val()));
+        gs.set_stretch_order(&mut st.mem, st.scanner.cur_order as u16);
     }
     if scan_keyword_in(st, c"minus".as_ptr())? {
         scan_dimen_in(st, mu, true, false)?;
-        st.mem.set_b32s1(q + 3, cur_val());
-        st.mem.set_b16s0(q, st.scanner.cur_order as u16);
+        gs.set_shrink(&mut st.mem, Scaled(cur_val()));
+        gs.set_shrink_order(&mut st.mem, st.scanner.cur_order as u16);
     }
 
     set_cur_val(q);
@@ -4342,7 +4359,10 @@ pub(crate) fn scan_something_internal_in(
                         while (st.scanner.cur_val_level as i16) > level {
                             if (st.scanner.cur_val_level as i16) == GLUE_VAL {
                                 let gm = cur_val();
-                                set_cur_val(st.mem.b32s1(gm + 1));
+                                let gs =
+                                    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(gm))
+                                        .expect("glue spec");
+                                set_cur_val(gs.width(&st.mem).0);
                                 crate::mem::delete_glue_ref(&mut st.mem, gm);
                             } else if (st.scanner.cur_val_level as i16) == MU_VAL {
                                 scc_err(crate::errors::mu_error_in(st))?;
@@ -4515,10 +4535,13 @@ pub(crate) fn scan_something_internal_in(
                             GLUE_STRETCH_CODE | GLUE_SHRINK_CODE => {
                                 scan_normal_glue_in(st)?;
                                 q = cur_val();
+                                let gs =
+                                    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q))
+                                        .expect("glue spec");
                                 if m == GLUE_STRETCH_CODE {
-                                    set_cur_val(st.mem.b32s1(q + 2));
+                                    set_cur_val(gs.stretch(&st.mem).0);
                                 } else {
-                                    set_cur_val(st.mem.b32s1(q + 3));
+                                    set_cur_val(gs.shrink(&st.mem).0);
                                 }
                                 crate::mem::delete_glue_ref(&mut st.mem, q);
                             }
@@ -4977,18 +5000,33 @@ pub(crate) fn scan_something_internal_in(
                         match cur_chr() {
                             x if x == INT_VAL as i32 => {
                                 if node_type == PENALTY_NODE {
-                                    set_cur_val(st.mem.b32s1(tx + 1));
+                                    let pn = st
+                                        .mem
+                                        .classify_penalty(MemIdx::new(tx))
+                                        .expect("valid penalty")
+                                        .expect("penalty");
+                                    set_cur_val(pn.penalty(&st.mem));
                                 }
                             }
                             x if x == DIMEN_VAL as i32 => {
                                 if node_type == KERN_NODE {
-                                    set_cur_val(st.mem.b32s1(tx + 1));
+                                    let kn = st
+                                        .mem
+                                        .classify_kern(MemIdx::new(tx))
+                                        .expect("valid kern")
+                                        .expect("kern");
+                                    set_cur_val(kn.width(&st.mem).0);
                                 }
                             }
                             x if x == GLUE_VAL as i32 => {
                                 if node_type == GLUE_NODE {
-                                    set_cur_val(st.mem.b32s0(tx + 1));
-                                    if st.mem.b16s0(tx) == MU_GLUE {
+                                    let gn = st
+                                        .mem
+                                        .classify_glue(MemIdx::new(tx))
+                                        .expect("valid glue")
+                                        .expect("glue");
+                                    set_cur_val(gn.glue_ptr(&st.mem).0);
+                                    if gn.subtype(&st.mem) == MU_GLUE {
                                         st.scanner.cur_val_level = MU_VAL as u8;
                                     }
                                 }
