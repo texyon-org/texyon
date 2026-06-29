@@ -579,7 +579,8 @@ unsafe fn clean_box_in(st: &mut EngineState, p: i32, s: i16) -> Result<i32, Math
         crate::packaging::hpack_emit_in(st, q, 0, ADDITIONAL)?
     };
 
-    let qq = st.mem.b32s1(x + 5);
+    let x_box = classify_box_or_panic(&st.mem, x);
+    let qq = x_box.list_ptr(&st.mem).0;
     if crate::mem::is_char_node(&st.mem, qq) {
         let r = st.mem.b32s1(qq);
         if r != TEX_NULL
@@ -1058,9 +1059,9 @@ fn make_op_finish_limits(
 /// translated from xetex-math.c:313 (make_fraction). Threaded SCC core.
 unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let q_raw = q.idx().0;
-    if st.mem.b32s1(q_raw + 1) == DEFAULT_CODE {
+    if q.thickness(&st.mem) == DEFAULT_CODE {
         let drt = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
-        st.mem.set_b32s1(q_raw + 1, drt);
+        q.set_thickness(&mut st.mem, drt);
     }
 
     let cs = st.scanner.cur_style;
@@ -1068,13 +1069,18 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
     let cs = st.scanner.cur_style;
     let mut z = clean_box_in(st, q_raw + 3, 2 * (cs / 2) + 3 - 2 * (cs / 6))?;
 
-    if st.mem.b32s1(x + 1) < st.mem.b32s1(z + 1) {
-        let w = st.mem.b32s1(z + 1);
+    let xb = classify_box_or_panic(&st.mem, x);
+    let zb = classify_box_or_panic(&st.mem, z);
+    if xb.width(&st.mem).0 < zb.width(&st.mem).0 {
+        let w = zb.width(&st.mem).0;
         x = rebox_in(st, x, w)?;
     } else {
-        let w = st.mem.b32s1(x + 1);
+        let w = xb.width(&st.mem).0;
         z = rebox_in(st, z, w)?;
     }
+    // x/z may have been re-boxed above; re-classify the (possibly new) handles.
+    let xb = classify_box_or_panic(&st.mem, x);
+    let zb = classify_box_or_panic(&st.mem, z);
 
     let cur_style = st.scanner.cur_style;
     let cur_size = st.scanner.cur_size;
@@ -1086,7 +1092,7 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
         )
     } else {
         (
-            if st.mem.b32s1(q_raw + 1) != 0 {
+            if q.thickness(&st.mem) != 0 {
                 num2(&st.fonts, &st.eqtb, cur_size)
             } else {
                 num3(&st.fonts, &st.eqtb, cur_size)
@@ -1096,7 +1102,7 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
     };
 
     let mut delta = 0;
-    if st.mem.b32s1(q_raw + 1) == 0 {
+    if q.thickness(&st.mem) == 0 {
         let clr = if font_is_ot_math(&st.fonts, cur_f) {
             if cur_style < TEXT_STYLE {
                 get_ot_math_constant(cur_f, STACKDISPLAYSTYLEGAPMIN)
@@ -1110,7 +1116,7 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
         };
 
         delta = crate::scaled_math::half(
-            clr - ((shift_up - st.mem.b32s1(x + 2)) - (st.mem.b32s1(z + 3) - shift_down)),
+            clr - ((shift_up - xb.depth(&st.mem).0) - (zb.height(&st.mem).0 - shift_down)),
         );
         if delta > 0 {
             shift_up += delta;
@@ -1119,31 +1125,31 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
     } else {
         let axis_height = axis_height(&st.fonts, &st.eqtb, cur_size);
         let (delta1, delta2) = if font_is_ot_math(&st.fonts, cur_f) {
-            delta = crate::scaled_math::half(st.mem.b32s1(q_raw + 1));
+            delta = crate::scaled_math::half(q.thickness(&st.mem));
             let clr_num = if cur_style < TEXT_STYLE {
                 get_ot_math_constant(cur_f, FRACTIONNUMDISPLAYSTYLEGAPMIN)
             } else {
                 get_ot_math_constant(cur_f, FRACTIONNUMERATORGAPMIN)
             };
-            let delta1 = clr_num - ((shift_up - st.mem.b32s1(x + 2)) - (axis_height + delta));
+            let delta1 = clr_num - ((shift_up - xb.depth(&st.mem).0) - (axis_height + delta));
 
             let clr_den = if cur_style < TEXT_STYLE {
                 get_ot_math_constant(cur_f, FRACTIONDENOMDISPLAYSTYLEGAPMIN)
             } else {
                 get_ot_math_constant(cur_f, FRACTIONDENOMINATORGAPMIN)
             };
-            let delta2 = clr_den - ((axis_height - delta) - (st.mem.b32s1(z + 3) - shift_down));
+            let delta2 = clr_den - ((axis_height - delta) - (zb.height(&st.mem).0 - shift_down));
             (delta1, delta2)
         } else {
             let clr = if cur_style < TEXT_STYLE {
-                3 * st.mem.b32s1(q_raw + 1)
+                3 * q.thickness(&st.mem)
             } else {
-                st.mem.b32s1(q_raw + 1)
+                q.thickness(&st.mem)
             };
-            delta = crate::scaled_math::half(st.mem.b32s1(q_raw + 1));
+            delta = crate::scaled_math::half(q.thickness(&st.mem));
             (
-                clr - ((shift_up - st.mem.b32s1(x + 2)) - (axis_height + delta)),
-                clr - ((axis_height - delta) - (st.mem.b32s1(z + 3) - shift_down)),
+                clr - ((shift_up - xb.depth(&st.mem).0) - (axis_height + delta)),
+                clr - ((axis_height - delta) - (zb.height(&st.mem).0 - shift_down)),
             )
         };
 
@@ -1156,7 +1162,7 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
     }
 
     let axis_height = axis_height(&st.fonts, &st.eqtb, cur_size);
-    let rule_thickness = st.mem.b32s1(q_raw + 1);
+    let rule_thickness = q.thickness(&st.mem);
     let v = make_fraction(
         &mut st.mem,
         FractionAssembly {
@@ -1203,7 +1209,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
     // NORMAL -> LIMITS latch.
     make_op_latch_limits(&mut st.mem, &st.scanner, q);
 
-    if st.mem.b32s1(q_raw + 1) == MATH_CHAR {
+    if q.nucleus_type(&st.mem) == MATH_CHAR {
         match fetch_in(st, q_raw + 1) {
             ErrorOutcome::Continue => {}
             other => return Err(MathBuildAbort::Error(other)),
@@ -1222,7 +1228,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                 if i_info.s3 > 0 {
                     st.scanner.cur_c = c as i32;
                     st.scanner.cur_i = i_info;
-                    st.mem.set_b16s0(q_raw + 1, c);
+                    q.set_nucleus_char(&mut st.mem, c);
                 }
             }
             delta = st
@@ -1231,6 +1237,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
         }
 
         let x = clean_box_in(st, q_raw + 1, st.scanner.cur_style)?;
+        let x_box = classify_box_or_panic(&st.mem, x);
 
         // OT-math glyph variant / assembly selection (now safe under the borrow,
         // session 207): `measure_native_glyph` is `&FontState`, the `get_ot_*`
@@ -1239,7 +1246,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
         if st.fonts.font_area_entry(cur_f) == OTGR_FONT_FLAG
             && isOpenTypeMathFont(st.fonts.font_layout_engine_ptr(cur_f))
         {
-            let mut p = st.mem.b32s1(x + 5);
+            let mut p = x_box.list_ptr(&st.mem).0;
             if p != TEX_NULL
                 && !crate::mem::is_char_node(&st.mem, p)
                 && st.mem.b16s1(p) == WHATSIT_NODE
@@ -1279,7 +1286,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                                     h1,
                                     false,
                                 )?;
-                                st.mem.set_b32s1(x + 5, p);
+                                x_box.set_list_ptr(&mut st.mem, MemPtr::from_raw(p));
                                 delta = 0;
                                 break 'found;
                             }
@@ -1294,16 +1301,15 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                 let p1 = st.mem.b32s1(p + 1);
                 let p3 = st.mem.b32s1(p + 3);
                 let p2 = st.mem.b32s1(p + 2);
-                st.mem.set_b32s1(x + 1, p1);
-                st.mem.set_b32s1(x + 3, p3);
-                st.mem.set_b32s1(x + 2, p2);
+                x_box.set_width(&mut st.mem, Scaled(p1));
+                x_box.set_height(&mut st.mem, Scaled(p3));
+                x_box.set_depth(&mut st.mem, Scaled(p2));
             }
         }
 
         // Finish the MATH_CHAR box.
         let size = st.scanner.cur_size;
         let ah = axis_height(&st.fonts, &st.eqtb, size);
-        let x_box = classify_box_or_panic(&st.mem, x);
         make_op_finish_math_char(&mut st.mem, q, x_box, delta, ah);
     }
 
@@ -1484,13 +1490,13 @@ fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbor
     use crate::errors::ErrorOutcome;
     let q_raw = q.idx().0;
     'restart: loop {
-        if st.mem.b32s1(q_raw + 3) != EMPTY {
+        if q.subscr_type(&st.mem) != EMPTY {
             return Ok(());
         }
-        if st.mem.b32s1(q_raw + 2) != EMPTY {
+        if q.supscr_type(&st.mem) != EMPTY {
             return Ok(());
         }
-        if st.mem.b32s1(q_raw + 1) != MATH_CHAR {
+        if q.nucleus_type(&st.mem) != MATH_CHAR {
             return Ok(());
         }
         let p = st.mem.b32s1(q_raw);
@@ -1500,14 +1506,16 @@ fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbor
         if st.mem.b16s1(p) < ORD_NOAD || st.mem.b16s1(p) > PUNCT_NOAD {
             return Ok(());
         }
-        if st.mem.b32s1(p + 1) != MATH_CHAR {
+        // `p` is now a known ORD..PUNCT noad.
+        let p_node = assume_noad(p);
+        if p_node.nucleus_type(&st.mem) != MATH_CHAR {
             return Ok(());
         }
-        if st.mem.b16s1(p + 1) % 256 != st.mem.b16s1(q_raw + 1) % 256 {
+        if p_node.nucleus_fam(&st.mem) % 256 != q.nucleus_fam(&st.mem) % 256 {
             return Ok(());
         }
 
-        st.mem.set_b32s1(q_raw + 1, MATH_TEXT_CHAR);
+        q.set_nucleus_type(&mut st.mem, MATH_TEXT_CHAR);
         match fetch_in(st, q_raw + 1) {
             ErrorOutcome::Continue => {}
             other => return Err(MakeOrdAbort::Error(other)),
@@ -1516,7 +1524,6 @@ fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbor
             return Ok(());
         }
 
-        let p_node = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) };
         match make_ord_body(&mut st.mem, &st.fonts, &mut st.scanner, q, p_node) {
             MakeOrdStep::Return => return Ok(()),
             MakeOrdStep::Restart => continue 'restart,
@@ -1995,9 +2002,13 @@ fn glyph_nucleus(mem: &MemState, p: i32) -> Option<ScriptGlyphNucleus> {
         && mem.b16s1(p) == WHATSIT_NODE
         && mem.b16s0(p) == GLYPH_NODE
     {
+        let pw = mem
+            .classify_whatsit(MemIdx::new(p))
+            .expect("valid whatsit")
+            .expect("glyph node");
         Some(ScriptGlyphNucleus {
-            font: mem.b16s2(p + 4) as i32,
-            glyph: mem.b16s1(p + 4),
+            font: pw.native_font(mem).0,
+            glyph: pw.native_glyph(mem),
         })
     } else {
         None
@@ -3180,9 +3191,13 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleA
     let bb = mem.classify_box(MemIdx::new(b)).unwrap().unwrap();
     let p = match input {
         CharBoxInput::Native { p } => {
-            let h = mem.b32s1(p + 3);
-            let w = mem.b32s1(p + 1);
-            let d = mem.b32s1(p + 2);
+            let pw = mem
+                .classify_whatsit(MemIdx::new(p))
+                .expect("valid whatsit")
+                .expect("native char node");
+            let h = pw.height(mem).0;
+            let w = pw.width(mem).0;
+            let d = pw.depth(mem).0;
             bb.set_height(mem, Scaled(h));
             bb.set_width(mem, Scaled(w));
             bb.set_depth(mem, Scaled(if d < 0 { 0 } else { d }));
@@ -3312,7 +3327,9 @@ fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: i32) {
     let link = b_box.list_ptr(mem);
     mem.set_b32s1(p, link.0);
     b_box.set_list_ptr(mem, MemPtr::from_raw(p));
-    b_box.set_height(mem, Scaled(mem.b32s1(p + 3)));
+    let p_box = classify_box_or_panic(mem, p);
+    let h = p_box.height(mem).0;
+    b_box.set_height(mem, Scaled(h));
 }
 
 /// translated from xetex-math.c:1474 (height_plus_depth)
@@ -3343,6 +3360,10 @@ fn new_stack_glyph(mem: &mut MemState, f: i32, g: i32) -> Result<i32, NodeRecycl
 /// borrow. Legacy callers use [`stack_glyph_into_box_global`], which allocates
 /// the node, drops the borrow for `measure_native_glyph`, then links it here.
 pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: i32) {
+    let pw = mem
+        .classify_whatsit(MemIdx::new(p))
+        .expect("valid whatsit")
+        .expect("glyph node");
     if matches!(b_box, AnyBox::HList(_)) {
         let mut q = b_box.list_ptr(mem).0;
         if q == TEX_NULL {
@@ -3352,11 +3373,11 @@ pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: i32) {
                 q = mem.b32s1(q);
             }
             mem.set_b32s1(q, p);
-            let glyph_height = mem.b32s1(p + 3);
+            let glyph_height = pw.height(mem).0;
             if b_box.height(mem).0 < glyph_height {
                 b_box.set_height(mem, Scaled(glyph_height));
             }
-            let glyph_depth = mem.b32s1(p + 2);
+            let glyph_depth = pw.depth(mem).0;
             if b_box.depth(mem).0 < glyph_depth {
                 b_box.set_depth(mem, Scaled(glyph_depth));
             }
@@ -3364,8 +3385,9 @@ pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: i32) {
     } else {
         mem.set_b32s1(p, b_box.list_ptr(mem).0);
         b_box.set_list_ptr(mem, MemPtr::from_raw(p));
-        b_box.set_height(mem, Scaled(mem.b32s1(p + 3)));
-        let glyph_width = mem.b32s1(p + 1);
+        let glyph_height = pw.height(mem).0;
+        b_box.set_height(mem, Scaled(glyph_height));
+        let glyph_width = pw.width(mem).0;
         if b_box.width(mem).0 < glyph_width {
             b_box.set_width(mem, Scaled(glyph_width));
         }
@@ -3407,10 +3429,17 @@ fn native_glyph_vbox_start(
 }
 
 fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: i32) {
+    let pw = mem
+        .classify_whatsit(MemIdx::new(p))
+        .expect("valid whatsit")
+        .expect("glyph node");
     b_box.set_list_ptr(mem, MemPtr::from_raw(p));
-    b_box.set_width(mem, Scaled(mem.b32s1(p + 1)));
-    b_box.set_height(mem, Scaled(mem.b32s1(p + 3)));
-    b_box.set_depth(mem, Scaled(mem.b32s1(p + 2)));
+    let w = pw.width(mem).0;
+    let h = pw.height(mem).0;
+    let d = pw.depth(mem).0;
+    b_box.set_width(mem, Scaled(w));
+    b_box.set_height(mem, Scaled(h));
+    b_box.set_depth(mem, Scaled(d));
 }
 
 /// Threaded core (`01b` §3a): build the single-glyph vbox under one borrow.
