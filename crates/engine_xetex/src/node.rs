@@ -444,6 +444,46 @@ impl AnyBox {
             AnyBox::VList(p) => p.set_link(mem, q),
         }
     }
+
+    #[inline]
+    pub fn subtype(self, mem: &MemState) -> u16 {
+        match self {
+            AnyBox::HList(p) => p.subtype(mem),
+            AnyBox::VList(p) => p.subtype(mem),
+        }
+    }
+
+    #[inline]
+    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
+        match self {
+            AnyBox::HList(p) => p.set_subtype(mem, v),
+            AnyBox::VList(p) => p.set_subtype(mem, v),
+        }
+    }
+
+    #[inline]
+    pub fn glue_sign(self, mem: &MemState) -> u16 {
+        match self {
+            AnyBox::HList(p) => p.glue_sign(mem),
+            AnyBox::VList(p) => p.glue_sign(mem),
+        }
+    }
+
+    #[inline]
+    pub fn glue_order(self, mem: &MemState) -> u16 {
+        match self {
+            AnyBox::HList(p) => p.glue_order(mem),
+            AnyBox::VList(p) => p.glue_order(mem),
+        }
+    }
+
+    #[inline]
+    pub fn glue_set(self, mem: &MemState) -> f64 {
+        match self {
+            AnyBox::HList(p) => p.glue_set(mem),
+            AnyBox::VList(p) => p.glue_set(mem),
+        }
+    }
 }
 
 /// A fully classified lo-mem node: the typed handle for every family whose

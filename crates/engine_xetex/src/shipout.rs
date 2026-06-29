@@ -1270,8 +1270,13 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     let mut cur_g = 0;
     let mut cur_glue = 0.0;
     let this_box = temp_ptr();
-    let g_order = st.mem.b16s0(this_box + 5);
-    let g_sign = st.mem.b16s1(this_box + 5);
+    let this_box_b = st
+        .mem
+        .classify_box(MemIdx::new(this_box))
+        .expect("valid hlist box")
+        .expect("hlist box");
+    let g_order = this_box_b.glue_order(&st.mem);
+    let g_sign = this_box_b.glue_sign(&st.mem);
 
     if st
         .eqtb
@@ -1289,7 +1294,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
         )?;
     }
 
-    let mut p = st.mem.b32s1(this_box + 5);
+    let mut p = this_box_b.list_ptr(&st.mem).0;
     st.shipout.cur_s += 1;
     if st.shipout.cur_s > 0 {
         emit_dvi_out(&mut st.shipout, PUSH)?;
@@ -1308,16 +1313,16 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     st.mem.set_b32s1(lr_node, st.scanner.LR_ptr);
     st.scanner.LR_ptr = lr_node;
 
-    if st.mem.b16s0(this_box) == DLIST {
+    if this_box_b.subtype(&st.mem) == DLIST {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
             st.scanner.cur_dir = LEFT_TO_RIGHT;
-            st.shipout.cur_h -= st.mem.b32s1(this_box + 1);
+            st.shipout.cur_h -= this_box_b.width(&st.mem).0;
         } else {
-            st.mem.set_b16s0(this_box, 0);
+            this_box_b.set_subtype(&mut st.mem, 0);
         }
     }
 
-    if st.scanner.cur_dir == RIGHT_TO_LEFT && st.mem.b16s0(this_box) != REVERSED {
+    if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box_b.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
         set_temp_ptr(p);
         p = crate::mem::new_kern(&mut st.mem, 0);
@@ -1340,7 +1345,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
         st.mem.set_b32s1(p, reversed);
         st.mem.set_b32s1(p + 1, -st.shipout.cur_h);
         st.shipout.cur_h = save_h;
-        st.mem.set_b16s0(this_box, REVERSED);
+        this_box_b.set_subtype(&mut st.mem, REVERSED);
     }
 
     let mut left_edge = st.shipout.cur_h;
@@ -1645,7 +1650,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     st.mem.set_b32s1(temp_ptr(), st.mem.avail);
     st.mem.avail = temp_ptr();
 
-    if st.mem.b16s0(this_box) == DLIST {
+    if this_box_b.subtype(&st.mem) == DLIST {
         st.scanner.cur_dir = RIGHT_TO_LEFT;
     }
 
@@ -1662,10 +1667,15 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     let mut cur_g = 0;
     let mut cur_glue = 0.0;
     let this_box = temp_ptr();
-    let g_order = st.mem.b16s0(this_box + 5);
-    let g_sign = st.mem.b16s1(this_box + 5);
-    let mut p = st.mem.b32s1(this_box + 5);
-    let upwards = st.mem.b16s0(this_box) == 1;
+    let this_box_b = st
+        .mem
+        .classify_box(MemIdx::new(this_box))
+        .expect("valid vlist box")
+        .expect("vlist box");
+    let g_order = this_box_b.glue_order(&st.mem);
+    let g_sign = this_box_b.glue_sign(&st.mem);
+    let mut p = this_box_b.list_ptr(&st.mem).0;
+    let upwards = this_box_b.subtype(&st.mem) == 1;
 
     st.shipout.cur_s = st.shipout.cur_s + 1;
     if st.shipout.cur_s > 0 {
@@ -1681,9 +1691,9 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     crate::synctex::synctex_vlist(st, this_box);
 
     if upwards {
-        st.shipout.cur_v = st.shipout.cur_v + st.mem.b32s1(this_box + 2);
+        st.shipout.cur_v = st.shipout.cur_v + this_box_b.depth(&st.mem).0;
     } else {
-        st.shipout.cur_v = st.shipout.cur_v - st.mem.b32s1(this_box + 3);
+        st.shipout.cur_v = st.shipout.cur_v - this_box_b.height(&st.mem).0;
     }
 
     let top_edge = st.shipout.cur_v;
@@ -1828,13 +1838,13 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                         if g_sign == STRETCHING {
                             if spec.stretch_order(&st.mem) == g_order {
                                 cur_glue += spec.stretch(&st.mem).0 as f64;
-                                let glue_temp = (st.mem.gr(this_box + 6) * cur_glue)
+                                let glue_temp = (this_box_b.glue_set(&st.mem) * cur_glue)
                                     .clamp(-1_000_000_000.0, 1_000_000_000.0);
                                 cur_g = crate::scaled_math::tex_round(glue_temp);
                             }
                         } else if spec.shrink_order(&st.mem) == g_order {
                             cur_glue -= spec.shrink(&st.mem).0 as f64;
-                            let glue_temp = (st.mem.gr(this_box + 6) * cur_glue)
+                            let glue_temp = (this_box_b.glue_set(&st.mem) * cur_glue)
                                 .clamp(-1_000_000_000.0, 1_000_000_000.0);
                             cur_g = crate::scaled_math::tex_round(glue_temp);
                         }
