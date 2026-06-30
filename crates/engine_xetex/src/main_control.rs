@@ -23,8 +23,9 @@ use crate::globals::{
 };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
+use crate::node::{GlueSpecNode, NodePtr};
 use crate::scan::{set_class_fn, set_family_fn};
-use crate::units::{MemIdx, Scaled};
+use crate::units::{MemIdx, MemPtr, Scaled};
 
 extern "C" {
     fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
@@ -391,6 +392,8 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                         span_count -= 1;
                         ss = st.mem.b32s1(ss);
                         let v = st.mem.b32s0(ss + 1);
+                        let v_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(v))
+                            .expect("non-null glue spec");
                         let g = new_glue(&mut st.mem, v);
                         if g == ALLOC_FAILED {
                             return Err(NodeRecycleAbort::Overflow.into());
@@ -398,18 +401,18 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                         st.mem.set_b32s1(u, g);
                         u = st.mem.b32s1(u);
                         st.mem.set_b16s0(u, GLUE_PAR_TAB_SKIP);
-                        t += st.mem.b32s1(v + 1);
+                        t += v_p.width(&st.mem).0;
                         if p.glue_sign(&st.mem) == STRETCHING {
-                            if st.mem.b16s1(v) == p.glue_order(&st.mem) {
+                            if v_p.stretch_order(&st.mem) == p.glue_order(&st.mem) {
                                 t += crate::scaled_math::tex_round(
-                                    p.glue_set(&st.mem) * st.mem.b32s1(v + 2) as f64,
+                                    p.glue_set(&st.mem) * v_p.stretch(&st.mem).0 as f64,
                                 );
                             }
                         } else if p.glue_sign(&st.mem) == SHRINKING
-                            && st.mem.b16s0(v) == p.glue_order(&st.mem)
+                            && v_p.shrink_order(&st.mem) == p.glue_order(&st.mem)
                         {
                             t -= crate::scaled_math::tex_round(
-                                p.glue_set(&st.mem) * st.mem.b32s1(v + 3) as f64,
+                                p.glue_set(&st.mem) * v_p.shrink(&st.mem).0 as f64,
                             );
                         }
                         ss = st.mem.b32s1(ss);
@@ -4045,27 +4048,37 @@ pub(crate) fn do_register_command_in(
                 }
                 let r = s;
                 crate::mem::delete_glue_ref(&mut st.mem, cur_val());
-                st.mem
-                    .set_b32s1(qs + 1, st.mem.b32s1(qs + 1) + st.mem.b32s1(r + 1));
-                if st.mem.b32s1(qs + 2) == 0 {
-                    st.mem.set_b16s1(qs, NORMAL);
+                let qs_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(qs))
+                    .expect("non-null glue spec");
+                let r_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(r))
+                    .expect("non-null glue spec");
+                let w = qs_p.width(&st.mem).0 + r_p.width(&st.mem).0;
+                qs_p.set_width(&mut st.mem, Scaled(w));
+                if qs_p.stretch(&st.mem).0 == 0 {
+                    qs_p.set_stretch_order(&mut st.mem, NORMAL);
                 }
-                if st.mem.b16s1(qs) == st.mem.b16s1(r) {
-                    st.mem
-                        .set_b32s1(qs + 2, st.mem.b32s1(qs + 2) + st.mem.b32s1(r + 2));
-                } else if st.mem.b16s1(qs) < st.mem.b16s1(r) && st.mem.b32s1(r + 2) != 0 {
-                    st.mem.set_b32s1(qs + 2, st.mem.b32s1(r + 2));
-                    st.mem.set_b16s1(qs, st.mem.b16s1(r));
+                if qs_p.stretch_order(&st.mem) == r_p.stretch_order(&st.mem) {
+                    let v = qs_p.stretch(&st.mem).0 + r_p.stretch(&st.mem).0;
+                    qs_p.set_stretch(&mut st.mem, Scaled(v));
+                } else if qs_p.stretch_order(&st.mem) < r_p.stretch_order(&st.mem)
+                    && r_p.stretch(&st.mem).0 != 0
+                {
+                    let (rs, ro) = (r_p.stretch(&st.mem), r_p.stretch_order(&st.mem));
+                    qs_p.set_stretch(&mut st.mem, rs);
+                    qs_p.set_stretch_order(&mut st.mem, ro);
                 }
-                if st.mem.b32s1(qs + 3) == 0 {
-                    st.mem.set_b16s0(qs, NORMAL);
+                if qs_p.shrink(&st.mem).0 == 0 {
+                    qs_p.set_shrink_order(&mut st.mem, NORMAL);
                 }
-                if st.mem.b16s0(qs) == st.mem.b16s0(r) {
-                    st.mem
-                        .set_b32s1(qs + 3, st.mem.b32s1(qs + 3) + st.mem.b32s1(r + 3));
-                } else if st.mem.b16s0(qs) < st.mem.b16s0(r) && st.mem.b32s1(r + 3) != 0 {
-                    st.mem.set_b32s1(qs + 3, st.mem.b32s1(r + 3));
-                    st.mem.set_b16s0(qs, st.mem.b16s0(r));
+                if qs_p.shrink_order(&st.mem) == r_p.shrink_order(&st.mem) {
+                    let v = qs_p.shrink(&st.mem).0 + r_p.shrink(&st.mem).0;
+                    qs_p.set_shrink(&mut st.mem, Scaled(v));
+                } else if qs_p.shrink_order(&st.mem) < r_p.shrink_order(&st.mem)
+                    && r_p.shrink(&st.mem).0 != 0
+                {
+                    let (rs, ro) = (r_p.shrink(&st.mem), r_p.shrink_order(&st.mem));
+                    qs_p.set_shrink(&mut st.mem, rs);
+                    qs_p.set_shrink_order(&mut st.mem, ro);
                 }
                 set_cur_val(qs);
             }
@@ -4103,41 +4116,47 @@ pub(crate) fn do_register_command_in(
             if r == crate::mem::ALLOC_FAILED {
                 return Err(crate::scan::NodeRecycleAbort::Overflow.into());
             }
+            let s_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s))
+                .expect("non-null glue spec");
+            let r_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(r))
+                .expect("non-null glue spec");
+            let (sw, sst, ssh) = (
+                s_p.width(&st.mem),
+                s_p.stretch(&st.mem),
+                s_p.shrink(&st.mem),
+            );
             if q == MULTIPLY {
                 let v = crate::scaled_math::mult_and_add_in(
                     &mut st.errors,
-                    st.mem.b32s1(s + 1),
+                    sw.0,
                     cur_val(),
                     0,
                     MAX_HALFWORD,
                 );
-                st.mem.set_b32s1(r + 1, v);
+                r_p.set_width(&mut st.mem, Scaled(v));
                 let v = crate::scaled_math::mult_and_add_in(
                     &mut st.errors,
-                    st.mem.b32s1(s + 2),
+                    sst.0,
                     cur_val(),
                     0,
                     MAX_HALFWORD,
                 );
-                st.mem.set_b32s1(r + 2, v);
+                r_p.set_stretch(&mut st.mem, Scaled(v));
                 let v = crate::scaled_math::mult_and_add_in(
                     &mut st.errors,
-                    st.mem.b32s1(s + 3),
+                    ssh.0,
                     cur_val(),
                     0,
                     MAX_HALFWORD,
                 );
-                st.mem.set_b32s1(r + 3, v);
+                r_p.set_shrink(&mut st.mem, Scaled(v));
             } else {
-                let v =
-                    crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(s + 1), cur_val());
-                st.mem.set_b32s1(r + 1, v);
-                let v =
-                    crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(s + 2), cur_val());
-                st.mem.set_b32s1(r + 2, v);
-                let v =
-                    crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(s + 3), cur_val());
-                st.mem.set_b32s1(r + 3, v);
+                let v = crate::scaled_math::x_over_n_in(&mut st.errors, sw.0, cur_val());
+                r_p.set_width(&mut st.mem, Scaled(v));
+                let v = crate::scaled_math::x_over_n_in(&mut st.errors, sst.0, cur_val());
+                r_p.set_stretch(&mut st.mem, Scaled(v));
+                let v = crate::scaled_math::x_over_n_in(&mut st.errors, ssh.0, cur_val());
+                r_p.set_shrink(&mut st.mem, Scaled(v));
             }
             set_cur_val(r);
         }
