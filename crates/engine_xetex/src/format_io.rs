@@ -7,15 +7,10 @@ use crate::consts::{
 };
 use crate::engine::{intpar, sort_avail_in, TRE_MAX_STRINGS, TRE_POOL_SIZE};
 use crate::globals::{
-    avail, cs_count, cur_input, dyn_used, eqtb_b16s0, eqtb_b16s1, eqtb_b32s1, fmem_ptr,
-    font_area_entry, font_dsize_entry, font_mapping_ptr, font_name_entry, font_ptr,
-    font_size_entry, format_ident, hash_high, hash_used, hi_mem_min, hyph_count, hyph_link_entry,
-    hyph_list_entry, hyph_next, hyph_size, hyph_start, hyph_word_entry, init_pool_ptr, interaction,
-    job_name, lo_mem_max, max_hyph_char, mem_b32s0, mem_b32s1, mem_end, par_loc, pool_ptr,
-    pool_size, rover, set_cs_count, set_cur_input_loc, set_dyn_used, set_eqtb_b32s1,
-    set_format_ident, set_help_line, set_help_ptr, set_hyph_next, set_interaction, set_pool_ptr,
-    set_selector, set_str_ptr, set_var_used, str_ptr, str_start, trie_max, trie_not_ready,
-    trie_op_ptr, trie_used_entry, var_used, write_loc,
+    cur_input, eqtb_b32s1, font_area_entry, font_mapping_ptr, format_ident, init_pool_ptr,
+    interaction, job_name, mem_b32s1, pool_ptr, pool_size, set_cur_input_loc, set_eqtb_b32s1,
+    set_format_ident, set_help_line, set_help_ptr, set_interaction, set_pool_ptr, set_selector,
+    set_str_ptr, str_ptr, str_start, trie_not_ready,
 };
 use crate::hyphenation::{init_trie, BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
 
@@ -269,7 +264,7 @@ pub unsafe fn store_fmt_file() {
 
     dump_int(fmt_out, FORMAT_HEADER_MAGIC);
     dump_int(fmt_out, FORMAT_SERIAL);
-    dump_int(fmt_out, hash_high());
+    dump_int(fmt_out, crate::state::with_state(|s| s.eqtb.hash_high));
 
     crate::state::with_state_mut(|st| {
         while st.input.pseudo_files != crate::mem::TEX_NULL {
@@ -300,9 +295,21 @@ pub unsafe fn store_fmt_file() {
     crate::output::print_int(pool_ptr());
 
     crate::state::with_state_mut(|st| sort_avail_in(&mut st.mem));
-    set_var_used(0);
-    dump_int(fmt_out, lo_mem_max());
-    dump_int(fmt_out, rover());
+    // These mem bookkeeping scalars do not change during the dump; snapshot the
+    // immutable ones once and track var_used/dyn_used as locals (written back
+    // below), so the free-list walk holds no per-read borrow.
+    let (lo_mem_max, rover, hi_mem_min, mem_end, avail) = crate::state::with_state(|s| {
+        (
+            s.mem.lo_mem_max,
+            s.mem.rover,
+            s.mem.hi_mem_min,
+            s.mem.mem_end,
+            s.mem.avail,
+        )
+    });
+    let mut var_used = 0i32;
+    dump_int(fmt_out, lo_mem_max);
+    dump_int(fmt_out, rover);
 
     for k in INT_VAL as usize..=INTER_CHAR_VAL as usize {
         let val = crate::state::with_state(|state| state.scanner.sa_root[k]);
@@ -311,66 +318,77 @@ pub unsafe fn store_fmt_file() {
 
     // `mem` is now a Rust-owned `Vec`; take a stable base pointer once (the
     // thread-local owner never reallocates) so the free-list `dump_slice`
-    // calls below — interleaved with `mem_*`/`var_used` accessor reads — hold
-    // no borrow. (session 58, the session-51 eqtb pattern.)
+    // calls below hold no borrow. (session 58, the session-51 eqtb pattern.)
     let mem_ptr = crate::state::with_state(|s| s.mem.data.as_ptr());
     let mut p = 0;
-    let mut q = rover();
+    let mut q = rover;
     let mut x = 0;
     loop {
         let len = q + 2 - p;
         dump_slice(fmt_out, mem_ptr.add(p as usize), len);
         x += len;
-        set_var_used(var_used() + q - p);
-        p = q + mem_b32s0(q);
+        var_used += q - p;
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        p = q + crate::state::with_state(|s| unsafe { s.mem.data[q as usize].b32.s0 });
         q = mem_b32s1(q + 1);
-        if q == rover() {
+        if q == rover {
             break;
         }
     }
 
-    set_var_used(var_used() + lo_mem_max() - p);
-    set_dyn_used(mem_end() + 1 - hi_mem_min());
-    dump_slice(fmt_out, mem_ptr.add(p as usize), lo_mem_max() + 1 - p);
-    x += lo_mem_max() + 1 - p;
+    var_used += lo_mem_max - p;
+    let mut dyn_used = mem_end + 1 - hi_mem_min;
+    dump_slice(fmt_out, mem_ptr.add(p as usize), lo_mem_max + 1 - p);
+    x += lo_mem_max + 1 - p;
 
-    dump_int(fmt_out, hi_mem_min());
-    dump_int(fmt_out, avail());
+    dump_int(fmt_out, hi_mem_min);
+    dump_int(fmt_out, avail);
     dump_slice(
         fmt_out,
-        mem_ptr.add(hi_mem_min() as usize),
-        mem_end() + 1 - hi_mem_min(),
+        mem_ptr.add(hi_mem_min as usize),
+        mem_end + 1 - hi_mem_min,
     );
-    x += mem_end() + 1 - hi_mem_min();
+    x += mem_end + 1 - hi_mem_min;
 
-    p = avail();
+    p = avail;
     while p != crate::mem::TEX_NULL {
-        set_dyn_used(dyn_used() - 1);
+        dyn_used -= 1;
         p = mem_b32s1(p);
     }
 
-    dump_int(fmt_out, var_used());
-    dump_int(fmt_out, dyn_used());
+    crate::state::with_state_mut(|s| {
+        s.mem.var_used = var_used;
+        s.mem.dyn_used = dyn_used;
+    });
+    dump_int(fmt_out, var_used);
+    dump_int(fmt_out, dyn_used);
 
     crate::output::print_ln();
     crate::output::print_int(x);
     crate::output::print_cstr(c" memory locations dumped; current usage is ".as_ptr());
-    crate::output::print_int(var_used());
+    crate::output::print_int(var_used);
     crate::output::print_char(b'&' as i32);
-    crate::output::print_int(dyn_used());
+    crate::output::print_int(dyn_used);
 
     // `eqtb` is now a Rust-owned `Vec`; take a stable base pointer once (the
     // thread-local owner never reallocates) so the sparse-region `dump_slice`
     // calls below — interleaved with `eqtb_*` accessor reads — hold no borrow.
     let eqtb_ptr = crate::state::with_state(|s| s.eqtb.data.as_ptr());
+    // Two eqtb words are "equal" for run-length dumping when their b32.s1 +
+    // b16.s1 + b16.s0 fields all match; read both words under one borrow.
+    let eqtb_words_equal = |a: i32, b: i32| {
+        // SAFETY: union projection; the `Vec` indices are bounds-checked.
+        crate::state::with_state(|s| unsafe {
+            s.eqtb.data[a as usize].b32.s1 == s.eqtb.data[b as usize].b32.s1
+                && s.eqtb.data[a as usize].b16.s1 == s.eqtb.data[b as usize].b16.s1
+                && s.eqtb.data[a as usize].b16.s0 == s.eqtb.data[b as usize].b16.s0
+        })
+    };
     let mut k = ACTIVE_BASE;
     loop {
         let mut j = k;
         while j < FORMAT_INT_BASE - 1 {
-            if eqtb_b32s1(j) == eqtb_b32s1(j + 1)
-                && eqtb_b16s1(j) == eqtb_b16s1(j + 1)
-                && eqtb_b16s0(j) == eqtb_b16s0(j + 1)
-            {
+            if eqtb_words_equal(j, j + 1) {
                 break;
             }
             j += 1;
@@ -378,11 +396,7 @@ pub unsafe fn store_fmt_file() {
         let l = if j < FORMAT_INT_BASE - 1 {
             j += 1;
             let l = j;
-            while j < FORMAT_INT_BASE - 1
-                && eqtb_b32s1(j) == eqtb_b32s1(j + 1)
-                && eqtb_b16s1(j) == eqtb_b16s1(j + 1)
-                && eqtb_b16s0(j) == eqtb_b16s0(j + 1)
-            {
+            while j < FORMAT_INT_BASE - 1 && eqtb_words_equal(j, j + 1) {
                 j += 1;
             }
             l
@@ -427,119 +441,120 @@ pub unsafe fn store_fmt_file() {
         }
     }
 
-    if hash_high() > 0 {
-        dump_slice(fmt_out, eqtb_ptr.add((EQTB_SIZE + 1) as usize), hash_high());
+    // These hash/eqtb scalars are immutable during the dump; snapshot once.
+    let hash_high = crate::state::with_state(|s| s.eqtb.hash_high);
+    let hash_used = crate::state::with_state(|s| s.eqtb.hash_used);
+    // Read both halves of hash word `p` under one borrow (offset −514 == HASH_BASE).
+    let hash_word = |p: i32| {
+        crate::state::with_state(|s| {
+            let w = s.eqtb.hash[(p as usize) - 514];
+            (w.s0, w.s1)
+        })
+    };
+
+    if hash_high > 0 {
+        dump_slice(fmt_out, eqtb_ptr.add((EQTB_SIZE + 1) as usize), hash_high);
     }
 
-    dump_int(fmt_out, par_loc());
-    dump_int(fmt_out, write_loc());
+    dump_int(fmt_out, crate::state::with_state(|s| s.input.par_loc));
+    dump_int(fmt_out, crate::state::with_state(|s| s.shipout.write_loc));
 
     for p in 0..=PRIM_SIZE {
-        dump_b32(
-            fmt_out,
-            crate::globals::prim_s0(p),
-            crate::globals::prim_s1(p),
-        );
+        let (s0, s1) =
+            crate::state::with_state(|s| (s.eqtb.prim[p as usize].s0, s.eqtb.prim[p as usize].s1));
+        dump_b32(fmt_out, s0, s1);
     }
 
-    dump_int(fmt_out, hash_used());
-    set_cs_count((FROZEN_CONTROL_SEQUENCE - 1) - hash_used() + hash_high());
+    dump_int(fmt_out, hash_used);
+    let mut cs_count = (FROZEN_CONTROL_SEQUENCE - 1) - hash_used + hash_high;
 
-    for p in FORMAT_HASH_BASE..=hash_used() {
-        if crate::globals::hash_s1(p) != 0 {
+    for p in FORMAT_HASH_BASE..=hash_used {
+        let (s0, s1) = hash_word(p);
+        if s1 != 0 {
             dump_int(fmt_out, p);
-            dump_b32(
-                fmt_out,
-                crate::globals::hash_s0(p),
-                crate::globals::hash_s1(p),
-            );
-            set_cs_count(cs_count() + 1);
+            dump_b32(fmt_out, s0, s1);
+            cs_count += 1;
         }
     }
 
-    for p in (hash_used() + 1)..=(UNDEFINED_CONTROL_SEQUENCE - 1) {
-        dump_b32(
-            fmt_out,
-            crate::globals::hash_s0(p),
-            crate::globals::hash_s1(p),
-        );
+    for p in (hash_used + 1)..=(UNDEFINED_CONTROL_SEQUENCE - 1) {
+        let (s0, s1) = hash_word(p);
+        dump_b32(fmt_out, s0, s1);
     }
-    if hash_high() > 0 {
-        for p in (EQTB_SIZE + 1)..=(EQTB_SIZE + hash_high()) {
-            dump_b32(
-                fmt_out,
-                crate::globals::hash_s0(p),
-                crate::globals::hash_s1(p),
-            );
+    if hash_high > 0 {
+        for p in (EQTB_SIZE + 1)..=(EQTB_SIZE + hash_high) {
+            let (s0, s1) = hash_word(p);
+            dump_b32(fmt_out, s0, s1);
         }
     }
 
-    dump_int(fmt_out, cs_count());
+    dump_int(fmt_out, cs_count);
 
     crate::output::print_ln();
-    crate::output::print_int(cs_count());
+    crate::output::print_int(cs_count);
     crate::output::print_cstr(c" multiletter control sequences".as_ptr());
 
-    let fmp = fmem_ptr();
+    let fmp = crate::state::with_state(|s| s.fonts.fmem_ptr);
+    let font_ptr = crate::state::with_state(|s| s.fonts.font_ptr);
     dump_int(fmt_out, fmp);
     // Dump the entire font-table region under a single borrow (`01b` §3). The
-    // interleaved `dump_int`/`dump_slice` are plain file FFI and `font_ptr()`/
-    // `fmp` are raw accessors, so none re-enter `with_state`; the dump order is
+    // interleaved `dump_int`/`dump_slice` are plain file FFI and `fmp`/`font_ptr`
+    // are snapshotted scalars, so none re-enter `with_state`; the dump order is
     // preserved byte-for-byte.
     crate::state::with_state(|state| {
         dump_slice(fmt_out, state.fonts.font_info.as_ptr(), fmp);
-        dump_int(fmt_out, font_ptr());
+        dump_int(fmt_out, font_ptr);
         dump_slice(
             fmt_out,
             state.fonts.font_check.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.font_size.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.font_dsize.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.font_params.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.hyphen_char.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.skew_char.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.font_name.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.font_area.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.font_bc.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.font_ec.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
-        let font_dump_count = font_ptr() + 1;
+        let font_dump_count = font_ptr + 1;
         dump_slice(
             fmt_out,
             state.fonts.char_base.as_ptr().add(FONT_BASE as usize),
@@ -588,17 +603,17 @@ pub unsafe fn store_fmt_file() {
         dump_slice(
             fmt_out,
             state.fonts.font_glue.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.bchar_label.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
             state.fonts.font_bchar.as_ptr().add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
         dump_slice(
             fmt_out,
@@ -607,20 +622,23 @@ pub unsafe fn store_fmt_file() {
                 .font_false_bchar
                 .as_ptr()
                 .add(FONT_BASE as usize),
-            font_ptr() + 1,
+            font_ptr + 1,
         );
     });
 
-    for k in FONT_BASE..=font_ptr() {
+    for k in FONT_BASE..=font_ptr {
         crate::output::print_nl_cstr(c"\\font".as_ptr());
-        crate::output::print_esc(crate::globals::hash_s1(FONT_ID_BASE + k));
+        let font_id_s1 =
+            crate::state::with_state(|s| s.eqtb.hash[((FONT_ID_BASE + k) as usize) - 514].s1);
+        crate::output::print_esc(font_id_s1);
         crate::output::print_char(b'=' as i32);
 
+        let font_name = crate::state::with_state(|s| s.fonts.font_name[k as usize]);
         if font_area_entry(k) == AAT_FONT_FLAG
             || font_area_entry(k) == OTGR_FONT_FLAG
             || !font_mapping_ptr(k).is_null()
         {
-            crate::output::print_file_name(font_name_entry(k), EMPTY_STRING, EMPTY_STRING);
+            crate::output::print_file_name(font_name, EMPTY_STRING, EMPTY_STRING);
             crate::output::error_here_with_diagnostic(
                 c"Can't \\dump a format with native fonts or font-mappings".as_ptr(),
             );
@@ -634,43 +652,60 @@ pub unsafe fn store_fmt_file() {
             );
             crate::errors::error();
         } else {
-            crate::output::print_file_name(font_name_entry(k), font_area_entry(k), EMPTY_STRING);
+            crate::output::print_file_name(font_name, font_area_entry(k), EMPTY_STRING);
         }
 
-        if font_size_entry(k) != font_dsize_entry(k) {
+        let (font_size, font_dsize) = crate::state::with_state(|s| {
+            (
+                s.fonts.font_size[k as usize],
+                s.fonts.font_dsize[k as usize],
+            )
+        });
+        if font_size != font_dsize {
             crate::output::print_cstr(c" at ".as_ptr());
-            crate::output::print_scaled(font_size_entry(k));
+            crate::output::print_scaled(font_size);
             crate::output::print_cstr(c"pt".as_ptr());
         }
     }
 
     crate::output::print_ln();
-    crate::output::print_int(fmem_ptr() - 7);
+    crate::output::print_int(fmp - 7);
     crate::output::print_cstr(c" words of font info for ".as_ptr());
-    crate::output::print_int(font_ptr());
-    if font_ptr() != FONT_BASE + 1 {
+    crate::output::print_int(font_ptr);
+    if font_ptr != FONT_BASE + 1 {
         crate::output::print_cstr(c" preloaded fonts".as_ptr());
     } else {
         crate::output::print_cstr(c" preloaded font".as_ptr());
     }
 
-    dump_int(fmt_out, hyph_count());
-    if hyph_next() <= FORMAT_HYPH_PRIME {
-        set_hyph_next(hyph_size());
+    let (hyph_count, hyph_size) =
+        crate::state::with_state(|s| (s.hyph.hyph_count, s.hyph.hyph_size));
+    dump_int(fmt_out, hyph_count);
+    let mut hyph_next = crate::state::with_state(|s| s.hyph.hyph_next);
+    if hyph_next <= FORMAT_HYPH_PRIME {
+        hyph_next = hyph_size;
+        crate::state::with_state_mut(|s| s.hyph.hyph_next = hyph_next);
     }
-    dump_int(fmt_out, hyph_next());
+    dump_int(fmt_out, hyph_next);
 
-    for k in 0..=hyph_size() {
-        if hyph_word_entry(k) != 0 {
-            dump_int(fmt_out, k + 65_536 * hyph_link_entry(k) as i32);
-            dump_int(fmt_out, hyph_word_entry(k));
-            dump_int(fmt_out, hyph_list_entry(k));
+    for k in 0..=hyph_size {
+        let (word, link, list) = crate::state::with_state(|s| {
+            (
+                s.hyph.hyph_word[k as usize],
+                s.hyph.hyph_link[k as usize],
+                s.hyph.hyph_list[k as usize],
+            )
+        });
+        if word != 0 {
+            dump_int(fmt_out, k + 65_536 * link as i32);
+            dump_int(fmt_out, word);
+            dump_int(fmt_out, list);
         }
     }
 
     crate::output::print_ln();
-    crate::output::print_int(hyph_count());
-    if hyph_count() != 1 {
+    crate::output::print_int(hyph_count);
+    if hyph_count != 1 {
         crate::output::print_cstr(c" hyphenation exceptions".as_ptr());
     } else {
         crate::output::print_cstr(c" hyphenation exception".as_ptr());
@@ -680,8 +715,18 @@ pub unsafe fn store_fmt_file() {
         init_trie();
     }
 
-    dump_int(fmt_out, trie_max());
-    dump_int(fmt_out, hyph_start());
+    // trie_max/hyph_start/max_hyph_char/trie_op_ptr are final after init_trie;
+    // snapshot them as locals for the rest of the region.
+    let (trie_max, hyph_start, max_hyph_char, trie_op_ptr) = crate::state::with_state(|s| {
+        (
+            s.hyph.trie_max,
+            s.hyph.hyph_start,
+            s.hyph.max_hyph_char,
+            s.hyph.trie_op_ptr,
+        )
+    });
+    dump_int(fmt_out, trie_max);
+    dump_int(fmt_out, hyph_start);
     // Snapshot all six trie array base pointers under one borrow (`01b` §3
     // snapshot idiom): the arenas never reallocate during dump, so the pointers
     // stay valid across the FFI `dump_slice`/`dump_int` calls below.
@@ -696,20 +741,20 @@ pub unsafe fn store_fmt_file() {
                 state.hyph.hyf_next.as_ptr(),
             )
         });
-    dump_slice(fmt_out, fmt_trie_trl, trie_max() + 1);
-    dump_slice(fmt_out, fmt_trie_tro, trie_max() + 1);
-    dump_slice(fmt_out, fmt_trie_trc, trie_max() + 1);
-    dump_int(fmt_out, max_hyph_char());
-    dump_int(fmt_out, trie_op_ptr());
-    dump_slice(fmt_out, fmt_hyf_distance.add(1), trie_op_ptr());
-    dump_slice(fmt_out, fmt_hyf_num.add(1), trie_op_ptr());
-    dump_slice(fmt_out, fmt_hyf_next.add(1), trie_op_ptr());
+    dump_slice(fmt_out, fmt_trie_trl, trie_max + 1);
+    dump_slice(fmt_out, fmt_trie_tro, trie_max + 1);
+    dump_slice(fmt_out, fmt_trie_trc, trie_max + 1);
+    dump_int(fmt_out, max_hyph_char);
+    dump_int(fmt_out, trie_op_ptr);
+    dump_slice(fmt_out, fmt_hyf_distance.add(1), trie_op_ptr);
+    dump_slice(fmt_out, fmt_hyf_num.add(1), trie_op_ptr);
+    dump_slice(fmt_out, fmt_hyf_next.add(1), trie_op_ptr);
 
     crate::output::print_nl_cstr(c"Hyphenation trie of length ".as_ptr());
-    crate::output::print_int(trie_max());
+    crate::output::print_int(trie_max);
     crate::output::print_cstr(c" has ".as_ptr());
-    crate::output::print_int(trie_op_ptr());
-    if trie_op_ptr() != 1 {
+    crate::output::print_int(trie_op_ptr);
+    if trie_op_ptr != 1 {
         crate::output::print_cstr(c" ops".as_ptr());
     } else {
         crate::output::print_cstr(c" op".as_ptr());
@@ -718,7 +763,7 @@ pub unsafe fn store_fmt_file() {
     crate::output::print_int(TRIE_OP_SIZE);
 
     for k in (0..=BIGGEST_LANG as usize).rev() {
-        let used = trie_used_entry(k);
+        let used = crate::state::with_state(|s| s.hyph.trie_used[k]);
         if used > 0 {
             crate::output::print_nl_cstr(c"  ".as_ptr());
             crate::output::print_int(used as i32);
@@ -735,7 +780,12 @@ pub unsafe fn store_fmt_file() {
 }
 // translated from xetex-ini.c:590 (pack_buffered_name)
 unsafe fn pack_buffered_name(_n: i16, _a: i32, _b: i32) {
-    crate::globals::set_name_of_file(tre_TEX_format_default as *mut libc::c_char);
+    let v = tre_TEX_format_default;
+    crate::state::with_state_mut(|s| {
+        let len = libc::strlen(v);
+        s.input.name_of_file.resize(len + 1, 0);
+        libc::strcpy(s.input.name_of_file.as_mut_ptr(), v);
+    });
     crate::globals::set_name_length(libc::strlen(tre_TEX_format_default) as i32);
 }
 // translated from xetex-ini.c:602 (load_fmt_file)

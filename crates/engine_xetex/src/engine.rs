@@ -11,18 +11,16 @@ use crate::consts::{
 };
 use crate::format_io::{load_fmt_file, store_fmt_file};
 use crate::globals::{
-    buf_size, cur_chr, cur_input, cur_val, eqtb_b32s1, first,
-    font_area_entry, font_mapping_ptr, font_max, font_mem_size, history,
-    in_initex_mode, interaction, job_name, mem_b32s1,
-    pool_size, selector, set_buffer_entry, set_cancel_boundary,
-    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head,
-    set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
-    set_cur_val, set_eqtb_b32s1, set_error_line, set_file_line_error_style_p, set_first,
-    set_font_info_b32s1, set_font_max, set_font_mem_size, set_half_error_line, set_hyph_start,
-    set_hyphen_char_entry, set_ins_disc, set_lft_hit, set_ligature_present,
-    set_max_print_line, set_max_reg_help_line, set_max_reg_num, set_open_parens, set_pool_ptr,
-    set_rt_hit, set_selector, set_skew_char_entry, set_str_ptr, set_temp_ptr,
-    set_trie_c_entry, set_trie_l_entry, set_trie_ptr, set_trie_r_entry, temp_ptr,
+    buf_size, cur_chr, cur_input, cur_val, eqtb_b32s1, first, font_area_entry, font_mapping_ptr,
+    font_max, font_mem_size, history, in_initex_mode, interaction, job_name, mem_b32s1, pool_size,
+    selector, set_buffer_entry, set_cancel_boundary, set_cur_list_aux_b32s1,
+    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line,
+    set_cur_list_prev_graf, set_cur_list_tail, set_cur_val, set_eqtb_b32s1, set_error_line,
+    set_file_line_error_style_p, set_first, set_font_info_b32s1, set_font_max, set_font_mem_size,
+    set_half_error_line, set_hyph_start, set_hyphen_char_entry, set_ins_disc, set_lft_hit,
+    set_ligature_present, set_max_print_line, set_max_reg_help_line, set_max_reg_num,
+    set_open_parens, set_pool_ptr, set_rt_hit, set_selector, set_skew_char_entry, set_str_ptr,
+    set_temp_ptr, set_trie_c_entry, set_trie_l_entry, set_trie_ptr, set_trie_r_entry, temp_ptr,
     trie_not_ready,
 };
 use crate::io::init_io;
@@ -341,7 +339,10 @@ pub unsafe fn final_cleanup() {
         crate::output::print_nl(b'(' as i32);
         crate::output::print_esc_cstr(c"end occurred ".as_ptr());
         crate::output::print_cstr(c"when ".as_ptr());
-        crate::output::print_cmd_chr(IF_TEST, crate::state::with_state(|s| s.scanner.cur_if) as i32);
+        crate::output::print_cmd_chr(
+            IF_TEST,
+            crate::state::with_state(|s| s.scanner.cur_if) as i32,
+        );
         let if_line = crate::state::with_state(|s| s.scanner.if_line);
         if if_line != 0 {
             crate::output::print_cstr(c" on line ".as_ptr());

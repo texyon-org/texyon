@@ -1,9 +1,7 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
-use crate::globals::{
-    buf_size, cur_chr, cur_val, first, name_of_file, set_name_length,
-};
+use crate::globals::{buf_size, cur_chr, cur_val, first, name_of_file, set_name_length};
 use crate::globals::{
     cur_cmd, cur_cs, cur_input, init_pool_ptr, pool_size, selector, set_cur_cs,
     set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,

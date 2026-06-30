@@ -272,13 +272,6 @@ pub(crate) fn set_j_random(v: u8) {
 // mem arena word accessors
 // ---------------------------------------------------------------------------
 
-/// Read `mem[p].b32.s0` (the first 32-bit word / node-size / type field).
-#[inline]
-pub(crate) fn mem_b32s0(p: i32) -> i32 {
-    // SAFETY: union projection; the `Vec` index is bounds-checked.
-    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b32.s0 })
-}
-
 /// Read `mem[p].b32.s1` (the `LLIST_link` / successor-pointer field).
 ///
 /// # Safety
@@ -293,31 +286,6 @@ pub(crate) fn mem_b32s1(p: i32) -> i32 {
 // ---------------------------------------------------------------------------
 // lo_mem_max / hi_mem_min / avail / mem_end / rover
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn lo_mem_max() -> i32 {
-    crate::state::with_state(|s| s.mem.lo_mem_max)
-}
-
-#[inline]
-pub(crate) fn hi_mem_min() -> i32 {
-    crate::state::with_state(|s| s.mem.hi_mem_min)
-}
-
-#[inline]
-pub(crate) fn avail() -> i32 {
-    crate::state::with_state(|s| s.mem.avail)
-}
-
-#[inline]
-pub(crate) fn mem_end() -> i32 {
-    crate::state::with_state(|s| s.mem.mem_end)
-}
-
-#[inline]
-pub(crate) fn rover() -> i32 {
-    crate::state::with_state(|s| s.mem.rover)
-}
 
 // ---------------------------------------------------------------------------
 // cur_input / line
@@ -429,18 +397,6 @@ pub(crate) fn set_eqtb_b32s1(p: i32, v: i32) {
         s.eqtb.data[p as usize].b32.s1 = v;
     });
 }
-/// Read `eqtb[p].b16.s1` (the "type" half of an equivalents entry).
-#[inline]
-pub(crate) fn eqtb_b16s1(p: i32) -> u16 {
-    // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
-    crate::state::with_state(|s| unsafe { s.eqtb.data[p as usize].b16.s1 })
-}
-/// Read `eqtb[p].b16.s0` (the "level" half of an equivalents entry).
-#[inline]
-pub(crate) fn eqtb_b16s0(p: i32) -> u16 {
-    // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
-    crate::state::with_state(|s| unsafe { s.eqtb.data[p as usize].b16.s0 })
-}
 // ---------------------------------------------------------------------------
 // str_ptr / str_start / str_pool (read accessor)
 // ---------------------------------------------------------------------------
@@ -455,21 +411,6 @@ pub(crate) fn name_of_file() -> *mut libc::c_char {
             s.input.name_of_file.as_ptr() as *mut libc::c_char
         }
     })
-}
-/// Write `name_of_file = v`.
-#[inline]
-pub(crate) fn set_name_of_file(v: *mut libc::c_char) {
-    crate::state::with_state_mut(|s| {
-        if v.is_null() {
-            s.input.name_of_file.clear();
-        } else {
-            unsafe {
-                let len = libc::strlen(v);
-                s.input.name_of_file.resize(len + 1, 0);
-                libc::strcpy(s.input.name_of_file.as_mut_ptr(), v);
-            }
-        }
-    });
 }
 /// Write `name_length = v`.
 #[inline]
@@ -542,17 +483,6 @@ pub(crate) fn set_hash_s1(p: i32, v: i32) {
     });
 }
 
-/// Read `prim[p].s0` (the link half of a primitive-table entry).
-#[inline]
-pub(crate) fn prim_s0(p: i32) -> i32 {
-    crate::state::with_state(|s| s.eqtb.prim[p as usize].s0)
-}
-/// Read `prim[p].s1` (the "text" half of a primitive-table entry).
-#[inline]
-pub(crate) fn prim_s1(p: i32) -> i32 {
-    crate::state::with_state(|s| s.eqtb.prim[p as usize].s1)
-}
-
 /// Returns `eqtb_top`.
 #[inline]
 pub(crate) fn eqtb_top() -> i32 {
@@ -564,10 +494,6 @@ pub(crate) fn eqtb_top() -> i32 {
 //                          no_new_control_sequence / prim_used)
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn hash_used() -> i32 {
-    crate::state::with_state(|state| state.eqtb.hash_used)
-}
 #[inline]
 pub(crate) fn set_hash_used(v: i32) {
     crate::state::with_state_mut(|state| {
@@ -581,10 +507,6 @@ pub(crate) fn hash_extra() -> i32 {
 #[inline]
 pub(crate) fn hash_top() -> i32 {
     crate::state::with_state(|state| state.eqtb.hash_top)
-}
-#[inline]
-pub(crate) fn hash_high() -> i32 {
-    crate::state::with_state(|state| state.eqtb.hash_high)
 }
 #[inline]
 pub(crate) fn set_no_new_control_sequence(v: bool) {
@@ -915,12 +837,6 @@ pub(crate) fn save_size() -> i32 {
 // font_name
 // ---------------------------------------------------------------------------
 
-/// Returns `font_name[f]` — the string-pool index for font f's name.
-#[inline]
-pub(crate) fn font_name_entry(f: i32) -> i32 {
-    crate::state::with_state(|state| state.fonts.font_name[f as usize])
-}
-
 /// Writes `font_name[f] = v`.
 #[inline]
 pub(crate) fn set_font_name_entry(f: i32, v: i32) {
@@ -937,24 +853,12 @@ pub(crate) fn set_font_info_b32s1(k: i32, v: i32) {
     });
 }
 
-/// Returns `fmem_ptr`.
-#[inline]
-pub(crate) fn fmem_ptr() -> i32 {
-    crate::state::with_state(|s| s.fonts.fmem_ptr)
-}
-
 /// Sets `fmem_ptr`.
 #[inline]
 pub(crate) fn set_fmem_ptr(v: i32) {
     crate::state::with_state_mut(|s| {
         s.fonts.fmem_ptr = v;
     });
-}
-
-/// Returns `font_ptr`.
-#[inline]
-pub(crate) fn font_ptr() -> i32 {
-    crate::state::with_state(|s| s.fonts.font_ptr)
 }
 
 /// Sets `font_ptr`.
@@ -1062,11 +966,6 @@ pub extern "C" fn tt_get_font_area_entry(f: i32) -> i32 {
     // SAFETY: mirror kept in sync with fonts.font_area by refresh_font_ffi_mirrors.
     unsafe { *font_ffi_mirror::FONT_AREA.add(f as usize) }
 }
-/// Returns `font_size[f]` — the current at-size (scaled_t) for font f.
-#[inline]
-pub(crate) fn font_size_entry(f: i32) -> i32 {
-    crate::state::with_state(|state| state.fonts.font_size[f as usize])
-}
 /// C++ bridge for the remaining OpenType math helper. Reads the borrow-free
 /// mirror (see `font_ffi_mirror`).
 #[no_mangle]
@@ -1080,11 +979,6 @@ pub(crate) fn set_font_size_entry(f: i32, v: i32) {
     crate::state::with_state_mut(|state| {
         state.fonts.font_size[f as usize] = v;
     });
-}
-/// Returns `font_dsize[f]` — the design-size (scaled_t) for font f.
-#[inline]
-pub(crate) fn font_dsize_entry(f: i32) -> i32 {
-    crate::state::with_state(|state| state.fonts.font_dsize[f as usize])
 }
 /// Writes `font_dsize[f] = v`.
 #[inline]
@@ -1432,11 +1326,6 @@ pub(crate) fn stack_size() -> i32 {
     unsafe { raw::stack_size }
 }
 
-/// Returns `par_loc` — hash-table location of \par (xetex-xetexd.h:522).
-#[inline]
-pub(crate) fn par_loc() -> i32 {
-    crate::state::with_state(|s| s.input.par_loc)
-}
 // ---------------------------------------------------------------------------
 // grp_stack / if_stack
 // ---------------------------------------------------------------------------
@@ -1499,36 +1388,6 @@ pub(crate) fn set_max_reg_num(v: i32) {
 pub(crate) fn set_max_reg_help_line(v: *const libc::c_char) {
     crate::state::with_state_mut(|s| {
         s.scanner.max_reg_help_line = v;
-    });
-}
-#[inline]
-pub(crate) fn var_used() -> i32 {
-    crate::state::with_state(|s| s.mem.var_used)
-}
-#[inline]
-pub(crate) fn set_var_used(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.mem.var_used = v;
-    });
-}
-#[inline]
-pub(crate) fn dyn_used() -> i32 {
-    crate::state::with_state(|s| s.mem.dyn_used)
-}
-#[inline]
-pub(crate) fn set_dyn_used(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.mem.dyn_used = v;
-    });
-}
-#[inline]
-pub(crate) fn cs_count() -> i32 {
-    crate::state::with_state(|state| state.eqtb.cs_count)
-}
-#[inline]
-pub(crate) fn set_cs_count(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.eqtb.cs_count = v;
     });
 }
 
@@ -1890,10 +1749,6 @@ pub(crate) fn set_prev_class(v: i32) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn max_hyph_char() -> i32 {
-    crate::state::with_state(|state| state.hyph.max_hyph_char)
-}
-#[inline]
 pub(crate) fn set_trie_c_entry(k: i32, v: u16) {
     crate::state::with_state_mut(|state| {
         state.hyph.trie_c[k as usize] = v;
@@ -1912,10 +1767,6 @@ pub(crate) fn set_trie_r_entry(k: i32, v: i32) {
     });
 }
 #[inline]
-pub(crate) fn trie_max() -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_max)
-}
-#[inline]
 pub(crate) fn set_trie_ptr(v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.trie_ptr = v;
@@ -1926,51 +1777,9 @@ pub(crate) fn trie_not_ready() -> bool {
     crate::state::with_state(|state| state.hyph.trie_not_ready)
 }
 #[inline]
-pub(crate) fn hyph_start() -> i32 {
-    crate::state::with_state(|state| state.hyph.hyph_start)
-}
-#[inline]
 pub(crate) fn set_hyph_start(v: i32) {
     crate::state::with_state_mut(|state| {
         state.hyph.hyph_start = v;
-    });
-}
-#[inline]
-pub(crate) fn trie_used_entry(k: usize) -> u16 {
-    crate::state::with_state(|state| state.hyph.trie_used[k])
-}
-#[inline]
-pub(crate) fn trie_op_ptr() -> i32 {
-    crate::state::with_state(|state| state.hyph.trie_op_ptr)
-}
-#[inline]
-pub(crate) fn hyph_word_entry(k: i32) -> i32 {
-    crate::state::with_state(|state| state.hyph.hyph_word[k as usize])
-}
-#[inline]
-pub(crate) fn hyph_list_entry(k: i32) -> i32 {
-    crate::state::with_state(|state| state.hyph.hyph_list[k as usize])
-}
-#[inline]
-pub(crate) fn hyph_link_entry(k: i32) -> u16 {
-    crate::state::with_state(|state| state.hyph.hyph_link[k as usize])
-}
-#[inline]
-pub(crate) fn hyph_count() -> i32 {
-    crate::state::with_state(|state| state.hyph.hyph_count)
-}
-#[inline]
-pub(crate) fn hyph_size() -> i32 {
-    crate::state::with_state(|state| state.hyph.hyph_size)
-}
-#[inline]
-pub(crate) fn hyph_next() -> i32 {
-    crate::state::with_state(|state| state.hyph.hyph_next)
-}
-#[inline]
-pub(crate) fn set_hyph_next(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyph_next = v;
     });
 }
 
@@ -2022,10 +1831,6 @@ pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
     });
 }
 
-#[inline]
-pub(crate) fn write_loc() -> i32 {
-    crate::state::with_state(|s| s.shipout.write_loc)
-}
 // ---------------------------------------------------------------------------
 // format_ident / edit_name_start / empty / sa_null per-field setters
 // ---------------------------------------------------------------------------
