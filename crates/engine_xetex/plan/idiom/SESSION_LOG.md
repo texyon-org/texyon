@@ -8,6 +8,90 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 241 — 2026-06-30 — Execution: globals.rs category-1 drain — fold the setjmp/IO boundary fns, delete 100 with_state wrappers
+
+**Type:** execution (workstream 01 / Phase C — globals.rs accessor-wrapper
+drain). Drove the session-240 "Next (b)": scope the 198 `with_state` accessor
+wrappers in `globals.rs`, report the burn-down, then thread/delete the
+deletable batch in small file-disjoint commits.
+
+**Scoping finding (corrects the session-240 framing).** A deterministic
+caller-classification (script, filtered for comment / local-closure-shadow /
+`#[test]` / `.method` false positives) shows the session-240 hypothesis — "how
+many of the 198 have *only* already-threaded callers (deletable now)" —
+resolves to **exactly 0**. A threaded caller holds the top-level `borrow_mut()`,
+so it **cannot** call a `with_state` wrapper without nest-panicking; no live
+wrapper has an all-threaded caller set. The 198 decompose as:
+- **4 dead** (zero callers).
+- **9 test-only** — pinned solely by `#[test]` fns in `scaled_math.rs`
+  (`arith_error`/`tex_remainder`/`random_entry`/…); deletable only by rewriting
+  test setup.
+- **22 leaf-mixed** — pinned by the error-panic trio (`confusion`/`overflow`/
+  `fatal_error`, called from hundreds of unthreaded sites), the deferred
+  abort-`fire` helpers (run *after* the borrow drops, by design), and a few
+  file/name leaves — but every one is **also** boundary-pinned, so none dies
+  from threading a leaf alone.
+- **163 boundary-only** — pinned by the setjmp/IO boundary fns (`tt_run_engine`
+  79, `store_fmt_file` 43, `final_cleanup` 10, `close_files_and_terminate` /
+  `tt_cleanup` / `tt_xetex_set_int_variable` …) that structurally **cannot**
+  take `&mut EngineState` (they straddle the C setjmp/longjmp boundary and
+  bootstrap the state).
+
+So the wrappers are **not a free repoint**. They drain only by **folding their
+boundary callers into held borrows** (the session-232 island pattern: replace N
+per-read wrapper borrows with one `with_state(_mut)` reading `st.field`
+directly, deleting any wrapper whose last caller is thereby repointed). That
+fold is the *same* structural setjmp wall the `mod raw` fold waits on — i.e. the
+category-1 drain is **gated on the boundary**, not independent of it. (The data
+already lives in `EngineState`, but "die as legacy callers thread" requires
+folding the setjmp boundary; that is the hard half.)
+
+**Commits (11), file-disjoint per boundary fn (+ globals.rs deletes),
+dashboard-validated each:**
+1. delete 4 dead wrappers (`set_lo_mem_max`/`mem_gr`/`help_ptr`/`rule_dp`).
+2. `tt_xetex_set_int_variable` → one borrow over the dispatch (−5 config setters).
+3. `close_files_and_terminate` → fold write-stream/log/transcript reads
+   (−4: `write_open`/`write_file`/`log_file`/`texmf_log_name`).
+4. `init_io` → one input-buffer-init borrow (−3: `last`/`set_last`/`set_input_file`).
+5. `tt_cleanup` → repoint the font-release + input-close loops
+   (−4: `font_layout_engine_ptr`/`set_font_layout_engine_ptr`/`in_open`/`input_file`).
+6. `get_strings_started` (−2: `set_str_start`/`string_vacancies`).
+7. `final_cleanup` → hoist scalars + batch the `\if`-node scanner writes
+   (−10: `input_ptr`/`open_parens`/`cur_level`/`cond_ptr`/`cur_if`/`if_line`/
+   `mem_b16s0`/`set_cond_ptr`/`set_cur_if`/`set_if_line`).
+8. `store_fmt_file` → fold every dump region (mem free-list, eqtb/hash
+   run-length, prim, font table, hyph/trie): snapshot immutable scalars once,
+   track mutated ones (var_used/dyn_used/cs_count/hyph_next) as locals written
+   back once, read each pair under one borrow via closures; inline
+   `pack_buffered_name`'s `set_name_of_file` (−38, incl. `hash_high`).
+9. `tt_run_engine` nullfont + trie-table init blocks → single borrows
+   (`maketexstring` computed before the borrow; shared `set_font_mapping_ptr`
+   write inlined under it) (−30 setters).
+
+**Metrics:** globals.rs `with_state` accessor wrappers **198 → 98** (−100);
+total `with_state` occurrences **352 → 296** (−56, net drop despite the ~1:1
+inlines, from the folded multi-read regions); `unsafe fn` **273** unchanged
+(pure behavior-preserving); cargo warnings **37** held.
+
+**Validation:** `cargo fmt`; `cargo check` 37 warnings; dashboard **29/2/7/4**
+per commit (TRIP exercises `\dump`+format-undump and `\if`-incomplete recovery —
+the high-risk paths these touch); release rebuild; full corpus **637 passed / 2
+diverged / 0 missing-golden** (only known FP `1905.00073v1`/`1905.00148v1`).
+
+**Next:** the remaining **98** wrappers are (a) ~49 `tt_run_engine`-exclusive
+**scattered singleton** setters — each a 1:1 `set_X(v)`→`with_state_mut(|s| s.f =
+v)` swap that deletes the wrapper but leaves `with_state` flat, interspersed
+with FFI / format-undump branches (low ROI, do only if pushing the wrapper
+count); (b) the **multi-boundary-pinned shared** wrappers (`selector`/
+`interaction`/`history`/`set_eqtb_b32s1`/`set_selector`/…) that die only when
+*all* their boundary callers fold; (c) the error-panic trio + 9 test-only,
+needing different treatment (thread `confusion`/`overflow`/`fatal_error` — a
+hundreds-of-sites ripple — or rewrite the `scaled_math` tests). Honest
+end-state: the last wrappers **and** the 41 `mod raw` scalars both fall only
+when the setjmp boundary itself is restructured to own `EngineState` directly
+(then `with_state` / `thread_local! RefCell` can be deleted); this session
+removed the cheap half of the boundary-fold work.
+
 ## Idiom session 240 — 2026-06-30 — Execution: typed field-read sweep (11 commits) + node accessor surface; threading-frontier writeup
 
 **Type:** execution (workstream 01 / typing — adoption + first signature

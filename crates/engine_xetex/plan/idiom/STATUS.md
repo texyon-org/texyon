@@ -4,6 +4,35 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-30 (last session = session 241, **execution — globals.rs
+category-1 drain: fold the setjmp/IO boundary fns, delete 100 `with_state`
+wrappers**. Scoped the 198 `globals.rs` accessor wrappers with a
+false-positive-filtered caller classifier. **Burn-down finding (corrects
+session-240):** *zero* wrappers have an all-threaded caller set — a threaded
+caller holds the top `borrow_mut()` and would nest-panic calling a `with_state`
+wrapper, so there is no free repoint. The 198 split as 4 dead / 9 test-only
+(`#[test]` in scaled_math) / 22 leaf-mixed (error-panic trio + deferred
+abort-`fire` helpers, all *also* boundary-pinned) / **163 boundary-only** pinned
+by the setjmp/IO fns (`tt_run_engine` 79, `store_fmt_file` 43, `final_cleanup`
+10, `close_files_and_terminate`/`tt_cleanup`/`tt_xetex_set_int_variable`…) that
+can't take `&mut EngineState`. They drain only by **folding each boundary fn
+into held borrows** (session-232 island pattern), which is the *same* setjmp
+wall the `mod raw` fold waits on. 11 file-disjoint, dashboard-validated commits
+folded the dead set + every small boundary fn + `final_cleanup` + the whole
+`store_fmt_file` dump (mem/eqtb/hash/prim/font/hyph-trie regions, snapshot
+immutables + local-track var_used/dyn_used/cs_count/hyph_next) + `tt_run_engine`
+nullfont/trie init. Metrics: globals.rs wrappers **198 → 98** (−100); total
+`with_state` **352 → 296**; `unsafe fn` **273** unchanged; warnings **37** held.
+Validation: dashboard **29/2/7/4** per commit (TRIP exercises `\dump`/undump +
+`\if`-recovery), release rebuild, full corpus **637 passed / 2 diverged / 0
+missing-golden** (known FP only). **Next:** remaining 98 = ~49 `tt_run_engine`
+scattered singleton setters (1:1, flat `with_state`, low ROI), the
+multi-boundary shared wrappers (die only when all their boundary callers fold),
+and the error-panic trio + test-only (need a `confusion`/`overflow`/`fatal_error`
+thread or test rewrite). End-state: the last wrappers + the 41 `mod raw` scalars
+both fall only when the setjmp boundary owns `EngineState` directly. See
+SESSION_LOG session 241.)
+
 Last updated: 2026-06-30 (last session = session 240, **execution — typed
 field-read sweep (11 commits) + node accessor surface**. One read-only recon
 workflow (9 agents) classified every raw `st.mem.bXXsY(ptr+N)` site across the 9
