@@ -16,8 +16,8 @@ use crate::mem::{
     new_spec, ALLOC_FAILED, TEX_NULL,
 };
 use crate::node::{
-    AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen,
-    RuleNode, VListNode, WhatsitNode,
+    AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, HListNode, KernNode, Noad, NodePtr,
+    RuleDimen, RuleNode, VListNode, WhatsitNode,
 };
 use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, EqtbState, FontState, MemState, SaveStackState, ScannerState};
@@ -875,12 +875,7 @@ fn make_fraction(
     mem: &mut MemState,
     assembly: FractionAssembly,
 ) -> Result<AnyBox, NodeRecycleAbort> {
-    let v = new_null_box(mem);
-    if v == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b16s1(v, VLIST_NODE);
-    let vb = mem.classify_box(MemIdx::new(v)).unwrap().unwrap();
+    let vb = AnyBox::VList(alloc_null_vbox(mem)?);
     let xb = assembly.x;
     let zb = assembly.z;
     vb.set_height(mem, Scaled(assembly.shift_up + xb.height(mem).0));
@@ -990,6 +985,32 @@ fn alloc_kern_node(mem: &mut MemState, width: i32) -> Result<NodePtr<KernNode>, 
     p.set_subtype(mem, NORMAL);
     p.set_width(mem, Scaled(width));
     Ok(p)
+}
+
+/// Typed HLIST twin of [`new_null_box`]: confines the family's single
+/// `from_idx_unchecked` to one audited allocator site (`01c` §8) so box-building
+/// callers receive the handle directly instead of re-classifying the `i32`
+/// index. `Err` is the arena-exhaustion sentinel (`01b` §5).
+fn alloc_null_box(mem: &mut MemState) -> Result<NodePtr<HListNode>, NodeRecycleAbort> {
+    let b = new_null_box(mem);
+    if b == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    // SAFETY: `new_null_box` type-stamps HLIST_NODE and zeroes the box fields.
+    Ok(unsafe { NodePtr::<HListNode>::from_idx_unchecked(MemIdx::new(b)) })
+}
+
+/// Typed VLIST twin of [`new_null_box`]: allocates the null box, re-stamps it
+/// `VLIST_NODE`, and returns the typed handle (same single-audited-site
+/// confinement as [`alloc_null_box`]).
+fn alloc_null_vbox(mem: &mut MemState) -> Result<NodePtr<VListNode>, NodeRecycleAbort> {
+    let b = new_null_box(mem);
+    if b == ALLOC_FAILED {
+        return Err(NodeRecycleAbort::Overflow);
+    }
+    mem.set_b16s1(b, VLIST_NODE);
+    // SAFETY: `b` was just stamped `VLIST_NODE`.
+    Ok(unsafe { NodePtr::<VListNode>::from_idx_unchecked(MemIdx::new(b)) })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3155,11 +3176,7 @@ enum CharBoxInput {
 /// which no output (`.xdv`/`.log`) or `mem`-image (TRIP uses TFM fonts only)
 /// path observes.
 fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<AnyBox, NodeRecycleAbort> {
-    let b = new_null_box(mem);
-    if b == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    let bb = mem.classify_box(MemIdx::new(b)).unwrap().unwrap();
+    let bb = AnyBox::HList(alloc_null_box(mem)?);
     let p = match input {
         CharBoxInput::Native { p } => {
             let pw = mem
@@ -3394,12 +3411,7 @@ fn native_glyph_vbox_start(
     f: i32,
     g: u16,
 ) -> Result<(AnyBox, NodePtr<WhatsitNode>), NodeRecycleAbort> {
-    let b = new_null_box(mem);
-    if b == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b16s1(b, VLIST_NODE);
-    let b_box = AnyBox::VList(unsafe { NodePtr::<VListNode>::from_idx_unchecked(MemIdx::new(b)) });
+    let b_box = AnyBox::VList(alloc_null_vbox(mem)?);
     let p = new_stack_glyph(mem, f, g as i32)?;
     Ok((b_box, p))
 }
@@ -5342,13 +5354,7 @@ fn build_ext_delimiter_box(
     q: crate::mem_types::B16x4,
     v: i32,
 ) -> Result<AnyBox, NodeRecycleAbort> {
-    let b = crate::mem::new_null_box(mem);
-    if b == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b16s1(b, VLIST_NODE);
-    // SAFETY: `b` was just stamped `VLIST_NODE`.
-    let vb = unsafe { NodePtr::<VListNode>::from_idx_unchecked(MemIdx::new(b)) };
+    let vb = alloc_null_vbox(mem)?;
     let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
     // The repeatable (s0) piece sets the box width and the per-step height.
     let u = height_plus_depth(fonts, f, r.s0);
