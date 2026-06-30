@@ -1278,7 +1278,9 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                                     ot_assembly_ptr,
                                     h1,
                                     false,
-                                )?;
+                                )?
+                                .idx()
+                                .0;
                                 x_box.set_list_ptr(&mut st.mem, MemPtr::from_raw(p));
                                 delta = 0;
                                 break 'found;
@@ -1824,7 +1826,7 @@ unsafe fn make_math_accent_in(
     let y = char_box_in(st, f, c)?;
     let mut p: i32;
     if initial.area == AAT_FONT_FLAG || initial.area == OTGR_FONT_FLAG {
-        let y_box = classify_box_or_panic(&st.mem, y);
+        let y_box = y;
         let glyph = start_native_accent_glyph(&mut st.mem, y_box, f)?;
         let glyph_id = {
             let addr = node_addr_in(st, glyph.old_node);
@@ -1836,7 +1838,7 @@ unsafe fn make_math_accent_in(
             let addr = node_addr_in(st, p);
             crate::ext::measure_native_glyph(&st.fonts, addr, 1);
         }
-        let y_box = classify_box_or_panic(&st.mem, y);
+        let y_box = y;
         finish_native_accent_glyph_start(&mut st.mem, y_box, glyph);
         if !initial.kind.is_multiple_of(2) {
             let addr = node_addr_in(st, p);
@@ -1863,9 +1865,10 @@ unsafe fn make_math_accent_in(
                     if !assembly_ptr.is_null() {
                         ot_assembly_ptr = assembly_ptr;
                         crate::mem::free_node(&mut st.mem, p, GLYPH_NODE_SIZE);
-                        p = build_opentype_assembly_in(st, f, ot_assembly_ptr, w, true)?;
-                        classify_box_or_panic(&st.mem, y)
-                            .set_list_ptr(&mut st.mem, MemPtr::from_raw(p));
+                        p = build_opentype_assembly_in(st, f, ot_assembly_ptr, w, true)?
+                            .idx()
+                            .0;
+                        y.set_list_ptr(&mut st.mem, MemPtr::from_raw(p));
                         break 'found;
                     }
                 } else {
@@ -1875,7 +1878,7 @@ unsafe fn make_math_accent_in(
             }
             // found:
         }
-        let y_box = classify_box_or_panic(&st.mem, y);
+        let y_box = y;
         sync_accent_box_to_glyph(&mut st.mem, y_box, p, bottom_accent);
         if p != TEX_NULL
             && !crate::mem::is_char_node(&st.mem, p)
@@ -1900,18 +1903,18 @@ unsafe fn make_math_accent_in(
             y_box.set_shift_amount(&mut st.mem, Scaled(s - sa));
         }
     } else {
-        let y_box = classify_box_or_panic(&st.mem, y);
+        let y_box = y;
         let shift = s + crate::scaled_math::half(w - y_box.width(&st.mem).0);
         set_accent_char_box_shift(&mut st.mem, y_box, shift);
         p = TEX_NULL;
     }
     let _ = p;
 
-    let y_box = classify_box_or_panic(&st.mem, y);
+    let y_box = y;
     zero_box_width(&mut st.mem, y_box);
     if bottom_accent {
         let x_box = classify_box_or_panic(&st.mem, x);
-        let y_box = classify_box_or_panic(&st.mem, y);
+        let y_box = y;
         link_bottom_accent_stack(&mut st.mem, x_box, y_box);
         let y_box = crate::packaging::vpackage_emit_in(st, x, 0, ADDITIONAL, MAX_HALFWORD)?;
         let x_box = classify_box_or_panic(&st.mem, x);
@@ -1920,9 +1923,9 @@ unsafe fn make_math_accent_in(
         finish_accent_nucleus(&mut st.mem, q, x_box, y_box);
     } else {
         let x_box = classify_box_or_panic(&st.mem, x);
-        let y_box = classify_box_or_panic(&st.mem, y);
+        let y_box = y;
         start_top_accent_stack(&mut st.mem, x_box, y_box, delta)?;
-        let y_box = crate::packaging::vpackage_emit_in(st, y, 0, ADDITIONAL, MAX_HALFWORD)?;
+        let y_box = crate::packaging::vpackage_emit_in(st, y.idx().0, 0, ADDITIONAL, MAX_HALFWORD)?;
         finish_top_accent_package(&mut st.mem, y_box, h)?;
         let x_box = classify_box_or_panic(&st.mem, x);
         finish_accent_nucleus(&mut st.mem, q, x_box, y_box);
@@ -3268,15 +3271,19 @@ fn math_build_abort_main(a: MathBuildAbort) -> crate::main_control::MainControlA
 /// The native path's `new_native_character_in` and the TFM metric reads are all
 /// `_in`/`&FontState` (no `with_state` re-entry), so the whole build holds the
 /// caller's `&mut EngineState`.
-fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<i32, MathBuildAbort> {
+fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuildAbort> {
     let area = st.fonts.font_area_entry(f);
-    if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
+    let b = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
         let p = crate::fonts::new_native_character_in(st, f, c as u32)?;
         let input = CharBoxInput::Native { p };
-        Ok(char_box(&mut st.mem, input)?)
+        char_box(&mut st.mem, input)?
     } else {
-        Ok(char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)?)
-    }
+        char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)?
+    };
+    // `char_box`/`char_box_tfm` return a raw index (their result is sometimes
+    // stacked as a child); classify once here at the creation boundary so the
+    // delimiter/accent callers carry the typed handle.
+    Ok(classify_box_or_panic(&st.mem, b))
 }
 
 /// Build a TFM character box under a single `mem`+`fonts` borrow. All the metric
@@ -3427,13 +3434,13 @@ fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: i32) {
 }
 
 /// Threaded core (`01b` §3a): build the single-glyph vbox under one borrow.
-fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<i32, NodeRecycleAbort> {
+fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, NodeRecycleAbort> {
     let (b, p) = native_glyph_vbox_start(&mut st.mem, f, g)?;
     let addr = st.mem.data.as_mut_ptr().wrapping_add(p as usize) as *mut std::ffi::c_void;
     // SAFETY: see `stack_glyph_into_box_in` — re-entry-free `&FontState` measure.
     unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) };
     native_glyph_vbox_finish(&mut st.mem, b, p);
-    Ok(b.idx().0)
+    Ok(b)
 }
 
 /// translated from xetex-math.c:1517 (stack_glue_into_box)
@@ -5209,7 +5216,7 @@ unsafe fn build_opentype_assembly_in(
     a: *mut libc::c_void,
     s: i32,
     horiz: bool,
-) -> Result<i32, NodeRecycleAbort> {
+) -> Result<AnyBox, NodeRecycleAbort> {
     let b = crate::mem::new_null_box(&mut st.mem);
     if b == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
@@ -5332,7 +5339,8 @@ unsafe fn build_opentype_assembly_in(
     } else {
         st.mem.set_b32s1(b + 3, nat);
     }
-    Ok(b)
+    // `b` is an hbox or vbox depending on `horiz`; classify once at the boundary.
+    Ok(classify_box_or_panic(&st.mem, b))
 }
 
 /// Build the extensible (`EXT_TAG`) delimiter box for [`var_delimiter_global`].
@@ -5353,7 +5361,7 @@ fn build_ext_delimiter_box(
     f: i32,
     q: crate::mem_types::B16x4,
     v: i32,
-) -> Result<i32, NodeRecycleAbort> {
+) -> Result<AnyBox, NodeRecycleAbort> {
     let b = crate::mem::new_null_box(mem);
     if b == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
@@ -5412,7 +5420,7 @@ fn build_ext_delimiter_box(
     }
     let height = vb.height(mem).0;
     vb.set_depth(mem, Scaled(w - height));
-    Ok(b)
+    Ok(AnyBox::VList(vb))
 }
 
 /// translated from xetex-math.c:1017 (var_delimiter)
@@ -5566,12 +5574,13 @@ unsafe fn var_delimiter_in(
         if bb == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
+        let bb = classify_box_or_panic(&st.mem, bb);
         let width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE);
-        classify_box_or_panic(&st.mem, bb).set_width(&mut st.mem, Scaled(width));
+        bb.set_width(&mut st.mem, Scaled(width));
         b = bb;
     }
     let axis = axis_height(&st.fonts, &st.eqtb, s);
-    let b_box = classify_box_or_panic(&st.mem, b);
+    let b_box = b;
     let shift = crate::scaled_math::half(b_box.height(&st.mem).0 - b_box.depth(&st.mem).0) - axis;
     b_box.set_shift_amount(&mut st.mem, Scaled(shift));
     free_ot_assembly(ot_assembly_ptr);
