@@ -4,6 +4,27 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-30 (last session = session 240, **execution — typed
+field-read sweep (11 commits) + node accessor surface**. One read-only recon
+workflow (9 agents) classified every raw `st.mem.bXXsY(ptr+N)` site across the 9
+hot files into GREEN/YELLOW/RED; implemented sequentially, file-disjoint,
+dashboard-validated per commit. Added a typed accessor surface in node.rs
+(InsNode float_cost/depth/height, UnsetNode glue_*, SaNode from_ptr/sa_ptr,
+WhatsitNode native/write/open) then adopted it across scan, linebreak, packaging,
+main_control, math, output, pagebuilder, expand, shipout. Metrics: raw node-field
+accesses ~**366 → 308** (−58); `with_state` **285** / `unsafe fn` **273**
+unchanged (pure typing); warnings **37** held. Validation: dashboard **29/2/7/4**
+per commit; release rebuild; full corpus **637 passed / 2 diverged / 0
+missing-golden** (only known FP pair). **Frontier finding:** the engine is
+functionally fully threaded; the residual ~285 `with_state` is structural — 198
+globals.rs accessor wrappers (data already in EngineState; die as legacy callers
+thread; not blocked) + 41 `mod raw` borrow-free hot scalars (the LAST domino:
+fold into EngineState only after the with_state leaves drain, else a with_state
+leaf under the live `&mut` nest-panics, `state.rs:1461`). **Next:** (a) the ~15-30
+clean typing-tail sites, or (b) the globals.rs category-1 drain — scope first how
+many of the 198 wrappers have only-threaded callers (deletable now) vs pinned.
+See SESSION_LOG session 240 for the full writeup.)
+
 Last updated: 2026-06-30 (last session = session 239, **execution — typed-
 propagation sweep**. Five file-disjoint, dashboard-validated commits, preceded
 by one read-only recon workflow (8 agents) classifying every `.idx().0`/

@@ -8,6 +8,74 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 240 — 2026-06-30 — Execution: typed field-read sweep (11 commits) + node accessor surface; threading-frontier writeup
+
+**Type:** execution (workstream 01 / typing — adoption + first signature
+propagation). One read-only recon workflow (9 parallel agents) classified every
+raw `st.mem.bXXsY(ptr+N)` site across the 9 hot files into GREEN (typeable now) /
+YELLOW (needs a small new accessor) / RED (bucket-D). Implemented sequentially,
+file-disjoint, dashboard-validated per commit. Pure behavior-preserving:
+`with_state` **285** and `unsafe fn` **273** unchanged.
+
+**Commits (11):**
+1. scan glue-spec arithmetic (`\advance`/order/ref_count/MU-coerce via
+   `GlueSpecNode`) + `set_math_char` noad type write.
+2. linebreak native-word text/glyph pointers (`native_text_ptr`/
+   `native_glyph_info_ptr`; new `set_native_length`; deleted dead
+   `NATIVE_NODE_SIZE`/`_NN`).
+3. packaging `append_to_vlist` baselineskip width.
+4. main_control `do_register_command` `\advance`/`\multiply`/`\divide` +
+   `fin_align` tabskip glue-spec.
+5. **node.rs accessor surface** (additive, `mod node` is `#[allow(dead_code)]`):
+   InsNode `float_cost`/`depth`/`height`(+set), UnsetNode `glue_stretch`/
+   `glue_shrink`/`glue_order`/`glue_sign`, SaNode `from_ptr`/`sa_ptr`,
+   WhatsitNode `set_native_font`/`set_native_glyph` + `write_stream`/`open_name`/
+   `open_area`/`open_ext`.
+6. math AnyBox glue setters (`init_math`), `app_display` p_orig/b_copy classify,
+   native-glyph construction (`new_stack_glyph`/`make_op`/`mlist_to_hlist`).
+7. output node-display reads (unset glue/ins/open/write) + `print_write_whatsit_in`
+   typed param (`NodePtr<WhatsitNode>`); `short_display` subtype reads.
+8. pagebuilder insertion height/depth/float_cost + eTeX SaNode marks
+   (`child(1)`/`child(2)`).
+9. expand sparse-array box/mark reads via SaNode (`sa_ptr` + collapsed `child(t)`).
+10. main_control `begin_insert_or_adjust` Ins/Adjust + `make_mark` fresh-node typing.
+11. shipout write/open whatsit fields.
+
+**Metrics:** raw `st.mem.bXXsY(ptr+N)` node-field accesses ~**366 → 308** (−58);
+`with_state` **285** / `unsafe fn` **273** unchanged; cargo warnings **37** held.
+
+**Validation:** `cargo fmt`; `cargo check` 37 warnings; dashboard **29/2/7/4** per
+commit; release rebuild; full corpus **637 passed / 2 diverged / 0 missing-golden**
+(only known FP `1905.00073v1`/`1905.00148v1`).
+
+**Frontier finding (the headline for whoever wants to "finish" this).** The engine
+is *functionally* fully threaded — every algorithm runs under `&mut EngineState`.
+The residual ~285 `with_state` is **structural, not backlog**, and splits in two
+(verified against `state.rs:1455-1466` + `globals.rs`):
+- **198 globals.rs `with_state` accessor wrappers** (`arith_error()` →
+  `with_state(|s| s.errors.…)`): the data **already lives in `EngineState`**; each
+  wrapper dies once its remaining legacy callers are threaded to read `st.X`
+  directly. Broad/lateral, finite, low-ROI — **NOT blocked**.
+- **41 `mod raw` `static mut` hot scalars** (`cur_cmd`/`cur_chr`/`cur_list`/
+  `cur_input`/`temp_ptr`/`main_*`/lig locals): read **borrow-free**
+  (`fn cur_cmd() -> u8 { unsafe { raw::cur_cmd } }`, NOT via `with_state`) so a
+  threaded core can touch them while holding the top-level `borrow_mut()`. They
+  must stay raw until **no `with_state` path touches them** — otherwise a
+  `with_state` leaf reached under the live `&mut` nest-panics (RefCell
+  double-borrow, `state.rs:1461`; this is the session-228 failure). **Sequencing
+  constraint, NOT a perf wall** (after inlining `st.input.cur_cmd` == the raw
+  load; the RefCell cost is paid once at the top). They are the LAST domino: fold
+  into `EngineState` only after the category-1 wrappers + setjmp-I/O leaves drain,
+  then `with_state`/`thread_local! RefCell` can be deleted entirely.
+
+**Next:** two tracks. (a) **Typing tail** — ~15-30 clean sites left
+(math `make_math_accent` glyphs, `box_end`/`handle_right_brace` noad, shipout
+PIC/edge which need new span/pic/edge families). (b) **globals.rs category-1
+drain** (the path that unblocks the final `mod raw` fold) — scope first: of the
+198 wrappers, how many have *only* already-threaded callers (deletable today by
+repointing to `st.X`) vs how many are pinned by a still-unthreaded caller; report
+that burn-down number, then thread the deletable batch in file-disjoint commits.
+
 ## Idiom session 239 — 2026-06-30 — Execution: typed-propagation sweep (is_null, alloc-twins, FractionAssembly/fin_align AnyBox)
 
 **Type:** execution (workstream 01 / typing — propagation). Five file-disjoint,
