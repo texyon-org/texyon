@@ -385,26 +385,18 @@ pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<NodePtr<RuleNode>, No
 /// translated from xetex-math.c:181 (overbar)
 ///
 /// Phase-C: threaded to `&mut MemState`. Builds the kern/rule/kern chain
-/// directly through the threaded [`new_kern`]/[`fraction_rule`] and returns its
-/// head; with_state-bearing `vpackage` callers run after the borrow drops
-/// (bucket C). Allocation failure propagates the
+/// directly through the typed [`alloc_kern_node`]/[`fraction_rule`] handles and
+/// returns its head; with_state-bearing `vpackage` callers run after the borrow
+/// drops (bucket C). Allocation failure propagates the
 /// [`NodeRecycleAbort`] sentinel (`01b` §5).
-pub fn overbar(mem: &mut MemState, b: i32, k: i32, t: i32) -> Result<i32, NodeRecycleAbort> {
-    let p_raw = new_kern(mem, k);
-    if p_raw == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    let p = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_raw)) };
-    p.set_link(mem, MemPtr::from_raw(b));
+pub fn overbar(mem: &mut MemState, b: AnyBox, k: i32, t: i32) -> Result<i32, NodeRecycleAbort> {
+    let p = alloc_kern_node(mem, k)?;
+    p.set_link(mem, MemPtr::from_idx(b.idx()));
     let q = fraction_rule(mem, t)?;
     q.set_link(mem, MemPtr::from_idx(p.idx()));
-    let r_raw = new_kern(mem, t);
-    if r_raw == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    let r = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(r_raw)) };
+    let r = alloc_kern_node(mem, t)?;
     r.set_link(mem, MemPtr::from_idx(q.idx()));
-    Ok(r_raw)
+    Ok(r.idx().0)
 }
 
 /// translated from xetex-math.c:195 (math_glue)
@@ -711,7 +703,7 @@ unsafe fn make_over_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
     let q_raw = q.idx().0;
     let x = clean_box_in(st, q_raw + 1, 2 * (st.scanner.cur_style / 2) + 1)?;
     let rule_thickness = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
-    let p = overbar(&mut st.mem, x.idx().0, 3 * rule_thickness, rule_thickness)?;
+    let p = overbar(&mut st.mem, x, 3 * rule_thickness, rule_thickness)?;
     let x = crate::packaging::vpackage_emit_in(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
     make_over(&mut st.mem, q, x);
     Ok(())
@@ -723,13 +715,9 @@ fn make_under_prepare(
     x: AnyBox,
     rule_thickness: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    let p = new_kern(mem, 3 * rule_thickness);
-    if p == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    x.set_link(mem, MemPtr::from_raw(p));
+    let p = alloc_kern_node(mem, 3 * rule_thickness)?;
+    x.set_link(mem, MemPtr::from_idx(p.idx()));
     let rule = fraction_rule(mem, rule_thickness)?;
-    let p = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) };
     p.set_link(mem, MemPtr::from_idx(rule.idx()));
     Ok(())
 }
@@ -865,7 +853,7 @@ unsafe fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), 
         clr += crate::scaled_math::half(delta);
     }
     y.set_shift_amount(&mut st.mem, Scaled(-(x_height + clr)));
-    let p = overbar(&mut st.mem, x.idx().0, clr, rule_height)?;
+    let p = overbar(&mut st.mem, x, clr, rule_height)?;
     let overbar_box = crate::packaging::vpackage_emit_in(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
     y.set_link(&mut st.mem, MemPtr::from_idx(overbar_box.idx()));
     let hbox = crate::packaging::hpack_emit_in(st, y.idx().0, 0, ADDITIONAL)?;
@@ -874,8 +862,8 @@ unsafe fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), 
 }
 
 struct FractionAssembly {
-    x: i32,
-    z: i32,
+    x: AnyBox,
+    z: AnyBox,
     rule_thickness: i32,
     shift_up: i32,
     shift_down: i32,
@@ -893,8 +881,8 @@ fn make_fraction(
     }
     mem.set_b16s1(v, VLIST_NODE);
     let vb = mem.classify_box(MemIdx::new(v)).unwrap().unwrap();
-    let xb = mem.classify_box(MemIdx::new(assembly.x)).unwrap().unwrap();
-    let zb = mem.classify_box(MemIdx::new(assembly.z)).unwrap().unwrap();
+    let xb = assembly.x;
+    let zb = assembly.z;
     vb.set_height(mem, Scaled(assembly.shift_up + xb.height(mem).0));
     vb.set_depth(mem, Scaled(zb.depth(mem).0 + assembly.shift_down));
     vb.set_width(mem, xb.width(mem));
@@ -903,21 +891,21 @@ fn make_fraction(
     if assembly.rule_thickness == 0 {
         let kw = (assembly.shift_up - xb.depth(mem).0) - (zb.height(mem).0 - assembly.shift_down);
         p = alloc_kern_node(mem, kw)?;
-        p.set_link(mem, MemPtr::from_raw(assembly.z));
+        p.set_link(mem, MemPtr::from_idx(assembly.z.idx()));
     } else {
         let y = fraction_rule(mem, assembly.rule_thickness)?;
         let p1w =
             (assembly.axis_height - assembly.delta) - (zb.height(mem).0 - assembly.shift_down);
         let p1 = alloc_kern_node(mem, p1w)?;
         y.set_link(mem, MemPtr::from_idx(p1.idx()));
-        p1.set_link(mem, MemPtr::from_raw(assembly.z));
+        p1.set_link(mem, MemPtr::from_idx(assembly.z.idx()));
         let pw = (assembly.shift_up - xb.depth(mem).0) - (assembly.axis_height + assembly.delta);
         p = alloc_kern_node(mem, pw)?;
         p.set_link(mem, MemPtr::from_idx(y.idx()));
     }
 
     xb.set_link(mem, MemPtr::from_idx(p.idx()));
-    vb.set_list_ptr(mem, MemPtr::from_raw(assembly.x));
+    vb.set_list_ptr(mem, MemPtr::from_idx(assembly.x.idx()));
     Ok(vb)
 }
 
@@ -1167,8 +1155,8 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
     let v = make_fraction(
         &mut st.mem,
         FractionAssembly {
-            x: x.idx().0,
-            z: z.idx().0,
+            x,
+            z,
             rule_thickness,
             shift_up,
             shift_down,
@@ -1402,22 +1390,17 @@ fn make_ord_body(
     loop {
         if scanner.cur_i.s2 == scanner.cur_c as u16 && scanner.cur_i.s3 <= 128 {
             if scanner.cur_i.s1 >= 128 {
-                let p_kern_idx = new_kern(
-                    mem,
-                    fonts.font_info_b32s1(
-                        fonts.kern_base_entry(scanner.cur_f)
-                            + 256 * scanner.cur_i.s1 as i32
-                            + scanner.cur_i.s0 as i32,
-                    ),
+                let kern_width = fonts.font_info_b32s1(
+                    fonts.kern_base_entry(scanner.cur_f)
+                        + 256 * scanner.cur_i.s1 as i32
+                        + scanner.cur_i.s0 as i32,
                 );
-                if p_kern_idx == ALLOC_FAILED {
+                let Ok(p_kern) = alloc_kern_node(mem, kern_width) else {
                     return MakeOrdStep::Overflow;
-                }
-                let p_kern =
-                    unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_kern_idx)) };
+                };
                 let link_q = q.link(mem);
                 p_kern.set_link(mem, link_q);
-                q.set_link(mem, MemPtr::from_raw(p_kern_idx));
+                q.set_link(mem, MemPtr::from_idx(p_kern.idx()));
                 return MakeOrdStep::Return;
             } else {
                 match scanner.cur_i.s1 {
