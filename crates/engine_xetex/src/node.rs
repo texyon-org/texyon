@@ -484,6 +484,30 @@ impl AnyBox {
             AnyBox::VList(p) => p.glue_set(mem),
         }
     }
+
+    #[inline]
+    pub fn set_glue_sign(self, mem: &mut MemState, v: u16) {
+        match self {
+            AnyBox::HList(p) => p.set_glue_sign(mem, v),
+            AnyBox::VList(p) => p.set_glue_sign(mem, v),
+        }
+    }
+
+    #[inline]
+    pub fn set_glue_order(self, mem: &mut MemState, v: u16) {
+        match self {
+            AnyBox::HList(p) => p.set_glue_order(mem, v),
+            AnyBox::VList(p) => p.set_glue_order(mem, v),
+        }
+    }
+
+    #[inline]
+    pub fn set_glue_set(self, mem: &mut MemState, v: f64) {
+        match self {
+            AnyBox::HList(p) => p.set_glue_set(mem, v),
+            AnyBox::VList(p) => p.set_glue_set(mem, v),
+        }
+    }
 }
 
 /// A fully classified lo-mem node: the typed handle for every family whose

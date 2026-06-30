@@ -1055,7 +1055,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                         .expect("non-null copied glue spec");
                     rr.set_shrink_order(&mut st.mem, NORMAL as u16);
                     crate::mem::delete_glue_ref(&mut st.mem, spec.idx().0);
-                    glue.set_glue_ptr(&mut st.mem, MemPtr::from_raw(rr.idx().0));
+                    glue.set_glue_ptr(&mut st.mem, MemPtr::from_idx(rr.idx()));
                     spec = rr;
                 }
                 spec.width(&st.mem).0

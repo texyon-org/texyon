@@ -2955,7 +2955,7 @@ unsafe fn try_break(
                         mem,
                         Scaled(linebreak.break_width[6] - linebreak.cur_active_width[6]),
                     );
-                    active(prev_r).set_link(mem, MemPtr::from_raw(q.idx().0));
+                    active(prev_r).set_link(mem, MemPtr::from_idx(q.idx()));
                     prev_prev_r = prev_r;
                     prev_r = q.idx().0;
                 }
@@ -2994,9 +2994,9 @@ unsafe fn try_break(
                         }
 
                         if mem.b16s1(prev_r) as i32 == DELTA_NODE {
-                            delta_node(prev_r).set_link(mem, MemPtr::from_raw(q_active.idx().0));
+                            delta_node(prev_r).set_link(mem, MemPtr::from_idx(q_active.idx()));
                         } else {
-                            active(prev_r).set_link(mem, MemPtr::from_raw(q_active.idx().0));
+                            active(prev_r).set_link(mem, MemPtr::from_idx(q_active.idx()));
                         }
                         prev_r = q_active.idx().0;
                     }
@@ -3034,9 +3034,9 @@ unsafe fn try_break(
                         Scaled(linebreak.cur_active_width[6] - linebreak.break_width[6]),
                     );
                     if mem.b16s1(prev_r) as i32 == DELTA_NODE {
-                        delta_node(prev_r).set_link(mem, MemPtr::from_raw(q.idx().0));
+                        delta_node(prev_r).set_link(mem, MemPtr::from_idx(q.idx()));
                     } else {
-                        active(prev_r).set_link(mem, MemPtr::from_raw(q.idx().0));
+                        active(prev_r).set_link(mem, MemPtr::from_idx(q.idx()));
                     }
                     prev_prev_r = prev_r;
                     prev_r = q.idx().0;

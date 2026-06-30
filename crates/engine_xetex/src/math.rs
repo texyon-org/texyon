@@ -17,7 +17,7 @@ use crate::mem::{
 };
 use crate::node::{
     AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, KernNode, Noad, NodePtr, RuleDimen,
-    RuleNode, VListNode,
+    RuleNode, VListNode, WhatsitNode,
 };
 use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, EqtbState, FontState, MemState, SaveStackState, ScannerState};
@@ -397,13 +397,13 @@ pub fn overbar(mem: &mut MemState, b: i32, k: i32, t: i32) -> Result<i32, NodeRe
     let p = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p_raw)) };
     p.set_link(mem, MemPtr::from_raw(b));
     let q = fraction_rule(mem, t)?;
-    q.set_link(mem, MemPtr::from_raw(p.idx().0));
+    q.set_link(mem, MemPtr::from_idx(p.idx()));
     let r_raw = new_kern(mem, t);
     if r_raw == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
     let r = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(r_raw)) };
-    r.set_link(mem, MemPtr::from_raw(q.idx().0));
+    r.set_link(mem, MemPtr::from_idx(q.idx()));
     Ok(r_raw)
 }
 
@@ -730,7 +730,7 @@ fn make_under_prepare(
     x.set_link(mem, MemPtr::from_raw(p));
     let rule = fraction_rule(mem, rule_thickness)?;
     let p = unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) };
-    p.set_link(mem, MemPtr::from_raw(rule.idx().0));
+    p.set_link(mem, MemPtr::from_idx(rule.idx()));
     Ok(())
 }
 
@@ -883,7 +883,10 @@ struct FractionAssembly {
     axis_height: i32,
 }
 
-fn make_fraction(mem: &mut MemState, assembly: FractionAssembly) -> Result<i32, NodeRecycleAbort> {
+fn make_fraction(
+    mem: &mut MemState,
+    assembly: FractionAssembly,
+) -> Result<AnyBox, NodeRecycleAbort> {
     let v = new_null_box(mem);
     if v == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
@@ -906,21 +909,26 @@ fn make_fraction(mem: &mut MemState, assembly: FractionAssembly) -> Result<i32, 
         let p1w =
             (assembly.axis_height - assembly.delta) - (zb.height(mem).0 - assembly.shift_down);
         let p1 = alloc_kern_node(mem, p1w)?;
-        y.set_link(mem, MemPtr::from_raw(p1.idx().0));
+        y.set_link(mem, MemPtr::from_idx(p1.idx()));
         p1.set_link(mem, MemPtr::from_raw(assembly.z));
         let pw = (assembly.shift_up - xb.depth(mem).0) - (assembly.axis_height + assembly.delta);
         p = alloc_kern_node(mem, pw)?;
-        p.set_link(mem, MemPtr::from_raw(y.idx().0));
+        p.set_link(mem, MemPtr::from_idx(y.idx()));
     }
 
-    xb.set_link(mem, MemPtr::from_raw(p.idx().0));
+    xb.set_link(mem, MemPtr::from_idx(p.idx()));
     vb.set_list_ptr(mem, MemPtr::from_raw(assembly.x));
-    Ok(v)
+    Ok(vb)
 }
 
-fn make_fraction_link_delimiters(mem: &mut MemState, left_delim: i32, v: i32, right_delim: i32) {
-    mem.set_b32s1(left_delim, v);
-    mem.set_b32s1(v, right_delim);
+fn make_fraction_link_delimiters(
+    mem: &mut MemState,
+    left_delim: AnyBox,
+    v: AnyBox,
+    right_delim: AnyBox,
+) {
+    left_delim.set_link(mem, MemPtr::from_idx(v.idx()));
+    v.set_link(mem, MemPtr::from_idx(right_delim.idx()));
 }
 
 fn make_fraction_finish(mem: &mut MemState, q: NodePtr<Noad>, hbox: AnyBox) {
@@ -1018,18 +1026,18 @@ fn make_op_finish_limits(
 
     if q.supscr_type(mem) == EMPTY {
         free_node(mem, x.idx().0, BOX_NODE_SIZE);
-        v.set_list_ptr(mem, MemPtr::from_raw(y.idx().0));
+        v.set_list_ptr(mem, MemPtr::from_idx(y.idx()));
     } else {
         let mut shift_up = spacings.bos3 - x.depth(mem).0;
         if shift_up < spacings.bos1 {
             shift_up = spacings.bos1;
         }
         let p = alloc_kern_node(mem, shift_up)?;
-        p.set_link(mem, MemPtr::from_raw(y.idx().0));
-        x.set_link(mem, MemPtr::from_raw(p.idx().0));
+        p.set_link(mem, MemPtr::from_idx(y.idx()));
+        x.set_link(mem, MemPtr::from_idx(p.idx()));
         let p2 = alloc_kern_node(mem, spacings.bos5)?;
-        p2.set_link(mem, MemPtr::from_raw(x.idx().0));
-        v.set_list_ptr(mem, MemPtr::from_raw(p2.idx().0));
+        p2.set_link(mem, MemPtr::from_idx(x.idx()));
+        v.set_list_ptr(mem, MemPtr::from_idx(p2.idx()));
         let height = v.height(mem).0 + spacings.bos5 + x.height(mem).0 + x.depth(mem).0 + shift_up;
         v.set_height(mem, Scaled(height));
     }
@@ -1042,10 +1050,10 @@ fn make_op_finish_limits(
             shift_down = spacings.bos2;
         }
         let p = alloc_kern_node(mem, shift_down)?;
-        y.set_link(mem, MemPtr::from_raw(p.idx().0));
-        p.set_link(mem, MemPtr::from_raw(z.idx().0));
+        y.set_link(mem, MemPtr::from_idx(p.idx()));
+        p.set_link(mem, MemPtr::from_idx(z.idx()));
         let p2 = alloc_kern_node(mem, spacings.bos5)?;
-        z.set_link(mem, MemPtr::from_raw(p2.idx().0));
+        z.set_link(mem, MemPtr::from_idx(p2.idx()));
         let depth = v.depth(mem).0 + spacings.bos5 + z.height(mem).0 + z.depth(mem).0 + shift_down;
         v.set_depth(mem, Scaled(depth));
     }
@@ -1177,7 +1185,7 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
 
     let left_delim = var_delimiter_in(st, q_raw + 4, cur_size, delimiter_size)?;
     let right_delim = var_delimiter_in(st, q_raw + 5, cur_size, delimiter_size)?;
-    make_fraction_link_delimiters(&mut st.mem, left_delim.idx().0, v, right_delim.idx().0);
+    make_fraction_link_delimiters(&mut st.mem, left_delim, v, right_delim);
     let hbox = crate::packaging::hpack_emit_in(st, left_delim.idx().0, 0, ADDITIONAL)?;
     make_fraction_finish(&mut st.mem, q, hbox);
     Ok(())
@@ -1428,7 +1436,7 @@ fn make_ord_body(
                         r.set_nucleus_char(mem, scanner.cur_i.s0);
                         r.set_nucleus_fam(mem, q.nucleus_fam(mem) % 256);
                         q.set_link(mem, MemPtr::from_raw(r_idx));
-                        r.set_link(mem, MemPtr::from_raw(p.idx().0));
+                        r.set_link(mem, MemPtr::from_idx(p.idx()));
                         if scanner.cur_i.s1 < 11 {
                             r.set_nucleus_type(mem, MATH_CHAR);
                         } else {
@@ -1654,7 +1662,7 @@ fn zero_box_width(mem: &mut MemState, box_node: AnyBox) {
 }
 
 fn link_bottom_accent_stack(mem: &mut MemState, x: AnyBox, y: AnyBox) {
-    x.set_link(mem, MemPtr::from_raw(y.idx().0));
+    x.set_link(mem, MemPtr::from_idx(y.idx()));
 }
 
 fn start_top_accent_stack(
@@ -1664,8 +1672,8 @@ fn start_top_accent_stack(
     delta: i32,
 ) -> Result<(), NodeRecycleAbort> {
     let p = alloc_kern_node(mem, -delta)?;
-    p.set_link(mem, MemPtr::from_raw(x.idx().0));
-    y.set_link(mem, MemPtr::from_raw(p.idx().0));
+    p.set_link(mem, MemPtr::from_idx(x.idx()));
+    y.set_link(mem, MemPtr::from_idx(p.idx()));
     Ok(())
 }
 
@@ -1677,7 +1685,7 @@ fn finish_top_accent_package(
     if y.height(mem).0 < h {
         let p = alloc_kern_node(mem, h - y.height(mem).0)?;
         p.set_link(mem, y.list_ptr(mem));
-        y.set_list_ptr(mem, MemPtr::from_raw(p.idx().0));
+        y.set_list_ptr(mem, MemPtr::from_idx(p.idx()));
         y.set_height(mem, Scaled(h));
     }
     Ok(())
@@ -3163,7 +3171,7 @@ enum CharBoxInput {
 /// allocation is `with_state`-bearing; only absolute `mem` addresses differ,
 /// which no output (`.xdv`/`.log`) or `mem`-image (TRIP uses TFM fonts only)
 /// path observes.
-fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleAbort> {
+fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<AnyBox, NodeRecycleAbort> {
     let b = new_null_box(mem);
     if b == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
@@ -3203,7 +3211,7 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<i32, NodeRecycleA
         }
     };
     bb.set_list_ptr(mem, MemPtr::from_raw(p));
-    Ok(b)
+    Ok(bb)
 }
 
 /// Unified cold-abort sentinel for the threaded math builders (`01b` §5): a
@@ -3266,17 +3274,16 @@ fn math_build_abort_main(a: MathBuildAbort) -> crate::main_control::MainControlA
 /// caller's `&mut EngineState`.
 fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuildAbort> {
     let area = st.fonts.font_area_entry(f);
-    let b = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
+    // `char_box`/`char_box_tfm` classify the freshly-built box at their creation
+    // boundary and return the typed `AnyBox`, so the delimiter/accent callers
+    // carry the handle without re-classifying.
+    if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
         let p = crate::fonts::new_native_character_in(st, f, c as u32)?;
         let input = CharBoxInput::Native { p };
-        char_box(&mut st.mem, input)?
+        Ok(char_box(&mut st.mem, input)?)
     } else {
-        char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)?
-    };
-    // `char_box`/`char_box_tfm` return a raw index (their result is sometimes
-    // stacked as a child); classify once here at the creation boundary so the
-    // delimiter/accent callers carry the typed handle.
-    Ok(classify_box_or_panic(&st.mem, b))
+        Ok(char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)?)
+    }
 }
 
 /// Build a TFM character box under a single `mem`+`fonts` borrow. All the metric
@@ -3289,7 +3296,7 @@ fn char_box_tfm(
     fonts: &mut FontState,
     f: i32,
     c: u16,
-) -> Result<i32, NodeRecycleAbort> {
+) -> Result<AnyBox, NodeRecycleAbort> {
     let c_eff = crate::fonts::effective_char(fonts, true, f, c);
     let q = fonts.font_info_b16(fonts.char_base_entry(f) + c_eff);
     let input = CharBoxInput::Tfm {
@@ -3307,12 +3314,11 @@ fn char_box_tfm(
 ///
 /// Phase-C: threaded to `&mut MemState`; takes the character box `p` already
 /// built by [`char_box_tfm`] (in [`build_ext_delimiter_box`]) and links it.
-fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: i32) {
+fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: AnyBox) {
     let link = b_box.list_ptr(mem);
-    mem.set_b32s1(p, link.0);
-    b_box.set_list_ptr(mem, MemPtr::from_raw(p));
-    let p_box = classify_box_or_panic(mem, p);
-    let h = p_box.height(mem).0;
+    p.set_link(mem, link);
+    b_box.set_list_ptr(mem, MemPtr::from_idx(p.idx()));
+    let h = p.height(mem).0;
     b_box.set_height(mem, Scaled(h));
 }
 
@@ -3326,7 +3332,11 @@ pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
         + fonts.font_info_b32s1(fonts.depth_base_entry(f) + q.s2 as i32 % 16)
 }
 
-fn new_stack_glyph(mem: &mut MemState, f: i32, g: i32) -> Result<i32, NodeRecycleAbort> {
+fn new_stack_glyph(
+    mem: &mut MemState,
+    f: i32,
+    g: i32,
+) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
     let p = crate::mem::get_node(mem, GLYPH_NODE_SIZE);
     if p == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
@@ -3335,43 +3345,42 @@ fn new_stack_glyph(mem: &mut MemState, f: i32, g: i32) -> Result<i32, NodeRecycl
     mem.set_b16s0(p, GLYPH_NODE);
     mem.set_b16s2(p + 4, f as u16);
     mem.set_b16s1(p + 4, g as u16);
-    Ok(p)
+    // Freshly allocated and type-stamped GLYPH_NODE whatsit; this is the
+    // family's audited construction boundary (`01c` §8).
+    Ok(unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(p)) })
 }
 
 /// translated from xetex-math.c:1482 (stack_glyph_into_box)
 ///
-/// Phase-C: the measured glyph node `p` is spliced under a narrow `MemState`
-/// borrow. Legacy callers use [`stack_glyph_into_box_global`], which allocates
-/// the node, drops the borrow for `measure_native_glyph`, then links it here.
-pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: i32) {
-    let pw = mem
-        .classify_whatsit(MemIdx::new(p))
-        .expect("valid whatsit")
-        .expect("glyph node");
+/// Phase-C: the measured glyph node `p` (a typed `GLYPH_NODE` whatsit handle)
+/// is spliced into `b_box` under the caller's `MemState` borrow. The threaded
+/// `stack_glyph_into_box_in` allocates the node, drops the borrow for
+/// `measure_native_glyph`, then links it here.
+pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: NodePtr<WhatsitNode>) {
     if matches!(b_box, AnyBox::HList(_)) {
         let mut q = b_box.list_ptr(mem).0;
         if q == TEX_NULL {
-            b_box.set_list_ptr(mem, MemPtr::from_raw(p));
+            b_box.set_list_ptr(mem, MemPtr::from_idx(p.idx()));
         } else {
             while mem.b32s1(q) != TEX_NULL {
                 q = mem.b32s1(q);
             }
-            mem.set_b32s1(q, p);
-            let glyph_height = pw.height(mem).0;
+            mem.set_b32s1(q, p.idx().0);
+            let glyph_height = p.height(mem).0;
             if b_box.height(mem).0 < glyph_height {
                 b_box.set_height(mem, Scaled(glyph_height));
             }
-            let glyph_depth = pw.depth(mem).0;
+            let glyph_depth = p.depth(mem).0;
             if b_box.depth(mem).0 < glyph_depth {
                 b_box.set_depth(mem, Scaled(glyph_depth));
             }
         }
     } else {
-        mem.set_b32s1(p, b_box.list_ptr(mem).0);
-        b_box.set_list_ptr(mem, MemPtr::from_raw(p));
-        let glyph_height = pw.height(mem).0;
+        p.set_link(mem, b_box.list_ptr(mem));
+        b_box.set_list_ptr(mem, MemPtr::from_idx(p.idx()));
+        let glyph_height = p.height(mem).0;
         b_box.set_height(mem, Scaled(glyph_height));
-        let glyph_width = pw.width(mem).0;
+        let glyph_width = p.width(mem).0;
         if b_box.width(mem).0 < glyph_width {
             b_box.set_width(mem, Scaled(glyph_width));
         }
@@ -3388,7 +3397,7 @@ fn stack_glyph_into_box_in(
     g: i32,
 ) -> Result<(), NodeRecycleAbort> {
     let p = new_stack_glyph(&mut st.mem, f, g)?;
-    let addr = st.mem.data.as_mut_ptr().wrapping_add(p as usize) as *mut std::ffi::c_void;
+    let addr = st.mem.data.as_mut_ptr().wrapping_add(p.idx().index()) as *mut std::ffi::c_void;
     // SAFETY: `measure_native_glyph` reads only `&FontState` and writes the
     // freshly-allocated node `p` through `addr`; no `with_state` re-entry.
     unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) };
@@ -3401,7 +3410,7 @@ fn native_glyph_vbox_start(
     mem: &mut MemState,
     f: i32,
     g: u16,
-) -> Result<(AnyBox, i32), NodeRecycleAbort> {
+) -> Result<(AnyBox, NodePtr<WhatsitNode>), NodeRecycleAbort> {
     let b = new_null_box(mem);
     if b == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
@@ -3412,15 +3421,11 @@ fn native_glyph_vbox_start(
     Ok((b_box, p))
 }
 
-fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: i32) {
-    let pw = mem
-        .classify_whatsit(MemIdx::new(p))
-        .expect("valid whatsit")
-        .expect("glyph node");
-    b_box.set_list_ptr(mem, MemPtr::from_raw(p));
-    let w = pw.width(mem).0;
-    let h = pw.height(mem).0;
-    let d = pw.depth(mem).0;
+fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: NodePtr<WhatsitNode>) {
+    b_box.set_list_ptr(mem, MemPtr::from_idx(p.idx()));
+    let w = p.width(mem).0;
+    let h = p.height(mem).0;
+    let d = p.depth(mem).0;
     b_box.set_width(mem, Scaled(w));
     b_box.set_height(mem, Scaled(h));
     b_box.set_depth(mem, Scaled(d));
@@ -3429,7 +3434,7 @@ fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: i32) {
 /// Threaded core (`01b` §3a): build the single-glyph vbox under one borrow.
 fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, NodeRecycleAbort> {
     let (b, p) = native_glyph_vbox_start(&mut st.mem, f, g)?;
-    let addr = st.mem.data.as_mut_ptr().wrapping_add(p as usize) as *mut std::ffi::c_void;
+    let addr = st.mem.data.as_mut_ptr().wrapping_add(p.idx().index()) as *mut std::ffi::c_void;
     // SAFETY: see `stack_glyph_into_box_in` — re-entry-free `&FontState` measure.
     unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) };
     native_glyph_vbox_finish(&mut st.mem, b, p);
@@ -5312,28 +5317,27 @@ unsafe fn build_opentype_assembly_in(
         }
         p = st.mem.b32s1(p);
     }
-    // Write the resolved dimensions — pure `mem` writes.
+    // Write the resolved dimensions — pure `mem` writes through the typed box.
     if s > nat && str > 0 {
         let o = if s - nat > str { str } else { s - nat };
-        st.mem.set_b16s0(b + 5, NORMAL);
-        st.mem.set_b16s1(b + 5, STRETCHING);
+        b_box.set_glue_order(&mut st.mem, NORMAL);
+        b_box.set_glue_sign(&mut st.mem, STRETCHING);
         // The C reads MEM[b+6].gr back after storing it; an f64 round-trips
         // exactly, so the stored `ratio` is byte-identical to the re-read.
         let ratio = o as f64 / str as f64;
-        st.mem.set_gr(b + 6, ratio);
-        let set_dim = nat + crate::scaled_math::tex_round(str as f64 * ratio);
+        b_box.set_glue_set(&mut st.mem, ratio);
+        let set_dim = Scaled(nat + crate::scaled_math::tex_round(str as f64 * ratio));
         if horiz {
-            st.mem.set_b32s1(b + 1, set_dim);
+            b_box.set_width(&mut st.mem, set_dim);
         } else {
-            st.mem.set_b32s1(b + 3, set_dim);
+            b_box.set_depth(&mut st.mem, set_dim);
         }
     } else if horiz {
-        st.mem.set_b32s1(b + 1, nat);
+        b_box.set_width(&mut st.mem, Scaled(nat));
     } else {
-        st.mem.set_b32s1(b + 3, nat);
+        b_box.set_depth(&mut st.mem, Scaled(nat));
     }
-    // `b` is an hbox or vbox depending on `horiz`; classify once at the boundary.
-    Ok(classify_box_or_panic(&st.mem, b))
+    Ok(b_box)
 }
 
 /// Build the extensible (`EXT_TAG`) delimiter box for [`var_delimiter_global`].

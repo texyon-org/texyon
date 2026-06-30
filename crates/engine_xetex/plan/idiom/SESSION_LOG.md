@@ -8,6 +8,56 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 238 — 2026-06-30 — Execution: link-store idiom + math box/glyph-creator return propagation
+
+**Type:** execution (workstream 01 / typing — *propagation*). Mechanical
+typing session, one commit, dashboard + full-corpus validated. Pure
+behavior-preserving typing: `with_state` **352** and `unsafe fn` **273**
+unchanged.
+
+**Code:**
+- **Link-store idiom (25 sites).** Every `MemPtr::from_raw(X.idx().0)` →
+  `MemPtr::from_idx(X.idx())` across math/linebreak/pagebuilder — the
+  documented store-a-typed-handle-into-a-pointer-field form
+  (`propagate-typed-returns-not-idx0`). `MemPtr::from_idx` 7 → 32.
+- **`char_box` chain → `AnyBox`.** `char_box`/`char_box_tfm` now return the
+  `AnyBox` they already classify internally (`bb`) instead of the raw index,
+  and `stack_into_box` takes `AnyBox` for its stacked char box. Dropped the
+  re-classify in `char_box_in` and the one inside `stack_into_box`; the
+  OpenType-assembly `char_box_tfm` callers feed the handle straight in with
+  no new `.idx().0`. −2 `classify_box_or_panic`.
+- **`make_fraction` chain → `AnyBox`.** `make_fraction` returns its `vb`
+  handle; `make_fraction_link_delimiters` takes `AnyBox`×3 and stores links
+  via `set_link(MemPtr::from_idx(..))`. −2 `.idx().0` at the call site.
+- **`build_opentype_assembly_in` typed writes.** Added `set_glue_sign`/
+  `set_glue_order`/`set_glue_set` delegators on `AnyBox`; the resolved-
+  dimension block now writes glue_sign/order/set + width/depth through the
+  once-classified `b_box`, and the function returns it (−1
+  `classify_box_or_panic`, 5 raw `b + N` writes typed).
+- **Glyph-node creator → `NodePtr<WhatsitNode>`.** `new_stack_glyph` returns
+  the typed glyph whatsit handle; `stack_glyph_into_box` /
+  `native_glyph_vbox_{start,finish}` carry it (`WhatsitNode: HasNodeHeader`,
+  so `set_link`/`idx` are available) and drop their `classify_whatsit`
+  re-classification (the `measure_native_glyph` raw-pointer base now derives
+  from `p.idx().index()`). −2 `classify_whatsit`.
+
+**Metrics:** `.idx().0` **150 → 125**; math.rs `classify_box_or_panic`
+**20 → 17**; math.rs `classify_whatsit` **5 → 3**; `MemPtr::from_idx`
+**7 → 32**.
+
+**Validation:** `cargo fmt`; `cargo check` **37** warnings (held); dashboard
+**29/2/7/4**; release rebuild; full corpus **637 passed / 2 diverged / 0
+missing-golden**, only known `1905.00073v1`/`1905.00148v1` (the glyph/native
+slice is the OpenType-math path — corpus is the key guard).
+
+**Next:** the clean propagation pool in math.rs is largely drained — the
+remaining `.idx().0`/`classify_box_or_panic` are justified `i32` boundaries
+(noad packed-record words like the overloaded nucleus_type/new_hlist word,
+`i32`-list-head callees `hpack_emit_in`/`overbar`/`rebox`/`free_node`, the
+after_math `a`/`b` nullable re-typed locals, and `cur_box`/`cur_list_tail`
+raw hot-path state per `mod-raw-is-intentional-not-debt`). Threading leaves
+to shrink the 352 `with_state` sites is the larger remaining vein.
+
 ## Idiom session 237 — 2026-06-30 — Execution: type the box-creator RETURNS (packaging core + math delimiter/char builders)
 
 **Type:** execution (workstream 01 / typing — *propagation*). Big mechanical
