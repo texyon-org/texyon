@@ -8,6 +8,80 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 242 — 2026-07-01 — Architecture + execution: EngineAbort — start killing the Rust longjmp spine (the real lever behind the wrapper/mod-raw endgame)
+
+**Type:** architecture verification + execution (workstream 01 / Phase C — the
+setjmp boundary). Drove the session-241 pivot: the ~98 `globals.rs` wrappers and
+41 `mod raw` scalars drain only when the boundary fns can hold a real borrow,
+which is blocked by the C `setjmp`/`longjmp`. The lever is **killing the Rust
+longjmp**, not folding wrappers.
+
+**Verified-architecture finding (don't take the pivot on faith).** Read
+`xetex-engine-interface.c` + `bridge_core/support/support.c`. The setjmp at
+`engine-interface.c:33` is the one-shot fatal bailout (no retry, no signals; the
+`__terrible_…_musl_linker_hack` fn is a never-called linker hack). But it has
+**three** longjmp sources, not one: Rust `_tt_abort` **plus** `bridge_core`
+`ttstub_input_seek` (support.c:282) and `ttstub_input_close` (320), which longjmp
+*from C* on internal I/O errors. So **deleting the setjmp** (the precondition for
+the final RefCell/ownership flip) is gated not just on converting the Rust spine
+but on a **cross-crate `bridge_core` change** the pivot framing omitted — Stage
+II. Output I/O (`ttstub_output_write/close/flush`) does **not** longjmp, which is
+why `store_fmt_file` could go fully Rust-longjmp-free. Also verified: the Rust
+fatal spine is *already* almost entirely deferred-fire (37 `*Abort` enums + 11
+`fire` fns, all reducing to 5 terminal causes — `overflow`/`confusion`/
+`fatal_error`/`pdf_error`/`_tt_abort`); the inline longjmps that remain cluster
+in the boundary fns themselves. Design doc: `01d-engine-abort-and-setjmp.md`.
+
+**Execution (4 commits, dashboard 29/2/7/4 green each; `unsafe fn` 273, warnings
+37 held throughout):**
+1. **EngineAbort foundation** — unified terminal `EngineAbort {Overflow,
+   Confusion, TtAbort}` in `errors.rs` with `into_history(self)->i32` (prints +
+   cleans, **no** longjmp, returns `HISTORY_FATAL_ERROR`); `overflow`/`confusion`
+   split to delegate then append `_tt_abort` (setjmp backstop for unconverted
+   callers). Converted the two `tt_run_engine` init fatals (consistency check,
+   primitive init) to `return …into_history()`. −2 longjmps.
+2. **final_cleanup → `Result<(), EngineAbort>`** caught at `tt_run_engine`;
+   `confusion`-on-dump-cleanup propagates instead of jumping. −1.
+3. **store_fmt_file fully Rust-longjmp-free** — `dump_bytes`/`dump_slice`/… →
+   `Result`, all 81 dump calls `?`-propagated (incl. the two `with_state` dump
+   closures, which now return `Result`), the 4 flat fatals → `Err`. This also
+   removes a **latent longjmp-under-borrow hazard** those session-241 dump folds
+   carried (a short write inside the held `with_state` borrow would jump past the
+   `RefCell` guard). −5.
+4. **Surfaced-message fidelity fix** (found by the verify workflow, below) — add
+   `_ttbc_set_error_message` to `bridge_core/support.c`; `into_history` writes
+   `format_buf` to the exact string the longjmp would have, so the host's
+   `EngineAbortedError` detail is unchanged.
+
+**Adversarial verification (Workflow, 6 lenses, ultracode).** Independently
+re-derived equivalence of each converted path against baseline `85bd7dc8`. 4
+EQUIVALENT (overflow/confusion split byte-exact; final_cleanup cleanup-once
+ordering; store_fmt_file normal-path byte sequence; store_fmt_file fatal arms). 1
+**DIVERGENT → fixed**: the abort message string *is* host-surfaced (via
+`with_global_lock`→`new_with_details`→`_ttbc_get_error_message`→`format_buf`), and
+the `Result` path bypassed `_tt_abort` so left it empty — commit 4 fixes it. 1
+DIVERGENT **pre-existing/out-of-scope**: `load_fmt_file_in` holds an `&mut`
+borrow across the whole undump, and `undump_bytes` `_tt_abort`s on a corrupt
+`.fmt` — a longjmp-under-borrow that predates this work (from the load-path fold)
+and is the natural next conversion target.
+
+**Metrics:** ~8 inline Rust longjmp sites → `Result` propagation to
+`tt_run_engine`; `unsafe fn` **273** unchanged; `with_state` ~**296** (no
+singleton folds — focused on the longjmp lever, not wrapper cosmetics per the
+guidance); warnings **37**. Validation: `cargo fmt`/`check`; dashboard
+**29/2/7/4** per commit (TRIP dumps+undumps a format, validating the
+store_fmt_file normal path byte-for-byte); release rebuild; full corpus **637
+passed / 2 diverged** (known FP only) on the final binary.
+
+**Next:** (a) `load_fmt_file` → `Result` (fixes the verified undump
+longjmp-under-borrow); (b) propagate the `!load_fmt_file()` early return at
+`tt_run_engine:1295`; (c) the `main_control` cluster waits on the Phase-C
+`with_state` drain before `main_control` can return `Result`. Fold each leaf
+`*Abort` into `EngineAbort` only as its subsystem converts (not a 17-file
+big-bang). Final setjmp deletion remains gated on the cross-crate `bridge_core`
+I/O-longjmp neutralization (Stage II). See `01d` + memory notes
+`setjmp-deletion-gated-on-bridge-core-io`, `engineabort-unification-progress`.
+
 ## Idiom session 241 — 2026-06-30 — Execution: globals.rs category-1 drain — fold the setjmp/IO boundary fns, delete 100 with_state wrappers
 
 **Type:** execution (workstream 01 / Phase C — globals.rs accessor-wrapper
