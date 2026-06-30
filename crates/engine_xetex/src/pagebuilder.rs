@@ -13,9 +13,9 @@ use crate::globals::{
 // (session 46). Thin module-private accessors over the thread-local.
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
-use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr};
+use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, SaNode};
 use crate::state::{EngineState, EqtbState, MemState, ShipoutState};
-use crate::units::{MemIdx, MemPtr};
+use crate::units::{MemIdx, MemPtr, Scaled};
 
 // Node types (xetex_format.h)
 const MATH_NODE: i32 = crate::consts::MATH_NODE as i32;
@@ -407,7 +407,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                             )?;
                             let height_plus_depth =
                                 tmp_box.height(&st.mem).0 + tmp_box.depth(&st.mem).0;
-                            st.mem.set_b32s1(p + 3, height_plus_depth);
+                            ins.set_height(&mut st.mem, Scaled(height_plus_depth));
                             crate::mem::free_node(&mut st.mem, tmp_box.idx().0, BOX_NODE_SIZE);
                             inner_wait = true;
                         }
@@ -466,21 +466,23 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                     if r == crate::mem::ALLOC_FAILED {
                         return Err(PageBuildAbort::MainMemoryOverflow);
                     }
-                    if st.mem.b32s1(cur_ptr() + 1) == TEX_NULL {
+                    let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(cur_ptr()))
+                        .expect("find_sa_element returned a mark-class element");
+                    if sa.child(&st.mem, 1).is_null() {
                         // ETEX_MARK_sa_first_mark == TEX_NULL
-                        st.mem
-                            .set_b32s1(cur_ptr() + 1, mark_node.mark_ptr(&st.mem).0);
-                        let mark = mark_node.mark_ptr(&st.mem).0;
+                        let mp = mark_node.mark_ptr(&st.mem);
+                        sa.set_child(&mut st.mem, 1, mp);
+                        let mark = mp.0;
                         st.mem.set_b32s0(mark, st.mem.b32s0(mark) + 1);
                         // TOKEN_LIST_ref_count++
                     }
-                    if st.mem.b32s0(cur_ptr() + 2) != TEX_NULL {
+                    if !sa.child(&st.mem, 2).is_null() {
                         // ETEX_MARK_sa_bot_mark != TEX_NULL
-                        let old_bot = st.mem.b32s0(cur_ptr() + 2);
+                        let old_bot = sa.child(&st.mem, 2).0;
                         crate::mem::delete_token_ref(&mut st.mem, old_bot);
                     }
-                    st.mem
-                        .set_b32s0(cur_ptr() + 2, mark_node.mark_ptr(&st.mem).0);
+                    let mp = mark_node.mark_ptr(&st.mem);
+                    sa.set_child(&mut st.mem, 2, mp);
                     let mark = mark_node.mark_ptr(&st.mem).0;
                     st.mem.set_b32s0(mark, st.mem.b32s0(mark) + 1);
                 // TOKEN_LIST_ref_count++
@@ -873,7 +875,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 }
 
                 if st.mem.b16s1(r) as i32 == SPLIT_UP {
-                    st.shipout.insert_penalties += st.mem.b32s1(p + 1); // INSERTION_NODE_float_cost
+                    st.shipout.insert_penalties += ins.float_cost(&st.mem);
                 } else {
                     st.mem.set_b32s1(r + 2, p); // PAGE_INS_NODE_last_ins_ptr = p
                     let delta = st.shipout.page_so_far[0]
@@ -882,19 +884,19 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                         + st.shipout.page_so_far[6];
                     let count_n = st.eqtb.b32s1(COUNT_BASE + n as i32);
                     let h = if count_n == 1000 {
-                        st.mem.b32s1(p + 3) // BOX_height(p)
+                        ins.height(&st.mem).0 // BOX_height(p)
                     } else {
-                        crate::scaled_math::x_over_n_in(&mut st.errors, st.mem.b32s1(p + 3), 1000)
+                        crate::scaled_math::x_over_n_in(&mut st.errors, ins.height(&st.mem).0, 1000)
                             * count_n
                     };
 
                     if (h <= 0 || h <= delta)
-                        && st.mem.b32s1(p + 3) + st.mem.b32s1(r + 3)
+                        && ins.height(&st.mem).0 + st.mem.b32s1(r + 3)
                             <= st.eqtb.b32s1(SCALED_BASE + n as i32)
                     {
                         st.shipout.page_so_far[0] -= h;
                         st.mem
-                            .set_b32s1(r + 3, st.mem.b32s1(r + 3) + st.mem.b32s1(p + 3));
+                            .set_b32s1(r + 3, st.mem.b32s1(r + 3) + ins.height(&st.mem).0);
                     } else {
                         // 1045: Split the insertion
                         let w = if count_n <= 0 {
@@ -915,7 +917,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                             st,
                             ins.ins_ptr(&st.mem).0,
                             w,
-                            st.mem.b32s1(p + 2),
+                            ins.depth(&st.mem).0,
                         )?;
                         // BOX_height(r) += best_height_plus_depth
                         st.mem.set_b32s1(
