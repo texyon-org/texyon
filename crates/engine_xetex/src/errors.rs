@@ -225,6 +225,8 @@ pub unsafe fn overflow(s: *const libc::c_char, n: i32) -> ! {
 pub(crate) enum EngineAbort {
     /// `overflow(what, n)` — TeX capacity exceeded.
     Overflow { what: *const libc::c_char, n: i32 },
+    /// `confusion(s)` — internal consistency failure ("This can't happen").
+    Confusion(*const libc::c_char),
     /// `_tt_abort(msg)` — direct longjmp with no user-facing print (`msg` lands in
     /// `format_buf`, which the outer caller does not surface — `01d` §1).
     TtAbort(*const libc::c_char),
@@ -250,6 +252,32 @@ impl EngineAbort {
                 set_help_line(0, c"you can ask a wizard to enlarge me.".as_ptr());
                 post_error_message(true);
             }
+            // The print + cleanup half of `confusion`.
+            EngineAbort::Confusion(s) => {
+                pre_error_message();
+                if history() < HISTORY_ERROR_ISSUED {
+                    print_cstr(c"This can't happen (".as_ptr());
+                    print_cstr(s);
+                    print_char(b')' as i32);
+                    set_help_ptr(1);
+                    set_help_line(
+                        0,
+                        c"I'm broken. Please show this to someone who can fix can fix".as_ptr(),
+                    );
+                } else {
+                    print_cstr(c"I can't go on meeting you like this".as_ptr());
+                    set_help_ptr(2);
+                    set_help_line(
+                        1,
+                        c"One of your faux pas seems to have wounded me deeply...".as_ptr(),
+                    );
+                    set_help_line(
+                        0,
+                        c"in fact, I'm barely conscious. Please fix it and try again.".as_ptr(),
+                    );
+                }
+                post_error_message(true);
+            }
             // `_tt_abort` prints nothing and runs no cleanup; matches the
             // existing `return history()` early exits in `tt_run_engine`.
             EngineAbort::TtAbort(_msg) => {}
@@ -266,29 +294,9 @@ impl EngineAbort {
 ///
 /// translated from xetex-errors.c:132 (confusion)
 pub unsafe fn confusion(s: *const libc::c_char) -> ! {
-    pre_error_message();
-    if history() < HISTORY_ERROR_ISSUED {
-        print_cstr(c"This can't happen (".as_ptr());
-        print_cstr(s);
-        print_char(b')' as i32);
-        set_help_ptr(1);
-        set_help_line(
-            0,
-            c"I'm broken. Please show this to someone who can fix can fix".as_ptr(),
-        );
-    } else {
-        print_cstr(c"I can't go on meeting you like this".as_ptr());
-        set_help_ptr(2);
-        set_help_line(
-            1,
-            c"One of your faux pas seems to have wounded me deeply...".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"in fact, I'm barely conscious. Please fix it and try again.".as_ptr(),
-        );
-    }
-    post_error_message(true);
+    // Print + cleanup through the shared terminal, then the longjmp the setjmp
+    // backstop still catches for unconverted callers (`01d` §4).
+    EngineAbort::Confusion(s).into_history();
     _tt_abort(c"halted on confusion()".as_ptr())
 }
 

@@ -297,7 +297,7 @@ unsafe fn primitive(
     Ok(())
 }
 // translated from xetex-ini.c:2201 (final_cleanup)
-pub unsafe fn final_cleanup() {
+pub unsafe fn final_cleanup() -> Result<(), crate::errors::EngineAbort> {
     const INT_PAR_NEW_LINE_CHAR: i32 = 49;
     const IF_NODE_SIZE: i32 = 2;
     const IF_TEST: u16 = 107;
@@ -428,13 +428,17 @@ pub unsafe fn final_cleanup() {
                 Ok::<(), &'static std::ffi::CStr>(())
             });
             if let Err(msg) = cleanup {
-                crate::errors::confusion(msg.as_ptr());
+                // Propagate the confusion to tt_run_engine's i32 return instead
+                // of longjmp-ing (`01d` §5.2); store_fmt_file's own fatals stay
+                // backstopped by the C setjmp until its slice converts.
+                return Err(crate::errors::EngineAbort::Confusion(msg.as_ptr()));
             }
             store_fmt_file();
-            return;
+            return Ok(());
         }
         crate::output::print_nl_cstr(c"(\\dump is performed only by INITEX)".as_ptr());
     }
+    Ok(())
 }
 // translated from xetex-ini.c:2210 (initialize_more_variables)
 fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
@@ -1439,7 +1443,12 @@ pub unsafe extern "C" fn tt_run_engine(
     crate::io::start_input(input_file_name);
     crate::globals::set_history(HISTORY_SPOTLESS);
     crate::main_control::main_control();
-    final_cleanup();
+    if let Err(a) = final_cleanup() {
+        // into_history runs the print + cleanup (incl. close_files_and_terminate
+        // + tt_cleanup via post_error_message) and returns HISTORY_FATAL_ERROR —
+        // identical to the old confusion() longjmp (`01d` §5.2).
+        return a.into_history();
+    }
     crate::io::close_files_and_terminate();
     tt_cleanup();
 
