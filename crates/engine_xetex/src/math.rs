@@ -851,22 +851,22 @@ unsafe fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), 
 
     let delimiter_height = x.height(&st.mem).0 + x.depth(&st.mem).0 + clr + rule_thickness;
     let y = var_delimiter_in(st, q_raw + 4, cur_size, delimiter_height)?;
-    let (delta, x_height, rule_height) =
-        make_radical_prepare_delimiter(&mut st.mem, y, x.idx().0, clr, rule_thickness, is_ot_math);
+    let (delta, x_height, rule_height) = make_radical_prepare_delimiter(
+        &mut st.mem,
+        y.idx().0,
+        x.idx().0,
+        clr,
+        rule_thickness,
+        is_ot_math,
+    );
     if delta > 0 {
         clr += crate::scaled_math::half(delta);
     }
-    {
-        let y_box = st.mem.classify_box(MemIdx::new(y)).unwrap().unwrap();
-        y_box.set_shift_amount(&mut st.mem, Scaled(-(x_height + clr)));
-    }
+    y.set_shift_amount(&mut st.mem, Scaled(-(x_height + clr)));
     let p = overbar(&mut st.mem, x.idx().0, clr, rule_height)?;
     let overbar_box = crate::packaging::vpackage_emit_in(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
-    {
-        let y_box = st.mem.classify_box(MemIdx::new(y)).unwrap().unwrap();
-        y_box.set_link(&mut st.mem, MemPtr::from_raw(overbar_box));
-    }
-    let hbox = crate::packaging::hpack_emit_in(st, y, 0, ADDITIONAL)?;
+    y.set_link(&mut st.mem, MemPtr::from_raw(overbar_box));
+    let hbox = crate::packaging::hpack_emit_in(st, y.idx().0, 0, ADDITIONAL)?;
     make_radical_finish(&mut st.mem, q, hbox);
     Ok(())
 }
@@ -1175,8 +1175,8 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
 
     let left_delim = var_delimiter_in(st, q_raw + 4, cur_size, delimiter_size)?;
     let right_delim = var_delimiter_in(st, q_raw + 5, cur_size, delimiter_size)?;
-    make_fraction_link_delimiters(&mut st.mem, left_delim, v, right_delim);
-    let hbox = crate::packaging::hpack_emit_in(st, left_delim, 0, ADDITIONAL)?;
+    make_fraction_link_delimiters(&mut st.mem, left_delim.idx().0, v, right_delim.idx().0);
+    let hbox = crate::packaging::hpack_emit_in(st, left_delim.idx().0, 0, ADDITIONAL)?;
     make_fraction_finish(&mut st.mem, q, hbox);
     Ok(())
 }
@@ -2566,7 +2566,7 @@ unsafe fn make_left_right_in(
         delta = delta2;
     }
     let delimiter = var_delimiter_in(st, q_raw + 1, size, delta)?;
-    q.set_nucleus_type(&mut st.mem, delimiter);
+    q.set_nucleus_type(&mut st.mem, delimiter.idx().0);
     Ok((q.noad_type(&st.mem).as_raw() as i32 - (LEFT_NOAD as i32 - 20)) as i16)
 }
 
@@ -5425,7 +5425,7 @@ unsafe fn var_delimiter_in(
     d: i32,
     s: i32,
     v: i32,
-) -> Result<i32, MathBuildAbort> {
+) -> Result<AnyBox, MathBuildAbort> {
     let mut f: i32 = FONT_BASE;
     let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
     let mut c: u16 = 0;
@@ -5574,5 +5574,5 @@ unsafe fn var_delimiter_in(
     let shift = crate::scaled_math::half(b_box.height(&st.mem).0 - b_box.depth(&st.mem).0) - axis;
     b_box.set_shift_amount(&mut st.mem, Scaled(shift));
     free_ot_assembly(ot_assembly_ptr);
-    Ok(b)
+    Ok(b_box)
 }
