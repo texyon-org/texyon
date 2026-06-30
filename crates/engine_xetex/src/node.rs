@@ -1921,6 +1921,39 @@ impl NodePtr<InsNode> {
     pub fn set_split_top_ptr(self, mem: &mut MemState, v: MemPtr) {
         mem.set_b32s1(self.idx.offset(4).0, v.0);
     }
+
+    /// Insertion penalty/float cost = `mem[(p) + 1].b32.s1`
+    /// (`INSERTION_NODE_float_cost`); an `i32` cost, not a `Scaled`.
+    #[inline]
+    pub fn float_cost(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_float_cost(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(1).0, v);
+    }
+
+    /// Depth slot = `mem[(p) + 2].b32.s1` (the box `depth` slot, used as the
+    /// `\splitmaxdepth` for an active `\insert`).
+    #[inline]
+    pub fn depth(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(2).0))
+    }
+    #[inline]
+    pub fn set_depth(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(2).0, v.0);
+    }
+
+    /// Height slot = `mem[(p) + 3].b32.s1` (the box `height` slot; the natural
+    /// height+depth contributed to the page).
+    #[inline]
+    pub fn height(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(3).0))
+    }
+    #[inline]
+    pub fn set_height(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(3).0, v.0);
+    }
 }
 
 /// `UNSET_NODE` (`NODE_type` = 13): an unset box produced while building an
@@ -1952,6 +1985,28 @@ impl NodePtr<UnsetNode> {
     pub fn height(self, mem: &MemState) -> Scaled {
         Scaled(mem.b32s1(self.idx.offset(3).0))
     }
+    /// Accumulated glue shrink = `mem[(p) + 4].b32.s1` (`glue_shrink`, the box
+    /// `shift_amount` slot reused on an unset node).
+    #[inline]
+    pub fn glue_shrink(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(4).0))
+    }
+    /// Glue sign = `mem[(p) + 5].b16.s1`.
+    #[inline]
+    pub fn glue_sign(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(5).0)
+    }
+    /// Glue order = `mem[(p) + 5].b16.s0`.
+    #[inline]
+    pub fn glue_order(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.offset(5).0)
+    }
+    /// Accumulated glue stretch = `mem[(p) + 6].b32.s1` (`glue_stretch`, the box
+    /// `glue_set` slot reused on an unset node).
+    #[inline]
+    pub fn glue_stretch(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(6).0))
+    }
 }
 
 /// `WHATSIT_NODE` (`NODE_type` = 8): the extension-node family — `\openout`,
@@ -1976,6 +2031,32 @@ impl NodePtr<WhatsitNode> {
     #[inline]
     pub fn write_tokens(self, mem: &MemState) -> MemPtr {
         MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+
+    /// `\openout`/`\write`/`\closeout` stream number = `mem[(p) + 1].b32.s0`
+    /// (`WRITE_NODE_stream` / `OPEN_NODE_stream`).
+    #[inline]
+    pub fn write_stream(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(1).0)
+    }
+
+    /// `\openout` file name string = `mem[(p) + 1].b32.s1` (`OPEN_NODE_name`;
+    /// the open-whatsit reading of the [`write_tokens`](NodePtr::write_tokens)
+    /// slot, here a string number).
+    #[inline]
+    pub fn open_name(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(1).0)
+    }
+    /// `\openout` file area string = `mem[(p) + 2].b32.s0` (`OPEN_NODE_area`).
+    #[inline]
+    pub fn open_area(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(2).0)
+    }
+    /// `\openout` file extension string = `mem[(p) + 2].b32.s1`
+    /// (`OPEN_NODE_ext`).
+    #[inline]
+    pub fn open_ext(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(2).0)
     }
 
     /// `\setlanguage` language number = `mem[(p) + 1].b32.s1`
@@ -2006,6 +2087,11 @@ impl NodePtr<WhatsitNode> {
     pub fn native_font(self, mem: &MemState) -> FontId {
         FontId(mem.b16s2(self.idx.offset(4).0) as i32)
     }
+    /// Set the native-node font = `mem[(p) + 4].b16.s2` (`NATIVE_NODE_font`).
+    #[inline]
+    pub fn set_native_font(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s2(self.idx.offset(4).0, v);
+    }
     /// Native-word UTF-16 item count = `mem[(p) + 4].b16.s1`
     /// (`NATIVE_NODE_length`); for a `GLYPH_NODE` this same word is the glyph
     /// number ([`native_glyph`](NodePtr::native_glyph)), and for a `PIC_NODE`
@@ -2025,6 +2111,11 @@ impl NodePtr<WhatsitNode> {
     #[inline]
     pub fn native_glyph(self, mem: &MemState) -> u16 {
         mem.b16s1(self.idx.offset(4).0)
+    }
+    /// Set the glyph number = `mem[(p) + 4].b16.s1` (`NATIVE_NODE_glyph`).
+    #[inline]
+    pub fn set_native_glyph(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.offset(4).0, v);
     }
     /// Picture/PDF path byte length = `mem[(p) + 4].b16.s1`
     /// (`PIC_NODE_path_len`; the `PIC_NODE`/`PDF_NODE` reading of the
@@ -2127,6 +2218,20 @@ impl NodePtr<SaNode> {
         } else {
             mem.set_b32s0(w, v.0);
         }
+    }
+
+    /// Convert a nullable sparse-array pointer to a typed record handle.
+    #[inline]
+    pub fn from_ptr(p: MemPtr) -> Option<NodePtr<SaNode>> {
+        p.as_idx()
+            .map(|idx| unsafe { NodePtr::<SaNode>::from_idx_unchecked(idx) })
+    }
+
+    /// Box-value pointer = `mem[p + 1].b32.s1` (`ETEX_SA_ptr`); the stored box
+    /// for a box-class sparse-array element. Same word as child slot 1.
+    #[inline]
+    pub fn sa_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
     }
 }
 
