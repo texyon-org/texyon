@@ -8,6 +8,55 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 236 — 2026-06-30 — Execution: typed field-read sweep (8 files) + first AnyBox return-propagation
+
+**Type:** execution (workstream 01 / typing). Very large mechanical session, then
+a review-driven pivot to handle *propagation*. One read-only recon workflow (8
+parallel agents, one per candidate file) produced a per-site classification of
+every raw `mem.bXXsY(expr+N)` into typeable-now slices vs bucket-D residue;
+implementation stayed sequential + per-commit dashboard-validated, full corpus
+verified at the field-typing milestone and again after the propagation commit.
+
+**Code (12 commits).** Field-read typing adopting the existing typed surface
+(`classify_*`/`NodePtr<K>`/`AnyBox`) across **scan, linebreak, output, expand,
+packaging, shipout, and math.rs (5 batches)**: ~**117** threaded raw `+N` reads
+(grep `mem.b(32|16)s[0-3](x+N)`: **329 → 212** over the 8 files) now go through
+typed handles classified once at a boundary. Polymorphic list cursors were
+converted to classify-once-per-node `match mem.classify(p)` dispatch
+(`short_display_in`, the `init_math`/`build_opentype_assembly` width-measure
+loops) instead of raw discriminant reads. Then a **return-type propagation**:
+`clean_box_in`/`rebox_in` now return `AnyBox` (classifying once at their hpack/
+arena creation boundary), so `make_over`/`make_under`/`make_radical`/
+`make_fraction`/`make_op` carry the handle and **9 redundant
+`classify_box_or_panic` re-classifications were removed** (`.idx().0` survives
+only at arena-field stores and still-`i32` callees: hpack/overbar/free_node/
+FractionAssembly).
+
+**Review feedback adopted (recorded in memory):** (1) carry typed `NodePtr<K>`
+handles, never the temporary `*_node_*_in` i32 bundlers
+([[carry-typed-handles-not-i32-bundlers]]); (2) classify the *cursor* in
+polymorphic walkers (typed `match mem.classify(p)`), don't read raw discriminants;
+(3) null checks use `MemPtr::is_null()`, never `ptr.0 != TEX_NULL`; (4) **the
+endgame is propagation** — classification happens once (creation/match boundary)
+and the typed handle flows through return types/params/state fields, so
+`classify_box_or_panic`/`assume_noad` eventually vanish.
+
+**Validation:** `cargo fmt`; `cargo check` warnings **37** (held) per commit;
+dashboard **29/2/7/4** per commit; release rebuild; full corpus **637 passed / 2
+diverged / 0 missing-golden**, only known `1905.00073v1`/`1905.00148v1`, at the
+field-typing milestone and after the propagation commit. `with_state`/`unsafe fn`
+unchanged (pure behavior-preserving typing). Remaining `classify_box_or_panic` in
+math.rs: **40**, all on genuinely-`i32` creator results not yet typed.
+
+**Next (continue the propagation bottom-up — this is the headline direction):**
+type the foundational box creators' returns so the remaining re-classifications
+collapse — `new_null_box`, `var_delimiter_in`, `char_box`/`char_box_in`, then the
+packaging core `hpack_emit_in`/`vpackage_emit_in` (cross-file, corpus-sensitive —
+do as its own careful bottom-up sequence). Then typed *state fields*
+(`st.scanner.just_box`/`cur_box`/…). `assume_noad` is a true polymorphic-dispatch
+helper but its callers can often receive `NodePtr<Noad>` directly. Still-pending
+field slice: `app_display_in` (the display L/R glue-surgery + 3×-reassigned `b`).
+
 ## Idiom session 235 — 2026-06-29 — Execution: typed dispatch + box-header reads (linebreak/shipout)
 
 **Type:** execution (workstream 01 / typing). Large mechanical session, four
