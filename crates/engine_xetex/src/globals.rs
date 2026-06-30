@@ -725,10 +725,6 @@ pub(crate) fn pool_size() -> i32 {
     crate::state::with_state(|state| state.strings.pool_size)
 }
 #[inline]
-pub(crate) fn string_vacancies() -> i32 {
-    crate::state::with_state(|state| state.strings.string_vacancies)
-}
-#[inline]
 pub(crate) fn pool_ptr() -> i32 {
     crate::state::with_state(|state| state.strings.pool_ptr)
 }
@@ -742,13 +738,6 @@ pub(crate) fn set_pool_ptr(v: i32) {
 // str_start write / str_ptr write / string pool limits
 // ---------------------------------------------------------------------------
 
-/// Write `str_start[k] = v`.
-#[inline]
-pub(crate) fn set_str_start(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.strings.str_start[k as usize] = v;
-    });
-}
 /// Write `str_ptr = v`.
 #[inline]
 pub(crate) fn set_str_ptr(v: i32) {

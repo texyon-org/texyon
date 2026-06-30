@@ -21,8 +21,8 @@ use crate::globals::{
     set_font_info_b32s1, set_font_max, set_font_mem_size, set_half_error_line, set_hyph_start,
     set_hyphen_char_entry, set_if_line, set_ins_disc, set_lft_hit, set_ligature_present,
     set_max_print_line, set_max_reg_help_line, set_max_reg_num, set_open_parens, set_pool_ptr,
-    set_rt_hit, set_selector, set_skew_char_entry, set_str_ptr, set_str_start, set_temp_ptr,
-    set_trie_c_entry, set_trie_l_entry, set_trie_ptr, set_trie_r_entry, string_vacancies, temp_ptr,
+    set_rt_hit, set_selector, set_skew_char_entry, set_str_ptr, set_temp_ptr,
+    set_trie_c_entry, set_trie_l_entry, set_trie_ptr, set_trie_r_entry, temp_ptr,
     trie_not_ready,
 };
 use crate::io::init_io;
@@ -151,10 +151,10 @@ pub(crate) fn intpar(n: i32) -> i32 {
 pub unsafe fn get_strings_started() {
     set_pool_ptr(0);
     set_str_ptr(0);
-    set_str_start(0, 0);
+    crate::state::with_state_mut(|s| s.strings.str_start[0] = 0);
     set_str_ptr(TOO_BIG_CHAR);
 
-    let spare_size = pool_size() - string_vacancies();
+    let spare_size = pool_size() - crate::state::with_state(|s| s.strings.string_vacancies);
     let loaded = crate::state::with_state_mut(|st| {
         crate::string_pool::load_pool_strings(&mut st.strings, spare_size)
     });
