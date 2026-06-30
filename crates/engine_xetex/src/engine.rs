@@ -11,15 +11,15 @@ use crate::consts::{
 };
 use crate::format_io::{load_fmt_file, store_fmt_file};
 use crate::globals::{
-    buf_size, cond_ptr, cur_chr, cur_if, cur_input, cur_level, cur_val, eqtb_b32s1, first,
+    buf_size, cur_chr, cur_input, cur_val, eqtb_b32s1, first,
     font_area_entry, font_mapping_ptr, font_max, font_mem_size, history,
-    if_line, in_initex_mode, interaction, job_name, mem_b16s0, mem_b32s1,
-    open_parens, pool_size, selector, set_buffer_entry, set_cancel_boundary, set_cond_ptr,
-    set_cur_if, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head,
+    in_initex_mode, interaction, job_name, mem_b32s1,
+    pool_size, selector, set_buffer_entry, set_cancel_boundary,
+    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head,
     set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
     set_cur_val, set_eqtb_b32s1, set_error_line, set_file_line_error_style_p, set_first,
     set_font_info_b32s1, set_font_max, set_font_mem_size, set_half_error_line, set_hyph_start,
-    set_hyphen_char_entry, set_if_line, set_ins_disc, set_lft_hit, set_ligature_present,
+    set_hyphen_char_entry, set_ins_disc, set_lft_hit, set_ligature_present,
     set_max_print_line, set_max_reg_help_line, set_max_reg_num, set_open_parens, set_pool_ptr,
     set_rt_hit, set_selector, set_skew_char_entry, set_str_ptr, set_temp_ptr,
     set_trie_c_entry, set_trie_l_entry, set_trie_ptr, set_trie_r_entry, temp_ptr,
@@ -310,7 +310,7 @@ pub unsafe fn final_cleanup() {
         crate::io::open_log_file();
     }
 
-    while crate::globals::input_ptr() > 0 {
+    while crate::state::with_state(|s| s.input.input_ptr) > 0 {
         if cur_input().state == TOKEN_LIST {
             crate::input::end_token_list();
         } else {
@@ -318,34 +318,48 @@ pub unsafe fn final_cleanup() {
         }
     }
 
-    while open_parens() > 0 {
+    loop {
+        let n = crate::state::with_state(|s| s.input.open_parens);
+        if n <= 0 {
+            break;
+        }
         crate::output::print_cstr(c" )".as_ptr());
-        set_open_parens(open_parens() - 1);
+        set_open_parens(n - 1);
     }
 
-    if cur_level() > LEVEL_ONE {
+    let cur_level = crate::state::with_state(|s| s.save_stack.cur_level);
+    if cur_level > LEVEL_ONE {
         crate::output::print_nl(b'(' as i32);
         crate::output::print_esc_cstr(c"end occurred ".as_ptr());
         crate::output::print_cstr(c"inside a group at level ".as_ptr());
-        crate::output::print_int(cur_level() as i32 - 1);
+        crate::output::print_int(cur_level as i32 - 1);
         crate::output::print_char(b')' as i32);
         crate::output::show_save_groups();
     }
 
-    while cond_ptr() != crate::mem::TEX_NULL {
+    while crate::state::with_state(|s| s.scanner.cond_ptr) != crate::mem::TEX_NULL {
         crate::output::print_nl(b'(' as i32);
         crate::output::print_esc_cstr(c"end occurred ".as_ptr());
         crate::output::print_cstr(c"when ".as_ptr());
-        crate::output::print_cmd_chr(IF_TEST, cur_if() as i32);
-        if if_line() != 0 {
+        crate::output::print_cmd_chr(IF_TEST, crate::state::with_state(|s| s.scanner.cur_if) as i32);
+        let if_line = crate::state::with_state(|s| s.scanner.if_line);
+        if if_line != 0 {
             crate::output::print_cstr(c" on line ".as_ptr());
-            crate::output::print_int(if_line());
+            crate::output::print_int(if_line);
         }
         crate::output::print_cstr(c" was incomplete)".as_ptr());
-        set_if_line(mem_b32s1(cond_ptr() + 1));
-        set_cur_if(mem_b16s0(cond_ptr()) as i16);
-        set_temp_ptr(cond_ptr());
-        set_cond_ptr(mem_b32s1(cond_ptr()));
+        let cond_ptr = crate::state::with_state(|s| s.scanner.cond_ptr);
+        let new_if_line = mem_b32s1(cond_ptr + 1);
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        let new_cur_if =
+            crate::state::with_state(|s| unsafe { s.mem.data[cond_ptr as usize].b16.s0 }) as i16;
+        let new_cond_ptr = mem_b32s1(cond_ptr);
+        set_temp_ptr(cond_ptr);
+        crate::state::with_state_mut(|s| {
+            s.scanner.if_line = new_if_line;
+            s.scanner.cur_if = new_cur_if;
+            s.scanner.cond_ptr = new_cond_ptr;
+        });
         let p = temp_ptr();
         crate::state::with_state_mut(|st| crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE));
     }

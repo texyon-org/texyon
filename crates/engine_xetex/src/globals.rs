@@ -394,11 +394,6 @@ pub(crate) fn line() -> i32 {
     unsafe { raw::line }
 }
 
-/// Returns `open_parens` (count of open pseudo-file parentheses in the transcript).
-#[inline]
-pub(crate) fn open_parens() -> i32 {
-    crate::state::with_state(|s| s.input.open_parens)
-}
 /// Sets `open_parens = v`.
 #[inline]
 pub(crate) fn set_open_parens(v: i32) {
@@ -415,13 +410,6 @@ pub(crate) fn set_open_parens(v: i32) {
 //   b32.s0 == bytes [0,4): b16.s0 (bytes 0-1) | b16.s1 (bytes 2-3)
 //   b32.s1 == bytes [4,8): b16.s2 (bytes 4-5) | b16.s3 (bytes 6-7)
 //   gr           == all 8 bytes as f64
-
-/// Read `mem[p].b16.s0` (low 16 bits of the first 32-bit half-word).
-#[inline]
-pub(crate) fn mem_b16s0(p: i32) -> u16 {
-    // SAFETY: union projection; the `Vec` index is bounds-checked.
-    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s0 })
-}
 
 // ---------------------------------------------------------------------------
 // eqtb accessor
@@ -917,10 +905,6 @@ pub(crate) fn save_ptr() -> i32 {
 #[inline]
 pub(crate) fn save_size() -> i32 {
     unsafe { raw::save_size }
-}
-#[inline]
-pub(crate) fn cur_level() -> u16 {
-    crate::state::with_state(|state| state.save_stack.cur_level)
 }
 
 // ---------------------------------------------------------------------------
@@ -1428,11 +1412,6 @@ pub(crate) fn set_cur_chr(v: i32) {
 // input_stack / input_ptr / base_ptr
 // ---------------------------------------------------------------------------
 
-/// Returns `input_ptr` — current top of the input-stack (xetex-xetexd.h:504).
-#[inline]
-pub(crate) fn input_ptr() -> i32 {
-    crate::state::with_state(|s| s.input.input_ptr)
-}
 /// Sets `input_ptr`.
 #[inline]
 pub(crate) fn set_input_ptr(v: i32) {
@@ -1481,47 +1460,6 @@ pub(crate) fn set_if_stack(k: i32, v: i32) {
 // ---------------------------------------------------------------------------
 // cond_ptr / if_limit / cur_if / if_line
 // ---------------------------------------------------------------------------
-
-/// Returns `cond_ptr` — head of the conditional-stack list
-/// (xetex-xetexd.h:537).
-#[inline]
-pub(crate) fn cond_ptr() -> i32 {
-    crate::state::with_state(|s| s.scanner.cond_ptr)
-}
-/// Sets `cond_ptr`.
-#[inline]
-pub(crate) fn set_cond_ptr(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cond_ptr = v;
-    });
-}
-
-/// Returns `cur_if` — current \if type (xetex-xetexd.h:539; small_number = i16).
-#[inline]
-pub(crate) fn cur_if() -> i16 {
-    crate::state::with_state(|s| s.scanner.cur_if)
-}
-/// Sets `cur_if`.
-#[inline]
-pub(crate) fn set_cur_if(v: i16) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.cur_if = v;
-    });
-}
-
-/// Returns `if_line` — line number where the current \if was entered
-/// (xetex-xetexd.h:540).
-#[inline]
-pub(crate) fn if_line() -> i32 {
-    crate::state::with_state(|s| s.scanner.if_line)
-}
-/// Sets `if_line`.
-#[inline]
-pub(crate) fn set_if_line(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.if_line = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // sa_root / sa_chain / sa_level
