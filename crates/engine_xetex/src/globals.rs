@@ -837,38 +837,6 @@ pub(crate) fn save_size() -> i32 {
 // font_name
 // ---------------------------------------------------------------------------
 
-/// Writes `font_name[f] = v`.
-#[inline]
-pub(crate) fn set_font_name_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_name[f as usize] = v;
-    });
-}
-
-/// Writes `font_info[k].b32.s1 = v`.
-#[inline]
-pub(crate) fn set_font_info_b32s1(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.font_info[k as usize].b32.s1 = v;
-    });
-}
-
-/// Sets `fmem_ptr`.
-#[inline]
-pub(crate) fn set_fmem_ptr(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.fmem_ptr = v;
-    });
-}
-
-/// Sets `font_ptr`.
-#[inline]
-pub(crate) fn set_font_ptr(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.font_ptr = v;
-    });
-}
-
 /// Returns `font_mem_size`.
 #[inline]
 pub(crate) fn font_mem_size() -> i32 {
@@ -883,31 +851,7 @@ pub(crate) fn set_font_mem_size(v: i32) {
     });
 }
 
-/// Sets `font_params[f] = v`.
-#[inline]
-pub(crate) fn set_font_params(f: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_params[f as usize] = v;
-    });
-}
-
-/// Sets `font_glue[f] = v`.
-#[inline]
-pub(crate) fn set_font_glue(f: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_glue[f as usize] = v;
-    });
-}
-
 /// Returns `param_base[f]`.
-
-/// Sets `param_base[f] = v`.
-#[inline]
-pub(crate) fn set_param_base(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.param_base[f as usize] = v;
-    });
-}
 
 /// Raw borrow-free mirrors of the three `FontState` arrays the OpenType-math
 /// C++ FFI (`xetex-XeTeXOTMath.cpp`) reads back via the `tt_get_font_*_entry`
@@ -951,13 +895,6 @@ pub(crate) fn refresh_font_ffi_mirrors(fonts: &crate::state::FontState) {
 pub(crate) fn font_area_entry(f: i32) -> i32 {
     crate::state::with_state(|state| state.fonts.font_area[f as usize])
 }
-/// Writes `font_area[f] = v`.
-#[inline]
-pub(crate) fn set_font_area_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_area[f as usize] = v;
-    });
-}
 /// C++ bridge for OpenType math helpers that still need font_area. Reads the
 /// borrow-free mirror so it is safe to call under a held `EngineState` borrow
 /// (see `font_ffi_mirror`).
@@ -972,55 +909,6 @@ pub extern "C" fn tt_get_font_area_entry(f: i32) -> i32 {
 pub extern "C" fn tt_get_font_size_entry(f: i32) -> i32 {
     // SAFETY: mirror kept in sync with fonts.font_size by refresh_font_ffi_mirrors.
     unsafe { *font_ffi_mirror::FONT_SIZE.add(f as usize) }
-}
-/// Writes `font_size[f] = v`.
-#[inline]
-pub(crate) fn set_font_size_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_size[f as usize] = v;
-    });
-}
-/// Writes `font_dsize[f] = v`.
-#[inline]
-pub(crate) fn set_font_dsize_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_dsize[f as usize] = v;
-    });
-}
-/// Writes `font_bc[f] = v`.
-#[inline]
-pub(crate) fn set_font_bc_entry(f: i32, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_bc[f as usize] = v;
-    });
-}
-/// Writes `font_ec[f] = v`.
-#[inline]
-pub(crate) fn set_font_ec_entry(f: i32, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_ec[f as usize] = v;
-    });
-}
-/// Writes `bchar_label[f] = v`.
-#[inline]
-pub(crate) fn set_bchar_label_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.bchar_label[f as usize] = v;
-    });
-}
-/// Writes `font_bchar[f] = v`.
-#[inline]
-pub(crate) fn set_font_bchar_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_bchar[f as usize] = v;
-    });
-}
-/// Writes `font_false_bchar[f] = v`.
-#[inline]
-pub(crate) fn set_font_false_bchar_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_false_bchar[f as usize] = v;
-    });
 }
 /// C++ bridge: returns `font_layout_engine[f]` for use in OpenType math helpers.
 /// Reads the borrow-free mirror (see `font_ffi_mirror`).
@@ -1039,78 +927,6 @@ pub(crate) fn font_mapping_ptr(f: i32) -> *mut libc::c_void {
 pub(crate) fn set_font_mapping_ptr(f: i32, v: *mut libc::c_void) {
     crate::state::with_state_mut(|s| {
         s.fonts.font_mapping[f as usize] = v;
-    });
-}
-
-/// Writes `hyphen_char[f] = v`.
-#[inline]
-pub(crate) fn set_hyphen_char_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.hyphen_char[f as usize] = v;
-    })
-}
-/// Writes `skew_char[f] = v`.
-#[inline]
-pub(crate) fn set_skew_char_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.skew_char[f as usize] = v;
-    })
-}
-/// Writes `char_base[f] = v`.
-#[inline]
-pub(crate) fn set_char_base_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.char_base[f as usize] = v;
-    });
-}
-/// Returns `width_base[f]`.
-/// Writes `width_base[f] = v`.
-#[inline]
-pub(crate) fn set_width_base_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.width_base[f as usize] = v;
-    });
-}
-/// Writes `height_base[f] = v`.
-#[inline]
-pub(crate) fn set_height_base_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.height_base[f as usize] = v;
-    });
-}
-/// Writes `depth_base[f] = v`.
-#[inline]
-pub(crate) fn set_depth_base_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.depth_base[f as usize] = v;
-    });
-}
-/// Writes `italic_base[f] = v`.
-#[inline]
-pub(crate) fn set_italic_base_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.italic_base[f as usize] = v;
-    });
-}
-/// Writes `lig_kern_base[f] = v`.
-#[inline]
-pub(crate) fn set_lig_kern_base_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.lig_kern_base[f as usize] = v;
-    });
-}
-/// Writes `kern_base[f] = v`.
-#[inline]
-pub(crate) fn set_kern_base_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.kern_base[f as usize] = v;
-    });
-}
-/// Writes `exten_base[f] = v`.
-#[inline]
-pub(crate) fn set_exten_base_entry(f: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.exten_base[f as usize] = v;
     });
 }
 
@@ -1749,38 +1565,8 @@ pub(crate) fn set_prev_class(v: i32) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn set_trie_c_entry(k: i32, v: u16) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_c[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn set_trie_l_entry(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_l[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn set_trie_r_entry(k: i32, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_r[k as usize] = v;
-    });
-}
-#[inline]
-pub(crate) fn set_trie_ptr(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.trie_ptr = v;
-    });
-}
-#[inline]
 pub(crate) fn trie_not_ready() -> bool {
     crate::state::with_state(|state| state.hyph.trie_not_ready)
-}
-#[inline]
-pub(crate) fn set_hyph_start(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.hyph.hyph_start = v;
-    });
 }
 
 // ---------------------------------------------------------------------------

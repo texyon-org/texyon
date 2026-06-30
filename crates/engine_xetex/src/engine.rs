@@ -16,12 +16,10 @@ use crate::globals::{
     selector, set_buffer_entry, set_cancel_boundary, set_cur_list_aux_b32s1,
     set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line,
     set_cur_list_prev_graf, set_cur_list_tail, set_cur_val, set_eqtb_b32s1, set_error_line,
-    set_file_line_error_style_p, set_first, set_font_info_b32s1, set_font_max, set_font_mem_size,
-    set_half_error_line, set_hyph_start, set_hyphen_char_entry, set_ins_disc, set_lft_hit,
-    set_ligature_present, set_max_print_line, set_max_reg_help_line, set_max_reg_num,
-    set_open_parens, set_pool_ptr, set_rt_hit, set_selector, set_skew_char_entry, set_str_ptr,
-    set_temp_ptr, set_trie_c_entry, set_trie_l_entry, set_trie_ptr, set_trie_r_entry, temp_ptr,
-    trie_not_ready,
+    set_file_line_error_style_p, set_first, set_font_max, set_font_mem_size, set_half_error_line,
+    set_ins_disc, set_lft_hit, set_ligature_present, set_max_print_line, set_max_reg_help_line,
+    set_max_reg_num, set_open_parens, set_pool_ptr, set_rt_hit, set_selector, set_str_ptr,
+    set_temp_ptr, temp_ptr, trie_not_ready,
 };
 use crate::io::init_io;
 use crate::state::{EngineState, MemState};
@@ -1313,12 +1311,12 @@ pub unsafe extern "C" fn tt_run_engine(
             state.hyph.trie_r = vec![0i32; trie_len];
             state.hyph.trie_hash = vec![0i32; trie_len];
             state.hyph.trie_taken = vec![false; trie_len];
+            state.hyph.trie_l[0] = 0;
+            state.hyph.trie_c[0] = 0;
+            state.hyph.trie_ptr = 0;
+            state.hyph.trie_r[0] = 0;
+            state.hyph.hyph_start = 0;
         });
-        set_trie_l_entry(0, 0);
-        set_trie_c_entry(0, 0);
-        set_trie_ptr(0);
-        set_trie_r_entry(0, 0);
-        set_hyph_start(0);
 
         let font_check_len = (font_max() as usize) + 1;
         let base_fmt_len = (font_max() as usize) + 1;
@@ -1362,38 +1360,42 @@ pub unsafe extern "C" fn tt_run_engine(
             crate::globals::refresh_font_ffi_mirrors(&state.fonts);
         });
 
-        crate::globals::set_font_ptr(FONT_BASE);
-        crate::globals::set_fmem_ptr(7);
-        crate::globals::set_font_name_entry(
-            FONT_BASE,
-            crate::texmfmp::maketexstring(c"nullfont".as_ptr()),
-        );
-        crate::globals::set_font_area_entry(FONT_BASE, EMPTY_STRING);
-        set_hyphen_char_entry(FONT_BASE, b'-' as i32);
-        set_skew_char_entry(FONT_BASE, -1);
-        crate::globals::set_bchar_label_entry(FONT_BASE, NON_ADDRESS);
-        crate::globals::set_font_bchar_entry(FONT_BASE, TOO_BIG_CHAR);
-        crate::globals::set_font_false_bchar_entry(FONT_BASE, TOO_BIG_CHAR);
-        crate::globals::set_font_bc_entry(FONT_BASE, 1);
-        crate::globals::set_font_ec_entry(FONT_BASE, 0);
-        crate::globals::set_font_size_entry(FONT_BASE, 0);
-        crate::globals::set_font_dsize_entry(FONT_BASE, 0);
-        crate::globals::set_char_base_entry(FONT_BASE, 0);
-        crate::globals::set_width_base_entry(FONT_BASE, 0);
-        crate::globals::set_height_base_entry(FONT_BASE, 0);
-        crate::globals::set_depth_base_entry(FONT_BASE, 0);
-        crate::globals::set_italic_base_entry(FONT_BASE, 0);
-        crate::globals::set_lig_kern_base_entry(FONT_BASE, 0);
-        crate::globals::set_kern_base_entry(FONT_BASE, 0);
-        crate::globals::set_exten_base_entry(FONT_BASE, 0);
-        crate::globals::set_font_glue(FONT_BASE, crate::mem::TEX_NULL);
-        crate::globals::set_font_params(FONT_BASE, 7);
-        crate::globals::set_font_mapping_ptr(FONT_BASE, std::ptr::null_mut());
-        crate::globals::set_param_base(FONT_BASE, -1);
-
-        for font_k in 0..=6 {
-            set_font_info_b32s1(font_k, 0);
-        }
+        // The nullfont (FONT_BASE) bootstrap is a contiguous run of font-table
+        // writes; the only state-touching argument is `maketexstring`, computed
+        // before the borrow. set_font_mapping_ptr stays a wrapper (used
+        // elsewhere) but its write is inlined here under the same borrow.
+        let nullfont_name = crate::texmfmp::maketexstring(c"nullfont".as_ptr());
+        crate::state::with_state_mut(|s| {
+            let f = FONT_BASE as usize;
+            s.fonts.font_ptr = FONT_BASE;
+            s.fonts.fmem_ptr = 7;
+            s.fonts.font_name[f] = nullfont_name;
+            s.fonts.font_area[f] = EMPTY_STRING;
+            s.fonts.hyphen_char[f] = b'-' as i32;
+            s.fonts.skew_char[f] = -1;
+            s.fonts.bchar_label[f] = NON_ADDRESS;
+            s.fonts.font_bchar[f] = TOO_BIG_CHAR;
+            s.fonts.font_false_bchar[f] = TOO_BIG_CHAR;
+            s.fonts.font_bc[f] = 1;
+            s.fonts.font_ec[f] = 0;
+            s.fonts.font_size[f] = 0;
+            s.fonts.font_dsize[f] = 0;
+            s.fonts.char_base[f] = 0;
+            s.fonts.width_base[f] = 0;
+            s.fonts.height_base[f] = 0;
+            s.fonts.depth_base[f] = 0;
+            s.fonts.italic_base[f] = 0;
+            s.fonts.lig_kern_base[f] = 0;
+            s.fonts.kern_base[f] = 0;
+            s.fonts.exten_base[f] = 0;
+            s.fonts.font_glue[f] = crate::mem::TEX_NULL;
+            s.fonts.font_params[f] = 7;
+            s.fonts.font_mapping[f] = std::ptr::null_mut();
+            s.fonts.param_base[f] = -1;
+            for font_k in 0..=6usize {
+                s.fonts.font_info[font_k].b32.s1 = 0;
+            }
+        });
     }
 
     let font_used_len = (font_max() as usize) + 1;
