@@ -871,12 +871,6 @@ pub(crate) fn set_job_name(v: i32) {
 pub(crate) fn texmf_log_name() -> i32 {
     crate::state::with_state(|state| state.strings.texmf_log_name)
 }
-#[inline]
-pub(crate) fn set_halt_on_error_p(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.config.halt_on_error_p = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // engine launch config flags (set by tt_xetex_set_int_variable)
@@ -887,32 +881,8 @@ pub(crate) fn in_initex_mode() -> bool {
     crate::state::with_state(|state| state.config.in_initex_mode)
 }
 #[inline]
-pub(crate) fn set_in_initex_mode(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.config.in_initex_mode = v;
-    });
-}
-#[inline]
-pub(crate) fn set_synctex_enabled(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.config.synctex_enabled = v;
-    });
-}
-#[inline]
 pub(crate) fn semantic_pagination_enabled() -> bool {
     crate::state::with_state(|state| state.config.semantic_pagination_enabled)
-}
-#[inline]
-pub(crate) fn set_semantic_pagination_enabled(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.config.semantic_pagination_enabled = v;
-    });
-}
-#[inline]
-pub(crate) fn set_shell_escape_enabled(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.config.shell_escape_enabled = v;
-    });
 }
 
 // ---------------------------------------------------------------------------
