@@ -987,7 +987,11 @@ pub fn append_to_vlist(
             if p == crate::mem::ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow);
             }
-            mem.set_b32s1(crate::globals::temp_ptr() + 1, d);
+            let bsl_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(
+                crate::globals::temp_ptr(),
+            ))
+            .expect("new_skip_param sets temp_ptr to a glue spec");
+            bsl_spec.set_width(mem, Scaled(d));
             p
         };
         mem.set_b32s1(crate::globals::cur_list_tail(), p);
