@@ -512,11 +512,6 @@ pub(crate) fn str_start(k: i32) -> i32 {
 // in_open / full_source_filename_stack / line_stack / file_line_error_style_p
 // ---------------------------------------------------------------------------
 
-/// Returns the current input nesting depth.
-#[inline]
-pub(crate) fn in_open() -> i32 {
-    crate::state::with_state(|s| s.input.in_open)
-}
 /// Returns non-zero when file:line-style error messages are active.
 #[inline]
 pub(crate) fn file_line_error_style_p() -> i32 {
@@ -1160,18 +1155,6 @@ pub(crate) fn set_font_false_bchar_entry(f: i32, v: i32) {
         state.fonts.font_false_bchar[f as usize] = v;
     });
 }
-/// Returns `font_layout_engine[f]`.
-#[inline]
-pub(crate) fn font_layout_engine_ptr(f: i32) -> *mut libc::c_void {
-    crate::state::with_state(|s| s.fonts.font_layout_engine[f as usize])
-}
-/// Writes `font_layout_engine[f] = v`.
-#[inline]
-pub(crate) fn set_font_layout_engine_ptr(f: i32, v: *mut libc::c_void) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.font_layout_engine[f as usize] = v;
-    });
-}
 /// C++ bridge: returns `font_layout_engine[f]` for use in OpenType math helpers.
 /// Reads the borrow-free mirror (see `font_ffi_mirror`).
 #[no_mangle]
@@ -1709,20 +1692,6 @@ pub(crate) fn set_line(v: i32) {
     unsafe {
         raw::line = v;
     }
-}
-
-// ---------------------------------------------------------------------------
-// eof_seen
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// input_file
-// ---------------------------------------------------------------------------
-
-/// Returns `input_file[k]` as a raw pointer (UFILE*; xetex-xetexd.h:509).
-#[inline]
-pub(crate) fn input_file(k: i32) -> *mut crate::io::UFile {
-    crate::state::with_state(|s| s.input.input_file[k as usize])
 }
 
 // ---------------------------------------------------------------------------

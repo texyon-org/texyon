@@ -12,8 +12,8 @@ use crate::consts::{
 use crate::format_io::{load_fmt_file, store_fmt_file};
 use crate::globals::{
     buf_size, cond_ptr, cur_chr, cur_if, cur_input, cur_level, cur_val, eqtb_b32s1, first,
-    font_area_entry, font_layout_engine_ptr, font_mapping_ptr, font_max, font_mem_size, history,
-    if_line, in_initex_mode, in_open, input_file, interaction, job_name, mem_b16s0, mem_b32s1,
+    font_area_entry, font_mapping_ptr, font_max, font_mem_size, history,
+    if_line, in_initex_mode, interaction, job_name, mem_b16s0, mem_b32s1,
     open_parens, pool_size, selector, set_buffer_entry, set_cancel_boundary, set_cond_ptr,
     set_cur_if, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head,
     set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
@@ -1421,10 +1421,12 @@ pub unsafe fn tt_cleanup() {
     tt_cleanup_destroy_font_manager();
 
     for font_k in 0..font_max() {
-        let engine = font_layout_engine_ptr(font_k);
+        let engine = crate::state::with_state(|s| s.fonts.font_layout_engine[font_k as usize]);
         if !engine.is_null() {
             crate::ext::release_font_engine(engine, font_area_entry(font_k));
-            crate::globals::set_font_layout_engine_ptr(font_k, std::ptr::null_mut());
+            crate::state::with_state_mut(|s| {
+                s.fonts.font_layout_engine[font_k as usize] = std::ptr::null_mut();
+            });
         }
         let mapping = font_mapping_ptr(font_k);
         if !mapping.is_null() {
@@ -1433,8 +1435,9 @@ pub unsafe fn tt_cleanup() {
         }
     }
 
-    for i in 1..=in_open() {
-        let f = input_file(i);
+    let in_open = crate::state::with_state(|s| s.input.in_open);
+    for i in 1..=in_open {
+        let f = crate::state::with_state(|s| s.input.input_file[i as usize]);
         if !f.is_null() {
             crate::io::u_close(f);
         }
