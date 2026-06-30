@@ -300,14 +300,6 @@ pub(crate) fn lo_mem_max() -> i32 {
 }
 
 #[inline]
-#[allow(dead_code)]
-pub(crate) fn set_lo_mem_max(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.mem.lo_mem_max = v;
-    });
-}
-
-#[inline]
 pub(crate) fn hi_mem_min() -> i32 {
     crate::state::with_state(|s| s.mem.hi_mem_min)
 }
@@ -429,14 +421,6 @@ pub(crate) fn set_open_parens(v: i32) {
 pub(crate) fn mem_b16s0(p: i32) -> u16 {
     // SAFETY: union projection; the `Vec` index is bounds-checked.
     crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b16.s0 })
-}
-
-/// Read the `gr` (f64) field of `mem[p]`.
-#[inline]
-#[allow(dead_code)]
-pub(crate) fn mem_gr(p: i32) -> f64 {
-    // SAFETY: union projection; the `Vec` index is bounds-checked.
-    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].gr })
 }
 
 // ---------------------------------------------------------------------------
@@ -812,11 +796,6 @@ pub(crate) fn init_pool_ptr() -> i32 {
 // help_ptr / help_line
 // ---------------------------------------------------------------------------
 
-#[inline]
-#[allow(dead_code)] // getter defined for completeness; only setter used so far
-pub(crate) fn help_ptr() -> u8 {
-    crate::state::with_state(|state| state.errors.help_ptr)
-}
 #[inline]
 pub(crate) fn set_help_ptr(v: u8) {
     crate::state::with_state_mut(|state| {
@@ -2216,11 +2195,6 @@ pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
     });
 }
 
-#[inline]
-#[allow(dead_code)]
-pub(crate) fn rule_dp() -> i32 {
-    crate::state::with_state(|s| s.shipout.rule_dp)
-}
 #[inline]
 pub(crate) fn write_loc() -> i32 {
     crate::state::with_state(|s| s.shipout.write_loc)
