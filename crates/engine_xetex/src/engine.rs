@@ -1289,8 +1289,15 @@ pub unsafe extern "C" fn tt_run_engine(
     }
     crate::globals::set_no_new_control_sequence(true);
 
-    if !in_initex_mode() && !load_fmt_file() {
-        return history();
+    if !in_initex_mode() {
+        match load_fmt_file() {
+            Ok(true) => {}
+            // Graceful load failure: terminate with the current history (matches
+            // the old `!load_fmt_file()` early return).
+            Ok(false) => return history(),
+            // Fatal undump abort: HISTORY_FATAL_ERROR with no longjmp (`01d` §5.4).
+            Err(a) => return a.into_history(),
+        }
     }
 
     if intpar(INT_PAR_END_LINE_CHAR) < 0 || intpar(INT_PAR_END_LINE_CHAR) > BIGGEST_CHAR {

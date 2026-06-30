@@ -15,7 +15,6 @@ use crate::globals::{
 use crate::hyphenation::{init_trie, BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
 
 extern "C" {
-    fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize;
     fn ttstub_output_write(
         handle: usize,
@@ -139,11 +138,20 @@ unsafe fn dump_b32(fmt_out: usize, s0: i32, s1: i32) -> Result<(), crate::errors
     dump_one(fmt_out, crate::mem_types::B32x2 { s0, s1 })
 }
 #[inline]
-unsafe fn undump_bytes(fmt_in: usize, ptr: *mut u8, item_size: usize, nitems: usize) {
+unsafe fn undump_bytes(
+    fmt_in: usize,
+    ptr: *mut u8,
+    item_size: usize,
+    nitems: usize,
+) -> Result<(), crate::errors::EngineAbort> {
     let byte_len = item_size * nitems;
     let read = ttstub_input_read(fmt_in, ptr, byte_len);
     if read < 0 || read as usize != byte_len {
-        _tt_abort(c"could not read format file data".as_ptr());
+        // A short/corrupt read returns the abort instead of longjmp-ing under the
+        // load_fmt_file_in `&mut EngineState` borrow (`01d` §5.4).
+        return Err(crate::errors::EngineAbort::TtAbort(
+            c"could not read format file data".as_ptr(),
+        ));
     }
 
     if cfg!(target_endian = "little") && item_size > 1 {
@@ -152,26 +160,32 @@ unsafe fn undump_bytes(fmt_in: usize, ptr: *mut u8, item_size: usize, nitems: us
             item.reverse();
         }
     }
+    Ok(())
 }
 #[inline]
-unsafe fn undump_slice<T>(fmt_in: usize, ptr: *mut T, nitems: i32) {
+unsafe fn undump_slice<T>(
+    fmt_in: usize,
+    ptr: *mut T,
+    nitems: i32,
+) -> Result<(), crate::errors::EngineAbort> {
     if nitems > 0 {
         undump_bytes(
             fmt_in,
             ptr as *mut u8,
             std::mem::size_of::<T>(),
             nitems as usize,
-        );
+        )?;
     }
+    Ok(())
 }
 #[inline]
-unsafe fn undump_one<T: Copy>(fmt_in: usize) -> T {
+unsafe fn undump_one<T: Copy>(fmt_in: usize) -> Result<T, crate::errors::EngineAbort> {
     let mut value = std::mem::MaybeUninit::<T>::uninit();
-    undump_slice(fmt_in, value.as_mut_ptr(), 1);
-    value.assume_init()
+    undump_slice(fmt_in, value.as_mut_ptr(), 1)?;
+    Ok(value.assume_init())
 }
 #[inline]
-unsafe fn undump_int(fmt_in: usize) -> i32 {
+unsafe fn undump_int(fmt_in: usize) -> Result<i32, crate::errors::EngineAbort> {
     undump_one(fmt_in)
 }
 unsafe fn undump_checked_i32(
@@ -180,33 +194,43 @@ unsafe fn undump_checked_i32(
     nitems: i32,
     low: i32,
     high: i32,
-) -> bool {
-    undump_slice(fmt_in, ptr, nitems);
+) -> Result<bool, crate::errors::EngineAbort> {
+    undump_slice(fmt_in, ptr, nitems)?;
     for i in 0..nitems {
         let value = *ptr.add(i as usize);
         if value < low || value > high {
-            return false;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
-unsafe fn undump_upper_i32(fmt_in: usize, ptr: *mut i32, nitems: i32, high: i32) -> bool {
-    undump_slice(fmt_in, ptr, nitems);
+unsafe fn undump_upper_i32(
+    fmt_in: usize,
+    ptr: *mut i32,
+    nitems: i32,
+    high: i32,
+) -> Result<bool, crate::errors::EngineAbort> {
+    undump_slice(fmt_in, ptr, nitems)?;
     for i in 0..nitems {
         if *ptr.add(i as usize) > high {
-            return false;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
-unsafe fn undump_upper_u16(fmt_in: usize, ptr: *mut u16, nitems: i32, high: u16) -> bool {
-    undump_slice(fmt_in, ptr, nitems);
+unsafe fn undump_upper_u16(
+    fmt_in: usize,
+    ptr: *mut u16,
+    nitems: i32,
+    high: u16,
+) -> Result<bool, crate::errors::EngineAbort> {
+    undump_slice(fmt_in, ptr, nitems)?;
     for i in 0..nitems {
         if *ptr.add(i as usize) > high {
-            return false;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 // translated from xetex-ini.c:587 (store_fmt_file)
 pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
@@ -820,37 +844,37 @@ unsafe fn pack_buffered_name(_n: i16, _a: i32, _b: i32) {
     crate::globals::set_name_length(libc::strlen(tre_TEX_format_default) as i32);
 }
 // translated from xetex-ini.c:602 (load_fmt_file)
-pub unsafe fn load_fmt_file() -> bool {
+pub unsafe fn load_fmt_file() -> Result<bool, crate::errors::EngineAbort> {
     let j = cur_input().loc;
     pack_buffered_name((tre_format_default_length - 4) as i16, 1, 0);
 
     let fmt_in = ttstub_input_open(crate::globals::name_of_file(), TTBC_FILE_FORMAT_FORMAT, 0);
     if fmt_in == INVALID_HANDLE {
-        _tt_abort(c"cannot open the format file".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(
+            c"cannot open the format file".as_ptr(),
+        ));
     }
 
     set_cur_input_loc(j);
 
     // Phase-C (`01b` §3): the whole undump runs under one `&mut EngineState`
-    // borrow. `undump_*` are plain file FFI (not `with_state`-bearing), so they
-    // are safe under the borrow; every cold `bad_format_file()`/`_tt_abort(msg)`
-    // rides the abort sentinel, fired by this wrapper after the borrow drops
-    // (`01b` §5). The file-open prelude above stays out of the borrow because
-    // `name_of_file`/`pack_buffered_name` are still `with_state`-bearing.
-    match crate::state::with_state_mut(|st| load_fmt_file_in(st, fmt_in)) {
-        Ok(b) => b,
-        Err(msg) => _tt_abort(msg),
-    }
+    // borrow. `undump_*` are plain file FFI; on a short/corrupt read they now
+    // return `EngineAbort` instead of longjmp-ing under the borrow (`01d` §5.4),
+    // as do the bad-format paths; this wrapper propagates the `Result` to
+    // `tt_run_engine`, which turns it into `HISTORY_FATAL_ERROR`. The file-open
+    // prelude stays out of the borrow (`name_of_file`/`pack_buffered_name` are
+    // still `with_state`-bearing).
+    crate::state::with_state_mut(|st| load_fmt_file_in(st, fmt_in))
 }
 
 /// Threaded core of [`load_fmt_file`] (`01b` §3): holds one `&mut EngineState`
 /// borrow across the entire format undump, touching every cluster directly.
-/// Returns `Err(msg)` for the cold fatal paths so the wrapper can
-/// `_tt_abort(msg)` after the borrow drops (`01b` §5).
+/// Bad-format and short-read fatals return `Err(EngineAbort)` (no longjmp under
+/// the borrow); the wrapper propagates them to `tt_run_engine` (`01d` §5.4).
 unsafe fn load_fmt_file_in(
     st: &mut crate::state::EngineState,
     fmt_in: usize,
-) -> Result<bool, *const libc::c_char> {
+) -> Result<bool, crate::errors::EngineAbort> {
     let mut j: i32;
     let mut k: i32;
     let mut p: i32;
@@ -866,19 +890,19 @@ unsafe fn load_fmt_file_in(
         st.mem.data = Vec::new();
     }
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x != FORMAT_HEADER_MAGIC {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x != FORMAT_SERIAL {
-        return Err(c"format file is of the wrong version".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"format file is of the wrong version".as_ptr()));
     }
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if !(0..=SUP_HASH_EXTRA).contains(&x) {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.eqtb.hash_high = x;
     if st.eqtb.hash_extra < st.eqtb.hash_high {
@@ -920,9 +944,9 @@ unsafe fn load_fmt_file_in(
     st.scanner.max_reg_num = 32_767;
     st.scanner.max_reg_help_line = c"A register number must be between 0 and 32767.".as_ptr();
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x != MEM_TOP {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
 
     crate::globals::set_cur_list_head(CONTRIB_HEAD);
@@ -937,25 +961,25 @@ unsafe fn load_fmt_file_in(
         mem_words_load
     ];
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x != EQTB_SIZE {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x != FORMAT_HASH_PRIME {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x != FORMAT_HYPH_PRIME {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < 0 {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if x > SUP_POOL_SIZE - tre_pool_free {
-        return Err(c"must increase string_pool_size".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"must increase string_pool_size".as_ptr()));
     }
     st.strings.pool_ptr = x;
     if TRE_POOL_SIZE < st.strings.pool_ptr + tre_pool_free {
@@ -963,12 +987,12 @@ unsafe fn load_fmt_file_in(
     }
     st.strings.pool_size = TRE_POOL_SIZE;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < 0 {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if x > SUP_MAX_STRINGS - tre_strings_free {
-        return Err(c"must increase sup_strings".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"must increase sup_strings".as_ptr()));
     }
     st.strings.str_ptr = x;
     if TRE_MAX_STRINGS < st.strings.str_ptr + tre_strings_free {
@@ -979,32 +1003,32 @@ unsafe fn load_fmt_file_in(
     st.strings.str_start = vec![0i32; (TRE_MAX_STRINGS as usize) + 1];
     let n = st.strings.str_ptr - TOO_BIG_CHAR + 1;
     let limit = st.strings.pool_ptr;
-    if !undump_checked_i32(fmt_in, st.strings.str_start.as_mut_ptr(), n, 0, limit) {
-        return Err(c"fatal format file error".as_ptr());
+    if !undump_checked_i32(fmt_in, st.strings.str_start.as_mut_ptr(), n, 0, limit)? {
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.strings.str_pool = vec![0u16; (TRE_POOL_SIZE as usize) + 1];
     let limit = st.strings.pool_ptr;
-    undump_slice(fmt_in, st.strings.str_pool.as_mut_ptr(), limit);
+    undump_slice(fmt_in, st.strings.str_pool.as_mut_ptr(), limit)?;
 
     st.strings.init_str_ptr = st.strings.str_ptr;
     st.strings.init_pool_ptr = st.strings.pool_ptr;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if !(1019..=MEM_TOP - HI_MEM_STAT_USAGE).contains(&x) {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.mem.lo_mem_max = x;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < 20 || x > st.mem.lo_mem_max {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.mem.rover = x;
 
     for idx in INT_VAL..=INTER_CHAR_VAL {
-        x = undump_int(fmt_in);
+        x = undump_int(fmt_in)?;
         if x < MIN_HALFWORD || x > st.mem.lo_mem_max {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
         st.scanner.sa_root[idx as usize] = x;
     }
@@ -1017,12 +1041,12 @@ unsafe fn load_fmt_file_in(
     p = 0;
     q = st.mem.rover;
     loop {
-        undump_slice(fmt_in, mem_ptr.add(p as usize), q + 2 - p);
+        undump_slice(fmt_in, mem_ptr.add(p as usize), q + 2 - p)?;
         p = q + st.mem.b32s0(q);
         if p > st.mem.lo_mem_max
             || (q >= st.mem.b32s1(q + 1) && st.mem.b32s1(q + 1) != st.mem.rover)
         {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
         q = st.mem.b32s1(q + 1);
         if q == st.mem.rover {
@@ -1030,17 +1054,17 @@ unsafe fn load_fmt_file_in(
         }
     }
 
-    undump_slice(fmt_in, mem_ptr.add(p as usize), st.mem.lo_mem_max + 1 - p);
+    undump_slice(fmt_in, mem_ptr.add(p as usize), st.mem.lo_mem_max + 1 - p)?;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < st.mem.lo_mem_max + 1 || x > PRE_ADJUST_HEAD {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.mem.hi_mem_min = x;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if !(MIN_HALFWORD..=MEM_TOP).contains(&x) {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.mem.avail = x;
 
@@ -1049,24 +1073,24 @@ unsafe fn load_fmt_file_in(
         fmt_in,
         mem_ptr.add(st.mem.hi_mem_min as usize),
         st.mem.mem_end + 1 - st.mem.hi_mem_min,
-    );
-    st.mem.var_used = undump_int(fmt_in);
-    st.mem.dyn_used = undump_int(fmt_in);
+    )?;
+    st.mem.var_used = undump_int(fmt_in)?;
+    st.mem.dyn_used = undump_int(fmt_in)?;
 
     let eqtb_ptr = st.eqtb.data.as_mut_ptr();
     k = ACTIVE_BASE;
     loop {
-        x = undump_int(fmt_in);
+        x = undump_int(fmt_in)?;
         if x < 1 || k + x > EQTB_SIZE + 1 {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
 
-        undump_slice(fmt_in, eqtb_ptr.add(k as usize), x);
+        undump_slice(fmt_in, eqtb_ptr.add(k as usize), x)?;
         k += x;
 
-        x = undump_int(fmt_in);
+        x = undump_int(fmt_in)?;
         if x < 0 || k + x > EQTB_SIZE + 1 {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
 
         for j1 in k..=(k + x - 1) {
@@ -1083,42 +1107,42 @@ unsafe fn load_fmt_file_in(
             fmt_in,
             eqtb_ptr.add((EQTB_SIZE + 1) as usize),
             st.eqtb.hash_high,
-        );
+        )?;
     }
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < FORMAT_HASH_BASE || x > st.eqtb.hash_top {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.input.par_loc = x;
     st.input.par_token = CS_TOKEN_FLAG + st.input.par_loc;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < FORMAT_HASH_BASE || x > st.eqtb.hash_top {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.shipout.write_loc = x;
 
     for prim_idx in 0..=PRIM_SIZE {
-        let value: crate::mem_types::B32x2 = undump_one(fmt_in);
+        let value: crate::mem_types::B32x2 = undump_one(fmt_in)?;
         st.eqtb.prim[prim_idx as usize].s0 = value.s0;
         st.eqtb.prim[prim_idx as usize].s1 = value.s1;
     }
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if !(FORMAT_HASH_BASE..=FROZEN_CONTROL_SEQUENCE).contains(&x) {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.eqtb.hash_used = x;
 
     p = FORMAT_HASH_BASE - 1;
     loop {
-        x = undump_int(fmt_in);
+        x = undump_int(fmt_in)?;
         if x < p + 1 || x > st.eqtb.hash_used {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
         p = x;
-        let value: crate::mem_types::B32x2 = undump_one(fmt_in);
+        let value: crate::mem_types::B32x2 = undump_one(fmt_in)?;
         st.eqtb.hash[(p - 514) as usize].s0 = value.s0;
         st.eqtb.hash[(p - 514) as usize].s1 = value.s1;
         if p == st.eqtb.hash_used {
@@ -1131,23 +1155,23 @@ unsafe fn load_fmt_file_in(
         fmt_in,
         hash_ptr.add((st.eqtb.hash_used + 1 - 514) as usize),
         (UNDEFINED_CONTROL_SEQUENCE - 1) - st.eqtb.hash_used,
-    );
+    )?;
     if st.eqtb.hash_high > 0 {
         undump_slice(
             fmt_in,
             hash_ptr.add((EQTB_SIZE + 1 - 514) as usize),
             st.eqtb.hash_high,
-        );
+        )?;
     }
 
-    st.eqtb.cs_count = undump_int(fmt_in);
+    st.eqtb.cs_count = undump_int(fmt_in)?;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < 7 {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if x > SUP_FONT_MEM_SIZE {
-        return Err(c"must increase font_mem_size".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"must increase font_mem_size".as_ptr()));
     }
     st.fonts.fmem_ptr = x;
     if st.fonts.fmem_ptr > st.fonts.font_mem_size {
@@ -1160,14 +1184,14 @@ unsafe fn load_fmt_file_in(
         b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
     };
     st.fonts.font_info = vec![zero_word; (fms as usize) + 1];
-    undump_slice(fmt_in, st.fonts.font_info.as_mut_ptr(), fmp);
+    undump_slice(fmt_in, st.fonts.font_info.as_mut_ptr(), fmp)?;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < FONT_BASE {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if x > FONT_BASE + MAX_FONT_MAX {
-        return Err(c"must increase font_max".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"must increase font_max".as_ptr()));
     }
     st.fonts.font_ptr = x;
 
@@ -1216,36 +1240,36 @@ unsafe fn load_fmt_file_in(
         fmt_in,
         st.fonts.font_check.as_mut_ptr().add(FONT_BASE as usize),
         font_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.font_size.as_mut_ptr().add(FONT_BASE as usize),
         font_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.font_dsize.as_mut_ptr().add(FONT_BASE as usize),
         font_undump_count,
-    );
+    )?;
     if !undump_checked_i32(
         fmt_in,
         st.fonts.font_params.as_mut_ptr().add(FONT_BASE as usize),
         font_undump_count,
         MIN_HALFWORD,
         MAX_HALFWORD,
-    ) {
-        return Err(c"fatal format file error".as_ptr());
+    )? {
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     undump_slice(
         fmt_in,
         st.fonts.hyphen_char.as_mut_ptr().add(FONT_BASE as usize),
         font_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.skew_char.as_mut_ptr().add(FONT_BASE as usize),
         font_undump_count,
-    );
+    )?;
     let font_count = font_undump_count;
     let max_str = st.strings.str_ptr;
     if !undump_upper_i32(
@@ -1253,73 +1277,73 @@ unsafe fn load_fmt_file_in(
         st.fonts.font_name.as_mut_ptr().add(FONT_BASE as usize),
         font_count,
         max_str,
-    ) {
-        return Err(c"fatal format file error".as_ptr());
+    )? {
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if !undump_upper_i32(
         fmt_in,
         st.fonts.font_area.as_mut_ptr().add(FONT_BASE as usize),
         font_count,
         max_str,
-    ) {
-        return Err(c"fatal format file error".as_ptr());
+    )? {
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     undump_slice(
         fmt_in,
         st.fonts.font_bc.as_mut_ptr().add(FONT_BASE as usize),
         font_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.font_ec.as_mut_ptr().add(FONT_BASE as usize),
         font_count,
-    );
+    )?;
     let base_undump_count = st.fonts.font_ptr + 1;
     undump_slice(
         fmt_in,
         st.fonts.char_base.as_mut_ptr().add(FONT_BASE as usize),
         base_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.width_base.as_mut_ptr().add(FONT_BASE as usize),
         base_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.height_base.as_mut_ptr().add(FONT_BASE as usize),
         base_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.depth_base.as_mut_ptr().add(FONT_BASE as usize),
         base_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.italic_base.as_mut_ptr().add(FONT_BASE as usize),
         base_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.lig_kern_base.as_mut_ptr().add(FONT_BASE as usize),
         base_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.kern_base.as_mut_ptr().add(FONT_BASE as usize),
         base_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.exten_base.as_mut_ptr().add(FONT_BASE as usize),
         base_undump_count,
-    );
+    )?;
     undump_slice(
         fmt_in,
         st.fonts.param_base.as_mut_ptr().add(FONT_BASE as usize),
         base_undump_count,
-    );
+    )?;
     let font_glue_count = st.fonts.font_ptr + 1;
     let font_glue_max = st.mem.lo_mem_max;
     if !undump_checked_i32(
@@ -1328,8 +1352,8 @@ unsafe fn load_fmt_file_in(
         font_glue_count,
         MIN_HALFWORD,
         font_glue_max,
-    ) {
-        return Err(c"fatal format file error".as_ptr());
+    )? {
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     let max_font_index = st.fonts.fmem_ptr - 1;
     if !undump_checked_i32(
@@ -1338,8 +1362,8 @@ unsafe fn load_fmt_file_in(
         font_count,
         0,
         max_font_index,
-    ) {
-        return Err(c"fatal format file error".as_ptr());
+    )? {
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if !undump_checked_i32(
         fmt_in,
@@ -1347,8 +1371,8 @@ unsafe fn load_fmt_file_in(
         font_count,
         0,
         TOO_BIG_CHAR,
-    ) {
-        return Err(c"fatal format file error".as_ptr());
+    )? {
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if !undump_checked_i32(
         fmt_in,
@@ -1359,33 +1383,33 @@ unsafe fn load_fmt_file_in(
         font_count,
         0,
         TOO_BIG_CHAR,
-    ) {
-        return Err(c"fatal format file error".as_ptr());
+    )? {
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < 0 {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if x > st.hyph.hyph_size {
-        return Err(c"must increase hyph_size".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"must increase hyph_size".as_ptr()));
     }
     st.hyph.hyph_count = x;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < FORMAT_HYPH_PRIME {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if x > st.hyph.hyph_size {
-        return Err(c"must increase hyph_size".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"must increase hyph_size".as_ptr()));
     }
     st.hyph.hyph_next = x;
 
     j = 0;
     for _ in 1..=st.hyph.hyph_count {
-        j = undump_int(fmt_in);
+        j = undump_int(fmt_in)?;
         if j < 0 {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
         if j > 65_535 {
             st.hyph.hyph_next = j / 65_536;
@@ -1395,19 +1419,19 @@ unsafe fn load_fmt_file_in(
         }
 
         if j >= st.hyph.hyph_size || st.hyph.hyph_next > st.hyph.hyph_size {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
         st.hyph.hyph_link[j as usize] = st.hyph.hyph_next as u16;
 
-        x = undump_int(fmt_in);
+        x = undump_int(fmt_in)?;
         if x < 0 || x > st.strings.str_ptr {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
         st.hyph.hyph_word[j as usize] = x;
 
-        x = undump_int(fmt_in);
+        x = undump_int(fmt_in)?;
         if !(MIN_HALFWORD..=MAX_HALFWORD).contains(&x) {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
         st.hyph.hyph_list[j as usize] = x;
     }
@@ -1423,43 +1447,43 @@ unsafe fn load_fmt_file_in(
         st.hyph.hyph_next += 1;
     }
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < 0 {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if x > st.hyph.trie_size {
-        return Err(c"must increase trie_size".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"must increase trie_size".as_ptr()));
     }
     j = x;
     st.hyph.trie_max = j;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < 0 || x > j {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     st.hyph.hyph_start = x;
 
     if st.hyph.trie_trl.is_empty() {
         st.hyph.trie_trl = vec![0i32; (j as usize) + 1];
     }
-    undump_slice(fmt_in, st.hyph.trie_trl.as_mut_ptr(), j + 1);
+    undump_slice(fmt_in, st.hyph.trie_trl.as_mut_ptr(), j + 1)?;
     if st.hyph.trie_tro.is_empty() {
         st.hyph.trie_tro = vec![0i32; (j as usize) + 1];
     }
-    undump_slice(fmt_in, st.hyph.trie_tro.as_mut_ptr(), j + 1);
+    undump_slice(fmt_in, st.hyph.trie_tro.as_mut_ptr(), j + 1)?;
     if st.hyph.trie_trc.is_empty() {
         st.hyph.trie_trc = vec![0u16; (j as usize) + 1];
     }
-    undump_slice(fmt_in, st.hyph.trie_trc.as_mut_ptr(), j + 1);
+    undump_slice(fmt_in, st.hyph.trie_trc.as_mut_ptr(), j + 1)?;
 
-    st.hyph.max_hyph_char = undump_int(fmt_in);
+    st.hyph.max_hyph_char = undump_int(fmt_in)?;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x < 0 {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
     if x > TRIE_OP_SIZE {
-        return Err(c"must increase TRIE_OP_SIZE".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"must increase TRIE_OP_SIZE".as_ptr()));
     }
     j = x;
     st.hyph.trie_op_ptr = j;
@@ -1467,10 +1491,10 @@ unsafe fn load_fmt_file_in(
     let fmt_hyf_distance = st.hyph.hyf_distance.as_mut_ptr();
     let fmt_hyf_num = st.hyph.hyf_num.as_mut_ptr();
     let fmt_hyf_next = st.hyph.hyf_next.as_mut_ptr();
-    undump_slice(fmt_in, fmt_hyf_distance.add(1), j);
-    undump_slice(fmt_in, fmt_hyf_num.add(1), j);
-    if !undump_upper_u16(fmt_in, fmt_hyf_next.add(1), j, MAX_TRIE_OP) {
-        return Err(c"fatal format file error".as_ptr());
+    undump_slice(fmt_in, fmt_hyf_distance.add(1), j)?;
+    undump_slice(fmt_in, fmt_hyf_num.add(1), j)?;
+    if !undump_upper_u16(fmt_in, fmt_hyf_next.add(1), j, MAX_TRIE_OP)? {
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
 
     for lang in 0..=BIGGEST_LANG as usize {
@@ -1479,15 +1503,15 @@ unsafe fn load_fmt_file_in(
 
     k = BIGGEST_LANG + 1;
     while j > 0 {
-        x = undump_int(fmt_in);
+        x = undump_int(fmt_in)?;
         if x < 0 || x > k - 1 {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
         k = x;
 
-        x = undump_int(fmt_in);
+        x = undump_int(fmt_in)?;
         if x < 1 || x > j {
-            return Err(c"fatal format file error".as_ptr());
+            return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
         }
         st.hyph.trie_used[k as usize] = x as u16;
         j -= x;
@@ -1496,9 +1520,9 @@ unsafe fn load_fmt_file_in(
 
     st.hyph.trie_not_ready = false;
 
-    x = undump_int(fmt_in);
+    x = undump_int(fmt_in)?;
     if x != FORMAT_FOOTER_MAGIC {
-        return Err(c"fatal format file error".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
 
     ttstub_input_close(fmt_in);
