@@ -1320,11 +1320,11 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
         if v == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        let w = {
-            st.mem.set_b16s1(v, NodeType::VList.as_raw());
-            let v_box = classify_box_or_panic(&st.mem, v);
-            make_op_prepare_limits_box(&mut st.mem, v_box, x, y, z)
-        };
+        st.mem.set_b16s1(v, NodeType::VList.as_raw());
+        // Classify the wrapper vbox once; the handle is `Copy` and holds no
+        // borrow, so it stays valid across the `rebox_in` calls below.
+        let v_box = classify_box_or_panic(&st.mem, v);
+        let w = make_op_prepare_limits_box(&mut st.mem, v_box, x, y, z);
 
         x = rebox_in(st, x, w)?;
         y = rebox_in(st, y, w)?;
@@ -1338,7 +1338,6 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
             bos4: big_op_spacing4(&st.fonts, &st.eqtb, size),
             bos5: big_op_spacing5(&st.fonts, &st.eqtb, size),
         };
-        let v_box = classify_box_or_panic(&st.mem, v);
         make_op_finish_limits(
             &mut st.mem,
             &mut st.scanner,
@@ -1817,8 +1816,9 @@ unsafe fn make_math_accent_in(
     let needs_reclean = accent_base_needs_reclean(&st.mem, q);
     if needs_reclean {
         move_accent_base_scripts_to_mlist(&mut st.mem, q, x)?;
-        x = clean_box_in(st, q_raw + 1, st.scanner.cur_style)?.idx().0;
-        let new_h = classify_box_or_panic(&st.mem, x).height(&st.mem).0;
+        let xb = clean_box_in(st, q_raw + 1, st.scanner.cur_style)?;
+        let new_h = xb.height(&st.mem).0;
+        x = xb.idx().0;
         delta += new_h - h;
         h = new_h;
     }
@@ -1826,8 +1826,7 @@ unsafe fn make_math_accent_in(
     let y = char_box_in(st, f, c)?;
     let mut p: i32;
     if initial.area == AAT_FONT_FLAG || initial.area == OTGR_FONT_FLAG {
-        let y_box = y;
-        let glyph = start_native_accent_glyph(&mut st.mem, y_box, f)?;
+        let glyph = start_native_accent_glyph(&mut st.mem, y, f)?;
         let glyph_id = {
             let addr = node_addr_in(st, glyph.old_node);
             real_get_native_glyph(addr, 0)
@@ -1838,8 +1837,7 @@ unsafe fn make_math_accent_in(
             let addr = node_addr_in(st, p);
             crate::ext::measure_native_glyph(&st.fonts, addr, 1);
         }
-        let y_box = y;
-        finish_native_accent_glyph_start(&mut st.mem, y_box, glyph);
+        finish_native_accent_glyph_start(&mut st.mem, y, glyph);
         if !initial.kind.is_multiple_of(2) {
             let addr = node_addr_in(st, p);
             crate::ext::measure_native_glyph(&st.fonts, addr, 1);
@@ -1903,31 +1901,26 @@ unsafe fn make_math_accent_in(
             y_box.set_shift_amount(&mut st.mem, Scaled(s - sa));
         }
     } else {
-        let y_box = y;
-        let shift = s + crate::scaled_math::half(w - y_box.width(&st.mem).0);
-        set_accent_char_box_shift(&mut st.mem, y_box, shift);
+        let shift = s + crate::scaled_math::half(w - y.width(&st.mem).0);
+        set_accent_char_box_shift(&mut st.mem, y, shift);
         p = TEX_NULL;
     }
     let _ = p;
 
-    let y_box = y;
-    zero_box_width(&mut st.mem, y_box);
+    // `x` was proven non-null at the top guard; classify it once here and reuse
+    // the handle across both accent-stacking branches.
+    let x_box = classify_box_or_panic(&st.mem, x);
+    zero_box_width(&mut st.mem, y);
     if bottom_accent {
-        let x_box = classify_box_or_panic(&st.mem, x);
-        let y_box = y;
-        link_bottom_accent_stack(&mut st.mem, x_box, y_box);
+        link_bottom_accent_stack(&mut st.mem, x_box, y);
         let y_box = crate::packaging::vpackage_emit_in(st, x, 0, ADDITIONAL, MAX_HALFWORD)?;
-        let x_box = classify_box_or_panic(&st.mem, x);
         let y_height = y_box.height(&st.mem).0;
         y_box.set_shift_amount(&mut st.mem, Scaled(-(h - y_height)));
         finish_accent_nucleus(&mut st.mem, q, x_box, y_box);
     } else {
-        let x_box = classify_box_or_panic(&st.mem, x);
-        let y_box = y;
-        start_top_accent_stack(&mut st.mem, x_box, y_box, delta)?;
+        start_top_accent_stack(&mut st.mem, x_box, y, delta)?;
         let y_box = crate::packaging::vpackage_emit_in(st, y.idx().0, 0, ADDITIONAL, MAX_HALFWORD)?;
         finish_top_accent_package(&mut st.mem, y_box, h)?;
-        let x_box = classify_box_or_panic(&st.mem, x);
         finish_accent_nucleus(&mut st.mem, q, x_box, y_box);
     }
 

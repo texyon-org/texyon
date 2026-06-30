@@ -8,6 +8,53 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 237 — 2026-06-30 — Execution: type the box-creator RETURNS (packaging core + math delimiter/char builders)
+
+**Type:** execution (workstream 01 / typing — *propagation*). Big mechanical
+session, three commits, each dashboard + full-corpus validated. Mid-session
+review feedback corrected the approach and is now in memory
+([[propagate-typed-returns-not-idx0]]): `from_idx_unchecked(MemIdx::new(x))` is
+an anti-pattern (re-deriving a handle that already exists) and blanket `.idx().0`
+at consumers defeats propagation — `.idx().0` is kept *only* at justified `i32`
+boundaries (i32 state fields, child/link stores via `MemPtr::from_idx`, nodes
+about to be re-typed, `i32`-only callees).
+
+**Commit 1 (`cfc8013b`) — packaging core returns `AnyBox`.**
+`hpack_emit_in`/`vpackage_emit_in` now return `AnyBox`. `PackOutcome` carries the
+classified `NodePtr` handle that `hpack_in`/`vpackage_in` already build (field
+`r_box: AnyBox`), so the emit boundary returns it verbatim — no
+`from_idx_unchecked` re-wrap. The over/underfull diag printers + common-endings
+take `AnyBox` (dropping their internal classify). ~38 callers across
+math/main_control/linebreak/pagebuilder updated: re-classifications collapse to
+the carried handle; consumers use typed accessors; `.idx().0` only at i32
+boundaries. Added `MemPtr::from_idx(MemIdx)` for the handle→pointer-field store
+idiom. `post_line_break_suffix` now takes `AnyBox`. math.rs
+`classify_box_or_panic` 40→32.
+
+**Commit 2 (`799c5984`) — math delimiter/char builders return `AnyBox`.**
+`char_box_in`, `native_glyph_vbox_in`, `build_ext_delimiter_box`,
+`build_opentype_assembly_in` now return `AnyBox` (classify once at their
+hpack/vpack/arena creation site). `var_delimiter_in`'s internal `b` is typed
+end-to-end so its final classify is gone; `make_math_accent`'s `y` carries the
+`char_box_in` handle (7 re-classifications removed). 32→25.
+
+**Commit 3 — collapse same-box re-classifications.** Hoisted one box handle in
+`make_op` (`v`) and `make_math_accent` (`x_box` once after the non-null guard;
+the reclean block reads height off the `clean_box_in` handle), and removed the
+`let y_box = y;` rebind artifacts. 25→20.
+
+**Validation:** `cargo fmt`; `cargo check` **37** warnings (held) per commit;
+dashboard **29/2/7/4** per commit; release rebuild; full corpus **637 passed / 2
+diverged / 0 missing-golden**, only known `1905.00073v1`/`1905.00148v1`, per
+commit. `with_state`/`unsafe fn` unchanged (pure typing).
+
+**Next:** typed state fields (`st.scanner.just_box`/`cur_box`) would retire the
+remaining main_control/linebreak `.idx().0` at field stores. The 20 residual
+math.rs `classify_box_or_panic` are genuine creation boundaries (clean_box
+single-box, rebox/char_box/build_* returns, opentype-assembly measure) or
+nullable/re-typed raw locals (`after_math` `a`/`b`, alignment `just_box`/`j`) —
+leave them.
+
 ## Idiom session 236 — 2026-06-30 — Execution: typed field-read sweep (8 files) + first AnyBox return-propagation
 
 **Type:** execution (workstream 01 / typing). Very large mechanical session, then
