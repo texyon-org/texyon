@@ -42,6 +42,10 @@ extern "C" {
 
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn _tt_abort(fmt: *const libc::c_char) -> !;
+    /// Set the bridge's abort message without longjmp-ing, so the host's
+    /// `EngineAbortedError` surfaces the same string a `_tt_abort` would have
+    /// (the fatal return path bypasses `_tt_abort`). See `01d` §1.
+    fn _ttbc_set_error_message(message: *const libc::c_char);
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +240,9 @@ impl EngineAbort {
     /// Print + clean the abort and return `HISTORY_FATAL_ERROR` (3) **without**
     /// longjmp-ing. Call only *after* the state borrow has dropped (it re-enters
     /// `with_state` through the print subtree). Observationally identical to the
-    /// matching longjmp, which also makes the C wrapper return 3 (`01d` §1).
+    /// matching longjmp: same prints, same cleanup, the C wrapper returns 3, and
+    /// the bridge's surfaced message is set to the same string `_tt_abort` would
+    /// have written (`01d` §1).
     pub(crate) unsafe fn into_history(self) -> i32 {
         match self {
             // The print + cleanup half of `overflow` (everything bar `_tt_abort`).
@@ -251,6 +257,7 @@ impl EngineAbort {
                 set_help_line(1, c"If you really absolutely need more capacity,".as_ptr());
                 set_help_line(0, c"you can ask a wizard to enlarge me.".as_ptr());
                 post_error_message(true);
+                _ttbc_set_error_message(c"halted on overflow()".as_ptr());
             }
             // The print + cleanup half of `confusion`.
             EngineAbort::Confusion(s) => {
@@ -277,10 +284,11 @@ impl EngineAbort {
                     );
                 }
                 post_error_message(true);
+                _ttbc_set_error_message(c"halted on confusion()".as_ptr());
             }
-            // `_tt_abort` prints nothing and runs no cleanup; matches the
-            // existing `return history()` early exits in `tt_run_engine`.
-            EngineAbort::TtAbort(_msg) => {}
+            // `_tt_abort(msg)` prints nothing and runs no cleanup; it only writes
+            // `msg` to the bridge's surfaced message — mirror exactly that.
+            EngineAbort::TtAbort(msg) => _ttbc_set_error_message(msg),
         }
         HISTORY_FATAL_ERROR
     }

@@ -46,14 +46,22 @@ Verified:
   (`overflow`/`confusion`/`fatal_error`/`pdf_error`/direct `_tt_abort`) jumps;
   `error_in` returns `ErrorOutcome` and only its `Halt`/`Hundred` arms abort.
 
-**Behavior-preservation invariant.** The outer Rust caller
-(`lib.rs:267`) maps the C return purely by value: `0/1/2 → Ok(...)`,
-`3 → Err(EngineAbortedError::new_abort_indicator())`. The `_tt_abort` *message*
-(`format_buf`) is **not** surfaced — user-facing diagnostics come entirely from
-the log printing done *before* the jump (`pre_/post_error_message`). Therefore
+**Behavior-preservation invariant.** The outer Rust caller (`lib.rs:267`) maps
+the C return by value: `0/1/2 → Ok(...)`, `3 →
+Err(EngineAbortedError::new_abort_indicator())`. **Caveat (corrects an earlier
+draft):** the abort message string *is* surfaced — `bridge_core`'s
+`with_global_lock` (`lib.rs:320`) detects the `EngineAbortedError` and replaces
+it with `new_with_details()`, which reads the C `format_buf` via
+`_ttbc_get_error_message()`. `_tt_abort(msg)` writes `format_buf`; the
+`Result`-return path bypasses `_tt_abort`, so it **must** write the same string
+itself via `_ttbc_set_error_message(msg)` (added to `bridge_core/support.c`,
+called from `EngineAbort::into_history` — `"halted on overflow()"` /
+`"halted on confusion()"` / the `TtAbort` `msg`). With that,
 **returning `HISTORY_FATAL_ERROR` (3) from `tt_run_engine` is observationally
-identical to longjmp-ing**, provided the same printing + cleanup ran first. This
-is the entire correctness basis for the conversion.
+identical to longjmp-ing** — same log printing, same cleanup, same C return,
+same surfaced message. This is the correctness basis for the conversion. (The
+log/terminal diagnostics from `pre_/post_error_message` are unchanged regardless;
+the surfaced-string fidelity is the part that needs `_ttbc_set_error_message`.)
 
 ## 2. The corrected lever — the bridge_core I/O tail (key finding)
 

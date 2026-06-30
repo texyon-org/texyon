@@ -113,6 +113,18 @@ _ttbc_get_error_message(void)
 }
 
 
+/* Set the abort message without aborting. An engine that reports a fatal
+ * condition by returning HISTORY_FATAL_ERROR up to its caller (bypassing the
+ * setjmp/longjmp that _tt_abort would trigger) calls this so that
+ * _ttbc_get_error_message() still surfaces the same string a _tt_abort() would
+ * have written. */
+void
+_ttbc_set_error_message(const char *message)
+{
+    snprintf(format_buf, BUF_SIZE, "%s", message);
+}
+
+
 ttbc_state_t *
 _ttbc_get_core_state(void)
 {
