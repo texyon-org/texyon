@@ -2767,7 +2767,12 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
     set_cur_list_mode(old_mode);
     crate::input::end_token_list_in(st)?;
     let old_setting = st.shipout.selector;
-    let j = st.mem.b32s0(p + 1);
+    let w = st
+        .mem
+        .classify_whatsit(MemIdx::new(p))
+        .expect("valid whatsit")
+        .expect("write whatsit");
+    let j = w.write_stream(&st.mem);
 
     if j == 18 {
         st.shipout.selector = SELECTOR_NEW_STRING;
@@ -2908,7 +2913,12 @@ pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<
     match st.mem.b16s0(p) {
         OPEN_NODE | WRITE_NODE | CLOSE_NODE => {
             if !st.shipout.doing_leaders {
-                let j = st.mem.b32s0(p + 1);
+                let w = st
+                    .mem
+                    .classify_whatsit(MemIdx::new(p))
+                    .expect("valid whatsit")
+                    .expect("open/write/close whatsit");
+                let j = w.write_stream(&st.mem);
                 if st.mem.b16s0(p) == WRITE_NODE {
                     write_out_in(st, p)?;
                     return Ok(());
@@ -2923,9 +2933,9 @@ pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<
                 }
                 // OPEN_NODE
                 if j < 16 {
-                    st.scanner.cur_name = st.mem.b32s1(p + 1);
-                    st.scanner.cur_area = st.mem.b32s0(p + 2);
-                    st.scanner.cur_ext = st.mem.b32s1(p + 2);
+                    st.scanner.cur_name = w.open_name(&st.mem);
+                    st.scanner.cur_area = w.open_area(&st.mem);
+                    st.scanner.cur_ext = w.open_ext(&st.mem);
                     if crate::string_pool::length(&st.strings, st.scanner.cur_ext) == 0 {
                         // SAFETY: FFI string interning; deferred overflow tail.
                         st.scanner.cur_ext = unsafe {
