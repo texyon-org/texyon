@@ -8,7 +8,7 @@ use crate::globals::{
 use crate::globals::{
     cur_cmd, cur_cs, cur_input, init_pool_ptr, pool_size, selector, set_cur_cs,
     set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
-    set_eqtb_b32s1, set_first, set_line, set_selector, texmf_log_name, write_open,
+    set_eqtb_b32s1, set_first, set_line, set_selector,
 };
 use crate::input::InputAbort;
 use crate::output::capture_to_diagnostic;
@@ -1398,11 +1398,13 @@ pub(crate) unsafe fn pack_file_name_in(st: &mut crate::state::EngineState, n: i3
 }
 /// translated from xetex-xetex0.c:9722 (close_files_and_terminate)
 pub unsafe fn close_files_and_terminate() {
-    use crate::globals::{log_file, log_opened, write_file};
+    use crate::globals::log_opened;
 
     for k in 0usize..=15 {
-        if write_open(k) {
-            ttstub_output_close(write_file(k));
+        let (open, file) =
+            crate::state::with_state(|s| (s.shipout.write_open[k], s.shipout.write_file[k]));
+        if open {
+            ttstub_output_close(file);
         }
     }
 
@@ -1413,12 +1415,14 @@ pub unsafe fn close_files_and_terminate() {
     crate::state::with_state_mut(|st| crate::synctex::synctex_terminate(st, log_was_opened));
 
     if log_opened() {
-        ttstub_output_putc(log_file(), b'\n' as i32);
-        ttstub_output_close(log_file());
+        let log_file = crate::state::with_state(|s| s.shipout.log_file);
+        ttstub_output_putc(log_file, b'\n' as i32);
+        ttstub_output_close(log_file);
         set_selector(selector() - 2);
         if selector() == SELECTOR_TERM_ONLY {
+            let texmf_log_name = crate::state::with_state(|s| s.strings.texmf_log_name);
             crate::output::print_nl_cstr(c"Transcript written on ".as_ptr());
-            crate::output::print(texmf_log_name());
+            crate::output::print(texmf_log_name);
             crate::output::print_char(b'.' as i32);
         }
     }

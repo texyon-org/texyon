@@ -682,24 +682,6 @@ pub(crate) fn set_rust_stdout(v: usize) {
     });
 }
 
-/// Returns the `log_file` output handle.
-#[inline]
-pub(crate) fn log_file() -> usize {
-    crate::state::with_state(|s| s.shipout.log_file)
-}
-
-/// Returns `write_file[i]`, the output handle for write-stream `i` (0–15).
-#[inline]
-pub(crate) fn write_file(i: usize) -> usize {
-    crate::state::with_state(|s| s.shipout.write_file[i])
-}
-
-/// Returns `write_open[i]`, whether write-stream `i` is open (xetex-xetexd.h:692).
-#[inline]
-pub(crate) fn write_open(i: usize) -> bool {
-    crate::state::with_state(|s| s.shipout.write_open[i])
-}
-
 // ---------------------------------------------------------------------------
 // print_raw_char globals
 // ---------------------------------------------------------------------------
@@ -866,10 +848,6 @@ pub(crate) fn set_job_name(v: i32) {
     crate::state::with_state_mut(|state| {
         state.strings.job_name = v;
     });
-}
-#[inline]
-pub(crate) fn texmf_log_name() -> i32 {
-    crate::state::with_state(|state| state.strings.texmf_log_name)
 }
 
 // ---------------------------------------------------------------------------
