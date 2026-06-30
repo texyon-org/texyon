@@ -187,13 +187,7 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
 ///
 /// translated from xetex-errors.c:98 (fatal_error)
 pub unsafe fn fatal_error(s: *const libc::c_char) {
-    pre_error_message();
-    print_cstr(c"Emergency stop".as_ptr());
-    print_nl_cstr(s);
-    capture_to_diagnostic(std::ptr::null_mut());
-    close_files_and_terminate();
-    tt_cleanup();
-    ttstub_output_flush(rust_stdout());
+    EngineAbort::Fatal(s).into_history();
     _tt_abort(s);
 }
 
@@ -231,8 +225,15 @@ pub(crate) enum EngineAbort {
     Overflow { what: *const libc::c_char, n: i32 },
     /// `confusion(s)` — internal consistency failure ("This can't happen").
     Confusion(*const libc::c_char),
-    /// `_tt_abort(msg)` — direct longjmp with no user-facing print (`msg` lands in
-    /// `format_buf`, which the outer caller does not surface — `01d` §1).
+    /// `fatal_error(s)` — "Emergency stop" + `s` (its own inline cleanup, not
+    /// `post_error_message`).
+    Fatal(*const libc::c_char),
+    /// `pdf_error(t, p)` — "Error (t): p".
+    PdfError {
+        t: *const libc::c_char,
+        p: *const libc::c_char,
+    },
+    /// `_tt_abort(msg)` — direct longjmp; `msg` is the surfaced abort message.
     TtAbort(*const libc::c_char),
 }
 
@@ -285,6 +286,32 @@ impl EngineAbort {
                 }
                 post_error_message(true);
                 _ttbc_set_error_message(c"halted on confusion()".as_ptr());
+            }
+            // The print + cleanup half of `fatal_error` (its own inline cleanup,
+            // not `post_error_message`); `_tt_abort(s)` surfaced `s`.
+            EngineAbort::Fatal(s) => {
+                pre_error_message();
+                print_cstr(c"Emergency stop".as_ptr());
+                print_nl_cstr(s);
+                capture_to_diagnostic(std::ptr::null_mut());
+                close_files_and_terminate();
+                tt_cleanup();
+                ttstub_output_flush(rust_stdout());
+                _ttbc_set_error_message(s);
+            }
+            // The print + cleanup half of `pdf_error`.
+            EngineAbort::PdfError { t, p } => {
+                pre_error_message();
+                print_cstr(c"Error".as_ptr());
+                if !t.is_null() {
+                    print_cstr(c" (".as_ptr());
+                    print_cstr(t);
+                    print_char(b')' as i32);
+                }
+                print_cstr(c": ".as_ptr());
+                print_cstr(p);
+                post_error_message(true);
+                _ttbc_set_error_message(c"halted on pdf_error()".as_ptr());
             }
             // `_tt_abort(msg)` prints nothing and runs no cleanup; it only writes
             // `msg` to the bridge's surfaced message — mirror exactly that.
@@ -344,16 +371,7 @@ pub(crate) fn not_font_error_common_in(
 
 /// translated from xetex-errors.c:157 (pdf_error)
 pub unsafe fn pdf_error(t: *const libc::c_char, p: *const libc::c_char) -> ! {
-    pre_error_message();
-    print_cstr(c"Error".as_ptr());
-    if !t.is_null() {
-        print_cstr(c" (".as_ptr());
-        print_cstr(t);
-        print_char(b')' as i32);
-    }
-    print_cstr(c": ".as_ptr());
-    print_cstr(p);
-    post_error_message(true);
+    EngineAbort::PdfError { t, p }.into_history();
     _tt_abort(c"halted on pdf_error()".as_ptr())
 }
 
