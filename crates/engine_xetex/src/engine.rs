@@ -216,21 +216,35 @@ impl From<crate::hash::HashLookupError> for PrimitiveInitAbort {
     }
 }
 
-unsafe fn fire_primitive_init_abort(e: PrimitiveInitAbort) -> ! {
-    match e {
-        PrimitiveInitAbort::MakeTexString(e) => crate::texmfmp::fire_make_tex_string(e),
-        PrimitiveInitAbort::HashLookup(e) => {
-            use crate::hash::HashLookupError::*;
-            let (what, limit) = match e {
-                HashSizeOverflow(n) => (c"hash size".as_ptr(), n),
-                PoolSizeOverflow(n) => (c"pool size".as_ptr(), n),
-                StringNumberOverflow(n) => (c"number of strings".as_ptr(), n),
-                PrimitiveSizeOverflow(n) => (c"primitive size".as_ptr(), n),
-            };
-            crate::errors::overflow(what, limit)
-        }
-        PrimitiveInitAbort::BufferSize(limit) => {
-            crate::errors::overflow(c"buffer size".as_ptr(), limit)
+impl PrimitiveInitAbort {
+    /// Fold this init-time sentinel into the unified terminal [`EngineAbort`].
+    /// `tt_run_engine` catches it and returns `into_history()` (no longjmp).
+    fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        use crate::errors::EngineAbort;
+        match self {
+            PrimitiveInitAbort::MakeTexString(e) => match e {
+                crate::texmfmp::MakeTexStringAbort::PoolOverflow => {
+                    EngineAbort::TtAbort(c"string pool overflow".as_ptr())
+                }
+                crate::texmfmp::MakeTexStringAbort::StringOverflow => EngineAbort::Overflow {
+                    what: c"number of strings".as_ptr(),
+                    n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
+                },
+            },
+            PrimitiveInitAbort::HashLookup(e) => {
+                use crate::hash::HashLookupError::*;
+                let (what, n) = match e {
+                    HashSizeOverflow(n) => (c"hash size".as_ptr(), n),
+                    PoolSizeOverflow(n) => (c"pool size".as_ptr(), n),
+                    StringNumberOverflow(n) => (c"number of strings".as_ptr(), n),
+                    PrimitiveSizeOverflow(n) => (c"primitive size".as_ptr(), n),
+                };
+                EngineAbort::Overflow { what, n }
+            }
+            PrimitiveInitAbort::BufferSize(limit) => EngineAbort::Overflow {
+                what: c"buffer size".as_ptr(),
+                n: limit,
+            },
         }
     }
 }
@@ -1193,7 +1207,9 @@ pub unsafe extern "C" fn tt_run_engine(
             c"failed internal consistency check #%d".as_ptr(),
             tre_bad,
         );
-        _tt_abort(msg.as_ptr());
+        // Consistency check failed: terminate with HISTORY_FATAL_ERROR (the
+        // setjmp longjmp's observable result), no longjmp (`01d` §5).
+        return crate::errors::EngineAbort::TtAbort(msg.as_ptr()).into_history();
     }
 
     crate::state::with_state_mut(initialize_more_variables_in);
@@ -1203,7 +1219,7 @@ pub unsafe extern "C" fn tt_run_engine(
         crate::state::with_state_mut(|st| initialize_more_initex_variables_in(st, format_ident));
         let result = crate::state::with_state_mut(|st| initialize_primitives(st));
         if let Err(e) = result {
-            fire_primitive_init_abort(e);
+            return e.into_engine_abort().into_history();
         }
         crate::state::with_state_mut(|state| {
             state.strings.init_str_ptr = state.strings.str_ptr;

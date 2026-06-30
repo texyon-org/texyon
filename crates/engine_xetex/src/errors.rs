@@ -201,17 +201,61 @@ pub unsafe fn fatal_error(s: *const libc::c_char) {
 ///
 /// translated from xetex-errors.c:113 (overflow)
 pub unsafe fn overflow(s: *const libc::c_char, n: i32) -> ! {
-    pre_error_message();
-    print_cstr(c"TeX capacity exceeded, sorry [".as_ptr());
-    print_cstr(s);
-    print_char(b'=' as i32);
-    print_int(n);
-    print_char(b']' as i32);
-    set_help_ptr(2);
-    set_help_line(1, c"If you really absolutely need more capacity,".as_ptr());
-    set_help_line(0, c"you can ask a wizard to enlarge me.".as_ptr());
-    post_error_message(true);
+    // Print + cleanup through the shared terminal, then the longjmp the setjmp
+    // backstop still catches for unconverted callers (`01d` §4).
+    EngineAbort::Overflow { what: s, n }.into_history();
     _tt_abort(c"halted on overflow()".as_ptr())
+}
+
+// ---------------------------------------------------------------------------
+// EngineAbort — the unified terminal abort (plan/idiom/01d-engine-abort-and-setjmp.md)
+// ---------------------------------------------------------------------------
+
+/// The unified terminal abort cause. Every scattered `*Abort` sentinel reduces
+/// to one of these (see `01d` §3). Consumed two ways:
+///
+/// - [`into_history`](EngineAbort::into_history) — prints + cleans **without** the
+///   `_tt_abort` longjmp and returns `HISTORY_FATAL_ERROR`, for `Result` catch
+///   points that propagate the abort up to `tt_run_engine`'s `i32` return.
+/// - (future) `fire(self) -> !` — the single longjmp dispatcher, used by the
+///   leaf wrappers not yet converted to propagate, plus the setjmp backstop.
+///
+/// Variants are added as each subsystem converts to propagate
+/// `Result<_, EngineAbort>`; today only the `tt_run_engine` init paths use it.
+pub(crate) enum EngineAbort {
+    /// `overflow(what, n)` — TeX capacity exceeded.
+    Overflow { what: *const libc::c_char, n: i32 },
+    /// `_tt_abort(msg)` — direct longjmp with no user-facing print (`msg` lands in
+    /// `format_buf`, which the outer caller does not surface — `01d` §1).
+    TtAbort(*const libc::c_char),
+}
+
+impl EngineAbort {
+    /// Print + clean the abort and return `HISTORY_FATAL_ERROR` (3) **without**
+    /// longjmp-ing. Call only *after* the state borrow has dropped (it re-enters
+    /// `with_state` through the print subtree). Observationally identical to the
+    /// matching longjmp, which also makes the C wrapper return 3 (`01d` §1).
+    pub(crate) unsafe fn into_history(self) -> i32 {
+        match self {
+            // The print + cleanup half of `overflow` (everything bar `_tt_abort`).
+            EngineAbort::Overflow { what, n } => {
+                pre_error_message();
+                print_cstr(c"TeX capacity exceeded, sorry [".as_ptr());
+                print_cstr(what);
+                print_char(b'=' as i32);
+                print_int(n);
+                print_char(b']' as i32);
+                set_help_ptr(2);
+                set_help_line(1, c"If you really absolutely need more capacity,".as_ptr());
+                set_help_line(0, c"you can ask a wizard to enlarge me.".as_ptr());
+                post_error_message(true);
+            }
+            // `_tt_abort` prints nothing and runs no cleanup; matches the
+            // existing `return history()` early exits in `tt_run_engine`.
+            EngineAbort::TtAbort(_msg) => {}
+        }
+        HISTORY_FATAL_ERROR
+    }
 }
 
 // ---------------------------------------------------------------------------
