@@ -320,7 +320,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         let head = st.mem.b32s1(ALIGN_HEAD);
         let w = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
         let m = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
-        let pp = crate::packaging::hpack_emit_in(st, head, w, m)?.idx().0;
+        let pp = crate::packaging::hpack_emit_in(st, head, w, m)?;
         st.eqtb
             .set_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE, rule_save);
         pp
@@ -338,9 +338,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         let head = st.mem.b32s1(ALIGN_HEAD);
         let w = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
         let m = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
-        let pp = crate::packaging::vpackage_emit_in(st, head, w, m, MAX_HALFWORD)?
-            .idx()
-            .0;
+        let pp = crate::packaging::vpackage_emit_in(st, head, w, m, MAX_HALFWORD)?;
         qq = st.mem.b32s1(st.mem.b32s1(ALIGN_HEAD));
         loop {
             st.mem.set_b32s1(qq + 1, st.mem.b32s1(qq + 3));
@@ -364,22 +362,22 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                 // §836: set this row/column to its final type and dimensions
                 if cur_list_mode() == INNER_VMODE {
                     st.mem.set_b16s1(q, HLIST_NODE);
-                    st.mem.set_b32s1(q + 1, st.mem.b32s1(p + 1));
+                    st.mem.set_b32s1(q + 1, p.width(&st.mem).0);
                     if st.input.nest[(st.input.nest_ptr - 1) as usize].mode == MMODE {
                         st.mem.set_b16s0(q, DLIST);
                     }
                 } else {
                     st.mem.set_b16s1(q, VLIST_NODE);
-                    st.mem.set_b32s1(q + 3, st.mem.b32s1(p + 3));
+                    st.mem.set_b32s1(q + 3, p.height(&st.mem).0);
                 }
-                st.mem.set_b16s0(q + 5, st.mem.b16s0(p + 5));
-                st.mem.set_b16s1(q + 5, st.mem.b16s1(p + 5));
-                st.mem.set_gr(q + 6, st.mem.gr(p + 6));
+                st.mem.set_b16s0(q + 5, p.glue_order(&st.mem));
+                st.mem.set_b16s1(q + 5, p.glue_sign(&st.mem));
+                st.mem.set_gr(q + 6, p.glue_set(&st.mem));
                 st.mem.set_b32s1(q + 4, o);
 
                 // Walk the column UNSET_NODEs inside this row
                 let mut r = st.mem.b32s1(st.mem.b32s1(q + 5));
-                let mut ss = st.mem.b32s1(st.mem.b32s1(p + 5));
+                let mut ss = st.mem.b32s1(p.list_ptr(&st.mem).0);
                 loop {
                     // §837: for each column unset node r, distribute glue
                     let n = st.mem.b16s0(r);
@@ -401,17 +399,17 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                         u = st.mem.b32s1(u);
                         st.mem.set_b16s0(u, GLUE_PAR_TAB_SKIP);
                         t += st.mem.b32s1(v + 1);
-                        if st.mem.b16s1(p + 5) == STRETCHING {
-                            if st.mem.b16s1(v) == st.mem.b16s0(p + 5) {
+                        if p.glue_sign(&st.mem) == STRETCHING {
+                            if st.mem.b16s1(v) == p.glue_order(&st.mem) {
                                 t += crate::scaled_math::tex_round(
-                                    st.mem.gr(p + 6) * st.mem.b32s1(v + 2) as f64,
+                                    p.glue_set(&st.mem) * st.mem.b32s1(v + 2) as f64,
                                 );
                             }
-                        } else if st.mem.b16s1(p + 5) == SHRINKING
-                            && st.mem.b16s0(v) == st.mem.b16s0(p + 5)
+                        } else if p.glue_sign(&st.mem) == SHRINKING
+                            && st.mem.b16s0(v) == p.glue_order(&st.mem)
                         {
                             t -= crate::scaled_math::tex_round(
-                                st.mem.gr(p + 6) * st.mem.b32s1(v + 3) as f64,
+                                p.glue_set(&st.mem) * st.mem.b32s1(v + 3) as f64,
                             );
                         }
                         ss = st.mem.b32s1(ss);
@@ -518,13 +516,13 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
             } else if st.mem.b16s1(q) == RULE_NODE {
                 // §835: rule node — fill in any NULL_FLAG dimensions from the packed box
                 if st.mem.b32s1(q + 1) == NULL_FLAG {
-                    st.mem.set_b32s1(q + 1, st.mem.b32s1(p + 1));
+                    st.mem.set_b32s1(q + 1, p.width(&st.mem).0);
                 }
                 if st.mem.b32s1(q + 3) == NULL_FLAG {
-                    st.mem.set_b32s1(q + 3, st.mem.b32s1(p + 3));
+                    st.mem.set_b32s1(q + 3, p.height(&st.mem).0);
                 }
                 if st.mem.b32s1(q + 2) == NULL_FLAG {
-                    st.mem.set_b32s1(q + 2, st.mem.b32s1(p + 2));
+                    st.mem.set_b32s1(q + 2, p.depth(&st.mem).0);
                 }
                 if o != 0 {
                     let r = st.mem.b32s1(q);
@@ -543,7 +541,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         q = st.mem.b32s1(q);
     }
 
-    flush_node_list(&mut st.mem, p).map_err(MainControlAbort::Confusion)?;
+    flush_node_list(&mut st.mem, p.idx().0).map_err(MainControlAbort::Confusion)?;
     pop_alignment_in(st);
 
     // Save aux and pop nest to get back to the outer list
