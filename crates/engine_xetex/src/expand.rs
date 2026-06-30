@@ -97,8 +97,9 @@ extern "C" {
 // Stubs first (manifest §d step 1); bodies translated from the global versions.
 // ---------------------------------------------------------------------------
 
+use crate::node::{NodePtr, SaNode};
 use crate::scan::SccAbort;
-use crate::units::MemIdx;
+use crate::units::{MemIdx, MemPtr};
 
 pub(crate) fn ins_the_toks_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let v = crate::scan::the_toks_in(st)?;
@@ -249,7 +250,10 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                 if cur_ptr() == TEX_NULL {
                     TEX_NULL
                 } else {
-                    st.mem.b32s1(cur_ptr() + 1)
+                    NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(cur_ptr()))
+                        .expect("non-null sa element")
+                        .sa_ptr(&st.mem)
+                        .0
                 }
             };
             b = if this_if == IF_VOID_CODE {
@@ -640,7 +644,10 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 if cur_ptr() == TEX_NULL {
                     p = TEX_NULL;
                 } else {
-                    p = st.mem.b32s1(cur_ptr() + 1);
+                    p = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(cur_ptr()))
+                        .expect("non-null sa element")
+                        .sa_ptr(&st.mem)
+                        .0;
                 }
             }
             if p == TEX_NULL || st.mem.b16s1(p) != HLIST_NODE {
@@ -1304,11 +1311,9 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                             false,
                         );
                         if cur_ptr() != crate::mem::TEX_NULL {
-                            if !t.is_multiple_of(2) {
-                                set_cur_ptr(st.mem.b32s1(cur_ptr() + (t as i32 / 2) + 1));
-                            } else {
-                                set_cur_ptr(st.mem.b32s0(cur_ptr() + (t as i32 / 2) + 1));
-                            }
+                            let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(cur_ptr()))
+                                .expect("non-null sa element");
+                            set_cur_ptr(sa.child(&st.mem, t as i32).0);
                         }
                     }
                     if cur_ptr() != crate::mem::TEX_NULL {
