@@ -433,7 +433,7 @@ pub unsafe fn final_cleanup() -> Result<(), crate::errors::EngineAbort> {
                 // backstopped by the C setjmp until its slice converts.
                 return Err(crate::errors::EngineAbort::Confusion(msg.as_ptr()));
             }
-            store_fmt_file();
+            store_fmt_file()?;
             return Ok(());
         }
         crate::output::print_nl_cstr(c"(\\dump is performed only by INITEX)".as_ptr());

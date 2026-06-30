@@ -84,7 +84,12 @@ const PC_INT_BASE: i32 = 7_826_729;
 // ---- moved verbatim from ini.rs (workstream 02) ----
 
 #[inline]
-unsafe fn dump_bytes(fmt_out: usize, ptr: *const u8, item_size: usize, nitems: usize) {
+unsafe fn dump_bytes(
+    fmt_out: usize,
+    ptr: *const u8,
+    item_size: usize,
+    nitems: usize,
+) -> Result<(), crate::errors::EngineAbort> {
     let byte_len = item_size * nitems;
     let written = if cfg!(target_endian = "little") && item_size > 1 {
         let mut bytes = std::slice::from_raw_parts(ptr, byte_len).to_vec();
@@ -97,31 +102,41 @@ unsafe fn dump_bytes(fmt_out: usize, ptr: *const u8, item_size: usize, nitems: u
     };
 
     if written != byte_len {
-        _tt_abort(c"could not write format file data".as_ptr());
+        // A short write returns the abort instead of longjmp-ing under any held
+        // borrow (`01d` §5.3); tt_run_engine turns it into HISTORY_FATAL_ERROR.
+        return Err(crate::errors::EngineAbort::TtAbort(
+            c"could not write format file data".as_ptr(),
+        ));
     }
+    Ok(())
 }
 #[inline]
-unsafe fn dump_slice<T>(fmt_out: usize, ptr: *const T, nitems: i32) {
+unsafe fn dump_slice<T>(
+    fmt_out: usize,
+    ptr: *const T,
+    nitems: i32,
+) -> Result<(), crate::errors::EngineAbort> {
     if nitems > 0 {
         dump_bytes(
             fmt_out,
             ptr as *const u8,
             std::mem::size_of::<T>(),
             nitems as usize,
-        );
+        )?;
     }
+    Ok(())
 }
 #[inline]
-unsafe fn dump_one<T: Copy>(fmt_out: usize, value: T) {
-    dump_slice(fmt_out, &value as *const T, 1);
+unsafe fn dump_one<T: Copy>(fmt_out: usize, value: T) -> Result<(), crate::errors::EngineAbort> {
+    dump_slice(fmt_out, &value as *const T, 1)
 }
 #[inline]
-unsafe fn dump_int(fmt_out: usize, value: i32) {
-    dump_one(fmt_out, value);
+unsafe fn dump_int(fmt_out: usize, value: i32) -> Result<(), crate::errors::EngineAbort> {
+    dump_one(fmt_out, value)
 }
 #[inline]
-unsafe fn dump_b32(fmt_out: usize, s0: i32, s1: i32) {
-    dump_one(fmt_out, crate::mem_types::B32x2 { s0, s1 });
+unsafe fn dump_b32(fmt_out: usize, s0: i32, s1: i32) -> Result<(), crate::errors::EngineAbort> {
+    dump_one(fmt_out, crate::mem_types::B32x2 { s0, s1 })
 }
 #[inline]
 unsafe fn undump_bytes(fmt_in: usize, ptr: *mut u8, item_size: usize, nitems: usize) {
@@ -194,7 +209,7 @@ unsafe fn undump_upper_u16(fmt_in: usize, ptr: *mut u16, nitems: i32, high: u16)
     true
 }
 // translated from xetex-ini.c:587 (store_fmt_file)
-pub unsafe fn store_fmt_file() {
+pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
     if crate::globals::save_ptr() != 0 {
         crate::output::error_here_with_diagnostic(c"You can't dump inside a group".as_ptr());
         crate::output::capture_to_diagnostic(std::ptr::null_mut());
@@ -211,7 +226,11 @@ pub unsafe fn store_fmt_file() {
         crate::globals::set_history(HISTORY_FATAL_ERROR);
         crate::io::close_files_and_terminate();
         ttstub_output_flush(crate::globals::rust_stdout());
-        _tt_abort(c"\\dump inside a group".as_ptr());
+        // Cleanup already done above; propagate the terminal (TtAbort runs no
+        // further cleanup in into_history) instead of longjmp-ing (`01d` §5.3).
+        return Err(crate::errors::EngineAbort::TtAbort(
+            c"\\dump inside a group".as_ptr(),
+        ));
     }
 
     set_selector(SELECTOR_NEW_STRING);
@@ -232,17 +251,24 @@ pub unsafe fn store_fmt_file() {
     }
 
     if pool_ptr() + 1 > pool_size() {
-        crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr());
+        return Err(crate::errors::EngineAbort::Overflow {
+            what: c"pool size".as_ptr(),
+            n: pool_size() - init_pool_ptr(),
+        });
     }
 
     let new_format_ident =
         crate::state::with_state_mut(|st| crate::string_pool::make_string(&mut st.strings));
     let new_format_ident = match new_format_ident {
         Ok(value) => value,
-        Err(crate::scan::NodeRecycleAbort::Overflow) => crate::errors::overflow(
-            c"number of strings".as_ptr(),
-            crate::globals::max_strings() - crate::globals::init_str_ptr(),
-        ),
+        Err(crate::scan::NodeRecycleAbort::Overflow) => {
+            return Err(crate::errors::EngineAbort::Overflow {
+                what: c"number of strings".as_ptr(),
+                n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
+            })
+        }
+        // Other recycle aborts (main-memory) stay backstopped by the C setjmp
+        // until the scan-layer aborts fold into EngineAbort.
         Err(e) => crate::scan::node_recycle_abort(e),
     };
     set_format_ident(new_format_ident);
@@ -250,7 +276,9 @@ pub unsafe fn store_fmt_file() {
 
     let fmt_out = ttstub_output_open(crate::globals::name_of_file(), 0);
     if fmt_out == INVALID_HANDLE {
-        _tt_abort(c"cannot open format output file".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(
+            c"cannot open format output file".as_ptr(),
+        ));
     }
 
     crate::output::print_nl_cstr(c"Beginning to dump on file ".as_ptr());
@@ -262,9 +290,9 @@ pub unsafe fn store_fmt_file() {
     crate::output::print_nl_cstr(c"".as_ptr());
     crate::output::print(format_ident());
 
-    dump_int(fmt_out, FORMAT_HEADER_MAGIC);
-    dump_int(fmt_out, FORMAT_SERIAL);
-    dump_int(fmt_out, crate::state::with_state(|s| s.eqtb.hash_high));
+    dump_int(fmt_out, FORMAT_HEADER_MAGIC)?;
+    dump_int(fmt_out, FORMAT_SERIAL)?;
+    dump_int(fmt_out, crate::state::with_state(|s| s.eqtb.hash_high))?;
 
     crate::state::with_state_mut(|st| {
         while st.input.pseudo_files != crate::mem::TEX_NULL {
@@ -273,21 +301,22 @@ pub unsafe fn store_fmt_file() {
         }
     });
 
-    dump_int(fmt_out, MEM_TOP);
-    dump_int(fmt_out, EQTB_SIZE);
-    dump_int(fmt_out, FORMAT_HASH_PRIME);
-    dump_int(fmt_out, FORMAT_HYPH_PRIME);
+    dump_int(fmt_out, MEM_TOP)?;
+    dump_int(fmt_out, EQTB_SIZE)?;
+    dump_int(fmt_out, FORMAT_HASH_PRIME)?;
+    dump_int(fmt_out, FORMAT_HYPH_PRIME)?;
 
-    dump_int(fmt_out, pool_ptr());
-    dump_int(fmt_out, str_ptr());
-    crate::state::with_state(|state| {
+    dump_int(fmt_out, pool_ptr())?;
+    dump_int(fmt_out, str_ptr())?;
+    crate::state::with_state(|state| -> Result<(), crate::errors::EngineAbort> {
         dump_slice(
             fmt_out,
             state.strings.str_start.as_ptr(),
             str_ptr() - TOO_BIG_CHAR + 1,
-        );
-        dump_slice(fmt_out, state.strings.str_pool.as_ptr(), pool_ptr());
-    });
+        )?;
+        dump_slice(fmt_out, state.strings.str_pool.as_ptr(), pool_ptr())?;
+        Ok(())
+    })?;
 
     crate::output::print_ln();
     crate::output::print_int(str_ptr());
@@ -308,12 +337,12 @@ pub unsafe fn store_fmt_file() {
         )
     });
     let mut var_used = 0i32;
-    dump_int(fmt_out, lo_mem_max);
-    dump_int(fmt_out, rover);
+    dump_int(fmt_out, lo_mem_max)?;
+    dump_int(fmt_out, rover)?;
 
     for k in INT_VAL as usize..=INTER_CHAR_VAL as usize {
         let val = crate::state::with_state(|state| state.scanner.sa_root[k]);
-        dump_int(fmt_out, val);
+        dump_int(fmt_out, val)?;
     }
 
     // `mem` is now a Rust-owned `Vec`; take a stable base pointer once (the
@@ -325,7 +354,7 @@ pub unsafe fn store_fmt_file() {
     let mut x = 0;
     loop {
         let len = q + 2 - p;
-        dump_slice(fmt_out, mem_ptr.add(p as usize), len);
+        dump_slice(fmt_out, mem_ptr.add(p as usize), len)?;
         x += len;
         var_used += q - p;
         // SAFETY: union projection; the `Vec` index is bounds-checked.
@@ -338,16 +367,16 @@ pub unsafe fn store_fmt_file() {
 
     var_used += lo_mem_max - p;
     let mut dyn_used = mem_end + 1 - hi_mem_min;
-    dump_slice(fmt_out, mem_ptr.add(p as usize), lo_mem_max + 1 - p);
+    dump_slice(fmt_out, mem_ptr.add(p as usize), lo_mem_max + 1 - p)?;
     x += lo_mem_max + 1 - p;
 
-    dump_int(fmt_out, hi_mem_min);
-    dump_int(fmt_out, avail);
+    dump_int(fmt_out, hi_mem_min)?;
+    dump_int(fmt_out, avail)?;
     dump_slice(
         fmt_out,
         mem_ptr.add(hi_mem_min as usize),
         mem_end + 1 - hi_mem_min,
-    );
+    )?;
     x += mem_end + 1 - hi_mem_min;
 
     p = avail;
@@ -360,8 +389,8 @@ pub unsafe fn store_fmt_file() {
         s.mem.var_used = var_used;
         s.mem.dyn_used = dyn_used;
     });
-    dump_int(fmt_out, var_used);
-    dump_int(fmt_out, dyn_used);
+    dump_int(fmt_out, var_used)?;
+    dump_int(fmt_out, dyn_used)?;
 
     crate::output::print_ln();
     crate::output::print_int(x);
@@ -404,10 +433,10 @@ pub unsafe fn store_fmt_file() {
             FORMAT_INT_BASE
         };
 
-        dump_int(fmt_out, l - k);
-        dump_slice(fmt_out, eqtb_ptr.add(k as usize), l - k);
+        dump_int(fmt_out, l - k)?;
+        dump_slice(fmt_out, eqtb_ptr.add(k as usize), l - k)?;
         k = j + 1;
-        dump_int(fmt_out, k - l);
+        dump_int(fmt_out, k - l)?;
         if k == FORMAT_INT_BASE {
             break;
         }
@@ -432,10 +461,10 @@ pub unsafe fn store_fmt_file() {
             EQTB_SIZE + 1
         };
 
-        dump_int(fmt_out, l - k);
-        dump_slice(fmt_out, eqtb_ptr.add(k as usize), l - k);
+        dump_int(fmt_out, l - k)?;
+        dump_slice(fmt_out, eqtb_ptr.add(k as usize), l - k)?;
         k = j + 1;
-        dump_int(fmt_out, k - l);
+        dump_int(fmt_out, k - l)?;
         if k > EQTB_SIZE {
             break;
         }
@@ -453,42 +482,42 @@ pub unsafe fn store_fmt_file() {
     };
 
     if hash_high > 0 {
-        dump_slice(fmt_out, eqtb_ptr.add((EQTB_SIZE + 1) as usize), hash_high);
+        dump_slice(fmt_out, eqtb_ptr.add((EQTB_SIZE + 1) as usize), hash_high)?;
     }
 
-    dump_int(fmt_out, crate::state::with_state(|s| s.input.par_loc));
-    dump_int(fmt_out, crate::state::with_state(|s| s.shipout.write_loc));
+    dump_int(fmt_out, crate::state::with_state(|s| s.input.par_loc))?;
+    dump_int(fmt_out, crate::state::with_state(|s| s.shipout.write_loc))?;
 
     for p in 0..=PRIM_SIZE {
         let (s0, s1) =
             crate::state::with_state(|s| (s.eqtb.prim[p as usize].s0, s.eqtb.prim[p as usize].s1));
-        dump_b32(fmt_out, s0, s1);
+        dump_b32(fmt_out, s0, s1)?;
     }
 
-    dump_int(fmt_out, hash_used);
+    dump_int(fmt_out, hash_used)?;
     let mut cs_count = (FROZEN_CONTROL_SEQUENCE - 1) - hash_used + hash_high;
 
     for p in FORMAT_HASH_BASE..=hash_used {
         let (s0, s1) = hash_word(p);
         if s1 != 0 {
-            dump_int(fmt_out, p);
-            dump_b32(fmt_out, s0, s1);
+            dump_int(fmt_out, p)?;
+            dump_b32(fmt_out, s0, s1)?;
             cs_count += 1;
         }
     }
 
     for p in (hash_used + 1)..=(UNDEFINED_CONTROL_SEQUENCE - 1) {
         let (s0, s1) = hash_word(p);
-        dump_b32(fmt_out, s0, s1);
+        dump_b32(fmt_out, s0, s1)?;
     }
     if hash_high > 0 {
         for p in (EQTB_SIZE + 1)..=(EQTB_SIZE + hash_high) {
             let (s0, s1) = hash_word(p);
-            dump_b32(fmt_out, s0, s1);
+            dump_b32(fmt_out, s0, s1)?;
         }
     }
 
-    dump_int(fmt_out, cs_count);
+    dump_int(fmt_out, cs_count)?;
 
     crate::output::print_ln();
     crate::output::print_int(cs_count);
@@ -496,125 +525,125 @@ pub unsafe fn store_fmt_file() {
 
     let fmp = crate::state::with_state(|s| s.fonts.fmem_ptr);
     let font_ptr = crate::state::with_state(|s| s.fonts.font_ptr);
-    dump_int(fmt_out, fmp);
+    dump_int(fmt_out, fmp)?;
     // Dump the entire font-table region under a single borrow (`01b` §3). The
     // interleaved `dump_int`/`dump_slice` are plain file FFI and `fmp`/`font_ptr`
     // are snapshotted scalars, so none re-enter `with_state`; the dump order is
     // preserved byte-for-byte.
-    crate::state::with_state(|state| {
-        dump_slice(fmt_out, state.fonts.font_info.as_ptr(), fmp);
-        dump_int(fmt_out, font_ptr);
+    crate::state::with_state(|state| -> Result<(), crate::errors::EngineAbort> {
+        dump_slice(fmt_out, state.fonts.font_info.as_ptr(), fmp)?;
+        dump_int(fmt_out, font_ptr)?;
         dump_slice(
             fmt_out,
             state.fonts.font_check.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.font_size.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.font_dsize.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.font_params.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.hyphen_char.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.skew_char.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.font_name.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.font_area.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.font_bc.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.font_ec.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         let font_dump_count = font_ptr + 1;
         dump_slice(
             fmt_out,
             state.fonts.char_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.width_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.height_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.depth_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.italic_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.lig_kern_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.kern_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.exten_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.param_base.as_ptr().add(FONT_BASE as usize),
             font_dump_count,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.font_glue.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.bchar_label.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state.fonts.font_bchar.as_ptr().add(FONT_BASE as usize),
             font_ptr + 1,
-        );
+        )?;
         dump_slice(
             fmt_out,
             state
@@ -623,8 +652,9 @@ pub unsafe fn store_fmt_file() {
                 .as_ptr()
                 .add(FONT_BASE as usize),
             font_ptr + 1,
-        );
-    });
+        )?;
+        Ok(())
+    })?;
 
     for k in FONT_BASE..=font_ptr {
         crate::output::print_nl_cstr(c"\\font".as_ptr());
@@ -680,13 +710,13 @@ pub unsafe fn store_fmt_file() {
 
     let (hyph_count, hyph_size) =
         crate::state::with_state(|s| (s.hyph.hyph_count, s.hyph.hyph_size));
-    dump_int(fmt_out, hyph_count);
+    dump_int(fmt_out, hyph_count)?;
     let mut hyph_next = crate::state::with_state(|s| s.hyph.hyph_next);
     if hyph_next <= FORMAT_HYPH_PRIME {
         hyph_next = hyph_size;
         crate::state::with_state_mut(|s| s.hyph.hyph_next = hyph_next);
     }
-    dump_int(fmt_out, hyph_next);
+    dump_int(fmt_out, hyph_next)?;
 
     for k in 0..=hyph_size {
         let (word, link, list) = crate::state::with_state(|s| {
@@ -697,9 +727,9 @@ pub unsafe fn store_fmt_file() {
             )
         });
         if word != 0 {
-            dump_int(fmt_out, k + 65_536 * link as i32);
-            dump_int(fmt_out, word);
-            dump_int(fmt_out, list);
+            dump_int(fmt_out, k + 65_536 * link as i32)?;
+            dump_int(fmt_out, word)?;
+            dump_int(fmt_out, list)?;
         }
     }
 
@@ -725,8 +755,8 @@ pub unsafe fn store_fmt_file() {
             s.hyph.trie_op_ptr,
         )
     });
-    dump_int(fmt_out, trie_max);
-    dump_int(fmt_out, hyph_start);
+    dump_int(fmt_out, trie_max)?;
+    dump_int(fmt_out, hyph_start)?;
     // Snapshot all six trie array base pointers under one borrow (`01b` §3
     // snapshot idiom): the arenas never reallocate during dump, so the pointers
     // stay valid across the FFI `dump_slice`/`dump_int` calls below.
@@ -741,14 +771,14 @@ pub unsafe fn store_fmt_file() {
                 state.hyph.hyf_next.as_ptr(),
             )
         });
-    dump_slice(fmt_out, fmt_trie_trl, trie_max + 1);
-    dump_slice(fmt_out, fmt_trie_tro, trie_max + 1);
-    dump_slice(fmt_out, fmt_trie_trc, trie_max + 1);
-    dump_int(fmt_out, max_hyph_char);
-    dump_int(fmt_out, trie_op_ptr);
-    dump_slice(fmt_out, fmt_hyf_distance.add(1), trie_op_ptr);
-    dump_slice(fmt_out, fmt_hyf_num.add(1), trie_op_ptr);
-    dump_slice(fmt_out, fmt_hyf_next.add(1), trie_op_ptr);
+    dump_slice(fmt_out, fmt_trie_trl, trie_max + 1)?;
+    dump_slice(fmt_out, fmt_trie_tro, trie_max + 1)?;
+    dump_slice(fmt_out, fmt_trie_trc, trie_max + 1)?;
+    dump_int(fmt_out, max_hyph_char)?;
+    dump_int(fmt_out, trie_op_ptr)?;
+    dump_slice(fmt_out, fmt_hyf_distance.add(1), trie_op_ptr)?;
+    dump_slice(fmt_out, fmt_hyf_num.add(1), trie_op_ptr)?;
+    dump_slice(fmt_out, fmt_hyf_next.add(1), trie_op_ptr)?;
 
     crate::output::print_nl_cstr(c"Hyphenation trie of length ".as_ptr());
     crate::output::print_int(trie_max);
@@ -769,14 +799,15 @@ pub unsafe fn store_fmt_file() {
             crate::output::print_int(used as i32);
             crate::output::print_cstr(c" for language ".as_ptr());
             crate::output::print_int(k as i32);
-            dump_int(fmt_out, k as i32);
-            dump_int(fmt_out, used as i32);
+            dump_int(fmt_out, k as i32)?;
+            dump_int(fmt_out, used as i32)?;
         }
     }
 
-    dump_int(fmt_out, FORMAT_FOOTER_MAGIC);
+    dump_int(fmt_out, FORMAT_FOOTER_MAGIC)?;
     set_eqtb_b32s1(PC_INT_BASE + INT_PAR_TRACING_STATS, 0);
     ttstub_output_close(fmt_out);
+    Ok(())
 }
 // translated from xetex-ini.c:590 (pack_buffered_name)
 unsafe fn pack_buffered_name(_n: i16, _a: i32, _b: i32) {
