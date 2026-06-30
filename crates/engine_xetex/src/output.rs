@@ -5,7 +5,7 @@ use crate::consts::{
     SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::{error_in, ErrorOutcome};
-use crate::node::{AnyBox, AnyNode};
+use crate::node::{AnyBox, AnyNode, NodePtr, WhatsitNode};
 use crate::state::EngineState;
 use crate::units::{MemIdx, NodeType};
 
@@ -813,9 +813,13 @@ pub(crate) fn print_size_in(st: &mut EngineState, s: i32) {
 /// Print a write-whatsit node's label and stream number.
 ///
 /// translated from xetex-output.c:245 (print_write_whatsit)
-pub(crate) fn print_write_whatsit_in(st: &mut EngineState, s: *const libc::c_char, p: i32) {
+pub(crate) fn print_write_whatsit_in(
+    st: &mut EngineState,
+    s: *const libc::c_char,
+    p: NodePtr<WhatsitNode>,
+) {
     print_esc_cstr_in(st, s);
-    let v = st.mem.b32s0(p + 1);
+    let v = p.write_stream(&st.mem);
     if v < 16 {
         print_int_in(st, v);
     } else if v == 16 {
@@ -3937,7 +3941,7 @@ pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
                 | Ok(AnyNode::Unset(_)) => {
                     print_cstr_in(st, c"[]".as_ptr());
                 }
-                Ok(AnyNode::Whatsit(w)) => match st.mem.b16s0(p) {
+                Ok(AnyNode::Whatsit(w)) => match w.subtype(&st.mem) {
                     NATIVE_WORD_NODE_SD | NATIVE_WORD_NODE_AT_SD => {
                         let fnt = w.native_font(&st.mem).0;
                         if fnt != st.errors.font_in_short_display {
@@ -3960,8 +3964,8 @@ pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
                         print_char_in(st, ' ' as i32);
                     }
                 }
-                Ok(AnyNode::Math(_)) => {
-                    if st.mem.b16s0(p) >= L_CODE_SD {
+                Ok(AnyNode::Math(m)) => {
+                    if m.subtype(&st.mem) >= L_CODE_SD {
                         print_cstr_in(st, c"[]".as_ptr());
                     } else {
                         print_char_in(st, '$' as i32);
@@ -3976,7 +3980,7 @@ pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
                     let post = d.post_break(&st.mem).0;
                     short_display_in(st, pre);
                     short_display_in(st, post);
-                    let mut n = st.mem.b16s0(p) as i32;
+                    let mut n = d.subtype(&st.mem) as i32;
                     while n > 0 {
                         if st.mem.b32s1(p) != crate::mem::TEX_NULL {
                             p = st.mem.b32s1(p);
@@ -4249,21 +4253,21 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                         print_int_in(st, node.subtype(&st.mem) as i32 + 1);
                         print_cstr_in(st, c" columns)".as_ptr());
                     }
-                    if st.mem.b32s1(p + 6) != 0 {
+                    if node.glue_stretch(&st.mem).0 != 0 {
                         print_cstr_in(st, c", stretch ".as_ptr());
                         print_glue_in(
                             st,
-                            st.mem.b32s1(p + 6),
-                            st.mem.b16s0(p + 5) as i32,
+                            node.glue_stretch(&st.mem).0,
+                            node.glue_order(&st.mem) as i32,
                             std::ptr::null(),
                         );
                     }
-                    if st.mem.b32s1(p + 4) != 0 {
+                    if node.glue_shrink(&st.mem).0 != 0 {
                         print_cstr_in(st, c", shrink ".as_ptr());
                         print_glue_in(
                             st,
-                            st.mem.b32s1(p + 4),
-                            st.mem.b16s1(p + 5) as i32,
+                            node.glue_shrink(&st.mem).0,
+                            node.glue_sign(&st.mem) as i32,
                             std::ptr::null(),
                         );
                     }
@@ -4284,13 +4288,13 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                     print_esc_cstr_in(st, c"insert".as_ptr());
                     print_int_in(st, node.subtype(&st.mem) as i32);
                     print_cstr_in(st, c", natural size ".as_ptr());
-                    print_scaled_in(st, st.mem.b32s1(p + 3));
+                    print_scaled_in(st, node.height(&st.mem).0);
                     print_cstr_in(st, c"; split(".as_ptr());
                     print_spec_in(st, node.split_top_ptr(&st.mem).0, std::ptr::null());
                     print_char_in(st, ',' as i32);
-                    print_scaled_in(st, st.mem.b32s1(p + 2));
+                    print_scaled_in(st, node.depth(&st.mem).0);
                     print_cstr_in(st, c"); float cost ".as_ptr());
-                    print_int_in(st, st.mem.b32s1(p + 1));
+                    print_int_in(st, node.float_cost(&st.mem));
                     st.strings.str_pool[st.strings.pool_ptr as usize] = '.' as u16;
                     st.strings.pool_ptr += 1;
                     show_node_list_in(st, node.ins_ptr(&st.mem).0);
@@ -4299,21 +4303,21 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                 Ok(AnyNode::Whatsit(node)) => {
                     match node.subtype(&st.mem) {
                         OPEN_NODE_SNL => {
-                            print_write_whatsit_in(st, c"openout".as_ptr(), p);
+                            print_write_whatsit_in(st, c"openout".as_ptr(), node);
                             print_char_in(st, '=' as i32);
                             print_file_name_in(
                                 st,
-                                st.mem.b32s1(p + 1),
-                                st.mem.b32s0(p + 2),
-                                st.mem.b32s1(p + 2),
+                                node.open_name(&st.mem),
+                                node.open_area(&st.mem),
+                                node.open_ext(&st.mem),
                             );
                         }
                         WRITE_NODE_SNL => {
-                            print_write_whatsit_in(st, c"write".as_ptr(), p);
+                            print_write_whatsit_in(st, c"write".as_ptr(), node);
                             print_mark_in(st, node.write_tokens(&st.mem).0);
                         }
                         CLOSE_NODE_SNL => {
-                            print_write_whatsit_in(st, c"closeout".as_ptr(), p);
+                            print_write_whatsit_in(st, c"closeout".as_ptr(), node);
                         }
                         SPECIAL_NODE_SNL => {
                             print_esc_cstr_in(st, c"special".as_ptr());
@@ -4434,7 +4438,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                 Ok(AnyNode::MarginKern(node)) => {
                     print_esc_cstr_in(st, c"kern".as_ptr());
                     print_scaled_in(st, node.width(&st.mem).0);
-                    if st.mem.b16s0(p) == 0 {
+                    if node.subtype(&st.mem) == 0 {
                         print_cstr_in(st, c" (left margin)".as_ptr());
                     } else {
                         print_cstr_in(st, c" (right margin)".as_ptr());
