@@ -1263,19 +1263,25 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                 && st.mem.b16s0(p) == GLYPH_NODE
             {
                 'found: {
+                    let p_w = st
+                        .mem
+                        .classify_whatsit(MemIdx::new(p))
+                        .expect("valid whatsit")
+                        .expect("glyph node");
                     if st.scanner.cur_style < TEXT_STYLE {
                         let mut h1 = get_ot_math_constant(cur_f, DISPLAYOPERATORMINHEIGHT);
-                        let size_h = (st.mem.b32s1(p + 3) + st.mem.b32s1(p + 2)) as f64 * 5.0 / 4.0;
+                        let size_h =
+                            (p_w.height(&st.mem).0 + p_w.depth(&st.mem).0) as f64 * 5.0 / 4.0;
                         if (h1 as f64) < size_h {
                             h1 = size_h as i32;
                         }
-                        let c_glyph = st.mem.b16s1(p + 4);
+                        let c_glyph = p_w.native_glyph(&st.mem);
                         let mut n: i32 = 0;
                         let mut h2: i32 = 0;
                         loop {
                             let g = get_ot_math_variant(cur_f, c_glyph as i32, n, &mut h2, 0);
                             if h2 > 0 {
-                                st.mem.set_b16s1(p + 4, g as u16);
+                                p_w.set_native_glyph(&mut st.mem, g as u16);
                                 let addr = node_addr_in(st, p);
                                 crate::ext::measure_native_glyph(&st.fonts, addr, 1);
                             }
@@ -1307,7 +1313,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                             crate::ext::measure_native_glyph(&st.fonts, addr, 1);
                         }
                     }
-                    delta = get_ot_math_ital_corr(cur_f, st.mem.b16s1(p + 4) as i32);
+                    delta = get_ot_math_ital_corr(cur_f, p_w.native_glyph(&st.mem) as i32);
                 }
                 // found:
                 let p1 = st.mem.b32s1(p + 1);
@@ -2897,14 +2903,24 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                             }
                             st.mem.set_b16s1(p, WHATSIT_NODE);
                             st.mem.set_b16s0(p, GLYPH_NODE);
-                            st.mem.set_b16s2(p + 4, cur_f as u16);
+                            let p_w = st
+                                .mem
+                                .classify_whatsit(MemIdx::new(p))
+                                .expect("valid whatsit")
+                                .expect("glyph node");
+                            p_w.set_native_font(&mut st.mem, cur_f as u16);
                             let zaddr = node_addr_in(st, z);
-                            st.mem.set_b16s1(p + 4, real_get_native_glyph(zaddr, 0));
+                            p_w.set_native_glyph(&mut st.mem, real_get_native_glyph(zaddr, 0));
                             let paddr = node_addr_in(st, p);
                             crate::ext::measure_native_glyph(&st.fonts, paddr, 1);
-                            let zsize = st.mem.b16s3(z + 4) as i32;
+                            let z_w = st
+                                .mem
+                                .classify_whatsit(MemIdx::new(z))
+                                .expect("valid whatsit")
+                                .expect("native char node");
+                            let zsize = z_w.native_size(&st.mem);
                             crate::mem::free_node(&mut st.mem, z, zsize);
-                            delta = get_ot_math_ital_corr(cur_f, st.mem.b16s1(p + 4) as i32);
+                            delta = get_ot_math_ital_corr(cur_f, p_w.native_glyph(&st.mem) as i32);
                             if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR
                                 && !font_is_ot_math(&st.fonts, cur_f)
                             {
@@ -3343,11 +3359,12 @@ fn new_stack_glyph(
     }
     mem.set_b16s1(p, WHATSIT_NODE);
     mem.set_b16s0(p, GLYPH_NODE);
-    mem.set_b16s2(p + 4, f as u16);
-    mem.set_b16s1(p + 4, g as u16);
     // Freshly allocated and type-stamped GLYPH_NODE whatsit; this is the
     // family's audited construction boundary (`01c` §8).
-    Ok(unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(p)) })
+    let pw = unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(p)) };
+    pw.set_native_font(mem, f as u16);
+    pw.set_native_glyph(mem, g as u16);
+    Ok(pw)
 }
 
 /// translated from xetex-math.c:1482 (stack_glyph_into_box)
@@ -4249,32 +4266,35 @@ fn app_display_in(
     let x = st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION);
 
     if x == 0 {
-        st.mem.set_b32s1(b + 4, s + d);
+        classify_box_or_panic(&st.mem, b).set_shift_amount(&mut st.mem, Scaled(s + d));
     } else {
         let z = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
         let p_orig = b;
+        let p_orig_box = classify_box_or_panic(&st.mem, p_orig);
         let mut e;
         if x > 0 {
-            e = z - d - st.mem.b32s1(p_orig + 1);
+            e = z - d - p_orig_box.width(&st.mem).0;
         } else {
             e = d;
-            d = z - e - st.mem.b32s1(p_orig + 1);
+            d = z - e - p_orig_box.width(&st.mem).0;
         }
         if j != TEX_NULL {
             b = crate::packaging::copy_node_list(&mut st.mem, j)?;
-            st.mem.set_b32s1(b + 3, st.mem.b32s1(p_orig + 3));
-            st.mem.set_b32s1(b + 2, st.mem.b32s1(p_orig + 2));
-            let b4 = st.mem.b32s1(b + 4);
+            let b_copy = classify_box_or_panic(&st.mem, b);
+            let (po_h, po_d) = (p_orig_box.height(&st.mem), p_orig_box.depth(&st.mem));
+            b_copy.set_height(&mut st.mem, po_h);
+            b_copy.set_depth(&mut st.mem, po_d);
+            let b4 = b_copy.shift_amount(&st.mem).0;
             let s2 = s - b4;
             d += s2;
-            e = e + st.mem.b32s1(b + 1) - z - s2;
+            e = e + b_copy.width(&st.mem).0 - z - s2;
         }
         let (mut p, mut q);
-        if st.mem.b16s0(p_orig) == DLIST {
+        if p_orig_box.subtype(&st.mem) == DLIST {
             q = p_orig;
             p = p_orig;
         } else {
-            let r0 = st.mem.b32s1(p_orig + 5);
+            let r0 = p_orig_box.list_ptr(&st.mem).0;
             crate::mem::free_node(&mut st.mem, p_orig, BOX_NODE_SIZE);
             if r0 == TEX_NULL {
                 return Err(MainControlAbort::Confusion(c"LR4"));
@@ -4763,10 +4783,9 @@ pub(crate) fn init_math_in(
             jbox.set_width(&mut st.mem, jb_w);
             jbox.set_shift_amount(&mut st.mem, jb_sh);
             jbox.set_list_ptr(&mut st.mem, MemPtr::from_raw(p_glue));
-            // glue_sign/order/set have no AnyBox setter yet; write raw, read typed.
-            st.mem.set_b16s0(j + 5, jb_go);
-            st.mem.set_b16s1(j + 5, jb_gs);
-            st.mem.set_gr(j + 6, jb_gset);
+            jbox.set_glue_order(&mut st.mem, jb_go);
+            jbox.set_glue_sign(&mut st.mem, jb_gs);
+            jbox.set_glue_set(&mut st.mem, jb_gset);
 
             let mut v = jb_sh.0;
             x = if cur_list_e_tex_aux() == TEX_NULL {
