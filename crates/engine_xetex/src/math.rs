@@ -5133,7 +5133,7 @@ fn rebox(
         .classify_box(MemIdx::new(b))
         .expect("valid node type for rebox")
         .expect("rebox receives a box");
-    if bb.width(mem).0 != w && bb.list_ptr(mem).0 != TEX_NULL {
+    if bb.width(mem).0 != w && !bb.list_ptr(mem).is_null() {
         let mut p = bb.list_ptr(mem).0;
         if let Some(v) = char_kern_width {
             if v != bb.width(mem).0 {

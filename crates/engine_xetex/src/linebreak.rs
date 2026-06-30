@@ -431,7 +431,7 @@ fn is_empty_box_in(mem: &MemState, p: i32) -> bool {
     p.width(mem).0 == 0
         && p.height(mem).0 == 0
         && p.depth(mem).0 == 0
-        && p.list_ptr(mem).0 == TEX_NULL
+        && p.list_ptr(mem).is_null()
 }
 
 #[inline]
@@ -441,8 +441,8 @@ fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
             INS_NODE | MARK_NODE | ADJUST_NODE | PENALTY_NODE => true,
             DISC_NODE => {
                 let p = disc_node(p);
-                p.pre_break(mem).0 == TEX_NULL
-                    && p.post_break(mem).0 == TEX_NULL
+                p.pre_break(mem).is_null()
+                    && p.post_break(mem).is_null()
                     && p.subtype(mem) == 0
             }
             MATH_NODE => math_node(p).width(mem).0 == 0,
@@ -456,7 +456,7 @@ fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
                 p.width(mem).0 == 0
                     && p.height(mem).0 == 0
                     && p.depth(mem).0 == 0
-                    && p.list_ptr(mem).0 == TEX_NULL
+                    && p.list_ptr(mem).is_null()
             }
             _ => false,
         }
@@ -494,7 +494,7 @@ pub fn total_pw(
     p: i32,
 ) -> Option<i32> {
     let break_node = active(q).break_node(mem);
-    let mut l = if break_node.0 == TEX_NULL {
+    let mut l = if break_node.is_null() {
         linebreak.first_p
     } else {
         passive_node(break_node.0).cur_break(mem).0
@@ -503,7 +503,7 @@ pub fn total_pw(
     let mut r = crate::mem::prev_rightmost(mem, linebreak.global_prev_p, p);
     if p != TEX_NULL && mem.b16s1(p) as i32 == DISC_NODE {
         let p_disc = disc_node(p);
-        if p_disc.pre_break(mem).0 != TEX_NULL {
+        if !p_disc.pre_break(mem).is_null() {
             r = p_disc.pre_break(mem).0;
             while mem.b32s1(r) != TEX_NULL {
                 r = mem.b32s1(r);
@@ -517,7 +517,7 @@ pub fn total_pw(
 
     if l != TEX_NULL && mem.b16s1(l) as i32 == DISC_NODE {
         let l_disc = disc_node(l);
-        if l_disc.post_break(mem).0 != TEX_NULL {
+        if !l_disc.post_break(mem).is_null() {
             l = l_disc.post_break(mem).0;
         } else {
             let mut n = l_disc.subtype(mem);
@@ -563,7 +563,7 @@ pub fn find_protchar_left(
         let t = l;
         while run
             && mem.b16s1(l) as i32 == HLIST_NODE
-            && box_node(mem, l).list_ptr(mem).0 != TEX_NULL
+            && !box_node(mem, l).list_ptr(mem).is_null()
         {
             if !push_node(linebreak, l) {
                 return None;
@@ -608,7 +608,7 @@ pub fn find_protchar_right(
         let t = r;
         while run
             && mem.b16s1(r) as i32 == HLIST_NODE
-            && box_node(mem, r).list_ptr(mem).0 != TEX_NULL
+            && !box_node(mem, r).list_ptr(mem).is_null()
         {
             if !push_node(linebreak, l) || !push_node(linebreak, r) {
                 return None;
@@ -2331,7 +2331,7 @@ fn post_line_break_prefix(
             q_disc.set_subtype(mem, 0);
         }
 
-        if q_disc.post_break(mem).0 != TEX_NULL {
+        if !q_disc.post_break(mem).is_null() {
             let mut s = q_disc.post_break(mem).0;
             while mem.b32s1(s) != TEX_NULL {
                 s = mem.b32s1(s);
@@ -2342,7 +2342,7 @@ fn post_line_break_prefix(
             post_disc_break = true;
         }
 
-        if q_disc.pre_break(mem).0 != TEX_NULL {
+        if !q_disc.pre_break(mem).is_null() {
             let mut s = q_disc.pre_break(mem).0;
             q_disc.set_link(mem, MemPtr::from_raw(s));
             while mem.b32s1(s) != TEX_NULL {
@@ -2844,7 +2844,7 @@ unsafe fn try_break(
                         }
 
                         linebreak.break_width[1] += linebreak.disc_width;
-                        if cur_disc.post_break(mem).0 == TEX_NULL {
+                        if cur_disc.post_break(mem).is_null() {
                             s = mem.b32s1(v);
                         }
                     }

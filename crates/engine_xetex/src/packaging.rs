@@ -1973,7 +1973,7 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
         //   0 = top, 1 = first, 2 = bot, 3 = split_first, 4 = split_bot.
         match a {
             VSPLIT_INIT_DM => {
-                if node.child(mem, 3).0 != TEX_NULL {
+                if !node.child(mem, 3).is_null() {
                     crate::mem::delete_token_ref(mem, node.child(mem, 3).0);
                     node.set_child(mem, 3, MemPtr::NULL);
                     crate::mem::delete_token_ref(mem, node.child(mem, 4).0);
@@ -1981,8 +1981,8 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
                 }
             }
             FIRE_UP_INIT_DM => {
-                if node.child(mem, 2).0 != TEX_NULL {
-                    if node.child(mem, 0).0 != TEX_NULL {
+                if !node.child(mem, 2).is_null() {
+                    if !node.child(mem, 0).is_null() {
                         crate::mem::delete_token_ref(mem, node.child(mem, 0).0);
                     }
                     crate::mem::delete_token_ref(mem, node.child(mem, 1).0);
@@ -1999,7 +1999,7 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
                 }
             }
             FIRE_UP_DONE_DM => {
-                if node.child(mem, 0).0 != TEX_NULL && node.child(mem, 1).0 == TEX_NULL {
+                if !node.child(mem, 0).is_null() && node.child(mem, 1).is_null() {
                     let head = node.child(mem, 0);
                     node.set_child(mem, 1, head);
                     let cur = mem.b32s0(head.0);
@@ -2019,7 +2019,7 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
             _ => {}
         }
 
-        if node.child(mem, 2).0 == TEX_NULL && node.child(mem, 4).0 == TEX_NULL {
+        if node.child(mem, 2).is_null() && node.child(mem, 4).is_null() {
             crate::mem::free_node(mem, q, MARK_CLASS_NODE_SIZE_DM);
             q = TEX_NULL;
         }
@@ -2433,7 +2433,7 @@ fn hpack_in(
             r_node.set_glue_sign(mem, 0);
             r_node.set_glue_set(mem, 0.0);
         }
-        if o == NORMAL_HP && r_node.list_ptr(mem).0 != TEX_NULL {
+        if o == NORMAL_HP && !r_node.list_ptr(mem).is_null() {
             shipout.last_badness = crate::helpers::badness(x, scanner.total_stretch[NORMAL_HP]);
             if shipout.last_badness > eqtb.b32s1(INT_BASE + INT_PAR_HBADNESS_HP) {
                 push_pack_diag(
@@ -2463,7 +2463,7 @@ fn hpack_in(
             r_node.set_glue_sign(mem, 0);
             r_node.set_glue_set(mem, 0.0);
         }
-        if scanner.total_shrink[o] < (-x) && o == NORMAL_HP && r_node.list_ptr(mem).0 != TEX_NULL {
+        if scanner.total_shrink[o] < (-x) && o == NORMAL_HP && !r_node.list_ptr(mem).is_null() {
             shipout.last_badness = 1_000_000;
             r_node.set_glue_set(mem, 1.0);
             if (-x) - scanner.total_shrink[NORMAL_HP] > eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HFUZZ_HP)
@@ -2497,7 +2497,7 @@ fn hpack_in(
                     },
                 );
             }
-        } else if o == NORMAL_HP && r_node.list_ptr(mem).0 != TEX_NULL {
+        } else if o == NORMAL_HP && !r_node.list_ptr(mem).is_null() {
             shipout.last_badness = crate::helpers::badness(-x, scanner.total_shrink[NORMAL_HP]);
             if shipout.last_badness > eqtb.b32s1(INT_BASE + INT_PAR_HBADNESS_HP) {
                 push_pack_diag(
@@ -2825,7 +2825,7 @@ fn vpackage_in(
             r_node.set_glue_sign(mem, 0);
             r_node.set_glue_set(mem, 0.0);
         }
-        if o == NORMAL_VP && r_node.list_ptr(mem).0 != TEX_NULL {
+        if o == NORMAL_VP && !r_node.list_ptr(mem).is_null() {
             shipout.last_badness = crate::helpers::badness(x, scanner.total_stretch[NORMAL_VP]);
             if shipout.last_badness > eqtb.b32s1(INT_BASE + INT_PAR_VBADNESS_VP) {
                 push_pack_diag(
@@ -2855,7 +2855,7 @@ fn vpackage_in(
             r_node.set_glue_sign(mem, 0);
             r_node.set_glue_set(mem, 0.0);
         }
-        if scanner.total_shrink[o] < (-x) && o == NORMAL_VP && r_node.list_ptr(mem).0 != TEX_NULL {
+        if scanner.total_shrink[o] < (-x) && o == NORMAL_VP && !r_node.list_ptr(mem).is_null() {
             shipout.last_badness = 1_000_000;
             r_node.set_glue_set(mem, 1.0);
             if (-x) - scanner.total_shrink[NORMAL_VP] > eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_VFUZZ_VP)
@@ -2868,7 +2868,7 @@ fn vpackage_in(
                     },
                 );
             }
-        } else if o == NORMAL_VP && r_node.list_ptr(mem).0 != TEX_NULL {
+        } else if o == NORMAL_VP && !r_node.list_ptr(mem).is_null() {
             shipout.last_badness = crate::helpers::badness(-x, scanner.total_shrink[NORMAL_VP]);
             if shipout.last_badness > eqtb.b32s1(INT_BASE + INT_PAR_VBADNESS_VP) {
                 push_pack_diag(
