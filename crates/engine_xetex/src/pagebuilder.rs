@@ -398,23 +398,17 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                         ins.set_ins_ptr(&mut st.mem, MemPtr::from_raw(pruned));
                         if ins.ins_ptr(&st.mem) != MemPtr::NULL {
                             // INSERTION_NODE_ins_ptr != TEX_NULL
-                            let tmp = crate::packaging::vpackage_emit_in(
+                            let tmp_box = crate::packaging::vpackage_emit_in(
                                 st,
                                 ins.ins_ptr(&st.mem).0,
                                 0,
                                 ADDITIONAL,
                                 MAX_HALFWORD,
                             )?;
-                            let tmp_box = st
-                                .mem
-                                .classify_box(MemIdx::new(tmp))
-                                .expect("valid packed box")
-                                .expect("packed box");
-                            st.mem.set_b32s1(
-                                p + 3,
-                                tmp_box.height(&st.mem).0 + tmp_box.depth(&st.mem).0,
-                            );
-                            crate::mem::free_node(&mut st.mem, tmp, BOX_NODE_SIZE);
+                            let height_plus_depth =
+                                tmp_box.height(&st.mem).0 + tmp_box.depth(&st.mem).0;
+                            st.mem.set_b32s1(p + 3, height_plus_depth);
+                            crate::mem::free_node(&mut st.mem, tmp_box.idx().0, BOX_NODE_SIZE);
                             inner_wait = true;
                         }
                     }
@@ -431,7 +425,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                     crate::mem::free_node(&mut st.mem, box_n, BOX_NODE_SIZE);
                     let packed =
                         crate::packaging::vpackage_emit_in(st, box_lp, 0, ADDITIONAL, MAX_HALFWORD);
-                    st.eqtb.set_b32s1(BOX_BASE + n2 as i32, packed?);
+                    st.eqtb.set_b32s1(BOX_BASE + n2 as i32, packed?.idx().0);
                     inner_wait
                 } else {
                     // best_ins_ptr != p — advance s to end of list
@@ -548,7 +542,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
         EXACTLY,
         st.shipout.page_max_depth,
     )?;
-    st.eqtb.set_b32s1(BOX_BASE + 255, packed_255);
+    st.eqtb.set_b32s1(BOX_BASE + 255, packed_255.idx().0);
     st.eqtb
         .set_b32s1(INT_BASE + INT_PAR__vbadness, save_vbadness);
     st.eqtb.set_b32s1(DIMEN_BASE + DIMEN_PAR__vfuzz, save_vfuzz);

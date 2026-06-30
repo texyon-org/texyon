@@ -184,7 +184,9 @@ pub(crate) enum PackDiag {
 
 #[derive(Copy, Clone)]
 struct PackOutcome {
-    r: i32,
+    /// The freshly-packed box, classified once at its allocation site (an
+    /// `HListNode` from [`hpack_in`], a `VListNode` from [`vpackage_in`]).
+    r_box: AnyBox,
     diags: [Option<PackDiag>; 2],
 }
 
@@ -1634,7 +1636,7 @@ fn finish_vsplit_after_break(
             ADDITIONAL_VS,
             MAX_HALFWORD,
         )?;
-        q = packed.r;
+        q = packed.r_box.idx().0;
         push_vsplit_package(&mut packages, packed);
     }
     store_split_remainder(mem, scanner, eqtb, q)?;
@@ -1649,7 +1651,7 @@ fn finish_vsplit_after_break(
         EXACTLY_VS,
         state.split_max_d,
     )?;
-    let r = result.r;
+    let r = result.r_box.idx().0;
     push_vsplit_package(&mut packages, result);
 
     Ok(VsplitOutcome {
@@ -1699,7 +1701,7 @@ fn print_vsplit_needs_vbox_error_in(st: &mut crate::state::EngineState) -> Error
 fn print_vsplit_packages_in(st: &mut crate::state::EngineState, outcome: VsplitOutcome) {
     for package in outcome.packages.into_iter().flatten() {
         for diag in package.diags.into_iter().flatten() {
-            print_vpack_diag_in(st, package.r, diag);
+            print_vpack_diag_in(st, package.r_box, diag);
         }
     }
 }
@@ -2047,7 +2049,6 @@ fn hpack_in(
     r_node.set_subtype(mem, 0);
     r_node.set_shift_amount(mem, Scaled(0));
     r_node.set_list_ptr(mem, MemPtr::from_raw(list));
-    let r = r_node.idx().0;
     let mut q = r_node.idx().offset(5).0;
     let mut h: i32 = 0;
     let mut d: i32 = 0;
@@ -2551,7 +2552,10 @@ fn hpack_in(
         }
     }
 
-    Ok(PackOutcome { r, diags })
+    Ok(PackOutcome {
+        r_box: AnyBox::HList(r_node),
+        diags,
+    })
 }
 
 /// Threaded core (Phase C): emit the over/underfull-`\hbox` diagnostic under a
@@ -2560,7 +2564,7 @@ fn hpack_in(
 /// borrow. Byte-identical to [`print_hpack_diag`].
 pub(crate) fn print_hpack_diag_in(
     st: &mut crate::state::EngineState,
-    box_ptr: i32,
+    box_ptr: AnyBox,
     diag: PackDiag,
 ) {
     use crate::output::{
@@ -2608,7 +2612,7 @@ pub(crate) fn print_hpack_diag_in(
     print_hpack_common_ending_in(st, box_ptr);
 }
 
-fn print_hpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: i32) {
+fn print_hpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: AnyBox) {
     use crate::output::{
         begin_diagnostic_in, capture_to_diagnostic_in, end_diagnostic_in, print_cstr_in,
         print_int_in, print_ln_in, short_display_in, show_box_in,
@@ -2633,16 +2637,11 @@ fn print_hpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: i32
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     print_ln_in(st);
     st.errors.font_in_short_display = 0;
-    let bx = st
-        .mem
-        .classify_box(MemIdx::new(box_ptr))
-        .expect("valid box")
-        .expect("hpack diagnostic box");
-    let list = bx.list_ptr(&st.mem).0;
+    let list = box_ptr.list_ptr(&st.mem).0;
     short_display_in(st, list);
     print_ln_in(st);
     begin_diagnostic_in(st);
-    show_box_in(st, box_ptr);
+    show_box_in(st, box_ptr.idx().0);
     end_diagnostic_in(st, true);
 }
 
@@ -2656,7 +2655,7 @@ pub(crate) fn hpack_emit_in(
     p: i32,
     w: i32,
     m: i16,
-) -> Result<i32, NodeRecycleAbort> {
+) -> Result<AnyBox, NodeRecycleAbort> {
     let outcome = hpack_in(
         &mut st.mem,
         &st.eqtb,
@@ -2668,9 +2667,11 @@ pub(crate) fn hpack_emit_in(
         m,
     )?;
     for diag in outcome.diags.into_iter().flatten() {
-        print_hpack_diag_in(st, outcome.r, diag);
+        print_hpack_diag_in(st, outcome.r_box, diag);
     }
-    Ok(outcome.r)
+    // `hpack_in` classified the freshly-allocated `HListNode` at its alloc site
+    // and carried the handle out in `PackOutcome`; hand it to callers verbatim.
+    Ok(outcome.r_box)
 }
 
 fn vpackage_in(
@@ -2881,7 +2882,7 @@ fn vpackage_in(
     }
 
     Ok(PackOutcome {
-        r: r_node.idx().0,
+        r_box: AnyBox::VList(r_node),
         diags,
     })
 }
@@ -2890,7 +2891,7 @@ fn vpackage_in(
 /// live `&mut EngineState` borrow. Byte-identical to [`print_vpack_diag`].
 pub(crate) fn print_vpack_diag_in(
     st: &mut crate::state::EngineState,
-    box_ptr: i32,
+    box_ptr: AnyBox,
     diag: PackDiag,
 ) {
     use crate::output::{
@@ -2932,7 +2933,7 @@ pub(crate) fn print_vpack_diag_in(
     print_vpack_common_ending_in(st, box_ptr);
 }
 
-fn print_vpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: i32) {
+fn print_vpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: AnyBox) {
     use crate::output::{
         begin_diagnostic_in, capture_to_diagnostic_in, end_diagnostic_in, print_cstr_in,
         print_int_in, print_ln_in, show_box_in,
@@ -2953,7 +2954,7 @@ fn print_vpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: i32
     }
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     begin_diagnostic_in(st);
-    show_box_in(st, box_ptr);
+    show_box_in(st, box_ptr.idx().0);
     end_diagnostic_in(st, true);
 }
 
@@ -2966,7 +2967,7 @@ pub(crate) fn vpackage_emit_in(
     h: i32,
     m: i16,
     l: i32,
-) -> Result<i32, NodeRecycleAbort> {
+) -> Result<AnyBox, NodeRecycleAbort> {
     let outcome = vpackage_in(
         &mut st.mem,
         &st.eqtb,
@@ -2978,7 +2979,9 @@ pub(crate) fn vpackage_emit_in(
         l,
     )?;
     for diag in outcome.diags.into_iter().flatten() {
-        print_vpack_diag_in(st, outcome.r, diag);
+        print_vpack_diag_in(st, outcome.r_box, diag);
     }
-    Ok(outcome.r)
+    // `vpackage_in` carried the classified `VListNode` handle out in
+    // `PackOutcome`; hand it to callers verbatim.
+    Ok(outcome.r_box)
 }

@@ -24,7 +24,7 @@ use crate::globals::{
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
 use crate::scan::{set_class_fn, set_family_fn};
-use crate::units::MemIdx;
+use crate::units::{MemIdx, Scaled};
 
 extern "C" {
     fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
@@ -320,7 +320,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         let head = st.mem.b32s1(ALIGN_HEAD);
         let w = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
         let m = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
-        let pp = crate::packaging::hpack_emit_in(st, head, w, m)?;
+        let pp = crate::packaging::hpack_emit_in(st, head, w, m)?.idx().0;
         st.eqtb
             .set_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE, rule_save);
         pp
@@ -338,7 +338,9 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         let head = st.mem.b32s1(ALIGN_HEAD);
         let w = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
         let m = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
-        let pp = crate::packaging::vpackage_emit_in(st, head, w, m, MAX_HALFWORD)?;
+        let pp = crate::packaging::vpackage_emit_in(st, head, w, m, MAX_HALFWORD)?
+            .idx()
+            .0;
         qq = st.mem.b32s1(st.mem.b32s1(ALIGN_HEAD));
         loop {
             st.mem.set_b32s1(qq + 1, st.mem.b32s1(qq + 3));
@@ -527,7 +529,9 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                 if o != 0 {
                     let r = st.mem.b32s1(q);
                     st.mem.set_b32s1(q, TEX_NULL);
-                    let qq2 = crate::packaging::hpack_emit_in(st, q, 0, ADDITIONAL)?;
+                    let qq2 = crate::packaging::hpack_emit_in(st, q, 0, ADDITIONAL)?
+                        .idx()
+                        .0;
                     st.mem.set_b32s1(qq2 + 4, o);
                     st.mem.set_b32s1(qq2, r);
                     st.mem.set_b32s1(s, qq2);
@@ -952,7 +956,9 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             st.scanner.adjust_tail = st.scanner.cur_tail;
             st.scanner.pre_adjust_tail = st.scanner.cur_pre_tail;
             let head = st.mem.b32s1(cur_list_head());
-            let u = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?;
+            let u = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?
+                .idx()
+                .0;
             let w = st.mem.b32s1(u + 1);
             st.scanner.cur_tail = st.scanner.adjust_tail;
             st.scanner.adjust_tail = TEX_NULL;
@@ -961,7 +967,9 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             (u, w)
         } else {
             let head = st.mem.b32s1(cur_list_head());
-            let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, 0)?;
+            let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, 0)?
+                .idx()
+                .0;
             let w = st.mem.b32s1(u + 3);
             (u, w)
         };
@@ -1071,21 +1079,19 @@ pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainC
             st.mem.set_b32s1(cur_list_tail(), v);
             set_cur_list_tail(st.scanner.cur_pre_tail);
         }
-        let b = st
-            .mem
-            .classify_box(MemIdx::new(u))
-            .expect("valid node type for append_to_vlist")
-            .expect("append_to_vlist receives an hlist or vlist node");
-        crate::packaging::append_to_vlist(&mut st.mem, &st.eqtb, b)?;
+        crate::packaging::append_to_vlist(&mut st.mem, &st.eqtb, u)?;
         if st.scanner.cur_head != st.scanner.cur_tail {
             let v = st.mem.b32s1(st.scanner.cur_head);
             st.mem.set_b32s1(cur_list_tail(), v);
             set_cur_list_tail(st.scanner.cur_tail);
         }
-        u
+        // `u` is re-stamped as an UNSET_NODE below, so drop to the raw index here.
+        u.idx().0
     } else {
         let head = st.mem.b32s1(cur_list_head());
-        let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
+        let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?
+            .idx()
+            .0;
         pop_nest_in(&mut st.mem, &mut st.input);
         st.mem.set_b32s1(cur_list_tail(), u);
         set_cur_list_tail(u);
@@ -1925,23 +1931,23 @@ pub(crate) fn package_in(
         let list = st.mem.b32s1(cur_list_head());
         let w = st.save_stack.b32s1(sp + 2);
         let m = st.save_stack.b32s1(sp + 1) as i16;
-        st.scanner.cur_box = crate::packaging::hpack_emit_in(st, list, w, m)?;
+        st.scanner.cur_box = crate::packaging::hpack_emit_in(st, list, w, m)?.idx().0;
     } else {
         let sp = st.save_stack.save_ptr;
         let list = st.mem.b32s1(cur_list_head());
         let h = st.save_stack.b32s1(sp + 2);
         let m = st.save_stack.b32s1(sp + 1) as i16;
-        st.scanner.cur_box = crate::packaging::vpackage_emit_in(st, list, h, m, d)?;
+        let cb = crate::packaging::vpackage_emit_in(st, list, h, m, d)?;
+        st.scanner.cur_box = cb.idx().0;
         if c == VTOP_CODE {
-            let cb = st.scanner.cur_box;
             let mut hh = 0i32;
-            let p = st.mem.b32s1(cb + 5);
+            let p = cb.list_ptr(&st.mem).0;
             if p != TEX_NULL && st.mem.b16s1(p) <= 2 {
                 hh = st.mem.b32s1(p + 3);
             }
-            st.mem
-                .set_b32s1(cb + 2, st.mem.b32s1(cb + 2) - hh + st.mem.b32s1(cb + 3));
-            st.mem.set_b32s1(cb + 3, hh);
+            let new_depth = cb.depth(&st.mem).0 - hh + cb.height(&st.mem).0;
+            cb.set_depth(&mut st.mem, Scaled(new_depth));
+            cb.set_height(&mut st.mem, Scaled(hh));
         }
     }
     st.eqtb.set_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS, v);
@@ -2809,9 +2815,9 @@ pub(crate) fn handle_right_brace_in(
                 st.mem.set_b16s0(cur_list_tail(), sp);
                 st.mem.set_b32s1(
                     cur_list_tail() + 3,
-                    st.mem.b32s1(p + 3) + st.mem.b32s1(p + 2),
+                    p.height(&st.mem).0 + p.depth(&st.mem).0,
                 );
-                st.mem.set_b32s0(cur_list_tail() + 4, st.mem.b32s1(p + 5)); // ins list ptr
+                st.mem.set_b32s0(cur_list_tail() + 4, p.list_ptr(&st.mem).0); // ins list ptr
                 st.mem.set_b32s1(cur_list_tail() + 4, q);
                 st.mem.set_b32s1(cur_list_tail() + 2, d);
                 st.mem.set_b32s1(cur_list_tail() + 1, f);
@@ -2825,11 +2831,11 @@ pub(crate) fn handle_right_brace_in(
                 st.mem.set_b16s1(cur_list_tail(), ADJUST_NODE);
                 let sp = st.save_stack.b32s1(st.save_stack.save_ptr + 1) as u16;
                 st.mem.set_b16s0(cur_list_tail(), sp);
-                st.mem.set_b32s1(cur_list_tail() + 1, st.mem.b32s1(p + 5));
+                st.mem.set_b32s1(cur_list_tail() + 1, p.list_ptr(&st.mem).0);
                 delete_glue_ref(&mut st.mem, q);
             }
 
-            free_node(&mut st.mem, p, BOX_NODE_SIZE);
+            free_node(&mut st.mem, p.idx().0, BOX_NODE_SIZE);
             if st.input.nest_ptr == 0 {
                 crate::pagebuilder::build_page_in(st)?;
             }
@@ -2942,7 +2948,7 @@ pub(crate) fn handle_right_brace_in(
             set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
             st.mem.set_b16s1(cur_list_tail(), VCENTER_NOAD);
             st.mem.set_b32s1(cur_list_tail() + 1, SUB_BOX);
-            st.mem.set_b32s0(cur_list_tail() + 1, p);
+            st.mem.set_b32s0(cur_list_tail() + 1, p.idx().0);
         }
 
         MATH_CHOICE_GROUP => {
@@ -3651,7 +3657,9 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
         };
         let mut pa = p;
         if h != x {
-            pa = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
+            pa = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?
+                .idx()
+                .0;
             st.mem.set_b32s1(pa + 4, x - h);
         }
         let delta = if is_native(&st.fonts, f) && a == 0 {

@@ -2462,18 +2462,14 @@ fn post_line_break_suffix(
     scanner: &mut ScannerState,
     linebreak: &mut LinebreakState,
     eqtb: &EqtbState,
-    just_box: i32,
+    just_box: AnyBox,
     hpack: PostLineHpack,
     d: bool,
     lr_ptr: &mut i32,
     cur_line: &mut i32,
 ) -> Result<bool, PostLineAbort> {
-    scanner.just_box = just_box;
-    let just = mem
-        .classify_box(MemIdx::new(just_box))
-        .expect("valid hpack box type")
-        .expect("hpack returns an hlist");
-    just.set_shift_amount(mem, Scaled(hpack.cur_indent));
+    scanner.just_box = just_box.idx().0;
+    just_box.set_shift_amount(mem, Scaled(hpack.cur_indent));
 
     if PRE_ADJUST_HEAD != scanner.pre_adjust_tail {
         mem.set_b32s1(crate::globals::cur_list_tail(), mem.b32s1(PRE_ADJUST_HEAD));
@@ -2481,7 +2477,7 @@ fn post_line_break_suffix(
     }
 
     scanner.pre_adjust_tail = TEX_NULL;
-    crate::packaging::append_to_vlist(mem, eqtb, just).map_err(PostLineAbort::Node)?;
+    crate::packaging::append_to_vlist(mem, eqtb, just_box).map_err(PostLineAbort::Node)?;
 
     if ADJUST_HEAD != scanner.adjust_tail {
         mem.set_b32s1(crate::globals::cur_list_tail(), mem.b32s1(ADJUST_HEAD));

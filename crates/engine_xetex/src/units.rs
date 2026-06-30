@@ -80,6 +80,14 @@ impl MemPtr {
         MemPtr(raw)
     }
 
+    /// A non-null pointer to a known-valid node. The idiomatic way to store a
+    /// typed node handle (`p.idx()`) into another node's pointer field without
+    /// dropping back to a raw `i32` (`01c` propagation).
+    #[inline]
+    pub fn from_idx(idx: MemIdx) -> MemPtr {
+        MemPtr(idx.0)
+    }
+
     /// Is this the TeX null pointer?
     #[inline]
     pub fn is_null(self) -> bool {

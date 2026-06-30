@@ -568,18 +568,16 @@ unsafe fn clean_box_in(st: &mut EngineState, p: i32, s: i16) -> Result<AnyBox, M
         }
     }
 
-    let x = if crate::mem::is_char_node(&st.mem, q) || q == TEX_NULL {
+    let x_box = if crate::mem::is_char_node(&st.mem, q) || q == TEX_NULL {
         crate::packaging::hpack_emit_in(st, q, 0, ADDITIONAL)?
     } else if st.mem.b32s1(q) == TEX_NULL
         && st.mem.b16s1(q) <= VLIST_NODE
         && st.mem.b32s1(q + 4) == 0
     {
-        q
+        classify_box_or_panic(&st.mem, q)
     } else {
         crate::packaging::hpack_emit_in(st, q, 0, ADDITIONAL)?
     };
-
-    let x_box = classify_box_or_panic(&st.mem, x);
     let qq = x_box.list_ptr(&st.mem).0;
     if crate::mem::is_char_node(&st.mem, qq) {
         let r = st.mem.b32s1(qq);
@@ -704,8 +702,8 @@ fn fetch_in(st: &mut EngineState, a: i32) -> crate::errors::ErrorOutcome {
 }
 
 /// translated from xetex-math.c:198 (make_over)
-fn make_over(mem: &mut MemState, q: NodePtr<Noad>, x: i32) {
-    q.set_nucleus_field(mem, x);
+fn make_over(mem: &mut MemState, q: NodePtr<Noad>, x: AnyBox) {
+    q.set_nucleus_field(mem, x.idx().0);
     q.set_nucleus_type(mem, SUB_BOX);
 }
 
@@ -736,13 +734,17 @@ fn make_under_prepare(
     Ok(())
 }
 
-fn make_under_finish(mem: &mut MemState, q: NodePtr<Noad>, x: i32, y: i32, rule_thickness: i32) {
-    let yb = mem.classify_box(MemIdx::new(y)).unwrap().unwrap();
-    let xb = mem.classify_box(MemIdx::new(x)).unwrap().unwrap();
+fn make_under_finish(
+    mem: &mut MemState,
+    q: NodePtr<Noad>,
+    xb: AnyBox,
+    yb: AnyBox,
+    rule_thickness: i32,
+) {
     let delta = yb.height(mem).0 + yb.depth(mem).0 + rule_thickness;
     yb.set_height(mem, xb.height(mem));
     yb.set_depth(mem, Scaled(delta - yb.height(mem).0));
-    q.set_nucleus_field(mem, y);
+    q.set_nucleus_field(mem, yb.idx().0);
     q.set_nucleus_type(mem, SUB_BOX);
 }
 
@@ -752,7 +754,7 @@ unsafe fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Ma
     let rule_thickness = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
     make_under_prepare(&mut st.mem, x, rule_thickness)?;
     let y = crate::packaging::vpackage_emit_in(st, x.idx().0, 0, ADDITIONAL, MAX_HALFWORD)?;
-    make_under_finish(&mut st.mem, q, x.idx().0, y, rule_thickness);
+    make_under_finish(&mut st.mem, q, x, y, rule_thickness);
     Ok(())
 }
 
@@ -782,8 +784,8 @@ unsafe fn make_vcenter_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), 
     Ok(())
 }
 
-fn make_radical_finish(mem: &mut MemState, q: NodePtr<Noad>, x: i32) {
-    q.set_nucleus_field(mem, x);
+fn make_radical_finish(mem: &mut MemState, q: NodePtr<Noad>, x: AnyBox) {
+    q.set_nucleus_field(mem, x.idx().0);
     q.set_nucleus_type(mem, SUB_BOX);
 }
 
@@ -865,7 +867,7 @@ unsafe fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), 
     y.set_shift_amount(&mut st.mem, Scaled(-(x_height + clr)));
     let p = overbar(&mut st.mem, x.idx().0, clr, rule_height)?;
     let overbar_box = crate::packaging::vpackage_emit_in(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
-    y.set_link(&mut st.mem, MemPtr::from_raw(overbar_box));
+    y.set_link(&mut st.mem, MemPtr::from_idx(overbar_box.idx()));
     let hbox = crate::packaging::hpack_emit_in(st, y.idx().0, 0, ADDITIONAL)?;
     make_radical_finish(&mut st.mem, q, hbox);
     Ok(())
@@ -921,8 +923,8 @@ fn make_fraction_link_delimiters(mem: &mut MemState, left_delim: i32, v: i32, ri
     mem.set_b32s1(v, right_delim);
 }
 
-fn make_fraction_finish(mem: &mut MemState, q: NodePtr<Noad>, hbox: i32) {
-    q.set_nucleus_type(mem, hbox);
+fn make_fraction_finish(mem: &mut MemState, q: NodePtr<Noad>, hbox: AnyBox) {
+    q.set_nucleus_type(mem, hbox.idx().0);
 }
 
 #[inline]
@@ -1911,9 +1913,8 @@ unsafe fn make_math_accent_in(
         let x_box = classify_box_or_panic(&st.mem, x);
         let y_box = classify_box_or_panic(&st.mem, y);
         link_bottom_accent_stack(&mut st.mem, x_box, y_box);
-        let y = crate::packaging::vpackage_emit_in(st, x, 0, ADDITIONAL, MAX_HALFWORD)?;
+        let y_box = crate::packaging::vpackage_emit_in(st, x, 0, ADDITIONAL, MAX_HALFWORD)?;
         let x_box = classify_box_or_panic(&st.mem, x);
-        let y_box = classify_box_or_panic(&st.mem, y);
         let y_height = y_box.height(&st.mem).0;
         y_box.set_shift_amount(&mut st.mem, Scaled(-(h - y_height)));
         finish_accent_nucleus(&mut st.mem, q, x_box, y_box);
@@ -1921,11 +1922,9 @@ unsafe fn make_math_accent_in(
         let x_box = classify_box_or_panic(&st.mem, x);
         let y_box = classify_box_or_panic(&st.mem, y);
         start_top_accent_stack(&mut st.mem, x_box, y_box, delta)?;
-        let y = crate::packaging::vpackage_emit_in(st, y, 0, ADDITIONAL, MAX_HALFWORD)?;
-        let y_box = classify_box_or_panic(&st.mem, y);
+        let y_box = crate::packaging::vpackage_emit_in(st, y, 0, ADDITIONAL, MAX_HALFWORD)?;
         finish_top_accent_package(&mut st.mem, y_box, h)?;
         let x_box = classify_box_or_panic(&st.mem, x);
-        let y_box = classify_box_or_panic(&st.mem, y);
         finish_accent_nucleus(&mut st.mem, q, x_box, y_box);
     }
 
@@ -2104,18 +2103,17 @@ unsafe fn initial_script_shifts_in(
     if crate::mem::is_char_node(&st.mem, p) || glyph_nucleus(&st.mem, p).is_some() {
         Ok(ScriptShifts { up: 0, down: 0 })
     } else {
-        let z = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
+        let zb = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
         let t = if st.scanner.cur_style < SCRIPT_STYLE {
             SCRIPT_SIZE
         } else {
             SCRIPT_SCRIPT_SIZE
         };
-        let zb = st.mem.classify_box(MemIdx::new(z)).unwrap().unwrap();
         let shifts = ScriptShifts {
             up: zb.height(&st.mem).0 - sup_drop(&st.fonts, &st.eqtb, t),
             down: zb.depth(&st.mem).0 + sub_drop(&st.fonts, &st.eqtb, t),
         };
-        free_node(&mut st.mem, z, BOX_NODE_SIZE);
+        free_node(&mut st.mem, zb.idx().0, BOX_NODE_SIZE);
         Ok(shifts)
     }
 }
@@ -2202,10 +2200,8 @@ unsafe fn finish_subsup_stack_in(
 
     let packaged =
         crate::packaging::vpackage_emit_in(st, input.x.idx().0, 0, ADDITIONAL, MAX_HALFWORD)?;
-    let pb = st.mem.classify_box(MemIdx::new(packaged)).unwrap().unwrap();
-    pb.set_shift_amount(&mut st.mem, Scaled(input.shift_down));
-    let packaged_box = classify_box_or_panic(&st.mem, packaged);
-    append_script_box_in(st, input.q, packaged_box);
+    packaged.set_shift_amount(&mut st.mem, Scaled(input.shift_down));
+    append_script_box_in(st, input.q, packaged);
     Ok(())
 }
 
@@ -2952,6 +2948,8 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                         update_math_style_params_in(st);
                         let list = st.mem.b32s1(TEMP_HEAD);
                         crate::packaging::hpack_emit_in(st, list, 0, ADDITIONAL)?
+                            .idx()
+                            .0
                     }
                     _ => return Err(NodeRecycleAbort::Confusion(c"mlist2").into()),
                 };
@@ -2963,15 +2961,13 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                 }
 
                 let list = st.mem.b32s1(q + 1);
-                let z = crate::packaging::hpack_emit_in(st, list, 0, ADDITIONAL)?;
-                let z_box = classify_box_or_panic(&st.mem, z);
+                let z_box = crate::packaging::hpack_emit_in(st, list, 0, ADDITIONAL)?;
                 mlist_track_box(&mut st.mem, z_box, &mut max_h, &mut max_d);
                 (r, r_type, q) = mlist_advance_in(st, q, style);
             }
             FirstPass::CheckDimensions => {
                 let list = st.mem.b32s1(q + 1);
-                let z = crate::packaging::hpack_emit_in(st, list, 0, ADDITIONAL)?;
-                let z_box = classify_box_or_panic(&st.mem, z);
+                let z_box = crate::packaging::hpack_emit_in(st, list, 0, ADDITIONAL)?;
                 mlist_track_box(&mut st.mem, z_box, &mut max_h, &mut max_d);
                 (r, r_type, q) = mlist_advance_in(st, q, style);
             }
@@ -4369,7 +4365,9 @@ fn app_display_in(
             st.mem.set_b32s1(r, p);
             st.mem.set_b32s1(u2, r);
             if j == TEX_NULL {
-                b = crate::packaging::hpack_emit_in(st, u2, 0, ADDITIONAL)?;
+                b = crate::packaging::hpack_emit_in(st, u2, 0, ADDITIONAL)?
+                    .idx()
+                    .0;
                 st.mem.set_b32s1(b + 4, s);
             } else {
                 st.mem.set_b32s1(b + 5, u2);
@@ -4464,7 +4462,9 @@ pub(crate) fn after_math_in(
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = false;
         unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
-        a = crate::packaging::hpack_emit_in(st, st.mem.b32s1(TEMP_HEAD), 0, ADDITIONAL)?;
+        a = crate::packaging::hpack_emit_in(st, st.mem.b32s1(TEMP_HEAD), 0, ADDITIONAL)?
+            .idx()
+            .0;
         st.mem.set_b16s0(a, DLIST);
         crate::save::unsave_in(st)?;
         st.save_stack.save_ptr -= 1;
@@ -4542,7 +4542,9 @@ pub(crate) fn after_math_in(
         p = st.mem.b32s1(TEMP_HEAD);
         st.scanner.adjust_tail = ADJUST_HEAD;
         st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-        let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
+        let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?
+            .idx()
+            .0;
         p = classify_box_or_panic(&st.mem, b).list_ptr(&st.mem).0;
         let t = st.scanner.adjust_tail;
         st.scanner.adjust_tail = TEX_NULL;
@@ -4570,12 +4572,14 @@ pub(crate) fn after_math_in(
                     || st.scanner.total_shrink[FILLL] != 0)
             {
                 crate::mem::free_node(&mut st.mem, b, BOX_NODE_SIZE);
-                b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?;
+                b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?
+                    .idx()
+                    .0;
             } else {
                 e = 0;
                 if w > z {
                     crate::mem::free_node(&mut st.mem, b, BOX_NODE_SIZE);
-                    b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?;
+                    b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?.idx().0;
                 }
             }
             w = classify_box_or_panic(&st.mem, b).width(&st.mem).0;
@@ -4640,7 +4644,9 @@ pub(crate) fn after_math_in(
                 st.mem.set_b32s1(b, r);
                 st.mem.set_b32s1(r, a);
             }
-            b = crate::packaging::hpack_emit_in(st, b, 0, ADDITIONAL)?;
+            b = crate::packaging::hpack_emit_in(st, b, 0, ADDITIONAL)?
+                .idx()
+                .0;
         }
 
         app_display_in(st, j, b, d)?;
@@ -5161,9 +5167,7 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
     let mut bb = b;
     if bb.width(&st.mem).0 != w && !bb.list_ptr(&st.mem).is_null() && matches!(bb, AnyBox::VList(_))
     {
-        // hpack returns a raw box index; classify once at that creation boundary.
-        let hb = crate::packaging::hpack_emit_in(st, bb.idx().0, 0, ADDITIONAL)?;
-        bb = classify_box_or_panic(&st.mem, hb);
+        bb = crate::packaging::hpack_emit_in(st, bb.idx().0, 0, ADDITIONAL)?;
     }
 
     let char_kern_width = if bb.width(&st.mem).0 != w && !bb.list_ptr(&st.mem).is_null() {
@@ -5186,10 +5190,7 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
 
     match rebox(&mut st.mem, bb.idx().0, w, char_kern_width)? {
         ReboxResult::Done(rb) => Ok(classify_box_or_panic(&st.mem, rb)),
-        ReboxResult::Hpack(rb) => {
-            let hb = crate::packaging::hpack_emit_in(st, rb, w, EXACTLY)?;
-            Ok(classify_box_or_panic(&st.mem, hb))
-        }
+        ReboxResult::Hpack(rb) => Ok(crate::packaging::hpack_emit_in(st, rb, w, EXACTLY)?),
     }
 }
 
