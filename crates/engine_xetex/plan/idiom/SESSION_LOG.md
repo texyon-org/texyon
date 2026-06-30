@@ -8,6 +8,70 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 239 — 2026-06-30 — Execution: typed-propagation sweep (is_null, alloc-twins, FractionAssembly/fin_align AnyBox)
+
+**Type:** execution (workstream 01 / typing — propagation). Five file-disjoint,
+dashboard-validated commits, preceded by one read-only recon workflow (8 parallel
+agents) that classified every `.idx().0`/`from_idx_unchecked`/null-check site
+across the 7 hot files into propagatable vs justified-i32-boundary. Pure
+behavior-preserving typing: `with_state` **352** and `unsafe fn` **273**
+unchanged.
+
+**Commits:**
+1. **is_null sweep** — 26 raw `<accessor>.0 == TEX_NULL`/`.0 != TEX_NULL` null
+   checks on MemPtr chains (list_ptr/pre_break/post_break/child/break_node) →
+   `.is_null()`/`!…is_null()` across linebreak (12), packaging (13), math (1).
+2. **shipout movement loop** — `while q.link(mem).0 != p.idx().0` →
+   `q.link(mem) != MemPtr::from_idx(p.idx())` (both DVI y/z reuse loops).
+3. **math kern/fraction typing** — `overbar` takes `AnyBox` and builds via the
+   typed `alloc_kern_node` (not `new_kern` + `from_idx_unchecked`);
+   `make_under_prepare`/`make_ord` adopt `alloc_kern_node`; `FractionAssembly.x/z`
+   → `AnyBox` so `make_fraction` reads them directly. −4 `from_idx_unchecked`,
+   −2 `classify_box`.
+4. **fin_align_in** — the §836-840 packed template box classified once
+   (hpack/vpack already return `AnyBox`); 15 raw `mem.bXXsY(p+N)` reads →
+   typed `AnyBox` accessors (width/height/depth/glue_sign/glue_order/glue_set/
+   list_ptr); −2 `.idx().0`. **TRIP caught an initial depth/height +2/+3 offset
+   swap during validation** (depth is +2, height +3) — fixed and re-validated.
+5. **typed null-box allocators** — added `alloc_null_box`/`alloc_null_vbox`
+   (typed HLIST/VLIST twins of `new_null_box`, confining `from_idx_unchecked` to
+   one audited site each, like the existing `alloc_kern_node`); adopted at
+   `char_box`/`make_fraction`/`native_glyph_vbox_start`/`build_ext_delimiter`
+   (−2 `classify_box`, −2 inline `from_idx_unchecked`).
+
+**Metrics:** `.idx().0` **125 → 120**; `.0 [!=]= TEX_NULL` **24 → 0**;
+`from_idx_unchecked` **47 → 43**; math.rs `classify_box` **~25 → 22**;
+`with_state` **352** / `unsafe fn` **273** unchanged; cargo warnings **37** held.
+
+**Key finding (strategy — recorded in [[propagate-typed-returns-not-idx0]] /
+[[typing-frontier-is-bucket-d-residue]]):** the recon over-flagged flipping the
+`new_*` constructors (new_kern/new_glue/new_noad/new_null_box) to
+`Option<NodePtr<K>>`. **Descoped**: a global return-type flip sprays `.idx().0`
+at the i32 link / `cur_list_tail` / state stores (the consuming side stays raw
+`mod raw`) and forces awkward `map_or(ALLOC_FAILED,…)` at callers that share an
+i32 binding with raw reads (math.rs 4316/4741) or other i32 constructors — all
+to remove a handful of `from_idx_unchecked`. The clean alternative used here is
+the **typed-twin allocator** (`alloc_kern_node`/`alloc_null_box`/
+`alloc_null_vbox`): confine `from_idx_unchecked` to one audited allocator and let
+the *re-classifying* callers adopt the typed handle, leaving the i32-link-store
+callers on `new_*`. Matches session-238's drained-pool assessment.
+
+**Validation:** `cargo fmt`; `cargo check` 37 warnings; dashboard **29/2/7/4**
+per commit; release rebuild; full corpus **637 passed / 2 diverged / 0
+missing-golden** (only the known FP `1905.00073v1`/`1905.00148v1`),
+doc-count == baseline, no NOXDV/NOLOG.
+
+**Next:** the recon-identified clean typing pool is drained — the remaining
+`.idx().0` (math 56, mem 17, main_control 12, linebreak 12, packaging 11) are
+justified i32 boundaries (noad packed-record nucleus stores, i32-list-head
+callees `free_node`/`hpack_emit`/`show_box`, link stores into raw
+`cur_list_tail`/cursors per [[mod-raw-is-intentional-not-debt]]). Further
+typed-twin adoptions (`alloc_noad`/`alloc_glue`) are marginal (1–2 re-classify
+sites each). The larger remaining vein is **threading leaves to shrink the 352
+`with_state` sites** (session-238's call) — now mostly setjmp-anchored IO/init
+(io/output/format_io/texmfmp/engine) + the bucket-D measurer interleavings in
+`make_op`.
+
 ## Idiom session 238 — 2026-06-30 — Execution: link-store idiom + math box/glyph-creator return propagation
 
 **Type:** execution (workstream 01 / typing — *propagation*). Mechanical

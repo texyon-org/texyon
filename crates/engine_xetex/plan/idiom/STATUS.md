@@ -4,6 +4,34 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-06-30 (last session = session 239, **execution — typed-
+propagation sweep**. Five file-disjoint, dashboard-validated commits, preceded
+by one read-only recon workflow (8 agents) classifying every `.idx().0`/
+`from_idx_unchecked`/null-check site across the 7 hot files. (1) is_null sweep:
+26 raw `<accessor>.0 == TEX_NULL` → `.is_null()` on MemPtr chains
+(linebreak/packaging/math). (2) shipout DVI movement loops →
+`q.link(mem) != MemPtr::from_idx(p.idx())`. (3) math kern/fraction: `overbar`
+takes `AnyBox` + builds via the typed `alloc_kern_node`; `make_under`/`make_ord`
+adopt it; `FractionAssembly.x/z` → `AnyBox` (−4 from_idx_unchecked, −2
+classify_box). (4) `fin_align_in`: §836-840 packed template box classified once,
+15 raw `mem.bXXsY(p+N)` reads → typed `AnyBox` accessors (TRIP caught + fixed an
+initial depth/height +2/+3 swap). (5) typed null-box allocators
+`alloc_null_box`/`alloc_null_vbox` (HLIST/VLIST twins confining
+`from_idx_unchecked` to one audited site), adopted at char_box/make_fraction/
+native_glyph_vbox/build_ext_delimiter. Metrics: `.idx().0` **125 → 120**;
+`.0 [!=]= TEX_NULL` **24 → 0**; `from_idx_unchecked` **47 → 43**; math.rs
+`classify_box` **~25 → 22**; `with_state` **352** / `unsafe fn` **273** unchanged
+(pure typing). Validation: dashboard **29/2/7/4** per commit; release rebuild;
+full corpus **637 passed / 2 diverged / 0 missing-golden** (only known FP
+`1905.00073v1`/`1905.00148v1`, doc-count == baseline, no NOXDV/NOLOG).
+**Strategy finding:** descoped the recon-suggested
+global `new_* → Option<NodePtr<K>>` flip (sprays `.idx().0` at i32 link/
+cur_list_tail/state stores + awkward `map_or(ALLOC_FAILED,…)` at mixed-binding
+callers) in favour of the typed-twin-allocator pattern. **Next:** clean typing
+pool drained — remaining `.idx().0` are justified i32 boundaries; the larger
+remaining vein is threading leaves to shrink the 352 `with_state` sites
+(setjmp-anchored IO/init + bucket-D `make_op` measurer interleavings).)
+
 Last updated: 2026-06-29 (last session = session 235, **execution — typed
 dispatch + box-header reads (linebreak/shipout)**. Four file-disjoint typing
 slices, one Explore subagent for the `linebreak.rs` per-site family manifest.
