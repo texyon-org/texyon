@@ -44,7 +44,7 @@ use crate::output::print_nl_cstr_in;
 
 use crate::io::open_log_file;
 use crate::node::{GlueSpecNode, NodePtr, RuleDimen};
-use crate::units::{MemIdx, MemPtr, Scaled};
+use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
 extern "C" {
 
@@ -1259,9 +1259,12 @@ pub(crate) fn set_math_char_in(
             if (0..NUMBER_MATH_FAM_SM).contains(&cf) {
                 nd.set_nucleus_fam(&mut st.mem, cf as u16);
             }
-            st.mem.set_b16s1(p, ORD_NOAD);
+            nd.set_noad_type(&mut st.mem, NodeType::OrdNoad);
         } else {
-            st.mem.set_b16s1(p, ORD_NOAD + math_class_fn(c) as u16);
+            nd.set_noad_type(
+                &mut st.mem,
+                NodeType::from_raw(ORD_NOAD + math_class_fn(c) as u16).expect("valid noad type"),
+            );
         }
         let fam = nd.nucleus_fam(&st.mem) + (ch / 65536) as u16 * 256;
         nd.set_nucleus_fam(&mut st.mem, fam);
@@ -3117,8 +3120,12 @@ pub(crate) fn xetex_scan_dimen_in(
                 if mu {
                     scan_something_internal_in(st, MU_VAL, false)?;
                     if st.scanner.cur_val_level as i16 >= GLUE_VAL {
-                        let v = st.mem.b32s1(cur_val() + 1);
-                        crate::mem::delete_glue_ref(&mut st.mem, cur_val());
+                        let gm = cur_val();
+                        let v = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(gm))
+                            .expect("non-null glue spec")
+                            .width(&st.mem)
+                            .0;
+                        crate::mem::delete_glue_ref(&mut st.mem, gm);
                         set_cur_val(v);
                     }
                     if st.scanner.cur_val_level as i16 == MU_VAL {
@@ -3222,8 +3229,12 @@ pub(crate) fn xetex_scan_dimen_in(
                     if mu {
                         scan_something_internal_in(st, MU_VAL, false)?;
                         if st.scanner.cur_val_level as i16 >= GLUE_VAL {
-                            let v = st.mem.b32s1(cur_val() + 1);
-                            crate::mem::delete_glue_ref(&mut st.mem, cur_val());
+                            let gm = cur_val();
+                            let v = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(gm))
+                                .expect("non-null glue spec")
+                                .width(&st.mem)
+                                .0;
+                            crate::mem::delete_glue_ref(&mut st.mem, gm);
                             set_cur_val(v);
                         }
                         if st.scanner.cur_val_level as i16 != MU_VAL {
@@ -4375,12 +4386,14 @@ pub(crate) fn scan_something_internal_in(
                                 let nv = new_spec_scc(st, gm)?;
                                 set_cur_val(nv);
                                 crate::mem::delete_glue_ref(&mut st.mem, gm);
-                                let v1 = -(st.mem.b32s1(cur_val() + 1));
-                                st.mem.set_b32s1(cur_val() + 1, v1);
-                                let v2 = -(st.mem.b32s1(cur_val() + 2));
-                                st.mem.set_b32s1(cur_val() + 2, v2);
-                                let v3 = -(st.mem.b32s1(cur_val() + 3));
-                                st.mem.set_b32s1(cur_val() + 3, v3);
+                                let gs =
+                                    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(nv))
+                                        .expect("non-null glue spec");
+                                let (w, str_, shr) =
+                                    (gs.width(&st.mem), gs.stretch(&st.mem), gs.shrink(&st.mem));
+                                gs.set_width(&mut st.mem, Scaled(-w.0));
+                                gs.set_stretch(&mut st.mem, Scaled(-str_.0));
+                                gs.set_shrink(&mut st.mem, Scaled(-shr.0));
                             } else {
                                 set_cur_val(-cur_val());
                             }
@@ -4957,10 +4970,13 @@ pub(crate) fn scan_something_internal_in(
                             GLUE_STRETCH_ORDER_CODE | GLUE_SHRINK_ORDER_CODE => {
                                 scan_normal_glue_in(st)?;
                                 q = cur_val();
+                                let gs =
+                                    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q))
+                                        .expect("non-null glue spec");
                                 if m == GLUE_STRETCH_ORDER_CODE {
-                                    set_cur_val(st.mem.b16s1(q) as i32);
+                                    set_cur_val(gs.stretch_order(&st.mem) as i32);
                                 } else {
-                                    set_cur_val(st.mem.b16s0(q) as i32);
+                                    set_cur_val(gs.shrink_order(&st.mem) as i32);
                                 }
                                 crate::mem::delete_glue_ref(&mut st.mem, q);
                             }
@@ -5112,7 +5128,9 @@ pub(crate) fn scan_something_internal_in(
     // Coerce cur_val to the requested level.
     while (st.scanner.cur_val_level as i16) > level {
         if (st.scanner.cur_val_level as i16) == GLUE_VAL {
-            set_cur_val(st.mem.b32s1(cur_val() + 1));
+            let gs = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(cur_val()))
+                .expect("non-null glue spec");
+            set_cur_val(gs.width(&st.mem).0);
         } else if (st.scanner.cur_val_level as i16) == MU_VAL {
             scc_err(crate::errors::mu_error_in(st))?;
         }
@@ -5124,12 +5142,12 @@ pub(crate) fn scan_something_internal_in(
             let gm = cur_val();
             let nv = new_spec_scc(st, gm)?;
             set_cur_val(nv);
-            let v1 = -(st.mem.b32s1(cur_val() + 1));
-            st.mem.set_b32s1(cur_val() + 1, v1);
-            let v2 = -(st.mem.b32s1(cur_val() + 2));
-            st.mem.set_b32s1(cur_val() + 2, v2);
-            let v3 = -(st.mem.b32s1(cur_val() + 3));
-            st.mem.set_b32s1(cur_val() + 3, v3);
+            let gs = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(nv))
+                .expect("non-null glue spec");
+            let (w, str_, shr) = (gs.width(&st.mem), gs.stretch(&st.mem), gs.shrink(&st.mem));
+            gs.set_width(&mut st.mem, Scaled(-w.0));
+            gs.set_stretch(&mut st.mem, Scaled(-str_.0));
+            gs.set_shrink(&mut st.mem, Scaled(-shr.0));
         } else {
             set_cur_val(-cur_val());
         }
@@ -5137,8 +5155,10 @@ pub(crate) fn scan_something_internal_in(
         && (st.scanner.cur_val_level as i16) <= MU_VAL
     {
         // GLUE_SPEC_ref_count(cur_val)++
-        let v = st.mem.b32s1(cur_val()) + 1;
-        st.mem.set_b32s1(cur_val(), v);
+        let gs = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(cur_val()))
+            .expect("non-null glue spec");
+        let rc = gs.ref_count(&st.mem) + 1;
+        gs.set_ref_count(&mut st.mem, rc);
     }
     Ok(())
 }
