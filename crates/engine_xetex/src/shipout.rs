@@ -2642,7 +2642,7 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
             q.set_state(mem, p.state(mem));
             if q.state(mem) == MOV_Y_HERE {
                 let out = vec![o.wrapping_add(4)];
-                while q.link(mem).0 != p.idx().0 {
+                while q.link(mem) != MemPtr::from_idx(p.idx()) {
                     q = NodePtr::<MovementNode>::from_ptr(q.link(mem))
                         .expect("found movement record is linked from the new record");
                     match q.state(mem) {
@@ -2654,7 +2654,7 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
                 out
             } else {
                 let out = vec![o.wrapping_add(9)];
-                while q.link(mem).0 != p.idx().0 {
+                while q.link(mem) != MemPtr::from_idx(p.idx()) {
                     q = NodePtr::<MovementNode>::from_ptr(q.link(mem))
                         .expect("found movement record is linked from the new record");
                     match q.state(mem) {
