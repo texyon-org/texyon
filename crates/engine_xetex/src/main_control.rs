@@ -23,7 +23,7 @@ use crate::globals::{
 };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
-use crate::node::{GlueSpecNode, NodePtr};
+use crate::node::{AnyNode, GlueSpecNode, NodePtr};
 use crate::scan::{set_class_fn, set_family_fn};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -2811,17 +2811,21 @@ pub(crate) fn handle_right_brace_in(
                 }
                 st.mem.set_b32s1(cur_list_tail(), new_node);
                 set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
-                st.mem.set_b16s1(cur_list_tail(), INS_NODE);
+                let tail = cur_list_tail();
+                st.mem.set_b16s1(tail, INS_NODE);
+                let ins = match st.mem.classify(MemIdx::new(tail)) {
+                    Ok(AnyNode::Ins(ins)) => ins,
+                    _ => unreachable!("freshly stamped INS_NODE"),
+                };
                 let sp = st.save_stack.b32s1(st.save_stack.save_ptr) as u16;
-                st.mem.set_b16s0(cur_list_tail(), sp);
-                st.mem.set_b32s1(
-                    cur_list_tail() + 3,
-                    p.height(&st.mem).0 + p.depth(&st.mem).0,
-                );
-                st.mem.set_b32s0(cur_list_tail() + 4, p.list_ptr(&st.mem).0); // ins list ptr
-                st.mem.set_b32s1(cur_list_tail() + 4, q);
-                st.mem.set_b32s1(cur_list_tail() + 2, d);
-                st.mem.set_b32s1(cur_list_tail() + 1, f);
+                ins.set_subtype(&mut st.mem, sp);
+                let hd = p.height(&st.mem).0 + p.depth(&st.mem).0;
+                ins.set_height(&mut st.mem, Scaled(hd));
+                let lp = p.list_ptr(&st.mem); // ins list ptr
+                ins.set_ins_ptr(&mut st.mem, lp);
+                ins.set_split_top_ptr(&mut st.mem, MemPtr::from_raw(q));
+                ins.set_depth(&mut st.mem, Scaled(d));
+                ins.set_float_cost(&mut st.mem, f);
             } else {
                 let new_node = get_node(&mut st.mem, SMALL_NODE_SIZE);
                 if new_node == ALLOC_FAILED {
@@ -2829,10 +2833,16 @@ pub(crate) fn handle_right_brace_in(
                 }
                 st.mem.set_b32s1(cur_list_tail(), new_node);
                 set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
-                st.mem.set_b16s1(cur_list_tail(), ADJUST_NODE);
+                let tail = cur_list_tail();
+                st.mem.set_b16s1(tail, ADJUST_NODE);
+                let adj = match st.mem.classify(MemIdx::new(tail)) {
+                    Ok(AnyNode::Adjust(adj)) => adj,
+                    _ => unreachable!("freshly stamped ADJUST_NODE"),
+                };
                 let sp = st.save_stack.b32s1(st.save_stack.save_ptr + 1) as u16;
-                st.mem.set_b16s0(cur_list_tail(), sp);
-                st.mem.set_b32s1(cur_list_tail() + 1, p.list_ptr(&st.mem).0);
+                adj.set_subtype(&mut st.mem, sp);
+                let lp = p.list_ptr(&st.mem);
+                adj.set_adjust_ptr(&mut st.mem, lp);
                 delete_glue_ref(&mut st.mem, q);
             }
 
@@ -3081,10 +3091,14 @@ pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     if p == crate::mem::ALLOC_FAILED {
         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
-    st.mem.set_b32s0(p + 1, c);
     st.mem.set_b16s1(p, MARK_NODE); // NODE_type(p)
-    st.mem.set_b16s0(p, 0);
-    st.mem.set_b32s1(p + 1, st.scanner.def_ref);
+    let mark = match st.mem.classify(MemIdx::new(p)) {
+        Ok(AnyNode::Mark(mark)) => mark,
+        _ => unreachable!("freshly stamped MARK_NODE"),
+    };
+    mark.set_mark_class(&mut st.mem, c);
+    mark.set_subtype(&mut st.mem, 0);
+    mark.set_mark_ptr(&mut st.mem, MemPtr::from_raw(st.scanner.def_ref));
     let tail = crate::globals::cur_list_tail();
     st.mem.set_b32s1(tail, p);
     crate::globals::set_cur_list_tail(p);
