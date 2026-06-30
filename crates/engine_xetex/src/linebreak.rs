@@ -20,7 +20,6 @@ use crate::units::{MemIdx, MemPtr, Scaled};
 const GLUE_PAR_XETEX_LINEBREAK_SKIP: i32 = 15;
 const INT_PAR_XETEX_LINEBREAK_LOCALE: i32 = 66;
 const INT_PAR_XETEX_LINEBREAK_PENALTY: i32 = 67;
-const NATIVE_NODE_SIZE_NN: i32 = 6;
 
 const MAX_HLIST_STACK: i16 = 512;
 const HLIST_NODE: i32 = crate::consts::HLIST_NODE as i32;
@@ -45,7 +44,6 @@ const NORMAL: u16 = 0;
 const HOLD_HEAD: i32 = 4_999_995;
 const ACTIVE_LIST: i32 = 4_999_992;
 const LAST_ACTIVE: i32 = ACTIVE_LIST;
-const NATIVE_NODE_SIZE: i32 = 6;
 const PASSIVE_NODE_SIZE: i32 = 2;
 const ACTIVE_NODE_SIZE_NORMAL: i16 = 3;
 const ACTIVE_NODE_SIZE_EXTENDED: i16 = 5;
@@ -115,7 +113,7 @@ extern "C" {
 
 // translated from xetex-linebreak.c:77 (get_native_usv)
 pub fn get_native_usv(mem: &MemState, p: i32, i: i32) -> i32 {
-    let text = mem.as_u16_ptr(p + NATIVE_NODE_SIZE);
+    let text = whatsit_node_in(mem, p).native_text_ptr(mem);
     let c = unsafe { *text.add(i as usize) };
 
     if (0xD800..0xDC00).contains(&c) {
@@ -375,7 +373,7 @@ fn native_node_len_in(mem: &MemState, p: i32) -> i32 {
 
 #[inline]
 fn set_native_node_len_in(mem: &mut MemState, p: i32, v: i32) {
-    mem.set_b16s1(p + 4, v as u16);
+    whatsit_node_in(mem, p).set_native_length(mem, v as u16);
 }
 
 #[inline]
@@ -385,8 +383,10 @@ fn native_node_font_in(mem: &MemState, p: i32) -> i32 {
 
 #[inline]
 pub unsafe fn copy_native_tail(mem: &mut MemState, q: i32, ha: i32, start: i32) {
-    let dst = mem.as_u16_ptr_mut(q + NATIVE_NODE_SIZE);
-    let src = mem.as_u16_ptr(ha + NATIVE_NODE_SIZE);
+    let qh = whatsit_node_in(mem, q);
+    let dst = qh.native_text_ptr_mut(mem);
+    let hah = whatsit_node_in(mem, ha);
+    let src = hah.native_text_ptr(mem);
     for i in start..native_node_len_in(mem, ha) {
         *dst.add((i - start) as usize) = *src.add(i as usize);
     }
@@ -428,10 +428,7 @@ fn is_empty_box_in(mem: &MemState, p: i32) -> bool {
         return false;
     }
     let p = box_node(mem, p);
-    p.width(mem).0 == 0
-        && p.height(mem).0 == 0
-        && p.depth(mem).0 == 0
-        && p.list_ptr(mem).is_null()
+    p.width(mem).0 == 0 && p.height(mem).0 == 0 && p.depth(mem).0 == 0 && p.list_ptr(mem).is_null()
 }
 
 #[inline]
@@ -441,9 +438,7 @@ fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
             INS_NODE | MARK_NODE | ADJUST_NODE | PENALTY_NODE => true,
             DISC_NODE => {
                 let p = disc_node(p);
-                p.pre_break(mem).is_null()
-                    && p.post_break(mem).is_null()
-                    && p.subtype(mem) == 0
+                p.pre_break(mem).is_null() && p.post_break(mem).is_null() && p.subtype(mem) == 0
             }
             MATH_NODE => math_node(p).width(mem).0 == 0,
             KERN_NODE => {
@@ -561,9 +556,7 @@ pub fn find_protchar_left(
     let mut run = true;
     loop {
         let t = l;
-        while run
-            && mem.b16s1(l) as i32 == HLIST_NODE
-            && !box_node(mem, l).list_ptr(mem).is_null()
+        while run && mem.b16s1(l) as i32 == HLIST_NODE && !box_node(mem, l).list_ptr(mem).is_null()
         {
             if !push_node(linebreak, l) {
                 return None;
@@ -606,9 +599,7 @@ pub fn find_protchar_right(
     let mut run = true;
     loop {
         let t = r;
-        while run
-            && mem.b16s1(r) as i32 == HLIST_NODE
-            && !box_node(mem, r).list_ptr(mem).is_null()
+        while run && mem.b16s1(r) as i32 == HLIST_NODE && !box_node(mem, r).list_ptr(mem).is_null()
         {
             if !push_node(linebreak, l) || !push_node(linebreak, r) {
                 return None;
@@ -3443,8 +3434,10 @@ fn hyphenate_native_word_if_needed(
             // SAFETY: both nodes are sized for the copied UTF-16 range;
             // the mem arena never reallocates.
             unsafe {
-                let dst = st.mem.as_u16_ptr_mut(q + NATIVE_NODE_SIZE);
-                let src = st.mem.as_u16_ptr(ha + NATIVE_NODE_SIZE);
+                let qh = whatsit_node_in(&st.mem, q);
+                let dst = qh.native_text_ptr_mut(&mut st.mem);
+                let hah = whatsit_node_in(&st.mem, ha);
+                let src = hah.native_text_ptr(&st.mem);
                 for i in 0..=(j - hp - 1) {
                     *dst.add(i as usize) = *src.add((i + hp) as usize);
                 }
@@ -3472,8 +3465,10 @@ fn hyphenate_native_word_if_needed(
     st.mem.set_b16s0(q, subtype);
     // SAFETY: see above.
     unsafe {
-        let dst = st.mem.as_u16_ptr_mut(q + NATIVE_NODE_SIZE);
-        let src = st.mem.as_u16_ptr(ha + NATIVE_NODE_SIZE);
+        let qh = whatsit_node_in(&st.mem, q);
+        let dst = qh.native_text_ptr_mut(&mut st.mem);
+        let hah = whatsit_node_in(&st.mem, ha);
+        let src = hah.native_text_ptr(&st.mem);
         for i in 0..=(new_hn - hp - 1) {
             *dst.add(i as usize) = *src.add((i + hp) as usize);
         }
@@ -3893,7 +3888,7 @@ pub fn char_pw_in(
         && mem.b16s1(p) == WHATSIT_NODE
         && (mem.b16s0(p) == NATIVE_WORD_NODE || mem.b16s0(p) == NATIVE_WORD_NODE_AT)
     {
-        if !mem.ptr(p + 5).is_null() {
+        if !whatsit_node_in(mem, p).native_glyph_info_ptr(mem).is_null() {
             // NATIVE_NODE_glyph_info_ptr != NULL
             let f = whatsit_node_in(mem, p).native_font(mem).0; // NATIVE_NODE_font
             let cp = unsafe { real_get_native_word_cp(mem.node_addr(p), side as libc::c_int) };
@@ -3971,7 +3966,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
         let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, main_f, len)?;
         st.mem.set_b32s1(cur_list_tail(), node);
         set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
-        let text = st.mem.as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
+        let t = cur_list_tail();
+        let text = whatsit_node_in(&st.mem, t).native_text_ptr_mut(&mut st.mem);
         for i in 0..len {
             *text.add(i as usize) = *native_text.add((s + i) as usize);
         }
@@ -4017,7 +4013,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                 )?;
                 st.mem.set_b32s1(cur_list_tail(), node);
                 set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
-                let text = st.mem.as_u16_ptr_mut(cur_list_tail() + NATIVE_NODE_SIZE_NN);
+                let t = cur_list_tail();
+                let text = whatsit_node_in(&st.mem, t).native_text_ptr_mut(&mut st.mem);
                 for i in prev_offs..offs {
                     *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
                 }

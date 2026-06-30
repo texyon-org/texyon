@@ -2014,6 +2014,11 @@ impl NodePtr<WhatsitNode> {
     pub fn native_length(self, mem: &MemState) -> u16 {
         mem.b16s1(self.idx.offset(4).0)
     }
+    /// Set the native-word UTF-16 item count = `mem[(p) + 4].b16.s1`.
+    #[inline]
+    pub fn set_native_length(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.offset(4).0, v);
+    }
     /// Glyph number = `mem[(p) + 4].b16.s1` (`NATIVE_NODE_glyph`; the
     /// `GLYPH_NODE` reading of the [`native_length`](NodePtr::native_length)
     /// word).
