@@ -2,8 +2,7 @@
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{
-    buf_size, cur_chr, cur_val, first, last, name_of_file, set_buffer_entry, set_input_file,
-    set_last, set_name_length,
+    buf_size, cur_chr, cur_val, first, name_of_file, set_name_length,
 };
 use crate::globals::{
     cur_cmd, cur_cs, cur_input, init_pool_ptr, pool_size, selector, set_cur_cs,
@@ -1446,13 +1445,17 @@ pub unsafe fn init_io() {
     STDIN_UFILE.skip_next_lf = 0;
     STDIN_UFILE.encoding_mode = UTF8 as i16;
     STDIN_UFILE.conversion_data = std::ptr::null_mut();
-    set_input_file(0, (&raw mut STDIN_UFILE).cast());
 
-    set_buffer_entry(first(), 0);
-    set_last(first());
-    set_cur_input_loc(first());
-    set_cur_input_limit(last());
-    set_first(last() + 1);
+    let first = first();
+    let last = crate::state::with_state_mut(|s| {
+        s.input.input_file[0] = (&raw mut STDIN_UFILE).cast();
+        s.input.buffer[first as usize] = 0;
+        s.input.last = first;
+        s.input.last
+    });
+    set_cur_input_loc(first);
+    set_cur_input_limit(last);
+    set_first(last + 1);
 }
 
 // scanner / `expand` SCC — threaded `_in` cores (session 204 big pass).

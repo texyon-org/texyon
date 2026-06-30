@@ -1724,28 +1724,11 @@ pub(crate) fn set_line(v: i32) {
 pub(crate) fn input_file(k: i32) -> *mut crate::io::UFile {
     crate::state::with_state(|s| s.input.input_file[k as usize])
 }
-/// Sets `input_file[k]`.
-#[inline]
-pub(crate) fn set_input_file(k: i32, v: *mut crate::io::UFile) {
-    crate::state::with_state_mut(|s| s.input.input_file[k as usize] = v);
-}
 
 // ---------------------------------------------------------------------------
-// last / max_buf_stack / set_buffer_entry / cur_input_limit
+// max_buf_stack / set_buffer_entry / cur_input_limit
 // ---------------------------------------------------------------------------
 
-/// Returns `last` — index one past the last character on the current input line.
-#[inline]
-pub(crate) fn last() -> i32 {
-    crate::state::with_state(|s| s.input.last)
-}
-/// Sets `last`.
-#[inline]
-pub(crate) fn set_last(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.last = v;
-    });
-}
 /// Sets `max_buf_stack`.
 #[inline]
 pub(crate) fn set_max_buf_stack(v: i32) {
