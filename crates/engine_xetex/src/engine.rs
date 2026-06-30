@@ -59,7 +59,6 @@ static mut TRE_TRIE_SIZE: i32 = 0;
 static mut TRE_HYPH_SIZE: i32 = 0;
 
 extern "C" {
-    fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     static xetex_primitives: XetexPrimitiveDef;
     static xetex_primitives_count: libc::size_t;
@@ -144,7 +143,7 @@ pub(crate) fn intpar(n: i32) -> i32 {
 // ---- moved verbatim from ini.rs (workstream 02) ----
 
 // translated from xetex-ini.c:3452 (get_strings_started)
-pub unsafe fn get_strings_started() {
+pub unsafe fn get_strings_started() -> Result<(), crate::errors::EngineAbort> {
     set_pool_ptr(0);
     set_str_ptr(0);
     crate::state::with_state_mut(|s| s.strings.str_start[0] = 0);
@@ -156,11 +155,15 @@ pub unsafe fn get_strings_started() {
     });
     let loaded = match loaded {
         Ok(value) => value,
+        // Main-memory recycle abort stays setjmp-backstopped (different terminal).
         Err(e) => crate::scan::node_recycle_abort(e),
     };
     if loaded == 0 {
-        _tt_abort(c"must increase pool_size".as_ptr());
+        return Err(crate::errors::EngineAbort::TtAbort(
+            c"must increase pool_size".as_ptr(),
+        ));
     }
+    Ok(())
 }
 /// translated from xetex-ini.c:554 (sort_avail)
 pub(crate) fn sort_avail_in(mem: &mut MemState) {
@@ -1218,7 +1221,9 @@ pub unsafe extern "C" fn tt_run_engine(
 
     crate::state::with_state_mut(initialize_more_variables_in);
     if in_initex_mode() {
-        get_strings_started();
+        if let Err(a) = get_strings_started() {
+            return a.into_history();
+        }
         let format_ident = crate::texmfmp::maketexstring(c" (INITEX)".as_ptr());
         crate::state::with_state_mut(|st| initialize_more_initex_variables_in(st, format_ident));
         let result = crate::state::with_state_mut(|st| initialize_primitives(st));
