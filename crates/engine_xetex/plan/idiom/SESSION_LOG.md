@@ -24,13 +24,16 @@ packaging, shipout, and math.rs (5 batches)**: ~**117** threaded raw `+N` reads
 typed handles classified once at a boundary. Polymorphic list cursors were
 converted to classify-once-per-node `match mem.classify(p)` dispatch
 (`short_display_in`, the `init_math`/`build_opentype_assembly` width-measure
-loops) instead of raw discriminant reads. Then a **return-type propagation**:
-`clean_box_in`/`rebox_in` now return `AnyBox` (classifying once at their hpack/
-arena creation boundary), so `make_over`/`make_under`/`make_radical`/
-`make_fraction`/`make_op` carry the handle and **9 redundant
-`classify_box_or_panic` re-classifications were removed** (`.idx().0` survives
-only at arena-field stores and still-`i32` callees: hpack/overbar/free_node/
-FractionAssembly).
+loops) instead of raw discriminant reads. Then a **return-type propagation** (two commits):
+`clean_box_in`/`rebox_in`/`var_delimiter_in` now return `AnyBox` (classifying
+once at their hpack/arena creation boundary), so `make_over`/`make_under`/
+`make_radical`/`make_fraction`/`make_op` carry the handle and **11 redundant
+re-classifications were removed** (9 `classify_box_or_panic` for the clean_box/
+rebox layer + 2 `classify_box().unwrap().unwrap()` for the var_delimiter `y` in
+make_radical); `.idx().0` survives only at arena-field stores and still-`i32`
+callees (hpack/overbar/free_node/FractionAssembly/make_radical_prepare_delimiter/
+set_nucleus_type). `rebox_in`/`var_delimiter_in` take their box context so the
+re-box reassignments stay typed end-to-end.
 
 **Review feedback adopted (recorded in memory):** (1) carry typed `NodePtr<K>`
 handles, never the temporary `*_node_*_in` i32 bundlers
