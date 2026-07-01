@@ -11,8 +11,8 @@ use crate::consts::{
 };
 use crate::format_io::{load_fmt_file, store_fmt_file};
 use crate::globals::{
-    buf_size, cur_chr, cur_input, cur_val, eqtb_b32s1, first, font_area_entry, font_mapping_ptr,
-    font_max, font_mem_size, history, in_initex_mode, interaction, job_name, mem_b32s1, selector,
+    buf_size, cur_chr, cur_input, cur_val, eqtb_b32s1, first, font_max, font_mem_size, history,
+    in_initex_mode, interaction, job_name, mem_b32s1, selector,
     set_buffer_entry, set_cancel_boundary, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux,
     set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf,
     set_cur_list_tail, set_cur_val, set_eqtb_b32s1, set_error_line, set_file_line_error_style_p,
@@ -1501,30 +1501,34 @@ pub unsafe extern "C" fn tt_run_engine(
 }
 // translated from xetex-ini.c:2226 (tt_cleanup)
 pub unsafe fn tt_cleanup() {
+    crate::state::with_state_mut(|st| tt_cleanup_in(st));
+}
+// Threaded core: the whole teardown runs under one held `&mut EngineState`
+// borrow (`01d` §6.1 drain step 3). The only re-entrant calls are pure FFI
+// (release_font_engine / TECkit_DisposeConverter / u_close→bridge input_close),
+// none of which touch EngineState, so they are sound under the held borrow.
+pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
     tt_cleanup_pdf_files_close();
     libc::free(tt_cleanup_TEX_format_default as *mut _);
-    crate::shipout::deinitialize_shipout_variables();
+    st.shipout.dvi_buf = Vec::new();
 
     tt_cleanup_destroy_font_manager();
 
-    for font_k in 0..font_max() {
-        let engine = crate::state::with_state(|s| s.fonts.font_layout_engine[font_k as usize]);
+    for font_k in 0..st.fonts.font_max {
+        let engine = st.fonts.font_layout_engine[font_k as usize];
         if !engine.is_null() {
-            crate::ext::release_font_engine(engine, font_area_entry(font_k));
-            crate::state::with_state_mut(|s| {
-                s.fonts.font_layout_engine[font_k as usize] = std::ptr::null_mut();
-            });
+            crate::ext::release_font_engine(engine, st.fonts.font_area[font_k as usize]);
+            st.fonts.font_layout_engine[font_k as usize] = std::ptr::null_mut();
         }
-        let mapping = font_mapping_ptr(font_k);
+        let mapping = st.fonts.font_mapping[font_k as usize];
         if !mapping.is_null() {
             tt_cleanup_TECkit_DisposeConverter(mapping);
-            crate::globals::set_font_mapping_ptr(font_k, std::ptr::null_mut());
+            st.fonts.font_mapping[font_k as usize] = std::ptr::null_mut();
         }
     }
 
-    let in_open = crate::state::with_state(|s| s.input.in_open);
-    for i in 1..=in_open {
-        let f = crate::state::with_state(|s| s.input.input_file[i as usize]);
+    for i in 1..=st.input.in_open {
+        let f = st.input.input_file[i as usize];
         if !f.is_null() {
             // Terminal cleanup (tt_cleanup): absorb a serious close error — the
             // engine is already tearing down (`01d` §2.1).
@@ -1533,10 +1537,11 @@ pub unsafe fn tt_cleanup() {
     }
 
     // Release all Rust-owned arenas (were C `malloc`'d / format-loaded arrays)
-    // under a single borrow: the save-stack, the input nest/file/macro/buffer
+    // under the held borrow: the save-stack, the input nest/file/macro/buffer
     // arrays, the hyph exception table, the scanner native_text scratch, the
     // mem/eqtb/strings/fonts format arenas, and the hyphenation trie arrays.
-    crate::state::with_state_mut(|s| {
+    {
+        let s = &mut *st;
         s.save_stack.data = Vec::new();
 
         if !s.input.name_of_input_file.is_null() {
@@ -1616,5 +1621,5 @@ pub unsafe fn tt_cleanup() {
         s.hyph.trie_r = Vec::new();
         s.hyph.trie_hash = Vec::new();
         s.hyph.trie_taken = Vec::new();
-    });
+    }
 }

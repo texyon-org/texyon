@@ -922,14 +922,6 @@ pub extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
 pub(crate) fn font_mapping_ptr(f: i32) -> *mut libc::c_void {
     crate::state::with_state(|s| s.fonts.font_mapping[f as usize])
 }
-/// Writes `font_mapping[f] = v`.
-#[inline]
-pub(crate) fn set_font_mapping_ptr(f: i32, v: *mut libc::c_void) {
-    crate::state::with_state_mut(|s| {
-        s.fonts.font_mapping[f as usize] = v;
-    });
-}
-
 #[inline]
 pub(crate) fn random_seed() -> i32 {
     crate::state::with_state(|state| state.errors.random_seed)

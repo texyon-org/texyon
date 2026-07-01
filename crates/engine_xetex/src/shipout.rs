@@ -522,11 +522,6 @@ pub fn initialize_shipout_variables() {
     });
 }
 
-// translated from xetex-shipout.c:63 (deinitialize_shipout_variables)
-pub fn deinitialize_shipout_variables() {
-    crate::state::with_state_mut(|s| s.shipout.dvi_buf = Vec::new());
-}
-
 // translated from xetex-shipout.c:2306 (dvi_swap)
 //
 // Direct `&mut ShipoutState` buffer-swap bookkeeping. The byte flush and the
