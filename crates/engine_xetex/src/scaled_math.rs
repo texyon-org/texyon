@@ -8,7 +8,6 @@
 //!
 //! See `plan/04-migration-order.md` Phase 1 for context on why these
 //! functions are the very first ones translated.
-use crate::errors::error;
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
 use crate::output::print_cstr;
@@ -587,7 +586,12 @@ pub unsafe fn m_log(mut x: i32) -> i32 {
             0,
             c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr(),
         );
-        error();
+        // Dead branch: m_log's only caller (norm_rand) always passes x >= 1, and it
+        // runs under conv_toks_in's &mut EngineState borrow, so this with_state_mut
+        // double-borrow-panics exactly as the old error() did before reaching its
+        // .finish() — never actually executed. Non-longjmp, so error() can be
+        // deleted (`01d` §5.6).
+        let _ = crate::state::with_state_mut(crate::errors::error_in);
         return 0;
     }
 

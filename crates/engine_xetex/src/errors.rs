@@ -77,7 +77,13 @@ unsafe fn post_error_message(need_to_print_it: bool) {
         set_interaction(SCROLL_MODE);
     }
     if need_to_print_it && log_opened() {
-        error();
+        // Absorb the recoverable-error outcome instead of the error()/finish()
+        // longjmp: post_error_message runs inside into_history's terminal cleanup
+        // (post-borrow), which unconditionally commits to HISTORY_FATAL_ERROR just
+        // below. A nested Halt/Hundred outcome is dropped — the surrounding
+        // into_history still returns 3, surfacing the primary abort's message rather
+        // than the nested halt's (an unexercised nested-abort path) (`01d` §5.6).
+        let _ = crate::state::with_state_mut(error_in);
     }
     set_history(HISTORY_FATAL_ERROR);
     close_files_and_terminate();
@@ -156,16 +162,11 @@ impl ErrorOutcome {
     }
 }
 
-/// Handle a recoverable TeX error.
-///
-/// translated from xetex-errors.c:52 (error)
-pub unsafe fn error() {
-    let outcome = crate::state::with_state_mut(|st| error_in(st));
-    outcome.finish();
-}
-
-/// `&mut EngineState` core of [`error`]. Returns the cold-abort sentinel (§5);
-/// the hot path is `Continue`.
+/// `&mut EngineState` core of the recoverable TeX error handler (translated from
+/// xetex-errors.c:52, `error`). Returns the cold-abort sentinel (§5); the hot
+/// path is `Continue`. The old global `error()` wrapper (which ran this then
+/// `ErrorOutcome::finish()`'s `_tt_abort` longjmp) is deleted: all callers now
+/// thread the outcome to `EngineAbort` (`01d` §5.6).
 pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
     if st.errors.history < HISTORY_ERROR_ISSUED {
         st.errors.history = HISTORY_ERROR_ISSUED;
