@@ -1319,8 +1319,8 @@ impl From<crate::ext::NativeFontAbort> for NodeRecycleAbort {
 }
 
 impl NodeRecycleAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`node_recycle_abort`] without longjmp-ing. Call only *after* the state
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `node_recycle_abort` without longjmp-ing. Call only *after* the state
     /// borrow drops (`OverflowRunaway` re-enters `with_state` via `runaway`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         const MEM_TOP_NR: i32 = 4_999_999;
@@ -2330,8 +2330,8 @@ impl From<crate::ext::NativeFontAbort> for SccAbort {
 }
 
 impl SccAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`fire`](SccAbort::fire) arm-for-arm without longjmp-ing. Call only
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `SccAbort::fire` arm-for-arm without longjmp-ing. Call only
     /// *after* the state borrow drops (`NoLegalEnd` opens the log, the recursive
     /// arms re-enter `with_state`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {

@@ -245,8 +245,8 @@ fn get_node_ship(mem: &mut MemState, s: i32) -> Result<i32, ShipoutAbort> {
 }
 
 impl ShipoutAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`fire_shipout_abort`] arm-for-arm without longjmp-ing. `MainMemoryOverflow`
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire_shipout_abort` arm-for-arm without longjmp-ing. `MainMemoryOverflow`
     /// is a plain overflow (no `runaway`). `CannotOpenOutput` rebuilds the message
     /// from `name_of_file()` (post-borrow) into a leaked heap buffer so the
     /// pointer stays valid through `into_history`.

@@ -94,7 +94,7 @@ pub fn get_avail(mem: &mut MemState) -> i32 {
 }
 
 /// The `main memory size` overflow as an [`EngineAbort`] value (`01d` §5.5) —
-/// the non-longjmp twin of [`fire_main_memory_overflow`]: run `runaway()` (the
+/// the non-longjmp twin of the former `fire_main_memory_overflow`: run `runaway()` (the
 /// runaway-diagnostic side effect) then hand back the `Overflow` terminal for
 /// the caller to propagate. Call only *after* the state borrow drops (`runaway`
 /// re-enters `with_state`).

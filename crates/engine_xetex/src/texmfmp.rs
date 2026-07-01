@@ -209,8 +209,8 @@ pub(crate) enum MakeTexStringAbort {
 }
 
 impl MakeTexStringAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`fire_make_tex_string`] without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire_make_tex_string` without longjmp-ing.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             MakeTexStringAbort::PoolOverflow => {
@@ -352,7 +352,7 @@ pub(crate) unsafe fn getmd5sum_in(strings: &mut crate::state::StringsState, s: i
 // make_src_special — write "src:{lineno} {filename}" into the pool
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`make_src_special`]. Returns the cold pool
+/// `&mut EngineState` core of the `make_src_special` op. Returns the cold pool
 /// overflow as `Err(())` for the caller to defer (`01b` §5).
 pub(crate) fn make_src_special_in(
     st: &mut crate::state::EngineState,

@@ -124,7 +124,7 @@ pub(crate) enum ErrorOutcome {
 
 impl ErrorOutcome {
     /// Map this cold outcome to the unified [`EngineAbort`] terminal (`01d`
-    /// §5.5), mirroring [`finish`](ErrorOutcome::finish) arm-for-arm but
+    /// §5.5), mirroring the former `ErrorOutcome::finish` arm-for-arm but
     /// *without* firing — the caller propagates the value up to `tt_run_engine`,
     /// which runs the print+cleanup via [`EngineAbort::into_history`]. The
     /// `Halt`/`Hundred` `post_error_message(false)` runs inside

@@ -1029,8 +1029,8 @@ pub(crate) enum NameAbort {
     NumberOfStrings,
 }
 
-/// `&mut EngineState` core of [`more_name`] (`01b` §3). Touches `scanner` +
-/// `strings`; the cold pool-size `overflow` defers via [`NameAbort`].
+/// `&mut EngineState` core of the `more_name` file-name op (`01b` §3). Touches
+/// `scanner` + `strings`; the cold pool-size `overflow` defers via [`NameAbort`].
 pub(crate) fn more_name_in(st: &mut crate::state::EngineState, c: u16) -> Result<bool, NameAbort> {
     let stop = st.scanner.stop_at_space;
     let q = st.scanner.file_name_quote_char;
@@ -1065,8 +1065,8 @@ pub(crate) fn more_name_in(st: &mut crate::state::EngineState, c: u16) -> Result
 }
 
 impl NameAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`fire_name_overflow`] without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire_name_overflow` without longjmp-ing.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             NameAbort::PoolSize => crate::errors::EngineAbort::Overflow {
@@ -1080,7 +1080,7 @@ impl NameAbort {
         }
     }
 }
-/// `&mut EngineState` core of [`end_name`] (`01b` §3). Touches `strings` +
+/// `&mut EngineState` core of the `end_name` file-name op (`01b` §3). Touches `strings` +
 /// `scanner`; the cold `overflow("number of strings")` (direct or via
 /// `make_string`/`slow_make_string`) defers via [`NameAbort`].
 pub(crate) fn end_name_in(st: &mut crate::state::EngineState) -> Result<(), NameAbort> {
