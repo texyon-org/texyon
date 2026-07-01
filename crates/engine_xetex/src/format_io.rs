@@ -243,7 +243,14 @@ pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
             set_interaction(SCROLL_MODE);
         }
         if crate::globals::log_opened() {
-            crate::errors::error();
+            // Thread error()'s outcome instead of the error()/finish() longjmp:
+            // Continue falls through to the terminal below; a Halt/Hundred outcome
+            // propagates as EngineAbort (into_history runs post_error_message and
+            // surfaces the halt message, returns 3) — `01d` §5.6.
+            let outcome = crate::state::with_state_mut(crate::errors::error_in);
+            if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
+                return Err(outcome.into_engine_abort());
+            }
         }
 
         crate::globals::set_history(HISTORY_FATAL_ERROR);
@@ -707,7 +714,14 @@ pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
                 0,
                 c"(Load them at runtime, not as part of the format file.)".as_ptr(),
             );
-            crate::errors::error();
+            // Thread error()'s outcome instead of the error()/finish() longjmp:
+            // Continue resumes the font-dump loop; a Halt/Hundred outcome propagates
+            // as EngineAbort (into_history prints + surfaces the halt, returns 3) —
+            // `01d` §5.6.
+            let outcome = crate::state::with_state_mut(crate::errors::error_in);
+            if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
+                return Err(outcome.into_engine_abort());
+            }
         } else {
             crate::output::print_file_name(font_name, font_area_entry(k), EMPTY_STRING);
         }
