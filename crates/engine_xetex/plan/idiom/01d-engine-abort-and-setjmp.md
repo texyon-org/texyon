@@ -581,6 +581,51 @@ is concentrated in the boundary/wrapper layer that the setjmp gated.
    `tt_xetex_open_input` io.rs) need a raw-pointer stash rather than the borrow.
 9. **FINAL FLIP** (one commit, §6).
 
+## 6.2 The flip executed via a pointer bridge — DONE (session 251)
+
+The "one atomic commit" framing of step 9 was replaced by a **staged pointer
+bridge** that makes the flip incremental and validatable. The key move: instead of
+big-banging owned-`st` + deleting every `with_state` at once, `tt_run_engine` OWNS
+its `EngineState` (heap-boxed local) and installs a thread-local raw pointer to it;
+`with_state`/`with_state_mut` reach `st` through that pointer, falling back to the
+old thread-local `RefCell` when the pointer is null (unit tests + pre-run
+`tt_xetex_set_int_variable`, which also keeps that path's double-borrow panic net).
+This let the still-unthreaded accessor/terminal code keep working while each
+`with_state` region drained to direct `&mut EngineState` threading, one validated
+commit at a time. Config carryover: `tt_run_engine` copies the pre-run fallback
+config into the owned state before installing the pointer (`ConfigState: Copy`); a
+drop guard clears the pointer on every exit path.
+
+**Landed (session 251, 7 commits, each dashboard 29/2/7/4 + 80 unit tests + 37
+warnings; corpus 637/2 on the bridge pivot):** `with_state` **142 → 50**.
+1. `0ee31a4a` — the bridge + owned `st` + config carryover (behavior-identical).
+2. `80ec07a6` — `tt_run_engine`'s 13 in-frame `with_state_mut` blocks → owned `st`.
+3. `54838c23` — all ~65 `tt_run_engine` accessor CALLS → `st.*`; **57 dead accessors
+   deleted** (the whole `set_*`/getter population that only `tt_run_engine` used).
+4. `3f6c2bbb`/`8afaa725` — `tt_run_engine`'s boundary calls (`main_control_in`/
+   `final_cleanup_in`/`close_files_and_terminate_in`/`tt_cleanup_in`/`start_input_in`/
+   `maketexstring_in`) go direct; the `final_cleanup`/`main_control`/7 io wrappers/
+   `maketexstring` wrapper deleted.
+5. `03ed6003` — **`into_history(self, st: &mut EngineState)`** + `pre_/post_error_message_in`
+   thread the whole terminal-cleanup tree; 12 more dead accessors (`history`/
+   `interaction`/`selector`/`log_opened`/`job_name`/`rust_stdout` + setters, the
+   `tt_cleanup` wrapper, `print_char`/`print_int`).
+
+**What's DONE:** `EngineState` is owned by `tt_run_engine`, and the ENTIRE boundary/
+terminal layer (`tt_run_engine`, `into_history` + `pre_/post_error_message`, and every
+`*_in` boundary fn) threads `&mut st` with zero `with_state`. The `mod-raw` scalars
+(`cur_input`/`set_cur_input_*`/`set_line`/`set_first`) stay as before (borrow-safe).
+
+**What REMAINS (the 50):** leaf `with_state` re-entries in not-yet-threaded functions
+(the general Phase-C frontier) — ~21 `globals.rs` accessors still called from
+un-threaded leaves (arith_error/name_of_file/pool_size/two_to_the/…), the
+output/texmfmp/scaled_math print+math wrappers with un-threaded callers, and the
+config fallback path (`engine_interface` set + `engine.rs` carryover). Removing the
+pointer bridge + fallback entirely (true zero-`with_state`) is now a pure mechanical
+cascade with NO architectural blocker: thread each remaining leaf caller, delete the
+wrapper. The bridge is sound in the interim (owned `st`, no persistent global data
+except the tests-only fallback).
+
 **Traps (session-249 map, verified):**
 - **`mod raw` scalars STAY PUT during the drain.** Do NOT fold
   `cur_cs`/`cur_tok`/`cur_chr`/`cur_cmd`/`cur_val`/`cur_ptr`/`line`/… (globals.rs
