@@ -543,6 +543,12 @@ is concentrated in the boundary/wrapper layer that the setjmp gated.
    deleting both now-dead wrappers. Re-entrant calls are all pure FFI, sound under the borrow.
 4. **`load_fmt_file`** (format_io.rs) — trivial once `pack_buffered_name` gets a one-line
    `_in`; `load_fmt_file_in` is already the flip's reference model.
+   **DONE session 250** (`9e49c308`, with_state 209→208): the pack-name prelude now runs
+   inside `load_fmt_file`'s single `with_state_mut` — `pack_buffered_name` inlined onto the
+   borrow (name_of_file/name_length written directly), the file open reads `st.input.name_of_file`
+   directly, `cur_input()`/`set_cur_input_loc` stay (mod-raw scalars, borrow-independent).
+   Deletes now-dead `pack_buffered_name` + its redundant `tre_format_default_length` extern.
+   The frame is now fully drained (zero with_state re-entries — the flip-gate condition).
 5. **`store_fmt_file`** (format_io.rs) — the big drain (~34 sites), mechanically uniform;
    after #2 (it calls `close_files_and_terminate`).
 6. **`final_cleanup`** (engine.rs:309) — after #5; its input-SCC calls
