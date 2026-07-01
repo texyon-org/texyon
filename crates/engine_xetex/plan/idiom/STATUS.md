@@ -4,6 +4,43 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-07-01 (last session = session 245, **execution — the
+`main_control` → EngineAbort fold (`01d` §5.5); the main-control Rust longjmp
+spine is dead**. One all-or-nothing commit + a 31-agent adversarial verify.
+`main_control()` now returns `Result<(), EngineAbort>`
+(`with_state_mut(main_control_in).map_err(into_engine_abort)`, fired
+post-borrow); `tt_run_engine` catches with `if let Err(a) = main_control() {
+return a.into_history(); }` **before** `final_cleanup` — skipping it exactly as
+the old `e.fire()` longjmp-to-setjmp did. Each of ~31 leaf `*Abort`/outcome
+types in the main_control tree gained a **non-unsafe**
+`into_engine_abort(self) -> EngineAbort` co-located with (and replacing) its
+`fire()`/`finish()`, transcribing every terminal arm-for-arm
+(overflow→Overflow / confusion→Confusion / fatal_error→Fatal /
+pdf_error→PdfError / `_tt_abort`→TtAbort / ErrorOutcome Halt/Hundred→HaltMessage),
+message strings + numeric args preserved exactly (`into_history` does the
+print+cleanup, so format_buf fidelity is automatic — `01d` §1). Side effects
+preserved: new `crate::mem::main_memory_overflow_abort()` (`runaway()` then the
+"main memory size" Overflow) for the runaway arms vs a **bare** Overflow for the
+plain-overflow arms (the distinction verified per arm); `SccAbort::NoLegalEnd`
+opens the log before `Fatal`; NativeChar/LoadNativeFont `PoolOverflow` re-read
+`(pool_size, init_pool_ptr)` via `with_state`; `ShipoutAbort::CannotOpenOutput`
+rebuilds its message from `name_of_file()` into a **leaked** buffer so the
+pointer survives to `into_history`. `MainControlAbort::fire` + the 13 now-dead
+leaf dispatchers whose sole caller was main_control (Rust's transitive
+dead-code closure) were deleted → **`unsafe fn` 273 → 263** (−10; the ~31
+into_engine_aborts add **zero** unsafe fns, via internal `unsafe {}` blocks).
+**Adversarial verify (Workflow, 31 independent skeptics — one per leaf, each
+deriving the terminal from the original `fire()`/`finish()` at HEAD): 31/31
+EQUIVALENT, 128 arms, 0 divergent** (MainControlAbort 22 arms, none dropped;
+ShipoutAbort 10; PageBuild/LineBreakOutcome 9; SccAbort 8; HyphenateAbort 7).
+Dashboard **29/2/7/4**; warnings **37**; `with_state` unchanged; full corpus
+**637 passed / 2 diverged** (known FP only). **Next:** Stage-I residue — the
+non-main_control longjmp scatter (`maketexstring`/`start_input` +
+scattered io/font/ext/pic aborts, each still firing via its own global
+wrapper), then Stage II (the in-crate `ttstub_input_seek`/`close` →
+`ttbc_*`/`Result` sweep + the `xmalloc` `_tt_abort` jumps), before the setjmp +
+owned-`EngineState` flip (§6). See SESSION_LOG session 245.)
+
 Last updated: 2026-07-01 (last session = session 243–244, **execution —
 format_io fully longjmp-free + EngineAbort terminal set; `main_control` gate
 disproved**. Continued the session-242 lever. Four commits (dashboard 29/2/7/4

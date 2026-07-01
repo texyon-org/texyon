@@ -8,6 +8,82 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 245 — 2026-07-01 — Execution: the main_control → EngineAbort fold (kill the main-control Rust longjmp spine)
+
+**Type:** execution (continuation of the session-242 / 243–244 EngineAbort
+lever). Autonomous: one all-or-nothing commit + a 31-agent adversarial verify.
+
+**The fold (`01d` §5.5).** `main_control()` now returns `Result<(), EngineAbort>`:
+`with_state_mut(main_control_in).map_err(|e| e.into_engine_abort())`, mapped
+**post-borrow**. `tt_run_engine` catches it — `if let Err(a) = main_control() {
+return a.into_history(); }` — **before** `final_cleanup`, so a fatal main-control
+abort skips `final_cleanup` exactly as the old `e.fire()` longjmp-straight-to-the-
+setjmp did (`01d` §5.5). This deletes the bulk of the remaining Rust longjmps.
+
+**Mechanics.** Each of the ~31 leaf `*Abort`/outcome types in the main_control
+tree gained a **non-unsafe** `into_engine_abort(self) -> EngineAbort`,
+co-located with (and replacing) its former `fire()`/`finish()` dispatcher,
+transcribing each terminal arm-for-arm: `overflow`→`Overflow`,
+`confusion`→`Confusion`, `fatal_error`→`Fatal`, `pdf_error`→`PdfError`,
+`_tt_abort(msg)`→`TtAbort(msg)`, `ErrorOutcome` Halt/Hundred→`HaltMessage`.
+Message strings + numeric args preserved exactly; `into_history()` runs the
+same print+cleanup the longjmp terminal did, so **format_buf surfacing fidelity
+is automatic** (the class of bug the session-242 verify caught — `01d` §1).
+Keeping them non-unsafe (internal `unsafe {}` blocks for the handful of side
+effects) means the fold **adds zero unsafe fns**.
+
+**Side-effecting leaves (`01d` §5.5), all preserved in order:** added
+`crate::mem::main_memory_overflow_abort()` — the non-longjmp twin of
+`fire_main_memory_overflow` (`runaway()` then the `"main memory size"`
+Overflow). The MainMemory arms that ran `runaway()` route through it; the
+**plain** `overflow("main memory size")` arms (SaMutation, ShowWhatever,
+Shipout, PageBuild::MainMemoryOverflow, Hyphenate, LineBreak::Overflow,
+NodeRecycle::Overflow) stay a **bare** `Overflow` with no `runaway` — the
+distinction was checked per arm. `SccAbort::NoLegalEnd{open_log}` opens the log
+before `Fatal`; NativeChar/LoadNativeFont `PoolOverflow` re-read
+`(pool_size, init_pool_ptr)` via `with_state`; `ShipoutAbort::CannotOpenOutput`
+rebuilds its message from `name_of_file()` via `snprintf` into a **leaked**
+heap buffer so the pointer survives to `into_history`. `ErrorOutcome`'s
+`post_error_message(false)` stays inside `into_history(HaltMessage)`, not
+`into_engine_abort` (correct post-borrow timing).
+
+**Deletions (`unsafe fn` 273 → 263).** `MainControlAbort::fire` + the 13 leaf
+dispatchers whose sole caller was main_control became dead (Rust's *transitive*
+dead-code closure flagged them all at once) and were deleted: free fns
+`raise_save_abort`, `fire_page_build_abort`, `fire_line_break_outcome`; and the
+`fire`/`finish` of PushNest/SaMutation/Unsave/InsertSrc/IssueMessage/ShowWhatever
++ NativeChar/ReadFontInfo/LoadNativeFont/NewCharacter/Hyphenate. (`fire_shipout_abort`,
+`InputAbort::fire`, `SccAbort::fire`, the Open*/MakeTexString/Name fires **stay**
+— still fired by their own non-main_control global wrappers, so not dead.) Two
+now-unused `node_recycle_abort` imports removed to hold warnings at 37.
+
+**Adversarial verification (Workflow, 31 independent skeptics, ultracode).** One
+agent per leaf, each fetching the ORIGINAL `fire()`/`finish()` at HEAD
+(`git show HEAD:…`), independently re-deriving the terminal + message strings +
+numeric args + ordered side effects, and diffing against the new
+`into_engine_abort` under the equivalence rules. Result: **31/31 EQUIVALENT,
+128 arms, 0 divergent** (MainControlAbort 22 arms — every variant mapped, none
+dropped; ShipoutAbort 10; PageBuild/LineBreakOutcome 9; SccAbort 8;
+HyphenateAbort 7). The session-242 verify found a real `format_buf` bug in the
+analogous class; this one found nothing.
+
+**Metrics:** `unsafe fn` **273 → 263** (−10, the deleted dispatchers; the ~31
+into_engine_aborts are all non-unsafe); `with_state` unchanged; warnings **37**.
+Validation: dashboard **29/2/7/4** on the committed tree; release rebuild; full
+corpus **637 passed / 2 diverged** (known FP pair `1905.00073v1`/`1905.00148v1`).
+Also reverted a `cargo fmt` line-wrap churn in `format_io.rs` (a prior session's
+over-width `return Err(...)` one-liners) to keep the commit focused. Commit
+`997152e6`.
+
+**Next (`01d` §2/§5).** The remaining Rust longjmp tail is the **non-main_control
+scatter** (Stage-I residue): `maketexstring`/`start_input` + scattered
+io/font/ext/pic aborts, each still `fire()`-ing via its own global wrapper (not
+reached through main_control). Then **Stage II** (IN-CRATE): replace the ~19
+`ttstub_input_seek`/`close` call sites with `ttbc_*`/`CoreBridgeState` + `Result`
+threading, and fold the `xmalloc`/`xcalloc`/`xrealloc` `_tt_abort` jumps. Only
+after both do the `setjmp` deletion + owned-`EngineState` flip (§6) become
+possible. Don't start Stage II or the flip before the Stage-I residue is clear.
+
 ## Idiom session 243–244 — 2026-07-01 — Execution: format_io fully longjmp-free + EngineAbort terminal set; main_control gate disproved
 
 **Type:** execution (continuation of session 242's EngineAbort lever).
