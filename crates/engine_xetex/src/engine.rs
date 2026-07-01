@@ -1081,7 +1081,8 @@ pub unsafe extern "C" fn tt_run_engine(
     let in_open_words = (tre_max_in_open as usize) + 1;
     let param_words = (tre_param_size as usize) + 1;
     let hyph_words = (TRE_HYPH_SIZE as usize) + 1;
-    crate::state::with_state_mut(|state| {
+    {
+        let state = &mut *st;
         state.eqtb.hash_extra = 600_000;
         state.strings.pool_size = TRE_POOL_SIZE;
         state.strings.string_vacancies = TRE_STRING_VACANCIES;
@@ -1133,12 +1134,13 @@ pub unsafe extern "C" fn tt_run_engine(
         state.hyph.hyph_word = vec![0i32; hyph_words];
         state.hyph.hyph_list = vec![0i32; hyph_words];
         state.hyph.hyph_link = vec![0u16; hyph_words];
-    });
+    }
 
     if in_initex_mode() {
         // `xmalloc_array(MEM_TOP + 1)` allocated `MEM_TOP + 2` words; match it.
         let mem_words_init = (MEM_TOP as usize) + 2;
-        crate::state::with_state_mut(|s| {
+        {
+            let s = &mut *st;
             s.mem.data = vec![
                 crate::mem_types::MemoryWord {
                     b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
@@ -1155,7 +1157,7 @@ pub unsafe extern "C" fn tt_run_engine(
 
             let n = (1 + s.eqtb.hash_top - 514) as usize;
             s.eqtb.hash = vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; n];
-        });
+        }
 
         crate::globals::set_hash_s0(HASH_BASE, 0);
         crate::globals::set_hash_s1(HASH_BASE, 0);
@@ -1177,12 +1179,13 @@ pub unsafe extern "C" fn tt_run_engine(
         };
         // `xcalloc_array(n)` allocated `n + 1` zeroed words; match that.
         let eqtb_words_initex = (crate::globals::eqtb_top() as usize) + 1;
-        crate::state::with_state_mut(|state| {
+        {
+            let state = &mut *st;
             state.eqtb.data = vec![zero_word_initex; eqtb_words_initex];
             state.strings.str_start = vec![0i32; (TRE_MAX_STRINGS as usize) + 1];
             state.strings.str_pool = vec![0u16; (TRE_POOL_SIZE as usize) + 1];
             state.fonts.font_info = vec![zero_word_initex; (fms_initex as usize) + 1];
-        });
+        }
     }
 
     crate::globals::set_history(HISTORY_FATAL_ERROR);
@@ -1247,24 +1250,25 @@ pub unsafe extern "C" fn tt_run_engine(
         return crate::errors::EngineAbort::TtAbort(msg.as_ptr()).into_history();
     }
 
-    crate::state::with_state_mut(initialize_more_variables_in);
+    initialize_more_variables_in(&mut *st);
     if in_initex_mode() {
-        if let Err(a) = crate::state::with_state_mut(|st| get_strings_started_in(st)) {
+        if let Err(a) = get_strings_started_in(&mut *st) {
             return a.into_history();
         }
         let format_ident = match crate::texmfmp::maketexstring(c" (INITEX)".as_ptr()) {
             Ok(v) => v,
             Err(a) => return a.into_history(),
         };
-        crate::state::with_state_mut(|st| initialize_more_initex_variables_in(st, format_ident));
-        let result = crate::state::with_state_mut(|st| initialize_primitives(st));
+        initialize_more_initex_variables_in(&mut *st, format_ident);
+        let result = initialize_primitives(&mut *st);
         if let Err(e) = result {
             return e.into_engine_abort().into_history();
         }
-        crate::state::with_state_mut(|state| {
+        {
+            let state = &mut *st;
             state.strings.init_str_ptr = state.strings.str_ptr;
             state.strings.init_pool_ptr = state.strings.pool_ptr;
-        });
+        }
     }
 
     crate::math::initialize_math_variables();
@@ -1363,7 +1367,8 @@ pub unsafe extern "C" fn tt_run_engine(
     }
 
     if trie_not_ready() {
-        crate::state::with_state_mut(|state| {
+        {
+            let state = &mut *st;
             let trie_len = (state.hyph.trie_size as usize) + 1;
             state.hyph.trie_trl = vec![0i32; trie_len];
             state.hyph.trie_tro = vec![0i32; trie_len];
@@ -1379,11 +1384,12 @@ pub unsafe extern "C" fn tt_run_engine(
             state.hyph.trie_ptr = 0;
             state.hyph.trie_r[0] = 0;
             state.hyph.hyph_start = 0;
-        });
+        }
 
         let font_check_len = (font_max() as usize) + 1;
         let base_fmt_len = (font_max() as usize) + 1;
-        crate::state::with_state_mut(|state| {
+        {
+            let state = &mut *st;
             state.fonts.font_layout_engine = vec![std::ptr::null_mut(); font_check_len];
             state.fonts.font_mapping = vec![std::ptr::null_mut(); font_check_len];
             state.fonts.font_flags = vec![0i8; font_check_len];
@@ -1421,17 +1427,17 @@ pub unsafe extern "C" fn tt_run_engine(
             state.fonts.exten_base = vec![0i32; base_fmt_len];
             state.fonts.param_base = vec![0i32; base_fmt_len];
             crate::globals::refresh_font_ffi_mirrors(&state.fonts);
-        });
+        }
 
         // The nullfont (FONT_BASE) bootstrap is a contiguous run of font-table
-        // writes; the only state-touching argument is `maketexstring`, computed
-        // before the borrow. set_font_mapping_ptr stays a wrapper (used
-        // elsewhere) but its write is inlined here under the same borrow.
+        // writes on the owned state; the only state-touching argument is
+        // `maketexstring`, computed before the block.
         let nullfont_name = match crate::texmfmp::maketexstring(c"nullfont".as_ptr()) {
             Ok(v) => v,
             Err(a) => return a.into_history(),
         };
-        crate::state::with_state_mut(|s| {
+        {
+            let s = &mut *st;
             let f = FONT_BASE as usize;
             s.fonts.font_ptr = FONT_BASE;
             s.fonts.fmem_ptr = 7;
@@ -1461,13 +1467,14 @@ pub unsafe extern "C" fn tt_run_engine(
             for font_k in 0..=6usize {
                 s.fonts.font_info[font_k].b32.s1 = 0;
             }
-        });
+        }
     }
 
     let font_used_len = (font_max() as usize) + 1;
-    crate::state::with_state_mut(|state| {
+    {
+        let state = &mut *st;
         state.fonts.font_used = vec![false; font_used_len];
-    });
+    }
 
     crate::globals::set_random_seed(
         crate::globals::microseconds() * 1000 + (crate::globals::epochseconds() % 1_000_000),
@@ -1485,7 +1492,7 @@ pub unsafe extern "C" fn tt_run_engine(
     }
 
     pdf_files_init();
-    crate::state::with_state_mut(|st| crate::synctex::synctex_init_command(st));
+    crate::synctex::synctex_init_command(&mut *st);
     if let Err(a) = crate::io::start_input(input_file_name) {
         // A fatal abort while opening the primary input. into_history runs the
         // print + cleanup and returns HISTORY_FATAL_ERROR, skipping the rest of
