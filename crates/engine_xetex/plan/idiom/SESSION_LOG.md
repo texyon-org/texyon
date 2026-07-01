@@ -33,8 +33,26 @@ EngineState) -> Result<(), EngineAbort>`: 3 inline `with_state` + the `set_pool_
 the now-unused imports. `with_state` **221 → 219**; warnings 37; dashboard 29/2/7/4
 (TRIP's `\dump` exercises this INITEX path).
 
-**Next:** roadmap step 2 — `close_files_and_terminate` (prerequisite for `store_fmt_file`,
-clears the errors.rs terminal path), then the format-file pair. See [[globals-wrappers-gated-on-setjmp-boundary]].
+**Drain executed — roadmap steps 2–6 all DONE this session (each dashboard-green 29/2/7/4,
+37 warnings; corpus 637/2 validated cumulatively).** Each boundary fn became
+`fn_in(st: &mut EngineState)` + a thin `with_state_mut` wrapper, fully drained:
+- **2. `close_files_and_terminate`** (`c6c79fe6`) — 219→215.
+- **3. `tt_cleanup`** (`cd1b2142`) — 215→209; deleted dead `set_font_mapping_ptr` + `deinitialize_shipout_variables`.
+- **4. `load_fmt_file`** prelude (`9e49c308`) — 209→208; `pack_buffered_name` inlined + deleted.
+- **5. `store_fmt_file`** (`fbb1d488`) — the big ~600-line drain, 208→**161**; all `print_*`→`_in`,
+  eqtb-run/hash-word helper closures reparametrized to take `st`; cascade deleted 15 now-dead
+  wrappers (4 output primitives + 10 globals accessors + `init_trie`).
+- **6. `final_cleanup`** (`14fc2aa5`) — 161→**142**; c==1 INITEX block inlines its `with_state_mut`
+  closure + calls `store_fmt_file_in(st)`; cascade deleted 8 more (`print_esc_cstr`/`print_nl`/
+  `print_cmd_chr`/`show_save_groups`, `store_fmt_file`/`end_token_list`/`end_file_reading` wrappers, `mem_b32s1`).
+
+`crate::state::with_state` **221 → 142** (−79). **The ordered boundary-fn drain (steps 1–6) is
+complete.** Remaining `with_state`: 86 `globals.rs` accessor *definitions* (delete at the flip) +
+~15 inside `tt_run_engine`'s own init frame + ~40 scattered non-`_in` wrapper bodies pinned by
+that frame. Draining these = threading `tt_run_engine` itself = **step 9, the atomic FLIP** (delete
+`with_state`/`thread_local`/setjmp together + re-plumb `tt_xetex_set_int_variable`'s 5 config
+fields into retained statics). That's the user-gated major change; paused here for direction.
+See [[globals-wrappers-gated-on-setjmp-boundary]], [[engineabort-unification-progress]].
 
 ## Idiom session 249 — 2026-07-01 — Execution: eliminate EVERY remaining longjmp — 0 `_tt_abort`, 0 `.fire()`, 0 bridge_core input-close (01d §5.6/§5.7/§6)
 
