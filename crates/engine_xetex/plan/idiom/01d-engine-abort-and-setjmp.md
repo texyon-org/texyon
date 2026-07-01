@@ -563,6 +563,14 @@ is concentrated in the boundary/wrapper layer that the setjmp gated.
 6. **`final_cleanup`** (engine.rs:309) — after #5; its input-SCC calls
    (`end_token_list`/`end_file_reading`) return `InputAbort`, so bare `?` becomes
    `map_err(|e| e.into_engine_abort())?`.
+   **DONE session 250** (`14fc2aa5`, with_state 161→142): `final_cleanup_in(st)` + thin
+   wrapper. All with_state re-entries → direct `st.*`; `print_*`/`output::` → `_in`
+   (incl. `show_save_groups_in`/`print_cmd_chr_in`); `end_token_list_in`/
+   `end_file_reading_in`/`open_log_file_in` with `map_err`; the c==1 INITEX dump block
+   inlines its former `with_state_mut` closure and calls `store_fmt_file_in(st)`;
+   `flush_node_list`'s `&CStr` maps to `EngineAbort::Confusion`. **Cascade:** last non-`_in`
+   caller of `print_esc_cstr`/`print_nl`/`print_cmd_chr`/`show_save_groups`, the
+   `store_fmt_file`/`end_token_list`/`end_file_reading` wrappers, and `mem_b32s1` — 8 deleted.
 7. **Cascade:** with #1–6 done the ~140 thin wrappers lose their last un-threaded callers
    and delete with their bodies — the 5 boundary-only init/deinit wrappers
    (`initialize_pagebuilder_variables`, `initialize/deinitialize_shipout_variables`,
