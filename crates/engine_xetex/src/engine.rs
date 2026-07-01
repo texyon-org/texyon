@@ -1240,7 +1240,9 @@ pub unsafe extern "C" fn tt_run_engine(
         if let Err(a) = get_strings_started_in(&mut *st) {
             return a.into_history(&mut *st);
         }
-        let format_ident = match crate::texmfmp::maketexstring(c" (INITEX)".as_ptr()) {
+        let format_ident = match crate::texmfmp::maketexstring_in(&mut st.strings, c" (INITEX)".as_ptr())
+            .map_err(|e| e.into_engine_abort())
+        {
             Ok(v) => v,
             Err(a) => return a.into_history(&mut *st),
         };
@@ -1416,7 +1418,9 @@ pub unsafe extern "C" fn tt_run_engine(
         // The nullfont (FONT_BASE) bootstrap is a contiguous run of font-table
         // writes on the owned state; the only state-touching argument is
         // `maketexstring`, computed before the block.
-        let nullfont_name = match crate::texmfmp::maketexstring(c"nullfont".as_ptr()) {
+        let nullfont_name = match crate::texmfmp::maketexstring_in(&mut st.strings, c"nullfont".as_ptr())
+            .map_err(|e| e.into_engine_abort())
+        {
             Ok(v) => v,
             Err(a) => return a.into_history(&mut *st),
         };
