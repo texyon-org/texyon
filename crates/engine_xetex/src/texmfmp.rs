@@ -373,20 +373,6 @@ pub(crate) unsafe fn getmd5sum_in(strings: &mut crate::state::StringsState, s: i
 // make_src_special — write "src:{lineno} {filename}" into the pool
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-texmfmp.c:274 (make_src_special)
-pub unsafe fn make_src_special(srcfilename: i32, lineno: i32) -> i32 {
-    match crate::state::with_state_mut(|st| make_src_special_in(st, srcfilename, lineno)) {
-        Ok(b) => b,
-        Err(()) => fire_make_src_pool_overflow(),
-    }
-}
-
-/// Fire the deferred `make_src_special` string-pool overflow after the state
-/// borrow drops (`01b` §5).
-pub(crate) unsafe fn fire_make_src_pool_overflow() -> ! {
-    _tt_abort(c"string pool overflow".as_ptr())
-}
-
 /// `&mut EngineState` core of [`make_src_special`]. Returns the cold pool
 /// overflow as `Err(())` for the caller to defer (`01b` §5).
 pub(crate) fn make_src_special_in(

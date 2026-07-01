@@ -511,15 +511,11 @@ unsafe fn apply_normalization_in(
 
 /// Read one line from UFILE into the TeX `buffer`, handling encodings.
 ///
-/// translated from xetex-io.c:135 (input_line)
-pub unsafe fn input_line(f: *mut UFile) -> libc::c_int {
-    match crate::state::with_state_mut(|st| input_line_in(st, f)) {
-        Ok(v) => v,
-        Err(a) => a.fire(),
-    }
-}
-
-/// Threaded `_in` core of [`input_line`] (`01b` §3). Holds one `&mut
+/// translated from xetex-io.c:135 (input_line). The legacy no-arg bridge
+/// wrapper was deleted (`01d` §5.6, DEAD set): all live callers reach the
+/// `_in` core directly.
+///
+/// Threaded `_in` core (`01b` §3). Holds one `&mut
 /// EngineState` borrow across the read, touching `st.input` (buffer/`last`/
 /// `max_buf_stack`) and `st.eqtb` (input normalization) directly and calling
 /// the threaded `get_uni_c_in`/`apply_normalization_in`/`conversion_error_in`
@@ -930,29 +926,14 @@ pub(crate) enum OpenOrCloseAbort {
 }
 
 impl OpenOrCloseAbort {
-    pub(crate) unsafe fn fire(self) -> ! {
-        match self {
-            OpenOrCloseAbort::Scanner(e) => e.fire(),
-            OpenOrCloseAbort::Name(e) => fire_name_overflow(e),
-            OpenOrCloseAbort::MakeString(e) => crate::texmfmp::fire_make_tex_string(e),
-        }
-    }
-
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`fire`](OpenOrCloseAbort::fire) without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5). The longjmp-ing
+    /// `fire` was deleted with the DEAD `open_or_close` wrapper (`01d` §5.6).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             OpenOrCloseAbort::Scanner(e) => e.into_engine_abort(),
             OpenOrCloseAbort::Name(e) => e.into_engine_abort(),
             OpenOrCloseAbort::MakeString(e) => e.into_engine_abort(),
         }
-    }
-}
-
-/// Bridge-down wrapper for legacy callers (`01b` §3, §5).
-pub unsafe fn open_or_close() {
-    if let Err(e) = crate::state::with_state_mut(|st| open_or_close_in(st)) {
-        e.fire();
     }
 }
 
@@ -1067,15 +1048,6 @@ pub(crate) fn more_name_in(st: &mut crate::state::EngineState, c: u16) -> Result
     Ok(true)
 }
 
-/// Bridge-down wrapper for legacy `more_name` callers (`01b` §3, §5).
-/// translated from xetex-xetex0.c:7837 (more_name)
-pub unsafe fn more_name(c: u16) -> bool {
-    match crate::state::with_state_mut(|st| more_name_in(st, c)) {
-        Ok(v) => v,
-        Err(e) => fire_name_overflow(e),
-    }
-}
-
 /// Run a deferred file-name [`NameAbort`] overflow after the borrow drops.
 /// Never returns.
 pub(crate) unsafe fn fire_name_overflow(e: NameAbort) -> ! {
@@ -1181,13 +1153,6 @@ pub(crate) fn end_name_in(st: &mut crate::state::EngineState) -> Result<(), Name
     Ok(())
 }
 
-/// Bridge-down wrapper for legacy `end_name` callers (`01b` §3, §5).
-/// translated from xetex-xetex0.c:7870 (end_name)
-pub unsafe fn end_name() {
-    if let Err(e) = crate::state::with_state_mut(|st| end_name_in(st)) {
-        fire_name_overflow(e);
-    }
-}
 /// `&mut EngineState` core of [`make_name_string`] (`01b` §3). Touches
 /// `strings`/`scanner`/`input`; cold `overflow` defers via [`NameAbort`].
 pub(crate) unsafe fn make_name_string_in(
@@ -1243,23 +1208,6 @@ pub unsafe fn make_name_string() -> Result<i32, crate::errors::EngineAbort> {
     // Sole caller is store_fmt_file (Result-threadable); propagate the cold
     // NameAbort overflow as EngineAbort instead of longjmp-ing (`01d` §5.6).
     crate::state::with_state_mut(|st| make_name_string_in(st)).map_err(|e| e.into_engine_abort())
-}
-/// translated from xetex-xetex0.c:13424 (scan_and_pack_name)
-pub unsafe fn scan_and_pack_name() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_and_pack_name_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-unsafe fn scan_file_name_braced() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_file_name_braced_in(st)) {
-        unsafe { e.fire() }
-    }
-}
-/// translated from xetex-xetex0.c:8003 (scan_file_name)
-pub unsafe fn scan_file_name() {
-    if let Err(e) = crate::state::with_state_mut(|st| scan_file_name_in(st)) {
-        unsafe { e.fire() }
-    }
 }
 /// translated from xetex-xetex0.c:7970 (pack_job_name)
 pub unsafe fn pack_job_name(s: *const libc::c_char) -> Result<(), crate::errors::EngineAbort> {
