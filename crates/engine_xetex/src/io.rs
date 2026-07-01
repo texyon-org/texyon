@@ -113,6 +113,46 @@ mod raw {
 }
 
 // ---------------------------------------------------------------------------
+// Non-longjmp input seek (Stage II, `01d` §2.1)
+// ---------------------------------------------------------------------------
+//
+// The C `ttstub_input_seek`/`ttstub_input_close` wrappers `longjmp` to the engine
+// setjmp on a serious internal I/O error. To let the boundary functions eventually
+// hold a real `&mut EngineState` across an input seek/close (the §6 flip), call the
+// exported `ttbc_*` functions directly — they return the error as a value and never
+// jump. `es` is the global `CoreBridgeState` the C wrappers use, obtained from
+// `_ttbc_get_core_state()` (both non-header exports from `bridge_core/support`).
+
+extern "C" {
+    fn _ttbc_get_core_state() -> *mut libc::c_void;
+    fn ttbc_input_seek(
+        es: *mut libc::c_void,
+        handle: usize,
+        offset: libc::ssize_t,
+        whence: libc::c_int,
+        internal_error: *mut libc::c_int,
+    ) -> libc::size_t;
+}
+
+/// Non-longjmp replacement for the C `ttstub_input_seek` wrapper. Every engine call
+/// site rewinds with `SEEK_SET`, and `ttbc_input_seek` sets `internal_error` only
+/// for an invalid `whence`, so the seek longjmp is unreachable here: this returns
+/// the new position like the C wrapper and asserts `internal_error == 0`.
+pub(crate) unsafe fn input_seek(
+    handle: usize,
+    offset: libc::ssize_t,
+    whence: libc::c_int,
+) -> libc::size_t {
+    let mut internal_error: libc::c_int = 0;
+    let rv = ttbc_input_seek(_ttbc_get_core_state(), handle, offset, whence, &mut internal_error);
+    debug_assert_eq!(
+        internal_error, 0,
+        "ttbc_input_seek flags internal_error only for an invalid whence"
+    );
+    rv
+}
+
+// ---------------------------------------------------------------------------
 // C externs needed by translated functions
 // ---------------------------------------------------------------------------
 
@@ -131,8 +171,6 @@ extern "C" {
     fn ttstub_get_last_input_abspath(buffer: *mut libc::c_char, len: libc::size_t)
         -> libc::ssize_t;
     fn ttstub_input_close(handle: usize) -> libc::c_int;
-    fn ttstub_input_seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int)
-        -> libc::size_t;
     fn ttstub_input_getc(handle: usize) -> libc::c_int;
     fn ttstub_input_ungetc(handle: usize, ch: libc::c_int) -> libc::c_int;
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
@@ -305,10 +343,10 @@ pub(crate) unsafe fn u_open_in_in(
             mode = UTF16LE;
         } else if b1 == 0 && b2 != 0 {
             mode = UTF16BE;
-            ttstub_input_seek((**f).handle, 0, libc::SEEK_SET);
+            input_seek((**f).handle, 0, libc::SEEK_SET);
         } else if b2 == 0 && b1 != 0 {
             mode = UTF16LE;
-            ttstub_input_seek((**f).handle, 0, libc::SEEK_SET);
+            input_seek((**f).handle, 0, libc::SEEK_SET);
         } else if b1 == 0xEF && b2 == 0xBB {
             let b3 = ttstub_input_getc((**f).handle);
             if b3 == 0xBF {
@@ -317,7 +355,7 @@ pub(crate) unsafe fn u_open_in_in(
         }
 
         if mode == AUTO {
-            ttstub_input_seek((**f).handle, 0, libc::SEEK_SET);
+            input_seek((**f).handle, 0, libc::SEEK_SET);
             mode = UTF8;
         }
     }

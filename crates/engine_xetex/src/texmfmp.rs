@@ -33,8 +33,6 @@ extern "C" {
     fn ttstub_input_get_size(handle: usize) -> libc::size_t;
     fn ttstub_input_get_mtime(handle: usize) -> libc::time_t;
     fn ttstub_input_close(handle: usize) -> libc::c_int;
-    fn ttstub_input_seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int)
-        -> libc::size_t;
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
 }
 
@@ -507,7 +505,7 @@ pub(crate) unsafe fn getfiledump_in(
         return;
     }
 
-    ttstub_input_seek(handle, offset as libc::ssize_t, libc::SEEK_SET);
+    crate::io::input_seek(handle, offset as libc::ssize_t, libc::SEEK_SET);
     let actual = ttstub_input_read(handle, buffer, length as libc::size_t);
     ttstub_input_close(handle);
 
