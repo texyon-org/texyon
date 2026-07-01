@@ -532,7 +532,9 @@ is concentrated in the boundary/wrapper layer that the setjmp gated.
 2. **`close_files_and_terminate`** (io.rs) — 5 sites, all workers threaded
    (`finalize_dvi_file_in`, `synctex_terminate(st,…)`, `print_*_in`); already `Result`.
    **Prerequisite for `store_fmt_file`**; its four callers (normal-exit + errors.rs:99/294
-   post-borrow + format_io.rs:260) all hold no borrow, so bridge cleanly.
+   post-borrow + format_io.rs:260) all hold no borrow, so bridge cleanly. **DONE
+   session 250** (`c6c79fe6`, 219→215): `close_files_and_terminate_in(st)` + a thin
+   one-`with_state_mut` bridge wrapper keeping the four callers unchanged.
 3. **`tt_cleanup`** (engine.rs) — 5 sites, no Result friction; two big single-borrow blocks.
 4. **`load_fmt_file`** (format_io.rs) — trivial once `pack_buffered_name` gets a one-line
    `_in`; `load_fmt_file_in` is already the flip's reference model.
