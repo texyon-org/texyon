@@ -29,7 +29,6 @@ extern "C" {
         is_gz: libc::c_int,
     ) -> usize;
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
-    fn ttstub_input_close(handle: usize) -> libc::c_int;
 
     #[link_name = "TEX_format_default"]
     static mut tre_TEX_format_default: *mut libc::c_char;
@@ -1529,6 +1528,12 @@ unsafe fn load_fmt_file_in(
         return Err(crate::errors::EngineAbort::TtAbort(c"fatal format file error".as_ptr()));
     }
 
-    ttstub_input_close(fmt_in);
+    if crate::io::input_close(fmt_in) {
+        // The C ttstub_input_close wrapper longjmp'd on this serious internal
+        // close error; propagate it to tt_run_engine as a fatal abort (`01d` §2.1).
+        return Err(crate::errors::EngineAbort::TtAbort(
+            c"serious internal error closing the format file".as_ptr(),
+        ));
+    }
     Ok(true)
 }

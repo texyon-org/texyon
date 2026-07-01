@@ -18,7 +18,6 @@ use crate::state::{EngineState, FontState};
 extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn ttstub_input_getc(handle: usize) -> libc::c_int;
-    fn ttstub_input_close(handle: usize) -> libc::c_int;
     fn get_loaded_font_design_size() -> i32;
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
     fn get_ot_math_constant(f: i32, n: i32) -> i32;
@@ -322,6 +321,9 @@ pub(crate) enum ReadFontInfoAbort {
     TfmOutOfMemory,
     Native(LoadNativeFontAbort),
     Error(ErrorOutcome),
+    /// Serious internal error closing the TFM file (the C `ttstub_input_close`
+    /// wrapper `longjmp`'d here); propagated as a fatal abort (`01d` §2.1).
+    InputClose,
 }
 
 impl ReadFontInfoAbort {
@@ -334,6 +336,9 @@ impl ReadFontInfoAbort {
             ),
             ReadFontInfoAbort::Native(e) => e.into_engine_abort(),
             ReadFontInfoAbort::Error(outcome) => outcome.into_engine_abort(),
+            ReadFontInfoAbort::InputClose => crate::errors::EngineAbort::TtAbort(
+                c"serious internal error closing the font metric file".as_ptr(),
+            ),
         }
     }
 }
@@ -501,8 +506,10 @@ pub(crate) unsafe fn read_font_info_in(
         }
     }
 
-    if file_opened {
-        ttstub_input_close(tfm_file);
+    if file_opened && crate::io::input_close(tfm_file) {
+        // The C ttstub_input_close wrapper longjmp'd on this serious internal
+        // close error; propagate it to tt_run_engine as a fatal abort (`01d` §2.1).
+        return Err(ReadFontInfoAbort::InputClose);
     }
 
     if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 && (g == FONT_BASE || file_opened)

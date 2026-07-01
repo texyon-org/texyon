@@ -132,6 +132,7 @@ extern "C" {
         whence: libc::c_int,
         internal_error: *mut libc::c_int,
     ) -> libc::size_t;
+    fn ttbc_input_close(es: *mut libc::c_void, handle: usize) -> libc::c_int;
 }
 
 /// Non-longjmp replacement for the C `ttstub_input_seek` wrapper. Every engine call
@@ -150,6 +151,18 @@ pub(crate) unsafe fn input_seek(
         "ttbc_input_seek flags internal_error only for an invalid whence"
     );
     rv
+}
+
+/// Non-longjmp replacement for the C `ttstub_input_close` wrapper. Returns `true`
+/// on the serious internal close error the C wrapper `longjmp`'d on
+/// (`ttbc_input_close != 0`, i.e. `input_close`'s `scan_remainder` failed); a
+/// `Result`-path caller propagates it as `EngineAbort::TtAbort` (`01d` §2.1). The
+/// old bare `longjmp` ran no cleanup and left the surfaced message undefined, so
+/// `TtAbort` (no cleanup, sets a descriptive message, history 3) is control-flow
+/// equivalent with a strictly-better message on this rare path.
+#[must_use]
+pub(crate) unsafe fn input_close(handle: usize) -> bool {
+    ttbc_input_close(_ttbc_get_core_state(), handle) != 0
 }
 
 // ---------------------------------------------------------------------------
