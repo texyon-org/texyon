@@ -145,7 +145,13 @@ pub(crate) unsafe fn input_seek(
     whence: libc::c_int,
 ) -> libc::size_t {
     let mut internal_error: libc::c_int = 0;
-    let rv = ttbc_input_seek(_ttbc_get_core_state(), handle, offset, whence, &mut internal_error);
+    let rv = ttbc_input_seek(
+        _ttbc_get_core_state(),
+        handle,
+        offset,
+        whence,
+        &mut internal_error,
+    );
     debug_assert_eq!(
         internal_error, 0,
         "ttbc_input_seek flags internal_error only for an invalid whence"
