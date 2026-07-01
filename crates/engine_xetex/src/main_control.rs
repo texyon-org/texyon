@@ -698,11 +698,14 @@ pub(crate) fn get_preamble_token_in(
             }
         }
         if cur_cmd() == ENDV {
-            unsafe {
-                crate::errors::fatal_error(
-                    c"(interwoven alignment preambles are not allowed)".as_ptr(),
-                );
-            }
+            // Interwoven alignment preamble: propagate as a Result instead of the
+            // direct fatal_error longjmp under the &mut EngineState borrow, mirroring
+            // the sibling sites at fin_align (MainControlAbort::Input -> InputAbort::
+            // Fatal -> EngineAbort::Fatal; into_history prints "Emergency stop" + msg
+            // and returns 3, same as the old fatal_error) — `01d` §5.6.
+            return Err(MainControlAbort::Input(crate::input::InputAbort::Fatal(
+                c"(interwoven alignment preambles are not allowed)".as_ptr(),
+            )));
         }
         if cur_cmd() == ASSIGN_GLUE && cur_chr() == GLUE_BASE_TAB_SKIP {
             crate::scan::scan_optional_equals_in(st)?;
