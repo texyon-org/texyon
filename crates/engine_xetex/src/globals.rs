@@ -351,14 +351,6 @@ pub(crate) fn line() -> i32 {
     unsafe { raw::line }
 }
 
-/// Sets `open_parens = v`.
-#[inline]
-pub(crate) fn set_open_parens(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.open_parens = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // mem word-level accessors (b16 and gr fields)
 // ---------------------------------------------------------------------------
@@ -372,20 +364,6 @@ pub(crate) fn set_open_parens(v: i32) {
 // eqtb accessor
 // ---------------------------------------------------------------------------
 
-/// Read `eqtb[p].b32.s1` (the "value" half of an equivalents entry).
-#[inline]
-pub(crate) fn eqtb_b32s1(p: i32) -> i32 {
-    // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
-    crate::state::with_state(|s| unsafe { s.eqtb.data[p as usize].b32.s1 })
-}
-/// Write `v` into `eqtb[p].b32.s1`.
-#[inline]
-pub(crate) fn set_eqtb_b32s1(p: i32, v: i32) {
-    // Union-field write through a `Vec` index needs no `unsafe` (session 41).
-    crate::state::with_state_mut(|s| {
-        s.eqtb.data[p as usize].b32.s1 = v;
-    });
-}
 // ---------------------------------------------------------------------------
 // str_ptr / str_start / str_pool (read accessor)
 // ---------------------------------------------------------------------------
@@ -418,79 +396,20 @@ pub(crate) fn name_length() -> i32 {
 // in_open / full_source_filename_stack / line_stack / file_line_error_style_p
 // ---------------------------------------------------------------------------
 
-/// Returns non-zero when file:line-style error messages are active.
-#[inline]
-pub(crate) fn file_line_error_style_p() -> i32 {
-    crate::state::with_state(|state| state.config.file_line_error_style_p)
-}
-/// Sets non-zero when file:line-style error messages are active.
-#[inline]
-pub(crate) fn set_file_line_error_style_p(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.config.file_line_error_style_p = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // hash / prim / eqtb_top
 // ---------------------------------------------------------------------------
 
-/// Read `hash[p].s0` (the "link" half of a hash-table entry).
-#[inline]
-pub(crate) fn hash_s0(p: i32) -> i32 {
-    crate::state::with_state(|s| s.eqtb.hash[(p as usize) - 514].s0)
-}
-/// Write `hash[p].s0 = v`.
-#[inline]
-pub(crate) fn set_hash_s0(p: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.eqtb.hash[(p as usize) - 514].s0 = v;
-    });
-}
 /// Read `hash[p].s1` (the "text" half of a hash-table entry).
 #[inline]
 pub(crate) fn hash_s1(p: i32) -> i32 {
     crate::state::with_state(|s| s.eqtb.hash[(p as usize) - 514].s1)
-}
-/// Write `hash[p].s1 = v`.
-#[inline]
-pub(crate) fn set_hash_s1(p: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.eqtb.hash[(p as usize) - 514].s1 = v;
-    });
-}
-
-/// Returns `eqtb_top`.
-#[inline]
-pub(crate) fn eqtb_top() -> i32 {
-    crate::state::with_state(|state| state.eqtb.eqtb_top)
 }
 
 // ---------------------------------------------------------------------------
 // hash management globals (hash_used / hash_extra / hash_high /
 //                          no_new_control_sequence / prim_used)
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn set_hash_used(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.eqtb.hash_used = v;
-    });
-}
-#[inline]
-pub(crate) fn hash_extra() -> i32 {
-    crate::state::with_state(|state| state.eqtb.hash_extra)
-}
-#[inline]
-pub(crate) fn hash_top() -> i32 {
-    crate::state::with_state(|state| state.eqtb.hash_top)
-}
-#[inline]
-pub(crate) fn set_no_new_control_sequence(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.eqtb.no_new_control_sequence = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // temp_ptr
@@ -530,22 +449,6 @@ pub(crate) fn set_selector(v: i32) {
     });
 }
 
-/// Sets `term_offset`.
-#[inline]
-pub(crate) fn set_term_offset(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.term_offset = v;
-    });
-}
-
-/// Sets `file_offset`.
-#[inline]
-pub(crate) fn set_file_offset(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.file_offset = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // rust_stdout / log_file / write_file / current_diagnostic
 // ---------------------------------------------------------------------------
@@ -556,56 +459,9 @@ pub(crate) fn rust_stdout() -> usize {
     crate::state::with_state(|s| s.shipout.rust_stdout)
 }
 
-/// Sets the `rust_stdout` output handle.
-#[inline]
-pub(crate) fn set_rust_stdout(v: usize) {
-    crate::state::with_state_mut(|s| {
-        s.shipout.rust_stdout = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // print_raw_char globals
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn max_print_line() -> i32 {
-    crate::state::with_state(|state| state.config.max_print_line)
-}
-#[inline]
-pub(crate) fn set_max_print_line(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.config.max_print_line = v;
-    });
-}
-
-#[inline]
-pub(crate) fn set_tally(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.tally = v;
-    });
-}
-
-#[inline]
-pub(crate) fn error_line() -> i32 {
-    crate::state::with_state(|state| state.errors.error_line)
-}
-#[inline]
-pub(crate) fn set_error_line(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.error_line = v;
-    });
-}
-#[inline]
-pub(crate) fn half_error_line() -> i32 {
-    crate::state::with_state(|state| state.errors.half_error_line)
-}
-#[inline]
-pub(crate) fn set_half_error_line(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.half_error_line = v;
-    });
-}
 
 #[inline]
 pub(crate) fn pool_size() -> i32 {
@@ -688,34 +544,13 @@ pub(crate) fn log_opened() -> bool {
     crate::state::with_state(|state| state.errors.log_opened)
 }
 #[inline]
-pub(crate) fn set_log_opened(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.errors.log_opened = v;
-    });
-}
-#[inline]
 pub(crate) fn job_name() -> i32 {
     crate::state::with_state(|state| state.strings.job_name)
-}
-#[inline]
-pub(crate) fn set_job_name(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.strings.job_name = v;
-    });
 }
 
 // ---------------------------------------------------------------------------
 // engine launch config flags (set by tt_xetex_set_int_variable)
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn in_initex_mode() -> bool {
-    crate::state::with_state(|state| state.config.in_initex_mode)
-}
-#[inline]
-pub(crate) fn semantic_pagination_enabled() -> bool {
-    crate::state::with_state(|state| state.config.semantic_pagination_enabled)
-}
 
 // ---------------------------------------------------------------------------
 // old_setting
@@ -746,12 +581,6 @@ pub(crate) fn set_cur_tok(v: i32) {
     }
 }
 #[inline]
-pub(crate) fn set_align_state(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.align_state = v;
-    });
-}
-#[inline]
 pub(crate) fn cur_chr() -> i32 {
     unsafe { raw::cur_chr }
 }
@@ -769,13 +598,6 @@ pub(crate) fn set_cur_val(v: i32) {
 // name_in_progress / stop_at_space
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_name_in_progress(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.scanner.name_in_progress = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // save_stack / save_ptr / cur_level / cur_group
 // ---------------------------------------------------------------------------
@@ -792,20 +614,6 @@ pub(crate) fn save_size() -> i32 {
 // ---------------------------------------------------------------------------
 // font_name
 // ---------------------------------------------------------------------------
-
-/// Returns `font_mem_size`.
-#[inline]
-pub(crate) fn font_mem_size() -> i32 {
-    crate::state::with_state(|state| state.fonts.font_mem_size)
-}
-
-/// Sets `font_mem_size`.
-#[inline]
-pub(crate) fn set_font_mem_size(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_mem_size = v;
-    });
-}
 
 /// Returns `param_base[f]`.
 
@@ -868,16 +676,6 @@ pub extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
     // SAFETY: mirror kept in sync with fonts.font_layout_engine by refresh_font_ffi_mirrors.
     unsafe { *font_ffi_mirror::FONT_LAYOUT_ENGINE.add(f as usize) }
 }
-#[inline]
-pub(crate) fn random_seed() -> i32 {
-    crate::state::with_state(|state| state.errors.random_seed)
-}
-#[inline]
-pub(crate) fn set_random_seed(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.random_seed = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // epochseconds / microseconds
@@ -888,20 +686,8 @@ pub(crate) fn epochseconds() -> i32 {
     crate::state::with_state(|state| state.shipout.epochseconds)
 }
 #[inline]
-pub(crate) fn set_epochseconds(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.epochseconds = v;
-    });
-}
-#[inline]
 pub(crate) fn microseconds() -> i32 {
     crate::state::with_state(|state| state.shipout.microseconds)
-}
-#[inline]
-pub(crate) fn set_microseconds(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.microseconds = v;
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1017,21 +803,6 @@ pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
 // font_max
 // ---------------------------------------------------------------------------
 
-/// Returns `font_max` — the largest valid internal font number
-/// (xetex-xetexd.h:406).
-#[inline]
-pub(crate) fn font_max() -> i32 {
-    crate::state::with_state(|state| state.fonts.font_max)
-}
-
-/// Sets `font_max`.
-#[inline]
-pub(crate) fn set_font_max(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.font_max = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // cur_cmd / cur_mark
 // ---------------------------------------------------------------------------
@@ -1060,20 +831,6 @@ pub(crate) fn set_cur_chr(v: i32) {
 // input_stack / input_ptr / base_ptr
 // ---------------------------------------------------------------------------
 
-/// Sets `input_ptr`.
-#[inline]
-pub(crate) fn set_input_ptr(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.input_ptr = v;
-    });
-}
-/// Sets `max_in_stack`.
-#[inline]
-pub(crate) fn set_max_in_stack(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.max_in_stack = v;
-    });
-}
 /// Returns `stack_size` — capacity of the input stack (xetex-xetexd.h:410).
 #[inline]
 pub(crate) fn stack_size() -> i32 {
@@ -1083,22 +840,6 @@ pub(crate) fn stack_size() -> i32 {
 // ---------------------------------------------------------------------------
 // grp_stack / if_stack
 // ---------------------------------------------------------------------------
-
-/// Sets `grp_stack[k]`.
-#[inline]
-pub(crate) fn set_grp_stack(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.grp_stack[k as usize] = v;
-    });
-}
-
-/// Sets `if_stack[k]`.
-#[inline]
-pub(crate) fn set_if_stack(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.if_stack[k as usize] = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // cond_ptr / if_limit / cur_if / if_line
@@ -1132,37 +873,10 @@ pub(crate) fn set_cur_ptr(v: i32) {
 // max_reg_num / max_reg_help_line
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_max_reg_num(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.max_reg_num = v;
-    });
-}
-#[inline]
-pub(crate) fn set_max_reg_help_line(v: *const libc::c_char) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.max_reg_help_line = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // param_stack / param_ptr / max_param_stack
 // ---------------------------------------------------------------------------
 
-/// Sets `param_ptr`.
-#[inline]
-pub(crate) fn set_param_ptr(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.param_ptr = v;
-    });
-}
-/// Sets `max_param_stack`.
-#[inline]
-pub(crate) fn set_max_param_stack(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.max_param_stack = v;
-    });
-}
 /// Returns `param_size` — allocated capacity of param_stack (xetex-ini.c:3596).
 #[inline]
 pub(crate) fn param_size() -> i32 {
@@ -1200,32 +914,10 @@ pub(crate) fn max_in_open() -> i32 {
 // set_in_open
 // ---------------------------------------------------------------------------
 
-/// Sets `in_open`.
-#[inline]
-pub(crate) fn set_in_open(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.in_open = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // source_filename_stack / full_source_filename_stack / line_stack
 // ---------------------------------------------------------------------------
 
-/// Sets `source_filename_stack[k]`.
-#[inline]
-pub(crate) fn set_source_filename_stack(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.source_filename_stack[k as usize] = v;
-    });
-}
-/// Sets `full_source_filename_stack[k]`.
-#[inline]
-pub(crate) fn set_full_source_filename_stack(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.full_source_filename_stack[k as usize] = v;
-    });
-}
 /// Sets `line`.
 #[inline]
 pub(crate) fn set_line(v: i32) {
@@ -1238,18 +930,6 @@ pub(crate) fn set_line(v: i32) {
 // max_buf_stack / set_buffer_entry / cur_input_limit
 // ---------------------------------------------------------------------------
 
-/// Sets `max_buf_stack`.
-#[inline]
-pub(crate) fn set_max_buf_stack(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.max_buf_stack = v;
-    });
-}
-/// Writes `buffer[k] = v`.
-#[inline]
-pub(crate) fn set_buffer_entry(k: i32, v: i32) {
-    crate::state::with_state_mut(|s| s.input.buffer[k as usize] = v);
-}
 /// Writes `cur_input.limit = v`.
 #[inline]
 pub(crate) fn set_cur_input_limit(v: i32) {
@@ -1271,29 +951,10 @@ pub(crate) fn expand_depth() -> i32 {
 // scanner_status / warning_index / def_ref
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_scanner_status(v: u8) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.scanner_status = v;
-    });
-}
-#[inline]
-pub(crate) fn set_warning_index(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.warning_index = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // gave_char_warning_help / main_p / main_k
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_gave_char_warning_help(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.fonts.gave_char_warning_help = v;
-    });
-}
 #[inline]
 pub(crate) fn main_p() -> i32 {
     unsafe { raw::main_p }
@@ -1502,11 +1163,6 @@ pub(crate) fn set_prev_class(v: i32) {
 // hyphenation globals / cur_lang / insert_src_special_every_par
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn trie_not_ready() -> bool {
-    crate::state::with_state(|state| state.hyph.trie_not_ready)
-}
-
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -1534,26 +1190,6 @@ pub(crate) fn cur_list_mode_line() -> i32 {
 // ---------------------------------------------------------------------------
 // LR_ptr / LR_problems / cur_dir
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// force_eof (xetex-ini.c:159 / xetex-xetexd.h:524)
-// ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn set_force_eof(v: bool) {
-    crate::state::with_state_mut(|s| {
-        s.input.force_eof = v;
-    });
-}
-
-// ---------------------------------------------------------------------------
-// used_tectonic_coda_tokens (xetex-xetexd.h:723)
-// ---------------------------------------------------------------------------
-#[inline]
-pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
-    crate::state::with_state_mut(|s| {
-        s.scanner.used_tectonic_coda_tokens = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // format_ident / edit_name_start / empty / sa_null per-field setters

@@ -11,14 +11,10 @@ use crate::consts::{
 };
 use crate::format_io::load_fmt_file;
 use crate::globals::{
-    buf_size, cur_chr, cur_input, cur_val, eqtb_b32s1, first, font_max, font_mem_size, history,
-    in_initex_mode, interaction,
-    set_buffer_entry, set_cancel_boundary, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux,
-    set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf,
-    set_cur_list_tail, set_cur_val, set_eqtb_b32s1, set_error_line, set_file_line_error_style_p,
-    set_first, set_font_max, set_font_mem_size, set_half_error_line, set_ins_disc, set_lft_hit,
-    set_ligature_present, set_max_print_line, set_max_reg_help_line, set_max_reg_num,
-    set_open_parens, set_rt_hit, set_selector, set_temp_ptr, temp_ptr, trie_not_ready,
+    buf_size, cur_chr, cur_input, cur_val, first, set_cancel_boundary,
+    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
+    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_cur_val, set_first,
+    set_ins_disc, set_lft_hit, set_ligature_present, set_rt_hit, set_temp_ptr, temp_ptr,
 };
 use crate::io::init_io;
 use crate::state::{EngineState, MemState};
@@ -132,11 +128,6 @@ extern "C" {
     // `hash` cleanup is now the Rust `Vec` drop on `EngineState.eqtb.hash`. (session 52)
     // `mem` cleanup is now the Rust `Vec` drop on `EngineState.mem.data`. (session 58)
     // font_info cleanup moved to EngineState.fonts.font_info (Vec::new() reset).
-}
-
-#[inline]
-pub(crate) fn intpar(n: i32) -> i32 {
-    eqtb_b32s1(PC_INT_BASE + n)
 }
 
 // ---- moved verbatim from ini.rs (workstream 02) ----
@@ -1041,10 +1032,10 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_TEX_format_default = xmalloc(libc::strlen(dump_name) + 1) as *mut libc::c_char;
     libc::strcpy(tre_TEX_format_default, dump_name);
     tre_format_default_length = libc::strlen(dump_name) as i32;
-    crate::globals::set_rust_stdout(ttstub_output_open_stdout());
+    st.shipout.rust_stdout = ttstub_output_open_stdout();
 
-    if crate::globals::file_line_error_style_p() < 0 {
-        set_file_line_error_style_p(0);
+    if st.config.file_line_error_style_p < 0 {
+        st.config.file_line_error_style_p = 0;
     }
 
     TRE_POOL_SIZE = 6_250_000;
@@ -1052,8 +1043,8 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_pool_free = 47_500;
     TRE_MAX_STRINGS = 565_536;
     tre_strings_free = 100;
-    set_font_mem_size(8_000_000);
-    set_font_max(9_000);
+    st.fonts.font_mem_size = 8_000_000;
+    st.fonts.font_max = 9_000;
     TRE_TRIE_SIZE = 1_000_000;
     TRE_HYPH_SIZE = 8_191;
     tre_buf_size = 200_000;
@@ -1062,9 +1053,9 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_param_size = 10_000;
     tre_save_size = 80_000;
     tre_stack_size = 5_000;
-    set_error_line(79);
-    set_half_error_line(50);
-    set_max_print_line(79);
+    st.errors.error_line = 79;
+    st.errors.half_error_line = 50;
+    st.config.max_print_line = 79;
     tre_expand_depth = 10_000;
 
     // Allocate every Rust-owned per-run arena under a single borrow. All sizes
@@ -1136,7 +1127,7 @@ pub unsafe extern "C" fn tt_run_engine(
         state.hyph.hyph_link = vec![0u16; hyph_words];
     }
 
-    if in_initex_mode() {
+    if st.config.in_initex_mode {
         // `xmalloc_array(MEM_TOP + 1)` allocated `MEM_TOP + 2` words; match it.
         let mem_words_init = (MEM_TOP as usize) + 2;
         {
@@ -1159,26 +1150,25 @@ pub unsafe extern "C" fn tt_run_engine(
             s.eqtb.hash = vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; n];
         }
 
-        crate::globals::set_hash_s0(HASH_BASE, 0);
-        crate::globals::set_hash_s1(HASH_BASE, 0);
-        let hash_base = crate::globals::hash_s0(HASH_BASE);
-        let hash_base_s1 = crate::globals::hash_s1(HASH_BASE);
+        st.eqtb.hash[(HASH_BASE as usize) - 514].s0 = 0;
+        st.eqtb.hash[(HASH_BASE as usize) - 514].s1 = 0;
+        let hash_base = st.eqtb.hash[(HASH_BASE as usize) - 514].s0;
+        let hash_base_s1 = st.eqtb.hash[(HASH_BASE as usize) - 514].s1;
         let mut h = HASH_BASE + 1;
-        let h_top = crate::globals::hash_top();
+        let h_top = st.eqtb.hash_top;
         while h <= h_top {
-            crate::globals::set_hash_s0(h, hash_base);
-            crate::globals::set_hash_s1(h, hash_base_s1);
+            st.eqtb.hash[(h as usize) - 514].s0 = hash_base;
+            st.eqtb.hash[(h as usize) - 514].s1 = hash_base_s1;
             h += 1;
         }
-        crate::globals::set_hash_used(h_top);
+        st.eqtb.hash_used = h_top;
 
-        // pre-compute font_mem_size before the mutable borrow (backed by with_state)
-        let fms_initex = font_mem_size();
+        let fms_initex = st.fonts.font_mem_size;
         let zero_word_initex = crate::mem_types::MemoryWord {
             b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
         };
         // `xcalloc_array(n)` allocated `n + 1` zeroed words; match that.
-        let eqtb_words_initex = (crate::globals::eqtb_top() as usize) + 1;
+        let eqtb_words_initex = (st.eqtb.eqtb_top as usize) + 1;
         {
             let state = &mut *st;
             state.eqtb.data = vec![zero_word_initex; eqtb_words_initex];
@@ -1188,14 +1178,12 @@ pub unsafe extern "C" fn tt_run_engine(
         }
     }
 
-    crate::globals::set_history(HISTORY_FATAL_ERROR);
+    st.errors.history = HISTORY_FATAL_ERROR;
     tre_bad = 0;
-    if crate::globals::half_error_line() < 30
-        || crate::globals::half_error_line() > crate::globals::error_line() - 15
-    {
+    if st.errors.half_error_line < 30 || st.errors.half_error_line > st.errors.error_line - 15 {
         tre_bad = 1;
     }
-    if crate::globals::max_print_line() < 60 {
+    if st.config.max_print_line < 60 {
         tre_bad = 2;
     }
     if 1100 > MEM_TOP {
@@ -1216,7 +1204,7 @@ pub unsafe extern "C" fn tt_run_engine(
     if MAX_FONT_MAX < crate::mem::TEX_NULL || MAX_FONT_MAX > MAX_HALFWORD {
         tre_bad = 15;
     }
-    if font_max() > FONT_BASE + 9000 {
+    if st.fonts.font_max > FONT_BASE + 9000 {
         tre_bad = 16;
     }
     if tre_save_size > MAX_HALFWORD || TRE_MAX_STRINGS > MAX_HALFWORD {
@@ -1225,7 +1213,7 @@ pub unsafe extern "C" fn tt_run_engine(
     if tre_buf_size > MAX_HALFWORD {
         tre_bad = 18;
     }
-    if CS_TOKEN_FLAG + EQTB_SIZE + crate::globals::hash_extra() > MAX_HALFWORD {
+    if CS_TOKEN_FLAG + EQTB_SIZE + st.eqtb.hash_extra > MAX_HALFWORD {
         tre_bad = 21;
     }
     if FORMAT_HASH_OFFSET < 0 || FORMAT_HASH_OFFSET > HASH_BASE {
@@ -1251,7 +1239,7 @@ pub unsafe extern "C" fn tt_run_engine(
     }
 
     initialize_more_variables_in(&mut *st);
-    if in_initex_mode() {
+    if st.config.in_initex_mode {
         if let Err(a) = get_strings_started_in(&mut *st) {
             return a.into_history();
         }
@@ -1277,96 +1265,95 @@ pub unsafe extern "C" fn tt_run_engine(
     let mut epoch = 0;
     let mut micros = 0;
     crate::texmfmp::get_seconds_and_micros(&mut epoch, &mut micros);
-    crate::globals::set_epochseconds(epoch);
-    crate::globals::set_microseconds(micros);
+    st.shipout.epochseconds = epoch;
+    st.shipout.microseconds = micros;
     crate::texmfmp::init_start_time(build_date);
 
-    set_selector(SELECTOR_TERM_ONLY);
-    crate::globals::set_tally(0);
-    crate::globals::set_term_offset(0);
-    crate::globals::set_file_offset(0);
-    crate::globals::set_job_name(0);
-    crate::globals::set_name_in_progress(false);
-    crate::globals::set_log_opened(false);
-    tre_output_file_extension = if crate::globals::semantic_pagination_enabled() {
+    st.shipout.selector = SELECTOR_TERM_ONLY;
+    st.errors.tally = 0;
+    st.shipout.term_offset = 0;
+    st.shipout.file_offset = 0;
+    st.strings.job_name = 0;
+    st.scanner.name_in_progress = false;
+    st.errors.log_opened = false;
+    tre_output_file_extension = if st.config.semantic_pagination_enabled {
         c".spx".as_ptr()
     } else {
         c".xdv".as_ptr()
     };
 
-    crate::globals::set_input_ptr(0);
-    crate::globals::set_max_in_stack(0);
-    crate::globals::set_source_filename_stack(0, 0);
-    crate::globals::set_full_source_filename_stack(0, 0);
-    crate::globals::set_in_open(0);
-    set_open_parens(0);
-    crate::globals::set_max_buf_stack(0);
-    crate::globals::set_grp_stack(0, 0);
-    crate::globals::set_if_stack(0, crate::mem::TEX_NULL);
-    crate::globals::set_param_ptr(0);
-    crate::globals::set_max_param_stack(0);
-    crate::globals::set_used_tectonic_coda_tokens(false);
-    crate::globals::set_gave_char_warning_help(false);
+    st.input.input_ptr = 0;
+    st.input.max_in_stack = 0;
+    st.input.source_filename_stack[0] = 0;
+    st.input.full_source_filename_stack[0] = 0;
+    st.input.in_open = 0;
+    st.input.open_parens = 0;
+    st.input.max_buf_stack = 0;
+    st.input.grp_stack[0] = 0;
+    st.input.if_stack[0] = crate::mem::TEX_NULL;
+    st.input.param_ptr = 0;
+    st.input.max_param_stack = 0;
+    st.scanner.used_tectonic_coda_tokens = false;
+    st.fonts.gave_char_warning_help = false;
     set_first(0);
 
-    crate::globals::set_scanner_status(NORMAL as u8);
-    crate::globals::set_warning_index(crate::mem::TEX_NULL);
+    st.scanner.scanner_status = NORMAL as u8;
+    st.scanner.warning_index = crate::mem::TEX_NULL;
     set_first(1);
     crate::globals::set_cur_input_state(NEW_LINE);
     crate::globals::set_cur_input_start(1);
     crate::globals::set_cur_input_index(0);
     crate::globals::set_line(0);
     crate::globals::set_cur_input_name(0);
-    crate::globals::set_force_eof(false);
-    crate::globals::set_align_state(1_000_000);
+    st.input.force_eof = false;
+    st.scanner.align_state = 1_000_000;
 
     init_io();
 
-    if in_initex_mode() {
-        crate::globals::set_no_new_control_sequence(false);
-        set_max_reg_num(32767);
-        set_max_reg_help_line(c"A register number must be between 0 and 32767.".as_ptr());
+    if st.config.in_initex_mode {
+        st.eqtb.no_new_control_sequence = false;
+        st.scanner.max_reg_num = 32767;
+        st.scanner.max_reg_help_line = c"A register number must be between 0 and 32767.".as_ptr();
     }
-    crate::globals::set_no_new_control_sequence(true);
+    st.eqtb.no_new_control_sequence = true;
 
-    if !in_initex_mode() {
+    if !st.config.in_initex_mode {
         match load_fmt_file() {
             Ok(true) => {}
             // Graceful load failure: terminate with the current history (matches
             // the old `!load_fmt_file()` early return).
-            Ok(false) => return history(),
+            Ok(false) => return st.errors.history,
             // Fatal undump abort: HISTORY_FATAL_ERROR with no longjmp (`01d` §5.4).
             Err(a) => return a.into_history(),
         }
     }
 
-    if intpar(INT_PAR_END_LINE_CHAR) < 0 || intpar(INT_PAR_END_LINE_CHAR) > BIGGEST_CHAR {
+    // SAFETY: union projection; the eqtb index is a valid int-param slot.
+    let end_line_char = unsafe { st.eqtb.data[(PC_INT_BASE + INT_PAR_END_LINE_CHAR) as usize].b32.s1 };
+    if end_line_char < 0 || end_line_char > BIGGEST_CHAR {
         crate::globals::set_cur_input_limit(crate::globals::cur_input().limit - 1);
     } else {
-        set_buffer_entry(
-            crate::globals::cur_input().limit,
-            intpar(INT_PAR_END_LINE_CHAR),
-        );
+        st.input.buffer[crate::globals::cur_input().limit as usize] = end_line_char;
     }
 
-    if in_initex_mode() {
-        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_TIME, 0);
-        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_DAY, 0);
-        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_MONTH, 0);
-        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_YEAR, 0);
+    if st.config.in_initex_mode {
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_TIME) as usize].b32.s1 = 0;
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_DAY) as usize].b32.s1 = 0;
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_MONTH) as usize].b32.s1 = 0;
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_YEAR) as usize].b32.s1 = 0;
     } else {
         let mut time = 0;
         let mut day = 0;
         let mut month = 0;
         let mut year = 0;
         crate::texmfmp::get_date_and_time(build_date, &mut time, &mut day, &mut month, &mut year);
-        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_TIME, time);
-        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_DAY, day);
-        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_MONTH, month);
-        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_YEAR, year);
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_TIME) as usize].b32.s1 = time;
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_DAY) as usize].b32.s1 = day;
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_MONTH) as usize].b32.s1 = month;
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_YEAR) as usize].b32.s1 = year;
     }
 
-    if trie_not_ready() {
+    if st.hyph.trie_not_ready {
         {
             let state = &mut *st;
             let trie_len = (state.hyph.trie_size as usize) + 1;
@@ -1386,8 +1373,8 @@ pub unsafe extern "C" fn tt_run_engine(
             state.hyph.hyph_start = 0;
         }
 
-        let font_check_len = (font_max() as usize) + 1;
-        let base_fmt_len = (font_max() as usize) + 1;
+        let font_check_len = (st.fonts.font_max as usize) + 1;
+        let base_fmt_len = (st.fonts.font_max as usize) + 1;
         {
             let state = &mut *st;
             state.fonts.font_layout_engine = vec![std::ptr::null_mut(); font_check_len];
@@ -1470,25 +1457,25 @@ pub unsafe extern "C" fn tt_run_engine(
         }
     }
 
-    let font_used_len = (font_max() as usize) + 1;
+    let font_used_len = (st.fonts.font_max as usize) + 1;
     {
         let state = &mut *st;
         state.fonts.font_used = vec![false; font_used_len];
     }
 
-    crate::globals::set_random_seed(
-        crate::globals::microseconds() * 1000 + (crate::globals::epochseconds() % 1_000_000),
-    );
-    crate::scaled_math::init_randoms(crate::globals::random_seed());
+    st.errors.random_seed = st.shipout.microseconds * 1000 + (st.shipout.epochseconds % 1_000_000);
+    crate::scaled_math::init_randoms(st.errors.random_seed);
 
-    if interaction() == BATCH_MODE {
-        set_selector(SELECTOR_NO_PRINT);
+    if st.errors.interaction == BATCH_MODE {
+        st.shipout.selector = SELECTOR_NO_PRINT;
     } else {
-        set_selector(SELECTOR_TERM_ONLY);
+        st.shipout.selector = SELECTOR_TERM_ONLY;
     }
 
-    if crate::globals::semantic_pagination_enabled() {
-        set_eqtb_b32s1(PC_INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, 1);
+    if st.config.semantic_pagination_enabled {
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) as usize]
+            .b32
+            .s1 = 1;
     }
 
     pdf_files_init();
@@ -1500,7 +1487,7 @@ pub unsafe extern "C" fn tt_run_engine(
         // to the setjmp (`01d` §5.6).
         return a.into_history();
     }
-    crate::globals::set_history(HISTORY_SPOTLESS);
+    st.errors.history = HISTORY_SPOTLESS;
     if let Err(a) = crate::main_control::main_control() {
         // A fatal main-control abort. into_history runs the print + cleanup and
         // returns HISTORY_FATAL_ERROR, skipping final_cleanup — identical to the
@@ -1521,7 +1508,7 @@ pub unsafe extern "C" fn tt_run_engine(
     }
     tt_cleanup();
 
-    history()
+    st.errors.history
 }
 // translated from xetex-ini.c:2226 (tt_cleanup)
 pub unsafe fn tt_cleanup() {
