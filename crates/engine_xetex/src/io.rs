@@ -3,9 +3,8 @@
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{buf_size, cur_chr, cur_val, first, name_of_file, set_name_length};
 use crate::globals::{
-    cur_cmd, cur_cs, cur_input, init_pool_ptr, pool_size, selector, set_cur_cs,
-    set_cur_input_limit, set_cur_input_loc, set_cur_input_name, set_cur_input_state,
-    set_eqtb_b32s1, set_first, set_line, set_selector,
+    cur_cmd, cur_cs, cur_input, init_pool_ptr, pool_size, set_cur_cs, set_cur_input_limit,
+    set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_first, set_line,
 };
 use crate::input::InputAbort;
 use crate::output::capture_to_diagnostic;
@@ -1374,37 +1373,48 @@ pub(crate) unsafe fn pack_file_name_in(st: &mut crate::state::EngineState, n: i3
 /// success path (the only one exercised by TRIP/corpus) runs identically and
 /// returns `Ok(())`.
 pub unsafe fn close_files_and_terminate() -> Result<(), crate::errors::EngineAbort> {
-    use crate::globals::log_opened;
+    // Thin bridge for the not-yet-threaded callers (tt_run_engine normal exit +
+    // the errors.rs terminal-cleanup paths + store_fmt_file); they hold no borrow.
+    crate::state::with_state_mut(|st| close_files_and_terminate_in(st))
+}
 
+/// Threaded `_in` core of [`close_files_and_terminate`] (`01d` §6.1 drain, step 2).
+/// Holds one `&mut EngineState` across the whole teardown — every former
+/// `with_state`/wrapper re-entry (`set_eqtb_b32s1`/`log_opened`/`selector`/
+/// `set_selector`/`print_*`) is now direct `st.*` access or an `_in` print. Safe
+/// to hold the borrow: no path longjmps. Prerequisite for threading
+/// `store_fmt_file`, which will call this directly under its own borrow.
+pub(crate) unsafe fn close_files_and_terminate_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), crate::errors::EngineAbort> {
     for k in 0usize..=15 {
-        let (open, file) =
-            crate::state::with_state(|s| (s.shipout.write_open[k], s.shipout.write_file[k]));
-        if open {
-            ttstub_output_close(file);
+        if st.shipout.write_open[k] {
+            ttstub_output_close(st.shipout.write_file[k]);
         }
     }
 
-    set_eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR_CFT, -1);
+    st.eqtb.data[(INT_BASE + INT_PAR_NEW_LINE_CHAR_CFT) as usize]
+        .b32
+        .s1 = -1;
 
-    crate::state::with_state_mut(crate::shipout::finalize_dvi_file_in)
-        .map_err(|e| e.into_engine_abort())?;
-    let log_was_opened = log_opened();
-    crate::state::with_state_mut(|st| crate::synctex::synctex_terminate(st, log_was_opened));
+    crate::shipout::finalize_dvi_file_in(st).map_err(|e| e.into_engine_abort())?;
+    let log_was_opened = st.errors.log_opened;
+    crate::synctex::synctex_terminate(st, log_was_opened);
 
-    if log_opened() {
-        let log_file = crate::state::with_state(|s| s.shipout.log_file);
+    if st.errors.log_opened {
+        let log_file = st.shipout.log_file;
         ttstub_output_putc(log_file, b'\n' as i32);
         ttstub_output_close(log_file);
-        set_selector(selector() - 2);
-        if selector() == SELECTOR_TERM_ONLY {
-            let texmf_log_name = crate::state::with_state(|s| s.strings.texmf_log_name);
-            crate::output::print_nl_cstr(c"Transcript written on ".as_ptr());
-            crate::output::print(texmf_log_name);
-            crate::output::print_char(b'.' as i32);
+        st.shipout.selector -= 2;
+        if st.shipout.selector == SELECTOR_TERM_ONLY {
+            let texmf_log_name = st.strings.texmf_log_name;
+            crate::output::print_nl_cstr_in(st, c"Transcript written on ".as_ptr());
+            crate::output::print_in(st, texmf_log_name);
+            crate::output::print_char_in(st, b'.' as i32);
         }
     }
 
-    crate::output::print_ln();
+    crate::output::print_ln_in(st);
     Ok(())
 }
 
