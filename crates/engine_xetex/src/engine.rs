@@ -9,10 +9,10 @@ use crate::consts::{
     PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
     TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
 };
-use crate::format_io::{load_fmt_file, store_fmt_file};
+use crate::format_io::load_fmt_file;
 use crate::globals::{
     buf_size, cur_chr, cur_input, cur_val, eqtb_b32s1, first, font_max, font_mem_size, history,
-    in_initex_mode, interaction, job_name, mem_b32s1, selector,
+    in_initex_mode, interaction,
     set_buffer_entry, set_cancel_boundary, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux,
     set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf,
     set_cur_list_tail, set_cur_val, set_eqtb_b32s1, set_error_line, set_file_line_error_style_p,
@@ -307,6 +307,17 @@ unsafe fn primitive(
 }
 // translated from xetex-ini.c:2201 (final_cleanup)
 pub unsafe fn final_cleanup() -> Result<(), crate::errors::EngineAbort> {
+    crate::state::with_state_mut(|st| final_cleanup_in(st))
+}
+// Threaded core (`01d` §6.1 drain step 6): the whole cleanup runs under one held
+// `&mut EngineState` borrow. All with_state re-entries fold to direct `st.*`
+// access; `print_*`/`output::` → `_in`; `end_token_list`/`end_file_reading`/
+// `open_log_file` use their `_in` cores (`map_err` into EngineAbort);
+// `cur_chr`/`cur_input`/`temp_ptr` are mod-raw scalars (borrow-independent, stay
+// put until the flip). Fatals return EngineAbort, caught at tt_run_engine.
+pub(crate) unsafe fn final_cleanup_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), crate::errors::EngineAbort> {
     const INT_PAR_NEW_LINE_CHAR: i32 = 49;
     const IF_NODE_SIZE: i32 = 2;
     const IF_TEST: u16 = 107;
@@ -322,135 +333,121 @@ pub unsafe fn final_cleanup() -> Result<(), crate::errors::EngineAbort> {
     let mut c = cur_chr();
 
     if c != 1 {
-        set_eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, -1);
+        st.eqtb.data[(INT_BASE + INT_PAR_NEW_LINE_CHAR) as usize].b32.s1 = -1;
     }
 
-    if job_name() == 0 {
+    if st.strings.job_name == 0 {
         // Propagate an open-log failure as EngineAbort instead of the
         // open_log_file()/OpenLogAbort longjmp: final_cleanup returns Result and
-        // is caught at tt_run_engine (`01d` §5.6). final_cleanup re-enters
-        // with_state (no long-lived borrow held here), so this is safe.
-        crate::state::with_state_mut(|st| crate::io::open_log_file_in(st))
-            .map_err(|e| e.into_engine_abort())?;
+        // is caught at tt_run_engine (`01d` §5.6).
+        crate::io::open_log_file_in(st).map_err(|e| e.into_engine_abort())?;
     }
 
-    while crate::state::with_state(|s| s.input.input_ptr) > 0 {
+    while st.input.input_ptr > 0 {
         if cur_input().state == TOKEN_LIST {
-            crate::input::end_token_list()?;
+            crate::input::end_token_list_in(st).map_err(|e| e.into_engine_abort())?;
         } else {
-            crate::input::end_file_reading()?;
+            crate::input::end_file_reading_in(st).map_err(|e| e.into_engine_abort())?;
         }
     }
 
     loop {
-        let n = crate::state::with_state(|s| s.input.open_parens);
+        let n = st.input.open_parens;
         if n <= 0 {
             break;
         }
-        crate::output::print_cstr(c" )".as_ptr());
-        set_open_parens(n - 1);
+        crate::output::print_cstr_in(st, c" )".as_ptr());
+        st.input.open_parens = n - 1;
     }
 
-    let cur_level = crate::state::with_state(|s| s.save_stack.cur_level);
+    let cur_level = st.save_stack.cur_level;
     if cur_level > LEVEL_ONE {
-        crate::output::print_nl(b'(' as i32);
-        crate::output::print_esc_cstr(c"end occurred ".as_ptr());
-        crate::output::print_cstr(c"inside a group at level ".as_ptr());
-        crate::output::print_int(cur_level as i32 - 1);
-        crate::output::print_char(b')' as i32);
-        crate::output::show_save_groups();
+        crate::output::print_nl_in(st, b'(' as i32);
+        crate::output::print_esc_cstr_in(st, c"end occurred ".as_ptr());
+        crate::output::print_cstr_in(st, c"inside a group at level ".as_ptr());
+        crate::output::print_int_in(st, cur_level as i32 - 1);
+        crate::output::print_char_in(st, b')' as i32);
+        crate::output::show_save_groups_in(st);
     }
 
-    while crate::state::with_state(|s| s.scanner.cond_ptr) != crate::mem::TEX_NULL {
-        crate::output::print_nl(b'(' as i32);
-        crate::output::print_esc_cstr(c"end occurred ".as_ptr());
-        crate::output::print_cstr(c"when ".as_ptr());
-        crate::output::print_cmd_chr(
-            IF_TEST,
-            crate::state::with_state(|s| s.scanner.cur_if) as i32,
-        );
-        let if_line = crate::state::with_state(|s| s.scanner.if_line);
+    while st.scanner.cond_ptr != crate::mem::TEX_NULL {
+        crate::output::print_nl_in(st, b'(' as i32);
+        crate::output::print_esc_cstr_in(st, c"end occurred ".as_ptr());
+        crate::output::print_cstr_in(st, c"when ".as_ptr());
+        let cur_if = st.scanner.cur_if as i32;
+        crate::output::print_cmd_chr_in(st, IF_TEST, cur_if);
+        let if_line = st.scanner.if_line;
         if if_line != 0 {
-            crate::output::print_cstr(c" on line ".as_ptr());
-            crate::output::print_int(if_line);
+            crate::output::print_cstr_in(st, c" on line ".as_ptr());
+            crate::output::print_int_in(st, if_line);
         }
-        crate::output::print_cstr(c" was incomplete)".as_ptr());
-        let cond_ptr = crate::state::with_state(|s| s.scanner.cond_ptr);
-        let new_if_line = mem_b32s1(cond_ptr + 1);
+        crate::output::print_cstr_in(st, c" was incomplete)".as_ptr());
+        let cond_ptr = st.scanner.cond_ptr;
         // SAFETY: union projection; the `Vec` index is bounds-checked.
-        let new_cur_if =
-            crate::state::with_state(|s| unsafe { s.mem.data[cond_ptr as usize].b16.s0 }) as i16;
-        let new_cond_ptr = mem_b32s1(cond_ptr);
+        let new_if_line = unsafe { st.mem.data[(cond_ptr + 1) as usize].b32.s1 };
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        let new_cur_if = unsafe { st.mem.data[cond_ptr as usize].b16.s0 } as i16;
+        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        let new_cond_ptr = unsafe { st.mem.data[cond_ptr as usize].b32.s1 };
         set_temp_ptr(cond_ptr);
-        crate::state::with_state_mut(|s| {
-            s.scanner.if_line = new_if_line;
-            s.scanner.cur_if = new_cur_if;
-            s.scanner.cond_ptr = new_cond_ptr;
-        });
+        st.scanner.if_line = new_if_line;
+        st.scanner.cur_if = new_cur_if;
+        st.scanner.cond_ptr = new_cond_ptr;
         let p = temp_ptr();
-        crate::state::with_state_mut(|st| crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE));
+        crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE);
     }
 
-    if history() != HISTORY_SPOTLESS
-        && (history() == HISTORY_WARNING_ISSUED || interaction() < ERROR_STOP_MODE)
-        && selector() == SELECTOR_TERM_AND_LOG
+    if st.errors.history != HISTORY_SPOTLESS
+        && (st.errors.history == HISTORY_WARNING_ISSUED || st.errors.interaction < ERROR_STOP_MODE)
+        && st.shipout.selector == SELECTOR_TERM_AND_LOG
     {
-        set_selector(SELECTOR_TERM_ONLY);
-        crate::output::print_nl_cstr(
+        st.shipout.selector = SELECTOR_TERM_ONLY;
+        crate::output::print_nl_cstr_in(
+            st,
             c"(see the transcript file for additional information)".as_ptr(),
         );
-        set_selector(SELECTOR_TERM_AND_LOG);
+        st.shipout.selector = SELECTOR_TERM_AND_LOG;
     }
 
     if c == 1 {
-        if in_initex_mode() {
-            let cleanup = crate::state::with_state_mut(|st| {
-                c = TOP_MARK_CODE as i32;
-                loop {
-                    let mark = st.scanner.cur_mark[c as usize];
-                    if mark != crate::mem::TEX_NULL {
-                        crate::mem::delete_token_ref(&mut st.mem, mark);
-                    }
-                    if c as usize >= SPLIT_BOT_MARK_CODE {
-                        break;
-                    }
-                    c += 1;
+        if st.config.in_initex_mode {
+            c = TOP_MARK_CODE as i32;
+            loop {
+                let mark = st.scanner.cur_mark[c as usize];
+                if mark != crate::mem::TEX_NULL {
+                    crate::mem::delete_token_ref(&mut st.mem, mark);
                 }
-
-                let marks = st.scanner.sa_root[MARK_VAL];
-                if marks != crate::mem::TEX_NULL
-                    && crate::packaging::do_marks(&mut st.mem, 3, 0, marks)
-                {
-                    st.scanner.sa_root[MARK_VAL] = crate::mem::TEX_NULL;
+                if c as usize >= SPLIT_BOT_MARK_CODE {
+                    break;
                 }
-
-                c = LAST_BOX_CODE as i32;
-                loop {
-                    crate::packaging::flush_node_list(
-                        &mut st.mem,
-                        st.scanner.disc_ptr[c as usize],
-                    )?;
-                    if c as usize >= VSPLIT_CODE {
-                        break;
-                    }
-                    c += 1;
-                }
-
-                if st.shipout.last_glue != MAX_HALFWORD {
-                    crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
-                }
-                Ok::<(), &'static std::ffi::CStr>(())
-            });
-            if let Err(msg) = cleanup {
-                // Propagate the confusion to tt_run_engine's i32 return instead
-                // of longjmp-ing (`01d` §5.2); store_fmt_file's own fatals stay
-                // backstopped by the C setjmp until its slice converts.
-                return Err(crate::errors::EngineAbort::Confusion(msg.as_ptr()));
+                c += 1;
             }
-            store_fmt_file()?;
+
+            let marks = st.scanner.sa_root[MARK_VAL];
+            if marks != crate::mem::TEX_NULL && crate::packaging::do_marks(&mut st.mem, 3, 0, marks) {
+                st.scanner.sa_root[MARK_VAL] = crate::mem::TEX_NULL;
+            }
+
+            c = LAST_BOX_CODE as i32;
+            loop {
+                // Propagate the confusion to tt_run_engine's return instead of
+                // longjmp-ing (`01d` §5.2).
+                crate::packaging::flush_node_list(&mut st.mem, st.scanner.disc_ptr[c as usize])
+                    .map_err(|msg| crate::errors::EngineAbort::Confusion(msg.as_ptr()))?;
+                if c as usize >= VSPLIT_CODE {
+                    break;
+                }
+                c += 1;
+            }
+
+            if st.shipout.last_glue != MAX_HALFWORD {
+                crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
+            }
+
+            crate::format_io::store_fmt_file_in(st)?;
             return Ok(());
         }
-        crate::output::print_nl_cstr(c"(\\dump is performed only by INITEX)".as_ptr());
+        crate::output::print_nl_cstr_in(st, c"(\\dump is performed only by INITEX)".as_ptr());
     }
     Ok(())
 }

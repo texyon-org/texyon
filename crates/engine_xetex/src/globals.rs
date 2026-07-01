@@ -272,17 +272,6 @@ pub(crate) fn set_j_random(v: u8) {
 // mem arena word accessors
 // ---------------------------------------------------------------------------
 
-/// Read `mem[p].b32.s1` (the `LLIST_link` / successor-pointer field).
-///
-/// # Safety
-/// `p` must be a valid arena index (`0 ..= MEM_TOP`). TEX_NULL is never
-/// a valid index; callers must guard against it before calling this.
-#[inline]
-pub(crate) fn mem_b32s1(p: i32) -> i32 {
-    // SAFETY: union projection; the `Vec` index is bounds-checked.
-    crate::state::with_state(|s| unsafe { s.mem.data[p as usize].b32.s1 })
-}
-
 // ---------------------------------------------------------------------------
 // lo_mem_max / hi_mem_min / avail / mem_end / rover
 // ---------------------------------------------------------------------------

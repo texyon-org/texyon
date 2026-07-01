@@ -224,10 +224,6 @@ unsafe fn undump_upper_u16(
     }
     Ok(true)
 }
-// translated from xetex-ini.c:587 (store_fmt_file)
-pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
-    crate::state::with_state_mut(|st| store_fmt_file_in(st))
-}
 // Threaded core (`01d` §6.1 drain step 5): the whole dump runs under one held
 // `&mut EngineState` borrow. All former `with_state` re-entries fold to direct
 // `st.*` access, `print_*` → `print_*_in`, the globals accessors to their

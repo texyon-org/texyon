@@ -245,13 +245,6 @@ pub(crate) fn print_nl_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_cha
 // print_esc_cstr
 // ---------------------------------------------------------------------------
 
-/// Print the escape character (if any) followed by a C string.
-///
-/// translated from xetex-output.c:338 (print_esc_cstr)
-pub unsafe fn print_esc_cstr(s: *const libc::c_char) {
-    crate::state::with_state_mut(|st| print_esc_cstr_in(st, s));
-}
-
 /// `&mut EngineState` core of [`print_esc_cstr`].
 pub(crate) fn print_esc_cstr_in(st: &mut EngineState, s: *const libc::c_char) {
     let c = st.eqtb.b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
@@ -264,13 +257,6 @@ pub(crate) fn print_esc_cstr_in(st: &mut EngineState, s: *const libc::c_char) {
 // ---------------------------------------------------------------------------
 // print_nl
 // ---------------------------------------------------------------------------
-
-/// Start a new line if needed, then print string `s`.
-///
-/// translated from xetex-output.c:302 (print_nl)
-pub unsafe fn print_nl(s: i32) {
-    crate::state::with_state_mut(|st| print_nl_in(st, s));
-}
 
 /// `&mut EngineState` core of [`print_nl`].
 pub(crate) fn print_nl_in(st: &mut EngineState, s: i32) {
@@ -1870,13 +1856,6 @@ const CC_OTGR_FONT_FLAG: i32 = 0xFFFE;
 // PROTECTED_TOKEN (xetex-constants.h:361)
 const CC_PROTECTED_TOKEN: i32 = 0x1C00001;
 
-/// Print the name of command code `cmd` with subtype `chr_code`.
-///
-/// translated from xetex-xetex0.c:1265 (print_cmd_chr)
-pub unsafe fn print_cmd_chr(cmd: u16, chr_code: i32) {
-    crate::state::with_state_mut(|st| print_cmd_chr_in(st, cmd, chr_code));
-}
-
 /// `&mut EngineState` core of [`print_cmd_chr`].
 pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
     // Helper: print a char/codepoint (> 65535 uses print_char for raw code).
@@ -3299,10 +3278,6 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
     st.strings.str_ptr -= 1;
     st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
     Ok(())
-}
-// translated from xetex-xetex0.c:7752 (show_save_groups)
-pub unsafe fn show_save_groups() {
-    crate::state::with_state_mut(|st| show_save_groups_in(st));
 }
 
 /// `&mut EngineState` core of [`show_save_groups`].

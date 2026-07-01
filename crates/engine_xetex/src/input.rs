@@ -82,13 +82,6 @@ impl InputAbort {
 // end_token_list
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-xetex0.c:3108 (end_token_list)
-pub unsafe fn end_token_list() -> Result<(), crate::errors::EngineAbort> {
-    // Sole caller is final_cleanup (Result-threadable); propagate the cold
-    // InputAbort as EngineAbort instead of longjmp-ing (`01d` §5.6).
-    crate::state::with_state_mut(end_token_list_in).map_err(|a| a.into_engine_abort())
-}
-
 /// `&mut EngineState` core of [`end_token_list`] (`01b` §3). Touches the input
 /// stack (`st.input`) and `align_state` (`st.scanner`) directly; `cur_input` is
 /// the raw `mod raw` global (safe under the borrow); list recycling goes through
@@ -285,13 +278,6 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
 // ---------------------------------------------------------------------------
 // end_file_reading
 // ---------------------------------------------------------------------------
-
-/// translated from xetex-xetex0.c:3127 (end_file_reading)
-pub unsafe fn end_file_reading() -> Result<(), crate::errors::EngineAbort> {
-    // Sole caller is final_cleanup (Result-threadable); propagate the cold
-    // InputClose abort as EngineAbort instead of longjmp-ing (`01d` §2.1).
-    crate::state::with_state_mut(end_file_reading_in).map_err(|a| a.into_engine_abort())
-}
 
 /// `&mut EngineState` core of [`end_file_reading`] (`01b` §3). Touches the input
 /// stack (`st.input`) directly; `cur_input`/`first`/`line` are raw `mod raw`
