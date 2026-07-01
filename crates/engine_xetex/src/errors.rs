@@ -116,12 +116,14 @@ impl ErrorOutcome {
         match self {
             ErrorOutcome::Continue => {}
             ErrorOutcome::Halt => {
-                post_error_message(false);
-                _tt_abort(c"halted on potentially-recoverable error as specified".as_ptr());
+                let msg = c"halted on potentially-recoverable error as specified".as_ptr();
+                EngineAbort::HaltMessage(msg).into_history();
+                _tt_abort(msg);
             }
             ErrorOutcome::Hundred => {
-                post_error_message(false);
-                _tt_abort(c"halted after 100 potentially-recoverable errors".as_ptr());
+                let msg = c"halted after 100 potentially-recoverable errors".as_ptr();
+                EngineAbort::HaltMessage(msg).into_history();
+                _tt_abort(msg);
             }
             ErrorOutcome::Confusion(msg) => confusion(msg.as_ptr()),
             ErrorOutcome::Overflow { what, n } => overflow(what.as_ptr(), n),
@@ -235,6 +237,9 @@ pub(crate) enum EngineAbort {
     },
     /// `_tt_abort(msg)` — direct longjmp; `msg` is the surfaced abort message.
     TtAbort(*const libc::c_char),
+    /// `post_error_message(false)` then `_tt_abort(msg)` — the `ErrorOutcome`
+    /// `Halt`/`Hundred` terminal (halt-on-error / 100-errors).
+    HaltMessage(*const libc::c_char),
 }
 
 impl EngineAbort {
@@ -316,6 +321,12 @@ impl EngineAbort {
             // `_tt_abort(msg)` prints nothing and runs no cleanup; it only writes
             // `msg` to the bridge's surfaced message — mirror exactly that.
             EngineAbort::TtAbort(msg) => _ttbc_set_error_message(msg),
+            // ErrorOutcome Halt/Hundred: post_error_message(false) then the
+            // `msg` the `_tt_abort` surfaced.
+            EngineAbort::HaltMessage(msg) => {
+                post_error_message(false);
+                _ttbc_set_error_message(msg);
+            }
         }
         HISTORY_FATAL_ERROR
     }
