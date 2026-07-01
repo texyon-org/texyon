@@ -1227,7 +1227,10 @@ pub unsafe extern "C" fn tt_run_engine(
         if let Err(a) = get_strings_started() {
             return a.into_history();
         }
-        let format_ident = crate::texmfmp::maketexstring(c" (INITEX)".as_ptr());
+        let format_ident = match crate::texmfmp::maketexstring(c" (INITEX)".as_ptr()) {
+            Ok(v) => v,
+            Err(a) => return a.into_history(),
+        };
         crate::state::with_state_mut(|st| initialize_more_initex_variables_in(st, format_ident));
         let result = crate::state::with_state_mut(|st| initialize_primitives(st));
         if let Err(e) = result {
@@ -1399,7 +1402,10 @@ pub unsafe extern "C" fn tt_run_engine(
         // writes; the only state-touching argument is `maketexstring`, computed
         // before the borrow. set_font_mapping_ptr stays a wrapper (used
         // elsewhere) but its write is inlined here under the same borrow.
-        let nullfont_name = crate::texmfmp::maketexstring(c"nullfont".as_ptr());
+        let nullfont_name = match crate::texmfmp::maketexstring(c"nullfont".as_ptr()) {
+            Ok(v) => v,
+            Err(a) => return a.into_history(),
+        };
         crate::state::with_state_mut(|s| {
             let f = FONT_BASE as usize;
             s.fonts.font_ptr = FONT_BASE;

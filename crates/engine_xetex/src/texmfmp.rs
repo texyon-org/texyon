@@ -249,11 +249,11 @@ impl MakeTexStringAbort {
 }
 
 /// translated from xetex-texmfmp.c:245 (maketexstring)
-pub unsafe fn maketexstring(s: *const libc::c_char) -> i32 {
-    match crate::state::with_state_mut(|st| maketexstring_in(&mut st.strings, s)) {
-        Ok(v) => v,
-        Err(e) => fire_make_tex_string(e),
-    }
+pub unsafe fn maketexstring(s: *const libc::c_char) -> Result<i32, crate::errors::EngineAbort> {
+    // Both callers are tt_run_engine INITEX-init sites (Result-threadable via
+    // into_history); propagate the cold overflow as EngineAbort (`01d` §5.6).
+    crate::state::with_state_mut(|st| maketexstring_in(&mut st.strings, s))
+        .map_err(|e| e.into_engine_abort())
 }
 
 /// `&mut StringsState` core of [`maketexstring`] (scanner-SCC prereq).
