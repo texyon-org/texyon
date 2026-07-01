@@ -297,9 +297,6 @@ unsafe fn primitive(
     Ok(())
 }
 // translated from xetex-ini.c:2201 (final_cleanup)
-pub unsafe fn final_cleanup() -> Result<(), crate::errors::EngineAbort> {
-    crate::state::with_state_mut(|st| final_cleanup_in(st))
-}
 // Threaded core (`01d` §6.1 drain step 6): the whole cleanup runs under one held
 // `&mut EngineState` borrow. All with_state re-entries fold to direct `st.*`
 // access; `print_*`/`output::` → `_in`; `end_token_list`/`end_file_reading`/
@@ -1488,13 +1485,14 @@ pub unsafe extern "C" fn tt_run_engine(
         return a.into_history();
     }
     st.errors.history = HISTORY_SPOTLESS;
-    if let Err(a) = crate::main_control::main_control() {
+    if let Err(a) = crate::main_control::main_control_in(&mut *st).map_err(|e| e.into_engine_abort())
+    {
         // A fatal main-control abort. into_history runs the print + cleanup and
         // returns HISTORY_FATAL_ERROR, skipping final_cleanup — identical to the
         // old `MainControlAbort::fire` longjmp straight to the setjmp (`01d` §5.5).
         return a.into_history();
     }
-    if let Err(a) = final_cleanup() {
+    if let Err(a) = final_cleanup_in(&mut *st) {
         // into_history runs the print + cleanup (incl. close_files_and_terminate
         // + tt_cleanup via post_error_message) and returns HISTORY_FATAL_ERROR —
         // identical to the old confusion() longjmp (`01d` §5.2).
@@ -1503,10 +1501,10 @@ pub unsafe extern "C" fn tt_run_engine(
     // Normal exit: a finalize_dvi_file failure here (e.g. XDV write error) aborts
     // via into_history — identical to the old fire_shipout_abort longjmp, which
     // also skipped tt_cleanup and returned HISTORY_FATAL_ERROR (`01d` §5.6).
-    if let Err(a) = crate::io::close_files_and_terminate() {
+    if let Err(a) = crate::io::close_files_and_terminate_in(&mut *st) {
         return a.into_history();
     }
-    tt_cleanup();
+    tt_cleanup_in(&mut *st);
 
     st.errors.history
 }

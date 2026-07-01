@@ -6321,7 +6321,9 @@ unsafe fn do_lookahead(
 //
 // The public wrapper is the thread-local anchor; the full command loop holds
 // one state borrow and threads it through every dispatcher below this point.
-unsafe fn main_control_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
+pub(crate) unsafe fn main_control_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), MainControlAbort> {
     // Mode constants (xetex_format.h)
     const VMODE: u16 = 1;
     const HMODE: u16 = 104;
@@ -6756,14 +6758,6 @@ unsafe fn main_control_in(st: &mut crate::state::EngineState) -> Result<(), Main
     }
 }
 
-/// Run the main control loop under one borrow, mapping any cold
-/// [`MainControlAbort`] to the unified [`EngineAbort`] terminal *after* the
-/// borrow drops (`01d` §5.5). `tt_run_engine` catches the `Err` and returns
-/// `into_history()` — observationally identical to the former `e.fire()` longjmp
-/// (which also skipped `final_cleanup`).
-pub unsafe fn main_control() -> Result<(), crate::errors::EngineAbort> {
-    crate::state::with_state_mut(|st| main_control_in(st)).map_err(|e| e.into_engine_abort())
-}
 
 // ---- moved verbatim from ini.rs (workstream 02) ----
 
